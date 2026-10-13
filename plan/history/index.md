@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1037 / WS074 full static details reftest census（2026-10-14）
+
+[q1037履歴](queue-q1037.md): 固定details rootの静的reftest21件は12 local PASS/9 FAIL、残り4 reftestは別directory未実行。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1037/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1036 / WS074 ancestor reveal snapshot（2026-10-14）
 
 [q1036履歴](queue-q1036.md): DOM再親化時の新祖先beforematchを解消し、固定infinite-loop WPT1/1 PASS。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1036/README.md)。共有投影/GitHub publication pending。

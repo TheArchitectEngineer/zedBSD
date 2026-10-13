@@ -37,3 +37,13 @@ Event ws074-p190-q1033-outcome-20261014: q1033-i01 partial cleared、p190 whole�
 **partial scope cleared、p190 whole uncleared。** 静的match-only参照連鎖を最大16辺まで辿るrunner修正と4件の局所graph controlを完了。固定10件を同条件で再計測し、3 PASS/7 FAIL/0 error。q1033のfalse PASSは参照連鎖の2辺目4,930画素差によってFAILとなり、他9件の結果は維持。[証拠](evidence/20261014-q1034/README.md)。Python compileとdiff check PASS。browser/WPT/Master変更なし、host build/Acid再計測省略。scripted/variant/HTTPS/crashtest、完全なfuzzy override・混合reference graphは残り、p190 wholeとp173全3,805件100%は未達。GitHub publication保留。
 
 Event ws074-p190-q1034-outcome-20261014: q1034-i01 partial cleared、p190 whole uncleared。途中一致のfalse PASSを解消。今後のrunner coverageは残余条件と固定選定の拡大を要する。
+
+## q1037-i01 の有限部分範囲
+
+2026-10-14 01:31 JST、ユーザーの事前承認を適用、最大90分。q1034の静的match-only参照連鎖対応runnerで、固定Interop manifestが選んだ `html/rendering/the-details-element` 内の静的reftest候補全件を同一HTTP origin・800×600・固定fontで実測する。固定details reftest25件とIDを照合し、PASS/FAIL/errorと未実行理由、参照連鎖・fuzzy/代表画像差を分類し、後続修正の優先対象を記録する。scripted/variant/HTTPS/crashtestの実装、browser/WPT/公開ABI/`master.md`変更は含めない。固定commit/manifest、結果JSONの件数・ID、diff checkを検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1037-i01 結果（2026-10-14 01:31 JST）
+
+**partial scope cleared、p190 whole uncleared。** 固定details focusのうち `html/rendering/the-details-element` 内のreftest全21件をq1034 runnerで実測し、12 local PASS/9 FAIL/0 error。[結果・分類・代表画像](evidence/20261014-q1037/README.md)。FAILはreference-chain2件、`::details-content`5件、revert1件、inline layout1件。focus残り4 reftestはhidden属性directoryにあり、未実行として明示。ID/固定commit整合とdiff check PASS。コード無変更のためhost build/Acid再計測省略。p190 whole/p173全件100%未達、browser/WPT/Master無変更、GitHub publication保留。
+
+Event ws074-p190-q1037-outcome-20261014: q1037-i01 partial cleared、p190 whole uncleared。固定details静的21件を測定し、残る4 reftestと3 crashtestのcoverageを分けて記録。
