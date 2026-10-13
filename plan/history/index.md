@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1053 / WS074 fixed static reftest re-census（2026-10-14）
+
+[q1053履歴](queue-q1053.md): 固定静的1,561 IDを同条件再測定し518 local PASS/684 FAIL/359 error/0 timeout。全errorはDOCTYPE付きXHTML、旧PASS→FAIL8件。[証拠](../ws074/phase190/evidence/20261014-q1053/README.md)。p190部分cleared、p173全件100%未達、共有投影/GitHub publication pending。
+
 ## 最新: q1052 / WS074 vertical-lr Flexbox axis（2026-10-14）
 
 [q1052履歴](queue-q1052.md): vertical-lr Flex軸・float幅・line-left/right修正で固定10 reftestが10/10 local pixel exact PASS。p202と後続証拠によるp197〜p199 whole cleared。host21/21、Acid3画素差0/Acid2差1865。[証拠](../ws074/phase202/evidence/20261014-q1052/README.md)。p173全3,805件100%未達、共有投影/GitHub publication pending。

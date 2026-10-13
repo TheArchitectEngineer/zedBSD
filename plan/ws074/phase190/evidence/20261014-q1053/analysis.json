@@ -1,0 +1,190 @@
+{
+  "old_counts": {
+    "fail": 1051,
+    "pass": 500,
+    "timeout": 10
+  },
+  "new_counts": {
+    "error": 359,
+    "fail": 684,
+    "pass": 518
+  },
+  "selected": 1561,
+  "id_mismatch": [],
+  "transitions": {
+    "fail_to_error": 336,
+    "fail_to_fail": 676,
+    "fail_to_pass": 39,
+    "pass_to_error": 23,
+    "pass_to_fail": 8,
+    "pass_to_pass": 469,
+    "timeout_to_pass": 10
+  },
+  "by_focus": {
+    "anchor-positioning": {
+      "old": {
+        "fail": 21
+      },
+      "new": {
+        "error": 5,
+        "fail": 16
+      },
+      "transitions": {
+        "fail_to_error": 5,
+        "fail_to_fail": 16
+      }
+    },
+    "backdrop-filter": {
+      "old": {
+        "fail": 20,
+        "pass": 31
+      },
+      "new": {
+        "fail": 20,
+        "pass": 31
+      },
+      "transitions": {
+        "fail_to_fail": 20,
+        "pass_to_pass": 31
+      }
+    },
+    "details": {
+      "old": {
+        "fail": 11,
+        "pass": 12
+      },
+      "new": {
+        "fail": 11,
+        "pass": 12
+      },
+      "transitions": {
+        "fail_to_fail": 11,
+        "pass_to_pass": 12
+      }
+    },
+    "layout": {
+      "old": {
+        "fail": 866,
+        "pass": 429,
+        "timeout": 10
+      },
+      "new": {
+        "error": 280,
+        "fail": 576,
+        "pass": 449
+      },
+      "transitions": {
+        "fail_to_error": 259,
+        "fail_to_fail": 568,
+        "fail_to_pass": 39,
+        "pass_to_error": 21,
+        "pass_to_fail": 8,
+        "pass_to_pass": 400,
+        "timeout_to_pass": 10
+      }
+    },
+    "scope": {
+      "old": {
+        "fail": 1,
+        "pass": 1
+      },
+      "new": {
+        "fail": 1,
+        "pass": 1
+      },
+      "transitions": {
+        "fail_to_fail": 1,
+        "pass_to_pass": 1
+      }
+    },
+    "view-transitions": {
+      "old": {
+        "pass": 2
+      },
+      "new": {
+        "pass": 2
+      },
+      "transitions": {
+        "pass_to_pass": 2
+      }
+    },
+    "webcompat": {
+      "old": {
+        "fail": 16,
+        "pass": 9
+      },
+      "new": {
+        "fail": 16,
+        "pass": 9
+      },
+      "transitions": {
+        "fail_to_fail": 16,
+        "pass_to_pass": 9
+      }
+    },
+    "writingmodes": {
+      "old": {
+        "fail": 122,
+        "pass": 16
+      },
+      "new": {
+        "error": 74,
+        "fail": 50,
+        "pass": 14
+      },
+      "transitions": {
+        "fail_to_error": 72,
+        "fail_to_fail": 50,
+        "pass_to_error": 2,
+        "pass_to_pass": 14
+      }
+    }
+  },
+  "previous_pass_now_fail": [
+    "css/css-flexbox/flex-direction-row-vertical.html",
+    "css/css-flexbox/flexbox-basic-textarea-horiz-001.xhtml",
+    "css/css-flexbox/flexbox-basic-textarea-vert-001.xhtml",
+    "css/css-flexbox/gap-001-lr.html",
+    "css/css-flexbox/gap-002-lr.html",
+    "css/css-flexbox/gap-003-lr.html",
+    "css/css-flexbox/gap-004-lr.html",
+    "css/css-flexbox/gap-005-lr.html"
+  ],
+  "previous_pass_now_error": [
+    "css/css-flexbox/flex-aspect-ratio-img-column-014.html",
+    "css/css-flexbox/flex-aspect-ratio-img-column-015.html",
+    "css/css-flexbox/flex-aspect-ratio-img-row-010.html",
+    "css/css-flexbox/flex-aspect-ratio-img-row-011.html",
+    "css/css-flexbox/flex-grow-001.xht",
+    "css/css-flexbox/flex-minimum-height-flex-items-001.xht",
+    "css/css-flexbox/flex-minimum-height-flex-items-002.xht",
+    "css/css-flexbox/flex-minimum-height-flex-items-003.xht",
+    "css/css-flexbox/flex-minimum-height-flex-items-011.xht",
+    "css/css-flexbox/flex-minimum-height-flex-items-016.html",
+    "css/css-flexbox/flex-minimum-height-flex-items-017.html",
+    "css/css-flexbox/flex-minimum-height-flex-items-018.html",
+    "css/css-flexbox/flex-minimum-width-flex-items-002.xht",
+    "css/css-grid/grid-items/grid-item-inline-contribution-002.html",
+    "css/css-grid/grid-items/grid-item-inline-contribution-003.html",
+    "css/css-grid/placement/grid-placement-items-spanning-multiple-rows-001.html",
+    "css/css-grid/placement/grid-placement-using-named-grid-lines-001.html",
+    "css/css-grid/placement/grid-placement-using-named-grid-lines-003.html",
+    "css/css-grid/placement/grid-placement-using-named-grid-lines-004.html",
+    "css/css-grid/placement/grid-placement-using-named-grid-lines-005.html",
+    "css/css-grid/placement/grid-placement-using-named-grid-lines-006.html",
+    "css/css-writing-modes/text-orientation-mixed-srl-016.xht",
+    "css/css-writing-modes/text-orientation-upright-srl-018.xht"
+  ],
+  "previous_timeout_now_pass": [
+    "css/css-flexbox/flexbox-justify-content-horiz-003.xhtml",
+    "css/css-flexbox/flexbox-justify-content-horiz-004.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-001a.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-001b.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-002.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-003.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-004.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-005.xhtml",
+    "css/css-flexbox/flexbox-justify-content-vert-006.xhtml",
+    "css/css-flexbox/flexbox-justify-content-wmvert-001.xhtml"
+  ]
+}

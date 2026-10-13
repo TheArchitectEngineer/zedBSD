@@ -125,3 +125,13 @@ Event ws074-p190-q1046-p196-output-20261014: [p196](../phase196/phase.md)の最�
 Event ws074-p190-q1047-p197-output-20261014: [p197](../phase197/phase.md)の横方向負余白修正後、固定10件を同じ条件で測定し3 local PASS/7 FAIL/0 timeout。横方向2 IDのみFAIL→PASS、先行PASSは維持。[証拠](../phase197/evidence/20261014-q1047/README.md)。全静的1,561件再測定と残りrunner coverageは未実施、p190 wholeはuncleared。
 
 Event ws074-p190-q1048-p198-output-20261014: [p198](../phase198/phase.md)のfloat BFC margin相殺修正後、固定10件3 local PASS/7 FAIL/0 timeoutで数は不変。vert001a/006差画素減、vert001b差画素増を[証拠](../phase198/evidence/20261014-q1048/README.md)に保持。全静的1,561件再測定/残りrunner coverage未実施、p190 wholeはuncleared。
+
+## q1053-i01 の有限部分範囲
+
+2026-10-14 02:37 JST、このchatのユーザーによるInterop 2025全件100%までの有限Queue事前承認を適用。最大90分（04:07 JSTまで）。q1044の固定manifest・静的適格1,561 ID・同一HTTP・800×600・固定font・case別5秒・逐次fsync checkpoint条件を維持し、q1046〜q1052のXHTML/Flex修正後を全件再測定する。q1044との同一IDでPASS/FAIL/timeout遷移とfocus別集計を照合し、改善と回帰を分けて記録する。413未対応IDは未実行理由を維持。browser/WPT/公開ABI/`plan/master.md`の変更、scripted/variant/HTTPS runner追加は含めない。runが90分内に終わらない場合はcheckpointと未測定件数を記録しunclearedで終了する。結果JSON・ID集合・diff checkで検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+Event ws074-p190-q1053-design-20261014: q1052で固定Flexbox10件が10/10 local pixel exact PASSになったため、q1044静的全件baselineを同条件で更新し、次の一般欠陥を件数で選ぶ。p190の全2,022件coverage基準とp173全3,805件分母は不変。GitHub publication保留。
+
+## q1053-i01 結果（2026-10-14）
+
+**partial scope cleared、p190 whole uncleared。** 固定静的適格1,561 IDを全件再測定し、旧baselineと同一ID/条件を照合。518 local PASS/684 FAIL/359 error/0 timeout。旧500/1,051/0/10から、Flex XHTML timeout10件は全てPASS。39 FAIL→PASS、8 PASS→FAIL、23 PASS→error、336 FAIL→error。全359 errorはDOCTYPEを含むXHTMLで、q1046以降のXML parserがDTDをENOTSUPにする一般条件に一致。[結果・遷移・focus集計](evidence/20261014-q1053/README.md)。checkpoint1,561行一致、固定ID1,561・未対応413分類一致、diff check PASS。browser/WPT/runnerコード無変更でhost build/Acid再測定省略。p190全2,022件coverage・p173全3,805件100%未達。Event ws074-p190-q1053-outcome-20261014: q1053-i01 partial cleared、p190 whole uncleared。DOCTYPE負荷の読込error修正と旧PASS→FAIL8件の再監査が次の条件。GitHub publication保留。
