@@ -1,61 +1,66 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private API89 passive-scan codecs and state
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 passive-scan codecs and state.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/scan.h and fw/api/commands.h.  They were cross-checked against
+ * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
+ * block of values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Values of the 802.11 frame itself (frame control bits, element identifiers,
+ * rates and channel numbers) come from IEEE Std 802.11-2020, and the WMM
+ * element from the Wi-Fi Alliance WMM specification; the blocks that hold
+ * them say so.
  *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-scan.h"
 #include <kern/kcrt.h>
 
-
+/*
+ * The layout of the scan request (version 17), as byte offsets.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/scan.h (struct iwl_scan_req_umac_v17,
+ * struct iwl_scan_general_params_v11, struct iwl_scan_channel_params_v7,
+ * struct iwl_scan_channel_cfg_umac, struct iwl_scan_periodic_parms_v1 and
+ * struct iwl_scan_probe_params_v4).  drv_intel_ax211_scan_request_encode()
+ * fills it as follows:
+ * - bytes 0 and 4: scan id and out-of-channel priority;
+ * - the general section from byte 8: flags (16 bits) at +0, the two probing
+ *   stays at +4 and +5, the adaptive default stays for 2.4 GHz, 5 GHz and
+ *   the social channels at +6, +7 and +8 (2, 8 and 10), the adaptive budget
+ *   at +10, the scan priority at +28 and the two listening stays at +32 and
+ *   +33;
+ * - the channel section from byte 44: its flags, the channel count, and the
+ *   two access-point count overrides (10 and 2) at +2 and +3;
+ * - one 8-byte entry per channel from byte 48: a 32-bit flag word whose bit
+ *   30 holds the band (1 for 2.4 GHz, 0 for 5 GHz), the channel number at
+ *   +4, the power spectral density limit 0x80 (none known) at +5 and the
+ *   repetition count 1 at +6;
+ * - the schedule from byte 584, of which the first plan runs once (its
+ *   repetition count at +2 is 1);
+ * - the probe template from byte 596.
+ */
 #define AX211_SCAN_GENERAL_OFFSET 8U
 #define AX211_SCAN_CHANNEL_OFFSET 44U
 #define AX211_SCAN_CHANNEL_CONFIG_OFFSET 48U
@@ -63,17 +68,33 @@
 #define AX211_SCAN_PERIODIC_OFFSET 584U
 #define AX211_SCAN_PROBE_OFFSET 596U
 
-#define AX211_SCAN_FLAG_PASS_ALL 0x02U
-#define AX211_SCAN_FLAG_ITERATION_COMPLETE 0x04U
-#define AX211_SCAN_FLAG_ADAPTIVE_DWELL 0x80U
-#define AX211_SCAN_FLAG_FORCE_PASSIVE 0x0800U
-#define AX211_SCAN_CHANNEL_ORDER_FLAG 0x20U
+
+/*
+ * The flag values of the scan request and the outcome codes of its
+ * completion.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/scan.h (enum
+ * iwl_umac_scan_general_flags_v2, enum iwl_scan_channel_flags and the scan
+ * completion status).  The general flags set are REPORT_ALL (bit 1: pass
+ * every beacon and probe response to the host, not only matches),
+ * REPORT_EACH_PASS (bit 2: send the pass-finished notice), ADAPTIVE_STAY
+ * (bit 7: use the adaptive stay times of the general section) and
+ * LISTEN_ONLY (bit 11: scan every channel passively).  CHANNELS_IN_GIVEN_ORDER
+ * (bit 5 of the channel section's flags) makes the firmware visit the
+ * channels in the listed order.  A completion reports 1 when the scan
+ * finished and 2 when it was cancelled; anything else is a failure.
+ */
+#define AX211_SCAN_FLAG_REPORT_ALL 0x02U
+#define AX211_SCAN_FLAG_REPORT_EACH_PASS 0x04U
+#define AX211_SCAN_FLAG_ADAPTIVE_STAY 0x80U
+#define AX211_SCAN_FLAG_LISTEN_ONLY 0x0800U
+#define AX211_SCAN_CHANNELS_IN_GIVEN_ORDER 0x20U
 #define AX211_SCAN_24GHZ_BAND_FLAG 0x40000000U
-#define AX211_SCAN_STATUS_COMPLETED 1U
-#define AX211_SCAN_STATUS_ABORTED 2U
+#define AX211_SCAN_OUTCOME_FINISHED 1U
+#define AX211_SCAN_OUTCOME_CANCELLED 2U
 
 static int ax211_scan_station_valid(const uint8_t address[6]);
-static void ax211_scan_profile_add(struct intel_ax211_scan_profile *profile, const struct intel_ax211_protocol_channel *candidate, const struct intel_ax211_runtime_mcc *mcc, size_t regulatory_index, int lar_enabled);
+static void ax211_scan_profile_add(struct intel_ax211_scan_profile *profile, const struct intel_ax211_protocol_channel *candidate, const struct intel_ax211_runtime_mcc *mcc, size_t regulatory_index, int firmware_regulatory);
 static int ax211_scan_profile_valid(const struct intel_ax211_scan_profile *profile);
 static int ax211_scan_required_version( const struct intel_ax211_protocol_command_table *table, uint8_t opcode, uint8_t command_version);
 static void ax211_scan_put_le32(uint8_t *bytes, uint32_t value);
@@ -104,10 +125,10 @@ drv_intel_ax211_scan_profile_from_nvm(
 	    nvm->channel_24ghz_count >
 		    INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT ||
 	    nvm->channel_5ghz_count > INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT ||
-	    (nvm->lar_enabled &&
-	     (mcc == NULL || mcc->status > INTEL_AX211_RUNTIME_MCC_STATUS_MAX ||
+	    (nvm->firmware_regulatory &&
+	     (mcc == NULL || mcc->status > INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX ||
 	      mcc->channel_count == 0U ||
-	      mcc->channel_count > INTEL_AX211_RUNTIME_MCC_CHANNEL_LIMIT)) ||
+	      mcc->channel_count > INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT)) ||
 	    !ax211_scan_station_valid(station_address)) {
 		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_INVALID;
@@ -118,7 +139,7 @@ drv_intel_ax211_scan_profile_from_nvm(
 	/* Process each remaining element. */
 	for (index = 0U; index < nvm->channel_24ghz_count; index++) {
 		ax211_scan_profile_add(&parsed, &nvm->channel_24ghz[index], mcc,
-				       index, nvm->lar_enabled);
+				       index, nvm->firmware_regulatory);
 	}
 
 	/* Handles the nvm condition. */
@@ -129,7 +150,7 @@ drv_intel_ax211_scan_profile_from_nvm(
 				&parsed, &nvm->channel_5ghz[index], mcc,
 				INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT +
 					index,
-				nvm->lar_enabled);
+				nvm->firmware_regulatory);
 		}
 	}
 
@@ -164,7 +185,7 @@ drv_intel_ax211_scan_api89_validate(
 
 	/* Checks the operation result. */
 	result = ax211_scan_required_version(
-		table, INTEL_AX211_PROTOCOL_SCAN_CFG_OPCODE,
+		table, INTEL_AX211_PROTOCOL_SCAN_SETUP_OPCODE,
 		INTEL_AX211_SCAN_CONFIG_VERSION);
 	if (result != INTEL_AX211_SCAN_OK)
 		return result;
@@ -178,8 +199,8 @@ drv_intel_ax211_scan_api89_validate(
 
 	/* Obtains the ax211 scan required version result. */
 	error = ax211_scan_required_version(
-		table, INTEL_AX211_SCAN_ABORT_OPCODE,
-		INTEL_AX211_SCAN_ABORT_VERSION);
+		table, INTEL_AX211_SCAN_CANCEL_OPCODE,
+		INTEL_AX211_SCAN_CANCEL_VERSION);
 
 	/* Returns the computed result. */
 	return error;
@@ -202,25 +223,25 @@ drv_intel_ax211_scan_request_encode(
 		return INTEL_AX211_SCAN_INVALID;
 	kern_memset(output, 0, INTEL_AX211_SCAN_REQUEST_SIZE);
 	ax211_scan_put_le32(output, INTEL_AX211_SCAN_UID);
-	ax211_scan_put_le32(output + 4U, INTEL_AX211_SCAN_PRIORITY);
-	flags = AX211_SCAN_FLAG_PASS_ALL | AX211_SCAN_FLAG_ITERATION_COMPLETE |
-		AX211_SCAN_FLAG_ADAPTIVE_DWELL | AX211_SCAN_FLAG_FORCE_PASSIVE;
+	ax211_scan_put_le32(output + 4U, INTEL_AX211_SCAN_PRECEDENCE);
+	flags = AX211_SCAN_FLAG_REPORT_ALL | AX211_SCAN_FLAG_REPORT_EACH_PASS |
+		AX211_SCAN_FLAG_ADAPTIVE_STAY | AX211_SCAN_FLAG_LISTEN_ONLY;
 	ax211_scan_put_le16(output + AX211_SCAN_GENERAL_OFFSET, flags);
-	output[AX211_SCAN_GENERAL_OFFSET + 4U] = INTEL_AX211_SCAN_ACTIVE_DWELL;
-	output[AX211_SCAN_GENERAL_OFFSET + 5U] = INTEL_AX211_SCAN_ACTIVE_DWELL;
+	output[AX211_SCAN_GENERAL_OFFSET + 4U] = INTEL_AX211_SCAN_PROBING_STAY_TU;
+	output[AX211_SCAN_GENERAL_OFFSET + 5U] = INTEL_AX211_SCAN_PROBING_STAY_TU;
 	output[AX211_SCAN_GENERAL_OFFSET + 6U] = 2U;
 	output[AX211_SCAN_GENERAL_OFFSET + 7U] = 8U;
 	output[AX211_SCAN_GENERAL_OFFSET + 8U] = 10U;
 	ax211_scan_put_le16(output + AX211_SCAN_GENERAL_OFFSET + 10U,
 			    INTEL_AX211_SCAN_ADAPTIVE_BUDGET);
 	ax211_scan_put_le32(output + AX211_SCAN_GENERAL_OFFSET + 28U,
-			    INTEL_AX211_SCAN_PRIORITY);
+			    INTEL_AX211_SCAN_PRECEDENCE);
 	output[AX211_SCAN_GENERAL_OFFSET + 32U] =
-		INTEL_AX211_SCAN_PASSIVE_DWELL;
+		INTEL_AX211_SCAN_LISTENING_STAY_TU;
 	output[AX211_SCAN_GENERAL_OFFSET + 33U] =
-		INTEL_AX211_SCAN_PASSIVE_DWELL;
+		INTEL_AX211_SCAN_LISTENING_STAY_TU;
 
-	output[AX211_SCAN_CHANNEL_OFFSET] = AX211_SCAN_CHANNEL_ORDER_FLAG;
+	output[AX211_SCAN_CHANNEL_OFFSET] = AX211_SCAN_CHANNELS_IN_GIVEN_ORDER;
 	output[AX211_SCAN_CHANNEL_OFFSET + 1U] =
 		(uint8_t)profile->channel_count;
 	output[AX211_SCAN_CHANNEL_OFFSET + 2U] = 10U;
@@ -250,12 +271,12 @@ drv_intel_ax211_scan_request_encode(
  */
 int
 drv_intel_ax211_scan_abort_encode(
-	uint8_t output[INTEL_AX211_SCAN_ABORT_SIZE])
+	uint8_t output[INTEL_AX211_SCAN_CANCEL_SIZE])
 {
 	/* Handles the output availability. */
 	if (output == NULL)
 		return INTEL_AX211_SCAN_INVALID;
-	kern_memset(output, 0, INTEL_AX211_SCAN_ABORT_SIZE);
+	kern_memset(output, 0, INTEL_AX211_SCAN_CANCEL_SIZE);
 
 	/* Returns the computed result. */
 	return INTEL_AX211_SCAN_OK;
@@ -338,7 +359,7 @@ drv_intel_ax211_scan_request_ack(
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 
 		/* Returns the computed result. */
-		return INTEL_AX211_SCAN_TIMEOUT;
+		return INTEL_AX211_SCAN_TIMED_OUT;
 	}
 
 	state->phase = INTEL_AX211_SCAN_PHASE_RUNNING;
@@ -365,7 +386,7 @@ drv_intel_ax211_scan_event_accept(
 
 	/* Checks the operation result. */
 	result = ax211_scan_event_header(state, message, now_us);
-	if (result == INTEL_AX211_SCAN_TIMEOUT) {
+	if (result == INTEL_AX211_SCAN_TIMED_OUT) {
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 		state->abort_required = 1U;
 
@@ -378,9 +399,9 @@ drv_intel_ax211_scan_event_accept(
 		return result;
 
 	/* Handles the message condition. */
-	if (message->opcode == INTEL_AX211_SCAN_COMPLETE_OPCODE)
+	if (message->opcode == INTEL_AX211_SCAN_FINISHED_OPCODE)
 		result = ax211_scan_complete_decode(message, event);
-	else if (message->opcode == INTEL_AX211_SCAN_ITERATION_COMPLETE_OPCODE)
+	else if (message->opcode == INTEL_AX211_SCAN_PASS_FINISHED_OPCODE)
 		result = ax211_scan_iteration_decode(message, event);
 	else {
 		/* Returns the computed result. */
@@ -421,7 +442,7 @@ drv_intel_ax211_scan_expire(
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 
 		/* Returns the computed result. */
-		return INTEL_AX211_SCAN_TIMEOUT;
+		return INTEL_AX211_SCAN_TIMED_OUT;
 	}
 
 	/* Handles the state condition. */
@@ -433,7 +454,7 @@ drv_intel_ax211_scan_expire(
 		state->abort_required = 1U;
 
 		/* Returns the computed result. */
-		return INTEL_AX211_SCAN_TIMEOUT;
+		return INTEL_AX211_SCAN_TIMED_OUT;
 	}
 
 	/* Returns the computed result. */
@@ -476,7 +497,7 @@ ax211_scan_profile_add(
 	const struct intel_ax211_protocol_channel *candidate,
 	const struct intel_ax211_runtime_mcc *mcc,
 	size_t regulatory_index,
-	int lar_enabled)
+	int firmware_regulatory)
 {
 	/* Handles the candidate condition. */
 	if (candidate->number == 0U ||
@@ -486,11 +507,11 @@ ax211_scan_profile_add(
 	}
 
 	/* Handles the lar enabled condition. */
-	if (lar_enabled) {
+	if (firmware_regulatory) {
 		/* Handles the mcc availability. */
 		if (mcc == NULL || regulatory_index >= mcc->channel_count ||
 		    (mcc->channel[regulatory_index] &
-		     INTEL_AX211_PROTOCOL_NVM_CHANNEL_VALID) == 0U) {
+		     INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE) == 0U) {
 			/* Returns the computed result. */
 			return;
 		}
@@ -555,7 +576,7 @@ ax211_scan_required_version(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
-		table, INTEL_AX211_SCAN_GROUP_LONG, opcode, &version);
+		table, INTEL_AX211_SCAN_FAMILY_CLASSIC_WIDE, opcode, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK ||
 	    version.command_version != command_version ||
 	    version.notification_version != 0U) {
@@ -605,6 +626,20 @@ ax211_scan_probe_encode(
 	 * first profile is forced passive, so firmware never transmits this
 	 * frame.  Keep a valid OpenBSD-style legacy 11g probe body here; a
 	 * later active-scan profile must add its negotiated HT/HE information.
+	 *
+	 * Sources: Linux iwlwifi v6.17 fw/api/scan.h (struct
+	 * iwl_scan_probe_req: an offset and a length for the MAC header, for
+	 * each band part and for the common part).  Here the MAC header part is
+	 * at offset 0 with 26 bytes (the 24-byte header and the empty SSID
+	 * element), the first band part at offset 26 with 19 bytes (both rate
+	 * elements and the DS parameter element), the other band parts are
+	 * empty and the common part starts at offset 45 with no bytes.  The
+	 * frame follows IEEE Std 802.11-2020: frame control 0x40 (a probe
+	 * request), broadcast receiver and BSSID, a zero-length SSID element
+	 * (element 0), the supported rates element (1) with the eight rates
+	 * 1, 2, 5.5, 11, 6, 9, 12 and 18 Mbit/s, the extended rates element
+	 * (50) with 24, 36, 48 and 54 Mbit/s, all in units of 500 kbit/s, and
+	 * the DS parameter element (3) whose channel byte the firmware fills.
 	 */
 	ax211_scan_put_le16(probe, 0U);
 	ax211_scan_put_le16(probe + 2U, 26U);
@@ -660,10 +695,10 @@ ax211_scan_event_header(
 
 	/* Handles the now us condition. */
 	if (now_us >= state->scan_deadline)
-		return INTEL_AX211_SCAN_TIMEOUT;
+		return INTEL_AX211_SCAN_TIMED_OUT;
 
 	/* Handles the message condition. */
-	if (message->group != INTEL_AX211_SCAN_GROUP_LEGACY ||
+	if (message->group != INTEL_AX211_SCAN_FAMILY_CLASSIC ||
 	    message->version != INTEL_AX211_SCAN_NOTIFICATION_VERSION) {
 		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_UNSUPPORTED;
@@ -704,10 +739,10 @@ ax211_scan_complete_decode(
 		return INTEL_AX211_SCAN_OUT_OF_ORDER;
 	kern_memset(event, 0, sizeof(*event));
 	event->kind = INTEL_AX211_SCAN_EVENT_COMPLETE;
-	event->last_schedule = bytes[4U];
+	event->final_schedule = bytes[4U];
 	event->last_iteration = bytes[5U];
 	event->status = bytes[6U];
-	event->ebs_status = bytes[7U];
+	event->energy_skip_status = bytes[7U];
 
 	/*
 	 * Scheduling, iteration, EBS, elapsed-time, and reserved fields are
@@ -735,11 +770,11 @@ ax211_scan_status_result(
 	uint8_t status)
 {
 	/* Checks the operation status. */
-	if (status == AX211_SCAN_STATUS_COMPLETED)
+	if (status == AX211_SCAN_OUTCOME_FINISHED)
 		return INTEL_AX211_SCAN_COMPLETE;
 
 	/* Checks the operation status. */
-	if (status == AX211_SCAN_STATUS_ABORTED)
+	if (status == AX211_SCAN_OUTCOME_CANCELLED)
 		return INTEL_AX211_SCAN_ABORTED;
 
 	/* Returns the computed result. */
@@ -808,7 +843,7 @@ ax211_scan_iteration_decode(
 		 * notification.
 		 */
 		event->channel[index].channel = result[0U];
-		event->channel[index].probe_status = result[2U];
+		event->channel[index].probe_result = result[2U];
 		event->channel[index].probe_not_sent = result[3U];
 		event->channel[index].duration =
 			ax211_scan_get_le32(result + 4U);

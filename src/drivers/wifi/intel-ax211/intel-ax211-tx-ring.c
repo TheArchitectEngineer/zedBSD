@@ -1,61 +1,48 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private Gen3 data transmit ring
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Wire constants and layouts are derived from OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private Gen3 data transmit ring.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-fh.h, fw/api/datapath.h and fw/api/tx.h.  They were cross-checked
+ * against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
+ * 0f464d413c50.  Each block of values below names the header it was taken
+ * from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * SPDX-License-Identifier: ISC AND BSD-3-Clause
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-tx-ring.h"
 #include <kern/kcrt.h>
 
-
+/*
+ * The field values of the queue setup command and of a TFD.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/datapath.h (queue operation 0 adds a
+ * queue; size code 5 announces 256 descriptors, log2 of the count minus 3)
+ * and iwl-fh.h (a TFD starts with the buffer count in its low 5 bits, then
+ * one 10-byte entry per buffer from byte 2: a 16-bit length and a 64-bit
+ * address; a byte-count table entry holds the length in its low 14 bits).
+ * The narrow command header of the transmit command is 4 bytes.
+ */
 #define AX211_TX_QUEUE_OPERATION_ADD 0U
 #define AX211_TX_QUEUE_CB_SIZE 5U
 #define AX211_TX_TFD_NUM_TBS_MASK 0x1fU
@@ -64,27 +51,27 @@
 #define AX211_TX_BC_LENGTH_MASK 0x3fffU
 #define AX211_TX_NARROW_HEADER_SIZE 4U
 
-static int ax211_tx_ring_buffer_allocate(struct intel_ax211_tx_ring *ring, struct drv_dma_buffer *buffer, size_t size, size_t alignment);
+static int ax211_tx_ring_buffer_allocate(struct intel_ax211_frame_ring *ring, struct drv_dma_buffer *buffer, size_t size, size_t alignment);
 static int ax211_tx_ring_buffer_valid(const struct drv_dma_buffer *buffer, size_t size, uint64_t alignment);
 static void ax211_tx_ring_scrub(void *memory, size_t length);
-static void ax211_tx_ring_allocations_release(struct intel_ax211_tx_ring *ring);
-static void ax211_tx_ring_buffer_release(struct intel_ax211_tx_ring *ring, struct drv_dma_buffer *buffer);
-static int ax211_tx_ring_valid(const struct intel_ax211_tx_ring *ring);
+static void ax211_tx_ring_allocations_release(struct intel_ax211_frame_ring *ring);
+static void ax211_tx_ring_buffer_release(struct intel_ax211_frame_ring *ring, struct drv_dma_buffer *buffer);
+static int ax211_tx_ring_valid(const struct intel_ax211_frame_ring *ring);
 static int ax211_tx_queue_tid_valid(uint8_t tid);
 static void ax211_tx_queue_command_encode(uint8_t *command, uint8_t station_id, uint8_t tid, uint64_t byte_count_address, uint64_t tfd_address);
 static void ax211_tx_ring_put_le32(uint8_t *bytes, uint32_t value);
 static void ax211_tx_ring_put_le64(uint8_t *bytes, uint64_t value);
-static int ax211_tx_queue_config_valid(const struct intel_ax211_tx_ring *ring, const struct intel_ax211_tx_queue_config *config);
+static int ax211_tx_queue_config_valid(const struct intel_ax211_frame_ring *ring, const struct intel_ax211_tx_queue_config *config);
 static int ax211_tx_protocol_result(int result);
 static uint16_t ax211_tx_ring_get_le16(const uint8_t *bytes);
-static int ax211_tx_ring_cookie_active(const struct intel_ax211_tx_ring *ring, uint64_t cookie);
+static int ax211_tx_ring_cookie_active(const struct intel_ax211_frame_ring *ring, uint64_t cookie);
 static int ax211_tx_codec_result(int result);
-static int ax211_tx_ring_slot_stage( struct intel_ax211_tx_ring *ring, struct intel_ax211_tx_ring_slot *slot, uint8_t index, const struct intel_ax211_tx_request *request, const struct intel_ax211_tx_prepared *prepared, uint64_t deadline);
+static int ax211_tx_ring_slot_stage( struct intel_ax211_frame_ring *ring, struct intel_ax211_tx_ring_slot *slot, uint8_t index, const struct intel_ax211_tx_request *request, const struct intel_ax211_tx_prepared *prepared, uint64_t deadline);
 static void ax211_tx_ring_put_le16(uint8_t *bytes, uint16_t value);
 static void ax211_tx_ring_tfd_tb_encode(uint8_t *tfd, unsigned tb, uint16_t length, uint64_t address);
-static void ax211_tx_ring_slot_scrub(struct intel_ax211_tx_ring *ring, uint8_t index);
-static int ax211_tx_ring_sync_submission(struct intel_ax211_tx_ring *ring, uint8_t index, size_t command_length, size_t payload_length);
-static int ax211_tx_ring_active_sequence(const struct intel_ax211_tx_ring *ring, uint16_t next_sequence);
+static void ax211_tx_ring_slot_scrub(struct intel_ax211_frame_ring *ring, uint8_t index);
+static int ax211_tx_ring_sync_submission(struct intel_ax211_frame_ring *ring, uint8_t index, size_t command_length, size_t payload_length);
+static int ax211_tx_ring_active_sequence(const struct intel_ax211_frame_ring *ring, uint16_t next_sequence);
 
 /*
  * Implements the drv intel ax211 tx ring api89 validate operation.
@@ -110,16 +97,16 @@ drv_intel_ax211_tx_ring_api89_validate(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
-		table, INTEL_AX211_TX_QUEUE_CONFIG_GROUP,
-		INTEL_AX211_TX_QUEUE_CONFIG_OPCODE, &version);
+		table, INTEL_AX211_TX_QUEUE_SETUP_FAMILY,
+		INTEL_AX211_TX_QUEUE_SETUP_OPCODE, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_TX_RING_UNSUPPORTED;
 
 	/* Handles the version condition. */
 	if (version.command_version !=
-		    INTEL_AX211_TX_QUEUE_CONFIG_COMMAND_VERSION ||
+		    INTEL_AX211_TX_QUEUE_SETUP_COMMAND_VERSION ||
 	    version.notification_version !=
-		    INTEL_AX211_TX_QUEUE_CONFIG_RESPONSE_VERSION) {
+		    INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_VERSION) {
 		/* Returns the computed result. */
 		return INTEL_AX211_TX_RING_UNSUPPORTED;
 	}
@@ -136,7 +123,7 @@ drv_intel_ax211_tx_ring_allocate(
 	struct drv_dma_device *dma_device,
 	const struct intel_ax211_tx_ring_ops *ops,
 	void *ops_argument,
-	struct intel_ax211_tx_ring *ring)
+	struct intel_ax211_frame_ring *ring)
 {
 	size_t index;
 	int result;
@@ -168,7 +155,7 @@ drv_intel_ax211_tx_ring_allocate(
 	index = 0U;
 	/* Process each remaining element. */
 	while (result == INTEL_AX211_TX_RING_OK &&
-	       index < INTEL_AX211_TX_RING_SLOT_COUNT) {
+	       index < INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS) {
 		/* Checks the operation result. */
 		result = ax211_tx_ring_buffer_allocate(
 			ring, &ring->slot[index].command,
@@ -202,7 +189,7 @@ drv_intel_ax211_tx_ring_allocate(
  */
 int
 drv_intel_ax211_tx_ring_queue_add_build(
-	const struct intel_ax211_tx_ring *ring,
+	const struct intel_ax211_frame_ring *ring,
 	uint8_t station_id,
 	uint8_t tid,
 	struct intel_ax211_tx_queue_config *config)
@@ -234,7 +221,7 @@ drv_intel_ax211_tx_ring_queue_add_build(
  */
 int
 drv_intel_ax211_tx_ring_queue_add_complete(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_tx_queue_config *config,
 	uint32_t hardware_generation,
 	uint64_t connection_generation,
@@ -258,15 +245,15 @@ drv_intel_ax211_tx_ring_queue_add_complete(
 	}
 
 	/* Handles the pending condition. */
-	if (pending->group != INTEL_AX211_TX_QUEUE_CONFIG_GROUP ||
-	    pending->opcode != INTEL_AX211_TX_QUEUE_CONFIG_OPCODE ||
+	if (pending->group != INTEL_AX211_TX_QUEUE_SETUP_FAMILY ||
+	    pending->opcode != INTEL_AX211_TX_QUEUE_SETUP_OPCODE ||
 	    pending->response_version !=
-		    INTEL_AX211_TX_QUEUE_CONFIG_RESPONSE_VERSION ||
+		    INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_VERSION ||
 	    pending->generation != hardware_generation ||
 	    pending->minimum_response_length !=
-		    INTEL_AX211_TX_QUEUE_CONFIG_RESPONSE_SIZE ||
+		    INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_SIZE ||
 	    pending->maximum_response_length !=
-		    INTEL_AX211_TX_QUEUE_CONFIG_RESPONSE_SIZE) {
+		    INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_SIZE) {
 		/* Returns the computed result. */
 		return INTEL_AX211_TX_RING_INVALID;
 	}
@@ -306,7 +293,7 @@ drv_intel_ax211_tx_ring_queue_add_complete(
 	ring->connection_generation = connection_generation;
 	ring->queue = queue;
 	ring->read_sequence =
-		write_pointer & (INTEL_AX211_TX_RING_SLOT_COUNT - 1U);
+		write_pointer & (INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS - 1U);
 	ring->write_sequence = ring->read_sequence;
 	ring->station_id = config->station_id;
 	ring->tid = config->tid;
@@ -322,7 +309,7 @@ drv_intel_ax211_tx_ring_queue_add_complete(
  */
 int
 drv_intel_ax211_tx_ring_submit(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_tx_request *request,
 	uint64_t now,
 	uint64_t timeout,
@@ -432,7 +419,7 @@ drv_intel_ax211_tx_ring_submit(
  */
 int
 drv_intel_ax211_tx_ring_complete(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_protocol_message *message,
 	struct intel_ax211_tx_ring_retired *retired)
 {
@@ -544,8 +531,8 @@ drv_intel_ax211_tx_ring_complete(
 	candidate.sequence_control = completion.sequence_control;
 	candidate.byte_count = completion.byte_count;
 	candidate.acknowledged = completion.acknowledged;
-	candidate.failure_rts = completion.failure_rts;
-	candidate.failure_frame = completion.failure_frame;
+	candidate.rts_retries = completion.rts_retries;
+	candidate.frame_retries = completion.frame_retries;
 	ax211_tx_ring_slot_scrub(ring, expected_index);
 	ring->pending_count--;
 	ring->read_sequence = expected_sequence;
@@ -562,7 +549,7 @@ drv_intel_ax211_tx_ring_complete(
  */
 int
 drv_intel_ax211_tx_ring_timeout_oldest(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	uint64_t now,
 	struct intel_ax211_tx_ring_handle *handle)
 {
@@ -607,7 +594,7 @@ drv_intel_ax211_tx_ring_timeout_oldest(
  */
 int
 drv_intel_ax211_tx_ring_reset(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	int dma_quiesced)
 {
 	size_t index;
@@ -627,7 +614,7 @@ drv_intel_ax211_tx_ring_reset(
 		return INTEL_AX211_TX_RING_BARRIER_REQUIRED;
 	}
 	/* Process each remaining element. */
-	for (index = 0U; index < INTEL_AX211_TX_RING_SLOT_COUNT; index++)
+	for (index = 0U; index < INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS; index++)
 		ax211_tx_ring_slot_scrub(ring, (uint8_t)index);
 	ax211_tx_ring_scrub(ring->tfd.address, ring->tfd.size);
 	ax211_tx_ring_scrub(ring->byte_count.address, ring->byte_count.size);
@@ -654,7 +641,7 @@ drv_intel_ax211_tx_ring_reset(
  */
 int
 drv_intel_ax211_tx_ring_release(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	int dma_quiesced)
 {
 	int result;
@@ -680,7 +667,7 @@ drv_intel_ax211_tx_ring_release(
 /* Supports the ax211 tx ring buffer allocate operation. */
 static int
 ax211_tx_ring_buffer_allocate(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	struct drv_dma_buffer *buffer,
 	size_t size,
 	size_t alignment)
@@ -757,11 +744,11 @@ ax211_tx_ring_scrub(
 /* Supports the ax211 tx ring allocations release operation. */
 static void
 ax211_tx_ring_allocations_release(
-	struct intel_ax211_tx_ring *ring)
+	struct intel_ax211_frame_ring *ring)
 {
 	size_t index;
 
-	index = INTEL_AX211_TX_RING_SLOT_COUNT;
+	index = INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS;
 	/* Process each remaining element. */
 	while (index != 0U) {
 		index--;
@@ -776,7 +763,7 @@ ax211_tx_ring_allocations_release(
 /* Supports the ax211 tx ring buffer release operation. */
 static void
 ax211_tx_ring_buffer_release(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	struct drv_dma_buffer *buffer)
 {
 	/* Handles the address availability. */
@@ -791,7 +778,7 @@ ax211_tx_ring_buffer_release(
 /* Supports the ax211 tx ring valid operation. */
 static int
 ax211_tx_ring_valid(
-	const struct intel_ax211_tx_ring *ring)
+	const struct intel_ax211_frame_ring *ring)
 {
 	size_t index;
 
@@ -809,7 +796,7 @@ ax211_tx_ring_valid(
 		return 0;
 	}
 	/* Process each remaining element. */
-	for (index = 0U; index < INTEL_AX211_TX_RING_SLOT_COUNT; index++) {
+	for (index = 0U; index < INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS; index++) {
 		/* Checks the ax211 tx ring buffer valid result. */
 		if (!ax211_tx_ring_buffer_valid(
 			    &ring->slot[index].command,
@@ -844,7 +831,7 @@ ax211_tx_queue_command_encode(
 	uint64_t byte_count_address,
 	uint64_t tfd_address)
 {
-	kern_memset(command, 0, INTEL_AX211_TX_QUEUE_CONFIG_COMMAND_SIZE);
+	kern_memset(command, 0, INTEL_AX211_TX_QUEUE_SETUP_COMMAND_SIZE);
 	ax211_tx_ring_put_le32(command, AX211_TX_QUEUE_OPERATION_ADD);
 	ax211_tx_ring_put_le32(command + 4U, UINT32_C(1) << station_id);
 	command[8U] = tid;
@@ -879,11 +866,11 @@ ax211_tx_ring_put_le64(
 /* Supports the ax211 tx queue config valid operation. */
 static int
 ax211_tx_queue_config_valid(
-	const struct intel_ax211_tx_ring *ring,
+	const struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_tx_queue_config *config)
 {
 	int error;
-	uint8_t expected[INTEL_AX211_TX_QUEUE_CONFIG_COMMAND_SIZE];
+	uint8_t expected[INTEL_AX211_TX_QUEUE_SETUP_COMMAND_SIZE];
 
 	/* Checks the ax211 tx queue tid valid result. */
 	if (config == NULL || config->station_id >= 32U ||
@@ -945,13 +932,13 @@ ax211_tx_ring_get_le16(
 /* Supports the ax211 tx ring cookie active operation. */
 static int
 ax211_tx_ring_cookie_active(
-	const struct intel_ax211_tx_ring *ring,
+	const struct intel_ax211_frame_ring *ring,
 	uint64_t cookie)
 {
 	size_t index;
 
 	/* Process each remaining element. */
-	for (index = 0U; index < INTEL_AX211_TX_RING_SLOT_COUNT; index++) {
+	for (index = 0U; index < INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS; index++) {
 		/* Handles the ring condition. */
 		if (ring->slot[index].active &&
 		    ring->slot[index].handle.cookie == cookie) {
@@ -992,7 +979,7 @@ ax211_tx_codec_result(
 /* Supports the ax211 tx ring slot stage operation. */
 static int
 ax211_tx_ring_slot_stage(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	struct intel_ax211_tx_ring_slot *slot,
 	uint8_t index,
 	const struct intel_ax211_tx_request *request,
@@ -1008,9 +995,9 @@ ax211_tx_ring_slot_stage(
 
 	/* Handles the command length condition. */
 	command_length = AX211_TX_NARROW_HEADER_SIZE + prepared->command_length;
-	if (command_length <= INTEL_AX211_TX_RING_FIRST_TB_SIZE ||
+	if (command_length <= INTEL_AX211_TX_RING_HEADER_COPY_SIZE ||
 	    command_length > slot->command.size ||
-	    command_length - INTEL_AX211_TX_RING_FIRST_TB_SIZE >
+	    command_length - INTEL_AX211_TX_RING_HEADER_COPY_SIZE >
 		    INTEL_AX211_TX_RING_TB_SIZE_MAX ||
 	    prepared->payload_length > slot->payload.size ||
 	    prepared->payload_length > INTEL_AX211_TX_RING_TB_SIZE_MAX ||
@@ -1045,13 +1032,13 @@ ax211_tx_ring_slot_stage(
 	num_tbs = prepared->payload_length == 0U ? 2U : 3U;
 	ax211_tx_ring_put_le16(tfd,
 			       (uint16_t)(num_tbs & AX211_TX_TFD_NUM_TBS_MASK));
-	ax211_tx_ring_tfd_tb_encode(tfd, 0U, INTEL_AX211_TX_RING_FIRST_TB_SIZE,
+	ax211_tx_ring_tfd_tb_encode(tfd, 0U, INTEL_AX211_TX_RING_HEADER_COPY_SIZE,
 				    slot->command.device_address);
 	ax211_tx_ring_tfd_tb_encode(
 		tfd, 1U,
-		(uint16_t)(command_length - INTEL_AX211_TX_RING_FIRST_TB_SIZE),
+		(uint16_t)(command_length - INTEL_AX211_TX_RING_HEADER_COPY_SIZE),
 		slot->command.device_address +
-			INTEL_AX211_TX_RING_FIRST_TB_SIZE);
+			INTEL_AX211_TX_RING_HEADER_COPY_SIZE);
 
 	/* Handles the prepared condition. */
 	if (prepared->payload_length != 0U) {
@@ -1108,7 +1095,7 @@ ax211_tx_ring_tfd_tb_encode(
 /* Supports the ax211 tx ring slot scrub operation. */
 static void
 ax211_tx_ring_slot_scrub(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	uint8_t index)
 {
 	struct intel_ax211_tx_ring_slot *slot;
@@ -1136,7 +1123,7 @@ ax211_tx_ring_slot_scrub(
 /* Supports the ax211 tx ring sync submission operation. */
 static int
 ax211_tx_ring_sync_submission(
-	struct intel_ax211_tx_ring *ring,
+	struct intel_ax211_frame_ring *ring,
 	uint8_t index,
 	size_t command_length,
 	size_t payload_length)
@@ -1187,7 +1174,7 @@ ax211_tx_ring_sync_submission(
 /* Supports the ax211 tx ring active sequence operation. */
 static int
 ax211_tx_ring_active_sequence(
-	const struct intel_ax211_tx_ring *ring,
+	const struct intel_ax211_frame_ring *ring,
 	uint16_t next_sequence)
 {
 	const struct intel_ax211_tx_ring_slot *slot;

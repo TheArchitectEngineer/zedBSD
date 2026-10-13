@@ -1,52 +1,33 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private Gen3 transport implementation
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private Gen3 transport implementation.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-csr.h, iwl-fh.h, iwl-prph.h and fw/api/cmdhdr.h.  They were
+ * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
+ * commit 0f464d413c50.  Each block of values below names the header it was
+ * taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-transport.h"
@@ -55,6 +36,24 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The sizes of the DMA areas the transport checks, and the command ring's
+ * identity.
+ *
+ * Sources: Linux iwlwifi v6.17 iwl-fh.h (descriptor and byte-count table
+ * sizes) and fw/api/cmdhdr.h (command families).  The command ring is ring 0
+ * of the device; its 256 TFDs of 256 bytes fill 64 KiB, and its byte-count
+ * table has 1024 16-bit entries (2 KiB) of which the first 256 are used.
+ * Each of the 256 command slots is 324 bytes (82944 bytes in all), and a
+ * command too large for its slot goes through one 4 KiB external buffer.
+ * The receive transfer ring holds 512 descriptors of 16 bytes and the
+ * completion ring 512 entries of 32 bytes; the device's completion index is
+ * one 16-bit word.  The first transfer buffer of a command is always 20
+ * bytes: the device copies it into its own memory before it reads the
+ * rest.  The command families are the "group" byte of the wide header: 0 is
+ * the classic opcode space, and 1 is the same opcode space addressed through
+ * the wide header.
+ */
 #define AX211_COMMAND_TFD_SIZE 65536U
 #define AX211_COMMAND_BYTE_COUNT_SIZE 2048U
 #define AX211_COMMAND_SLOTS_SIZE 82944U
@@ -62,76 +61,155 @@
 #define AX211_RX_TRANSFER_SIZE 8192U
 #define AX211_RX_COMPLETION_SIZE 16384U
 #define AX211_RX_STATUS_SIZE 2U
-#define AX211_COMMAND_QUEUE 0U
+#define AX211_COMMAND_RING_ID 0U
 #define AX211_COMMAND_FIRST_TRANSFER_SIZE 20U
-#define AX211_COMMAND_GROUP_LEGACY 0U
-#define AX211_COMMAND_GROUP_LONG 1U
+#define AX211_COMMAND_FAMILY_CLASSIC 0U
+#define AX211_COMMAND_FAMILY_CLASSIC_WIDE 1U
 
-#define AX211_CSR_INT_COALESCING 0x004U
-#define AX211_CSR_INT 0x008U
-#define AX211_CSR_UCODE_DRV_GP1_CLR 0x05cU
-#define AX211_CSR_MAC_SHADOW_REG_CTRL 0x0a8U
-#define AX211_HBUS_TARG_WRPTR 0x460U
-#define AX211_RFH_Q0_FRBDCB_WIDX_TRG 0x1c80U
-#define AX211_CSR_MSIX_FH_INT_CAUSES_AD 0x2800U
-#define AX211_CSR_MSIX_FH_INT_MASK_AD 0x2804U
-#define AX211_CSR_MSIX_HW_INT_CAUSES_AD 0x2808U
-#define AX211_CSR_MSIX_HW_INT_MASK_AD 0x280cU
-#define AX211_CSR_MSIX_AUTOMASK_ST_AD 0x2810U
-#define AX211_CSR_MSIX_RX_IVAR_AD_REG 0x2880U
-#define AX211_CSR_MSIX_IVAR_AD_REG 0x2890U
+/*
+ * The host-visible registers of the interrupt, doorbell and MSI-X logic.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h, and iwl-fh.h for the receive free
+ * index.  What the transport does with each:
+ * - INTERRUPT_DELAY (0x004) is a byte written once, at ring setup, with the
+ *   default 0x40; Linux documents the unit as 32 us, so the device delays an
+ *   interrupt by up to 2048 us to coalesce causes.
+ * - INTERRUPT_CAUSE (0x008) is the legacy cause register.  The driver never
+ *   uses legacy interrupts, but writes all ones to it to clear causes left
+ *   from an earlier owner before the firmware is loaded.
+ * - FIRMWARE_FLAGS_CLEAR (0x05c) clears the firmware's handshake flags; the
+ *   driver clears the radio-off flag (bit 1) and the commands-held flag
+ *   (bit 2), each with its own write, before it lets the firmware run.
+ * - WRITE_SHADOWING (0x0a8) controls the device's shadow copies of its
+ *   doorbell registers, which take host writes while the MAC sleeps; the
+ *   driver sets bits 31 and 19:0 at ring setup, the value OpenBSD writes.
+ * - QUEUE_WRITE_INDEX (0x460) is the transmit doorbell: the ring number from
+ *   bit 16 up and the new write index in bits 15:0.
+ * - RX_FREE_INDEX (0x1c80) is the receive doorbell: the index up to which
+ *   the device may fill receive buffers.  The activate-rx step writes 8
+ *   after the firmware reported ALIVE; replenish then writes the
+ *   index of the last returned buffer, rounded down to a multiple of eight,
+ *   and only when it changed.
+ * - The MSI-X block at 0x2800: QUEUE_CAUSES and EVENT_CAUSES hold the
+ *   pending causes of the two cause registers and are cleared by writing
+ *   back what was read; QUEUE_MASK and EVENT_MASK disable a cause when its
+ *   bit is set; SELF_MASK_STATE (0x2810) re-enables a vector the device
+ *   masked by itself when it raised it; RX_VECTOR_MAP (0x2880) and
+ *   CAUSE_VECTOR_MAP (0x2890) are byte arrays that name the vector of each
+ *   cause.
+ */
+#define AX211_CSR_INTERRUPT_DELAY 0x004U
+#define AX211_CSR_INTERRUPT_CAUSE 0x008U
+#define AX211_CSR_FIRMWARE_FLAGS_CLEAR 0x05cU
+#define AX211_CSR_WRITE_SHADOWING 0x0a8U
+#define AX211_CSR_QUEUE_WRITE_INDEX 0x460U
+#define AX211_CSR_RX_FREE_INDEX 0x1c80U
+#define AX211_CSR_MSIX_QUEUE_CAUSES 0x2800U
+#define AX211_CSR_MSIX_QUEUE_MASK 0x2804U
+#define AX211_CSR_MSIX_EVENT_CAUSES 0x2808U
+#define AX211_CSR_MSIX_EVENT_MASK 0x280cU
+#define AX211_CSR_MSIX_SELF_MASK_STATE 0x2810U
+#define AX211_CSR_MSIX_RX_VECTOR_MAP 0x2880U
+#define AX211_CSR_MSIX_CAUSE_VECTOR_MAP 0x2890U
 
-#define AX211_HOST_INT_TIMEOUT_DEFAULT 0x40U
-#define AX211_MAC_SHADOW_ENABLE 0x800fffffU
-#define AX211_UCODE_RFKILL_CLEAR 0x00000002U
-#define AX211_UCODE_COMMAND_BLOCKED_CLEAR 0x00000004U
-#define AX211_MSIX_NON_AUTO_CLEAR 0x80U
-#define AX211_MSIX_VECTOR 0U
-#define AX211_MSIX_AUTOMASK_VECTOR0 1U
+/*
+ * The values written to those registers.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h.  A vector map byte holds the vector
+ * number in bits 6:0; bit 7 set means the device does not clear the cause
+ * by itself when it raises the vector, so the driver sees every cause it
+ * acknowledges.  All causes go to vector 0, and SELF_MASK_VECTOR0 is the
+ * bit of vector 0 in the self-mask state register.
+ */
+#define AX211_INTERRUPT_DELAY_DEFAULT 0x40U
+#define AX211_WRITE_SHADOWING_ENABLE 0x800fffffU
+#define AX211_FIRMWARE_FLAG_RADIO_OFF 0x00000002U
+#define AX211_FIRMWARE_FLAG_COMMANDS_HELD 0x00000004U
+#define AX211_VECTOR_MAP_MANUAL_CLEAR 0x80U
+#define AX211_VECTOR_MAP_TARGET 0U
+#define AX211_SELF_MASK_VECTOR0 1U
 
-#define AX211_FH_CAUSE_Q0 0x00000001U
-#define AX211_FH_CAUSE_Q1 0x00000002U
-#define AX211_FH_CAUSE_D2S_CH0 0x00010000U
-#define AX211_FH_CAUSE_D2S_CH1 0x00020000U
-#define AX211_FH_CAUSE_S2D 0x00080000U
-#define AX211_FH_CAUSE_ERROR INTEL_AX211_TRANSPORT_FH_CAUSE_ERROR
-#define AX211_FH_SUPPORTED                                                     \
-	(AX211_FH_CAUSE_Q0 | AX211_FH_CAUSE_Q1 | AX211_FH_CAUSE_D2S_CH0 |      \
-	 AX211_FH_CAUSE_D2S_CH1 | AX211_FH_CAUSE_S2D | AX211_FH_CAUSE_ERROR)
+/*
+ * The queue causes: the first of the two MSI-X cause registers.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (enum msix_fh_int_causes).  Bits
+ * 15:0 are the receive queues, of which the transport routes queues 0 and 1.
+ * Bits 16 and 17 are the two device-to-host DMA channels, bit 19 the
+ * host-to-device channel, and bit 21 a DMA engine fault.  QUEUE_CAUSES_ROUTED
+ * are the causes the transport unmasks and routes; the fault cause is the
+ * one shared with the boot and runtime code through intel-ax211-transport.h.
+ */
+#define AX211_QUEUE_CAUSE_RX0 0x00000001U
+#define AX211_QUEUE_CAUSE_RX1 0x00000002U
+#define AX211_QUEUE_CAUSE_TO_HOST0 0x00010000U
+#define AX211_QUEUE_CAUSE_TO_HOST1 0x00020000U
+#define AX211_QUEUE_CAUSE_TO_DEVICE 0x00080000U
+#define AX211_QUEUE_CAUSE_FAULT INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT
+#define AX211_QUEUE_CAUSES_ROUTED                                              \
+	(AX211_QUEUE_CAUSE_RX0 | AX211_QUEUE_CAUSE_RX1 |                       \
+	 AX211_QUEUE_CAUSE_TO_HOST0 | AX211_QUEUE_CAUSE_TO_HOST1 |             \
+	 AX211_QUEUE_CAUSE_TO_DEVICE | AX211_QUEUE_CAUSE_FAULT)
 
-#define AX211_HW_CAUSE_ALIVE INTEL_AX211_TRANSPORT_HW_CAUSE_ALIVE
-#define AX211_HW_CAUSE_WAKEUP 0x00000002U
-#define AX211_HW_CAUSE_RESET_DONE 0x00000004U
-#define AX211_HW_CAUSE_SW_ERROR_V2 INTEL_AX211_TRANSPORT_HW_CAUSE_SW_ERROR_V2
-#define AX211_HW_CAUSE_CT_KILL 0x00000040U
-#define AX211_HW_CAUSE_RF_KILL 0x00000080U
-#define AX211_HW_CAUSE_PERIODIC 0x00000100U
-#define AX211_HW_CAUSE_SW_ERROR INTEL_AX211_TRANSPORT_HW_CAUSE_SW_ERROR
-#define AX211_HW_CAUSE_SCD 0x04000000U
-#define AX211_HW_CAUSE_FH_TX 0x08000000U
-#define AX211_HW_CAUSE_HW_ERROR INTEL_AX211_TRANSPORT_HW_CAUSE_HW_ERROR
-#define AX211_HW_CAUSE_HAP 0x40000000U
-#define AX211_HW_SUPPORTED                                                     \
-	(AX211_HW_CAUSE_ALIVE | AX211_HW_CAUSE_WAKEUP |                        \
-	 AX211_HW_CAUSE_RESET_DONE | AX211_HW_CAUSE_SW_ERROR_V2 |              \
-	 AX211_HW_CAUSE_CT_KILL | AX211_HW_CAUSE_RF_KILL |                     \
-	 AX211_HW_CAUSE_PERIODIC | AX211_HW_CAUSE_SW_ERROR |                   \
-	 AX211_HW_CAUSE_SCD | AX211_HW_CAUSE_FH_TX | AX211_HW_CAUSE_HW_ERROR | \
-	 AX211_HW_CAUSE_HAP)
+/*
+ * The event causes: the second of the two MSI-X cause registers.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (enum msix_hw_int_causes),
+ * cross-checked with OpenBSD if_iwxreg.h.  Bit 0 is raised when the firmware
+ * reports ALIVE, bit 1 is a wake-up, bit 2
+ * the end of a reset, bit 6 a thermal stop, bit 7 the radio switch, bit 8 a
+ * periodic timer, bit 26 the transmit scheduler, bit 27 the transmit DMA
+ * engine and bit 30 a host wake.  Bits 25, 29 and 5 are faults: a firmware
+ * fault, a hardware fault, and a second firmware-fault cause (OpenBSD names
+ * bit 5 a second software-error cause; Linux v6.17 names it the software
+ * error of the later BZ family).  The driver routes all three and treats
+ * each as fatal (INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES).  While the
+ * firmware is being loaded only ALIVE is unmasked; at runtime all of
+ * EVENT_CAUSES_ROUTED are.
+ */
+#define AX211_EVENT_CAUSE_ALIVE INTEL_AX211_TRANSPORT_EVENT_CAUSE_ALIVE
+#define AX211_EVENT_CAUSE_WAKE 0x00000002U
+#define AX211_EVENT_CAUSE_RESET_FINISHED 0x00000004U
+#define AX211_EVENT_CAUSE_FIRMWARE_FAULT_V2                                    \
+	INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT_V2
+#define AX211_EVENT_CAUSE_THERMAL_STOP 0x00000040U
+#define AX211_EVENT_CAUSE_RADIO_SWITCH 0x00000080U
+#define AX211_EVENT_CAUSE_TIMER 0x00000100U
+#define AX211_EVENT_CAUSE_FIRMWARE_FAULT                                       \
+	INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT
+#define AX211_EVENT_CAUSE_SCHEDULER 0x04000000U
+#define AX211_EVENT_CAUSE_TX_DMA 0x08000000U
+#define AX211_EVENT_CAUSE_HARDWARE_FAULT                                       \
+	INTEL_AX211_TRANSPORT_EVENT_CAUSE_HARDWARE_FAULT
+#define AX211_EVENT_CAUSE_HOST_WAKE 0x40000000U
+#define AX211_EVENT_CAUSES_ROUTED                                              \
+	(AX211_EVENT_CAUSE_ALIVE | AX211_EVENT_CAUSE_WAKE |                    \
+	 AX211_EVENT_CAUSE_RESET_FINISHED |                                    \
+	 AX211_EVENT_CAUSE_FIRMWARE_FAULT_V2 | AX211_EVENT_CAUSE_THERMAL_STOP | \
+	 AX211_EVENT_CAUSE_RADIO_SWITCH | AX211_EVENT_CAUSE_TIMER |            \
+	 AX211_EVENT_CAUSE_FIRMWARE_FAULT | AX211_EVENT_CAUSE_SCHEDULER |      \
+	 AX211_EVENT_CAUSE_TX_DMA | AX211_EVENT_CAUSE_HARDWARE_FAULT |         \
+	 AX211_EVENT_CAUSE_HOST_WAKE)
 
-#define AX211_UREG_CHICK 0xa05c00U
-#define AX211_UREG_CHICK_MSIX_ENABLE 0x02000000U
-#define AX211_RFH_GEN_STATUS_GEN3 0xa07824U
-#define AX211_RFH_RXF_DMA_CFG_GEN3 0xa07880U
-#define AX211_RXF_DMA_IDLE 0x80000000U
+/*
+ * The periphery registers the transport uses.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-prph.h (the interrupt mode register of the
+ * upper CPU and its MSI-X bit) and iwl-fh.h (the receive DMA configuration
+ * and status registers of the AX210 family and the idle bit).  All three are
+ * reached at the upper-CPU periphery base plus their offset, while the
+ * device is held awake.  INTERRUPT_MODE_MSIX is set once, before the vector
+ * map is programmed, to select MSI-X signalling.  When the transport is
+ * quiesced, writing zero to RX_DMA_CONFIG stops receive DMA, and the
+ * transport waits up to 10 ms, polling every 10 us, for the idle bit of
+ * RX_DMA_STATUS.
+ */
+#define AX211_PRPH_INTERRUPT_MODE 0xa05c00U
+#define AX211_INTERRUPT_MODE_MSIX 0x02000000U
+#define AX211_PRPH_RX_DMA_STATUS 0xa07824U
+#define AX211_PRPH_RX_DMA_CONFIG 0xa07880U
+#define AX211_RX_DMA_STATUS_IDLE 0x80000000U
 #define AX211_RX_IDLE_TIMEOUT_US 10000U
 #define AX211_RX_IDLE_POLL_US 10U
-
-static const uint8_t ax211_fh_ivar_cause[] = {0x00U, 0x01U, 0x03U, 0x05U};
-
-static const uint8_t ax211_hw_ivar_cause[] = {0x10U, 0x11U, 0x12U, 0x16U,
-					      0x17U, 0x18U, 0x29U, 0x15U,
-					      0x2aU, 0x2bU, 0x2dU, 0x2eU};
 
 static int ax211_ops_valid(const struct intel_ax211_transport_ops *ops);
 static int ax211_profile_valid(const struct intel_ax211_mmio_profile *profile);
@@ -144,7 +222,7 @@ static int ax211_csr_write8(struct intel_ax211_transport *transport, uint32_t of
 static void ax211_mask_all_best_effort(struct intel_ax211_transport *transport);
 static int ax211_dma_sync(struct intel_ax211_transport *transport, enum intel_ax211_transport_dma_region region, size_t offset, size_t length, enum intel_ax211_transport_dma_direction direction);
 static int ax211_csr_read(struct intel_ax211_transport *transport, uint32_t offset, uint32_t *value);
-static int ax211_ack_raw(struct intel_ax211_transport *transport, uint32_t *flow_handler, uint32_t *hardware);
+static int ax211_ack_raw(struct intel_ax211_transport *transport, uint32_t *queue_causes, uint32_t *hardware);
 static int ax211_rx_descriptor_valid(uint16_t index, uint64_t device_address);
 static int ax211_publish_rx_descriptor(struct intel_ax211_transport *transport, uint16_t index, uint64_t device_address);
 static void ax211_set_published(struct intel_ax211_transport *transport, uint16_t index, int published);
@@ -186,9 +264,9 @@ drv_intel_ax211_transport_init(
 
 	/* Checks the operation result. */
 	result = drv_intel_ax211_ring_init(&transport->command_ring,
-					   AX211_COMMAND_QUEUE,
+					   AX211_COMMAND_RING_ID,
 					   INTEL_AX211_COMMAND_RING_SIZE);
-	if (result != INTEL_AX211_OK) {
+	if (result != INTEL_AX211_SUCCESS) {
 		kern_memset(transport, 0, sizeof(*transport));
 
 		/* Returns the computed result. */
@@ -224,16 +302,16 @@ drv_intel_ax211_transport_configure_msix(
 	/* Selects MSI-X inside UMAC while NIC ownership is held. */
 
 	/* Checks the operation result. */
-	result = transport->ops->nic_lock(transport->argument);
+	result = transport->ops->wake_hold(transport->argument);
 	if (result != 0)
 		return INTEL_AX211_TRANSPORT_IO;
 	result = transport->ops->prph_write32(
 		transport->argument,
-		transport->profile.umac_prph_offset + AX211_UREG_CHICK,
-		AX211_UREG_CHICK_MSIX_ENABLE);
+		transport->profile.upper_cpu_prph_base + AX211_PRPH_INTERRUPT_MODE,
+		AX211_INTERRUPT_MODE_MSIX);
 
 	/* Checks the operation result. */
-	unlock_result = transport->ops->nic_unlock(transport->argument);
+	unlock_result = transport->ops->wake_release(transport->argument);
 	if (result != 0 || unlock_result != 0) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
@@ -242,7 +320,7 @@ drv_intel_ax211_transport_configure_msix(
 		return INTEL_AX211_TRANSPORT_IO;
 	}
 
-	/* Keeps every cause masked while the IVAR table is changed. */
+	/* Keeps every cause masked while the vector map is changed. */
 
 	/* Checks the operation result. */
 	result = ax211_mask_all(transport);
@@ -378,9 +456,9 @@ drv_intel_ax211_transport_initialize_rings(
 
 	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_ring_init(&transport->command_ring,
-						AX211_COMMAND_QUEUE,
+						AX211_COMMAND_RING_ID,
 						INTEL_AX211_COMMAND_RING_SIZE);
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
 
@@ -401,8 +479,8 @@ drv_intel_ax211_transport_initialize_rings(
 	/* Applies the proven interrupt-coalescing and shadow-register setup. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_write8(transport, AX211_CSR_INT_COALESCING,
-				  AX211_HOST_INT_TIMEOUT_DEFAULT);
+	result = ax211_csr_write8(transport, AX211_CSR_INTERRUPT_DELAY,
+				  AX211_INTERRUPT_DELAY_DEFAULT);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
@@ -412,7 +490,7 @@ drv_intel_ax211_transport_initialize_rings(
 	}
 
 	/* Checks the operation result. */
-	result = ax211_csr_read(transport, AX211_CSR_MAC_SHADOW_REG_CTRL,
+	result = ax211_csr_read(transport, AX211_CSR_WRITE_SHADOWING,
 				&shadow);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
@@ -422,10 +500,10 @@ drv_intel_ax211_transport_initialize_rings(
 		return result;
 	}
 
-	shadow |= AX211_MAC_SHADOW_ENABLE;
+	shadow |= AX211_WRITE_SHADOWING_ENABLE;
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_CSR_MAC_SHADOW_REG_CTRL,
+	result = ax211_csr_write(transport, AX211_CSR_WRITE_SHADOWING,
 				 shadow);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
@@ -449,7 +527,7 @@ int
 drv_intel_ax211_transport_enable_firmware_interrupts(
 	struct intel_ax211_transport *transport)
 {
-	uint32_t flow_handler;
+	uint32_t queue_causes;
 	uint32_t hardware;
 	int result;
 
@@ -467,11 +545,11 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 	/* Clears legacy and MSI-X stale state before clearing handshakes. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_CSR_INT, UINT32_MAX);
+	result = ax211_csr_write(transport, AX211_CSR_INTERRUPT_CAUSE, UINT32_MAX);
 	if (result == INTEL_AX211_TRANSPORT_OK)
 		result = ax211_mask_all(transport);
 	if (result == INTEL_AX211_TRANSPORT_OK)
-		result = ax211_ack_raw(transport, &flow_handler, &hardware);
+		result = ax211_ack_raw(transport, &queue_causes, &hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
@@ -484,16 +562,16 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 	/* Clears firmware RF-kill and blocked-command handshake bits. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_CSR_UCODE_DRV_GP1_CLR,
-				 AX211_UCODE_RFKILL_CLEAR);
+	result = ax211_csr_write(transport, AX211_CSR_FIRMWARE_FLAGS_CLEAR,
+				 AX211_FIRMWARE_FLAG_RADIO_OFF);
 	if (result == INTEL_AX211_TRANSPORT_OK) {
-		result = ax211_csr_write(transport, AX211_CSR_UCODE_DRV_GP1_CLR,
-					 AX211_UCODE_COMMAND_BLOCKED_CLEAR);
+		result = ax211_csr_write(transport, AX211_CSR_FIRMWARE_FLAGS_CLEAR,
+					 AX211_FIRMWARE_FLAG_COMMANDS_HELD);
 	}
 
 	/* Checks the operation result. */
 	if (result == INTEL_AX211_TRANSPORT_OK)
-		result = ax211_csr_write(transport, AX211_CSR_INT, UINT32_MAX);
+		result = ax211_csr_write(transport, AX211_CSR_INTERRUPT_CAUSE, UINT32_MAX);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
@@ -506,7 +584,7 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 	/* Re-acknowledges before exposing ALIVE and flow-handler delivery. */
 
 	/* Checks the operation result. */
-	result = ax211_ack_raw(transport, &flow_handler, &hardware);
+	result = ax211_ack_raw(transport, &queue_causes, &hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		ax211_mask_all_best_effort(transport);
 		transport->failed = 1U;
@@ -517,12 +595,12 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 	}
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_CSR_MSIX_HW_INT_MASK_AD,
-				 ~AX211_HW_CAUSE_ALIVE);
+	result = ax211_csr_write(transport, AX211_CSR_MSIX_EVENT_MASK,
+				 ~AX211_EVENT_CAUSE_ALIVE);
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_csr_write(transport,
-					 AX211_CSR_MSIX_FH_INT_MASK_AD,
-					 ~AX211_FH_SUPPORTED);
+					 AX211_CSR_MSIX_QUEUE_MASK,
+					 ~AX211_QUEUE_CAUSES_ROUTED);
 	}
 
 	/* Checks the operation result. */
@@ -535,8 +613,8 @@ drv_intel_ax211_transport_enable_firmware_interrupts(
 		return result;
 	}
 
-	transport->enabled_hw_causes = AX211_HW_CAUSE_ALIVE;
-	transport->enabled_fh_causes = AX211_FH_SUPPORTED;
+	transport->enabled_event_causes = AX211_EVENT_CAUSE_ALIVE;
+	transport->enabled_queue_causes = AX211_QUEUE_CAUSES_ROUTED;
 	transport->interrupts_enabled = 1U;
 	transport->firmware_load_mode = 1U;
 
@@ -567,12 +645,12 @@ drv_intel_ax211_transport_enable_runtime_interrupts(
 	/* Publishes both unmasked-cause sets before recording runtime mode. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_CSR_MSIX_FH_INT_MASK_AD,
-				 ~AX211_FH_SUPPORTED);
+	result = ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_MASK,
+				 ~AX211_QUEUE_CAUSES_ROUTED);
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_csr_write(transport,
-					 AX211_CSR_MSIX_HW_INT_MASK_AD,
-					 ~AX211_HW_SUPPORTED);
+					 AX211_CSR_MSIX_EVENT_MASK,
+					 ~AX211_EVENT_CAUSES_ROUTED);
 	}
 
 	/* Checks the operation result. */
@@ -585,8 +663,8 @@ drv_intel_ax211_transport_enable_runtime_interrupts(
 		return result;
 	}
 
-	transport->enabled_fh_causes = AX211_FH_SUPPORTED;
-	transport->enabled_hw_causes = AX211_HW_SUPPORTED;
+	transport->enabled_queue_causes = AX211_QUEUE_CAUSES_ROUTED;
+	transport->enabled_event_causes = AX211_EVENT_CAUSES_ROUTED;
 	transport->interrupts_enabled = 1U;
 	transport->firmware_load_mode = 0U;
 
@@ -613,8 +691,8 @@ drv_intel_ax211_transport_disable_interrupts(
 
 	/* Masks flow-handler causes before hardware causes. */
 	result = ax211_mask_all(transport);
-	transport->enabled_fh_causes = 0U;
-	transport->enabled_hw_causes = 0U;
+	transport->enabled_queue_causes = 0U;
+	transport->enabled_event_causes = 0U;
 	transport->interrupts_enabled = 0U;
 	transport->firmware_load_mode = 0U;
 	if (result != INTEL_AX211_TRANSPORT_OK) {
@@ -636,7 +714,7 @@ drv_intel_ax211_transport_interrupt_claim(
 	struct intel_ax211_transport *transport,
 	struct intel_ax211_transport_causes *causes)
 {
-	uint32_t flow_handler;
+	uint32_t queue_causes;
 	uint32_t hardware;
 	int result;
 
@@ -654,7 +732,7 @@ drv_intel_ax211_transport_interrupt_claim(
 	/* Captures and W1C-acknowledges both cause banks before dispatch. */
 
 	/* Checks the operation result. */
-	result = ax211_ack_raw(transport, &flow_handler, &hardware);
+	result = ax211_ack_raw(transport, &queue_causes, &hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 
@@ -662,9 +740,9 @@ drv_intel_ax211_transport_interrupt_claim(
 		return result;
 	}
 
-	causes->flow_handler = flow_handler & transport->enabled_fh_causes;
-	causes->hardware = hardware & transport->enabled_hw_causes;
-	causes->raw_flow_handler = flow_handler;
+	causes->queue_causes = queue_causes & transport->enabled_queue_causes;
+	causes->hardware = hardware & transport->enabled_event_causes;
+	causes->raw_queue_causes = queue_causes;
 	causes->raw_hardware = hardware;
 
 	/* Returns the computed result. */
@@ -692,8 +770,8 @@ drv_intel_ax211_transport_interrupt_rearm(
 	}
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_CSR_MSIX_AUTOMASK_ST_AD,
-				 AX211_MSIX_AUTOMASK_VECTOR0);
+	result = ax211_csr_write(transport, AX211_CSR_MSIX_SELF_MASK_STATE,
+				 AX211_SELF_MASK_VECTOR0);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
@@ -770,7 +848,7 @@ drv_intel_ax211_transport_activate_rx(
 	/* Checks the operation result. */
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_csr_write(transport,
-					 AX211_RFH_Q0_FRBDCB_WIDX_TRG, 8U);
+					 AX211_CSR_RX_FREE_INDEX, 8U);
 	}
 
 	/* Checks the operation result. */
@@ -893,7 +971,7 @@ drv_intel_ax211_transport_rx_next(
 	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_rx_completion_descriptor_decode(
 		descriptor, &buffer_id, &flags);
-	if (core_result != INTEL_AX211_OK ||
+	if (core_result != INTEL_AX211_SUCCESS ||
 	    buffer_id >= INTEL_AX211_TRANSPORT_RX_DESCRIPTOR_COUNT) {
 		/* Returns the computed result. */
 		return INTEL_AX211_TRANSPORT_INVALID;
@@ -995,7 +1073,7 @@ drv_intel_ax211_transport_rx_replenish(
 	/* Reports only a complete group of eight replenished descriptors. */
 
 	/* Checks the operation result. */
-	result = ax211_csr_write(transport, AX211_RFH_Q0_FRBDCB_WIDX_TRG,
+	result = ax211_csr_write(transport, AX211_CSR_RX_FREE_INDEX,
 				 credit);
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		transport->rx_tail = previous;
@@ -1069,11 +1147,11 @@ drv_intel_ax211_transport_command_prepare_inline(
 		return INTEL_AX211_TRANSPORT_FULL;
 
 	/* Handles the core result condition. */
-	if (core_result != INTEL_AX211_OK)
+	if (core_result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_TRANSPORT_INVALID;
 	slot_offset = (size_t)reserved.index *
 		      INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE;
-	tfd_offset = (size_t)reserved.index * INTEL_AX211_TFD_SIZE;
+	tfd_offset = (size_t)reserved.index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
 	slot = transport->memory.command_slots + slot_offset;
 	tfd = transport->memory.command_tfd + tfd_offset;
 
@@ -1087,9 +1165,9 @@ drv_intel_ax211_transport_command_prepare_inline(
 	header_size = INTEL_AX211_WIDE_COMMAND_HEADER_SIZE;
 
 	/* Handles the command condition. */
-	if (command->group == AX211_COMMAND_GROUP_LEGACY) {
+	if (command->group == AX211_COMMAND_FAMILY_CLASSIC) {
 		wire_command = *command;
-		wire_command.group = AX211_COMMAND_GROUP_LONG;
+		wire_command.group = AX211_COMMAND_FAMILY_CLASSIC_WIDE;
 		wire_command.version = 0U;
 		core_result = drv_intel_ax211_wide_command_encode(
 			slot, &wire_command, (uint16_t)payload_length,
@@ -1100,7 +1178,7 @@ drv_intel_ax211_transport_command_prepare_inline(
 	}
 
 	/* Handles the core result condition. */
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		ax211_command_rollback(transport);
 
 		/* Returns the computed result. */
@@ -1141,7 +1219,7 @@ drv_intel_ax211_transport_command_prepare_inline(
 
 	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_tfd_encode(tfd, buffer, buffer_count);
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 		ax211_command_rollback(transport);
 
@@ -1159,14 +1237,14 @@ drv_intel_ax211_transport_command_prepare_inline(
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(transport,
 					INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
-					tfd_offset, INTEL_AX211_TFD_SIZE,
+					tfd_offset, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE,
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
 	/* Checks the operation result. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
-		kern_memset(tfd, 0, INTEL_AX211_TFD_SIZE);
+		kern_memset(tfd, 0, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 		ax211_command_rollback(transport);
 
 		/* Failed. */
@@ -1239,9 +1317,9 @@ drv_intel_ax211_transport_command_prepare_external(
 		return INTEL_AX211_TRANSPORT_FULL;
 
 	/* Handles the core result condition. */
-	if (core_result != INTEL_AX211_OK)
+	if (core_result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_TRANSPORT_INVALID;
-	tfd_offset = (size_t)reserved.index * INTEL_AX211_TFD_SIZE;
+	tfd_offset = (size_t)reserved.index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
 	external = transport->memory.command_external;
 	tfd = transport->memory.command_tfd + tfd_offset;
 
@@ -1249,9 +1327,9 @@ drv_intel_ax211_transport_command_prepare_external(
 	header_size = INTEL_AX211_WIDE_COMMAND_HEADER_SIZE;
 
 	/* Handles the command condition. */
-	if (command->group == AX211_COMMAND_GROUP_LEGACY) {
+	if (command->group == AX211_COMMAND_FAMILY_CLASSIC) {
 		wire_command = *command;
-		wire_command.group = AX211_COMMAND_GROUP_LONG;
+		wire_command.group = AX211_COMMAND_FAMILY_CLASSIC_WIDE;
 		wire_command.version = 0U;
 		core_result = drv_intel_ax211_wide_command_encode(
 			external, &wire_command, (uint16_t)payload_length,
@@ -1262,7 +1340,7 @@ drv_intel_ax211_transport_command_prepare_external(
 	}
 
 	/* Handles the core result condition. */
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		ax211_command_rollback(transport);
 
 		/* Returns the computed result. */
@@ -1280,7 +1358,7 @@ drv_intel_ax211_transport_command_prepare_external(
 
 	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_tfd_encode(tfd, buffer, 2U);
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		kern_memset(external, 0, transport->memory.command_external_size);
 		ax211_command_rollback(transport);
 
@@ -1295,14 +1373,14 @@ drv_intel_ax211_transport_command_prepare_external(
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(transport,
 					INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
-					tfd_offset, INTEL_AX211_TFD_SIZE,
+					tfd_offset, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE,
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
 	/* Checks the operation result. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
 		kern_memset(external, 0, transport->memory.command_external_size);
-		kern_memset(tfd, 0, INTEL_AX211_TFD_SIZE);
+		kern_memset(tfd, 0, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
 		/* Handles the scrub result condition. */
 		scrub_result = ax211_command_external_scrub(transport);
@@ -1310,7 +1388,7 @@ drv_intel_ax211_transport_command_prepare_external(
 			scrub_result = ax211_dma_sync(
 				transport,
 				INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
-				tfd_offset, INTEL_AX211_TFD_SIZE,
+				tfd_offset, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE,
 				INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 		}
 
@@ -1381,7 +1459,7 @@ drv_intel_ax211_transport_command_publish(
 			transport->command_write_sequence;
 	result = ax211_csr_write(
 	    transport,
-	    AX211_HBUS_TARG_WRPTR,
+	    AX211_CSR_QUEUE_WRITE_INDEX,
 	    write_pointer);
 	transport->command_prepared = 0U;
 	if (result != INTEL_AX211_TRANSPORT_OK) {
@@ -1433,11 +1511,11 @@ drv_intel_ax211_transport_command_abort_prepared(
 	/* Scrubs and republishes the un-rung slot before making it reusable. */
 	slot_offset =
 		(size_t)token->index * INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE;
-	tfd_offset = (size_t)token->index * INTEL_AX211_TFD_SIZE;
+	tfd_offset = (size_t)token->index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
 	kern_memset(transport->memory.command_slots + slot_offset, 0,
 	       INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 	kern_memset(transport->memory.command_tfd + tfd_offset, 0,
-	       INTEL_AX211_TFD_SIZE);
+	       INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
 	/* Handles the external condition. */
 	result = INTEL_AX211_TRANSPORT_OK;
@@ -1454,7 +1532,7 @@ drv_intel_ax211_transport_command_abort_prepared(
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(transport,
 					INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
-					tfd_offset, INTEL_AX211_TFD_SIZE,
+					tfd_offset, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE,
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
@@ -1552,14 +1630,14 @@ drv_intel_ax211_transport_command_complete(
 	}
 	slot_offset =
 		(size_t)token->index * INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE;
-	tfd_offset = (size_t)token->index * INTEL_AX211_TFD_SIZE;
+	tfd_offset = (size_t)token->index * INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE;
 	external = ax211_command_external_matches(transport, token);
 
 	/* Scrubs retired host-command bytes before the slot can be reused. */
 	kern_memset(transport->memory.command_slots + slot_offset, 0,
 	       INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 	kern_memset(transport->memory.command_tfd + tfd_offset, 0,
-	       INTEL_AX211_TFD_SIZE);
+	       INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
 	/* Handles the external condition. */
 	result = INTEL_AX211_TRANSPORT_OK;
@@ -1576,7 +1654,7 @@ drv_intel_ax211_transport_command_complete(
 	if (result == INTEL_AX211_TRANSPORT_OK) {
 		result = ax211_dma_sync(transport,
 					INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD,
-					tfd_offset, INTEL_AX211_TFD_SIZE,
+					tfd_offset, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE,
 					INTEL_AX211_TRANSPORT_DMA_PREWRITE);
 	}
 
@@ -1594,7 +1672,7 @@ drv_intel_ax211_transport_command_complete(
 		drv_intel_ax211_ring_complete(&transport->command_ring, token);
 
 	/* Handles the core result condition. */
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		transport->failed = 1U;
 		transport->quiesced = 1U;
 
@@ -1712,9 +1790,9 @@ drv_intel_ax211_transport_command_after_device_reset(
 
 	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_ring_init(&transport->command_ring,
-						AX211_COMMAND_QUEUE,
+						AX211_COMMAND_RING_ID,
 						INTEL_AX211_COMMAND_RING_SIZE);
-	if (core_result != INTEL_AX211_OK) {
+	if (core_result != INTEL_AX211_SUCCESS) {
 		transport->failed = 1U;
 
 		/* Returns the computed result. */
@@ -1745,7 +1823,7 @@ int
 drv_intel_ax211_transport_quiesce(
 	struct intel_ax211_transport *transport)
 {
-	uint32_t flow_handler;
+	uint32_t queue_causes;
 	uint32_t hardware;
 	int commands_outstanding;
 	int result;
@@ -1767,8 +1845,8 @@ drv_intel_ax211_transport_quiesce(
 	if (transport->msix_configured) {
 		result = ax211_mask_all(transport);
 		transport->interrupts_enabled = 0U;
-		transport->enabled_fh_causes = 0U;
-		transport->enabled_hw_causes = 0U;
+		transport->enabled_queue_causes = 0U;
+		transport->enabled_event_causes = 0U;
 		if (result != INTEL_AX211_TRANSPORT_OK) {
 			transport->failed = 1U;
 
@@ -1777,7 +1855,7 @@ drv_intel_ax211_transport_quiesce(
 		}
 
 		/* Checks the operation result. */
-		result = ax211_ack_raw(transport, &flow_handler, &hardware);
+		result = ax211_ack_raw(transport, &queue_causes, &hardware);
 		if (result != INTEL_AX211_TRANSPORT_OK) {
 			transport->failed = 1U;
 
@@ -1797,7 +1875,7 @@ drv_intel_ax211_transport_quiesce(
 	/* Disables Gen3 RX DMA only inside one checked NIC ownership scope. */
 
 	/* Checks the operation result. */
-	result = transport->ops->nic_lock(transport->argument);
+	result = transport->ops->wake_hold(transport->argument);
 	if (result != 0) {
 		transport->failed = 1U;
 
@@ -1808,8 +1886,8 @@ drv_intel_ax211_transport_quiesce(
 	/* Checks the operation result. */
 	result = transport->ops->prph_write32(
 		transport->argument,
-		transport->profile.umac_prph_offset +
-			AX211_RFH_RXF_DMA_CFG_GEN3,
+		transport->profile.upper_cpu_prph_base +
+			AX211_PRPH_RX_DMA_CONFIG,
 		0U);
 	if (result == 0)
 		result = ax211_poll_rx_idle(transport);
@@ -1817,7 +1895,7 @@ drv_intel_ax211_transport_quiesce(
 		result = INTEL_AX211_TRANSPORT_IO;
 
 	/* Checks the operation result. */
-	unlock_result = transport->ops->nic_unlock(transport->argument);
+	unlock_result = transport->ops->wake_release(transport->argument);
 	if (result != INTEL_AX211_TRANSPORT_OK || unlock_result != 0) {
 		transport->failed = 1U;
 		transport->rx_dma_idle = 0U;
@@ -1861,7 +1939,7 @@ ax211_ops_valid(
 	}
 
 	/* Handles the nic lock availability. */
-	if (ops->nic_lock == NULL || ops->nic_unlock == NULL ||
+	if (ops->wake_hold == NULL || ops->wake_release == NULL ||
 	    ops->prph_read32 == NULL || ops->prph_write32 == NULL) {
 		/* Succeeded. */
 		return 0;
@@ -1895,12 +1973,12 @@ ax211_profile_valid(
 	}
 
 	/* Handles the profile condition. */
-	if (profile->rf_type != INTEL_AX211_MMIO_RF_GF || profile->cdb != 0U)
+	if (profile->rf_type != INTEL_AX211_MMIO_RF_GF || profile->concurrent_bands != 0U)
 		return 0;
 
 	/* Handles the profile condition. */
 	if (profile->integrated != 0U ||
-	    profile->umac_prph_offset != INTEL_AX211_MMIO_UMAC_PRPH_OFFSET) {
+	    profile->upper_cpu_prph_base != INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE) {
 		/* Succeeded. */
 		return 0;
 	}
@@ -2008,10 +2086,10 @@ ax211_mask_all(
 	int first_result;
 	int second_result;
 
-	first_result = ax211_csr_write(transport, AX211_CSR_MSIX_FH_INT_MASK_AD,
+	first_result = ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_MASK,
 				       UINT32_MAX);
 	second_result = ax211_csr_write(
-		transport, AX211_CSR_MSIX_HW_INT_MASK_AD, UINT32_MAX);
+		transport, AX211_CSR_MSIX_EVENT_MASK, UINT32_MAX);
 
 	/* Handles the first result condition. */
 	if (first_result != INTEL_AX211_TRANSPORT_OK)
@@ -2039,57 +2117,81 @@ ax211_csr_write(
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
-/* Programs the exact single-vector RX and non-RX IVAR entries. */
+/*
+ * Sends every routed cause to MSI-X vector 0.
+ *
+ * Each cause owns one byte of a vector map, at the position of its bit in
+ * its cause register: bits 15:0 of the queue-cause register (the receive
+ * queues) own bytes 0 to 15 of the receive vector map, bits 31:16 of that
+ * register own bytes 0 to 15 of the cause vector map, and bit n of the
+ * event-cause register owns byte 16 + n of the cause vector map.  The map is
+ * derived from the routed cause sets, so a cause that is unmasked always has
+ * a route.  The caller masks every cause first, so the order in which the
+ * bytes are written does not matter.
+ */
 static int
 ax211_configure_msix_routes(
 	struct intel_ax211_transport *transport)
 {
-	size_t index;
+	uint32_t cause_bit;
+	uint32_t cause_mask;
+	uint32_t map_offset;
 	int result;
 
-	/* Maps command and data RX causes first. */
-	result =
-		ax211_csr_write8(transport, AX211_CSR_MSIX_RX_IVAR_AD_REG,
-				 AX211_MSIX_VECTOR | AX211_MSIX_NON_AUTO_CLEAR);
+	/* Routes the queue causes in ascending bit order. */
+	for (cause_bit = 0U; cause_bit < 32U; cause_bit++) {
+		cause_mask = UINT32_C(1) << cause_bit;
 
-	/* Checks the operation result. */
-	if (result == INTEL_AX211_TRANSPORT_OK) {
-		result = ax211_csr_write8(
-			transport, AX211_CSR_MSIX_RX_IVAR_AD_REG + 1U,
-			AX211_MSIX_VECTOR | AX211_MSIX_NON_AUTO_CLEAR);
-	}
+		/* Leaves a cause that is never unmasked without a route. */
+		if ((AX211_QUEUE_CAUSES_ROUTED & cause_mask) == 0U)
+			continue;
 
-	/* Checks the operation result. */
-	if (result != INTEL_AX211_TRANSPORT_OK)
-		return result;
+		/* Selects the receive map for a queue and the cause map above. */
+		if (cause_bit < 16U) {
+			map_offset = AX211_CSR_MSIX_RX_VECTOR_MAP + cause_bit;
+		} else {
+			map_offset = AX211_CSR_MSIX_CAUSE_VECTOR_MAP +
+				     (cause_bit - 16U);
+		}
 
-	/* Maps every admitted flow-handler cause to vector zero. */
-	for (index = 0U; index < sizeof(ax211_fh_ivar_cause); index++) {
-		/* Checks the operation result. */
+		/* Sends the cause to vector 0 and leaves its clearing to us. */
 		result = ax211_csr_write8(
 			transport,
-			AX211_CSR_MSIX_IVAR_AD_REG + ax211_fh_ivar_cause[index],
-			AX211_MSIX_VECTOR | AX211_MSIX_NON_AUTO_CLEAR);
+			map_offset,
+			AX211_VECTOR_MAP_TARGET | AX211_VECTOR_MAP_MANUAL_CLEAR);
+
+		/* Stops at the first byte the device did not take. */
 		if (result != INTEL_AX211_TRANSPORT_OK)
 			return result;
 	}
 
-	/* Maps every admitted hardware cause to vector zero. */
-	for (index = 0U; index < sizeof(ax211_hw_ivar_cause); index++) {
-		/* Checks the operation result. */
+	/* Routes the event causes in ascending bit order. */
+	for (cause_bit = 0U; cause_bit < 32U; cause_bit++) {
+		cause_mask = UINT32_C(1) << cause_bit;
+
+		/* Leaves a cause that is never unmasked without a route. */
+		if ((AX211_EVENT_CAUSES_ROUTED & cause_mask) == 0U)
+			continue;
+
+		/* Places the event causes after the sixteen DMA cause bytes. */
+		map_offset = AX211_CSR_MSIX_CAUSE_VECTOR_MAP + 16U + cause_bit;
+
+		/* Sends the cause to vector 0 and leaves its clearing to us. */
 		result = ax211_csr_write8(
 			transport,
-			AX211_CSR_MSIX_IVAR_AD_REG + ax211_hw_ivar_cause[index],
-			AX211_MSIX_VECTOR | AX211_MSIX_NON_AUTO_CLEAR);
+			map_offset,
+			AX211_VECTOR_MAP_TARGET | AX211_VECTOR_MAP_MANUAL_CLEAR);
+
+		/* Stops at the first byte the device did not take. */
 		if (result != INTEL_AX211_TRANSPORT_OK)
 			return result;
 	}
 
-	/* Returns the computed result. */
+	/* Reports that every routed cause now reaches vector 0. */
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
-/* Writes one checked IVAR or interrupt-coalescing byte. */
+/* Writes one checked vector-map or interrupt-delay byte. */
 static int
 ax211_csr_write8(
 	struct intel_ax211_transport *transport,
@@ -2104,14 +2206,14 @@ ax211_csr_write8(
 	return INTEL_AX211_TRANSPORT_OK;
 }
 
-/* Makes a best-effort mask after partial IVAR programming. */
+/* Makes a best-effort mask after a partly written vector map. */
 static void
 ax211_mask_all_best_effort(
 	struct intel_ax211_transport *transport)
 {
-	(void)ax211_csr_write(transport, AX211_CSR_MSIX_FH_INT_MASK_AD,
+	(void)ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_MASK,
 			      UINT32_MAX);
-	(void)ax211_csr_write(transport, AX211_CSR_MSIX_HW_INT_MASK_AD,
+	(void)ax211_csr_write(transport, AX211_CSR_MSIX_EVENT_MASK,
 			      UINT32_MAX);
 }
 
@@ -2154,32 +2256,32 @@ ax211_csr_read(
 static int
 ax211_ack_raw(
 	struct intel_ax211_transport *transport,
-	uint32_t *flow_handler,
+	uint32_t *queue_causes,
 	uint32_t *hardware)
 {
 	int error;
 	int result;
 
 	/* Checks the operation result. */
-	result = ax211_csr_read(transport, AX211_CSR_MSIX_FH_INT_CAUSES_AD,
-				flow_handler);
+	result = ax211_csr_read(transport, AX211_CSR_MSIX_QUEUE_CAUSES,
+				queue_causes);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
 
 	/* Checks the operation result. */
-	result = ax211_csr_read(transport, AX211_CSR_MSIX_HW_INT_CAUSES_AD,
+	result = ax211_csr_read(transport, AX211_CSR_MSIX_EVENT_CAUSES,
 				hardware);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
-	result = ax211_csr_write(transport, AX211_CSR_MSIX_FH_INT_CAUSES_AD,
-				 *flow_handler);
+	result = ax211_csr_write(transport, AX211_CSR_MSIX_QUEUE_CAUSES,
+				 *queue_causes);
 	/* Checks the operation result. */
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return result;
 
 	/* Obtains the ax211 csr write result. */
 	error = ax211_csr_write(
-		transport, AX211_CSR_MSIX_HW_INT_CAUSES_AD, *hardware);
+		transport, AX211_CSR_MSIX_EVENT_CAUSES, *hardware);
 
 	/* Returns the computed result. */
 	return error;
@@ -2228,7 +2330,7 @@ ax211_publish_rx_descriptor(
 	/* Handles the core result condition. */
 	core_result = drv_intel_ax211_rx_transfer_descriptor_encode(
 		descriptor, index, device_address);
-	if (core_result != INTEL_AX211_OK)
+	if (core_result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_TRANSPORT_INVALID;
 
 	/* Makes the complete descriptor visible before marking it published. */
@@ -2400,14 +2502,14 @@ ax211_poll_rx_idle(
 		/* Checks the operation result. */
 		result = transport->ops->prph_read32(
 			transport->argument,
-			transport->profile.umac_prph_offset +
-				AX211_RFH_GEN_STATUS_GEN3,
+			transport->profile.upper_cpu_prph_base +
+				AX211_PRPH_RX_DMA_STATUS,
 			&status);
 		if (result != 0)
 			return INTEL_AX211_TRANSPORT_IO;
 
 		/* Checks the operation status. */
-		if ((status & AX211_RXF_DMA_IDLE) != 0U)
+		if ((status & AX211_RX_DMA_STATUS_IDLE) != 0U)
 			return INTEL_AX211_TRANSPORT_OK;
 
 		/* Checks the clock us result. */

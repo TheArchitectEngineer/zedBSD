@@ -25,8 +25,8 @@ static void ax211_backend_fail(struct intel_ax211_transport_backend *backend);
 static int ax211_backend_csr_write32(void *argument, uint32_t offset, uint32_t value);
 static int ax211_backend_csr_write8(void *argument, uint32_t offset, uint8_t value);
 static int ax211_backend_bar_byte_valid( const struct intel_ax211_pci_mmio_backend *pci_mmio, uint32_t offset);
-static int ax211_backend_nic_lock(void *argument);
-static int ax211_backend_nic_unlock(void *argument);
+static int ax211_backend_wake_hold(void *argument);
+static int ax211_backend_wake_release(void *argument);
 static int ax211_backend_prph_read32(void *argument, uint32_t address, uint32_t *value);
 static int ax211_backend_prph_write32(void *argument, uint32_t address, uint32_t value);
 static int ax211_backend_dma_sync(void *argument, enum intel_ax211_transport_dma_region region, size_t offset, size_t length, enum intel_ax211_transport_dma_direction direction);
@@ -40,8 +40,8 @@ static void ax211_backend_trace_deadline(void *argument, enum intel_ax211_transp
 
 static const struct intel_ax211_transport_ops ax211_backend_operations = {
 	ax211_backend_csr_read32,    ax211_backend_csr_write32,
-	ax211_backend_csr_write8,    ax211_backend_nic_lock,
-	ax211_backend_nic_unlock,    ax211_backend_prph_read32,
+	ax211_backend_csr_write8,    ax211_backend_wake_hold,
+	ax211_backend_wake_release,    ax211_backend_prph_read32,
 	ax211_backend_prph_write32,  ax211_backend_dma_sync,
 	ax211_backend_delay_us,	     ax211_backend_clock_us,
 	ax211_backend_trace_deadline};
@@ -204,7 +204,7 @@ ax211_backend_ready(
 
 	/* Checks the ax211 backend buffer valid result. */
 	if (!ax211_backend_buffer_valid(&dma->command_byte_count,
-					INTEL_AX211_COMMAND_BC_TABLE_SIZE,
+					INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE,
 					128U)) {
 		/* Succeeded. */
 		return 0;
@@ -383,7 +383,7 @@ ax211_backend_bar_byte_valid(
 
 /* Supports the ax211 backend nic lock operation. */
 static int
-ax211_backend_nic_lock(
+ax211_backend_wake_hold(
 	void *argument)
 {
 	struct intel_ax211_transport_backend *backend;
@@ -394,7 +394,7 @@ ax211_backend_nic_lock(
 		return -1;
 
 	/* Checks the drv intel ax211 mmio nic lock result. */
-	if (drv_intel_ax211_mmio_nic_lock(backend->mmio) != INTEL_AX211_MMIO_OK)
+	if (drv_intel_ax211_mmio_wake_hold(backend->mmio) != INTEL_AX211_MMIO_OK)
 		return -1;
 
 	/* Succeeded. */
@@ -403,7 +403,7 @@ ax211_backend_nic_lock(
 
 /* Unlock remains available after a failure so ownership cannot leak. */
 static int
-ax211_backend_nic_unlock(
+ax211_backend_wake_release(
 	void *argument)
 {
 	struct intel_ax211_transport_backend *backend;
@@ -414,7 +414,7 @@ ax211_backend_nic_unlock(
 		return -1;
 
 	/* Checks the drv intel ax211 mmio nic unlock result. */
-	if (drv_intel_ax211_mmio_nic_unlock(backend->mmio) !=
+	if (drv_intel_ax211_mmio_wake_release(backend->mmio) !=
 	    INTEL_AX211_MMIO_OK) {
 		/* Reports operation failure. */
 		return -1;
@@ -573,7 +573,7 @@ ax211_backend_region_size(
 		return INTEL_AX211_COMMAND_TFD_RING_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT:
 		/* Returns the computed result. */
-		return INTEL_AX211_COMMAND_BC_TABLE_SIZE;
+		return INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS:
 		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_SLOTS_SIZE;

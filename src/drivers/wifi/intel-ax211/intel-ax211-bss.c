@@ -1,57 +1,23 @@
 /* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
 
 /*
- * zedBSD Intel AX211 private BSS association-metadata implementation
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Management-frame layout and information-element constants are derived
- * from OpenBSD sys/net80211/ieee80211.h and sys/dev/pci/if_iwx.c at commit
- * 0f464d413c50396e4e6cd70948f15613d6a73081.
- * Copyright (c) 2001 Atsushi Onoe
- * Copyright (c) 2002-2008 Sam Leffler, Errno Consulting
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private BSS association-metadata implementation.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * SPDX-License-Identifier: ISC AND BSD-3-Clause
+ * Sources of the values.  Every constant in this file is a value of the
+ * 802.11 frame itself: the frame control field, the fixed fields of a beacon
+ * and a probe response, and the element identifiers and lengths come from
+ * IEEE Std 802.11-2020 (9.2.4.1 frame control, 9.3.3.2 and 9.3.3.10 beacon
+ * and probe response bodies, 9.4.2 elements), and the WMM information and
+ * parameter elements from the Wi-Fi Alliance WMM specification (vendor
+ * element of OUI 00-50-F2, type 2).  No value in this file is taken from a
+ * driver header.
  */
 
 #include "intel-ax211-bss.h"
@@ -60,6 +26,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The frame control values that mark a frame the BSS cache accepts.
+ *
+ * Source: IEEE Std 802.11-2020 9.2.4.1.  Only a protocol version 0
+ * management frame of subtype probe response (5) or beacon (8), sent
+ * neither to nor from a distribution system and not protected, describes a
+ * network.
+ */
 #define AX211_BSS_FRAME_VERSION_MASK 0x0003U
 #define AX211_BSS_FRAME_TYPE_MASK 0x000cU
 #define AX211_BSS_FRAME_TYPE_MANAGEMENT 0x0000U
@@ -69,10 +43,31 @@
 #define AX211_BSS_FRAME_TO_FROM_DS 0x0300U
 #define AX211_BSS_FRAME_PROTECTED 0x4000U
 
+/*
+ * Where the fields of a beacon or probe response are.
+ *
+ * Source: IEEE Std 802.11-2020 9.3.3.2 and 9.3.3.10.  The management header
+ * is 24 bytes with the BSSID at byte 16; the fixed body follows (timestamp
+ * 8 bytes, beacon interval at byte 32, capability information at 34), and
+ * the elements start at byte 36.
+ */
 #define AX211_BSS_FIXED_BODY_OFFSET 24U
 #define AX211_BSS_INFORMATION_ELEMENTS_OFFSET 36U
 #define AX211_BSS_BSSID_OFFSET 16U
 
+/*
+ * The elements the cache reads.
+ *
+ * Sources: IEEE Std 802.11-2020 9.4.2 (element identifiers: SSID 0, DS
+ * parameter set 3, TIM 5, HT operation 61, vendor specific 221; an SSID of
+ * at most 32 bytes, an HT operation body of 22 bytes, a TIM body of at
+ * least 4 bytes) and the Wi-Fi Alliance WMM specification (a vendor element
+ * of OUI 00-50-F2 and OUI type 2, whose subtype 0 is the 7-byte information
+ * element and subtype 1 the 24-byte parameter element, both version 1).
+ * The DS parameter set gives the channel the network says it is on; a
+ * frame whose element disagrees with the channel it was received on is
+ * refused as malformed.
+ */
 #define AX211_BSS_IE_SSID 0U
 #define AX211_BSS_IE_TIM 5U
 #define AX211_BSS_IE_DS_PARAMETER 3U
@@ -113,7 +108,7 @@ static int ax211_bss_entry_worse(const struct intel_ax211_bss_entry *left, const
  */
 int
 drv_intel_ax211_bss_decode(
-	const struct intel_ax211_rx_mpdu *mpdu,
+	const struct intel_ax211_rx_delivery *mpdu,
 	uint64_t observation_generation,
 	uint32_t hardware_epoch,
 	struct intel_ax211_bss_entry *entry)
@@ -190,7 +185,7 @@ drv_intel_ax211_bss_decode(
 		ax211_bss_get_le64(frame + AX211_BSS_FIXED_BODY_OFFSET);
 	decoded.receive_tsf = mpdu->tsf;
 	decoded.hardware_epoch = hardware_epoch;
-	decoded.gp2_on_air_rise = mpdu->gp2_on_air_rise;
+	decoded.air_start_clock = mpdu->air_start_clock;
 	decoded.rssi_dbm = mpdu->rssi_dbm;
 	decoded.beacon_interval_tu = ax211_bss_get_le16(frame + 32U);
 	decoded.capability = ax211_bss_get_le16(frame + 34U);
@@ -420,10 +415,10 @@ drv_intel_ax211_bss_assoc_metadata(
 	kern_memcpy(decoded.bssid, entry->bssid, sizeof(decoded.bssid));
 	decoded.common_generation = connection_generation;
 	decoded.observation_generation = entry->observation_generation;
-	decoded.beacon_tsf = entry->frame_timestamp;
+	decoded.beacon_timestamp = entry->frame_timestamp;
 	decoded.receive_tsf = entry->receive_tsf;
 	decoded.hardware_epoch = entry->hardware_epoch;
-	decoded.beacon_arrive_time = entry->gp2_on_air_rise;
+	decoded.beacon_arrive_time = entry->air_start_clock;
 	decoded.beacon_interval_tu = entry->beacon_interval_tu;
 	decoded.capability = entry->capability;
 	decoded.channel = entry->channel;

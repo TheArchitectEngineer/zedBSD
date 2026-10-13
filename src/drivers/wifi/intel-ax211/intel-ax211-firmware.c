@@ -16,6 +16,7 @@
 #include "kern/kmem.h"
 #include "kern/vfs.h"
 
+/* The running state of one SHA-256 computation (FIPS 180-4). */
 struct ax211_sha256_context {
 	uint32_t state[8];
 	uint64_t length;
@@ -23,6 +24,13 @@ struct ax211_sha256_context {
 	size_t used;
 };
 
+/*
+ * The 64 round constants of SHA-256.
+ *
+ * Source: FIPS 180-4, 4.2.2 (the first 32 bits of the fractional parts of
+ * the cube roots of the first 64 primes).  The loader hashes each firmware
+ * file before it parses it.
+ */
 static const uint32_t ax211_sha256_constants[64] = {
 	0x428a2f98U, 0x71374491U, 0xb5c0fbcfU, 0xe9b5dba5U, 0x3956c25bU,
 	0x59f111f1U, 0x923f82a4U, 0xab1c5ed5U, 0xd807aa98U, 0x12835b01U,
@@ -38,6 +46,12 @@ static const uint32_t ax211_sha256_constants[64] = {
 	0x682e6ff3U, 0x748f82eeU, 0x78a5636fU, 0x84c87814U, 0x8cc70208U,
 	0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U};
 
+/*
+ * The SHA-256 digests of the pinned firmware image and PNVM file.
+ *
+ * Source: measured by zedBSD on the files of linux-firmware 20260410
+ * (intel-ax211-internal.h); a file with another digest is not loaded.
+ */
 static const uint8_t ax211_ucode_digest[32] = {
 	0xc5U, 0x69U, 0xc4U, 0xb0U, 0xffU, 0xe2U, 0x05U, 0x4aU,
 	0x1cU, 0xedU, 0xd5U, 0xafU, 0xfcU, 0xcfU, 0xf2U, 0xdaU,
@@ -335,7 +349,7 @@ drv_intel_ax211_firmware_files_release(
 	if (files == NULL)
 		return;
 	ax211_release_bytes(&files->ucode_bytes, INTEL_AX211_FIRMWARE_SIZE);
-	ax211_release_bytes(&files->pnvm_bytes, INTEL_AX211_PNVM_SIZE);
+	ax211_release_bytes(&files->pnvm_bytes, INTEL_AX211_PNVM_FILE_SIZE);
 	kern_memset(files, 0, sizeof(*files));
 }
 
@@ -366,7 +380,7 @@ ax211_files_state(
 	/* Handles the ucode present condition. */
 	if (!ucode_present || !pnvm_present ||
 	    files->ucode_size != INTEL_AX211_FIRMWARE_SIZE ||
-	    files->pnvm_size != INTEL_AX211_PNVM_SIZE) {
+	    files->pnvm_size != INTEL_AX211_PNVM_FILE_SIZE) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -545,7 +559,7 @@ drv_intel_ax211_firmware_files_load(
 		/* Checks the ax211 parse ucode result. */
 		if (ax211_parse_ucode(
 			    candidate.ucode_bytes, candidate.ucode_size,
-			    &candidate.ucode_manifest) != INTEL_AX211_OK)
+			    &candidate.ucode_manifest) != INTEL_AX211_SUCCESS)
 			error = EILSEQ;
 	}
 
@@ -553,16 +567,16 @@ drv_intel_ax211_firmware_files_load(
 	if (error == 0) {
 		/* Checks the operation status. */
 		error = ax211_read_exact_file(
-			INTEL_AX211_PNVM_VFS_PATH, INTEL_AX211_PNVM_SIZE,
+			INTEL_AX211_PNVM_VFS_PATH, INTEL_AX211_PNVM_FILE_SIZE,
 			ax211_pnvm_digest, &candidate.pnvm_bytes);
 		if (error == 0)
-			candidate.pnvm_size = INTEL_AX211_PNVM_SIZE;
+			candidate.pnvm_size = INTEL_AX211_PNVM_FILE_SIZE;
 	}
 
 	/* Checks the operation status. */
 	if (error == 0 &&
 	    ax211_inspect_pnvm(candidate.pnvm_bytes, candidate.pnvm_size,
-			       &candidate.pnvm_inventory) != INTEL_AX211_OK)
+			       &candidate.pnvm_inventory) != INTEL_AX211_SUCCESS)
 		error = EILSEQ;
 	if (error != 0) {
 		drv_intel_ax211_firmware_files_release(&candidate);

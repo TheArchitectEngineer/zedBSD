@@ -46,8 +46,8 @@ static struct test_fixture fixture;
 static int test_csr_read(void *argument, uint32_t offset, uint32_t *word);
 static int test_csr_write(void *argument, uint32_t offset, uint32_t word);
 static int test_csr_write8(void *argument, uint32_t offset, uint8_t byte);
-static int test_nic_lock(void *argument);
-static int test_nic_unlock(void *argument);
+static int test_wake_hold(void *argument);
+static int test_wake_release(void *argument);
 static int test_prph_read(void *argument, uint32_t address, uint32_t *word);
 static int test_prph_write(void *argument, uint32_t address, uint32_t word);
 static int test_dma_sync(void *argument, enum intel_ax211_transport_dma_region region, size_t offset, size_t length, enum intel_ax211_transport_dma_direction direction);
@@ -138,7 +138,7 @@ test_csr_write8(
 
 /* Gives the serial test exclusive access to the fake NIC. */
 static int
-test_nic_lock(
+test_wake_hold(
 	void *argument)
 {
 	/* Requires no host lock because the fixture has one caller. */
@@ -150,7 +150,7 @@ test_nic_lock(
 
 /* Releases fake NIC access without changing command ownership. */
 static int
-test_nic_unlock(
+test_wake_release(
 	void *argument)
 {
 	/* Leaves the hardware sequence under the transport's control. */
@@ -266,8 +266,8 @@ test_setup(
 	fixture.ops.csr_read32 = test_csr_read;
 	fixture.ops.csr_write32 = test_csr_write;
 	fixture.ops.csr_write8 = test_csr_write8;
-	fixture.ops.nic_lock = test_nic_lock;
-	fixture.ops.nic_unlock = test_nic_unlock;
+	fixture.ops.wake_hold = test_wake_hold;
+	fixture.ops.wake_release = test_wake_release;
 	fixture.ops.prph_read32 = test_prph_read;
 	fixture.ops.prph_write32 = test_prph_write;
 	fixture.ops.dma_sync = test_dma_sync;
@@ -277,7 +277,7 @@ test_setup(
 	/* Uses the existing SO/GF transport profile without changing policy. */
 	fixture.profile.mac_type = INTEL_AX211_MMIO_MAC_SO;
 	fixture.profile.rf_type = INTEL_AX211_MMIO_RF_GF;
-	fixture.profile.umac_prph_offset = INTEL_AX211_MMIO_UMAC_PRPH_OFFSET;
+	fixture.profile.upper_cpu_prph_base = INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE;
 
 	/* Assigns separate storage to every production DMA allocation. */
 	fixture.memory.command_tfd = fixture.tfd;

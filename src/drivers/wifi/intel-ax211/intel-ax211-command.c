@@ -1,55 +1,32 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private firmware command transactions
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private firmware command transactions.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/commands.h and fw/api/nvm-reg.h.  They were cross-checked against
+ * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
+ * block of values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-command.h"
@@ -104,7 +81,7 @@ drv_intel_ax211_command_transaction_init(
  * Implements the drv intel ax211 command nvm access complete encode operation.
  */
 int
-drv_intel_ax211_command_nvm_access_complete_encode(
+drv_intel_ax211_command_nvm_handoff_encode(
 	uint8_t output[4])
 {
 	/* Handles the output availability. */
@@ -120,7 +97,7 @@ drv_intel_ax211_command_nvm_access_complete_encode(
  * Implements the drv intel ax211 command nvm get info encode operation.
  */
 int
-drv_intel_ax211_command_nvm_get_info_encode(
+drv_intel_ax211_command_nvm_query_encode(
 	uint8_t output[4])
 {
 	/* Handles the output availability. */
@@ -260,7 +237,7 @@ drv_intel_ax211_command_submit(
  * Implements the drv intel ax211 command submit nvm access complete operation.
  */
 int
-drv_intel_ax211_command_submit_nvm_access_complete(
+drv_intel_ax211_command_submit_nvm_handoff(
 	struct intel_ax211_command_transaction *transaction,
 	uint64_t now,
 	uint64_t timeout,
@@ -271,15 +248,15 @@ drv_intel_ax211_command_submit_nvm_access_complete(
 	uint8_t payload[4];
 
 	/* Checks the drv intel ax211 command nvm access complete encode result. */
-	if (drv_intel_ax211_command_nvm_access_complete_encode(payload) !=
+	if (drv_intel_ax211_command_nvm_handoff_encode(payload) !=
 	    INTEL_AX211_COMMAND_OK) {
 		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 	kern_memset(&request, 0, sizeof(request));
-	request.command.group = INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM;
+	request.command.group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
 	request.command.opcode =
-		INTEL_AX211_PROTOCOL_NVM_ACCESS_COMPLETE_OPCODE;
+		INTEL_AX211_PROTOCOL_NVM_HANDOFF_OPCODE;
 	request.command.version = 0U;
 	request.payload = payload;
 	request.payload_length = sizeof(payload);
@@ -299,7 +276,7 @@ drv_intel_ax211_command_submit_nvm_access_complete(
  * Implements the drv intel ax211 command submit nvm get info operation.
  */
 int
-drv_intel_ax211_command_submit_nvm_get_info(
+drv_intel_ax211_command_submit_nvm_query(
 	struct intel_ax211_command_transaction *transaction,
 	uint64_t now,
 	uint64_t timeout,
@@ -310,22 +287,22 @@ drv_intel_ax211_command_submit_nvm_get_info(
 	uint8_t payload[4];
 
 	/* Checks the drv intel ax211 command nvm get info encode result. */
-	if (drv_intel_ax211_command_nvm_get_info_encode(payload) !=
+	if (drv_intel_ax211_command_nvm_query_encode(payload) !=
 	    INTEL_AX211_COMMAND_OK) {
 		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 	kern_memset(&request, 0, sizeof(request));
-	request.command.group = INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM;
-	request.command.opcode = INTEL_AX211_PROTOCOL_NVM_GET_INFO_OPCODE;
+	request.command.group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
+	request.command.opcode = INTEL_AX211_PROTOCOL_NVM_QUERY_OPCODE;
 	request.command.version = 0U;
 	request.payload = payload;
 	request.payload_length = sizeof(payload);
-	request.response_version = INTEL_AX211_PROTOCOL_NVM_GET_INFO_VERSION;
+	request.response_version = INTEL_AX211_PROTOCOL_NVM_QUERY_VERSION;
 	request.minimum_response_length =
-		INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE;
+		INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE;
 	request.maximum_response_length =
-		INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE;
+		INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE;
 
 	/* Obtains the drv intel ax211 command submit result. */
 	error = drv_intel_ax211_command_submit(transaction, &request,
@@ -373,7 +350,7 @@ drv_intel_ax211_command_complete(
 		drv_intel_ax211_event_decode(event_bytes, event_length, &event);
 
 	/* Checks the operation result. */
-	if (result != INTEL_AX211_OK)
+	if (result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_COMMAND_MALFORMED;
 
 	/* Handles the event condition. */
@@ -413,9 +390,9 @@ drv_intel_ax211_command_complete(
 	 * command.  Restore its logical group only for the matching pending
 	 * token; genuine long-group commands retain their wire identity.
 	 */
-	if (entry->pending.group == INTEL_AX211_PROTOCOL_GROUP_LEGACY &&
-	    wire_group == INTEL_AX211_PROTOCOL_GROUP_LONG)
-		message.group = INTEL_AX211_PROTOCOL_GROUP_LEGACY;
+	if (entry->pending.group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
+	    wire_group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC_WIDE)
+		message.group = INTEL_AX211_PROTOCOL_FAMILY_CLASSIC;
 	else
 		message.group = wire_group;
 

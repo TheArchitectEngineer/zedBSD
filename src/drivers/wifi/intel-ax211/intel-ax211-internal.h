@@ -1,51 +1,33 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private core contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private core contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * iwl-config.h, fw/file.h, pcie/iwl-context-info-v2.h, iwl-fh.h and
+ * fw/api/cmdhdr.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_INTERNAL_H
@@ -54,21 +36,57 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The PCI identity of the one AX211 module this driver binds.
+ *
+ * Source: the PCI ID database and the read-only hardware intake of the
+ * Latitude test machines (ws004 HW-T37), which found the CNVio2 function at
+ * 8086:51f0 with subsystem 8086:4090 and revision 01.  The driver attaches
+ * only on an exact match of all five values, so a different AX2xx part is
+ * left alone instead of being driven with this firmware.
+ */
 #define INTEL_AX211_PCI_VENDOR_ID 0x8086U
 #define INTEL_AX211_PCI_DEVICE_ID 0x51f0U
 #define INTEL_AX211_PCI_SUBVENDOR_ID 0x8086U
 #define INTEL_AX211_PCI_SUBDEVICE_ID 0x4090U
 #define INTEL_AX211_PCI_REVISION 0x01U
-#define INTEL_AX211_MAC_TYPE_SO 0x37U
-#define INTEL_AX211_MAC_TYPE_SOF 0x43U
+
+/*
+ * The silicon and radio identity the firmware image is built for.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-config.h (the MAC and RF type codes of the
+ * So family and of the Garfield Peak radio) and iwl-csr.h (where they are
+ * read).  The MAC type is the 12-bit field at bits 15:4 of the silicon
+ * revision register and is 0x37 on So and 0x43 on SoF; the radio kind is the
+ * 12-bit field at bits 23:12 of the radio identity register and is 0x10d on
+ * Garfield Peak.  The same pair of codes reappears inside the PNVM file as
+ * the hardware-kind record, and drv_intel_ax211_pnvm_select() accepts a PNVM
+ * section only when that record carries this pair.  CONCURRENT_BANDS is zero
+ * because this module has one LMAC and cannot run two bands at once, so every
+ * command that takes an LMAC number is sent with zero.  The CRF, CNV, WFPM
+ * and raw radio identity words are the values of the exact unit this driver
+ * targets; the driver does not read them, and the host tests pin them so that
+ * the identity record stays complete.
+ */
+#define INTEL_AX211_SILICON_SO 0x37U
+#define INTEL_AX211_SILICON_SOF 0x43U
 #define INTEL_AX211_CRF_ID 0x401410U
 #define INTEL_AX211_CNV_ID 0x80400U
 #define INTEL_AX211_WFPM_ID 0x80000020U
 #define INTEL_AX211_RAW_RF_ID 0x2010d000U
-#define INTEL_AX211_RF_TYPE 0x10dU
-#define INTEL_AX211_RF_CDB 0U
-#define INTEL_AX211_RF_JACKET 1U
+#define INTEL_AX211_RADIO_GF 0x10dU
+#define INTEL_AX211_RADIO_CONCURRENT_BANDS 0U
+#define INTEL_AX211_RADIO_JACKET 1U
 
+/*
+ * The one firmware image the driver accepts.
+ *
+ * Source: the linux-firmware repository at the tag and commit below, measured
+ * by zedBSD (size, SHA-256, and the version record inside the file).  The
+ * driver refuses any other image: the command versions, the command layouts
+ * and the boot order in this driver were established against API 89 of this
+ * build, and nothing guarantees that another build keeps them.
+ */
 #define INTEL_AX211_FIRMWARE_PATH "intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode"
 #define INTEL_AX211_FIRMWARE_SIZE 1736748U
 #define INTEL_AX211_FIRMWARE_SHA256                                            \
@@ -78,42 +96,117 @@
 #define INTEL_AX211_FIRMWARE_MINOR 0x735b75a4U
 #define INTEL_AX211_FIRMWARE_SERIAL 0U
 
+/*
+ * The platform data (PNVM) file that belongs to that image.
+ *
+ * Source: the same linux-firmware commit, measured by zedBSD.  The file holds
+ * radio tuning sections for several boards; the driver copies only the
+ * sections of the board that the firmware names in its ALIVE notification.
+ */
 #define INTEL_AX211_PNVM_PATH "intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm"
-#define INTEL_AX211_PNVM_SIZE 55176U
+#define INTEL_AX211_PNVM_FILE_SIZE 55176U
 #define INTEL_AX211_PNVM_SHA256                                                \
 	"efa9726d4a9d44b83fc9a14cedcf306a4e439e9de919802eb9e92df4ec032b2a"
 
+/* The linux-firmware release the two files above were taken from. */
 #define INTEL_AX211_LINUX_FIRMWARE_TAG "20260410"
 #define INTEL_AX211_LINUX_FIRMWARE_COMMIT                                      \
 	"dc85ccedc9c973682fbcf4d628ca61174bcc3120"
 
-#define INTEL_AX211_TLV_MAGIC 0x0a4c5749U
-#define INTEL_AX211_TLV_HEADER_SIZE 88U
-#define INTEL_AX211_TLV_RECORD_HEADER_SIZE 8U
-#define INTEL_AX211_MAX_FW_SECTIONS 69U
-#define INTEL_AX211_MAX_PNVM_SECTIONS 64U
+/*
+ * The framing of the firmware file and of the PNVM file.
+ *
+ * Source: Linux iwlwifi v6.17 fw/file.h (struct iwl_tlv_ucode_header and
+ * struct iwl_ucode_tlv).  The firmware file starts with an 88-byte header:
+ * a zero word, the magic word 0x0a4c5749 ("IWL\n" in little-endian order), a
+ * 64-byte human-readable build name, the header version at byte 72 and the
+ * build number at byte 76.  Records follow, each an 8-byte header (type and
+ * length, both little-endian words) and a body padded to four bytes.  The
+ * PNVM file is the same record stream without the 88-byte header.  The
+ * section limits are zedBSD's bounds.  The host test of the pinned files
+ * found 60 runtime entries in the image (15 LMAC, 17 UMAC and 26 paged
+ * sections plus the two marks below, none longer than 32 KiB) and 8 sections
+ * for 4 boards in the PNVM file.
+ */
+#define INTEL_AX211_FIRMWARE_FILE_MAGIC 0x0a4c5749U
+#define INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE 88U
+#define INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE 8U
+#define INTEL_AX211_FIRMWARE_SECTION_LIMIT 69U
+#define INTEL_AX211_PNVM_SECTION_LIMIT 64U
+
+/*
+ * The command ring and the receive ring, as the device sees them.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-fh.h (RX_QUEUE_CB_SIZE, TFD_QUEUE_CB_SIZE,
+ * struct iwl_rx_transfer_desc, struct iwl_rx_completion_desc) and
+ * pcie/iwl-context-info-v2.h.  The device is told the size of each ring as a
+ * code, not a count: the command ring of 256 entries is announced as 5
+ * (log2 of the count minus 3, because that ring is counted in groups of
+ * eight), the receive ring of 512 entries as 9 (log2 of the count).  A
+ * receive transfer descriptor is 16 bytes (buffer id at byte 0, buffer
+ * address at byte 8); a receive completion descriptor is 32 bytes and the
+ * device writes the buffer id back at byte 4 and its flags at byte 6.
+ */
 #define INTEL_AX211_COMMAND_RING_SIZE 256U
 #define INTEL_AX211_RX_RING_SIZE 512U
 #define INTEL_AX211_COMMAND_RING_CB_SIZE 5U
 #define INTEL_AX211_RX_RING_CB_SIZE 9U
 #define INTEL_AX211_MAX_COMMAND_PAYLOAD 4088U
-#define INTEL_AX211_CONTEXT_INFO_GEN3_SIZE 104U
+#define INTEL_AX211_BOOT_CONTEXT_SIZE 104U
 #define INTEL_AX211_RX_TRANSFER_DESCRIPTOR_SIZE 16U
 #define INTEL_AX211_RX_COMPLETION_DESCRIPTOR_SIZE 32U
-#define INTEL_AX211_TFD_SIZE 256U
-#define INTEL_AX211_TFD_MAX_BUFFERS 25U
-#define INTEL_AX211_TFD_BUFFER_MAX_LENGTH 4092U
+
+/*
+ * The transfer descriptor (TFD) of the Gen3 transmit queues.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-fh.h (struct iwl_tfh_tfd and struct
+ * iwl_tfh_tb).  A descriptor is 256 bytes: a 16-bit buffer count, then up to
+ * 25 buffer entries of 10 bytes (a 16-bit length and a 64-bit address).  A
+ * buffer may not exceed 4092 bytes.  The command ring and every data ring use
+ * this one layout.
+ */
+#define INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE 256U
+#define INTEL_AX211_TRANSFER_DESCRIPTOR_BUFFERS 25U
+#define INTEL_AX211_TRANSFER_BUFFER_LENGTH_MAX 4092U
+
+/*
+ * The headers in front of a command and of a firmware event.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/cmdhdr.h (struct iwl_cmd_header and
+ * struct iwl_cmd_header_wide, struct iwl_rx_packet).  The narrow header is
+ * 4 bytes: opcode, flags, ring index, ring number.  The wide header adds a
+ * command family byte in place of the flags, a 16-bit payload length at byte
+ * 4, a reserved byte and the layout version at byte 7.  An event starts with
+ * a 32-bit word whose low 14 bits are the frame length and whose bits 21:16
+ * name the receive queue, followed by a narrow header; the payload therefore
+ * starts at byte 8.  The staging capacity is zedBSD's own bound for one
+ * copied event.
+ */
 #define INTEL_AX211_NARROW_COMMAND_HEADER_SIZE 4U
 #define INTEL_AX211_WIDE_COMMAND_HEADER_SIZE 8U
 #define INTEL_AX211_EVENT_HEADER_SIZE 8U
 #define INTEL_AX211_STAGING_CAPACITY 4096U
 
-#define INTEL_AX211_CPU1_CPU2_SEPARATOR 0xffffccccU
-#define INTEL_AX211_PAGING_SEPARATOR 0xaaaabbbbU
-#define INTEL_AX211_PNVM_SEPARATOR 0xddddeeeeU
+/*
+ * The destination words that mark section boundaries instead of naming a
+ * load address.
+ *
+ * Source: Linux iwlwifi v6.17 fw/file.h for the first two, and the PNVM
+ * reader in fw/pnvm.c for the third.  In the runtime section list of the
+ * firmware file, a section whose destination is 0xffffcccc separates the
+ * lower-MAC (LMAC) sections from the upper-MAC (UMAC) sections, and one whose
+ * destination is 0xaaaabbbb separates the UMAC sections from the paged
+ * sections.  Both marks carry a body of exactly one zero word, and the
+ * firmware loader in this file refuses an image that lacks either mark or
+ * repeats it.  In the PNVM file, a section with destination 0xddddeeee closes
+ * a board's data and is not copied.
+ */
+#define INTEL_AX211_UPPER_CPU_IMAGE_MARK 0xffffccccU
+#define INTEL_AX211_PAGED_IMAGE_MARK 0xaaaabbbbU
+#define INTEL_AX211_PNVM_IMAGE_MARK 0xddddeeeeU
 
 enum intel_ax211_result {
-	INTEL_AX211_OK = 0,
+	INTEL_AX211_SUCCESS = 0,
 	INTEL_AX211_INVALID = 1,
 	INTEL_AX211_TRUNCATED = 2,
 	INTEL_AX211_OVERFLOW = 3,
@@ -145,13 +238,13 @@ struct intel_ax211_firmware_manifest {
 	uint32_t api_major;
 	uint32_t api_minor;
 	uint32_t api_serial;
-	uint32_t phy_sku;
+	uint32_t radio_profile;
 	uint32_t cpu_count;
 	size_t iml_offset;
 	size_t iml_length;
 	size_t command_versions_offset;
 	size_t command_versions_length;
-	struct intel_ax211_section runtime[INTEL_AX211_MAX_FW_SECTIONS];
+	struct intel_ax211_section runtime[INTEL_AX211_FIRMWARE_SECTION_LIMIT];
 	size_t runtime_count;
 	size_t lmac_count;
 	size_t umac_count;
@@ -160,16 +253,27 @@ struct intel_ax211_firmware_manifest {
 	uint32_t capabilities[5];
 };
 
-struct intel_ax211_sku_id {
+/*
+ * The three words that name the board a firmware instance runs on.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/alive.h (the SKU words of the ALIVE
+ * notification) and fw/file.h (the PNVM SKU record, type 64).  The firmware
+ * reports these words in its ALIVE notification; the PNVM file opens each
+ * board's data with a 12-byte record carrying the same three words.  The
+ * driver copies the PNVM sections of the one board whose words are equal to
+ * the reported ones, so the signature is the key that ties a running
+ * firmware to its radio tuning data.
+ */
+struct intel_ax211_board_signature {
 	uint32_t data[3];
 };
 
 struct intel_ax211_pnvm_manifest {
-	struct intel_ax211_sku_id sku;
+	struct intel_ax211_board_signature sku;
 	uint32_t version;
 	uint16_t mac_type;
 	uint16_t rf_id;
-	struct intel_ax211_section section[INTEL_AX211_MAX_PNVM_SECTIONS];
+	struct intel_ax211_section section[INTEL_AX211_PNVM_SECTION_LIMIT];
 	size_t section_count;
 	size_t total_length;
 };
@@ -183,32 +287,80 @@ struct intel_ax211_pnvm_inventory {
 	size_t total_section_length;
 };
 
-struct intel_ax211_context_info_gen3 {
+/*
+ * The boot context: the one structure the device reads to find the host's
+ * rings when the firmware starts.
+ *
+ * Sources: Linux iwlwifi v6.17 pcie/iwl-context-info-v2.h, struct
+ * iwl_context_info_v2, and OpenBSD sys/dev/pci/if_iwxreg.h, struct
+ * iwx_context_info_gen3, at commit 0f464d413c50.  The field order and widths
+ * are the device's DMA layout; the names here are zedBSD's.
+ *
+ * drv_intel_ax211_boot_context_encode() writes these fields as 104
+ * little-endian bytes into a coherent DMA page, and the address of that page
+ * goes into the boot context register before the upper CPU is started.  The
+ * device reads the page when the firmware starts and then works from the
+ * rings it names.  drv_intel_ax211_dma_prepare_boot() writes a new page for
+ * every boot attempt instead of reusing an old one.  Byte offsets on the
+ * wire, in field order: version 0, (a 16-bit length in words, always 26,
+ * written by the encoder at 2), config 4, status page 8, the four index
+ * arrays 16, 24, 32 and 40, the two index slot counts 48 and 50, the two
+ * ring addresses 52 and 60, the two size codes 68 and 70, the doorbells 72
+ * and 74, the vectors 76 and 78, the four entry header and footer sizes 80
+ * to 83, the ring control flags 84, the status page vector 86, the scratch
+ * area address 88 and its size 96; bytes 100 to 103 are reserved and zero.
+ *
+ * How the fields are used on the AX211, as found by this driver:
+ * - version and config are zero; the API 89 firmware boots with them so.
+ * - status_page_address is a 4 KiB page the firmware owns for its own
+ *   bookkeeping.  The driver puts the two tail-index arrays inside it, at
+ *   2048 and 3072 bytes from its start (half and three quarters of the page,
+ *   the places Linux uses as well).
+ * - completion_head_array_address is a two-byte DMA word in which the device
+ *   publishes how far it has filled the receive completion ring.  The
+ *   transport reads it as a little-endian 16-bit index to learn which
+ *   completions are new.
+ * - transfer_head_array_address and the two index slot counts stay zero: this
+ *   driver uses no per-queue head array.
+ * - command_ring_address is the command TFD ring and response_ring_address
+ *   is the receive completion ring; command responses and notifications all
+ *   arrive through receive completions.
+ * - the size codes must be 5 for the 256-entry command ring and 9 for the
+ *   512-entry receive ring, and the encoder refuses any other value.
+ * - doorbells, vectors, entry header and footer sizes, ring control flags and
+ *   the status page vector are zero.  The API 89 firmware boots with them so,
+ *   and every interrupt then arrives on MSI-X vector 0, the only vector the
+ *   transport routes.
+ * - scratch_area_address and scratch_area_size name the 1660-byte scratch
+ *   area in which the driver tells the firmware where the PNVM sections, the
+ *   receive buffers and the firmware's own DRAM copies are.
+ */
+struct intel_ax211_boot_context {
 	uint16_t version;
 	uint32_t config;
-	uint64_t prph_info_base;
-	uint64_t cr_head_index_base;
-	uint64_t tr_tail_index_base;
-	uint64_t cr_tail_index_base;
-	uint64_t tr_head_index_base;
-	uint16_t cr_index_count;
-	uint16_t tr_index_count;
-	uint64_t command_transfer_ring_base;
-	uint64_t command_completion_ring_base;
-	uint16_t command_transfer_ring_size;
-	uint16_t command_completion_ring_size;
-	uint16_t command_transfer_doorbell;
-	uint16_t command_completion_doorbell;
-	uint16_t command_transfer_msi;
-	uint16_t command_completion_msi;
-	uint8_t transfer_header_dwords;
-	uint8_t transfer_footer_dwords;
-	uint8_t completion_header_dwords;
-	uint8_t completion_footer_dwords;
-	uint16_t message_ring_flags;
-	uint16_t prph_info_msi;
-	uint64_t prph_scratch_base;
-	uint32_t prph_scratch_size;
+	uint64_t status_page_address;
+	uint64_t completion_head_array_address;
+	uint64_t transfer_tail_array_address;
+	uint64_t completion_tail_array_address;
+	uint64_t transfer_head_array_address;
+	uint16_t completion_index_slots;
+	uint16_t transfer_index_slots;
+	uint64_t command_ring_address;
+	uint64_t response_ring_address;
+	uint16_t command_ring_size_code;
+	uint16_t response_ring_size_code;
+	uint16_t command_ring_doorbell;
+	uint16_t response_ring_doorbell;
+	uint16_t command_ring_vector;
+	uint16_t response_ring_vector;
+	uint8_t command_entry_header_words;
+	uint8_t command_entry_footer_words;
+	uint8_t response_entry_header_words;
+	uint8_t response_entry_footer_words;
+	uint16_t ring_control_flags;
+	uint16_t status_page_vector;
+	uint64_t scratch_area_address;
+	uint32_t scratch_area_size;
 };
 
 struct intel_ax211_command_id {
@@ -256,18 +408,18 @@ int drv_intel_ax211_mac_type_supported(uint16_t mac_type);
 int
 drv_intel_ax211_firmware_parse(const uint8_t *bytes, size_t length,
 			       struct intel_ax211_firmware_manifest *manifest);
-int drv_intel_ax211_sku_equal(const struct intel_ax211_sku_id *left,
-			      const struct intel_ax211_sku_id *right);
-int drv_intel_ax211_pnvm_parse(const uint8_t *bytes, size_t length,
-			       const struct intel_ax211_sku_id *sku,
+int drv_intel_ax211_sku_equal(const struct intel_ax211_board_signature *left,
+			      const struct intel_ax211_board_signature *right);
+int drv_intel_ax211_pnvm_select(const uint8_t *bytes, size_t length,
+			       const struct intel_ax211_board_signature *sku,
 			       uint16_t mac_type, uint16_t rf_id,
 			       struct intel_ax211_pnvm_manifest *manifest);
 int drv_intel_ax211_pnvm_inspect(const uint8_t *bytes, size_t length,
 				 struct intel_ax211_pnvm_inventory *inventory);
 
-int drv_intel_ax211_context_info_gen3_encode(
+int drv_intel_ax211_boot_context_encode(
 	uint8_t output[104],
-	const struct intel_ax211_context_info_gen3 *context);
+	const struct intel_ax211_boot_context *context);
 int drv_intel_ax211_rx_transfer_descriptor_encode(uint8_t output[16],
 						  uint16_t buffer_id,
 						  uint64_t address);

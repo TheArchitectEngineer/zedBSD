@@ -69,8 +69,8 @@ struct test_fixture {
 	uint8_t firmware[INTEL_AX211_PROTOCOL_API89_COMMAND_BYTES];
 	uint8_t pnvm[TEST_PNVM_CAPACITY];
 	size_t pnvm_length;
-	uint8_t context[INTEL_AX211_CONTEXT_INFO_GEN3_SIZE];
-	uint8_t iml[INTEL_AX211_MMIO_IML_SIZE];
+	uint8_t context[INTEL_AX211_BOOT_CONTEXT_SIZE];
+	uint8_t iml[INTEL_AX211_MMIO_LOADER_IMAGE_SIZE];
 	uint8_t rx_byte;
 	char trace[TEST_TRACE_CAPACITY];
 	size_t trace_length;
@@ -96,7 +96,7 @@ static size_t test_append_tlv(uint8_t *bytes, size_t capacity,
 static size_t test_append_u32(uint8_t *bytes, size_t capacity,
 	size_t offset, uint32_t type, uint32_t value);
 static size_t test_append_sku(uint8_t *bytes, size_t capacity,
-	size_t offset, const struct intel_ax211_sku_id *sku);
+	size_t offset, const struct intel_ax211_board_signature *sku);
 static size_t test_append_hw(uint8_t *bytes, size_t capacity,
 	size_t offset, uint16_t mac, uint16_t rf);
 static void test_trace(struct test_fixture *fixture, char value);
@@ -116,7 +116,7 @@ static size_t test_packet_make(uint8_t *bytes, size_t capacity,
 	uint8_t opcode, uint8_t group, uint8_t index, uint8_t queue,
 	const uint8_t *payload, size_t payload_length);
 static void test_alive_payload(uint8_t payload[INTEL_AX211_PROTOCOL_ALIVE_SIZE]);
-static void test_nvm_payload(uint8_t payload[INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE]);
+static void test_nvm_payload(uint8_t payload[INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE]);
 static int test_receive_epoch_begin(void *argument, uint32_t generation);
 static int test_transport_bind(void *argument,
 	struct intel_ax211_dma_resources *dma, struct intel_ax211_mmio *mmio,
@@ -125,7 +125,7 @@ static int test_receive_event(void *argument, uint64_t deadline_us,
 	uint8_t *bytes, size_t capacity,
 	struct intel_ax211_boot_received_event *event);
 static int test_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
-static int test_post_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
+static int test_after_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
 static int test_interrupt_drain(void *argument);
 static int test_bus_master_disable(void *argument);
 static int test_clock_us(void *argument, uint64_t *time_us);
@@ -288,7 +288,7 @@ drv_intel_ax211_dma_release(
 
 /* Records the first card-ready transition. */
 int
-drv_intel_ax211_mmio_prepare_card_hw(
+drv_intel_ax211_mmio_take_ownership(
 	struct intel_ax211_mmio *mmio)
 {
 	assert(mmio == &active_fixture->mmio);
@@ -327,7 +327,7 @@ drv_intel_ax211_mmio_publish_gen3(
 	assert(mmio == &active_fixture->mmio);
 	assert(boot->context_address == 0x100000U);
 	assert(boot->iml_address == 0x200000U);
-	assert(boot->iml_size == INTEL_AX211_MMIO_IML_SIZE);
+	assert(boot->iml_size == INTEL_AX211_MMIO_LOADER_IMAGE_SIZE);
 	test_trace(active_fixture, 'G');
 	if (active_fixture->fail_stage == TEST_FAIL_GEN3)
 		return INTEL_AX211_MMIO_IO;
@@ -369,7 +369,7 @@ drv_intel_ax211_transport_initialize_rings(
 		return INTEL_AX211_TRANSPORT_IO;
 	result = drv_intel_ax211_ring_init(&transport->command_ring,
 	    TEST_COMMAND_QUEUE, INTEL_AX211_COMMAND_RING_SIZE);
-	assert(result == INTEL_AX211_OK);
+	assert(result == INTEL_AX211_SUCCESS);
 	transport->rings_initialized = 1U;
 	transport->command_reset_completed = 1U;
 	return INTEL_AX211_TRANSPORT_OK;
@@ -431,13 +431,13 @@ drv_intel_ax211_transport_command_prepare_inline(
 	result = drv_intel_ax211_ring_reserve(&transport->command_ring, token);
 	if (result == INTEL_AX211_FULL)
 		return INTEL_AX211_TRANSPORT_FULL;
-	assert(result == INTEL_AX211_OK);
+	assert(result == INTEL_AX211_SUCCESS);
 	transport->command_prepared_token = *token;
 	transport->command_prepared = 1U;
-	if (command->group == INTEL_AX211_INIT_SYSTEM_GROUP)
+	if (command->group == INTEL_AX211_INIT_FAMILY_PLATFORM)
 		test_trace(active_fixture, 'c');
 	else if (command->opcode ==
-	    INTEL_AX211_PROTOCOL_NVM_ACCESS_COMPLETE_OPCODE)
+	    INTEL_AX211_PROTOCOL_NVM_HANDOFF_OPCODE)
 		test_trace(active_fixture, 'd');
 	else
 		test_trace(active_fixture, 'e');
@@ -497,7 +497,7 @@ drv_intel_ax211_transport_command_complete(
 	int result;
 
 	result = drv_intel_ax211_ring_complete(&transport->command_ring, token);
-	if (result != INTEL_AX211_OK)
+	if (result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_TRANSPORT_STALE;
 	return INTEL_AX211_TRANSPORT_OK;
 }
@@ -548,7 +548,7 @@ drv_intel_ax211_transport_command_after_device_reset(
 	test_trace(active_fixture, 'z');
 	result = drv_intel_ax211_ring_init(&transport->command_ring,
 	    TEST_COMMAND_QUEUE, INTEL_AX211_COMMAND_RING_SIZE);
-	assert(result == INTEL_AX211_OK);
+	assert(result == INTEL_AX211_SUCCESS);
 	transport->command_prepared = 0U;
 	transport->command_reset_required = 0U;
 	transport->command_reset_completed = 1U;
@@ -618,7 +618,7 @@ test_append_sku(
 	uint8_t *bytes,
 	size_t capacity,
 	size_t offset,
-	const struct intel_ax211_sku_id *sku)
+	const struct intel_ax211_board_signature *sku)
 {
 	uint8_t payload[12];
 
@@ -701,7 +701,7 @@ static void
 test_pnvm_build(
 	struct test_fixture *fixture)
 {
-	struct intel_ax211_sku_id sku;
+	struct intel_ax211_board_signature sku;
 	uint8_t section[7];
 	size_t offset;
 
@@ -721,7 +721,7 @@ test_pnvm_build(
 	offset = test_append_u32(fixture->pnvm, sizeof(fixture->pnvm),
 	    offset, 62U, 1U);
 	offset = test_append_hw(fixture->pnvm, sizeof(fixture->pnvm),
-	    offset, INTEL_AX211_MAC_TYPE_SO, INTEL_AX211_RF_TYPE);
+	    offset, INTEL_AX211_SILICON_SO, INTEL_AX211_RADIO_GF);
 	offset = test_append_tlv(fixture->pnvm, sizeof(fixture->pnvm),
 	    offset, 19U, section, sizeof(section));
 	fixture->pnvm_length = offset;
@@ -739,19 +739,19 @@ test_fixture_init(
 	test_pnvm_build(fixture);
 	fixture->clock = 100U;
 	fixture->dma_device = (struct drv_dma_device *)(void *)&fixture->rx_byte;
-	fixture->mmio.profile.mac_type = INTEL_AX211_MAC_TYPE_SO;
-	fixture->mmio.profile.rf_type = INTEL_AX211_RF_TYPE;
+	fixture->mmio.profile.mac_type = INTEL_AX211_SILICON_SO;
+	fixture->mmio.profile.rf_type = INTEL_AX211_RADIO_GF;
 	fixture->ops.receive_epoch_begin = test_receive_epoch_begin;
 	fixture->ops.transport_bind = test_transport_bind;
 	fixture->ops.receive_event = test_receive_event;
 	fixture->ops.publish_pnvm = test_publish_pnvm;
-	fixture->ops.post_alive = test_post_alive;
+	fixture->ops.after_alive = test_after_alive;
 	fixture->ops.interrupt_drain = test_interrupt_drain;
 	fixture->ops.bus_master_disable = test_bus_master_disable;
 	fixture->ops.clock_us = test_clock_us;
 	result = drv_intel_ax211_boot_init(&fixture->boot, &fixture->ops, fixture,
 	    fixture->dma_device, &fixture->mmio, &fixture->transport, 0x0370U,
-	    INTEL_AX211_RF_TYPE, 7U);
+	    INTEL_AX211_RADIO_GF, 7U);
 	assert(result == INTEL_AX211_BOOT_OK);
 }
 
@@ -821,9 +821,9 @@ test_event_make(
 {
 	uint8_t alive[INTEL_AX211_PROTOCOL_ALIVE_SIZE];
 	uint8_t generic_status[4];
-	uint8_t init[INTEL_AX211_PROTOCOL_INIT_COMPLETE_SIZE];
-	uint8_t nvm[INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE];
-	uint8_t pnvm[INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_SIZE];
+	uint8_t init[INTEL_AX211_PROTOCOL_INIT_FINISHED_SIZE];
+	uint8_t nvm[INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE];
+	uint8_t pnvm[INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_SIZE];
 	uint8_t command_index;
 	uint8_t group;
 	uint8_t opcode;
@@ -857,32 +857,32 @@ test_event_make(
 		payload = alive;
 		payload_length = sizeof(alive);
 	} else if (event->type == TEST_EVENT_PNVM) {
-		opcode = INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_OPCODE;
-		group = INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM;
-		*version = INTEL_AX211_PROTOCOL_PNVM_INIT_COMPLETE_VERSION;
+		opcode = INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_OPCODE;
+		group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
+		*version = INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_VERSION;
 		memset(pnvm, 0, sizeof(pnvm));
 		payload = pnvm;
 		payload_length = sizeof(pnvm);
 	} else if (event->type == TEST_EVENT_INIT) {
-		opcode = INTEL_AX211_PROTOCOL_INIT_COMPLETE_OPCODE;
+		opcode = INTEL_AX211_PROTOCOL_INIT_FINISHED_OPCODE;
 		*version = INTEL_AX211_PROTOCOL_UNKNOWN_VERSION;
 		memset(init, 0, sizeof(init));
 		payload = init;
 		payload_length = sizeof(init);
 	} else if (event->type == TEST_EVENT_ACK_EXTENDED) {
-		opcode = INTEL_AX211_INIT_EXTENDED_CFG_OPCODE;
-		group = INTEL_AX211_INIT_SYSTEM_GROUP;
+		opcode = INTEL_AX211_INIT_STAGE_SELECT_OPCODE;
+		group = INTEL_AX211_INIT_FAMILY_PLATFORM;
 		queue = TEST_COMMAND_QUEUE;
 		memset(generic_status, 0, sizeof(generic_status));
 		payload = generic_status;
 		payload_length = sizeof(generic_status);
 	} else if (event->type == TEST_EVENT_ACK_ACCESS) {
-		opcode = INTEL_AX211_PROTOCOL_NVM_ACCESS_COMPLETE_OPCODE;
-		group = INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM;
+		opcode = INTEL_AX211_PROTOCOL_NVM_HANDOFF_OPCODE;
+		group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
 		queue = TEST_COMMAND_QUEUE;
 	} else if (event->type == TEST_EVENT_ACK_NVM) {
-		opcode = INTEL_AX211_PROTOCOL_NVM_GET_INFO_OPCODE;
-		group = INTEL_AX211_PROTOCOL_GROUP_REGULATORY_NVM;
+		opcode = INTEL_AX211_PROTOCOL_NVM_QUERY_OPCODE;
+		group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
 		queue = TEST_COMMAND_QUEUE;
 		test_nvm_payload(nvm);
 		payload = nvm;
@@ -933,7 +933,7 @@ test_alive_payload(
 	uint8_t payload[INTEL_AX211_PROTOCOL_ALIVE_SIZE])
 {
 	memset(payload, 0, INTEL_AX211_PROTOCOL_ALIVE_SIZE);
-	test_put_le16(payload, INTEL_AX211_PROTOCOL_ALIVE_STATUS_OK);
+	test_put_le16(payload, INTEL_AX211_PROTOCOL_ALIVE_HEALTHY);
 	test_put_le32(payload + 116U, 1U);
 	test_put_le32(payload + 120U, 2U);
 	test_put_le32(payload + 124U, 3U);
@@ -941,9 +941,9 @@ test_alive_payload(
 
 static void
 test_nvm_payload(
-	uint8_t payload[INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE])
+	uint8_t payload[INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE])
 {
-	memset(payload, 0, INTEL_AX211_PROTOCOL_NVM_GET_INFO_SIZE);
+	memset(payload, 0, INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE);
 	test_put_le16(payload + 4U, 0x1234U);
 	payload[6] = 2U;
 	payload[7] = 1U;
@@ -953,8 +953,8 @@ test_nvm_payload(
 	test_put_le32(payload + 16U, 1U);
 	test_put_le32(payload + 20U, 1U);
 	test_put_le32(payload + 24U, 1U);
-	test_put_le32(payload + 28U, INTEL_AX211_PROTOCOL_NVM_CHANNEL_VALID |
-	    INTEL_AX211_PROTOCOL_NVM_CHANNEL_ACTIVE);
+	test_put_le32(payload + 28U, INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE |
+	    INTEL_AX211_PROTOCOL_CHANNEL_FLAG_MAY_TRANSMIT);
 }
 
 /* Drains pre-existing events and atomically installs one receive epoch. */
@@ -1064,14 +1064,14 @@ test_publish_pnvm(
 }
 
 static int
-test_post_alive(
+test_after_alive(
 	void *argument,
 	const struct intel_ax211_protocol_alive *alive)
 {
 	struct test_fixture *fixture;
 
 	fixture = argument;
-	assert(alive->status == INTEL_AX211_PROTOCOL_ALIVE_STATUS_OK);
+	assert(alive->status == INTEL_AX211_PROTOCOL_ALIVE_HEALTHY);
 	test_trace(fixture, 'O');
 	if (fixture->fail_stage == TEST_FAIL_POST_ALIVE)
 		return -1;
@@ -1151,7 +1151,7 @@ test_success(void)
 	assert(strchr(fixture.trace, 'A') == NULL);
 	assert(fixture.source_released);
 	assert(fixture.dma_released);
-	assert(nvm.nvm_version == 0x1234U);
+	assert(nvm.nvm_revision == 0x1234U);
 	assert(nvm.valid_24ghz_count == 1U);
 	assert(drv_intel_ax211_boot_command_table(&fixture.boot, &table) ==
 	    INTEL_AX211_BOOT_OK);
@@ -1406,7 +1406,7 @@ test_command_poison_reset(void)
 	assert(result == INTEL_AX211_COMMAND_OK);
 
 	/* One command that is never answered times out and poisons the transaction. */
-	result = drv_intel_ax211_command_submit_nvm_get_info(&transaction, 0U,
+	result = drv_intel_ax211_command_submit_nvm_query(&transaction, 0U,
 	    10U, &handle);
 	assert(result == INTEL_AX211_COMMAND_OK);
 	result = drv_intel_ax211_command_timeout_oldest(&transaction, 5U,
@@ -1418,7 +1418,7 @@ test_command_poison_reset(void)
 	assert(drv_intel_ax211_command_is_poisoned(&transaction));
 
 	/* Nothing more is sent while poisoned. */
-	result = drv_intel_ax211_command_submit_nvm_get_info(&transaction, 20U,
+	result = drv_intel_ax211_command_submit_nvm_query(&transaction, 20U,
 	    10U, &handle);
 	assert(result == INTEL_AX211_COMMAND_POISONED);
 
@@ -1440,7 +1440,7 @@ test_command_poison_reset(void)
 	assert(result == INTEL_AX211_COMMAND_OK);
 	assert(!drv_intel_ax211_command_is_poisoned(&transaction));
 	assert(drv_intel_ax211_command_pending_count(&transaction) == 0U);
-	result = drv_intel_ax211_command_submit_nvm_get_info(&transaction, 30U,
+	result = drv_intel_ax211_command_submit_nvm_query(&transaction, 30U,
 	    10U, &handle);
 	assert(result == INTEL_AX211_COMMAND_OK);
 	assert(handle.hardware_epoch == 8U);

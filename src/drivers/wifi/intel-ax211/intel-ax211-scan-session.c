@@ -1,65 +1,51 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private API89 scan-session coordinator
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 scan-session coordinator.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/scan.h.  They were cross-checked against OpenBSD
+ * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
+ * values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-scan-session.h"
 #include <kern/kcrt.h>
 
-
-#define AX211_SCAN_ABORT_RESPONSE_SIZE 4U
-#define AX211_SCAN_ABORT_STATUS_SUCCESS 0U
-#define AX211_SCAN_ABORT_STATUS_IN_PROGRESS 1U
-#define AX211_SCAN_ABORT_STATUS_NOT_FOUND 2U
+/*
+ * The answer to a scan cancel.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/scan.h (enum
+ * iwl_umac_scan_abort_status).  The answer is one 32-bit status word: 0
+ * means the scan was stopped, 1 that the stop is under way and a scan
+ * completion will follow, 2 that no scan was running.  The session treats
+ * status 2 as the end of the scan at once; after 0 or 1 it still waits for
+ * the completion notification, which then reports the cancelled outcome.
+ */
+#define AX211_SCAN_CANCEL_RESPONSE_SIZE 4U
+#define AX211_SCAN_CANCEL_DONE 0U
+#define AX211_SCAN_CANCEL_PENDING 1U
+#define AX211_SCAN_CANCEL_NO_SCAN 2U
 
 static int ax211_scan_session_scan_result(int result);
 static int ax211_scan_session_live(const struct intel_ax211_scan_session *session);
@@ -351,7 +337,7 @@ drv_intel_ax211_scan_session_abort(
 	uint64_t now_us)
 {
 	int error;
-	uint8_t payload[INTEL_AX211_SCAN_ABORT_SIZE];
+	uint8_t payload[INTEL_AX211_SCAN_CANCEL_SIZE];
 	int result;
 
 	/* Checks the ax211 scan session live result. */
@@ -383,7 +369,7 @@ drv_intel_ax211_scan_session_abort(
 
 	/* Checks the operation result. */
 	result = ax211_scan_session_submit(
-		session, INTEL_AX211_SCAN_ABORT_OPCODE, payload,
+		session, INTEL_AX211_SCAN_CANCEL_OPCODE, payload,
 		sizeof(payload), now_us,
 		INTEL_AX211_SCAN_SESSION_ABORT_TIMEOUT_US,
 		INTEL_AX211_SCAN_SESSION_WAIT_ABORT_ACK);
@@ -422,9 +408,9 @@ drv_intel_ax211_scan_session_abort_ack(
 		return result;
 
 	/* Handles the abort status condition. */
-	if (abort_status != AX211_SCAN_ABORT_STATUS_SUCCESS &&
-	    abort_status != AX211_SCAN_ABORT_STATUS_IN_PROGRESS &&
-	    abort_status != AX211_SCAN_ABORT_STATUS_NOT_FOUND) {
+	if (abort_status != AX211_SCAN_CANCEL_DONE &&
+	    abort_status != AX211_SCAN_CANCEL_PENDING &&
+	    abort_status != AX211_SCAN_CANCEL_NO_SCAN) {
 		/* Obtains the ax211 scan session terminal result. */
 		error = ax211_scan_session_terminal(
 			session, INTEL_AX211_SCAN_SESSION_COMMAND);
@@ -434,7 +420,7 @@ drv_intel_ax211_scan_session_abort_ack(
 	}
 
 	/* Handles the abort status condition. */
-	if (abort_status == AX211_SCAN_ABORT_STATUS_NOT_FOUND) {
+	if (abort_status == AX211_SCAN_CANCEL_NO_SCAN) {
 		session->scan.abort_required = 0U;
 		session->scan.phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 
@@ -580,7 +566,7 @@ ax211_scan_session_scan_result(
 	case INTEL_AX211_SCAN_OUT_OF_ORDER:
 		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_OUT_OF_ORDER;
-	case INTEL_AX211_SCAN_TIMEOUT:
+	case INTEL_AX211_SCAN_TIMED_OUT:
 		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_TIMEOUT;
 	case INTEL_AX211_SCAN_COMPLETE:
@@ -663,7 +649,7 @@ ax211_scan_session_submit(
 	if (now_us > UINT64_MAX - timeout_us)
 		return INTEL_AX211_SCAN_SESSION_INVALID;
 	kern_memset(&request, 0, sizeof(request));
-	request.command.group = INTEL_AX211_SCAN_GROUP_LONG;
+	request.command.group = INTEL_AX211_SCAN_FAMILY_CLASSIC_WIDE;
 	request.command.opcode = opcode;
 
 	/* API89 layouts are 17/1; the Gen3 wide-header wire version is zero. */
@@ -673,11 +659,11 @@ ax211_scan_session_submit(
 	request.response_version = 0U;
 
 	/* Handles the opcode condition. */
-	if (opcode == INTEL_AX211_SCAN_ABORT_OPCODE) {
+	if (opcode == INTEL_AX211_SCAN_CANCEL_OPCODE) {
 		request.minimum_response_length =
-			AX211_SCAN_ABORT_RESPONSE_SIZE;
+			AX211_SCAN_CANCEL_RESPONSE_SIZE;
 		request.maximum_response_length =
-			AX211_SCAN_ABORT_RESPONSE_SIZE;
+			AX211_SCAN_CANCEL_RESPONSE_SIZE;
 	} else {
 		request.minimum_response_length = 0U;
 		request.maximum_response_length = 0U;
@@ -746,7 +732,7 @@ ax211_scan_session_ack(
 {
 	int error;
 	struct intel_ax211_event event;
-	uint8_t response[AX211_SCAN_ABORT_RESPONSE_SIZE];
+	uint8_t response[AX211_SCAN_CANCEL_RESPONSE_SIZE];
 	void *response_bytes;
 	size_t response_capacity;
 	size_t response_length;
@@ -804,7 +790,7 @@ ax211_scan_session_ack(
 
 	/* Checks the drv intel ax211 event decode result. */
 	if (drv_intel_ax211_event_decode(event_bytes, event_length, &event) !=
-	    INTEL_AX211_OK) {
+	    INTEL_AX211_SUCCESS) {
 		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_SESSION_COMMAND;
 	}

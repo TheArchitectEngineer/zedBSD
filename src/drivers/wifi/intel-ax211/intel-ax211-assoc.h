@@ -1,57 +1,34 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private API89 association-session contract
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private API89 association-session contract.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * fw/api/mac-cfg.h, fw/api/phy-ctxt.h, fw/api/datapath.h,
+ * fw/api/time-event.h, fw/api/power.h and fw/api/mac.h.  They were
+ * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
+ * commit 0f464d413c50.  Each block of values below names the header it was
+ * taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD source provenance:
- *   sys/dev/pci/if_iwx.c, if_iwxreg.h at
- *   0f464d413c50396e4e6cd70948f15613d6a73081
- *
- * SPDX-License-Identifier: ISC AND BSD-3-Clause
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_ASSOC_H
@@ -62,6 +39,12 @@
 
 #include "intel-ax211-protocol.h"
 
+/*
+ * zedBSD's bounds of the association session: one second per command, at
+ * most 32 commands in one session, the largest payload (the 208-byte link
+ * setup), and a 20 MHz channel.  The four access categories of EDCA follow
+ * IEEE Std 802.11-2020 9.4.2.28.
+ */
 #define INTEL_AX211_ASSOC_COMMAND_TIMEOUT_US 1000000U
 #define INTEL_AX211_ASSOC_COMMAND_LIMIT 32U
 #define INTEL_AX211_ASSOC_PAYLOAD_MAX 208U
@@ -69,55 +52,123 @@
 #define INTEL_AX211_ASSOC_CHANNEL_WIDTH_MHZ 20U
 #define INTEL_AX211_ASSOC_EDCA_COUNT 4U
 
-#define INTEL_AX211_ASSOC_GROUP_LEGACY 0U
-#define INTEL_AX211_ASSOC_GROUP_LONG 1U
-#define INTEL_AX211_ASSOC_GROUP_MAC_CONFIG 3U
-#define INTEL_AX211_ASSOC_GROUP_DATA_PATH 5U
+/*
+ * The command families of the association commands.
+ *
+ * Source: Linux iwlwifi v6.17 fw/api/commands.h (enum
+ * iwl_mvm_command_groups): 0 the classic opcode space, 1 the same space
+ * through the wide header, 3 the MAC configuration family (interfaces,
+ * links, stations and time reservations), 5 the data path family (receive
+ * chains, transmit queues and keys).
+ */
+#define INTEL_AX211_ASSOC_FAMILY_CLASSIC 0U
+#define INTEL_AX211_ASSOC_FAMILY_CLASSIC_WIDE 1U
+#define INTEL_AX211_ASSOC_FAMILY_LINK_SETUP 3U
+#define INTEL_AX211_ASSOC_FAMILY_TRAFFIC 5U
 
-#define INTEL_AX211_ASSOC_PHY_CONTEXT_OPCODE 0x08U
-#define INTEL_AX211_ASSOC_MAC_CONFIG_OPCODE 0x08U
-#define INTEL_AX211_ASSOC_LINK_CONFIG_OPCODE 0x09U
-#define INTEL_AX211_ASSOC_STATION_CONFIG_OPCODE 0x0aU
-#define INTEL_AX211_ASSOC_STATION_REMOVE_OPCODE 0x0cU
-#define INTEL_AX211_ASSOC_RLC_CONFIG_OPCODE 0x08U
-#define INTEL_AX211_ASSOC_QUEUE_CONFIG_OPCODE 0x17U
-#define INTEL_AX211_ASSOC_SESSION_PROTECTION_OPCODE 0x05U
-#define INTEL_AX211_ASSOC_SESSION_NOTIFICATION_OPCODE 0xfbU
-#define INTEL_AX211_ASSOC_MCAST_FILTER_OPCODE 0xd0U
-#define INTEL_AX211_ASSOC_MAC_POWER_OPCODE 0xa9U
+/*
+ * The association commands: opcodes, layout versions and payload sizes.
+ *
+ * Sources: Linux iwlwifi v6.17 fw/api/commands.h, fw/api/mac-cfg.h,
+ * fw/api/phy-ctxt.h, fw/api/datapath.h, fw/api/time-event.h, fw/api/power.h
+ * and fw/api/mac.h for the numbers and layouts; the versions are those the
+ * pinned API 89 image lists, and the API 89 check refuses an image that
+ * lists any of them differently.  Each command is named by family and
+ * opcode; opcode 8 means three different commands in families 0, 3 and 5.
+ *
+ * - CHANNEL_CONTEXT (0/0x08, v4, 32 bytes) adds or removes the channel the
+ *   link runs on: action at byte 4, channel number as a 32-bit word at 8,
+ *   band at 12.  The LMAC number at byte 16 stays zero on this
+ *   single-band radio.  It is the one association command with the narrow
+ *   header.
+ * - INTERFACE_SETUP (3/0x08, v2, 52 bytes) adds, modifies or removes the
+ *   station interface: slot at 0, action at 4, interface kind at 8, own
+ *   address at 12, receive filter at 20, the no-ACK flag at 32, associated
+ *   flag at 36 and association id at 40.
+ * - LINK_SETUP (3/0x09, v2, 208 bytes) describes the link: action at 0,
+ *   link slot at 4, interface slot at 8, channel context at 12, own address
+ *   at 16, then for a modification the change mask at 24, the active flag at
+ *   28, ACK rates at 36 and 40, preamble at 44, slot time at 48, QoS at 56,
+ *   the four EDCA entries from 60 (8 bytes each), beacon interval at 136 and
+ *   DTIM interval at 140.
+ * - PEER_SETUP (3/0x0a, v1, 96 bytes) and PEER_REMOVE (3/0x0c, v1, 4 bytes)
+ *   add and remove the access point's station entry: slot at 0, link at 4,
+ *   its address at 8 and 16, kind at 24 and association id at 28.
+ * - RECEIVE_CHAINS (5/0x08, v2, 32 bytes) sets the receive chains: the chain
+ *   mask shifted left by one, with bits 10 and 12, at byte 4.  Unlike the
+ *   other wide commands, the API 89 firmware wants the layout version 2 in
+ *   the version byte of the wide header as well; every other command of
+ *   this file sends 0 there.
+ * - QUEUE_SETUP (5/0x17, v3, 36 bytes; answer v2, 8 bytes) adds or removes
+ *   the transmit queue of management traffic (TID 15): operation at 0,
+ *   station mask at 4, TID at 8, size code at 16, byte-count table address
+ *   at 20 and descriptor ring address at 28.  The answer names the queue
+ *   the firmware allocated.
+ * - TIME_RESERVATION (3/0x05, v2, 24 bytes) asks the firmware to stay on the
+ *   channel for the join: interface slot at 0, action at 4, the join
+ *   configuration (0) at 8 and the duration at 12, nine beacon intervals.
+ *   The firmware reports the end of the reservation with
+ *   TIME_RESERVATION_NOTICE (3/0xfb, 16 bytes: interface, status, start
+ *   flag, configuration); the image lists that notice as version 3 with the
+ *   unchanged version 2 layout.
+ * - MULTICAST_LIST (1/0xd0, v1, 12 bytes) is sent after association: byte 0
+ *   set (filter on own frames), byte 3 set (pass all multicast), BSSID at
+ *   byte 4.
+ * - POWER_SAVE (1/0xa9, v1, 40 bytes) carries the interface slot at 0, the
+ *   power flags at 4 (zero: power save off) and the keep-alive period in
+ *   seconds at 6.  The period is three DTIM intervals rounded up to whole
+ *   seconds, and at least 25 s.  The firmware may answer with no payload or
+ *   with one 32-bit status word that must be zero.
+ */
+#define INTEL_AX211_ASSOC_CHANNEL_CONTEXT_OPCODE 0x08U
+#define INTEL_AX211_ASSOC_INTERFACE_SETUP_OPCODE 0x08U
+#define INTEL_AX211_ASSOC_LINK_SETUP_OPCODE 0x09U
+#define INTEL_AX211_ASSOC_PEER_SETUP_OPCODE 0x0aU
+#define INTEL_AX211_ASSOC_PEER_REMOVE_OPCODE 0x0cU
+#define INTEL_AX211_ASSOC_RECEIVE_CHAINS_OPCODE 0x08U
+#define INTEL_AX211_ASSOC_QUEUE_SETUP_OPCODE 0x17U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_OPCODE 0x05U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE 0xfbU
+#define INTEL_AX211_ASSOC_MULTICAST_LIST_OPCODE 0xd0U
+#define INTEL_AX211_ASSOC_POWER_SAVE_OPCODE 0xa9U
 
-#define INTEL_AX211_ASSOC_PHY_CONTEXT_VERSION 4U
-#define INTEL_AX211_ASSOC_MAC_CONFIG_VERSION 2U
-#define INTEL_AX211_ASSOC_LINK_CONFIG_VERSION 2U
-#define INTEL_AX211_ASSOC_STATION_CONFIG_VERSION 1U
-#define INTEL_AX211_ASSOC_STATION_REMOVE_VERSION 1U
-#define INTEL_AX211_ASSOC_RLC_CONFIG_VERSION 2U
-#define INTEL_AX211_ASSOC_QUEUE_CONFIG_VERSION 3U
+#define INTEL_AX211_ASSOC_CHANNEL_CONTEXT_VERSION 4U
+#define INTEL_AX211_ASSOC_INTERFACE_SETUP_VERSION 2U
+#define INTEL_AX211_ASSOC_LINK_SETUP_VERSION 2U
+#define INTEL_AX211_ASSOC_PEER_SETUP_VERSION 1U
+#define INTEL_AX211_ASSOC_PEER_REMOVE_VERSION 1U
+#define INTEL_AX211_ASSOC_RECEIVE_CHAINS_VERSION 2U
+#define INTEL_AX211_ASSOC_QUEUE_SETUP_VERSION 3U
 #define INTEL_AX211_ASSOC_QUEUE_RESPONSE_VERSION 2U
-#define INTEL_AX211_ASSOC_SESSION_PROTECTION_VERSION 2U
-#define INTEL_AX211_ASSOC_SESSION_NOTIFICATION_LAYOUT_VERSION 2U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_VERSION 2U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_LAYOUT_VERSION 2U
 /* API89 advertises notification version 3 for the unchanged v2 layout. */
-#define INTEL_AX211_ASSOC_SESSION_NOTIFICATION_API89_VERSION 3U
-#define INTEL_AX211_ASSOC_MCAST_FILTER_VERSION 1U
-#define INTEL_AX211_ASSOC_MAC_POWER_VERSION 1U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_API89_VERSION 3U
+#define INTEL_AX211_ASSOC_MULTICAST_LIST_VERSION 1U
+#define INTEL_AX211_ASSOC_POWER_SAVE_VERSION 1U
 
-#define INTEL_AX211_ASSOC_PHY_CONTEXT_SIZE 32U
-#define INTEL_AX211_ASSOC_MAC_CONFIG_SIZE 52U
-#define INTEL_AX211_ASSOC_LINK_CONFIG_SIZE 208U
-#define INTEL_AX211_ASSOC_STATION_CONFIG_SIZE 96U
-#define INTEL_AX211_ASSOC_REMOVE_STATION_SIZE 4U
-#define INTEL_AX211_ASSOC_RLC_CONFIG_SIZE 32U
-#define INTEL_AX211_ASSOC_QUEUE_CONFIG_SIZE 36U
+#define INTEL_AX211_ASSOC_CHANNEL_CONTEXT_SIZE 32U
+#define INTEL_AX211_ASSOC_INTERFACE_SETUP_SIZE 52U
+#define INTEL_AX211_ASSOC_LINK_SETUP_SIZE 208U
+#define INTEL_AX211_ASSOC_PEER_SETUP_SIZE 96U
+#define INTEL_AX211_ASSOC_PEER_REMOVE_SIZE 4U
+#define INTEL_AX211_ASSOC_RECEIVE_CHAINS_SIZE 32U
+#define INTEL_AX211_ASSOC_QUEUE_SETUP_SIZE 36U
 #define INTEL_AX211_ASSOC_QUEUE_RESPONSE_SIZE 8U
-#define INTEL_AX211_ASSOC_SESSION_PROTECTION_SIZE 24U
-#define INTEL_AX211_ASSOC_SESSION_NOTIFICATION_SIZE 16U
-#define INTEL_AX211_ASSOC_MCAST_FILTER_SIZE 12U
-#define INTEL_AX211_ASSOC_MAC_POWER_SIZE 40U
-#define INTEL_AX211_ASSOC_MAC_POWER_RESPONSE_SIZE 4U
-#define INTEL_AX211_ASSOC_MAC_POWER_KEEP_ALIVE_MIN_SECONDS 25U
-#define INTEL_AX211_ASSOC_MAC_ID 0U
-#define INTEL_AX211_ASSOC_LINK_ID 0U
-#define INTEL_AX211_ASSOC_STATION_ID 0U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_SIZE 24U
+#define INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_SIZE 16U
+#define INTEL_AX211_ASSOC_MULTICAST_LIST_SIZE 12U
+#define INTEL_AX211_ASSOC_POWER_SAVE_SIZE 40U
+#define INTEL_AX211_ASSOC_POWER_SAVE_RESPONSE_SIZE 4U
+#define INTEL_AX211_ASSOC_POWER_SAVE_KEEP_ALIVE_MIN_SECONDS 25U
+
+/*
+ * The firmware slots of the one interface, link and access point that the
+ * driver uses; all three are slot 0.
+ */
+#define INTEL_AX211_ASSOC_INTERFACE_SLOT 0U
+#define INTEL_AX211_ASSOC_LINK_SLOT 0U
+#define INTEL_AX211_ASSOC_PEER_SLOT 0U
 
 enum intel_ax211_assoc_result {
 	INTEL_AX211_ASSOC_OK = 0,
@@ -156,7 +207,7 @@ enum intel_ax211_assoc_step {
 	INTEL_AX211_ASSOC_STEP_MAC_ADD = 1,
 	INTEL_AX211_ASSOC_STEP_LINK_ADD = 2,
 	INTEL_AX211_ASSOC_STEP_PHY_ADD = 3,
-	INTEL_AX211_ASSOC_STEP_RLC_CONFIG = 4,
+	INTEL_AX211_ASSOC_STEP_RECEIVE_CHAINS = 4,
 	INTEL_AX211_ASSOC_STEP_LINK_ASSIGN = 5,
 	INTEL_AX211_ASSOC_STEP_LINK_ACTIVATE = 6,
 	INTEL_AX211_ASSOC_STEP_STATION_ADD = 7,
@@ -216,7 +267,7 @@ struct intel_ax211_assoc_update {
 	uint8_t dtim_period;
 	uint8_t dtim_count;
 	uint32_t beacon_arrive_time;
-	uint64_t beacon_tsf;
+	uint64_t beacon_timestamp;
 };
 
 /*

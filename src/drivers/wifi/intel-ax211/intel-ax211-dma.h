@@ -1,53 +1,33 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private DMA ownership
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private DMA ownership.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * pcie/iwl-context-info-v2.h, iwl-fh.h and fw/file.h.  They were
+ * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
+ * commit 0f464d413c50.  Each block of values below names the header it was
+ * taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * SPDX-License-Identifier: ISC AND BSD-3-Clause
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_DMA_H
@@ -57,11 +37,35 @@
 
 #include "intel-ax211-internal.h"
 
-#define INTEL_AX211_PRPH_SCRATCH_SIZE 1660U
-#define INTEL_AX211_PRPH_INFO_SIZE 4096U
-#define INTEL_AX211_ICT_SIZE 4096U
+/*
+ * The sizes of the DMA areas prepared for one boot.
+ *
+ * Sources: Linux iwlwifi v6.17 pcie/iwl-context-info-v2.h (the scratch area,
+ * struct iwl_prph_scratch, and the status page), iwl-fh.h (rings and the
+ * 4 KiB receive buffers) and fw/file.h (the image loader record).
+ * - The scratch area is 1660 bytes; the firmware is told its size in words
+ *   at its byte 4 (415).
+ * - The status page is one 4 KiB page owned by the firmware; the transmit
+ *   and completion tail arrays live inside it (intel-ax211-internal.h).
+ * - The interrupt cause table (4 KiB, 4 KiB aligned) is allocated but never
+ *   given to the device: the table is the legacy interrupt path, and this
+ *   driver runs in MSI-X mode only.
+ * - The command ring, its byte-count table, its slots and the external
+ *   command buffer, and the two receive rings, have the sizes given in
+ *   intel-ax211-transport.c.  The device's completion index is one 16-bit
+ *   word, and each receive buffer is 4 KiB, which the scratch area's
+ *   control flags announce.
+ * - The PNVM address table holds the 64-bit address of each PNVM section
+ *   copied for the running board, at most 64 entries in 512 bytes.
+ * - The image loader is the 13944-byte loader record of the pinned image,
+ *   and no runtime section of that image exceeds 32 KiB, which the loader
+ *   checks before it copies one into DMA memory.
+ */
+#define INTEL_AX211_SCRATCH_AREA_SIZE 1660U
+#define INTEL_AX211_STATUS_PAGE_SIZE 4096U
+#define INTEL_AX211_INTERRUPT_TABLE_SIZE 4096U
 #define INTEL_AX211_COMMAND_TFD_RING_SIZE 65536U
-#define INTEL_AX211_COMMAND_BC_TABLE_SIZE 2048U
+#define INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE 2048U
 #define INTEL_AX211_COMMAND_SLOTS_SIZE 82944U
 #define INTEL_AX211_COMMAND_EXTERNAL_SIZE 4096U
 #define INTEL_AX211_RX_TRANSFER_RING_SIZE 8192U
@@ -69,9 +73,14 @@
 #define INTEL_AX211_RX_STATUS_SIZE 2U
 #define INTEL_AX211_RX_BUFFER_SIZE 4096U
 #define INTEL_AX211_PNVM_ADDRESS_TABLE_SIZE 512U
-#define INTEL_AX211_IML_SIZE 13944U
+#define INTEL_AX211_LOADER_IMAGE_SIZE 13944U
 #define INTEL_AX211_FIRMWARE_SECTION_SIZE_MAX 32768U
 
+/*
+ * The three groups of runtime sections, in the order the firmware file
+ * lists them between its two marks; each group has its own address list in
+ * the scratch area.
+ */
 enum intel_ax211_dma_image_class {
 	INTEL_AX211_DMA_IMAGE_LMAC = 1,
 	INTEL_AX211_DMA_IMAGE_UMAC = 2,
@@ -93,7 +102,7 @@ struct intel_ax211_dma_resources {
 	struct drv_dma_device *device;
 	struct drv_dma_buffer context;
 	struct drv_dma_buffer scratch;
-	struct drv_dma_buffer prph_info;
+	struct drv_dma_buffer status_page;
 	struct drv_dma_buffer ict;
 	struct drv_dma_buffer command_tfd;
 	struct drv_dma_buffer command_byte_count;
@@ -103,12 +112,12 @@ struct intel_ax211_dma_resources {
 	struct drv_dma_buffer rx_completion;
 	struct drv_dma_buffer rx_status;
 	struct drv_dma_buffer iml;
-	struct intel_ax211_dma_image firmware[INTEL_AX211_MAX_FW_SECTIONS];
+	struct intel_ax211_dma_image firmware[INTEL_AX211_FIRMWARE_SECTION_LIMIT];
 	size_t firmware_count;
 	struct drv_dma_buffer rx_buffer[INTEL_AX211_RX_RING_SIZE];
 	size_t rx_buffer_count;
 	struct drv_dma_buffer pnvm_table;
-	struct drv_dma_buffer pnvm[INTEL_AX211_MAX_PNVM_SECTIONS];
+	struct drv_dma_buffer pnvm[INTEL_AX211_PNVM_SECTION_LIMIT];
 	size_t pnvm_count;
 	size_t pnvm_total_length;
 	uint8_t boot_prepared;

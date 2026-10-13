@@ -1,9 +1,22 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 PCI BAR backend
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 PCI BAR backend.
+ *
+ * Sources of the values.  The four registers of the periphery window below
+ * are facts of the AX211 hardware, collected with Intel's own driver headers
+ * as the primary source: Linux iwlwifi at tag v6.17, under
+ * drivers/net/wireless/intel/iwlwifi/, in iwl-csr.h, cross-checked against
+ * OpenBSD sys/dev/pci/if_iwxreg.h at commit 0f464d413c50.  This file is not
+ * an adaptation of those headers: it gives the values names of its own and
+ * says how the driver uses them.
  */
 
 #include "intel-ax211-pci-mmio.h"
@@ -16,13 +29,29 @@
 #include "kern/atomic.h"
 #include "kern/clock.h"
 
+/* The smallest BAR0 mapping that covers every register the driver uses. */
 #define AX211_PCI_MMIO_MINIMUM_SIZE 0x4000U
-#define AX211_HBUS_PRPH_WRITE_ADDRESS 0x0444U
-#define AX211_HBUS_PRPH_READ_ADDRESS 0x0448U
-#define AX211_HBUS_PRPH_WRITE_DATA 0x044cU
-#define AX211_HBUS_PRPH_READ_DATA 0x0450U
-#define AX211_PRPH_ACCESS_DWORD 0x03000000U
+
+/*
+ * The indirect window into the periphery (PRPH) register space.
+ *
+ * Source: Linux iwlwifi v6.17 iwl-csr.h (the target periphery write address,
+ * read address, write data and read data registers).  Periphery registers
+ * are not mapped in BAR0.  A read writes the 24-bit periphery address, with
+ * the access size code 3 (a full 32-bit word) in bits 25:24, to READ_ADDRESS
+ * and then reads READ_DATA; a write writes the address the same way to
+ * WRITE_ADDRESS and then the value to WRITE_DATA.  The device must be held
+ * awake for the whole access, which the MMIO layer checks before it calls
+ * this backend.
+ */
+#define AX211_CSR_PRPH_WRITE_ADDRESS 0x0444U
+#define AX211_CSR_PRPH_READ_ADDRESS 0x0448U
+#define AX211_CSR_PRPH_WRITE_DATA 0x044cU
+#define AX211_CSR_PRPH_READ_DATA 0x0450U
+#define AX211_PRPH_ACCESS_FULL_WORD 0x03000000U
 #define AX211_PRPH_ADDRESS_MASK 0x00ffffffU
+
+/* zedBSD's bounds of the counter that times the busy waits. */
 #define AX211_MICROSECONDS_PER_SECOND 1000000ULL
 #define AX211_COUNTER_FREQUENCY_MIN_HZ 1000000ULL
 #define AX211_COUNTER_FREQUENCY_MAX_HZ 10000000000ULL
@@ -187,15 +216,15 @@ ax211_backend_prph_read32(
 		return EINVAL;
 
 	/* Checks the operation status. */
-	error = ax211_backend_csr_write32(backend, AX211_HBUS_PRPH_READ_ADDRESS,
-					  address | AX211_PRPH_ACCESS_DWORD);
+	error = ax211_backend_csr_write32(backend, AX211_CSR_PRPH_READ_ADDRESS,
+					  address | AX211_PRPH_ACCESS_FULL_WORD);
 	if (error != 0)
 		return error;
 	kern_io_barrier();
 
 	/* Obtains the ax211 backend csr read32 result. */
 	function_result = ax211_backend_csr_read32(
-		backend, AX211_HBUS_PRPH_READ_DATA, value);
+		backend, AX211_CSR_PRPH_READ_DATA, value);
 
 	/* Returns the computed result. */
 	return function_result;
@@ -218,15 +247,15 @@ ax211_backend_prph_write32(
 
 	/* Checks the operation status. */
 	error = ax211_backend_csr_write32(backend,
-					  AX211_HBUS_PRPH_WRITE_ADDRESS,
-					  address | AX211_PRPH_ACCESS_DWORD);
+					  AX211_CSR_PRPH_WRITE_ADDRESS,
+					  address | AX211_PRPH_ACCESS_FULL_WORD);
 	if (error != 0)
 		return error;
 	kern_io_write_barrier();
 
 	/* Obtains the ax211 backend csr write32 result. */
 	function_result = ax211_backend_csr_write32(
-		backend, AX211_HBUS_PRPH_WRITE_DATA, value);
+		backend, AX211_CSR_PRPH_WRITE_DATA, value);
 
 	/* Returns the computed result. */
 	return function_result;

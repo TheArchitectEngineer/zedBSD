@@ -1,53 +1,32 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private DMA ownership
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
  *
- * Portions derived from OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c.
- * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
- * Copyright (c) 2014 Fixup Software Ltd.
- * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private DMA ownership.
  *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
+ * Sources of the values.  The register offsets, bit positions, command
+ * numbers, firmware file record types and wire layouts in this file are facts
+ * of the AX211 hardware and of its firmware interface.  Intel publishes no
+ * register or host-command specification for this device, so the values were
+ * collected with Intel's own driver headers as the primary source: Linux
+ * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
+ * pcie/iwl-context-info-v2.h and iwl-fh.h.  They were cross-checked against
+ * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
+ * block of values below names the header it was taken from.
  *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- *
- * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name Intel Corporation nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * SPDX-License-Identifier: ISC AND BSD-3-Clause
+ * This file is not an adaptation of those headers.  It collects the interface
+ * values, gives them names of its own, and adds what the zedBSD driver
+ * established about each of them while it was brought up on AX211 hardware:
+ * where the value is used, what it means to the device or to the firmware,
+ * the order the device requires, and how the firmware behaved.  It is written
+ * as a reference that a developer of an AX211 driver for another operating
+ * system can use on its own.
  */
 
 #include "intel-ax211-dma.h"
@@ -55,6 +34,25 @@
 
 #include <uapi/errno.h>
 
+/*
+ * The layout of the scratch area, and the boot context's fixed fields.
+ *
+ * Source: Linux iwlwifi v6.17 pcie/iwl-context-info-v2.h (struct
+ * iwl_prph_scratch and enum iwl_prph_scratch_flags), cross-checked with
+ * OpenBSD if_iwxreg.h (struct iwx_prph_scratch).  ax211_scratch_build()
+ * writes, from byte 0: the silicon revision as read from the device, a zero
+ * layout version, the size of the area in 32-bit words and, at byte 8, the
+ * control flags.  The flags used are 0x000f0000: receive buffers of 4 KiB
+ * (bit 16), completions in the descriptor form (bit 17), and transfer
+ * descriptors of 256 bytes (bits 19:18 set to 3), the forms the transport
+ * implements.  Byte 16 holds the address of the PNVM address table and
+ * byte 24 the total length of the copied PNVM sections, both written only
+ * once the firmware has named its board.  Byte 48 holds the address of the
+ * receive transfer ring.  From byte 124 the area holds three lists of 64
+ * section addresses (64-bit, 512 bytes each): the UMAC sections, then the
+ * LMAC sections, then the paged sections.  The firmware copies its code
+ * from those addresses; a boot with an empty group is refused.
+ */
 #define AX211_SCRATCH_CONTROL_FLAGS 0x000f0000U
 #define AX211_SCRATCH_PNVM_BASE_OFFSET 16U
 #define AX211_SCRATCH_PNVM_SIZE_OFFSET 24U
@@ -63,8 +61,8 @@
 #define AX211_SCRATCH_UMAC_OFFSET AX211_SCRATCH_DRAM_OFFSET
 #define AX211_SCRATCH_LMAC_OFFSET (AX211_SCRATCH_UMAC_OFFSET + 512U)
 #define AX211_SCRATCH_PAGING_OFFSET (AX211_SCRATCH_LMAC_OFFSET + 512U)
-#define AX211_CONTEXT_VERSION 0U
-#define AX211_CONTEXT_CONFIG 0U
+#define AX211_BOOT_CONTEXT_VERSION 0U
+#define AX211_BOOT_CONTEXT_CONFIG 0U
 
 #ifdef INTEL_AX211_DMA_HOST_TEST
 #define AX211_DMA_SCRUB intel_ax211_dma_host_scrub
@@ -162,9 +160,9 @@ drv_intel_ax211_dma_prepare_pnvm(
 	/* Handles the pnvm bytes availability. */
 	if (pnvm_bytes == NULL || manifest == NULL || resources == NULL ||
 	    !resources->boot_prepared || !resources->boot_images_released ||
-	    resources->pnvm_prepared || pnvm_length != INTEL_AX211_PNVM_SIZE ||
+	    resources->pnvm_prepared || pnvm_length != INTEL_AX211_PNVM_FILE_SIZE ||
 	    manifest->section_count == 0U ||
-	    manifest->section_count > INTEL_AX211_MAX_PNVM_SECTIONS ||
+	    manifest->section_count > INTEL_AX211_PNVM_SECTION_LIMIT ||
 	    manifest->total_length == 0U || manifest->total_length > UINT32_MAX) {
 		/* Failed. */
 		return EINVAL;
@@ -321,7 +319,7 @@ drv_intel_ax211_dma_release(
 	ax211_buffer_release(resources, &resources->command_byte_count);
 	ax211_buffer_release(resources, &resources->command_tfd);
 	ax211_buffer_release(resources, &resources->ict);
-	ax211_buffer_release(resources, &resources->prph_info);
+	ax211_buffer_release(resources, &resources->status_page);
 	ax211_buffer_release(resources, &resources->scratch);
 	ax211_buffer_release(resources, &resources->context);
 	kern_memset(resources, 0, sizeof(*resources));
@@ -342,14 +340,14 @@ ax211_boot_manifest_validate(
 	/* Checks the ax211 range valid result. */
 	if (firmware_bytes == NULL || manifest == NULL ||
 	    firmware_length != INTEL_AX211_FIRMWARE_SIZE ||
-	    manifest->runtime_count > INTEL_AX211_MAX_FW_SECTIONS ||
+	    manifest->runtime_count > INTEL_AX211_FIRMWARE_SECTION_LIMIT ||
 	    manifest->lmac_count == 0U || manifest->lmac_count > 64U ||
 	    manifest->umac_count == 0U || manifest->umac_count > 64U ||
 	    manifest->paging_count == 0U || manifest->paging_count > 64U ||
 	    manifest->lmac_count + manifest->umac_count +
 			    manifest->paging_count + 2U !=
 		    manifest->runtime_count ||
-	    manifest->iml_length != INTEL_AX211_IML_SIZE ||
+	    manifest->iml_length != INTEL_AX211_LOADER_IMAGE_SIZE ||
 	    !ax211_range_valid(manifest->iml_offset, manifest->iml_length,
 			       firmware_length)) {
 		/* Failed. */
@@ -364,7 +362,7 @@ ax211_boot_manifest_validate(
 		if (index == cpu_separator) {
 			/* Handles the section condition. */
 			if (section->destination !=
-				    INTEL_AX211_CPU1_CPU2_SEPARATOR ||
+				    INTEL_AX211_UPPER_CPU_IMAGE_MARK ||
 			    section->length != 0U) {
 				/* Failed. */
 				return EINVAL;
@@ -372,15 +370,15 @@ ax211_boot_manifest_validate(
 		} else if (index == paging_separator) {
 			/* Handles the section condition. */
 			if (section->destination !=
-				    INTEL_AX211_PAGING_SEPARATOR ||
+				    INTEL_AX211_PAGED_IMAGE_MARK ||
 			    section->length != 0U) {
 				/* Failed. */
 				return EINVAL;
 			}
 		} else if (section->destination ==
-				   INTEL_AX211_CPU1_CPU2_SEPARATOR ||
+				   INTEL_AX211_UPPER_CPU_IMAGE_MARK ||
 			   section->destination ==
-				   INTEL_AX211_PAGING_SEPARATOR ||
+				   INTEL_AX211_PAGED_IMAGE_MARK ||
 			   section->length == 0U ||
 			   section->length >
 				   INTEL_AX211_FIRMWARE_SECTION_SIZE_MAX ||
@@ -416,24 +414,24 @@ ax211_fixed_buffers_allocate(
 
 	/* Checks the operation status. */
 	error = ax211_buffer_allocate(resources, &resources->context,
-				      INTEL_AX211_CONTEXT_INFO_GEN3_SIZE, 1U);
+				      INTEL_AX211_BOOT_CONTEXT_SIZE, 1U);
 	if (error == 0) {
 		error = ax211_buffer_allocate(resources, &resources->scratch,
-					      INTEL_AX211_PRPH_SCRATCH_SIZE,
+					      INTEL_AX211_SCRATCH_AREA_SIZE,
 					      1U);
 	}
 
 	/* Checks the operation status. */
 	if (error == 0) {
-		error = ax211_buffer_allocate(resources, &resources->prph_info,
-					      INTEL_AX211_PRPH_INFO_SIZE, 1U);
+		error = ax211_buffer_allocate(resources, &resources->status_page,
+					      INTEL_AX211_STATUS_PAGE_SIZE, 1U);
 	}
 
 	/* Checks the operation status. */
 	if (error == 0) {
 		error = ax211_buffer_allocate(resources, &resources->ict,
-					      INTEL_AX211_ICT_SIZE,
-					      INTEL_AX211_ICT_SIZE);
+					      INTEL_AX211_INTERRUPT_TABLE_SIZE,
+					      INTEL_AX211_INTERRUPT_TABLE_SIZE);
 	}
 
 	/* Checks the operation status. */
@@ -447,7 +445,7 @@ ax211_fixed_buffers_allocate(
 	if (error == 0) {
 		error = ax211_buffer_allocate(
 			resources, &resources->command_byte_count,
-			INTEL_AX211_COMMAND_BC_TABLE_SIZE, 128U);
+			INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE, 128U);
 	}
 
 	/* Checks the operation status. */
@@ -545,7 +543,7 @@ ax211_firmware_buffers_allocate(
 	/* Checks the ax211 range valid result. */
 	if (!ax211_range_valid(manifest->iml_offset, manifest->iml_length,
 			       length) ||
-	    manifest->iml_length != INTEL_AX211_IML_SIZE) {
+	    manifest->iml_length != INTEL_AX211_LOADER_IMAGE_SIZE) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -562,13 +560,13 @@ ax211_firmware_buffers_allocate(
 	     index++) {
 		/* Handles the section condition. */
 		section = &manifest->runtime[index];
-		if (section->destination == INTEL_AX211_CPU1_CPU2_SEPARATOR) {
+		if (section->destination == INTEL_AX211_UPPER_CPU_IMAGE_MARK) {
 			image_class = INTEL_AX211_DMA_IMAGE_UMAC;
 			continue;
 		}
 
 		/* Handles the section condition. */
-		if (section->destination == INTEL_AX211_PAGING_SEPARATOR) {
+		if (section->destination == INTEL_AX211_PAGED_IMAGE_MARK) {
 			image_class = INTEL_AX211_DMA_IMAGE_PAGING;
 			continue;
 		}
@@ -578,7 +576,7 @@ ax211_firmware_buffers_allocate(
 		    section->length > INTEL_AX211_FIRMWARE_SECTION_SIZE_MAX ||
 		    !ax211_range_valid(section->file_offset, section->length,
 				       length) ||
-		    resources->firmware_count >= INTEL_AX211_MAX_FW_SECTIONS) {
+		    resources->firmware_count >= INTEL_AX211_FIRMWARE_SECTION_LIMIT) {
 			error = EINVAL;
 			continue;
 		}
@@ -632,7 +630,7 @@ ax211_rx_buffers_allocate(
 			result = drv_intel_ax211_rx_transfer_descriptor_encode(
 				descriptor, (uint16_t)index,
 				resources->rx_buffer[index].device_address);
-			if (result != INTEL_AX211_OK)
+			if (result != INTEL_AX211_SUCCESS)
 				error = EINVAL;
 		}
 	}
@@ -665,7 +663,7 @@ ax211_scratch_build(
 	kern_memset(scratch, 0, resources->scratch.size);
 	ax211_put_le16(scratch, hardware_revision);
 	ax211_put_le16(scratch + 2U, 0U);
-	ax211_put_le16(scratch + 4U, INTEL_AX211_PRPH_SCRATCH_SIZE / 4U);
+	ax211_put_le16(scratch + 4U, INTEL_AX211_SCRATCH_AREA_SIZE / 4U);
 	ax211_put_le32(scratch + 8U, AX211_SCRATCH_CONTROL_FLAGS);
 	ax211_put_le64(scratch + AX211_SCRATCH_RBD_BASE_OFFSET,
 		       resources->rx_transfer.device_address);
@@ -737,32 +735,32 @@ static int
 ax211_context_build(
 	struct intel_ax211_dma_resources *resources)
 {
-	struct intel_ax211_context_info_gen3 context;
+	struct intel_ax211_boot_context context;
 	int result;
 
 	/* Describes every ring and scratch area to the firmware. */
 	kern_memset(&context, 0, sizeof(context));
-	context.version = AX211_CONTEXT_VERSION;
-	context.config = AX211_CONTEXT_CONFIG;
-	context.prph_info_base = resources->prph_info.device_address;
-	context.cr_head_index_base = resources->rx_status.device_address;
-	context.tr_tail_index_base =
-		resources->prph_info.device_address + 2048U;
-	context.cr_tail_index_base =
-		resources->prph_info.device_address + 3072U;
-	context.command_transfer_ring_base =
+	context.version = AX211_BOOT_CONTEXT_VERSION;
+	context.config = AX211_BOOT_CONTEXT_CONFIG;
+	context.status_page_address = resources->status_page.device_address;
+	context.completion_head_array_address = resources->rx_status.device_address;
+	context.transfer_tail_array_address =
+		resources->status_page.device_address + 2048U;
+	context.completion_tail_array_address =
+		resources->status_page.device_address + 3072U;
+	context.command_ring_address =
 		resources->command_tfd.device_address;
-	context.command_completion_ring_base =
+	context.response_ring_address =
 		resources->rx_completion.device_address;
-	context.command_transfer_ring_size = INTEL_AX211_COMMAND_RING_CB_SIZE;
-	context.command_completion_ring_size = INTEL_AX211_RX_RING_CB_SIZE;
-	context.prph_scratch_base = resources->scratch.device_address;
-	context.prph_scratch_size = INTEL_AX211_PRPH_SCRATCH_SIZE;
-	result = drv_intel_ax211_context_info_gen3_encode(
+	context.command_ring_size_code = INTEL_AX211_COMMAND_RING_CB_SIZE;
+	context.response_ring_size_code = INTEL_AX211_RX_RING_CB_SIZE;
+	context.scratch_area_address = resources->scratch.device_address;
+	context.scratch_area_size = INTEL_AX211_SCRATCH_AREA_SIZE;
+	result = drv_intel_ax211_boot_context_encode(
 		resources->context.address, &context);
 
 	/* Returns the computed result. */
-	return result == INTEL_AX211_OK ? 0 : EINVAL;
+	return result == INTEL_AX211_SUCCESS ? 0 : EINVAL;
 }
 
 /* Supports the ax211 buffer release operation. */

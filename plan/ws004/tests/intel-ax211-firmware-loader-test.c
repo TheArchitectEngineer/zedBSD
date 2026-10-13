@@ -95,7 +95,7 @@ fixture_size(enum fixture_file_kind kind)
 	if (kind == FIXTURE_FILE_UCODE)
 		return INTEL_AX211_FIRMWARE_SIZE;
 	if (kind == FIXTURE_FILE_PNVM)
-		return INTEL_AX211_PNVM_SIZE;
+		return INTEL_AX211_PNVM_FILE_SIZE;
 	return 0U;
 }
 
@@ -149,7 +149,7 @@ kern_malloc(size_t size)
 {
 	unsigned index;
 
-	if (size != INTEL_AX211_FIRMWARE_SIZE && size != INTEL_AX211_PNVM_SIZE)
+	if (size != INTEL_AX211_FIRMWARE_SIZE && size != INTEL_AX211_PNVM_FILE_SIZE)
 		return NULL;
 	if (fixture_fault == FIXTURE_FAULT_ALLOCATE &&
 	    fixture_size(fault_file) == size)
@@ -377,7 +377,7 @@ main(void)
 	TEST_CHECK(fixture_embedded_size(FIXTURE_FILE_UCODE) ==
 	    INTEL_AX211_FIRMWARE_SIZE);
 	TEST_CHECK(fixture_embedded_size(FIXTURE_FILE_PNVM) ==
-	    INTEL_AX211_PNVM_SIZE);
+	    INTEL_AX211_PNVM_FILE_SIZE);
 	TEST_CHECK(strcmp(INTEL_AX211_FIRMWARE_VFS_PATH,
 	    "/lib/firmware/intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode") == 0);
 	TEST_CHECK(strcmp(INTEL_AX211_PNVM_VFS_PATH,
@@ -389,7 +389,7 @@ main(void)
 	memset(&files, 0, sizeof(files));
 	TEST_CHECK(drv_intel_ax211_firmware_files_load(&files) == 0);
 	TEST_CHECK(files.ucode_size == INTEL_AX211_FIRMWARE_SIZE);
-	TEST_CHECK(files.pnvm_size == INTEL_AX211_PNVM_SIZE);
+	TEST_CHECK(files.pnvm_size == INTEL_AX211_PNVM_FILE_SIZE);
 	TEST_CHECK(files.ucode_manifest.api_major == INTEL_AX211_FIRMWARE_API);
 	TEST_CHECK(files.ucode_manifest.api_minor == INTEL_AX211_FIRMWARE_MINOR);
 	TEST_CHECK(files.pnvm_inventory.sku_count != 0U);
