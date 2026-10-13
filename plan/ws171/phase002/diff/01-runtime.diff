@@ -1,0 +1,140 @@
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -42,37 +42,74 @@
+  * - Must be used only in HAL and early init phase of the kernel.
+  */
+ 
++/*
++ * HAL_ASSERT(e) stops the machine through hal_assert() with the file, the
++ * line and the text of e when e is false, and does nothing when it is
++ * true.  e is evaluated once.  HAL_FATAL(msg) stops it through
++ * hal_fatal() with the file, the line and msg.  Neither returns when it
++ * stops.
++ */
+ #define HAL_ASSERT(e)	((e) ? (void)0 : hal_assert(__FILE__, __LINE__, #e))
+ #define HAL_FATAL(msg)	hal_fatal(__FILE__, __LINE__, msg)
+ 
++/*
++ * Return the number of bytes before the terminating NUL of s.
++ *
++ * s must not be NULL.  It may be called in any context.
++ */
+ int
+ hal_strlen(
+ 	const char *s);
+ 
++/*
++ * Fill n bytes from s with the byte value of c (converted to unsigned
++ * char), and return s.
++ *
++ * It may be called in any context; it takes no lock.
++ */
+ void *
+ hal_memset(
+ 	void *s,
+ 	int c,
+ 	size_t n);
+ 
++/*
++ * Fill n 16-bit elements (not bytes) from s with c, and return s.
++ *
++ * s must be aligned to 2 bytes.  It may be called in any context.
++ */
+ void *
+ hal_memset16(
+ 	uint16_t *s,
+ 	uint16_t c,
+ 	size_t n);
+ 
++/*
++ * Fill n 32-bit elements (not bytes) from s with c, and return s.
++ *
++ * s must be aligned to 4 bytes.  It may be called in any context.
++ */
+ void *
+ hal_memset32(
+ 	uint32_t *s,
+ 	uint32_t c,
+ 	size_t n);
+ 
++/*
++ * Copy n bytes from src to dest, and return dest.
++ *
++ * The two ranges must not overlap (no direction is promised).  It may be
++ * called in any context.
++ */
+ void *
+ hal_memcpy(
+ 	void *dest,
+ 	const void *src,
+ 	size_t n);
+ 
++/*
++ * Put one character on the console as hal_putc() does, and return c.
++ */
+ int
+ hal_putchar(
+ 	int c);
+@@ -83,26 +120,62 @@
+  * Before the kernel console exists this writes to the HAL's own early
+  * console. Once the kernel publishes kernel_putc, every character is
+  * delegated there instead and the HAL stops touching the display.
++ *
++ * It may be called in any context, an IRQ handler and a CPU stopping on
++ * a fatal error included, and from any CPU; the HAL's own console is
++ * serialized between CPUs.  A newline ('\n') starts a new line.
+  */
+ void
+ hal_putc(
+ 	int c);
+ 
++/*
++ * Put a string on the console as hal_putc() does, without adding a
++ * newline (unlike puts in C), and return 0.
++ *
++ * A NULL s puts nothing.
++ */
+ int
+ hal_puts(
+ 	const char *s);
+ 
++/*
++ * Format a message as printf in C does and put it on the console, and
++ * return 0.
++ *
++ * Only these conversions are understood: %c, %s (NULL prints "(null)"),
++ * %u and %x of an unsigned, with an optional field width and leading 0,
++ * and the l and ll length modifiers for 64-bit values, and %%.  Any
++ * other conversion is not portable between architectures.  It may be
++ * called in any context, as hal_putc() may; whether the lines of two
++ * CPUs can interleave depends on the architecture.
++ */
+ int
+ hal_printf(
+ 	const char *format,
+ 	...);
+ 
++/*
++ * Report a failed HAL_ASSERT() and stop.
++ *
++ * It prints "assert: file:line: exp" on the console and never returns:
++ * the calling CPU halts with interrupts disabled.  It is called through
++ * HAL_ASSERT(), not directly.
++ */
+ void
+ hal_assert(
+ 	const char *file,
+ 	int line,
+ 	const char *exp);
+ 
++/*
++ * Report a fatal error and stop.
++ *
++ * It prints "fatal: file:line: s" on the console and never returns: the
++ * calling CPU halts with interrupts disabled.  It may be called in any
++ * context, an IRQ handler included.  It is called through HAL_FATAL(),
++ * not directly.
++ */
+ void
+ hal_fatal(
+ 	const char *file,

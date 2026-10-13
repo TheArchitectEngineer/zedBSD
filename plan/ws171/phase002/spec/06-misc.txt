@@ -1,0 +1,46 @@
+@@ hal_rtc_read_epoch_time
+/*
+ * Read wall-clock time as whole seconds since the Unix epoch.
+ *
+ * It reads the machine's battery-backed clock, taken as UTC, and is
+ * slow (milliseconds): the kernel reads it at boot and after a sleep and
+ * keeps its own time from hal_rtc_read_counter().  Call it from thread
+ * context.  Returns true with the time, or false when the machine has no
+ * such clock or its value is not valid (*unix_seconds is then unchanged).
+ */
+@@ hal_get_arch_handoff
+/*
+ * Return an architecture-specific boot handoff object by name.  The
+ * returned object remains owned by HAL.  Unknown or unavailable
+ * handoffs return NULL.
+ *
+ * The names and the types of their objects are the architecture's:
+ * "boot.command-line" (a NUL-terminated string) on every port that boots
+ * with one, and machine-specific ones such as "pcat.framebuffer" or
+ * "acpi.rsdp".  The objects live for the boot and do not change after
+ * kernel_main() is called.
+ */
+@@ hal_entropy_fill
+/*
+ * Fill a buffer from a platform cryptographic entropy source. Ports which
+ * have no such source return false. Buffer contents are unspecified when the
+ * function returns false.
+ *
+ * It may also return false when the source fails to deliver after a few
+ * tries.  It may be called in any context.
+ */
+@@ ^struct hal_memstat \{
+/*
+ * A snapshot of the HAL's memory accounting, for the kernel's statistics:
+ * the physical pages (total, reserved, allocated, free), the tasks and
+ * their kernel stacks, the spaces and their page tables, what the boot
+ * firmware reported, and the allocator's own costs.  A port fills what
+ * it keeps and leaves the rest 0.
+ */
+@@ hal_get_memstat
+/*
+ * Get the memory usage statistics.
+ *
+ * The fields are read together under the allocator's lock.  A NULL stat
+ * is ignored.  It may be called in any context.
+ */

@@ -1,6 +1,334 @@
 --- a/include/hal/hal.h
 +++ b/include/hal/hal.h
-@@ -307,40 +307,98 @@
+@@ -42,37 +42,74 @@
+  * - Must be used only in HAL and early init phase of the kernel.
+  */
+ 
++/*
++ * HAL_ASSERT(e) stops the machine through hal_assert() with the file, the
++ * line and the text of e when e is false, and does nothing when it is
++ * true.  e is evaluated once.  HAL_FATAL(msg) stops it through
++ * hal_fatal() with the file, the line and msg.  Neither returns when it
++ * stops.
++ */
+ #define HAL_ASSERT(e)	((e) ? (void)0 : hal_assert(__FILE__, __LINE__, #e))
+ #define HAL_FATAL(msg)	hal_fatal(__FILE__, __LINE__, msg)
+ 
++/*
++ * Return the number of bytes before the terminating NUL of s.
++ *
++ * s must not be NULL.  It may be called in any context.
++ */
+ int
+ hal_strlen(
+ 	const char *s);
+ 
++/*
++ * Fill n bytes from s with the byte value of c (converted to unsigned
++ * char), and return s.
++ *
++ * It may be called in any context; it takes no lock.
++ */
+ void *
+ hal_memset(
+ 	void *s,
+ 	int c,
+ 	size_t n);
+ 
++/*
++ * Fill n 16-bit elements (not bytes) from s with c, and return s.
++ *
++ * s must be aligned to 2 bytes.  It may be called in any context.
++ */
+ void *
+ hal_memset16(
+ 	uint16_t *s,
+ 	uint16_t c,
+ 	size_t n);
+ 
++/*
++ * Fill n 32-bit elements (not bytes) from s with c, and return s.
++ *
++ * s must be aligned to 4 bytes.  It may be called in any context.
++ */
+ void *
+ hal_memset32(
+ 	uint32_t *s,
+ 	uint32_t c,
+ 	size_t n);
+ 
++/*
++ * Copy n bytes from src to dest, and return dest.
++ *
++ * The two ranges must not overlap (no direction is promised).  It may be
++ * called in any context.
++ */
+ void *
+ hal_memcpy(
+ 	void *dest,
+ 	const void *src,
+ 	size_t n);
+ 
++/*
++ * Put one character on the console as hal_putc() does, and return c.
++ */
+ int
+ hal_putchar(
+ 	int c);
+@@ -83,26 +120,62 @@
+  * Before the kernel console exists this writes to the HAL's own early
+  * console. Once the kernel publishes kernel_putc, every character is
+  * delegated there instead and the HAL stops touching the display.
++ *
++ * It may be called in any context, an IRQ handler and a CPU stopping on
++ * a fatal error included, and from any CPU; the HAL's own console is
++ * serialized between CPUs.  A newline ('\n') starts a new line.
+  */
+ void
+ hal_putc(
+ 	int c);
+ 
++/*
++ * Put a string on the console as hal_putc() does, without adding a
++ * newline (unlike puts in C), and return 0.
++ *
++ * A NULL s puts nothing.
++ */
+ int
+ hal_puts(
+ 	const char *s);
+ 
++/*
++ * Format a message as printf in C does and put it on the console, and
++ * return 0.
++ *
++ * Only these conversions are understood: %c, %s (NULL prints "(null)"),
++ * %u and %x of an unsigned, with an optional field width and leading 0,
++ * and the l and ll length modifiers for 64-bit values, and %%.  Any
++ * other conversion is not portable between architectures.  It may be
++ * called in any context, as hal_putc() may; whether the lines of two
++ * CPUs can interleave depends on the architecture.
++ */
+ int
+ hal_printf(
+ 	const char *format,
+ 	...);
+ 
++/*
++ * Report a failed HAL_ASSERT() and stop.
++ *
++ * It prints "assert: file:line: exp" on the console and never returns:
++ * the calling CPU halts with interrupts disabled.  It is called through
++ * HAL_ASSERT(), not directly.
++ */
+ void
+ hal_assert(
+ 	const char *file,
+ 	int line,
+ 	const char *exp);
+ 
++/*
++ * Report a fatal error and stop.
++ *
++ * It prints "fatal: file:line: s" on the console and never returns: the
++ * calling CPU halts with interrupts disabled.  It may be called in any
++ * context, an IRQ handler included.  It is called through HAL_FATAL(),
++ * not directly.
++ */
+ void
+ hal_fatal(
+ 	const char *file,
+@@ -113,39 +186,72 @@
+ /*
+  * SMP
+  *
+- * Secondary processors are initialized inside HAL, and waiting fo
+- * IPI at the moment kernel_main() called.
++ * Only the boot CPU runs when kernel_main() is called.  The kernel starts
++ * the others with hal_cpu_start_others() once it can schedule them; each
++ * enters the kernel through kernel_secondary_entry().  CPUs are named by
++ * dense logical IDs, 0 (the boot CPU) to hal_cpu_count() - 1, which never
++ * change.
++ *
++ * HAL_CPU_MAX is the most CPUs any HAL supports; a CPU mask holds one bit
++ * for each of them.
+  */
+ 
+ #define HAL_CPU_MAX	512U
+ #define HAL_CPU_MASK_WORDS	((HAL_CPU_MAX + 63U) / 64U)
+ 
++/*
++ * A logical CPU ID: 0 to hal_cpu_count() - 1.
++ */
+ typedef uint32_t hal_cpu_id_t;
+ 
++/*
++ * A set of CPUs, one bit per logical ID (bit id % 64 of word id / 64).
++ * It is a plain value: the hal_cpu_mask_*() helpers below change it
++ * without any lock, and the caller serializes a mask it shares.
++ */
+ struct hal_cpu_mask {
+ 	uint64_t bits[HAL_CPU_MASK_WORDS];
+ };
+ 
+ /*
+- * XXX: Add explanation.
++ * Start every secondary CPU the HAL found.
++ *
++ * The boot CPU calls it once, after the kernel is ready for
++ * kernel_secondary_entry() to run on each of the others.  Each secondary
++ * CPU initializes itself, wraps its context as its initial task
++ * (hal_task_create_for_init_context()), starts its tick, joins
++ * hal_cpu_ready_mask(), and enters kernel_secondary_entry(), which never
++ * returns.  The call returns once each of them has started; it does not
++ * wait for them to reach the kernel.  On a uniprocessor HAL it does
++ * nothing.
++ *
++ * Returns HAL_OK, or the error of the first CPU that could not be
++ * started; the CPUs started before it keep running.
+  */
+ int
+ hal_cpu_start_others(void);
+ 
+ /*
+- * Get the numbers of the CPUs.
++ * Return the number of CPUs the HAL found, which is fixed before
++ * kernel_main() is called.  CPUs that failed to start are counted.
+  */
+ unsigned
+ hal_cpu_count(void);
+ 
+ /*
+- * Get the ID of the current CPU of the caller context.
++ * Return the logical ID of the CPU the caller runs on.
++ *
++ * The answer is only stable while the caller cannot be moved to another
++ * CPU (interrupts disabled, or the kernel's preemption held off).
+  */
+ hal_cpu_id_t
+ hal_cpu_current(void);
+ 
+ /*
+- * XXX: Add explanation.
++ * Copy the set of CPUs that have started and can take notifications
++ * (the boot CPU, and each secondary CPU from the moment it joins, before
++ * kernel_secondary_entry()).  A NULL result is ignored.  It may be called
++ * in any context.
+  */
+ void
+ hal_cpu_ready_mask(
+@@ -173,25 +279,47 @@
+ /*
+  * Notify every CPU of a mask, as hal_cpu_notify() does one.  Every CPU
+  * is checked before any is notified: on an error none was.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a NULL mask or one that names a CPU
++ * that does not exist, HAL_ERR_STATE for one that names a CPU not online,
++ * or HAL_ERR_UNSUPPORTED on a machine without a way to interrupt another
++ * CPU.
+  */
+ int
+ hal_cpu_notify_mask(
+ 	const struct hal_cpu_mask *targets);
+ 
+ /*
+- * XXX: Add explanation.
++ * Stop the calling CPU for good.
++ *
++ * Interrupts are disabled and the CPU halts; it takes no interrupt, no
++ * notification and no tick again.  The HAL calls it on the CPUs that
++ * hal_cpu_panic_all() stops.  It may be called in any context.
+  */
+ _Noreturn void
+ hal_cpu_park(void);
+ 
+ /*
+- * XXX: Add explanation.
++ * Stop every CPU after a fatal error, the calling one last; it never
++ * returns.
++ *
++ * The other online CPUs are made to call hal_cpu_park() by an interrupt
++ * they take even with interrupts disabled where the machine has one (on
++ * other machines a CPU running with interrupts disabled stops when it
++ * enables them).  Before hal_cpu_start_others() has returned, the other
++ * CPUs may not be stopped.  It may be called in any context.
+  */
+ _Noreturn void
+ hal_cpu_panic_all(void);
+ 
+ /*
+  * Atomically enable interrupts and halt, then return with IRQs disabled.
++ *
++ * Call it with interrupts disabled, from the CPU's idle loop.  No
++ * interrupt can arrive between the check that made the caller idle and
++ * the halt.  It returns after one interrupt (an IRQ, the tick or a
++ * notification) has been dispatched, or at once on a machine that cannot
++ * halt.
+  */
+ void
+ hal_cpu_idle(void);
+@@ -236,12 +364,18 @@
+  * XXX: Is this same to hal_cpu_idle()??
+  *
+  * Halt until a next interrupt.
++ *
++ * Unlike hal_cpu_idle() it does not change the interrupt state: with
++ * interrupts disabled the CPU stays halted until a non-maskable event,
++ * which is how the stop loops use it (for (;;) hal_halt()).  With
++ * interrupts enabled an interrupt that arrives just before the halt is
++ * dispatched first and the CPU then halts until the next one.
+  */
+ void
+ hal_halt(void);
+ 
+ /*
+- * Utility to clear all CPU mask bits.
++ * Clear every bit of a CPU mask.
+  */
+ static inline void
+ hal_cpu_mask_zero(
+@@ -254,7 +388,9 @@
+ }
+ 
+ /*
+- * Utility to set all CPU mask bits.
++ * Set every bit of a CPU mask, including the bits of CPUs that do not
++ * exist; a caller that sends to such a mask first masks it with
++ * hal_cpu_ready_mask().
+  */
+ static inline void
+ hal_cpu_mask_fill(
+@@ -267,7 +403,8 @@
+ }
+ 
+ /*
+- * Utility to set a CPU mask bit.
++ * Set the bit of a CPU in a mask.  A CPU ID of HAL_CPU_MAX or more is
++ * ignored.
+  */
+ static inline void
+ hal_cpu_mask_set(
+@@ -279,7 +416,8 @@
+ }
+ 
+ /*
+- * Utility to clear a CPU mask bit.
++ * Clear the bit of a CPU in a mask.  A CPU ID of HAL_CPU_MAX or more is
++ * ignored.
+  */
+ static inline void
+ hal_cpu_mask_clear(
+@@ -291,7 +429,8 @@
+ }
+ 
+ /*
+- * Utility to check a CPU mask bit.
++ * Return 1 when the bit of a CPU is set in a mask, 0 otherwise (and for
++ * a CPU ID of HAL_CPU_MAX or more).
+  */
+ static inline int
+ hal_cpu_mask_test(
+@@ -307,40 +446,98 @@
   * IRQ
   */
  
@@ -106,7 +434,7 @@
   */
  int
  hal_irq_set_affinity(
-@@ -348,7 +406,16 @@
+@@ -348,7 +545,16 @@
  	const struct hal_cpu_mask *requested);
  
  /*
@@ -124,7 +452,7 @@
   */
  int
  hal_irq_get_affinity(
-@@ -359,14 +426,19 @@
+@@ -359,14 +565,19 @@
  /*
   * Set the trigger mode and polarity of a numbered IRQ.
   *
@@ -147,7 +475,7 @@
   */
  int
  hal_irq_set_mode(
-@@ -433,21 +505,46 @@
+@@ -433,21 +644,46 @@
  hal_irq_resume(void);
  
  /*
@@ -197,7 +525,7 @@
   */
  int
  hal_irq_register(
-@@ -456,7 +553,22 @@
+@@ -456,7 +692,22 @@
  	void *arg);
  
  /*
@@ -221,7 +549,7 @@
   */
  int
  hal_irq_unregister(
-@@ -465,9 +577,28 @@
+@@ -465,9 +716,28 @@
  	void *arg);
  
  /*
@@ -252,7 +580,7 @@
   */
  int
  hal_irq_register_msi(
-@@ -479,20 +610,44 @@
+@@ -479,20 +749,44 @@
  	uint32_t *mapped_event);
  
  /*
@@ -305,7 +633,7 @@
   */
  int
  hal_irq_alloc_msi(
-@@ -502,8 +657,16 @@
+@@ -502,8 +796,16 @@
  	uint32_t *mapped_event);
  
  /*
@@ -324,7 +652,7 @@
   */
  int
  hal_irq_attach_msi(
-@@ -512,11 +675,19 @@
+@@ -512,11 +814,19 @@
  	void *handler_arg);
  
  /*
@@ -349,7 +677,7 @@
   */
  int
  hal_irq_detach_msi_sync(
-@@ -525,17 +696,34 @@
+@@ -525,17 +835,34 @@
  	void *handler_arg);
  
  /*
@@ -389,7 +717,316 @@
   */
  void
  hal_irq_send_eoi(
-@@ -890,21 +1078,55 @@
+@@ -561,6 +888,12 @@
+ 
+ /*
+  * Read wall-clock time as whole seconds since the Unix epoch.
++ *
++ * It reads the machine's battery-backed clock, taken as UTC, and is
++ * slow (milliseconds): the kernel reads it at boot and after a sleep and
++ * keeps its own time from hal_rtc_read_counter().  Call it from thread
++ * context.  Returns true with the time, or false when the machine has no
++ * such clock or its value is not valid (*unix_seconds is then unchanged).
+  */
+ bool
+ hal_rtc_read_epoch_time(
+@@ -598,13 +931,25 @@
+  */
+ 
+ /*
+- * Get the total RAM size.
++ * Return the size in bytes of the RAM the HAL manages (what
++ * hal_pmem_alloc() can hand out, in use or not), fixed at boot.
+  */
+ size_t
+ hal_pmem_get_total_size(void);
+ 
+ /*
+- * Allocate a physical memory block.
++ * Allocate a block of physical RAM.
++ *
++ * The size is rounded up to whole pages and req_align (0 for a page) must
++ * be a power of two of at least a page.  The block is not mapped anywhere
++ * but the kernel's direct map (hal_pmem_to_kernel()) and its contents are
++ * not cleared.  It may be called in any context; it takes the allocator's
++ * spin lock with interrupts disabled for a bounded time.
++ *
++ * Returns HAL_OK with the block's physical address in *block,
++ * HAL_ERR_INVALID for a zero size, a bad alignment or a NULL block,
++ * HAL_ERR_NOMEM when no run of that size is free, or HAL_ERR_STATE before
++ * the allocator is ready.
+  */
+ int
+ hal_pmem_alloc(
+@@ -643,6 +988,11 @@
+ /*
+  * Free a physical memory block. size must be the requested size of the
+  * matching allocation; a smaller size splits the block.
++ *
++ * On HAL_OK *block is set to 0.  It may be called in any context, as
++ * hal_pmem_alloc() may.  Returns HAL_OK, or HAL_ERR_INVALID for a NULL
++ * block, a zero size or a range the allocator does not own (and
++ * HAL_ERR_STATE for one that is not allocated, where the HAL can tell).
+  */
+ int
+ hal_pmem_free(
+@@ -672,6 +1022,9 @@
+  *
+  * The range is afterwards reachable through the direct map only, and the
+  * HAL discards its cached lines so the direct map reads what is in RAM.
++ * vaddr and size must be those of one hal_pmem_map_uncached().  Returns
++ * HAL_OK or HAL_ERR_INVALID; a port without hal_pmem_map_uncached() does
++ * not provide it either.
+  */
+ int
+ hal_pmem_unmap_uncached(
+@@ -697,12 +1050,19 @@
+ #define HAL_SPACE_SYS	(NULL)
+ 
+ /*
+- * Address space handle.
++ * Address space handle: a user space from hal_space_create(), or
++ * HAL_SPACE_SYS where an operation allows the system half.
+  */
+ typedef void *hal_space_t;
+ 
+ /*
+- * Page attributes.
++ * Page attributes for hal_space_map(), hal_space_prot() and
++ * hal_space_map_device(), ORed together.  READ, WRITE and EXEC are the
++ * access; NOCACHE, WRITETHRU, DEVICE and WC the memory type (the default
++ * is cached RAM).  A port refuses a combination it cannot represent
++ * rather than weakening it: HAL_ERR_INVALID for one it never allows (an
++ * executable device page; a writable and executable user page on some
++ * ports), HAL_ERR_UNSUPPORTED for one this machine lacks.
+  */
+ #define HAL_SPACE_NONE			(0)
+ #define HAL_SPACE_READ			(1)
+@@ -718,12 +1078,22 @@
+  */
+ #define HAL_SPACE_WC			(64)
+ 
++/*
++ * What hal_space_query() and hal_space_prot_query() report of a page:
++ * mapped, read or executed since the flag was cleared, written since it
++ * was cleared.  A port without such hardware bits reports conservatively
++ * (a mapped page as accessed, a writable page as dirty).
++ */
+ #define HAL_SPACE_PAGE_PRESENT		0x01U
+ #define HAL_SPACE_PAGE_ACCESSED		0x02U
+ #define HAL_SPACE_PAGE_DIRTY		0x04U
+ 
+ /*
+  * Create a user space containing the shared system mapping.
++ *
++ * The user half is empty.  Call it from thread context: it allocates
++ * with kernel_alloc() and the HAL's page allocator.  Returns the space,
++ * or NULL when memory runs out.
+  */
+ hal_space_t
+ hal_space_create(void);
+@@ -732,6 +1102,11 @@
+  * Destroy a user space.  The generic kernel must first retire every owning
+  * task and ensure that no CPU selects the space.  HAL implementations close
+  * hardware translation windows, but never change task ownership implicitly.
++ *
++ * The page tables are freed; the pages they mapped are not (they belong
++ * to the kernel, which frees them).  A NULL space is ignored.  A space
++ * that a CPU still selects, or one unknown or already being destroyed, is
++ * fatal (HAL_FATAL).  Call it from thread context.
+  */
+ void
+ hal_space_destroy(
+@@ -739,6 +1114,11 @@
+ 
+ /*
+  * Select a user space on the current CPU; HAL_SPACE_SYS selects only system.
++ *
++ * hal_task_context_switch() calls it for the next task's space; the
++ * kernel calls it directly only for the calling task's own space (an
++ * exec).  The space must be alive (not passed to hal_space_destroy()),
++ * which is fatal otherwise.  It may be called with interrupts disabled.
+  */
+ void
+ hal_space_switch(
+@@ -752,6 +1132,17 @@
+  * through unmap, and the port must reject execution and cached RAM aliases.
+  * Protection changes preserve this device classification and cache policy.
+  * A port may report HAL_ERR_UNSUPPORTED when device user mappings are absent.
++ *
++ * space is a user space (not HAL_SPACE_SYS); vaddr, paddr and size are
++ * page-aligned and the range lies in hal_space_get_user_range().  No
++ * page of the range may be mapped already.  On return every CPU sees the
++ * new mappings.  Call it from thread context.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a bad range, a page already mapped,
++ * memory that is not managed RAM (without HAL_SPACE_DEVICE) or attributes
++ * without an access or that the port refuses, HAL_ERR_NOMEM when a page
++ * table cannot be allocated (nothing stays mapped), HAL_ERR_STATE for a
++ * space being destroyed, or HAL_ERR_UNSUPPORTED as above.
+  */
+ int
+ hal_space_map(
+@@ -763,6 +1154,14 @@
+ 
+ /*
+  * Unmap an address and complete any required TLB synchronization.
++ *
++ * Pages of the range that are not mapped are skipped, and a zero size
++ * does nothing.  On return no CPU can reach the old pages through this
++ * space, so the caller may reuse them.  The page tables emptied may be
++ * freed.  Call it from thread context.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a NULL space or a range outside the
++ * user range, or HAL_ERR_STATE for a space being destroyed.
+  */
+ int
+ hal_space_unmap(
+@@ -776,6 +1175,17 @@
+  * RAM is direct-mapped and needs no call; device memory is not. The
+  * HAL owns the kernel window used for device mappings, so the caller
+  * receives the address the HAL chose. attr is the OR of HAL_SPACE_*.
++ *
++ * The mapping is uncached unless HAL_SPACE_WC asks for write-combining;
++ * it is never executable.  A range the boot firmware's mappings already
++ * cover may be given that address, and it outlives its unmap.  Call it
++ * from thread context.
++ *
++ * Returns HAL_OK with the address in *vaddr, HAL_ERR_INVALID for an empty
++ * range, a NULL vaddr, HAL_SPACE_EXEC, conflicting cache attributes or a
++ * range beyond the physical address width (or one that is RAM, where the
++ * port tells), HAL_ERR_UNSUPPORTED for a cache policy this machine
++ * lacks, or HAL_ERR_NOMEM when the window is full.
+  */
+ int
+ hal_space_map_device(
+@@ -786,6 +1196,11 @@
+ 
+ /*
+  * Remove a mapping made by hal_space_map_device().
++ *
++ * vaddr and size must be those the mapping gave and asked for.  On
++ * HAL_OK no CPU reaches the device through that address any more (a
++ * firmware mapping given out stays).  Returns HAL_OK, or HAL_ERR_INVALID
++ * for a range that is not such a mapping.
+  */
+ int
+ hal_space_unmap_device(
+@@ -794,6 +1209,8 @@
+ 
+ /*
+  * Change protection and complete any required TLB synchronization.
++ *
++ * As hal_space_prot_query() without reporting the flags.
+  */
+ int
+ hal_space_prot(
+@@ -803,15 +1220,23 @@
+ 	uint32_t attr);
+ 
+ /*
+- * XXX: Add a single-line explanation here. Should be renamed??
+  * XXX: Should be renamed to  hal_space_prot_with_query_flags() ??
+  *
++ * Change the protection of a user range and report what its pages saw.
++ *
+  * Atomically publish a protection change, complete every required remote TLB
+  * invalidation, and then report the access/dirty state accumulated by the old
+  * translations.  flags is the OR of HAL_PAGE_* for the complete range.  In
+  * particular, removing HAL_SPACE_WRITE observes stores made through stale TLB
+  * entries before the shootdown acknowledgement.  Callers may therefore use
+  * this operation as the write-revoke boundary before page writeback.
++ *
++ * Every page of the range must be mapped; the physical pages and a device
++ * page's memory type are kept.  flags may be NULL.  Call it from thread
++ * context.  Returns HAL_OK, HAL_ERR_INVALID for a NULL space, a range
++ * outside the user range or with a page not mapped, or attributes without
++ * an access or that the port refuses (nothing changed), or HAL_ERR_STATE
++ * for a space being destroyed.
+  */
+ int
+ hal_space_prot_query(
+@@ -822,8 +1247,15 @@
+ 	uint32_t *flags);
+ 
+ /*
+- * XXX: Add a single-line explanation here.
+  * XXX: Should be renamed to  hal_space_query_flags() ??
++ *
++ * Report the state of one user page.
++ *
++ * *flags receives the HAL_SPACE_PAGE_* state of the page at vaddr in a
++ * user space (0 when it is not mapped).  The answer may be stale as soon
++ * as it is read: another CPU can access the page meanwhile.  Returns
++ * HAL_OK, HAL_ERR_INVALID for a NULL space or flags or an address outside
++ * the user range, or HAL_ERR_STATE for a space being destroyed.
+  */
+ int
+ hal_space_query(
+@@ -832,7 +1264,17 @@
+ 	uint32_t *flags);
+ 
+ /*
+- * XXX: Add a single-line explanation here. Should be renamed??
++ * XXX: Should be renamed??
++ *
++ * Clear the access and dirty bits of one user page.
++ *
++ * flags names the bits to clear (HAL_SPACE_PAGE_ACCESSED,
++ * HAL_SPACE_PAGE_DIRTY) of the mapped page at vaddr; the TLB
++ * synchronization completes so that a later access sets them again.  A port that tracks them conservatively
++ * may keep them set (a writable page stays dirty).  Returns HAL_OK,
++ * HAL_ERR_INVALID for a NULL space, an address outside the user range, a
++ * page not mapped or other flags, or HAL_ERR_STATE for a space being
++ * destroyed.
+  */
+ int
+ hal_space_clear_flags(
+@@ -848,6 +1290,11 @@
+  * - If a user space is specified, do TLB shootdown and user space
+  *   TLBs will be flushed on all processors where currently selecting
+  *   the specified user space.
++ *
++ * It returns when every CPU concerned has flushed.  The HAL's own map
++ * operations synchronize the TLBs themselves; this is for page tables
++ * the kernel changed in another way (the system half's shared tables).
++ * A user space being destroyed is fatal.  Call it from thread context.
+  */
+ void
+ hal_space_flush_tlb(
+@@ -855,6 +1302,9 @@
+ 
+ /*
+  * Flush TLBs only for the spcified range.
++ *
++ * As hal_space_flush_tlb() for the pages of [vaddr, vaddr + size); a
++ * port may flush more.  A zero size does nothing.
+  */
+ void
+ hal_space_flush_tlb_range(
+@@ -866,6 +1316,10 @@
+  * Get the page size.
+  *
+  *  - level > 1 means a large page size.
++ *
++ * Level 1 is the base page that every map operation counts in; level 2
++ * and up are the larger pages of the page-table levels above.  Returns 0
++ * for a level the machine does not have.
+  */
+ size_t
+ hal_space_get_page_size(
+@@ -873,6 +1327,10 @@
+ 
+ /*
+  * Get the rage of user space virtual address.
++ *
++ * *minimum receives the lowest user address that can be mapped (the
++ * page at 0 never is), *limit the address just past the highest.  Either
++ * may be NULL.  Fixed for the boot.
+  */
+ void
+ hal_space_get_user_range(
+@@ -890,21 +1348,55 @@
   */
  
  /*
@@ -449,7 +1086,7 @@
   */
  hal_task_t
  hal_task_create(
-@@ -914,25 +1136,54 @@
+@@ -914,25 +1406,54 @@
  	void *user_stack_pointer);
  
  /*
@@ -510,7 +1147,7 @@
   */
  hal_task_t
  hal_task_fork_current(
-@@ -940,7 +1191,19 @@
+@@ -940,7 +1461,19 @@
  	intptr_t child_syscall_result);
  
  /*
@@ -531,7 +1168,7 @@
   */
  int
  hal_task_exec_current(
-@@ -949,7 +1212,15 @@
+@@ -949,7 +1482,15 @@
  	uintptr_t user_stack_pointer);
  
  /*
@@ -548,7 +1185,7 @@
   */
  int
  hal_task_exec_validate(
-@@ -958,14 +1229,23 @@
+@@ -958,14 +1499,23 @@
  	uintptr_t user_stack_pointer);
  
  /*
@@ -575,7 +1212,7 @@
   */
  int
  hal_task_get_user_context(
-@@ -974,7 +1254,25 @@
+@@ -974,7 +1524,25 @@
  	intptr_t *return_value);
  
  /*
@@ -602,7 +1239,7 @@
   */
  int
  hal_task_signal_enter(
-@@ -987,7 +1285,18 @@
+@@ -987,7 +1555,18 @@
  	uint32_t token);
  
  /*
@@ -622,7 +1259,7 @@
   */
  int
  hal_task_signal_return(
-@@ -995,13 +1304,21 @@
+@@ -995,13 +1574,21 @@
  	intptr_t *return_value);
  
  /*
@@ -646,7 +1283,7 @@
   */
  void
  hal_task_set_tls(
-@@ -1009,28 +1326,55 @@
+@@ -1009,28 +1596,55 @@
  	uintptr_t value);
  
  /*
@@ -704,7 +1341,7 @@
  int
  hal_task_transfer(
  	hal_task_t task,
-@@ -1054,32 +1398,66 @@
+@@ -1054,32 +1668,66 @@
   * the structures are declared in its own header; a caller that has to name
   * a register copies the set into a form of its own rather than passing this
   * one outward.
@@ -771,7 +1408,7 @@
  int
  hal_task_set_user_vregs(
  	hal_task_t task,
-@@ -1092,12 +1470,20 @@
+@@ -1092,12 +1740,20 @@
   * the others run.  An architecture with no step facility of its own
   * arranges the same observable behaviour by other means: where the next
   * instruction ends is something only the architecture knows.
@@ -792,7 +1429,7 @@
  int
  hal_task_get_single_step(
  	hal_task_t task,
-@@ -1145,6 +1531,17 @@
+@@ -1145,6 +1801,17 @@
  	const struct hal_debug_point *points,
  	unsigned count);
  
@@ -810,3 +1447,205 @@
  int
  hal_task_get_debug_points(
  	hal_task_t task,
+@@ -1160,7 +1827,13 @@
+ #define hal_compiler_barrier()	__asm__ volatile("" ::: "memory")
+ 
+ /*
+- * Memory barrier.
++ * Memory barriers between the CPUs.
++ *
++ * hal_mb() orders every memory access before it ahead of every access
++ * after it, as other CPUs see them; hal_rmb() orders loads only, and
++ * hal_wmb() stores only.  Each is also a compiler barrier.  They order,
++ * they do not wait for anything: a device's view needs the hal_io_*()
++ * barriers below.
+  */
+ void
+ hal_mb(void);
+@@ -1171,6 +1844,15 @@
+ void
+ hal_wmb(void);
+ 
++/*
++ * Memory barriers between the CPU and devices.
++ *
++ * As hal_mb(), hal_rmb() and hal_wmb(), but they also order accesses to
++ * device memory and DMA buffers as a device sees them: a store to a
++ * descriptor in RAM before hal_io_wmb() reaches the device before the
++ * doorbell register written after it.  The hal_mmio_*() accessors already
++ * include them.
++ */
+ void
+ hal_io_mb(void);
+ 
+@@ -1181,28 +1863,58 @@
+ hal_io_wmb(void);
+ 
+ /*
+- * Cache flush
++ * Cache maintenance
++ *
++ * Only a HAL whose machine needs them defines the data cache operations;
++ * the kernel builds the code that calls them only for those machines
++ * (src/kern/dcache.c).  Each covers the cache lines that contain any
++ * byte of [addr, addr + size) and returns when the operation is complete
++ * for every CPU and for devices.  It may be called in any context.
++ */
++
++/*
++ * Make the instruction fetch see what was stored in the range (code
++ * written by a debugger, for example).  It does nothing on a machine
++ * whose instruction cache follows stores.
+  */
+ void
+ hal_icache_invalidate_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Write back the dirty data cache lines of the range to memory, keeping
++ * them valid, before a device reads the memory.
++ */
+ void
+ hal_dcache_clean_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Discard the data cache lines of the range, before the CPU reads what a
++ * device wrote.  A port may write back dirty lines first, so that the
++ * bytes of a line shared with other data are not lost.
++ */
+ void
+ hal_dcache_invalidate_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Write back and discard the data cache lines of the range.
++ */
+ void
+ hal_dcache_clean_invalidate_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Make code stored in [addr, addr + size) through a data mapping visible
++ * to instruction fetch on every CPU: data cache written back to the point
++ * of unification, instruction cache invalidated, and the pipeline
++ * synchronized.
++ */
+ void
+ hal_sync_instruction_stream(
+ 	void *addr,
+@@ -1213,6 +1925,14 @@
+  * I/O
+  */
+ 
++/*
++ * Port I/O
++ *
++ * The x86 I/O port space, 8, 16 and 32 bits wide.  Each is one access in
++ * program order with the CPU's other accesses.  On an architecture
++ * without port I/O they are fatal (HAL_FATAL); its drivers never call
++ * them.
++ */
+ uint8_t
+ hal_io_inp8(
+ 	uint16_t port);
+@@ -1240,6 +1960,17 @@
+ 	uint16_t port,
+ 	uint32_t value);
+ 
++/*
++ * Memory-mapped I/O
++ *
++ * One access of the given width to device memory mapped with
++ * hal_space_map_device() (or a firmware window); the address must be
++ * aligned to the width.  A read completes before any later device read,
++ * and a write is ordered before any later device write (each includes
++ * hal_io_rmb() or hal_io_wmb() after the access).  A write may still be
++ * on its way to the device when the call returns; a read of the same
++ * device after it flushes it.  They may be called in any context.
++ */
+ uint8_t
+ hal_mmio_read8(
+ 	const volatile void *addr);
+@@ -1285,25 +2016,40 @@
+  * Return an architecture-specific boot handoff object by name.  The
+  * returned object remains owned by HAL.  Unknown or unavailable
+  * handoffs return NULL.
++ *
++ * The names and the types of their objects are the architecture's:
++ * "boot.command-line" (a NUL-terminated string) on every port that boots
++ * with one, and machine-specific ones such as "pcat.framebuffer" or
++ * "acpi.rsdp".  The objects live for the boot and do not change after
++ * kernel_main() is called.
+  */
+ void *
+ hal_get_arch_handoff(
+ 	const char *name);
+ 
+ /*
+- * Do system reset for a reboot.
++ * Reset the machine for a reboot; it does not return.
++ *
++ * Interrupts are disabled first.  A HAL whose machine the kernel's
++ * platform code resets by other means (ACPI on a PC) does not define it;
++ * the kernel's platform code knows which machines call it.
+  */
+ void
+ hal_reset(void);
+ 
+ /*
+- * Do system power off.
++ * Power the machine off; it does not return.
++ *
++ * As for hal_reset(), only some HALs define it.  A machine without a
++ * power switch the HAL can reach halts the calling CPU with interrupts
++ * disabled instead.
+  */
+ void
+ hal_poweroff(void);
+ 
+ /*
+- * Halt for a kernel panic.
++ * Halt the calling CPU for good after a kernel panic has been reported;
++ * it does not return.  Interrupts are disabled.
+  */
+ void
+ hal_panic(void);
+@@ -1313,6 +2059,9 @@
+  * Fill a buffer from a platform cryptographic entropy source. Ports which
+  * have no such source return false. Buffer contents are unspecified when the
+  * function returns false.
++ *
++ * It may also return false when the source fails to deliver after a few
++ * tries.  It may be called in any context.
+  */
+ bool
+ hal_entropy_fill(
+@@ -1324,6 +2073,13 @@
+  * Memory Usage 
+  */
+ 
++/*
++ * A snapshot of the HAL's memory accounting, for the kernel's statistics:
++ * the physical pages (total, reserved, allocated, free), the tasks and
++ * their kernel stacks, the spaces and their page tables, what the boot
++ * firmware reported, and the allocator's own costs.  A port fills what
++ * it keeps and leaves the rest 0.
++ */
+ struct hal_memstat {
+ 	size_t physical_total;
+ 	size_t physical_reserved;
+@@ -1356,6 +2112,9 @@
+ 
+ /*
+  * Get the memory usage statistics.
++ *
++ * The fields are read together under the allocator's lock.  A NULL stat
++ * is ignored.  It may be called in any context.
+  */
+ void
+ hal_get_memstat(

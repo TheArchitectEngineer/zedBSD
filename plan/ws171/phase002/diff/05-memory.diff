@@ -1,0 +1,422 @@
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -925,13 +925,25 @@
+  */
+ 
+ /*
+- * Get the total RAM size.
++ * Return the size in bytes of the RAM the HAL manages (what
++ * hal_pmem_alloc() can hand out, in use or not), fixed at boot.
+  */
+ size_t
+ hal_pmem_get_total_size(void);
+ 
+ /*
+- * Allocate a physical memory block.
++ * Allocate a block of physical RAM.
++ *
++ * The size is rounded up to whole pages and req_align (0 for a page) must
++ * be a power of two of at least a page.  The block is not mapped anywhere
++ * but the kernel's direct map (hal_pmem_to_kernel()) and its contents are
++ * not cleared.  It may be called in any context; it takes the allocator's
++ * spin lock with interrupts disabled for a bounded time.
++ *
++ * Returns HAL_OK with the block's physical address in *block,
++ * HAL_ERR_INVALID for a zero size, a bad alignment or a NULL block,
++ * HAL_ERR_NOMEM when no run of that size is free, or HAL_ERR_STATE before
++ * the allocator is ready.
+  */
+ int
+ hal_pmem_alloc(
+@@ -970,6 +982,11 @@
+ /*
+  * Free a physical memory block. size must be the requested size of the
+  * matching allocation; a smaller size splits the block.
++ *
++ * On HAL_OK *block is set to 0.  It may be called in any context, as
++ * hal_pmem_alloc() may.  Returns HAL_OK, or HAL_ERR_INVALID for a NULL
++ * block, a zero size or a range the allocator does not own (and
++ * HAL_ERR_STATE for one that is not allocated, where the HAL can tell).
+  */
+ int
+ hal_pmem_free(
+@@ -999,6 +1016,9 @@
+  *
+  * The range is afterwards reachable through the direct map only, and the
+  * HAL discards its cached lines so the direct map reads what is in RAM.
++ * vaddr and size must be those of one hal_pmem_map_uncached().  Returns
++ * HAL_OK or HAL_ERR_INVALID; a port without hal_pmem_map_uncached() does
++ * not provide it either.
+  */
+ int
+ hal_pmem_unmap_uncached(
+@@ -1024,12 +1044,19 @@
+ #define HAL_SPACE_SYS	(NULL)
+ 
+ /*
+- * Address space handle.
++ * Address space handle: a user space from hal_space_create(), or
++ * HAL_SPACE_SYS where an operation allows the system half.
+  */
+ typedef void *hal_space_t;
+ 
+ /*
+- * Page attributes.
++ * Page attributes for hal_space_map(), hal_space_prot() and
++ * hal_space_map_device(), ORed together.  READ, WRITE and EXEC are the
++ * access; NOCACHE, WRITETHRU, DEVICE and WC the memory type (the default
++ * is cached RAM).  A port refuses a combination it cannot represent
++ * rather than weakening it: HAL_ERR_INVALID for one it never allows (an
++ * executable device page; a writable and executable user page on some
++ * ports), HAL_ERR_UNSUPPORTED for one this machine lacks.
+  */
+ #define HAL_SPACE_NONE			(0)
+ #define HAL_SPACE_READ			(1)
+@@ -1045,12 +1072,22 @@
+  */
+ #define HAL_SPACE_WC			(64)
+ 
++/*
++ * What hal_space_query() and hal_space_prot_query() report of a page:
++ * mapped, read or executed since the flag was cleared, written since it
++ * was cleared.  A port without such hardware bits reports conservatively
++ * (a mapped page as accessed, a writable page as dirty).
++ */
+ #define HAL_SPACE_PAGE_PRESENT		0x01U
+ #define HAL_SPACE_PAGE_ACCESSED		0x02U
+ #define HAL_SPACE_PAGE_DIRTY		0x04U
+ 
+ /*
+  * Create a user space containing the shared system mapping.
++ *
++ * The user half is empty.  Call it from thread context: it allocates
++ * with kernel_alloc() and the HAL's page allocator.  Returns the space,
++ * or NULL when memory runs out.
+  */
+ hal_space_t
+ hal_space_create(void);
+@@ -1059,6 +1096,11 @@
+  * Destroy a user space.  The generic kernel must first retire every owning
+  * task and ensure that no CPU selects the space.  HAL implementations close
+  * hardware translation windows, but never change task ownership implicitly.
++ *
++ * The page tables are freed; the pages they mapped are not (they belong
++ * to the kernel, which frees them).  A NULL space is ignored.  A space
++ * that a CPU still selects, or one unknown or already being destroyed, is
++ * fatal (HAL_FATAL).  Call it from thread context.
+  */
+ void
+ hal_space_destroy(
+@@ -1066,6 +1108,11 @@
+ 
+ /*
+  * Select a user space on the current CPU; HAL_SPACE_SYS selects only system.
++ *
++ * hal_task_context_switch() calls it for the next task's space; the
++ * kernel calls it directly only for the calling task's own space (an
++ * exec).  The space must be alive (not passed to hal_space_destroy()),
++ * which is fatal otherwise.  It may be called with interrupts disabled.
+  */
+ void
+ hal_space_switch(
+@@ -1079,6 +1126,17 @@
+  * through unmap, and the port must reject execution and cached RAM aliases.
+  * Protection changes preserve this device classification and cache policy.
+  * A port may report HAL_ERR_UNSUPPORTED when device user mappings are absent.
++ *
++ * space is a user space (not HAL_SPACE_SYS); vaddr, paddr and size are
++ * page-aligned and the range lies in hal_space_get_user_range().  No
++ * page of the range may be mapped already.  On return every CPU sees the
++ * new mappings.  Call it from thread context.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a bad range, a page already mapped,
++ * memory that is not managed RAM (without HAL_SPACE_DEVICE) or attributes
++ * without an access or that the port refuses, HAL_ERR_NOMEM when a page
++ * table cannot be allocated (nothing stays mapped), HAL_ERR_STATE for a
++ * space being destroyed, or HAL_ERR_UNSUPPORTED as above.
+  */
+ int
+ hal_space_map(
+@@ -1090,6 +1148,14 @@
+ 
+ /*
+  * Unmap an address and complete any required TLB synchronization.
++ *
++ * Pages of the range that are not mapped are skipped, and a zero size
++ * does nothing.  On return no CPU can reach the old pages through this
++ * space, so the caller may reuse them.  The page tables emptied may be
++ * freed.  Call it from thread context.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a NULL space or a range outside the
++ * user range, or HAL_ERR_STATE for a space being destroyed.
+  */
+ int
+ hal_space_unmap(
+@@ -1103,6 +1169,17 @@
+  * RAM is direct-mapped and needs no call; device memory is not. The
+  * HAL owns the kernel window used for device mappings, so the caller
+  * receives the address the HAL chose. attr is the OR of HAL_SPACE_*.
++ *
++ * The mapping is uncached unless HAL_SPACE_WC asks for write-combining;
++ * it is never executable.  A range the boot firmware's mappings already
++ * cover may be given that address, and it outlives its unmap.  Call it
++ * from thread context.
++ *
++ * Returns HAL_OK with the address in *vaddr, HAL_ERR_INVALID for an empty
++ * range, a NULL vaddr, HAL_SPACE_EXEC, conflicting cache attributes or a
++ * range beyond the physical address width (or one that is RAM, where the
++ * port tells), HAL_ERR_UNSUPPORTED for a cache policy this machine
++ * lacks, or HAL_ERR_NOMEM when the window is full.
+  */
+ int
+ hal_space_map_device(
+@@ -1113,6 +1190,11 @@
+ 
+ /*
+  * Remove a mapping made by hal_space_map_device().
++ *
++ * vaddr and size must be those the mapping gave and asked for.  On
++ * HAL_OK no CPU reaches the device through that address any more (a
++ * firmware mapping given out stays).  Returns HAL_OK, or HAL_ERR_INVALID
++ * for a range that is not such a mapping.
+  */
+ int
+ hal_space_unmap_device(
+@@ -1121,6 +1203,8 @@
+ 
+ /*
+  * Change protection and complete any required TLB synchronization.
++ *
++ * As hal_space_prot_query() without reporting the flags.
+  */
+ int
+ hal_space_prot(
+@@ -1130,15 +1214,23 @@
+ 	uint32_t attr);
+ 
+ /*
+- * XXX: Add a single-line explanation here. Should be renamed??
+  * XXX: Should be renamed to  hal_space_prot_with_query_flags() ??
+  *
++ * Change the protection of a user range and report what its pages saw.
++ *
+  * Atomically publish a protection change, complete every required remote TLB
+  * invalidation, and then report the access/dirty state accumulated by the old
+  * translations.  flags is the OR of HAL_PAGE_* for the complete range.  In
+  * particular, removing HAL_SPACE_WRITE observes stores made through stale TLB
+  * entries before the shootdown acknowledgement.  Callers may therefore use
+  * this operation as the write-revoke boundary before page writeback.
++ *
++ * Every page of the range must be mapped; the physical pages and a device
++ * page's memory type are kept.  flags may be NULL.  Call it from thread
++ * context.  Returns HAL_OK, HAL_ERR_INVALID for a NULL space, a range
++ * outside the user range or with a page not mapped, or attributes without
++ * an access or that the port refuses (nothing changed), or HAL_ERR_STATE
++ * for a space being destroyed.
+  */
+ int
+ hal_space_prot_query(
+@@ -1149,8 +1241,15 @@
+ 	uint32_t *flags);
+ 
+ /*
+- * XXX: Add a single-line explanation here.
+  * XXX: Should be renamed to  hal_space_query_flags() ??
++ *
++ * Report the state of one user page.
++ *
++ * *flags receives the HAL_SPACE_PAGE_* state of the page at vaddr in a
++ * user space (0 when it is not mapped).  The answer may be stale as soon
++ * as it is read: another CPU can access the page meanwhile.  Returns
++ * HAL_OK, HAL_ERR_INVALID for a NULL space or flags or an address outside
++ * the user range, or HAL_ERR_STATE for a space being destroyed.
+  */
+ int
+ hal_space_query(
+@@ -1159,7 +1258,17 @@
+ 	uint32_t *flags);
+ 
+ /*
+- * XXX: Add a single-line explanation here. Should be renamed??
++ * XXX: Should be renamed??
++ *
++ * Clear the access and dirty bits of one user page.
++ *
++ * flags names the bits to clear (HAL_SPACE_PAGE_ACCESSED,
++ * HAL_SPACE_PAGE_DIRTY) of the mapped page at vaddr; the TLB
++ * synchronization completes so that a later access sets them again.  A port that tracks them conservatively
++ * may keep them set (a writable page stays dirty).  Returns HAL_OK,
++ * HAL_ERR_INVALID for a NULL space, an address outside the user range, a
++ * page not mapped or other flags, or HAL_ERR_STATE for a space being
++ * destroyed.
+  */
+ int
+ hal_space_clear_flags(
+@@ -1175,6 +1284,11 @@
+  * - If a user space is specified, do TLB shootdown and user space
+  *   TLBs will be flushed on all processors where currently selecting
+  *   the specified user space.
++ *
++ * It returns when every CPU concerned has flushed.  The HAL's own map
++ * operations synchronize the TLBs themselves; this is for page tables
++ * the kernel changed in another way (the system half's shared tables).
++ * A user space being destroyed is fatal.  Call it from thread context.
+  */
+ void
+ hal_space_flush_tlb(
+@@ -1182,6 +1296,9 @@
+ 
+ /*
+  * Flush TLBs only for the spcified range.
++ *
++ * As hal_space_flush_tlb() for the pages of [vaddr, vaddr + size); a
++ * port may flush more.  A zero size does nothing.
+  */
+ void
+ hal_space_flush_tlb_range(
+@@ -1193,6 +1310,10 @@
+  * Get the page size.
+  *
+  *  - level > 1 means a large page size.
++ *
++ * Level 1 is the base page that every map operation counts in; level 2
++ * and up are the larger pages of the page-table levels above.  Returns 0
++ * for a level the machine does not have.
+  */
+ size_t
+ hal_space_get_page_size(
+@@ -1200,6 +1321,10 @@
+ 
+ /*
+  * Get the rage of user space virtual address.
++ *
++ * *minimum receives the lowest user address that can be mapped (the
++ * page at 0 never is), *limit the address just past the highest.  Either
++ * may be NULL.  Fixed for the boot.
+  */
+ void
+ hal_space_get_user_range(
+@@ -1696,7 +1821,13 @@
+ #define hal_compiler_barrier()	__asm__ volatile("" ::: "memory")
+ 
+ /*
+- * Memory barrier.
++ * Memory barriers between the CPUs.
++ *
++ * hal_mb() orders every memory access before it ahead of every access
++ * after it, as other CPUs see them; hal_rmb() orders loads only, and
++ * hal_wmb() stores only.  Each is also a compiler barrier.  They order,
++ * they do not wait for anything: a device's view needs the hal_io_*()
++ * barriers below.
+  */
+ void
+ hal_mb(void);
+@@ -1707,6 +1838,15 @@
+ void
+ hal_wmb(void);
+ 
++/*
++ * Memory barriers between the CPU and devices.
++ *
++ * As hal_mb(), hal_rmb() and hal_wmb(), but they also order accesses to
++ * device memory and DMA buffers as a device sees them: a store to a
++ * descriptor in RAM before hal_io_wmb() reaches the device before the
++ * doorbell register written after it.  The hal_mmio_*() accessors already
++ * include them.
++ */
+ void
+ hal_io_mb(void);
+ 
+@@ -1717,28 +1857,58 @@
+ hal_io_wmb(void);
+ 
+ /*
+- * Cache flush
++ * Cache maintenance
++ *
++ * Only a HAL whose machine needs them defines the data cache operations;
++ * the kernel builds the code that calls them only for those machines
++ * (src/kern/dcache.c).  Each covers the cache lines that contain any
++ * byte of [addr, addr + size) and returns when the operation is complete
++ * for every CPU and for devices.  It may be called in any context.
++ */
++
++/*
++ * Make the instruction fetch see what was stored in the range (code
++ * written by a debugger, for example).  It does nothing on a machine
++ * whose instruction cache follows stores.
+  */
+ void
+ hal_icache_invalidate_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Write back the dirty data cache lines of the range to memory, keeping
++ * them valid, before a device reads the memory.
++ */
+ void
+ hal_dcache_clean_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Discard the data cache lines of the range, before the CPU reads what a
++ * device wrote.  A port may write back dirty lines first, so that the
++ * bytes of a line shared with other data are not lost.
++ */
+ void
+ hal_dcache_invalidate_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Write back and discard the data cache lines of the range.
++ */
+ void
+ hal_dcache_clean_invalidate_range(
+ 	uintptr_t addr,
+ 	size_t size);
+ 
++/*
++ * Make code stored in [addr, addr + size) through a data mapping visible
++ * to instruction fetch on every CPU: data cache written back to the point
++ * of unification, instruction cache invalidated, and the pipeline
++ * synchronized.
++ */
+ void
+ hal_sync_instruction_stream(
+ 	void *addr,
+@@ -1749,6 +1919,14 @@
+  * I/O
+  */
+ 
++/*
++ * Port I/O
++ *
++ * The x86 I/O port space, 8, 16 and 32 bits wide.  Each is one access in
++ * program order with the CPU's other accesses.  On an architecture
++ * without port I/O they are fatal (HAL_FATAL); its drivers never call
++ * them.
++ */
+ uint8_t
+ hal_io_inp8(
+ 	uint16_t port);
+@@ -1776,6 +1954,17 @@
+ 	uint16_t port,
+ 	uint32_t value);
+ 
++/*
++ * Memory-mapped I/O
++ *
++ * One access of the given width to device memory mapped with
++ * hal_space_map_device() (or a firmware window); the address must be
++ * aligned to the width.  A read completes before any later device read,
++ * and a write is ordered before any later device write (each includes
++ * hal_io_rmb() or hal_io_wmb() after the access).  A write may still be
++ * on its way to the device when the call returns; a read of the same
++ * device after it flushes it.  They may be called in any context.
++ */
+ uint8_t
+ hal_mmio_read8(
+ 	const volatile void *addr);
