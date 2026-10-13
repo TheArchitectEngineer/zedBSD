@@ -62,3 +62,11 @@ p011 の失敗の原因（object の寿命: 最後の unmap で object を壊し
 実機: 未実施。
 
 要る判断（ユーザー）: 「check が status 0」を `tests/runtests` の全 pass（4932/4932）で満たしたとみなすか、bash を package として足して `make check` を通すか。
+
+## 2026-10-13 P2（q951）: 判断待ちのまま Q1 へ
+
+kernel の変更は q434 で適用済みで、残りは上の「要る判断」だけ。P2 の範囲では決められないので止めて Q1 に返した。選択肢と事実:
+- (a) `tests/runtests` の全 pass（4932/4932、q434）と `xmlwf` の動作で「check が status 0」を満たしたとみなす。`make check` の status 2 は expat の `tests/xmltest.sh` の `#! /usr/bin/env bash` だけが原因で、kernel・make とは関係ない。**P2 の推し**（2026-10-13 ユーザー「これ以上ベータ2に機能追加しない」に合う。`/bin/sh` の bash 拡張は WS065 で済み、bash そのものは base に無い）。
+- (b) bash を package（`userland/packages/`）として足し、`make check` を通す。新しい package の追加（ライセンスの監査、GPLv3）で、ベータ2 の機能を足さない方針と合わない。
+- (c) `/usr/bin/env bash` を `/bin/sh` に向ける（bash の名前の link）。sh は bash の全機能を持たないので、他の script を誤らせる恐れ。推さない。
+(a) なら p014 は cleared にできる（新しい試験は要らない。QEMU の再計測を求めるなら expat の configure・make・runtests を 512 MiB で 1 回、T1）。
