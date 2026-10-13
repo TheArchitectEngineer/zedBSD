@@ -34,7 +34,7 @@
 | [WS196](ws196/ws.md) useradd・usermod・userdel（account-admin を呼ぶ前段）と account-admin の欠陥の直し | p002・p003 merge 済み（host 試験 74・148 項目 PASS）。T1-597、規約の見直し p005 | 0.5 | T1 |
 | [WS227](ws227/ws.md) menuconfig の表示名・画像と PDF の library を Desktop へ・Linux/FreeBSD に独自の base の命令 | completed（2026-10-14） | 0 | — |
 | [WS228](ws228/ws.md) 独自実装の簡単な vi（**ベータ2 の最後の機能**、2026-10-14 ユーザー「ここまでがベータ2ですね。」） | p001 merge 済み（host 試験 44 件 PASS）。T1-595、kernel の console（p004、P1） | 0.5 | P1・T1 |
-| [BUG-302](bugs/BUG-302.md) emacs の SKK の辞書が見つからない（UAT） | 直し merge 済み（単独の n・辞書の文言・SKK-JISYO.X・候補の崩れ）、T1-594 待ち | — | T1 |
+| [BUG-302](bugs/BUG-302.md) emacs の SKK の辞書が見つからない（UAT） | resolved（T1-594 QEMU PASS）、実機の UAT | — | ユーザー |
 | [WS225](ws225/ws.md) Vulkan の header の書き直し | blocked（2026-10-13 ユーザー「まだ着手せず、ブロッキング」） | — | — |
 
 ## 既知の問題に書いて出す（ベータ3 以降）
