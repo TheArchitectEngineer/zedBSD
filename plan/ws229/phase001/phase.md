@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws229-p001 -->
 # ws229-p001: Gen9・Gen9.5 対応の調べと設計
 
-Status: in-progress（2026-10-14 Q1、q976、P1。設計文書を書いた。design-reviewer と Q1 の判定待ち）
+Status: cleared（2026-10-14 Q1: 設計を受け入れ、D1〜D3 の決定を記録。design-reviewer は p002〜p004 と並行で通す）
 Disposition: normal
 Parent: [WS229](../ws.md)
 Queue: q976
@@ -278,3 +278,9 @@ Gen9 の **PCI ID の合計 86**（SKL 25 ＋ KBL 22 ＋ CFL 39）。Gen9 の GT
 - design-reviewer を通す（Q1）。
 - D1〜D3（§4.3）をユーザーに。特に D2（Gen9 の機械）が無いと p005 は始められない。
 - p002〜p007 を WS229 の Phase の表に足す（Q1。§5 の形）。§5 の「版の選択の口」（`gt->graphics_ver` と compile の `graphics_ver`）を p002 の最初の commit として先に main に入れる段取り。
+
+## ユーザーの決定（2026-10-14 クリック）
+
+- D1: 段階 (1) の受け入れは「実機の GT で Vulkan の試験の読み戻しが PASS」（推しどおり）。画面は GOP の console のまま。
+- D2: 実機は 6・7・8 世代の Core i5 の laptop（ユーザー「全部Laptopです。」）を USB で直に起動（推しどおり）。結果は SSH か画面の写真。
+- D3: display の無い node で Keiland を動かす経路は作らない（D1 の決定で不要）。

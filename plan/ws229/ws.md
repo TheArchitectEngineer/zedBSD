@@ -3,12 +3,12 @@
 # WS229: i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応させる
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-14 Q1 作成）
+Status: incomplete（2026-10-14 p001 cleared、p002〜p004 を並行で実装）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: q976（p001、P1）
+Queue: q977（p002、P2）・q978（p003、P1）・q979（p004、P3）
 Target: ベータ2 に入れば入れる（2026-10-14 ユーザー「Gen9対応は進めて、今日の夕方のコードフリーズに間に合えば入れます。間に合わなくてもドロップはオーケーです。」）。間に合わなければベータ3
 Resume point: p001。
 <!-- awesome-plan-current:end -->
@@ -36,4 +36,10 @@ GOP のままで GT と EU: 6〜8 LW。display controller を足して全体: 10
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計: Gen9・9.5 と Gen12 の違いの一覧（EU の命令の符号化・send の descriptor・execlists の ELSP・forcewake・MOCS・context の layout・workaround・3D と compute の state・GOP のままの起動）、Phase の分け方と見積もり | planned（q976、P1） | — |
+| [p001](phase001/phase.md) | 調べと設計（a〜d の答え、Phase の分け方 §5、見積もり 14.5 LW） | cleared（2026-10-14） | — |
+| p002 | GT の起動（Gen9）、最初の commit で共有の契約（`gt->graphics_ver`） | planned（q977、P2） | p001 |
+| p003 | EU の符号化（Gen9）、`drv_i915_shader_compile_gen()` | planned（q978、P1） | p001 |
+| p004 | 3D と compute の state（Gen9） | planned（q979、P3。P3 の ws143 の直しの後） | p001、p002 の契約 |
+| p005 | Vulkan の通しと実機（6・7・8 世代を USB で） | planned | p002〜p004 |
+| p006 | display controller（Gen9） | planned（今日の範囲外） | p005 |
+| p007 | 規約の全文の見直し | planned | p005 |
