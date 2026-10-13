@@ -113,6 +113,21 @@ T1-NNN（ws228-p002、vi の guest の試験）:
 - 試験 B（VT console の画面、**ws228-p004 の kernel の修正が main に入った後**）: QEMU の画面の console（TERM=zed、login の既定）で `vi /etc/rc.conf` を開き、`j` を数回と `$` を打った画面を QMP の `screendump` で PNG に撮る。合否: 本文の行が左端から 1 行ずつ並び、最下行が空か message、cursor が `$` の行の末尾にあること（目視、PNG を Q1 に）。`:q` で shell に戻り、prompt が最下行にあること。
 - 時間の目安: build の後、A は約 1 分、B は約 2 分。
 
+### 11a. T1-595 の試験 A の FAIL の原因と再試験の依頼（2026-10-14 P3）
+
+T1-595 の試験 A（vi-guest.py）は 5 段とも FAIL した（`build/review/t1-595/vi-guest-595b.txt`・`vi-guest-run2.txt`、main の checkout）。原因は **試験の側**で、vi と kernel の tty には欠陥は見つからなかった。
+
+- **日本語の行の化け（4 段）**: guest は serial に 1 byte ずつ書くので、`cat` の出力の多 byte の文字が socket の別々の `recv` に分かれて届く。`plan/tools/guest/serial.py` の `Console.read_until` は `recv` ごとに `decode("utf-8", "replace")` するので、分かれた文字の各片が U+FFFD になる。FAIL の値の U+FFFD の数は全て、正しい中身（`日本語`・`本語`）の分かれ方で説明が付く（例 x-japanese の 6 個 = 本語の 6 byte が全部別々、dd-undo の `本` + 3 個 = 語の 3 byte が別々）。`hello`・`lo` が正しいことと合わせ、vi が書いた file は 4 段とも期待どおりだったと読める（guest での直の確かめは再試験で）。
+- **stty-restored**: 前後の `stty -g` の値は同じ。試験が vi の終わりを prompt の正規表現で待ち、次の命令を shell が line editor に入る前に打ったため、命令の行が端末の echo と line editor の echo の 2 度出て、出力の最初の 1 行だけを捨てる比べ方がずれた。
+- 直し（`plan/ws228/tests/vi-guest.py`）: 読み手を incremental decoder にした（serial.Console の subclass）。vi は `vi FILE; echo ZEDBSD-VI-STATUS=$?` で起動し、その marker で終わりを待つ（古い prompt に合わない。vi の終了状態 0 も判定に足した）。命令を打つ前に line が 1 s 静かになるまで読む。命令の出力は打った行の最後の写しの後から取る。
+- host 試験（`run-host-vi.py`、50 項目）: 多 byte の文字を 1 byte ずつ 50 ms 空けて打つ 4 項目（split-insert・split-r・split-f・split-search）を足し PASS（vi の key の組み立ては分かれた byte で正しい）。stand-in の guest（AF_UNIX の socket に 1 byte ずつ 10 ms 空けて書く）に対し、serial.py の読み手は分かれた文字を失い（再現）、vi-guest.py の読み手は `日本語` を保つ（serial-split-utf8 PASS）。命令の行が 2 度出る流れで出力を正しく取る（serial-double-echo PASS）。`host-vi: ok (50 cases)`。
+- 残件: `plan/tools/guest/serial.py` の読み手の同じ欠陥（UTF-8 を出す他の serial の試験にも効く）は P3 の範囲外なので直していない。Q1 への提案は handback に書いた。
+
+T1-NNN（ws228-p002 の試験 A の再試験、T1-595 の後）:
+- image: 依頼の時点の main の SHA（この直しの merge を含む）で `make ZEDBSD_CONFIG=plan/ws228/tests/config-amd64-vi.mk` の image。T1-595 の image を使い回してよい（直したのは host 側の試験の script だけで、guest の中身は変わらない）。個別の file の複写は無し。
+- 試験 A（serial）: `python3 plan/ws228/tests/vi-guest.py --socket <serial の socket>`。合否: 最後の行が `vi-guest: ok (5 steps)`。FAIL の時は出力の全部（`vi=<状態>` と取れた中身を含む）を Q1 に返す。
+- 時間の目安: 約 2 分（各段で line が静かになるのを待つ分、T1-595 より長い）。
+
 ## review-1 の反映（2026-10-14 P3）
 
 review: [review-1.md](review-1.md)（design-reviewer、6af970de4 の設計）。決定は上の「決定」。各指摘の扱い:

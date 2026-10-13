@@ -6,18 +6,22 @@
 #   python3 plan/ws228/tests/run-host-vi.py [--keep-going]
 # PASS ends with "host-vi: ok (N cases)".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+import codecs
 import fcntl
+import importlib.util
 import os
 import pty
 import select
 import shutil
+import socket
 import struct
 import subprocess
 import sys
 import tempfile
-import unicodedata
 import termios
+import threading
 import time
+import unicodedata
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 ESC = "\x1b"
@@ -58,9 +62,9 @@ def run(command, keys, cwd, timeout=8.0, output=None):
             drain(fd, 0.3, output)
             output.append(None)
             continue
-        os.write(fd, chunk.encode("utf-8"))
+        os.write(fd, chunk if isinstance(chunk, bytes) else chunk.encode("utf-8"))
         # A lone ESC must stand apart from the next key.
-        time.sleep(0.15 if chunk.endswith(ESC) else 0.05)
+        time.sleep(0.15 if chunk == ESC or (isinstance(chunk, str) and chunk.endswith(ESC)) else 0.05)
     deadline = time.time() + timeout
     while time.time() < deadline:
         drain(fd, 0.05, output)
@@ -129,9 +133,10 @@ class Screen:
         self.cells = [[" "] * columns for _ in range(rows)]
         self.row = 0
         self.column = 0
+        self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
 
     def feed(self, data):
-        text = data.decode("utf-8", errors="replace")
+        text = self.decoder.decode(data)
         index = 0
         while index < len(text):
             char = text[index]
@@ -209,6 +214,86 @@ def keys_of(text):
     return chunks
 
 
+def keys_split(text):
+    """Like keys_of, but each byte of a character of several bytes is typed on
+    its own, 50 ms apart, as a slow line (the serial console) delivers it."""
+    chunks = []
+    for chunk in keys_of(text):
+        current = ""
+        for char in chunk:
+            data = char.encode("utf-8")
+            if len(data) == 1:
+                current += char
+                continue
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(bytes([byte]) for byte in data)
+        if current:
+            chunks.append(current)
+    return chunks
+
+
+# Cases whose characters of several bytes are typed a byte at a time (T1-595).
+SPLIT_CASES = [
+    ("split-insert", None, "ihello\r日本語" + ESC + ":wq\r", "hello\n日本語\n"),
+    ("split-r", "日本語\n", "lrあ:wq\r", "日あ語\n"),
+    ("split-f", "日本語テキスト\n", "fテD:wq\r", "日本語\n"),
+    ("split-search", "日本\n日本語\n", "/語\rx:wq\r", "日本\n日本\n"),
+]
+
+
+def serial_cases(report, out):
+    """The serial reader of vi-guest.py against a stand-in guest on a socket:
+    a character split between reads, and a command line shown twice."""
+    spec = importlib.util.spec_from_file_location("vi_guest", os.path.join(os.path.dirname(__file__), "vi-guest.py"))
+    vi_guest = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vi_guest)
+    path = os.path.join(out, "serial.sock")
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(path)
+    server.listen(4)
+
+    def guest(stream, after_line):
+        connection, _ = server.accept()
+        if after_line:
+            typed = b""
+            while not typed.endswith(b"\r"):
+                typed += connection.recv(1)
+        for byte in stream:
+            connection.sendall(bytes([byte]))
+            time.sleep(0.01)
+        time.sleep(0.5)
+        connection.close()
+
+    # Each byte comes in a read of its own: the reader keeps 日本語 whole.
+    text = "hello\n日本語\n" + vi_guest.serial.MARKER + "=0\n"
+    pattern = vi_guest.re.compile(vi_guest.re.escape(vi_guest.serial.MARKER) + r"=\d")
+    results = []
+    for reader in (vi_guest.serial.Console, vi_guest.Console):
+        thread = threading.Thread(target=guest, args=(text.encode("utf-8"), False))
+        thread.start()
+        console = reader(path, 10.0)
+        results.append(console.read_until(pattern))
+        thread.join()
+        console.socket.close()
+    old, new = results
+    print("     (serial.py's own reader %s)" % ("loses the split characters" if "\ufffd" in old else "keeps them"))
+    report("serial-split-utf8", new.startswith("hello\n日本語\n"), repr(new))
+
+    # The line comes back from the terminal and again from the line editor: the output is what follows the last copy.
+    line = "stty -g; echo %s=$?" % vi_guest.serial.MARKER
+    stream = (line + "\r\nroot@kei:~$ " + line + "\r\n26:3:7:77\r\n" + vi_guest.serial.MARKER + "=0\r\n").encode()
+    thread = threading.Thread(target=guest, args=(stream, True))
+    thread.start()
+    console = vi_guest.Console(path, 10.0)
+    status, body = vi_guest.command(console, "stty -g")
+    thread.join()
+    console.socket.close()
+    server.close()
+    report("serial-double-echo", (status, body) == (0, "26:3:7:77\n"), repr((status, body)))
+
+
 CASES = [
     # name, initial file contents (None: no file), keys, expected contents
     ("insert-and-write", None, "ihello\rworld" + ESC + ":wq\r", "hello\nworld\n"),
@@ -262,13 +347,14 @@ def main():
                 print("host-vi: FAIL (output in %s)" % out)
                 sys.exit(1)
 
-    for name, initial, keys, expected in CASES:
+    cases = [case + (keys_of,) for case in CASES] + [case + (keys_split,) for case in SPLIT_CASES]
+    for name, initial, keys, expected, typing in cases:
         work = tempfile.mkdtemp(prefix=name + ".", dir=out)
         path = os.path.join(work, "f.txt")
         if initial is not None:
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(initial)
-        status = run("%s f.txt" % vi, keys_of(keys), work)
+        status = run("%s f.txt" % vi, typing(keys), work)
         got = None
         if os.path.exists(path):
             with open(path, encoding="utf-8", errors="replace") as handle:
@@ -435,6 +521,8 @@ def main():
     status = run_then_close("HOME=%s exec %s f.txt" % (work, vi), "l", work)
     recovered = [name for name in os.listdir(work) if name.startswith(".vi-recover.")]
     report("hangup-clean", status == 1 and not recovered, "status=%r files=%r" % (status, recovered))
+
+    serial_cases(report, out)
 
     if failures:
         print("host-vi: FAIL (%d of %d, output in %s)" % (failures, count, out))
