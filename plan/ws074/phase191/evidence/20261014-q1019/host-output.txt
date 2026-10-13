@@ -1,0 +1,8 @@
+parent-style=wavy
+child-style=solid
+parent-ink=all
+child-ink=all
+initial-style=solid
+initial-ink=auto
+invalid-style=false
+invalid-ink=false

@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1018 / WS074 text-decoration-line inline CSSOM canonicalization
+# q1019 / WS074 text-decoration style and skip ink CSSOM
 
-Status: finished（2026-10-14 00:20〜00:25 JST）
+Status: finished（2026-10-14 00:26〜00:28 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1018有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 00:20 JST 開始、最大90分（01:50 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1019有限部分scope](phase191/phase.md) に適用。
+Timebox: 2026-10-14 00:26 JST 開始、最大90分（01:56 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1018-i01 | [ws074-p191](phase191/phase.md) partial | text-decoration-lineのinline CSSStyleDeclaration格納値を既存parserに基づきcanonical化。CSS-wide/他property/不正値維持。局所fixture、build、対象WPT67 subtest、全16件、Acid3/Acid2非増加。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p191 whole は uncleared） | q1017値parser/computed出力 |
+| q1019-i01 | [ws074-p191](phase191/phase.md) partial | text-decoration-styleと-skip-inkの値/初期値/継承/computed CSSOM。描画方式変更なし。invalid試験、局所fixture、build、対象4 WPT、全16件、Acid3/Acid2非増加。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p191 whole は uncleared） | q1018までのCSSOM baseline |
 
-Dependency graph: p173固定manifest → p189 q1015 baseline → q1016 CSS.supports → q1017値解析 → q1018-i01 → p191 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力。
+Dependency graph: p173固定manifest → p189 q1015 baseline → q1016〜q1018 CSSOM出力 → q1019-i01 → p191 whole判断 → p173最終100%判断。p189 whole/p190は別の必要出力。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 
@@ -28,3 +28,5 @@ Outcome: q1016-i01 partial cleared、p191 whole uncleared。`CSS.supports` を�
 Outcome: q1017-i01 partial cleared、p191 whole uncleared。対象WPT18/18 subtest PASS、固定textdecoration全16件5 PASS/11 FAIL、subtest79 PASS/100 FAIL。host build・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1017/README.md)。全件100%未達。
 
 Outcome: q1018-i01 partial cleared、p191 whole uncleared。対象WPT67/67 subtest PASS、固定textdecoration全16件6 PASS/10 FAIL、subtest128 PASS/51 FAIL。host build warning0・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1018/README.md)。全件100%未達。
+
+Outcome: q1019-i01 partial cleared、p191 whole uncleared。対象4 WPT16/16 subtest・invalid既存2 WPT PASS、固定textdecoration全16件10 PASS/6 FAIL、subtest144 PASS/35 FAIL。host build warning0・局所fixture・Acid3差0/Acid2差1865の回帰確認。[証拠](phase191/evidence/20261014-q1019/README.md)。全件100%未達。

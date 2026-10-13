@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1019 / WS074 text decoration longhand CSSOM（2026-10-14）
+
+[q1019履歴](queue-q1019.md): 対象4 WPT16/16 subtest PASS、固定textdecoration全16件10 PASS/6 FAIL、subtest144 PASS/35 FAIL。Acid3画素差0、Acid2差1865を維持。p191 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase191/evidence/20261014-q1019/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1018 / WS074 text-decoration-line inline CSSOM（2026-10-14）
 
 [q1018履歴](queue-q1018.md): 対象WPT67/67 subtest PASS、固定textdecoration全16件6 PASS/10 FAIL、subtest128 PASS/51 FAIL。Acid3画素差0、Acid2差1865を維持。p191 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase191/evidence/20261014-q1018/README.md)。共有投影/GitHub publication pending。

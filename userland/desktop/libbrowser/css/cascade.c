@@ -738,6 +738,7 @@ cascade_compute(
 		style->visibility = parent->visibility;
 		style->list_style = parent->list_style;
 		style->underline = parent->underline;
+		style->text_decoration_skip_ink = parent->text_decoration_skip_ink;
 		style->text_shadow = parent->text_shadow;
 		style->text_shadow_set = parent->text_shadow_set;
 		style->custom = parent->custom;
@@ -3390,6 +3391,7 @@ cascade_apply(
 		    property == CSS_PROP_WHITE_SPACE ||
 		    property == CSS_PROP_TEXT_TRANSFORM ||
 		    property == CSS_PROP_TEXT_SHADOW ||
+		    property == CSS_PROP_TEXT_DECORATION_SKIP_INK ||
 		    property == CSS_PROP_CURSOR ||
 		    property == CSS_PROP_VISIBILITY ||
 		    property == CSS_PROP_DIRECTION ||
@@ -3646,6 +3648,12 @@ cascade_apply(
 	case CSS_PROP_TEXT_DECORATION_LINE:
 		style->text_decoration_line = value->keyword;
 		style->underline = (value->keyword & CSS_DECORATION_UNDERLINE) != 0;
+		break;
+	case CSS_PROP_TEXT_DECORATION_STYLE:
+		style->text_decoration_style = value->keyword;
+		break;
+	case CSS_PROP_TEXT_DECORATION_SKIP_INK:
+		style->text_decoration_skip_ink = value->keyword;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		style->list_style = value->keyword;
@@ -4029,6 +4037,12 @@ cascade_inherit(
 	case CSS_PROP_TEXT_DECORATION_LINE:
 		style->text_decoration_line = parent->text_decoration_line;
 		style->underline = parent->underline;
+		break;
+	case CSS_PROP_TEXT_DECORATION_STYLE:
+		style->text_decoration_style = parent->text_decoration_style;
+		break;
+	case CSS_PROP_TEXT_DECORATION_SKIP_INK:
+		style->text_decoration_skip_ink = parent->text_decoration_skip_ink;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		style->list_style = parent->list_style;

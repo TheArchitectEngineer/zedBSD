@@ -235,6 +235,21 @@ enum css_decoration_line {
 	CSS_DECORATION_GRAMMAR_ERROR = 32
 };
 
+/* Computed keywords of the text decoration longhands. */
+enum css_decoration_style {
+	CSS_DECORATION_SOLID,
+	CSS_DECORATION_DOUBLE,
+	CSS_DECORATION_DOTTED,
+	CSS_DECORATION_DASHED,
+	CSS_DECORATION_WAVY
+};
+
+enum css_decoration_skip_ink {
+	CSS_DECORATION_SKIP_AUTO,
+	CSS_DECORATION_SKIP_NONE,
+	CSS_DECORATION_SKIP_ALL
+};
+
 /* The values of white-space. */
 enum css_white_space {
 	CSS_WHITE_SPACE_NORMAL,
@@ -539,6 +554,8 @@ struct css_style {
 	int cursor;
 	int underline;
 	int text_decoration_line;
+	int text_decoration_style;
+	int text_decoration_skip_ink;
 	int list_style;
 
 	/*

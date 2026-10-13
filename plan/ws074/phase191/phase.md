@@ -45,3 +45,13 @@ Event ws074-p191-q1017-outcome-20261014: q1017-i01 partial cleared、p191 whole�
 **partial scope cleared、p191 whole uncleared。** 共通CSS parserから `text-decoration-line` のbit集合を取り、inline CSSOMとcomputed styleのcanonical直列化を共有。[証拠](evidence/20261014-q1018/README.md)。対象WPT67/67 subtest PASS、固定textdecoration全16件6 PASS/10 FAIL、subtest128 PASS/51 FAIL。局所fixtureの直接property/setProperty/cssText、CSS-wide・他property・不正値、host build warning0、CSSOM12/12、rule model44/44を確認。Acid3 score100/100・画素差0、Acid2差1865不変。色/style/skip-ink/shorthandなどが残る。GitHub publication保留。
 
 Event ws074-p191-q1018-outcome-20261014: q1018-i01 partial cleared、p191 wholeは10 test FAILのためuncleared。固定3,805分母と他Phase依存は維持。次の値parser/CSSOM不足は別の有限Queueにする。
+
+## q1019-i01 の有限部分範囲
+
+2026-10-14 00:26 JST、ユーザーの事前承認を適用、最大90分。固定textdecoration領域の `text-decoration-style`（valid/computed各5 subtest）と `text-decoration-skip-ink`（valid/computed各3 subtest）を、仕様の値・初期値・継承・computed CSSOMとして実装する。styleは非継承、skip-inkは継承。描画へのwavy/double/ink skipping反映はこの部分scope外であり、全機能対応を主張しない。invalid既存試験、局所fixture、build、4対象WPTと領域全16件、Acid3/Acid2差画素非増加を確認。WPT本体/期待・公開ABI・`master.md`は変更しない。
+
+## q1019-i01 結果（2026-10-14 00:28 JST）
+
+**partial scope cleared、p191 whole uncleared。** style/skip-inkの値parser、初期値、継承、computed CSSOMを追加。[証拠](evidence/20261014-q1019/README.md)。対象4 WPTは16/16 subtest PASS、invalid既存2 WPT PASS。固定textdecoration全16件は10 PASS/6 FAIL、subtest144 PASS/35 FAIL（q1018の6/10、128/51から改善）。局所fixture、host build warning0、CSSOM12/12、rule model44/44。Acid3 score100/100・画素差0、Acid2差1865不変。描画反映と残る色/shorthand等は未達。GitHub publication保留。
+
+Event ws074-p191-q1019-outcome-20261014: q1019-i01 partial cleared。p191 wholeは6 test FAILのためuncleared。p173分母・p189/p190 runner依存は維持。残る互換は別の有限Queueへ。

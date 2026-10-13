@@ -1,0 +1,170 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Property text-decoration value 'none'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Property text-decoration value 'line-through'",
+      "status": 1,
+      "message": "assert_equals: expected \"line-through\" but got \"\""
+    },
+    {
+      "name": "Property text-decoration value 'solid'",
+      "status": 1,
+      "message": "assert_true: 'solid' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value 'currentcolor'",
+      "status": 1,
+      "message": "assert_true: 'currentcolor' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value 'double overline underline'",
+      "status": 1,
+      "message": "assert_true: 'double overline underline' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value 'underline overline line-through red'",
+      "status": 1,
+      "message": "assert_equals: expected \"underline overline line-through rgb(255, 0, 0)\" but got \"\""
+    },
+    {
+      "name": "Property text-decoration value 'rgba(10, 20, 30, 0.4) dotted'",
+      "status": 1,
+      "message": "assert_true: 'rgba(10, 20, 30, 0.4) dotted' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value 'underline dashed rgb(0, 255, 0)'",
+      "status": 1,
+      "message": "assert_equals: expected \"underline dashed rgb(0, 255, 0)\" but got \"\""
+    },
+    {
+      "name": "Property text-decoration value 'underline overline line-through blink'",
+      "status": 1,
+      "message": "assert_equals: expected \"underline overline line-through blink\" but got \"\""
+    },
+    {
+      "name": "Property text-decoration value 'underline overline line-through blink red'",
+      "status": 1,
+      "message": "assert_equals: expected \"underline overline line-through blink rgb(255, 0, 0)\" but got \"\""
+    },
+    {
+      "name": "Property text-decoration value 'auto'",
+      "status": 1,
+      "message": "assert_true: 'auto' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value 'from-font'",
+      "status": 1,
+      "message": "assert_true: 'from-font' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value '10px'",
+      "status": 1,
+      "message": "assert_true: '10px' is a supported value for text-decoration. expected true got false"
+    },
+    {
+      "name": "Property text-decoration value 'underline red from-font'",
+      "status": 1,
+      "message": "assert_equals: expected \"underline from-font rgb(255, 0, 0)\" but got \"\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Property text-decoration value 'none'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Property text-decoration value 'line-through'",
+        "status": 1,
+        "message": "assert_equals: expected \"line-through\" but got \"\""
+      },
+      {
+        "name": "Property text-decoration value 'solid'",
+        "status": 1,
+        "message": "assert_true: 'solid' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value 'currentcolor'",
+        "status": 1,
+        "message": "assert_true: 'currentcolor' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value 'double overline underline'",
+        "status": 1,
+        "message": "assert_true: 'double overline underline' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value 'underline overline line-through red'",
+        "status": 1,
+        "message": "assert_equals: expected \"underline overline line-through rgb(255, 0, 0)\" but got \"\""
+      },
+      {
+        "name": "Property text-decoration value 'rgba(10, 20, 30, 0.4) dotted'",
+        "status": 1,
+        "message": "assert_true: 'rgba(10, 20, 30, 0.4) dotted' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value 'underline dashed rgb(0, 255, 0)'",
+        "status": 1,
+        "message": "assert_equals: expected \"underline dashed rgb(0, 255, 0)\" but got \"\""
+      },
+      {
+        "name": "Property text-decoration value 'underline overline line-through blink'",
+        "status": 1,
+        "message": "assert_equals: expected \"underline overline line-through blink\" but got \"\""
+      },
+      {
+        "name": "Property text-decoration value 'underline overline line-through blink red'",
+        "status": 1,
+        "message": "assert_equals: expected \"underline overline line-through blink rgb(255, 0, 0)\" but got \"\""
+      },
+      {
+        "name": "Property text-decoration value 'auto'",
+        "status": 1,
+        "message": "assert_true: 'auto' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value 'from-font'",
+        "status": 1,
+        "message": "assert_true: 'from-font' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value '10px'",
+        "status": 1,
+        "message": "assert_true: '10px' is a supported value for text-decoration. expected true got false"
+      },
+      {
+        "name": "Property text-decoration value 'underline red from-font'",
+        "status": 1,
+        "message": "assert_equals: expected \"underline from-font rgb(255, 0, 0)\" but got \"\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-text-decor/parsing/text-decoration-computed.html",
+  "focus": [
+    "textdecoration"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:45483/css/css-text-decor/parsing/text-decoration-computed.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Property text-decoration value 'none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'line-through'\",\"status\":1,\"message\":\"assert_equals: expected \\\"line-through\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'solid'\",\"status\":1,\"message\":\"assert_true: 'solid' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'currentcolor'\",\"status\":1,\"message\":\"assert_true: 'currentcolor' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'double overline underline'\",\"status\":1,\"message\":\"assert_true: 'double overline underline' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'underline overline line-through red'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline overline line-through rgb(255, 0, 0)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'rgba(10, 20, 30, 0.4) dotted'\",\"status\":1,\"message\":\"assert_true: 'rgba(10, 20, 30, 0.4) dotted' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'underline dashed rgb(0, 255, 0)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline dashed rgb(0, 255, 0)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'underline overline line-through blink'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline overline line-through blink\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'underline overline line-through blink red'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline overline line-through blink rgb(255, 0, 0)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'auto'\",\"status\":1,\"message\":\"assert_true: 'auto' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'from-font'\",\"status\":1,\"message\":\"assert_true: 'from-font' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value '10px'\",\"status\":1,\"message\":\"assert_true: '10px' is a supported value for text-decoration. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property text-decoration value 'underline red from-font'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline from-font rgb(255, 0, 0)\\\" but got \\\"\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Property text-decoration value 'none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Property text-decoration value 'line-through'\",\"status\":1,\"message\":\"assert_equals: expected \\\"line-through\\\" but got \\\"\\\"\"},{\"name\":\"Property text-decoration value 'solid'\",\"status\":1,\"message\":\"assert_true: 'solid' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value 'currentcolor'\",\"status\":1,\"message\":\"assert_true: 'currentcolor' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value 'double overline underline'\",\"status\":1,\"message\":\"assert_true: 'double overline underline' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value 'underline overline line-through red'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline overline line-through rgb(255, 0, 0)\\\" but got \\\"\\\"\"},{\"name\":\"Property text-decoration value 'rgba(10, 20, 30, 0.4) dotted'\",\"status\":1,\"message\":\"assert_true: 'rgba(10, 20, 30, 0.4) dotted' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value 'underline dashed rgb(0, 255, 0)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline dashed rgb(0, 255, 0)\\\" but got \\\"\\\"\"},{\"name\":\"Property text-decoration value 'underline overline line-through blink'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline overline line-through blink\\\" but got \\\"\\\"\"},{\"name\":\"Property text-decoration value 'underline overline line-through blink red'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline overline line-through blink rgb(255, 0, 0)\\\" but got \\\"\\\"\"},{\"name\":\"Property text-decoration value 'auto'\",\"status\":1,\"message\":\"assert_true: 'auto' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value 'from-font'\",\"status\":1,\"message\":\"assert_true: 'from-font' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value '10px'\",\"status\":1,\"message\":\"assert_true: '10px' is a supported value for text-decoration. expected true got false\"},{\"name\":\"Property text-decoration value 'underline red from-font'\",\"status\":1,\"message\":\"assert_equals: expected \\\"underline from-font rgb(255, 0, 0)\\\" but got \\\"\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

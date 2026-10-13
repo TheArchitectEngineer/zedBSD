@@ -1,0 +1,16 @@
+<!doctype html>
+<div id="parent" style="text-decoration-style:wavy;text-decoration-skip-ink:all"><span id="child">child</span></div>
+<div id="target"></div>
+<script>
+const parent = document.getElementById('parent');
+const child = document.getElementById('child');
+const target = document.getElementById('target');
+console.log('parent-style=' + getComputedStyle(parent).textDecorationStyle);
+console.log('child-style=' + getComputedStyle(child).textDecorationStyle);
+console.log('parent-ink=' + getComputedStyle(parent).textDecorationSkipInk);
+console.log('child-ink=' + getComputedStyle(child).textDecorationSkipInk);
+console.log('initial-style=' + getComputedStyle(target).textDecorationStyle);
+console.log('initial-ink=' + getComputedStyle(target).textDecorationSkipInk);
+console.log('invalid-style=' + CSS.supports('text-decoration-style', 'zigzag'));
+console.log('invalid-ink=' + CSS.supports('text-decoration-skip-ink', 'maybe'));
+</script>

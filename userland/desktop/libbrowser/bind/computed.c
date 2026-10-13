@@ -111,7 +111,9 @@ enum computed_property {
 	COMPUTED_TRANSFORM,
 	COMPUTED_GRID_TEMPLATE_COLUMNS,
 	COMPUTED_TEXT_TRANSFORM,
-	COMPUTED_TEXT_DECORATION_LINE
+	COMPUTED_TEXT_DECORATION_LINE,
+	COMPUTED_TEXT_DECORATION_STYLE,
+	COMPUTED_TEXT_DECORATION_SKIP_INK
 };
 
 /*
@@ -234,6 +236,8 @@ static const struct computed_entry computed_entries[] = {
 	{ "transform", COMPUTED_TRANSFORM },
 	{ "grid-template-columns", COMPUTED_GRID_TEMPLATE_COLUMNS },
 	{ "text-decoration-line", COMPUTED_TEXT_DECORATION_LINE },
+	{ "text-decoration-style", COMPUTED_TEXT_DECORATION_STYLE },
+	{ "text-decoration-skip-ink", COMPUTED_TEXT_DECORATION_SKIP_INK },
 	{ NULL, 0 }
 };
 
@@ -309,6 +313,10 @@ static const char *const computed_cursors[] = {
 
 /* The resolved CSS2 transform names follow the native computed keyword enum. */
 static const char *const computed_text_transforms[] = { "none", "capitalize", "uppercase", "lowercase" };
+
+/* The text decoration keyword names follow their computed enums. */
+static const char *const computed_decoration_styles[] = { "solid", "double", "dotted", "dashed", "wavy" };
+static const char *const computed_decoration_skip_inks[] = { "auto", "none", "all" };
 
 /* The names of white-space, by enum css_white_space. */
 static const char *const computed_white_spaces[] = { "normal", "pre", "nowrap", "pre-wrap", "pre-line" };
@@ -858,6 +866,12 @@ computed_write_keyword(
 		break;
 	case COMPUTED_TEXT_DECORATION_LINE:
 		error = css_decoration_line_serialize(style->text_decoration_line, out);
+		break;
+	case COMPUTED_TEXT_DECORATION_STYLE:
+		error = computed_name(computed_decoration_styles, 5, style->text_decoration_style, out);
+		break;
+	case COMPUTED_TEXT_DECORATION_SKIP_INK:
+		error = computed_name(computed_decoration_skip_inks, 3, style->text_decoration_skip_ink, out);
 		break;
 	case COMPUTED_WHITE_SPACE:
 		error = computed_name(computed_white_spaces, 5, style->white_space, out);

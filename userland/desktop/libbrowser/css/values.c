@@ -203,6 +203,8 @@ static const struct values_name values_names[] = {
 	{ "text-transform", CSS_PROP_TEXT_TRANSFORM },
 	{ "cursor", CSS_PROP_CURSOR },
 	{ "text-decoration-line", CSS_PROP_TEXT_DECORATION_LINE },
+	{ "text-decoration-style", CSS_PROP_TEXT_DECORATION_STYLE },
+	{ "text-decoration-skip-ink", CSS_PROP_TEXT_DECORATION_SKIP_INK },
 	{ "list-style-type", CSS_PROP_LIST_STYLE_TYPE },
 	{ "top", CSS_PROP_TOP },
 	{ "right", CSS_PROP_RIGHT },
@@ -631,6 +633,24 @@ static const struct values_keyword values_white_space[] = {
 	{ "nowrap", CSS_WHITE_SPACE_NOWRAP },
 	{ "pre-wrap", CSS_WHITE_SPACE_PRE_WRAP },
 	{ "pre-line", CSS_WHITE_SPACE_PRE_LINE },
+	{ NULL, 0 }
+};
+
+/* The keywords of text-decoration-style. */
+static const struct values_keyword values_decoration_styles[] = {
+	{ "solid", CSS_DECORATION_SOLID },
+	{ "double", CSS_DECORATION_DOUBLE },
+	{ "dotted", CSS_DECORATION_DOTTED },
+	{ "dashed", CSS_DECORATION_DASHED },
+	{ "wavy", CSS_DECORATION_WAVY },
+	{ NULL, 0 }
+};
+
+/* The keywords of text-decoration-skip-ink. */
+static const struct values_keyword values_decoration_skip_inks[] = {
+	{ "auto", CSS_DECORATION_SKIP_AUTO },
+	{ "none", CSS_DECORATION_SKIP_NONE },
+	{ "all", CSS_DECORATION_SKIP_ALL },
 	{ NULL, 0 }
 };
 
@@ -1759,6 +1779,12 @@ values_single(
 		break;
 	case CSS_PROP_WHITE_SPACE:
 		table = values_white_space;
+		break;
+	case CSS_PROP_TEXT_DECORATION_STYLE:
+		table = values_decoration_styles;
+		break;
+	case CSS_PROP_TEXT_DECORATION_SKIP_INK:
+		table = values_decoration_skip_inks;
 		break;
 	case CSS_PROP_LIST_STYLE_TYPE:
 		table = values_list_style;
