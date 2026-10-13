@@ -4999,3 +4999,158 @@ values_text_decoration(
 	values_add(out, made, CSS_PROP_TEXT_DECORATION_COLOR, &color_value);
 	return 0;
 }
+
+/* Appends a nonempty shorthand component with the CSS separator. */
+static int
+values_decoration_append(struct wb_units *out, const struct wb_units *part)
+{
+	int error;
+
+	if (part->length == 0U)
+		return 0;
+	if (out->length != 0U) {
+		error = wb_utf8_to_units((const unsigned char *)" ", 1U, out);
+		if (error != 0)
+			return error;
+	}
+	return wb_units_append(out, part->data, part->length);
+}
+
+/* Serializes one parsed text-decoration shorthand and its four longhands. */
+int
+css_decoration_shorthand_serialize(
+	const uint16_t *units,
+	size_t length,
+	struct wb_units *shorthand,
+	struct wb_units *line,
+	struct wb_units *thickness,
+	struct wb_units *style,
+	struct wb_units *color)
+{
+	struct css_declaration declarations[4];
+	struct css_token *tokens;
+	struct wb_arena arena;
+	size_t starts[8];
+	size_t lengths[8];
+	size_t token_count;
+	size_t component_count;
+	size_t made;
+	size_t start;
+	size_t end;
+	size_t index;
+	size_t style_index;
+	int keyword;
+	int error;
+
+	wb_arena_init(&arena, 0);
+	error = css_tokenize(&arena, units, length, &tokens, &token_count);
+	if (error != 0)
+		goto cleanup;
+	if (token_count == 0U) {
+		error = EINVAL;
+		goto cleanup;
+	}
+	start = 0U;
+	end = token_count - 1U;
+	while (start < end && tokens[start].type == CSS_TOKEN_WHITESPACE)
+		start++;
+	while (end > start && tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
+		end--;
+	if (start == end) {
+		error = EINVAL;
+		goto cleanup;
+	}
+
+	/* The production shorthand parser is the single validity decision. */
+	made = 0U;
+	error = values_text_decoration(tokens + start, end - start, declarations, &made);
+	if (error != 0)
+		goto cleanup;
+	if (made != 4U) {
+		error = EINVAL;
+		goto cleanup;
+	}
+	component_count = values_components(tokens + start, end - start, starts, lengths, 8U);
+	if (component_count == 0U || component_count >= 8U) {
+		error = EINVAL;
+		goto cleanup;
+	}
+
+	/* Each longhand keeps its specified component, or its initial value. */
+	error = css_decoration_line_serialize(declarations[0].value.keyword, line);
+	if (error != 0)
+		goto cleanup;
+	error = wb_utf8_to_units((const unsigned char *)"auto", 4U, thickness);
+	if (error != 0)
+		goto cleanup;
+	error = wb_utf8_to_units((const unsigned char *)"solid", 5U, style);
+	if (error != 0)
+		goto cleanup;
+	error = wb_utf8_to_units((const unsigned char *)"currentcolor", 12U, color);
+	if (error != 0)
+		goto cleanup;
+
+	for (index = 0U; index < component_count; index++) {
+		const struct css_token *part;
+		size_t part_start;
+		size_t part_end;
+		struct css_value parsed;
+		struct wb_units *destination;
+
+		part = tokens + start + starts[index];
+		part_start = part->source_start;
+		part_end = part[lengths[index] - 1U].source_end;
+		if (values_decoration_line(part, lengths[index], &parsed) == 0)
+			continue;
+		if (lengths[index] == 1U && values_keyword(values_decoration_styles, part, &keyword)) {
+			style->length = 0U;
+			for (style_index = 0U; values_decoration_styles[style_index].name != NULL; style_index++) {
+				if (values_decoration_styles[style_index].value == keyword)
+					break;
+			}
+			error = wb_utf8_to_units((const unsigned char *)values_decoration_styles[style_index].name,
+			    strlen(values_decoration_styles[style_index].name), style);
+			if (error != 0)
+				goto cleanup;
+			continue;
+		}
+		if (lengths[index] == 1U &&
+		    (css_ident_equal(part, "auto") || css_ident_equal(part, "from-font") ||
+		    part->type == CSS_TOKEN_DIMENSION || part->type == CSS_TOKEN_PERCENTAGE ||
+		    (part->type == CSS_TOKEN_NUMBER && part->number == 0))) {
+			destination = thickness;
+		} else {
+			destination = color;
+		}
+		destination->length = 0U;
+		error = wb_units_append(destination, units + part_start, part_end - part_start);
+		if (error != 0)
+			goto cleanup;
+	}
+
+	/* Initial components are omitted unless the entire value is initial. */
+	if (declarations[0].value.keyword != 0 ||
+	    (declarations[1].value.kind == CSS_VALUE_KEYWORD && declarations[1].value.keyword == 0 &&
+	    declarations[2].value.keyword == CSS_DECORATION_SOLID &&
+	    declarations[3].value.color == CSS_CURRENT_COLOR)) {
+		error = values_decoration_append(shorthand, line);
+		if (error != 0)
+			goto cleanup;
+	}
+	if (!(declarations[1].value.kind == CSS_VALUE_KEYWORD && declarations[1].value.keyword == 0)) {
+		error = values_decoration_append(shorthand, thickness);
+		if (error != 0)
+			goto cleanup;
+	}
+	if (declarations[2].value.keyword != CSS_DECORATION_SOLID) {
+		error = values_decoration_append(shorthand, style);
+		if (error != 0)
+			goto cleanup;
+	}
+	if (declarations[3].value.color != CSS_CURRENT_COLOR)
+		error = values_decoration_append(shorthand, color);
+
+cleanup:
+	wb_arena_release(&arena);
+	return error;
+}

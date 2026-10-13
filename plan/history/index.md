@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1022 / WS074 text-decoration inline CSSOM（2026-10-14）
+
+[q1022履歴](queue-q1022.md): valid17/17・shorthand5/5 subtest PASS、固定textdecoration全16件15 PASS/1 FAIL、subtest165 PASS/14 FAIL。Acid3画素差0、Acid2差1865を維持。p191 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase191/evidence/20261014-q1022/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1021 / WS074 text-decoration shorthand grammar（2026-10-14）
 
 [q1021履歴](queue-q1021.md): invalid WPT3/3 subtest PASS、固定textdecoration全16件13 PASS/3 FAIL、subtest153 PASS/26 FAIL。Acid3画素差0、Acid2差1865を維持。p191 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase191/evidence/20261014-q1021/README.md)。共有投影/GitHub publication pending。

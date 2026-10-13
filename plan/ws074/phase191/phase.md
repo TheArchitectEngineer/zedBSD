@@ -75,3 +75,13 @@ Event ws074-p191-q1020-outcome-20261014: q1020-i01 partial cleared。p191 whole�
 **partial scope cleared、p191 whole uncleared。** `text-decoration`の全componentを検証してline/thickness/style/colorの4 longhand宣言へ展開。[証拠](evidence/20261014-q1021/README.md)。invalid WPT3/3 subtest PASS、固定textdecoration全16件13 PASS/3 FAIL、subtest153 PASS/26 FAIL（q1020の12/4、150/29から改善）。局所fixture、host build warning0、CSSOM12/12、rule model44/44。Acid3 score100/100・画素差0、Acid2差1865不変。3件のCSSOM直列化・getterは後続へ。GitHub publication保留。
 
 Event ws074-p191-q1021-outcome-20261014: q1021-i01 partial cleared。p191 wholeは3 test FAILのためuncleared。p173分母・p189/p190 runner依存は維持。次はshorthand CSSOMを有限Queueで扱う。
+
+## q1022-i01 の有限部分範囲
+
+2026-10-14 00:38 JST、ユーザーの事前承認を適用、最大90分。`text-decoration-valid.html` の指定値 canonical直列化と `text-decoration-shorthand.html` の4 longhand getterを対象にする。q1021の既存parserと整合する一般的なCSSOM処理として実装する。computed shorthand、新しい線の描画、p191 wholeクリアはこの部分基準に含めない。局所fixture、host build、対象WPTと固定全16件、Acid3/Acid2差画素非増加を確認。WPT本体/期待・公開ABI・`master.md`は変更しない。適用規則は Guardrail、C全文、browser component全文。
+
+## q1022-i01 結果（2026-10-14 00:42 JST）
+
+**partial scope cleared、p191 whole uncleared。** 指定 shorthand の canonical CSSOM と4 longhand getter・変更時の展開を実装。[証拠](evidence/20261014-q1022/README.md)。対象 valid17/17、shorthand5/5 subtest PASS。固定全16件は15 PASS/1 FAIL、165 PASS/14 FAIL subtest。host build warning0、CSSOM12/12、rule model44/44、Acid3 score100/100・画素差0、Acid2差1865不変。残りはcomputed shorthand。GitHub publication保留。
+
+Event ws074-p191-q1022-outcome-20261014: q1022-i01 partial cleared。p191 wholeは1 test FAILのためuncleared。p173分母・p189/p190 runner依存は維持。次はcomputed shorthandを有限Queueで扱う。

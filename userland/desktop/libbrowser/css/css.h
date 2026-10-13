@@ -668,6 +668,7 @@ int css_declaration_valid(struct vm_heap *heap, const uint16_t *units, size_t le
 const char *css_property_name(size_t index);
 int css_decoration_line_parse(const uint16_t *units, size_t length, int *lines);
 int css_decoration_line_serialize(int lines, struct wb_units *out);
+int css_decoration_shorthand_serialize(const uint16_t *units, size_t length, struct wb_units *shorthand, struct wb_units *line, struct wb_units *thickness, struct wb_units *style, struct wb_units *color);
 
 /* The engine (cascade.c). */
 int css_engine_create(struct css_engine **engine, struct vm_heap *heap);

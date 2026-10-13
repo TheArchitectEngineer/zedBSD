@@ -65,6 +65,10 @@ static int style_list_remove_at(struct vm_realm *realm, struct style_list *list,
 static int style_remove_from_list(struct vm_realm *realm, struct style_list *list, const struct vm_string *name);
 static int style_valid(struct vm_realm *realm, const struct vm_string *name, const struct vm_string *value, int *valid);
 static int style_canonical_decoration_line(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
+static int style_decoration_parts(const struct vm_string *value, struct wb_units parts[5]);
+static int style_decoration_longhand(const struct vm_string *name);
+static int style_decoration_get(struct vm_realm *realm, const struct style_list *list, const struct vm_string *name, vm_value *result, int *present);
+static int style_decoration_expand(struct vm_realm *realm, struct style_list *list);
 static int style_property_name(struct vm_realm *realm, vm_value value, struct vm_string **name);
 static int style_accessor(struct bind_window *window, const char *name, struct vm_string *property);
 static void style_camel_case(const char *name, int capital, char out[STYLE_NAME_MAX]);
@@ -811,6 +815,27 @@ style_set(
 	status = style_read(realm, element, &list);
 	if (status != 0)
 		goto roots_cleanup;
+	if (vm_string_equal_ascii(name, "text-decoration")) {
+		/* A later shorthand replaces all four earlier longhand values. */
+		index = 0U;
+		while (index < list.names->length) {
+			struct vm_string *earlier;
+
+			earlier = (struct vm_string *)vm_value_as_cell(list.names->elements[index]);
+			if (!style_decoration_longhand(earlier)) {
+				index++;
+				continue;
+			}
+			status = style_list_remove_at(realm, &list, index);
+			if (status != 0)
+				goto cleanup;
+		}
+	}
+	if (style_decoration_longhand(name)) {
+		status = style_decoration_expand(realm, &list);
+		if (status != 0)
+			goto cleanup;
+	}
 
 	/* A property not there is appended. */
 	present = style_find(&list, name, &index);
@@ -901,6 +926,11 @@ style_remove(
 	if (status != 0)
 		goto cleanup;
 	old_root = vm_value_as_cell(*old_value);
+	if (style_decoration_longhand(name)) {
+		status = style_decoration_expand(realm, &list);
+		if (status != 0)
+			goto cleanup;
+	}
 
 	/* Each declaration of the property, the last one's value reported. */
 	removed = 0;
@@ -1147,7 +1177,7 @@ style_valid(
 	return 0;
 }
 
-/* Canonicalizes only parsed text-decoration-line keywords, preserving CSS-wide values. */
+/* Canonicalizes parsed decoration keywords and the complete shorthand. */
 static int
 style_canonical_decoration_line(
 	struct vm_realm *realm,
@@ -1157,11 +1187,15 @@ style_canonical_decoration_line(
 {
 	struct wb_units source;
 	struct wb_units canonical;
+	struct wb_units parts[4];
+	size_t index;
+	int shorthand;
 	int lines;
 	int status;
 
 	*out = value;
-	if (!vm_string_equal_ascii(name, "text-decoration-line"))
+	shorthand = vm_string_equal_ascii(name, "text-decoration");
+	if (!shorthand && !vm_string_equal_ascii(name, "text-decoration-line"))
 		return 0;
 	wb_units_init(&source);
 	status = vm_string_append_units(value, &source);
@@ -1169,15 +1203,24 @@ style_canonical_decoration_line(
 		wb_units_release(&source);
 		return status;
 	}
-	status = css_decoration_line_parse(source.data, source.length, &lines);
-	wb_units_release(&source);
-	if (status == EINVAL)
-		return 0;
-	if (status != 0)
-		return status;
-
 	wb_units_init(&canonical);
-	status = css_decoration_line_serialize(lines, &canonical);
+	if (shorthand) {
+		for (index = 0U; index < 4U; index++)
+			wb_units_init(&parts[index]);
+		status = css_decoration_shorthand_serialize(source.data, source.length,
+		    &canonical, &parts[0], &parts[1], &parts[2], &parts[3]);
+		for (index = 0U; index < 4U; index++)
+			wb_units_release(&parts[index]);
+	} else {
+		status = css_decoration_line_parse(source.data, source.length, &lines);
+		if (status == 0)
+			status = css_decoration_line_serialize(lines, &canonical);
+	}
+	wb_units_release(&source);
+	if (status == EINVAL) {
+		wb_units_release(&canonical);
+		return 0;
+	}
 	if (status != 0) {
 		wb_units_release(&canonical);
 		return status;
@@ -1187,6 +1230,150 @@ style_canonical_decoration_line(
 	if (*out == NULL)
 		return ENOMEM;
 	return 0;
+}
+
+/* Splits a stored decoration shorthand through the production CSS parser. */
+static int
+style_decoration_parts(const struct vm_string *value, struct wb_units parts[5])
+{
+	struct wb_units source;
+	size_t index;
+	int status;
+
+	wb_units_init(&source);
+	for (index = 0U; index < 5U; index++)
+		wb_units_init(&parts[index]);
+	status = vm_string_append_units(value, &source);
+	if (status == 0 &&
+	    (vm_string_equal_ascii(value, "inherit") || vm_string_equal_ascii(value, "initial") ||
+	    vm_string_equal_ascii(value, "unset") || vm_string_equal_ascii(value, "revert") ||
+	    vm_string_equal_ascii(value, "revert-layer"))) {
+		for (index = 0U; index < 5U; index++) {
+			status = wb_units_append(&parts[index], source.data, source.length);
+			if (status != 0)
+				break;
+		}
+	} else if (status == 0) {
+		status = css_decoration_shorthand_serialize(source.data, source.length,
+		    &parts[0], &parts[1], &parts[2], &parts[3], &parts[4]);
+	}
+	wb_units_release(&source);
+	return status;
+}
+
+/* The four longhands of text-decoration have stable positions in the parser result. */
+static int
+style_decoration_longhand(const struct vm_string *name)
+{
+	if (vm_string_equal_ascii(name, "text-decoration-line"))
+		return 1;
+	if (vm_string_equal_ascii(name, "text-decoration-thickness"))
+		return 2;
+	if (vm_string_equal_ascii(name, "text-decoration-style"))
+		return 3;
+	if (vm_string_equal_ascii(name, "text-decoration-color"))
+		return 4;
+	return 0;
+}
+
+/* Reads a longhand from a shorthand that has not yet been expanded. */
+static int
+style_decoration_get(
+	struct vm_realm *realm,
+	const struct style_list *list,
+	const struct vm_string *name,
+	vm_value *result,
+	int *present)
+{
+	struct wb_units parts[5];
+	struct vm_string *value;
+	size_t index;
+	size_t part;
+	int status;
+
+	*present = 0;
+	part = (size_t)style_decoration_longhand(name);
+	if (part == 0U)
+		return 0;
+	for (index = 0U; index < list->names->length; index++) {
+		value = (struct vm_string *)vm_value_as_cell(list->names->elements[index]);
+		if (vm_string_equal_ascii(value, "text-decoration"))
+			break;
+	}
+	if (index == list->names->length)
+		return 0;
+	value = (struct vm_string *)vm_value_as_cell(list->values->elements[index]);
+	status = style_decoration_parts(value, parts);
+	if (status == 0) {
+		value = vm_string_from_units(realm->heap, parts[part].data, parts[part].length);
+		if (value == NULL)
+			status = ENOMEM;
+		else {
+			*result = vm_value_cell(value);
+			*present = 1;
+		}
+	}
+	for (index = 0U; index < 5U; index++)
+		wb_units_release(&parts[index]);
+	return status;
+}
+
+/* Replaces a shorthand with its longhands before a longhand mutation. */
+static int
+style_decoration_expand(struct vm_realm *realm, struct style_list *list)
+{
+	static const char *const names[4] = {
+		"text-decoration-line", "text-decoration-thickness",
+		"text-decoration-style", "text-decoration-color"
+	};
+	struct wb_units parts[5];
+	struct vm_string *name;
+	struct vm_string *value;
+	struct vm_cell *name_root;
+	size_t index;
+	size_t part;
+	int important;
+	int status;
+
+	for (index = 0U; index < list->names->length; index++) {
+		name = (struct vm_string *)vm_value_as_cell(list->names->elements[index]);
+		if (vm_string_equal_ascii(name, "text-decoration"))
+			break;
+	}
+	if (index == list->names->length)
+		return 0;
+	value = (struct vm_string *)vm_value_as_cell(list->values->elements[index]);
+	important = vm_to_boolean(list->priorities->elements[index]);
+	status = style_decoration_parts(value, parts);
+	if (status != 0)
+		goto cleanup;
+	status = style_list_remove_at(realm, list, (uint32_t)index);
+	if (status != 0)
+		goto cleanup;
+	for (part = 0U; part < 4U; part++) {
+		name = vm_atom_from_ascii(realm->heap, names[part]);
+		if (name == NULL) {
+			status = ENOMEM;
+			goto cleanup;
+		}
+		name_root = &name->cell;
+		status = vm_heap_add_root(realm->heap, &name_root);
+		if (status != 0)
+			goto cleanup;
+		value = vm_string_from_units(realm->heap, parts[part + 1U].data, parts[part + 1U].length);
+		if (value == NULL)
+			status = ENOMEM;
+		else
+			status = style_list_append(realm, list, name, value, important);
+		vm_heap_remove_root(realm->heap, &name_root);
+		if (status != 0)
+			goto cleanup;
+	}
+
+cleanup:
+	for (index = 0U; index < 5U; index++)
+		wb_units_release(&parts[index]);
+	return status;
 }
 
 /* Reads a property name argument: lower case, but a custom property's as it is. */
@@ -1658,6 +1845,19 @@ style_get_property_value(
 
 	/* A property not there is the empty string. */
 	present = style_find(&list, name, &index);
+	if (!present) {
+		status = style_decoration_get(realm, &list, name, result, &present);
+		if (status != 0) {
+			style_list_release(realm, &list);
+			vm_heap_remove_root(realm->heap, &name_root);
+			return status;
+		}
+		if (present) {
+			style_list_release(realm, &list);
+			vm_heap_remove_root(realm->heap, &name_root);
+			return 0;
+		}
+	}
 	vm_heap_remove_root(realm->heap, &name_root);
 	if (!present) {
 		status = bind_string(realm, "", result);
@@ -1892,6 +2092,17 @@ style_member_get(
 
 	/* A property not there is the empty string. */
 	present = style_find(&list, name, &index);
+	if (!present) {
+		status = style_decoration_get(realm, &list, name, result, &present);
+		if (status != 0) {
+			style_list_release(realm, &list);
+			return status;
+		}
+		if (present) {
+			style_list_release(realm, &list);
+			return 0;
+		}
+	}
 	if (!present) {
 		status = bind_string(realm, "", result);
 		style_list_release(realm, &list);
