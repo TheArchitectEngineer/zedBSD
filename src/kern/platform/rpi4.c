@@ -36,6 +36,9 @@
 #include "drivers/platform/rpi4/rpi4-gpio.h"
 #include "drivers/platform/rpi4/rpi4-pcie.h"
 #include "drivers/platform/rpi4/rpi4-sdhci.h"
+#if CONFIG_DRIVER_BCM2711_WIFI
+#include "drivers/platform/rpi4/rpi4-wifi.h"
+#endif
 #if CONFIG_DRIVER_BCM2711_GPU
 #include "drivers/gpu/bcm2711/bcm2711-gpu.h"
 #endif
@@ -47,6 +50,21 @@
  * and the tree's header states its real size inside it.
  */
 #define RPI4_FDT_READ_LIMIT	(2U * 1024U * 1024U)
+
+#if CONFIG_DRIVER_BCM2711_WIFI
+/*
+ * The SD controller the SD card driver bound to, and the device tree's
+ * physical address, for the onboard Wi-Fi's probe.
+ *
+ * Both are recorded by kern_platform_init() before any other driver
+ * starts and never change afterwards.  The controller is the handoff's
+ * eMMC2, or the legacy controller when QEMU puts the SD card there; the
+ * onboard Wi-Fi, which uses the legacy controller on a board, leaves it
+ * alone when the SD card has it.  Zero means not yet known.
+ */
+static uintptr_t rpi4_sd_base;
+static uint64_t rpi4_fdt_phys;
+#endif
 
 static void prepare_shared_blocks(uint64_t fdt_phys);
 
@@ -93,6 +111,9 @@ kern_platform_init(
 	/* Selects the MBR partition scheme and starts the SD controller. */
 	partition_set_scheme(&drv_partition_scheme_mbr);
 	disk_registry_reset();
+#if CONFIG_DRIVER_BCM2711_WIFI
+	rpi4_sd_base = (uintptr_t)rpi4->sdhci_phys;
+#endif
 	if (drv_rpi4_sdhci_init((uintptr_t)rpi4->sdhci_phys) != 0) {
 		/*
 		 * QEMU raspi4b currently attaches -drive if=sd to the legacy
@@ -102,8 +123,16 @@ kern_platform_init(
 			return 0;
 		if (drv_rpi4_sdhci_init(0xfe300000ULL) != 0)
 			return 0;
+#if CONFIG_DRIVER_BCM2711_WIFI
+		rpi4_sd_base = (uintptr_t)0xfe300000ULL;
+#endif
 		hal_puts("sdhci: using QEMU legacy-controller fallback\n");
 	}
+
+#if CONFIG_DRIVER_BCM2711_WIFI
+	/* Keeps the tree's address for the Wi-Fi probe discovery starts later. */
+	rpi4_fdt_phys = rpi4->fdt_phys;
+#endif
 
 	/* Prepares the firmware mailbox and the GPIO block the drivers below share. */
 	prepare_shared_blocks(rpi4->fdt_phys);
@@ -186,6 +215,14 @@ kern_platform_refresh_devices(
 
 	/* Has the USB controllers behind PCIe find their devices. */
 	drv_rpi4_pcie_refresh();
+
+#if CONFIG_DRIVER_BCM2711_WIFI
+	/*
+	 * Starts the onboard Wi-Fi's thread; a board or emulator without the
+	 * chip, or with the SD card on its controller, goes on without it.
+	 */
+	(void)drv_rpi4_wifi_probe(rpi4_fdt_phys, rpi4_sd_base);
+#endif
 }
 
 /*

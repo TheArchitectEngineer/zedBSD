@@ -91,6 +91,15 @@ ARM64_KERNEL_SOURCES += src/drivers/ethernet/bcm54213pe.c \
 	src/drivers/platform/rpi4/rpi4-ethernet.c
 endif
 
+# The onboard Wi-Fi: the legacy EMMC controller as an SDIO host, the SD
+# interrupt line's dispatcher and the chip's bring-up (ws206-p002b).
+ifeq ($(CONFIG_DRIVER_BCM2711_WIFI),y)
+ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmc-irq.c \
+	src/drivers/platform/rpi4/rpi4-sdio-host.c \
+	src/drivers/platform/rpi4/rpi4-sdio.c \
+	src/drivers/platform/rpi4/rpi4-wifi.c
+endif
+
 # The headphone jack: PWM1 and a legacy DMA channel (ws207-p002).
 ifeq ($(CONFIG_DRIVER_BCM2711_AUDIO),y)
 ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-audio.c \
