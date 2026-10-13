@@ -3,7 +3,7 @@
 # ws215-p001: Raspberry Pi 4 の内蔵の Bluetooth の調査と設計
 
 Parent: [WS215](../ws.md)
-Status: in-progress（2026-10-13 P3: 設計の第 2 版。review-1 の重大 1〜3・中 1〜11・軽微を直した。design-reviewer の再 review 待ち。判断 D1〜D5 を Q1 経由でユーザーへ）
+Status: in-progress（2026-10-13 P3: 設計の第 2 版で review-1 を直し、review-2 の判定は「p002 可、p003 は中-B〜E を節に数行ずつ」。第 3 版の補い（下の節）で review-2 の中-B〜F・軽微を p003・p005 の節に入れた。D1〜D4 は 2026-10-13 朝にユーザーが答え、D5 は未回答で推しの (a)）
 Phase disposition: normal
 Queue: P3 の lane（Q1 の割当、2026-10-13）
 
@@ -40,6 +40,29 @@ review-1 の要点は [review-1.md](review-1.md)。判定は「p002 は進めて
 | 軽微: HAL の変更は不要 | 同意。HAL の API は変えない | — |
 | D1〜D4 への意見 | 9 節に review の意見を推しとして残した | 9 節 |
 
+## 第 3 版の補い（review-2 への対応、2026-10-13 P3）
+
+review-2 の要点は [review-2.md](review-2.md)。判定は「p002 は進めてよい、p003 は中-A を Q1 が解き中-B〜E を p003 の節に数行ずつ、p005 は中-B・中-F の反映が条件」。下の表の決めは、3 節・4 節の該当の ID の記述より優先する（実装の時に本文へ畳む）。
+
+| 指摘 | 対応（段） | 直す ID |
+| --- | --- | --- |
+| 中-A WS206 の helper の API | Q1 が解いた: ws206-p002a、WS206 の W3（[ws206 p001](../../ws206/phase001/phase.md) の W3）。WS215 は次をそのまま使う: `drv_rpi4_gpio_set_function(pin, DRV_RPI4_GPIO_FUNCTION_ALT3)`（30〜33）、`drv_rpi4_gpio_pull_from_dt()` で DT の `brcm,pull` を `enum drv_rpi4_gpio_pull` に直してから `drv_rpi4_gpio_set_pull()`（DT が読めなければ定数 30 `PULL_UP`・31 `PULL_NONE`・32 `PULL_NONE`・33 `PULL_UP`）、`drv_rpi4_firmware_get_gpio`・`set_gpio(DRV_RPI4_FIRMWARE_GPIO_BT_ON, ...)`（128 + line の変換と応答の状態の語の検査は helper の中。WS215 は返り値だけを見る。ENOTSUP なら attach しない）。`drv_rpi4_gpio_init()` は `kern_platform_init` が 1 回呼ぶ（WS215 は呼ばない、ENODEV なら attach しない） | B5、B12（p003） |
+| 中-B STOPPED の履歴が daemon の始めの `BT_IOC_RESET` で毎回消え、「60 秒に 3 回」が働かない。「RECOVER の reset で戻る」は誤り | **kernel（p003）**: 自己 reset の履歴は直近 3 回の時刻の ring。`BT_IOC_RESET` は STOPPED を出る（電源の入れ直し、`send` を受け直す）が **ring を消さない**。窓（60 秒）の中で 4 回目の自己 reset が起きれば、`BT_IOC_RESET` の直後でも再び STOPPED。ring の古い時刻は 60 秒で外れるだけ。**daemon（p005）**: 今の `btd_failures` は始動の失敗だけを数える（main.c 988〜999 行）ので、自己 reset の notice が READY の後に周期的に来ても止まらない。**求めていない RESET の notice**（自分が `BT_IOC_RESET` を呼んで読み捨てた物以外）が READY から T 秒（既定 60 秒、自前の決め）以内に来たら `btd_failures` に 1 を足す。`BTD_FAILURES_MAX`（3）で `btd_stopped`。RECOVER（reopen・reset のどちらも）が 0 に戻す（既存、main.c 1862〜1863 行）。**文の訂正**: daemon が止まった時に戻す操作は `bt` の RECOVER の **reopen**（reset は session が閉じていると `ERROR no-controller`、main.c 1843〜1846 行）。reopen は `btd_open` → 始動の初めの `BT_IOC_RESET`（B14）なので、kernel の STOPPED と daemon の止まりが reopen 1 回で両方戻る。**host 試験**: p003 は「STOPPED → `BT_IOC_RESET` → 窓の中の 1 回の自己 reset で再び STOPPED」「窓の外では数え直し」、p005 は「READY の後 1 秒ごとの notice で 3 回目に daemon が止まり、RECOVER の reopen で再び始まる」 | B9、B14、4 節、8 節（p003・p005） |
+| 中-C HUNT が長い偽の候補で本物の Command Complete を飲む（`04 0E FF` が 255 byte を待つ） | **HUNT は header の byte ごとに判定する**: 1 byte 目 `0x04`、2 byte 目 `0x0E` か `0x0F`、3 byte 目（引数の長さ）は `0x0F` なら 4 ちょうど、`0x0E` なら 4 以上、6 byte 目まで（Num_HCI_Command_Packets と opcode）で opcode が遷移の後に送った最後の command の opcode と一致（遷移の後にまだ何も送っていなければ一致を問わない。`send()` が type 1 の packet の opcode を spinlock の下で覚える。自前の決め）。どこかで外れたら、または候補の途中で 100 ms byte が来なければ（B8 の時計と同じ）、**候補の始まりの 1 byte だけを捨て、保持した残り（始まり +1 から）を頭から HUNT に通し直す（replay）**。replay の buffer は driver の状態の中の 260 byte（header 3 + 引数の最大 255、端数の余り）の配列、replay は worker の中だけで行い、受けの ring とは別。本体を読み終えた候補だけを class へ渡し SYNC へ。**host 試験**: 「偽の header の prefix（`04 0E FF` の後）に本物の CC」「`04 04 0E 04 …`（type の byte の重なり）」「opcode の違う CC の後に正しい CC」「候補の途中の 100 ms の止まり → replay で後ろの本物を拾う」 | B8、B9、8 節（p003） |
+| 中-D reset の op と worker の自己 reset の取り合い | **遷移の世代番号** `generation`（uint32）: 電源の入れ直しと速さの切り替え（B9 の遷移）のたびに、電源の mutex を持ったまま spinlock の下で 1 を足す。**worker の自己 reset**: spinlock の下で今の世代 g を覚え、`stop_request` が立っていれば自己 reset をやめて止まる（下）。立っていなければ spinlock を放して電源の mutex を取る。**取った後に世代が g でなければ**（その間に reset の op か set_speed が遷移を済ませた）自己 reset を取り消す（数えず、notice も出さない）。**reset・set_speed の op**（class の op の mutex の下）: (1) spinlock の下で `stop_request` を立て worker を起こす、(2) **電源の mutex を取る前に** worker が止まった合図（`parked`）を上限 1 s で待つ（worker が自己 reset の途中なら、それが終わって止まるのを待つ。worker は電源の mutex の外で止まるので逆順の待ちにならない）、(3) 電源の mutex を取り、遷移、世代 +1、(4) `stop_request` を下ろし worker を起こす。**class に断られて持っている packet**（B7 の保持）と HUNT の候補は、worker が世代の変わりを見た時に捨てる（古い controller の packet を新しい session に渡さない）。世代の判定は純粋な関数にして host 試験（reset の op と自己 reset の重なりの順、保持の packet の破棄） | B7、B9、6 節（p003） |
+| 中-E 登録の flags の mask（bt-hci.c 226〜228 行は sco の op がある時だけ flags を設定）のままでは `BT_INFO_SPEED`・`ADDRESS` が消える | B20 の (3) を次に置き換える: `info.flags` は flag ごとに条件を分けて class が作る。`BT_INFO_SCO` は `sco_set`・`sco_send` が両方 NULL でなく description の flags に SCO がある時、`BT_INFO_SPEED` は `set_speed` が NULL でなく `speed_max` が 0 でない時、`BT_INFO_ADDRESS` は `board_address` が全部 0 でない時（SPEED・ADDRESS は description の flags を見ない）。usb-bt と loopback は `set_speed` が NULL・`speed_max` 0・address 0 なので、今の `bt_info` と同じ値になることを host 試験と grep で確かめる | B20（p003） |
+| 中-F D5 の症状の記述に出典が無い | p006 の 10 分の試験で、送りの止まり（B10 の 2 s）の数に加えて PL011 の割り込みの数と率（受け・送り・誤り別、`GET_STATS` か klog の 1 行）を始めと終わりで記録する。driver は p003 で数を持つ | B10、8 節（p003・p006） |
+| 軽微 notice の取り違え | 4 節の 2 を「`BT_IOC_RESET` の後、node を非 block で EAGAIN まで読み、RESET の notice を 1 つ以上含むことを確かめて全部捨てる（上限 1 s で notice が無ければ始動の失敗）」に。open で class が ring を空にするので、残るのは自分の reset の notice とその後のゴミだけ | B14、4 節（p005） |
+| 軽微 Broadcom の folder | session に `broadcom_folder` の欄（既定 `/lib/firmware/brcm`、Intel の `firmware_folder` と並べる）。host 試験は一時の folder を差し込む | B14（p005） |
+| 軽微 RECOVER で電源の入れ直しが 2 回 | RECOVER の reset は `BT_IOC_RESET` の後に reopen し、始動の初めでもう一度 `BT_IOC_RESET` するので電源の入れ直しが 2 回になる。害は無く、始動が 1 回ぶん（約 600 ms）長いだけ。記録だけで直さない | B14（p005） |
+| 軽微 firmware の file の名前 | Read Local Name の生の文字列から path を作らない。表（"BCM4345C0" → `BCM4345C0.hcd`）で引き、表に無い名前は `FIRMWARE_NEEDED`（理由に名前を出す、印字できない byte は `?`）。製造者は 15（Broadcom）と 305（Cypress）の両方を受ける（出典は Assigned Numbers、2a 節に 305 の行を p005 で足す） | B14、2a 節（p005） |
+| 軽微 古い記述 | `emulated_board()` は main の `drv_rpi4_board_emulated()`（`rpi4-board.c`、Q1 の補足）を使う。`drv_rpi4_firmware_init` の SMP の不安全は済み（8155669d4）。B4・B12・B20 の該当の文はこれに読み替える | B4、B12、B20 |
+| 軽微 vmunix.mk の行番号 | config.txt の利用者は `platform/arm64/vmunix.mk` の hdd-image の規則の `$(ARM64_PLATFORM)/config.txt` の 2 か所（行番号は動くので p003 で grep で拾う。p002 の後は 626・633 行） | B2（p003） |
+| 軽微 mailbox の GPIO の答えの状態の語 | WS206 の W3 の helper が検査する（中-A の行） | B12 |
+| 軽微 Pi の既定の image に bluetoothd を入れるか | **既に入っている**（[p002](../phase002/phase.md) で判明: base の package は platform が `*`、`config-rpi4.mk` に bluetoothd・bt）。D1「Bluetooth はデフォルト有効」に従い入れたまま。controller が無い間は 2 秒ごとに node を探すだけで log を出さない（p002 の節） | p002 |
+| 値の出典の表 | p003・p005 の入る時に、(e1)(e2) の行に file の path・commit・行を足し、自前の値（静かな窓 10 ms、byte の間の 100 ms、空き待ち 1 s、送りの止まり 2 s、daemon の T 60 秒、HUNT の opcode の一致）は「自前の決め」と明記する | 2a 節 |
+| D5 | (b) の前に **(c) ARM の公開の PL011 の errata・TRM の改訂を探す**を足した（9 節） | 9 節 |
+
 ## 由来
 
 2026-10-12 ユーザー:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」SMP（WS208）は main に入った。WiFi は [WS206](../../ws206/ws.md)（P1 が並行して設計中）、Bluetooth はこの WS。
@@ -57,7 +80,7 @@ review-1 の要点は [review-1.md](review-1.md)。判定は「p002 は進めて
 | UAPI | `include/uapi/bluetooth.h`: H4 の形、`BT_IOC_GET_INFO`・`SET_BOOTLOADER`・`RESET`・`SET_ACL_MAX`・`GET_STATS`・`SET_SCO`（番号 0〜5）。`struct bt_info` は 160 byte（`reserved[4]` を含む、static assert は無い）。`BT_BUS_USB` だけ。notice は `BT_PACKET_NOTICE_RESET` だけ。`BT_IOC_RESET` の comment は USB の書き方（150〜159 行）。SCO の write は「isochronous の pipe に約 36 ms を queue、満ちたら EAGAIN」（24〜29 行）。ACL の上限 `BT_ACL_DATA_MAX` 4096 |
 | USB の transport | `src/drivers/usb/usb-bt.c`。assembler を `BT_ACL_DATA_MAX` で作る（602 行）。reset は worker を止め、device を reset し、`drv_bt_hci_notice(RESET)` を queue に入れる（1357 行） |
 | bluetoothd | `userland/base/bluetoothd/`。始動は `btd_session_start()`: `GET_INFO` → Intel（0x8087）なら Intel の firmware → `session_core()`。`session_dispatch` は RESET の notice で `BTD_STATE_ERROR`（session.c 815〜819 行）、`btd_loop` が close し（main.c 804 行）、2 秒後に open し直す（816 行）。command を待つ間の notice は ECONNRESET（session.c 936〜938 行）。始動の失敗が 3 回続くと止まる（`BTD_FAILURES_MAX`、main.c 76 行）。`bt` の RECOVER の reset が `BT_IOC_RESET` の後に止まりを解いて open し直す（main.c 1850〜1866 行）。load の記憶の key は `physical_path` の "/device" までで、無ければ空（main.c 3004〜3022 行）。firmware の folder は `BTD_FIRMWARE_FOLDER` = `/lib/firmware/intel` の 1 つ（protocol.h 73 行） |
-| **arm64 で build されない物** | bluetoothd・bt・bt-probe の package の arch が `amd64` だけ。`CONFIG_INPUT_BRIDGE` は Makefile 245 行で amd64 だけ y、kernel の規則も amd64 の vmunix.mk（349〜355 行）にだけある。arm64 の kernel の HCI の class は `CONFIG_DRIVER_USB_BT=y` の時だけ build（platform/arm64/vmunix.mk 130〜132 行） |
+| **arm64 で build されない物**（p002 で訂正: bluetoothd・bt は base の package で platform は `*`、既に arm64 で build され Pi の image に入っていた。arm64 で外れていたのは bt-probe と input bridge だけ） | bluetoothd・bt・bt-probe の package の arch が `amd64` だけ。`CONFIG_INPUT_BRIDGE` は Makefile 245 行で amd64 だけ y、kernel の規則も amd64 の vmunix.mk（349〜355 行）にだけある。arm64 の kernel の HCI の class は `CONFIG_DRIVER_USB_BT=y` の時だけ build（platform/arm64/vmunix.mk 130〜132 行） |
 | Pi 4 の UART | HAL の early console（`src/hal/arm64/bsp-rpi4/uart.c`）は PL011 を GPIO 14・15 で使う。`CONFIG_RPI4_SERIAL_CONSOLE=y` の時だけ（既定 n）。n の時は HAL も `rpi4-console.c` も PL011 に触らない。`prekern_bsp_cons_irq_init()` が FDT の最初の `arm,pl011` の割り込みを mask したまま残す |
 | config.txt | `platform/arm64/config.txt`（静的な 1 file）: `enable_uart=1`、`init_uart_clock=48000000`、`uart_2ndstage=1`、`dtoverlay=disable-bt`。利用者は 5 か所: `platform/arm64/bootloader.mk` 4 行、`platform/arm64/disk-image.mk` 10 行、`platform/arm64/vmunix.mk` 595・602 行、`platform/arm64/tools/check-rpi4-hdd-image.py` 87 行（渡された file と image の中を比べる） |
 | Pi 4 の driver | `src/drivers/platform/rpi4/`: console、ethernet、firmware（mailbox、`drv_rpi4_firmware_property()`、buffer を atomic に取り、取れなければ sleep して再試行、長く取れなければ EBUSY、rpi4-firmware.c 250〜274 行）、pcie、sdhci、audio。GPIO の共通の helper はまだ無い（WS206 p002a が作る） |
@@ -192,11 +215,11 @@ QEMU は BT を emulate しないので QEMU の BT の試験は無い。QEMU �
 
 | ID | 問い | 推し（review-1 の意見） | いつまでに |
 | --- | --- | --- | --- |
-| D1 | serial の console の build で BT を使えなくしてよいか（B2）。代わりに serial の console を mini UART へ移せば両立するが、HAL の early console の書き直しと core の clock の固定が要る | **使えなくする**（serial の build は debug 用、今の挙動のまま）。review-1 も賛成: mini UART の console は core の clock を固定するので Future Work | p003 の前 |
-| D2 | Pi 4 の image に `BCM4345C0.hcd`（Cypress の EULA: object code のまま、Cypress の IC と使う時だけ再配布可、改変・逆解析の禁止）を入れてよいか | **入れる**。review-1 は条件つき賛成: 既定 off の package、Pi 4 の config だけで選ぶ、license の本文の一致を p004 で確かめる | p004 の前 |
-| D3 | controller も DT も address を持たない時の BD_ADDR | **実機で読んでから決める**（review-1 も同じ）。代案は mailbox の board の MAC（`GET_BOARD_MAC_ADDRESS`）から決まった規則で作る（推測。firmware が DT に入れる値との関係は実機で確かめる） | p005 の前 |
-| D4 | 実機の UAT の機器（keyboard・mouse・headset・Android の phone）は amd64 の UAT と同じ物でよいか | **同じ物**（review-1 も賛成。A2DP は WS205 の arm64 に依存） | p006 の前 |
-| D5 | Pi 4 の UART の部品（PL011）には、相手からの「待って」の信号（CTS）が頻繁に変わると送りが止まることがある、という癖があり、Raspberry Pi の Linux はその回避を入れている（DT の `cts-event-workaround`）。回避の具体の手順は Linux の GPL の code（とその commit の説明）にしか書かれておらず、WS215 は GPL の code を読まない決まり（B19）。どうするか | **(a) 回避なしで始める**: zedBSD は CTS の割り込みを使わず、部品の自動の流れの制御だけを使う作りにする（回避が要る場面を避けられる見込み、推測）。実機の 10 分の A2DP と WiFi の大きな転送の同時で送りが止まらないかを見て、止まったら改めて相談する。止まっても B10 の 2 s の上限で controller を reset して戻る（その間の音は途切れる）。他の案: (b) WS141 と同じ「値・手順は事実として読み、写さない、最後に類似の監査」の例外を WS215 のこの 1 点にだけ広げる | p003 の前 |
+| D1 | serial の console の build で BT を使えなくしてよいか（B2）。代わりに serial の console を mini UART へ移せば両立するが、HAL の early console の書き直しと core の clock の固定が要る | **使えなくする**（serial の build は debug 用、今の挙動のまま）。review-1 も賛成: mini UART の console は core の clock を固定するので Future Work | p003 の前。**2026-10-13 朝 ユーザー**:「シリアルコンソールはオプションにしてデフォルトでOFFです。ONにしたらBluetoothが使えなくてよいです。Bluetoothはデフォルト有効です。」→ B2 の `CONFIG_DRIVER_BCM2711_BT` の既定は **y**（「計測まで n」を取り消す。clock の前後の log は残す） |
+| D2 | Pi 4 の image に `BCM4345C0.hcd`（Cypress の EULA: object code のまま、Cypress の IC と使う時だけ再配布可、改変・逆解析の禁止）を入れてよいか | **入れる**。review-1 は条件つき賛成: 既定 off の package、Pi 4 の config だけで選ぶ、license の本文の一致を p004 で確かめる | p004 の前。**2026-10-13 朝 ユーザー**「OKです」 |
+| D3 | controller も DT も address を持たない時の BD_ADDR | **実機で読んでから決める**（review-1 も同じ）。代案は mailbox の board の MAC（`GET_BOARD_MAC_ADDRESS`）から決まった規則で作る（推測。firmware が DT に入れる値との関係は実機で確かめる） | p005 の前。**2026-10-13 朝 ユーザー**: 推しで OK |
+| D4 | 実機の UAT の機器（keyboard・mouse・headset・Android の phone）は amd64 の UAT と同じ物でよいか | **同じ物**（review-1 も賛成。A2DP は WS205 の arm64 に依存） | p006 の前。**2026-10-13 朝 ユーザー**「よいです」 |
+| D5 | Pi 4 の UART の部品（PL011）には、相手からの「待って」の信号（CTS）が頻繁に変わると送りが止まることがある、という癖があり、Raspberry Pi の Linux はその回避を入れている（DT の `cts-event-workaround`）。回避の具体の手順は Linux の GPL の code（とその commit の説明）にしか書かれておらず、WS215 は GPL の code を読まない決まり（B19）。どうするか | **(a) 回避なしで始める**: zedBSD は CTS の割り込みを使わず、部品の自動の流れの制御だけを使う作りにする（回避が要る場面を避けられる見込み、推測）。実機の 10 分の A2DP と WiFi の大きな転送の同時で送りが止まらないかを見て、止まったら改めて相談する。止まっても B10 の 2 s の上限で controller を reset して戻る（その間の音は途切れる）。他の案: (c) ARM の公開の PL011 の errata・TRM の改訂を先に探す（review-2）、(b) WS141 と同じ「値・手順は事実として読み、写さない、最後に類似の監査」の例外を WS215 のこの 1 点にだけ広げる | p003 の前。2026-10-13 朝の時点で未回答 → 推しの (a) で進め、p006 で中-F の観察（review-2 の条件: 中-B の直しが先） |
 
 ## 10. 危うい所
 

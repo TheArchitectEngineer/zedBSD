@@ -242,8 +242,9 @@ CONFIG_RPI4_SERIAL_CONSOLE ?= n
 CONFIG_INPUT_TEST_INJECT ?= n
 CONFIG_SECURITY_KEY_TEST_LOOPBACK ?= n
 CONFIG_BT_TEST_LOOPBACK ?= n
-# /dev/input/bridge, the Bluetooth daemon's HID input devices (ws143-p005): amd64 only; pcat and arm64 do not build it.
-CONFIG_INPUT_BRIDGE ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+# /dev/input/bridge, the Bluetooth daemon's HID input devices (ws143-p005): amd64 and the Raspberry Pi 4 (ws215-p002);
+# pcat does not build it.
+CONFIG_INPUT_BRIDGE ?= $(if $(filter amd64 rpi4,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_KERNEL_USB_HID_CHECKPOINT ?= n
 CONFIG_BUF_CACHE_KIB ?= 0
 CONFIG_GPU_JOB_RESERVATION_MS ?= 10000

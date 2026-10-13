@@ -137,6 +137,15 @@ ARM64_USB_SOURCES += src/drivers/usb/usb-rtl8822bu.c \
 	src/drivers/wifi/rtl8822b/rtl8822b.c src/drivers/wifi/rtl8822b/rtl8822b-security.c
 endif
 ARM64_KERNEL_SOURCES += $(ARM64_USB_SOURCES)
+# /dev/input/bridge (ws143-p005, ws215-p002): the Bluetooth daemon's HID devices, on the HID input glue; it refuses a FIDO
+# descriptor with hidraw-describe.c.  Both come with usb-hid, or here without it.
+ifeq ($(CONFIG_INPUT_BRIDGE),y)
+ARM64_KERNEL_SOURCES += src/drivers/generic/input-bridge.c src/drivers/generic/input-bridge-setup.c
+ifneq ($(CONFIG_DRIVER_USB_HID),y)
+ARM64_KERNEL_SOURCES += src/drivers/generic/hidraw-describe.c src/drivers/generic/hid-report.c \
+	src/drivers/generic/hid-digitizer.c src/drivers/generic/hid-touch.c src/drivers/generic/hid-input.c
+endif
+endif
 # The BCM2711 graphics driver (ws141): the display path and V3D.
 ifeq ($(CONFIG_DRIVER_BCM2711_GPU),y)
 # Native BCM2711 nodes need the common GPU core even without a PCI GPU.
