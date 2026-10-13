@@ -13,6 +13,12 @@
  * to 16-bit stereo at the stream's rate and written into the stream's ring,
  * which paces the reading.  A seek drops what is decoded and queued, and
  * starts the clock again at the time sought.
+ *
+ * The clock is the sound's, so the sound must never wait for the pictures
+ * (BUG-300): while the ring of pictures is full, the reader keeps the
+ * picture that did not fit, keeps reading, decodes and writes the sound, and
+ * keeps the video packets in the file's order in a bounded queue, which the
+ * video decoder takes as the ring makes room.
  */
 
 #include "videoplayer.h"
@@ -30,9 +36,40 @@
 #define MEDIA_SOUND_FRAMES	8192
 
 /*
+ * The video packets read ahead of their decoding at most, by count and by
+ * bytes.  The sound's ring holds half a second and a file interleaves its
+ * tracks in chunks of about half a second, so the queue holds about a
+ * second of video in an ordinary file; the bounds keep an unusual file
+ * (tracks not interleaved) from taking the memory, and then the reader
+ * waits for the pictures as before.
+ */
+#define MEDIA_PACKETS		128U
+#define MEDIA_PACKET_BYTES	(64U * 1024U * 1024U)
+
+/* What media_picture and media_drain report when the ring of pictures is full and a picture is held back. */
+#define MEDIA_FULL		2
+
+/*
+ * A video packet read ahead of its decoding: a copy of the container's
+ * packet whose bytes the queue owns, or the end of the video track (which
+ * drains the decoder).  sent says that the decoder has taken it; it stays
+ * in the queue until the decoder's output after it is taken, as the
+ * container's bytes stay valid until the next read.
+ */
+struct media_queued {
+	struct media_packet packet;
+	unsigned char *bytes;
+	int end;
+	int sent;
+};
+
+/*
  * What the media thread holds: the file, the two decoders and their
  * tracks, the time before which what decodes is passed over (after a
- * seek), and the converted sound.
+ * seek), the converted sound, and the video waiting for room in the ring
+ * of pictures: the packets read ahead (a ring, in the file's order, with
+ * their bytes in all), the picture decoded that did not fit, and whether
+ * the end of the video track is queued.
  */
 struct media_reader {
 	struct vp_media *media;
@@ -44,6 +81,13 @@ struct media_reader {
 	double skip_before;
 	int sound_trimmed;
 	int16_t samples[MEDIA_SOUND_FRAMES * 2];
+	struct media_queued queue[MEDIA_PACKETS];
+	unsigned queue_first;
+	unsigned queue_count;
+	size_t queue_bytes;
+	struct app_frame *held;
+	double held_time;
+	int video_ended;
 };
 
 static void *media_run(void *argument);
@@ -53,6 +97,13 @@ static int app_decoder(struct media_reader *reader, unsigned kind, struct app_de
 static int media_feed(struct media_reader *reader, struct app_decoder *decoder, const struct media_packet *packet);
 static int media_drain(struct media_reader *reader, struct app_decoder *decoder);
 static int media_picture(struct media_reader *reader, struct app_frame *picture, double time);
+static int media_place(struct media_reader *reader);
+static int media_video_pump(struct media_reader *reader);
+static int media_enqueue(struct media_reader *reader, const struct media_packet *packet);
+static void media_dequeue(struct media_reader *reader);
+static void media_video_reset(struct media_reader *reader);
+static int media_queue_full(const struct media_reader *reader);
+static void media_wait_room(struct vp_media *media);
 static int media_sound(struct media_reader *reader, double time);
 static int media_seek(struct media_reader *reader);
 static void media_fail(struct media_reader *reader, int error);
@@ -344,6 +395,7 @@ media_run(
 	struct media_packet packet;
 	int drained;
 	int status;
+	int full;
 	int stop;
 
 	/* Until told to end. */
@@ -369,6 +421,24 @@ media_run(
 			continue;
 		}
 
+		/* The pictures decoded from the video packets read ahead, as far as the ring has room. */
+		status = media_video_pump(reader);
+		if (status < 0) {
+			media_fail(reader, -status);
+			continue;
+		}
+
+		/* A seek or the end interrupted the pictures. */
+		if (status != 0)
+			continue;
+
+		/* With the ring and the queue of video packets both full, the reader waits for a picture to be taken. */
+		full = media_queue_full(reader);
+		if (full) {
+			media_wait_room(media);
+			continue;
+		}
+
 		/* The next packet; the end of the file drains the decoders and waits. */
 		status = media_file_read(reader->file, &packet);
 		if (status == ENODATA) {
@@ -376,8 +446,28 @@ media_run(
 			drained = media->eof;
 			(void)pthread_mutex_unlock(&media->lock);
 			if (!drained) {
-				status = media_feed(reader, reader->video, NULL);
-				if (status == 0 && reader->sound != NULL)
+				/* The end of the video track follows its last packet, and drains its decoder in turn. */
+				if (!reader->video_ended) {
+					status = media_enqueue(reader, NULL);
+					if (status < 0) {
+						media_fail(reader, -status);
+						continue;
+					}
+
+					/* The end is queued once; a seek reads the track, and its end, again. */
+					reader->video_ended = 1;
+					continue;
+				}
+
+				/* The last pictures go to the ring as it makes room, before the sound's end. */
+				if (reader->queue_count > 0U || reader->held != NULL) {
+					media_wait_room(media);
+					continue;
+				}
+
+				/* The sound decoder gives the sound it still holds. */
+				status = 0;
+				if (reader->sound != NULL)
 					status = media_feed(reader, reader->sound, NULL);
 				if (status < 0) {
 					media_fail(reader, -status);
@@ -405,10 +495,15 @@ media_run(
 			continue;
 		}
 
-		/* A runtime decode failure pauses the file and is published to the window once. */
+		/*
+		 * A video packet joins the queue (decoded at the next turn, as the
+		 * ring has room) and a sound packet is decoded and written now, so
+		 * the sound goes on while the pictures wait.  A runtime decode
+		 * failure pauses the file and is published to the window once.
+		 */
 		status = 0;
 		if (packet.track == reader->video_track)
-			status = media_feed(reader, reader->video, &packet);
+			status = media_enqueue(reader, &packet);
 		else if (reader->sound != NULL && packet.track == reader->sound_track)
 			status = media_feed(reader, reader->sound, &packet);
 		if (status < 0)
@@ -493,6 +588,9 @@ static void
 media_reader_close(
 	struct media_reader *reader)
 {
+	/* The video waiting for the ring goes before its decoder. */
+	media_video_reset(reader);
+
 	/* Each part, when it was made. */
 	app_decoder_close(reader->video);
 	reader->video = NULL;
@@ -576,7 +674,11 @@ media_feed(
 	return status;
 }
 
-/* Handles every picture or sound a decoder has ready; nonzero when a seek or the end interrupted. */
+/*
+ * Handles every picture or sound a decoder has ready.  Returns 0, MEDIA_FULL
+ * when the ring of pictures is full (a picture held back), 1 when a seek or
+ * the end interrupted, or a negative errno value.
+ */
 static int
 media_drain(
 	struct media_reader *reader,
@@ -603,58 +705,272 @@ media_drain(
 			status = media_sound(reader, (double)time_us / 1000000.0);
 		}
 
-		/* A seek or the end stops the drain. */
+		/* A full ring, a seek or the end stops the drain. */
 		if (status != 0)
 			return status;
 	}
 }
 
-/* Queues a picture (the reference is the ring's or freed), waiting for room; nonzero when a seek or the end came meanwhile. */
+/*
+ * Queues a picture in the ring, or holds it back while the ring is full
+ * (the reader's, until media_place puts it in).  Returns 0, MEDIA_FULL when
+ * it is held back, or 1 when a seek or the end came (the held picture then
+ * goes with the seek or the reader).
+ */
 static int
 media_picture(
 	struct media_reader *reader,
 	struct app_frame *picture,
 	double time)
 {
-	struct vp_media *media;
-	struct timespec until;
-	unsigned slot;
+	int status;
 
 	/* A picture before the time sought is passed over. */
-	media = reader->media;
 	if (time < reader->skip_before) {
 		app_frame_free(&picture);
 		return 0;
 	}
 
-	/* Room in the ring, unless a seek or the end comes first. */
+	/* The reader holds it until it is in the ring. */
+	reader->held = picture;
+	reader->held_time = time;
+
+	/* Into the ring, when it has room. */
+	status = media_place(reader);
+	if (status != 0)
+		return status;
+
+	/* Succeeded: the picture is the ring's. */
+	return 0;
+}
+
+/*
+ * Puts the picture held back into the ring when it has room.  Returns 0
+ * (put in, or none held), MEDIA_FULL when the ring is still full, or 1 when
+ * a seek or the end came.
+ */
+static int
+media_place(
+	struct media_reader *reader)
+{
+	struct vp_media *media;
+	unsigned slot;
+
+	/* Nothing held back. */
+	if (reader->held == NULL)
+		return 0;
+
+	/* Into the next slot of the ring, unless a seek or the end came or the ring is still full. */
+	media = reader->media;
 	(void)pthread_mutex_lock(&media->lock);
-	while (media->picture_count == VP_PICTURES && !media->quit && !media->seek_wanted) {
-		(void)clock_gettime(CLOCK_REALTIME, &until);
-		until.tv_nsec += MEDIA_WAIT_MS * 1000000L;
-		if (until.tv_nsec >= 1000000000L) {
-			until.tv_sec++;
-			until.tv_nsec -= 1000000000L;
-		}
 
-		/* Woken by a picture taken or a request, or after the wait. */
-		(void)pthread_cond_timedwait(&media->wake, &media->lock, &until);
-	}
-
-	/* Interrupted. */
+	/* A seek or the end came: the seek or the reader frees the picture held back. */
 	if (media->quit || media->seek_wanted) {
 		(void)pthread_mutex_unlock(&media->lock);
-		app_frame_free(&picture);
 		return 1;
 	}
 
-	/* Queued. */
+	/* The ring is still full: the picture stays held back. */
+	if (media->picture_count == VP_PICTURES) {
+		(void)pthread_mutex_unlock(&media->lock);
+		return MEDIA_FULL;
+	}
+
+	/* The next slot takes it. */
 	slot = (media->picture_first + media->picture_count) % VP_PICTURES;
-	media->pictures[slot] = picture;
-	media->picture_times[slot] = time;
+	media->pictures[slot] = reader->held;
+	media->picture_times[slot] = reader->held_time;
 	media->picture_count++;
+
 	(void)pthread_mutex_unlock(&media->lock);
+
+	/* Succeeded: the ring owns the picture now. */
+	reader->held = NULL;
 	return 0;
+}
+
+/*
+ * Decodes the video packets read ahead, in the file's order, as far as the
+ * ring of pictures has room: the picture held back first, then what the
+ * decoder has ready, then the next packet.  Returns 0 when the queue is
+ * empty or the ring is full (a picture held back), 1 when a seek or the
+ * end came, or a negative errno value for a decoding failure.
+ */
+static int
+media_video_pump(
+	struct media_reader *reader)
+{
+	struct media_queued *head;
+	const struct media_packet *packet;
+	int tries;
+	int status;
+
+	/* Until the queue is empty or the ring is full. */
+	tries = 0;
+	for (;;) {
+		/* The picture held back goes first, so the pictures keep their order. */
+		status = media_place(reader);
+		if (status == MEDIA_FULL)
+			return 0;
+		if (status != 0)
+			return status;
+
+		/* What the decoder has ready, until the ring is full again. */
+		status = media_drain(reader, reader->video);
+		if (status == MEDIA_FULL)
+			return 0;
+		if (status != 0)
+			return status;
+
+		/* The packet sent last is done with once the output it gave is taken. */
+		head = &reader->queue[reader->queue_first];
+		if (reader->queue_count > 0U && head->sent)
+			media_dequeue(reader);
+
+		/* Nothing more is read ahead. */
+		if (reader->queue_count == 0U)
+			return 0;
+
+		/* The next packet, or NULL at the end of the track, which drains the decoder. */
+		head = &reader->queue[reader->queue_first];
+		packet = &head->packet;
+		if (head->end)
+			packet = NULL;
+		status = app_decoder_send(reader->video, packet);
+
+		/* A full decoder gives its pictures first, then takes the packet, once. */
+		if (status == EAGAIN) {
+			tries++;
+			if (tries >= 2)
+				return -EAGAIN;
+			continue;
+		}
+
+		/* A rejected packet must not disappear silently or be followed by uninitialized output. */
+		if (status != 0)
+			return -status;
+
+		/* Taken: its output is drained at the next turn of the loop. */
+		tries = 0;
+		head->sent = 1;
+	}
+}
+
+/*
+ * Adds a copy of a video packet to the queue read ahead, or the end of the
+ * track when packet is NULL.  The caller makes sure that there is a free
+ * slot (media_queue_full).  Returns 0 or -ENOMEM.
+ */
+static int
+media_enqueue(
+	struct media_reader *reader,
+	const struct media_packet *packet)
+{
+	struct media_queued *entry;
+	unsigned slot;
+
+	/* The next free slot, emptied. */
+	slot = (reader->queue_first + reader->queue_count) % MEDIA_PACKETS;
+	entry = &reader->queue[slot];
+	memset(entry, 0, sizeof(*entry));
+
+	/* The end of the track has no bytes. */
+	if (packet == NULL) {
+		entry->end = 1;
+		reader->queue_count++;
+		return 0;
+	}
+
+	/* The bytes, which the container keeps only until its next read. */
+	entry->bytes = malloc(packet->size + 1U);
+	if (entry->bytes == NULL)
+		return -ENOMEM;
+	if (packet->size > 0U)
+		memcpy(entry->bytes, packet->data, packet->size);
+
+	/* The packet points at the queue's copy. */
+	entry->packet = *packet;
+	entry->packet.data = entry->bytes;
+	reader->queue_bytes += packet->size;
+	reader->queue_count++;
+
+	/* Succeeded: the packet waits for the decoder. */
+	return 0;
+}
+
+/* Removes the oldest packet read ahead and frees its bytes. */
+static void
+media_dequeue(
+	struct media_reader *reader)
+{
+	struct media_queued *entry;
+
+	/* The oldest. */
+	entry = &reader->queue[reader->queue_first];
+	reader->queue_bytes -= entry->packet.size;
+	free(entry->bytes);
+	memset(entry, 0, sizeof(*entry));
+
+	/* The next one becomes the oldest. */
+	reader->queue_first = (reader->queue_first + 1U) % MEDIA_PACKETS;
+	reader->queue_count--;
+}
+
+/* Drops the video read ahead and the picture held back (after a seek, or when the reader goes). */
+static void
+media_video_reset(
+	struct media_reader *reader)
+{
+	/* Every packet read ahead. */
+	while (reader->queue_count > 0U)
+		media_dequeue(reader);
+	reader->queue_first = 0U;
+	reader->queue_bytes = 0U;
+
+	/* The picture held back, and the end of the track, which is read again. */
+	app_frame_free(&reader->held);
+	reader->video_ended = 0;
+}
+
+/* Tells whether the queue of video packets read ahead has no room for another packet. */
+static int
+media_queue_full(
+	const struct media_reader *reader)
+{
+	/* By count, then by bytes. */
+	if (reader->queue_count >= MEDIA_PACKETS)
+		return 1;
+	if (reader->queue_bytes >= MEDIA_PACKET_BYTES)
+		return 1;
+
+	/* Room for one more. */
+	return 0;
+}
+
+/* Waits a little for room in the ring of pictures, unless it has room or a seek or the end is asked for. */
+static void
+media_wait_room(
+	struct vp_media *media)
+{
+	struct timespec until;
+
+	/* The longest wait. */
+	(void)clock_gettime(CLOCK_REALTIME, &until);
+	until.tv_nsec += MEDIA_WAIT_MS * 1000000L;
+	if (until.tv_nsec >= 1000000000L) {
+		until.tv_sec++;
+		until.tv_nsec -= 1000000000L;
+	}
+
+	/* Woken by a picture taken or a request, or after the wait. */
+	(void)pthread_mutex_lock(&media->lock);
+
+	if (media->picture_count == VP_PICTURES &&
+	    !media->quit &&
+	    !media->seek_wanted)
+		(void)pthread_cond_timedwait(&media->wake, &media->lock, &until);
+
+	(void)pthread_mutex_unlock(&media->lock);
 }
 
 /* Converts the sound received and writes it, waiting for room; nonzero when a seek or the end came meanwhile. */
@@ -733,7 +1049,8 @@ media_seek(
 		return 1;
 	}
 
-	/* Reset decoded output only after the container seek succeeded. */
+	/* Reset decoded output only after the container seek succeeded; the video read ahead and held back goes too. */
+	media_video_reset(reader);
 	app_decoder_flush(reader->video);
 	if (reader->sound != NULL) {
 		app_decoder_flush(reader->sound);
