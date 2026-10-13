@@ -87,6 +87,13 @@ struct i915_gt {
 	uint64_t gmadr_size;
 	void *aperture;
 
+	/*
+	 * The graphics (GT) version, told from the PCI device id: 9 for Skylake
+	 * and its Gen9.5 successors, 12 for Tiger Lake and Alder Lake.  Every
+	 * GT table, context layout and submission path is chosen by it.
+	 */
+	unsigned graphics_ver;
+
 	/* The display version and platform, told from the PCI device id. */
 	unsigned display_ver;
 	int is_alderlake_p;
