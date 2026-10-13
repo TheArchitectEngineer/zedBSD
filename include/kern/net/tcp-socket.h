@@ -55,12 +55,18 @@ enum tcp_state {
 #define TCP_REORDER_MAX 16U
 #endif
 
+/*
+ * One segment in the send ring: its copy, where it lies in the sequence
+ * space, its TCP flags, and whether it went out as a probe of a window
+ * that could not take it (ws220-p005; set when it is marked sent).
+ */
 struct tcp_pending {
 	struct packet_buf *packet;
 	uint32_t sequence;
 	uint32_t advance;
 	uint16_t length;
 	uint8_t flags;
+	uint8_t probe;
 };
 
 /*
@@ -93,6 +99,7 @@ struct tcp_counters {
 	uint64_t out_of_order_in;
 	uint64_t out_of_order_kept;
 	uint64_t receive_refused;
+	uint64_t fast_retransmits;
 };
 
 struct tcp_socket {
@@ -216,13 +223,20 @@ struct tcp_socket {
 	uint64_t rtt_start;
 	unsigned syn_timed_out;
 	/*
-	 * A recovery after a timeout that really expired: while
-	 * recovery_active is set, an acknowledgement after a resend has the
-	 * next segment resent at once only while it lies before recovery_end,
-	 * what had been sent at the timeout (ws220-p004 review-1 G1).
+	 * NewReno's recovery (RFC 6582, ws220-p005): duplicate_acks counts the
+	 * duplicate acknowledgements in a row; the third starts a fast
+	 * retransmit.  A fast retransmit or a timeout that really expired sets
+	 * recover to the end of what was sent and recovery: while it lasts,
+	 * each acknowledgement that moves but stops short of recover (a
+	 * partial one) has the next segment resent at once, and one that
+	 * reaches recover ends it.  recover_set says recover holds a value; a
+	 * new fast retransmit waits for an acknowledgement beyond it, so the
+	 * duplicates a resent window brings start none.
 	 */
-	uint32_t recovery_end;
-	unsigned recovery_active;
+	unsigned duplicate_acks;
+	uint32_t recover;
+	unsigned recover_set;
+	unsigned recovery;
 	/*
 	 * TCP_NODELAY as the caller set it, and the idle-probe state for
 	 * SO_KEEPALIVE: when the next probe is due and how many have gone

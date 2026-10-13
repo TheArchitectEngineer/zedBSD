@@ -69,11 +69,16 @@ scenario() {
 scenario lan-clean 30 --bytes 67108864
 # 10 ms of round trip: the rate is the window over the round trip (64 KB: 6.4 MB/s).
 scenario rtt-10ms 4 --bytes 16777216 --delay-us 5000
-# (ws220-p004 review-1 G2: the resends of these and of slow-reader stay at most p003's, --expect-retransmits-max.)
+# (The resends of these and of slow-reader stay at most the counts of ws220-p005, --expect-retransmits-max: p004 review-1 G2
+# took p003's, p005's fast retransmit lowered slow-reader's from 14246 and made lan-loss-1's 85 with 2 timeouts.
+# rtt-10ms-loss-0.1 loses nothing to its losses since p005 (no timeout); its rate is the ring's 8 KB a round trip, p006.)
 # Losses on the data with a Linux peer's window: each must cost a round trip or so, not a timeout.
-scenario lan-loss-0.1 10 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 30
-scenario lan-loss-1 2 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 83
-scenario rtt-10ms-loss-0.1 2 --bytes 8388608 --delay-us 5000 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 10
+scenario lan-loss-0.1 10 --bytes 33554432 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 30 \
+    --expect-timeouts-max 0
+scenario lan-loss-1 2 --bytes 8388608 --loss-ab 1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 85 \
+    --expect-timeouts-max 2
+scenario rtt-10ms-loss-0.1 2 --bytes 8388608 --delay-us 5000 --loss-ab 0.1 --peer-window 65535 --limit-s 300 --expect-retransmits-max 10 \
+    --expect-timeouts-max 0
 # The same losses with zedBSD as the receiver (its window moves, which hides part of the sender's fault).
 scenario lan-loss-1-zedbsd 2 --bytes 16777216 --loss-ab 1 --limit-s 300
 # Losses on the acknowledgements only.
@@ -81,7 +86,7 @@ scenario lan-ackloss-1 30 --bytes 33554432 --loss-ba 1 --peer-window 65535 --exp
 # A's sequence numbers wrap 4 MiB into the transfer (a 1 GB transfer crosses the wrap one time in four).
 scenario lan-wrap 10 --bytes 16777216 --wrap-before 4194304 --limit-s 120
 # A reader slower than the link (2 MB/s): the window closes and opens again, the rate is the reader's.
-scenario slow-reader 1.6 --bytes 16777216 --reader-kbps 16000 --expect-retransmits-max 14246
+scenario slow-reader 1.6 --bytes 16777216 --reader-kbps 16000 --expect-retransmits-max 6929
 # ws220-p002: one data segment in twenty starts 100 bytes before B's receive_next (B takes the rest), also across the wrap.
 scenario overlap 30 --bytes 33554432 --overlap-ab 5
 scenario overlap-wrap 30 --bytes 16777216 --overlap-ab 5 --wrap-before 4194304 --limit-s 120
@@ -194,12 +199,24 @@ scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retr
 # ws220-p004 review-1 G1: the round trip grows from 0.2 ms to 600 ms past the timeout: the backoff holds until a sample,
 # the resends stay few, and SRTT follows (a Linux-like peer, whose window does not move).
 scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
-    --expect-retransmits-max 4 --expect-srtt-us 500000:700000
+    --expect-retransmits-max 8 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
+# ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
+scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 20 --delay-step-us 300000 --limit-s 120 \
+    --expect-retransmits-max 8 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
 # ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
-scenario zero-window 2 --bytes 16777216 --reader-pause-at-ms 100 --reader-pause-ms 5000 --expect-retransmits-max 10
+scenario zero-window 2.5 --bytes 16777216 --reader-pause-at-ms 100 --reader-pause-ms 5000 --expect-retransmits-max 10
 # ws220-p004 review-1 M1: A's route fails for 50 ms; a write taken back and written again is not timed from its first
 # try (SRTT stays within 5 ms).
 scenario no-route 10 --bytes 16777216 --no-route-at-ms 100 --no-route-ms 50 --expect-srtt-max-us 5000
+# ws220-p005: NewReno (RFC 6582): two segments of one window lost: one fast retransmit, then the partial
+# acknowledgement's resend, no timeout (a Linux-like peer and zedBSD); a whole window lost: one timeout, its partial
+# acknowledgements' resends, and no fast retransmit from the duplicates the resends bring.
+scenario two-holes 30 --bytes 1048576 --drop-ab 100,103 --peer-window 65535 --expect-fast-retransmits 1:1 \
+    --expect-timeouts-max 0 --expect-retransmits-max 2
+scenario two-holes-zedbsd 30 --bytes 1048576 --drop-ab 100,103 --expect-fast-retransmits 1:1 --expect-timeouts-max 0 \
+    --expect-retransmits-max 2
+scenario window-lost 2 --bytes 1048576 --drop-ab 100,101,102,103,104,105,106,107 --peer-window 65535 \
+    --expect-fast-retransmits 0:0 --expect-timeouts-max 1 --expect-retransmits-max 8
 # ws220-p002: the link loses everything 500 ms in: A gives up after R2 (at least 100 s; 1+2+4+8+16+32+60 s of resends).
 giveup() {
 	name=$1

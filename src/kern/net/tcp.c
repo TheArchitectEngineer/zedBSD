@@ -132,6 +132,9 @@ struct tcp_segment_addresses {
  */
 #define TCP_SYN_RETRIED_RTO KERN_MS_TO_TICKS(3000U)
 
+/* The duplicate acknowledgements in a row that start a fast retransmit (RFC 5681 section 3.2). */
+#define TCP_DUPLICATE_ACKS_FAST 3U
+
 /* The longest round-trip sample taken, so the sums in microseconds stay within 32 bits. */
 #define TCP_RTT_SAMPLE_MAX_US 60000000U
 /* How long closing a connection waits for what it sent to be taken. */
@@ -302,6 +305,7 @@ static void tcp_rtt_handshake_locked(struct tcp_endpoint *endpoint, uint32_t ack
 static int tcp_retransmit_given_up_locked(struct tcp_endpoint *endpoint, uint64_t now);
 static enum tcp_reset_check tcp_reset_check_locked(const struct tcp_endpoint *endpoint, uint32_t sequence);
 static int tcp_send_window_update_allowed_locked(const struct tcp_endpoint *endpoint, uint32_t sequence, uint32_t acknowledgement);
+static int tcp_probe_fits_locked(const struct tcp_endpoint *endpoint);
 struct tcp_discard {
 	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
 	unsigned count;
@@ -746,14 +750,17 @@ tcp_timer_run(
 
 		/*
 		 * A timeout that really expired starts a recovery up to what was
-		 * sent by then: the immediate resends that follow its
-		 * acknowledgements go no further (ws220-p004 review-1 G1), so
-		 * segments sent after it are not resent and give the sample that
-		 * ends the backoff.
+		 * sent by then (RFC 6582 section 4): partial acknowledgements
+		 * have the next hole resent at once, segments sent after it are
+		 * not resent (they give the sample that ends the backoff,
+		 * ws220-p004 review-1 G1), and the duplicates the resends bring
+		 * start no fast retransmit.
 		 */
 		if (!immediate) {
-			endpoint->tcp.recovery_end = tcp_sent_end_locked(endpoint);
-			endpoint->tcp.recovery_active = 1;
+			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
+			endpoint->tcp.recover_set = 1;
+			endpoint->tcp.recovery = 1;
+			endpoint->tcp.duplicate_acks = 0;
 		}
 
 		/* The next deadline, the timeout doubled as many times as it is backed off. */
@@ -783,6 +790,17 @@ tcp_timer_run(
 		/* A SYN (or SYN-ACK) resent. */
 		if (endpoint->tcp.state == TCP_SYN_SENT || endpoint->tcp.state == TCP_SYN_RECEIVED)
 			endpoint->tcp.syn_timed_out = 1;
+
+		/*
+		 * A resend into a window that cannot take it probes the window
+		 * (RFC 9293 section 3.8.6.1, ws220-p005): it is sent again at
+		 * once when the window opens, rather than at the backed-off
+		 * timeout.
+		 */
+		oldest->probe = 0;
+		if (length != 0 &&
+		    sequence + oldest->advance - endpoint->tcp.send_unacknowledged > (uint32_t)endpoint->tcp.peer_window)
+			oldest->probe = 1;
 		spin_unlock_irqrestore(&socket->lock, irq);
 
 		/* Resends the oldest segment. */
@@ -1600,6 +1618,10 @@ tcp_stats_fill_locked(
 	entry->out_of_order_in = counters->out_of_order_in;
 	entry->out_of_order_kept = counters->out_of_order_kept;
 	entry->receive_refused = counters->receive_refused;
+
+	/* Fast retransmits (ws220-p005). */
+	entry->features |= TCP_STATS_HAVE_FAST_RETRANSMIT;
+	entry->fast_retransmits = counters->fast_retransmits;
 }
 
 /* Builds and transmits one segment with an explicit sequence number. */
@@ -1778,7 +1800,9 @@ tcp_retransmit_reset(
 	endpoint->tcp.retransmit_since = 0;
 	endpoint->tcp.retransmit_refused = 0;
 	endpoint->tcp.retransmit_immediate = 0;
-	endpoint->tcp.recovery_active = 0;
+	endpoint->tcp.recovery = 0;
+	endpoint->tcp.recover_set = 0;
+	endpoint->tcp.duplicate_acks = 0;
 
 	/* No segment is left to time; the estimate and its backoff stay for the connection. */
 	endpoint->tcp.rtt_timing = 0;
@@ -2016,7 +2040,9 @@ tcp_rtt_forget_locked(
 	endpoint->tcp.rto_backoff = 0;
 	endpoint->tcp.rtt_timing = 0;
 	endpoint->tcp.syn_timed_out = 0;
-	endpoint->tcp.recovery_active = 0;
+	endpoint->tcp.recovery = 0;
+	endpoint->tcp.recover_set = 0;
+	endpoint->tcp.duplicate_acks = 0;
 }
 
 /*
@@ -2158,6 +2184,32 @@ tcp_send_window_update_allowed_locked(
 	return 0;
 }
 
+/*
+ * Tells whether the oldest segment sent went out as a probe of a window
+ * that could not take it and now fits the window the peer advertises,
+ * under the socket lock (ws220-p005).
+ */
+static int
+tcp_probe_fits_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	const struct tcp_pending *oldest;
+	uint32_t end;
+
+	/* No probe: an ordinary segment, which a reopened window says nothing of. */
+	oldest = &endpoint->tcp.send_queue[endpoint->tcp.send_first];
+	if (oldest->probe == 0)
+		return 0;
+
+	/* The window does not reach its end yet: the timer probes again. */
+	end = oldest->sequence + oldest->advance - endpoint->tcp.send_unacknowledged;
+	if (end > (uint32_t)endpoint->tcp.peer_window)
+		return 0;
+
+	/* Succeeded: the probe fits now. */
+	return 1;
+}
+
 /* Reports the sequence space the outstanding segments occupy. */
 static uint32_t
 tcp_in_flight(
@@ -2241,19 +2293,18 @@ tcp_retire_acknowledged(
 
 	/*
 	 * The timer follows whatever is now the oldest segment sent; with
-	 * none, an unsent one starts it when it goes (ws220-p003).  An
-	 * acknowledgement for a segment that had to be resent shows the peer
-	 * is back, and the segments sent after the lost one were most likely
-	 * lost with it (the peer keeps only in-order data), so the next one is
-	 * resent at once rather than after another timeout, as long as it was
-	 * sent before the timeout that started the recovery (recovery_end):
-	 * what was sent after has not been lost by that timeout.
+	 * none, an unsent one starts it when it goes (ws220-p003).  In a
+	 * recovery (RFC 6582 section 3.2), an acknowledgement short of recover
+	 * is a partial one: the next hole is resent at once rather than after
+	 * another timeout; one that reaches recover ends the recovery.  The
+	 * duplicates in a row start over (ws220-p005).
 	 */
 	recovering = 0;
-	if (endpoint->tcp.retransmit_count != 0 && endpoint->tcp.recovery_active != 0)
-		recovering = tcp_sequence_before(acknowledgement, endpoint->tcp.recovery_end);
+	if (endpoint->tcp.recovery != 0)
+		recovering = tcp_sequence_before(acknowledgement, endpoint->tcp.recover);
 	if (!recovering)
-		endpoint->tcp.recovery_active = 0;
+		endpoint->tcp.recovery = 0;
+	endpoint->tcp.duplicate_acks = 0;
 	endpoint->tcp.retransmit_count = 0;
 	endpoint->tcp.retransmit_since = 0;
 	endpoint->tcp.retransmit_refused = 0;
@@ -2707,6 +2758,17 @@ tcp_mark_sent_locked(
 		endpoint->tcp.retransmit_immediate = 0;
 		endpoint->tcp.retransmit_deadline = now + timeout;
 	}
+
+	/*
+	 * A segment that goes beyond the window the peer last advertised (a
+	 * closed or too small window lets one segment go) is a probe of that
+	 * window (ws220-p005): the peer refuses it unless the window has
+	 * opened, and it is sent again at once when it does.
+	 */
+	entry->probe = 0;
+	if (entry->length != 0 &&
+	    entry->sequence + entry->advance - endpoint->tcp.send_unacknowledged > (uint32_t)endpoint->tcp.peer_window)
+		entry->probe = 1;
 
 	/* With no segment being timed, this one is: one sample a round trip (ws220-p004). */
 	if (endpoint->tcp.rtt_timing == 0) {
@@ -4694,6 +4756,9 @@ tcp_segment_input(
 	int discard_payload;
 	int queued;
 	int window_opened;
+	int duplicate;
+	int fast;
+	int reprobe;
 	int window_update;
 	int acknowledges_unsent;
 	int acknowledges_old;
@@ -5015,22 +5080,55 @@ tcp_segment_input(
 		 * SYN or FIN, and leaves the window as it was.
 		 */
 		sent = tcp_sent_count_locked(endpoint);
+		duplicate = 0;
 		if (retransmit.count == 0 &&
 		    acknowledgement == endpoint->tcp.send_unacknowledged &&
 		    sent != 0 &&
 		    endpoint->tcp.peer_window == previous_window &&
 		    payload_length == 0 &&
 		    (flags & (TCP_SYN | TCP_FIN)) == 0)
+			duplicate = 1;
+		if (duplicate) {
 			endpoint->tcp.counters.duplicate_acks_in++;
+			endpoint->tcp.duplicate_acks++;
+		}
 
 		/*
-		 * A window that reopens while segments are still outstanding
-		 * and this acknowledgement took none of them means the peer
-		 * had no room for the oldest: it was refused, not lost in
-		 * flight.  It is sent again now rather than after a timeout.
+		 * The third duplicate in a row outside a recovery, after an
+		 * acknowledgement beyond the last recover, has the oldest segment
+		 * resent at once (RFC 5681 section 3.2, RFC 6582 section 3.2)
+		 * and starts a recovery up to what has been sent.
 		 */
-		if (window_opened && retransmit.count == 0 &&
-		    sent != 0) {
+		fast = 0;
+		if (duplicate && endpoint->tcp.duplicate_acks == TCP_DUPLICATE_ACKS_FAST && endpoint->tcp.recovery == 0) {
+			fast = 1;
+			if (endpoint->tcp.recover_set != 0)
+				fast = tcp_sequence_at_or_before(endpoint->tcp.recover, acknowledgement);
+		}
+
+		/* The fast retransmit: a recovery up to what was sent, and the oldest resent at once. */
+		if (fast) {
+			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
+			endpoint->tcp.recover_set = 1;
+			endpoint->tcp.recovery = 1;
+			endpoint->tcp.retransmit_deadline = sched_ticks();
+			endpoint->tcp.retransmit_immediate = 1;
+			endpoint->tcp.counters.fast_retransmits++;
+			endpoint->tcp.counters.immediate_resends++;
+		}
+
+		/*
+		 * A window that opens while the oldest segment sent went out as a
+		 * probe of a window that could not take it (ws220-p005): the peer
+		 * refused it, so it is sent again now that it fits.  Any other
+		 * reopened window says nothing of what the peer took, and the
+		 * resend it used to bring was a spurious one (ws220-p004 §6).
+		 */
+		reprobe = 0;
+		if (window_opened && retransmit.count == 0 && sent != 0)
+			reprobe = tcp_probe_fits_locked(endpoint);
+		if (reprobe) {
+			endpoint->tcp.send_queue[endpoint->tcp.send_first].probe = 0;
 			endpoint->tcp.retransmit_deadline = sched_ticks();
 			endpoint->tcp.retransmit_immediate = 1;
 			endpoint->tcp.counters.immediate_resends++;

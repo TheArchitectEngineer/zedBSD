@@ -385,8 +385,9 @@ struct tcp_stats_header {
  * again); payload bytes taken in order; segments resent by the
  * retransmission path that the device took and their bytes, and how many
  * times that resend was made due at once
- * (immediate_resends: a recovered acknowledgement or a reopened window)
- * rather than by a timeout; segments the stack failed to hand to the
+ * (immediate_resends: a fast retransmit, a partial acknowledgement in a
+ * recovery, or a window that opened for a probe; ws220-p005) rather than
+ * by a timeout; segments the stack failed to hand to the
  * device (segment_send_failures, an acknowledgement or a resend lost on
  * the way out); acknowledgements received, those that acknowledged
  * nothing new while data was outstanding (duplicate_acks_in), and those
