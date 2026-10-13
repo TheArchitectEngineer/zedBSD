@@ -1,0 +1,37 @@
+{
+  "selected": [
+    "/css/css-anchor-position/anchor-position-borders-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-001.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-003.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-004.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-005.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-006.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-007.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-008.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-009.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-010.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-011.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-013.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-014.html",
+    "/css/css-flexbox/radiobutton-min-size.html",
+    "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode-and-rtl-direction.html",
+    "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode.html",
+    "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode-and-rtl-direction.html",
+    "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode.html"
+  ],
+  "results": {
+    "no_font_current_pass": 19,
+    "fixed_font_current_fail": 19
+  },
+  "groups": {
+    "anchor": 14,
+    "flex-radio": 1,
+    "sideways-scroll": 4
+  },
+  "geometry": {
+    "no_font": "0x0",
+    "fixed_font": "100x20"
+  },
+  "classification": "old no-font local passes depended on missing geometry; fixed-font failures expose real unmet behavior"
+}

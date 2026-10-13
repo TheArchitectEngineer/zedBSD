@@ -1,0 +1,177 @@
+{
+  "selected": [
+    "/css/css-anchor-position/anchor-position-borders-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-001.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-002.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-003.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-004.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-005.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-006.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-007.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-008.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-009.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-010.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-011.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-013.html",
+    "/css/css-anchor-position/anchor-scroll-position-try-014.html",
+    "/css/css-flexbox/radiobutton-min-size.html",
+    "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode-and-rtl-direction.html",
+    "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode.html",
+    "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode-and-rtl-direction.html",
+    "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode.html"
+  ],
+  "results": [
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-position-borders-002.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 5,
+      "raw": "test-01.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-001.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 6,
+      "raw": "test-02.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-002.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 2,
+      "raw": "test-03.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-003.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 2,
+      "raw": "test-04.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-004.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 3,
+      "raw": "test-05.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-005.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 2,
+      "raw": "test-06.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-006.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 6,
+      "raw": "test-07.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-007.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 5,
+      "raw": "test-08.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-008.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 4,
+      "raw": "test-09.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-009.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 4,
+      "raw": "test-10.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-010.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 4,
+      "raw": "test-11.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-011.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 4,
+      "raw": "test-12.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-013.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 3,
+      "raw": "test-13.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-anchor-position/anchor-scroll-position-try-014.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 3,
+      "raw": "test-14.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/css-flexbox/radiobutton-min-size.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 1,
+      "raw": "test-15.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode-and-rtl-direction.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 9,
+      "raw": "test-16.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/cssom-view/scrollIntoView-sideways-lr-writing-mode.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 9,
+      "raw": "test-17.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode-and-rtl-direction.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 9,
+      "raw": "test-18.json.gz"
+    },
+    {
+      "kind": "result",
+      "test_id": "/css/cssom-view/scrollIntoView-sideways-rl-writing-mode.html",
+      "outcome": "pass",
+      "completion": true,
+      "subtests": 9,
+      "raw": "test-19.json.gz"
+    }
+  ]
+}

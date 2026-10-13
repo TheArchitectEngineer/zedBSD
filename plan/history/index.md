@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1068 / WS074 uniform testharness census（2026-10-14）
+## 最新: q1069 / WS074 prior PASS to FAIL audit（2026-10-14）
+
+[q1069履歴](queue-q1069.md): 旧PASS→FAIL19件はfont未指定の欠落geometryによる見かけのPASSと判定。[証拠](../ws074/phase189/evidence/20261014-q1069/README.md)。固定font最新223 PASS/1,232非PASS、p189/p173全件100%未達。
+
+## q1068 / WS074 uniform testharness census（2026-10-14）
 
 [q1068履歴](queue-q1068.md): 同条件適格1,455 IDは223 PASS/1,232非PASS、旧PASS→FAIL19候補。[証拠](../ws074/phase189/evidence/20261014-q1068/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
 

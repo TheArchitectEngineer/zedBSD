@@ -89,3 +89,11 @@ Event ws074-p189-q1067-p210-followup-20261014: q1066旧process_error1 IDは[p210
 ## q1068-i01 結果（2026-10-14 04:40 JST）
 
 Event ws074-p189-q1068-outcome-20261014: 単一HTTP適格testharness1,455 IDを固定font/修正後host browserで同条件全再測定。[証拠](evidence/20261014-q1068/README.md)。223 PASS/1135 FAIL/10 completion無し/73 stdout無し/14 harness error。旧q1063/q1064比63 FAIL→PASS・19 no_completion→PASS、19旧PASS→FAIL候補（anchor14・sideways scroll4・Flex radio1）。q1066同font280件は19 PASS/260 FAIL維持、旧SIGSEGV1はp210修正でcompletion付きFAIL。12 shard正常終了、ID/hash/checkpoint/gzip raw1455一致、runner unit6/6・py_compile/diff check PASS。q1068-i01 partial cleared、p189 whole uncleared。環境未対応328と非PASS1232、p173全3805件100%が残る。browser/WPT/Master無変更、共有投影/GitHub publication保留。
+
+## q1069-i01 有限部分範囲（2026-10-14 04:41 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（06:11 JSTまで）に適用。q1068で旧PASS→FAILになった固定19 unique testharness ID（anchor14・sideways scrollIntoView4・Flex radio1）を、現行同一host browser/WPT/manifest/localhost条件でfont指定なしの旧環境を再実行し、q1064旧・q1068固定font両方のraw callback/subtest・コマンド・geometry値と照合する。真のbrowser修正後退と旧runnerのfont未指定による見かけのPASSを分け、未確定は未確定とする。browser/WPT/runner/公開ABI/`plan/master.md`変更なし、原因修正は含めない。ID/checkpoint/raw/分類一致とdiff checkで検証し、上限時は部分証拠を残す。[Guardrail](../../guardrail.md)とrunner近傍規則を適用。p189 whole/p173全件100%はこの部分基準に含めない。
+
+## q1069-i01 結果（2026-10-14 04:42 JST）
+
+Event ws074-p189-q1069-outcome-20261014: q1068旧PASS→FAIL19 IDを現行同一browserのfont未指定条件で再実行し全19 completion付きPASS。[証拠](evidence/20261014-q1069/README.md)。局所100×20 boxはfont未指定時0×0、固定font時100×20で、旧PASSはgeometry欠落の見かけの結果と判定。anchor14・sideways scroll4・Flex radio1の固定font FAILは実際の未達。ID/checkpoint/raw全19一致、diff check PASS。q1069-i01 partial cleared、p189 whole uncleared。q1068固定font223 PASS/1232非PASSを最新baselineとして維持、環境未対応328、p173全3805件100%未達。browser/WPT/runner/Master無変更、共有投影/GitHub publication保留。
