@@ -354,6 +354,60 @@ kwl_focus_previous(
 }
 
 /*
+ * Brings forward the lowest window in the stacking order of the desktop
+ * shown (ws102-p026, the keyboard's next application), which then has the
+ * focus: called again and again, it goes round every window in turn.
+ * Returns 0, or ENOENT when there is no other window.
+ */
+int
+kwl_focus_next(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	struct kwl_object *top;
+	struct kwl_object *lowest;
+	int icons;
+
+	/* The highest and the lowest window of the desktop shown, as kwl_focus_previous counts them. */
+	top = NULL;
+	lowest = NULL;
+	for (client = server->clients; client != NULL; client = client->next) {
+		if (client->fatal)
+			continue;
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* A shown window, not the desktop's icons. */
+			if (surface->kind != KWL_SURFACE || surface->dead || !surface->mapped)
+				continue;
+			if (surface->desktop != server->desktop || surface->minimized)
+				continue;
+			icons = kwl_desktop_is(surface);
+			if (icons)
+				continue;
+
+			/* Kept: the highest and the lowest. */
+			if (top == NULL || surface->map_order > top->map_order)
+				top = surface;
+			if (lowest == NULL || surface->map_order < lowest->map_order)
+				lowest = surface;
+		}
+	}
+
+	/* No other window to bring forward. */
+	if (lowest == NULL || lowest == top) {
+		printf("KWL FOCUS next none\n");
+		return ENOENT;
+	}
+
+	/* It comes forward and has the focus (the keyboard, if open, stays). */
+	kwl_glass_raise(server, lowest);
+	printf("KWL FOCUS next surface=%u app=%s from=%u client=%llu\n", lowest->id, lowest->app_id, top->id, (unsigned long long)lowest->client->number);
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Takes the shortcuts that stand in for the tool face's buttons: Super+Alt
  * with C, X, V, Z, Y, A, S, E (the operations), P (the previous
  * application), Q (the state, logged), H (the clipboard's history,

@@ -33,6 +33,13 @@
 /* How many times the next candidate is asked for before the window opens. */
 #define ENGINE_PRESSES_WINDOW	2U
 
+/*
+ * How many conversions of the whole reading come before the predictions in
+ * the on-screen keyboard's words (ws102-p026); more follow them when the
+ * predictions leave room.
+ */
+#define ENGINE_KEYBOARD_CONVERSIONS	6U
+
 static bool engine_append_units(struct ja_core *core, const struct ja_romaji_result *result);
 static void engine_commit_conversion(struct ja_core *core, struct ime_output *out);
 static void engine_commit_composition(struct ja_core *core, struct ime_output *out);
@@ -49,6 +56,9 @@ static void engine_save(struct ime_engine *engine);
 static void engine_destroy(struct ime_engine *engine);
 static size_t engine_predict(struct ime_engine *engine, const char *reading, char *list, size_t size);
 static void engine_learn(struct ime_engine *engine, const char *reading, const char *word);
+static size_t engine_convert_reading(struct ja_core *core, const char *reading, struct ja_prediction *out, size_t max);
+static size_t engine_convert_units(struct ja_core *core, const char *reading, struct ja_unit *units, struct ja_text *text, struct ja_segment *segment, struct ja_prediction *out, size_t max);
+static void engine_word_add(struct ja_prediction *list, size_t *count, size_t max, const char *text, const char *reading);
 
 /*
  * The Japanese engine's functions, as the Wayland side calls them.
@@ -1149,9 +1159,13 @@ engine_predict(
 	size_t size)
 {
 	struct ja_prediction predictions[JA_PREDICT_KEYBOARD_MAX];
+	struct ja_prediction conversions[JA_PREDICT_KEYBOARD_MAX];
+	struct ja_prediction words[JA_PREDICT_KEYBOARD_MAX];
 	const struct ja_predict_index *indexes[2];
 	struct ja_core *core;
 	size_t count;
+	size_t converted;
+	size_t word_count;
 	size_t used;
 	size_t i;
 	int written;
@@ -1178,10 +1192,25 @@ engine_predict(
 		indexes[i] = &core->indexes[i];
 	count = ja_predict_keyboard(core->lexicon.user, indexes, core->index_count, reading, strlen(reading), predictions, JA_PREDICT_KEYBOARD_MAX);
 
+	/*
+	 * The reading converted whole as the Space key converts it (ws102-p026:
+	 * with its okurigana, which the predictions leave out), the first few
+	 * before the predictions and the rest after them; a word in both is
+	 * offered once, with the prediction's reading so that it is learned.
+	 */
+	converted = engine_convert_reading(core, reading, conversions, JA_PREDICT_KEYBOARD_MAX);
+	word_count = 0;
+	for (i = 0; i < converted && i < ENGINE_KEYBOARD_CONVERSIONS; i++)
+		engine_word_add(words, &word_count, JA_PREDICT_KEYBOARD_MAX, conversions[i].text, conversions[i].reading);
+	for (i = 0; i < count; i++)
+		engine_word_add(words, &word_count, JA_PREDICT_KEYBOARD_MAX, predictions[i].text, predictions[i].reading);
+	for (i = ENGINE_KEYBOARD_CONVERSIONS; i < converted; i++)
+		engine_word_add(words, &word_count, JA_PREDICT_KEYBOARD_MAX, conversions[i].text, conversions[i].reading);
+
 	/* One line each, while they fit. */
 	used = 0;
-	for (i = 0; i < count; i++) {
-		written = snprintf(list + used, size - used, "%s\t%s\n", predictions[i].text, predictions[i].reading);
+	for (i = 0; i < word_count; i++) {
+		written = snprintf(list + used, size - used, "%s\t%s\n", words[i].text, words[i].reading);
 		if (written < 0 || (size_t)written >= size - used) {
 			list[used] = '\0';
 			break;
@@ -1193,6 +1222,200 @@ engine_predict(
 
 	/* The length. */
 	return used;
+}
+
+/*
+ * Converts a reading of the on-screen keyboard whole, as the Space key
+ * converts a composition (ws102-p026): split into segments, each with its
+ * okurigana and particles (engine_convert_units).  The readings given are
+ * empty (a conversion is not learned as a word).  Returns how many were
+ * written into out, 0 for a reading that is not all kana, does not fit,
+ * or without memory.
+ */
+static size_t
+engine_convert_reading(
+	struct ja_core *core,
+	const char *reading,
+	struct ja_prediction *out,
+	size_t max)
+{
+	struct ja_unit *units;
+	struct ja_text *text;
+	struct ja_segment *segment;
+	size_t count;
+
+	/* The reading's units. */
+	units = calloc(JA_UNITS_MAX, sizeof(*units));
+	if (units == NULL)
+		return 0;
+
+	/* The segmenter's text. */
+	text = malloc(sizeof(*text));
+	if (text == NULL) {
+		free(units);
+		return 0;
+	}
+
+	/* One segment at a time. */
+	segment = malloc(sizeof(*segment));
+	if (segment == NULL) {
+		free(text);
+		free(units);
+		return 0;
+	}
+
+	/* The conversion, and the room it used given back. */
+	count = engine_convert_units(core, reading, units, text, segment, out, max);
+	free(segment);
+	free(text);
+	free(units);
+
+	/* Succeeded: the conversions written. */
+	return count;
+}
+
+/*
+ * Converts a reading into the room given: one segment gives its
+ * candidates (but the reading itself in hiragana), more give one sentence
+ * of their first candidates.  Returns how many were written into out.
+ */
+static size_t
+engine_convert_units(
+	struct ja_core *core,
+	const char *reading,
+	struct ja_unit *units,
+	struct ja_text *text,
+	struct ja_segment *segment,
+	struct ja_prediction *out,
+	size_t max)
+{
+	struct ja_span spans[JA_UNITS_MAX];
+	char sentence[IME_CANDIDATE_MAX];
+	const char *first;
+	size_t length;
+	size_t at;
+	size_t used;
+	size_t unit_count;
+	size_t span_count;
+	size_t count;
+	size_t word;
+	size_t i;
+	uint32_t code;
+	bool kana;
+	int order;
+
+	/* The reading's characters: all kana (hiragana and the long vowel mark), as many as a composition holds. */
+	length = strlen(reading);
+	unit_count = 0;
+	for (at = 0; at < length; at += used) {
+		used = ja_utf8_decode(reading + at, length - at, &code);
+		if (used == 0U || unit_count >= JA_UNITS_MAX)
+			return 0;
+		kana = ja_is_hiragana(code);
+		if (!kana && code != 0x30fcU)
+			return 0;
+		units[unit_count].code = code;
+		units[unit_count].kind = JA_UNIT_KANA;
+		unit_count++;
+	}
+
+	/* Nothing to convert. */
+	if (unit_count == 0U)
+		return 0;
+
+	/* Split as the conversion splits it. */
+	ja_text_build(text, units, unit_count);
+	span_count = ja_segment_split(&core->lexicon, text, 0, spans, JA_UNITS_MAX);
+	if (span_count == 0U)
+		return 0;
+
+	/* One segment: each of its candidates, the reading as typed left out. */
+	count = 0;
+	if (span_count == 1U) {
+		segment->start = spans[0].start;
+		segment->end = spans[0].end;
+		ja_segment_candidates(&core->lexicon, text, segment);
+		for (i = 0; i < segment->candidate_count && count < max; i++) {
+			order = strcmp(segment->candidates[i], reading);
+			if (order == 0)
+				continue;
+			engine_word_add(out, &count, max, segment->candidates[i], "");
+		}
+
+		/* Succeeded: the segment's candidates. */
+		return count;
+	}
+
+	/* More: each segment's first candidate (its kana without one) after the others; a sentence too long is not offered. */
+	used = 0;
+	for (i = 0; i < span_count; i++) {
+		segment->start = spans[i].start;
+		segment->end = spans[i].end;
+		ja_segment_candidates(&core->lexicon, text, segment);
+		first = text->bytes + text->offsets[segment->start];
+		word = text->offsets[segment->end] - text->offsets[segment->start];
+		if (segment->candidate_count != 0U) {
+			first = segment->candidates[0];
+			word = strlen(first);
+		}
+
+		/* A sentence too long for a candidate. */
+		if (used + word >= sizeof(sentence))
+			return 0;
+		memcpy(sentence + used, first, word);
+		used += word;
+	}
+
+	/* The sentence, unless it is the reading as typed. */
+	sentence[used] = '\0';
+	order = strcmp(sentence, reading);
+	if (order != 0)
+		engine_word_add(out, &count, max, sentence, "");
+
+	/* Succeeded: the sentence. */
+	return count;
+}
+
+/*
+ * Adds a word of the on-screen keyboard to a list unless it is there
+ * already (one there without a reading takes the reading given) or the
+ * list is full.
+ */
+static void
+engine_word_add(
+	struct ja_prediction *list,
+	size_t *count,
+	size_t max,
+	const char *text,
+	const char *reading)
+{
+	size_t text_length;
+	size_t reading_length;
+	size_t i;
+	int order;
+
+	/* A word listed already: it keeps its place, and gets a reading it lacks. */
+	for (i = 0; i < *count; i++) {
+		order = strcmp(list[i].text, text);
+		if (order != 0)
+			continue;
+		if (list[i].reading[0] == '\0')
+			(void)snprintf(list[i].reading, sizeof(list[i].reading), "%s", reading);
+		return;
+	}
+
+	/* No room, or a word too long. */
+	if (*count >= max)
+		return;
+	text_length = strlen(text);
+	reading_length = strlen(reading);
+	if (text_length >= sizeof(list[0].text) || reading_length >= sizeof(list[0].reading))
+		return;
+
+	/* Succeeded: the word is last in the list. */
+	(void)snprintf(list[*count].text, sizeof(list[*count].text), "%s", text);
+	(void)snprintf(list[*count].reading, sizeof(list[*count].reading), "%s", reading);
+	(*count)++;
 }
 
 /*

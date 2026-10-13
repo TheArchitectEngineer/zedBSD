@@ -2379,11 +2379,21 @@ int kwl_keyboard_touch_up(struct kwl_server *server, uint32_t id, int32_t x, int
 void kwl_keyboard_touch_cancel(struct kwl_server *server, uint32_t id);
 void kwl_keyboard_inset_notify(struct kwl_server *server, const int32_t *panel);
 void kwl_keyboard_predictions(struct kwl_server *server, uint32_t serial, const char *list);
+/*
+ * The flick panel's reading shown as its own preedit (ws102-p026): a key of
+ * the keyboard (kwl_seat_key) and a change of the focus (kwl_ime_focus)
+ * commit it where it was typed; a text input that goes takes it with it.
+ */
+struct kwl_text_input;
+void kwl_keyboard_key_typed(struct kwl_server *server, uint32_t state);
+void kwl_keyboard_focus_leaving(struct kwl_server *server);
+void kwl_keyboard_text_input_gone(struct kwl_server *server, struct kwl_text_input *input);
 
-/* The editing operations and the previous application, for the keyboard's tool face (edit.c, ws102-p017). */
+/* The editing operations and the previous and next application, for the keyboard's tool face (edit.c, ws102-p017, p026). */
 int kwl_edit_action(struct kwl_server *server, unsigned action);
 int kwl_edit_state(struct kwl_server *server, uint32_t *enabled);
 int kwl_focus_previous(struct kwl_server *server);
+int kwl_focus_next(struct kwl_server *server);
 
 /*
  * The clipboard's history (clipboard.c, ws102-p018): the last

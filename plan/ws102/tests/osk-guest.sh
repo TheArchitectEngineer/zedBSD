@@ -16,10 +16,10 @@
 #             a flick up held on な (the petals, petals.png; ぬ), the face key to the alpha face (abc: a, flick up c) and
 #             the number face (1, 2 flicked down >), back to kana; a finger's flick right on あ (え)
 #   send      (p004) what the keys type reaches the focused application: in Text Editor (/root/osk.txt) the alpha face's
-#             a i u e o, the case key (O) and the number face's 1 2 3 as keys, saved by Ctrl+S: the file is
+#             a i u e, a/A (Shift, p026) and o (O), and the number face's 1 2 3 as keys, saved by Ctrl+S: the file is
 #             "aiueO123"; in ime-probe (a text input) the kana face's あ い う え お and か with the voice key (が)
-#             as commits: its text is "あいうえおかが" with a deletion of 3 bytes before が; in wltest (no text input)
-#             a kana is refused; in Text Editor a kana (WS090's text input) is also tried, and noted
+#             as the panel's preedit (p026: nothing deleted), 改行 commits it: its text is "あいうえおかが"; in wltest
+#             (no text input) a kana is refused; in Text Editor a kana (WS090's text input) is also tried, and noted
 #   close     (p005) the title band dragged 100 px right closes the flick panel, 100 px down the QWERTY panel; App
 #             Home and Wiseview close an open panel (the lock screen needs a session's compositor: not checked here);
 #             (BUG-229) they put it away (put-away), and without a focused window it is not brought back
@@ -50,8 +50,8 @@
 #             in turn, 100 taps, each finger touching 50 ms before the other lifts (touch.c's ROUTE_OSK: each finger its
 #             own press, the second's touch makes the first's key act); the file is "fj" 50 times, 100 keys logged,
 #             99 rollovers, none lost (roll.png)
-#   tools     (p016) the flick panel's tools: select, right x5, copy, the application before, paste, three times, from
-#             one Text Editor into another: "hellohellohello"
+#   tools     (p016) the flick panel's tools (their places from the log, KWL OSK trect): select, right x5, copy, the
+#             application before, paste, three times, from one Text Editor into another: "hellohellohello"
 #   history   (p024) the history tab: three copies ("alpha", "bravo", "charlie"), the second row pasted: "bravo"
 #   emoji     (p022) the emoji tab (1238,141): category 0's first emoji and category 1's fourth reach ime-probe as
 #             commits (PROBE TEXT); wltest (no text input) refuses one (sent=0); one tapped into Text Editor and saved
@@ -59,6 +59,12 @@
 #   latency   (p010) L3's measurements in three rounds (20 QWERTY keys into Text Editor, the panels' slides): the
 #             release to the key sent, to Text Editor's next buffer, and the slides' frames (osk-latency.py,
 #             OUTDIR/latency.txt)
+#   p026      (p026; the input method's image, as qwerty-ime) the UAT of 2026-10-13: in Terminal the kana face's あい is
+#             the preedit (no commit per kana, no deletion), the first candidate tapped is committed once; よむ converted
+#             by the space key (読む, okurigana) and committed by 改行; the kana face turns the input method on (ja), the
+#             alpha face off (direct); a/A once makes the next letter a capital; the number face's band button turns it
+#             on and 1 is the full-width １; 次のApp brings the other window forward; the tools at the user's sizes
+#             (p026-flick.png) and the QWERTY panel's Return and Backspace (p026-qwerty.png)
 #   touch     (p002; the pen image) 10 injected swipes from the bottom-right corner open and close the panel 10 times
 #             (5 opens, 5 closes); 10 straight-up strokes from the corner open nothing
 #   OUTDIR is the first argument:  GUEST_RUNTIME=... BIN=build/ws102-amd64 plan/ws102/tests/osk-guest.sh OUTDIR STEP...
@@ -196,6 +202,26 @@ qkey_tap() {
 # A tap on a tool of the flick panel.
 tool_tap() { pointer move "$1" "$2" sleep 120 down sleep 50 up sleep 350; }
 
+# The middle of the latest logged place matching a pattern (... x=X y=Y width=W height=H): place_middle PATTERN sets px py
+# (both 0 when it is not logged).
+place_middle() {
+	set -- $(guest "grep -a '$1' /tmp/zdesktop.log | tail -1" | sed -n 's/.* x=\([0-9]*\) y=\([0-9]*\) width=\([0-9]*\) height=\([0-9]*\).*/\1 \2 \3 \4/p')
+	px=$(( ${1:-0} + ${3:-0} / 2 ))
+	py=$(( ${2:-0} + ${4:-0} / 2 ))
+}
+
+# A tap on the flick panel's tool with a label, at the place the panel logged when it opened (p026: the rows' heights
+# follow the screen); a label not logged fails the run and taps nothing.
+tool_label() {
+	place_middle "KWL OSK trect label=$1 "
+	if [ "$px" = 0 ]; then
+		echo "tool $1: no place MISSING"
+		status=1
+		return
+	fi
+	tool_tap "$px" "$py"
+}
+
 # A tap on a key, and a flick of one (dx, dy) in steps.
 key_tap() { pointer move "$1" "$2" sleep 150 down sleep 60 up sleep 350; }
 key_flick() {
@@ -310,14 +336,15 @@ hold 800'
 		expect_log 'KWL MAP client='
 		swipe 1272 792 1130 650
 		expect_log 'KWL OSK open kind=flick'
-		# The alpha face: a (abc), i (ghi up), u (tuv left), e (def left), o (mno up), then the case key (O).
+		# The alpha face: a (abc), i (ghi up), u (tuv left), e (def left), a/A (Shift once), o (mno up: O).
 		key_tap 1238 758
 		key_tap 1082 524
 		key_flick 1004 602 0 -30
 		key_flick 1082 680 -30 0
 		key_flick 1160 524 -30 0
-		key_flick 1160 602 0 -30
 		key_tap 1004 758
+		expect_log 'KWL OSK flick-shift state=1'
+		key_flick 1160 602 0 -30
 		# The number face: 1 2 3.
 		key_tap 1238 758
 		key_tap 1004 524
@@ -344,12 +371,15 @@ hold 800'
 		key_flick 1004 524 0 30
 		key_tap 1082 524
 		key_tap 1004 758
+		# (p026) the panel's preedit, then 改行 commits it whole; nothing is deleted.
+		expect_text 'KWL OSK preedit text=あいうえおかが'
+		shot send-probe.png
+		key_tap 1238 680
+		expect_text 'KWL OSK reading commit text=あいうえおかが reason=enter'
 		sleep 1
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe.log"
 		grep -qF 'PROBE TEXT text=あいうえおかが' "$out/ime-probe.log" && echo "ime-probe: あいうえおかが ok" || { echo "ime-probe: text MISSING"; status=1; }
-		grep -qF 'PROBE DELETE before=3 after=0' "$out/ime-probe.log" && echo "ime-probe: delete 3 before が ok" || { echo "ime-probe: delete MISSING"; status=1; }
-		expect_text 'KWL OSK send via=commit text=が before=3'
-		shot send-probe.png
+		grep -qF 'PROBE DELETE' "$out/ime-probe.log" && { echo "ime-probe: a deletion MISSING (p026: none expected)"; status=1; } || echo "ime-probe: no deletion ok"
 		# wltest (no text input) on top: a kana is refused.
 		guest 'for p in $(ps -A -o pid,args | grep "[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		guest "export XDG_RUNTIME_DIR=/tmp; /bin/wltest --windowed --frames=3600 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
@@ -505,7 +535,7 @@ hold 800'
 		pointer move 700 200 sleep 300
 		shot qwerty-ime.png
 		# Enter commits: a text, not the letter typed.
-		qkey_tap 'Enter'
+		qkey_tap 'Return'
 		expect_log 'KWL OSK send via=ime code=28'
 		sleep 1
 		guest 'cat /tmp/ime-probe.log' > "$out/ime-probe-qwerty.log"
@@ -516,6 +546,92 @@ hold 800'
 			echo "qwerty-ime: commit (\"$committed\") MISSING"
 			status=1
 		fi
+		;;
+	p026)
+		# (p026) The UAT of 2026-10-13 on the input method's image: Terminal focused, the flick panel opened.
+		compositor
+		expect_log 'KWL IME started pid='
+		guest 'for p in $(ps -A -o pid,args | grep -E "[t]erminal|[i]me-probe" | awk "{print \$1}"); do kill $p; done; rm -f /tmp/t.log /tmp/ime-probe.log' >/dev/null
+		guest 'export XDG_RUNTIME_DIR=/tmp HOME=/root; cd /root; /bin/terminal --token=p026 --timeout-s=600 > /tmp/t.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+		expect_log 'KWL MAP client='
+		swipe 1272 792 1130 650
+		expect_log 'KWL OSK open kind=flick'
+		# The kana face turns the input method on.
+		expect_log 'KWL OSK ime face=kana on=1'
+		expect_log 'KWL IME language=ja'
+		sleep 1
+		pointer move 400 300 sleep 300
+		shot p026-flick.png
+		# あい is the panel's preedit; the first candidate is committed once, nothing deleted (the double input).
+		key_tap 1004 524
+		key_flick 1004 524 -30 0
+		expect_text 'KWL OSK preedit text=あい'
+		expect_text 'reading=あい count='
+		grep -qE 'KWL OSK predictions serial=[0-9]+ reading=あい count=[1-9]' "$out/osk-now.txt" && echo "p026: candidates for あい ok" || { echo "p026: no candidates for あい MISSING"; status=1; }
+		shot p026-candidates.png
+		place_middle 'KWL OSK crect slot=0 '
+		tool_tap "$px" "$py"
+		expect_text 'KWL OSK candidate commit sent=1 slot=0 word='
+		sleep 1
+		guest 'cat /tmp/t.log' > "$out/p026-terminal.log"
+		word=$(grep -a 'KWL OSK candidate commit sent=1 slot=0' "$out/osk-now.txt" | tail -1 | sed 's/.* word=\([^ ]*\) .*/\1/')
+		commits=$(grep -ac 'ZTERM IME commit' "$out/p026-terminal.log")
+		if [ "$commits" = 1 ] && grep -qF "text=$word" "$out/p026-terminal.log" && ! grep -q 'ZTERM IME delete' "$out/p026-terminal.log"; then
+			echo "p026: Terminal took $word once, no kana before it ok"
+		else
+			echo "p026: Terminal's commits ($commits, word $word) MISSING"
+			status=1
+		fi
+		# よむ (や down, ま up), the space key converts with the okurigana, 改行 commits.
+		key_flick 1082 680 0 30
+		key_flick 1004 680 0 -30
+		expect_text 'KWL OSK preedit text=よむ'
+		sleep 1
+		key_tap 1238 602
+		expect_text 'KWL OSK convert slot=0 word=読む reading=よむ'
+		shot p026-converted.png
+		key_tap 1238 680
+		expect_text 'KWL OSK reading commit text=読む reason=enter'
+		sleep 1
+		guest 'cat /tmp/t.log' > "$out/p026-terminal.log"
+		grep -qF 'ZTERM IME commit bytes=6 text=読む' "$out/p026-terminal.log" && echo "p026: Terminal took 読む ok" || { echo "p026: 読む MISSING"; status=1; }
+		# The alpha face turns the input method off; a/A once: the next letter only is a capital.
+		key_tap 1238 758
+		expect_log 'KWL OSK ime face=alpha on=0'
+		expect_log 'KWL IME language=direct'
+		key_tap 1004 758
+		expect_log 'KWL OSK flick-shift state=1'
+		pointer move 400 300 sleep 300
+		shot p026-shift.png
+		key_tap 1082 524
+		expect_log 'KWL OSK send via=key code=30 shift=1'
+		key_tap 1082 524
+		expect_log 'KWL OSK send via=key code=30 shift=0'
+		# The number face: its band's button turns the input method on, and 1 is the full-width １.
+		key_tap 1238 758
+		expect_log 'KWL OSK face name=number'
+		place_middle 'KWL OSK wrect '
+		tool_tap "$px" "$py"
+		expect_log 'KWL OSK width toggle on=1'
+		sleep 1
+		key_tap 1004 524
+		expect_text 'KWL OSK send via=commit text=１ before=0'
+		pointer move 400 300 sleep 300
+		shot p026-number.png
+		# 次のApp: with ime-probe on top, the lowest window (Terminal) comes forward.
+		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
+		expect_count 'KWL MAP client=' 2
+		tool_label 次のApp
+		expect_log 'KWL OSK tool next error=0'
+		expect_log 'KWL FOCUS next surface='
+		# The QWERTY panel: Backspace at the right of the digits, Return at the right of the middle row.
+		swipe 6 792 150 650
+		expect_log 'KWL OSK open kind=qwerty'
+		expect_log 'KWL OSK qrect face=letters row=1 index=10 .* label=Backspace'
+		expect_log 'KWL OSK qrect face=letters row=3 index=9 .* label=Return'
+		pointer move 700 200 sleep 300
+		shot p026-qwerty.png
+		guest 'for p in $(ps -A -o pid,args | grep -E "[t]erminal|[i]me-probe" | awk "{print \$1}"); do kill $p; done' >/dev/null
 		;;
 	hand)
 		compositor
@@ -830,14 +946,14 @@ hold 800"
 		shot tools.png
 		round=1
 		while [ $round -le 3 ]; do
-			tool_tap 1004 234
-			tool_tap 1004 284
+			tool_label 行頭
+			tool_label 選択
 			n=0
-			while [ $n -lt 5 ]; do tool_tap 1238 184; n=$((n + 1)); done
-			tool_tap 1017 334
-			tool_tap 1043 98
-			tool_tap 1225 334
-			[ $round -lt 3 ] && tool_tap 1043 98
+			while [ $n -lt 5 ]; do tool_label →; n=$((n + 1)); done
+			tool_label コピー
+			tool_label 前のApp
+			tool_label 貼り付け
+			[ $round -lt 3 ] && tool_label 前のApp
 			round=$((round + 1))
 		done
 		expect_count 'KWL OSK tool edit action=0 error=0' 3
@@ -863,12 +979,13 @@ hold 800"
 		guest "rm -f /root/receive.txt; touch /root/receive.txt; export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/textedit --timeout-s=900 /root/receive.txt > /tmp/te-receive.log 2>&1 </dev/null & sleep 5; echo started" >/dev/null
 		swipe 1272 792 1130 650
 		expect_log 'KWL OSK open kind=flick'
-		tool_tap 1160 141
+		tool_label 履歴
 		expect_log 'KWL OSK tool face=history items=3'
 		sleep 1
 		pointer move 400 300 sleep 300
 		shot history.png
-		tool_tap 1121 213
+		place_middle 'KWL OSK hrect row=1 '
+		tool_tap "$px" "$py"
 		expect_log 'KWL OSK history paste index=1 error=0'
 		sleep 1
 		pointer move 400 300 sleep 300
@@ -886,7 +1003,7 @@ hold 800"
 		guest "export XDG_RUNTIME_DIR=/tmp HOME=/root; /bin/ime-probe --log=/tmp/ime-probe.log --seconds=300 > /dev/null 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 		swipe 1272 792 1130 650
 		expect_log 'KWL OSK open kind=flick'
-		tool_tap 1238 141
+		tool_label 絵文字
 		expect_log 'KWL OSK tool face=emoji category=0'
 		sleep 1
 		pointer move 400 300 sleep 300

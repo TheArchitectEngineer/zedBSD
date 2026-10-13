@@ -119,3 +119,9 @@ Resume point: L1 を満たした。L2 の p006・p007・p008・p009・p015・p01
 ## Phase（2026-10-06 追加: 再設計）
 
 - [ws102-p025](phase025/phase.md) 設計と実装: OSK の残り（App Home で消える・引き出し・full keyboard の IME）（test-wait、q789 で実装 4b956b9d）
+
+## Phase（2026-10-13 追加: UAT の指摘）
+
+| Phase | 段 | 目的 | Status | 依存 |
+| --- | --- | --- | --- | --- |
+| [ws102-p026](phase026/phase.md) | L2 | UAT 2026-10-13 の指摘: flick のかなを OSK の preedit にして候補の二重確定をなくす（Terminal）、送り仮名つきの変換（IME の予測の先頭に読み全体の変換）、a/A を Shift に、かなの面で IME ON・英字で OFF・数字の面は band の 全角/半角、QWERTY の Return・Backspace の位置、flick の Del → 削除、道具の行の高さ（1.5 倍・2 倍、収まらない画面は比で縮める）、Del → 次のApp（窓の巡回） | in-progress（実装済み・T1 の試験待ち、P2） | p025 |

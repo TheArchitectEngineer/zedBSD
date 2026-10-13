@@ -1036,6 +1036,9 @@ kwl_seat_key(
 		return;
 	}
 
+	/* A key typed commits the on-screen keyboard's reading first (keyboard.c, ws102-p026). */
+	kwl_keyboard_key_typed(server, state);
+
 	/*
 	 * The Windows key pressed alone opens or closes App Home (ws142-p002),
 	 * not on the lock or the login screen; every key is followed (so Super+L
