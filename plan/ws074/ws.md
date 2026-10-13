@@ -10,7 +10,7 @@ Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。Acid3 の [q1003](queue.md) はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行した。
 Queue: [q1003](queue.md) finished / p180 cleared。以前の [q1002](../history/queue-q1002.md) は p178 得点位置の部分 scope cleared、Phase 全体は uncleared。
-Resume point: q1003 後、Acid3 score100/100・pixel差42921/480000、Acid2差1865/120000。本文の y=373.50 / reference y=350 の差が残る。p100 全体は未達。
+Resume point: q1003 後、Acid3 score100/100・pixel差42921/480000、Acid2差1865/120000。本文の y=373.50 / reference y=350 の差は [p181](phase181/phase.md) の候補。p100 全体は未達。
 <!-- awesome-plan-current:end -->
 
 ## Q1 向けの整理（2026-10-05、Q1）
@@ -309,6 +309,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p178](phase178/phase.md) | Acid3 の 1 領域の pixel 一致を試み、実行上の障害を記録（旧B1評価は現行scopeから除外） | uncleared（q1002-i01 は得点位置の部分 scope cleared、ROI差9572→800。1領域 pixel 完全一致は未達） | p099、p172、p179（cleared） |
 | [ws074-p179](phase179/phase.md) | Acid3 参照ページの `reference.png` が背景画像として描かれない原因を特定し、一般的な欠陥を修正・検証 | cleared（q1001-i01。canvas 背景画像の高さ0判定を修正、差56647） | p172、p178 q1000 の baseline |
 | [ws074-p180](phase180/phase.md) | iframe の子が親ページに描かれる一般的な原因を調べ、通常の fallback 描画を除く | cleared（q1003-i01、Acid3差565減、frame load52/52） | p172、p179、p178 q1002 の実測出力 |
+| [ws074-p181](phase181/phase.md) | HTML `type` 属性 selector の大文字小文字と hidden input の余分な行高を調べる | planned（q1004 exact scope案、Queue未選定） | p172、p179、p180 cleared、q1003 実測出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -319,6 +320,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 2026-10-13 / p180-addition-after-q1002: q1002 の test paint/layout では iframe 内の `FAIL` が2個描かれ、test 本文 y373.50 と reference 本文 y350 に差がある。[p180](phase180/phase.md)で iframe 子の親ページへの誤描画を一般的に調べる独立 Phase を追加し、q1003 の最大90分 exact scope案を置いた。p178/q1002の outcome と p100 全画面差0の条件は変えない。Queue は未選定・未承認。
 
 2026-10-13 / q1003-p180-clearance: ユーザーが [p180](phase180/phase.md) の最大90分 exact scope を承認。iframe DOM 子の親ページ box 生成を止め、0×0/通常寸法/`display:contents` host fixture、frame load 52/52、build warning0。Acid3 score100/100・差42921/480000（q1002から565減）、Acid2差1865不変。[証拠](phase180/evidence/20261013-q1003/report.json)。p180 cleared。本文 y373.50 は不変で form/inline line の別原因、p100 全画面差0と WS074 acceptance は未達。次 Queue の承認が必要。
+
+2026-10-13 / p181-addition-after-q1003: test の `<input type=HIDDEN>` に対し UA `input[type=hidden]` が現行 selector 比較では一致せず、form の高さ24の line が本文を押し下げる原因候補。[p181](phase181/phase.md) で HTML `type` 属性値の大文字小文字と明示的 `s`/`i` flag に限定した有限の調査・修正・再計測を提案。q1003/p180 の結果と p100 の全画面条件は変えない。Queue は未選定・未承認。
 
 ## 後の WS・Future Work の候補
 
