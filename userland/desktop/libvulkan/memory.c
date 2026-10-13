@@ -1136,7 +1136,7 @@ memory_allocate(
 	/* The resource import takes precedence over allocation export when a resource is supplied. */
 	if (imported != 0U) {
 		/* The renderer imports a resource already attached to this independent context. */
-		vulkan_write_u32(&writer, 1000384002U);
+		vulkan_write_u32(&writer, GPU_OP_RECORD_IMPORT_RESOURCE);
 		vulkan_write_u64(&writer, 0U);
 		vulkan_write_u32(&writer, imported);
 	} else if (shared != VK_FALSE) {

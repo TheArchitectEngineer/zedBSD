@@ -552,7 +552,7 @@ device_queue_remote(
 	vulkan_write_u64(&writer, 1);
 	vulkan_write_u32(&writer, 1000145003U);
 	vulkan_write_u64(&writer, 1);
-	vulkan_write_u32(&writer, 1000384005U);
+	vulkan_write_u32(&writer, GPU_OP_RECORD_QUEUE_TIMELINE);
 	vulkan_write_u64(&writer, 0);
 	vulkan_write_u32(&writer, queue->timeline_index);
 	vulkan_write_u32(&writer, 0);

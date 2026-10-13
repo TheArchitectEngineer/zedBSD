@@ -421,7 +421,11 @@ share_context_add(
 	if (member == NULL)
 		return ENOMEM;
 
-	/* Acknowledged attach enables VkImportMemoryResourceInfoMESA in this context. */
+	/*
+	 * Acknowledged attach enables VkImportMemoryResourceInfoMESA in this
+	 * context (the record named in venus-protocol
+	 * xmls/VK_MESA_venus_protocol.xml; GPU_OP_RECORD_IMPORT_RESOURCE).
+	 */
 	error = drv_venus_resource_request_locked(controller, 0x0202U, context, share->storage->identifier);
 	if (error != 0) {
 		drv_venus_transport_fail(&controller->transport, error);

@@ -17,6 +17,14 @@
  * is.  The names, this file and every later number are zedBSD's own; a
  * command of zedBSD's alone is numbered from GPU_OP_OWN_FIRST, which a
  * Venus host is never sent.
+ *
+ * Source of the reused values (cited, not copied): the venus-protocol
+ * repository, commit ca19b6358d7cc491bc3e4de76f04c6700876a8fa (the
+ * generator revision git-ca1e9220 that virglrenderer 1.1.0's headers
+ * name).  Every command number and the reply flag are those of
+ * xmls/VK_EXT_command_serialization.xml; the arguments of the commands
+ * 178 to 180 and the two record types are those of
+ * xmls/VK_MESA_venus_protocol.xml.
  */
 
 #ifndef UAPI_GPU_OP_H
@@ -30,6 +38,25 @@
  */
 #define GPU_OP_PROTOCOL_VERSION	2U
 #define GPU_OP_OWN_FIRST	0x10000U
+
+/*
+ * The flag word that follows each command's number: GPU_OP_FLAG_REPLY asks
+ * the renderer to write the command's reply (bit 0 of the command flags,
+ * VK_COMMAND_GENERATE_REPLY_BIT_EXT in VK_EXT_command_serialization.xml).
+ */
+#define GPU_OP_FLAG_REPLY	1U
+
+/*
+ * The structure types of the two private records a command may chain:
+ * GPU_OP_RECORD_IMPORT_RESOURCE, followed by the u32 id of a resource the
+ * context imported, makes vkAllocateMemory import that resource;
+ * GPU_OP_RECORD_QUEUE_TIMELINE, followed by a u32 ring index, binds the
+ * queue vkGetDeviceQueue2 returns to that timeline.  The values are offsets
+ * 2 and 5 of extension 385 in VK_MESA_venus_protocol.xml
+ * (VkImportMemoryResourceInfoMESA, VkDeviceQueueTimelineInfoMESA).
+ */
+#define GPU_OP_RECORD_IMPORT_RESOURCE	1000384002U
+#define GPU_OP_RECORD_QUEUE_TIMELINE	1000384005U
 
 /* Each command, the Vulkan command it carries named beside it. */
 enum gpu_op {

@@ -15,6 +15,11 @@
  * whose 20-byte reply at a fixed position is the completion trailer
  * libvulkan polls.  A command too long for one submission travels in a
  * session blob and is named by vkExecuteCommandStreamsMESA (180).
+ *
+ * The MESA command names, and the arguments of GPU_OP_SET_REPLY_STREAM,
+ * GPU_OP_SEEK_REPLY_STREAM and GPU_OP_EXECUTE_STREAMS (uapi/gpu-op.h), are
+ * cited from the Venus protocol: venus-protocol xmls/VK_MESA_venus_protocol.xml, commit
+ * ca19b6358d7cc491bc3e4de76f04c6700876a8fa.
  */
 
 #ifndef DRIVERS_GPU_I915_RENDER_TRANSPORT_H

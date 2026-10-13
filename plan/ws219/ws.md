@@ -26,7 +26,7 @@ Related Milestones: なし
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 監査: Venus 由来の物の洗い出し、事実と表現の写しの区別、付け直す名前の一覧 | in-progress（2026-10-13 P2 実施。表現の写しは無し、Google の表示は WS167 で既に除去済み。判断 4 点を Q1 → ユーザー） |
-| p002 | 定数名の付け直し、著作権表示の除去と引用の明記、試験 | planned |
+| [p002](phase002/phase.md) | 出典の記入、README:164・API-PROVENANCE の直し、名前の無い数 3 つに gpu-op.h の名前（ユーザーの決定で縮めた範囲） | in-progress（2026-10-13 P2 実装・build warning 0・host 試験 PASS、QEMU の Venus の起動は T1 待ち） |
 
 ## ユーザーの決定（2026-10-13、p001 の後）
 

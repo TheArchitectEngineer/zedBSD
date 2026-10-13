@@ -1,14 +1,17 @@
 # Vulkan declaration provenance
 
 These are public API declarations, not imported Vulkan implementation code.
-The ABI and numeric declarations are selected from Khronos registry-derived
-Vulkan 1.3.269 declaration data embedded in the pinned Venus protocol tree:
+The ABI and numeric declarations are selected from the Khronos Vulkan
+1.3.269 declarations:
 
-- virglrenderer tag `1.1.0`, commit `1aeaf5e10a9c89096e96d09599aa419d5c50712f`.
-- Input path: `src/venus/venus-protocol/vulkan_core.h`.
+- Khronos Vulkan-Headers tag `v1.3.269`.
+- Input path: `include/vulkan/vulkan_core.h`.
 - Input SHA-256: `8cb01233ecf0fac130f0db2fdbbd79b6643f91f65c9afb807978924148798287`.
-- [Pinned source](https://gitlab.freedesktop.org/virgl/virglrenderer/-/blob/1aeaf5e10a9c89096e96d09599aa419d5c50712f/src/venus/venus-protocol/vulkan_core.h).
+- [Pinned source](https://github.com/KhronosGroup/Vulkan-Headers/blob/v1.3.269/include/vulkan/vulkan_core.h).
 - Declaration license: Apache-2.0, copyright 2015–2023 The Khronos Group Inc.
+- The copy virglrenderer 1.1.0 (commit `1aeaf5e10a9c89096e96d09599aa419d5c50712f`)
+  carries as `src/venus/venus-protocol/vulkan_core.h` is the same file, byte for
+  byte (the SHA-256 above; ws219-p001); it is not a Venus declaration.
   The independent zedBSD selection/formatting tool and platform wrapper are Zlib.
 
 The maintained header exposes 137 Vulkan 1.0 commands and 18 Vulkan-1.0-era

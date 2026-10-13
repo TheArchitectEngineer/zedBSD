@@ -161,4 +161,6 @@ host の試験は `plan/ws214/tests/vulkan-overlay-host.sh`。
 [API-PROVENANCE.md](../../../include/libc/vulkan/API-PROVENANCE.md) に
 固定した公式宣言の版・hash・ライセンスとNoct再生成手順を記録しています。
 実装は独立して記述し、Mesa、loader、virglrendererのC実装を移入していません。
-公開APIとprotocol IDの必要なライセンス表示はそれぞれの資料を参照してください。
+公開APIの宣言のライセンス表示は `include/libc/vulkan/LICENSE-API` にあります。
+command の番号と wire の形は Venus protocol の値・仕様を引用した事実で、引用元は
+[gpu-op.h](../../../include/uapi/gpu-op.h) と `wire.c` の頭の注記にあります（第三者のライセンス表示は置いていません、ws167-p002・ws219-p001）。
