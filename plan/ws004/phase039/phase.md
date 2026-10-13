@@ -124,3 +124,44 @@ code, makes one driver own another's lifetime, changes public UAPI without an
 approved decision, or cannot preserve both passing normal paths. Keep the
 duplicated implementations and record the rejected abstraction rather than
 forcing superficial reuse.
+
+## 2026-10-13 review result (P2, q963): no extraction
+
+Queue: q963 (P2, 2026-10-13). Authority: the user's 2026-10-13 instruction to finish the beta-2 implementation without new features, and Q1's assignment ("a no-extraction conclusion is acceptable; record the reason"). No source was changed.
+
+Prerequisites as found: RTL8822BU normal path complete (p028-p030, p041-p044, p046 physical). AX211 p038 is still formally uncleared (one shared final direct-boot result), but the exact-device VFIO normal path passed (q066) and the 5330 UAT uses AX211 Wi-Fi (BUG-145, BUG-157, BUG-212 records). The comparison below therefore uses both working implementations as they stand in main (2026-10-13).
+
+### Inventory (procedure step 1)
+
+Both drivers plug in only through `struct wlan_radio_ops` (`include/kern/net/wlan.h`): `rtl8822bu_radio_ops` (usb-rtl8822bu.c:625, 13 SoftMAC operations) and `ax211_radio_ops` (intel-ax211.c:1700, the same 13 plus `restart`). `wlan_wpa2_ops` and `wlan_fullmac_ops` are core-internal adapters, not driver tables.
+
+| Topic | Classification | Evidence |
+| --- | --- | --- |
+| Beacon/probe IE parsing for selection | Already correctly common (`wlan_frame_parse_bss`) | RTL has none. AX211's `ax211_bss_ies_decode` (intel-ax211-bss.c:466) also reads TIM/DTIM and WMM for its firmware association, which `wlan_bss_record` does not carry. It is device-specific use, not a duplicate of the selection parser |
+| Auth/assoc/probe frame building, RSN IE | Already common (wlan-wpa2-codec.c, wlan.c:4263) | RTL builds a deauth frame privately for its hardware path; AX211 builds a firmware scan-offload probe template (`ax211_scan_probe_encode`) with firmware rate encoding: device-specific |
+| BSS cache and selection | Already common (`cache_insert_locked`, `station_select_bss_locked`) | AX211's private 64-entry cache mirrors the core's eviction rule on purpose (intel-ax211-bss.c:316-318) to feed firmware association. It only looks up the core-selected BSS |
+| Data header, LLC/SNAP, EAPOL, PN assignment, replay check | Already common (wlan-l2.c, wlan.c) | Drivers only classify or measure lengths for DMA |
+| CCMP header decode on RX / header check on TX | Same public behavior, intentionally independent implementation (see below) | RTL usb-rtl8822bu.c:4529-4572 and 4182-4204; AX211 intel-ax211-rx.c:471-529 and intel-ax211-tx.c:497; core static `ccmp_header_parse`/`ccmp_header_store` (wlan-l2.c:365/348) |
+| Channel-to-frequency and channel validity | Same arithmetic, different policy | Core has two static copies (wlan.c:2968, wlan-frame.c:421); AX211 `ax211_pci_channel_frequency` (intel-ax211.c:4139) with NVM/MCC regulatory; RTL a channel table plus JP/ETSI board policy (usb-rtl8822bu.c:571-587, rtl8822b.c:1294-1306) |
+| Sequence numbers, rate choice, key slots, deadlines/time units | Device-specific | Hardware descriptor bits (RTL EN_HWSEQ, CAM slots, tick-to-ms), firmware-assigned sequence numbers and rate formats (AX211), separate key state modules |
+
+### Extraction candidates (procedure steps 2-3)
+
+1. CCMP header encode/parse. This is the only 802.11 mechanism that both drivers re-implement privately (48-bit little-endian PN from bytes 0, 1, 4-7, key index `>> 6`, PN 0 rejected). The contracts are not identical:
+   - Header offset: RTL assumes a fixed 24-byte header. AX211 computes the header length (QoS, 4-address).
+   - Validity: RTL also requires the reserved bits (`& 0x3f == 0x20`). AX211 checks only the ExtIV bit.
+   - Error reporting: RTL returns errno values (EACCES, EILSEQ, EINVAL). AX211 returns its delivery enum or STALE.
+   - Context: RTL decodes under a spinlock snapshot of adapter state with descriptor fields (`encryption_type`, `icv_error`) mixed in. AX211 decodes lock-free under its caller's `lifecycle_lock` mutex with firmware status bits mixed in.
+
+   By the procedure ("any mismatch keeps it private"), it stays duplicated. The core already re-verifies the header and requires the driver-reported PN to match (wlan-l2.c:226-231), so the invariant that matters (PN and replay) is already maintained once in the core. A shared helper would remove about 40 lines per driver. It would not move an invariant, and line-count reduction alone is not sufficient (step 3).
+2. Channel-to-frequency. The formula is one line per band. The regulatory and channel-validity policy that surrounds it is device- and board-specific (RTL board policy, AX211 NVM/MCC). The only invariant that could be shared is the arithmetic itself. Making the core's static copy exported would be a mechanical cleanup inside the core (two core copies plus bcm43455), not driver commonization. It is not worth a regression campaign on both exact devices now.
+
+Conclusion: **no extraction**. Both drivers stay independently replaceable, and the public WLAN UAPI is untouched. Because there is no extraction, HW-T39's post-refactor suites and the two bounded normal-path smokes are not required (completion condition: "a documented no-change review and passing comparison gates complete the Phase"). The comparison gates are the drivers' existing passing focused suites and physical results recorded in p028-p030, p038 and p041-p046. They were not rerun because no code changed.
+
+### Observations for later (not part of this Phase's change)
+
+- Core hardware detail: `wlan_l2_parse_data` expects an RTL-style MIC trailer to still be attached (wlan-l2.c:253-258). AX211 pads 8 zero bytes to satisfy it (intel-ax211-rx.c:284-288, 333-335). This is a core assumption that leaks one device's layout. A later core cleanup could make the trailer optional per received frame.
+- RTL's fixed 24-byte header offset in its CCMP RX decode and TX check assumes non-QoS, three-address data frames. It has passed the physical normal paths. If QoS data ever reaches that path, the decode would read the wrong bytes. It is recorded here, not changed: no failure is observed, and changing it is outside a no-extraction review.
+- The core keeps two identical static `channel_frequency` copies (wlan.c, wlan-frame.c), and 21 files define private `le16`/`le32` helpers. These are core or kernel-wide tidy-ups, not WLAN driver commonization.
+
+Status: proposed cleared with the no-extraction result (Q1 judges). Evidence: the read-only inventory above (2026-10-13), with file:line references in main as of 55712017f.

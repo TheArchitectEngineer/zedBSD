@@ -60,7 +60,7 @@ Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2
   2. adapter と各 device に `org.freedesktop.DBus.Properties.GetAll`（1 つ数 KB）を待たない call で順に送る（同時に 4 つまで）、
   3. 以後は signal で追う: `org.freedesktop.DBus.ObjectManager.InterfacesAdded`・`InterfacesRemoved`（sender `org.bluez`、path `/`）と `org.freedesktop.DBus.Properties.PropertiesChanged`（sender `org.bluez`、path_namespace `/org/bluez`）の match を足す。PropertiesChanged の `a{sv}` を表に当てる。
 - 周期の再読み（見ている間 2 秒・他 30 秒）は adapter の `GetAll` だけ（device は signal で十分。signal を取りこぼした印（`dbus_dispatch_messages` の EMSGSIZE など）があれば 1 から読み直す）。
-- 64 KiB を越える message（壊れた・巨大な InterfacesAdded）は捨てて log、表は次の読み直しで直す。
+- 64 KiB を越える message は、今の `dbus-linux.c` では `EOVERFLOW` で bus を閉じる（2026-10-13 の別の世代の調べ）。Bluetooth の connection が閉じたら `reachable` を一時 0 にし、次の tick で開き直して 1 から読み直す（他の backend の connection には響かない、§3 の専用の connection）。
 
 ## 4. `dbus-linux.c` の拡張
 
@@ -68,6 +68,7 @@ Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2
 | --- | --- |
 | `dbus_send_call(bus, destination, path, interface, member, signature, args, count, uint32_t *serial)` | method call を送るだけ（送りの期限は今の `bus_send` の期限、受けは待たない）。返事は `dbus_dispatch_messages` の callback に来る |
 | `dbus_dispatch_messages` | 今は返事・error を捨てる → callback に渡す（既存の利用者（notify-linux.c）は type を見て method call と signal だけを扱っているか確かめ、返事を無視する形にする。既存の動作は変えない） |
+| 遅らせた返事 | `dbus_dispatch_messages` は callback の後に message を解放するので、Agent の call（`RequestConfirmation` など）に答えを待って返すには、呼び手の `sender` と `serial` を写して持つ。`dbus_send_return_to(bus, sender, serial, …)`・`dbus_send_error_to(bus, sender, serial, name, text)` を足す（今の `dbus_send_return` はその薄い包みに） |
 | `struct dbus_reply` の `error` | 既にある（error の名前）。待たない call の error の名前（`org.bluez.Error.AuthenticationFailed` ほか）を backend が §5.3 の errno に写す |
 | `struct dbus_arg` の variant | `variant`（内の signature、例 `"b"`）を足し、`v` の時は内の 1 つの値（数か文字列）を組む。`Properties.Set`（`ssv`）と `SetDiscoveryFilter`（`a{sv}`、§5.2）に使う |
 | `a{sv}` の書き | `SetDiscoveryFilter` の `{"Transport": <"auto">}` の 1 項目だけ（固定の bytes の組み立てで足りるなら `dbus_arg` の `dict` は足さない、実装で小さい方） |
@@ -119,7 +120,7 @@ reason は error の名前の最後の語（`AuthenticationFailed` など、`KL_
 
 | method | 口 | 返事 |
 | --- | --- | --- |
-| `RequestConfirmation(o device, u passkey)` | `ASK_CONFIRM`（number = passkey） | 答えまで返事を保留（呼び出しの message を表に持つ）。yes → 空の return、no → `org.bluez.Error.Rejected` |
+| `RequestConfirmation(o device, u passkey)` | `ASK_CONFIRM`（number = passkey） | 答えまで返事を保留（呼び手の sender と serial を表に写して持つ、§4）。yes → 空の return、no → `org.bluez.Error.Rejected` |
 | `RequestAuthorization(o device)` | `ASK_CONSENT` | 同上 |
 | `AuthorizeService(o device, s uuid)` | paired で trusted の device なら即 return。他は `ASK_CONSENT` | 同上 |
 | `DisplayPasskey(o device, u passkey, q entered)` | `ASK_PASSKEY`（最初の 1 回だけ、entered の更新は無視） | 空の return（method は返事を求める） |
