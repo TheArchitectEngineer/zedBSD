@@ -1,0 +1,7 @@
+interface=true
+other=undefined
+initial=false
+set=true
+remove=false
+attr=true
+clear=true

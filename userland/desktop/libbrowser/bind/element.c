@@ -31,6 +31,8 @@ static int element_title_get(struct vm_realm *realm, vm_value this_value, const 
 static int element_title_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_hidden_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_hidden_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int details_open_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int details_open_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_get_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_set_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_remove_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -158,6 +160,17 @@ static const struct bind_operation html_element_operations[] = {
  */
 const struct bind_interface bind_html_element_interface = {
 	"HTMLElement", BIND_ELEMENT, 0, NULL, html_element_attributes, html_element_operations, NULL
+};
+
+/* The boolean open attribute belongs only to HTMLDetailsElement. */
+static const struct bind_attribute details_attributes[] = {
+	{ "open", details_open_get, details_open_set },
+	{ NULL, NULL, NULL }
+};
+
+/* A details element has its own interface and inherits all HTMLElement members. */
+const struct bind_interface bind_html_details_element_interface = {
+	"HTMLDetailsElement", BIND_HTML_ELEMENT, 0, NULL, details_attributes, NULL, NULL
 };
 
 /*
@@ -669,6 +682,82 @@ cleanup:
 
 	/* Succeeded: the attribute follows the value. */
 	return 0;
+}
+
+/* Reports the details element's reflected boolean open attribute. */
+static int
+details_open_get(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	if (element->ns != DOM_NS_HTML || element->tag != DOM_TAG_DETAILS)
+		return bind_throw_illegal(realm);
+	*result = vm_value_boolean(dom_attribute_ascii(element, "open") != NULL);
+	return 0;
+}
+
+/* Sets or removes the details element's open content attribute. */
+static int
+details_open_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_element *element;
+	struct vm_cell *roots[2];
+	vm_value pair[2];
+	unsigned registered;
+	int open;
+	int status;
+
+	status = element_this(realm, this_value, &element);
+	if (status != 0)
+		return status;
+	if (element->ns != DOM_NS_HTML || element->tag != DOM_TAG_DETAILS)
+		return bind_throw_illegal(realm);
+	*result = VM_VALUE_UNDEFINED;
+	open = vm_to_boolean(js_argument(args, count, 0));
+	status = bind_string(realm, "open", &pair[0]);
+	if (status != 0)
+		return status;
+	roots[0] = vm_value_as_cell(pair[0]);
+	registered = 0U;
+	status = vm_heap_add_root(realm->heap, &roots[0]);
+	if (status != 0)
+		return status;
+	registered++;
+	status = bind_string(realm, "", &pair[1]);
+	if (status != 0)
+		goto cleanup;
+	roots[1] = vm_value_as_cell(pair[1]);
+	status = vm_heap_add_root(realm->heap, &roots[1]);
+	if (status != 0)
+		goto cleanup;
+	registered++;
+	if (open)
+		status = element_set_attribute(realm, this_value, pair, 2U, result);
+	else
+		status = element_remove_attribute(realm, this_value, pair, 1U, result);
+
+cleanup:
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
+	return status;
 }
 
 /* Reports an attribute's value, or null when the element does not have it (getAttribute). */

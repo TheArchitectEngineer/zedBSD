@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1026 / WS074 HTMLDetailsElement.open（2026-10-14）
+
+[q1026履歴](queue-q1026.md): 専用interfaceとboolean open反映で固定WPTのopen欠落を解消。次のhidden until-found差分でPASS未達。p193 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1026/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1025 / WS074 Window unique-id named lookup（2026-10-14）
 
 [q1025履歴](queue-q1025.md): 一意HTML idのlive Window named lookupで先頭ReferenceErrorを解消。2対象WPTは別の未実装でPASS未達。p192 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase192/evidence/20261014-q1025/README.md)。共有投影/GitHub publication pending。

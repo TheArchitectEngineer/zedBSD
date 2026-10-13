@@ -1,0 +1,18 @@
+<!doctype html>
+<details id="target"></details>
+<div id="other"></div>
+<script>
+const details = document.getElementById('target');
+const other = document.getElementById('other');
+console.log('interface=' + (details instanceof HTMLDetailsElement));
+console.log('other=' + typeof other.open);
+console.log('initial=' + details.open);
+details.open = true;
+console.log('set=' + (details.open && details.hasAttribute('open')));
+details.removeAttribute('open');
+console.log('remove=' + details.open);
+details.setAttribute('open', 'anything');
+console.log('attr=' + details.open);
+details.open = false;
+console.log('clear=' + (!details.open && !details.hasAttribute('open')));
+</script>

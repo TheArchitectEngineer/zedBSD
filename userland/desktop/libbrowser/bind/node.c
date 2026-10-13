@@ -1454,6 +1454,8 @@ node_prototype_index(
 			return BIND_HTML_TEMPLATE_ELEMENT;
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_IFRAME)
 			return BIND_HTML_IFRAME_ELEMENT;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_DETAILS)
+			return BIND_HTML_DETAILS_ELEMENT;
 		/* Reflected HTML attributes live on their exact tagged interfaces. */
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_BUTTON)
 			return BIND_HTML_BUTTON_ELEMENT;

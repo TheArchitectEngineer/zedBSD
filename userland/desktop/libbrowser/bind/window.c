@@ -101,6 +101,7 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_document_fragment_interface,
 	&bind_element_interface,
 	&bind_html_element_interface,
+	&bind_html_details_element_interface,
 	&bind_window_interface,
 	&bind_event_interface,
 	&bind_ui_event_interface,

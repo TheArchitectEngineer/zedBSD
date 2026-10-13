@@ -50,6 +50,7 @@ enum bind_interface_index {
 	BIND_DOCUMENT_FRAGMENT,
 	BIND_ELEMENT,
 	BIND_HTML_ELEMENT,
+	BIND_HTML_DETAILS_ELEMENT,
 	BIND_WINDOW,
 	BIND_EVENT,
 	BIND_UI_EVENT,
@@ -347,6 +348,7 @@ extern const struct bind_interface bind_svg_text_path_element_interface;
 
 /* Scoped branded HTML reflected attributes (html-reflection.c). */
 extern const struct bind_interface bind_html_button_element_interface;
+extern const struct bind_interface bind_html_details_element_interface;
 extern const struct bind_interface bind_html_label_element_interface;
 extern const struct bind_interface bind_html_meta_element_interface;
 extern const struct bind_interface bind_html_object_element_interface;
