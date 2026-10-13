@@ -1,0 +1,319 @@
+{
+  "count": 8,
+  "old_outcomes": {
+    "fail": 8
+  },
+  "new_outcomes": {
+    "pass": 2,
+    "fail": 6
+  },
+  "subtest_transitions": {
+    "1->0": 20
+  },
+  "rows": [
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-001.html",
+      "old_outcome": "fail",
+      "new_outcome": "pass",
+      "old_pass": 0,
+      "new_pass": 6,
+      "subtests": 6,
+      "changes": [
+        {
+          "name": ".before 1",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".before 2",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".before 3",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 4",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 5",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 6",
+          "old": 1,
+          "new": 0
+        }
+      ],
+      "new_failures": []
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-002.html",
+      "old_outcome": "fail",
+      "new_outcome": "pass",
+      "old_pass": 0,
+      "new_pass": 6,
+      "subtests": 6,
+      "changes": [
+        {
+          "name": ".before 1",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".before 2",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".before 3",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 4",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 5",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 6",
+          "old": 1,
+          "new": 0
+        }
+      ],
+      "new_failures": []
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-003.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 1,
+      "subtests": 6,
+      "changes": [
+        {
+          "name": ".after 5",
+          "old": 1,
+          "new": 0
+        }
+      ],
+      "new_failures": [
+        {
+          "name": ".before 1",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"40\"></div>\noffsetLeft expected 40 but got 0"
+        },
+        {
+          "name": ".before 2",
+          "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"50\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before\" data-offset-x=\"40\"></div>\noffsetLeft expected 40 but got 10"
+        },
+        {
+          "name": ".before 3",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before\" data-offset-x=\"40\"></div>\noffsetLeft expected 40 but got 0"
+        },
+        {
+          "name": ".after 4",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before after\" data-offset-x=\"70\"></div>\noffsetLeft expected 70 but got 0"
+        },
+        {
+          "name": ".after 6",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before after\" data-offset-x=\"70\"></div>\noffsetLeft expected 70 but got 0"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-004.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 1,
+      "subtests": 6,
+      "changes": [
+        {
+          "name": ".before 2",
+          "old": 1,
+          "new": 0
+        }
+      ],
+      "new_failures": [
+        {
+          "name": ".before 1",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"70\"></div>\noffsetLeft expected 70 but got 0"
+        },
+        {
+          "name": ".before 3",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before\" data-offset-x=\"70\"></div>\noffsetLeft expected 70 but got 0"
+        },
+        {
+          "name": ".after 4",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before after\" data-offset-x=\"40\"></div>\noffsetLeft expected 40 but got 0"
+        },
+        {
+          "name": ".after 5",
+          "message": "\n<div id=\"item2\" data-expected-width=\"50\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before after\" data-offset-x=\"40\" style=\"justify-self: baseline;\"></div>\noffsetLeft expected 40 but got 10"
+        },
+        {
+          "name": ".after 6",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before after\" data-offset-x=\"40\"></div>\noffsetLeft expected 40 but got 0"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-005.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 3,
+      "subtests": 6,
+      "changes": [
+        {
+          "name": ".before 2",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 5",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 6",
+          "old": 1,
+          "new": 0
+        }
+      ],
+      "new_failures": [
+        {
+          "name": ".before 1",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"50\" data-expected-height=\"20\" data-offset-x=\"0\" class=\" before\" data-offset-y=\"16\">\u00c9</div>\noffsetTop expected 16 but got 0"
+        },
+        {
+          "name": ".before 3",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"50\" data-expected-height=\"30\" data-offset-x=\"100\" class=\" before\" data-offset-y=\"8\">\u00c9</div>\noffsetTop expected 8 but got 0"
+        },
+        {
+          "name": ".after 4",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"50\" data-expected-height=\"20\" data-offset-x=\"0\" class=\" before after\" data-offset-y=\"8\">\u00c9</div>\noffsetTop expected 8 but got 0"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-006.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 3,
+      "subtests": 6,
+      "changes": [
+        {
+          "name": ".before 2",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".before 3",
+          "old": 1,
+          "new": 0
+        },
+        {
+          "name": ".after 5",
+          "old": 1,
+          "new": 0
+        }
+      ],
+      "new_failures": [
+        {
+          "name": ".before 1",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"50\" data-expected-height=\"20\" data-offset-x=\"0\" class=\" before\" data-offset-y=\"8\">\u00c9</div>\noffsetTop expected 8 but got 0"
+        },
+        {
+          "name": ".after 4",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"50\" data-expected-height=\"20\" data-offset-x=\"0\" class=\" before after\" data-offset-y=\"16\">\u00c9</div>\noffsetTop expected 16 but got 0"
+        },
+        {
+          "name": ".after 6",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"50\" data-expected-height=\"30\" data-offset-x=\"100\" class=\" before after\" data-offset-y=\"8\">\u00c9</div>\noffsetTop expected 8 but got 0"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-007.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 0,
+      "subtests": 6,
+      "changes": [],
+      "new_failures": [
+        {
+          "name": ".before 1",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"4\">\u00c9</div>\nwidth expected 20 but got 100"
+        },
+        {
+          "name": ".before 2",
+          "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before\" data-offset-x=\"0\">\u00c9</div>\nwidth expected 40 but got 100"
+        },
+        {
+          "name": ".before 3",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before\" data-offset-x=\"2\">\u00c9</div>\nwidth expected 30 but got 100"
+        },
+        {
+          "name": ".after 4",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before after\" data-offset-x=\"2\">\u00c9</div>\nwidth expected 20 but got 100"
+        },
+        {
+          "name": ".after 5",
+          "message": "equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before after\" data-offset-x=\"60\" style=\"justify-self: end;\">\u00c9</div>\nwidth expected 40 but got 100"
+        },
+        {
+          "name": ".after 6",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before after\" data-offset-x=\"0\">\u00c9</div>\nwidth expected 30 but got 100"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-008.html",
+      "old_outcome": "fail",
+      "new_outcome": "fail",
+      "old_pass": 0,
+      "new_pass": 0,
+      "subtests": 6,
+      "changes": [],
+      "new_failures": [
+        {
+          "name": ".before 1",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"2\">\u00c9</div>\nwidth expected 20 but got 100"
+        },
+        {
+          "name": ".before 2",
+          "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before\" data-offset-x=\"30\">\u00c9</div>\nwidth expected 40 but got 100"
+        },
+        {
+          "name": ".before 3",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before\" data-offset-x=\"0\">\u00c9</div>\nwidth expected 30 but got 100"
+        },
+        {
+          "name": ".after 4",
+          "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before after\" data-offset-x=\"4\">\u00c9</div>\nwidth expected 20 but got 100"
+        },
+        {
+          "name": ".after 5",
+          "message": "ls: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before after\" data-offset-x=\"0\" style=\"justify-self: baseline;\">\u00c9</div>\nwidth expected 40 but got 100"
+        },
+        {
+          "name": ".after 6",
+          "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before after\" data-offset-x=\"2\">\u00c9</div>\nwidth expected 30 but got 100"
+        }
+      ]
+    }
+  ]
+}

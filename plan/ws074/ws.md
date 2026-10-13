@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1096](queue.md) finished / p219空Grid子baseline、部分cleared。2026-10-14 08:06 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1097](queue.md) finished / p219 style-changes固定8件再測定、部分cleared。2026-10-14 08:08 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -849,3 +849,5 @@ Event ws074-p218-q1095-partial-clear-20261014: [p218](phase218/phase.md) q1095-i
 Event ws074-p219-addition-20261014: [p219](phase219/phase.md)を追加。q1095でstyle-changes-001のtrack幅が回復してもempty子baseline offsetが残る。baseline名43 FAILは症状上限で同一原因とは断定しない。p217 alignment206受け入れとp189/p173分母不変。共有投影/GitHub publication保留。
 
 Event ws074-p219-q1096-partial-clear-and-p217-output-20261014: [p219](phase219/phase.md) q1096-i01で空Grid子の固定行合成baselineを実装。[証拠](phase219/evidence/20261014-q1096/README.md)。固定style-changes-001は3/6→6/6 subtest、whole FAIL→PASS。p217 style-changes向け出力を追加したが、残205 alignmentとp219内容line/auto行/縦書きは未達。[p217更新](phase217/phase.md)。旧PASS、warning0 build、Acid3差0維持。共有投影/GitHub publication保留。
+
+Event ws074-p219-q1097-partial-clear-20261014: [p219](phase219/phase.md) q1097-i01は固定style-changes8 IDを同条件測定し、0→2 whole PASS/20 FAIL→PASS subtest。[証拠](phase219/evidence/20261014-q1097/README.md)。003/004はvertical-rl水平offset、005/006は文字line縦baseline、007/008はvertical-lr文字幅/offset。q1097部分cleared、p219/p217/p189/p173全件100%未達、共有投影/GitHub publication保留。

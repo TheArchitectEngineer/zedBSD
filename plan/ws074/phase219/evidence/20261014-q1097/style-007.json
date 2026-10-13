@@ -1,0 +1,93 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": ".before 1",
+      "status": 1,
+      "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"4\">É</div>\nwidth expected 20 but got 100"
+    },
+    {
+      "name": ".before 2",
+      "status": 1,
+      "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before\" data-offset-x=\"0\">É</div>\nwidth expected 40 but got 100"
+    },
+    {
+      "name": ".before 3",
+      "status": 1,
+      "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before\" data-offset-x=\"2\">É</div>\nwidth expected 30 but got 100"
+    },
+    {
+      "name": ".after 4",
+      "status": 1,
+      "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before after\" data-offset-x=\"2\">É</div>\nwidth expected 20 but got 100"
+    },
+    {
+      "name": ".after 5",
+      "status": 1,
+      "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before after\" data-offset-x=\"60\" style=\"justify-self: end;\">É</div>\nwidth expected 40 but got 100"
+    },
+    {
+      "name": ".after 6",
+      "status": 1,
+      "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before after\" data-offset-x=\"0\">É</div>\nwidth expected 30 but got 100"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": ".before 1",
+        "status": 1,
+        "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"4\">É</div>\nwidth expected 20 but got 100"
+      },
+      {
+        "name": ".before 2",
+        "status": 1,
+        "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before\" data-offset-x=\"0\">É</div>\nwidth expected 40 but got 100"
+      },
+      {
+        "name": ".before 3",
+        "status": 1,
+        "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before\" data-offset-x=\"2\">É</div>\nwidth expected 30 but got 100"
+      },
+      {
+        "name": ".after 4",
+        "status": 1,
+        "message": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before after\" data-offset-x=\"2\">É</div>\nwidth expected 20 but got 100"
+      },
+      {
+        "name": ".after 5",
+        "status": 1,
+        "message": "assert_equals: \n<div id=\"item2\" data-expected-width=\"40\" data-expected-height=\"50\" data-offset-y=\"50\" class=\" before after\" data-offset-x=\"60\" style=\"justify-self: end;\">É</div>\nwidth expected 40 but got 100"
+      },
+      {
+        "name": ".after 6",
+        "status": 1,
+        "message": "assert_equals: \n<div id=\"item3\" data-expected-width=\"30\" data-expected-height=\"50\" data-offset-y=\"100\" class=\" before after\" data-offset-x=\"0\">É</div>\nwidth expected 30 but got 100"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/alignment/grid-alignment-style-changes-007.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:41709/css/css-grid/alignment/grid-alignment-style-changes-007.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\".before 1\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item1\\\" data-expected-width=\\\"20\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"0\\\" class=\\\" before\\\" data-offset-x=\\\"4\\\">É</div>\\nwidth expected 20 but got 100\"}\nWS074_WPT_RESULT {\"name\":\".before 2\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item2\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"50\\\" class=\\\" before\\\" data-offset-x=\\\"0\\\">É</div>\\nwidth expected 40 but got 100\"}\nWS074_WPT_RESULT {\"name\":\".before 3\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item3\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"100\\\" class=\\\" before\\\" data-offset-x=\\\"2\\\">É</div>\\nwidth expected 30 but got 100\"}\nWS074_WPT_RESULT {\"name\":\".after 4\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item1\\\" data-expected-width=\\\"20\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"0\\\" class=\\\" before after\\\" data-offset-x=\\\"2\\\">É</div>\\nwidth expected 20 but got 100\"}\nWS074_WPT_RESULT {\"name\":\".after 5\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item2\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"50\\\" class=\\\" before after\\\" data-offset-x=\\\"60\\\" style=\\\"justify-self: end;\\\">É</div>\\nwidth expected 40 but got 100\"}\nWS074_WPT_RESULT {\"name\":\".after 6\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item3\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"100\\\" class=\\\" before after\\\" data-offset-x=\\\"0\\\">É</div>\\nwidth expected 30 but got 100\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\".before 1\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item1\\\" data-expected-width=\\\"20\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"0\\\" class=\\\" before\\\" data-offset-x=\\\"4\\\">É</div>\\nwidth expected 20 but got 100\"},{\"name\":\".before 2\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item2\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"50\\\" class=\\\" before\\\" data-offset-x=\\\"0\\\">É</div>\\nwidth expected 40 but got 100\"},{\"name\":\".before 3\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item3\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"100\\\" class=\\\" before\\\" data-offset-x=\\\"2\\\">É</div>\\nwidth expected 30 but got 100\"},{\"name\":\".after 4\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item1\\\" data-expected-width=\\\"20\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"0\\\" class=\\\" before after\\\" data-offset-x=\\\"2\\\">É</div>\\nwidth expected 20 but got 100\"},{\"name\":\".after 5\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item2\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"50\\\" class=\\\" before after\\\" data-offset-x=\\\"60\\\" style=\\\"justify-self: end;\\\">É</div>\\nwidth expected 40 but got 100\"},{\"name\":\".after 6\",\"status\":1,\"message\":\"assert_equals: \\n<div id=\\\"item3\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"50\\\" data-offset-y=\\\"100\\\" class=\\\" before after\\\" data-offset-x=\\\"0\\\">É</div>\\nwidth expected 30 but got 100\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

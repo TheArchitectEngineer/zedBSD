@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1096 / WS074 empty Grid item baseline alignment（2026-10-14）
+## 最新: q1097 / WS074 Grid style-changes eight-ID measure（2026-10-14）
+
+[q1097履歴](queue-q1097.md): 固定style-changes8 IDは0→2 whole PASS、0→20/48 subtest PASS。残005/006は文字line baseline、縦書き4件は別欠陥。[証拠](../ws074/phase219/evidence/20261014-q1097/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1096 / WS074 empty Grid item baseline alignment（2026-10-14）
 
 [q1096履歴](queue-q1096.md): 空Grid子の固定行合成baselineで固定style-changes-001が3/6→6/6 subtest、whole FAIL→PASS。旧PASSとAcid3差0維持。[証拠](../ws074/phase219/evidence/20261014-q1096/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

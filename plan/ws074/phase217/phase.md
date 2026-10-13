@@ -65,3 +65,5 @@ Event ws074-p217-p218-shorthand-output-20261014: [p218](../phase218/phase.md)を
 Follow-up ws074-p217-p218-q1095-output-20261014: [p218 q1095](../phase218/evidence/20261014-q1095/README.md)で明示`grid: rows / columns`のtrack sizing出力を検証。固定alignment style-changes-001は幅失敗が解消し3/6 subtest PASSになったが、baseline縦offset差でwholeはFAIL。p217の他style-changesと全206件は未測定/未達で、p217受け入れは不変。
 
 Follow-up ws074-p217-p219-q1096-output-20261014: [p219 q1096](../phase219/evidence/20261014-q1096/README.md)で空子の固定行合成baselineを検証。style-changes-001は3/6→6/6 subtest、whole FAIL→PASS。p217 alignment残205件の同条件全再測定は未実施で、p217 whole受け入れは未達。
+
+Follow-up ws074-p217-p219-q1097-eight-20261014: [p219 q1097](../phase219/evidence/20261014-q1097/README.md)でstyle-changes固定8件を同条件測定し、q1093の0/8 whole PASS・0/48 subtestから2/8 whole PASS・20/48 subtestへ改善。旧PASS後退0。残6件は文字line baseline2と縦書き4で、p217全206件の再測定/受け入れは未達。
