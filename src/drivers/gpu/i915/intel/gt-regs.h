@@ -640,4 +640,48 @@
 /* drivers/gpu/drm/i915/pxp/intel_pxp_regs.h */
 #define GEN12_KCR_BASE	0x32000
 
+/*
+ * The Gen9 (Skylake to Comet Lake) GT registers and fields (ws229-p002).
+ * Modified for zedBSD: excerpted and reformatted by hand from the Linux
+ * 6.8.12 reference. Values are unchanged. Sources (SHA-256 of the file):
+ *   drivers/gpu/drm/i915/i915_reg.h
+ *     efcb6385e32031ca3c5b97f7691c5ed1706c2a6709e3875ff78c2cf2eff0e626
+ *   drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ *     e0b8207e1799fc7e061eb38fe6ebc3e87bea8eca63040f4214358436ca115a83
+ */
+
+/* drivers/gpu/drm/i915/i915_reg.h: the Gen8 master interrupt control and GT banks */
+#define GEN8_MASTER_IRQ	(0x44200)
+#define GEN8_MASTER_IRQ_CONTROL	(1U << 31)
+#define GEN8_PCU_IRQ	(1U << 30)
+#define GEN8_DE_PCH_IRQ	(1U << 23)
+#define GEN8_DE_MISC_IRQ	(1U << 22)
+#define GEN8_DE_PORT_IRQ	(1U << 20)
+#define GEN8_DE_PIPE_IRQ(pipe)	(1U << (16 + (pipe)))
+#define GEN8_GT_VECS_IRQ	(1U << 6)
+#define GEN8_GT_GUC_IRQ	(1U << 5)
+#define GEN8_GT_PM_IRQ	(1U << 4)
+#define GEN8_GT_VCS1_IRQ	(1U << 3)
+#define GEN8_GT_VCS0_IRQ	(1U << 2)
+#define GEN8_GT_BCS_IRQ	(1U << 1)
+#define GEN8_GT_RCS_IRQ	(1U << 0)
+#define GEN8_GT_ISR(which)	(0x44300 + (0x10 * (which)))
+#define GEN8_GT_IMR(which)	(0x44304 + (0x10 * (which)))
+#define GEN8_GT_IIR(which)	(0x44308 + (0x10 * (which)))
+#define GEN8_GT_IER(which)	(0x4430c + (0x10 * (which)))
+#define GEN8_RCS_IRQ_SHIFT	0
+#define GEN8_BCS_IRQ_SHIFT	16
+#define GEN8_VCS0_IRQ_SHIFT	0
+#define GEN8_VCS1_IRQ_SHIFT	16
+#define GEN8_VECS_IRQ_SHIFT	0
+#define GEN8_DE_PIPE_IMR(pipe)	(0x44404 + (0x10 * (pipe)))
+#define GEN8_DE_PIPE_IIR(pipe)	(0x44408 + (0x10 * (pipe)))
+#define GEN8_DE_PIPE_IER(pipe)	(0x4440c + (0x10 * (pipe)))
+#define GEN8_DE_PORT_IMR	(0x44444)
+#define GEN8_DE_PORT_IIR	(0x44448)
+#define GEN8_DE_PORT_IER	(0x4444c)
+#define GEN8_DE_MISC_IMR	(0x44464)
+#define GEN8_DE_MISC_IIR	(0x44468)
+#define GEN8_DE_MISC_IER	(0x4446c)
+
 #endif /* DRIVERS_GPU_I915_INTEL_GT_REGS_H */

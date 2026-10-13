@@ -78,6 +78,15 @@
 /* The display's interrupt summary control (GEN11_DISPLAY_INT_CTL). */
 #define I915_DISPLAY_INT_CTL	0x44200U
 
+/*
+ * The Gen9 display power well state (HSW_PWR_WELL_CTL2): power well 1
+ * powers pipe A, power well 2 pipes B and C.  Gen9 has three pipes.
+ */
+#define I915_GEN9_PWR_WELL_CTL2	0x45404U
+#define I915_GEN9_PW_1_STATE	(1U << 28)
+#define I915_GEN9_PW_2_STATE	(1U << 30)
+#define I915_GEN9_PIPES		3U
+
 /* Turns an id-list entry into the bare product id. */
 #define I915_ID_VALUE(product)	(product)
 
@@ -176,6 +185,7 @@ static const struct kern_gpu_start_ops i915_start_ops = {
 static void i915_interim_display_irq_enable(void *context, int enabled);
 static void i915_interim_display_irq_nothing(void *context);
 static void i915_interim_display_irq_reset(void *context);
+static void i915_interim_irq_silence(struct i915_mmio *mmio, uint32_t imr, uint32_t iir, uint32_t ier);
 static void i915_interim_display_irq_handle(void *context, uint32_t master_ctl);
 
 /*
@@ -1625,7 +1635,7 @@ i915_start_interrupts(
 	 * half in their place.
 	 */
 	gt->irq.display_ops = &i915_interim_display_irq_ops;
-	gt->irq.display_context = &gt->mmio;
+	gt->irq.display_context = gt;
 	drv_i915_display_irq_prepare(device);
 
 	/* Resets every source, attaches the handler and enables the GT sources. */
@@ -2344,17 +2354,67 @@ i915_cpu_physical_bits(void)
 	return (unsigned)(eax & 0xffU);
 }
 
-/* Keeps the display interrupt summary switched off while the display is not connected. */
+/*
+ * Keeps the display interrupts switched off while the display is not connected.
+ *
+ * Gen12 has a display summary control to turn off.  Gen9 has none: its
+ * display sources report straight into GEN8_MASTER_IRQ, so each one is
+ * masked, disabled and cleared instead (the display half of
+ * gen8_irq_reset()).  A pipe whose power well is down is not touched.
+ */
 static void
 i915_interim_display_irq_reset(
 	void *context)
 {
-	struct i915_mmio *mmio;
+	struct i915_gt *gt;
+	uint32_t power;
+	unsigned pipe;
 
 	/* Only the summary: a device without a display acknowledges no display source. */
-	mmio = context;
-	drv_i915_raw_write32(mmio, I915_DISPLAY_INT_CTL, 0U);
-	drv_i915_posting_read32(mmio, I915_DISPLAY_INT_CTL);
+	gt = context;
+	if (gt->graphics_ver != 9U) {
+		drv_i915_raw_write32(&gt->mmio, I915_DISPLAY_INT_CTL, 0U);
+		drv_i915_posting_read32(&gt->mmio, I915_DISPLAY_INT_CTL);
+		return;
+	}
+
+	/* Silences the pipe sources of every pipe whose power well is up. */
+	power = drv_i915_raw_read32(&gt->mmio, I915_GEN9_PWR_WELL_CTL2);
+	for (pipe = 0U; pipe < I915_GEN9_PIPES; pipe++) {
+		/* Pipe A needs power well 1, pipes B and C power well 2 as well. */
+		if ((power & I915_GEN9_PW_1_STATE) == 0U)
+			break;
+		if (pipe != 0U && (power & I915_GEN9_PW_2_STATE) == 0U)
+			break;
+
+		i915_interim_irq_silence(&gt->mmio, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
+	}
+
+	/* Silences the port and miscellaneous display sources, which are always powered. */
+	i915_interim_irq_silence(&gt->mmio, GEN8_DE_PORT_IMR, GEN8_DE_PORT_IIR, GEN8_DE_PORT_IER);
+	i915_interim_irq_silence(&gt->mmio, GEN8_DE_MISC_IMR, GEN8_DE_MISC_IIR, GEN8_DE_MISC_IER);
+}
+
+/* Masks, disables and clears one display interrupt register set (gen3_irq_reset()). */
+static void
+i915_interim_irq_silence(
+	struct i915_mmio *mmio,
+	uint32_t imr,
+	uint32_t iir,
+	uint32_t ier)
+{
+	/* Masks every source, and flushes the mask. */
+	drv_i915_raw_write32(mmio, imr, 0xffffffffU);
+	drv_i915_posting_read32(mmio, imr);
+
+	/* Disables every source. */
+	drv_i915_raw_write32(mmio, ier, 0U);
+
+	/* Clears what is pending, twice because IIR can queue two events. */
+	drv_i915_raw_write32(mmio, iir, 0xffffffffU);
+	drv_i915_posting_read32(mmio, iir);
+	drv_i915_raw_write32(mmio, iir, 0xffffffffU);
+	drv_i915_posting_read32(mmio, iir);
 }
 
 /* Ignores the interrupt enable state while no display is connected. */

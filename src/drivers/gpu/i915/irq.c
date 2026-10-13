@@ -12,6 +12,11 @@
  * gen11_irq_reset(), gen11_irq_postinstall() and gen11_irq_handler() in
  * order.  The GT half follows gt/intel_gt_irq.c; the display half is called
  * through the display operations table at the same points.
+ *
+ * A Gen9 GT takes the Gen8 layout instead (gen8_irq_reset(),
+ * gen8_irq_postinstall(), gen8_irq_handler()): GEN8_MASTER_IRQ, and four GT
+ * banks of ISR, IMR, IIR and IER whose bits name the engines directly, with
+ * no identity handshake.
  */
 
 #include "i915.h"
@@ -75,6 +80,11 @@
 #define I915_IRQ_SYNC_TIMEOUT_US	100000U
 #define I915_IRQ_SYNC_STEP_US		10U
 
+/* The GEN8_MASTER_IRQ bits that name GT sources, with the control bit; the rest are display and PCU. */
+#define I915_IRQ_GEN8_GT_BITS		(GEN8_MASTER_IRQ_CONTROL | GEN8_GT_RCS_IRQ | GEN8_GT_BCS_IRQ | \
+					 GEN8_GT_VCS0_IRQ | GEN8_GT_VCS1_IRQ | GEN8_GT_VECS_IRQ | \
+					 GEN8_GT_PM_IRQ | GEN8_GT_GUC_IRQ)
+
 static void i915_irq_write(struct i915_irq_dev *irq, uint32_t offset, uint32_t value, unsigned *counter);
 static uint32_t i915_master_intr_disable(struct i915_irq_dev *irq);
 static void i915_master_intr_enable(struct i915_irq_dev *irq);
@@ -87,6 +97,12 @@ static void i915_gt_identity_handler(struct i915_irq_dev *irq, uint32_t identity
 static void i915_gt_bank_handler(struct i915_irq_dev *irq, unsigned bank);
 static void i915_irq_handler_body(int vector, hal_irq_ack_t acknowledge, void *argument);
 static void i915_irq_handler(int vector, hal_irq_ack_t acknowledge, void *argument);
+static int i915_irq_gen9(const struct i915_irq_dev *irq);
+static void i915_gen8_gt_irq_reset(struct i915_irq_dev *irq);
+static void i915_gen8_gt_irq_postinstall(struct i915_irq_dev *irq);
+static void i915_gen8_gt_irq_handler(struct i915_irq_dev *irq, uint32_t master_ctl);
+static void i915_gen8_engine_irq(struct i915_irq_dev *irq, int engine_class, int instance, uint32_t iir);
+static void i915_gen8_gt_bank_ack(struct i915_irq_dev *irq, unsigned bank, uint32_t *iir);
 
 /*
  * Installs the interrupt handler and enables the interrupt sources.
@@ -340,8 +356,12 @@ drv_i915_irq_reset(
 	/* Stops the device from raising any interrupt while the sources change. */
 	(void)i915_master_intr_disable(irq);
 
-	/* Resets the engine interrupt enables and masks. */
-	drv_i915_gen11_gt_irq_reset(irq);
+	/* Resets the engine interrupt enables and masks of the GT's layout. */
+	if (i915_irq_gen9(irq) != 0) {
+		i915_gen8_gt_irq_reset(irq);
+	} else {
+		drv_i915_gen11_gt_irq_reset(irq);
+	}
 
 	/*
 	 * Resets the display sources (gen11_display_irq_reset()).
@@ -352,8 +372,11 @@ drv_i915_irq_reset(
 	if (irq->display_ops != NULL)
 		irq->display_ops->reset(irq->display_context);
 
-	/* Resets the GU_MISC and PCU sources. */
-	drv_i915_gen3_irq_reset(irq, GEN11_GU_MISC_IMR, GEN11_GU_MISC_IIR, GEN11_GU_MISC_IER);
+	/* Resets the GU_MISC source, which Gen9 does not have. */
+	if (i915_irq_gen9(irq) == 0)
+		drv_i915_gen3_irq_reset(irq, GEN11_GU_MISC_IMR, GEN11_GU_MISC_IIR, GEN11_GU_MISC_IER);
+
+	/* Resets the PCU source. */
 	drv_i915_gen3_irq_reset(irq, GEN8_PCU_IMR, GEN8_PCU_IIR, GEN8_PCU_IER);
 }
 
@@ -368,24 +391,35 @@ drv_i915_irq_postinstall(
 	struct i915_irq_dev *irq)
 {
 	uint32_t gu_misc_masked;
+	uint32_t master;
 
-	/* Enables the engine interrupts the submission backend needs. */
-	drv_i915_gen11_gt_irq_postinstall(irq);
+	/* Enables the engine interrupts the submission backend needs, in the GT's layout. */
+	if (i915_irq_gen9(irq) != 0) {
+		i915_gen8_gt_irq_postinstall(irq);
+	} else {
+		drv_i915_gen11_gt_irq_postinstall(irq);
+	}
 
 	/* Enables the display sources (gen11_de_irq_postinstall()). */
 	if (irq->display_ops != NULL)
 		irq->display_ops->postinstall(irq->display_context);
 
-	/* Enables the GU_MISC graphics system event, which feeds the OpRegion. */
-	gu_misc_masked = GEN11_GU_MISC_GSE;
-	drv_i915_gen3_irq_init(irq, GEN11_GU_MISC_IMR, ~gu_misc_masked, GEN11_GU_MISC_IER, gu_misc_masked, GEN11_GU_MISC_IIR);
+	/* Enables the GU_MISC graphics system event, which feeds the OpRegion; Gen9 has none. */
+	if (i915_irq_gen9(irq) == 0) {
+		gu_misc_masked = GEN11_GU_MISC_GSE;
+		drv_i915_gen3_irq_init(irq, GEN11_GU_MISC_IMR, ~gu_misc_masked, GEN11_GU_MISC_IER, gu_misc_masked, GEN11_GU_MISC_IIR);
+	}
 
 	/* Records that every source has been set up. */
 	irq->reached_postinstall = 1;
 
 	/* Lets the device raise interrupts, and flushes the enable. */
+	master = GEN11_GFX_MSTR_IRQ;
+	if (i915_irq_gen9(irq) != 0)
+		master = GEN8_MASTER_IRQ;
+
 	i915_master_intr_enable(irq);
-	drv_i915_posting_read32(irq->m, GEN11_GFX_MSTR_IRQ);
+	drv_i915_posting_read32(irq->m, master);
 	irq->reached_master_enable = 1;
 }
 
@@ -635,15 +669,21 @@ i915_master_intr_disable(
 	struct i915_irq_dev *irq)
 {
 	uint32_t master_ctl;
+	uint32_t master;
+
+	/* Picks the master control of the GT's layout. */
+	master = GEN11_GFX_MSTR_IRQ;
+	if (i915_irq_gen9(irq) != 0)
+		master = GEN8_MASTER_IRQ;
 
 	/* Stops the device from raising further interrupts. */
-	drv_i915_raw_write32(irq->m, GEN11_GFX_MSTR_IRQ, 0U);
+	drv_i915_raw_write32(irq->m, master, 0U);
 
 	/*
 	 * With the master control off, samples the level indications; they
 	 * are cleared by the acknowledges of the sources they name.
 	 */
-	master_ctl = drv_i915_raw_read32(irq->m, GEN11_GFX_MSTR_IRQ);
+	master_ctl = drv_i915_raw_read32(irq->m, master);
 
 	/* Succeeded: reports the sources that were pending. */
 	return master_ctl;
@@ -654,8 +694,12 @@ static void
 i915_master_intr_enable(
 	struct i915_irq_dev *irq)
 {
-	/* Lets the device raise interrupts again. */
-	drv_i915_raw_write32(irq->m, GEN11_GFX_MSTR_IRQ, GEN11_MASTER_IRQ);
+	/* Lets the device raise interrupts again, through the master control of the GT's layout. */
+	if (i915_irq_gen9(irq) != 0) {
+		drv_i915_raw_write32(irq->m, GEN8_MASTER_IRQ, GEN8_MASTER_IRQ_CONTROL);
+	} else {
+		drv_i915_raw_write32(irq->m, GEN11_GFX_MSTR_IRQ, GEN11_MASTER_IRQ);
+	}
 }
 
 /* Selects one bank bit, waits for its identity and acknowledges it. */
@@ -920,6 +964,23 @@ i915_irq_handler_body(
 		return;
 	}
 
+	/*
+	 * A Gen9 GT serves its banks and reopens the master control; its
+	 * display sources stay disabled while the display is not driven, so a
+	 * display bit is only counted (gen8_irq_handler()).
+	 */
+	if (i915_irq_gen9(irq) != 0) {
+		irq->gt_irq_count++;
+		i915_gen8_gt_irq_handler(irq, master_ctl);
+		if ((master_ctl & ~I915_IRQ_GEN8_GT_BITS) != 0U)
+			irq->display_irq_count++;
+
+		i915_master_intr_enable(irq);
+		irq->irq_handled_count++;
+		hal_irq_send_eoi(acknowledge);
+		return;
+	}
+
 	/* Serves the GT banks the master control reports. */
 	if ((master_ctl & (GEN11_GT_DW_IRQ(0) | GEN11_GT_DW_IRQ(1))) != 0U) {
 		irq->gt_irq_count++;
@@ -984,4 +1045,167 @@ i915_irq_handler(
 
 	/* Counts the exit once the invocation no longer touches the device. */
 	(void)__atomic_add_fetch(&irq->handler_exits, 1U, __ATOMIC_SEQ_CST);
+}
+
+/* Reports nonzero when the interrupt device serves a Gen9 GT. */
+static int
+i915_irq_gen9(
+	const struct i915_irq_dev *irq)
+{
+	/* Before the GT information is bound the layout is Gen11's. */
+	if (irq->gt == NULL)
+		return 0;
+
+	/* The GT information says which layout the device has. */
+	if (irq->gt->graphics_ver == 9)
+		return 1;
+
+	/* Every other device has the Gen11 layout. */
+	return 0;
+}
+
+/*
+ * Masks, disables and clears the four Gen8 GT banks (gen8_gt_irq_reset()).
+ */
+static void
+i915_gen8_gt_irq_reset(
+	struct i915_irq_dev *irq)
+{
+	unsigned bank;
+
+	/* Bank 0 is RCS and BCS, 1 the video decode engines, 2 PM and GuC, 3 VECS. */
+	for (bank = 0U; bank < 4U; bank++)
+		drv_i915_gen3_irq_reset(irq, GEN8_GT_IMR(bank), GEN8_GT_IIR(bank), GEN8_GT_IER(bank));
+}
+
+/*
+ * Enables the engine interrupts of the Gen8 GT banks (gen8_gt_irq_postinstall()).
+ *
+ * Each engine gets the user interrupt, the command streamer error, the
+ * context switch and the semaphore wait at its shift in its bank.  The PM
+ * bank stays disabled and masked: RPS enables its sources itself.
+ */
+static void
+i915_gen8_gt_irq_postinstall(
+	struct i915_irq_dev *irq)
+{
+	uint32_t irqs;
+	uint32_t render_copy;
+	uint32_t video;
+	uint32_t enhancement;
+
+	/* The interrupts every engine of the execlists backend needs. */
+	irqs = GT_CS_MASTER_ERROR_INTERRUPT;
+	irqs |= GT_RENDER_USER_INTERRUPT;
+	irqs |= GT_CONTEXT_SWITCH_INTERRUPT;
+	irqs |= GT_WAIT_SEMAPHORE_INTERRUPT;
+
+	/* Places the bits of each engine in its bank. */
+	render_copy = (irqs << GEN8_RCS_IRQ_SHIFT) | (irqs << GEN8_BCS_IRQ_SHIFT);
+	video = (irqs << GEN8_VCS0_IRQ_SHIFT) | (irqs << GEN8_VCS1_IRQ_SHIFT);
+	enhancement = irqs << GEN8_VECS_IRQ_SHIFT;
+
+	/* Keeps the masks for the diagnostics. */
+	irq->gt_irqs = irqs;
+	irq->gt_dmask = render_copy;
+	irq->gt_smask = enhancement;
+
+	/* Enables and unmasks the engine banks; the PM bank is left masked (pm_imr = ~0, pm_ier = 0). */
+	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(0U), ~render_copy, GEN8_GT_IER(0U), render_copy, GEN8_GT_IIR(0U));
+	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(1U), ~video, GEN8_GT_IER(1U), video, GEN8_GT_IIR(1U));
+	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(2U), ~0U, GEN8_GT_IER(2U), 0U, GEN8_GT_IIR(2U));
+	drv_i915_gen3_irq_init(irq, GEN8_GT_IMR(3U), ~enhancement, GEN8_GT_IER(3U), enhancement, GEN8_GT_IIR(3U));
+}
+
+/*
+ * Serves the Gen8 GT banks the master control reports (gen8_gt_irq_handler()).
+ *
+ * Each bank's IIR names its engines by bit position: it is read, decoded
+ * per engine and written back to acknowledge it.
+ */
+static void
+i915_gen8_gt_irq_handler(
+	struct i915_irq_dev *irq,
+	uint32_t master_ctl)
+{
+	uint32_t iir;
+
+	/* Serves the render and copy engines of bank 0. */
+	if ((master_ctl & (GEN8_GT_RCS_IRQ | GEN8_GT_BCS_IRQ)) != 0U) {
+		i915_gen8_gt_bank_ack(irq, 0U, &iir);
+		i915_gen8_engine_irq(irq, I915_RENDER_CLASS, 0, (iir >> GEN8_RCS_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_COPY_ENGINE_CLASS, 0, (iir >> GEN8_BCS_IRQ_SHIFT) & 0xffffU);
+	}
+
+	/* Serves the video decode engines of bank 1. */
+	if ((master_ctl & (GEN8_GT_VCS0_IRQ | GEN8_GT_VCS1_IRQ)) != 0U) {
+		i915_gen8_gt_bank_ack(irq, 1U, &iir);
+		i915_gen8_engine_irq(irq, I915_VIDEO_DECODE_CLASS, 0, (iir >> GEN8_VCS0_IRQ_SHIFT) & 0xffffU);
+		i915_gen8_engine_irq(irq, I915_VIDEO_DECODE_CLASS, 1, (iir >> GEN8_VCS1_IRQ_SHIFT) & 0xffffU);
+	}
+
+	/* Serves the video enhancement engine of bank 3. */
+	if ((master_ctl & GEN8_GT_VECS_IRQ) != 0U) {
+		i915_gen8_gt_bank_ack(irq, 3U, &iir);
+		i915_gen8_engine_irq(irq, I915_VIDEO_ENHANCEMENT_CLASS, 0, (iir >> GEN8_VECS_IRQ_SHIFT) & 0xffffU);
+	}
+
+	/* Hands the power management bank to the RPS handler. */
+	if ((master_ctl & (GEN8_GT_PM_IRQ | GEN8_GT_GUC_IRQ)) != 0U) {
+		i915_gen8_gt_bank_ack(irq, 2U, &iir);
+		if (iir != 0U) {
+			irq->gt_other_intrs++;
+			i915_gt_pm_irq(irq, iir & 0xffffU);
+		}
+	}
+}
+
+/* Reads one Gen8 GT bank's IIR and acknowledges what it holds. */
+static void
+i915_gen8_gt_bank_ack(
+	struct i915_irq_dev *irq,
+	unsigned bank,
+	uint32_t *iir)
+{
+	/* Reads which sources of the bank are pending. */
+	*iir = drv_i915_raw_read32(irq->m, GEN8_GT_IIR(bank));
+
+	/* Nothing pending: there is nothing to acknowledge. */
+	if (*iir == 0U)
+		return;
+
+	/* Acknowledges the bank; a bank of two engines is served for both. */
+	drv_i915_raw_write32(irq->m, GEN8_GT_IIR(bank), *iir);
+
+	/* The diagnostics keep the first two banks, the engine banks of the Gen11 layout too. */
+	if (bank < I915_IRQ_GT_BANKS) {
+		irq->gt_bank_acks[bank]++;
+		irq->last_gt_intr_dw[bank] = *iir;
+	}
+}
+
+/* Decodes one engine's part of a Gen8 GT bank, when the engine exists. */
+static void
+i915_gen8_engine_irq(
+	struct i915_irq_dev *irq,
+	int engine_class,
+	int instance,
+	uint32_t iir)
+{
+	int known;
+
+	/* An engine with nothing pending has nothing to decode. */
+	if (iir == 0U)
+		return;
+
+	/* Bits of an engine the GT does not have are counted as unknown. */
+	known = i915_gt_engine_known(irq, (unsigned)engine_class, (unsigned)instance);
+	if (known == 0) {
+		irq->gt_unknown_class++;
+		return;
+	}
+
+	/* Hands the engine's bits to the engine decode. */
+	irq->gt_engine_intrs++;
+	i915_gt_engine_irq(irq, iir);
 }
