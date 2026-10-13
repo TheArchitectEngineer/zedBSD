@@ -3,7 +3,7 @@
 # WS228: 独自実装の簡単な vi を base に足す
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-14 Q1 作成）
+Status: incomplete（2026-10-14 p001 実装済み・merge 済み、T1 待ち）
 Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1
@@ -28,6 +28,6 @@ Resume point: p001。
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 範囲の設計（design-reviewer）→ 実装・host 試験 | in-progress（q971、P3。実装・host 試験 PASS・review-1 反映済み。cleared は p002 の T1 の後に Q1 が判定） | — |
-| p002 | T1: guest の端末で編集・保存 | planned | p001 |
+| p002 | T1: guest の端末で編集・保存（T1-595。試験 B は p004 の後） | planned | p001、p004 |
 | p003 | 規約の全文の見直し | planned | p002 |
 | [p004](phase004/phase.md) | kernel の VT console の CSI に引数 2 つの `H` と最小限の `m`（review-1 F1、2026-10-14 ユーザー「kernel の console を直す」） | planned（q973、P1） | — |
