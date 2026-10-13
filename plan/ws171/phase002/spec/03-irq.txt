@@ -1,0 +1,290 @@
+@@ ^#define HAL_IRQ_ACK_NONE
+/*
+ * The acknowledgement that stands for no interrupt.  No delivery is ever
+ * handed this value, and hal_irq_send_eoi() refuses it.
+ */
+@@ ^#define HAL_IRQ_TRIGGER_EDGE
+/*
+ * Trigger modes for hal_irq_set_mode(): an edge-triggered IRQ is raised
+ * once per transition of its line, a level-triggered one for as long as
+ * the line is asserted.
+ */
+@@ ^#define HAL_IRQ_POLARITY_HIGH
+/*
+ * Polarities for hal_irq_set_mode(): which level of the line (or which
+ * edge, for an edge-triggered IRQ) asserts the interrupt.
+ */
+@@ ^typedef uintptr_t hal_irq_ack_t;
+/*
+ * The token for one interrupt delivery that has not yet been ended at the
+ * interrupt controller.
+ *
+ * The HAL hands one to the handler of every delivery, and to the kernel's
+ * kernel_timer_handler() and kernel_cpu_notify_handler().  Its value has
+ * no meaning outside the HAL; it is only passed back, once, to
+ * hal_irq_send_eoi() on the CPU that received it.
+ */
+@@ ^typedef void \(\*hal_irq_handler_t\)
+/*
+ * The handler of an IRQ, registered with hal_irq_register(),
+ * hal_irq_register_msi() or hal_irq_attach_msi().
+ *
+ * It runs in interrupt context on the CPU the IRQ was delivered to, with
+ * that CPU's interrupts disabled, and must not sleep.  It is given the
+ * IRQ, the acknowledgement of this delivery and the argument it was
+ * registered with.  It ends the delivery with hal_irq_send_eoi() before
+ * it returns; the same IRQ is not delivered again on that CPU until it
+ * has.
+ */
+@@ hal_irq_disable
+/*
+ * Disable interrupts on the calling CPU and report whether they were
+ * enabled.
+ *
+ * Only the calling CPU is affected; no IRQ is masked at its controller,
+ * and other CPUs keep taking interrupts.  The result is how the caller
+ * puts the previous state back: it calls hal_irq_enable() only when the
+ * result was true, so that sections nest.  It may be called in any
+ * context, including an IRQ handler.
+ *
+ * Returns true when interrupts were enabled on entry, false when they
+ * were already disabled.
+ */
+@@ hal_irq_enable
+/*
+ * Enable interrupts on the calling CPU.
+ *
+ * It ends a section begun by hal_irq_disable() that returned true.  It
+ * must not be called from an IRQ handler, or inside a section whose
+ * hal_irq_disable() returned false: both expect interrupts to stay
+ * disabled.  An interrupt that was held pending is taken at once.
+ */
+@@ hal_irq_set_affinity
+/*
+ * Ask that a numbered IRQ be delivered to the CPUs of a mask.
+ *
+ * The HAL routes the IRQ to one CPU of the mask that is online (in
+ * hal_cpu_ready_mask()), chosen by the HAL; the mask is kept as the
+ * request and is reported by hal_irq_get_affinity().  A machine that
+ * delivers every IRQ to one CPU accepts a mask that includes that CPU
+ * and keeps delivering there.  The IRQ's mask and handler are not
+ * changed.  Call it from a context that may spin, not from the IRQ's own
+ * handler.
+ *
+ *  irq       ... a numbered IRQ.
+ *  requested ... the CPUs the caller would have it delivered to.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist or a
+ * mask without a CPU the IRQ can be routed to, HAL_ERR_BUSY while a
+ * delivery of the IRQ is under way, or HAL_ERR_UNSUPPORTED when the
+ * controller cannot route the IRQ (a message-signalled IRQ's destination
+ * is fixed when it is allocated).  On an error the route and the request
+ * are unchanged.
+ */
+@@ hal_irq_get_affinity
+/*
+ * Report where an IRQ is asked to go and where it actually goes.
+ *
+ *  irq       ... a numbered or message-signalled IRQ.
+ *  requested ... receives the mask last accepted by
+ *                hal_irq_set_affinity(), or the HAL's initial request.
+ *  effective ... receives the CPUs the IRQ is delivered to now.
+ *
+ * Neither result may be NULL; both are written together, as one
+ * snapshot.  Returns HAL_OK, or HAL_ERR_INVALID for an IRQ that does not
+ * exist.
+ */
+@@ hal_irq_set_mode
+/*
+ * Set the trigger mode and polarity of a numbered IRQ.
+ *
+ * The IRQ must be masked (hal_irq_mask) while its configuration is
+ * changed; a HAL may refuse an unmasked IRQ with HAL_ERR_BUSY.  The mask
+ * is left as it was.  Call it from thread context.
+ *
+ *  irq      ... IRQ number.
+ *  trigger  ... HAL_IRQ_TRIGGER_EDGE or HAL_IRQ_TRIGGER_LEVEL.
+ *  polarity ... HAL_IRQ_POLARITY_HIGH or HAL_IRQ_POLARITY_LOW.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist or a
+ * value outside the ones above, HAL_ERR_BUSY while the IRQ is unmasked or
+ * a delivery of it is under way, or HAL_ERR_UNSUPPORTED if the interrupt controller cannot
+ * represent the requested configuration (a message-signalled IRQ has
+ * none).
+ */
+@@ hal_irq_mask
+/*
+ * Stop a numbered or message-signalled IRQ from being delivered.
+ *
+ * The IRQ must exist.  On return the handler is not called for a new
+ * delivery of the IRQ on any CPU; a call already under way on another CPU
+ * may still finish.  The mask is kept until hal_irq_unmask(), and
+ * registering a handler does not unmask it.  While hal_irq_suspend() is
+ * in effect it changes only what hal_irq_resume() puts back.  It may be
+ * called in any context, including the IRQ's own handler.
+ */
+@@ hal_irq_unmask
+/*
+ * Let a numbered or message-signalled IRQ be delivered again.
+ *
+ * The IRQ must exist.  A delivery that was held at the controller while
+ * the IRQ was masked is taken once the IRQ is unmasked.  An IRQ without a handler that arrives
+ * is acknowledged and masked again by the HAL.  While hal_irq_suspend()
+ * is in effect it changes only what hal_irq_resume() puts back.  It may
+ * be called in any context, including the IRQ's own handler.
+ */
+@@ hal_irq_register
+/*
+ * Register the handler of a numbered IRQ.
+ *
+ * Deliveries of the IRQ go to the handler with its argument from the
+ * next one on.  The IRQ's mask is not changed: the caller unmasks it
+ * with hal_irq_unmask() once it is ready to take a delivery.  The handler is called as hal_irq_handler_t describes.  Call it
+ * from thread context.
+ *
+ *  irq_num ... a numbered IRQ.
+ *  func    ... the handler; must not be NULL.
+ *  arg     ... passed to every call of the handler.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist or a
+ * NULL handler, or HAL_ERR_BUSY when the IRQ already has a handler.
+ */
+@@ hal_irq_unregister
+/*
+ * Remove the handler of a numbered IRQ.
+ *
+ * The IRQ is masked, and on HAL_OK the handler is not called again and
+ * no call of it is still running on any CPU, so the caller may free what
+ * the argument points to.  Call it from thread context, never from the
+ * handler being removed.
+ *
+ *  irq_num ... the IRQ given to hal_irq_register().
+ *  func    ... the handler given to hal_irq_register().
+ *  arg     ... the argument given to hal_irq_register().
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID when the IRQ does not exist or its
+ * handler and argument are not the ones given, or HAL_ERR_BUSY when a
+ * call of the handler is running and cannot be waited for, such as when
+ * the removal was called from that call; on an error the handler stays
+ * registered.
+ */
+@@ hal_irq_register_msi
+/*
+ * Allocate a message-signalled IRQ for a device and register its handler,
+ * in one step.
+ *
+ * The HAL picks a free IRQ and returns the message the device is to send
+ * for it; the caller programs the message into the device's MSI
+ * capability and enables it.  The handler takes deliveries at once: the
+ * IRQ is not masked.  A driver that must program the device before it
+ * can take a delivery uses hal_irq_alloc_msi() and hal_irq_attach_msi()
+ * instead.  Call it from thread context.
+ *
+ *  source       ... the device, as a canonical bus identity (initially
+ *                   "PCI SSSS:BB:DD.F").
+ *  handler      ... the handler; must not be NULL.
+ *  handler_arg  ... passed to every call of the handler.
+ *  mapped_irq   ... receives the IRQ, for the other hal_irq_*() calls.
+ *  mapped_addr  ... receives the message's destination address.
+ *  mapped_event ... receives the message's data.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for a malformed source or a NULL
+ * argument, HAL_ERR_NOMEM when no message-signalled IRQ is free, or
+ * HAL_ERR_UNSUPPORTED on a machine without message-signalled IRQs; on an
+ * error nothing was allocated and no result was written.
+ */
+@@ hal_irq_unregister_msi
+/*
+ * Remove the handler of an IRQ from hal_irq_register_msi() and free the
+ * IRQ.
+ *
+ * On HAL_OK the handler is not called again, no call of it is still
+ * running, and the IRQ may be handed out again.  The caller must have
+ * stopped the device from sending the message first.  Call it from thread
+ * context, never from the handler.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that is not an allocated
+ * message-signalled IRQ, HAL_ERR_BUSY when it was called from the
+ * handler, or HAL_ERR_UNSUPPORTED on a machine without message-signalled
+ * IRQs.
+ */
+@@ hal_irq_alloc_msi
+/*
+ * Allocate a message-signalled IRQ for a device without attaching a
+ * handler.
+ *
+ * It allocates the vector, the architecture's routing and the message;
+ * it does not touch the device's MSI Enable.  Until it returns HAL_OK it
+ * publishes no usable resource to the caller.  The allocated IRQ reaches
+ * a valid descriptor at once: an arrival while no handler is attached is
+ * masked and acknowledged, never dispatched through a NULL handler.  Call
+ * it from thread context.
+ *
+ *  source       ... the device, as for hal_irq_register_msi().
+ *  mapped_irq   ... receives the IRQ.
+ *  mapped_addr  ... receives the message's destination address (not a
+ *                   RAM CPU-physical address, nor a DMA address for a
+ *                   GPU page table).
+ *  mapped_event ... receives the message's data.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for a malformed source or a NULL
+ * result, HAL_ERR_NOMEM when no message-signalled IRQ is free, or
+ * HAL_ERR_UNSUPPORTED on a machine without message-signalled IRQs.
+ */
+@@ hal_irq_attach_msi
+/*
+ * Attach a driver handler to an IRQ allocated by hal_irq_alloc_msi().
+ *
+ * The handler and its argument must be fully initialised before this
+ * call: a delivery may reach the handler as soon as it returns HAL_OK.
+ * Call it from thread context.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that is not message-
+ * signalled or a NULL handler, HAL_ERR_STATE when the IRQ is not
+ * allocated or already has a handler, or HAL_ERR_UNSUPPORTED on a machine
+ * without message-signalled IRQs.
+ */
+@@ hal_irq_detach_msi_sync
+/*
+ * Detach the driver handler from an IRQ allocated by hal_irq_alloc_msi(),
+ * keeping the IRQ allocated.
+ *
+ * On HAL_OK the handler will not be called again and any invocation
+ * already started on any CPU has finished, so the caller may free handler
+ * state.  It waits for the handler EXECUTION only, not for work or timers
+ * the handler itself queued.  Call it from a sleepable context; never
+ * from IRQ context or from the handler being detached.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID when the IRQ is not allocated or its
+ * handler and argument are not the ones given, HAL_ERR_BUSY when it was
+ * called from the handler, or HAL_ERR_UNSUPPORTED on a machine without
+ * message-signalled IRQs.
+ */
+@@ hal_irq_free_msi
+/*
+ * Free an IRQ allocated by hal_irq_alloc_msi().
+ *
+ * Its handler must be detached and the caller must already have STOPPED
+ * THE SOURCE (a detached handler does not stop the device from sending
+ * MSIs).  It synchronises with remaining vector, routing and pending
+ * processing before the IRQ may be handed out again.  Call it from thread
+ * context.
+ *
+ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that is not an allocated
+ * message-signalled IRQ, HAL_ERR_STATE while a handler is attached or a
+ * delivery is under way, or HAL_ERR_UNSUPPORTED on a machine without
+ * message-signalled IRQs.
+ */
+@@ hal_irq_send_eoi
+/*
+ * End an interrupt delivery at the interrupt controller.
+ *
+ * The acknowledgement must be one handed to this CPU and not yet ended,
+ * and deliveries are ended in the reverse order they were taken on the
+ * CPU: the controller retires them that way.  After the call the
+ * acknowledgement is spent, and the controller may deliver the same
+ * source again.  Each acknowledgement is ended exactly once, by the
+ * handler that received it (or by the kernel's tick and notification
+ * handlers for theirs).  An acknowledgement that this CPU does not hold
+ * is fatal (HAL_FATAL).
+ */

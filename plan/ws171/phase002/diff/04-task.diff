@@ -1,0 +1,423 @@
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -1078,21 +1078,55 @@
+  */
+ 
+ /*
+- * Task handle.
++ * A task: one CPU context the kernel can switch to, with its own kernel
++ * stack, the address space it runs in, its user thread pointer (TLS), its
++ * floating-point state, and one pointer the kernel keeps in it.
++ *
++ * The HAL owns the record; the kernel holds the handle from
++ * hal_task_create() (or hal_task_fork_current(),
++ * hal_task_create_for_init_context()) until hal_task_destroy().  A task
++ * is running while a CPU executes it, from the hal_task_context_switch()
++ * that enters it until the switch that leaves it has moved off its stack.
+  */
+ typedef void *hal_task_t;
+ 
+ /*
+  * Wrap the calling CPU's current context as that CPU's initial task.
++ *
++ * Every CPU calls this once, the boot CPU from the kernel before it
++ * creates any other task and each secondary CPU from its own HAL
++ * bring-up; a second call on one CPU is fatal (HAL_FATAL).  The task runs
++ * in HAL_SPACE_SYS on this CPU, it is what hal_task_get_current() returns
++ * from then on, and the first call fixes the floating-point state that
++ * every later task starts with.  The boot CPU's call must come before a
++ * secondary CPU's.
++ *
+  * Returns the new task, or NULL when the task record cannot be
+- * allocated.  Every CPU calls this once, the boot CPU from the kernel
+- * and each secondary CPU from its own HAL bring-up.
++ * allocated.
+  */
+ hal_task_t
+ hal_task_create_for_init_context(void);
+ 
+ /*
+- * Create a task.
++ * Create a task that is not running, ready to be switched to.
++ *
++ * A system task (space is HAL_SPACE_SYS, user_stack_pointer is NULL)
++ * calls start(arg) on its own kernel stack, with interrupts enabled; it
++ * must never return from start (a return is fatal).  A user task (any
++ * other space, with a user stack) enters user mode at start with the stack
++ * pointer at user_stack_pointer; arg is not used.  The task starts with
++ * the initial floating-point state, no TLS and a NULL private pointer.
++ * It is resumed only on the CPU the HAL first assigns to it until
++ * hal_task_transfer() names another one.  Call it from thread context:
++ * it allocates with kernel_alloc().
++ *
++ *  space              ... the address space the task runs in.
++ *  start              ... the entry; must not be NULL.
++ *  arg                ... the argument of a system task's entry.
++ *  user_stack_pointer ... a user task's initial stack pointer.
++ *
++ * Returns the task, or NULL when start is NULL, when the space and the
++ * stack do not agree as above, or when memory runs out.
+  */
+ hal_task_t
+ hal_task_create(
+@@ -1102,25 +1136,54 @@
+ 	void *user_stack_pointer);
+ 
+ /*
+- * Destroy a task.
++ * Destroy a task that is not running, and free its kernel stack and
++ * record.
++ *
++ * The task must not be running on any CPU, the calling one included: a
++ * running task is fatal (HAL_FATAL).  The task's address space is not
++ * destroyed; it belongs to the kernel, which destroys it separately.  A
++ * NULL task is ignored.  The handle must not be used again.
+  */
+ void
+ hal_task_destroy(
+ 	hal_task_t t);
+ 
+ /*
+- * Switch to a task.
++ * Switch the calling CPU from its current task to another task.
++ *
++ * The CPU saves the current task's registers, floating-point state, TLS
++ * and debug points, and takes those of the next task, with the next
++ * task's address space (hal_space_switch()).  The call returns in the
++ * departing task only when a later switch comes back to it, possibly on
++ * another CPU after hal_task_transfer().  Switching to the current task
++ * does nothing.
++ *
++ * Call it with interrupts disabled on this CPU and with no spin lock
++ * held that the next task might take.  The next task must not be running
++ * and must be assigned to this CPU (hal_task_create(),
++ * hal_task_transfer()); either violation is fatal (HAL_FATAL).  The
++ * departing task stays running until this CPU has left its stack, so it
++ * cannot be transferred or destroyed before then.
+  */
+ void
+ hal_task_context_switch(
+ 	hal_task_t t);
+ 
+ /*
+- * XXX: Add a single line, easy to understand explanation.
++ * Create a copy of the calling task that returns to user mode as the
++ * child of a fork.
+  *
+- * Duplicate/replace the active return-to-user context.  These
+- * operations are valid only while the current task is handling a user
+- * system call.
++ * It is valid only while the calling task is handling a system call from
++ * user mode.  The child is a user task in child_space that, when first
++ * switched to, returns from the same system call with the same user
++ * registers, TLS and floating-point state, except that the system call's
++ * return value is child_syscall_result.  Its nested signal state, debug
++ * points and private pointer are not copied.  It is assigned to the
++ * calling CPU, as hal_task_create() assigns a task.  The caller has
++ * already copied the user memory into child_space.
++ *
++ * Returns the child, or NULL when the calling task has no user frame to
++ * copy, when child_space is HAL_SPACE_SYS, or when memory runs out.
+  */
+ hal_task_t
+ hal_task_fork_current(
+@@ -1128,7 +1191,19 @@
+ 	intptr_t child_syscall_result);
+ 
+ /*
+- * XXX: Add a single line, easy to understand explanation.
++ * Replace the program of the calling task, for an exec.
++ *
++ * It is valid only while the calling task is handling a system call from
++ * user mode.  When the system call returns, the task enters user mode at
++ * entry with the stack pointer at user_stack_pointer and every other user
++ * register cleared, in new_space, which becomes the task's space and the
++ * CPU's current one at once.  The TLS, the nested signal state and the
++ * floating-point state are reset to those of a new task.  The old space
++ * is not destroyed.  It checks what hal_task_exec_validate() checks and
++ * changes nothing when that fails.
++ *
++ * Returns 0, or -1 when the exec cannot be done (see
++ * hal_task_exec_validate()).
+  */
+ int
+ hal_task_exec_current(
+@@ -1137,7 +1212,15 @@
+ 	uintptr_t user_stack_pointer);
+ 
+ /*
+- * XXX: Add a single line, easy to understand explanation.
++ * Check that hal_task_exec_current() would succeed, without changing
++ * anything.
++ *
++ * The kernel calls it before it commits to an exec (and drops the old
++ * program), so that the commit cannot fail.  It succeeds when the calling
++ * task is handling a system call from user mode, new_space is not
++ * HAL_SPACE_SYS, and entry and user_stack_pointer are not zero.
++ *
++ * Returns 0 when the exec can be done, or -1.
+  */
+ int
+ hal_task_exec_validate(
+@@ -1146,14 +1229,23 @@
+ 	uintptr_t user_stack_pointer);
+ 
+ /*
+- * Return the active return-to-user stack pointer.
++ * Return the user stack pointer the calling task returns to user mode
++ * with.
++ *
++ * It is valid while the calling task is in the kernel from user mode (a
++ * system call or a trap).  Returns 0 when the calling task has no user
++ * frame.
+  */
+ uintptr_t
+ hal_task_get_user_stack(void);
+ 
+ /*
+- * Read the active return-to-user program counter, stack pointer and
+- * return value.
++ * Read the program counter, stack pointer and return-value register the
++ * calling task returns to user mode with.
++ *
++ * It is valid while the calling task is in the kernel from user mode.  A
++ * NULL result is skipped.  Returns 0, or -1 when the calling task has no
++ * user frame.
+  */
+ int
+ hal_task_get_user_context(
+@@ -1162,7 +1254,25 @@
+ 	intptr_t *return_value);
+ 
+ /*
+- * XXX: Add explanation.
++ * Make the calling task enter a user signal handler when it returns to
++ * user mode.
++ *
++ * It is valid while the calling task is in the kernel from user mode.
++ * The user registers it would have returned with, and its floating-point
++ * state, are saved under token, and it returns to user mode at handler
++ * with the stack pointer at stack and with signo, siginfo and ucontext as
++ * the handler's three arguments in the architecture's calling
++ * convention.  The caller has built the signal frame on the user stack.
++ * Where the architecture passes a return address in a register, it is
++ * set to restorer; where the return address is on the stack, the caller
++ * has put it there and restorer is not used.  Handlers nest up to
++ * HAL_SIGNAL_NEST_MAX deep; each is left with hal_task_signal_return().
++ *
++ *  token ... chosen by the kernel, not zero; hal_task_signal_return()
++ *            must present it.
++ *
++ * Returns 0, or -1 when the calling task has no user frame, the nesting
++ * is full, or handler, stack or token is zero; on -1 nothing changed.
+  */
+ int
+ hal_task_signal_enter(
+@@ -1175,7 +1285,18 @@
+ 	uint32_t token);
+ 
+ /*
+- * XXX: Add explanation.
++ * Leave the innermost signal handler of the calling task.
++ *
++ * It is valid while the calling task is in the kernel from user mode (the
++ * sigreturn system call).  The user registers and floating-point state
++ * saved by the matching hal_task_signal_enter() are put back, so that the
++ * task resumes where the signal interrupted it, and *return_value
++ * receives the saved return-value register, which the system call returns
++ * so that the register is unchanged.
++ *
++ * Returns 0, or -1 when the calling task has no user frame or no handler
++ * to leave, return_value is NULL, or token is zero or is not the token of
++ * the innermost handler; on -1 nothing changed.
+  */
+ int
+ hal_task_signal_return(
+@@ -1183,13 +1304,21 @@
+ 	intptr_t *return_value);
+ 
+ /*
+- * Get the current task.
++ * Return the task running on the calling CPU.
++ *
++ * The answer is the caller's own task even if the caller is preempted and
++ * moved to another CPU right after.  Returns NULL before the CPU's
++ * hal_task_create_for_init_context().
+  */
+ hal_task_t
+ hal_task_get_current(void);
+ 
+ /*
+- * Set user TLS.
++ * Set the user thread pointer (TLS base) of a task.
++ *
++ * A task that is running on the calling CPU (the caller's own task) takes
++ * the value at once; another task takes it when it is next switched to.
++ * A NULL task is ignored.
+  */
+ void
+ hal_task_set_tls(
+@@ -1197,28 +1326,55 @@
+ 	uintptr_t value);
+ 
+ /*
+- * Get user TLS.
++ * Return the user thread pointer (TLS base) of a task, or 0 for a NULL
++ * task.
+  */
+ uintptr_t
+ hal_task_get_tls(
+ 	hal_task_t t);
+ 
+ /*
+- * Opaque kernel ownership link.  HAL stores but never dereferences it.
++ * Store the kernel's pointer in a task.
++ *
++ * The pointer is an opaque ownership link: the HAL stores it but never
++ * dereferences it.  A NULL task is ignored.
+  */
+ void
+ hal_task_set_private(
+ 	hal_task_t t,
+ 	void *private_data);
+ 
++/*
++ * Return the pointer stored by hal_task_set_private(), or NULL for a
++ * NULL task or one that has none.
++ */
+ void *
+ hal_task_get_private(
+ 	hal_task_t t);
+ 
++/*
++ * Return the address space a task runs in, or HAL_SPACE_SYS for a NULL
++ * task.
++ */
+ hal_space_t
+ hal_task_get_space(
+ 	hal_task_t t);
+ 
++/*
++ * Assign a task that is not running to another CPU, which is the only one
++ * that may switch to it from then on.
++ *
++ * The kernel calls it before it queues the task on the target CPU's run
++ * queue.  The assignment holds until the next hal_task_transfer().
++ *
++ *  task       ... a task that is not running.
++ *  target_cpu ... the CPU that is to run it next.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a NULL task or a CPU that does not
++ * exist, HAL_ERR_BUSY while the task is running or the HAL cannot move
++ * it (it waits for an IRQ of its CPU), or HAL_ERR_STATE when the target
++ * CPU is not online; on an error the assignment is unchanged.
++ */
+ int
+ hal_task_transfer(
+ 	hal_task_t task,
+@@ -1242,32 +1398,66 @@
+  * the structures are declared in its own header; a caller that has to name
+  * a register copies the set into a form of its own rather than passing this
+  * one outward.
++ *
++ * The task is stopped in the kernel on its way back to user mode (a
++ * debugger's stop), or is the calling task.  Each call returns 0, or -1
++ * when the task is NULL, a result or source is NULL, the task has no
++ * user frame (the integer registers and the step flag need one), or the
++ * architecture has no such set.  A write changes what the task returns to
++ * user mode with.
++ */
++
++/*
++ * Read the user integer registers of a task, with its TLS base.
+  */
+ int
+ hal_task_get_user_gpregs(
+ 	hal_task_t task,
+ 	struct hal_gpregs *registers);
+ 
++/*
++ * Write the user integer registers of a task.
++ *
++ * The bits of the flags register and the selectors that belong to the
++ * kernel are kept as they were.  An instruction or stack pointer the CPU
++ * would refuse on the way back to user mode is refused with -1 and
++ * nothing is written.
++ */
+ int
+ hal_task_set_user_gpregs(
+ 	hal_task_t task,
+ 	const struct hal_gpregs *registers);
+ 
++/*
++ * Read the user floating-point registers of a task.
++ */
+ int
+ hal_task_get_user_fpregs(
+ 	hal_task_t task,
+ 	struct hal_fpregs *registers);
+ 
++/*
++ * Write the user floating-point registers of a task.
++ */
+ int
+ hal_task_set_user_fpregs(
+ 	hal_task_t task,
+ 	const struct hal_fpregs *registers);
+ 
++/*
++ * Read the user vector registers of a task.  An architecture whose
++ * vector state is the floating-point set returns -1.
++ */
+ int
+ hal_task_get_user_vregs(
+ 	hal_task_t task,
+ 	struct hal_vregs *registers);
+ 
++/*
++ * Write the user vector registers of a task.  Control bits the CPU does
++ * not implement are dropped.  An architecture whose vector state is the
++ * floating-point set returns -1.
++ */
+ int
+ hal_task_set_user_vregs(
+ 	hal_task_t task,
+@@ -1280,12 +1470,20 @@
+  * the others run.  An architecture with no step facility of its own
+  * arranges the same observable behaviour by other means: where the next
+  * instruction ends is something only the architecture knows.
++ *
++ * The request stays until it is turned off (enable 0).  Returns 0, or -1
++ * when the task has no user frame.
+  */
+ int
+ hal_task_set_single_step(
+ 	hal_task_t task,
+ 	int enable);
+ 
++/*
++ * Report in *enable whether a task is asked to step (1) or not (0).
++ *
++ * Returns 0, or -1 when enable is NULL or the task has no user frame.
++ */
+ int
+ hal_task_get_single_step(
+ 	hal_task_t task,
+@@ -1333,6 +1531,17 @@
+ 	const struct hal_debug_point *points,
+ 	unsigned count);
+ 
++/*
++ * Report the debug points a task runs with, as last given to
++ * hal_task_set_debug_points().
++ *
++ *  points   ... receives the points; may be NULL when the task has none.
++ *  capacity ... how many points fit in points.
++ *  count    ... receives how many there are.
++ *
++ * Returns 0, or -1 when the task or count is NULL or the points do not
++ * fit in capacity.
++ */
+ int
+ hal_task_get_debug_points(
+ 	hal_task_t task,

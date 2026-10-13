@@ -1,0 +1,812 @@
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -307,40 +307,98 @@
+  * IRQ
+  */
+ 
++/*
++ * The acknowledgement that stands for no interrupt.  No delivery is ever
++ * handed this value, and hal_irq_send_eoi() refuses it.
++ */
+ #define HAL_IRQ_ACK_NONE	((hal_irq_ack_t)0)
+ 
+-/* IRQ trigger mode. */
++/*
++ * Trigger modes for hal_irq_set_mode(): an edge-triggered IRQ is raised
++ * once per transition of its line, a level-triggered one for as long as
++ * the line is asserted.
++ */
+ #define HAL_IRQ_TRIGGER_EDGE	0
+ #define HAL_IRQ_TRIGGER_LEVEL	1
+ 
+-/* IRQ polarity. */
++/*
++ * Polarities for hal_irq_set_mode(): which level of the line (or which
++ * edge, for an edge-triggered IRQ) asserts the interrupt.
++ */
+ #define HAL_IRQ_POLARITY_HIGH	0
+ #define HAL_IRQ_POLARITY_LOW	1
+ 
+ /*
+- * IRQ acknowledge number.
++ * The token for one interrupt delivery that has not yet been ended at the
++ * interrupt controller.
++ *
++ * The HAL hands one to the handler of every delivery, and to the kernel's
++ * kernel_timer_handler() and kernel_cpu_notify_handler().  Its value has
++ * no meaning outside the HAL; it is only passed back, once, to
++ * hal_irq_send_eoi() on the CPU that received it.
+  */
+ typedef uintptr_t hal_irq_ack_t;
+ 
+ /*
+- * IRQ handler.
++ * The handler of an IRQ, registered with hal_irq_register(),
++ * hal_irq_register_msi() or hal_irq_attach_msi().
++ *
++ * It runs in interrupt context on the CPU the IRQ was delivered to, with
++ * that CPU's interrupts disabled, and must not sleep.  It is given the
++ * IRQ, the acknowledgement of this delivery and the argument it was
++ * registered with.  It ends the delivery with hal_irq_send_eoi() before
++ * it returns; the same IRQ is not delivered again on that CPU until it
++ * has.
+  */
+ typedef void (*hal_irq_handler_t)(int irq, hal_irq_ack_t acknowledge, void *argument);
+ 
+ /*
+- * Disable IRQ interrupts. Returns true if currently enabled.
++ * Disable interrupts on the calling CPU and report whether they were
++ * enabled.
++ *
++ * Only the calling CPU is affected; no IRQ is masked at its controller,
++ * and other CPUs keep taking interrupts.  The result is how the caller
++ * puts the previous state back: it calls hal_irq_enable() only when the
++ * result was true, so that sections nest.  It may be called in any
++ * context, including an IRQ handler.
++ *
++ * Returns true when interrupts were enabled on entry, false when they
++ * were already disabled.
+  */
+ bool
+ hal_irq_disable(void);
+ 
+ /*
+- * Enable IRQ interrupts.
++ * Enable interrupts on the calling CPU.
++ *
++ * It ends a section begun by hal_irq_disable() that returned true.  It
++ * must not be called from an IRQ handler, or inside a section whose
++ * hal_irq_disable() returned false: both expect interrupts to stay
++ * disabled.  An interrupt that was held pending is taken at once.
+  */
+ void
+ hal_irq_enable(void);
+ 
+ /*
+- * Set IRQ affinity.
++ * Ask that a numbered IRQ be delivered to the CPUs of a mask.
++ *
++ * The HAL routes the IRQ to one CPU of the mask that is online (in
++ * hal_cpu_ready_mask()), chosen by the HAL; the mask is kept as the
++ * request and is reported by hal_irq_get_affinity().  A machine that
++ * delivers every IRQ to one CPU accepts a mask that includes that CPU
++ * and keeps delivering there.  The IRQ's mask and handler are not
++ * changed.  Call it from a context that may spin, not from the IRQ's own
++ * handler.
++ *
++ *  irq       ... a numbered IRQ.
++ *  requested ... the CPUs the caller would have it delivered to.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist or a
++ * mask without a CPU the IRQ can be routed to, HAL_ERR_BUSY while a
++ * delivery of the IRQ is under way, or HAL_ERR_UNSUPPORTED when the
++ * controller cannot route the IRQ (a message-signalled IRQ's destination
++ * is fixed when it is allocated).  On an error the route and the request
++ * are unchanged.
+  */
+ int
+ hal_irq_set_affinity(
+@@ -348,7 +406,16 @@
+ 	const struct hal_cpu_mask *requested);
+ 
+ /*
+- * Get IRQ affinity.
++ * Report where an IRQ is asked to go and where it actually goes.
++ *
++ *  irq       ... a numbered or message-signalled IRQ.
++ *  requested ... receives the mask last accepted by
++ *                hal_irq_set_affinity(), or the HAL's initial request.
++ *  effective ... receives the CPUs the IRQ is delivered to now.
++ *
++ * Neither result may be NULL; both are written together, as one
++ * snapshot.  Returns HAL_OK, or HAL_ERR_INVALID for an IRQ that does not
++ * exist.
+  */
+ int
+ hal_irq_get_affinity(
+@@ -359,14 +426,19 @@
+ /*
+  * Set the trigger mode and polarity of a numbered IRQ.
+  *
+- * The IRQ must be masked while its configuration is changed.
++ * The IRQ must be masked (hal_irq_mask) while its configuration is
++ * changed; a HAL may refuse an unmasked IRQ with HAL_ERR_BUSY.  The mask
++ * is left as it was.  Call it from thread context.
+  *
+  *  irq      ... IRQ number.
+  *  trigger  ... HAL_IRQ_TRIGGER_EDGE or HAL_IRQ_TRIGGER_LEVEL.
+  *  polarity ... HAL_IRQ_POLARITY_HIGH or HAL_IRQ_POLARITY_LOW.
+  *
+- * Returns HAL_ERR_UNSUPPORTED if the interrupt controller cannot
+- * represent the requested configuration.
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist or a
++ * value outside the ones above, HAL_ERR_BUSY while the IRQ is unmasked or
++ * a delivery of it is under way, or HAL_ERR_UNSUPPORTED if the interrupt controller cannot
++ * represent the requested configuration (a message-signalled IRQ has
++ * none).
+  */
+ int
+ hal_irq_set_mode(
+@@ -433,21 +505,46 @@
+ hal_irq_resume(void);
+ 
+ /*
+- * Set an IRQ mask.
++ * Stop a numbered or message-signalled IRQ from being delivered.
++ *
++ * The IRQ must exist.  On return the handler is not called for a new
++ * delivery of the IRQ on any CPU; a call already under way on another CPU
++ * may still finish.  The mask is kept until hal_irq_unmask(), and
++ * registering a handler does not unmask it.  While hal_irq_suspend() is
++ * in effect it changes only what hal_irq_resume() puts back.  It may be
++ * called in any context, including the IRQ's own handler.
+  */
+ void
+ hal_irq_mask(
+ 	int irq_num);
+ 
+ /*
+- * Clear an IRQ mask.
++ * Let a numbered or message-signalled IRQ be delivered again.
++ *
++ * The IRQ must exist.  A delivery that was held at the controller while
++ * the IRQ was masked is taken once the IRQ is unmasked.  An IRQ without a handler that arrives
++ * is acknowledged and masked again by the HAL.  While hal_irq_suspend()
++ * is in effect it changes only what hal_irq_resume() puts back.  It may
++ * be called in any context, including the IRQ's own handler.
+  */
+ void
+ hal_irq_unmask(
+ 	int irq_num);
+ 
+ /*
+- * Register a handler for a numbered IRQ.
++ * Register the handler of a numbered IRQ.
++ *
++ * Deliveries of the IRQ go to the handler with its argument from the
++ * next one on.  The IRQ's mask is not changed: the caller unmasks it
++ * with hal_irq_unmask() once it is ready to take a delivery.  The handler is called as hal_irq_handler_t describes.  Call it
++ * from thread context.
++ *
++ *  irq_num ... a numbered IRQ.
++ *  func    ... the handler; must not be NULL.
++ *  arg     ... passed to every call of the handler.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that does not exist or a
++ * NULL handler, or HAL_ERR_BUSY when the IRQ already has a handler.
+  */
+ int
+ hal_irq_register(
+@@ -456,7 +553,22 @@
+ 	void *arg);
+ 
+ /*
+- * Unregister a handler for a numberd IRQ.
++ * Remove the handler of a numbered IRQ.
++ *
++ * The IRQ is masked, and on HAL_OK the handler is not called again and
++ * no call of it is still running on any CPU, so the caller may free what
++ * the argument points to.  Call it from thread context, never from the
++ * handler being removed.
++ *
++ *  irq_num ... the IRQ given to hal_irq_register().
++ *  func    ... the handler given to hal_irq_register().
++ *  arg     ... the argument given to hal_irq_register().
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID when the IRQ does not exist or its
++ * handler and argument are not the ones given, or HAL_ERR_BUSY when a
++ * call of the handler is running and cannot be waited for, such as when
++ * the removal was called from that call; on an error the handler stays
++ * registered.
+  */
+ int
+ hal_irq_unregister(
+@@ -465,9 +577,28 @@
+ 	void *arg);
+ 
+ /*
+- * Register a handler for a message-signalled logical IRQ.
++ * Allocate a message-signalled IRQ for a device and register its handler,
++ * in one step.
+  *
+- * "source" is a canonical bus identity (initially "PCI SSSS:BB:DD.F").
++ * The HAL picks a free IRQ and returns the message the device is to send
++ * for it; the caller programs the message into the device's MSI
++ * capability and enables it.  The handler takes deliveries at once: the
++ * IRQ is not masked.  A driver that must program the device before it
++ * can take a delivery uses hal_irq_alloc_msi() and hal_irq_attach_msi()
++ * instead.  Call it from thread context.
++ *
++ *  source       ... the device, as a canonical bus identity (initially
++ *                   "PCI SSSS:BB:DD.F").
++ *  handler      ... the handler; must not be NULL.
++ *  handler_arg  ... passed to every call of the handler.
++ *  mapped_irq   ... receives the IRQ, for the other hal_irq_*() calls.
++ *  mapped_addr  ... receives the message's destination address.
++ *  mapped_event ... receives the message's data.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a malformed source or a NULL
++ * argument, HAL_ERR_NOMEM when no message-signalled IRQ is free, or
++ * HAL_ERR_UNSUPPORTED on a machine without message-signalled IRQs; on an
++ * error nothing was allocated and no result was written.
+  */
+ int
+ hal_irq_register_msi(
+@@ -479,20 +610,44 @@
+ 	uint32_t *mapped_event);
+ 
+ /*
+- * Unregister a handler for a message-signalled logical IRQ.
++ * Remove the handler of an IRQ from hal_irq_register_msi() and free the
++ * IRQ.
++ *
++ * On HAL_OK the handler is not called again, no call of it is still
++ * running, and the IRQ may be handed out again.  The caller must have
++ * stopped the device from sending the message first.  Call it from thread
++ * context, never from the handler.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that is not an allocated
++ * message-signalled IRQ, HAL_ERR_BUSY when it was called from the
++ * handler, or HAL_ERR_UNSUPPORTED on a machine without message-signalled
++ * IRQs.
+  */
+ int
+ hal_irq_unregister_msi(
+ 	int mapped_irq);
+ 
+ /*
+- * Allocate the vector, architecture routing, and message for a message-signalled
+- * IRQ WITHOUT attaching a driver handler.  Does NOT touch the PCI capability's MSI
+- * Enable.  Until it returns HAL_OK it publishes no usable resource to the caller.
+- * The allocated vector reaches a valid IRQ descriptor: an arrival while no handler
+- * is attached is masked and acknowledged (irqchip ack/EOI), never dispatched
+- * through a NULL handler.  mapped_addr is the MSI message DESTINATION address (not
+- * a RAM CPU-physical address, nor a DMA address for a GPU page table).
++ * Allocate a message-signalled IRQ for a device without attaching a
++ * handler.
++ *
++ * It allocates the vector, the architecture's routing and the message;
++ * it does not touch the device's MSI Enable.  Until it returns HAL_OK it
++ * publishes no usable resource to the caller.  The allocated IRQ reaches
++ * a valid descriptor at once: an arrival while no handler is attached is
++ * masked and acknowledged, never dispatched through a NULL handler.  Call
++ * it from thread context.
++ *
++ *  source       ... the device, as for hal_irq_register_msi().
++ *  mapped_irq   ... receives the IRQ.
++ *  mapped_addr  ... receives the message's destination address (not a
++ *                   RAM CPU-physical address, nor a DMA address for a
++ *                   GPU page table).
++ *  mapped_event ... receives the message's data.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a malformed source or a NULL
++ * result, HAL_ERR_NOMEM when no message-signalled IRQ is free, or
++ * HAL_ERR_UNSUPPORTED on a machine without message-signalled IRQs.
+  */
+ int
+ hal_irq_alloc_msi(
+@@ -502,8 +657,16 @@
+ 	uint32_t *mapped_event);
+ 
+ /*
+- * Attach a driver handler to a vector previously allocated by hal_irq_alloc_msi.
+- * The handler and its argument must be fully initialised before this call.
++ * Attach a driver handler to an IRQ allocated by hal_irq_alloc_msi().
++ *
++ * The handler and its argument must be fully initialised before this
++ * call: a delivery may reach the handler as soon as it returns HAL_OK.
++ * Call it from thread context.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that is not message-
++ * signalled or a NULL handler, HAL_ERR_STATE when the IRQ is not
++ * allocated or already has a handler, or HAL_ERR_UNSUPPORTED on a machine
++ * without message-signalled IRQs.
+  */
+ int
+ hal_irq_attach_msi(
+@@ -512,11 +675,19 @@
+ 	void *handler_arg);
+ 
+ /*
+- * Detach the driver handler from an hal_irq_alloc_msi vector.  On HAL_OK the
+- * handler will not be called again and any invocation already started on any CPU
+- * has finished, so the caller may free handler state.  It waits for the handler
+- * EXECUTION only, not for work/timers the handler itself queued.  Call from a
+- * sleepable context; never from IRQ context or from the handler being detached.
++ * Detach the driver handler from an IRQ allocated by hal_irq_alloc_msi(),
++ * keeping the IRQ allocated.
++ *
++ * On HAL_OK the handler will not be called again and any invocation
++ * already started on any CPU has finished, so the caller may free handler
++ * state.  It waits for the handler EXECUTION only, not for work or timers
++ * the handler itself queued.  Call it from a sleepable context; never
++ * from IRQ context or from the handler being detached.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID when the IRQ is not allocated or its
++ * handler and argument are not the ones given, HAL_ERR_BUSY when it was
++ * called from the handler, or HAL_ERR_UNSUPPORTED on a machine without
++ * message-signalled IRQs.
+  */
+ int
+ hal_irq_detach_msi_sync(
+@@ -525,17 +696,34 @@
+ 	void *handler_arg);
+ 
+ /*
+- * Free a vector allocated by hal_irq_alloc_msi.  Its handler must be detached and
+- * the caller must already have STOPPED THE SOURCE (a detached handler does not stop
+- * the device from sending MSIs).  Synchronises with remaining vector/routing/pending
+- * processing before the vector may be reused.
++ * Free an IRQ allocated by hal_irq_alloc_msi().
++ *
++ * Its handler must be detached and the caller must already have STOPPED
++ * THE SOURCE (a detached handler does not stop the device from sending
++ * MSIs).  It synchronises with remaining vector, routing and pending
++ * processing before the IRQ may be handed out again.  Call it from thread
++ * context.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for an IRQ that is not an allocated
++ * message-signalled IRQ, HAL_ERR_STATE while a handler is attached or a
++ * delivery is under way, or HAL_ERR_UNSUPPORTED on a machine without
++ * message-signalled IRQs.
+  */
+ int
+ hal_irq_free_msi(
+ 	int mapped_irq);
+ 
+ /*
+- * Send EOI to the IRQ controller.
++ * End an interrupt delivery at the interrupt controller.
++ *
++ * The acknowledgement must be one handed to this CPU and not yet ended,
++ * and deliveries are ended in the reverse order they were taken on the
++ * CPU: the controller retires them that way.  After the call the
++ * acknowledgement is spent, and the controller may deliver the same
++ * source again.  Each acknowledgement is ended exactly once, by the
++ * handler that received it (or by the kernel's tick and notification
++ * handlers for theirs).  An acknowledgement that this CPU does not hold
++ * is fatal (HAL_FATAL).
+  */
+ void
+ hal_irq_send_eoi(
+@@ -890,21 +1078,55 @@
+  */
+ 
+ /*
+- * Task handle.
++ * A task: one CPU context the kernel can switch to, with its own kernel
++ * stack, the address space it runs in, its user thread pointer (TLS), its
++ * floating-point state, and one pointer the kernel keeps in it.
++ *
++ * The HAL owns the record; the kernel holds the handle from
++ * hal_task_create() (or hal_task_fork_current(),
++ * hal_task_create_for_init_context()) until hal_task_destroy().  A task
++ * is running while a CPU executes it, from the hal_task_context_switch()
++ * that enters it until the switch that leaves it has moved off its stack.
+  */
+ typedef void *hal_task_t;
+ 
+ /*
+  * Wrap the calling CPU's current context as that CPU's initial task.
++ *
++ * Every CPU calls this once, the boot CPU from the kernel before it
++ * creates any other task and each secondary CPU from its own HAL
++ * bring-up; a second call on one CPU is fatal (HAL_FATAL).  The task runs
++ * in HAL_SPACE_SYS on this CPU, it is what hal_task_get_current() returns
++ * from then on, and the first call fixes the floating-point state that
++ * every later task starts with.  The boot CPU's call must come before a
++ * secondary CPU's.
++ *
+  * Returns the new task, or NULL when the task record cannot be
+- * allocated.  Every CPU calls this once, the boot CPU from the kernel
+- * and each secondary CPU from its own HAL bring-up.
++ * allocated.
+  */
+ hal_task_t
+ hal_task_create_for_init_context(void);
+ 
+ /*
+- * Create a task.
++ * Create a task that is not running, ready to be switched to.
++ *
++ * A system task (space is HAL_SPACE_SYS, user_stack_pointer is NULL)
++ * calls start(arg) on its own kernel stack, with interrupts enabled; it
++ * must never return from start (a return is fatal).  A user task (any
++ * other space, with a user stack) enters user mode at start with the stack
++ * pointer at user_stack_pointer; arg is not used.  The task starts with
++ * the initial floating-point state, no TLS and a NULL private pointer.
++ * It is resumed only on the CPU the HAL first assigns to it until
++ * hal_task_transfer() names another one.  Call it from thread context:
++ * it allocates with kernel_alloc().
++ *
++ *  space              ... the address space the task runs in.
++ *  start              ... the entry; must not be NULL.
++ *  arg                ... the argument of a system task's entry.
++ *  user_stack_pointer ... a user task's initial stack pointer.
++ *
++ * Returns the task, or NULL when start is NULL, when the space and the
++ * stack do not agree as above, or when memory runs out.
+  */
+ hal_task_t
+ hal_task_create(
+@@ -914,25 +1136,54 @@
+ 	void *user_stack_pointer);
+ 
+ /*
+- * Destroy a task.
++ * Destroy a task that is not running, and free its kernel stack and
++ * record.
++ *
++ * The task must not be running on any CPU, the calling one included: a
++ * running task is fatal (HAL_FATAL).  The task's address space is not
++ * destroyed; it belongs to the kernel, which destroys it separately.  A
++ * NULL task is ignored.  The handle must not be used again.
+  */
+ void
+ hal_task_destroy(
+ 	hal_task_t t);
+ 
+ /*
+- * Switch to a task.
++ * Switch the calling CPU from its current task to another task.
++ *
++ * The CPU saves the current task's registers, floating-point state, TLS
++ * and debug points, and takes those of the next task, with the next
++ * task's address space (hal_space_switch()).  The call returns in the
++ * departing task only when a later switch comes back to it, possibly on
++ * another CPU after hal_task_transfer().  Switching to the current task
++ * does nothing.
++ *
++ * Call it with interrupts disabled on this CPU and with no spin lock
++ * held that the next task might take.  The next task must not be running
++ * and must be assigned to this CPU (hal_task_create(),
++ * hal_task_transfer()); either violation is fatal (HAL_FATAL).  The
++ * departing task stays running until this CPU has left its stack, so it
++ * cannot be transferred or destroyed before then.
+  */
+ void
+ hal_task_context_switch(
+ 	hal_task_t t);
+ 
+ /*
+- * XXX: Add a single line, easy to understand explanation.
++ * Create a copy of the calling task that returns to user mode as the
++ * child of a fork.
++ *
++ * It is valid only while the calling task is handling a system call from
++ * user mode.  The child is a user task in child_space that, when first
++ * switched to, returns from the same system call with the same user
++ * registers, TLS and floating-point state, except that the system call's
++ * return value is child_syscall_result.  Its nested signal state, debug
++ * points and private pointer are not copied.  It is assigned to the
++ * calling CPU, as hal_task_create() assigns a task.  The caller has
++ * already copied the user memory into child_space.
+  *
+- * Duplicate/replace the active return-to-user context.  These
+- * operations are valid only while the current task is handling a user
+- * system call.
++ * Returns the child, or NULL when the calling task has no user frame to
++ * copy, when child_space is HAL_SPACE_SYS, or when memory runs out.
+  */
+ hal_task_t
+ hal_task_fork_current(
+@@ -940,7 +1191,19 @@
+ 	intptr_t child_syscall_result);
+ 
+ /*
+- * XXX: Add a single line, easy to understand explanation.
++ * Replace the program of the calling task, for an exec.
++ *
++ * It is valid only while the calling task is handling a system call from
++ * user mode.  When the system call returns, the task enters user mode at
++ * entry with the stack pointer at user_stack_pointer and every other user
++ * register cleared, in new_space, which becomes the task's space and the
++ * CPU's current one at once.  The TLS, the nested signal state and the
++ * floating-point state are reset to those of a new task.  The old space
++ * is not destroyed.  It checks what hal_task_exec_validate() checks and
++ * changes nothing when that fails.
++ *
++ * Returns 0, or -1 when the exec cannot be done (see
++ * hal_task_exec_validate()).
+  */
+ int
+ hal_task_exec_current(
+@@ -949,7 +1212,15 @@
+ 	uintptr_t user_stack_pointer);
+ 
+ /*
+- * XXX: Add a single line, easy to understand explanation.
++ * Check that hal_task_exec_current() would succeed, without changing
++ * anything.
++ *
++ * The kernel calls it before it commits to an exec (and drops the old
++ * program), so that the commit cannot fail.  It succeeds when the calling
++ * task is handling a system call from user mode, new_space is not
++ * HAL_SPACE_SYS, and entry and user_stack_pointer are not zero.
++ *
++ * Returns 0 when the exec can be done, or -1.
+  */
+ int
+ hal_task_exec_validate(
+@@ -958,14 +1229,23 @@
+ 	uintptr_t user_stack_pointer);
+ 
+ /*
+- * Return the active return-to-user stack pointer.
++ * Return the user stack pointer the calling task returns to user mode
++ * with.
++ *
++ * It is valid while the calling task is in the kernel from user mode (a
++ * system call or a trap).  Returns 0 when the calling task has no user
++ * frame.
+  */
+ uintptr_t
+ hal_task_get_user_stack(void);
+ 
+ /*
+- * Read the active return-to-user program counter, stack pointer and
+- * return value.
++ * Read the program counter, stack pointer and return-value register the
++ * calling task returns to user mode with.
++ *
++ * It is valid while the calling task is in the kernel from user mode.  A
++ * NULL result is skipped.  Returns 0, or -1 when the calling task has no
++ * user frame.
+  */
+ int
+ hal_task_get_user_context(
+@@ -974,7 +1254,25 @@
+ 	intptr_t *return_value);
+ 
+ /*
+- * XXX: Add explanation.
++ * Make the calling task enter a user signal handler when it returns to
++ * user mode.
++ *
++ * It is valid while the calling task is in the kernel from user mode.
++ * The user registers it would have returned with, and its floating-point
++ * state, are saved under token, and it returns to user mode at handler
++ * with the stack pointer at stack and with signo, siginfo and ucontext as
++ * the handler's three arguments in the architecture's calling
++ * convention.  The caller has built the signal frame on the user stack.
++ * Where the architecture passes a return address in a register, it is
++ * set to restorer; where the return address is on the stack, the caller
++ * has put it there and restorer is not used.  Handlers nest up to
++ * HAL_SIGNAL_NEST_MAX deep; each is left with hal_task_signal_return().
++ *
++ *  token ... chosen by the kernel, not zero; hal_task_signal_return()
++ *            must present it.
++ *
++ * Returns 0, or -1 when the calling task has no user frame, the nesting
++ * is full, or handler, stack or token is zero; on -1 nothing changed.
+  */
+ int
+ hal_task_signal_enter(
+@@ -987,7 +1285,18 @@
+ 	uint32_t token);
+ 
+ /*
+- * XXX: Add explanation.
++ * Leave the innermost signal handler of the calling task.
++ *
++ * It is valid while the calling task is in the kernel from user mode (the
++ * sigreturn system call).  The user registers and floating-point state
++ * saved by the matching hal_task_signal_enter() are put back, so that the
++ * task resumes where the signal interrupted it, and *return_value
++ * receives the saved return-value register, which the system call returns
++ * so that the register is unchanged.
++ *
++ * Returns 0, or -1 when the calling task has no user frame or no handler
++ * to leave, return_value is NULL, or token is zero or is not the token of
++ * the innermost handler; on -1 nothing changed.
+  */
+ int
+ hal_task_signal_return(
+@@ -995,13 +1304,21 @@
+ 	intptr_t *return_value);
+ 
+ /*
+- * Get the current task.
++ * Return the task running on the calling CPU.
++ *
++ * The answer is the caller's own task even if the caller is preempted and
++ * moved to another CPU right after.  Returns NULL before the CPU's
++ * hal_task_create_for_init_context().
+  */
+ hal_task_t
+ hal_task_get_current(void);
+ 
+ /*
+- * Set user TLS.
++ * Set the user thread pointer (TLS base) of a task.
++ *
++ * A task that is running on the calling CPU (the caller's own task) takes
++ * the value at once; another task takes it when it is next switched to.
++ * A NULL task is ignored.
+  */
+ void
+ hal_task_set_tls(
+@@ -1009,28 +1326,55 @@
+ 	uintptr_t value);
+ 
+ /*
+- * Get user TLS.
++ * Return the user thread pointer (TLS base) of a task, or 0 for a NULL
++ * task.
+  */
+ uintptr_t
+ hal_task_get_tls(
+ 	hal_task_t t);
+ 
+ /*
+- * Opaque kernel ownership link.  HAL stores but never dereferences it.
++ * Store the kernel's pointer in a task.
++ *
++ * The pointer is an opaque ownership link: the HAL stores it but never
++ * dereferences it.  A NULL task is ignored.
+  */
+ void
+ hal_task_set_private(
+ 	hal_task_t t,
+ 	void *private_data);
+ 
++/*
++ * Return the pointer stored by hal_task_set_private(), or NULL for a
++ * NULL task or one that has none.
++ */
+ void *
+ hal_task_get_private(
+ 	hal_task_t t);
+ 
++/*
++ * Return the address space a task runs in, or HAL_SPACE_SYS for a NULL
++ * task.
++ */
+ hal_space_t
+ hal_task_get_space(
+ 	hal_task_t t);
+ 
++/*
++ * Assign a task that is not running to another CPU, which is the only one
++ * that may switch to it from then on.
++ *
++ * The kernel calls it before it queues the task on the target CPU's run
++ * queue.  The assignment holds until the next hal_task_transfer().
++ *
++ *  task       ... a task that is not running.
++ *  target_cpu ... the CPU that is to run it next.
++ *
++ * Returns HAL_OK, HAL_ERR_INVALID for a NULL task or a CPU that does not
++ * exist, HAL_ERR_BUSY while the task is running or the HAL cannot move
++ * it (it waits for an IRQ of its CPU), or HAL_ERR_STATE when the target
++ * CPU is not online; on an error the assignment is unchanged.
++ */
+ int
+ hal_task_transfer(
+ 	hal_task_t task,
+@@ -1054,32 +1398,66 @@
+  * the structures are declared in its own header; a caller that has to name
+  * a register copies the set into a form of its own rather than passing this
+  * one outward.
++ *
++ * The task is stopped in the kernel on its way back to user mode (a
++ * debugger's stop), or is the calling task.  Each call returns 0, or -1
++ * when the task is NULL, a result or source is NULL, the task has no
++ * user frame (the integer registers and the step flag need one), or the
++ * architecture has no such set.  A write changes what the task returns to
++ * user mode with.
++ */
++
++/*
++ * Read the user integer registers of a task, with its TLS base.
+  */
+ int
+ hal_task_get_user_gpregs(
+ 	hal_task_t task,
+ 	struct hal_gpregs *registers);
+ 
++/*
++ * Write the user integer registers of a task.
++ *
++ * The bits of the flags register and the selectors that belong to the
++ * kernel are kept as they were.  An instruction or stack pointer the CPU
++ * would refuse on the way back to user mode is refused with -1 and
++ * nothing is written.
++ */
+ int
+ hal_task_set_user_gpregs(
+ 	hal_task_t task,
+ 	const struct hal_gpregs *registers);
+ 
++/*
++ * Read the user floating-point registers of a task.
++ */
+ int
+ hal_task_get_user_fpregs(
+ 	hal_task_t task,
+ 	struct hal_fpregs *registers);
+ 
++/*
++ * Write the user floating-point registers of a task.
++ */
+ int
+ hal_task_set_user_fpregs(
+ 	hal_task_t task,
+ 	const struct hal_fpregs *registers);
+ 
++/*
++ * Read the user vector registers of a task.  An architecture whose
++ * vector state is the floating-point set returns -1.
++ */
+ int
+ hal_task_get_user_vregs(
+ 	hal_task_t task,
+ 	struct hal_vregs *registers);
+ 
++/*
++ * Write the user vector registers of a task.  Control bits the CPU does
++ * not implement are dropped.  An architecture whose vector state is the
++ * floating-point set returns -1.
++ */
+ int
+ hal_task_set_user_vregs(
+ 	hal_task_t task,
+@@ -1092,12 +1470,20 @@
+  * the others run.  An architecture with no step facility of its own
+  * arranges the same observable behaviour by other means: where the next
+  * instruction ends is something only the architecture knows.
++ *
++ * The request stays until it is turned off (enable 0).  Returns 0, or -1
++ * when the task has no user frame.
+  */
+ int
+ hal_task_set_single_step(
+ 	hal_task_t task,
+ 	int enable);
+ 
++/*
++ * Report in *enable whether a task is asked to step (1) or not (0).
++ *
++ * Returns 0, or -1 when enable is NULL or the task has no user frame.
++ */
+ int
+ hal_task_get_single_step(
+ 	hal_task_t task,
+@@ -1145,6 +1531,17 @@
+ 	const struct hal_debug_point *points,
+ 	unsigned count);
+ 
++/*
++ * Report the debug points a task runs with, as last given to
++ * hal_task_set_debug_points().
++ *
++ *  points   ... receives the points; may be NULL when the task has none.
++ *  capacity ... how many points fit in points.
++ *  count    ... receives how many there are.
++ *
++ * Returns 0, or -1 when the task or count is NULL or the points do not
++ * fit in capacity.
++ */
+ int
+ hal_task_get_debug_points(
+ 	hal_task_t task,
