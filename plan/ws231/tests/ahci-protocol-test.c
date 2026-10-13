@@ -37,6 +37,8 @@ static void test_result(void);
 static void test_chunks(void);
 static void test_states(void);
 static void test_signatures(void);
+static void test_polling(void);
+static void test_cache(void);
 
 /*
  * Runs every group and reports the outcome.
@@ -55,6 +57,8 @@ main(
 	test_chunks();
 	test_states();
 	test_signatures();
+	test_polling();
+	test_cache();
 
 	/* Reports a failure count other than zero as a failed run. */
 	if (failures != 0U) {
@@ -453,4 +457,67 @@ test_signatures(void)
 
 	/* An absent device (all ones) is not ATA. */
 	CHECK(drv_ahci_signature_class(0xffffffffU) != DRV_AHCI_SIG_CLASS_ATA);
+}
+
+/*
+ * Checks which completions count as found by polling (T1-609 (1)).
+ *
+ * In QEMU most commands finish before the waiter's first look; those were
+ * counted as polling (2048 by the end of a 32 MiB dd) although the
+ * interrupt worked.
+ */
+static void
+test_polling(void)
+{
+	unsigned state;
+
+	/* Finished before the first look: no sleep, so no evidence (the T1-609 case). */
+	state = drv_ahci_command_advance(DRV_AHCI_COMMAND_ACTIVE, DRV_AHCI_PX_IS_DHRS, 0x50U, 0U, 1U);
+	CHECK(state == DRV_AHCI_COMMAND_DONE);
+	CHECK(!drv_ahci_completion_by_polling(state, 0, 0, 0));
+
+	/* A sleep the interrupt handler ended: the interrupt worked. */
+	CHECK(!drv_ahci_completion_by_polling(state, 0, 1, 1));
+
+	/* A sleep the poll interval ended, then found finished: a lost interrupt. */
+	CHECK(drv_ahci_completion_by_polling(state, 0, 1, 0));
+
+	/* The idle thread yields instead of sleeping and is never counted. */
+	CHECK(!drv_ahci_completion_by_polling(state, 1, 1, 0));
+
+	/* Errors and aborts are reported on their own and are not counted. */
+	CHECK(!drv_ahci_completion_by_polling(DRV_AHCI_COMMAND_DEVICE_ERROR, 0, 1, 0));
+	CHECK(!drv_ahci_completion_by_polling(DRV_AHCI_COMMAND_LINK_ERROR, 0, 1, 0));
+	CHECK(!drv_ahci_completion_by_polling(DRV_AHCI_COMMAND_ABORTED, 0, 1, 0));
+	CHECK(!drv_ahci_completion_by_polling(DRV_AHCI_COMMAND_ACTIVE, 0, 1, 0));
+}
+
+/* Checks when the disk's write cache needs a flush at close (T1-609 (2)). */
+static void
+test_cache(void)
+{
+	int dirty;
+
+	/* A fresh port is clean; reads and IDENTIFY keep it clean. */
+	dirty = 0;
+	dirty = drv_ahci_cache_dirty_after(dirty, DRV_AHCI_ATA_READ_DMA_EXT, 1);
+	CHECK(dirty == 0);
+	dirty = drv_ahci_cache_dirty_after(dirty, DRV_AHCI_ATA_IDENTIFY, 1);
+	CHECK(dirty == 0);
+
+	/* A write, even one that failed, leaves the cache dirty. */
+	CHECK(drv_ahci_cache_dirty_after(0, DRV_AHCI_ATA_WRITE_DMA_EXT, 0) == 1);
+	dirty = drv_ahci_cache_dirty_after(dirty, DRV_AHCI_ATA_WRITE_DMA_EXT, 1);
+	CHECK(dirty == 1);
+
+	/* A read after it does not clean it; a failed flush does not either. */
+	dirty = drv_ahci_cache_dirty_after(dirty, DRV_AHCI_ATA_READ_DMA_EXT, 1);
+	CHECK(dirty == 1);
+	dirty = drv_ahci_cache_dirty_after(dirty, DRV_AHCI_ATA_FLUSH_CACHE_EXT, 0);
+	CHECK(dirty == 1);
+
+	/* A finished flush, EXT or not, cleans it. */
+	CHECK(drv_ahci_cache_dirty_after(1, DRV_AHCI_ATA_FLUSH_CACHE, 1) == 0);
+	dirty = drv_ahci_cache_dirty_after(dirty, DRV_AHCI_ATA_FLUSH_CACHE_EXT, 1);
+	CHECK(dirty == 0);
 }

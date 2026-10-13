@@ -177,8 +177,19 @@ struct ahci_port {
 	 */
 	unsigned dma_unsafe;
 
-	/* Completions a waiter found by polling instead of by interrupt. */
+	/*
+	 * Completions a waiter found only after a poll-interval sleep that no
+	 * interrupt ended (drv_ahci_completion_by_polling).  Zero while the
+	 * interrupt path works; the log shows it at each power of two.
+	 */
 	unsigned poll_completions;
+
+	/*
+	 * Set by every write command and cleared by a flush that finished, both
+	 * under the command mutex.  A close with it set flushes the disk's write
+	 * cache, so raw writes reach the medium without waiting for shutdown.
+	 */
+	unsigned cache_dirty;
 
 	struct drv_ahci_identity identity;
 	struct disk *disk;
@@ -252,11 +263,13 @@ static int ahci_detach(struct drv_pci_device *device, unsigned flags);
 static void ahci_shutdown(struct drv_pci_device *device);
 static int ahci_suspend(struct drv_pci_device *device);
 static int ahci_resume(struct drv_pci_device *device);
+static void ahci_disk_close(struct disk *disk);
 static int ahci_disk_submit(struct disk *disk, struct bio *bio);
 static int ahci_disk_ioctl(struct disk *disk, unsigned long request, void *argument);
 
 /* Device operation and registration tables. */
 static const struct disk_ops ahci_disk_ops = {
+	.close = ahci_disk_close,
 	.submit = ahci_disk_submit,
 	.ioctl = ahci_disk_ioctl,
 };
@@ -824,6 +837,46 @@ ahci_resume(
 
 	/* Succeeded: the HBA takes requests again. */
 	return 0;
+}
+
+/*
+ * Flushes the disk's write cache when a write since the last flush may
+ * still sit in it.
+ *
+ * Raw writes to the whole disk (dd to /dev/sdN) are not covered by a
+ * filesystem's sync, so the close that ends them flushes, the way FreeBSD's
+ * ada(4) does.  A failed flush is logged; the close itself cannot fail.
+ */
+static void
+ahci_disk_close(
+	struct disk *disk)
+{
+	struct ahci_port *port;
+	int error;
+
+	/* Ignores a close without a disk this driver published. */
+	if (disk == NULL)
+		return;
+	port = disk->d_data;
+	if (port == NULL)
+		return;
+
+	/* Flushes with the port to itself, only when a write is unflushed. */
+	error = 0;
+	mutex_lock(&port->command_mutex);
+
+	if (port->cache_dirty && !port->dead)
+		error = ahci_port_flush(port, AHCI_COMMAND_TIMEOUT_MS, AHCI_IO_RETRIES);
+
+	mutex_unlock(&port->command_mutex);
+
+	/* Logs a cache the disk could not flush; the data may not be durable. */
+	if (error != 0) {
+		kern_logf("ahci%u: port %u: flush at close failed (%d)\n",
+			  port->controller->index,
+			  port->number,
+			  error);
+	}
 }
 
 /* Serves one block request against an AHCI disk. */
@@ -2342,6 +2395,9 @@ ahci_port_execute(
 	if (!built)
 		return EINVAL;
 
+	/* A write may leave data in the disk's cache from here on, whatever its outcome. */
+	port->cache_dirty = drv_ahci_cache_dirty_after(port->cache_dirty, command, 0);
+
 	/*
 	 * Issues the slot.  Status left from before is absorbed first, so it
 	 * cannot be read as this command's.  The table and header must reach
@@ -2365,8 +2421,14 @@ ahci_port_execute(
 	if (state == DRV_AHCI_COMMAND_DONE) {
 		kern_io_read_barrier();
 		moved = header->transferred;
-		if (length == 0U)
+
+		/* A finished flush has emptied the cache of every earlier write. */
+		if (length == 0U) {
+			port->cache_dirty = drv_ahci_cache_dirty_after(port->cache_dirty, command, 1);
 			return 0;
+		}
+
+		/* Succeeded: the data command moved every byte. */
 		if ((size_t)moved == length)
 			return 0;
 
@@ -2449,11 +2511,14 @@ ahci_port_wait_command(
 	uint64_t now;
 	uint64_t wake;
 	uint64_t sequence;
+	uint64_t after;
 	unsigned long irq;
 	uint32_t command_issue;
 	uint32_t task_file;
 	unsigned state;
-	unsigned woken_by_interrupt;
+	int polled;
+	int slept;
+	int woken;
 	int idle;
 
 	/* Fixes the moment the command is given up on. */
@@ -2468,14 +2533,16 @@ ahci_port_wait_command(
 	if (thread != NULL && (thread->flags & THREAD_FLAG_IDLE) == 0U)
 		idle = 0;
 
-	/* Looks at the port, then sleeps or yields, until the command resolves. */
-	woken_by_interrupt = 0;
+	/*
+	 * Looks at the port, then sleeps or yields, until the command resolves.
+	 * slept and woken describe the last sleep: whether there was one, and
+	 * whether a wakeup (only the interrupt handler wakes this queue while
+	 * the waiter sleeps) ended it rather than the poll interval.
+	 */
+	slept = 0;
+	woken = 0;
 	irq = spin_lock_irqsave(&port->state_lock);
 	for (;;) {
-		/* Notes whether the interrupt handler already saw this command's status. */
-		if (port->interrupt_status != 0U)
-			woken_by_interrupt = 1;
-
 		/* Folds in status the interrupt has not delivered yet. */
 		ahci_port_service_locked(port);
 		command_issue = ahci_port_read(port, DRV_AHCI_PX_CI);
@@ -2509,18 +2576,25 @@ ahci_port_wait_command(
 				wake = deadline;
 			sequence = waitq_sequence(&port->waitq);
 			(void)waitq_sleep(&port->waitq, &port->state_lock, sequence, wake, 0);
+
+			/* An advanced sequence means the interrupt handler woke the waiter. */
+			slept = 1;
+			woken = 0;
+			after = waitq_sequence(&port->waitq);
+			if (after != sequence)
+				woken = 1;
 		}
 	}
 
 	spin_unlock_irqrestore(&port->state_lock, irq);
 
 	/*
-	 * Counts a completion an ordinary thread found by its own look, with
-	 * no interrupt having delivered any of the command's status; a working
-	 * interrupt leaves the count at zero.  The log shows the first and then
-	 * every power of two.
+	 * Counts a completion found only because the poll interval ended a
+	 * sleep that no interrupt ended; a working interrupt leaves the count
+	 * at zero.  The log shows the first and then every power of two.
 	 */
-	if (!idle && !woken_by_interrupt && state == DRV_AHCI_COMMAND_DONE) {
+	polled = drv_ahci_completion_by_polling(state, idle, slept, woken);
+	if (polled) {
 		port->poll_completions++;
 		if ((port->poll_completions & (port->poll_completions - 1U)) == 0U) {
 			kern_logf("ahci%u: port %u: completion found by polling (%u)\n",
