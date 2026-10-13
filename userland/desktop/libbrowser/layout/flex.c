@@ -23,6 +23,7 @@
 #include "layout/layout.h"
 
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,6 +46,7 @@ struct flex_item {
 	layout_unit maximum;
 	int auto_minimum;
 	int frozen;
+	int violation;
 };
 
 /*
@@ -167,7 +169,7 @@ layout_flex(
 			available = 0;
 		used = 0;
 		for (index = 0; index < count; index++)
-			used += items[index].base + items[index].frame + items[index].margin_start + items[index].margin_end;
+			used += items[index].size + items[index].frame + items[index].margin_start + items[index].margin_end;
 		if (count > 1)
 			used += gap_main * (layout_unit)(count - 1U);
 		if (available < used)
@@ -182,7 +184,7 @@ layout_flex(
 		end = start;
 		used = 0;
 		while (end < count) {
-			outer = items[end].base + items[end].frame + items[end].margin_start + items[end].margin_end;
+			outer = items[end].size + items[end].frame + items[end].margin_start + items[end].margin_end;
 			if (end > start)
 				outer += gap_main;
 			if (wrap && available >= 0 && end > start && used + outer > available)
@@ -472,20 +474,15 @@ flex_base_size(
 	if (item->minimum < 0)
 		item->minimum = 0;
 
-	/* An item already clamped at a limit is frozen before growing. */
-	item->frozen = 0;
-	if (item->maximum >= 0 && item->base > item->maximum) {
-		item->base = item->maximum;
-		item->frozen = 1;
-	}
-	if (item->base < item->minimum) {
-		item->base = item->minimum;
-		item->frozen = 1;
-	}
+	/* The base stays unconstrained; the hypothetical size is limited for line breaking. */
 	item->size = item->base;
+	if (item->maximum >= 0 && item->size > item->maximum)
+		item->size = item->maximum;
+	if (item->size < item->minimum)
+		item->size = item->minimum;
 
 	/* The container's measure of its content counts the item's margin box at that size. */
-	child->flex_hypothetical = item->base + item->frame + item->margin_start + item->margin_end;
+	child->flex_hypothetical = item->size + item->frame + item->margin_start + item->margin_end;
 
 	/* Succeeded: the item has its hypothetical size. */
 	return 0;
@@ -505,11 +502,19 @@ flex_grow(
 	layout_unit used;
 	layout_unit remaining;
 	layout_unit share;
+	layout_unit target;
+	int64_t total_violation;
 	float total;
 	float weight;
 	size_t index;
 	size_t round;
-	int violated;
+	int sign;
+
+	/* Inflexible items and bases already above a maximum keep their hypothetical size. */
+	for (index = 0; index < count; index++) {
+		items[index].frozen = items[index].box->style.flex_grow <= 0 ||
+		    items[index].base > items[index].size;
+	}
 
 	/* Each violation freezes at least one item, so the bounded loop terminates. */
 	for (round = 0; round <= count; round++) {
@@ -529,8 +534,13 @@ flex_grow(
 		remaining = available - used;
 		if (remaining <= 0 || total <= 0) {
 			for (index = 0; index < count; index++) {
-				if (!items[index].frozen)
+				if (!items[index].frozen) {
 					items[index].size = items[index].base;
+				if (items[index].size < items[index].minimum)
+						items[index].size = items[index].minimum;
+				if (items[index].maximum >= 0 && items[index].size > items[index].maximum)
+						items[index].size = items[index].maximum;
+				}
 			}
 			return;
 		}
@@ -539,20 +549,33 @@ flex_grow(
 		weight = total;
 		if (weight < 1)
 			weight = 1;
-		violated = 0;
+		total_violation = 0;
 		for (index = 0; index < count; index++) {
 			if (items[index].frozen)
 				continue;
 			share = (layout_unit)((float)remaining * items[index].box->style.flex_grow / weight);
-			items[index].size = items[index].base + share;
+			target = items[index].base + share;
+			items[index].size = target;
+			items[index].violation = 0;
+			if (items[index].size < items[index].minimum) {
+				items[index].size = items[index].minimum;
+				items[index].violation = 1;
+			}
 			if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
 				items[index].size = items[index].maximum;
-				items[index].frozen = 1;
-				violated = 1;
+				items[index].violation = -1;
 			}
+			total_violation += (int64_t)items[index].size - target;
 		}
-		if (!violated)
+
+		/* Freeze only the min or max violations that dominate this round. */
+		if (total_violation == 0)
 			return;
+		sign = total_violation > 0 ? 1 : -1;
+		for (index = 0; index < count; index++) {
+			if (items[index].violation == sign)
+				items[index].frozen = 1;
+		}
 	}
 }
 
@@ -579,9 +602,11 @@ flex_shrink(
 	size_t round;
 	int violated;
 
-	/* No item is frozen yet. */
-	for (index = 0; index < count; index++)
-		items[index].frozen = 0;
+	/* Inflexible items and bases below a minimum keep their hypothetical size. */
+	for (index = 0; index < count; index++) {
+		items[index].frozen = items[index].box->style.flex_shrink <= 0 ||
+		    items[index].base < items[index].size;
+	}
 
 	/* At most one round per item, as each round freezes one at least. */
 	for (round = 0; round <= count; round++) {
@@ -606,8 +631,13 @@ flex_shrink(
 		/* Enough room now, or nothing left that shrinks: the others keep their bases. */
 		if (missing <= 0 || total <= 0) {
 			for (index = 0; index < count; index++) {
-				if (!items[index].frozen)
+				if (!items[index].frozen) {
 					items[index].size = items[index].base;
+				if (items[index].size < items[index].minimum)
+						items[index].size = items[index].minimum;
+				if (items[index].maximum >= 0 && items[index].size > items[index].maximum)
+						items[index].size = items[index].maximum;
+				}
 			}
 
 			/* The sizes stand. */
@@ -624,6 +654,11 @@ flex_shrink(
 			items[index].size = items[index].base - share;
 			if (items[index].size < items[index].minimum) {
 				items[index].size = items[index].minimum;
+				items[index].frozen = 1;
+				violated = 1;
+			}
+			if (items[index].maximum >= 0 && items[index].size > items[index].maximum) {
+				items[index].size = items[index].maximum;
 				items[index].frozen = 1;
 				violated = 1;
 			}
@@ -661,7 +696,7 @@ flex_auto_minimums(
 		return 0;
 	used = 0;
 	for (index = 0; index < count; index++)
-		used += items[index].base + items[index].frame + items[index].margin_start + items[index].margin_end;
+		used += items[index].size + items[index].frame + items[index].margin_start + items[index].margin_end;
 	if (count > 1)
 		used += gap * (layout_unit)(count - 1U);
 	if (used <= available)

@@ -1,0 +1,96 @@
+{
+  "checkpoint": "plan/ws074/phase208/evidence/20261014-q1061-final/progress.jsonl",
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "pass": 4
+  },
+  "eligible": 4,
+  "eligible_not_sampled": 0,
+  "render_timeout": 5.0,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/flex-direction-row-vertical-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flex-direction-row-vertical.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/flexbox-basic-textarea-horiz-001-ref.xhtml",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flexbox-basic-textarea-horiz-001.xhtml"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/flexbox-basic-textarea-vert-001-ref.xhtml",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flexbox-basic-textarea-vert-001.xhtml"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "css/css-flexbox/flexbox-flex-wrap-flexing-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "css/css-flexbox/flexbox-flex-wrap-flexing.html"
+    }
+  ],
+  "root": "css/css-flexbox",
+  "schema": 1,
+  "selected": 4,
+  "selection": "focus round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase208/evidence/20261014-q1061/selection-manifest.json",
+  "skipped": {},
+  "suite": "wpt",
+  "unrun": [],
+  "viewport": [
+    800,
+    600
+  ]
+}

@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1060 / WS074 static reftest re-census after Flex and textarea repairs
+# q1061 / WS074 Flex base vs hypothetical wrap/grow
 
-Status: finished（2026-10-14 03:19–03:23 JST）
+Status: finished（2026-10-14 03:24–03:29 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p190 q1060有限部分scope](phase190/phase.md)に適用。
-Timebox: 2026-10-14 03:19 JST 開始、最大90分（04:49 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p208のq1061有限部分scope](phase208/phase.md)に適用。
+Timebox: 2026-10-14 03:24 JST 開始、最大90分（04:54 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1060-i01 | [ws074-p190](phase190/phase.md) partial | 固定静的1,561 IDをq1056同条件で再測定し全遷移・旧8回帰・新規PASS→FAIL・focusを分類。runner/browser/WPT/Master変更なし、最大90分 | cleared | q1057〜q1059のbrowser変更とq1056 baseline |
+| q1061-i01 | [ws074-p208](phase208/phase.md) whole | Flex base/hypotheticalを分けwrapとmin/max freezeを修正、固定回帰1・textarea3・Flex10とhost/build/Acid回帰。WPT/runner/ABI/Master変更なし、最大90分 | cleared | q1060新規FAIL1件、p206 Flex分配 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -22,6 +22,8 @@ Outcome: q1058-i01 partial cleared、p206 whole uncleared。旧回帰3件は0→
 Outcome: q1059-i01 / p207 whole cleared。font shorthand line-height resetで差198→110、textarea描画端pixel丸めで固定1 ID差0。旧8回帰3件3/3・Flex10/10 local pixel exact PASS、host CSS rule51/51・CSSOM12/12・submit13/13、warning0 build、Acid3差0/Acid2差1865。[証拠](phase207/evidence/20261014-q1059/README.md)。p206も後続証拠でwhole cleared。p190/p173全件100%未達。
 
 Outcome: q1060-i01 partial cleared、p190 whole uncleared。固定静的1,561 IDは660 local PASS/901 pixel FAIL/0 error/0 timeout。旧8回帰全PASS、q1056比21 FAIL→PASS/1 PASS→FAIL（flexbox-flex-wrap-flexing.html）。[証拠](phase190/evidence/20261014-q1060/README.md)。p173全3,805件100%は未達。
+
+Outcome: q1061-i01 / p208 whole cleared。q1060新規PASS→FAIL1件は5000差画素→0、textarea guard3件と合わせ4/4 local pixel exact PASS。固定Flex10/10・host physical21/21・CSS rule51/51・CSSOM12/12、warning0 build、Acid3差0/Acid2差1865。[証拠](phase208/evidence/20261014-q1061/README.md)。p190/p173全件100%未達、次Queueで広域census。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 

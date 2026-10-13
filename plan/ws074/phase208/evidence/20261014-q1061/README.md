@@ -1,0 +1,9 @@
+# q1061-i01 — Flex base versus hypothetical size
+
+Fixed WPT checkout `2d66b9b7998bb58c336138c178323ddee857b586`. q1060 identified exactly one new local PASS→FAIL: `css/css-flexbox/flexbox-flex-wrap-flexing.html`, differing by 5,000 pixels. Each of its two items has `flex-basis:0` and `min-width:100px` inside a 150px wrapping flex container. Early freezing at the minimum left a red 50px strip on both lines.
+
+The Flex item now retains its unconstrained base separately from its min/max-clamped hypothetical size. Wrapping and initial grow/shrink choice use hypothetical size; distribution uses base, with [Flexbox §9.7](https://www.w3.org/TR/css-flexbox-1/#resolve-flexible-lengths) violation freezing and bounded redistribution. Native `--dump=layout` shows two 150×50 items at y48 and y98, fully covering the 150×100 container. The source and its reference now match pixel for pixel.
+
+Verification after final source change: `sh plan/ws074/tests/host-build.sh plain` exit0 warning0; selected four (new regression plus q1059's three guards) **4/4 local pixel exact PASS** in `../20261014-q1061-final/report.json`; fixed Flex10 **10/10** in `../20261014-q1061-flex-final/report.json`. Host physical justify21/21, CSS rule51/51, CSSOM12/12. `python3 plan/ws074/tests/run-acid-tests.py --out build/ws074-acid-q1061-final`: Acid3 score/inventory100/100 and pixel difference0/480000; Acid2 difference1865/120000 unchanged. `git diff --check` PASS; `clang-format` unavailable and changed source manually checked against C full standard. Earlier same-scope results before the final max clamp are retained in the parent and `../20261014-q1061-flex/` directories.
+
+q1061-i01 and p208 whole cleared. The q1060 census remains a dated snapshot: a new full census is needed to measure all transitions after this fix. p190's other pixel/runner failures and p173 all 3,805 PASS remain open. Shared Master/Queue/GitHub publication pending with Q1; no push.
