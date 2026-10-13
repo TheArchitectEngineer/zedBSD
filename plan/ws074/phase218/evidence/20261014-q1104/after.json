@@ -1,0 +1,433 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['grid-template'] = \"none\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template'] = \"none / none\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"none\" but got \"none / none\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"auto / auto\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template'] = \"none / [a] 0px\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template'] = \"none / [] 0px\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"none / 0px\" but got \"none / [] 0px\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] 10px / auto\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] 10px / none\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[] 10px [] / [] auto []\" should set the property value",
+      "status": 1,
+      "message": "assert_equals: serialization should be canonical expected \"10px / auto\" but got \"[] 10px [] / [] auto []\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] \\\"a\\\" 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] \\\"a\\\" 10px []\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[] \\\"a\\\" 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] \\\"a\\\" 10px [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" auto\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a a a\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" / 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" / 20%\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" / 5fr\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] \\\"a\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] \\\"a\\\" [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[] \\\"a\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [] [] \\\"b\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [] \\\"b\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] [b] \\\"b\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\"\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" / 0\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" 10px / 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" calc(100% - 10px) / calc(10px)\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" 10px [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] [a] \\\"b\\\" 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] [] \\\"b\\\" 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" 10px [a] \\\"b\\\" [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] \\\"a\\\" [a] \\\"b\\\" [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" \\\"a\\\" [a] \\\"b\\\" [a]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" [a] / 0\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" \\\"a\\\" [a] [a] \\\"b\\\" / auto\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template'] = \"\\\"a\\\" auto [a] \\\"b\\\" auto [b] / 10px\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['grid-template'] = \"none\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template'] = \"none / none\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"none\" but got \"none / none\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"auto / auto\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template'] = \"none / [a] 0px\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template'] = \"none / [] 0px\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"none / 0px\" but got \"none / [] 0px\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] 10px / auto\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] 10px / none\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[] 10px [] / [] auto []\" should set the property value",
+        "status": 1,
+        "message": "assert_equals: serialization should be canonical expected \"10px / auto\" but got \"[] 10px [] / [] auto []\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] \\\"a\\\" 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] \\\"a\\\" 10px []\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[] \\\"a\\\" 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] \\\"a\\\" 10px [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" auto\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a a a\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" / 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" / 20%\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" / 5fr\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] \\\"a\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] \\\"a\\\" [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[] \\\"a\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [] [] \\\"b\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [] \\\"b\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] [b] \\\"b\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\"\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" / 0\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" 10px / 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" calc(100% - 10px) / calc(10px)\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" 10px [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] [a] \\\"b\\\" 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] [] \\\"b\\\" 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" 10px [a] \\\"b\\\" [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"[a] \\\"a\\\" [a] \\\"b\\\" [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" \\\"a\\\" [a] \\\"b\\\" [a]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" [a] \\\"b\\\" [a] / 0\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" \\\"a\\\" [a] [a] \\\"b\\\" / auto\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template'] = \"\\\"a\\\" auto [a] \\\"b\\\" auto [b] / 10px\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-template-shorthand-valid.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:42887/css/css-grid/parsing/grid-template-shorthand-valid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"none / none\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"none\\\" but got \\\"none / none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"auto / auto\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"none / [a] 0px\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"none / [] 0px\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"none / 0px\\\" but got \\\"none / [] 0px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] 10px / auto\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] 10px / none\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[] 10px [] / [] auto []\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"10px / auto\\\" but got \\\"[] 10px [] / [] auto []\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" 10px []\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[] \\\\\\\"a\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" 10px [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a a a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 20%\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 5fr\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[] \\\\\\\"a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [] [] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] [b] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 0\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" 10px / 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" calc(100% - 10px) / calc(10px)\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" 10px [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] [a] \\\\\\\"b\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] [] \\\\\\\"b\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" 10px [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" \\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a] / 0\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" \\\\\\\"a\\\\\\\" [a] [a] \\\\\\\"b\\\\\\\" / auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" auto [a] \\\\\\\"b\\\\\\\" auto [b] / 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['grid-template'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template'] = \\\"none / none\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"none\\\" but got \\\"none / none\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"auto / auto\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template'] = \\\"none / [a] 0px\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template'] = \\\"none / [] 0px\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"none / 0px\\\" but got \\\"none / [] 0px\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] 10px / auto\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] 10px / none\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template'] = \\\"[] 10px [] / [] auto []\\\" should set the property value\",\"status\":1,\"message\":\"assert_equals: serialization should be canonical expected \\\"10px / auto\\\" but got \\\"[] 10px [] / [] auto []\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" 10px []\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[] \\\\\\\"a\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" 10px [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a a a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 20%\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 5fr\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[] \\\\\\\"a\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [] [] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] [b] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\"\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" / 0\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" 10px / 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" calc(100% - 10px) / calc(10px)\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" 10px [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] [a] \\\\\\\"b\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] [] \\\\\\\"b\\\\\\\" 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" 10px [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"[a] \\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" \\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" [a] \\\\\\\"b\\\\\\\" [a] / 0\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" \\\\\\\"a\\\\\\\" [a] [a] \\\\\\\"b\\\\\\\" / auto\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template'] = \\\"\\\\\\\"a\\\\\\\" auto [a] \\\\\\\"b\\\\\\\" auto [b] / 10px\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

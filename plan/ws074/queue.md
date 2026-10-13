@@ -1,16 +1,16 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1103 / WS074 vertical inline text layout design
+# q1104 / WS074 explicit Grid template shorthand
 
-Status: finished（2026-10-14 08:22–08:23 JST）
+Status: finished（2026-10-14 08:23–08:25 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 最大90分（09:52 JSTまで）。
+Timebox: 最大90分（09:53 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1103-i01 | [ws074-p217](phase217/phase.md) partial | 固定007/008のvertical-lr Ahem文字幅期待/実際、q1092最小host、CSS writing-mode/line/paint/DOM geometry経路を追い、1文字sideways inlineの最小実装境界と次の検証fixtureを設計する。読取と証拠のみ。browser/runner/WPT/公開ABI/Master変更なし、Acid/全Grid再測定なし | cleared（部分）。[証拠](phase217/evidence/20261014-q1103/README.md)、p217 whole uncleared | q1102残007/008・q1092 vertical host |
+| q1104-i01 | [ws074-p218](phase218/phase.md) partial | `grid-template: <既存対応track-list> / <既存対応track-list>`と単独`none`を既存rows/columnsへatomic展開。areas/line names/CSSOM getter/auto-flow等は対象外。最小geometryとcascade/invalid検証、固定grid-template-shorthand-valid代表のsubtest推移、旧Grid/JS/CSS、warning0 build、Acid3差0・Acid2非増加。WPT/runner/公開ABI/Master変更なし | cleared（部分）。[証拠](phase218/evidence/20261014-q1104/README.md)、p218 whole uncleared | q1095 grid明示track parser・q1103と独立 |
 
-Dependency graph: q1093 Grid recensus → q1095明示track形 → q1096 empty baseline → q1097 style-changes測定 → q1098 line baseline → q1099 style-changes再測定 → q1100縦書き診断 → q1101空子x → q1102再測定 → q1103縦文字設計。q1092縦書き設計もq1100/q1103前提。
+Dependency graph: q1093 Grid recensus → q1095明示track形 → q1104 grid-template明示track形。q1096〜q1103は独立のbaseline/縦書き鎖で、q1103→p220は外部後続。
 
-Upcoming Work Outlook: [p220](phase220/phase.md)の縦inline最初の有限実装、p217へのGrid統合、他baseline群、implicit shorthand/CSSOM。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: [p220](phase220/phase.md)の縦inline最初の有限実装、p217へのGrid統合、他baseline群、Grid areas/lines/CSSOM。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。

@@ -1,0 +1,34 @@
+{
+  "id": "/css/css-grid/parsing/grid-template-shorthand-valid.html",
+  "before_outcome": "fail",
+  "after_outcome": "fail",
+  "before_pass": 0,
+  "after_pass": 5,
+  "changes": [
+    {
+      "name": "e.style['grid-template'] = \"none\" should set the property value",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "name": "e.style['grid-template'] = \"auto / auto\" should set the property value",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "name": "e.style['grid-template'] = \"none / [a] 0px\" should set the property value",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] 10px / auto\" should set the property value",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "name": "e.style['grid-template'] = \"[a] 10px / none\" should set the property value",
+      "before": 1,
+      "after": 0
+    }
+  ]
+}
