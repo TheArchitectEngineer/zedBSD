@@ -86,3 +86,29 @@ batch を取らない state の書き手は `_gen` の版を足し、古い名�
 - r1 の Gen9 化（eu-test の Gen9 の kernel と batch を使う）は P1 の eu-test の後。
 - Gen9 で CACHE_MODE_1 を fixture は書かない（anv の context 初期化の値。単色の draw には効かない判断）。
 - `build/ws229-p005f/`（kernel 2 本・log・逆アセンブルの作業物）と `build/ws229-p004/host.run.*` の古い run は Q1 が消してよい。
+
+## p005 の続き（2026-10-14 P3 の次の世代、ws229-p005 の一部）
+
+範囲: 上の残り 2 つ（draw の `t->graphics_ver`、r1 の Gen9 化）。
+
+| 何 | 内容 | file | commit |
+| --- | --- | --- | --- |
+| hang の dump の版 | `i915_draw_find_engine()` で `t->graphics_ver = env->graphics_ver`。draw・tex・r1・t3・bl の hang の dump が Gen9 では Gen9 の ring fault register（0x4094）を読む。draw-test.c の中で `t->graphics_ver` を読むのは eu-test.c の `drv_i915_test_eu_hang_dump_reset()` だけ（他の helper は読まない）ので、Gen12 の振る舞いは変わらない。eu-internal.h の注記を直した | draw-test.c・eu-internal.h | e8a67ef52 |
+| r1 の Gen9 化 | 拒否（SKIP）を外し、両方の半分を GT の版で作る: compute は `drv_i915_test_eu_build_batch_gen()`・`_check_pipeline_select_gen()`・`drv_i915_test_eu_fill_idd()`・Gen9 の store kernel（`drv_i915_test_eu_kernel_gen9`）、thread の上限は Gen9 で 56×subslice−1（eu-test と同じ）、draw は `_mocs_gen`・`_write_state_gen`・`_build_batch_gen` と draw-test.c の版つきの select の確かめ。kernel の読み戻しの比較も版の kernel で。Gen9 で拒否するのは tex・t3・bl だけになった | draw-test.c | c7c80bf82 |
+
+確かめ（host と build。QEMU・実機は使っていない）:
+- `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws229-p005g/k64-exec I915_TESTS=y I915_TEST_SET=execution ZEDBSD_TEST_CPPFLAGS=-DI915_TEST_SCENARIO=draw vmunix`（1 行の後と r1 の後）→ rc 0、warning 0、`amd64 vmunix check: PASS`（draw-test.o が作り直されたことを確かめた）。
+- r1 の compute の state page: draw-test.c を host で丸ごと compile する使い捨ての harness（scratchpad、commit しない）で、
+  `i915_r1_write_c1_state(page, 12)` の 4096 byte が変更前の手書きの値（kernel・IDD の dw2=1<<20・marker 0xdead0000）と同一、
+  `(page, 9)` が Gen9 の kernel と `fill_idd(9)`（dw2=0）を持つ。Gen12 の c1 の batch は `build_batch_gen(…, 12)` そのもの（旧名の wrapper の中身）、
+  draw の batch・state は run.sh が旧名と `_gen(…, 12)` の同一を確かめている。
+- `GENXML=<p1>/build/mesa-tools/mesa-25.0.7/src/intel/genxml BRW_TOOLS=<p1>/build/mesa-tools/build-asm/src/intel/compiler sh plan/ws229/tests/host/run.sh` → PASS（Gen12 の 17 file が 03dee2287 と同一、14 batch・882 命令）。
+- 同じ環境で `sh plan/ws229/tests/eu-test-gen9-host.sh` → PASS（eu-gen12 の batch の SHA-256 09786119…0fe6 が Gen9 化の前と同一）。
+
+取りやめた物: Q1 経由のユーザーの指示で一度「全部入り」の scenario `gen9`（eu → vkcs → vkx → vke1 → vke2 → vkc を 1 回の起動で）と
+1 つの USB の image を作りかけた（337700822・077df9995・1bed58a61）が、同じ日のユーザーの指示「全部入りの Gen9 の imageはいらないです。」で
+取りやめ、d63e083b9 で 3 つとも戻した（tree は c7c80bf82 と同一）。試験は SV7 の passthrough で試験ごと（P1）。
+
+未実施・残り:
+- 実機: Gen9 の draw・r1（SV7 の passthrough の試験ごと、P1・T1）、Gen12 の 5330 で draw・r1・tex・t3・bl が変わらず PASS か（T1）。
+- `build/ws229-p005g/`（kernel 4 本と log）と `build/ws229-gen9/`（止めた image の build の途中物）は Q1 が消してよい。
