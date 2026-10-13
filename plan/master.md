@@ -12,10 +12,10 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1（新しい世代）: q980 ws229-p005 の準備（Gen9 の eu-test の kernel、実機の image と手順、5330 の回帰の依頼）。
+  - P1: 空き（ws229-p005 の準備は merge 済み。Q1 が Gen9 の image 6 つを build/ws229-gen9/ に作成中）。
   - P2（新しい世代）: q981 ws231-p001 基本の AHCI の driver（ws229-p002 は merge 済み）。
   - P3: 空き（q979 ws229-p004 は merge 済み）。
-  - T1（新しい世代）: T1-606（5330 の Gen12 の回帰、Gen9 の変更を含む main）。
+  - T1: 空き。T1-606（5330 の Gen12 の回帰）はユーザーが 5330 を Linux（chaos）で起動し直すのを待つ。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
