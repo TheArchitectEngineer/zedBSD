@@ -3,7 +3,7 @@
 # ws216-p003: Notes の model と形式（道具の種類、形の列、焼き込み、編集 data 3.0、journal 3、部分消し、PDF の書き出し）
 
 Parent: [WS216](../ws.md)
-Status: in-progress（2026-10-13 P1: 実装と host の受け入れ B1〜B10 は済み、Q1 の review・merge の待ち。QEMU・実機は p007）
+Status: cleared（2026-10-13 Q1: host の受け入れ B1〜B10 は済み、QEMU・実機は p007。FreeBSD の native の build は未実施。旧: 2026-10-13 P1: 実装と host の受け入れ B1〜B10 は済み、Q1 の review・merge の待ち。QEMU・実機は p007）
 Phase disposition: normal
 Queue: Q1 の依頼（2026-10-13、P1）。承認は ws.md の「ユーザーの決定」（D1〜D12）と review-2 の判定（p003 の前に M-5・M-10・M-12 をこの phase.md で解決）
 
