@@ -2,6 +2,12 @@
 merge_one () 
 { 
     git merge --no-ff --no-commit $1 > /tmp/claude-1000/m.txt 2>&1;
+    # A merge that did not start (local changes in the way, index lock) leaves no MERGE_HEAD;
+    # committing then would take whatever another session had staged (2026-10-14).
+    if ! git rev-parse -q --verify MERGE_HEAD > /dev/null; then
+        echo "MERGE NOT STARTED $1: $(head -1 /tmp/claude-1000/m.txt)";
+        return 1;
+    fi;
     u=$(git diff --name-only --diff-filter=U);
     if [ -n "$u" ]; then
         if [ "$u" = plan/agents/T1/requests.md ]; then

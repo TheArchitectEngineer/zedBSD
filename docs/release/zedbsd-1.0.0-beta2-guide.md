@@ -201,7 +201,7 @@ The image is built from the source with `make menuconfig` (choose the CPU,
 the boot options and the programs, then **Build boot image**). The steps are
 in the [build-from-source guide](../howto/build-from-source.md). The menu
 names the Base programs and libraries by their command and library names,
-and has a **Retro** menu at the top for the X11 programs Xzed, zwm, zshell
+and has a **Retro** menu, right after Base, for the X11 programs Xzed, zwm, zshell
 and zterm. Choosing the i386 CPU (with the PC-9800 or PC/AT board) leaves
 the Desktop out, as the desktop is not built for i386.
 

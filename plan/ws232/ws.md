@@ -42,6 +42,6 @@ Resume point: なし（completed）。p003（Retro を Base の下へ、PC-98 �
 
 | Phase | 内容 | 目標 | Status | 依存 |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | i386 の CPU と board、Retro の menu、pc98 の build・起動 | 1〜5 | in-progress | 無し |
+| [p001](phase001/phase.md) | i386 の CPU と board、Retro の menu、pc98 の build・起動 | 1〜5 | cleared（2026-10-14） | 無し |
 | [p002](phase002/phase.md) | 規約の全文の見直し（menuconfig・rtld の #if） | 規約 | cleared | p001 |
 | [p003](phase003/phase.md) | Retro を全 CPU で Base の直後へ、PC-98 の driver を全部 Drivers > Platform へ | 6・7 | cleared（Q1 の確認待ち） | p001 |
