@@ -3,7 +3,7 @@
 # ws143-p007: Linux の Bluetooth の backend（BlueZ の D-Bus）と FreeBSD の未対応の表示
 
 Parent: [WS143](../ws.md)
-Status: in-progress — test-wait（2026-10-14 Q1: T1-593 の Linux の部分は Connect を除き PASS（ON・adapter の名・Other Devices・番号の照合・pair・Forget・電源）。仮想の相手（profile 無し）への Connect は NotAvailable で、頁が「The pairing was refused.」と誤った文を出す。Forget の後の 2 回目の pair は相手の側の古い bond を消すまで AuthenticationCanceled（仮想の相手の性質と推測）。FreeBSD の頁は未実施（GPU の無い guest で compositor が起きない、T1-587））
+Status: in-progress — test-wait（2026-10-14 P3: T1-593 の Connect の文を直した（§11、commit eb79dde1c、host 試験 PASS）、T1 の再試験（§11 の依頼の文）待ち。旧 2026-10-14 Q1: T1-593 の Linux の部分は Connect を除き PASS（ON・adapter の名・Other Devices・番号の照合・pair・Forget・電源）。仮想の相手（profile 無し）への Connect は NotAvailable で、頁が「The pairing was refused.」と誤った文を出す。Forget の後の 2 回目の pair は相手の側の古い bond を消すまで AuthenticationCanceled（仮想の相手の性質と推測）。FreeBSD の頁は未実施（GPU の無い guest で compositor が起きない、T1-587））
 Phase disposition: normal
 Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」、WS143 の design.md §9（D7・D13 ほか、2026-10-05 夕 ユーザー「全部推奨」）と §10 の p007、2026-10-08 ユーザー「Linux・FreeBSD は 10/13 以降」。
 Queue（実装）: q967（P3、2026-10-14）。review: [review-1](review-1.md)（design-reviewer、判定「直せば実装してよい」、重大 4 と中 M1・M3・M5・M7・M8 を入れれば再 review なし、Q1）。
@@ -279,3 +279,42 @@ FreeBSD の source（`libkeiland-backend-freebsd/Makefile.freebsd` は `bluetoot
 - 試験の C（`bt-linux-host-test.c`）は確かめの式を `check()` の引数に書いており、coding-style の「Boolean を式で作らない」に合わない所がある（p009 の規約の全文の見直しで扱う）。
 - GetNameOwner が期限切れ（bus daemon が応答しない）の時は、NameOwnerChanged が来るまで owner を知らないまま（再試行しない）。
 - §9.8 の既知の制限（L1・L2）。
+
+## 11. T1-593 の直し（2026-10-14 P3、Connect の失敗の文）
+
+### 原因
+
+- 頁が見る errno は backend の errno ではなく、compositor の result を経た物: backend の errno →（`wayland/bluetooth-shell.c` の `bt_applied()`）→ `KL_SYSTEM_RESULT_*` →（`libkeiland/system/system-view.c` の `system_view_error_of()`）→ 頁の errno。写しは ECONNREFUSED → REFUSED → **EACCES**、EACCES → DENIED → EPERM、ETIMEDOUT → UNREACHABLE → ENETUNREACH、ENOTSUP → UNSUPPORTED → ENOTSUP、EIO → FAILED → EIO。
+- 頁（`settings/page-bluetooth.c` の `se_bluetooth_result()`）の失敗の文は errno だけで引き、request の種類（pair・connect）を見ない。頁の EACCES は「The pairing was refused.」。
+- §9.4 の写しで BlueZ の `NotAvailable` は ECONNREFUSED。profile の無い相手への `Device1.Connect` は BlueZ が `org.bluez.Error.NotAvailable`（`br-connection-profile-unavailable`）を返すので、ECONNREFUSED → 頁の EACCES →「The pairing was refused.」（bt6）。
+- 確かめで分かった同じ系統の食い違い: §9.4 は `AuthenticationFailed`・`AuthenticationRejected`・`AuthenticationCanceled`・`Rejected`・`Canceled` を EACCES にしていたが、zedBSD の backend（`bluetooth-zedbsd.c` の `bt_error()`）では EACCES は bluetoothd の `permission`（D8 の許されない利用者）で、pairing の拒否（`rejected`）は ECONNREFUSED。このため Linux の pairing の拒否は頁で「This account may not change Bluetooth.」になる（T1-593 の 2 回目の pair の request 4・5、`error=13 AuthenticationCanceled`。PNG は撮られていない）。`tests/scenarios/apps/settings/bluetooth-pair.md` の「no で `kind=pair errno=<EACCES>`（Linux は 13）と The pairing was refused.」にも合わない。
+
+### 直し（commit eb79dde1c）
+
+| file | 内容 |
+| --- | --- |
+| `libkeiland-backend-linux/bluetooth-linux.c` の `bt_errno()` | Connect（request の CONNECT、Pair の後の Connect の段）の `NotAvailable` → **ENOTSUP**（この computer が繋ぐ profile が無い）。`Failed`・`ConnectionAttemptFailed` で本文に `timeout`（大小を問わず、`br-connection-page-timeout`・`Page Timeout`）→ **ETIMEDOUT**（相手が応じない）。`AuthenticationFailed`・`AuthenticationRejected`・`AuthenticationCanceled`・`Rejected`・`Canceled` → **ECONNREFUSED**（zedBSD の `rejected` と同じ）。`NotAuthorized`・D-Bus の `AccessDenied` は EACCES のまま（許されない呼び手）。自分の Agent が PIN・passkey の入力を断った後の Pair の失敗（reason `input-unsupported`）は **ENOTSUP**（頁は「Bluetooth cannot do that here yet.」、§9.8 L1 の制限） |
+| `settings/page-bluetooth.c` の `se_bluetooth_result()` | `doing` が `connect` の時の文の表を足した（頁の errno で）: EACCES「The device refused the connection.」、ENOTSUP「This computer cannot connect to this kind of device.」、ENETUNREACH「The device did not answer. Check that it is on and nearby.」、EIO「The device could not be connected.」。他（EBUSY・EPERM・ENODEV・EINVAL）は今までの共通の文。pair の文は変えない |
+| `libkeiland-backend/keiland-backend.h` | `kl_backend_bluetooth_take_result` の comment に errno の意味（EACCES は許されない呼び手、ECONNREFUSED は相手か利用者の拒否、ETIMEDOUT は相手が応じない、ENOTSUP はこの computer ができない）と ENOTSUP を足した（comment だけ） |
+
+§9.4 の error の写しの表は、上の行で置き換わる（Connect の NotAvailable・timeout の本文・Authentication 系・input-unsupported）。
+
+zedBSD への影響（頁は共通）: zedBSD の Connect の失敗は bluetoothd の HID の理由（`no-hid`・`security`・`protocol` など）が `bt_error()` で EIO、`timeout` が ETIMEDOUT。今までの頁の文は「It did not work.」・「The device did not answer.」で、直しの後は「The device could not be connected.」・「The device did not answer. Check that it is on and nearby.」。zedBSD の backend の写しは変えていない（`no-hid` を ENOTSUP にすれば Linux の NotAvailable と同じ文になる。p007 の範囲の外なので Q1 の判断に残す）。
+
+### Forget と 2 回目の pair（記録だけ）
+
+- Forget は `Adapter1.RemoveDevice(o)` を呼ぶ（`bluetooth-linux.c` の `bt_request_send` の FORGET、host 試験の偽の org.bluez も `RemoveDevice` の call を記録）。T1-593 でも `request 3 kind=4 error=0`。
+- Forget の後の 2 回目の pair の `AuthenticationCanceled` は、相手（同じ bluetoothd の hci1）が古い bond を持ったままのため。相手側で device を remove すると窓が出て paired（request 6 error=0）。こちらの側の不具合ではなく、仮想の相手の性質と推測（実の device では相手の側の bond の消し方の問題）。直さない。直しの後は、この場合の頁の文は「The pairing was refused.」（ECONNREFUSED → 頁の EACCES）になる。
+
+### 確かめ（host、2026-10-14 P3）
+
+- `sh plan/ws143/tests/bt-linux-host-test.sh build/p3-bt-linux`: **PASS**（plain 58 checks ok、ASan+UBSan 58 checks ok。出力 `build/p3-bt-linux.run.VMPvLH`）。変えた・足した確かめ: pair-no（answer no → ECONNREFUSED）、pair-failed-text（`Failed` `br-connection-page-timeout` → ETIMEDOUT、reason は本文）、pin-refused（ENOTSUP、`input-unsupported`）、bluez-cancel（ECONNREFUSED）、新しく connect-no-profile（`NotAvailable` → ENOTSUP、reason `NotAvailable`）、connect-no-answer（`Failed` `br-connection-page-timeout` → ETIMEDOUT）、connect-refused（`Failed` `br-connection-refused` → ECONNREFUSED）、connect-not-supported（`NotSupported` → ENOTSUP）。偽の org.bluez の `connect-error` は `名前:本文` を受けるようにした。
+- `sh plan/ws143/tests/bt-page-result-host-test.sh build/p3-keiland-linux`（新）: **PASS**。Linux の Settings の object（main.o を除く）と試験の main を link し、`se_bluetooth_result()` に頁の errno を渡して文を確かめる: connect の ENOTSUP・EACCES・ENETUNREACH・EIO・EPERM・0、pair の EACCES「The pairing was refused.」・ENOTSUP・ENETUNREACH・0（10 件 ok）。
+- `make -f userland/desktop/keiland-linux.mk -j8 KEILAND_LINUX_BUILD=build/p3-keiland-linux build/p3-keiland-linux/bin/settings build/p3-keiland-linux/bin/wayland`: 成功、warning 0（log `build/p3-p007-build5.log`）。
+- `sh plan/tools/keiland-os-boundary/check.sh`: FAIL だが、この変更の無い tree（git stash で戻した）でも同じ FAIL（C4 `userland/desktop/libpdf/font.c:57`・`replace.c:39` の `/usr/share/fonts`、libpdf の別の作業）。この変更で増えた FAIL は無い。
+- `git diff --check`: 問題なし。
+- zedBSD の amd64 の build: 実施していない（zedBSD が build する file で変わったのは `page-bluetooth.c` と `keiland-backend.h` の comment。`page-bluetooth.c` は Linux の build で warning 0）。
+
+### T1 への再試験の依頼（Q1 が T1 に送る文）
+
+> T1-593 の再試験（ws143-p007 の Connect の失敗の文、P3 eb79dde1c）。WS131 の Debian 13 の QEMU+KVM の guest（SSH・QMP PNG の例外）に main の tree の `make keiland-linux` を install、bluez と bluez-test-tools、`modprobe hci_vhci; btvirt -l2 &`。Keiland を root でない利用者（kei、systemd-run の PAMName=login・tty1、T1-593 と同じ）で起動。相手側（hci1）は bluetoothctl で select・power on・discoverable on・pairable on・agent on・default-agent（Keiland の後）。(1) Settings の Bluetooth で相手を Pair（数の一致の窓で Pair）→ paired。(2) My Devices の相手で Disconnect、続けて Connect（profile の無い仮想の相手なので BlueZ は NotAvailable）: 頁の文が「This computer cannot connect to this kind of device.」で、「The pairing was refused.」ではないこと（PNG）。stderr に `request N kind=5 error=95 reason=NotAvailable`。(3) Forget の後に相手側で `remove 00:AA:01:00:00:00`（hci0 の address）をせずに Pair → 失敗の文が「The pairing was refused.」（「This account may not change Bluetooth.」ではない）で stderr に `kind=3 error=111 reason=AuthenticationCanceled`（PNG）。その後に相手側で remove して Pair が通ること。(4) Pair の窓で Cancel（または No）→ 文が「The pairing was refused.」（PNG）。合否は PNG の文と stderr の行。FreeBSD は T1-587 と同じく GPU の無い guest で compositor が起きないので省く。
