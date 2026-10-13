@@ -595,6 +595,13 @@ output_rotate_turn(
 	if (!resized && after->turn != KWL_ROTATE_0 && compose->turn.image != VK_NULL_HANDLE)
 		reuse = 1U;
 
+	/*
+	 * The cursor's plane presents nothing from now on: its thread submits
+	 * on the queue the new images' layout moves are submitted on (review
+	 * M2); it goes on at the next kwl_cursor_plane_update.
+	 */
+	kwl_cursor_plane_hold(server);
+
 	/* A new turn image, when the new angle is turned by the compositor and none of the size serves. */
 	if (after->turn != KWL_ROTATE_0 && !reuse) {
 		result = kwl_turn_open(compose, after->width, after->height, after->turn, &fresh);
@@ -623,13 +630,8 @@ output_rotate_turn(
 	kwl_input_rotated(server);
 	clock->prepared = kwl_milliseconds();
 
-	/*
-	 * No frame, nor the cursor's plane (its thread submits on the same
-	 * queue, review M2), may use the old images while they go; the cursor
-	 * thread goes on at the next kwl_cursor_plane_update.
-	 */
+	/* No frame may use the old images while they go (the cursor's plane is held already). */
 	kwl_compose_park(server);
-	kwl_cursor_plane_hold(server);
 	clock->parked = kwl_milliseconds();
 	(void)vkDeviceWaitIdle(compose->device);
 	clock->idle = kwl_milliseconds();
