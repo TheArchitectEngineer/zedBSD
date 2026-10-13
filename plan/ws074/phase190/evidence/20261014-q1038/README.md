@@ -1,0 +1,7 @@
+# q1038 hidden-attribute reftest census
+
+The fixed details focus includes four reftests under `html/editing/the-hidden-attribute`: `hidden-until-found-001`, `004`, `005`, and `007`. The q1034 static runner admitted 004 and 005 and measured **0 local PASS, 2 FAIL, 0 error** at the same 800×600 localhost/font conditions as q1037. [Report](report.json) records 22,500 and 1,568 different pixels respectively; [004 image](failures/001-hidden-until-found-004.png) and [005 image](failures/002-hidden-until-found-005.png) retain visual evidence. Both tests involve the `hidden=until-found` layout/paint behavior, including content visibility and size containment.
+
+IDs 001 and 007 use `reftest-wait` and scripts, so they remain **unrun** by this static runner. Its discovery `script` count includes other unselected files and must not be read as a count of selected Interop IDs. Combined with [q1037](../20261014-q1037/README.md), the fixed details focus has 23/25 reftests locally measured: **12 local PASS, 11 FAIL, 2 unrun scripted**. These are partial static-runner results, not official WPT certification. Three details crashtests also remain unrun.
+
+The fixed manifest IDs, WPT commit, per-reference metrics and saved images were checked; `git diff --check` passed. Browser/WPT/Master source did not change, so host build and Acid reruns were outside this measurement Queue. p190 whole and the 3,805-ID objective remain uncleared. Shared Queue/Master/GitHub publication is Q1 owned; no push.

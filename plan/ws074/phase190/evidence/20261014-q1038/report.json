@@ -1,0 +1,58 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 2
+  },
+  "eligible": 2,
+  "results": [
+    {
+      "image": "001-hidden-until-found-004.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 22500,
+          "equal": false,
+          "max_difference": 82,
+          "path": "html/editing/the-hidden-attribute/resources/container-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/editing/the-hidden-attribute/hidden-until-found-004.html"
+    },
+    {
+      "image": "002-hidden-until-found-005.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1568,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/editing/the-hidden-attribute/hidden-until-found-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/editing/the-hidden-attribute/hidden-until-found-005.html"
+    }
+  ],
+  "root": "html/editing/the-hidden-attribute",
+  "schema": 1,
+  "selected": 2,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+  "skipped": {
+    "script": 4
+  },
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

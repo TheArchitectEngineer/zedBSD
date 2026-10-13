@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1038 / WS074 hidden-attribute static reftests（2026-10-14）
+
+[q1038履歴](queue-q1038.md): 固定hidden directory reftest4件中static2件は0 local PASS/2 FAIL、scripted2件未実行。details focus25件中23件を測定済み。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1038/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1037 / WS074 full static details reftest census（2026-10-14）
 
 [q1037履歴](queue-q1037.md): 固定details rootの静的reftest21件は12 local PASS/9 FAIL、残り4 reftestは別directory未実行。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1037/README.md)。共有投影/GitHub publication pending。

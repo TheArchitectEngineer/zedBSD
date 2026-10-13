@@ -47,3 +47,13 @@ Event ws074-p190-q1034-outcome-20261014: q1034-i01 partial cleared、p190 whole 
 **partial scope cleared、p190 whole uncleared。** 固定details focusのうち `html/rendering/the-details-element` 内のreftest全21件をq1034 runnerで実測し、12 local PASS/9 FAIL/0 error。[結果・分類・代表画像](evidence/20261014-q1037/README.md)。FAILはreference-chain2件、`::details-content`5件、revert1件、inline layout1件。focus残り4 reftestはhidden属性directoryにあり、未実行として明示。ID/固定commit整合とdiff check PASS。コード無変更のためhost build/Acid再計測省略。p190 whole/p173全件100%未達、browser/WPT/Master無変更、GitHub publication保留。
 
 Event ws074-p190-q1037-outcome-20261014: q1037-i01 partial cleared、p190 whole uncleared。固定details静的21件を測定し、残る4 reftestと3 crashtestのcoverageを分けて記録。
+
+## q1038-i01 の有限部分範囲
+
+2026-10-14 01:32 JST、ユーザーの事前承認を適用、最大90分。q1037で別directoryとして未実行とした固定details focusの `html/editing/the-hidden-attribute` 内4 reftest IDを、q1034 runnerの同一HTTP origin・800×600・固定font条件で実測する。q1037の21 IDと合わせた全25 reftestのID/状態を照合し、PASS/FAIL/error/未対応と画素差・参照条件を記録。runner条件外なら理由を明記して止める。crashtest/scripted/variant/HTTPSのrunner実装、browser/WPT/公開ABI/`master.md`変更は含めない。固定commit/manifest、JSON整合・diff checkを検証する。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)を適用。
+
+## q1038-i01 結果（2026-10-14 01:32 JST）
+
+**partial scope cleared、p190 whole uncleared。** 固定hidden directoryの4 reftest ID中、static条件の004/005を実測して0 local PASS/2 FAIL/0 error。001/007はscriptとreftest-waitがあるため未実行。[結果・画像](evidence/20261014-q1038/README.md)。q1037の21件と合わせてdetails focus25件中23件測定、12 local PASS/11 FAIL/2未実行。004/005はhidden=until-foundのcontent visibility/size containment欠落が共通原因候補。ID/固定commit/参照とdiff check PASS。コード無変更のためhost build/Acid再計測省略。p190 whole/p173全件100%未達、browser/WPT/Master無変更、GitHub publication保留。
+
+Event ws074-p190-q1038-outcome-20261014: q1038-i01 partial cleared、p190 whole uncleared。固定details focus25 reftestの23件をlocal static runnerで実測済み、scripted2件が未実行。

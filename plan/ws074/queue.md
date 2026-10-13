@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1037 / WS074 full static details reftest census
+# q1038 / WS074 hidden-attribute static reftests
 
-Status: finished（2026-10-14 01:31 JST）
+Status: finished（2026-10-14 01:32 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1037有限部分scope](phase190/phase.md) に適用。
-Timebox: 2026-10-14 01:31 JST 開始、最大90分（03:01 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p190のq1038有限部分scope](phase190/phase.md) に適用。
+Timebox: 2026-10-14 01:32 JST 開始、最大90分（03:02 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1037-i01 | [ws074-p190](phase190/phase.md) partial | 固定details領域の静的reftest全候補をq1034 runnerで実測し、manifest25件との照合、PASS/FAIL/error、参照連鎖・fuzzy/画像差を分類。代表差分画像を保存。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1034 match chain output |
+| q1038-i01 | [ws074-p190](phase190/phase.md) partial | 固定details focusのhidden-attribute directory reftest残り4 IDをq1034 runnerで同条件測定し、q1037の21 IDと合わせた25件の状態・画素差/未対応理由を記録。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1037 root21 census |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -66,3 +66,5 @@ Outcome: q1035-i01 partial cleared、p193 whole uncleared。UA CSSのfirst summa
 Outcome: q1036-i01 partial cleared、p193 whole uncleared。ancestor reveal候補をevent前にsnapshot/GC root化。固定infinite-loop WPT1/1 PASS、先行4件PASS、element-removal002 no_output維持。host build warning0・native property65/65・realm30/30・pre-insertion29/29、Acid3差0/480000・Acid2差1865/120000不変。[証拠](phase193/evidence/20261014-q1036/README.md)。p173全件100%未達。
 
 Outcome: q1037-i01 partial cleared、p190 whole uncleared。固定details rootの静的reftest全21件は12 local PASS/9 FAIL/0 error。focusの残り4 reftestは別directory未実行。FAIL分類はreference-chain2、details-content pseudo5、revert1、inline layout1。[証拠](phase190/evidence/20261014-q1037/README.md)。コード無変更、p173全件100%未達。
+
+Outcome: q1038-i01 partial cleared、p190 whole uncleared。hidden directory固定reftest4件中静的2件は0 local PASS/2 FAIL、scripted2件は未実行。q1037と合わせdetails focus25件中23件実測、12 local PASS/11 FAIL/2未実行。[証拠](phase190/evidence/20261014-q1038/README.md)。コード無変更、p173全件100%未達。
