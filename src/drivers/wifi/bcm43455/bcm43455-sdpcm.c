@@ -78,6 +78,10 @@ bcm43455_sdpcm_decode(
 	header->flow_control = frame[HEADER_FLOW_CONTROL];
 	header->max_sequence = frame[HEADER_MAX_SEQUENCE];
 
+	/* A frame of only a header carries the credit and no payload; its offset is not used. */
+	if (length == BCM43455_SDPCM_HEADER_LENGTH)
+		return 0;
+
 	/* The payload starts after the header and inside the frame. */
 	if (header->data_offset < BCM43455_SDPCM_HEADER_LENGTH)
 		return EPROTO;

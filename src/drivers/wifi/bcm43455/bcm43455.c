@@ -829,6 +829,10 @@ load_clm(
 /*
  * Sets the country to the world-wide "XX" and logs what the firmware
  * reads back, which is the regulatory domain it then runs in.
+ *
+ * The revision is first left to the firmware (-1); a firmware that
+ * refuses that is asked for revision 0, the only other one a world-wide
+ * table is expected to carry (both unconfirmed on a board).
  */
 static int
 set_country(
@@ -847,8 +851,13 @@ set_country(
 	country[COUNTRY_CODE] = (uint8_t)COUNTRY_CODE_0;
 	country[COUNTRY_CODE + 1U] = (uint8_t)COUNTRY_CODE_1;
 
-	/* Sets it. */
+	/* Sets it, falling back to revision 0. */
 	error = bcm43455_bus_iovar_set(&device->bus, "country", country, sizeof(country));
+	if (error == EIO || error == EOPNOTSUPP) {
+		kern_logf("bcm43455: country XX with the firmware's revision refused (%d); trying revision 0\n", error);
+		bcm43455_put_le32(country + COUNTRY_REVISION, 0);
+		error = bcm43455_bus_iovar_set(&device->bus, "country", country, sizeof(country));
+	}
 	if (error != 0) {
 		kern_logf("bcm43455: country XX not set (%d)\n", error);
 		return error;

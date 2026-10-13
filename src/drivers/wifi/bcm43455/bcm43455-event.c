@@ -26,8 +26,7 @@
 #define VENDOR_OUI			19U
 #define VENDOR_USER_SUBTYPE		22U
 
-/* The vendor header's values for a firmware event. */
-#define VENDOR_SUBTYPE_LONG		0x8001U
+/* The vendor header's user subtype of a firmware event. */
 #define VENDOR_USER_SUBTYPE_EVENT	1U
 
 /* The event message, big-endian, after the vendor header. */
@@ -75,10 +74,13 @@ bcm43455_event_decode(
 	if (length < BCM43455_EVENT_HEADER_LENGTH)
 		return EPROTO;
 
-	/* The vendor header names Broadcom and the event subtype. */
+	/*
+	 * The vendor header names Broadcom and the event user subtype.  Its
+	 * own subtype (0x8001) is read but, as other drivers of the chip do,
+	 * not required.
+	 */
 	subtype = bcm43455_get_be16(frame + VENDOR_SUBTYPE);
-	if (subtype != VENDOR_SUBTYPE_LONG)
-		return EPROTO;
+	event->vendor_subtype = subtype;
 	same = kern_memcmp(frame + VENDOR_OUI, broadcom_oui, sizeof(broadcom_oui));
 	if (same != 0)
 		return EPROTO;

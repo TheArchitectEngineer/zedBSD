@@ -27,8 +27,8 @@
 /* The length of an event message, up to its data. */
 #define BCM43455_EVENT_HEADER_LENGTH	72U
 
-/* The bytes of the firmware's event mask: one bit per event number. */
-#define BCM43455_EVENT_MASK_LENGTH	16U
+/* The bytes of the firmware's event mask: one bit per event number, up to 143. */
+#define BCM43455_EVENT_MASK_LENGTH	18U
 
 /* The events this driver asks for. */
 #define BCM43455_EVENT_SET_SSID		0U
@@ -44,12 +44,14 @@
 /*
  * One decoded event message.
  *
+ * vendor_subtype is the vendor header's subtype (0x8001 for an event),
  * type is the event number, status and reason its outcome as the
  * firmware numbers them, address the peer it concerns.  data_offset and
  * data_length say where the event's data is in the Ethernet frame,
  * already bounded by the frame.
  */
 struct bcm43455_event {
+	uint16_t vendor_subtype;
 	uint16_t version;
 	uint16_t flags;
 	uint32_t type;

@@ -135,6 +135,7 @@ struct bcm43455_bus_counters {
 	uint64_t data_in;
 	uint64_t data_out;
 	uint64_t dropped;
+	uint64_t glom_frames;
 	uint64_t bad_frames;
 	uint64_t stale_answers;
 };

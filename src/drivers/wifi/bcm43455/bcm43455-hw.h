@@ -22,6 +22,16 @@
 #define BCM43455_FUNCTION_BACKPLANE	1U
 #define BCM43455_FUNCTION_FRAMES	2U
 
+/* The common register that aborts a function's transfer. */
+#define BCM43455_CCCR_IO_ABORT		0x06U
+
+/* The vendor registers of function 0: card capability (CMD14) and card control. */
+#define BCM43455_CCCR_CARD_CAPABILITY	0xf0U
+#define BCM43455_CARD_CAPABILITY_CMD14	0x02U
+#define BCM43455_CARD_CAPABILITY_CMD14_EXT	0x04U
+#define BCM43455_CCCR_CARD_CONTROL	0xf1U
+#define BCM43455_CARD_CONTROL_WLAN_RESET	0x02U
+
 /* The common register that enables the card's interrupts: master, F1, F2. */
 #define BCM43455_CCCR_INTERRUPT_ENABLE	0x04U
 #define BCM43455_CCCR_INTERRUPT_MASTER	0x01U
@@ -36,6 +46,15 @@
 #define BCM43455_F1_FRAME_CONTROL	0x1000dU
 #define BCM43455_F1_CHIP_CLOCK		0x1000eU
 #define BCM43455_F1_PULL_UP		0x1000fU
+#define BCM43455_F1_WAKEUP_CONTROL	0x1001eU
+#define BCM43455_F1_SLEEP_CONTROL	0x1001fU
+
+/* Wakeup control: wait for the fast clock on wakeup.  Sleep control: keep SDIO on. */
+#define BCM43455_WAKEUP_HT_WAIT		0x02U
+#define BCM43455_SLEEP_KEEP_SDIO_ON	0x01U
+
+/* The SDIO device core revision from which the keep-SDIO-on bit is set at attach. */
+#define BCM43455_SDIO_REVISION_KSO	12U
 
 /* The watermark the frame function's read FIFO uses. */
 #define BCM43455_F1_WATERMARK_VALUE	8U
@@ -68,6 +87,29 @@
 #define BCM43455_CHIPCOMMON_CAPABILITY	0x04U
 #define BCM43455_CHIPCOMMON_CAPABILITY_EXT	0xacU
 #define BCM43455_CHIPCOMMON_EROM	0xfcU
+
+/* The chip common capability bits: a PMU, and a PMU in a core of its own (AOB). */
+#define BCM43455_CAPABILITY_PMU		0x10000000U
+#define BCM43455_CAPABILITY_EXT_AOB	0x00000040U
+
+/* The chip common revision from which the PMU may be a core of its own. */
+#define BCM43455_CHIPCOMMON_REVISION_AOB	35U
+
+/* The PMU's registers: its control, its capabilities, and the chip control window. */
+#define BCM43455_PMU_CONTROL		0x600U
+#define BCM43455_PMU_CONTROL_RESOURCE_RELOAD	(2U << 13)
+#define BCM43455_PMU_CAPABILITY		0x604U
+#define BCM43455_PMU_REVISION_MASK	0xffU
+#define BCM43455_PMU_CHIP_CONTROL_ADDRESS	0x650U
+#define BCM43455_PMU_CHIP_CONTROL_DATA	0x654U
+
+/*
+ * Save-restore on the 4345: chip control register 3, bit 2, with a PMU of
+ * revision 17 or later.
+ */
+#define BCM43455_PMU_CHIP_CONTROL_SR	3U
+#define BCM43455_SR_ENABLED		0x04U
+#define BCM43455_PMU_REVISION_SR	17U
 
 /* The chip id register: the chip number, its revision, and the bus type. */
 #define BCM43455_CHIP_ID_MASK		0x0000ffffU
@@ -117,6 +159,8 @@
 #define BCM43455_EROM_KIND_MASTER_WRAP	3U
 #define BCM43455_EROM_SIZE_SHIFT	4U
 #define BCM43455_EROM_SIZE_MASK		0x03U
+#define BCM43455_EROM_SIZE_4K		0U
+#define BCM43455_EROM_SIZE_8K		1U
 #define BCM43455_EROM_SIZE_DESCRIBED	3U
 
 /* The most enumeration ROM words read before giving up on its end. */
@@ -125,6 +169,7 @@
 /* The core ids this driver looks for. */
 #define BCM43455_CORE_CHIPCOMMON	0x800U
 #define BCM43455_CORE_D11		0x812U
+#define BCM43455_CORE_PMU		0x827U
 #define BCM43455_CORE_SDIO_DEVICE	0x829U
 #define BCM43455_CORE_ARM_CR4		0x83eU
 

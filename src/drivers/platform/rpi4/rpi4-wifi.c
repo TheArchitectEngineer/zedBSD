@@ -156,8 +156,8 @@ static int stopping_requested(struct rpi4_wifi *wifi);
 static int wifi_sleep(void *context, unsigned milliseconds);
 static int bus_read_byte(void *context, unsigned function, uint32_t address, uint8_t *value);
 static int bus_write_byte(void *context, unsigned function, uint32_t address, uint8_t value);
-static int bus_read(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
-static int bus_write(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
+static int bus_read(void *context, unsigned function, uint32_t address, int increment, uint8_t *buffer, size_t length);
+static int bus_write(void *context, unsigned function, uint32_t address, int increment, uint8_t *buffer, size_t length);
 static unsigned bus_block_size(void *context, unsigned function);
 static int bus_enable_function(void *context, unsigned function, unsigned timeout_ms);
 static int bus_disable_function(void *context, unsigned function);
@@ -925,12 +925,13 @@ bus_write_byte(
 	return 0;
 }
 
-/* CMD53 read with an incrementing address. */
+/* CMD53 read, with an incrementing or a fixed address. */
 static int
 bus_read(
 	void *context,
 	unsigned function,
 	uint32_t address,
+	int increment,
 	uint8_t *buffer,
 	size_t length)
 {
@@ -940,7 +941,7 @@ bus_read(
 	wifi = context;
 
 	/* Reads the bytes through the card layer. */
-	error = drv_rpi4_sdio_transfer(&wifi->card, DRV_RPI4_SDIO_DATA_READ, function, address, 1, buffer, length);
+	error = drv_rpi4_sdio_transfer(&wifi->card, DRV_RPI4_SDIO_DATA_READ, function, address, increment, buffer, length);
 	if (error != 0)
 		return error;
 
@@ -948,12 +949,13 @@ bus_read(
 	return 0;
 }
 
-/* CMD53 write with an incrementing address. */
+/* CMD53 write, with an incrementing or a fixed address. */
 static int
 bus_write(
 	void *context,
 	unsigned function,
 	uint32_t address,
+	int increment,
 	uint8_t *buffer,
 	size_t length)
 {
@@ -963,7 +965,7 @@ bus_write(
 	wifi = context;
 
 	/* Writes the bytes through the card layer. */
-	error = drv_rpi4_sdio_transfer(&wifi->card, DRV_RPI4_SDIO_DATA_WRITE, function, address, 1, buffer, length);
+	error = drv_rpi4_sdio_transfer(&wifi->card, DRV_RPI4_SDIO_DATA_WRITE, function, address, increment, buffer, length);
 	if (error != 0)
 		return error;
 

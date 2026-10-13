@@ -43,9 +43,12 @@ struct bcm43455_core {
  *
  * window is the backplane address the window registers point at, valid
  * once window_valid is set; a failed window write clears it, so the next
- * access writes all three registers again.  bounce carries data between
- * a caller's constant buffer and the bus.  Only one thread uses a chip at
- * a time (see bcm43455-bus.h).
+ * access writes all three registers again.  pmu_base is where the PMU's
+ * registers are (its own core, or the chip common core), save_restore
+ * whether the firmware runs the chip's save-restore, in which case the
+ * firmware rather than the host decides the fast clock.  bounce carries
+ * data between a caller's constant buffer and the bus.  Only one thread
+ * uses a chip at a time (see bcm43455-bus.h).
  */
 struct bcm43455_chip {
 	const struct bcm43455_bus_ops *ops;
@@ -62,6 +65,10 @@ struct bcm43455_chip {
 	struct bcm43455_core sdio;
 	struct bcm43455_core cr4;
 	struct bcm43455_core d11;
+	struct bcm43455_core pmu;
+	uint32_t pmu_base;
+	unsigned pmu_revision;
+	unsigned save_restore;
 	uint32_t ram_base;
 	uint32_t ram_size;
 
@@ -69,8 +76,9 @@ struct bcm43455_chip {
 };
 
 /*
- * Starts the backplane clock, identifies the chip and finds its cores and
- * RAM.
+ * Starts the backplane clock, identifies the chip, finds its cores and
+ * RAM, halts its ARM core and radio, and leaves the frame function off
+ * and the chip on its slow clock, ready for the download.
  *
  * Returns ENODEV for a chip that is not a BCM43455 and EIO for an
  * enumeration ROM that does not describe the needed cores.
@@ -90,8 +98,9 @@ int bcm43455_chip_write_memory(struct bcm43455_chip *chip, uint32_t address, con
 int bcm43455_chip_read_memory(struct bcm43455_chip *chip, uint32_t address, uint8_t *data, size_t length);
 
 /*
- * Writes the firmware and the converted NVRAM into RAM, checks them, and
- * starts the ARM core at the firmware's reset vector.
+ * Writes the firmware and the converted NVRAM into RAM on the fast clock,
+ * reads them back whole, and starts the ARM core at the firmware's reset
+ * vector.
  *
  * Returns EIO when what was read back differs from what was written.
  */

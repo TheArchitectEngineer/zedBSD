@@ -28,9 +28,10 @@
  * What the driver needs of the SDIO bus.
  *
  * Every operation runs in thread context.  read_byte and write_byte are
- * CMD52; read and write are CMD53 with an incrementing address, a length
- * up to the function's block size in byte mode and a longer one in whole
- * blocks.  sleep waits without busy waiting and returns ECANCELED when
+ * CMD52; read and write are CMD53, with an incrementing address (the
+ * backplane) or a fixed one (increment 0: the frame function's FIFO), a
+ * length up to the function's block size in byte mode and a longer one in
+ * whole blocks.  sleep waits without busy waiting and returns ECANCELED when
  * the board stops the driver.  interrupt_wait waits for the card's
  * interrupt until deadline (the scheduler's clock): 0 for an interrupt,
  * which leaves it disarmed until interrupt_rearm; EAGAIN for a wakeup
@@ -42,8 +43,8 @@
 struct bcm43455_bus_ops {
 	int (*read_byte)(void *context, unsigned function, uint32_t address, uint8_t *value);
 	int (*write_byte)(void *context, unsigned function, uint32_t address, uint8_t value);
-	int (*read)(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
-	int (*write)(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
+	int (*read)(void *context, unsigned function, uint32_t address, int increment, uint8_t *buffer, size_t length);
+	int (*write)(void *context, unsigned function, uint32_t address, int increment, uint8_t *buffer, size_t length);
 	unsigned (*block_size)(void *context, unsigned function);
 	int (*enable_function)(void *context, unsigned function, unsigned timeout_ms);
 	int (*disable_function)(void *context, unsigned function);

@@ -29,8 +29,8 @@
 #include <kern/thread.h>
 #include <uapi/errno.h>
 
-/* How much of a frame is read before its length is known. */
-#define FIRST_READ			64U
+/* How much of a frame is read before its length is known: its SDPCM header. */
+#define FIRST_READ			BCM43455_SDPCM_HEADER_LENGTH
 
 /* The most frames one pass of the receive path reads before it lets sends in. */
 #define FRAMES_PER_SERVICE		32U
@@ -41,13 +41,18 @@
 /* The firmware's error code for a command or variable it does not have. */
 #define FIRMWARE_UNSUPPORTED		(-23)
 
-/* The SDPCM credit before the firmware's first frame: one frame. */
-#define INITIAL_CREDIT			1U
+/*
+ * The first sequence number and the credit before the firmware's first
+ * frame: a window of one frame.
+ */
+#define INITIAL_SEQUENCE		0xffU
+#define INITIAL_CREDIT			0U
 
 static void bus_thread(void *argument);
 static int service(struct bcm43455_bus *bus);
 static int handle_mailbox(struct bcm43455_bus *bus);
 static int read_frame(struct bcm43455_bus *bus);
+static int read_fifo(struct bcm43455_bus *bus, uint8_t *buffer, size_t length);
 static int discard_rest(struct bcm43455_bus *bus, size_t length);
 static int abort_frame(struct bcm43455_bus *bus);
 static void dispatch(struct bcm43455_bus *bus, const struct bcm43455_sdpcm_header *header);
@@ -104,8 +109,8 @@ void
 bcm43455_bus_reset(
 	struct bcm43455_bus *bus)
 {
-	/* A new firmware starts its sequence at zero and grants one frame until it says more. */
-	bus->tx_sequence = 0;
+	/* A new firmware is sent one frame before it grants more. */
+	bus->tx_sequence = (uint8_t)INITIAL_SEQUENCE;
 	bus->tx_max = (uint8_t)INITIAL_CREDIT;
 	bus->flow_control = 0;
 	bus->firmware_protocol = 0;
@@ -479,6 +484,11 @@ bus_thread(
  * Reads the SDIO core's interrupt status, answers the mailbox and reads
  * the pending frames.  Returns an error only for a bus or firmware
  * failure that ends the bus.
+ *
+ * The frames are read on every pass, with or without the frame
+ * indication, as other drivers of the chip do: a missed indication must
+ * not leave a frame waiting.  Reading when there is none costs one
+ * header's read.
  */
 static int
 service(
@@ -488,17 +498,18 @@ service(
 	unsigned frames;
 	int error;
 
-	/* Reads what the SDIO core has to say. */
+	/* Reads what the SDIO core has to say: the to-host mailbox's bits and chip activity. */
 	error = bcm43455_chip_read32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_INT_STATUS, &status);
 	if (error != 0)
 		return error;
-	if (status == 0)
-		return 0;
+	status &= BCM43455_INT_MAILBOX_MASK | BCM43455_INT_CHIP_ACTIVE;
 
 	/* Clears the bits it raised before acting on them, so a new one is not lost. */
-	error = bcm43455_chip_write32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_INT_STATUS, status);
-	if (error != 0)
-		return error;
+	if (status != 0) {
+		error = bcm43455_chip_write32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_INT_STATUS, status);
+		if (error != 0)
+			return error;
+	}
 
 	/* Answers the firmware's mailbox. */
 	if ((status & BCM43455_INT_HOST_MAILBOX) != 0) {
@@ -506,10 +517,6 @@ service(
 		if (error != 0)
 			return error;
 	}
-
-	/* Without a frame indication there is nothing to read. */
-	if ((status & BCM43455_INT_FRAME) == 0)
-		return 0;
 
 	/* Reads frames until the chip has none, a bad one stops the pass, or the pass is long enough. */
 	for (frames = 0; frames < FRAMES_PER_SERVICE; frames++) {
@@ -579,21 +586,19 @@ read_frame(
 	struct bcm43455_bus *bus)
 {
 	struct bcm43455_sdpcm_header header;
-	unsigned block;
 	size_t rest;
-	size_t padded;
 	size_t used;
 	int error;
 
-	/* Reads the frame's first bytes, which hold its header. */
+	/* Reads the frame's header. */
 	error = bcm43455_chip_frame_window(&bus->chip);
 	if (error != 0)
 		return error;
-	error = bus->chip.ops->read(bus->chip.context, BCM43455_FUNCTION_FRAMES, BCM43455_FRAME_ADDRESS, bus->rx_frame, FIRST_READ);
+	error = bus->chip.ops->read(bus->chip.context, BCM43455_FUNCTION_FRAMES, BCM43455_FRAME_ADDRESS, 0, bus->rx_frame, FIRST_READ);
 	if (error != 0)
 		return error;
 
-	/* Decodes the header; an empty tag means no frame, a garbled one is terminated. */
+	/* Decodes it; an empty tag means no frame, a garbled one is aborted. */
 	error = bcm43455_sdpcm_decode(bus->rx_frame, FIRST_READ, &header);
 	if (error == ENOENT) {
 		kern_memset(bus->rx_frame, 0, FIRST_READ);
@@ -612,32 +617,29 @@ read_frame(
 	bus->tx_max = header.max_sequence;
 	bus->flow_control = header.flow_control;
 
-	/* Reads the rest of a frame longer than the first read, or drops a frame too long to keep. */
-	used = FIRST_READ;
-	if (header.length > FIRST_READ) {
-		block = bus->chip.ops->block_size(bus->chip.context, BCM43455_FUNCTION_FRAMES);
-		rest = (size_t)header.length - FIRST_READ;
-		padded = bcm43455_sdpcm_padded_length(rest, block);
-		if (FIRST_READ + padded > sizeof(bus->rx_frame)) {
-			kern_memset(bus->rx_frame, 0, FIRST_READ);
-			bus->counters.dropped++;
-			error = discard_rest(bus, padded);
-			if (error != 0)
-				return error;
-			return 0;
-		}
-		error = bus->chip.ops->read(
-			bus->chip.context,
-			BCM43455_FUNCTION_FRAMES,
-			BCM43455_FRAME_ADDRESS,
-			bus->rx_frame + FIRST_READ,
-			padded);
-		if (error != 0) {
-			kern_memset(bus->rx_frame, 0, FIRST_READ);
-			return error;
-		}
-		used += padded;
+	/* A frame of only a header carries nothing but the credit. */
+	if (header.length == FIRST_READ) {
+		kern_memset(bus->rx_frame, 0, FIRST_READ);
+		return 0;
 	}
+
+	/* Reads the rest in four-byte units, or drops a frame too long to keep. */
+	rest = (size_t)header.length - FIRST_READ;
+	rest = (rest + 3U) & ~(size_t)3U;
+	if (FIRST_READ + rest > sizeof(bus->rx_frame)) {
+		kern_memset(bus->rx_frame, 0, FIRST_READ);
+		bus->counters.dropped++;
+		error = discard_rest(bus, rest);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+	error = read_fifo(bus, bus->rx_frame + FIRST_READ, rest);
+	if (error != 0) {
+		kern_memset(bus->rx_frame, 0, FIRST_READ + rest);
+		return error;
+	}
+	used = FIRST_READ + rest;
 
 	/* Hands the frame to its channel's consumer, then clears it. */
 	bus->counters.frames_in++;
@@ -649,8 +651,52 @@ read_frame(
 }
 
 /*
+ * Reads length bytes (a multiple of four) from the frame function's FIFO:
+ * whole blocks first, then the bytes left over.
+ */
+static int
+read_fifo(
+	struct bcm43455_bus *bus,
+	uint8_t *buffer,
+	size_t length)
+{
+	size_t blocks;
+	unsigned block;
+	int error;
+
+	/* A run longer than a block goes as whole blocks, then a byte-mode tail. */
+	block = bus->chip.ops->block_size(bus->chip.context, BCM43455_FUNCTION_FRAMES);
+	blocks = 0;
+	if (block != 0 && length > block)
+		blocks = length - length % block;
+
+	/* The whole blocks. */
+	if (blocks != 0) {
+		error = bus->chip.ops->read(bus->chip.context, BCM43455_FUNCTION_FRAMES, BCM43455_FRAME_ADDRESS, 0, buffer, blocks);
+		if (error != 0)
+			return error;
+	}
+
+	/* The bytes left over. */
+	if (length > blocks) {
+		error = bus->chip.ops->read(
+			bus->chip.context,
+			BCM43455_FUNCTION_FRAMES,
+			BCM43455_FRAME_ADDRESS,
+			0,
+			buffer + blocks,
+			length - blocks);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: buffer holds the bytes. */
+	return 0;
+}
+
+/*
  * Reads and throws away the rest of a frame too long for the receive
- * buffer.
+ * buffer, a buffer's worth at a time.
  */
 static int
 discard_rest(
@@ -659,29 +705,19 @@ discard_rest(
 {
 	size_t piece;
 	size_t room;
-	unsigned block;
 	int error;
 
-	/* Reads whole blocks into the buffer past the header, a buffer's worth at a time. */
-	block = bus->chip.ops->block_size(bus->chip.context, BCM43455_FUNCTION_FRAMES);
+	/* Reads into the buffer past the header, as much as fits each time. */
 	room = sizeof(bus->rx_frame) - FIRST_READ;
-	if (block != 0)
-		room -= room % block;
+	room &= ~(size_t)3U;
 	while (length != 0) {
-		/* Takes as much as fits, in a size the bus can move. */
+		/* Takes as much as fits. */
 		piece = length;
 		if (piece > room)
 			piece = room;
-		if (block != 0 && piece > block)
-			piece -= piece % block;
 
 		/* Reads it and forgets it. */
-		error = bus->chip.ops->read(
-			bus->chip.context,
-			BCM43455_FUNCTION_FRAMES,
-			BCM43455_FRAME_ADDRESS,
-			bus->rx_frame + FIRST_READ,
-			piece);
+		error = read_fifo(bus, bus->rx_frame + FIRST_READ, piece);
 		kern_memset(bus->rx_frame + FIRST_READ, 0, piece);
 		if (error != 0)
 			return error;
@@ -693,14 +729,20 @@ discard_rest(
 }
 
 /*
- * Tells the chip to drop the frame being read and that the host refused
- * it, so the next read starts at the next frame.
+ * Aborts the frame being read, tells the chip to drop it, and tells the
+ * firmware that the host refused it, so the next read starts at the next
+ * frame.
  */
 static int
 abort_frame(
 	struct bcm43455_bus *bus)
 {
 	int error;
+
+	/* Aborts the frame function's transfer. */
+	error = bus->chip.ops->write_byte(bus->chip.context, BCM43455_FUNCTION_COMMON, BCM43455_CCCR_IO_ABORT, BCM43455_FUNCTION_FRAMES);
+	if (error != 0)
+		return error;
 
 	/* Terminates the frame in the read FIFO. */
 	error = bus->chip.ops->write_byte(
@@ -775,8 +817,19 @@ dispatch(
 		bus->hooks->data(bus->hook_context, payload + data.frame_offset, data.frame_length);
 		break;
 
+	case BCM43455_SDPCM_CHANNEL_GLOM:
+		/*
+		 * A glommed frame should not come once receive glomming is
+		 * turned off; the first one is logged, since its frames are lost.
+		 */
+		bus->counters.dropped++;
+		bus->counters.glom_frames++;
+		if (bus->counters.glom_frames == 1)
+			kern_logf("bcm43455: glommed frame dropped; the firmware still gloms received frames\n");
+		break;
+
 	default:
-		/* A glommed frame (receive glomming is turned off) or an unknown channel is dropped. */
+		/* A frame of an unknown channel is dropped. */
 		bus->counters.dropped++;
 		break;
 	}
@@ -894,7 +947,7 @@ send_frame(
 	/* Writes the frame, then clears it whatever came of the write. */
 	error = bcm43455_chip_frame_window(&bus->chip);
 	if (error == 0)
-		error = bus->chip.ops->write(bus->chip.context, BCM43455_FUNCTION_FRAMES, BCM43455_FRAME_ADDRESS, bus->tx_frame, padded);
+		error = bus->chip.ops->write(bus->chip.context, BCM43455_FUNCTION_FRAMES, BCM43455_FRAME_ADDRESS, 0, bus->tx_frame, padded);
 	kern_memset(bus->tx_frame, 0, padded);
 	if (error != 0)
 		return error;

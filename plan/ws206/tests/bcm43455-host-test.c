@@ -79,6 +79,7 @@ uint64_t sched_ticks(void);
 #define D11_WRAP		0x18101000U
 #define SDIO_WRAP		0x18102000U
 #define CR4_WRAP		0x18103000U
+#define PMU_BASE		0x18012000U
 #define EROM_BASE		0x18109000U
 #define RAM_BASE		0x198000U
 #define RAM_SIZE		0xc8000U
@@ -119,6 +120,15 @@ static struct {
 	uint8_t clock;
 	uint8_t window[3];
 	uint8_t watermark;
+	uint8_t sleep_control;
+	uint8_t wakeup_control;
+	uint8_t card_capability;
+	uint8_t card_control;
+	unsigned io_aborts;
+	unsigned f2_disables;
+	unsigned save_restore;
+	uint32_t pmu_control;
+	uint32_t chip_control_address;
 	unsigned read_terminates;
 	uint32_t erom[64];
 	unsigned erom_words;
@@ -255,8 +265,8 @@ static unsigned char *read_whole(const char *path, size_t *size);
 /* The bus operations the model answers. */
 static int op_read_byte(void *context, unsigned function, uint32_t address, uint8_t *value);
 static int op_write_byte(void *context, unsigned function, uint32_t address, uint8_t value);
-static int op_read(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
-static int op_write(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
+static int op_read(void *context, unsigned function, uint32_t address, int increment, uint8_t *buffer, size_t length);
+static int op_write(void *context, unsigned function, uint32_t address, int increment, uint8_t *buffer, size_t length);
 static unsigned op_block_size(void *context, unsigned function);
 static int op_enable_function(void *context, unsigned function, unsigned timeout_ms);
 static int op_disable_function(void *context, unsigned function);
@@ -370,6 +380,11 @@ check_sdpcm(void)
 	CHECK(bcm43455_sdpcm_decode(frame, sizeof(frame), &header) == EPROTO);
 	frame[7] = 11;
 	CHECK(bcm43455_sdpcm_decode(frame, sizeof(frame), &header) == EPROTO);
+	bcm43455_sdpcm_encode(frame, 12, 3, 0);
+	frame[7] = 0;
+	frame[9] = 20;
+	CHECK(bcm43455_sdpcm_decode(frame, sizeof(frame), &header) == 0);
+	CHECK(header.length == 12 && header.max_sequence == 20);
 	CHECK(bcm43455_sdpcm_decode(frame, 11, &header) == EINVAL);
 
 	/* The window wraps modulo 256 and a backwards or garbled grant is none. */
@@ -474,6 +489,7 @@ check_events(void)
 	length = build_event(frame, BCM43455_EVENT_LINK, 0, 1, 6);
 	CHECK(bcm43455_event_decode(frame, length, &event) == 0);
 	CHECK(event.type == 16 && event.status == 0 && event.reason == 1 && event.version == 2);
+	CHECK(event.vendor_subtype == 0x8001);
 	CHECK(event.data_offset == 72 && event.data_length == 6);
 	CHECK(memcmp(event.address, chip_mac, 6) == 0);
 
@@ -493,7 +509,8 @@ check_events(void)
 	CHECK(bcm43455_event_mask_add(mask, 46) == 0);
 	CHECK(bcm43455_event_mask_add(mask, 69) == 0);
 	CHECK(mask[0] == 1 && mask[5] == 0x40 && mask[8] == 0x20);
-	CHECK(bcm43455_event_mask_add(mask, 128) == EINVAL);
+	CHECK(bcm43455_event_mask_add(mask, 143) == 0 && mask[17] == 0x80);
+	CHECK(bcm43455_event_mask_add(mask, 144) == EINVAL);
 }
 
 /* NVRAM conversion, its address and its place in RAM; CLM messages. */
@@ -702,12 +719,26 @@ check_chip(void)
 	CHECK(op_power_up(NULL) == 0);
 	CHECK(bcm43455_chip_attach(chip_state, &model_ops, NULL) == 0);
 	CHECK(chip_state->id == 0x4345 && chip_state->revision == 6);
+	CHECK(chip_state->chipcommon.base == CC_BASE && chip_state->chipcommon.wrapper == CC_WRAP);
+	CHECK(chip_state->chipcommon.revision == 43);
 	CHECK(chip_state->sdio.base == SDIO_BASE && chip_state->sdio.wrapper == SDIO_WRAP);
 	CHECK(chip_state->cr4.base == CR4_BASE && chip_state->cr4.wrapper == CR4_WRAP);
 	CHECK(chip_state->d11.base == D11_BASE && chip_state->d11.wrapper == D11_WRAP);
-	CHECK(chip_state->chipcommon.base == CC_BASE && chip_state->chipcommon.wrapper == CC_WRAP);
+	CHECK(chip_state->pmu.base == PMU_BASE && chip_state->pmu_base == PMU_BASE);
 	CHECK(chip_state->ram_base == RAM_BASE && chip_state->ram_size == RAM_SIZE);
-	CHECK((chip.clock & BCM43455_CLOCK_FORCE_ALP) != 0);
+
+	/* The ARM core is halted and the radio held in reset with its PHY reset first. */
+	CHECK((chip.cr4_io & BCM43455_CR4_IO_CPU_HALT) != 0 && chip.cr4_reset == 0);
+	CHECK(chip.d11_io_count == 2);
+	CHECK(chip.d11_io_history[0] == (BCM43455_D11_IO_PHY_RESET | BCM43455_D11_IO_PHY_CLOCK | 3U));
+	CHECK(chip.d11_io == (BCM43455_D11_IO_PHY_CLOCK | 3U) && chip.d11_reset == 1);
+
+	/* The PMU says save-restore; SDIO stays on, a card reset resets WLAN, the PMU reloads, F2 is off, the clock is the chip's. */
+	CHECK(chip_state->pmu_revision == 24 && chip_state->save_restore == 1);
+	CHECK((chip.sleep_control & BCM43455_SLEEP_KEEP_SDIO_ON) != 0);
+	CHECK((chip.card_control & BCM43455_CARD_CONTROL_WLAN_RESET) != 0);
+	CHECK((chip.pmu_control & BCM43455_PMU_CONTROL_RESOURCE_RELOAD) != 0);
+	CHECK(chip.f2_disables == 1 && chip.clock == 0);
 
 	/* The firmware and the NVRAM go to the bottom and the top of RAM while the ARM core is halted. */
 	for (i = 0; i < BCM43455_FIRMWARE_SIZE; i++)
@@ -721,27 +752,34 @@ check_chip(void)
 	CHECK(chip.vector == bcm43455_get_le32(firmware_image));
 	CHECK(chip.booted == 1 && chip.boot_count == 1 && chip.boot_image_ok == 1);
 	CHECK(all_zero(chip_state->bounce, sizeof(chip_state->bounce)));
+	CHECK(chip.clock == 0);
 
-	/* The radio core was reset with its PHY held and clocked. */
-	CHECK(chip.d11_io_count >= 2);
-	CHECK(chip.d11_io_history[0] == (BCM43455_D11_IO_PHY_RESET | BCM43455_D11_IO_PHY_CLOCK | 3U));
-	CHECK(chip.d11_io == (BCM43455_D11_IO_PHY_CLOCK | BCM43455_IO_CONTROL_CLOCK));
-
-	/* The frame function comes up behind the running firmware. */
+	/* With save-restore the frame function comes up with the HT wait, CMD14 and only the force bit. */
 	CHECK(bcm43455_chip_start(chip_state) == 0);
 	CHECK(chip.to_chip_data == (4U << 16));
-	CHECK((chip.clock & BCM43455_CLOCK_FORCE_HT) != 0);
 	CHECK(chip.f2_enabled == 1);
 	CHECK(chip.host_int_mask == (BCM43455_INT_MAILBOX_MASK | BCM43455_INT_CHIP_ACTIVE));
 	CHECK(chip.watermark == 8);
+	CHECK((chip.wakeup_control & BCM43455_WAKEUP_HT_WAIT) != 0);
+	CHECK(chip.card_capability == (BCM43455_CARD_CAPABILITY_CMD14 | BCM43455_CARD_CAPABILITY_CMD14_EXT));
+	CHECK(chip.clock == BCM43455_CLOCK_FORCE_HT);
 	CHECK(chip.ien == 0x07);
 	CHECK(chip.window[2] == 0x18 && chip.window[1] == 0x00 && chip.window[0] == 0x00);
 
-	/* A chip of another kind, and a ROM without the ARM core, are refused. */
+	/* Without save-restore the host's request is put back without the force. */
+	model_reset();
+	chip.save_restore = 0;
+	CHECK(op_power_up(NULL) == 0);
+	CHECK(bcm43455_chip_attach(chip_state, &model_ops, NULL) == 0);
+	CHECK(chip_state->save_restore == 0);
+	CHECK(bcm43455_chip_download(chip_state, firmware_image, BCM43455_FIRMWARE_SIZE, nvram, sizeof(nvram)) == 0);
+	CHECK(bcm43455_chip_start(chip_state) == 0);
+	CHECK((chip.clock & 0x3fU) == BCM43455_CLOCK_HT_REQUEST);
+	CHECK(chip.wakeup_control == 0 && chip.card_capability == 0);
+
+	/* A ROM without the ARM core's registers is refused. */
 	model_reset();
 	CHECK(op_power_up(NULL) == 0);
-	chip.erom_words = 0;
-	model_build_erom();
 	chip.erom[chip.erom_words - 3U] = 0x0000000fU;
 	CHECK(bcm43455_chip_attach(chip_state, &model_ops, NULL) == EIO);
 	free(chip_state);
@@ -793,12 +831,12 @@ check_probe(void)
 	CHECK(request != NULL);
 	CHECK(memcmp(request->payload, "XX\0\0\xff\xff\xff\xffXX\0\0", 12) == 0);
 
-	/* The event mask names the nine events the driver uses, and only them. */
+	/* The event mask, 18 bytes, names the nine events the driver uses, and only them. */
 	request = find_request("event_msgs");
-	CHECK(request != NULL && request->length == 16);
+	CHECK(request != NULL && request->length == 18);
 	CHECK(request->payload[0] == 0xe9 && request->payload[1] == 0x10 && request->payload[2] == 0x01);
 	CHECK(request->payload[5] == 0x40 && request->payload[8] == 0x20);
-	for (i = 3; i < 16; i++) {
+	for (i = 3; i < 18; i++) {
 		if (i != 5 && i != 8)
 			CHECK(request->payload[i] == 0);
 	}
@@ -836,6 +874,15 @@ check_refusals(void)
 	device = make_device(placeholder_text);
 	CHECK(bcm43455_device_probe(device) == EIO);
 	CHECK(chip.powered == 0 && chip.power_downs == 1);
+	bcm43455_device_destroy(device);
+
+	/* A firmware that refuses the firmware's choice of revision is given revision 0. */
+	model_reset();
+	chip.refuse_country = 2;
+	device = make_device(placeholder_text);
+	CHECK(bcm43455_device_probe(device) == 0);
+	CHECK(chip.request_count == 15);
+	CHECK(memcmp(chip.country, "XX\0\0\0\0\0\0XX\0\0", 12) == 0);
 	bcm43455_device_destroy(device);
 
 	/* A firmware that never answers times out, and the chip is powered down. */
@@ -988,7 +1035,7 @@ check_failures(void)
 	pthread_mutex_unlock(&model_lock);
 	answered = 0;
 	CHECK(bcm43455_bus_iovar_get(&device->bus, "cur_etheraddr", answer, 6, &answered) == 0);
-	CHECK(chip.read_terminates == 1 && chip.naks == 1);
+	CHECK(chip.io_aborts == 1 && chip.read_terminates == 1 && chip.naks == 1);
 	CHECK(device->bus.counters.bad_frames == 1);
 
 	/* A frame longer than the receive buffer is read through and dropped. */
@@ -1250,6 +1297,7 @@ model_reset(void)
 	chip.ram = ram;
 	memset(chip.ram, 0, RAM_SIZE);
 	chip.credit = 8;
+	chip.save_restore = 1;
 	chip.d11_reset = 0;
 	chip.cr4_reset = 1;
 	model_build_erom();
@@ -1299,20 +1347,21 @@ erom_address(
 static void
 model_build_erom(void)
 {
-	/* The chip common core: one slave wrapper. */
-	erom_component(0x4bf, 0x800, 1, 1, 0, 0);
+	/* The chip common core, revision 43: one slave wrapper. */
+	erom_component(0x4bf, 0x800, 43, 1, 0, 0);
 	erom_address(CC_BASE, 0, 0, 0);
 	erom_address(CC_WRAP, 0, 2, 0);
 
 	/*
-	 * The radio core: a master port, a slave with a described size, a
-	 * slave wrapper that a core with master ports does not use, and its
-	 * master wrapper.
+	 * The radio core: a master port, a memory region of a described size
+	 * that is not its registers, its registers, a slave wrapper that a
+	 * core with master ports does not use, and its master wrapper.
 	 */
 	erom_component(0x4bf, 0x812, 2, 1, 1, 1);
 	erom_add(0x00000103U);
-	erom_address(D11_BASE, 0, 0, 3);
-	erom_add(0x00002000U);
+	erom_address(0x18500000U, 0, 0, 3);
+	erom_add(0x00010000U);
+	erom_address(D11_BASE, 0, 0, 0);
 	erom_address(0x18201000U, 0, 2, 0);
 	erom_address(D11_WRAP, 0, 3, 0);
 
@@ -1322,8 +1371,12 @@ model_build_erom(void)
 	erom_add(0x00000001U);
 	erom_address(0x18104000U, 0, 2, 0);
 
-	/* The SDIO device core. */
-	erom_component(0x4bf, 0x829, 4, 0, 1, 1);
+	/* The PMU, a core of its own without wrappers. */
+	erom_component(0x4bf, 0x827, 24, 0, 0, 0);
+	erom_address(PMU_BASE, 0, 0, 0);
+
+	/* The SDIO device core, revision 21. */
+	erom_component(0x4bf, 0x829, 21, 0, 1, 1);
 	erom_add(0x00000203U);
 	erom_address(SDIO_BASE, 0, 0, 0);
 	erom_address(SDIO_WRAP, 0, 3, 0);
@@ -1476,6 +1529,14 @@ model_read32_locked(
 		return chip.cr4_io;
 	case CR4_WRAP + 0x800:
 		return chip.cr4_reset;
+	case PMU_BASE + 0x600:
+		return chip.pmu_control;
+	case PMU_BASE + 0x604:
+		return 24U;
+	case PMU_BASE + 0x654:
+		if (chip.chip_control_address == 3U && chip.save_restore)
+			return 0x04U;
+		return 0;
 	case SDIO_BASE + 0x20:
 		return chip.int_status;
 	case SDIO_BASE + 0x24:
@@ -1507,6 +1568,12 @@ model_write32_locked(
 		break;
 	case CR4_BASE + 0x40:
 		chip.cr4_bank = value;
+		break;
+	case PMU_BASE + 0x600:
+		chip.pmu_control = value;
+		break;
+	case PMU_BASE + 0x650:
+		chip.chip_control_address = value;
 		break;
 	case D11_WRAP + 0x408:
 		chip.d11_io = value;
@@ -1636,7 +1703,9 @@ model_control(
 			if (chip.clm_received == BCM43455_CLM_SIZE && clm_flags != 0x1004)
 				chip.clm_flags_ok = 0;
 		} else if (strcmp(request->name, "country") == 0) {
-			if (chip.refuse_country)
+			if (chip.refuse_country == 1)
+				status = -1;
+			else if (chip.refuse_country == 2 && bcm43455_get_le32(request->payload + 4) == 0xffffffffU)
 				status = -1;
 			else
 				memcpy(chip.country, request->payload, 12);
@@ -1710,13 +1779,19 @@ op_read_byte(
 			*value = 0x43;
 		else if (address == 0x04)
 			*value = chip.ien;
+		else if (address == BCM43455_CCCR_CARD_CONTROL)
+			*value = chip.card_control;
 	} else if (function == 1) {
 		if (address == BCM43455_F1_CHIP_CLOCK) {
-			*value = chip.clock;
+			*value = (uint8_t)(chip.clock & 0x3fU);
 			if ((chip.clock & (BCM43455_CLOCK_ALP_REQUEST | BCM43455_CLOCK_FORCE_ALP)) != 0)
 				*value |= BCM43455_CLOCK_ALP_AVAILABLE;
-			if (chip.booted && (chip.clock & BCM43455_CLOCK_HT_REQUEST) != 0)
+			if ((chip.clock & (BCM43455_CLOCK_HT_REQUEST | BCM43455_CLOCK_FORCE_HT)) != 0)
 				*value |= BCM43455_CLOCK_HT_AVAILABLE;
+		} else if (address == BCM43455_F1_SLEEP_CONTROL) {
+			*value = chip.sleep_control;
+		} else if (address == BCM43455_F1_WAKEUP_CONTROL) {
+			*value = chip.wakeup_control;
 		}
 	}
 	pthread_mutex_unlock(&model_lock);
@@ -1736,6 +1811,13 @@ op_write_byte(
 	CHECK(chip.powered);
 	if (function == 0 && address == 0x04) {
 		chip.ien = value;
+	} else if (function == 0 && address == BCM43455_CCCR_IO_ABORT) {
+		CHECK(value == 2);
+		chip.io_aborts++;
+	} else if (function == 0 && address == BCM43455_CCCR_CARD_CAPABILITY) {
+		chip.card_capability = value;
+	} else if (function == 0 && address == BCM43455_CCCR_CARD_CONTROL) {
+		chip.card_control = value;
 	} else if (function == 1) {
 		switch (address) {
 		case BCM43455_F1_WINDOW_LOW:
@@ -1752,6 +1834,12 @@ op_write_byte(
 			break;
 		case BCM43455_F1_WATERMARK:
 			chip.watermark = value;
+			break;
+		case BCM43455_F1_SLEEP_CONTROL:
+			chip.sleep_control = value;
+			break;
+		case BCM43455_F1_WAKEUP_CONTROL:
+			chip.wakeup_control = value;
 			break;
 		case BCM43455_F1_FRAME_CONTROL:
 			/* Terminating drops the frame being read, if one was started. */
@@ -1790,6 +1878,7 @@ op_read(
 	void *context,
 	unsigned function,
 	uint32_t address,
+	int increment,
 	uint8_t *buffer,
 	size_t length)
 {
@@ -1805,6 +1894,7 @@ op_read(
 	if (length > op_block_size(NULL, function))
 		CHECK((length % op_block_size(NULL, function)) == 0);
 	if (function == 1) {
+		CHECK(increment == 1);
 		base = backplane_address(address);
 		CHECK((base & 3U) == 0 && (length % 4U) == 0);
 		CHECK((base & 0x7fffU) + length <= 0x8000U);
@@ -1813,7 +1903,8 @@ op_read(
 			memcpy(buffer + i, &value, 4);
 		}
 	} else {
-		CHECK(function == 2 && address == BCM43455_FRAME_ADDRESS && chip.f2_enabled);
+		CHECK(function == 2 && address == BCM43455_FRAME_ADDRESS && increment == 0 && chip.f2_enabled);
+		CHECK((length % 4U) == 0);
 		memset(buffer, 0, length);
 		if (chip.queue_count != 0) {
 			frame = &chip.queue[chip.queue_head];
@@ -1837,6 +1928,7 @@ op_write(
 	void *context,
 	unsigned function,
 	uint32_t address,
+	int increment,
 	uint8_t *buffer,
 	size_t length)
 {
@@ -1851,6 +1943,7 @@ op_write(
 	if (length > op_block_size(NULL, function))
 		CHECK((length % op_block_size(NULL, function)) == 0);
 	if (function == 1) {
+		CHECK(increment == 1);
 		base = backplane_address(address);
 		CHECK((base & 3U) == 0 && (length % 4U) == 0);
 		CHECK((base & 0x7fffU) + length <= 0x8000U);
@@ -1859,7 +1952,7 @@ op_write(
 			model_write32_locked(base + (uint32_t)i, value);
 		}
 	} else {
-		CHECK(function == 2 && address == BCM43455_FRAME_ADDRESS && chip.f2_enabled);
+		CHECK(function == 2 && address == BCM43455_FRAME_ADDRESS && increment == 0 && chip.f2_enabled);
 		CHECK((length % 4U) == 0);
 		model_frame_from_host(buffer, length);
 	}
@@ -1895,7 +1988,7 @@ op_enable_function(
 	CHECK(function == 2);
 	pthread_mutex_lock(&model_lock);
 	error = ETIMEDOUT;
-	if (chip.booted && (chip.clock & BCM43455_CLOCK_HT_REQUEST) != 0) {
+	if (chip.booted && (chip.clock & (BCM43455_CLOCK_HT_REQUEST | BCM43455_CLOCK_FORCE_HT)) != 0) {
 		chip.f2_enabled = 1;
 		error = 0;
 	}
@@ -1903,14 +1996,18 @@ op_enable_function(
 	return error;
 }
 
-/* Nothing disables a function in this driver yet. */
+/* The frame function is disabled at attach, until the firmware runs. */
 static int
 op_disable_function(
 	void *context,
 	unsigned function)
 {
 	(void)context;
-	(void)function;
+	CHECK(function == 2);
+	pthread_mutex_lock(&model_lock);
+	chip.f2_disables++;
+	chip.f2_enabled = 0;
+	pthread_mutex_unlock(&model_lock);
 	return 0;
 }
 
@@ -2017,8 +2114,11 @@ op_power_up(
 	chip.queue_count = 0;
 	chip.read_position = 0;
 	chip.int_status = 0;
-	chip.host_sequence = 0;
+	chip.host_sequence = 0xff;
 	chip.firmware_sequence = 0;
+	chip.sleep_control = 0;
+	chip.wakeup_control = 0;
+	chip.card_control = 0;
 	chip.d11_reset = 0;
 	chip.cr4_reset = 1;
 	chip.cr4_io = 0;
