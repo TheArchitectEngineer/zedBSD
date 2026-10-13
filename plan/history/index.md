@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1047 / WS074 Flexbox overflow positioning（2026-10-14）
+
+[q1047履歴](queue-q1047.md): 負余白のend/center配置を修正、固定横方向2 IDは双方local PASS、10件は1→3 PASS/7 FAIL。p197 partial cleared、p173全件100%未達。[証拠](../ws074/phase197/evidence/20261014-q1047/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1046 / WS074 top-level XHTML parsing（2026-10-14）
 
 [q1046履歴](queue-q1046.md): 固定XHTML timeout10件を0にし1 local PASS/9 FAIL。p196 partial cleared、whole未達、p195は後続証拠でcleared。p173全件100%未達。[証拠](../ws074/phase196/evidence/20261014-q1046/README.md)。共有投影/GitHub publication pending。

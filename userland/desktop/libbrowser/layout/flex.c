@@ -974,14 +974,14 @@ flex_place_line(
 	int reverse;
 	int align;
 
-	/* The room the items leave along the main axis (none without a definite size). */
+	/* Keep overflow signed for end and center; only an indefinite size has no remaining space. */
 	used = 0;
 	for (index = 0; index < count; index++)
 		used += items[index].size + items[index].frame + items[index].margin_start + items[index].margin_end;
 	if (count > 1)
 		used += gap * (layout_unit)(count - 1U);
 	free_space = 0;
-	if (available >= 0 && available > used)
+	if (available >= 0)
 		free_space = available - used;
 
 	/* justify-content: where the first item starts and what goes between them. */
@@ -995,16 +995,20 @@ flex_place_line(
 		cursor = free_space / 2;
 		break;
 	case CSS_ALIGN_SPACE_BETWEEN:
-		if (count > 1)
+		if (free_space > 0 && count > 1)
 			between = gap + free_space / (layout_unit)(count - 1U);
 		break;
 	case CSS_ALIGN_SPACE_AROUND:
-		cursor = free_space / (layout_unit)(count * 2U);
-		between = gap + free_space / (layout_unit)count;
+		if (free_space > 0) {
+			cursor = free_space / (layout_unit)(count * 2U);
+			between = gap + free_space / (layout_unit)count;
+		}
 		break;
 	case CSS_ALIGN_SPACE_EVENLY:
-		cursor = free_space / (layout_unit)(count + 1U);
-		between = gap + free_space / (layout_unit)(count + 1U);
+		if (free_space > 0) {
+			cursor = free_space / (layout_unit)(count + 1U);
+			between = gap + free_space / (layout_unit)(count + 1U);
+		}
 		break;
 	default:
 		break;
