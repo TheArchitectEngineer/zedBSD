@@ -3,7 +3,8 @@
 # WS221: Jumbo frame（Ethernet の L2 の大きな MTU）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は次に空いた P。WS220（TCP）と関係: MSS は MTU から決まる）
+Status: incomplete（2026-10-13 Q1 作成。P2 が p001 を実行: 設計 [phase001/phase.md](phase001/phase.md) を書いた。design-reviewer とユーザーの判断（phase.md §9）待ち。WS220（TCP）と関係: MSS は MTU から決まる、p005 は WS220 p006・p007 の後）
+Resume point: p001 の review → §9 の判断 → p002（kernel）と p004（設定）を Queue に
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -21,9 +22,18 @@ Related Milestones: なし
 
 ## Phase
 
-| Phase | 内容 | Status |
-| --- | --- | --- |
-| p001 | 調べと設計: device ごとの上限、MTU の設定の口（ioctl・net の設定・保存）、IP・TCP の層の MTU の使い方、packet buffer の大きさ → design-reviewer | planned |
+| Phase | 内容 | 依存 | Status |
+| --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 調べと設計: device ごとの上限、MTU の設定の口（ioctl・net の設定・保存）、IP・TCP の層の MTU の使い方、packet buffer の大きさ → design-reviewer | — | in-progress（2026-10-13 P2: 設計は書いた。design-reviewer とユーザーの判断（phase.md §9）待ち） |
+| p002（案） | kernel: packet の pool を 2 つの class（標準 2 KB・jumbo 9 KB、64-bit だけ）に、`net_device.mtu_max`・`set_mtu`・`net_device_set_mtu`、UAPI `SIOCSIFMTU`、IPv6 の link MTU の追従、`syscall.c` の大きさの上限、UDP・ICMP・packet socket の alloc、`ifconfig IF mtu N` | — | planning（p001 の review の後） |
+| p003（案） | driver: CDC ECM（descriptor の `wMaxSegmentSize` から上限、buffer・URB・検査、`set_mtu`）、CDC NCM（codec の max datagram を可変に、NTB 32 KB/16 KB、`SET_MAX_DATAGRAM_SIZE` の値、log）。host の NCM の wire 試験 | p002 | planning |
+| p004（案） | 設定: net.conf の `mtu`、`net` の console の `mtu N`・`no mtu`、reconcile の `MTU`、networkd の op・policy（up の前に設定）、ping の `-s` | p002（host 試験は独立） | planning |
+| p005（案） | TCP: MSS を device の MTU − 40 / − 60 から（SYN の広告、送る segment は min(相手の MSS, 自分)）、受けの packet の上限の見直し | p002、**WS220 p006・p007** が main に入って cleared | planning |
+| p006（案） | 実機の受け入れ: 5330（RTL8156）と Pi 4（USB LAN、型番は質問中）で 9000 の相手と 1500 の相手の混在、DF の大きい ping、TCP の継続の転送（両向き） | p003・p004・p005 | planning（ユーザーの機械と時期） |
+| p007（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | p002〜p005 | planning |
+
+p001 の設計の要点: QEMU の usb-net（CDC ECM）は descriptor の `wMaxSegmentSize` が 1514 で変えられないので、QEMU では MTU の口（拒否・EBUSY・保存・再起動）と回帰だけを確かめ、jumbo の data の経路は実機だけ（phase.md §1.10・§8）。
+判断の要る点（推奨つき）は phase.md §9（MTU の変更は down の時だけ、jumbo の slot 32、最小 MTU、IPv4 の PMTU は Future Work、Settings は表示だけ、ping の `-s`、`.net_bss` の linker の一行）。
 
 ## ユーザーの決定（2026-10-13）
 
