@@ -1,0 +1,7 @@
+# q1034 static match reference chain
+
+The pinned Interop 2025 manifest and WPT commit were used with the same 800×600 viewport, localhost HTTP origin, and fonts as q1033. The [report](report.json) contains the same 10 selected IDs: **3 PASS, 7 FAIL, 0 error**. `details-display-type-001.html` changed from a false PASS to FAIL: it equals `details-display-type-001-ref.html` at the first edge (0 different pixels), but that reference differs from `details-display-type-001-ref2.html` by 4,930 pixels. The new `chain` and `resolved` fields retain both comparisons. The other nine outcomes did not change.
+
+The static runner now follows `rel=match` references until a leaf, with a 16-edge bound. Missing files, cycles, scripted references, and mixed match/mismatch chains become explicit errors on a traversed branch. Four isolated graph controls passed: unequal leaf, equal leaf, cycle, and mixed relation. `python3 -m py_compile` and `git diff --check` passed. Browser, WPT, and Master were not changed, so host build and Acid reruns were not part of this Queue.
+
+This is partial runner coverage. The runner still lacks scripted/variant/HTTPS/crashtest support and complete WPT fuzzy override/reference graph semantics; the 10 results are local static-runner results rather than official WPT certification. p190 whole and the 3,805-ID goal remain uncleared. Shared Queue/Master/GitHub publication is Q1 owned; no push.

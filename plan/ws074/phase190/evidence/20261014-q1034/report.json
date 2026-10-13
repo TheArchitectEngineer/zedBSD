@@ -1,0 +1,202 @@
+{
+  "commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "counts": {
+    "fail": 7,
+    "pass": 3
+  },
+  "eligible": 21,
+  "results": [
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 243,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/single-summary.html",
+          "relation": "mismatch"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-after.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1907,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/single-summary.html",
+          "relation": "mismatch"
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-before.html"
+    },
+    {
+      "image": "001-details-display-type-001-ref.png",
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 4930,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-display-type-001-ref2.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-display-type-001-ref.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [
+            {
+              "allowed_different_pixels": 0,
+              "allowed_max_difference": 0,
+              "different_pixels": 4930,
+              "equal": false,
+              "max_difference": 255,
+              "path": "html/rendering/the-details-element/details-display-type-001-ref2.html",
+              "relation": "match"
+            }
+          ],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "html/rendering/the-details-element/details-display-type-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-display-type-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "chain": [],
+          "different_pixels": 0,
+          "equal": true,
+          "max_difference": 0,
+          "path": "html/rendering/the-details-element/details-display-type-002-ref.html",
+          "relation": "match",
+          "resolved": true
+        }
+      ],
+      "script_errors": [],
+      "status": "pass",
+      "test": "html/rendering/the-details-element/details-display-type-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 12493,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-001-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-001.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 12493,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-002-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-002.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 334,
+          "equal": false,
+          "max_difference": 127,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-003-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-003.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 1140,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-004-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-004.html"
+    },
+    {
+      "references": [
+        {
+          "allowed_different_pixels": 0,
+          "allowed_max_difference": 0,
+          "different_pixels": 2282,
+          "equal": false,
+          "max_difference": 255,
+          "path": "html/rendering/the-details-element/details-pseudo-elements-005-ref.html",
+          "relation": "match",
+          "resolved": false
+        }
+      ],
+      "script_errors": [],
+      "status": "fail",
+      "test": "html/rendering/the-details-element/details-pseudo-elements-005.html"
+    }
+  ],
+  "root": "html/rendering/the-details-element",
+  "schema": 1,
+  "selected": 10,
+  "selection": "first-level round-robin, path-sorted",
+  "selection_manifest": "plan/ws074/phase173/evidence/20261013-q1012/manifest.json",
+  "skipped": {},
+  "suite": "wpt",
+  "viewport": [
+    800,
+    600
+  ]
+}

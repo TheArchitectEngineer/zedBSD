@@ -2,7 +2,7 @@
 
 # ws074-p190: Interop 2025 reftest・crashtest runner coverage
 
-Status: in-progress（2026-10-14 q1033 partial）
+Status: in-progress（2026-10-14 q1034 partial）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -27,3 +27,13 @@ Event ws074-p173-q1012-split-20261013: [p173](../phase173/phase.md) から testh
 **partial scope cleared、p190 whole uncleared。** 固定選定10件の既存runner結果は4 provisional PASS/6 FAIL/0 error。[監査と画像](evidence/20261014-q1033/README.md)。`details-display-type-001.html`のPASSは参照がさらに別の参照へmatchする連鎖をrunnerが無視したfalse passと判明。各ID/参照/commitと画素差を確認。scripted/variant/HTTPS/crashtestは未実行。browser/WPT/Master無変更、diff check PASS。コード無変更のためhost build/Acid再計測省略。次は参照グラフを扱うrunner修正が必要。p190 wholeとp173全件100%未達、GitHub publication保留。
 
 Event ws074-p190-q1033-outcome-20261014: q1033-i01 partial cleared、p190 wholeはuncleared。PASSのreference-chain誤判定を特定し、既存runnerの全件拡大前に修正する。
+
+## q1034-i01 の有限部分範囲
+
+2026-10-14 01:23 JST、ユーザーの事前承認を適用、最大90分。固定WPTの`tools/wptrunner/wptrunner/executors/base.py`はreftestのreference treeを末端まで辿る。現行runnerは直近1辺で止まり、q1033で`details-display-type-001.html`をfalse PASSとした。このQueueで静的な`rel=match`のみの参照連鎖を最大16辺まで辿り、途中一致だけではPASSにしない。cycle、欠損、scripted、match/mismatch混合の連鎖は結果をerror/unsupportedとして明示し、誤PASSを避ける。局所graph試験、q1033固定10件同条件再計測、runner Python compile/diff checkを行う。browser/WPT/公開ABI/`master.md`は変更しない。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1034-i01 結果（2026-10-14 01:24 JST）
+
+**partial scope cleared、p190 whole uncleared。** 静的match-only参照連鎖を最大16辺まで辿るrunner修正と4件の局所graph controlを完了。固定10件を同条件で再計測し、3 PASS/7 FAIL/0 error。q1033のfalse PASSは参照連鎖の2辺目4,930画素差によってFAILとなり、他9件の結果は維持。[証拠](evidence/20261014-q1034/README.md)。Python compileとdiff check PASS。browser/WPT/Master変更なし、host build/Acid再計測省略。scripted/variant/HTTPS/crashtest、完全なfuzzy override・混合reference graphは残り、p190 wholeとp173全3,805件100%は未達。GitHub publication保留。
+
+Event ws074-p190-q1034-outcome-20261014: q1034-i01 partial cleared、p190 whole uncleared。途中一致のfalse PASSを解消。今後のrunner coverageは残余条件と固定選定の拡大を要する。

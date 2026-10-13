@@ -40,6 +40,7 @@ FONT_NAMES = ("Mahora-Regular.ttf", "JetBrainsMono-Regular.ttf",
               "DroidSansFallbackFull.ttf")
 ACTIVE_SCRIPT = re.compile(r"<script\b|reftest-wait", re.I)
 FUZZY_VALUE = re.compile(r"(maxDifference|totalPixels)\s*=\s*(\d+)(?:-(\d+))?")
+MAX_MATCH_CHAIN = 16
 
 
 class ReftestMetadata(HTMLParser):
@@ -270,6 +271,56 @@ def compare(left, right, maximum, pixels):
     }
 
 
+def match_chain(reference, image, base, program, fonts, width, height,
+                temporary, data_home, visited, depth):
+    """Check static match-only descendants of a reference, without false PASS."""
+    if depth > MAX_MATCH_CHAIN:
+        raise RuntimeError("reference chain exceeds %d edges" % MAX_MATCH_CHAIN)
+    path = (WPT / urlsplit(reference).path).resolve()
+    try:
+        path.relative_to(WPT)
+    except ValueError as error:
+        raise RuntimeError("reference leaves fixed WPT root: " + reference) from error
+    if not path.is_file():
+        raise RuntimeError("reference chain file is missing: " + reference)
+    text, metadata = read_metadata(path)
+    if ACTIVE_SCRIPT.search(text):
+        raise RuntimeError("scripted reference chain is unsupported: " + reference)
+    if not metadata.references:
+        return True, []
+    if any(relation != "match" for relation, _href in metadata.references):
+        raise RuntimeError("mixed reference chain is unsupported: " + reference)
+
+    comparisons = []
+    for _relation, href in metadata.references:
+        resolved = resolve_reference(path, href)
+        if resolved is None:
+            raise RuntimeError("external reference chain is unsupported: " + href)
+        child_path, child = resolved
+        if not child_path.is_file():
+            raise RuntimeError("reference chain file is missing: " + child)
+        if child in visited:
+            raise RuntimeError("reference chain cycle: " + child)
+        child_url = base + quote(child, safe="/?=&")
+        child_image, errors = render(program, fonts, width, height, child_url,
+                                     temporary / "chain.ppm", data_home)
+        if errors:
+            raise RuntimeError("reference chain script error: " + child)
+        maximum, pixels = fuzzy_limits(metadata.fuzzy, child)
+        equal, metrics = compare(image, child_image, maximum, pixels)
+        item = {"relation": "match", "path": child, "equal": equal, **metrics}
+        comparisons.append(item)
+        if not equal:
+            continue
+        descendant, child_records = match_chain(
+            child, child_image, base, program, fonts, width, height,
+            temporary, data_home, visited | {child}, depth + 1)
+        item["chain"] = child_records
+        if descendant:
+            return True, comparisons
+    return False, comparisons
+
+
 def save_failure(directory, number, test_name, test, reference, difference):
     name = "%03d-%s" % (number, Path(test_name).stem[:45])
     bright = ImageEnhance.Brightness(difference).enhance(4.0)
@@ -341,11 +392,20 @@ def main():
                         )
                         item = {"relation": relation, "path": reference,
                                 "equal": equal, **metrics}
+                        resolved = equal
+                        if relation == "match" and equal:
+                            resolved, chain = match_chain(
+                                reference, reference_image, base, args.program,
+                                fonts, args.width, args.height, temporary,
+                                data_home, {candidate["path"], reference}, 1)
+                            item["chain"] = chain
+                        if relation == "match":
+                            item["resolved"] = resolved
                         if reference_errors:
                             item["script_errors"] = reference_errors
                         record["references"].append(item)
                         if relation == "match":
-                            match_results.append(equal)
+                            match_results.append(resolved)
                         else:
                             mismatch_results.append(not equal)
                         if not equal and first_failed_images is None:
