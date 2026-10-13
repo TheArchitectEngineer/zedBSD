@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/sysctl.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 #include <uapi/sysctl.h>
 #include <uapi/io-stats.h>
 #include <uapi/cache-memory.h>
@@ -28,6 +30,8 @@ static int show_cputimes(void);
 static int show_diskstats(void);
 static int show_gputelemetry(void);
 static int show_thermal(void);
+static int show_tcpstats(void);
+static void format_tcp_address(char *text, size_t size, uint32_t family, const uint8_t *address, uint16_t port);
 static int fetch_value(const char *name, unsigned char **buffer, size_t *length);
 static int show_writeback(void);
 static int show_readahead(void);
@@ -93,6 +97,7 @@ show_all(
 	    "hw.diskstats",
 	    "hw.gputelemetry",
 	    "hw.thermal",
+	    "net.tcpstats",
 	    "kern.boot.firmware_partition",
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
@@ -197,6 +202,10 @@ show_name(
 	/* Each temperature sensor, a line a sensor (ws134-p009). */
 	if (strcmp(name, "hw.thermal") == 0)
 		return show_thermal();
+
+	/* Each TCP socket's state and counts, a line a socket (ws220-p001). */
+	if (strcmp(name, "net.tcpstats") == 0)
+		return show_tcpstats();
 
 	/* Formats speculative observations separately from ordinary demand I/O.
 	 */
@@ -734,6 +743,128 @@ show_thermal(
 
 	/* Succeeded: every sensor is printed. */
 	return 0;
+}
+
+/*
+ * Prints net.tcpstats (ws220-p001): the time of the reading, the sockets
+ * and the packet pool's use, then a line a socket with its addresses,
+ * state, send and receive sides, retransmission timer and counts, each as
+ * name=value after the field of struct tcp_stats_entry.  Returns 0, or -1
+ * with errno set.
+ */
+static int
+show_tcpstats(
+	void)
+{
+	const struct tcp_stats_header *header;
+	const struct tcp_stats_entry *entry;
+	unsigned char *buffer;
+	char local[64];
+	char remote[64];
+	size_t length;
+	uint32_t index;
+	int status;
+	int valid;
+
+	/* The value, whole. */
+	status = fetch_value("net.tcpstats", &buffer, &length);
+	if (status != 0)
+		return -1;
+
+	/* A value of a layout this command does not know. */
+	header = (const struct tcp_stats_header *)(void *)buffer;
+	valid = 1;
+	if (length < sizeof(*header)) {
+		valid = 0;
+	} else if (header->version != TCP_STATS_VERSION) {
+		valid = 0;
+	} else if (header->element_size != sizeof(*entry)) {
+		valid = 0;
+	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
+		valid = 0;
+	}
+
+	/* Refuses what it cannot read. */
+	if (!valid) {
+		free(buffer);
+		errno = EINVAL;
+		return -1;
+	}
+
+	/* The reading's time, the sockets and the packet pool. */
+	printf("net.tcpstats: time_ms=%llu sockets=%u packets_total=%u packets_used=%u packets_used_max=%u "
+	       "packet_alloc_failures=%llu\n",
+	       (unsigned long long)header->time_ms, header->count, header->packets_total, header->packets_used,
+	       header->packets_used_max, (unsigned long long)header->packet_alloc_failures);
+
+	/* A line a socket. */
+	for (index = 0; index < header->count; index++) {
+		entry = (const struct tcp_stats_entry *)(void *)(buffer + header->struct_size + (size_t)index * header->element_size);
+		format_tcp_address(local, sizeof(local), entry->family, entry->local_address, entry->local_port);
+		format_tcp_address(remote, sizeof(remote), entry->family, entry->remote_address, entry->remote_port);
+		printf("net.tcpstats: time_ms=%llu local=%s remote=%s state=%u features=0x%x "
+		       "send_unacknowledged=%u send_next=%u send_window=%u in_flight_bytes=%u send_segments=%u send_ring=%u "
+		       "send_mss=%u cwnd=%u ssthresh=%u srtt_us=%u rttvar_us=%u backoff=%u rto_ms=%u retransmit_in_ms=%u "
+		       "receive_next=%u receive_window=%u receive_mss=%u receive_bytes=%u receive_packets=%u "
+		       "receive_limit_bytes=%u reorder_segments=%u",
+		       (unsigned long long)header->time_ms, local, remote, entry->state, entry->features,
+		       entry->send_unacknowledged, entry->send_next, entry->send_window, entry->in_flight_bytes,
+		       entry->send_segments, entry->send_ring, entry->send_mss, entry->cwnd, entry->ssthresh,
+		       entry->srtt_us, entry->rttvar_us, entry->backoff, entry->rto_ms, entry->retransmit_in_ms,
+		       entry->receive_next, entry->receive_window, entry->receive_mss, entry->receive_bytes,
+		       entry->receive_packets, entry->receive_limit_bytes, entry->reorder_segments);
+		printf(" segments_out=%llu segments_in=%llu data_segments_out=%llu data_bytes_out=%llu data_bytes_in=%llu "
+		       "retransmit_segments=%llu retransmit_bytes=%llu immediate_resends=%llu send_refused=%llu "
+		       "send_buffer_sleeps=%llu segment_send_failures=%llu acks_in=%llu duplicate_acks_in=%llu "
+		       "acks_outside=%llu zero_windows_in=%llu zero_windows_out=%llu window_updates_out=%llu "
+		       "old_segments_in=%llu out_of_order_in=%llu out_of_order_kept=%llu receive_refused=%llu "
+		       "fast_retransmits=%llu\n",
+		       (unsigned long long)entry->segments_out, (unsigned long long)entry->segments_in,
+		       (unsigned long long)entry->data_segments_out, (unsigned long long)entry->data_bytes_out,
+		       (unsigned long long)entry->data_bytes_in, (unsigned long long)entry->retransmit_segments,
+		       (unsigned long long)entry->retransmit_bytes, (unsigned long long)entry->immediate_resends,
+		       (unsigned long long)entry->send_refused, (unsigned long long)entry->send_buffer_sleeps,
+		       (unsigned long long)entry->segment_send_failures, (unsigned long long)entry->acks_in,
+		       (unsigned long long)entry->duplicate_acks_in, (unsigned long long)entry->acks_outside,
+		       (unsigned long long)entry->zero_windows_in, (unsigned long long)entry->zero_windows_out,
+		       (unsigned long long)entry->window_updates_out, (unsigned long long)entry->old_segments_in,
+		       (unsigned long long)entry->out_of_order_in, (unsigned long long)entry->out_of_order_kept,
+		       (unsigned long long)entry->receive_refused, (unsigned long long)entry->fast_retransmits);
+	}
+
+	/* The value is not needed any more. */
+	free(buffer);
+
+	/* Succeeded: every socket is printed. */
+	return 0;
+}
+
+/*
+ * Writes a socket's address and port as text: a.b.c.d:port for IPv4 and
+ * [address]:port for IPv6.
+ */
+static void
+format_tcp_address(
+	char *text,
+	size_t size,
+	uint32_t family,
+	const uint8_t *address,
+	uint16_t port)
+{
+	char host[INET6_ADDRSTRLEN];
+	const char *converted;
+
+	/* An IPv6 address in brackets, so the port after it is not read as part of it. */
+	if (family == TCP_STATS_FAMILY_INET6) {
+		converted = inet_ntop(AF_INET6, address, host, sizeof(host));
+		if (converted == NULL)
+			snprintf(host, sizeof(host), "?");
+		snprintf(text, size, "[%s]:%u", host, port);
+		return;
+	}
+
+	/* An IPv4 address, its four bytes in network order. */
+	snprintf(text, size, "%u.%u.%u.%u:%u", address[0], address[1], address[2], address[3], port);
 }
 
 /*

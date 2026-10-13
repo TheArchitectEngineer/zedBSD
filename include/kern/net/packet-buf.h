@@ -32,6 +32,18 @@
 
 struct net_device;
 
+/*
+ * The packet pool's use at one moment (packet_buf_pool_usage): its size,
+ * the packets taken now and the most ever taken, and how many allocations
+ * found none free.
+ */
+struct packet_buf_pool_usage {
+	unsigned total;
+	unsigned used;
+	unsigned used_max;
+	uint64_t alloc_failures;
+};
+
 struct packet_buf {
 	uint8_t *storage;
 	uint8_t *data;
@@ -109,5 +121,8 @@ packet_buf_copy_region(
 	size_t length);
 unsigned
 packet_buf_in_use(void);
+void
+packet_buf_pool_usage(
+	struct packet_buf_pool_usage *usage);
 
 #endif

@@ -26,6 +26,7 @@
 #include "kern/lock.h"
 #include "kern/sched.h"
 #include "kern/clock.h"
+#include "kern/net/tcp-socket.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
@@ -60,6 +61,7 @@ static const struct sysctl_leaf leaves[] = {
 	{{ CTL_KERN, KERN_BOOT_CONFIG_MATCHES, 0 }, 2, "kern.boot.config_matches"},
 	{{ CTL_KERN, KERN_BOOT_ROOT_IMAGE, 0 }, 2, "kern.boot.root_image"},
 	{{ CTL_KERN, KERN_BOOT_LOGIN, 0 }, 2, "kern.boot.login"},
+	{{ CTL_NET, NET_TCPSTATS, 0 }, 2, "net.tcpstats"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_MAX_BYTES }, 3,
 	 "vfs.bufcache.max_bytes"},
 	{{ CTL_VFS, VFS_BUFCACHE, VFS_BUFCACHE_CURRENT_BYTES }, 3,
@@ -147,6 +149,7 @@ static int sysctl_thermal(void *oldp, size_t *oldlenp, const void *newp, size_t 
 static int sysctl_gpu_start(void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int sysctl_cputimes(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_diskstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
+static int sysctl_tcpstats(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_gputelemetry(void *oldp, size_t *oldlenp, const void *newp, size_t newlen);
 static int sysctl_writeback(const int *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen, int superuser);
 static int oid_compare(const int *a, unsigned alen, const int *b, unsigned blen);
@@ -401,6 +404,12 @@ kern_sysctl(
 	/* Reports each physical disk's work. */
 	if (namelen == 2 && name[0] == CTL_HW && name[1] == HW_DISKSTATS) {
 		error = sysctl_diskstats(oldp, oldlenp, newp, newlen);
+		return error;
+	}
+
+	/* Reports each TCP socket's state and counts (ws220-p001). */
+	if (namelen == 2 && name[0] == CTL_NET && name[1] == NET_TCPSTATS) {
+		error = sysctl_tcpstats(oldp, oldlenp, newp, newlen);
 		return error;
 	}
 
@@ -852,6 +861,46 @@ sysctl_diskstats(
 	/* The value, or only its length without a buffer. */
 	capacity = *oldlenp;
 	error = disk_stats_copy(oldp, capacity, &needed);
+	*oldlenp = needed;
+
+	/* Reports a buffer too small. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the value (or its length) is given. */
+	return 0;
+}
+
+/*
+ * Reads net.tcpstats: the header and each TCP socket's state and counts
+ * (ws220-p001), written by the TCP registry under its lock.  A buffer too
+ * small fails with ENOMEM and the length needed.
+ */
+static int
+sysctl_tcpstats(
+	void *oldp,
+	size_t *oldlenp,
+	const void *newp,
+	size_t newlen)
+{
+	size_t needed;
+	size_t capacity;
+	int error;
+
+	/* Read-only. */
+	if (newp != NULL || newlen != 0)
+		return EPERM;
+
+	/* Without a length there is nothing to size or copy. */
+	if (oldlenp == NULL) {
+		if (oldp == NULL)
+			return 0;
+		return EINVAL;
+	}
+
+	/* The value, or only its length without a buffer. */
+	capacity = *oldlenp;
+	error = tcp_stats_copy(oldp, capacity, &needed);
 	*oldlenp = needed;
 
 	/* Reports a buffer too small. */

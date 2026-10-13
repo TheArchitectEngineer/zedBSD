@@ -39,6 +39,15 @@ struct packet_slot {
 
 static struct packet_slot packet_pool[PACKET_BUF_POOL_COUNT] NET_BSS;
 static unsigned packet_used;
+
+/*
+ * The most packets ever taken at once, and how many allocations found the
+ * pool empty, since the pool was emptied (ws220-p001: net.tcpstats shows
+ * whether a transfer ran the stack out of packets).  Both only grow and are
+ * moved under the pool lock with packet_used.
+ */
+static unsigned packet_used_max;
+static uint64_t packet_alloc_failures;
 static atomic_uint_t packet_guard;
 
 static bool packet_lock(void);
@@ -56,6 +65,8 @@ packet_buf_pool_init(
 	enabled = packet_lock();
 	kern_memset(packet_pool, 0, sizeof(packet_pool));
 	packet_used = 0;
+	packet_used_max = 0;
+	packet_alloc_failures = 0;
 	packet_unlock(enabled);
 }
 
@@ -93,6 +104,8 @@ packet_buf_alloc(
 			continue;
 		slot->used = 1;
 		packet_used++;
+		if (packet_used > packet_used_max)
+			packet_used_max = packet_used;
 		kern_memset(&slot->packet, 0, sizeof(slot->packet));
 		slot->packet.storage = slot->storage;
 		slot->packet.data = slot->storage + headroom;
@@ -104,6 +117,10 @@ packet_buf_alloc(
 		packet = &slot->packet;
 		break;
 	}
+
+	/* A pool with no free slot is counted, for net.tcpstats. */
+	if (packet == NULL)
+		packet_alloc_failures++;
 
 	packet_unlock(enabled);
 
@@ -415,6 +432,27 @@ packet_buf_in_use(
 
 	/* Reports the sampled count. */
 	return result;
+}
+
+/*
+ * Reports the pool's size, the packets taken now and the most ever taken,
+ * and how many allocations found no packet free.
+ */
+void
+packet_buf_pool_usage(
+	struct packet_buf_pool_usage *usage)
+{
+	bool enabled;
+
+	/* Samples the counts together under the pool lock. */
+	enabled = packet_lock();
+
+	usage->total = PACKET_BUF_POOL_COUNT;
+	usage->used = packet_used;
+	usage->used_max = packet_used_max;
+	usage->alloc_failures = packet_alloc_failures;
+
+	packet_unlock(enabled);
 }
 
 /* Disables interrupts, when the HAL is present, and takes the pool lock. */
