@@ -320,7 +320,8 @@ struct css_token {
 
 /*
  * One simple selector: a name (an atom), and for attributes a value (an
- * atom) and a comparison.  A pseudo-class is pseudo (CSS_PSEUDO_*); :not,
+ * atom), a comparison, and explicit attribute case flags.  A pseudo-class is
+ * pseudo (CSS_PSEUDO_*); :not,
  * :is, :where and :has keep their argument selectors (in the sheet's
  * arena), the :nth-* ones the a and b of an+b.  A pseudo-element is pseudo
  * (CSS_PSEUDO_ELEMENT_*).
@@ -331,6 +332,7 @@ struct css_simple {
 	struct vm_string *value;
 	int match;
 	int case_insensitive;
+	int case_sensitive;
 	int pseudo;
 	const struct css_selector *arguments;
 	size_t argument_count;

@@ -8,9 +8,9 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Owner: Q1（プロジェクト全体）。Acid3 の [q1003](queue.md) はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行した。
-Queue: [q1003](queue.md) finished / p180 cleared。以前の [q1002](../history/queue-q1002.md) は p178 得点位置の部分 scope cleared、Phase 全体は uncleared。
-Resume point: q1003 後、Acid3 score100/100・pixel差42921/480000、Acid2差1865/120000。本文の y=373.50 / reference y=350 の差は [p181](phase181/phase.md) の候補。p100 全体は未達。
+Owner: Q1（プロジェクト全体）。Acid3 の [q1004](queue.md) はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行した。
+Queue: [q1004](queue.md) finished / p181 cleared。以前の [q1003](../history/queue-q1003.md) は p180 cleared。
+Resume point: q1004 後、Acid3 score100/100・pixel差18596/480000、Acid2差1865/120000。本文 y349.50 / reference y350 などの差が残る。p100 全体は未達。
 <!-- awesome-plan-current:end -->
 
 ## Q1 向けの整理（2026-10-05、Q1）
@@ -24,10 +24,10 @@ Resume point: q1003 後、Acid3 score100/100・pixel差42921/480000、Acid2差18
 | 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file。2026-10-05 Q1 照合: p172 の取込みの後は `.c` が 167）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
 | JS | 自前の engine（ES2024 の構文、ES2015 の class・async・generator・Symbol・Map 等、RegExp、Date）。test262 は p025〜p087 の時点の数（全体の最新の計測は未） | 下の Phase の表 |
 | デモの目標 | amazon.co.jp のトップと検索（2026-09-28 ユーザー、Google から変更） | [amazon-goal.md](amazon-goal.md) |
-| Acid3 | **現行 q1003: 得点100/100、pixel一致91.0581%（差42921/480000）**。参照背景画像、得点位置、iframe 子誤描画を修復。q1000 の差302056から259135減。歴史的な q579 の37.04%は取込み途中の別 source | [p179](phase179/phase.md)、[p178](phase178/phase.md)、[p180](phase180/phase.md) |
+| Acid3 | **現行 q1004: 得点100/100、pixel一致96.1258%（差18596/480000）**。参照背景画像、得点位置、iframe 子誤描画、hidden input の行高を修復。q1000 の差302056から283460減。歴史的な q579 の37.04%は取込み途中の別 source | [p179](phase179/phase.md)、[p178](phase178/phase.md)、[p180](phase180/phase.md)、[p181](phase181/phase.md) |
 | Acid2 | ~~exact pixel は不合格（p097 の時点で 90.56%）~~ → 2026-10-05 Q1 照合で訂正: **exact pixel 合格**。p099（q507）で 90.56% → 100.00%、p172 の取込み後も plain・ASan で 120000 画素一致（[checkpoint96](phase172/import/checkpoint96/README.md)）。90.56% は p099 の前の値 | [p099](phase099/phase.md)、[p097](phase097/phase.md) |
 | p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
-| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1003 の現行値は得点100/100・pixel一致91.0581%。差42921が残り、p100 全体は未達 | [p100](phase100/phase.md) |
+| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1004 の現行値は得点100/100・pixel一致96.1258%。差18596が残り、p100 全体は未達 | [p100](phase100/phase.md) |
 
 ### Acid3 の後に止めている目標（2026-10-13 現在）
 
@@ -298,7 +298,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p097](phase097/phase.md) | 指定10公開siteの画像・box・DOM tree比較、阿部寛のホームページのguest full-screenデモ、WPT reftestとAcid、一般化できる差を最大4件修正 | **cleared**（2026-09-30。WPT 44/100、Acid2 90.56%、Acid3 9/100。`postMessage`、table rowspan、presentational hint、intrinsic auto margin） | p094、p096 |
 | ws074-p098 | ES module scriptのgraph取得・link・評価、`import`・`export`、GitHubのhydration比較 | planned（2026-09-30ユーザー指定によりp101後へ延期） | p087、p088、p097、p172 |
 | [ws074-p099](phase099/phase.md) | Acid2 100%: 固定harnessでexact pixel一致、crash・timeout 0 | **cleared**（2026-09-30、q507。90.56% → 100.00%、plain/ASan） | p097 |
-| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（q1003 現行値: 得点100/100、pixel一致91.0581%。全体未達） | p099、p172（両方 cleared） |
+| [ws074-p100](phase100/phase.md) | Acid3の100/100、固定参照とのpixel完全一致、fail・Uncaught・crash・timeout 0 | planned（q1004 現行値: 得点100/100、pixel一致96.1258%。全体未達） | p099、p172（両方 cleared） |
 | ws074-p101 | WPT CSS2 reftest 100%: 固定commitのscriptなし全5904件でpass 100%、error 0 | planned（p100後、p172も必須） | p100、p172 |
 | [ws074-p172](phase172/phase.md) | origin/browser2のbrowser変更をWS107後のlibbrowser/browser配置へ取込み、関連計画/試験/bugを意味的に照合するblocking gate | cleared / b-q598（browser3 の q598、main の q598 とは別。209/209 review、whole final gates） | WS107の実成果、p099、branch snapshot |
 | [ws074-p173](phase173/phase.md) | Interop 2025の公式focus area対象WPTを固定・baseline化し、全件PASSへ向けた失敗群と後続Phaseを設計 | planned / Queueなし | p172、p100 |
@@ -309,7 +309,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p178](phase178/phase.md) | Acid3 の 1 領域の pixel 一致を試み、実行上の障害を記録（旧B1評価は現行scopeから除外） | uncleared（q1002-i01 は得点位置の部分 scope cleared、ROI差9572→800。1領域 pixel 完全一致は未達） | p099、p172、p179（cleared） |
 | [ws074-p179](phase179/phase.md) | Acid3 参照ページの `reference.png` が背景画像として描かれない原因を特定し、一般的な欠陥を修正・検証 | cleared（q1001-i01。canvas 背景画像の高さ0判定を修正、差56647） | p172、p178 q1000 の baseline |
 | [ws074-p180](phase180/phase.md) | iframe の子が親ページに描かれる一般的な原因を調べ、通常の fallback 描画を除く | cleared（q1003-i01、Acid3差565減、frame load52/52） | p172、p179、p178 q1002 の実測出力 |
-| [ws074-p181](phase181/phase.md) | HTML `type` 属性 selector の大文字小文字と hidden input の余分な行高を調べる | planned（q1004 exact scope案、Queue未選定） | p172、p179、p180 cleared、q1003 実測出力 |
+| [ws074-p181](phase181/phase.md) | HTML `type` 属性 selector の大文字小文字と hidden input の余分な行高を調べる | cleared（q1004-i01、Acid3差24325減、CSS rule44/44） | p172、p179、p180 cleared、q1003 実測出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -322,6 +322,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 2026-10-13 / q1003-p180-clearance: ユーザーが [p180](phase180/phase.md) の最大90分 exact scope を承認。iframe DOM 子の親ページ box 生成を止め、0×0/通常寸法/`display:contents` host fixture、frame load 52/52、build warning0。Acid3 score100/100・差42921/480000（q1002から565減）、Acid2差1865不変。[証拠](phase180/evidence/20261013-q1003/report.json)。p180 cleared。本文 y373.50 は不変で form/inline line の別原因、p100 全画面差0と WS074 acceptance は未達。次 Queue の承認が必要。
 
 2026-10-13 / p181-addition-after-q1003: test の `<input type=HIDDEN>` に対し UA `input[type=hidden]` が現行 selector 比較では一致せず、form の高さ24の line が本文を押し下げる原因候補。[p181](phase181/phase.md) で HTML `type` 属性値の大文字小文字と明示的 `s`/`i` flag に限定した有限の調査・修正・再計測を提案。q1003/p180 の結果と p100 の全画面条件は変えない。Queue は未選定・未承認。
+
+2026-10-13 / q1004-p181-clearance: ユーザーが [p181](phase181/phase.md) の最大90分 exact scope を承認。HTML `type` 属性 selector の flag 無し・`s`・`i` を区別し、`type=HIDDEN` を UA `input[type=hidden]` に一致させた。fixture pass、CSS rule44/44、build warning0。Acid3 score100/100・差18596/480000（q1003から24325減）、Acid2差1865不変。[証拠](phase181/evidence/20261013-q1004/report.json)。p181 cleared。本文 y349.50 / reference y350 ほかの差、p100全画面差0と WS074 acceptance は未達。次 Queue の承認が必要。
 
 ## 後の WS・Future Work の候補
 

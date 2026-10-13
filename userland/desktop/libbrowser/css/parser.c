@@ -1468,6 +1468,7 @@ parser_attribute(
 		if (!insensitive && !sensitive)
 			return EINVAL;
 		simple->case_insensitive = insensitive;
+		simple->case_sensitive = sensitive;
 		index++;
 	}
 

@@ -2,13 +2,13 @@
 
 # ws074-p181: HTML `type` 属性 selector と hidden input の行高
 
-Status: planned（q1003 の残差から追加。実装 Queue 未選定）
+Status: cleared（q1004-i01、2026-10-13 23:02 JST。HTML `type` 属性 selector 修正）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074 を継承）
 Related: [p100](../phase100/phase.md) の Acid3 pixel 完全一致に寄与
 Prerequisites: p172/p179/p180 cleared、[q1003](../phase180/evidence/20261013-q1003/report.json) の同条件 layout/paint と差画像。
-Queue: 未選定・未承認。下記 q1004 は提案であり、実装を始めない。
+Queue: [q1004-i01](../queue.md) cleared。2026-10-13、このチャットでユーザーが下記最大90分の exact scope に「q1004 の範囲を承認する」と回答。
 
 ## 観測と設計の前提
 
@@ -29,3 +29,14 @@ HTML 文書の HTML 要素の `type` 属性セレクタが、flag 無しでは�
 原因が異なる、範囲外の仕様実装が必要、差が増える、または90分に達した場合は attempt を uncleared として原因・証拠・再開条件を残す。HTML Standard が列挙する `type` 以外の属性値の包括対応は今回の Queue に含めず、必要なら別の Phase で扱う。実装にはユーザーの exact-scope 承認と Queue active 化が必要。
 
 2026-10-13 q1003 後: iframe `FAIL` 2 item を除いても本文 y=373.50 は不変。`type=HIDDEN` の UA selector 不一致と form line 24px を新しい原因候補として分離。p180 cleared と p100 全画面条件は変えない。
+
+## q1004-i01 結果（2026-10-13 22:58〜23:02 JST）
+
+**cleared**。`css/internal.h`・`css/parser.c` で属性 selector の flag 無しと明示的 `s` を区別し、`css/cascade.c` で HTML 文書の HTML 要素の `type` 値を flag 無しなら ASCII 大文字小文字を区別せず比較する。`s` は区別、`i` は区別しない。XML/SVG と他属性の既存比較は維持。`type` の `=`, `~=`, `|=`, `^=`, `$=`, `*=` を最小 fixture で確認した。
+
+- 新規 `host-attribute-type-case.c` は修正前 FAIL、修正後 PASS。`type=HIDDEN` の input は DOM に残り、UA `display:none` により layout から消える。通常の HTML type・明示的 `s`/`i`・他属性・SVG の selector を独立の印で確認。Acid3 の form collection を含む100項目も pass。
+- `sh plan/ws074/tests/host-build.sh plain` は warning/error0。`host-css-rule-model` 44/44、`host-iframe-fallback` pass、`git diff --check` pass。`clang-format` は環境に無く、変更 C と browser component の全文規約を手動確認。QEMU/別OSと main 最新 HEAD 全体の再buildは未実施。
+- 固定 WPT の最終 `run-acid-tests.py --out build/ws074-acid-q1004-final`: Acid3 score100/100、inventory100/100、例外0、全画面差 **18596/480000**（91.0581%→96.1258%一致、差42921→18596で24325減）。Acid2差 **1865/120000** 不変。[report](evidence/20261013-q1004/report.json)、[Acid3並列画像](evidence/20261013-q1004/acid3-side.png)、[Acid2並列画像](evidence/20261013-q1004/acid2-side.png)、前後 layout/paint を保存。
+- Acid3 test の form line は24→0、後続本文 y=373.50→349.50。reference 本文 y=350 との0.5差と他領域の残差は残る。p100 の全画面差0、Acid2 の現行 exact は未達。
+
+Source は独立 branch `codex/ws074-acid3` で WIP commit とし、main の作業 tree へ投影。GitHub Issue/Project publication と push は設定どおり保留。`master.md` は変更しない。

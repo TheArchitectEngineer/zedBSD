@@ -220,7 +220,7 @@ static int cascade_is_form_element(const struct dom_element *element);
 static int cascade_compute(struct css_engine *engine, struct dom_element *element, const struct css_style *parent, struct css_style *style, int pseudo);
 static int cascade_compound_matches(struct css_engine *engine, struct dom_element *element, const struct css_compound *compound);
 static int cascade_simple_matches(struct css_engine *engine, struct dom_element *element, const struct css_simple *simple);
-static int cascade_attribute_matches(const struct vm_string *value, const struct css_simple *simple);
+static int cascade_attribute_matches(const struct vm_string *value, const struct css_simple *simple, int insensitive, int html_type);
 static int cascade_has_class(const struct vm_string *classes, const struct vm_string *name);
 static int cascade_class_atoms(struct css_engine *engine, struct vm_string *classes, struct vm_string *const **atoms, size_t *count);
 static int cascade_class_grow(struct css_engine *engine);
@@ -2288,6 +2288,8 @@ cascade_simple_matches(
 	size_t count;
 	size_t position;
 	int matches;
+	int insensitive;
+	int html_type;
 	int error;
 
 	/* The kind of selector. */
@@ -2324,7 +2326,14 @@ cascade_simple_matches(
 		attribute = dom_element_find_attribute(element, DOM_NS_NONE, simple->name);
 		if (attribute == NULL)
 			return 0;
-		return cascade_attribute_matches(attribute->value, simple);
+
+		/* HTML type values match without case unless an explicit s flag overrides the host language. */
+		html_type = element->ns == DOM_NS_HTML && element->node.document->content == DOM_CONTENT_HTML &&
+		    vm_string_equal_ascii(simple->name, "type");
+		insensitive = simple->case_insensitive;
+		if (!simple->case_sensitive && html_type)
+			insensitive = 1;
+		return cascade_attribute_matches(attribute->value, simple, insensitive, html_type);
 	case CSS_SIMPLE_PSEUDO_CLASS:
 		matches = cascade_pseudo_class(engine, element, simple);
 		return matches;
@@ -2794,7 +2803,9 @@ cascade_is_form_element(
 static int
 cascade_attribute_matches(
 	const struct vm_string *value,
-	const struct css_simple *simple)
+	const struct css_simple *simple,
+	int insensitive,
+	int html_type)
 {
 	const struct vm_string *wanted;
 	size_t start;
@@ -2808,12 +2819,14 @@ cascade_attribute_matches(
 		return 1;
 	wanted = simple->value;
 
-	/* A word of a space-separated list. */
-	if (simple->match == CSS_MATCH_INCLUDES)
+	/* Keep existing list matching for other attributes outside this HTML type change. */
+	if (simple->match == CSS_MATCH_INCLUDES && !html_type)
 		return cascade_has_class(value, wanted);
 
 	/* Compares at the place the kind of match asks for. */
 	length = wanted->length;
+	if (simple->match == CSS_MATCH_INCLUDES && length == 0)
+		return 0;
 	if (simple->match == CSS_MATCH_EQUAL && value->length != length)
 		return 0;
 	if (value->length < length)
@@ -2828,10 +2841,23 @@ cascade_attribute_matches(
 	for (start = 0; start + length <= value->length; start++) {
 		if (simple->match == CSS_MATCH_SUFFIX && start != value->length - length)
 			continue;
+		if (simple->match == CSS_MATCH_INCLUDES) {
+			/* A list match spans a complete CSS-whitespace-separated word. */
+			if (start > 0) {
+				a = vm_string_at(value, start - 1U);
+				if (a != ' ' && a != '\t' && a != '\n' && a != '\f' && a != '\r')
+					continue;
+			}
+			if (start + length < value->length) {
+				a = vm_string_at(value, start + length);
+				if (a != ' ' && a != '\t' && a != '\n' && a != '\f' && a != '\r')
+					continue;
+			}
+		}
 		for (index = 0; index < length; index++) {
 			a = vm_string_at(value, start + index);
 			b = vm_string_at(wanted, index);
-			if (simple->case_insensitive) {
+			if (insensitive) {
 				if (a >= 'A' && a <= 'Z')
 					a = (uint16_t)(a + 0x20U);
 				if (b >= 'A' && b <= 'Z')
@@ -2846,7 +2872,7 @@ cascade_attribute_matches(
 		/* The whole value matched here. */
 		if (index == length)
 			return 1;
-		if (simple->match != CSS_MATCH_SUBSTRING && simple->match != CSS_MATCH_SUFFIX)
+		if (simple->match != CSS_MATCH_SUBSTRING && simple->match != CSS_MATCH_SUFFIX && simple->match != CSS_MATCH_INCLUDES)
 			return 0;
 	}
 

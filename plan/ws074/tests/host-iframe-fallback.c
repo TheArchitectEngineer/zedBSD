@@ -17,7 +17,11 @@
 
 static struct dom_element *first_iframe(struct dom_node *root);
 
-/* Runs the parent-page DOM, layout and paint checks for three iframe display modes. */
+/*
+ * Runs the parent-page DOM, layout and paint checks for three iframe display modes.
+ *
+ * A native child mutation also covers descendants added after parsing.
+ */
 int
 main(
 	void)

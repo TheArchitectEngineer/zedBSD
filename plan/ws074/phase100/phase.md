@@ -2,7 +2,7 @@
 
 # ws074-p100: Acid3 100/100・pixel完全一致
 
-Status: planned（2026-10-13 再開指示。q1003 現行値: 得点100/100、pixel一致91.0581%、差42921/480000。全体の条件は未達）
+Status: planned（2026-10-13 再開指示。q1004 現行値: 得点100/100、pixel一致96.1258%、差18596/480000。全体の条件は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -52,3 +52,5 @@ Event ws074-dedicated-interop2025-20261002: ユーザーがAcid3のpixel単位10
 2026-10-13 q1002 follow-up: ユーザー承認の [p178得点位置試行](../phase178/next-queue-proposal.md) は部分 scope cleared。参照得点の `right:0`/auto幅の位置を修復し、得点ROI差9572→800、全体差56647→43486、score100/100・例外0、Acid2差1865で不変。[q1002の証拠](../phase178/evidence/20261013-q1002/report.json)。得点領域と全画面の pixel 差0は未達で、この Phase は planned のまま。次の有限試行には別の exact scope/Queue が必要。
 
 2026-10-13 q1003 follow-up: ユーザー承認の [p180 iframe子描画修正](../phase180/phase.md) は cleared。DOM/frame load を保って iframe の子を親文書の layout/paint から除き、Acid3差43486→42921、score100/100・例外0、Acid2差1865で不変。[証拠](../phase180/evidence/20261013-q1003/report.json)。本文 y373.50 / reference y350 の差、全画面差0、Acid2現行exactは未達。この Phase は planned のままで、次の有限試行には別の exact scope/Queue が必要。
+
+2026-10-13 q1004 follow-up: ユーザー承認の [p181 HTML type selector修正](../phase181/phase.md) は cleared。`type=HIDDEN` の input が UA `input[type=hidden]` と一致し、form line24→0、本文 y373.50→349.50。Acid3差42921→18596、score100/100・例外0、Acid2差1865で不変。[証拠](../phase181/evidence/20261013-q1004/report.json)。全画面差0、本文の残り0.5差、Acid2現行exactは未達。この Phase は planned のままで、次の有限試行には別の exact scope/Queue が必要。

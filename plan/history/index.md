@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1004 / WS074 HTML type 属性 selector（2026-10-13）
+
+[q1004履歴](queue-q1004.md): `type=HIDDEN` を UA `input[type=hidden]` に一致させ、form line24→0、本文 y373.50→349.50。固定 Acid3 は得点100/100・pixel差18596/480000（q1003の42921から24325減）、Acid2差1865/120000で不変。host fixture pass、CSS rule44/44、build warning0。p181 cleared。p100全画面差0、WS074 acceptanceは未達。次原因は差画像から選ぶ。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
 ## 最新: q1003 / WS074 iframe 子の描画（2026-10-13）
 
 [q1003履歴](queue-q1003.md): iframe 内の `FAIL` 2個を親のlayout/paintから除去。固定 Acid3 は得点100/100・pixel差42921/480000（q1002の43486から565減）、Acid2差1865/120000で不変。host fixture pass、frame load52/52、build warning0。p180 cleared。本文 y373.50 / reference y350 の差、p100全画面差0、WS074 acceptanceは未達。次候補は form/inline line の高さ。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
