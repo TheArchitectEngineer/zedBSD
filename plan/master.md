@@ -14,7 +14,7 @@
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1（新しい世代）: q980 ws229-p005 の準備（Gen9 の eu-test の kernel、実機の image と手順、5330 の回帰の依頼）。
   - P2（新しい世代）: q977 ws229-p002 GT の起動（Gen9）。
-  - P3（新しい世代）: q979 ws229-p004 3D と compute の state（Gen9）。
+  - P3: 空き（q979 ws229-p004 は merge 済み）。
   - T1: 空き（T1-605 PASS）。次は Gen9 の実機の USB の image の準備（p005）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
@@ -948,6 +948,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [plan/ws196/tests/user-commands-host-test.sh](ws196/tests/user-commands-host-test.sh)（ws196-p003、2026-10-14、helper `user-commands-run.sh`） | useradd・usermod・userdel の前段（option から request の文、使い方の誤り、答えの語から終わりの状態）と、本物の account-admin との通しの 148 項目 | sudo が要る（path は新しい folder へ、host の file は変えない） |
 | [tests/tty-csi-host-test.c](../tests/tty-csi-host-test.c)（ws228-p004、2026-10-14） | kernel の VT console の CSI の解析（`src/kern/tty-csi.c`: 引数の配列、`H`・`f`、SGR の最小限、38・48 の飛ばし、知らない列の捨て方） | `cc -std=c99 -Wall -Wextra -Werror -Isrc src/kern/tty-csi.c tests/tty-csi-host-test.c` で作って走らせる。PASS の行 |
 | [plan/ws229/tests/eu-gen9-host.sh](ws229/tests/eu-gen9-host.sh)（ws229-p003、2026-10-14） | i915 の EU の Gen9 の符号化: 96 の kernel を Mesa の brw_disasm/brw_asm `--gen=skl` で往復し byte が一致、拒否すべき module は拒否、期待の listing（`eu-gen9-expect.asm`）と encoder の byte の一致 | Mesa の道具（`build/mesa-tools/`）が要る |
+| [plan/ws229/tests/host/run.sh](ws229/tests/host/run.sh)（ws229-p004、2026-10-14） | i915 の 3D と compute の state: Gen12 の batch と state の byte が基準の commit と同一、Gen12 は gen120.xml・Gen9 は gen90.xml で厳密に decode、両者の field の比べ（許す差は gen9-check.py） | GENXML と BRW_TOOLS（`build/mesa-tools/`）、BASE の commit が要る |
 | [tests/rpi4-sdhci-host-test.c](../tests/rpi4-sdhci-host-test.c)（BUG-295、2026-10-13） | Pi 4 の SD の driver（多 block の CMD25/CMD18・auto-CMD12、失敗の時の 1 block の書き直し、要求の切り分け）の回帰（偽の register） | `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk rpi4-sdhci-host-test`、PASS で終わる |
 | [plan/ws081/tests/run-notestouch.sh](ws081/tests/run-notestouch.sh)（2026-10-13 BUG-296 で追従） | Notes の touch（userland/desktop/notes/touch.c）の host 試験: 2 本指の pinch と上限、drag・flick・glide、overscroll、double tap、toolbar と頁の tap（toolbar の印）、ペンの近くの掌、指で書く。`plan/ws081/tests/run-notestouch.sh [OUTDIR]`（sanitizer は `EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"`）。PASS は `host-notestouch: ok (N checks)` |
 | [plan/ws079/tests/run-notes-zoom-limit.sh](ws079/tests/run-notes-zoom-limit.sh)（BUG-296、2026-10-13） | Notes の頁の絵の確保が断られた時に倍率を下げて作り直す（i915 の 16 MiB の上限の模型）。`sh plan/ws079/tests/run-notes-zoom-limit.sh`、PASS は `ok (15 checks)` と `PASS` |
