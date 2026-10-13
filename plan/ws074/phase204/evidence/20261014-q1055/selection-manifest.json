@@ -1,0 +1,392 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "wpt_manifest_sha256": "951619bb1a7c1f25ff0abc6e5ae4f15116a4e8874b053bd93cf0aca681098ac0",
+  "selected_count": 47,
+  "unresolved_count": 0,
+  "selected": [
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-043.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-043.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-047.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-047.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-048.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-048.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-050.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-050.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-054.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-054.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-055.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-055.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-056.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-056.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-058.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-058.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-060.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-060.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-062.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-062.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-slr-063.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-slr-063.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-042.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-042.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-045.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-045.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-046.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-046.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-049.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-049.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-051.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-051.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-052.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-052.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-053.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-053.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-057.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-057.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-059.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-059.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-061.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-061.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/block-flow-direction-srl-064.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/block-flow-direction-srl-064.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-043.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-043.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-047.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-047.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-048.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-048.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-050.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-050.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-053.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-053.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-054.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-054.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-056.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-056.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-058.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-058.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-slr-060.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-slr-060.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-042.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-042.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-045.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-045.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-046.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-046.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-049.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-049.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-051.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-051.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-052.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-052.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-055.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-055.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-057.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-057.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/line-box-direction-srl-059.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/line-box-direction-srl-059.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/row-progression-slr-023.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/row-progression-slr-023.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/row-progression-slr-029.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/row-progression-slr-029.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/row-progression-srl-022.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/row-progression-srl-022.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/row-progression-srl-028.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/row-progression-srl-028.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/row-progression-vlr-009.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/row-progression-vlr-009.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/table-column-order-slr-007.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/table-column-order-slr-007.xht"
+    },
+    {
+      "id": "/css/css-writing-modes/table-column-order-srl-006.xht",
+      "focus": [
+        "writingmodes"
+      ],
+      "type": "reftest",
+      "source": "css/css-writing-modes/table-column-order-srl-006.xht"
+    }
+  ],
+  "unresolved": [],
+  "focus_counts": {
+    "writingmodes": {
+      "selected": 47,
+      "unresolved": 0
+    }
+  }
+}

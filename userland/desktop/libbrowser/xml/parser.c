@@ -26,6 +26,7 @@ struct xml_parser {
 	int root_seen;
 	struct xml_units doctype;
 	int doctype_seen;
+	int xhtml_nbsp;
 };
 
 static int xml_decode(struct wb_units *units, const unsigned char *bytes, size_t length);
@@ -54,7 +55,7 @@ static int xml_text(struct xml_parser *parser);
 static int xml_delimited(struct xml_parser *parser, int type, const char *ending);
 static int xml_instruction(struct xml_parser *parser);
 static int xml_declaration(struct xml_parser *parser);
-static int xml_doctype_literal(struct xml_parser *parser, int public_id);
+static int xml_doctype_literal(struct xml_parser *parser, int public_id, struct xml_units *value);
 static int xml_doctype(struct xml_parser *parser);
 static int xml_parse_tree(struct xml_parser *parser);
 
@@ -698,6 +699,10 @@ xml_reference(
 		matched = xml_ascii(name, "quot", 0);
 		if (matched)
 			point = '"';
+		/* The XHTML 1.0 Strict DTD declares nbsp as U+00A0; other XML profiles do not. */
+		matched = parser->xhtml_nbsp && xml_ascii(name, "nbsp", 0);
+		if (matched)
+			point = 0xa0U;
 		if (point == 0)
 			return EINVAL;
 	}
@@ -1450,10 +1455,12 @@ xml_instruction(
 static int
 xml_doctype_literal(
 	struct xml_parser *parser,
-	int public_id)
+	int public_id,
+	struct xml_units *value)
 {
 	const uint16_t *input;
 	size_t length;
+	size_t start;
 	uint16_t quote;
 	uint16_t unit;
 	int legal;
@@ -1466,10 +1473,16 @@ xml_doctype_literal(
 	if (quote != '\'' && quote != '"')
 		return EINVAL;
 	parser->offset++;
+	start = parser->offset;
 	while (parser->offset < length) {
 		unit = input[parser->offset++];
-		if (unit == quote)
+		if (unit == quote) {
+			if (value != NULL) {
+				value->data = input + start;
+				value->length = parser->offset - start - 1U;
+			}
 			return 0;
+		}
 		if (!public_id)
 			continue;
 
@@ -1497,14 +1510,19 @@ xml_doctype(
 	struct xml_units name;
 	struct xml_units prefix;
 	struct xml_units local;
+	struct xml_units public_name;
 	const uint16_t *input;
 	size_t length;
+	int public_id;
 	int status;
 
 	if (parser->open->type != XML_DOCUMENT || parser->root_seen || parser->doctype_seen)
 		return EINVAL;
 	input = parser->document->input.data;
 	length = parser->document->input.length;
+	public_name.data = NULL;
+	public_name.length = 0;
+	public_id = 0;
 	parser->offset += 9U;
 	if (parser->offset >= length || !xml_space(input[parser->offset]))
 		return EINVAL;
@@ -1517,21 +1535,19 @@ xml_doctype(
 	if (xml_space(input[parser->offset])) {
 		xml_skip_space(parser);
 		if (xml_at(parser, "SYSTEM") || xml_at(parser, "PUBLIC")) {
-			int public_id;
-
 			public_id = xml_at(parser, "PUBLIC");
 			parser->offset += 6U;
 			if (parser->offset >= length || !xml_space(input[parser->offset]))
 				return EINVAL;
 			xml_skip_space(parser);
-			status = xml_doctype_literal(parser, public_id);
+			status = xml_doctype_literal(parser, public_id, &public_name);
 			if (status != 0)
 				return status;
 			if (public_id) {
 				if (parser->offset >= length || !xml_space(input[parser->offset]))
 					return EINVAL;
 				xml_skip_space(parser);
-				status = xml_doctype_literal(parser, 0);
+				status = xml_doctype_literal(parser, 0, NULL);
 				if (status != 0)
 					return status;
 			}
@@ -1547,6 +1563,8 @@ xml_doctype(
 	parser->offset++;
 	parser->doctype = name;
 	parser->doctype_seen = 1;
+	parser->xhtml_nbsp = public_id && xml_ascii(name, "html", 0) &&
+	    xml_ascii(public_name, "-//W3C//DTD XHTML 1.0 Strict//EN", 0);
 	return 0;
 }
 

@@ -2,7 +2,7 @@
 
 # ws074-p203: XML external-ID DOCTYPE without DTD processing
 
-Status: uncleared（2026-10-14 q1054-i01 partial cleared、47件の外部DTD実体未達）
+Status: cleared（2026-10-14 q1054-i01 partial、q1055後続証拠で旧359件のload error解消）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -23,3 +23,7 @@ Event ws074-p203-created-20261014: q1053固定1,561件の359 errorはすべてDO
 ## q1054-i01 結果（2026-10-14）
 
 **部分scope cleared、p203 whole uncleared。** 外部IDだけのDOCTYPE構文を外部取得なしで受理し、内部subset・未知実体は拒否。固定359 ID中312件の読み込みを解消し、122 local PASS/190 pixel FAIL/47 load error。[証拠](evidence/20261014-q1054/README.md)。残り47件は全てXHTML 1.0 DTD由来の`&nbsp;`を使い、限定non-validating parserでは解決しない。host XML model243/243・DOM54/54・document16/16・binding34/34、warning0 build、固定Flex10/10 pixel PASS、Acid3 score100/100・差0/480000、Acid2差1865/120000不変。p190/p173全件受け入れは未達。Event ws074-p203-q1054-outcome-20261014: q1054-i01 partial cleared、p203 wholeは47 load errorでuncleared。未知実体を無条件許容せず、別範囲でXHTML標準実体を扱う。GitHub publication保留。
+
+## q1055後続判定（2026-10-14）
+
+Event ws074-p203-q1055-followup-20261014: [p204](../phase204/phase.md)でXHTML1 Strictの既知`nbsp`を限定的に解決し、q1054残り47 IDのload errorは47→0。[後続証拠](../phase204/evidence/20261014-q1055/README.md)。q1054の312成功と合わせて固定359 IDのDOCTYPE読込error解消を確認。q1054 attemptのpartial結果は改変せず、p203 wholeを後続証拠でcleared。画素不一致はp190へ残し、p173全件100%は未達。GitHub publication保留。

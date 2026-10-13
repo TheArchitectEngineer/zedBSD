@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1054 / WS074 XML external-ID DOCTYPE subset（2026-10-14）
+## 最新: q1055 / WS074 XHTML 1.0 Strict nbsp subset（2026-10-14）
+
+[q1055履歴](queue-q1055.md): 旧47 load errorを0へ解消し47 pixel FAILとして描画へ進行。p204 whole cleared、p203も後続証拠でcleared。XML host249/249、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase204/evidence/20261014-q1055/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1054 / WS074 XML external-ID DOCTYPE subset（2026-10-14）
 
 [q1054履歴](queue-q1054.md): 359旧error中312件の読み込みを解消し122 local PASS/190 pixel FAIL/47 `nbsp` load error。p203部分cleared、whole未達。XML host243/243、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase203/evidence/20261014-q1054/README.md)。p173全件100%未達、共有投影/GitHub publication pending。
 

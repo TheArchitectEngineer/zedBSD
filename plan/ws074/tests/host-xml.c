@@ -93,6 +93,10 @@ static const struct xml_case xml_cases[] = {
     {"<!DOCTYPE r><r/>", 0},
     {"<!DOCTYPE r SYSTEM 'unused.dtd'><r/>", 0},
     {"<!DOCTYPE r PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://example.test/dtd'><r/>", 0},
+    {"<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'><html a='&nbsp;'>&nbsp;</html>", 0},
+    {"<!DOCTYPE html SYSTEM 'unused.dtd'><html>&nbsp;</html>", EINVAL},
+    {"<!DOCTYPE r PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'unused.dtd'><r>&nbsp;</r>", EINVAL},
+    {"<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'unused.dtd'><html>&unknown;</html>", EINVAL},
     {"<!DOCTYPE r><q/>", EINVAL},
     {"<!DOCTYPE r><!DOCTYPE r><r/>", EINVAL},
     {"<!DOCTYPE r SYSTEM unused.dtd><r/>", EINVAL},
@@ -487,6 +491,21 @@ xml_semantics(
 
 	/* Declaration metadata must not occupy an ordinary node slot. */
 	xml_check(document->node.first_child->type == XML_ELEMENT, "XML declaration is not a PI node");
+	xml_document_destroy(document);
+	document = NULL;
+
+	/* The pinned XHTML DTD's nbsp expands to a real no-break-space text and attribute value. */
+	input = "<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'unused.dtd'><html a='&nbsp;'>&nbsp;</html>";
+	status = xml_document_parse(&document, (const unsigned char *)input, strlen(input), &error);
+	if (status != 0)
+		goto cleanup;
+	root = document->node.first_child;
+	if (root == NULL || root->attributes == NULL || root->first_child == NULL) {
+		status = EINVAL;
+		goto cleanup;
+	}
+	xml_check(xml_matches(root->attributes->value, "\xc2\xa0"), "XHTML nbsp attribute value");
+	xml_check(xml_matches(root->first_child->value, "\xc2\xa0"), "XHTML nbsp text value");
 	xml_document_destroy(document);
 	document = NULL;
 

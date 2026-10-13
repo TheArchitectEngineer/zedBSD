@@ -1,19 +1,21 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1054 / WS074 XML external-ID DOCTYPE subset
+# q1055 / WS074 XHTML 1.0 Strict nbsp subset
 
-Status: finished（2026-10-14 02:43–02:47 JST）
+Status: finished（2026-10-14 02:48–02:51 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p203のq1054有限部分scope](phase203/phase.md) に適用。
-Timebox: 2026-10-14 02:43 JST 開始、最大90分（04:13 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p204のq1055有限部分scope](phase204/phase.md) に適用。
+Timebox: 2026-10-14 02:48 JST 開始、最大90分（04:18 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1054-i01 | [ws074-p203](phase203/phase.md) partial | XML外部ID DOCTYPE構文を副作用無しで受け入れ、内部subset/未知実体を拒否。q1053 error359 ID・固定Flex10件、host/XML/build/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial）。p203 whole uncleared | p190 q1053全359 error証拠、p196 XHTML解析 |
+| q1055-i01 | [ws074-p204](phase204/phase.md) whole | XHTML1 Strict公開DTD識別子に限定し`nbsp`をU+00A0へ展開、別DTD/未知実体拒否。固定47 ID・Flex10件、host/XML/build/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared | p203 q1054残り47 `nbsp` error証拠 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
+
+Outcome: q1055-i01 / p204 whole cleared。XHTML1 Strict公開IDの`nbsp`をU+00A0へ解決、旧47 load errorは0へ、47 pixel FAILとして描画に進んだ。XML host249/249・DOM54/54・document16/16・binding34/34、warning0 build、固定Flex10/10 PASS、Acid3差0/Acid2差1865。[証拠](phase204/evidence/20261014-q1055/README.md)。p203 wholeも後続証拠でcleared。p190/p173全件100%は未達。
 
 Outcome: q1049-i01 partial cleared、p199 whole uncleared。物理left/rightとcolumn fallbackを実装し、固定10件は5 local PASS/5 FAIL/0 timeoutへ改善。fixture12/12・CSS rule44/44・CSSOM12/12・mutation12/12・warning0 build・Acid3差0/Acid2差1865。[証拠](phase199/evidence/20261014-q1049/README.md)。fractional/min-height/writing-mode残差、p173全3,805件100%は未達。
 
