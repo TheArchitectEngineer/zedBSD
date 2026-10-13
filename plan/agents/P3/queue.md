@@ -56,3 +56,5 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 
 2026-10-13 夜 / q941（新しい世代）: user「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」→ [ws220-p003](../../ws220/phase003/phase.md) TCP の送りの未送信・retry の実装の再開。前の世代の書きかけは Q1 が agent/p3 398bbdebb（WIP）に救った（写し build/salvage-20261013/p3-1e0e3c3be.patch）。main を取り込み → §1 の設計どおり実装 → 模型・host 試験・build → Q1 に merge 依頼 → T1 の依頼は T1-574（基線）の後。State: active。
 - q941 結果（2026-10-13 夜）: a82c9ba7b を敵対的 review（plan/ws220/phase003/review-1.md、重大 G1・中 M1・M2）→ 直し 37ed0dd97（EAGAIN は LOST で RTO・R2 へ、ACK の数は順序外だけ、timer の再送の拒みは 10 ms、tcp-stream-series.sh の停止の直し）→ main 282f46038。模型・amd64/rpi4 build warning 0。ws220-p003 は test-wait（T1-577、T1-574 の後）。
+
+2026-10-13 夜 / q943: ws220-p004 RTT の推定と RTO（RFC 6298、最小 200 ms はユーザーの決定）。同じ P3 の続き。承認: ユーザーの再開の指示と WS220 のユーザーの決定（2026-10-13「はい、推奨でいいです。」）。p003 の出力は main 282f46038（p003 の clearance は T1-577 の後）。State: active。
