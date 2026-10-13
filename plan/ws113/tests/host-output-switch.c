@@ -205,7 +205,9 @@ kwl_compose_output_open(
 	test_opens++;
 	for (index = 0U; index < test_display_count; index++) {
 		if (test_displays[index].handle == server->compose->display && !test_displays[index].refuses) {
+			/* Opened: the desktop follows the size it has now, as the real opening's end does (ws217-p002a, review-4 C7). */
 			server->compose->output_open = 1U;
+			(void)kwl_output_rotated(server);
 			return 0;
 		}
 	}
@@ -305,6 +307,36 @@ kwl_heads_lost(
 	/* As the test says. */
 	(void)server;
 	return test_heads_lost;
+}
+
+/* Stands in for the outputs' rectangles (heads.c): the anchor alone, at the desktop's size. */
+unsigned
+kwl_outputs(
+	struct kwl_server *server,
+	struct kwl_plane_rect *outputs)
+{
+	/* No head is open here. */
+	memset(outputs, 0, KWL_PLANE_SLOTS * sizeof(outputs[0]));
+	outputs[KWL_PLANE_ANCHOR].width = server->width;
+	outputs[KWL_PLANE_ANCHOR].height = server->height;
+
+	/* Succeeded: every slot. */
+	return KWL_PLANE_SLOTS;
+}
+
+/* Stands in for the pointer's warp (input.c, ws213-p004): the move applied to the pointer on the anchor. */
+void
+kwl_pointer_warp(
+	struct kwl_server *server,
+	const struct kwl_plane_rect *outputs,
+	kwl_cursor_box_move_fn *move,
+	const void *context)
+{
+	unsigned output;
+
+	/* The pointer is on the anchor here. */
+	output = KWL_PLANE_ANCHOR;
+	move(context, outputs, &server->pointer_x, &server->pointer_y, &output);
 }
 
 /* Stands in for telling the clients. */

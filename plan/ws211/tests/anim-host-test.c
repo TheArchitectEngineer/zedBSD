@@ -527,6 +527,8 @@ main(
 	server->height = 500U;
 	compose->output.width = 1000U;
 	compose->output.height = 500U;
+	compose->target_width = 1000U;
+	compose->target_height = 500U;
 	kwl_layers_open(server);
 	assert(compose->layers.ready);
 	assert(images_made == KWL_LAYERS);
