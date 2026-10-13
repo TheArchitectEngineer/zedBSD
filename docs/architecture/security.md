@@ -41,20 +41,25 @@ An administrator can do the following from Settings > Users:
 - reset another user's password;
 - add a user to or remove a user from the `wheel` and `network` groups.
 
+root can do the same and a little more from a terminal with `useradd`,
+`usermod` and `userdel`: set the shell, the display name, the user ID of a
+new user and the primary group, replace or add to the groups, lock and
+unlock the password, and remove a user that still has programs running.
+
 Every user can see the list of users. Every user can change their own
 password; that path is separate (`passwd -s`, below).
 
 ### The path
 
 ```text
-Settings (user)  ->  compositor (user)  ->  libkeiland-backend (user)
-                                              |
-                                              | runs as a child, request on stdin
-                                              v
-                                       account-admin (set-user-ID root)
-                                              |
-                                              v
-                              /etc/passwd, /etc/shadow, /etc/group, /home
+Settings (user)  ->  compositor (user)  ->  libkeiland-backend (user)  --+
+                                                                         | runs as a child,
+useradd / usermod / userdel (root, in a terminal or through sudo)  ------+ request on stdin
+                                                                         v
+                                                      account-admin (set-user-ID root)
+                                                                         |
+                                                                         v
+                                   /etc/passwd, /etc/shadow, /etc/group, /etc/passkey, /home
 ```
 
 - Settings asks for the operation through a `kl_system_account_*` request on
@@ -64,10 +69,16 @@ Settings (user)  ->  compositor (user)  ->  libkeiland-backend (user)
   child, writes one request to its standard input, reads one answer from its
   standard output and waits for it to exit. This is the same pattern as the
   user's own password change through `passwd -s`.
-- `account-admin` is the only privileged part. It is a set-user-ID root
-  program in the base system (source `userland/base/account-admin/`),
-  installed as `/usr/libexec/account-admin`, mode 4555, owned by root. It is
-  not on any user's `PATH`, because no one runs it by hand.
+- `useradd`, `usermod` and `userdel` are front ends that only root runs.
+  They turn their options into one request and run `account-admin` the same
+  way. They read and write no account file themselves.
+- `account-admin` is the only part that changes the account files. It is a
+  set-user-ID root program in the base system (source
+  `userland/base/account-admin/`), installed as
+  `/usr/libexec/account-admin`, mode 4555, owned by root. It is not on any
+  user's `PATH`, because no one runs it by hand. Keeping every edit, check
+  and lock in one program means Settings and the terminal tools follow the
+  same rules.
 
 The tool was chosen over a new request on `sessiond`, the root session
 daemon. `sessiond` could identify the caller from its socket and skip the
@@ -79,7 +90,9 @@ rule as `sudo`: the administrator types their password for each change.
 ### Request format
 
 The request is text on standard input, one field per line, ending at end of
-file:
+file. Its form depends on the caller's real user ID.
+
+A caller that is not root (Settings) gives its password first:
 
 ```text
 <caller's password>
@@ -94,87 +107,184 @@ file:
 | `reset-password` | name, new password |
 | `group-add` | name, group (`wheel` or `network`) |
 | `group-remove` | name, group (`wheel` or `network`) |
+| `system-language` | `en` or `ja` (the login screen's language) |
 
-Nothing comes from the command line or the environment. The tool ignores
-`argv` beyond its name and clears its environment before it starts.
+root (real user ID 0) gives no password. The first line is the operation,
+and every other line is `KEY VALUE`: the key, one space, and the value to
+the end of the line (it may be empty). A key may appear once.
+
+| Operation | Keys (`name` is required) | Front end |
+| --- | --- | --- |
+| `user-add` | `name`, `comment`, `shell`, `uid`, `group`, `groups`, `home` (`make` or `none`) | `useradd` |
+| `user-modify` | `name`, `comment`, `shell`, `group`, `groups` or `groups-add`, `password` (`lock` or `unlock`) | `usermod` |
+| `user-remove` | `name`, `home` (`keep` or `remove`), `force` (`yes`) | `userdel` |
+
+- `comment` is the display name. `shell` is an absolute path to a program
+  that exists. `uid` is from 1000 to 59999 and is not used by any user or
+  group. `group` (the primary group) is `wheel`, `network` or the user's own
+  group. `groups` and `groups-add` are lists of `wheel` and `network`
+  separated by `,`. `groups` replaces the user's groups (an empty list takes
+  the user out of all of them); `groups-add` adds to them.
+- A `user-modify` must change something. `home remove` and `force yes`
+  cannot be given together, because a running program could keep writing in
+  the home while it is removed.
+- root cannot use Settings' operations, and other callers cannot use root's.
+
+Nothing comes from the command line. The tool ignores `argv` beyond its
+name and clears its environment before it starts. The one exception is
+`SUDO_USER` when the caller is root: it is read only to be written to the
+log, because anyone can set it.
 
 The answer is one line on standard output, `ok` or `error <reason>`, and the
 exit status is 0 or 1. The reasons are fixed words, such as
 `not-administrator`, `bad-password`, `no-such-user`, `name-taken`,
-`bad-name`, `weak-password`, `last-administrator`, `self`, `root`, `busy` and
-`home-exists`,
-so that Settings can show a message in the user's language.
+`bad-name`, `weak-password`, `last-administrator`, `self`, `root`, `busy`,
+`home-exists`, `failed`, `bad-request`, `bad-value` (a key's value outside
+its rules), `id-taken`, `no-password` (an unlock with no password behind
+the lock) and `home-failed` (the account was made but its home could not
+be), so that Settings and the front ends can show a message in the user's
+language.
 
 ### Checks, in order
 
-1. **The caller.** The caller is the real user ID. The tool looks it up in
-   `/etc/passwd`. A real user ID of 0 is refused, because root administers
-   with the base tools, not this path.
-2. **Administrator.** The caller must be in `wheel`. Otherwise the answer is
-   `not-administrator`, and the password is not checked, so the tool cannot
-   be used to test passwords of non-administrators.
-3. **Password.** The caller's password must match the hash in
-   `/etc/shadow`. A wrong password is answered after a fixed delay of 2
-   seconds, and the failure is logged.
-4. **The target.**
-   - root and system accounts (user ID below 1000) are refused (`root`).
-   - An administrator cannot remove themselves or take themselves out of
-     `wheel` (`self`).
-   - The last administrator among the people's accounts (user ID 1000 and
-     up) cannot be removed or taken out of `wheel` (`last-administrator`).
-     root does not count: it is always in `wheel` but is locked in a release
-     build, so the machine always keeps an administrator who can log in.
-5. **The values.**
+1. **The caller.** The caller is the real user ID.
+   - root is accepted without a password: it can already edit the files.
+   - Any other caller is looked up in `/etc/passwd` and must be in
+     `wheel`. Otherwise the answer is `not-administrator`, and the password
+     is not checked, so the tool cannot be used to test passwords of
+     non-administrators.
+   - That caller's password must match the hash in `/etc/shadow`. A wrong
+     password is answered after a fixed delay of 2 seconds, and the failure
+     is logged.
+2. **The target.**
+   - root and system accounts (user ID below 1000, or above 59999) are
+     refused (`root`).
+   - In Settings, an administrator cannot remove themselves or take
+     themselves out of `wheel` (`self`). root's front ends have no such
+     check, because under `sudo` the tool cannot know reliably who is
+     typing; the next rule protects the machine instead.
+   - A user who has a running process cannot be removed (`busy`), unless
+     root forces it.
+3. **The values.**
    - A new name is a lower-case letter followed by up to 31 lower-case
-     letters, digits, `-` or `_`, and must not be taken (`bad-name`,
-     `name-taken`).
-   - A display name may not contain `:` or a newline.
-   - A new password follows the shared password rules (at least 8
-     printable characters).
-   - The group is `wheel` or `network`; no other group can be changed
-     here.
+     letters, digits, `-` or `_`, and must not be taken as a user or a group
+     (`bad-name`, `name-taken`).
+   - A display name may not contain `:` or a control character.
+   - A new password from Settings follows the shared password rules (at
+     least 8 printable characters).
+   - root's keys follow the rules under [Request format](#request-format).
+4. **The last administrator.** The tool makes the new texts of all three
+   files in memory first. If the files had at least one administrator who
+   can log in and the new texts have none, the change is refused
+   (`last-administrator`). This one rule covers every way to lose the last
+   one: removing them, locking their password, giving them a shell that
+   does not log in, moving their primary group off `wheel`, or replacing
+   their groups. An administrator who can log in is a user with an ID from
+   1000 to 59999 who:
+   - is in `wheel` (as the primary group or by name);
+   - has a shell that logs in (no shell, or one that is not a `nologin` or
+     `false`);
+   - has a shadow line whose hash is not empty and does not start with `!`
+     or `*`;
+   - has an account that has not expired (the shadow's expiry field is
+     empty, 0, or a later day).
+
+   root does not count. It is always in `wheel`, but its password is locked
+   in a release build, so the machine must keep an administrator who can log
+   in. A user that `useradd` made without a password does not count either.
+   A machine that had no such administrator before the change is not refused,
+   because the change cannot make it worse.
 
 Only after every check passes does the tool change anything.
 
 ### What each operation changes
 
-- **add:** takes the lowest number from 1000 up that is free both as a user
-  ID and as a group ID, and gives the user a private group of the same name
-  and number. Writes the `/etc/passwd`, `/etc/group` and
-  `/etc/shadow` lines (SHA-512 crypt), and adds the user to `wheel` when
-  asked. Creates `/home/<name>` with mode 0700, owned by the new user, and
-  copies the skeleton files from `/etc/skel` into it, when there are any:
-  only the regular files directly in it, owned by the new user, without
-  group and other permissions. If `/home/<name>` already exists (for
-  example kept from an earlier removal), the request is refused
+- **add / user-add:** gives the user a new user ID and a private group of
+  the same name and number (always, even when another primary group is
+  chosen), writes the `/etc/passwd`, `/etc/group` and `/etc/shadow` lines,
+  and adds the user to the groups asked for. Settings writes the password's
+  hash (SHA-512 crypt). `useradd` writes `!`, a locked password, and the
+  password is set later with `passwd NAME`. The home is always
+  `/home/<name>`. Unless `home none` is given, the tool creates it with mode
+  0700, owned by the new user and their primary group, and copies the
+  skeleton files from `/etc/skel` into it: only the regular files directly
+  in it, owned by the new user, without group and other permissions.
+  Directories in the skeleton are not copied. If `/home/<name>` already
+  exists (for example kept from an earlier removal), the request is refused
   (`home-exists`) and the directory is left alone, so an old home's files
   never pass silently to a new account.
-- **remove:** removes the user's lines from `/etc/passkey`, the three
-  account files and every group's member list. The home directory is kept unless `remove-home` was
-  given. It is removed only after Settings has asked the administrator to
-  confirm, and the tool never follows a symbolic link while removing it.
-  A user who has a running process (logged in, or a program left running)
-  cannot be removed (`busy`). The tool looks for any process with that
-  user's ID in the kernel's process list, and for a login record naming
-  them.
+- **The new user ID** is one more than the highest of all of these, so an ID
+  is never given twice while anything of its last owner may be left:
+  - every user ID and group ID from 1000 to 59999 in the files;
+  - the record of the highest ID ever given (`/etc/account-admin.last-id`,
+    written before the account files);
+  - the owners of the entries in `/home`;
+  - cron's tables, named by user ID;
+  - the owners of at's jobs.
+
+  root may give the ID with `uid` instead.
+- **remove / user-remove:** removes the user's lines from `/etc/passkey`,
+  `/etc/shadow` and `/etc/passwd`, and the user's name from every group's
+  member list. The user's own group is removed too, unless it is another
+  user's primary group or has other members; such a group is kept, and the
+  log says so. After the change, the tool removes the user's cron table and
+  at jobs, and removes `/etc/keiland/autologin` when it names the user, so a
+  later account of the same name is not logged in by itself. The home
+  directory is kept unless `remove-home` (or `home remove`) was given. It is
+  removed only when it is `/home/<name>`, the user's home in `/etc/passwd`,
+  and a directory the user owns. In Settings, the administrator confirms it
+  first. While removing it, the tool never follows a symbolic link and
+  never enters another file system mounted inside it. What it leaves is
+  said in the log. To find a running process (`busy`), the tool looks for
+  any process with that user's ID in the kernel's process list, and for a
+  login record naming them.
+- **Leftovers:** if a crash left lines of a name without its `/etc/passwd`
+  line, removing that name cleans its shadow line, its own group, its name
+  in the member lists and its `/etc/passkey` lines. The answer is
+  `no-such-user` only when nothing of the name is left.
 - **reset-password:** replaces the user's hash, and removes the user's PIN
   and security keys from `/etc/passkey`. The user is not told the old one,
   and no one can read it.
 - **group-add / group-remove:** edits the member list of `wheel` or
   `network` in `/etc/group`.
+- **user-modify:** sets the display name (`comment`), the shell, or the
+  primary group in `/etc/passwd`, and edits the member lists in
+  `/etc/group`. `password lock` puts a `!` in front of the hash. `password
+  unlock` takes it off, but is refused (`no-password`) when nothing that
+  can be typed is behind it: an empty hash would let anyone log in with an
+  empty password.
+- **root's `passwd NAME`** is not part of this tool. It replaces the whole
+  hash field, so it also unlocks a locked password. It does not remove the
+  user's PIN and security keys. To revoke those as well, use Settings'
+  password reset.
+- **Locked accounts and automatic login:** `sessiond` does not log in the
+  account named by `/etc/keiland/autologin` when its shadow line is
+  missing, its password is locked (`!` or `*` in front of the hash), or the
+  account has expired. It shows the login screen instead.
 
 ### Robustness
 
-- All four files are changed under the shared lock, in the order `passkey`
-  (removing any line left for the name), `group`, `passwd`, `shadow` for an
-  addition, and `passkey`, `shadow`, `passwd`, `group` for a removal. Each is
-  replaced atomically. A crash between files leaves at most an unused group
-  or an account without a password entry, which cannot log in, and never a
-  PIN or security key that a later account of the same name inherits.
+- The account files are changed under the shared lock (see
+  [Shared account core](#shared-account-core)). Under the lock, the tool
+  writes only the files: the record of the last user ID, `/etc/passkey`,
+  then each account file that changed, replaced atomically. The order is
+  `group`, `passwd`, `shadow` for an addition, and `shadow`, `passwd`,
+  `group` for any other change. A crash between files leaves at most an
+  unused group or an account without a password entry, which cannot log in.
+  It never leaves a PIN or security key that a later account of the same
+  name inherits.
+- If a file cannot be written, the files written before it are written back
+  from the texts read under the lock, and the answer is `failed`.
+- What can take long happens after the lock is released, so other tools
+  that wait for the lock are not held: creating a home, copying the skeleton,
+  removing a home, and cleaning the job spools and the automatic login.
 - Signals that would stop the tool midway are held during the change.
 - The tool reads a bounded request (4 KiB). Longer input is refused before
   any check.
 - Password buffers are cleared before the tool exits.
+- Every request's result goes to the system log (auth), with the caller.
+  For root, the log also gives `SUDO_USER` when it is set. Passwords and
+  hashes are never logged.
 
 ### Other operating systems
 
@@ -512,10 +622,16 @@ account rules (`userland/base/common/account.c`):
   and different from the one they replace. Hashes are SHA-512 crypt with a
   high round count and 16 random characters of salt from `getentropy`.
 - **File replacement:** `/etc/shadow` and the other files are never written
-  in place. Under an exclusive lock file, the whole file is read, the change
-  is applied, the result is written to a new file in `/etc` with the
-  original's mode, synced, and renamed over the original. Then `/etc` is
-  synced.
+  in place. Under the lock, the whole file is read, the change is applied,
+  the result is written to a new file in `/etc` with the original's mode,
+  synced, and renamed over the original. Then `/etc` is synced.
+- **The lock:** an exclusive `flock` on `/etc/shadow.lock`. `passwd`, `su`,
+  `sudo`, `account-admin`, `passkey` and `passkey-fido2` take it before they
+  change an account file or `/etc/passkey`. They try for 5 seconds and then
+  answer that the files are busy. The kernel releases the lock when its
+  holder exits or dies, so a crashed tool never leaves it held, and a live
+  holder's lock is never taken over. The lock file is never removed.
+  Removing it would let a waiter lock a file that nobody else sees.
 - **wheel:** a user is in `wheel` when it is the primary group or the group
   names the user.
 - **Environment:** a command run as another user keeps only the terminal and

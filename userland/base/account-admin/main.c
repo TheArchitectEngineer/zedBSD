@@ -360,12 +360,14 @@ admin_sudo_user(
 	if (value == NULL)
 		return;
 
-	/* A name that fits, of printable characters without ':'. */
+	/* A name that fits. */
 	length = strlen(value);
 	if (length == 0U || length >= size) {
 		(void)snprintf(name, size, "?");
 		return;
 	}
+
+	/* Printable characters without ':'. */
 	for (i = 0; i < length; i++) {
 		/* One character. */
 		if (value[i] <= ' ' ||
