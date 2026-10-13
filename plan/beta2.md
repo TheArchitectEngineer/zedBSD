@@ -57,12 +57,12 @@
 | WS201（/home の暗号化）、WS195（/opt/keiland）、WS196（useradd 等）、WS198（self-build）、[WS001 p045](ws001/phase045/phase.md) POSIX の header、[WS126](ws126/ws.md) Python | ベータ3 の列 |
 | 規約の全文の見直しの Phase（各 WS） | ユーザーの決定でベータ3 |
 
-## 終わっていない WS（2026-10-13 Q1、128 件）
+## 終わっていない WS（2026-10-13 Q1、122 件）
 
 2026-10-13 ユーザー「終わっていないWSとその概要、何がブロッキングしているかを、表にして、plan/beta2.mdに入れてください。」→ 各 ws.md の Status・Resume point・Phase の表から作った（記録に無い事は「不明」）。WS は completed でない物（incomplete・planning・planned）。区分は ws.md・この文書・master.md に根拠がある時だけ断定し、master の「ベータ1」の段は fg019 の決定（最初のベータはベータ2）でベータ2 に読み替えた。
-注: WS120・WS168・WS178・WS187 は 2026-10-13 ユーザーの指示で completed にして表から外した。WS172 は ws.md と phase.md の状態が食い違う。WS123 は canceled。
+注: 2026-10-13 ユーザーの指示で WS014・WS044・WS048・WS118・WS139 は close、WS195 は cancel して表から外した。WS004・WS009・WS046・WS095・WS155・WS157・WS171・WS172・WS196 はベータ2 へ移した（WS095・WS171 は優先度低め、WS171 はやることが無い時）。WS120・WS168・WS178・WS187 は 2026-10-13 ユーザーの指示で completed にして表から外した。WS172 は ws.md と phase.md の状態が食い違う。WS123 は canceled。
 
-### ベータ2 の物（51 件）
+### ベータ2 の物（60 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
@@ -117,6 +117,15 @@
 | [WS200](ws200/ws.md) | Users のパスワード変更と認証方式の選択 | incomplete（p001 cleared、p002 planning） | 実機の確かめ（5330 の UAT p002） | ベータ2 |
 | [WS202](ws202/ws.md) | libmedia だけで mp4・m4a を再生 | incomplete（p013 UAT OK、p012 planned、p014 planned、他の code の Phase は uncleared） | T1 の全項目（p012）、規約 p014、BUG-300（スライダー） | ベータ2 |
 | [WS225](ws225/ws.md) | Vulkan の header を仕様だけで書き直す | planning（blocked、p001 planned） | ユーザーの指示で着手しない（WS226 の後） | ベータ2（blocked） |
+| [WS004](ws004/ws.md) | ハードウェアの拡張（USB・WLAN・NVMe・PCI） | incomplete。p021・p038 uncleared、p025 planned（実機）、p034 test-wait、p035・p039 planned | 実機の確かめ（5330 の SN740、p025）、T1 の試験（p034）、Queue なし | ベータ2（5330 の NVMe に書き込んでよい（2026-10-13 ユーザー）） |
+| [WS009](ws009/ws.md) | 製品の文書（GPU の文書ほか） | incomplete。p001〜p008 済み、DOC-54 は Phase 未定義 | GPU の文書の保留の解除待ち（DOC-54） | ベータ2（2026-10-13 ユーザー） |
+| [WS046](ws046/ws.md) | GNU 互換の make | incomplete。p011・p014 uncleared、p005（規約と回帰）planning | なし（着手待ち、p014 の当て直しから、Queue なし） | ベータ2（2026-10-13 ユーザー） |
+| [WS095](ws095/ws.md) | 日本語 IME | incomplete。p001〜p005・p012 cleared、p006・p007 は T1 待ち、p009〜p011 planning | T1 の試験待ち（p006・p007）、p009 は WS074 の担当次第 | ベータ2（優先度低め（2026-10-13 ユーザー）） |
+| [WS155](ws155/ws.md) | カレンダーの app（予定・メモ） | incomplete（p000〜p004 cleared、p006 in-progress、p005 規約） | 実機の確かめ（p006 の UAT、T1-561 は PASS）、規約 p005 はベータ3 | ベータ2（UAT OK（2026-10-13 ユーザー）） |
+| [WS157](ws157/ws.md) | 写真の管理の app（Photos） | incomplete（p011〜p014・p016 in-progress、p015・p017 planned） | T1 の試験待ち（p013・p014・p016）、p016 は main に未統合、実機の GUI の UAT は未実施 | ベータ2（UAT OK（2026-10-13 ユーザー）） |
+| [WS171](ws171/ws.md) | hal.h の全関数に契約の comment | planning（p001 cleared、p002 差分の案・p003 適用） | 担当が未割当、p002 はユーザーの review が要る | ベータ2（優先度低め、やることが無い時に入れる（2026-10-13 ユーザー）） |
+| [WS172](ws172/ws.md) | passkey の認証の枠組み（/sbin/passkey） | incomplete（p002・p003 cleared、p007 test-wait、p004〜p006 planning） | T1 の試験（p007 の再依頼）、p001 は phase.md で判断 P1〜P10 待ちのまま（ws.md は cleared と記録） | ベータ2（2026-10-13 ユーザー） |
+| [WS196](ws196/ws.md) | useradd・usermod・userdel | planning（p001 範囲の設計） | ユーザーの判断 E1〜E6、design-reviewer、WS195 p001 | ベータ2（2026-10-13 ユーザー） |
 
 ### 区分が記録に無い物（今日の Pi 4・網・描画・license などの新しい WS が中心）（25 件）
 
@@ -148,55 +157,40 @@
 | [WS223](ws223/ws.md) | 全画面は合成、game mode は拡張の時だけ | planning（p001 第 1 版、p002〜p005 planned） | design-reviewer の後の第 2 版、ユーザーの判断 D1〜D6 | 不明 |
 | [WS226](ws226/ws.md) | Vulkan 1.3 の header と libvulkan の 1.3 の実装 | planning（p001 第 1 版） | design-reviewer の review-1、担当は次に空いた P | 不明 |
 
-### ベータ3 以降の物（47 件）
+### ベータ3 以降の物（32 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
 | [WS001](ws001/ws.md) | POSIX.1-2024 の utility・header の適合 | incomplete。p041〜p043 in-progress、p044 test-wait、p045 planned、p046〜p051 planning | T1 の guest 試験待ち（p041〜p044）、p045 は 10/17 の後に merge（Q1 の判定）、p046〜p051 は担当が未割当 | ベータ3 以降 |
-| [WS004](ws004/ws.md) | ハードウェアの拡張（USB・WLAN・NVMe・PCI） | incomplete。p021・p038 uncleared、p025 planned（実機）、p034 test-wait、p035・p039 planned | 実機の確かめ（5330 の SN740、p025）、T1 の試験（p034）、Queue なし | ベータ3 以降 |
-| [WS009](ws009/ws.md) | 製品の文書（GPU の文書ほか） | incomplete。p001〜p008 済み、DOC-54 は Phase 未定義 | GPU の文書の保留の解除待ち（DOC-54） | ベータ3 以降 |
-| [WS014](ws014/ws.md) | QEMU の virtio-gpu の GPU・表示の経路 | incomplete。残りは p004（最終 API・規約）planning、旧設計の p001 は手動の保留 | 規約の全文の見直し p004 が未着手（規約はベータ3）、p001 は手動の保留 | ベータ3 以降 |
 | [WS026](ws026/ws.md) | 試験の資産の整理 | planning。Phase 未定義 | なし（着手待ち、Phase 未定義） | ベータ3 以降 |
 | [WS037](ws037/ws.md) | NVIDIA RTX（nvrtx）の driver | planning。p001 in-progress、p002〜p009 planned・planning | ユーザーの指示で要検討・ブロック、試験機の host の情報待ち（p002） | ベータ3 以降（Target はベータ4 以降） |
 | [WS038](ws038/ws.md) | Intel Arc dGPU の driver | planning。番号の予約だけ、Phase なし | ユーザーの指示で要検討・ブロック | ベータ3 以降（Target はベータ4 以降） |
 | [WS039](ws039/ws.md) | AMD RDNA GPU の driver | planning。番号の予約だけ、Phase なし | ユーザーの指示で要検討・ブロック | ベータ3 以降（Target はベータ4 以降） |
-| [WS044](ws044/ws.md) | Raspberry Pi 4 の開発環境（font・FAT32・lldb） | planning。p003（lldb）・p004（規約）planning | ユーザーの指示で要検討・ブロック、実機の結果待ち（p001・p005〜p009） | ベータ3 以降（Target はベータ4 以降） |
-| [WS046](ws046/ws.md) | GNU 互換の make | incomplete。p011・p014 uncleared、p005（規約と回帰）planning | なし（着手待ち、p014 の当て直しから、Queue なし） | ベータ3 以降 |
-| [WS048](ws048/ws.md) | Raspberry Pi 4 の USB（hub・HID キーボード） | incomplete。p015 の直しは main に統合済み、p006・p007 planned | 実機の確かめ（Pi 4、ユーザー: 通常の cancel log の停止と USB 入力） | ベータ3 以降（Target はベータ4 以降） |
 | [WS052](ws052/ws.md) | 電源管理（S0i3 の sleep） | incomplete。p001・p002・p005・p006・p009 in-progress、p010〜p012 test-wait、p007 planning、p008 planned | T1 の QEMU の試験と実機の確かめ（5330 の UAT）、設計の review（p001・p007） | ベータ3 以降 |
 | [WS068](ws068/ws.md) | EGL・OpenGL ES・desktop GL | incomplete。p004・p009 in-progress、p007・p039 ほか planning・planned、GL 3.3 以降（p034〜p037）は保留 | GL 3.3 以降はユーザーの指示で保留、p009 は T1-180 の計測待ち | ベータ3 以降 |
 | [WS074](ws074/ws.md) | Web ブラウザ（libbrowser と shell） | incomplete。p100 ほか多数が planned、待機 | ユーザーの指示で保留（レンダリングの改善は指示まで行わない） | ベータ3 以降 |
 | [WS080](ws080/ws.md) | PE/COFF の動的ローダ ld.coff | planning。p001 の設計まで、p002〜p012 planning | ユーザーの指示で要検討・ブロック、ユーザーの判断 D1〜D17 と HAL の差分の承認（A1・A2） | ベータ3 以降（Target はベータ4 以降） |
-| [WS095](ws095/ws.md) | 日本語 IME | incomplete。p001〜p005・p012 cleared、p006・p007 は T1 待ち、p009〜p011 planning | T1 の試験待ち（p006・p007）、p009 は WS074 の担当次第 | ベータ3 以降（続き） |
 | [WS101](ws101/ws.md) | GPU の compute（Noct の自動並列化） | incomplete。L1 で区切り、p012・p013・p018 planned、p016・p017 は優先を下げた | ユーザーの指示で最適化の優先を下げた（再開の指示待ち） | ベータ3 以降 |
 | [WS106](ws106/ws.md) | test app を userland/tests へ集約 | incomplete。p002 は cleared 候補、p003 planning | なし（着手待ち） | ベータ3 以降 |
 | [WS112](ws112/ws.md) | Debian・Ubuntu・RPi OS の deb | incomplete。p002・p003 cleared、p007（規約）planned | 規約の全文の見直し p007 が未着手 | ベータ3 以降（残りは規約） |
 | [WS115](ws115/ws.md) | upstream GTK4 の移植 | planning。p010 in-progress（中断）、p003 planning | rtld の上限で GTK が起動しない（p010 の再開点） | ベータ3 以降 |
 | [WS116](ws116/ws.md) | upstream Qt6 の移植 | planning。p001〜p005 planning | 他の WS の依存（WS117 p002・WS115 p008） | ベータ3 以降 |
 | [WS117](ws117/ws.md) | Linux の標準 Qt6 の互換 | planned。p001 planned、p002〜p006 planning | ユーザーの判断（p002 の行別の採否）、p001 は WS114 p007 の後 | ベータ3 以降 |
-| [WS118](ws118/ws.md) | Latitude 5320 の対応 | incomplete。p006・p007 cleared、p005 uncleared、p001〜p004 planning | 実機の確かめ（5320、電源オフ）、ユーザーの立会い | ベータ3 以降（Target はベータ4 以降） |
 | [WS119](ws119/ws.md) | インストーラの作り直し | planning。p001 planned、p002〜p006 planning | アイディアの Phase の後のユーザーとの議論と要件の判断 | ベータ3 以降（Target はベータ4 以降） |
 | [WS121](ws121/ws.md) | browser の動画の再生 | incomplete。p001・p002・p004〜p006 cleared、p003（Range）planning | browser（WS074）と一緒にベータ3 へ（Q1 の判定） | ベータ3 以降 |
 | [WS124](ws124/ws.md) | Emacs（端末版）の package | planning。p001・p002 planned、p003〜p006 planning | 担当が未割当、p004 は ws125-p002 の後 | ベータ3 以降（Target はベータ4 以降） |
 | [WS125](ws125/ws.md) | vim の package | planning。p002 test-wait、p001 planned、p003・p004 planning | T1 の試験（ws126-p005 の image の boot） | ベータ3 以降（Target はベータ4 以降） |
 | [WS126](ws126/ws.md) | Python 3（core）の package | planning。p002・p003 cleared、p005 test-wait、p004 は行わない、p006 planning | T1 の試験（p005） | ベータ3 以降 |
-| [WS139](ws139/ws.md) | desktop の速さ | incomplete。p001 in-progress、p002・p003 planned | T1 の計測（E1）、ユーザーの判断 U2（5330 の操作）・U1・U3・U4 | ベータ3 以降 |
 | [WS144](ws144/ws.md) | VPN | planning。p001 planning | アイディアの Phase の後のユーザーとの議論 | ベータ3 以降（Target はベータ4 以降） |
 | [WS146](ws146/ws.md) | SSH の独自のオンラインストレージ | planning。p001 planning | 時期の決定、WS150 の後 | ベータ3 以降（Target はベータ4 以降） |
 | [WS147](ws147/ws.md) | OneDrive の連携 | planning。p001 planning | 時期の決定、WS150 の後 | ベータ3 以降（Target はベータ4 以降） |
 | [WS152](ws152/ws.md) | system の更新（Settings の Updates の頁の実体） | planning（p001 方式の検討の第 2 版） | ユーザーの判断 U1〜U12 | ベータ3 以降 |
-| [WS155](ws155/ws.md) | カレンダーの app（予定・メモ） | incomplete（p000〜p004 cleared、p006 in-progress、p005 規約） | 実機の確かめ（p006 の UAT、T1-561 は PASS）、規約 p005 はベータ3 | ベータ3 以降（続き。p006 の区分は不明） |
-| [WS157](ws157/ws.md) | 写真の管理の app（Photos） | incomplete（p011〜p014・p016 in-progress、p015・p017 planned） | T1 の試験待ち（p013・p014・p016）、p016 は main に未統合、実機の GUI の UAT は未実施 | ベータ3 以降（続き。ベータ2 の範囲は済み） |
 | [WS158](ws158/ws.md) | Keiland と app の翻訳（日本語） | incomplete（p001 cleared、p002〜p005 in-progress・test-wait、p006 planning） | T1 の試験（p003・p004）、ユーザーの日本語の review（p005） | ベータ3 以降 |
-| [WS171](ws171/ws.md) | hal.h の全関数に契約の comment | planning（p001 cleared、p002 差分の案・p003 適用） | 担当が未割当、p002 はユーザーの review が要る | ベータ3 以降 |
-| [WS172](ws172/ws.md) | passkey の認証の枠組み（/sbin/passkey） | incomplete（p002・p003 cleared、p007 test-wait、p004〜p006 planning） | T1 の試験（p007 の再依頼）、p001 は phase.md で判断 P1〜P10 待ちのまま（ws.md は cleared と記録） | ベータ3 以降 |
 | [WS176](ws176/ws.md) | Canvas（pen のイラストと画像の編集） | planning（p001 planning） | ユーザーの決定でベータ3 | ベータ3 以降 |
 | [WS180](ws180/ws.md) | Emacs ベースのグラフィカルなエディタ | planning（Phase 未定） | ユーザーの決定でベータ3 以降（WS だけ作成） | ベータ3 以降 |
 | [WS184](ws184/ws.md) | 左手デバイスの OSK（クリエイターモード） | planning（p001・p002 planned） | ユーザーの決定でベータ3 | ベータ3 以降 |
 | [WS185](ws185/ws.md) | ゲームパッドの OSK とゲームコンソールモード | planning（p001〜p003 planned） | ユーザーの決定でベータ3 | ベータ3 以降 |
 | [WS186](ws186/ws.md) | Realtek RTL8822CE の WiFi（5320） | planning（p001 planned） | ユーザーの決定でベータ3（ベータ2 が早く終われば前倒し） | ベータ3 以降 |
-| [WS195](ws195/ws.md) | userland/desktop を /opt/keiland/ へ | planning（p001 設計） | ユーザーの判断 D1〜D7、design-reviewer | ベータ3 以降 |
-| [WS196](ws196/ws.md) | useradd・usermod・userdel | planning（p001 範囲の設計） | ユーザーの判断 E1〜E6、design-reviewer、WS195 p001 | ベータ3 以降 |
 | [WS198](ws198/ws.md) | zedBSD の上で zedBSD を self-build | planning（p001 cleared 候補） | ユーザーの決定でベータ3、p001 は Q1 の判定 | ベータ3 以降 |
 | [WS201](ws201/ws.md) | /home の暗号化（FIDO2 の PRF と key slot） | planning（p001 設計） | ユーザーの指示で今は検討しない | ベータ3 以降 |
 
