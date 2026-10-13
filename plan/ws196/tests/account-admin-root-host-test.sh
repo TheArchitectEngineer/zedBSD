@@ -7,8 +7,11 @@
 # -L, removal and -g (S1, S2), user IDs never given twice (S3), a removal's jobs and automatic login cleaned (S3), the
 # lock held by another process (S4, flock), the files put back after a failed write (S5), what is left of a name without
 # a passwd line cleaned (S5), a mount point in a home left (S6), a home the user does not own kept (F2), another user's
-# primary group kept (M7).  The last line is "account-admin-root-host-test: PASS".
-#   sh plan/ws196/tests/account-admin-root-host-test.sh   (from the repository's top; needs sudo, unshare, flock, openssl)
+# primary group kept (M7), and Settings' form from kei through a set-user-ID copy (ws089-p026's add, busy, removal
+# keeping the home and home-exists, each answered within 20 s; T1-600).  The last line is
+# "account-admin-root-host-test: PASS".
+#   sh plan/ws196/tests/account-admin-root-host-test.sh   (from the repository's top; needs sudo, unshare, flock, openssl,
+#   setpriv)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 mkdir -p build/tmp
@@ -24,6 +27,32 @@ cc -std=gnu17 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -Wno-format-truncation 
 	-DADMIN_LANGUAGE_FILE="\"$OUT/etc/language\"" -DADMIN_LANGUAGE_DIRECTORY="\"$OUT/etc\"" \
 	-o "$OUT/account-admin" userland/base/account-admin/main.c userland/base/account-admin/edit.c \
 	userland/base/common/account.c userland/base/login/verify.c userland/base/passkey/record.c -lcrypt
+# A login recorded in utmp (Settings' busy on Linux, where there is no /dev/system).
+cat > "$OUT/utmp-login.c" <<'EOF'
+#include <string.h>
+#include <unistd.h>
+#include <utmpx.h>
+int
+main(int argc, char **argv)
+{
+	struct utmpx record;
+
+	if (argc != 2)
+		return 2;
+	memset(&record, 0, sizeof(record));
+	record.ut_type = USER_PROCESS;
+	record.ut_pid = getpid();
+	strncpy(record.ut_user, argv[1], sizeof(record.ut_user));
+	strncpy(record.ut_line, "pts/9", sizeof(record.ut_line));
+	strncpy(record.ut_id, "p9", sizeof(record.ut_id));
+	setutxent();
+	if (pututxline(&record) == NULL)
+		return 1;
+	endutxent();
+	return 0;
+}
+EOF
+cc -std=gnu17 -D_GNU_SOURCE -O1 -Wall -Wextra -Werror -o "$OUT/utmp-login" "$OUT/utmp-login.c"
 hash=$(openssl passwd -6 -salt p002salt secret123)
 cat > "$OUT/etc/passwd" <<EOF
 root:x:0:0:root:/root:/bin/sh
@@ -173,6 +202,49 @@ expect remove-kim 'user-remove\nname kim\nhome remove\n' ok
 gone remove-kim-file "\$O/home/kim/file"
 there remove-kim-mount-kept "\$O/home/kim/mnt/keep"
 umount "\$O/home/kim/mnt"
+
+# Settings' form (ws089-p026's steps 3 and 7; T1-600): kei (uid 1000, in wheel, password secret123) through the
+# set-user-ID copy, the host's passwd, group and shadow bound to the test's (bound again before each request: the tool
+# replaces the files, and a bind keeps the old one) for getpwuid, getgrnam and getspnam.  alice is added, busy (a login
+# recorded in utmp: /dev/system, the guest's list of processes, is not on Linux), removed keeping her home once the
+# login is gone, and her name again is home-exists.  Every answer comes within 20 s (timeout's 124 would be a hang).
+S="\$O/account-admin-settings"
+cp "\$A" "\$S"
+chown root:root "\$S"
+chmod 4755 "\$S"
+mount -t tmpfs -o size=64k tmpfs /run
+: > /run/utmp
+bind() {
+	for f in passwd group; do umount "/etc/\$f" 2>/dev/null; mount --bind "\$O/etc/\$f" "/etc/\$f"; done
+	umount /etc/shadow 2>/dev/null
+	mount --bind "\$O/shadowdir/shadow" /etc/shadow
+}
+kei() {
+	bind
+	printf '%b' "\$1" | ASAN_OPTIONS=detect_leaks=0 timeout 20 setpriv --reuid=1000 --regid=1000 --clear-groups "\$S"
+	echo "status=\$?"
+}
+settings() {
+	got=\$(kei "\$2" | tr '\n' ' ')
+	if [ "\$got" = "\$3" ]; then echo "ok \$1"; else echo "FAIL \$1 (got '\$got', wanted '\$3')"; fi
+}
+settings settings-wrong-password 'wrong\nreset-password\nkei\nwhatever12\n' 'error bad-password status=1 '
+settings settings-add-alice 'secret123\nadd\nalice\nAlice Tanaka\nalicepass1\nuser\n' 'ok status=0 '
+has settings-alice-passwd "\$O/etc/passwd" '^alice:x:[0-9]*:[0-9]*:Alice Tanaka:'
+is settings-alice-home "\$(stat -c %u:%a "\$O/home/alice" 2>&1)" "\$(grep '^alice:' "\$O/etc/passwd" | cut -d: -f3):700"
+settings settings-name-taken 'secret123\nadd\nalice\nAlice\nalicepass1\nuser\n' 'error name-taken status=1 '
+"\$O/utmp-login" alice
+settings settings-busy 'secret123\nremove\nalice\nkeep-home\n' 'error busy status=1 '
+: > /run/utmp
+settings settings-remove-alice 'secret123\nremove\nalice\nkeep-home\n' 'ok status=0 '
+lacks settings-alice-gone "\$O/etc/passwd" '^alice:'
+lacks settings-alice-gone-shadow "\$O/shadowdir/shadow" '^alice:'
+lacks settings-alice-gone-group "\$O/etc/group" '^alice:'
+there settings-alice-home-kept "\$O/home/alice"
+settings settings-home-exists 'secret123\nadd\nalice\nAlice\nalicepass1\nuser\n' 'error home-exists status=1 '
+settings settings-self 'secret123\nremove\nkei\nkeep-home\n' 'error self status=1 '
+umount /etc/passwd /etc/group /etc/shadow
+umount /run
 
 # S4: the lock held by another process for longer than the wait is not taken over; once given back it is taken.
 flock -x "\$O/etc/shadow.lock" sleep 8 &
