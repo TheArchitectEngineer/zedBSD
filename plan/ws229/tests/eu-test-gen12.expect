@@ -1,0 +1,9 @@
+first PIPELINE_SELECT PipelineSelection=0 MaskBits=0x13 MediaSamplerDOPClockGateEnable=1
+last PIPELINE_SELECT PipelineSelection=2 MaskBits=0x13 MediaSamplerDOPClockGateEnable=1
+STATE_BASE_ADDRESS GeneralStateMOCS=6 StatelessDataPortAccessMOCS=6 SurfaceStateMOCS=6 InstructionMOCS=4 BindlessSurfaceStateSize=63
+before-gpgpu PIPE_CONTROL CommandStreamerStallEnable=1 RenderTargetCacheFlushEnable=1 DepthCacheFlushEnable=1 HDCPipelineFlushEnable=1
+after-gpgpu PIPE_CONTROL CommandStreamerStallEnable=1 StallAtPixelScoreboard=1
+exact MEDIA_VFE_STATE MaximumNumberofThreads=671 NumberofURBEntries=2 URBEntryAllocationSize=2
+exact GPGPU_WALKER ThreadGroupIDXDimension=1 ThreadGroupIDYDimension=1 ThreadGroupIDZDimension=1 RightExecutionMask=1 BottomExecutionMask=0xffffffff
+tail GPGPU_WALKER MEDIA_STATE_FLUSH PIPE_CONTROL PIPE_CONTROL MI_STORE_DATA_IMM MI_BATCH_BUFFER_END MI_NOOP
+idd KernelStartPointer=1024 ThreadPreemptionDisable=1 NumberofThreadsinGPGPUThreadGroup=1
