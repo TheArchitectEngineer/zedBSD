@@ -348,6 +348,20 @@
    "note": ""
   },
   {
+   "id": "brcmbt-firmware",
+   "name": "Broadcom/Cypress UART Bluetooth firmware (Raspberry Pi 4, BCM4345C0)",
+   "when": "program:brcmbt-firmware",
+   "license": "LicenseRef-cypress-eula (redistribution allowed)",
+   "upstream": "RPi-Distro bluez-firmware; licence text from linux-firmware",
+   "version": "1.2-9+rpt4",
+   "notices": [
+    "/usr/share/licenses/brcmbt-firmware/LICENCE.cypress",
+    "/usr/share/licenses/brcmbt-firmware/bluez-firmware.copyright"
+   ],
+   "paths": [],
+   "note": "Object code only, solely for use with Cypress integrated circuits (selected only by the Raspberry Pi 4 image); the licence forbids modification and reverse engineering."
+  },
+  {
    "id": "intelbt-firmware",
    "name": "Intel Bluetooth firmware (AX211, Solar)",
    "when": "program:intelbt-firmware",
