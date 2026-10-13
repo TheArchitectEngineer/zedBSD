@@ -36,8 +36,40 @@ Queue: q982
 
 ## 目標 4: config/ci/config-pc98.mk の build
 
-（進行中）
+- 1 回目: `make -k -j32 ZEDBSD_CONFIG=config/ci/config-pc98.mk disk-image`（P1 の worktree、log
+  `/home/awe/zedBSD-worktrees/p1/build/ws232/pc98-build-1.log`）→ 失敗は 1 つだけ:
+  `src/rtld/rtld.c:3278:1: error: unused function 'tlsdesc_slot' [-Werror,-Wunused-function]`。
+  `tlsdesc_slot`（WS140 U3 の TLSDESC の引数の置き場）は amd64・arm64 の TLSDESC の処理（`#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)`）
+  からだけ呼ばれ、i386 では使われない。
+- 直した所: 宣言と定義を同じ `#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)` で囲んだ（amd64・arm64 の code は変わらない）。commit c826dc5da。
+- 2 回目: 同じ command（log `/home/awe/zedBSD-worktrees/p1/build/ws232/pc98-build-2.log`）→ rc=0、compiler の warning 0
+  （log の warning は gmake の jobserver の 1 行だけ）。image `/home/awe/zedBSD-worktrees/p1/build/pc98/hdd-image.img`
+  （185597952 byte、sha256 `969de239325a8c974b5aa965bc4cb56d93053f82f76a20d0bc0825c3cf0f638f`）。rootfs に Retro の
+  `/bin/Xzed`・`/bin/zwm`・`/bin/zshell`・`/bin/zterm` が入っている。WS227 の library の移動による失敗は出なかった
+  （config-pc98.mk は Desktop の program を持たない）。
 
-## 目標 5: PC-98 の QEMU で login prompt まで
+## 目標 5: PC-98 の QEMU で login prompt まで（T1 への依頼）
 
-（進行中）
+P1 は QEMU を起動しない。次を T1 に流してもらう（Q1 経由）。image は上の目標 4 の物（P1 は T1 の結果まで `build/pc98/` を作り直さない）。
+
+- 道具: 登録済みの [pc98-boot.py](../../tools/pc98-boot.py)（`boot-test.sh` に PC-98 の mode が無いため。Master の Tools 節）。
+  image を一時の directory に複写して起動し、text VRAM（`pmemsave 0xa0000 0x2000`）で `login: ` を待ち、root/root で login して
+  `uname -a` を打ち、画面を text と PNG で残す。
+- command（main の checkout か P1 の worktree のどちらからでも同じ）:
+
+      timeout 900 python3 plan/tools/pc98-boot.py \
+          /home/awe/qemu-pc98/build/qemu-system-i386 \
+          /home/awe/zedBSD-worktrees/p1/build/pc98/hdd-image.img \
+          <OUTPUT>
+
+  中で起動される QEMU（`plan/tools/clock/pc98-sleep.py` の `Guest`）:
+  `qemu-system-i386 -M pc9821,pegc=off,coregraph=on -cpu 486 -smp 1 -m 64M -display none -serial none -no-reboot
+  -drive if=ide,format=raw,file=<複写した image> -monitor unix:<dir>/monitor.sock,server=on,wait=off`
+  （machine は PC-9821、disk は IDE の raw の 1 台）。
+- 判定: 終了 status 0、`<OUTPUT>/login.png`（と `login.txt`）に `login:` の prompt、`<OUTPUT>/command.png` に `uname -a` の出力
+  （zedBSD、i386）。PNG は text VRAM から描いた物なので、実際の画面も要るなら、`login:` が出た所で monitor に
+  `screendump -f png <OUTPUT>/login-screendump.png` を送って撮る（QEMU 11.0.93、`-display none` でも撮れる）。
+  console・serial の log では判定しない。
+- 上限: 起動の待ちは pc98-boot.py の 300 秒、全体は 900 秒。変更なしの再試行は 3 回まで。
+
+（結果は T1 の後に Q1 が記入・判定する。それまで Phase は cleared にしない。）
