@@ -3,7 +3,7 @@
 # ws143-p007: Linux の Bluetooth の backend（BlueZ の D-Bus）と FreeBSD の未対応の表示
 
 Parent: [WS143](../ws.md)
-Status: in-progress — test-wait（2026-10-14 P3: T1-593 の Connect の文を直した（§11、commit eb79dde1c、host 試験 PASS）、T1 の再試験（§11 の依頼の文）待ち。旧 2026-10-14 Q1: T1-593 の Linux の部分は Connect を除き PASS（ON・adapter の名・Other Devices・番号の照合・pair・Forget・電源）。仮想の相手（profile 無し）への Connect は NotAvailable で、頁が「The pairing was refused.」と誤った文を出す。Forget の後の 2 回目の pair は相手の側の古い bond を消すまで AuthenticationCanceled（仮想の相手の性質と推測）。FreeBSD の頁は未実施（GPU の無い guest で compositor が起きない、T1-587））
+Status: in-progress — test-wait（2026-10-14 P3: T1-604 の観察の直し（§12、commit 56f416f41、host 試験 PASS）。Pair の窓の Cancel（no）で自分の pairing をすぐ終える（CancelPairing、ECONNREFUSED `rejected`）、Pair の終わりで窓の question と保留の Agent の call を必ず終える。T1 の再試験（§12.5 の依頼の文）待ち。旧 2026-10-14 P3: T1-593 の Connect の文を直した（§11、eb79dde1c）、T1-604 で文は PASS。FreeBSD の頁は未実施（GPU の無い guest で compositor が起きない、T1-587））
 Phase disposition: normal
 Queue: q962（P2、2026-10-13）。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」、WS143 の design.md §9（D7・D13 ほか、2026-10-05 夕 ユーザー「全部推奨」）と §10 の p007、2026-10-08 ユーザー「Linux・FreeBSD は 10/13 以降」。
 Queue（実装）: q967（P3、2026-10-14）。review: [review-1](review-1.md)（design-reviewer、判定「直せば実装してよい」、重大 4 と中 M1・M3・M5・M7・M8 を入れれば再 review なし、Q1）。
@@ -318,3 +318,39 @@ zedBSD への影響（頁は共通）: zedBSD の Connect の失敗は bluetooth
 ### T1 への再試験の依頼（Q1 が T1 に送る文）
 
 > T1-593 の再試験（ws143-p007 の Connect の失敗の文、P3 eb79dde1c）。WS131 の Debian 13 の QEMU+KVM の guest（SSH・QMP PNG の例外）に main の tree の `make keiland-linux` を install、bluez と bluez-test-tools、`modprobe hci_vhci; btvirt -l2 &`。Keiland を root でない利用者（kei、systemd-run の PAMName=login・tty1、T1-593 と同じ）で起動。相手側（hci1）は bluetoothctl で select・power on・discoverable on・pairable on・agent on・default-agent（Keiland の後）。(1) Settings の Bluetooth で相手を Pair（数の一致の窓で Pair）→ paired。(2) My Devices の相手で Disconnect、続けて Connect（profile の無い仮想の相手なので BlueZ は NotAvailable）: 頁の文が「This computer cannot connect to this kind of device.」で、「The pairing was refused.」ではないこと（PNG）。stderr に `request N kind=5 error=95 reason=NotAvailable`。(3) Forget の後に相手側で `remove 00:AA:01:00:00:00`（hci0 の address）をせずに Pair → 失敗の文が「The pairing was refused.」（「This account may not change Bluetooth.」ではない）で stderr に `kind=3 error=111 reason=AuthenticationCanceled`（PNG）。その後に相手側で remove して Pair が通ること。(4) Pair の窓で Cancel（または No）→ 文が「The pairing was refused.」（PNG）。合否は PNG の文と stderr の行。FreeBSD は T1-587 と同じく GPU の無い guest で compositor が起きないので省く。
+
+## 12. T1-604 の観察の直し（2026-10-14 P3）
+
+T1-604（文は PASS）の観察 3 つ。証拠は T1 の `build/review/t1-604/`（PNG と `keiland-stderr-full.txt`、読み取りで）。
+
+### 12.1 Pair の窓の Cancel が Keiland の側で終わらない（直した）
+
+- 原因: 窓の Cancel（数の一致の CONFIRM・同意の CONSENT）は `kwl_bluetooth_answer(id, 0)` →（Linux）`kl_backend_bluetooth_answer` が保留の `RequestConfirmation` に `org.bluez.Error.Rejected` を返すだけで、request は BlueZ の `Pair()` の答えを待っていた。BlueZ は negative reply を controller に送った後、認証の終わりの event を待つ。btvirt の仮想の相手は相手の側（hci1 の bluetoothctl）の答えまで終えないので、`Pair()` が約 35 秒返らず、その間 request が出たまま（`pairing` 1）で頁の Pair の button が薄いまま（s19〜s22）。相手が no と答えて `AuthenticationFailed`（request 9、s23）。
+- zedBSD の同じ操作: 窓の Cancel は同じく answer no → bluetoothd が `PAIR_CONFIRM_NEGATIVE` を送り、認証の終わりで `ERROR rejected` → `bt_error()` で ECONNREFUSED → 頁は「The pairing was refused.」（zedBSD も controller の event を待つ。実機では negative reply の後すぐ失敗が来る見込み）。数を見せる窓（PASSKEY）の Cancel は `kl_backend_bluetooth_cancel` → ECANCELED `cancelled`（zedBSD・Linux とも）→ compositor の `bt_applied()` に ECANCELED の行が無く FAILED → 頁の EIO →「It did not work.」。
+- 直し（`bluetooth-linux.c`）: `kl_backend_bluetooth_answer` で、答えが no で question が自分の Pair（request が PAIR、段が Pair、question の device の path が request の path）のものなら、Rejected を返した後に `bt_request_give_up()` で request をすぐ終える: `Device1.CancelPairing` を送り、request の call を「誰にも答えない」に変え（遅れて来る `AuthenticationCanceled` は捨てる）、result **ECONNREFUSED、reason `rejected`**（zedBSD の bluetoothd と同じ errno と reason）。頁の文は zedBSD と同じ「The pairing was refused.」、Pair の button はすぐ戻る。窓の 20 秒の期限（`ASK_MS`、answer no）と、画面の lock の間の no も同じ道を通る。`kl_backend_bluetooth_cancel`（PASSKEY の Cancel）は同じ `bt_request_give_up()` を使う（ECANCELED `cancelled`、変わらず）。
+- 頁の文の決め: 取り消しに専用の文（「Pairing was cancelled.」）を出すには、compositor の `bt_applied()` と `KL_SYSTEM_RESULT_*`（client の protocol）に cancelled の値を足す必要があり、zedBSD・Linux の両方と libkeiland に触る。p007 の範囲の外なので、今は zedBSD と同じ文（CONFIRM・CONSENT の Cancel は「The pairing was refused.」、PASSKEY の Cancel は「It did not work.」）に揃えた。専用の文にするかは Q1 の判断に残す。
+
+### 12.2 pair の失敗の後も確認の窓が残る（直した。ただし T1 の場面の原因は確定できない）
+
+- source の確かめ: 直す前から、`Pair()` の error（段 Pair）の答えで question の device が request の device なら `ASK_END` を出していた（窓は END で閉じる）。BlueZ が `Agent1.Cancel` を送る場合も END を出す。従って `Pair()` が失敗を返した時点で窓は閉じるはずで、T1 の (3) の「失敗の後も約 15 秒」は、こちらの BlueZ の `Pair()` がまだ返っていない間（相手の側では失敗が見えていても、こちらの BlueZ は自分の Agent の答えを待つ）か、PNG の取り違え（s14・s15 は時計が 13:21、前後の s13・s16 は 18:21。s14・s15 には窓が無い）と推測。compositor の stdout（`KWL BT ask closed via=…`）が記録に無いので、窓が閉じた理由（`end` か `time` か）は分からない。
+- 見つけた不具合（直した）: `Pair()` が失敗して question を END で終えても、BlueZ が `Agent1.Cancel` を送らなければ、保留の Agent の call（`pending`）が 30 秒（`BT_PENDING_MS`）残り、その間の次の Pair の `RequestConfirmation` は「Another question is open」で Rejected になる。
+- 直し: `bt_pair_question_end()` を足し、Pair の段の答え（成功・失敗）と、Pair の段の request の終わり（`bt_request_finish`: cancel・give up・期限）で、request の device の question を終える: 保留の call に `org.bluez.Error.Canceled` を返して放し、`ASK_END` を出す（zedBSD の `bt_request_end` が request の終わりで question を終えるのと同じ）。`bt_forget_service`（owner が去った・接続を失った）では保留の call を先に捨ててから request を終える（去った owner に返事を送らない、§9.1 のまま）。
+
+### 12.3 Connected: yes の間 button が Disconnect のまま、押すと kind=5（観察、直さない）
+
+- source の確かめ: 頁の button の文と押した時の要求は同じ `drawn[].flags & KL_BLUETOOTH_CONNECTED`（`page-bluetooth.c` の `bluetooth_list` と `se_bluetooth_press`）、flag は compositor の `KL_SYSTEM_BT_CONNECTED` ← backend の `connected` ← BlueZ の `Device1.Connected`（`bt_device_property`、PropertiesChanged で追う）。誤りは見つからない。
+- 記録の確かめ: `keiland-stderr-full.txt` で、Connect の 3 回（request 2〜4）の各々の前に頁の layout が `CONTROL index=300 width=103`（Disconnect）から `width=84`（Connect）に変わっている（Connected が yes → no）。つまり押した時の頁は Connect を出していた。profile の無い仮想の相手では、Connect の試み（と pair の後の Connect）で ACL が上がって `Connected: yes` になり、使う profile の無い ACL を BlueZ（か kernel）が数秒で切って `Connected: no` に戻る、と推測。PNG（s7・s8）は yes の間に撮られ、押したのは no に戻った後。仮想の相手の性質で、Connected の扱いの誤りではない。
+- host 試験に `disconnected-signal`（PropertiesChanged の `Connected` false で `connected` 0）を足した。
+
+### 12.4 確かめ（host、2026-10-14 P3）
+
+- `sh plan/ws143/tests/bt-linux-host-test.sh build/p3-bt-linux`: **PASS**（plain 66 checks ok、ASan+UBSan 66 checks ok。出力 `build/p3-bt-linux.run.7wWRs6`）。足した確かめ: `disconnected-signal`、5a（偽の org.bluez の `confirm-hold`: no の後も Pair が相手の側を待つ btvirt の形）`no-ends-at-once`（1 秒以内に ECONNREFUSED `rejected`、`pairing` 0）・`no-rejected`（Agent の答えは Rejected）・`no-cancels-pairing`（CancelPairing が送られ、遅れた答えは result にならない）、5b（`confirm-fail`: question の間に Pair が `AuthenticationCanceled` で失敗し、BlueZ は Cancel を送らない）`fail-ends-question`（question の id の END が result と共に来る）・`fail-lets-call-go`（保留の call は Canceled で放される）、5c `next-pair-asked`・`next-pair-no`（次の Pair の question がすぐ出る）。
+- 同じ試験を直す前の `bluetooth-linux.c`（git stash で一時に戻した）で: 5 FAIL（`no-ends-at-once`・`no-cancels-pairing`、その request が残るため 5b・5c も EBUSY で落ちる）。出力 `build/p3-bt-linux-old.run.CCjRUU`。
+- `sh plan/ws143/tests/bt-page-result-host-test.sh build/p3-keiland-linux`: **PASS**（12 件。足した: 窓の Cancel の 2 つ、ECONNREFUSED（頁の EACCES）→「The pairing was refused.」、ECANCELED（頁の EIO）→「It did not work.」）。
+- `make -f userland/desktop/keiland-linux.mk -j8 KEILAND_LINUX_BUILD=build/p3-keiland-linux build/p3-keiland-linux/bin/wayland`: 成功、warning 0（log `build/p3-p007-build6.log`）。
+- `sh plan/tools/keiland-os-boundary/check.sh`: PASS。`git diff --check`: 問題なし。
+- zedBSD の build: 実施していない（zedBSD が build する file は変えていない）。
+
+### 12.5 T1 への再試験の依頼（Q1 が T1 に送る文）
+
+> T1-604 の観察の再試験（ws143-p007、P3 56f416f41）。T1-604 と同じ環境（WS131 の Debian 13 の QEMU+KVM の guest、SSH・QMP PNG の例外、main の tree の `make keiland-linux` と install、bluez・bluez-test-tools、`modprobe hci_vhci; btvirt -l2 &`、Keiland を kei で systemd-run（PAMName=login、tty1）、相手 hci1 は bluetoothctl の agent と default-agent を Keiland の後に）。**compositor の stdout（`KWL BT ask …`・`KWL BT answer …` の行）も stderr と共に取る**（窓が閉じた理由 `via=` を見るため）。(1) Other Devices の相手を Pair → 数の一致の窓で **Cancel**、相手の側は答えない: 1〜2 秒以内に窓が閉じ、頁が「The pairing was refused.」で Pair の button が濃く戻ること（PNG を Cancel の直後と 3 秒後）。stderr に `request N kind=3 error=111 reason=rejected`、stdout に `KWL BT answer no via=press`。その後、相手の側の bluetoothctl の確認を no か放置で終えさせてから、もう一度 Pair → 窓で Pair（相手 yes）で paired になること（`InProgress` で「Bluetooth is busy. Try again in a moment.」が出たら数秒後に押し直し、その旨を記録）。(2) Forget（Remove）して相手の側で remove せずに Pair（T1-604 の (3) と同じ古い bond）: 失敗の文「The pairing was refused.」が出た時に窓が残っていないこと。残っていれば何秒残るかと stdout の `KWL BT ask closed via=`（`end` か `time` か）、stderr の request の行（PNG を失敗の文が出た直後）。(3) 観察: paired の相手の行の button（Disconnect・Connect）を押す直前の PNG と、その時の `bluetoothctl info` の Connected、stderr の request の kind（Disconnect は 6、Connect は 5）が合うこと。合否は (1) と (2) の PNG・stderr・stdout。FreeBSD は省く。

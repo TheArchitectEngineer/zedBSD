@@ -211,6 +211,39 @@ class Device(dbus.service.Object):
                 fake.pending_pair = None
                 return False
             GLib.timeout_add(300, cancel)
+        elif script == "confirm-hold":
+            # As btvirt's pair: an answer of no leaves Pair running until the device's side ends it (8 s here) or CancelPairing.
+            fake.pending_pair = (self, ok, err)
+            fake.agent_result = "pending"
+
+            def answered(*values):
+                fake.agent_result = "ok"
+
+            def held(error):
+                fake.agent_result = error.get_dbus_name()
+
+            def device_side():
+                if fake.pending_pair is not None and fake.pending_pair[0] is self:
+                    fake.pending_pair = None
+                    err(Failure("org.bluez.Error.AuthenticationFailed"))
+                return False
+            agent.RequestConfirmation(dbus.ObjectPath(self.path), dbus.UInt32(222222), reply_handler=answered, error_handler=held, timeout=25)
+            GLib.timeout_add(8000, device_side)
+        elif script == "confirm-fail":
+            # Pair fails while the question is asked, and the agent's call is not cancelled (T1-604's window left open).
+            fake.agent_result = "pending"
+
+            def kept(*values):
+                fake.agent_result = "ok"
+
+            def let_go(error):
+                fake.agent_result = error.get_dbus_name()
+
+            def fail():
+                err(Failure("org.bluez.Error.AuthenticationCanceled"))
+                return False
+            agent.RequestConfirmation(dbus.ObjectPath(self.path), dbus.UInt32(333333), reply_handler=kept, error_handler=let_go, timeout=25)
+            GLib.timeout_add(300, fail)
         elif script == "pin":
             agent.RequestPinCode(dbus.ObjectPath(self.path), reply_handler=lambda pin: paired(), error_handler=refused, timeout=25)
         elif script == "passkey":

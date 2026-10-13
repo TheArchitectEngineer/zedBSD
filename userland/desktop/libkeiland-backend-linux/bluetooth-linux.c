@@ -302,6 +302,8 @@ static struct bt_device *bt_add_device(struct kl_backend_bluetooth *bluetooth, c
 static void bt_remove_device(struct kl_backend_bluetooth *bluetooth, const char *path);
 static void bt_request_answer(struct kl_backend_bluetooth *bluetooth, struct dbus_reply *reply, const char *error_name, const char *error_text);
 static void bt_request_finish(struct kl_backend_bluetooth *bluetooth, int error, const char *reason);
+static void bt_request_give_up(struct kl_backend_bluetooth *bluetooth, int error, const char *reason);
+static void bt_pair_question_end(struct kl_backend_bluetooth *bluetooth);
 static int bt_request_send(struct kl_backend_bluetooth *bluetooth, unsigned step);
 static int bt_errno(const char *error_name, const char *error_text, unsigned request, unsigned step);
 static int bt_says_timeout(const char *text);
@@ -662,9 +664,12 @@ kl_backend_bluetooth_take_question(
 
 /*
  * Answers the question of an id (CONFIRM and CONSENT): 1 yes, 0 no; the
- * agent's call held for it gets its return or BlueZ's Rejected.  Returns
- * 0, ENOENT when that question is not the one asked now, or the error of
- * sending.
+ * agent's call held for it gets its return or BlueZ's Rejected.  No to
+ * this program's own pairing also ends that pairing at once, as refused
+ * (ECONNREFUSED, "rejected", as zedBSD's bluetoothd answers it), and
+ * BlueZ is asked to stop it: BlueZ would otherwise wait for the device's
+ * side to end it (T1-604).  Returns 0, ENOENT when that question is not
+ * the one asked now, or the error of sending.
  */
 int
 kl_backend_bluetooth_answer(
@@ -672,7 +677,9 @@ kl_backend_bluetooth_answer(
 	uint32_t id,
 	unsigned yes)
 {
+	unsigned own;
 	int error;
+	int same;
 
 	/* The question asked now, of that id, with a call waiting for it. */
 	if (bluetooth == NULL)
@@ -680,14 +687,25 @@ kl_backend_bluetooth_answer(
 	if (!bluetooth->pending || bluetooth->question_id != id)
 		return ENOENT;
 
+	/* Whether it is this program's own pairing's question, asked while Pair runs. */
+	own = 0U;
+	same = strcmp(bluetooth->question_path, bluetooth->request_path);
+	if (bluetooth->request_kind == KL_BACKEND_BT_PAIR && bluetooth->request_step == BT_STEP_PAIR && same == 0)
+		own = 1U;
+
 	/* Yes is an empty return; no is BlueZ's refusal. */
 	bluetooth->pending = 0U;
 	bluetooth->question_id = 0U;
+	bluetooth->question_path[0] = '\0';
 	if (yes) {
 		error = dbus_send_return_to(&bluetooth->bus, bluetooth->pending_sender, bluetooth->pending_serial, "", NULL, 0);
 	} else {
 		error = dbus_send_error_to(&bluetooth->bus, bluetooth->pending_sender, bluetooth->pending_serial, "org.bluez.Error.Rejected", "Rejected by the user");
 	}
+
+	/* No to this program's own pairing: the pairing ends here, refused. */
+	if (!yes && own)
+		bt_request_give_up(bluetooth, ECONNREFUSED, "rejected");
 
 	/* A connection that broke takes the pairing with it. */
 	if (error != 0)
@@ -705,28 +723,14 @@ int
 kl_backend_bluetooth_cancel(
 	struct kl_backend_bluetooth *bluetooth)
 {
-	uint32_t serial;
-	size_t index;
-
 	/* Only a pairing of this program's going on. */
 	if (bluetooth == NULL)
 		return ENOENT;
 	if (bluetooth->request_kind != KL_BACKEND_BT_PAIR)
 		return ENOENT;
 
-	/* Pair is cancelled while it runs; its later steps are only dropped. */
-	if (bluetooth->request_step == BT_STEP_PAIR) {
-		(void)dbus_send_call(&bluetooth->bus, LINUX_DBUS_NO_AUTO_START, BT_SERVICE, bluetooth->request_path, BT_DEVICE, "CancelPairing", "", NULL, 0, &serial);
-	}
-
-	/* The request's call outstanding is answered to no one. */
-	for (index = 0; index < bluetooth->call_count; index++) {
-		if (bluetooth->calls[index].kind == BT_CALL_REQUEST)
-			bluetooth->calls[index].kind = BT_CALL_IGNORED;
-	}
-
 	/* Succeeded: given up, said as a result. */
-	bt_request_finish(bluetooth, ECANCELED, "cancelled");
+	bt_request_give_up(bluetooth, ECANCELED, "cancelled");
 	return 0;
 }
 
@@ -837,12 +841,14 @@ bt_forget_service(
 	size_t index;
 	size_t kept;
 
+	/* The call held for the question is dropped first (no answer goes to an owner gone). */
+	bluetooth->pending = 0U;
+
 	/* The request outstanding. */
 	if (bluetooth->request_kind != 0U)
 		bt_request_finish(bluetooth, ENOTCONN, "lost");
 
-	/* The question asked, and the call held for it. */
-	bluetooth->pending = 0U;
+	/* The question asked. */
 	bt_question_end(bluetooth);
 
 	/* The calls sent to BlueZ are answered to no one; the bus's own are kept. */
@@ -2203,7 +2209,6 @@ bt_request_answer(
 {
 	char reason[KL_BACKEND_BT_REASON_MAX];
 	int error;
-	int same;
 
 	(void)reply;
 
@@ -2219,9 +2224,7 @@ bt_request_answer(
 	switch (bluetooth->request_step) {
 	case BT_STEP_PAIR:
 		/* The pairing's question about this device is over either way. */
-		same = strcmp(bluetooth->question_path, bluetooth->request_path);
-		if (bluetooth->question_id != 0U && same == 0)
-			bt_question_end(bluetooth);
+		bt_pair_question_end(bluetooth);
 
 		/* A pairing that failed is the request's end; a code the agent would not type is what this computer cannot do. */
 		if (error != 0) {
@@ -2284,6 +2287,10 @@ bt_request_finish(
 	if (bluetooth->request_kind == 0U)
 		return;
 
+	/* A Pair's question is over with it, as zedBSD's ends with its request (the window goes). */
+	if (bluetooth->request_kind == KL_BACKEND_BT_PAIR && bluetooth->request_step == BT_STEP_PAIR)
+		bt_pair_question_end(bluetooth);
+
 	/* Room (the oldest answer goes when they pile up). */
 	if (bluetooth->result_count == BT_RESULTS_MAX) {
 		bluetooth->result_count--;
@@ -2304,6 +2311,58 @@ bt_request_finish(
 	bluetooth->request_kind = 0U;
 	bluetooth->request_step = BT_STEP_NONE;
 	bluetooth->adapter_due_ms = 0U;
+}
+
+/*
+ * Ends this program's request at once with its result: a Pair still
+ * running is cancelled at BlueZ, and the request's call outstanding is
+ * answered to no one (its late answer is dropped).
+ */
+static void
+bt_request_give_up(
+	struct kl_backend_bluetooth *bluetooth,
+	int error,
+	const char *reason)
+{
+	uint32_t serial;
+	size_t index;
+
+	/* Pair is cancelled while it runs; a pairing's later steps are only dropped. */
+	if (bluetooth->request_step == BT_STEP_PAIR) {
+		(void)dbus_send_call(&bluetooth->bus, LINUX_DBUS_NO_AUTO_START, BT_SERVICE, bluetooth->request_path, BT_DEVICE, "CancelPairing", "", NULL, 0, &serial);
+	}
+
+	/* The request's call outstanding is answered to no one. */
+	for (index = 0; index < bluetooth->call_count; index++) {
+		if (bluetooth->calls[index].kind == BT_CALL_REQUEST)
+			bluetooth->calls[index].kind = BT_CALL_IGNORED;
+	}
+
+	/* Succeeded: ended, said as a result. */
+	bt_request_finish(bluetooth, error, reason);
+}
+
+/*
+ * Ends the question about the device of this program's pairing, if one is
+ * asked now: the agent's call held for it is refused as cancelled (BlueZ
+ * may not cancel it itself), and its END is kept, which closes the window.
+ */
+static void
+bt_pair_question_end(
+	struct kl_backend_bluetooth *bluetooth)
+{
+	int same;
+
+	/* Only a question asked about the pairing's device. */
+	if (bluetooth->question_id == 0U)
+		return;
+	same = strcmp(bluetooth->question_path, bluetooth->request_path);
+	if (same != 0)
+		return;
+
+	/* Succeeded: the call held let go, and the question ended. */
+	bt_agent_release_pending(bluetooth, "org.bluez.Error.Canceled");
+	bt_question_end(bluetooth);
 }
 
 /*

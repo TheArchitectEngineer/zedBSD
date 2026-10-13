@@ -99,6 +99,7 @@ main(
 	struct seen seen;
 	char answer[4096];
 	char argument[256];
+	unsigned results;
 	unsigned target;
 	size_t count;
 	size_t index;
@@ -148,6 +149,12 @@ main(
 	(void)pump(bluetooth, &seen, 500, until_never, NULL);
 	(void)find_device(bluetooth, LASER, &device);
 	check(device.connected == 1U, "connected-signal", "connected=%u", device.connected);
+	(void)fake("set", "address=" LASER ";name=Connected;value=0", answer, sizeof(answer));
+	(void)pump(bluetooth, &seen, 500, until_never, NULL);
+	(void)find_device(bluetooth, LASER, &device);
+	check(device.connected == 0U, "disconnected-signal", "connected=%u", device.connected);
+	(void)fake("set", "address=" LASER ";name=Connected;value=1", answer, sizeof(answer));
+	(void)pump(bluetooth, &seen, 500, until_never, NULL);
 
 	/* 3. A device the backend never heard of changes: it is read whole. */
 	(void)fake("add", "address=AA:00:00:00:00:05;name=Quiet Q;paired=0;rssi=-80;kind=bredr;announce=0", answer, sizeof(answer));
@@ -177,6 +184,40 @@ main(
 	(void)kl_backend_bluetooth_answer(bluetooth, seen.question.id, 0U);
 	found = pump(bluetooth, &seen, 3000, until_result, NULL);
 	check(error == 0 && found && seen.result_error == ECONNREFUSED, "pair-no", "error=%d found=%d result=%d", error, found, seen.result_error);
+
+	/* 5a. No while BlueZ would wait for the device's side (btvirt, T1-604): the pairing ends at once, refused, and BlueZ is told to stop it. */
+	(void)fake("script", "confirm-hold", answer, sizeof(answer));
+	error = request(bluetooth, &seen, KL_BACKEND_BT_PAIR, "AA:00:00:00:00:06", KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 3000, until_question, NULL);
+	(void)kl_backend_bluetooth_answer(bluetooth, seen.question.id, 0U);
+	found = pump(bluetooth, &seen, 1000, until_result, NULL);
+	kl_backend_bluetooth_get_state(bluetooth, &state);
+	check(error == 0 && found && seen.result_error == ECONNREFUSED && strcmp(seen.result_reason, "rejected") == 0 && state.pairing == 0U, "no-ends-at-once", "error=%d found=%d result=%d reason=%s pairing=%u", error, found, seen.result_error, seen.result_reason, state.pairing);
+	(void)fake("agent-result", "", answer, sizeof(answer));
+	check(strcmp(answer, "org.bluez.Error.Rejected") == 0, "no-rejected", "%s", answer);
+	results = seen.results;
+	(void)pump(bluetooth, &seen, 500, until_never, NULL);
+	check(calls_contain("CancelPairing AA:00:00:00:00:06") && seen.results == results, "no-cancels-pairing", "results=%u then %u", results, seen.results);
+
+	/* 5b. Pair fails while its question is asked and BlueZ does not cancel the question: it ends with the result, and its call is let go. */
+	(void)fake("script", "confirm-fail", answer, sizeof(answer));
+	seen.ends = 0U;
+	(void)request(bluetooth, &seen, KL_BACKEND_BT_PAIR, "AA:00:00:00:00:06", KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 3000, until_result, NULL);
+	check(found && seen.result_error == ECONNREFUSED && seen.questions == 1U && seen.ends > 0U && seen.last_end == seen.question.id, "fail-ends-question", "result=%d questions=%u ends=%u end=%u question=%u", seen.result_error, seen.questions, seen.ends, seen.last_end, seen.question.id);
+	(void)pump(bluetooth, &seen, 1000, until_agent_result, NULL);
+	(void)fake("agent-result", "", answer, sizeof(answer));
+	check(strcmp(answer, "org.bluez.Error.Canceled") == 0, "fail-lets-call-go", "%s", answer);
+
+	/* 5c. The next pairing is asked at once (no call of the failed one still held). */
+	(void)fake("script", "confirm", answer, sizeof(answer));
+	(void)request(bluetooth, &seen, KL_BACKEND_BT_PAIR, "AA:00:00:00:00:06", KL_BACKEND_BT_BREDR);
+	found = pump(bluetooth, &seen, 3000, until_question, NULL);
+	check(found && seen.question.kind == KL_BACKEND_BT_ASK_CONFIRM && seen.question.number == 123456U, "next-pair-asked", "found=%d kind=%u number=%u", found, seen.question.kind, seen.question.number);
+	(void)kl_backend_bluetooth_answer(bluetooth, seen.question.id, 0U);
+	found = pump(bluetooth, &seen, 1000, until_result, NULL);
+	(void)pump(bluetooth, &seen, 300, until_never, NULL);
+	check(found && seen.result_error == ECONNREFUSED, "next-pair-no", "result=%d", seen.result_error);
 
 	/* 6. BlueZ's plain Failed: its text is the reason, and a page timeout is a device that did not answer. */
 	(void)fake("script", "fail:org.bluez.Error.Failed:br-connection-page-timeout", answer, sizeof(answer));
