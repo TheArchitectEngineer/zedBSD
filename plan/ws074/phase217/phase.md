@@ -146,3 +146,11 @@ Event ws074-p217-q1110-partial-clear-20261014: [証拠](evidence/20261014-q1110/
 ## q1111-i01 結果（2026-10-14 08:51 JST）
 
 Event ws074-p217-q1111-partial-clear-20261014: [証拠](evidence/20261014-q1111/README.md)。固定行軸003/004/008/010/011の水平10 subtest中6 FAIL、011のself-endはq1110で両PASSへ改善。物理left/rightと子自身のdirectionを使うself-startの未配置が共通。現在のGridはRTLでそれらを静的area経路から除外、LTRではstartへ置く。次はprivate area widthと最終子幅で左/右辺を計算。縦書き10 subtestはwidth差、全5 whole FAIL。q1111部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1112-i01 有限部分範囲（2026-10-14 08:52 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:22 JSTまで）に適用。水平LTR/RTL Gridの直接absolute子、有効明示area、四inset auto、水平子について`justify-self`または親`justify-items`のleft/right/self-startをprivate area幅と最終子幅で物理辺に配置。固定row-axis positioned-items003/004/008/010/011の水平subtest、最小LTR/RTL/子の異方向/明示inset/無効line、旧PASS代表、Grid/CSS/JS、warning0 build、Acid3差0・Acid2非増加で検証。縦書き、他CSS配置、runner/WPT/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1112-i01 結果（2026-10-14 08:53 JST）
+
+Event ws074-p217-q1112-partial-clear-20261014: [証拠](evidence/20261014-q1112/README.md)。水平Gridの絶対子で物理left/rightと子方向self-startをprivate area端へ配置。最小fixture PASS。固定行軸5件で横書き6 subtest FAIL→PASS、横書き10/10 PASS。縦書き10 subtestはwidth期待10/実60でFAIL継続、whole5件FAIL。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1112部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1111 / WS074 positioned Grid remaining inline-alignment diagnosis（2026-10-14）
+## 最新: q1112 / WS074 positioned Grid physical inline edges（2026-10-14）
+
+[q1112履歴](queue-q1112.md): 固定行軸5件の水平6 subtest FAIL→PASS、水平10/10 PASS。縦書き差は残る。旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1112/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1111 / WS074 positioned Grid remaining inline-alignment diagnosis（2026-10-14）
 
 [q1111履歴](queue-q1111.md): 固定行軸5件で水平10中6 subtestがleft/right/self-startの物理辺差、011は両PASS。縦書き差は残る。[証拠](../ws074/phase217/evidence/20261014-q1111/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

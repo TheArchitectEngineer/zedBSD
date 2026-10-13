@@ -1,0 +1,16 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; width: 100px; height: 100px;
+  grid-template-columns: 100px; grid-template-rows: 100px; }
+.grid > div { position: absolute; width: 20px; height: 10px;
+  grid-column: 1 / 2; grid-row: 1 / 2; }
+.left { justify-self: left; }
+.right { justify-self: right; }
+.self-start { justify-self: self-start; }
+.rtl { direction: rtl; }
+.ltr { direction: ltr; }
+.grid > .inset { justify-self: right; left: 7px; }
+.grid > .invalid { justify-self: right; grid-column: 99 / 100; }
+</style>
+<div class="grid"><div class="left"></div><div class="right"></div><div class="self-start rtl"></div><div class="inset"></div><div class="invalid"></div></div>
+<div class="grid rtl"><div class="left"></div><div class="right"></div><div class="self-start ltr"></div></div>

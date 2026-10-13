@@ -547,7 +547,9 @@ grid_static_position(
 			justify = box->style.justify_items;
 		if (box->style.direction == CSS_DIRECTION_RTL &&
 		    justify != CSS_ALIGN_START && justify != CSS_ALIGN_END &&
-		    justify != CSS_ALIGN_SELF_END && justify != CSS_ALIGN_CENTER)
+		    justify != CSS_ALIGN_SELF_END && justify != CSS_ALIGN_CENTER &&
+		    justify != CSS_ALIGN_LEFT && justify != CSS_ALIGN_RIGHT &&
+		    justify != CSS_ALIGN_SELF_START)
 			continue;
 
 		/* Track offsets include the container's content distribution and gaps. */
@@ -571,11 +573,19 @@ grid_static_position(
 		child->static_y = y;
 		if (child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 		    (justify == CSS_ALIGN_END || justify == CSS_ALIGN_SELF_END ||
-		    justify == CSS_ALIGN_CENTER)) {
+		    justify == CSS_ALIGN_CENTER || justify == CSS_ALIGN_LEFT ||
+		    justify == CSS_ALIGN_RIGHT || justify == CSS_ALIGN_SELF_START)) {
 			child->static_x_align = justify;
-			child->static_x_align_from_right = justify == CSS_ALIGN_SELF_END ?
-			    child->style.direction == CSS_DIRECTION_LTR :
-			    box->style.direction == CSS_DIRECTION_LTR;
+			if (justify == CSS_ALIGN_SELF_END)
+				child->static_x_align_from_right =
+				    child->style.direction == CSS_DIRECTION_LTR;
+			else if (justify == CSS_ALIGN_SELF_START)
+				child->static_x_align_from_right =
+				    child->style.direction == CSS_DIRECTION_RTL;
+			else
+				child->static_x_align_from_right =
+				    justify == CSS_ALIGN_RIGHT ||
+				    (justify == CSS_ALIGN_END && box->style.direction == CSS_DIRECTION_LTR);
 			for (index = column; index < column + column_span; index++) {
 				child->static_x_area_width += grid->columns[index];
 				if (index + 1 < column + column_span)

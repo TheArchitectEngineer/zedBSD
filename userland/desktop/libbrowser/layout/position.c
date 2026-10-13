@@ -578,7 +578,10 @@ position_place(
 	} else if (has_right) {
 		x = containing->x + containing->width - right - box->margin[CSS_RIGHT] - (box->width + frame);
 	} else if (box->static_x_align == CSS_ALIGN_END ||
-	    box->static_x_align == CSS_ALIGN_SELF_END) {
+	    box->static_x_align == CSS_ALIGN_SELF_END ||
+	    box->static_x_align == CSS_ALIGN_SELF_START ||
+	    box->static_x_align == CSS_ALIGN_LEFT ||
+	    box->static_x_align == CSS_ALIGN_RIGHT) {
 		if (box->static_x_align_from_right) {
 			x = box->static_x +
 			    (box->static_x_from_right ? 0 : box->static_x_area_width) -
