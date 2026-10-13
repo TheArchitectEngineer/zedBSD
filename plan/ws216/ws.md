@@ -3,7 +3,7 @@
 # WS216: Notes の描く道具（筆・鉛筆・領域の塗りつぶし・水彩）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は BUG-296（Notes の pinch の落ち）の後に割り当て）
+Status: planning（2026-10-13 Q1 作成。p001 の設計 1 を P1 が書いた。design-reviewer の review とユーザーの判断 D1〜D9 の待ち）
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -26,6 +26,15 @@ Notes（`userland/desktop/notes/`）に、今のペン・消しゴムに加え�
 
 ## Phase
 
-| Phase | 内容 | Status |
-| --- | --- | --- |
-| p001 | 設計: stroke の型と PDF への出し方（vector か raster か）、塗りつぶしの方式、描画の速さ（Pi 4・5330） | planning |
+| Phase | 内容 | 依存 | Status |
+| --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 設計: stroke の型と PDF への出し方（vector か raster か）、塗りつぶしの方式、描画の速さ（Pi 4・5330）、UI、段の分け方 | — | in-progress（設計 1、review と D1〜D9 の待ち） |
+| p002 | libpdf: 輪郭の style と範囲（平らな切り口）、writer の `/BM`・clip・`q/Q`・運ぶ画像の行列の描画、content の Flate | p001 | planned |
+| p003 | Notes の model と形式: 道具の種類 2〜5、形の列、筆の幅の関数、鉛筆の区間、水彩の縁、編集 data 3.0・journal 3、undo・消しゴム、PDF の書き出し | p002、BUG-296 の merge | planned |
+| p004 | 画面: Multiply と粒の pipeline、粒の texture（PDF と同じ bytes）、複数の輪郭、継ぎ目の fringe なし | p003 | planned |
+| p005 | 領域の塗りつぶし: 頁の絵の読み戻し、flood fill（許容差・隙間を閉じる）、輪郭化、重なりの順、undo・journal、消しゴム | p003 | planned |
+| p006 | UI: 描く道具の button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り | p003 | planned |
+| p007 | T1 の QEMU（AAT の draw-tools・fill-region）、実機 5330 のペン（ユーザー）、Pi 4 の速さ（WS141 p017 の後） | p004〜p006 | planned |
+| p008 | 規約の全文の見直し | p007 | planned |
+
+見積 計 約 14.5 LW（[p001 §8](phase001/phase.md#8-段の分け方と受け入れ試験)）。p002 は Notes の source に触れないので BUG-296 を待たずに始められる。p004〜p006 は同じ `main.c` を触るので同じ担当が順に行う。
