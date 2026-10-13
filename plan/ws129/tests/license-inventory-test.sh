@@ -1,7 +1,9 @@
 #!/bin/sh
 # ws129-p002: host test of tools/release/license-inventory.py on the CI image's configuration.
 #  1. The real table: no open item (G1-G4 added, remacs taken into the tree under zlib, 2026-10-04).
-#  2. A table without the AX211 component: its ISC/BSD sources are reported uncovered.
+#  2. A table without the RTL8822B tables and musl regex components: the BSD-3-Clause tables and the TRE/musl
+#     regex sources (third-party copyright without SPDX) are reported uncovered.  (Until ws218-p002 this case
+#     removed the AX211 driver component, which no longer exists: the driver is the project's own, Zlib.)
 #  3. A table where OpenSSL were GPL without the decision mark: reported as a GPL component without a decision (it was
 #     emacs until emacs left the CI image).
 #  3b. ffmpeg "decided" without its decision's source: reported (ws122, 2026-10-05).
@@ -25,16 +27,18 @@ expect() {
 run --index "$work/index.txt"
 open=$(grep -c "^license-inventory: \(missing notice\|decision pending\|decided without\|uncovered\|unlisted\|GPL-family\)" "$work/err")
 if [ "$open" = 0 ]; then echo "ok: the real table has no open item"; else echo "FAIL: the real table has $open open items"; status=1; fi
+# The AX211 driver is the project's own since ws218-p002: no AX211 source may be reported as third-party.
+if grep -q "src/drivers/wifi/intel-ax211/" "$work/err"; then echo "FAIL: an AX211 source is reported as third-party"; status=1; else echo "ok: the AX211 driver sources are the project's own"; fi
 
 # 2.
 python3 -c "
 import json,sys
 d=json.load(open('tools/release/license-components.json'))
-d['components']=[c for c in d['components'] if c['id']!='intel-ax211-driver']
-json.dump(d,open('$work/no-ax211.json','w'))"
-run --components "$work/no-ax211.json"
-expect "uncovered ISC AND BSD-3-Clause source: src/drivers/wifi/intel-ax211/" "sources without a component are reported"
-expect "uncovered third-party text without SPDX: src/drivers/wifi/intel-ax211/" "third-party text without SPDX is reported"
+d['components']=[c for c in d['components'] if c['id'] not in ('rtl8822b-tables','musl-regex')]
+json.dump(d,open('$work/no-components.json','w'))"
+run --components "$work/no-components.json"
+expect "uncovered BSD-3-Clause source: src/drivers/wifi/rtl8822b/" "sources without a component are reported"
+expect "uncovered third-party text without SPDX: src/libc/regex/" "third-party text without SPDX is reported"
 
 # 3.
 python3 -c "

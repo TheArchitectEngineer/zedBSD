@@ -28,7 +28,7 @@ Related Milestones: なし
 | Phase | 内容 | Status |
 | --- | --- | --- |
 | p001 | 監査: OpenBSD iwx(4) との比較、定数の名前と table の出典の調べ、結果の記録（削除の可否の判断材料） | planned |
-| p002 | 削除と引用の表示の整理（p001 で確かめられた範囲だけ） | planned |
+| [p002](phase002/phase.md) | 削除と引用の表示の整理、名前の付け直し、block ごとの出典の comment（ユーザーの決定 2026-10-13） | in-progress（実装・build・host 試験・機械比較済み、T1・実機の試験待ち、削除 3 path は Q1） |
 
 ## ユーザーの決定（2026-10-13、p001 の後）
 

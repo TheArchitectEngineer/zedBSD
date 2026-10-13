@@ -349,13 +349,6 @@ ifeq ($(strip $(CONFIG_DRIVER_USB_RTL8822BU)),y)
 override ZEDBSD_USER_PROGRAMS := $(sort \
 	$(ZEDBSD_USER_PROGRAMS) rtl8822b-tables-license)
 endif
-# The AX211 driver contains wire-format work derived from OpenBSD iwx(4) and
-# Intel sources. Binary images containing the driver must reproduce both
-# notices independently of the separately selected firmware package.
-ifeq ($(strip $(CONFIG_DRIVER_PCI_INTEL_AX211)),y)
-override ZEDBSD_USER_PROGRAMS := $(sort \
-	$(ZEDBSD_USER_PROGRAMS) intel-ax211-driver-license)
-endif
 # The i915 driver contains MIT code derived from the Linux i915 and DRM display
 # drivers; binary images containing it reproduce that notice (ws129-p002).
 ifeq ($(strip $(CONFIG_DRIVER_PCI_I915)),y)

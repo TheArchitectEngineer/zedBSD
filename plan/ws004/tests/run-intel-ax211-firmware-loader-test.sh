@@ -5,8 +5,9 @@ python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
-build_dir=$(mktemp -d "${TMPDIR:-/tmp}/zedbsd-ax211-loader.XXXXXX")
-trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
+# The work directory stays in build/tmp; deleting it is Q1's step (plan/tools/q1-clean.sh).
+mkdir -p "$repo_root/build/tmp"
+build_dir=$(mktemp -d "$repo_root/build/tmp/zedbsd-ax211-loader.XXXXXX")
 
 revision=dc85ccedc9c973682fbcf4d628ca61174bcc3120
 cache=${INTEL_AX211_FIRMWARE_TEST_CACHE:-$repo_root/build/sources/firmware/intelax211/$revision}

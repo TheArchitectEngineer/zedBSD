@@ -58,21 +58,6 @@
    "note": "userland/base/licenses/i915-driver/LICENSE (the copyright notices of the derived parts and the MIT permission notice), installed by i915-driver-license, selected with CONFIG_DRIVER_PCI_I915."
   },
   {
-   "id": "intel-ax211-driver",
-   "name": "Intel AX211 WiFi driver (derived from OpenBSD iwx(4) and Intel)",
-   "when": "driver:CONFIG_DRIVER_PCI_INTEL_AX211",
-   "license": "ISC AND BSD-3-Clause",
-   "upstream": "OpenBSD iwx(4), Intel iwlwifi",
-   "version": "",
-   "notices": [
-    "/usr/share/licenses/intel-ax211-driver/LICENSE"
-   ],
-   "paths": [
-    "src/drivers/wifi/intel-ax211/"
-   ],
-   "note": ""
-  },
-  {
    "id": "rtl8822b-tables",
    "name": "RTL8822B initialization tables",
    "when": "driver:CONFIG_DRIVER_USB_RTL8822BU",
