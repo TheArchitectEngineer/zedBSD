@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1000 / WS074 Acid3 baseline（2026-10-13）
+## 最新: q1001 / WS074 Acid3 参照背景画像（2026-10-13）
+
+[q1001履歴](queue-q1001.md): p179 で高さ0の root から canvas に伝播する背景画像の省略を修正。固定 Acid3 は得点100/100・pixel差56647/480000（q1000 の302056から245409減）、Acid2差1865/120000で不変。host build warning0、回帰試験pass。p179 cleared、p178 の旧 attempt は uncleared、p100/WS074 は未達。新 Queue は未選定。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
+
+## 前回: q1000 / WS074 Acid3 baseline（2026-10-13）
 
 [q1000履歴](queue-q1000.md): 現行 source の Acid3 は得点100/100、pixel差302056/480000。参照の背景画像が欠け、p178 の1領域試行は停止・uncleared。Acid2 も現行条件で差1865/120000。WS074/p100 は未達。次は参照画像の読込み経路と Acid2 差の原因を有限 scope に分ける。独立 tree の成果は main 未統合、GitHub publication 保留、push なし。
 

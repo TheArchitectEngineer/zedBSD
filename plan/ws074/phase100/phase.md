@@ -2,7 +2,7 @@
 
 # ws074-p100: Acid3 100/100・pixel完全一致
 
-Status: planned（2026-10-13 再開指示。q1000 現行 baseline: 得点100/100、pixel一致37.0717%、差302056/480000。全体の条件は未達）
+Status: planned（2026-10-13 再開指示。q1001 現行値: 得点100/100、pixel一致88.1985%、差56647/480000。全体の条件は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -46,3 +46,5 @@ Event ws074-dedicated-interop2025-20261002: ユーザーがAcid3のpixel単位10
 2026-10-13 の checkout には固定 WPT の `build/ws074-suites/wpt` と B1 worktree が無く、共有 Queue に p100/p178 の項目が無い。Q1 が Queue と担当を記録する前に implementation attempt は始めない。担当の削除禁止と現行 runner の `unlink()`・suite fetch の `rm -rf` の不整合、および Mahora への font 変更は [p178 の実行前の整合](../phase178/phase.md)で扱う。`master.md` はこのセッションで変更しない。
 
 2026-10-13 follow-up: ユーザーがこのセッションによる Queue 管理を指示し、[q1000](../queue.md) を p178 の有限の試行として実施・終了した。固定 WPT と host build の準備後の現行計測は得点100/100、pixel一致37.0717%、差302056/480000、Acid2一致98.4458%。参照側の `reference.png` の箱が描かれず差が画面全体に広がったので、p178はuncleared。p100の条件は未達。詳細と画像は[p178](../phase178/phase.md)。上段の「WPT が無い」「Queue が無い」は開始前の状態を記す。
+
+2026-10-13 q1001 follow-up: ユーザーが [p179](../phase179/phase.md) の範囲を承認し、参照画像が描かれない一般的な原因を修復した。同じ固定条件で Acid3 得点100/100・例外0、差56647/480000（88.1985%一致）、Acid2差1865/120000。p179 は cleared、p178 の旧 q1000 attempt は uncleared のまま。全画面差0と Acid2 の現行回帰は未達であり、本 Phase は planned。次の局所試行には新しい Queue の exact scope と承認が必要。[q1001の証拠](../phase179/evidence/20261013-q1001/report.json)。

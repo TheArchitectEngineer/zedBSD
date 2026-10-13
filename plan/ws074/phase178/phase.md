@@ -167,3 +167,5 @@ Codex の独立 tree `/tmp/zedbsd-ws074`（開始時 source `7433ca18d`）で実
 再開条件: 参照側の `reference.png` の読み込み/paint を独立した有限 scope で調査・修正し、固定条件で再計測してから、p178 の1領域選択へ戻る。Acid2 の差も別途原因を判定する。p100 全体の clearance は未達。
 
 2026-10-13 / design-revision-after-q1000: 参照側の背景画像欠落を [p179](../phase179/phase.md) に分け、p178 の再試行をその verified 出力の後に置く。q1000 の全画面差により1領域選択が成立しなかったため。p179 は CSS/URL/取得/decode/paint を切り分け、一般的な欠陥の最小修正と同条件での再計測を受け入れる。p178 の局所 pixel 一致、Acid2 回帰、p100 の全画面差0を免除しない。p179 の新 Queue は未選定。
+
+2026-10-13 / q1001-p179-output: [p179](../phase179/phase.md) は cleared。参照画像が canvas に描かれ、同条件の Acid3 差は302056から56647へ減った。q1000-i01 の uncleared は書き換えない。次の局所領域を差画像から選び、この Phase の新 attempt を exact scope/時間枠を定めた Queue に入れる必要がある。Acid2 の差1865/120000と p100 の全画面差0も残る。

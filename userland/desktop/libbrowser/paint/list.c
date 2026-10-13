@@ -2047,11 +2047,13 @@ list_background_image(
 	int repeat_x;
 	int repeat_y;
 
-	/* Nothing without an image, or in an area without room. */
+	/* A zero-sized positioning area still places a canvas image. */
 	image = box->background;
 	if (walk->error != 0 || image == NULL)
 		return;
-	if (area->width <= 0 || area->height <= 0 || painting->width <= 0 || painting->height <= 0)
+	if (painting->width <= 0)
+		return;
+	if (painting->height <= 0)
 		return;
 
 	/* A fixed image is sized and positioned against the viewport at the document origin. */
