@@ -328,7 +328,9 @@ static void hide_cursor(struct kwl_server *server);
 static void send_touch(struct kwl_client *client, uint32_t opcode, const void *payload, size_t size);
 static void report_heard(struct touch_report *report, struct kwl_client *client);
 static uint32_t contact_id(const struct touch_screen *screen, unsigned slot);
-static int32_t scale_fixed(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
+static void screen_gestures_end(struct touch_screen *screen);
+static unsigned screen_release(struct kwl_server *server, struct touch_screen *screen, unsigned at_finger);
+static void shell_release_here(struct kwl_server *server);
 static int32_t magnitude(int32_t value);
 static void emit(struct kwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
 
@@ -401,52 +403,16 @@ kwl_touch_remove(
 	int notify)
 {
 	struct touch_screen *screen;
-	struct touch_contact *contact;
-	unsigned slot;
 
 	/* A node that is not a known touch screen has nothing to forget. */
 	screen = screen_of(input);
 	if (screen == NULL)
 		return;
 
-	/* A gesture on a title bar of this screen is given up. */
-	if (title.screen == screen) {
-		title.state = TITLE_NONE;
-		title.screen = NULL;
-		title.window = NULL;
-	}
-
-	/* So is a group of its fingers at an edge. */
-	if (group.screen == screen) {
-		group.state = GROUP_NONE;
-		group.screen = NULL;
-		group.fingers = 0;
-	}
-
-	/* The fingers that hold the pointer's left button let it go. */
-	for (slot = 0; slot < TOUCH_SLOTS; slot++) {
-		contact = &screen->contacts[slot];
-
-		/* Only a finger down that pressed the button, and only when anyone is told. */
-		if (!notify || contact->tracking < 0)
-			continue;
-
-		/* The shell's press, or a client's, is released where the finger was; a drag the finger drove is given up. */
-		if (contact->route == ROUTE_SHELL) {
-			(void)shell_press(server, contact->place_x / 256 + contact->offset_x, contact->place_y / 256 + contact->offset_y, 0, 0U);
-		} else if (contact->route == ROUTE_POINTER) {
-			kwl_seat_button(server, 0, KWL_BUTTON_LEFT, 0U);
-			kwl_seat_frame(server);
-		} else if (contact->route == ROUTE_DRAG) {
-			kwl_data_drag_cancel(server);
-		} else if (contact->route == ROUTE_OSK) {
-			kwl_keyboard_touch_cancel(server, contact_id(screen, slot));
-		}
-
-		/* The finger no longer has a route of its own. */
-		if (contact->route != ROUTE_CLIENT)
-			contact->route = ROUTE_IGNORED;
-	}
+	/* Its gestures are given up, and its fingers let go of what they hold. */
+	screen_gestures_end(screen);
+	if (notify)
+		(void)screen_release(server, screen, 1U);
 
 	/* The clients hearing a finger of it are cancelled. */
 	if (notify)
@@ -458,6 +424,38 @@ kwl_touch_remove(
 	/* The slot is free. */
 	printf("KWL TOUCH removed device=%s\n", input->path);
 	screen->input = NULL;
+}
+
+/*
+ * Cancels every finger on every touch screen (WS217: the angle an output
+ * shows changed, and a place given before means another point now): the
+ * shell's presses and the pointer's button are let go where each finger
+ * was, a drag and the keyboard's touch are given up, the clients hearing a
+ * finger hear wl_touch.cancel, and each finger goes nowhere until it lifts.
+ */
+void
+kwl_touch_cancel(
+	struct kwl_server *server,
+	const char *reason)
+{
+	unsigned index;
+	unsigned fingers;
+
+	/* Each screen's gestures and fingers. */
+	fingers = 0U;
+	for (index = 0; index < TOUCH_SCREENS; index++) {
+		/* A free slot has no fingers. */
+		if (screens[index].input == NULL)
+			continue;
+
+		/* Its gestures given up, its fingers let go. */
+		screen_gestures_end(&screens[index]);
+		fingers += screen_release(server, &screens[index], 0U);
+	}
+
+	/* The clients hearing a finger. */
+	cancel_clients(reason);
+	printf("KWL TOUCH cancel all reason=%s fingers=%u\n", reason, fingers);
 }
 
 /*
@@ -888,6 +886,8 @@ read_report(
 {
 	const struct input_event *event;
 	struct touch_contact *contact;
+	struct kwl_cursor_axis across;
+	struct kwl_cursor_axis down;
 	unsigned index;
 	unsigned slot;
 
@@ -961,11 +961,19 @@ read_report(
 		}
 	}
 
-	/* The whole touch screen maps onto the whole output. */
+	/*
+	 * The whole touch screen maps onto the whole panel of the output, and
+	 * each point to the logical place the output shows there (WS217).
+	 */
+	across.minimum = screen->axis_x.minimum;
+	across.maximum = screen->axis_x.maximum;
+	down.minimum = screen->axis_y.minimum;
+	down.maximum = screen->axis_y.maximum;
 	for (slot = 0; slot < TOUCH_SLOTS; slot++) {
 		contact = &screen->contacts[slot];
-		contact->place_x = scale_fixed(contact->raw_x, screen->axis_x.minimum, screen->axis_x.maximum, server->width);
-		contact->place_y = scale_fixed(contact->raw_y, screen->axis_y.minimum, screen->axis_y.maximum, server->height);
+		across.value = contact->raw_x;
+		down.value = contact->raw_y;
+		kwl_output_absolute(server, KWL_PLANE_ANCHOR, 1U, &across, &down, &contact->place_x, &contact->place_y);
 	}
 }
 
@@ -1942,6 +1950,17 @@ shell_press(
 	return taken;
 }
 
+/* Releases the shell's press of a finger where the pointer is, without moving it. */
+static void
+shell_release_here(
+	struct kwl_server *server)
+{
+	/* The shell knows a finger is its source. */
+	server->shell_source = KWL_CONTACT_TOUCH;
+	(void)kwl_seat_button_shell(server, 0U, KWL_BUTTON_LEFT, 0U);
+	server->shell_source = KWL_CONTACT_POINTER;
+}
+
 /* Passes a finger's movement through the shell as the pointer's, to where it was last reported. */
 static void
 shell_motion(
@@ -2495,31 +2514,75 @@ contact_id(
 	return index * TOUCH_SLOTS + slot;
 }
 
-/* Maps one axis value onto 0 .. size - 1 pixels in 24.8 fixed point. */
-static int32_t
-scale_fixed(
-	int32_t value,
-	int32_t minimum,
-	int32_t maximum,
-	uint32_t size)
+/* Gives up the gestures a screen's fingers were making: a pair on a title bar, a group at an edge. */
+static void
+screen_gestures_end(
+	struct touch_screen *screen)
 {
-	int64_t offset;
-	int64_t range;
+	/* A gesture on a title bar of this screen is given up. */
+	if (title.screen == screen) {
+		title.state = TITLE_NONE;
+		title.screen = NULL;
+		title.window = NULL;
+	}
 
-	/* The low end of the range, and anything below it, is the first pixel. */
-	if (size <= 1U || value <= minimum)
-		return 0;
+	/* So is a group of its fingers at an edge. */
+	if (group.screen == screen) {
+		group.state = GROUP_NONE;
+		group.screen = NULL;
+		group.fingers = 0;
+	}
+}
 
-	/* The high end of the range, and anything above it, is the last pixel. */
-	if (value >= maximum)
-		return ((int32_t)size - 1) * 256;
+/*
+ * Lets go of what a screen's fingers hold (the shell's press, the
+ * pointer's button, a drag, the keyboard's touch): the shell's press where
+ * each finger was (at_finger), or where the pointer is (an angle's change:
+ * a finger's place of the old angle is another point now, and the pointer
+ * is kept on its own physical point); from now on a finger goes nowhere
+ * until it lifts, but a client's, which cancel_clients ends.  Returns how
+ * many fingers were down.
+ */
+static unsigned
+screen_release(
+	struct kwl_server *server,
+	struct touch_screen *screen,
+	unsigned at_finger)
+{
+	struct touch_contact *contact;
+	unsigned slot;
+	unsigned fingers;
 
-	/* Everything between scales linearly. */
-	offset = (int64_t)value - minimum;
-	range = (int64_t)maximum - minimum;
+	/* Each finger down. */
+	fingers = 0U;
+	for (slot = 0; slot < TOUCH_SLOTS; slot++) {
+		contact = &screen->contacts[slot];
+		if (contact->tracking < 0)
+			continue;
+		fingers++;
 
-	/* Succeeded: the place in 1/256 pixels. */
-	return (int32_t)((offset * ((int64_t)size - 1) * 256) / range);
+		/* The shell's press, or a client's, is released; a drag the finger drove is given up. */
+		if (contact->route == ROUTE_SHELL && at_finger) {
+			(void)shell_press(server, contact->place_x / 256 + contact->offset_x, contact->place_y / 256 + contact->offset_y, 0, 0U);
+		} else if (contact->route == ROUTE_SHELL) {
+			shell_release_here(server);
+		} else if (contact->route == ROUTE_POINTER) {
+			kwl_seat_button(server, 0, KWL_BUTTON_LEFT, 0U);
+			kwl_seat_frame(server);
+		} else if (contact->route == ROUTE_DRAG) {
+			kwl_data_drag_cancel(server);
+		} else if (contact->route == ROUTE_OSK) {
+			kwl_keyboard_touch_cancel(server, contact_id(screen, slot));
+		}
+
+		/* The finger no longer has a route of its own, nor drives the pointer. */
+		contact->following = 0;
+		if (contact->route != ROUTE_CLIENT)
+			contact->route = ROUTE_IGNORED;
+	}
+
+	/* Succeeded: the fingers down. */
+	return fingers;
 }
 
 /* Reports how far a signed distance is, whichever way. */

@@ -273,6 +273,7 @@ static unsigned new_role(const struct hid_input *input, unsigned slot);
 static size_t take_old_events(void);
 static size_t take_new_events(const struct hid_input *input);
 static int compare_devices(const struct input_device *old_device, int new_number, const char *what);
+static uint32_t pen_properties(const struct fake_device *record);
 static int axis_differs(const struct input_abs_axis *old_axis, const struct input_abs_axis *new_axis);
 static int compare_side_by_side(const struct descriptor *descriptor, unsigned reports, int quiet);
 static int compare_i2c_side_by_side(const struct descriptor *descriptor, unsigned reports, int quiet);
@@ -890,6 +891,7 @@ compare_devices(
 	const struct input_abs_axis *old_axis;
 	const struct input_abs_axis *new_axis;
 	size_t index;
+	uint32_t new_properties;
 	int differs;
 	int texts;
 	int identities;
@@ -909,6 +911,7 @@ compare_devices(
 	old_record = (const struct fake_device *)old_device;
 	new_record = &fake_devices[new_number];
 	differs = 0;
+	new_properties = new_record->properties & ~pen_properties(new_record);
 	texts = strcmp(old_record->name, new_record->name);
 	texts |= strcmp(old_record->physical_path, new_record->physical_path);
 	texts |= strcmp(old_record->unique_id, new_record->unique_id);
@@ -921,7 +924,7 @@ compare_devices(
 		differs = 1;
 	else if (old_record->axis_count != new_record->axis_count)
 		differs = 1;
-	else if (old_record->properties != new_record->properties)
+	else if (old_record->properties != new_properties)
 		differs = 1;
 
 	/* The capabilities, once their counts agree. */
@@ -948,6 +951,28 @@ compare_devices(
 
 	/* Succeeded: the registrations are the same. */
 	return 1;
+}
+
+/*
+ * Gives the properties the glue gives a pen's device and the old code did
+ * not (WS217: INPUT_PROP_DIRECT for a pen on a display, INPUT_PROP_POINTER
+ * for a pen tablet), which the comparison leaves out; a device that is no
+ * pen has none.
+ */
+static uint32_t
+pen_properties(
+	const struct fake_device *record)
+{
+	size_t index;
+
+	/* A pen declares its tool. */
+	for (index = 0; index < record->capability_count; index++) {
+		if (record->capabilities[index].type == EV_KEY && record->capabilities[index].code == BTN_TOOL_PEN)
+			return (1U << INPUT_PROP_DIRECT) | (1U << INPUT_PROP_POINTER);
+	}
+
+	/* Succeeded: no pen. */
+	return 0U;
 }
 
 /* Reports whether two registered axes differ in their code or range. */

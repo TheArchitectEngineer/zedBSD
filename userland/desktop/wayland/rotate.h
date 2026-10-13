@@ -293,6 +293,45 @@ kwl_rotate_select(
 }
 
 /*
+ * Gives the logical place of a physical point on a panel of width by
+ * height (kwl_rotate_point_back's arithmetic, here for the files linked
+ * without rotate.c: the cursor's box).  The sizes and the point may be in
+ * pixels, or both in 1/256 pixels for a 24.8 fixed-point point (as
+ * kwl_rotate_fixed_back).
+ */
+static __inline void
+kwl_rotate_pixel_back(
+	unsigned rotation,
+	uint32_t width,
+	uint32_t height,
+	int32_t *x,
+	int32_t *y)
+{
+	int32_t physical_x;
+	int32_t physical_y;
+	int32_t wide;
+	int32_t high;
+
+	/* The physical point, and the panel's sides. */
+	physical_x = *x;
+	physical_y = *y;
+	wide = (int32_t)width;
+	high = (int32_t)height;
+
+	/* The logical point for each angle; 0 keeps it. */
+	if (rotation == KWL_ROTATE_90) {
+		*x = physical_y;
+		*y = wide - 1 - physical_x;
+	} else if (rotation == KWL_ROTATE_180) {
+		*x = wide - 1 - physical_x;
+		*y = high - 1 - physical_y;
+	} else if (rotation == KWL_ROTATE_270) {
+		*x = high - 1 - physical_y;
+		*y = physical_x;
+	}
+}
+
+/*
  * Moves a pointer's place on an output that turns from one angle to
  * another on the same panel (physical_width by physical_height): kept
  * inside the old logical picture, taken to the physical point it is

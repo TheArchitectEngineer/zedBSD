@@ -97,6 +97,7 @@ static int shot_displays_request(const char *line);
 static void shot_displays(struct kwl_server *server, int connection, const char *line);
 static void shot_policy(struct kwl_server *server, int connection, const char *word);
 static void shot_rotate(struct kwl_server *server, int connection, const char *number);
+static void shot_pointer(struct kwl_server *server, int connection);
 static void shot_finish(struct kwl_server *server, const char *error);
 static int shot_buffer(struct kwl_compose *compose);
 static void shot_buffer_free(struct kwl_compose *compose);
@@ -293,6 +294,14 @@ kwl_shot_tick(
 	match = strncmp(line, "ROTATE ", 7U);
 	if (match == 0) {
 		shot_rotate(server, connection, line + 7);
+		(void)close(connection);
+		return;
+	}
+
+	/* POINTER: where the pointer is, in the plane's logical pixels (WS217's absolute devices). */
+	match = strncmp(line, "POINTER", 7U);
+	if (match == 0) {
+		shot_pointer(server, connection);
 		(void)close(connection);
 		return;
 	}
@@ -758,5 +767,32 @@ shot_rotate(
 	/* Succeeded: what was done, and the desktop's size now. */
 	(void)snprintf(answer, sizeof(answer), "OK applied=%u saved=%d rotation=%u width=%u height=%u\n", applied, saved,
 	    server->compose->rotation, server->width, server->height);
+	shot_answer(connection, answer);
+}
+
+/*
+ * Answers where the pointer is (WS217): the place an absolute device put it
+ * at, as the cursor's box has it (the input thread's latest), in the
+ * plane's logical pixels, and its output.
+ */
+static void
+shot_pointer(
+	struct kwl_server *server,
+	int connection)
+{
+	char answer[96];
+	int32_t x;
+	int32_t y;
+	unsigned output;
+
+	/* The box's place, or the main thread's before the threads run. */
+	x = server->pointer_x;
+	y = server->pointer_y;
+	output = server->pointer_output;
+	if (server->threads_prepared)
+		kwl_cursor_box_read(&server->cursor_box, &x, &y, &output);
+
+	/* Succeeded: the place. */
+	(void)snprintf(answer, sizeof(answer), "OK x=%d y=%d output=%u\n", x, y, output);
 	shot_answer(connection, answer);
 }

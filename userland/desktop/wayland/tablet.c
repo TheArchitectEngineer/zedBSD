@@ -199,7 +199,7 @@ static void barrel_changes(struct kwl_server *server, struct tablet_device *devi
 static struct kwl_object *tablet_target(struct kwl_server *server, struct tablet_device *device);
 static int client_has_tool(struct kwl_client *client, unsigned slot);
 static void place_pointer(struct kwl_server *server, struct tablet_device *device);
-static int32_t scale_fixed(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
+static void device_tilt(struct kwl_server *server, const struct tablet_device *device, int32_t *tilt_x, int32_t *tilt_y);
 static void focus_set(struct kwl_server *server, struct tablet_device *device, struct kwl_object *surface);
 static void send_axes(struct tablet_device *device, unsigned motion, unsigned pressure, unsigned tilt);
 static void send_tool(struct tablet_device *device, uint32_t opcode, const void *payload, size_t size);
@@ -269,7 +269,7 @@ kwl_tablet_add(
 	}
 
 	/* One line lets a test see the tablet's axes. */
-	printf("KWL TABLET added device=%s name=\"%s\" x=%d..%d y=%d..%d pressure=%d..%d tilt=%u\n", input->path, device->name, device->axis_x.minimum, device->axis_x.maximum, device->axis_y.minimum, device->axis_y.maximum, device->axis_pressure.minimum, device->axis_pressure.maximum, device->has_tilt);
+	printf("KWL TABLET added device=%s name=\"%s\" x=%d..%d y=%d..%d pressure=%d..%d tilt=%u direct=%u\n", input->path, device->name, device->axis_x.minimum, device->axis_x.maximum, device->axis_y.minimum, device->axis_y.maximum, device->axis_pressure.minimum, device->axis_pressure.maximum, device->has_tilt, input->direct);
 
 	/* Succeeded: the tablet's reports are applied from now on. */
 	return 0;
@@ -340,6 +340,45 @@ kwl_tablet_remove(
 	printf("KWL TABLET removed device=%s\n", input->path);
 	device->input = NULL;
 	device->focus = NULL;
+}
+
+/*
+ * Lifts every pen and takes it off its surface (WS217: the angle an output
+ * shows changed, and the pen's place means another point now): a touch
+ * ends with up, or the pointer's left button is let go, and the surface
+ * hears proximity_out.  A pen still near comes back over the surface its
+ * next report's place shows; one still pressed hovers until it lifts.
+ */
+void
+kwl_tablet_cancel(
+	struct kwl_server *server)
+{
+	struct tablet_device *device;
+	unsigned index;
+	unsigned sent;
+	unsigned pointer_activity;
+	unsigned pens;
+
+	/* Each tablet in use. */
+	pens = 0U;
+	pointer_activity = 0U;
+	for (index = 0; index < TABLET_MAX; index++) {
+		device = &tablets[index];
+		if (device->input == NULL)
+			continue;
+
+		/* Its touch ends; the up and the proximity_out share the frame focus_set ends with. */
+		sent = 0U;
+		if (device->route != ROUTE_NONE || device->focus != NULL)
+			pens++;
+		touch_end(server, device, 0U, &sent, &pointer_activity);
+		focus_set(server, device, NULL);
+	}
+
+	/* The pointer's button let go is one frame. */
+	if (pointer_activity)
+		kwl_seat_frame(server);
+	printf("KWL TABLET cancel pens=%u\n", pens);
 }
 
 /*
@@ -770,7 +809,14 @@ touch_press(
 {
 	struct kwl_object *target;
 	uint32_t serial;
+	int32_t tilt_x;
+	int32_t tilt_y;
 	int taken;
+
+	/* Where the pen touched, logical, and its tilt, for the tests (WS217). */
+	device_tilt(server, device, &tilt_x, &tilt_y);
+	printf("KWL TABLET down device=%s x=%d y=%d direct=%u tilt=%d,%d\n", device->input->path, device->place_x / 256, device->place_y / 256,
+	       device->input->direct, tilt_x / 256, tilt_y / 256);
 
 	/* The compositor's grabs, screens and title bars see the press first. */
 	taken = kwl_seat_button_shell(server, time, KWL_BUTTON_LEFT, 1U);
@@ -1007,12 +1053,23 @@ place_pointer(
 	struct kwl_server *server,
 	struct tablet_device *device)
 {
+	struct kwl_cursor_axis across;
+	struct kwl_cursor_axis down;
 	int32_t old_x;
 	int32_t old_y;
 
-	/* The pen's place on the output in 24.8 fixed point. */
-	device->place_x = scale_fixed(device->raw_x, device->axis_x.minimum, device->axis_x.maximum, server->width);
-	device->place_y = scale_fixed(device->raw_y, device->axis_y.minimum, device->axis_y.maximum, server->height);
+	/*
+	 * The pen's place on the output in 24.8 fixed point: a pen on the
+	 * display at the logical place the panel's point shows, a pen tablet
+	 * on the desk over the logical picture as it is (WS217).
+	 */
+	across.value = device->raw_x;
+	across.minimum = device->axis_x.minimum;
+	across.maximum = device->axis_x.maximum;
+	down.value = device->raw_y;
+	down.minimum = device->axis_y.minimum;
+	down.maximum = device->axis_y.maximum;
+	kwl_output_absolute(server, KWL_PLANE_ANCHOR, device->input->direct, &across, &down, &device->place_x, &device->place_y);
 
 	/*
 	 * The pointer follows in whole pixels on the anchor (ws113-p007), placed
@@ -1027,31 +1084,42 @@ place_pointer(
 		kwl_damage_pointer(server, old_x, old_y);
 }
 
-/* Maps one axis value onto 0 .. size - 1 pixels in 24.8 fixed point. */
-static int32_t
-scale_fixed(
-	int32_t value,
-	int32_t minimum,
-	int32_t maximum,
-	uint32_t size)
+/*
+ * Gives the pen's tilt in degrees as wl_fixed, across and down the
+ * logical picture: a pen on the display tilts over the panel, whose
+ * directions the output's angle turns (WS217); a pen tablet's is as it is.
+ */
+static void
+device_tilt(
+	struct kwl_server *server,
+	const struct tablet_device *device,
+	int32_t *tilt_x,
+	int32_t *tilt_y)
 {
-	int64_t offset;
-	int64_t range;
+	int32_t physical_x;
+	int32_t physical_y;
+	unsigned rotation;
 
-	/* The low end of the range, and anything below it, is the first pixel. */
-	if (size <= 1U || value <= minimum)
-		return 0;
+	/* No tilt axes, no tilt. */
+	*tilt_x = 0;
+	*tilt_y = 0;
+	if (!device->has_tilt)
+		return;
 
-	/* The high end of the range, and anything above it, is the last pixel. */
-	if (value >= maximum)
-		return ((int32_t)size - 1) * 256;
+	/* The tilt the axes report. */
+	physical_x = tilt_fixed(&device->axis_tilt_x, device->raw_tilt_x);
+	physical_y = tilt_fixed(&device->axis_tilt_y, device->raw_tilt_y);
 
-	/* Everything between scales linearly. */
-	offset = (int64_t)value - minimum;
-	range = (int64_t)maximum - minimum;
+	/* A pen tablet on the desk is not turned. */
+	if (!device->input->direct) {
+		*tilt_x = physical_x;
+		*tilt_y = physical_y;
+		return;
+	}
 
-	/* Succeeded: the place in 1/256 pixels. */
-	return (int32_t)((offset * ((int64_t)size - 1) * 256) / range);
+	/* Succeeded: a pen on the display tilts in the logical directions. */
+	rotation = kwl_output_rotation(server, KWL_PLANE_ANCHOR);
+	kwl_rotate_vector(rotation, physical_x, physical_y, tilt_x, tilt_y);
 }
 
 /*
@@ -1168,8 +1236,7 @@ send_axes(
 	if ((tilt ||
 	     fresh) &&
 	    device->has_tilt) {
-		words[0] = tilt_fixed(&device->axis_tilt_x, device->raw_tilt_x);
-		words[1] = tilt_fixed(&device->axis_tilt_y, device->raw_tilt_y);
+		device_tilt(device->focus->client->server, device, &words[0], &words[1]);
 		if (fresh ||
 		    words[0] != device->sent_tilt_x ||
 		    words[1] != device->sent_tilt_y) {

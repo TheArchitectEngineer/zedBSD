@@ -479,6 +479,14 @@ kwl_output_rotated(
 	compose->opened_steps = steps;
 
 	/*
+	 * The drag and drop, the grabs, the fingers and the pens end what they
+	 * were doing at the old angle first, without moving the pointer
+	 * (ws217-p003 review S1): the turn below keeps it on its physical point.
+	 */
+	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U)
+		kwl_input_rotated(server);
+
+	/*
 	 * Another angle on the same panel keeps the pointer on its physical
 	 * point, before the fitting below would keep it inside the new size
 	 * (review S1); on another panel the fitting's clamp alone.
@@ -495,6 +503,9 @@ kwl_output_rotated(
 		output_resized(server, 1U);
 		kwl_outputs_changed(server);
 	}
+
+	/* The input thread computes the motions over what the output shows now. */
+	kwl_input_geometry(server);
 
 	/* Another angle moves every point of the output: everything is drawn again, and the tests read it. */
 	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U) {

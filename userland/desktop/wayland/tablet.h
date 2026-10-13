@@ -20,6 +20,7 @@
 
 int kwl_tablet_add(struct kwl_server *server, struct kwl_input_device *device);
 void kwl_tablet_remove(struct kwl_server *server, struct kwl_input_device *device, int notify);
+void kwl_tablet_cancel(struct kwl_server *server);
 void kwl_tablet_frame(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
 int kwl_tablet_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 void kwl_tablet_object_gone(struct kwl_object *object);

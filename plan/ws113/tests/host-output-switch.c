@@ -339,6 +339,24 @@ kwl_pointer_warp(
 	move(context, outputs, &server->pointer_x, &server->pointer_y, &output);
 }
 
+/* Stands in for the input's end of what the absolute devices did at an old angle (input.c, ws217-p003): none here. */
+void
+kwl_input_rotated(
+	struct kwl_server *server)
+{
+	/* No device. */
+	(void)server;
+}
+
+/* Stands in for giving the input thread the geometry (input.c, ws217-p003): no thread here. */
+void
+kwl_input_geometry(
+	struct kwl_server *server)
+{
+	/* No thread. */
+	(void)server;
+}
+
 /* Stands in for telling the clients. */
 void
 kwl_outputs_changed(

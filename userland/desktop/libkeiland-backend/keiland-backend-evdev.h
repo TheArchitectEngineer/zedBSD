@@ -39,8 +39,9 @@ struct kl_backend;
 /*
  * The capability bitmaps of one evdev node, as EVIOCGBIT reports them, and
  * its INPUT_PROP_* properties as EVIOCGPROP reports them (ws159-p004: a
- * touch pad is a pointer, a touch screen is direct).  A backend that does
- * not read the properties leaves them empty (Linux and FreeBSD for now).
+ * touch pad is a pointer, a touch screen is direct; WS217: a pen on the
+ * display is direct).  Every backend reads them (Linux and FreeBSD since
+ * WS217's decision D11); a kernel without EVIOCGPROP leaves them empty.
  *
  * One instance lives on the stack while a node is classified.
  */

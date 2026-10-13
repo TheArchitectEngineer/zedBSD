@@ -90,6 +90,7 @@ static void panel_report(int descriptor, unsigned number, unsigned fingers, unsi
 static void pen_report(int descriptor, unsigned number);
 static int take_until(struct kwl_input_thread *input, int wake, unsigned slot, enum kwl_input_event_kind kind, unsigned wait_ms);
 static void warp_set(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
+static void warp_outputs(struct kwl_cursor_box *box, const struct kwl_plane_rect *outputs, const int32_t *place, struct kwl_cursor_motion *motion);
 
 /* The device kinds the test attaches. */
 enum {
@@ -316,6 +317,37 @@ warp_set(
 	*output = KWL_PLANE_ANCHOR;
 }
 
+/*
+ * Warps with the outputs' rectangles given, as the main thread does: the
+ * geometry of WS217 with each output's panel its rectangle, not turned, and
+ * the absolute pointer on the anchor.
+ */
+static void
+warp_outputs(
+	struct kwl_cursor_box *box,
+	const struct kwl_plane_rect *outputs,
+	const int32_t *place,
+	struct kwl_cursor_motion *motion)
+{
+	struct kwl_cursor_geometry geometry;
+	unsigned slot;
+
+	/* The rectangles, and each panel the same size at 0. */
+	memset(&geometry, 0, sizeof(geometry));
+	memcpy(geometry.outputs, outputs, sizeof(geometry.outputs));
+	geometry.output_count = KWL_PLANE_SLOTS;
+	for (slot = 0U; slot < KWL_PLANE_SLOTS; slot++) {
+		geometry.physical[slot].width = outputs[slot].width;
+		geometry.physical[slot].height = outputs[slot].height;
+	}
+
+	/* The absolute pointer on the anchor. */
+	geometry.absolute_slot = KWL_PLANE_ANCHOR;
+
+	/* The warp. */
+	kwl_cursor_box_warp(box, &geometry, warp_set, place, motion);
+}
+
 /* Runs the input thread's passes one at a time against the main thread's side. */
 static void
 stepwise(void)
@@ -397,7 +429,7 @@ stepwise(void)
 	/* (k) A warp: the next relative motion adds to the warp's place; a motion before it keeps the old count. */
 	place[0] = 100;
 	place[1] = 200;
-	kwl_cursor_box_warp(&box, NULL, 0U, warp_set, place, &motion);
+	kwl_cursor_box_warp(&box, NULL, warp_set, place, &motion);
 	check(motion.warp == 1U && motion.x == 100 && motion.y == 200, "the warp moves the box and its count");
 	check(taken[2].u.frame.motion.warp == 0U, "the motion before the warp has the old count");
 	fake_us += 8000U;
@@ -429,7 +461,7 @@ stepwise(void)
 	outputs[1].height = 1024;
 	place[0] = 1915;
 	place[1] = 500;
-	kwl_cursor_box_warp(&box, outputs, KWL_PLANE_SLOTS, warp_set, place, &motion);
+	warp_outputs(&box, outputs, place, &motion);
 	settings.mouse_speed = 100;
 	kwl_input_thread_settings(&input, &settings);
 	fake_us += 8000U;
@@ -727,7 +759,7 @@ threaded(void)
 			outputs[1].x = 1920;
 			outputs[1].width = (round % 2U) ? 1280U : 0U;
 			outputs[1].height = 1024;
-			kwl_cursor_box_warp(&box, outputs, KWL_PLANE_SLOTS, warp_set, place, &motion);
+			warp_outputs(&box, outputs, place, &motion);
 			settings.mouse_speed = 100 + (int32_t)(round % 100U);
 			kwl_input_thread_settings(&input, &settings);
 		}

@@ -35,7 +35,7 @@
 #include <string.h>
 
 static int output_rotate_turn(struct kwl_server *server, const struct kwl_rotate_state *after);
-static int output_rotate_heads_extended(const struct kwl_compose *compose);
+static const char *output_rotate_heads(const struct kwl_compose *compose);
 static void output_rotate_caches(struct kwl_server *server, unsigned scene_kept, unsigned resized);
 static const char *output_rotate_mode_name(unsigned mode);
 
@@ -61,7 +61,8 @@ kwl_output_select_rotation(
 	unsigned decision;
 	unsigned open;
 	unsigned scanning_out;
-	int extended;
+	unsigned stored;
+	const char *heads;
 	int valid;
 	int error;
 
@@ -91,20 +92,35 @@ kwl_output_select_rotation(
 		return ENOTSUP;
 	}
 
-	/* The same choice shown: nothing changes. */
+	/*
+	 * The same choice shown changes nothing on the display; displays.conf
+	 * is written when it says another angle (a test's policy showed 0 and
+	 * kept the line, T1-583), so the choice is the one kept.
+	 */
 	if (decision == KWL_ROTATE_SELECT_NOTHING) {
 		*applied = 1U;
+		stored = kwl_displays_rotation(&compose->config, compose->display_name);
+		if (stored == rotation)
+			return 0;
+		error = kwl_displays_set_rotation(&compose->config, compose->display_name, rotation);
+		if (error != 0)
+			return error;
+		*saved = kwl_heads_config_save(server);
+		printf("KWL OUTPUT rotate key=%s selected=%u saved=%d applied=1 reason=kept\n", compose->display_name, rotation, *saved);
 		return 0;
 	}
 
 	/*
 	 * Not beside an extended display shown (review M4): the heads' places
 	 * are checked only when they open, and the anchor's new size would
-	 * leave a gap or an overlap until ws217-p005 places them again.
+	 * leave a gap or an overlap until ws217-p005 places them again.  Nor
+	 * while a mirror shows the picture (ws217-p003 review M6): a device on
+	 * the mirror's display would map by the anchor's angle until
+	 * ws217-p006 maps it by the display it is on.
 	 */
-	extended = output_rotate_heads_extended(compose);
-	if (extended) {
-		printf("KWL OUTPUT rotate refused key=%s rotation=%u reason=heads\n", compose->display_name, rotation);
+	heads = output_rotate_heads(compose);
+	if (heads != NULL) {
+		printf("KWL OUTPUT rotate refused key=%s rotation=%u reason=%s\n", compose->display_name, rotation, heads);
 		return ENOTSUP;
 	}
 
@@ -231,6 +247,9 @@ kwl_output_apply_rotation(
 		kwl_outputs_changed(server);
 	}
 
+	/* The input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
+	kwl_input_geometry(server);
+
 	/* Everything is drawn again; the user's change of choice is written. */
 	server->dirty = 1;
 	compose->rotate_saved = -1;
@@ -352,6 +371,12 @@ output_rotate_turn(
 	}
 
 	/*
+	 * The fingers and the pens end what they were doing while their places
+	 * still mean the old points (ws217-p003): the angle changes now.
+	 */
+	kwl_input_rotated(server);
+
+	/*
 	 * No frame, nor the cursor's plane (its thread submits on the same
 	 * queue, review M2), may use the old images while they go; the cursor
 	 * thread goes on at the next kwl_cursor_plane_update.
@@ -436,25 +461,35 @@ output_rotate_caches(
 	compose->scene.valid = 0U;
 }
 
-/* Tells whether an extended display is shown beside the output (a head open in the extended mode). */
-static int
-output_rotate_heads_extended(
+/*
+ * Names why the anchor may not turn beside the other displays shown: a
+ * head open in the extended mode ("heads") or in the mirror ("mirror");
+ * NULL when the output is alone.
+ */
+static const char *
+output_rotate_heads(
 	const struct kwl_compose *compose)
 {
 	unsigned index;
-
-	/* The mirror's heads follow the output's picture, whatever its size. */
-	if (compose->display_mode != KWL_DISPLAYS_EXTENDED)
-		return 0;
+	int open;
 
 	/* Any head open. */
+	open = 0;
 	for (index = 0U; index < KWL_HEADS; index++) {
 		if (compose->heads[index].open)
-			return 1;
+			open = 1;
 	}
 
 	/* None: the output is alone. */
-	return 0;
+	if (!open)
+		return NULL;
+
+	/* The extended mode's heads, or the mirror's. */
+	if (compose->display_mode == KWL_DISPLAYS_EXTENDED)
+		return "heads";
+
+	/* Succeeded: a mirror shows the picture. */
+	return "mirror";
 }
 
 /* Names who changed the angle, for the log. */

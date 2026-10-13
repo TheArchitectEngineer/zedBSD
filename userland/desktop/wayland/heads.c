@@ -1875,6 +1875,78 @@ kwl_pointer_absolute(
 }
 
 /*
+ * Gives what the pointer's place is computed over (WS217): the outputs'
+ * logical rectangles, each one's panel and the angle shown on it, and the
+ * output the absolute pointer maps onto (the anchor until devices are
+ * bound to displays, ws217-p006).  A head is not turned yet (ws217-p005):
+ * its panel is its logical size.
+ */
+void
+kwl_output_geometry(
+	struct kwl_server *server,
+	struct kwl_cursor_geometry *geometry)
+{
+	unsigned slot;
+
+	/* The rectangles; the absolute pointer on the anchor. */
+	memset(geometry, 0, sizeof(*geometry));
+	geometry->output_count = kwl_outputs(server, geometry->outputs);
+	geometry->absolute_slot = KWL_PLANE_ANCHOR;
+
+	/* Each output's panel: its logical size turned back by its angle. */
+	for (slot = 0U; slot < KWL_PLANE_SLOTS; slot++) {
+		geometry->physical[slot].rotation = kwl_output_rotation(server, slot);
+		kwl_rotate_size(geometry->physical[slot].rotation,
+				geometry->outputs[slot].width,
+				geometry->outputs[slot].height,
+				&geometry->physical[slot].width,
+				&geometry->physical[slot].height);
+	}
+}
+
+/*
+ * Gives the angle an output shows its picture at (WS217): the anchor's
+ * angle shown (0 while a game pauses the turn), 0 for a head (ws217-p005).
+ */
+unsigned
+kwl_output_rotation(
+	struct kwl_server *server,
+	unsigned slot)
+{
+	/* A head, or no device open yet. */
+	if (slot != KWL_PLANE_ANCHOR || server->compose == NULL)
+		return KWL_ROTATE_0;
+
+	/* Succeeded: the anchor's angle. */
+	return server->compose->rotation;
+}
+
+/*
+ * Maps an absolute device's report onto an output (WS217, plan/ws217/
+ * phase001 6.1), in 24.8 fixed point of the plane: a direct device's
+ * place on the output's panel turned back by its angle, any other's on
+ * its logical picture as it is.
+ */
+void
+kwl_output_absolute(
+	struct kwl_server *server,
+	unsigned slot,
+	unsigned direct,
+	const struct kwl_cursor_axis *across,
+	const struct kwl_cursor_axis *down,
+	int32_t *x,
+	int32_t *y)
+{
+	struct kwl_cursor_geometry geometry;
+
+	/* The outputs as they are now. */
+	kwl_output_geometry(server, &geometry);
+
+	/* The place, in 1/256 pixels. */
+	kwl_cursor_geometry_place(&geometry, slot, direct, 256U, across, down, x, y);
+}
+
+/*
  * Takes the windows and the pointer off an output going away (a head
  * closed, the mirror mode chosen) to the anchor, at the same share of the
  * way across.
