@@ -56,7 +56,6 @@ struct position_entry {
 
 static int position_walk(struct layout_tree *tree, struct layout_box *box, const struct position_block *containing, const struct position_block *viewport, int depth);
 static int position_place(struct layout_tree *tree, struct layout_box *box, const struct position_block *containing);
-static int position_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
 static void position_padding_box(const struct layout_box *box, struct position_block *block);
 static int position_offset(const struct css_length *length, layout_unit size, layout_unit *value);
 static layout_unit position_frame(const struct layout_box *box);
@@ -203,7 +202,7 @@ layout_shrink_to_fit(
 
 	/* CSS shrink-to-fit keeps the widest unbreakable content even when the room is empty. */
 	if (content > available) {
-		error = position_min_content(tree, box, &minimum);
+		error = layout_min_content(tree, box, &minimum);
 		if (error != 0) {
 			box->style.width = width;
 			return error;
@@ -281,8 +280,8 @@ layout_max_content(
 }
 
 /* Measures the narrowest content width with every permitted line break taken. */
-static int
-position_min_content(
+int
+layout_min_content(
 	struct layout_tree *tree,
 	struct layout_box *box,
 	layout_unit *width)

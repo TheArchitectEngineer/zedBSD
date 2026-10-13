@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1074](queue.md) finished / p189 Grid testharness recensus。2026-10-14 05:44 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1075](queue.md) finished / p214 Grid fit-content min-content floor。2026-10-14 05:54 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -472,6 +472,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p211](phase211/phase.md) | Interop 2025 CSS Grid inline-axis self alignment | cleared / q1070 LTR基本配置・関連静的旧PASS維持 | p189 q1068・p190 q1062 fixed baseline |
 | [ws074-p212](phase212/phase.md) | Interop 2025 CSS Grid horizontal RTL alignment | cleared / q1071代表WPT18/18・静的旧PASS維持 | p211 q1070 LTR出力 |
 | [ws074-p213](phase213/phase.md) | Interop 2025 CSS Grid auto-width self alignment | cleared / q1073代表WPT PASS・静的旧PASS維持 | p212 q1071・p189 q1072 fixed baseline |
+| [ws074-p214](phase214/phase.md) | Interop 2025 CSS Grid fit-content min-content floor | cleared / q1075系列4 ID改善・静的旧PASS維持 | p213 q1073・p189 q1074 fixed baseline |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -793,3 +794,5 @@ Event ws074-p189-q1072-outcome-20261014: [p189](phase189/phase.md) q1072-i01 par
 Event ws074-p213-addition-revision-and-q1073-clear-20261014: [p213](phase213/phase.md)を追加し、Grid横書きauto幅の非stretch self-alignmentを担当。最初の固定静的529件に旧PASS→FAIL3件を検出し、auto inline margin残余配分とvertical-rl子項目除外を有限範囲に記録して修正。[証拠](phase213/evidence/20261014-q1073/README.md)では代表testharness1 ID whole FAIL→PASS、局所44/44、静的旧123 PASS全維持・1 FAIL→PASS、Acid3差0。q1073-i01/p213 whole cleared。p189/p190/p173全件100%は未達、共有Master/Queue/GitHub publication保留。
 
 Event ws074-p189-q1074-outcome-20261014: [p189](phase189/phase.md) q1074-i01 partial cleared。固定Grid testharness502 IDは43 PASS/427 FAIL/32 no_output→57 PASS/413 FAIL/32 no_output、14 whole FAIL→PASS/0 PASS→FAIL、subtest PASS+42。[証拠](phase189/evidence/20261014-q1074/README.md)。p189/p190/p173全件100%未達、共有Master/Queue/GitHub publication保留。
+
+Event ws074-p214-addition-and-q1075-clear-20261014: [p214](phase214/phase.md)を追加し、Grid fit-contentのmin-content下限を内部既存測定と共有。q1075-i01/p214 whole cleared、固定幅変化14 WPT中4 whole FAIL→PASS・旧PASS後退0、静的Grid529旧124 PASS全維持、Acid3差0。[証拠](phase214/evidence/20261014-q1075/README.md)。残4件はreplaced image固有、p189/p190/p173全件100%未達、共有Master/Queue/GitHub publication保留。

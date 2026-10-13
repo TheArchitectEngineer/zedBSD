@@ -261,6 +261,7 @@ layout_unit layout_clearance(const struct layout_tree *tree, int clear);
 layout_unit layout_floats_bottom(const struct layout_tree *tree);
 int layout_shrink_to_fit(struct layout_tree *tree, struct layout_box *box, layout_unit room);
 int layout_max_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
+int layout_min_content(struct layout_tree *tree, struct layout_box *box, layout_unit *width);
 int layout_stacking_order(const struct layout_tree *tree, struct wb_vector *boxes, size_t *flow_index);
 void layout_release(struct layout_tree *tree);
 int layout_block(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);

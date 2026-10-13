@@ -790,6 +790,7 @@ grid_lay_item(
 	struct grid_sizes saved;
 	layout_unit content;
 	layout_unit intrinsic;
+	layout_unit minimum;
 	layout_unit remaining;
 	int left_auto;
 	int right_auto;
@@ -835,6 +836,22 @@ grid_lay_item(
 		content = 0;
 	if (justify != CSS_ALIGN_STRETCH && content > intrinsic)
 		content = intrinsic;
+	if (justify != CSS_ALIGN_STRETCH && content < intrinsic) {
+		/* A line that cannot break may be wider than its grid area. */
+		error = layout_min_content(tree, item, &minimum);
+		if (error != 0) {
+			item->style.box_sizing = saved.box_sizing;
+			item->style.width = saved.width;
+			item->style.min_width = saved.min_width;
+			item->style.max_width = saved.max_width;
+			memcpy(item->style.margin, saved.margin, sizeof(saved.margin));
+			return error;
+		}
+		if (content < minimum)
+			content = minimum;
+		if (content > intrinsic)
+			content = intrinsic;
+	}
 
 	/* The layout at that width. */
 	item->style.box_sizing = CSS_BOX_SIZING_CONTENT;

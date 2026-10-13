@@ -11,13 +11,15 @@ import subprocess
 import tempfile
 
 
-def position(program, parent_style, child_style, auto_width=False):
+def position(program, parent_style, child_style, auto_width=False,
+             content_width=20, column_width=100):
     width = "auto" if auto_width else "20px"
-    content = '<span style="display:inline-block;width:20px;height:10px"></span>' if auto_width else ""
+    content = ('<span style="display:inline-block;width:%dpx;height:10px"></span>' %
+               content_width) if auto_width else ""
     source = ('<!doctype html><body><div style="display:grid;width:100px;'
-              'grid-template-columns:100px;%s"><div style="width:%s;'
+              'grid-template-columns:%dpx;%s"><div style="width:%s;'
               'height:10px;%s">%s</div></div></body>' %
-              (parent_style, width, child_style, content))
+              (column_width, parent_style, width, child_style, content))
     fonts = Path("userland/desktop/fonts")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "grid-justify.html"
@@ -104,9 +106,21 @@ def main():
             print("FAIL auto %s %s: expected %s, got %s" %
                   (parent_style, child_style, expected, observed))
             failures += 1
+    minimum_cases = [
+        ("justify-items:start;", "", (0.0, 120.0)),
+        ("justify-items:stretch;", "", (0.0, 80.0)),
+        ("", "margin-left:auto;margin-right:auto;", (0.0, 120.0)),
+    ]
+    for parent_style, child_style, expected in minimum_cases:
+        observed = position(args.program, parent_style, child_style, True,
+                            content_width=120, column_width=80)
+        if observed != expected:
+            print("FAIL min-content %s %s: expected %s, got %s" %
+                  (parent_style, child_style, expected, observed))
+            failures += 1
     if failures:
         return 1
-    total = len(cases) + len(auto_cases)
+    total = len(cases) + len(auto_cases) + len(minimum_cases)
     print("grid inline-axis placement: %d/%d passed" % (total, total))
     return 0
 

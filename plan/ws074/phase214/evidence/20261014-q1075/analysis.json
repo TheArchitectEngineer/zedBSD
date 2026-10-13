@@ -1,0 +1,38 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "grid_static_count": 529,
+  "grid_static_ids_sha256": "a5a03c28c352a6c89e0a935ca4af0d4ab86e84540527240448d0e76aebf37817",
+  "grid_static_old_counts": {
+    "fail": 405,
+    "pass": 124
+  },
+  "grid_static_new_counts": {
+    "fail": 405,
+    "pass": 124
+  },
+  "grid_static_transitions": {
+    "fail->fail": 405,
+    "pass->pass": 124
+  },
+  "series_count": 14,
+  "series_old_counts": {
+    "pass": 6,
+    "fail": 8
+  },
+  "series_new_counts": {
+    "fail": 4,
+    "pass": 10
+  },
+  "series_transitions": {
+    "fail->fail": 4,
+    "fail->pass": 4,
+    "pass->pass": 6
+  },
+  "series_changed": [
+    "/css/css-grid/alignment/grid-alignment-implies-size-change-025.html",
+    "/css/css-grid/alignment/grid-alignment-implies-size-change-026.html",
+    "/css/css-grid/alignment/grid-alignment-implies-size-change-027.html",
+    "/css/css-grid/alignment/grid-alignment-implies-size-change-028.html"
+  ],
+  "grid_static_regressions": []
+}

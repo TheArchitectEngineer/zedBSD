@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1074 / WS074 CSS Grid testharness recensus（2026-10-14）
+## 最新: q1075 / WS074 CSS Grid fit-content min-content floor（2026-10-14）
+
+[q1075履歴](queue-q1075.md): 固定幅変化14 WPTは4 whole FAIL→PASS、旧PASS後退0。静的Grid529旧124 PASS維持、p214 whole cleared、Acid3差0。[証拠](../ws074/phase214/evidence/20261014-q1075/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1074 / WS074 CSS Grid testharness recensus（2026-10-14）
 
 [q1074履歴](queue-q1074.md): 固定Grid502 IDは43→57 PASS、427→413 FAIL、32 no_output維持。旧PASS後退0、subtest PASS+42、p189 partial cleared。[証拠](../ws074/phase189/evidence/20261014-q1074/README.md)。p189/p190/p173全件100%未達、共有投影/GitHub publication pending。
 
