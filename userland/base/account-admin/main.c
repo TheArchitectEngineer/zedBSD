@@ -244,6 +244,8 @@ main(
 	struct admin_request request;
 	sigset_t held;
 	sigset_t previous;
+	const char *operation_word;
+	const char *reason_word;
 	size_t length;
 	uid_t real;
 	uid_t effective;
@@ -315,11 +317,15 @@ main(
 	reason = admin_apply(&request, caller);
 	(void)sigprocmask(SIG_SETMASK, &previous, NULL);
 
+	/* The words the log line names the operation and its result by. */
+	operation_word = admin_operation_word(request.operation);
+	reason_word = admin_reason_word(reason);
+
 	/* The result logged, with the user who asked root through sudo. */
 	if (sudo_user[0] != '\0') {
-		syslog(LOG_NOTICE, "%s by root (sudo %s) for %s: %s", admin_operation_word(request.operation), sudo_user, request.name, admin_reason_word(reason));
+		syslog(LOG_NOTICE, "%s by root (sudo %s) for %s: %s", operation_word, sudo_user, request.name, reason_word);
 	} else {
-		syslog(LOG_NOTICE, "%s by %s for %s: %s", admin_operation_word(request.operation), caller, request.name, admin_reason_word(reason));
+		syslog(LOG_NOTICE, "%s by %s for %s: %s", operation_word, caller, request.name, reason_word);
 	}
 
 	/* The request (with any new password) goes; the result is answered. */
@@ -400,6 +406,7 @@ admin_check_caller(
 	struct passwd account;
 	struct passwd *found;
 	size_t name_length;
+	size_t password_length;
 	gid_t primary;
 	int wheel;
 	int error;
@@ -425,7 +432,8 @@ admin_check_caller(
 
 	/* The caller's password (login_verify erases its copy); a wrong one costs two seconds. */
 	(void)snprintf(check, sizeof(check), "%s", request->password);
-	admin_wipe(request->password, strlen(request->password));
+	password_length = strlen(request->password);
+	admin_wipe(request->password, password_length);
 	error = login_verify(caller, check, &account, buffer, sizeof(buffer));
 	admin_wipe(check, sizeof(check));
 	admin_wipe(buffer, sizeof(buffer));
@@ -492,6 +500,7 @@ admin_apply(
 {
 	struct admin_files files;
 	struct admin_after after;
+	const char *message;
 	int reason;
 	int error;
 
@@ -509,7 +518,8 @@ admin_apply(
 	/* The lock. */
 	error = account_files_lock();
 	if (error != 0) {
-		syslog(LOG_ERR, "the account files could not be locked: %s", strerror(error));
+		message = strerror(error);
+		syslog(LOG_ERR, "the account files could not be locked: %s", message);
 		return ADMIN_FAILED;
 	}
 
@@ -573,6 +583,7 @@ admin_files_open(
 	struct admin_files *files)
 {
 	struct admin_text *text;
+	const char *message;
 	int which;
 	int error;
 
@@ -607,7 +618,8 @@ admin_files_open(
 		/* The file. */
 		error = account_file_read(text->path, text->original, ADMIN_FILE_MAX, &text->original_length);
 		if (error != 0) {
-			syslog(LOG_ERR, "%s could not be read: %s", text->path, strerror(error));
+			message = strerror(error);
+			syslog(LOG_ERR, "%s could not be read: %s", text->path, message);
 			return error;
 		}
 
@@ -1614,12 +1626,14 @@ admin_write(
 	const char *text,
 	size_t length)
 {
+	const char *message;
 	int error;
 
 	/* The atomic replacement. */
 	error = account_file_write(path, mode, text, length);
 	if (error != 0) {
-		syslog(LOG_ERR, "%s could not be replaced: %s", path, strerror(error));
+		message = strerror(error);
+		syslog(LOG_ERR, "%s could not be replaced: %s", path, message);
 		return error;
 	}
 
@@ -1682,6 +1696,7 @@ admin_highest_in_directory(
 	DIR *directory;
 	char *end;
 	long number;
+	int directory_descriptor;
 	int error;
 	int dot;
 
@@ -1689,6 +1704,7 @@ admin_highest_in_directory(
 	directory = opendir(path);
 	if (directory == NULL)
 		return;
+	directory_descriptor = dirfd(directory);
 
 	/* Each entry. */
 	for (;;) {
@@ -1708,7 +1724,7 @@ admin_highest_in_directory(
 			if (end == entry->d_name || *end != '\0')
 				continue;
 		} else {
-			error = fstatat(dirfd(directory), entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
+			error = fstatat(directory_descriptor, entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
 			if (error != 0)
 				continue;
 			number = (long)status.st_uid;
@@ -1778,17 +1794,22 @@ admin_passkey_forget(
 	const char *name,
 	int *changed)
 {
+	const char *message;
 	char *text;
 	char *output;
 	int error;
 
-	/* The file's text and its edited copy. */
+	/* The file's text. */
 	*changed = 0;
-	text = malloc(ADMIN_FILE_MAX);
-	output = malloc(ADMIN_OUTPUT_MAX);
+	output = NULL;
 	error = ENOMEM;
-	if (text != NULL && output != NULL)
-		error = admin_passkey_edit(name, text, output, changed);
+	text = malloc(ADMIN_FILE_MAX);
+	if (text != NULL) {
+		/* Its edited copy, and the edit through both. */
+		output = malloc(ADMIN_OUTPUT_MAX);
+		if (output != NULL)
+			error = admin_passkey_edit(name, text, output, changed);
+	}
 
 	/* Both wiped (they hold the PINs' hashes) and freed. */
 	if (text != NULL) {
@@ -1804,7 +1825,8 @@ admin_passkey_forget(
 
 	/* A failure is said. */
 	if (error != 0) {
-		syslog(LOG_ERR, "the passkey lines of %s could not be removed: %s", name, strerror(error));
+		message = strerror(error);
+		syslog(LOG_ERR, "the passkey lines of %s could not be removed: %s", name, message);
 		return error;
 	}
 
@@ -1969,6 +1991,7 @@ static int
 admin_after_work(
 	const struct admin_after *after)
 {
+	const char *message;
 	int error;
 
 	/* A removed user's home, when asked. */
@@ -1986,7 +2009,8 @@ admin_after_work(
 	if (after->make_home) {
 		error = admin_make_home(after->name, after->uid, after->gid);
 		if (error != 0) {
-			syslog(LOG_ERR, "the home of %s could not be made: %s", after->name, strerror(error));
+			message = strerror(error);
+			syslog(LOG_ERR, "the home of %s could not be made: %s", after->name, message);
 			return ADMIN_HOME_FAILED;
 		}
 	}
@@ -2061,6 +2085,7 @@ admin_copy_skeleton(
 	ssize_t got;
 	ssize_t put;
 	DIR *skeleton;
+	int skeleton_descriptor;
 	int regular;
 	int source;
 	int target;
@@ -2071,6 +2096,7 @@ admin_copy_skeleton(
 	skeleton = opendir(ADMIN_SKELETON);
 	if (skeleton == NULL)
 		return;
+	skeleton_descriptor = dirfd(skeleton);
 
 	/* Each entry that is a regular file. */
 	for (;;) {
@@ -2085,7 +2111,7 @@ admin_copy_skeleton(
 			continue;
 
 		/* A regular file (not followed). */
-		error = fstatat(dirfd(skeleton), entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
+		error = fstatat(skeleton_descriptor, entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
 		regular = 0;
 		if (error == 0 && (status.st_mode & S_IFMT) == S_IFREG)
 			regular = 1;
@@ -2093,7 +2119,7 @@ admin_copy_skeleton(
 			continue;
 
 		/* The file and its copy, made anew in the home. */
-		source = openat(dirfd(skeleton), entry->d_name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+		source = openat(skeleton_descriptor, entry->d_name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
 		if (source < 0)
 			continue;
 		target = openat(home, entry->d_name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, status.st_mode & 0700);
@@ -2137,13 +2163,15 @@ admin_remove_home(
 	long uid)
 {
 	struct stat status;
+	const char *message;
 	int base;
 	int error;
 
 	/* The homes' directory, not followed if it is a link. */
 	base = open(ADMIN_HOME_BASE, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
 	if (base < 0) {
-		syslog(LOG_ERR, "the home of %s could not be removed: %s", name, strerror(errno));
+		message = strerror(errno);
+		syslog(LOG_ERR, "the home of %s could not be removed: %s", name, message);
 		return;
 	}
 
@@ -2163,8 +2191,10 @@ admin_remove_home(
 
 	/* The tree, on the home's own file system. */
 	error = admin_remove_tree(base, name, 0, status.st_dev);
-	if (error != 0)
-		syslog(LOG_ERR, "the home of %s could not be removed whole: %s", name, strerror(error));
+	if (error != 0) {
+		message = strerror(error);
+		syslog(LOG_ERR, "the home of %s could not be removed whole: %s", name, message);
+	}
 
 	/* The homes' directory is no longer needed. */
 	(void)close(base);
@@ -2187,6 +2217,7 @@ admin_remove_tree(
 	struct stat status;
 	DIR *directory;
 	int descriptor;
+	int directory_descriptor;
 	int error;
 	int first;
 	int dot;
@@ -2226,6 +2257,7 @@ admin_remove_tree(
 	}
 
 	/* Everything in it, the first error kept. */
+	directory_descriptor = dirfd(directory);
 	first = 0;
 	for (;;) {
 		/* The next entry, or the end. */
@@ -2239,7 +2271,7 @@ admin_remove_tree(
 			continue;
 
 		/* Removed, and under it. */
-		error = admin_remove_tree(dirfd(directory), entry->d_name, depth + 1, device);
+		error = admin_remove_tree(directory_descriptor, entry->d_name, depth + 1, device);
 		if (error != 0 && first == 0)
 			first = error;
 	}
@@ -2267,16 +2299,20 @@ admin_spool_forget(
 	struct dirent *entry;
 	struct stat status;
 	char path[ADMIN_PATH_MAX];
+	const char *message;
 	DIR *directory;
 	int descriptor;
+	int directory_descriptor;
 	int error;
 	int dot;
 
 	/* The cron table. */
 	(void)snprintf(path, sizeof(path), "%s/%ld", ADMIN_CRON_SPOOL, uid);
 	error = unlink(path);
-	if (error != 0 && errno != ENOENT)
-		syslog(LOG_ERR, "%s could not be removed: %s", path, strerror(errno));
+	if (error != 0 && errno != ENOENT) {
+		message = strerror(errno);
+		syslog(LOG_ERR, "%s could not be removed: %s", path, message);
+	}
 
 	/* at's spool, not followed if it is a link; none has no job. */
 	descriptor = open(ADMIN_AT_SPOOL, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
@@ -2289,6 +2325,7 @@ admin_spool_forget(
 	}
 
 	/* Each job the user owns. */
+	directory_descriptor = dirfd(directory);
 	for (;;) {
 		/* The next entry, or the end. */
 		entry = readdir(directory);
@@ -2301,16 +2338,18 @@ admin_spool_forget(
 			continue;
 
 		/* A regular file of the user's. */
-		error = fstatat(dirfd(directory), entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
+		error = fstatat(directory_descriptor, entry->d_name, &status, AT_SYMLINK_NOFOLLOW);
 		if (error != 0)
 			continue;
 		if ((status.st_mode & S_IFMT) != S_IFREG || (long)status.st_uid != uid)
 			continue;
 
 		/* Removed. */
-		error = unlinkat(dirfd(directory), entry->d_name, 0);
-		if (error != 0)
-			syslog(LOG_ERR, "the at job %s could not be removed: %s", entry->d_name, strerror(errno));
+		error = unlinkat(directory_descriptor, entry->d_name, 0);
+		if (error != 0) {
+			message = strerror(errno);
+			syslog(LOG_ERR, "the at job %s could not be removed: %s", entry->d_name, message);
+		}
 	}
 
 	/* The spool is no longer needed. */
@@ -2329,6 +2368,7 @@ admin_autologin_forget(
 {
 	char text[ADMIN_SMALL_MAX];
 	size_t length;
+	const char *message;
 	size_t first;
 	int error;
 	int same;
@@ -2349,7 +2389,8 @@ admin_autologin_forget(
 	/* It names the user: it goes. */
 	error = unlink(ADMIN_AUTOLOGIN_FILE);
 	if (error != 0) {
-		syslog(LOG_ERR, "%s could not be removed: %s", ADMIN_AUTOLOGIN_FILE, strerror(errno));
+		message = strerror(errno);
+		syslog(LOG_ERR, "%s could not be removed: %s", ADMIN_AUTOLOGIN_FILE, message);
 		return;
 	}
 
@@ -2369,7 +2410,9 @@ admin_dot(
 		return 1;
 
 	/* "..". */
-	if (name[0] == '.' && name[1] == '.' && name[2] == '\0')
+	if (name[0] == '.' &&
+	    name[1] == '.' &&
+	    name[2] == '\0')
 		return 1;
 
 	/* Another name. */
@@ -2383,11 +2426,16 @@ static void
 admin_answer(
 	int reason)
 {
+	const char *word;
+
+	/* The reason's word. */
+	word = admin_reason_word(reason);
+
 	/* "ok", or "error" and the reason's word. */
 	if (reason == ADMIN_OK)
 		(void)printf("ok\n");
 	else
-		(void)printf("error %s\n", admin_reason_word(reason));
+		(void)printf("error %s\n", word);
 	(void)fflush(stdout);
 }
 
@@ -2444,6 +2492,7 @@ admin_system_language(
 	const struct admin_request *request)
 {
 	char line[16];
+	const char *message;
 	int written;
 	int made;
 	int error;
@@ -2456,7 +2505,8 @@ admin_system_language(
 	/* The directory, when the system has none yet (an existing one is kept as it is). */
 	made = mkdir(ADMIN_LANGUAGE_DIRECTORY, 0755);
 	if (made != 0 && errno != EEXIST) {
-		syslog(LOG_ERR, "%s could not be made: %s", ADMIN_LANGUAGE_DIRECTORY, strerror(errno));
+		message = strerror(errno);
+		syslog(LOG_ERR, "%s could not be made: %s", ADMIN_LANGUAGE_DIRECTORY, message);
 		return ADMIN_FAILED;
 	}
 

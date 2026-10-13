@@ -189,6 +189,7 @@ user_front_send(
 	const char *name)
 {
 	char answer[FRONT_ANSWER_MAX];
+	const char *message;
 	int status;
 	int error;
 
@@ -196,7 +197,8 @@ user_front_send(
 	(void)signal(SIGPIPE, SIG_IGN);
 	error = front_run(request, answer, sizeof(answer));
 	if (error != 0) {
-		fprintf(stderr, "%s: %s could not be run: %s\n", request->program, ACCOUNT_ADMIN_PATH, strerror(error));
+		message = strerror(error);
+		fprintf(stderr, "%s: %s could not be run: %s\n", request->program, ACCOUNT_ADMIN_PATH, message);
 		return USER_FRONT_FAILED;
 	}
 

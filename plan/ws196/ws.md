@@ -33,4 +33,4 @@ Resume point: p002・p003 は実装済み、p004（T1、依頼の文は [phase00
 | [p002](phase002/phase.md) | account-admin の欠陥の直し（S1・S3・S4・S5・S6・M7・M2 の autologin）と root の前段の request の口（usermod の操作を含む） | in-progress — merge 済み（7f2c850a7）、T1（p004）待ち（q969） | p001 |
 | [p003](phase003/phase.md) | useradd・usermod・userdel の前段（F1・S2・S8、§2 の option から `-d`・`-m` を除く）、man（`docs/reference/user-administration.md`）、host 試験 | in-progress — 実装と host 試験済み、test-wait（p004）（q972） | p002 |
 | [p004](phase004/phase.md) | T1: guest で 3 つの命令・Settings の Users の頁・login・autologin、`plan/ws089/tests/admin-p026-guest.sh`（p002 と p003 の依頼を 1 つに） | planned（依頼の文は書いた、Q1 が T1 へ） | p003 |
-| p005 | 規約の全文の見直し | planned | p004 |
+| [p005](phase005/phase.md) | 規約の全文の見直し（WS が変えた C を全文と照らし、書き方だけを直した） | 見直しと host 試験済み（2026-10-14 P2）、Q1 の判定待ち | p004 |
