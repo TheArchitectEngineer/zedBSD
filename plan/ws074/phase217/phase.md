@@ -9,6 +9,7 @@ Primary Milestone: MG006（WS074を継承）
 Prerequisites: [p189 q1087 Grid recensus](../phase189/evidence/20261014-q1087/README.md)。
 Scoped output dependency: alignment style-changesの`grid` shorthandによる明示track sizingは[p218](../phase218/phase.md)の対応出力を要する。p217の他alignment調査/修正は独立に進められる。
 Scoped output dependency: alignment style-changesの空子baselineは[p219 q1096](../phase219/evidence/20261014-q1096/README.md)の出力を用いる。内容line/auto行/縦書きは依然未達。
+Scoped output dependency: alignment style-changes007/008のvertical-lr文字line geometryは[p220](../phase220/phase.md)の検証済み出力を待つ。空子vertical-rlと水平alignmentは独立。
 
 ## 目的と受け入れ
 
@@ -85,3 +86,13 @@ Event ws074-p217-q1100-partial-clear-20261014: [証拠](evidence/20261014-q1100/
 ## q1101-i01 結果（2026-10-14 08:19 JST）
 
 Event ws074-p217-q1101-partial-clear-20261014: [証拠](evidence/20261014-q1101/README.md)。水平Grid固定1列の空vertical-rl子でborder-left baselineを共有。最小2gridのmargin/endケースPASS、固定003/004各1/6→6/6 subtest・whole FAIL→PASS。旧001/002/005/006と100-subtest PASS維持。Grid48/CSS51/JS14、warning0 build、Acid3差0・Acid2差1865。q1101部分cleared、p217/p219/p189/p173全件100%未達。文字入りvertical-lr 007/008と一般縦書きは残る。共有投影/GitHub publication保留。
+
+Follow-up ws074-p217-q1102-eight-20261014: [p189 q1102](../phase189/evidence/20261014-q1102/README.md)の固定8件再測定は6/8 whole PASS・36/48 subtest PASS。残007/008はvertical-lr文字子width期待20/40/30対実100。p217全206件の受け入れは未達。
+
+## q1103-i01 有限部分範囲（2026-10-14 08:22 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:52 JSTまで）に適用。固定007/008のvertical-lr Ahem文字幅期待/実際、q1092最小host、CSS writing-mode/line/paint/DOM geometry経路を追い、1文字sideways inlineの最小実装境界と次の検証fixtureを設計する。読取と証拠のみ。browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1103-i01 結果（2026-10-14 08:23 JST）
+
+Event ws074-p217-q1103-partial-clear-and-p220-add-20261014: [証拠](evidence/20261014-q1103/README.md)。固定007/008はvertical-lr文字子width期待20/40/30対実100。Gridが非水平子をstretchし、inlineは横x方向で行組み、paint/bounds/hitも横書き座標、CSS `text-orientation`無し。Grid単独の修正では不十分なため縦inline geometryを[p220](../phase220/phase.md)へ分離し、p217の007/008文字alignmentだけその出力へ依存させる。q1103部分cleared、p217/p220/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。

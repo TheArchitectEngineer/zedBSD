@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1102 / WS074 Grid style-changes eight-ID recensus（2026-10-14）
+## 最新: q1103 / WS074 vertical inline text layout design（2026-10-14）
+
+[q1103履歴](queue-q1103.md): 固定007/008のwidth100差はGrid stretchと横書き固定のinline/paint/geometryが重なる。[p220](../ws074/phase220/phase.md)を追加。[証拠](../ws074/phase217/evidence/20261014-q1103/README.md)。部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1102 / WS074 Grid style-changes eight-ID recensus（2026-10-14）
 
 [q1102履歴](queue-q1102.md): 固定8 IDは4→6 whole PASS、26→36/48 subtest PASS、旧PASS後退0。残007/008は縦書き文字幅差。[証拠](../ws074/phase189/evidence/20261014-q1102/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
