@@ -2,13 +2,13 @@
 
 # ws074-p182: HTTP stylesheet 応答の MIME 判定
 
-Status: planned（q1004 の残差から追加。実装 Queue 未選定）
+Status: cleared（q1005-i01、2026-10-13 23:09 JST）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074 を継承）
 Related: [p100](../phase100/phase.md) の Acid3 pixel 完全一致に寄与
 Prerequisites: p172/p179/p180/p181 cleared、[q1004](../phase181/evidence/20261013-q1004/report.json) の差画像・style/paint。
-Queue: 未選定・未承認。下記 q1005 は提案であり、実装を始めない。
+Queue: [q1005-i01](../../history/queue-q1005.md) cleared。2026-10-13、このチャットでユーザーが下記最大90分の exact scope に「q1005 の範囲を承認する」と回答。続けて、Acid3画素差0まで最大90分の Queue を反復して自動実行する指示を受けた。後続 Queue は各 exact scope を記録してから着手する。
 
 ## 観測と設計の前提
 
@@ -29,3 +29,14 @@ Queue: 未選定・未承認。下記 q1005 は提案であり、実装を始め
 原因が異なる、MIME の処理に他 module の大きな設計変更が必要、差が増える、または90分に達した場合は attempt を uncleared として原因・証拠・再開条件を残す。quirks/cross-origin の全面的な MIME 方針やローカル file MIME の拡張は今回の Queue に含めない。実装にはユーザーの exact-scope 承認と Queue active 化が必要。
 
 2026-10-13 q1004 後: Acid3 h1 が赤、reference が黒。`empty.css` の実ヘッダ text/html と `sheets_arrived()` の MIME 無判定を新しい原因候補として分離。p181 cleared と p100 全画面条件は変えない。
+
+## q1005-i01 結果（2026-10-13 23:06〜23:09 JST）
+
+**cleared**。実 HTTP host fixture で修正前の `text/html` stylesheet 適用を再現した（wrong h1 が赤）。`page/sheets.c` の非同期 HTTP stylesheet 到着時、非 quirks HTML 文書の Content-Type essence が `text/css` 以外なら解析・適用を止める。パラメータと ASCII 大文字小文字を認識し、MIME 欠落・quirks の既存経路を維持。DOM link と HTTP load の lifecycle は保持。
+
+- `python3 plan/ws074/tests/run-stylesheet-mime-tests.py`: 修正前 FAIL、修正後 PASS。非 CSS MIME 非適用、`text/css; charset=utf-8` と `TEXT/CSS` 適用、Content-Type 欠落と quirks の既存適用、link DOM 保持を確認。
+- `sh plan/ws074/tests/host-build.sh plain`: warning/error 0。`git diff --check` PASS。`clang-format` は環境に無く、変更 C と browser component 全文規約を手動確認。QEMU/別 OS と main 最新 HEAD 全体の再buildは未実施。
+- 固定 WPT `run-acid-tests.py --out build/ws074-acid-q1005-final`: Acid3 score100/100・inventory100/100・例外0、差 **13302/480000**（97.22875%一致、q1004 の18596から5294減）。Acid2差 **1865/120000** 不変。[report](evidence/20261013-q1005/report.json)、[Acid3並列画像](evidence/20261013-q1005/acid3-side.png)、[Acid2並列画像](evidence/20261013-q1005/acid2-side.png)、前後 style/paint を保存。h1 は赤から黒に変わった。
+- 残差は上部に見えるべきでない文字、得点 slash の赤、`FAIL` の重なり、本文の僅かな位置差等。p100 の全画面差0は未達。次 Queue で差画像から一つの原因を選ぶ。
+
+Source は独立 branch `codex/ws074-acid3` で WIP commit とし、main 作業 tree へ投影。GitHub Issue/Project publication と push は保留。`master.md` は変更しない。

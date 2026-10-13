@@ -76,6 +76,7 @@ static struct page_sheet *sheets_find_location(const struct page *page, const ch
 static int sheets_parse(struct page *page, struct page_sheet *entry, const unsigned char *bytes, size_t length);
 static int sheets_resolve_url(void *context, const struct vm_string *url, struct vm_string **resolved);
 static void sheets_arrived(void *context, struct net_request *request);
+static int sheets_css_mime(const struct wb_buffer *content_type);
 static void sheets_fetch_imports(struct page *page, struct page_sheet *entry);
 static void sheets_drop_unused(struct page *page);
 static void sheets_free(struct page_sheet *entry);
@@ -774,6 +775,11 @@ sheets_arrived(
 	response = net_request_response(request);
 	if (error == 0 && (response->status < 200 || response->status > 299))
 		error = EINVAL;
+	if (error == 0 && entry->page->document->content == DOM_CONTENT_HTML &&
+	    entry->page->document->quirks != DOM_QUIRKS &&
+	    response->content_type.length != 0 &&
+	    !sheets_css_mime(&response->content_type))
+		error = EINVAL;
 	if (error == 0)
 		error = sheets_parse(entry->page, entry, response->body.data, response->body.length);
 	if (error != 0)
@@ -785,6 +791,43 @@ sheets_arrived(
 
 	/* The page is styled and laid out again with it. */
 	entry->page->sheets_generation++;
+}
+
+/* Checks the MIME essence of an HTTP stylesheet response. */
+static int
+sheets_css_mime(
+	const struct wb_buffer *content_type)
+{
+	static const char css_mime[] = "text/css";
+	const unsigned char *bytes;
+	size_t start;
+	size_t end;
+	size_t index;
+	unsigned char byte;
+
+	bytes = content_type->data;
+	start = 0;
+	end = content_type->length;
+	while (start < end && (bytes[start] == ' ' || bytes[start] == '\t'))
+		start++;
+	for (index = start; index < end; index++) {
+		if (bytes[index] == ';') {
+			end = index;
+			break;
+		}
+	}
+	while (end > start && (bytes[end - 1] == ' ' || bytes[end - 1] == '\t'))
+		end--;
+	if (end - start != sizeof(css_mime) - 1)
+		return 0;
+	for (index = 0; index < sizeof(css_mime) - 1; index++) {
+		byte = bytes[start + index];
+		if (byte >= 'A' && byte <= 'Z')
+			byte += 'a' - 'A';
+		if (byte != css_mime[index])
+			return 0;
+	}
+	return 1;
 }
 
 /*

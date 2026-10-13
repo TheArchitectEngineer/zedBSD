@@ -8,9 +8,9 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
-Owner: Q1（プロジェクト全体）。Acid3 の [q1004](queue.md) はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行した。
-Queue: [q1004](queue.md) finished / p181 cleared。以前の [q1003](../history/queue-q1003.md) は p180 cleared。
-Resume point: q1004 後、Acid3 score100/100・pixel差18596/480000、Acid2差1865/120000。赤い h1 は [p182](phase182/phase.md) の次候補。本文 y349.50 / reference y350 などの差も残る。p100 全体は未達。
+Owner: Q1（プロジェクト全体）。Acid3 の Queue はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行中。ユーザーは画素差0まで最大90分 Queue の自動反復を指示。
+Queue: [q1005](../history/queue-q1005.md) finished / p182 cleared。次 Queue は残差から選定して自動継続。
+Resume point: q1005 後、Acid3 score100/100・pixel差13302/480000、Acid2差1865/120000。赤い h1 は修復。得点 slash の赤と上部の余分な文字等を次の候補とする。p100 全体は未達。
 <!-- awesome-plan-current:end -->
 
 ## Q1 向けの整理（2026-10-05、Q1）
@@ -24,10 +24,10 @@ Resume point: q1004 後、Acid3 score100/100・pixel差18596/480000、Acid2差18
 | 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file。2026-10-05 Q1 照合: p172 の取込みの後は `.c` が 167）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
 | JS | 自前の engine（ES2024 の構文、ES2015 の class・async・generator・Symbol・Map 等、RegExp、Date）。test262 は p025〜p087 の時点の数（全体の最新の計測は未） | 下の Phase の表 |
 | デモの目標 | amazon.co.jp のトップと検索（2026-09-28 ユーザー、Google から変更） | [amazon-goal.md](amazon-goal.md) |
-| Acid3 | **現行 q1004: 得点100/100、pixel一致96.1258%（差18596/480000）**。参照背景画像、得点位置、iframe 子誤描画、hidden input の行高を修復。q1000 の差302056から283460減。歴史的な q579 の37.04%は取込み途中の別 source | [p179](phase179/phase.md)、[p178](phase178/phase.md)、[p180](phase180/phase.md)、[p181](phase181/phase.md) |
+| Acid3 | **現行 q1005: 得点100/100、pixel一致97.22875%（差13302/480000）**。参照背景画像、得点位置、iframe 子誤描画、hidden input の行高を修復。q1000 の差302056から288754減。歴史的な q579 の37.04%は取込み途中の別 source | [p179](phase179/phase.md)、[p178](phase178/phase.md)、[p180](phase180/phase.md)、[p181](phase181/phase.md)、[p182](phase182/phase.md) |
 | Acid2 | ~~exact pixel は不合格（p097 の時点で 90.56%）~~ → 2026-10-05 Q1 照合で訂正: **exact pixel 合格**。p099（q507）で 90.56% → 100.00%、p172 の取込み後も plain・ASan で 120000 画素一致（[checkpoint96](phase172/import/checkpoint96/README.md)）。90.56% は p099 の前の値 | [p099](phase099/phase.md)、[p097](phase097/phase.md) |
 | p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
-| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1004 の現行値は得点100/100・pixel一致96.1258%。差18596が残り、p100 全体は未達 | [p100](phase100/phase.md) |
+| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1005 の現行値は得点100/100・pixel一致97.22875%。差13302が残り、p100 全体は未達 | [p100](phase100/phase.md) |
 
 ### Acid3 の後に止めている目標（2026-10-13 現在）
 
@@ -310,7 +310,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p179](phase179/phase.md) | Acid3 参照ページの `reference.png` が背景画像として描かれない原因を特定し、一般的な欠陥を修正・検証 | cleared（q1001-i01。canvas 背景画像の高さ0判定を修正、差56647） | p172、p178 q1000 の baseline |
 | [ws074-p180](phase180/phase.md) | iframe の子が親ページに描かれる一般的な原因を調べ、通常の fallback 描画を除く | cleared（q1003-i01、Acid3差565減、frame load52/52） | p172、p179、p178 q1002 の実測出力 |
 | [ws074-p181](phase181/phase.md) | HTML `type` 属性 selector の大文字小文字と hidden input の余分な行高を調べる | cleared（q1004-i01、Acid3差24325減、CSS rule44/44） | p172、p179、p180 cleared、q1003 実測出力 |
-| [ws074-p182](phase182/phase.md) | HTTP stylesheet 応答の MIME 判定と Acid3 の赤い h1 を調べる | planned（q1005 exact scope案、Queue未選定） | p172、p179、p180、p181 cleared、q1004 実測出力 |
+| [ws074-p182](phase182/phase.md) | HTTP stylesheet 応答の MIME 判定と Acid3 の赤い h1 を調べる | cleared（q1005-i01、Acid3差5294減、HTTP MIME fixture pass） | p172、p179、p180、p181 cleared、q1004 実測出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -574,3 +574,5 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 
 - ws090-p025（P1）で `browser.h` に `browser_view_text_target`・`browser_view_compose`・`browser_view_commit_text` を足し（追加だけ、export は browser_view_* の wildcard）、`dom_control` に `preedit` と `preedit_cursor` を足した。web の form の欄の IME の口。
 - host-browser-ime で、textarea の value が script から undefined になることが分かった（binding の未実装、plan/ws177/backlog-p1.md にも）。
+
+2026-10-13 / q1005-p182-clearance: [p182](phase182/phase.md) で非 quirks HTML の HTTP stylesheet MIME を判定。実 HTTP fixture 修正前 FAIL→修正後 PASS、build warning0。固定 Acid3 score100/100・差13302/480000（5294減）、Acid2差1865不変。[証拠](phase182/evidence/20261013-q1005/report.json)。p182 cleared。slash 色と上部の余分な文字等、p100 全画面差0・WS074 acceptance は未達。ユーザーの自動反復指示に従い次の最大90分 Queue を選定する。

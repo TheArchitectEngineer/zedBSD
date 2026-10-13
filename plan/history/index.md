@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1005 / WS074 HTTP stylesheet MIME（2026-10-13）
+
+[q1005履歴](queue-q1005.md): 非 quirks HTML の HTTP stylesheet MIME を判定し、`text/html` の `empty.css` を不適用にした。実 HTTP fixture は修正前 FAIL→修正後 PASS、host build warning0。固定 Acid3 得点100/100・pixel差13302/480000（q1004 から5294減、97.22875%一致）、Acid2差1865/120000不変。p182 cleared。p100全画面差0とWS074受入は未達。ユーザー指示により次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
 ## 最新: q1004 / WS074 HTML type 属性 selector（2026-10-13）
 
 [q1004履歴](queue-q1004.md): `type=HIDDEN` を UA `input[type=hidden]` に一致させ、form line24→0、本文 y373.50→349.50。固定 Acid3 は得点100/100・pixel差18596/480000（q1003の42921から24325減）、Acid2差1865/120000で不変。host fixture pass、CSS rule44/44、build warning0。p181 cleared。p100全画面差0、WS074 acceptanceは未達。次原因は差画像から選ぶ。独立 branch の main 統合、GitHub publication と push は保留。`master.md` は未変更。
