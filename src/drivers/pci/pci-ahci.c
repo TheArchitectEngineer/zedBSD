@@ -409,6 +409,7 @@ drv_pci_ahci_probe_ports(
 	for (;;) {
 		irq = spin_lock_irqsave(&ahci_registry_lock);
 
+		/* Finds the first HBA no probe has taken and takes it. */
 		controller = ahci_controllers;
 		while (controller != NULL && controller->probed)
 			controller = controller->next;
@@ -445,6 +446,7 @@ ahci_attach(
 	struct drv_pci_bar bar;
 	const char *stage;
 	const char *irq_name;
+	size_t first_port_end;
 	unsigned irq_count;
 	unsigned long irq;
 	uint16_t command;
@@ -458,6 +460,7 @@ ahci_attach(
 	if (controller == NULL)
 		return ENOMEM;
 
+	/* Initializes the record and learns where the function sits on the bus. */
 	kern_memset(controller, 0, sizeof(*controller));
 	controller->pci = device;
 	controller->class_code = drv_pci_device_class(device);
@@ -505,8 +508,9 @@ ahci_attach(
 	controller->bar_mapped = 1;
 
 	/* The mapping must reach at least the first port's registers. */
+	first_port_end = drv_ahci_port_offset(1U);
 	if (controller->mapping.address == NULL ||
-	    controller->mapping.size < drv_ahci_port_offset(1U)) {
+	    controller->mapping.size < first_port_end) {
 		error = ENODEV;
 		goto fail;
 	}
@@ -579,6 +583,8 @@ ahci_attach(
 		error = EIO;
 		goto fail;
 	}
+
+	/* Remembers that the vector must be given back if a later step fails. */
 	controller->irq_allocated = 1;
 
 	/* Installs the handler that completes commands. */
@@ -614,6 +620,7 @@ ahci_attach(
 	if (controller->irq.type == DRV_PCI_IRQ_MSI)
 		irq_name = "MSI";
 
+	/* Logs what the HBA reports about itself. */
 	kern_logf("ahci%u: PCI %04x:%02x:%02x.%u class=%06x version=%08x "
 		  "cap=%08x ports=%08x slots=%u %s\n",
 		  controller->index,
@@ -695,6 +702,7 @@ ahci_shutdown(
 			continue;
 		}
 
+		/* Flushes the disk's write cache with the short boot-time bound. */
 		error = ahci_port_flush(port, AHCI_SHORT_TIMEOUT_MS, 0U);
 
 		mutex_unlock(&port->command_mutex);
@@ -723,6 +731,7 @@ ahci_shutdown(
 		if (port->dma_unsafe)
 			continue;
 
+		/* Silences the port, then stops its engine and FIS reception. */
 		ahci_port_write(port, DRV_AHCI_PX_IE, 0U);
 		error = ahci_port_engine_stop(port);
 		if (error == 0)
@@ -1019,6 +1028,7 @@ ahci_port_wait_clear(
 		if (now >= deadline)
 			break;
 
+		/* Gives the CPU away before the next look. */
 		sched_yield();
 	}
 
@@ -1052,6 +1062,7 @@ ahci_pci_quiesce(
 		if (error != 0)
 			return error;
 
+		/* Clears the MSI enable bit and writes the control word back. */
 		control &= (uint16_t)~AHCI_PCI_MSI_ENABLE;
 		error = drv_pci_device_config_write16(
 			controller->pci,
@@ -1071,6 +1082,8 @@ ahci_pci_quiesce(
 
 	command &= (uint16_t)~(AHCI_PCI_COMMAND_IO | AHCI_PCI_COMMAND_MEMORY |
 			       AHCI_PCI_COMMAND_MASTER);
+
+	/* Writes the command register back with all three bits clear. */
 	error = drv_pci_device_config_write16(controller->pci, AHCI_PCI_COMMAND, command);
 	if (error != 0)
 		return error;
@@ -1139,6 +1152,7 @@ ahci_attach_quiet_ports(
 		if (port == NULL)
 			continue;
 
+		/* Masks the port's interrupts, then clears its recorded status. */
 		ahci_port_write(port, DRV_AHCI_PX_IE, 0U);
 		ahci_port_clear_status(port);
 	}
@@ -1210,6 +1224,8 @@ ahci_intel_remap_check(
 	/* The remap registers exist only on Intel parts with a large enough ABAR. */
 	if (controller->mapping.size < DRV_AHCI_INTEL_REMAP_END)
 		return;
+
+	/* Intel's vendor-specific capability says whether the remap exists. */
 	vendor_capability = ahci_read(controller, DRV_AHCI_REG_INTEL_VSCAP);
 	if ((vendor_capability & 1U) == 0U)
 		return;
@@ -1221,6 +1237,7 @@ ahci_intel_remap_check(
 		if ((remap_capability & (UINT32_C(1) << index)) == 0U)
 			continue;
 
+		/* Reads the class code of the device remapped in this slot. */
 		device_class = ahci_read(
 			controller,
 			DRV_AHCI_REG_INTEL_REMAP_DCC + (size_t)index * DRV_AHCI_PORT_STRIDE);
@@ -1247,6 +1264,7 @@ ahci_irq(
 	uint32_t pending;
 	unsigned number;
 
+	/* Recovers the HBA this interrupt was established for. */
 	controller = argument;
 
 	/* Reads which ports raised the interrupt. */
@@ -1262,6 +1280,7 @@ ahci_irq(
 		if (port == NULL)
 			continue;
 
+		/* Collects this port's status under its state lock. */
 		irq = spin_lock_irqsave(&port->state_lock);
 
 		ahci_port_service_locked(port);
@@ -1372,6 +1391,7 @@ ahci_probe_controller(
 		if (port == NULL)
 			continue;
 
+		/* Allocates the port's DMA memory and points the port at it. */
 		error = ahci_port_memory_install(port);
 		if (error != 0) {
 			kern_logf("ahci%u: port %u: DMA memory unavailable (%d)\n",
@@ -1399,6 +1419,7 @@ ahci_probe_controller(
 		if (port->dead)
 			continue;
 
+		/* Powers the port up and starts FIS reception. */
 		ahci_port_prepare_link(port);
 	}
 
@@ -1415,6 +1436,7 @@ ahci_probe_controller(
 		if (port->dead)
 			continue;
 
+		/* Starts the port if an ATA disk answers, otherwise stops it. */
 		ahci_port_admit(port);
 	}
 
@@ -1433,6 +1455,7 @@ ahci_probe_controller(
 		if (!port->started)
 			continue;
 
+		/* Reads the disk's identity, then publishes it to the disk layer. */
 		error = ahci_port_identify(port);
 		if (error == 0)
 			error = ahci_port_publish(port);
@@ -1468,6 +1491,7 @@ ahci_bios_handoff(
 			if (now >= deadline)
 				break;
 
+			/* Gives the CPU away, then looks at the handoff register again. */
 			sched_yield();
 			handoff = ahci_read(controller, DRV_AHCI_REG_BOHC);
 		}
@@ -1487,6 +1511,7 @@ ahci_stop_all_ports(
 	struct ahci_controller *controller)
 {
 	struct ahci_port *port;
+	uint32_t command;
 	unsigned number;
 	int failed;
 	int error;
@@ -1498,14 +1523,16 @@ ahci_stop_all_ports(
 		if (port == NULL)
 			continue;
 
+		/* Stops the engine, then FIS reception. */
 		error = ahci_port_engine_stop(port);
 		if (error == 0)
 			error = ahci_port_receive_stop(port);
 		if (error != 0) {
+			command = ahci_port_read(port, DRV_AHCI_PX_CMD);
 			kern_logf("ahci%u: port %u: does not stop (cmd=%08x)\n",
 				  controller->index,
 				  number,
-				  ahci_port_read(port, DRV_AHCI_PX_CMD));
+				  command);
 			failed = 1;
 		}
 	}
@@ -1548,6 +1575,7 @@ ahci_hba_reset(
 		if (now >= deadline)
 			return ETIMEDOUT;
 
+		/* Gives the CPU away before the next look. */
 		sched_yield();
 	}
 
@@ -1556,6 +1584,8 @@ ahci_hba_reset(
 	control |= DRV_AHCI_GHC_AE;
 	control &= ~DRV_AHCI_GHC_IE;
 	ahci_write(controller, DRV_AHCI_REG_GHC, control);
+
+	/* The reset also cleared the ports' interrupt masks and status. */
 	ahci_attach_quiet_ports(controller);
 
 	/* Checks that the reset left every port stopped. */
@@ -1582,6 +1612,7 @@ ahci_port_memory_install(
 	uint64_t end;
 	int error;
 
+	/* Finds the HBA and the DMA allocator its function uses. */
 	controller = port->controller;
 	dma = drv_pci_device_dma(controller->pci);
 
@@ -1666,6 +1697,7 @@ ahci_port_prepare_link(
 	uint32_t command;
 	uint32_t value;
 
+	/* Finds the HBA whose capabilities say what the port has. */
 	controller = port->controller;
 
 	/* FIS-based switching is for port multipliers, which are not used. */
@@ -1718,6 +1750,7 @@ ahci_links_reset(
 		if (port->dead)
 			continue;
 
+		/* Starts COMRESET on the port, keeping its speed limit. */
 		control = ahci_port_read(port, DRV_AHCI_PX_SCTL);
 		control &= DRV_AHCI_PX_SCTL_SPD_MASK;
 		control |= DRV_AHCI_PX_SCTL_IPM_NONE | DRV_AHCI_PX_SCTL_DET_INIT;
@@ -1736,6 +1769,7 @@ ahci_links_reset(
 		if (port->dead)
 			continue;
 
+		/* Releases COMRESET so the PHY starts negotiating. */
 		control = ahci_port_read(port, DRV_AHCI_PX_SCTL);
 		control &= ~DRV_AHCI_PX_SCTL_DET_MASK;
 		ahci_port_write(port, DRV_AHCI_PX_SCTL, control);
@@ -1761,12 +1795,14 @@ ahci_links_wait(
 	unsigned number;
 	unsigned pending;
 
+	/* Sets the two deadlines the wait is judged against. */
 	now = sched_ticks();
 	absent_after = now + kern_ms_to_ticks(AHCI_LINK_ABSENT_MS) + 1U;
 	deadline = now + kern_ms_to_ticks(AHCI_LINK_UP_MS) + 1U;
 
 	/* Looks at every pending port until none is left or time runs out. */
 	for (;;) {
+		/* Looks at each port whose link is still undecided. */
 		now = sched_ticks();
 		pending = 0;
 		for (number = 0; number < DRV_AHCI_PORT_MAX; number++) {
@@ -1796,6 +1832,7 @@ ahci_links_wait(
 		if (pending == 0U)
 			break;
 
+		/* Gives the CPU away before the next look. */
 		sched_yield();
 	}
 }
@@ -1831,6 +1868,7 @@ ahci_devices_wait(
 		if (port->link != AHCI_LINK_UP)
 			continue;
 
+		/* Clears every recorded link error, then makes sure FRE is on. */
 		ahci_port_write(port, DRV_AHCI_PX_SERR, UINT32_MAX);
 		command = ahci_port_read(port, DRV_AHCI_PX_CMD);
 		if ((command & DRV_AHCI_PX_CMD_FRE) == 0U)
@@ -1840,11 +1878,13 @@ ahci_devices_wait(
 	/* Waits until no linked device is busy, or the time runs out. */
 	deadline = sched_ticks() + kern_ms_to_ticks(AHCI_DEVICE_READY_MS) + 1U;
 	for (;;) {
+		/* Notes whether the wait has run out before this look. */
 		now = sched_ticks();
 		expired = 0;
 		if (now >= deadline)
 			expired = 1;
 
+		/* Looks at each linked port's task file. */
 		pending = 0;
 		for (number = 0; number < DRV_AHCI_PORT_MAX; number++) {
 			port = controller->ports[number];
@@ -1868,6 +1908,7 @@ ahci_devices_wait(
 				continue;
 			}
 
+			/* Counts the device as still busy; the loop looks again. */
 			pending++;
 		}
 
@@ -1875,6 +1916,7 @@ ahci_devices_wait(
 		if (pending == 0U)
 			break;
 
+		/* Gives the CPU away before the next look. */
 		sched_yield();
 	}
 }
@@ -1893,6 +1935,7 @@ ahci_port_admit(
 	unsigned device_class;
 	int error;
 
+	/* Finds the HBA whose capabilities the port depends on. */
 	controller = port->controller;
 
 	/* An empty port keeps its memory installed but receives nothing. */
@@ -1928,6 +1971,8 @@ ahci_port_admit(
 		ahci_port_retire(port);
 		return;
 	}
+
+	/* Remembers that the bounce buffer exists. */
 	port->bounce_allocated = 1;
 
 	/* An HBA without 64-bit addressing cannot reach a high bounce buffer. */
@@ -1963,7 +2008,7 @@ ahci_port_retire(
 {
 	int error;
 
-	/* Stops the port's interrupts and engines. */
+	/* Stops the port's interrupts and engines, then takes it out of service. */
 	ahci_port_write(port, DRV_AHCI_PX_IE, 0U);
 	error = ahci_port_engine_stop(port);
 	if (error == 0)
@@ -2077,6 +2122,7 @@ ahci_port_comreset(
 		if (now >= deadline)
 			return ENODEV;
 
+		/* Gives the CPU away before the next look. */
 		sched_yield();
 	}
 
@@ -2101,6 +2147,7 @@ ahci_port_identify(
 {
 	uint16_t words[DRV_AHCI_IDENTIFY_SIZE / 2U];
 	char model[AHCI_MODEL_TEXT_SIZE];
+	const char *cache_text;
 	uint32_t reasons;
 	int retryable;
 	int error;
@@ -2134,6 +2181,8 @@ ahci_port_identify(
 	/* Decodes the addressing, the sector size and the cache. */
 	drv_ahci_identify_text(words, 27U, 20U, model, sizeof(model));
 	reasons = drv_ahci_identify_parse(words, &port->identity);
+
+	/* Refuses a disk this driver cannot address. */
 	if (reasons != 0U) {
 		kern_logf("ahci%u: port %u: %s not supported (%08x)\n",
 			  port->controller->index,
@@ -2143,6 +2192,12 @@ ahci_port_identify(
 		return EOPNOTSUPP;
 	}
 
+	/* Names the write cache in the log only when the disk has one. */
+	cache_text = "";
+	if (port->identity.write_cache)
+		cache_text = " write-cache";
+
+	/* Logs what the disk reported. */
 	kern_logf("ahci%u: port %u: %s sectors=%08x:%08x sector-size=%u%s\n",
 		  port->controller->index,
 		  port->number,
@@ -2150,7 +2205,7 @@ ahci_port_identify(
 		  (uint32_t)(port->identity.sector_count >> 32),
 		  (uint32_t)port->identity.sector_count,
 		  port->identity.sector_size,
-		  port->identity.write_cache ? " write-cache" : "");
+		  cache_text);
 
 	/* Succeeded: the disk is identified. */
 	return 0;
@@ -2196,6 +2251,7 @@ ahci_port_publish(
 		return error;
 	}
 
+	/* Logs the name the disk is reachable by. */
 	kern_logf("ahci%u: port %u: /dev/%s\n",
 		  port->controller->index,
 		  port->number,
@@ -2230,12 +2286,15 @@ ahci_port_execute(
 	uint8_t *table;
 	uint32_t slot_mask;
 	uint32_t moved;
+	uint32_t task_file;
+	uint32_t serr;
 	unsigned long irq;
 	unsigned prd_count;
 	unsigned state;
 	int built;
 	int recovered;
 
+	/* Starts with a command that is not worth repeating. */
 	*retryable = 0;
 
 	/* A port out of service takes no more commands. */
@@ -2311,6 +2370,7 @@ ahci_port_execute(
 		if ((size_t)moved == length)
 			return 0;
 
+		/* A short transfer is logged and treated as a link fault. */
 		kern_logf("ahci%u: port %u: command %02x moved %u of %u bytes\n",
 			  port->controller->index,
 			  port->number,
@@ -2329,7 +2389,11 @@ ahci_port_execute(
 		outcome = "timeout";
 	}
 
-	/* Logs what the port shows before recovery clears it. */
+	/* Reads what the port shows before recovery clears it. */
+	task_file = ahci_port_read(port, DRV_AHCI_PX_TFD);
+	serr = ahci_port_read(port, DRV_AHCI_PX_SERR);
+
+	/* Logs that state together with the command that failed. */
 	kern_logf("ahci%u: port %u: command %02x lba=%08x:%08x count=%u %s "
 		  "is=%08x tfd=%08x serr=%08x\n",
 		  port->controller->index,
@@ -2340,8 +2404,8 @@ ahci_port_execute(
 		  count,
 		  outcome,
 		  port->interrupt_status,
-		  ahci_port_read(port, DRV_AHCI_PX_TFD),
-		  ahci_port_read(port, DRV_AHCI_PX_SERR));
+		  task_file,
+		  serr);
 
 	/* Brings the port back for the next command. */
 	recovered = ahci_port_recover(port);
@@ -2392,6 +2456,7 @@ ahci_port_wait_command(
 	unsigned woken_by_interrupt;
 	int idle;
 
+	/* Fixes the moment the command is given up on. */
 	deadline = sched_ticks() + kern_ms_to_ticks(timeout_ms) + 1U;
 
 	/*
@@ -2496,6 +2561,7 @@ ahci_port_recover(
 		if (port->disk != NULL)
 			disk_persistence_forget(port->disk);
 
+		/* Resets the link and waits for the engine to go idle. */
 		error = ahci_port_comreset(port);
 		if (error == 0) {
 			error = ahci_port_wait_clear(
@@ -2547,6 +2613,7 @@ ahci_port_quarantine(
 	if (port->disk != NULL)
 		disk_media_revoke(port->disk);
 
+	/* Logs that the port is gone for good. */
 	kern_logf("ahci%u: port %u: quarantined; its DMA memory is kept\n",
 		  port->controller->index,
 		  port->number);
@@ -2626,6 +2693,7 @@ ahci_port_transfer(
 		if (!write)
 			kern_memcpy(bytes, port->bounce_dma.address, length);
 
+		/* Advances past the chunk that moved. */
 		*transferred += length;
 		bytes += length;
 		block += count;
@@ -2699,6 +2767,7 @@ ahci_ports_lock(
 		if (controller->ports[number] == NULL)
 			continue;
 
+		/* Takes this port's mutex, waiting for its running command. */
 		mutex_lock(&controller->ports[number]->command_mutex);
 	}
 }
@@ -2742,6 +2811,7 @@ ahci_suspend_stop(
 		if (port->dead)
 			continue;
 
+		/* Flushes this disk's write cache with the short bound. */
 		error = ahci_port_flush(port, AHCI_SHORT_TIMEOUT_MS, 0U);
 		if (error != 0)
 			return error;
@@ -2762,6 +2832,7 @@ ahci_suspend_stop(
 		if (port->dead)
 			continue;
 
+		/* Silences the port, then stops its engine and FIS reception. */
 		ahci_port_write(port, DRV_AHCI_PX_IE, 0U);
 		error = ahci_port_engine_stop(port);
 		if (error == 0)
@@ -2823,6 +2894,7 @@ ahci_resume_start(
 		if (port->dma_unsafe)
 			continue;
 
+		/* Silences the port, then stops its engine and FIS reception. */
 		ahci_port_write(port, DRV_AHCI_PX_IE, 0U);
 		error = ahci_port_engine_stop(port);
 		if (error == 0)
@@ -2832,6 +2904,7 @@ ahci_resume_start(
 			continue;
 		}
 
+		/* Rewrites the registers that locate the port's command list and FIS area. */
 		if (port->memory_installed) {
 			ahci_port_write(
 				port,
@@ -2850,6 +2923,8 @@ ahci_resume_start(
 				DRV_AHCI_PX_FBU,
 				(uint32_t)(port->received_fis_dma.device_address >> 32));
 		}
+
+		/* Drops the status the stopped port still shows. */
 		ahci_port_clear_status(port);
 	}
 
@@ -2870,9 +2945,11 @@ ahci_resume_start(
 		if (port->dead)
 			continue;
 
+		/* Powers the port up and starts FIS reception. */
 		ahci_port_prepare_link(port);
 	}
 
+	/* Resets every link, then waits for links and devices together. */
 	ahci_links_reset(controller);
 	ahci_links_wait(controller);
 	ahci_devices_wait(controller);

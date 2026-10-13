@@ -531,6 +531,7 @@ drv_ahci_prdt_build(
 		entries[used].reserved = 0;
 		entries[used].count = (uint32_t)(piece - 1U);
 
+		/* Moves past the piece just described. */
 		address += piece;
 		remaining -= piece;
 		used++;
@@ -565,6 +566,7 @@ drv_ahci_identify_parse(
 	if (identity == NULL)
 		return DRV_AHCI_IDENTIFY_INVALID;
 
+	/* Starts with no reason to refuse the disk. */
 	reasons = 0;
 
 	/* Word 83 bit 10: the 48-bit address feature set, needed for DMA EXT. */
@@ -601,6 +603,8 @@ drv_ahci_identify_parse(
 	} else if ((size & (size - 1U)) != 0U) {
 		reasons |= DRV_AHCI_IDENTIFY_SECTOR_SIZE;
 	}
+
+	/* Records the size, usable or not, for the caller's log. */
 	identity->sector_size = size;
 
 	/* Word 83 bit 12: FLUSH CACHE is supported. */

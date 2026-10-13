@@ -163,6 +163,9 @@ kern_platform_init(
 #if CONFIG_DRIVER_PCI_VENUS
 	int venus_error;
 #endif
+#if CONFIG_DRIVER_PCI_AHCI
+	int ahci_error;
+#endif
 #if CONFIG_DRIVER_PCI_I915
 	int i915_error;
 #endif
@@ -260,7 +263,9 @@ kern_platform_init(
 		kern_logf("nvme: PCI driver registration failed\n");
 #endif
 #if CONFIG_DRIVER_PCI_AHCI
-	if (drv_pci_ahci_driver_register() != 0)
+	/* Binds AHCI SATA controllers through the PCI lifecycle. */
+	ahci_error = drv_pci_ahci_driver_register();
+	if (ahci_error != 0)
 		kern_logf("ahci: PCI driver registration failed\n");
 #endif
 #if CONFIG_DRIVER_PCI_VENUS
