@@ -145,4 +145,4 @@ void pdf_outline_ranges_free(ranges, range_count);
 - QEMU・実機（5330・Pi 4）の確かめは無い（libpdf だけの段。Notes に入るのは p003 以降、画面は p007 で T1）。
 - FreeBSD の native の build は未実施。
 - `review-2` の p003 以降の中（M-1〜M-5・M-10〜M-12 の Notes の分）は p003・p005 の phase.md で扱う。
-- 他の WS の libpdf の host 試験（`run-pdf-text.sh`・`plan/ws175/tests/run-host-notes-edit.sh`・`run-host-edit-scan.sh`・`run-pdfviewer-host.sh`）の結果は下に追記する。
+- 他の WS の libpdf の host 試験: `plan/ws175/tests/run-host-notes-edit.sh` PASS、`run-host-edit-scan.sh` PASS、`plan/ws079/tests/run-pdfviewer-host.sh` ok。`run-pdf-text.sh` は 900 s の上限で fuzz の段（6 段目、asan の shading-plain の途中）で打ち切り。それまでの段に FAIL・ASan・UBSan の報告は無い（fuzz の残りは未実施）。
