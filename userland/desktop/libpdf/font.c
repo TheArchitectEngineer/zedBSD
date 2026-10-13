@@ -45,6 +45,7 @@
 #include <pdf.h>
 #include <truetype/truetype.h>
 
+#include "userland/desktop/paths.h"
 #include "internal.h"
 
 /*
@@ -54,7 +55,7 @@
  * its own directory.
  */
 #ifndef PDF_FONT_DIRECTORY
-#define PDF_FONT_DIRECTORY "/usr/share/fonts"
+#define PDF_FONT_DIRECTORY KEILAND_DATADIR "/fonts"
 #endif
 
 /*

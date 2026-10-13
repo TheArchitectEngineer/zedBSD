@@ -32,11 +32,12 @@
 #include <pdf.h>
 #include <truetype/truetype.h>
 
+#include "userland/desktop/paths.h"
 #include "internal.h"
 
 /* Where the desktop's fonts are (font.c's substitutes too; a host test names its own folder). */
 #ifndef PDF_FONT_DIRECTORY
-#define PDF_FONT_DIRECTORY "/usr/share/fonts"
+#define PDF_FONT_DIRECTORY KEILAND_DATADIR "/fonts"
 #endif
 #ifndef PDF_EDIT_FONT_DIRECTORY
 #define PDF_EDIT_FONT_DIRECTORY PDF_FONT_DIRECTORY
