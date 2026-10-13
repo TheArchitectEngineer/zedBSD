@@ -85,3 +85,6 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 - q942 結果（2026-10-13 夜）: ws216-p005 設計 c7fbd7423 → design review（plan/ws216/phase005/review-1.md、S-2 消しゴム・M-6 上限はユーザーの決定）→ 実装 e98624d0f → main 6c703b2fc。host 154 checks ×3 0 failed、amd64・rpi4・Linux の notes warning 0（main でも Q1 が notes の build warning 0）。code の敵対的 review を別に起動。test-wait（画は p007 の T1、Pi は p009）。消しゴムの「半幅＋2 pt」は線と塗りの判定と塗りの操作の中だけに当て、塗りの無い所の線の消しゴムは今のまま（Q1 が P1 の解釈を採用）。L-11 は F-102。
 
 2026-10-13 夜 / q944: ws216-p006 Notes の描く道具の UI（button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り、AAT の helper の追従、塗りの間の表示 L-8）。同じ P1 の続き。承認: ユーザーの再開の指示と WS216 の D1〜D12。p005 の出力は main 6c703b2fc。State: active。
+- q944 結果（2026-10-13 夜）: ws216-p006 設計 244091c0b → design review（plan/ws216/phase006/review-1.md、ユーザーの決定 4 件）・p005 の code review（code-review-1.md）の直しを含め a7043d57e → main 3f22c82ec（main で notes の build warning 0）。host U1〜U5 済み、test-wait（U6 は p007 の T1）。P1 の世代はここで終わり（context 約 75 万 token）。
+
+2026-10-13 夜 / q946（P1 の新しい世代）: ws216-p007 の準備: AAT の scenario（tests/scenarios/apps/notes/draw-tools.md・fill-region.md）と試験の image の config（plan/ws216/tests/config.mk）を書き、T1 の依頼の文面を Q1 に。承認: ユーザーの再開の指示と WS216 の D1〜D12。State: active。
