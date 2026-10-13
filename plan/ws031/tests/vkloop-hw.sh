@@ -45,9 +45,12 @@
 #                                                      (not in git); the capture harness docks mview and opens Wiseview
 #        Every run takes the machine: flock /tmp/i915-hw.lock plan/ws031/tests/vkloop-hw.sh ...
 #        I915_HOST names the 5330 for ssh and scp (default: the alias solaris10-man; e.g. I915_HOST=awe@10.0.30.3)
+#        I915_MACHINE=sv7 runs on the Let's Note SV7 (Gen9.5) in place of the 5330: its host, no test VBT, the boot
+#                                                      word i915.gen9=on, and a check of the host's iGPU (plan/ws031/tests/hw-machine.sh)
 set -u
 cd "$(dirname "$0")/../../.."
 . plan/tools/guest/jobs.sh  # ZEDBSD_JOBS, the parallel jobs (default 16)
+. plan/ws031/tests/hw-machine.sh  # I915_MACHINE: the host, the iGPU, the test VBT and the boot words
 EXTRA=${1:-}
 TIME_MS=${2:-}
 ORACLE=0
@@ -88,7 +91,7 @@ case "$EXTRA" in zdesktop*)
 	export ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws031/tests/config-zdesktop-hw.mk}
 	BUILD=${BUILD:-build/resident-zdesktop} ;;
 esac
-I915_HOST=${I915_HOST:-solaris10-man}
+I915_HOST=${I915_HOST:-$I915_MACHINE_HOST}
 MVIEW_RUN=0
 case "$EXTRA" in mview*)
 	MVIEW_RUN=1
@@ -107,9 +110,10 @@ case "$EXTRA" in oracle*)
 	I915_TEST_ORACLE=y
 	EXTRA="${EXTRA#oracle}" ;;
 esac
-# XXX: the run is the QEMU passthrough, whose guest sees no OpRegion, so the kernel always carries the
+# XXX: the run is the QEMU passthrough, whose guest sees no OpRegion, so the 5330's kernel always carries the
 # test machine's captured VBT (I915_TEST_VBT=y, vendor/intel-vbt/).  Drop it once the GPU tests run on bare metal.
-I915_TEST_VBT=y
+# The SV7 (I915_MACHINE=sv7) has none: the driver drives no Gen9 display (plan/ws031/tests/hw-machine.sh).
+I915_TEST_VBT=${I915_TEST_VBT:-y}
 # I915_TEST_CAPTURE=y (from the environment, default n): the capture display in place of the panel -- the LCD is not
 # brought up and every presentation is copied into guest RAM for the host's pmemsave (display/capture.c)
 I915_TEST_CAPTURE=${I915_TEST_CAPTURE:-n}
@@ -119,6 +123,8 @@ ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws031/tests/config-vkprobe-hw.mk}
 mkdir -p $BUILD
 # a change of flags or of the test build is not seen by make: force the rebuild and relink by hand
 FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT|capture=$I915_TEST_CAPTURE"
+# the machine's boot words (I915_BOOT_EXTRA, e.g. i915.gen9=on) are in the boot config's name: make sees them itself
+[ -z "$I915_BOOT_EXTRA" ] || FLAGS="$FLAGS|boot=$I915_BOOT_EXTRA"
 [ -f $BUILD/.vkloop-flags ] && [ "$(cat $BUILD/.vkloop-flags)" = "$FLAGS" ] || {
 	touch src/drivers/gpu/i915/i915.c
 	# the scenario is read by the runner only
@@ -232,11 +238,14 @@ rm -f $RC_GEN.new
 RC_CONF=$RC_GEN
 # The image the one standard way (ws136-p003): the config, the files of the tree, and the build's variables, without
 # the guest harness's SSH files (the machine is reached over its serial log).
+# The machine's boot words go in only when it has some, so the 5330's make line stays as it was.
+BOOT_EXTRA=
+[ -z "$I915_BOOT_EXTRA" ] || BOOT_EXTRA="ZEDBSD_BOOT_EXTRA_LINES=$I915_BOOT_EXTRA"
 # shellcheck disable=SC2086
 plan/tools/guest/test-image.sh --no-harness "$ZEDBSD_CONFIG" "$BUILD" $FILES "I915_TESTS=${I915_TESTS:-n}" \
 	"I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" "I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" ZEDBSD_TEST_RC_CONF=$RC_CONF \
-	ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > $BUILD/resident-build.log 2>&1 || {
+	${BOOT_EXTRA:+"$BOOT_EXTRA"} ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > $BUILD/resident-build.log 2>&1 || {
 	echo "BUILD FAILED (the image on the 5330 is NOT this tree):"
 	grep -E ' error: |Error [0-9]' $BUILD/resident-build.log | head
 	exit 1
@@ -246,6 +255,12 @@ printf '%s' "$FLAGS" > $BUILD/.vkloop-flags
 if [ "${VKLOOP_BUILD_ONLY:-0}" = 1 ]; then
 	echo "vkloop-hw: built $BUILD/hdd-image.img"
 	exit 0
+fi
+# the machine's iGPU (I915_IGPU, vendor:device): a run meant for one machine does not start on another
+if [ -n "$I915_IGPU" ]; then
+	IGPU=$(ssh $I915_HOST 'cat /sys/bus/pci/devices/0000:00:02.0/vendor /sys/bus/pci/devices/0000:00:02.0/device' |
+		sed 's/^0x//' | paste -sd:)
+	[ "$IGPU" = "$I915_IGPU" ] || { echo "the iGPU of $I915_HOST is '$IGPU', not $I915_IGPU ($I915_MACHINE)"; exit 1; }
 fi
 # the iGPU goes back to vfio-pci if a Venus run left it on the host i915 driver (bigbang/igpu-mode.sh)
 ssh $I915_HOST bigbang/igpu-mode.sh vfio >/dev/null || { echo "iGPU is not on vfio-pci"; exit 1; }
