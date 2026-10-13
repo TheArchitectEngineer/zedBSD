@@ -143,3 +143,11 @@ Event ws074-p190-q1053-design-20261014: q1052で固定Flexbox10件が10/10 local
 ## q1056-i01 結果（2026-10-14）
 
 Event ws074-p190-q1056-outcome-20261014: 固定静的1,561 IDをq1044/q1053と同条件で全再測定。640 local PASS/921 pixel FAIL/0 error/0 timeout。[証拠](evidence/20261014-q1056/README.md)。q1053の359 load errorは122 PASS/237 pixel FAILに移動し、旧8 PASS→FAILは全て引き続きFAIL。ID集合・checkpoint1,561行とreportを照合済み。q1056-i01 partial cleared、p190 whole uncleared。runner未対応413 ID、921画素不一致、公式環境同等性、p173全3,805件100%が残る。browser/WPT/runner/Masterは未変更、共有投影/GitHub publication保留。
+
+## q1060-i01 有限部分範囲（2026-10-14）
+
+このchatのユーザーによる「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を最大90分 Queue（03:19–04:49 JST）へ適用。q1057〜q1059の論理margin・Flex min/max・font/textarea描画変更後、固定manifestの静的適格1,561 reftest IDをq1056と同一800×600・5秒上限・localhost・固定fontで全測定する。ID/checkpoint/report一致、q1056からの全遷移・旧8回帰・focus別結果と新しいPASS→FAILを分類する。runner/browser/WPT/Masterは変更しない。上限時は部分証拠と再開条件を残し、無制限延長しない。p190 wholeにはscript付き/variant413 IDと残るpixel FAIL解消が必要。
+
+## q1060-i01 結果（2026-10-14）
+
+Event ws074-p190-q1060-outcome-20261014: 固定静的1,561 IDをq1056同条件で全再測定。660 local PASS/901 pixel FAIL/0 error/0 timeout。[証拠](evidence/20261014-q1060/README.md)。q1056比21 FAIL→PASS/1 PASS→FAIL、旧8回帰は全てPASS。新規PASS→FAILは`css/css-flexbox/flexbox-flex-wrap-flexing.html`、次の有限範囲で切り分ける。固定ID・checkpoint1,561行/report照合済み。q1060-i01 partial cleared、p190 whole uncleared。runner未対応413 IDと901不一致、p173全3,805件100%が残る。browser/WPT/runner/Master未変更、共有投影/GitHub publication保留。

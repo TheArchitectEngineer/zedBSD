@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1059](queue.md) finished / p207縦textarea小数差。2026-10-14 03:18 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1056固定静的reftest1,561件は640 local PASS/921 pixel FAIL/0 error/0 timeout。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
+Queue: [q1060](queue.md) finished / p190静的1,561 ID再集計。2026-10-14 03:23 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -120,6 +120,8 @@ Event ws074-p203-addition-q1054-20261014: q1053の359 error全てにDOCTYPE付�
 Event ws074-p203-q1054-outcome-20261014: [p203](phase203/phase.md) q1054-i01で外部ID DOCTYPEを副作用なしで受理。359旧error中312件は読み込み成功、122 local PASS/190 pixel FAIL/47 load error。[証拠](phase203/evidence/20261014-q1054/README.md)。残り47件は`&nbsp;`未解決でp203 whole uncleared。host XML243/243・固定Flex10/10 PASS・Acid3差0/Acid2差1865。p190/p173全件受け入れは未達、共有Master/Queue/GitHub publication保留。
 
 Event ws074-p204-addition-q1055-20261014: q1054の残り47 errorは全てXHTML1 Strict公開DTD識別子と`&nbsp;`の組。DTD限定の既知実体値U+00A0を[p204](phase204/phase.md)に分離し、一般XML/別DTDの未知実体拒否を保持。p203/p190/p173受け入れは不変、共有Master/Queue/GitHub publication保留。
+
+Event ws074-p190-q1060-outcome-20261014: [p190](phase190/phase.md) q1060-i01で固定静的1,561 IDを再集計、660 local PASS/901 pixel FAIL/0 error/0 timeout。[証拠](phase190/evidence/20261014-q1060/README.md)。旧8回帰は全件PASS、q1056比21 FAIL→PASS/1 PASS→FAIL（flexbox-flex-wrap-flexing）。q1060部分cleared、p190/p173 whole未達、共有Master/Queue/GitHub publication保留。
 
 Event ws074-p207-q1059-outcome-and-p206-followup-20261014: [p207](phase207/phase.md) q1059-i01はwhole cleared。font shorthandのline-height resetとtextarea描画端pixel丸めで最後の旧回帰1 ID差198→0。[証拠](phase207/evidence/20261014-q1059/README.md)。旧8回帰3件3/3・Flex10/10 local pixel exact PASS、Acid3差0。p206も後続証拠でwhole cleared、q1058当時のpartial結果は保持。p190/p173全件100%未達、共有Master/Queue/GitHub publication保留。
 

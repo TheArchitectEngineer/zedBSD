@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1059 / WS074 fractional textarea border rasterization（2026-10-14）
+## 最新: q1060 / WS074 static reftest re-census（2026-10-14）
+
+[q1060履歴](queue-q1060.md): 固定静的1,561 IDは660 local PASS/901 pixel FAIL/0 error/0 timeout。旧8回帰全PASS、q1056比21 FAIL→PASS/1新規FAIL。[証拠](../ws074/phase190/evidence/20261014-q1060/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1059 / WS074 fractional textarea border rasterization（2026-10-14）
 
 [q1059履歴](queue-q1059.md): 旧残1 IDの198差画素を0へ、固定旧3件3/3・Flex10/10 local pixel exact PASS。p207と後続証拠によるp206 whole cleared。Acid3差0。[証拠](../ws074/phase207/evidence/20261014-q1059/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
 
