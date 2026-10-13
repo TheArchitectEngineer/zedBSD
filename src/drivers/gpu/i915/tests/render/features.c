@@ -435,21 +435,26 @@ drv_i915_test_render_features(
 	kern_logf("i915: vke1: the steps run once the node is published\n");
 }
 
-/* Runs the scenario: waits for the node, sets up, runs every step, tears down and logs the verdict. */
-static void
-i915_vke1_thread(
-	void *argument)
+/*
+ * Runs the features scenario "vke1" on the calling thread.
+ *
+ * Waits for the node, sets up, runs every step, tears down and logs the
+ * verdict, as the scenario's own thread does.  Returns 0 when every step
+ * passed; otherwise ETIMEDOUT, ENOMEM, the setup's error or EIO, once the
+ * verdict line has said why.
+ */
+int
+drv_i915_test_render_features_run(
+	struct i915_device *device)
 {
-	struct i915_device *device;
 	struct i915_vke1 *x;
 	int error;
 
 	/* Waits until the node is published and its worker serves. */
-	device = argument;
 	error = i915_vke1_wait_node(device);
 	if (error != 0) {
 		kern_logf("i915: vke1: verdict FAIL (the node was not published within %u s)\n", I915_VKE1_WAIT_S);
-		return;
+		return error;
 	}
 
 	/* Opens the session and makes every object the steps use. */
@@ -460,7 +465,7 @@ i915_vke1_thread(
 	if (error != 0) {
 		kern_logf("i915: vke1: verdict FAIL (setup: %d)\n", error);
 		i915_vke1_teardown(x);
-		return;
+		return error;
 	}
 
 	/* Runs every step; each logs its own verdict. */
@@ -475,10 +480,22 @@ i915_vke1_thread(
 	i915_vke1_teardown(x);
 	if (x->failed != 0U) {
 		kern_logf("i915: vke1: verdict FAIL (%u of %u steps passed)\n", x->passed, x->passed + x->failed);
-		return;
+		return EIO;
 	}
 
 	kern_logf("i915: vke1: verdict PASS (%u of %u steps passed)\n", x->passed, x->passed + x->failed);
+
+	/* Succeeded: every step passed. */
+	return 0;
+}
+
+/* Runs the scenario on its own thread; the verdict lines are its result. */
+static void
+i915_vke1_thread(
+	void *argument)
+{
+	/* Runs the steps; the verdict is already in the log. */
+	(void)drv_i915_test_render_features_run(argument);
 }
 
 /* Waits until the node is published, sleeping a twentieth of a second at a time; ETIMEDOUT when it never is. */

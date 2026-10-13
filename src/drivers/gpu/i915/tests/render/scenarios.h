@@ -23,5 +23,10 @@ void drv_i915_test_render_compiler(struct i915_device *device);
 void drv_i915_test_render_features(struct i915_device *device);
 void drv_i915_test_render_generality(struct i915_device *device);
 void drv_i915_test_render_compute(struct i915_device *device);
+int drv_i915_test_render_executor_run(struct i915_device *device);
+int drv_i915_test_render_compiler_run(struct i915_device *device);
+int drv_i915_test_render_features_run(struct i915_device *device);
+int drv_i915_test_render_generality_run(struct i915_device *device);
+int drv_i915_test_render_compute_run(struct i915_device *device);
 
 #endif

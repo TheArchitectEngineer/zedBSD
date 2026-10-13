@@ -529,32 +529,37 @@ drv_i915_test_render_compute(
 	kern_logf("i915: vkcs: the steps run once the node is published\n");
 }
 
-/* Runs the scenario: waits for the node, sets up, runs every step, tears down and logs the verdict. */
-static void
-i915_vkcs_thread(
-	void *argument)
+/*
+ * Runs the compute scenario "vkcs" on the calling thread.
+ *
+ * Waits for the node, sets up, runs every step, tears down and logs the
+ * verdict, as the scenario's own thread does.  Returns 0 when every step
+ * passed; otherwise ETIMEDOUT, ENOMEM, the setup's error or EIO, once the
+ * verdict line has said why.
+ */
+int
+drv_i915_test_render_compute_run(
+	struct i915_device *device)
 {
 	static const uint32_t ids_local[3] = { 4U, 2U, 3U };
 	static const uint32_t odd_local[3] = { 5U, 3U, 1U };
-	struct i915_device *device;
 	struct i915_vkcs *x;
 	unsigned passed;
 	unsigned failed;
 	int error;
 
 	/* Waits until the node is published and its worker serves. */
-	device = argument;
 	error = i915_vkcs_wait_node(device);
 	if (error != 0) {
 		kern_logf("i915: vkcs: verdict FAIL (the node was not published within %u s)\n", I915_VKCS_WAIT_S);
-		return;
+		return error;
 	}
 
 	/* Takes the scenario's state. */
 	x = kern_calloc(1U, sizeof(*x));
 	if (x == NULL) {
 		kern_logf("i915: vkcs: verdict FAIL (no memory for the scenario's %u bytes)\n", (unsigned)sizeof(*x));
-		return;
+		return ENOMEM;
 	}
 
 	/* Opens the session and makes every object the steps use. */
@@ -564,7 +569,7 @@ i915_vkcs_thread(
 		kern_logf("i915: vkcs: verdict FAIL (setup: %d)\n", error);
 		i915_vkcs_teardown(x);
 		kern_free(x);
-		return;
+		return error;
 	}
 
 	/* Runs every step, from the single channel outwards; each logs its own verdict. */
@@ -599,10 +604,22 @@ i915_vkcs_thread(
 	kern_free(x);
 	if (failed != 0U) {
 		kern_logf("i915: vkcs: verdict FAIL (%u of %u steps passed)\n", passed, passed + failed);
-		return;
+		return EIO;
 	}
 
 	kern_logf("i915: vkcs: verdict PASS (%u of %u steps passed)\n", passed, passed + failed);
+
+	/* Succeeded: every step passed. */
+	return 0;
+}
+
+/* Runs the scenario on its own thread; the verdict lines are its result. */
+static void
+i915_vkcs_thread(
+	void *argument)
+{
+	/* Runs the steps; the verdict is already in the log. */
+	(void)drv_i915_test_render_compute_run(argument);
 }
 
 /* Waits until the node is published, sleeping a twentieth of a second at a time; ETIMEDOUT when it never is. */
