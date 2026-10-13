@@ -13,6 +13,8 @@ out=${1:-build/ws175-notes}
 cc=${CC:-cc}
 . plan/tools/fresh-out.sh
 fresh_out "$out"
+# An absolute path, so the journals' XDG_DATA_HOME stays inside it (a relative one made Notes fall back to ~/.local/share).
+out=$(cd "$out" && pwd)
 mkdir -p "$out/include"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 ln -sf "$(pwd)/include/libc/pdf.h" "$out/include/pdf.h"
