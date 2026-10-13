@@ -93,6 +93,12 @@
 /* The frequency request and the up/down hysteresis. */
 #define GEN6_RPNSWREQ				0xa008U
 #define GEN9_FREQUENCY(frequency)		((uint32_t)(frequency) << 23)
+
+/* GEN6_RC_VIDEO_FREQ, which Gen9 gives RP1 (gen9_rps_enable(), Linux 6.8.12 intel_gt_regs.h). */
+#define GEN6_RC_VIDEO_FREQ			0xa00cU
+
+/* The Gen9 RP1 field of GEN6_RP_STATE_CAP (__gen6_rps_get_freq_caps()). */
+#define GEN9_RP1_CAP_SHIFT			8U
 #define GEN6_RP_IDLE_HYSTERSIS			0xa070U
 
 /* The frequency limits the interrupts are given between, and the RP control. */

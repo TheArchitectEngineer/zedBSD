@@ -150,6 +150,12 @@ struct i915_mocs {
 
 	/* Nonzero once a table has been built for this platform. */
 	int valid;
+
+	/*
+	 * Nonzero when every engine has a MOCS table of its own (Gen9) rather
+	 * than one global table (Gen12); the engine resume programs it.
+	 */
+	int engine_mocs;
 };
 
 /*
@@ -198,6 +204,7 @@ void drv_i915_wa_masked_field_set(struct i915_wa_list *wal, uint32_t reg, uint32
 void drv_i915_wa_add_no_verify(struct i915_wa_list *wal, uint32_t reg, uint32_t clr, uint32_t set, int is_mcr, const char *name);
 
 void drv_i915_gt_init_workarounds_adlp(struct i915_wa_list *wal, const struct i915_gt_info *gt);
+void drv_i915_gt_init_workarounds_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt);
 void drv_i915_engine_init_workarounds(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
 void drv_i915_engine_init_ctx_wa(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
 void drv_i915_engine_init_whitelist(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver);
@@ -209,8 +216,10 @@ void drv_i915_wa_list_dump(const struct i915_wa_list *wal, const char *what);
 void drv_i915_get_mocs_settings(struct i915_mocs *table, int graphics_ver);
 void drv_i915_mocs_init(const struct i915_mocs *table, struct i915_mmio *mmio, unsigned *global_writes, unsigned *l3cc_writes);
 void drv_i915_init_l3cc_table(const struct i915_mocs *table, struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_mocs_init_engine(const struct i915_mocs *table, const struct i915_engine_info *engine, struct i915_mmio *mmio, unsigned *writes);
 
 void drv_i915_tgl_setup_private_ppat(struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_bdw_setup_private_ppat(struct i915_mmio *mmio, unsigned *writes);
 
 void drv_i915_gt_init_tables(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, int graphics_ver, struct mutex *sb_lock, struct i915_mmio *mmio);
 void drv_i915_gt_init_hw_core(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, struct i915_mmio *mmio);

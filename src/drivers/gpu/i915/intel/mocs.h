@@ -120,4 +120,29 @@
 #define GEN8_PPAT_WC				(1U << 0)
 #define GEN8_PPAT_UC				(0U << 0)
 
+/*
+ * The Gen9 MOCS and PAT values (ws229-p002), excerpted by hand from the Linux
+ * 6.8.12 reference; values are unchanged.  Sources (SHA-256):
+ *   drivers/gpu/drm/i915/gt/intel_mocs.c
+ *     49f2b6a2a47bcf26bf57eef51d5a125458378298602462b8ff9986a54a15ffe7
+ *   drivers/gpu/drm/i915/gt/intel_gt_regs.h (__GEN9_*_MOCS0, GEN8_PRIVATE_PAT_*)
+ *   drivers/gpu/drm/i915/gt/intel_gtt.h (GEN8_PPAT_*)
+ */
+#define LE_0_PAGETABLE				_LE_CACHEABILITY(0)
+#define LE_TC_0_PAGETABLE			_LE_TGT_CACHE(0)
+#define LE_TC_2_LLC_ELLC			_LE_TGT_CACHE(2)
+#define GEN9_MOCS_UC_INDEX			0U
+#define GEN9_MOCS_UNUSED_ENTRIES_INDEX		1U
+#define GEN9_RCS0_MOCS0				0xc800U
+#define GEN9_VCS0_MOCS0				0xc900U
+#define GEN9_VCS1_MOCS0				0xca00U
+#define GEN9_VECS0_MOCS0			0xcb00U
+#define GEN9_BCS0_MOCS0				0xcc00U
+#define GEN8_PRIVATE_PAT_LO			0x40e0U
+#define GEN8_PRIVATE_PAT_HI			0x40e4U
+#define GEN8_PPAT_AGE(x)			((uint32_t)(x) << 4)
+#define GEN8_PPAT_LLCELLC			(2U << 2)
+#define GEN8_PPAT_LLC				(1U << 2)
+#define GEN8_PPAT_ELLC_OVERRIDE			(0U << 2)
+
 #endif /* DRIVERS_GPU_I915_INTEL_MOCS_H */

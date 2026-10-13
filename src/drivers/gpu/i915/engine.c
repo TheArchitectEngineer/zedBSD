@@ -558,10 +558,11 @@ drv_i915_gt_resume(
 		drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
 		/*
-		 * execlists_resume() starts with intel_mocs_init_engine(): global
-		 * MOCS means no per-engine table, but the render engine's L3CC
-		 * table is programmed again.
+		 * execlists_resume() starts with intel_mocs_init_engine(): Gen9
+		 * programs the engine's own MOCS table, global MOCS has none, and
+		 * the render engine's L3CC table is programmed again.
 		 */
+		drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
 		if (ge->info->class == I915_RENDER_CLASS)
 			drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
 
@@ -638,7 +639,8 @@ drv_i915_engine_reset(
 	/* Applies the engine workarounds and the whitelist the reset cleared (intel_engine_resume()). */
 	drv_i915_engine_apply_resume_wa(gi, gt, index, mmio);
 
-	/* The render engine's L3CC table is programmed again, as execlists_resume() does. */
+	/* The engine's MOCS (Gen9) and the render engine's L3CC table are programmed again, as execlists_resume() does. */
+	drv_i915_mocs_init_engine(&gi->mocs, ge->info, mmio, NULL);
 	if (ge->info->class == I915_RENDER_CLASS)
 		drv_i915_init_l3cc_table(&gi->mocs, mmio, &es->l3cc_writes_rcs);
 
