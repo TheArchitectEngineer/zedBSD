@@ -197,3 +197,5 @@ Q1 の判定「merge は保留、重大 1・中 2 を直してから」。同じ
 - 判定の基準の見直し（提案、Q1 が決める）: この共有の host では、別の session の基線との比（mean 90 %、longest_stall 1.5 倍）は環境の揺れで外れうる。p003〜p005 の合否は、同じ session で基線の kernel（0047ea2）を先か後に流した値と比べる。
 - T1 の cputimes の採り方（`sysctl hw.cputimes`・`top -b`）は guest.sh の状態と series の guest が別で採れなかった（k*-cpu/*.txt）。
 - 未実施: gdbstub での CPU の持ち主の確認（環境と分かったので不要と判断）、実機。
+- T1-581 の追記（Q1 の読み、2026-10-13）: down-disk の `zero_windows_out` は k1・k2・k3 で 2・97・695（再送・`send_refused` などは全 run で 0）。Q1 の数えた 2 ms 超の隙間は本表と少し違う（k3 down-disk 213、k1 905/721、k2 143/546。数え方の違い、傾向は同じ）。`hw.cputimes` は k3 だけ採れた: up で **cpu0 の system がほぼ 100 %**（他の CPU は約 15 %）、down-disk でも cpu0 の system 49 s / 54 s。`top -b` は process ごとの値が 0 で使えなかった。
+- 残件（次の Phase の候補、Q1 が決める）: cpu0 の system 100 % の持ち主が network worker か（ECM は rx_urb・tx_urb が 1 つずつで、完了の処理と re-arm を worker の poll で行い、USB の 1 frame ごとに worker を起こす）を、kernel の thread ごとの CPU 時間か gdbstub で確かめる。worker なら、ECM の複数の URB（受け・送りの transfer を複数並べる）か完了の処理の割り込みの側への移しで、usb-net の速さ（今 3.5〜4.6 MB/s）と環境の揺れへの強さが上がる見込み。WS220 の TCP の範囲の外（driver）なので、別の WS か WS220 の新しい Phase として計画する。down-disk の `zero_windows_out` の増え（k3 695）は受けの窓（p007、受け側の SWS 回避）で見る。
