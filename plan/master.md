@@ -34,7 +34,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q947、T1-581。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q949、T1-581。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -576,6 +576,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-13 夜 ユーザー（AskUserQuestion）: WS220 の p003・p004 は損失 0 で longest_stall_ms が約 200 ms に伸び受けが 11〜12 % 遅い（T1-577）が「main に残し、直しを急ぐ」→ ベータ2 に入れたまま、p005 も merge（e7ccb1a1c）、P3 の新しい世代が調べて直す（q947）。P1 の次は「WS217 p002b 画面の 90° 回転」（q948）。
 - 2026-10-13 夜 ユーザー（AskUserQuestion、WS220 p005 の窓 0 の相手、FreeBSD stable/15 を調べた後）: 「FreeBSD と同じ＋p006 で pool を切り離す」→ persist を再送と分ける（5〜60 s、shift 上限 12）、答えない相手は約 12 回で落とす、close 後 60 s、TCP_MAXUNACKTIME（既定は無効）。pool の逼迫で落とす案・既定を 0 以外にする案は入れない。共有の pool を握られる問題は p006 の送りの buffer の切り離しで解く。
 - 2026-10-13 夜 ユーザー（AskUserQuestion、ws216-p006 Notes の描く道具の UI）: 水彩の label は今のまま（toolbar・帯は Water、Tool menu は Watercolor）、描く道具の button に帯が開く印を付ける、Pi で数秒かかる塗りは待つ（上限なし、時間は log）、塗りの道具の drag は「Tap to fill」の status。ws216-p005 の code review（build/review/ws216-p005-code-review-1.md）は main に入れたままでよい、中 2（小さな点の tap の桁あふれ、消しゴムの速さ）は p006 の前に P1 が直す。
 - 2026-10-13 夜 ユーザー（AskUserQuestion）: WS090 p020（Mahora）・p021（padding 0）は「今の外観で OK」→ cleared。WS173 p005 の素の 5330 の起動は「ユーザーが USB で起動」（T1 が SSH、ESP には書かない）。WS181 p011 は「今の動きで OK」→ cleared。WS197 の HFP は「HFP 全体をベータ3」（p006 は main にあるがベータ2 では既知の問題、UAT #13 を外す）。WS154 の SKK の記号の範囲は 2026-10-05 夜に決定済み（Future Work）で、残りは UAT だけ。

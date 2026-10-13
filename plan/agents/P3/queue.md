@@ -63,3 +63,6 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 2026-10-13 夜 / q945: ws220-p005 fast retransmit と NewReno の回復、persist timer、窓が開いた時の再送を外す（p001 §4 の p005 の行）。同じ P3 の続き。承認: ユーザーの再開の指示と WS220 のユーザーの決定。p004 の出力は main 51f753f27。State: active。
 （2026-10-13 Q1: P3 が報告した pcat の link の失敗（drv_xhci_isoch_* の未定義）は platform/pcat/vmunix.mk に pci-xhci-isoch.o を足して直した、config/ci/config-pcat.mk の vmunix は warning 0。）
 - q945 途中（2026-10-13 夜）: ws220-p005 設計 6923b94e6・実装 8086543a1（模型 lan-loss-0.1 4.63→36.54 MB/s、lan-loss-1 0.46→12.16）。design-reviewer の結果待ちで merge 保留。削除の依頼は済み。
+- q945 結果（2026-10-13 夜）: ws220-p005 設計 6923b94e6 → design review（plan/ws220/phase005/review-1.md、重大 G1・G2）→ 直し 14d230247 → M7 の FreeBSD と同じ persist と TCP_MAXUNACKTIME（ユーザーの決定）29056974d → main e7ccb1a1c。libc の tcp.h の注記は Q1 が直した（3fb62183e）。test-wait（T1 の依頼は下の q947 の後にまとめる）。P3 の世代はここで終わり（context 約 83 万 token）。
+
+2026-10-13 夜 / q947（P3 の新しい世代）: WS220 の T1-577 の損失 0 の退行の調べと直し（longest_stall_ms 2〜8 → 178〜226 ms、再送 0、down・down-disk 88〜89 %）。ユーザー「main に残し、直しを急ぐ」（2026-10-13）。State: active。

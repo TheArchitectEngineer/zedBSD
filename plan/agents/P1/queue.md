@@ -89,3 +89,5 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 
 2026-10-13 夜 / q946（P1 の新しい世代）: ws216-p007 の準備: AAT の scenario（tests/scenarios/apps/notes/draw-tools.md・fill-region.md）と試験の image の config（plan/ws216/tests/config.mk）を書き、T1 の依頼の文面を Q1 に。承認: ユーザーの再開の指示と WS216 の D1〜D12。State: active。
 - q946 結果（2026-10-13 夜、P1 の新しい世代）: ws216-p007 の phase.md・AAT の scenario 2 つ・helper・config を d83ef6a03 → main 79a932b8c。Q1 が標準の AAT の image（plan/tools/aat/config-amd64-aat.mk）に peninject を足した。test-wait（T1-580）。
+
+2026-10-13 夜 / q948（P1 の第 2 世代の続き）: ws217-p002b 画面の回転の turn（compositor の 90/270°）。ユーザー（AskUserQuestion「WS217 p002b 画面の 90° 回転」）。p002a の出力は main（T1-576 の (B) 待ち）。State: active。
