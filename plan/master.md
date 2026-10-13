@@ -13,7 +13,7 @@
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
   - P1（新しい世代）: q980 ws229-p005 の準備（Gen9 の eu-test の kernel、実機の image と手順、5330 の回帰の依頼）。
-  - P2（新しい世代）: q977 ws229-p002 GT の起動（Gen9）。
+  - P2（新しい世代）: q981 ws231-p001 基本の AHCI の driver（ws229-p002 は merge 済み）。
   - P3: 空き（q979 ws229-p004 は merge 済み）。
   - T1: 空き（T1-605 PASS）。次は Gen9 の実機の USB の image の準備（p005）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS231、q981、T1-606。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS232、q982、T1-606。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -536,6 +536,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | completed（2026-10-14） | — |
 | [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、今日の夕方のコードフリーズに間に合えばベータ2、間に合わなければドロップ可） | planned | P1（q976 p001） |
 | [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | planning | 未割当 |
+| [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、18 時のコードフリーズに間に合えばベータ2、間に合わなければベータ3） | planned | P2（q981） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
