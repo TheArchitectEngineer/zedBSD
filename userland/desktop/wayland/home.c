@@ -17,9 +17,10 @@
  * own size; closing is the same way back (edge.c gives the depths).  The
  * launcher in the system bar (a click or a tap), the Windows key alone, a
  * swipe up from the bottom edge of the desktop and the touch pad's two
- * fingers down from its top edge open it, the last two following the
- * finger.  The launcher again, the Windows key, a drag down on Home, Esc,
- * or starting an application closes it.  A drag from the top-left corner
+ * fingers up from its bottom edge (the 2026-10-13 user's instruction) open
+ * it, the last two following the finger.  The launcher again, the Windows
+ * key, a drag down on Home, the touch pad's two fingers up from its bottom
+ * edge again, Esc, or starting an application closes it.  A drag from the top-left corner
  * opens nothing any more (WS184 takes that swipe).
  *
  * Typing while it is open searches: the text shows at the top and only the
@@ -141,10 +142,11 @@
 #define HOME_RISE_DISTANCE	360.0f
 
 /*
- * The touch pad's two fingers down from its top edge (ws181-p008): the
+ * The touch pad's two fingers up from its bottom edge (the 2026-10-13
+ * user's instruction; from the top edge down before, ws181-p008): the
  * fingers' travel that opens Home all the way (micrometres; Wiseview's
- * from the bottom edge is as long, shell.c), and the speed at the lift
- * that opens it whatever the travel (micrometres a second, shell.c's
+ * from the top edge is as long, shell.c), and the speed at the lift that
+ * opens it whatever the travel (micrometres a second, shell.c's
  * GESTURE_FLICK).
  */
 #define HOME_PAD_UM		40000
@@ -261,8 +263,9 @@ static unsigned home_pages = 1U;
 /*
  * Whether the touch pad's gesture Home follows closes it (two fingers up
  * from the pad's bottom edge on Home, ws181-p009) rather than opens it
- * (two fingers down from the top edge): set at the gesture's beginning in
- * kwl_home_pad, read by its later phases; the event loop's thread only.
+ * (the same from the desktop or Wiseview, the 2026-10-13 user's
+ * instruction): set at the gesture's beginning in kwl_home_pad, read by its
+ * later phases; the event loop's thread only.
  */
 static unsigned home_pad_closing;
 
@@ -478,13 +481,15 @@ kwl_home_close_now(
 }
 
 /*
- * Follows a touch pad gesture of Home's.  Two fingers down from the pad's
- * top edge (TOP2, ws181-p008, the 2026-10-07 UAT) with Home closed open it
- * as far as they have come, and at their lift it opens past HOME_THRESHOLD
- * of HOME_PAD_UM or when flicked, and goes back closed otherwise (or when
- * the gesture is given up).  Two fingers up from the pad's bottom edge
- * (BOTTOM2, ws181-p009) with Home open close it the same way, the desktop
- * coming back as they go.  shell.c gives it every phase of the gesture.
+ * Follows a touch pad gesture of Home's: two fingers up from the pad's
+ * bottom edge (BOTTOM2).  With Home closed (the 2026-10-13 user's
+ * instruction, as the touch screen's swipe up from the bottom edge; TOP2
+ * opened it before, ws181-p008) they open it as far as they have come, and
+ * at their lift it opens past HOME_THRESHOLD of HOME_PAD_UM or when
+ * flicked, and goes back closed otherwise (or when the gesture is given
+ * up).  With Home open (ws181-p009) they close it the same way, the
+ * desktop coming back as they go.  shell.c gives it every phase of the
+ * gesture.
  */
 void
 kwl_home_pad(
@@ -557,7 +562,7 @@ kwl_home_pad(
 		return;
 	}
 
-	/* The end of an opening: past the threshold or flicked down it opens from where the fingers left it. */
+	/* The end of an opening: past the threshold or flicked up it opens from where the fingers left it. */
 	if (phase == KWL_TOUCHPAD_PHASE_END &&
 	    (progress >= HOME_THRESHOLD || speed >= HOME_PAD_FLICK)) {
 		home_open(server, progress, "pad");

@@ -508,11 +508,13 @@ static void bar_cover_log(struct kwl_server *server, const struct kwl_object *co
 static int home_without_bar(struct kwl_server *server, uint32_t button, uint32_t state);
 static float wiseview_progress(struct kwl_server *server);
 static void wiseview_settle(struct kwl_server *server, float from, float to);
+static void wiseview_close_now(struct kwl_server *server, const char *via);
 static void wiseview_choose(struct kwl_server *server, const char *via);
 static void wiseview_move(struct kwl_server *server, int step);
 static int wiseview_pad_swipe(struct kwl_server *server, unsigned direction);
 static int gesture_fullscreen(struct kwl_server *server, uint32_t gesture);
 static unsigned gesture_as_swipe(uint32_t gesture);
+static void gesture_wiseview_begin(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
 static void gesture_wiseview(struct kwl_server *server, uint32_t phase, int32_t travel_um, int32_t speed);
 static void gesture_desktop(struct kwl_server *server, uint32_t gesture, uint32_t phase, int32_t travel_um, int32_t speed);
 static int gesture_may_start(struct kwl_server *server);
@@ -8196,6 +8198,25 @@ wiseview_key(
 }
 
 /*
+ * Closes Wiseview at once, without its animation, for App Home to open from
+ * its bottom edge (WS181; the touch pad's two fingers up, the 2026-10-13
+ * user's instruction): no press of its tiles goes on.
+ */
+static void
+wiseview_close_now(
+	struct kwl_server *server,
+	const char *via)
+{
+	/* Settled closed now, its press forgotten. */
+	server->wiseview = 0.0f;
+	server->wiseview_moving = 0;
+	server->wiseview_press = NULL;
+	server->wiseview_dragging = 0;
+	server->dirty = 1;
+	printf("KWL WISEVIEW close via=%s\n", via);
+}
+
+/*
  * Chooses Wiseview's current tile (Enter, Space, a swipe of two fingers
  * down): its window comes back from minimized, to the top as the layout
  * mode is, and Wiseview closes; without a current window it only closes.
@@ -8748,12 +8769,7 @@ wiseview_button(
 
 	/* A press at the bottom edge closes Wiseview at once and starts the swipe up to App Home (WS181). */
 	if (server->pointer_y >= (int32_t)server->height - WISEVIEW_EDGE) {
-		server->wiseview = 0.0f;
-		server->wiseview_moving = 0;
-		server->wiseview_press = NULL;
-		server->wiseview_dragging = 0;
-		server->dirty = 1;
-		printf("KWL WISEVIEW close via=bottom-edge\n");
+		wiseview_close_now(server, "bottom-edge");
 		(void)kwl_home_edge_press(server);
 		return 1;
 	}
@@ -9370,14 +9386,18 @@ kwl_glass_pad_scroll(
 
 /*
  * Carries out a touch pad gesture (touchpad.c, ws142-p003): two fingers up
- * from the pad's bottom edge or three fingers up open Wiseview, two
- * fingers in from the left or the right edge switch to the desktop on that
- * side, each following the fingers as the pointer's edge drags do (D10);
- * two fingers down from the top edge open App Home following them
- * (ws181-p008) and on App Home two fingers up from the bottom edge close it
- * (ws181-p009); a tap of three fingers shows the switcher (ws142-p005).
- * Nothing starts over the login and lock screens, a fullscreen window
- * (D6), App Home, an open Wiseview or another swipe.
+ * from the pad's bottom edge open App Home and two fingers down from its
+ * top edge open Wiseview, as the touch screen's edges do (the 2026-10-13
+ * user's instruction, which replaces ws181-p008's top edge to App Home);
+ * three fingers up open Wiseview too, and two fingers in from the left or
+ * the right edge switch to the desktop on that side, each following the
+ * fingers as the pointer's edge drags do (D10).  On App Home two fingers up
+ * from the bottom edge close it (ws181-p009) and two fingers down from the
+ * top edge go from it to Wiseview; on Wiseview two fingers up from the
+ * bottom edge go from it to App Home.  A tap of three fingers shows the
+ * switcher (ws142-p005).  Nothing else starts over the login and lock
+ * screens, a fullscreen window (D6), App Home, an open Wiseview or another
+ * swipe.
  */
 void
 kwl_glass_gesture(
@@ -9392,6 +9412,7 @@ kwl_glass_gesture(
 	unsigned direction;
 	float home;
 	int switching;
+	int showing;
 	int dialog;
 	int taken;
 	int may;
@@ -9446,7 +9467,7 @@ kwl_glass_gesture(
 		return;
 	}
 
-	/* App Home following two fingers from the top edge goes on (home.c, ws181-p008). */
+	/* App Home following two fingers from the bottom edge goes on (home.c). */
 	if (server->home_pad) {
 		kwl_home_pad(server, phase, travel_um, speed);
 		return;
@@ -9464,6 +9485,32 @@ kwl_glass_gesture(
 	home = kwl_home_progress(server);
 	if (gesture == KWL_TOUCHPAD_GESTURE_BOTTOM2 &&
 	    (home > 0.0f || server->home_to > 0.0f)) {
+		kwl_home_pad(server, phase, travel_um, speed);
+		return;
+	}
+
+	/*
+	 * On App Home, two fingers down from the top edge close it at once and
+	 * open Wiseview following them, as the touch screen's swipe down from
+	 * the top edge does (the 2026-10-13 user's instruction).
+	 */
+	if (gesture == KWL_TOUCHPAD_GESTURE_TOP2 &&
+	    (home > 0.0f || server->home_to > 0.0f)) {
+		kwl_home_close_now(server, "pad-top");
+		gesture_wiseview_begin(server, phase, travel_um, speed);
+		return;
+	}
+
+	/*
+	 * While Wiseview shows, two fingers up from the bottom edge close it at
+	 * once and open App Home following them, as the touch screen's press at
+	 * its bottom edge does (the 2026-10-13 user's instruction).
+	 */
+	showing = wiseview_showing(server);
+	if (gesture == KWL_TOUCHPAD_GESTURE_BOTTOM2 &&
+	    showing &&
+	    !server->wiseview_gesture) {
+		wiseview_close_now(server, "pad-bottom");
 		kwl_home_pad(server, phase, travel_um, speed);
 		return;
 	}
@@ -9486,27 +9533,20 @@ kwl_glass_gesture(
 	if (!may)
 		return;
 
-	/*
-	 * Two fingers from the top edge down: App Home opens following them
-	 * (ws181-p008, the 2026-10-07 UAT; a docked window floats again by its
-	 * title in the bar instead, BUG-224's way before).
-	 */
-	if (gesture == KWL_TOUCHPAD_GESTURE_TOP2) {
-		kwl_home_pad(server, phase, travel_um, speed);
-		return;
-	}
-
 	/* Each gesture. */
 	switch (gesture) {
 	case KWL_TOUCHPAD_GESTURE_BOTTOM2:
+		/*
+		 * App Home opens following the fingers, as the touch screen's swipe
+		 * up from the bottom edge does (the 2026-10-13 user's instruction; a
+		 * docked window floats again by its title in the bar, BUG-224).
+		 */
+		kwl_home_pad(server, phase, travel_um, speed);
+		break;
+	case KWL_TOUCHPAD_GESTURE_TOP2:
 	case KWL_TOUCHPAD_GESTURE_UP3:
-		/* Wiseview starts opening; the window on top is the current tile; a swipe in it begins afresh. */
-		server->wiseview_gesture = 1;
-		server->wiseview_pad = 1;
-		server->wiseview_current = sheet_owner(kwl_top_window(server));
-		kwl_swipe_end(&server->pad_swipe);
-		printf("KWL WISEVIEW gesture via=pad\n");
-		gesture_wiseview(server, phase, travel_um, speed);
+		/* Wiseview opens following the fingers (from the top edge as the touch screen's swipe down, the 2026-10-13 user's instruction). */
+		gesture_wiseview_begin(server, phase, travel_um, speed);
 		break;
 	case KWL_TOUCHPAD_GESTURE_LEFT2:
 	case KWL_TOUCHPAD_GESTURE_RIGHT2:
@@ -9522,6 +9562,27 @@ kwl_glass_gesture(
 		(void)kwl_switch_open(server, KWL_SWITCHER_VIA_PAD);
 		break;
 	}
+}
+
+/* Starts the touch pad's Wiseview gesture: the window on top is the current tile, and a swipe in it begins afresh. */
+static void
+gesture_wiseview_begin(
+	struct kwl_server *server,
+	uint32_t phase,
+	int32_t travel_um,
+	int32_t speed)
+{
+	/* Wiseview follows the fingers from now on, the window on top its current tile. */
+	server->wiseview_gesture = 1;
+	server->wiseview_pad = 1;
+	server->wiseview_current = sheet_owner(kwl_top_window(server));
+
+	/* A swipe of the tiles begins afresh after it. */
+	kwl_swipe_end(&server->pad_swipe);
+	printf("KWL WISEVIEW gesture via=pad\n");
+
+	/* Its first phase: as far open as the fingers have come. */
+	gesture_wiseview(server, phase, travel_um, speed);
 }
 
 /* Follows the touch pad's Wiseview gesture: opening with the travel, and open or closed at its end. */

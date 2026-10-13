@@ -4,23 +4,28 @@
 # compositor under test (BUILD/bin/wayland) is copied in, 1280x800, with one wltest window.  Each script waits 2.6 s
 # first: the compositor looks for new evdev nodes every 2 s.
 #  1. Two fingers up 30 mm from the pad's bottom edge, quickly: "KWL GESTURE kind=bottom2 phase=begin" and "...end",
-#     Wiseview opens following them ("KWL WISEVIEW gesture via=pad", "KWL WISEVIEW opening"; wiseview-pad.png); Esc
-#     closes it.
-#  2. The same, 8 mm and slowly: Wiseview goes back closed ("KWL WISEVIEW cancel").
+#     App Home opens following them (the 2026-10-13 user's instruction, as the touch screen's bottom edge: "KWL HOME
+#     pad swipe closing=0", "KWL HOME open via=pad"; home-pad.png shows Home); Esc closes it.
+#  2. The same, 8 mm and slowly: Home goes back closed ("KWL HOME pad back").
 #  3. Two fingers left 40 mm from the right edge: from the middle desktop, where a session starts (ws181-p006), the
 #     desktop to the right ("KWL GLASS desktop=3 via=pad").
 #  4. Two fingers right 40 mm from the left edge: back to the middle ("KWL GLASS desktop=2 via=pad"), then to the left
 #     one ("desktop=1 via=pad"); again on the left one, where there is no neighbour on the left: it stays
 #     ("desktop=1 via=pad" once more).
-#  5. Three fingers up 25 mm in the middle: "kind=up3", Wiseview opens; Esc closes it.
+#  5. Three fingers up 25 mm in the middle: "kind=up3", Wiseview opens ("KWL WISEVIEW gesture via=pad"); Esc closes it.
 #  6. A tap of three fingers: "kind=tap3 phase=end" (the switcher comes with ws142-p005).
 #  7. Two fingers in the middle moving up: a scroll, no gesture begins; its lift is told once as "kind=swipe2
 #     phase=end" (ws142-p009: one swipe is one step of Wiseview or the switcher).
 #  7b. One finger only in the right edge's band, two moving left (ws181-p008: one finger in the band is enough):
 #     "kind=right2", from the left desktop the middle one ("KWL GLASS desktop=2 via=pad" once more).
-#  7c. Two fingers down from the top edge, one finger only in its band (ws181-p008): App Home opens following them
-#     ("kind=top2 phase=begin", "KWL HOME pad swipe", "KWL HOME open via=pad"; home-pad.png shows Home); Esc closes
-#     it.  The same, 6 mm and slowly: Home goes back closed ("KWL HOME pad back").
+#  7c. Two fingers down from the top edge, one finger only in its band (ws181-p008): Wiseview opens following them
+#     (the 2026-10-13 user's instruction, as the touch screen's top edge: "kind=top2 phase=begin", "KWL WISEVIEW
+#     gesture via=pad", "KWL WISEVIEW opening"; wiseview-pad.png); Esc closes it.  The same, 6 mm and slowly: Wiseview
+#     goes back closed ("KWL WISEVIEW cancel").
+#  7d. Between the two: App Home by two fingers up from the bottom edge; on it two fingers down from the top edge close
+#     it at once and open Wiseview ("KWL HOME close via=pad-top", "KWL WISEVIEW opening"); on Wiseview two fingers up
+#     from the bottom edge close it at once and open Home ("KWL WISEVIEW close via=pad-bottom", "KWL HOME open
+#     via=pad"); Esc closes Home.
 #  8. A fullscreen window (the bar hidden): the bottom edge's gesture is logged but opens nothing (D6).
 #  9. The compositor stays up, with no ERROR in its log.
 #   plan/ws079/tests/pen-guest.sh start IMAGE
@@ -60,24 +65,24 @@ guest 'chmod 755 /bin/wayland; export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0
 /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null & for w in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q KWL.READY /tmp/zdesktop.log 2>/dev/null && break; sleep 0.5; done; sleep 2; echo started' >/dev/null
 guest "$env /bin/wltest --windowed --size=420x300 --color=f4f7fc --frames=3600 --delay-ms=250 > /tmp/w.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 
-# 1. Two fingers up 30 mm from the bottom edge in 190 ms.
+# 1. Two fingers up 30 mm from the bottom edge in 190 ms: App Home.
 pad bottom2 "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
 expect_count bottom2-begin 'KWL GESTURE kind=bottom2 phase=begin' 1
 expect_count bottom2-end 'KWL GESTURE kind=bottom2 phase=end' 1
-expect_count bottom2-follows 'KWL WISEVIEW gesture via=pad' 1
-expect_count bottom2-opens 'KWL WISEVIEW opening from=' 1
+expect_count bottom2-follows 'KWL HOME pad swipe closing=0' 1
+expect_count bottom2-home 'KWL HOME open via=pad' 1
 sleep 1
-shot wiseview-pad
+shot home-pad
 tap esc
-expect_count bottom2-esc-closes 'KWL WISEVIEW close key' 1
+expect_count bottom2-esc-closes 'KWL HOME close via=escape' 1
 sleep 1
 
 # 2. 8 mm in 720 ms: back closed.
 pad bottom2-short "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -96 12 60" "up 0; up 1"
 expect_count short-begin 'KWL GESTURE kind=bottom2 phase=begin' 2
-expect_count short-cancel 'KWL WISEVIEW cancel from=' 1
-# A wrong opening is closed, so that the steps after it are not judged on an open Wiseview (T1-126).
-opened=$(count 'KWL WISEVIEW opening from=')
+expect_count short-back 'KWL HOME pad back' 1
+# A wrong opening is closed, so that the steps after it are not judged on an open Home (T1-126).
+opened=$(count 'KWL HOME open via=pad')
 [ "${opened:-0}" -gt 1 ] 2>/dev/null && tap esc
 sleep 1
 
@@ -102,9 +107,10 @@ sleep 1
 # 5. Three fingers up 25 mm in the middle: Wiseview; Esc closes it.
 pad up3 "down 0 400 500; down 1 550 480; down 2 700 500" "wait 30" "swipe 0 -300 12 16" "up 0; up 1; up 2"
 expect_count up3-begin 'KWL GESTURE kind=up3 phase=begin' 1
-expect_count up3-opens 'KWL WISEVIEW opening from=' 2
+expect_count up3-follows 'KWL WISEVIEW gesture via=pad' 1
+expect_count up3-opens 'KWL WISEVIEW opening from=' 1
 tap esc
-expect_count up3-esc-closes 'KWL WISEVIEW close key' 2
+expect_count up3-esc-closes 'KWL WISEVIEW close key' 1
 sleep 1
 
 # 6. A tap of three fingers.
@@ -124,28 +130,44 @@ expect_count right2-one-begin 'KWL GESTURE kind=right2 phase=begin' 2
 expect_count right2-one-desktop 'KWL GLASS desktop=2 via=pad' 2
 sleep 1
 
-# 7c. Two fingers down from the top edge, one in its band: App Home follows them and opens; Esc closes it; a short slow one goes back.
+# 7c. Two fingers down from the top edge, one in its band: Wiseview follows them and opens; Esc closes it; a short slow one goes back.
 pad top2 "down 0 500 10; down 1 700 200" "wait 30" "swipe 0 360 12 16" "up 0; up 1"
 expect_count top2-begin 'KWL GESTURE kind=top2 phase=begin' 1
-expect_count top2-follows 'KWL HOME pad swipe' 1
-expect_count top2-home 'KWL HOME open via=pad' 1
+expect_count top2-follows 'KWL WISEVIEW gesture via=pad' 2
+expect_count top2-opens 'KWL WISEVIEW opening from=' 2
 sleep 1
-shot home-pad
+shot wiseview-pad
 tap esc
-expect_count top2-esc-closes 'KWL HOME close via=escape' 1
+expect_count top2-esc-closes 'KWL WISEVIEW close key' 2
 sleep 1
 pad top2-short "down 0 500 10; down 1 700 200" "wait 30" "swipe 0 72 12 60" "up 0; up 1"
 expect_count top2-short-begin 'KWL GESTURE kind=top2 phase=begin' 2
-expect_count top2-short-back 'KWL HOME pad back' 1
-expect_count top2-short-no-home 'KWL HOME open via=pad' 1
+expect_count top2-short-cancel 'KWL WISEVIEW cancel from=' 1
+expect_count top2-short-no-wiseview 'KWL WISEVIEW opening from=' 2
+sleep 1
+
+# 7d. App Home from the bottom edge; from it Wiseview by the top edge; from Wiseview Home again by the bottom edge; Esc.
+pad home-again "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
+expect_count home-again-opens 'KWL HOME open via=pad' 2
+sleep 1
+pad home-to-wiseview "down 0 500 10; down 1 700 200" "wait 30" "swipe 0 360 12 16" "up 0; up 1"
+expect_count home-to-wiseview-closes 'KWL HOME close via=pad-top' 1
+expect_count home-to-wiseview-opens 'KWL WISEVIEW opening from=' 3
+sleep 1
+pad wiseview-to-home "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
+expect_count wiseview-to-home-closes 'KWL WISEVIEW close via=pad-bottom' 1
+expect_count wiseview-to-home-opens 'KWL HOME open via=pad' 3
+sleep 1
+tap esc
+expect_count home-again-esc 'KWL HOME close via=escape' 2
 sleep 1
 
 # 8. A fullscreen window: the gesture opens nothing (D6).
 guest "$env /bin/wltest --color=203040 --frames=3600 --delay-ms=250 > /tmp/f.log 2>&1 </dev/null & sleep 4; echo started" >/dev/null
 expect_count fullscreen-bar-hidden 'KWL GLASS bar hidden fullscreen=' 1
 pad fullscreen "down 0 500 750; down 1 700 745" "wait 30" "swipe 0 -360 12 16" "up 0; up 1"
-expect_count fullscreen-gesture-logged 'KWL GESTURE kind=bottom2 phase=begin' 3
-expect_count fullscreen-no-wiseview 'KWL WISEVIEW gesture via=pad' 3
+expect_count fullscreen-gesture-logged 'KWL GESTURE kind=bottom2 phase=begin' 5
+expect_count fullscreen-no-home 'KWL HOME pad swipe' 4
 
 # 9. Up, without errors.
 running=$(guest 'ps -A -o args | grep -cE "[w]ayland( |$)"' | tail -1)
@@ -154,5 +176,5 @@ guest 'grep -E "KWL GESTURE|KWL WISEVIEW|KWL HOME (open|close|pad)|KWL GLASS des
 grep -q ERROR "$out/log.txt" && fail no-error || pass no-error
 guest "$stop_all" >/dev/null
 
-echo "p003-guest: status $status (outputs in $out; wiseview-pad.png and home-pad.png for the eye)"
+echo "p003-guest: status $status (outputs in $out; home-pad.png and wiseview-pad.png for the eye)"
 exit $status

@@ -43,7 +43,8 @@
  *     STAGGER_MS apart are one landing even if the first one has moved
  *     meanwhile (BUG-254: fingers seldom land at once);
  *   - two fingers of which one touches within EDGE_UM of the top edge and
- *     that move down are TOP2 (ws142-p009; App Home, ws181-p008);
+ *     that move down are TOP2 (ws142-p009; Wiseview in the shell, the
+ *     2026-10-13 user's instruction, BOTTOM2 being App Home);
  *   - the end of a touch of two fingers that scrolled (all of them lifted,
  *     or one of them) is told as SWIPE2's end, after its scrolling, so
  *     that the shell can make one swipe one step (ws142-p009);

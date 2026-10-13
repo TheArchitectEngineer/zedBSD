@@ -1646,9 +1646,10 @@ struct kwl_server {
 	 */
 	unsigned home_press_moved;
 	/*
-	 * The touch pad's two fingers down from its top edge (TOP2, ws181-p008)
-	 * open Home following them: whether such a gesture is under way, from
-	 * its beginning until its end (the gestures' phases go to Home).
+	 * The touch pad's two fingers up from its bottom edge (BOTTOM2, the
+	 * 2026-10-13 user's instruction; TOP2 before, ws181-p008) open or close
+	 * Home following them: whether such a gesture is under way, from its
+	 * beginning until its end (the gestures' phases go to Home).
 	 */
 	unsigned home_pad;
 	/*

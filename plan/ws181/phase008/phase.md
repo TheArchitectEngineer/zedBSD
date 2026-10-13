@@ -17,6 +17,7 @@ Queue: q851 / q851-i01（ユーザーの UAT 2026-10-07）
 1. App Home への遷移: desktop（app の窓）が縮みながら奥へ消え、App Home が奥から大きくなって現れる（iOS と同じ）。戻る時は逆。今の slide を置き換える。
 2. touchpad の端からの 2 本指 swipe（左・右・上・下）: 2 本のうち 1 本が端の帯にあれば端の swipe と認める。
 3. touchpad の上端からの swipe down を App Home への遷移に（今は docked の解除）。docked の解除は他の操作（bar の 2 回 tap など）に残す。
+   - **置き換え（2026-10-13 ユーザーの指示）**: touchpad の上端から下は Wiseview、下端から上が App Home（touch panel の端と同じ）。[p012](../phase012/phase.md)。
 4. 画面の左上からの右下への swipe は今 App Home だが、[WS184](../../ws184/ws.md) の左手デバイスの OSK に移るので、App Home の入口が上端の swipe down・Super・他に揃うよう整理する。
 
 ## 受け入れ
