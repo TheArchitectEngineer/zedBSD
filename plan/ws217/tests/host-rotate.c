@@ -15,7 +15,8 @@
  * table (plan/ws217/phase001/phase.md, section 4.6); the turn pass's
  * texture coordinates against the points (ws217-p002b) and what a user's
  * choice of an angle does; the inline way back of the absolute devices
- * against the points and the fixed-point places (ws217-p003).
+ * against the points and the fixed-point places (ws217-p003); and a
+ * floating window's place fitted to an output turned and back (BUG-306).
  */
 
 #include "rotate.h"
@@ -53,6 +54,7 @@ static void test_coefficients(void);
 static void test_select(void);
 static void test_pointer(void);
 static void test_pixel_back(void);
+static void test_fit_window(void);
 static void test_state(struct kwl_rotate_state *state, uint32_t width, uint32_t height, unsigned rotation, unsigned hw180, unsigned policy_any);
 
 /* Runs every check. */
@@ -73,6 +75,7 @@ main(void)
 	test_select();
 	test_pointer();
 	test_pixel_back();
+	test_fit_window();
 
 	/* The verdict. */
 	if (failures != 0U) {
@@ -840,4 +843,64 @@ test_pixel_back(void)
 		/* Every sub-pixel the same. */
 		check(same, "the inline way back in sub-pixels is kwl_rotate_fixed_back's");
 	}
+}
+
+/*
+ * A floating window fitted to an output turned and turned back (BUG-306,
+ * T1-611): Settings 1180 wide at x=50 on 1280x800 (the glass look's space
+ * from x=12, 1256 wide) is moved to x=12 at 90 (776 wide), shrinks to the
+ * new bounds, and goes back to x=50 at 0, the second time too; a window the
+ * user moved after a fit starts from where it was put; one that fits is not
+ * moved and keeps nothing.
+ */
+static void
+test_fit_window(void)
+{
+	struct kwl_fit_home fit;
+	struct kwl_fit_home plain;
+	int32_t x;
+	int32_t y;
+	unsigned round;
+
+	/* Nothing moved yet. */
+	memset(&fit, 0, sizeof(fit));
+	x = 50;
+	y = 100;
+
+	/* Twice: 90 (the window still 1180 wide), then 0 (the client shrank to the bounds, 776). */
+	for (round = 0U; round < 2U; round++) {
+		kwl_rotate_fit_window(&fit, &x, &y, 1180, 680, 12, 100, 776, 1168);
+		check(x == 12 && y == 100, "at 90 the window is moved to the space's left edge");
+		check(fit.moved == 1U && fit.home_x == 50 && fit.home_y == 100, "the place it had is kept");
+		kwl_rotate_fit_window(&fit, &x, &y, 776, 680, 12, 100, 1256, 688);
+		check(x == 50 && y == 100, "back at 0 the window is where it was");
+		check(fit.moved == 0U, "a window that fits keeps nothing");
+	}
+
+	/* The old fitting (nothing kept) leaves the window at x=12 at 0: the bug. */
+	memset(&plain, 0, sizeof(plain));
+	x = 50;
+	y = 100;
+	kwl_rotate_fit_window(&plain, &x, &y, 1180, 680, 12, 100, 776, 1168);
+	plain.moved = 0U;
+	kwl_rotate_fit_window(&plain, &x, &y, 776, 680, 12, 100, 1256, 688);
+	check(x == 12, "without the kept place the window stays at the left edge");
+
+	/* A window the user moved after the fit starts from its new place. */
+	memset(&fit, 0, sizeof(fit));
+	x = 50;
+	y = 100;
+	kwl_rotate_fit_window(&fit, &x, &y, 1180, 680, 12, 100, 776, 1168);
+	x = 30;
+	kwl_rotate_fit_window(&fit, &x, &y, 776, 680, 12, 100, 1256, 688);
+	check(x == 30 && fit.moved == 0U, "a window moved by the user stays where it was put");
+
+	/* Its bottom edge too: a tall window at 0 is moved up inside the space, and back at 90. */
+	memset(&fit, 0, sizeof(fit));
+	x = 12;
+	y = 600;
+	kwl_rotate_fit_window(&fit, &x, &y, 700, 400, 12, 100, 1256, 688);
+	check(y == 388 && fit.moved == 1U && fit.home_y == 600, "the bottom edge inside the space");
+	kwl_rotate_fit_window(&fit, &x, &y, 700, 400, 12, 100, 776, 1168);
+	check(y == 600 && fit.moved == 0U, "back where it was when the space is tall again");
 }

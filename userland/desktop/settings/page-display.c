@@ -1146,6 +1146,7 @@ display_rotation_tile(
 	int x,
 	int y)
 {
+	const struct kl_theme *theme;
 	struct se_display *display;
 	struct kl_rect hit;
 	char degrees[16];
@@ -1159,12 +1160,17 @@ display_rotation_tile(
 	angle = se_rotate_angle(slot);
 	pressable = se_rotate_pressable(angle, display->rotation[index], display->rotation_mask[index]);
 
-	/* Its colors: the angle chosen, one that can be chosen, one that cannot. */
+	/*
+	 * Its colors: the angle chosen, its picture and degrees in the ink that
+	 * reads on the accent (BUG-306: the accent's text colour is the accent
+	 * itself, which hid them); one that can be chosen; one that cannot.
+	 */
 	ground = SE_COLOR_TILE;
 	ink = SE_COLOR_TEXT;
 	if (angle == display->rotation[index]) {
+		theme = kl_theme_default();
 		ground = SE_COLOR_ACCENT;
-		ink = SE_COLOR_ACCENT_TEXT;
+		ink = theme->accent_ink;
 	} else if (!pressable) {
 		ground = SE_COLOR_FIELD;
 		ink = SE_COLOR_TEXT_FAINT;

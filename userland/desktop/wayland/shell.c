@@ -2738,6 +2738,10 @@ kwl_glass_output_resized(
 	struct shell_rect docked;
 	uint32_t width;
 	uint32_t height;
+	int32_t space_x;
+	int32_t space_y;
+	int32_t space_width;
+	int32_t space_height;
 	int32_t x;
 	int32_t y;
 	int desktop;
@@ -2778,32 +2782,35 @@ kwl_glass_output_resized(
 				continue;
 			}
 
-			/* Floating: its size kept, moved inside the space. */
+			/*
+			 * Floating: its size kept, moved inside the space, from the
+			 * place it had before the last new size moved it when it
+			 * has not been moved since (BUG-306: a display turned and
+			 * turned back puts it where it was).
+			 */
 			width = 0U;
 			height = 0U;
 			kwl_decoration_geometry(surface, &width, &height);
-			x = surface->x;
-			y = surface->y;
-			if (server->glass) {
-				kwl_glass_fit(server, (int32_t)width, (int32_t)height, &x, &y);
-			} else {
-				/* Its right and bottom edges inside the output. */
-				if (x + (int32_t)width > (int32_t)server->width)
-					x = (int32_t)server->width - (int32_t)width;
-				if (y + (int32_t)height > (int32_t)server->height)
-					y = (int32_t)server->height - (int32_t)height;
 
-				/* Never left of it nor above it. */
-				if (x < 0)
-					x = 0;
-				if (y < 0)
-					y = 0;
+			/* The space: the glass look's under the system bar, or the output. */
+			space_x = 0;
+			space_y = 0;
+			space_width = (int32_t)server->width;
+			space_height = (int32_t)server->height;
+			if (server->glass) {
+				space_x = KWL_GLASS_MARGIN;
+				space_y = KWL_GLASS_TOP;
+				kwl_glass_space(server, &space_width, &space_height);
 			}
 
 			/* The window's place. */
+			x = surface->x;
+			y = surface->y;
+			kwl_rotate_fit_window(&surface->fit, &x, &y, (int32_t)width, (int32_t)height, space_x, space_y, space_width, space_height);
 			surface->x = x;
 			surface->y = y;
-			printf("KWL OUTPUT window surface=%u state=floating x=%d y=%d w=%u h=%u\n", surface->id, (int)x, (int)y, width, height);
+			printf("KWL OUTPUT window surface=%u state=floating x=%d y=%d w=%u h=%u moved=%u home=%d,%d\n", surface->id, (int)x, (int)y, width, height,
+			    surface->fit.moved, (int)surface->fit.home_x, (int)surface->fit.home_y);
 		}
 	}
 

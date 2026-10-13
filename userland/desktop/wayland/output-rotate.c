@@ -38,6 +38,7 @@ static int output_rotate_turn(struct kwl_server *server, const struct kwl_rotate
 static const char *output_rotate_heads(const struct kwl_compose *compose);
 static void output_rotate_caches(struct kwl_server *server, unsigned scene_kept, unsigned resized);
 static const char *output_rotate_mode_name(unsigned mode);
+static void output_rotate_times(uint64_t started, uint64_t prepared, uint64_t parked, uint64_t idle);
 
 /*
  * Takes the user's choice of an output's angle: refused outside the
@@ -384,6 +385,10 @@ output_rotate_turn(
 	struct kwl_compose *compose;
 	struct kwl_turn fresh;
 	struct kwl_glass_size glass;
+	uint64_t started;
+	uint64_t prepared;
+	uint64_t parked;
+	uint64_t idle;
 	unsigned scene_kept;
 	unsigned resized;
 	unsigned reuse;
@@ -391,6 +396,7 @@ output_rotate_turn(
 	int error;
 
 	/* Whether the logical size changes, and whether the turn image of the size can serve the new angle. */
+	started = kwl_milliseconds();
 	compose = server->compose;
 	memset(&fresh, 0, sizeof(fresh));
 	memset(&glass, 0, sizeof(glass));
@@ -425,15 +431,19 @@ output_rotate_turn(
 	 * still mean the old points (ws217-p003): the angle changes now.
 	 */
 	kwl_input_rotated(server);
+	prepared = kwl_milliseconds();
 
 	/*
 	 * No frame, nor the cursor's plane (its thread submits on the same
 	 * queue, review M2), may use the old images while they go; the cursor
-	 * thread goes on at the next kwl_cursor_plane_update.
+	 * thread goes on at the next kwl_cursor_plane_update.  How long each
+	 * step took is logged (BUG-306: a turn that took 12 s).
 	 */
 	kwl_compose_park(server);
 	kwl_cursor_plane_hold(server);
+	parked = kwl_milliseconds();
 	(void)vkDeviceWaitIdle(compose->device);
+	idle = kwl_milliseconds();
 
 	/* The new angle and logical size; the turn's images can be made again. */
 	kwl_output_size_set(server, compose->mode_width, compose->mode_height, after->rotation);
@@ -446,6 +456,7 @@ output_rotate_turn(
 		compose->turn.rotation = after->turn;
 		memset(compose->image_frames, 0, sizeof(compose->image_frames));
 		kwl_compose_unpark(server);
+		output_rotate_times(started, prepared, parked, idle);
 		return 0;
 	}
 
@@ -470,7 +481,27 @@ output_rotate_turn(
 
 	/* Succeeded: the render thread goes on with the new images. */
 	kwl_compose_unpark(server);
+	output_rotate_times(started, prepared, parked, idle);
 	return 0;
+}
+
+/*
+ * Logs how long the steps of a turn took (BUG-306): the new images made,
+ * the render thread parked, the device idle, and the images exchanged.
+ */
+static void
+output_rotate_times(
+	uint64_t started,
+	uint64_t prepared,
+	uint64_t parked,
+	uint64_t idle)
+{
+	uint64_t now;
+
+	/* Each step's length, from the one before it. */
+	now = kwl_milliseconds();
+	printf("KWL OUTPUT rotate times prepare_ms=%llu park_ms=%llu idle_ms=%llu swap_ms=%llu\n", (unsigned long long)(prepared - started),
+	    (unsigned long long)(parked - prepared), (unsigned long long)(idle - parked), (unsigned long long)(now - idle));
 }
 
 /*
