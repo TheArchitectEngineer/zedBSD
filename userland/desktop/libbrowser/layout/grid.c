@@ -123,6 +123,7 @@ layout_grid(
 	layout_unit shared_baseline;
 	layout_unit right_extent;
 	layout_unit shared_right_extent;
+	layout_unit free_height;
 	size_t index;
 	size_t peer;
 	int position;
@@ -130,6 +131,9 @@ layout_grid(
 	int align;
 	int baseline_eligible;
 	int peer_baseline_eligible;
+	int auto_top;
+	int auto_bottom;
+	int auto_block_margin;
 	int error;
 
 	/* The children out of the flow have their static place at the content box's corner. */
@@ -256,6 +260,20 @@ layout_grid(
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
 			align = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
+		/* Definite horizontal rows distribute block-axis auto margins after sizing. */
+		auto_top = child->style.margin[CSS_TOP].unit == CSS_UNIT_AUTO;
+		auto_bottom = child->style.margin[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		auto_block_margin = 0;
+		if ((auto_top || auto_bottom) && box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    item->row_span == 1 && item->row < box->style.row_count &&
+		    box->style.rows[item->row].kind == CSS_TRACK_LENGTH) {
+			if (box->style.rows[item->row].size.unit == CSS_UNIT_PX ||
+			    (box->style.rows[item->row].size.unit == CSS_UNIT_PERCENT &&
+			    box->style.height.unit == CSS_UNIT_PX))
+				auto_block_margin = 1;
+		}
+		if (auto_block_margin)
+			align = CSS_ALIGN_START;
 		baseline_eligible = grid_fixed_row_baseline(box, item, &baseline);
 		if (align == CSS_ALIGN_BASELINE && !baseline_eligible)
 			align = CSS_ALIGN_START;
@@ -320,6 +338,12 @@ layout_grid(
 			child->x = x + area_width - shared_right_extent;
 		}
 		child->y = y + child->margin[CSS_TOP];
+		if (auto_block_margin) {
+			/* Auto margins absorb only positive space left in the final row. */
+			free_height = area_height - grid_outer_height(child);
+			if (free_height > 0 && auto_top)
+				child->y += auto_bottom ? free_height / 2 : free_height;
+		}
 		if (align == CSS_ALIGN_BASELINE) {
 			/* Members in this fixed row share their first or synthesized baseline. */
 			shared_baseline = 0;
@@ -1265,6 +1289,9 @@ grid_fixed_row_baseline(
 	if (box->style.rows[item->row].kind != CSS_TRACK_LENGTH)
 		return 0;
 	if (box->style.rows[item->row].size.unit != CSS_UNIT_PX)
+		return 0;
+	if (child->style.margin[CSS_TOP].unit == CSS_UNIT_AUTO ||
+	    child->style.margin[CSS_BOTTOM].unit == CSS_UNIT_AUTO)
 		return 0;
 
 	/* Only members with a baseline preference join the row's group. */

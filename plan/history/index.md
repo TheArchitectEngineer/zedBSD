@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1106 / WS074 Grid alignment residual triage（2026-10-14）
+## 最新: q1107 / WS074 Grid block-axis auto margins（2026-10-14）
+
+[q1107履歴](queue-q1107.md): 固定auto-margins7件は全whole FAIL→PASS、計14 subtest改善、旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1107/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1106 / WS074 Grid alignment residual triage（2026-10-14）
 
 [q1106履歴](queue-q1106.md): 固定alignment残200 whole FAILを分類。auto margin系列7件の行内余白吸収欠落を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1106/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

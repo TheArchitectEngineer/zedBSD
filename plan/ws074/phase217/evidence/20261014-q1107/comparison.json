@@ -1,0 +1,65 @@
+[
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-001.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-002.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-003.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-004.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-005.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-006.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  },
+  {
+    "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-007.html",
+    "old_outcome": "fail",
+    "new_outcome": "pass",
+    "old_pass": 0,
+    "new_pass": 2,
+    "fail_to_pass": 2,
+    "pass_to_fail": 0
+  }
+]

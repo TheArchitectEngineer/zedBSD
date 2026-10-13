@@ -106,3 +106,11 @@ Follow-up ws074-p217-q1105-full-grid-20261014: [p189 q1105](../phase189/evidence
 ## q1106-i01 結果（2026-10-14 08:38 JST）
 
 Event ws074-p217-q1106-partial-clear-20261014: [証拠](evidence/20261014-q1106/README.md)。固定alignment200 whole FAILの初回失敗はwidth79、offsetLeft65、offsetTop37、height18、scrollWidth1。positioned/縦stretchは別系統。auto margin系列7件は各2 subtest offsetTop差で、40%/60%行とauto上下marginの再計算が共通。Gridが行開始へ置いており、CSS Grid §11.2の正の余白吸収が欠落。次はこの独立した有限修正を選ぶ。q1106部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1107-i01 有限部分範囲（2026-10-14 08:39 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:09 JSTまで）に適用。水平Gridのrow span1・definite pixel/percent行でin-flow子の上下auto marginを最終item/area height後の正の余白へ配分（両auto等分、片側auto全量）。その軸のstretch/self alignmentを抑え、溢れはauto0。最小双方/片側/overflow fixture、固定auto-margins001〜007、旧Grid/PASS、CSS/JS、warning0 build、Acid3差0・Acid2非増加。縦書き/row span>1/公開ABI/WPT/runner/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1107-i01 結果（2026-10-14 08:40 JST）
+
+Event ws074-p217-q1107-partial-clear-20261014: [証拠](evidence/20261014-q1107/README.md)。水平Grid definite行で上下auto marginを最終item高さ後の正の余白へ配分。最小6ケースPASS、固定auto-margins001〜007は全7 whole FAIL→PASS・計14 subtest FAIL→PASS、逆0。旧style-changes001と100-subtest代表PASS維持、Grid48/CSS51/JS14、warning0 build、Acid3差0・Acid2差1865。q1107部分cleared、p217/p189/p173全件100%未達。auto行/row span/縦書き残、共有投影/GitHub publication保留。
