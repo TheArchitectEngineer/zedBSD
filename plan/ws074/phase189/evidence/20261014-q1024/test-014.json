@@ -1,0 +1,160 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Property zoom value 'normal'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '1'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '1.5'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '0.75'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value 'calc(1 - 0.5)'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value 'calc(1 * 0.5)'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '100%'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '150%'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '75%'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value 'calc(100% - 50%)'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value 'calc(100% * 0.5)'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '0'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property zoom value '0%'",
+      "status": 1,
+      "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Property zoom value 'normal'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '1'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '1.5'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '0.75'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value 'calc(1 - 0.5)'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value 'calc(1 * 0.5)'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '100%'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '150%'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '75%'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value 'calc(100% - 50%)'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value 'calc(100% * 0.5)'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '0'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property zoom value '0%'",
+        "status": 1,
+        "message": "assert_true: zoom doesn't seem to be supported in the computed style expected true got false"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-viewport/zoom/parsing/zoom-computed.html",
+  "focus": [
+    "webcompat"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:41353/css/css-viewport/zoom/parsing/zoom-computed.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Property zoom value 'normal'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '1'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '1.5'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '0.75'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value 'calc(1 - 0.5)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value 'calc(1 * 0.5)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '100%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '150%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '75%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value 'calc(100% - 50%)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value 'calc(100% * 0.5)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '0'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property zoom value '0%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Property zoom value 'normal'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '1'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '1.5'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '0.75'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value 'calc(1 - 0.5)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value 'calc(1 * 0.5)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '100%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '150%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '75%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value 'calc(100% - 50%)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value 'calc(100% * 0.5)'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '0'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property zoom value '0%'\",\"status\":1,\"message\":\"assert_true: zoom doesn't seem to be supported in the computed style expected true got false\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

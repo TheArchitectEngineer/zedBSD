@@ -1,0 +1,40 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "incorrect UA animations for root transition",
+      "status": 1,
+      "message": "assert_implements: Missing document.startViewTransition undefined"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "incorrect UA animations for root transition",
+        "status": 1,
+        "message": "assert_implements: Missing document.startViewTransition undefined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-view-transitions/group-animation-for-root-transition.html",
+  "focus": [
+    "view-transitions"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:46877/css/css-view-transitions/group-animation-for-root-transition.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"incorrect UA animations for root transition\",\"status\":1,\"message\":\"assert_implements: Missing document.startViewTransition undefined\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"incorrect UA animations for root transition\",\"status\":1,\"message\":\"assert_implements: Missing document.startViewTransition undefined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

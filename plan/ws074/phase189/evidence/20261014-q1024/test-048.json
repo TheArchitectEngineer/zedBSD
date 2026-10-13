@@ -1,0 +1,160 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "CSSScopeRule.cssText, implicit scope",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.cssText, root only",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.cssText, root and limit",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.cssText, limit only",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.start, implicit scope",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.start, root only",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.start, root and limit",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.start, limit only",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.end, implicit scope",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.end, root only",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.end, root and limit",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule.end, limit only",
+      "status": 1,
+      "message": "style is not defined"
+    },
+    {
+      "name": "CSSScopeRule is a CSSGroupingRule",
+      "status": 1,
+      "message": "style is not defined"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "CSSScopeRule.cssText, implicit scope",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.cssText, root only",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.cssText, root and limit",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.cssText, limit only",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.start, implicit scope",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.start, root only",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.start, root and limit",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.start, limit only",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.end, implicit scope",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.end, root only",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.end, root and limit",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule.end, limit only",
+        "status": 1,
+        "message": "style is not defined"
+      },
+      {
+        "name": "CSSScopeRule is a CSSGroupingRule",
+        "status": 1,
+        "message": "style is not defined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-cascade/scope-cssom.html",
+  "focus": [
+    "scope"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:38835/css/css-cascade/scope-cssom.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"CSSScopeRule.cssText, implicit scope\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.cssText, root only\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.cssText, root and limit\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.cssText, limit only\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.start, implicit scope\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.start, root only\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.start, root and limit\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.start, limit only\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.end, implicit scope\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.end, root only\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.end, root and limit\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule.end, limit only\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSScopeRule is a CSSGroupingRule\",\"status\":1,\"message\":\"style is not defined\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"CSSScopeRule.cssText, implicit scope\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.cssText, root only\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.cssText, root and limit\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.cssText, limit only\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.start, implicit scope\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.start, root only\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.start, root and limit\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.start, limit only\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.end, implicit scope\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.end, root only\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.end, root and limit\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule.end, limit only\",\"status\":1,\"message\":\"style is not defined\"},{\"name\":\"CSSScopeRule is a CSSGroupingRule\",\"status\":1,\"message\":\"style is not defined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

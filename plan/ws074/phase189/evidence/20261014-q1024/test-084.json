@@ -1,0 +1,290 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Single scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Scope can not match its own root without :scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Selecting self with :scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Single scope with limit",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Single scope, :scope pseudo in main selector",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Single scope, :scope pseudo in to-selector",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Multiple scopes, :scope pseudo in to-selector",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Inner @scope with :scope in from-selector",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Multiple scopes from same @scope-rule, only one limited",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Multiple scopes from same @scope-rule, both limited",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Nested scopes",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Nested scopes, reverse",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Nested scopes, with to-selector",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Nested scopes, :has(:scope ...) in inner from-selector",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Nested scopes, inner scoping root must be in the outer scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Nested scopes, inner scoping root may be the outer scoping root",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": ":scope selecting itself",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "The scoping limit is not in scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Simulated inclusive scoping limit",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Scope with no elements",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": ":scope direct adjacent sibling",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": ":scope indirect adjacent sibling",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Relative selector inside @scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": ":scope in two different compounds",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Scope root with :has()",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "Any scope limit makes the element out of scope",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Single scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Scope can not match its own root without :scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Selecting self with :scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Single scope with limit",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Single scope, :scope pseudo in main selector",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Single scope, :scope pseudo in to-selector",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Multiple scopes, :scope pseudo in to-selector",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Inner @scope with :scope in from-selector",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Multiple scopes from same @scope-rule, only one limited",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Multiple scopes from same @scope-rule, both limited",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Nested scopes",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Nested scopes, reverse",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Nested scopes, with to-selector",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Nested scopes, :has(:scope ...) in inner from-selector",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Nested scopes, inner scoping root must be in the outer scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Nested scopes, inner scoping root may be the outer scoping root",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": ":scope selecting itself",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "The scoping limit is not in scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Simulated inclusive scoping limit",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Scope with no elements",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": ":scope direct adjacent sibling",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": ":scope indirect adjacent sibling",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Relative selector inside @scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": ":scope in two different compounds",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Scope root with :has()",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "Any scope limit makes the element out of scope",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-cascade/scope-evaluation.html",
+  "focus": [
+    "scope"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:43737/css/css-cascade/scope-evaluation.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Single scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Scope can not match its own root without :scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Selecting self with :scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Single scope with limit\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Single scope, :scope pseudo in main selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Single scope, :scope pseudo in to-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Multiple scopes, :scope pseudo in to-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Inner @scope with :scope in from-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Multiple scopes from same @scope-rule, only one limited\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Multiple scopes from same @scope-rule, both limited\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Nested scopes\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Nested scopes, reverse\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Nested scopes, with to-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Nested scopes, :has(:scope ...) in inner from-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Nested scopes, inner scoping root must be in the outer scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Nested scopes, inner scoping root may be the outer scoping root\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\":scope selecting itself\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"The scoping limit is not in scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Simulated inclusive scoping limit\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Scope with no elements\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\":scope direct adjacent sibling\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\":scope indirect adjacent sibling\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Relative selector inside @scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\":scope in two different compounds\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Scope root with :has()\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"Any scope limit makes the element out of scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Single scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Scope can not match its own root without :scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Selecting self with :scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Single scope with limit\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Single scope, :scope pseudo in main selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Single scope, :scope pseudo in to-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Multiple scopes, :scope pseudo in to-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Inner @scope with :scope in from-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Multiple scopes from same @scope-rule, only one limited\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Multiple scopes from same @scope-rule, both limited\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Nested scopes\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Nested scopes, reverse\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Nested scopes, with to-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Nested scopes, :has(:scope ...) in inner from-selector\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Nested scopes, inner scoping root must be in the outer scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Nested scopes, inner scoping root may be the outer scoping root\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\":scope selecting itself\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"The scoping limit is not in scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Simulated inclusive scoping limit\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Scope with no elements\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\":scope direct adjacent sibling\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\":scope indirect adjacent sibling\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Relative selector inside @scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\":scope in two different compounds\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Scope root with :has()\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"Any scope limit makes the element out of scope\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

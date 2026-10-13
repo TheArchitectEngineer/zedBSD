@@ -1,0 +1,9 @@
+# q1024 bounded testharness shard
+
+Pinned WPT `2d66b9b7998bb58c336138c178323ddee857b586`, [fixed p173 manifest](../../../phase173/evidence/20261013-q1012/manifest.json). `run-interop2025-shard.py` selected physical plain HTTP HTML tests from each focus in lexicographic order, at most 8 per focus and 128 total, deduplicating overlap. [report.json](report.json) lists exact selection, per-area candidate/exclusion counts and 100 per-test raw callback reports. Selection resulted in 100 unique IDs; the four areas storageaccess, urlpattern, webassembly and webrtc had no eligible candidate under this environment filter.
+
+Outcomes: **9 PASS, 68 FAIL, 3 harness error, 7 no completion, 13 no output**. PASS 9 are textdecoration cases; no other result is counted as PASS. These are a bounded shard, not a 1,783 testharness baseline or a rate for all 3,805 IDs.
+
+Representative findings: `anchor-center-001.html` rejects `align-self: anchor-center` (browser CSS difference). `backdrop-filter-interpolation-001.html` reports unsupported `backdrop-filter` values. `at-scope-parsing.html` has harness error `main is not defined`; `beforematch-attribute-removal-001.html` has no completion after `a1 is not defined`. `logical-box-margin.html` uses a module script and emits no output; the current single-origin runner and candidate filter do not provide a complete module execution environment. `scrollend-fires-to-text-input.html` also emits no output while waiting for async events. These are cause candidates from recorded stdout/source; no blanket attribution to the browser.
+
+Checks: pinned commit and manifest verified by runner; deterministic at-most bounds and deduplication evident in report; Python `py_compile` PASS; `git diff --check` PASS. Browser/WPT/Master unchanged, so Acid was not rerun. Remaining p189 requirements: all 1,783 results and 0 unexplained environment gaps. Shared Queue/Master/GitHub publication Q1 owned, no push.

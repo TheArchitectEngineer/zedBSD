@@ -45,3 +45,13 @@ Event ws074-p189-q1014-outcome-20261014: q1014-i01 partial cleared、p189 whole 
 ユーザーの Interop 2025 全件PASSまでの有限 Queue 事前承認に基づき、固定manifestのtextdecoration領域全16 testharness IDを測定。**partial scope cleared、p189 whole uncleared。** 4 PASS/12 FAIL、subtest47 PASS/132 FAIL、全16 completion取得。infra failure0。[証拠](evidence/20261014-q1015/README.md)。computed系で `CSS` global がなく、CSSOM の text-decoration longhand・shorthand 不足が広く見える。browser/WPT/Master source変更なし。次のbrowser修正は新しい有限Queueにする。
 
 Event ws074-p189-q1015-outcome-20261014: 16 IDの正式結果と失敗群を保存。textdecoration領域も全件100%未達、p189の他IDとp173全件baselineが残る。GitHub publication保留。
+
+## q1024-i01 の有限部分範囲
+
+2026-10-14 00:46 JST、ユーザーの事前承認を適用、最大90分。固定manifestの19 focusから、q1014と同じ単一HTTP・物理HTML・driver/worker不要の候補を各最大8件、全体最大128 unique ID決定的に選定し、WPT callback runnerで測る。重複、候補除外理由、PASS/FAIL/harness ERROR/timeout/no-outputなどを機械可読に保存し、代表的な失敗の原因候補を分類する。ブラウザ、WPT本体、公開ABI、`master.md`は変更しない。selectionの局所検査・Python compile・固定入力照合・runner結果の保存を確認する。p189 whole 1,783件と全件PASSはこの部分基準に含めない。
+
+## q1024-i01 結果（2026-10-14 00:48 JST）
+
+**partial scope cleared、p189 whole uncleared。** 固定manifestから各focus最大8・全体100 unique IDを選び実行。[証拠](evidence/20261014-q1024/README.md)。9 PASS、68 FAIL、3 harness error、7 completion無し、13 stdout無し。4領域は現条件で候補0。anchor/backdrop CSS不足、named element global欠落、module script未実行、async event待ちなどを原因候補として分離。結果JSONに選定・除外理由・生callbackを保存。Python compile、diff check PASS。browser/WPT/Master無変更、Acid再計測省略。p189 whole1,783件とp173全3,805件100%は未達、GitHub publication保留。
+
+Event ws074-p189-q1024-outcome-20261014: q1024-i01 partial cleared、p189 whole uncleared。100 unique IDの結果と環境別の残件を保存。次はmodule等の環境分類を正確化し、browser共通原因を有限Queueで処理する。

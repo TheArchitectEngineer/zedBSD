@@ -1,0 +1,200 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "div.hidden = false",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = true",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = \"foo\"",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = \"false\"",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = \"\"",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.setAttribute('hidden', \"false\") should make div.hidden return true",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.setAttribute('hidden', \"foo\") should make div.hidden return true",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = \"until-found\"",
+      "status": 1,
+      "message": "assert_equals: div.hidden = \"until-found\" should return \"until-found\" expected (string) \"until-found\" but got (boolean) true"
+    },
+    {
+      "name": "div.hidden = \"UNTIL-FOUND\"",
+      "status": 1,
+      "message": "assert_equals: div.hidden = \"UNTIL-FOUND\" should return \"until-found\" expected (string) \"until-found\" but got (boolean) true"
+    },
+    {
+      "name": "div.hidden = \"UnTiL-FoUnD\"",
+      "status": 1,
+      "message": "assert_equals: div.hidden = \"UnTiL-FoUnD\" should return \"until-found\" expected (string) \"until-found\" but got (boolean) true"
+    },
+    {
+      "name": "div.hidden = \"untıl-found\"",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = \"untİl-found\"",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = null",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = undefined",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = 1",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = 0",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "div.hidden = NaN",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "div.hidden = false",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = true",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = \"foo\"",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = \"false\"",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = \"\"",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.setAttribute('hidden', \"false\") should make div.hidden return true",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.setAttribute('hidden', \"foo\") should make div.hidden return true",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = \"until-found\"",
+        "status": 1,
+        "message": "assert_equals: div.hidden = \"until-found\" should return \"until-found\" expected (string) \"until-found\" but got (boolean) true"
+      },
+      {
+        "name": "div.hidden = \"UNTIL-FOUND\"",
+        "status": 1,
+        "message": "assert_equals: div.hidden = \"UNTIL-FOUND\" should return \"until-found\" expected (string) \"until-found\" but got (boolean) true"
+      },
+      {
+        "name": "div.hidden = \"UnTiL-FoUnD\"",
+        "status": 1,
+        "message": "assert_equals: div.hidden = \"UnTiL-FoUnD\" should return \"until-found\" expected (string) \"until-found\" but got (boolean) true"
+      },
+      {
+        "name": "div.hidden = \"untıl-found\"",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = \"untİl-found\"",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = null",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = undefined",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = 1",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = 0",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "div.hidden = NaN",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/html/editing/the-hidden-attribute/hidden-idl.html",
+  "focus": [
+    "details"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:33185/html/editing/the-hidden-attribute/hidden-idl.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"div.hidden = false\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = true\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"foo\\\"\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"false\\\"\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"\\\"\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', \\\"false\\\") should make div.hidden return true\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.setAttribute('hidden', \\\"foo\\\") should make div.hidden return true\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"until-found\\\"\",\"status\":1,\"message\":\"assert_equals: div.hidden = \\\"until-found\\\" should return \\\"until-found\\\" expected (string) \\\"until-found\\\" but got (boolean) true\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"UNTIL-FOUND\\\"\",\"status\":1,\"message\":\"assert_equals: div.hidden = \\\"UNTIL-FOUND\\\" should return \\\"until-found\\\" expected (string) \\\"until-found\\\" but got (boolean) true\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"UnTiL-FoUnD\\\"\",\"status\":1,\"message\":\"assert_equals: div.hidden = \\\"UnTiL-FoUnD\\\" should return \\\"until-found\\\" expected (string) \\\"until-found\\\" but got (boolean) true\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"untıl-found\\\"\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = \\\"untİl-found\\\"\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = null\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = undefined\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = 1\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = 0\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"div.hidden = NaN\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"div.hidden = false\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = true\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = \\\"foo\\\"\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = \\\"false\\\"\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = \\\"\\\"\",\"status\":0,\"message\":\"\"},{\"name\":\"div.setAttribute('hidden', \\\"false\\\") should make div.hidden return true\",\"status\":0,\"message\":\"\"},{\"name\":\"div.setAttribute('hidden', \\\"foo\\\") should make div.hidden return true\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = \\\"until-found\\\"\",\"status\":1,\"message\":\"assert_equals: div.hidden = \\\"until-found\\\" should return \\\"until-found\\\" expected (string) \\\"until-found\\\" but got (boolean) true\"},{\"name\":\"div.hidden = \\\"UNTIL-FOUND\\\"\",\"status\":1,\"message\":\"assert_equals: div.hidden = \\\"UNTIL-FOUND\\\" should return \\\"until-found\\\" expected (string) \\\"until-found\\\" but got (boolean) true\"},{\"name\":\"div.hidden = \\\"UnTiL-FoUnD\\\"\",\"status\":1,\"message\":\"assert_equals: div.hidden = \\\"UnTiL-FoUnD\\\" should return \\\"until-found\\\" expected (string) \\\"until-found\\\" but got (boolean) true\"},{\"name\":\"div.hidden = \\\"untıl-found\\\"\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = \\\"untİl-found\\\"\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = null\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = undefined\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = 1\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = 0\",\"status\":0,\"message\":\"\"},{\"name\":\"div.hidden = NaN\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

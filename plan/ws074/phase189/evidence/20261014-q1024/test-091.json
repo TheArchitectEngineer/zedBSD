@@ -1,0 +1,40 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "FCP and LCP are the same when there is a single text element in the page.",
+      "status": 1,
+      "message": "assert_implements: PerformancePaintTiming is not implemented undefined"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "FCP and LCP are the same when there is a single text element in the page.",
+        "status": 1,
+        "message": "assert_implements: PerformancePaintTiming is not implemented undefined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/largest-contentful-paint/first-paint-equals-lcp-text.html",
+  "focus": [
+    "core-web-vitals"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:40933/largest-contentful-paint/first-paint-equals-lcp-text.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"FCP and LCP are the same when there is a single text element in the page.\",\"status\":1,\"message\":\"assert_implements: PerformancePaintTiming is not implemented undefined\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"FCP and LCP are the same when there is a single text element in the page.\",\"status\":1,\"message\":\"assert_implements: PerformancePaintTiming is not implemented undefined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

@@ -1,0 +1,70 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "can't bypass required members by omitting the dictionary entirely",
+      "status": 1,
+      "message": "assert_throws_js: function \"function () { [native code] }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+    },
+    {
+      "name": "from is required",
+      "status": 1,
+      "message": "assert_throws_js: function \"function () { [native code] }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+    },
+    {
+      "name": "all properties are reflected back",
+      "status": 1,
+      "message": "NavigationCurrentEntryChangeEvent is not defined"
+    },
+    {
+      "name": "defaults are as expected",
+      "status": 1,
+      "message": "NavigationCurrentEntryChangeEvent is not defined"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "can't bypass required members by omitting the dictionary entirely",
+        "status": 1,
+        "message": "assert_throws_js: function \"function () { [native code] }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "from is required",
+        "status": 1,
+        "message": "assert_throws_js: function \"function () { [native code] }\" threw object \"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\" (\"ReferenceError\") expected instance of function \"function TypeError() { [native code] }\" (\"TypeError\")"
+      },
+      {
+        "name": "all properties are reflected back",
+        "status": 1,
+        "message": "NavigationCurrentEntryChangeEvent is not defined"
+      },
+      {
+        "name": "defaults are as expected",
+        "status": 1,
+        "message": "NavigationCurrentEntryChangeEvent is not defined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/navigation-api/currententrychange-event/constructor.html",
+  "focus": [
+    "navigation"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:34041/navigation-api/currententrychange-event/constructor.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"can't bypass required members by omitting the dictionary entirely\",\"status\":1,\"message\":\"assert_throws_js: function \\\"function () { [native code] }\\\" threw object \\\"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\\\" (\\\"ReferenceError\\\") expected instance of function \\\"function TypeError() { [native code] }\\\" (\\\"TypeError\\\")\"}\nWS074_WPT_RESULT {\"name\":\"from is required\",\"status\":1,\"message\":\"assert_throws_js: function \\\"function () { [native code] }\\\" threw object \\\"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\\\" (\\\"ReferenceError\\\") expected instance of function \\\"function TypeError() { [native code] }\\\" (\\\"TypeError\\\")\"}\nWS074_WPT_RESULT {\"name\":\"all properties are reflected back\",\"status\":1,\"message\":\"NavigationCurrentEntryChangeEvent is not defined\"}\nWS074_WPT_RESULT {\"name\":\"defaults are as expected\",\"status\":1,\"message\":\"NavigationCurrentEntryChangeEvent is not defined\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"can't bypass required members by omitting the dictionary entirely\",\"status\":1,\"message\":\"assert_throws_js: function \\\"function () { [native code] }\\\" threw object \\\"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\\\" (\\\"ReferenceError\\\") expected instance of function \\\"function TypeError() { [native code] }\\\" (\\\"TypeError\\\")\"},{\"name\":\"from is required\",\"status\":1,\"message\":\"assert_throws_js: function \\\"function () { [native code] }\\\" threw object \\\"ReferenceError: NavigationCurrentEntryChangeEvent is not defined\\\" (\\\"ReferenceError\\\") expected instance of function \\\"function TypeError() { [native code] }\\\" (\\\"TypeError\\\")\"},{\"name\":\"all properties are reflected back\",\"status\":1,\"message\":\"NavigationCurrentEntryChangeEvent is not defined\"},{\"name\":\"defaults are as expected\",\"status\":1,\"message\":\"NavigationCurrentEntryChangeEvent is not defined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

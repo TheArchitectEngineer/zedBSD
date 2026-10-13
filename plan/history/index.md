@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1024 / WS074 testharness bounded shard（2026-10-14）
+
+[q1024履歴](queue-q1024.md): 単一HTTP条件の100 unique IDを実測、9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。4領域は候補0。p189 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase189/evidence/20261014-q1024/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1023 / WS074 text-decoration computed shorthand（2026-10-14）
 
 [q1023履歴](queue-q1023.md): 固定textdecoration全16/16 test、179/179 subtest PASS。Acid3画素差0、Acid2差1865を維持。p191 whole cleared、p173全件100%は未達。[証拠](../ws074/phase191/evidence/20261014-q1023/README.md)。共有投影/GitHub publication pending。

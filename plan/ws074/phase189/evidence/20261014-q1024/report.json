@@ -1,0 +1,748 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "selection": {
+    "per_focus": 8,
+    "max_tests": 128,
+    "area_ids": {
+      "anchor-positioning": [
+        "/css/css-anchor-position/anchor-center-001.html",
+        "/css/css-anchor-position/anchor-center-htb-htb.html",
+        "/css/css-anchor-position/anchor-center-htb-vrl.html",
+        "/css/css-anchor-position/anchor-center-offset-change.html",
+        "/css/css-anchor-position/anchor-center-vrl-htb.html",
+        "/css/css-anchor-position/anchor-center-vrl-vrl.html",
+        "/css/css-anchor-position/anchor-fallback-invalidation.html",
+        "/css/css-anchor-position/anchor-getComputedStyle-001.html"
+      ],
+      "backdrop-filter": [
+        "/css/filter-effects/animation/backdrop-filter-interpolation-001.html",
+        "/css/filter-effects/animation/backdrop-filter-interpolation-002.html",
+        "/css/filter-effects/animation/backdrop-filter-interpolation-003.html",
+        "/css/filter-effects/animation/backdrop-filter-interpolation-004.html",
+        "/css/filter-effects/backdrop-filter-important.html",
+        "/css/filter-effects/parsing/backdrop-filter-computed.html",
+        "/css/filter-effects/parsing/backdrop-filter-parsing-invalid.html",
+        "/css/filter-effects/parsing/backdrop-filter-parsing-valid.html"
+      ],
+      "core-web-vitals": [
+        "/event-timing/supported-types-consistent-with-self.html",
+        "/largest-contentful-paint/background-image-set-image.html",
+        "/largest-contentful-paint/broken-image-icon.html",
+        "/largest-contentful-paint/contracted-image.html",
+        "/largest-contentful-paint/element-only-when-fully-active.html",
+        "/largest-contentful-paint/expanded-image.html",
+        "/largest-contentful-paint/first-letter-background.html",
+        "/largest-contentful-paint/first-paint-equals-lcp-text.html"
+      ],
+      "details": [
+        "/html/editing/the-hidden-attribute/beforematch-attribute-removal-001.html",
+        "/html/editing/the-hidden-attribute/beforematch-attribute-removal-002.html",
+        "/html/editing/the-hidden-attribute/beforematch-element-fragment-navigation.html",
+        "/html/editing/the-hidden-attribute/beforematch-element-removal-001.html",
+        "/html/editing/the-hidden-attribute/beforematch-element-removal-002.html",
+        "/html/editing/the-hidden-attribute/beforematch-infinite-loop.html",
+        "/html/editing/the-hidden-attribute/hidden-idl.html",
+        "/html/editing/the-hidden-attribute/hidden-ua-stylesheet.html"
+      ],
+      "layout": [
+        "/css/css-flexbox/abspos/abspos-descendent-001.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-content-001.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-001.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-002.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-003.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-004.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-005.html",
+        "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-006.html"
+      ],
+      "modules": [
+        "/html/semantics/scripting-1/the-script-element/import-attributes/empty-attributes-clause.html",
+        "/html/semantics/scripting-1/the-script-element/import-attributes/invalid-import-errors-order.html",
+        "/html/semantics/scripting-1/the-script-element/import-attributes/invalid-type-attribute-error.html",
+        "/html/semantics/scripting-1/the-script-element/import-attributes/unsupported-attribute.html",
+        "/html/semantics/scripting-1/the-script-element/json-module/charset-2.html",
+        "/html/semantics/scripting-1/the-script-element/json-module/charset.html",
+        "/html/semantics/scripting-1/the-script-element/json-module/cors-crossorigin-requests.html",
+        "/html/semantics/scripting-1/the-script-element/json-module/integrity.html"
+      ],
+      "navigation": [
+        "/navigation-api/currententrychange-event/anchor-click.html",
+        "/navigation-api/currententrychange-event/constructor.html",
+        "/navigation-api/currententrychange-event/history-back-same-doc.html",
+        "/navigation-api/currententrychange-event/history-pushState.html",
+        "/navigation-api/currententrychange-event/history-replaceState.html",
+        "/navigation-api/currententrychange-event/location-api.html",
+        "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc-popup.html",
+        "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc.html"
+      ],
+      "pointer-and-mouse-events": [
+        "/pointerevents/pointerevent_constructor.html"
+      ],
+      "remove-mutation-events": [
+        "/dom/historical-mutation-events.html"
+      ],
+      "scope": [
+        "/css/css-cascade/at-scope-parsing.html",
+        "/css/css-cascade/at-scope-relative-syntax.html",
+        "/css/css-cascade/scope-container.html",
+        "/css/css-cascade/scope-cssom.html",
+        "/css/css-cascade/scope-declarations.html",
+        "/css/css-cascade/scope-deep.html",
+        "/css/css-cascade/scope-evaluation.html",
+        "/css/css-cascade/scope-implicit-external.html"
+      ],
+      "scrollend": [
+        "/dom/events/scrolling/scrollend-fires-to-text-input.html",
+        "/dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html"
+      ],
+      "storageaccess": [],
+      "textdecoration": [
+        "/css/css-text-decor/parsing/text-decoration-color-computed.html",
+        "/css/css-text-decor/parsing/text-decoration-color-invalid.html",
+        "/css/css-text-decor/parsing/text-decoration-color-valid.html",
+        "/css/css-text-decor/parsing/text-decoration-computed.html",
+        "/css/css-text-decor/parsing/text-decoration-invalid.html",
+        "/css/css-text-decor/parsing/text-decoration-line-computed.html",
+        "/css/css-text-decor/parsing/text-decoration-line-invalid.html",
+        "/css/css-text-decor/parsing/text-decoration-line-valid.html"
+      ],
+      "urlpattern": [],
+      "view-transitions": [
+        "/css/css-view-transitions/duplicate-tag-rejects-capture.html",
+        "/css/css-view-transitions/duplicate-tag-rejects-start.html",
+        "/css/css-view-transitions/dynamic-stylesheet-animations.html",
+        "/css/css-view-transitions/event-pseudo-name.html",
+        "/css/css-view-transitions/finished-promise-defers-cleanup.tentative.html",
+        "/css/css-view-transitions/group-animation-for-root-transition.html",
+        "/css/css-view-transitions/hit-test-pseudo-element-element-from-point.html",
+        "/css/css-view-transitions/hit-test-unpainted-element-from-point.html"
+      ],
+      "webassembly": [],
+      "webcompat": [
+        "/css/css-viewport/zoom/parsing/zoom-computed.html",
+        "/css/css-viewport/zoom/parsing/zoom-valid.html",
+        "/css/css-viewport/zoom/relative-units.html",
+        "/css/css-viewport/zoom/scroll-top-test-with-zoom.html",
+        "/css/css-viewport/zoom/widget.html",
+        "/css/cssom/caretPositionFromPoint-with-transformation.html",
+        "/css/cssom/caretPositionFromPoint.html",
+        "/shadow-dom/Document-caretPositionFromPoint.tentative.html"
+      ],
+      "webrtc": [],
+      "writingmodes": [
+        "/css/css-flexbox/negative-overflow-003.html",
+        "/css/css-logical/logical-box-border-color.html",
+        "/css/css-logical/logical-box-border-radius.html",
+        "/css/css-logical/logical-box-border-shorthands.html",
+        "/css/css-logical/logical-box-border-style.html",
+        "/css/css-logical/logical-box-border-width.html",
+        "/css/css-logical/logical-box-inset.html",
+        "/css/css-logical/logical-box-margin.html"
+      ]
+    },
+    "reason_counts": {
+      "anchor-positioning": {
+        "candidate": 147,
+        "other_type": 86,
+        "requires_driver_origin_or_worker": 1
+      },
+      "backdrop-filter": {
+        "candidate": 8,
+        "other_type": 61
+      },
+      "core-web-vitals": {
+        "candidate": 48,
+        "generated_context": 5,
+        "https": 1,
+        "requires_driver_origin_or_worker": 61,
+        "worker_or_substitution_path": 2
+      },
+      "details": {
+        "candidate": 13,
+        "other_type": 28,
+        "requires_driver_origin_or_worker": 5
+      },
+      "layout": {
+        "candidate": 799,
+        "other_type": 1453
+      },
+      "modules": {
+        "candidate": 13,
+        "generated_context": 15,
+        "worker_or_substitution_path": 2
+      },
+      "navigation": {
+        "candidate": 307,
+        "requires_driver_origin_or_worker": 24,
+        "variant_url": 39,
+        "worker_or_substitution_path": 8
+      },
+      "pointer-and-mouse-events": {
+        "candidate": 1,
+        "https": 1,
+        "requires_driver_origin_or_worker": 20,
+        "variant_url": 20
+      },
+      "remove-mutation-events": {
+        "candidate": 1
+      },
+      "scope": {
+        "candidate": 22,
+        "other_type": 5,
+        "requires_driver_origin_or_worker": 2
+      },
+      "scrollend": {
+        "candidate": 2,
+        "requires_driver_origin_or_worker": 5,
+        "variant_url": 21
+      },
+      "storageaccess": {
+        "generated_context": 3,
+        "https": 18,
+        "worker_or_substitution_path": 1
+      },
+      "textdecoration": {
+        "candidate": 16
+      },
+      "urlpattern": {
+        "generated_context": 8,
+        "https": 4
+      },
+      "view-transitions": {
+        "candidate": 44,
+        "other_type": 215,
+        "requires_driver_origin_or_worker": 4
+      },
+      "webassembly": {
+        "generated_context": 12
+      },
+      "webcompat": {
+        "candidate": 8,
+        "generated_context": 2,
+        "https": 10,
+        "other_type": 41,
+        "requires_driver_origin_or_worker": 1,
+        "worker_or_substitution_path": 20
+      },
+      "webrtc": {
+        "https": 10,
+        "requires_driver_origin_or_worker": 1
+      },
+      "writingmodes": {
+        "candidate": 26,
+        "other_type": 139,
+        "requires_driver_origin_or_worker": 2
+      }
+    }
+  },
+  "execution_count": 100,
+  "results": [
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-001.html",
+      "outcome": "fail",
+      "report": "test-001.json"
+    },
+    {
+      "test_id": "/css/filter-effects/animation/backdrop-filter-interpolation-001.html",
+      "outcome": "fail",
+      "report": "test-002.json"
+    },
+    {
+      "test_id": "/event-timing/supported-types-consistent-with-self.html",
+      "outcome": "fail",
+      "report": "test-003.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-attribute-removal-001.html",
+      "outcome": "no_completion",
+      "report": "test-004.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/abspos-descendent-001.html",
+      "outcome": "fail",
+      "report": "test-005.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/import-attributes/empty-attributes-clause.html",
+      "outcome": "fail",
+      "report": "test-006.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/anchor-click.html",
+      "outcome": "fail",
+      "report": "test-007.json"
+    },
+    {
+      "test_id": "/pointerevents/pointerevent_constructor.html",
+      "outcome": "fail",
+      "report": "test-008.json"
+    },
+    {
+      "test_id": "/dom/historical-mutation-events.html",
+      "outcome": "fail",
+      "report": "test-009.json"
+    },
+    {
+      "test_id": "/css/css-cascade/at-scope-parsing.html",
+      "outcome": "harness_error",
+      "report": "test-010.json"
+    },
+    {
+      "test_id": "/dom/events/scrolling/scrollend-fires-to-text-input.html",
+      "outcome": "no_output",
+      "report": "test-011.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-computed.html",
+      "outcome": "pass",
+      "report": "test-012.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/duplicate-tag-rejects-capture.html",
+      "outcome": "fail",
+      "report": "test-013.json"
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/parsing/zoom-computed.html",
+      "outcome": "fail",
+      "report": "test-014.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/negative-overflow-003.html",
+      "outcome": "fail",
+      "report": "test-015.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-htb-htb.html",
+      "outcome": "fail",
+      "report": "test-016.json"
+    },
+    {
+      "test_id": "/css/filter-effects/animation/backdrop-filter-interpolation-002.html",
+      "outcome": "fail",
+      "report": "test-017.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/background-image-set-image.html",
+      "outcome": "fail",
+      "report": "test-018.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-attribute-removal-002.html",
+      "outcome": "no_completion",
+      "report": "test-019.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-content-001.html",
+      "outcome": "fail",
+      "report": "test-020.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/import-attributes/invalid-import-errors-order.html",
+      "outcome": "fail",
+      "report": "test-021.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/constructor.html",
+      "outcome": "fail",
+      "report": "test-022.json"
+    },
+    {
+      "test_id": "/css/css-cascade/at-scope-relative-syntax.html",
+      "outcome": "harness_error",
+      "report": "test-023.json"
+    },
+    {
+      "test_id": "/dom/events/scrolling/scrollend-with-snap-on-fractional-offset.html",
+      "outcome": "no_completion",
+      "report": "test-024.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-invalid.html",
+      "outcome": "pass",
+      "report": "test-025.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/duplicate-tag-rejects-start.html",
+      "outcome": "fail",
+      "report": "test-026.json"
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/parsing/zoom-valid.html",
+      "outcome": "fail",
+      "report": "test-027.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-border-color.html",
+      "outcome": "no_output",
+      "report": "test-028.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-htb-vrl.html",
+      "outcome": "fail",
+      "report": "test-029.json"
+    },
+    {
+      "test_id": "/css/filter-effects/animation/backdrop-filter-interpolation-003.html",
+      "outcome": "fail",
+      "report": "test-030.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/broken-image-icon.html",
+      "outcome": "fail",
+      "report": "test-031.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-element-fragment-navigation.html",
+      "outcome": "fail",
+      "report": "test-032.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-001.html",
+      "outcome": "fail",
+      "report": "test-033.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/import-attributes/invalid-type-attribute-error.html",
+      "outcome": "fail",
+      "report": "test-034.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/history-back-same-doc.html",
+      "outcome": "fail",
+      "report": "test-035.json"
+    },
+    {
+      "test_id": "/css/css-cascade/scope-container.html",
+      "outcome": "fail",
+      "report": "test-036.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-color-valid.html",
+      "outcome": "pass",
+      "report": "test-037.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/dynamic-stylesheet-animations.html",
+      "outcome": "fail",
+      "report": "test-038.json"
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/relative-units.html",
+      "outcome": "fail",
+      "report": "test-039.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-border-radius.html",
+      "outcome": "no_output",
+      "report": "test-040.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-offset-change.html",
+      "outcome": "fail",
+      "report": "test-041.json"
+    },
+    {
+      "test_id": "/css/filter-effects/animation/backdrop-filter-interpolation-004.html",
+      "outcome": "fail",
+      "report": "test-042.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/contracted-image.html",
+      "outcome": "fail",
+      "report": "test-043.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-element-removal-001.html",
+      "outcome": "no_completion",
+      "report": "test-044.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-002.html",
+      "outcome": "fail",
+      "report": "test-045.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/import-attributes/unsupported-attribute.html",
+      "outcome": "fail",
+      "report": "test-046.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/history-pushState.html",
+      "outcome": "fail",
+      "report": "test-047.json"
+    },
+    {
+      "test_id": "/css/css-cascade/scope-cssom.html",
+      "outcome": "fail",
+      "report": "test-048.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-computed.html",
+      "outcome": "pass",
+      "report": "test-049.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/event-pseudo-name.html",
+      "outcome": "fail",
+      "report": "test-050.json"
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/scroll-top-test-with-zoom.html",
+      "outcome": "fail",
+      "report": "test-051.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-border-shorthands.html",
+      "outcome": "no_output",
+      "report": "test-052.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-vrl-htb.html",
+      "outcome": "fail",
+      "report": "test-053.json"
+    },
+    {
+      "test_id": "/css/filter-effects/backdrop-filter-important.html",
+      "outcome": "fail",
+      "report": "test-054.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/element-only-when-fully-active.html",
+      "outcome": "no_output",
+      "report": "test-055.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-element-removal-002.html",
+      "outcome": "no_completion",
+      "report": "test-056.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-003.html",
+      "outcome": "fail",
+      "report": "test-057.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/json-module/charset-2.html",
+      "outcome": "no_output",
+      "report": "test-058.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/history-replaceState.html",
+      "outcome": "fail",
+      "report": "test-059.json"
+    },
+    {
+      "test_id": "/css/css-cascade/scope-declarations.html",
+      "outcome": "harness_error",
+      "report": "test-060.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-invalid.html",
+      "outcome": "pass",
+      "report": "test-061.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/finished-promise-defers-cleanup.tentative.html",
+      "outcome": "fail",
+      "report": "test-062.json"
+    },
+    {
+      "test_id": "/css/css-viewport/zoom/widget.html",
+      "outcome": "fail",
+      "report": "test-063.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-border-style.html",
+      "outcome": "no_output",
+      "report": "test-064.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-center-vrl-vrl.html",
+      "outcome": "fail",
+      "report": "test-065.json"
+    },
+    {
+      "test_id": "/css/filter-effects/parsing/backdrop-filter-computed.html",
+      "outcome": "fail",
+      "report": "test-066.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/expanded-image.html",
+      "outcome": "fail",
+      "report": "test-067.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/beforematch-infinite-loop.html",
+      "outcome": "fail",
+      "report": "test-068.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-004.html",
+      "outcome": "fail",
+      "report": "test-069.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/json-module/charset.html",
+      "outcome": "no_output",
+      "report": "test-070.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/location-api.html",
+      "outcome": "fail",
+      "report": "test-071.json"
+    },
+    {
+      "test_id": "/css/css-cascade/scope-deep.html",
+      "outcome": "no_completion",
+      "report": "test-072.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-line-computed.html",
+      "outcome": "pass",
+      "report": "test-073.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/group-animation-for-root-transition.html",
+      "outcome": "fail",
+      "report": "test-074.json"
+    },
+    {
+      "test_id": "/css/cssom/caretPositionFromPoint-with-transformation.html",
+      "outcome": "fail",
+      "report": "test-075.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-border-width.html",
+      "outcome": "no_output",
+      "report": "test-076.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-fallback-invalidation.html",
+      "outcome": "fail",
+      "report": "test-077.json"
+    },
+    {
+      "test_id": "/css/filter-effects/parsing/backdrop-filter-parsing-invalid.html",
+      "outcome": "pass",
+      "report": "test-078.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/first-letter-background.html",
+      "outcome": "fail",
+      "report": "test-079.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/hidden-idl.html",
+      "outcome": "fail",
+      "report": "test-080.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-005.html",
+      "outcome": "fail",
+      "report": "test-081.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/json-module/cors-crossorigin-requests.html",
+      "outcome": "no_output",
+      "report": "test-082.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc-popup.html",
+      "outcome": "fail",
+      "report": "test-083.json"
+    },
+    {
+      "test_id": "/css/css-cascade/scope-evaluation.html",
+      "outcome": "fail",
+      "report": "test-084.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-line-invalid.html",
+      "outcome": "pass",
+      "report": "test-085.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/hit-test-pseudo-element-element-from-point.html",
+      "outcome": "fail",
+      "report": "test-086.json"
+    },
+    {
+      "test_id": "/css/cssom/caretPositionFromPoint.html",
+      "outcome": "fail",
+      "report": "test-087.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-inset.html",
+      "outcome": "no_output",
+      "report": "test-088.json"
+    },
+    {
+      "test_id": "/css/css-anchor-position/anchor-getComputedStyle-001.html",
+      "outcome": "fail",
+      "report": "test-089.json"
+    },
+    {
+      "test_id": "/css/filter-effects/parsing/backdrop-filter-parsing-valid.html",
+      "outcome": "fail",
+      "report": "test-090.json"
+    },
+    {
+      "test_id": "/largest-contentful-paint/first-paint-equals-lcp-text.html",
+      "outcome": "fail",
+      "report": "test-091.json"
+    },
+    {
+      "test_id": "/html/editing/the-hidden-attribute/hidden-ua-stylesheet.html",
+      "outcome": "fail",
+      "report": "test-092.json"
+    },
+    {
+      "test_id": "/css/css-flexbox/abspos/flex-abspos-staticpos-align-self-006.html",
+      "outcome": "fail",
+      "report": "test-093.json"
+    },
+    {
+      "test_id": "/html/semantics/scripting-1/the-script-element/json-module/integrity.html",
+      "outcome": "no_output",
+      "report": "test-094.json"
+    },
+    {
+      "test_id": "/navigation-api/currententrychange-event/navigate-from-initial-about-blank-same-doc.html",
+      "outcome": "fail",
+      "report": "test-095.json"
+    },
+    {
+      "test_id": "/css/css-cascade/scope-implicit-external.html",
+      "outcome": "no_completion",
+      "report": "test-096.json"
+    },
+    {
+      "test_id": "/css/css-text-decor/parsing/text-decoration-line-valid.html",
+      "outcome": "pass",
+      "report": "test-097.json"
+    },
+    {
+      "test_id": "/css/css-view-transitions/hit-test-unpainted-element-from-point.html",
+      "outcome": "fail",
+      "report": "test-098.json"
+    },
+    {
+      "test_id": "/shadow-dom/Document-caretPositionFromPoint.tentative.html",
+      "outcome": "fail",
+      "report": "test-099.json"
+    },
+    {
+      "test_id": "/css/css-logical/logical-box-margin.html",
+      "outcome": "no_output",
+      "report": "test-100.json"
+    }
+  ],
+  "outcome_counts": {
+    "fail": 68,
+    "harness_error": 3,
+    "no_completion": 7,
+    "no_output": 13,
+    "pass": 9
+  }
+}

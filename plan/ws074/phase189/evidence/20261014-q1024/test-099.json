@@ -1,0 +1,170 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "document.caretPositionFromPoint() throws when called without the correct parameters",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument",
+      "status": 1,
+      "message": "container is not defined"
+    },
+    {
+      "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.",
+      "status": 1,
+      "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: container is not defined\""
+    },
+    {
+      "name": "document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.",
+      "status": 1,
+      "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: container is not defined\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "document.caretPositionFromPoint() throws when called without the correct parameters",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.",
+        "status": 1,
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: container is not defined\""
+      },
+      {
+        "name": "document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.",
+        "status": 1,
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: container is not defined\""
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      },
+      {
+        "name": "document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument",
+        "status": 1,
+        "message": "container is not defined"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/shadow-dom/Document-caretPositionFromPoint.tentative.html",
+  "focus": [
+    "webcompat"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:36391/shadow-dom/Document-caretPositionFromPoint.tentative.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() throws when called without the correct parameters\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: container is not defined\\\"\"}\nWS074_WPT_RESULT {\"name\":\"document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: container is not defined\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"document.caretPositionFromPoint() throws when called without the correct parameters\",\"status\":0,\"message\":\"\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: container is not defined\\\"\"},{\"name\":\"document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: container is not defined\\\"\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument\",\"status\":1,\"message\":\"container is not defined\"},{\"name\":\"document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument\",\"status\":1,\"message\":\"container is not defined\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

@@ -1,0 +1,40 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Background image-set images should be eligible for LCP candidates",
+      "status": 1,
+      "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: PerformanceObserver is not defined\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Background image-set images should be eligible for LCP candidates",
+        "status": 1,
+        "message": "promise_test: Unhandled rejection with value: object \"ReferenceError: PerformanceObserver is not defined\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/largest-contentful-paint/background-image-set-image.html",
+  "focus": [
+    "core-web-vitals"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:44223/largest-contentful-paint/background-image-set-image.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Background image-set images should be eligible for LCP candidates\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: PerformanceObserver is not defined\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Background image-set images should be eligible for LCP candidates\",\"status\":1,\"message\":\"promise_test: Unhandled rejection with value: object \\\"ReferenceError: PerformanceObserver is not defined\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}
