@@ -123,6 +123,13 @@ struct kwl_fit_home {
 #define KWL_ROTATE_STEP_SAVE	16U
 
 /*
+ * How long an output turned to another size shows its old frame at most
+ * while its windows draw the new size (ms, BUG-306): a window that has not
+ * by then is shown as it draws.
+ */
+#define KWL_ROTATE_HOLD_MS	1000U
+
+/*
  * Who changes the state (kwl_rotate_steps, review-4 S16 and L49): the user
  * (Settings' set_rotation, whose change of choice is saved), an output's
  * opening (which made the surface and the turn's images itself, so it
@@ -475,6 +482,50 @@ kwl_rotate_fit_window(
 		fit->x = *x;
 		fit->y = *y;
 	}
+}
+
+/*
+ * Tells whether a configure's serial a client acknowledged is newer than
+ * one sent before it (BUG-306: a window acknowledged a configure sent
+ * after an output's turn); the serials wrap.
+ */
+static __inline int
+kwl_rotate_serial_newer(
+	uint32_t acked,
+	uint32_t sent)
+{
+	int32_t ahead;
+
+	/* How far past the one sent, counting on over the wrap. */
+	ahead = (int32_t)(acked - sent);
+	if (ahead > 0)
+		return 1;
+
+	/* The same one, or one before it. */
+	return 0;
+}
+
+/*
+ * Tells whether an output turned to another size still shows its old
+ * frame (BUG-306): some windows have not drawn the new size yet, and the
+ * wait that began at began (ms) has not reached KWL_ROTATE_HOLD_MS by now.
+ */
+static __inline int
+kwl_rotate_holding(
+	unsigned waiting,
+	uint64_t began,
+	uint64_t now)
+{
+	/* Every window drew the new size. */
+	if (waiting == 0U)
+		return 0;
+
+	/* The wait is over: the windows late are shown as they draw. */
+	if (now - began >= KWL_ROTATE_HOLD_MS)
+		return 0;
+
+	/* Succeeded: the old frame stays. */
+	return 1;
 }
 
 #endif

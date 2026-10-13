@@ -28,23 +28,57 @@
 
 #include "kwl.h"
 #include "compose.h"
+#include "desktop.h"
 #include "scanout-rules.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
-static int output_rotate_turn(struct kwl_server *server, const struct kwl_rotate_state *after);
+/*
+ * When each step of a change of the angle shown ended (kwl_milliseconds),
+ * for the log's times (BUG-306: a turn that took 7 to 12 s); a step not
+ * taken ends when the one before it did.
+ */
+struct output_rotate_clock {
+	/* The change began. */
+	uint64_t started;
+
+	/* The new turn image made, and the look's wallpaper at the new size. */
+	uint64_t turn_made;
+	uint64_t glass_made;
+
+	/* The fingers and the pens ended (everything made before the render thread parks). */
+	uint64_t prepared;
+
+	/* The render thread parked, and the device idle. */
+	uint64_t parked;
+	uint64_t idle;
+
+	/* The turn image and the wallpaper exchanged, then the caches made again and the thread going on. */
+	uint64_t exchanged;
+	uint64_t swapped;
+
+	/* The pointer and the windows fitted, the clients told, and the choice given to displays.conf's writer. */
+	uint64_t fitted;
+	uint64_t told;
+	uint64_t saved;
+};
+
+static int output_rotate_turn(struct kwl_server *server, const struct kwl_rotate_state *after, struct output_rotate_clock *clock);
 static const char *output_rotate_heads(const struct kwl_compose *compose);
 static void output_rotate_caches(struct kwl_server *server, unsigned scene_kept, unsigned resized);
 static const char *output_rotate_mode_name(unsigned mode);
-static void output_rotate_times(uint64_t started, uint64_t prepared, uint64_t parked, uint64_t idle);
+static void output_rotate_times(const struct output_rotate_clock *clock);
+static void output_rotate_clock_fill(struct output_rotate_clock *clock, uint64_t now);
+static int output_rotate_waits(struct kwl_server *server, const struct kwl_object *surface);
 
 /*
  * Takes the user's choice of an output's angle: refused outside the
  * display's mask; saved, and shown now when the output is open (or at its
  * next opening).  *applied says whether the angle is shown now, *saved
- * whether displays.conf was written (0) or its errno.  Returns 0, EINVAL
+ * whether displays.conf's writing was given (0: its thread writes it,
+ * heads.c) or its errno.  Returns 0, EINVAL
  * for a number that is not an angle, ENOTSUP for an angle the display may
  * not take (or a head's, ws217-p005), or the error of showing it (the
  * choice then goes back to what it was).
@@ -186,9 +220,9 @@ kwl_output_apply_rotation(
 {
 	struct kwl_compose *compose;
 	struct kwl_rotate_state after;
+	struct output_rotate_clock clock;
 	char names[64];
 	int32_t pointer[4];
-	uint64_t started;
 	unsigned steps;
 	unsigned before_rotation;
 	int error;
@@ -221,17 +255,20 @@ kwl_output_apply_rotation(
 	}
 
 	/* Another turn: the images exchanged (nothing changes when the new ones cannot be made). */
-	started = kwl_milliseconds();
+	memset(&clock, 0, sizeof(clock));
+	clock.started = kwl_milliseconds();
 	before_rotation = compose->rotation;
 	if ((steps & KWL_ROTATE_STEP_TURN) != 0U) {
-		error = output_rotate_turn(server, &after);
+		error = output_rotate_turn(server, &after, &clock);
 		if (error != 0)
 			return error;
 	}
 
-	/* The same angle (a choice saved alone): the size is set as it is. */
-	if ((steps & KWL_ROTATE_STEP_TURN) == 0U)
+	/* The same angle (a choice saved alone): the size is set as it is, and no image was made. */
+	if ((steps & KWL_ROTATE_STEP_TURN) == 0U) {
 		kwl_output_size_set(server, compose->mode_width, compose->mode_height, rotation);
+		output_rotate_clock_fill(&clock, clock.started);
+	}
 
 	/*
 	 * The pointer first, from its old logical place to the same point of
@@ -248,14 +285,22 @@ kwl_output_apply_rotation(
 	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U)
 		kwl_output_pointer_turn(server, before_rotation, rotation, pointer);
 	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U) {
+		kwl_output_rotate_hold(server);
 		kwl_output_fit(server, 0U);
-		kwl_outputs_changed(server);
 	}
+	clock.fitted = kwl_milliseconds();
 
-	/* The input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
+	/* The clients told the new size; the input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
+	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U)
+		kwl_outputs_changed(server);
 	kwl_input_geometry(server);
+	clock.told = kwl_milliseconds();
 
-	/* Everything is drawn again; the user's change of choice is written. */
+	/*
+	 * Everything is drawn again; the user's change of choice is given to
+	 * displays.conf's writer, whose thread waits for the file's flush
+	 * (heads.c, BUG-306: the flush in the event loop took seconds).
+	 */
 	server->dirty = 1;
 	compose->rotate_saved = -1;
 	if ((steps & KWL_ROTATE_STEP_SAVE) != 0U) {
@@ -263,16 +308,18 @@ kwl_output_apply_rotation(
 		if (compose->rotate_saved != 0)
 			printf("KWL OUTPUT rotate save errno=%d\n", compose->rotate_saved);
 	}
+	clock.saved = kwl_milliseconds();
 
-	/* Succeeded: the output shows the angle from now on, and the tests read it. */
+	/* Succeeded: the output shows the angle from now on, and the tests read it with how long each step took. */
 	compose->opened = after;
 	compose->opened_display = compose->display;
 	kwl_output_steps_name(steps, names, sizeof(names));
+	output_rotate_times(&clock);
 	printf("KWL OUTPUT rotate key=%s rotation=%u selected=%u scanout=%u turn=%u width=%u height=%u mode=%ux%u steps=%s by=%s "
 	    "pointer=%d,%d>%d,%d ms=%llu\n",
 	    compose->display_name, after.rotation, after.selected, after.scanout, after.turn, after.width, after.height, compose->mode_width,
 	    compose->mode_height, names, output_rotate_mode_name(mode), pointer[0], pointer[1], pointer[2], pointer[3],
-	    (unsigned long long)(kwl_milliseconds() - started));
+	    (unsigned long long)(kwl_milliseconds() - clock.started));
 	return 0;
 }
 
@@ -368,6 +415,150 @@ kwl_output_rotation_report(
 }
 
 /*
+ * Begins showing the old frame after an output turned to another size
+ * (BUG-306): the first frame at the new size would show each window's
+ * image of the old size, cut and out of place, until its client draws the
+ * new one.  Every window on the anchor's desktop shown that is told a new
+ * size is waited for (a fullscreen or docked one, told by the fitting that
+ * follows; a floating one of xdg-shell 4, by its new bounds), from the last
+ * configure it was sent before the turn, at most KWL_ROTATE_HOLD_MS.
+ * Called before the windows are fitted.
+ */
+void
+kwl_output_rotate_hold(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	unsigned windows;
+	int waits;
+
+	/* Each window told a new size, from the last configure it heard before the turn. */
+	windows = 0U;
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only a surface. */
+			if (surface->kind != KWL_SURFACE)
+				continue;
+
+			/* A window not waited for now is not waited for since an earlier turn either. */
+			surface->rotate_waits = 0U;
+			waits = output_rotate_waits(server, surface);
+			if (!waits)
+				continue;
+
+			/* An image drawn after a newer configure was acknowledged ends its wait (kwl_output_rotate_committed). */
+			surface->rotate_waits = 1U;
+			surface->rotate_serial = surface->configure_serial;
+			windows++;
+		}
+	}
+
+	/* The wait begins now, when there is a window to wait for. */
+	server->rotate_hold_windows = windows;
+	server->rotate_hold_ms = 0U;
+	if (windows != 0U)
+		server->rotate_hold_ms = kwl_milliseconds();
+	printf("KWL OUTPUT rotate hold windows=%u\n", windows);
+}
+
+/*
+ * Ends a window's wait after an output's turn (BUG-306) when the image it
+ * just committed was drawn after it acknowledged a configure sent after
+ * the turn (display.c's adoption of a commit).
+ */
+void
+kwl_output_rotate_committed(
+	struct kwl_server *server,
+	struct kwl_object *surface)
+{
+	int newer;
+
+	/* Only a window waited for, with an image. */
+	if (!surface->rotate_waits || surface->current == NULL)
+		return;
+
+	/* An image drawn before the client read the new size: the wait goes on. */
+	newer = kwl_rotate_serial_newer(surface->acked_serial, surface->rotate_serial);
+	if (!newer)
+		return;
+
+	/* Succeeded: the window has drawn the new size, and the log says when. */
+	surface->rotate_waits = 0U;
+	printf("KWL OUTPUT rotate drawn surface=%u client=%llu after_ms=%llu\n", surface->id, (unsigned long long)surface->client->number,
+	    (unsigned long long)(kwl_milliseconds() - server->rotate_hold_ms));
+}
+
+/*
+ * Tells whether the event loop keeps the old frame shown after an output's
+ * turn to another size (BUG-306): while a window waited for has not drawn
+ * the new size and the wait is not over, no frame is drawn, and every
+ * frame callback is told at once so that the clients draw on (their
+ * presentation waits for it).  At the wait's end everything is drawn, and
+ * the log says how long the old frame stayed and how many windows were
+ * late.  Returns 1 while it stays.
+ */
+int
+kwl_output_rotate_held(
+	struct kwl_server *server)
+{
+	struct kwl_client *client;
+	struct kwl_object *surface;
+	uint64_t now;
+	unsigned waiting;
+	int holding;
+
+	/* No wait. */
+	if (server->rotate_hold_ms == 0U)
+		return 0;
+
+	/* The windows still waited for, in every live client. */
+	waiting = 0U;
+	for (client = server->clients; client != NULL; client = client->next) {
+		/* A failed client hears nothing. */
+		if (client->fatal)
+			continue;
+
+		/* Each of its surfaces. */
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* Only a live surface. */
+			if (surface->kind != KWL_SURFACE || surface->dead)
+				continue;
+
+			/* Its frame callbacks told now: no frame shows its image. */
+			if (surface->committed_callbacks != NULL)
+				kwl_callbacks_done(&surface->committed_callbacks);
+
+			/* A window gone from the screen is not waited for. */
+			if (surface->rotate_waits && surface->mapped)
+				waiting++;
+		}
+	}
+
+	/* The old frame stays while a window is waited for and the wait is not over. */
+	now = kwl_milliseconds();
+	holding = kwl_rotate_holding(waiting, server->rotate_hold_ms, now);
+	if (holding)
+		return 1;
+
+	/* The wait ends: no window is waited for any more. */
+	for (client = server->clients; client != NULL; client = client->next) {
+		for (surface = client->objects; surface != NULL; surface = surface->next) {
+			/* A late window is shown as it draws. */
+			if (surface->kind == KWL_SURFACE)
+				surface->rotate_waits = 0U;
+		}
+	}
+
+	/* Succeeded: the new size is drawn from now on. */
+	printf("KWL OUTPUT rotate shown held_ms=%llu windows=%u late=%u\n", (unsigned long long)(now - server->rotate_hold_ms), server->rotate_hold_windows,
+	    waiting);
+	server->rotate_hold_ms = 0U;
+	server->dirty = 1;
+	return 0;
+}
+
+/*
  * Exchanges the turn's images for another angle the compositor turns (or
  * none).  Another logical size makes a new turn image and the look's
  * wallpaper first (a failure changes nothing), and with the render and
@@ -375,20 +566,18 @@ kwl_output_rotation_report(
  * size-bound caches are made again.  The same size (90 and 270, 0 and a
  * turned 180) keeps every image of the size, the turn image too (its
  * pixels are logical), and only the swapchain's images are drawn whole
- * (review M5).  Returns 0 or the errno of making the new images.
+ * (review M5).  The clock gets when each step ended.  Returns 0 or the
+ * errno of making the new images.
  */
 static int
 output_rotate_turn(
 	struct kwl_server *server,
-	const struct kwl_rotate_state *after)
+	const struct kwl_rotate_state *after,
+	struct output_rotate_clock *clock)
 {
 	struct kwl_compose *compose;
 	struct kwl_turn fresh;
 	struct kwl_glass_size glass;
-	uint64_t started;
-	uint64_t prepared;
-	uint64_t parked;
-	uint64_t idle;
 	unsigned scene_kept;
 	unsigned resized;
 	unsigned reuse;
@@ -396,7 +585,6 @@ output_rotate_turn(
 	int error;
 
 	/* Whether the logical size changes, and whether the turn image of the size can serve the new angle. */
-	started = kwl_milliseconds();
 	compose = server->compose;
 	memset(&fresh, 0, sizeof(fresh));
 	memset(&glass, 0, sizeof(glass));
@@ -407,6 +595,13 @@ output_rotate_turn(
 	if (!resized && after->turn != KWL_ROTATE_0 && compose->turn.image != VK_NULL_HANDLE)
 		reuse = 1U;
 
+	/*
+	 * The cursor's plane presents nothing from now on: its thread submits
+	 * on the queue the new images' layout moves are submitted on (review
+	 * M2); it goes on at the next kwl_cursor_plane_update.
+	 */
+	kwl_cursor_plane_hold(server);
+
 	/* A new turn image, when the new angle is turned by the compositor and none of the size serves. */
 	if (after->turn != KWL_ROTATE_0 && !reuse) {
 		result = kwl_turn_open(compose, after->width, after->height, after->turn, &fresh);
@@ -415,6 +610,7 @@ output_rotate_turn(
 			return ENOMEM;
 		}
 	}
+	clock->turn_made = kwl_milliseconds();
 
 	/* The look's wallpaper at the new logical size, when the size changes. */
 	if (resized) {
@@ -425,25 +621,20 @@ output_rotate_turn(
 			return error;
 		}
 	}
+	clock->glass_made = kwl_milliseconds();
 
 	/*
 	 * The fingers and the pens end what they were doing while their places
 	 * still mean the old points (ws217-p003): the angle changes now.
 	 */
 	kwl_input_rotated(server);
-	prepared = kwl_milliseconds();
+	clock->prepared = kwl_milliseconds();
 
-	/*
-	 * No frame, nor the cursor's plane (its thread submits on the same
-	 * queue, review M2), may use the old images while they go; the cursor
-	 * thread goes on at the next kwl_cursor_plane_update.  How long each
-	 * step took is logged (BUG-306: a turn that took 12 s).
-	 */
+	/* No frame may use the old images while they go (the cursor's plane is held already). */
 	kwl_compose_park(server);
-	kwl_cursor_plane_hold(server);
-	parked = kwl_milliseconds();
+	clock->parked = kwl_milliseconds();
 	(void)vkDeviceWaitIdle(compose->device);
-	idle = kwl_milliseconds();
+	clock->idle = kwl_milliseconds();
 
 	/* The new angle and logical size; the turn's images can be made again. */
 	kwl_output_size_set(server, compose->mode_width, compose->mode_height, after->rotation);
@@ -456,7 +647,8 @@ output_rotate_turn(
 		compose->turn.rotation = after->turn;
 		memset(compose->image_frames, 0, sizeof(compose->image_frames));
 		kwl_compose_unpark(server);
-		output_rotate_times(started, prepared, parked, idle);
+		output_rotate_clock_fill(clock, clock->idle);
+		clock->swapped = kwl_milliseconds();
 		return 0;
 	}
 
@@ -472,6 +664,7 @@ output_rotate_turn(
 
 	/* The look's wallpaper exchanged. */
 	kwl_glass_size_swap(server, &glass);
+	clock->exchanged = kwl_milliseconds();
 
 	/* The caches of another size made again; every image is drawn whole next. */
 	scene_kept = 0U;
@@ -481,27 +674,52 @@ output_rotate_turn(
 
 	/* Succeeded: the render thread goes on with the new images. */
 	kwl_compose_unpark(server);
-	output_rotate_times(started, prepared, parked, idle);
+	clock->swapped = kwl_milliseconds();
 	return 0;
 }
 
 /*
- * Logs how long the steps of a turn took (BUG-306): the new images made,
- * the render thread parked, the device idle, and the images exchanged.
+ * Logs how long each step of a change of the angle shown took (BUG-306):
+ * the new images made (the turn image, the wallpaper), the render thread
+ * parked, the device idle, the images exchanged and the caches made
+ * again, then the windows fitted, the clients told and the choice given
+ * to displays.conf's writer.
  */
 static void
 output_rotate_times(
-	uint64_t started,
-	uint64_t prepared,
-	uint64_t parked,
-	uint64_t idle)
+	const struct output_rotate_clock *clock)
 {
-	uint64_t now;
+	/* Each step's length, from the one before it; prepare and swap as before, with their parts. */
+	printf("KWL OUTPUT rotate times prepare_ms=%llu turn_ms=%llu glass_ms=%llu park_ms=%llu idle_ms=%llu swap_ms=%llu caches_ms=%llu "
+	    "fit_ms=%llu tell_ms=%llu save_ms=%llu\n",
+	    (unsigned long long)(clock->prepared - clock->started), (unsigned long long)(clock->turn_made - clock->started),
+	    (unsigned long long)(clock->glass_made - clock->turn_made), (unsigned long long)(clock->parked - clock->prepared),
+	    (unsigned long long)(clock->idle - clock->parked), (unsigned long long)(clock->swapped - clock->idle),
+	    (unsigned long long)(clock->swapped - clock->exchanged), (unsigned long long)(clock->fitted - clock->swapped),
+	    (unsigned long long)(clock->told - clock->fitted), (unsigned long long)(clock->saved - clock->told));
+}
 
-	/* Each step's length, from the one before it. */
-	now = kwl_milliseconds();
-	printf("KWL OUTPUT rotate times prepare_ms=%llu park_ms=%llu idle_ms=%llu swap_ms=%llu\n", (unsigned long long)(prepared - started),
-	    (unsigned long long)(parked - prepared), (unsigned long long)(idle - parked), (unsigned long long)(now - idle));
+/* Marks every step of the turn from the first not taken as ended when the one before it did (now). */
+static void
+output_rotate_clock_fill(
+	struct output_rotate_clock *clock,
+	uint64_t now)
+{
+	/* Each image step not taken yet ends now. */
+	if (clock->turn_made == 0U)
+		clock->turn_made = now;
+	if (clock->glass_made == 0U)
+		clock->glass_made = now;
+	if (clock->prepared == 0U)
+		clock->prepared = now;
+	if (clock->parked == 0U)
+		clock->parked = now;
+	if (clock->idle == 0U)
+		clock->idle = now;
+	if (clock->exchanged == 0U)
+		clock->exchanged = now;
+	if (clock->swapped == 0U)
+		clock->swapped = now;
 }
 
 /*
@@ -594,4 +812,46 @@ output_rotate_mode_name(
 
 	/* An opening's change. */
 	return "open";
+}
+
+/*
+ * Tells whether a window is waited for after its output turned to another
+ * size: mapped on the anchor, on the desktop shown and not minimized, and
+ * told its new size (fullscreen or docked, or floating with xdg-shell 4's
+ * bounds).
+ */
+static int
+output_rotate_waits(
+	struct kwl_server *server,
+	const struct kwl_object *surface)
+{
+	const struct kwl_object *top;
+	int desktop;
+
+	/* A live, mapped window's surface, not the desktop's icons. */
+	if (surface->dead || !surface->mapped || surface->client->fatal)
+		return 0;
+	if (surface->role == NULL || surface->role->top == NULL)
+		return 0;
+	desktop = kwl_desktop_is(surface);
+	if (desktop)
+		return 0;
+
+	/* Shown on the anchor now. */
+	if (surface->output != KWL_PLANE_ANCHOR || surface->minimized)
+		return 0;
+	if (surface->desktop != server->desktop)
+		return 0;
+
+	/* A fullscreen or docked window is sent the new size. */
+	if (surface->fullscreen || surface->maximized)
+		return 1;
+
+	/* A floating window hears new bounds only from xdg-shell 4 on (kwl_window_bounds_refresh). */
+	top = surface->role->top;
+	if (top->kind != KWL_TOPLEVEL || top->version < 4U || !surface->configured)
+		return 0;
+
+	/* Succeeded: the window is told the new bounds and draws them. */
+	return 1;
 }

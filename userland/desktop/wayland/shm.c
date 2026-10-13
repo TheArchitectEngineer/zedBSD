@@ -430,6 +430,13 @@ kwl_host_image_batch_end(
 	if (command == VK_NULL_HANDLE)
 		return VK_SUCCESS;
 
+	/*
+	 * The render thread submits nothing meanwhile (a batch while it runs:
+	 * an output turning, WS217); the first image's move waited for it too.
+	 */
+	if (compose->render_started)
+		kwl_render_wait_idle(&compose->render);
+
 	/* The recorded moves, submitted together. */
 	result = vkEndCommandBuffer(command);
 	if (result == VK_SUCCESS) {

@@ -112,6 +112,7 @@ kwl_schedule(
 	uint64_t part;
 	int direct;
 	int ready;
+	int held;
 	int error;
 
 	/* An OS-paused display cannot compose or present until authority returns. */
@@ -214,6 +215,15 @@ kwl_schedule(
 	part = kwl_cycles();
 	kwl_cursor_plane_update(server);
 	server->perf.cursor_cycles += kwl_cycles() - part;
+
+	/*
+	 * An output turned to another size shows its old frame until its
+	 * windows have drawn the new size (output-rotate.c, BUG-306); their
+	 * frame callbacks are told meanwhile, so that they draw on.
+	 */
+	held = kwl_output_rotate_held(server);
+	if (held)
+		return;
 
 	/*
 	 * A frame to draw is wanted now, before the frame pacing's wait: the
@@ -457,6 +467,9 @@ adopt_commit(
 	/* The time the image was taken, when the per-frame lines were asked for (ws099-p015's pen latency). */
 	if (server->log_frames)
 		printf("KWL LAT adopt surface=%u at_us=%llu\n", surface->id, (unsigned long long)kwl_microseconds());
+
+	/* A window an output's turn waits for may have drawn the new size (output-rotate.c). */
+	kwl_output_rotate_committed(server, surface);
 
 	/* An awaited window has committed. */
 	if (surface->awaited) {

@@ -15,8 +15,10 @@
  * table (plan/ws217/phase001/phase.md, section 4.6); the turn pass's
  * texture coordinates against the points (ws217-p002b) and what a user's
  * choice of an angle does; the inline way back of the absolute devices
- * against the points and the fixed-point places (ws217-p003); and a
- * floating window's place fitted to an output turned and back (BUG-306).
+ * against the points and the fixed-point places (ws217-p003); a floating
+ * window's place fitted to an output turned and back (BUG-306); and the
+ * wait for the windows' images of the new size after a turn (BUG-306:
+ * the serials acknowledged and the end of the wait).
  */
 
 #include "rotate.h"
@@ -55,6 +57,7 @@ static void test_select(void);
 static void test_pointer(void);
 static void test_pixel_back(void);
 static void test_fit_window(void);
+static void test_hold(void);
 static void test_state(struct kwl_rotate_state *state, uint32_t width, uint32_t height, unsigned rotation, unsigned hw180, unsigned policy_any);
 
 /* Runs every check. */
@@ -76,6 +79,7 @@ main(void)
 	test_pointer();
 	test_pixel_back();
 	test_fit_window();
+	test_hold();
 
 	/* The verdict. */
 	if (failures != 0U) {
@@ -903,4 +907,29 @@ test_fit_window(void)
 	check(y == 388 && fit.moved == 1U && fit.home_y == 600, "the bottom edge inside the space");
 	kwl_rotate_fit_window(&fit, &x, &y, 700, 400, 12, 100, 776, 1168);
 	check(y == 600 && fit.moved == 0U, "back where it was when the space is tall again");
+}
+
+/*
+ * The wait after a turn to another size: a configure acknowledged after
+ * the one sent before the turn ends a window's wait (over the serials'
+ * wrap too), the same or an older one does not; the old frame stays while
+ * a window is waited for, until KWL_ROTATE_HOLD_MS.
+ */
+static void
+test_hold(void)
+{
+	/* Newer, the same, and older serials, near the wrap too. */
+	check(kwl_rotate_serial_newer(11U, 10U) == 1, "hold: serial 11 after 10");
+	check(kwl_rotate_serial_newer(10U, 10U) == 0, "hold: serial 10 is not after 10");
+	check(kwl_rotate_serial_newer(9U, 10U) == 0, "hold: serial 9 is not after 10");
+	check(kwl_rotate_serial_newer(1U, 0xffffffffU) == 1, "hold: serial 1 after the wrap");
+	check(kwl_rotate_serial_newer(0xfffffffeU, 2U) == 0, "hold: serial before the wrap is older");
+	check(kwl_rotate_serial_newer(5U, 0U) == 1, "hold: any serial after none sent");
+
+	/* The old frame stays while a window is waited for, until the wait is over. */
+	check(kwl_rotate_holding(0U, 1000U, 1000U) == 0, "hold: no window waited for");
+	check(kwl_rotate_holding(2U, 1000U, 1000U) == 1, "hold: windows waited for at the start");
+	check(kwl_rotate_holding(1U, 1000U, 1000U + KWL_ROTATE_HOLD_MS - 1U) == 1, "hold: just before the end");
+	check(kwl_rotate_holding(1U, 1000U, 1000U + KWL_ROTATE_HOLD_MS) == 0, "hold: at the end");
+	check(kwl_rotate_holding(1U, 1000U, 1000U + 10U * KWL_ROTATE_HOLD_MS) == 0, "hold: long after the end");
 }

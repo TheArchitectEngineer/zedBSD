@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws217-p004 -->
 # ws217-p004: protocol・libkeiland・Settings の回転
 
-Status: in-progress（2026-10-14 P3: 実装 agent/p3、host 試験と build は済み、T1 の QEMU 待ち。clear は Q1 が T1 の結果で判定）
+Status: in-progress（2026-10-14 P3: 実装 agent/p3、host 試験と build は済み、T1 の QEMU 待ち。T1-613 の後、回転の時間と回転の直後の絵を直した（下の節）。clear は Q1 が T1 の結果で判定）
 Disposition: normal
 Parent: [WS217](../ws.md)
 Queue: q983
@@ -75,3 +75,53 @@ Q1「画面の回転は、ベータ2 では Settings に操作が無く、displa
 - 上の「設計からの差」1・2 の Q1 の判断（1 は D14 の逸脱、ユーザーへの報告が要るかもしれない）。
 - head の回転（p005）、`bind_touch`・`listen_touch`・`touch` の中身と libkeiland の `kl_system_touches_*`（p006）、game の session（p012）。
 - FreeBSD の build は未実施（Settings の rotate.c は Makefile.freebsd にも足した）。
+
+## 回転の遅さと回転の直後の古い絵（2026-10-14 P3、T1-613 の解析と修正）
+
+由来: [BUG-306](../../bugs/BUG-306.md) の T1-613 の節。Settings で回すと `KWL OUTPUT rotate … ms=` が 9830・8795・7285（大きさが変わる回転）、100（90°→270°）、2386。回転の約 3 s 後の最初の撮影は窓が崩れた位置。QEMU は起動していない（解析は T1 の `t1/build/review/t1-613/session.log`・PNG と source から）。
+
+### 時間の内訳（T1-613 の log と source）
+
+`ms=` は `kwl_output_apply_rotation` の全体。turn（`output_rotate_turn`）の分は `rotate times` の prepare・park・idle・swap の和で、残りは turn の後の pointer・fit・`kwl_outputs_changed`・`kwl_input_geometry`・`kwl_heads_config_save`。
+
+| 回 | 回転 | ms= | turn（prepare+park+idle+swap） | turn の後 |
+| --- | --- | --- | --- | --- |
+| 1 | 0→90 | 9830 | 1106+0+40+1133 = 2279 | 7551 |
+| 2 | 90→0 | 8795 | 881+0+41+1243 = 2165 | 6630 |
+| 3 | 0→90 | 7285 | 955+0+40+1132 = 2127 | 5158 |
+| 4 | 90→270（同じ大きさ） | 100 | 0+25+57+0 = 82 | 18 |
+| 5 | 270→0 | 2386 | 1071+0+40+1243 = 2354 | 32 |
+
+1. **turn の後の 5〜7.5 s は displays.conf の fsync**（source から特定、直接の計測は次の T1 で）。turn の後の段のうち I/O や他の thread を待つのは `kwl_heads_config_save` → `heads_save` の `fsync` だけ（pointer・fit・outputs_changed・input_geometry はメモリの上の操作と送信の queue）。zedBSD の UFS の fsync（`src/drivers/fs/ufs.c` の `ufs_file_sync`）は file の inode を書いた後に `ufs_sync(mount)` で**volume 全体**の遅延書き込み（最大 32 MB）と journal を書き出し、disk に flush を求める。QEMU（`-drive` の既定 cache=writeback）では guest の flush が host の image の fdatasync になり、host の負荷（他の担当の build）で秒単位に揺れる。32 ms〜7.5 s の揺れはこれと合う。回転の間 main thread が止まるので、frame も client も止まる（BUG-306 の -4 の候補の 12 s とも同じ経路）。
+2. **prepare の約 0.9〜1.1 s のうち約 0.9 s は壁紙の作り直し**（`KWL GLASS size … by=turn ms=881〜1071`）。起動時の同じ仕事（2 つの host image と描画）は 361 ms（`KWL STARTUP step=wallpaper`）。違いは layout の移動: 起動時は batch で 1 回の submit と待ちだが、回転では 2 つの image がそれぞれ 2 回ずつ `kwl_render_wait_idle`（描画中の frame の終わりを待つ）・submit・`vkQueueWaitIdle` を単独で行っていた（Venus では 1 回ごとに往復）。壁紙の decode は無い（壁紙の path は空で、風景を描く。起動時 74 ms）。残りの約 0.05〜0.2 s は turn image（初回は turn の pipeline も作る）。
+3. **swap の 1.1〜1.2 s** は device を止めた間の Vulkan の object の作り直しと破棄（古い turn image と壁紙の解放、scene の buffer、layer の 3 つの image と pass）。Venus では作成・解放の 1 回ごとに host と往復する。`vkDeviceWaitIdle` は 40 ms、park は 0〜25 ms で小さい。
+
+### 回転の直後の古い絵
+
+回転 1 の後の撮影（c1.png、回転の終わりの約 1.5 s 後）では、Settings の新しい buffer（776x800、`KWL IMPORT client=2 buffer=83`）はまだ届いておらず、1180x680 の古い buffer と古い glass の panel が縦の画面の x=12 に描かれて右が切れていた（c1b.png の時点では正常）。compositor は回転の直後の最初の frame から新しい配置で描くので、client が新しい大きさを描くまでの間（Venus では import も遅く 1〜2 s）、窓が崩れて見える。
+
+### 直したこと（agent/p3 777da859b・e8762528e・e9d61dada）
+
+| 所 | 変えた事 |
+| --- | --- |
+| `wayland/heads.c` | displays.conf を書く thread（`struct heads_writer`）。回転の選択の保存（`kwl_heads_config_save`）は main thread で text と path を作って渡すだけにし、thread が mkstemp・write・fsync・rename を行う（渡された最新の 1 つを書く。書いている間に来た物はその後に書く）。log `KWL DISPLAYS saved by=writer errno= wait_ms= ms=`（ms= が fsync を含む書き込みの時間）。他の保存（displays の mode、display の on/off、移動の失敗）は今までどおり同期で、先に thread の書き込みの終わりを待つ（file が最新の選択で終わる）。compositor の終わり（`kwl_compose_close`）で書き残しを待って thread を閉じる（`kwl_heads_config_close`）。thread を作れなければ今までどおりその場で書く |
+| `wayland/glass.c`・`shm.c` | 回転の壁紙（`kwl_glass_size_prepare`）の 2 つの image の layout の移動を起動時と同じ batch で 1 回の submit と待ちにした（`glass_size_make` に分けた）。`kwl_host_image_batch_end` は render thread が動いている時は submit の前に idle を待つ |
+| `wayland/output-rotate.c` | cursor の plane（同じ queue に submit する）を turn の最初に止める（今までは park の時。batch の submit の前に止める）。`KWL OUTPUT rotate times` を回転の最後に 1 行で出し、段を細かくした: `prepare_ms turn_ms glass_ms park_ms idle_ms swap_ms caches_ms fit_ms tell_ms save_ms`（prepare・park・idle・swap は今までと同じ意味） |
+| `wayland/output-rotate.c`・`display.c`・`kwl.h`・`rotate.h` | **回転の後の古い frame の保持**: 大きさが変わる回転で、anchor の今の desktop の窓のうち新しい大きさを告げられる物（fullscreen・docked、xdg-shell 4 の浮いた窓は新しい bounds）を、回転の前に送った最後の configure の serial で覚え、それより新しい configure を ack した後の commit が来るまで（最長 `KWL_ROTATE_HOLD_MS` = 1000 ms）新しい frame を描かない（画面は回転の前の frame のまま）。待つ間も全部の surface の frame callback はすぐ返す（client の Vulkan の present は前の callback を待つので）。log `KWL OUTPUT rotate hold windows=N`・`KWL OUTPUT rotate drawn surface= client= after_ms=`・`KWL OUTPUT rotate shown held_ms= windows= late=`（late は時間切れまで描かなかった窓の数）。desktop の icon の surface（ZFILES）は待たない |
+
+見込み（未計測）: 大きさが変わる回転の `ms=` は Venus で turn の分の約 1.7〜1.9 s（prepare が起動時の壁紙と同じ約 0.4〜0.5 s、swap は変わらず約 1.2 s）、fsync の分は 0。2 s を超えるなら残りは swap の Vulkan の object の作り直し（Venus の往復）で、次の手は回転の前の大きさの image（壁紙・layer・scene・turn）を 1 組残して戻る回転で使い回すこと（memory が出力 1 枚分の数倍増える）。
+
+### 確かめ（host・build、P3）
+
+- `sh plan/ws217/tests/host-rotate.sh` → PASS（plain、ASan/UBSan）。新しい `test_hold`: ack の serial が回転の前の serial より新しいか（wrap を含む）、保持の終わり（窓が 0、1000 ms の直前・ちょうど・後）。
+- `sh plan/ws217/tests/host-rotation-settings.sh` → PASS。`sh plan/ws113/tests/host-output-switch.sh` → PASS（kwl.h の変更）。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws217-p004r/amd64 build/ws217-p004r/amd64/bin/wayland` → exit 0、warning 0。`make … ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws217-p004r/arm64 …/bin/wayland` → exit 0、warning 0。`make -j16 KEILAND_ASK=n KEILAND_LINUX_BUILD=build/ws217-p004r/linux keiland-linux` → exit 0、warning 0。`git diff --check` → 無し。
+- 未実施: QEMU（T1 へ）、FreeBSD の build、実機。displays.conf の writer の thread の host 試験は無い（heads.c は依存が多く単独で build できない。仕組みは review で確かめた）。
+
+### T1 への再試験の依頼の文（Q1 が台帳へ）
+
+> ws217-p004 / BUG-306（回転の時間と回転の直後の絵）の QEMU Venus の確かめ。image: agent/p3 e9d61dada（main への merge の後）の tree で `AAT_CONFIG=plan/ws217/tests/config-amd64.mk plan/tools/aat/build-image.sh BUILD`。session は AAT の普通の起動（policy の指定なし）。T1-613 と同じく login して `settings display` を開き、Rotation の絵を **90° → 0° → 90° → 270° → 0°** と押す（位置は直前の PNG で読む）。
+> - 各回: 押した **1 s 後と 3 s 後**に PNG を撮る（`r<n>-1s.png`・`r<n>-3s.png`）。`aat windows` で Settings が mapped True。
+> - 3 回目（90°）の 3 s 後に `cat $HOME/.config/keiland/displays.conf` → `rotate=<key> 90` の行がある。最後（0°）の 3 s 後に同じく → `rotate=` の行が無い。
+> - 最後に **logout の前に** session.log を host へ写し、次の行を結果に貼る: `KWL OUTPUT rotate`（`times`・`hold`・`drawn`・`shown` と `ms=` の行の全部）、`KWL DISPLAYS saved`、`KWL DISPLAYS rotation`、`KWL GLASS size`、`KWL OUTPUT window`、`KEILAND PRESENT_FAILED`、`ZSETTINGS FAILED`、`KWL FAILED`、`KWL SLOW_PASS` のうち us= が 1000000 を超える物。
+> - 合否: (1) 大きさが変わる 4 回の `ms=` が各 2000 以下（超えたら FAIL ではなく値と `times` の行を記録する）、`times` の `save_ms` が 50 以下。(2) 各回の後に `KWL DISPLAYS saved by=writer errno=0`。(3) 1 s・3 s の PNG で、窓が切れたり古い大きさのまま新しい向きに置かれたりしていない（回転の前の絵のまま、または新しい向きで Settings が新しい配置で描かれている）。(4) `KWL OUTPUT rotate shown … late=0`（late=1 で held_ms=1000 なら記録して PASS）。(5) Settings が 5 回とも残り、FAILED の行が 0。(6) displays.conf の行が上のとおり。
