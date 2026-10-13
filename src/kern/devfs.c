@@ -61,6 +61,12 @@
 #define DEVFS_STD_INO_BASE 0x500000000ULL
 /* The number of character devices whose ownership or mode can be changed. */
 #define DEVFS_CDEV_ATTRIBUTES_MAX 32U
+/*
+ * The most bytes of whole sectors one raw block transfer hands the disk at
+ * once (BUG-304).  It keeps the sector count within 32 bits and bounds how
+ * much a failed run leaves unreported.
+ */
+#define DEVFS_BLOCK_IO_RUN_BYTES (1024U * 1024U)
 #define DEVFS_HIGH __attribute__((section(".hightext")))
 #ifdef KERN_STORAGE_HOST_TEST
 #undef DEVFS_HIGH
@@ -337,6 +343,33 @@ devfs_block_io_piece(
 	*within = offset;
 	*count = amount;
 	return 0;
+}
+
+/*
+ * Counts the whole sectors at an aligned position that one transfer can move.
+ *
+ * Zero means the position is inside a sector or less than a sector remains,
+ * so the piece goes through the sector bounce instead.
+ */
+static inline uint32_t
+devfs_block_io_run(
+	uint64_t position,
+	size_t remaining,
+	uint32_t block_size)
+{
+	size_t bytes;
+
+	/* A position inside a sector starts with a partial piece. */
+	if (block_size == 0U || position % block_size != 0U)
+		return 0U;
+
+	/* Takes the whole sectors left, up to the bound of one run. */
+	bytes = remaining;
+	if (bytes > DEVFS_BLOCK_IO_RUN_BYTES)
+		bytes = DEVFS_BLOCK_IO_RUN_BYTES;
+
+	/* Reports the sectors; zero when less than one remains. */
+	return (uint32_t)(bytes / block_size);
 }
 
 /* Tests whether a path component equals a literal name. */
@@ -1598,6 +1631,7 @@ block_pread_data(
 	uint64_t position;
 	uint64_t block;
 	uint32_t block_size;
+	uint32_t run;
 	size_t total;
 	size_t within;
 	size_t count;
@@ -1622,8 +1656,32 @@ block_pread_data(
 	position = range.position;
 	length = range.length;
 
-	/* Reads one sector at a time, reporting a short read on a late error. */
+	/*
+	 * Reads whole sectors straight into the caller's buffer as runs, and a
+	 * partial sector at either end through the bounce, reporting a short
+	 * read on a late error.
+	 */
 	while (total < length) {
+		/* Moves an aligned run of whole sectors in one disk read. */
+		run = devfs_block_io_run(position, length - total, block_size);
+		if (run != 0U) {
+			block = position / block_size;
+			if (file->f_block_claim != NULL)
+				error = disk_read_direct(disk, block, run, output + total);
+			else
+				error = disk_read(disk, block, run, output + total);
+			if (error != 0) {
+				if (total != 0)
+					return (ssize_t)total;
+				return -error;
+			}
+
+			total += (size_t)run * block_size;
+			position += (uint64_t)run * block_size;
+			continue;
+		}
+
+		/* Finds the sector that holds a partial piece. */
 		error = devfs_block_io_piece(position, length - total,
 		    block_size, &block, &within, &count);
 		if (error != 0) {
@@ -1632,6 +1690,7 @@ block_pread_data(
 			return -error;
 		}
 
+		/* Reads that sector into the bounce. */
 		if (file->f_block_claim != NULL)
 			error = disk_read_direct(disk, block, 1, bounce);
 		else
@@ -1642,6 +1701,7 @@ block_pread_data(
 			return -error;
 		}
 
+		/* Copies out the part of the sector the caller asked for. */
 		kern_memcpy(output + total, bounce + within, count);
 		total += count;
 		position += count;
@@ -1703,6 +1763,7 @@ block_pwrite_data(
 	uint64_t last;
 	uint64_t block;
 	uint32_t block_size;
+	uint32_t run;
 	size_t total;
 	size_t within;
 	size_t count;
@@ -1750,8 +1811,34 @@ block_pwrite_data(
 		}
 	}
 
-	/* Writes one sector at a time, merging partial sectors with the disk. */
+	/*
+	 * Writes whole sectors straight from the caller's buffer as runs (BUG-304:
+	 * one sector per call made the cache write its 4 KiB line every 512
+	 * bytes), and merges a partial sector at either end with the disk.
+	 */
 	while (total < length) {
+		/* Moves an aligned run of whole sectors in one disk write. */
+		run = devfs_block_io_run(position, length - total, block_size);
+		if (run != 0U) {
+			block = position / block_size;
+			if (file->f_block_claim != NULL)
+				error = disk_write_direct_claimed(disk, block, run,
+				    input + total, file->f_block_claim);
+			else
+				error = disk_write(disk, block, run, input + total);
+			if (error != 0) {
+				backing_mutation_end(&guard);
+				if (total != 0)
+					return (ssize_t)total;
+				return -error;
+			}
+
+			total += (size_t)run * block_size;
+			position += (uint64_t)run * block_size;
+			continue;
+		}
+
+		/* Finds the sector that holds a partial piece. */
 		error = devfs_block_io_piece(position, length - total,
 		    block_size, &block, &within, &count);
 		if (error != 0) {
@@ -1761,21 +1848,19 @@ block_pwrite_data(
 			return -error;
 		}
 
-		if (within != 0 || count != block_size) {
-			if (file->f_block_claim != NULL)
-				error = disk_read_direct(disk, block, 1, bounce);
-			else
-				error = disk_read(disk, block, 1, bounce);
-			if (error != 0) {
-				backing_mutation_end(&guard);
-				if (total != 0)
-					return (ssize_t)total;
-				return -error;
-			}
-		} else {
-			kern_memset(bounce, 0, sizeof(bounce));
+		/* Reads the rest of that sector, which the write keeps. */
+		if (file->f_block_claim != NULL)
+			error = disk_read_direct(disk, block, 1, bounce);
+		else
+			error = disk_read(disk, block, 1, bounce);
+		if (error != 0) {
+			backing_mutation_end(&guard);
+			if (total != 0)
+				return (ssize_t)total;
+			return -error;
 		}
 
+		/* Merges the piece into the sector and writes it back. */
 		kern_memcpy(bounce + within, input + total, count);
 		if (file->f_block_claim != NULL)
 			error = disk_write_direct_claimed(disk, block, 1, bounce, file->f_block_claim);
