@@ -103,7 +103,7 @@ struct i915_test_eu {
 	/* The render engine's index in the GT's engine table. */
 	unsigned engine_idx;
 
-	/* The GT version the fixture is built for: 9, or 12 for every other value (0 in the draw tests). */
+	/* The GT version the fixture is built for: 9, or 12 for every other value (the GT's version in the draw tests). */
 	unsigned graphics_ver;
 
 	/* How many fixture page entries the release put back to scratch. */

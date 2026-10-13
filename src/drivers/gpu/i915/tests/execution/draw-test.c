@@ -848,6 +848,9 @@ i915_draw_find_engine(
 	env->ge = &env->es->ge[i];
 	env->el = &env->es->el[i];
 
+	/* Names the GT version, so a hang dump reads that version's ring fault register. */
+	t->graphics_ver = env->graphics_ver;
+
 	/* Succeeded: the engine is known. */
 	return 0;
 }
