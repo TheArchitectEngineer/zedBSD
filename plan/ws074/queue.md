@@ -1,17 +1,19 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1055 / WS074 XHTML 1.0 Strict nbsp subset
+# q1056 / WS074 fixed static reftest re-census after XHTML loading repair
 
-Status: finished（2026-10-14 02:48–02:51 JST）
+Status: finished（2026-10-14 02:52–03:00 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p204のq1055有限部分scope](phase204/phase.md) に適用。
-Timebox: 2026-10-14 02:48 JST 開始、最大90分（04:18 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p190 q1056有限部分scope](phase190/phase.md)に適用。
+Timebox: 2026-10-14 02:52 JST 開始、最大90分（04:22 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1055-i01 | [ws074-p204](phase204/phase.md) whole | XHTML1 Strict公開DTD識別子に限定し`nbsp`をU+00A0へ展開、別DTD/未知実体拒否。固定47 ID・Flex10件、host/XML/build/Acid回帰。WPT/Master/公開ABI変更なし。最大90分 | cleared | p203 q1054残り47 `nbsp` error証拠 |
+| q1056-i01 | [ws074-p190](phase190/phase.md) partial | 固定静的1,561 IDをq1053同条件で再測定し旧359 error・旧PASS→FAIL8と全遷移・focusを分類。runner/browser/WPT/Master変更なし、最大90分 | cleared | q1055 XHTML既知entity読込証拠 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
+
+Outcome: q1056-i01 partial cleared、p190 whole uncleared。固定静的1,561 IDは640 local PASS/921 pixel FAIL/0 error/0 timeout。旧359 load errorは122 PASS/237 pixel FAIL、旧8 PASS→FAILは未回復。[証拠](phase190/evidence/20261014-q1056/README.md)。p173全3,805件100%は未達。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 

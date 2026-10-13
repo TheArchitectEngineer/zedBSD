@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1055 / WS074 XHTML 1.0 Strict nbsp subset（2026-10-14）
+## 最新: q1056 / WS074 static reftest re-census（2026-10-14）
+
+[q1056履歴](queue-q1056.md): 固定静的1,561 IDは640 local PASS/921 pixel FAIL/0 error/0 timeout。旧359 load errorは122 PASS/237 pixel FAIL、旧8 PASS→FAILは未回復。[証拠](../ws074/phase190/evidence/20261014-q1056/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1055 / WS074 XHTML 1.0 Strict nbsp subset（2026-10-14）
 
 [q1055履歴](queue-q1055.md): 旧47 load errorを0へ解消し47 pixel FAILとして描画へ進行。p204 whole cleared、p203も後続証拠でcleared。XML host249/249、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase204/evidence/20261014-q1055/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
 

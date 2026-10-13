@@ -135,3 +135,11 @@ Event ws074-p190-q1053-design-20261014: q1052で固定Flexbox10件が10/10 local
 ## q1053-i01 結果（2026-10-14）
 
 **partial scope cleared、p190 whole uncleared。** 固定静的適格1,561 IDを全件再測定し、旧baselineと同一ID/条件を照合。518 local PASS/684 FAIL/359 error/0 timeout。旧500/1,051/0/10から、Flex XHTML timeout10件は全てPASS。39 FAIL→PASS、8 PASS→FAIL、23 PASS→error、336 FAIL→error。全359 errorはDOCTYPEを含むXHTMLで、q1046以降のXML parserがDTDをENOTSUPにする一般条件に一致。[結果・遷移・focus集計](evidence/20261014-q1053/README.md)。checkpoint1,561行一致、固定ID1,561・未対応413分類一致、diff check PASS。browser/WPT/runnerコード無変更でhost build/Acid再測定省略。p190全2,022件coverage・p173全3,805件100%未達。Event ws074-p190-q1053-outcome-20261014: q1053-i01 partial cleared、p190 whole uncleared。DOCTYPE負荷の読込error修正と旧PASS→FAIL8件の再監査が次の条件。GitHub publication保留。
+
+## q1056-i01 有限部分範囲（2026-10-14）
+
+このchatのユーザーによる「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」をこの最大90分 Queue（02:52–04:22 JST）に適用。固定Interop manifestの静的適格reftest 1,561 IDを、q1053と同じ800×600・5秒上限・localhost・固定fontで再実行する。q1044/q1053とのID対応、PASS/FAIL/error/timeoutと遷移、旧PASS→FAIL8件、q1054/q1055の359旧error、focus別結果を機械可読化して原因を分類する。runner/browser/WPT/Masterは変更しない。固定ID一致・checkpoint完全性と集計整合を確認する。リソース上限に達すれば部分証拠と再開条件を記録し、無限に延長しない。p190 wholeにはscript付き/variantの413 IDとpixel FAILの解消が残る。
+
+## q1056-i01 結果（2026-10-14）
+
+Event ws074-p190-q1056-outcome-20261014: 固定静的1,561 IDをq1044/q1053と同条件で全再測定。640 local PASS/921 pixel FAIL/0 error/0 timeout。[証拠](evidence/20261014-q1056/README.md)。q1053の359 load errorは122 PASS/237 pixel FAILに移動し、旧8 PASS→FAILは全て引き続きFAIL。ID集合・checkpoint1,561行とreportを照合済み。q1056-i01 partial cleared、p190 whole uncleared。runner未対応413 ID、921画素不一致、公式環境同等性、p173全3,805件100%が残る。browser/WPT/runner/Masterは未変更、共有投影/GitHub publication保留。
