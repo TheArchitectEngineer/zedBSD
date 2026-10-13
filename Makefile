@@ -729,6 +729,7 @@ KERN_NET_SOURCES := \
 	src/kern/net/wifi/wlan-frame.c \
 	src/kern/net/wifi/wlan-wpa2-codec.c \
 	src/kern/net/wifi/wlan-wpa2.c \
+	src/kern/net/wifi/wlan-fullmac.c \
 	src/kern/net/wifi/wlan-l2.c \
 	src/kern/net/wifi/wlan.c \
 	src/kern/net/arp.c \
