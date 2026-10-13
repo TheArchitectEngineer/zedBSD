@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1090 / WS074 RTL Grid absolute position design（2026-10-14）
+## 最新: q1091 / WS074 horizontal RTL Grid absolute start（2026-10-14）
+
+[q1091履歴](queue-q1091.md): 固定WPT代表2件の水平RTL subtestが各FAIL→PASS。縦書き2件でwholeはFAIL継続。最小RTL5件、旧PASS代表、Acid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1091/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1090 / WS074 RTL Grid absolute position design（2026-10-14）
 
 [q1090履歴](queue-q1090.md): RTL fixed/auto幅の最小HTMLで実x8、期待x388/384。private right-edge static metadataを次の実装境界に定めた。[証拠](../ws074/phase217/evidence/20261014-q1090/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

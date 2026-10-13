@@ -41,3 +41,11 @@ Event ws074-p217-q1089-partial-clear-20261014: 水平LTR/有効明示areaの絶�
 ## q1090-i01 結果（2026-10-14 07:41 JST）
 
 Event ws074-p217-q1090-partial-clear-20261014: [証拠](evidence/20261014-q1090/README.md)。最小RTL 400px Gridの固定20px/auto24px absolute子は両方物理x=8、inline-start期待x=388/384。Gridが子の幅確定前に左端static_xを置き、position_placeが幅確定後も左端として読むことが原因。次はprivate right-edge static metadataを介し、幅確定後に右端から配置する限定実装。q1090-i01部分cleared。p217 whole/p189/p173全件100%未達。製品browser/runner/WPT/ABI/Master無変更、共有投影/GitHub publication保留。
+
+## q1091-i01 有限部分範囲（2026-10-14 07:42 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:12 JSTまで）に適用。水平RTL Gridの固定trackと余白で`justify-content:normal`をinline-start（右）へ配置し、位置指定grid直接absolute子で両axis inset auto、有効明示row/column、inline start alignmentに限りprivate right-edge static metadataを幅確定後の配置へ使う。固定/auto幅最小HTML、q1089 LTR/明示inset/無効line、固定WPT水平RTL2件、旧PASS代表、classic JS14、warning0 host build、Acid3差0・Acid2非増加を検証。縦書き/他alignment/Grid502全再測定、runner/WPT/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1091-i01 結果（2026-10-14 07:48 JST）
+
+Event ws074-p217-q1091-partial-clear-20261014: [証拠](evidence/20261014-q1091/README.md)。RTL normalの余白を右へ配し、有効明示areaのabsolute子で幅確定後に右端からstatic配置。最小RTL5ケースとq1089 LTR、Grid48/48/physical21/21、classic JS14/14、warning0 host build、Acid3差0・Acid2差1865。固定WPT代表2件の水平RTL subtestが各FAIL→PASS、旧PASS代表100/100維持。wholeは縦書き2 subtestがFAIL。q1091-i01部分cleared、p217 whole/p189/p173全件100%未達、共有投影/GitHub publication保留。

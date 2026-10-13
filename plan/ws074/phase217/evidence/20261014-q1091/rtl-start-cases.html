@@ -1,0 +1,12 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; direction: rtl; justify-items: start; width: 400px; grid-template-columns: 100px 150px; grid-template-rows: 80px 80px; margin-bottom: 10px; }
+.grid > div { position: absolute; grid-row: 1 / 2; height: 10px; }
+.fixed { grid-column: 1 / 2; width: 20px; }
+.auto { grid-column: 1 / 2; font: 10px monospace; }
+.second { grid-column: 2 / 3; width: 30px; }
+.explicit { grid-column: 1 / 2; width: 20px; left: 7px; top: 9px; }
+.invalid { grid-column: 99 / 100; width: 20px; }
+</style>
+<div class="grid"><div class="fixed">X</div><div class="second">Y</div><div class="explicit">E</div><div class="invalid">I</div></div>
+<div class="grid"><div class="auto">XXXX</div></div>

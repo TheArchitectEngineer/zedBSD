@@ -128,6 +128,7 @@ layout_grid(
 			continue;
 		child->static_x = 0;
 		child->static_y = 0;
+		child->static_x_from_right = 0;
 	}
 
 	/* The items, placed in their cells. */
@@ -168,6 +169,9 @@ layout_grid(
 		shift = room / 2;
 	if (room > 0) {
 		if (box->style.justify_content == CSS_ALIGN_RIGHT ||
+		    (box->style.justify_content == CSS_ALIGN_NORMAL &&
+		    box->style.direction == CSS_DIRECTION_RTL &&
+		    box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB) ||
 		    (box->style.justify_content == CSS_ALIGN_END &&
 		    box->style.direction == CSS_DIRECTION_LTR) ||
 		    (box->style.justify_content == CSS_ALIGN_START &&
@@ -428,15 +432,18 @@ grid_static_position(
 	int row;
 	int row_span;
 	int index;
+	int justify;
 
 	/* Other writing directions retain their existing static-position path. */
 	if (box->style.position != CSS_POSITION_RELATIVE)
 		return;
 	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
 		return;
-	if (box->style.direction != CSS_DIRECTION_LTR)
+	if (box->style.direction != CSS_DIRECTION_LTR &&
+	    box->style.direction != CSS_DIRECTION_RTL)
 		return;
 
+	/* A direct absolute child can use a definite explicit area without becoming a grid item. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->style.position != CSS_POSITION_ABSOLUTE)
 			continue;
@@ -466,11 +473,28 @@ grid_static_position(
 			continue;
 		if (row + row_span > box->style.row_count)
 			continue;
+		if (box->style.direction == CSS_DIRECTION_RTL) {
+			justify = child->style.justify_self;
+			if (justify == CSS_ALIGN_AUTO)
+				justify = box->style.justify_items;
+			if (justify != CSS_ALIGN_START)
+				continue;
+		}
 
 		/* Track offsets include the container's content distribution and gaps. */
 		x = shift;
-		for (index = 0; index < column; index++)
-			x += grid->columns[index] + column_gap;
+		if (box->style.direction == CSS_DIRECTION_RTL) {
+			/* The right edge includes the current column and every track after it. */
+			for (index = column; index < grid->column_count; index++) {
+				x += grid->columns[index];
+				if (index + 1 < grid->column_count)
+					x += column_gap;
+			}
+			child->static_x_from_right = 1;
+		} else {
+			for (index = 0; index < column; index++)
+				x += grid->columns[index] + column_gap;
+		}
 		y = 0;
 		for (index = 0; index < row; index++)
 			y += grid->rows[index] + row_gap;

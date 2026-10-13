@@ -74,6 +74,7 @@ def main():
         ("grid-template-columns:30px 70px;", "grid-column:2;", (30.0, 20.0)),
         ("direction:rtl;grid-template-columns:30px 70px;", "grid-column:1;", (80.0, 20.0)),
         ("direction:rtl;grid-template-columns:30px 70px;", "grid-column:2;", (50.0, 20.0)),
+        ("direction:rtl;grid-template-columns:30px;", "", (80.0, 20.0)),
         ("direction:rtl;grid-template-columns:30px;justify-content:start;", "", (80.0, 20.0)),
         ("direction:rtl;grid-template-columns:30px;justify-content:end;", "", (10.0, 20.0)),
         ("direction:rtl;grid-template-columns:30px;justify-content:left;", "", (10.0, 20.0)),

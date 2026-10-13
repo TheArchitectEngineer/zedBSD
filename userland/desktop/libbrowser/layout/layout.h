@@ -130,6 +130,8 @@ struct layout_box {
 	int atomic;
 	layout_unit static_x;
 	layout_unit static_y;
+	/* A Grid absolute child's static_x names the right edge of its area. */
+	int static_x_from_right;
 
 	/* The box model, resolved. */
 	layout_unit x;

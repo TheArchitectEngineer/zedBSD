@@ -577,6 +577,9 @@ position_place(
 		x = containing->x + left + box->margin[CSS_LEFT];
 	} else if (has_right) {
 		x = containing->x + containing->width - right - box->margin[CSS_RIGHT] - (box->width + frame);
+	} else if (box->static_x_from_right) {
+		/* A Grid inline-start edge needs the width that was just measured. */
+		x = box->static_x - box->margin[CSS_RIGHT] - (box->width + frame);
 	} else {
 		x = box->static_x + box->margin[CSS_LEFT];
 	}
