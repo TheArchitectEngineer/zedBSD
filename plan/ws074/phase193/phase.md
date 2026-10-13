@@ -50,8 +50,18 @@ Event ws074-p193-q1028-outcome-20261014: q1028-i01 partial cleared、p193 whole�
 
 2026-10-14 01:14 JST、ユーザーの事前承認を適用、最大90分。q1029後の固定`hidden-until-found-and-details.html` は内側の `hidden` を除去できないまま外側の `beforematch` に進む。`dom_element_remove_attribute` が intern 済み属性名のポインタ同一性を要するため、fragment祖先reveal内の `hidden` 除去と `details` の `open` 設定にatomを用い、順序・後続状態を修正する。固定hidden/details WPT、局所fixture、host build/関連試験、Acid3/Acid2差画素非増加を確認。toggle全仕様やp193全件PASSはこの部分基準に含めない。WPT本体/公開ABI/`master.md`は変更しない。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
 
-## q1030-i01 結果（2026-10-14 01:17 JST）
+## q1030-i01 結果（2026-10-14 01:16 JST）
 
 **partial scope cleared、p193 whole uncleared。** reveal内の`hidden`除去と`open`設定をatom名に修正。[証拠](evidence/20261014-q1030/README.md)。局所fixtureは内側から外側への状態とイベント順を確認。固定beforematch中断2 WPTはPASS。`hidden-until-found-and-details.html`は次の`toggle`通知待ちでno output、PASS未達。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。p193 wholeとp173全件は未達、GitHub publication保留。
 
 Event ws074-p193-q1030-outcome-20261014: q1030-i01 partial cleared、p193 wholeはuncleared。次の固定WPT阻害はdetails toggle通知。
+
+## q1031-i01 の有限部分範囲
+
+2026-10-14 01:16 JST、ユーザーの事前承認を適用、最大90分。`details.open` setterとfragment revealによる開閉の状態変化で、非同期の`toggle`通知をqueueする。同task内に同じdetailsの変更が重なる場合は通知を1回にまとめる。固定`hidden-until-found-and-details.html`、局所fixture、host build/関連試験、Acid3/Acid2差画素非増加を確認。ToggleEventのoldState/newState全仕様やp193全件PASSはこの部分基準に含めない。WPT本体/公開ABI/`master.md`は変更しない。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1031-i01 結果（2026-10-14 01:18 JST）
+
+**partial scope cleared、p193 whole uncleared。** details.open IDLとfragment revealの状態変化で非同期・非bubblingのtoggle通知を1回queue。[証拠](evidence/20261014-q1031/README.md)。局所fixtureで同期時未発火・同task内3変更のcoalescing・最終状態を確認。固定`hidden-until-found-and-details.html`1/1 PASS、先行beforematch PASS維持。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。p193 whole、p173全件は未達、GitHub publication保留。
+
+Event ws074-p193-q1031-outcome-20261014: q1031-i01 partial cleared、p193 wholeはuncleared。残るdetails/hidden固定対象を再分類する。

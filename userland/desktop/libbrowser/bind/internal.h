@@ -400,6 +400,7 @@ extern const struct bind_interface bind_document_type_interface;
 extern const struct bind_interface bind_document_fragment_interface;
 extern const struct bind_interface bind_element_interface;
 extern const struct bind_interface bind_html_element_interface;
+int bind_details_queue_toggle(struct bind_window *window, struct dom_element *element);
 extern const struct bind_interface bind_window_interface;
 extern const struct bind_interface bind_event_interface;
 extern const struct bind_interface bind_submit_event_interface;

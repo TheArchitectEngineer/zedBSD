@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1030 / WS074 fragment ancestor attribute identity
+# q1031 / WS074 details toggle task
 
-Status: finished（2026-10-14 01:14〜01:17 JST）
+Status: finished（2026-10-14 01:16〜01:18 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 01:14 JST 開始、最大90分（02:44 JSTまで）。
+Timebox: 2026-10-14 01:16 JST 開始、最大90分（02:46 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1030-i01 | [ws074-p193](phase193/phase.md) partial | fragment祖先revealでDOM属性名のatom同一性を保ち、hidden除去とdetails openを正しく反映する。局所fixture・固定hidden/details WPT・host build/Acid回帰。toggle全仕様等、WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | q1029 attributes WPT output |
+| q1031-i01 | [ws074-p193](phase193/phase.md) partial | details.openの状態変化とfragment revealから非同期toggle通知を1回queueし、同task内の繰返し変更をまとめる。局所fixture・固定hidden/details WPT・host build/Acid回帰。ToggleEventのold/new state全仕様、WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | q1030 reveal order output |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -52,3 +52,5 @@ Outcome: q1028-i01 partial cleared、p193 whole uncleared。同一文書hash・f
 Outcome: q1029-i01 partial cleared、p194 whole uncleared。Element.attributesのlive read surfaceで固定beforematch WPT1/1 PASS。別WPTはreveal順序差でFAIL。host build warning0・native property65/65・realm30/30・Acid3差0/Acid2差1865。[証拠](phase194/evidence/20261014-q1029/README.md)。p173全件100%未達。
 
 Outcome: q1030-i01 partial cleared、p193 whole uncleared。hidden/openのatom同一性を修正し固定中断2 WPT PASS。別WPTはtoggle待ちでno output。host build warning0・native property65/65・realm30/30・Acid3差0/Acid2差1865。[証拠](phase193/evidence/20261014-q1030/README.md)。p173全件100%未達。
+
+Outcome: q1031-i01 partial cleared、p193 whole uncleared。非同期toggleをcoalesceし固定hidden/details WPT1/1 PASS、先行beforematch PASS維持。host build warning0・native property65/65・realm30/30・Acid3差0/Acid2差1865。[証拠](phase193/evidence/20261014-q1031/README.md)。p173全件100%未達。

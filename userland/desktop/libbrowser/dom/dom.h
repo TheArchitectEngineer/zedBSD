@@ -386,6 +386,8 @@ struct dom_element {
 	struct vm_object *cells_collection;
 	/* Script click suppresses recursion until its activation and callbacks finish. */
 	int click_in_progress;
+	/* One pending details toggle task coalesces changes in the current task. */
+	int toggle_pending;
 	/* Native submission events suppress same-form reentrancy until dispatch completes. */
 	int firing_submission_events;
 	/* A connected iframe retains its child realm until synchronous removal. */

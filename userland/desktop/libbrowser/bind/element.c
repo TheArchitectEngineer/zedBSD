@@ -36,6 +36,7 @@ static int element_hidden_set(struct vm_realm *realm, vm_value this_value, const
 static int element_hidden_until_found(const struct vm_string *value);
 static int details_open_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int details_open_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int details_toggle_task(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_get_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_set_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_remove_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -831,6 +832,76 @@ cleanup:
 	return 0;
 }
 
+/* Queues one details toggle through the page's existing task timer. */
+int
+bind_details_queue_toggle(
+	struct bind_window *window,
+	struct dom_element *element)
+{
+	struct vm_function *function;
+	struct vm_cell *roots[2];
+	vm_value arguments[2];
+	vm_value timer_id;
+	unsigned registered;
+	int status;
+
+	/* A pending task delivers the final state once for this element. */
+	if (element->toggle_pending)
+		return 0;
+	roots[0] = &element->node.cell;
+	roots[1] = NULL;
+	registered = 0U;
+	status = vm_heap_add_root(window->realm->heap, &roots[0]);
+	if (status != 0)
+		return status;
+	registered++;
+	status = js_builtin_function(window->realm, "details toggle task", 0, details_toggle_task, NULL, &function);
+	if (status != 0)
+		goto cleanup;
+	roots[1] = &function->object.cell;
+	status = vm_heap_add_root(window->realm->heap, &roots[1]);
+	if (status != 0)
+		goto cleanup;
+	registered++;
+	function->data = vm_value_cell(element);
+	arguments[0] = vm_value_cell(function);
+	arguments[1] = vm_value_int32(0);
+	status = bind_set_timeout(window->realm, VM_VALUE_UNDEFINED, arguments, 2U, &timer_id);
+	if (status == 0)
+		element->toggle_pending = 1;
+
+cleanup:
+	while (registered != 0U) {
+		registered--;
+		vm_heap_remove_root(window->realm->heap, &roots[registered]);
+	}
+	return status;
+}
+
+/* Runs after the current script task and sends one non-bubbling toggle. */
+static int
+details_toggle_task(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct vm_function *callee;
+	struct dom_element *element;
+	int canceled;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	*result = VM_VALUE_UNDEFINED;
+	callee = js_builtin_callee(realm);
+	element = (struct dom_element *)vm_value_as_cell(callee->data);
+	element->toggle_pending = 0;
+	canceled = 0;
+	return bind_fire_event(bind_window_of(realm), &element->node, "toggle", 0U, &canceled);
+}
+
 /* Reports the details element's reflected boolean open attribute. */
 static int
 details_open_get(
@@ -867,6 +938,7 @@ details_open_set(
 	struct vm_cell *roots[2];
 	vm_value pair[2];
 	unsigned registered;
+	int was_open;
 	int open;
 	int status;
 
@@ -876,6 +948,7 @@ details_open_set(
 	if (element->ns != DOM_NS_HTML || element->tag != DOM_TAG_DETAILS)
 		return bind_throw_illegal(realm);
 	*result = VM_VALUE_UNDEFINED;
+	was_open = dom_attribute_ascii(element, "open") != NULL;
 	open = vm_to_boolean(js_argument(args, count, 0));
 	status = bind_string(realm, "open", &pair[0]);
 	if (status != 0)
@@ -898,6 +971,8 @@ details_open_set(
 		status = element_set_attribute(realm, this_value, pair, 2U, result);
 	else
 		status = element_remove_attribute(realm, this_value, pair, 1U, result);
+	if (status == 0 && was_open != open)
+		status = bind_details_queue_toggle(bind_window_of(realm), element);
 
 cleanup:
 	while (registered != 0U) {

@@ -1,0 +1,9 @@
+<!doctype html><details id="sample"><summary>Title</summary>Body</details><script>
+var count = 0;
+sample.addEventListener('toggle', function (event) { count++; console.log('toggle', String(count), String(sample.open), String(event.bubbles)); });
+sample.open = true;
+sample.open = false;
+sample.open = true;
+console.log('sync', String(count), String(sample.open));
+setTimeout(function () { console.log('later', String(count)); }, 0);
+</script>

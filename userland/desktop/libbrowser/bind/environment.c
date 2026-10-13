@@ -1762,8 +1762,11 @@ environment_open_details(
 	value = vm_string_from_utf8(realm->heap, "", 0U);
 	if (value == NULL)
 		error = ENOMEM;
-	else
+	else {
 		error = dom_element_set_attribute(element, name, value);
+		if (error == 0)
+			error = bind_details_queue_toggle(bind_window_of(realm), element);
+	}
 	vm_heap_remove_root(realm->heap, &root);
 	return error;
 }

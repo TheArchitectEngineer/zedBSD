@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1031 / WS074 details toggle task（2026-10-14）
+
+[q1031履歴](queue-q1031.md): 非同期toggleをcoalesceし、固定hidden/details WPT1/1 PASS。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1031/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1030 / WS074 fragment ancestor attribute identity（2026-10-14）
 
 [q1030履歴](queue-q1030.md): hidden/openのatom同一性を修正し、固定中断WPT2件PASS。別WPTはtoggle待ち。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1030/README.md)。共有投影/GitHub publication pending。

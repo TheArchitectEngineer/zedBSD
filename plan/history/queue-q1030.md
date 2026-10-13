@@ -2,7 +2,7 @@
 
 # q1030 / WS074 fragment ancestor attribute identity
 
-Status: finished（2026-10-14 01:14〜01:17 JST）。Approval: この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を [p193の有限部分scope](../ws074/phase193/phase.md) に適用。最大90分。
+Status: finished（2026-10-14 01:14〜01:16 JST）。Approval: この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を [p193の有限部分scope](../ws074/phase193/phase.md) に適用。最大90分。
 
 | Attempt | Phase | Exact scope | Outcome |
 | --- | --- | --- | --- |
