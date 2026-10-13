@@ -1,6 +1,6 @@
 --- a/include/hal/hal.h
 +++ b/include/hal/hal.h
-@@ -1217,21 +1217,55 @@
+@@ -1218,21 +1218,55 @@
   */
  
  /*
@@ -60,7 +60,7 @@
   */
  hal_task_t
  hal_task_create(
-@@ -1241,25 +1275,54 @@
+@@ -1242,25 +1276,54 @@
  	void *user_stack_pointer);
  
  /*
@@ -121,7 +121,7 @@
   */
  hal_task_t
  hal_task_fork_current(
-@@ -1267,7 +1330,19 @@
+@@ -1268,7 +1331,19 @@
  	intptr_t child_syscall_result);
  
  /*
@@ -142,7 +142,7 @@
   */
  int
  hal_task_exec_current(
-@@ -1276,7 +1351,15 @@
+@@ -1277,7 +1352,15 @@
  	uintptr_t user_stack_pointer);
  
  /*
@@ -159,7 +159,7 @@
   */
  int
  hal_task_exec_validate(
-@@ -1285,14 +1368,23 @@
+@@ -1286,14 +1369,23 @@
  	uintptr_t user_stack_pointer);
  
  /*
@@ -186,7 +186,7 @@
   */
  int
  hal_task_get_user_context(
-@@ -1301,7 +1393,25 @@
+@@ -1302,7 +1394,25 @@
  	intptr_t *return_value);
  
  /*
@@ -213,7 +213,7 @@
   */
  int
  hal_task_signal_enter(
-@@ -1314,7 +1424,18 @@
+@@ -1315,7 +1425,18 @@
  	uint32_t token);
  
  /*
@@ -233,7 +233,7 @@
   */
  int
  hal_task_signal_return(
-@@ -1322,13 +1443,21 @@
+@@ -1323,13 +1444,21 @@
  	intptr_t *return_value);
  
  /*
@@ -257,7 +257,7 @@
   */
  void
  hal_task_set_tls(
-@@ -1336,28 +1465,55 @@
+@@ -1337,28 +1466,55 @@
  	uintptr_t value);
  
  /*
@@ -315,7 +315,7 @@
  int
  hal_task_transfer(
  	hal_task_t task,
-@@ -1381,32 +1537,66 @@
+@@ -1382,32 +1538,66 @@
   * the structures are declared in its own header; a caller that has to name
   * a register copies the set into a form of its own rather than passing this
   * one outward.
@@ -382,7 +382,7 @@
  int
  hal_task_set_user_vregs(
  	hal_task_t task,
-@@ -1419,12 +1609,20 @@
+@@ -1420,12 +1610,20 @@
   * the others run.  An architecture with no step facility of its own
   * arranges the same observable behaviour by other means: where the next
   * instruction ends is something only the architecture knows.
@@ -403,7 +403,7 @@
  int
  hal_task_get_single_step(
  	hal_task_t task,
-@@ -1472,6 +1670,17 @@
+@@ -1473,6 +1671,17 @@
  	const struct hal_debug_point *points,
  	unsigned count);
  

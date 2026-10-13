@@ -75,7 +75,7 @@
  int
  hal_putchar(
  	int c);
-@@ -83,26 +120,62 @@
+@@ -83,26 +120,63 @@
   * Before the kernel console exists this writes to the HAL's own early
   * console. Once the kernel publishes kernel_putc, every character is
   * delegated there instead and the HAL stops touching the display.
@@ -104,7 +104,8 @@
 + *
 + * Only these conversions are understood: %c, %s (NULL prints "(null)"),
 + * %u and %x of an unsigned, with an optional field width and leading 0,
-+ * and the l and ll length modifiers for 64-bit values, and %%.  Any
++ * and the l and ll length modifiers (long and long long, as in C), and
++ * %%.  Any
 + * other conversion is not portable between architectures.  It may be
 + * called in any context, as hal_putc() may; whether the lines of two
 + * CPUs can interleave depends on the architecture.

@@ -1,6 +1,6 @@
 --- a/include/hal/hal.h
 +++ b/include/hal/hal.h
-@@ -186,39 +186,72 @@
+@@ -187,39 +187,72 @@
  /*
   * SMP
   *
@@ -79,7 +79,7 @@
   */
  void
  hal_cpu_ready_mask(
-@@ -246,25 +279,47 @@
+@@ -247,25 +280,47 @@
  /*
   * Notify every CPU of a mask, as hal_cpu_notify() does one.  Every CPU
   * is checked before any is notified: on an error none was.
@@ -129,7 +129,7 @@
   */
  void
  hal_cpu_idle(void);
-@@ -309,12 +364,18 @@
+@@ -310,12 +365,18 @@
   * XXX: Is this same to hal_cpu_idle()??
   *
   * Halt until a next interrupt.
@@ -149,7 +149,7 @@
   */
  static inline void
  hal_cpu_mask_zero(
-@@ -327,7 +388,9 @@
+@@ -328,7 +389,9 @@
  }
  
  /*
@@ -160,7 +160,7 @@
   */
  static inline void
  hal_cpu_mask_fill(
-@@ -340,7 +403,8 @@
+@@ -341,7 +404,8 @@
  }
  
  /*
@@ -170,7 +170,7 @@
   */
  static inline void
  hal_cpu_mask_set(
-@@ -352,7 +416,8 @@
+@@ -353,7 +417,8 @@
  }
  
  /*
@@ -180,7 +180,7 @@
   */
  static inline void
  hal_cpu_mask_clear(
-@@ -364,7 +429,8 @@
+@@ -365,7 +430,8 @@
  }
  
  /*
@@ -190,7 +190,7 @@
   */
  static inline int
  hal_cpu_mask_test(
-@@ -1364,19 +1430,28 @@
+@@ -1365,19 +1431,28 @@
  	const char *name);
  
  /*

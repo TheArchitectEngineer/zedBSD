@@ -68,7 +68,8 @@
  *
  * Only these conversions are understood: %c, %s (NULL prints "(null)"),
  * %u and %x of an unsigned, with an optional field width and leading 0,
- * and the l and ll length modifiers for 64-bit values, and %%.  Any
+ * and the l and ll length modifiers (long and long long, as in C), and
+ * %%.  Any
  * other conversion is not portable between architectures.  It may be
  * called in any context, as hal_putc() may; whether the lines of two
  * CPUs can interleave depends on the architecture.
