@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1087 / WS074 Grid testharness recensus（2026-10-14）
+## 最新: q1088 / WS074 Grid alignment diagnosis（2026-10-14）
+
+[q1088履歴](queue-q1088.md): alignment FAIL206件を分類し、絶対配置grid子のstatic原点、縦書き強制stretch、`grid` shorthand欠落を別欠陥として確認。[証拠](../ws074/phase217/evidence/20261014-q1088/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1087 / WS074 Grid testharness recensus（2026-10-14）
 
 [q1087履歴](queue-q1087.md): 固定Grid502 IDを全再測定し103 PASS/399 FAIL/no_output0。旧no_output32がPASS、旧PASS後退0。[証拠](../ws074/phase189/evidence/20261014-q1087/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

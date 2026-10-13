@@ -1,0 +1,94 @@
+{
+  "filename_tag_counts": {
+    "auto-margins": 10,
+    "baseline": 43,
+    "positioned": 64,
+    "style-changes": 8,
+    "vertical": 45
+  },
+  "fixed_grid_alignment_fail_ids": 206,
+  "representatives": [
+    "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-001.html",
+    "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-001.html",
+    "/css/css-grid/alignment/grid-alignment-style-changes-001.html"
+  ],
+  "top_failure_messages": [
+    {
+      "count": 465,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-vertical.html",
+      "pattern": "width expected N but got N"
+    },
+    {
+      "count": 363,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-001.html",
+      "pattern": "offsetLeft expected N but got N"
+    },
+    {
+      "count": 203,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-003.html",
+      "pattern": "offsetTop expected N but got N"
+    },
+    {
+      "count": 64,
+      "example_id": "/css/css-grid/alignment/grid-align-content-distribution-vertical-lr.html",
+      "pattern": "height expected N but got N"
+    },
+    {
+      "count": 4,
+      "example_id": "/css/css-grid/alignment/grid-content-alignment-overflow-002.html",
+      "pattern": "scrollWidth expected N but got N"
+    },
+    {
+      "count": 3,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-vertical.html",
+      "pattern": "assert_equals: baselineN and baselineN should have the same baseline; expected N but got N"
+    },
+    {
+      "count": 3,
+      "example_id": "/css/css-grid/alignment/grid-content-alignment-overflow-002.html",
+      "pattern": "scrollHeight expected N but got N"
+    },
+    {
+      "count": 1,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-vertical.html",
+      "pattern": "assert_equals: baselineN and baselineN should be right aligned with each other; expected N but got N"
+    },
+    {
+      "count": 1,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-vertical.html",
+      "pattern": "assert_less_than: baselineN and baselineN should be below the dominant baseline; expected a number less than N but got N"
+    },
+    {
+      "count": 1,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline-vertical.html",
+      "pattern": "assert_equals: baselineN and baselineN should be left aligned with each other; expected N but got N"
+    },
+    {
+      "count": 1,
+      "example_id": "/css/css-grid/alignment/grid-align-baseline.html",
+      "pattern": "assert_greater_than: baselineN and baselineN should be below the dominant baseline; expected a number greater than N but got N"
+    }
+  ],
+  "top_families": {
+    "grid-align-baseline": 4,
+    "grid-align-baseline-fieldset": 3,
+    "grid-align-baseline-flex": 4,
+    "grid-align-baseline-grid": 3,
+    "grid-align-baseline-multicol": 3,
+    "grid-align-baseline-overflow": 3,
+    "grid-alignment-implies-size-change": 6,
+    "grid-alignment-style-changes": 8,
+    "grid-block-axis-alignment-auto-margins": 7,
+    "grid-column-axis-alignment-positioned-items": 17,
+    "grid-column-axis-self-baseline-synthesized": 5,
+    "grid-justify-baseline": 4,
+    "grid-row-axis-alignment-positioned-items": 17,
+    "grid-row-axis-self-baseline-synthesized": 5,
+    "grid-self-alignment-non-static-positioned-items": 12,
+    "grid-self-alignment-positioned-items-with-margin-border-padding": 16,
+    "grid-self-alignment-stretch": 12,
+    "grid-self-alignment-stretch-vertical-lr": 16,
+    "grid-self-alignment-stretch-vertical-rl": 16,
+    "grid-self-baseline-not-applied-if-sizing-cyclic-dependency": 3
+  }
+}
