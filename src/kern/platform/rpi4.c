@@ -317,6 +317,19 @@ kern_platform_halt(
 }
 
 /*
+ * Stops the onboard Wi-Fi's publishing thread before a shutdown or reboot.
+ */
+void
+kern_platform_shutdown_prepare(
+	void)
+{
+#if CONFIG_DRIVER_BCM2711_WIFI
+	/* Ends a bring-up still in progress; a published wlanN is closed by the network's shutdown. */
+	drv_rpi4_wifi_stop();
+#endif
+}
+
+/*
  * Turns the power off through the HAL, halting if that returns.
  */
 int

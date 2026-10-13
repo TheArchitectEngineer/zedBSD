@@ -10,9 +10,10 @@
  *
  * The chip (Broadcom/Cypress BCM43455) sits on the legacy EMMC controller's
  * SDIO bus.  The probe only reads the device tree and starts a thread; the
- * thread powers the chip, routes its pins and enumerates its SDIO
- * interface.  Until the chip's own driver exists, it reports what it found
- * and powers the chip down again.
+ * thread waits for the root file system and the firmware package's files,
+ * routes the chip's pins, starts the host, and has the BCM43455 driver
+ * (src/drivers/wifi/bcm43455/) power the chip, learn its identity and
+ * publish it as wlanN.
  */
 
 #ifndef KERN_DRIVERS_RPI4_WIFI_H
@@ -32,10 +33,13 @@
 int drv_rpi4_wifi_probe(uint64_t fdt_phys, uintptr_t sd_base);
 
 /*
- * Stops the thread and waits until it has powered the chip down.
+ * Stops the publishing thread and waits until it has ended.
  *
- * Returns at once when there is no thread.  Thread context only; never
- * called by the thread itself.
+ * A thread stopped before the publication gives the host and the chip's
+ * power back; a published chip is left to its network device, which the
+ * network's shutdown closes.  Returns at once when there is no thread.
+ * Called before a shutdown or reboot, so no wlanN appears while the
+ * network stops.  Thread context only; never called by the thread itself.
  */
 void drv_rpi4_wifi_stop(void);
 

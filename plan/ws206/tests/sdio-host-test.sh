@@ -5,7 +5,7 @@
 #
 # SPDX-License-Identifier: Zlib
 #
-# Builds the Raspberry Pi 4 SDIO host test (ws206-p002b) twice and runs it:
+# Builds the Raspberry Pi 4 SDIO host test (ws206-p002b, p004) twice and runs it:
 # the single-threaded checks under AddressSanitizer and
 # UndefinedBehaviorSanitizer, the stop and the threads under
 # ThreadSanitizer.  The guest is not started.
@@ -56,4 +56,6 @@ export TSAN_OPTIONS
 "$OUT/sdio-host-test-unit" unit "$DTB"
 "$OUT/sdio-host-test-smp" stop "$DTB"
 "$OUT/sdio-host-test-smp" smp "$DTB"
+"$OUT/sdio-host-test-unit" nopackage "$DTB"
+"$OUT/sdio-host-test-unit" refused "$DTB"
 echo "sdio-host-test: PASS"

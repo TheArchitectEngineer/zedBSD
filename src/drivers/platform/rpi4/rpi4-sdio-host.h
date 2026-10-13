@@ -97,7 +97,9 @@ struct drv_rpi4_sdio_command {
  * interrupt should reach the CPU at all.  card_irq_armed is whether it is
  * enabled in the controller right now: the handler disarms it when it
  * fires, because the controller keeps raising the level until the card is
- * served, and the serving thread rearms it afterwards.
+ * served, and the serving thread rearms it afterwards.  card_irq_kicked
+ * is a wakeup without an interrupt, for work the serving thread has
+ * besides the card.
  */
 struct drv_rpi4_sdio_host {
 	volatile uint8_t *registers;
@@ -114,6 +116,7 @@ struct drv_rpi4_sdio_host {
 	unsigned card_irq_wanted;
 	unsigned card_irq_armed;
 	unsigned card_irq_pending;
+	unsigned card_irq_kicked;
 	uint64_t card_irq_count;
 };
 
@@ -189,10 +192,17 @@ void drv_rpi4_sdio_host_card_irq_rearm(struct drv_rpi4_sdio_host *host);
  * Waits until the card's interrupt fires or the scheduler's clock reaches
  * deadline.
  *
- * Returns 0 for an interrupt, which is consumed, and ETIMEDOUT at the
- * deadline; the caller then looks at the card anyway.  Thread context only.
+ * Returns 0 for an interrupt, which is consumed, EAGAIN for a kick
+ * (drv_rpi4_sdio_host_card_irq_kick()), and ETIMEDOUT at the deadline;
+ * the caller then looks at the card anyway.  Thread context only.
  */
 int drv_rpi4_sdio_host_card_irq_wait(struct drv_rpi4_sdio_host *host, uint64_t deadline);
+
+/*
+ * Ends the serving thread's current or next wait for the card's
+ * interrupt with EAGAIN.  Any thread context.
+ */
+void drv_rpi4_sdio_host_card_irq_kick(struct drv_rpi4_sdio_host *host);
 
 /*
  * Stops the controller: no interrupt, no bus clock and no bus power.
