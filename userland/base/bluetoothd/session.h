@@ -8,9 +8,10 @@
 /*
  * One controller's session in bluetoothd (ws143-p003, ws143-p004): the H4
  * packets read and written on its node (/dev/bluetoothN, or a socket pair in the
- * host tests), one command at a time, the start (Intel's firmware load,
- * then the HCI core's set-up), the scan, and the ACL data path with the
- * controller's buffers counted (the BR/EDR pool and LE's).
+ * host tests), one command at a time, the start (Intel's firmware load, or
+ * on a UART Broadcom's (ws215-p005), then the HCI core's set-up), the scan,
+ * and the ACL data path with the controller's buffers counted (the BR/EDR
+ * pool and LE's).
  *
  * A packet that comes while a command waits for its answer is queued and
  * handed out later, from btd_session_input, so the handler that gets the
@@ -25,6 +26,7 @@
 #define BLUETOOTHD_SESSION_H
 
 #include "userland/base/bluetoothd/acl.h"
+#include "userland/base/bluetoothd/broadcom.h"
 #include "userland/base/bluetoothd/hci.h"
 #include "userland/base/bluetoothd/intel.h"
 
@@ -38,6 +40,16 @@
 
 /* The longest firmware file read. */
 #define BTD_FIRMWARE_MAX	(4U * 1024U * 1024U)
+
+/*
+ * The start's retries (ws215-p001, the answer to review-2's 中-B): how
+ * many failures in a row stop the tries, and how long a ready controller
+ * must stay up before its run of failures is forgotten.  A reset the
+ * daemon did not ask for, within that time of a ready start, is a
+ * failure too.
+ */
+#define BTD_RETRY_FAILURES_MAX	3U
+#define BTD_RETRY_STEADY_MS	60000U
 
 /* The longest scan, in seconds. */
 #define BTD_SCAN_SECONDS_MAX	30U
@@ -97,11 +109,35 @@ enum btd_state {
 	BTD_STATE_LOST
 };
 
-/* How long the session waits: for a command's answer, for the download's end and for the boot (milliseconds). */
+/*
+ * How long the session waits (milliseconds): for a command's answer, for
+ * Intel's download's end and boot; on a UART for the kernel's notice of
+ * the reset the start begins with, after Broadcom's Download Minidriver,
+ * for Launch RAM's answer, and for the patch to settle after it.
+ */
 struct btd_timing {
 	unsigned command_ms;
 	unsigned download_ms;
 	unsigned boot_ms;
+	unsigned reset_ms;
+	unsigned minidriver_ms;
+	unsigned launch_ms;
+	unsigned settle_ms;
+};
+
+/*
+ * The daemon's count of failed starts in a row (ws215-p005): the failures,
+ * whether the tries stopped, and when the controller last became ready
+ * (ready says it still is).  A start that fails, or a reset the daemon did
+ * not ask for within BTD_RETRY_STEADY_MS of a ready start, counts one;
+ * BTD_RETRY_FAILURES_MAX of them stop the tries until a recovery clears
+ * them; a controller ready for BTD_RETRY_STEADY_MS forgets them.
+ */
+struct btd_retry {
+	unsigned failures;
+	int stopped;
+	int ready;
+	uint64_t ready_ms;
 };
 
 struct btd_session;
@@ -251,6 +287,28 @@ struct btd_session {
 	struct btd_intel_version intel_version;
 	int firmware_loaded;
 
+	/*
+	 * A Broadcom controller on a UART (ws215-p005): its patch files'
+	 * folder, whether it is one, the chip's name, the line's speed now,
+	 * whether this attempt changed the speed (a failure after that is
+	 * tried again at the ROM's speed) and whether the tries at the fast
+	 * speed were given up, the LMP subversions before and after the patch,
+	 * whether Launch RAM went unanswered, the address the patched
+	 * controller had, and what was done with it.
+	 */
+	const char *broadcom_folder;
+	int broadcom;
+	char chip[BTD_BROADCOM_CHIP_MAX];
+	uint32_t line_speed;
+	int speed_changed;
+	int slow;
+	uint16_t rom_subversion;
+	uint16_t lmp_subversion;
+	int launch_unanswered;
+	uint8_t rom_address[BTD_ADDRESS_BYTES];
+	enum btd_broadcom_address address_choice;
+	int address_written;
+
 	/* The scan: the devices found, whether one runs, which parts, and when it ends. */
 	struct btd_devices devices;
 	int scanning;
@@ -342,5 +400,10 @@ unsigned btd_session_link_room(const struct btd_session *session, uint16_t handl
 unsigned btd_session_links(const struct btd_session *session, uint16_t *handles, uint8_t (*addresses)[BTD_ADDRESS_BYTES], unsigned max);
 const char *btd_state_name(enum btd_state state);
 uint64_t btd_now_ms(void);
+void btd_retry_clear(struct btd_retry *retry);
+void btd_retry_ready(struct btd_retry *retry, uint64_t now);
+int btd_retry_failed(struct btd_retry *retry);
+int btd_retry_reset(struct btd_retry *retry, uint64_t now);
+void btd_retry_tick(struct btd_retry *retry, uint64_t now);
 
 #endif

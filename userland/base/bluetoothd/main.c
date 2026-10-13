@@ -18,8 +18,12 @@
  * the bonds and their removal.  A node that goes (the controller was
  * pulled out, or re-enumerated after its firmware's boot) is closed, and
  * the nodes are looked for again every BTD_RETRY_MS; so is a controller
- * whose start failed in a way a new start may mend, BTD_FAILURES_MAX times
- * in a row at most.
+ * whose start failed in a way a new start may mend, or that was reset
+ * under the daemon soon after a ready start, BTD_RETRY_FAILURES_MAX times
+ * in a row at most (ws215-p005, session.h).
+ *
+ * A controller on a UART (the Raspberry Pi 4's, ws215-p005) is reset by
+ * the kernel at each start and loaded with its Broadcom patch each time.
  *
  * Intel's firmware is loaded once for a controller (by its USB vendor,
  * product and port): one that comes back in its bootloader after a load
@@ -72,8 +76,7 @@
 /* How often the nodes are looked for while there is no controller. */
 #define BTD_RETRY_MS		2000U
 
-/* How many starts in a row may fail before the daemon stops trying, and how long a booted controller may take to come back. */
-#define BTD_FAILURES_MAX	3U
+/* How long a booted controller may take to come back. */
 #define BTD_REAPPEAR_MS		10000U
 
 /* How many controllers' loads are remembered, and the length of a controller's key. */
@@ -176,6 +179,8 @@ static void btd_forget_load(const char *key);
 static int btd_listen(void);
 static void btd_open(void);
 static void btd_close(void);
+static void btd_count_reset(uint64_t now);
+static void btd_log_broadcom(void);
 static void btd_packets(void);
 static int btd_timeout(void);
 static void btd_accept(int listener);
@@ -411,12 +416,21 @@ static int btd_snoop = -1;
 static uint8_t btd_trace_copy[BT_ACL_PACKET_MAX];
 
 /*
- * How many starts in a row failed (0 again after a ready start), and
- * whether the daemon stopped trying; whether the last open's busy node was
- * logged already.
+ * How many starts in a row failed, counting the resets the daemon did not
+ * ask for soon after a ready start (forgotten once a controller stays
+ * ready, cleared by a recovery), and whether the daemon stopped trying.
+ * The daemon's one thread alone uses it.
  */
-static unsigned btd_failures;
-static int btd_stopped;
+static struct btd_retry btd_retries;
+
+/*
+ * The session's count of the kernel's reset notices when it became ready
+ * (a reset during the start, mended by its second try, is not one of
+ * after); set at each ready start.
+ */
+static unsigned btd_ready_resets;
+
+/* Whether the last open's busy node was logged already. */
 static int btd_busy_logged;
 
 /*
@@ -800,9 +814,15 @@ main(
 		if (btd_session_open && btd_session.scanning && now >= btd_session.scan_end_ms)
 			btd_scan_end();
 
-		/* A controller reset under the daemon is started again. */
-		if (btd_session_open && btd_session.state == BTD_STATE_ERROR)
+		/* A controller ready long enough forgets the failed starts before it. */
+		if (btd_session_open && btd_session.state == BTD_STATE_READY)
+			btd_retry_tick(&btd_retries, now);
+
+		/* A controller reset under the daemon is started again; soon after its start, the reset counts as a failure. */
+		if (btd_session_open && btd_session.state == BTD_STATE_ERROR) {
+			btd_count_reset(now);
 			btd_close();
+		}
 
 		/* A booted controller that did not come back is a failed load. */
 		if (!btd_session_open && btd_reappear_ms != 0U && now >= btd_reappear_ms) {
@@ -813,7 +833,7 @@ main(
 		}
 
 		/* No controller: the nodes are looked for again, unless the daemon stopped trying. */
-		if (!btd_session_open && !btd_stopped && now >= btd_looked_ms + BTD_RETRY_MS)
+		if (!btd_session_open && !btd_retries.stopped && now >= btd_looked_ms + BTD_RETRY_MS)
 			btd_open();
 
 		/* What the clients that can take it are sent (before a new client takes a slot). */
@@ -920,6 +940,7 @@ btd_open(
 	char path[BTD_PATH_MAX];
 	const char *trace_label;
 	int descriptor;
+	int stopped;
 	int loaded;
 	int error;
 
@@ -984,25 +1005,98 @@ btd_open(
 	if (btd_session.load_sent && btd_session.state == BTD_STATE_LOST)
 		btd_reappear_ms = btd_now_ms() + BTD_REAPPEAR_MS;
 
-	/* A ready start ends a run of failures (the HID devices are read); a failed one counts, and too many stop the tries. */
+	/* A Broadcom controller's patch: the chip, the ROM's and the patch's LMP subversions, the line, Launch RAM's answer, the address. */
+	if (btd_session.broadcom)
+		btd_log_broadcom();
+
+	/* A ready start is noted (the HID devices are read); a failed one counts, and too many stop the tries. */
 	if (btd_session.state == BTD_STATE_READY) {
-		btd_failures = 0U;
+		btd_retry_ready(&btd_retries, btd_now_ms());
+		btd_ready_resets = btd_session.resets;
 		if (!btd_powered_off)
 			btd_hid_refresh(&btd_hid_host);
 		error = btd_phone_load(&btd_phone_link);
 		if (error == EEXIST)
 			btd_log("bluetoothd: two phones' records are valid; neither is used until one is forgotten\n");
 	} else if (btd_session.state == BTD_STATE_ERROR) {
-		btd_failures++;
-		if (btd_failures >= BTD_FAILURES_MAX) {
-			btd_stopped = 1;
-			btd_log("bluetoothd: %u starts failed in a row; not trying again until restarted\n", btd_failures);
-		}
+		stopped = btd_retry_failed(&btd_retries);
+		if (stopped)
+			btd_log("bluetoothd: %u starts failed in a row; not trying again until restarted\n", btd_retries.failures);
 	}
 
 	/* A node that went, or a step that a new start may mend, is closed (looked for again later). */
 	if (btd_session.state == BTD_STATE_LOST || btd_session.state == BTD_STATE_ERROR)
 		btd_close();
+}
+
+/*
+ * Counts a reset of a ready controller that the daemon did not ask for
+ * (the kernel's notice; a UART transport resets its controller itself when
+ * it loses step) as a failed start when it came soon after the start, so
+ * a controller reset again and again stops the tries (ws215-p001, the
+ * answer to review-2's 中-B).  A recovery's reopen clears the count.
+ */
+static void
+btd_count_reset(
+	uint64_t now)
+{
+	int stopped;
+
+	/* Only the kernel's notice since the ready start counts; a hardware error is the controller's own report. */
+	if (btd_session.resets == btd_ready_resets)
+		return;
+
+	/* One failure more when soon after the ready start; too many stop the tries. */
+	stopped = btd_retry_reset(&btd_retries, now);
+	if (stopped)
+		btd_log("bluetoothd: the controller was reset %u times soon after its starts; not trying again until recovered\n", btd_retries.failures);
+}
+
+/* Logs a Broadcom controller's patch: what the board on the Pi is checked by (ws215-p005). */
+static void
+btd_log_broadcom(
+	void)
+{
+	const char *firmware;
+	const char *launch;
+	const char *address;
+	char rom_address[24];
+
+	/* Whether the patch was loaded. */
+	firmware = "-";
+	if (btd_session.firmware_loaded)
+		firmware = "loaded";
+
+	/* Whether Launch RAM was answered. */
+	launch = "answered";
+	if (btd_session.launch_unanswered)
+		launch = "unanswered";
+
+	/* What became of the address: the controller's own, the board's written, a refused write, or a default kept. */
+	if (btd_session.address_choice == BTD_BROADCOM_ADDRESS_WRITE && btd_session.address_written) {
+		address = "board";
+	} else if (btd_session.address_choice == BTD_BROADCOM_ADDRESS_WRITE) {
+		address = "board-refused";
+	} else if (btd_session.address_choice == BTD_BROADCOM_ADDRESS_DEFAULT) {
+		address = "default";
+	} else {
+		address = "own";
+	}
+
+	/* The address the patched controller had before the board's was written. */
+	btd_format_address(btd_session.rom_address, rom_address, sizeof(rom_address));
+
+	/* One line. */
+	btd_log("bluetoothd: broadcom chip=%s firmware=%s rom=0x%04x patched=0x%04x speed=%u slow=%d launch=%s address=%s had=%s\n",
+		btd_session.chip,
+		firmware,
+		(unsigned)btd_session.rom_subversion,
+		(unsigned)btd_session.lmp_subversion,
+		(unsigned)btd_session.line_speed,
+		btd_session.slow,
+		launch,
+		address,
+		rom_address);
 }
 
 /* Closes the controller's node; a scan's waiting client hears that it ended, and a pairing ends as lost. */
@@ -1035,7 +1129,7 @@ btd_close(
 	btd_log("bluetoothd: %s closed (%s %s)\n", btd_session.path, btd_state_name(btd_session.state), btd_session.reason);
 	(void)close(btd_session.descriptor);
 	btd_session_open = 0;
-	if (!btd_stopped)
+	if (!btd_retries.stopped)
 		btd_session.state = BTD_STATE_NONE;
 	btd_looked_ms = btd_now_ms();
 }
@@ -1142,7 +1236,7 @@ btd_timeout(
 	    deadline != 0U &&
 	    (earliest == 0U || deadline < earliest))
 		earliest = deadline;
-	if (!btd_session_open && !btd_stopped) {
+	if (!btd_session_open && !btd_retries.stopped) {
 		deadline = btd_looked_ms + BTD_RETRY_MS;
 		if (earliest == 0U || deadline < earliest)
 			earliest = deadline;
@@ -1861,8 +1955,7 @@ btd_recover(
 
 	/* End scans, pairing, HID and phone routes before replacing their session. */
 	btd_close();
-	btd_stopped = 0;
-	btd_failures = 0U;
+	btd_retry_clear(&btd_retries);
 	btd_reappear_ms = 0U;
 	btd_open();
 	btd_log("BLUETOOTHD RECOVER operation=%s state=%s uid=%u\n",
