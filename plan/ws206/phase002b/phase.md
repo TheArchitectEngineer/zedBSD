@@ -3,7 +3,7 @@
 # ws206-p002b: SDIO の host と SDIO の層（Pi 4 の内蔵 WiFi）
 
 Parent: [WS206](../ws.md)
-Status: in-progress（q932、P1、2026-10-13。実装・host 試験・build は済み。clearance は Pi の実機の CMD5・CCCR・CIS の読み（Q1 がユーザーに依頼）と T1 の QEMU raspi4b の起動の回帰の結果を Q1 が判定してから）
+Status: in-progress（q932、P1、2026-10-13。実装・host 試験・build は済み。clearance は Pi の実機の CMD5・CCCR・CIS の読み（Q1 がユーザーに依頼）と T1 の QEMU raspi4b の起動の回帰の結果を Q1 が判定してから）。test-wait（T1-558）
 Phase disposition: normal
 Queue: q932（[P1 の lane](../../agents/P1/queue.md)）
 
