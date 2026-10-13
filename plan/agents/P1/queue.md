@@ -82,3 +82,6 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 - q940 結果（2026-10-13 夜）: 981e20f1b → main cae6db34f（Q1 が render.c の塊・組の pipeline の確保と解放を review）。host 244 checks ×3（plain・ASan・UBSan）0 failed、amd64・rpi4・Linux の notes の build warning 0。ws216-p004 は test-wait（画の確かめは p007 の T1 にまとめる、P1 の推奨を Q1 が採用）。
 
 2026-10-13 夜 / q942: [ws216-p005](../../ws216/ws.md) 領域の塗りつぶし（同じ P1 の続き、WS216 の表の「p004〜p006 は同じ担当が順に」）。承認: ユーザーの再開の指示と WS216 の D1〜D12。p004 の成果は main cae6db34f に統合済み（p004 の clearance は p007 の T1 の後）。State: active。
+- q942 結果（2026-10-13 夜）: ws216-p005 設計 c7fbd7423 → design review（plan/ws216/phase005/review-1.md、S-2 消しゴム・M-6 上限はユーザーの決定）→ 実装 e98624d0f → main 6c703b2fc。host 154 checks ×3 0 failed、amd64・rpi4・Linux の notes warning 0（main でも Q1 が notes の build warning 0）。code の敵対的 review を別に起動。test-wait（画は p007 の T1、Pi は p009）。消しゴムの「半幅＋2 pt」は線と塗りの判定と塗りの操作の中だけに当て、塗りの無い所の線の消しゴムは今のまま（Q1 が P1 の解釈を採用）。L-11 は F-102。
+
+2026-10-13 夜 / q944: ws216-p006 Notes の描く道具の UI（button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り、AAT の helper の追従、塗りの間の表示 L-8）。同じ P1 の続き。承認: ユーザーの再開の指示と WS216 の D1〜D12。p005 の出力は main 6c703b2fc。State: active。

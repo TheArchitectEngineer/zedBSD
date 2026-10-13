@@ -108,6 +108,7 @@ Future Work は実行を許可しない。
 | F-099 | Notes: 古い Notes が保存した編集 data 3.0 の file（base の中に 3.0 の編集 data が bytes で残る）を新しい Notes が読み直す | 古い image を使い続けた利用者の道具の情報を取り戻せる | WS216 p001 第 2 版 M9（2026-10-13） | 候補 | 古い image を使い続ける報告が来た時 | [WS216 p001](ws216/phase001/phase.md) |
 | F-100 | TCP の ISN を予測できない形に（RFC 6528） | 盲目の注入・接続の乗っ取りを難しくする | WS220 p002（P4、2026-10-13） | 候補 | WS220 の直しの後、または安全の監査の時 | [ws220-p002](ws220/phase002/phase.md) |
 | F-101 | TCP の SYN flood への備え（SYN cookie か backlog の扱い） | SYN_RECEIVED が 180 s（RFC 1122）になり、偽の SYN で listener の backlog 16 が約 3 分塞がる | WS220 p002（P4、2026-10-13） | 候補 | 外へ公開する server の用途が出た時 | [ws220-p002](ws220/phase002/phase.md) |
+| F-102 | Notes の塗り替えを置き換えに（同じ塗りの直上で領域が同じなら古い塗りを消す） | 今は古い塗りを残したまま上に重ね、file が大きくなり、消しゴムの塗りの操作で全部消える | ws216-p005 review-1 L-11（2026-10-13） | 候補（製品の選択） | Notes の塗りの UAT の後 | [WS216](ws216/ws.md) |
 
 | fw-docs-ids | docs/ の本文に残る Plan の ID（WS・BUG・q の番号、2026-10-05 で 58 箇所、docs/agent は対象外）を消し、必要なら中身を言葉で書く | docs は目標の設計で plan に依らない規則 | 2026-10-05 ユーザー「消します。ただし後回しでいいです。」 | 決定済み・後回し | 空いた枠、または ws129-p005（RC）の文書の見直し | — |
 | fw-audiod-client | video player（ws122-p002）に内蔵した audiod の client（48 kHz S16 stereo）を共有の library に移し、音楽の app（WS120）や通知の音でも使う | 同じ client の重複を避ける | 2026-10-05 ws122-p002（P2） | 後回し | WS120 の着手、または 2 つ目の audiod の client が要る時 | ws122-p002 の phase.md（git の履歴、2026-10-08 の WS の完了で削除） |
