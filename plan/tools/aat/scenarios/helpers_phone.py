@@ -99,7 +99,7 @@ def message(item):
 		mark = run.mark()
 		run.type("Hello from AAT")
 		run.key("enter")
-		sent = run.wait(r"PHONE SEND contact=0 channel=0 length=14 error=0", mark, 10)
+		sent = run.wait(r"PHONE SEND contact=0 channel=0 length=14 (?:\S+ )*error=0", mark, 10)
 		delivered = run.wait(r"PHONE STATUS request=\d+ state=2 failed=0", mark, 10)
 		echo = run.wait(r"PHONE RECEIVED contact=0 channel=0 length=20 error=0", mark, 10)
 		item.step("typed Hello from AAT, Enter", f"{sent}; {delivered}; {echo}")

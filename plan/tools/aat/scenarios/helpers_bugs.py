@@ -381,7 +381,8 @@ def phone_ime_flick(item):
 		run.key("alt+space")
 		time.sleep(0.3)
 		run.key("enter")
-		sent = run.wait(r"PHONE SEND contact=0 channel=0 length=\d+ error=0", mark, 10)
+		# Phone's SEND line has more fields before error= (paired=, ws197-p004), so they are let through.
+		sent = run.wait(r"PHONE SEND contact=0 channel=0 length=\d+ (?:\S+ )*error=0", mark, 10)
 		time.sleep(1.0)
 		_, kept = run.sh(f"cat {PHONE_FOLDER}/messages/aat-ben/*.txt")
 		japanese = any(ord(character) > 0x7f for character in kept)
@@ -404,7 +405,7 @@ def phone_ime_flick(item):
 		send = run.mark()
 		run.click(*phone_field(window))
 		run.key("enter")
-		flicked = run.wait(r"PHONE SEND contact=0 channel=0 length=3 error=0", send, 10)
+		flicked = run.wait(r"PHONE SEND contact=0 channel=0 length=3 (?:\S+ )*error=0", send, 10)
 		item.step("Enter (send)", flicked)
 		item.check(voiced and committed and not refused, "BUG-204 reproduced: the flick panel's kana did not reach Phone's field")
 		item.check(flicked, "the kana が was not sent (no PHONE SEND length=3)")
