@@ -3,7 +3,7 @@ id: apps.pdfviewer.find-select
 title: PDF Viewer で文字を検索し、選択して copy する
 status: active
 areas: [pdfviewer, libpdf]
-paths: [userland/desktop/pdfviewer/, userland/base/libpdf/]
+paths: [userland/desktop/pdfviewer/, userland/desktop/libpdf/]
 machine: either
 human: look
 since: ws128-p004

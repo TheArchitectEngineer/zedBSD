@@ -22,10 +22,10 @@ ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 flags="-std=gnu11 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -fsanitize=address,undefined -fno-sanitize-recover=all -I$out/include -Iuserland/desktop/picture -I."
 objects=""
-for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
-    userland/base/libjpeg-compat/decompress.c userland/base/libjpeg-compat/error.c userland/base/libjpeg-compat/huffman.c \
-    userland/base/libjpeg-compat/idct.c userland/base/libjpeg-compat/marker.c userland/base/libjpeg-compat/memory.c \
-    userland/base/libjpeg-compat/source.c userland/desktop/picture/wallpaper.c plan/tools/wallpaper/host-wallpaper-decode.c; do
+for file in userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c \
+    userland/desktop/libjpeg-compat/decompress.c userland/desktop/libjpeg-compat/error.c userland/desktop/libjpeg-compat/huffman.c \
+    userland/desktop/libjpeg-compat/idct.c userland/desktop/libjpeg-compat/marker.c userland/desktop/libjpeg-compat/memory.c \
+    userland/desktop/libjpeg-compat/source.c userland/desktop/picture/wallpaper.c plan/tools/wallpaper/host-wallpaper-decode.c; do
 	object="$out/obj/$(basename "$file" .c).o"
 	"$cc" $flags -c "$file" -o "$object"
 	objects="$objects $object"

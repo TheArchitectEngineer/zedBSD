@@ -3,7 +3,7 @@ id: apps.notes.draw-tools
 title: Notes の筆・鉛筆・水彩をペンで描き、描く道具の帯で Marker を選び、保存して開き直す
 status: active
 areas: [notes, libpdf]
-paths: [userland/desktop/notes/, userland/base/libpdf/, userland/tests/peninject/]
+paths: [userland/desktop/notes/, userland/desktop/libpdf/, userland/tests/peninject/]
 machine: either
 human: look
 since: ws216-p007

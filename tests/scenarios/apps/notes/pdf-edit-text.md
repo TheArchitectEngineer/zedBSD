@@ -3,7 +3,7 @@ id: apps.notes.pdf-edit-text
 title: Notes で PDF の中の文字を書き換え、消す
 status: active
 areas: [notes, libpdf]
-paths: [userland/desktop/notes/, userland/base/libpdf/]
+paths: [userland/desktop/notes/, userland/desktop/libpdf/]
 machine: either
 human: none
 since: ws175-p001

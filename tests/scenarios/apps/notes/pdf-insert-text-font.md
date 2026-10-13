@@ -3,7 +3,7 @@ id: apps.notes.pdf-insert-text-font
 title: Notes で PDF に文字を挿入し、font を変える（日本語を含む）
 status: active
 areas: [notes, libpdf, ime]
-paths: [userland/desktop/notes/, userland/base/libpdf/]
+paths: [userland/desktop/notes/, userland/desktop/libpdf/]
 machine: either
 human: none
 since: ws175-p001

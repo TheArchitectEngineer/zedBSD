@@ -18,4 +18,4 @@ LIBGL_SOURCES := userland/desktop/libGL/context.c userland/desktop/libGL/fixed.c
 
 # The public SONAME follows the standard spelling.
 LIBGL_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libGL.so=$(BUILD)/dynamic/libGL.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libgl,OpenGL,amd64,y,library,$(LIBGL_SOURCES),y,desktop,desktop/libGL,desktop/libegl,,shared-library,$(LIBGL_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libgl,libGL,amd64,y,library,$(LIBGL_SOURCES),y,desktop,desktop/libGL,desktop/libegl,,shared-library,$(LIBGL_IMAGE_DATA),,lib))

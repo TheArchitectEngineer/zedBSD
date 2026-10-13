@@ -1,6 +1,6 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
-# libpdf: the PDF library of the base programs (plan/ws079/design-pdf.md).  ws079-p004: the
+# libpdf: the PDF library of the desktop programs (plan/ws079/design-pdf.md).  ws079-p004: the
 # writer (pages of filled vector paths, fill opacity, images, one attached file), the smoothed
 # pressure-width outline of a pen stroke, and the reader of the writer's own documents (pages,
 # boxes, content hashes, the attached file).  ws079-p006: the page content interpreted into a
@@ -16,14 +16,14 @@ include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 # content compressed through libz-compat's deflate.  ws216-p002: the outlines of factors and ranges, the
 # writer's states, Flate content and grains (paint.c), the reader's Flate hash and tiling patterns.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-LIBPDF_SOURCES := userland/base/libpdf/writer.c userland/base/libpdf/update.c userland/base/libpdf/clean.c userland/base/libpdf/outline.c \
-	userland/base/libpdf/paint.c \
-	userland/base/libpdf/object.c userland/base/libpdf/reader.c \
-	userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/image.c userland/base/libpdf/display.c \
-	userland/base/libpdf/content.c userland/base/libpdf/editor.c userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c \
-	userland/base/libpdf/font.c userland/base/libpdf/encoding.c \
-	userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c userland/base/libpdf/type1.c \
-	userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c userland/base/libpdf/crypt.c
+LIBPDF_SOURCES := userland/desktop/libpdf/writer.c userland/desktop/libpdf/update.c userland/desktop/libpdf/clean.c userland/desktop/libpdf/outline.c \
+	userland/desktop/libpdf/paint.c \
+	userland/desktop/libpdf/object.c userland/desktop/libpdf/reader.c \
+	userland/desktop/libpdf/filter.c userland/desktop/libpdf/ccitt.c userland/desktop/libpdf/image.c userland/desktop/libpdf/display.c \
+	userland/desktop/libpdf/content.c userland/desktop/libpdf/editor.c userland/desktop/libpdf/tounicode.c userland/desktop/libpdf/intake.c userland/desktop/libpdf/replace.c userland/desktop/libpdf/embed.c userland/desktop/libpdf/subset.c userland/desktop/libpdf/stroke.c userland/desktop/libpdf/raster.c \
+	userland/desktop/libpdf/font.c userland/desktop/libpdf/encoding.c \
+	userland/desktop/libpdf/shading.c userland/desktop/libpdf/charstrings.c userland/desktop/libpdf/type1.c \
+	userland/desktop/libpdf/cff.c userland/desktop/libpdf/cffdata.c userland/desktop/libpdf/crypt.c
 
 LIBPDF_IMAGE_DATA := $(if $(ZEDBSD_TOPLEVEL_BUILD),/lib/libpdf.so=$(BUILD)/dynamic/libpdf.so)
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,libpdf,PDF library for base programs,*,y,library,$(LIBPDF_SOURCES),y,base,base/libpdf,base/libz-compat base/libjpeg-compat desktop/libtruetype,,shared-library,$(LIBPDF_IMAGE_DATA),,lib))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,libpdf,libpdf,*,y,library,$(LIBPDF_SOURCES),y,desktop,desktop/libpdf,base/libz-compat desktop/libjpeg-compat desktop/libtruetype,,shared-library,$(LIBPDF_IMAGE_DATA),,lib))

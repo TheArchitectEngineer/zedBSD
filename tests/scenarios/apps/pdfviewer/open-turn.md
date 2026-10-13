@@ -3,7 +3,7 @@ id: apps.pdfviewer.open-turn
 title: PDF Viewer で 2 頁の PDF を開き、頁を送る
 status: active
 areas: [pdfviewer, libpdf]
-paths: [userland/desktop/pdfviewer/, userland/base/libpdf/]
+paths: [userland/desktop/pdfviewer/, userland/desktop/libpdf/]
 machine: either
 human: look
 since: ws127
