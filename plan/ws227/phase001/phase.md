@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws227-p001 -->
 # ws227-p001: menuconfig の表示名、library の Desktop への移動、Linux・FreeBSD の独自の命令
 
-Status: in-progress（2026-10-14 P1: 実装と host・build の確かめ済み、Q1 の判定待ち。※要確認の 3 件は下の「Linux・FreeBSD」）
+Status: cleared（2026-10-14 Q1: f1563ff74 を merge。fidoctl の Linux の build（21ace71c5）は 2026-10-13 のユーザーの決定「fidoctl は Linux/FreeBSD に入れない」（Linux/FreeBSD の FIDO2 はベータ3）に反するので Q1 が外した（Makefile.linux を削除、keiland-linux.mk の include と run.py の fidoctl・libpasskey の path を戻し、LINUX.md を passkey だけに）。passkey-fido2・noct も入れない（P1 の案どおり）。plan/ws074/tests の 3 file の path は Q1 が直した。完了済みの WS の試験 3 本は Q1 が削除。QEMU は不要（path の移動だけ）、FreeBSD の実 build は未実施）
 Disposition: normal
 Parent: [WS227](../ws.md)
 Queue: q970

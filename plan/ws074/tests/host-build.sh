@@ -63,8 +63,8 @@ done
 
 # The image libraries (ws074-p021): libjpeg-compat, libpng-compat with libz-compat, libgif-compat.
 ln -sfn "$(pwd)/include/libc/compat" $base/include/compat
-for file in userland/base/libjpeg-compat/*.c userland/base/libpng-compat/*.c userland/base/libz-compat/*.c \
-    userland/base/libgif-compat/*.c; do
+for file in userland/desktop/libjpeg-compat/*.c userland/desktop/libpng-compat/*.c userland/base/libz-compat/*.c \
+    userland/desktop/libgif-compat/*.c; do
 	library=$(basename "$(dirname "$file")")
 	object=$out/obj/$library-$(basename "$file" .c).o
 	if [ ! -f "$object" ] || [ "$file" -nt "$object" ] || [ "$out/flags" -nt "$object" ]; then

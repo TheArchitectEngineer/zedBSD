@@ -121,7 +121,6 @@ include userland/desktop/pdfviewer/Makefile.linux
 include userland/tests/kuidemo/Makefile.linux
 include userland/desktop/ime/Makefile.linux
 include userland/base/passkey/Makefile.linux
-include userland/base/fidoctl/Makefile.linux
 include userland/desktop/printd/Makefile.linux
 include userland/tests/printtest/Makefile.linux
 

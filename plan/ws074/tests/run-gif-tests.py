@@ -28,7 +28,7 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-SOURCES = [os.path.join(ROOT, "userland/base/libgif-compat", name) for name in ("decode.c", "lzw.c")]
+SOURCES = [os.path.join(ROOT, "userland/desktop/libgif-compat", name) for name in ("decode.c", "lzw.c")]
 DRIVER = os.path.join(ROOT, "plan/ws074/tests/gif-driver.c")
 
 

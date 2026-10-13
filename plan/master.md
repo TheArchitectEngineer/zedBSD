@@ -12,7 +12,7 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1（新しい世代、agent/p1）: q970 ws227-p001 menuconfig の表示名・library の Desktop への移動・Linux/FreeBSD の独自の命令。
+  - P1: 空き（q970 ws227-p001 は 2026-10-14 に cleared、WS227 completed）。
   - P2（新しい世代、agent/p2-ws215）: q969 ws196-p002 account-admin の欠陥の直しと root の前段の口（7d632a555 の common/ への切り出しは採らない）。
   - P3（新しい世代、agent/p3）: q971 ws228-p001 簡単な vi の設計と実装。
   - T1: 空き。未実行 T1-592（ws217-p002b B と p003）・T1-593（ws143-p007）・T1-586・T1-591（低い優先度）。
@@ -532,7 +532,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS224](ws224/ws.md) | MG006 | Vulkan の header の著作権表示の形（zedBSD の file header の下に Khronos の表示を別の block で、派生物、解説は入れない）（2026-10-13 ユーザー） | completed（2026-10-13） | Q1 |
 | [WS225](ws225/ws.md) | MG006 | Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す（2026-10-13 ユーザー） | planning（blocked、ベータ2 で実装） | 着手しない |
 | [WS226](ws226/ws.md) | MG006 | Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で Vulkan 1.3 の API を実装しきる（不整合の整理）（2026-10-13 ユーザー） | planning | 次に空いた P |
-| [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | planned | P1（q970） |
+| [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | planned | P3（q971） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。

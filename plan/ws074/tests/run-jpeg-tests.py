@@ -35,7 +35,7 @@ import subprocess
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-SOURCES = sorted(glob.glob(os.path.join(ROOT, "userland/base/libjpeg-compat/*.c")))
+SOURCES = sorted(glob.glob(os.path.join(ROOT, "userland/desktop/libjpeg-compat/*.c")))
 ORDERS = {"rgb": "012", "bgr": "210", "rgbx": "012X", "bgrx": "210X", "xbgr": "X210", "xrgb": "X012",
           "rgba": "012X", "bgra": "210X", "abgr": "X210", "argb": "X012"}
 
