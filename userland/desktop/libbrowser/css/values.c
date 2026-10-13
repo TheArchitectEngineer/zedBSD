@@ -152,6 +152,7 @@ static int values_grid_line(const struct css_token *tokens, size_t count, struct
 static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_grid_area(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_decoration_line(const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_text_decoration(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 
 /* The property names this pass knows. */
 static const struct values_name values_names[] = {
@@ -206,6 +207,7 @@ static const struct values_name values_names[] = {
 	{ "text-decoration-style", CSS_PROP_TEXT_DECORATION_STYLE },
 	{ "text-decoration-skip-ink", CSS_PROP_TEXT_DECORATION_SKIP_INK },
 	{ "text-decoration-color", CSS_PROP_TEXT_DECORATION_COLOR },
+	{ "text-decoration-thickness", CSS_PROP_TEXT_DECORATION_THICKNESS },
 	{ "list-style-type", CSS_PROP_LIST_STYLE_TYPE },
 	{ "top", CSS_PROP_TOP },
 	{ "right", CSS_PROP_RIGHT },
@@ -1079,7 +1081,7 @@ css_parse_property(
 	case SHORT_BACKGROUND_SIZE:
 		return values_background_size(tokens, count, out, out_count);
 	case SHORT_TEXT_DECORATION:
-		return css_parse_value_as(parse, CSS_PROP_TEXT_DECORATION_LINE, tokens, 1, out, out_count);
+		return values_text_decoration(tokens, count, out, out_count);
 	case SHORT_LIST_STYLE:
 		for (first = 0; first < (int)count; first++) {
 			error = values_single(parse, CSS_PROP_LIST_STYLE_TYPE, &tokens[first], 1, &value);
@@ -1619,6 +1621,24 @@ values_single(
 	/* Decoration lines form an unordered list of distinct keywords. */
 	if (property == CSS_PROP_TEXT_DECORATION_LINE)
 		return values_decoration_line(tokens, count, value);
+	if (property == CSS_PROP_TEXT_DECORATION_THICKNESS) {
+		if (count != 1U)
+			return EINVAL;
+		if (css_ident_equal(&tokens[0], "auto")) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = 0;
+			return 0;
+		}
+		if (css_ident_equal(&tokens[0], "from-font")) {
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = 1;
+			return 0;
+		}
+		error = values_length(&tokens[0], 0, value);
+		if (error != 0 || value->number < 0)
+			return EINVAL;
+		return 0;
+	}
 
 	/* Families take a list; colors may be a function of several tokens. */
 	if (property == CSS_PROP_FONT_FAMILY)
@@ -2525,6 +2545,12 @@ values_wide_keyword(
 		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, value);
 		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_WIDTH, value);
 		values_add(out, made, CSS_PROP_BACKGROUND_SIZE_HEIGHT, value);
+		return;
+	case SHORT_TEXT_DECORATION:
+		values_add(out, made, CSS_PROP_TEXT_DECORATION_LINE, value);
+		values_add(out, made, CSS_PROP_TEXT_DECORATION_THICKNESS, value);
+		values_add(out, made, CSS_PROP_TEXT_DECORATION_STYLE, value);
+		values_add(out, made, CSS_PROP_TEXT_DECORATION_COLOR, value);
 		return;
 	case SHORT_BORDER_RADIUS:
 		/* The eight radii (ws074-p062). */
@@ -4865,5 +4891,111 @@ values_decoration_line(
 	/* Succeeded: no repeated lines, and error decorations occur alone. */
 	value->kind = CSS_VALUE_KEYWORD;
 	value->keyword = lines;
+	return 0;
+}
+
+/* Parses every component of the text-decoration shorthand before publishing its longhands. */
+static int
+values_text_decoration(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value line_value;
+	struct css_value style_value;
+	struct css_value color_value;
+	struct css_value thickness_value;
+	struct css_value part_value;
+	size_t starts[8];
+	size_t lengths[8];
+	size_t components;
+	size_t index;
+	int lines_seen;
+	int line_ended;
+	int style_seen;
+	int color_seen;
+	int thickness_seen;
+	int error;
+
+	components = values_components(tokens, count, starts, lengths, 8);
+	if (components == 0 || components >= 8)
+		return EINVAL;
+	memset(&line_value, 0, sizeof(line_value));
+	memset(&style_value, 0, sizeof(style_value));
+	memset(&color_value, 0, sizeof(color_value));
+	memset(&thickness_value, 0, sizeof(thickness_value));
+	line_value.kind = CSS_VALUE_KEYWORD;
+	style_value.kind = CSS_VALUE_KEYWORD;
+	style_value.keyword = CSS_DECORATION_SOLID;
+	color_value.kind = CSS_VALUE_COLOR;
+	color_value.color = CSS_CURRENT_COLOR;
+	thickness_value.kind = CSS_VALUE_KEYWORD;
+	lines_seen = 0;
+	line_ended = 0;
+	style_seen = 0;
+	color_seen = 0;
+	thickness_seen = 0;
+
+	for (index = 0; index < components; index++) {
+		const struct css_token *part;
+		size_t length;
+		int keyword;
+
+		part = tokens + starts[index];
+		length = lengths[index];
+		error = values_decoration_line(part, length, &part_value);
+		if (error == 0) {
+			if (line_ended ||
+			    (lines_seen && (part_value.keyword == 0 || line_value.keyword == 0 ||
+			    (line_value.keyword & part_value.keyword) != 0 ||
+			    line_value.keyword >= CSS_DECORATION_SPELLING_ERROR ||
+			    part_value.keyword >= CSS_DECORATION_SPELLING_ERROR)))
+				return EINVAL;
+			line_value.keyword |= part_value.keyword;
+			lines_seen = 1;
+			continue;
+		}
+		if (lines_seen)
+			line_ended = 1;
+
+		if (length == 1U && values_keyword(values_decoration_styles, part, &keyword)) {
+			if (style_seen)
+				return EINVAL;
+			style_value.keyword = keyword;
+			style_seen = 1;
+			continue;
+		}
+		if (length == 1U &&
+		    (css_ident_equal(part, "auto") || css_ident_equal(part, "from-font") ||
+		    part->type == CSS_TOKEN_DIMENSION || part->type == CSS_TOKEN_PERCENTAGE ||
+		    (part->type == CSS_TOKEN_NUMBER && part->number == 0))) {
+			if (thickness_seen)
+				return EINVAL;
+			if (css_ident_equal(part, "auto")) {
+				thickness_value.keyword = 0;
+			} else if (css_ident_equal(part, "from-font")) {
+				thickness_value.keyword = 1;
+			} else {
+				error = values_length(part, 0, &thickness_value);
+				if (error != 0 || thickness_value.number < 0)
+					return EINVAL;
+			}
+			thickness_seen = 1;
+			continue;
+		}
+		if (color_seen)
+			return EINVAL;
+		error = css_parse_color(part, length, &color_value.color);
+		if (error != 0)
+			return EINVAL;
+		color_seen = 1;
+	}
+
+	/* Every omitted subproperty takes its initial value. */
+	values_add(out, made, CSS_PROP_TEXT_DECORATION_LINE, &line_value);
+	values_add(out, made, CSS_PROP_TEXT_DECORATION_THICKNESS, &thickness_value);
+	values_add(out, made, CSS_PROP_TEXT_DECORATION_STYLE, &style_value);
+	values_add(out, made, CSS_PROP_TEXT_DECORATION_COLOR, &color_value);
 	return 0;
 }

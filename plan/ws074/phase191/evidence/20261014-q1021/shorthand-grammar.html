@@ -1,0 +1,13 @@
+<!doctype html>
+<div id="target" style="color: blue"></div>
+<script>
+const target = document.getElementById('target');
+console.log('valid=' + CSS.supports('text-decoration', 'overline from-font dotted green'));
+console.log('invalid-repeat=' + CSS.supports('text-decoration', 'double overline underline dotted'));
+console.log('invalid-split=' + CSS.supports('text-decoration', 'overline blue underline'));
+target.style.textDecoration = 'overline from-font dotted green';
+console.log('line=' + getComputedStyle(target).textDecorationLine);
+console.log('style=' + getComputedStyle(target).textDecorationStyle);
+console.log('color=' + getComputedStyle(target).textDecorationColor);
+console.log('thickness-inline=' + target.style.textDecorationThickness);
+</script>

@@ -1,0 +1,7 @@
+valid=true
+invalid-repeat=false
+invalid-split=false
+line=overline
+style=dotted
+color=rgb(0, 128, 0)
+thickness-inline=
