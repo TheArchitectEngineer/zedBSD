@@ -56,8 +56,8 @@ static int start_backplane_clock(struct bcm43455_chip *chip);
 static int scan_erom(struct bcm43455_chip *chip, uint32_t erom);
 static void keep_core(struct bcm43455_chip *chip, const struct bcm43455_core *core);
 static int read_ram_size(struct bcm43455_chip *chip);
-static int hold_core_in_reset(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t prereset, uint32_t reset);
-static int restart_core(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t prereset, uint32_t reset, uint32_t postreset);
+static int hold_core_in_reset(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t control_running, uint32_t control_held);
+static int restart_core(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t control_running, uint32_t control_held, uint32_t control_released);
 static int halt_cores(struct bcm43455_chip *chip);
 static int read_power_unit(struct bcm43455_chip *chip);
 static int prepare_interface(struct bcm43455_chip *chip);
@@ -842,8 +842,8 @@ static int
 hold_core_in_reset(
 	struct bcm43455_chip *chip,
 	const struct bcm43455_core *core,
-	uint32_t prereset,
-	uint32_t reset)
+	uint32_t control_running,
+	uint32_t control_held)
 {
 	uint32_t control;
 	uint32_t readback;
@@ -860,7 +860,7 @@ hold_core_in_reset(
 		error = bcm43455_chip_write32(
 			chip,
 			core->wrapper + BCM43455_WRAP_IO_CONTROL,
-			prereset | BCM43455_IO_CONTROL_FORCE_GATE | BCM43455_IO_CONTROL_CLOCK);
+			control_running | BCM43455_IO_CONTROL_FORCE_GATE | BCM43455_IO_CONTROL_CLOCK);
 		if (error != 0)
 			return error;
 		error = bcm43455_chip_read32(chip, core->wrapper + BCM43455_WRAP_IO_CONTROL, &readback);
@@ -880,7 +880,7 @@ hold_core_in_reset(
 	error = bcm43455_chip_write32(
 		chip,
 		core->wrapper + BCM43455_WRAP_IO_CONTROL,
-		reset | BCM43455_IO_CONTROL_FORCE_GATE | BCM43455_IO_CONTROL_CLOCK);
+		control_held | BCM43455_IO_CONTROL_FORCE_GATE | BCM43455_IO_CONTROL_CLOCK);
 	if (error != 0)
 		return error;
 	error = bcm43455_chip_read32(chip, core->wrapper + BCM43455_WRAP_IO_CONTROL, &readback);
@@ -899,9 +899,9 @@ static int
 restart_core(
 	struct bcm43455_chip *chip,
 	const struct bcm43455_core *core,
-	uint32_t prereset,
-	uint32_t reset,
-	uint32_t postreset)
+	uint32_t control_running,
+	uint32_t control_held,
+	uint32_t control_released)
 {
 	uint32_t control;
 	uint32_t readback;
@@ -909,7 +909,7 @@ restart_core(
 	int error;
 
 	/* Puts the core into reset first, which works from any state. */
-	error = hold_core_in_reset(chip, core, prereset, reset);
+	error = hold_core_in_reset(chip, core, control_running, control_held);
 	if (error != 0)
 		return error;
 
@@ -940,7 +940,7 @@ restart_core(
 	}
 
 	/* Sets the running control with the clock on and the forced gate off, and reads it back. */
-	error = bcm43455_chip_write32(chip, core->wrapper + BCM43455_WRAP_IO_CONTROL, postreset | BCM43455_IO_CONTROL_CLOCK);
+	error = bcm43455_chip_write32(chip, core->wrapper + BCM43455_WRAP_IO_CONTROL, control_released | BCM43455_IO_CONTROL_CLOCK);
 	if (error != 0)
 		return error;
 	error = bcm43455_chip_read32(chip, core->wrapper + BCM43455_WRAP_IO_CONTROL, &readback);
@@ -961,15 +961,15 @@ halt_cores(
 	struct bcm43455_chip *chip)
 {
 	uint32_t control;
-	uint32_t prereset;
+	uint32_t halt_kept;
 	int error;
 
 	/* Resets the ARM core, keeping only its halt bit across, and leaves it halted. */
 	error = bcm43455_chip_read32(chip, chip->cr4.wrapper + BCM43455_WRAP_IO_CONTROL, &control);
 	if (error != 0)
 		return error;
-	prereset = control & BCM43455_CR4_IO_CPU_HALT;
-	error = restart_core(chip, &chip->cr4, prereset, BCM43455_CR4_IO_CPU_HALT, BCM43455_CR4_IO_CPU_HALT);
+	halt_kept = control & BCM43455_CR4_IO_CPU_HALT;
+	error = restart_core(chip, &chip->cr4, halt_kept, BCM43455_CR4_IO_CPU_HALT, BCM43455_CR4_IO_CPU_HALT);
 	if (error != 0)
 		return error;
 

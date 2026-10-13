@@ -923,10 +923,10 @@ check_probe(void)
 	CHECK(chip.clm_received == BCM43455_CLM_SIZE && chip.clm_messages == 2 && chip.clm_flags_ok == 1);
 	CHECK(memcmp(chip.clm, device->files.clm, BCM43455_CLM_SIZE) == 0);
 
-	/* The country is XX, the firmware's choice of revision. */
+	/* The country is XX, revision 0, the world-wide locale. */
 	request = find_request("country");
 	CHECK(request != NULL);
-	CHECK(memcmp(request->payload, "XX\0\0\xff\xff\xff\xffXX\0\0", 12) == 0);
+	CHECK(memcmp(request->payload, "XX\0\0\0\0\0\0XX\0\0", 12) == 0);
 
 	/* The event mask, 18 bytes, names the nine events the driver uses, and only them. */
 	request = find_request("event_msgs");
@@ -973,13 +973,13 @@ check_refusals(void)
 	CHECK(chip.powered == 0 && chip.power_downs == 1);
 	bcm43455_device_destroy(device);
 
-	/* A firmware that refuses the firmware's choice of revision is given revision 0. */
+	/* A firmware that refuses revision 0 is asked to choose the revision itself. */
 	model_reset();
 	chip.refuse_country = 2;
 	device = make_device(placeholder_text);
 	CHECK(bcm43455_device_probe(device) == 0);
 	CHECK(chip.request_count == 17);
-	CHECK(memcmp(chip.country, "XX\0\0\0\0\0\0XX\0\0", 12) == 0);
+	CHECK(memcmp(chip.country, "XX\0\0\xff\xff\xff\xffXX\0\0", 12) == 0);
 	bcm43455_device_destroy(device);
 
 	/* A firmware that never answers times out, and the chip is powered down. */
@@ -2880,7 +2880,7 @@ model_control(
 		} else if (strcmp(request->name, "country") == 0) {
 			if (chip.refuse_country == 1)
 				status = -1;
-			else if (chip.refuse_country == 2 && bcm43455_get_le32(request->payload + 4) == 0xffffffffU)
+			else if (chip.refuse_country == 2 && bcm43455_get_le32(request->payload + 4) == 0)
 				status = -1;
 			else
 				memcpy(chip.country, request->payload, 12);

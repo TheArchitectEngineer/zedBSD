@@ -205,3 +205,16 @@ dmesg: `dmesg | grep -E 'rpi4-(wifi|sdio)|bcm43455'`。p004 の「Pi 4 で見る
 - `/home/awe/zedBSD-worktrees/p3/build/tmp/p005-upstream/`（bwfm・WHD の取得物）、`/home/awe/zedBSD-worktrees/p3/build/tmp/p005-tools/`（写した比較の道具と出力）
 - `/home/awe/zedBSD-worktrees/p3/build/ws206-p005/`（host 試験の出力）、`/home/awe/zedBSD-worktrees/p3/build/ws206-host/fullmac.run.*`（今回の fullmac の出力）、`/home/awe/zedBSD-worktrees/p3/build/tmp/p005-*.log`
 - scratchpad の `p005/`（試験の断片、誤りの埋め込みの tree の写し `mut-base/` と出力 `mut-out/`、`mutate.py`）
+
+## 追記（2026-10-13 P3、Q1 の依頼の 2 つ、main 1f41809ad を merge した後）
+
+1. **country の revision の順**（Q1 の判断）: 出典のある rev 0（WHD `whd_types.h:859` の `WHD_COUNTRY_WORLD_WIDE_XX`）を先に設定し、firmware が断ったら（EIO・EOPNOTSUPP）rev −1（firmware に任せる）で設定し直す。p004 の順（−1 が先）を置き換えた。`bcm43455.c` の `COUNTRY_REVISION_WORLD`（0）と `COUNTRY_REVISION_ANY`（−1）、log の行は `bcm43455: country XX revision 0 refused (<errno>); trying the firmware's revision`（読み戻しの行 `bcm43455: country XX revision <n> (code XX)` は同じ）。host 試験の期待: probe の最初の `country` の payload が `XX\0\0` + rev 0 + `XX\0\0`、model が rev 0 を断ると 2 つ目は rev −1 で、要求の数は 17。p004 の [phase.md](../phase004/phase.md) の設計からの違いの行・失敗の時の log の行、[values.md](../phase004/values.md) の country の行に注記した。
+2. **core の reset の関数の引数の名前**（Q1 の許可で p004 の file）: `bcm43455-chip.c` の `hold_core_in_reset()`・`restart_core()` の `prereset`・`reset`・`postreset`（bwfm `bwfm_chip_ai_disable()`・`bwfm_chip_ai_reset()` と同じ並びと名前）を `control_running`・`control_held`・`control_released` に、`halt_cores()` の局所変数 `prereset` を `halt_kept` に替えた。動作は同じ（名前だけ）。
+
+確認:
+- rpi4 の vmunix: rc 0、warning 0、`arm64 vmunix check: PASS`（SHA-256 `ec135bef59b033e8f2399bc7ac4e3133daac74a32d309fb733a1ac85b78db099`）。amd64 の vmunix: rc 0、warning 0、`amd64 vmunix check: PASS`。
+- `bcm43455-host-test.sh`: unit・smp・radio・radio-smp PASS（radio-smp: 453 join・667 escan・333 abort、TSan の報告 0）。`git diff --check` 空。
+- bwfm（同じ commit 28854fb0 を worktree の `build/tmp/p005b-upstream/` に取り直した）と driver の全体の ident k=12: 0.03% → 0.00%（1 gram）。12 token 以上の一致は `bcm43455-station.c:768` の `0 ) return ; for ( i = 0 ; i <`（C の定型）だけになり、chip.c の 3 箇所は消えた。
+- QEMU・実機は未実施（T1 の起動の回帰は Q1 がまとめて依頼）。
+
+削除の依頼（Q1 へ）: `/home/awe/zedBSD-worktrees/p3/build/tmp/p005b-upstream/`、`/home/awe/zedBSD-worktrees/p3/build/tmp/p005b-tools/`、`/home/awe/zedBSD-worktrees/p3/build/tmp/p005b-*.log`、`/home/awe/zedBSD-worktrees/p3/build/ws206-p005b/`。
