@@ -449,7 +449,7 @@ static const struct values_keyword values_flex_wrap[] = {
 /* The keywords of the alignment properties; justify-* keeps physical left and right distinct. */
 static const struct values_keyword values_align[] = {
 	{ "auto", CSS_ALIGN_AUTO },
-	{ "normal", CSS_ALIGN_STRETCH },
+	{ "normal", CSS_ALIGN_NORMAL },
 	{ "stretch", CSS_ALIGN_STRETCH },
 	{ "flex-start", CSS_ALIGN_START },
 	{ "start", CSS_ALIGN_START },

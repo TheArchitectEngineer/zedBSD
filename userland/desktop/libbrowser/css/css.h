@@ -344,10 +344,11 @@ enum css_flex_wrap {
 
 /*
  * The places of content and self alignment (auto belongs to self
- * alignment; normal and stretch are one in this limited model).
+ * alignment; normal can size a replaced Grid item differently from stretch).
  */
 enum css_align {
 	CSS_ALIGN_AUTO,
+	CSS_ALIGN_NORMAL,
 	CSS_ALIGN_STRETCH,
 	CSS_ALIGN_START,
 	CSS_ALIGN_END,

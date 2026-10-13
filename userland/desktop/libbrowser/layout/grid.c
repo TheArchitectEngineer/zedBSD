@@ -180,10 +180,16 @@ layout_grid(
 		justify = item->box->style.justify_self;
 		if (justify == CSS_ALIGN_AUTO)
 			justify = box->style.justify_items;
+		if (justify == CSS_ALIGN_NORMAL)
+			justify = item->box->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
 		if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
-		    item->box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB || item->box->replaced ||
+		    item->box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
 		    item->box->style.min_width.unit != CSS_UNIT_AUTO ||
 		    item->box->style.max_width.unit != CSS_UNIT_NONE)
+			justify = CSS_ALIGN_STRETCH;
+		if (item->box->replaced &&
+		    (item->box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO ||
+		    item->box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO))
 			justify = CSS_ALIGN_STRETCH;
 		else if (item->box->style.margin[CSS_LEFT].unit == CSS_UNIT_AUTO ||
 		    item->box->style.margin[CSS_RIGHT].unit == CSS_UNIT_AUTO)
@@ -227,6 +233,8 @@ layout_grid(
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
+		if (align == CSS_ALIGN_NORMAL)
+			align = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
 		if (align == CSS_ALIGN_BASELINE)
 			align = CSS_ALIGN_START;
 
@@ -249,7 +257,7 @@ layout_grid(
 		child->x = x + child->margin[CSS_LEFT];
 		if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 		    (child->style.width.unit != CSS_UNIT_AUTO ||
-		    (!child->replaced && child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    (child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 		    child->style.min_width.unit == CSS_UNIT_AUTO &&
 		    child->style.max_width.unit == CSS_UNIT_NONE &&
 		    child->style.margin[CSS_LEFT].unit != CSS_UNIT_AUTO &&
@@ -257,6 +265,8 @@ layout_grid(
 			justify = child->style.justify_self;
 			if (justify == CSS_ALIGN_AUTO)
 				justify = box->style.justify_items;
+			if (justify == CSS_ALIGN_NORMAL)
+				justify = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
 			if (justify == CSS_ALIGN_STRETCH)
 				justify = CSS_ALIGN_START;
 			if (justify == CSS_ALIGN_SELF_START)
@@ -799,6 +809,10 @@ grid_lay_item(
 
 	/* An item with a width of its own is laid out in the area as a block is. */
 	if (item->style.width.unit != CSS_UNIT_AUTO) {
+		error = layout_block(tree, item, width);
+		return error;
+	}
+	if (item->replaced && justify != CSS_ALIGN_STRETCH) {
 		error = layout_block(tree, item, width);
 		return error;
 	}
