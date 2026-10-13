@@ -11,11 +11,12 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-13 夜（Q1）: N=2（P1・P3）＋T1**（ユーザー「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」）。前のセッションは 20:06 で止まり、書きかけを救った（写し `build/salvage-20261013/`）。
-  - P1（agent/p1）: q940 [ws216-p004](ws216/phase004/phase.md) Notes の画面は main cae6db34f に統合（test-wait、画は p007 の T1）。p005 塗りつぶしも main 6c703b2fc（test-wait）。p006 UI も main 3f22c82ec（test-wait）。今は新しい世代で q946 ws216-p007 の AAT の scenario。
-  - P3（agent/p3）: q941 [ws220-p003](ws220/phase003/phase.md) TCP の送りの未送信・retry は review-1 の直しの後 main 282f46038 に統合（test-wait T1-577）。p004 RTT と RTO も main 51f753f27（test-wait T1-579）。今は q945 ws220-p005 fast retransmit。
-  - T1（agent/t1）: 未実行の T1-571〜T1-576（BUG-298・ws219-p002・ws218-p002・WS220 の基線 T1-574・ws206-p005・ws217-p002a）。
-  - P2・P4 は停止（未 commit なし）。WS221 p001 はユーザーの §9 Q1〜Q13、WS217 p002a は T1-576 待ち。
+- **2026-10-13 夜（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「N=3で、P2を追加し、実装を担当してもらいます。」「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
+  - P1（第 3 世代、agent/p1）: q959 ws217-p003 入力の座標。
+  - P2（agent/p2-ws215）: q953 ws145-p005 → q954 ws161 の build → q960 ws172-p004b の設計だけ。
+  - P3（第 2 世代、agent/p3）: q955 ws156-p006 → q956 ws051-p005b → q957 ws081 → q958 ws033-p001。
+  - T1（agent/t1）: T1-583（ws217-p002b）→ T1-584（ws157）→ T1-585（ws220-p005、60 秒を超える転送を含む）→ T1-586（低い優先度）。5330 が届けば T1-582（BUG-300）を先に。
+  - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
