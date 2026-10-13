@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The automatic helpers of Notes' PDF editing (tests/scenarios/apps/notes/pdf-*.md, ws175-p010).
+"""The automatic helpers of Notes' PDF editing (tests/scenarios/apps/notes/pdf-*.md, ws175-p010) and of its drawing
+tools (draw-tools.md and fill-region.md, ws216-p007).
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -14,8 +15,13 @@ page in the window), NOTES BUTTONS (the toolbar's buttons by action), NOTES TEXT
 and the window's place from the compositor's.  The saved document is taken to the host and read with
 qpdf, pdftotext, pdffonts and pdfimages.  What only a person can judge (how the page looks) is left to
 the screenshots (needs-person).
+
+The drawing tools' strokes are drawn with the test pen (peninject, in the image of plan/ws216/tests/config.mk), so that
+they carry a pressure.  The injector admits four opens and aat-input holds all four, so the helper stops aat-input,
+replays the pen's script and starts aat-input again (Pen.draw).
 """
 import io
+import math
 import re
 import shlex
 import subprocess
@@ -42,6 +48,32 @@ FONT = 43
 PEN = 1
 # ws216-p006: the drawing tool button (the drawing tool used last, or its strip of drawing tools).
 DRAW = 48
+# ws216: the strip's drawing tools, the highlighter (Marker), the colours and widths by index, the eraser.
+HIGHLIGHTER = 2
+ERASER = 3
+BRUSH = 49
+COLOR = 20
+WIDTH = 30
+
+# The model's tool of a stroke (NOTES STROKE tool=, userland/desktop/notes/notes.h NOTES_TOOL_*).
+STROKE_PEN = 0
+STROKE_HIGHLIGHTER = 1
+STROKE_BRUSH = 2
+STROKE_PENCIL = 3
+STROKE_WATERCOLOR = 4
+
+# The test pen's script (peninject): its declared range, its full pressure, how long the compositor is given to find
+# the new device, and the pause between samples.
+PEN_RANGE = 32767
+PEN_PRESSURE_MAX = 4095
+PEN_SETTLE_MS = 3000
+PEN_STEP_MS = 15
+# A stroke whose highest pressure is above this (of NOTES_PRESSURE_MAX 65535) had the pen's pressure.
+PEN_PRESSED = 30000
+
+# How far below the window's top the page is clear of the toolbar, its band of notices and the strip of drawing tools
+# (app.h NOTES_TOOLBAR_HEIGHT 68, ui.c UI_STRIP_TOP 70 and UI_STRIP_HEIGHT 40: the strip ends at 110).
+TOOLBAR_CLEAR = 140
 
 # edit-basic.pdf (make-edit-samples.py's BASIC_*): US Letter, the paragraph's baselines from 700 down by 20 at x 72,
 # 14 points; the image's box (x, y, width, height) in PDF points.
@@ -50,18 +82,23 @@ LEFT = 72
 TOP = 700
 STEP = 20
 IMAGE = (72, 420, 240, 150)
+# The white square inside the image (its pixels 130..190 by 70..130 of 320 by 200, make-edit-samples.py), a gradient round
+# it: its middle in PDF points, a place the fill tool closes in (ws216-p007).
+PICTURE_SQUARE = (72 + 160 * 240 / 320, 420 + 150 - 100 * 150 / 200)
 
 
 class Notes:
 	"""Notes on a document of the scenario's own folder: its window and its lines since it started."""
 
-	def __init__(self, item, folder: str, name: str = "notes-edit.pdf"):
+	def __init__(self, item, folder: str, name: str = "notes-edit.pdf", opened: str = r"NOTES OPEN pages=\d+"):
+		"""Starts Notes on folder/name; opened is the line that says the document is there (NOTES START for a new
+		notebook, whose file is not there yet)."""
 		self.item = item
 		self.folder = folder
 		self.path = f"{folder}/{name}"
 		self.start = run.mark()
 		self.window = run.open_as_user(item, f"/bin/notes {shlex.quote(self.path)}", ready=r"NOTES FRAME first")
-		self.opened = run.wait(r"NOTES OPEN pages=\d+", self.start, 10)
+		self.opened = run.wait(opened, self.start, 10)
 		item.step(f"Notes opened {self.path}", self.opened)
 		item.check(self.opened, "Notes did not open the document")
 
@@ -84,6 +121,17 @@ class Notes:
 	def scale(self) -> float:
 		"""The page's pixels per point."""
 		return self.layout()[2]
+
+	def area(self) -> tuple[int, int, int, int]:
+		"""The part of the page shown, on the screen (left, top, right, bottom): inside the window, below the toolbar's
+		band and a margin in from the window's edges (NOTES LAYOUT window=WxH page=X,Y,W,H)."""
+		lines = run.lines(r"NOTES LAYOUT window=", self.start)
+		self.item.check(lines, "no NOTES LAYOUT line")
+		match = re.search(r"window=(\d+)x(\d+) page=(-?\d+),(-?\d+),(\d+),(\d+)", lines[-1])
+		width, height, left, top, page_width, page_height = (int(value) for value in match.groups())
+		inside = (max(left, 24), max(top, TOOLBAR_CLEAR), min(left + page_width, width - 24), min(top + page_height, height - 24))
+		self.item.check(inside[2] - inside[0] > 200 and inside[3] - inside[1] > 200, f"too little of the page is shown: {lines[-1]}")
+		return (self.window.x + inside[0], self.window.y + inside[1], self.window.x + inside[2], self.window.y + inside[3])
 
 	def button(self, action: int) -> tuple[int, int]:
 		"""The middle of a toolbar button, from the last NOTES BUTTONS line that has it."""
@@ -567,6 +615,253 @@ def pdf_edit_multipage(item):
 	same = ImageChops.difference(Image.open(pages[0][0]).convert("RGB"), Image.open(pages[1][0]).convert("RGB")).getbbox() is None
 	item.check(same, "page 2 is not drawn as the original's")
 	item.person(f"{stroke}; the screenshots: page 3's line gone and the pen line, both after opening again, the image put back")
+
+
+def pen_script(points: list[tuple[float, float]]) -> str:
+	"""A peninject script of one stroke through screen points: the pen tilted, its pressure from 0 up to full and back
+	to 0 along the stroke (the compositor maps the whole tablet to the whole screen, plan/ws079/tests/notes-pen.sh)."""
+	width, height = run.screen()
+
+	def raw(x: float, y: float) -> tuple[int, int]:
+		return round(x * PEN_RANGE / (width - 1)), round(y * PEN_RANGE / (height - 1))
+
+	x, y = raw(*points[0])
+	lines = [f"size {PEN_RANGE} {PEN_RANGE}", f"wait {PEN_SETTLE_MS}", "tool pen", f"hover {x} {y} 20 -15", "wait 200",
+		f"down {x} {y} 0 20 -15"]
+	last = len(points) - 1
+	for index, point in enumerate(points[1:], start=1):
+		x, y = raw(*point)
+		pressure = round(PEN_PRESSURE_MAX * math.sin(index / last * math.pi))
+		lines += [f"move {x} {y} {pressure} 20 -15", f"wait {PEN_STEP_MS}"]
+	lines += ["up", "wait 500"]
+	return "\n".join(lines) + "\n"
+
+
+def has_pen() -> bool:
+	"""Whether the image has the test pen (peninject: plan/ws216/tests/config.mk has it, the plain AAT image not)."""
+	status, output = run.sh("test -x /bin/peninject && echo pen=yes || echo pen=no")
+	return "pen=yes" in output
+
+
+def pen_stroke(item, notes: Notes, name: str, points: list[tuple[float, float]], tool: int, pen: bool) -> str:
+	"""Draws a stroke with the test pen and waits for its NOTES STROKE of the model's tool, with the pen's pressure and
+	tilt.  aat-input holds every open of the injector, so it is stopped for the pen and started again after.  Without
+	the pen (an image without peninject) the stroke is the mouse's, of no pressure, and the record says so."""
+	if not pen:
+		line = notes.act(lambda: run.press_path(points[::4] + [points[-1]]), rf"NOTES STROKE page=\d+ id=\d+ tool={tool} ",
+			f"the {name} stroke with the mouse (no test pen in the image: no pressure)")
+		return line
+	local = run.outdir / "notes-draw" / item.ident / f"{name}.pen"
+	local.parent.mkdir(parents=True, exist_ok=True)
+	local.write_text(pen_script(points))
+	remote = f"{notes.folder}/{name}.pen"
+	run.aat("put", str(local), remote)
+	width, height = run.screen()
+	mark = run.mark()
+	run.aat("stop")
+	try:
+		status, output = run.sh(f"timeout 60 /bin/peninject {shlex.quote(remote)}; echo peninject=$?", timeout=90)
+	finally:
+		run.aat("start", "--size", f"{width}x{height}")
+		time.sleep(1.0)
+	pattern = rf"NOTES STROKE page=\d+ id=\d+ tool={tool} points=\d+ strokes=\d+ pressure=\d+\.\.\d+ tilt=1"
+	line = run.wait(pattern, mark, 15)
+	item.step(f"the pen's {name} stroke (peninject)", f"{output.strip()[-80:]}; {line or 'no NOTES STROKE'}")
+	item.check("peninject=0" in output, f"{name}: peninject failed: {output.strip()[-200:]}")
+	item.check(line, f"{name}: no line {pattern!r}")
+	highest = int(re.search(r"pressure=\d+\.\.(\d+)", line).group(1))
+	item.check(highest > PEN_PRESSED, f"{name}: the stroke has no pen pressure: {line}")
+	return line
+
+
+def row(area: tuple[int, int, int, int], fraction: float, start: float = 0.15, end: float = 0.85, wave: float = 0.0,
+		steps: int = 40) -> list[tuple[float, float]]:
+	"""The screen points of a stroke across the page shown, at a fraction of its height, with a wave of a height."""
+	left, top, right, bottom = area
+	y = top + (bottom - top) * fraction
+	points = []
+	for step in range(steps + 1):
+		t = step / steps
+		points.append((left + (right - left) * (start + (end - start) * t), y + wave * math.sin(t * 2 * math.pi)))
+	return points
+
+
+def pdf_parts(item, path: Path) -> bytes:
+	"""The saved PDF's objects uncompressed (qpdf --qdf), for its graphics states and patterns."""
+	plain = path.with_name(path.stem + "-qdf.pdf")
+	host(item, "qpdf", "--qdf", "--object-streams=disable", str(path), str(plain))
+	return plain.read_bytes() if plain.exists() else b""
+
+
+def page_picture(item, path: Path, name: str) -> None:
+	"""Page 1 of a saved PDF drawn by Poppler (pdftoppm) beside the records, for a person to compare with the screen."""
+	prefix = run.pictures / f"{item.ident}-{name}"
+	run.pictures.mkdir(parents=True, exist_ok=True)
+	host(item, "pdftoppm", "-r", "72", "-f", "1", "-l", "1", "-png", "-singlefile", str(path), str(prefix))
+	picture = prefix.with_suffix(".png")
+	if picture.exists():
+		relative = str(picture.relative_to(run.outdir))
+		item.pictures.append(relative)
+		item.steps[-1]["pictures"].append(relative)
+
+
+@run.define("apps.notes.draw-tools")
+def draw_tools(item):
+	folder = prepare(item)
+	notes = Notes(item, folder, "draw.pdf", opened=r"NOTES START ")
+	area = notes.area()
+	pen = has_pen()
+	item.step("the test pen", "peninject" if pen else "none: the strokes are the mouse's, of no pressure")
+
+	# The brush, the pencil and the watercolour by their keys, each a stroke of the pen from no pressure to full and back.
+	notes.act(lambda: run.key("b"), r"NOTES TOOL 49 name=brush", "the key B (the brush)")
+	notes.press(COLOR, None, "black")
+	notes.press(WIDTH + 1, None, "the middle width")
+	brush = pen_stroke(item, notes, "brush", row(area, 0.15, wave=18), STROKE_BRUSH, pen)
+	notes.act(lambda: run.key("l"), r"NOTES TOOL 50 name=pencil", "the key L (the pencil)")
+	pencil = pen_stroke(item, notes, "pencil", row(area, 0.32, wave=18), STROKE_PENCIL, pen)
+	run.shot(item, "brush-pencil")
+
+	# Two watercolour strokes, blue then red, crossing: their overlap is darker, the colours mixed as paint (Multiply).
+	notes.act(lambda: run.key("w"), r"NOTES TOOL 51 name=watercolor", "the key W (the watercolour)")
+	notes.press(COLOR + 1, None, "blue")
+	water = pen_stroke(item, notes, "water-blue", row(area, 0.52), STROKE_WATERCOLOR, pen)
+	notes.press(COLOR + 2, None, "red")
+	left, top, right, bottom = area
+	cross = [(left + (right - left) * (0.35 + 0.3 * step / 40), top + (bottom - top) * (0.42 + 0.2 * step / 40)) for step in range(41)]
+	pen_stroke(item, notes, "water-red", cross, STROKE_WATERCOLOR, pen)
+	run.shot(item, "watercolor")
+
+	# The pipelines of the grain (the pencil) and Multiply (the watercolour) were made, none fell back.
+	made = run.lines(r"NOTES PIPE made name=(grain|multiply)", notes.start)
+	fallback = run.lines(r"NOTES PIPE fallback", notes.start)
+	grain = run.lines(r"NOTES GRAIN hash=", notes.start)
+	item.step("the pipelines", "; ".join(made + fallback + grain[-1:]))
+	item.check(any("name=grain" in line for line in made) and any("name=multiply" in line for line in made),
+		"no NOTES PIPE made name=grain and name=multiply")
+	item.check(not fallback, f"a pipeline fell back: {fallback[:1]}")
+
+	# The drawing tool button opens the strip; its Marker chooses the highlighter and closes it.
+	mark = run.mark()
+	notes.press(DRAW, r"NOTES DRAWS open", "the drawing tool button")
+	strip = run.wait(rf"NOTES BUTTONS .* {BRUSH}:", mark, 10)
+	item.check(strip, "the strip's buttons were not logged (no NOTES BUTTONS with the brush)")
+	run.shot(item, "strip")
+	mark = run.mark()
+	notes.press(HIGHLIGHTER, r"NOTES TOOL 2 name=highlighter", "the strip's Marker")
+	item.check(run.wait(r"NOTES DRAWS closed", mark, 5), "the strip did not close after the Marker")
+	marker = notes.act(lambda: run.press_path(row(area, 0.78, steps=12)), rf"NOTES STROKE page=0 id=\d+ tool={STROKE_HIGHLIGHTER} ",
+		"drew a Marker line with the mouse")
+	strokes = aatlib.number(marker, "strokes")
+	run.shot(item, "all-tools")
+
+	# Undo and redo of the last stroke.
+	notes.act(lambda: run.key("ctrl+z"), rf"NOTES UNDO page=0 strokes={strokes - 1} ", "Ctrl+Z")
+	notes.act(lambda: run.key("ctrl+shift+z"), rf"NOTES REDO page=0 strokes={strokes} ", "Ctrl+Shift+Z")
+	notes.press(COLOR, None, "black (put back for the next scenarios)")
+	notes.act(lambda: run.key("p"), r"NOTES TOOL 1 name=pen", "the key P (the pen, put back)")
+
+	# Saved, closed, opened again: every stroke there, drawn as before.
+	notes.act(lambda: run.key("ctrl+s"), rf"NOTES SAVE reason=request pages=\d+ strokes={strokes} ", "Ctrl+S")
+	notes.close()
+	again = Notes(item, folder, "draw.pdf")
+	item.check(f"strokes={strokes} " in again.opened and "kind=notes" in again.opened, f"not opened again with the strokes: {again.opened}")
+	time.sleep(1.0)
+	run.shot(item, "reopened")
+	fallback = run.lines(r"NOTES PIPE fallback", again.start)
+	item.check(not fallback, f"a pipeline fell back after opening again: {fallback[:1]}")
+	again.close()
+
+	# On the host: a sound PDF with the watercolour's Multiply and the pencil's grain pattern, drawn by Poppler.
+	path = fetch(item, again, "draw.pdf")
+	check = host(item, "qpdf", "--check", str(path))
+	item.check("No syntax or stream encoding errors" in check, "qpdf --check found errors")
+	parts = pdf_parts(item, path)
+	item.check(b"/Multiply" in parts, "the saved PDF has no /BM /Multiply (the watercolour)")
+	item.check(b"/PatternType 1" in parts, "the saved PDF has no tiling pattern (the pencil's grain)")
+	page_picture(item, path, "poppler")
+	if not pen:
+		item.failed("the image has no test pen (peninject), so the strokes had no pressure: build it with plan/ws216/tests/config.mk")
+	item.person(f"{brush}; {pencil}; {water}; {made}; the screenshots: the brush thin at its ends and thick in the middle, "
+		"the pencil's grain with no lines at its sections' joins, the watercolours darker where they cross (blue and red mixed "
+		"as paint), the strip under the toolbar, the same page after opening again, and Poppler's page near the screen's")
+
+
+@run.define("apps.notes.fill-region")
+def fill_region(item):
+	folder = prepare(item)
+	notes = Notes(item, folder, "fill.pdf", opened=r"NOTES START ")
+	notes.pen()
+	area = notes.area()
+	left, top, right, bottom = area
+	middle = ((left + right) / 2, (top + bottom) / 2)
+	radius = min(right - left, bottom - top) * 0.25
+
+	# A closed circle with the pen (the mouse), its end past its start.
+	circle = [(middle[0] + radius * math.cos(step / 36 * 2 * math.pi), middle[1] + radius * math.sin(step / 36 * 2 * math.pi))
+		for step in range(40)]
+	notes.act(lambda: run.press_path(circle), rf"NOTES STROKE page=0 id=\d+ tool={STROKE_PEN} ", "drew a closed circle")
+
+	# The fill tool by its key, a click inside the circle: filled under the line, with no background to draw.
+	notes.act(lambda: run.key("f"), r"NOTES TOOL 52 name=fill", "the key F (the fill)")
+	mark = run.mark()
+	run.click(*middle)
+	made = run.wait(r"NOTES FILL made place=\d+ ", mark, 120)
+	bands = run.wait(r"NOTES FILL bands=\d+ background_us=\d+", mark, 5)
+	item.step("clicked inside the circle", f"{bands}; {made}")
+	item.check(made, "no NOTES FILL made")
+	item.check(aatlib.number(made, "place") == 0, f"the fill is not under the circle's line: {made}")
+	item.check(bands and aatlib.number(bands, "background_us") == 0, f"a page without a background drew one: {bands}")
+	time.sleep(1.0)
+	run.shot(item, "filled")
+
+	# The same place again: refused, the fill there already ("Already filled").
+	refused = notes.act(lambda: run.click(*middle), r"NOTES FILL refused reason=same ", "clicked the same place again", timeout=120)
+	run.shot(item, "already-filled")
+
+	# A drag with the fill tool fills nothing ("Tap to fill").
+	drag = [(middle[0] + step * 8, middle[1] + step * 4) for step in range(8)]
+	notes.act(lambda: run.press_path(drag), r"NOTES FILL moved", "dragged on the fill")
+	run.shot(item, "tap-to-fill")
+
+	# The eraser (whole strokes) at the circle's middle takes the fill, not the line; Ctrl+Z brings it back.
+	tool = notes.act(lambda: run.key("e"), rf"NOTES TOOL {ERASER} parts=\d name=eraser", "the key E (the eraser)")
+	if "parts=1" in tool:
+		notes.act(lambda: run.key("e"), rf"NOTES TOOL {ERASER} parts=0 name=eraser", "the key E again (whole strokes)")
+	notes.act(lambda: run.click(*middle), r"NOTES ERASE page=0 removed=1 strokes=1\b", "clicked the eraser inside the circle")
+	run.shot(item, "erased")
+	notes.act(lambda: run.key("ctrl+z"), r"NOTES UNDO page=0 strokes=2 ", "Ctrl+Z")
+	run.shot(item, "undone")
+	notes.act(lambda: run.key("p"), r"NOTES TOOL 1 name=pen", "the key P (the pen, put back)")
+	notes.close()
+
+	# On a PDF: the white square inside edit-basic.pdf's picture (a gradient round it) filled, its background drawn.
+	pdf = Notes(item, folder)
+	pdf.act(lambda: run.key("f"), r"NOTES TOOL 52 name=fill", "the key F (the fill)")
+	square = pdf.at_pdf(*PICTURE_SQUARE)
+	shown = pdf.area()
+	item.check(shown[0] <= square[0] <= shown[2] and shown[1] <= square[1] <= shown[3], f"the picture's square {square} is not shown")
+	mark = run.mark()
+	run.click(*square)
+	on_pdf = run.wait(r"NOTES FILL made place=\d+ ", mark, 120)
+	background = run.wait(r"NOTES FILL bands=\d+ background_us=\d+", mark, 5)
+	item.step("clicked the white square inside the PDF's picture", f"{background}; {on_pdf}")
+	item.check(on_pdf, "no NOTES FILL made on the PDF")
+	item.check(background and aatlib.number(background, "background_us") > 0, f"the PDF's page was not drawn for the fill: {background}")
+	time.sleep(1.0)
+	run.shot(item, "pdf-filled")
+	pdf.act(lambda: run.key("p"), r"NOTES TOOL 1 name=pen", "the key P (the pen, put back)")
+	pdf.act(lambda: run.key("ctrl+s"), r"NOTES SAVE reason=request pages=3 strokes=1 ", "Ctrl+S")
+	pdf.close()
+
+	# On the host: a sound PDF, drawn by Poppler.
+	path = fetch(item, pdf, "saved.pdf")
+	check = host(item, "qpdf", "--check", str(path))
+	item.check("No syntax or stream encoding errors" in check, "qpdf --check found errors")
+	page_picture(item, path, "poppler")
+	item.person(f"{made}; {bands}; {refused}; {on_pdf}; {background}; the screenshots: the circle filled up to its line with "
+		"no white gap and the line on top, the notice Already filled, the status Tap to fill, the fill gone and back, the PDF's "
+		"white square filled (and Poppler's page the same)")
 
 
 sys.exit(run.go(before=common.before(run), after=common.after(run)))

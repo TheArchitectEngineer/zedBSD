@@ -34,7 +34,7 @@ Notes（`userland/desktop/notes/`）に、今のペン・消しゴムに加え�
 | [p004](phase004/phase.md) | 画面: 頂点の塊（4 MiB の塊、i915 の 1 確保 16 MiB の上限）、遅延の pipeline と代わり（Pi）、粒の texture 3 段、Multiply、複数の輪郭、継ぎ目の fringe なし | p003 | in-progress（2026-10-13 P1: 実装と host の受け入れ C1〜C8 済み、test-wait（画は p007 で T1）） |
 | [p005](phase005/phase.md) | 領域の塗りつぶし: 決まった倍率の帯の画面外の描画と読み戻し、flood fill（許容差・隙間を閉じる）、輪郭化と上限、重なりの順、undo・journal、消しゴム（D7 (c)） | p003、main に入った p004 の出力 | in-progress（2026-10-13 P1: 実装と host の受け入れ F1〜F11 済み、test-wait（画は p007 で T1、Pi は p009）） |
 | [p006](phase006/phase.md) | UI: 描く道具の button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り、AAT の helper の追従 | main に入った p003〜p005 の出力 | in-progress（2026-10-13 P1: 実装と host の受け入れ U1〜U5 済み、test-wait（画面の操作は p007 で T1）） |
-| p007 | T1 の QEMU（AAT の draw-tools・fill-region）、実機 5330 のペン（ユーザー） | p002〜p006 | planned |
+| [p007](phase007/phase.md) | T1 の QEMU（AAT の draw-tools・fill-region）、実機 5330 のペン（ユーザー） | p002〜p006 | in-progress（2026-10-13 P1 q946: scenario・helper・試験の image の config 済み、test-wait（T1 の QEMU、5330 はユーザー）） |
 | p008 | 規約の全文の見直し | p007 | planned |
 | p009 | Pi 4 の確かめ（起動、代わりの log が出ない、各道具、速さの数） | p007、WS141 p017、WS141 の Multiply の blend の依頼 | planned |
 
