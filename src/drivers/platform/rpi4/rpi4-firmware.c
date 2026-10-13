@@ -77,6 +77,41 @@
 #define XHCI_RESET_FUNCTION_SHIFT	12U
 
 /*
+ * The tags of the firmware's GPIO expander (Raspberry Pi firmware wiki,
+ * "Mailbox property interface").  Each request starts with the GPIO's
+ * number; the firmware overwrites that word with zero when it handled the
+ * request, so a nonzero first word in the answer is a failure.
+ */
+#define FIRMWARE_TAG_GET_GPIO_STATE	0x00030041U
+#define FIRMWARE_TAG_SET_GPIO_STATE	0x00038041U
+#define FIRMWARE_TAG_GET_GPIO_CONFIG	0x00030043U
+
+/* The expander's lines are GPIO 128 and up in the firmware's numbering. */
+#define FIRMWARE_GPIO_EXPANDER_BASE	128U
+
+/* The first word of a GPIO answer when the firmware handled the request. */
+#define FIRMWARE_GPIO_STATUS_OK		0U
+
+/*
+ * The value words of the GPIO tags: a state request and answer is the GPIO
+ * and its state; a configuration answer is the GPIO, the direction, the
+ * polarity, whether termination is on and whether it pulls up.
+ */
+#define FIRMWARE_GPIO_STATE_WORDS	2U
+#define FIRMWARE_GPIO_CONFIG_WORDS	5U
+
+/*
+ * The bytes an answer must hold: the status word alone for a change, and
+ * the status word with the word read after it for a question.
+ */
+#define FIRMWARE_GPIO_STATUS_BYTES	4U
+#define FIRMWARE_GPIO_ANSWER_BYTES	8U
+
+/* The firmware's direction codes in a configuration answer. */
+#define FIRMWARE_GPIO_DIRECTION_IN	0U
+#define FIRMWARE_GPIO_DIRECTION_OUT	1U
+
+/*
  * The steps of the mailbox's one-time preparation.
  *
  * ABSENT: nobody has prepared it, or the last attempt failed.  PREPARING:
@@ -137,6 +172,7 @@ static void build_request(uint32_t tag, const uint32_t *values, unsigned request
 static int post_request(void);
 static int wait_mailbox(unsigned status_offset, uint32_t busy_bit);
 static int read_answer(uint32_t *values, unsigned capacity, uint32_t *answered);
+static int expander_gpio(enum drv_rpi4_firmware_gpio line, uint32_t *gpio);
 
 /*
  * Finds the mailbox in the device tree and prepares the request buffer.
@@ -277,6 +313,171 @@ drv_rpi4_firmware_notify_xhci_reset(
 		return error;
 
 	/* Succeeded: the controller has its firmware. */
+	return 0;
+}
+
+/*
+ * Reads whether an expander line is high.
+ */
+int
+drv_rpi4_firmware_get_gpio(
+	enum drv_rpi4_firmware_gpio line,
+	int *state)
+{
+	uint32_t values[FIRMWARE_GPIO_STATE_WORDS];
+	uint32_t answered;
+	uint32_t gpio;
+	int error;
+
+	/* Refuses nowhere to put the answer. */
+	if (state == NULL)
+		return EINVAL;
+
+	/* Names the line in the firmware's numbering, refusing any other line. */
+	error = expander_gpio(line, &gpio);
+	if (error != 0)
+		return error;
+
+	/* Asks for the line's level. */
+	values[0] = gpio;
+	values[1] = 0;
+	answered = 0;
+	error = drv_rpi4_firmware_property(
+		FIRMWARE_TAG_GET_GPIO_STATE,
+		values,
+		FIRMWARE_GPIO_STATE_WORDS,
+		FIRMWARE_GPIO_STATE_WORDS,
+		&answered);
+	if (error != 0)
+		return error;
+
+	/* Refuses an answer without the level in it. */
+	if (answered < FIRMWARE_GPIO_ANSWER_BYTES)
+		return EIO;
+
+	/* Refuses an answer whose status word says the firmware failed. */
+	if (values[0] != FIRMWARE_GPIO_STATUS_OK) {
+		kern_logf("rpi4-firmware: GPIO %u state not read (%x)\n", gpio, values[0]);
+		return EIO;
+	}
+
+	/* Any nonzero level is high. */
+	*state = 0;
+	if (values[1] != 0)
+		*state = 1;
+
+	/* Succeeded: state holds the line's level. */
+	return 0;
+}
+
+/*
+ * Drives an expander line low or high.
+ */
+int
+drv_rpi4_firmware_set_gpio(
+	enum drv_rpi4_firmware_gpio line,
+	int state)
+{
+	uint32_t values[FIRMWARE_GPIO_STATE_WORDS];
+	uint32_t answered;
+	uint32_t gpio;
+	int error;
+
+	/* Refuses a level other than low and high. */
+	if (state != 0 && state != 1)
+		return EINVAL;
+
+	/* Names the line in the firmware's numbering, refusing any other line. */
+	error = expander_gpio(line, &gpio);
+	if (error != 0)
+		return error;
+
+	/* Asks the firmware to drive the line. */
+	values[0] = gpio;
+	values[1] = (uint32_t)state;
+	answered = 0;
+	error = drv_rpi4_firmware_property(
+		FIRMWARE_TAG_SET_GPIO_STATE,
+		values,
+		FIRMWARE_GPIO_STATE_WORDS,
+		FIRMWARE_GPIO_STATE_WORDS,
+		&answered);
+	if (error != 0)
+		return error;
+
+	/* Refuses an answer without its status word. */
+	if (answered < FIRMWARE_GPIO_STATUS_BYTES)
+		return EIO;
+
+	/* Refuses an answer whose status word says the firmware failed. */
+	if (values[0] != FIRMWARE_GPIO_STATUS_OK) {
+		kern_logf("rpi4-firmware: GPIO %u not set (%x)\n", gpio, values[0]);
+		return EIO;
+	}
+
+	/* Succeeded: the line is at the new level. */
+	return 0;
+}
+
+/*
+ * Reads whether an expander line is an input or an output.
+ */
+int
+drv_rpi4_firmware_get_gpio_direction(
+	enum drv_rpi4_firmware_gpio line,
+	enum drv_rpi4_firmware_gpio_direction *direction)
+{
+	uint32_t values[FIRMWARE_GPIO_CONFIG_WORDS];
+	uint32_t answered;
+	uint32_t gpio;
+	int error;
+
+	/* Refuses nowhere to put the answer. */
+	if (direction == NULL)
+		return EINVAL;
+
+	/* Names the line in the firmware's numbering, refusing any other line. */
+	error = expander_gpio(line, &gpio);
+	if (error != 0)
+		return error;
+
+	/* Asks for the line's configuration; only the GPIO goes with the question. */
+	kern_memset(values, 0, sizeof(values));
+	values[0] = gpio;
+	answered = 0;
+	error = drv_rpi4_firmware_property(
+		FIRMWARE_TAG_GET_GPIO_CONFIG,
+		values,
+		1U,
+		FIRMWARE_GPIO_CONFIG_WORDS,
+		&answered);
+	if (error != 0)
+		return error;
+
+	/* Refuses an answer without the direction in it. */
+	if (answered < FIRMWARE_GPIO_ANSWER_BYTES)
+		return EIO;
+
+	/* Refuses an answer whose status word says the firmware failed. */
+	if (values[0] != FIRMWARE_GPIO_STATUS_OK) {
+		kern_logf("rpi4-firmware: GPIO %u configuration not read (%x)\n", gpio, values[0]);
+		return EIO;
+	}
+
+	/* Names the firmware's direction; any other code is not one it defines. */
+	switch (values[1]) {
+	case FIRMWARE_GPIO_DIRECTION_IN:
+		*direction = DRV_RPI4_FIRMWARE_GPIO_INPUT;
+		break;
+	case FIRMWARE_GPIO_DIRECTION_OUT:
+		*direction = DRV_RPI4_FIRMWARE_GPIO_OUTPUT;
+		break;
+	default:
+		kern_logf("rpi4-firmware: GPIO %u has direction %x\n", gpio, values[1]);
+		return EIO;
+	}
+
+	/* Succeeded: direction holds the line's direction. */
 	return 0;
 }
 
@@ -533,5 +734,32 @@ read_answer(
 		values[index] = message[PROPERTY_WORD_VALUES + index];
 
 	/* Succeeded: values holds the answer. */
+	return 0;
+}
+
+/*
+ * Converts an expander line to the firmware's GPIO number.
+ *
+ * This is the one place that adds the expander's base, and it accepts only
+ * the lines of the enumeration.
+ */
+static int
+expander_gpio(
+	enum drv_rpi4_firmware_gpio line,
+	uint32_t *gpio)
+{
+	/* Names the line; any other number, such as the SD card's power, is refused. */
+	switch (line) {
+	case DRV_RPI4_FIRMWARE_GPIO_BT_ON:
+	case DRV_RPI4_FIRMWARE_GPIO_WL_ON:
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Adds the expander's base to the line's place in the expander. */
+	*gpio = FIRMWARE_GPIO_EXPANDER_BASE + (uint32_t)line;
+
+	/* Succeeded: gpio holds the line's number in the firmware's numbering. */
 	return 0;
 }

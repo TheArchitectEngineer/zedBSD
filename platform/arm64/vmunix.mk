@@ -62,6 +62,7 @@ ARM64_KERNEL_SOURCES := \
 	src/drivers/platform/rpi4/rpi4-pcie.c \
 	src/drivers/platform/rpi4/rpi4-board.c \
 	src/drivers/platform/rpi4/rpi4-firmware.c src/kern/dcache.c \
+	src/drivers/platform/rpi4/rpi4-gpio.c \
 	src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
 	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c \
