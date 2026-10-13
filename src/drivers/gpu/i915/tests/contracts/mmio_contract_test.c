@@ -31,6 +31,7 @@ static void mmio_check_held_access(struct i915_mmio *mmio, struct mock_mmio *moc
 static void mmio_check_auto_access(struct i915_mmio *mmio, struct mock_mmio *mock);
 static void mmio_check_forcewake_failures(struct i915_mmio *mmio, struct mock_mmio *mock);
 static void mmio_check_steering(struct i915_mmio *mmio);
+static void mmio_check_gen9_domains(struct mock_mmio *mock);
 
 /*
  * Runs the register access contract checks.
@@ -61,6 +62,7 @@ main(void)
 	mmio_check_auto_access(&mmio, &mock);
 	mmio_check_forcewake_failures(&mmio, &mock);
 	mmio_check_steering(&mmio);
+	mmio_check_gen9_domains(&mock);
 
 	/* No group may leave a domain held behind it. */
 	contract_section("balance: no forcewake left held at end");
@@ -100,6 +102,66 @@ mmio_check_domains(
 	/* A register in no range is always on. */
 	domain = drv_i915_mmio_domain_of(mmio, 0x1234U);
 	contract_check(domain == -1, "0x1234 is always-on");
+}
+
+/*
+ * Checks the Gen9 register-to-domain map the driver ships (intel_uncore.c
+ * __gen9_fw_ranges): one media domain, the copy engine under GT, the
+ * uncore hole always on, and a held media domain covering both media engines.
+ */
+static void
+mmio_check_gen9_domains(
+	struct mock_mmio *mock)
+{
+	static struct i915_trace trace;
+	static struct i915_mmio gen9;
+	const struct i915_mmio_range *ranges;
+	unsigned range_count;
+	int domain;
+	int error;
+
+	contract_section("domain: the Gen9 register-to-forcewake-domain map");
+
+	/* Binds a second access to the Gen9 map. */
+	drv_i915_trace_init(&trace);
+	ranges = drv_i915_mmio_gen9_ranges(&range_count);
+	drv_i915_mmio_init(&gen9, mock_mmio_ops(), mock, ranges, range_count, &trace);
+
+	/* The render command streamer and the render chicken registers need the render domain. */
+	domain = drv_i915_mmio_domain_of(&gen9, 0x2244U);
+	contract_check(domain == I915_FORCEWAKE_RENDER, "0x2244 is render domain");
+	domain = drv_i915_mmio_domain_of(&gen9, 0xe194U);
+	contract_check(domain == I915_FORCEWAKE_RENDER, "0xe194 is render domain");
+
+	/* The copy engine, the fuses and the low GT registers need the GT domain. */
+	domain = drv_i915_mmio_domain_of(&gen9, 0x22034U);
+	contract_check(domain == I915_FORCEWAKE_GT, "0x22034 (BCS) is GT domain");
+	domain = drv_i915_mmio_domain_of(&gen9, 0x9120U);
+	contract_check(domain == I915_FORCEWAKE_GT, "0x9120 (GEN8_FUSE2) is GT domain");
+	domain = drv_i915_mmio_domain_of(&gen9, 0x0a00U);
+	contract_check(domain == I915_FORCEWAKE_GT, "0xa00 is GT domain");
+
+	/* Both media engines sit in the one media domain. */
+	domain = drv_i915_mmio_domain_of(&gen9, 0x12034U);
+	contract_check(domain == I915_FORCEWAKE_MEDIA_GEN9, "0x12034 (VCS0) is the Gen9 media domain");
+	domain = drv_i915_mmio_domain_of(&gen9, 0x1a034U);
+	contract_check(domain == I915_FORCEWAKE_MEDIA_GEN9, "0x1a034 (VECS0) is the Gen9 media domain");
+
+	/* The uncore hole, the forcewake requests and the display are always on. */
+	domain = drv_i915_mmio_domain_of(&gen9, 0x0fdcU);
+	contract_check(domain == -1, "0xfdc (MCR selector) is always-on");
+	domain = drv_i915_mmio_domain_of(&gen9, 0xa270U);
+	contract_check(domain == I915_FORCEWAKE_GT, "0xa270 sits in the GT range as the reference lists it");
+	domain = drv_i915_mmio_domain_of(&gen9, 0x44200U);
+	contract_check(domain == -1, "0x44200 (GEN8_MASTER_IRQ) is always-on");
+
+	/* The media domain wakes and is given back by its own count. */
+	error = drv_i915_forcewake_get(&gen9, I915_FORCEWAKE_MEDIA_GEN9);
+	contract_check(error == 0, "the Gen9 media domain wakes");
+	(void)drv_i915_read32(&gen9, 0x1a034U);
+	error = drv_i915_forcewake_put(&gen9, I915_FORCEWAKE_MEDIA_GEN9);
+	contract_check(error == 0, "the Gen9 media domain is given back");
+	contract_check(drv_i915_forcewake_held(&gen9, I915_FORCEWAKE_MEDIA_GEN9) == 0, "the Gen9 media domain is balanced");
 }
 
 /* Checks that nested holds wake the domain once and let it sleep once. */

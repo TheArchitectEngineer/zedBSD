@@ -560,6 +560,10 @@ i915_sfc_lock(
 	int lock_obtained;
 	int error;
 
+	/* Gen9, before graphics 11, does not lock the converter (gen6_reset_engines()). */
+	if (gt->graphics_ver == 9)
+		return 0;
+
 	/* Only a decode engine with a converter, or an enhancement engine, has one to lock. */
 	if (engine->class == I915_VIDEO_DECODE_CLASS) {
 		if ((gt->vdbox_sfc_access & (1U << (unsigned)engine->instance)) == 0U)
