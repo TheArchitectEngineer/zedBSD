@@ -441,8 +441,8 @@ inject_declare_pen(
 	struct input_device_info info;
 	int error;
 
-	/* A pen is the pen kind, reports no fingers and has no Scan Time. */
-	if (setup->kind != INPUT_INJECT_KIND_PEN)
+	/* A pen is a pen kind (on a display, or on a tablet beside it), reports no fingers and has no Scan Time. */
+	if (setup->kind != INPUT_INJECT_KIND_PEN && setup->kind != INPUT_INJECT_KIND_PEN_POINTER)
 		return EINVAL;
 	if (setup->report_contacts != 0U)
 		return EINVAL;
@@ -461,9 +461,18 @@ inject_declare_pen(
 	inject_axis(&state->axes[4], ABS_TILT_Y, -INPUT_INJECT_TILT_MAX,
 		    INPUT_INJECT_TILT_MAX, INJECT_TILT_RESOLUTION);
 
-	/* Registers the pen as an ordinary input device. */
+	/*
+	 * Registers the pen as an ordinary input device: one on a display
+	 * points at it, one on a tablet does not (WS217); their names tell them
+	 * apart.  Both are written to as the pen kind.
+	 */
 	kern_memset(&info, 0, sizeof(info));
 	info.name = "Test pen (input-inject)";
+	info.properties = 1U << INPUT_PROP_DIRECT;
+	if (setup->kind == INPUT_INJECT_KIND_PEN_POINTER) {
+		info.name = "Test pen tablet (input-inject)";
+		info.properties = 1U << INPUT_PROP_POINTER;
+	}
 	info.physical_path = "input-inject";
 	info.id.bustype = BUS_VIRTUAL;
 	info.capabilities = inject_capabilities;

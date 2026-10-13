@@ -395,6 +395,14 @@ struct kwl_input_device {
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned absolute;
+	/*
+	 * The device points at the display it is on (WS217): a touch screen, an
+	 * absolute pointer, a pen whose node says INPUT_PROP_DIRECT.  Its place
+	 * is the panel's point, turned back by the output's angle; any other
+	 * absolute device (a pen tablet on the desk) maps onto the logical
+	 * picture as it is.
+	 */
+	unsigned direct;
 	/* A pen tablet (tablet.c, WS079 p003): its reports go to the tablet, not to apply_frame. */
 	unsigned tablet;
 	/* A touch screen (touch.c, WS079 p013): its reports go to the touch screen, not to apply_frame. */
@@ -2333,6 +2341,9 @@ unsigned kwl_window_output(struct kwl_object *surface);
 void kwl_window_to_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
 void kwl_window_set_output(struct kwl_server *server, struct kwl_object *window, unsigned slot, const char *why);
 void kwl_pointer_absolute(struct kwl_server *server);
+void kwl_output_geometry(struct kwl_server *server, struct kwl_cursor_geometry *geometry);
+unsigned kwl_output_rotation(struct kwl_server *server, unsigned slot);
+void kwl_output_absolute(struct kwl_server *server, unsigned slot, unsigned direct, const struct kwl_cursor_axis *across, const struct kwl_cursor_axis *down, int32_t *x, int32_t *y);
 
 /* The outputs each surface's client was told it is on, wl_surface.enter and leave (surface-outputs.c, ws177-p001). */
 void kwl_surface_outputs_sync(struct kwl_server *server);
@@ -2562,6 +2573,8 @@ int kwl_input_threads_start(struct kwl_server *server);
 void kwl_input_threads_stop(struct kwl_server *server);
 void kwl_input_drain(struct kwl_server *server);
 void kwl_input_sync(struct kwl_server *server);
+void kwl_input_geometry(struct kwl_server *server);
+void kwl_input_rotated(struct kwl_server *server);
 void kwl_input_touchpads_changed(struct kwl_server *server);
 void kwl_input_pause(struct kwl_server *server, struct kwl_input_device *device);
 void kwl_input_resume(struct kwl_server *server, struct kwl_input_device *device, int descriptor);

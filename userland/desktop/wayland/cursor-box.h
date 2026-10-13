@@ -84,6 +84,39 @@ struct kwl_cursor_motion {
 };
 
 /*
+ * One output's panel as the absolute devices see it (WS217): its physical
+ * width and height, and the angle the picture is shown at on it (clockwise
+ * degrees, rotate.h), which the output's logical rectangle is turned by.
+ */
+struct kwl_cursor_physical {
+	uint32_t width;
+	uint32_t height;
+	unsigned rotation;
+};
+
+/*
+ * What the pointer's place is computed over (WS217, plan/ws217/phase001
+ * 6.6): the outputs' logical rectangles of the plane (no size: not shown),
+ * each output's panel and angle, and the output an absolute pointer maps
+ * onto.  The main thread makes it (kwl_output_geometry) and gives it to
+ * the box whole, so that a place is never computed over the rectangles of
+ * one moment and the angles of another.
+ */
+struct kwl_cursor_geometry {
+	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
+	unsigned output_count;
+	struct kwl_cursor_physical physical[KWL_PLANE_SLOTS];
+	unsigned absolute_slot;
+};
+
+/* One axis of an absolute device's report: the value and the range it lies in. */
+struct kwl_cursor_axis {
+	int32_t value;
+	int32_t minimum;
+	int32_t maximum;
+};
+
+/*
  * One warp of the main thread: given the box's place and output, gives the
  * new ones.  It runs under the cursor lock, so it only computes (plane.c's
  * functions): no output, no allocation.
@@ -108,6 +141,9 @@ typedef void kwl_cursor_box_move_fn(const void *context, const struct kwl_plane_
  * with none that the box does not show), and its counts.  sequence counts
  * every change the cursor thread waits for; answered signals the main
  * thread.
+ *
+ * The last four fields are the geometry the motions are computed over
+ * (struct kwl_cursor_geometry, WS217), always written together.
  */
 struct kwl_cursor_box {
 	pthread_mutex_t lock;
@@ -136,17 +172,19 @@ struct kwl_cursor_box {
 	uint64_t writes;
 	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	unsigned output_count;
+	struct kwl_cursor_physical physical[KWL_PLANE_SLOTS];
+	unsigned absolute_slot;
 };
 
 int kwl_cursor_box_init(struct kwl_cursor_box *box, int32_t x, int32_t y, uint32_t width, uint32_t height);
 void kwl_cursor_box_destroy(struct kwl_cursor_box *box);
 void kwl_cursor_box_move(struct kwl_cursor_box *box, int64_t dx, int64_t dy, uint64_t event_us, struct kwl_cursor_motion *motion);
 void kwl_cursor_box_place(struct kwl_cursor_box *box, int32_t value_x, int32_t minimum_x, int32_t maximum_x, int32_t value_y, int32_t minimum_y, int32_t maximum_y, int64_t dx, int64_t dy, uint64_t event_us, struct kwl_cursor_motion *motion);
-void kwl_cursor_box_warp(struct kwl_cursor_box *box, const struct kwl_plane_rect *outputs, unsigned count, kwl_cursor_box_move_fn *move, const void *context, struct kwl_cursor_motion *motion);
-void kwl_cursor_box_outputs(struct kwl_cursor_box *box, const struct kwl_plane_rect *outputs, unsigned count);
+void kwl_cursor_box_warp(struct kwl_cursor_box *box, const struct kwl_cursor_geometry *geometry, kwl_cursor_box_move_fn *move, const void *context, struct kwl_cursor_motion *motion);
+void kwl_cursor_box_outputs(struct kwl_cursor_box *box, const struct kwl_cursor_geometry *geometry);
 void kwl_cursor_box_read(struct kwl_cursor_box *box, int32_t *x, int32_t *y, unsigned *output);
 void kwl_cursor_box_take_stats(struct kwl_cursor_box *box, struct kwl_cursor_stats *stats);
-int32_t kwl_cursor_scale_absolute(int32_t value, int32_t minimum, int32_t maximum, uint32_t size);
 int32_t kwl_cursor_clamp(int64_t position, uint32_t size);
+void kwl_cursor_geometry_place(const struct kwl_cursor_geometry *geometry, unsigned slot, unsigned direct, unsigned unit, const struct kwl_cursor_axis *across, const struct kwl_cursor_axis *down, int32_t *x, int32_t *y);
 
 #endif

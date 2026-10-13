@@ -87,7 +87,7 @@ static int apply_motion(struct kwl_server *server, const struct kwl_cursor_motio
 static void box_measure(struct kwl_server *server, const struct kwl_cursor_motion *motion);
 static void apply_key(struct kwl_server *server, uint32_t time, uint32_t key, int32_t value);
 static void update_capabilities(struct kwl_server *server);
-static int attach_tablet(struct kwl_server *server, int descriptor, const char *path);
+static int attach_tablet(struct kwl_server *server, int descriptor, const char *path, unsigned direct);
 static int attach_touch(struct kwl_server *server, int descriptor, const char *path);
 static int multitouch(const struct kl_backend_input_caps *capabilities);
 static int touchpad_node(const struct kl_backend_input_caps *capabilities);
@@ -136,6 +136,8 @@ kwl_input_probe(
 	unsigned pointer;
 	unsigned keyboard;
 	unsigned absolute;
+	unsigned direct;
+	int on_display;
 	int touch_screen;
 	int pad;
 	int has_type;
@@ -150,10 +152,19 @@ kwl_input_probe(
 	if (has_type &&
 	    has_first &&
 	    has_second) {
+		/*
+		 * A pen on the display points at it (INPUT_PROP_DIRECT, WS217); a
+		 * pen tablet on the desk, or one whose node says nothing, does not.
+		 */
+		direct = 0U;
+		on_display = bit_is_set(capabilities->properties, INPUT_PROP_DIRECT);
+		if (on_display)
+			direct = 1U;
+
 		/* Both position ranges must be readable and nonempty to be mapped. */
 		error = read_ranges(descriptor, &x, &y);
 		if (error == 0) {
-			error = attach_tablet(server, descriptor, path);
+			error = attach_tablet(server, descriptor, path, direct);
 			return error == 0;
 		}
 	}
@@ -262,9 +273,14 @@ kwl_input_attach(
 	device->keyboard = keyboard;
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
-	/* An absolute pointer maps its axis ranges onto the surface, from the place it reports now. */
+	/*
+	 * An absolute pointer maps its axis ranges onto the display it is
+	 * on, from the place it reports now (it points at the display: QEMU's
+	 * tablet, WS217).
+	 */
 	if (pointer && x != NULL && y != NULL) {
 		device->absolute = 1;
+		device->direct = 1U;
 		device->abs_x_minimum = x->minimum;
 		device->abs_x_maximum = x->maximum;
 		device->abs_y_minimum = y->minimum;
@@ -485,9 +501,7 @@ void
 kwl_input_sync(
 	struct kwl_server *server)
 {
-	struct kwl_plane_rect outputs[KWL_PLANE_SLOTS];
 	struct kwl_input_settings settings;
-	unsigned count;
 	int same;
 
 	/* Nothing runs before the thread starts. */
@@ -502,9 +516,44 @@ kwl_input_sync(
 		server->input_settings_given = settings;
 	}
 
-	/* The outputs' rectangles the motions are computed over. */
-	count = kwl_outputs(server, outputs);
-	kwl_cursor_box_outputs(&server->cursor_box, outputs, count);
+	/* The geometry the motions are computed over. */
+	kwl_input_geometry(server);
+}
+
+/*
+ * Gives the input thread the geometry the pointer's place is computed over
+ * as the main thread has it now (WS217: the outputs' rectangles, panels and
+ * angles), at once.
+ */
+void
+kwl_input_geometry(
+	struct kwl_server *server)
+{
+	struct kwl_cursor_geometry geometry;
+
+	/* Nothing runs before the thread starts. */
+	if (!server->input_thread_ready)
+		return;
+
+	/* The geometry as it is, given whole. */
+	kwl_output_geometry(server, &geometry);
+	kwl_cursor_box_outputs(&server->cursor_box, &geometry);
+}
+
+/*
+ * Ends what the absolute devices were doing when the angle an output shows
+ * changed (WS217, plan/ws217/phase001 4.6 A 5): every finger on a touch
+ * screen is cancelled until it lifts, and every pen lifts and leaves its
+ * surface (a pen still near comes back at its next report, where the new
+ * angle maps it).  The pointer and the geometry follow the turn's warp.
+ */
+void
+kwl_input_rotated(
+	struct kwl_server *server)
+{
+	/* The fingers, then the pens. */
+	kwl_touch_cancel(server, "rotated");
+	kwl_tablet_cancel(server);
 }
 
 /*
@@ -619,6 +668,7 @@ kwl_pointer_warp(
 	kwl_cursor_box_move_fn *move,
 	const void *context)
 {
+	struct kwl_cursor_geometry geometry;
 	struct kwl_cursor_motion motion;
 	int32_t x;
 	int32_t y;
@@ -636,8 +686,19 @@ kwl_pointer_warp(
 		return;
 	}
 
-	/* The box moves; the main thread's view and warp count follow it. */
-	kwl_cursor_box_warp(&server->cursor_box, outputs, KWL_PLANE_SLOTS, move, context, &motion);
+	/*
+	 * The box moves, with the rectangles given and the panels and angles
+	 * as they are now (WS217); the main thread's view and warp count
+	 * follow it.
+	 */
+	if (outputs != NULL) {
+		kwl_output_geometry(server, &geometry);
+		memcpy(geometry.outputs, outputs, sizeof(geometry.outputs));
+		geometry.output_count = KWL_PLANE_SLOTS;
+		kwl_cursor_box_warp(&server->cursor_box, &geometry, move, context, &motion);
+	} else {
+		kwl_cursor_box_warp(&server->cursor_box, NULL, move, context, &motion);
+	}
 	server->pointer_x = motion.x;
 	server->pointer_y = motion.y;
 	server->pointer_output = motion.output;
@@ -1105,7 +1166,8 @@ static int
 attach_tablet(
 	struct kwl_server *server,
 	int descriptor,
-	const char *path)
+	const char *path,
+	unsigned direct)
 {
 	struct kwl_input_device *device;
 	unsigned index;
@@ -1129,6 +1191,7 @@ attach_tablet(
 	memset(device, 0, sizeof(*device));
 	device->fd = descriptor;
 	device->tablet = 1;
+	device->direct = direct;
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/* The tablet reads the axes and tells the bound tablet seats (tablet.c). */
@@ -1144,7 +1207,7 @@ attach_tablet(
 	input_attach(server, device);
 
 	/* One line lets a test see which devices the seat uses. */
-	printf("KWL INPUT device=%s kind=tablet abs=1\n", device->path);
+	printf("KWL INPUT device=%s kind=tablet abs=1 direct=%u\n", device->path, device->direct);
 
 	/* Bound seats learn that a pointer (the pen's fallback) is there. */
 	update_capabilities(server);
@@ -1188,6 +1251,7 @@ attach_touch(
 	memset(device, 0, sizeof(*device));
 	device->fd = descriptor;
 	device->touch = 1;
+	device->direct = 1U;
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/* The touch screen reads its range (touch.c). */

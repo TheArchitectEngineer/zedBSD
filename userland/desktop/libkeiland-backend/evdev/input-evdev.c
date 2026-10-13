@@ -274,7 +274,7 @@ probe_device(
 		kl_backend_seat_device_close(backend, descriptor);
 }
 
-/* Reads the event, key, relative and absolute capability bitmaps of one node. */
+/* Reads the event, key, relative and absolute capability bitmaps and the properties of one node. */
 static int
 read_capabilities(
 	int descriptor,
@@ -305,6 +305,15 @@ read_capabilities(
 	if (error < 0)
 		return errno;
 
-	/* Succeeded: the four bitmaps describe the node. */
+	/*
+	 * Its properties (WS217, decision D11: a touch pad is a pointer, a pen
+	 * on the display is direct); a kernel without EVIOCGPROP leaves them
+	 * empty, as the zedBSD backend does.
+	 */
+	error = ioctl(descriptor, EVIOCGPROP(sizeof(capabilities->properties)), capabilities->properties);
+	if (error < 0)
+		memset(capabilities->properties, 0, sizeof(capabilities->properties));
+
+	/* Succeeded: the bitmaps describe the node. */
 	return 0;
 }

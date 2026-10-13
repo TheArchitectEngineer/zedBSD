@@ -12,6 +12,10 @@
  * (WS079 p002), and only root may open it.
  *
  *   peninject [SCRIPT]   replays a pen script (standard input without SCRIPT)
+ *   peninject --pointer [SCRIPT]
+ *                        replays it with a pen on a tablet beside the
+ *                        display (INPUT_INJECT_KIND_PEN_POINTER, WS217)
+ *                        instead of one on the display
  *   peninject -c         checks the injector's refusals (EACCES and EPERM for a
  *                        non-root user, EBUSY, EINVAL)
  *   peninject -d MS      waits for the test pen's evdev node and prints its
@@ -102,6 +106,7 @@ struct pen_command_word {
  */
 struct pen_state {
 	int fd;
+	uint32_t kind;
 	int declared;
 	int tool;
 	int in_range;
@@ -144,7 +149,7 @@ static const struct pen_command_word pen_commands[] = {
 	{ "hold", COMMAND_WAIT },
 };
 
-static int replay(const char *path);
+static int replay(const char *path, uint32_t kind);
 static int run_line(struct pen_state *pen, char *line, unsigned number);
 static int run_command(struct pen_state *pen, enum pen_command command, const char *line);
 static enum pen_command command_of(const char *word);
@@ -176,6 +181,8 @@ main(
 	int argc,
 	char **argv)
 {
+	uint32_t kind;
+	int first;
 	int status;
 	int same;
 	long milliseconds;
@@ -199,17 +206,28 @@ main(
 		return status;
 	}
 
-	/* More than one argument is not a replay. */
-	if (argc > 2) {
-		fprintf(stderr, "usage: peninject [SCRIPT] | -c | -d MS\n");
+	/* --pointer replays with a pen on a tablet beside the display. */
+	kind = INPUT_INJECT_KIND_PEN;
+	first = 1;
+	same = 1;
+	if (argc >= 2)
+		same = strcmp(argv[1], "--pointer");
+	if (same == 0) {
+		kind = INPUT_INJECT_KIND_PEN_POINTER;
+		first = 2;
+	}
+
+	/* More than one script is not a replay. */
+	if (argc > first + 1) {
+		fprintf(stderr, "usage: peninject [--pointer] [SCRIPT] | -c | -d MS\n");
 		return 2;
 	}
 
 	/* Replays the named script, or standard input. */
-	if (argc == 2) {
-		status = replay(argv[1]);
+	if (argc == first + 1) {
+		status = replay(argv[first], kind);
 	} else {
-		status = replay(NULL);
+		status = replay(NULL, kind);
 	}
 
 	/* Reports a replay that failed. */
@@ -223,7 +241,8 @@ main(
 /* Replays one script through the injector. */
 static int
 replay(
-	const char *path)
+	const char *path,
+	uint32_t kind)
 {
 	struct pen_state pen;
 	char line[PENINJECT_LINE_MAX];
@@ -244,6 +263,7 @@ replay(
 
 	/* Opens the injector; the pen is declared by the first command. */
 	memset(&pen, 0, sizeof(pen));
+	pen.kind = kind;
 	pen.tool = BTN_TOOL_PEN;
 	pen.fd = open(PENINJECT_NODE, O_WRONLY);
 	if (pen.fd < 0) {
@@ -685,7 +705,7 @@ pen_declare(
 	/* Describes the pen: its kind and the size of its area. */
 	memset(&setup, 0, sizeof(setup));
 	setup.magic = INPUT_INJECT_MAGIC;
-	setup.kind = INPUT_INJECT_KIND_PEN;
+	setup.kind = pen->kind;
 	setup.x_max = width;
 	setup.y_max = height;
 

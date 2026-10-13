@@ -17,6 +17,7 @@
 
 int kwl_touch_add(struct kwl_input_device *device);
 void kwl_touch_remove(struct kwl_server *server, struct kwl_input_device *device, int notify);
+void kwl_touch_cancel(struct kwl_server *server, const char *reason);
 void kwl_touch_frame(struct kwl_server *server, struct kwl_input_device *device, uint32_t time);
 void kwl_touch_tick(struct kwl_server *server);
 void kwl_touch_object_gone(struct kwl_object *object);

@@ -231,6 +231,9 @@ kwl_output_apply_rotation(
 		kwl_outputs_changed(server);
 	}
 
+	/* The input thread computes the motions over the new angle (the pointer's warp gave it already when it ran). */
+	kwl_input_geometry(server);
+
 	/* Everything is drawn again; the user's change of choice is written. */
 	server->dirty = 1;
 	compose->rotate_saved = -1;
@@ -350,6 +353,12 @@ output_rotate_turn(
 			return error;
 		}
 	}
+
+	/*
+	 * The fingers and the pens end what they were doing while their places
+	 * still mean the old points (ws217-p003): the angle changes now.
+	 */
+	kwl_input_rotated(server);
 
 	/*
 	 * No frame, nor the cursor's plane (its thread submits on the same

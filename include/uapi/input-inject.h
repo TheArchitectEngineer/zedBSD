@@ -19,7 +19,11 @@
  * BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOUCH, BTN_STYLUS and BTN_STYLUS2
  * (report_contacts and reserved are 0).  Every later write is an array of
  * struct input_event; each event must be one of the declared codes with a
- * value in its range, or the whole write is refused.
+ * value in its range, or the whole write is refused.  The pen is on a
+ * display (INPUT_PROP_DIRECT).
+ *
+ * INPUT_INJECT_KIND_PEN_POINTER declares the same pen on a tablet beside
+ * the display (INPUT_PROP_POINTER), named apart (WS217).
  *
  * INPUT_INJECT_KIND_TOUCH declares a virtual touch screen of ten slots
  * whose fingers lie in 0..x_max and 0..y_max (evdev multitouch protocol B:
@@ -89,6 +93,7 @@ extern "C" {
 #define INPUT_INJECT_KIND_TOUCHPAD	3U
 #define INPUT_INJECT_KIND_MOUSE		4U
 #define INPUT_INJECT_KIND_KEYBOARD	5U
+#define INPUT_INJECT_KIND_PEN_POINTER	6U
 
 /* The most opens (devices) at once, and the largest relative movement of one event. */
 #define INPUT_INJECT_OPENS_MAX		4U

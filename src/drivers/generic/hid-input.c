@@ -101,6 +101,7 @@ static void hid_input_keys(struct hid_input *input, struct hid_input_report_stat
 static void hid_input_pen_report(struct hid_input *input, uint64_t milliseconds);
 static void hid_input_touch_report(struct hid_input *input, uint64_t milliseconds);
 static int hid_input_log_marker(struct hid_input *input);
+static uint32_t hid_input_pen_properties(const struct hid_input *input);
 
 /*
  * Parses a report descriptor and describes the devices it declares.
@@ -312,6 +313,7 @@ drv_hid_input_publish(
 	info.capability_count = input->capability_count;
 	info.absolute_axes = input->absolute_axes;
 	info.absolute_axis_count = input->absolute_axis_count;
+	info.properties = hid_input_pen_properties(input);
 
 	/* The main device, unless it would declare EV_SYN alone or the transport wants the touch device alone. */
 	error = 0;
@@ -776,4 +778,32 @@ hid_input_log_marker(
 
 	/* Succeeded: this one is logged. */
 	return 1;
+}
+
+/*
+ * Gives the properties of the main device of a pen (WS217): a pen on a
+ * display (the Pen collection) points at it, INPUT_PROP_DIRECT; a pen on a
+ * tablet beside it (the Digitizer collection alone) is INPUT_PROP_POINTER,
+ * unless the same descriptor's touch screen says the surface is a display.
+ * A device without a pen says nothing.
+ */
+static uint32_t
+hid_input_pen_properties(
+	const struct hid_input *input)
+{
+	/* No pen, no property. */
+	if (input->pen == HID_REPORT_PEN_NONE)
+		return 0U;
+
+	/* A pen on the display. */
+	if (input->pen == HID_REPORT_PEN_DISPLAY)
+		return 1U << INPUT_PROP_DIRECT;
+
+	/* A Digitizer whose touch screen is the display's. */
+	if (input->touch_present &&
+	    (input->touch_description.properties & (1U << INPUT_PROP_DIRECT)) != 0U)
+		return 1U << INPUT_PROP_DIRECT;
+
+	/* Succeeded: a pen tablet on the desk. */
+	return 1U << INPUT_PROP_POINTER;
 }
