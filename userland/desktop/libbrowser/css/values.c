@@ -1885,8 +1885,14 @@ values_single(
 		return values_length(&tokens[0], 0, value);
 	}
 
-	/* The other lengths: sizes, margins and paddings. */
-	return values_length(&tokens[0], 1, value);
+	/* Padding cannot be negative; reject the declaration before it replaces an earlier value. */
+	error = values_length(&tokens[0], 1, value);
+	if (error != 0)
+		return error;
+	if (property >= CSS_PROP_PADDING_TOP && property <= CSS_PROP_PADDING_LEFT &&
+	    value->kind == CSS_VALUE_LENGTH && value->number < 0)
+		return EINVAL;
+	return 0;
 }
 
 /* Parses font-family: names (identifiers joined by spaces, or strings) separated by commas. */

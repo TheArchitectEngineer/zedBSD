@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。Acid3 の Queue はユーザーの指示によりこの Codex セッションが単独で管理し、別 worktree で実行中。ユーザーは画素差0まで最大90分 Queue の自動反復を指示。
-Queue: [q1009](../history/queue-q1009.md) finished / p186 partial sharp shadow cleared。次 Queue は残差から自動選定。
-Resume point: q1009 後、Acid3 score100/100・pixel差1701/480000、Acid2差1865/120000。残差は左上リンク文字801画素と紫の箱右端900画素。p100 全体は未達。
+Queue: [q1010](../history/queue-q1010.md) finished / p187 cleared。次 Queue は残差から自動選定。
+Resume point: q1010 後、Acid3 score100/100・pixel差801/480000、Acid2差1865/120000。残差は左上リンク文字のみ。p100 全体は未達。
 <!-- awesome-plan-current:end -->
 
 ## Q1 向けの整理（2026-10-05、Q1）
@@ -24,10 +24,10 @@ Resume point: q1009 後、Acid3 score100/100・pixel差1701/480000、Acid2差186
 | 構成 | engine は `userland/desktop/libbrowser/`（WS107 で移した、165 file。2026-10-05 Q1 照合: p172 の取込みの後は `.c` が 167）、shell は `userland/desktop/browser/`（main・shell・app の data）。browser と独立の client は公開の `browser.h` で `libbrowser.so` を動的に link | [WS107](../ws107/ws.md) completed |
 | JS | 自前の engine（ES2024 の構文、ES2015 の class・async・generator・Symbol・Map 等、RegExp、Date）。test262 は p025〜p087 の時点の数（全体の最新の計測は未） | 下の Phase の表 |
 | デモの目標 | amazon.co.jp のトップと検索（2026-09-28 ユーザー、Google から変更） | [amazon-goal.md](amazon-goal.md) |
-| Acid3 | **現行 q1009: 得点100/100、pixel一致99.645625%（差1701/480000）**。参照背景画像、得点位置、iframe 子誤描画、hidden input の行高を修復。q1000 の差302056から300355減。歴史的な q579 の37.04%は取込み途中の別 source | [p179](phase179/phase.md)、[p178](phase178/phase.md)、[p180](phase180/phase.md)、[p181](phase181/phase.md)、[p182](phase182/phase.md)、[p183](phase183/phase.md)、[p184](phase184/phase.md)、[p185](phase185/phase.md)、[p186](phase186/phase.md) |
+| Acid3 | **現行 q1010: 得点100/100、pixel一致99.833125%（差801/480000）**。参照背景画像、得点位置、iframe 子誤描画、hidden input の行高を修復。q1000 の差302056から301255減。歴史的な q579 の37.04%は取込み途中の別 source | [p179](phase179/phase.md)、[p178](phase178/phase.md)、[p180](phase180/phase.md)、[p181](phase181/phase.md)、[p182](phase182/phase.md)、[p183](phase183/phase.md)、[p184](phase184/phase.md)、[p185](phase185/phase.md)、[p186](phase186/phase.md)、[p187](phase187/phase.md) |
 | Acid2 | ~~exact pixel は不合格（p097 の時点で 90.56%）~~ → 2026-10-05 Q1 照合で訂正: **exact pixel 合格**。p099（q507）で 90.56% → 100.00%、p172 の取込み後も plain・ASan で 120000 画素一致（[checkpoint96](phase172/import/checkpoint96/README.md)）。90.56% は p099 の前の値 | [p099](phase099/phase.md)、[p097](phase097/phase.md) |
 | p172（Codex の branch の取り込み） | whole cleared（2026-10-03、209/209 の review・hash、host・ASan・ABI・Acid2、target の boot と Venus） | [phase172/import/checkpoint98](phase172/import/checkpoint98/README.md) |
-| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1009 の現行値は得点100/100・pixel一致99.645625%。差1701が残り、p100 全体は未達 | [p100](phase100/phase.md) |
+| p100（Acid3 の pixel 完全一致・fail 0） | **planned、しかかり**。q1010 の現行値は得点100/100・pixel一致99.833125%。差801が残り、p100 全体は未達 | [p100](phase100/phase.md) |
 
 ### Acid3 の後に止めている目標（2026-10-13 現在）
 
@@ -315,6 +315,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p184](phase184/phase.md) | loaded object の fallback DOM 描画と `FAIL` を調べる | cleared（q1007-i01、Acid3差183減、object fallback fixture pass） | p172、p179、p180、p181、p182、p183 cleared、q1006 実測出力 |
 | [ws074-p185](phase185/phase.md) | bucket line と後続本文の0.5px位置差を調べる | cleared（q1008-i01、Acid3差8265減、zero-font fixture pass） | p172〜p184 cleared、q1007 実測出力 |
 | [ws074-p186](phase186/phase.md) | sharp text-shadow と見出し影を調べる | cleared（q1009-i01、sharp 単一 scope、Acid3差2451減） | p172〜p185 cleared、q1008 実測出力 |
+| [ws074-p187](phase187/phase.md) | 負の padding と第6色箱の幅を調べる | cleared（q1010-i01、Acid3差900減、negative padding fixture pass） | p172〜p186 cleared、q1009 実測出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -596,3 +597,7 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 2026-10-13 / p186-addition-q1009: q1008 差画像で h1 の +3px 灰色の影が欠ける。sharp text-shadow の一般的な有限部分 scope を [p186](phase186/phase.md) に限定し、最大90分 q1009-i01 を選定。p185 clearance と p100全画面条件は不変。
 
 2026-10-13 / q1009-p186-clearance: [p186](phase186/phase.md) で単一 sharp text-shadow を追加。局所 paint fixture と CSS rule44/44、build warning0。固定 Acid3 score100/100・差1701/480000（2451減）、Acid2差1865不変。[証拠](phase186/evidence/20261013-q1009/report.json)。p186 の有限部分 scope cleared。残差801+900、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定する。
+
+2026-10-13 / p187-addition-q1010: q1009 差の紫の第6箱右端900画素は `padding-right:-10px` の受理に対応。[p187](phase187/phase.md) に直接負の padding 無効化と局所試験を限定し、最大90分 q1010-i01 を選定。p186 clearance と p100全画面条件は不変。
+
+2026-10-13 / q1010-p187-clearance: [p187](phase187/phase.md) で直接負の padding を無効宣言として先行値維持。fixture 修正前 FAIL→修正後 PASS、CSS rule44/44、build warning0。固定 Acid3 score100/100・差801/480000（900減）、Acid2差1865不変。[証拠](phase187/evidence/20261013-q1010/report.json)。p187 cleared。残る左上リンク801画素、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定する。
