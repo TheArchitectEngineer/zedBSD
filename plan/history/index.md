@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1095 / WS074 explicit Grid shorthand tracks（2026-10-14）
+## 最新: q1096 / WS074 empty Grid item baseline alignment（2026-10-14）
+
+[q1096履歴](queue-q1096.md): 空Grid子の固定行合成baselineで固定style-changes-001が3/6→6/6 subtest、whole FAIL→PASS。旧PASSとAcid3差0維持。[証拠](../ws074/phase219/evidence/20261014-q1096/README.md)。p219部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1095 / WS074 explicit Grid shorthand tracks（2026-10-14）
 
 [q1095履歴](queue-q1095.md): 明示`grid: rows / columns`をatomic展開。固定style-changesは0→3/6 subtest PASS、wholeはbaseline差でFAIL。旧PASSとAcid3差0維持。[証拠](../ws074/phase218/evidence/20261014-q1095/README.md)。p218部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

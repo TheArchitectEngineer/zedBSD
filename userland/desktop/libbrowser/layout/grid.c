@@ -86,6 +86,7 @@ static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layo
 static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
 static layout_unit grid_outer_height(const struct layout_box *item);
+static int grid_empty_baseline(const struct layout_box *box, const struct grid_item *item);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
 
@@ -116,10 +117,15 @@ layout_grid(
 	layout_unit room;
 	layout_unit used;
 	layout_unit shift;
+	layout_unit baseline;
+	layout_unit shared_baseline;
 	size_t index;
+	size_t peer;
 	int position;
 	int justify;
 	int align;
+	int baseline_eligible;
+	int peer_baseline_eligible;
 	int error;
 
 	/* The children out of the flow have their static place at the content box's corner. */
@@ -246,7 +252,8 @@ layout_grid(
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
 			align = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
-		if (align == CSS_ALIGN_BASELINE)
+		baseline_eligible = grid_empty_baseline(box, item);
+		if (align == CSS_ALIGN_BASELINE && !baseline_eligible)
 			align = CSS_ALIGN_START;
 
 		/* A definite grid area must reach percentage descendants of a stretched item. */
@@ -296,6 +303,24 @@ layout_grid(
 				child->x += (area_width - outer_width) / 2;
 		}
 		child->y = y + child->margin[CSS_TOP];
+		if (align == CSS_ALIGN_BASELINE) {
+			/* Empty items in this fixed row share their synthesized border-edge baseline. */
+			shared_baseline = 0;
+			/* Find the lowest border-edge baseline among participating siblings. */
+			for (peer = 0; peer < grid.item_count; peer++) {
+				if (grid.items[peer].row != item->row)
+					continue;
+				peer_baseline_eligible = grid_empty_baseline(box, &grid.items[peer]);
+				if (!peer_baseline_eligible)
+					continue;
+				baseline = grid_outer_height(grid.items[peer].box) -
+				    grid.items[peer].box->margin[CSS_BOTTOM];
+				if (baseline > shared_baseline)
+					shared_baseline = baseline;
+			}
+			baseline = grid_outer_height(child) - child->margin[CSS_BOTTOM];
+			child->y += shared_baseline - baseline;
+		}
 		outer = grid_outer_height(child);
 		if (align == CSS_ALIGN_END && area_height > outer)
 			child->y += area_height - outer;
@@ -1201,6 +1226,47 @@ grid_outer_height(
 	/* The content, paddings, borders and margins. */
 	return item->margin[CSS_TOP] + item->border[CSS_TOP] + item->padding[CSS_TOP] + item->height +
 	    item->padding[CSS_BOTTOM] + item->border[CSS_BOTTOM] + item->margin[CSS_BOTTOM];
+}
+
+/* Selects a fixed-row empty grid item whose baseline comes from its lower border edge. */
+static int
+grid_empty_baseline(
+	const struct layout_box *box,
+	const struct grid_item *item)
+{
+	const struct layout_box *child;
+	int align;
+
+	child = item->box;
+	/* The current group shares a horizontal block axis. */
+	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
+		return 0;
+	if (child->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
+		return 0;
+
+	/* The row's fixed pixel size leaves baseline alignment out of track sizing. */
+	if (item->row_span != 1 || item->row >= box->style.row_count)
+		return 0;
+	if (box->style.rows[item->row].kind != CSS_TRACK_LENGTH)
+		return 0;
+	if (box->style.rows[item->row].size.unit != CSS_UNIT_PX)
+		return 0;
+
+	/* Empty boxes with a definite height synthesize at their lower border edge. */
+	if (child->style.height.unit != CSS_UNIT_PX)
+		return 0;
+	if (child->first_child != NULL || child->line_count != 0)
+		return 0;
+
+	/* Only members with a baseline preference join the row's group. */
+	align = child->style.align_self;
+	if (align == CSS_ALIGN_AUTO)
+		align = box->style.align_items;
+	if (align != CSS_ALIGN_BASELINE)
+		return 0;
+
+	/* This child has a synthesized baseline in the fixed row. */
+	return 1;
 }
 
 /* Resolves a track's length: pixels, or a percentage of the whole (none while measuring); anything else is zero. */

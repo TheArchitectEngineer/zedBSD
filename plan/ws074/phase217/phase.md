@@ -8,6 +8,7 @@ Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
 Prerequisites: [p189 q1087 Grid recensus](../phase189/evidence/20261014-q1087/README.md)。
 Scoped output dependency: alignment style-changesの`grid` shorthandによる明示track sizingは[p218](../phase218/phase.md)の対応出力を要する。p217の他alignment調査/修正は独立に進められる。
+Scoped output dependency: alignment style-changesの空子baselineは[p219 q1096](../phase219/evidence/20261014-q1096/README.md)の出力を用いる。内容line/auto行/縦書きは依然未達。
 
 ## 目的と受け入れ
 
@@ -62,3 +63,5 @@ Event ws074-p217-q1092-partial-clear-20261014: [証拠](evidence/20261014-q1092/
 Event ws074-p217-p218-shorthand-output-20261014: [p218](../phase218/phase.md)を独立追加。p217 alignment style-changes 8件の`grid` shorthand指定によるtrack sizingはp218の該当出力に依存する。p217全206件の受け入れは不変で、他alignment修正は独立。q1094は字面83 FAILを上限として記録し、原因同一性は断定しない。[p218調査証拠](../phase218/evidence/20261014-q1094/README.md)。
 
 Follow-up ws074-p217-p218-q1095-output-20261014: [p218 q1095](../phase218/evidence/20261014-q1095/README.md)で明示`grid: rows / columns`のtrack sizing出力を検証。固定alignment style-changes-001は幅失敗が解消し3/6 subtest PASSになったが、baseline縦offset差でwholeはFAIL。p217の他style-changesと全206件は未測定/未達で、p217受け入れは不変。
+
+Follow-up ws074-p217-p219-q1096-output-20261014: [p219 q1096](../phase219/evidence/20261014-q1096/README.md)で空子の固定行合成baselineを検証。style-changes-001は3/6→6/6 subtest、whole FAIL→PASS。p217 alignment残205件の同条件全再測定は未実施で、p217 whole受け入れは未達。

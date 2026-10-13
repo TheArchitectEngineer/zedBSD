@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1095](queue.md) finished / p218明示Grid shorthand track構文、部分cleared。2026-10-14 08:02 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1096](queue.md) finished / p219空Grid子baseline、部分cleared。2026-10-14 08:06 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -477,6 +477,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p216](phase216/phase.md) | Interop 2025 JavaScript module loading | uncleared / q1079–q1086 partial cleared | p189 q1078 module調査 |
 | [ws074-p217](phase217/phase.md) | Interop 2025 Grid alignment failures | uncleared / q1088–q1089部分cleared | p189 q1087 Grid recensus |
 | [ws074-p218](phase218/phase.md) | Interop 2025 CSS Grid shorthand | uncleared / q1094部分cleared | p189 q1093 Grid recensus |
+| [ws074-p219](phase219/phase.md) | Interop 2025 Grid baseline self-alignment | uncleared / q1096部分cleared | p189 q1093 Grid・p218 q1095 track |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -844,3 +845,7 @@ Event ws074-p218-addition-20261014: [p218](phase218/phase.md)を追加。q1093�
 Event ws074-p218-q1094-partial-clear-and-p217-dependency-20261014: [p218](phase218/phase.md) q1094-i01は固定source字面83 FAILを上限とし、静的HTMLでshorthand未認識・longhand正常を再現。[証拠](phase218/evidence/20261014-q1094/README.md)。最初は明示行/列構文をatomic展開、implicit/CSSOM等は後続。p217 alignment style-changesのtrack sizingのみp218該当出力に依存するが、p217受け入れや他alignment作業は不変。[p217変更](phase217/phase.md)。q1094部分cleared、p218/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p218-q1095-partial-clear-20261014: [p218](phase218/phase.md) q1095-i01は既存track-listの明示`grid: rows / columns`をatomic展開。[証拠](phase218/evidence/20261014-q1095/README.md)。最小12 geometry、CSS rule51/CSSOM12/mutation12、Grid48、JS14、warning0 build、Acid3差0。固定style-changes 0→3/6 subtest PASS、wholeはbaseline差でFAIL、旧PASS代表維持。p217のshorthand track sizing出力は利用可能だがbaseline等の受け入れは未達。q1095部分cleared、p218/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p219-addition-20261014: [p219](phase219/phase.md)を追加。q1095でstyle-changes-001のtrack幅が回復してもempty子baseline offsetが残る。baseline名43 FAILは症状上限で同一原因とは断定しない。p217 alignment206受け入れとp189/p173分母不変。共有投影/GitHub publication保留。
+
+Event ws074-p219-q1096-partial-clear-and-p217-output-20261014: [p219](phase219/phase.md) q1096-i01で空Grid子の固定行合成baselineを実装。[証拠](phase219/evidence/20261014-q1096/README.md)。固定style-changes-001は3/6→6/6 subtest、whole FAIL→PASS。p217 style-changes向け出力を追加したが、残205 alignmentとp219内容line/auto行/縦書きは未達。[p217更新](phase217/phase.md)。旧PASS、warning0 build、Acid3差0維持。共有投影/GitHub publication保留。
