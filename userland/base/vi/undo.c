@@ -22,7 +22,11 @@ static void group_free(struct vi_undo_group *group);
 static int group_reserve(struct vi_undo_group *group);
 static int groups_reserve(struct vi_undo *undo);
 static void forget_oldest(struct vi_undo *undo);
+static unsigned long state_serial(const struct vi_undo *undo);
+static size_t group_bytes(const struct vi_undo_group *group);
 static int capture_text(const struct vi_editor *editor, struct vi_change *change);
+static char *lines_text(const struct vi_buffer *buffer, size_t first, size_t count, size_t *length);
+static int over_limit(const struct vi_editor *editor, enum vi_change_kind kind, size_t length);
 static int can_merge_insert(const struct vi_undo_group *group, const struct vi_change *change);
 
 /*
@@ -32,9 +36,9 @@ void
 vi_undo_init(
 	struct vi_undo *undo)
 {
-	/* No change made, and the buffer is as it was read. */
+	/* No change made, and the buffer, in state 0, is as it was read. */
 	memset(undo, 0, sizeof(*undo));
-	undo->saved_valid = 1;
+	undo->next_serial = 1;
 }
 
 /*
@@ -110,14 +114,16 @@ vi_undo_end(
 		return;
 	}
 
-	/* Forgets the changes that were taken back. */
-	for (index = undo->current; index < undo->count; index++)
-		group_free(&undo->groups[index]);
-	undo->count = undo->current;
+	/* The new state gets a name no other state ever had. */
+	undo->open.serial = undo->next_serial;
+	undo->next_serial++;
 
-	/* The written state was among the forgotten ones, so it cannot come back. */
-	if (undo->saved > undo->current)
-		undo->saved_valid = 0;
+	/* Forgets the changes that were taken back. */
+	for (index = undo->current; index < undo->count; index++) {
+		undo->bytes -= group_bytes(&undo->groups[index]);
+		group_free(&undo->groups[index]);
+	}
+	undo->count = undo->current;
 
 	/* Keeps the history within its limit by forgetting the oldest change. */
 	if (undo->count >= VI_UNDO_GROUP_LIMIT)
@@ -130,20 +136,29 @@ vi_undo_end(
 		 * Without the group the older ones no longer describe the
 		 * buffer, so the whole history is given up.
 		 */
+		undo->base_serial = undo->open.serial;
 		group_free(&undo->open);
 		for (index = 0; index < undo->count; index++)
 			group_free(&undo->groups[index]);
 		undo->count = 0;
 		undo->current = 0;
-		undo->saved_valid = 0;
+		undo->bytes = 0;
 		return;
 	}
 
 	/* Keeps the group as the newest change. */
+	undo->bytes += group_bytes(&undo->open);
 	undo->groups[undo->count] = undo->open;
 	undo->count++;
 	undo->current = undo->count;
 	memset(&undo->open, 0, sizeof(undo->open));
+
+	/* Forgets the oldest changes while the history holds too much text; the newest stays. */
+	while (undo->bytes > VI_UNDO_BYTE_LIMIT) {
+		if (undo->count <= 1)
+			break;
+		forget_oldest(undo);
+	}
 }
 
 /*
@@ -153,9 +168,8 @@ void
 vi_undo_mark_saved(
 	struct vi_editor *editor)
 {
-	/* The written state is the one after the applied groups. */
-	editor->undo.saved = editor->undo.current;
-	editor->undo.saved_valid = 1;
+	/* The written state is the one the buffer is in now. */
+	editor->undo.saved_serial = state_serial(&editor->undo);
 }
 
 /*
@@ -166,6 +180,7 @@ vi_undo_modified(
 	const struct vi_editor *editor)
 {
 	const struct vi_undo *undo;
+	unsigned long state;
 
 	undo = &editor->undo;
 
@@ -173,12 +188,9 @@ vi_undo_modified(
 	if (undo->open_active && undo->open.count != 0)
 		return 1;
 
-	/* The written state can no longer be reached by u or CONTROL-R. */
-	if (!undo->saved_valid)
-		return 1;
-
-	/* u or CONTROL-R moved away from the written state. */
-	if (undo->saved != undo->current)
+	/* The buffer is in another state than the one read or written. */
+	state = state_serial(undo);
+	if (state != undo->saved_serial)
 		return 1;
 
 	/* Unchanged: the buffer is the written state. */
@@ -262,10 +274,12 @@ vi_undo_forward(
 /*
  * Makes one change to the buffer and records it in the running command.
  *
- * For an insertion the text is what goes in.  For a deletion of text the
- * length is how many bytes go; for a deletion of a line, a split and a
- * join the text is not used.  Returns 0, or an errno value with the
- * buffer and the history unchanged.
+ * For an insertion of text the text is what goes in; for an insertion of
+ * lines it is the lines, each ended by a newline.  For a deletion of text
+ * the length is how many bytes go, and for a deletion of lines how many
+ * lines go; a split and a join use neither.  An insertion that would take
+ * the buffer past the file size limit is refused with EFBIG.  Returns 0,
+ * or an errno value with the buffer and the history unchanged.
  */
 int
 vi_edit(
@@ -281,7 +295,13 @@ vi_edit(
 	struct vi_change *last;
 	char *grown;
 	int merged;
+	int too_large;
 	int error;
+
+	/* Refuses a change that would take the buffer past the file size limit. */
+	too_large = over_limit(editor, kind, length);
+	if (too_large)
+		return EFBIG;
 
 	/* Makes sure the change has a group to go into. */
 	error = vi_undo_begin(editor);
@@ -433,18 +453,49 @@ static void
 forget_oldest(
 	struct vi_undo *undo)
 {
+	/*
+	 * The state after the oldest group becomes the base; the state before
+	 * it can no longer be reached, so a file written in it now counts as
+	 * changed for good.
+	 */
+	undo->base_serial = undo->groups[0].serial;
+
 	/* Releases the oldest group and closes its slot. */
+	undo->bytes -= group_bytes(&undo->groups[0]);
 	group_free(&undo->groups[0]);
 	memmove(&undo->groups[0], &undo->groups[1], (undo->count - 1) * sizeof(undo->groups[0]));
 	undo->count--;
 	undo->current--;
+}
 
-	/* The written state was the oldest one, which is now gone. */
-	if (undo->saved == 0) {
-		undo->saved_valid = 0;
-	} else {
-		undo->saved--;
-	}
+/* Gives the name of the state the buffer is in. */
+static unsigned long
+state_serial(
+	const struct vi_undo *undo)
+{
+	/* No applied group: the base state. */
+	if (undo->current == 0)
+		return undo->base_serial;
+
+	/* Otherwise the state after the last applied group. */
+	return undo->groups[undo->current - 1].serial;
+}
+
+/* Gives the bytes of text a group keeps. */
+static size_t
+group_bytes(
+	const struct vi_undo_group *group)
+{
+	size_t total;
+	size_t index;
+
+	/* Adds up the text of each change. */
+	total = 0;
+	for (index = 0; index < group->count; index++)
+		total += group->changes[index].length;
+
+	/* The total. */
+	return total;
 }
 
 /*
@@ -462,6 +513,7 @@ capture_text(
 	const struct vi_line *line;
 	const char *source;
 	char *copy;
+	size_t index;
 
 	/* Refuses a change on a line the buffer does not have. */
 	if (change->line >= editor->buffer.count) {
@@ -474,7 +526,14 @@ capture_text(
 	change->text = NULL;
 	switch (change->kind) {
 	case VI_CHANGE_INSERT_TEXT:
+		break;
 	case VI_CHANGE_INSERT_LINE:
+		/* The lines are counted by their newlines. */
+		change->count = 0;
+		for (index = 0; index < change->length; index++) {
+			if (source[index] == '\n')
+				change->count++;
+		}
 		break;
 	case VI_CHANGE_DELETE_TEXT:
 		line = &editor->buffer.lines[change->line];
@@ -485,10 +544,17 @@ capture_text(
 		source = line->text + change->offset;
 		break;
 	case VI_CHANGE_DELETE_LINE:
-		line = &editor->buffer.lines[change->line];
-		source = line->text;
-		change->length = line->length;
-		break;
+		/* The caller gives the number of lines; the copy is the lines, each with its newline. */
+		change->count = change->length;
+		if (change->count == 0)
+			return EINVAL;
+		if (change->count > editor->buffer.count - change->line)
+			return EINVAL;
+		copy = lines_text(&editor->buffer, change->line, change->count, &change->length);
+		if (copy == NULL)
+			return ENOMEM;
+		change->text = copy;
+		return 0;
 	case VI_CHANGE_JOIN_LINE:
 		change->offset = editor->buffer.lines[change->line].length;
 		change->length = 0;
@@ -538,4 +604,75 @@ can_merge_insert(
 
 	/* The two insertions meet. */
 	return 1;
+}
+
+/* Copies count lines from first on, each with a newline after it. */
+static char *
+lines_text(
+	const struct vi_buffer *buffer,
+	size_t first,
+	size_t count,
+	size_t *length)
+{
+	const struct vi_line *line;
+	size_t index;
+	size_t size;
+	char *text;
+
+	/* Measures the lines and their newlines. */
+	size = 0;
+	for (index = first; index < first + count; index++)
+		size += buffer->lines[index].length + 1;
+
+	/* Allocates the copy. */
+	text = malloc(size + 1);
+	if (text == NULL)
+		return NULL;
+
+	/* Copies each line and its newline. */
+	size = 0;
+	for (index = first; index < first + count; index++) {
+		line = &buffer->lines[index];
+		if (line->length != 0)
+			memcpy(text + size, line->text, line->length);
+		size += line->length;
+		text[size] = '\n';
+		size++;
+	}
+	text[size] = '\0';
+	*length = size;
+
+	/* Succeeded: the caller owns the copy. */
+	return text;
+}
+
+/*
+ * Tells whether a change would make the buffer larger than a file vi
+ * opens, so that vi never writes a file it could not read back.
+ */
+static int
+over_limit(
+	const struct vi_editor *editor,
+	enum vi_change_kind kind,
+	size_t length)
+{
+	size_t added;
+
+	/* Only insertions and splits make the buffer larger. */
+	added = 0;
+	if (kind == VI_CHANGE_INSERT_TEXT)
+		added = length;
+	else if (kind == VI_CHANGE_INSERT_LINE)
+		added = length;
+	else if (kind == VI_CHANGE_SPLIT_LINE)
+		added = 1;
+
+	/* Compares the size after the change with the limit. */
+	if (added > VI_FILE_SIZE_LIMIT)
+		return 1;
+	if (editor->buffer.bytes > VI_FILE_SIZE_LIMIT - added)
+		return 1;
+
+	/* The change fits. */
+	return 0;
 }

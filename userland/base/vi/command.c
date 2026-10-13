@@ -86,6 +86,7 @@ static void command_open(struct vi_editor *editor, int above);
 static void command_line(struct vi_editor *editor);
 static void record_key(struct vi_editor *editor, int key);
 static int key_is_text(int key);
+static void report_error(struct vi_editor *editor, int error);
 static int key_ends_input(int key);
 static int word_ends_at(struct vi_editor *editor, struct vi_position position, int big);
 
@@ -1499,25 +1500,26 @@ delete_lines(
 	size_t first,
 	size_t last)
 {
-	size_t remaining;
 	int error;
 
-	/* Deletes the lines after the first, the first last. */
-	for (remaining = last - first; remaining > 0; remaining--) {
-		error = vi_edit(editor, VI_CHANGE_DELETE_LINE, first + 1, 0, "", 0);
-		if (error != 0)
-			return error;
-	}
+	/* Deleting every line keeps the first, emptied, since the buffer always has a line. */
+	if (first == 0 && last + 1 == editor->buffer.count) {
+		/* The lines after the first go in one step. */
+		if (last > 0) {
+			error = vi_edit(editor, VI_CHANGE_DELETE_LINE, 1, 0, "", last);
+			if (error != 0)
+				return error;
+		}
 
-	/* The buffer always keeps a line: when it is the only one, its text goes instead. */
-	if (editor->buffer.count == 1) {
+		/* The first line's text goes. */
 		error = vi_edit(editor, VI_CHANGE_DELETE_TEXT, 0, 0, "", editor->buffer.lines[0].length);
 		if (error != 0)
 			return error;
 		return 0;
 	}
 
-	error = vi_edit(editor, VI_CHANGE_DELETE_LINE, first, 0, "", 0);
+	/* Otherwise the lines go in one step. */
+	error = vi_edit(editor, VI_CHANGE_DELETE_LINE, first, 0, "", last - first + 1);
 	if (error != 0)
 		return error;
 
@@ -1550,9 +1552,10 @@ delete_between(
 	if (error != 0)
 		return error;
 
-	/* The lines in between go whole. */
-	for (middle = end.line - start.line - 1; middle > 0; middle--) {
-		error = vi_edit(editor, VI_CHANGE_DELETE_LINE, start.line + 1, 0, "", 0);
+	/* The lines in between go whole, in one step. */
+	middle = end.line - start.line - 1;
+	if (middle > 0) {
+		error = vi_edit(editor, VI_CHANGE_DELETE_LINE, start.line + 1, 0, "", middle);
 		if (error != 0)
 			return error;
 	}
@@ -1681,7 +1684,7 @@ operator(
 	/* Copies the text into the register. */
 	error = text_between(editor, start, end, moved.linewise, &copy);
 	if (error != 0) {
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 		return;
 	}
 	register_replace(editor, &copy);
@@ -1712,7 +1715,7 @@ operator(
 		error = delete_between(editor, start, end);
 	}
 	if (error != 0) {
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 		return;
 	}
 
@@ -1903,7 +1906,7 @@ insert_key(
 
 	/* Tells of an edit the buffer could not take. */
 	if (error != 0)
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 }
 
 /* Inserts text without newlines at the cursor and moves the cursor after it. */
@@ -1943,6 +1946,8 @@ command_put(
 	size_t start;
 	size_t first_line;
 	size_t first_offset;
+	size_t size;
+	char *block;
 	int newlines;
 	int error;
 
@@ -1960,20 +1965,25 @@ command_put(
 		if (before)
 			at.line = editor->cursor.line;
 		first_line = at.line;
-		while (count > 0) {
-			count--;
-			start = 0;
-			for (index = 0; index < yank->length; index++) {
-				if (yank->text[index] != '\n')
-					continue;
-				error = vi_edit(editor, VI_CHANGE_INSERT_LINE, at.line, 0, yank->text + start, index - start);
-				if (error != 0) {
-					vi_message(editor, "Out of memory");
-					return;
-				}
-				at.line++;
-				start = index + 1;
-			}
+
+		/* The copies go in as one block of lines, which must stay within the file size limit. */
+		if (yank->length > VI_FILE_SIZE_LIMIT / count) {
+			report_error(editor, EFBIG);
+			return;
+		}
+		size = yank->length * (size_t)count;
+		block = malloc(size + 1);
+		if (block == NULL) {
+			report_error(editor, ENOMEM);
+			return;
+		}
+		for (index = 0; index < (size_t)count; index++)
+			memcpy(block + index * yank->length, yank->text, yank->length);
+		error = vi_edit(editor, VI_CHANGE_INSERT_LINE, at.line, 0, block, size);
+		free(block);
+		if (error != 0) {
+			report_error(editor, error);
+			return;
 		}
 		editor->cursor.line = first_line;
 		vi_cursor_first_nonblank(editor);
@@ -2001,7 +2011,7 @@ command_put(
 			if (index > start) {
 				error = vi_edit(editor, VI_CHANGE_INSERT_TEXT, at.line, at.offset, yank->text + start, index - start);
 				if (error != 0) {
-					vi_message(editor, "Out of memory");
+					report_error(editor, error);
 					return;
 				}
 				at.offset += index - start;
@@ -2011,7 +2021,7 @@ command_put(
 			if (index < yank->length) {
 				error = vi_edit(editor, VI_CHANGE_SPLIT_LINE, at.line, at.offset, "", 0);
 				if (error != 0) {
-					vi_message(editor, "Out of memory");
+					report_error(editor, error);
 					return;
 				}
 				at.line++;
@@ -2072,13 +2082,13 @@ command_delete_characters(
 	/* The characters go to the register, then out of the line. */
 	error = text_between(editor, start, end, 0, &copy);
 	if (error != 0) {
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 		return;
 	}
 	register_replace(editor, &copy);
 	error = delete_between(editor, start, end);
 	if (error != 0) {
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 		return;
 	}
 
@@ -2125,7 +2135,7 @@ command_replace(
 		if (error == 0)
 			error = vi_edit(editor, VI_CHANGE_SPLIT_LINE, editor->cursor.line, editor->cursor.offset, "", 0);
 		if (error != 0) {
-			vi_message(editor, "Out of memory");
+			report_error(editor, error);
 			return;
 		}
 		editor->cursor.line++;
@@ -2144,14 +2154,14 @@ command_replace(
 	count = replaced;
 	error = delete_between(editor, editor->cursor, end);
 	if (error != 0) {
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 		return;
 	}
 	end = editor->cursor;
 	while (count > 0) {
 		error = vi_edit(editor, VI_CHANGE_INSERT_TEXT, end.line, end.offset, text, length);
 		if (error != 0) {
-			vi_message(editor, "Out of memory");
+			report_error(editor, error);
 			return;
 		}
 		end.offset += length;
@@ -2236,7 +2246,7 @@ command_join(
 	return;
 
 fail:
-	vi_message(editor, "Out of memory");
+	report_error(editor, error);
 }
 
 /* Switches the case of count ASCII letters from the cursor on (~), moving past them. */
@@ -2276,7 +2286,7 @@ command_toggle_case(
 			if (error == 0)
 				error = vi_edit(editor, VI_CHANGE_INSERT_TEXT, editor->cursor.line, offset, &letter, 1);
 			if (error != 0) {
-				vi_message(editor, "Out of memory");
+				report_error(editor, error);
 				return;
 			}
 			line = line_at(editor, editor->cursor.line);
@@ -2313,7 +2323,7 @@ command_undo(
 			break;
 		}
 		if (error != 0) {
-			vi_message(editor, "Out of memory");
+			report_error(editor, error);
 			break;
 		}
 	}
@@ -2485,9 +2495,9 @@ command_open(
 	index = editor->cursor.line + 1;
 	if (above)
 		index = editor->cursor.line;
-	error = vi_edit(editor, VI_CHANGE_INSERT_LINE, index, 0, "", 0);
+	error = vi_edit(editor, VI_CHANGE_INSERT_LINE, index, 0, "\n", 1);
 	if (error != 0) {
-		vi_message(editor, "Out of memory");
+		report_error(editor, error);
 		return;
 	}
 
@@ -2598,4 +2608,17 @@ word_ends_at(
 
 	/* The word goes on past the position. */
 	return 0;
+}
+
+/* Tells why an edit could not be made. */
+static void
+report_error(
+	struct vi_editor *editor,
+	int error)
+{
+	/* A file grown past the limit, or memory run out. */
+	if (error == EFBIG)
+		vi_message(editor, "File too large");
+	else
+		vi_message(editor, "Out of memory");
 }

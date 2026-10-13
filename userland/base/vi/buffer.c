@@ -21,8 +21,9 @@ static int line_reserve(struct vi_line *line, size_t length);
 static int lines_reserve(struct vi_buffer *buffer, size_t count);
 static int insert_text(struct vi_buffer *buffer, size_t index, size_t offset, const char *text, size_t length);
 static int delete_text(struct vi_buffer *buffer, size_t index, size_t offset, size_t length);
-static int insert_line(struct vi_buffer *buffer, size_t index, const char *text, size_t length);
-static int delete_line(struct vi_buffer *buffer, size_t index);
+static int insert_lines(struct vi_buffer *buffer, size_t index, const char *text, size_t length);
+static int delete_lines(struct vi_buffer *buffer, size_t index, size_t count);
+static int make_line(struct vi_line *line, const char *text, size_t length);
 static int split_line(struct vi_buffer *buffer, size_t index, size_t offset);
 static int join_line(struct vi_buffer *buffer, size_t index, size_t offset);
 
@@ -70,12 +71,23 @@ vi_buffer_append_line(
 	const char *text,
 	size_t length)
 {
+	struct vi_line line;
 	int error;
 
-	/* The new line goes after every line already read. */
-	error = insert_line(buffer, buffer->count, text, length);
+	/* Makes room in the table for one more line. */
+	error = lines_reserve(buffer, buffer->count + 1);
 	if (error != 0)
 		return error;
+
+	/* Makes the new line. */
+	error = make_line(&line, text, length);
+	if (error != 0)
+		return error;
+
+	/* The new line goes after every line already read. */
+	buffer->lines[buffer->count] = line;
+	buffer->count++;
+	buffer->bytes += length + 1;
 
 	/* Succeeded. */
 	return 0;
@@ -140,10 +152,10 @@ vi_buffer_apply(
 		error = join_line(buffer, change->line, change->offset);
 		break;
 	case VI_CHANGE_INSERT_LINE:
-		error = insert_line(buffer, change->line, change->text, change->length);
+		error = insert_lines(buffer, change->line, change->text, change->length);
 		break;
 	case VI_CHANGE_DELETE_LINE:
-		error = delete_line(buffer, change->line);
+		error = delete_lines(buffer, change->line, change->count);
 		break;
 	}
 
@@ -250,6 +262,7 @@ insert_text(
 	memmove(line->text + offset + length, line->text + offset, line->length - offset + 1);
 	memcpy(line->text + offset, text, length);
 	line->length += length;
+	buffer->bytes += length;
 
 	/* Succeeded. */
 	return 0;
@@ -280,65 +293,131 @@ delete_text(
 	/* Closes the gap, moving the NUL with the rest of the line. */
 	memmove(line->text + offset, line->text + offset + length, line->length - offset - length + 1);
 	line->length -= length;
+	buffer->bytes -= length;
 
 	/* Succeeded. */
 	return 0;
 }
 
-/* Inserts a new line holding the given text before the line at index. */
+/*
+ * Inserts lines before the line at index.  The text is the lines, each
+ * ended by a newline; the table moves once however many lines there are.
+ */
 static int
-insert_line(
+insert_lines(
 	struct vi_buffer *buffer,
 	size_t index,
 	const char *text,
 	size_t length)
 {
-	struct vi_line line;
+	struct vi_line *made;
+	size_t count;
+	size_t made_count;
+	size_t start;
+	size_t position;
 	int error;
 
 	/* Refuses a place outside the buffer; the end itself is allowed. */
 	if (index > buffer->count)
 		return EINVAL;
 
-	/* Makes room for one more line in the table. */
-	error = lines_reserve(buffer, buffer->count + 1);
+	/* Counts the lines, which the newlines end. */
+	count = 0;
+	for (position = 0; position < length; position++) {
+		if (text[position] == '\n')
+			count++;
+	}
+	if (count == 0)
+		return EINVAL;
+
+	/* Makes room for the lines in the table, and a list for the new ones. */
+	error = lines_reserve(buffer, buffer->count + count);
 	if (error != 0)
 		return error;
 
-	/* Makes the storage of the new line before the table changes. */
-	memset(&line, 0, sizeof(line));
-	error = line_reserve(&line, length);
-	if (error != 0)
-		return error;
+	made = malloc(count * sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
 
-	/* Fills the new line with its text and the NUL after it. */
-	memcpy(line.text, text, length);
-	line.text[length] = '\0';
-	line.length = length;
+	/* Makes each line before the table changes, so a failure leaves the buffer whole. */
+	made_count = 0;
+	start = 0;
+	for (position = 0; position < length; position++) {
+		if (text[position] != '\n')
+			continue;
+		error = make_line(&made[made_count], text + start, position - start);
+		if (error != 0) {
+			while (made_count > 0) {
+				made_count--;
+				free(made[made_count].text);
+			}
+			free(made);
+			return error;
+		}
+		made_count++;
+		start = position + 1;
+	}
 
-	/* Opens a slot in the table and puts the line in it. */
-	memmove(&buffer->lines[index + 1], &buffer->lines[index], (buffer->count - index) * sizeof(buffer->lines[0]));
-	buffer->lines[index] = line;
-	buffer->count++;
+	/* Opens a gap in the table once and puts the lines in it. */
+	memmove(&buffer->lines[index + count], &buffer->lines[index], (buffer->count - index) * sizeof(buffer->lines[0]));
+	memcpy(&buffer->lines[index], made, count * sizeof(*made));
+	buffer->count += count;
+	buffer->bytes += length;
+	free(made);
 
 	/* Succeeded. */
 	return 0;
 }
 
-/* Removes the line at index from the buffer. */
+/* Removes count lines from index on, moving the table once. */
 static int
-delete_line(
+delete_lines(
 	struct vi_buffer *buffer,
-	size_t index)
+	size_t index,
+	size_t count)
 {
-	/* Refuses a place outside the buffer. */
+	size_t position;
+
+	/* Refuses a range outside the buffer. */
 	if (index >= buffer->count)
 		return EINVAL;
+	if (count > buffer->count - index)
+		return EINVAL;
 
-	/* Releases the text and closes the slot in the table. */
-	free(buffer->lines[index].text);
-	memmove(&buffer->lines[index], &buffer->lines[index + 1], (buffer->count - index - 1) * sizeof(buffer->lines[0]));
-	buffer->count--;
+	/* Releases the text of each line. */
+	for (position = index; position < index + count; position++) {
+		buffer->bytes -= buffer->lines[position].length + 1;
+		free(buffer->lines[position].text);
+	}
+
+	/* Closes the gap once. */
+	memmove(&buffer->lines[index], &buffer->lines[index + count], (buffer->count - index - count) * sizeof(buffer->lines[0]));
+	buffer->count -= count;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Makes the storage of one line holding the given text and its NUL. */
+static int
+make_line(
+	struct vi_line *line,
+	const char *text,
+	size_t length)
+{
+	int error;
+
+	/* Starts empty and grows to the length. */
+	memset(line, 0, sizeof(*line));
+	error = line_reserve(line, length);
+	if (error != 0)
+		return error;
+
+	/* Copies the text and ends it with a NUL. */
+	if (length != 0)
+		memcpy(line->text, text, length);
+	line->text[length] = '\0';
+	line->length = length;
 
 	/* Succeeded. */
 	return 0;
@@ -352,6 +431,7 @@ split_line(
 	size_t offset)
 {
 	struct vi_line *line;
+	struct vi_line second;
 	int error;
 
 	/* Refuses a place outside the buffer. */
@@ -364,12 +444,23 @@ split_line(
 	if (offset > line->length)
 		return EINVAL;
 
-	/* Puts the second part in a new line after this one. */
-	error = insert_line(buffer, index + 1, line->text + offset, line->length - offset);
+	/* Makes the second part as a line of its own, and room for it in the table. */
+	error = lines_reserve(buffer, buffer->count + 1);
 	if (error != 0)
 		return error;
 
-	/* Ends the first part at the split; the table may have moved. */
+	line = &buffer->lines[index];
+	error = make_line(&second, line->text + offset, line->length - offset);
+	if (error != 0)
+		return error;
+
+	/* Puts the second part after this line; the newline between them adds a byte. */
+	memmove(&buffer->lines[index + 2], &buffer->lines[index + 1], (buffer->count - index - 1) * sizeof(buffer->lines[0]));
+	buffer->lines[index + 1] = second;
+	buffer->count++;
+	buffer->bytes++;
+
+	/* Ends the first part at the split. */
 	line = &buffer->lines[index];
 	line->length = offset;
 	line->text[offset] = '\0';
@@ -402,8 +493,8 @@ join_line(
 	if (error != 0)
 		return error;
 
-	/* Removes the next line, now part of this one. */
-	error = delete_line(buffer, index + 1);
+	/* Removes the next line, now part of this one; of its bytes only the newline is gone in the end. */
+	error = delete_lines(buffer, index + 1, 1);
 	if (error != 0)
 		return error;
 

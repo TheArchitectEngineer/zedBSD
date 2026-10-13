@@ -34,8 +34,19 @@
 /* The number of changes u can take back; older ones are forgotten. */
 #define VI_UNDO_GROUP_LIMIT 1000U
 
-/* The largest count a command takes; a longer number is cut to it. */
-#define VI_COUNT_LIMIT 10000000UL
+/*
+ * The most bytes the history of changes keeps.  Older changes are
+ * forgotten beyond it, so a few large deletions cannot hold many times
+ * the size of the file.
+ */
+#define VI_UNDO_BYTE_LIMIT VI_FILE_SIZE_LIMIT
+
+/*
+ * The largest count a command takes; a longer number is cut to it.  The
+ * interrupt key is an ordinary key while vi runs, so a count must stay
+ * small enough to finish.
+ */
+#define VI_COUNT_LIMIT 1000000UL
 
 /* The length of a status message and of a typed : or / line. */
 #define VI_MESSAGE_LENGTH 256U
@@ -67,6 +78,9 @@
 #define VI_KEY_DELETE 0x107
 #define VI_KEY_PAGE_UP 0x108
 #define VI_KEY_PAGE_DOWN 0x109
+
+/* A key sequence vi does not know, read whole and then ignored. */
+#define VI_KEY_UNKNOWN 0x10a
 
 /* Not a key: the editor was told to stop (a hangup or a termination). */
 #define VI_KEY_STOP 0x1ff
@@ -128,11 +142,14 @@ struct vi_line {
  * The lines of the file being edited.
  *
  * There is always at least one line: an empty file is one empty line.
+ * bytes is the size the lines would have in a file, a newline after
+ * each, which edits keep within the file size limit.
  */
 struct vi_buffer {
 	struct vi_line *lines;
 	size_t count;
 	size_t capacity;
+	size_t bytes;
 };
 
 /*
@@ -150,8 +167,9 @@ struct vi_position {
  * One change made to the buffer, kept so that u can take it back and
  * CONTROL-R can make it again.
  *
- * The text is what was inserted or deleted (a whole line for the line
- * kinds); a split or a join keeps no text.
+ * The text is what was inserted or deleted.  For the line kinds it holds
+ * count whole lines, each ended by a newline, so that many lines move in
+ * one step.  A split or a join keeps no text.
  */
 struct vi_change {
 	enum vi_change_kind kind;
@@ -159,36 +177,46 @@ struct vi_change {
 	size_t offset;
 	char *text;
 	size_t length;
+	size_t count;
 };
 
 /*
  * The changes one command made, taken back together by one u.
  *
  * The cursor is where the command started, which is where u puts it.
+ * serial names the state of the buffer after the group; no two groups
+ * ever share one.
  */
 struct vi_undo_group {
 	struct vi_change *changes;
 	size_t count;
 	size_t capacity;
 	struct vi_position cursor;
+	unsigned long serial;
 };
 
 /*
  * The history of changes.
  *
  * Groups before current are applied to the buffer; groups from current to
- * count were taken back and can be made again.  saved is the value current
- * had when the file was last written, and saved_valid is cleared when
- * that state can no longer be reached.  open is the group the running
- * command adds to, valid while open_active is set.
+ * count were taken back and can be made again.  The state of the buffer
+ * is named by the serial of the last applied group, or by base_serial
+ * when none is applied (the serial of the last group forgotten, 0 at the
+ * start).  saved_serial names the state last read or written, so the
+ * buffer is unchanged exactly when its state has that name.  next_serial
+ * only grows.  bytes is the text all groups hold, kept within
+ * VI_UNDO_BYTE_LIMIT.  open is the group the running command adds to,
+ * valid while open_active is set.
  */
 struct vi_undo {
 	struct vi_undo_group *groups;
 	size_t count;
 	size_t capacity;
 	size_t current;
-	size_t saved;
-	int saved_valid;
+	unsigned long base_serial;
+	unsigned long saved_serial;
+	unsigned long next_serial;
+	size_t bytes;
 	struct vi_undo_group open;
 	int open_active;
 };
