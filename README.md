@@ -12,15 +12,15 @@ zedBSD and Keiland Desktop
 </div><br>
 
 `zedBSD` is an operating system for modern computers, including those
-with touch displays.  It consists of POSIX-compatible kernel and base
-system written from scratch, and ships with `Keiland Desktop`, a
+with touch displays.  It consists of a POSIX-compatible kernel and
+base system written from scratch, and ships with `Keiland Desktop`, a
 Wayland-based desktop environment that unifies the classic mouse UI/UX
 and a futuristic touch UI/UX.
 
-zedBSD aim to become a commercial UNIX in the line of macOS and
+zedBSD aims to become a commercial UNIX in the line of macOS and
 Solaris: an operating system made for newly-designed cutting-edge
 computers, that changes "the way computing is".  It is written to
-conform to `POSIX.1-2024`, and not yet a certified UNIX system.
+conform to `POSIX.1-2024`, and is not yet a certified UNIX system.
 Conformance will keep being raised, and UNIX certification from The
 Open Group is a goal.  (UNIX is a registered trademark of The Open
 Group.)
@@ -73,7 +73,7 @@ systems architect.
 ## Try zedBSD
 
 You do not need to compile from scratch to boot zedBSD.  Pre-built
-images are published for real PC and QEMU.
+images are published for real PCs and QEMU.
 
 ### Real PC
 
@@ -82,14 +82,14 @@ Write a disk image to a USB stick, then boot from it.
 Supported hardware:
 
 - Dell Latitude 5330:
--- CPU: Intel Core i5 1245P
--- GPU: Intel Iris Xe (Xe-LP)
--- WiFi: Intel AX211
--- Bluetooth: Intel AX211
--- USB: USB 3.0, USB-C DisplayPort Alt Mode
+    - CPU: Intel Core i5 1245P
+    - GPU: Intel Iris Xe (Xe-LP)
+    - WiFi: Intel AX211
+    - Bluetooth: Intel AX211
+    - USB: USB 3.0, USB-C DisplayPort Alt Mode
 
 - Raspberry Pi4
--- GPU, USB, WiFi, and Ethernet are supported
+    - GPU, USB, WiFi, and Ethernet are supported
 
 ### Windows (VM)
 
@@ -372,7 +372,8 @@ The following is our initial cost estimation:
 | Commercial Fonts                      | $5,000             | $10                   | $10                    | $10                     |
 | Crypto Export Administration          | $3,300             | $0                    | $0                     | $0                      |
 
-So, the total initial cost is around $45000. (The UNIX certification is 50% off, based on our software volume tier.)
+So, the total initial cost is around $45,000.
+(The UNIX certification is 50% off, based on our software volume tier.)
 
 | Lot                | Price per copy | 
 |--------------------|----------------|
@@ -380,8 +381,8 @@ So, the total initial cost is around $45000. (The UNIX certification is 50% off,
 | Starting at 10000  | $16            |
 | Starting at 100000 | $12            |
 
-If we wouldn't get UNIX and Bluetooth licenses, the price for @10000
-won't change a lot.
+Even without the UNIX and Bluetooth licenses, the price at 10,000
+units wouldn't change much.
 
 | Lot                | Price per copy |
 |--------------------|----------------|
@@ -394,7 +395,7 @@ cost at around $16, allowing a retail price of **$20-$30 per copy**,
 which is highly competitive and reasonable.
 
 **Conclusion:**
-To cover the initial release, we would need to fund this project via crowdfunding by securing either:
+To cover the initial release, I would need to fund this project via crowdfunding by securing either:
 - **~10,000 backers at $5 each**, or
 - **~1,000 backers at $50 each**.
 

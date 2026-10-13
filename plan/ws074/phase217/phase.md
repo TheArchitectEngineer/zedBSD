@@ -49,3 +49,11 @@ Event ws074-p217-q1090-partial-clear-20261014: [証拠](evidence/20261014-q1090/
 ## q1091-i01 結果（2026-10-14 07:48 JST）
 
 Event ws074-p217-q1091-partial-clear-20261014: [証拠](evidence/20261014-q1091/README.md)。RTL normalの余白を右へ配し、有効明示areaのabsolute子で幅確定後に右端からstatic配置。最小RTL5ケースとq1089 LTR、Grid48/48/physical21/21、classic JS14/14、warning0 host build、Acid3差0・Acid2差1865。固定WPT代表2件の水平RTL subtestが各FAIL→PASS、旧PASS代表100/100維持。wholeは縦書き2 subtestがFAIL。q1091-i01部分cleared、p217 whole/p189/p173全件100%未達、共有投影/GitHub publication保留。
+
+## q1092-i01 有限部分範囲（2026-10-14 07:50 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:20 JSTまで）に適用。q1091固定WPT代表2件に残るvertical-lr/rl subtestのoffset/width/height期待と実測を抽出。対応する最小縦書きGridでin-flowとabsolute子をhost実測し、writing-modeの軸/track対応と現行layout/grid/position経路を追い、次の有限修正scope・リスクを証拠化する。読み取り調査/証拠fixtureのみ。製品browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1092-i01 結果（2026-10-14 07:53 JST）
+
+Event ws074-p217-q1092-partial-clear-20261014: [証拠](evidence/20261014-q1092/README.md)。固定WPT縦書きは両代表で最初にwidth期待10/実60。最小vertical-lr Gridでin-flow100×13・absolute24×13、テキストは横方向の幅24を維持。Gridは列/行を物理x/yに対応させ非水平を強制stretch、inline文字組みはwriting-modeを使わない。幅だけの局所修正では全条件を満たさないため、文字組み・Grid軸・absolute areaを分けて有限実装する設計を次候補にし、独立のGrid shorthand等へも進める。q1092-i01部分cleared、p217 whole/p189/p173全件100%未達。製品browser/runner/WPT/ABI/Master無変更、共有投影/GitHub publication保留。

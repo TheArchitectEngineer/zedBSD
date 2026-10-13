@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1091 / WS074 horizontal RTL Grid absolute start（2026-10-14）
+## 最新: q1092 / WS074 vertical Grid alignment diagnosis（2026-10-14）
+
+[q1092履歴](queue-q1092.md): 縦書きの固定代表はwidth期待10/実60。最小HTMLでin-flow100×13・absolute24×13、inline文字組み/論理軸/absolute areaの複数欠陥を確認。[証拠](../ws074/phase217/evidence/20261014-q1092/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1091 / WS074 horizontal RTL Grid absolute start（2026-10-14）
 
 [q1091履歴](queue-q1091.md): 固定WPT代表2件の水平RTL subtestが各FAIL→PASS。縦書き2件でwholeはFAIL継続。最小RTL5件、旧PASS代表、Acid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1091/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
