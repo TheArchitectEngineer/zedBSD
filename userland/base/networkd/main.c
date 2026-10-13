@@ -60,6 +60,14 @@
  */
 #define LAN_HARDWARE_ADDRESS_LENGTH	6U
 
+/*
+ * How long a command asked to stop (SIGTERM) has to put back what it
+ * changed before it is killed, in microseconds.  dhcpc reads with a
+ * timeout of at most a second and then puts the interface back as it
+ * found it (BUG-298).
+ */
+#define CHILD_STOP_US	3000000ULL
+
 #define NETWORKD_AUTH_LOG_MAX 512U
 #define NETWORKD_GROUP_DATABASE_MAX 8192U
 #define NETWORKD_GROUP_BUFFER_MAX 2048U
@@ -286,6 +294,52 @@ static char lan_down_pending[IFNAMSIZ];
  */
 static char lan_removed_pending[IFNAMSIZ];
 
+/*
+ * The wired interface the policy is configuring now, and whether a request
+ * about it has asked for that to stop.
+ *
+ * lan_configure sets the name for the whole of its run and empties it before
+ * it returns; requests that arrive meanwhile are read by service_wifi_wait.
+ * A request that gives this interface its address, or takes it away, is the
+ * administrator's word and outranks what the policy was doing: it is put
+ * aside in lan_pending, the policy's command is stopped (the flag is set),
+ * and the request is carried out once lan_configure has returned.  Carried
+ * out in the middle, a static address was given while dhcpc waited for an
+ * answer; dhcpc then put back the address it had found (none) when it gave
+ * up, and the policy gave the interface a link-local address over the
+ * static one (BUG-298).
+ */
+static char lan_configuring[IFNAMSIZ];
+static int lan_configure_cancelled;
+
+/*
+ * Set while lan_configure runs a command it can be stopped in: bringing
+ * the interface up, and dhcpc or the static address.  A request put aside
+ * at any other time (the link-local address, the routes) stops nothing and
+ * waits for the configuring to end: those commands are short, and a route
+ * left half changed would be worse than the wait.
+ */
+static int lan_configure_stoppable;
+
+/*
+ * The request put aside for lan_configuring, and its connection; -1 when
+ * none is.  Only one is kept: a second one about the same interface is
+ * refused with EBUSY until the first has been carried out.  run_lan_work
+ * carries it out as soon as lan_configure returns, so it never outlives
+ * the configuring it interrupted.
+ */
+static struct networkd_wifi_pending lan_pending;
+static int lan_pending_client = -1;
+
+/*
+ * How many requests service_wifi_wait is carrying out inside a command it
+ * waits for.  A request is put aside only at depth zero: deeper, the
+ * command a cancellation would stop is the nested request's own (a lease
+ * for another interface), not the policy's, so the request is refused with
+ * EBUSY instead.
+ */
+static unsigned control_dispatch_depth;
+
 static struct networkd_wlan_radio known_wlan_radios[NETWORKD_WLAN_RADIO_MAX];
 static size_t known_wlan_radio_count;
 static int wifi_disable_pending;
@@ -411,6 +465,10 @@ static int prefer_resolver(const unsigned char *, size_t);
 static void resolver_write_failed(const char *);
 static void lan_assign_link_local(const char *, uint64_t);
 static void lan_configure(const struct networkd_lan_work *);
+static void lan_configure_steps(const struct networkd_lan_work *);
+static int lan_request_supersedes(const struct networkd_request *, enum networkd_client_role);
+static void dispatch_pending_lan(void);
+static int stop_child(pid_t, int *);
 static void lan_take_down(const char *);
 static void lan_clear_address(const char *);
 static void lan_hold_down(const char *);
@@ -1675,13 +1733,38 @@ lan_assign_link_local(
 /*
  * Supports the lan configure operation.
  *
+ * Names the interface as the one being configured for as long as the
+ * configuring runs, so that a request about it which arrives meanwhile is
+ * put aside and carried out afterwards rather than in the middle (BUG-298).
+ */
+static void
+lan_configure(
+	const struct networkd_lan_work *work)
+{
+	/* Names the interface the requests that arrive meanwhile are checked against. */
+	(void)snprintf(lan_configuring, sizeof(lan_configuring), "%s",
+		       work->interface);
+	lan_configure_cancelled = 0;
+
+	/* Configures it. */
+	lan_configure_steps(work);
+
+	/* Nothing is being configured any more. */
+	lan_configuring[0] = '\0';
+	lan_configure_cancelled = 0;
+	lan_configure_stoppable = 0;
+}
+
+/*
+ * Supports the lan configure steps operation.
+ *
  * Brings one interface up and gives it what the configuration asks for.
  * Whether that succeeded is answered by looking at the interface rather
  * than at what the command returned: a lease that was refused and a lease
  * that was never answered leave the same interface behind.
  */
 static void
-lan_configure(
+lan_configure_steps(
 	const struct networkd_lan_work *work)
 {
 	char diagnostic[CHILD_OUTPUT_MAX];
@@ -1698,12 +1781,25 @@ lan_configure(
 	arguments[2] = (char *)"up";
 	arguments[3] = NULL;
 
+	/*
+	 * From here until its address is given, a request about the interface
+	 * stops the command that is running (BUG-298).
+	 */
+	lan_configure_stoppable = 1;
+
 	/* Handles an interface that will not come up at all. */
 	if (run_command_until(arguments, 10U, deadline, diagnostic) != 0) {
+		/* A request about it stopped the command; what it asks decides instead. */
+		if (lan_configure_cancelled)
+			return;
 		(void)networkd_lan_configured(&managed_lan, work->interface, 0);
 		notify_state_changed();
 		return;
 	}
+
+	/* A request that came while it was brought up decides the rest. */
+	if (lan_configure_cancelled)
+		return;
 
 	/* Dispatch the selected kind of configuration. */
 	if (work->policy.mode == NETWORKD_LAN_MODE_STATIC) {
@@ -1728,7 +1824,23 @@ lan_configure(
 		(void)run_command_until(arguments,
 		    work->policy.dhcp_timeout + 5U, deadline, diagnostic);
 	}
+
+	/* What is run from here on is not stopped; a request waits for it. */
+	lan_configure_stoppable = 0;
 	obtained = lan_address_usable(work->interface);
+
+	/*
+	 * Leaves an interface a request has taken over as it is.  The request
+	 * put aside gives it its address (or takes it down) as soon as this
+	 * returns; a link-local address given now would only be replaced, and
+	 * the interface stays PENDING, so the policy tries again if the
+	 * request leaves it without an address (BUG-298).
+	 */
+	if (!obtained && lan_configure_cancelled) {
+		syslog(LOG_NOTICE, "networkd: %s: configuring stopped for a request",
+		       work->interface);
+		return;
+	}
 
 	/*
 	 * Says in the system log why an interface obtained nothing.  What
@@ -2470,6 +2582,10 @@ run_lan_work(
 		if (work.action != NETWORKD_LAN_ACTION_CONFIGURE)
 			return;
 		lan_configure(&work);
+
+		/* Carries out the request that stopped the configuring (BUG-298). */
+		if (lan_pending_client >= 0)
+			dispatch_pending_lan();
 	}
 }
 
@@ -5503,6 +5619,84 @@ default_route_index(
 	return found;
 }
 
+/*
+ * Carries out the request put aside while its interface was configured.
+ *
+ * The configuring it stopped has returned, so the request runs as it would
+ * have had it come a moment later, and its answer goes to the caller that
+ * has waited for it.
+ */
+static void
+dispatch_pending_lan(
+	void)
+{
+	int client;
+
+	/* Takes the request out of its slot before it runs, so that it can be filled again. */
+	client = lan_pending_client;
+	lan_pending_client = -1;
+
+	/* Carries it out and answers it. */
+	dispatch_request(client, &lan_pending.request, lan_pending.role,
+	    &lan_pending.peer);
+	(void)close(client);
+	networkd_protocol_clear(&lan_pending, sizeof(lan_pending));
+}
+
+/*
+ * Reports whether a request takes over the interface being configured.
+ *
+ * A request that gives the interface an address (STATIC, DHCP, or its
+ * entry in net.conf with LAN_CONFIGURE) or takes it up or down says what
+ * the interface is to be, and the policy's DHCP running at the same time
+ * would undo it when it gave up (BUG-298).  A request the caller may not
+ * make, or one a confirmed transaction refuses, is refused at once
+ * instead, without stopping anything.
+ */
+static int
+lan_request_supersedes(
+	const struct networkd_request *request,
+	enum networkd_client_role role)
+{
+	const char *operation;
+	uint32_t opcode;
+	int allowed;
+	int checked;
+
+	/* Nothing is being configured. */
+	if (lan_configuring[0] == '\0')
+		return 0;
+
+	/* Only the requests that decide the interface's address. */
+	opcode = request->header.opcode;
+	if (opcode != NETWORKD_OP_UP &&
+	    opcode != NETWORKD_OP_DOWN &&
+	    opcode != NETWORKD_OP_DHCP &&
+	    opcode != NETWORKD_OP_STATIC &&
+	    opcode != NETWORKD_OP_LAN_CONFIGURE)
+		return 0;
+
+	/* Only a request about the interface being configured. */
+	if (strcmp(request->interface, lan_configuring) != 0)
+		return 0;
+
+	/* A caller that may not make the request does not stop anything. */
+	operation = operation_name(opcode);
+	if (operation == NULL)
+		return 0;
+	allowed = operation_allowed(role, operation);
+	if (!allowed)
+		return 0;
+
+	/* Nor does a request that the confirmed transaction refuses. */
+	checked = networkd_confirmed_check(&confirmed, request->token);
+	if (checked != 0)
+		return 0;
+
+	/* The request takes the interface over. */
+	return 1;
+}
+
 /* Resumes deferred control only after the interrupted actor has unwound. */
 static void
 dispatch_pending_wifi(
@@ -5662,7 +5856,9 @@ service_wifi_wait(
 	int client;
 	int error;
 	int deferred;
+	int parked;
 	int interrupts;
+	int supersedes;
 	uint64_t cleanup_deadline;
 
 	/*
@@ -5683,8 +5879,37 @@ service_wifi_wait(
 	if (client < 0)
 		return 0;
 	deferred = 0;
-	if (wifi_work.deadline == 0U) {
+	parked = 0;
+	supersedes = 0;
+	if (wifi_work.deadline == 0U)
+		supersedes = lan_request_supersedes(&request, role);
+
+	/*
+	 * Outside Wi-Fi work a request is carried out now, unless it takes
+	 * over the wired interface being configured: that one waits until the
+	 * configuring has been stopped (BUG-298), or is refused while another
+	 * already waits or the command running is not the configuring's own.
+	 */
+	if (supersedes &&
+	    control_dispatch_depth == 0U &&
+	    lan_pending_client < 0) {
+		lan_pending_client = client;
+		lan_pending.role = role;
+		memcpy(&lan_pending.request, &request, sizeof(request));
+		memcpy(&lan_pending.peer, &peer, sizeof(peer));
+		parked = 1;
+
+		/* The configuring's command is stopped only where it can be. */
+		if (lan_configure_stoppable)
+			lan_configure_cancelled = 1;
+	} else if (supersedes) {
+		send_response(client, request.header.request_id, request.header.opcode,
+		    NETWORKD_RESULT_ERROR, EBUSY,
+		    "the interface is being configured; retry", NULL, 0U);
+	} else if (wifi_work.deadline == 0U) {
+		control_dispatch_depth++;
 		dispatch_request(client, &request, role, &peer);
+		control_dispatch_depth--;
 	} else if (operation_name(request.header.opcode) == NULL ||
 	    !operation_allowed(role, operation_name(request.header.opcode))) {
 		send_response(client, request.header.request_id, request.header.opcode,
@@ -5760,6 +5985,12 @@ service_wifi_wait(
 		}
 	}
 	networkd_protocol_clear(&request, sizeof(request));
+
+	/* A request put aside keeps its connection, and may stop the configuring's command. */
+	if (parked && lan_configure_cancelled)
+		return ECANCELED;
+	if (parked)
+		return 0;
 	if (!deferred)
 		(void)close(client);
 	return deferred ? EINTR : 0;
@@ -8974,6 +9205,7 @@ run_command_until(
 	char temporary[96];
 	int output, status, child_done;
 	int child_error;
+	int reaped;
 	int standard_output, standard_error;
 	pid_t child;
 	uint64_t now;
@@ -8982,6 +9214,7 @@ run_command_until(
 	status = 0;
 	child_done = 0;
 	child_error = 0;
+	reaped = 0;
 	now = netutil_monotonic_us();
 	operation_deadline = now + (uint64_t)timeout_seconds * 1000000ULL;
 	if (deadline == 0U || deadline > operation_deadline)
@@ -9058,9 +9291,10 @@ run_command_until(
 		result = waitpid(child, &status, WNOHANG);
 
 		/* Checks the operation result. */
-		if (result == child)
+		if (result == child) {
 			child_done = 1;
-		else if (result < 0 && errno != EINTR) {
+			reaped = 1;
+		} else if (result < 0 && errno != EINTR) {
 			child_error = errno != 0 ? errno : EIO;
 			/* ECHILD means there is no remaining child to signal. */
 			if (child_error != ECHILD) {
@@ -9076,6 +9310,15 @@ run_command_until(
 		if (child_done)
 			break;
 
+		/*
+		 * A request that takes over what the command is doing asks it
+		 * to stop, and lets it put back what it changed (BUG-298).
+		 */
+		if (child_error == ECANCELED) {
+			reaped = stop_child(child, &status);
+			break;
+		}
+
 		/* Cancellation, deadline and wait errors retain their exact cause. */
 		if (child_error != 0) {
 			(void)kill(child, SIGKILL);
@@ -9086,6 +9329,16 @@ run_command_until(
 		}
 		usleep(10000);
 	}
+
+	/*
+	 * A command asked to stop that finished all the same did its work:
+	 * dhcpc that had its lease, and committed it, before it heard.
+	 */
+	if (child_error == ECANCELED &&
+	    reaped &&
+	    WIFEXITED(status) &&
+	    WEXITSTATUS(status) == 0)
+		child_error = 0;
 
 	/* Handles a failed lseek operation. */
 	if (lseek(output, 0, SEEK_SET) >= 0) {
@@ -9116,6 +9369,49 @@ run_command_until(
 
 	/* Reports successful completion. */
 	return 0;
+}
+
+/*
+ * Stops a child asked to stop, letting it put back what it changed.
+ *
+ * SIGTERM first: dhcpc then gives up as at its own timeout and puts the
+ * interface back as it found it.  A child still there after CHILD_STOP_US
+ * is killed.  Returns 1 when the child was reaped and its status stored.
+ */
+static int
+stop_child(
+	pid_t child,
+	int *status)
+{
+	uint64_t stop_deadline;
+	pid_t result;
+
+	/* Asks the child to stop. */
+	(void)kill(child, SIGTERM);
+	stop_deadline = netutil_monotonic_us() + CHILD_STOP_US;
+
+	/* Waits for it to end by itself, for a bounded time. */
+	while (netutil_monotonic_us() < stop_deadline) {
+		result = waitpid(child, status, WNOHANG);
+		if (result == child)
+			return 1;
+
+		/* Handles a child that cannot be waited for. */
+		if (result < 0 && errno != EINTR)
+			return 0;
+		usleep(10000);
+	}
+
+	/* Kills a child that did not stop, and reaps it. */
+	(void)kill(child, SIGKILL);
+	do {
+		result = waitpid(child, status, 0);
+	} while (result < 0 && errno == EINTR);
+
+	/* Reports whether the status is the child's. */
+	if (result != child)
+		return 0;
+	return 1;
 }
 
 /* Supports the clean diagnostic operation. */

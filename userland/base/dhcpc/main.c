@@ -213,6 +213,15 @@ main(
 	    netutil_monotonic_us() + (uint64_t)timeout_seconds * 1000000U;
 	timed_out = 0;
 	(void)signal(SIGALRM, timeout_handler);
+
+	/*
+	 * Being asked to stop ends the transaction as its timeout does: the
+	 * interface is put back as it was found.  networkd asks so when a
+	 * request takes over the interface its policy is configuring, and a
+	 * kill that left the address cleared mid-transaction would leave the
+	 * interface as neither had it (BUG-298).
+	 */
+	(void)signal(SIGTERM, timeout_handler);
 	(void)alarm(timeout_seconds);
 	failure_stage = "carrier";
 

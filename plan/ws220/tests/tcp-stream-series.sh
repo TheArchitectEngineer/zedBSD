@@ -113,8 +113,13 @@ if [ "$mode" = qemu ]; then
 	iface=$(remote "ifconfig -a | awk '/^[a-z]+[0-9]+:/ {name = substr(\$1, 1, length(\$1) - 1)} /ether 52:54:00:33:00:08/ {print name}'" |
 	    tail -1)
 	[ -n "$iface" ] || { echo "FAIL: no second adapter"; exit 1; }
-	remote "net static $iface ipv4 10.77.0.2 netmask 255.255.255.0 || ifconfig $iface inet 10.77.0.2 netmask 255.255.255.0; ifconfig $iface up; sleep 2; ping -c 3 10.77.0.1" > "$out/setup.txt"
+	# The address through networkd (net static), not ifconfig behind its back: the adapter is not in net.conf, so
+	# networkd's DHCP may still be running on it; the request stops that DHCP, which would otherwise put back the
+	# address it found and fall back to 169.254 over 10.77.0.2 (BUG-298).  The address is read again after
+	# networkd's 10-second DHCP would have ended.
+	remote "net static $iface ipv4 10.77.0.2 netmask 255.255.255.0 && ifconfig $iface up && sleep 2 && ping -c 3 10.77.0.1; sleep 10; ifconfig $iface" > "$out/setup.txt"
 	grep -qE ' [1-3] packets received' "$out/setup.txt" || { cat "$out/setup.txt"; echo "FAIL: no way to 10.77.0.1"; exit 1; }
+	grep -q 'inet 10\.77\.0\.2 ' "$out/setup.txt" || { cat "$out/setup.txt"; echo "FAIL: $iface lost 10.77.0.2 (BUG-298)"; exit 1; }
 	machine_ip=10.77.0.2
 	# The machine is reached from the namespace with the guests' key.
 	machine=root@10.77.0.2
