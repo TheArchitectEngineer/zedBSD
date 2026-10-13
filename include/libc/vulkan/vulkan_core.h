@@ -4,7 +4,7 @@
  * zedBSD
  * Copyright (C) 2026 Awe Morris
  *
- * The zedBSD selection, formatting and additions in this file are Zlib.
+ * The zedBSD selection and formatting of this file are Zlib.
  */
 
 /*
