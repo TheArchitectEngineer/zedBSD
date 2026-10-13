@@ -57,6 +57,44 @@
 | WS201（/home の暗号化）、WS195（/opt/keiland）、WS196（useradd 等）、WS198（self-build）、[WS001 p045](ws001/phase045/phase.md) POSIX の header、[WS126](ws126/ws.md) Python | ベータ3 の列 |
 | 規約の全文の見直しの Phase（各 WS） | ユーザーの決定でベータ3 |
 
+## ベータ2 の残りの工数（2026-10-13 Q1、各 ws.md から見積もり直し、±50 %）
+
+ユーザー「残っているWSの一覧と、工数のLW見積もりをください。」「残っているベータ2のWSです」→ 2 つの担当が ws.md の残りの Phase から見積もった（master.md の 10/06 の表は古い）。
+
+- 実装・設計の残り: 合計 **約 48 LW**。うち空き時間だけの WS031（7）・WS075（4）と blocked の WS225（8、未見積の推測）を除くと **約 29 LW**（1 LW ≈ 実時間 1〜2 時間、担当 1 人あたり）。
+- T1・実機・UAT・判断を待つだけ（実装 0）の WS: 約 35。待ちの後に出うる直しは数えていない（WS197 1〜2、WS159 1〜2 など）。
+- ベータ3 に回った規約の全文の見直しなど: 約 32 LW（別。WS197 の HFP 59 LW と WS172 の OpenSSL の置き換え約 6 は含まない）。
+
+| WS | 残りの実装 | LW |
+| --- | --- | --- |
+| [WS225](ws225/ws.md) | Vulkan の header の書き直し（blocked、WS226 の後） | 8（推測） |
+| [WS031](ws031/ws.md) | Vulkan の実行器と compiler の残り（空き時間だけ） | 7（推測） |
+| [WS157](ws157/ws.md) | Photos の thumbnail の jail（p015）・libjpeg の縮小 decode（p017） | 4.5 |
+| [WS075](ws075/ws.md) | i915 の高度化（空き時間だけ、描画の高速化は止めている） | 4（推測） |
+| [WS172](ws172/ws.md) | passkey の security chip の調べ（p004）・/dev/security0 と TPM の設計（p004b） | 2.5 |
+| [WS196](ws196/ws.md) | useradd・usermod・userdel（先に判断 E1〜E6） | 2.3 |
+| [WS143](ws143/ws.md) | Bluetooth の 5330 の firmware の load と scan の後の直し、Linux の BlueZ の backend | 2.2（推測） |
+| [WS004](ws004/ws.md) | WLAN の driver の共通化（p039、任意）、SN740 の実機の手順 | 2 |
+| [WS113](ws113/ws.md) | Linux・FreeBSD の KMS の互換（p010、後回し） | 2（推測） |
+| [WS046](ws046/ws.md) | GNU 互換の make の残り（p014 の make check の判断、p007） | 1.5 |
+| [WS102](ws102/ws.md) | 画面 keyboard の frame の p95 を目標まで（p011） | 1.5（推測） |
+| [WS171](ws171/ws.md) | hal.h の契約の comment（優先度低め、やることが無い時） | 1.5 |
+| [WS009](ws009/ws.md) | /dev/gpu の文書（DOC-54、保留の解除の後） | 1 |
+| [WS051](ws051/ws.md) | USB-C の残り（p004c・p005b） | 1 |
+| [WS081](ws081/ws.md) | touch の L3 の計測と係数 | 1（推測） |
+| [WS090](ws090/ws.md) | p026 の層 3（5330 で測ってから） | 1（条件つき） |
+| [WS095](ws095/ws.md) | IME の Browser の欄（p009）と回帰（p011）、優先度低め | 1 |
+| [WS145](ws145/ws.md) | Linux・FreeBSD の build・install と guest（p005） | 1 |
+| [WS156](ws156/ws.md) | 通知の Linux の D-Bus（p006） | 0.7 |
+| [WS033](ws033/ws.md) | USB LAN の後挿し（p001） | 0.5 |
+| [WS129](ws129/ws.md) | release notes・既知の問題・手引き | 0.5 |
+| [WS161](ws161/ws.md) | YubiKey の Linux・FreeBSD の build | 0.5 |
+| [WS202](ws202/ws.md) | BUG-300 の残り | 0.5（推測） |
+| [WS089](ws089/ws.md)・[WS193](ws193/ws.md)・[WS191](ws191/ws.md) | 小さな照合・残り | 0.3・0.3・0.1 |
+
+実装 0（待ち・判定・完了の記録だけ）: WS049・WS100・WS127（全 Phase cleared、完了の処理だけ）、WS083（規約だけ）、WS050・WS079・WS084・WS094・WS099・WS128・WS130・WS131・WS132・WS134・WS142・WS154・WS159・WS164・WS165・WS173・WS174・WS175・WS181・WS182・WS183・WS189・WS197・WS200（T1・実機・UAT・判断の待ち）、WS155・WS169・WS170・WS177・WS190・WS194（ベータ2 の残り無し）。
+記録のずれ（phase.md が正しく ws.md の表が古い）: WS095 p006・p007、WS190 p002・p003、WS194 p001。見積もりの表の全文は 2 つの担当の出力（Q1 の scratchpad、lw1.md・lw2.md）。
+
 ## 終わっていない WS（2026-10-13 Q1、122 件）
 
 2026-10-13 ユーザー「終わっていないWSとその概要、何がブロッキングしているかを、表にして、plan/beta2.mdに入れてください。」→ 各 ws.md の Status・Resume point・Phase の表から作った（記録に無い事は「不明」）。WS は completed でない物（incomplete・planning・planned）。区分は ws.md・この文書・master.md に根拠がある時だけ断定し、master の「ベータ1」の段は fg019 の決定（最初のベータはベータ2）でベータ2 に読み替えた。
