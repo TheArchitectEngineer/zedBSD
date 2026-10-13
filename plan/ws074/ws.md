@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1110](queue.md) finished / p217 positioned Grid inline軸整列。2026-10-14 08:50 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1111](queue.md) finished / p217 positioned Grid残差診断。2026-10-14 08:51 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -878,3 +878,5 @@ Event ws074-p217-q1108-partial-clear-20261014: [p217](phase217/phase.md) q1108-i
 Event ws074-p217-q1109-partial-clear-20261014: [p217](phase217/phase.md) q1109-i01は水平Gridの確定areaで絶対子のend/center系block軸整列を最終子高さ後に計算。[証拠](phase217/evidence/20261014-q1109/README.md)。固定列軸5件の横書き10 subtestがFAIL→PASS、縦書き10 subtestはwidth差でFAIL継続。旧PASS2件、Grid/CSS/JS、warning0 build、Acid3画素差0・Acid2差1865維持。q1109部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p217-q1110-partial-clear-20261014: [p217](phase217/phase.md) q1110-i01は水平Gridの確定areaで絶対子のend/center系inline軸整列を最終子幅後に計算。[証拠](phase217/evidence/20261014-q1110/README.md)。固定行軸4件の横書き8 subtestがFAIL→PASS、縦書き8 subtestはwidth差でFAIL継続。旧PASS2件、Grid/CSS/JS、warning0 build、Acid3画素差0・Acid2差1865維持。q1110部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p217-q1111-partial-clear-20261014: [p217](phase217/phase.md) q1111-i01は固定行軸003/004/008/010/011をq1110後に再測定。[証拠](phase217/evidence/20261014-q1111/README.md)。水平10 subtest中6 FAIL、self-endの011は2 PASS。残る物理left/rightと子方向self-startのarea内配置を次の有限修正に設定。縦書き10件は幅差、whole5件FAIL継続。browser/runner/WPT/ABI/Master/Acid無変更、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

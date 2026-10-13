@@ -1,0 +1,7 @@
+# q1111-i01 — remaining positioned Grid inline-axis cases
+
+The fixed row-axis WPT 003/004/008/010/011 files were rerun after q1110 using the same pinned WPT and runner. Horizontal LTR/RTL outcomes are 003 PASS/FAIL (`justify-self:left`, expected x300/actual0 in RTL), 004 FAIL/FAIL (`right`, expected x40/340, actual0), 008 PASS/FAIL (`self-start`, expected x340/actual0 in RTL), 010 FAIL/FAIL (`self-start` with child direction opposite the container, expected x40/300, actual0), and 011 PASS/PASS (`self-end`, fixed by q1110). Every vertical-writing subtest still first fails width expected10/actual60. All five files remain whole FAIL.
+
+The current `grid_static_position` declines RTL children whose justify value is not start/end/self-end/center, and leaves LTR `right`/opposite-direction `self-start` at the area start. `position_place` already has final child width and q1110's private area width/physical edge representation. A bounded next implementation can add physical `left` and `right`, and `self-start` based on the child's own direction, while preserving explicit inset precedence and q1110 end/center. This would target six remaining horizontal subtest failures in these five files. It does not address vertical Grid axes or 012–016's area and direction combinations.
+
+q1111-i01 read-only diagnosis cleared. p217/p189/p173 whole and all3,805 PASS remain uncleared. Browser, runner, WPT, ABI, Master and Acid were unchanged. Shared projection/GitHub publication pending with Q1; no push.

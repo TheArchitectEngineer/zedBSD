@@ -138,3 +138,11 @@ Event ws074-p217-q1109-partial-clear-20261014: [証拠](evidence/20261014-q1109/
 ## q1110-i01 結果（2026-10-14 08:50 JST）
 
 Event ws074-p217-q1110-partial-clear-20261014: [証拠](evidence/20261014-q1110/README.md)。水平Gridの確定areaで絶対子のinline-axis end/center系位置を最終子幅後に解決。最小LTR/RTL/明示inset/無効line/子の異方向self-end fixture PASS。固定行軸4件の横書き8 subtest FAIL→PASS、縦書き8 subtestはwidth期待10/実60でFAIL継続。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1110部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1111-i01 有限部分範囲（2026-10-14 08:51 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:21 JSTまで）に適用。q1110後の固定row-axis positioned-items003/004/008/010/011を同条件再測定し、水平LTR/RTL各subtestの初回差とWPTの方向指定を抽出。left/right/self-start/self-endの物理辺と現行private static-area経路を照合して次の有限修正を設計。読取/証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1111-i01 結果（2026-10-14 08:51 JST）
+
+Event ws074-p217-q1111-partial-clear-20261014: [証拠](evidence/20261014-q1111/README.md)。固定行軸003/004/008/010/011の水平10 subtest中6 FAIL、011のself-endはq1110で両PASSへ改善。物理left/rightと子自身のdirectionを使うself-startの未配置が共通。現在のGridはRTLでそれらを静的area経路から除外、LTRではstartへ置く。次はprivate area widthと最終子幅で左/右辺を計算。縦書き10 subtestはwidth差、全5 whole FAIL。q1111部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
