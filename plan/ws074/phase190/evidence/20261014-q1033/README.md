@@ -1,0 +1,9 @@
+# q1033 selected static details reftest audit
+
+The existing static reftest runner was run on the pinned WPT commit with the fixed Interop manifest, `html/rendering/the-details-element` root, 800×600 viewport, three fixed font files and one localhost origin. [Report](report.json) has 10 selected IDs and their references: **4 provisional PASS, 6 FAIL, 0 error**. All 10 IDs were verified in the fixed manifest. Scripted/variant/HTTPS tests and crashtests were not run.
+
+The provisional PASS for `details-display-type-001.html` is a **false pass in this runner**. It equals its `details-display-type-001-ref.html` reference (0 pixel differences), but that reference has its own `rel=match` link to `details-display-type-001-ref2.html` and differs by 4,930 pixels. The runner stops at the first reference instead of resolving the chain, so its top-level PASS is not a valid reftest result. [Side-by-side image](failures/001-details-display-type-001-ref.png) shows the chained failure. The engine source states CSS subgrid is not implemented; this likely explains the visual difference, but the exact layout cause needs separate browser work.
+
+The FAIL for `details-pseudo-elements-001.html` differs from its reference by 12,493 pixels; its [side-by-side image](failures/002-details-pseudo-elements-001.png) shows the expected cyan details-content area absent in the test. The other four pseudo-element cases fail with 334–12,493 different pixels. The two mismatch PASS results have distinct test/reference pixels. All PASS results remain provisional until reference chains and other runner conditions are handled.
+
+The exact initial selection, per-reference metrics and saved two representative images are in the report. No browser/WPT/Master source changed; `git diff --check` PASS. p190 whole and the 3,805-ID goal remain uncleared. Shared Queue/Master/GitHub publication is Q1 owned; no push.

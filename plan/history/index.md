@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1033 / WS074 selected static details reftest audit（2026-10-14）
+
+[q1033履歴](queue-q1033.md): 固定選定10件の既存runner結果4 provisional PASS/6 FAIL。PASS1件にreference-chain誤判定を発見。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1033/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1032 / WS074 details testharness full focus measurement（2026-10-14）
 
 [q1032履歴](queue-q1032.md): 固定details testharness全18件を測り6 PASS/10 FAIL/2 no_output。25 reftest/3 crashtestはp190待ち。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1032/README.md)。共有投影/GitHub publication pending。

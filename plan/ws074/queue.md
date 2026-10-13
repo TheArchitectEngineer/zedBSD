@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1032 / WS074 details testharness full focus measurement
+# q1033 / WS074 selected static details reftest validation
 
-Status: finished（2026-10-14 01:19 JST）
+Status: finished（2026-10-14 01:20 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 01:19 JST 開始、最大90分（02:49 JSTまで）。
+Timebox: 2026-10-14 01:20 JST 開始、最大90分（02:50 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1032-i01 | [ws074-p193](phase193/phase.md) partial | 固定manifestのdetails焦点testharness全18 IDを既存単一HTTP runnerで測定・分類し、残る一般原因と未実行環境を記録する。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | q1031 toggle output、p189 runner |
+| q1033-i01 | [ws074-p190](phase190/phase.md) partial | 固定manifestで選ばれたhtml/rendering/the-details-elementの静的reftestを最大10件、既存runnerで同一HTTP・固定viewport/font条件で測る。PASS/FAILの参照・画素差とerrorを監査。scripted/HTTPS/crashtest、browser/WPT/Master変更なし。最大90分 | cleared（partial、p190 whole uncleared） | p173固定manifest、q1032 details census |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -56,3 +56,5 @@ Outcome: q1030-i01 partial cleared、p193 whole uncleared。hidden/openのatom�
 Outcome: q1031-i01 partial cleared、p193 whole uncleared。非同期toggleをcoalesceし固定hidden/details WPT1/1 PASS、先行beforematch PASS維持。host build warning0・native property65/65・realm30/30・Acid3差0/Acid2差1865。[証拠](phase193/evidence/20261014-q1031/README.md)。p173全件100%未達。
 
 Outcome: q1032-i01 partial cleared、p193 whole uncleared。固定details testharness全18件は6 PASS/10 FAIL/2 no_output。25 reftest/3 crashtestはp190 runner待ち。[証拠](phase193/evidence/20261014-q1032/README.md)。コード無変更、p173全件100%未達。
+
+Outcome: q1033-i01 partial cleared、p190 whole uncleared。選定静的reftest10件は既存runnerで4 provisional PASS/6 FAIL、PASS1件はreference-chain無視のfalse pass。[証拠](phase190/evidence/20261014-q1033/README.md)。コード無変更、p173全件100%未達。
