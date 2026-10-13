@@ -35,6 +35,9 @@
 #if CONFIG_DRIVER_PCI_NVME
 #include <drivers/pci/pci-nvme.h>
 #endif
+#if CONFIG_DRIVER_PCI_AHCI
+#include <drivers/pci/pci-ahci.h>
+#endif
 #if CONFIG_DRIVER_PCI_INTEL_AX211
 #include <drivers/wifi/intel-ax211/pci-intel-ax211.h>
 #endif
@@ -256,6 +259,10 @@ kern_platform_init(
 	if (drv_pci_nvme_driver_register() != 0)
 		kern_logf("nvme: PCI driver registration failed\n");
 #endif
+#if CONFIG_DRIVER_PCI_AHCI
+	if (drv_pci_ahci_driver_register() != 0)
+		kern_logf("ahci: PCI driver registration failed\n");
+#endif
 #if CONFIG_DRIVER_PCI_VENUS
 	/* Binds Venus through the same PCI lifecycle as other devices. */
 	venus_error = drv_pci_venus_driver_register();
@@ -436,6 +443,11 @@ nvme:
 	 */
 #if CONFIG_DRIVER_PCI_NVME
 	drv_pci_nvme_probe_namespaces();
+#endif
+
+	/* SATA disks behind AHCI follow the same bounded removable-media wait. */
+#if CONFIG_DRIVER_PCI_AHCI
+	drv_pci_ahci_probe_ports();
 #endif
 }
 

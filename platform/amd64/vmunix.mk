@@ -132,6 +132,9 @@ AMD64_NVME_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
 AMD64_NVME_SOURCES += src/drivers/pci/pci-nvme.c
 endif
+ifeq ($(CONFIG_DRIVER_PCI_AHCI),y)
+AMD64_NVME_SOURCES += src/drivers/pci/pci-ahci.c
+endif
 AMD64_HDA_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_HDA),y)
 AMD64_HDA_SOURCES += src/drivers/pci/pci-hda.c

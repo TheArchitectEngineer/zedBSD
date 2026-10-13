@@ -103,6 +103,9 @@ PCAT_NVME_OBJS :=
 ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
 PCAT_NVME_OBJS += $(BUILD)/drivers/pci/pci-nvme.o
 endif
+ifeq ($(CONFIG_DRIVER_PCI_AHCI),y)
+PCAT_NVME_OBJS += $(BUILD)/drivers/pci/pci-ahci.o
+endif
 ifeq ($(CONFIG_DRIVER_USB_CDC_NCM),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-cdc-ncm.o \
 	$(BUILD)/drivers/usb/usb-cdc-ncm-net.o
