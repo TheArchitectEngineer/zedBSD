@@ -53,3 +53,5 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 2026-10-03 / q632-i01（generation3）: host の memory の圧迫でラップアップ、uncleared。agent/p3 381b403b8..184600fd3 未統合。q632-i02（generation4）: user「N=1でP3のみを再開しましょう。」、ws131-p003 の「再開の手順」1〜6、4h、in-progress。
 
 2026-10-03 / 5320 を FreeBSD に: user「Latitude 5320はP4で利用する実機ですが、P4は停止しており、P3を優先している状況ですので、FreeBSDのビルドやテストにSSH経由で利用してOKです。awe@10.0.30.3 です。」「5320にはFreeBSD 15.1がインストールされており、起動しています。」「ホストキーは更新してOKです。」→ Q1 が known_hosts の 10.0.30.3 を更新（ED25519 SHA256:SU3SAIyuzmOC97UBmW2veciwXDfHLA+C8AAKcZTiysE）、疎通を確認（FreeBSD 15.1-RELEASE、8 CPU、8 GB、cc・gmake・git・python3 あり）。P3 の WS131 p003 で FreeBSD の build と試験を再開（「書くだけ」を解除）。P4 の再開の時は P3 から 5320 を返す。
+
+2026-10-13 夜 / q941（新しい世代）: user「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」→ [ws220-p003](../../ws220/phase003/phase.md) TCP の送りの未送信・retry の実装の再開。前の世代の書きかけは Q1 が agent/p3 398bbdebb（WIP）に救った（写し build/salvage-20261013/p3-1e0e3c3be.patch）。main を取り込み → §1 の設計どおり実装 → 模型・host 試験・build → Q1 に merge 依頼 → T1 の依頼は T1-574（基線）の後。State: active。

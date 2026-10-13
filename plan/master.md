@@ -11,12 +11,11 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-13 20:25（新しい Q1 のオンボーディング）: 動いている agent は無し**（前の Q1 のセッションは 20:06 の a556c4672 で止まった。QEMU も無し）。書きかけを救った（写しは `build/salvage-20261013/`）:
-  - P1（agent/p1 6b09ad269、WIP）: [ws216-p004](ws216/ws.md) Notes の画面（形の列・Normal/Multiply・粒の texture・遅延の pipeline）。設計 §1〜§6 と実装 約 1400 行・host 試験の source はあるが、build・host 試験の結果（§7）は未記録。再開は build と host 試験から。
-  - P3（agent/p3 398bbdebb、WIP）: [ws220-p003](ws220/ws.md) TCP の送りの未送信・retry。設計 §1 は決まり、tcp-socket.h の欄と tcp.c の一部だけ（実装は途中）。§2〜§5 は未記入。
-  - P2（agent/p2-ws215）・P4（agent/p4）: 未 commit の差分なし。最後の仕事は WS221 p001 の設計（review-2・ユーザーの §9 Q1〜Q13 待ち）と WS217 p002a（T1-576 待ち）。
-  - T1: T1-571〜T1-576 が未実行（BUG-298・ws219-p002・ws218-p002・WS220 の基線 T1-574・ws206-p005・ws217-p002a）。
-  - 2026-10-12 夜の P3 の WS141・WS211 の状態は各 ws.md と decisions-log。
+- **2026-10-13 夜（Q1）: N=2（P1・P3）＋T1**（ユーザー「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」）。前のセッションは 20:06 で止まり、書きかけを救った（写し `build/salvage-20261013/`）。
+  - P1（agent/p1、救った WIP 6b09ad269）: q940 [ws216-p004](ws216/phase004/phase.md) Notes の画面（形の列・Normal/Multiply・粒の texture）。実装 約 1400 行はあり、build・host 試験・§7 から。
+  - P3（agent/p3、救った WIP 398bbdebb）: q941 [ws220-p003](ws220/phase003/phase.md) TCP の送りの未送信・retry。設計 §1 は済み、実装は途中。
+  - T1（agent/t1）: 未実行の T1-571〜T1-576（BUG-298・ws219-p002・ws218-p002・WS220 の基線 T1-574・ws206-p005・ws217-p002a）。
+  - P2・P4 は停止（未 commit なし）。WS221 p001 はユーザーの §9 Q1〜Q13、WS217 p002a は T1-576 待ち。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -35,7 +34,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-300、WS227、q940、T1-577。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-300、WS227、q942、T1-577。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 

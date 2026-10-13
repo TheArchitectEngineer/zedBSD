@@ -77,3 +77,5 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 
 2026-10-03 / P1 の後: user「P1でBUG-149をクリアした後、ほかに関連バグが見つかっていなければ、いったんラップアップして、P3をN=1のシリアル区間で実行しましょう」→ q635 が cleared かつ関連の新しい bug が無ければ P1 を通常のラップアップで終了、以後 N=1（P3 だけ）。関連の bug が見つかったら Q1 が user に報告して判断を仰ぐ。
 | P1-merge ws113-p015 | — | 43d35865a（kl_scroll）・9d04591db・583caebf8 | wayland/{apps-bar,arrange-shell,heads,plane,shell,...}・libkeiland scroll・plan/ws113 | integrated 79b9b1b83（2026-10-08、T1-380 待ち） |
+
+2026-10-13 夜 / q940（新しい世代）: user「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」→ [ws216-p004](../../ws216/phase004/phase.md) Notes の画面の再開。前の世代の書きかけは Q1 が agent/p1 6b09ad269（WIP）に救った（写し build/salvage-20261013/p1-569d8e952.patch）。main を取り込み → build・host 試験 → §7 の記録 → Q1 に merge 依頼 → QEMU の確かめは T1 への依頼を Q1 に送る。State: active。
