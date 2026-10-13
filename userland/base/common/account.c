@@ -18,10 +18,11 @@
  *
  * /etc/shadow is replaced, never written in place: under the lock (an
  * exclusive flock on the lock file, which the kernel gives back when its
- * holder exits or dies; ws196-p002), the whole file is read, the user's line gets the new hash and
- * today's day in its third field (every other byte is kept), the result is
- * written to a new file in /etc with the shadow's mode (0400) and synced,
- * and renamed over /etc/shadow; then /etc itself is synced.  The signals
+ * holder exits or dies; ws196-p002), the whole file is read, the user's
+ * line gets the new hash and today's day in its third field (every other
+ * byte is kept), the result is written to a new file in /etc with the
+ * shadow's mode (0400) and synced, and renamed over /etc/shadow; then /etc
+ * itself is synced.  The signals
  * that would stop the program midway are held meanwhile.  A reader sees
  * the old file or the new one, never a part.
  *
@@ -479,6 +480,7 @@ account_files_lock(void)
 {
 	unsigned tries;
 	int descriptor;
+	int taken;
 	int error;
 
 	/* Held already by this process. */
@@ -491,12 +493,13 @@ account_files_lock(void)
 		return errno;
 
 	/* A few tries. */
+	taken = 0;
 	for (tries = 0; tries < ACCOUNT_LOCK_TRIES; tries++) {
 		/* Taken: the descriptor holds it until it is closed. */
 		error = flock(descriptor, LOCK_EX | LOCK_NB);
 		if (error == 0) {
-			account_lock_descriptor = descriptor;
-			return 0;
+			taken = 1;
+			break;
 		}
 
 		/* An error other than another holder. */
@@ -511,8 +514,14 @@ account_files_lock(void)
 	}
 
 	/* It stayed taken. */
-	(void)close(descriptor);
-	return EBUSY;
+	if (!taken) {
+		(void)close(descriptor);
+		return EBUSY;
+	}
+
+	/* Succeeded: this process holds the lock until it closes the descriptor. */
+	account_lock_descriptor = descriptor;
+	return 0;
 }
 
 /* Gives the lock of the account files back. */

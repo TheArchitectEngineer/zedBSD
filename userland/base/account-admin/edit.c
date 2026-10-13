@@ -255,7 +255,7 @@ admin_language_valid(
 			return 1;
 	}
 
-	/* Succeeded: not one of them. */
+	/* Reports a language the login screen does not have. */
 	return 0;
 }
 
@@ -282,7 +282,10 @@ admin_name_valid(
 
 		/* A character allowed. */
 		c = name[i];
-		if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_')
+		if ((c >= 'a' && c <= 'z') ||
+		    (c >= '0' && c <= '9') ||
+		    c == '-' ||
+		    c == '_')
 			continue;
 		return 0;
 	}
@@ -310,7 +313,9 @@ admin_display_valid(
 	/* No ':', and no control character. */
 	for (i = 0; i < length; i++) {
 		/* One byte. */
-		if (display[i] == ':' || (unsigned char)display[i] < 0x20U || display[i] == 0x7f)
+		if (display[i] == ':' ||
+		    (unsigned char)display[i] < 0x20U ||
+		    display[i] == 0x7f)
 			return 0;
 	}
 
@@ -458,6 +463,7 @@ admin_number_field(
 {
 	const char *field;
 	size_t field_length;
+	long number;
 	int error;
 
 	/* The field. */
@@ -465,8 +471,11 @@ admin_number_field(
 	if (error != 0)
 		return -1;
 
-	/* Its number. */
-	return edit_number(field, field_length);
+	/* Its number, or -1 when the field is not one. */
+	number = edit_number(field, field_length);
+
+	/* Reports the number. */
+	return number;
 }
 
 /*
@@ -781,18 +790,22 @@ admin_line_append(
 	size_t capacity,
 	size_t *written)
 {
+	size_t line_length;
 	size_t used;
 	int error;
 
 	/* The text, ended. */
 	used = 0;
 	error = edit_put(output, capacity, &used, text, length);
-	if (error == 0 && length > 0U && text[length - 1U] != '\n')
+	if (error == 0 &&
+	    length > 0U &&
+	    text[length - 1U] != '\n')
 		error = edit_put(output, capacity, &used, "\n", 1U);
 
 	/* The line, ended. */
+	line_length = strlen(line);
 	if (error == 0)
-		error = edit_put(output, capacity, &used, line, strlen(line));
+		error = edit_put(output, capacity, &used, line, line_length);
 	if (error == 0)
 		error = edit_put(output, capacity, &used, "\n", 1U);
 	if (error != 0)
@@ -1326,6 +1339,7 @@ edit_root_value(
 	int key,
 	const char *value)
 {
+	size_t value_length;
 	long number;
 	int valid;
 	int same;
@@ -1352,7 +1366,8 @@ edit_root_value(
 		break;
 	case EDIT_KEY_UID:
 		/* A person's user ID. */
-		number = edit_number(value, strlen(value));
+		value_length = strlen(value);
+		number = edit_number(value, value_length);
 		if (number < ADMIN_ID_FIRST || number > ADMIN_ID_LAST)
 			return ADMIN_BAD_VALUE;
 		request->uid = number;
@@ -1616,6 +1631,8 @@ edit_put(
 	/* The bytes. */
 	memcpy(output + *used, bytes, length);
 	*used += length;
+
+	/* Succeeded: the bytes are in the output. */
 	return 0;
 }
 
