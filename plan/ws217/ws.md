@@ -46,3 +46,11 @@ Related Milestones: なし
 2026-10-13 Q1（第 2 版の残る問い D7〜D12）: ユーザーの「ではあとは推奨でお願いします」に沿って推奨を採る: D7 Pi 4 の回転の受け入れは WS141 p015 の後、D8 度数に統一、D9 login 画面は回らない（制限として記録、Future Work）、D10 案 E（wl_output は transform normal・mode は論理）、D11 Linux・FreeBSD の backend に EVIOCGPROP の読みを足す、D12 UAPI に `INPUT_INJECT_KIND_PEN_POINTER` を足し注入の pen を DIRECT に（HAL ではない、Q1 の判断で可、ユーザーに報告）。番号の割当: `KL_SYSTEM_SINCE_ROTATION` = 34・`KL_SYSTEM_MANAGER_VERSION` = 34（実装の時に main の最大を確かめ直す）、KL_VERSION は実装の merge の時に Q1 が次の空きを割り当てる（93 は WS210 と取り合い）。
 
 2026-10-13 Q1: review-2 の判定「p002 はまだ始められない」（致命的 2 C3・C4、重大 3、中 10、軽微 15）。第 3 版で C3（turn pass の部分 frame は pass_load）・C4（回転は compose_display の中で当て、open の経路で論理の大きさが変われば resize の手順）と p002 に関わる M1〜M4 を直せば開始可。新しい問い S8（mirror の中の結び付けは各 display の回転で写す）と M8（WS141 p015 の前の Pi では回転を UNSUPPORTED）は推奨を採る（ユーザーに報告、変更可）。第 3 版の担当は次に空いた P。
+
+## ユーザーの決定（2026-10-13、scanout の回転）
+
+ユーザー（原文）:「はい、Intelのscanoutの回転機能を使ってください。KHR_displayでできそうですか？」「Venusでは回転できなくていいです。画面サイズを変えればいいだけなので。この場合は回転機能を無効表示にします。」→ Q1 が Linux i915 v6.17 の `skl_universal_plane.c:2959-2964`（display version 13 以降は plane の回転が 0°・180° だけ、12 以前は 90°・270° も、90/270 は tile の並びが条件）を示し、案を出した。ユーザー:「はい、回転はそれで実装してください。」→ 決定:
+- 180°: Intel は全部、表示の hardware の回転（KHR_display の `VkDisplaySurfaceCreateInfoKHR.transform` と surface の `supportedTransforms`、swapchain の `preTransform`。libvulkan の IDENTITY 以外の拒否を外し、UAPI に plane の回転を足し、i915 で plane の回転を有効に）。Pi 4 は HVS の左右・上下の反転の組で 180°。
+- 90°・270°: Intel は全部（5320 の Tiger Lake も）compositor の GPU の回転（第 2 版の turn pass）。Y-tiled の作業はしない（Future Work）。Pi 4 は WS141 p015 の後に compositor で、それまでは無効表示。
+- Venus（QEMU）: 回転は無効表示（画面の大きさを変えればよい）。
+- 第 3 版で review-2 の C3・C4・M1〜M4 と合わせてこの形にする。担当は次に空いた P。
