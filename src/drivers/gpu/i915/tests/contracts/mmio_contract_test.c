@@ -120,6 +120,7 @@ mmio_check_gen9_domains(
 	int domain;
 	int error;
 
+	/* Names the section the checks below belong to. */
 	contract_section("domain: the Gen9 register-to-forcewake-domain map");
 
 	/* Binds a second access to the Gen9 map. */

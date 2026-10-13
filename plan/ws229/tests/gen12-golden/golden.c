@@ -90,7 +90,9 @@ main(void)
 	unsigned range_count;
 	unsigned index;
 	unsigned writes;
+#ifndef GOLDEN_GEN9
 	int domain;
+#endif
 	int error;
 	char name[64];
 
@@ -154,6 +156,8 @@ main(void)
 		golden_dump_list("whitelist", &init.whitelist[index]);
 	}
 	printf("mocs n=%u uc=%u unused=%u\n", init.mocs.n_entries, init.mocs.uc_index, init.mocs.unused_entries_index);
+
+	/* The frequencies the render power state is built with. */
 	printf("rps rp0=%u rp1=%u min=%u eff=%u\n", init.rps.rp0_freq, init.rps.rp1_freq, init.rps.min_freq, init.rps.efficient_freq);
 
 	/* The programming of intel_gt_init_hw() and the engines' resume. */
@@ -239,10 +243,16 @@ golden_dump_list(
 	const char *what,
 	const struct i915_wa_list *wal)
 {
+	const char *name;
 	unsigned index;
 
+	/* Names the list, with a dash for one that has no name. */
+	name = "-";
+	if (wal->name != NULL)
+		name = wal->name;
+
 	/* Prints the list's name and size, then each entry. */
-	printf("list %s %s %u\n", what, wal->name != NULL ? wal->name : "-", wal->count);
+	printf("list %s %s %u\n", what, name, wal->count);
 	for (index = 0U; index < wal->count; index++) {
 		printf("  reg=%05x clr=%08x set=%08x rmask=%08x kind=%d mcr=%d\n",
 		       wal->list[index].reg,
@@ -274,9 +284,11 @@ golden_dump_words(
 				zero = 0;
 		}
 
+		/* Skips a line of eight zero dwords. */
 		if (zero != 0)
 			continue;
 
+		/* Prints the line's offset and its eight dwords. */
 		printf("  %04x:", index);
 		for (column = 0U; column < 8U && index + column < count; column++)
 			printf(" %08x", words[index + column]);

@@ -1124,6 +1124,8 @@ i915_blit_build_batch(
 	} else {
 		drv_i915_batch_emit(batch, GEN12_SURFTYPE_NULL << 29);
 	}
+
+	/* Zeroes the rest of the stencil buffer packet. */
 	for (index = 2U; index < stencil_dwords; index++)
 		drv_i915_batch_emit(batch, 0U);
 

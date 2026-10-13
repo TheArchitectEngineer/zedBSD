@@ -156,6 +156,7 @@ drv_i915_gt_invalidate_tlb_full(
 	if (es->n != 0U && es->ge[0].info->graphics_ver == 9)
 		gen9 = 1;
 
+	/* Takes the Gen12 domains unless the GT is Gen9. */
 	domains = i915_tlb_forcewake_domains;
 	domain_count = I915_TLB_FORCEWAKE_DOMAINS;
 	if (gen9 != 0) {

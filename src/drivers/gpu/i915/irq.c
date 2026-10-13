@@ -993,6 +993,7 @@ i915_irq_handler_body(
 		if ((master_ctl & ~I915_IRQ_GEN8_GT_BITS) != 0U)
 			irq->display_irq_count++;
 
+		/* Re-enables the master interrupt now the sources are handled. */
 		i915_master_intr_enable(irq);
 		irq->irq_handled_count++;
 		hal_irq_send_eoi(acknowledge);

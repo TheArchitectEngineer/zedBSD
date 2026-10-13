@@ -397,6 +397,7 @@ drv_i915_test_eu_build_batch_gen(
 		    PIPE_CONTROL_DEPTH_CACHE_FLUSH);
 	}
 
+	/* Selects the GPGPU pipeline and stalls until the earlier work is visible. */
 	i915_eu_emit(&batch, i915_eu_pipeline_select(batch.graphics_ver, 2U));
 	i915_eu_emit_pipe_control(&batch, PIPE_CONTROL_CS_STALL | I915_TEST_PC_STALL_AT_SCOREBOARD);
 

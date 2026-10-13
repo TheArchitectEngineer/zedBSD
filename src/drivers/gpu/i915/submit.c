@@ -141,6 +141,7 @@ drv_i915_execlists_enable(
 	struct i915_mmio *mmio)
 {
 	uint32_t base;
+	uint32_t engine_irqs;
 
 	/* Nothing to enable without a set-up engine and register access. */
 	if (ge == NULL ||
@@ -175,7 +176,8 @@ drv_i915_execlists_enable(
 	 * gen8_logical_ring_enable_irq()).
 	 */
 	if (ge->info->graphics_ver == 9) {
-		i915_execlists_write(ge, mmio, RING_IMR(base), ~i915_gen9_engine_irqs(ge));
+		engine_irqs = i915_gen9_engine_irqs(ge);
+		i915_execlists_write(ge, mmio, RING_IMR(base), ~engine_irqs);
 		drv_i915_posting_read32(mmio, RING_IMR(base));
 	}
 

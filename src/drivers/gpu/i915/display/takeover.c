@@ -2719,6 +2719,7 @@ drv_i915_n0_lite_gen9(
 	unsigned pipe;
 	int overlap;
 	int vtd_active;
+	const char *where_running;
 
 	/* Reads which display power wells the firmware left up. */
 	power = drv_i915_raw_read32(m, I915_GEN9_PWR_WELL_CTL2);
@@ -2740,10 +2741,17 @@ drv_i915_n0_lite_gen9(
 	deps.mmio = m;
 	report->hypervisor = i915_cpu_hypervisor();
 	i915_read_vtd(&deps, report);
+
+	/* Names where the driver runs for the report. */
+	where_running = "native";
+	if (report->hypervisor != 0)
+		where_running = "guest";
+
+	/* Reports what the translation unit looks like. */
 	kern_logf("i915: N0-lite (gen9): GFXVTBAR=0x%llx enabled=%d %s readable=%d GSTS=0x%08x PMEN=0x%08x\n",
 		  (unsigned long long)report->gfxvtbar,
 		  report->vtd_enabled,
-		  report->hypervisor ? "guest" : "native",
+		  where_running,
 		  report->vtd_readable,
 		  report->vtd_gsts,
 		  report->vtd_pmen);
