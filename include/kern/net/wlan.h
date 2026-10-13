@@ -48,6 +48,36 @@ struct net_device;
 struct packet_buf;
 struct wlan_station;
 
+#define WLAN_FULLMAC_PMK_LENGTH 32U
+
+/*
+ * One connection a FullMAC radio is asked to make.
+ *
+ * The common core derives the PMK from the passphrase and owns every value
+ * here.  The driver copies the request into its own slot before
+ * fullmac_connect returns, keeps the PMK only until it has handed it to the
+ * firmware, and then erases its copy; the core erases this request as soon as
+ * the call returns.
+ */
+struct wlan_fullmac_connect_request {
+	uint64_t generation;
+	uint64_t deadline_ticks;
+	struct wlan_bss_record bss;
+	uint8_t pmk[WLAN_FULLMAC_PMK_LENGTH];
+};
+
+/*
+ * The firmware's own progress of a FullMAC connection.
+ *
+ * ASSOCIATED means the firmware has joined the access point, and AUTHORIZED
+ * means its supplicant has finished the four-way and group handshakes.  A
+ * failure or a disconnection is reported with wlan_station_report_link_loss.
+ */
+enum wlan_fullmac_event {
+	WLAN_FULLMAC_EVENT_ASSOCIATED = 1,
+	WLAN_FULLMAC_EVENT_AUTHORIZED = 2
+};
+
 typedef uint64_t (*wlan_clock_fn)(void *context);
 
 enum wlan_radio_frame_class {
@@ -159,6 +189,23 @@ struct wlan_radio_ops {
 	 * (BUG-158).  The result is the driver's own; common keeps no state.
 	 */
 	int (*restart)(void *context);
+	/*
+	 * FullMAC only.  A radio whose firmware runs the association and the
+	 * WPA2 supplicant itself sets these two and leaves every SoftMAC
+	 * method (connect_start, management_transmit, association_set,
+	 * association_clear, frame_transmit, key_install, key_delete,
+	 * keys_activate) NULL; it must offer scan_channel_start, scan_stop,
+	 * disconnect, quiesce and stop_retry too, and every scan channel must
+	 * be OFFLOADED_DWELL.  fullmac_connect copies the request and returns
+	 * at once; the result arrives later as report_fullmac_event or
+	 * report_link_loss.  ethernet_transmit copies one 802.3 frame of the
+	 * open connection generation into the driver's queue and returns at
+	 * once (ENOBUFS when the queue is full).
+	 */
+	int (*fullmac_connect)(void *context,
+		const struct wlan_fullmac_connect_request *request);
+	int (*ethernet_transmit)(void *context, uint64_t generation,
+		const uint8_t *frame, size_t length);
 };
 
 void wlan_core_init(void);
@@ -238,11 +285,24 @@ int wlan_station_report_scan_error(struct wlan_station *station,
 	uint64_t generation, int error);
 /* Only these common-core entry points can advance a connection.  Drivers
  * cannot publish AUTHORIZED directly: that transition is made after the WPA2
- * engine receives the matching M4 TX acknowledgement. */
+ * engine receives the matching M4 TX acknowledgement.  A FullMAC driver
+ * reports its firmware's AUTHORIZED through wlan_station_report_fullmac_event;
+ * the common FullMAC engine maps it into the connection state, and the common
+ * core still opens the controlled port (the carrier) itself.  The two SoftMAC
+ * reports below return EOPNOTSUPP on a FullMAC station. */
 int wlan_station_report_frame(struct wlan_station *station,
 	const struct wlan_radio_rx_frame *report);
 int wlan_station_report_tx_complete(struct wlan_station *station,
 	uint64_t generation, uint64_t cookie, int acknowledged, int error);
+/* Poll/thread context, FullMAC only (EOPNOTSUPP on a SoftMAC station).  The
+ * control gate is taken; an event of an older generation is ESTALE. */
+int wlan_station_report_fullmac_event(struct wlan_station *station,
+	uint64_t generation, enum wlan_fullmac_event event);
+/* Poll/thread context, FullMAC only.  Delivers one received 802.3 frame of
+ * the given generation to the device once the controlled port is open; an
+ * EAPOL frame (the firmware supplicant's own) is consumed and dropped. */
+int wlan_station_report_ethernet(struct wlan_station *station,
+	uint64_t generation, const uint8_t *frame, size_t length);
 /* Poll/thread-context transport/firmware loss.  It closes carrier and retires
  * the reported generation.  A new connection requires a userspace request. */
 int wlan_station_report_link_loss(struct wlan_station *station,
@@ -286,7 +346,9 @@ struct wlan_station_test_snapshot {
 	uint8_t connect_driver_active;
 	uint8_t connect_stop_pending;
 	uint8_t connect_retire_explicit;
-	uint8_t reserved[2];
+	/* The station runs the FullMAC engine; wpa_state then holds its state. */
+	uint8_t fullmac;
+	uint8_t reserved[1];
 };
 #define WLAN_STATION_TEST_PHASE_ASSOCIATING 1U
 #define WLAN_STATION_TEST_PHASE_FOUR_WAY 2U

@@ -36,7 +36,7 @@ Pi 4（10.0.30.2）の実機で、内蔵の BCM43455 の wlan0 が現れ（chip 
 | p005 | driver の radio の op（scan の順、非同期の connect と firmware の supplicant、errno の表、data、link loss、restart） | planned | p004、p008 |
 | p006 | 実機の受け入れ（T1）: scan・WPA2・DHCP・ping・Settings、可能なら Bluetooth と同時 | planned | p005、E2 |
 | p007 | 規約の全文の見直しと値の出典の監査 | planned | p006 |
-| p008 | WLAN の core の FullMAC の engine（`wlan-fullmac.c`）と station の分岐（kernel の内部の API）と host の試験（p004 と並べて進められる、6〜8 LW） | planned | p001 |
+| [p008](phase008/phase.md) | WLAN の core の FullMAC の engine（`wlan-fullmac.c`）と station の分岐（kernel の内部の API）と host の試験（p004 と並べて進められる、6〜8 LW） | in-progress（2026-10-13 P3、実装・host 試験（ASan/UBSan・TSan・既存の SoftMAC の試験）・amd64/rpi4 の build 済み、Q1 の判定待ち。driver との API は phase.md の「driver から見える内部の API」） | p001 |
 
 2026-10-13 P1: p001 の第 2 版で p004・p005 の中身を分け直し、core の FullMAC の部分を p008 として足した（番号は付け直さない）。第 3 版で p002 を p002a（helper、WS215 と共有）と p002b（SDIO の host）に分けた（review-2 と Q1 の判断）。計 約 31〜33 LW。
 

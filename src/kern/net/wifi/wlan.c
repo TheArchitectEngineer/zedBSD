@@ -10,6 +10,9 @@
  *
  * A station binds a network device to a radio driver and runs the scan
  * and WPA2 connection state machines on behalf of the network worker.
+ * A SoftMAC radio's connection runs in the common WPA2 engine; a FullMAC
+ * radio's firmware runs its own, and the common FullMAC engine follows it.
+ * The mode is fixed at attach by the radio's method set.
  * Radio callbacks report scan results, frames, and link loss under the
  * station spinlock; control methods that may sleep in a bus driver are
  * serialized by a separate control gate.  Scan results are staged per
@@ -23,6 +26,7 @@
 #include "kern/lock.h"
 #include "kern/net/net-device.h"
 #include "kern/net/packet-buf.h"
+#include "kern/net/wifi/wlan-fullmac.h"
 #include "kern/net/wifi/wlan-l2.h"
 #include "kern/net/wifi/wlan-wpa2.h"
 
@@ -97,10 +101,17 @@ struct wlan_station {
 	int connect_driver_active;
 	int connect_stop_pending;
 	int connect_retire_explicit;
+	/*
+	 * Set at attach when the radio is FullMAC, and fixed for the life of
+	 * the station.  A FullMAC station never starts the WPA2 engine and
+	 * runs fullmac_engine instead; a SoftMAC one never starts that.
+	 */
+	int fullmac;
 	struct wlan_bss_record selected;
 	uint8_t credential[WLAN_PASSPHRASE_STORAGE];
 	uint32_t credential_length;
 	struct wlan_wpa2_engine wpa2;
+	struct wlan_fullmac_engine fullmac_engine;
 	struct wlan_l2_rx_state l2_rx;
 	uint64_t transmit_packet_number;
 	uint64_t transmit_cookie;
@@ -177,6 +188,20 @@ static int station_wpa_key_delete(void *context, uint64_t generation, enum wlan_
 static int station_wpa_authorized_set(void *context, uint64_t generation, int authorized);
 static int station_wpa_radio_stop(void *context, uint64_t generation);
 static int station_link_lost_controlled(struct wlan_station *station, uint64_t generation, int reason);
+static int radio_ops_mode_valid(const struct wlan_radio_ops *ops);
+static int scan_profile_mode_valid(const struct wlan_radio_ops *ops, const struct wlan_scan_profile *profile);
+static int station_engine_idle(struct wlan_station *station);
+static int station_engine_failed(struct wlan_station *station);
+static int station_engine_stop(struct wlan_station *station);
+static int station_engine_timer(struct wlan_station *station, uint64_t now);
+static void station_sync_engine_locked(struct wlan_station *station);
+static void station_sync_fullmac_locked(struct wlan_station *station);
+static int station_fullmac_port_open_locked(const struct wlan_station *station, uint64_t generation);
+static int station_fullmac_transmit(struct wlan_station *station, struct packet_buf *packet);
+static int station_wpa2_start(struct wlan_station *station, uint64_t generation, uint64_t deadline, const struct wlan_bss_record *selected, const uint8_t *credential, size_t credential_length);
+static int station_fullmac_start(struct wlan_station *station, uint64_t generation, uint64_t deadline, const struct wlan_bss_record *selected, const uint8_t *credential, size_t credential_length);
+static int station_fullmac_connect(void *context, uint64_t generation, const struct wlan_fullmac_connect_request *request);
+static int station_fullmac_authorized_set(void *context, uint64_t generation, int authorized);
 static int station_enter(struct wlan_station *station);
 static void station_leave(struct wlan_station *station);
 static void station_control_enter(struct wlan_station *station);
@@ -226,6 +251,17 @@ static const struct wlan_wpa2_ops station_wpa2_ops = {
 };
 
 /*
+ * The station's side of the FullMAC engine.
+ *
+ * radio_stop is the same driver disconnect the WPA2 engine uses.
+ */
+static const struct wlan_fullmac_ops station_fullmac_ops = {
+	.connect = station_fullmac_connect,
+	.authorized_set = station_fullmac_authorized_set,
+	.radio_stop = station_wpa_radio_stop
+};
+
+/*
  * Initializes the station registry once, waiting for a concurrent
  * initializer to finish.
  */
@@ -267,8 +303,9 @@ wlan_core_init(
  * Attaches a station to a network device and radio driver.
  *
  * The radio must offer scan start and stop together, and either the
- * complete connection method set or none of it.  Active probing needs a
- * management transmit method.
+ * complete connection method set of one mode or none of it.  A SoftMAC
+ * radio's active probing needs a management transmit method; a FullMAC
+ * radio's firmware times every scan channel itself.
  */
 int
 wlan_station_attach(
@@ -295,25 +332,15 @@ wlan_station_attach(
 	if (device->hwaddr_len != 6U || !bssid_valid(device->hwaddr))
 		return EINVAL;
 
-	/* Scan methods come in pairs; connection methods come as a set. */
-	if ((ops->scan_channel_start != NULL) != (ops->scan_stop != NULL) ||
-	    ((ops->connect_start != NULL || ops->disconnect != NULL ||
-	    ops->association_set != NULL || ops->association_clear != NULL ||
-	    ops->frame_transmit != NULL || ops->key_install != NULL ||
-	    ops->key_delete != NULL || ops->keys_activate != NULL) &&
-	    (ops->connect_start == NULL ||
-	    ops->disconnect == NULL || ops->association_set == NULL ||
-	    ops->association_clear == NULL || ops->frame_transmit == NULL ||
-	    ops->key_install == NULL || ops->key_delete == NULL ||
-	    ops->keys_activate == NULL)))
-		return EINVAL;
-	if (ops->management_transmit == NULL) {
-		for (index = 0U; index < scan_profile->channel_count; index++) {
-			if ((scan_profile->channels[index].flags &
-			    WLAN_SCAN_CHANNEL_ACTIVE_ALLOWED) != 0U)
-				return EINVAL;
-		}
-	}
+	/* Connection methods come as the complete set of one mode. */
+	error = radio_ops_mode_valid(ops);
+	if (error != 0)
+		return error;
+
+	/* The scan profile must suit the methods the radio offers. */
+	error = scan_profile_mode_valid(ops, scan_profile);
+	if (error != 0)
+		return error;
 
 	if (atomic_load_acquire(&wlan_initialized) != 2U)
 		wlan_core_init();
@@ -395,6 +422,22 @@ wlan_station_attach(
 		return error;
 	}
 
+	/* A FullMAC radio's station follows its firmware with the FullMAC engine. */
+	error = wlan_fullmac_engine_init(&free_station->fullmac_engine,
+	    &station_fullmac_ops, free_station);
+	if (error != 0) {
+		spin_unlock_irqrestore(&free_station->lock,
+		    station_enabled);
+		spin_unlock_irqrestore(&wlan_registry_lock, enabled);
+		net_device_release(device);
+		return error;
+	}
+
+	/* The mode is fixed now: a FullMAC radio is the one that connects itself. */
+	free_station->fullmac = 0;
+	if (ops->fullmac_connect != NULL)
+		free_station->fullmac = 1;
+
 	free_station->used = 1;
 
 	spin_unlock_irqrestore(&free_station->lock, station_enabled);
@@ -415,7 +458,6 @@ wlan_station_scan_profile_update(
 	const struct wlan_scan_profile *scan_profile)
 {
 	unsigned long enabled;
-	unsigned index;
 	int error;
 
 	/* Validates the profile and takes the station and control gate. */
@@ -440,19 +482,8 @@ wlan_station_scan_profile_update(
 	    station->scan_state == WLAN_SCAN_RUNNING) {
 		error = EBUSY;
 	} else {
-		/* Active probing needs a management transmit method. */
-		error = 0;
-		if (station->ops->management_transmit == NULL) {
-			for (index = 0U; index < scan_profile->channel_count;
-			     index++) {
-				if ((scan_profile->channels[index].flags &
-				    WLAN_SCAN_CHANNEL_ACTIVE_ALLOWED) != 0U) {
-					error = EINVAL;
-					break;
-				}
-			}
-		}
-
+		/* The new profile must suit the methods the radio offers. */
+		error = scan_profile_mode_valid(station->ops, scan_profile);
 		if (error == 0)
 			station->scan_profile = *scan_profile;
 	}
@@ -850,6 +881,14 @@ wlan_station_report_frame(
 	    !bytes_zero(report->reserved, sizeof(report->reserved)))
 		return EINVAL;
 
+	/*
+	 * A FullMAC radio reports Ethernet frames and firmware events instead.
+	 * The mode is fixed before attach publishes the station, so the
+	 * driver that holds the station reads it without the lock.
+	 */
+	if (station != NULL && station->fullmac)
+		return EOPNOTSUPP;
+
 	/* A beacon refreshes the beacon watch; otherwise it feeds the scan. */
 	frame_control = (uint16_t)((uint16_t)report->frame[0] |
 	    ((uint16_t)report->frame[1] << 8));
@@ -1088,6 +1127,11 @@ wlan_station_report_tx_complete(
 	    (acknowledged != 0 && acknowledged != 1) ||
 	    (acknowledged && error != 0))
 		return EINVAL;
+
+	/* A FullMAC radio's firmware owns the transmit completions. */
+	if (station != NULL && station->fullmac)
+		return EOPNOTSUPP;
+
 	result = station_enter(station);
 	if (result != 0)
 		return result;
@@ -1159,6 +1203,12 @@ wlan_station_transmit(
 	station_control_enter(station);
 	kern_memset(&request, 0, sizeof(request));
 
+	/* A FullMAC radio carries the Ethernet frame itself. */
+	if (station->fullmac) {
+		result = station_fullmac_transmit(station, packet);
+		goto out;
+	}
+
 	/* Takes the next packet number and cookie of an authorized link. */
 
 	/* Refuses a transmit before the controlled port opens. */
@@ -1210,6 +1260,192 @@ out:
 	station_control_leave(station);
 	station_leave(station);
 	return result;
+}
+
+/*
+ * Applies a FullMAC firmware's connection event.
+ *
+ * The event must belong to the connection generation the station is
+ * running.  The FullMAC engine decides what it means, and the station then
+ * publishes the engine's state: ASSOCIATED shows as the four-way phase, and
+ * AUTHORIZED opens the controlled port.
+ */
+int
+wlan_station_report_fullmac_event(
+	struct wlan_station *station,
+	uint64_t generation,
+	enum wlan_fullmac_event event)
+{
+	unsigned long enabled;
+	uint64_t now;
+	int error;
+
+	now = 0U;
+
+	/* Rejects a zero generation or an event the interface does not define. */
+	if (generation == 0U)
+		return EINVAL;
+	if (event != WLAN_FULLMAC_EVENT_ASSOCIATED &&
+	    event != WLAN_FULLMAC_EVENT_AUTHORIZED)
+		return EINVAL;
+
+	/* Pins the station and serializes the event with the other control paths. */
+	error = station_enter(station);
+	if (error != 0)
+		return error;
+	station_control_enter(station);
+
+	/* Accepts the event only for the connection the station is running. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	if (!station->fullmac) {
+		/* A SoftMAC station's own engine follows the handshake. */
+		error = EOPNOTSUPP;
+	} else if (!station->administrative_up ||
+	    station->connection_generation != generation ||
+	    station->connect_retire_explicit) {
+		/* The connection the event names has been retired or replaced. */
+		error = ESTALE;
+	} else {
+		now = station_now_locked(station);
+		error = 0;
+	}
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+	/* Stops at a refused event without touching the engine. */
+	if (error != 0)
+		goto out;
+
+	/* Lets the engine follow the firmware, which may open the port. */
+	error = wlan_fullmac_engine_report(&station->fullmac_engine,
+	    generation, event, now);
+
+	/* Publishes the state the event produced. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	station_sync_engine_locked(station);
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+/* Releases the station and lets the worker act on the new state. */
+out:
+	station_control_leave(station);
+	station_leave(station);
+	wlan_worker_wakeup();
+
+	/* Reports why the event was refused or what it failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the engine follows the event. */
+	return 0;
+}
+
+/*
+ * Delivers one Ethernet frame a FullMAC radio received to the device.
+ *
+ * Only a frame of the running connection generation passes, and only once
+ * the controlled port is open.  The firmware supplicant's EAPOL frames are
+ * consumed here and never reach the network stack.  The decision reads only
+ * the station's own published state under its lock, never the engine, so
+ * the poll path needs no control gate.
+ */
+int
+wlan_station_report_ethernet(
+	struct wlan_station *station,
+	uint64_t generation,
+	const uint8_t *frame,
+	size_t length)
+{
+	struct packet_buf *packet;
+	void *room;
+	unsigned long enabled;
+	int fullmac;
+	int current;
+	int port_open;
+	int error;
+
+	packet = NULL;
+
+	/* Rejects a missing frame or a zero generation. */
+	if (frame == NULL || generation == 0U)
+		return EINVAL;
+
+	/* Rejects a frame shorter than an Ethernet header or longer than a frame. */
+	if (length < WLAN_L2_ETHERNET_HEADER_SIZE ||
+	    length > WLAN_L2_ETHERNET_MAX)
+		return EMSGSIZE;
+
+	/* Pins the station while the frame is delivered. */
+	error = station_enter(station);
+	if (error != 0)
+		return error;
+
+	/* Samples the mode, the generation, and the controlled port. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	fullmac = station->fullmac;
+	current = 0;
+	if (station->connection_generation == generation)
+		current = 1;
+	port_open = station_fullmac_port_open_locked(station, generation);
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+	/* Refuses a frame the station cannot take. */
+	if (!fullmac) {
+		/* A SoftMAC radio reports 802.11 frames with report_frame. */
+		error = EOPNOTSUPP;
+		goto out;
+	} else if (!current) {
+		/* The frame belongs to a connection that has ended. */
+		error = ESTALE;
+		goto out;
+	} else if (!port_open) {
+		/* The controlled port is still closed. */
+		error = EACCES;
+		goto out;
+	}
+
+	/* Consumes the firmware supplicant's EAPOL frame. */
+	if (frame[12U] == 0x88U && frame[13U] == 0x8eU) {
+		error = 0;
+		goto out;
+	}
+
+	/* Copies the frame into a packet of its own. */
+	packet = packet_buf_alloc(0U);
+	if (packet == NULL) {
+		error = ENOBUFS;
+		goto out;
+	}
+
+	/* Makes room for the whole frame. */
+	room = packet_buf_append(packet, length);
+	if (room == NULL) {
+		error = EMSGSIZE;
+		goto out;
+	}
+
+	/* Hands the packet to the network stack, which owns it from here. */
+	kern_memcpy(packet->data, frame, length);
+	net_device_receive(station->device, packet);
+	packet = NULL;
+	error = 0;
+
+/* Releases what the delivery still holds. */
+out:
+	if (packet != NULL)
+		packet_buf_free(packet);
+	station_leave(station);
+
+	/* Reports why the frame was not delivered. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame was delivered or consumed. */
+	return 0;
 }
 
 /*
@@ -2069,6 +2305,7 @@ wlan_station_test_secrets_clear(
 {
 	unsigned long enabled;
 	int clear;
+	int fullmac_clear;
 
 	/* Treats a missing station as holding no secrets. */
 	if (station == NULL)
@@ -2087,6 +2324,12 @@ wlan_station_test_secrets_clear(
 	    bytes_zero(station->wpa2.gtk, sizeof(station->wpa2.gtk)) &&
 	    bytes_zero(station->wpa2.tx_frame,
 	    sizeof(station->wpa2.tx_frame));
+
+	/* The FullMAC engine holds the PMK only while its connect call runs. */
+	fullmac_clear = wlan_fullmac_engine_secrets_clear(
+	    &station->fullmac_engine);
+	if (!fullmac_clear)
+		clear = 0;
 
 	spin_unlock_irqrestore(&station->lock, enabled);
 
@@ -2123,6 +2366,11 @@ wlan_station_test_seed_authorized(
 	    bss->ssid_length > WLAN_SSID_MAX ||
 	    channel_frequency(bss->channel) == 0U)
 		return EINVAL;
+
+	/* Seeds a WPA2 engine, which only a SoftMAC station runs. */
+	if (station->fullmac)
+		return EOPNOTSUPP;
+
 	group_generation = key_generation + 1U;
 	enabled = spin_lock_irqsave(&station->lock);
 
@@ -2223,6 +2471,10 @@ wlan_station_test_begin_pairwise_rekey(
 	if (station == NULL)
 		return EINVAL;
 
+	/* A FullMAC firmware rekeys by itself. */
+	if (station->fullmac)
+		return EOPNOTSUPP;
+
 	/* Refuses a rekey unless the link is authorized and keyed. */
 	enabled = spin_lock_irqsave(&station->lock);
 
@@ -2267,6 +2519,10 @@ wlan_station_test_begin_group_rekey(
 	if (station == NULL)
 		return EINVAL;
 
+	/* A FullMAC firmware rekeys by itself. */
+	if (station->fullmac)
+		return EOPNOTSUPP;
+
 	/* Refuses a rekey unless both key types are installed. */
 	enabled = spin_lock_irqsave(&station->lock);
 
@@ -2310,6 +2566,10 @@ wlan_station_test_set_initial_phase(
 	    (phase != WLAN_STATION_TEST_PHASE_ASSOCIATING &&
 	    phase != WLAN_STATION_TEST_PHASE_FOUR_WAY))
 		return EINVAL;
+
+	/* Only a SoftMAC station's WPA2 engine has these phases. */
+	if (station->fullmac)
+		return EOPNOTSUPP;
 
 	/* Refuses a phase change once the link is past authentication. */
 	enabled = spin_lock_irqsave(&station->lock);
@@ -2357,6 +2617,10 @@ wlan_station_test_complete_authorized(
 	    key_generation == 0U ||
 	    key_generation == UINT64_MAX)
 		return EINVAL;
+
+	/* Only a SoftMAC station's WPA2 engine installs these keys. */
+	if (station->fullmac)
+		return EOPNOTSUPP;
 
 	/* Derives the group generation from the pairwise one. */
 	group_generation = key_generation + 1U;
@@ -2452,6 +2716,13 @@ wlan_station_test_snapshot(
 	snapshot->reconnect_attempts = 0U;
 	snapshot->state = station->state;
 	snapshot->wpa_state = (uint32_t)station->wpa2.state;
+	snapshot->fullmac = 0U;
+	if (station->fullmac) {
+		/* A FullMAC station reports the FullMAC engine's state instead. */
+		snapshot->wpa_state = (uint32_t)station->fullmac_engine.state;
+		snapshot->fullmac = 1U;
+	}
+
 	snapshot->association_capability = station->wpa2.profile.capability;
 	snapshot->reconnect_pending = 0U;
 	snapshot->reconnect_scan_active = 0U;
@@ -2486,6 +2757,10 @@ wlan_station_test_transmit_eapol(
 	/* Rejects a call that names no station or no frame. */
 	if (station == NULL || cookie == 0U || frame == NULL || length == 0U)
 		return EINVAL;
+
+	/* A FullMAC firmware sends its own EAPOL frames. */
+	if (station->fullmac)
+		return EOPNOTSUPP;
 
 	/* Holds the station and the control gate across the transmit. */
 	error = station_enter(station);
@@ -2623,6 +2898,10 @@ static int
 station_beacon_watch_active_locked(
 	const struct wlan_station *station)
 {
+	/* A FullMAC firmware watches the beacons and reports a loss itself. */
+	if (station->fullmac)
+		return 0;
+
 	if (!station->connect_driver_active ||
 	    station->beacon_watch_deadline == 0U)
 		return 0;
@@ -3635,6 +3914,7 @@ station_link_lost_controlled(
 	int reason)
 {
 	unsigned long enabled;
+	int engine_idle;
 	int carrier_error;
 	int error;
 
@@ -3657,7 +3937,9 @@ station_link_lost_controlled(
 		return ESTALE;
 	}
 
-	if (wlan_wpa2_engine_state(&station->wpa2) == WLAN_WPA2_STATE_IDLE) {
+	/* An engine that never started has no connection to lose. */
+	engine_idle = station_engine_idle(station);
+	if (engine_idle) {
 		spin_unlock_irqrestore(&station->lock, enabled);
 		return ENOTCONN;
 	}
@@ -3686,7 +3968,17 @@ station_link_lost_controlled(
 
 	spin_unlock_irqrestore(&station->lock, enabled);
 
-	error = wlan_wpa2_engine_stop(&station->wpa2);
+	/*
+	 * A FullMAC engine records the loss first, so a stop that fails leaves
+	 * it failed with this reason.  A stale result only means the engine
+	 * already belongs to no live attempt, which the stop below settles.
+	 */
+	if (station->fullmac)
+		(void)wlan_fullmac_engine_fail(&station->fullmac_engine,
+		    generation, reason);
+
+	/* Stops the engine: the port closes, then the radio connection goes. */
+	error = station_engine_stop(station);
 
 	/* Retires now, or leaves a stop pending for the timer. */
 	enabled = spin_lock_irqsave(&station->lock);
@@ -4415,6 +4707,8 @@ ioctl_connect(
 	uint64_t generation;
 	uint64_t deadline;
 	int control_entered;
+	int connect_supported;
+	int engine_idle;
 	int error;
 
 	generation = 0U;
@@ -4443,7 +4737,13 @@ ioctl_connect(
 		goto output_locked;
 	}
 
-	if (station->ops->connect_start == NULL) {
+	/* Refuses a radio of either mode that offers no way to connect. */
+	connect_supported = 0;
+	if (station->fullmac && station->ops->fullmac_connect != NULL)
+		connect_supported = 1;
+	else if (!station->fullmac && station->ops->connect_start != NULL)
+		connect_supported = 1;
+	if (!connect_supported) {
 		error = EOPNOTSUPP;
 		goto output_locked;
 	}
@@ -4474,7 +4774,10 @@ ioctl_connect(
 	error = station_generation_locked(station, &generation);
 	if (error != 0)
 		goto output_locked;
-	if (wlan_wpa2_engine_state(&station->wpa2) != WLAN_WPA2_STATE_IDLE) {
+
+	/* Refuses a connect while the engine still retires an earlier one. */
+	engine_idle = station_engine_idle(station);
+	if (!engine_idle) {
 		error = EBUSY;
 		goto output_locked;
 	}
@@ -4574,8 +4877,7 @@ station_retire_controlled(
 	connection_generation = station->connection_generation;
 	stop_scan = station->scan_driver_active;
 	stop_connection = station->connect_driver_active;
-	engine_stop_needed = wlan_wpa2_engine_state(&station->wpa2) !=
-	    WLAN_WPA2_STATE_IDLE;
+	engine_stop_needed = !station_engine_idle(station);
 	station->connect_retire_explicit = 1;
 	station->connect_stop_pending = 0;
 	station->connect_retry_deadline = 0U;
@@ -4613,7 +4915,7 @@ station_retire_controlled(
 	}
 
 	if (engine_stop_needed)
-		connection_error = wlan_wpa2_engine_stop(&station->wpa2);
+		connection_error = station_engine_stop(station);
 	enabled = spin_lock_irqsave(&station->lock);
 
 	connection_still_active = station->connect_driver_active;
@@ -5007,27 +5309,18 @@ station_scan_stop_result(
 		wlan_worker_wakeup();
 }
 
-/* Starts the WPA2 engine on a pending connection. */
+/* Starts the engine of the station's mode on a pending connection. */
 static void
 station_connection_start(
 	struct wlan_station *station)
 {
-	static const uint8_t supported_rates_24[12] = {
-		0x82U, 0x84U, 0x8bU, 0x96U,
-		0x0cU, 0x12U, 0x18U, 0x24U,
-		0x30U, 0x48U, 0x60U, 0x6cU
-	};
-	static const uint8_t supported_rates_5[8] = {
-		0x8cU, 0x12U, 0x98U, 0x24U,
-		0xb0U, 0x48U, 0x60U, 0x6cU
-	};
 	uint8_t credential[WLAN_PASSPHRASE_STORAGE];
 	struct wlan_bss_record selected;
-	struct wlan_wpa2_profile profile;
 	unsigned long enabled;
 	uint64_t generation;
 	uint64_t deadline;
 	size_t credential_length;
+	int engine_idle;
 	int error;
 
 	/* Takes the pending selection and credential out of the station. */
@@ -5050,37 +5343,16 @@ station_connection_start(
 
 	spin_unlock_irqrestore(&station->lock, enabled);
 
-	/* Builds the engine profile for the selected band. */
-	kern_memset(&profile, 0, sizeof(profile));
-	kern_memcpy(profile.station, station->device->hwaddr,
-	    sizeof(profile.station));
-	kern_memcpy(profile.bssid, selected.bssid, sizeof(profile.bssid));
-	kern_memcpy(profile.ssid, selected.ssid, selected.ssid_length);
-	profile.ssid_length = selected.ssid_length;
-	if (selected.channel <= 14U) {
-		kern_memcpy(profile.rates, supported_rates_24,
-		    sizeof(supported_rates_24));
-		profile.rate_count = sizeof(supported_rates_24);
+	/* A FullMAC radio's firmware makes the connection; its engine follows. */
+	if (station->fullmac) {
+		error = station_fullmac_start(station, generation, deadline,
+		    &selected, credential, credential_length);
 	} else {
-		kern_memcpy(profile.rates, supported_rates_5,
-		    sizeof(supported_rates_5));
-		profile.rate_count = sizeof(supported_rates_5);
+		error = station_wpa2_start(station, generation, deadline,
+		    &selected, credential, credential_length);
 	}
 
-	/* Describes the association and starts the handshake engine. */
-	profile.channel = selected.channel;
-	profile.capability = WLAN_LOCAL_ASSOC_CAPABILITY;
-	if (selected.channel > 14U)
-		profile.capability |= WLAN_ASSOC_CAPABILITY_SHORT_SLOT_TIME;
-	profile.listen_interval = 1U;
-	profile.passphrase = credential;
-	profile.passphrase_length = credential_length;
-	profile.total_deadline_ticks = deadline;
-	profile.transition_timeout_ticks = WLAN_CONNECT_TRANSITION_TICKS;
-	profile.recovery_timeout_ticks = WLAN_CONNECT_DEADLINE_TICKS;
-	error = wlan_wpa2_engine_start(&station->wpa2, generation, &profile,
-	    station->clock(station->clock_context));
-	wlan_crypto_erase(&profile, sizeof(profile));
+	/* The passphrase is not needed again: each engine keeps only its PMK. */
 	secure_zero(credential, sizeof(credential));
 
 	/* Publishes the engine state; an idle engine after a failure fails. */
@@ -5088,9 +5360,9 @@ station_connection_start(
 
 	/* Publishes the engine state, failing the station if it never started. */
 	if (station->connection_generation == generation) {
-		station_sync_wpa_locked(station);
-		if (error != 0 && wlan_wpa2_engine_state(&station->wpa2) ==
-		    WLAN_WPA2_STATE_IDLE) {
+		station_sync_engine_locked(station);
+		engine_idle = station_engine_idle(station);
+		if (error != 0 && engine_idle) {
 			station->state = WLAN_STATE_FAILED;
 			station->terminal_error = error;
 		}
@@ -5102,6 +5374,72 @@ station_connection_start(
 		wlan_worker_wakeup();
 }
 
+/* Starts the WPA2 engine of a SoftMAC station on the selected BSS. */
+static int
+station_wpa2_start(
+	struct wlan_station *station,
+	uint64_t generation,
+	uint64_t deadline,
+	const struct wlan_bss_record *selected,
+	const uint8_t *credential,
+	size_t credential_length)
+{
+	static const uint8_t supported_rates_24[12] = {
+		0x82U, 0x84U, 0x8bU, 0x96U,
+		0x0cU, 0x12U, 0x18U, 0x24U,
+		0x30U, 0x48U, 0x60U, 0x6cU
+	};
+	static const uint8_t supported_rates_5[8] = {
+		0x8cU, 0x12U, 0x98U, 0x24U,
+		0xb0U, 0x48U, 0x60U, 0x6cU
+	};
+	struct wlan_wpa2_profile profile;
+	uint64_t now;
+	int error;
+
+	/* Builds the engine profile for the selected band. */
+	kern_memset(&profile, 0, sizeof(profile));
+	kern_memcpy(profile.station, station->device->hwaddr,
+	    sizeof(profile.station));
+	kern_memcpy(profile.bssid, selected->bssid, sizeof(profile.bssid));
+	kern_memcpy(profile.ssid, selected->ssid, selected->ssid_length);
+	profile.ssid_length = selected->ssid_length;
+	if (selected->channel <= 14U) {
+		kern_memcpy(profile.rates, supported_rates_24,
+		    sizeof(supported_rates_24));
+		profile.rate_count = sizeof(supported_rates_24);
+	} else {
+		kern_memcpy(profile.rates, supported_rates_5,
+		    sizeof(supported_rates_5));
+		profile.rate_count = sizeof(supported_rates_5);
+	}
+
+	/* Describes the association. */
+	profile.channel = selected->channel;
+	profile.capability = WLAN_LOCAL_ASSOC_CAPABILITY;
+	if (selected->channel > 14U)
+		profile.capability |= WLAN_ASSOC_CAPABILITY_SHORT_SLOT_TIME;
+	profile.listen_interval = 1U;
+	profile.passphrase = credential;
+	profile.passphrase_length = credential_length;
+	profile.total_deadline_ticks = deadline;
+	profile.transition_timeout_ticks = WLAN_CONNECT_TRANSITION_TICKS;
+	profile.recovery_timeout_ticks = WLAN_CONNECT_DEADLINE_TICKS;
+
+	/* Starts the handshake engine, then erases the profile's copy. */
+	now = station->clock(station->clock_context);
+	error = wlan_wpa2_engine_start(&station->wpa2, generation, &profile,
+	    now);
+	wlan_crypto_erase(&profile, sizeof(profile));
+
+	/* Reports why the engine did not start. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the engine runs the handshake. */
+	return 0;
+}
+
 /* Drives the connection state machine from the timer. */
 static void
 station_connection_timer(
@@ -5110,7 +5448,8 @@ station_connection_timer(
 {
 	unsigned long enabled;
 	uint64_t generation;
-	enum wlan_wpa2_state wpa_state;
+	int engine_idle;
+	int engine_failed;
 	int cleanup_due;
 	int stop;
 	int error;
@@ -5130,7 +5469,8 @@ station_connection_timer(
 	}
 
 	/* An expired beacon watch is a link loss. */
-	wpa_state = wlan_wpa2_engine_state(&station->wpa2);
+	engine_idle = station_engine_idle(station);
+	engine_failed = station_engine_failed(station);
 	if (deadline_expired(station_now_locked(station),
 	    station->beacon_watch_deadline) &&
 	    station->wpa2.connected_lifetime) {
@@ -5147,11 +5487,10 @@ station_connection_timer(
 	spin_unlock_irqrestore(&station->lock, enabled);
 
 	/* A live engine runs its own timer. */
-	if (wpa_state != WLAN_WPA2_STATE_IDLE &&
-	    wpa_state != WLAN_WPA2_STATE_FAILED) {
-		error = wlan_wpa2_engine_timer(&station->wpa2, now);
+	if (!engine_idle && !engine_failed) {
+		error = station_engine_timer(station, now);
 		enabled = spin_lock_irqsave(&station->lock);
-		station_sync_wpa_locked(station);
+		station_sync_engine_locked(station);
 		spin_unlock_irqrestore(&station->lock, enabled);
 		if (error != 0)
 			wlan_worker_wakeup();
@@ -5159,7 +5498,7 @@ station_connection_timer(
 	}
 
 	/* A failed engine is stopped once its retry deadline passes. */
-	if (wpa_state == WLAN_WPA2_STATE_FAILED) {
+	if (engine_failed) {
 		enabled = spin_lock_irqsave(&station->lock);
 		now = station_now_locked(station);
 		cleanup_due = station->connect_stop_pending &&
@@ -5169,8 +5508,8 @@ station_connection_timer(
 	}
 
 	/* Stops a failed engine, arming a retry when the stop itself fails. */
-	if (wpa_state == WLAN_WPA2_STATE_FAILED && cleanup_due) {
-		error = wlan_wpa2_engine_stop(&station->wpa2);
+	if (engine_failed && cleanup_due) {
+		error = station_engine_stop(station);
 		enabled = spin_lock_irqsave(&station->lock);
 		if (error == 0) {
 			if (!station->connect_driver_active) {
@@ -5216,8 +5555,8 @@ station_connection_timer(
 	if (stop && station->connection_generation == generation) {
 		if (error == 0) {
 			station->connect_driver_active = 0;
-			if (wlan_wpa2_engine_state(&station->wpa2) ==
-			    WLAN_WPA2_STATE_IDLE)
+			engine_idle = station_engine_idle(station);
+			if (engine_idle)
 				station_finish_connection_retire_locked(station);
 		} else {
 			station->connect_stop_pending = 1;
@@ -5226,8 +5565,9 @@ station_connection_timer(
 	}
 
 	/* Retires the connection once nothing is left to stop. */
+	engine_idle = station_engine_idle(station);
 	if (!station->connect_driver_active &&
-	    wlan_wpa2_engine_state(&station->wpa2) == WLAN_WPA2_STATE_IDLE &&
+	    engine_idle &&
 	    station->connect_stop_pending)
 		station_finish_connection_retire_locked(station);
 	else if (!station->connect_driver_active &&
@@ -5473,4 +5813,483 @@ station_timer_run(
 	station_connection_timer(station, now);
 	station_scan_timer(station, now);
 	station_control_leave(station);
+}
+
+/* Tests that a radio offers the complete method set of exactly one mode. */
+static int
+radio_ops_mode_valid(
+	const struct wlan_radio_ops *ops)
+{
+	int softmac_any;
+	int softmac_all;
+
+	/* Scan methods come in pairs. */
+	if ((ops->scan_channel_start != NULL) != (ops->scan_stop != NULL))
+		return EINVAL;
+
+	/* A FullMAC radio is the one whose firmware connects by itself. */
+	if (ops->fullmac_connect != NULL) {
+		/* It scans, disconnects, sends Ethernet frames, and stops. */
+		if (ops->scan_channel_start == NULL ||
+		    ops->disconnect == NULL ||
+		    ops->ethernet_transmit == NULL ||
+		    ops->quiesce == NULL ||
+		    ops->stop_retry == NULL)
+			return EINVAL;
+
+		/* It never mixes in a method of the SoftMAC protocol path. */
+		if (ops->connect_start != NULL ||
+		    ops->management_transmit != NULL ||
+		    ops->association_set != NULL ||
+		    ops->association_clear != NULL ||
+		    ops->frame_transmit != NULL ||
+		    ops->key_install != NULL ||
+		    ops->key_delete != NULL ||
+		    ops->keys_activate != NULL)
+			return EINVAL;
+
+		/* Reports a complete FullMAC method set. */
+		return 0;
+	}
+
+	/* A SoftMAC radio sends 802.11 frames the core builds, never Ethernet. */
+	if (ops->ethernet_transmit != NULL)
+		return EINVAL;
+
+	/* Notes whether the radio offers any SoftMAC connection method. */
+	softmac_any = 0;
+	if (ops->connect_start != NULL ||
+	    ops->disconnect != NULL ||
+	    ops->association_set != NULL ||
+	    ops->association_clear != NULL ||
+	    ops->frame_transmit != NULL ||
+	    ops->key_install != NULL ||
+	    ops->key_delete != NULL ||
+	    ops->keys_activate != NULL)
+		softmac_any = 1;
+
+	/* Notes whether it offers every one of them. */
+	softmac_all = 0;
+	if (ops->connect_start != NULL &&
+	    ops->disconnect != NULL &&
+	    ops->association_set != NULL &&
+	    ops->association_clear != NULL &&
+	    ops->frame_transmit != NULL &&
+	    ops->key_install != NULL &&
+	    ops->key_delete != NULL &&
+	    ops->keys_activate != NULL)
+		softmac_all = 1;
+
+	/* SoftMAC connection methods come as a complete set or not at all. */
+	if (softmac_any && !softmac_all)
+		return EINVAL;
+
+	/* Reports a usable SoftMAC method set. */
+	return 0;
+}
+
+/* Tests that every channel of a scan profile suits the radio's methods. */
+static int
+scan_profile_mode_valid(
+	const struct wlan_radio_ops *ops,
+	const struct wlan_scan_profile *profile)
+{
+	uint32_t index;
+	uint32_t flags;
+
+	/* Checks each channel the profile uses. */
+	for (index = 0U; index < profile->channel_count; index++) {
+		flags = profile->channels[index].flags;
+
+		/* Active probing needs a management transmit method. */
+		if (ops->management_transmit == NULL &&
+		    (flags & WLAN_SCAN_CHANNEL_ACTIVE_ALLOWED) != 0U)
+			return EINVAL;
+
+		/* A FullMAC firmware times every channel and reports its end. */
+		if (ops->fullmac_connect != NULL &&
+		    (flags & WLAN_SCAN_CHANNEL_OFFLOADED_DWELL) == 0U)
+			return EINVAL;
+	}
+
+	/* Reports a profile the radio can scan. */
+	return 0;
+}
+
+/* Tests whether the engine of the station's mode is idle. */
+static int
+station_engine_idle(
+	struct wlan_station *station)
+{
+	enum wlan_fullmac_state fullmac_state;
+	enum wlan_wpa2_state wpa2_state;
+
+	/* A FullMAC station asks its FullMAC engine. */
+	if (station->fullmac) {
+		fullmac_state = wlan_fullmac_engine_state(
+		    &station->fullmac_engine);
+		if (fullmac_state == WLAN_FULLMAC_STATE_IDLE)
+			return 1;
+		return 0;
+	}
+
+	/* A SoftMAC station asks its WPA2 engine. */
+	wpa2_state = wlan_wpa2_engine_state(&station->wpa2);
+	if (wpa2_state == WLAN_WPA2_STATE_IDLE)
+		return 1;
+
+	/* Reports an engine that still holds an attempt. */
+	return 0;
+}
+
+/* Tests whether the engine of the station's mode has failed. */
+static int
+station_engine_failed(
+	struct wlan_station *station)
+{
+	enum wlan_fullmac_state fullmac_state;
+	enum wlan_wpa2_state wpa2_state;
+
+	/* A FullMAC station asks its FullMAC engine. */
+	if (station->fullmac) {
+		fullmac_state = wlan_fullmac_engine_state(
+		    &station->fullmac_engine);
+		if (fullmac_state == WLAN_FULLMAC_STATE_FAILED)
+			return 1;
+		return 0;
+	}
+
+	/* A SoftMAC station asks its WPA2 engine. */
+	wpa2_state = wlan_wpa2_engine_state(&station->wpa2);
+	if (wpa2_state == WLAN_WPA2_STATE_FAILED)
+		return 1;
+
+	/* Reports an engine that has not failed. */
+	return 0;
+}
+
+/* Stops the engine of the station's mode; the caller holds the control gate. */
+static int
+station_engine_stop(
+	struct wlan_station *station)
+{
+	int error;
+
+	/* Retires the attempt through the engine that owns its barriers. */
+	if (station->fullmac)
+		error = wlan_fullmac_engine_stop(&station->fullmac_engine);
+	else
+		error = wlan_wpa2_engine_stop(&station->wpa2);
+
+	/* Reports the barrier that did not complete. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the engine is idle. */
+	return 0;
+}
+
+/* Runs the timer of the engine of the station's mode; the caller holds the control gate. */
+static int
+station_engine_timer(
+	struct wlan_station *station,
+	uint64_t now)
+{
+	int error;
+
+	/* Lets the engine of this mode act on its deadlines. */
+	if (station->fullmac)
+		error = wlan_fullmac_engine_timer(&station->fullmac_engine, now);
+	else
+		error = wlan_wpa2_engine_timer(&station->wpa2, now);
+
+	/* Reports what the deadline did to the attempt. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the attempt still has time. */
+	return 0;
+}
+
+/* Mirrors the engine of the station's mode into the station state; the caller holds the station lock. */
+static void
+station_sync_engine_locked(
+	struct wlan_station *station)
+{
+	/* Each mode's engine is the authority on its own progress. */
+	if (station->fullmac)
+		station_sync_fullmac_locked(station);
+	else
+		station_sync_wpa_locked(station);
+}
+
+/* Mirrors the FullMAC engine state into the station state; the caller holds the station lock. */
+static void
+station_sync_fullmac_locked(
+	struct wlan_station *station)
+{
+	enum wlan_fullmac_state state;
+
+	state = wlan_fullmac_engine_state(&station->fullmac_engine);
+
+	/*
+	 * The controlled port follows the engine every time, as it does for
+	 * the WPA2 engine: it is open exactly while the firmware's
+	 * authorization stands.  There are no retries the core can see.
+	 */
+	station->connection_step_deadline =
+	    wlan_fullmac_engine_next_deadline(&station->fullmac_engine);
+	station->authenticated = 0U;
+	station->associated = 0U;
+	station->key_installed = 0U;
+	station->controlled_port = 0U;
+	station->retry_count = 0U;
+
+	/* Maps the engine state to the visible connection state. */
+	switch (state) {
+	case WLAN_FULLMAC_STATE_CONNECTING:
+		/* The firmware authenticates and associates in one step. */
+		station->state = WLAN_STATE_ASSOCIATING;
+		break;
+	case WLAN_FULLMAC_STATE_ASSOCIATED:
+		/* The firmware supplicant runs the four-way handshake. */
+		station->authenticated = 1U;
+		station->associated = 1U;
+		station->state = WLAN_STATE_FOUR_WAY;
+		break;
+	case WLAN_FULLMAC_STATE_AUTHORIZED:
+		/* The firmware has the keys; the beacons are its to watch. */
+		station->authenticated = 1U;
+		station->associated = 1U;
+		station->key_installed = 1U;
+		station->controlled_port = 1U;
+		station->state = WLAN_STATE_CONNECTED;
+		station->terminal_error = 0;
+		station->connection_deadline = 0U;
+		break;
+	case WLAN_FULLMAC_STATE_FAILED:
+		/* A failed attempt owes a stop, which the timer runs at once. */
+		station->terminal_error = wlan_fullmac_engine_last_error(
+		    &station->fullmac_engine);
+		station->state = WLAN_STATE_FAILED;
+		station->connect_stop_pending = 1;
+		station->connect_retry_deadline = deadline_after(
+		    station_now_locked(station), 1U);
+		break;
+	case WLAN_FULLMAC_STATE_IDLE:
+	default:
+		/* An idle engine leaves the retirement to settle the state. */
+		break;
+	}
+}
+
+/* Tests whether a FullMAC station's controlled port is open for a generation; the caller holds the station lock. */
+static int
+station_fullmac_port_open_locked(
+	const struct wlan_station *station,
+	uint64_t generation)
+{
+	/* Only a FullMAC station's port opens this way. */
+	if (!station->fullmac)
+		return 0;
+
+	/* The port belongs to the running connection generation only. */
+	if (station->connection_generation != generation)
+		return 0;
+
+	/* The port opens when the firmware's authorization is published. */
+	if (!station->controlled_port)
+		return 0;
+	if (station->state != WLAN_STATE_CONNECTED)
+		return 0;
+
+	/* Reports an open port. */
+	return 1;
+}
+
+/* Hands one Ethernet packet to a FullMAC radio; the caller holds the control gate. */
+static int
+station_fullmac_transmit(
+	struct wlan_station *station,
+	struct packet_buf *packet)
+{
+	unsigned long enabled;
+	uint64_t generation;
+	int port_open;
+	int error;
+
+	/* Refuses a packet shorter than an Ethernet header or longer than a frame. */
+	if (packet->length < WLAN_L2_ETHERNET_HEADER_SIZE ||
+	    packet->length > WLAN_L2_ETHERNET_MAX)
+		return EMSGSIZE;
+
+	/* EAPOL belongs to the firmware supplicant; the host never sends its own. */
+	if (packet->data[12U] == 0x88U && packet->data[13U] == 0x8eU)
+		return EACCES;
+
+	/* Takes the generation whose controlled port must be open. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	generation = station->connection_generation;
+	port_open = station_fullmac_port_open_locked(station, generation);
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+	/* Refuses a transmit before the controlled port opens. */
+	if (!port_open)
+		return ENETDOWN;
+
+	/* Gives the frame to the radio, which copies it into its queue. */
+	error = station->ops->ethernet_transmit(station->radio_context,
+	    generation, packet->data, packet->length);
+
+	/* Reports why the radio did not take the frame. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the radio queued the frame. */
+	return 0;
+}
+
+/* Starts the FullMAC engine of a FullMAC station on the selected BSS. */
+static int
+station_fullmac_start(
+	struct wlan_station *station,
+	uint64_t generation,
+	uint64_t deadline,
+	const struct wlan_bss_record *selected,
+	const uint8_t *credential,
+	size_t credential_length)
+{
+	struct wlan_fullmac_profile profile;
+	uint64_t now;
+	int error;
+
+	/* Describes the connection the firmware is to make. */
+	kern_memset(&profile, 0, sizeof(profile));
+	profile.bss = *selected;
+	profile.passphrase = credential;
+	profile.passphrase_length = credential_length;
+	profile.total_deadline_ticks = deadline;
+
+	/* Starts the engine, which derives the PMK and hands it to the radio. */
+	now = station->clock(station->clock_context);
+	error = wlan_fullmac_engine_start(&station->fullmac_engine, generation,
+	    &profile, now);
+	wlan_crypto_erase(&profile, sizeof(profile));
+
+	/* Reports why the attempt did not reach the firmware. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the firmware has the connection. */
+	return 0;
+}
+
+/* Hands a connection to a FullMAC radio for the FullMAC engine. */
+static int
+station_fullmac_connect(
+	void *context,
+	uint64_t generation,
+	const struct wlan_fullmac_connect_request *request)
+{
+	struct wlan_station *station;
+	unsigned long enabled;
+	int bssid_differs;
+	int error;
+
+	/* Refuses the call when the radio cannot connect by itself. */
+	station = context;
+	if (station == NULL ||
+	    request == NULL ||
+	    station->ops->fullmac_connect == NULL)
+		return EOPNOTSUPP;
+
+	/* The request must still describe the selected BSS and generation. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	bssid_differs = kern_memcmp(station->selected.bssid, request->bss.bssid,
+	    6U);
+	if (station->selected.channel != request->bss.channel ||
+	    bssid_differs != 0) {
+		spin_unlock_irqrestore(&station->lock, enabled);
+		return ESTALE;
+	}
+
+	if (station->connection_generation != generation ||
+	    request->generation != generation) {
+		spin_unlock_irqrestore(&station->lock, enabled);
+		return ESTALE;
+	}
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+	/* Hands the connection over; the radio copies it and returns at once. */
+	error = station->ops->fullmac_connect(station->radio_context, request);
+	if (error != 0)
+		return error;
+
+	/* Records that a disconnect is now owed to the radio. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	if (station->connection_generation == generation)
+		station->connect_driver_active = 1;
+	else
+		error = ESTALE;
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+	/* Reports a connection that was replaced while the radio took it. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the radio owns the connection. */
+	return 0;
+}
+
+/* Opens or closes the controlled port for the FullMAC engine. */
+static int
+station_fullmac_authorized_set(
+	void *context,
+	uint64_t generation,
+	int authorized)
+{
+	struct wlan_station *station;
+	unsigned long enabled;
+	int error;
+
+	/* Rejects a call that names no station or no valid state. */
+	station = context;
+	if (station == NULL || (authorized != 0 && authorized != 1))
+		return EINVAL;
+
+	/* Opens or closes the port of the connection still running. */
+	enabled = spin_lock_irqsave(&station->lock);
+
+	if (station->connection_generation != generation) {
+		/* The request belongs to an older connection. */
+		error = ESTALE;
+	} else if (authorized) {
+		/*
+		 * The firmware's AUTHORIZED is the evidence: it installed the
+		 * keys itself, so the core has none to check.  The carrier is
+		 * the controlled port the network stack sees.
+		 */
+		error = net_device_set_carrier(station->device, 1);
+		if (error == 0) {
+			station->controlled_port = 1U;
+			station->key_installed = 1U;
+		}
+	} else {
+		error = station_carrier_down_locked(station);
+	}
+
+	spin_unlock_irqrestore(&station->lock, enabled);
+
+	/* Reports why the port could not be set. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the port matches the firmware's authorization. */
+	return 0;
 }
