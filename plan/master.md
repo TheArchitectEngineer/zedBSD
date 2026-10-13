@@ -41,7 +41,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- WS197 の HFP（p006・p007）・WS204・WS205 がベータ2 に入るか、ベータ3 か（P1 の順で進める。10/13 の凍結の扱いはユーザーと）。
+- WS204（HD Audio の録音と HFP の通話の音）・WS205（Bluetooth audio A2DP と headset）がベータ2 に入るか（WS197 の HFP は 2026-10-13 にベータ3 と決定）。
 - WS202 H1〜H6・J1〜J10: software は main に統合済み、判断がまだ要るかは WS202 の記録で確かめる。
 - BUG-222 を既知の問題にするか close か。
 - WS129 の release notes・既知の問題・手引きの review。
@@ -575,6 +575,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-13 夜 ユーザー（AskUserQuestion）: WS090 p020（Mahora）・p021（padding 0）は「今の外観で OK」→ cleared。WS173 p005 の素の 5330 の起動は「ユーザーが USB で起動」（T1 が SSH、ESP には書かない）。WS181 p011 は「今の動きで OK」→ cleared。WS197 の HFP は「HFP 全体をベータ3」（p006 は main にあるがベータ2 では既知の問題、UAT #13 を外す）。WS154 の SKK の記号の範囲は 2026-10-05 夜に決定済み（Future Work）で、残りは UAT だけ。
 - 2026-10-13 夜 ユーザー（AskUserQuestion「Q1 が止めてよい」）: T1 が TCP の測りの後の古い `stream.py serve`（root）の kill を権限の判定で断られた件 → 測りの終わった古い stream.py serve に限り Q1 が sudo kill で止めてよい。T1 には kill させない。直った tcp-stream-series.sh（main 282f46038）は自分で止める。
 - 2026-10-12 ユーザー（Pi の試し）: 1280x720 で「めちゃくちゃ速くなりました」、1024x600 で「めちゃくちゃ快適です」、place23（WS213 p004 の I・C・R＋WS211 p008 の client の damage）で「非常に快適です」。数字（compositor の draw→shown の p50/p90）: 1920x1080 92/125ms、1280x720 60/87ms、1024x600 59/102ms、1024x600+place23 58/90ms（submit→shown p50 26ms）。place23 で KWL RENDER stalled 0、FAILED 0。WS213 p004 の box_lag の p99 は 5 秒窓の一部で 19〜30ms（必達 16.7ms 未達の窓あり、最長 36ms）、pass_max 1 回 401ms → p004 は未 clear、原因の切り分け（kernel の長い transaction・SMP 依存か）が残り。ユーザーの次の希望: 1280x720 で試した後、ディスプレイ本来の解像度（1920x1200、今は config.txt の hdmi_mode=82 で 1920x1080 に固定）で出す。Pi は今 config.txt を 1024x600（hdmi_cvt、元は config.txt.res1080）。
 - 2026-10-12 ユーザー（クリック）: WS213 の設計（第 6 版、thread の分け方 M・R・C・I・W、必達は box_lag の p99 ≤ 16.7ms、p003 の閾値に届かなければ WS211 の削減を先に）は「この設計でよい」。要約は Q1 が plan/ws213/phase001/summary.md に置く（P4 の Write はツールの決まりで拒否されたため、ユーザーの許可で Q1 が置いた）。Q1: WS213 p003 は P4 で着手、WS141 p016 (B) は第 6 版で B-u を P2 が実装（kernel 側は段 B-k2）。

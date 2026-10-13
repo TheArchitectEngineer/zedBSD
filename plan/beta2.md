@@ -17,6 +17,7 @@
 
 ## 今の状況
 
+- 2026-10-13 ユーザー: WS197 の HFP（p006 の制御・p007 の音）は全体をベータ3（ベータ2 では既知の問題、UAT #13 を外した）。WS090 p020・p021 と WS181 p011 は外観・動きで OK、WS173 p005 はユーザーの USB の起動。
 - 2026-10-11: [WS197](ws197/ws.md)（スマホ連携）は SMS・MMS の受信と表示（日本語・写真を実機で確認済み）、PBAP の連絡先と通話の履歴、Bluetooth の自動復旧まで main に入った。P1 の書きかけの差分は照合して必要な 1 点だけ merge（d5296c23e）。残りは HFP（通話）と MMS の写真・動画の送信。**HFP をベータ2 に入れるかはユーザーの判断待ち。**
 - [BUG-287](bugs/BUG-287.md)（スマホ連携が「connecting」のまま）の直しは全部 main に入った。image を作り直してよい。
 - WS199・WS200 は実装と QEMU の試験が済み、残りは次の UAT。
@@ -47,7 +48,6 @@
 | --- | --- | --- | --- |
 | 11 | [WS197](ws197/ws.md) スマホの SMS（Android） | 手順は ws197/ws.md の「5330 の UAT の手順」: Settings → Bluetooth でスマホを pairing して「Use as phone」→ Phone の app で受信・送信・同期、app を閉じている間の通知 | SMS が送受信でき、履歴が同期される |
 | 12 | [WS197](ws197/ws.md) 写真・動画の MMS の送信と「＋」の添付の選択（2026-10-11、main e7ff23fba 以降の image） | 手順は [phase010](ws197/phase010/phase.md) の末尾: Phone の「＋」→ Photos & Videos で写真・動画を選ぶ（File… でも可）→ 文を添えて Send | スマホから相手に MMS が届く。1 通は元の bytes で合計 8 MiB まで（carrier の上限を越えるとスマホ側で失敗しうる） |
-| 13 | [WS197](ws197/ws.md) HFP の通話の制御（音はまだ、p007） | 手順は [phase006](ws197/phase006/phase.md) の末尾: Settings の Bluetooth で「Also use calls」→ スマホに着信 → Phone の通話の card で Answer・経過時間・Keypad の DTMF・Hang Up。Phone を閉じた時の着信の通知。会話の Call で発信 | スマホの通話が PC の操作で応答・終話・発信できる（音はスマホ側のまま） |
 
 ## 既知の問題に書いて出す（ベータ3 以降）
 

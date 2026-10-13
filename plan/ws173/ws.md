@@ -23,7 +23,7 @@ Q1 の問い「実機をベアメタル起動したときに、SSH越しにマ�
 | p002 | compositor: 試験の image だけの画面の撮影の口と `keiland-shot`（i915 の実機で合成した画面を読み戻して PNG、QEMU でも同じ口） | P1 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-200 で aat-p002 PASS。旧: Q1 の判定待ち（2026-10-05 Q1 の注記: T1-200 で aat-p002 PASS。phase.md は in-progr…） | — |
 | [p003](phase003/phase.md) | host の道具 `plan/tools/aat/`（SSH で click・drag・wheel・key・type・shot の取得・log の行の待ち）と AAT の image の config | P2 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-200c PASS、その後の AAT の実行で使われている。旧: test-done（2026-10-07: T1-200c 以降の AAT の実行で target で確認、判定は Q1）） | p001・p002 |
 | p004 | AAT の項目の一覧（今の実装済みの機能、UAT の項目から機器と使用感を除いた物）と判定の基準 | Q1 | cleared（2026-10-06 Q1 判定: T1-202c の smoke 8 本 pass、full 79 本の判定の一覧（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: planning） | — |
-| p005 | 素の 5330 で AAT を行い、結果を記録 | T1 か専任 | planning | p001〜p004、素の起動の方法（ユーザーの判断） |
+| p005 | 素の 5330 で AAT を行い、結果を記録 | T1 か専任 | planned（起動の方法は 2026-10-13 ユーザー（AskUserQuestion）「ユーザーが USB で起動」: AAT の image を USB に焼いて 1 回起動、T1 が SSH で操作、ESP には書かない） | p001〜p004、素の起動の方法（ユーザーの判断） |
 
 - 2026-10-05 Q1: p001・p002（P1）は T1-200 で aat-p002 PASS、p003（P2 の host の道具）は T1-200c で PASS（QEMU、注入・撮影・転送・log の待ち）。AAT の土台は QEMU で動く。残り: p004 の項目と scenarios、素の 5330 での最初の実行（ユーザーが USB で起動）。
 

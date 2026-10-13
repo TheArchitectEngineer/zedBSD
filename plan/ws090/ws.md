@@ -47,8 +47,8 @@ Resume point: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p007・p010・p01
 | [ws090-p017](phase017/phase.md) | 設計 — libkeiland の慣性 scroll（全ての窓）と開始の遅れ | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | | — |
 | [ws090-p018](phase018/phase.md) | 設計 — pointer の追従の再描画を一定の frame rate に（hover・drag の範囲選択） | test-wait → Q1 の判定待ち（T1-233 files-regress PASS、Mail・Calendar は T1-389、Phone は T1-393 の PNG（Q1 の目視）。frame の callback の集約は任意の残り） | | — |
 | [ws090-p019](phase019/phase.md) | 慣性 scroll を libkeiland に一本化する（全ての app） | cleared（詳細は phase.md） | — |
-| [ws090-p020](phase020/phase.md) | UI の font を Mahora へ（Regular・Mono・Bold） | test-wait（T1-252 の PNG、ユーザーの外観の判断待ち） | | — |
-| [ws090-p021](phase021/phase.md) | 全ての app の窓の中身の padding を 0 に（title bar と同じ幅、title bar との間は compositor の定数） | test-wait（T1-256 の (a)〜(c) PASS、(d)(e) の 13 app の PNG（t1 の build/t1-275 ほか）をユーザーが見る） | | — |
+| [ws090-p020](phase020/phase.md) | UI の font を Mahora へ（Regular・Mono・Bold） | cleared（2026-10-13 ユーザー（AskUserQuestion）「今の外観で OK」） | | — |
+| [ws090-p021](phase021/phase.md) | 全ての app の窓の中身の padding を 0 に（title bar と同じ幅、title bar との間は compositor の定数） | cleared（2026-10-13 ユーザー（AskUserQuestion）「今の外観で OK」） | | — |
 | [ws090-p022](phase022/phase.md) | 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ | cleared（2026-10-07、項目 6 は p025 へ） | — |
 | [ws090-p023](phase023/phase.md) | Files・Settings の残りの自前の UI 部品を libkeiland の部品へ | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。copy の取り消しの × と Wi-Fi の Disconnect は 5330 の UAT へ） | | | — |
 | [ws090-p024](phase024/phase.md) | libkeiland に複数選択の list と icon の grid の部品を足し、Files の list・grid の view を置き換える | cleared（詳細は phase.md） | — |

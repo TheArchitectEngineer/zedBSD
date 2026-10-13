@@ -46,6 +46,7 @@ guide.
 | Opening and closing App Home is less smooth than on Linux: the animation runs at a lower frame rate. | — | BUG-280 |
 | The Browser does not respond while a page loads, and editing the address can put `file://` in front of `https://`. | Wait for the page; type the whole address again. | BUG-207, BUG-206 |
 | Japanese input does not work in Phone. | — | BUG-203 |
+| Phone calls through a paired phone (Bluetooth HFP) are not supported yet: **Also use calls** in Settings can be turned on, but calls cannot be answered or made from Kei, and there is no call audio. | Answer and make calls on the phone. Messages and contacts work. | — (planned for Beta 3) |
 
 <!-- review: the rows below are the bugs the beta 2 triage plans to fix before the RC, and the ones whose fixes wait for
      T1. Move a row into the table above only if it is still open at the RC.
