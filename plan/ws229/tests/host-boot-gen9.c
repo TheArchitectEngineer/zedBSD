@@ -67,6 +67,7 @@ main(void)
 	error = parse(&parameters, "i915.gen9=On");
 	check(error == EINVAL, "i915.gen9=On is refused");
 
+	/* Reports the totals. */
 	printf("host-boot-gen9: %u checks, %u failures\n", checks, failures);
 
 	/* Reports a failed check. */

@@ -244,6 +244,7 @@ drv_i915_gt_init_mmio(
 		if (gt->l3bank_mask == 0U)
 			kern_logf("i915: WARN L3 bank mask is all zero!\n");
 
+		/* The L3 banks are reached through steering. */
 		gt->l3bank_steering = 1;
 	}
 
@@ -625,6 +626,7 @@ i915_gen9_sseu_info_init(
 	unsigned subslice_total;
 	unsigned first_slice;
 	unsigned slice;
+	unsigned slice_count;
 	unsigned subslice;
 	unsigned index;
 	int found;
@@ -684,8 +686,9 @@ i915_gen9_sseu_info_init(
 		sseu->eu_per_subslice = (uint16_t)((sseu->eu_total + subslice_total - 1U) / subslice_total);
 
 	/* Slice power gating needs more than one slice. */
+	slice_count = i915_hweight16(sseu->slice_mask);
 	sseu->has_slice_pg = 0;
-	if (i915_hweight16(sseu->slice_mask) > 1U)
+	if (slice_count > 1U)
 		sseu->has_slice_pg = 1;
 
 	/* The fuses are decoded. */

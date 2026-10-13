@@ -1629,6 +1629,7 @@ drv_i915_eu_sync_function(
 		} else {
 			buffer->error = 1;
 		}
+
 		return;
 	}
 
@@ -2230,6 +2231,7 @@ i915_eu_send_gen9(
 			src0.hstride = EU_HSTRIDE_0;
 		}
 
+		/* Encodes the destination, the payload and the message descriptor. */
 		i915_eu_dst(buffer, inst, dst);
 		i915_eu_src0(buffer, inst, src0);
 		i915_eu_src1(buffer, inst, drv_i915_eu_imm_ud(descriptor));
@@ -2631,7 +2633,10 @@ i915_eu_source(
 		} else {
 			i915_eu_field(inst, layout->file, buffer->format->file_imm);
 		}
+
+		/* The value rides in the last word. */
 		i915_eu_field(inst, buffer->format->imm32, reg.immediate);
+
 		return;
 	}
 

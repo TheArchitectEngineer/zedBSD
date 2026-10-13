@@ -1270,6 +1270,7 @@ i915_gen9_wa_init_mcr(
 		if ((gt->sseu.slice_mask & (1U << candidate)) == 0U)
 			continue;
 
+		/* The lowest enabled slice is where the steering points. */
 		slice = candidate;
 		break;
 	}
@@ -1280,6 +1281,7 @@ i915_gen9_wa_init_mcr(
 		if ((gt->sseu.subslice_mask & (1U << candidate)) == 0U)
 			continue;
 
+		/* The lowest enabled subslice is where the steering points. */
 		subslice = candidate;
 		break;
 	}
@@ -1319,6 +1321,7 @@ i915_gen9_engine_workarounds(
 		if (gt->revision == 4U || gt->revision > 5U)
 			return;
 
+		/* Sets the semaphore wait poll of a Kaby Lake non-render engine, per the workaround above. */
 		drv_i915_wa_write_clr_set(wal, RING_SEMA_WAIT_POLL(engine->mmio_base), 0xffffffffU, 1U, 0, "WaKBLVECSSemaphoreWaitPoll");
 		return;
 	}
@@ -1515,6 +1518,7 @@ i915_mocs_fill(
 		if (index >= (unsigned)I915_MOCS_ENTRIES)
 			continue;
 
+		/* Stores the row's control and L3 cache values. */
 		table->control[index] = rows[row].control;
 		table->l3cc[index] = rows[row].l3cc;
 	}

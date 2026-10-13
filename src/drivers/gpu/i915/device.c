@@ -1162,11 +1162,13 @@ i915_start_prepare(
 		return error;
 	}
 
+	/* Records the versions and the platform the product belongs to. */
 	gt->graphics_ver = kind.graphics_ver;
 	gt->display_ver = kind.display_ver;
 	gt->is_alderlake_p = kind.is_alderlake_p;
 	gt->info.platform = kind.platform;
 
+	/* Reports the product that was recognised. */
 	kern_logf("i915: display device: 8086:%04x rev 0x%02x -> graphics version %u, display version %u, %s\n",
 	    (unsigned)product,
 	    gt->info.revision,
@@ -1508,6 +1510,7 @@ i915_start_memory(
 		if (gt->ggtt_entries > reserved)
 			driver_ggtt_first = gt->ggtt_entries - reserved;
 
+		/* Takes over the display hardware the GT start depends on. */
 		device->stage = "n0_lite_gen9";
 		error = drv_i915_n0_lite_gen9(device->display, &gt->mmio, driver_ggtt_first);
 		if (error != 0)
@@ -2452,6 +2455,7 @@ i915_interim_display_irq_reset(
 		if (pipe != 0U && (power & I915_GEN9_PW_2_STATE) == 0U)
 			break;
 
+		/* Silences the powered pipe's interrupt sources. */
 		i915_interim_irq_silence(&gt->mmio, GEN8_DE_PIPE_IMR(pipe), GEN8_DE_PIPE_IIR(pipe), GEN8_DE_PIPE_IER(pipe));
 	}
 

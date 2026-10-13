@@ -646,6 +646,7 @@ i915_defaults_emit_null_state(
 	if (object == NULL)
 		return ENOMEM;
 
+	/* Publishes the page so the teardown can release it. */
 	d->null_state[index] = object;
 
 	/* Binds it into the GGTT, where the secure batch is fetched from. */
@@ -666,6 +667,7 @@ i915_defaults_emit_null_state(
 		if (dword + 1U >= count)
 			return EINVAL;
 
+		/* Adds the page's address to the relocated dword and clears its upper half. */
 		batch[dword] += ggtt;
 		batch[dword + 1U] = 0U;
 	}

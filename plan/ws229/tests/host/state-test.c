@@ -252,7 +252,10 @@ main(
 	test_version(9U);
 #endif
 
+	/* Reports where the dumped state went. */
 	printf("ws229 state host test: files written to %s\n", test_out);
+
+	/* Succeeded: every scenario was dumped. */
 	return 0;
 }
 
@@ -701,6 +704,8 @@ test_dispatch(
 		binary.shared_bytes = 4096U;
 		binary.uses_barrier = 1U;
 	}
+
+	/* Gives the pipeline two threads with zeroed thread ids. */
 	memset(thread_ids, 0, sizeof(thread_ids));
 	world->pipeline.cs_binary = &binary;
 	world->pipeline.threads = 2U;

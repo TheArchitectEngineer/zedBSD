@@ -41,6 +41,7 @@ drv_i915_gt_object_create(
 	uint32_t size;
 	void *cpu;
 
+	/* The stub allocates from the host heap and needs no manager. */
 	(void)gm;
 
 	/* Rounds the size up to whole pages and allocates the backing. */
