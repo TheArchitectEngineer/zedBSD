@@ -44,7 +44,7 @@ struct decode_gif_source {
 
 static int decode_kind(const unsigned char *data, size_t size);
 static int decode_png(const unsigned char *data, size_t size, struct preview_image *image);
-static int decode_jpeg(const unsigned char *data, size_t size, struct preview_image *image);
+static int decode_jpeg(const unsigned char *data, size_t size, const struct preview_request *request, struct preview_image *image);
 static int decode_gif(const unsigned char *data, size_t size, struct preview_image *image);
 static int decode_gif_read(GifFileType *gif, GifByteType *bytes, int count);
 static int decode_pnm(const unsigned char *data, size_t size, struct preview_image *image);
@@ -75,7 +75,7 @@ preview_decode(
 		error = decode_png(data, size, image);
 		break;
 	case DECODE_JPEG:
-		error = decode_jpeg(data, size, image);
+		error = decode_jpeg(data, size, request, image);
 		break;
 	case DECODE_GIF:
 		error = decode_gif(data, size, image);
@@ -199,19 +199,32 @@ decode_png(
 	return 0;
 }
 
-/* Decodes a JPEG, turned as its EXIF orientation says; 0 or an errno value. */
+/*
+ * Decodes a JPEG, turned as its EXIF orientation says; 0 or an errno
+ * value.  It is decoded scaled down (1/2, 1/4 or 1/8, ws157-p017) as far
+ * as the size asked allows in either orientation, so a large photo's
+ * preview decodes only the samples it needs, and the limits apply to
+ * that scaled size.
+ */
 static int
 decode_jpeg(
 	const unsigned char *data,
 	size_t size,
+	const struct preview_request *request,
 	struct preview_image *image)
 {
 	struct kl_picture picture;
+	unsigned box_side;
 	int orientation;
 	int error;
 
-	/* Decoded within the limits. */
-	error = kl_picture_jpeg(NULL, data, size, PREVIEW_DECODE_SIDE, PREVIEW_DECODE_PIXELS, &picture, &orientation);
+	/* The box's longer side, which the picture must still fill or fit. */
+	box_side = (unsigned)request->width;
+	if (request->height > request->width)
+		box_side = (unsigned)request->height;
+
+	/* Decoded at that scale, within the limits. */
+	error = kl_picture_jpeg_reduced(NULL, data, size, box_side, request->cover, PREVIEW_DECODE_SIDE, PREVIEW_DECODE_PIXELS, &picture, &orientation);
 	if (error != 0)
 		return error;
 

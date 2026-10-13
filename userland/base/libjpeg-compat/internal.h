@@ -11,7 +11,9 @@
  *
  * The decoder reads the whole image when jpeg_start_decompress is called:
  * each component's blocks go through the inverse DCT into a plane of
- * samples (padded to whole MCUs).  A progressive image keeps each
+ * samples (padded to whole MCUs; scaled down by 1/2, 1/4 or 1/8 when
+ * scale_num / scale_denom asks for it, each block then made smaller by
+ * a reduced inverse DCT).  A progressive image keeps each
  * component's coefficients until its last scan, and goes through the
  * inverse DCT then.  jpeg_read_scanlines then upsamples each
  * component's row (libjpeg's "fancy" triangle filter by default) and
@@ -93,6 +95,9 @@ struct jpeg_huffman {
 /*
  * One component's decoded samples: the plane (stride bytes a row,
  * padded to whole MCUs), its rows, and the DC prediction of the scan.
+ * Each block of the component is block_size by block_size samples of
+ * the plane (8, or 4, 2 or 1 when the output is scaled down: the
+ * component's DCT_scaled_size), blocks_across by blocks_down blocks.
  * A progressive image also keeps the coefficients of each block of the
  * plane (64 a block, blocks row by row) and the quantization table the
  * component's first scan found in force (libjpeg latches it there too).
@@ -101,6 +106,9 @@ struct jpeg_plane {
 	JSAMPLE *samples;
 	size_t stride;
 	size_t rows;
+	int block_size;
+	size_t blocks_across;
+	size_t blocks_down;
 	int prediction;
 	int decoded;
 	JCOEF *coefficients;
@@ -212,5 +220,6 @@ void jpeg_compat_finish_progressive(j_decompress_ptr cinfo);
 
 /* The inverse DCT (idct.c). */
 void jpeg_compat_idct(const JCOEF *coefficients, const UINT16 *quantization, JSAMPLE *out, size_t stride);
+void jpeg_compat_idct_reduced(const JCOEF *coefficients, const UINT16 *quantization, int size, JSAMPLE *out, size_t stride);
 
 #endif

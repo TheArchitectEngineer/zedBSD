@@ -41,6 +41,7 @@ struct picture_jpeg_error {
 static void picture_jpeg_exit(j_common_ptr info);
 static void picture_jpeg_quiet(j_common_ptr info, int level);
 static int picture_jpeg_orientation(j_decompress_ptr info);
+static unsigned picture_jpeg_denominator(unsigned long width, unsigned long height, unsigned box_side, int cover);
 static int picture_too_large(unsigned long width, unsigned long height, unsigned max_side, unsigned long max_pixels);
 static unsigned picture_read16(const unsigned char *data, int big_endian);
 static unsigned long picture_read32(const unsigned char *data, int big_endian);
@@ -246,7 +247,8 @@ kl_picture_orient(
  * Decodes a JPEG, from a file (file) or from memory (data and size when
  * file is NULL), into an opaque picture as stored, and gives its EXIF
  * orientation (1 to 8) for kl_picture_orient.  A side over max_side
- * or pixels over max_pixels (0: no limit) are refused.
+ * or pixels over max_pixels (0: no limit) are refused before the
+ * decoding.
  *
  * Returns 0, EINVAL for a damaged JPEG or one of a kind not supported,
  * E2BIG for one too large, or ENOMEM; the picture is then empty.
@@ -256,6 +258,41 @@ kl_picture_jpeg(
 	FILE *file,
 	const unsigned char *data,
 	size_t size,
+	unsigned max_side,
+	unsigned long max_pixels,
+	struct kl_picture *picture,
+	int *orientation)
+{
+	int error;
+
+	/* The whole picture: no box to reduce it to. */
+	error = kl_picture_jpeg_reduced(file, data, size, 0U, 0, max_side, max_pixels, picture, orientation);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picture as stored. */
+	return 0;
+}
+
+/*
+ * Decodes a JPEG as kl_picture_jpeg does, scaled down by the largest of
+ * 1/8, 1/4 and 1/2 (libjpeg's scaled decoding) that still leaves the
+ * picture at least as large as a box of box_side by box_side needs in
+ * either orientation: for cover (the box filled, the picture cut to it)
+ * the picture's shorter side, for contain (the picture within the box)
+ * its longer side, stays at least box_side.  box_side 0 decodes the
+ * whole picture.  The limits apply to the scaled size, so a picture too
+ * large to decode whole can still be decoded smaller.
+ *
+ * Returns 0, EINVAL, E2BIG or ENOMEM as kl_picture_jpeg.
+ */
+int
+kl_picture_jpeg_reduced(
+	FILE *file,
+	const unsigned char *data,
+	size_t size,
+	unsigned box_side,
+	int cover,
 	unsigned max_side,
 	unsigned long max_pixels,
 	struct kl_picture *picture,
@@ -271,6 +308,7 @@ kl_picture_jpeg(
 	unsigned magenta;
 	unsigned yellow;
 	unsigned black;
+	unsigned denominator;
 	unsigned x;
 	int inverted;
 	int cmyk;
@@ -321,16 +359,22 @@ kl_picture_jpeg(
 		cmyk = 0;
 	}
 
-	/* The decoding starts; Adobe's marker says whether CMYK is stored inverted. */
-	inverted = info.saw_Adobe_marker;
-	(void)jpeg_start_decompress(&info);
+	/* The scale the box needs, and the size it gives. */
+	denominator = picture_jpeg_denominator(info.image_width, info.image_height, box_side, cover);
+	info.scale_num = 1;
+	info.scale_denom = denominator;
+	jpeg_calc_output_dimensions(&info);
 
-	/* A size the program can hold at all. */
+	/* A size the program can hold at all, known before anything is decoded. */
 	large = picture_too_large(info.output_width, info.output_height, max_side, max_pixels);
 	if (large) {
 		jpeg_destroy_decompress(&info);
 		return E2BIG;
 	}
+
+	/* The decoding; Adobe's marker says whether CMYK is stored inverted. */
+	inverted = info.saw_Adobe_marker;
+	(void)jpeg_start_decompress(&info);
 
 	/* The picture's size; a JPEG is always opaque. */
 	picture->width = (int)info.output_width;
@@ -552,6 +596,39 @@ picture_jpeg_orientation(
 
 	/* Succeeded: the default orientation keeps the picture as stored. */
 	return 1;
+}
+
+/* Chooses the scale (1, 2, 4 or 8 for 1/1 to 1/8) a JPEG of a size is decoded at for a box. */
+static unsigned
+picture_jpeg_denominator(
+	unsigned long width,
+	unsigned long height,
+	unsigned box_side,
+	int cover)
+{
+	unsigned long side;
+	unsigned denominator;
+
+	/* No box: the whole picture. */
+	if (box_side == 0U)
+		return 1U;
+
+	/* The side that must stay at least the box's: the shorter for cover, the longer for contain. */
+	side = width;
+	if (cover && height < width) {
+		side = height;
+	} else if (!cover && height > width) {
+		side = height;
+	}
+
+	/* The largest denominator whose scaled side still covers the box. */
+	for (denominator = 8U; denominator > 1U; denominator /= 2U) {
+		if ((unsigned long)denominator * (unsigned long)box_side <= side)
+			return denominator;
+	}
+
+	/* No reduction leaves enough: the whole picture. */
+	return 1U;
 }
 
 /* Tells whether a size is empty or over the limits (0: none). */

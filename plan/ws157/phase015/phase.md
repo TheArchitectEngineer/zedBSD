@@ -3,7 +3,7 @@
 # ws157-p015: Photos・Phone の thumbnail の decode を jail へ（#11）
 
 Parent: [WS157](../ws.md)
-Status: in-progress（P1。実装と host の試験・build まで。判断 L1（大きな写真の上限）を Q1 へ、T1 の確かめ待ち）
+Status: in-progress — test-wait（実装・host・build は 2026-10-11 P1、main に統合済み。L1 は決定済み（p017）。T1 の確かめを p017 と 1 本で依頼、2026-10-13 P2 q949、Q1 経由）
 Phase disposition: normal
 Queue: P1 の lane（p012 の #11、2026-10-11 ユーザー承認「全部承認です。」）
 
@@ -49,7 +49,12 @@ Queue: P1 の lane（p012 の #11、2026-10-11 ユーザー承認「全部承認
 - T1（QEMU、current-uat）: Photos の一覧の thumbnail、写真を開いた絵、drag、Phone の会話の写真と下書き、picker の thumbnail が出ること、`ps` で `keiland-preview` が起きること。合否: 絵が出る、Photos・Phone の process が libjpeg 等を読み込まない（`ldd` 相当）。
 - 実機。
 
+## 2026-10-13 P2（q949）: T1 の依頼の準備
+
+- 実装は main に入っている（`photos/decode.c` の `ph_preview`、`thumbs.c`・`main.c`・Phone の `view.c`、`preview.h` の上限）。q949 では source を変えず、T1 の依頼を p017 と 1 本にまとめた。
+- 上の T1 の合否「Photos・Phone の process が libjpeg 等を読み込まない（`ldd` 相当）」は、そのままでは満たせない: Photos・Phone の link は共通の package の規則（`basic`）で libpng-compat・libjpeg-compat・libgif-compat を NEEDED に持つ（`llvm-readelf -d`）。ただし両方とも JPEG・PNG・GIF の symbol を一つも参照しない（`llvm-nm -D --undefined-only build/ws157-p017/bin/{photos,phone}` で jpeg・png_・DGif が 0、2026-10-13 P2 が host で確かめた）。合否は「decode の symbol を参照しない（host の llvm-nm、済み）」と「thumbnail を作る間に `keiland-preview` が起きる（guest の `ps`）」に改めた。NEEDED を外すのは build の規則の変更なので範囲の外。
+
 ## 残り
 
-- L1 の決定。
+- T1 の結果（Q1 が判定）。
 - p012 の #5（変更のたびに thumbnail を全部捨てる）は別。

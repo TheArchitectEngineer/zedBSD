@@ -46,6 +46,7 @@ static void jpeg_compat_ac_refine(j_decompress_ptr cinfo, int index, JCOEF *bloc
 static void jpeg_compat_refine_bit(j_decompress_ptr cinfo, JCOEF *coefficient, int bit);
 static void jpeg_compat_latch_quantization(j_decompress_ptr cinfo);
 static void jpeg_compat_store_block(j_decompress_ptr cinfo, int index, JDIMENSION column, JDIMENSION row, const JCOEF *coefficients);
+static void jpeg_compat_transform(struct jpeg_plane *plane, const JCOEF *coefficients, const UINT16 *quantization, JDIMENSION column, JDIMENSION row);
 static void jpeg_compat_check_tables(j_decompress_ptr cinfo);
 static void jpeg_compat_restart(j_decompress_ptr cinfo);
 static void jpeg_compat_next_mcu(j_decompress_ptr cinfo, JDIMENSION done);
@@ -142,8 +143,8 @@ jpeg_compat_decode_scan(
 	if (master->scan_count == 1) {
 		index = master->scan_components[0];
 		component = &master->components[index];
-		across = (component->downsampled_width + DCTSIZE - 1U) / DCTSIZE;
-		down = (component->downsampled_height + DCTSIZE - 1U) / DCTSIZE;
+		across = component->width_in_blocks;
+		down = component->height_in_blocks;
 		for (row = 0; row < down; row++) {
 			for (column = 0; column < across; column++) {
 				jpeg_compat_next_mcu(cinfo, done);
@@ -202,19 +203,20 @@ jpeg_compat_finish_progressive(
 	master = cinfo->master;
 	for (index = 0; index < cinfo->num_components; index++) {
 		plane = &master->planes[index];
-		across = (JDIMENSION)(plane->stride / DCTSIZE);
-		down = (JDIMENSION)(plane->rows / DCTSIZE);
+		across = (JDIMENSION)plane->blocks_across;
+		down = (JDIMENSION)plane->blocks_down;
 
 		/* A component no scan named keeps its plane at the centre sample. */
 		if (!plane->quant_latched)
 			continue;
 		for (row = 0; row < down; row++) {
 			for (column = 0; column < across; column++) {
-				jpeg_compat_idct(
+				jpeg_compat_transform(
+					plane,
 					plane->coefficients + ((size_t)row * across + column) * DCTSIZE2,
 					plane->quant.quantval,
-					plane->samples + (size_t)row * DCTSIZE * plane->stride + (size_t)column * DCTSIZE,
-					plane->stride);
+					column,
+					row);
 			}
 		}
 	}
@@ -493,16 +495,14 @@ jpeg_compat_coefficients(
 	JDIMENSION row)
 {
 	struct jpeg_plane *plane;
-	size_t across;
 
 	/* A block outside the plane (a corrupt frame) has none. */
 	plane = &cinfo->master->planes[index];
-	if ((size_t)(row + 1U) * DCTSIZE > plane->rows || (size_t)(column + 1U) * DCTSIZE > plane->stride)
+	if ((size_t)row >= plane->blocks_down || (size_t)column >= plane->blocks_across)
 		return NULL;
 
 	/* Succeeded: the block's 64 coefficients, blocks row by row. */
-	across = plane->stride / DCTSIZE;
-	return plane->coefficients + ((size_t)row * across + column) * DCTSIZE2;
+	return plane->coefficients + ((size_t)row * plane->blocks_across + column) * DCTSIZE2;
 }
 
 /* Reads the first bits of a block's DC (T.81 G.1.2.1): the difference from the prediction, shifted up by Al. */
@@ -733,18 +733,40 @@ jpeg_compat_store_block(
 	struct jpeg_decomp_master *master;
 	jpeg_component_info *component;
 	struct jpeg_plane *plane;
-	JSAMPLE *out;
 
 	/* A block outside the plane (a corrupt frame) is dropped. */
 	master = cinfo->master;
 	component = &master->components[index];
 	plane = &master->planes[index];
-	if ((size_t)(row + 1U) * DCTSIZE > plane->rows || (size_t)(column + 1U) * DCTSIZE > plane->stride)
+	if ((size_t)row >= plane->blocks_down || (size_t)column >= plane->blocks_across)
 		return;
 
 	/* The inverse DCT into the plane. */
-	out = plane->samples + (size_t)row * DCTSIZE * plane->stride + (size_t)column * DCTSIZE;
-	jpeg_compat_idct(coefficients, master->quant[component->quant_tbl_no].quantval, out, plane->stride);
+	jpeg_compat_transform(plane, coefficients, master->quant[component->quant_tbl_no].quantval, column, row);
+}
+
+/* Puts a block's inverse DCT, full or reduced to the plane's block size, at its block position in the plane. */
+static void
+jpeg_compat_transform(
+	struct jpeg_plane *plane,
+	const JCOEF *coefficients,
+	const UINT16 *quantization,
+	JDIMENSION column,
+	JDIMENSION row)
+{
+	JSAMPLE *out;
+	size_t size;
+
+	/* The block's first sample in the plane. */
+	size = (size_t)plane->block_size;
+	out = plane->samples + (size_t)row * size * plane->stride + (size_t)column * size;
+
+	/* A full block takes the 8-point transform, a smaller one the reduced transform. */
+	if (plane->block_size == DCTSIZE) {
+		jpeg_compat_idct(coefficients, quantization, out, plane->stride);
+	} else {
+		jpeg_compat_idct_reduced(coefficients, quantization, plane->block_size, out, plane->stride);
+	}
 }
 
 /*

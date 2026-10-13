@@ -8,8 +8,13 @@
 /*
  * The decompression calls: making and ending the object, the header and
  * its defaults, decoding the image (at jpeg_start_decompress), and the
- * output rows.  Each output row takes each component's row upsampled to
- * the image's width (libjpeg's triangle filter, "fancy upsampling", for
+ * output rows.  The output may be scaled down by 1/2, 1/4 or 1/8
+ * (scale_num / scale_denom, chosen as libjpeg chooses): each block is
+ * then decoded smaller by the reduced inverse DCT (idct.c), and the
+ * chroma of a subsampled image is decoded less reduced where that makes
+ * its upsampling a whole ratio smaller, as libjpeg-turbo does.  Each
+ * output row takes each component's row upsampled to the output's width
+ * (libjpeg's triangle filter, "fancy upsampling", for
  * the 2:1 ratios by default) and converts its colour with libjpeg's
  * fixed-point tables, so that the samples match libjpeg's.  A CMYK image
  * is given as it is, and a YCCK one is made CMYK as libjpeg makes it
@@ -59,6 +64,8 @@ struct color_layout {
 static void decompress_defaults(j_decompress_ptr cinfo);
 static void decompress_geometry(j_decompress_ptr cinfo);
 static void decompress_color_space(j_decompress_ptr cinfo);
+static void decompress_scale(j_decompress_ptr cinfo);
+static void decompress_component_ratios(j_decompress_ptr cinfo, int index, JDIMENSION *ratio_h, JDIMENSION *ratio_v);
 static void decompress_start_image(j_decompress_ptr cinfo);
 static enum color_conversion decompress_conversion(j_decompress_ptr cinfo);
 static int decompress_layout(J_COLOR_SPACE space, struct color_layout *layout);
@@ -181,8 +188,10 @@ jpeg_read_header(
 }
 
 /*
- * Sets the output's size and components from the parameters (the image's
- * size: scaling is not provided).
+ * Sets the output's size and components from the parameters: the image's
+ * size scaled by the 1/8, 1/4 or 1/2 that scale_num / scale_denom asks
+ * for (the smallest of them not smaller than the scale asked, else the
+ * image's size), each side rounded up.
  */
 void
 jpeg_calc_output_dimensions(
@@ -192,9 +201,8 @@ jpeg_calc_output_dimensions(
 	if (cinfo->global_state != JPEG_STATE_READY)
 		jpeg_compat_fail_number((j_common_ptr)cinfo, JERR_BAD_STATE, cinfo->global_state, 0);
 
-	/* The size, and the components of the colour space asked for. */
-	cinfo->output_width = cinfo->image_width;
-	cinfo->output_height = cinfo->image_height;
+	/* The scale, the size it gives, and the components of the colour space asked for. */
+	decompress_scale(cinfo);
 	decompress_color_space(cinfo);
 	cinfo->output_components = cinfo->out_color_components;
 	cinfo->rec_outbuf_height = 1;
@@ -335,7 +343,8 @@ decompress_defaults(
 
 /*
  * Works out the frame's geometry: the largest sampling factors, each
- * component's size in samples and blocks, and the MCUs.  A lone component
+ * component's size in samples (unscaled; decompress_scale sets them at
+ * the output's scale) and blocks, and the MCUs.  A lone component
  * is one block per MCU whatever its factors; the others must divide the
  * largest (libjpeg upsamples by whole ratios only).
  */
@@ -394,6 +403,79 @@ decompress_geometry(
 		component->downsampled_height = (JDIMENSION)(((uint64_t)cinfo->image_height * v + max_v - 1U) / max_v);
 		component->width_in_blocks = (component->downsampled_width + DCTSIZE - 1U) / DCTSIZE;
 		component->height_in_blocks = (component->downsampled_height + DCTSIZE - 1U) / DCTSIZE;
+		component->DCT_scaled_size = DCTSIZE;
+	}
+}
+
+/*
+ * Chooses the output's scale (min_DCT_scaled_size: 8, or 4, 2 or 1 for
+ * 1/2, 1/4 or 1/8), the output's size, and each component's block size
+ * and size in samples at that scale.  A subsampled component's blocks are
+ * made larger (by doubling, up to 8) while its upsampling stays a whole
+ * ratio, so that its samples come from the transform rather than from
+ * the upsampling (libjpeg-turbo's choice).
+ */
+static void
+decompress_scale(
+	j_decompress_ptr cinfo)
+{
+	jpeg_component_info *component;
+	JDIMENSION max_h;
+	JDIMENSION max_v;
+	JDIMENSION h;
+	JDIMENSION v;
+	JDIMENSION scaled;
+	JDIMENSION size;
+	int index;
+
+	/* The scale: the smallest of 1/8, 1/4 and 1/2 that is not below the one asked, else 1. */
+	if (cinfo->scale_num * 8U <= cinfo->scale_denom) {
+		scaled = 1;
+	} else if (cinfo->scale_num * 4U <= cinfo->scale_denom) {
+		scaled = 2;
+	} else if (cinfo->scale_num * 2U <= cinfo->scale_denom) {
+		scaled = 4;
+	} else {
+		scaled = DCTSIZE;
+	}
+
+	/* The output's size, each side rounded up. */
+	cinfo->min_DCT_scaled_size = (int)scaled;
+	cinfo->output_width = (JDIMENSION)(((uint64_t)cinfo->image_width * scaled + DCTSIZE - 1U) / DCTSIZE);
+	cinfo->output_height = (JDIMENSION)(((uint64_t)cinfo->image_height * scaled + DCTSIZE - 1U) / DCTSIZE);
+
+	/* A lone component counts as 1 by 1, as decompress_geometry counts it. */
+	max_h = (JDIMENSION)cinfo->max_h_samp_factor;
+	max_v = (JDIMENSION)cinfo->max_v_samp_factor;
+	if (cinfo->num_components == 1) {
+		max_h = 1;
+		max_v = 1;
+	}
+
+	/* Each component's block size and its size in samples at the scale. */
+	for (index = 0; index < cinfo->num_components; index++) {
+		component = &cinfo->master->components[index];
+		h = (JDIMENSION)component->h_samp_factor;
+		v = (JDIMENSION)component->v_samp_factor;
+		if (cinfo->num_components == 1) {
+			h = 1;
+			v = 1;
+		}
+
+		/* Doubled while the upsampling across and down stays whole at the doubled size. */
+		size = scaled;
+		while (size < DCTSIZE) {
+			if ((max_h * scaled) % (h * size * 2U) != 0)
+				break;
+			if ((max_v * scaled) % (v * size * 2U) != 0)
+				break;
+			size *= 2U;
+		}
+
+		/* The block size, and the samples it gives across and down. */
+		component->DCT_scaled_size = (int)size;
+		component->downsampled_width = (JDIMENSION)(((uint64_t)cinfo->image_width * h * size + max_h * DCTSIZE - 1U) / (max_h * DCTSIZE));
+		component->downsampled_height = (JDIMENSION)(((uint64_t)cinfo->image_height * v * size + max_v * DCTSIZE - 1U) / (max_v * DCTSIZE));
 	}
 }
 
@@ -432,7 +514,7 @@ decompress_start_image(
 	int h;
 	int v;
 
-	/* Each plane covers whole MCUs (whole blocks for a lone component). */
+	/* Each plane covers whole MCUs (whole blocks for a lone component), each block at the component's scaled size. */
 	master = cinfo->master;
 	total = 0;
 	for (index = 0; index < cinfo->num_components; index++) {
@@ -445,16 +527,21 @@ decompress_start_image(
 			v = 1;
 		}
 
-		/* Its size, and a start without a prediction, samples, coefficients or table. */
-		plane->stride = (size_t)master->mcus_across * (size_t)h * DCTSIZE;
-		plane->rows = (size_t)master->mcus_down * (size_t)v * DCTSIZE;
+		/* Its blocks and size, and a start without a prediction, samples, coefficients or table. */
+		plane->block_size = component->DCT_scaled_size;
+		plane->blocks_across = (size_t)master->mcus_across * (size_t)h;
+		plane->blocks_down = (size_t)master->mcus_down * (size_t)v;
+		plane->stride = plane->blocks_across * (size_t)plane->block_size;
+		plane->rows = plane->blocks_down * (size_t)plane->block_size;
 		plane->prediction = 0;
 		plane->decoded = 0;
 		plane->coefficients = NULL;
 		plane->quant_latched = 0;
+
+		/* Its bytes: the samples, and a progressive image's coefficients of every block at full size. */
 		size = (uint64_t)plane->stride * plane->rows;
 		if (cinfo->progressive_mode)
-			size *= 1U + sizeof(JCOEF);
+			size += (uint64_t)plane->blocks_across * plane->blocks_down * DCTSIZE2 * sizeof(JCOEF);
 		total += size;
 		if (total > JPEG_SAMPLES_MAX)
 			jpeg_compat_fail_number((j_common_ptr)cinfo, JERR_IMAGE_TOO_BIG, (int)cinfo->image_width, (int)cinfo->image_height);
@@ -469,8 +556,9 @@ decompress_start_image(
 
 		/* A progressive image keeps every coefficient of the plane's blocks, starting at zero. */
 		if (cinfo->progressive_mode) {
-			plane->coefficients = jpeg_compat_alloc(cinfo, JPOOL_IMAGE, plane->stride * plane->rows * sizeof(JCOEF));
-			memset(plane->coefficients, 0, plane->stride * plane->rows * sizeof(JCOEF));
+			size = (uint64_t)plane->blocks_across * plane->blocks_down * DCTSIZE2 * sizeof(JCOEF);
+			plane->coefficients = jpeg_compat_alloc(cinfo, JPOOL_IMAGE, (size_t)size);
+			memset(plane->coefficients, 0, (size_t)size);
 		}
 	}
 
@@ -635,19 +723,18 @@ decompress_upsample(
 	int lower;
 	int bias;
 	int sum;
+	int fancy;
 
-	/* The component's ratios to the output. */
+	/* The component's ratios to the output, and whether the filters are used (not at 1/8, as in libjpeg). */
 	master = cinfo->master;
 	component = &master->components[index];
 	plane = &master->planes[index];
 	out = master->upsampled[index];
 	width = component->downsampled_width;
-	ratio_h = 1;
-	ratio_v = 1;
-	if (cinfo->num_components > 1) {
-		ratio_h = (JDIMENSION)(cinfo->max_h_samp_factor / component->h_samp_factor);
-		ratio_v = (JDIMENSION)(cinfo->max_v_samp_factor / component->v_samp_factor);
-	}
+	decompress_component_ratios(cinfo, index, &ratio_h, &ratio_v);
+	fancy = 0;
+	if (cinfo->do_fancy_upsampling && cinfo->min_DCT_scaled_size > 1)
+		fancy = 1;
 
 	/* The plane's row, and for a 1:2 ratio the neighbour the filter leans to (clamped to the real rows). */
 	row = y / ratio_v;
@@ -664,10 +751,10 @@ decompress_upsample(
 	if (ratio_h == 1 && ratio_v == 1) {
 		/* The same size. */
 		memcpy(out, near, cinfo->output_width);
-	} else if (ratio_h == 2 && ratio_v == 1 && cinfo->do_fancy_upsampling && width > 2U) {
+	} else if (ratio_h == 2 && ratio_v == 1 && fancy && width > 2U) {
 		/* 2:1 across: the triangle filter. */
 		decompress_h2v1(near, width, out);
-	} else if (ratio_h == 1 && ratio_v == 2 && cinfo->do_fancy_upsampling) {
+	} else if (ratio_h == 1 && ratio_v == 2 && fancy) {
 		/* 1:2 down: 3/4 of the nearer row and 1/4 of the other. */
 		bias = 1;
 		if (lower)
@@ -676,7 +763,7 @@ decompress_upsample(
 			sum = near[x] * 3 + far[x];
 			out[x] = (JSAMPLE)((sum + bias) >> 2);
 		}
-	} else if (ratio_h == 2 && ratio_v == 2 && cinfo->do_fancy_upsampling && width > 2U) {
+	} else if (ratio_h == 2 && ratio_v == 2 && fancy && width > 2U) {
 		/* 2:1 both ways: the triangle filter in both directions. */
 		decompress_h2v2(near, far, width, out);
 	} else {
@@ -684,6 +771,36 @@ decompress_upsample(
 		for (x = 0; x < cinfo->output_width; x++)
 			out[x] = near[x / ratio_h];
 	}
+}
+
+/*
+ * Works out a component's whole upsampling ratios across and down: the
+ * largest factor at the output's block size over its own at its block
+ * size (1 for a lone component).
+ */
+static void
+decompress_component_ratios(
+	j_decompress_ptr cinfo,
+	int index,
+	JDIMENSION *ratio_h,
+	JDIMENSION *ratio_v)
+{
+	jpeg_component_info *component;
+	JDIMENSION scaled;
+	JDIMENSION size;
+
+	/* A lone component is the output's own samples. */
+	*ratio_h = 1;
+	*ratio_v = 1;
+	if (cinfo->num_components == 1)
+		return;
+
+	/* The ratios, whole by decompress_geometry's check and decompress_scale's choice. */
+	component = &cinfo->master->components[index];
+	scaled = (JDIMENSION)cinfo->min_DCT_scaled_size;
+	size = (JDIMENSION)component->DCT_scaled_size;
+	*ratio_h = ((JDIMENSION)cinfo->max_h_samp_factor * scaled) / ((JDIMENSION)component->h_samp_factor * size);
+	*ratio_v = ((JDIMENSION)cinfo->max_v_samp_factor * scaled) / ((JDIMENSION)component->v_samp_factor * size);
 }
 
 /* libjpeg's h2v1 fancy upsampling of one row (jdsample.c): 3/4 of the nearer sample and 1/4 of the further. */
