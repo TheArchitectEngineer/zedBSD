@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws181-p012 -->
 # ws181-p012: touchpad の上端・下端の 2 本指の入れ替え（下端 → App Home、上端 → Wiseview）
 
-Status: in-progress（2026-10-13 P4、端の入れ替えと「App Home を下へ払って閉じる」の追加まで、実装・build・host 試験。QEMU は T1、実機の感触はユーザーの UAT）
+Status: in-progress（2026-10-13 Q1: T1-559・T1-560（QEMU）PASS、残りは実機の感触の UAT。2026-10-13 P4、端の入れ替えと「App Home を下へ払って閉じる」の追加まで、実装・build・host 試験。QEMU は T1、実機の感触はユーザーの UAT）
 Disposition: normal
 Parent: [WS181](../ws.md)
 Queue: Q1 の割り当て（2026-10-13 ユーザーの指示）
