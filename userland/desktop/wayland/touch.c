@@ -329,7 +329,8 @@ static void send_touch(struct kwl_client *client, uint32_t opcode, const void *p
 static void report_heard(struct touch_report *report, struct kwl_client *client);
 static uint32_t contact_id(const struct touch_screen *screen, unsigned slot);
 static void screen_gestures_end(struct touch_screen *screen);
-static unsigned screen_release(struct kwl_server *server, struct touch_screen *screen);
+static unsigned screen_release(struct kwl_server *server, struct touch_screen *screen, unsigned at_finger);
+static void shell_release_here(struct kwl_server *server);
 static int32_t magnitude(int32_t value);
 static void emit(struct kwl_client *client, uint32_t id, uint32_t opcode, const void *payload, size_t size);
 
@@ -411,7 +412,7 @@ kwl_touch_remove(
 	/* Its gestures are given up, and its fingers let go of what they hold. */
 	screen_gestures_end(screen);
 	if (notify)
-		(void)screen_release(server, screen);
+		(void)screen_release(server, screen, 1U);
 
 	/* The clients hearing a finger of it are cancelled. */
 	if (notify)
@@ -449,7 +450,7 @@ kwl_touch_cancel(
 
 		/* Its gestures given up, its fingers let go. */
 		screen_gestures_end(&screens[index]);
-		fingers += screen_release(server, &screens[index]);
+		fingers += screen_release(server, &screens[index], 0U);
 	}
 
 	/* The clients hearing a finger. */
@@ -1949,6 +1950,17 @@ shell_press(
 	return taken;
 }
 
+/* Releases the shell's press of a finger where the pointer is, without moving it. */
+static void
+shell_release_here(
+	struct kwl_server *server)
+{
+	/* The shell knows a finger is its source. */
+	server->shell_source = KWL_CONTACT_TOUCH;
+	(void)kwl_seat_button_shell(server, 0U, KWL_BUTTON_LEFT, 0U);
+	server->shell_source = KWL_CONTACT_POINTER;
+}
+
 /* Passes a finger's movement through the shell as the pointer's, to where it was last reported. */
 static void
 shell_motion(
@@ -2524,14 +2536,18 @@ screen_gestures_end(
 
 /*
  * Lets go of what a screen's fingers hold (the shell's press, the
- * pointer's button, a drag, the keyboard's touch), where each finger was;
- * from now on a finger goes nowhere until it lifts, but a client's, which
- * cancel_clients ends.  Returns how many fingers were down.
+ * pointer's button, a drag, the keyboard's touch): the shell's press where
+ * each finger was (at_finger), or where the pointer is (an angle's change:
+ * a finger's place of the old angle is another point now, and the pointer
+ * is kept on its own physical point); from now on a finger goes nowhere
+ * until it lifts, but a client's, which cancel_clients ends.  Returns how
+ * many fingers were down.
  */
 static unsigned
 screen_release(
 	struct kwl_server *server,
-	struct touch_screen *screen)
+	struct touch_screen *screen,
+	unsigned at_finger)
 {
 	struct touch_contact *contact;
 	unsigned slot;
@@ -2545,9 +2561,11 @@ screen_release(
 			continue;
 		fingers++;
 
-		/* The shell's press, or a client's, is released where the finger was; a drag the finger drove is given up. */
-		if (contact->route == ROUTE_SHELL) {
+		/* The shell's press, or a client's, is released; a drag the finger drove is given up. */
+		if (contact->route == ROUTE_SHELL && at_finger) {
 			(void)shell_press(server, contact->place_x / 256 + contact->offset_x, contact->place_y / 256 + contact->offset_y, 0, 0U);
+		} else if (contact->route == ROUTE_SHELL) {
+			shell_release_here(server);
 		} else if (contact->route == ROUTE_POINTER) {
 			kwl_seat_button(server, 0, KWL_BUTTON_LEFT, 0U);
 			kwl_seat_frame(server);

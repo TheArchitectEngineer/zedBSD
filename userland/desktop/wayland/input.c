@@ -28,6 +28,7 @@
  */
 
 #include "kwl.h"
+#include "data.h"
 #include "tablet.h"
 #include "touch.h"
 
@@ -138,6 +139,7 @@ kwl_input_probe(
 	unsigned absolute;
 	unsigned direct;
 	int on_display;
+	int beside_display;
 	int touch_screen;
 	int pad;
 	int has_type;
@@ -221,11 +223,21 @@ kwl_input_probe(
 	if (!pointer && !keyboard)
 		return 0;
 
+	/*
+	 * An absolute pointer points at the display it is on (QEMU's tablet,
+	 * WS217), unless its node says it is a pointer beside it (a pen tablet
+	 * without pressure, ws217-p003 review M5).
+	 */
+	direct = 1U;
+	beside_display = bit_is_set(capabilities->properties, INPUT_PROP_POINTER);
+	if (beside_display)
+		direct = 0U;
+
 	/* Keep the node; an absolute pointer brings its ranges along. */
 	if (absolute) {
-		error = kwl_input_attach(server, descriptor, path, pointer, keyboard, &x, &y);
+		error = kwl_input_attach(server, descriptor, path, pointer, keyboard, direct, &x, &y);
 	} else {
-		error = kwl_input_attach(server, descriptor, path, pointer, keyboard, NULL, NULL);
+		error = kwl_input_attach(server, descriptor, path, pointer, keyboard, 0U, NULL, NULL);
 	}
 
 	/* Succeeded: the node has been classified; 1 when the seat keeps it. */
@@ -246,6 +258,7 @@ kwl_input_attach(
 	const char *path,
 	unsigned pointer,
 	unsigned keyboard,
+	unsigned direct,
 	const struct input_absinfo *x,
 	const struct input_absinfo *y)
 {
@@ -274,13 +287,12 @@ kwl_input_attach(
 	snprintf(device->path, sizeof(device->path), "%s", path);
 
 	/*
-	 * An absolute pointer maps its axis ranges onto the display it is
-	 * on, from the place it reports now (it points at the display: QEMU's
-	 * tablet, WS217).
+	 * An absolute pointer maps its axis ranges onto the display, from the
+	 * place it reports now; one on the display maps onto its panel (WS217).
 	 */
 	if (pointer && x != NULL && y != NULL) {
 		device->absolute = 1;
-		device->direct = 1U;
+		device->direct = direct;
 		device->abs_x_minimum = x->minimum;
 		device->abs_x_maximum = x->maximum;
 		device->abs_y_minimum = y->minimum;
@@ -535,23 +547,33 @@ kwl_input_geometry(
 	if (!server->input_thread_ready)
 		return;
 
-	/* The geometry as it is, given whole. */
+	/*
+	 * The geometry as it is, given whole; another panel or angle makes the
+	 * motions computed before it no place of the pointer (review M7), and
+	 * the main thread takes the box's new warp count.
+	 */
 	kwl_output_geometry(server, &geometry);
-	kwl_cursor_box_outputs(&server->cursor_box, &geometry);
+	kwl_cursor_box_outputs(&server->cursor_box, &geometry, &server->pointer_warp);
 }
 
 /*
  * Ends what the absolute devices were doing when the angle an output shows
- * changed (WS217, plan/ws217/phase001 4.6 A 5): every finger on a touch
- * screen is cancelled until it lifts, and every pen lifts and leaves its
- * surface (a pen still near comes back at its next report, where the new
+ * changed (WS217, plan/ws217/phase001 4.6 A 5): a drag and drop is
+ * given up, the pointer's grabs end, every finger on a touch screen is
+ * cancelled until it lifts, and every pen lifts and leaves its surface (a pen still near comes back at its next report, where the new
  * angle maps it).  The pointer and the geometry follow the turn's warp.
  */
 void
 kwl_input_rotated(
 	struct kwl_server *server)
 {
-	/* The fingers, then the pens. */
+	/*
+	 * A drag and drop is given up first (a button let go below would drop
+	 * it where the old angle put it), then the pointer's grabs end, then
+	 * the fingers and the pens.
+	 */
+	kwl_data_drag_cancel(server);
+	kwl_seat_grabs_end(server);
 	kwl_touch_cancel(server, "rotated");
 	kwl_tablet_cancel(server);
 }

@@ -181,7 +181,7 @@ void kwl_cursor_box_destroy(struct kwl_cursor_box *box);
 void kwl_cursor_box_move(struct kwl_cursor_box *box, int64_t dx, int64_t dy, uint64_t event_us, struct kwl_cursor_motion *motion);
 void kwl_cursor_box_place(struct kwl_cursor_box *box, int32_t value_x, int32_t minimum_x, int32_t maximum_x, int32_t value_y, int32_t minimum_y, int32_t maximum_y, int64_t dx, int64_t dy, uint64_t event_us, struct kwl_cursor_motion *motion);
 void kwl_cursor_box_warp(struct kwl_cursor_box *box, const struct kwl_cursor_geometry *geometry, kwl_cursor_box_move_fn *move, const void *context, struct kwl_cursor_motion *motion);
-void kwl_cursor_box_outputs(struct kwl_cursor_box *box, const struct kwl_cursor_geometry *geometry);
+void kwl_cursor_box_outputs(struct kwl_cursor_box *box, const struct kwl_cursor_geometry *geometry, uint64_t *warp);
 void kwl_cursor_box_read(struct kwl_cursor_box *box, int32_t *x, int32_t *y, unsigned *output);
 void kwl_cursor_box_take_stats(struct kwl_cursor_box *box, struct kwl_cursor_stats *stats);
 int32_t kwl_cursor_clamp(int64_t position, uint32_t size);

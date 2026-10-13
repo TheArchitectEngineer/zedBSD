@@ -228,17 +228,28 @@ kwl_cursor_box_warp(
 /*
  * Gives the box the geometry as the main thread has it now (a display
  * opened, closed, moved, resized or turned), for the motions from now on.
- * A pointer the change takes off its output is carried by a warp.
+ * A pointer the change takes off its output is carried by a warp.  Another
+ * panel or angle (or another output for the absolute pointer) moves the
+ * warp count, so that a place the input thread computed over the old
+ * geometry is not taken as the pointer's (ws217-p003 review M7); *warp
+ * gets the count the main thread holds from now on.
  */
 void
 kwl_cursor_box_outputs(
 	struct kwl_cursor_box *box,
-	const struct kwl_cursor_geometry *geometry)
+	const struct kwl_cursor_geometry *geometry,
+	uint64_t *warp)
 {
-	/* The geometry replaced whole. */
+	int panels;
+
+	/* The geometry replaced whole, and the count moved for another mapping. */
 	pthread_mutex_lock(&box->lock);
 
+	panels = memcmp(box->physical, geometry->physical, sizeof(box->physical));
+	if (panels != 0 || box->absolute_slot != geometry->absolute_slot)
+		box->warp++;
 	box_geometry(box, geometry);
+	*warp = box->warp;
 
 	pthread_mutex_unlock(&box->lock);
 }

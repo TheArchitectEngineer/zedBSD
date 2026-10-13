@@ -976,6 +976,47 @@ seat_axis(
 }
 
 /*
+ * Ends the pointer's grabs (WS217: the angle an output shows changes, and
+ * the pointer goes to its own physical point, another logical point): a
+ * resize ends at its last size, a window's move and an arrangement's swap
+ * where they are, and a client's window operation forgets its button; the
+ * button still held reaches a client later as an ordinary release.
+ */
+void
+kwl_seat_grabs_end(
+	struct kwl_server *server)
+{
+	unsigned grabs;
+	int swapped;
+
+	/* A client's operation keeps no destination for the release. */
+	grabs = 0U;
+	if (server->interactive_window != NULL)
+		grabs++;
+	interactive_clear(server);
+
+	/* A resize, told its last size. */
+	if (server->resize != NULL) {
+		(void)kwl_toplevel_button(server, 0U);
+		grabs++;
+	}
+
+	/* A window's move, where it is. */
+	if (server->drag != NULL) {
+		kwl_glass_toplevel_move_end(server, server->drag);
+		grabs++;
+	}
+
+	/* An arrangement's swap, where it is. */
+	swapped = kwl_arrange_move_end(server);
+	if (swapped)
+		grabs++;
+
+	/* Succeeded: the tests read how many ended. */
+	printf("KWL SEAT grabs end grabs=%u\n", grabs);
+}
+
+/*
  * Ends one group of pointer events for version 5 pointers of the focused client.
  */
 void

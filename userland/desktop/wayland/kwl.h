@@ -2554,6 +2554,7 @@ void kwl_seat_axis(struct kwl_server *server, uint32_t time, int32_t vertical, i
 void kwl_seat_axis_finger(struct kwl_server *server, uint32_t time, int32_t vertical, int32_t horizontal, int32_t vertical_units, int32_t horizontal_units);
 void kwl_seat_axis_stop(struct kwl_server *server, uint32_t time);
 void kwl_seat_frame(struct kwl_server *server);
+void kwl_seat_grabs_end(struct kwl_server *server);
 void kwl_seat_key(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 void kwl_seat_key_deliver(struct kwl_server *server, uint32_t time, uint32_t key, uint32_t state);
 void kwl_seat_modifiers(struct kwl_server *server);
@@ -2567,7 +2568,7 @@ void kwl_os_poll_done(struct kwl_server *server, const struct pollfd *descriptor
 void kwl_input_scan(struct kwl_server *server);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
-int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, const struct input_absinfo *x, const struct input_absinfo *y);
+int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, unsigned direct, const struct input_absinfo *x, const struct input_absinfo *y);
 int kwl_threads_prepare(struct kwl_server *server);
 int kwl_input_threads_start(struct kwl_server *server);
 void kwl_input_threads_stop(struct kwl_server *server);

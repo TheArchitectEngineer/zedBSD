@@ -402,6 +402,8 @@ test_box(void)
 	int32_t y;
 	int32_t expected_x;
 	int32_t expected_y;
+	uint64_t warp;
+	uint64_t warp_before;
 	unsigned output;
 	unsigned angle;
 	int error;
@@ -418,7 +420,18 @@ test_box(void)
 	/* Each angle: the geometry given, then reports at the panel's corners and a middle point. */
 	for (angle = 0U; angle < 4U; angle++) {
 		geometry_one(&geometry, KWL_PLANE_ANCHOR, 0, 0, 1280U, 800U, test_angles[angle]);
-		kwl_cursor_box_outputs(&box, &geometry);
+		warp_before = box.warp;
+		kwl_cursor_box_outputs(&box, &geometry, &warp);
+		check(warp == box.warp, "kwl_cursor_box_outputs gives the warp count");
+		if (angle != 0U)
+			check(warp == warp_before + 1U, "another angle moves the warp count");
+		if (angle == 0U)
+			check(warp == warp_before, "the first angle, as the box had it, keeps the warp count");
+
+		/* The same geometry again keeps the count. */
+		warp_before = warp;
+		kwl_cursor_box_outputs(&box, &geometry, &warp);
+		check(warp == warp_before, "the same geometry keeps the warp count");
 		physical_differs = memcmp(box.physical, geometry.physical, sizeof(box.physical));
 		outputs_differ = memcmp(box.outputs, geometry.outputs, sizeof(box.outputs));
 		check(physical_differs == 0 && outputs_differ == 0, "kwl_cursor_box_outputs writes the geometry whole");

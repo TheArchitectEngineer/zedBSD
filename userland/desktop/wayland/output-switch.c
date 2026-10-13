@@ -479,6 +479,14 @@ kwl_output_rotated(
 	compose->opened_steps = steps;
 
 	/*
+	 * The drag and drop, the grabs, the fingers and the pens end what they
+	 * were doing at the old angle first, without moving the pointer
+	 * (ws217-p003 review S1): the turn below keeps it on its physical point.
+	 */
+	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U)
+		kwl_input_rotated(server);
+
+	/*
 	 * Another angle on the same panel keeps the pointer on its physical
 	 * point, before the fitting below would keep it inside the new size
 	 * (review S1); on another panel the fitting's clamp alone.
@@ -489,10 +497,6 @@ kwl_output_rotated(
 	pointer[3] = -1;
 	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U && same_panel)
 		kwl_output_pointer_turn(server, before_rotation, after.rotation, pointer);
-
-	/* The fingers and the pens end what they were doing at the old angle (ws217-p003). */
-	if ((steps & KWL_ROTATE_STEP_ROTATED) != 0U)
-		kwl_input_rotated(server);
 
 	/* The desktop fitted to another logical size (the look's images, the windows, the pointer), and the clients told. */
 	if ((steps & KWL_ROTATE_STEP_RESIZED) != 0U) {

@@ -322,8 +322,16 @@ Prerequisites: p002a の出力（main 済み: `rotate.c`・`kwl_output_size_set`
 | L12 | head の slot には swapchain の pass（`kwl_compose_target_pass`）、turn pass は clip の後、pass の後に bind を忘れる、backdrop の作り直しは `kwl_backdrop_destroy` が `backdrop_set` を NULL に |
 | L13 | turn の時も scene は swapchain の写しの能力で開く条件のまま（性能だけの違い、変えない） |
 
+## 13. T1-583 の結果と直し（2026-10-14 P1、q959 の中で、Q1 の指示）
+
+- T1-583（Q1 の判定の要約）: A・C・D は PASS（log の pointer `640,400>400,639` が式に合う、270 は GLASS の作り直し無し、displays.conf の保存と消去、`POLICY default` の `refused reason=mask`）。B（部分と全体の画素の比較）は image に wltest が無く未実施。
+- 不具合: `POLICY default`（実効 0・選択 90 から選択 0）→ `POLICY any` → `ROTATE 0` が `OK applied=1 saved=-1` で、displays.conf に `rotate=… 90` が残った（普通の 90 → 0 は `saved=0` で消える）。原因: 選択も実効も 0 なので `kwl_rotate_select` が NOTHING を返し、policy が書かずに残した config の行を見ていなかった。直し（output-rotate.c の `kwl_output_select_rotation`）: NOTHING の時に `kwl_displays_rotation()` の値が頼まれた角度と違えば書いて保存し、`KWL OUTPUT rotate key=… selected=R saved=0 applied=1 reason=kept`。
+- B のため `plan/ws217/tests/config-amd64.mk` に wltest（と p003 の tablet-probe）を足した。
+- 確かめ: build（amd64 ci・試験の config の wayland、rpi4、keiland-linux）warning 0。QEMU は T1（B と上の再現の手順、p003 と一緒に）。Status は in-progress のまま（B と saved の直しの T1 まで）。
+
 ## Event
 
 - 2026-10-13 / ws217-p002b-design-1: P1 が q948 で第 1 版を書いた（source は main `1eb79f9db`）。review-4 の S12（select と apply の 2 つの関数）・M21（arrange と refit）・p002a の残し 4（turn_build と既定の分け方）を入れ、M16 の前提（zedBSD の session は `keiland-desktop` でない）を見つけて試験の policy の渡し方を変えた。コードは書いていない。design-reviewer の review 待ち。
 - 2026-10-13 / ws217-p002b-impl-1: P1 が q948 で実装（turn.c・output-rotate.c・turn.vert ほか、§11）。build 4 つと host 試験 PASS。T1 の依頼を Q1 へ。
 - 2026-10-13 / ws217-p002b-review-1: design-reviewer の review-1（条件つきで進めてよい）。P1 が S1・M1〜M7・L1〜L13 を実装と phase.md に反映（Q1 の決め: M6 は試験の image だけ、M4 は ENOTSUP、M3 は全部捨てる形）。
+- 2026-10-14 / ws217-p002b-t1-583: T1-583 の A・C・D PASS、B 未実施（wltest 無し）、`saved=-1` の不具合。P1 が q959 の中で直し、wltest を image に足した（§13）。T1 は p003 と一緒に流す。
