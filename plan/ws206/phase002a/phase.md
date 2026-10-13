@@ -3,7 +3,7 @@
 # ws206-p002a: Pi 4 の GPIO の helper と mailbox の GPIO の helper
 
 Parent: [WS206](../ws.md)
-Status: in-progress（q932、P1、2026-10-13）
+Status: in-progress（q932、P1、2026-10-13。実装・host 試験・build は済み（dc2504ff2）。clearance は T1 の QEMU raspi4b の起動の回帰の結果を Q1 が判定してから）
 Phase disposition: normal
 Queue: q932（[P1 の lane](../../agents/P1/queue.md)）
 
@@ -54,6 +54,25 @@ make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=co
 - Pi の起動の回帰と、dmesg に `rpi4-gpio`・`rpi4-firmware` の失敗の log が無いこと。
 - p002b で: `drv_rpi4_firmware_get_gpio`・`get_gpio_direction` で WL_ON・BT_ON の今の状態と向き、`get_function` で GPFSEL3（pin 30〜39）の今の値、答えの長さと状態の語の形。
 
-## 記録
+## 記録（2026-10-13 P1、agent/p1 dc2504ff2、base main 752de34d2）
 
-（実行の後に追記）
+- 実装: `rpi4-gpio.c`・`.h`（新規、`platform/arm64/vmunix.mk` で常に build）、`rpi4-firmware.c`・`.h` に expander の 3 つの helper、
+  `src/kern/platform/rpi4.c` の `prepare_shared_blocks()`（SD の初期化の後、GENET・PCIe・audio・GPU の前に tree を開いて
+  `drv_rpi4_firmware_init` と `drv_rpi4_gpio_init`、失敗は log して続ける）。PCIe と GPU の `drv_rpi4_firmware_init` の呼び出しは残した（READY なら何もしない）。
+- W3 からの違い（設計の範囲の中の技術の判断）:
+  - GPIO の map は DT の大きさによらず 0xf4 に固定（Pi 4 の DT は `reg = <0x7e200000 0xb4>` で pull の register に届かない、dtc で確かめた）。DT の大きさが 0x18（GPFSEL0〜5）未満なら EINVAL。
+  - spinlock は static の初期化子（`audio.c` の registry と同じ形）。init の競合で `spin_init` を 2 度呼ばないため。`get_function` も同じ lock の下で読む。
+  - mailbox の EBUSY の 50 ms の再試行は入れない（review-3 軽微 3）。
+  - 向きの helper は `drv_rpi4_firmware_get_gpio_direction(line, enum drv_rpi4_firmware_gpio_direction *)`。列挙型は INPUT=1・OUTPUT=2（firmware の 0・1 と別の数）、firmware の 0・1 以外は EIO。
+  - 答えの検査: 最初の語（firmware が GPIO の番号を 0 で上書きすれば成功）が 0 でなければ EIO。get と向きは 8 byte 未満の答え、set は 4 byte 未満の答えも EIO。
+    答えの形は wiki と Linux の expander の driver の振る舞い（code は写していない）から。**Pi の実機では未確認**（p002b で確かめる）。
+- コマンドと結果（host、QEMU・実機は使っていない）:
+  - `sh plan/ws206/tests/gpio-host-test.sh build/ws206-p002a/gpio <main>/vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb` → unit（ASan・UBSan）PASS、smp（TSan、8 thread × 4000 の変更、map 1 回）PASS。
+  - 試験が誤りを捕まえることの確かめ（scratchpad の写しで、tree は変えていない）: pull の up と down の取り違え → FAIL、`update_field` の lock を外す → FAIL（lock の外の register の読み書き）、128+line を外す → FAIL。
+  - `sh plan/ws206/tests/firmware-smp-host-test.sh build/ws206-p002a/firmware-smp <dtb>` → PASS（race 1 準備・16000 answer、retry 2 準備・14000 answer）。
+  - `make -f plan/ws048/tests/host-test.mk` の `firmware-host-test` → 200163 checks passed。
+  - `make -o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix` → rc 0、warning 0（3 file を touch して再 build も 0）。
+  - `make -o <worktree>/build/amd64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/vmunix` → rc 0、warning 0。
+  - `git diff --check` → 空。
+- 未実施: QEMU raspi4b の `boot-test.sh`、Pi の起動の回帰（T1、Q1 に依頼）。expander の答えの実機の形。
+- 試験の file `plan/ws206/tests/gpio-host-test.*` は WS206 の未完了の Phase（p002b・ws215-p003 の helper の回帰）から参照する。WS の終わりに Master の Tools に登録するかを Q1 が判断。
