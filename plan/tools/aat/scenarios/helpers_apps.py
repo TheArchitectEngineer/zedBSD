@@ -531,6 +531,11 @@ def calendar(item):
 	run.click(*window.middle())
 	time.sleep(0.5)
 	picked = run.lines(r"CALENDAR SELECT date=", mark)
+	# A click where the day has no item opens a new event of it (ws155-p006): its Cancel (the panel's, as in
+	# helpers_calendar.py) closes it, so that the shots show the months.
+	if run.lines(r"CALENDAR EDIT new list=", mark):
+		run.click(window.x + window.width - 132, window.y + 274)
+		time.sleep(0.5)
 	mark = run.mark()
 	run.key("right")
 	selected = run.wait(r"CALENDAR SELECT date=\S+", mark, 10)

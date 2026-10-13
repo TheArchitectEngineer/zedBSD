@@ -8,7 +8,8 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 Calendar keeps its events under ~/Documents/Calendar as iCalendar files (one each); the helper takes kei's folder away
 before and after.  The places in the window are view.c's layout, from the window's right edge: the panel 300 wide,
 its Work card at (right - 220, 146), the editor's Save at (right - 54, 274) and Cancel at (right - 132, 274); an
-event's first pill in a cell 39 below the cell's top (ws155-p006).  Today's cell is the one the view logs
+event's first pill in a cell 39 below the cell's top, and a click on a cell where it has no pill opens a new event
+(ws155-p006).  Today's cell is the one the view logs
 (CALENDAR CELL today x= y= width= height=, in the window).  The system bar's clock is at the screen's top right.
 """
 import re
@@ -61,6 +62,19 @@ def event(item):
 		cancelled = run.wait(r"CALENDAR EDIT cancel", mark, 10)
 		item.step("Cancel", cancelled or "")
 		item.check(cancelled, "Cancel did not close the editor")
+		# A click low in today's cell, under its one pill where it has no item: a new event of today (ws155-p006).
+		mark = run.mark()
+		run.click(window.x + x + width // 2, window.y + y + height - 10)
+		blank = run.wait(r"CALENDAR BLANK date=\S+ mode=Month", mark, 10)
+		new = run.wait(r"CALENDAR EDIT new list=\w+", mark, 10)
+		item.step("clicked today's cell where it has no item", f"{blank}; {new}")
+		run.shot(item, "blank-new")
+		item.check(blank and new, "a click where the day has no item did not open a new event")
+		mark = run.mark()
+		run.click(right - 132, window.y + 274)
+		cancelled = run.wait(r"CALENDAR EDIT cancel", mark, 10)
+		item.step("Cancel the new event", cancelled or "")
+		item.check(cancelled, "Cancel did not close the new event's editor")
 		# Closed, then opened again from the system bar's clock.
 		run.close(item, window)
 		screen_width, _ = run.screen()
@@ -75,7 +89,7 @@ def event(item):
 		time.sleep(1.0)
 		run.shot(item, "from-clock")
 		item.check(opened and ready, "the clock did not open Calendar")
-		item.person("the editor, the event on today's cell, the editor of the event opened by its pill, and Calendar opened from the clock")
+		item.person("the editor, the event on today's cell, the editor of the event opened by its pill, the new event opened by a click under the pill, and Calendar opened from the clock")
 	finally:
 		run.sh(f"rm -rf {FOLDER}")
 

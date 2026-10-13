@@ -13,8 +13,10 @@
  * would: the start, a date clicked and the small desk calendar's page
  * turning, a kind of event dragged onto a date and the cell sinking, the
  * memo typed in and dragged onto a date, the event kept double clicked
- * and double tapped on its pill to edit it (ws155-p006), the next month, a calendar
- * hidden, the motion reduced, and the cards on glass.  The "CALENDAR" lines the
+ * and double tapped on its pill to edit it (ws155-p006), a click where a day
+ * has no item opening a new event in the months, the week and the day and in
+ * a window too narrow for the panel (the editor over the months), the next
+ * month, a calendar hidden, the motion reduced, and the cards on glass.  The "CALENDAR" lines the
  * view logs are checked.
  *
  *     host-calendar FONT FALLBACK PREFIX
@@ -43,6 +45,21 @@
 /* The editor's Save in the panel (x 980, the editor inset 14; its buttons under the title, all day, the times and the calendars). */
 #define TEST_SAVE_X		1226
 #define TEST_SAVE_Y		274
+#define TEST_CANCEL_X		(TEST_SAVE_X - 78)
+
+/*
+ * The narrower window, with no room for the panel, and its editor's Save
+ * over the months (the months' card 676 wide from 224 less the gap, the
+ * card 300 wide under the bar, the editor inset 14).
+ */
+#define TEST_NARROW_WIDTH	900
+#define TEST_NARROW_SAVE_X	834
+#define TEST_NARROW_SAVE_Y	334
+
+/* The week's and the day's band (the months' card at 224, 744 wide, under the bar and the days' row). */
+#define TEST_LIST_X		224
+#define TEST_LIST_Y		90
+#define TEST_WEEK_COLUMN	(744 / 7)
 
 /* The log the view wrote, for the checks. */
 static char test_log[32768];
@@ -54,12 +71,18 @@ static int test_failures;
 /* The frame's time. */
 static uint64_t test_now = 1000000000U;
 
+/* The window's width the frames are drawn at. */
+static int test_width = TEST_WIDTH;
+
 int main(int argc, char **argv);
 int test_calendar_data_load(const char *folder, const struct cal_date *today);
 static void test_frame(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style);
 static void test_click(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int x, int y);
 static void test_double(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, int x, int y, int finger);
 static void test_check(const char *name, const char *expected);
+static void test_has(const char *name, const char *expected);
+static void test_absent(const char *name, const char *unexpected);
+static void test_narrow(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const char *prefix);
 static int test_save(struct cal_view *view, const struct kl_canvas *canvas, const char *prefix, const char *name, int glass);
 
 /*
@@ -83,7 +106,6 @@ main(
 	struct kl_ui *ui;
 	uint32_t *pixels;
 	uint32_t *copy;
-	const char *opened;
 	size_t count;
 	size_t kept;
 	int desk_only;
@@ -171,6 +193,8 @@ main(
 
 	/* A date clicked (the 14th, Wednesday of the third week): its page turns, six frames over the turn. */
 	test_click(&view, ui, &style, TEST_GRID_X + 3 * TEST_COLUMN + 49, TEST_GRID_Y + 52 + 2 * TEST_ROW + 52);
+	test_has("blank-month", "BLANK date=2026-10-14 mode=Month");
+	test_has("blank-new", "EDIT new list=Work");
 	test_check("select", "FLIP from=2026-10-05 to=2026-10-14");
 	for (i = 0; i < 6; i++) {
 		/* One frame of the turn. */
@@ -178,6 +202,10 @@ main(
 		test_now += 110000U;
 		test_frame(&view, ui, &style);
 	}
+
+	/* ws155-p006: the click was where the 14th has no item, so a new event of the 14th opened; Cancel closes it. */
+	test_click(&view, ui, &style, TEST_CANCEL_X, TEST_SAVE_Y);
+	test_check("blank-cancel", "EDIT cancel");
 
 	/* The Work card dragged onto the 22nd: the cell sinks, three frames. */
 	test_now += 2000000U;
@@ -227,15 +255,15 @@ main(
 		printf("PASS pill-count\n");
 	}
 
-	/* A double click on the cell beside its pills opens nothing. */
+	/* A double click on the cell beside its pills opens no item, but the new event its first click opened; Cancel closes it. */
 	test_double(&view, ui, &style, TEST_GRID_X + 4 * TEST_COLUMN + 49, TEST_GRID_Y + 52 + 3 * TEST_ROW + 12, 0);
-	opened = strstr(test_log, "EDIT open");
-	if (opened != NULL) {
-		printf("FAIL pill-none\n%s", test_log);
-		test_failures++;
-	} else {
-		printf("PASS pill-none\n");
-	}
+	test_has("blank-double", "BLANK date=2026-10-22 mode=Month");
+	test_absent("pill-none", "EDIT open");
+	test_click(&view, ui, &style, TEST_CANCEL_X, TEST_SAVE_Y);
+	test_check("blank-double-cancel", "EDIT cancel");
+
+	/* A window too narrow for the panel: a click where a day has no item opens the editor over the months. */
+	test_narrow(&view, ui, &style, argv[3]);
 
 	/* The memo: a click after its last line's end gives it the keyboard with the caret there, " ok" is typed, then it is dragged by its header onto the 26th. */
 	test_now += 1000000U;
@@ -300,10 +328,43 @@ main(
 	test_click(&view, ui, &style, 596, 30);
 	test_check("week", "MODE Week");
 	(void)test_save(&view, &canvas, argv[3], "week", 0);
+
+	/* ws155-p006: in the week, a click on an item's row opens it, not a new event; Cancel closes it. */
+	test_click(&view, ui, &style, TEST_LIST_X + TEST_WEEK_COLUMN + 50, TEST_LIST_Y + 55);
+	test_has("week-row", "EDIT open index=");
+	test_absent("week-row-only", "BLANK");
+
+	/* The frame the window draws again for the editor opened, then Cancel. */
+	test_frame(&view, ui, &style);
+	test_click(&view, ui, &style, TEST_CANCEL_X, TEST_SAVE_Y);
+	test_check("week-row-cancel", "EDIT cancel");
+
+	/* Under Wednesday the 7th, which has no item: a new event of the 7th, of the first calendar shown (Work is hidden); Cancel closes it. */
+	test_click(&view, ui, &style, TEST_LIST_X + 3 * TEST_WEEK_COLUMN + 50, TEST_LIST_Y + 300);
+	test_has("blank-week", "BLANK date=2026-10-07 mode=Week");
+	test_check("blank-week-new", "EDIT new list=Personal");
+
+	/* The frame the window draws again for the editor opened, then Cancel. */
+	test_frame(&view, ui, &style);
+	(void)test_save(&view, &canvas, argv[3], "week-new", 0);
+	test_click(&view, ui, &style, TEST_CANCEL_X, TEST_SAVE_Y);
+	test_check("blank-week-cancel", "EDIT cancel");
+
+	/* The day. */
 	test_now += 1000000U;
 	test_click(&view, ui, &style, 657, 30);
 	test_check("day", "MODE Day");
 	(void)test_save(&view, &canvas, argv[3], "day", 0);
+
+	/* ws155-p006: anywhere under the day's name (the 7th chosen, with no item): a new event of the 7th; Cancel closes it. */
+	test_click(&view, ui, &style, 600, TEST_LIST_Y + 400);
+	test_has("blank-day", "BLANK date=2026-10-07 mode=Day");
+	test_check("blank-day-new", "EDIT new list=Personal");
+
+	/* The frame the window draws again for the editor opened, then Cancel. */
+	test_frame(&view, ui, &style);
+	test_click(&view, ui, &style, TEST_CANCEL_X, TEST_SAVE_Y);
+	test_check("blank-day-cancel", "EDIT cancel");
 	test_now += 1000000U;
 	test_click(&view, ui, &style, 533, 30);
 	test_check("month", "MODE Month");
@@ -378,7 +439,7 @@ test_frame(
 
 	/* The frame. */
 	kl_ui_begin(ui, test_now);
-	cal_view_draw(view, ui, style, TEST_WIDTH, TEST_HEIGHT, test_now);
+	cal_view_draw(view, ui, style, test_width, TEST_HEIGHT, test_now);
 	(void)kl_ui_end(ui, test_now);
 
 	/* The keys no widget took. */
@@ -472,6 +533,123 @@ test_check(
 	}
 
 	/* The next check reads only what comes after. */
+	test_log_length = 0;
+	test_log[0] = '\0';
+}
+
+/*
+ * Checks that the view logged a line, and keeps the log for the next check.
+ */
+static void
+test_has(
+	const char *name,
+	const char *expected)
+{
+	const char *found;
+
+	/* The line among those logged. */
+	found = strstr(test_log, expected);
+	if (found == NULL) {
+		printf("FAIL %s expected \"%s\" in:\n%s", name, expected, test_log);
+		test_failures++;
+	} else {
+		printf("PASS %s\n", name);
+	}
+}
+
+/*
+ * Checks that the view logged no line with some words, and empties the log.
+ */
+static void
+test_absent(
+	const char *name,
+	const char *unexpected)
+{
+	const char *found;
+
+	/* No such line among those logged. */
+	found = strstr(test_log, unexpected);
+	if (found != NULL) {
+		printf("FAIL %s unexpected \"%s\" in:\n%s", name, unexpected, test_log);
+		test_failures++;
+	} else {
+		printf("PASS %s\n", name);
+	}
+
+	/* The next check reads only what comes after. */
+	test_log_length = 0;
+	test_log[0] = '\0';
+}
+
+/*
+ * ws155-p006: in a window too narrow for the panel, clicks where a day has
+ * no item: the editor opens over the months, the months under it take no
+ * click, and its Save keeps the new event (on the 27th, from 9 to 10); the
+ * window is wide again after.
+ */
+static void
+test_narrow(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const char *prefix)
+{
+	struct kl_canvas narrow;
+	struct kl_style narrow_style;
+	const char *found;
+	int error;
+	int x;
+	int y;
+	int width;
+	int height;
+	int scanned;
+
+	/* The narrower canvas on the same pixels, and its style. */
+	error = kl_canvas_init(&narrow, style->canvas->pixels, TEST_WIDTH, TEST_NARROW_WIDTH, TEST_HEIGHT);
+	if (error != 0) {
+		printf("FAIL narrow canvas error=%d\n", error);
+		test_failures++;
+		return;
+	}
+
+	/* Its first frame: today's cell (Monday the 5th) says where it went. */
+	narrow_style = *style;
+	narrow_style.canvas = &narrow;
+	test_width = TEST_NARROW_WIDTH;
+	test_now += 1000000U;
+	test_frame(view, ui, &narrow_style);
+	found = strstr(test_log, "CELL today ");
+	scanned = 0;
+	if (found != NULL)
+		scanned = sscanf(found, "CELL today x=%d y=%d width=%d height=%d", &x, &y, &width, &height);
+	if (scanned != 4) {
+		printf("FAIL narrow-cell\n%s", test_log);
+		test_failures++;
+		test_width = TEST_WIDTH;
+		kl_canvas_release(&narrow);
+		return;
+	}
+
+	/* Tuesday the 27th, three weeks under the 5th, low in its cell where it has no item: the editor over the months. */
+	test_log_length = 0;
+	test_log[0] = '\0';
+	test_click(view, ui, &narrow_style, x + width + width / 2, y + 3 * height + height - 12);
+	test_has("narrow-blank", "BLANK date=2026-10-27 mode=Month");
+	test_check("narrow-new", "EDIT new list=Work");
+	(void)test_save(view, &narrow, prefix, "narrow-editor", 0);
+
+	/* The 26th, left of the editor's card: the months under it take no click. */
+	test_click(view, ui, &narrow_style, x + width / 2, y + 3 * height + height - 12);
+	test_absent("narrow-veil", "BLANK");
+
+	/* Save over the months keeps the new event of the 27th. */
+	test_click(view, ui, &narrow_style, TEST_NARROW_SAVE_X, TEST_NARROW_SAVE_Y);
+	test_check("narrow-save", "list=Work date=2026-10-27 all_day=0 start=540 end=600 error=0");
+
+	/* The window wide again. */
+	test_width = TEST_WIDTH;
+	test_frame(view, ui, style);
+	kl_canvas_release(&narrow);
 	test_log_length = 0;
 	test_log[0] = '\0';
 }

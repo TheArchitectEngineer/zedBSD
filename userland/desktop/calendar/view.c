@@ -24,7 +24,11 @@
  * chosen: a small desk calendar in 3D, the date, and its events and memos
  * in full.  An item opens in the editor (to change, keep or delete it)
  * with a double click or tap on its pill in the months, or a click on its
- * row in the card of the day, the week or the day (ws155-p006).
+ * row in the card of the day, the week or the day (ws155-p006); a click or
+ * tap on a day where it has no item -- in the months, the week or the day
+ * -- opens the editor on a new event of that day, as a drop of a kind does.
+ * A window too narrow for the panel shows the editor as a card over the
+ * months, which takes every click on them while it is open.
  *
  * The motion is little and calm: the small desk calendar's page turns
  * over when the day chosen changes, and the cell something is dropped on
@@ -127,6 +131,17 @@
 #define CAL_ID_EDIT_DELETE	23U
 #define CAL_ID_EDIT_CANCEL	24U
 #define CAL_ID_LIST_ITEM	25U
+#define CAL_ID_EDIT_VEIL	26U
+#define CAL_ID_DAY_BLANK	27U
+
+/* What is under a point in a month's cell: no item, an item's pill, or "+N more". */
+#define VIEW_PILL_NONE		0
+#define VIEW_PILL_ITEM		1
+#define VIEW_PILL_MORE		2
+
+/* The new event's hours: from 9 to 10. */
+#define CAL_NEW_START		(9 * 60)
+#define CAL_NEW_END		(10 * 60)
 
 /* The colors: the ground, the cards, Sunday's and Saturday's, the text of their numbers. */
 #define CAL_COLOR_GROUND_TOP	kl_theme_choose(KL_RGB(0xeef4fd), KL_RGB(0x1b1f26))
@@ -200,6 +215,9 @@ static unsigned view_drag_source(struct cal_view *view, struct kl_ui *ui, uint32
 static int view_memo(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, int top, int height, uint64_t now_us);
 static void view_chosen_day(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *card, uint64_t now_us);
 static void view_editor(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *area, uint64_t now_us);
+static void view_editor_over(struct cal_view *view, struct kl_ui *ui, const struct kl_style *style, const struct kl_rect *main, uint64_t now_us);
+static void view_new(struct cal_view *view, enum cal_list list, const struct cal_date *date);
+static void view_blank(struct cal_view *view, const struct cal_date *date, uint64_t now_us);
 static void view_edit(struct cal_view *view, long index, uint64_t now_us);
 static void view_edit_save(struct cal_view *view, uint64_t now_us);
 static void view_edit_delete(struct cal_view *view, uint64_t now_us);
@@ -222,7 +240,7 @@ static int view_month_top(const struct cal_view *view, int index, int cell_heigh
 static int view_month_rows(const struct cal_view *view, int index, struct cal_date *first);
 static int view_cell_height(const struct kl_rect *grid);
 static int view_in_clip(const struct kl_canvas *canvas, const struct kl_rect *rect);
-static void view_pill_open(struct cal_view *view, struct kl_ui *ui, const struct kl_rect *cell, const struct cal_date *date, uint64_t now_us);
+static int view_pill_at(struct cal_view *view, struct kl_ui *ui, const struct kl_rect *cell, const struct cal_date *date, long *index);
 static void view_centred(const struct kl_style *style, int cx, int baseline, const char *text, unsigned pixels, int bold, kl_color color);
 static float view_ease(float t);
 
@@ -523,6 +541,10 @@ cal_view_draw(
 		view->cell_count = 0;
 		view_list(view, ui, style, &layout.grid, now_us);
 	}
+
+	/* An event being edited with no room for the panel: the editor over the months. */
+	if (view->editing && layout.panel.width == 0)
+		view_editor_over(view, ui, style, &layout.main, now_us);
 
 	/* A kind of event being dragged, over everything. */
 	view_ghost(view, ui, style);
@@ -1365,6 +1387,8 @@ view_cell(
 	kl_color ink;
 	kl_color color;
 	kl_color tint;
+	long index;
+	int under;
 	int sinking;
 	int chosen;
 	int shown;
@@ -1415,9 +1439,24 @@ view_cell(
 		view_select(view, date, now_us);
 	}
 
-	/* A double click or tap on one of its pills opens that item in the editor. */
-	if ((hit & KL_HIT_DOUBLE) != 0U)
-		view_pill_open(view, ui, cell, date, now_us);
+	/* What of the cell a click or tap was on. */
+	under = VIEW_PILL_NONE;
+	index = -1;
+	if ((hit & KL_HIT_CLICKED) != 0U)
+		under = view_pill_at(view, ui, cell, date, &index);
+
+	/*
+	 * A double click or tap on one of its pills opens that item in the
+	 * editor (its first click only chose the day); one click or tap where
+	 * there is no item opens a new event of the day -- the second of a
+	 * double click there leaves the new event as the first opened it.
+	 */
+	if ((hit & KL_HIT_DOUBLE) != 0U) {
+		if (under == VIEW_PILL_ITEM)
+			view_edit(view, index, now_us);
+	} else if (under == VIEW_PILL_NONE && (hit & KL_HIT_CLICKED) != 0U) {
+		view_blank(view, date, now_us);
+	}
 
 	/* Where a drop finds it. */
 	if (view->cell_count < CAL_CELLS_MAX && seen.height > 0) {
@@ -1539,18 +1578,17 @@ view_cell(
 }
 
 /*
- * Opens in the editor the item whose pill in a cell is under the point of
- * the input (a double click or tap on the cell; the pills are laid out as
- * view_cell draws them, a cell that is not sinking).  A point on no pill,
- * or on "+N more", opens nothing.
+ * Tells what of a cell is under the point of the input: an item's pill
+ * (its index in the store in *index), "+N more", or neither (the pills
+ * are laid out as view_cell draws them, a cell that is not sinking).
  */
-static void
-view_pill_open(
+static int
+view_pill_at(
 	struct cal_view *view,
 	struct kl_ui *ui,
 	const struct kl_rect *cell,
 	const struct cal_date *date,
-	uint64_t now_us)
+	long *index)
 {
 	struct view_entry entries[CAL_DAY_EVENTS];
 	size_t count;
@@ -1566,22 +1604,31 @@ view_pill_open(
 	if (count > fits && fits > 0U)
 		fits--;
 
-	/* Beside the pills: nothing. */
+	/* Beside the pills: none of them. */
 	kl_ui_pointer(ui, &px, &py);
 	if (px < (double)(cell->x + 5) || px >= (double)(cell->x + cell->width - 5))
-		return;
+		return VIEW_PILL_NONE;
 
 	/* The pill under the point. */
 	y = cell->y + 30;
 	for (i = 0; i < count && i < fits; i++) {
 		if (py >= (double)y && py < (double)(y + CAL_PILL)) {
-			view_edit(view, entries[i].index, now_us);
-			return;
+			*index = entries[i].index;
+			return VIEW_PILL_ITEM;
 		}
 
 		/* The next pill under it. */
 		y += CAL_PILL + CAL_PILL_GAP;
 	}
+
+	/* "+N more" under the last pill, for the items that did not fit. */
+	if (count > i &&
+	    py >= (double)y &&
+	    py < (double)(y + CAL_PILL))
+		return VIEW_PILL_MORE;
+
+	/* Neither: the cell's ground or its number. */
+	return VIEW_PILL_NONE;
 }
 
 /* Tells whether a rectangle has a pixel within a canvas's clip (the part of the frame being drawn). */
@@ -2678,11 +2725,56 @@ view_drop(
 	view_select(view, date, now_us);
 
 	/* The new event in the editor. */
+	view_new(view, list, date);
+}
+
+/*
+ * Starts a new event on a day clicked or tapped where it has no item (the
+ * months, the week or the day): the day is chosen, and the editor opens as
+ * after a drop, on the first calendar shown (Work when all are hidden).
+ */
+static void
+view_blank(
+	struct cal_view *view,
+	const struct cal_date *date,
+	uint64_t now_us)
+{
+	enum cal_list list;
+	int i;
+
+	/* The log the tests read. */
+	cal_log("BLANK date=%04d-%02d-%02d mode=%s", date->year, date->month, date->day, view_segments[view->mode]);
+
+	/* The first calendar shown. */
+	list = CAL_WORK;
+	for (i = CAL_LISTS - 1; i >= 0; i--) {
+		if ((view->hidden & (1U << i)) == 0U)
+			list = (enum cal_list)i;
+	}
+
+	/* The day chosen (the same week or day stays in view). */
+	view_select(view, date, now_us);
+
+	/* The new event in the editor. */
+	view_new(view, list, date);
+}
+
+/*
+ * Opens the editor on a new event of a calendar on a day, with its title
+ * and the hour from 9.
+ */
+static void
+view_new(
+	struct cal_view *view,
+	enum cal_list list,
+	const struct cal_date *date)
+{
+	/* The new event's fields. */
 	memset(&view->edit, 0, sizeof(view->edit));
 	view->edit.list = list;
 	view->edit.date = *date;
-	view->edit.start = 9 * 60;
-	view->edit.end = 10 * 60;
+	view->edit.start = CAL_NEW_START;
+	view->edit.end = CAL_NEW_END;
 	view->edit_index = -1;
 	view->editing = 1;
 	kl_field_set(&view->edit_title, view_new_titles[list]);
@@ -2848,6 +2940,46 @@ view_editor(
 	}
 }
 
+/*
+ * Draws the editor as a card over the months' card (a window too narrow
+ * for the panel), at its right under its bar; under the card, the months
+ * take no click while it is open.
+ */
+static void
+view_editor_over(
+	struct cal_view *view,
+	struct kl_ui *ui,
+	const struct kl_style *style,
+	const struct kl_rect *main,
+	uint64_t now_us)
+{
+	struct kl_rect card;
+	struct kl_rect editor;
+
+	/* The months' card takes the clicks the editor's card does not. */
+	(void)kl_ui_hit(ui, CAL_ID_EDIT_VEIL, 0U, main);
+
+	/* The card: the panel's width at the right, or what the months' card leaves. */
+	card.width = CAL_PANEL;
+	if (card.width > main->width - 2 * CAL_GAP)
+		card.width = main->width - 2 * CAL_GAP;
+	card.x = main->x + main->width - CAL_GAP - card.width;
+	card.y = main->y + CAL_TOPBAR;
+	card.height = 92 + 2 * (CAL_KIND_HEIGHT + 8) + 52 + 14;
+
+	/* Opaque over the months even on glass: the shadow, the card and its edge. */
+	kl_canvas_shadow(style->canvas, (float)card.x, (float)card.y + 2.0f, (float)card.width, (float)card.height, CAL_CARD_RADIUS, 10.0f, style->theme->shadow);
+	kl_canvas_round(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, CAL_CARD_RADIUS, CAL_COLOR_SURFACE);
+	kl_canvas_round_border(style->canvas, (float)card.x, (float)card.y, (float)card.width, (float)card.height, CAL_CARD_RADIUS, 1.0f, style->theme->panel_edge);
+
+	/* The editor within it, inset as in the panel. */
+	editor.x = card.x + 14;
+	editor.y = card.y + 14;
+	editor.width = card.width - 28;
+	editor.height = card.height - 28;
+	view_editor(view, ui, style, &editor, now_us);
+}
+
 /* Keeps the event of the editor (its times read from their fields) and closes the editor. */
 static void
 view_edit_save(
@@ -2976,6 +3108,7 @@ view_list(
 	struct view_entry entries[CAL_DAY_EVENTS];
 	struct cal_date day;
 	struct kl_rect column;
+	struct kl_rect blank;
 	struct kl_rect row;
 	char line[192];
 	kl_color ink;
@@ -3024,6 +3157,18 @@ view_list(
 			row.height = column.height - 16;
 			kl_canvas_fill(style->canvas, &row, style->theme->row_separator);
 		}
+
+		/*
+		 * Under its name, where it has no item, a click or tap starts a new
+		 * event of the day (the items' rows, recorded after, take theirs);
+		 * the list has no hours, so the new event is from 9 as after a drop.
+		 */
+		blank = column;
+		blank.y = column.y + 34;
+		blank.height = column.height - 34;
+		hit = kl_ui_hit(ui, CAL_ID_DAY_BLANK, (uint32_t)(day.year * 10000 + day.month * 100 + day.day), &blank);
+		if ((hit & KL_HIT_CLICKED) != 0U && (hit & KL_HIT_DOUBLE) == 0U)
+			view_blank(view, &day, now_us);
 
 		/* Its items: the calendar's color, the time, the title (a memo's note). */
 		count = view_day(view, &day, entries, CAL_DAY_EVENTS);

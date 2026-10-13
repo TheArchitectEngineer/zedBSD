@@ -61,7 +61,7 @@ Keiland の標準 app として、カレンダー・予定の管理（スケジ�
 | ws155-p003 | app: 保存・編集・Week と Day・開始の通知 | cleared（2026-10-07、T1-297） | p002 |
 | ws155-p004 | system bar の時計から Calendar を開く | cleared（2026-10-07、T1-297） | p001 |
 | ws155-p005 | 全文規約の見直し | planning（ベータ3、2026-10-08 ユーザー「コーディング規約による整形はベータ3」） | p002〜p004 |
-| ws155-p006 | 月の表示の予定の double click（double tap）で既存の編集の画面を開く（2026-10-13 UAT） | test-wait（T1 の AAT `apps.calendar.event`、[phase](phase006/phase.md)） | p003 |
+| ws155-p006 | 月の表示の予定の double click（double tap）で既存の編集の画面を開く、月・週・日の空き地の click で新規作成（狭い窓は months の上に編集の card）（2026-10-13 UAT） | test-wait（T1 の AAT `apps.calendar.event`、[phase](phase006/phase.md)） | p003 |
 
 ## mock への再指示（2026-10-05 ユーザー、T1-179 の画面を見て）
 
