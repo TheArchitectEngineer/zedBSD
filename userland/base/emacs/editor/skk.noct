@@ -423,9 +423,9 @@ func skkLookupIn(text, reading, out) {
     if (idx < 0) {
         return 0;
     }
-    // Cut the candidate line.
+    // Cut the candidate line. String.substring takes (start, length).
     var from = idx + String.charCount(probe);
-    var slice = String.substring(text, from, from + 4000);
+    var slice = String.substring(text, from, 4000);
     var eol = String.indexOf(slice, "\n");
     if (eol >= 0) {
         slice = String.substring(slice, 0, eol);
@@ -437,7 +437,7 @@ func skkLookupIn(text, reading, out) {
     while (i <= n) {
         if (i == n || String.charAt(slice, i) == "/") {
             if (i > start) {
-                var cand = String.substring(slice, start, i);
+                var cand = String.substring(slice, start, i - start);
                 var semi = String.indexOf(cand, ";");
                 if (semi >= 0) {
                     cand = String.substring(cand, 0, semi);
