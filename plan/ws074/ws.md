@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1099](queue.md) finished / p219固定style-changes8件再測定。2026-10-14 08:14 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1100](queue.md) finished / p217残縦書きstyle-changes4件の診断。2026-10-14 08:17 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -855,3 +855,5 @@ Event ws074-p219-q1097-partial-clear-20261014: [p219](phase219/phase.md) q1097-i
 Event ws074-p219-q1098-partial-clear-20261014: [p219](phase219/phase.md) q1098-i01は固定pixel行の水平Grid直接inline text先頭line baselineをempty合成baseline groupに追加。[証拠](phase219/evidence/20261014-q1098/README.md)。固定style-changes005/006各3/6→6/6 subtest・whole PASS、旧001/002と100 subtest PASS維持。host回帰・warning0 build、Acid3差0/Acid2差1865。q1098部分cleared、p219/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p219-q1099-partial-clear-20261014: [p219](phase219/phase.md) q1099-i01は固定style-changes8 IDを同条件再測定し2→4 whole PASS、20→26/48 subtest PASS、旧PASS後退0。[証拠](phase219/evidence/20261014-q1099/README.md)。残4 IDは縦書きoffset/文字幅差。q1099部分cleared、p219/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p217-q1100-partial-clear-20261014: [p217](phase217/phase.md) q1100-i01は残縦書き4 IDの失敗を空子offsetのみ2件と文字子width初回差2件へ分割。[証拠](phase217/evidence/20261014-q1100/README.md)。前者の限定baseline groupを次の独立修正候補とし、後者には縦文字layoutと論理幅が必要。q1100部分cleared、p217/p219/p189/p173全件100%未達。共有投影/GitHub publication保留。

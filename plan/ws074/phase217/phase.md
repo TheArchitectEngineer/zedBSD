@@ -67,3 +67,13 @@ Follow-up ws074-p217-p218-q1095-output-20261014: [p218 q1095](../phase218/eviden
 Follow-up ws074-p217-p219-q1096-output-20261014: [p219 q1096](../phase219/evidence/20261014-q1096/README.md)で空子の固定行合成baselineを検証。style-changes-001は3/6→6/6 subtest、whole FAIL→PASS。p217 alignment残205件の同条件全再測定は未実施で、p217 whole受け入れは未達。
 
 Follow-up ws074-p217-p219-q1097-eight-20261014: [p219 q1097](../phase219/evidence/20261014-q1097/README.md)でstyle-changes固定8件を同条件測定し、q1093の0/8 whole PASS・0/48 subtestから2/8 whole PASS・20/48 subtestへ改善。旧PASS後退0。残6件は文字line baseline2と縦書き4で、p217全206件の再測定/受け入れは未達。
+
+Follow-up ws074-p217-p219-q1099-eight-20261014: [p219 q1099](../phase219/evidence/20261014-q1099/README.md)で固定8件を同条件再測定し4/8 whole PASS・26/48 subtest PASS。横書き文字line2件が新規whole PASS、残4件は縦書き。p217全206件の再測定/受け入れは未達。
+
+## q1100-i01 有限部分範囲（2026-10-14 08:15 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（09:45 JSTまで）に適用。q1099残4 vertical-rl/lr style-changes IDの48中22失敗から期待/実際の初回不一致と後続assertを分類。固定WPT sourceとGrid layout/text/geometry経路を追い、必要ならhost最小HTMLで縦書き空子/文字子を実測。次の独立有限実装境界を記録。browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1100-i01 結果（2026-10-14 08:17 JST）
+
+Event ws074-p217-q1100-partial-clear-20261014: [証拠](evidence/20261014-q1100/README.md)。003/004は空vertical-rl子のwidth/heightが合い、失敗はoffsetLeftのみ。baseline群ではx40、50px子除外後は残群x70・除外子x40。007/008はvertical-lr文字子が初回width期待20/40/30対実100で全12 subtest失敗。前者の限定された縦書き空子baseline配置を次の有限修正とし、後者は縦文字layout/論理幅の別設計が必要。q1100部分cleared、p217/p219/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
