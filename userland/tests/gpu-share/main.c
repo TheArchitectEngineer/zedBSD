@@ -604,7 +604,11 @@ share_receive(
 	VkBufferMemoryBarrier visible;
 	VkResult result;
 
-	/* This performs CTX_ATTACH, VkImportMemoryResourceInfoMESA, and VkImage binding. */
+	/*
+	 * This performs CTX_ATTACH, VkImportMemoryResourceInfoMESA (the record
+	 * named in venus-protocol xmls/VK_MESA_venus_protocol.xml), and VkImage
+	 * binding.
+	 */
 	if (share_kind == SHARE_LINEAR) {
 		context->operation = "vulkan_wsi_shared_image_import";
 		result = vulkan_wsi_shared_image_import(context->device, *descriptor, NULL, &context->image, &context->image_memory, &context->descriptor);

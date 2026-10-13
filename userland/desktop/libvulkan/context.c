@@ -132,7 +132,13 @@ vulkan_context_open(
 	context->capabilities = information.capabilities;
 	context->max_resource_bytes = information.max_resource_bytes;
 
-	/* Requests the pinned Venus capability record with all output fields clear. */
+	/*
+	 * Requests the pinned Venus capability record with all output fields
+	 * clear.  Only the record's values are used: the capset id 4, and the
+	 * wire format version at byte 0, the protocol XML version at byte 4 and
+	 * supports_multiple_timelines at byte 152, as virglrenderer 1.1.0's
+	 * src/venus_hw.h lays out struct virgl_renderer_capset_venus.
+	 */
 	memset(&capset, 0, sizeof(capset));
 	capset.version = GPU_ABI_VERSION;
 	capset.size = sizeof(capset);

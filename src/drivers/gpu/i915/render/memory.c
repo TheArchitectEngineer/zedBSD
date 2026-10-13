@@ -256,6 +256,9 @@ drv_i915_gfx_memory_release(
 /*
  * The sType libvulkan chains for an import: VkImportMemoryResourceInfoMESA,
  * whose u32 is the id of a resource the session imported (GPU_RESOURCE_IMPORT).
+ * The name and value (GPU_OP_RECORD_IMPORT_RESOURCE) are cited from the Venus
+ * protocol: venus-protocol xmls/VK_MESA_venus_protocol.xml, commit
+ * ca19b6358d7cc491bc3e4de76f04c6700876a8fa.
  */
 #define I915_VK_IMPORT_MEMORY_RESOURCE	1000384002U
 

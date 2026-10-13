@@ -7,6 +7,12 @@
 
 /*
  * Encodes checked Venus wire primitives independently of Vulkan scene data.
+ *
+ * The wire form (little-endian words, u64 array sizes and pointer marks,
+ * sType and pNext presence, strings as a u64 length with the NUL and a
+ * 4-byte padded body, handles as u64 object ids) follows the venus-protocol
+ * specification docs/VK_EXT_command_serialization.txt, commit
+ * ca19b6358d7cc491bc3e4de76f04c6700876a8fa; the code is zedBSD's own.
  */
 
 #include <stdlib.h>
@@ -576,7 +582,7 @@ vulkan_command_begin(
 
 	/* Encodes the command identity and protocol reply-request flag. */
 	vulkan_write_u32(writer, opcode);
-	vulkan_write_u32(writer, 1);
+	vulkan_write_u32(writer, GPU_OP_FLAG_REPLY);
 
 	/* Succeeded: parameter encoders can append to this command header. */
 	return;
