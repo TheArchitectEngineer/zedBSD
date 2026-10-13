@@ -28,6 +28,10 @@ Resume point: p001。
 
 GOP のままで GT と EU: 6〜8 LW。display controller を足して全体: 10〜15 LW。p001 の調べで締める。
 
+## 実機（2026-10-14 ユーザー）
+
+「手元には第6、7，8、11，12、13世代、のCore i5があります。」→ Gen9（6・7 世代）と Gen9.5（8 世代）の実機の確かめができる。11〜13 世代は今の Gen12 の経路の回帰（desktop の model なら PCI ID の追加が要る）。
+
 ## Phase
 
 | Phase | 目的 | Status | 依存 |
