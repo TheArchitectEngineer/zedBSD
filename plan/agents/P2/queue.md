@@ -73,3 +73,5 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - q962〜q964 結果（2026-10-13 夜〜10-14）: WS143 p007 の設計（bd4f767a6・db09ac249、design-reviewer 中）、WS004 p039 は抽出しない（7ccc03c62、Q1 が cleared）、WS089・WS191・WS193 の照合（26488543d、Q1 が判定）。
 - 予約: q965 [BUG-301](../../bugs/BUG-301.md)（RTL8822BU の CCMP の header の長さ、確かめて要れば直す）→ q966 [WS171](../../ws171/ws.md)（hal.h の契約の comment、優先度低め、やることが無い時）。p007 の review が返ったら p007 の実装を先に。
 - P2 の第 2 世代はここで終わり（2026-10-14、context 約 63 万 token）。q965（BUG-301）・q966（WS171）・WS143 p007 の実装（review の後）は次の世代へ。
+
+2026-10-14 / q968（P2 の第 3 世代、新しく起動）: [WS196](../../ws196/ws.md) useradd・usermod・userdel。ユーザー（2026-10-14 AskUserQuestion「WS196 の判断を今聞き、P2 が実装」）。E1〜E6 は 2026-10-09 にユーザーが全部 (a)。WS195 の cancel で account-admin は base に残るが E4 (a) の置き場（userland/base/common/）はそのまま成り立つ（Q1）。p001 の design-reviewer は Q1 が回す、p002（共有の層の切り出し、account-admin の振る舞いは不変）から。State: active。
