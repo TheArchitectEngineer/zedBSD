@@ -355,7 +355,9 @@ static void object_chunk_grow(void);
 static struct rtld_program_table *program_table_take(size_t size);
 static void object_set_programs(struct rtld_object *object, const Elf_Phdr *phdr, unsigned phnum);
 static Elf_Phdr *read_program_headers(int fd, const Elf_Ehdr *header, Elf_Phdr *room, unsigned room_count, size_t *mapping_size);
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)
 static struct __tls_index *tlsdesc_slot(struct rtld_object *object);
+#endif
 static void object_tables_take(const struct rtld_object *object, struct rtld_object_tables *tables);
 static void object_tables_release(const struct rtld_object_tables *tables);
 static void object_reserve_needed(struct rtld_object *object);
@@ -3270,6 +3272,7 @@ read_program_headers(
 	return headers;
 }
 
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64)
 /*
  * Gives an object room for one more TLSDESC argument: inside it, then in
  * the last page, then in a new page linked after it.
@@ -3315,6 +3318,7 @@ tlsdesc_slot(
 	/* Succeeded: room in a page. */
 	return slot;
 }
+#endif
 
 /*
  * Takes what an object holds outside itself, before its slot is cleared;
