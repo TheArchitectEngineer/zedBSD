@@ -6,7 +6,7 @@
  */
 
 /*
- * The kernel's sandbox test (ws168-p002; plan/ws168/phase001 section 6):
+ * The kernel's sandbox test (ws168-p002; plan/ws168/preview-sandbox-design.md section 6):
  * starts the static child /usr/libexec/sandbox-child with sandbox_spawn
  * and checks what it may do.
  *

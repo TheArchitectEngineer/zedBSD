@@ -1,7 +1,7 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
 # keiland-preview (WS168 p003): makes the preview of a picture or a PDF from fd 0 into fd 1, started by Files and
-# Settings with sandbox_spawn (plan/ws168/phase001/phase.md).  A static program (the class static: the sandbox opens
+# Settings with sandbox_spawn (plan/ws168/preview-sandbox-design.md).  A static program (the class static: the sandbox opens
 # no file, so it cannot load a shared library), with the decoders compiled in: libz-compat, libpng-compat,
 # libjpeg-compat, libgif-compat through userland/desktop/picture, libtruetype and libpdf (built without substitute
 # font files, PDF_FONT_FILES 0) and the C library's mathematics (both in platform/amd64/vmunix.mk).  amd64 zedBSD.

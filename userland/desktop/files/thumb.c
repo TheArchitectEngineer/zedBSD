@@ -10,7 +10,7 @@
  * preview, Quick Look and the Today page show, and the fitting of a
  * picture into a box.
  *
- * ws168-p004 (plan/ws168/phase001/phase.md section 5): Files decodes no
+ * ws168-p004 (plan/ws168/preview-sandbox-design.md section 5): Files decodes no
  * picture itself.  keiland-preview makes each one in a sandbox (on
  * zedBSD sandbox_spawn, on Linux a process that confines itself with
  * seccomp; on FreeBSD, until it confines itself with Capsicum, in this

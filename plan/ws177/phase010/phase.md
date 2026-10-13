@@ -7,7 +7,7 @@ Status: cleared（2026-10-08 Q1 判定、T1-414 と host の試験）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue / attempts: q886 の 2（P1、2026-10-08）
-Origin: [backlog-p2](../backlog-p2.md) の 131・133・142（WS168 ws168-p003・p004）、[案](../phasing-20261008.md) の J、設計 [ws168-p001](../../ws168/phase001/phase.md) の §4.3・§5.2
+Origin: [backlog-p2](../backlog-p2.md) の 131・133・142（WS168 ws168-p003・p004）、[案](../phasing-20261008.md) の J、設計 [ws168-p001](../../ws168/preview-sandbox-design.md) の §4.3・§5.2
 
 ## 設計と変更（2026-10-08 P1）
 
@@ -20,12 +20,12 @@ Origin: [backlog-p2](../backlog-p2.md) の 131・133・142（WS168 ws168-p003・
 | 142 Quick Look・Today を待たずに | `client.c` に `preview_picture_begin`・`preview_picture_follow`・`preview_picture_cancel`・`preview_status_error`（`preview_picture` はこれらで書き直した。時間切れ・signal は EIO から ETIMEDOUT に）。Files の `fm_picture_begin/follow/cancel/busy`（FM_PICTURE_PEEK・HERO）。Quick Look・preview の欄の絵（`fm_peek_picture` は頼むだけ、`fm_peek_tick` が受け取る）と Today の hero（`fm_home_tick`、待つ間は gradient）は子を待たずに、終わった tick で描き直す。`fm_ui_wait` は子のある間 20 ms ごとに見る。file を移る・閉じる時は子を止める。Settings の背景の tile は前から loader の thread の中で待つので窓は止まらない（変えない） |
 
 - 変更: `userland/base/libpdf/font.c`・`exports.map`、`include/libc/pdf.h`、`userland/desktop/preview/fonts.c`（新）・`main.c`・`preview.h`・`client.c`・`client.h`・`Makefile`・`Makefile.linux`、`userland/desktop/files/files.h`・`thumb.c`・`thumb-cache.c`・`peek.c`・`ui-home.c`・`ui.c`。
-- 試験: `plan/ws177/tests/host-preview-fuzz.{sh,py}`（新）。登録済みの道具の追従: `plan/tools/files/host-model.c`（2 つ同時・失敗の印・待たない絵）、AAT `plan/tools/aat/scenarios/helpers_preview.py` と `tests/scenarios/apps/files/thumbnails.md`（2 つ同時・失敗の印・PDF の文字）。WS168 の `plan/ws168/tests/run-host-preview.sh` の source に `fonts.c` を足した（無いと link できない）。
+- 試験: `plan/ws177/tests/host-preview-fuzz.{sh,py}`（新）。登録済みの道具の追従: `plan/tools/files/host-model.c`（2 つ同時・失敗の印・待たない絵）、AAT `plan/tools/aat/scenarios/helpers_preview.py` と `tests/scenarios/apps/files/thumbnails.md`（2 つ同時・失敗の印・PDF の文字）。WS168 の `plan/ws168/tests/run-host-preview.sh` の source に `fonts.c` を足した（無いと link できない）。（plan/ws168/tests の試験は WS の完了で 2026-10-13 に削除）
 
 ## 確認（host・build、2026-10-08）
 
 - `sh plan/ws177/tests/host-preview-fuzz.sh 300 1`・`1000 2` → PASS。`ASAN=1`（ASan/UBSan、閉じ込めと memory の上限なし）で `1000 3`・`5000 4`（fonts.c の前）・`1000 6`（後）→ PASS。埋め込まれていない Helvetica の「HELLO」が描かれる（暗い画素 1781）。
-- `sh plan/ws168/tests/run-host-preview.sh build/p1-ws168/host-preview` → host-preview の 30 の ok、host-client PASS ×2。
+- `sh plan/ws168/tests/run-host-preview.sh build/p1-ws168/host-preview` → host-preview の 30 の ok、host-client PASS ×2。（この試験は WS の完了で 2026-10-13 に削除）
 - `sh plan/tools/files/host-model.sh` → files-model PASS（2 つ同時、壊れた PNG の失敗の印、次の session で読む、変わった file は試し直す、待たない絵 64x43 と EINVAL）。
 - build（warning 0）: `make -j16 BUILD=build/p1-j ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk build/p1-j/bin/keiland-preview build/p1-j/bin/files build/p1-j/bin/settings build/p1-j/dynamic/libpdf.so`（keiland-preview に Mahora、libpdf.so に `pdf_font_memory_add`）。Linux: `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-linux build/p1-linux/libexec/keiland-preview build/p1-linux/bin/files`。style-check: 変えた file は 0 件。
 

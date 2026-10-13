@@ -40,7 +40,7 @@ Origin: [backlog-p2](../backlog-p2.md) の 113・114（ws120-p009）、[案](../
 
 - build: `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/amd64 build/amd64/bin/music build/amd64/bin/videoplayer` → exit 0、warning 0（-Werror）。style-check（music の全部と videoplayer/audio.c）→ 指摘なし。
 - host（新規）: `sh plan/ws177/tests/host-music-play.sh` → PASS（3 回連続、ASan・UBSan。play.c を container・decoder・音の stream の stand-in で: 最後まで鳴る、16 個続けて decode できない → MU_FAIL_DECODE・止まる・1 回だけ、15 個続けてを 2 回 → 失敗にならず終わる（`draining` の不具合の回帰も兼ねる）、読みの誤り → MU_FAIL_READ、次の曲で失敗が残らない）。
-- host（既存に追加）: `plan/ws120/tests/run-host-music.sh` → PASS（search-space・search-escape・search-enter を足した。view.c の直しを外すと search-escape・search-enter が FAIL になることを確かめた）。`plan/ws177/tests/host-music-m.sh` → PASS（p020 の回帰）。
+- host（既存に追加）: `plan/ws120/tests/run-host-music.sh` → PASS（search-space・search-escape・search-enter を足した。view.c の直しを外すと search-escape・search-enter が FAIL になることを確かめた）。`plan/ws177/tests/host-music-m.sh` → PASS（p020 の回帰）。（この試験は WS の完了で 2026-10-13 に削除）
 - 新しい世代（2026-10-08 夜）: NOTICE の log を足して build（`build/amd64/bin/music`）exit 0・warning 0、style-check 指摘なし、host 4 本（run-host-music・host-music-play・host-music-m・run-host-music-library）PASS、`check-scenarios.py` PASS、helper は `py_compile` のみ（QEMU は T1）。
 - 未実施: main.c の流れ（連打のまとめ、gone、lost の開き直し、Files の理由）は host で組めず、QEMU の T1 に `apps.music.failures`（新しい scenario、`tests/scenarios/apps/music/failures.md`）で依頼する。
 
@@ -50,7 +50,7 @@ Origin: [backlog-p2](../backlog-p2.md) の 113・114（ws120-p009）、[案](../
 - 原因: libkeiland の kl_ui は 1 frame の間の click を 1 つだけ覚える（`ui_click` が `clicked` を上書きし、2 つ目は `clicked_double`）。2 つの click が 1 frame に入ると Music には CLICKED|DOUBLE の 1 回にしか見えない。
 - 直し（`music/view.c`・`music.h`）: bar の丸い button（Previous・Play・Next）は押された回数を返す。DOUBLE の click は、その button の最初の click が 450 ms（ui の double click の 400 ms と frame の遅れ）以内の frame で数えられていなければ、1 frame に 2 つ来た物として 2 回。`view->bar_pressed`・`bar_pressed_us` に最後に数えた button と frame の時刻。libkeiland の API は変えない。
 - helper: `run.key("esc")`。
-- 確認: `build/amd64/bin/music` exit 0・warning 0、style-check 指摘なし、`plan/ws120/tests/run-host-music.sh` PASS（新しい next-alone・next-twice-one-frame・next-twice-two-frames。直しを外すと next-twice-one-frame が FAIL になることを確かめた）。
+- 確認: `build/amd64/bin/music` exit 0・warning 0、style-check 指摘なし、`plan/ws120/tests/run-host-music.sh` PASS（新しい next-alone・next-twice-one-frame・next-twice-two-frames。直しを外すと next-twice-one-frame が FAIL になることを確かめた）。（この試験は WS の完了で 2026-10-13 に削除）
 
 ## T1-452 の結果と直し（2026-10-08 夜 P2）
 

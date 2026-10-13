@@ -8,7 +8,7 @@
 /*
  * Music (WS120): Keiland's music player for the songs in ~/Music.
  *
- * The songs are m4a files (AAC in MP4, plan/ws120/phase001/phase.md, the
+ * The songs are m4a files (AAC in MP4, plan/ws120/ws.md, the
  * 2026-10-07 user decision); their names, artists, albums and covers come
  * from the files' MP4 metadata (tags.c), and the collection groups them by
  * album (library.c).  Playing (play.c) reads the file with mediafile,

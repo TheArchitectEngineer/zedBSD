@@ -6,7 +6,7 @@
  */
 
 /*
- * sandbox_spawn (ws168-p002; plan/ws168/phase001 section 3).
+ * sandbox_spawn (ws168-p002; plan/ws168/preview-sandbox-design.md section 3).
  *
  * The parent asks for a child that runs a static image in a sandbox from
  * its first instruction: a new address space, only the files the request

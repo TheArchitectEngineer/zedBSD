@@ -7,7 +7,7 @@
 
 /*
  * keiland-preview's confinement on Linux (WS168 p003,
- * plan/ws168/phase001/phase.md section 7): no new privileges, then a
+ * plan/ws168/preview-sandbox-design.md section 7): no new privileges, then a
  * seccomp filter that lets the process read and write the descriptors it
  * has, map anonymous memory that cannot run, read the clock and random
  * bytes and end; opening a file (openat, which the C library uses) is

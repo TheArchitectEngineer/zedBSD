@@ -7,7 +7,7 @@
 
 /*
  * The callers' side of keiland-preview (WS168 p004,
- * plan/ws168/phase001/phase.md section 5): compiled into the programs that
+ * plan/ws168/preview-sandbox-design.md section 5): compiled into the programs that
  * show previews (Files, Settings).  A preview is asked of a child that
  * gets the input file as fd 0 and the output file as fd 1 and nothing else
  * (zedbsd/spawn.c: sandbox_spawn; linux/spawn.c: a new process that

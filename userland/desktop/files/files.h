@@ -741,7 +741,7 @@ struct fm_dashboard {
 #define FM_THUMBS		64
 #define FM_THUMB_SIDE		256
 
-/* How many thumbnails are made at once, each by a child of its own (ws177-p010, plan/ws168/phase001/phase.md section 5.2). */
+/* How many thumbnails are made at once, each by a child of its own (ws177-p010, plan/ws168/preview-sandbox-design.md section 5.2). */
 #define FM_THUMB_MAKERS		2
 
 /*

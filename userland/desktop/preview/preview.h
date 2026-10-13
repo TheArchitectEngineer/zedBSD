@@ -6,7 +6,7 @@
  */
 
 /*
- * keiland-preview (WS168 p003, plan/ws168/phase001/phase.md section 4):
+ * keiland-preview (WS168 p003, plan/ws168/preview-sandbox-design.md section 4):
  * makes the preview (a small picture) of a picture or a PDF document, in
  * a process that can do nothing but compute.  The caller opens the input
  * file as fd 0 and the output file as fd 1 and starts the program in a

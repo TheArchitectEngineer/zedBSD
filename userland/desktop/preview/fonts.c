@@ -7,7 +7,7 @@
 
 /*
  * The substitute fonts keiland-preview carries in itself (ws177-p010,
- * plan/ws168/phase001/phase.md section 4.3): the program opens no file, so
+ * plan/ws168/preview-sandbox-design.md section 4.3): the program opens no file, so
  * the desktop's Mahora (sans, bold and mono; Mahora-LICENSE.txt, installed
  * with the desktop's fonts) is put in the program by the assembler's
  * .incbin and given to libpdf in memory, which then draws the fonts a PDF

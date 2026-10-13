@@ -7,7 +7,7 @@
 
 /*
  * Starting keiland-preview on Linux (WS168 p004; client.h,
- * plan/ws168/phase001/phase.md section 7): a new process with the input as
+ * plan/ws168/preview-sandbox-design.md section 7): a new process with the input as
  * fd 0 and the output as fd 1 and every other descriptor closed, the
  * limits of memory, processor time and size written, and the program run
  * with an empty environment; the program confines itself with seccomp

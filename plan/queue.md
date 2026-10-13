@@ -123,7 +123,7 @@ Last reconciled Queue: [q779](history/queue-q779.md)（2026-10-06、BUG-202の�
 | q870 / q870-i01 | P2（未実装の Bug、2026-10-08） | [BUG-240](bugs/BUG-240.md) URL の欄の / → [BUG-238](bugs/BUG-238.md) emacs の -nw → [BUG-239](bugs/BUG-239.md) client の後始末 → [BUG-241](bugs/BUG-241.md) fallback の font | — | — | pending |
 | q866 / q866-i01 | P1（UAT の Bug、2026-10-08） | 描画の遅れの UAT の Bug: [BUG-221](bugs/BUG-221.md) drag の範囲選択の追従の遅れ → [BUG-226](bugs/BUG-226.md) 左の pane の hover の遅れ → [BUG-225](bugs/BUG-225.md) App Home の表示の 0.7 秒の遅れ | — | — | finished（BUG-221 T1-385・BUG-226 T1-389 待ち、BUG-225 は記録だけ: 実装済み、icon の刻みはユーザーの判断） |
 | q865 / q865-i01 | P1（UAT の Bug、2026-10-08） | [BUG-259](bugs/BUG-259.md) PDF viewer の窓のリサイズが重い | — | — | test-wait（T1-383、main 2f384818a に統合） |
-| q864 / q864-i01 | P2（2026-10-08 ユーザーの要望、q863 の後） | [ws187-p001](ws187/phase001/phase.md) lock の画面の大きな時計（縦長でも中央より上） | — | — | finished / cleared（T1-379 QEMU PASS、2026-10-08） |
+| q864 / q864-i01 | P2（2026-10-08 ユーザーの要望、q863 の後） | ws187-p001 lock の画面の大きな時計（縦長でも中央より上） | — | — | finished / cleared（T1-379 QEMU PASS、2026-10-08） |
 | q863 / q863-i01 | P2（touchpad、優先順の 6 番） | [ws183-p002](ws183/ws.md) 1 本指のタップのクリックの遅れ | — | — | test-wait（実機、ユーザーの手。main b776026ca に統合 2026-10-08） |
 | q862 / q862-i01 | P1（widget、優先順の 4 番） | [ws090-p015](ws090/ws.md) Terminal・Notes の scroll を `kui_scroll` へ（rubber band の境界と位置の引き継ぎを含む、WS081 の host 試験 2 本の更新） | p011（cleared） | — | pending |
 | q860 / q860-i01 | P2（優先順の 10 番、写真・カレンダーのベータ2 の分は試験待ちだけ） | [WS143](ws143/ws.md) p001 の記録を締め、HID の Phase から実装 | — | — | finished / cleared（T1-384 PASS） |

@@ -7,7 +7,7 @@
 
 /*
  * Starting keiland-preview on zedBSD (WS168 p004; client.h,
- * plan/ws168/phase001/phase.md sections 3 and 5): sandbox_spawn with the
+ * plan/ws168/preview-sandbox-design.md sections 3 and 5): sandbox_spawn with the
  * program's image (a static one), the input as fd 0 and the output as fd
  * 1 and no other, the arguments, and the limits of memory, processor time
  * and size written.  The child is in its sandbox from its first

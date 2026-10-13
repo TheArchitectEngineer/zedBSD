@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws177-p010: builds keiland-preview on Linux as plan/ws168/tests/run-host-preview.sh does (with its seccomp
+# ws177-p010: builds keiland-preview on Linux as the WS168 host test did (removed with the completed WS168 on 2026-10-13) (with its seccomp
 # confinement; ASAN=1 builds it with ASan and UBSan instead, without the confinement and the memory limit) and runs
 # host-preview-fuzz.py: the bombs (pictures and documents that say they are huge, a decompression bomb, an input past
 # 64 MiB, a deep PDF) and SAMPLES damaged files made from good ones, each under the limits Files puts on the child

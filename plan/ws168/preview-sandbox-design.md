@@ -2,8 +2,10 @@
 
 # ws168-p001: 隔離されたプレビューの command の要件と設計
 
+（2026-10-13 Q1: WS168 の完了で phase001/phase.md からこの名前に移した。source の注（userland/desktop/preview/・files/thumb.c・include/uapi/sandbox.h ほか）がこの file を参照するので残す。）
+
 Phase ID: `ws168-p001`
-Parent: [WS168](../ws.md)
+Parent: [WS168](ws.md)
 Status: cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: H1〜H7 決定済み、p003・p004 が cleared）（旧: planning（2026-10-05 P1 generation17。設計の第 2 版（ユーザーの review を反映）。code はユーザーの review の後。§8 の判断が要る。2026-10-05 夜: H1〜H7 決定））
 Phase disposition: normal
 Queue: Q1 の 2026-10-05 の指示（第 1 版の設計、続けてユーザーの review に従った第 2 版）
@@ -27,7 +29,7 @@ Queue: Q1 の 2026-10-05 の指示（第 1 版の設計、続けてユーザー�
 - 呼び出し側（Files の縮小表示・Quick Look・Today の hero、Settings の背景の tile）の変え方、時間・memory の上限、失敗の扱い。
 - Linux・FreeBSD の版で同じ形をどう作るか。
 - 試験の方針。
-- 由来: ユーザーの 2026-10-05 の追加（ws.md）。関係する記録: [Future Work](../../future-work.md) の F-035（縮小表示、「decoder の package の監査が要る」）。
+- 由来: ユーザーの 2026-10-05 の追加（ws.md）。関係する記録: [Future Work](../future-work.md) の F-035（縮小表示、「decoder の package の監査が要る」）。
 - 範囲外: 実装（p002 以降）。compositor の背景の復号（§8 の H4）。Image Viewer・PDF Viewer・browser（WS074 の D1 で process の分離は後回し）など、
   利用者が開いて見る app の隔離（別の WS の題。ただし同じ `sandbox_spawn` を使えるように API を作る）。
 

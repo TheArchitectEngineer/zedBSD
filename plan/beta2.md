@@ -57,12 +57,12 @@
 | WS201（/home の暗号化）、WS195（/opt/keiland）、WS196（useradd 等）、WS198（self-build）、[WS001 p045](ws001/phase045/phase.md) POSIX の header、[WS126](ws126/ws.md) Python | ベータ3 の列 |
 | 規約の全文の見直しの Phase（各 WS） | ユーザーの決定でベータ3 |
 
-## 終わっていない WS（2026-10-13 Q1、132 件）
+## 終わっていない WS（2026-10-13 Q1、128 件）
 
 2026-10-13 ユーザー「終わっていないWSとその概要、何がブロッキングしているかを、表にして、plan/beta2.mdに入れてください。」→ 各 ws.md の Status・Resume point・Phase の表から作った（記録に無い事は「不明」）。WS は completed でない物（incomplete・planning・planned）。区分は ws.md・この文書・master.md に根拠がある時だけ断定し、master の「ベータ1」の段は fg019 の決定（最初のベータはベータ2）でベータ2 に読み替えた。
-注: WS168・WS178・WS187・WS120 は残りの Phase が無く、完了の記録だけが残る。WS172 は ws.md と phase.md の状態が食い違う。WS123 は canceled。
+注: WS120・WS168・WS178・WS187 は 2026-10-13 ユーザーの指示で completed にして表から外した。WS172 は ws.md と phase.md の状態が食い違う。WS123 は canceled。
 
-### ベータ2 の物（55 件）
+### ベータ2 の物（51 件）
 
 | WS | 概要 | 状態 | 止めている物 | 区分 |
 | --- | --- | --- | --- | --- |
@@ -83,7 +83,6 @@
 | [WS100](ws100/ws.md) | 音量（audiod と Settings の Sound） | incomplete。p006 cleared（2026-10-13 ユーザーの実機の確かめ OK、HDA の音）、p009（音量の曲線）は QEMU を T1 | T1 の試験（p009） | ベータ2（旧ベータ1 の段） |
 | [WS102](ws102/ws.md) | スクリーンキーボード | incomplete。p010・p026 in-progress、p011〜p014 planned | T1 の再試験待ち（p026）と p010 の基準値、p012 は WS095 の続き、p013 は WS085 | ベータ2 |
 | [WS113](ws113/ws.md) | 外部・複数 display と Settings の Display | incomplete。p012・p013 in-progress、p014 test-wait、p008・p009・p010・p011a が残り | BUG-266、実機の確かめ（5330 の全経路 p008）、蓋 p011a と規約 p009 はベータ3、p010 は後回し | ベータ2 |
-| [WS120](ws120/ws.md) | 音楽の app（m4a と local の collection） | incomplete。p001・p008・p009 cleared、他は canceled、残りの Phase なし | なし（WS の完了の処理が未） | ベータ2 |
 | [WS127](ws127/ws.md) | Files の app | incomplete。p007 cleared（2026-10-13 ユーザーの実機の確かめ OK、Files） | FreeBSD の build（p008 の残り、10/13 以降） | ベータ2（旧ベータ1 の段） |
 | [WS128](ws128/ws.md) | 標準 app の仕上げ | incomplete。p007（実機）・p012（icon）planning | 実機の確かめ（5330 の通し、ユーザー）、p012 はデザインの方向のユーザーの確認 | ベータ2（旧ベータ1 の段） |
 | [WS129](ws129/ws.md) | ベータ2 の release 作業 | incomplete。p002 planned、p005・p013 は下書き済み、p006・p007・p008 planning | ユーザーの review（release notes・既知の問題・手引き）、最終回帰 p006 は 10/14、公開はユーザーの指示 | ベータ2 |
@@ -100,18 +99,15 @@
 | [WS161](ws161/ws.md) | YubiKey（USB の FIDO2・NFC の CTAP2） | incomplete。p001〜p005 cleared、p006 は実機の UAT OK（2026-10-13 ユーザーの実機の確かめ OK、YubiKey）、p007 規約 | Linux・FreeBSD の build（p006 の残り）、規約 p007 はベータ3 | ベータ2 |
 | [WS164](ws164/ws.md) | 起動時の Welcome の画面 | incomplete（p001・p002 cleared、p003 規約 planned） | 規約の全文の見直し p003（ベータ3）、実機は UAT | ベータ2 |
 | [WS165](ws165/ws.md) | 手書きの入力（段 1） | incomplete（p001〜p003・p005 cleared、p004 UAT と規約） | 実機の確かめ（UAT）、規約はベータ3 | ベータ2 |
-| [WS168](ws168/ws.md) | プレビューを作る隔離された command | incomplete（p001〜p004 cleared） | 記録に残りの Phase なし（WS の完了の記録が無い） | ベータ2 |
 | [WS169](ws169/ws.md) | メーラの app と compositor のメールの API | incomplete（p000〜p005 cleared、p006 は作らない、p007 規約） | 規約 p007 はベータ3（OAuth2 の p006 はユーザーの決定で外した） | ベータ2 |
 | [WS170](ws170/ws.md) | Phone の app（連絡先とタイムライン） | incomplete（p000〜p004 cleared、p005 規約） | 規約 p005 はベータ3 | ベータ2 |
 | [WS173](ws173/ws.md) | AAT（エージェントが実機を操作する受け入れの枠組み） | incomplete（p001〜p004・p006 cleared、p005 planning） | 素の 5330 の起動の方法（ユーザーの判断） | ベータ2 |
 | [WS174](ws174/ws.md) | 起動時の Ctrl・Shift で boot の選択を変える | incomplete（p001〜p003・p005 cleared、p004 BIOS は案） | ユーザーの指示で BIOS（p004）は後日、実機（UEFI の 5330）は UAT | ベータ2（表はベータ1、ベータ1 はベータ2 に一本化） |
 | [WS175](ws175/ws.md) | Notes で PDF の画像と文字を編集 | incomplete（p002 判定待ち、p010 in-progress、p011 規約は未作成） | T1 の再実行（p010 の AAT）、p002 は Q1 の判定 | ベータ2 |
 | [WS177](ws177/ws.md) | ベータ2 積み残し（準正常系・異常系） | incomplete（p019 以外は cleared） | p019 の残り（Browser の IME (b)(d)）はベータ3 に回した | ベータ2 |
-| [WS178](ws178/ws.md) | OpenGL を Desktop へ、GLX を xserver へ | incomplete（p001 cleared） | 記録に残りの Phase なし（x11-p004 の段 3 は BUG-273） | ベータ2 |
 | [WS181](ws181/ws.md) | 窓の状態・App Home のモード・整列のモード | incomplete（p001〜p010 cleared、p011・p012 in-progress） | p011 は PNG を見たユーザーの返事待ち、p012 は実機の感触の UAT（T1-559・T1-560 PASS） | ベータ2 |
 | [WS182](ws182/ws.md) | 電源ボタンのメニュー（Log Out・Shut Down） | incomplete（p001 cleared、p002 uncleared） | 実機の確かめ（5320・5330 の短押し・長押し） | ベータ2（最後） |
 | [WS183](ws183/ws.md) | I2C HID の割り込みと TGL の GPIO の group | incomplete（p002・p003 cleared、p001 test-wait） | 実機の確かめ（5320、電源オフ、ユーザーの時期） | ベータ2 |
-| [WS187](ws187/ws.md) | ロック画面（時計・スワイプの解除・認証の選択） | incomplete（p001〜p004 cleared、実機の UAT は 10/10 に確認） | なし（WS の完了の記録待ち） | ベータ2 |
 | [WS189](ws189/ws.md) | app の間の drag and drop | incomplete（p001・p004 cleared、p002・p003 test-wait） | T1 の残りの項目（across-displays・pdfviewer の drag-out・photo-to-notes 3〜4 など） | ベータ2 |
 | [WS190](ws190/ws.md) | 文字の欄と Text Editor の指での選択 | incomplete（p001〜p003 cleared、p004 規約 planned） | 規約 p004 はベータ3 | ベータ2 |
 | [WS191](ws191/ws.md) | 再生の音を libkeiland の audio stream の口へ | incomplete（p002〜p004 cleared、p001 設計は planned のまま、p005 規約） | 規約 p005 はベータ3、p001 の記録が planned のまま | ベータ2 |

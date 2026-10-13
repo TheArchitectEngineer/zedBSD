@@ -28,5 +28,5 @@ Origin: [backlog-p2](../backlog-p2.md) の 106・107・108・112（ws120-p008・
 
 - build: `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/amd64 build/amd64/bin/music` → exit 0、warning 0（-Werror）。`python3 plan/tools/style-check.py userland/desktop/music/*.c userland/desktop/music/*.h` → 指摘なし。
 - host（新規）: `sh plan/ws177/tests/host-music-m.sh build/ws177-p020/host-music-m` → PASS（ASan・UBSan、4 回連続）。大小と空白・Greek・Cyrillic・全角の畳み、Greek・Cyrillic の検索、Various Artists、後の曲の album artist、disc の folder、同じ番号の別 folder は別 album、10 段下、輪の symlink、絵と音の .mp4、cover の後読みと中央の切り抜き（左端が中央の緑）、cache の書き出しと利用（同じ大きさ・時刻の file は読まない）・時刻が変われば読み直す、folder の追加・移動の検出と rescan、外の file の保持。
-- host（既存を追随）: `plan/ws120/tests/run-host-music-library.sh` → PASS（8 曲 4 album に、cover の後読み、cache を使わない）、`plan/ws120/tests/run-host-music.sh` → PASS（cache を使わない。album の鍵の修正で Demos が 1 つのまま）。
+- host（既存を追随）: `plan/ws120/tests/run-host-music-library.sh` → PASS（8 曲 4 album に、cover の後読み、cache を使わない）、`plan/ws120/tests/run-host-music.sh` → PASS（cache を使わない。album の鍵の修正で Demos が 1 つのまま）。（この試験は WS の完了で 2026-10-13 に削除）
 - QEMU: 未実施。T1 に `apps.music.play`（手順 1 に `MUSIC COVER album=0 error=0`、手順 6 に folder の追加と `MUSIC RESCAN songs=3 albums=2 error=0` を足した）を p021 と一緒に依頼する。

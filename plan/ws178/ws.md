@@ -2,24 +2,32 @@
 
 # WS178: OpenGL を Desktop へ、GLX を X11 server（xserver）へ
 
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared（x11-p004 の段 3 は BUG-273）。2026-10-08 q910 P2 の照合: p001 は T1-340 で p005 PASS・x11-p004 の段 3 FAIL（T1-341 で WS178 の前の main でも同じ＝既存）→ Q1 の判定と x11-p004 の段 3 の Bug 化）（2026-10-07 追加、ベータ2、優先度は低い。p001 を P1 が実装、T1 待ち）
-Master: [master](../master.md)
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-13 ユーザー「完了の記録だけが残る物: WS120・WS168・WS178・WS187 →closeしてください。」。旧: incomplete）
 Primary Milestone: MG006
+Parent: [Master](../master.md)
+Queue: なし
+<!-- awesome-plan-current:end -->
 
-## 由来
+## 目的
 
-ユーザー（2026-10-07）:「make menuconfigの X11 -> OpenGL and GLX ですが、Desktop -> OpenGL に移動して、GLXは Desktop -> X11 server for the compositorのライブラリの1つに統合しましょう。ベータ2の範囲にして、優先度は低くていいです。」
+ユーザー（2026-10-07）「make menuconfigの X11 -> OpenGL and GLX ですが、Desktop -> OpenGL に移動して、GLXは Desktop -> X11 server for the compositorのライブラリの1つに統合しましょう。ベータ2の範囲にして、優先度は低くていいです。」同日のユーザーの決定「完全に分ける」（libGL.so は GL だけ、glX* は xserver の package の libGLX.so だけ）。
 
-## 目標
+## 結果（2026-10-13 完了）
 
-- 今の package `libgl`（label「OpenGL and GLX」、menu の X11、`userland/x11/libGL/`）を分ける。
-  - OpenGL（libGL の GL の部分: gl3.c・fixed.c・immediate.c・shaders）は menu の Desktop の「OpenGL」へ（tree も `userland/desktop/` の下へ移す）。
-  - GLX（glx.c）は Desktop の「X11 server for the compositor」（`xserver`、`userland/desktop/xserver/`）の library の 1 つにする（xserver を選ぶと GLX も入る）。
-- glxtest・zgears など libGL を要る X11 の program の依存（REQUIRE）と link を新しい置き場所に合わせる。（2026-10-07 ユーザーの決定「完全に分ける」で置き換え）libGL.so は GL だけ、glX* は libGLX.so（xserver の package）だけにする。tree の program は -lGL -lGLX に直し、外から移植する X の GL の program は link の修正が要ることを文書に書く。
-- vmunix.mk（libGL の link の規則）・config の program の一覧・menuconfig の host 試験を追従する。
+- p001: tree `userland/x11/libGL/` → `userland/desktop/libGL/`（package `libgl`、label「OpenGL」、menu Desktop）。GLX は `userland/desktop/xserver/libGLX/`（xserver の package が `/lib/libGLX.so` を持ち、REQUIRE に desktop/libGL）。GL と GLX の間は私的な口 `userland/desktop/libGL/zgl-glx.h`。exports は libGL.so が gl* と `zgl_glx_attach`、libGLX.so が glX* と `zglx_swap_step`。
+- link: `platform/amd64/vmunix.mk` の libGL.so・libGLX.so の規則、zgears・glxtest は `-l:libGL.so -l:libGLX.so`、REQUIRE は `desktop/libGL desktop/xserver`。文書は `include/libc/GL/glx.h` の注、`docs/reference/compatibility-profile.md`、`userland/desktop/xserver/libGLX/README.md`（外から移植する X の GL の program は `-lGLX` を足す）。
+- 確認: build warning 0、`llvm-nm`・`llvm-readelf` で symbol と NEEDED、QEMU の T1-340 で x11 の回帰の p005 PASS。
+
+## 制限・移管
+
+- x11-p004 の段 3（docked の glxtest を bar の close で閉じても終わらない）は WS178 の前の main でも同じ（T1-341）で、BUG-273（後に BUG-245 の duplicate）へ移した。
+- `plan/tools/menuconfig-target-host-test.py` の platform の縛りの検査の FAIL は WS178 と無関係の既存。全文規約の見直しはベータ3。実機は未実施。
 
 ## Phase
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 分割と移動（package・tree・link・menu・config）、build と menuconfig の試験、T1 で zgears・glxtest の回帰 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-340 で p005 PASS。x11-p004 の段 3 の FAIL は WS178 の前から（T1-341）で BUG-273（tracking）。旧: in-progress（P1、実装と host 確認済み、T1 待ち）） | — |
+| Phase | 内容 | 最終の状態 |
+| --- | --- | --- |
+| ws178-p001 | 分割と移動（package・tree・link・menu・config）、build と menuconfig の試験、T1 で zgears・glxtest の回帰 | cleared（2026-10-08、T1-340。x11-p004 の段 3 は BUG-273） |
+
+Phase の directory は、完了の規則（AGENTS.md）で削除する（git の履歴に残る、削除は Q1）。
