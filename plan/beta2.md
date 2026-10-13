@@ -30,7 +30,7 @@
 | --- | --- | --- | --- |
 | [WS202](ws202/ws.md) 動画再生（libmedia の H.264・AAC を Video Player・Music で使う） | p013 の UAT OK。残り: p012 の T1 の全項目、BUG-300（スライダー約 50%、5330 の CLOCK の log 待ち） | 0.5 | T1 |
 | [WS197](ws197/ws.md) Bluetooth のスマホ連携（SMS の MAP・連絡先の PBAP） | UAT は済み（2026-10-13 ユーザー）。HFP（p006・p007）はベータ3（既知の問題に書いた） | 0 | — |
-| [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 下書き済み（[notes](../docs/release/zedbsd-1.0.0-beta2.md)・[known issues](../docs/release/zedbsd-1.0.0-beta2-known-issues.md)）。今日の決定（HFP・DSDT の行）を反映済み、Notes の描く道具の節は未 | 0.5 | Q1 |
+| [WS129](ws129/ws.md) p005・p013 release notes・既知の問題・利用の手引き | 2026-10-14 P3 が 10/13〜14 の追加（vi・useradd など・menuconfig・Retro・BUG-302・303・Linux の Bluetooth・回転）を書き足した。Gen9・AHCI は〔判定待ち〕の印（18 時の判定で残すか消す）。HFP の行あり（DSDT は BUG-165 の resolved で既知の問題は不要）。browser の節は WS074 の merge の後。Notes の描く道具の節は未 | 0.5 | Q1 |
 | [WS129](ws129/ws.md) p006 最終回帰（release の image） | 10/14〜15 | 3 | T1 |
 | [WS129](ws129/ws.md) p008 公開の準備（tag・CI・配布物） | 手順は用意済み。10/16、公開はユーザーの指示 | 0.5 | Q1 |
 | [WS196](ws196/ws.md) useradd・usermod・userdel（account-admin を呼ぶ前段）と account-admin の欠陥の直し | completed（2026-10-14、QEMU の T1-603 PASS） | 0 | — |
