@@ -12,7 +12,7 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1: 空き（ws217-p003 の T1-592 の P3-3 は試験の手順の誤り、T1-598 で再試験）。
+  - P1（新しい世代）: q976 ws229-p001 i915 の Gen9・9.5 対応の調べと設計（ベータ3、裏で）。
   - P2: 空き（ws196-p002・p003・p005 は merge 済み、T1-597 待ち）。
   - P3: 空き（ws228-p001・p003 は merge 済み、T1-595・596 待ち）。
   - T1（新しい世代）: T1-594（BUG-302）→ T1-595（ws228 vi の試験 A）→ T1-596（ws228-p004 console＋vi の試験 B）→ T1-597（ws196 の useradd など）→ T1-598（ws217-p003 の P3-3・P3-5 の再試験）→ T1-592（ws217-p002b B と p003）・T1-593（ws143-p007）・T1-586・T1-591（低い優先度）。
@@ -35,7 +35,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS229、q976、T1-603。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-304、WS230、q977、T1-603。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -534,6 +534,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS226](ws226/ws.md) | MG006 | Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で Vulkan 1.3 の API を実装しきる（不整合の整理）（2026-10-13 ユーザー） | planning | 次に空いた P |
 | [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | incomplete（p001 merge 済み、T1-595 と p004 の kernel の console） | P1（p004） |
+| [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、ベータ3 以降、裏で） | planned | P1（q976 p001） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
