@@ -47,8 +47,10 @@
 #include <time.h>
 #include <unistd.h>
 
-/* The security key style's program, and the first user ID of a person's account. */
+/* The security key style's program (a build without it names a path that is not installed, ws172-p011), and the first user ID of a person's account. */
+#ifndef PASSKEY_FIDO2_PATH
 #define PASSKEY_FIDO2_PATH	"/usr/libexec/passkey-fido2"
+#endif
 #define PASSKEY_UID_FIRST	1000U
 
 /* The largest /etc/passkey, read and written whole. */
@@ -264,6 +266,9 @@ passkey_read(
 {
 	ssize_t count;
 	size_t used;
+
+	/* Nothing read yet (also what a failure leaves). */
+	*length = 0U;
 
 	/* Until the end of input, one byte beyond the bound being an error. */
 	used = 0U;

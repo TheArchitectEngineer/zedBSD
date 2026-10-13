@@ -3,7 +3,7 @@
 # ws161-p006: 実機の UAT と Linux・FreeBSD の build
 
 Parent: [WS161](../ws.md)
-Status: in-progress（実機の UAT は 2026-10-13 ユーザー「OKでした」（USB の YubiKey）。Linux・FreeBSD の build は 2026-10-13 P2 q954 で os-freebsd.c を書いた（main に統合）。fidoctl は zedBSD だけ（2026-10-13 ユーザー (c)）。FreeBSD の本当の header での os-freebsd.c の build は未実施）
+Status: in-progress（実機の UAT は 2026-10-13 ユーザー「OKでした」（USB の YubiKey）。Linux・FreeBSD の FIDO2 はベータ3（2026-10-13 夜 ユーザー、下）。q954 の os-freebsd.c と fidoctl の Makefile は main から外した）
 Phase disposition: normal
 Queue: q954（P2、2026-10-13。承認: ユーザー「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。」と p001 §9.6 の p006）
 
@@ -31,7 +31,7 @@ Queue: q954（P2、2026-10-13。承認: ユーザー「これ以上ベータ2に
 
 ## 判断（Q1 へ、2026-10-13）→ ユーザーの決定 (c)
 
-**2026-10-13 ユーザー（Q1 経由）: (c)「Linux・FreeBSD には入れない」**。fidoctl は zedBSD だけ。Linux の Keiland の build に libssl-dev を必須にしない。fidoctl の Makefile.linux・Makefile.freebsd は Q1 が main から外し、os-freebsd.c は残した（libpasskey の FreeBSD の os 層、後で使う時のため）。
+**2026-10-13 ユーザー（Q1 経由）: (c)「Linux・FreeBSD には入れない」**。fidoctl は zedBSD だけ。Linux の Keiland の build に libssl-dev を必須にしない。fidoctl の Makefile.linux・Makefile.freebsd は Q1 が main から外した（os-freebsd.c も同じ夜に外した、下の節）。
 
 元の問い:
 
@@ -39,7 +39,7 @@ fidoctl を `keiland-linux.mk`・`keiland-freebsd.mk` の既定の all に入れ
 
 ## 未実施
 
-- os-freebsd.c の FreeBSD の本当の header での build（Linux・FreeBSD の Keiland の build に fidoctl を入れないので、build の規則は無い。使う時に確かめる）。
+- Linux・FreeBSD の FIDO2 はベータ3（Linux 標準の FIDO2 の調べから）。
 - NFC（ACR1252U と YubiKey 5 NFC）の実機の確かめ（ws.md の 2026-10-10 の記録で未確認のまま）。
 
 ## 2026-10-13 夜: ベータ3 へ（Q1）

@@ -120,6 +120,7 @@ include userland/desktop/imageview/Makefile.linux
 include userland/desktop/pdfviewer/Makefile.linux
 include userland/tests/kuidemo/Makefile.linux
 include userland/desktop/ime/Makefile.linux
+include userland/base/passkey/Makefile.linux
 include userland/desktop/printd/Makefile.linux
 include userland/tests/printtest/Makefile.linux
 
@@ -171,7 +172,7 @@ KEILAND_LINUX_RETIRED := lib/libkeiui.so
 
 install: all
 	@set -e; for f in $(KEILAND_LINUX_INSTALL); do \
-		mode=0644; case $$f in lib/*|bin/*|libexec/*) mode=0755 ;; esac; \
+		mode=0644; case $$f in lib/*|bin/*|libexec/*) mode=0755 ;; sbin/*) mode=0500 ;; esac; \
 		install -D -m $$mode $(KEILAND_LINUX_BUILD)/$$f $(DESTDIR)$(KEILAND_PREFIX)/$$f; \
 	done
 	@set -e; for f in $(KEILAND_LINUX_RETIRED); do rm -f $(DESTDIR)$(KEILAND_PREFIX)/$$f; done
