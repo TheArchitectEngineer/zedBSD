@@ -102,9 +102,10 @@ X11 programs run on the desktop through a rootless X server, with GLX.
   ejected from Files) and FIDO2 security keys.
 - Printing to network printers over IPP and LPD.
 - Computers whose firmware stops the old PIT timer, such as a desktop PC
-  with a Core i5-13400F, no longer stop at the start with "Local APIC timer initialization failed": when the CPU reports
-  the frequency of its time-stamp counter (TSC), the kernel measures its
-  timer with the TSC instead.
+  with a Core i5-13400F, no longer stop at the start with "Local APIC
+  timer initialization failed": when the CPU reports the frequency of its
+  time-stamp counter (TSC), the kernel measures its timer with the TSC
+  instead.
 - 〔判定待ち〕 A preview of the older Intel graphics, Gen9 and Gen9.5 (the
   integrated GPUs of the 6th to 10th generation Core processors). It is off
   by default; the [user guide](https://github.com/awemorris/zedBSD/blob/zedbsd-1.0.0-beta2/docs/release/zedbsd-1.0.0-beta2-guide.md#older-intel-graphics)
@@ -112,9 +113,10 @@ X11 programs run on the desktop through a rootless X server, with GLX.
   and Vulkan only: the picture stays on the framebuffer the firmware set up,
   there is no Vulkan Video, and sleep is refused while it is on.
 - 〔判定待ち〕 SATA drives on AHCI controllers, including Intel controllers
-  set to RAID mode in the firmware, with sleep and wake. Kei still starts
-  from USB; a SATA drive inside the computer can be read and written. NCQ,
-  TRIM, hot plugging and optical drives are not supported yet.
+  set to RAID mode in the firmware, kept working across sleep. Kei still
+  starts from USB; a SATA drive inside the computer can be read and
+  written. NCQ, TRIM, hot plugging and optical drives are not supported
+  yet.
 
 <!-- review (2026-10-09 user): Bluetooth (WS143) and Vulkan Video (WS083) are in, and are turned off at the last
      moment (10/16) if they are not ready. If one is turned off, replace its line:
