@@ -59,6 +59,18 @@ int
 kern_platform_poweroff(void);
 
 /*
+ * Stop the platform's own device threads before a shutdown or reboot.
+ *
+ * Called by system_shutdown_prepare() once the volumes are synced and
+ * before the network stops, so a device that a platform thread is still
+ * bringing up is not published while the network shuts down.  Optional:
+ * it is weak, and a platform without such threads does not define it.
+ * Thread context.
+ */
+void
+kern_platform_shutdown_prepare(void) __attribute__((weak));
+
+/*
  * Look up one boot handoff object by name.
  *
  * The object stays owned by the platform. An unknown or unavailable

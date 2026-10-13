@@ -17,6 +17,7 @@
 #include "kern/sched.h"
 #include "kern/readahead.h"
 #include "kern/klog.h"
+#include "kern/platform.h"
 #include <uapi/errno.h>
 
 /*
@@ -127,6 +128,13 @@ system_shutdown_prepare(
 	if (writeback_shutdown_finish != NULL)
 		writeback_shutdown_finish(1);
 	kern_logf("shutdown: the volumes are synced; stopping the network\n");
+
+	/*
+	 * Stops the platform's device threads first, so none publishes a
+	 * device while the network stops (the Raspberry Pi 4's onboard Wi-Fi).
+	 */
+	if (kern_platform_shutdown_prepare != NULL)
+		kern_platform_shutdown_prepare();
 
 	/*
 	 * Network close joins driver RX/TX producers.  USB then disconnects

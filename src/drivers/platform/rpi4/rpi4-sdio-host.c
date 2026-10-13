@@ -201,6 +201,7 @@ drv_rpi4_sdio_host_init(
 	host->card_irq_wanted = 0;
 	host->card_irq_armed = 0;
 	host->card_irq_pending = 0;
+	host->card_irq_kicked = 0;
 	host->card_irq_count = 0;
 
 	/* Prepares the locks and the queue the serving thread waits on. */
@@ -535,6 +536,13 @@ drv_rpi4_sdio_host_card_irq_wait(
 			break;
 		}
 
+		/* Consumes a kick: the serving thread has work besides the card. */
+		if (host->card_irq_kicked != 0) {
+			host->card_irq_kicked = 0;
+			error = EAGAIN;
+			break;
+		}
+
 		/* Sleeps on the handler's wakeup; EAGAIN means one came meanwhile. */
 		observed = waitq_sequence(&host->card_irq_wait);
 		error = waitq_sleep(&host->card_irq_wait, &host->irq_lock, observed, deadline, 0);
@@ -544,12 +552,33 @@ drv_rpi4_sdio_host_card_irq_wait(
 
 	spin_unlock_irqrestore(&host->irq_lock, enabled);
 
-	/* Reports a deadline without an interrupt; the caller looks at the card anyway. */
+	/* Reports a kick or a deadline without an interrupt; the caller looks at the card anyway. */
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the card raised its interrupt. */
 	return 0;
+}
+
+/*
+ * Wakes the thread waiting for the card's interrupt without one.
+ */
+void
+drv_rpi4_sdio_host_card_irq_kick(
+	struct drv_rpi4_sdio_host *host)
+{
+	unsigned long enabled;
+
+	/*
+	 * kicked stays set until a wait consumes it, so a kick that comes
+	 * before the thread sleeps still ends its next wait at once.
+	 */
+	enabled = spin_lock_irqsave(&host->irq_lock);
+
+	host->card_irq_kicked = 1;
+	waitq_wake_all(&host->card_irq_wait);
+
+	spin_unlock_irqrestore(&host->irq_lock, enabled);
 }
 
 /*

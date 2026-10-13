@@ -16,16 +16,23 @@
  * behind them, a model of the GPIO block, stand-ins for the firmware's
  * mailbox helpers, and the firmware's real device tree.
  *
- * Usage: sdio-host-test unit|stop|smp FIRMWARE.dtb
+ * Usage: sdio-host-test unit|stop|smp|nopackage|refused FIRMWARE.dtb
  *
  * unit: the clock divider, the answers to CMD5 and CMD52, the CIS walk,
  *       the slot in the tree, the dispatcher's two slots, the host's
  *       procedures and the card's interrupt, enumeration, CMD53, and the
- *       Wi-Fi thread from probe to power-down.
+ *       Wi-Fi thread from probe to a published chip (ws206-p004): the
+ *       BCM43455 driver is replaced by stand-ins that drive the bus
+ *       operations rpi4-wifi.c gives it.
  * stop: the thread is stopped while it waits for a card that never
  *       answers; the stop returns at once and everything is given back.
  * smp:  the dispatcher's slots change while interrupts arrive, and the
- *       card's interrupt fires while the serving thread waits and rearms.
+ *       card's interrupt fires while the serving thread waits and rearms,
+ *       and a kick ends the wait.
+ * nopackage: without the firmware package the thread ends having touched
+ *       no hardware: no mailbox, no pin, no power line.
+ * refused: a chip the driver refuses (its probe fails) gets everything
+ *       given back.
  */
 
 #include "drivers/platform/rpi4/rpi4-firmware.h"
@@ -34,6 +41,7 @@
 #include "drivers/platform/rpi4/rpi4-sdio-host.h"
 #include "drivers/platform/rpi4/rpi4-sdio.h"
 #include "drivers/platform/rpi4/rpi4-wifi.h"
+#include "drivers/wifi/bcm43455/bcm43455.h"
 #include <kern/clock.h>
 #include <kern/device-io.h>
 #include <kern/irq.h>
@@ -236,6 +244,22 @@ static unsigned char *tree_blob;
 static size_t tree_size;
 static struct drv_fdt fdt;
 
+/*
+ * The BCM43455 driver's stand-ins: whether the package's files are there,
+ * what the probe answers, and what the thread asked of them.
+ */
+static int files_present = 1;
+static int probe_answer;
+static unsigned files_loaded;
+static unsigned devices_made;
+static unsigned devices_probed;
+static unsigned devices_published;
+static unsigned devices_destroyed;
+static unsigned probe_cccr;
+static const struct bcm43455_bus_ops *bus_ops;
+static void *bus_context;
+static int fake_device_token;
+
 /* The handlers the dispatcher tests add, and how often each was asked. */
 static unsigned asked[3];
 static bool answers[3];
@@ -245,6 +269,8 @@ static volatile int smp_stop;
 static void run_unit(void);
 static void run_stop(void);
 static void run_smp(void);
+static void run_nopackage(void);
+static void run_refused(void);
 static void check_divisor(void);
 static void check_decoders(void);
 static void check_cis(void);
@@ -313,6 +339,10 @@ main(
 		run_stop();
 	} else if (strcmp(argv[1], "smp") == 0) {
 		run_smp();
+	} else if (strcmp(argv[1], "nopackage") == 0) {
+		run_nopackage();
+	} else if (strcmp(argv[1], "refused") == 0) {
+		run_refused();
 	} else {
 		fprintf(stderr, "sdio-host-test: unknown scenario %s\n", argv[1]);
 		return 2;
@@ -631,6 +661,13 @@ check_host(void)
 	CHECK(drv_rpi4_sdio_host_card_irq_wait(&host, deadline) == ETIMEDOUT);
 	CHECK(sched_ticks() >= deadline);
 
+	/* A kick before the wait ends it at once with EAGAIN, once, and leaves the interrupt disarmed. */
+	drv_rpi4_sdio_host_card_irq_kick(&host);
+	CHECK(drv_rpi4_sdio_host_card_irq_wait(&host, sched_ticks() + 1000U) == EAGAIN);
+	CHECK(sched_ticks() < deadline + 500U);
+	CHECK(drv_rpi4_sdio_host_card_irq_wait(&host, sched_ticks() + 5U) == ETIMEDOUT);
+	CHECK((sdhci[R_SIGNAL_ENABLE / 4U] & S_CARD) == 0);
+
 	/* A disarmed interrupt stays disarmed through a reset; rearming brings it back. */
 	CHECK(drv_rpi4_sdio_host_reset(&host) == 0);
 	CHECK(resets_all == 2U);
@@ -754,8 +791,9 @@ check_enumeration(void)
 }
 
 /*
- * The probe on a board, the thread run to its end, and what it left.
- * The probe runs once per kernel, so this is the unit scenario's last step.
+ * The probe on a board, the thread run to a published chip, and what it
+ * kept.  The probe runs once per kernel, so this is the unit scenario's
+ * last step.
  */
 static void
 check_thread(void)
@@ -778,8 +816,12 @@ check_thread(void)
 	join_wifi();
 	CHECK(drv_rpi4_wifi_probe(FDT_PHYSICAL, (uintptr_t)EMMC2_BASE) == EALREADY);
 
-	/* The mailbox was prepared and WL_ON pulsed low, high, then low at the end. */
+	/* The files were read before the mailbox, and the driver probed and published the chip. */
+	CHECK(files_loaded == 1U && devices_made == 1U);
+	CHECK(devices_probed == 1U && devices_published == 1U && devices_destroyed == 0U);
 	CHECK(firmware_inits == 1U);
+
+	/* The driver's power_up pulsed WL_ON low and high, its power_down drove it low. */
 	CHECK(power.count == 3U);
 	CHECK(power.states[0] == 0 && power.states[1] == 1 && power.states[2] == 0);
 
@@ -793,18 +835,19 @@ check_thread(void)
 	for (i = 35; i <= 39; i++)
 		CHECK(((pulls >> ((i - 32U) * 2U)) & 0x3U) == 1U);
 
-	/* The card was enumerated, F1 enabled and the block sizes set (CMD52 needs the card selected). */
+	/* The card was enumerated, F1 enabled, the block sizes set, and the CCCR read through the bus. */
 	CHECK((card.f0[0x02] & 0x02U) != 0);
 	CHECK(card.f0[0x110] == 64U && card.f0[0x211] == 2U);
+	CHECK(probe_cccr == card.f0[0x00]);
+	CHECK(bus_ops->block_size(bus_context, 1) == 64U && bus_ops->block_size(bus_context, 2) == 512U);
 
-	/* Everything was given back: no slot on the line, no clock, no bus power. */
-	CHECK(drv_rpi4_mmc_irq_remove(MMC_IRQ, drv_rpi4_sdio_host_interrupt, NULL) == ENOENT);
-	CHECK((sdhci[R_CLOCK / 4U] & 0xffffU) == 0);
-	CHECK(((sdhci[R_HOST / 4U] >> 8) & 0xffU) == 0);
-	CHECK(sdhci[R_SIGNAL_ENABLE / 4U] == 0);
+	/* The published chip keeps the host: its clock still runs and its bus is powered. */
+	CHECK((sdhci[R_CLOCK / 4U] & 0x0004U) != 0);
+	CHECK(((sdhci[R_HOST / 4U] >> 8) & 0xffU) != 0);
 
-	/* A stop after the end returns at once. */
+	/* A stop after the end returns at once and leaves the published chip alone. */
 	drv_rpi4_wifi_stop();
+	CHECK((sdhci[R_CLOCK / 4U] & 0x0004U) != 0);
 }
 
 /*
@@ -840,15 +883,76 @@ run_stop(void)
 	CHECK(taken < 300U);
 	join_wifi();
 
-	/* The retries happened, and everything was given back. */
+	/* The retries happened, the driver's stand-in powered down, and everything was given back. */
 	CHECK(resets_lines > 0);
-	CHECK(power.count == 3U);
-	CHECK(power.states[0] == 0 && power.states[1] == 1 && power.states[2] == 0);
+	CHECK(devices_destroyed == 1U && devices_published == 0U);
+	CHECK(power.count == 4U);
+	CHECK(power.states[0] == 0 && power.states[1] == 1 && power.states[2] == 0 && power.states[3] == 0);
 	CHECK((sdhci[R_CLOCK / 4U] & 0xffffU) == 0);
 	CHECK(sdhci[R_SIGNAL_ENABLE / 4U] == 0);
 	CHECK(drv_rpi4_mmc_irq_remove(MMC_IRQ, drv_rpi4_sdio_host_interrupt, NULL) == ENOENT);
 
 	/* A second stop finds no thread. */
+	drv_rpi4_wifi_stop();
+}
+
+/*
+ * Without the firmware package the thread reads no further than the file
+ * system: no mailbox, no pin, no controller, no power line.
+ */
+static void
+run_nopackage(void)
+{
+	enum drv_rpi4_gpio_function function;
+
+	/* A board without the package. */
+	prepare_model();
+	prepare_gpio();
+	power_card(1);
+	power.count = 0;
+	files_present = 0;
+
+	/* The thread ends on its own. */
+	CHECK(drv_rpi4_wifi_probe(FDT_PHYSICAL, (uintptr_t)EMMC2_BASE) == 0);
+	join_wifi();
+
+	/* Nothing was touched. */
+	CHECK(files_loaded == 1U && devices_made == 0U);
+	CHECK(firmware_inits == 0U);
+	CHECK(power.count == 0U);
+	CHECK(register_calls == 0U);
+	CHECK(drv_rpi4_gpio_get_function(34, &function) == 0);
+	CHECK(function == DRV_RPI4_GPIO_FUNCTION_INPUT);
+	CHECK(sdhci[R_CLOCK / 4U] == 0 && resets_all == 0U);
+
+	drv_rpi4_wifi_stop();
+}
+
+/*
+ * A chip the driver refuses is given everything back, as if no driver
+ * had run.
+ */
+static void
+run_refused(void)
+{
+	/* A board whose chip the driver's probe refuses, as for a placeholder address. */
+	prepare_model();
+	prepare_gpio();
+	power_card(1);
+	power.count = 0;
+	probe_answer = EADDRNOTAVAIL;
+
+	CHECK(drv_rpi4_wifi_probe(FDT_PHYSICAL, (uintptr_t)EMMC2_BASE) == 0);
+	join_wifi();
+
+	/* The device was destroyed and the hardware given back. */
+	CHECK(devices_probed == 1U && devices_published == 0U && devices_destroyed == 1U);
+	CHECK(power.count == 4U);
+	CHECK(power.states[2] == 0 && power.states[3] == 0);
+	CHECK((sdhci[R_CLOCK / 4U] & 0xffffU) == 0);
+	CHECK(sdhci[R_SIGNAL_ENABLE / 4U] == 0);
+	CHECK(((sdhci[R_HOST / 4U] >> 8) & 0xffU) == 0);
+
 	drv_rpi4_wifi_stop();
 }
 
@@ -1996,4 +2100,103 @@ drv_rpi4_firmware_get_gpio_direction(
 	CHECK(line == DRV_RPI4_FIRMWARE_GPIO_WL_ON);
 	*direction = DRV_RPI4_FIRMWARE_GPIO_OUTPUT;
 	return 0;
+}
+
+/*
+ * The BCM43455 driver's stand-ins.  They drive the bus operations the
+ * way the driver does at its probe: power up, a CMD52, power down.
+ */
+
+/* The root is always there. */
+int
+bcm43455_files_root_ready(void)
+{
+	return 1;
+}
+
+/* Hands out three small buffers, or ENOENT without the package. */
+int
+bcm43455_files_load(
+	struct bcm43455_files *files)
+{
+	files_loaded++;
+	memset(files, 0, sizeof(*files));
+	if (!files_present)
+		return ENOENT;
+	files->firmware = malloc(4);
+	files->clm = malloc(4);
+	files->nvram = malloc(4);
+	CHECK(files->firmware != NULL && files->clm != NULL && files->nvram != NULL);
+	files->firmware_length = 4;
+	files->clm_length = 4;
+	files->nvram_length = 4;
+	return 0;
+}
+
+/* Frees what bcm43455_files_load() handed out. */
+void
+bcm43455_files_release(
+	struct bcm43455_files *files)
+{
+	free(files->firmware);
+	free(files->clm);
+	free(files->nvram);
+	memset(files, 0, sizeof(*files));
+}
+
+/* Records the bus and takes the files. */
+int
+bcm43455_device_create(
+	const struct bcm43455_bus_ops *ops,
+	void *context,
+	struct bcm43455_files *files,
+	struct bcm43455_device **result)
+{
+	CHECK(ops != NULL && files != NULL && files->firmware != NULL);
+	bus_ops = ops;
+	bus_context = context;
+	bcm43455_files_release(files);
+	devices_made++;
+	*result = (struct bcm43455_device *)&fake_device_token;
+	return 0;
+}
+
+/* Powers the chip up through the bus, reads the CCCR revision, powers it down. */
+int
+bcm43455_device_probe(
+	struct bcm43455_device *device)
+{
+	uint8_t value;
+	int error;
+
+	CHECK(device == (struct bcm43455_device *)&fake_device_token);
+	devices_probed++;
+	error = bus_ops->power_up(bus_context);
+	if (error == 0) {
+		CHECK(bus_ops->read_byte(bus_context, 0, 0x00, &value) == 0);
+		probe_cccr = value;
+	}
+	bus_ops->power_down(bus_context);
+	if (error != 0)
+		return error;
+	return probe_answer;
+}
+
+/* Publishes nothing, counting the call. */
+int
+bcm43455_device_publish(
+	struct bcm43455_device *device)
+{
+	CHECK(device == (struct bcm43455_device *)&fake_device_token);
+	devices_published++;
+	return 0;
+}
+
+/* Counts the device's end. */
+void
+bcm43455_device_destroy(
+	struct bcm43455_device *device)
+{
+	CHECK(device == (struct bcm43455_device *)&fake_device_token);
+	devices_destroyed++;
 }

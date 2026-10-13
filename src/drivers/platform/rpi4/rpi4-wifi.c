@@ -6,16 +6,20 @@
  */
 
 /*
- * Raspberry Pi 4 onboard Wi-Fi: the probe and its thread.
+ * Raspberry Pi 4 onboard Wi-Fi: the probe, its publishing thread, and the
+ * SDIO bus the BCM43455 driver runs on.
  *
  * The boot probe only reads the device tree and starts one thread, so the
- * boot does not wait on the chip.  The thread prepares the mailbox, reads
- * the controller's clock, routes the SDIO pins, starts the host, adds the
- * host to the SD interrupt line, pulses the chip's power line (WL_ON on
- * the firmware's GPIO expander) and enumerates the SDIO interface.  Until
- * the chip's driver exists (ws206-p004) it logs what it found, which is
- * what the first bring-up on a board is checked by, and powers the chip
- * down again.
+ * boot does not wait on the chip.  The thread first waits for the root
+ * file system and reads the firmware package's files; without them it
+ * ends having touched no hardware.  Then it prepares the mailbox, reads
+ * the controller's clock, routes the SDIO pins, starts the host and adds
+ * it to the SD interrupt line, and hands the chip to the BCM43455 driver,
+ * which powers it through WL_ON (on the firmware's GPIO expander),
+ * enumerates it, learns its identity and publishes it as wlanN.  A
+ * published chip keeps the host, the interrupt slot and the power line
+ * for as long as the kernel runs; a chip that is not published gives them
+ * back.
  *
  * Stopping: drv_rpi4_wifi_stop() sets stopping under the lifecycle mutex
  * and wakes the thread, then lets the mutex go before it waits for the
@@ -30,6 +34,7 @@
 #include "drivers/platform/rpi4/rpi4-gpio.h"
 #include "drivers/platform/rpi4/rpi4-mmc-irq.h"
 #include "drivers/platform/rpi4/rpi4-sdio.h"
+#include "drivers/wifi/bcm43455/bcm43455.h"
 #include <drivers/generic/fdt.h>
 #include <kern/atomic.h>
 #include <kern/clock.h>
@@ -52,6 +57,10 @@
 #define FIRMWARE_CLOCK_EMMC		1U
 #define FIRMWARE_CLOCK_WORDS		2U
 #define FIRMWARE_CLOCK_ANSWER_BYTES	8U
+
+/* How long the thread waits for the root file system, and how often it looks. */
+#define ROOT_WAIT_MS			300000U
+#define ROOT_POLL_MS			1000U
 
 /* How long WL_ON stays low for the chip's reset, and how long it settles high. */
 #define POWER_LOW_MS			10U
@@ -83,16 +92,19 @@
 #define PROBE_REFUSED			3U
 
 /*
- * The onboard Wi-Fi: its description, its controller and card, and the
- * state its thread and drv_rpi4_wifi_stop() share.
+ * The onboard Wi-Fi: its description, its controller and card, the
+ * BCM43455 device on them, and the state its thread and
+ * drv_rpi4_wifi_stop() share.
  *
  * There is one per board and it lives for as long as the kernel runs.
  * The probe fills it before it starts the thread; afterwards the thread
  * owns everything but the fields under state_lock (stopping, running and
- * the two queues), which drv_rpi4_wifi_stop() changes too.
- * lifecycle_lock serializes the callers that start or stop the thread;
- * the thread itself never takes it.  The progress flags record what the
- * thread must give back.
+ * the two queues), which drv_rpi4_wifi_stop() changes too.  Once the
+ * device is published, the BCM43455 driver owns the host and the card
+ * through the bus operations.  lifecycle_lock serializes the publication
+ * against drv_rpi4_wifi_stop(); the thread takes it only around the
+ * publication, and drv_rpi4_wifi_stop() lets it go before it waits.  The
+ * progress flags record what an unpublished chip must give back.
  */
 struct rpi4_wifi {
 	struct drv_fdt fdt;
@@ -102,6 +114,9 @@ struct rpi4_wifi {
 	struct drv_rpi4_sdio_waiter waiter;
 	void *registers;
 	uint32_t base_clock_hz;
+	struct bcm43455_device *device;
+	unsigned published;
+	unsigned card_reported;
 
 	unsigned host_ready;
 	unsigned irq_added;
@@ -127,6 +142,8 @@ static volatile unsigned wifi_probe_state;
 static struct rpi4_wifi wifi_board;
 
 static void wifi_thread(void *argument);
+static int publish(struct rpi4_wifi *wifi);
+static int wait_for_root(struct rpi4_wifi *wifi);
 static int bring_up(struct rpi4_wifi *wifi);
 static int read_controller_clock(struct rpi4_wifi *wifi);
 static void report_power_line(void);
@@ -137,6 +154,37 @@ static void report_card(struct rpi4_wifi *wifi);
 static void give_back(struct rpi4_wifi *wifi);
 static int stopping_requested(struct rpi4_wifi *wifi);
 static int wifi_sleep(void *context, unsigned milliseconds);
+static int bus_read_byte(void *context, unsigned function, uint32_t address, uint8_t *value);
+static int bus_write_byte(void *context, unsigned function, uint32_t address, uint8_t value);
+static int bus_read(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
+static int bus_write(void *context, unsigned function, uint32_t address, uint8_t *buffer, size_t length);
+static unsigned bus_block_size(void *context, unsigned function);
+static int bus_enable_function(void *context, unsigned function, unsigned timeout_ms);
+static int bus_disable_function(void *context, unsigned function);
+static int bus_interrupt_wait(void *context, uint64_t deadline);
+static void bus_interrupt_enable(void *context, int enable);
+static void bus_interrupt_rearm(void *context);
+static void bus_interrupt_kick(void *context);
+static int bus_power_up(void *context);
+static void bus_power_down(void *context);
+
+/* The SDIO bus as the BCM43455 driver sees it: the card layer and the host. */
+static const struct bcm43455_bus_ops wifi_bus_operations = {
+	bus_read_byte,
+	bus_write_byte,
+	bus_read,
+	bus_write,
+	bus_block_size,
+	bus_enable_function,
+	bus_disable_function,
+	wifi_sleep,
+	bus_interrupt_wait,
+	bus_interrupt_enable,
+	bus_interrupt_rearm,
+	bus_interrupt_kick,
+	bus_power_up,
+	bus_power_down
+};
 
 /*
  * Looks for the onboard Wi-Fi and starts its thread.
@@ -201,6 +249,9 @@ drv_rpi4_wifi_probe(
 	wifi->power_touched = 0;
 	wifi->registers = NULL;
 	wifi->base_clock_hz = 0;
+	wifi->device = NULL;
+	wifi->published = 0;
+	wifi->card_reported = 0;
 	wifi->waiter.sleep = wifi_sleep;
 	wifi->waiter.context = wifi;
 
@@ -234,7 +285,7 @@ drv_rpi4_wifi_probe(
 }
 
 /*
- * Stops the thread and waits until it has powered the chip down.
+ * Stops the publishing thread and waits until it has ended.
  */
 void
 drv_rpi4_wifi_stop(void)
@@ -280,7 +331,7 @@ drv_rpi4_wifi_stop(void)
 	spin_unlock_irqrestore(&wifi->state_lock, enabled);
 }
 
-/* Brings the chip's SDIO interface up, reports it, and gives everything back. */
+/* Publishes the chip, or gives everything back when it cannot be. */
 static void
 wifi_thread(
 	void *argument)
@@ -291,15 +342,24 @@ wifi_thread(
 
 	wifi = argument;
 
-	/* Brings the interface up as far as this stage goes. */
-	error = bring_up(wifi);
+	/* Brings the chip up and publishes it; a missing package was logged already. */
+	error = publish(wifi);
 	if (error == ECANCELED)
 		kern_logf("rpi4-wifi: bring-up stopped on request\n");
-	else if (error != 0)
-		kern_logf("rpi4-wifi: SDIO bring-up failed (%d)\n", error);
+	else if (error != 0 && error != ENOENT)
+		kern_logf("rpi4-wifi: onboard Wi-Fi not published (%d)\n", error);
 
-	/* Leaves the interrupt line, the controller and the chip as they would be without a driver. */
-	give_back(wifi);
+	/*
+	 * An unpublished chip leaves the device, the interrupt line, the
+	 * controller and its power as they would be without a driver.
+	 */
+	if (!wifi->published) {
+		if (wifi->device != NULL) {
+			bcm43455_device_destroy(wifi->device);
+			wifi->device = NULL;
+		}
+		give_back(wifi);
+	}
 
 	/* Reports the thread finished to a waiting drv_rpi4_wifi_stop(). */
 	enabled = spin_lock_irqsave(&wifi->state_lock);
@@ -311,19 +371,116 @@ wifi_thread(
 }
 
 /*
- * Prepares the shared blocks, starts the host, pulses the chip's power and
- * enumerates its SDIO interface.
+ * Waits for the root, reads the files, prepares the host, and has the
+ * BCM43455 driver probe and publish the chip.  Hardware is touched only
+ * once the files are in memory.
  */
 static int
-bring_up(
+publish(
 	struct rpi4_wifi *wifi)
 {
+	struct bcm43455_files files;
 	int error;
 
 	/* Refuses to start when a stop came first. */
 	error = stopping_requested(wifi);
 	if (error != 0)
 		return error;
+
+	/* Waits for the root file system, where the firmware package puts its files. */
+	error = wait_for_root(wifi);
+	if (error != 0)
+		return error;
+
+	/* Reads the files with no lock held; without the package there is no Wi-Fi and nothing is touched. */
+	error = bcm43455_files_load(&files);
+	if (error == ENOENT) {
+		kern_logf("rpi4-wifi: package bcm43455-firmware not installed; no onboard Wi-Fi\n");
+		return error;
+	}
+	if (error != 0)
+		return error;
+
+	/* Makes the device, which takes the files. */
+	error = bcm43455_device_create(&wifi_bus_operations, wifi, &files, &wifi->device);
+	if (error != 0) {
+		bcm43455_files_release(&files);
+		return error;
+	}
+
+	/* Prepares the mailbox, the pins and the host. */
+	error = bring_up(wifi);
+	if (error != 0)
+		return error;
+
+	/* Has the driver bring the chip up once, learn its identity and power it down. */
+	error = bcm43455_device_probe(wifi->device);
+	if (error != 0)
+		return error;
+
+	/* Publishes it, unless a stop came meanwhile. */
+	mutex_lock(&wifi->lifecycle_lock);
+
+	error = stopping_requested(wifi);
+	if (error == 0)
+		error = bcm43455_device_publish(wifi->device);
+	if (error == 0)
+		wifi->published = 1;
+
+	mutex_unlock(&wifi->lifecycle_lock);
+
+	/* Reports why the chip is not published. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: wlanN exists and owns the chip from here on. */
+	return 0;
+}
+
+/*
+ * Waits for the root file system in one-second steps, up to five minutes;
+ * a stop ends the wait.
+ */
+static int
+wait_for_root(
+	struct rpi4_wifi *wifi)
+{
+	unsigned waited;
+	int ready;
+	int error;
+
+	/* Looks for the root until it is there or the bound is spent. */
+	for (waited = 0;; waited += ROOT_POLL_MS) {
+		/* Stops as soon as the root is mounted. */
+		ready = bcm43455_files_root_ready();
+		if (ready)
+			break;
+
+		/* The bound is spent without a root. */
+		if (waited >= ROOT_WAIT_MS) {
+			kern_logf("rpi4-wifi: no root file system after %u s\n", ROOT_WAIT_MS / 1000U);
+			return ETIMEDOUT;
+		}
+
+		/* Sleeps one step; a stop ends the wait. */
+		error = wifi_sleep(wifi, ROOT_POLL_MS);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the files can be looked for. */
+	return 0;
+}
+
+/*
+ * Prepares the shared blocks and starts the host; the chip stays
+ * unpowered until the driver's power_up.
+ */
+static int
+bring_up(
+	struct rpi4_wifi *wifi)
+{
+	int error;
 
 	/* Prepares the mailbox; a call after the platform's does nothing. */
 	error = drv_rpi4_firmware_init(&wifi->fdt);
@@ -370,23 +527,7 @@ bring_up(
 	}
 	wifi->irq_added = 1;
 
-	/* Resets the chip through its power line. */
-	error = pulse_power(wifi);
-	if (error != 0)
-		return error;
-
-	/* Enumerates the SDIO interface up to a selected card on the fast bus. */
-	error = drv_rpi4_sdio_enumerate(&wifi->card, &wifi->host, &wifi->waiter);
-	if (error != 0)
-		return error;
-	report_card(wifi);
-
-	/* Enables the backplane function and sets both functions' block sizes. */
-	error = prepare_functions(wifi);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the chip's SDIO interface answers. */
+	/* Succeeded: the host can reach the chip once it is powered. */
 	return 0;
 }
 
@@ -628,8 +769,9 @@ report_card(
 }
 
 /*
- * Gives back what the thread took: the card's interrupt and the slot on
- * the line, the controller, and the chip's power.
+ * Gives back what the thread took for a chip that is not published: the
+ * card's interrupt and the slot on the line, the controller, and the
+ * chip's power.
  */
 static void
 give_back(
@@ -651,13 +793,13 @@ give_back(
 		wifi->irq_added = 0;
 	}
 
-	/* Powers the chip down until its driver exists; untouched power is left as the firmware set it. */
+	/* Powers the chip down; untouched power is left as the firmware set it. */
 	if (wifi->power_touched != 0) {
 		error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 0);
 		if (error != 0)
 			kern_logf("rpi4-wifi: WL_ON not driven low at the end (%d)\n", error);
 		else
-			kern_logf("rpi4-wifi: chip powered down until its driver is added\n");
+			kern_logf("rpi4-wifi: chip powered down\n");
 		wifi->power_touched = 0;
 	}
 }
@@ -735,4 +877,277 @@ wifi_sleep(
 
 	/* Succeeded: the time has passed. */
 	return 0;
+}
+
+/* CMD52 read of one byte of a function. */
+static int
+bus_read_byte(
+	void *context,
+	unsigned function,
+	uint32_t address,
+	uint8_t *value)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Reads the byte through the card layer. */
+	error = drv_rpi4_sdio_read_byte(&wifi->card, function, address, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: value holds the byte. */
+	return 0;
+}
+
+/* CMD52 write of one byte of a function. */
+static int
+bus_write_byte(
+	void *context,
+	unsigned function,
+	uint32_t address,
+	uint8_t value)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Writes the byte through the card layer. */
+	error = drv_rpi4_sdio_write_byte(&wifi->card, function, address, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the byte is written. */
+	return 0;
+}
+
+/* CMD53 read with an incrementing address. */
+static int
+bus_read(
+	void *context,
+	unsigned function,
+	uint32_t address,
+	uint8_t *buffer,
+	size_t length)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Reads the bytes through the card layer. */
+	error = drv_rpi4_sdio_transfer(&wifi->card, DRV_RPI4_SDIO_DATA_READ, function, address, 1, buffer, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: buffer holds the bytes. */
+	return 0;
+}
+
+/* CMD53 write with an incrementing address. */
+static int
+bus_write(
+	void *context,
+	unsigned function,
+	uint32_t address,
+	uint8_t *buffer,
+	size_t length)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Writes the bytes through the card layer. */
+	error = drv_rpi4_sdio_transfer(&wifi->card, DRV_RPI4_SDIO_DATA_WRITE, function, address, 1, buffer, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes are written. */
+	return 0;
+}
+
+/* The block size set for a function, zero for none. */
+static unsigned
+bus_block_size(
+	void *context,
+	unsigned function)
+{
+	struct rpi4_wifi *wifi;
+
+	wifi = context;
+
+	/* A function past the card's has no block size. */
+	if (function > DRV_RPI4_SDIO_FUNCTION_MAX)
+		return 0;
+
+	/* Reports the size enumeration and power_up set. */
+	return wifi->card.block_size[function];
+}
+
+/* Enables a function and waits for it to report ready. */
+static int
+bus_enable_function(
+	void *context,
+	unsigned function,
+	unsigned timeout_ms)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Enables it through the card layer, which sleeps through the thread's waiter. */
+	error = drv_rpi4_sdio_enable_function(&wifi->card, function, &wifi->waiter, timeout_ms);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the function is ready. */
+	return 0;
+}
+
+/* Disables a function. */
+static int
+bus_disable_function(
+	void *context,
+	unsigned function)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Disables it through the card layer. */
+	error = drv_rpi4_sdio_disable_function(&wifi->card, function);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the function is off. */
+	return 0;
+}
+
+/* Waits for the card's interrupt, a kick or the deadline. */
+static int
+bus_interrupt_wait(
+	void *context,
+	uint64_t deadline)
+{
+	struct rpi4_wifi *wifi;
+	int waited;
+
+	wifi = context;
+
+	/* Waits on the host's card interrupt. */
+	waited = drv_rpi4_sdio_host_card_irq_wait(&wifi->host, deadline);
+	if (waited != 0)
+		return waited;
+
+	/* Succeeded: the card interrupted, and its interrupt is disarmed. */
+	return 0;
+}
+
+/* Lets the card's interrupt reach the CPU, or keeps it away. */
+static void
+bus_interrupt_enable(
+	void *context,
+	int enable)
+{
+	struct rpi4_wifi *wifi;
+
+	wifi = context;
+
+	/* Applies it in the host. */
+	drv_rpi4_sdio_host_card_irq_enable(&wifi->host, enable);
+}
+
+/* Arms the card's interrupt again after it was served. */
+static void
+bus_interrupt_rearm(
+	void *context)
+{
+	struct rpi4_wifi *wifi;
+
+	wifi = context;
+
+	/* Rearms it in the host. */
+	drv_rpi4_sdio_host_card_irq_rearm(&wifi->host);
+}
+
+/* Ends the bus thread's wait without an interrupt. */
+static void
+bus_interrupt_kick(
+	void *context)
+{
+	struct rpi4_wifi *wifi;
+
+	wifi = context;
+
+	/* Kicks the host's wait. */
+	drv_rpi4_sdio_host_card_irq_kick(&wifi->host);
+}
+
+/*
+ * Powers the chip from reset and enumerates it: the bus back to one line
+ * at 400 kHz, the WL_ON pulse, CMD5 to CMD7 and the move to four lines at
+ * 25 MHz, function 1 enabled and both block sizes set.
+ */
+static int
+bus_power_up(
+	void *context)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Returns the bus to the enumeration settings, which a previous run left fast and wide. */
+	error = drv_rpi4_sdio_host_set_bus_width(&wifi->host, 1);
+	if (error != 0)
+		return error;
+	error = drv_rpi4_sdio_host_set_clock(&wifi->host, DRV_RPI4_SDIO_HOST_IDENTIFY_HZ);
+	if (error != 0)
+		return error;
+
+	/* Resets the chip through its power line. */
+	error = pulse_power(wifi);
+	if (error != 0)
+		return error;
+
+	/* Enumerates the SDIO interface up to a selected card on the fast bus; the first time is logged. */
+	error = drv_rpi4_sdio_enumerate(&wifi->card, &wifi->host, &wifi->waiter);
+	if (error != 0)
+		return error;
+	if (!wifi->card_reported) {
+		report_card(wifi);
+		wifi->card_reported = 1;
+	}
+
+	/* Enables the backplane function and sets both functions' block sizes. */
+	error = prepare_functions(wifi);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the chip's backplane can be reached. */
+	return 0;
+}
+
+/* Cuts the chip's power and keeps its interrupt away. */
+static void
+bus_power_down(
+	void *context)
+{
+	struct rpi4_wifi *wifi;
+	int error;
+
+	wifi = context;
+
+	/* Keeps the card's interrupt off the line. */
+	drv_rpi4_sdio_host_card_irq_enable(&wifi->host, 0);
+
+	/* Holds the chip in reset. */
+	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 0);
+	if (error != 0)
+		kern_logf("rpi4-wifi: WL_ON not driven low (%d)\n", error);
 }

@@ -92,12 +92,21 @@ ARM64_KERNEL_SOURCES += src/drivers/ethernet/bcm54213pe.c \
 endif
 
 # The onboard Wi-Fi: the legacy EMMC controller as an SDIO host, the SD
-# interrupt line's dispatcher and the chip's bring-up (ws206-p002b).
+# interrupt line's dispatcher and the chip's bring-up (ws206-p002b), and
+# the BCM43455 driver on top of them (ws206-p004).
 ifeq ($(CONFIG_DRIVER_BCM2711_WIFI),y)
 ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmc-irq.c \
 	src/drivers/platform/rpi4/rpi4-sdio-host.c \
 	src/drivers/platform/rpi4/rpi4-sdio.c \
-	src/drivers/platform/rpi4/rpi4-wifi.c
+	src/drivers/platform/rpi4/rpi4-wifi.c \
+	src/drivers/wifi/bcm43455/bcm43455.c \
+	src/drivers/wifi/bcm43455/bcm43455-bcdc.c \
+	src/drivers/wifi/bcm43455/bcm43455-bus.c \
+	src/drivers/wifi/bcm43455/bcm43455-chip.c \
+	src/drivers/wifi/bcm43455/bcm43455-event.c \
+	src/drivers/wifi/bcm43455/bcm43455-files.c \
+	src/drivers/wifi/bcm43455/bcm43455-nvram.c \
+	src/drivers/wifi/bcm43455/bcm43455-sdpcm.c
 endif
 
 # The onboard Bluetooth: the PL011 as the controller's HCI transport (ws215-p003).

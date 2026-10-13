@@ -1,0 +1,197 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * BCM43455: the chip's registers as the host reaches them over SDIO.
+ *
+ * Function 1 holds a few control registers of the SDIO interface and a
+ * 32 KB window onto the chip's backplane, the bus every core of the chip
+ * sits on.  The values come from public sources and are recorded with
+ * them, one by one, in plan/ws206/phase004/values.md.  No code here.
+ */
+
+#ifndef KERN_DRIVERS_BCM43455_HW_H
+#define KERN_DRIVERS_BCM43455_HW_H
+
+/* The SDIO functions: the common registers, the backplane, and the frames. */
+#define BCM43455_FUNCTION_COMMON	0U
+#define BCM43455_FUNCTION_BACKPLANE	1U
+#define BCM43455_FUNCTION_FRAMES	2U
+
+/* The common register that enables the card's interrupts: master, F1, F2. */
+#define BCM43455_CCCR_INTERRUPT_ENABLE	0x04U
+#define BCM43455_CCCR_INTERRUPT_MASTER	0x01U
+#define BCM43455_CCCR_INTERRUPT_F1	0x02U
+#define BCM43455_CCCR_INTERRUPT_F2	0x04U
+
+/* Function 1's control registers. */
+#define BCM43455_F1_WATERMARK		0x10008U
+#define BCM43455_F1_WINDOW_LOW		0x1000aU
+#define BCM43455_F1_WINDOW_MID		0x1000bU
+#define BCM43455_F1_WINDOW_HIGH		0x1000cU
+#define BCM43455_F1_FRAME_CONTROL	0x1000dU
+#define BCM43455_F1_CHIP_CLOCK		0x1000eU
+#define BCM43455_F1_PULL_UP		0x1000fU
+
+/* The watermark the frame function's read FIFO uses. */
+#define BCM43455_F1_WATERMARK_VALUE	8U
+
+/* Frame control: terminate the frame being read. */
+#define BCM43455_FRAME_CONTROL_READ_TERMINATE	0x01U
+
+/* The chip clock register's requests and states. */
+#define BCM43455_CLOCK_FORCE_ALP	0x01U
+#define BCM43455_CLOCK_FORCE_HT		0x02U
+#define BCM43455_CLOCK_ALP_REQUEST	0x08U
+#define BCM43455_CLOCK_HT_REQUEST	0x10U
+#define BCM43455_CLOCK_HW_REQUEST_OFF	0x20U
+#define BCM43455_CLOCK_ALP_AVAILABLE	0x40U
+#define BCM43455_CLOCK_HT_AVAILABLE	0x80U
+
+/*
+ * The backplane window: the high address bits go to the three window
+ * registers, the low fifteen into the function 1 address, with a flag that
+ * makes each access four bytes wide.
+ */
+#define BCM43455_WINDOW_SIZE		0x8000U
+#define BCM43455_WINDOW_OFFSET_MASK	0x7fffU
+#define BCM43455_WINDOW_ACCESS_32	0x8000U
+#define BCM43455_WINDOW_LOW_MASK	0x80U
+
+/* The chip common core, the first core on every backplane, and its registers. */
+#define BCM43455_CHIPCOMMON_BASE	0x18000000U
+#define BCM43455_CHIPCOMMON_ID		0x00U
+#define BCM43455_CHIPCOMMON_CAPABILITY	0x04U
+#define BCM43455_CHIPCOMMON_CAPABILITY_EXT	0xacU
+#define BCM43455_CHIPCOMMON_EROM	0xfcU
+
+/* The chip id register: the chip number, its revision, and the bus type. */
+#define BCM43455_CHIP_ID_MASK		0x0000ffffU
+#define BCM43455_CHIP_REVISION_SHIFT	16U
+#define BCM43455_CHIP_REVISION_MASK	0x0fU
+#define BCM43455_CHIP_BUS_SHIFT		28U
+#define BCM43455_CHIP_BUS_MASK		0x0fU
+#define BCM43455_CHIP_BUS_AXI		1U
+
+/* The chip this driver drives: BCM4345, revision 6 or later (the 43455 C0). */
+#define BCM43455_CHIP_ID		0x4345U
+#define BCM43455_CHIP_REVISION_MIN	6U
+
+/* The backplane address of the chip's RAM on the 43455. */
+#define BCM43455_RAM_BASE		0x198000U
+
+/* The enumeration ROM's descriptor types. */
+#define BCM43455_EROM_TYPE_MASK		0x0fU
+#define BCM43455_EROM_TYPE_SHORT_MASK	0x07U
+#define BCM43455_EROM_COMPONENT		0x01U
+#define BCM43455_EROM_MASTER_PORT	0x03U
+#define BCM43455_EROM_ADDRESS		0x05U
+#define BCM43455_EROM_END		0x0fU
+#define BCM43455_EROM_WIDE		0x08U
+
+/* A component descriptor's first word: its class and its core id. */
+#define BCM43455_EROM_CLASS_SHIFT	4U
+#define BCM43455_EROM_CLASS_MASK	0x0fU
+#define BCM43455_EROM_PART_SHIFT	8U
+#define BCM43455_EROM_PART_MASK		0x0fffU
+
+/* A component descriptor's second word: its revision and its port counts. */
+#define BCM43455_EROM_REVISION_SHIFT	24U
+#define BCM43455_EROM_REVISION_MASK	0xffU
+#define BCM43455_EROM_SLAVE_WRAPS_SHIFT	19U
+#define BCM43455_EROM_MASTER_WRAPS_SHIFT	14U
+#define BCM43455_EROM_COUNT_MASK	0x1fU
+
+/* An address descriptor: base, port, kind and size encoding. */
+#define BCM43455_EROM_BASE_MASK		0xfffff000U
+#define BCM43455_EROM_PORT_SHIFT	8U
+#define BCM43455_EROM_PORT_MASK		0x0fU
+#define BCM43455_EROM_KIND_SHIFT	6U
+#define BCM43455_EROM_KIND_MASK		0x03U
+#define BCM43455_EROM_KIND_SLAVE	0U
+#define BCM43455_EROM_KIND_SLAVE_WRAP	2U
+#define BCM43455_EROM_KIND_MASTER_WRAP	3U
+#define BCM43455_EROM_SIZE_SHIFT	4U
+#define BCM43455_EROM_SIZE_MASK		0x03U
+#define BCM43455_EROM_SIZE_DESCRIBED	3U
+
+/* The most enumeration ROM words read before giving up on its end. */
+#define BCM43455_EROM_WORDS_MAX		1024U
+
+/* The core ids this driver looks for. */
+#define BCM43455_CORE_CHIPCOMMON	0x800U
+#define BCM43455_CORE_D11		0x812U
+#define BCM43455_CORE_SDIO_DEVICE	0x829U
+#define BCM43455_CORE_ARM_CR4		0x83eU
+
+/* A core's wrapper registers: the I/O control and the reset control. */
+#define BCM43455_WRAP_IO_CONTROL	0x408U
+#define BCM43455_WRAP_RESET_CONTROL	0x800U
+#define BCM43455_IO_CONTROL_CLOCK	0x0001U
+#define BCM43455_IO_CONTROL_FORCE_GATE	0x0002U
+#define BCM43455_RESET_CONTROL_RESET	0x0001U
+
+/* The I/O control bits of the ARM CR4 (halt) and of D11 (the radio's PHY). */
+#define BCM43455_CR4_IO_CPU_HALT	0x0020U
+#define BCM43455_D11_IO_PHY_CLOCK	0x0004U
+#define BCM43455_D11_IO_PHY_RESET	0x0008U
+
+/* The ARM CR4's registers that describe its RAM banks. */
+#define BCM43455_CR4_CAPABILITY		0x04U
+#define BCM43455_CR4_BANK_INDEX		0x40U
+#define BCM43455_CR4_BANK_INFO		0x44U
+#define BCM43455_CR4_BANKS_A_MASK	0x0fU
+#define BCM43455_CR4_BANKS_B_SHIFT	4U
+#define BCM43455_CR4_BANKS_B_MASK	0x0fU
+#define BCM43455_CR4_BANK_SIZE_MASK	0x7fU
+#define BCM43455_CR4_BANK_UNIT		8192U
+#define BCM43455_CR4_BANK_1K		0x200U
+
+/* The SDIO device core's registers. */
+#define BCM43455_SDIO_INT_STATUS	0x20U
+#define BCM43455_SDIO_HOST_INT_MASK	0x24U
+#define BCM43455_SDIO_TO_CHIP_MAILBOX	0x40U
+#define BCM43455_SDIO_TO_HOST_MAILBOX	0x44U
+#define BCM43455_SDIO_TO_CHIP_DATA	0x48U
+#define BCM43455_SDIO_TO_HOST_DATA	0x4cU
+
+/* The SDIO device core's interrupt status: the to-host mailbox's bits and chip activity. */
+#define BCM43455_INT_FLOW_STATE		0x00000010U
+#define BCM43455_INT_FLOW_CHANGE	0x00000020U
+#define BCM43455_INT_FRAME		0x00000040U
+#define BCM43455_INT_HOST_MAILBOX	0x00000080U
+#define BCM43455_INT_MAILBOX_MASK	0x000000f0U
+#define BCM43455_INT_CHIP_ACTIVE	0x20000000U
+
+/* The to-chip mailbox: a received frame refused, and the host's acknowledgement. */
+#define BCM43455_TO_CHIP_NAK		0x00000001U
+#define BCM43455_TO_CHIP_ACK		0x00000002U
+
+/* The to-chip mailbox data: the host's protocol version. */
+#define BCM43455_TO_CHIP_VERSION_SHIFT	16U
+
+/* The to-host mailbox data: what the firmware tells the host. */
+#define BCM43455_TO_HOST_NAK_HANDLED	0x00000001U
+#define BCM43455_TO_HOST_DEVICE_READY	0x00000002U
+#define BCM43455_TO_HOST_FLOW_CONTROL	0x00000004U
+#define BCM43455_TO_HOST_FIRMWARE_READY	0x00000008U
+#define BCM43455_TO_HOST_FIRMWARE_HALT	0x00000010U
+#define BCM43455_TO_HOST_VERSION_SHIFT	16U
+#define BCM43455_TO_HOST_VERSION_MASK	0xffU
+#define BCM43455_TO_HOST_FLOW_SHIFT	24U
+
+/* The SDPCM protocol version host and firmware speak. */
+#define BCM43455_SDPCM_PROTOCOL		4U
+
+/*
+ * The function 2 address frames are read from and written to: the chip
+ * common core's window with the four-byte flag.  Function 2 is a FIFO, so
+ * the address only has to stay in the window.
+ */
+#define BCM43455_FRAME_ADDRESS		((BCM43455_CHIPCOMMON_BASE & BCM43455_WINDOW_OFFSET_MASK) | BCM43455_WINDOW_ACCESS_32)
+
+#endif
