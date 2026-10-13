@@ -10,7 +10,7 @@ Objectives: O1
 Parent: [Master](../master.md)
 Queue: q970（finished）
 Target: ベータ2
-Resume point: p001 の Q1 の判定と ※要確認の 3 件（phase001/phase.md の「Linux・FreeBSD」）。
+Resume point: なし（completed）。
 <!-- awesome-plan-current:end -->
 
 ## 原文（2026-10-14 ユーザー）
@@ -32,4 +32,4 @@ Resume point: p001 の Q1 の判定と ※要確認の 3 件（phase001/phase.md
 
 | Phase | 目的 | Status | 依存 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 表示名・移動・Linux/FreeBSD の build の全部（小さいので 1 つ） | cleared（2026-10-14） | — |
+| p001 | 表示名・移動・Linux/FreeBSD の build の全部（小さいので 1 つ） | cleared（2026-10-14） | — |
