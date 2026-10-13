@@ -40,3 +40,7 @@ p001 の設計の要点: QEMU の usb-net（CDC ECM）は descriptor の `wMaxSe
 ユーザー（原文）:「GENETはMTU 1500までです。でもUSB LANではMTU 9000にしましょう。」→ Pi 4 の GENET は 1500 のまま（対象外、理由はユーザーの判断と hardware の上限）。USB の有線 LAN（CDC ECM・NCM と、zedBSD が扱う USB の Ethernet の chip）は MTU 9000 を目標にする（chip・descriptor の wMaxSegmentSize が 9000 未満ならその上限、p001 で一覧）。受け入れの実機は USB LAN（Pi 4 と 5330 に挿した物）。
 
 依存（2026-10-13 Q1、WS220 review-1 S5）: WS220 の p006（相手の MSS・送りの buffer）と p007（受けの窓）は MTU から MSS を決めるので、この WS の MTU の口と IP の層の MTU の使い方に合わせる。どちらが先でも、MSS は interface の MTU − 40（IPv4）・−60（IPv6）で決める形に揃える。
+
+2026-10-13 Q1: review-1（致命的 0、重大 8、中 11、軽微 12）。p002（kernel）は S1（MTU の変更と up の競合、device_lock の下の印）・S2（sendmsg・recvmsg の大きさの上限）・M1・M2 を phase.md で直し、S7（jumbo の slot 32 の枯渇: driver の受けの予約、socket ごとの上限、lo0 の datagram は標準の class）を Q2 と一緒に決めてから。p004（設定）は S6（起動は reconcile を通らず `lan_send_policy`／`lan_policy_decode` の固定の語数、Settings の lan-configure.c）で §3.7 を書き直してから。p003 の前に RTL8156 の descriptor の値を読む（S8）。S4（IPv6 の TCP は path MTU で segment を切る、IPv4 は DF と fragmentation needed を読まないので途中に 1500 の router があると止まる）で Q4（IPv4 の PMTU を Future Work）を考え直す。
+
+完了の条件の読み替え（review S8、ユーザーの決定に合わせる）: 上の「目的と完了の条件」の 2 の GENET・amd64 の有線、3 の断片化、4 の QEMU で MTU 9000 の受け入れは、ユーザーの決定（GENET は 1500 のまま、USB の有線 LAN で 9000）と設計（QEMU の usb-net は 1514 固定）に合わせて、次に読み替える: 対象は USB の有線 LAN（CDC ECM・NCM）、QEMU では MTU の設定の口と回帰だけ、大きな frame の受け入れは実機（Pi 4・5330 に挿した USB LAN）だけ。5320 は対象の実機に含めない（ユーザーの確認待ち）。
