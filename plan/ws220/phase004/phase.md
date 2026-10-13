@@ -146,3 +146,7 @@ p004 の scenario（全部 PASS、seed は 1 固定）:
 | L3 | Q1 がユーザーに報告 |
 | L4・L5 | §1（G の項、単位・型・符号、retire の中の順） |
 | L6 | 冒頭の「依存」 |
+
+## 8. T1-577 の「退行」の調べ（2026-10-13、q947）
+
+p003 と一緒に調べた。p004 の RTO（約 203 ms）は止まりと無関係（再送 0、約 200 ms は Linux の zero window probe）。同じ session の A/B（T1-581）で p003＋p004 の kernel は p002 の kernel より速く止まりも短い。詳細と表は [p003 §8](../phase003/phase.md)。

@@ -177,3 +177,23 @@ Q1 の判定「merge は保留、重大 1・中 2 を直してから」。同じ
 - 直し（`plan/ws220/tests/tcp-stream-series.sh`）: tcpdump・HTTP server・ss の sampler は、それぞれ自分の pid を `$out` の file（`wire-RUN.pid`・`server.pid`・`ss-RUN.pid`）に書いて `exec` する（`sh -c 'echo $$ > FILE; exec …'`）。新しい `stop_pidfile FILE` が SIGTERM を送り、10 s まで終わるのを待ってから SIGKILL。各 run の終わりに capture と sampler を止め、`teardown`（trap EXIT）で capture・sampler・server を必ず止める。rm は使わない（pid の file は出力の folder に残る）。
 - `plan/ws220/tests/stream.py`: `serve` は SIGTERM を SIGINT と同じに扱い、log の `done` の行を書いて終わる。
 - 確かめ（QEMU なし、host だけ）: 一時の namespace `p3t` の lo で、script と同じ形で server・sampler・capture を起こし、4 MiB を fetch して、pid の file で止めた（`build/tmp/p3-cmp.D1j7/harness.sh`、使い捨て）。pid の file の pid は `tcpdump`・`python3`・`sh` 自身、capture は止めてから 0.22 s で終わり起こした shell も終わった、namespace に残った process 0、8080 相当の port で待つ物 0、pcap は閉じられ（124 packets captured）、server の log に `done … bytes=4194304`。`sh -n` ok。QEMU の run（guest を含む全体）は T1 の次の run で確かめる。
+
+## 8. T1-577 の「退行」の調べ（2026-10-13、q947、P3）
+
+承認: q947（ユーザー「main に残し、直しを急ぐ」）。結論: **p003・p004 の退行ではなく、測りの環境（host）の差**。code の直しはしない。
+
+- 症状（T1-577、bac387218 = p003＋p004、損失 0）: 基線 T1-574（0047ea2 = p002、別の session）と比べ wire の longest_stall_ms 2〜8 → 178〜226 ms、平均 89〜93 %。
+- pcap（tshark）で見たこと: 止まりは TCP の timer ではなく guest の userland の thread が走らないこと。up は全部 ACK 済み・窓は開き・ring は空なのに tcp-stream が 184 ms 書かない。down は fetch が 12〜36 ms 読まず（その間 network worker は ACK を続ける）、窓が 0 になり、更新は 20〜180 ms 後か Linux の zero window probe（約 200 ms、我々の RTO ではない）の後。`segment_send_failures`・`send_refused`・再送は 0、ACK の数 = data の数で、p003 の拒み・retry の道は一度も走っていない。2 ms を超える wire の隙間は T1-574 の up 6・down 3 に対し T1-577 の up 324・down 703。
+- 読み: 0047ea2..bac387218 の src・include の差は tcp.c・tcp-socket.h・sysctl.h・sandbox.h だけ。down の道（data の受け、ACK、recvfrom）の差は `tcp_send_ack` への置き換えだけで実質同じ。`tcp_timer_next_deadline` の過ぎた期限での worker の空回りは模型（本物の tcp.c、pass ごとに `tcp_timer_next_deadline() <= now` を数える一時の計装、scratchpad）で 0。ECM は rx_urb・tx_urb が 1 つずつで、完了の処理と re-arm は全部 network worker の poll（usb-cdc-ecm.c）で行うので、USB の 1 frame ごとに worker の起床が要る。wire の止まりは worker か userland の thread が CPU を得ないことで、host の負荷に敏感。
+- A/B（T1-581、同じ 1 つの session で順に、`--runs up,down-disk --bytes 268435456`、証拠 /home/awe/zedBSD-worktrees/t1/build/review/t1-581/）:
+
+| kernel | up MB/s | up stall | up の隙間 >2 ms / >30 ms | down-disk MB/s | down-disk stall | 隙間 >2 ms / >30 ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| k1 0047ea2（p002、T1-574 と同じ） | 3.00 | 196 ms | 893 / 70 | 3.57 | 146 ms | 547 / 13 |
+| k2 bac387218（p003＋p004、T1-577 と同じ） | 3.41 | 56 ms | 142 / 7 | 3.69 | 84 ms | 417 / 7 |
+| k3 e7ccb1a1c（p005） | 3.46 | 4 ms | 4 / 0 | 4.60 | 30 ms | 107 / 0 |
+
+  同じ session では p002 の kernel も T1-577 と同じ止まりを出し、k2 は k1 より全ての値で良い。k1→k2→k3 は時刻の順でもあり、host の負荷が下がっていった可能性があるので、k3 の改善も code の効果とは言い切れない（Q1 の読み: 21 時以後に別の Codex のセッションが WS074 の build・試験をしていた形跡）。k3 の `features=0x32`。
+- 判定の基準の見直し（提案、Q1 が決める）: この共有の host では、別の session の基線との比（mean 90 %、longest_stall 1.5 倍）は環境の揺れで外れうる。p003〜p005 の合否は、同じ session で基線の kernel（0047ea2）を先か後に流した値と比べる。
+- T1 の cputimes の採り方（`sysctl hw.cputimes`・`top -b`）は guest.sh の状態と series の guest が別で採れなかった（k*-cpu/*.txt）。
+- 未実施: gdbstub での CPU の持ち主の確認（環境と分かったので不要と判断）、実機。
