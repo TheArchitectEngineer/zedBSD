@@ -17,6 +17,15 @@
  * Every buffer a request or an answer passes through (the slot, the frame
  * buffers) is cleared once its bytes have moved on, so a key that a
  * request carries does not stay in memory.
+ *
+ * Sources: the receive and send rules (a twelve-byte header read first,
+ * the rest in four-byte units; the credit window; the first sequence
+ * number; the padding; the interrupt status and mailbox handling) follow
+ * OpenBSD's bwfm(4) (ISC), sys/dev/sdmmc/if_bwfm_sdio.c 1.44
+ * (bwfm_sdio_rx_frames(), bwfm_sdio_tx_ok(), bwfm_sdio_tx_ctrlframe(),
+ * bwfm_sdio_task()); the abort of a bad frame follows Infineon's WHD
+ * (Apache-2.0), whd_bus_sdio_protocol.c (whd_bus_sdio_abort_read()).  The
+ * thread, the slot, direct mode and the hooks are this driver's own.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-bus.h"
@@ -51,11 +60,11 @@
 static void bus_thread(void *argument);
 static int service(struct bcm43455_bus *bus);
 static int handle_mailbox(struct bcm43455_bus *bus);
-static int read_frame(struct bcm43455_bus *bus);
+static int receive_frame(struct bcm43455_bus *bus);
 static int read_fifo(struct bcm43455_bus *bus, uint8_t *buffer, size_t length);
 static int discard_rest(struct bcm43455_bus *bus, size_t length);
 static int abort_frame(struct bcm43455_bus *bus);
-static void dispatch(struct bcm43455_bus *bus, const struct bcm43455_sdpcm_header *header);
+static void dispatch(struct bcm43455_bus *bus, const struct bcm43455_sdpcm_fields *header);
 static void deliver_answer(struct bcm43455_bus *bus, const uint8_t *payload, size_t length);
 static int answer_error(const struct bcm43455_bcdc_answer *answer);
 static int send_frame(struct bcm43455_bus *bus, unsigned channel, size_t length);
@@ -106,12 +115,12 @@ bcm43455_bus_init(
  * Forgets the SDPCM state of a previous firmware run.
  */
 void
-bcm43455_bus_reset(
+bcm43455_bus_forget(
 	struct bcm43455_bus *bus)
 {
 	/* A new firmware is sent one frame before it grants more. */
 	bus->tx_sequence = (uint8_t)INITIAL_SEQUENCE;
-	bus->tx_max = (uint8_t)INITIAL_CREDIT;
+	bus->tx_credit_limit = (uint8_t)INITIAL_CREDIT;
 	bus->flow_control = 0;
 	bus->firmware_protocol = 0;
 	kern_memset(&bus->direct, 0, sizeof(bus->direct));
@@ -219,7 +228,7 @@ bcm43455_bus_iovar_get(
 		return error;
 
 	/* Asks for the value. */
-	error = bcm43455_bus_control(bus, BCM43455_WLC_GET_VAR, 0, request, length, answer, capacity, answer_length);
+	error = bcm43455_bus_control(bus, BCM43455_COMMAND_READ_VARIABLE, 0, request, length, answer, capacity, answer_length);
 	if (error != 0)
 		return error;
 
@@ -247,7 +256,7 @@ bcm43455_bus_iovar_set(
 		return error;
 
 	/* Sets it, then clears the copy, since a value may be a key. */
-	error = bcm43455_bus_control(bus, BCM43455_WLC_SET_VAR, 1, request, request_length, NULL, 0, NULL);
+	error = bcm43455_bus_control(bus, BCM43455_COMMAND_WRITE_VARIABLE, 1, request, request_length, NULL, 0, NULL);
 	kern_memset(request, 0, request_length);
 	if (error != 0)
 		return error;
@@ -282,7 +291,7 @@ bcm43455_bus_iovar_set_u32(
  * Starts the bus thread.
  */
 int
-bcm43455_bus_start(
+bcm43455_bus_thread_start(
 	struct bcm43455_bus *bus)
 {
 	struct thread *thread;
@@ -311,7 +320,7 @@ bcm43455_bus_start(
 
 	spin_unlock_irqrestore(&bus->lock, enabled);
 
-	/* Starts it; nobody joins it, bcm43455_bus_stop() waits for its flag instead. */
+	/* Starts it; nobody joins it, bcm43455_bus_thread_stop() waits for its flag instead. */
 	thread->detached = 1;
 	thread_start(thread);
 
@@ -325,7 +334,7 @@ bcm43455_bus_start(
  * Stops the bus thread and waits until it has let the bus go.
  */
 int
-bcm43455_bus_stop(
+bcm43455_bus_thread_stop(
 	struct bcm43455_bus *bus)
 {
 	unsigned long enabled;
@@ -410,7 +419,7 @@ bus_thread(
 	/* Serves the chip one wakeup at a time. */
 	for (;;) {
 		/* Samples the stop request and whether anything waits to be sent within the credit. */
-		window = bcm43455_sdpcm_window(bus->tx_max, bus->tx_sequence);
+		window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 		enabled = spin_lock_irqsave(&bus->lock);
 
 		stop = bus->stop_requested;
@@ -499,14 +508,14 @@ service(
 	int error;
 
 	/* Reads what the SDIO core has to say: the to-host mailbox's bits and chip activity. */
-	error = bcm43455_chip_read32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_INT_STATUS, &status);
+	error = bcm43455_chip_read32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_CORE_INTERRUPTS, &status);
 	if (error != 0)
 		return error;
 	status &= BCM43455_INT_MAILBOX_MASK | BCM43455_INT_CHIP_ACTIVE;
 
 	/* Clears the bits it raised before acting on them, so a new one is not lost. */
 	if (status != 0) {
-		error = bcm43455_chip_write32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_INT_STATUS, status);
+		error = bcm43455_chip_write32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_CORE_INTERRUPTS, status);
 		if (error != 0)
 			return error;
 	}
@@ -520,7 +529,7 @@ service(
 
 	/* Reads frames until the chip has none, a bad one stops the pass, or the pass is long enough. */
 	for (frames = 0; frames < FRAMES_PER_SERVICE; frames++) {
-		error = read_frame(bus);
+		error = receive_frame(bus);
 		if (error == ENOENT)
 			break;
 		if (error == EAGAIN)
@@ -582,10 +591,10 @@ handle_mailbox(
  * a bus error otherwise.
  */
 static int
-read_frame(
+receive_frame(
 	struct bcm43455_bus *bus)
 {
-	struct bcm43455_sdpcm_header header;
+	struct bcm43455_sdpcm_fields header;
 	size_t rest;
 	size_t used;
 	int error;
@@ -614,7 +623,7 @@ read_frame(
 	}
 
 	/* Every frame carries the firmware's latest credit and flow control. */
-	bus->tx_max = header.max_sequence;
+	bus->tx_credit_limit = header.max_sequence;
 	bus->flow_control = header.flow_control;
 
 	/* A frame of only a header carries nothing but the credit. */
@@ -768,7 +777,7 @@ abort_frame(
 static void
 dispatch(
 	struct bcm43455_bus *bus,
-	const struct bcm43455_sdpcm_header *header)
+	const struct bcm43455_sdpcm_fields *header)
 {
 	struct bcm43455_bcdc_data data;
 	struct bcm43455_event event;
@@ -778,8 +787,8 @@ dispatch(
 	int error;
 
 	/* The payload starts where the header says. */
-	payload = bus->rx_frame + header->data_offset;
-	length = (size_t)header->length - header->data_offset;
+	payload = bus->rx_frame + header->payload_start;
+	length = (size_t)header->length - header->payload_start;
 
 	/* Each channel has its consumer. */
 	switch (header->channel) {
@@ -997,7 +1006,7 @@ send_slot(
 	int error;
 
 	/* Waits for credit; the request stays queued. */
-	window = bcm43455_sdpcm_window(bus->tx_max, bus->tx_sequence);
+	window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 	if (window == 0)
 		return 0;
 
@@ -1069,7 +1078,7 @@ send_data(
 	/* Sends frames until the device has none or the credit runs out. */
 	for (;;) {
 		/* Without credit, the frames stay with the device until the firmware grants more. */
-		window = bcm43455_sdpcm_window(bus->tx_max, bus->tx_sequence);
+		window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 		if (window == 0) {
 			enabled = spin_lock_irqsave(&bus->lock);
 
@@ -1159,7 +1168,7 @@ direct_control(
 	/* Waits for credit, reading what the chip sends meanwhile. */
 	deadline = deadline_after(BCM43455_BUS_CONTROL_TIMEOUT_MS);
 	for (;;) {
-		window = bcm43455_sdpcm_window(bus->tx_max, bus->tx_sequence);
+		window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 		if (window != 0)
 			break;
 		error = direct_wait(bus, deadline);

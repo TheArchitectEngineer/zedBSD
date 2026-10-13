@@ -9,9 +9,14 @@
  * BCM43455: checking the package's files, converting the NVRAM text and
  * cutting the CLM into clmload messages.
  *
- * Pure functions: no lock, no allocation, no hardware.  The NVRAM form and
- * the clmload header are recorded in plan/ws206/phase004/values.md with
- * their public sources.
+ * Pure functions: no lock, no allocation, no hardware.
+ *
+ * Sources: the NVRAM's form at the top of RAM (NUL-separated settings,
+ * padding, the length word) is the one OpenBSD's bwfm(4) (ISC) builds in
+ * sys/dev/ic/bwfm.c 1.113 (bwfm_nvram_convert()); this driver also drops
+ * the spaces around a line and lines without "=".  The clmload message
+ * (flags, kind, length, checksum, 1400 bytes a piece) follows Infineon's
+ * WHD (Apache-2.0) whd_wlioctl.h and whd_clm.c and bwfm's bwfmreg.h.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-firmware.h"
@@ -158,7 +163,7 @@ bcm43455_nvram_check(
  * Turns the NVRAM text into the chip's form.
  */
 int
-bcm43455_nvram_convert(
+bcm43455_nvram_pack(
 	const uint8_t *text,
 	size_t length,
 	uint8_t *blob,

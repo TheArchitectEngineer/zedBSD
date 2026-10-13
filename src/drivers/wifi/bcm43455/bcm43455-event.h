@@ -31,22 +31,22 @@
 #define BCM43455_EVENT_MASK_LENGTH	18U
 
 /* The events this driver asks for. */
-#define BCM43455_EVENT_SET_SSID		0U
-#define BCM43455_EVENT_AUTH		3U
-#define BCM43455_EVENT_DEAUTH		5U
-#define BCM43455_EVENT_DEAUTH_IND	6U
-#define BCM43455_EVENT_ASSOC		7U
-#define BCM43455_EVENT_DISASSOC_IND	12U
+#define BCM43455_EVENT_JOIN_RESULT		0U
+#define BCM43455_EVENT_AUTHENTICATION		3U
+#define BCM43455_EVENT_DEAUTHENTICATED		5U
+#define BCM43455_EVENT_PEER_DEAUTHENTICATED	6U
+#define BCM43455_EVENT_ASSOCIATION		7U
+#define BCM43455_EVENT_PEER_DISASSOCIATED	12U
 #define BCM43455_EVENT_LINK		16U
-#define BCM43455_EVENT_PSK_SUP		46U
-#define BCM43455_EVENT_ESCAN_RESULT	69U
+#define BCM43455_EVENT_SUPPLICANT		46U
+#define BCM43455_EVENT_SCAN_RESULT	69U
 
 /*
  * One decoded event message.
  *
  * vendor_subtype is the vendor header's subtype (0x8001 for an event),
  * type is the event number, status and reason its outcome as the
- * firmware numbers them, address the peer it concerns.  data_offset and
+ * firmware numbers them, address the peer it concerns.  data_start and
  * data_length say where the event's data is in the Ethernet frame,
  * already bounded by the frame.
  */
@@ -57,11 +57,11 @@ struct bcm43455_event {
 	uint32_t type;
 	uint32_t status;
 	uint32_t reason;
-	uint32_t auth_type;
+	uint32_t authentication;
 	uint8_t address[6];
 	uint8_t interface_index;
 	uint8_t bsscfg_index;
-	size_t data_offset;
+	size_t data_start;
 	size_t data_length;
 };
 

@@ -83,7 +83,7 @@ struct bcm43455_chip {
  * Returns ENODEV for a chip that is not a BCM43455 and EIO for an
  * enumeration ROM that does not describe the needed cores.
  */
-int bcm43455_chip_attach(struct bcm43455_chip *chip, const struct bcm43455_bus_ops *ops, void *context);
+int bcm43455_chip_identify(struct bcm43455_chip *chip, const struct bcm43455_bus_ops *ops, void *context);
 
 /* Reads one 32-bit backplane register. */
 int bcm43455_chip_read32(struct bcm43455_chip *chip, uint32_t address, uint32_t *value);

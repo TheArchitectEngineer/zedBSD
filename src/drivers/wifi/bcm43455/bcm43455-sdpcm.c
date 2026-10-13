@@ -9,8 +9,10 @@
  * BCM43455: encoding and decoding the SDPCM frame headers.
  *
  * The layout (frame tag, then the software header) is the one the chip's
- * firmware uses on its SDIO frame function; the byte positions are
- * recorded in plan/ws206/phase004/values.md with their public sources.
+ * firmware uses on its SDIO frame function.  Source: OpenBSD bwfm(4)
+ * (ISC), sys/dev/sdmmc/if_bwfm_sdio.h 1.3 (struct bwfm_sdio_hwhdr and
+ * struct bwfm_sdio_swhdr) for the byte positions, if_bwfm_sdio.c 1.44
+ * for the credit rule and the padding; values only.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-sdpcm.h"
@@ -23,7 +25,7 @@
 #define HEADER_SEQUENCE		4U
 #define HEADER_CHANNEL		5U
 #define HEADER_NEXT_LENGTH	6U
-#define HEADER_DATA_OFFSET	7U
+#define HEADER_PAYLOAD_START	7U
 #define HEADER_FLOW_CONTROL	8U
 #define HEADER_MAX_SEQUENCE	9U
 
@@ -41,7 +43,7 @@ int
 bcm43455_sdpcm_decode(
 	const uint8_t *frame,
 	size_t available,
-	struct bcm43455_sdpcm_header *header)
+	struct bcm43455_sdpcm_fields *header)
 {
 	uint16_t length;
 	uint16_t check;
@@ -74,7 +76,7 @@ bcm43455_sdpcm_decode(
 	header->channel = (uint8_t)(frame[HEADER_CHANNEL] & CHANNEL_MASK);
 	header->flags = (uint8_t)(frame[HEADER_CHANNEL] >> FLAGS_SHIFT);
 	header->next_length = frame[HEADER_NEXT_LENGTH];
-	header->data_offset = frame[HEADER_DATA_OFFSET];
+	header->payload_start = frame[HEADER_PAYLOAD_START];
 	header->flow_control = frame[HEADER_FLOW_CONTROL];
 	header->max_sequence = frame[HEADER_MAX_SEQUENCE];
 
@@ -83,9 +85,9 @@ bcm43455_sdpcm_decode(
 		return 0;
 
 	/* The payload starts after the header and inside the frame. */
-	if (header->data_offset < BCM43455_SDPCM_HEADER_LENGTH)
+	if (header->payload_start < BCM43455_SDPCM_HEADER_LENGTH)
 		return EPROTO;
-	if (header->data_offset > length)
+	if (header->payload_start > length)
 		return EPROTO;
 
 	/* Succeeded: header describes the frame. */
@@ -110,7 +112,7 @@ bcm43455_sdpcm_encode(
 	frame[HEADER_SEQUENCE] = sequence;
 	frame[HEADER_CHANNEL] = (uint8_t)(channel & CHANNEL_MASK);
 	frame[HEADER_NEXT_LENGTH] = 0;
-	frame[HEADER_DATA_OFFSET] = (uint8_t)BCM43455_SDPCM_HEADER_LENGTH;
+	frame[HEADER_PAYLOAD_START] = (uint8_t)BCM43455_SDPCM_HEADER_LENGTH;
 	frame[HEADER_FLOW_CONTROL] = 0;
 	frame[HEADER_MAX_SEQUENCE] = 0;
 	frame[10] = 0;

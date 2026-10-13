@@ -8,8 +8,10 @@
 /*
  * BCM43455: decoding the firmware's event frames.
  *
- * The vendor header's values and the event message's layout are recorded
- * in plan/ws206/phase004/values.md with their public sources.
+ * Source: OpenBSD bwfm(4) (ISC), sys/dev/ic/bwfmreg.h 1.26 (struct
+ * bwfm_ethhdr, struct bwfm_event_msg and the event numbers) and the check
+ * in bwfm.c 1.113 (bwfm_rx()); the event numbers agree with Infineon's
+ * WHD (Apache-2.0) whd_events.h.  Values only.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-event.h"
@@ -94,7 +96,7 @@ bcm43455_event_decode(
 	event->type = bcm43455_get_be32(frame + MESSAGE_TYPE);
 	event->status = bcm43455_get_be32(frame + MESSAGE_STATUS);
 	event->reason = bcm43455_get_be32(frame + MESSAGE_REASON);
-	event->auth_type = bcm43455_get_be32(frame + MESSAGE_AUTH_TYPE);
+	event->authentication = bcm43455_get_be32(frame + MESSAGE_AUTH_TYPE);
 	kern_memcpy(event->address, frame + MESSAGE_ADDRESS, sizeof(event->address));
 	event->interface_index = frame[MESSAGE_INTERFACE_INDEX];
 	event->bsscfg_index = frame[MESSAGE_BSSCFG_INDEX];
@@ -103,7 +105,7 @@ bcm43455_event_decode(
 	data_length = bcm43455_get_be32(frame + MESSAGE_DATA_LENGTH);
 	if ((size_t)data_length > length - BCM43455_EVENT_HEADER_LENGTH)
 		return EPROTO;
-	event->data_offset = BCM43455_EVENT_HEADER_LENGTH;
+	event->data_start = BCM43455_EVENT_HEADER_LENGTH;
 	event->data_length = (size_t)data_length;
 
 	/* Succeeded: event describes the frame. */

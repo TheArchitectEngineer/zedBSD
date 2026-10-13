@@ -153,7 +153,7 @@ struct bcm43455_bus {
 	void *hook_context;
 
 	uint8_t tx_sequence;
-	uint8_t tx_max;
+	uint8_t tx_credit_limit;
 	uint8_t flow_control;
 	unsigned firmware_protocol;
 	uint16_t next_id;
@@ -184,7 +184,7 @@ int bcm43455_bus_init(struct bcm43455_bus *bus, const struct bcm43455_bus_hooks 
 /*
  * Forgets the SDPCM state of a previous firmware run, before a new one.
  */
-void bcm43455_bus_reset(struct bcm43455_bus *bus);
+void bcm43455_bus_forget(struct bcm43455_bus *bus);
 
 /*
  * Allows (1) or forbids (0) direct mode.  The lifecycle owner allows it
@@ -219,14 +219,14 @@ int bcm43455_bus_iovar_set_u32(struct bcm43455_bus *bus, const char *name, uint3
  *
  * Returns the kernel's error when the thread cannot be made.
  */
-int bcm43455_bus_start(struct bcm43455_bus *bus);
+int bcm43455_bus_thread_start(struct bcm43455_bus *bus);
 
 /*
  * Stops the bus thread and waits until it has let the bus go, which
  * returns the bus to its owner for direct mode.  Returns the error the
  * thread stopped on, 0 for a stop on request.
  */
-int bcm43455_bus_stop(struct bcm43455_bus *bus);
+int bcm43455_bus_thread_stop(struct bcm43455_bus *bus);
 
 /*
  * Tells the bus thread that the device has a frame to send.  Any context

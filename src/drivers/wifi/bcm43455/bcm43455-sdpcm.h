@@ -41,18 +41,18 @@
 /*
  * One decoded SDPCM header.
  *
- * length is the whole frame, header included; data_offset is where the
+ * length is the whole frame, header included; payload_start is where the
  * payload starts, counted from the frame's first byte.  max_sequence is
  * the last sequence number the firmware will accept, which is how it
  * grants credit; flow_control has one bit per priority it has paused.
  */
-struct bcm43455_sdpcm_header {
+struct bcm43455_sdpcm_fields {
 	uint16_t length;
 	uint8_t sequence;
 	uint8_t channel;
 	uint8_t flags;
 	uint8_t next_length;
-	uint8_t data_offset;
+	uint8_t payload_start;
 	uint8_t flow_control;
 	uint8_t max_sequence;
 };
@@ -66,7 +66,7 @@ struct bcm43455_sdpcm_header {
  * does not match, and EPROTO for a length or payload offset that cannot
  * be a frame.
  */
-int bcm43455_sdpcm_decode(const uint8_t *frame, size_t available, struct bcm43455_sdpcm_header *header);
+int bcm43455_sdpcm_decode(const uint8_t *frame, size_t available, struct bcm43455_sdpcm_fields *header);
 
 /*
  * Writes the header of a frame to send.

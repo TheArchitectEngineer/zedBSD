@@ -19,6 +19,12 @@
  * loaded, the country set to the world-wide "XX" and read back (E6),
  * roaming off, power saving off, the events the driver uses enabled.
  *
+ * Sources: the variable names and the country's layout are those of
+ * Infineon's WHD (Apache-2.0) whd_wlioctl.h; the event mask's length (18
+ * bytes) is OpenBSD bwfm(4)'s (ISC) bwfmreg.h 1.26.  "bus:rxglom" and the
+ * country revision -1 have no permissively licensed public source; they
+ * are marked so in plan/ws206/phase004/values.md and checked on a board.
+ *
  * The radio operations (scan and connect) and the FullMAC data path are
  * not here yet: the station is attached with only quiesce and stop_retry,
  * and a received data frame is dropped (ws206-p005, with the WLAN core's
@@ -184,7 +190,7 @@ bcm43455_device_create(
 		goto fail;
 
 	/* Turns the NVRAM text into the chip's form once, and keeps its placeholder address. */
-	error = bcm43455_nvram_convert(
+	error = bcm43455_nvram_pack(
 		device->files.nvram,
 		device->files.nvram_length,
 		device->nvram,
@@ -384,7 +390,7 @@ bcm43455_device_start(
 	int error;
 
 	/* Forgets the previous run's bus state and powers the chip from reset. */
-	bcm43455_bus_reset(&device->bus);
+	bcm43455_bus_forget(&device->bus);
 	device->powered = 1;
 	error = device->ops->power_up(device->context);
 	if (error != 0) {
@@ -393,7 +399,7 @@ bcm43455_device_start(
 	}
 
 	/* Finds the chip's cores and RAM. */
-	error = bcm43455_chip_attach(&device->bus.chip, device->ops, device->context);
+	error = bcm43455_chip_identify(&device->bus.chip, device->ops, device->context);
 	if (error != 0)
 		goto fail;
 
@@ -427,7 +433,7 @@ bcm43455_device_start(
 	}
 
 	/* Brings the radio up. */
-	error = command_u32(device, BCM43455_WLC_UP, 1);
+	error = command_u32(device, BCM43455_COMMAND_RADIO_UP, 1);
 	if (error != 0) {
 		kern_logf("bcm43455: radio did not come up (%d)\n", error);
 		goto fail;
@@ -435,7 +441,7 @@ bcm43455_device_start(
 
 	/* Hands the bus to its thread. */
 	bcm43455_bus_direct(&device->bus, 0);
-	error = bcm43455_bus_start(&device->bus);
+	error = bcm43455_bus_thread_start(&device->bus);
 	if (error != 0)
 		goto fail;
 
@@ -460,14 +466,14 @@ bcm43455_device_stop(
 
 	/* Takes the bus back from its thread. */
 	device->runtime_active = 0;
-	error = bcm43455_bus_stop(&device->bus);
+	error = bcm43455_bus_thread_stop(&device->bus);
 	if (error != 0)
 		kern_logf("bcm43455: bus thread had stopped on error %d\n", error);
 
 	/* Takes the radio down while the firmware still answers. */
 	if (device->firmware_running) {
 		bcm43455_bus_direct(&device->bus, 1);
-		error = command_u32(device, BCM43455_WLC_DOWN, 1);
+		error = command_u32(device, BCM43455_COMMAND_RADIO_DOWN, 1);
 		if (error != 0 && error != ENETDOWN)
 			kern_logf("bcm43455: radio not taken down (%d)\n", error);
 		bcm43455_bus_direct(&device->bus, 0);
@@ -483,7 +489,7 @@ bcm43455_device_stop(
 
 	/* Drops what the rings still hold, and the bus's frame copies. */
 	clear_rings(device);
-	bcm43455_bus_reset(&device->bus);
+	bcm43455_bus_forget(&device->bus);
 }
 
 /*
@@ -747,7 +753,7 @@ start_settings(
 	}
 
 	/* Keeps the radio out of power saving. */
-	error = command_u32(device, BCM43455_WLC_SET_PM, POWER_SAVE_OFF);
+	error = command_u32(device, BCM43455_COMMAND_POWER_SAVE, POWER_SAVE_OFF);
 	if (error != 0) {
 		kern_logf("bcm43455: power saving not turned off (%d)\n", error);
 		return error;
@@ -969,15 +975,15 @@ enable_events(
 	struct bcm43455_device *device)
 {
 	static const unsigned events[] = {
-		BCM43455_EVENT_SET_SSID,
-		BCM43455_EVENT_AUTH,
-		BCM43455_EVENT_DEAUTH,
-		BCM43455_EVENT_DEAUTH_IND,
-		BCM43455_EVENT_ASSOC,
-		BCM43455_EVENT_DISASSOC_IND,
+		BCM43455_EVENT_JOIN_RESULT,
+		BCM43455_EVENT_AUTHENTICATION,
+		BCM43455_EVENT_DEAUTHENTICATED,
+		BCM43455_EVENT_PEER_DEAUTHENTICATED,
+		BCM43455_EVENT_ASSOCIATION,
+		BCM43455_EVENT_PEER_DISASSOCIATED,
 		BCM43455_EVENT_LINK,
-		BCM43455_EVENT_PSK_SUP,
-		BCM43455_EVENT_ESCAN_RESULT
+		BCM43455_EVENT_SUPPLICANT,
+		BCM43455_EVENT_SCAN_RESULT
 	};
 	uint8_t mask[BCM43455_EVENT_MASK_LENGTH];
 	unsigned i;
@@ -1022,7 +1028,7 @@ read_channels(
 	answered = 0;
 	error = bcm43455_bus_control(
 		&device->bus,
-		BCM43455_WLC_GET_VALID_CHANNELS,
+		BCM43455_COMMAND_CHANNEL_LIST,
 		0,
 		request,
 		sizeof(request),

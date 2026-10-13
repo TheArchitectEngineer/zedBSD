@@ -12,10 +12,16 @@
  * The chip's cores sit on an AXI backplane.  The host reaches it through
  * function 1: three window registers hold an address's high bits and the
  * low fifteen go into the function 1 address.  Each core has a wrapper
- * whose reset and I/O control registers start, stop and halt it.  The
- * sequence of register operations and every value are recorded with their
- * public sources in plan/ws206/phase004/values.md; no code of another
- * driver was copied.
+ * whose reset and I/O control registers start, stop and halt it.
+ *
+ * Sources: the order of the register operations follows OpenBSD's bwfm(4)
+ * (ISC), sys/dev/ic/bwfm.c 1.113 (bwfm_chip_attach(), bwfm_chip_ai_disable(),
+ * bwfm_chip_ai_reset(), bwfm_chip_dmp_erom_scan(), bwfm_chip_cr4_set_passive(),
+ * bwfm_chip_cr4_set_active(), bwfm_chip_tcm_ramsize(), bwfm_chip_sr_capable())
+ * and sys/dev/sdmmc/if_bwfm_sdio.c 1.44 (the attach, the download and
+ * bwfm_sdio_preinit()).  Only the facts (which register, which value, in
+ * which order) were taken; the functions, their split and the comments
+ * are this driver's own.  plan/ws206/phase004/values.md has the lines.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-chip.h"
@@ -50,8 +56,8 @@ static int start_backplane_clock(struct bcm43455_chip *chip);
 static int scan_erom(struct bcm43455_chip *chip, uint32_t erom);
 static void keep_core(struct bcm43455_chip *chip, const struct bcm43455_core *core);
 static int read_ram_size(struct bcm43455_chip *chip);
-static int disable_core(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t prereset, uint32_t reset);
-static int reset_core(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t prereset, uint32_t reset, uint32_t postreset);
+static int hold_core_in_reset(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t prereset, uint32_t reset);
+static int restart_core(struct bcm43455_chip *chip, const struct bcm43455_core *core, uint32_t prereset, uint32_t reset, uint32_t postreset);
 static int halt_cores(struct bcm43455_chip *chip);
 static int read_power_unit(struct bcm43455_chip *chip);
 static int prepare_interface(struct bcm43455_chip *chip);
@@ -63,7 +69,7 @@ static int wait_clock(struct bcm43455_chip *chip, uint8_t mask, unsigned timeout
  * Starts the backplane clock, identifies the chip and finds its cores.
  */
 int
-bcm43455_chip_attach(
+bcm43455_chip_identify(
 	struct bcm43455_chip *chip,
 	const struct bcm43455_bus_ops *ops,
 	void *context)
@@ -254,6 +260,11 @@ bcm43455_chip_read_memory(
 
 /*
  * Writes the firmware and the NVRAM and starts the ARM core.
+ *
+ * The order (fast clock, firmware, read back, NVRAM below the top of RAM,
+ * read back, reset vector at address 0, ARM core released, clock given
+ * back) is bwfm's bwfm_sdio_load_microcode() and
+ * bwfm_sdio_buscore_activate().
  */
 int
 bcm43455_chip_download(
@@ -305,7 +316,7 @@ bcm43455_chip_download(
 		nvram_address);
 
 	/* Clears the SDIO core's interrupt state left from before. */
-	error = bcm43455_chip_write32(chip, chip->sdio.base + BCM43455_SDIO_INT_STATUS, 0xffffffffU);
+	error = bcm43455_chip_write32(chip, chip->sdio.base + BCM43455_SDIO_CORE_INTERRUPTS, 0xffffffffU);
 	if (error != 0)
 		return error;
 
@@ -317,7 +328,7 @@ bcm43455_chip_download(
 
 	/* Lets the ARM core out of reset without the halt: the firmware starts. */
 	halted = BCM43455_CR4_IO_CPU_HALT;
-	error = reset_core(chip, &chip->cr4, halted, 0, 0);
+	error = restart_core(chip, &chip->cr4, halted, 0, 0);
 	if (error != 0)
 		return error;
 
@@ -332,6 +343,10 @@ bcm43455_chip_download(
 
 /*
  * Brings the frame function up behind the running firmware.
+ *
+ * The order is bwfm's bwfm_sdio_preinit(), the save-restore branch
+ * included; the interrupt enable is WHD's (whd_bus_sdio_protocol.c,
+ * master, F1 and F2).
  */
 int
 bcm43455_chip_start(
@@ -376,7 +391,7 @@ bcm43455_chip_start(
 	/* Lets the to-host mailbox and the chip's activity raise the SDIO core's interrupt. */
 	error = bcm43455_chip_write32(
 		chip,
-		chip->sdio.base + BCM43455_SDIO_HOST_INT_MASK,
+		chip->sdio.base + BCM43455_SDIO_CORE_INTERRUPT_MASK,
 		BCM43455_INT_MAILBOX_MASK | BCM43455_INT_CHIP_ACTIVE);
 	if (error != 0)
 		return error;
@@ -567,7 +582,7 @@ transfer_memory(
 /*
  * Asks for the backplane's slow clock, waits for it, and then keeps it on
  * by force; also drops the SDIO lines' internal pull-ups, which the board
- * provides.
+ * provides.  The order is bwfm's bwfm_sdio_buscore_prepare().
  */
 static int
 start_backplane_clock(
@@ -614,8 +629,10 @@ start_backplane_clock(
  *
  * A component takes two words; master port descriptors are skipped; each
  * address descriptor may be followed by a high address word and a size
- * word.  A core's base is its first slave port 0 address, its wrapper the
- * first master wrapper (for a core with master ports) or slave wrapper.
+ * word.  A core's base is its first 4 KB or 8 KB slave port 0 address, its
+ * wrapper the first master wrapper (for a core with master ports) or
+ * slave wrapper.  The descriptor format and these rules are those of
+ * bwfm's bwfm_chip_dmp_get_regaddr(); the walk is written anew.
  */
 static int
 scan_erom(
@@ -765,7 +782,8 @@ keep_core(
 }
 
 /*
- * Adds up the ARM CR4's RAM banks.
+ * Adds up the ARM CR4's RAM banks, as bwfm's bwfm_chip_tcm_ramsize()
+ * reads them.
  */
 static int
 read_ram_size(
@@ -817,10 +835,11 @@ read_ram_size(
 
 /*
  * Puts a core into reset with the given I/O control before and during it.
- * A core already in reset only gets its in-reset control.
+ * A core already in reset only gets its in-reset control.  The register
+ * sequence is the AXI wrapper's, as bwfm's bwfm_chip_ai_disable() does it.
  */
 static int
-disable_core(
+hold_core_in_reset(
 	struct bcm43455_chip *chip,
 	const struct bcm43455_core *core,
 	uint32_t prereset,
@@ -874,10 +893,10 @@ disable_core(
 
 /*
  * Resets a core from whatever state it is in and lets it run with the
- * post-reset I/O control.
+ * post-reset I/O control, as bwfm's bwfm_chip_ai_reset() does it.
  */
 static int
-reset_core(
+restart_core(
 	struct bcm43455_chip *chip,
 	const struct bcm43455_core *core,
 	uint32_t prereset,
@@ -890,7 +909,7 @@ reset_core(
 	int error;
 
 	/* Puts the core into reset first, which works from any state. */
-	error = disable_core(chip, core, prereset, reset);
+	error = hold_core_in_reset(chip, core, prereset, reset);
 	if (error != 0)
 		return error;
 
@@ -934,7 +953,8 @@ reset_core(
 
 /*
  * Leaves the ARM core out of reset but halted, and the radio core in
- * reset with its PHY clocked, so the RAM can be written.
+ * reset with its PHY clocked, so the RAM can be written: bwfm's
+ * bwfm_chip_cr4_set_passive().
  */
 static int
 halt_cores(
@@ -949,12 +969,12 @@ halt_cores(
 	if (error != 0)
 		return error;
 	prereset = control & BCM43455_CR4_IO_CPU_HALT;
-	error = reset_core(chip, &chip->cr4, prereset, BCM43455_CR4_IO_CPU_HALT, BCM43455_CR4_IO_CPU_HALT);
+	error = restart_core(chip, &chip->cr4, prereset, BCM43455_CR4_IO_CPU_HALT, BCM43455_CR4_IO_CPU_HALT);
 	if (error != 0)
 		return error;
 
 	/* Puts the radio core into reset, its PHY reset first and its clock kept. */
-	error = disable_core(
+	error = hold_core_in_reset(
 		chip,
 		&chip->d11,
 		BCM43455_D11_IO_PHY_RESET | BCM43455_D11_IO_PHY_CLOCK,
@@ -969,7 +989,8 @@ halt_cores(
 /*
  * Finds the PMU (a core of its own on a chip that says so, else part of
  * the chip common core), reads its revision, and reads whether the chip
- * runs save-restore.
+ * runs save-restore: bwfm's bwfm_chip_get_pmu() and, for the 4345,
+ * bwfm_chip_sr_capable().
  */
 static int
 read_power_unit(
@@ -1010,7 +1031,7 @@ read_power_unit(
 		error = bcm43455_chip_read32(chip, chip->pmu_base + BCM43455_PMU_CHIP_CONTROL_DATA, &control);
 		if (error != 0)
 			return error;
-		if ((control & BCM43455_SR_ENABLED) != 0)
+		if ((control & BCM43455_SAVE_RESTORE_BIT) != 0)
 			chip->save_restore = 1;
 	}
 
@@ -1026,7 +1047,8 @@ read_power_unit(
 /*
  * Keeps the SDIO interface awake, lets an SDIO reset reset the WLAN
  * backplane, reloads the PMU's resources, and leaves the frame function
- * off and the chip on its slow clock.
+ * off and the chip on its slow clock: the steps bwfm's attach takes after
+ * bwfm_chip_attach() (if_bwfm_sdio.c).
  */
 static int
 prepare_interface(

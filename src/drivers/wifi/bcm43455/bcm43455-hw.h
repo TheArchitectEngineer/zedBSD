@@ -10,8 +10,16 @@
  *
  * Function 1 holds a few control registers of the SDIO interface and a
  * 32 KB window onto the chip's backplane, the bus every core of the chip
- * sits on.  The values come from public sources and are recorded with
- * them, one by one, in plan/ws206/phase004/values.md.  No code here.
+ * sits on.  No code here.
+ *
+ * Sources.  Each group names where its values were checked; only the
+ * values are used, the names and the comments are this driver's own.
+ * "bwfm" is OpenBSD's bwfm(4) (ISC): sys/dev/ic/bwfmreg.h 1.26,
+ * sys/dev/sdmmc/if_bwfm_sdio.h 1.3 and if_bwfm_sdio.c 1.44.  "WHD" is
+ * Infineon's wifi-host-driver (Apache-2.0), tree bd99da7b,
+ * WHD/COMPONENT_WIFI6/src/bus_protocols/whd_sdio.h.  "SDIO" is the SD
+ * Association's SDIO Simplified Specification.  The table with line
+ * numbers is plan/ws206/phase004/values.md.
  */
 
 #ifndef KERN_DRIVERS_BCM43455_HW_H
@@ -22,23 +30,23 @@
 #define BCM43455_FUNCTION_BACKPLANE	1U
 #define BCM43455_FUNCTION_FRAMES	2U
 
-/* The common register that aborts a function's transfer. */
+/* The common register that aborts a function's transfer (SDIO; WHD whd_sdio.h). */
 #define BCM43455_CCCR_IO_ABORT		0x06U
 
-/* The vendor registers of function 0: card capability (CMD14) and card control. */
+/* The vendor registers of function 0: card capability (CMD14) and card control (bwfm if_bwfm_sdio.h). */
 #define BCM43455_CCCR_CARD_CAPABILITY	0xf0U
 #define BCM43455_CARD_CAPABILITY_CMD14	0x02U
 #define BCM43455_CARD_CAPABILITY_CMD14_EXT	0x04U
 #define BCM43455_CCCR_CARD_CONTROL	0xf1U
 #define BCM43455_CARD_CONTROL_WLAN_RESET	0x02U
 
-/* The common register that enables the card's interrupts: master, F1, F2. */
+/* The common register that enables the card's interrupts: master, F1, F2 (SDIO; WHD whd_sdio.h). */
 #define BCM43455_CCCR_INTERRUPT_ENABLE	0x04U
 #define BCM43455_CCCR_INTERRUPT_MASTER	0x01U
 #define BCM43455_CCCR_INTERRUPT_F1	0x02U
 #define BCM43455_CCCR_INTERRUPT_F2	0x04U
 
-/* Function 1's control registers. */
+/* Function 1's control registers (bwfm if_bwfm_sdio.h; frame control from WHD whd_sdio.h). */
 #define BCM43455_F1_WATERMARK		0x10008U
 #define BCM43455_F1_WINDOW_LOW		0x1000aU
 #define BCM43455_F1_WINDOW_MID		0x1000bU
@@ -49,20 +57,20 @@
 #define BCM43455_F1_WAKEUP_CONTROL	0x1001eU
 #define BCM43455_F1_SLEEP_CONTROL	0x1001fU
 
-/* Wakeup control: wait for the fast clock on wakeup.  Sleep control: keep SDIO on. */
+/* Wakeup control: wait for the fast clock on wakeup.  Sleep control: keep SDIO on (bwfm if_bwfm_sdio.h). */
 #define BCM43455_WAKEUP_HT_WAIT		0x02U
 #define BCM43455_SLEEP_KEEP_SDIO_ON	0x01U
 
-/* The SDIO device core revision from which the keep-SDIO-on bit is set at attach. */
+/* The SDIO device core revision from which the keep-SDIO-on bit is set at attach (bwfm if_bwfm_sdio.c). */
 #define BCM43455_SDIO_REVISION_KSO	12U
 
-/* The watermark the frame function's read FIFO uses. */
+/* The watermark the frame function's read FIFO uses (bwfm if_bwfm_sdio.c). */
 #define BCM43455_F1_WATERMARK_VALUE	8U
 
-/* Frame control: terminate the frame being read. */
+/* Frame control: terminate the frame being read (WHD whd_sdio.h). */
 #define BCM43455_FRAME_CONTROL_READ_TERMINATE	0x01U
 
-/* The chip clock register's requests and states. */
+/* The chip clock register's requests and states (bwfm if_bwfm_sdio.h; WHD whd_sdio.h). */
 #define BCM43455_CLOCK_FORCE_ALP	0x01U
 #define BCM43455_CLOCK_FORCE_HT		0x02U
 #define BCM43455_CLOCK_ALP_REQUEST	0x08U
@@ -81,21 +89,21 @@
 #define BCM43455_WINDOW_ACCESS_32	0x8000U
 #define BCM43455_WINDOW_LOW_MASK	0x80U
 
-/* The chip common core, the first core on every backplane, and its registers. */
+/* The chip common core, the first core on every backplane, and its registers (bwfm bwfmreg.h). */
 #define BCM43455_CHIPCOMMON_BASE	0x18000000U
 #define BCM43455_CHIPCOMMON_ID		0x00U
 #define BCM43455_CHIPCOMMON_CAPABILITY	0x04U
 #define BCM43455_CHIPCOMMON_CAPABILITY_EXT	0xacU
 #define BCM43455_CHIPCOMMON_EROM	0xfcU
 
-/* The chip common capability bits: a PMU, and a PMU in a core of its own (AOB). */
+/* The chip common capability bits: a PMU, and a PMU in a core of its own (bwfm bwfmreg.h). */
 #define BCM43455_CAPABILITY_PMU		0x10000000U
 #define BCM43455_CAPABILITY_EXT_AOB	0x00000040U
 
-/* The chip common revision from which the PMU may be a core of its own. */
+/* The chip common revision from which the PMU may be a core of its own (bwfm bwfm.c). */
 #define BCM43455_CHIPCOMMON_REVISION_AOB	35U
 
-/* The PMU's registers: its control, its capabilities, and the chip control window. */
+/* The PMU's registers: its control, its capabilities, and the chip control window (bwfm bwfmreg.h). */
 #define BCM43455_PMU_CONTROL		0x600U
 #define BCM43455_PMU_CONTROL_RESOURCE_RELOAD	(2U << 13)
 #define BCM43455_PMU_CAPABILITY		0x604U
@@ -105,13 +113,13 @@
 
 /*
  * Save-restore on the 4345: chip control register 3, bit 2, with a PMU of
- * revision 17 or later.
+ * revision 17 or later (bwfm bwfm.c, bwfm_chip_sr_capable()).
  */
 #define BCM43455_PMU_CHIP_CONTROL_SR	3U
-#define BCM43455_SR_ENABLED		0x04U
+#define BCM43455_SAVE_RESTORE_BIT		0x04U
 #define BCM43455_PMU_REVISION_SR	17U
 
-/* The chip id register: the chip number, its revision, and the bus type. */
+/* The chip id register: the chip number, its revision, and the bus type (bwfm bwfmreg.h). */
 #define BCM43455_CHIP_ID_MASK		0x0000ffffU
 #define BCM43455_CHIP_REVISION_SHIFT	16U
 #define BCM43455_CHIP_REVISION_MASK	0x0fU
@@ -119,14 +127,14 @@
 #define BCM43455_CHIP_BUS_MASK		0x0fU
 #define BCM43455_CHIP_BUS_AXI		1U
 
-/* The chip this driver drives: BCM4345, revision 6 or later (the 43455 C0). */
+/* The chip this driver drives: BCM4345, revision 6 or later, the 43455 C0 (bwfm bwfmvar.h, if_bwfm_sdio.c). */
 #define BCM43455_CHIP_ID		0x4345U
 #define BCM43455_CHIP_REVISION_MIN	6U
 
-/* The backplane address of the chip's RAM on the 43455. */
+/* The backplane address of the chip's RAM on the 43455 (bwfm bwfm.c). */
 #define BCM43455_RAM_BASE		0x198000U
 
-/* The enumeration ROM's descriptor types. */
+/* The enumeration ROM's descriptor types (bwfm bwfmreg.h, for this and the next three groups). */
 #define BCM43455_EROM_TYPE_MASK		0x0fU
 #define BCM43455_EROM_TYPE_SHORT_MASK	0x07U
 #define BCM43455_EROM_COMPONENT		0x01U
@@ -166,26 +174,26 @@
 /* The most enumeration ROM words read before giving up on its end. */
 #define BCM43455_EROM_WORDS_MAX		1024U
 
-/* The core ids this driver looks for. */
+/* The core ids this driver looks for (bwfm bwfmreg.h). */
 #define BCM43455_CORE_CHIPCOMMON	0x800U
 #define BCM43455_CORE_D11		0x812U
 #define BCM43455_CORE_PMU		0x827U
 #define BCM43455_CORE_SDIO_DEVICE	0x829U
 #define BCM43455_CORE_ARM_CR4		0x83eU
 
-/* A core's wrapper registers: the I/O control and the reset control. */
+/* A core's wrapper registers: the I/O control and the reset control (bwfm bwfmreg.h). */
 #define BCM43455_WRAP_IO_CONTROL	0x408U
 #define BCM43455_WRAP_RESET_CONTROL	0x800U
 #define BCM43455_IO_CONTROL_CLOCK	0x0001U
 #define BCM43455_IO_CONTROL_FORCE_GATE	0x0002U
 #define BCM43455_RESET_CONTROL_RESET	0x0001U
 
-/* The I/O control bits of the ARM CR4 (halt) and of D11 (the radio's PHY). */
+/* The I/O control bits of the ARM CR4 (halt) and of D11, the radio's PHY (bwfm bwfmreg.h). */
 #define BCM43455_CR4_IO_CPU_HALT	0x0020U
 #define BCM43455_D11_IO_PHY_CLOCK	0x0004U
 #define BCM43455_D11_IO_PHY_RESET	0x0008U
 
-/* The ARM CR4's registers that describe its RAM banks. */
+/* The ARM CR4's registers that describe its RAM banks (bwfm bwfmreg.h). */
 #define BCM43455_CR4_CAPABILITY		0x04U
 #define BCM43455_CR4_BANK_INDEX		0x40U
 #define BCM43455_CR4_BANK_INFO		0x44U
@@ -196,9 +204,9 @@
 #define BCM43455_CR4_BANK_UNIT		8192U
 #define BCM43455_CR4_BANK_1K		0x200U
 
-/* The SDIO device core's registers. */
-#define BCM43455_SDIO_INT_STATUS	0x20U
-#define BCM43455_SDIO_HOST_INT_MASK	0x24U
+/* The SDIO device core's registers (bwfm if_bwfm_sdio.h, for this and the next four groups). */
+#define BCM43455_SDIO_CORE_INTERRUPTS	0x20U
+#define BCM43455_SDIO_CORE_INTERRUPT_MASK	0x24U
 #define BCM43455_SDIO_TO_CHIP_MAILBOX	0x40U
 #define BCM43455_SDIO_TO_HOST_MAILBOX	0x44U
 #define BCM43455_SDIO_TO_CHIP_DATA	0x48U
@@ -229,7 +237,7 @@
 #define BCM43455_TO_HOST_VERSION_MASK	0xffU
 #define BCM43455_TO_HOST_FLOW_SHIFT	24U
 
-/* The SDPCM protocol version host and firmware speak. */
+/* The SDPCM protocol version host and firmware speak (bwfm if_bwfm_sdio.h). */
 #define BCM43455_SDPCM_PROTOCOL		4U
 
 /*

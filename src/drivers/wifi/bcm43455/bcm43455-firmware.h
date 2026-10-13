@@ -114,7 +114,7 @@ int bcm43455_nvram_check(const uint8_t *text, size_t length);
  * when the result does not fit capacity and EINVAL when no setting is
  * left.
  */
-int bcm43455_nvram_convert(const uint8_t *text, size_t length, uint8_t *blob, size_t capacity, size_t *blob_length);
+int bcm43455_nvram_pack(const uint8_t *text, size_t length, uint8_t *blob, size_t capacity, size_t *blob_length);
 
 /*
  * Reads the NVRAM text's macaddr setting.

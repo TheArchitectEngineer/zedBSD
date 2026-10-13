@@ -354,7 +354,7 @@ run_unit(
 static void
 check_sdpcm(void)
 {
-	struct bcm43455_sdpcm_header header;
+	struct bcm43455_sdpcm_fields header;
 	uint8_t frame[64];
 
 	/* A frame written is read back with its fields. */
@@ -365,7 +365,7 @@ check_sdpcm(void)
 	CHECK(bcm43455_get_le16(frame) == 40 && bcm43455_get_le16(frame + 2) == (uint16_t)~40U);
 	CHECK(bcm43455_sdpcm_decode(frame, sizeof(frame), &header) == 0);
 	CHECK(header.length == 40 && header.sequence == 7 && header.channel == 2);
-	CHECK(header.data_offset == 12 && header.max_sequence == 12 && header.flow_control == 0x5a);
+	CHECK(header.payload_start == 12 && header.max_sequence == 12 && header.flow_control == 0x5a);
 
 	/* An all-zero tag is no frame; a wrong complement or a short length is refused. */
 	memset(frame, 0, sizeof(frame));
@@ -490,7 +490,7 @@ check_events(void)
 	CHECK(bcm43455_event_decode(frame, length, &event) == 0);
 	CHECK(event.type == 16 && event.status == 0 && event.reason == 1 && event.version == 2);
 	CHECK(event.vendor_subtype == 0x8001);
-	CHECK(event.data_offset == 72 && event.data_length == 6);
+	CHECK(event.data_start == 72 && event.data_length == 6);
 	CHECK(memcmp(event.address, chip_mac, 6) == 0);
 
 	/* Another ethertype is not an event; a wrong vendor or an overlong data length is refused. */
@@ -541,7 +541,7 @@ check_nvram(void)
 
 	/* Settings are kept, each with its NUL; comments, blanks and junk are dropped; a NUL and zeros pad it. */
 	memset(blob, 0xaa, sizeof(blob));
-	CHECK(bcm43455_nvram_convert((const uint8_t *)text, sizeof(text) - 1U, blob, sizeof(blob), &length) == 0);
+	CHECK(bcm43455_nvram_pack((const uint8_t *)text, sizeof(text) - 1U, blob, sizeof(blob), &length) == 0);
 	CHECK(memcmp(blob, expected, sizeof(expected)) == 0);
 	CHECK((length % 4U) == 0);
 	words = (uint32_t)((length - 4U) / 4U);
@@ -550,8 +550,8 @@ check_nvram(void)
 	CHECK(all_zero(blob + sizeof(expected) - 1U, length - 4U - (sizeof(expected) - 1U)));
 
 	/* A list that does not fit, or holds no setting, is refused. */
-	CHECK(bcm43455_nvram_convert((const uint8_t *)text, sizeof(text) - 1U, blob, 40, &length) == ENOSPC);
-	CHECK(bcm43455_nvram_convert((const uint8_t *)"# none\n\n", 8, blob, sizeof(blob), &length) == EINVAL);
+	CHECK(bcm43455_nvram_pack((const uint8_t *)text, sizeof(text) - 1U, blob, 40, &length) == ENOSPC);
+	CHECK(bcm43455_nvram_pack((const uint8_t *)"# none\n\n", 8, blob, sizeof(blob), &length) == EINVAL);
 
 	/* The placeholder address is the macaddr line, not the commented one. */
 	CHECK(bcm43455_nvram_mac((const uint8_t *)text, sizeof(text) - 1U, mac) == 0);
@@ -665,7 +665,7 @@ check_real_files(
 	CHECK(bcm43455_nvram_check(nvram, nvram_size) == 0);
 
 	/* The NVRAM converts to whole words with a length word, and has no country of its own (E6). */
-	CHECK(bcm43455_nvram_convert(nvram, nvram_size, blob, sizeof(blob), &length) == 0);
+	CHECK(bcm43455_nvram_pack(nvram, nvram_size, blob, sizeof(blob), &length) == 0);
 	CHECK((length % 4U) == 0 && length < nvram_size);
 	CHECK(memmem(blob, length, "ccode=", 6) == NULL);
 	CHECK(memmem(blob, length, "boardflags3=0x44200100", 23) != NULL);
@@ -717,7 +717,7 @@ check_chip(void)
 	/* A powered chip is identified and its cores are found in the enumeration ROM. */
 	model_reset();
 	CHECK(op_power_up(NULL) == 0);
-	CHECK(bcm43455_chip_attach(chip_state, &model_ops, NULL) == 0);
+	CHECK(bcm43455_chip_identify(chip_state, &model_ops, NULL) == 0);
 	CHECK(chip_state->id == 0x4345 && chip_state->revision == 6);
 	CHECK(chip_state->chipcommon.base == CC_BASE && chip_state->chipcommon.wrapper == CC_WRAP);
 	CHECK(chip_state->chipcommon.revision == 43);
@@ -770,7 +770,7 @@ check_chip(void)
 	model_reset();
 	chip.save_restore = 0;
 	CHECK(op_power_up(NULL) == 0);
-	CHECK(bcm43455_chip_attach(chip_state, &model_ops, NULL) == 0);
+	CHECK(bcm43455_chip_identify(chip_state, &model_ops, NULL) == 0);
 	CHECK(chip_state->save_restore == 0);
 	CHECK(bcm43455_chip_download(chip_state, firmware_image, BCM43455_FIRMWARE_SIZE, nvram, sizeof(nvram)) == 0);
 	CHECK(bcm43455_chip_start(chip_state) == 0);
@@ -781,7 +781,7 @@ check_chip(void)
 	model_reset();
 	CHECK(op_power_up(NULL) == 0);
 	chip.erom[chip.erom_words - 3U] = 0x0000000fU;
-	CHECK(bcm43455_chip_attach(chip_state, &model_ops, NULL) == EIO);
+	CHECK(bcm43455_chip_identify(chip_state, &model_ops, NULL) == EIO);
 	free(chip_state);
 }
 
@@ -816,11 +816,11 @@ check_probe(void)
 	CHECK(strcmp(chip.requests[8].name, "cap") == 0);
 	CHECK(strcmp(chip.requests[9].name, "event_msgs") == 0);
 	CHECK(strcmp(chip.requests[10].name, "roam_off") == 0);
-	CHECK(chip.requests[11].command == BCM43455_WLC_SET_PM && bcm43455_get_le32(chip.requests[11].payload) == 0);
-	CHECK(chip.requests[12].command == BCM43455_WLC_GET_VALID_CHANNELS);
+	CHECK(chip.requests[11].command == BCM43455_COMMAND_POWER_SAVE && bcm43455_get_le32(chip.requests[11].payload) == 0);
+	CHECK(chip.requests[12].command == BCM43455_COMMAND_CHANNEL_LIST);
 	count = bcm43455_get_le32(chip.requests[12].payload);
 	CHECK(count == BCM43455_CHANNELS_MAX);
-	CHECK(chip.requests[13].command == BCM43455_WLC_DOWN);
+	CHECK(chip.requests[13].command == BCM43455_COMMAND_RADIO_DOWN);
 
 	/* The CLM arrived whole, in two messages marked begin and end. */
 	CHECK(chip.clm_received == BCM43455_CLM_SIZE && chip.clm_messages == 2 && chip.clm_flags_ok == 1);
@@ -1063,7 +1063,7 @@ check_failures(void)
 	pthread_mutex_unlock(&model_lock);
 	model_push_event(BCM43455_EVENT_LINK, 0, 0);
 	for (i = 0; i < 100; i++) {
-		if (bcm43455_sdpcm_window(device->bus.tx_max, device->bus.tx_sequence) != 0)
+		if (bcm43455_sdpcm_window(device->bus.tx_credit_limit, device->bus.tx_sequence) != 0)
 			break;
 		sleep_ms(5);
 	}
@@ -1647,15 +1647,15 @@ model_control(
 	request->set = set;
 	name = "";
 	value_offset = 0;
-	if (command == BCM43455_WLC_GET_VAR || command == BCM43455_WLC_SET_VAR) {
+	if (command == BCM43455_COMMAND_READ_VARIABLE || command == BCM43455_COMMAND_WRITE_VARIABLE) {
 		name = (const char *)payload;
 		name_length = strnlen(name, request_length);
 		CHECK(name_length < request_length && name_length < sizeof(request->name));
 		memcpy(request->name, name, name_length);
 		value_offset = name_length + 1U;
-	} else if (command == BCM43455_WLC_UP) {
+	} else if (command == BCM43455_COMMAND_RADIO_UP) {
 		strcpy(request->name, "up");
-	} else if (command == BCM43455_WLC_DOWN) {
+	} else if (command == BCM43455_COMMAND_RADIO_DOWN) {
 		strcpy(request->name, "down");
 	}
 	request->length = request_length - value_offset;
@@ -1669,7 +1669,7 @@ model_control(
 	memset(answer, 0, sizeof(answer));
 	memcpy(answer, message, 16);
 	status = 0;
-	if (command == BCM43455_WLC_GET_VAR) {
+	if (command == BCM43455_COMMAND_READ_VARIABLE) {
 		if (strcmp(request->name, "cur_etheraddr") == 0) {
 			memcpy(answer + 16, chip_mac, 6);
 		} else if (strcmp(request->name, "ver") == 0) {
@@ -1685,7 +1685,7 @@ model_control(
 		} else {
 			status = -23;
 		}
-	} else if (command == BCM43455_WLC_SET_VAR) {
+	} else if (command == BCM43455_COMMAND_WRITE_VARIABLE) {
 		if (strcmp(request->name, "clmload") == 0) {
 			uint16_t clm_flags;
 			uint32_t clm_length;
@@ -1712,14 +1712,14 @@ model_control(
 		} else if (strcmp(request->name, "test_secret") == 0) {
 			memcpy(chip.secret_seen, request->payload, 32);
 		}
-	} else if (command == BCM43455_WLC_GET_VALID_CHANNELS) {
+	} else if (command == BCM43455_COMMAND_CHANNEL_LIST) {
 		static const uint32_t list[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
 		unsigned i;
 
 		bcm43455_put_le32(answer + 16, 13);
 		for (i = 0; i < 13; i++)
 			bcm43455_put_le32(answer + 20 + 4 * i, list[i]);
-	} else if (command == BCM43455_WLC_DOWN && chip.halt_on_down) {
+	} else if (command == BCM43455_COMMAND_RADIO_DOWN && chip.halt_on_down) {
 		status = -1;
 	}
 
@@ -1738,12 +1738,12 @@ model_frame_from_host(
 	const uint8_t *bytes,
 	size_t length)
 {
-	struct bcm43455_sdpcm_header header;
+	struct bcm43455_sdpcm_fields header;
 	struct bcm43455_bcdc_data data;
 
 	CHECK(bcm43455_sdpcm_decode(bytes, length, &header) == 0);
 	CHECK(header.length <= length);
-	CHECK(header.data_offset == 12);
+	CHECK(header.payload_start == 12);
 
 	/* The host's sequence goes up by one, and it never sends beyond the credit. */
 	if (header.sequence != chip.host_sequence)

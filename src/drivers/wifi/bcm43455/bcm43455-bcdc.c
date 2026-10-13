@@ -8,8 +8,10 @@
 /*
  * BCM43455: encoding and decoding the BCDC control and data headers.
  *
- * The field positions and flag bits are recorded in
- * plan/ws206/phase004/values.md with their public sources.
+ * Source: OpenBSD bwfm(4) (ISC), sys/dev/ic/bwfmreg.h 1.26 (struct
+ * bwfm_proto_bcdc_dcmd and struct bwfm_proto_bcdc_hdr) for the field
+ * positions and flag bits, and its command numbers, which Infineon's WHD
+ * (Apache-2.0) whd_wlioctl.h also lists; values only.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-bcdc.h"
@@ -34,7 +36,7 @@
 #define DATA_FLAGS		0U
 #define DATA_PRIORITY		1U
 #define DATA_FLAGS2		2U
-#define DATA_OFFSET		3U
+#define DATA_SKIP_WORDS		3U
 
 /* The data header's version, in the high four bits of its flags byte. */
 #define DATA_VERSION		2U
@@ -45,7 +47,7 @@
 #define DATA_INTERFACE_MASK	0x0fU
 
 /* The data header's offset counts four-byte words. */
-#define DATA_OFFSET_UNIT	4U
+#define DATA_SKIP_UNIT	4U
 
 /* The longest iovar name this driver sends, its NUL excluded. */
 #define IOVAR_NAME_MAX		64U
@@ -181,7 +183,7 @@ bcm43455_bcdc_encode_data(
 	header[DATA_FLAGS] = (uint8_t)(DATA_VERSION << DATA_VERSION_SHIFT);
 	header[DATA_PRIORITY] = (uint8_t)(priority & DATA_PRIORITY_MASK);
 	header[DATA_FLAGS2] = (uint8_t)(interface & DATA_INTERFACE_MASK);
-	header[DATA_OFFSET] = 0;
+	header[DATA_SKIP_WORDS] = 0;
 }
 
 /*
@@ -206,7 +208,7 @@ bcm43455_bcdc_decode_data(
 		return EPROTO;
 
 	/* The frame starts after the header and the firmware's extra words. */
-	offset = BCM43455_BCDC_DATA_LENGTH + (size_t)payload[DATA_OFFSET] * DATA_OFFSET_UNIT;
+	offset = BCM43455_BCDC_DATA_LENGTH + (size_t)payload[DATA_SKIP_WORDS] * DATA_SKIP_UNIT;
 	if (offset > length)
 		return EPROTO;
 
