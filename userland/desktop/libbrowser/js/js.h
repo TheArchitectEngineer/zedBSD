@@ -205,12 +205,23 @@ void js_program_release(struct js_program *program);
 
 /* Compiling and running (compile.c). */
 struct js_module;
+/* Names are borrowed from the module and remain stable until its release. */
+struct js_module_import_info {
+	const uint16_t *specifier;
+	size_t specifier_length;
+	const uint16_t *imported;
+	size_t imported_length;
+	const uint16_t *local;
+	size_t local_length;
+};
 int js_compile(struct vm_realm *realm, struct js_program *program, struct vm_function **function, struct js_syntax_error *error);
 int js_run_script(struct vm_realm *realm, const uint16_t *source, size_t length, unsigned how, vm_value *result, struct js_syntax_error *error);
 int js_module_create(struct vm_realm *realm, const uint16_t *source, size_t length, struct js_module **module, struct js_syntax_error *error);
 int js_module_evaluate(struct js_module *module);
 int js_module_export(struct js_module *module, const uint16_t *name, size_t length, vm_value *value);
-int js_module_link_import(struct js_module *module, const uint16_t *local, size_t local_length, struct js_module *target, const uint16_t *exported, size_t exported_length);
+size_t js_module_import_count(const struct js_module *module);
+int js_module_import_at(const struct js_module *module, size_t index, struct js_module_import_info *info);
+int js_module_link_import(struct js_module *module, const uint16_t *specifier, size_t specifier_length, const uint16_t *local, size_t local_length, struct js_module *target, const uint16_t *exported, size_t exported_length);
 void js_module_release(struct js_module *module);
 
 /* The built-in objects (builtin.c). */

@@ -533,10 +533,43 @@ js_module_export(
 	return ENOENT;
 }
 
+/* Returns the stable import names that a graph loader must resolve. */
+size_t
+js_module_import_count(
+	const struct js_module *module)
+{
+	return module->import_count;
+}
+
+/* Borrows one import's specifier and both names until the module is released. */
+int
+js_module_import_at(
+	const struct js_module *module,
+	size_t index,
+	struct js_module_import_info *info)
+{
+	const struct js_module_import *entry;
+
+	if (info == NULL)
+		return EINVAL;
+	if (index >= module->import_count)
+		return ENOENT;
+	entry = &module->imports[index];
+	info->specifier = entry->specifier;
+	info->specifier_length = entry->specifier_length;
+	info->imported = entry->imported;
+	info->imported_length = entry->imported_length;
+	info->local = entry->local;
+	info->local_length = entry->local_length;
+	return 0;
+}
+
 /* Links one local named import to the target module's retained export slot. */
 int
 js_module_link_import(
 	struct js_module *module,
+	const uint16_t *specifier,
+	size_t specifier_length,
 	const uint16_t *local,
 	size_t local_length,
 	struct js_module *target,
@@ -566,6 +599,9 @@ js_module_link_import(
 		return ENOENT;
 	if (import->linked)
 		return EALREADY;
+	if (import->specifier_length != specifier_length ||
+	    memcmp(import->specifier, specifier, specifier_length * sizeof(uint16_t)) != 0)
+		return EINVAL;
 	if (import->imported_length != exported_length ||
 	    memcmp(import->imported, exported, exported_length * sizeof(uint16_t)) != 0)
 		return EINVAL;
