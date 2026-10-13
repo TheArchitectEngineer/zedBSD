@@ -401,6 +401,15 @@ To cover the initial release, I would need to fund this project via crowdfunding
 
 ---
 
+## Web Browser
+
+zedBSD's libbrowser is being developed using WPT (Web Platform Tests),
+with Chrome's V8 and Blink engines' behaviors serving as test oracles.
+AI agents are made to run in infinite loops until the tests achieve a
+100% pass rate.
+
+---
+
 ## License
 
 zedBSD and Keiland Desktop are distributed under the zlib License. See
