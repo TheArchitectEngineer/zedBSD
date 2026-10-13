@@ -15,7 +15,7 @@
  *                                  a cut end) and of its parameters, and checks that each output is whole rows
  *                                  within the limit; under ASan and UBSan any fault ends the test
  *
- * It calls pdf_ccitt_decode() of userland/base/libpdf/ccitt.c directly.
+ * It calls pdf_ccitt_decode() of userland/desktop/libpdf/ccitt.c directly.
  */
 
 #include <errno.h>

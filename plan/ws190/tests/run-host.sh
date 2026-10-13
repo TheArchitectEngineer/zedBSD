@@ -29,7 +29,7 @@ for test in host-text-bar host-touch-select; do
 			$K/text-touch.c $K/text-bar.c $K/text-select.c $K/ui.c $K/widgets.c $K/field.c $K/text-area.c $K/list.c $K/cards.c \
 			$U/libkeiland/gesture.c $U/libkeiland/motion.c $U/libkeiland/scroll.c \
 			$U/libtruetype/*.c $U/picture/color-glyph.c \
-			userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c -lm \
+			userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c -lm \
 			-o "$work/$test-$mode"
 		timeout 60 "$work/$test-$mode" $U/fonts/Mahora-Regular.ttf
 	done

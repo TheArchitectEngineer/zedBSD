@@ -28,13 +28,13 @@ for variant in plain sanitized; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"
 	done
 	# shellcheck disable=SC2086
-	"$cc" $flags -Wno-overlength-strings -Iuserland/base/libpdf userland/base/libpdf/*.c plan/ws177/tests/host-clean-forms.c \
+	"$cc" $flags -Wno-overlength-strings -Iuserland/desktop/libpdf userland/desktop/libpdf/*.c plan/ws177/tests/host-clean-forms.c \
 		$objects -lm -o "$out/host-clean-forms-$variant"
 	if ! "$out/host-clean-forms-$variant" "$out/sample.pdf" "$out/clean-$variant.pdf"; then
 		status=1

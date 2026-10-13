@@ -25,7 +25,7 @@ cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -DKEILAND_DATADIR="\"$(pw
 	-I"$out/inc" -I. -I$K -I$U/libtruetype \
 	plan/ws090/tests/host-mahora.c $K/canvas.c $K/text.c \
 	$U/libtruetype/*.c $U/picture/color-glyph.c \
-	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/base/libpng-compat/read.c \
+	userland/base/libz-compat/inflate.c userland/base/libz-compat/checksum.c userland/desktop/libpng-compat/read.c \
 	-lm -o "$out/host-mahora"
 "$out/host-mahora" "$out/share/fonts" "$out/mahora.ppm"
 python3 -c "import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])" "$out/mahora.ppm" "$out/mahora.png"

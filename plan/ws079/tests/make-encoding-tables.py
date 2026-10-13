@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# ws079-p007: writes userland/base/libpdf/encoding.c, the tables of libpdf's simple-font encodings:
+# ws079-p007: writes userland/desktop/libpdf/encoding.c, the tables of libpdf's simple-font encodings:
 # the three base encodings of PDF (StandardEncoding, WinAnsiEncoding and MacRomanEncoding, PDF 1.7 Annex D)
 # as the Unicode value of each code, and the glyph names a /Differences array uses, sorted, with their
 # Unicode values.  The names are those of the three encodings and those of the Adobe Glyph List
 # (BSD-3-Clause, through fontTools.agl) in the Latin, Greek, punctuation, currency, letterlike, arrow,
 # mathematical and Latin-ligature ranges; afii names and private-use values are left out.
-#   python3 plan/ws079/tests/make-encoding-tables.py > userland/base/libpdf/encoding.c
+#   python3 plan/ws079/tests/make-encoding-tables.py > userland/desktop/libpdf/encoding.c
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import codecs
 from fontTools import agl

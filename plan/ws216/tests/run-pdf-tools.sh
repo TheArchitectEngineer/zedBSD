@@ -19,7 +19,7 @@ for header in pdf.h sha2.h md5.h sha1.h; do
 	ln -sf "$(pwd)/include/libc/$header" "$out/include/$header"
 done
 ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
-git show "$golden:userland/base/libpdf/outline.c" > "$out/outline-golden.c"
+git show "$golden:userland/desktop/libpdf/outline.c" > "$out/outline-golden.c"
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
@@ -34,7 +34,7 @@ for variant in plain asan ubsan; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"
@@ -47,7 +47,7 @@ for variant in plain asan ubsan; do
 	# The golden outline: main f9077504e's file with its two public names changed.
 	"$cc" $flags -Dpdf_outline_stroke=old_pdf_outline_stroke -Dpdf_outline_free=old_pdf_outline_free \
 	    -c "$out/outline-golden.c" -o "$out/outline-golden-$variant.o"
-	"$cc" $flags -Wno-overlength-strings userland/base/libpdf/*.c plan/ws216/tests/host-pdf-tools.c "$out/outline-golden-$variant.o" \
+	"$cc" $flags -Wno-overlength-strings userland/desktop/libpdf/*.c plan/ws216/tests/host-pdf-tools.c "$out/outline-golden-$variant.o" \
 	    $objects -lm -o "$out/host-pdf-tools-$variant"
 done
 # A2, A3: the outlines, in every variant.

@@ -7,7 +7,7 @@
 
 /*
  * ws175-p002b: the host test of libpdf's /ToUnicode CMap reader
- * (userland/base/libpdf/tounicode.c): single codes, a ligature, a
+ * (userland/desktop/libpdf/tounicode.c): single codes, a ligature, a
  * surrogate pair, a range counting up, a range of an array, the codes'
  * byte lengths kept apart, a later entry over an earlier one, and CMaps
  * that are not one.

@@ -32,12 +32,12 @@ ln -sf "$(pwd)/userland/desktop/fonts/DroidSansFallbackFull.ttf" "$out/fonts/kei
 fonts=$(cd "$out/fonts" && pwd)
 sources="userland/desktop/notes/document.c userland/desktop/notes/edit.c userland/desktop/notes/encode.c
 	userland/desktop/notes/journal.c userland/desktop/notes/save.c userland/desktop/notes/shape.c
-	userland/base/libpdf/writer.c userland/base/libpdf/paint.c userland/base/libpdf/update.c userland/base/libpdf/clean.c userland/base/libpdf/outline.c userland/base/libpdf/object.c
-	userland/base/libpdf/reader.c userland/base/libpdf/filter.c userland/base/libpdf/ccitt.c userland/base/libpdf/crypt.c
-	userland/base/libpdf/image.c userland/base/libpdf/display.c userland/base/libpdf/content.c userland/base/libpdf/editor.c
-	userland/base/libpdf/tounicode.c userland/base/libpdf/intake.c userland/base/libpdf/replace.c userland/base/libpdf/embed.c userland/base/libpdf/subset.c userland/base/libpdf/stroke.c userland/base/libpdf/raster.c
-	userland/base/libpdf/font.c userland/base/libpdf/encoding.c userland/base/libpdf/shading.c userland/base/libpdf/charstrings.c
-	userland/base/libpdf/type1.c userland/base/libpdf/cff.c userland/base/libpdf/cffdata.c plan/ws175/tests/host-notes-edit.c"
+	userland/desktop/libpdf/writer.c userland/desktop/libpdf/paint.c userland/desktop/libpdf/update.c userland/desktop/libpdf/clean.c userland/desktop/libpdf/outline.c userland/desktop/libpdf/object.c
+	userland/desktop/libpdf/reader.c userland/desktop/libpdf/filter.c userland/desktop/libpdf/ccitt.c userland/desktop/libpdf/crypt.c
+	userland/desktop/libpdf/image.c userland/desktop/libpdf/display.c userland/desktop/libpdf/content.c userland/desktop/libpdf/editor.c
+	userland/desktop/libpdf/tounicode.c userland/desktop/libpdf/intake.c userland/desktop/libpdf/replace.c userland/desktop/libpdf/embed.c userland/desktop/libpdf/subset.c userland/desktop/libpdf/stroke.c userland/desktop/libpdf/raster.c
+	userland/desktop/libpdf/font.c userland/desktop/libpdf/encoding.c userland/desktop/libpdf/shading.c userland/desktop/libpdf/charstrings.c
+	userland/desktop/libpdf/type1.c userland/desktop/libpdf/cff.c userland/desktop/libpdf/cffdata.c plan/ws175/tests/host-notes-edit.c"
 status=0
 for variant in plain asan ubsan; do
 	flags="-std=c99 -pedantic -O1 -g -Wall -Wextra -Werror -Wno-overlength-strings -D_DEFAULT_SOURCE -I$out/include -Iuserland/desktop/notes -DPDF_EDIT_FONT_DIRECTORY=\"$fonts\""
@@ -52,8 +52,8 @@ for variant in plain asan ubsan; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/sha2-$variant.o $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c \
-		userland/base/libpng-compat/*.c userland/base/libgif-compat/*.c userland/desktop/picture/picture.c userland/desktop/picture/png-write.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c userland/desktop/libtruetype/*.c \
+		userland/desktop/libpng-compat/*.c userland/desktop/libgif-compat/*.c userland/desktop/picture/picture.c userland/desktop/picture/png-write.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"

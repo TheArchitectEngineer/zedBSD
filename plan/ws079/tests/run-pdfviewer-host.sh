@@ -23,7 +23,7 @@ ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 mkdir -p "$out/include/truetype"
 ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 # The whole of libpdf (ws128-p004: Find reads the pages' text through the editor).
-libpdf=$(ls userland/base/libpdf/*.c)
+libpdf=$(ls userland/desktop/libpdf/*.c)
 viewer="userland/desktop/pdfviewer/view.c userland/desktop/pdfviewer/draw.c userland/desktop/pdfviewer/document.c
 	userland/desktop/pdfviewer/canvas.c userland/desktop/pdfviewer/text.c userland/desktop/pdfviewer/find.c"
 # ws079-p007: a page with a JBIG2 image (libpdf leaves it out) for the notice.
@@ -57,7 +57,7 @@ for variant in plain asan; do
 	"$cc" $loose -c src/libc/openbsd-sha2.c -o "$out/sha2-$variant.o"
 	"$cc" $loose -w -c src/libc/openbsd-digest.c -o "$out/digest-$variant.o"
 	objects="$objects $out/digest-$variant.o"
-	for file in userland/base/libz-compat/*.c userland/base/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
+	for file in userland/base/libz-compat/*.c userland/desktop/libjpeg-compat/*.c userland/desktop/libtruetype/*.c; do
 		object="$out/$(basename "$(dirname "$file")")-$(basename "$file" .c)-$variant.o"
 		"$cc" $loose -w -I"$(dirname "$file")" -c "$file" -o "$object"
 		objects="$objects $object"
