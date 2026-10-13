@@ -7,13 +7,16 @@
 <!--
   Q1 の操作盤。先頭（awesome-plan-current）は「今」だけを書き、各 block は「master:<名前>:start」〜「master:<名前>:end」で丸ごと置き換えてよい。
   block: updated・agents・merge・next・open-decisions・focus・blocked（先頭）、priority・outlook（本体）、decisions-log・history-log（末尾の付録、新しい物を block の先頭に足す）。
-  置き換え: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
-- **2026-10-12 夜（Q1）: P3 だけ**（P1・P2・T1 は停止）。Settings/Files の無操作の描画・CPU の直しは bug-fixer（別 worktree）が作業中。
-  - P3（agent/p3、最新 60583b336）: [WS141](ws141/ws.md) と [WS211](ws211/ws.md)。Pi 4（10.0.30.2）への書き込みは auto mode の判定で止まるので、P3 が /tmp に束と place*.sh を置き、ユーザーが Pi で sudo sh を実行して電源を入れ直す。
-    - Pi の今: place3（vmunix 3188273747）。place4（main 47ec30eea: serial 無効・console 停止・perf は v3d.perf=1 の時だけ・frame pacing の免除・段 0/0b）は /tmp に置いてあり、ユーザーの実行待ち。(B) の perf-on.sh は reboot で消えるので P3 が置き直す（原本 scratchpad/p3g3/bundle4/）。
-    - WS211: 段 0・0b は main。段 1・2（60583b336）は review-4 中、未 merge。決定（時間差をやめる、見た目の変化を受け入れる、最速で引っかかり無し）は decisions-log。
-    - WS141: p016 の A1・A2・予算 512MiB・TFU・部分変換・準備の失敗の局所化・CURSOR_SET の鍵・HAL の allocator の word 走査は main。(B) の libvulkan の fast path は第 4 版の review 待ち（review-B3 の後、904bdfe0d）。(b) は v3d.perf=1 の計測の後。
-  - 結果（2026-10-12 ユーザー）: App Home の開閉で落ちない、Music は起動する、Settings を開くと App Home 4fps（直し中）、デスクトップは CPU の負荷で引っかかる（SMP は WS208、最後の予定でユーザーに再確認中）。
+  置き換え（この行も marker の文字を含むので、範囲は `^<!-- master:agents:start` で行頭に固定する）: sed -i '/master:agents:start/,/master:agents:end/{//!d}' plan/master.md の後に sed -i '/master:agents:start/r new.md' plan/master.md。
+-->
+
+<!-- master:agents:start -->
+- **2026-10-13 20:25（新しい Q1 のオンボーディング）: 動いている agent は無し**（前の Q1 のセッションは 20:06 の a556c4672 で止まった。QEMU も無し）。書きかけを救った（写しは `build/salvage-20261013/`）:
+  - P1（agent/p1 6b09ad269、WIP）: [ws216-p004](ws216/ws.md) Notes の画面（形の列・Normal/Multiply・粒の texture・遅延の pipeline）。設計 §1〜§6 と実装 約 1400 行・host 試験の source はあるが、build・host 試験の結果（§7）は未記録。再開は build と host 試験から。
+  - P3（agent/p3 398bbdebb、WIP）: [ws220-p003](ws220/ws.md) TCP の送りの未送信・retry。設計 §1 は決まり、tcp-socket.h の欄と tcp.c の一部だけ（実装は途中）。§2〜§5 は未記入。
+  - P2（agent/p2-ws215）・P4（agent/p4）: 未 commit の差分なし。最後の仕事は WS221 p001 の設計（review-2・ユーザーの §9 Q1〜Q13 待ち）と WS217 p002a（T1-576 待ち）。
+  - T1: T1-571〜T1-576 が未実行（BUG-298・ws219-p002・ws218-p002・WS220 の基線 T1-574・ws206-p005・ws217-p002a）。
+  - 2026-10-12 夜の P3 の WS141・WS211 の状態は各 ws.md と decisions-log。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
