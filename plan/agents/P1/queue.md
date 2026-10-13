@@ -88,3 +88,4 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 - q944 結果（2026-10-13 夜）: ws216-p006 設計 244091c0b → design review（plan/ws216/phase006/review-1.md、ユーザーの決定 4 件）・p005 の code review（code-review-1.md）の直しを含め a7043d57e → main 3f22c82ec（main で notes の build warning 0）。host U1〜U5 済み、test-wait（U6 は p007 の T1）。P1 の世代はここで終わり（context 約 75 万 token）。
 
 2026-10-13 夜 / q946（P1 の新しい世代）: ws216-p007 の準備: AAT の scenario（tests/scenarios/apps/notes/draw-tools.md・fill-region.md）と試験の image の config（plan/ws216/tests/config.mk）を書き、T1 の依頼の文面を Q1 に。承認: ユーザーの再開の指示と WS216 の D1〜D12。State: active。
+- q946 結果（2026-10-13 夜、P1 の新しい世代）: ws216-p007 の phase.md・AAT の scenario 2 つ・helper・config を d83ef6a03 → main 79a932b8c。Q1 が標準の AAT の image（plan/tools/aat/config-amd64-aat.mk）に peninject を足した。test-wait（T1-580）。

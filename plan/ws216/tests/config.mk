@@ -5,5 +5,5 @@
 # (plan/ws175/tests/make-edit-samples.py) and puts it on the target at run time.
 #   AAT_CONFIG=plan/ws216/tests/config.mk plan/tools/aat/build-image.sh BUILD
 #   plan/tools/aat/run-aat.sh qemu OUTDIR apps.notes.draw-tools apps.notes.fill-region
+# Since 2026-10-13 the standard AAT image carries peninject, so this is the AAT image itself.
 include plan/tools/aat/config-amd64-aat.mk
-ZEDBSD_USER_PROGRAMS += peninject

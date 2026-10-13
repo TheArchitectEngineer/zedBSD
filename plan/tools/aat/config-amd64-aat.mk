@@ -14,3 +14,6 @@ ZEDBSD_USER_PROGRAMS += keiland-shot
 # The desktop's settings from the command line (userland/tests/keiland-settings): desktop.language.lock-japanese sets
 # ui.language with it (q809).
 ZEDBSD_USER_PROGRAMS += keiland-settings
+# The test pen (peninject, WS079): apps.notes.draw-tools draws strokes with a pressure (ws216-p007; 2026-10-13 Q1: in
+# the standard AAT image so that the full suite runs it).
+ZEDBSD_USER_PROGRAMS += peninject
