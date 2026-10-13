@@ -241,3 +241,7 @@ P1 の推し（第 2 版）: **D**。理由: session の保護（§1.1）が必�
 | M10 判断の点の抜け | S8〜S13、S2 の条件 |
 | M11 Phase と WS の分け方 | phase.md の「次」: 汎用の `/dev/securityN` は別の WS として立てることを Q1 に提案 |
 | minor 1〜12 | §1.1（persistent の数、DA の詳細、EK の証明書、NV の rate、鍵の属性）、§1.3（PQC）、§1.6（attestation）、§1.7（PIV）、§3.3（試験の raw の口の build の分け）、§3.4（ioctl の group は `'S'` を避ける: p004b）、§3.4（同一性で N の不安定を吸収）、§3.7（試験の計画） |
+
+## 2026-10-13 ユーザーの決定（AskUserQuestion）
+
+ユーザー:「済みません、ベータ2では設計までです。設計までと言うことなら、推奨でOKです。」（S1 への答え）、S2「最初は root だけ」、S3「5330 の確認の後に決める」、S4「chip の鍵の署名」。→ **ベータ2 の WS172 は設計まで**（p004b の /dev/securityN の UAPI と TPM driver の設計の文書。実装はベータ3 以降）。S1〜S13 は全部 §5 の P1 の推し（S1 D、S2 (a) root だけ、S3 5330 の確認の後（FIFO なら TIS）、S4 (a)、S5 後、S6 しない、S7 呼び手、S8 lockoutAuth は乱数で root だけが読める所・DA の値は zedBSD・既に所有された TPM は chip の方式を出さない、S9 必須・userland、S10 §3.0・disk の暗号は別 WS、S11 入れる、S12 予算から、S13 dTPM・PTT は混ぜる・AMD fTPM は混ぜない）。
