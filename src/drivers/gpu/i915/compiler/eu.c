@@ -1779,6 +1779,47 @@ drv_i915_eu_flag_store(
 }
 
 /*
+ * Moves a flag subregister's sixteen channel bits into the 16-bit word at
+ * byte `subnr` of general register `nr`: one channel, outside the mask.
+ *
+ * Gen9's render-target write header takes the pixels a discarding shader
+ * still holds this way, in its word 15 (lower_fb_write_logical_send(),
+ * brw_lower_logical_sends.cpp, before Gfx11).
+ */
+void
+drv_i915_eu_flag_store_word(
+	struct i915_eu_buf *buffer,
+	enum i915_eu_flag flag,
+	uint32_t nr,
+	uint32_t subnr)
+{
+	struct i915_eu_reg dst;
+	struct i915_eu_reg src;
+
+	/* A flag outside the two flag registers is refused. */
+	if (flag >= I915_EU_FLAG_COUNT) {
+		buffer->error = 1;
+		return;
+	}
+
+	/* The word of the general register, written for the one channel. */
+	dst = drv_i915_eu_grf_region(nr, subnr, EU_TYPE_UW, EU_VSTRIDE_0, EU_WIDTH_1, EU_HSTRIDE_1);
+
+	/* The flag register and the byte of its subregister, as a 16-bit scalar source. */
+	kern_memset(&src, 0, sizeof(src));
+	src.file = EU_FILE_ARF;
+	src.nr = EU_ARF_FLAG + (uint32_t)flag / 2U;
+	src.subnr = ((uint32_t)flag % 2U) * 2U;
+	src.type = EU_TYPE_UW;
+	src.vstride = EU_VSTRIDE_0;
+	src.width = EU_WIDTH_1;
+	src.hstride = EU_HSTRIDE_0;
+
+	/* Encodes a move of the one word, outside the mask. */
+	drv_i915_eu_mov_scalar(buffer, dst, src);
+}
+
+/*
  * Encodes an IF on `flag`: the channels whose bit of the flag is clear stop
  * running until the matching ENDIF, and when no channel is left the thread
  * jumps to the ENDIF.  Returns the IF's position; its targets are written by

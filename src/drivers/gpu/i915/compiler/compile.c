@@ -278,6 +278,33 @@
 #define COMPILE_EX_MLEN(n)		((uint32_t)(n) << 6)
 #define COMPILE_EX_RT_INDEX(n)		((uint32_t)(n) << 12)
 
+/* The message length field of a descriptor, which a header-carrying write replaces. */
+#define COMPILE_DESC_MLEN_MASK		(0xfU << EU_DESC_MLEN_SHIFT)
+
+/*
+ * Gen9's render-target write header (lower_fb_write_logical_send(),
+ * brw_lower_logical_sends.cpp, before Gfx11): two registers, copies of r0
+ * and r1, with the render target's index in dword 2 and a discarding
+ * shader's live pixels in word 15.  Gen9 needs it where Gen12 says the
+ * index in the extended descriptor: for a write to any target but 0 alone,
+ * and for a dual-source write.
+ *
+ * A write that does not end the thread builds it in r96, above every value
+ * register of a fragment shader.  The last write, whose payload must sit in
+ * r112..r127, builds it in location 0's registers: when a header is needed
+ * the last location is not 0, so location 0 was either sent before or never
+ * written.  A dual-source write puts it right before the first colour
+ * (r122, r123) after copying the second colour out to r116..r119, location
+ * 2's registers, which a dual-source shader never writes.
+ */
+#define COMPILE_GEN9_RT_HEADER_GRF	96U
+#define COMPILE_GEN9_RT_LAST_HEADER_GRF	124U
+#define COMPILE_GEN9_RT_HEADER_REGS	2U
+#define COMPILE_GEN9_RT_INDEX_DWORD	2U
+#define COMPILE_GEN9_RT_PIXELS_BYTE	30U
+#define COMPILE_GEN9_DUAL_HEADER_GRF	122U
+#define COMPILE_GEN9_DUAL_SECOND_GRF	116U
+
 /*
  * A64 untyped surface read and write of one channel, SIMD8, stateless
  * (Mesa's brw_dp_a64_untyped_surface_rw_desc(): message type 0x11 / 0x19,
@@ -572,6 +599,9 @@ static int i915_compile_sampler_index(const struct i915_compile_state *state, co
 static void i915_compile_sample_message(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst, uint32_t sampler);
 static void i915_compile_texture(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_sampler_header(struct i915_compile_state *state, uint32_t header_grf, uint32_t offsets);
+static void i915_compile_terminate_targets_gen9(struct i915_compile_state *state, uint32_t outputs);
+static void i915_compile_terminate_dual_gen9(struct i915_compile_state *state);
+static void i915_compile_rt_header_gen9(struct i915_compile_state *state, uint32_t header_grf, uint32_t location);
 static void i915_compile_integer(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_multiply(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_divide(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
@@ -4862,12 +4892,22 @@ i915_compile_terminate(
 
 	/* Both colours of a dual-source blend in one write to render target 0, which ends the thread. */
 	if (state->uses_second_color != 0) {
-		i915_compile_terminate_dual(state);
+		if (state->graphics_ver == 9U) {
+			i915_compile_terminate_dual_gen9(state);
+		} else {
+			i915_compile_terminate_dual(state);
+		}
+		return;
+	}
+
+	/* Gen9 names any render target but 0 alone in a header. */
+	outputs = i915_compile_fs_outputs(state);
+	if (state->graphics_ver == 9U && outputs != 1U) {
+		i915_compile_terminate_targets_gen9(state, outputs);
 		return;
 	}
 
 	/* Each colour location to its render target, in ascending order; the last write ends the thread. */
-	outputs = i915_compile_fs_outputs(state);
 	for (location = 0U; location < I915_SHADER_MAX_COLOR_OUTPUTS; location++) {
 		if ((outputs & (1U << location)) == 0U)
 			continue;
@@ -4955,6 +4995,174 @@ i915_compile_terminate_dual(
 			 extended,
 			 1,
 			 1);
+}
+
+/*
+ * Writes each colour location to its render target on Gen9 when a header
+ * is needed (see COMPILE_GEN9_RT_HEADER_GRF): in ascending order, each a
+ * split write of the header and the location's four colour registers, the
+ * last one ending the thread.  A shader that discards writes only the
+ * pixels f1.0 still holds.
+ */
+static void
+i915_compile_terminate_targets_gen9(
+	struct i915_compile_state *state,
+	uint32_t outputs)
+{
+	struct i915_eu_buf *code;
+	struct i915_eu_reg colors;
+	uint32_t header_grf;
+	uint32_t descriptor;
+	uint32_t location;
+	int last;
+
+	/* Emits into the shader's encoder buffer. */
+	code = &state->code;
+
+	/* Each location the shader writes, in ascending order. */
+	for (location = 0U; location < I915_SHADER_MAX_COLOR_OUTPUTS; location++) {
+		if ((outputs & (1U << location)) == 0U)
+			continue;
+
+		/* Only the last write ends the thread, and its header must sit in r112..r127. */
+		last = 0;
+		header_grf = COMPILE_GEN9_RT_HEADER_GRF;
+		if ((outputs >> (location + 1U)) == 0U) {
+			last = 1;
+			header_grf = COMPILE_GEN9_RT_LAST_HEADER_GRF;
+		}
+
+		/* Builds the header naming the target. */
+		i915_compile_rt_header_gen9(state, header_grf, location);
+
+		/* The descriptor: the header's two registers, the colours as the second run, the target's entry. */
+		descriptor = COMPILE_DESC_RT_WRITE & ~(COMPILE_DESC_RT_LAST | COMPILE_DESC_MLEN_MASK);
+		descriptor |= COMPILE_GEN9_RT_HEADER_REGS << EU_DESC_MLEN_SHIFT;
+		descriptor |= EU_DESC_HEADER_PRESENT;
+		descriptor |= I915_SHADER_RT_BTI(location);
+		if (last != 0)
+			descriptor |= COMPILE_DESC_RT_LAST;
+		colors = drv_i915_eu_grf(COMPILE_MAX_GRF - 3U - 4U * location);
+
+		/* A shader that discards writes the colour only to the pixels f1.0 still holds. */
+		if (state->uses_kill != 0) {
+			drv_i915_eu_send_masked(code,
+						I915_EU_FLAG_F1_0,
+						drv_i915_eu_null(),
+						drv_i915_eu_grf(header_grf),
+						colors,
+						COMPILE_SFID_RENDER_CACHE,
+						descriptor,
+						COMPILE_EX_MLEN(4U),
+						1,
+						last);
+			continue;
+		}
+
+		/* The header and the colour to the render target, SENDC as a render-target write must be. */
+		drv_i915_eu_send(code,
+				 drv_i915_eu_null(),
+				 drv_i915_eu_grf(header_grf),
+				 colors,
+				 COMPILE_SFID_RENDER_CACHE,
+				 descriptor,
+				 COMPILE_EX_MLEN(4U),
+				 1,
+				 last);
+	}
+}
+
+/*
+ * Writes a dual-source fragment shader's two colours on Gen9: the header
+ * and the first colour as one run (r122..r127), the second colour, copied
+ * to r116..r119, as the second, in one dual-source write to render target
+ * 0 that ends the thread (lower_fb_write_logical_send() before Gfx11, the
+ * header being required for every dual-source message).  A shader that
+ * discards writes only the pixels f1.0 still holds.
+ */
+static void
+i915_compile_terminate_dual_gen9(
+	struct i915_compile_state *state)
+{
+	struct i915_eu_buf *code;
+	uint32_t descriptor;
+	uint32_t index;
+
+	/* Emits into the shader's encoder buffer. */
+	code = &state->code;
+
+	/* Moves the second colour out of the registers the header takes. */
+	for (index = 0U; index < 4U; index++) {
+		drv_i915_eu_mov_all(code,
+				    drv_i915_eu_grf_ud(COMPILE_GEN9_DUAL_SECOND_GRF + index),
+				    drv_i915_eu_grf_ud(COMPILE_MAX_GRF - 3U - 4U + index));
+	}
+
+	/* Builds the header of render target 0 right before the first colour. */
+	i915_compile_rt_header_gen9(state, COMPILE_GEN9_DUAL_HEADER_GRF, 0U);
+
+	/* The descriptor: the header and the first colour as one run, the last target, entry 0. */
+	descriptor = COMPILE_DESC_RT_WRITE_DUAL & ~(COMPILE_DESC_RT_LAST | COMPILE_DESC_MLEN_MASK);
+	descriptor |= (COMPILE_GEN9_RT_HEADER_REGS + 4U) << EU_DESC_MLEN_SHIFT;
+	descriptor |= EU_DESC_HEADER_PRESENT;
+	descriptor |= I915_SHADER_RT_BTI(0U);
+	descriptor |= COMPILE_DESC_RT_LAST;
+
+	/* Only the live pixels of a shader that discards. */
+	if (state->uses_kill != 0) {
+		drv_i915_eu_send_masked(code,
+					I915_EU_FLAG_F1_0,
+					drv_i915_eu_null(),
+					drv_i915_eu_grf(COMPILE_GEN9_DUAL_HEADER_GRF),
+					drv_i915_eu_grf(COMPILE_GEN9_DUAL_SECOND_GRF),
+					COMPILE_SFID_RENDER_CACHE,
+					descriptor,
+					COMPILE_EX_MLEN(4U),
+					1,
+					1);
+		return;
+	}
+
+	/* Succeeded: both colours to the render target, SENDC as a render-target write must be. */
+	drv_i915_eu_send(code,
+			 drv_i915_eu_null(),
+			 drv_i915_eu_grf(COMPILE_GEN9_DUAL_HEADER_GRF),
+			 drv_i915_eu_grf(COMPILE_GEN9_DUAL_SECOND_GRF),
+			 COMPILE_SFID_RENDER_CACHE,
+			 descriptor,
+			 COMPILE_EX_MLEN(4U),
+			 1,
+			 1);
+}
+
+/*
+ * Builds Gen9's render-target write header in `header_grf` and the next
+ * register: copies of r0 and r1 for all channels, the target `location` in
+ * dword 2 when it is not 0, and for a shader that discards the pixels f1.0
+ * still holds in word 15 (see COMPILE_GEN9_RT_HEADER_GRF).
+ */
+static void
+i915_compile_rt_header_gen9(
+	struct i915_compile_state *state,
+	uint32_t header_grf,
+	uint32_t location)
+{
+	struct i915_eu_reg dword;
+
+	/* Copies r0 and r1, outside the mask. */
+	drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(header_grf), drv_i915_eu_grf_ud(0U));
+	drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(header_grf + 1U), drv_i915_eu_grf_ud(1U));
+
+	/* The render target's index selects its blend state; r0's dword 2 holds 0 in a pixel thread. */
+	if (location != 0U) {
+		dword = drv_i915_eu_grf_ud(header_grf);
+		dword.subnr = 4U * COMPILE_GEN9_RT_INDEX_DWORD;
+		drv_i915_eu_mov_scalar(&state->code, dword, drv_i915_eu_imm_ud(location));
+	}
+
+	/* A shader that discards says which pixels are still live. */
+	if (state->uses_kill != 0)
+		drv_i915_eu_flag_store_word(&state->code, I915_EU_FLAG_F1_0, header_grf, COMPILE_GEN9_RT_PIXELS_BYTE);
 }
 
 /*

@@ -85,6 +85,29 @@ for spv in "$repo"/userland/tests/mview/shaders/*.spv "$repo"/src/drivers/gpu/i9
 	fi
 done
 
+# 2b. ws229's own fragment modules for the Gen9-only render-target header (several targets, a target other than 0 with
+#     discard), judged for Gen9 and, as a check that the Gen12 path still takes them, for Gen12 too (--gen=adl).
+for source in "$repo"/plan/ws229/tests/shaders/*.frag; do
+	name=$(basename "$source")
+	glslc --target-env=vulkan1.0 -o "$work/$name.spv" "$source" || { echo "$name: FAIL glslc"; status=1; continue; }
+	if "$work/eudump" -gen9 fragment "$work/$name.spv" "$work/$name.bin" 2> "$work/$name.log"; then
+		judge "$name" "$work/$name.bin"
+	else
+		echo "$name: FAIL refused for Gen9: $(cat "$work/$name.log")"; status=1
+	fi
+	if "$work/eudump" fragment "$work/$name.spv" "$work/$name.gen12.bin" 2> "$work/$name.gen12.log"; then
+		"$tools/brw_disasm" --gen=adl --input-path="$work/$name.gen12.bin" > "$work/$name.gen12.asm" 2>&1
+		"$tools/brw_asm" --gen=adl -o "$work/$name.gen12.re" "$work/$name.gen12.asm" > /dev/null 2>&1
+		if grep -q 'ERROR\|illegal' "$work/$name.gen12.asm" || ! cmp -s "$work/$name.gen12.bin" "$work/$name.gen12.re"; then
+			echo "$name (Gen12): FAIL the round trip"; status=1
+		else
+			echo "$name (Gen12): disassembled and re-assembled to the same bytes"
+		fi
+	else
+		echo "$name (Gen12): FAIL refused: $(cat "$work/$name.gen12.log")"; status=1
+	fi
+done
+
 # 3. The compute modules.
 mkdir -p "$work/cs"
 for source in "$repo"/plan/ws101/tests/host/shaders/*.comp "$repo"/src/drivers/gpu/i915/tests/render/compute-shaders/*.comp; do
