@@ -35,3 +35,13 @@ Scope reconciliation 2026-10-14 00:59 JST: 固定2025 WPT `hidden-idl.html` は 
 **partial scope cleared、p193 whole uncleared。** `HTMLElement.hidden` の3状態getterとsetterを実装。[証拠](evidence/20261014-q1027/README.md)。固定`hidden-idl.html`17/17、`hidden-until-found-idl.html`1/1 subtest PASS。局所fixture、host build warning0、native property65/65、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。固定beforematch WPTはID/反映失敗を越えたが fragment navigation/ancestor revealing未完でno output。固定2025 WPTと2026 living Standardの`undefined`挙動差を記録、WPTは無変更。p193 wholeは未達、GitHub publication保留。
 
 Event ws074-p193-q1027-outcome-20261014: q1027-i01 partial cleared、p193 wholeはuncleared。hidden IDL固定2 WPT PASSとfragment navigation未完を分離。p189/p173分母は不変。
+
+## q1028-i01 の有限部分範囲
+
+2026-10-14 01:02 JST、ユーザーの事前承認を適用、最大90分。同一文書の `Location.hash` setterを実装し、URLのfragmentを更新する。対象IDを探し、`hidden=until-found` と閉じた `<details>` の祖先を仕様の順に reveal して `beforematch` を同期通知し、状態変化・DOM除去で中断する。対象へのscrollを行う。固定 `beforematch-attribute-removal-001.html` と関連fragment WPT、局所fixture、host build/関連試験、Acid3/Acid2の差画素非増加を確認する。別文書navigation、History、全details testのPASSはこの部分範囲外。WPT本体/公開ABI/`master.md`は変更しない。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1028-i01 結果（2026-10-14 01:09 JST）
+
+**partial scope cleared、p193 whole uncleared。** 同一文書URL更新、fragment ID探索、同期beforematch・祖先revealと状態変化時の中断を実装。[証拠](evidence/20261014-q1028/README.md)。局所fixtureは順序・伝播・中断・hashを確認。固定beforematch WPTはno outputからcompletion付きFAILへ進行したが、次は一般的な `Element.attributes` 欠落でWPT harnessの要素整形に失敗する。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。p193 whole、p173全件は未達、GitHub publication保留。
+
+Event ws074-p193-q1028-outcome-20261014: q1028-i01 partial cleared、p193 wholeはuncleared。固定WPTの新たな `Element.attributes` 欠落を次の独立scopeへ送る。

@@ -17,11 +17,12 @@
  * data property of the prototype, so an own-property test on the object
  * fails as it does in other browsers; what changes (the screen's size,
  * the clock, the location) is an accessor.  The location is read from the
- * host (the page's URL); setting it, which navigates, is not in this pass.
+ * host (the page's URL); its hash setter navigates within this document.
  * navigator.sendBeacon accepts a beacon without sending it.
  */
 
 #include "bind/internal.h"
+#include "net/net.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -109,7 +110,7 @@ static int environment_instance(struct bind_window *window, int interface, const
 static int environment_strings(struct vm_realm *realm, struct vm_object *object, const struct environment_string *table);
 static int environment_numbers(struct vm_realm *realm, struct vm_object *object, const struct environment_number *table);
 static int environment_flags(struct vm_realm *realm, struct vm_object *object, const struct environment_flag *table);
-static int environment_part_accessor(struct vm_realm *realm, struct vm_object *object, const char *name, vm_native getter, int part);
+static int environment_part_accessor(struct vm_realm *realm, struct vm_object *object, const char *name, vm_native getter, vm_native setter, int part);
 static int environment_empty_array(struct vm_realm *realm, vm_value *value);
 static int environment_navigator_app_version(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_navigator_user_agent(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -123,6 +124,11 @@ static int environment_performance_time_origin(struct vm_realm *realm, vm_value 
 static int environment_performance_entries(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_performance_nothing(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_location_part(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_location_hash_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int environment_fragment_target(struct bind_window *window, const struct wb_buffer *fragment, struct dom_node **target);
+static int environment_reveal_target(struct bind_window *window, struct dom_node *target);
+static int environment_hidden_until_found(const struct vm_string *value);
+static int environment_open_details(struct vm_realm *realm, struct dom_element *element);
 static int environment_location_to_string(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_image_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int environment_outer_size(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -590,7 +596,7 @@ environment_install_screen(
 
 	/* The sizes follow the window's viewport, which is the whole screen the page can have. */
 	for (size = environment_screen_sizes; size->name != NULL; size++) {
-		error = environment_part_accessor(realm, prototype, size->name, environment_screen_size, size->part);
+		error = environment_part_accessor(realm, prototype, size->name, environment_screen_size, NULL, size->part);
 		if (error != 0)
 			return error;
 	}
@@ -671,7 +677,8 @@ environment_install_location(
 	realm = window->realm;
 	prototype = window->prototypes[BIND_LOCATION];
 	for (part = environment_location_parts; part->name != NULL; part++) {
-		error = environment_part_accessor(realm, prototype, part->name, environment_location_part, part->part);
+		error = environment_part_accessor(realm, prototype, part->name, environment_location_part,
+			part->part == BIND_LOCATION_HASH ? environment_location_hash_set : NULL, part->part);
 		if (error != 0)
 			return error;
 	}
@@ -1162,10 +1169,10 @@ environment_install_window(
 		return error;
 
 	/* The outer size is the viewport's (the window's frame is not counted). */
-	error = environment_part_accessor(realm, global, "outerWidth", environment_outer_size, 0);
+	error = environment_part_accessor(realm, global, "outerWidth", environment_outer_size, NULL, 0);
 	if (error != 0)
 		return error;
-	error = environment_part_accessor(realm, global, "outerHeight", environment_outer_size, 1);
+	error = environment_part_accessor(realm, global, "outerHeight", environment_outer_size, NULL, 1);
 	if (error != 0)
 		return error;
 
@@ -1301,8 +1308,8 @@ environment_flags(
 }
 
 /*
- * Defines a read-only accessor whose getter reads one part of something;
- * the getter finds the part in its function's data.
+ * Defines an accessor whose getter reads one part of something; the optional
+ * setter updates that part. The getter finds the part in its function data.
  */
 static int
 environment_part_accessor(
@@ -1310,11 +1317,17 @@ environment_part_accessor(
 	struct vm_object *object,
 	const char *name,
 	vm_native getter,
+	vm_native setter,
 	int part)
 {
 	struct vm_function *function;
+	struct vm_function *set_function;
 	struct vm_accessor *accessor;
 	char getter_name[80];
+	char setter_name[80];
+	struct vm_cell *roots[3];
+	vm_value set_value;
+	unsigned registered;
 	int error;
 
 	/* The getter, named "get NAME", which knows its part. */
@@ -1323,17 +1336,49 @@ environment_part_accessor(
 	if (error != 0)
 		return error;
 	function->data = vm_value_int32(part);
-
-	/* The accessor, without a setter. */
-	accessor = vm_accessor_create(realm->heap, vm_value_cell(function), VM_VALUE_UNDEFINED);
-	if (accessor == NULL)
-		return ENOMEM;
-	error = js_builtin_value(realm, object, name, vm_value_cell(accessor), VM_PROPERTY_ACCESSOR | VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+	roots[0] = &function->object.cell;
+	registered = 0U;
+	error = vm_heap_add_root(realm->heap, &roots[0]);
 	if (error != 0)
 		return error;
+	registered++;
+
+	/* A second function allocation must retain the first until publication. */
+	set_value = VM_VALUE_UNDEFINED;
+	if (setter != NULL) {
+		snprintf(setter_name, sizeof(setter_name), "set %s", name);
+		error = js_builtin_function(realm, setter_name, 1, setter, NULL, &set_function);
+		if (error != 0)
+			goto cleanup;
+		roots[1] = &set_function->object.cell;
+		error = vm_heap_add_root(realm->heap, &roots[1]);
+		if (error != 0)
+			goto cleanup;
+		registered++;
+		set_value = vm_value_cell(set_function);
+	}
+
+	/* The accessor, with a setter only when this part changes. */
+	accessor = vm_accessor_create(realm->heap, vm_value_cell(function), set_value);
+	if (accessor == NULL) {
+		error = ENOMEM;
+		goto cleanup;
+	}
+	roots[registered] = &accessor->cell;
+	error = vm_heap_add_root(realm->heap, &roots[registered]);
+	if (error != 0)
+		goto cleanup;
+	registered++;
+	error = js_builtin_value(realm, object, name, vm_value_cell(accessor), VM_PROPERTY_ACCESSOR | VM_PROPERTY_ENUMERABLE | VM_PROPERTY_CONFIGURABLE);
+
+cleanup:
+	while (registered > 0U) {
+		registered--;
+		vm_heap_remove_root(realm->heap, &roots[registered]);
+	}
 
 	/* Succeeded: the accessor is defined. */
-	return 0;
+	return error;
 }
 
 /* Makes a new empty array (a list with nothing in it). */
@@ -1673,6 +1718,216 @@ environment_location_part(
 
 	/* Succeeded: the part is reported. */
 	return 0;
+}
+
+/* Matches the special hidden state without changing the stored spelling. */
+static int
+environment_hidden_until_found(
+	const struct vm_string *value)
+{
+	static const char keyword[] = "until-found";
+	size_t index;
+	uint16_t unit;
+
+	if (value == NULL || value->length != sizeof(keyword) - 1U)
+		return 0;
+	for (index = 0U; index < sizeof(keyword) - 1U; index++) {
+		unit = vm_string_at(value, index);
+		if (unit >= 'A' && unit <= 'Z')
+			unit = (uint16_t)(unit + 0x20U);
+		if (unit != (uint16_t)keyword[index])
+			return 0;
+	}
+	return 1;
+}
+
+/* Adds open to one closed details element while its caller roots the node. */
+static int
+environment_open_details(
+	struct vm_realm *realm,
+	struct dom_element *element)
+{
+	struct vm_cell *root;
+	struct vm_string *name;
+	struct vm_string *value;
+	int error;
+
+	name = vm_string_from_utf8(realm->heap, "open", 4U);
+	if (name == NULL)
+		return ENOMEM;
+	root = &name->cell;
+	error = vm_heap_add_root(realm->heap, &root);
+	if (error != 0)
+		return error;
+	value = vm_string_from_utf8(realm->heap, "", 0U);
+	if (value == NULL)
+		error = ENOMEM;
+	else
+		error = dom_element_set_attribute(element, name, value);
+	vm_heap_remove_root(realm->heap, &root);
+	return error;
+}
+
+/* Finds the first connected element with the decoded fragment's id. */
+static int
+environment_fragment_target(
+	struct bind_window *window,
+	const struct wb_buffer *fragment,
+	struct dom_node **target)
+{
+	struct dom_node *walk;
+	struct dom_element *element;
+	struct vm_string *id;
+	struct wb_buffer decoded;
+	struct wb_buffer text;
+	const char *hash;
+	size_t length;
+	int error;
+
+	*target = NULL;
+	if (window->document == NULL || fragment->length == 0U)
+		return 0;
+	hash = wb_buffer_string(fragment);
+	length = fragment->length;
+	if (hash[0] == '#') {
+		hash++;
+		length--;
+	}
+	if (length == 0U)
+		return 0;
+	wb_buffer_init(&decoded);
+	error = net_percent_decode(hash, length, &decoded);
+	if (error != 0) {
+		wb_buffer_release(&decoded);
+		return error;
+	}
+	for (walk = bind_following(&window->document->node, &window->document->node);
+	     walk != NULL;
+	     walk = bind_following(walk, &window->document->node)) {
+		if (walk->type != DOM_ELEMENT)
+			continue;
+		element = (struct dom_element *)walk;
+		id = dom_attribute_ascii(element, "id");
+		if (id == NULL)
+			continue;
+		wb_buffer_init(&text);
+		error = vm_string_to_utf8(id, &text);
+		if (error == 0 && text.length == decoded.length &&
+		    memcmp(text.data, decoded.data, text.length) == 0)
+			*target = walk;
+		wb_buffer_release(&text);
+		if (error != 0 || *target != NULL)
+			break;
+	}
+	wb_buffer_release(&decoded);
+	return error;
+}
+
+/* Reveals a target and its ancestors from the target outward. */
+static int
+environment_reveal_target(
+	struct bind_window *window,
+	struct dom_node *target)
+{
+	struct vm_cell *roots[2];
+	struct dom_node *walk;
+	struct dom_element *element;
+	struct vm_string *hidden;
+	struct vm_string *name;
+	int error;
+	int canceled;
+
+	roots[0] = &target->cell;
+	roots[1] = NULL;
+	error = vm_heap_add_root(window->realm->heap, &roots[0]);
+	if (error != 0)
+		return error;
+	error = vm_heap_add_root(window->realm->heap, &roots[1]);
+	if (error != 0) {
+		vm_heap_remove_root(window->realm->heap, &roots[0]);
+		return error;
+	}
+	for (walk = target; walk != NULL && walk != &window->document->node; walk = walk->parent) {
+		if (walk->type != DOM_ELEMENT)
+			continue;
+		roots[1] = &walk->cell;
+		element = (struct dom_element *)walk;
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_DETAILS &&
+		    dom_attribute_ascii(element, "open") == NULL) {
+			error = environment_open_details(window->realm, element);
+			if (error != 0)
+				break;
+		}
+		hidden = dom_attribute_ascii(element, "hidden");
+		if (!environment_hidden_until_found(hidden))
+			continue;
+		canceled = 0;
+		error = bind_fire_event(window, walk, "beforematch", BIND_EVENT_BUBBLES, &canceled);
+		if (error != 0)
+			break;
+		if (!dom_is_inclusive_ancestor(&window->document->node, walk) ||
+		    !environment_hidden_until_found(dom_attribute_ascii(element, "hidden")))
+			break;
+		name = vm_string_from_utf8(window->realm->heap, "hidden", 6U);
+		if (name == NULL) {
+			error = ENOMEM;
+			break;
+		}
+		error = dom_element_remove_attribute(element, name);
+		if (error != 0)
+			break;
+	}
+	vm_heap_remove_root(window->realm->heap, &roots[1]);
+	vm_heap_remove_root(window->realm->heap, &roots[0]);
+	return error;
+}
+
+/* Same-document fragment navigation, including synchronous ancestor reveal. */
+static int
+environment_location_hash_set(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct bind_window *window;
+	struct vm_string *given;
+	struct wb_buffer hash;
+	struct dom_node *target;
+	struct vm_cell *target_root;
+	struct bind_box box;
+	int error;
+
+	UNUSED_PARAMETER(this_value);
+	*result = VM_VALUE_UNDEFINED;
+	error = bind_to_string(realm, js_argument(args, count, 0), &given);
+	if (error != 0)
+		return error;
+	wb_buffer_init(&hash);
+	error = vm_string_to_utf8(given, &hash);
+	window = bind_window_of(realm);
+	if (error == 0 && window->host.fragment == NULL)
+		error = ENOTSUP;
+	if (error == 0)
+		error = window->host.fragment(window->host.context, wb_buffer_string(&hash), hash.length);
+	if (error == 0)
+		error = environment_fragment_target(window, &hash, &target);
+	if (error == 0 && target != NULL) {
+		target_root = &target->cell;
+		error = vm_heap_add_root(realm->heap, &target_root);
+		if (error == 0) {
+			error = environment_reveal_target(window, target);
+			if (error == 0 &&
+			    dom_is_inclusive_ancestor(&window->document->node, target) &&
+			    window->host.node_box != NULL && window->host.scroll_to != NULL &&
+			    window->host.node_box(window->host.context, target, &box))
+				window->host.scroll_to(window->host.context, 0.0, box.y);
+			vm_heap_remove_root(realm->heap, &target_root);
+		}
+	}
+	wb_buffer_release(&hash);
+	return error;
 }
 
 /* Reports location.toString(): the whole URL. */

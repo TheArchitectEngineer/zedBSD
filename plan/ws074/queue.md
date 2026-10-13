@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1027 / WS074 HTMLElement.hidden reflection
+# q1028 / WS074 same-document fragment navigation
 
-Status: finished（2026-10-14 00:57〜01:00 JST）
+Status: finished（2026-10-14 01:02〜01:09 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 00:57 JST 開始、最大90分（02:27 JSTまで）。
+Timebox: 2026-10-14 01:02 JST 開始、最大90分（02:32 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1027-i01 | [ws074-p193](phase193/phase.md) partial | HTMLElement.hiddenのmissing/normal/until-found getterとsetterを仕様に合わせる。fixture、固定beforematch WPT、host build/Acid回帰。ancestor revealingは後続。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | q1026 details.open |
+| q1028-i01 | [ws074-p193](phase193/phase.md) partial | Location.hash代入による同一文書URL更新、fragment target探索、必要な祖先のbeforematch・revealとscrollを実装。固定beforematch WPT、局所fixture、host build/Acid回帰で検証。別文書navigation、WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | q1027 hidden reflection |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -46,3 +46,5 @@ Outcome: q1025-i01 partial cleared、p192 whole uncleared。一意id global look
 Outcome: q1026-i01 partial cleared、p193 whole uncleared。HTMLDetailsElement.open反映を追加、fixture・host回帰・Acid3差0/Acid2差1865を確認。対象WPTは次のhidden until-found差分でPASS未達。[証拠](phase193/evidence/20261014-q1026/README.md)。p173全件100%未達。
 
 Outcome: q1027-i01 partial cleared、p193 whole uncleared。固定hidden IDL2 WPTが17/17・1/1 subtest PASS、beforematchはfragment navigation未完でno output。host build warning0・native property65/65・Acid3差0/Acid2差1865。[証拠](phase193/evidence/20261014-q1027/README.md)。p173全件100%未達。
+
+Outcome: q1028-i01 partial cleared、p193 whole uncleared。同一文書hash・fragment target・beforematch revealをfixtureで確認。固定WPTはcompletion付きFAILへ進行し、次の `Element.attributes` 欠落を特定。host build warning0・native property65/65・realm30/30・Acid3差0/Acid2差1865。[証拠](phase193/evidence/20261014-q1028/README.md)。p173全件100%未達。

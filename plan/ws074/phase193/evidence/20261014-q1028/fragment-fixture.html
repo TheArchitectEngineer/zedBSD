@@ -1,0 +1,15 @@
+<!doctype html>
+<details id="a3"><div id="a2" hidden="until-found"><details id="a1" hidden="until-found"><div id="a1child">Hidden</div></details></div></details>
+<script>
+console.log('before', String(a1.open), String(a1.hidden), String(a2.hidden), String(a3.open), location.hash);
+a1.addEventListener('beforematch', function (event) {
+  console.log('a1 event', event.type, String(a1.open), String(a1.hidden), String(a2.hidden), String(a3.open));
+  a2.addEventListener('beforematch', function (other) {
+    console.log('a2 bubble', String(other.target === a1));
+    a1.hidden = true;
+    console.log('changed', String(a1.hidden));
+  }, {once: true});
+}, {once: true});
+location.hash = '#a1child';
+console.log('after', String(a1.open), String(a1.hidden), String(a2.hidden), String(a3.open), location.hash);
+</script>

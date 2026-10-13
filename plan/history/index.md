@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1028 / WS074 same-document fragment navigation（2026-10-14）
+
+[q1028履歴](queue-q1028.md): hash更新と同期beforematch/revealを局所確認。固定WPTはcompletion付きFAILへ進行し、次は`Element.attributes`欠落。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1028/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1027 / WS074 HTMLElement.hidden reflection（2026-10-14）
 
 [q1027履歴](queue-q1027.md): 固定hidden IDL2 WPTの18/18 subtest PASS。beforematchはfragment navigation未完でno output。p193 partial scope cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1027/README.md)。共有投影/GitHub publication pending。

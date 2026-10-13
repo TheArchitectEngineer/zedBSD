@@ -1,0 +1,5 @@
+before false until-found until-found false
+a1 event beforematch true until-found until-found false
+a2 bubble true
+changed true
+after true true until-found false #a1child
