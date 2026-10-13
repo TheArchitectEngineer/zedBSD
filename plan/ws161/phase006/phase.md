@@ -38,3 +38,7 @@ fidoctl を `keiland-linux.mk`・`keiland-freebsd.mk` の既定の all に入れ
 - FreeBSD 15 の guest（WS109）での build（os-freebsd.c と fidoctl）と `fidoctl list`、USB の YubiKey を guest に渡せるなら鍵が 1 つ見えること（T1）。
 - Debian の guest での `fidoctl list`（鍵を guest に渡せるなら）。
 - NFC（ACR1252U と YubiKey 5 NFC）の実機の確かめ（ws.md の 2026-10-10 の記録で未確認のまま）。
+
+## 2026-10-13 夜: ベータ3 へ（Q1）
+
+ユーザー「Linux/FreeBSDではFIDO2はまだ入れなくていいです。あとでLinux標準のFIDO2について調べて入れますが、ベータ3にします。」→ P2 の os-freebsd.c（c2fcd7d3d）と fidoctl の Makefile.linux・Makefile.freebsd は main から外した（git の履歴に残る）。Linux 標準の FIDO2 の調べと Linux・FreeBSD の対応はベータ3。
