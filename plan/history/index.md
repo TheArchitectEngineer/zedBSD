@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1006 / WS074 CSS HSL/HSLA（2026-10-13）
+
+[q1006履歴](queue-q1006.md): CSS hsl()/hsla() 解析・RGB変換。host HSL14/14、build warning0。固定 Acid3 得点100/100・pixel差12600/480000（q1005から702減、97.375%一致）、Acid2差1865/120000不変。p183 cleared。上部の余分な文字等、p100全画面差0とWS074受入は未達。次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
+
 ## 最新: q1005 / WS074 HTTP stylesheet MIME（2026-10-13）
 
 [q1005履歴](queue-q1005.md): 非 quirks HTML の HTTP stylesheet MIME を判定し、`text/html` の `empty.css` を不適用にした。実 HTTP fixture は修正前 FAIL→修正後 PASS、host build warning0。固定 Acid3 得点100/100・pixel差13302/480000（q1004 から5294減、97.22875%一致）、Acid2差1865/120000不変。p182 cleared。p100全画面差0とWS074受入は未達。ユーザー指示により次の最大90分 Queue を自動選定。独立branchのmain統合、GitHub publicationとpushは保留。`master.md` は未変更。
