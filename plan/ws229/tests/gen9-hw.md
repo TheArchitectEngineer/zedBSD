@@ -6,8 +6,8 @@
 ## 1. 何を確かめるか
 
 Gen9（Skylake）と Gen9.5（Kaby Lake・Coffee Lake 系）の iGPU で、i915 の GT と EU が動き、Vulkan の試験の読み戻しが PASS すること
-（ユーザーの決定 D1）。画面は firmware（GOP）の console のまま（display の driver は p006）。Gen9 は boot の指定 `i915.gen9=on` で
-有効にする（既定は off、U1）。image はこの指定を入れてある。Gen9 の間は suspend を断る（U2）ので、蓋を閉じず AC 電源で行う。
+（ユーザーの決定 D1）。画面は firmware（GOP）の console のまま（display の driver は p006）。Gen9 は 2026-10-14 から既定で
+有効（U1、実機 PASS の後。それまでは boot の指定 `i915.gen9=on` が要った）。image はこの指定を入れたまま（害は無い）。Gen9 の間は suspend を断る（U2）ので、蓋を閉じず AC 電源で行う。
 
 | 順 | 試験（scenario） | 何を見るか | PASS の行 |
 | --- | --- | --- | --- |

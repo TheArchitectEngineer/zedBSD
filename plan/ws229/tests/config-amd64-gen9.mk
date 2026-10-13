@@ -1,6 +1,7 @@
 # ws229-p005: the USB image that boots a Gen9 or Gen9.5 laptop (6th, 7th and 8th generation Core) by itself and runs
 # one i915 test scenario after the GPU starts.  The CI amd64 image (config/ci/config-amd64.mk) with:
-#   - i915.gen9=on (ws229-p002's boot parameter; the driver leaves a Gen9 GPU alone without it until the hardware PASS),
+#   - i915.gen9=on (ws229-p002's boot parameter; Gen9 is driven by default since the hardware PASS, 2026-10-14, so
+#     the word changes nothing and is kept so that the images stay as they were tested),
 #   - the text console with the kernel's lines on it (no graphical boot, no graphical login: Gen9 has no display
 #     driver yet and the firmware's framebuffer stays the console; a photo of the screen is the fallback record),
 #   - the i915 test build of one scenario, GEN9_SCENARIO (eu, vkcs, vkx, vke1, vke2 or vkc), with the test set that
