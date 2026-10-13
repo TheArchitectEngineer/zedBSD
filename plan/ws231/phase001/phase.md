@@ -26,3 +26,5 @@ Queue: q981
 - U2:「Intel の RAID mode にも bind」→ class 01.06.01 に加え、Intel の RAID mode（class 01.04.00）の controller を Intel の device ID の表で AHCI として bind（Linux と同じ）。RST が NVMe を AHCI の BAR に remap している機種は対象外（記録だけ）。
 - U3・U4: 推しどおり（shutdown では FLUSH CACHE（EXT）だけ、STANDBY IMMEDIATE は出さない。hw.diskstats の「IDE」は受け入れ、UAPI を増やさない）。
 技術判断（Q1）: R1〜R3 と中 1〜9、軽微は review の直し方の案どおり。試験の案 (a)〜(f) を T1 の依頼に入れる。
+
+- 2026-10-14 ユーザー（U1 の変更）:「最小の suspend・resumeだけでいいんじゃないですか？linkの省電力は割と、相性問題がひどいです」→ 最小の suspend・resume を入れ、既定を y に戻す（18 時までに T1 の QEMU の試験が PASS しなければ n）。ALPM・DevSleep などの link の省電力は入れない（相性の問題）。
