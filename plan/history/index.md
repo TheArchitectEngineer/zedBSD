@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1084 / WS074 module import metadata（2026-10-14）
+## 最新: q1085 / WS074 module URL graph（2026-10-14）
+
+[q1085履歴](queue-q1085.md): canonical URL cacheとdependency link/evaluateを追加。相対URL/共有依存/評価順/missing export/cycle、classic JS14/14、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1085/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1084 / WS074 module import metadata（2026-10-14）
 
 [q1084履歴](queue-q1084.md): named importの指定子と名前を列挙、specifier照合linkを追加。複数specifierと誤指定子拒否、classic JS14/14、Acid3差0。[証拠](../ws074/phase216/evidence/20261014-q1084/README.md)。p216部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

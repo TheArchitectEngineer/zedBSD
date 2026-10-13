@@ -43,6 +43,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/js/scope.c \
 	$(LIBBROWSER_DIR)/js/emit.c \
 	$(LIBBROWSER_DIR)/js/compile.c \
+	$(LIBBROWSER_DIR)/js/module_graph.c \
 	$(LIBBROWSER_DIR)/js/compile_expr.c \
 	$(LIBBROWSER_DIR)/js/script.c \
 	$(LIBBROWSER_DIR)/js/builtin.c \

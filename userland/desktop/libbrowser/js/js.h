@@ -224,6 +224,17 @@ int js_module_import_at(const struct js_module *module, size_t index, struct js_
 int js_module_link_import(struct js_module *module, const uint16_t *specifier, size_t specifier_length, const uint16_t *local, size_t local_length, struct js_module *target, const uint16_t *exported, size_t exported_length);
 void js_module_release(struct js_module *module);
 
+/* The host resolves each import relative to its owning module, then fetches one canonical URL. */
+struct js_module_graph;
+typedef int (*js_module_resolve)(void *context, const char *base, const uint16_t *specifier,
+	size_t length, struct wb_buffer *url);
+typedef int (*js_module_fetch)(void *context, const char *url, struct wb_units *source);
+int js_module_graph_create(struct vm_realm *realm, js_module_resolve resolve,
+	js_module_fetch fetch, void *context, struct js_module_graph **graph);
+int js_module_graph_run(struct js_module_graph *graph, const char *url,
+	struct js_syntax_error *error);
+void js_module_graph_release(struct js_module_graph *graph);
+
 /* The built-in objects (builtin.c). */
 int js_install_builtins(struct vm_realm *realm);
 

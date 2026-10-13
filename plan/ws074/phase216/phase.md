@@ -2,7 +2,7 @@
 
 # ws074-p216: Interop 2025 JavaScript module loading
 
-Status: uncleared（q1079–q1084 partial cleared、URL graph/HTML未実装）
+Status: uncleared（q1079–q1085 partial cleared、HTML module loader未実装）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
@@ -67,3 +67,11 @@ Event ws074-p216-q1083-partial-clear-and-design-revision-20261014: named import�
 ## q1084-i01 結果（2026-10-14 06:57 JST）
 
 Event ws074-p216-q1084-partial-clear-20261014: static named importのspecifier/imported/local名を安定read-only内部APIで列挙し、linkでspecifier一致を検査。[証拠](evidence/20261014-q1084/README.md)。同一specifierの2名、別specifier、誤指定子拒否、既存live read hostをPASS。classic JS14/14、warning0 build、Acid3差0・Acid2差1865。q1084-i01 partial cleared、p216 wholeはURL graph/HTML未実装でuncleared。固定Grid32とp189/p173全件100%は未達、共有投影/GitHub publication保留。
+
+## q1085-i01 有限部分範囲（2026-10-14 06:58 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（08:28 JSTまで）に適用。host提供のcanonical URL+source取得callbackでspecifierをimport元URL基準に解決し、module graphのURL cacheで一度instantiate、全importをlink後に依存先→import元順で一度評価する。共有依存とcycleを扱い、失敗を返す。局所hostで相対URL/共有依存/評価順/一度限り/不正import/cycleを検証。HTML loader、HTTP/MIME、namespace/default/re-exportは含めない。classic JS14、warning0 build、Acid3差0・Acid2非増加。WPT/runner/公開ABI/`plan/master.md`不変更。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。p216 whole/固定32 ID callbackは本部分範囲外。
+
+## q1085-i01 結果（2026-10-14 07:00 JST）
+
+Event ws074-p216-q1085-partial-clear-20261014: canonical URLをキーとする内部graphでinstantiateを一度だけ行い、import元基準の相対URL解決、dependency DFS link/evaluate、cycle再帰停止を実装。[証拠](evidence/20261014-q1085/README.md)。局所hostは共有依存一度限り/評価順/missing export/cycleをPASS。classic JS14/14、warning0 build、Acid3差0・Acid2差1865。q1085-i01 partial cleared、p216 wholeはHTML loaderと固定Grid32再測定が未了。共有投影/GitHub publication保留。
