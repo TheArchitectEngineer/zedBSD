@@ -1,0 +1,236 @@
+{
+  "fixed_wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "old_outcomes": {
+    "fail": 427,
+    "pass": 43,
+    "no_output": 32
+  },
+  "new_outcomes": {
+    "fail": 413,
+    "pass": 57,
+    "no_output": 32
+  },
+  "transitions": {
+    "fail->fail": 413,
+    "fail->pass": 14,
+    "no_output->no_output": 32,
+    "pass->pass": 43
+  },
+  "changed": [
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-019.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-020.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-023.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-024.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-inline-axis-alignment-auto-margins-005.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-inline-axis-alignment-auto-margins-006.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-001.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-002.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-003.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-004.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-001.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-002.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-001.html",
+      "old": "fail",
+      "new": "pass"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-002.html",
+      "old": "fail",
+      "new": "pass"
+    }
+  ],
+  "changed_subtests": [
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-stretch.html",
+      "old_pass_subtests": 8,
+      "new_pass_subtests": 10
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-019.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-020.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-023.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-024.html",
+      "old_pass_subtests": 1,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-inline-axis-alignment-auto-margins-005.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-inline-axis-alignment-auto-margins-006.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 2
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-001.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 1
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-002.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 1
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-003.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 1
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-004.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 1
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment.html",
+      "old_pass_subtests": 32,
+      "new_pass_subtests": 28
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-001.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 8
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-002.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 8
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-001.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 8
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-002.html",
+      "old_pass_subtests": 0,
+      "new_pass_subtests": 8
+    }
+  ],
+  "subtest_status_totals": {
+    "old": {
+      "1": 5996,
+      "0": 1809
+    },
+    "new": {
+      "1": 5954,
+      "0": 1851
+    }
+  },
+  "remaining_fail_by_grid_directory": {
+    "abspos": 24,
+    "alignment": 220,
+    "animation": 11,
+    "grid-definition": 42,
+    "grid-items": 28,
+    "grid-layout-properties.html": 1,
+    "grid-model": 10,
+    "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+    "inheritance.html": 1,
+    "layout-algorithm": 28,
+    "parsing": 35,
+    "placement": 4,
+    "subgrid": 7,
+    "table-grid-item-005.html": 1
+  },
+  "shards": [
+    {
+      "offset": 0,
+      "count": 128,
+      "outcomes": {
+        "fail": 78,
+        "no_output": 32,
+        "pass": 18
+      }
+    },
+    {
+      "offset": 128,
+      "count": 128,
+      "outcomes": {
+        "fail": 118,
+        "pass": 10
+      }
+    },
+    {
+      "offset": 256,
+      "count": 128,
+      "outcomes": {
+        "fail": 117,
+        "pass": 11
+      }
+    },
+    {
+      "offset": 384,
+      "count": 118,
+      "outcomes": {
+        "fail": 100,
+        "pass": 18
+      }
+    }
+  ]
+}

@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1073 / WS074 CSS Grid auto-width self alignment
+# q1074 / WS074 CSS Grid testharness recensus
 
-Status: finished（2026-10-14 05:24–05:37 JST）
+Status: finished（2026-10-14 05:38–05:44 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p213有限scope](phase213/phase.md)に適用。
-Timebox: 2026-10-14 05:24 JST開始、最大90分（06:54 JSTまで）。
+Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p189 q1074有限部分scope](phase189/phase.md)に適用。
+Timebox: 2026-10-14 05:38 JST開始、最大90分（07:08 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1073-i01 | [ws074-p213](phase213/phase.md) | 横書きGridのin-flow非置換auto幅/非stretchの幅・位置とauto inline margin配分、縦書き子項目除外。代表WPT・局所fixture・固定静的Grid旧PASS・host/Acid確認。runner/WPT/ABI/Master不変更 | cleared | p212 q1071配置、p189 q1072 baseline |
+| q1074-i01 | [ws074-p189](phase189/phase.md) partial | 固定Grid適格testharness502 IDを同条件・最大128件shard再測定し、q1072との全ID/outcome/subtest/raw照合と残失敗群分類。runner/browser/WPT/ABI/Master不変更 | cleared | p213 q1073 Grid auto幅・p189 q1072 baseline |
 
-Dependency graph: p173 manifest → p189 q1072 baseline → p212 q1071 → p213 q1073 → p173全件100%判断。
+Dependency graph: p173 manifest → p189 q1072 baseline → p213 q1073 auto幅 → p189 q1074再計測 → p173全件100%判断。
 
-Outcome: q1073-i01/p213 whole cleared。[証拠](phase213/evidence/20261014-q1073/README.md)。代表WPT whole FAIL→PASS、固定Grid静的529 IDは旧123 PASS/406 FAIL→124 PASS/405 FAIL、旧PASS後退0。局所44/44、warning0 host build、Acid3差0/Acid2差1865。全3,805件100%は未達。
+Outcome: q1074-i01 partial cleared、p189 whole uncleared。[証拠](phase189/evidence/20261014-q1074/README.md)。Grid502 ID旧43 PASS/427 FAIL/32 no_output→57 PASS/413 FAIL/32 no_output、旧PASS後退0、subtest PASS+42。p173全3,805件100%未達。
 
 Upcoming Work Outlook: Grid427 FAILとmodule script no_output32件から共通原因を別の有限Queueで切り分ける。全域baseline testharness223 PASS/1,232非PASS（q1068）、環境未対応328、reftest未対応413・静的899 pixel FAIL。Gridのみq1072で43/502 PASS、全域の数へは合算しない。共有 `plan/queue.md` / Master / GitHub publication はQ1セッションとの競合を避けpending projection。
