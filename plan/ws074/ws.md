@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1062](queue.md) finished / p190静的1,561 ID再集計。2026-10-14 03:35 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1063](queue.md) finished / p189 testharness最初の128 ID実測。2026-10-14 03:39 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -760,3 +760,5 @@ Event ws074-browser-next-goals-20261002: ユーザーが専任P10の次の目標
 2026-10-13 / q1011-main-merge: ユーザーのマージ指示で WS074 の145 file を `main` commit `1f9cc35ca` に取り込んだ。main host build warning/error0、visited-link fixture6/6、固定 Acid3 score100/100・inventory100/100・例外0・差 **0/480000** を再確認。[main再計測](phase188/evidence/20261013-merge-main/report.json)。Acid2差1865/120000不変。p188 cleared、p100 whole planned、WS074 incomplete を維持。`master.md` 未変更、push/GitHub publication保留。
 
 Event ws074-p190-q1062-outcome-20261014: [p190](phase190/phase.md) q1062-i01 partial cleared。固定静的1,561 IDは662 local PASS/899 pixel FAIL/0 error/0 timeout、q1060比2 FAIL→PASS/0 PASS→FAIL。[証拠](phase190/evidence/20261014-q1062/README.md)。p190 whole/p173全3,805件100%は未達。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1063-outcome-20261014: [p189](phase189/phase.md) q1063-i01 partial cleared。単一HTTP候補1,455件中最初の128 IDを測り18 PASS/110非PASS。[証拠](phase189/evidence/20261014-q1063/README.md)。p189 whole/p173全3,805件100%未達。共有投影/GitHub publication保留。

@@ -1,0 +1,95 @@
+{
+  "outcome": "harness_error",
+  "result_callbacks": [
+    {
+      "name": "Can anchor to a name both defined and scoped by the same element",
+      "status": 1,
+      "message": "assert_equals: expected \"10px\" but got \"auto\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Can anchor to a name both defined and scoped by the same element",
+        "status": 1,
+        "message": "assert_equals: expected \"10px\" but got \"auto\""
+      },
+      {
+        "name": "Sibling can not anchor into anchor-scope, even when anchor-name present",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:all on common ancestor",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--a on common ancestor",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:all on sibling",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:all scopes multiple names",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--a,--b scopes --a and --b",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--a scopes only --a",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--b scopes only --b",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--a scopes only --a (out-of-flow anchors)",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--a scopes only --a (both out-of-flow and in-flow anchors)",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "anchor-scope:--a scopes only --a (both out-of-flow and in-flow anchors, reverse)",
+        "status": 3,
+        "message": ""
+      }
+    ],
+    "status": 1,
+    "message": "Test named 'Can anchor to a name both defined and scoped by the same element' specified 1 'cleanup' function, and 1 failed."
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/anchor-scope-basic.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:46767/css/css-anchor-position/anchor-scope-basic.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Can anchor to a name both defined and scoped by the same element\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Can anchor to a name both defined and scoped by the same element\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px\\\" but got \\\"auto\\\"\"},{\"name\":\"Sibling can not anchor into anchor-scope, even when anchor-name present\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:all on common ancestor\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--a on common ancestor\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:all on sibling\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:all scopes multiple names\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--a,--b scopes --a and --b\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--a scopes only --a\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--b scopes only --b\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--a scopes only --a (out-of-flow anchors)\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--a scopes only --a (both out-of-flow and in-flow anchors)\",\"status\":3,\"message\":\"\"},{\"name\":\"anchor-scope:--a scopes only --a (both out-of-flow and in-flow anchors, reverse)\",\"status\":3,\"message\":\"\"}],\"status\":1,\"message\":\"Test named 'Can anchor to a name both defined and scoped by the same element' specified 1 'cleanup' function, and 1 failed.\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

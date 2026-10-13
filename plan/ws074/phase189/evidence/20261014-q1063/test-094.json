@@ -1,0 +1,130 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Property anchor-scope value 'none'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value 'initial'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value 'all'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value '--a'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value '--a, --b'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value '--a, --b, --c'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value '--foo, --bar'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope value '--bar, --foo'",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope has initial value none",
+      "status": 1,
+      "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "name": "Property anchor-scope does not inherit",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Property anchor-scope value 'none'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value 'initial'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value 'all'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value '--a'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value '--a, --b'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value '--a, --b, --c'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value '--foo, --bar'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope value '--bar, --foo'",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope has initial value none",
+        "status": 1,
+        "message": "assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false"
+      },
+      {
+        "name": "Property anchor-scope does not inherit",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/parsing/anchor-scope-computed.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:42537/css/css-anchor-position/parsing/anchor-scope-computed.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Property anchor-scope value 'none'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value 'initial'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value 'all'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value '--a'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value '--a, --b'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value '--a, --b, --c'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value '--foo, --bar'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope value '--bar, --foo'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope has initial value none\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property anchor-scope does not inherit\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Property anchor-scope value 'none'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value 'initial'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value 'all'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value '--a'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value '--a, --b'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value '--a, --b, --c'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value '--foo, --bar'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope value '--bar, --foo'\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope has initial value none\",\"status\":1,\"message\":\"assert_true: anchor-scope doesn't seem to be supported in the computed style expected true got false\"},{\"name\":\"Property anchor-scope does not inherit\",\"status\":1,\"message\":\"assert_true: expected true got false\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

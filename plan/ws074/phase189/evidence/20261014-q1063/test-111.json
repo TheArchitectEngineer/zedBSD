@@ -1,0 +1,670 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "none",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "span-all",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "span-all span-all",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "top left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "top center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "top right",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center right",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "bottom left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "bottom center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "bottom right",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "start start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "start center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "start end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "end start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "end center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "end end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-start self-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-start center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-start self-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center self-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center self-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-end self-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-end center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-end self-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "y-start x-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "y-start center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "y-start x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center x-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "y-end x-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "y-end center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "y-end x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-y-start self-x-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-y-start center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-y-start self-x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center self-x-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "center self-x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-y-end self-x-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-y-end center",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "self-y-end self-x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "span-self-y-start span-self-x-end",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "span-bottom span-all",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --right, --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --bottom, --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --bottom, --right, --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --bottom, --right, --left, --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --bottom, --left, --top, --right",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --right flip-inline",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --bottom flip-block",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --left flip-start",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --right flip-x",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --bottom flip-y",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --left flip-inline, --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --left flip-x, --top",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --top flip-block, --left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --top flip-y, --left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --left flip-start flip-block, --left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "Placement: --left flip-start flip-y, --left",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "none",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "span-all",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "span-all span-all",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "top left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "top center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "top right",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center right",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "bottom left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "bottom center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "bottom right",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "start start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "start center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "start end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "end start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "end center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "end end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-start self-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-start center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-start self-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center self-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center self-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-end self-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-end center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-end self-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "y-start x-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "y-start center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "y-start x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center x-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "y-end x-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "y-end center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "y-end x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-y-start self-x-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-y-start center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-y-start self-x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center self-x-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "center self-x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-y-end self-x-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-y-end center",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "self-y-end self-x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "span-self-y-start span-self-x-end",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "span-bottom span-all",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --right, --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --bottom, --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --bottom, --right, --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --bottom, --right, --left, --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --bottom, --left, --top, --right",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --right flip-inline",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --bottom flip-block",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --left flip-start",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --right flip-x",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --bottom flip-y",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --left flip-inline, --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --left flip-x, --top",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --top flip-block, --left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --top flip-y, --left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --left flip-start flip-block, --left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "Placement: --left flip-start flip-y, --left",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/position-area-in-position-try.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:35803/css/css-anchor-position/position-area-in-position-try.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"none\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"span-all\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"span-all span-all\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"top left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"top center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"top right\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center right\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"bottom left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"bottom center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"bottom right\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"start start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"start end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"end start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"end end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-start self-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-start self-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center self-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center self-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-end self-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-end self-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"y-start x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"y-start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"y-start x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"y-end x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"y-end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"y-end x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-y-start self-x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-y-start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-y-start self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center self-x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"center self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-y-end self-x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-y-end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"self-y-end self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"span-self-y-start span-self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"span-bottom span-all\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --right, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --bottom, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --bottom, --right, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --bottom, --right, --left, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --bottom, --left, --top, --right\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --right flip-inline\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --bottom flip-block\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --left flip-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --right flip-x\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --bottom flip-y\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --left flip-inline, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --left flip-x, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --top flip-block, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --top flip-y, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --left flip-start flip-block, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Placement: --left flip-start flip-y, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"none\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"span-all\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"span-all span-all\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"top left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"top center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"top right\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center right\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"bottom left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"bottom center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"bottom right\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"start start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"start end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"end start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"end end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-start self-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-start self-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center self-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center self-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-end self-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-end self-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"y-start x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"y-start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"y-start x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"y-end x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"y-end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"y-end x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-y-start self-x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-y-start center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-y-start self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center self-x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"center self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-y-end self-x-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-y-end center\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"self-y-end self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"span-self-y-start span-self-x-end\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"span-bottom span-all\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --right, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --bottom, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --bottom, --right, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --bottom, --right, --left, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --bottom, --left, --top, --right\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --right flip-inline\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --bottom flip-block\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --left flip-start\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --right flip-x\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --bottom flip-y\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --left flip-inline, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --left flip-x, --top\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --top flip-block, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --top flip-y, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --left flip-start flip-block, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"Placement: --left flip-start flip-y, --left\",\"status\":1,\"message\":\"assert_true: expected true got false\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

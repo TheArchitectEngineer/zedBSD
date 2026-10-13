@@ -1,0 +1,190 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": ".target 1",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"left:anchor(inside)\" data-offset-x=\"150\"></div>\noffsetLeft expected 150 but got 0"
+    },
+    {
+      "name": ".target 2",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"left:anchor(outside)\" data-offset-x=\"200\"></div>\noffsetLeft expected 200 but got 0"
+    },
+    {
+      "name": ".target 3",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"right:anchor(inside)\" data-offset-x=\"190\"></div>\noffsetLeft expected 190 but got 0"
+    },
+    {
+      "name": ".target 4",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"right:anchor(outside)\" data-offset-x=\"140\"></div>\noffsetLeft expected 140 but got 0"
+    },
+    {
+      "name": ".target 5",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"top:anchor(inside)\" data-offset-y=\"250\"></div>\noffsetTop expected 250 but got 0"
+    },
+    {
+      "name": ".target 6",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"top:anchor(outside)\" data-offset-y=\"300\"></div>\noffsetTop expected 300 but got 0"
+    },
+    {
+      "name": ".target 7",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"bottom:anchor(inside)\" data-offset-y=\"290\"></div>\noffsetTop expected 290 but got 0"
+    },
+    {
+      "name": ".target 8",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"bottom:anchor(outside)\" data-offset-y=\"240\"></div>\noffsetTop expected 240 but got 0"
+    },
+    {
+      "name": ".target 9",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-start:anchor(inside)\" data-offset-x=\"150\"></div>\noffsetLeft expected 150 but got 0"
+    },
+    {
+      "name": ".target 10",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-start:anchor(outside)\" data-offset-x=\"200\"></div>\noffsetLeft expected 200 but got 0"
+    },
+    {
+      "name": ".target 11",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-end:anchor(inside)\" data-offset-x=\"190\"></div>\noffsetLeft expected 190 but got 0"
+    },
+    {
+      "name": ".target 12",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-end:anchor(outside)\" data-offset-x=\"140\"></div>\noffsetLeft expected 140 but got 0"
+    },
+    {
+      "name": ".target 13",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-start:anchor(inside)\" data-offset-y=\"250\"></div>\noffsetTop expected 250 but got 0"
+    },
+    {
+      "name": ".target 14",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-start:anchor(outside)\" data-offset-y=\"300\"></div>\noffsetTop expected 300 but got 0"
+    },
+    {
+      "name": ".target 15",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-end:anchor(inside)\" data-offset-y=\"290\"></div>\noffsetTop expected 290 but got 0"
+    },
+    {
+      "name": ".target 16",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-end:anchor(outside)\" data-offset-y=\"240\"></div>\noffsetTop expected 240 but got 0"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": ".target 1",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"left:anchor(inside)\" data-offset-x=\"150\"></div>\noffsetLeft expected 150 but got 0"
+      },
+      {
+        "name": ".target 2",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"left:anchor(outside)\" data-offset-x=\"200\"></div>\noffsetLeft expected 200 but got 0"
+      },
+      {
+        "name": ".target 3",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"right:anchor(inside)\" data-offset-x=\"190\"></div>\noffsetLeft expected 190 but got 0"
+      },
+      {
+        "name": ".target 4",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"right:anchor(outside)\" data-offset-x=\"140\"></div>\noffsetLeft expected 140 but got 0"
+      },
+      {
+        "name": ".target 5",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"top:anchor(inside)\" data-offset-y=\"250\"></div>\noffsetTop expected 250 but got 0"
+      },
+      {
+        "name": ".target 6",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"top:anchor(outside)\" data-offset-y=\"300\"></div>\noffsetTop expected 300 but got 0"
+      },
+      {
+        "name": ".target 7",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"bottom:anchor(inside)\" data-offset-y=\"290\"></div>\noffsetTop expected 290 but got 0"
+      },
+      {
+        "name": ".target 8",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"bottom:anchor(outside)\" data-offset-y=\"240\"></div>\noffsetTop expected 240 but got 0"
+      },
+      {
+        "name": ".target 9",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-start:anchor(inside)\" data-offset-x=\"150\"></div>\noffsetLeft expected 150 but got 0"
+      },
+      {
+        "name": ".target 10",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-start:anchor(outside)\" data-offset-x=\"200\"></div>\noffsetLeft expected 200 but got 0"
+      },
+      {
+        "name": ".target 11",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-end:anchor(inside)\" data-offset-x=\"190\"></div>\noffsetLeft expected 190 but got 0"
+      },
+      {
+        "name": ".target 12",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-inline-end:anchor(outside)\" data-offset-x=\"140\"></div>\noffsetLeft expected 140 but got 0"
+      },
+      {
+        "name": ".target 13",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-start:anchor(inside)\" data-offset-y=\"250\"></div>\noffsetTop expected 250 but got 0"
+      },
+      {
+        "name": ".target 14",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-start:anchor(outside)\" data-offset-y=\"300\"></div>\noffsetTop expected 300 but got 0"
+      },
+      {
+        "name": ".target 15",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-end:anchor(inside)\" data-offset-y=\"290\"></div>\noffsetTop expected 290 but got 0"
+      },
+      {
+        "name": ".target 16",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"target\" style=\"inset-block-end:anchor(outside)\" data-offset-y=\"240\"></div>\noffsetTop expected 240 but got 0"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/anchor-inside-outside.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:33087/css/css-anchor-position/anchor-inside-outside.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\".target 1\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"left:anchor(inside)\\\" data-offset-x=\\\"150\\\"></div>\\noffsetLeft expected 150 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 2\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"left:anchor(outside)\\\" data-offset-x=\\\"200\\\"></div>\\noffsetLeft expected 200 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"right:anchor(inside)\\\" data-offset-x=\\\"190\\\"></div>\\noffsetLeft expected 190 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 4\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"right:anchor(outside)\\\" data-offset-x=\\\"140\\\"></div>\\noffsetLeft expected 140 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 5\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"top:anchor(inside)\\\" data-offset-y=\\\"250\\\"></div>\\noffsetTop expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 6\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"top:anchor(outside)\\\" data-offset-y=\\\"300\\\"></div>\\noffsetTop expected 300 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 7\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"bottom:anchor(inside)\\\" data-offset-y=\\\"290\\\"></div>\\noffsetTop expected 290 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 8\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"bottom:anchor(outside)\\\" data-offset-y=\\\"240\\\"></div>\\noffsetTop expected 240 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 9\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-start:anchor(inside)\\\" data-offset-x=\\\"150\\\"></div>\\noffsetLeft expected 150 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 10\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-start:anchor(outside)\\\" data-offset-x=\\\"200\\\"></div>\\noffsetLeft expected 200 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 11\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-end:anchor(inside)\\\" data-offset-x=\\\"190\\\"></div>\\noffsetLeft expected 190 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 12\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-end:anchor(outside)\\\" data-offset-x=\\\"140\\\"></div>\\noffsetLeft expected 140 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 13\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-start:anchor(inside)\\\" data-offset-y=\\\"250\\\"></div>\\noffsetTop expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 14\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-start:anchor(outside)\\\" data-offset-y=\\\"300\\\"></div>\\noffsetTop expected 300 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 15\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-end:anchor(inside)\\\" data-offset-y=\\\"290\\\"></div>\\noffsetTop expected 290 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".target 16\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-end:anchor(outside)\\\" data-offset-y=\\\"240\\\"></div>\\noffsetTop expected 240 but got 0\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\".target 1\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"left:anchor(inside)\\\" data-offset-x=\\\"150\\\"></div>\\noffsetLeft expected 150 but got 0\"},{\"name\":\".target 2\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"left:anchor(outside)\\\" data-offset-x=\\\"200\\\"></div>\\noffsetLeft expected 200 but got 0\"},{\"name\":\".target 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"right:anchor(inside)\\\" data-offset-x=\\\"190\\\"></div>\\noffsetLeft expected 190 but got 0\"},{\"name\":\".target 4\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"right:anchor(outside)\\\" data-offset-x=\\\"140\\\"></div>\\noffsetLeft expected 140 but got 0\"},{\"name\":\".target 5\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"top:anchor(inside)\\\" data-offset-y=\\\"250\\\"></div>\\noffsetTop expected 250 but got 0\"},{\"name\":\".target 6\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"top:anchor(outside)\\\" data-offset-y=\\\"300\\\"></div>\\noffsetTop expected 300 but got 0\"},{\"name\":\".target 7\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"bottom:anchor(inside)\\\" data-offset-y=\\\"290\\\"></div>\\noffsetTop expected 290 but got 0\"},{\"name\":\".target 8\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"bottom:anchor(outside)\\\" data-offset-y=\\\"240\\\"></div>\\noffsetTop expected 240 but got 0\"},{\"name\":\".target 9\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-start:anchor(inside)\\\" data-offset-x=\\\"150\\\"></div>\\noffsetLeft expected 150 but got 0\"},{\"name\":\".target 10\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-start:anchor(outside)\\\" data-offset-x=\\\"200\\\"></div>\\noffsetLeft expected 200 but got 0\"},{\"name\":\".target 11\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-end:anchor(inside)\\\" data-offset-x=\\\"190\\\"></div>\\noffsetLeft expected 190 but got 0\"},{\"name\":\".target 12\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-inline-end:anchor(outside)\\\" data-offset-x=\\\"140\\\"></div>\\noffsetLeft expected 140 but got 0\"},{\"name\":\".target 13\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-start:anchor(inside)\\\" data-offset-y=\\\"250\\\"></div>\\noffsetTop expected 250 but got 0\"},{\"name\":\".target 14\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-start:anchor(outside)\\\" data-offset-y=\\\"300\\\"></div>\\noffsetTop expected 300 but got 0\"},{\"name\":\".target 15\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-end:anchor(inside)\\\" data-offset-y=\\\"290\\\"></div>\\noffsetTop expected 290 but got 0\"},{\"name\":\".target 16\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"target\\\" style=\\\"inset-block-end:anchor(outside)\\\" data-offset-y=\\\"240\\\"></div>\\noffsetTop expected 240 but got 0\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

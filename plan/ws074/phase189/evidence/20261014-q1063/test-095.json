@@ -1,0 +1,200 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['anchor-scope'] = \"initial\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"inherit\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"unset\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"revert\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"none\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"all\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--a\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--a, --b\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--a, --b, --c\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--foo, --bar\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--bar, --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--a none\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"none --a\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"none all\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"--a --b\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"a, b, c\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['anchor-scope'] = \"\" should not set the property value",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['anchor-scope'] = \"initial\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"inherit\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"unset\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"revert\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"none\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"all\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--a\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--a, --b\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--a, --b, --c\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--foo, --bar\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--bar, --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--a none\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"none --a\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"none all\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"--a --b\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"a, b, c\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['anchor-scope'] = \"\" should not set the property value",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/parsing/anchor-scope-parsing.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:37437/css/css-anchor-position/parsing/anchor-scope-parsing.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"initial\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"inherit\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"unset\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"revert\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"none\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"all\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--a\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--a, --b\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--a, --b, --c\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--foo, --bar\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--bar, --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--a none\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"none --a\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"none all\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"--a --b\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"a, b, c\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['anchor-scope'] = \\\"\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['anchor-scope'] = \\\"initial\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"inherit\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"unset\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"revert\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"none\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"all\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--a\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--a, --b\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--a, --b, --c\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--foo, --bar\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--bar, --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--a none\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"none --a\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"none all\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"--a --b\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"a, b, c\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['anchor-scope'] = \\\"\\\" should not set the property value\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

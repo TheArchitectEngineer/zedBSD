@@ -1,0 +1,250 @@
+{
+  "outcome": "pass",
+  "result_callbacks": [
+    {
+      "name": "e.style['font-size'] = \"anchor-size(--foo width)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo, width)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width,)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width height)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, 10px 20%)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, 10px, 20%)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo,)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(, 10px)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(foo width)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo top)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo 10em)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo 100s)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo 50%)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, 1)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, 100s)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, height)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, anchor-size(bar width))\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"anchor-size(--foo width, anchor(--bar top))\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"calc(anchor-size(foo width) + 10px + 10%)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"calc(10px + 100 * anchor-size(--foo width, anchor-size(bar bottom)))\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['width'] = \"min(anchor-size(--foo width), anchor-size(--bar height), anchor(--baz top))\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['top'] = \"calc(anchor-size(--foo width, 1) + 1px)\" should not set the property value",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['font-size'] = \"anchor-size(--foo width)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo, width)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width,)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width height)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, 10px 20%)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, 10px, 20%)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo,)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(, 10px)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(foo width)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo top)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo 10em)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo 100s)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo 50%)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, 1)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, 100s)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, height)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, anchor-size(bar width))\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"anchor-size(--foo width, anchor(--bar top))\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"calc(anchor-size(foo width) + 10px + 10%)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"calc(10px + 100 * anchor-size(--foo width, anchor-size(bar bottom)))\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['width'] = \"min(anchor-size(--foo width), anchor-size(--bar height), anchor(--baz top))\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['top'] = \"calc(anchor-size(--foo width, 1) + 1px)\" should not set the property value",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/anchor-size-parse-invalid.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:40051/css/css-anchor-position/anchor-size-parse-invalid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['font-size'] = \\\"anchor-size(--foo width)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo, width)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width,)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width height)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 10px 20%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 10px, 20%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo,)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(, 10px)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(foo width)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo top)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo 10em)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo 100s)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo 50%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 1)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 100s)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, height)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, anchor-size(bar width))\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, anchor(--bar top))\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"calc(anchor-size(foo width) + 10px + 10%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"calc(10px + 100 * anchor-size(--foo width, anchor-size(bar bottom)))\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['width'] = \\\"min(anchor-size(--foo width), anchor-size(--bar height), anchor(--baz top))\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['top'] = \\\"calc(anchor-size(--foo width, 1) + 1px)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['font-size'] = \\\"anchor-size(--foo width)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo, width)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width,)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width height)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 10px 20%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 10px, 20%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo,)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(, 10px)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(foo width)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo top)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo 10em)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo 100s)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo 50%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 1)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, 100s)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, height)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, anchor-size(bar width))\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"anchor-size(--foo width, anchor(--bar top))\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"calc(anchor-size(foo width) + 10px + 10%)\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"calc(10px + 100 * anchor-size(--foo width, anchor-size(bar bottom)))\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['width'] = \\\"min(anchor-size(--foo width), anchor-size(--bar height), anchor(--baz top))\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['top'] = \\\"calc(anchor-size(--foo width, 1) + 1px)\\\" should not set the property value\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

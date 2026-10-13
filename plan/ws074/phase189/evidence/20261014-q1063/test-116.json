@@ -1,0 +1,470 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Offsets for: start start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: inline-start block-end with writing-mode / direction: containing-block: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: inline-start block-end with writing-mode / direction: containing-block: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: self: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: self: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: self: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: horizontal-tb / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: self: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: self: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: self: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / ltr",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: start start with writing-mode / direction: self: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    },
+    {
+      "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+    },
+    {
+      "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / rtl",
+      "status": 1,
+      "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Offsets for: start start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: inline-start block-end with writing-mode / direction: containing-block: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: inline-start block-end with writing-mode / direction: containing-block: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: self: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: self: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: self: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: horizontal-tb / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: self: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: self: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetTop expected 225 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: self: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / ltr",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: start start with writing-mode / direction: self: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      },
+      {
+        "name": "Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetWidth expected 100 but got 0"
+      },
+      {
+        "name": "Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / rtl",
+        "status": 1,
+        "message": "assert_equals: Checking offsetLeft expected 250 but got 0"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/position-area-wm-dir.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:38511/css/css-anchor-position/position-area-wm-dir.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: inline-start block-end with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: inline-start block-end with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: inline-start block-end with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: inline-start block-end with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-inline-start self-block-end with writing-mode / direction: containing-block: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: containing-block: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: horizontal-tb / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-lr / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetTop expected 225 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / ltr\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: start start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-start self-start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"},{\"name\":\"Offsets for: x-start y-start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetWidth expected 100 but got 0\"},{\"name\":\"Offsets for: self-x-start self-y-start with writing-mode / direction: self: vertical-rl / rtl\",\"status\":1,\"message\":\"assert_equals: Checking offsetLeft expected 250 but got 0\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

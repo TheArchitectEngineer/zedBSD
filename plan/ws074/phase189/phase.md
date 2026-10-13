@@ -55,3 +55,11 @@ Event ws074-p189-q1015-outcome-20261014: 16 IDの正式結果と失敗群を保�
 **partial scope cleared、p189 whole uncleared。** 固定manifestから各focus最大8・全体100 unique IDを選び実行。[証拠](evidence/20261014-q1024/README.md)。9 PASS、68 FAIL、3 harness error、7 completion無し、13 stdout無し。4領域は現条件で候補0。anchor/backdrop CSS不足、named element global欠落、module script未実行、async event待ちなどを原因候補として分離。結果JSONに選定・除外理由・生callbackを保存。Python compile、diff check PASS。browser/WPT/Master無変更、Acid再計測省略。p189 whole1,783件とp173全3,805件100%は未達、GitHub publication保留。
 
 Event ws074-p189-q1024-outcome-20261014: q1024-i01 partial cleared、p189 whole uncleared。100 unique IDの結果と環境別の残件を保存。次はmodule等の環境分類を正確化し、browser共通原因を有限Queueで処理する。
+
+## q1063-i01 の有限部分範囲（2026-10-14 03:38 JST）
+
+このchatのユーザーによる「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を最大90分 Queue（03:38–05:08 JST）に適用。固定manifestの1,783 testharnessから、既存の単一localhost HTTP・物理HTML・driver/worker等不要という候補判定を保ち、全候補をID順に列挙してoffset/limitで決定的な有限shardを選べるrunnerを追加する。各件を機械可読結果と逐次checkpointに保存し、最初の最大128 unique IDを現行host browserで実測する。manifest/WPT commit・選定ID・結果分類・checkpointの整合を検証し、対象外/未実行をPASSにしない。既存q1024と同じ理由分類を維持する。browser/WPT/公開ABI/`plan/master.md`は変更しない。runが90分に収まらなければcheckpointと未実行件数を残してunclearedとする。適用規則は[Guardrail](../../guardrail.md)、Python runner近傍のcopyright/Zlib header・既存命名・単体検証。p189 whole1,783件とp173全3,805件100%はこの部分範囲の受け入れに含めない。
+
+## q1063-i01 結果（2026-10-14）
+
+Event ws074-p189-q1063-outcome-20261014: 全1,783 testharness IDから現行単一HTTP条件で1,455候補を決定的に列挙できるrunnerを追加し、offset0の128 IDを実測。[証拠](evidence/20261014-q1063/README.md)。18 PASS/93 FAIL/5 harness error/8 completion無し/4 stdout無し。checkpoint128行・raw report・選定ID一致、局所選定2/2、py_compile/diff check PASS。q1063-i01 partial cleared、p189 whole uncleared。残り1,327候補と環境未対応328 ID、110非PASS、p173全3,805件100%が残る。browser/WPT/Master変更なし、共有投影/GitHub publication保留。

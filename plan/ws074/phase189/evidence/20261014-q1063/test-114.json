@@ -1,0 +1,100 @@
+{
+  "outcome": "pass",
+  "result_callbacks": [
+    {
+      "name": "top left",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "span-top left",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "top span-left",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "top center",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "left center",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "start center",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "center start",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "top left",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "span-top left",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "top span-left",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "top center",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "left center",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "start center",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "center start",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/position-area-value.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:44297/css/css-anchor-position/position-area-value.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"top left\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"span-top left\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"top span-left\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"top center\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"left center\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"start center\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"center start\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"top left\",\"status\":0,\"message\":\"\"},{\"name\":\"span-top left\",\"status\":0,\"message\":\"\"},{\"name\":\"top span-left\",\"status\":0,\"message\":\"\"},{\"name\":\"top center\",\"status\":0,\"message\":\"\"},{\"name\":\"left center\",\"status\":0,\"message\":\"\"},{\"name\":\"start center\",\"status\":0,\"message\":\"\"},{\"name\":\"center start\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

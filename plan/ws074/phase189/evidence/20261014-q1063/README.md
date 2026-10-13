@@ -1,0 +1,9 @@
+# q1063-i01 — scalable testharness census, shard 0
+
+Pinned WPT `2d66b9b7998bb58c336138c178323ddee857b586`, fixed Interop 2025 manifest 3,805 unique IDs including 1,783 testharness. The new `run-interop2025-census.py` uses the existing single-localhost-HTTP physical-HTML eligibility filter, enumerates all 1,455 currently eligible testharness IDs lexically, and selects a bounded offset/limit shard. The remaining 328 testharness IDs are classified by existing environment filter (45 generated context, 44 HTTPS, 126 driver/origin/worker, 80 URL variants, 33 worker/substitution path). No unsupported or unrun test is treated as PASS. The candidate filter is intentionally conservative and is not an official WPT environment.
+
+Shard offset 0, limit 128 ran all 128 IDs; this lexical range is wholly in `css-anchor-position`. Outcomes: **18 PASS, 93 FAIL, 5 harness error, 8 no completion, 4 no output**. Per-test callback result and raw stdout are in `test-*.json`; `progress.jsonl` fsyncs every completed result. `report.json` records the full eligible-list SHA256, reason counts, selected IDs and outcomes.
+
+Verification: `python3 plan/ws074/tests/run-interop2025-census.py --wpt /tmp/zedbsd-interop2025-wpt --manifest plan/ws074/phase173/evidence/20261013-q1012/manifest.json --out plan/ws074/phase189/evidence/20261014-q1063 --limit 128` exited 0. Selection controls 2/2 PASS; `py_compile` and `git diff --check` PASS. Header and report have identical 128 unique IDs; 128 checkpoint rows, reports and outcome totals agree. Browser/WPT/Master untouched; q1061 measured host build and Acid after the last browser change.
+
+q1063-i01 partial cleared; p189 whole uncleared. Remaining: 1,327 eligible IDs unrun and 328 filtered IDs needing environment coverage; 110 measured IDs have non-PASS outcomes. Reftest p190 and all 3,805 PASS p173 remain unmet. Shared Master/Queue/GitHub publication pending with Q1; no push.

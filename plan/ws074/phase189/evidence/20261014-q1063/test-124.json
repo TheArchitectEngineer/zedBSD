@@ -1,0 +1,50 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Size container query responds to fallback width",
+      "status": 1,
+      "message": "assert_equals: expected \"rgb(0, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+    },
+    {
+      "name": "Size container query responds to fallback width and applies height to not fit the first fallback",
+      "status": 1,
+      "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Size container query responds to fallback width",
+        "status": 1,
+        "message": "assert_equals: expected \"rgb(0, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "Size container query responds to fallback width and applies height to not fit the first fallback",
+        "status": 1,
+        "message": "assert_equals: expected \"rgb(255, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/position-try-container-query.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:44773/css/css-anchor-position/position-try-container-query.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Size container query responds to fallback width\",\"status\":1,\"message\":\"assert_equals: expected \\\"rgb(0, 255, 0)\\\" but got \\\"rgba(0, 0, 0, 0)\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Size container query responds to fallback width and applies height to not fit the first fallback\",\"status\":1,\"message\":\"assert_equals: expected \\\"rgb(255, 255, 0)\\\" but got \\\"rgba(0, 0, 0, 0)\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Size container query responds to fallback width\",\"status\":1,\"message\":\"assert_equals: expected \\\"rgb(0, 255, 0)\\\" but got \\\"rgba(0, 0, 0, 0)\\\"\"},{\"name\":\"Size container query responds to fallback width and applies height to not fit the first fallback\",\"status\":1,\"message\":\"assert_equals: expected \\\"rgb(255, 255, 0)\\\" but got \\\"rgba(0, 0, 0, 0)\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

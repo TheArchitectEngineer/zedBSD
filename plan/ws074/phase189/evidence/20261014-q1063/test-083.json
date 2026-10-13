@@ -1,0 +1,2680 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "CSSPositionTryRule attribute values",
+      "status": 1,
+      "message": "CSSPositionTryRule is not defined"
+    },
+    {
+      "name": "CSSPositionTryRule escaped ident name",
+      "status": 1,
+      "message": "CSSPositionTryRule is not defined"
+    },
+    {
+      "name": "CSSPositionTryRule.style.setProperty setting allowed and disallowed properties",
+      "status": 1,
+      "message": "assert_equals: expected 100 but got 0"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.item",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.cssText",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-top)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-top)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-top] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-top] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginTop] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginTop] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-right)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-right)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-right] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-right] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginRight] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginRight] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-bottom)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-bottom)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-bottom] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-bottom] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBottom] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBottom] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-left)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-left)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-left] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-left] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginLeft] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginLeft] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-block)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-block)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-block] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-block] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBlock] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBlock] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-block-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-block-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-block-start] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-block-start] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBlockStart] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBlockStart] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-block-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-block-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-block-end] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-block-end] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBlockEnd] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginBlockEnd] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-inline)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-inline)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-inline] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-inline] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginInline] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginInline] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-inline-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-inline-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-inline-start] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-inline-start] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginInlineStart] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginInlineStart] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(margin-inline-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(margin-inline-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-inline-end] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[margin-inline-end] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginInlineEnd] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[marginInlineEnd] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(top)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(top)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[top] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[top] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(left)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(left)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[left] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[left] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(right)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(right)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[right] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[right] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(bottom)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(bottom)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[bottom] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[bottom] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset-block)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset-block)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-block] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-block] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetBlock] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetBlock] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset-block-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset-block-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-block-start] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-block-start] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetBlockStart] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetBlockStart] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset-block-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset-block-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-block-end] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-block-end] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetBlockEnd] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetBlockEnd] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset-inline)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset-inline)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-inline] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-inline] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetInline] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetInline] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset-inline-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset-inline-start)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-inline-start] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-inline-start] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetInlineStart] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetInlineStart] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inset-inline-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inset-inline-end)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-inline-end] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inset-inline-end] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetInlineEnd] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[insetInlineEnd] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(width)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(width)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[width] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[width] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(height)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(height)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[height] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[height] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(min-width)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(min-width)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-width] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-width] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minWidth] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minWidth] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(max-width)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(max-width)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-width] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-width] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxWidth] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxWidth] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(min-height)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(min-height)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-height] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-height] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minHeight] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minHeight] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(max-height)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(max-height)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-height] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-height] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxHeight] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxHeight] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(block-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(block-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[block-size] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[block-size] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[blockSize] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[blockSize] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(min-block-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(min-block-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-block-size] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-block-size] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minBlockSize] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minBlockSize] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(max-block-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(max-block-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-block-size] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-block-size] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxBlockSize] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxBlockSize] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(inline-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(inline-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inline-size] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inline-size] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inlineSize] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[inlineSize] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(min-inline-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(min-inline-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-inline-size] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[min-inline-size] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minInlineSize] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[minInlineSize] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(max-inline-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(max-inline-size)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-inline-size] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[max-inline-size] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxInlineSize] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[maxInlineSize] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(place-self)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(place-self)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[place-self] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[place-self] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[placeSelf] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[placeSelf] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(align-self)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(align-self)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[align-self] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[align-self] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[alignSelf] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[alignSelf] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(justify-self)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(justify-self)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[justify-self] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[justify-self] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[justifySelf] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[justifySelf] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(position-anchor)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(position-anchor)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[position-anchor] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[position-anchor] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[positionAnchor] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[positionAnchor] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(position-area)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(position-area)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[position-area] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[position-area] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[positionArea] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[positionArea] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(color)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(color)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[color] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[color] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(align-items)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(align-items)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[align-items] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[align-items] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[alignItems] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[alignItems] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(align-content)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(align-content)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[align-content] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[align-content] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[alignContent] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[alignContent] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(background)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(background)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[background] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[background] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(display)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(display)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[display] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[display] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(position)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(position)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[position] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[position] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(writing-mode)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(writing-mode)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[writing-mode] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[writing-mode] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[writingMode] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[writingMode] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(direction)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(direction)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[direction] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[direction] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.getPropertyValue(syntax)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors.setProperty(syntax)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[syntax] (set)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    },
+    {
+      "name": "CSSPositionTryDescriptors[syntax] (get)",
+      "status": 1,
+      "message": "Cannot read properties of undefined or null"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "CSSPositionTryRule attribute values",
+        "status": 1,
+        "message": "CSSPositionTryRule is not defined"
+      },
+      {
+        "name": "CSSPositionTryRule escaped ident name",
+        "status": 1,
+        "message": "CSSPositionTryRule is not defined"
+      },
+      {
+        "name": "CSSPositionTryRule.style.setProperty setting allowed and disallowed properties",
+        "status": 1,
+        "message": "assert_equals: expected 100 but got 0"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.item",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.cssText",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-top)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-top)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-top] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-top] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginTop] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginTop] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-right)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-right)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-right] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-right] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginRight] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginRight] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-bottom)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-bottom)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-bottom] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-bottom] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBottom] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBottom] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-left)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-left)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-left] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-left] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginLeft] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginLeft] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-block)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-block)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-block] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-block] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBlock] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBlock] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-block-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-block-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-block-start] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-block-start] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBlockStart] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBlockStart] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-block-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-block-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-block-end] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-block-end] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBlockEnd] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginBlockEnd] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-inline)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-inline)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-inline] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-inline] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginInline] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginInline] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-inline-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-inline-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-inline-start] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-inline-start] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginInlineStart] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginInlineStart] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(margin-inline-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(margin-inline-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-inline-end] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[margin-inline-end] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginInlineEnd] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[marginInlineEnd] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(top)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(top)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[top] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[top] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(left)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(left)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[left] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[left] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(right)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(right)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[right] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[right] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(bottom)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(bottom)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[bottom] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[bottom] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset-block)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset-block)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-block] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-block] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetBlock] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetBlock] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset-block-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset-block-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-block-start] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-block-start] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetBlockStart] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetBlockStart] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset-block-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset-block-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-block-end] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-block-end] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetBlockEnd] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetBlockEnd] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset-inline)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset-inline)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-inline] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-inline] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetInline] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetInline] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset-inline-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset-inline-start)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-inline-start] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-inline-start] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetInlineStart] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetInlineStart] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inset-inline-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inset-inline-end)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-inline-end] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inset-inline-end] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetInlineEnd] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[insetInlineEnd] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(width)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(width)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[width] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[width] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(height)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(height)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[height] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[height] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(min-width)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(min-width)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-width] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-width] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minWidth] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minWidth] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(max-width)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(max-width)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-width] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-width] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxWidth] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxWidth] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(min-height)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(min-height)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-height] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-height] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minHeight] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minHeight] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(max-height)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(max-height)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-height] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-height] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxHeight] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxHeight] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(block-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(block-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[block-size] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[block-size] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[blockSize] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[blockSize] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(min-block-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(min-block-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-block-size] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-block-size] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minBlockSize] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minBlockSize] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(max-block-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(max-block-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-block-size] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-block-size] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxBlockSize] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxBlockSize] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(inline-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(inline-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inline-size] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inline-size] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inlineSize] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[inlineSize] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(min-inline-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(min-inline-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-inline-size] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[min-inline-size] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minInlineSize] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[minInlineSize] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(max-inline-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(max-inline-size)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-inline-size] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[max-inline-size] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxInlineSize] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[maxInlineSize] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(place-self)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(place-self)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[place-self] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[place-self] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[placeSelf] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[placeSelf] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(align-self)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(align-self)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[align-self] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[align-self] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[alignSelf] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[alignSelf] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(justify-self)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(justify-self)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[justify-self] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[justify-self] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[justifySelf] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[justifySelf] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(position-anchor)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(position-anchor)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[position-anchor] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[position-anchor] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[positionAnchor] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[positionAnchor] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(position-area)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(position-area)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[position-area] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[position-area] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[positionArea] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[positionArea] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(color)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(color)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[color] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[color] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(align-items)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(align-items)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[align-items] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[align-items] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[alignItems] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[alignItems] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(align-content)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(align-content)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[align-content] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[align-content] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[alignContent] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[alignContent] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(background)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(background)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[background] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[background] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(display)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(display)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[display] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[display] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(position)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(position)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[position] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[position] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(writing-mode)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(writing-mode)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[writing-mode] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[writing-mode] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[writingMode] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[writingMode] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(direction)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(direction)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[direction] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[direction] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.getPropertyValue(syntax)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors.setProperty(syntax)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[syntax] (set)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      },
+      {
+        "name": "CSSPositionTryDescriptors[syntax] (get)",
+        "status": 1,
+        "message": "Cannot read properties of undefined or null"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/at-position-try-cssom.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:38965/css/css-anchor-position/at-position-try-cssom.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"CSSPositionTryRule attribute values\",\"status\":1,\"message\":\"CSSPositionTryRule is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryRule escaped ident name\",\"status\":1,\"message\":\"CSSPositionTryRule is not defined\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryRule.style.setProperty setting allowed and disallowed properties\",\"status\":1,\"message\":\"assert_equals: expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.item\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.cssText\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-top] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-top] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginTop] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginTop] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-right] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-right] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginRight] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginRight] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-bottom] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-bottom] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBottom] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBottom] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-left] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-left] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginLeft] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginLeft] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-block] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-block] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBlock] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBlock] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-block-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-block-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBlockStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBlockStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-block-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-block-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBlockEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginBlockEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-inline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-inline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginInline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginInline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-inline-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-inline-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginInlineStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginInlineStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(margin-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-inline-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[margin-inline-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginInlineEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[marginInlineEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[top] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[top] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[left] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[left] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[right] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[right] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[bottom] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[bottom] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-block] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-block] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetBlock] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetBlock] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-block-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-block-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetBlockStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetBlockStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-block-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-block-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetBlockEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetBlockEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-inline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-inline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetInline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetInline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-inline-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-inline-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetInlineStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetInlineStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inset-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-inline-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inset-inline-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetInlineEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[insetInlineEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[width] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[width] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[height] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[height] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(min-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-width] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-width] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minWidth] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minWidth] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(max-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-width] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-width] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxWidth] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxWidth] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(min-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-height] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-height] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minHeight] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minHeight] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(max-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-height] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-height] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxHeight] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxHeight] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[block-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[block-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[blockSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[blockSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(min-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-block-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-block-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minBlockSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minBlockSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(max-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-block-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-block-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxBlockSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxBlockSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inline-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inline-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inlineSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[inlineSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(min-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-inline-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[min-inline-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minInlineSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[minInlineSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(max-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-inline-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[max-inline-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxInlineSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[maxInlineSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(place-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(place-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[place-self] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[place-self] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[placeSelf] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[placeSelf] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(align-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(align-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[align-self] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[align-self] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[alignSelf] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[alignSelf] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(justify-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(justify-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[justify-self] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[justify-self] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[justifySelf] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[justifySelf] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(position-anchor)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(position-anchor)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[position-anchor] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[position-anchor] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[positionAnchor] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[positionAnchor] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(position-area)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(position-area)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[position-area] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[position-area] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[positionArea] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[positionArea] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(color)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(color)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[color] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[color] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(align-items)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(align-items)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[align-items] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[align-items] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[alignItems] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[alignItems] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(align-content)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(align-content)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[align-content] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[align-content] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[alignContent] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[alignContent] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(background)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(background)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[background] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[background] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(display)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(display)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[display] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[display] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(position)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(position)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[position] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[position] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(writing-mode)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(writing-mode)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[writing-mode] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[writing-mode] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[writingMode] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[writingMode] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(direction)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(direction)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[direction] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[direction] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.getPropertyValue(syntax)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors.setProperty(syntax)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[syntax] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_RESULT {\"name\":\"CSSPositionTryDescriptors[syntax] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"CSSPositionTryRule attribute values\",\"status\":1,\"message\":\"CSSPositionTryRule is not defined\"},{\"name\":\"CSSPositionTryRule escaped ident name\",\"status\":1,\"message\":\"CSSPositionTryRule is not defined\"},{\"name\":\"CSSPositionTryRule.style.setProperty setting allowed and disallowed properties\",\"status\":1,\"message\":\"assert_equals: expected 100 but got 0\"},{\"name\":\"CSSPositionTryDescriptors.item\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.cssText\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-top] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-top] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginTop] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginTop] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-right] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-right] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginRight] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginRight] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-bottom] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-bottom] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBottom] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBottom] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-left] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-left] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginLeft] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginLeft] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-block] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-block] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBlock] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBlock] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-block-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-block-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBlockStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBlockStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-block-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-block-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBlockEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginBlockEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-inline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-inline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginInline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginInline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-inline-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-inline-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginInlineStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginInlineStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(margin-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(margin-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-inline-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[margin-inline-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginInlineEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[marginInlineEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(top)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[top] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[top] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(left)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[left] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[left] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(right)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[right] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[right] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(bottom)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[bottom] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[bottom] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset-block)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-block] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-block] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetBlock] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetBlock] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset-block-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-block-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-block-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetBlockStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetBlockStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset-block-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-block-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-block-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetBlockEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetBlockEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset-inline)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-inline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-inline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetInline] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetInline] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset-inline-start)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-inline-start] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-inline-start] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetInlineStart] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetInlineStart] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inset-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inset-inline-end)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-inline-end] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inset-inline-end] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetInlineEnd] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[insetInlineEnd] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[width] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[width] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[height] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[height] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(min-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-width] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-width] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minWidth] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minWidth] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(max-width)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-width] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-width] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxWidth] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxWidth] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(min-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-height] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-height] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minHeight] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minHeight] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(max-height)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-height] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-height] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxHeight] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxHeight] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[block-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[block-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[blockSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[blockSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(min-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-block-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-block-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minBlockSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minBlockSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(max-block-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-block-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-block-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxBlockSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxBlockSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inline-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inline-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inlineSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[inlineSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(min-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(min-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-inline-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[min-inline-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minInlineSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[minInlineSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(max-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(max-inline-size)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-inline-size] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[max-inline-size] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxInlineSize] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[maxInlineSize] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(place-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(place-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[place-self] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[place-self] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[placeSelf] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[placeSelf] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(align-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(align-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[align-self] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[align-self] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[alignSelf] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[alignSelf] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(justify-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(justify-self)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[justify-self] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[justify-self] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[justifySelf] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[justifySelf] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(position-anchor)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(position-anchor)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[position-anchor] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[position-anchor] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[positionAnchor] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[positionAnchor] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(position-area)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(position-area)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[position-area] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[position-area] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[positionArea] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[positionArea] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(color)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(color)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[color] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[color] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(align-items)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(align-items)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[align-items] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[align-items] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[alignItems] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[alignItems] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(align-content)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(align-content)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[align-content] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[align-content] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[alignContent] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[alignContent] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(background)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(background)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[background] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[background] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(display)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(display)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[display] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[display] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(position)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(position)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[position] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[position] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(writing-mode)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(writing-mode)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[writing-mode] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[writing-mode] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[writingMode] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[writingMode] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(direction)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(direction)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[direction] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[direction] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.getPropertyValue(syntax)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors.setProperty(syntax)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[syntax] (set)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"},{\"name\":\"CSSPositionTryDescriptors[syntax] (get)\",\"status\":1,\"message\":\"Cannot read properties of undefined or null\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

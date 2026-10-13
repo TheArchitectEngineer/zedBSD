@@ -1,0 +1,600 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['position-try-fallbacks'] = \"initial\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"inherit\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"unset\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"revert\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"none\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-block\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-block \" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start, flip-block\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start flip-inline, flip-block\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start, flip-start\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start flip-inline flip-block\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-block, --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar, flip-block flip-start\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo, --bar, --baz\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar flip-block\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar flip-inline flip-block\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-inline --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-inline flip-start --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"left top\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"top left\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"start start\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"left, right\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo, left\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo, left, --bar\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo, flip-start, left\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo flip-start, left\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"left, --bar flip-start\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-x \" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start, flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start flip-y, flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start flip-y flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-x, --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar, flip-x flip-start\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar flip-y flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-y --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-y flip-start --foo\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start flip-inline flip-y flip-block flip-x\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"none, flip-start\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-block flip-block\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-block flip-inline flip-inline\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-block, flip-inline flip-inline\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--bar flip-block --foo\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo --bar\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-inline --bar flip-block\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"-foo\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"foo\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start 123\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo 123\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo left\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-start left\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"left --foo \" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"left flip-start\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"--foo, none\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"none, flip-x\" should not set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['position-try-fallbacks'] = \"flip-y flip-y\" should not set the property value",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['position-try-fallbacks'] = \"initial\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"inherit\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"unset\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"revert\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"none\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-block\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-block \" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start, flip-block\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start flip-inline, flip-block\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start, flip-start\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start flip-inline flip-block\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-block, --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar, flip-block flip-start\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo, --bar, --baz\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar flip-block\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar flip-inline flip-block\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-inline --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-inline flip-start --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"left top\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"top left\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"start start\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"left, right\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo, left\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo, left, --bar\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo, flip-start, left\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo flip-start, left\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"left, --bar flip-start\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-x \" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start, flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start flip-y, flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start flip-y flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-x, --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar, flip-x flip-start\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar flip-y flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-y --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-y flip-start --foo\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start flip-inline flip-y flip-block flip-x\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"none, flip-start\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-block flip-block\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-block flip-inline flip-inline\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-block, flip-inline flip-inline\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--bar flip-block --foo\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo --bar\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-inline --bar flip-block\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"-foo\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"foo\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start 123\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo 123\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo left\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-start left\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"left --foo \" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"left flip-start\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"--foo, none\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"none, flip-x\" should not set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['position-try-fallbacks'] = \"flip-y flip-y\" should not set the property value",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/parsing/position-try-fallbacks-parsing.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:45391/css/css-anchor-position/parsing/position-try-fallbacks-parsing.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"initial\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"inherit\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"unset\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"revert\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"none\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block \\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start, flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-inline, flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start, flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-inline flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block, --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar, flip-block flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, --bar, --baz\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-inline flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-inline --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-inline flip-start --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"left top\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"top left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"start start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"left, right\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, left, --bar\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, flip-start, left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo flip-start, left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"left, --bar flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-x \\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start, flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-y, flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-y flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-x, --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar, flip-x flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-y flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-y --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-y flip-start --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-inline flip-y flip-block flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"none, flip-start\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block flip-block\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block flip-inline flip-inline\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block, flip-inline flip-inline\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-block --foo\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo --bar\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-inline --bar flip-block\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"-foo\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"foo\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start 123\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo 123\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo left\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start left\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"left --foo \\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"left flip-start\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, none\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"none, flip-x\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-y flip-y\\\" should not set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['position-try-fallbacks'] = \\\"initial\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"inherit\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"unset\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"revert\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"none\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block \\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start, flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-inline, flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start, flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-inline flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block, --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar, flip-block flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, --bar, --baz\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-inline flip-block\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-inline --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-inline flip-start --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"left top\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"top left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"start start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"left, right\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, left, --bar\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, flip-start, left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo flip-start, left\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"left, --bar flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-x \\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start, flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-y, flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-y flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-x, --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar, flip-x flip-start\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-y flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-y --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-y flip-start --foo\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start flip-inline flip-y flip-block flip-x\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"none, flip-start\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block flip-block\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block flip-inline flip-inline\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-block, flip-inline flip-inline\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--bar flip-block --foo\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo --bar\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-inline --bar flip-block\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"-foo\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"foo\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start 123\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo 123\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo left\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-start left\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"left --foo \\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"left flip-start\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"--foo, none\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"none, flip-x\\\" should not set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['position-try-fallbacks'] = \\\"flip-y flip-y\\\" should not set the property value\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

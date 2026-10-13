@@ -1,0 +1,230 @@
+{
+  "outcome": "harness_error",
+  "result_callbacks": [
+    {
+      "name": "Element can be anchor positioned",
+      "status": 1,
+      "message": "assert_equals: expected \"125px\" but got \"auto\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Element can be anchor positioned",
+        "status": 1,
+        "message": "assert_equals: expected \"125px\" but got \"auto\""
+      },
+      {
+        "name": "Element can use <length> fallback if present",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Element can use <length> fallback with percentage",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Element can use <length> fallback for max size with percentage",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Element can use <length> fallback for margin with percentage",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, left",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, right",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, bottom",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, top",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, width",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, height",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, min-width",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, min-height",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, max-width",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, max-height",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, --unknown left",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, --unknown width",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, cross-axis query (vertical)",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function,  cross-axis query (horizontal)",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, anchor() in sizing property",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested left",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested right",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested bottom",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested top",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested min-width",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested min-height",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested max-width",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, nested max-height",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, invalid anchor() in fallback",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, invalid anchor-size() in fallback",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, min()",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, max()",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, abs()",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, sign()",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, anchor(var())",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, anchor(unknown var()) (fallback)",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Invalid anchor function, anchor(unknown var()) (no fallback)",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Revert to invalid anchor()",
+        "status": 3,
+        "message": ""
+      },
+      {
+        "name": "Flip to invalid anchor()",
+        "status": 3,
+        "message": ""
+      }
+    ],
+    "status": 1,
+    "message": "Test named 'Element can be anchor positioned' specified 1 'cleanup' function, and 1 failed."
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/anchor-invalid-fallback.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:32977/css/css-anchor-position/anchor-invalid-fallback.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Element can be anchor positioned\",\"status\":1,\"message\":\"assert_equals: expected \\\"125px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Element can be anchor positioned\",\"status\":1,\"message\":\"assert_equals: expected \\\"125px\\\" but got \\\"auto\\\"\"},{\"name\":\"Element can use <length> fallback if present\",\"status\":3,\"message\":\"\"},{\"name\":\"Element can use <length> fallback with percentage\",\"status\":3,\"message\":\"\"},{\"name\":\"Element can use <length> fallback for max size with percentage\",\"status\":3,\"message\":\"\"},{\"name\":\"Element can use <length> fallback for margin with percentage\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, left\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, right\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, bottom\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, top\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, width\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, height\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, min-width\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, min-height\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, max-width\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, max-height\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, --unknown left\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, --unknown width\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, cross-axis query (vertical)\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function,  cross-axis query (horizontal)\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, anchor() in sizing property\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested left\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested right\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested bottom\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested top\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested min-width\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested min-height\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested max-width\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, nested max-height\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, invalid anchor() in fallback\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, invalid anchor-size() in fallback\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, min()\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, max()\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, abs()\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, sign()\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, anchor(var())\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, anchor(unknown var()) (fallback)\",\"status\":3,\"message\":\"\"},{\"name\":\"Invalid anchor function, anchor(unknown var()) (no fallback)\",\"status\":3,\"message\":\"\"},{\"name\":\"Revert to invalid anchor()\",\"status\":3,\"message\":\"\"},{\"name\":\"Flip to invalid anchor()\",\"status\":3,\"message\":\"\"}],\"status\":1,\"message\":\"Test named 'Element can be anchor positioned' specified 1 'cleanup' function, and 1 failed.\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

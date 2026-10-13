@@ -1,0 +1,590 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "top: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "bottom: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "left: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "right: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset-block-start: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset-block-end: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset-inline-start: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset-inline-end: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset-block: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset-inline: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "position-area: span-all is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-top: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-bottom: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-left: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-right: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-block-start: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-block-end: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-inline-start: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-inline-end: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-block: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin-inline: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "margin: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "width: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "height: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "block-size: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inline-size: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "min-width: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "min-height: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "min-block-size: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "min-inline-size: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "max-width: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "max-height: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "max-block-size: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "max-inline-size: 1px is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "justify-self: normal is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "align-self: normal is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "place-self: normal is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "position-anchor: --anchor is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "--custom: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "font-size: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "border-width: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "padding: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "display: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "position: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "float: 1px is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "justify-content: normal is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "align-content: normal is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "justify-items: normal is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "align-items: normal is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "top: revert is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "top: revert-layer is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset: revert is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset: revert-layer is allowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "top: 1px !important is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    },
+    {
+      "name": "inset: 1px !important is disallowed in @position-try",
+      "status": 1,
+      "message": "The input is not one supported CSS rule."
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "top: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "bottom: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "left: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "right: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset-block-start: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset-block-end: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset-inline-start: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset-inline-end: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset-block: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset-inline: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "position-area: span-all is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-top: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-bottom: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-left: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-right: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-block-start: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-block-end: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-inline-start: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-inline-end: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-block: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin-inline: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "margin: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "width: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "height: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "block-size: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inline-size: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "min-width: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "min-height: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "min-block-size: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "min-inline-size: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "max-width: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "max-height: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "max-block-size: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "max-inline-size: 1px is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "justify-self: normal is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "align-self: normal is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "place-self: normal is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "position-anchor: --anchor is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "--custom: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "font-size: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "border-width: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "padding: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "display: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "position: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "float: 1px is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "justify-content: normal is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "align-content: normal is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "justify-items: normal is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "align-items: normal is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "top: revert is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "top: revert-layer is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset: revert is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset: revert-layer is allowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "top: 1px !important is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      },
+      {
+        "name": "inset: 1px !important is disallowed in @position-try",
+        "status": 1,
+        "message": "The input is not one supported CSS rule."
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/at-position-try-allowed-declarations.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:36609/css/css-anchor-position/at-position-try-allowed-declarations.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"top: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"bottom: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"left: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"right: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset-block-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset-block-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset-inline-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset-inline-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset-block: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset-inline: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"position-area: span-all is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-top: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-bottom: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-left: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-right: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-block-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-block-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-inline-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-inline-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-block: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin-inline: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"margin: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"width: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"height: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"block-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inline-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"min-width: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"min-height: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"min-block-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"min-inline-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"max-width: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"max-height: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"max-block-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"max-inline-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"justify-self: normal is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"align-self: normal is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"place-self: normal is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"position-anchor: --anchor is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"--custom: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"font-size: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"border-width: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"padding: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"display: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"position: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"float: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"justify-content: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"align-content: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"justify-items: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"align-items: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"top: revert is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"top: revert-layer is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset: revert is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset: revert-layer is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"top: 1px !important is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_RESULT {\"name\":\"inset: 1px !important is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"top: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"bottom: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"left: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"right: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset-block-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset-block-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset-inline-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset-inline-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset-block: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset-inline: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"position-area: span-all is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-top: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-bottom: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-left: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-right: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-block-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-block-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-inline-start: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-inline-end: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-block: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin-inline: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"margin: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"width: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"height: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"block-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inline-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"min-width: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"min-height: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"min-block-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"min-inline-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"max-width: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"max-height: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"max-block-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"max-inline-size: 1px is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"justify-self: normal is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"align-self: normal is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"place-self: normal is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"position-anchor: --anchor is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"--custom: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"font-size: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"border-width: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"padding: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"display: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"position: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"float: 1px is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"justify-content: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"align-content: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"justify-items: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"align-items: normal is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"top: revert is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"top: revert-layer is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset: revert is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset: revert-layer is allowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"top: 1px !important is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"},{\"name\":\"inset: 1px !important is disallowed in @position-try\",\"status\":1,\"message\":\"The input is not one supported CSS rule.\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

@@ -1,0 +1,60 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": ".anchored 1",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"anchored exceeds-end\" data-offset-x=\"22\" data-offset-y=\"11\"></div>\noffsetLeft expected 22 but got 0"
+    },
+    {
+      "name": ".anchored 2",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"anchored ltr vlr exceeds-start\" data-offset-x=\"22\" data-offset-y=\"11\"></div>\noffsetLeft expected 22 but got 0"
+    },
+    {
+      "name": ".anchored 3",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"anchored exceeds-size\" data-offset-x=\"22\" data-offset-y=\"11\"></div>\noffsetLeft expected 22 but got 0"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": ".anchored 1",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"anchored exceeds-end\" data-offset-x=\"22\" data-offset-y=\"11\"></div>\noffsetLeft expected 22 but got 0"
+      },
+      {
+        "name": ".anchored 2",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"anchored ltr vlr exceeds-start\" data-offset-x=\"22\" data-offset-y=\"11\"></div>\noffsetLeft expected 22 but got 0"
+      },
+      {
+        "name": ".anchored 3",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"anchored exceeds-size\" data-offset-x=\"22\" data-offset-y=\"11\"></div>\noffsetLeft expected 22 but got 0"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/position-try-003.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:43957/css/css-anchor-position/position-try-003.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\".anchored 1\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"anchored exceeds-end\\\" data-offset-x=\\\"22\\\" data-offset-y=\\\"11\\\"></div>\\noffsetLeft expected 22 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".anchored 2\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"anchored ltr vlr exceeds-start\\\" data-offset-x=\\\"22\\\" data-offset-y=\\\"11\\\"></div>\\noffsetLeft expected 22 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".anchored 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"anchored exceeds-size\\\" data-offset-x=\\\"22\\\" data-offset-y=\\\"11\\\"></div>\\noffsetLeft expected 22 but got 0\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\".anchored 1\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"anchored exceeds-end\\\" data-offset-x=\\\"22\\\" data-offset-y=\\\"11\\\"></div>\\noffsetLeft expected 22 but got 0\"},{\"name\":\".anchored 2\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"anchored ltr vlr exceeds-start\\\" data-offset-x=\\\"22\\\" data-offset-y=\\\"11\\\"></div>\\noffsetLeft expected 22 but got 0\"},{\"name\":\".anchored 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"anchored exceeds-size\\\" data-offset-x=\\\"22\\\" data-offset-y=\\\"11\\\"></div>\\noffsetLeft expected 22 but got 0\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

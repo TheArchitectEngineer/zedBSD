@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1062 / WS074 static reftest re-census（2026-10-14）
+## 最新: q1063 / WS074 testharness census shard 0（2026-10-14）
+
+[q1063履歴](queue-q1063.md): 現行単一HTTP候補1,455件中128件実測18 PASS/110非PASS。checkpoint/report/raw一致。[証拠](../ws074/phase189/evidence/20261014-q1063/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1062 / WS074 static reftest re-census（2026-10-14）
 
 [q1062履歴](queue-q1062.md): 固定静的1,561 IDは662 local PASS/899 pixel FAIL/0 error/0 timeout。q1060比2 FAIL→PASS/0 PASS→FAIL。[証拠](../ws074/phase190/evidence/20261014-q1062/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
 

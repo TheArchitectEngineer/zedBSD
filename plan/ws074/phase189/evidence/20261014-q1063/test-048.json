@@ -1,0 +1,28 @@
+{
+  "outcome": "harness_error",
+  "result_callbacks": [],
+  "completion": {
+    "tests": [],
+    "status": 1,
+    "message": "Error: assert_own_property: expected property \"registerProperty\" missing"
+  },
+  "json_errors": [],
+  "test_id": "/css/css-anchor-position/anchor-query-custom-property-registration.html",
+  "focus": [
+    "anchor-positioning"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "http://127.0.0.1:42153/css/css-anchor-position/anchor-query-custom-property-registration.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_COMPLETE {\"tests\":[],\"status\":1,\"message\":\"Error: assert_own_property: expected property \\\"registerProperty\\\" missing\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}
