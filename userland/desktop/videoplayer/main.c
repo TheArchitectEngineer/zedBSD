@@ -60,6 +60,14 @@
 #define VP_STEP			10.0
 #define VP_SEEK_US		150000U
 
+/*
+ * After the end of the file, a heard position that stands still this long
+ * (us) is the end of the sound (BUG-300); and how often the clock is logged
+ * while playing (us).
+ */
+#define VP_END_STALL_US		500000U
+#define VP_CLOCK_LOG_US		1000000U
+
 /* The evdev codes of the keys. */
 #define VP_KEY_ESC		1U
 #define VP_KEY_Q		16U
@@ -117,6 +125,19 @@ struct vp_player {
 	unsigned shown;
 	int need_picture;
 
+	/*
+	 * The watch on the sound after the end of the file: the position heard
+	 * when it last moved, and when (us).  A position that stands still after
+	 * the end is the end (BUG-300).  It starts again whenever the player is
+	 * not playing at the end.
+	 */
+	int end_watching;
+	uint64_t end_heard;
+	uint64_t end_heard_us;
+
+	/* When the clock was last logged (us, 0 for never). */
+	uint64_t clock_logged_us;
+
 	/* The bar: shown until a time; the position while dragged and the last seek it asked. */
 	uint64_t bar_until;
 	double position;
@@ -167,6 +188,8 @@ static void vp_choose(struct vp_player *player);
 static void vp_chosen(void *data, struct kl_file_chooser *chooser, unsigned result, const char *path, size_t filter);
 static int vp_resize(struct vp_player *player);
 static void vp_draw(struct vp_player *player, uint64_t now_us);
+static int vp_played_out(struct vp_player *player, double clock, uint64_t now_us);
+static void vp_log_clock(struct vp_player *player, double clock, int played_out, uint64_t now_us);
 static void vp_draw_picture(struct vp_player *player);
 static void vp_notice(struct vp_player *player, int error, int problem);
 static void vp_draw_bar(struct vp_player *player, uint64_t now_us);
@@ -754,13 +777,12 @@ vp_draw(
 	uint64_t shown_us;
 	uint64_t after_ms;
 	double clock;
+	double due;
 	double time;
 	double next;
 	int status;
 	int failure;
 	int played_out;
-	uint64_t read_frames;
-	uint64_t written_frames;
 
 	/* A decoder failure is a user-visible playback state, rather than an apparent end of the file. */
 	(void)pthread_mutex_lock(&player->media.lock);
@@ -772,9 +794,22 @@ vp_draw(
 		player->dirty = 1;
 	}
 
-	/* The picture whose time has come (the first one at once after an open or a seek). */
+	/* The clock, and whether the sound has played out at the end of the file. */
 	clock = vp_media_clock(&player->media);
-	picture = vp_media_take(&player->media, clock, &time, &next);
+	played_out = vp_played_out(player, clock, now_us);
+
+	/* The clock's reckoning, once a second while playing (BUG-300). */
+	vp_log_clock(player, clock, played_out, now_us);
+
+	/*
+	 * The picture whose time has come (the first one at once after an open
+	 * or a seek).  Once the sound has played out, every picture left is due:
+	 * the clock stops short of the end with the position heard (BUG-300).
+	 */
+	due = clock;
+	if (played_out)
+		due = HUGE_VAL;
+	picture = vp_media_take(&player->media, due, &time, &next);
 	if (picture == NULL && player->need_picture && next >= 0.0)
 		picture = vp_media_take(&player->media, next, &time, &next);
 	if (picture != NULL) {
@@ -788,25 +823,13 @@ vp_draw(
 			vp_log("FRAMES shown=%u time_ms=%lld late=%u", player->shown, (long long)(time * 1000.0), player->media.late);
 	}
 
-	/* The end of the file: the last picture shown and nothing left. */
+	/* The end of the file, published once the sound has played out and the last picture is taken. */
 	(void)pthread_mutex_lock(&player->media.lock);
-	played_out = 0;
-	if (player->media.has_audio) {
-		read_frames = vp_audio_read_position(&player->audio);
-		written_frames = vp_audio_write_position(&player->audio);
-		if (read_frames >= written_frames)
-			played_out = 1;
-	} else if (player->media.duration <= 0.0 || clock >= player->media.duration) {
-		played_out = 1;
-	}
 
-	/* Publish end only after both due pictures and sound have been presented. */
 	if (
+		played_out &&
 		player->media.state == VP_PLAYING &&
-		player->media.eof &&
-		player->media.picture_count == 0U &&
-		clock >= player->picture_time &&
-		played_out) {
+		player->media.picture_count == 0U) {
 		/* The clock stays at the end (BUG-300), as the slider and the time show it while ended. */
 		player->media.clock_time = clock;
 		if (player->media.duration > clock)
@@ -817,7 +840,6 @@ vp_draw(
 		player->dirty = 1;
 	}
 
-	/* The media is the thread's again. */
 	(void)pthread_mutex_unlock(&player->media.lock);
 
 	/* Nothing changed: no frame. */
@@ -850,6 +872,132 @@ vp_draw(
 			after_ms = (shown_us - player->resized_us) / 1000U;
 		vp_log("PRESENTED width=%u height=%u after_ms=%llu", player->width, player->height, (unsigned long long)after_ms);
 	}
+}
+
+/*
+ * Tells whether the sound has played out at the end of the file while playing (BUG-300):
+ * the device side has taken all the sound written but the last frame at most, or the
+ * position heard has stood still for a while; without sound, the clock is at the length.
+ */
+static int
+vp_played_out(
+	struct vp_player *player,
+	double clock,
+	uint64_t now_us)
+{
+	uint64_t read_frames;
+	uint64_t written_frames;
+	uint64_t heard_frames;
+	double duration;
+	unsigned state;
+	int has_audio;
+	int seeking;
+	int eof;
+
+	/* The media's state, and whether the reader has come to the end of the file. */
+	(void)pthread_mutex_lock(&player->media.lock);
+
+	state = player->media.state;
+	eof = player->media.eof;
+	seeking = player->media.seek_wanted;
+	has_audio = player->media.has_audio;
+	duration = player->media.duration;
+
+	(void)pthread_mutex_unlock(&player->media.lock);
+
+	/* Not playing at the end, or a seek on its way: not played out, and the watch on the sound starts again. */
+	if (state != VP_PLAYING || !eof || seeking) {
+		player->end_watching = 0;
+		return 0;
+	}
+
+	/* Without sound, the end comes with the clock at the length (or at once without one). */
+	if (!has_audio) {
+		if (duration <= 0.0)
+			return 1;
+		if (clock >= duration)
+			return 1;
+		return 0;
+	}
+
+	/*
+	 * The device side has taken all the sound written.  The rate converter
+	 * keeps a last frame waiting for a next one to blend towards, which never
+	 * comes, so one frame short is the end as well.
+	 */
+	read_frames = vp_audio_read_position(&player->audio);
+	written_frames = vp_audio_write_position(&player->audio);
+	if (read_frames + 1U >= written_frames)
+		return 1;
+
+	/* The position heard: one that moved starts the watch again from now. */
+	heard_frames = vp_audio_clock_position(&player->audio);
+	if (!player->end_watching || heard_frames != player->end_heard) {
+		player->end_watching = 1;
+		player->end_heard = heard_frames;
+		player->end_heard_us = now_us;
+		return 0;
+	}
+
+	/* A position heard that has stood still since the end of the file is the end of the sound. */
+	if (now_us - player->end_heard_us >= VP_END_STALL_US)
+		return 1;
+
+	/* Succeeded: the sound is still playing out. */
+	return 0;
+}
+
+/* Logs the clock, the sound's counts and the pictures waiting, once a second while playing (BUG-300). */
+static void
+vp_log_clock(
+	struct vp_player *player,
+	double clock,
+	int played_out,
+	uint64_t now_us)
+{
+	uint64_t heard_frames;
+	uint64_t written_frames;
+	uint64_t read_frames;
+	unsigned pictures;
+	unsigned late;
+	unsigned state;
+	int eof;
+
+	/* Not a second since the last line. */
+	if (player->clock_logged_us != 0U && now_us - player->clock_logged_us < VP_CLOCK_LOG_US)
+		return;
+
+	/* The media's state and the pictures decoded ahead. */
+	(void)pthread_mutex_lock(&player->media.lock);
+
+	state = player->media.state;
+	eof = player->media.eof;
+	pictures = player->media.picture_count;
+	late = player->media.late;
+
+	(void)pthread_mutex_unlock(&player->media.lock);
+
+	/* Only while playing. */
+	if (state != VP_PLAYING)
+		return;
+
+	/* The sound's counts: the position heard, the frames written, and the frames the device side took. */
+	heard_frames = vp_audio_clock_position(&player->audio);
+	written_frames = vp_audio_write_position(&player->audio);
+	read_frames = vp_audio_read_position(&player->audio);
+
+	/* The line, and when it was written. */
+	vp_log("CLOCK time_ms=%lld heard=%llu written=%llu consumed=%llu pictures=%u late=%u eof=%d out=%d state=%u",
+	    (long long)(clock * 1000.0),
+	    (unsigned long long)heard_frames,
+	    (unsigned long long)written_frames,
+	    (unsigned long long)read_frames,
+	    pictures,
+	    late,
+	    eof,
+	    played_out,
+	    state);
+	player->clock_logged_us = now_us;
 }
 
 /* Draws the picture fitted to the window, black around it (or black alone). */
