@@ -317,8 +317,10 @@ vm_heap_mark(
 		/* The mark says the cell is reached and queued; it is traced once. */
 		heap_set_bit(block->marked, index);
 	} else {
-		/* A cell outside every block is a large one. */
-		large = (struct vm_large *)((unsigned char *)cell - HEAP_LARGE_HEADER);
+		/* Only a registered large allocation is a GC cell; manual realms are external. */
+		large = heap_large_of(heap, (uintptr_t)cell);
+		if (large == NULL || heap_large_cell(large) != cell)
+			return;
 		if (large->marked)
 			return;
 

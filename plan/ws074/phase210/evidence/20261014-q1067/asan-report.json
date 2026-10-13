@@ -1,0 +1,748 @@
+{
+  "outcome": "process_error",
+  "result_callbacks": [
+    {
+      "name": "grid-1.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"1008px\""
+    },
+    {
+      "name": "grid-1.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-1.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-1.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-1.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-1.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-2.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-2.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-2.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-2.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-2.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-2.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-3.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-3.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-3.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-3.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-3.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-3.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-4.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-4.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-4.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-4.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-4.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-4.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-5.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-5.height",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"200px\""
+    },
+    {
+      "name": "grid-5.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"auto\""
+    },
+    {
+      "name": "grid-5.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"\""
+    },
+    {
+      "name": "img-5.width",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"200px\""
+    },
+    {
+      "name": "img-5.height",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"200px\""
+    },
+    {
+      "name": "grid-6.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-6.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-6.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"auto\""
+    },
+    {
+      "name": "grid-6.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"\""
+    },
+    {
+      "name": "img-6.width",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"200px\""
+    },
+    {
+      "name": "img-6.height",
+      "status": 1,
+      "message": "assert_equals: expected \"50px\" but got \"200px\""
+    },
+    {
+      "name": "grid-7.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"1008px\""
+    },
+    {
+      "name": "grid-7.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-7.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-7.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-7.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-7.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-8.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-8.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-8.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-8.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-8.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-8.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-9.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-9.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-9.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-9.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-9.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-9.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-10.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-10.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-10.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-10.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-10.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-10.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-11.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-11.height",
+      "status": 1,
+      "message": "assert_equals: expected \"125px\" but got \"225px\""
+    },
+    {
+      "name": "grid-11.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"100px\" but got \"auto\""
+    },
+    {
+      "name": "grid-11.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"100px 25px\" but got \"\""
+    },
+    {
+      "name": "img-11.width",
+      "status": 1,
+      "message": "assert_equals: expected \"100px\" but got \"200px\""
+    },
+    {
+      "name": "img-11.height",
+      "status": 1,
+      "message": "assert_equals: expected \"100px\" but got \"200px\""
+    },
+    {
+      "name": "grid-12.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-12.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-12.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"100px\" but got \"auto\""
+    },
+    {
+      "name": "grid-12.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"100px 25px\" but got \"\""
+    },
+    {
+      "name": "img-12.width",
+      "status": 1,
+      "message": "assert_equals: expected \"100px\" but got \"200px\""
+    },
+    {
+      "name": "img-12.height",
+      "status": 1,
+      "message": "assert_equals: expected \"100px\" but got \"200px\""
+    },
+    {
+      "name": "grid-13.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"1008px\""
+    },
+    {
+      "name": "grid-13.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-13.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-13.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-13.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-13.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-14.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-14.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-14.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-14.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-14.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-14.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-15.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-15.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-15.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-15.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-15.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-15.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-16.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-16.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-16.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-16.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-16.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-16.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-17.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-17.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-17.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-17.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-17.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-17.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-18.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-18.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-18.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-18.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"\""
+    },
+    {
+      "name": "img-18.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-18.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-19.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"1008px\""
+    },
+    {
+      "name": "grid-19.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-19.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-19.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-19.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-19.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-20.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-20.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-20.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-20.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-20.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "img-20.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-21.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-21.height",
+      "status": 1,
+      "message": "assert_equals: expected \"225px\" but got \"525px\""
+    },
+    {
+      "name": "grid-21.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-21.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-21.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-21.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-22.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-22.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-22.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-22.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-22.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-22.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-23.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-23.height",
+      "status": 1,
+      "message": "assert_equals: expected \"225px\" but got \"525px\""
+    },
+    {
+      "name": "grid-23.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-23.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-23.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-23.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "grid-24.width",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-24.height",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "grid-24.gridTemplateColumns",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "name": "grid-24.gridTemplateRows",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 25px\" but got \"\""
+    },
+    {
+      "name": "img-24.width",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    },
+    {
+      "name": "img-24.height",
+      "status": 1,
+      "message": "assert_equals: expected \"200px\" but got \"500px\""
+    }
+  ],
+  "completion": null,
+  "json_errors": [],
+  "test_id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-021.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "e6bef989f18938d80a4a2ce449506211e5a8f22dd9a254dc2d8d73da1a2cd40e",
+  "command": [
+    "build/ws074-host/asan/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:46877/css/css-grid/grid-items/grid-minimum-size-grid-items-021.html"
+  ],
+  "returncode": 1,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"grid-1.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"1008px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-1.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-1.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-1.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-1.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-1.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-2.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-2.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-2.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-2.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-2.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-2.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-3.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-3.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-3.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-3.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-3.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-3.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-4.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-4.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-4.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-4.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-4.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-4.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-5.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-5.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-5.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-5.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-5.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-5.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-6.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-6.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-6.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-6.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-6.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-6.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-7.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"1008px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-7.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-7.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-7.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-7.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-7.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-8.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-8.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-8.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-8.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-8.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-8.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-9.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-9.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-9.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-9.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-9.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-9.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-10.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-10.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-10.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-10.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-10.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-10.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-11.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-11.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"125px\\\" but got \\\"225px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-11.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-11.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-11.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-11.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-12.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-12.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-12.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-12.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-12.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-12.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"100px\\\" but got \\\"200px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-13.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"1008px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-13.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-13.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-13.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-13.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-13.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-14.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-14.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-14.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-14.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-14.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-14.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-15.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-15.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-15.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-15.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-15.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-15.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-16.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-16.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-16.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-16.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-16.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-16.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-17.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-17.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-17.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-17.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-17.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-17.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-18.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-18.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-18.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-18.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-18.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-18.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-19.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"1008px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-19.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-19.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-19.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-19.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-19.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-20.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-20.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-20.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-20.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-20.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"img-20.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-21.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-21.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"225px\\\" but got \\\"525px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-21.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-21.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-21.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-21.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-22.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-22.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-22.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-22.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-22.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-22.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-23.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-23.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"225px\\\" but got \\\"525px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-23.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-23.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-23.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-23.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-24.width\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-24.height\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-24.gridTemplateColumns\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-24.gridTemplateRows\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 25px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-24.width\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"img-24.height\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px\\\" but got \\\"500px\\\"\"}\n",
+  "stderr": "=================================================================\n==1972352==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x516000000068 at pc 0x7fe0b696d9e2 bp 0x7fffe0078320 sp 0x7fffe0078318\nREAD of size 4 at 0x516000000068 thread T0\n    #0 0x7fe0b696d9e1 in vm_heap_mark userland/desktop/libbrowser/vm/heap.c:322\n    #1 0x7fe0b6975ebf in vm_heap_mark_value userland/desktop/libbrowser/vm/object.c:87\n    #2 0x7fe0b6976309 in vm_object_trace userland/desktop/libbrowser/vm/object.c:1136\n    #3 0x7fe0b696ec19 in heap_drain userland/desktop/libbrowser/vm/heap.c:933\n    #4 0x7fe0b696ec19 in vm_heap_collect userland/desktop/libbrowser/vm/heap.c:275\n    #5 0x7fe0b696fd42 in vm_heap_alloc userland/desktop/libbrowser/vm/heap.c:204\n    #6 0x7fe0b6971fee in vm_string_alloc userland/desktop/libbrowser/vm/string.c:463\n    #7 0x7fe0b6972138 in vm_string_from_latin1 userland/desktop/libbrowser/vm/string.c:49\n    #8 0x7fe0b697343f in vm_atom_from_ascii userland/desktop/libbrowser/vm/atom.c:90\n    #9 0x7fe0b697669a in vm_key_from_ascii userland/desktop/libbrowser/vm/object.c:241\n    #10 0x7fe0b698fdc8 in vm_set userland/desktop/libbrowser/vm/access.c:266\n    #11 0x7fe0b6a0699a in array_set userland/desktop/libbrowser/js/builtin_array.c:2111\n    #12 0x7fe0b6a12881 in array_slice userland/desktop/libbrowser/js/builtin_array.c:1468\n    #13 0x7fe0b697b164 in function_run_native userland/desktop/libbrowser/vm/function.c:1032\n    #14 0x7fe0b697e5a2 in vm_call userland/desktop/libbrowser/vm/function.c:673\n    #15 0x7fe0b69ad2af in interpreter_call userland/desktop/libbrowser/vm/interpreter.c:1436\n    #16 0x7fe0b69ad2af in interpreter_step userland/desktop/libbrowser/vm/interpreter.c:618\n    #17 0x7fe0b69ad2af in interpreter_run userland/desktop/libbrowser/vm/interpreter.c:544\n    #18 0x7fe0b69b1ec6 in interpreter_enter userland/desktop/libbrowser/vm/interpreter.c:329\n    #19 0x7fe0b69b2117 in vm_interpret userland/desktop/libbrowser/vm/interpreter.c:138\n    #20 0x7fe0b697e485 in vm_call userland/desktop/libbrowser/vm/function.c:654\n    #21 0x7fe0b6a02a01 in function_call userland/desktop/libbrowser/js/builtin_function.c:246\n    #22 0x7fe0b697b164 in function_run_native userland/desktop/libbrowser/vm/function.c:1032\n    #23 0x7fe0b697e5a2 in vm_call userland/desktop/libbrowser/vm/function.c:673\n    #24 0x7fe0b69ad2af in interpreter_call userland/desktop/libbrowser/vm/interpreter.c:1436\n    #25 0x7fe0b69ad2af in interpreter_step userland/desktop/libbrowser/vm/interpreter.c:618\n    #26 0x7fe0b69ad2af in interpreter_run userland/desktop/libbrowser/vm/interpreter.c:544\n    #27 0x7fe0b69b1ec6 in interpreter_enter userland/desktop/libbrowser/vm/interpreter.c:329\n    #28 0x7fe0b69b2117 in vm_interpret userland/desktop/libbrowser/vm/interpreter.c:138\n    #29 0x7fe0b697e485 in vm_call userland/desktop/libbrowser/vm/function.c:654\n    #30 0x7fe0b699ec4a in promise_run_reaction userland/desktop/libbrowser/vm/promise.c:686\n    #31 0x7fe0b699ec4a in vm_promise_run_job userland/desktop/libbrowser/vm/promise.c:384\n    #32 0x7fe0b6980382 in vm_run_jobs userland/desktop/libbrowser/vm/realm.c:181\n    #33 0x7fe0b6af2bee in bind_checkpoint userland/desktop/libbrowser/bind/window.c:424\n    #34 0x7fe0b6bfea64 in browser_view_settle userland/desktop/libbrowser/view/view.c:1447\n    #35 0x564234593012 in main_open userland/desktop/browser/main.c:430\n    #36 0x564234595b62 in main_run_page userland/desktop/browser/main.c:351\n    #37 0x564234595b62 in main userland/desktop/browser/main.c:206\n    #38 0x7fe0b5a35ca7  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)\n    #39 0x7fe0b5a35d64 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)\n    #40 0x564234592390 in _start (/home/awe/zedBSD-claude1/build/ws074-host/asan/browser+0x6390) (BuildId: 949493b2de5ebf7ba966429432c12de17b953e52)\n\n0x516000000068 is located 24 bytes before 592-byte region [0x516000000080,0x5160000002d0)\nallocated by thread T0 here:\n    #0 0x7fe0b74f4610 in calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:77\n    #1 0x7fe0b697f960 in realm_create userland/desktop/libbrowser/vm/realm.c:299\n    #2 0x7fe0b697ff40 in vm_realm_create userland/desktop/libbrowser/vm/realm.c:72\n    #3 0x7fe0b6bd144c in page_start_scripts userland/desktop/libbrowser/page/script.c:384\n    #4 0x7fe0b6bbdfdf in page_create userland/desktop/libbrowser/page/page.c:107\n    #5 0x7fe0b6bf5cf0 in view_make_page userland/desktop/libbrowser/view/view.c:2079\n    #6 0x7fe0b6bf69c5 in view_open_page userland/desktop/libbrowser/view/view.c:2109\n    #7 0x7fe0b6bf69c5 in view_navigate userland/desktop/libbrowser/view/view.c:2051\n    #8 0x7fe0b6bfa43c in browser_view_load userland/desktop/libbrowser/view/view.c:447\n    #9 0x564234592ca9 in main_open userland/desktop/browser/main.c:421\n    #10 0x564234595b62 in main_run_page userland/desktop/browser/main.c:351\n    #11 0x564234595b62 in main userland/desktop/browser/main.c:206\n    #12 0x7fe0b5a35ca7  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: c495b62edadd6c356265942ec1282d98058a7b41)\n\nSUMMARY: AddressSanitizer: heap-buffer-overflow userland/desktop/libbrowser/vm/heap.c:322 in vm_heap_mark\nShadow bytes around the buggy address:\n  0x515ffffffd80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x515ffffffe00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x515ffffffe80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x515fffffff00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x515fffffff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n=>0x516000000000: fa fa fa fa fa fa fa fa fa fa fa fa fa[fa]fa fa\n  0x516000000080: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x516000000100: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x516000000180: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x516000000200: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x516000000280: 00 00 00 00 00 00 00 00 00 00 fa fa fa fa fa fa\nShadow byte legend (one shadow byte represents 8 application bytes):\n  Addressable:           00\n  Partially addressable: 01 02 03 04 05 06 07 \n  Heap left redzone:       fa\n  Freed heap region:       fd\n  Stack left redzone:      f1\n  Stack mid redzone:       f2\n  Stack right redzone:     f3\n  Stack after return:      f5\n  Stack use after scope:   f8\n  Global redzone:          f9\n  Global init order:       f6\n  Poisoned by user:        f7\n  Container overflow:      fc\n  Array cookie:            ac\n  Intra object redzone:    bb\n  ASan internal:           fe\n  Left alloca redzone:     ca\n  Right alloca redzone:    cb\n==1972352==ABORTING\n",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1066 / WS074 grid FontFaceSet recensus（2026-10-14）
+## 最新: q1067 / WS074 CSS Grid WPT process crash（2026-10-14）
+
+[q1067履歴](queue-q1067.md): pre-fix ASan heap-buffer-overflowをGC large登録照合で修正、固定WPT旧SIGSEGV→通常/ASan completion。[証拠](../ws074/phase210/evidence/20261014-q1067/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1066 / WS074 grid FontFaceSet recensus（2026-10-14）
 
 [q1066履歴](queue-q1066.md): 旧CSS Grid no_completion280 IDは19 PASS/260 FAIL/1再現SIGSEGV、279 completion。[証拠](../ws074/phase189/evidence/20261014-q1066/README.md)。p189/p173全件100%未達、共有投影/GitHub publication pending。
 

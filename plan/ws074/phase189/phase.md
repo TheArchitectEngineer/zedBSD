@@ -79,3 +79,5 @@ Event ws074-p189-q1064-outcome-20261014: q1063の単一HTTP候補1,455 IDの残�
 ## q1066-i01 結果（2026-10-14 04:07 JST）
 
 Event ws074-p189-q1066-outcome-20261014: runnerに明示固定font directoryを追加、旧`document.fonts.ready`停止のCSS Grid280 IDを全再測定。[証拠](evidence/20261014-q1066/README.md)。19 PASS/260 FAIL/1 process error(-11 SIGSEGV)、279 completion、subtest313/2640 PASS。旧全280 no_completionは0、残るSIGSEGV1は同条件1回再現。ID/checkpoint280/raw gzip280一致、runner unit6/6・py_compile/diff check PASS。q1066-i01 partial cleared、p189 whole uncleared。q1063/q1064との混合条件暫定179 PASS/1170 FAIL/1 process error/19 no_completion/73 no_output/13 harness error、環境未対応328。browser/WPT/Master変更なし、p173全3,805件100%未達、共有投影/GitHub publication保留。
+
+Event ws074-p189-q1067-p210-followup-20261014: q1066旧process_error1 IDは[p210](../phase210/phase.md)のGC一般修正後、同条件で通常3/3・ASan1/1 completion付きFAILへ進んだ。[証拠](../phase210/evidence/20261014-q1067/README.md)。q1066当時の結果は書き換えず、p189全件の最新集計は次Queueで同条件再測定する。p189 whole/p173全件100%は未達。
