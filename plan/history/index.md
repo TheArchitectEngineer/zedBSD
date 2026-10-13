@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1056 / WS074 static reftest re-census（2026-10-14）
+## 最新: q1057 / WS074 vertical-lr logical margins（2026-10-14）
+
+[q1057履歴](queue-q1057.md): 固定vertical-lr gap5 reftestが5/5 local pixel exact PASS。p205 whole cleared。host CSS51/51、固定Flex10/10 PASS、Acid3差0。[証拠](../ws074/phase205/evidence/20261014-q1057/README.md)。残る旧8回帰中3件、p190/p173全件100%未達、共有投影/GitHub publication pending。
+
+## q1056 / WS074 static reftest re-census（2026-10-14）
 
 [q1056履歴](queue-q1056.md): 固定静的1,561 IDは640 local PASS/921 pixel FAIL/0 error/0 timeout。旧359 load errorは122 PASS/237 pixel FAIL、旧8 PASS→FAILは未回復。[証拠](../ws074/phase190/evidence/20261014-q1056/README.md)。p190/p173全件100%未達、共有投影/GitHub publication pending。
 

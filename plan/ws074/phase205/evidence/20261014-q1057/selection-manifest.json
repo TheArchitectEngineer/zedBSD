@@ -1,0 +1,56 @@
+{
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "wpt_manifest_sha256": "951619bb1a7c1f25ff0abc6e5ae4f15116a4e8874b053bd93cf0aca681098ac0",
+  "focus_counts": {
+    "layout": {
+      "selected": 5,
+      "unresolved": 0
+    }
+  },
+  "selected_count": 5,
+  "unresolved_count": 0,
+  "selected": [
+    {
+      "id": "/css/css-flexbox/gap-001-lr.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/gap-001-lr.html"
+    },
+    {
+      "id": "/css/css-flexbox/gap-002-lr.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/gap-002-lr.html"
+    },
+    {
+      "id": "/css/css-flexbox/gap-003-lr.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/gap-003-lr.html"
+    },
+    {
+      "id": "/css/css-flexbox/gap-004-lr.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/gap-004-lr.html"
+    },
+    {
+      "id": "/css/css-flexbox/gap-005-lr.html",
+      "focus": [
+        "layout"
+      ],
+      "type": "reftest",
+      "source": "css/css-flexbox/gap-005-lr.html"
+    }
+  ],
+  "unresolved": []
+}

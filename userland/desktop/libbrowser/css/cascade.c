@@ -237,6 +237,7 @@ static struct dom_element *cascade_parent_element(struct dom_element *element);
 static struct dom_element *cascade_previous_element(struct dom_element *element);
 static struct dom_element *cascade_next_element(struct dom_element *element);
 static void cascade_apply(struct css_engine *engine, struct css_style *style, const struct css_style *parent, const struct css_declaration *declaration);
+static int cascade_margin_property(int property, int writing_mode, int direction);
 static void cascade_inherit(struct css_style *style, const struct css_style *parent, int property);
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
@@ -802,11 +803,21 @@ cascade_compute(
 	/* Rescales a keyword-scale size for a change to or from the monospace family. */
 	cascade_monospace_size(style, parent, font_size);
 
+	/* The final inherited flow determines which physical edge every logical margin uses. */
+	for (index = 0; index < list.count; index++) {
+		if (matches[index].declaration->property == CSS_PROP_WRITING_MODE ||
+		    matches[index].declaration->property == CSS_PROP_DIRECTION)
+			cascade_apply(engine, style, parent, matches[index].declaration);
+	}
+
 	/* Then every other declaration in order, the later winning. */
 	for (index = 0; index < list.count; index++) {
 		if (matches[index].declaration->property == CSS_PROP_FONT_SIZE)
 			continue;
 		if (matches[index].declaration->property == CSS_PROP_FONT_FAMILY)
+			continue;
+		if (matches[index].declaration->property == CSS_PROP_WRITING_MODE ||
+		    matches[index].declaration->property == CSS_PROP_DIRECTION)
 			continue;
 		cascade_apply(engine, style, parent, matches[index].declaration);
 	}
@@ -3357,6 +3368,43 @@ cascade_next_element(
 	return NULL;
 }
 
+/* Resolves the four logical margin names after the element's flow is computed. */
+static int
+cascade_margin_property(
+	int property,
+	int writing_mode,
+	int direction)
+{
+	if (writing_mode == CSS_WRITING_VERTICAL_LR) {
+		switch (property) {
+		case CSS_PROP_MARGIN_INLINE_START:
+			return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_BOTTOM : CSS_PROP_MARGIN_TOP;
+		case CSS_PROP_MARGIN_INLINE_END:
+			return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_TOP : CSS_PROP_MARGIN_BOTTOM;
+		case CSS_PROP_MARGIN_BLOCK_START:
+			return CSS_PROP_MARGIN_LEFT;
+		case CSS_PROP_MARGIN_BLOCK_END:
+			return CSS_PROP_MARGIN_RIGHT;
+		default:
+			return property;
+		}
+	}
+
+	/* Horizontal block flow has top/bottom block edges and direction-dependent inline edges. */
+	switch (property) {
+	case CSS_PROP_MARGIN_INLINE_START:
+		return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_RIGHT : CSS_PROP_MARGIN_LEFT;
+	case CSS_PROP_MARGIN_INLINE_END:
+		return direction == CSS_DIRECTION_RTL ? CSS_PROP_MARGIN_LEFT : CSS_PROP_MARGIN_RIGHT;
+	case CSS_PROP_MARGIN_BLOCK_START:
+		return CSS_PROP_MARGIN_TOP;
+	case CSS_PROP_MARGIN_BLOCK_END:
+		return CSS_PROP_MARGIN_BOTTOM;
+	default:
+		return property;
+	}
+}
+
 /* Applies one declaration to the style being computed. */
 static void
 cascade_apply(
@@ -3378,7 +3426,7 @@ cascade_apply(
 
 	/* The CSS-wide keywords. */
 	value = &declaration->value;
-	property = declaration->property;
+	property = cascade_margin_property(declaration->property, style->writing_mode, style->direction);
 	if (value->kind == CSS_VALUE_INHERIT || value->kind == CSS_VALUE_UNSET) {
 		/* Unset follows inheritance only for properties whose initial cascade inherits. */
 		inherited = 0;

@@ -23,6 +23,7 @@ static int model_input(struct css_rule_model **model, struct vm_heap *heap, cons
 static int model_insert_text(struct css_rule_model *model, const char *text, size_t index);
 static int model_case(struct vm_heap *heap);
 static int model_height(struct css_rule_model *model, struct dom_element *image, float *height);
+static int model_margins(struct dom_element *image, const char *source, float margins[4]);
 
 /*
  * Runs native structural CSS source and cascade observations.
@@ -170,6 +171,7 @@ model_case(
 	uint32_t inserted;
 	uint32_t generation;
 	float height;
+	float margins[4];
 	int type;
 	int present;
 	int status;
@@ -632,6 +634,36 @@ model_case(
 	wb_units_release(&text);
 	model_check(status == EOVERFLOW && model == NULL, "excessive curly nesting refuses partial model publication");
 
+	/* Logical margins map with the final flow, even when its declaration comes later. */
+	status = model_margins(image, "img{margin-inline-start:7px;writing-mode:vertical-lr}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_TOP] == 7 && margins[CSS_LEFT] == 0, "vertical-lr inline start maps to top");
+	status = model_margins(image, "img{direction:rtl;margin-inline-start:7px;writing-mode:vertical-lr}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_BOTTOM] == 7 && margins[CSS_TOP] == 0, "vertical-lr RTL inline start maps to bottom");
+	status = model_margins(image, "img{margin-block:3px 4px;writing-mode:vertical-lr}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_LEFT] == 3 && margins[CSS_RIGHT] == 4, "vertical-lr block shorthand maps to left and right");
+	status = model_margins(image, "img{margin-inline:3px 4px;writing-mode:vertical-lr}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_TOP] == 3 && margins[CSS_BOTTOM] == 4, "vertical-lr inline shorthand maps to top and bottom");
+	status = model_margins(image, "img{writing-mode:vertical-lr;margin-left:2px;margin-block-start:9px}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_LEFT] == 9, "later logical margin wins physical side");
+	status = model_margins(image, "img{writing-mode:vertical-lr;margin-block-start:9px;margin-left:2px}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_LEFT] == 2, "later physical margin wins logical side");
+	status = model_margins(image, "img{direction:rtl;margin-inline-start:5px}", margins);
+	if (status != 0)
+		return status;
+	model_check(margins[CSS_RIGHT] == 5 && margins[CSS_LEFT] == 0, "horizontal RTL inline start maps to right");
+
 	/* Succeeded: structural grammar, immutable handles and actual cascade mutation were observed. */
 	return 0;
 }
@@ -685,4 +717,40 @@ model_height(
 
 	/* Succeeded: the real cascade supplied the current image height. */
 	return 0;
+}
+
+/* Computes the four actual physical margins from one ordinary rule source. */
+static int
+model_margins(
+	struct dom_element *image,
+	const char *source,
+	float margins[4])
+{
+	struct css_engine *engine;
+	struct css_style style;
+	struct wb_units units;
+	int status;
+	int side;
+
+	wb_units_init(&units);
+	status = wb_utf8_to_units((const unsigned char *)source, strlen(source), &units);
+	if (status != 0)
+		goto cleanup_units;
+	status = css_engine_create(&engine, image->node.document->heap);
+	if (status != 0)
+		goto cleanup_units;
+	status = css_engine_add_sheet(engine, units.data, units.length);
+	if (status != 0)
+		goto cleanup_engine;
+	status = css_engine_compute(engine, image, NULL, &style);
+	if (status != 0)
+		goto cleanup_engine;
+	for (side = 0; side < 4; side++)
+		margins[side] = style.margin[side].value;
+
+cleanup_engine:
+	css_engine_destroy(engine);
+cleanup_units:
+	wb_units_release(&units);
+	return status;
 }

@@ -309,11 +309,11 @@ static const struct values_name values_names[] = {
 	{ "text-decoration", SHORT_TEXT_DECORATION },
 	{ "list-style", SHORT_LIST_STYLE },
 
-	/* The logical properties, in a horizontal left-to-right writing mode (ws074-p061). */
-	{ "margin-inline-start", CSS_PROP_MARGIN_LEFT },
-	{ "margin-inline-end", CSS_PROP_MARGIN_RIGHT },
-	{ "margin-block-start", CSS_PROP_MARGIN_TOP },
-	{ "margin-block-end", CSS_PROP_MARGIN_BOTTOM },
+	/* Logical margins retain their identity until the computed flow is known. */
+	{ "margin-inline-start", CSS_PROP_MARGIN_INLINE_START },
+	{ "margin-inline-end", CSS_PROP_MARGIN_INLINE_END },
+	{ "margin-block-start", CSS_PROP_MARGIN_BLOCK_START },
+	{ "margin-block-end", CSS_PROP_MARGIN_BLOCK_END },
 	{ "padding-inline-start", CSS_PROP_PADDING_LEFT },
 	{ "padding-inline-end", CSS_PROP_PADDING_RIGHT },
 	{ "padding-block-start", CSS_PROP_PADDING_TOP },
@@ -1104,9 +1104,9 @@ css_parse_property(
 	case SHORT_FONT:
 		return css_parse_font(parse, tokens, count, out, out_count);
 	case SHORT_MARGIN_INLINE:
-		return values_pair(parse, CSS_PROP_MARGIN_LEFT, CSS_PROP_MARGIN_RIGHT, tokens, count, out, out_count);
+		return values_pair(parse, CSS_PROP_MARGIN_INLINE_START, CSS_PROP_MARGIN_INLINE_END, tokens, count, out, out_count);
 	case SHORT_MARGIN_BLOCK:
-		return values_pair(parse, CSS_PROP_MARGIN_TOP, CSS_PROP_MARGIN_BOTTOM, tokens, count, out, out_count);
+		return values_pair(parse, CSS_PROP_MARGIN_BLOCK_START, CSS_PROP_MARGIN_BLOCK_END, tokens, count, out, out_count);
 	case SHORT_PADDING_INLINE:
 		return values_pair(parse, CSS_PROP_PADDING_LEFT, CSS_PROP_PADDING_RIGHT, tokens, count, out, out_count);
 	case SHORT_PADDING_BLOCK:
@@ -2534,6 +2534,14 @@ values_wide_keyword(
 	case SHORT_MARGIN:
 		first = CSS_PROP_MARGIN_TOP;
 		break;
+	case SHORT_MARGIN_INLINE:
+		values_add(out, made, CSS_PROP_MARGIN_INLINE_START, value);
+		values_add(out, made, CSS_PROP_MARGIN_INLINE_END, value);
+		return;
+	case SHORT_MARGIN_BLOCK:
+		values_add(out, made, CSS_PROP_MARGIN_BLOCK_START, value);
+		values_add(out, made, CSS_PROP_MARGIN_BLOCK_END, value);
+		return;
 	case SHORT_PADDING:
 		first = CSS_PROP_PADDING_TOP;
 		break;
@@ -3216,6 +3224,10 @@ values_takes_length(
 	case CSS_PROP_MARGIN_RIGHT:
 	case CSS_PROP_MARGIN_BOTTOM:
 	case CSS_PROP_MARGIN_LEFT:
+	case CSS_PROP_MARGIN_INLINE_START:
+	case CSS_PROP_MARGIN_INLINE_END:
+	case CSS_PROP_MARGIN_BLOCK_START:
+	case CSS_PROP_MARGIN_BLOCK_END:
 	case CSS_PROP_PADDING_TOP:
 	case CSS_PROP_PADDING_RIGHT:
 	case CSS_PROP_PADDING_BOTTOM:
