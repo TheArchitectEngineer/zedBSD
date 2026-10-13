@@ -1,15 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1034 / WS074 static match reference chains
+# q1035 / WS074 first summary UA display
 
-Status: finished（2026-10-14 01:23–01:24 JST）
+Status: finished（2026-10-14 01:26–01:27 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
-Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 01:23 JST 開始、最大90分（02:53 JSTまで）。
+Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p193のq1035有限部分scope](phase193/phase.md) に適用。
+Timebox: 2026-10-14 01:26 JST 開始、最大90分（02:56 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1034-i01 | [ws074-p190](phase190/phase.md) partial | 静的match-only reference chainを有界に辿り、途中だけ一致するfalse PASSを防ぐ。cycle/missing/script/mixed chainは明示的error。局所graph試験、q1033固定10件再計測。browser/WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1033 reference-chain finding |
+| q1035-i01 | [ws074-p193](phase193/phase.md) partial | HTML UA CSSに `details > summary:first-of-type { display:list-item }` を追加。固定details-display WPT8 subtestとauthor override、host build/CSS回帰、Acid3/2差画素非増加を確認。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial） | q1032 details-display 7/8 |
 
 Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
@@ -60,3 +60,5 @@ Outcome: q1032-i01 partial cleared、p193 whole uncleared。固定details testha
 Outcome: q1033-i01 partial cleared、p190 whole uncleared。選定静的reftest10件は既存runnerで4 provisional PASS/6 FAIL、PASS1件はreference-chain無視のfalse pass。[証拠](phase190/evidence/20261014-q1033/README.md)。コード無変更、p173全件100%未達。
 
 Outcome: q1034-i01 partial cleared、p190 whole uncleared。静的match-only reference chainの16辺上限と誤PASS防止を追加。局所graph4/4 PASS、固定10件は3 PASS/7 FAIL/0 errorへ訂正（先のfalse PASS1件がFAIL）。Python compile/diff check PASS。[証拠](phase190/evidence/20261014-q1034/README.md)。browser/WPT/Master無変更、p173全件100%未達。
+
+Outcome: q1035-i01 partial cleared、p193 whole uncleared。UA CSSのfirst summary list-item既定値を追加し、固定details-display WPTは8/8 subtest PASS。host build warning0・CSS rule model44/44・CSSOM12/12、Acid3差0/480000・Acid2差1865/120000不変。[証拠](phase193/evidence/20261014-q1035/README.md)。p173全件100%未達。

@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1035 / WS074 first summary UA display（2026-10-14）
+
+[q1035履歴](queue-q1035.md): 固定details-display WPTはUA CSS修正で8/8 subtest PASS。p193 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase193/evidence/20261014-q1035/README.md)。共有投影/GitHub publication pending。
+
 ## 最新: q1034 / WS074 static match reference chains（2026-10-14）
 
 [q1034履歴](queue-q1034.md): 静的match-only連鎖を有界に判定し、固定10件は3 PASS/7 FAILへ訂正。p190 partial cleared、wholeとp173全件100%は未達。[証拠](../ws074/phase190/evidence/20261014-q1034/README.md)。共有投影/GitHub publication pending。

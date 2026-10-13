@@ -75,3 +75,13 @@ Event ws074-p193-q1031-outcome-20261014: q1031-i01 partial cleared、p193 whole�
 **partial scope cleared、p193 whole uncleared。** 固定details testharness18件を全実測し6 PASS・10 FAIL・2 no_output。[一覧と分類](evidence/20261014-q1032/README.md)。主な残件はfragment/scroll、reveal再入・DOM除去、computed content-visibility、text fragment/testdriver、details layout。25 reftest/3 crashtestはp190のrunnerを待つ未実行。browser/WPT/Master無変更、manifest整合・結果JSON・diff check PASS。コード無変更のためhost build/Acid再計測省略。p193 wholeとp173全件100%未達、GitHub publication保留。
 
 Event ws074-p193-q1032-outcome-20261014: q1032-i01 partial cleared、p193 wholeはuncleared。固定18 testharnessの残る12件を分類、28件はp190待ち。
+
+## q1035-i01 の有限部分範囲
+
+2026-10-14 01:26 JST、ユーザーの事前承認を適用、最大90分。固定 `details-display.html` は8 subtest中「最初の直下summaryの既定displayはlist-item」の1件だけFAIL。HTML StandardのUA rule `details > summary:first-of-type { display: list-item; }` が現行UA CSSに欠けている。UA CSSの最小追加で既定値を合わせ、他のsummaryとauthor ruleによるoverrideを保持する。固定WPT8/8、局所CSS/host build warning0、Acid3/Acid2差画素非増加を確認。details-content pseudo、marker描画全仕様、gridのblockification、WPT/Master/公開ABI変更は含めない。[HTML Standard該当節](https://html.spec.whatwg.org/multipage/rendering.html#the-details-and-summary-elements)。適用は[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)。
+
+## q1035-i01 結果（2026-10-14 01:27 JST）
+
+**partial scope cleared、p193 whole uncleared。** HTML UA CSSへfirst-of-type summaryのlist-item既定値を追加し、固定 `details-display.html` は7/8から8/8 subtest PASS。[証拠](evidence/20261014-q1035/README.md)。host build warning/error0、CSS rule model44/44・CSSOM12/12、Acid3 score100/100・差0/480000、Acid2差1865/120000不変。C/browser標準の該当1行を手動確認、clang-formatは利用不可。details-content pseudo、marker、grid blockificationは残り、p193 whole/p173全件100%未達。WPT/Master/公開ABI無変更、GitHub publication保留。
+
+Event ws074-p193-q1035-outcome-20261014: q1035-i01 partial cleared、p193 whole uncleared。固定details-displayの既定display全8 subtestがPASS。

@@ -27,6 +27,7 @@ const char css_user_agent_sheet[] =
 	" template, title { display: none; }\n"
 	"[hidden] { display: none; }\n"
 	"li { display: list-item; }\n"
+	"details > summary:first-of-type { display: list-item; }\n"
 	"table { display: table; }\n"
 	"tr { display: table-row; }\n"
 	"td, th { display: table-cell; }\n"
