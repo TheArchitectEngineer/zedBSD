@@ -1,0 +1,10 @@
+missing=false
+mixed=until-found
+special=until-found
+invalid=true
+false=false
+empty=false
+null=false
+zero=false
+nan=false
+undefined=false

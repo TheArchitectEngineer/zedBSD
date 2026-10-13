@@ -23,3 +23,15 @@ Event ws074-p193-design-20261014: p192で先頭ReferenceError解消後、details
 **partial scope cleared、p193 whole uncleared。** HTMLDetailsElement専用prototypeとboolean `open` getter/setterを追加。[証拠](evidence/20261014-q1026/README.md)。局所fixtureはinterface・他HTMLElementとの区別、属性反映の全項目が期待どおり。host build warning0、native property65/65、realm30/30、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。固定WPTの `a1.open` 未定義は解消したが、`hidden="until-found"` がboolean trueで返る後続失敗のためno completion。toggle/hidden探索は未実装、GitHub publication保留。
 
 Event ws074-p193-q1026-outcome-20261014: q1026-i01 partial cleared、p193 wholeはuncleared。固定WPTの次の差分と残りのdetails/hidden条件を記録。p189/p173は不変。
+
+## q1027-i01 の有限部分範囲
+
+2026-10-14 00:57 JST、ユーザーの事前承認を適用、最大90分。`HTMLElement.hidden` getter は `hidden="until-found"` を文字列、その他の属性ありを true、属性なしを falseとして返す。setter は大文字小文字を問わない `until-found`、false/空文字/null/0/NaN の除去、それ以外の空値属性設定を HTML Standard に合わせる。局所fixture、固定beforematch WPT、host build/関連試験、Acid3/Acid2差画素非増加を確認。hiddenの描画/ancestor revealingは後続、対象WPT全PASSはこの部分基準に含めない。WPT本体/公開ABI/`master.md`は変更しない。
+
+Scope reconciliation 2026-10-14 00:59 JST: 固定2025 WPT `hidden-idl.html` は `hidden = undefined` を属性除去と判定する一方、2026-10-13更新の living HTML Standard はその他の値として空値属性設定と記す。ユーザーの固定Interop 2025全件PASS目標を実装選択の出典として、q1027の setter 検証に `undefined` 除去を含める。仕様改訂との差は受け入れ証拠で明示し、WPTは改変しない。
+
+## q1027-i01 結果（2026-10-14 01:00 JST）
+
+**partial scope cleared、p193 whole uncleared。** `HTMLElement.hidden` の3状態getterとsetterを実装。[証拠](evidence/20261014-q1027/README.md)。固定`hidden-idl.html`17/17、`hidden-until-found-idl.html`1/1 subtest PASS。局所fixture、host build warning0、native property65/65、diff check PASS。Acid3 score100/100・画素差0、Acid2差1865不変。固定beforematch WPTはID/反映失敗を越えたが fragment navigation/ancestor revealing未完でno output。固定2025 WPTと2026 living Standardの`undefined`挙動差を記録、WPTは無変更。p193 wholeは未達、GitHub publication保留。
+
+Event ws074-p193-q1027-outcome-20261014: q1027-i01 partial cleared、p193 wholeはuncleared。hidden IDL固定2 WPT PASSとfragment navigation未完を分離。p189/p173分母は不変。

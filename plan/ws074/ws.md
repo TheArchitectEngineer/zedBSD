@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1026](queue.md) finished / p193 partial cleared、whole uncleared。2026-10-14 00:54〜00:56 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration領域全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILで p191 cleared。p189の単一HTTP shard100件はq1024時点で9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。q1025/26でbeforematch WPTの先頭ReferenceErrorとdetails.open欠落は解消し、現在はhidden until-found値で停止、PASS未達。p189の残りtestharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
+Queue: [q1027](queue.md) finished / p193 partial cleared、whole uncleared。2026-10-14 00:57〜01:00 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration領域全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILで p191 cleared。p189の単一HTTP shard100件はq1024時点で9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。q1025〜27でbeforematch WPTの先頭ReferenceErrorとdetails.open/hidden値の欠落は解消し、現在はfragment navigation/ancestor revealing待ちでno output、PASS未達。固定hidden IDL2件は18/18 subtest PASS。p189の残りtestharnessと p190 のreftest/crashtest coverage、p173全件baselineと100%は未達。Acid3 score100/100・pixel差0/480000、p100 whole は別に未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -44,6 +44,8 @@ Event ws074-p189-q1024-outcome-20261014: [p189](phase189/phase.md) q1024-i01で�
 Event ws074-p192-design-and-q1025-outcome-20261014: [p192](phase192/phase.md)を追加し、HTML Window named propertiesを担当。q1025-i01で一意HTML id live lookupを実装して局所fixture・host回帰・Acid3差0を確認。[証拠](phase192/evidence/20261014-q1025/README.md)。2対象WPTの先頭ReferenceErrorは消えたが別の未実装でPASS未達。p192 wholeはuncleared、p189/p190/p173の受け入れは不変。GitHub publication保留。
 
 Event ws074-p193-design-and-q1026-outcome-20261014: [p193](phase193/phase.md)を追加しdetails/hidden until-foundを担当。q1026-i01はHTMLDetailsElement.openの専用interface・boolean反映を実装、fixture/hostとAcid3差0を確認。[証拠](phase193/evidence/20261014-q1026/README.md)。対象WPTはhidden until-found値でPASS未達、p193 wholeはuncleared。p189/p173分母と受け入れは不変、GitHub publication保留。
+
+Event ws074-p193-q1027-outcome-20261014: [p193](phase193/phase.md) q1027-i01でhiddenの3状態IDL反映を実装、固定hidden IDL2 WPTは18/18 subtest PASS。[証拠](phase193/evidence/20261014-q1027/README.md)。2025 WPTと2026 living Standardの`undefined`差を明示。beforematchはfragment navigation未完でno output、p193 whole未達。Acid3差0、Acid2差1865維持、GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -353,7 +355,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p190](phase190/phase.md) | Interop 2025 reftest 1,974件・crashtest48件のrunner coverage | planned / Queueなし | p173 q1012 固定manifest出力 |
 | [ws074-p191](phase191/phase.md) | Interop 2025 textdecoration全16 testharnessのCSSOM互換 | cleared / q1023、16件16 PASS/0 FAIL | p173固定manifest、p189 q1015全16件baseline |
 | [ws074-p192](phase192/phase.md) | Interop 2025 Window named properties互換 | uncleared / q1025 partial cleared、一意id live lookup | p173固定manifest、p189 q1024 shard |
-| [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1026 partial cleared、details.open反映 | p189 q1024 shard、p192 q1025一意id output |
+| [ws074-p193](phase193/phase.md) | Interop 2025 details/hidden until-found互換 | uncleared / q1026〜q1027 partial cleared、hidden IDL2 WPT PASS | p189 q1024 shard、p192 q1025一意id output |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

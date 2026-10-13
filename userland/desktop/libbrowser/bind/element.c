@@ -31,6 +31,7 @@ static int element_title_get(struct vm_realm *realm, vm_value this_value, const 
 static int element_title_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_hidden_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_hidden_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int element_hidden_until_found(const struct vm_string *value);
 static int details_open_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int details_open_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int element_get_attribute(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -597,7 +598,27 @@ element_title_set(
 	return 0;
 }
 
-/* Reports whether the element has the hidden attribute (hidden). */
+/* An ASCII-insensitive match for the hidden attribute's special keyword. */
+static int
+element_hidden_until_found(const struct vm_string *value)
+{
+	static const char keyword[] = "until-found";
+	size_t index;
+	uint16_t unit;
+
+	if (value == NULL || value->length != sizeof(keyword) - 1U)
+		return 0;
+	for (index = 0U; index < sizeof(keyword) - 1U; index++) {
+		unit = vm_string_at(value, index);
+		if (unit >= 'A' && unit <= 'Z')
+			unit = (uint16_t)(unit + 0x20U);
+		if (unit != (uint16_t)keyword[index])
+			return 0;
+	}
+	return 1;
+}
+
+/* Reports the hidden attribute's missing, hidden or until-found state. */
 static int
 element_hidden_get(
 	struct vm_realm *realm,
@@ -606,21 +627,20 @@ element_hidden_get(
 	unsigned count,
 	vm_value *result)
 {
-	vm_value name;
+	struct dom_element *element;
+	struct vm_string *attribute;
 	int status;
 
 	UNUSED_PARAMETER(args);
 	UNUSED_PARAMETER(count);
 
-	/* The same answer as hasAttribute("hidden"). */
-	status = bind_string(realm, "hidden", &name);
+	status = element_this(realm, this_value, &element);
 	if (status != 0)
 		return status;
-	status = element_has_attribute(realm, this_value, &name, 1, result);
-	if (status != 0)
-		return status;
-
-	/* Succeeded: the answer is reported. */
+	attribute = dom_attribute_ascii(element, "hidden");
+	if (element_hidden_until_found(attribute))
+		return bind_string(realm, "until-found", result);
+	*result = vm_value_boolean(attribute != NULL);
 	return 0;
 }
 
@@ -635,13 +655,35 @@ element_hidden_set(
 {
 	struct vm_cell *roots[2];
 	vm_value pair[2];
+	vm_value given;
+	struct vm_string *text;
+	const char *new_value;
+	double number;
 	unsigned registered;
-	int hidden;
+	int remove;
 	int status;
 
-	/* The attribute's name, and an empty value when it is added. */
+	/* The special keyword keeps its spelling; the other false-like values remove. */
 	*result = VM_VALUE_UNDEFINED;
-	hidden = vm_to_boolean(js_argument(args, count, 0));
+	given = js_argument(args, count, 0);
+	remove = 0;
+	new_value = "";
+	if (vm_value_is_string(given)) {
+		text = (struct vm_string *)vm_value_as_cell(given);
+		if (element_hidden_until_found(text))
+			new_value = "until-found";
+		else if (text->length == 0U)
+			remove = 1;
+	} else if (given == VM_VALUE_FALSE || given == VM_VALUE_NULL ||
+	    given == VM_VALUE_UNDEFINED) {
+		remove = 1;
+	} else if (vm_value_is_number(given)) {
+		number = vm_value_as_number(given);
+		if (number == 0.0 || number != number)
+			remove = 1;
+	}
+
+	/* The attribute's name and its resulting value stay live through mutation. */
 	status = bind_string(realm, "hidden", &pair[0]);
 	if (status != 0)
 		return status;
@@ -653,7 +695,7 @@ element_hidden_set(
 	registered++;
 
 	/* The name stays live while the empty value is allocated. */
-	status = bind_string(realm, "", &pair[1]);
+	status = bind_string(realm, new_value, &pair[1]);
 	if (status != 0)
 		goto cleanup;
 	roots[1] = vm_value_as_cell(pair[1]);
@@ -662,12 +704,11 @@ element_hidden_set(
 		goto cleanup;
 	registered++;
 
-	/* Added for true, removed for false. */
-	if (hidden) {
-		status = element_set_attribute(realm, this_value, pair, 2, result);
-	} else {
+	/* The omitted state removes; all other values set the content attribute. */
+	if (remove)
 		status = element_remove_attribute(realm, this_value, pair, 1, result);
-	}
+	else
+		status = element_set_attribute(realm, this_value, pair, 2, result);
 
 cleanup:
 	/* Both temporary arguments leave the root set on every outcome. */

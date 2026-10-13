@@ -1,0 +1,24 @@
+<!doctype html>
+<div id="target"></div>
+<script>
+const target = document.getElementById('target');
+console.log('missing=' + target.hidden);
+target.setAttribute('hidden', 'UnTiL-FoUnD');
+console.log('mixed=' + target.hidden);
+target.hidden = 'UNTIL-FOUND';
+console.log('special=' + target.getAttribute('hidden'));
+target.setAttribute('hidden', 'other');
+console.log('invalid=' + target.hidden);
+target.hidden = false;
+console.log('false=' + target.hidden);
+target.hidden = '';
+console.log('empty=' + target.hasAttribute('hidden'));
+target.hidden = null;
+console.log('null=' + target.hasAttribute('hidden'));
+target.hidden = 0;
+console.log('zero=' + target.hasAttribute('hidden'));
+target.hidden = 0 / 0;
+console.log('nan=' + target.hasAttribute('hidden'));
+target.hidden = undefined;
+console.log('undefined=' + target.hidden);
+</script>

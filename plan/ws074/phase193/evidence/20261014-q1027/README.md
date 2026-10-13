@@ -1,0 +1,7 @@
+# q1027 HTMLElement.hidden reflection
+
+The getter now returns `"until-found"` for that case-insensitive attribute state, true for other present values, and false when absent. The setter recognizes `until-found`, removes the attribute for false/empty string/null/0/NaN, and sets the empty attribute for other values. For **fixed 2025 WPT** it also removes the attribute for `undefined`: [hidden-idl.html](test-02.json) requires this, while the [current HTML Standard setter](https://html.spec.whatwg.org/multipage/interaction.html#the-hidden-attribute) says the final otherwise branch sets an empty attribute. This version difference is explicit; no WPT expectations were changed.
+
+[Fixture](hidden-reflection.html) / [output](host-output.txt) covers mixed-case getter/setter and all above states. Pinned Interop WPT: `hidden-idl.html` 17/17 subtests PASS, `hidden-until-found-idl.html` 1/1 PASS. `beforematch-attribute-removal-001.html` [result](test-01.json) progressed beyond hidden reflection, but emits no output because fragment navigation/ancestor revealing does not complete. It is not PASS.
+
+Host build warning0, native property checks65/65, `git diff --check` PASS; C/browser component rules manually reviewed, clang-format unavailable. [Acid summary](acid-summary.json): Acid3 score100/100 and exact 0/480000 pixel difference; Acid2 1865/120000 different, unchanged. WPT/Master/public ABI unchanged. p193 whole and 3,805 ID objective remain uncleared. Shared Queue/Master/GitHub publication Q1 owned, no push.

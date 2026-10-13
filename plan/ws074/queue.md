@@ -1,17 +1,17 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1026 / WS074 HTMLDetailsElement.open
+# q1027 / WS074 HTMLElement.hidden reflection
 
-Status: finished（2026-10-14 00:54〜00:56 JST）
+Status: finished（2026-10-14 00:57〜01:00 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: 2026-10-14 00:07 JST、この chat のユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を、[p191のq1021有限部分scope](phase191/phase.md) に適用。
-Timebox: 2026-10-14 00:54 JST 開始、最大90分（02:24 JSTまで）。
+Timebox: 2026-10-14 00:57 JST 開始、最大90分（02:27 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1026-i01 | [ws074-p193](phase193/phase.md) partial | HTMLDetailsElement専用prototypeとboolean open反映。局所fixture、関連WPT、host build/Acid回帰。toggle/hidden until-foundは後続。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | p192 q1025一意id output |
+| q1027-i01 | [ws074-p193](phase193/phase.md) partial | HTMLElement.hiddenのmissing/normal/until-found getterとsetterを仕様に合わせる。fixture、固定beforematch WPT、host build/Acid回帰。ancestor revealingは後続。WPT/Master/公開ABI変更なし。最大90分 | cleared（partial、p193 whole uncleared） | q1026 details.open |
 
-Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → q1026-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
+Dependency graph: p173固定manifest → p189 q1024 shard → p192 q1025一意id output → p193 q1026 details.open → q1027-i01 → p193 whole判断 → p173最終100%判断。p189 whole/p190/p192 wholeは別の必要出力、p191 whole cleared。
 
 Upcoming Work Outlook: p191の残るtextdecoration CSSOM、p189 runnerの環境対応、[p190](phase190/phase.md) reftest/crashtest coverage、p173全件baselineを候補とする。次の Queue も有限scopeを記録する。
 
@@ -44,3 +44,5 @@ Outcome: q1024-i01 partial cleared、p189 whole uncleared。選定100件の実�
 Outcome: q1025-i01 partial cleared、p192 whole uncleared。一意id global lookupを実装し、局所fixture・native property65/65・realm30/30・Acid3差0/Acid2差1865の回帰確認。2 WPTの先頭ReferenceErrorを解消したが双方別の未実装でPASS未達。[証拠](phase192/evidence/20261014-q1025/README.md)。p173全件100%未達。
 
 Outcome: q1026-i01 partial cleared、p193 whole uncleared。HTMLDetailsElement.open反映を追加、fixture・host回帰・Acid3差0/Acid2差1865を確認。対象WPTは次のhidden until-found差分でPASS未達。[証拠](phase193/evidence/20261014-q1026/README.md)。p173全件100%未達。
+
+Outcome: q1027-i01 partial cleared、p193 whole uncleared。固定hidden IDL2 WPTが17/17・1/1 subtest PASS、beforematchはfragment navigation未完でno output。host build warning0・native property65/65・Acid3差0/Acid2差1865。[証拠](phase193/evidence/20261014-q1027/README.md)。p173全件100%未達。
