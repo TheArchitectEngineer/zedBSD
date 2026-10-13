@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1049](queue.md) finished / p199物理justify-content left/rightの部分scope。2026-10-14 02:21 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1050](queue.md) finished / p200分配余白丸め。2026-10-14 02:27 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域・未解決0。textdecoration全16 testharnessは16 PASS/0 FAIL、subtest179 PASS/0 FAILでp191 cleared。p189の単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、q1035/q1036で2件追加PASS。q1040固定crashtest全48件local PASS。q1044固定静的reftest1,561件は500 local PASS/1,051 FAIL/10 timeoutの当時baseline、残るscript関連407/variant6はrunner未対応。q1046で最上位XHTMLの固定timeout10を0へ改善、q1047横方向2件をlocal PASSにして固定10件は3 PASS/7 FAIL。p195は後続証拠でcleared、p196はscript付きXHTML未達、p197は縦方向7 FAIL。p189/p190のrunner coverage、描画FAILとp173全件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -100,6 +100,8 @@ Event ws074-p198-q1048-outcome-20261014: [p198](phase198/phase.md) q1048-i01はf
 Event ws074-p199-addition-q1049-20261014: [p198](phase198/phase.md) q1048後のvert001aに、`justify-content:right`をcolumn main axisのendと誤解釈する別欠陥を確認。[p199](phase199/phase.md)で物理left/rightとcolumn start fallback、row RTL/reverse/gridを有限に扱う。p197/p198/p190/p173受け入れは不変。共有Master/Queue/GitHub publication保留。
 
 Event ws074-p199-q1049-outcome-20261014: [p199](phase199/phase.md) q1049-i01で物理left/rightを分け、固定10件は3→5 local PASS、残り5 FAIL。host fixture12/12、build warning0、Acid3画素差0/Acid2差1865を確認。[証拠](phase199/evidence/20261014-q1049/README.md)。p199 whole、p197/p190/p173全件100%は未達。共有Master/Queue/GitHub publication保留。
+
+Event ws074-p200-addition-and-q1050-clear-20261014: [p199](phase199/phase.md)後の端数描画3件を扱う[p200](phase200/phase.md)を追加。q1050-i01で正のFlex分配余白の丸めを修正し、対象3件すべてpixel exact PASS、固定10件は8 PASS/2 FAIL。[証拠](phase200/evidence/20261014-q1050/README.md)。p200 whole cleared。p197/p198/p199/p190/p173の残る受け入れは不変。Acid3差0/Acid2差1865、共有Master/Queue/GitHub publication保留。
 
 ## Q1 向けの整理（2026-10-05、Q1）
 
@@ -416,6 +418,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p197](phase197/phase.md) | Interop 2025 Flexbox justify-content overflow配置 | uncleared / q1047横方向2件partial cleared、縦方向7 FAIL | p196 q1046 XHTML描画証拠 |
 | [ws074-p198](phase198/phase.md) | Interop 2025 BFCの親/子縦margin相殺禁止 | uncleared / q1048一般規則partial cleared、固定7 FAIL残 | p197 q1047縦方向7 FAIL証拠 |
 | [ws074-p199](phase199/phase.md) | Interop 2025 justify-content物理left/right | uncleared / q1049部分scope cleared、固定5 FAIL残 | p198 q1048参照差証拠 |
+| [ws074-p200](phase200/phase.md) | Interop 2025 Flex分配余白の端数丸め | cleared / q1050対象3 ID pixel exact PASS | p199 q1049端数差証拠 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

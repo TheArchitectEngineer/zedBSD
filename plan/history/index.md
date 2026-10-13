@@ -2,6 +2,10 @@
 
 # Past Log
 
+## 最新: q1050 / WS074 Flexbox distributed spacing rounding（2026-10-14）
+
+[q1050履歴](queue-q1050.md): 端数丸めとreverse残差配分で対象3 reftestが全てpixel exact PASS、固定10件は8 local PASS/2 FAIL。p200 whole cleared。Acid3画素差0/Acid2差1865。[証拠](../ws074/phase200/evidence/20261014-q1050/README.md)。p173全件100%未達、共有投影/GitHub publication pending。
+
 ## 最新: q1049 / WS074 physical justify-content left/right（2026-10-14）
 
 [q1049履歴](queue-q1049.md): 物理left/rightを区別し、固定10件は5 local PASS/5 FAILへ改善。host12/12、Acid3画素差0、Acid2差1865。[証拠](../ws074/phase199/evidence/20261014-q1049/README.md)。p199部分cleared、wholeとp173全件100%未達。共有投影/GitHub publication pending。

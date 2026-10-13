@@ -71,6 +71,7 @@ static void flex_resolve(struct flex_item *items, size_t count, layout_unit avai
 static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_relay_cross(struct layout_tree *tree, struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit line_cross, layout_unit percentage_basis);
+static layout_unit flex_divide_nearest(layout_unit numerator, layout_unit denominator);
 static void flex_place_line(struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit available, layout_unit gap, layout_unit cross_start, layout_unit line_cross);
 static layout_unit flex_cross_outer(const struct layout_box *item, int row);
 static int flex_align_of(const struct layout_box *box, const struct layout_box *item);
@@ -945,6 +946,16 @@ flex_relay_cross(
 	return 0;
 }
 
+/* A positive distributed gap uses the same nearest layout unit as a CSS calc() length. */
+static layout_unit
+flex_divide_nearest(
+	layout_unit numerator,
+	layout_unit denominator)
+{
+	return numerator / denominator +
+	    (numerator % denominator >= denominator / 2 + denominator % 2);
+}
+
 /*
  * Places a line's laid out items: along the main axis by justify-content
  * (and reversed for a reverse direction), across the line by their
@@ -996,18 +1007,18 @@ flex_place_line(
 		break;
 	case CSS_ALIGN_SPACE_BETWEEN:
 		if (free_space > 0 && count > 1)
-			between = gap + free_space / (layout_unit)(count - 1U);
+			between = gap + flex_divide_nearest(free_space, (layout_unit)(count - 1U));
 		break;
 	case CSS_ALIGN_SPACE_AROUND:
 		if (free_space > 0) {
-			cursor = free_space / (layout_unit)(count * 2U);
-			between = gap + free_space / (layout_unit)count;
+			cursor = flex_divide_nearest(free_space, (layout_unit)(count * 2U));
+			between = gap + flex_divide_nearest(free_space, (layout_unit)count);
 		}
 		break;
 	case CSS_ALIGN_SPACE_EVENLY:
 		if (free_space > 0) {
-			cursor = free_space / (layout_unit)(count + 1U);
-			between = gap + free_space / (layout_unit)(count + 1U);
+			cursor = flex_divide_nearest(free_space, (layout_unit)(count + 1U));
+			between = gap + flex_divide_nearest(free_space, (layout_unit)(count + 1U));
 		}
 		break;
 	default:
@@ -1020,6 +1031,12 @@ flex_place_line(
 		reverse = 1;
 	if (row && box->style.direction == CSS_DIRECTION_RTL)
 		reverse = !reverse;
+	/* Give reverse lines the residual end gap after rounded distributed gaps. */
+	if (reverse && free_space > 0 && count > 1 &&
+	    (box->style.justify_content == CSS_ALIGN_SPACE_BETWEEN ||
+	    box->style.justify_content == CSS_ALIGN_SPACE_AROUND ||
+	    box->style.justify_content == CSS_ALIGN_SPACE_EVENLY))
+		cursor = free_space - cursor - (layout_unit)(count - 1U) * (between - gap);
 
 	/* Physical left/right keep their edge under reversed rows; a vertical main axis falls back to start. */
 	if (!row && (box->style.justify_content == CSS_ALIGN_LEFT ||
