@@ -15,7 +15,9 @@
  * (align-self, align-items).  Columns are sized in three steps: the fixed
  * ones, then the auto ones at their items' content width, then the fr
  * ones sharing what is left (auto columns share it when there is no fr);
- * rows are as tall as their items unless the template fixes them.  Not in
+ * rows are as tall as their items unless the template fixes them.  Direct
+ * absolute children with definite lines use their area's static origin in
+ * horizontal LTR grids, without taking part in track sizing.  Not in
  * this pass: named lines and areas, dense packing, full inline-axis
  * alignment, order, baselines, subgrid, and auto-fill and auto-fit.
  */
@@ -73,6 +75,8 @@ struct grid_sizes {
 
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
 static void grid_resolve(const struct css_grid_place *place, int explicit_count, int *start, int *span);
+static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
+	layout_unit column_gap, layout_unit row_gap, layout_unit shift);
 static int grid_place(struct grid_state *grid);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_take(struct grid_state *grid, int row, int column, int row_span, int column_span);
@@ -203,6 +207,9 @@ layout_grid(
 
 	/* The rows' heights from the items. */
 	grid_size_rows(box, &grid, row_gap);
+
+	/* Absolute children use valid definite grid areas without sizing the tracks. */
+	grid_static_position(box, &grid, column_gap, row_gap, shift);
 
 	/* Each item in its area, aligned in it across the rows. */
 	for (index = 0; index < grid.item_count; index++) {
@@ -402,6 +409,74 @@ grid_resolve(
 
 	/* The first track, or -1 for auto. */
 	*start = first;
+}
+
+/* Gives a direct absolute child the origin of its definite grid area. */
+static void
+grid_static_position(
+	struct layout_box *box,
+	const struct grid_state *grid,
+	layout_unit column_gap,
+	layout_unit row_gap,
+	layout_unit shift)
+{
+	struct layout_box *child;
+	layout_unit x;
+	layout_unit y;
+	int column;
+	int column_span;
+	int row;
+	int row_span;
+	int index;
+
+	/* Other writing directions retain their existing static-position path. */
+	if (box->style.position != CSS_POSITION_RELATIVE)
+		return;
+	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
+		return;
+	if (box->style.direction != CSS_DIRECTION_LTR)
+		return;
+
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->style.position != CSS_POSITION_ABSOLUTE)
+			continue;
+		if (child->style.offset[CSS_LEFT].unit != CSS_UNIT_AUTO)
+			continue;
+		if (child->style.offset[CSS_RIGHT].unit != CSS_UNIT_AUTO)
+			continue;
+		if (child->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO)
+			continue;
+		if (child->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
+			continue;
+
+		/* An absolute box never creates a track or enters auto-placement. */
+		grid_resolve(&child->style.grid_column, box->style.column_count,
+		    &column, &column_span);
+		grid_resolve(&child->style.grid_row, box->style.row_count,
+		    &row, &row_span);
+		if (column < 0)
+			continue;
+		if (row < 0)
+			continue;
+		if (column_span < 1)
+			continue;
+		if (row_span < 1)
+			continue;
+		if (column + column_span > box->style.column_count)
+			continue;
+		if (row + row_span > box->style.row_count)
+			continue;
+
+		/* Track offsets include the container's content distribution and gaps. */
+		x = shift;
+		for (index = 0; index < column; index++)
+			x += grid->columns[index] + column_gap;
+		y = 0;
+		for (index = 0; index < row; index++)
+			y += grid->rows[index] + row_gap;
+		child->static_x = x;
+		child->static_y = y;
+	}
 }
 
 /*

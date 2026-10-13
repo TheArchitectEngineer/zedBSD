@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1088 / WS074 Grid alignment diagnosis（2026-10-14）
+## 最新: q1089 / WS074 definite abspos Grid static origin（2026-10-14）
+
+[q1089履歴](queue-q1089.md): 水平LTRの有効明示area絶対子のstatic原点を修正。固定WPT代表2件の水平subtestが各FAIL→PASS、wholeはRTL/縦書き未達。[証拠](../ws074/phase217/evidence/20261014-q1089/README.md)。Acid3差0、p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1088 / WS074 Grid alignment diagnosis（2026-10-14）
 
 [q1088履歴](queue-q1088.md): alignment FAIL206件を分類し、絶対配置grid子のstatic原点、縦書き強制stretch、`grid` shorthand欠落を別欠陥として確認。[証拠](../ws074/phase217/evidence/20261014-q1088/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

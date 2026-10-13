@@ -1,0 +1,10 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; width: 250px; grid-template-columns: 100px 150px; grid-template-rows: 80px 80px; }
+.grid > div { width: 20px; height: 10px; }
+.flow { grid-column: 1 / 2; grid-row: 1 / 2; }
+.area { position: absolute; grid-column: 2 / 3; grid-row: 2 / 3; }
+.explicit { position: absolute; grid-column: 2 / 3; grid-row: 2 / 3; left: 7px; top: 9px; }
+.invalid { position: absolute; grid-column: 99 / 100; grid-row: 99 / 100; }
+</style>
+<div class="grid"><div class="flow">F</div><div class="area">A</div><div class="explicit">E</div><div class="invalid">I</div></div>
