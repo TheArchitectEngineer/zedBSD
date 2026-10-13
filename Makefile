@@ -48,6 +48,7 @@ ZEDBSD_CONFIG_OPTIONAL_GOALS := menuconfig help list-user-programs \
 	menuconfig-host-test rtl8822b-firmware-fixture-cache \
 	intelax211-firmware-fixture-cache i915-firmware-fixture-cache \
 	intelbt-firmware-fixture-cache brcmbt-firmware-fixture-cache \
+	bcm43455-firmware-fixture-cache \
 	download toolchain \
 	noct-toolchain-smoke noct-download noct-source \
 	noct-target-source-verify noct-host-source noct-host-source-verify \

@@ -362,6 +362,23 @@
    "note": "Object code only, solely for use with Cypress integrated circuits (selected only by the Raspberry Pi 4 image); the licence forbids modification and reverse engineering."
   },
   {
+   "id": "bcm43455-firmware",
+   "name": "Broadcom/Cypress BCM43455 SDIO WiFi firmware, CLM and NVRAM (Raspberry Pi 4)",
+   "when": "program:bcm43455-firmware",
+   "license": "LicenseRef-cypress-eula (redistribution allowed); the NVRAM values are also published under GPL-2.0-or-later",
+   "upstream": "RPi-Distro firmware-nonfree; licence texts from linux-firmware",
+   "version": "1:20260519-1~bpo13+1+rpt1",
+   "notices": [
+    "/usr/share/licenses/bcm43455-firmware/LICENCE.cypress",
+    "/usr/share/licenses/bcm43455-firmware/GPL-2",
+    "/usr/share/licenses/bcm43455-firmware/firmware-nonfree.copyright"
+   ],
+   "paths": [],
+   "note": "Firmware and CLM: object code only, solely for use with Cypress integrated circuits (selected only by the Raspberry Pi 4 image); the licence forbids modification and reverse engineering. The NVRAM is used as firmware-nonfree distributes it under the Cypress licence; linux-firmware publishes the same values under GPL-2.0+, so the GPL-2 text is installed with it. The NVRAM text is its own source form and no zedBSD code links with any of these files.",
+   "status": "decided",
+   "decision": "2026-10-13 user (WS206 E4): put the GPL licence file with the NVRAM"
+  },
+  {
    "id": "intelbt-firmware",
    "name": "Intel Bluetooth firmware (AX211, Solar)",
    "when": "program:intelbt-firmware",
