@@ -34,7 +34,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q952、T1-585。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-301、WS227、q952、T1-586。次の KL_VERSION は 93（WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
@@ -576,6 +576,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-13 夜 Q1 の判定: WS220 の T1 の基準を「同じ session の中の基線の kernel と比べる」に改めた（共有の host の負荷で別の session の基線とは比べられない、T1-581）。p003・p004 は cleared、p005 は損失の時の確かめを T1-585 で。WS046 p007 は T1-050 の証拠で cleared。
 - 2026-10-13 夜 ユーザー:「Codex のセッションは、私が WS074 の作業を頼んだ物です。これもベータ2までに完了予定です。」→ WS074 はベータ2、Codex のセッションの担当（main の checkout で直に作業）。
 - 2026-10-13 夜 ユーザー:「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」「これ以上ベータ2に機能追加しないつもりなので、実装を終わらせましょう。N=3で、P2を追加し、実装を担当してもらいます。」→ N=3（P1・P2・P3）＋T1。P2 はベータ2 の残りの実装（q949 WS157 から）。UAT 待ちの Phase の一括の cleared は担当が準備、Q1 が commit。
 - 2026-10-13 夜 ユーザー（AskUserQuestion）: BUG-300 の切り分けで、ユーザーの動画を 5330 の kei の home に scp して使ってよい（repo・image・tests には入れず、試した後は 5330 から消す）。
