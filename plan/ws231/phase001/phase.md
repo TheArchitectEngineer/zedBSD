@@ -76,3 +76,8 @@ image: branch agent/p2-ws215 の 8919876ec 以降（Q1 の merge の後は main�
 9. **既存の回帰**: q35 の既定の boot-test（uefi-nvme、uefi-usb）が遅れずに通ること（AHCI の bind で S0 idle・boot が壊れないこと）。
 
 結果（PASS/FAIL、PNG、dmesg の抜き出しの場所）を P2 と Q1 に。実機（5330・5320 の SATA）は別。
+
+## 2026-10-14 T1-609（QEMU q35、tree a25b73a3f）
+
+- PASS: dd+cmp、partition、blkdebug の EIO と回復、2 つの HBA、空の port の boot 時間の差 0、S0 idle、AHCI からの root、既存の q35 の boot-test。
+- FAIL: (1) `completion found by polling` が boot の直後から（32 MiB の後 2048）、(2) sync・poweroff で QMP の flush_operations が増えない、(3) wr_bytes が 8〜40 倍。P2 が直す。成果物は T1 の worktree の build/review/t1-609/。
