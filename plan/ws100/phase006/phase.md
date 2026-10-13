@@ -4,7 +4,7 @@
 
 Phase ID: `ws100-p006`
 Parent: [WS100](../ws.md)
-Status: planning → planned（2026-10-01 に phase.md を作った。手順は下）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: planned、5330 の HDA の codec と pin、鳴るかをユーザーが聞く（A7）。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Phase disposition: normal
 Queue: なし
 依存: p002（音を出す道具 `audiod-feedback`）、b はユーザーの実機の時間

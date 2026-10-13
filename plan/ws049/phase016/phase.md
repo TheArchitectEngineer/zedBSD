@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p016`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04。実装と host の試験は済み。QEMU の回帰（p007 と同じ image）と実機の確認待ち）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、実装と host 試験は済み、QEMU の回帰（p007 と同じ image、T1-090 PASS）と実機の確認待ち。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Phase disposition: normal
 Queue: q694 / q694-i01（P1 generation15）。Q1 の技術判断（2026-10-04、p008 の発見から）: 「bridge の secondary bus は新しい ws049-p016（q694）として
 P1 の優先に入れ、q678 p007 の後・q693 p009 の前に行う。drv_pci_find_device を bridge の先の bus も引けるようにする `src/drivers/pci/` の最小の変更は

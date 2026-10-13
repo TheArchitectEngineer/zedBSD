@@ -1,6 +1,6 @@
 # ws090-p020: UI の font を Mahora へ（Regular・Mono・Bold）
 
-Status: test-wait（q812、P1、2026-10-06 実装済み・T1 の PNG とユーザーの外観の判断待ち。下の「q812（P1）」）
+Status: cleared（2026-10-13 ユーザー（AskUserQuestion）「今の外観で OK」、ws.md の表に合わせた。旧: test-wait、T1 の PNG とユーザーの外観の判断待ち）
 WS: [WS090](../ws.md)
 Related: [BUG-205](../../bugs/BUG-205.md)（太字を輪郭の太らせで作っていた）
 

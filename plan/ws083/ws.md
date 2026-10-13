@@ -3,7 +3,7 @@
 # WS083: Vulkan Video の拡張と i915 の対応（最初の目標 H.264 の decode）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-10: p001〜p006・p008 cleared。p007 の hang の回復は実機の確かめだけ（ユーザーの準備: plan/ws083/phase007/phase.md の「2026-10-10 実機の手順」）、p009 はベータ3）
+Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p009。p007 は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）。旧: incomplete（2026-10-10: p001〜p006・p008 cleared。p007 の hang の回復は実機の確かめだけ（ユーザーの準備: plan/ws083/phase007/phase.md の「2026-10-10 実機の手順」）、p009 はベータ3））
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1

@@ -4,7 +4,7 @@
 
 Phase ID: `ws049-p007`
 Parent: [WS049](../ws.md)
-Status: in-progress（2026-10-04。QEMU の受け入れは T1-090 で PASS（SCI の unmask と event thread の start を直した）。実機の観点（電源ボタン・蓋・AC・EC）は次の UAT 待ち）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、QEMU は T1-090 PASS、実機の電源ボタン・蓋・AC・EC の UAT 待ち。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Phase disposition: normal
 Queue: q678 / q678-i01（P1 generation15）。承認: q677 と同じ（2026-10-04 user の DP Alt Mode の目標と 17 時の体制の指示）
 

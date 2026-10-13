@@ -2,7 +2,7 @@
 
 # ws127-p007: 5330 の実機での操作と速さ
 
-Status: planning（2026-10-02 ベータ1の計画。要る判断・成果は「未決の判断」と「依存」）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: planning、5330 の実機の Files の UAT 待ち。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Disposition: normal
 Parent: [WS127](../ws.md)
 Queue: なし

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws183-p001 -->
 # ws183-p001: i2c-hid の Extended Interrupt の経路と Tiger Lake の GPIO の group
 
-Status: test-wait（2026-10-08 P1: 実装と build・host 試験まで。5320 の実機の確認待ち（ユーザーの時期））
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: test-wait、実装と build・host 試験まで、5320 の実機の確認待ち（ユーザーの時期））
 Disposition: normal
 Parent: [WS183](../ws.md)
 Queue: q858 の後の P1 の列（Q1、ユーザーの優先順の 6 番）

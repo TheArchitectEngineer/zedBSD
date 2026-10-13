@@ -2,7 +2,7 @@
 # ws182-p002: 実装 — 電源ボタンでメニュー、押下と解放
 
 Parent: [WS182](../ws.md)
-Status: uncleared（2026-10-08 Q1: T1-377 QEMU PASS（1〜5 の行、電源は切れない、PNG に card、T1 の worktree build/t1-377-out/p/）。残り: 実機（5320・5330）の短押し・1.5 s 長押しの gap_ms で押下/解放の推定と 2 s の窓を確定、D1 のユーザーの確認）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: uncleared、T1-377 QEMU PASS。実機（5320・5330）の短押し・1.5 s 長押しの gap_ms と 2 s の窓の確定、D1 のユーザーの確認（2026-10-08「現状ではオーケーです」）が残り）
 Disposition: normal
 Queue: q861 / q861-i01
 依存: [p001](../phase001/phase.md)（設計。D1 はユーザーの確認待ち、推奨のまま実装）

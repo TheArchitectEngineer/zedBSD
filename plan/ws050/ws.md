@@ -3,7 +3,7 @@
 # WS050: USB-C の UCSI driver
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p006 の全文規約の分。p006 の実機の確認の分は上の指示で OK、p001・p005 は 2026-10-08 Q1 の判定で cleared（表を phase.md に合わせた））。旧: incomplete）
 Primary Milestone: MG003
 Related Milestones: MG006
 Objectives: O2
@@ -48,12 +48,12 @@ Alternate Mode・USB PD の contract）を読み、変化を受け取り、必�
 
 | Phase | 内容 | Status | 依存 | 対象 |
 | --- | --- | --- | --- | --- |
-| [ws050-p001](phase001/phase.md) | 調査と設計: UCSI の仕様（1.2/2.x）、対象機の `USBC000` の AML（共有 memory の配置、`_DSM` の function）、Type-C の層の設計、公開の形 | in-progress → Q1 の判定待ち（第 3 版、§10 の判断は 2026-10-04 ユーザーが決定、p002〜p005 がこの設計で実装済み） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | 設計文書 |
+| [ws050-p001](phase001/phase.md) | 調査と設計: UCSI の仕様（1.2/2.x）、対象機の `USBC000` の AML（共有 memory の配置、`_DSM` の function）、Type-C の層の設計、公開の形 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）、phase.md に合わせた。旧: in-progress → Q1 の判定待ち（第 3 版）） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | 設計文書 |
 | [ws050-p002](phase002/phase.md) | UCSI の核・Type-C の層の状態と kernel 内の口、1.x・2.x の配置、疑似の PPM と記録の再生の host の試験 | cleared（2026-10-07 Q1） | p001、仕様書での確認、実機の VERSION と mailbox の記録（UAT） | `src/drivers/typec/` |
 | [ws050-p003](phase003/phase.md) | ACPI の transport と kernel への組み込み（`ucsi-acpi.c`、attach、Notify、thread、`/dev/typec`） | cleared（2026-10-07 Q1、T1-330） | p002、ws049-p017（q696、WS049 の公開の口）、ws049-p007・p008 | 同上 |
 | [ws050-p004](phase004/phase.md) | 操作の command（CONNECTOR_RESET・SET_UOR・SET_PDR・SET_NEW_CAM・GET_CABLE_PROPERTY）と操作の口 | cleared（2026-10-07 Q1） | p003 | 同上 |
-| [ws050-p005](phase005/phase.md) | i915 との連携（HPD・pin・向きの二つの出所の統合、TC の port と connector の対応付け） | in-progress → Q1 の判定待ち（host 94・build warning 0。5330 の実機 2026-10-08 の log で TC1・TC2 の connector の対応が bound（error 0）、ucsi の初期化に timeout 無し） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。5330 の log） | | 同上 |
-| ws050-p006 | 実機の確認と規約の全文の確認 | planned（実機は 5330、全文規約の分はベータ3、2026-10-08 ユーザー） | p003〜p005、実機 | WS の全 source |
+| [ws050-p005](phase005/phase.md) | i915 との連携（HPD・pin・向きの二つの出所の統合、TC の port と connector の対応付け） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）、phase.md に合わせた。旧: in-progress → Q1 の判定待ち（host 94・build warning 0、5330 の TC1・TC2 の対応が bound）） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。5330 の log） | | 同上 |
+| ws050-p006 | 実機の確認と規約の全文の確認 | planned（実機の確認の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。残りは全文規約の分でベータ3（2026-10-08 ユーザー）） | p003〜p005、実機 | WS の全 source |
 
 ## 2026-10-04 予定（Q1）
 

@@ -42,7 +42,7 @@ app から通知を出せる仕組みを作り、画面の下の中央を headli
 | [ws156-p002](phase002/phase.md) | 通知の口（protocol・libkeiland）と compositor の受け取り | cleared（2026-10-06 Q1、T1-269。実機は UAT） | p001 |
 | [ws156-p003](phase003/phase.md) | popup の描画と動き（右から中央、3 秒、左へ fade-out）、× で消す、全画面・lock、system の通知 | cleared（2026-10-08 Q1、T1-375b PASS 20 項目） | p002 |
 | [ws156-p004](phase004/phase.md) | log（hotkey、ring の左右、すべて消去、個別に消した物は残さない） | cleared（2026-10-08 Q1、T1-375b PASS） | p003 |
-| ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | uncleared（2026-10-08 QEMU の回帰 T1-375b PASS、20 項目 ok、PNG 5 枚。残り: 5330 の実機の UAT。全文の規約の見直しはベータ3、2026-10-08 ユーザー） | p002〜p004 |
+| ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | uncleared（5330 の実機の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。QEMU の回帰は T1-375b PASS（20 項目 ok）。残りは全文の規約の見直しでベータ3（2026-10-08 ユーザー）） | p002〜p004 |
 | ws156-p006 | Linux: libkeiland-backend の D-Bus の `org.freedesktop.Notifications`（設計 p001 §11、2026-10-05 ユーザー「実装はあと回し」） | planning（後回し。Linux の作業は 10/13 以降、2026-10-08 ユーザー） | p002 |
 
 ## 2026-10-10 WS197 p004c による変更（Q1）

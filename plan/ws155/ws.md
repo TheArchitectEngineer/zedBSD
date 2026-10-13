@@ -3,7 +3,7 @@
 # WS155: Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13: ユーザー「UATは終わっています。OKでした。」で p006 を cleared。残りは p005（全文規約）だけ。以下は旧記載: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p000 cleared。 2026-10-08 q902 P1 の照合: p001〜p004 cleared（2026-10-07 Q1、T1-297）。ベータ2 の範囲の残りは p000 の扱いだけ、続きはベータ3）
+Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005）。旧: incomplete（2026-10-13: ユーザー「UATは終わっています。OKでした。」で p006 を cleared。残りは p005（全文規約）だけ。以下は旧記載: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p000 cleared。 2026-10-08 q902 P1 の照合: p001〜p004 cleared（2026-10-07 Q1、T1-297）。ベータ2 の範囲の残りは p000 の扱いだけ、続きはベータ3））
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

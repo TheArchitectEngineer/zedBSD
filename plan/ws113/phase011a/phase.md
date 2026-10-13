@@ -3,7 +3,7 @@
 # ws113-p011a: i915 の 1 出力の付け替え（Keiland の指示で点ける出力を替える）
 
 Parent: [WS113](../ws.md)
-Status: test-wait（実機 5330）。2026-10-08 q902 P1 の照合: 確認の (1)〜(3) の蓋の分は BUG-255 とともにベータ3（2026-10-07 ユーザー）。付け替えの口は ws113-p014（anchor の移し替え）・ws051-p004b が使い、TC への付け替えの失敗は BUG-266（P2）（旧: in-progress（2026-10-07 q850、P2: 実装・build（warning 0、vmunix の kernel include check PASS）まで。実機 5330 の確認は UAT））
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: test-wait（実機 5330）、実装・build 済み。蓋の分は BUG-255 とともにベータ3（2026-10-07 ユーザー）、TC への付け替えの失敗の BUG-266 は resolved）
 Disposition: normal
 Primary Milestone: MG006（WS から継承）
 Queue: q850（p004a の後）

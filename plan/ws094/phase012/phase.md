@@ -2,7 +2,7 @@
 
 # ws094-p012: L5 実機（5330）での L1 の手順と L3 の (a)(c)
 
-Status: planned（2026-10-01 に phase.md を作った。手順は下）
+Status: planned（L1 のユーザーの操作の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。L3 の (a)(c) の実機の計測は未実施で、p009 とともにベータ3 の性能の Phase へ（2026-10-08 Q1）の扱いを Q1 が判定）
 Disposition: normal
 Parent: [WS094](../ws.md)
 Queue: なし

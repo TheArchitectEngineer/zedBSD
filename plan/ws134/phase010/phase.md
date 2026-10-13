@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws134-p010 -->
 # ws134-p010: M4 全文規約・回帰・デモの通し
 
-Status: in-progress（q663、P2 generation8、2026-10-04。今できる分（全文規約の見直しと修正、QEMU の回帰の依頼）を実施。実機の要る分は実機待ち）
+Status: in-progress（実機の p003・p007・p009 とデモの分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。q663 で全文規約の見直しと直し済み、QEMU の回帰（T1）の結果の判定が残り）
 Disposition: normal
 Parent: [WS134](../ws.md)
 依存: p002〜p009。2026-10-04 Q1: 今できる分を進め、実機の要る p003（fps）・p007（i915）・p009（ACPI）は「実機待ち」として残す（WS134 の完了は実機の後）。

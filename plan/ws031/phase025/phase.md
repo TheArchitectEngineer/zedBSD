@@ -4,7 +4,7 @@
 
 Phase ID: `ws031-p025`
 Parent: [WS031](../ws.md)
-Status: blocked（UAT 待ち）（2026-10-09 P1: host の読みと既存の host 試験の照合は済み、新しい不具合は無し。終わらない loop の GPU の hang の扱いは実機の i915 が要る）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: blocked（UAT 待ち）、host の読みと照合は済み・新しい不具合なし、終わらない loop の GPU の hang の扱いの実機（5330）の確かめが残り）
 Phase disposition: normal
 Queue: Q1 の dispatch（P1、2026-10-09、ベータ3 の合間の仕事）
 元: [phase015](../phase015/phase.md) の「異常系」

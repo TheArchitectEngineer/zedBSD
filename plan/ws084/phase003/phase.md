@@ -4,7 +4,7 @@
 
 Phase ID: `ws084-p003`
 Parent: [WS084](../ws.md)
-Status: in-progress（2026-10-07 P2: host でできる所（reboot-loop.sh）まで。image の build と QEMU の boot test は T1、素の 5330 の 10 回は 5330 が届いてから）（旧: planned、2026-10-01 作成）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、host（reboot-loop.sh）まで、素の 5330 の 10 回の起動待ち。ws.md の表は 2026-10-13 ユーザーの実機の確かめ「OKでした」で cleared）
 Phase disposition: normal
 承認: なし（Queue に入れるときに main が承認を記録する）
 依存: p002（cleared）。ユーザーが 5330 を USB から起動できること。

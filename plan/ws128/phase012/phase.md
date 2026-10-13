@@ -2,7 +2,7 @@
 # ws128-p012: App Home（Apps の menu）の app の icon をデザインした物に差し替える
 
 Parent: [WS128](../ws.md)
-Status: in-progress（2026-10-06 ユーザーが montage-4 に決定、compositor に実装済み。UAT の image での確認待ち）
+Status: cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、2026-10-06 ユーザーが montage-4 に決定、compositor に実装済み、UAT の image での確認待ち）
 Disposition: normal
 
 ## 由来
