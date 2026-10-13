@@ -18,11 +18,12 @@ Resume point: p001。
 「make menuconfigのBaseで、プリグラムは基本的にコマンド名、ライブラリはlib*やlib*-compat, terminal definitionsはlibcurses * terminal definitions, daemonは*d,に表示を修正します。…また、Linux/FreeBSD向けのビルドでは。baseのこれらも、/opt/keiland/bin/や/opt/keiland/sbin/に入れます。passkeyコマンドのようなbaseのものも、Linux/FreeBSDではビルドします。」
 （Q1 が「base の program で libpng・libpdf などを使う物は無い」と報告した後）「libpng-compat, libjpeg-compat, libtruetype, libpdf, これらをすべて Desktop/ に移しても、baseのビルドには影響がないと言うことですね。じゃあそっちがいいなあ。」
 「ここだけ変更します。menuconfigのDesktopで、プログラムはコマンド名＋説明。ライブラリはlib*やlib*-compat。libpng-compat, libgif-compat, libjepg-compat, libpdfはDesktopに移します。menuconfigの表示だけでなく、srcも。」
+「menuconfigのbaseでは、プログラム名かライブラリ名でOKです。説明はいらないです。」
 「Linux・FreeBSD で /opt/keiland/bin・sbin に入れる「base のもの」は、zedBSD 独自のコマンド（passkey など）だけで、ls や cat のように host にもあるコマンドは入れない、という理解でよいです。」
 
 ## 目標
 
-1. menuconfig の Base の表示: program は命令の名前（例 `bt`、`emacs`、`fidoctl`、`noct`）、library は `lib*`・`lib*-compat`（例 `curses` → `libcurses`）、terminal の定義は `libcurses major terminal definitions`・`libcurses extra terminal definitions`、daemon は `*d`（例 `audiod`、`bluetoothd`、`volumed`）。
+1. menuconfig の Base の表示は名前だけで説明を付けない: program は命令の名前（例 `bt`、`emacs`、`fidoctl`、`noct`）、library は `lib*`・`lib*-compat`（例 `curses` → `libcurses`）、terminal の定義は `libcurses major terminal definitions`・`libcurses extra terminal definitions`、daemon は `*d`（例 `audiod`、`bluetoothd`、`volumed`）。
 2. menuconfig の Desktop の表示: program は「命令の名前＋説明」、library は `lib*`・`lib*-compat`。
 3. libpng-compat・libgif-compat・libjpeg-compat・libpdf の source を `userland/base/` から `userland/desktop/` へ移し、menu も Desktop に。libtruetype（source は既に desktop）の menu も Desktop に。libz-compat は base に残す（ユーザーの列挙に無い）。build の規則（`platform/*/vmunix.mk`・`keiland-linux.mk`・`keiland-freebsd.mk`・Makefile.linux/freebsd）、試験・docs の path を追従。
 4. Linux・FreeBSD の build: zedBSD 独自の base の命令（passkey など、host に同じ物が無い物）を build して `/opt/keiland/bin`・`/opt/keiland/sbin` に入れる。ls・cat など host にある命令は入れない。
