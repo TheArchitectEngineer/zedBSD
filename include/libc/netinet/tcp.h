@@ -19,9 +19,11 @@
  * getsockopt carry the option faithfully, but clearing it does not introduce
  * the delay the name refers to, because there is no such delay to restore.
  *
- * Only the names POSIX lists appear here.  Vendor-specific option names are
- * deliberately absent: a name a program can detect but not use would make it
- * take a path that fails at run time.
+ * Besides TCP_NODELAY, the header shows the vendor options the transport
+ * really implements, and only those: TCP_MAXUNACKTIME (FreeBSD's name and
+ * number) drops a connection that has made no progress for that many
+ * seconds.  A name a program can detect but not use would make it take a
+ * path that fails at run time, so no other vendor name appears.
  */
 
 #include <uapi/netinet.h>
