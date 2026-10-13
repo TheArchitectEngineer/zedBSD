@@ -329,6 +329,62 @@ vi_file_write(
 	return 0;
 }
 
+/*
+ * Keeps the buffer of a session that ended with unwritten changes in
+ * $HOME/.vi-recover.NAME.PID, made new with only the user able to read it,
+ * and says so on the standard error.  Without HOME nothing is kept.
+ */
+void
+vi_file_recover(
+	struct vi_editor *editor)
+{
+	struct file_totals totals;
+	const char *home;
+	const char *name;
+	const char *slash;
+	char path[PATH_MAX];
+	int length;
+	int descriptor;
+	int result;
+	int error;
+
+	/* The file goes in the home directory, never in a directory others can write. */
+	home = getenv("HOME");
+	if (home == NULL || home[0] == '\0')
+		return;
+
+	/* Names it after the file being edited and this process. */
+	name = "noname";
+	if (editor->file_name != NULL) {
+		name = editor->file_name;
+		slash = strrchr(name, '/');
+		if (slash != NULL)
+			name = slash + 1;
+	}
+	length = snprintf(path, sizeof(path), "%s/.vi-recover.%s.%ld", home, name, (long)getpid());
+	if (length < 0 || (size_t)length >= sizeof(path))
+		return;
+
+	/* Creates the file new, readable by the user alone. */
+	descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (descriptor < 0)
+		return;
+
+	/* Writes the lines and puts them on the disk. */
+	memset(&totals, 0, sizeof(totals));
+	error = write_lines(descriptor, &editor->buffer, &totals);
+	if (error == 0) {
+		result = fsync(descriptor);
+		if (result != 0)
+			error = errno;
+	}
+	(void)close(descriptor);
+
+	/* Tells where the changes are, if the standard error still goes anywhere. */
+	if (error == 0)
+		(void)fprintf(stderr, "vi: unwritten changes saved in %s\n", path);
+}
+
 /* Reads a whole file of about the given size into one allocation. */
 static int
 read_whole(
@@ -540,6 +596,7 @@ write_replacing(
 	char *temporary;
 	const char *slash;
 	size_t directory_length;
+	size_t name_length;
 	size_t size;
 	mode_t mode;
 	mode_t mask;
@@ -558,7 +615,8 @@ write_replacing(
 		return ENOMEM;
 
 	memcpy(temporary, target, directory_length);
-	if (strlen(target + directory_length) > FILE_TEMPORARY_NAME_LIMIT) {
+	name_length = strlen(target + directory_length);
+	if (name_length > FILE_TEMPORARY_NAME_LIMIT) {
 		(void)snprintf(temporary + directory_length, size - directory_length, ".vi-XXXXXX");
 	} else {
 		(void)snprintf(temporary + directory_length, size - directory_length, ".%s.vi-XXXXXX", target + directory_length);
@@ -728,6 +786,7 @@ keeps_identity(
 	const struct stat *existing)
 {
 	uid_t user;
+	gid_t group;
 
 	/* Other names for the same file would keep the old contents. */
 	if (existing->st_nlink > 1)
@@ -739,9 +798,10 @@ keeps_identity(
 		return 0;
 
 	/* Anyone else makes a new file that is theirs, in their own group. */
+	group = getegid();
 	if (existing->st_uid != user)
 		return 1;
-	if (existing->st_gid != getegid())
+	if (existing->st_gid != group)
 		return 1;
 
 	/* The new file can have the same owner and group. */
@@ -862,60 +922,4 @@ dangling_target(
 
 	/* Succeeded: the caller owns the name. */
 	return 0;
-}
-
-/*
- * Keeps the buffer of a session that ended with unwritten changes in
- * $HOME/.vi-recover.NAME.PID, made new with only the user able to read it,
- * and says so on the standard error.  Without HOME nothing is kept.
- */
-void
-vi_file_recover(
-	struct vi_editor *editor)
-{
-	struct file_totals totals;
-	const char *home;
-	const char *name;
-	const char *slash;
-	char path[PATH_MAX];
-	int length;
-	int descriptor;
-	int result;
-	int error;
-
-	/* The file goes in the home directory, never in a directory others can write. */
-	home = getenv("HOME");
-	if (home == NULL || home[0] == '\0')
-		return;
-
-	/* Names it after the file being edited and this process. */
-	name = "noname";
-	if (editor->file_name != NULL) {
-		name = editor->file_name;
-		slash = strrchr(name, '/');
-		if (slash != NULL)
-			name = slash + 1;
-	}
-	length = snprintf(path, sizeof(path), "%s/.vi-recover.%s.%ld", home, name, (long)getpid());
-	if (length < 0 || (size_t)length >= sizeof(path))
-		return;
-
-	/* Creates the file new, readable by the user alone. */
-	descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
-	if (descriptor < 0)
-		return;
-
-	/* Writes the lines and puts them on the disk. */
-	memset(&totals, 0, sizeof(totals));
-	error = write_lines(descriptor, &editor->buffer, &totals);
-	if (error == 0) {
-		result = fsync(descriptor);
-		if (result != 0)
-			error = errno;
-	}
-	(void)close(descriptor);
-
-	/* Tells where the changes are, if the standard error still goes anywhere. */
-	if (error == 0)
-		(void)fprintf(stderr, "vi: unwritten changes saved in %s\n", path);
 }
