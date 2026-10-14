@@ -149,7 +149,9 @@ struct drv_rpi4_vchiq_slot_zero {
  *
  * The positions are byte offsets into each side's endless stream of slots;
  * the slot queue index of a position is its slot count modulo the queue
- * length.  They wrap as 32-bit integers, which both sides compare only for
+ * length.  tx_slots counts the ARM's slots entered, compared with
+ * slot_queue_available by difference, so the comparison survives the
+ * position's wrap.  They wrap as 32-bit integers, which both sides compare only for
  * equality or by difference.  The caller serializes writers and readers.
  */
 struct drv_rpi4_vchiq_ring {
@@ -158,6 +160,7 @@ struct drv_rpi4_vchiq_ring {
 	struct drv_rpi4_vchiq_shared *local;
 	struct drv_rpi4_vchiq_shared *remote;
 	uint32_t tx_pos;
+	uint32_t tx_slots;
 	uint32_t slot_queue_available;
 	uint8_t *tx_data;
 	uint32_t rx_pos;

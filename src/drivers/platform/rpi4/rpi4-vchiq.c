@@ -81,6 +81,9 @@
 #define VCHIQ_ANSWER_WAIT_MS		1000U
 #define VCHIQ_SLOT_WAIT_MS		1000U
 
+/* The empty control replies (CLOSE, PAUSE, REMOTE_USE_ACTIVE) the receive thread may have waiting. */
+#define VCHIQ_CONTROL_PENDING		16U
+
 /* How often the receive thread looks at the queues without a doorbell. */
 #define VCHIQ_POLL_MS			20U
 
@@ -143,8 +146,10 @@ struct drv_rpi4_vchiq_service {
  * The one VCHIQ link of the boot.
  *
  * lock (taken with interrupts off) guards the services, the page list
- * mask, connected and the three wait queues; send_lock orders writers of
- * the ARM's message stream.  The receive thread alone reads the VPU's
+ * mask, connected, the pending control replies and the three wait queues;
+ * send_lock orders writers of the ARM's message stream.  The receive
+ * thread never waits for send_lock: its replies wait in control until a
+ * writer, or the receive thread when the lock is free, sends them.  The receive thread alone reads the VPU's
  * stream.  The link is never torn down.
  */
 struct rpi4_vchiq {
@@ -165,6 +170,9 @@ struct rpi4_vchiq {
 	bool connected;
 	bool broken;
 	struct drv_rpi4_vchiq_service services[VCHIQ_SERVICES];
+	uint32_t control[VCHIQ_CONTROL_PENDING];
+	unsigned control_head;
+	unsigned control_count;
 };
 
 /*
@@ -186,9 +194,11 @@ static void dispatch(struct rpi4_vchiq *vchiq, uint32_t msgid, uint32_t size, co
 static void dispatch_openack(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, uint32_t source, uint32_t size, const uint8_t *payload);
 static void dispatch_close(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, uint32_t source);
 static void dispatch_data(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, uint32_t source, uint32_t size, const uint8_t *payload);
-static void dispatch_bulk_done(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, uint32_t type, uint32_t size, const uint8_t *payload);
+static void dispatch_bulk_done(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, uint32_t source, uint32_t type, uint32_t size, const uint8_t *payload);
 static struct drv_rpi4_vchiq_service *service_by_port(struct rpi4_vchiq *vchiq, uint32_t port);
 static int send_message(struct rpi4_vchiq *vchiq, uint32_t msgid, const void *data, uint32_t size);
+static void queue_control(struct rpi4_vchiq *vchiq, uint32_t msgid);
+static void flush_control(struct rpi4_vchiq *vchiq);
 static int reserve_wait(struct rpi4_vchiq *vchiq, uint32_t size, uint8_t **payload);
 static void ring_vpu(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_event *event);
 static int wait_state(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, enum vchiq_service_state from, unsigned milliseconds);
@@ -480,46 +490,59 @@ drv_rpi4_vchiq_send_bulk(
 		return error;
 	}
 
-	/* The send lock keeps the message and the bulk together. */
-	mutex_lock(&vchiq->send_lock);
-
 	/*
-	 * Refuses a closed service; waits up to the slot wait limit while the
+	 * Waits, without the send lock, up to the slot wait limit while the
 	 * direction's queue is full (the receive thread completes bulks
-	 * without the send lock); else enters the bulk.
+	 * without it); then, under the send lock (which keeps the message and
+	 * the bulk together), enters the bulk if the queue still has room.
 	 */
 	deadline = sched_ticks() + kern_ms_to_ticks(VCHIQ_SLOT_WAIT_MS) + 1U;
-	enabled = spin_lock_irqsave(&vchiq->lock);
-
 	queue = &service->transmit;
 	if (direction == DRV_RPI4_VCHIQ_BULK_RECEIVE)
 		queue = &service->receive;
 	for (;;) {
+		enabled = spin_lock_irqsave(&vchiq->lock);
+
+		error = 0;
+		for (;;) {
+			open = service->state == VCHIQ_SERVICE_OPEN;
+			full = queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS;
+			if (!open || !full)
+				break;
+			observed = waitq_sequence(&vchiq->state_wake);
+			error = waitq_sleep(&vchiq->state_wake, &vchiq->lock, observed, deadline, 0);
+			if (error == ETIMEDOUT)
+				break;
+		}
+
+		spin_unlock_irqrestore(&vchiq->lock, enabled);
+
+		if (!open || full) {
+			pagelist_give(vchiq, index);
+			if (!open)
+				return ENOTCONN;
+			return EBUSY;
+		}
+
+		/* Takes the send lock, and the room if nobody took it meanwhile. */
+		mutex_lock(&vchiq->send_lock);
+		enabled = spin_lock_irqsave(&vchiq->lock);
+
 		open = service->state == VCHIQ_SERVICE_OPEN;
 		full = queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS;
-		if (!open || !full)
-			break;
-		observed = waitq_sequence(&vchiq->state_wake);
-		error = waitq_sleep(&vchiq->state_wake, &vchiq->lock, observed, deadline, 0);
-		if (error == ETIMEDOUT)
-			break;
-	}
-	if (open && !full) {
-		queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].context = bulk_context;
-		queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].pagelist = index;
-		queue->inserted++;
-	}
-	data_msgid = drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_DATA, service->local_port, service->remote_port);
-	bulk_msgid = drv_rpi4_vchiq_msgid(type, service->local_port, service->remote_port);
+		if (open && !full) {
+			queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].context = bulk_context;
+			queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].pagelist = index;
+			queue->inserted++;
+		}
+		data_msgid = drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_DATA, service->local_port, service->remote_port);
+		bulk_msgid = drv_rpi4_vchiq_msgid(type, service->local_port, service->remote_port);
 
-	spin_unlock_irqrestore(&vchiq->lock, enabled);
+		spin_unlock_irqrestore(&vchiq->lock, enabled);
 
-	if (!open || full) {
+		if (open && !full)
+			break;
 		mutex_unlock(&vchiq->send_lock);
-		pagelist_give(vchiq, index);
-		if (!open)
-			return ENOTCONN;
-		return EBUSY;
 	}
 
 	/* The announcing message, when there is one. */
@@ -542,15 +565,11 @@ drv_rpi4_vchiq_send_bulk(
 		}
 	}
 
-	/* Rings the VPU for whatever was published. */
-	ring_vpu(vchiq, &vchiq->ring.remote->trigger);
-
-	mutex_unlock(&vchiq->send_lock);
-
 	/*
-	 * A bulk whose message never went out is taken back.  The announcing
-	 * message may have gone out alone; the client's protocol then stalls
-	 * and its own timeouts report it.
+	 * A bulk whose message never went out is taken back while the send
+	 * lock still keeps every other bulk behind it.  The announcing message
+	 * may have gone out alone; the client's protocol then stalls and its
+	 * own timeouts report it.
 	 */
 	if (error != 0) {
 		enabled = spin_lock_irqsave(&vchiq->lock);
@@ -560,6 +579,16 @@ drv_rpi4_vchiq_send_bulk(
 		spin_unlock_irqrestore(&vchiq->lock, enabled);
 
 		pagelist_give(vchiq, index);
+	}
+
+	/* Rings the VPU for whatever was published, with the receive thread's replies. */
+	flush_control(vchiq);
+	ring_vpu(vchiq, &vchiq->ring.remote->trigger);
+
+	mutex_unlock(&vchiq->send_lock);
+
+	/* Reports a bulk that was not queued. */
+	if (error != 0) {
 		kern_logf("rpi4-vchiq: bulk of %u bytes not queued (%d)\n", (unsigned)bytes, error);
 		return error;
 	}
@@ -833,6 +862,7 @@ receive_main(
 	uint64_t observed;
 	uint64_t deadline;
 	bool sync_logged;
+	int locked;
 
 	/* The link lives for the kernel's lifetime. */
 	vchiq = argument;
@@ -851,6 +881,15 @@ receive_main(
 		local->trigger.fired = 0;
 		kern_io_barrier();
 		receive_all(vchiq);
+
+		/* Sends the replies the messages asked for, when no writer holds the stream. */
+		locked = mutex_trylock(&vchiq->send_lock);
+		if (locked) {
+			flush_control(vchiq);
+			if (!vchiq->connected)
+				ring_vpu(vchiq, &vchiq->ring.remote->trigger);
+			mutex_unlock(&vchiq->send_lock);
+		}
 
 		/* Recycled slots: writers waiting for room look again. */
 		if (local->recycle.fired != 0) {
@@ -960,7 +999,7 @@ dispatch(
 		break;
 	case DRV_RPI4_VCHIQ_MSG_OPEN:
 		/* The ARM offers no services: refuses the firmware's open. */
-		(void)send_message(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, 0, source), NULL, 0);
+		queue_control(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, 0, source));
 		break;
 	case DRV_RPI4_VCHIQ_MSG_OPENACK:
 		dispatch_openack(vchiq, service, source, size, payload);
@@ -973,15 +1012,15 @@ dispatch(
 		break;
 	case DRV_RPI4_VCHIQ_MSG_BULK_RX_DONE:
 	case DRV_RPI4_VCHIQ_MSG_BULK_TX_DONE:
-		dispatch_bulk_done(vchiq, service, type, size, payload);
+		dispatch_bulk_done(vchiq, service, source, type, size, payload);
 		break;
 	case DRV_RPI4_VCHIQ_MSG_PAUSE:
 		/* The ARM never suspends the link: answers a pause at once. */
-		(void)send_message(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_PAUSE, 0, 0), NULL, 0);
+		queue_control(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_PAUSE, 0, 0));
 		break;
 	case DRV_RPI4_VCHIQ_MSG_REMOTE_USE:
 		/* The firmware asks the ARM to stay awake: says that it is. */
-		(void)send_message(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_REMOTE_USE_ACTIVE, 0, 0), NULL, 0);
+		queue_control(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_REMOTE_USE_ACTIVE, 0, 0));
 		break;
 	case DRV_RPI4_VCHIQ_MSG_RESUME:
 	case DRV_RPI4_VCHIQ_MSG_REMOTE_RELEASE:
@@ -1025,7 +1064,7 @@ dispatch_openack(
 
 	/* Closes the firmware's side of an open nobody waits for. */
 	if (late)
-		(void)send_message(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, 0, source), NULL, 0);
+		queue_control(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, 0, source));
 }
 
 /*
@@ -1047,6 +1086,13 @@ dispatch_close(
 	notify = false;
 	enabled = spin_lock_irqsave(&vchiq->lock);
 
+	if (service != NULL &&
+	    service->state != VCHIQ_SERVICE_OPENING &&
+	    service->state != VCHIQ_SERVICE_FREE &&
+	    service->remote_port != source) {
+		/* A CLOSE from an earlier use of the port is not this service's. */
+		service = NULL;
+	}
 	if (service != NULL) {
 		if (service->state == VCHIQ_SERVICE_OPEN) {
 			answer = true;
@@ -1062,7 +1108,7 @@ dispatch_close(
 
 	/* The firmware closed an open service: agrees, and tells the client. */
 	if (answer)
-		(void)send_message(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, service->local_port, source), NULL, 0);
+		queue_control(vchiq, drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, service->local_port, source));
 	if (notify) {
 		if (service->ops->closed != NULL)
 			service->ops->closed(service->context);
@@ -1124,6 +1170,7 @@ static void
 dispatch_bulk_done(
 	struct rpi4_vchiq *vchiq,
 	struct drv_rpi4_vchiq_service *service,
+	uint32_t source,
 	uint32_t type,
 	uint32_t size,
 	const uint8_t *payload)
@@ -1146,7 +1193,7 @@ dispatch_bulk_done(
 	pagelist = 0;
 	enabled = spin_lock_irqsave(&vchiq->lock);
 
-	if (service != NULL && service->state != VCHIQ_SERVICE_FREE) {
+	if (service != NULL && service->state != VCHIQ_SERVICE_FREE && service->remote_port == source) {
 		queue = &service->transmit;
 		if (type == DRV_RPI4_VCHIQ_MSG_BULK_RX_DONE)
 			queue = &service->receive;
@@ -1216,8 +1263,9 @@ send_message(
 		if (size != 0)
 			kern_memcpy(payload, data, size);
 		drv_rpi4_vchiq_ring_commit(&vchiq->ring, msgid, size);
-		ring_vpu(vchiq, &vchiq->ring.remote->trigger);
 	}
+	flush_control(vchiq);
+	ring_vpu(vchiq, &vchiq->ring.remote->trigger);
 
 	mutex_unlock(&vchiq->send_lock);
 
@@ -1227,6 +1275,75 @@ send_message(
 
 	/* Succeeded: the message is the VPU's to read. */
 	return 0;
+}
+
+/* Leaves an empty control reply for the next holder of the send lock to send. */
+static void
+queue_control(
+	struct rpi4_vchiq *vchiq,
+	uint32_t msgid)
+{
+	unsigned long enabled;
+	bool dropped;
+
+	/* Appends the reply; a full list drops it (the firmware's own timeouts then apply). */
+	dropped = false;
+	enabled = spin_lock_irqsave(&vchiq->lock);
+
+	if (vchiq->control_count < VCHIQ_CONTROL_PENDING) {
+		vchiq->control[(vchiq->control_head + vchiq->control_count) % VCHIQ_CONTROL_PENDING] = msgid;
+		vchiq->control_count++;
+	} else {
+		dropped = true;
+	}
+
+	spin_unlock_irqrestore(&vchiq->lock, enabled);
+
+	/* Reports a lost reply. */
+	if (dropped)
+		kern_logf("rpi4-vchiq: control reply %08x dropped\n", (unsigned)msgid);
+}
+
+/*
+ * Sends the waiting control replies without waiting for a slot; the
+ * caller holds the send lock and rings the VPU afterwards.
+ */
+static void
+flush_control(
+	struct rpi4_vchiq *vchiq)
+{
+	unsigned long enabled;
+	uint8_t *payload;
+	uint32_t msgid;
+	bool empty;
+	int error;
+
+	/* One reply at a time, until none waits or no slot is free. */
+	for (;;) {
+		enabled = spin_lock_irqsave(&vchiq->lock);
+
+		empty = vchiq->control_count == 0;
+		msgid = vchiq->control[vchiq->control_head];
+
+		spin_unlock_irqrestore(&vchiq->lock, enabled);
+
+		if (empty)
+			return;
+		error = drv_rpi4_vchiq_ring_reserve(&vchiq->ring, 0, &payload);
+		if (error == EAGAIN) {
+			drv_rpi4_vchiq_ring_recycle(&vchiq->ring);
+			error = drv_rpi4_vchiq_ring_reserve(&vchiq->ring, 0, &payload);
+		}
+		if (error != 0)
+			return;
+		drv_rpi4_vchiq_ring_commit(&vchiq->ring, msgid, 0);
+		enabled = spin_lock_irqsave(&vchiq->lock);
+
+		vchiq->control_head = (vchiq->control_head + 1U) % VCHIQ_CONTROL_PENDING;
+		vchiq->control_count--;
+
+		spin_unlock_irqrestore(&vchiq->lock, enabled);
+	}
 }
 
 /*

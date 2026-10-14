@@ -85,9 +85,25 @@ drv_rpi4_h264_write_sps(
 	uint32_t index;
 	int error;
 
-	/* Refuses fields H.264 cannot code. */
+	/* Refuses fields H.264 cannot code (7.4.2.1.1's ranges, and what Exp-Golomb here holds). */
 	if (sps->offset_count > 255U || sps->id > 31U || sps->level > 18U)
 		return EINVAL;
+	if (sps->chroma_format_idc > 3U || sps->bit_depth_luma_minus8 > 6U || sps->bit_depth_chroma_minus8 > 6U)
+		return EINVAL;
+	if (sps->log2_max_frame_num_minus4 > 12U || sps->pic_order_cnt_type > 2U || sps->log2_max_pic_order_cnt_lsb_minus4 > 12U)
+		return EINVAL;
+	if (sps->max_num_ref_frames > 16U || sps->pic_width_in_mbs_minus1 > 1023U || sps->pic_height_in_map_units_minus1 > 1023U)
+		return EINVAL;
+	for (index = 0; index < 4U; index++) {
+		if (sps->crop[index] > 0xffffU)
+			return EINVAL;
+	}
+	if (sps->offset_for_non_ref_pic == INT32_MIN || sps->offset_for_top_to_bottom_field == INT32_MIN)
+		return EINVAL;
+	for (index = 0; index < sps->offset_count; index++) {
+		if (sps->offsets[index] == INT32_MIN)
+			return EINVAL;
+	}
 	kern_memset(rbsp, 0, sizeof(rbsp));
 	writer.data = rbsp;
 	writer.capacity_bits = sizeof(rbsp) * 8U;
@@ -191,8 +207,16 @@ drv_rpi4_h264_write_pps(
 	int tail;
 	int error;
 
-	/* Refuses fields H.264 cannot code. */
+	/* Refuses fields H.264 cannot code (7.4.2.2's ranges). */
 	if (pps->pps_id > 255U || pps->sps_id > 31U || pps->weighted_bipred_idc > 2U)
+		return EINVAL;
+	if (pps->num_ref_idx_l0_default_active_minus1 > 31U || pps->num_ref_idx_l1_default_active_minus1 > 31U)
+		return EINVAL;
+	if (pps->pic_init_qp_minus26 < -64 || pps->pic_init_qp_minus26 > 25 ||
+	    pps->pic_init_qs_minus26 < -26 || pps->pic_init_qs_minus26 > 25)
+		return EINVAL;
+	if (pps->chroma_qp_index_offset < -12 || pps->chroma_qp_index_offset > 12 ||
+	    pps->second_chroma_qp_index_offset < -12 || pps->second_chroma_qp_index_offset > 12)
 		return EINVAL;
 	kern_memset(rbsp, 0, sizeof(rbsp));
 	writer.data = rbsp;
