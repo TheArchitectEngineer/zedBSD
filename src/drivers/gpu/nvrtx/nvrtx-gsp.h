@@ -441,6 +441,38 @@ struct nvrtx_fwsec {
 #define NVRTX_SEQ_CORE_WAIT_HALT	7U
 #define NVRTX_SEQ_CORE_RESUME		8U
 
+/* The static information the firmware reports, and the fields the driver reads of it. */
+#define NVRTX_STATIC_INFO_BYTES		1656U
+#define NVRTX_STATIC_FB_LENGTH_AT	1224U
+#define NVRTX_STATIC_SHORT_NAME_AT	1324U
+#define NVRTX_STATIC_NAME_BYTES		64U
+#define NVRTX_STATIC_BAR1_ROOT_AT	1536U
+#define NVRTX_STATIC_BAR2_ROOT_AT	1544U
+#define NVRTX_STATIC_INTERNAL_CLIENT_AT	1600U
+#define NVRTX_STATIC_UEFI_AT		1614U
+
+/* The allocation call's header and where the resource manager reports its status. */
+#define NVRTX_ALLOC_HEADER_BYTES	44U
+#define NVRTX_ALLOC_STATUS_AT		16U
+
+/* The three classes of the first objects, and their parameter lengths. */
+#define NVRTX_CLASS_ROOT		0x0000U
+#define NVRTX_CLASS_DEVICE		0x0080U
+#define NVRTX_CLASS_SUBDEVICE		0x2080U
+#define NVRTX_ROOT_PARAMS_BYTES		120U
+#define NVRTX_ROOT_PROCESS_AT		4U
+#define NVRTX_DEVICE_PARAMS_BYTES	56U
+#define NVRTX_DEVICE_SHARE_AT		4U
+#define NVRTX_SUBDEVICE_PARAMS_BYTES	4U
+
+/* One resource-manager object: its client, parent, own handle and class. */
+struct nvrtx_object {
+	uint32_t client;
+	uint32_t parent;
+	uint32_t handle;
+	uint32_t class_number;
+};
+
 /* What the system information says about the GPU. */
 struct nvrtx_sysinfo_values {
 	uint64_t registers;
@@ -507,6 +539,7 @@ int nvrtx_channel_receive(struct nvrtx_channel *channel, uint8_t *payload, size_
 void nvrtx_sysinfo(uint8_t *record, const struct nvrtx_sysinfo_values *values);
 int nvrtx_registry(uint8_t *registry, size_t capacity, size_t *length);
 void nvrtx_unload_args(uint8_t *args);
+size_t nvrtx_alloc_call(uint8_t *call, size_t capacity, const struct nvrtx_object *object, const uint8_t *parameters, size_t parameters_length);
 int nvrtx_sequencer_next(const uint8_t *payload, size_t length, uint32_t *cursor, struct nvrtx_seq_command *command);
 int nvrtx_sequencer_save(uint8_t *payload, size_t length, uint32_t slot, uint32_t value);
 

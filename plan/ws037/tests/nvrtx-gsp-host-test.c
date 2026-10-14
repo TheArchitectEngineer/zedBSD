@@ -506,6 +506,18 @@ test_records(void)
 	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && cursor == 10, "sequencer: core start");
 	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && cursor == 11, "sequencer: wait halt");
 	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == ENOENT, "sequencer: end");
+	{
+		struct nvrtx_object o = { 0xc0de0001U, 0xc0de0001U, 0xc0de0080U, 0x80U };
+		uint8_t params[56];
+		uint8_t call[200];
+		size_t n;
+
+		memset(params, 0x5a, sizeof(params));
+		n = nvrtx_alloc_call(call, sizeof(call), &o, params, sizeof(params));
+		check(n == 100 && nvrtx_get32(call, 0) == 0xc0de0001U && nvrtx_get32(call, 8) == 0xc0de0080U && nvrtx_get32(call, 12) == 0x80, "alloc: header handles and class");
+		check(nvrtx_get32(call, 16) == 0 && nvrtx_get32(call, 20) == 56 && nvrtx_get32(call, 24) == 0 && call[44] == 0x5a && call[99] == 0x5a, "alloc: status, length, parameters");
+		check(nvrtx_alloc_call(call, 60, &o, params, sizeof(params)) == 0, "alloc: small buffer refused");
+	}
 	nvrtx_put32(seq, 40, 99);
 	cursor = 0;
 	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == EINVAL, "sequencer: unknown opcode");

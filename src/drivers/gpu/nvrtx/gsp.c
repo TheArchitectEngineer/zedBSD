@@ -23,7 +23,10 @@
  * which places the firmware in the region and starts it.  P2b waits for the
  * firmware's init-done event, performing the CPU sequencer it sends.
  *
- * The stages after P2b are not in this revision: the worker stops the GSP
+ * P3 asks for the static information and allocates the first objects: a
+ * client, the device and the subdevice.
+ *
+ * The stages after P3 are not in this revision: the worker stops the GSP
  * (P7: the unload call, the GSP's falcon reset, FWSEC-SB, booter_unload) and
  * gives the preparation back, so the GPU ends as the firmware left it.
  */
@@ -73,6 +76,14 @@
 /* The highest user address the resource manager is told of (the 47-bit user half). */
 #define GSP_USER_ADDRESS_LIMIT		0x00007ffffffff000ULL
 
+/* How long a P3 call waits for its reply. */
+#define GSP_CALL_TIMEOUT_US		5000000U
+
+/* The handles the driver gives its first objects. */
+#define GSP_HANDLE_CLIENT		0xc0de0001U
+#define GSP_HANDLE_DEVICE		0xc0de0080U
+#define GSP_HANDLE_SUBDEVICE		0xc0de2080U
+
 /* The page of the queue memory that lists its pages, counted with the rest. */
 #define GSP_QUEUE_PTE_COUNT		(NVRTX_QUEUE_SHARED_BYTES / NVRTX_GSP_PAGE_SIZE)
 
@@ -90,6 +101,9 @@ static int gsp_queue_setup_calls(struct nvrtx_gpu *gpu);
 static int gsp_boot_riscv(struct nvrtx_gpu *gpu);
 static int gsp_init_done(struct nvrtx_gpu *gpu);
 static int gsp_stop(struct nvrtx_gpu *gpu);
+static int gsp_static_info(struct nvrtx_gpu *gpu);
+static int gsp_allocate(struct nvrtx_gpu *gpu, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
+static int gsp_objects(struct nvrtx_gpu *gpu);
 
 /*
  * Runs the GSP boot as far as this revision goes.
@@ -182,14 +196,25 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Says why the boot goes no further; the finish stops the GSP again. */
+	/* Stops before P3 when the boot asks; the finish stops the GSP again. */
 	allowed = nvrtx_stage_allowed("P3");
 	if (!allowed) {
 		nvrtx_stage_mark("P3 skipped (nvrtx.stop=P3)");
-	} else {
-		nvrtx_stage_mark("P3 is not in this kernel; stopping after P2b");
+		gsp_finish(gpu);
+		return 0;
 	}
 
+	/* Reads the static information and allocates the first objects. */
+	error = gsp_static_info(gpu);
+	if (error == 0)
+		error = gsp_objects(gpu);
+	if (error != 0) {
+		gsp_finish(gpu);
+		return error;
+	}
+
+	/* Says why the boot goes no further; the finish stops the GSP again. */
+	nvrtx_stage_mark("P4 is not in this kernel; stopping after P3");
 	gsp_finish(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
@@ -888,5 +913,138 @@ gsp_stop(
 
 	/* Succeeded: the GSP is stopped. */
 	gpu->state = NVRTX_GSP_REGION_SET;
+	return 0;
+}
+
+/* Asks the firmware for its static information and marks what it says about the GPU. */
+static int
+gsp_static_info(
+	struct nvrtx_gpu *gpu)
+{
+	char name[NVRTX_STATIC_NAME_BYTES + 1U];
+	uint32_t sequence;
+	size_t length;
+	size_t index;
+	int error;
+
+	/* Sends a zeroed record of the information's size and waits for it to come back filled. */
+	nvrtx_stage_mark("P3 begin: static info");
+	kern_memset(gpu->reply, 0, NVRTX_STATIC_INFO_BYTES);
+	error = nvrtx_rpc_send(gpu, NVRTX_CALL_STATIC_INFO, gpu->reply, NVRTX_STATIC_INFO_BYTES, 1, &sequence);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_rpc_wait(gpu, NVRTX_CALL_STATIC_INFO, sequence, GSP_CALL_TIMEOUT_US, &length);
+	if (error != 0) {
+		nvrtx_stage_mark("P3 fail: static info (%d)", error);
+		return error;
+	}
+
+	/* A short reply is not the 570.144 layout. */
+	if (length < NVRTX_STATIC_INFO_BYTES) {
+		nvrtx_stage_mark("P3 fail: static info of %zu bytes", length);
+		return EIO;
+	}
+
+	/* Copies the GPU's short name, keeping printable characters only. */
+	for (index = 0U; index < NVRTX_STATIC_NAME_BYTES; index++) {
+		name[index] = (char)gpu->reply[NVRTX_STATIC_SHORT_NAME_AT + index];
+		if (name[index] == '\0')
+			break;
+		if (name[index] < ' ' || name[index] > '~')
+			name[index] = '?';
+	}
+	name[index] = '\0';
+
+	/* Succeeded: the firmware knows the GPU. */
+	nvrtx_stage_mark("P3 static: %s vram %lluM uefi %u", name,
+	    (unsigned long long)(nvrtx_get64(gpu->reply, NVRTX_STATIC_FB_LENGTH_AT) >> 20),
+	    (unsigned)gpu->reply[NVRTX_STATIC_UEFI_AT]);
+	nvrtx_stage_mark("P3 static: bar1 root %llx bar2 root %llx",
+	    (unsigned long long)nvrtx_get64(gpu->reply, NVRTX_STATIC_BAR1_ROOT_AT),
+	    (unsigned long long)nvrtx_get64(gpu->reply, NVRTX_STATIC_BAR2_ROOT_AT));
+	return 0;
+}
+
+/* Allocates one object under the driver's client and checks the status the firmware returns. */
+static int
+gsp_allocate(
+	struct nvrtx_gpu *gpu,
+	uint32_t parent,
+	uint32_t handle,
+	uint32_t class_number,
+	const uint8_t *parameters,
+	size_t length)
+{
+	struct nvrtx_object object;
+	uint8_t call[NVRTX_ALLOC_HEADER_BYTES + NVRTX_ROOT_PARAMS_BYTES];
+	size_t call_length;
+	size_t reply_length;
+	uint32_t sequence;
+	uint32_t status;
+	int error;
+
+	/* Builds the call. */
+	object.client = GSP_HANDLE_CLIENT;
+	object.parent = parent;
+	object.handle = handle;
+	object.class_number = class_number;
+	call_length = nvrtx_alloc_call(call, sizeof(call), &object, parameters, length);
+	if (call_length == 0U)
+		return E2BIG;
+
+	/* Sends it and waits for the reply. */
+	error = nvrtx_rpc_send(gpu, NVRTX_CALL_ALLOCATE, call, call_length, 1, &sequence);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_rpc_wait(gpu, NVRTX_CALL_ALLOCATE, sequence, GSP_CALL_TIMEOUT_US, &reply_length);
+	if (error != 0)
+		return error;
+
+	/* The reply's status is the resource manager's verdict. */
+	if (reply_length < NVRTX_ALLOC_HEADER_BYTES)
+		return EIO;
+	status = nvrtx_get32(gpu->reply, NVRTX_ALLOC_STATUS_AT);
+	if (status != 0U) {
+		nvrtx_stage_mark("P3 fail: class %04x status %08x", (unsigned)class_number, (unsigned)status);
+		return EIO;
+	}
+
+	/* Succeeded: the object exists. */
+	return 0;
+}
+
+/* Allocates the client, the device and the subdevice. */
+static int
+gsp_objects(
+	struct nvrtx_gpu *gpu)
+{
+	uint8_t parameters[NVRTX_ROOT_PARAMS_BYTES];
+	int error;
+
+	/* The client is its own parent; it names itself and no process. */
+	kern_memset(parameters, 0, sizeof(parameters));
+	nvrtx_put32(parameters, 0U, GSP_HANDLE_CLIENT);
+	nvrtx_put32(parameters, NVRTX_ROOT_PROCESS_AT, 0xffffffffU);
+	error = gsp_allocate(gpu, GSP_HANDLE_CLIENT, GSP_HANDLE_CLIENT, NVRTX_CLASS_ROOT, parameters, NVRTX_ROOT_PARAMS_BYTES);
+	if (error != 0)
+		return error;
+
+	/* The device shares the client. */
+	kern_memset(parameters, 0, sizeof(parameters));
+	nvrtx_put32(parameters, NVRTX_DEVICE_SHARE_AT, GSP_HANDLE_CLIENT);
+	error = gsp_allocate(gpu, GSP_HANDLE_CLIENT, GSP_HANDLE_DEVICE, NVRTX_CLASS_DEVICE, parameters, NVRTX_DEVICE_PARAMS_BYTES);
+	if (error != 0)
+		return error;
+
+	/* The subdevice is the first (and only) one of the device. */
+	kern_memset(parameters, 0, sizeof(parameters));
+	error = gsp_allocate(gpu, GSP_HANDLE_DEVICE, GSP_HANDLE_SUBDEVICE, NVRTX_CLASS_SUBDEVICE, parameters, NVRTX_SUBDEVICE_PARAMS_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the driver has its client, device and subdevice. */
+	nvrtx_stage_mark("P3 ok: client, device and subdevice");
 	return 0;
 }

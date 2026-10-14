@@ -272,6 +272,45 @@ nvrtx_sequencer_save(
 	return 0;
 }
 
+/*
+ * Writes the allocation call for one resource-manager object.
+ *
+ * The call is the 44-byte header (client, parent, object, class, status,
+ * parameter length, flags, four reserved bytes) followed by the class's
+ * parameters.  Returns the call's length, or 0 when it does not fit.
+ */
+size_t
+nvrtx_alloc_call(
+	uint8_t *call,
+	size_t capacity,
+	const struct nvrtx_object *object,
+	const uint8_t *parameters,
+	size_t parameters_length)
+{
+	size_t at;
+
+	/* Refuses a call that does not fit. */
+	if (NVRTX_ALLOC_HEADER_BYTES + parameters_length > capacity)
+		return 0U;
+
+	/* Writes the header; the status stays zero for the resource manager to fill. */
+	for (at = 0U; at < NVRTX_ALLOC_HEADER_BYTES; at++)
+		call[at] = 0U;
+	nvrtx_put32(call, 0U, object->client);
+	nvrtx_put32(call, 4U, object->parent);
+	nvrtx_put32(call, 8U, object->handle);
+	nvrtx_put32(call, 12U, object->class_number);
+	nvrtx_put32(call, NVRTX_ALLOC_STATUS_AT, 0U);
+	nvrtx_put32(call, 20U, (uint32_t)parameters_length);
+
+	/* Copies the parameters after the header. */
+	for (at = 0U; at < parameters_length; at++)
+		call[NVRTX_ALLOC_HEADER_BYTES + at] = parameters[at];
+
+	/* Succeeded: the call's length. */
+	return NVRTX_ALLOC_HEADER_BYTES + parameters_length;
+}
+
 /* Measures a zero-terminated name. */
 static size_t
 records_strlen(
