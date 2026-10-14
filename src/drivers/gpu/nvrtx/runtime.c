@@ -68,6 +68,8 @@ static int runtime_reserve(void *private_data, void *session, uint32_t timeline,
 static int runtime_commit(void *private_data, void *session, void *token, struct drv_gpu_completion *completion);
 static int runtime_cancel(void *private_data, void *session, void *token, struct drv_gpu_completion *completion, unsigned fault);
 static int runtime_capacity(void *private_data, void *session, uint32_t timeline, unsigned *available);
+static int runtime_stop_begin(void *private_data, void *session, int error);
+static int runtime_stop_poll(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
 static void runtime_worker(void *argument);
 static void runtime_enqueue(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
@@ -89,10 +91,10 @@ static const struct drv_gpu_job_ops runtime_jobs = {
 	runtime_capacity
 };
 
-/* The recovery operations: only the fault (no local stop). */
+/* The recovery operations: a session's stop and its poll, and the device's fault. */
 static const struct drv_gpu_recovery_ops runtime_recovery = {
-	NULL,
-	NULL,
+	runtime_stop_begin,
+	runtime_stop_poll,
 	runtime_fault,
 	NULL,
 	NULL
@@ -211,10 +213,12 @@ runtime_command(
 
 	pending = owner->pending;
 	faulted = node->faulted;
+	if (owner->stopping != 0)
+		faulted = 1;
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	/* A faulted device takes nothing; queued work goes first. */
+	/* A faulted device, or a session being stopped, takes nothing; queued work goes first. */
 	if (faulted != 0)
 		return EIO;
 	if (pending != 0U)
@@ -284,10 +288,12 @@ runtime_submit(
 	if (bytes != 0U)
 		kern_memcpy(entry->wire, wire, bytes);
 
-	/* Queues it unless the device faulted. */
+	/* Queues it unless the device faulted or the session is being stopped. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	faulted = node->faulted;
+	if (entry->session->stopping != 0)
+		faulted = 1;
 	if (faulted == 0) {
 		entry->session->pending++;
 		runtime_enqueue(node, entry);
@@ -361,10 +367,10 @@ runtime_reserve(
 	if (!owned)
 		return EINVAL;
 
-	/* Takes a free marker unless the device faulted. */
+	/* Takes a free marker unless the device faulted or the session is being stopped. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
-	if (node->faulted != 0) {
+	if (node->faulted != 0 || owner->stopping != 0) {
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 		return EIO;
 	}
@@ -537,6 +543,77 @@ runtime_capacity(
 }
 
 /*
+ * Begins the stop of a session (its open is closing, or the core gave up
+ * on it): the session takes no new frame, command or reservation from now
+ * on.  What it queued still runs to its end; nothing here waits.
+ */
+static int
+runtime_stop_begin(
+	void *private_data,
+	void *session,
+	int error)
+{
+	struct nvrtx_node *node;
+	struct nvrtx_session *owner;
+	unsigned long enabled;
+
+	UNUSED_PARAMETER(error);
+
+	node = private_data;
+	owner = session;
+
+	/* stopping refuses the session's new work (submit, command, reserve answer EIO). */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->stopping = 1;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Succeeded: the stop is begun. */
+	return 0;
+}
+
+/*
+ * Reports whether a stopping session's work has ended: 0 once nothing it
+ * queued is queued or running any more (reservations it never committed
+ * may remain: the core withdraws them), EAGAIN until then.
+ */
+static int
+runtime_stop_poll(
+	void *private_data,
+	void *session)
+{
+	struct nvrtx_node *node;
+	struct nvrtx_session *owner;
+	unsigned long enabled;
+	uint32_t reserved;
+	uint32_t slot;
+	uint32_t pending;
+
+	node = private_data;
+	owner = session;
+
+	/* The session's pending work less its reservations not yet committed. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	reserved = 0U;
+	for (slot = 0U; slot < NVRTX_NODE_MARKERS; slot++) {
+		if (node->markers[slot].session == owner && node->markers[slot].state == NVRTX_ENTRY_RESERVED)
+			reserved++;
+	}
+	pending = owner->pending - reserved;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Work of the session still queued or running. */
+	if (pending != 0U)
+		return EAGAIN;
+
+	/* Succeeded: the session's work has ended. */
+	return 0;
+}
+
+/*
  * Stops new work after a fault: frames and markers queued afterwards are
  * refused, and the queued ones complete with EIO.  Idempotent.
  */
@@ -547,18 +624,23 @@ runtime_fault(
 {
 	struct nvrtx_node *node;
 	unsigned long enabled;
-
-	UNUSED_PARAMETER(error);
+	bool first;
 
 	node = private_data;
 
-	/* Sets the flag the queue's users look at. */
+	/* Sets the flag the queue's users look at; the first fault is shown. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
+	first = false;
+	if (node->faulted == 0)
+		first = true;
 	node->faulted = 1;
 	waitq_wake_all(&node->available);
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	if (first)
+		nvrtx_stage_mark("D2: the renderer faulted (%d); it takes no more work", error);
 }
 
 /*

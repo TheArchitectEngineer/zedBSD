@@ -335,3 +335,11 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
 - 原因: 方式 B の guest では GOP の console が emulated の VGA にあり RTX に無いので、既定の takeover（console を見せる）は head を firmware に残し、P8c（resident）は `display.taken` が無いので走らない。R8c・R8d は `nvrtx.disp.test=1`（自前の帯の surface）で takeover していた。
 - 直し: R9v と R9k の語に `nvrtx.disp.test=1` を足した（`config-amd64-nvrtx.mk`、8.8 と R9k の手順の前提）。code は変えない。
 - 後の課題（desktop が通った後に Q1 と決める）: console の無い時（方式 B、または GOP が別の GPU）にも、renderer を求められたら自前の黒い surface で takeover して device を登録するか。
+
+### 8.10 R9v（T1-673、2026-10-16）: vkquad PASS、display-events FAIL と直し
+
+- `plan/agents/T1/results-20261016-t1-673.md`。`P8c ok: gpu device registered`、**`VKQUAD ok device=zedBSD nvrtx (NVIDIA Turing) pixels=4096`**（D3: RTX が compositor の quad の shader で描き、copy・clear・buffer↔image と読み戻しが合う。実機の初の Vulkan の描画）。
+- display-events: `DISPLAY-EVENTS done error=-3` だけ（extensions の行も出ない: `vkEnumeratePhysicalDevices` が 0 台で -3）。nvrtx の error の行は無し。
+- 原因（code の読みで特定）: GPU core は native の仕事をした session が閉じる時に recovery の stop（`stop_begin`・`stop_poll`）で止まったことを確かめ、stop の無い backend では device 全体を fault にする（`gpu.c` の monitor、action 3）。runtime は `recovery.fault` しか持たなかったので、vkquad の終わりで renderer が fault し、次の open（display-events）の libvulkan の最初の command が EIO で、その node は飛ばされた。
+- 直し（`runtime.c`・`nvrtx-node.h`）: `stop_begin`（session に stopping を立て、新しい frame・command・reservation を EIO で断る、待たない）と `stop_poll`（session の queued／running の仕事が無くなれば 0、まだなら EAGAIN、commit されていない reservation は数えない）。fault の最初の 1 回を `D2: the renderer faulted (E); it takes no more work` と kernel log に出す（次の切り分けのため）。build は warning 0。
+- 次: T1 で R9v を流し直す（vkquad の後の display-events が swapchain／present の行を出すこと、vkquad を 2 回流して 2 回とも ok になること）。

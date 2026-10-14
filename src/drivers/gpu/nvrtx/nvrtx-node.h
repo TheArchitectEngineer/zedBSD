@@ -98,13 +98,15 @@ struct nvrtx_resource {
  * blobs lists its blobs by protocol number (the executor reads streams and
  * writes replies there), vk is its executor session, and pending counts
  * its queued frames and its reserved or queued markers (under the node's
- * queue_lock): a drain waits until it is zero.
+ * queue_lock): a drain waits until it is zero.  stopping (under queue_lock)
+ * is set by the core's stop of the session: it takes no new work.
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
 	struct nvrtx_resource *blobs;
 	struct nvrtx_vk_session *vk;
 	uint32_t pending;
+	int stopping;
 };
 
 /*
