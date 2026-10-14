@@ -729,3 +729,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-652 | Q1（WS037 R8d、P1 の display の event・cursor・share、merge f787c576b、rombar=1、T1-647 の PASS の後、ユーザーが monitor を見る） | phase006 の「T への手順（R8d…）」 | 未実施（T1-645・647 待ち） |
 | T1-653 | Q1（WS236 p006 の直し 49a7e41f2・merge 44eee26c5、Pi 4 実機、CI の kernel の差し替え、vkvideo-probe・videoplayer・dump-compare） | plan/ws236/phase006/phase.md の「T への依頼」 | 未実施 |
 | T1-654 | Q1（BUG-311 の BT 7 回目 72e530ec1・merge a45cbf8fa、Pi 4 実機、T1-653 と同じ main の kernel で） | plan/bugs/BUG-311.md の「7 回目」 | 未実施 |
+| T1-655 | Q1（WS239 p002、compositor の失敗時の console の login、merge 790ca59fe、QEMU、Venus の guest 可） | plan/ws239/phase001/phase.md の「T の手順」の A〜D | 未実施 |
