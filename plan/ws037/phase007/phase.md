@@ -2,7 +2,7 @@
 
 # ws037-p007: 3D の投入（段 P9g: 最初の draw）
 
-Status: in-progress（2026-10-15: 段 P9g（7a・7b・7c）は R7d の再試験 T1-656 で実機 PASS。次は desktop までの段 D1〜D7（8 節）。D1 は実装済み、R9w は T 待ち）
+Status: in-progress（2026-10-16: **D3・D5・D6 が方式 B（passthrough）の実機で PASS**。D6 は T1-678 で Keiland の desktop が nvrtx で描かれた（8.13）→ D6 は cleared の候補（Q1 の判定）。残りは D7（方法 A、8.14、ユーザーの判断待ち）。以前: 段 P9g は T1-656 で実機 PASS）
 Disposition: normal
 Parent: [WS037](../ws.md)
 依存: [p008](../phase008/phase.md) の段 E（頂点・fragment の program と SPH、2026-10-15 実装・host 済み）、段 P9c（compute の投入。2026-10-15 実機 R7c PASS: GR の channel・promote・QMD・fence の道が実機で動いた）、P5g（golden context）
@@ -362,3 +362,36 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
   - `stage.c`・`scanout.c`・`nvrtx-private.h`: 新しい語 `nvrtx.disp.own=1`: console が GPU に無い時（方式 B）、takeover は driver 自身の surface（test の帯）をすぐに出す（test の flip と待ちは無い）。`P8b ok: head N shows the driver's surface`。
   - `config-amd64-nvrtx.mk`: R9k の語を `nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1` に。
 - build は warning 0。次: T1 で R9k を流し直す。sessiond.log に `SESSIOND DISPLAY waited_ms=…` が出て、greeter（compositor）が動き、keiland-shot が PNG を取れること。
+
+### 8.13 R9k（T1-678、2026-10-16）: PASS（D6: RTX の上に Keiland の desktop）
+
+- `plan/agents/T1/results-20261016-t1-678.md`（tree f706f4718、1c5c90857 込み）。RTX 2070 実機、方式 B（QEMU+VFIO、rombar=1）。boot の語 `login=graphical kmsg=quiet nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1`。image の build は rc 0・warning 0。
+- dmesg（nvrtx）: `P8b ok: head 0 shows the driver's surface`（1280x1024）→ `P8c ok: gpu device registered, display 1280x1024 at 60019 mHz`。`refused`・`D3 fail`・`did not compile`・`faulted` は 0 件。`/dev/gpu0` あり。
+- sessiond.log: **`SESSIOND DISPLAY waited_ms=2300`**（8.12 の attach の数えで sessiond が待った）→ greeter=/bin/wayland、AUTOLOGIN kei、SEAT `/dev/gpu0`、SESSION start、`HANDOFF session ready=1`。ps に wayland（`--session --glass`）・keiland-ime・files `--desktop`・settings `--welcome`。
+- `keiland-shot` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` rc 0。PNG: 上の panel（時計）、wallpaper、Settings の "Welcome to Kei, Kei" の window（Skip・Next）。写しは main の `build/review/t1-678-r9k.png`。
+- 判定: **D6 PASS（QEMU+VFIO の実機の RTX。compositor が nvrtx の renderer で合成し、nvrtx の display に出した）**。ユーザーの目標「RTXでデスクトップが描画できること。」を方式 B で満たした。証拠は compositor の capture（keiland-shot）と log で、RTX の monitor の目視はこの run では無い（同じ display の道の帯は 8.12 の run でユーザーが目視）。
+- D6 は cleared の候補（Q1 の判定）。p007 の残り: D7（方法 A、8.14）と、`nvrtx.vk`・`nvrtx.disp.own` の既定（ユーザーの判断）。
+
+### 8.14 D7（方法 A: 素の起動）で要る物（2026-10-16、P2 の洗い出し。code は未着手、ユーザーの判断待ち）
+
+Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動）で GOP の console を引き継ぐ道で desktop まで行くか、`nvrtx.vk` の既定を洗い出す。調べた事実（code と T の結果）:
+
+| # | 項目 | 今の code の動き | 方法 A で要る物・危険 |
+| --- | --- | --- | --- |
+| 1 | GSP の起動 | 既定で起動する: `nvrtx.gsp` は既定 on、firmware の絵が RTX にある時（`gop_on_gpu`）だけ（`nvrtx.c` 149 行）。`nvrtx.disp`・`nvrtx.resident` も既定 on | 語は要らない |
+| 2 | console の引き継ぎ（P0 → P4m → P8b） | console が GOP の framebuffer（BAR1 の +0）なら P0 で保ち、GSP の起動の後 P4m で BAR1 の 0.. を VRAM の先頭に map し直し、P8b で **console を window に出す**（`P8b ok: head 0 shows the console`、`scanout.c` 750〜865 行）。console と mode の大きさが違う・pitch が 64 の倍数でない時は head に触れない（GOP のまま、`taken` 0） | **この道は実機で一度も通っていない**。方式 B の run は全て console が QEMU の VGA にあり `P8b: no console kept`（T1-669）で、帯（test）か自前（own）の surface だった。方法 A の最初の run がこの道の初の実機の確認になる。GOP の framebuffer が BAR1 の +0 でない（ReBAR・Above 4G の設定による）と `N1`/`P0` で保てない |
+| 3 | head を引き継げなかった時 | `taken` 0 なら **GPU device も登録しない**（`gsp.c` 351〜360 行、T1-669 の `P8 done; this revision ends at P8c`）。console を保っていれば GSP は console のために動いたまま（`gsp_end`、`P8: the GSP stays up to keep the console`）、console は CPU で描かれ続ける | `/dev/gpu0` が無く desktop は出ない（attach の数えが 0 に戻り sessiond は console に戻る）。`nvrtx.disp.own=1` を既定にすれば console を出せない時に自前の surface へ切り替えて P8c まで進めるが、その時 text console は見えなくなる（console の付け直しは design の項目 12、WS037 の範囲の外） |
+| 4 | renderer | `nvrtx.vk` は既定 off（`stage.c` 315 行）。off なら node は DISPLAY だけで、libvulkan は別の renderer の node が無いと physical device を作れない。10.0.30.5 の i5-13400F は内蔵 GPU が無い（F）ので **他の renderer は無い** | **`nvrtx.vk=1` が要る**（語か既定 on）。vk は work channel（P9w）と P5g（golden context）を伴う。実機で通ったのは方式 B だけ（T1-673/675/678） |
+| 5 | sessiond の待ち | GSP の worker の間 `hw.gpu.attaching` を数える（8.12）ので sessiond は `/dev/gpu0` を最大 15 s 待つ。方式 B では 2.3 s 待った。方法 A は `nvrtx.disp.test` の待ちが無いので同程度の見込み | 15 s を越えると console に戻る（その時は sessiond.log の `CONSOLE reason=no-display`）。素の機械の GSP の起動の時間は未計測 |
+| 6 | compositor の claim と release | claim で compositor の surface に flip、release で引き継いだ時の surface（方法 A では console）に戻す | release で console に戻る道も実機は未確認（方式 B では自前の surface に戻った） |
+| 7 | 判定の手段 | 10.0.30.5 の NIC（RTL8127）の driver は tree に無い（`src` に 0x8127 の id が無い）ので SSH・dmesg の取得は無い | **判定はユーザーの目視と写真**（RTX の monitor に desktop）。失敗の時の切り分けには kernel の行を画面に出す image（下の RAd）が要る。compositor が描いた後は kernel の行は見えない |
+| 8 | GOP の mode | P8b は GOP の mode（ARMED の viewport と raster）をそのまま使い、別の mode は ENOTSUP | UEFI の loader が GOP の mode を選ぶ: graphical boot（main の既定）は `video=` を落として 1920x1080 を求め（`platform/amd64/vmunix.mk` 1235 行の注記）、graphical boot n は `video=`（640x480）。desktop はその mode で出る（解像度の変更は範囲の外）。1920x1080 の pitch 7680 は 64 の倍数 |
+
+**提案（ユーザーの判断に掛ける物、Q1 経由）**:
+
+1. 最初の方法 A の run は語 `nvrtx.vk=1` を足すだけにし（既定は変えない）、PASS の後に `nvrtx.vk` を既定 on にするかを決める。既定 on の危険: vk が失敗する機械で boot の時間（P5g・compile）が延びる。失敗しても console・GPU device は残る作り（renderer の fault は node を止めるだけ）。
+2. `nvrtx.disp.own` は方法 A では要らない（console が RTX にある）。既定 on にするなら意味は「console を出せない時に自前の surface へ落ちる」に変える案（今は語がある時は console の有無に関わらず自前）。方式 B では便利だが、方法 A で console の形が合わない時に text console が消える。判断が要る。
+3. image（`config-amd64-nvrtx.mk` に足した）:
+   - **RAk**: main の image の既定（graphical boot・graphical login、kernel の行は出さない）＋語 `nvrtx.vk=1`＋`display-inventory`。合格: RTX の monitor に boot の logo → GSP の起動の間の一時的な黒は可 → Keiland の desktop（panel・wallpaper・Welcome の window）。
+   - **RAd**（RAk が FAIL の時の切り分け）: RAk に kernel の行を画面に出す（`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、graphical boot n）。最後に見えた `N1`・`P0`・`P4m`・`P8b`・`P8c`・`P9w` の印を写真に撮る。graphical boot n なので GOP は 640x480 になり、RAk（1920x1080）とは mode が違う点に注意（切り分けの用で、合格の判定は RAk）。
+   - 手順は phase006 の RA と同じ: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/rak NVRTX_RUN=RAk`、USB に書き、BIOS は CSM off・primary display が PEG、RTX の出力に monitor。
