@@ -14,7 +14,8 @@
  * the firmware's picture (the GOP) lit, on which output (SOR) and protocol.
  * The timing of a lit head is read from the display's armed state, which the
  * kernel can read directly.  Nothing here changes what is on the screen;
- * the core and window channels that set a mode and flip are stage P8b.
+ * the core and window channels that take the head over and flip are stage
+ * P8b (scanout.c).
  * The order and the controls are nouveau's (r535 display bring-up, with the
  * 570 numbers of the system controls).
  */
@@ -169,6 +170,9 @@ nvrtx_display_stop(
 
 	display = &gpu->display;
 	failures = 0;
+
+	/* Frees P8b's channels first: they are children of the root. */
+	nvrtx_scanout_stop(gpu);
 
 	/* Frees the root, then the common object. */
 	if (display->root_made != 0) {

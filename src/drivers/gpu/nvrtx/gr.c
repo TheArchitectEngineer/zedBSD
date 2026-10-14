@@ -34,9 +34,8 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The arena: its size, and how far below the top of the last usable region it starts at most. */
+/* The arena: its size (its reserve below the top is NVRTX_GR_ARENA_RESERVE). */
 #define GR_ARENA_BYTES			0x8000000ULL
-#define GR_ARENA_RESERVE		0x8800000ULL
 #define GR_ARENA_ALIGN			0x200000ULL
 
 /* The arena's parts. */
@@ -290,7 +289,7 @@ gr_layout(
 	gr = &gpu->gr;
 
 	/* Takes the arena below the first block, in the last usable region. */
-	error = nvrtx_mmu_vram_block(gpu->static_info, GR_ARENA_RESERVE, &candidate, &region);
+	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_GR_ARENA_RESERVE, &candidate, &region);
 	if (error != 0) {
 		nvrtx_stage_mark("P5g fail: no VRAM for the arena (%d)", error);
 		return error;

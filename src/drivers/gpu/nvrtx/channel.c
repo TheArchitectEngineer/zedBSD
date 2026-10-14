@@ -94,6 +94,7 @@
 
 static int channel_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
 static int channel_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t *value);
+static int channel_vram_fill(struct nvrtx_gpu *gpu, uint64_t address, uint32_t value, size_t length);
 static int channel_buffers(struct nvrtx_gpu *gpu);
 static int channel_flush_tlb(struct nvrtx_gpu *gpu);
 static int channel_fence(struct nvrtx_gpu *gpu);
@@ -552,6 +553,63 @@ nvrtx_vram_zero(
 	return 0;
 }
 
+/*
+ * Fills a run of the VRAM with one 32-bit value through the register window.
+ *
+ * The run goes in pieces that each lie inside one 64 KiB step of the
+ * window.  The address and the length are whole words.
+ */
+int
+nvrtx_vram_fill(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	uint32_t value,
+	size_t length)
+{
+	size_t piece;
+	size_t done;
+	int error;
+
+	/* Whole words only. */
+	if ((address % 4U) != 0U || (length % 4U) != 0U)
+		return EINVAL;
+
+	/* Fills up to the next 64 KiB boundary each time. */
+	done = 0U;
+	while (done < length) {
+		piece = 0x10000U - (size_t)((address + done) & 0xffffU);
+		if (piece > length - done)
+			piece = length - done;
+		error = channel_vram_fill(gpu, address + done, value, piece);
+		if (error != 0)
+			return error;
+		done += piece;
+	}
+
+	/* Succeeded: every word of the run holds the value. */
+	return 0;
+}
+
+/*
+ * Reads one word of the VRAM through the register window.
+ */
+int
+nvrtx_vram_read32(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	uint32_t *value)
+{
+	int error;
+
+	/* Reads it through the window, which is put back afterwards. */
+	error = channel_vram_read32(gpu, address, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the word is in *value. */
+	return 0;
+}
+
 /* Writes bytes into the VRAM through the register window, then puts the window back. */
 static int
 channel_vram_write(
@@ -580,6 +638,37 @@ channel_vram_write(
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
 
 	/* Succeeded: the bytes are in the VRAM. */
+	return 0;
+}
+
+/* Writes one value over a run of the VRAM through the register window, then puts the window back. */
+static int
+channel_vram_fill(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	uint32_t value,
+	size_t length)
+{
+	uint64_t base;
+	uint32_t offset;
+	uint32_t saved;
+	size_t at;
+
+	/* The range must lie inside one window position, in whole words. */
+	base = address & ~0xffffULL;
+	offset = (uint32_t)(address & 0xffffU);
+	if ((length % 4U) != 0U || offset + length > CHANNEL_WINDOW_BYTES)
+		return EINVAL;
+
+	/* Points the window at the range, writes the value word by word, and puts the window back. */
+	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
+	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)(base >> 16));
+	for (at = 0U; at < length; at += 4U)
+		nvrtx_wr32(gpu, CHANNEL_WINDOW_AT + offset + (uint32_t)at, value);
+	(void)nvrtx_rd32(gpu, CHANNEL_WINDOW_AT + offset);
+	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
+
+	/* Succeeded: the run holds the value. */
 	return 0;
 }
 

@@ -7,8 +7,9 @@
 #     stage marks are on the guest's emulated VGA screen that QMP's screendump captures,
 #   - the boot words of one run: NVRTX_RUN=R0 (no words: N0 and N1 only), R1 (nvrtx.gsp=1
 #     nvrtx.stop=P1a), R2 (stop=P2a), R3 (stop=P3), R4 (stop=P4), R5 (stop=P5), R6 (stop=P6) or
-#     R7 (nvrtx.gsp=1, every built stage) or R7g (R7 and nvrtx.gr=1, the golden context); plan/ws037/phase004
-#     and phase005 give what each run must show.
+#     R7 (nvrtx.gsp=1, every built stage) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (R7 and
+#     nvrtx.disp=1, the takeover of the head the GOP lit); plan/ws037/phase004 to phase006 give what each
+#     run must show.
 # Build one image per run, each into its own BUILD:
 #   plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r0 NVRTX_RUN=R0
 include config/ci/config-amd64.mk
@@ -48,4 +49,8 @@ endif
 # ws037-p005 5f: R7 with the graphics golden context and the TU10x scrubber (stage P5g).
 ifeq ($(NVRTX_RUN),R7g)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1
+endif
+# ws037-p006 P8b: R7 with the takeover of the head the GOP lit (needs the RTX's option ROM run, rombar=1).
+ifeq ($(NVRTX_RUN),R8b)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1
 endif

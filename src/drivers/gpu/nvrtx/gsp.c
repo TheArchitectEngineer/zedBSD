@@ -273,8 +273,23 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Says why the boot goes no further; the finish runs P6's stop and P7. */
-	nvrtx_stage_mark("P8b is not in this kernel; stopping after P8a");
+	/* Takes the firmware's head over when the boot asks (nvrtx.disp=1) and does not stop before it. */
+	wanted = nvrtx_stage_disp_wanted();
+	allowed = nvrtx_stage_allowed("P8b");
+	if (wanted && !allowed)
+		nvrtx_stage_mark("P8b skipped (nvrtx.stop=P8b)");
+	if (!wanted)
+		nvrtx_stage_mark("P8b not asked (nvrtx.disp=1); stopping after P8a");
+	if (wanted && allowed) {
+		error = nvrtx_scanout_start(gpu);
+		if (error != 0) {
+			gsp_finish(gpu);
+			return error;
+		}
+	}
+
+	/* Says where the boot ends; the finish runs P8's and P6's stops and P7. */
+	nvrtx_stage_mark("P8 done; stopping (this revision ends at P8b)");
 	gsp_finish(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
@@ -322,9 +337,10 @@ nvrtx_gsp_release(
 	nvrtx_buffer_free(gpu, &memory->fwsec_frts);
 	nvrtx_buffer_free(gpu, &memory->fwsec_sb);
 
-	/* Frees the buffers of the first channel and of the graphics context. */
+	/* Frees the buffers of the first channel, of the graphics context and of the display's channels. */
 	nvrtx_channel_release(gpu);
 	nvrtx_gr_release(gpu);
+	nvrtx_scanout_release(gpu);
 
 	/* Frees the channel's staging buffer and the reply buffer. */
 	if (memory->staging != NULL)

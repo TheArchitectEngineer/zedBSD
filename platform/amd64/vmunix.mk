@@ -176,6 +176,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/channel.c
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/gr.c
 # P8a: the display under the GSP, its objects and the readout of the lit heads (ws037-p006).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display.c
+# P8b: the takeover of the firmware's head, the display channels and a flip (ws037-p006, nvrtx.disp=1).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/scanout.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
