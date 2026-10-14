@@ -8,6 +8,6 @@ Status: finished（2026-10-14 13:47–13:49 JST）。Approval: このchatのユ�
 | --- | --- | --- | --- |
 | q1186-i01 | [p217](../ws074/phase217/phase.md) partial | 固定縦lr/rl Grid直接横LTR absolute子、row1/col2右insetのstatic area/justify-center、独立lr/rl/WPT007先頭2子/旧WPT/host/Acid | cleared。独立2矩形Chromium一致、両縦callback先頭2子全検査PASS、WPT file wholeはFAILのまま、p217 whole未達 |
 
-Outcome: WPT007縦lr/rl callbacks初回失敗は3番目子へ進んだ。水平2 callback PASS、旧WPT/host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。[証拠](../ws074/phase217/evidence/20261014-q1186/README.md)。WPT/runner/ABI/Master無変更。
+Outcome: WPT007縦lr初回失敗は4番目子、縦rl初回失敗は3番目子。水平2 callback PASS、旧WPT/host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。[証拠](../ws074/phase217/evidence/20261014-q1186/README.md)。WPT/runner/ABI/Master無変更。
 
-Resume: 縦Gridの3番目absolute子、次に4番目子/RTL方向。p189/p173全3,805件100%未達。共有Queue/Master/GitHub publication pending、pushなし。
+Resume: 縦rl Gridの3番目横RTL absolute子、次に縦lrの4番目子。p189/p173全3,805件100%未達。共有Queue/Master/GitHub publication pending、pushなし。

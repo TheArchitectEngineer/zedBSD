@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html><head><style>
+.grid { position: relative; display: inline-grid; grid-template-columns: 100px 150px; grid-template-rows: 150px 100px; writing-mode: vertical-rl; font: 10px/1 monospace; }
+.grid > div { position: absolute; writing-mode: horizontal-tb; direction: rtl; grid-row: 2 / 3; grid-column: 1 / 2; align-self: center; justify-self: start; top: 10px; }
+</style>
+</head><body><div class="grid" id="grid"><div>X XX X</div></div>
+<pre>32,10,36,10</pre>
+<script>
+var gridRect = document.getElementById("grid").getBoundingClientRect();
+var itemRect = document.querySelector(".grid > div").getBoundingClientRect();
+var result = Math.round(itemRect.left - gridRect.left) + "," + Math.round(itemRect.top - gridRect.top) + "," + Math.round(itemRect.width) + "," + Math.round(itemRect.height);
+document.querySelector("pre").textContent = result;
+console.log(result);
+</script>
+</body></html>
