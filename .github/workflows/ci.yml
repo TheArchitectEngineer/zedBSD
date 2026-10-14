@@ -30,9 +30,11 @@ jobs:
           make -j4 toolchain
 
       - name: Build amd64
+        # The firmware is fetched (from awemorris/zedBSD-firmware, else its upstream) after its license is accepted
+        # once; "yes |" answers that question for every selected firmware before the parallel build.
         run: |
-          git submodule update --init --depth 1 vendor/raspberrypi-firmware
           cp config/ci/config-amd64.mk config.mk
+          yes | make firmware-licenses
           make -j4
           mkdir -p artifacts
           gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-intel.img.gz
@@ -40,6 +42,7 @@ jobs:
       - name: Build arm64
         run: |
           cp config/ci/config-rpi4.mk config.mk
+          yes | make firmware-licenses
           make -j4
           mkdir -p artifacts
           gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-rpi4.img.gz
@@ -47,6 +50,7 @@ jobs:
       - name: Build arm64
         run: |
           cp config/ci/config-pc98.mk config.mk
+          yes | make firmware-licenses
           make -j4
           mkdir -p artifacts
           gzip -9 -c build/pc98/hdd-image.img > artifacts/zedbsd-pc98.img.gz

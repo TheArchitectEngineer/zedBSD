@@ -1,6 +1,7 @@
 # zedBSD optional Intel i915 display DMC firmware package
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
+include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
 override I915_FIRMWARE_FIXTURE_GOAL := i915-firmware-fixture-cache
 ifneq ($(filter $(I915_FIRMWARE_FIXTURE_GOAL),$(MAKECMDGOALS)),)
@@ -21,6 +22,11 @@ I915_FIRMWARE_LICENSE_SIZE ?= 2080
 I915_FIRMWARE_LICENSE_SHA256 ?= 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
 I915_FIRMWARE_WHENCE_SIZE ?= 425450
 I915_FIRMWARE_WHENCE_SHA256 ?= c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+# The package directory of the zedBSD firmware repository; empty fetches
+# from the upstream alone (userland/firmware/zedbsd-firmware.mk).
+I915_FIRMWARE_ZEDBSD_URL ?=
+# The fixture does not ask about the license unless it sets this to y.
+I915_FIRMWARE_LICENSE_PROMPT ?= n
 I915_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
@@ -38,6 +44,8 @@ override I915_FIRMWARE_LICENSE_SIZE := 2080
 override I915_FIRMWARE_LICENSE_SHA256 := 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
 override I915_FIRMWARE_WHENCE_SIZE := 425450
 override I915_FIRMWARE_WHENCE_SHA256 := c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+override I915_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/i915)
+override I915_FIRMWARE_LICENSE_PROMPT := y
 override I915_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
@@ -64,6 +72,20 @@ override I915_FIRMWARE_DATA := \
 	/usr/share/licenses/i915-firmware/LICENSE.i915=$(I915_FIRMWARE_CACHE_LICENSE) \
 	/usr/share/licenses/i915-firmware/WHENCE=$(I915_FIRMWARE_CACHE_WHENCE) \
 	/usr/share/zedbsd/packages/i915-firmware.manifest=$(I915_FIRMWARE_MANIFEST)
+
+# The license the first fetch asks about (userland/firmware/zedbsd-firmware.mk).
+override I915_FIRMWARE_LICENSE_COMMAND = $(call ZEDBSD_FIRMWARE_LICENSE_COMMAND,i915-firmware,$(I915_FIRMWARE_CACHE_ROOT),$(ZEDBSD_FIRMWARE_TREE)/i915/i915-firmware.notice,$(I915_FIRMWARE_LICENSE_PATH),$(I915_FIRMWARE_LICENSE_SIZE),$(I915_FIRMWARE_LICENSE_SHA256),$(I915_FIRMWARE_ZEDBSD_URL),$(I915_FIRMWARE_BASE_URL)/$(I915_FIRMWARE_LICENSE_PATH)$(I915_FIRMWARE_URL_SUFFIX),$(I915_FIRMWARE_FETCH))
+ifneq ($(call ZEDBSD_FIRMWARE_ASK_AT_PARSE,i915-firmware,$(filter i915-firmware,$(ZEDBSD_USER_PROGRAMS)),$(I915_FIRMWARE_CACHE_DIR)),)
+ifneq ($(shell $(I915_FIRMWARE_LICENSE_COMMAND) && echo accepted),accepted)
+$(error i915-firmware: the firmware license was not accepted; see above)
+endif
+endif
+ifneq ($(filter i915-firmware,$(ZEDBSD_USER_PROGRAMS)),)
+firmware-licenses: i915-firmware-license
+endif
+.PHONY: i915-firmware-license
+i915-firmware-license:
+	@if test ! -d '$(I915_FIRMWARE_CACHE_DIR)'; then $(I915_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,i915-firmware,Intel i915 display DMC firmware,amd64,n,package,,y,firmware,firmware/i915,,,data,$(I915_FIRMWARE_DATA),,))
 override USERLAND_i915-firmware_DATA := $(I915_FIRMWARE_DATA)
@@ -127,6 +149,9 @@ i915-firmware-cache:
 		verify_cache "$$cache"; \
 		exit 0; \
 	fi; \
+	if test '$(I915_FIRMWARE_LICENSE_PROMPT)' = y; then \
+		$(I915_FIRMWARE_LICENSE_COMMAND); \
+	fi; \
 	parent=$${cache%/*}; \
 	mkdir -p "$$parent"; \
 	lock="$$cache.lock"; \
@@ -147,12 +172,23 @@ i915-firmware-cache:
 	locked=1; \
 	trap cleanup EXIT HUP INT TERM; \
 	temporary=$$(mktemp -d "$$parent/.i915.$(I915_FIRMWARE_REVISION).XXXXXX"); \
+	repository='$(I915_FIRMWARE_ZEDBSD_URL)'; \
+	fetch() { \
+		if test -n "$$repository" && \
+			$(I915_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
+			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "i915-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
+		fi; \
+		$(I915_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
+	}; \
 	base='$(I915_FIRMWARE_BASE_URL)'; \
 	suffix='$(I915_FIRMWARE_URL_SUFFIX)'; \
-	$(I915_FIRMWARE_FETCH) --output "$$temporary/adlp_dmc.bin" "$$base/$(I915_FIRMWARE_ADLP_DMC_PATH)$$suffix"; \
-	$(I915_FIRMWARE_FETCH) --output "$$temporary/tgl_dmc_ver2_12.bin" "$$base/$(I915_FIRMWARE_TGL_DMC_PATH)$$suffix"; \
-	$(I915_FIRMWARE_FETCH) --output "$$temporary/LICENSE.i915" "$$base/$(I915_FIRMWARE_LICENSE_PATH)$$suffix"; \
-	$(I915_FIRMWARE_FETCH) --output "$$temporary/WHENCE" "$$base/$(I915_FIRMWARE_WHENCE_PATH)$$suffix"; \
+	fetch adlp_dmc.bin "$$base/$(I915_FIRMWARE_ADLP_DMC_PATH)$$suffix"; \
+	fetch tgl_dmc_ver2_12.bin "$$base/$(I915_FIRMWARE_TGL_DMC_PATH)$$suffix"; \
+	fetch LICENSE.i915 "$$base/$(I915_FIRMWARE_LICENSE_PATH)$$suffix"; \
+	fetch WHENCE "$$base/$(I915_FIRMWARE_WHENCE_PATH)$$suffix"; \
 	verify_cache "$$temporary"; \
 	mv -- "$$temporary" "$$cache"; \
 	temporary=; \

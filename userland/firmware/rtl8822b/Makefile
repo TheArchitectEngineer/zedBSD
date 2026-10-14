@@ -1,6 +1,7 @@
 # zedBSD optional RTL8822B firmware package
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
+include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
 override RTL8822B_FIRMWARE_FIXTURE_GOAL := rtl8822b-firmware-fixture-cache
 ifneq ($(filter $(RTL8822B_FIRMWARE_FIXTURE_GOAL),$(MAKECMDGOALS)),)
@@ -18,6 +19,11 @@ RTL8822B_FIRMWARE_LICENSE_SIZE ?= 2115
 RTL8822B_FIRMWARE_LICENSE_SHA256 ?= a61351665b4f264f6c631364f85b907d8f8f41f8b369533ef4021765f9f3b62e
 RTL8822B_FIRMWARE_MIRROR_WHENCE_SIZE ?= 364259
 RTL8822B_FIRMWARE_MIRROR_WHENCE_SHA256 ?= 54474263d8418a29e7b11485e79936d15a81dd75381308b29cadf2d53b78aa51
+# The package directory of the zedBSD firmware repository; empty fetches
+# from the upstream alone (userland/firmware/zedbsd-firmware.mk).
+RTL8822B_FIRMWARE_ZEDBSD_URL ?=
+# The fixture does not ask about the license unless it sets this to y.
+RTL8822B_FIRMWARE_LICENSE_PROMPT ?= n
 else
 # These values define the selected production package.  `override` is
 # intentional: accepting command-line substitutions would allow different
@@ -31,6 +37,8 @@ override RTL8822B_FIRMWARE_LICENSE_SIZE := 2115
 override RTL8822B_FIRMWARE_LICENSE_SHA256 := a61351665b4f264f6c631364f85b907d8f8f41f8b369533ef4021765f9f3b62e
 override RTL8822B_FIRMWARE_MIRROR_WHENCE_SIZE := 364259
 override RTL8822B_FIRMWARE_MIRROR_WHENCE_SHA256 := 54474263d8418a29e7b11485e79936d15a81dd75381308b29cadf2d53b78aa51
+override RTL8822B_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/rtl8822b)
+override RTL8822B_FIRMWARE_LICENSE_PROMPT := y
 endif
 override RTL8822B_FIRMWARE_OFFICIAL_REVISION := 458e40fdbb4dad5134ec230a42df21aea1b5baf8
 
@@ -57,6 +65,20 @@ override RTL8822B_FIRMWARE_DATA := \
 	/lib/firmware/rtw88/rtw8822b_fw.bin=$(RTL8822B_FIRMWARE_CACHE_BLOB) \
 	/usr/share/licenses/rtl8822b-firmware/LICENCE.rtlwifi_firmware.txt=$(RTL8822B_FIRMWARE_CACHE_LICENSE) \
 	/usr/share/zedbsd/packages/rtl8822b-firmware.manifest=$(RTL8822B_FIRMWARE_MANIFEST)
+
+# The license the first fetch asks about (userland/firmware/zedbsd-firmware.mk).
+override RTL8822B_FIRMWARE_LICENSE_COMMAND = $(call ZEDBSD_FIRMWARE_LICENSE_COMMAND,rtl8822b-firmware,$(RTL8822B_FIRMWARE_CACHE_ROOT),$(ZEDBSD_FIRMWARE_TREE)/rtl8822b/rtl8822b-firmware.notice,LICENCE.rtlwifi_firmware.txt,$(RTL8822B_FIRMWARE_LICENSE_SIZE),$(RTL8822B_FIRMWARE_LICENSE_SHA256),$(RTL8822B_FIRMWARE_ZEDBSD_URL),$(RTL8822B_FIRMWARE_MIRROR_BASE_URL)/$(RTL8822B_FIRMWARE_MIRROR_REVISION)/$(RTL8822B_FIRMWARE_LICENSE_UPSTREAM_PATH),$(RTL8822B_FIRMWARE_FETCH))
+ifneq ($(call ZEDBSD_FIRMWARE_ASK_AT_PARSE,rtl8822b-firmware,$(filter rtl8822b-firmware,$(ZEDBSD_USER_PROGRAMS)),$(RTL8822B_FIRMWARE_CACHE_DIR)),)
+ifneq ($(shell $(RTL8822B_FIRMWARE_LICENSE_COMMAND) && echo accepted),accepted)
+$(error rtl8822b-firmware: the firmware license was not accepted; see above)
+endif
+endif
+ifneq ($(filter rtl8822b-firmware,$(ZEDBSD_USER_PROGRAMS)),)
+firmware-licenses: rtl8822b-firmware-license
+endif
+.PHONY: rtl8822b-firmware-license
+rtl8822b-firmware-license:
+	@if test ! -d '$(RTL8822B_FIRMWARE_CACHE_DIR)'; then $(RTL8822B_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,rtl8822b-firmware,Realtek RTL8822B firmware,i386 pc98 amd64,n,package,,y,firmware,firmware/rtl8822b,,,data,$(RTL8822B_FIRMWARE_DATA),,))
 override USERLAND_rtl8822b-firmware_DATA := $(RTL8822B_FIRMWARE_DATA)
@@ -117,6 +139,9 @@ rtl8822b-firmware-cache:
 		verify_cache "$$cache"; \
 		exit 0; \
 	fi; \
+	if test '$(RTL8822B_FIRMWARE_LICENSE_PROMPT)' = y; then \
+		$(RTL8822B_FIRMWARE_LICENSE_COMMAND); \
+	fi; \
 	parent=$${cache%/*}; \
 	mkdir -p "$$parent"; \
 	lock="$$cache.lock"; \
@@ -137,10 +162,21 @@ rtl8822b-firmware-cache:
 	locked=1; \
 	trap cleanup EXIT HUP INT TERM; \
 	temporary=$$(mktemp -d "$$parent/.rtl8822b.$(RTL8822B_FIRMWARE_MIRROR_REVISION).XXXXXX"); \
+	repository='$(RTL8822B_FIRMWARE_ZEDBSD_URL)'; \
+	fetch() { \
+		if test -n "$$repository" && \
+			$(RTL8822B_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
+			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "rtl8822b-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
+		fi; \
+		$(RTL8822B_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
+	}; \
 	base='$(RTL8822B_FIRMWARE_MIRROR_BASE_URL)/$(RTL8822B_FIRMWARE_MIRROR_REVISION)'; \
-	$(RTL8822B_FIRMWARE_FETCH) --output "$$temporary/rtw8822b_fw.bin" "$$base/$(RTL8822B_FIRMWARE_UPSTREAM_PATH)"; \
-	$(RTL8822B_FIRMWARE_FETCH) --output "$$temporary/LICENCE.rtlwifi_firmware.txt" "$$base/$(RTL8822B_FIRMWARE_LICENSE_UPSTREAM_PATH)"; \
-	$(RTL8822B_FIRMWARE_FETCH) --output "$$temporary/WHENCE" "$$base/$(RTL8822B_FIRMWARE_WHENCE_UPSTREAM_PATH)"; \
+	fetch rtw8822b_fw.bin "$$base/$(RTL8822B_FIRMWARE_UPSTREAM_PATH)"; \
+	fetch LICENCE.rtlwifi_firmware.txt "$$base/$(RTL8822B_FIRMWARE_LICENSE_UPSTREAM_PATH)"; \
+	fetch WHENCE "$$base/$(RTL8822B_FIRMWARE_WHENCE_UPSTREAM_PATH)"; \
 	verify_cache "$$temporary"; \
 	mv -- "$$temporary" "$$cache"; \
 	temporary=; \

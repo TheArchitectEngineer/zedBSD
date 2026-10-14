@@ -7,5 +7,5 @@ QEMU_FLAGS ?= -machine raspi4b -m 2G -display none -serial mon:stdio \
 .PHONY: run
 run: disk-image
 	$(QEMU) $(QEMU_FLAGS) -kernel $(abspath $(BUILD)/vmunix) \
-		-dtb $(abspath vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb) \
+		-dtb $(abspath $(RPI4_BOOT_FIRMWARE_DTB)) \
 		-drive "file=$(abspath $(DISK_IMAGE_ARTIFACT)),format=raw,if=sd,snapshot=on"

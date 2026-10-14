@@ -49,6 +49,9 @@ if [ ! -f "$reference" ] || [ plan/tools/libm/gen-reference.py -nt "$reference" 
 fi
 
 # The image with both files in /root.
+# The firmware the configuration selects is fetched after its license is accepted once (ws233-p001); the question
+# is answered the way CI answers it (2026-10-14, Q1 for the user).
+yes | make ZEDBSD_CONFIG=$config BUILD="$build" firmware-licenses
 make -j"$ZEDBSD_JOBS" ZEDBSD_CONFIG=$config BUILD="$build" \
 	ZEDBSD_TEST_EXTRA_FILES="--file /root/libm-test=$root/$out/libm-test --file /root/libm-ref.bin=$root/$reference --mode /root/libm-test=0755" \
 	disk-image
