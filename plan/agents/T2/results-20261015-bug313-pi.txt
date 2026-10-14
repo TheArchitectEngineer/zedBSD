@@ -1,0 +1,93 @@
+sh: 1: uptime: not found
+/dev/mmcblk0p2 on / type ufs (rw)
+SHA2-256(/boot/boot0/vmunix)= 2664df57023056350853d06a633a48c3df1e81f8d4b4c731632105e42699848e
+==dmesg
+input: /dev/input/event0: 2.4G Wireless Receiver
+usb-hid: event device usb0 device=2 interface=0 endpoint=81 report-bytes=8
+usb0: device 2 interface 0 class 03/01/01 driver=usb-hid
+input: /dev/input/event1: 2.4G Wireless Receiver
+usb-hid: event device usb0 device=2 interface=1 endpoint=82 report-bytes=21
+usb0: device 2 interface 1 class 03/01/02 driver=usb-hid
+input: /dev/input/event2: USB Receiver
+usb-hid: event device usb0 device=4 interface=0 endpoint=81 report-bytes=16
+usb0: device 4 interface 0 class 03/01/01 driver=usb-hid
+input: /dev/input/event3: USB Receiver
+usb-hid: event device usb0 device=4 interface=1 endpoint=82 report-bytes=9
+usb0: device 4 interface 1 class 03/01/02 driver=usb-hid
+usb-hid-rdesc: usb0 device 4 interface 2 length=54
+usb-hid-rdesc: usb0 device 4 interface 2 0000: 06 00 ff 09 01 a1 01 85 10 95 06 75 08 15 00 26 ff 00 09 01 81 00 09 01 91 00 c0 06 00 ff 09 02
+usb-hid-rdesc: usb0 device 4 interface 2 0020: a1 01 85 11 95 13 75 08 15 00 26 ff 00 09 02 81 00 09 02 91 00 c0
+usb-hid-diag: usb0 device 4 interface 2 refused error=21 stage=parse item=0x0036 prefix=0x00
+usb-hid-diag: usb0 device 4 interface 2 attach error=21 stage=prepare
+usb0: device 4 interface 2 class 03/00/00 driver=usb-hid attach-failed error=21
+usb0: device 5 port 1 056a:8191 class 00 configuration=1 configured
+usb-hid: usb0 device 5 interface 0 device-mode=2 report=33 bytes=3 error=0
+input: /dev/input/event4: HIDTOUCH
+input: /dev/input/event5: HIDTOUCH Touchscreen
+usb-hid: event device usb0 device=5 interface=0 endpoint=81 report-bytes=54
+usb0: device 5 interface 0 class 03/00/00 driver=usb-hid
+usb-hid-rdesc: usb0 device 5 interface 1 length=28
+usb-hid-rdesc: usb0 device 5 interface 1 0000: 06 00 ff 09 01 a1 01 85 01 09 01 75 08 95 3f 81 02 85 02 09 ff 75 08 95 3f 91 02 c0
+usb-hid-diag: usb0 device 5 interface 1 refused error=3 stage=parse item=0x000f prefix=0x81
+usb-hid-diag: usb0 device 5 interface 1 attach error=3 stage=prepare
+usb0: device 5 interface 1 class 03/00/00 driver=usb-hid attach-failed error=3
+hid-input: usb0/port1/device5/interface2 is a touch screen's mouse emulation; it is not published
+usb-hid: event device usb0 device=5 interface=2 endpoint=83 report-bytes=7
+usb0: device 5 interface 2 class 03/00/00 driver=usb-hid
+==dev
+total 0
+crw------- 1 root wheel 0 Jan  1  1970 bridge
+crw------- 1 kei  kei   0 Jan  1  1970 event0
+crw------- 1 kei  kei   0 Jan  1  1970 event1
+crw------- 1 kei  kei   0 Jan  1  1970 event2
+crw------- 1 kei  kei   0 Jan  1  1970 event3
+crw------- 1 kei  kei   0 Jan  1  1970 event4
+crw------- 1 kei  kei   0 Jan  1  1970 event5
+==log
+/boot/boot0/log:
+boot-000001.txt
+boot-000002.txt
+
+/var/log:
+kernel.log
+kernel.log.old
+messages
+sessiond.log
+==ps
+1767225606 SESSIOND SEAT events subscribed classes=0xa0
+1767225606 SESSIOND START greeter=/bin/wayland session=/etc/keiland/session pid=23
+1767225606 SESSIOND AUTOLOGIN user=kei
+1767225606 SESSIOND SEAT path=/dev/gpu0 uid=1000 mode=0600
+1767225606 SESSIOND SEAT path=/dev/gpu1 uid=1000 mode=0600
+1767225606 SESSIOND SESSION start user=kei uid=1000 pid=24 runtime=/run/user/1000
+1767225606 SESSIOND NETWORK session open uid=1000
+1767225608 SESSIOND HANDOFF session ready=1 waited_ms=2034
+1767225608 SESSIOND HANDOFF go written=3 at_ms=8532
+1767225608 SESSIOND SEAT path=/dev/input/event0 uid=1000 mode=0600
+1767225608 SESSIOND SEAT path=/dev/input/event1 uid=1000 mode=0600
+1767225609 SESSIOND SEAT path=/dev/input/event2 uid=1000 mode=0600
+1767225609 SESSIOND SEAT path=/dev/input/event3 uid=1000 mode=0600
+1767225609 SESSIOND SEAT path=/dev/input/event4 uid=1000 mode=0600
+1767225609 SESSIOND SEAT path=/dev/input/event5 uid=1000 mode=0600
+UID        PID PPID TTY     TIME CMD
+root         0    0 ?   00:00:00 kernel
+root         1    0 ?   00:00:00 kernel
+root         4    1 ?   00:00:00 kernel
+root         5    1 ?   00:00:00 kernel
+root         6    1 ?   00:00:00 kernel
+root         7    1 ?   00:00:00 kernel
+root         8    1 ?   00:00:00 kernel
+_bluetooth  10    8 ?   00:00:00 kernel
+root        11    1 ?   00:00:00 kernel
+root        20    1 ?   00:00:00 kernel
+root        21    1 ?   00:00:00 kernel
+root        23    1 ?   00:00:00 kernel
+kei         24   23 ?   00:00:06 /bin/wayland --session --glass --socket=/run/user/1000/wayland-0 --wallpaper=/usr/share/keiland/wallpaper.png --control-fd=3
+kei         35   24 ?   00:00:00 /usr/libexec/keiland-ime --method=ja
+kei         36   24 ?   00:00:00 /bin/files --desktop
+kei         37   24 ?   00:00:00 /bin/settings --welcome
+root        72   20 ?   00:00:00 kernel
+kei         74   72 ?   00:00:00 sshd-session: kei@notty
+kei         75   74 ?   00:00:00 sh -c grep -il "KWL" /var/log/* /boot/boot0/log/* /tmp/* /home/kei/* 2>/dev/null; tail -15 /var/log/sessiond.log; ps -ef 2>&1| head -30
+kei         78   75 ?   00:00:00 ps -ef
+kei         79   75 ?   00:00:00 head -30
