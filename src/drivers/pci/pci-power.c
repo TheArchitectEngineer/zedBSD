@@ -94,7 +94,7 @@
  * One function the suspend took on: its saved configuration, how deep it
  * is in the bus tree, and how far its suspend went, which is exactly what
  * its resume undoes.  wake_wanted is set by the driver's suspend through
- * drv_pci_device_set_wake().
+ * drv_pci_device_set_wake(), keep_d0 through drv_pci_device_keep_d0().
  */
 struct power_entry {
 	struct drv_pci_device *device;
@@ -103,6 +103,7 @@ struct power_entry {
 	uint8_t driver_suspended;
 	uint8_t wake_wanted;
 	uint8_t wake_armed;
+	uint8_t keep_d0;
 	uint8_t in_d3;
 	uint8_t platform_d3;
 };
@@ -514,6 +515,38 @@ drv_pci_device_set_wake(
 }
 
 /*
+ * Asks, from a driver's suspend, that the function stay in D0 while the
+ * system is in S0 idle (WS237 p005: a Gen9 i915 keeps the display the
+ * firmware lit, which D3hot would lose).  The configuration is still
+ * saved and written back; neither the function nor the platform is
+ * powered down.  It reports EINVAL outside a suspend.
+ */
+int
+drv_pci_device_keep_d0(
+	struct drv_pci_device *device,
+	bool keep)
+{
+	struct power_entry *entry;
+
+	/* Refuses a call outside the suspend of a function. */
+	if (power.entries == NULL || power.current >= power.count)
+		return EINVAL;
+
+	/* Refuses another function than the one being suspended. */
+	entry = &power.entries[power.current];
+	if (entry->device != device)
+		return EINVAL;
+
+	/* keep_d0 makes the suspend leave the function and the platform powered. */
+	entry->keep_d0 = 0;
+	if (keep)
+		entry->keep_d0 = 1;
+
+	/* Succeeded: the suspend will keep the function in D0 as asked. */
+	return 0;
+}
+
+/*
  * Writes a function's name for messages: "pci SSSS:BB:DD.F DRIVER".
  */
 void
@@ -831,6 +864,10 @@ suspend_entry(
 			return error;
 		}
 	}
+
+	/* A function its driver keeps in D0 sleeps powered (drv_pci_device_keep_d0). */
+	if (entry->keep_d0)
+		return 0;
 
 	/* Puts the function in D3hot; one without power management stays in D0. */
 	error = drv_pci_device_set_power_state(device, DRV_PCI_D3_HOT);

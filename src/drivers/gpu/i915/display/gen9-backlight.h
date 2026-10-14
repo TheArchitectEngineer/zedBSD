@@ -79,4 +79,8 @@ void drv_i915_gen9_backlight_start(struct i915_device *device);
 /* Withdraws the backlight device. */
 void drv_i915_gen9_backlight_stop(struct i915_device *device);
 
+/* Turns the panel's light off for a sleep (whatever the step), and back on after it (WS237 p005). */
+void drv_i915_gen9_backlight_suspend(struct i915_device *device);
+void drv_i915_gen9_backlight_resume(struct i915_device *device);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_GEN9_BACKLIGHT_H */

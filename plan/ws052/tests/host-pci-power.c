@@ -111,6 +111,9 @@ static struct drv_pci_device *failing_platform;
 /* The function whose driver's resume reports ESTALE, or NULL. */
 static struct drv_pci_device *stale_resume;
 
+/* The function whose driver keeps it in D0 across the sleep (WS237 p005), or NULL. */
+static struct drv_pci_device *keep_d0;
+
 /* How many checks failed. */
 static unsigned failures;
 
@@ -129,6 +132,7 @@ static void test_platform_failure(void);
 static void test_no_suspend(void);
 static void test_states(void);
 static void test_stale(void);
+static void test_keep_d0(void);
 
 /*
  * Runs the checks and reports how many failed.
@@ -144,6 +148,7 @@ main(void)
 	test_no_suspend();
 	test_states();
 	test_stale();
+	test_keep_d0();
 
 	/* Reports the outcome. */
 	if (failures != 0) {
@@ -177,6 +182,7 @@ reset_world(void)
 	failing_suspend = NULL;
 	failing_platform = NULL;
 	stale_resume = NULL;
+	keep_d0 = NULL;
 	drv_pci_platform_power_set(&test_platform);
 }
 
@@ -512,7 +518,38 @@ test_stale(void)
 	check_trace("platform:C:0 wake:C:0 resume:C reprobe:C platform:A:0 resume:A platform:D:0 resume:D", "stale: trace");
 }
 
-/* The simulated driver's suspend: C asks for its wake, and the failing function refuses. */
+/*
+ * Checks a function its driver keeps in D0 (WS237 p005): A stays in D0
+ * with its platform powered, the others sleep as before, and the resume
+ * gives A only its driver's resume.
+ */
+static void
+test_keep_d0(void)
+{
+	struct drv_pci_device *failed;
+	int error;
+
+	/* A is kept in D0. */
+	reset_world();
+	keep_d0 = &functions[0];
+	error = drv_pci_suspend_all(&failed);
+	check(error == 0, "keep D0: the suspend succeeds");
+	check_trace("suspend:D platform:D:3 suspend:A suspend:C wake:C:1 platform:C:3", "keep D0: suspend");
+	check((config_get(&functions[0], CAP_PM + 4U, 2) & 3U) == 0U, "keep D0: A in D0");
+	check((config_get(&functions[4], CAP_PM + 4U, 2) & 3U) == 3U, "keep D0: D in D3hot");
+
+	/* The resume: A gets its driver's resume only. */
+	trace[0] = '\0';
+	error = drv_pci_resume_all();
+	check(error == 0, "keep D0: the resume succeeds");
+	check_trace("platform:C:0 wake:C:0 resume:C resume:A platform:D:0 resume:D", "keep D0: resume");
+
+	/* Outside a suspend the request is refused. */
+	error = drv_pci_device_keep_d0(&functions[0], true);
+	check(error == EINVAL, "keep D0: outside a suspend is EINVAL");
+}
+
+/* The simulated driver's suspend: C asks for its wake, the kept function stays in D0, and the failing function refuses. */
 static int
 driver_suspend(
 	struct drv_pci_device *device)
@@ -525,6 +562,13 @@ driver_suspend(
 	/* The failing function refuses. */
 	if (device == failing_suspend)
 		return EBUSY;
+
+	/* The function kept in D0 says so. */
+	if (device == keep_d0) {
+		error = drv_pci_device_keep_d0(device, true);
+		if (error != 0)
+			return error;
+	}
 
 	/* C, a USB controller, wakes the system. */
 	if (device == &functions[2]) {

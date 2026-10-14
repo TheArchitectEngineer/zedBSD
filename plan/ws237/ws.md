@@ -28,7 +28,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | [ws237-p002](phase002/phase.md) | readout と primary plane の flip（段 1）、1.5 LW | in-progress（P2）— 実装と host の確かめ済み（a5613f4b2）、T1（QEMU・SV7 の passthrough・5330）とユーザーの SV7 の素の起動の試験待ち |
 | [ws237-p003](phase003/phase.md) | backlight、1.0 LW | in-progress（P2）— 実装と host の確かめ済み、実機は WS の最後に SV7 でまとめて |
 | [ws237-p004](phase004/phase.md) | mode set と外部の display、6.0 LW | in-progress（P2）— register の順と計算（aa3250e12・cafce9894）、P3 の fixture（b9b6f0e66）、outputs と node と bootfb のつなぎ込み（ee0df7e11・55063dd4d）を実装、host 試験と build 済み。SV7 の確かめは WS の最後 |
-| ws237-p005 | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | planned |
+| [ws237-p005](phase005/phase.md) | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | in-progress（P2）— ユーザーの判断 (B) D0 のまま sleep を実装、host と build 済み。SV7 は WS の最後 |
 | ws237-p006 | 規約の全文、0.5 LW | planned |
 - 2026-10-14 ユーザー「SV7の確認はせずに進めて、最後に確認してデバッグで調整しましょう。」→ p002 の実機の確かめを待たずに p003〜p005 を実装し、最後に SV7 でまとめて確かめて直す。
 
@@ -53,7 +53,17 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | `i915.gen9.display=flip` | 同じ解像度で、tearing が無い。window を速く動かしても横の裂け目が出ない | `i915: gen9 display: PWR_WELL_CTL2=... DC_STATE_EN=...`（readout）、`flip on pipe A, buffers at ...`、`presentations are flipped on the firmware's plane`。<br>出てはいけない行: `flip not used (...)`、`did not latch` |
 | `i915.gen9.display=backlight` | flip に加え、Settings の明るさで panel が明るく・暗くなる。最低でも真っ黒にならない | `i915: gen9 backlight: ... PWM control ... (N %)`、`the panel's brightness is offered as a backlight device`。<br>`no backlight device` の行が出たら、その理由 |
 | `i915.gen9.display=modeset` | backlight に加え、外部の DP・HDMI の monitor を挿すと、1 秒ほどで desktop に 2 つ目の画面として現れる（monitor の推奨の mode。CD clock を超える mode は使わない）。抜くと消える | `i915: gen9 node: external displays on ports B C D (connected 0x...), panel on pipe A, CD clock ... kHz, latencies ...`、<br>挿した時 `i915: gen9 outputs: port X: DP sink`（または `HDMI sink`）`, EDID 256 bytes, 1920x1080 at 148500 kHz`、`port X lit on pipe B, DPLL1, ...`、`lease ... of port X claimed`、<br>抜いた時 `port X's sink went; its display is dark and its lease ended`、`port X dark` |
-| `i915.gen9.display=full` | 今は modeset と同じ。suspend・resume（p005）はユーザーの判断の後 | modeset と同じ |
+| `i915.gen9.display=full` | 今は modeset と同じ | modeset と同じ |
+
+### sleep（どの段でも）
+
+1. 上の段の確かめの後、desktop の電源の menu から sleep する（または蓋を閉じる）。
+2. 期待: 画面の明かりが消え、外部の monitor は信号が無くなる。
+3. 電源ボタン（または蓋を開ける）で起こす。
+4. 期待: 数秒以内に同じ画面に戻り、外部の monitor も前の画面に戻る。
+5. 見る行: `i915: suspend: a Gen9 device sleeps in D0 ...`、`i915: gen9 backlight: the panel's light is off for the sleep`、`... is on again`、`i915: resume: the Gen9 display is back`。
+   - 外部の monitor が戻らなければ `port X could not be lit again after the sleep: N`。
+   - `suspend refused: ... cannot stay in D0` が出たら、sleep に入っていない。
 
 ### 不具合の時
 
