@@ -434,6 +434,8 @@ struct nvrtx_fwsec {
 #define NVRTX_EVENT_SEQUENCER		0x1002U
 #define NVRTX_EVENT_ERROR_LOG		0x1006U
 #define NVRTX_EVENT_LIBOS_PRINT		0x100cU
+#define NVRTX_EVENT_BRIDGELESS		0x100fU
+#define NVRTX_EVENT_POST_NOCAT		0x1020U
 
 /* The system information's length, and the unload call's. */
 #define NVRTX_SYSINFO_BYTES		928U

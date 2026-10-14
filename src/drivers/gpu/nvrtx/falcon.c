@@ -34,6 +34,7 @@
 #define FALCON_OS_VERSION		0x080U
 #define FALCON_IDENTITY_COPY		0x084U
 #define FALCON_CPU_CONTROL		0x100U
+#define FALCON_CPU_ALIAS		0x130U
 #define FALCON_BOOT_VECTOR		0x104U
 #define FALCON_HARDWARE_CONFIG		0x108U
 #define FALCON_DMA_CONTROL		0x10cU
@@ -49,6 +50,7 @@
 /* Bits of those registers. */
 #define FALCON_CPU_START		0x2U
 #define FALCON_CPU_HALTED		0x10U
+#define FALCON_CPU_ALIAS_ENABLED	0x40U
 #define FALCON_SCRUBBING		0x6U
 #define FALCON_PORT_AUTO_INCREMENT	(1U << 24)
 #define FALCON_PORT_SECURE		(1U << 28)
@@ -333,6 +335,29 @@ nvrtx_falcon_boot(
 
 	/* Succeeded: the program ran to its halt. */
 	return 0;
+}
+
+/*
+ * Starts a falcon's CPU where it stands, through the alias register when the
+ * CPU control says the alias is in use.
+ */
+void
+nvrtx_falcon_start(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon)
+{
+	uint32_t control;
+
+	/* Reads whether the CPU control is reached through its alias. */
+	control = nvrtx_rd32(gpu, falcon->base + FALCON_CPU_CONTROL);
+	if ((control & FALCON_CPU_ALIAS_ENABLED) != 0U) {
+		/* The alias starts the CPU. */
+		nvrtx_wr32(gpu, falcon->base + FALCON_CPU_ALIAS, FALCON_CPU_START);
+		return;
+	}
+
+	/* The CPU control itself starts the CPU. */
+	nvrtx_wr32(gpu, falcon->base + FALCON_CPU_CONTROL, FALCON_CPU_START);
 }
 
 /*

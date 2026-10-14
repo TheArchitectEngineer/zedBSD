@@ -240,3 +240,46 @@ T2 の再試験（[results-20261014-nvrtx-retest](../../agents/T2/results-202610
 
 - R3 が `P2b fail` の時: 画面の `P2b … ms` の行（今は 1 時点 3 行、`log put` の行を含む）を PNG に撮り、前回と同じ 6 つの `pmemsave`（logs 3 つ、queues、libos、rmargs）。番地は `P2a memory:` の行から。その後 QEMU を止め host を reboot。R4 は流さない。
 - `log put` の 1 つ目が 0x16 のまま（前回と同じ所で停止）なら、dump の log0 の record を P1 が前回と比べる。LOGRM の put が 0 でなくなれば RM の task まで進んだ印。
+
+## R3 の 3 回目（CPU sequencer の opcode 8）と nouveau に合わせた sequencer（2026-10-14、P1）
+
+T2（[results-20261014-nvrtx-r3-retest2](../../agents/T2/results-20261014-nvrtx-r3-retest2.md)、QEMU の guest に VFIO で渡した実機）: RMARGS の直しが効き、200 ms で `cmd put 2 got 2; msg size 40000`（GSP-RM が動き、system info と registry を読み、status の queue を作った）。727 ms に message 0x1020（1212 byte）と CPU sequencer（2000 byte）が来て、`sequencer: opcode 8 not supported` → `P2b fail (21)`。その時 `mbox 0 0`・`riscv 0`（RISC-V が止まっている）・`boot 13300000`。
+
+### dump4 の解読（P1、host）
+
+- 0x1020 は `GSP_POST_NOCAT_RECORD`（nouveau の r570 の msgfn の表）。nouveau は r570 で受けて捨てる（`drop_post_nocat_record`）。
+- sequencer（bufferSizeDWord 16354、cmdIndex 490）の中身: `POLL 0x110040 が 0x80000000`（GSP の停止の待ち）→ `WRITE 0x110040 = 0` → `CORE_RESET` → GSP の falcon の DMEM（0x1101c0/c4）と IMEM（0x110180/84/88）へ小さな falcon の program を書く → `WRITE 0x110040 = 0xfe`・`0x110104 = 0xfd00` → `CORE_START` → `CORE_WAIT_HALT` → `WRITE 0x110004 = 0` → `STORE 0x110040 → 0`・`STORE 0x110044 → 1` → **`CORE_RESUME`**（opcode 8）。GSP-RM が自分を止め、GSP の falcon で別の program を走らせ、SEC2 の booter で GSP-RM を再開させる Turing の起動の手順。
+
+### nouveau（MIT の `rm/r535/gsp.c` の `r535_gsp_msg_run_cpu_sequencer`、`falcon/v1.c`、`engine/sec2/tu102.c`）との照合と直し（commit `870aecf93`）
+
+| opcode | nouveau | nvrtx（直しの後） |
+| --- | --- | --- |
+| 0 REG_WRITE | wr32(addr, val) | 同じ |
+| 1 REG_MODIFY | mask(addr, mask, val) | 同じ |
+| 2 REG_POLL | rd32(addr) を 1 回、その後 timeout（0 なら 4 s）まで (rd32 & mask) == val を poll、失敗は無視 | 1 回目の読みを足した（前は無かった） |
+| 3 DELAY_US | udelay(val) | 同じ（usleep） |
+| 4 REG_STORE | regSaveArea[index] = rd32(addr) | 同じ |
+| 5 CORE_RESET | GSP の falcon の reset（disable・enable）、0x624 bit 7、0x10c = 0 | 同じ |
+| 6 CORE_START | 0x100 の bit 6 なら 0x130 = 2、でなければ 0x100 = 2 | 同じ（`nvrtx_falcon_start` に分けた） |
+| 7 CORE_WAIT_FOR_HALT | 0x100 の bit 4 を 2 s | 同じ |
+| 8 CORE_RESUME | GSP の reset_eng（RISC-V へ）→ GSP の 0x040/0x044 = libos の args の番地 → **SEC2 を start**（v1 の start: SEC2 の 0x100 の bit 6 なら 0x130、でなければ 0x100 = 2。P2a の booter_load が載ったまま）→ 0x1180f8 の bit 26 を 2 s → SEC2 の 0x040 が 0 → GSP の 0x080 = app の版 → 0x111240 の bit 0 | **足した**（`rpc_core_resume`）。印 `sequencer: core resume`、失敗の時は `resume not handed over (boot …)`・`resume booter …`・`resume left RISC-V stopped` |
+
+ほかに nouveau に合わせた所:
+
+- RPC の番号: nouveau は返事を待つ call に 0 から順に番号を振る（system info・registry は 0 で番号を使わない）。我々は 1 からだった → 0 から。
+- 返事の照合: nouveau は function だけで照合する。我々は function と番号 → function だけ（番号が違えば `rpc N: reply sequence …` の印だけ出す。design 2.6 の番号の照合は動いた後に戻す）。
+- event の扱い: nouveau が handler 無しで捨てる `UCODE_LIBOS_PRINT`（0x100c）・`PERF_BRIDGELESS_INFO_UPDATE`（0x100f）・`GSP_POST_NOCAT_RECORD`（0x1020）は印を出さずに捨てる。
+
+検証: y の kernel rc 0・warning 0・`amd64 vmunix check: PASS`、host 試験 167 項目 PASS（実物の firmware の file を含む。sequencer の decode の opcode 8 は引数 0 語で前から通る）、`git diff --check` 0、GPL の旧名 0。CORE_RESUME の実際の動きは実機でだけ分かる（未実施）。
+
+### T2 への手順（R3・R4、main の `870aecf93` 以降）
+
+前と同じ image の作り方（`NVRTX_RUN=R3`・`R4`）。各 run の前に host の reboot と `prepare.sh --check`。
+
+| run | 合格の印 | 後始末 |
+| --- | --- | --- |
+| R3 | `P2b 200 ms: cmd put 2 got 2; msg size 40000 …`、`rpc: sequencer of 2000 bytes`、`sequencer: core resume`、（`resume …` の失敗の行が無い）、`P2b ok: GSP-RM is up after N ms`、`P3 skipped`、`P7 begin: unload`、`P7 begin: FWSEC-SB`、`P7 booter_unload`、`P7 ok: region torn down`、login prompt | 合格なら続けて R4 |
+| R4 | R3 に加えて `P3 static:` 2 行、`P3 ok: client, device and subdevice`、`P4 skipped`、`P7 ok: region torn down` | — |
+
+- R3 が `P2b fail` の時: 画面の全部の nvrtx の行（`sequencer: resume …` の行を含む）を PNG に、前回と同じ 6 つの `pmemsave`、QEMU を止め host を reboot。R4 は流さない。
+- R3 が P2b ok で P7 が fail の時（`P7 unload call`・`P7 fail …`）: 行を PNG に撮り、host を reboot。R4 は流さない。

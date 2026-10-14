@@ -228,6 +228,7 @@ int nvrtx_poll(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t mask, uint32_t v
 uint64_t nvrtx_now_us(void);
 int nvrtx_falcon_reset(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 int nvrtx_falcon_reset_engine(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+void nvrtx_falcon_start(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 void nvrtx_falcon_load_physical(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 void nvrtx_falcon_dma_system(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t context);
 uint32_t nvrtx_falcon_code_limit(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
