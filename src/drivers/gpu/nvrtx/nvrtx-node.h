@@ -31,6 +31,8 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
+struct nvrtx_vk_session;
+
 /* The one display's identity and generation. */
 #define NVRTX_NODE_DISPLAY_ID		1U
 #define NVRTX_NODE_GENERATION		1U
@@ -74,6 +76,10 @@ struct nvrtx_resource {
 	struct kern_pmem ram;
 	uint8_t *cpu;
 	struct nvrtx_backing *backing;
+	/* A blob's protocol number and its place in its session's list of blobs (NULL session: not listed). */
+	uint32_t resource_id;
+	struct nvrtx_session *session;
+	struct nvrtx_resource *next_blob;
 };
 
 /*
@@ -81,6 +87,9 @@ struct nvrtx_resource {
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
+	/* The session's blobs by protocol number (the executor reads streams and writes replies there), and its executor session. */
+	struct nvrtx_resource *blobs;
+	struct nvrtx_vk_session *vk;
 };
 
 /*
@@ -156,5 +165,6 @@ int nvrtx_cursor_hide(void *private_data, void *session, const struct gpu_displa
 
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);
 uint32_t nvrtx_node_resource_id(struct nvrtx_node *node);
+void nvrtx_node_blob_listed(struct nvrtx_node *node, struct nvrtx_session *session, struct nvrtx_resource *resource, uint32_t resource_id);
 
 #endif

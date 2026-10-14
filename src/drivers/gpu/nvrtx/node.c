@@ -36,6 +36,7 @@
 #include <uapi/gpu-display.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
+#include "drivers/gpu/nvrtx/nvrtx-vk.h"
 
 /*
  * The device's capabilities: storage, VRAM blobs, transfers, CPU mappings,
@@ -66,6 +67,7 @@ static void node_close(void *private_data, void *session);
 static int node_get_info(void *private_data, void *session, struct gpu_info *info);
 static int node_resource_create(void *private_data, void *session, const struct gpu_resource_create *request, void **object);
 static void node_resource_destroy(void *private_data, void *session, void *object);
+static void node_blob_unlisted(struct nvrtx_node *node, struct nvrtx_resource *resource);
 static int node_blob_create(void *private_data, void *session, const struct gpu_blob_create *request, void **object, uint32_t *resource_id);
 static int node_resource_read(void *private_data, void *session, void *object, uint64_t offset, void *buffer, uint32_t bytes);
 static int node_resource_write(void *private_data, void *session, void *object, uint64_t offset, const void *buffer, uint32_t bytes);
@@ -231,18 +233,80 @@ nvrtx_node_resource_id(
 	return resource_id;
 }
 
-/* Opens a session: it only names its node. */
+/*
+ * Lists a blob in its session under its protocol number, so the executor
+ * finds it.
+ */
+void
+nvrtx_node_blob_listed(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session,
+	struct nvrtx_resource *resource,
+	uint32_t resource_id)
+{
+	/* At the head of the session's list. */
+	mutex_lock(&node->lock);
+
+	resource->resource_id = resource_id;
+	resource->session = session;
+	resource->next_blob = session->blobs;
+	session->blobs = resource;
+
+	mutex_unlock(&node->lock);
+}
+
+/*
+ * Gives the CPU view of a blob of the executor's owner (a node session) by
+ * its protocol number.  The caller holds the node's lock.
+ */
+int
+nvrtx_vk_blob(
+	void *owner,
+	uint32_t resource_id,
+	uint8_t **cpu,
+	uint64_t *bytes)
+{
+	struct nvrtx_session *session;
+	struct nvrtx_resource *resource;
+
+	session = owner;
+
+	/* Finds the number among the session's blobs. */
+	for (resource = session->blobs; resource != NULL; resource = resource->next_blob) {
+		if (resource->resource_id == resource_id)
+			break;
+	}
+
+	/* Refuses a number the session has no blob for. */
+	if (resource == NULL)
+		return ENOENT;
+
+	/* Succeeded: the blob's bytes in the CPU's window and their count. */
+	*cpu = (uint8_t *)(uintptr_t)nvrtx_bo_cpu(session->node->gpu, &resource->backing->bo);
+	*bytes = resource->bytes;
+	return 0;
+}
+
+/* Opens a session: it names its node and has an executor session of its own. */
 static int
 node_open(
 	void *private_data,
 	void **session)
 {
 	struct nvrtx_session *opened;
+	int error;
 
 	/* Allocates the session. */
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
+
+	/* Opens its executor session. */
+	error = nvrtx_vk_session_open(opened, &opened->vk);
+	if (error != 0) {
+		kern_free(opened);
+		return error;
+	}
 
 	/* Succeeded: the session is the caller's. */
 	opened->node = private_data;
@@ -250,18 +314,31 @@ node_open(
 	return 0;
 }
 
-/* Closes a session: its lease ends (the console surface comes back) before it goes. */
+/* Closes a session: its lease ends (the console surface comes back), its executor session closes, then it goes. */
 static void
 node_close(
 	void *private_data,
 	void *session)
 {
 	struct nvrtx_node *node;
+	struct nvrtx_session *closing;
+	int error;
 
 	node = private_data;
+	closing = session;
 
 	/* Ends the session's lease, if it holds it. */
 	nvrtx_present_session_close(node, session);
+
+	/* Closes the executor session; a payload still held keeps it (and is shown). */
+	mutex_lock(&node->lock);
+
+	error = nvrtx_vk_session_close(&closing->vk);
+
+	mutex_unlock(&node->lock);
+
+	if (error != 0)
+		nvrtx_stage_mark("P8c: an executor session closed with %d", error);
 
 	/* Frees the session. */
 	kern_free(session);
@@ -364,7 +441,8 @@ node_resource_destroy(
 		return;
 	}
 
-	/* A blob leaves the screen first. */
+	/* A blob leaves its session's list and the screen first. */
+	node_blob_unlisted(node, resource);
 	nvrtx_present_resource_gone(node, resource);
 
 	/* Drops its reference to the VRAM; the last one gives it back. */
@@ -395,8 +473,6 @@ node_blob_create(
 	volatile uint8_t *cpu;
 	uint64_t at;
 	int error;
-
-	UNUSED_PARAMETER(session);
 
 	node = private_data;
 
@@ -439,8 +515,9 @@ node_blob_create(
 	resource->bytes = request->bytes;
 	resource->backing = backing;
 
-	/* Succeeded: the blob is the session's, numbered for the protocol. */
+	/* Succeeded: the blob is the session's, numbered for the protocol and listed. */
 	*resource_id = nvrtx_node_resource_id(node);
+	nvrtx_node_blob_listed(node, session, resource, *resource_id);
 	*object = resource;
 	return 0;
 }
@@ -638,4 +715,30 @@ node_drain(
 		/* Brings the refresh count up to date. */
 		nvrtx_present_refresh_sample(node, &count, &time_ns);
 	}
+}
+
+/* Takes a blob out of its session's list (a blob never listed is left alone). */
+static void
+node_blob_unlisted(
+	struct nvrtx_node *node,
+	struct nvrtx_resource *resource)
+{
+	struct nvrtx_resource **link;
+
+	/* Unlinks it from the session's list. */
+	mutex_lock(&node->lock);
+
+	if (resource->session != NULL) {
+		for (link = &resource->session->blobs; *link != NULL; link = &(*link)->next_blob) {
+			if (*link == resource) {
+				*link = resource->next_blob;
+				break;
+			}
+		}
+	}
+
+	resource->session = NULL;
+	resource->next_blob = NULL;
+
+	mutex_unlock(&node->lock);
 }
