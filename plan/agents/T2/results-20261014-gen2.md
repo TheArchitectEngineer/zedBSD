@@ -28,3 +28,13 @@ Criteria:
 SLOW_PASS us > 1000000 (slow-pass.txt): 1356000 at_ms=74298 (schedule_us, startup), 3681000 at_ms=77980 (schedule_us, startup), and six turn passes with clients_us 2.10..2.29 s at at_ms 133669, 167182, 213331, 295082, 336576, 370401 (the Settings set_rotation request; main-thread work, same as T1-614).
 No ZSETTINGS SLOW-FRAME line above the threshold was extracted separately (included in key-lines.txt if present).
 Time: image 21 m 09 s, guest session ~6 min. QEMU stopped.
+
+## T1-617 (BUG-309 pc98 partition on cylinder boundary) — PASS (QEMU pc98 only; real machine 未実施)
+
+- main 82b726bfd をマージした worktree。image build: `make ZEDBSD_CONFIG=config/ci/config-pc98.mk disk-image`（build/i386/sysroot は main の共有 sysroot への symlink）、1m44s。
+- image: /home/awe/zedBSD-worktrees/t2/build/pc98/hdd-image.img（残す。UAT 用）
+  sha256 6fa99b5279955534215785f926ec2c998ae6b4ef7e76bd67d0fa607214c33393 、185708544 bytes
+- sector 1 の BOOT の entry（od -j 512）: `a1 91 00 00 00 00 10 00 00 00 10 00 10 07 6a 0a 42 4f 4f 54 ...` → 期待の `a1 91 00 00 00 00 10 00 00 00 10 00 10 07` で始まる（一致）。
+- sector 0（IPL）: `eb 0a 90 90 49 50 4c 31 00 00 00 1e fa fc 8c c8 ...`
+- `python3 plan/tools/pc98-boot.py /home/awe/qemu-pc98/build/qemu-system-i386 build/pc98/hdd-image.img /home/awe/zedBSD-worktrees/t2/build/t2-617` exit 0、39.7s。
+- PNG: /home/awe/zedBSD-worktrees/t2/build/t2-617/login.png （"login:" 表示）、/home/awe/zedBSD-worktrees/t2/build/t2-617/command.png （root login、`uname -a; echo WSDONE` が i386 と WSDONE を表示）
