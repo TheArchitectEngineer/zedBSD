@@ -12,6 +12,9 @@
 
 #include "drivers/gpu/bcm2711/vulkan-input.h"
 #include "drivers/gpu/bcm2711/vulkan-resource.h"
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 
 /* Only device-independent generated record decoding is reused; native payload construction is separate. */
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
@@ -30,6 +33,7 @@ static int create_input(struct bcm2711_vulkan_session *session, enum i915_vk_obj
 static int destroy_input(struct bcm2711_vulkan_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader);
 static int record_prefix(struct i915_wire_reader *reader, enum i915_vk_object_kind kind);
 static int build_view(struct bcm2711_vulkan_session *session, const VkImageViewCreateInfo *info, struct bcm2711_vulkan_object *device, struct bcm2711_vulkan_input_owner **payload);
+static int view_plane(const VkImageViewCreateInfo *info, const struct bcm2711_vulkan_resource *image, uint32_t *plane);
 static int build_sampler(const VkSamplerCreateInfo *info, struct bcm2711_vulkan_input_owner **payload);
 static int build_module(const VkShaderModuleCreateInfo *info, struct bcm2711_vulkan_input_owner **payload);
 static int release_input(struct bcm2711_vulkan_session *session, void *payload);
@@ -297,12 +301,12 @@ build_view(
 	struct bcm2711_vulkan_object *image;
 	struct bcm2711_vulkan_resource *description;
 	struct bcm2711_vulkan_image_view *view;
+	uint32_t plane;
 	int error;
 
-	/* Views address the sole supported colour subresource, without mutable-format reinterpretation. */
+	/* Views address one colour subresource, or one plane of an NV12 picture, at its only level and layer. */
 	if (info->flags != 0 ||
 	    info->viewType != VK_IMAGE_VIEW_TYPE_2D ||
-	    info->subresourceRange.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
 	    info->subresourceRange.baseMipLevel != 0 ||
 	    info->subresourceRange.baseArrayLayer != 0)
 		return ENOTSUP;
@@ -314,8 +318,13 @@ build_view(
 	if (image == NULL)
 		return EINVAL;
 	description = image->payload;
-	if (description->device != device || info->format != description->format)
+	if (description->device != device)
 		return EINVAL;
+
+	/* A plane view reads its plane in the plane's own format; any other view the image's whole colour. */
+	error = view_plane(info, description, &plane);
+	if (error != 0)
+		return error;
 
 	/* Identity or explicit same-channel selectors have exact equivalent native TMU/TLB semantics. */
 	error = identity_swizzle(info->components.r, VK_COMPONENT_SWIZZLE_R);
@@ -343,10 +352,58 @@ build_view(
 	view->owner.parent = image;
 	view->format = info->format;
 	view->components = info->components;
+	view->plane = plane;
 	*payload = &view->owner;
 
 	/* Succeeded: one immutable view owns its exact colour image independently. */
 	return 0;
+}
+
+/*
+ * Finds the plane a view reads.
+ *
+ * A colour view of the image's own format reads the whole image (plane 0).
+ * A view of an NV12 picture that the GPU samples may read its luma plane
+ * as R8 (plane 1) or its interleaved chroma plane as RG8 (plane 2).
+ */
+static int
+view_plane(
+	const VkImageViewCreateInfo *info,
+	const struct bcm2711_vulkan_resource *image,
+	uint32_t *plane)
+{
+	/* The whole image's colour in its own format. */
+	*plane = 0;
+	if (info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT) {
+		if (info->format != image->format)
+			return EINVAL;
+		return 0;
+	}
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* Only a sampled NV12 picture has planes to view. */
+	if (image->format != (VkFormat)BCM2711_VIDEO_FORMAT_NV12 || (image->usage & VK_IMAGE_USAGE_SAMPLED_BIT) == 0)
+		return ENOTSUP;
+
+	/* The luma plane as R8. */
+	if (info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT) {
+		if (info->format != VK_FORMAT_R8_UNORM)
+			return EINVAL;
+		*plane = 1;
+		return 0;
+	}
+
+	/* The chroma plane as RG8, Cb in red and Cr in green. */
+	if (info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_PLANE_1_BIT) {
+		if (info->format != VK_FORMAT_R8G8_UNORM)
+			return EINVAL;
+		*plane = 2;
+		return 0;
+	}
+#endif
+
+	/* Any other aspect has no view. */
+	return ENOTSUP;
 }
 
 /* Builds the single-level normalized sampler subset used by actual Keiland nearest and glass-linear sampling. */

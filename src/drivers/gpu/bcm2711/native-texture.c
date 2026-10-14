@@ -141,6 +141,129 @@ bcm2711_native_texture_offset(
 }
 
 /*
+ * Gives a texel format's size in bytes and its native texture type.
+ */
+int
+bcm2711_native_texel_layout(
+	enum bcm2711_native_texel texel,
+	uint32_t *texel_bytes,
+	uint32_t *type)
+{
+	/* The native types are R8 0, RG8 2 and RGBA8 4. */
+	switch (texel) {
+	case BCM2711_NATIVE_TEXEL_RGBA8:
+		*texel_bytes = 4U;
+		*type = 4U;
+		break;
+	case BCM2711_NATIVE_TEXEL_R8:
+		*texel_bytes = 1U;
+		*type = 0U;
+		break;
+	case BCM2711_NATIVE_TEXEL_RG8:
+		*texel_bytes = 2U;
+		*type = 2U;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the texel's size and type. */
+	return 0;
+}
+
+/*
+ * Copies visible raster texels of one, two or four bytes into a complete zero-padded, strict UIF image.
+ *
+ * The same contract as bcm2711_native_texture_copy, for any admitted texel
+ * size: one utile row at a time, at its place from texture_offset.  It is the
+ * CPU's conversion when the texture formatting unit cannot convert.
+ */
+int
+bcm2711_native_texture_copy_texel(
+	uint32_t width,
+	uint32_t height,
+	uint32_t texel_bytes,
+	const void *raster,
+	uint32_t pitch,
+	size_t raster_bytes,
+	void *tiled,
+	size_t tiled_bytes)
+{
+	const uint8_t *source;
+	uint8_t *destination;
+	uint32_t storage_bytes;
+	uint32_t utile_width;
+	uint32_t utile_height;
+	uint32_t x;
+	uint32_t y;
+	uint32_t run;
+	uint32_t offset;
+	uint64_t source_bytes;
+	uintptr_t source_first;
+	uintptr_t destination_first;
+	int error;
+
+	/* A conversion never invents storage for either image representation. */
+	if (raster == NULL || tiled == NULL)
+		return EINVAL;
+
+	/* Extent checks establish finite, overflow-free native row/column arithmetic. */
+	error = bcm2711_native_texture_size_texel(width, height, texel_bytes, &storage_bytes);
+	if (error != 0)
+		return error;
+	error = utile_extent(texel_bytes, &utile_width, &utile_height);
+	if (error != 0)
+		return error;
+
+	/* Each raster row includes every visible texel, and the source holds the whole image. */
+	if (pitch < width * texel_bytes)
+		return EINVAL;
+	source_bytes = (uint64_t)(height - 1U) * pitch + (uint64_t)width * texel_bytes;
+	if (source_bytes > raster_bytes)
+		return EINVAL;
+
+	/* The destination holds whole native blocks, including all zero padding. */
+	if (tiled_bytes < storage_bytes)
+		return ENOSPC;
+
+	/* Integer address checks precede every CPU pointer offset or overlap decision. */
+	source_first = (uintptr_t)raster;
+	destination_first = (uintptr_t)tiled;
+	if (source_bytes > UINTPTR_MAX - source_first)
+		return EINVAL;
+	if (storage_bytes > UINTPTR_MAX - destination_first)
+		return EINVAL;
+
+	/* The two representations must not alias. */
+	if (source_first < destination_first + storage_bytes && destination_first < source_first + source_bytes)
+		return EINVAL;
+
+	/* Deterministic padding prevents filtered edge accesses from consuming stale scratch contents. */
+	source = raster;
+	destination = tiled;
+	kern_memset(destination, 0, storage_bytes);
+
+	/* Copies every utile row of every visible row. */
+	for (y = 0; y < height; y++) {
+		/* One utile row is contiguous in the UIF image. */
+		for (x = 0; x < width; x += utile_width) {
+			error = bcm2711_native_texture_offset(x, y, height, texel_bytes, &offset);
+			if (error != 0)
+				return error;
+
+			/* The visible texels of the utile row. */
+			run = width - x;
+			if (run > utile_width)
+				run = utile_width;
+			kern_memcpy(destination + offset, source + (size_t)y * pitch + (size_t)x * texel_bytes, (size_t)run * texel_bytes);
+		}
+	}
+
+	/* Succeeded: every visible texel occupies its exact non-XOR UIF address. */
+	return 0;
+}
+
+/*
  * Encodes one complete native texture record for independently owned strict UIF scratch storage.
  *
  * The owner supplies the exact size returned by texture_size and keeps the
@@ -154,8 +277,12 @@ bcm2711_native_texture_encode(
 	size_t capacity)
 {
 	uint32_t storage_bytes;
+	uint32_t texel_bytes;
+	uint32_t type;
 	uint32_t red;
+	uint32_t green;
 	uint32_t blue;
+	uint32_t alpha;
 	uint64_t end;
 	int error;
 
@@ -171,8 +298,13 @@ bcm2711_native_texture_encode(
 	if (texture->address == 0 || (texture->address & 63U) != 0)
 		return EINVAL;
 
+	/* The texel format's size and native type; an unknown one has no record. */
+	error = bcm2711_native_texel_layout(texture->texel, &texel_bytes, &type);
+	if (error != 0)
+		return error;
+
 	/* Native storage covers the complete padded UIF image, not merely the visible pixel rectangle. */
-	error = bcm2711_native_texture_size(texture->width, texture->height, &storage_bytes);
+	error = bcm2711_native_texture_size_texel(texture->width, texture->height, texel_bytes, &storage_bytes);
 	if (error != 0)
 		return error;
 
@@ -188,30 +320,44 @@ bcm2711_native_texture_encode(
 	/* Component swapping is one exact BGRA choice, without arbitrary swizzle state. */
 	if (texture->swap_red_blue > 1U)
 		return EINVAL;
+	if (texture->swap_red_blue != 0 && texture->texel != BCM2711_NATIVE_TEXEL_RGBA8)
+		return EINVAL;
 
 	/* RGBA scratch retains its bytes; BGRA changes only the shader descriptor's red/blue selection. */
 	red = 2U;
+	green = 3U;
 	blue = 4U;
+	alpha = 5U;
 	if (texture->swap_red_blue != 0) {
 		red = 4U;
 		blue = 2U;
 	}
 
-	/* Defines an unflipped, single-layer, single-level normalized RGBA8 texture with its exact padded layer stride. */
+	/* An R8 or RG8 texel reads zero for its absent colours and one for alpha, as Vulkan defines them. */
+	if (texture->texel == BCM2711_NATIVE_TEXEL_R8) {
+		green = 0U;
+		blue = 0U;
+		alpha = 1U;
+	} else if (texture->texel == BCM2711_NATIVE_TEXEL_RG8) {
+		blue = 0U;
+		alpha = 1U;
+	}
+
+	/* Defines an unflipped, single-layer, single-level normalized texture of the texel's type with its exact padded layer stride. */
 	kern_memset(bytes, 0, BCM2711_NATIVE_TEXTURE_BYTES);
 	write_bits(bytes, 0, 32, texture->address);
 	write_bits(bytes, 32, 26, storage_bytes / 64U);
 	write_bits(bytes, 58, 14, texture->width);
 	write_bits(bytes, 72, 14, texture->height);
 	write_bits(bytes, 86, 14, 1U);
-	write_bits(bytes, 100, 7, 4U);
+	write_bits(bytes, 100, 7, type);
 
 	/* Extended state explicitly selects strict UIF with XOR disabled, independent of small-image automatic tiling. */
 	write_bits(bytes, 107, 1, 1U);
 	write_bits(bytes, 108, 3, red);
-	write_bits(bytes, 111, 3, 3U);
+	write_bits(bytes, 111, 3, green);
 	write_bits(bytes, 114, 3, blue);
-	write_bits(bytes, 117, 3, 5U);
+	write_bits(bytes, 117, 3, alpha);
 	write_bits(bytes, 134, 1, 1U);
 	write_bits(bytes, 135, 1, 1U);
 

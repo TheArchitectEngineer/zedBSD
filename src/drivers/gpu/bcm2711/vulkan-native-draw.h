@@ -20,6 +20,8 @@
 /* One converted raster belongs to the draw that allocated it; a pass may borrow it until whole-pass retirement. */
 struct bcm2711_vulkan_native_texture_copy {
 	const struct bcm2711_vulkan_resource *image;
+	/* Where in the image the texture's raster starts: a picture's planes are two textures of one image. */
+	uint64_t offset;
 	struct bcm2711_native_storage *pixels;
 	/* A space-owned snapshot lends pixels to this draw, which holds one use of it until it retires. */
 	struct bcm2711_native_snapshot *snapshot;

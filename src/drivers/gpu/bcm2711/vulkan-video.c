@@ -87,6 +87,9 @@
 /* The decoder's output buffers: the flights', the kept frames' and one for the push or a late frame. */
 #define VIDEO_OUTPUTS			(VIDEO_FLIGHTS + VIDEO_HELD + 1U)
 
+/* The end of the physical memory the VPU's window reaches: a direct run lies below it. */
+#define VIDEO_DIRECT_LIMIT		0x40000000ULL
+
 /* No time stamp: a collection that waits for no particular decode. */
 #define VIDEO_NO_PTS			((int64_t)-1)
 
@@ -246,6 +249,10 @@ struct video_copy {
  * objects a command names.  target and cpu are resolved before each collection's
  * window and valid only in it; placed, lost and the frame's fields are
  * written in the window and taken after it, under the controller mutex.
+ * direct is the image's memory run when the frame goes there from the
+ * VPU (a sampled image, ws236 p011), retained until the decoder's target
+ * is removed; direct_frame says the frame came that way, so no frame of
+ * the decoder's memory is the image's copy.
  */
 struct video_flight {
 	int64_t pts;
@@ -267,6 +274,19 @@ struct video_flight {
 	uint64_t received_at;
 	uint64_t place_ticks;
 	struct video_copy copy;
+	struct bcm2711_buffer *direct;
+	bool direct_frame;
+};
+
+/*
+ * The run a decode's frame goes to directly, prepared before its unit is
+ * sent: the image's memory run, retained while the decoder has the target,
+ * and the target.  registered says the decoder has it.
+ */
+struct video_direct {
+	struct bcm2711_buffer *buffer;
+	struct drv_rpi4_mmal_target target;
+	bool registered;
 };
 
 /*
@@ -487,9 +507,12 @@ static int pool_results(struct bcm2711_vulkan_session *session, struct i915_wire
 static int record_query(struct bcm2711_vulkan_session *session, uint32_t opcode, struct i915_wire_reader *reader);
 static int run_control(struct bcm2711_render_device *controller, const struct video_command *command);
 static int run_decode(struct bcm2711_render_device *controller, const struct video_command *command);
-static int begin_decode(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command);
+static int begin_decode(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command, struct video_direct *direct);
+static void prepare_direct(struct bcm2711_vulkan_resource *image, struct video_direct *direct);
+static void release_direct(struct video_session *video, struct bcm2711_buffer **buffer, int64_t pts, bool registered);
+static void mark_written(struct video_flight *flight);
 static int send_push(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command);
-static int add_flight(struct video_session *video, const struct video_command *command);
+static int add_flight(struct video_session *video, const struct video_command *command, struct video_direct *direct);
 static int wait_or_skip(struct video_session *video, const struct video_command *command, const char *reason);
 static int collect(struct bcm2711_render_device *controller, struct video_session *video, unsigned wait_ms, int64_t until);
 static bool take_frame(struct video_session *video, const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, int64_t until);
@@ -503,7 +526,7 @@ static uint32_t unused_pps_id(const struct video_parameters *parameters);
 static int build_unit(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command, uint8_t *staging, uint32_t capacity, uint32_t *bytes);
 static int append_set(uint8_t *staging, uint32_t capacity, uint32_t *used, const uint8_t *unit, size_t bytes, uint8_t *sent, size_t *sent_bytes, bool force);
 static int image_target(const struct bcm2711_vulkan_object *view_object, struct bcm2711_vulkan_resource **image, uint8_t **cpu);
-static void relayout(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, const struct bcm2711_vulkan_resource *image, uint8_t *cpu, struct video_copy *copy);
+static void relayout(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, const struct bcm2711_vulkan_resource *image, uint8_t *cpu, bool correct, struct video_copy *copy);
 static void note_decode(const struct video_flight *flight, uint64_t now);
 static void report_stats(uint64_t now);
 static uint64_t average_us(uint64_t ticks, uint32_t count);
@@ -817,6 +840,32 @@ bcm2711_vulkan_video_nv12_layout(
 	rows = (height + 15U) & ~15U;
 	*chroma = (uint64_t)*pitch * rows;
 	*bytes = *chroma + (uint64_t)*pitch * (rows / 2U);
+}
+
+/*
+ * Reports whether a decoded NV12 image holds the firmware's samples as they
+ * are.
+ *
+ * An image the GPU samples does (ws236 p011: the footroom error makes no
+ * visible difference, and correcting it would cost a CPU copy), and its
+ * readback corrects them; any other decode output holds them corrected.
+ */
+bool
+bcm2711_vulkan_video_image_raw(
+	const struct bcm2711_vulkan_resource *image)
+{
+	/* Only an NV12 decode output. */
+	if (image == NULL || image->format != (VkFormat)BCM2711_VIDEO_FORMAT_NV12)
+		return false;
+	if ((image->usage & BCM2711_VIDEO_USAGE_DECODE_DST) == 0)
+		return false;
+
+	/* A sampled one keeps the samples as they come. */
+	if ((image->usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0)
+		return true;
+
+	/* Succeeded: any other holds corrected samples. */
+	return false;
 }
 
 /*
@@ -3310,6 +3359,7 @@ run_decode(
 	struct video_session *video;
 	struct video_parameters *parameters;
 	struct bcm2711_vulkan_resource *image;
+	struct video_direct direct;
 	uint8_t *cpu;
 	unsigned wait_ms;
 	int64_t until;
@@ -3377,10 +3427,17 @@ run_decode(
 		return error;
 	}
 
+	/* A sampled image's run, which the frame goes to directly, stays while the decoder may write it. */
+	prepare_direct(image, &direct);
+
 	/* Without the controller mutex: the unit is built and sent. */
 	bcm2711_render_window_open(controller);
-	error = begin_decode(video, parameters, command);
+	error = begin_decode(video, parameters, command, &direct);
 	closed = bcm2711_render_window_close(controller);
+
+	/* A unit not sent leaves no target; the run goes. */
+	if (error != 0 || closed != 0)
+		release_direct(video, &direct.buffer, direct.target.pts, direct.registered);
 
 	/* Reports a window that did not close. */
 	if (closed != 0) {
@@ -3414,8 +3471,8 @@ run_decode(
 		return 0;
 	}
 
-	/* The decode is in flight. */
-	error = add_flight(video, command);
+	/* The decode is in flight; the flight takes the run. */
+	error = add_flight(video, command, &direct);
 	video->sending = NULL;
 	if (error != 0)
 		return error;
@@ -3427,13 +3484,15 @@ run_decode(
 /*
  * Builds and sends a decode's access unit into a staging area the firmware
  * has given back (ETIMEDOUT when it has not), and after the first unit of
- * a start the push picture.  The caller has the window open.
+ * a start the push picture.  A prepared direct run becomes the decode's
+ * target first.  The caller has the window open.
  */
 static int
 begin_decode(
 	struct video_session *video,
 	const struct video_parameters *parameters,
-	const struct video_command *command)
+	const struct video_command *command,
+	struct video_direct *direct)
 {
 	uint8_t *staging;
 	uint32_t capacity;
@@ -3452,6 +3511,18 @@ begin_decode(
 	error = build_unit(video, parameters, command, staging, capacity, &bytes);
 	if (error != 0)
 		return error;
+
+	/*
+	 * A sampled image's frame goes to its run directly; the decoder has the
+	 * target before the unit can bring the frame.  A target the decoder
+	 * cannot take leaves the frame to the bounce memory.
+	 */
+	if (direct->buffer != NULL) {
+		direct->target.pts = video->sequence;
+		error = drv_rpi4_mmal_decoder_target(video->decoder, &direct->target);
+		if (error == 0)
+			direct->registered = true;
+	}
 
 	/* Sends it with its time stamp. */
 	error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, video->sequence, 0);
@@ -3530,12 +3601,13 @@ send_push(
 /*
  * Puts a sent decode in flight: its time stamp, its output picture's view
  * and its status query, retained until its frame is placed or it is given
- * up, and its deadline.
+ * up, its direct run, and its deadline.
  */
 static int
 add_flight(
 	struct video_session *video,
-	const struct video_command *command)
+	const struct video_command *command,
+	struct video_direct *direct)
 {
 	struct video_flight *flight;
 	struct video_pool *pool;
@@ -3551,8 +3623,12 @@ add_flight(
 
 	/* The output picture's view, and through it its image, stay while the frame may come. */
 	error = bcm2711_vulkan_object_retain(command->view);
-	if (error != 0)
+	if (error != 0) {
+		release_direct(video, &direct->buffer, flight->pts, direct->registered);
 		return error;
+	}
+
+	/* The flight holds the view and knows the image behind it. */
 	flight->view = command->view;
 	view = command->view->payload;
 	flight->image = view->owner.parent;
@@ -3561,6 +3637,7 @@ add_flight(
 	if (command->status != NULL) {
 		error = bcm2711_vulkan_object_retain(command->status->pool);
 		if (error != 0) {
+			release_direct(video, &direct->buffer, flight->pts, direct->registered);
 			(void)bcm2711_vulkan_object_release(flight->view);
 			return error;
 		}
@@ -3573,6 +3650,14 @@ add_flight(
 			flight->generation = pool->generation[flight->query];
 			pool->pending[flight->query]++;
 		}
+	}
+
+	/* The run the frame goes to directly, when the decoder took the target; else the run goes now. */
+	if (direct->registered) {
+		flight->direct = direct->buffer;
+		direct->buffer = NULL;
+	} else {
+		release_direct(video, &direct->buffer, flight->pts, false);
 	}
 
 	/* Its times: the decode's first step, the send, and how long the frame is waited for. */
@@ -3736,6 +3821,7 @@ take_frame(
 	unsigned first;
 	unsigned found;
 	unsigned index;
+	bool raw;
 
 	/* An empty frame carries no picture; the push's frame is not one of the stream's. */
 	if (frame->length == 0 || frame->pts == VIDEO_PUSH_PTS) {
@@ -3789,9 +3875,23 @@ take_frame(
 		return false;
 	}
 
-	/* The frame, corrected, into its image; the frame stays in its buffer as the image's cached copy. */
+	/*
+	 * A frame that went to its image directly is in place already, and its
+	 * buffer goes back at once.  Any other is copied into its image --
+	 * corrected unless the image holds the firmware's samples as they are
+	 * (a sampled one) -- and stays in its buffer as the image's cached copy.
+	 */
 	received = clock_ticks();
-	relayout(frame, pixels, flight->target, flight->cpu, &flight->copy);
+	if (frame->direct) {
+		(void)drv_rpi4_mmal_decoder_release(video->decoder, frame->handle);
+		flight->direct_frame = true;
+		kern_memset(&flight->copy, 0, sizeof(flight->copy));
+	} else {
+		raw = bcm2711_vulkan_video_image_raw(flight->target);
+		relayout(frame, pixels, flight->target, flight->cpu, !raw, &flight->copy);
+	}
+
+	/* The flight has its frame, and the frame's place among the arrivals and costs. */
 	flight->placed = true;
 	flight->handle = frame->handle;
 	flight->frame_flags = frame->flags;
@@ -3838,6 +3938,8 @@ retire_flights(
 				status = VIDEO_STATUS_ERROR;
 			video->timeouts = 0;
 			note_decode(flight, now);
+			mark_written(flight);
+			release_direct(video, &flight->direct, flight->pts, true);
 			error = finish_flight(flight, status);
 			if (result == 0)
 				result = error;
@@ -3858,10 +3960,11 @@ retire_flights(
 				skip_line(video, flight->pts, "frame lost", EIO);
 			}
 
-			/* The sets go again; the query says ERROR and the view goes. */
+			/* The sets go again; the target goes, the query says ERROR and the view goes. */
 			video->sent_sps_bytes = 0;
 			video->sent_pps_bytes = 0;
 			video_stats.skipped++;
+			release_direct(video, &flight->direct, flight->pts, true);
 			error = finish_flight(flight, VIDEO_STATUS_ERROR);
 			if (result == 0)
 				result = error;
@@ -3963,6 +4066,21 @@ keep_held(
 		index++;
 	}
 
+	/* A frame that went to its image directly leaves no copy; the view goes. */
+	if (flight->direct_frame) {
+		error = bcm2711_vulkan_object_release(flight->view);
+		flight->view = NULL;
+		if (result == 0)
+			result = error;
+
+		/* Reports a release that failed. */
+		if (result != 0)
+			return result;
+
+		/* Succeeded: the image's readback reads the image. */
+		return 0;
+	}
+
 	/* No room: the oldest copy goes (its image has the frame in its own memory). */
 	if (video->held_count == VIDEO_HELD) {
 		error = drop_held(video, 0);
@@ -4031,8 +4149,9 @@ drop_all(
 	result = 0;
 	for (index = 0; index < video->flight_count; index++) {
 		flight = &video->flights[index];
-		if (flight->placed)
+		if (flight->placed && !flight->direct_frame)
 			(void)drv_rpi4_mmal_decoder_release(video->decoder, flight->handle);
+		release_direct(video, &flight->direct, flight->pts, true);
 		error = finish_flight(flight, VIDEO_STATUS_ERROR);
 		if (result == 0)
 			result = error;
@@ -4223,9 +4342,126 @@ image_target(
 }
 
 /*
+ * Prepares the direct run of a decode's output image: a sampled NV12 image
+ * whose memory run lies in the VPU's window gets its frame there, without
+ * the CPU's copy.  direct has no run otherwise.  The caller holds the
+ * controller mutex.
+ */
+static void
+prepare_direct(
+	struct bcm2711_vulkan_resource *image,
+	struct video_direct *direct)
+{
+	struct bcm2711_v3d_view *backing;
+	uint64_t chroma;
+	uint64_t bytes;
+	uint64_t physical;
+	uint32_t pitch;
+	uint32_t address;
+	void *mapped;
+	bool raw;
+	int error;
+
+	/* No run until one is found. */
+	kern_memset(direct, 0, sizeof(*direct));
+
+	/* Only an image the GPU samples holds the firmware's samples as they come. */
+	raw = bcm2711_vulkan_video_image_raw(image);
+	if (!raw)
+		return;
+
+	/* The image's run, which must be uncached for the CPU. */
+	bcm2711_vulkan_video_nv12_layout(image->width, image->height, &pitch, &chroma, &bytes);
+	error = bcm2711_vulkan_resource_backing(image, 0, bytes, &backing, &address, &mapped);
+	if (error != 0)
+		return;
+	if (!backing->buffer->uncached)
+		return;
+
+	/* Where the image starts in physical memory; the VPU reaches only the first 1 GiB. */
+	physical = backing->buffer->memory.paddr + (address - backing->address);
+	if (physical + bytes > VIDEO_DIRECT_LIMIT)
+		return;
+
+	/* The run stays until the decoder's target is removed. */
+	bcm2711_buffer_retain(backing->buffer);
+	direct->buffer = backing->buffer;
+	direct->target.physical = physical;
+	direct->target.bytes = (uint32_t)bytes;
+	direct->target.pitch = pitch;
+	direct->target.chroma = (uint32_t)chroma;
+}
+
+/*
+ * Lets a direct run go: the decoder's target of decode pts is removed when
+ * registered says it has one, and the run is released unless a transfer
+ * into it did not complete, in which case it is kept for good.
+ */
+static void
+release_direct(
+	struct video_session *video,
+	struct bcm2711_buffer **buffer,
+	int64_t pts,
+	bool registered)
+{
+	bool kept;
+
+	/* No run, nothing to let go. */
+	if (*buffer == NULL)
+		return;
+
+	/* The decoder's target goes first, so no later frame goes to the run. */
+	kept = false;
+	if (registered && video->decoder != NULL)
+		drv_rpi4_mmal_decoder_untarget(video->decoder, pts, &kept);
+
+	/* A run the VPU may still write is never freed. */
+	if (kept) {
+		kern_logf("v3d: video: decode %lld: its image's memory kept for good: a transfer into it did not complete\n", (long long)pts);
+		*buffer = NULL;
+		return;
+	}
+
+	/* The run goes. */
+	bcm2711_buffer_release(*buffer);
+	*buffer = NULL;
+}
+
+/*
+ * Tells the image's run that its frame changed it, so a texture made from
+ * it earlier is made again.  The caller holds the controller mutex.
+ */
+static void
+mark_written(
+	struct video_flight *flight)
+{
+	struct bcm2711_v3d_view *backing;
+	uint64_t chroma;
+	uint64_t bytes;
+	uint32_t pitch;
+	uint32_t address;
+	void *mapped;
+	int error;
+
+	/* An image that cannot be reached has no run to tell. */
+	if (flight->target == NULL)
+		return;
+
+	/* The image's run and where the image starts in it. */
+	bcm2711_vulkan_video_nv12_layout(flight->target->width, flight->target->height, &pitch, &chroma, &bytes);
+	error = bcm2711_vulkan_resource_backing(flight->target, 0, bytes, &backing, &address, &mapped);
+	if (error != 0)
+		return;
+
+	/* The whole image changed. */
+	bcm2711_v3d_memory_written(backing->buffer, address - backing->address, NULL);
+}
+
+/*
  * Copies a frame from the decoder's cached memory into the image's layout,
- * row by row, with the firmware's footroom error undone: the luma rows,
- * then the chroma rows, each as wide as both layouts allow.  copy receives
+ * row by row, with the firmware's footroom error undone when correct says
+ * so: the luma rows, then the chroma rows, each as wide as both layouts
+ * allow.  copy receives
  * where the part copied is in the decoder's memory, for the image's
  * cached copy.
  */
@@ -4235,6 +4471,7 @@ relayout(
 	const uint8_t *pixels,
 	const struct bcm2711_vulkan_resource *image,
 	uint8_t *cpu,
+	bool correct,
 	struct video_copy *copy)
 {
 	const uint8_t *luma;
@@ -4267,13 +4504,23 @@ relayout(
 	if (rows > frame->height)
 		rows = frame->height;
 
-	/* The luma rows. */
-	for (row = 0; row < rows; row++)
-		drv_rpi4_mmal_copy_samples(cpu + (size_t)row * pitch, luma + (size_t)row * source_pitch, width);
+	/* The luma rows, corrected or as they are. */
+	for (row = 0; row < rows; row++) {
+		if (correct) {
+			drv_rpi4_mmal_copy_samples(cpu + (size_t)row * pitch, luma + (size_t)row * source_pitch, width);
+		} else {
+			kern_memcpy(cpu + (size_t)row * pitch, luma + (size_t)row * source_pitch, width);
+		}
+	}
 
 	/* The chroma rows, half as many. */
-	for (row = 0; row < rows / 2U; row++)
-		drv_rpi4_mmal_copy_samples(cpu + chroma + (size_t)row * pitch, chroma_plane + (size_t)row * source_pitch, width);
+	for (row = 0; row < rows / 2U; row++) {
+		if (correct) {
+			drv_rpi4_mmal_copy_samples(cpu + chroma + (size_t)row * pitch, chroma_plane + (size_t)row * source_pitch, width);
+		} else {
+			kern_memcpy(cpu + chroma + (size_t)row * pitch, chroma_plane + (size_t)row * source_pitch, width);
+		}
+	}
 
 	/* The part copied, for the image's readback. */
 	copy->luma = luma;

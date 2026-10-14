@@ -11,7 +11,7 @@
  * SHA-256 of each frame (ws083).
  *
  *   vkvideo-probe --list
- *   vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] [--dump=FILE] STREAM.h264
+ *   vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] [--dump=FILE] [--sampled] STREAM.h264
  *
  * The list names each queue family with its flags and video codec
  * operations and the device's video extensions; on a device without video
@@ -35,6 +35,12 @@
  * planes' offsets and pitches, the display window), in decode order; the
  * format of the kernel probe's /dev/mmal-probe, which
  * plan/ws236/tests/dump-compare.py compares with a reference decode.
+ * With --sampled (ws236-p011), the pictures are made as a renderer makes
+ * them to sample their planes (sampled usage, plane views allowed) and are
+ * not mapped: after each decode its picture is copied with
+ * vkCmdCopyImageToBuffer, both planes into a buffer of the image's layout,
+ * in the decode's command buffer, and the hash and the dump read that
+ * buffer (the decode's time then includes the copy).
  */
 
 #include "h264.h"
@@ -87,6 +93,7 @@ struct probe_options {
 	uint32_t frames;
 	int time;
 	const char *dump;
+	int sampled;
 };
 
 /* The decode times of a run with --time, in nanoseconds. */
@@ -125,7 +132,18 @@ struct probe {
 	uint32_t session_memory_count;
 	VkVideoSessionParametersKHR parameters;
 
-	/* The pictures, one a DPB slot: each image, its memory (mapped) and its view; the references the session reads. */
+	/*
+	 * Whether the pictures are sampled ones read back by a copy (--sampled),
+	 * and then the buffer of the image's layout the copy writes, its memory
+	 * (mapped) and its size.
+	 */
+	int sampled;
+	VkBuffer readback;
+	VkDeviceMemory readback_memory;
+	uint8_t *readback_map;
+	VkDeviceSize readback_size;
+
+	/* The pictures, one a DPB slot: each image, its memory (mapped, or the readback's) and its view; the references the session reads. */
 	uint32_t slots;
 	uint32_t max_references;
 	VkImage image[DPB_SLOTS];
@@ -165,6 +183,8 @@ static int probe_allocate(struct probe *probe, const VkMemoryRequirements *requi
 static int probe_pictures(struct probe *probe);
 static int probe_picture(struct probe *probe, uint32_t slot);
 static int probe_bitstream(struct probe *probe, size_t bytes);
+static int probe_readback(struct probe *probe);
+static void probe_copy_commands(struct probe *probe, uint32_t slot);
 static int probe_session(struct probe *probe);
 static int probe_parameters(struct probe *probe, const struct h264_stream *stream);
 static int probe_commands(struct probe *probe);
@@ -198,7 +218,7 @@ main(
 	memset(&options, 0, sizeof(options));
 	status = probe_arguments(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: vkvideo-probe --list | vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] [--dump=FILE] STREAM.h264\n");
+		fprintf(stderr, "usage: vkvideo-probe --list | vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] [--dump=FILE] [--sampled] STREAM.h264\n");
 		return 2;
 	}
 
@@ -271,6 +291,13 @@ probe_arguments(
 			continue;
 		}
 
+		/* --sampled: sampled pictures read back by a copy. */
+		differs = strcmp(argument, "--sampled");
+		if (differs == 0) {
+			options->sampled = 1;
+			continue;
+		}
+
 		/* --dump=FILE: the decoded images. */
 		differs = strncmp(argument, "--dump=", 7U);
 		if (differs == 0) {
@@ -295,6 +322,8 @@ probe_arguments(
 	if (options->list && options->time)
 		return -1;
 	if (options->list && options->dump != NULL)
+		return -1;
+	if (options->list && options->sampled)
 		return -1;
 	if (!options->list && options->stream == NULL)
 		return -1;
@@ -664,6 +693,13 @@ probe_picture(
 	image.samples = VK_SAMPLE_COUNT_1_BIT;
 	image.tiling = VK_IMAGE_TILING_OPTIMAL;
 	image.usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+	if (probe->sampled) {
+		/* A sampled picture, whose planes a renderer views, read back by a copy. */
+		image.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+		image.usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	}
+
+	/* One queue owns it, and its contents start undefined. */
 	image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	result = vkCreateImage(probe->device, &image, NULL, &probe->image[slot]);
@@ -678,10 +714,19 @@ probe_picture(
 	result = vkBindImageMemory(probe->device, probe->image[slot], probe->image_memory[slot], 0U);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkBindImageMemory");
-	result = vkMapMemory(probe->device, probe->image_memory[slot], 0U, VK_WHOLE_SIZE, 0U, &map);
-	if (result != VK_SUCCESS)
-		return probe_failed(result, "vkMapMemory");
-	probe->image_map[slot] = map;
+
+	/* A sampled picture is read through the readback's copy; any other through its own mapping. */
+	if (probe->sampled) {
+		error = probe_readback(probe);
+		if (error != 0)
+			return error;
+		probe->image_map[slot] = probe->readback_map;
+	} else {
+		result = vkMapMemory(probe->device, probe->image_memory[slot], 0U, VK_WHOLE_SIZE, 0U, &map);
+		if (result != VK_SUCCESS)
+			return probe_failed(result, "vkMapMemory");
+		probe->image_map[slot] = map;
+	}
 
 	/* Its view. */
 	memset(&view, 0, sizeof(view));
@@ -698,6 +743,120 @@ probe_picture(
 
 	/* Succeeded: the slot's picture. */
 	return 0;
+}
+
+/* Makes the readback buffer of the pictures' layout, once, with its memory (mapped). */
+static int
+probe_readback(
+	struct probe *probe)
+{
+	VkImageSubresource subresource;
+	VkSubresourceLayout chroma;
+	VkBufferCreateInfo buffer;
+	VkMemoryRequirements requirements;
+	VkResult result;
+	void *map;
+	int error;
+
+	/* One buffer serves every picture. */
+	if (probe->readback != VK_NULL_HANDLE)
+		return 0;
+
+	/* As large as a picture's layout: the chroma plane is the last. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+	vkGetImageSubresourceLayout(probe->device, probe->image[0], &subresource, &chroma);
+	probe->readback_size = chroma.offset + chroma.size;
+
+	/* The buffer: a copy's destination. */
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = probe->readback_size;
+	buffer.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	result = vkCreateBuffer(probe->device, &buffer, NULL, &probe->readback);
+	if (result != VK_SUCCESS)
+		return probe_failed(result, "vkCreateBuffer");
+
+	/* Its memory, bound and mapped. */
+	vkGetBufferMemoryRequirements(probe->device, probe->readback, &requirements);
+	error = probe_allocate(probe, &requirements, &probe->readback_memory);
+	if (error != 0)
+		return error;
+	result = vkBindBufferMemory(probe->device, probe->readback, probe->readback_memory, 0U);
+	if (result != VK_SUCCESS)
+		return probe_failed(result, "vkBindBufferMemory");
+	result = vkMapMemory(probe->device, probe->readback_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	if (result != VK_SUCCESS)
+		return probe_failed(result, "vkMapMemory");
+	probe->readback_map = map;
+
+	/* Succeeded: the readback is ready. */
+	return 0;
+}
+
+/*
+ * Records the copy of a slot's picture into the readback: both planes at
+ * the image layout's offsets and pitches, between barriers that take the
+ * image from the DPB layout and back.
+ */
+static void
+probe_copy_commands(
+	struct probe *probe,
+	uint32_t slot)
+{
+	VkImageSubresource subresource;
+	VkSubresourceLayout luma;
+	VkSubresourceLayout chroma;
+	VkImageMemoryBarrier barrier;
+	VkBufferImageCopy regions[2];
+
+	/* The planes' places in the layout. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+	vkGetImageSubresourceLayout(probe->device, probe->image[slot], &subresource, &luma);
+	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+	vkGetImageSubresourceLayout(probe->device, probe->image[slot], &subresource, &chroma);
+
+	/* From the DPB layout to the copy's. */
+	memset(&barrier, 0, sizeof(barrier));
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = probe->image[slot];
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.levelCount = 1U;
+	barrier.subresourceRange.layerCount = 1U;
+	vkCmdPipelineBarrier(probe->command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
+
+	/* The luma plane, one byte a texel, then the chroma plane, two. */
+	memset(regions, 0, sizeof(regions));
+	regions[0].bufferOffset = luma.offset;
+	regions[0].bufferRowLength = (uint32_t)luma.rowPitch;
+	regions[0].imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+	regions[0].imageSubresource.layerCount = 1U;
+	regions[0].imageExtent.width = probe->extent.width;
+	regions[0].imageExtent.height = probe->extent.height;
+	regions[0].imageExtent.depth = 1U;
+	regions[1].bufferOffset = chroma.offset;
+	regions[1].bufferRowLength = (uint32_t)(chroma.rowPitch / 2U);
+	regions[1].imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+	regions[1].imageSubresource.layerCount = 1U;
+	regions[1].imageExtent.width = probe->extent.width / 2U;
+	regions[1].imageExtent.height = probe->extent.height / 2U;
+	regions[1].imageExtent.depth = 1U;
+	vkCmdCopyImageToBuffer(probe->command, probe->image[slot], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, probe->readback, 2U, regions);
+
+	/* Back to the DPB layout for the next decodes. */
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+	vkCmdPipelineBarrier(probe->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0U, 0U, NULL, 0U, NULL, 1U, &barrier);
 }
 
 /* Makes the bitstream buffer of a picture's bytes, and its memory (mapped). */
@@ -1124,6 +1283,10 @@ probe_decode(
 	memset(&end, 0, sizeof(end));
 	end.sType = VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR;
 	vkCmdEndVideoCodingKHR(probe->command, &end);
+
+	/* A sampled picture is read back by a copy, which waits for its frame. */
+	if (probe->sampled)
+		probe_copy_commands(probe, (uint32_t)plan->setup);
 	result = vkEndCommandBuffer(probe->command);
 	if (result != VK_SUCCESS)
 		return probe_failed(result, "vkEndCommandBuffer");
@@ -1418,6 +1581,7 @@ probe_run(
 	dpb_init(&dpb, probe->max_references);
 	probe->max_references = dpb.max_references;
 	probe->slots = dpb.slots;
+	probe->sampled = options->sampled;
 
 	/* The device and the decoder's objects. */
 	error = probe_device(probe);
@@ -1583,6 +1747,10 @@ probe_close(
 			vkDestroyBuffer(probe->device, probe->buffer, NULL);
 		if (probe->buffer_memory != VK_NULL_HANDLE)
 			vkFreeMemory(probe->device, probe->buffer_memory, NULL);
+		if (probe->readback != VK_NULL_HANDLE)
+			vkDestroyBuffer(probe->device, probe->readback, NULL);
+		if (probe->readback_memory != VK_NULL_HANDLE)
+			vkFreeMemory(probe->device, probe->readback_memory, NULL);
 		for (index = 0U; index < DPB_SLOTS; index++) {
 			if (probe->view[index] != VK_NULL_HANDLE)
 				vkDestroyImageView(probe->device, probe->view[index], NULL);

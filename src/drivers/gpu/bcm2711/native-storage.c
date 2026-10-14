@@ -412,6 +412,38 @@ bcm2711_native_snapshot_get(
 	bool unit,
 	struct bcm2711_native_snapshot **result)
 {
+	int error;
+
+	/* An RGBA8 or BGRA8 image has four-byte texels. */
+	error = bcm2711_native_snapshot_get_texel(space, buffer, offset, width, height, pitch, 4U, raster, raster_bytes, unit, result);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller samples the snapshot's pixels until its draw retires. */
+	return 0;
+}
+
+/*
+ * Finds or makes the converted texture of one raster interval of one-, two- or four-byte texels.
+ *
+ * As bcm2711_native_snapshot_get; texel_bytes is part of the key.  A snapshot
+ * of one- or two-byte texels is always converted whole (the plane of a
+ * decoded picture changes whole).
+ */
+int
+bcm2711_native_snapshot_get_texel(
+	struct bcm2711_v3d_space *space,
+	struct bcm2711_buffer *buffer,
+	uint64_t offset,
+	uint32_t width,
+	uint32_t height,
+	uint32_t pitch,
+	uint32_t texel_bytes,
+	const void *raster,
+	size_t raster_bytes,
+	bool unit,
+	struct bcm2711_native_snapshot **result)
+{
 	struct bcm2711_native_snapshot *snapshot;
 	const void *whole;
 	uint32_t bytes;
@@ -423,7 +455,7 @@ bcm2711_native_snapshot_get(
 	*result = NULL;
 	if (space->snapshot_limit == 0 || buffer->host_mapped)
 		return ENOTSUP;
-	error = bcm2711_native_texture_size(width, height, &bytes);
+	error = bcm2711_native_texture_size_texel(width, height, texel_bytes, &bytes);
 	if (error != 0)
 		return error;
 	space->snapshot_serial++;
@@ -440,7 +472,8 @@ bcm2711_native_snapshot_get(
 		    snapshot->offset == offset &&
 		    snapshot->width == width &&
 		    snapshot->height == height &&
-		    snapshot->pitch == pitch)
+		    snapshot->pitch == pitch &&
+		    snapshot->texel_bytes == texel_bytes)
 			break;
 	}
 
@@ -461,9 +494,9 @@ bcm2711_native_snapshot_get(
 					return error;
 			}
 
-			/* Converted pixels with a known small change are brought up to date in place. */
+			/* Converted four-byte pixels with a known small change are brought up to date in place. */
 			updated = false;
-			if (snapshot->valid) {
+			if (snapshot->valid && texel_bytes == 4U) {
 				error = snapshot_update(space, snapshot, raster, raster_bytes, unit, &updated);
 				if (error != 0)
 					return error;
@@ -508,6 +541,7 @@ bcm2711_native_snapshot_get(
 	snapshot->width = width;
 	snapshot->height = height;
 	snapshot->pitch = pitch;
+	snapshot->texel_bytes = texel_bytes;
 
 	/* The first conversion defines the generation the snapshot is valid for. */
 	snapshot->buffer = buffer;
@@ -710,15 +744,29 @@ snapshot_fill(
 	if (raster == NULL)
 		return 0;
 
-	/* The CPU conversion writes every block, including zero padding. */
-	error = bcm2711_native_texture_copy(
-		snapshot->width,
-		snapshot->height,
-		raster,
-		snapshot->pitch,
-		raster_bytes,
-		snapshot->pixels->view->buffer->address,
-		(size_t)snapshot->pixels->bytes);
+	/* The CPU conversion writes every block, including zero padding; four-byte texels have the faster copy. */
+	if (snapshot->texel_bytes == 4U) {
+		error = bcm2711_native_texture_copy(
+			snapshot->width,
+			snapshot->height,
+			raster,
+			snapshot->pitch,
+			raster_bytes,
+			snapshot->pixels->view->buffer->address,
+			(size_t)snapshot->pixels->bytes);
+	} else {
+		error = bcm2711_native_texture_copy_texel(
+			snapshot->width,
+			snapshot->height,
+			snapshot->texel_bytes,
+			raster,
+			snapshot->pitch,
+			raster_bytes,
+			snapshot->pixels->view->buffer->address,
+			(size_t)snapshot->pixels->bytes);
+	}
+
+	/* A conversion that failed leaves the snapshot invalid. */
 	if (error != 0)
 		return error;
 
