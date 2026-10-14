@@ -39,3 +39,33 @@ for name in pb-high-352-pyramid i-high-352-cqm p-baseline-64; do
 	echo "$name: units=$units frames=$frames refs=$refs reorder=$reorder buffering=$buffering"
 done
 [ "$fail" = 0 ] && echo "h264: all PASS"
+# ws236-p004: the SPS/PPS writers against libmedia's parser: every set written back from its StdVideo fields reads
+# the same in ffmpeg's trace_headers (the SPS up to the VUI, the PPS whole) and the streams decode to the same frames.
+mkdir -p "$work/vk"
+ln -s "$repo/include/libc/vulkan" "$work/vk/vulkan"
+san="-O1 -g -fsanitize=address,undefined"
+# shellcheck disable=SC2086
+cc -std=c11 -Wall -Wextra -Werror -I"$repo/src" -I"$repo/include" $san -c "$repo/src/drivers/platform/rpi4/rpi4-h264.c" -o "$work/rpi4-h264.o"
+for part in h264 bits; do
+	# shellcheck disable=SC2086
+	cc -std=c11 -Wall -Wextra -I"$work/vk" $san -c "$repo/userland/desktop/libmedia/$part.c" -o "$work/libmedia-$part.o"
+done
+# shellcheck disable=SC2086
+cc -std=c11 -Wall -Wextra -I"$repo/src" -I"$work/vk" -idirafter "$repo/include" -I"$repo/userland/desktop/libmedia" $san \
+	"$repo/plan/ws236/tests/h264-write-test.c" "$work/rpi4-h264.o" "$work/libmedia-h264.o" "$work/libmedia-bits.o" -o "$work/h264-write"
+fail=0
+for name in pb-high-352-pyramid i-high-352-cqm p-baseline-64; do
+	in="$repo/plan/ws236/tests/$name.h264"
+	UBSAN_OPTIONS=halt_on_error=1 "$work/h264-write" rewrite "$in" "$work/$name.w.h264" 0
+	for kind in sps pps; do
+		if [ $kind = sps ]; then range='/Sequence Parameter Set/,/vui_parameters_present_flag/'; else range='/Picture Parameter Set/,/rbsp_stop_one_bit/'; fi
+		ffmpeg -hide_banner -i "$in" -c copy -bsf:v trace_headers -f null - 2>&1 | sed -n "${range}p" | sed 's/^\[[^]]*\] //' | grep -v 'vui_parameters_present\|rbsp_stop\|rbsp_alignment' | sed 's/^[0-9]* *//' >"$work/$name.$kind.1"
+		ffmpeg -hide_banner -i "$work/$name.w.h264" -c copy -bsf:v trace_headers -f null - 2>&1 | sed -n "${range}p" | sed 's/^\[[^]]*\] //' | grep -v 'vui_parameters_present\|rbsp_stop\|rbsp_alignment' | sed 's/^[0-9]* *//' >"$work/$name.$kind.2"
+		if ! cmp -s "$work/$name.$kind.1" "$work/$name.$kind.2"; then echo "FAIL $name: written $kind differs"; diff "$work/$name.$kind.1" "$work/$name.$kind.2" | head -5; fail=1; fi
+	done
+	ffmpeg -v error -i "$in" -f framemd5 - | grep -v '^#' | awk -F, '{print $6}' | sort >"$work/$name.w.a"
+	ffmpeg -v error -i "$work/$name.w.h264" -f framemd5 - | grep -v '^#' | awk -F, '{print $6}' | sort >"$work/$name.w.b"
+	if ! cmp -s "$work/$name.w.a" "$work/$name.w.b"; then echo "FAIL $name: written sets decode differently"; fail=1; fi
+	echo "$name: sets written back $(wc -l <"$work/$name.sps.2") SPS lines $(wc -l <"$work/$name.pps.2") PPS lines"
+done
+[ "$fail" = 0 ] && echo "h264-write: all PASS"

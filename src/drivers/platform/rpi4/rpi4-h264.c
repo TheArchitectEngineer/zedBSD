@@ -57,6 +57,200 @@ static void skip_scaling_list(struct h264_reader *reader, unsigned size);
 static void write_bits(struct h264_writer *writer, uint32_t value, unsigned count);
 static void write_ue(struct h264_writer *writer, uint32_t value);
 static int high_profile(uint32_t profile);
+static void write_se(struct h264_writer *writer, int32_t value);
+static void write_vui_no_reorder(struct h264_writer *writer, uint32_t references);
+static void write_trailing(struct h264_writer *writer);
+static void write_scaling(struct h264_writer *writer, const struct drv_rpi4_h264_scaling *scaling, uint32_t lists);
+static uint32_t level_number(uint32_t level);
+static int pack_nal(uint8_t header, const uint8_t *rbsp, size_t bytes, uint8_t *output, size_t capacity, size_t *written);
+
+/*
+ * Writes an SPS NAL unit from its fields.
+ *
+ * The syntax is 7.3.2.1.1's, field by field; the scaling lists are coded
+ * as present, default or explicit with every delta written.
+ */
+int
+drv_rpi4_h264_write_sps(
+	const struct drv_rpi4_h264_sps *sps,
+	int no_reorder,
+	uint8_t *output,
+	size_t capacity,
+	size_t *written)
+{
+	uint8_t rbsp[H264_RBSP_MAX + 2048U];
+	struct h264_writer writer;
+	uint32_t constraints;
+	uint32_t lists;
+	uint32_t index;
+	int error;
+
+	/* Refuses fields H.264 cannot code. */
+	if (sps->offset_count > 255U || sps->id > 31U || sps->level > 18U)
+		return EINVAL;
+	kern_memset(rbsp, 0, sizeof(rbsp));
+	writer.data = rbsp;
+	writer.capacity_bits = sizeof(rbsp) * 8U;
+	writer.position = 0;
+	writer.error = 0;
+
+	/* profile_idc, constraint_set0..5 and two reserved zeros, level_idc, the id. */
+	constraints = 0;
+	for (index = 0; index < 6U; index++) {
+		if ((sps->flags & (DRV_RPI4_H264_SPS_CONSTRAINT_SET0 << index)) != 0)
+			constraints |= 0x80U >> index;
+	}
+	write_bits(&writer, sps->profile_idc, 8);
+	write_bits(&writer, constraints, 8);
+	write_bits(&writer, level_number(sps->level), 8);
+	write_ue(&writer, sps->id);
+
+	/* The high profiles' chroma format, bit depths and scaling matrix. */
+	if (high_profile(sps->profile_idc)) {
+		write_ue(&writer, sps->chroma_format_idc);
+		if (sps->chroma_format_idc == 3U)
+			write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_SEPARATE_PLANES) != 0, 1);
+		write_ue(&writer, sps->bit_depth_luma_minus8);
+		write_ue(&writer, sps->bit_depth_chroma_minus8);
+		write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_QPPRIME_BYPASS) != 0, 1);
+		write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_SCALING) != 0, 1);
+		if ((sps->flags & DRV_RPI4_H264_SPS_SCALING) != 0) {
+			lists = 8U;
+			if (sps->chroma_format_idc == 3U)
+				lists = 12U;
+			write_scaling(&writer, &sps->scaling, lists);
+		}
+	}
+
+	/* The frame number and the picture order count syntax. */
+	write_ue(&writer, sps->log2_max_frame_num_minus4);
+	write_ue(&writer, sps->pic_order_cnt_type);
+	if (sps->pic_order_cnt_type == 0) {
+		write_ue(&writer, sps->log2_max_pic_order_cnt_lsb_minus4);
+	} else if (sps->pic_order_cnt_type == 1U) {
+		write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_DELTA_POC_ZERO) != 0, 1);
+		write_se(&writer, sps->offset_for_non_ref_pic);
+		write_se(&writer, sps->offset_for_top_to_bottom_field);
+		write_ue(&writer, sps->offset_count);
+		for (index = 0; index < sps->offset_count; index++)
+			write_se(&writer, sps->offsets[index]);
+	}
+
+	/* The references, the size, the field flags and the cropping. */
+	write_ue(&writer, sps->max_num_ref_frames);
+	write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_GAPS_ALLOWED) != 0, 1);
+	write_ue(&writer, sps->pic_width_in_mbs_minus1);
+	write_ue(&writer, sps->pic_height_in_map_units_minus1);
+	write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_FRAME_MBS_ONLY) != 0, 1);
+	if ((sps->flags & DRV_RPI4_H264_SPS_FRAME_MBS_ONLY) == 0)
+		write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_MB_ADAPTIVE) != 0, 1);
+	write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_DIRECT_8X8) != 0, 1);
+	write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_CROPPING) != 0, 1);
+	if ((sps->flags & DRV_RPI4_H264_SPS_CROPPING) != 0) {
+		for (index = 0; index < 4U; index++)
+			write_ue(&writer, sps->crop[index]);
+	}
+
+	/* The VUI asking for no reordering, or none. */
+	if (no_reorder) {
+		write_vui_no_reorder(&writer, sps->max_num_ref_frames);
+	} else {
+		write_bits(&writer, 0, 1);
+	}
+	write_trailing(&writer);
+	if (writer.error != 0)
+		return ENOSPC;
+
+	/* The start code, the header (nal_ref_idc 3, type 7) and the escaped body. */
+	error = pack_nal(0x67U, rbsp, writer.position / 8U, output, capacity, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: output holds the unit. */
+	return 0;
+}
+
+/*
+ * Writes a PPS NAL unit from its fields (7.3.2.2), with one slice group.
+ *
+ * The optional tail (the 8x8 transform, the scaling lists and the second
+ * chroma offset) is written only when one of them differs from what its
+ * absence means.
+ */
+int
+drv_rpi4_h264_write_pps(
+	const struct drv_rpi4_h264_pps *pps,
+	const struct drv_rpi4_h264_sps *sps,
+	uint8_t *output,
+	size_t capacity,
+	size_t *written)
+{
+	uint8_t rbsp[H264_RBSP_MAX + 2048U];
+	struct h264_writer writer;
+	uint32_t lists;
+	int tail;
+	int error;
+
+	/* Refuses fields H.264 cannot code. */
+	if (pps->pps_id > 255U || pps->sps_id > 31U || pps->weighted_bipred_idc > 2U)
+		return EINVAL;
+	kern_memset(rbsp, 0, sizeof(rbsp));
+	writer.data = rbsp;
+	writer.capacity_bits = sizeof(rbsp) * 8U;
+	writer.position = 0;
+	writer.error = 0;
+
+	/* The ids, the entropy coder, the field order flag and one slice group. */
+	write_ue(&writer, pps->pps_id);
+	write_ue(&writer, pps->sps_id);
+	write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_CABAC) != 0, 1);
+	write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_BOTTOM_FIELD_POC) != 0, 1);
+	write_ue(&writer, 0);
+
+	/* The default references, the weighted prediction and the quantizers. */
+	write_ue(&writer, pps->num_ref_idx_l0_default_active_minus1);
+	write_ue(&writer, pps->num_ref_idx_l1_default_active_minus1);
+	write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_WEIGHTED_PRED) != 0, 1);
+	write_bits(&writer, pps->weighted_bipred_idc, 2);
+	write_se(&writer, pps->pic_init_qp_minus26);
+	write_se(&writer, pps->pic_init_qs_minus26);
+	write_se(&writer, pps->chroma_qp_index_offset);
+	write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_DEBLOCKING_CONTROL) != 0, 1);
+	write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_CONSTRAINED_INTRA) != 0, 1);
+	write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_REDUNDANT_PIC_CNT) != 0, 1);
+
+	/* The optional tail, when any of it says something. */
+	tail = 0;
+	if ((pps->flags & (DRV_RPI4_H264_PPS_TRANSFORM_8X8 | DRV_RPI4_H264_PPS_SCALING)) != 0)
+		tail = 1;
+	if (pps->second_chroma_qp_index_offset != pps->chroma_qp_index_offset)
+		tail = 1;
+	if (tail) {
+		write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_TRANSFORM_8X8) != 0, 1);
+		write_bits(&writer, (pps->flags & DRV_RPI4_H264_PPS_SCALING) != 0, 1);
+		if ((pps->flags & DRV_RPI4_H264_PPS_SCALING) != 0) {
+			lists = 6U;
+			if ((pps->flags & DRV_RPI4_H264_PPS_TRANSFORM_8X8) != 0) {
+				lists += 2U;
+				if (sps != NULL && sps->chroma_format_idc == 3U)
+					lists += 4U;
+			}
+			write_scaling(&writer, &pps->scaling, lists);
+		}
+		write_se(&writer, pps->second_chroma_qp_index_offset);
+	}
+	write_trailing(&writer);
+	if (writer.error != 0)
+		return ENOSPC;
+
+	/* The start code, the header (nal_ref_idc 3, type 8) and the escaped body. */
+	error = pack_nal(0x68U, rbsp, writer.position / 8U, output, capacity, written);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: output holds the unit. */
+	return 0;
+}
 
 /*
  * Finds the next NAL unit of an Annex B stream at or after offset.
@@ -179,9 +373,7 @@ drv_rpi4_h264_sps_no_reorder(
 	uint32_t cropping;
 	size_t rbsp_bytes;
 	size_t prefix_bits;
-	size_t bytes_out;
-	size_t zeros;
-	size_t out;
+	int error;
 
 	/* Requires an SPS NAL unit with a body. */
 	if (bytes < 4U || (nal[0] & H264_NAL_TYPE_MASK) != DRV_RPI4_H264_NAL_SPS)
@@ -276,70 +468,18 @@ drv_rpi4_h264_sps_no_reorder(
 	while (reader.position < prefix_bits)
 		write_bits(&writer, read_bits(&reader, 1), 1);
 
-	/* VUI present, with nothing but the bitstream restriction. */
-	write_bits(&writer, 1, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 0, 1);
-	write_bits(&writer, 1, 1);
-
-	/* The restriction: no size limits, the widest motion, no reordering. */
-	write_bits(&writer, 1, 1);
-	write_ue(&writer, 0);
-	write_ue(&writer, 0);
-	write_ue(&writer, H264_MAX_MV_LENGTH);
-	write_ue(&writer, H264_MAX_MV_LENGTH);
-	write_ue(&writer, 0);
-	if (references == 0)
-		references = 1;
-	write_ue(&writer, references);
-
-	/* rbsp_trailing_bits: a one, then zeros to the byte boundary. */
-	write_bits(&writer, 1, 1);
-	while ((writer.position % 8U) != 0)
-		write_bits(&writer, 0, 1);
+	/* VUI present, with nothing but the bitstream restriction, then the trailing bits. */
+	write_vui_no_reorder(&writer, references);
+	write_trailing(&writer);
 	if (writer.error != 0)
 		return ENOSPC;
-	bytes_out = writer.position / 8U;
 
-	/* The start code and the NAL header byte. */
-	if (capacity < 5U)
-		return ENOSPC;
-	output[0] = 0;
-	output[1] = 0;
-	output[2] = 0;
-	output[3] = 1;
-	output[4] = nal[0];
-	out = 5U;
-
-	/* The body, with a 0x03 after any two zeros that precede a byte of 3 or less. */
-	zeros = 0;
-	for (index = 0; index < bytes_out; index++) {
-		if (zeros >= 2U && rewritten[index] <= 3U) {
-			if (out >= capacity)
-				return ENOSPC;
-			output[out] = 3;
-			out++;
-			zeros = 0;
-		}
-		if (out >= capacity)
-			return ENOSPC;
-		output[out] = rewritten[index];
-		out++;
-		if (rewritten[index] == 0) {
-			zeros++;
-		} else {
-			zeros = 0;
-		}
-	}
+	/* The start code, the NAL header byte and the escaped body. */
+	error = pack_nal(nal[0], rewritten, writer.position / 8U, output, capacity, written);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: output holds the rewritten unit. */
-	*written = out;
 	return 0;
 }
 
@@ -582,4 +722,180 @@ high_profile(
 	default:
 		return 0;
 	}
+}
+
+/* Writes a signed Exp-Golomb code. */
+static void
+write_se(
+	struct h264_writer *writer,
+	int32_t value)
+{
+	/* Positive values take the odd codes, the others the even ones. */
+	if (value > 0) {
+		write_ue(writer, (uint32_t)value * 2U - 1U);
+	} else {
+		write_ue(writer, (uint32_t)(-(int64_t)value) * 2U);
+	}
+}
+
+/*
+ * Writes vui_parameters_present_flag and VUI whose only content is the
+ * bitstream restriction asking for no reordering.
+ */
+static void
+write_vui_no_reorder(
+	struct h264_writer *writer,
+	uint32_t references)
+{
+	/* VUI present; no aspect, overscan, signal, chroma location, timing, HRD or picture structure. */
+	write_bits(writer, 1, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+	write_bits(writer, 0, 1);
+
+	/* The restriction: no size limits, the widest motion, no reordering. */
+	write_bits(writer, 1, 1);
+	write_bits(writer, 1, 1);
+	write_ue(writer, 0);
+	write_ue(writer, 0);
+	write_ue(writer, H264_MAX_MV_LENGTH);
+	write_ue(writer, H264_MAX_MV_LENGTH);
+	write_ue(writer, 0);
+	if (references == 0)
+		references = 1;
+	write_ue(writer, references);
+}
+
+/* Writes rbsp_trailing_bits: a one, then zeros to the byte boundary. */
+static void
+write_trailing(
+	struct h264_writer *writer)
+{
+	/* The stop bit and the alignment. */
+	write_bits(writer, 1, 1);
+	while ((writer->position % 8U) != 0 && writer->error == 0)
+		write_bits(writer, 0, 1);
+}
+
+/*
+ * Writes the scaling lists of a set: a present flag per list, and for a
+ * present one either the default marker or every delta.
+ */
+static void
+write_scaling(
+	struct h264_writer *writer,
+	const struct drv_rpi4_h264_scaling *scaling,
+	uint32_t lists)
+{
+	const uint8_t *list;
+	uint32_t index;
+	uint32_t size;
+	uint32_t entry;
+	int32_t last;
+	int32_t delta;
+
+	/* Each list in coding order: the six 4x4 lists, then the 8x8 ones. */
+	for (index = 0; index < lists; index++) {
+		if ((scaling->present_mask & (1U << index)) == 0) {
+			write_bits(writer, 0, 1);
+			continue;
+		}
+		write_bits(writer, 1, 1);
+
+		/* A default list is the delta that makes the first scale zero. */
+		if ((scaling->default_mask & (1U << index)) != 0) {
+			write_se(writer, -8);
+			continue;
+		}
+
+		/* An explicit list: each coefficient's delta from the one before, wrapped to -128..127. */
+		if (index < 6U) {
+			list = scaling->list4[index];
+			size = 16U;
+		} else {
+			list = scaling->list8[index - 6U];
+			size = 64U;
+		}
+		last = 8;
+		for (entry = 0; entry < size; entry++) {
+			delta = ((int32_t)list[entry] - last + 256) % 256;
+			if (delta > 127)
+				delta -= 256;
+			write_se(writer, delta);
+			last = list[entry];
+		}
+	}
+}
+
+/* Converts StdVideoH264LevelIdc to level_idc. */
+static uint32_t
+level_number(
+	uint32_t level)
+{
+	/* The enum counts the levels 1.0 to 6.2 in order. */
+	static const uint8_t numbers[19] = {
+		10, 11, 12, 13, 20, 21, 22, 30, 31, 32, 40, 41, 42, 50, 51, 52, 60, 61, 62
+	};
+
+	/* Succeeded: the level's number. */
+	return numbers[level];
+}
+
+/*
+ * Writes a start code, a NAL header byte and an RBSP with emulation
+ * prevention: a 0x03 goes in after any two zeros that precede a byte of
+ * three or less.
+ */
+static int
+pack_nal(
+	uint8_t header,
+	const uint8_t *rbsp,
+	size_t bytes,
+	uint8_t *output,
+	size_t capacity,
+	size_t *written)
+{
+	size_t index;
+	size_t zeros;
+	size_t out;
+
+	/* The four-byte start code and the header. */
+	if (capacity < 5U)
+		return ENOSPC;
+	output[0] = 0;
+	output[1] = 0;
+	output[2] = 0;
+	output[3] = 1;
+	output[4] = header;
+	out = 5U;
+
+	/* The body, escaped. */
+	zeros = 0;
+	for (index = 0; index < bytes; index++) {
+		if (zeros >= 2U && rbsp[index] <= 3U) {
+			if (out >= capacity)
+				return ENOSPC;
+			output[out] = 3;
+			out++;
+			zeros = 0;
+		}
+		if (out >= capacity)
+			return ENOSPC;
+		output[out] = rbsp[index];
+		out++;
+		if (rbsp[index] == 0) {
+			zeros++;
+		} else {
+			zeros = 0;
+		}
+	}
+
+	/* Succeeded: output holds the unit. */
+	*written = out;
+	return 0;
 }
