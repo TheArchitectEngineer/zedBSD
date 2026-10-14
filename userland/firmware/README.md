@@ -81,5 +81,8 @@ license text, and asks `yes/no`. An accepted text is recorded beside the cache
 again; a changed text is. Any other answer, or none, stops the build without
 fetching. A build goal asks while make reads the makefiles, so `make -j` is
 safe; an unattended build answers first with `yes | make firmware-licenses`,
-as CI does.
+as CI does. The build menu (`make menuconfig`, Build boot image) asks in a
+license screen of its own before it builds: `make firmware-licenses-pending`
+lists what would be asked without asking, and `license-agree.sh` in its
+accept mode writes the record.
 This hierarchy is package organization, not a common hardware-driver layer.

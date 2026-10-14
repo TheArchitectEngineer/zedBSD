@@ -61,3 +61,10 @@ ZEDBSD_FIRMWARE_FIELD = $(word $(2),$(subst |, ,$(filter $(1)|%,$(3))))
 # PACKAGE-license target here when it is selected.
 .PHONY: firmware-licenses
 firmware-licenses:
+
+# "make firmware-licenses-pending" asks nothing: for each selected package
+# whose license the first fetch would ask about, it fetches and checks the
+# license text and prints one tab-separated line (license-agree.sh, mode
+# pending) for a front end that asks in its own way (tools/menuconfig.py).
+.PHONY: firmware-licenses-pending
+firmware-licenses-pending:

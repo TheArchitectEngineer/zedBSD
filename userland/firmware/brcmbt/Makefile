@@ -86,10 +86,13 @@ endif
 endif
 ifneq ($(filter brcmbt-firmware,$(ZEDBSD_USER_PROGRAMS)),)
 firmware-licenses: brcmbt-firmware-license
+firmware-licenses-pending: brcmbt-firmware-license-pending
 endif
-.PHONY: brcmbt-firmware-license
+.PHONY: brcmbt-firmware-license brcmbt-firmware-license-pending
 brcmbt-firmware-license:
 	@if test ! -d '$(BRCMBT_FIRMWARE_CACHE_DIR)'; then $(BRCMBT_FIRMWARE_LICENSE_COMMAND); fi
+brcmbt-firmware-license-pending:
+	@if test ! -d '$(BRCMBT_FIRMWARE_CACHE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(BRCMBT_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,brcmbt-firmware,Broadcom UART Bluetooth firmware,*,n,package,,y,firmware,firmware/brcmbt,,,data,$(BRCMBT_FIRMWARE_DATA),,))
 override USERLAND_brcmbt-firmware_DATA := $(BRCMBT_FIRMWARE_DATA)

@@ -102,10 +102,13 @@ endif
 endif
 ifneq ($(filter intelbt-firmware,$(ZEDBSD_USER_PROGRAMS)),)
 firmware-licenses: intelbt-firmware-license
+firmware-licenses-pending: intelbt-firmware-license-pending
 endif
-.PHONY: intelbt-firmware-license
+.PHONY: intelbt-firmware-license intelbt-firmware-license-pending
 intelbt-firmware-license:
 	@if test ! -d '$(INTELBT_FIRMWARE_CACHE_DIR)'; then $(INTELBT_FIRMWARE_LICENSE_COMMAND); fi
+intelbt-firmware-license-pending:
+	@if test ! -d '$(INTELBT_FIRMWARE_CACHE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(INTELBT_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,intelbt-firmware,Intel Bluetooth firmware,amd64,n,package,,y,firmware,firmware/intelbt,,,data,$(INTELBT_FIRMWARE_DATA),,))
 override USERLAND_intelbt-firmware_DATA := $(INTELBT_FIRMWARE_DATA)

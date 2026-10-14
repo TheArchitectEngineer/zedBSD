@@ -70,9 +70,12 @@ $(error rpi4-boot-firmware: the firmware license was not accepted; see above)
 endif
 endif
 firmware-licenses: rpi4-boot-firmware-license
-.PHONY: rpi4-boot-firmware-license
+firmware-licenses-pending: rpi4-boot-firmware-license-pending
+.PHONY: rpi4-boot-firmware-license rpi4-boot-firmware-license-pending
 rpi4-boot-firmware-license:
 	@if test ! -d '$(RPI4_BOOT_FIRMWARE_DIR)'; then $(RPI4_BOOT_FIRMWARE_LICENSE_COMMAND); fi
+rpi4-boot-firmware-license-pending:
+	@if test ! -d '$(RPI4_BOOT_FIRMWARE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(RPI4_BOOT_FIRMWARE_LICENSE_COMMAND); fi
 
 .PHONY: download rpi4-boot-firmware rpi4-boot-firmware-cache \
 	rpi4-boot-firmware-fixture-cache
