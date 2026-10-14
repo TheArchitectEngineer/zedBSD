@@ -54,7 +54,7 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **今のゴール（2026-10-15 夜 ユーザー）**:「RTXでデスクトップが描画できること。」「Piでデコーダから変換なしでGPUのテクスチャにして、60fps出るようになること。」→ WS037（P2: R8b の flip → D2 executor → desktop）、WS236（案 0 の depth → 案 1: VPU の出力を CPU で変換せずに GPU の texture として sample、60 fps）。
+- **今のゴール（2026-10-15 夜 ユーザー）**:「RTXでデスクトップが描画できること。」「Piでデコーダから変換なしでGPUのテクスチャにして、60fps出るようになること。」→ WS037（P2: R8b の flip → D2 executor → desktop）、WS236（案 0 の depth → 案 1: VPU の出力を CPU で変換せずに GPU の texture として sample、60 fps）。 2026-10-16 朝 ユーザー「私は14時まで寝るので、現在の目標を完了させておいてください。」→ Q1 が自律で進める（判断の要る点は記録して先へ）。状況: RTX は方法 A の 1 回目で GOP 640x480 と mode 1280x1024 の違いで takeover せず（P2 が直し中）。Pi は T1-681 で GPU の picture の道（DRAW 1 ms 未満、色 OK）、1080p30 で 21 fps、rest（present の待ち）27〜52 ms が律速 → P3 が presenter の 2 frame 重ねと 1080p60 の試験の mp4。
 - **fg019 ベータ2 の公開（10/17、RC 10/13）**。優先順（2026-10-07 ユーザー）: Settings Display（WS113）→ USB-C/DP Alt（WS051・WS050、BUG-256）→ Vulkan Video（WS083）→ widget（WS090）→ 通知（WS156）→ touchpad の割り込み・タップ（WS183）→ YubiKey（WS161）→ 写真（WS157）→ カレンダー（WS155）→ Bluetooth（WS143）→ 残り。空き時間だけ: IME（WS095）・RTL8822C（WS186）・Vulkan executor（WS031）・i915 の高度化（WS075、shader の compiler を含む）。ベータ3 と 10/13 以降の物は decisions-log。
 <!-- master:focus:end -->
 
