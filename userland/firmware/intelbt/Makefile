@@ -9,6 +9,7 @@
 # builder copies files only, so each linked name is installed as a second
 # copy of the same verified cache file.
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
+include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
 # Each entry is CACHE-NAME|UPSTREAM-PATH|SIZE|SHA-256.
 override INTELBT_FIRMWARE_FIXTURE_GOAL := intelbt-firmware-fixture-cache
@@ -31,6 +32,11 @@ INTELBT_FIRMWARE_FILES ?= \
 	ibt-1040-0041.ddc|intel/ibt-1040-0041.ddc|9|fe272982577efdc289cfe3e8bedafca607c0b7d6c9df1aab1880e22ef930d077 \
 	LICENCE.ibt_firmware|LICENCE.ibt_firmware|2040|5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4 \
 	WHENCE|WHENCE|425450|c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+# The package directory of the zedBSD firmware repository; empty fetches
+# from the upstream alone (userland/firmware/zedbsd-firmware.mk).
+INTELBT_FIRMWARE_ZEDBSD_URL ?=
+# The fixture does not ask about the license unless it sets this to y.
+INTELBT_FIRMWARE_LICENSE_PROMPT ?= n
 INTELBT_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
@@ -48,6 +54,8 @@ override INTELBT_FIRMWARE_FILES := \
 	ibt-1040-0041.ddc|intel/ibt-1040-0041.ddc|9|fe272982577efdc289cfe3e8bedafca607c0b7d6c9df1aab1880e22ef930d077 \
 	LICENCE.ibt_firmware|LICENCE.ibt_firmware|2040|5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4 \
 	WHENCE|WHENCE|425450|c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+override INTELBT_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/intelbt)
+override INTELBT_FIRMWARE_LICENSE_PROMPT := y
 override INTELBT_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
@@ -84,6 +92,20 @@ override INTELBT_FIRMWARE_DATA := \
 	$(INTELBT_FIRMWARE_LICENSE_DIR)/LICENCE.ibt_firmware=$(INTELBT_FIRMWARE_CACHE_DIR)/LICENCE.ibt_firmware \
 	$(INTELBT_FIRMWARE_LICENSE_DIR)/WHENCE=$(INTELBT_FIRMWARE_CACHE_DIR)/WHENCE \
 	/usr/share/zedbsd/packages/intelbt-firmware.manifest=$(INTELBT_FIRMWARE_MANIFEST)
+
+# The license the first fetch asks about (userland/firmware/zedbsd-firmware.mk).
+override INTELBT_FIRMWARE_LICENSE_COMMAND = $(call ZEDBSD_FIRMWARE_LICENSE_COMMAND,intelbt-firmware,$(INTELBT_FIRMWARE_CACHE_ROOT),$(ZEDBSD_FIRMWARE_TREE)/intelbt/intelbt-firmware.notice,LICENCE.ibt_firmware,$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.ibt_firmware,3,$(INTELBT_FIRMWARE_FILES)),$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.ibt_firmware,4,$(INTELBT_FIRMWARE_FILES)),$(INTELBT_FIRMWARE_ZEDBSD_URL),$(INTELBT_FIRMWARE_BASE_URL)/$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.ibt_firmware,2,$(INTELBT_FIRMWARE_FILES))$(INTELBT_FIRMWARE_URL_SUFFIX),$(INTELBT_FIRMWARE_FETCH))
+ifneq ($(call ZEDBSD_FIRMWARE_ASK_AT_PARSE,intelbt-firmware,$(filter intelbt-firmware,$(ZEDBSD_USER_PROGRAMS)),$(INTELBT_FIRMWARE_CACHE_DIR)),)
+ifneq ($(shell $(INTELBT_FIRMWARE_LICENSE_COMMAND) && echo accepted),accepted)
+$(error intelbt-firmware: the firmware license was not accepted; see above)
+endif
+endif
+ifneq ($(filter intelbt-firmware,$(ZEDBSD_USER_PROGRAMS)),)
+firmware-licenses: intelbt-firmware-license
+endif
+.PHONY: intelbt-firmware-license
+intelbt-firmware-license:
+	@if test ! -d '$(INTELBT_FIRMWARE_CACHE_DIR)'; then $(INTELBT_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,intelbt-firmware,Intel Bluetooth firmware,amd64,n,package,,y,firmware,firmware/intelbt,,,data,$(INTELBT_FIRMWARE_DATA),,))
 override USERLAND_intelbt-firmware_DATA := $(INTELBT_FIRMWARE_DATA)
@@ -142,6 +164,9 @@ intelbt-firmware-cache:
 		verify_cache "$$cache"; \
 		exit 0; \
 	fi; \
+	if test '$(INTELBT_FIRMWARE_LICENSE_PROMPT)' = y; then \
+		$(INTELBT_FIRMWARE_LICENSE_COMMAND); \
+	fi; \
 	parent=$${cache%/*}; \
 	mkdir -p "$$parent"; \
 	lock="$$cache.lock"; \
@@ -162,11 +187,22 @@ intelbt-firmware-cache:
 	locked=1; \
 	trap cleanup EXIT HUP INT TERM; \
 	temporary=$$(mktemp -d "$$parent/.intelbt.$(INTELBT_FIRMWARE_REVISION).XXXXXX"); \
+	repository='$(INTELBT_FIRMWARE_ZEDBSD_URL)'; \
+	fetch() { \
+		if test -n "$$repository" && \
+			$(INTELBT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
+			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "intelbt-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
+		fi; \
+		$(INTELBT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
+	}; \
 	base='$(INTELBT_FIRMWARE_BASE_URL)'; \
 	suffix='$(INTELBT_FIRMWARE_URL_SUFFIX)'; \
 	for entry in $$files; do \
 		old_ifs=$$IFS; IFS='|'; set -- $$entry; IFS=$$old_ifs; \
-		$(INTELBT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$base/$$2$$suffix"; \
+		fetch "$$1" "$$base/$$2$$suffix"; \
 	done; \
 	verify_cache "$$temporary"; \
 	mv -- "$$temporary" "$$cache"; \

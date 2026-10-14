@@ -62,5 +62,8 @@ for variable in $variables; do
 	set -- "$@" "$variable"
 done
 IFS=$old_ifs
+# The firmware the configuration selects is fetched after its license is accepted once (ws233-p001); a test image is
+# built unattended, so the question is answered the way CI answers it (2026-10-14, Q1 for the user).
+yes | "$@" firmware-licenses
 # shellcheck disable=SC2086
 exec "$@" $targets

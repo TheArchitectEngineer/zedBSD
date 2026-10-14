@@ -1,6 +1,7 @@
 # zedBSD optional Intel AX211 firmware package
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
+include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
 override INTEL_AX211_FIRMWARE_FIXTURE_GOAL := intelax211-firmware-fixture-cache
 ifneq ($(filter $(INTEL_AX211_FIRMWARE_FIXTURE_GOAL),$(MAKECMDGOALS)),)
@@ -21,6 +22,11 @@ INTEL_AX211_FIRMWARE_LICENSE_SIZE ?= 2046
 INTEL_AX211_FIRMWARE_LICENSE_SHA256 ?= 16d5040c7cf851fc693b7542e20870935b99802533ea1bfd231c377a2305e5c5
 INTEL_AX211_FIRMWARE_WHENCE_SIZE ?= 425450
 INTEL_AX211_FIRMWARE_WHENCE_SHA256 ?= c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+# The package directory of the zedBSD firmware repository; empty fetches
+# from the upstream alone (userland/firmware/zedbsd-firmware.mk).
+INTEL_AX211_FIRMWARE_ZEDBSD_URL ?=
+# The fixture does not ask about the license unless it sets this to y.
+INTEL_AX211_FIRMWARE_LICENSE_PROMPT ?= n
 INTEL_AX211_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
@@ -37,6 +43,8 @@ override INTEL_AX211_FIRMWARE_LICENSE_SIZE := 2046
 override INTEL_AX211_FIRMWARE_LICENSE_SHA256 := 16d5040c7cf851fc693b7542e20870935b99802533ea1bfd231c377a2305e5c5
 override INTEL_AX211_FIRMWARE_WHENCE_SIZE := 425450
 override INTEL_AX211_FIRMWARE_WHENCE_SHA256 := c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+override INTEL_AX211_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/intelax211)
+override INTEL_AX211_FIRMWARE_LICENSE_PROMPT := y
 override INTEL_AX211_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
@@ -64,6 +72,20 @@ override INTEL_AX211_FIRMWARE_DATA := \
 	/usr/share/licenses/intelax211-firmware/LICENCE.iwlwifi_firmware=$(INTEL_AX211_FIRMWARE_CACHE_LICENSE) \
 	/usr/share/licenses/intelax211-firmware/WHENCE=$(INTEL_AX211_FIRMWARE_CACHE_WHENCE) \
 	/usr/share/zedbsd/packages/intelax211-firmware.manifest=$(INTEL_AX211_FIRMWARE_MANIFEST)
+
+# The license the first fetch asks about (userland/firmware/zedbsd-firmware.mk).
+override INTEL_AX211_FIRMWARE_LICENSE_COMMAND = $(call ZEDBSD_FIRMWARE_LICENSE_COMMAND,intelax211-firmware,$(INTEL_AX211_FIRMWARE_CACHE_ROOT),$(ZEDBSD_FIRMWARE_TREE)/intelax211/intelax211-firmware.notice,$(INTEL_AX211_FIRMWARE_LICENSE_PATH),$(INTEL_AX211_FIRMWARE_LICENSE_SIZE),$(INTEL_AX211_FIRMWARE_LICENSE_SHA256),$(INTEL_AX211_FIRMWARE_ZEDBSD_URL),$(INTEL_AX211_FIRMWARE_BASE_URL)/$(INTEL_AX211_FIRMWARE_LICENSE_PATH)$(INTEL_AX211_FIRMWARE_URL_SUFFIX),$(INTEL_AX211_FIRMWARE_FETCH))
+ifneq ($(call ZEDBSD_FIRMWARE_ASK_AT_PARSE,intelax211-firmware,$(filter intelax211-firmware,$(ZEDBSD_USER_PROGRAMS)),$(INTEL_AX211_FIRMWARE_CACHE_DIR)),)
+ifneq ($(shell $(INTEL_AX211_FIRMWARE_LICENSE_COMMAND) && echo accepted),accepted)
+$(error intelax211-firmware: the firmware license was not accepted; see above)
+endif
+endif
+ifneq ($(filter intelax211-firmware,$(ZEDBSD_USER_PROGRAMS)),)
+firmware-licenses: intelax211-firmware-license
+endif
+.PHONY: intelax211-firmware-license
+intelax211-firmware-license:
+	@if test ! -d '$(INTEL_AX211_FIRMWARE_CACHE_DIR)'; then $(INTEL_AX211_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,intelax211-firmware,Intel AX211 firmware,amd64,n,package,,y,firmware,firmware/intelax211,,,data,$(INTEL_AX211_FIRMWARE_DATA),,))
 override USERLAND_intelax211-firmware_DATA := $(INTEL_AX211_FIRMWARE_DATA)
@@ -127,6 +149,9 @@ intelax211-firmware-cache:
 		verify_cache "$$cache"; \
 		exit 0; \
 	fi; \
+	if test '$(INTEL_AX211_FIRMWARE_LICENSE_PROMPT)' = y; then \
+		$(INTEL_AX211_FIRMWARE_LICENSE_COMMAND); \
+	fi; \
 	parent=$${cache%/*}; \
 	mkdir -p "$$parent"; \
 	lock="$$cache.lock"; \
@@ -147,12 +172,23 @@ intelax211-firmware-cache:
 	locked=1; \
 	trap cleanup EXIT HUP INT TERM; \
 	temporary=$$(mktemp -d "$$parent/.intelax211.$(INTEL_AX211_FIRMWARE_REVISION).XXXXXX"); \
+	repository='$(INTEL_AX211_FIRMWARE_ZEDBSD_URL)'; \
+	fetch() { \
+		if test -n "$$repository" && \
+			$(INTEL_AX211_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
+			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "intelax211-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
+		fi; \
+		$(INTEL_AX211_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
+	}; \
 	base='$(INTEL_AX211_FIRMWARE_BASE_URL)'; \
 	suffix='$(INTEL_AX211_FIRMWARE_URL_SUFFIX)'; \
-	$(INTEL_AX211_FIRMWARE_FETCH) --output "$$temporary/iwlwifi-so-a0-gf-a0-89.ucode" "$$base/$(INTEL_AX211_FIRMWARE_UCODE_PATH)$$suffix"; \
-	$(INTEL_AX211_FIRMWARE_FETCH) --output "$$temporary/iwlwifi-so-a0-gf-a0.pnvm" "$$base/$(INTEL_AX211_FIRMWARE_PNVM_PATH)$$suffix"; \
-	$(INTEL_AX211_FIRMWARE_FETCH) --output "$$temporary/LICENCE.iwlwifi_firmware" "$$base/$(INTEL_AX211_FIRMWARE_LICENSE_PATH)$$suffix"; \
-	$(INTEL_AX211_FIRMWARE_FETCH) --output "$$temporary/WHENCE" "$$base/$(INTEL_AX211_FIRMWARE_WHENCE_PATH)$$suffix"; \
+	fetch iwlwifi-so-a0-gf-a0-89.ucode "$$base/$(INTEL_AX211_FIRMWARE_UCODE_PATH)$$suffix"; \
+	fetch iwlwifi-so-a0-gf-a0.pnvm "$$base/$(INTEL_AX211_FIRMWARE_PNVM_PATH)$$suffix"; \
+	fetch LICENCE.iwlwifi_firmware "$$base/$(INTEL_AX211_FIRMWARE_LICENSE_PATH)$$suffix"; \
+	fetch WHENCE "$$base/$(INTEL_AX211_FIRMWARE_WHENCE_PATH)$$suffix"; \
 	verify_cache "$$temporary"; \
 	mv -- "$$temporary" "$$cache"; \
 	temporary=; \

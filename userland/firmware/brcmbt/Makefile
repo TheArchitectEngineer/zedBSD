@@ -10,6 +10,7 @@
 # HTML page, so the plain-text LICENCE.cypress comes from the official
 # linux-firmware tag 20260410 (the same blob, checked in ws215-p004).
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
+include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
 # Each entry is CACHE-NAME|SOURCE|UPSTREAM-PATH|SIZE|SHA-256, where SOURCE is
 # bluez (RPi-Distro/bluez-firmware) or linux (linux-firmware).
@@ -30,6 +31,11 @@ BRCMBT_FIRMWARE_FILES ?= \
 	BCM4345C0.hcd|bluez|debian/firmware/broadcom/BCM4345C0.hcd|63806|51c45e77ddad91a19e96dc8fb75295b2087c279940df2634b23baf71b6dea42c \
 	copyright|bluez|debian/copyright|23518|79576e5ea6740845bf71ce96ad4e31cd49797c8e1a259d64670f48554b8eb67c \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f
+# The package directory of the zedBSD firmware repository; empty fetches
+# from the upstream alone (userland/firmware/zedbsd-firmware.mk).
+BRCMBT_FIRMWARE_ZEDBSD_URL ?=
+# The fixture does not ask about the license unless it sets this to y.
+BRCMBT_FIRMWARE_LICENSE_PROMPT ?= n
 BRCMBT_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
@@ -44,6 +50,8 @@ override BRCMBT_FIRMWARE_FILES := \
 	BCM4345C0.hcd|bluez|debian/firmware/broadcom/BCM4345C0.hcd|63806|51c45e77ddad91a19e96dc8fb75295b2087c279940df2634b23baf71b6dea42c \
 	copyright|bluez|debian/copyright|23518|79576e5ea6740845bf71ce96ad4e31cd49797c8e1a259d64670f48554b8eb67c \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f
+override BRCMBT_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/brcmbt)
+override BRCMBT_FIRMWARE_LICENSE_PROMPT := y
 override BRCMBT_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
@@ -68,6 +76,20 @@ override BRCMBT_FIRMWARE_DATA := \
 	$(BRCMBT_FIRMWARE_LICENSE_DIR)/LICENCE.cypress=$(BRCMBT_FIRMWARE_CACHE_DIR)/LICENCE.cypress \
 	$(BRCMBT_FIRMWARE_LICENSE_DIR)/bluez-firmware.copyright=$(BRCMBT_FIRMWARE_CACHE_DIR)/copyright \
 	/usr/share/zedbsd/packages/brcmbt-firmware.manifest=$(BRCMBT_FIRMWARE_MANIFEST)
+
+# The license the first fetch asks about (userland/firmware/zedbsd-firmware.mk).
+override BRCMBT_FIRMWARE_LICENSE_COMMAND = $(call ZEDBSD_FIRMWARE_LICENSE_COMMAND,brcmbt-firmware,$(BRCMBT_FIRMWARE_CACHE_ROOT),$(ZEDBSD_FIRMWARE_TREE)/brcmbt/brcmbt-firmware.notice,LICENCE.cypress,$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.cypress,4,$(BRCMBT_FIRMWARE_FILES)),$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.cypress,5,$(BRCMBT_FIRMWARE_FILES)),$(BRCMBT_FIRMWARE_ZEDBSD_URL),$(BRCMBT_FIRMWARE_LINUX_BASE_URL)/$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.cypress,3,$(BRCMBT_FIRMWARE_FILES))$(BRCMBT_FIRMWARE_LINUX_URL_SUFFIX),$(BRCMBT_FIRMWARE_FETCH))
+ifneq ($(call ZEDBSD_FIRMWARE_ASK_AT_PARSE,brcmbt-firmware,$(filter brcmbt-firmware,$(ZEDBSD_USER_PROGRAMS)),$(BRCMBT_FIRMWARE_CACHE_DIR)),)
+ifneq ($(shell $(BRCMBT_FIRMWARE_LICENSE_COMMAND) && echo accepted),accepted)
+$(error brcmbt-firmware: the firmware license was not accepted; see above)
+endif
+endif
+ifneq ($(filter brcmbt-firmware,$(ZEDBSD_USER_PROGRAMS)),)
+firmware-licenses: brcmbt-firmware-license
+endif
+.PHONY: brcmbt-firmware-license
+brcmbt-firmware-license:
+	@if test ! -d '$(BRCMBT_FIRMWARE_CACHE_DIR)'; then $(BRCMBT_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,brcmbt-firmware,Broadcom UART Bluetooth firmware,*,n,package,,y,firmware,firmware/brcmbt,,,data,$(BRCMBT_FIRMWARE_DATA),,))
 override USERLAND_brcmbt-firmware_DATA := $(BRCMBT_FIRMWARE_DATA)
@@ -126,6 +148,9 @@ brcmbt-firmware-cache:
 		verify_cache "$$cache"; \
 		exit 0; \
 	fi; \
+	if test '$(BRCMBT_FIRMWARE_LICENSE_PROMPT)' = y; then \
+		$(BRCMBT_FIRMWARE_LICENSE_COMMAND); \
+	fi; \
 	parent=$${cache%/*}; \
 	mkdir -p "$$parent"; \
 	lock="$$cache.lock"; \
@@ -146,6 +171,17 @@ brcmbt-firmware-cache:
 	locked=1; \
 	trap cleanup EXIT HUP INT TERM; \
 	temporary=$$(mktemp -d "$$parent/.brcmbt.$(BRCMBT_FIRMWARE_BLUEZ_REVISION).XXXXXX"); \
+	repository='$(BRCMBT_FIRMWARE_ZEDBSD_URL)'; \
+	fetch() { \
+		if test -n "$$repository" && \
+			$(BRCMBT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
+			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "brcmbt-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
+		fi; \
+		$(BRCMBT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
+	}; \
 	for entry in $$files; do \
 		old_ifs=$$IFS; IFS='|'; set -- $$entry; IFS=$$old_ifs; \
 		case "$$2" in \
@@ -153,7 +189,7 @@ brcmbt-firmware-cache:
 		linux) url='$(BRCMBT_FIRMWARE_LINUX_BASE_URL)'"/$$3"'$(BRCMBT_FIRMWARE_LINUX_URL_SUFFIX)' ;; \
 		*) echo "brcmbt-firmware: unknown source for $$1: $$2" >&2; exit 1 ;; \
 		esac; \
-		$(BRCMBT_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$url"; \
+		fetch "$$1" "$$url"; \
 	done; \
 	verify_cache "$$temporary"; \
 	mv -- "$$temporary" "$$cache"; \

@@ -73,7 +73,12 @@ bios-ide)
 raspi4b)
 	qemu=${QEMU:-qemu-system-aarch64}
 	kernel=${KERNEL:-$(dirname -- "$image")/vmunix}
-	dtb=${DTB:-$root/vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb}
+	# The build puts the device tree beside the image (ws233-p001); an image built before that has none, and the
+	# old submodule's copy is the same file.
+	dtb=${DTB:-$(dirname -- "$image")/bcm2711-rpi-4-b.dtb}
+	if [[ -z ${DTB:-} && ! -f $dtb && -f $root/vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb ]]; then
+		dtb=$root/vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb
+	fi
 	required=("$image" "$kernel" "$dtb")
 	;;
 *)

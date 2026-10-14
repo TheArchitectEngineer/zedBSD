@@ -23,6 +23,9 @@ extra=""
 for test in plan/ws074/tests/js/*.js plan/tools/libm/js/*.js; do
 	extra="$extra --file /root/js/$(basename "$test")=$(pwd)/$test"
 done
+# The firmware the configuration selects is fetched after its license is accepted once (ws233-p001); the question
+# is answered the way CI answers it (2026-10-14, Q1 for the user).
+yes | make ZEDBSD_CONFIG=plan/tools/libm/config-amd64-browser-libm.mk BUILD="$build" firmware-licenses
 make -j"$ZEDBSD_JOBS" ZEDBSD_CONFIG=plan/tools/libm/config-amd64-browser-libm.mk \
 	BUILD="$build" "ZEDBSD_TEST_EXTRA_FILES=$extra" disk-image
 

@@ -64,4 +64,22 @@ linux-firmware commit above together with the full `debian/copyright` and
 the manifest. Only the Raspberry Pi 4 image configuration selects it.
 Its focused check is `plan/ws206/tests/bcm43455-firmware-package-test.sh`.
 Every entry is default-off, and ordinary builds perform no firmware fetch.
+
+Every file a package fetches is also kept, byte for byte and with its license
+texts, in the GitHub repository `awemorris/zedBSD-firmware`, one directory per
+package (`rpi4-boot/` holds the Raspberry Pi 4 boot firmware of
+`platform/arm64/firmware.mk`). `zedbsd-firmware.mk` names the repository's
+commit; while that is set, a package fetches each file from the repository
+first and from its upstream only when that fails, and checks the same size and
+SHA-256 either way. While it is empty, the packages fetch from their upstream
+alone.
+
+The first time a package's firmware is fetched, `license-agree.sh` shows what
+the firmware is and its copyright (the package's `*.notice` file), the whole
+license text, and asks `yes/no`. An accepted text is recorded beside the cache
+(`build/sources/firmware/PACKAGE/license-accepted`) and is not asked about
+again; a changed text is. Any other answer, or none, stops the build without
+fetching. A build goal asks while make reads the makefiles, so `make -j` is
+safe; an unattended build answers first with `yes | make firmware-licenses`,
+as CI does.
 This hierarchy is package organization, not a common hardware-driver layer.

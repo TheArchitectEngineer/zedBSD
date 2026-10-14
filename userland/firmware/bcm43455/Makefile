@@ -13,6 +13,7 @@
 # official linux-firmware tag 20260410 beside the full debian/copyright and
 # the provenance manifest (ws206-p003, the user's answer E4 of 2026-10-13).
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
+include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
 # Each entry is CACHE-NAME|SOURCE|UPSTREAM-PATH|SIZE|SHA-256, where SOURCE is
 # nonfree (RPi-Distro/firmware-nonfree) or linux (linux-firmware).
@@ -36,6 +37,11 @@ BCM43455_FIRMWARE_FILES ?= \
 	copyright|nonfree|debian/copyright|430523|07082fd0bb65e32c73af39a2292dd6c83f169be7427d338ba1fe34f9b86c0e30 \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f \
 	GPL-2|linux|GPL-2|18092|8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643
+# The package directory of the zedBSD firmware repository; empty fetches
+# from the upstream alone (userland/firmware/zedbsd-firmware.mk).
+BCM43455_FIRMWARE_ZEDBSD_URL ?=
+# The fixture does not ask about the license unless it sets this to y.
+BCM43455_FIRMWARE_LICENSE_PROMPT ?= n
 BCM43455_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
@@ -53,6 +59,8 @@ override BCM43455_FIRMWARE_FILES := \
 	copyright|nonfree|debian/copyright|430523|07082fd0bb65e32c73af39a2292dd6c83f169be7427d338ba1fe34f9b86c0e30 \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f \
 	GPL-2|linux|GPL-2|18092|8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643
+override BCM43455_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/bcm43455)
+override BCM43455_FIRMWARE_LICENSE_PROMPT := y
 override BCM43455_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
@@ -79,6 +87,20 @@ override BCM43455_FIRMWARE_DATA := \
 	$(BCM43455_FIRMWARE_LICENSE_DIR)/GPL-2=$(BCM43455_FIRMWARE_CACHE_DIR)/GPL-2 \
 	$(BCM43455_FIRMWARE_LICENSE_DIR)/firmware-nonfree.copyright=$(BCM43455_FIRMWARE_CACHE_DIR)/copyright \
 	/usr/share/zedbsd/packages/bcm43455-firmware.manifest=$(BCM43455_FIRMWARE_MANIFEST)
+
+# The license the first fetch asks about (userland/firmware/zedbsd-firmware.mk).
+override BCM43455_FIRMWARE_LICENSE_COMMAND = $(call ZEDBSD_FIRMWARE_LICENSE_COMMAND,bcm43455-firmware,$(BCM43455_FIRMWARE_CACHE_ROOT),$(ZEDBSD_FIRMWARE_TREE)/bcm43455/bcm43455-firmware.notice,LICENCE.cypress,$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.cypress,4,$(BCM43455_FIRMWARE_FILES)),$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.cypress,5,$(BCM43455_FIRMWARE_FILES)),$(BCM43455_FIRMWARE_ZEDBSD_URL),$(BCM43455_FIRMWARE_LINUX_BASE_URL)/$(call ZEDBSD_FIRMWARE_FIELD,LICENCE.cypress,3,$(BCM43455_FIRMWARE_FILES))$(BCM43455_FIRMWARE_LINUX_URL_SUFFIX),$(BCM43455_FIRMWARE_FETCH))
+ifneq ($(call ZEDBSD_FIRMWARE_ASK_AT_PARSE,bcm43455-firmware,$(filter bcm43455-firmware,$(ZEDBSD_USER_PROGRAMS)),$(BCM43455_FIRMWARE_CACHE_DIR)),)
+ifneq ($(shell $(BCM43455_FIRMWARE_LICENSE_COMMAND) && echo accepted),accepted)
+$(error bcm43455-firmware: the firmware license was not accepted; see above)
+endif
+endif
+ifneq ($(filter bcm43455-firmware,$(ZEDBSD_USER_PROGRAMS)),)
+firmware-licenses: bcm43455-firmware-license
+endif
+.PHONY: bcm43455-firmware-license
+bcm43455-firmware-license:
+	@if test ! -d '$(BCM43455_FIRMWARE_CACHE_DIR)'; then $(BCM43455_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,bcm43455-firmware,Broadcom BCM43455 SDIO WiFi firmware,*,n,package,,y,firmware,firmware/bcm43455,,,data,$(BCM43455_FIRMWARE_DATA),,))
 override USERLAND_bcm43455-firmware_DATA := $(BCM43455_FIRMWARE_DATA)
@@ -137,6 +159,9 @@ bcm43455-firmware-cache:
 		verify_cache "$$cache"; \
 		exit 0; \
 	fi; \
+	if test '$(BCM43455_FIRMWARE_LICENSE_PROMPT)' = y; then \
+		$(BCM43455_FIRMWARE_LICENSE_COMMAND); \
+	fi; \
 	parent=$${cache%/*}; \
 	mkdir -p "$$parent"; \
 	lock="$$cache.lock"; \
@@ -157,6 +182,17 @@ bcm43455-firmware-cache:
 	locked=1; \
 	trap cleanup EXIT HUP INT TERM; \
 	temporary=$$(mktemp -d "$$parent/.bcm43455.$(BCM43455_FIRMWARE_NONFREE_REVISION).XXXXXX"); \
+	repository='$(BCM43455_FIRMWARE_ZEDBSD_URL)'; \
+	fetch() { \
+		if test -n "$$repository" && \
+			$(BCM43455_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$repository/$$1"; then \
+			return 0; \
+		fi; \
+		if test -n "$$repository"; then \
+			echo "bcm43455-firmware: could not fetch $$1 from the zedBSD firmware repository; fetching it from upstream" >&2; \
+		fi; \
+		$(BCM43455_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$2"; \
+	}; \
 	for entry in $$files; do \
 		old_ifs=$$IFS; IFS='|'; set -- $$entry; IFS=$$old_ifs; \
 		case "$$2" in \
@@ -164,7 +200,7 @@ bcm43455-firmware-cache:
 		linux) url='$(BCM43455_FIRMWARE_LINUX_BASE_URL)'"/$$3"'$(BCM43455_FIRMWARE_LINUX_URL_SUFFIX)' ;; \
 		*) echo "bcm43455-firmware: unknown source for $$1: $$2" >&2; exit 1 ;; \
 		esac; \
-		$(BCM43455_FIRMWARE_FETCH) --output "$$temporary/$$1" "$$url"; \
+		fetch "$$1" "$$url"; \
 	done; \
 	verify_cache "$$temporary"; \
 	mv -- "$$temporary" "$$cache"; \

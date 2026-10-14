@@ -96,6 +96,7 @@ jobs:
       - name: Build amd64
         run: |
           cp "$RELEASE_CONFIG" config.mk
+          yes | make firmware-licenses
           make -j4 ZEDBSD_EXTRA_INPUTS="$PWD/artifacts/INDEX" \
             ZEDBSD_EXTRA_FILES="--file /usr/share/licenses/INDEX=$PWD/artifacts/INDEX"
           python3 tools/release/license-inventory.py --config "$RELEASE_CONFIG" --rootfs build/amd64/rootfs

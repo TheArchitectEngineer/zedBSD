@@ -250,8 +250,8 @@ $(BUILD)/tests/rpi4-fdt-host-test: tests/rpi4-fdt-host-test.c \
  src/hal/arm64/bsp-rpi4/fdt.c src/drivers/generic/fdt.c \
  src/drivers/platform/rpi4/rpi4-board.c $< -o $@
 
-rpi4-fdt-host-test: $(BUILD)/tests/rpi4-fdt-host-test
-	$< vendor/raspberrypi-firmware/boot/bcm2711-rpi-4-b.dtb
+rpi4-fdt-host-test: $(BUILD)/tests/rpi4-fdt-host-test $(RPI4_BOOT_FIRMWARE_DTB)
+	$< $(RPI4_BOOT_FIRMWARE_DTB)
 
 CHECK_RUN_TARGETS += rpi4-fdt-host-test
 
@@ -667,6 +667,7 @@ $(BUILD)/config.txt: rpi4-config-file $(ARM64_PLATFORM)/config.txt platform/arm6
 # the UFS root that the kernel's legacy autoroot finds beside it.
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
 	$(DATA_IMAGE) $(SWAP_IMAGE) $(BUILD)/config.txt $(BUILD)/cmdline.txt \
+	$(RPI4_BOOT_FIRMWARE_CACHE_FILES) \
 	platform/arm64/tools/make-rpi4-ufs-root-hdd-image.py \
 	platform/arm64/tools/make-rpi4-hdd-image.py \
 	platform/arm64/tools/check-rpi4-hdd-image.py tools/build/check-ufs-image.py
@@ -674,7 +675,7 @@ $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img \
  --kernel $(BUILD)/vmunix --ufs-root $(BUILD)/ufs-root.img \
  --data-image $(DATA_IMAGE) --swapfile $(SWAP_IMAGE) \
  --config $(BUILD)/config.txt --cmdline $(BUILD)/cmdline.txt \
- --firmware-dir vendor/raspberrypi-firmware/boot $@
+ --firmware-dir $(RPI4_BOOT_FIRMWARE_DIR) $@
 
 $(BUILD)/kernel.elf: $(ARM64_VMUNIX_OBJS) $(ARM64_PLATFORM)/vmunix.ld \
 	platform/arm64/tools/check-arm64-vmunix.py
