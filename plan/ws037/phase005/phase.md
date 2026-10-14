@@ -168,3 +168,25 @@ image は `plan/ws037/tests/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`
 
 - FAIL の時: 画面の nvrtx の全部の行（`rm: class … status …`・`rm: control … status …`・`P5 fail: fence …`・`P6 channel error: …` があればそれ）を PNG に。P5 の fence が来ない時は、guest を止める前に前回と同じ 6 つの `pmemsave`（`P2a memory:` の番地）に加えて、VRAM の塊は guest から見えないので取らない。QEMU を止め、host を reboot。次の run は流さない。
 - `P7 fail` が出たら host を reboot（次の run の前に必ず）。
+
+## R6 の結果と片付けの直し（2026-10-14 夜、P1）
+
+実機（方式 B、Q1 の伝え）: R4・R5 PASS。R6 は `P5 ok: channel 8 on runlist 8`・`fence 0x1234 reached after 516 us`・`fence 0x1235 reached after 1001 us`・`P5 ok: copy engine filled 64 words` まで PASS（GPU が仕事をした）。最後に `P7 unload call: 42`・`P7 fail: the GSP did not stop (42)`（42 = ETIMEDOUT: unload の RPC に返事が無く、mailbox 0 も unloaded にならない）。R6 は `nvrtx.stop=P6` で P6 の FREE を飛ばし、**scheduler に載った channel・copy の object・vaspace を残したまま unload** していた。
+
+### 直し（nouveau の順にそろえ、P7 の前に必ず片付ける）
+
+- `gsp_finish()`: GSP が動いていれば **`nvrtx.stop` に関わらず必ず** `nvrtx_channel_stop()`（P6）を流してから P7。`P6 skipped (nvrtx.stop=P6)` の分岐を削除。
+- `nvrtx_channel_stop()` の順（nouveau の channel の fini と object の破棄の順）: 1. `GPFIFO_SCHEDULE`（0xa06f0103、bEnable 0）で channel を scheduler から外す 2. copy の object（0xc5b50008）を FREE 3. channel を FREE 4. `UNSET_PAGE_DIRECTORY` 5. vaspace を FREE。失敗は数えて印に出し、P7 へ進む（今までどおり）。
+- `struct nvrtx_engine_state` に `scheduled`・`copy_made`（作った物だけを外す）。
+- P3 の client・device・subdevice は今までどおり残す（R4・R5 はそれで P7 ok）。
+
+検証: `CONFIG_DRIVER_PCI_NVRTX=y` の kernel（`plan/ws037/tests/config-amd64-nvrtx.mk`、`BUILD=build/ws037-y`）rc 0・warning 0・`kernel include check: PASS`・`amd64 vmunix check: PASS`。host 試験 `nvrtx-gsp-host-test.sh` 149 項目 PASS（firmware の cache が無いので実 file の項目は飛ばし）。実機は未実施。
+
+### T2 への手順（R6 の再試験と R7）
+
+| run | 合格の印 |
+| --- | --- |
+| R6 | 前の R6 の印（`P5 ok: … filled 64 words` まで）に加えて **`P6 ok: channel and vaspace freed`**、`P7 begin: unload` の後に `P7 unload call` の行が無く、**`P7 ok: region torn down`**、login prompt |
+| R7 | R6 と同じ印（P8 の手前で止まる旨の行を含む） |
+
+`P6: N frees failed` が出た時は、その前の `rm: control a06f0103 status …`・`rm: free … status …` の行を PNG に。`P7 fail` なら host を reboot。
