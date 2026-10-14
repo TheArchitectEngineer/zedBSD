@@ -28,12 +28,16 @@
  *
  * The end of a lease points the plane back at the firmware's surface, so
  * the text console is on the screen again.  A flip that does not latch
- * within I915_GEN9_FLIP_LATCH_MS gives the flips up for the rest of the
- * boot: the firmware's surface is written back and bootfb.c copies every
- * frame into the firmware's framebuffer as it did before.
+ * within I915_GEN9_FLIP_LATCH_MS, a fault of the plane reading one of the
+ * driver's buffers, or buffers the presenting session's space cannot map
+ * give the flips up for the rest of the boot: the firmware's surface is
+ * written back, the node's step falls to copy (gen9-display.h), and
+ * bootfb.c copies every frame into the firmware's framebuffer as it did
+ * before.
  *
- * Every function but the interrupt hook runs under the display's lease
- * mutex (bootfb.c), or before any session exists (the start).
+ * Every function but the interrupt hook and the resume's check (which
+ * only reads registers, with the worker parked) runs under the display's
+ * lease mutex (bootfb.c), or before any session exists (the start).
  *
  * XXX: one device; the plane's control, stride and watermarks are the
  * firmware's, so only a mode the firmware set is shown.
@@ -80,6 +84,9 @@
 /* The largest side the scanout buffers take. */
 #define I915_SKL_FLIP_MAX_SIDE		8192U
 
+/* The pipe interrupt sources the flips use: the first plane's flip done and fault. */
+#define I915_SKL_FLIP_IRQ_SOURCES	(I915_SKL_DE_PIPE_PLANE1_FLIP_DONE | I915_SKL_DE_PIPE_PLANE1_FAULT)
+
 /* The bytes of a GGTT page, and the multiple of pages the display window is claimed in. */
 #define I915_SKL_FLIP_PAGE_BYTES	4096U
 #define I915_SKL_FLIP_WINDOW_UNIT	32U
@@ -124,6 +131,21 @@ struct i915_skl_flip {
 
 	/* Completed by the flip-done interrupt; a waiter sleeps on it a tick at a time. */
 	struct i915_completion done;
+
+	/*
+	 * The plane's faults the interrupt handler saw since the lease's first
+	 * flip: a buffer of the driver's the display engine could not read.  A
+	 * latch of one of the driver's buffers that finds one ends the flips.
+	 * The handler adds to it; the claim and the first flip empty it.
+	 */
+	volatile uint32_t faults;
+
+	/*
+	 * Why the flips failed, for the stop's line, or NULL while they have
+	 * not: set by the waits and the presentation when the flips themselves
+	 * (not the frame or the GPU) went wrong, so the caller gives them up.
+	 */
+	const char *failure;
 
 	/* Flip-done interrupts seen, flips armed, and the frames' copy and wait times since the last timing line. */
 	volatile uint64_t irq_count;
@@ -354,7 +376,9 @@ drv_i915_skl_port_khz(
  * surface for the log only.  Returns 0 when the flips are used, ENOTSUP
  * when the boot line or the default asks for copies, EINVAL when the
  * firmware's display cannot be flipped, or the window's or the buffers'
- * error.  Every outcome is logged.
+ * error.  A failure is logged as the flip step's
+ * (drv_i915_gen9_display_fail()) and leaves the copy display; a window too
+ * small for the external displays gives up only the mode set.
  */
 int
 drv_i915_gen9_flip_start(
@@ -366,6 +390,7 @@ drv_i915_gen9_flip_start(
 	struct i915_gt *gt;
 	const char *fb_match;
 	unsigned pages;
+	unsigned output_pages;
 	int level;
 	int error;
 
@@ -378,12 +403,10 @@ drv_i915_gen9_flip_start(
 	if (gt->graphics_ver != 9U)
 		return ENOTSUP;
 
-	/* The boot line, or the default, chooses copies or flips. */
-	level = drv_i915_gen9_display_level();
-	if (level < I915_GEN9_DISPLAY_FLIP) {
-		kern_logf("i915: gen9 display: copy (i915.gen9.display=%s)\n", drv_i915_gen9_display_name(level));
+	/* The boot line, or the default, chooses copies or flips (bootfb.c logs the step taken). */
+	level = drv_i915_gen9_display_step();
+	if (level < I915_GEN9_DISPLAY_FLIP)
 		return ENOTSUP;
-	}
 
 	/* Reads what the firmware left, without writing a register. */
 	kern_memset(&registers, 0, sizeof(registers));
@@ -402,7 +425,7 @@ drv_i915_gen9_flip_start(
 
 	/* Reports a display the flips cannot stand in for. */
 	if (error != 0) {
-		kern_logf("i915: gen9 display: flip not used (%s); the copy display is used\n", flip->readout.reason);
+		drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_FLIP, flip->readout.reason, 0);
 		kern_memset(flip, 0, sizeof(*flip));
 		return error;
 	}
@@ -412,15 +435,27 @@ drv_i915_gen9_flip_start(
 	flip->gm = &gt->mem;
 	flip->firmware_stride = registers.plane_stride[flip->readout.pipe];
 
-	/* Claims a display window for two buffers; one claimed before is used as it is. */
+	/* The display window's pages for the panel's two buffers. */
 	pages = drv_i915_skl_flip_window_pages(flip->readout.stride_bytes * flip->readout.height);
-	if (level >= I915_GEN9_DISPLAY_MODESET)
-		pages += I915_SKL_OUTPUTS * drv_i915_skl_flip_window_pages(I915_SKL_OUTPUT_MAX_WIDTH * I915_SKL_OUTPUT_MAX_HEIGHT * 4U);
-	error = drv_i915_gt_display_window_init(flip->gm, pages);
+
+	/*
+	 * With the mode set, the window also holds two buffers of the largest
+	 * mode for each external output.  A window that large that cannot be
+	 * claimed gives the mode set up, and the panel's alone is claimed.
+	 */
+	error = ENOSPC;
+	if (level >= I915_GEN9_DISPLAY_MODESET) {
+		output_pages = I915_SKL_OUTPUTS * drv_i915_skl_flip_window_pages(I915_SKL_OUTPUT_MAX_WIDTH * I915_SKL_OUTPUT_MAX_HEIGHT * 4U);
+		error = drv_i915_gt_display_window_init(flip->gm, pages + output_pages);
+		if (error != 0 && error != EBUSY)
+			drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_MODESET, "the display window for the external displays could not be claimed", error);
+	}
+
+	/* The panel's window, unless the larger one was claimed; one claimed before is used as it is. */
+	if (error != 0 && error != EBUSY)
+		error = drv_i915_gt_display_window_init(flip->gm, pages);
 	if (error != 0 && error != EBUSY) {
-		kern_logf("i915: gen9 display: flip not used (the display window of %u pages could not be claimed: %d); the copy display is used\n",
-		    pages,
-		    error);
+		drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_FLIP, "the display window could not be claimed", error);
 		kern_memset(flip, 0, sizeof(*flip));
 		return error;
 	}
@@ -428,7 +463,7 @@ drv_i915_gen9_flip_start(
 	/* Makes and pins the two buffers. */
 	error = i915_skl_make_buffers(flip);
 	if (error != 0) {
-		kern_logf("i915: gen9 display: flip not used (the buffers could not be made: %d); the copy display is used\n", error);
+		drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_FLIP, "the buffers could not be made", error);
 		i915_skl_free_buffers(flip);
 		kern_memset(flip, 0, sizeof(*flip));
 		return error;
@@ -546,8 +581,11 @@ drv_i915_gen9_flip_claim(
  * buffer drawn into is shown by nothing.  The flip armed here latches at
  * the next vertical blank; the next presentation, or a wait, waits for
  * it.  Returns 0, EINVAL for a session without an executor or a frame not
- * in its address space, ETIMEDOUT when the previous flip did not latch,
- * or the mapping's or the copy's error.
+ * in its address space, the copy's error, or the error of the flips
+ * themselves: ETIMEDOUT when the previous flip did not latch, EIO when the
+ * plane faulted, or the mapping's error.  After one of the last kind
+ * drv_i915_gen9_flip_failed() reports nonzero and the caller gives the
+ * flips up and copies the frame instead.
  */
 int
 drv_i915_gen9_flip_present(
@@ -583,10 +621,12 @@ drv_i915_gen9_flip_present(
 	if (request->width == 0U || request->height == 0U)
 		return EINVAL;
 
-	/* Makes both buffers addressable in the session's space. */
+	/* Makes both buffers addressable in the session's space; buffers no space can name end the flips. */
 	error = i915_skl_map(device, owner->vm);
-	if (error != 0)
+	if (error != 0) {
+		flip->failure = "the buffers could not be mapped for the GPU";
 		return error;
+	}
 
 	/* Waits until the plane shows the flip armed before, so the other buffer is free. */
 	started = drv_i915_perf_now();
@@ -638,6 +678,14 @@ drv_i915_gen9_flip_present(
 	/* When the copy ended. */
 	copied = drv_i915_perf_now();
 
+	/*
+	 * The lease's first flip leaves the firmware's surface: a fault seen
+	 * while the plane read that surface is not one of the driver's
+	 * buffers', so the faults are counted from here on.
+	 */
+	if (flip->armed == 0U)
+		flip->faults = 0U;
+
 	/* Points the plane at the buffer (its pin keeps the address within 32 bits); it latches at the next vertical blank. */
 	i915_skl_arm(flip, (uint32_t)back->surf, back->stride_units);
 	flip->armed = (uint32_t)back->surf;
@@ -655,8 +703,9 @@ drv_i915_gen9_flip_present(
  * Waits until the newest flip has latched and reports the tick it was
  * seen latched at.
  *
- * Returns 0 (also when no flip is armed: the last latch is reported), or
- * ETIMEDOUT when the flip did not latch.
+ * Returns 0 (also when no flip is armed: the last latch is reported),
+ * ETIMEDOUT when the flip did not latch, or EIO when the plane faulted;
+ * either is the flips' own failure (drv_i915_gen9_flip_failed()).
  */
 int
 drv_i915_gen9_flip_wait(
@@ -678,6 +727,74 @@ drv_i915_gen9_flip_wait(
 	/* Succeeded: the tick the newest flip latched at. */
 	*latched_tick = flip->latched_tick;
 	return 0;
+}
+
+/*
+ * Reports nonzero when the error a presentation or a wait just returned
+ * was the flips' own (a flip that did not latch, a plane fault, buffers
+ * that could not be mapped), which the caller answers by giving the flips
+ * up; zero for an error of the frame or of the GPU's copy.
+ */
+int
+drv_i915_gen9_flip_failed(void)
+{
+	/* A reason was recorded by the presentation or the wait that failed. */
+	if (i915_skl_flip_state.failure != NULL)
+		return 1;
+
+	/* Succeeded: the flips themselves did not fail. */
+	return 0;
+}
+
+/*
+ * Checks after a sleep in D0 that the flipped panel's power well,
+ * transcoder and plane still run, and logs what it finds.
+ *
+ * Nothing is written: a panel whose pipe the sleep turned off cannot be
+ * lit again without a mode set of the panel, which this driver does not
+ * make, so the line says so for the photograph of the failure.
+ */
+void
+drv_i915_gen9_flip_resume(
+	struct i915_device *device)
+{
+	struct i915_skl_flip *flip;
+	uint32_t power;
+	uint32_t transconf;
+	uint32_t control;
+	uint32_t transconf_reg;
+
+	UNUSED_PARAMETER(device);
+
+	/* The flips of the one device. */
+	flip = &i915_skl_flip_state;
+
+	/* Only a panel the flips took over was read before the sleep. */
+	if (!flip->ready)
+		return;
+
+	/* The power well, the transcoder and the plane the panel needs. */
+	transconf_reg = I915_SKL_TRANSCONF_A + flip->readout.transcoder * I915_SKL_TRANSCODER_STRIDE;
+	if (flip->readout.transcoder == I915_SKL_TRANSCODER_EDP)
+		transconf_reg = I915_SKL_TRANSCONF_EDP;
+	power = drv_i915_raw_read32(flip->mmio, I915_SKL_PWR_WELL_CTL2);
+	transconf = drv_i915_raw_read32(flip->mmio, transconf_reg);
+	control = drv_i915_raw_read32(flip->mmio, i915_skl_plane_reg(flip, I915_SKL_PLANE_CTL_1_A));
+
+	/* A power well, transcoder or plane the sleep turned off leaves the panel dark. */
+	if ((power & I915_SKL_PW_1_STATE) == 0U ||
+	    (transconf & I915_SKL_TRANSCONF_STATE) == 0U ||
+	    (control & I915_SKL_PLANE_CTL_ENABLE) == 0U) {
+		kern_logf("i915: gen9 display: resume failed (pipe %c is off after the sleep: PWR_WELL_CTL2=0x%08x TRANSCONF=0x%08x PLANE_CTL=0x%08x); the panel stays dark until a restart\n",
+		    'A' + (int)flip->readout.pipe,
+		    power,
+		    transconf,
+		    control);
+		return;
+	}
+
+	/* Succeeded: the panel runs as before the sleep. */
+	kern_logf("i915: gen9 display: pipe %c runs after the sleep\n", 'A' + (int)flip->readout.pipe);
 }
 
 /*
@@ -710,7 +827,8 @@ drv_i915_gen9_flip_release(
 
 	/* A plane that kept a buffer of ours ends the flips; the buffers are kept. */
 	if (error != 0) {
-		kern_logf("i915: gen9 display: the firmware's surface 0x%08x did not come back; the flips end\n", flip->readout.surf);
+		kern_logf("i915: gen9 display: the firmware's surface 0x%08x did not come back at the end of the lease\n", flip->readout.surf);
+		drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_FLIP, "the firmware's surface did not come back", error);
 		flip->ready = 0;
 		return error;
 	}
@@ -725,18 +843,23 @@ drv_i915_gen9_flip_release(
 }
 
 /*
- * Gives the flips up for the rest of the boot after a flip did not latch.
+ * Gives the flips up for the rest of the boot after they failed (a flip
+ * that did not latch, a plane fault, buffers that could not be mapped).
  *
  * The firmware's surface is written back, the interrupt is disabled and
  * the mapping goes; the buffers are kept, since the plane may still read
- * one of them.
+ * one of them.  The node's step falls to copy with the failure's line.
+ * The caller holds the lease mutex.
  */
 void
 drv_i915_gen9_flip_stop(
 	struct i915_device *device)
 {
 	struct i915_skl_flip *flip;
+	const char *reason;
+	uint32_t armed;
 	uint32_t live;
+	uint32_t faults;
 	int error;
 
 	/* The flips of the one device. */
@@ -746,8 +869,15 @@ drv_i915_gen9_flip_stop(
 	if (!flip->ready)
 		return;
 
-	/* Writes the firmware's surface back and gives it the same time to latch. */
+	/* Why the flips end, and what the plane showed, before the restore changes them. */
+	reason = flip->failure;
+	if (reason == NULL)
+		reason = "a flip failed";
+	armed = flip->armed;
+	faults = flip->faults;
 	live = drv_i915_raw_read32(flip->mmio, i915_skl_plane_reg(flip, I915_SKL_PLANE_SURFLIVE_1_A)) & I915_SKL_PLANE_SURF_ADDR_MASK;
+
+	/* Writes the firmware's surface back and gives it the same time to latch. */
 	error = i915_skl_restore(flip);
 
 	/* No more waits, and no more mapping in the session's space. */
@@ -755,12 +885,15 @@ drv_i915_gen9_flip_stop(
 	i915_skl_unmap(device);
 	flip->ready = 0;
 
-	/* Says why the flips end. */
-	kern_logf("i915: gen9 display: flip to 0x%08x did not latch in %u ms (live 0x%08x); the firmware's surface is %s and the copy display is used from now on\n",
-	    flip->armed,
-	    I915_GEN9_FLIP_LATCH_MS,
+	/* What the plane showed, for the photograph of a failure. */
+	kern_logf("i915: gen9 display: flip to 0x%08x: live 0x%08x, faults 0x%x; the firmware's surface is %s\n",
+	    armed,
 	    live,
+	    faults,
 	    (error == 0) ? "back" : "NOT back");
+
+	/* Says why the flips end: the copies into the firmware's framebuffer from now on. */
+	drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_FLIP, reason, 0);
 }
 
 /*
@@ -842,6 +975,12 @@ drv_i915_gen9_flip_irq(
 
 	/* Acknowledges what was seen. */
 	drv_i915_raw_write32(flip->mmio, iir_reg, iir);
+
+	/* A fault is kept for the waiter, which gives the flips up when it sees one. */
+	if ((iir & I915_SKL_DE_PIPE_PLANE1_FAULT) != 0U) {
+		flip->faults |= iir & I915_SKL_DE_PIPE_PLANE1_FAULT;
+		drv_i915_complete(&flip->done);
+	}
 
 	/* A flip latched: the waiter reads the live surface now. */
 	if ((iir & I915_SKL_DE_PIPE_PLANE1_FLIP_DONE) != 0U) {
@@ -1432,8 +1571,10 @@ i915_skl_unmap(
  * Waits until the plane's live surface is the given one.
  *
  * Sleeps a tick at a time; the flip-done interrupt ends a sleep early.
- * Returns 0 with the latch's tick recorded, or ETIMEDOUT after
- * I915_GEN9_FLIP_LATCH_MS.
+ * Returns 0 with the latch's tick recorded, ETIMEDOUT after
+ * I915_GEN9_FLIP_LATCH_MS, or EIO when one of the driver's buffers latched
+ * but the plane faulted reading it (the screen would show nothing of it);
+ * either failure is recorded for the stop's line.
  */
 static int
 i915_skl_latch(
@@ -1444,6 +1585,7 @@ i915_skl_latch(
 	uint64_t now;
 	uint32_t live_reg;
 	uint32_t live;
+	uint32_t faults;
 
 	/* The plane's live surface register. */
 	live_reg = i915_skl_plane_reg(flip, I915_SKL_PLANE_SURFLIVE_1_A);
@@ -1457,11 +1599,25 @@ i915_skl_latch(
 
 		/* The time is up: the flip did not latch. */
 		now = sched_ticks();
-		if (now >= deadline)
+		if (now >= deadline) {
+			flip->failure = "a flip did not latch within 100 ms";
 			return ETIMEDOUT;
+		}
 
 		/* Sleeps until the next tick or the flip-done interrupt. */
 		(void)drv_i915_wait_for_completion(&flip->done, now + 1U);
+	}
+
+	/* The faults the handler saw, and one it has not served yet. */
+	faults = drv_i915_raw_read32(flip->mmio, I915_SKL_DE_PIPE_IIR_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE);
+	faults &= I915_SKL_DE_PIPE_PLANE1_FAULT;
+	faults |= flip->faults;
+
+	/* A buffer of the driver's the plane could not read shows nothing; the firmware's surface is the way back. */
+	if (faults != 0U && surf != flip->readout.surf) {
+		flip->faults = faults;
+		flip->failure = "the plane faulted reading the driver's buffer";
+		return EIO;
 	}
 
 	/* Succeeded: the plane shows the surface from this tick on. */
@@ -1535,9 +1691,10 @@ i915_skl_restore(
 }
 
 /*
- * Enables the plane's flip-done interrupt on the flip pipe: clears what is
- * pending, enables the source and unmasks it.  The other display sources
- * stay as the device start left them (masked and disabled).
+ * Enables the plane's flip-done and fault interrupts on the flip pipe:
+ * clears what is pending, enables the sources and unmasks them.  The other
+ * display sources stay as the device start left them (masked and
+ * disabled).
  */
 static void
 i915_skl_irq_enable(
@@ -1557,22 +1714,25 @@ i915_skl_irq_enable(
 	if (flip->irq_on)
 		return;
 
-	/* Clears a stale flip done, twice because the IIR can hold two. */
-	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
-	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
+	/* Clears a stale flip done or fault, twice because the IIR can hold two. */
+	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_FLIP_IRQ_SOURCES);
+	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_FLIP_IRQ_SOURCES);
 
-	/* The handler acknowledges the source from here on. */
+	/* No fault seen yet in this lease. */
+	flip->faults = 0U;
+
+	/* The handler acknowledges the sources from here on. */
 	flip->irq_on = 1;
 
-	/* Enables the source, then unmasks it. */
+	/* Enables the sources, then unmasks them. */
 	value = drv_i915_raw_read32(flip->mmio, ier_reg);
-	drv_i915_raw_write32(flip->mmio, ier_reg, value | I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
+	drv_i915_raw_write32(flip->mmio, ier_reg, value | I915_SKL_FLIP_IRQ_SOURCES);
 	value = drv_i915_raw_read32(flip->mmio, imr_reg);
-	drv_i915_raw_write32(flip->mmio, imr_reg, value & ~I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
+	drv_i915_raw_write32(flip->mmio, imr_reg, value & ~I915_SKL_FLIP_IRQ_SOURCES);
 	drv_i915_posting_read32(flip->mmio, imr_reg);
 }
 
-/* Masks and disables the plane's flip-done interrupt and clears what is pending. */
+/* Masks and disables the plane's flip-done and fault interrupts and clears what is pending. */
 static void
 i915_skl_irq_disable(
 	struct i915_skl_flip *flip)
@@ -1591,16 +1751,16 @@ i915_skl_irq_disable(
 	if (!flip->irq_on)
 		return;
 
-	/* Masks the source, then disables it. */
+	/* Masks the sources, then disables them. */
 	value = drv_i915_raw_read32(flip->mmio, imr_reg);
-	drv_i915_raw_write32(flip->mmio, imr_reg, value | I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
+	drv_i915_raw_write32(flip->mmio, imr_reg, value | I915_SKL_FLIP_IRQ_SOURCES);
 	drv_i915_posting_read32(flip->mmio, imr_reg);
 	value = drv_i915_raw_read32(flip->mmio, ier_reg);
-	drv_i915_raw_write32(flip->mmio, ier_reg, value & ~I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
+	drv_i915_raw_write32(flip->mmio, ier_reg, value & ~I915_SKL_FLIP_IRQ_SOURCES);
 
 	/* Clears what is pending, twice because the IIR can hold two. */
-	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
-	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_DE_PIPE_PLANE1_FLIP_DONE);
+	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_FLIP_IRQ_SOURCES);
+	drv_i915_raw_write32(flip->mmio, iir_reg, I915_SKL_FLIP_IRQ_SOURCES);
 
 	/* The handler leaves the source alone from here on. */
 	flip->irq_on = 0;

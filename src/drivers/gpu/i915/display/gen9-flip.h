@@ -158,11 +158,17 @@ int drv_i915_gen9_flip_panel(struct i915_skl_panel *panel);
 /* Readies the buffers and the flip interrupt for a new lease. */
 void drv_i915_gen9_flip_claim(struct i915_device *device);
 
-/* Draws a frame into the buffer the plane does not show and flips to it. */
+/* Draws a frame into the buffer the plane does not show and flips to it (see drv_i915_gen9_flip_failed for its errors). */
 int drv_i915_gen9_flip_present(struct i915_device *device, void *session, void *object, const struct gpu_display_present *request);
 
 /* Waits until the newest flip has latched; reports the tick it latched at. */
 int drv_i915_gen9_flip_wait(uint64_t *latched_tick);
+
+/* Reports nonzero when the error a presentation or a wait just returned was the flips' own. */
+int drv_i915_gen9_flip_failed(void);
+
+/* Checks after a sleep in D0 that the flipped panel still runs, and logs it. */
+void drv_i915_gen9_flip_resume(struct i915_device *device);
 
 /* Gives the plane back the firmware's surface at the end of a lease. */
 int drv_i915_gen9_flip_release(struct i915_device *device);
