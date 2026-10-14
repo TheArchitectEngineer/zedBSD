@@ -261,7 +261,9 @@ inline_vertical_absolute_grid(
 		    box->style.grid_column.end == 3 &&
 		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&
 		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO;
-		horizontal_rtl = box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		horizontal_rtl = box->style.writing_mode ==
+		    (parent->style.direction == CSS_DIRECTION_RTL ?
+		    CSS_WRITING_VERTICAL_RL : CSS_WRITING_VERTICAL_LR) &&
 		    box->style.direction == CSS_DIRECTION_RTL &&
 		    box->style.grid_column.start == 2 &&
 		    box->style.grid_column.end == 3 &&

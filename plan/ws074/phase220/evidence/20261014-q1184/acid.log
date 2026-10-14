@@ -1,0 +1,6 @@
+Temporary WPT files retained for Queue-manager cleanup: /home/awe/zedBSD-claude1/build/ws074-suites/wpt/acid/acid2/zedbsd-acid2-5yfc1u5q.html /home/awe/zedBSD-claude1/build/ws074-suites/wpt/acid/acid3/zedbsd-acid3-reference-d4s4fo6b.html /home/awe/zedBSD-claude1/build/ws074-suites/wpt/acid/acid3/zedbsd-acid3-diagnostic-rzbnr3no.html
+Acid2: 98.45% pixels, FAIL
+Acid3: score 100, complete True, PASS
+Acid3 inventory: 100/100 results; missing []
+Acid3 pixels: 100.00% agreement, exact match True
+/tmp/q1184-acid/report.json

@@ -1220,18 +1220,26 @@ grid_static_position(
 		    box->style.direction == CSS_DIRECTION_RTL &&
 		    box->style.column_count == 2 && box->style.row_count == 2 &&
 		    box->style.column_gap.value == 0 && box->style.row_gap.value == 0 &&
-		    column_span == 1 && row == 0 && row_span == 1 &&
+		    column_span == 1 && row_span == 1 &&
 		    child->style.direction == CSS_DIRECTION_RTL &&
 		    child->style.width.unit == CSS_UNIT_AUTO &&
 		    child->style.height.unit == CSS_UNIT_AUTO &&
-		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
 		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO &&
-		    ((column == 0 && child->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    ((row == 0 && column == 0 &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
 		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
 		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO) ||
-		    (column == 1 && child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    (row == 0 && column == 1 &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
 		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&
-		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO));
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO) ||
+		    (row == 1 && column == 1 &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_PX &&
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO));
 		/* Only definite pixel tracks supply this orthogonal area. */
 		for (index = 0; orthogonal_rtl_inset && index < 2; index++) {
 			if (box->style.columns[index].kind != CSS_TRACK_LENGTH ||

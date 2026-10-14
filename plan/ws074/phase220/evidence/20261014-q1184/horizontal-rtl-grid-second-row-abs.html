@@ -1,0 +1,14 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: inline-grid; direction: rtl; grid-template-columns: 100px 150px; grid-template-rows: 150px 100px; font: 10px/1 monospace; }
+.grid > div { position: absolute; writing-mode: vertical-rl; grid-row: 2 / 3; grid-column: 2 / 3; left: 5px; top: 10px; }
+</style>
+<div class="grid"><div>XX X<br>X XXX<br>X<br>XX XXX</div></div>
+<pre></pre>
+<script>
+var gridRect = document.querySelector(".grid").getBoundingClientRect();
+var itemRect = document.querySelector(".grid > div").getBoundingClientRect();
+var outputText = Math.round(itemRect.left - gridRect.left) + "," + Math.round(itemRect.top - gridRect.top) + "," + Math.round(itemRect.width) + "," + Math.round(itemRect.height);
+document.querySelector("pre").textContent = outputText;
+console.log(outputText);
+</script>
