@@ -22,6 +22,7 @@
 #include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/nvrtx-mem.h"
+#include "drivers/gpu/nvrtx/nvrtx-work.h"
 
 static unsigned failures;
 static unsigned checks;
@@ -467,6 +468,7 @@ test_records(void)
 	v.instance = 0xf0000000ULL;
 	v.bus_device_function = 0x0100;
 	v.user_address_limit = 0x00007ffffffff000ULL;
+	v.console_size = 0x7f0000ULL;
 	v.vendor = 0x10de;
 	v.device = 0x1f02;
 	v.subvendor = 0x1458;
@@ -477,6 +479,7 @@ test_records(void)
 	check(nvrtx_get64(record, 0) == 0xf6000000ULL && nvrtx_get64(record, 8) == 0xe0000000ULL && nvrtx_get64(record, 16) == 0xf0000000ULL, "sysinfo: windows");
 	check(nvrtx_get64(record, 32) == 0x100 && nvrtx_get64(record, 72) == 0x00007ffffffff000ULL, "sysinfo: BDF and user limit");
 	check(nvrtx_get32(record, 80) == 0x88000 && nvrtx_get32(record, 84) == 0x1000, "sysinfo: config mirror");
+	check(nvrtx_get64(record, 64) == 0x7f0000ULL && nvrtx_get64(record, 56) == 0U, "sysinfo: the console's size at GspSystemInfo.consoleMemSize");
 	check(nvrtx_get32(record, 88) == 0x1f0210de && nvrtx_get32(record, 92) == 0x37c21458 && nvrtx_get32(record, 96) == 0xa1, "sysinfo: PCI identity");
 	check(record[896] == 1 && record[908] == 0 && nvrtx_get64(record, 920) == 0, "sysinfo: primary, no preserved memory");
 
@@ -579,6 +582,42 @@ test_mmu(void)
 	check(nvrtx_mmu_vram_block(info, 0x10000, &block, &region) == 0 && region == 0 && block == 0x0ff00000ULL, "vram: protected region passed over");
 	nvrtx_put32(info, 344, 0);
 	check(nvrtx_mmu_vram_block(info, 0x10000, &block, &region) == ENOSPC, "vram: no region");
+}
+
+/* D1: the work channel's page entries, fences and first push buffer. */
+static void
+test_work(void)
+{
+	uint8_t entries[3 * 8];
+	uint64_t pages[2] = { 0x12340000ULL, 0x56781000ULL };
+	uint8_t push[64];
+	size_t length;
+
+	check(nvrtx_mmu_gr_pte_offset(NVRTX_WORK_VA_BASE, NVRTX_WORK_VA_BYTES, NVRTX_WORK_VA_BASE) == 0x4000, "work: first page entry after the directories");
+	check(nvrtx_mmu_gr_pte_offset(NVRTX_WORK_VA_BASE, NVRTX_WORK_VA_BYTES, NVRTX_WORK_VA_USER) == 0x4000 + (0x08100000 / 0x1000) * 8, "work: user range entry in page order across tables");
+	check(nvrtx_mmu_gr_pte_offset(NVRTX_WORK_VA_BASE, NVRTX_WORK_VA_BYTES, NVRTX_WORK_VA_BASE + NVRTX_WORK_VA_BYTES - 0x1000) == 0x4000 + (0x1ffff * 8), "work: last page entry");
+	check(nvrtx_mmu_gr_pte_offset(NVRTX_WORK_VA_BASE, NVRTX_WORK_VA_BYTES, NVRTX_WORK_VA_BASE + NVRTX_WORK_VA_BYTES) == 0, "work: past the range refused");
+	check(nvrtx_mmu_gr_pte_offset(NVRTX_WORK_VA_BASE, NVRTX_WORK_VA_BYTES, NVRTX_WORK_VA_USER + 8) == 0, "work: unaligned address refused");
+	check(nvrtx_mmu_gr_pte_offset(NVRTX_WORK_VA_BASE, NVRTX_WORK_VA_BYTES, NVRTX_WORK_VA_BASE - 0x1000) == 0, "work: below the range refused");
+	check(nvrtx_mmu_gr_pte_offset(0x20000000ULL, 0x20000000ULL + 0x200000ULL, 0x20000000ULL) == 0, "work: a range past one directory entry refused");
+	check(nvrtx_mmu_gr_tables_bytes(NVRTX_WORK_VA_BYTES) == 0x4000 + 256 * 0x1000, "work: 256 page tables");
+
+	nvrtx_mmu_gr_entries_vram(entries, 0x1f0000000ULL, 3);
+	check(nvrtx_get64(entries, 0) == ((0x1f0000000ULL >> 4) | 1) && nvrtx_get64(entries, 16) == ((0x1f0002000ULL >> 4) | 1), "work: VRAM entries valid, not privileged, consecutive");
+	nvrtx_mmu_gr_entries_system(entries, pages, 2);
+	check(nvrtx_get64(entries, 0) == ((0x12340000ULL >> 4) | 0xd) && nvrtx_get64(entries, 8) == ((0x56781000ULL >> 4) | 0xd), "work: system entries valid, coherent, volatile");
+
+	check(nvrtx_work_fence_passed(5, 5) && nvrtx_work_fence_passed(6, 5), "work: fence at or behind the semaphore passed");
+	check(!nvrtx_work_fence_passed(4, 5), "work: fence ahead not passed");
+	check(nvrtx_work_fence_passed(2, 0xfffffffeU) && !nvrtx_work_fence_passed(0xfffffffeU, 2), "work: fence wraps");
+
+	memset(push, 0, sizeof(push));
+	length = nvrtx_work_push_objects(push, 0xc597, 0xc5c0);
+	check(length == 16, "work: objects push 4 words");
+	check(nvrtx_get32(push, 0) == 0x20010000 && nvrtx_get32(push, 4) == 0xc597, "work: SET_OBJECT 3D on subchannel 0");
+	check(nvrtx_get32(push, 8) == 0x20012000 && nvrtx_get32(push, 12) == 0xc5c0, "work: SET_OBJECT compute on subchannel 1");
+	check(nvrtx_push_fence(push, 0x28001000ULL, 7) <= NVRTX_WORK_FENCE_BYTES, "work: a fence fits its slot");
+	check(NVRTX_WORK_RING_ENTRIES * 8 == 0x1000 && (NVRTX_WORK_RING_ENTRIES & (NVRTX_WORK_RING_ENTRIES - 1)) == 0, "work: ring is one page, a power of two");
 }
 
 /* P4m: the range allocator, the usable region's bounds and the VRAM page entry. */
@@ -1016,6 +1055,7 @@ main(int argc, char **argv)
 	test_vbios();
 	test_records();
 	test_mmu();
+	test_work();
 	test_heap();
 	test_objects();
 	test_gr();

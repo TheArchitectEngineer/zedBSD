@@ -227,6 +227,7 @@
 #define NVRTX_SM75_OP_AST		0x322U
 #define NVRTX_SM75_OP_IPA		0x326U
 #define NVRTX_SM75_OP_TEX		0xb60U
+#define NVRTX_SM75_OP_TLD		0xb66U
 #define NVRTX_SM75_OP_KILL		0x95bU
 
 /*
@@ -395,6 +396,15 @@
 #define NVRTX_SM75_TEX_LOD_ZERO		1U
 #define NVRTX_SM75_TEX_LOD_BIAS		2U
 #define NVRTX_SM75_TEX_LOD_EXPLICIT	3U
+
+/*
+ * A constant texel offset (bit 76, AOFFI): the register after the level of
+ * detail (or the second source alone) holds u in bits 3..0, v in 7..4 and r
+ * in 11..8, each a signed 4-bit number (nak_nir_lower_tex.c).  TLD (texel
+ * fetch) has the TEX fields with an explicit level of detail mode.
+ */
+#define NVRTX_SM75_TEX_AOFFI		76U
+#define NVRTX_SM75_TEX_OFFSET_BITS	4U
 
 /* The attribute addresses (NAK's NAK_ATTR_*): the position, the point size, the first generic one (16 bytes each), the instance and the vertex numbers. */
 #define NVRTX_SM75_ATTR_POINT_SIZE	0x06cU

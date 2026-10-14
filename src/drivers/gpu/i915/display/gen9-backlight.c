@@ -213,8 +213,8 @@ drv_i915_gen9_backlight_start(
 	if (backlight->published != NULL)
 		return;
 
-	/* The step the boot line asks for must take the backlight. */
-	level = drv_i915_gen9_display_level();
+	/* The step the node takes (the boot line's, lowered by a step that failed) must take the backlight. */
+	level = drv_i915_gen9_display_step();
 	if (level < I915_GEN9_DISPLAY_BACKLIGHT)
 		return;
 

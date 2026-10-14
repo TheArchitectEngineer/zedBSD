@@ -62,6 +62,7 @@
 #define M_SET_SUBTILING_PERF_KNOB_A		0x0360U
 #define M_SET_RASTER_ENABLE			0x037cU
 #define M_SET_VERTEX_STREAM_SIZE_A		0x0600U
+#define M_SET_HYBRID_ANTI_ALIAS_CONTROL		0x0754U
 #define M_SET_SHADER_LOCAL_MEMORY_WINDOW	0x077cU
 #define M_SET_COLOR_TARGET_A			0x0800U
 #define M_SET_COLOR_TARGET_STRIDE		0x40U
@@ -80,6 +81,7 @@
 #define M_SET_WINDOW_OFFSET_X			0x0df8U
 #define M_SET_SCISSOR_ENABLE			0x0e00U
 #define M_SET_SCISSOR_STRIDE			0x10U
+#define M_SET_POST_Z_PS_IMASK			0x0f1cU
 #define M_SET_VERTEX_STREAM_SUBSTITUTE_A	0x0f84U
 #define M_SET_SINGLE_CT_WRITE_CONTROL		0x0f90U
 #define M_SET_CT_MRT_ENABLE			0x0facU
@@ -174,6 +176,8 @@
 #define M_BIND_GROUP_CONSTANT_BUFFER		0x2410U
 #define M_BIND_GROUP_STRIDE			0x20U
 #define M_SET_COLOR_CLAMP			0x2600U
+#define M_SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL	0x2a00U
+#define M_SET_SHADING_RATE_STRIDE		0x10U
 
 /* The counts of the arrays NVK sets in full. */
 #define DRAW_COLOR_TARGETS		8U
@@ -183,6 +187,7 @@
 #define DRAW_VERTEX_STREAMS		32U
 #define DRAW_VERTEX_ATTRIBUTES		32U
 #define DRAW_SAMPLE_ORDERS		13U
+#define DRAW_SHADING_RATE_CONTROLS	16U
 
 /* The values NVK writes (the fields' meanings beside them). */
 #define V_TRUE				1U
@@ -225,6 +230,7 @@
 #define V_SAMPLE_MASK_ALL		0xffffU
 #define V_CT_WRITE_RGBA			0x1111U
 #define V_ANTI_ALIAS_1X1		0U
+#define V_HYBRID_ONE_PASS		1U
 
 /* The program groups NVK binds a vertex and a pixel program to, and a pixel program's subtiling. */
 #define V_GROUP_VERTEX			0U
@@ -595,8 +601,9 @@ nvrtx_push_draw_target(
  * Writes the pipeline in NVK's order of types: a vertex program at type 1
  * and a pixel program at type 5 (each index the same as its type, each at
  * its header's address, in its group), the other stages off, the pixel
- * program's tuning, then the last vertex stage's layer and clip planes,
- * and the shader caches invalidated for the new code.
+ * program's tuning and what NVK's shading rate and anti-aliasing macros
+ * set for it, then the last vertex stage's layer and clip planes, and the
+ * shader caches invalidated for the new code.
  *
  * Returns where the push buffer goes on.
  */
@@ -610,9 +617,15 @@ nvrtx_push_draw_pipeline(
 	uint32_t pixel_gprs)
 {
 	uint32_t type;
+	uint32_t index;
 
-	/* Each type: the vertex program, the pixel program, or off. */
-	for (type = 0U; type < NVRTX_DRAW_TYPES; type++) {
+	/*
+	 * Each type of a Vulkan stage, from the vertex program to the pixel
+	 * program: the program, or off.  Type 0 (the vertex program culling
+	 * before the fetch) is left as the golden context has it, as NVK
+	 * leaves it.
+	 */
+	for (type = NVRTX_DRAW_TYPE_VERTEX; type < NVRTX_DRAW_TYPES; type++) {
 		if (type == NVRTX_DRAW_TYPE_VERTEX) {
 			at = draw_program(push, at, type, vertex, vertex_gprs, V_GROUP_VERTEX);
 		} else if (type == NVRTX_DRAW_TYPE_PIXEL) {
@@ -622,13 +635,24 @@ nvrtx_push_draw_pipeline(
 		}
 	}
 
-	/* The pixel program: NVK's subtiling, no early depth, bounded culling. */
+	/* The pixel program: NVK's subtiling, no early depth, no post-depth coverage, bounded culling. */
 	at = draw_method(push, at, M_SET_SUBTILING_PERF_KNOB_A, 2U);
 	nvrtx_put32(push, at, V_SUBTILING_A);
 	nvrtx_put32(push, at + 4U, V_SUBTILING_B);
 	at += 8U;
 	at = draw_set(push, at, M_SET_API_MANDATED_EARLY_Z, V_FALSE);
+	at = draw_set(push, at, M_SET_POST_Z_PS_IMASK, V_FALSE);
 	at = draw_set(push, at, M_SET_ZCULL_BOUNDS, 0U);
+
+	/*
+	 * What NVK's two macros write for a pixel program without sample
+	 * shading at one sample a pixel: every variable pixel rate shading
+	 * control off (NVK_MME_SET_SHADING_RATE_CONTROL), then one pass a
+	 * pixel with the centroid per fragment (NVK_MME_SET_ANTI_ALIAS).
+	 */
+	for (index = 0U; index < DRAW_SHADING_RATE_CONTROLS; index++)
+		at = draw_set(push, at, M_SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL + index * M_SET_SHADING_RATE_STRIDE, V_FALSE);
+	at = draw_set(push, at, M_SET_HYBRID_ANTI_ALIAS_CONTROL, V_HYBRID_ONE_PASS);
 
 	/* The vertex program, the last before rasterization: the layer from the state, no clip planes. */
 	at = draw_set(push, at, M_SET_RT_LAYER, 0U);

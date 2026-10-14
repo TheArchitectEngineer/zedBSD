@@ -15,6 +15,15 @@
  * waits for the flips (the live surface read every tick, without the
  * interrupt), and the hotplug work (every second on its own queue).
  *
+ * An output whose mode set fails (a DP link that does not train, a
+ * transcoder that does not start), or whose flip does not latch, gives
+ * the mode set step up (gen9-display.h): every external display is
+ * darkened and withdrawn, as if its sink went, and the ports are not
+ * looked at again, so the panel's display goes on alone.  The flips of the
+ * panel failing withdraws them the same way, at the hotplug work's next
+ * look.  Running out of pipes, DPLLs or buffer space is not a failure: the
+ * claim is refused and the others go on.
+ *
  * XXX: one device.
  */
 
@@ -126,6 +135,16 @@ struct i915_gen9_node {
 	/* Nonzero while the system sleeps: the ports are not looked at. */
 	int sleeping;
 
+	/*
+	 * Nonzero once the mode set step was given up: every output is dark
+	 * and shown as without a sink, and the ports are not looked at again.
+	 * The hotplug work moves the events' sequence once for it and sets
+	 * announced, so the display sessions hear of it within a second.  Both
+	 * are set under the mutex and never cleared until the node stops.
+	 */
+	int withdrawn;
+	int announced;
+
 	/* The display events' sequence. */
 	struct spinlock sequence_lock;
 	uint64_t sequence;
@@ -151,6 +170,8 @@ static void i915_gen9_node_end(struct i915_gen9_node *node, unsigned index);
 static int i915_gen9_node_map(struct i915_gen9_node *node, struct i915_gen9_screen *screen, struct i915_ppgtt *vm);
 static void i915_gen9_node_unmap(struct i915_gen9_node *node, struct i915_gen9_screen *screen);
 static int i915_gen9_node_latch(struct i915_gen9_node *node, unsigned index);
+static void i915_gen9_node_failed(struct i915_gen9_node *node, const char *reason, int error);
+static void i915_gen9_node_withdraw(struct i915_gen9_node *node);
 
 /*
  * Starts the external displays: the panel must be flipped with its timing
@@ -182,15 +203,15 @@ drv_i915_gen9_node_start(
 	node = &i915_gen9_node_state;
 	mmio = &device->gt.mmio;
 
-	/* Only when the boot line asks for the mode set. */
-	level = drv_i915_gen9_display_level();
+	/* Only when the node's step (the boot line's, lowered by a step that failed) takes the mode set. */
+	level = drv_i915_gen9_display_step();
 	if (level < I915_GEN9_DISPLAY_MODESET)
 		return;
 
-	/* The flipped panel the outputs share the display with. */
+	/* The flipped panel the outputs share the display with; its watermarks need its pixel clock. */
 	error = drv_i915_gen9_flip_panel(&panel);
 	if (error != 0) {
-		kern_logf("i915: gen9 node: no external displays (the panel is not flipped or its pixel clock was not read)\n");
+		drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_MODESET, "the panel is not flipped or its pixel clock was not read", 0);
 		return;
 	}
 
@@ -200,7 +221,7 @@ drv_i915_gen9_node_start(
 	cdclk_ctl = drv_i915_raw_read32(mmio, I915_SKL_CDCLK_CTL);
 	cdclk = drv_i915_skl_cdclk_khz(lcpll1, ctrl1, cdclk_ctl);
 	if (cdclk == 0U) {
-		kern_logf("i915: gen9 node: no external displays (the CD clock could not be read)\n");
+		drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_MODESET, "the CD clock could not be read", 0);
 		return;
 	}
 
@@ -566,6 +587,7 @@ drv_i915_gen9_node_claim(
 	struct i915_skl_output *output;
 	struct i915_gen9_screen *screen;
 	unsigned index;
+	int light_tried;
 	int error;
 
 	UNUSED_PARAMETER(device);
@@ -596,8 +618,11 @@ drv_i915_gen9_node_claim(
 	/* The buffers, the output lit, the lease. */
 	if (error == 0)
 		error = i915_gen9_node_make_buffers(node, screen, &output->mode);
-	if (error == 0)
+	light_tried = 0;
+	if (error == 0) {
 		error = i915_gen9_node_light(node, index, (uint32_t)screen->buffer[0].surf);
+		light_tried = 1;
+	}
 	if (error == 0) {
 		screen->owner = session;
 		screen->lease = ((uint64_t)output->port << I915_GEN9_NODE_LEASE_SHIFT) | (node->next_lease & I915_GEN9_NODE_LEASE_MASK);
@@ -608,6 +633,12 @@ drv_i915_gen9_node_claim(
 	} else {
 		i915_gen9_node_free_buffers(screen);
 	}
+
+	/* A mode set that failed (not a pipe, DPLL or buffer space that ran out) gives the external displays up. */
+	if (light_tried &&
+	    error != 0 &&
+	    error != ENOSPC)
+		i915_gen9_node_failed(node, "an external display could not be lit", error);
 
 	mutex_unlock(&node->mutex);
 
@@ -703,8 +734,11 @@ drv_i915_gen9_node_present(
 	/* The buffers in the session's space, and the flip before latched. */
 	if (error == 0)
 		error = i915_gen9_node_map(node, screen, owner->vm);
-	if (error == 0 && screen->armed != 0U)
+	if (error == 0 && screen->armed != 0U) {
 		error = i915_gen9_node_latch(node, index);
+		if (error != 0)
+			i915_gen9_node_failed(node, "an external display's flip did not latch", error);
+	}
 
 	/* The frame copied into the buffer the plane does not show, then the flip. */
 	if (error == 0) {
@@ -774,7 +808,7 @@ drv_i915_gen9_node_wait(
 	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
-	/* The lease under the node's lock. */
+	/* The lease under the node's lock; a flip that does not latch gives the external displays up. */
 	mutex_lock(&node->mutex);
 
 	error = i915_gen9_node_lease_index(node, session, request->lease, &index);
@@ -783,8 +817,11 @@ drv_i915_gen9_node_wait(
 		error = EINVAL;
 	if (error == 0 && screen->sequence == 0U)
 		error = EAGAIN;
-	if (error == 0 && screen->armed != 0U)
+	if (error == 0 && screen->armed != 0U) {
 		error = i915_gen9_node_latch(node, index);
+		if (error != 0)
+			i915_gen9_node_failed(node, "an external display's flip did not latch", error);
+	}
 	if (error == 0) {
 		request->completed_sequence = screen->sequence;
 		request->present_time_ns = screen->latched_tick * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
@@ -884,6 +921,7 @@ drv_i915_gen9_node_resume(
 	struct i915_gen9_node *node;
 	struct i915_gen9_screen *screen;
 	unsigned index;
+	int failure;
 	int error;
 
 	UNUSED_PARAMETER(device);
@@ -896,15 +934,23 @@ drv_i915_gen9_node_resume(
 	/* Each output the sleep darkened, under the node's lock; then the ports are looked at again. */
 	mutex_lock(&node->mutex);
 
+	failure = 0;
 	for (index = 0; index < I915_SKL_OUTPUTS; index++) {
 		screen = &node->screen[index];
 		if (!screen->slept)
 			continue;
 		screen->slept = 0;
 		error = i915_gen9_node_light(node, index, screen->slept_surf);
-		if (error != 0)
+		if (error != 0) {
 			kern_logf("i915: gen9 node: port %c could not be lit again after the sleep: %d\n", 'A' + (int)node->outputs.output[index].port, error);
+			if (error != ENOSPC)
+				failure = error;
+		}
 	}
+
+	/* A mode set that failed after the sleep gives the external displays up. */
+	if (failure != 0)
+		i915_gen9_node_failed(node, "an external display could not be lit again after the sleep", failure);
 
 	/* The ports are looked at again. */
 	node->sleeping = 0;
@@ -1037,12 +1083,31 @@ i915_gen9_node_poll(
 {
 	unsigned changed;
 	unsigned index;
+	int announce;
+	int step;
 
 	/* The ports under the node's lock; none while the system sleeps. */
 	mutex_lock(&node->mutex);
 
 	if (node->sleeping) {
 		mutex_unlock(&node->mutex);
+		return;
+	}
+
+	/* A step below the mode set (the panel's flips failed, say) withdraws the external displays. */
+	step = drv_i915_gen9_display_step();
+	if (step < I915_GEN9_DISPLAY_MODESET)
+		i915_gen9_node_withdraw(node);
+
+	/* Withdrawn: the ports are not looked at again, and the sessions hear of it once. */
+	if (node->withdrawn) {
+		announce = 0;
+		if (!node->announced)
+			announce = 1;
+		node->announced = 1;
+		mutex_unlock(&node->mutex);
+		if (announce)
+			i915_gen9_node_bump(node);
 		return;
 	}
 
@@ -1403,4 +1468,55 @@ i915_gen9_node_latch(
 	screen->latched_tick = sched_ticks();
 	screen->armed = 0U;
 	return 0;
+}
+
+/*
+ * Gives the mode set step up after an external display failed: the
+ * failure's line, then every external display withdrawn (the hotplug
+ * work tells the sessions).  The caller holds the node's mutex.
+ */
+static void
+i915_gen9_node_failed(
+	struct i915_gen9_node *node,
+	const char *reason,
+	int error)
+{
+	/* The node's step falls below the mode set, with the line that says why. */
+	drv_i915_gen9_display_fail(I915_GEN9_DISPLAY_MODESET, reason, error);
+
+	/* Succeeded: every external display is dark and gone. */
+	i915_gen9_node_withdraw(node);
+}
+
+/*
+ * Darkens every external display, ends its lease and shows it as without
+ * a sink, for the rest of the boot.  The caller holds the node's mutex;
+ * the hotplug work moves the events' sequence for it.
+ */
+static void
+i915_gen9_node_withdraw(
+	struct i915_gen9_node *node)
+{
+	unsigned index;
+	int step;
+
+	/* Withdrawn once. */
+	if (node->withdrawn)
+		return;
+
+	/* The hotplug work and the claims see no sink from here on. */
+	node->withdrawn = 1;
+
+	/* Each output dark, its buffers given back, its lease ended, its sink forgotten. */
+	for (index = 0; index < I915_SKL_OUTPUTS; index++) {
+		i915_gen9_node_end(node, index);
+		node->outputs.output[index].connected = 0;
+	}
+
+	/* No port has a sink as far as the sessions are told. */
+	node->outputs.connected = 0U;
+
+	/* Succeeded: the panel's display goes on alone, at the node's step. */
+	step = drv_i915_gen9_display_step();
+	kern_logf("i915: gen9 node: the external displays are withdrawn (the display step is %s)\n", drv_i915_gen9_display_name(step));
 }

@@ -17,7 +17,7 @@ Queue: q933（[P1 の lane](../../agents/P1/queue.md)）
 | 所 | 決め |
 | --- | --- |
 | 出口 | PWM1（DT の `pwm@7e20c800`、ARM 0xfe20c800）の 2 channel を FIFO から（`USEF1`・`USEF2`、PWM の algorithm、`MSEN` 0）。GPIO 40・41 を ALT0（GPFSEL4 の 2 つの field だけ書く） |
-| clock | clock manager（DT の `brcm,bcm2711-cprman`）の PWM の clock を oscillator（DT の `clk-osc`、54 MHz）÷1 で。48 kHz なら range 1125（ちょうど）、44.1 kHz なら 1224（44,117.6 Hz、+0.04%）。firmware の mailbox は使わない |
+| clock | clock manager（DT の `brcm,bcm2711-cprman`）の PWM の clock を oscillator（DT の `clk-osc`、54 MHz）÷2（27 MHz、2026-10-15 BUG-318: ÷1 では PWM が FIFO を読まず DMA が止まる。48 kHz の range は 563、−0.09%）で。（以前の ÷1・range 1125 の記載は古い）48 kHz なら range 1125（ちょうど）、44.1 kHz なら 1224（44,117.6 Hz、+0.04%）。firmware の mailbox は使わない |
 | DMA | legacy の DMA（`brcm,bcm2835-dma`）の channel を `brcm,dma-channel-mask` から 4・5・6・2・0 の順で選ぶ（Pi 4 の DT では 4、SPI 0x54 = irq 116）。control block の輪（1 block = framework の 1 fragment、`INTEN`・`WAIT_RESP`・`DEST_DREQ`・`SRC_INC`・PERMAP 1 = PWM1）、宛先は FIF1 の bus address（DT の reg の値 0x7e20c800 + 0x18）。DMA の memory は bus の窓 0xc0000000 + 物理（1 GiB まで、`drv_dma_device_create_window`）、uncached |
 | 変換 | framework の ring は 16 bit stereo で DMA は使えないので、duty word の ring を別に持つ（fragment 4096 byte → block 8192 byte）。割り込みごとに DMA が入った block と次の block を変換し直す（次の割り込みでもう一度変換するので、書き込みからの遅れは割り込みの遅れ程度）。duty = (sample + 32768) × range >> 16 |
 | 位置と割り込み | position = (DMA の SOURCE_AD − duty の ring) / 2（sample の byte）。割り込みでは SOURCE_AD から今の block を求め、前回からの block の数だけ `drv_audio_interrupt` を呼ぶ（割り込みの取りこぼしで framework の数がずれない） |

@@ -13,36 +13,32 @@ It is changing the way computing is.
   <hr>
 </div><br>
 
-`zedBSD` is an operating system for modern computers, including those
-with touch displays.  It consists of a POSIX-compatible kernel and
-base system written from scratch, and ships with `Keiland Desktop`, a
-Wayland-based desktop environment that unifies the classic mouse UI/UX
-and a futuristic touch UI/UX.
+`zedBSD` is an operating system for modern computers, including those with touch
+displays.  It consists of a POSIX-compatible kernel and base system written from
+scratch, and ships with `Keiland Desktop`, a Wayland-based desktop environment
+that unifies the classic mouse UI/UX and a futuristic touch UI/UX.
 
-zedBSD aims to become a commercial UNIX in the line of macOS and
-Solaris: an operating system made for newly-designed cutting-edge
-computers, that changes "the way computing is".  It is written to
-conform to `POSIX.1-2024`, and is not yet a certified UNIX system.
-Conformance will keep being raised, and UNIX certification from The
-Open Group is a goal.  (UNIX is a registered trademark of The Open
-Group.)
+zedBSD aims to become a commercial UNIX in the line of macOS and Solaris: an
+operating system made for newly-designed cutting-edge computers, that changes
+"the way computing is".  It is written to conform to `POSIX.1-2024`, and is not
+yet a certified UNIX system.  Conformance will keep being raised, and UNIX
+certification from The Open Group is a goal.  (UNIX is a registered trademark of
+The Open Group.)
 
-Getting there means not being bound to an existing kernel or userland
-when the whole machine has to move together.  Most of the system is
-reimplemented.  Keiland Server is a Wayland compositor, and it adds
-many extensions that existing compositors do not have, so the display,
-input, and apps can behave as one machine rather than as a set of
-loosely coupled clients.  The same reason applies to the GPU stack on
-zedBSD: a native, direct Vulkan path, not Linux DRM/KMS or Mesa.  The
-desktop is not locked to that kernel.  Keiland Desktop is also ported
-to Linux and FreeBSD.
+Getting there means not being bound to an existing kernel or userland when the
+whole machine has to move together.  Most of the system is reimplemented.
+Keiland Server is a Wayland compositor, and it adds many extensions that
+existing compositors do not have, so the display, input, and apps can behave as
+one machine rather than as a set of loosely coupled clients.  The same reason
+applies to the GPU stack on zedBSD: a native, direct Vulkan path, not Linux
+DRM/KMS or Mesa.  The desktop is not locked to that kernel.  Keiland Desktop is
+also ported to Linux and FreeBSD.
 
-The kernel, drivers, libc, and desktop are developed so that hardware
-and software can ship as one product: tablets, phones, and PCs
-designed by the same person who directs the OS.  Everything that runs
-on open hardware stays free to use.  Features that need the project's
-own hardware are still published as source, and only run on that
-hardware.
+The kernel, drivers, libc, and desktop are developed so that hardware and
+software can ship as one product: tablets, phones, and PCs designed by the same
+person who directs the OS.  Everything that runs on open hardware stays free to
+use.  Features that need the project's own hardware are still published as
+source, and only run on that hardware.
 
 ---
 
@@ -53,9 +49,9 @@ Linux DRM/KMS or Mesa, and it does not use user-space drivers and
 compilers.
 
 Supported GPUs:
-- Intel iGPU (i915 and Xe)
-- Raspberry Pi VideoCore (Pi4 VC6)
-- NVIDIA RTX (2000 to 5000)
+- Intel iGPU (6th Skylake to 14th Raptor Lake Refresh)
+- Raspberry Pi (RPi4 VideoCore VI)
+- NVIDIA (RTX 20+)
 
 ---
 
@@ -65,19 +61,19 @@ Both zedBSD and Keiland Desktop are [architected and directed](plan/master.md)
 by a solo developer and implemented via AI coding agents, currently targeting
 64-bit x86 PCs and the Raspberry Pi series.
 
-Debugging is driven by a cutting-edge "Vision Language Model Loop" that
-captures the target machine's screen via camera.
+Debugging is driven by a cutting-edge "Vision Language Model Loop" that captures
+the target machine's screen via camera.
 
-This project is not a clone of any existing OS; every layer, including the
-desktop environment, is engineered from the ground up by a professional
-systems architect.
+This project is not a clone of any existing OS.  Every layer, including the
+desktop environment, is engineered from the ground up by a professional systems
+architect.
 
 ---
 
 ## Try zedBSD
 
-You do not need to compile from scratch to boot zedBSD.  Pre-built
-images are published for real PCs and QEMU.
+You do not need to compile from scratch to boot zedBSD.  Pre-built images are
+published for real PCs and QEMU.
 
 ### Real PC
 
@@ -86,19 +82,20 @@ Write a disk image to a USB stick, then boot from it.
 Supported hardware:
 
 - x86_64
-    - CPU: Intel Core i 6000 to 14000
-    - GPU: Intel iGPU (Gen9-12)
+    - CPU: Intel Core 6th to 14th gen
+    - GPU: Intel iGPU, NVIDIA RTX20+
     - WiFi: Intel AX211, Realtek USB WiFi
     - Bluetooth: USB Bluetooth
     - USB: USB 3.0, USB-C DisplayPort Alt Mode
 
 - Raspberry Pi4
-    - GPU, USB, WiFi, Bluetooth, and Ethernet are supported
+    - GPU, USB, WiFi, and Ethernet are supported
+	- Onboard Bluetooth driver is under debugging, will be merged soon
 
 ### Windows (VM)
 
-The release archive bundles a custom-patched QEMU build with Windows
-Vulkan passthrough.
+The release archive bundles a custom-patched QEMU build with Windows Vulkan
+passthrough.
 
 ### Linux (VM)
 
@@ -134,13 +131,13 @@ make keiland-linux
 make keiland-linux-install
 ```
 
-`make keiland-linux` first checks with the package manager (apt, dnf or
-yum, pacman) that the packages the build needs are installed. When some are
-missing it lists them and, on a terminal, offers to install them with sudo;
-otherwise it prints the command and stops. After a good build it offers to
-install Keiland at once, which makes `make keiland-linux-install`
-unnecessary. `KEILAND_ASK=n` asks nothing and only prints. The package
-names are in [userland/desktop/LINUX.md](userland/desktop/LINUX.md).
+`make keiland-linux` first checks with the package manager (apt, dnf or yum,
+pacman) that the packages the build needs are installed. When some are missing
+it lists them and, on a terminal, offers to install them with sudo; otherwise it
+prints the command and stops. After a good build it offers to install Keiland at
+once, which makes `make keiland-linux-install` unnecessary. `KEILAND_ASK=n` asks
+nothing and only prints. The package names are in
+[userland/desktop/LINUX.md](userland/desktop/LINUX.md).
 
 Then restart your display manager such as GDM.
 
@@ -160,8 +157,8 @@ make keiland-freebsd-install
 ```
 
 As on Linux, `make keiland-freebsd` checks the needed packages with `pkg`,
-offers to install the missing ones, and offers the install after a good
-build ([userland/desktop/README.freebsd.md](userland/desktop/README.freebsd.md)).
+offers to install the missing ones, and offers the install after a good build
+([userland/desktop/README.freebsd.md](userland/desktop/README.freebsd.md)).
 
 To run Keiland manually, type:
 
@@ -173,17 +170,16 @@ To run Keiland manually, type:
 
 ## Open hardware and project hardware
 
-Code that runs on generally-sold hardware (PCs, Raspberry Pi series,
-and other SBCs) is free for anyone to build and use.  That includes
-commercial use, modification, and redistribution under the [zlib
-License](LICENSE). Buying project hardware is not required to use that
-part of the system, and that split is meant to stay.
+Code that runs on generally-sold hardware (PCs, Raspberry Pi series, and other
+SBCs) is free for anyone to build and use.  That includes commercial use,
+modification, and redistribution under the [zlib License](LICENSE). Buying
+project hardware is not required to use that part of the system, and that split
+is meant to stay.
 
-Some features can only be realized on hardware designed by this
-project. Those features are still published as source, under the same
-license. They are not a closed edition. They depend on that hardware,
-so they do not run on a generic PC or Raspberry Pi. The sold product
-is the computer, not a paid OS license.
+Some features can only be realized on hardware designed by this project. Those
+features are still published as source, under the same license. They are not a
+closed edition. They depend on that hardware, so they do not run on a generic PC
+or Raspberry Pi. The sold product is the computer, not a paid OS license.
 
 zedBSD stay under zlib as the long-term license.  Improvements to the
 open-hardware system stay freely usable.
@@ -193,56 +189,50 @@ open-hardware system stay freely usable.
 ## Why a New Stack?
 
 Two objections often come up: why not use the existing open-source
-operating-system ecosystem, and whether a Wayland compositor written
-here is merely freeloading on that work.
+operating-system ecosystem, and whether a Wayland compositor written here is
+merely freeloading on that work.
 
-The first reason is the license of the operating system itself. A
-distribution assembled from the usual kernel, libc, desktop, and
-applications carries a large set of licenses. Tracking that set is a
-core job of a project such as Debian. By contrast, zedBSD, the base
-userland, the libraries, Keiland, and the applications written for
-this system are all under the zlib License, giving the operating
-system a single license. Optional third-party packages under `/usr`
-can still carry their own licenses; they are not part of that
-single-license base.
+The first reason is the license of the operating system itself. A distribution
+assembled from the usual kernel, libc, desktop, and applications carries a large
+set of licenses. Tracking that set is a core job of a project such as Debian. By
+contrast, zedBSD, the base userland, the libraries, Keiland, and the
+applications written for this system are all under the zlib License, giving the
+operating system a single license. Optional third-party packages under `/usr`
+can still carry their own licenses; they are not part of that single-license
+base.
 
-The second reason is who can change the stack. On Linux, the kernel,
-libc, desktop, and applications are developed by separate
-organizations. A change that spans all of those layers is slow, and
-sometimes impossible, to land as one piece of work. Here, those layers
-are under unified direction. A workload can be tuned by changing the
-kernel, the library, the compositor, and the application together.
+The second reason is who can change the stack. On Linux, the kernel, libc,
+desktop, and applications are developed by separate organizations. A change that
+spans all of those layers is slow, and sometimes impossible, to land as one
+piece of work. Here, those layers are under unified direction. A workload can be
+tuned by changing the kernel, the library, the compositor, and the application
+together.
 
-Keiland implements the Wayland specification and adds extensions that
-existing compositors do not have. The specification is merely the
-interface. The compositor, its extensions, and the clients are written
-specifically for this system so the display stack can evolve with the
-rest of the OS. That is a reimplementation, not a repackaging of an
-existing compositor.
+Keiland implements the Wayland specification and adds extensions that existing
+compositors do not have. The specification is merely the interface. The
+compositor, its extensions, and the clients are written specifically for this
+system so the display stack can evolve with the rest of the OS. That is a
+reimplementation, not a repackaging of an existing compositor.
 
-The new kernel is not a wall. Keiland has been ported so the desktop
-also runs on Linux and FreeBSD. The work is published under the zlib
-License for that very purpose: take it, ship it, and build on it. The
-point of this open-hardware system is open innovation, not a
-requirement that every user boot zedBSD.
+The new kernel is not a wall. Keiland has been ported so the desktop also runs
+on Linux and FreeBSD. The work is published under the zlib License for that very
+purpose: take it, ship it, and build on it. The point of this open-hardware
+system is open innovation, not a requirement that every user boot zedBSD.
 
-Furthermore, Keiland effectively acts as a secondary OS, much like
-OPENSTEP did. The Keiland desktop server features original Wayland
-extensions that integrate audio access, Wi-Fi/LAN and Bluetooth
-settings, a picture/video media library, calls and SMS via
-Bluetooth-connected smartphones or modems, an on-screen keyboard,
-predictive conversion for IMEs, user account management, and FIDO2
-security. Because all of these are implemented within the Keiland
-backend, Keiland can be ported to any OS simply by implementing an OS
-backend. Moreover, since Keiland applications depend only on
-`libkeiland`, they can even be ported to Windows using
-`libkeiland.dll`.
+Furthermore, Keiland effectively acts as a secondary OS, much like OPENSTEP
+did. The Keiland desktop server features original Wayland extensions that
+integrate audio access, Wi-Fi/LAN and Bluetooth settings, a picture/video media
+library, calls and SMS via Bluetooth-connected smartphones or modems, an
+on-screen keyboard, predictive conversion for IMEs, user account management, and
+FIDO2 security. Because all of these are implemented within the Keiland backend,
+Keiland can be ported to any OS simply by implementing an OS backend. Moreover,
+since Keiland applications depend only on `libkeiland`, they can even be ported
+to Windows using `libkeiland.dll`.
 
-Although the Keiland desktop server uses the Wayland protocol as its
-front-end API and Vulkan WSI for its backend, it is actually a
-"desktop OS server" and a "desktop app toolkit" rather than just a
-Wayland compositor. This is precisely how Windows and macOS work—and
-it is something that Linux lacks.
+Although the Keiland desktop server uses the Wayland protocol as its front-end
+API and Vulkan WSI for its backend, it is actually a "desktop OS server" and a
+"desktop app toolkit" rather than just a Wayland compositor. This is precisely
+how Windows and macOS work—and it is something that Linux lacks.
 
 ---
 
@@ -258,8 +248,7 @@ it is something that Linux lacks.
     runs on Linux and FreeBSD.
 
 - **Native Vulkan** — a GPU stack that does not sit on Linux DRM/KMS
-    or Mesa, and does not use user-space drivers. Intel iGPU (Core i 6th to 14th)
-    and Raspberry Pi VideoCore are supported today. NVIDIA and AMD are planned.
+    or Mesa, and does not use user-space drivers.
 
 - **Two machine classes** — modern 64-bit x86 and Raspberry Pi, plus
     partial retro targets used to show compatibility.
@@ -270,44 +259,42 @@ it is something that Linux lacks.
 
 zedBSD runs on modern computers. Supported development targets:
 
-| Target                      | Role                                          |
-|-----------------------------|-----------------------------------------------|
-| amd64 (64-bit x86 PC)       | Primary. Default image is GPT + UEFI + NVMe.  |
-| Raspberry Pi series         | Primary ARM target.                           |
+| Target                      | Role                                    |
+|-----------------------------|-----------------------------------------|
+| amd64 (64-bit x86 PC)       | Primary. Default image is UEFI + ACPI.  |
+| Raspberry Pi series         | Primary ARM target.                     |
 
 The zedBSD kernel supports some retro computers.
 
-| Target                      | Role                                          |
-|-----------------------------|-----------------------------------------------|
-| NEC PC-9800 (i386)          | Partial, compatibility demonstration.         |
-| IBM PC/AT (i386)            | Partial, compatibility demonstration.         |
-| sun4u (sparcv9)             | Partial, compatibility demonstration.         |
-| Sharp X68000 (m68k)         | Partial, compatibility demonstration.         |
+| Target                      | Role                                    |
+|-----------------------------|-----------------------------------------|
+| NEC PC-9800 (i386)          | Partial, compatibility demonstration.   |
+| IBM PC/AT (i386)            | Partial, compatibility demonstration.   |
+| sun4u (sparcv9)             | Partial, compatibility demonstration.   |
+| Sharp X68000 (m68k)         | Partial, compatibility demonstration.   |
 
 ---
 
 ## Design
 
-zedBSD adopts a layered architecture. Within this design, a component
-accesses only components in the layer directly below it and provides
-functionality exclusively to the layer directly above it. Furthermore,
-dependencies between adjacent layers are kept strictly one-to-one,
-preventing tangled cross-layer interactions.
+zedBSD adopts a layered architecture. Within this design, a component accesses
+only components in the layer directly below it and provides functionality
+exclusively to the layer directly above it. Furthermore, dependencies between
+adjacent layers are kept strictly one-to-one, preventing tangled cross-layer
+interactions.
 
-In the case of Linux desktops, the user environment is typically
-formed by numerous components with small, focused responsibilities
-communicating with one another. This represents a distributed object
-design, where the benefit lies in each component having limited scope,
-making individual parts relatively easy to develop. On the other hand,
-this inevitably creates complex many-to-many relationships among
-components. In my personal view, while systems with many-to-many
-relationships are straightforward to implement in isolation, they
+In the case of Linux desktops, the user environment is typically formed by
+numerous components with small, focused responsibilities communicating with one
+another. This represents a distributed object design, where the benefit lies in
+each component having limited scope, making individual parts relatively easy to
+develop. On the other hand, this inevitably creates complex many-to-many
+relationships among components. In my personal view, while systems with
+many-to-many relationships are straightforward to implement in isolation, they
 often struggle with overall system integration—as is often seen in
 microkernel-based operating systems.
 
-zedBSD adopts a layered architecture to resolve these trade-offs and
-deliver a tightly integrated, cohesive desktop experience directly at
-the OS level.
+zedBSD adopts a layered architecture to resolve these trade-offs and deliver a
+tightly integrated, cohesive desktop experience directly at the OS level.
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -335,15 +322,15 @@ the OS level.
 
 ## Building
 
-Host prerequisites, configuration, image layout, and the QEMU
-procedure are in the build-from-source guide.
+Host prerequisites, configuration, image layout, and the QEMU procedure are in
+the build-from-source guide.
 
-On amd64 the default disk image is the native layout: a GPT disk whose
-ESP holds the UEFI loader and the kernel, a read-write UFS root
-partition, and a swap partition. `make run` starts QEMU with OVMF and
-an NVMe disk. Hybrid (UEFI and BIOS), UEFI-only, and BIOS-only layouts
-are chosen by setting `ZEDBSD_VARIANT` (`hybrid`, `uefi`, `bios`) in
-`config.mk`; `make menuconfig` keeps the value it reads.
+On amd64 the default disk image is the native layout: a GPT disk whose ESP holds
+the UEFI loader and the kernel, a read-write UFS root partition, and a swap
+partition. `make run` starts QEMU with OVMF and an NVMe disk. Hybrid (UEFI and
+BIOS), UEFI-only, and BIOS-only layouts are chosen by setting `ZEDBSD_VARIANT`
+(`hybrid`, `uefi`, `bios`) in `config.mk`; `make menuconfig` keeps the value it
+reads.
 
 ```sh
 make                   # same as disk-image
@@ -426,19 +413,17 @@ To cover the initial release, I would need to fund this project via crowdfunding
 
 ## Web Browser
 
-zedBSD's libbrowser is being developed using WPT (Web Platform Tests),
-with Chrome's V8 and Blink engines' behaviors serving as test oracles.
-AI agents are made to run in infinite loops until the tests achieve a
-100% pass rate.
+zedBSD's libbrowser is being developed using WPT (Web Platform Tests), with
+Chrome's V8 and Blink engines' behaviors serving as test oracles.  AI agents are
+made to run in infinite loops until the tests achieve a 100% pass rate.
 
 ---
 
 ## License
 
 zedBSD and Keiland Desktop are distributed under the zlib License. See
-[LICENSE](LICENSE). The license is not a placeholder for a later
-proprietary release. The system is meant to stay published under zlib,
-including features that only run on project hardware. What runs on
-open hardware PCs, Raspberry Pi, and the other public targets stays
-free for anyone to use while conformance work, including a future UNIX
-certification, continues.
+[LICENSE](LICENSE). The license is not a placeholder for a later proprietary
+release. The system is meant to stay published under zlib, including features
+that only run on project hardware. What runs on open hardware PCs, Raspberry Pi,
+and the other public targets stays free for anyone to use while conformance
+work, including a future UNIX certification, continues.

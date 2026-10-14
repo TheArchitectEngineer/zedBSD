@@ -96,6 +96,7 @@ static int gsp_prepare_falcons(struct nvrtx_gpu *gpu);
 static int gsp_devinit_wait(struct nvrtx_gpu *gpu);
 static int gsp_region_set(struct nvrtx_gpu *gpu);
 static void gsp_finish(struct nvrtx_gpu *gpu);
+static void gsp_end(struct nvrtx_gpu *gpu);
 static int gsp_queue_setup_calls(struct nvrtx_gpu *gpu);
 static int gsp_boot_riscv(struct nvrtx_gpu *gpu);
 static int gsp_init_done(struct nvrtx_gpu *gpu);
@@ -119,7 +120,9 @@ nvrtx_gsp_start(
 {
 	bool allowed;
 	bool wanted;
+	bool forced;
 	bool resident;
+	bool work_wanted;
 	int error;
 
 	/* Stops before P0 when the boot asks. */
@@ -127,6 +130,20 @@ nvrtx_gsp_start(
 	if (!allowed) {
 		nvrtx_stage_mark("P0 skipped (nvrtx.stop=P0)");
 		return 0;
+	}
+
+	/*
+	 * Keeps the firmware's console through the boot; a GPU whose console
+	 * cannot be kept stays the firmware's unless the boot forces the GSP
+	 * (nvrtx.gsp=1, a test run without a picture to keep).
+	 */
+	error = nvrtx_console_check(gpu);
+	if (error != 0) {
+		forced = nvrtx_stage_gsp_forced();
+		if (!forced) {
+			nvrtx_stage_mark("P0 skipped: the console stays the firmware's");
+			return 0;
+		}
 	}
 
 	/* Prepares everything P1 and later need. */
@@ -238,30 +255,40 @@ nvrtx_gsp_start(
 	if (allowed)
 		(void)nvrtx_memory_start(gpu);
 
+	/* Gives a console the window no longer reaches back: the GSP stops and the window's mode is restored. */
+	if (gpu->console.kept != 0 && gpu->console.mapped == 0) {
+		nvrtx_stage_mark("P4m: the console is not reached; stopping to give it back");
+		gsp_finish(gpu);
+		return EIO;
+	}
+
 	/* Stops before P5 when the boot asks. */
 	allowed = nvrtx_stage_allowed("P5");
 	if (!allowed) {
 		nvrtx_stage_mark("P5 skipped (nvrtx.stop=P5)");
-		gsp_finish(gpu);
+		gsp_end(gpu);
 		return 0;
 	}
 
 	/* Makes the first channel and runs one fence through it. */
 	error = nvrtx_channel_start(gpu);
 	if (error != 0) {
-		gsp_finish(gpu);
+		gsp_end(gpu);
 		return error;
 	}
 
-	/* Builds the graphics golden context when the boot asks (nvrtx.gr=1) and does not stop before it. */
+	/* Builds the graphics golden context when the boot asks (nvrtx.gr=1, or the work channel that needs it) and does not stop before it. */
 	wanted = nvrtx_stage_gr_wanted();
+	work_wanted = nvrtx_stage_work_wanted();
+	if (work_wanted)
+		wanted = true;
 	allowed = nvrtx_stage_allowed("P5g");
 	if (wanted && !allowed)
 		nvrtx_stage_mark("P5g skipped (nvrtx.stop=P5g)");
 	if (wanted && allowed) {
 		error = nvrtx_gr_start(gpu);
 		if (error != 0) {
-			gsp_finish(gpu);
+			gsp_end(gpu);
 			return error;
 		}
 	}
@@ -274,7 +301,19 @@ nvrtx_gsp_start(
 	if (wanted && allowed) {
 		error = nvrtx_compute_start(gpu);
 		if (error != 0) {
-			gsp_finish(gpu);
+			gsp_end(gpu);
+			return error;
+		}
+	}
+
+	/* Makes the work channel when the boot asks (nvrtx.work=1) and does not stop before it. */
+	allowed = nvrtx_stage_allowed("P9w");
+	if (work_wanted && !allowed)
+		nvrtx_stage_mark("P9w skipped (nvrtx.stop=P9w)");
+	if (work_wanted && allowed) {
+		error = nvrtx_work_start(gpu);
+		if (error != 0) {
+			gsp_end(gpu);
 			return error;
 		}
 	}
@@ -283,35 +322,35 @@ nvrtx_gsp_start(
 	allowed = nvrtx_stage_allowed("P8");
 	if (!allowed) {
 		nvrtx_stage_mark("P8 skipped (nvrtx.stop=P8)");
-		gsp_finish(gpu);
+		gsp_end(gpu);
 		return 0;
 	}
 
 	/* Brings the display up under the GSP and reads what the firmware lit. */
 	error = nvrtx_display_start(gpu);
 	if (error != 0) {
-		gsp_finish(gpu);
+		gsp_end(gpu);
 		return error;
 	}
 
-	/* Takes the firmware's head over when the boot asks (nvrtx.disp=1) and does not stop before it. */
+	/* Takes the firmware's head over unless the boot says nvrtx.disp=0 or stops before it. */
 	wanted = nvrtx_stage_disp_wanted();
 	allowed = nvrtx_stage_allowed("P8b");
 	if (wanted && !allowed)
 		nvrtx_stage_mark("P8b skipped (nvrtx.stop=P8b)");
 	if (!wanted)
-		nvrtx_stage_mark("P8b not asked (nvrtx.disp=1); stopping after P8a");
+		nvrtx_stage_mark("P8b off (nvrtx.disp=0); stopping after P8a");
 	if (wanted && allowed) {
 		error = nvrtx_scanout_start(gpu);
 		if (error != 0) {
-			gsp_finish(gpu);
+			gsp_end(gpu);
 			return error;
 		}
 	}
 
-	/* Keeps the GSP up as a GPU device when the boot asks (nvrtx.resident=1) and the head was taken over. */
+	/* Keeps the GSP up as a GPU device unless the boot says nvrtx.resident=0, once the head was taken over. */
 	resident = nvrtx_stage_resident_wanted();
-	if (resident && wanted && allowed) {
+	if (resident && gpu->display.taken != 0) {
 		error = nvrtx_node_start(gpu);
 		if (error == 0) {
 			gpu->resident = 1;
@@ -320,9 +359,9 @@ nvrtx_gsp_start(
 		}
 	}
 
-	/* Says where the boot ends; the finish runs P8's and P6's stops and P7. */
-	nvrtx_stage_mark("P8 done; stopping (this revision ends at P8b)");
-	gsp_finish(gpu);
+	/* Says where the boot ends; the end keeps a console's GSP up, or runs P8's and P6's stops and P7. */
+	nvrtx_stage_mark("P8 done; this revision ends at P8c");
+	gsp_end(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
 	return 0;
@@ -369,10 +408,11 @@ nvrtx_gsp_release(
 	nvrtx_buffer_free(gpu, &memory->fwsec_frts);
 	nvrtx_buffer_free(gpu, &memory->fwsec_sb);
 
-	/* Frees the buffers of the first channel, of the graphics context, of the compute launch and of the display's channels. */
+	/* Frees the buffers of the first channel, of the graphics context, of the compute launch, of the work channel and of the display's channels. */
 	nvrtx_channel_release(gpu);
 	nvrtx_gr_release(gpu);
 	nvrtx_compute_release(gpu);
+	nvrtx_work_release(gpu);
 	nvrtx_scanout_release(gpu);
 	nvrtx_memory_release(gpu);
 
@@ -833,6 +873,33 @@ gsp_region_set(
 }
 
 /*
+ * Ends the boot after P4m, on its success or a failure: a GSP whose window
+ * holds the firmware's console again stays up (unless the boot says
+ * nvrtx.resident=0), because stopping the resource manager takes the
+ * console's mapping, and maybe the head, with it; the GPU is then kept
+ * until power-off as for the GPU device.  Otherwise the finish stops it.
+ */
+static void
+gsp_end(
+	struct nvrtx_gpu *gpu)
+{
+	bool resident;
+
+	/* Keeps a running GSP that holds the console. */
+	resident = nvrtx_stage_resident_wanted();
+	if (resident &&
+	    gpu->console.mapped != 0 &&
+	    gpu->state == NVRTX_GSP_RUNNING) {
+		gpu->resident = 1;
+		nvrtx_stage_mark("P8: the GSP stays up to keep the console");
+		return;
+	}
+
+	/* Stops the GSP and gives everything back. */
+	gsp_finish(gpu);
+}
+
+/*
  * Ends the boot: stops a running GSP and tears its region down once, then
  * gives the preparation back.
  *
@@ -857,6 +924,7 @@ gsp_finish(
 	 * channel left (R6).
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
+		nvrtx_work_stop(gpu);
 		nvrtx_compute_stop(gpu);
 		nvrtx_display_stop(gpu);
 		nvrtx_gr_stop(gpu);
@@ -898,6 +966,10 @@ gsp_finish(
 			nvrtx_stage_mark("P7 left: region %08x-%08x, no GSP started; reboot the host", (unsigned)low, (unsigned)high);
 	}
 
+	/* Puts the window back in the firmware's mode, so a kept console reaches its VRAM without the resource manager. */
+	if (stopped)
+		nvrtx_console_restore(gpu);
+
 	/* Gives the preparation back; a region that stayed is left for a power cycle. */
 	nvrtx_gsp_release(gpu);
 }
@@ -926,6 +998,7 @@ gsp_queue_setup_calls(
 	    ((uint64_t)identity->address.device << 3) |
 	    identity->address.function;
 	values.user_address_limit = GSP_USER_ADDRESS_LIMIT;
+	values.console_size = gpu->console.size;
 	values.vendor = drv_pci_device_vendor(pci);
 	values.device = drv_pci_device_product(pci);
 	values.subvendor = drv_pci_device_subvendor(pci);

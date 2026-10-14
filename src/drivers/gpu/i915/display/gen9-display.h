@@ -17,8 +17,30 @@
  *   copy       every frame is copied into the firmware's framebuffer (bootfb.c)
  *   flip       the firmware's plane is flipped between the driver's buffers (gen9-flip.c)
  *   backlight  and the panel's brightness is offered as a backlight device (gen9-backlight.c)
- *   modeset    and the driver sets modes itself: the panel, external DP and HDMI, hot-plug (gen9-modeset.c)
- *   full       and the display is saved and brought back across suspend (gen9-modeset.c)
+ *   modeset    and external DP and HDMI displays are lit beside the panel, with hot-plug (gen9-node.c)
+ *   full       the same as modeset: the sleep keeps the display at every step (the device sleeps in D0)
+ *
+ * The word asks for a step; the node takes the highest step up to it that
+ * works.  A step that fails lowers the node's step below it for the rest
+ * of the boot, with one line in the log
+ * ("i915: gen9 display: <step> failed (<reason>); using <step>"):
+ *
+ *   flip     the readout refuses the firmware's display, the window or the
+ *            buffers cannot be had, or later a flip does not latch, the
+ *            plane faults or the buffers cannot be mapped: the copies come
+ *            back (bootfb.c), and the external displays are withdrawn
+ *   modeset  the panel's pixel clock or the CD clock cannot be read, the
+ *            window has no room for the outputs' buffers, or later an
+ *            output's mode set fails or its flip does not latch: the
+ *            external displays are withdrawn (gen9-node.c), the panel goes
+ *            on flipped
+ *
+ * so a higher step that fails leaves the display of a lower one, at worst
+ * the copies into the firmware's framebuffer.  A backlight the panel does
+ * not have is not a failure (the node goes on without the device), and a
+ * backlight device once offered stays.  The panel's mode, the clocks and
+ * the power wells stay the firmware's at every step;
+ * i915.gen9.display=copy keeps the display exactly as it was before WS237.
  */
 
 #ifndef DRIVERS_GPU_I915_DISPLAY_GEN9_DISPLAY_H
@@ -46,5 +68,14 @@ int drv_i915_gen9_display_level(void);
 
 /* Reports the name of a step, for the log. */
 const char *drv_i915_gen9_display_name(int level);
+
+/* Reports the step the node takes now: the one asked for, lowered by a step that failed. */
+int drv_i915_gen9_display_step(void);
+
+/* Logs that a step failed and lowers the node's step below it. */
+void drv_i915_gen9_display_fail(int level, const char *reason, int error);
+
+/* Logs the step the node takes and the one asked for, once its display is bound. */
+void drv_i915_gen9_display_report(void);
 
 #endif /* DRIVERS_GPU_I915_DISPLAY_GEN9_DISPLAY_H */

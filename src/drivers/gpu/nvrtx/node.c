@@ -8,13 +8,13 @@
 /*
  * The GPU device of the nvrtx driver: sessions and resources (stage P8c).
  *
- * With nvrtx.resident=1 and a head taken over (P8b), the worker leaves the
- * GSP up and registers the GPU with the GPU core.  The device has ordinary
- * storage (RAM the CPU reads and writes), blobs in the VRAM (buffer objects
- * of P4m's allocator, mapped in the CPU's window, shared between opens by
- * share.c), transfers and CPU mappings of both, and the display of
- * present.c and cursor.c.  It has no command stream yet: the 3D and compute
- * work of the GPU device is a later stage (ws037-p007).
+ * By default (unless nvrtx.resident=0) with a head taken over (P8b), the
+ * worker leaves the GSP up and registers the GPU with the GPU core.  The
+ * device has ordinary storage (RAM the CPU reads and writes), blobs in the
+ * VRAM (buffer objects of P4m's allocator, mapped in the CPU's window,
+ * shared between opens by share.c), transfers and CPU mappings of both, and
+ * the display of present.c and cursor.c.  It has no command stream yet: the
+ * 3D and compute work of the GPU device is a later stage (ws037-p007).
  *
  * The device is never unregistered: the GSP has no path back to the firmware
  * while it runs, so the GPU is kept until power-off (detach refuses).

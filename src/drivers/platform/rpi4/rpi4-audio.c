@@ -9,8 +9,8 @@
  * The Raspberry Pi 4's headphone jack (ws207-p002).
  *
  * PWM1 drives the jack's two channels on GPIO 40 and 41 (ALT0).  Its clock
- * is the 54 MHz oscillator through the clock manager, so a 48 kHz sample is
- * 1125 PWM clocks; each sample is a duty word in the PWM's FIFO.  A legacy
+ * is the 54 MHz oscillator halved by the clock manager, so a 48 kHz sample
+ * is 563 PWM clocks; each sample is a duty word in the PWM's FIFO.  A legacy
  * DMA channel moves the duty words to the FIFO, paced by the PWM's DREQ,
  * through a cyclic chain of control blocks, one block a fragment of the
  * framework's ring, each raising an interrupt at its end.
@@ -80,6 +80,14 @@
 #define CM_ENABLE			0x00000010U
 #define CM_BUSY				0x00000080U
 #define CM_DIVI_SHIFT			12U
+
+/*
+ * The clock manager's divisor of the oscillator for the PWM.  Undivided
+ * (1) the PWM never drains its FIFO on a Pi 4 although the clock reports
+ * itself running, so the DMA stalls after the first words (BUG-318); 2,
+ * 3 and 4 all play.  2 keeps the most duty steps (27 MHz).
+ */
+#define CM_PWM_DIVISOR			2U
 
 /* One legacy DMA channel's registers (BCM2711 peripherals, 4.2.1). */
 #define DMA_CHANNEL_STRIDE		0x100U
@@ -570,7 +578,7 @@ route_pins(
 }
 
 /*
- * Runs the PWM's clock from the oscillator, undivided.
+ * Runs the PWM's clock from the oscillator, through CM_PWM_DIVISOR.
  */
 static int
 start_clock(
@@ -592,12 +600,12 @@ start_clock(
 	if (polls == AUDIO_STOP_POLLS)
 		return ETIMEDOUT;
 
-	/* Divides by 1 and starts it. */
-	write_register(audio->clock, CM_PWMDIV, CM_PASSWORD | (1U << CM_DIVI_SHIFT));
+	/* Sets the divisor and starts it. */
+	write_register(audio->clock, CM_PWMDIV, CM_PASSWORD | (CM_PWM_DIVISOR << CM_DIVI_SHIFT));
 	write_register(audio->clock, CM_PWMCTL, CM_PASSWORD | CM_SOURCE_OSCILLATOR);
 	write_register(audio->clock, CM_PWMCTL, CM_PASSWORD | CM_SOURCE_OSCILLATOR | CM_ENABLE);
 
-	/* Succeeded: the PWM counts at the oscillator's rate. */
+	/* Succeeded: the PWM counts at the divided oscillator's rate. */
 	return 0;
 }
 
@@ -725,7 +733,7 @@ audio_prepare(
 	audio->fragment_bytes = fragment_bytes;
 	audio->fragment_count = fragment_count;
 	audio->block_bytes = fragment_bytes * 2U;
-	audio->range = (audio->config.oscillator + format->rate / 2U) / format->rate;
+	audio->range = (audio->config.oscillator / CM_PWM_DIVISOR + format->rate / 2U) / format->rate;
 	audio->cbs = audio->ring.address;
 	audio->words = (uint32_t *)((uint8_t *)audio->ring.address + AUDIO_CB_AREA);
 	audio->cb_bus = (uint32_t)audio->ring.device_address;

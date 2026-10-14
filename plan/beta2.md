@@ -13,8 +13,6 @@
 | U1 | SV7・5330 | `build/uat/main-amd64/hdd-image.img`（main 2026-10-15 01:57、sha256 c76538263025b37d…） | USB に書いて起動 | /boot/boot0・/boot/efi が見える（BUG-316）、Windows・macOS で ZEDBSD の区画が見える（WS238）、SV7 は desktop（WS237） |
 | U2 | SV7・5330 | 同上 | browser で yahoo.co.jp | feed の画像の枠が無い、画像の大きさが Chrome と同じ（ws074-p233・p234） |
 | U4 | Pi 4（OLED の touch） | T1 が main の kernel と compositor を Pi に入れた後（Q1 が知らせる） | tap・中央の swipe・上端・下端の swipe | 指の下に反応する、中央の 1 本指の swipe で desktop が変わらない（BUG-315） |
-| U5 | i5 第 7・8 世代 | main の USB の image | Settings の明るさ、外部の DP・HDMI の monitor の抜き差し、sleep と復帰 | 明るさが変わる、外部の画面が出て消える、復帰で画面が戻る（WS237 p003〜p005。display controller と Keiland は 2026-10-15 OK） |
-| U3 | RTX 機 | main の USB の image で素で起動（P1 の既定 on・方法 A の merge 待ち、Q1 が知らせる） | 起動して画面を見る | RTX の画面に console・desktop が出るか |
 
 ## 日程
 
