@@ -735,3 +735,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-657 | BUG-318 の直し（rpi4-audio の PWM clock 分周）の Pi 4 実機の確かめ | **PASS**（T2、2026-10-15、結果 plan/agents/T2/results-20261015-t1-657.md） |
 | T1-660 | Q1（WS037 R7d、段 D の依存の印と並べ替え f668ec239） | phase007 の 7 節・phase008 の 12 節 | **PASS**（2026-10-15、main 597267901、3 draw とも 65536 pixels right、P6・P7 ok、見えた範囲に error 無し。[results](results-20261015-t1-660.md)） |
 | T1-659 | B1 ws074-p238（BUG-320 (3)、Pi 4 で browser の GPU 描画） | **FAIL**（T2、2026-10-15、`--render-gpu` が `vkCreateRenderPass failed (-4)`、旧 lib も同じ。windowed は 2 つの error 無しだが GPU 描画の確証なし。結果 plan/agents/T2/results-20261015-t1-659.md） |
+| T1-662 | WS037 R8b 再試験（6e4be8661） | FAIL（mode set まで ok、window flip notifier 0 after 2 s） | results-20261015-t1-662.md |
