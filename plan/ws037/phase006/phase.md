@@ -34,6 +34,18 @@ image は `config-amd64-nvrtx.mk` の `NVRTX_RUN=R7`（stop 無し。P5 の後�
 
 合格: R7 の印（`P5 ok …`・`P6 ok`・`P7 ok`）に加えて `P8 begin` → `P8 heads …` → `P8 ok: display, heads …` → `P8b is not in this kernel; stopping after P8a` → `P6 ok: channel and vaspace freed`（`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。点いた head の行（SOR・protocol・大きさ・clock）は値を記録（RTX の出力の monitor の解像度と照らす）。FAIL は `rm: …` の行を PNG に。`P7 fail` なら host を reboot。
 
+## P8b の作業の手順（次の世代へ。2026-10-15 P1 の区切り）
+
+読む物（nouveau、MIT、`plan/ws037/temp/linux/drivers/gpu/drm/nouveau/`）と作る物の順:
+
+1. **push buffer の登録と channel の確保**: `nvkm/subdev/gsp/rm/r570/disp.c` の `r570_disp_chan_set_pushbuf`（`NV2080_CTRL_CMD_INTERNAL_DISPLAY_CHANNEL_PUSHBUFFER` を内部の subdevice へ: addressSpace SYSMEM・cacheSnoop 1・pbTargetAperture PHYS_PCI_COHERENT・physicalAddr・limit・hclass・channelInstance・valid 1・subDeviceId 1）と `r570_dmac_alloc`（handle `(class << 16) | inst`、引数 channelInstance・offset（PUT の初期値）・subDeviceId 1、親は display の root）。r535 の `r535_dmac_*`（`r535/disp.c`）で user 領域の map と `r535_dmac_bind`（RAMHT への登録: context = `chid.user << 25 | (handle & 0x3fff)`）を読む。struct の大きさと offset は p535/p570 の probe（scratchpad の方式: nouveau の header を `-include pre.h` で compile）で出す。
+2. **RAMHT と ctxdma**: `nvkm/engine/dma/usergv100.c` の `gv100_dmaobj_bind`（24 byte: flags0・start>>8・limit>>8）、`nvkm/engine/disp/` の RAMHT の hash（`nvkm_ramht_insert`）。instance memory の中の RAMHT（0x2000）の位置は `r535_disp_oneinit` の後半。kernel が PRAMIN で instance memory に書く（`nvrtx_vram_write`）。ctxdma は 2 つ: notifier（VRAM 4 KiB）と VRAM 全体（surface 用）。
+3. **core の init**: `drivers/gpu/drm/nouveau/dispnv50/corec57d.c` の `corec57d_init`（`SET_CONTEXT_DMA_NOTIFIER`、window ごとの usage bounds）と `core507d.c`・`corec37d.c` の update と notifier の待ち（`corec37d_ntfy_wait_done`、notifier の offset 0 の STATUS が FINISHED）。method の offset は open-gpu-doc の `classes/display/clc57d.h`（MIT）。
+4. **mode set（GOP と同じ timing・SOR）**: `dispnv50/headc57d.c`（`headc57d_mode`・`headc57d_view`・`headc57d_or` など）、`dispnv50/corec37d.c`（`SOR_SET_CONTROL`）、`dispnv50/disp.c` の commit の順。timing は P8a の ARMED の読み（`display_head()`、+0x64/+0x68/+0x6c/+0x70/+0x0c）を全部 struct に残すよう広げる。SOR と protocol は P8a の `gop_sor`・`gop_protocol`。GSP の道では supervisor は RM が処理（`r535_disp_new` に `.super` 無し）。
+5. **window と surface**: `dispnv50/wndwc57e.c`（`wndwc57e_image_set`: SET_PRESENT_CONTROL・SET_SIZE・SET_STORAGE（pitch）・SET_PARAMS（A8R8G8B8）・SET_PLANAR_STORAGE（pitch>>6）・SET_CONTEXT_DMA_ISO（VRAM の ctxdma）・SET_OFFSET（>>8）・POINT_IN・SIZE_IN・SIZE_OUT）、`WINDOW_SET_CONTROL`（core、window の owner の head）。surface は VRAM（GR の arena と display の instance の間を避け、P4 の上端の block より下に GOP の大きさ（例 1920×1080×4 = 8 MiB）を取る）。塗るのは PRAMIN（`nvrtx_vram_write`、遅いが 1 回の試験の模様なら足りる）。
+6. **kick と完了**: user 領域（core 0x680000、window 0x690000 + w×0x1000）の PUT（+0）に push buffer の書いた位置、GET（+4）で空きを見る。notifier の完了を 2 s まで poll。flip は window に新しい SET_OFFSET と UPDATE。
+7. **印と run**: `P8b core channel` → `P8b ok: mode set (WxH on SOR n)` → `P8b ok: flip`。run は R7 に `nvrtx.disp=1`（新しい token、既定は P8a まで）を足した R8b。画面の確かめは RTX の出力（方式 B はユーザーの写真、方式 A の素の起動）。**GOP の出力先以外には出さない**（P8a で lit の head が無ければ P8b は何もしない）。
+
 ## Resume point
 
 P8a の実機の結果を待つ。次は P8b（core channel と window channel、GOP の head の引き継ぎ、自前の surface、flip）。P8b の画面の確かめは RTX の出力（方式 B ならユーザーの写真、方式 A の素の起動）。
