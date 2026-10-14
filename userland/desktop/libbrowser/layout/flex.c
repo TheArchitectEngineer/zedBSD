@@ -161,6 +161,14 @@ layout_flex(
 			if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
 				sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
 			available = layout_from_px(box->style.height.value) - sizing;
+		} else if (wrap && box->style.max_height.unit == CSS_UNIT_PX) {
+			/* A wrapping column breaks its lines at its maximum height. */
+			sizing = 0;
+			if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+				sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+			available = layout_from_px(box->style.max_height.value) - sizing;
+			if (available < 0)
+				available = 0;
 		}
 
 		/* A column's main axis is vertical: the gaps swap. */
