@@ -19,16 +19,28 @@
  * references, and the output picture (which is also the setup slot's,
  * DPB_AND_OUTPUT_COINCIDE) receives every decoded frame.
  *
- * A decode runs in the native job like a CPU copy, a step at a time: the
- * first step sends the unit, and each step looks for the frame with the
- * controller's window open (ioctls go on) for a few milliseconds and else
- * ends, so the other sessions' work runs while the VPU decodes.  The frame
- * comes into the decoder's cached memory; it is copied into the output
- * image with the firmware's footroom error undone, and stays there as the
- * image's cached copy, which the image's readback reads instead of the
- * image's uncached memory.  A bitstream the firmware cannot take, or a
- * frame that does not come, skips the picture (the image keeps what it
- * had) and marks the status query ERROR; it does not lose the submission.
+ * A decode runs in the native job like a CPU copy, and only sends its unit:
+ * the decode is then in flight, and the next decodes are sent behind it,
+ * so the firmware has several pictures at once (ws236 p008).  The frames
+ * come back in decode order and are taken whenever the session's decoder is
+ * looked at: when a decode is sent, when a command reads (or writes) an
+ * image whose frame has not come -- the image's readback waits for it, a
+ * step at a time with the controller's window open (ioctls go on), so the
+ * other sessions' work runs while the VPU decodes -- and at a reset.  A
+ * frame comes into the decoder's cached memory; it is copied into its
+ * output image with the firmware's footroom error undone, and stays there
+ * as the image's cached copy, which the image's readback reads instead of
+ * the image's uncached memory.  A decode's status query becomes available
+ * when its frame is placed.
+ *
+ * The fence of a decode's submission may therefore signal before the frame
+ * is in the image.  Every command that uses the image waits for the frame
+ * first, so what the commands read is the same; only a host that maps an
+ * image's memory and reads it without a command would see the old bytes.
+ *
+ * A bitstream the firmware cannot take, or a frame that does not come,
+ * skips the picture (the image keeps what it had) and marks the status
+ * query ERROR; it does not lose the submission.
  */
 
 #include <kern/clock.h>
@@ -59,6 +71,18 @@
  */
 #define VIDEO_BASELINE_ONLY		0
 
+/* The decodes a session has in flight (sent, frame not placed) at most. */
+#define VIDEO_FLIGHTS			4U
+
+/* The frames a session keeps in the decoder's memory as images' cached copies, at most. */
+#define VIDEO_HELD			3U
+
+/* The decoder's output buffers: the flights', the kept frames' and one for the push or a late frame. */
+#define VIDEO_OUTPUTS			(VIDEO_FLIGHTS + VIDEO_HELD + 1U)
+
+/* No time stamp: a collection that waits for no particular decode. */
+#define VIDEO_NO_PTS			((int64_t)-1)
+
 /* The H.264 decode limits the executor reports and holds sessions to. */
 #define VIDEO_MAX_DPB_SLOTS		17U
 #define VIDEO_MAX_REFERENCES		16U
@@ -84,13 +108,17 @@
 /* The deepest chain a structure may carry. */
 #define VIDEO_MAX_CHAIN			8U
 
-/* The firmware decoder's input staging: the largest access unit taken. */
-#define VIDEO_INPUT_BYTES		(4U * 1024U * 1024U)
+/*
+ * The firmware decoder's input staging: the largest access unit taken.
+ * Each of the decoder's staging areas has this much (a unit in flight
+ * holds one), so four of them take as much memory as two of 4 MiB did.
+ */
+#define VIDEO_INPUT_BYTES		(2U * 1024U * 1024U)
 
-/* How long a decode waits for its frame, over all its steps. */
+/* How long a decode waits for its frame, and for room to be sent, over all the steps. */
 #define VIDEO_FRAME_MS			500U
 
-/* How long one step of a decode looks for the frame before the other sessions take their turns. */
+/* How long one step looks for a frame before the other sessions take their turns. */
 #define VIDEO_POLL_MS			2U
 
 /* The timeouts in a row after which a session stops waiting. */
@@ -188,17 +216,80 @@ struct video_parameters {
 };
 
 /*
+ * Where a frame placed in an image is in the decoder's cached memory: its
+ * planes, their pitch, and the part of the image the frame covered (bytes
+ * a row, luma rows).
+ */
+struct video_copy {
+	const uint8_t *luma;
+	const uint8_t *chroma;
+	uint32_t pitch;
+	uint32_t width;
+	uint32_t rows;
+};
+
+/*
+ * One decode whose unit the firmware has and whose frame has not been
+ * placed.
+ *
+ * It retains the output picture's view (and through it the image) and the
+ * status query's pool, if any, until the frame is placed or the decode is
+ * given up.  command is the decode's record and image the view's image
+ * object, only compared with the records of an ending execution and the
+ * objects a command names.  target and cpu are resolved before each collection's
+ * window and valid only in it; placed, lost and the frame's fields are
+ * written in the window and taken after it, under the controller mutex.
+ */
+struct video_flight {
+	int64_t pts;
+	const struct video_command *command;
+	struct bcm2711_vulkan_object *view;
+	const struct bcm2711_vulkan_object *image;
+	struct bcm2711_vulkan_object *pool;
+	uint32_t query;
+	uint32_t generation;
+	uint64_t started_at;
+	uint64_t sent_at;
+	uint64_t deadline;
+	struct bcm2711_vulkan_resource *target;
+	uint8_t *cpu;
+	bool placed;
+	bool lost;
+	unsigned handle;
+	uint32_t frame_flags;
+	uint64_t received_at;
+	uint64_t place_ticks;
+	struct video_copy copy;
+};
+
+/*
+ * One frame kept in the decoder's memory as an image's cached copy: the
+ * image's view (retained, so the image stays), the image, the decoder's
+ * handle of the frame, and where the frame is.
+ */
+struct video_held {
+	struct bcm2711_vulkan_object *view;
+	const struct bcm2711_vulkan_resource *image;
+	unsigned handle;
+	struct video_copy copy;
+};
+
+/*
  * One VkVideoSessionKHR and the firmware decoder behind it.
  *
  * Published from its creation; the recorded begins retain it, so a decode
- * always finds its decoder.  The last sets sent, the time stamps and the
- * decode in flight move only in the native job, which runs one decode at a
- * time: inflight is the decode whose unit the firmware has and whose frame
- * has not come (its later steps find it there), until deadline.  unit is
- * the scratch a parameter set is written into (kept off the kernel stack).
+ * always finds its decoder.  The last sets sent, the time stamps, the
+ * flights (oldest first) and the kept frames (oldest first) change only in
+ * the native job and at the session's release, under the controller mutex
+ * (a collection's window writes only the flights' frame fields).  sending
+ * is the decode being sent, from its first step (sending_since) until it
+ * is sent or skipped.  self is the session's object, retained by a
+ * collection that no command of the session retains.  unit is the scratch
+ * a parameter set is written into (kept off the kernel stack).
  */
 struct video_session {
 	struct bcm2711_vulkan_input_owner owner;
+	struct bcm2711_vulkan_object *self;
 	uint32_t profile_idc;
 	uint32_t width;
 	uint32_t height;
@@ -209,12 +300,12 @@ struct video_session {
 	unsigned timeouts;
 	bool started;
 	int64_t sequence;
-	const struct video_command *inflight;
-	int64_t pts;
-	uint64_t started_at;
-	uint64_t sent_at;
-	uint64_t deadline;
-	uint32_t steps;
+	const struct video_command *sending;
+	uint64_t sending_since;
+	struct video_flight flights[VIDEO_FLIGHTS];
+	unsigned flight_count;
+	struct video_held held[VIDEO_HELD];
+	unsigned held_count;
 	unsigned push_lines;
 	unsigned late_lines;
 	uint8_t sent_sps[DRV_RPI4_H264_SPS_MAX + 2048U];
@@ -227,14 +318,21 @@ struct video_session {
 /*
  * One result status query pool.
  *
- * Published from its creation; the recorded query commands retain it.
- * The statuses and availabilities change only in the native job.
+ * Published from its creation; the recorded query commands and the
+ * flights retain it.  The statuses and availabilities change only in the
+ * native job.  pending counts a query's decodes in flight: its end makes it
+ * available only when none is left (ended remembers the end meanwhile).
+ * generation changes at each reset, so a flight of the query before the
+ * reset leaves it alone.
  */
 struct video_pool {
 	struct bcm2711_vulkan_input_owner owner;
 	uint32_t count;
 	int32_t status[VIDEO_QUERY_MAX];
 	uint8_t available[VIDEO_QUERY_MAX];
+	uint8_t pending[VIDEO_QUERY_MAX];
+	uint8_t ended[VIDEO_QUERY_MAX];
+	uint32_t generation[VIDEO_QUERY_MAX];
 };
 
 /* A picture resource as recorded. */
@@ -309,34 +407,15 @@ struct video_chain {
 };
 
 /*
- * The decoder's cached copy of the last frame placed in an image: where
- * its planes are in the decoder's bounce memory (valid until the decoder's
- * next receive or flush, which forget it first), their pitch, and the part
- * of the image the frame covered (bytes a row, luma rows).  A readback of
- * that image reads here, cheaply, instead of the image's uncached memory.
- * owner is the session that placed it, NULL when there is none.  Written
- * by the native job and read by it and by a session's release, all under
- * the controller mutex; relayout fills it in the window before owner is
- * set.
- */
-struct video_shadow {
-	const struct video_session *owner;
-	const struct bcm2711_vulkan_resource *image;
-	const uint8_t *luma;
-	const uint8_t *chroma;
-	uint32_t pitch;
-	uint32_t width;
-	uint32_t rows;
-};
-
-/*
  * What the decodes and readbacks of the last few seconds cost, for the
  * line written every VIDEO_STATS_MS: counts, and sums and the largest of
- * the times in ticks (send: from a decode's start to its unit sent; frame:
- * from then to its frame received, which is the VPU's decode, the bulk
- * and the cache invalidation; place: the corrected copy into the image;
- * readback: an NV12 image's copy to a buffer, from the cached copy or the
- * image's uncached memory).  Changed under the controller mutex.
+ * the times in ticks (send: from a decode's first step to its unit sent,
+ * which includes waiting for room; frame: from then to its frame received,
+ * which is the VPU's decode behind the decodes before it, the bulk and the
+ * cache invalidation; place: the corrected copy into the image; readback:
+ * an NV12 image's copy to a buffer, from the cached copy or the image's
+ * uncached memory; wait: a command's wait for its image's frame).  depth
+ * sums the flights after each send.  Changed under the controller mutex.
  */
 struct video_stats {
 	uint64_t window_start;
@@ -345,6 +424,10 @@ struct video_stats {
 	uint32_t skipped;
 	uint32_t pushes;
 	uint32_t steps;
+	uint32_t sends;
+	uint64_t depth;
+	uint32_t waits;
+	uint64_t wait_ticks;
 	uint64_t send_ticks;
 	uint64_t frame_ticks;
 	uint64_t frame_max;
@@ -392,29 +475,46 @@ static const struct video_pps *find_pps(const struct video_parameters *parameter
 static int pool_create(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int pool_results(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int record_query(struct bcm2711_vulkan_session *session, uint32_t opcode, struct i915_wire_reader *reader);
+static int run_control(struct bcm2711_render_device *controller, const struct video_command *command);
 static int run_decode(struct bcm2711_render_device *controller, const struct video_command *command);
 static int begin_decode(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command);
 static int send_push(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command);
-static int wait_frame(struct video_session *video, struct drv_rpi4_mmal_frame *frame, const uint8_t **pixels);
+static int add_flight(struct video_session *video, const struct video_command *command);
+static int wait_or_skip(struct video_session *video, const struct video_command *command, const char *reason);
+static int collect(struct bcm2711_render_device *controller, struct video_session *video, unsigned wait_ms, int64_t until);
+static bool take_frame(struct video_session *video, const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, int64_t until);
+static int retire_flights(struct video_session *video, uint64_t now);
+static int finish_flight(struct video_flight *flight, int32_t status);
+static int keep_held(struct video_session *video, struct video_flight *flight);
+static int drop_held(struct video_session *video, unsigned index);
+static int drop_all(struct video_session *video);
+static bool flight_pending(const struct video_session *video, int64_t until);
 static uint32_t unused_pps_id(const struct video_parameters *parameters);
 static int build_unit(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command, uint8_t *staging, uint32_t capacity, uint32_t *bytes);
 static int append_set(uint8_t *staging, uint32_t capacity, uint32_t *used, const uint8_t *unit, size_t bytes, uint8_t *sent, size_t *sent_bytes, bool force);
-static int image_target(const struct video_command *command, struct bcm2711_vulkan_resource **image, uint8_t **cpu);
-static void relayout(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, const struct bcm2711_vulkan_resource *image, uint8_t *cpu);
-static void forget_shadow(const struct video_session *owner);
-static void note_decode(const struct video_session *video, uint64_t received, uint64_t now);
+static int image_target(const struct bcm2711_vulkan_object *view_object, struct bcm2711_vulkan_resource **image, uint8_t **cpu);
+static void relayout(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, const struct bcm2711_vulkan_resource *image, uint8_t *cpu, struct video_copy *copy);
+static void note_decode(const struct video_flight *flight, uint64_t now);
 static void report_stats(uint64_t now);
 static uint64_t average_us(uint64_t ticks, uint32_t count);
+static uint64_t average_tenths(uint64_t sum, uint32_t count);
 static void set_status(const struct video_command *command, int32_t status);
 static void skip(struct video_session *video, const struct video_command *command, const char *reason, int error);
+static void skip_line(const struct video_session *video, int64_t pts, const char *reason, int error);
 
 /*
  * Whether any session has been promised video, for the log line said once.
  */
 static bool video_announced;
 
-/* The cached copy of the last frame placed (see struct video_shadow); under the controller mutex. */
-static struct video_shadow video_shadow;
+/*
+ * The session whose firmware decoder exists (the firmware client has one
+ * decoder at a time), whose flights and kept frames the commands that use
+ * an image look at.  Set when the decoder is made and cleared when the
+ * session is released, under the controller mutex; NULL while there is
+ * none.
+ */
+static struct video_session *video_current;
 
 /* The costs of the current window (see struct video_stats); under the controller mutex. */
 static struct video_stats video_stats;
@@ -611,10 +711,11 @@ bcm2711_vulkan_video_event(
  * Executes one recorded video or query event in the native job.
  *
  * A begin binds nothing (the decode finds its scope's begin itself); a
- * control with RESET drops the decoder's pictures; a decode decodes; an
- * end does nothing.  A query reset makes its queries unavailable; a begin
- * query names the status the next decodes of its scope write; an end
- * query makes it available.
+ * control with RESET waits for the frames in flight and drops the
+ * decoder's pictures; a decode sends its unit; an end does nothing.  A
+ * query reset makes its queries unavailable; a begin query names the
+ * status the next decodes of its scope write; an end query makes it
+ * available, or leaves that to its last decode in flight.
  */
 int
 bcm2711_vulkan_video_run(
@@ -622,11 +723,9 @@ bcm2711_vulkan_video_run(
 	const struct bcm2711_vulkan_record *record)
 {
 	const struct video_command *command;
-	struct video_session *video;
 	struct video_pool *pool;
 	uint32_t index;
 	int error;
-	int closed;
 
 	/* The record is a video command's. */
 	command = (const struct video_command *)record;
@@ -635,38 +734,20 @@ bcm2711_vulkan_video_run(
 	/* Each event has its own effect. */
 	switch (record->opcode) {
 	case GPU_OP_CMD_CONTROL_VIDEO_CODING:
-		/* A reset drops every picture and reference, and sends the sets again. */
-		video = command->begin->session->payload;
-		if ((command->flags & VIDEO_CONTROL_RESET) != 0 && !video->broken) {
-			/* The flush gives the buffer of the cached copy back: the copy is forgotten first. */
-			forget_shadow(NULL);
-			video->inflight = NULL;
-			bcm2711_render_window_open(controller);
-			error = drv_rpi4_mmal_decoder_flush(video->decoder);
-			closed = bcm2711_render_window_close(controller);
-			video->sent_sps_bytes = 0;
-			video->sent_pps_bytes = 0;
-			video->started = false;
-			if (error != 0) {
-				skip(video, NULL, "flush failed", error);
-				error = 0;
-			}
-
-			/* Reports a window that did not close. */
-			if (closed != 0)
-				error = closed;
-		}
-
+		error = run_control(controller, command);
 		break;
 	case GPU_OP_CMD_DECODE_VIDEO:
 		error = run_decode(controller, command);
 		break;
 	case GPU_OP_CMD_RESET_QUERY_POOL:
-		/* Every query of the range becomes unavailable. */
+		/* Every query of the range becomes unavailable; a decode still in flight for one leaves it alone. */
 		pool = command->pool->payload;
 		for (index = command->query; index < command->query + command->query_count; index++) {
 			pool->available[index] = 0;
 			pool->status[index] = 0;
+			pool->pending[index] = 0;
+			pool->ended[index] = 0;
+			pool->generation[index]++;
 		}
 
 		break;
@@ -676,9 +757,14 @@ bcm2711_vulkan_video_run(
 		pool->status[command->query] = VIDEO_STATUS_COMPLETE;
 		break;
 	case GPU_OP_CMD_END_QUERY:
-		/* The query is available. */
+		/* The query is available now, or when its last decode in flight has its frame. */
 		pool = command->pool->payload;
-		pool->available[command->query] = 1;
+		if (pool->pending[command->query] != 0) {
+			pool->ended[command->query] = 1;
+		} else {
+			pool->available[command->query] = 1;
+		}
+
 		break;
 	default:
 		/* A begin or an end of a coding scope. */
@@ -737,6 +823,7 @@ bcm2711_vulkan_video_readback(
 	uint8_t *destination,
 	uint64_t destination_pitch)
 {
+	const struct video_copy *copy;
 	const uint8_t *plane;
 	uint64_t chroma;
 	uint64_t total;
@@ -746,27 +833,37 @@ bcm2711_vulkan_video_readback(
 	uint32_t pitch;
 	uint32_t plane_rows;
 	uint32_t index;
+	unsigned held;
 
-	/* Only the image of the last frame, while its copy lasts. */
-	if (video_shadow.owner == NULL || video_shadow.image != image)
+	/* Only an image whose last frame the decoder keeps. */
+	copy = NULL;
+	if (video_current != NULL) {
+		for (held = 0; held < video_current->held_count; held++) {
+			if (video_current->held[held].image == image)
+				copy = &video_current->held[held].copy;
+		}
+	}
+
+	/* No cached copy of the image. */
+	if (copy == NULL)
 		return false;
 
 	/* The plane the rows are in, its start, and the rows of it the frame covered. */
 	bcm2711_vulkan_video_nv12_layout(image->width, image->height, &pitch, &chroma, &total);
 	if (offset >= chroma) {
 		base = chroma;
-		plane = video_shadow.chroma;
-		plane_rows = video_shadow.rows / 2U;
+		plane = copy->chroma;
+		plane_rows = copy->rows / 2U;
 	} else {
 		base = 0;
-		plane = video_shadow.luma;
-		plane_rows = video_shadow.rows;
+		plane = copy->luma;
+		plane_rows = copy->rows;
 	}
 
 	/* The first row and column in the plane; every row must lie in the covered part. */
 	row = (offset - base) / pitch;
 	column = (offset - base) % pitch;
-	if (bytes > video_shadow.width || column > video_shadow.width - bytes)
+	if (bytes > copy->width || column > copy->width - bytes)
 		return false;
 	if (rows > plane_rows || row > plane_rows - rows)
 		return false;
@@ -774,12 +871,154 @@ bcm2711_vulkan_video_readback(
 	/* Each row from the copy, corrected. */
 	for (index = 0; index < rows; index++) {
 		drv_rpi4_mmal_copy_samples(destination + (size_t)index * destination_pitch,
-					   plane + (size_t)(row + index) * video_shadow.pitch + column,
+					   plane + (size_t)(row + index) * copy->pitch + column,
 					   (size_t)bytes);
 	}
 
 	/* Succeeded: the rows came from the cached copy. */
 	return true;
+}
+
+/*
+ * Waits for the frames of the images a command names.
+ *
+ * A copy, a blit or an upload that reads or writes an image whose decode
+ * is in flight looks for the frames up to that decode's for VIDEO_POLL_MS
+ * with the controller's window open; EINPROGRESS while it has not come and
+ * its deadline has not passed (the job's step ends at the command and the
+ * next step comes back here).  The caller holds the controller mutex.
+ */
+int
+bcm2711_vulkan_video_settle(
+	struct bcm2711_render_device *controller,
+	const struct bcm2711_vulkan_record *record)
+{
+	struct video_session *video;
+	struct bcm2711_vulkan_object *self;
+	uint64_t started;
+	int64_t until;
+	unsigned slot;
+	unsigned flight;
+	bool pending;
+	int error;
+	int released;
+
+	/* Only the session with a decoder has flights. */
+	video = video_current;
+	if (video == NULL || video->flight_count == 0)
+		return 0;
+
+	/* The newest flight whose image the command names. */
+	until = VIDEO_NO_PTS;
+	for (slot = 0; slot < 2U; slot++) {
+		if (record->objects[slot] == NULL || record->objects[slot]->kind != I915_VK_OBJ_IMAGE)
+			continue;
+		for (flight = 0; flight < video->flight_count; flight++) {
+			if (video->flights[flight].image == record->objects[slot] && video->flights[flight].pts > until)
+				until = video->flights[flight].pts;
+		}
+	}
+
+	/* No image of the command is waited for. */
+	if (until == VIDEO_NO_PTS)
+		return 0;
+
+	/* The session stays while its decoder is looked at with the window open; no command of it retains it here. */
+	self = video->self;
+	error = bcm2711_vulkan_object_retain(self);
+	if (error != 0)
+		return error;
+
+	/* The frames up to that decode's. */
+	started = clock_ticks();
+	error = collect(controller, video, VIDEO_POLL_MS, until);
+	pending = flight_pending(video, until);
+	video_stats.waits++;
+	video_stats.wait_ticks += clock_ticks() - started;
+	video_stats.steps++;
+	released = bcm2711_vulkan_object_release(self);
+
+	/* Reports a collection or a release that failed. */
+	if (error != 0)
+		return error;
+	if (released != 0)
+		return released;
+
+	/* The frame has not come: the next step looks again. */
+	if (pending)
+		return EINPROGRESS;
+
+	/* Succeeded: the command's images hold their frames. */
+	return 0;
+}
+
+/*
+ * Waits for the frames of the decodes a command buffer recorded, before
+ * the execution that ran it signals its fence: the host may read the
+ * images (or the status queries) once the fence has signaled.  Zero when
+ * none is in flight, EINPROGRESS while one is.  The caller holds the
+ * controller mutex.
+ */
+int
+bcm2711_vulkan_video_settle_commands(
+	struct bcm2711_render_device *controller,
+	const struct bcm2711_vulkan_command_buffer *command)
+{
+	const struct bcm2711_vulkan_command_node *node;
+	const struct bcm2711_vulkan_record *record;
+	struct video_session *video;
+	struct bcm2711_vulkan_object *self;
+	int64_t until;
+	unsigned flight;
+	bool pending;
+	int error;
+	int released;
+
+	/* Only the session with a decoder has flights. */
+	video = video_current;
+	if (video == NULL || video->flight_count == 0)
+		return 0;
+
+	/* The newest flight of a decode the command buffer recorded. */
+	until = VIDEO_NO_PTS;
+	for (node = command->first; node != NULL; node = node->next) {
+		record = (const struct bcm2711_vulkan_record *)node;
+		if (record->opcode != GPU_OP_CMD_DECODE_VIDEO)
+			continue;
+		for (flight = 0; flight < video->flight_count; flight++) {
+			if (video->flights[flight].command == (const struct video_command *)record && video->flights[flight].pts > until)
+				until = video->flights[flight].pts;
+		}
+	}
+
+	/* None of its decodes is in flight. */
+	if (until == VIDEO_NO_PTS)
+		return 0;
+
+	/* The session stays while its decoder is looked at with the window open. */
+	self = video->self;
+	error = bcm2711_vulkan_object_retain(self);
+	if (error != 0)
+		return error;
+
+	/* The frames up to that decode's. */
+	error = collect(controller, video, VIDEO_POLL_MS, until);
+	pending = flight_pending(video, until);
+	video_stats.steps++;
+	released = bcm2711_vulkan_object_release(self);
+
+	/* Reports a collection or a release that failed. */
+	if (error != 0)
+		return error;
+	if (released != 0)
+		return released;
+
+	/* The frame has not come: the next step looks again. */
+	if (pending)
+		return EINPROGRESS;
+
+	/* Succeeded: the command buffer's decodes are in their images. */
+	return 0;
 }
 
 /*
@@ -1132,7 +1371,7 @@ session_create(
 	error = ENODEV;
 	available = bcm2711_vulkan_video_available();
 	if (available)
-		error = drv_rpi4_mmal_decoder_create(width, height, VIDEO_INPUT_BYTES, &video->decoder);
+		error = drv_rpi4_mmal_decoder_create(width, height, VIDEO_INPUT_BYTES, VIDEO_OUTPUTS, &video->decoder);
 	if (error != 0) {
 		kern_free(video);
 		kern_logf("v3d: video: no firmware decoder for a %ux%u session (%d)\n", (unsigned)width, (unsigned)height, error);
@@ -1162,6 +1401,10 @@ session_create(
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
 		return 0;
 	}
+
+	/* The session's own object, and the session whose decoder the commands look at. */
+	video->self = object;
+	video_current = video;
 
 	/* Replies VK_SUCCESS and the identity. */
 	drv_i915_wire_reply_u32(reply, 0U);
@@ -1517,16 +1760,26 @@ release_session(
 {
 	struct video_session *video;
 	int error;
+	int released;
 
-	/* The cached copy in the decoder's memory and the decoder go first; its memory stays if a bulk may still move it. */
+	/*
+	 * The decodes in flight are given up and the kept frames dropped, then
+	 * the decoder goes; its memory stays if a bulk may still move it.
+	 */
 	(void)session;
 	video = payload;
-	forget_shadow(video);
+	error = drop_all(video);
+	if (video_current == video)
+		video_current = NULL;
 	if (video->decoder != NULL)
 		drv_rpi4_mmal_decoder_destroy(video->decoder);
-	error = 0;
-	if (video->owner.device != NULL)
-		error = bcm2711_vulkan_object_release(video->owner.device);
+	if (video->owner.device != NULL) {
+		released = bcm2711_vulkan_object_release(video->owner.device);
+		if (error == 0)
+			error = released;
+	}
+
+	/* Frees the session. */
 	kern_free(video);
 	if (error != 0)
 		return error;
@@ -2900,16 +3153,71 @@ record_query(
 }
 
 /*
- * Decodes one picture with the firmware's decoder, a step at a time.
+ * Runs a coding control: a reset waits for the frames in flight, a step at
+ * a time, then drops every kept frame, picture and reference of the
+ * decoder, and sends the sets again.
+ */
+static int
+run_control(
+	struct bcm2711_render_device *controller,
+	const struct video_command *command)
+{
+	struct video_session *video;
+	int64_t newest;
+	int error;
+	int closed;
+
+	/* Only a reset of a working session does anything. */
+	video = command->begin->session->payload;
+	if ((command->flags & VIDEO_CONTROL_RESET) == 0 || video->broken)
+		return 0;
+
+	/* The decodes before the reset complete first: their frames are looked for until they come or their time is over. */
+	if (video->flight_count != 0) {
+		newest = video->flights[video->flight_count - 1U].pts;
+		error = collect(controller, video, VIDEO_POLL_MS, newest);
+		video_stats.steps++;
+		if (error != 0)
+			return error;
+		if (video->flight_count != 0)
+			return EINPROGRESS;
+	}
+
+	/* The flush gives every kept frame's buffer back: the copies go first. */
+	error = drop_all(video);
+	if (error != 0)
+		return error;
+
+	/* Drops the decoder's pictures without the controller mutex. */
+	bcm2711_render_window_open(controller);
+	error = drv_rpi4_mmal_decoder_flush(video->decoder);
+	closed = bcm2711_render_window_close(controller);
+
+	/* The next decode starts again, with its sets. */
+	video->sent_sps_bytes = 0;
+	video->sent_pps_bytes = 0;
+	video->started = false;
+	video->sending = NULL;
+	if (error != 0)
+		skip(video, NULL, "flush failed", error);
+
+	/* Reports a window that did not close. */
+	if (closed != 0)
+		return closed;
+
+	/* Succeeded: the decoder starts again at the next key frame. */
+	return 0;
+}
+
+/*
+ * Sends one picture's decode to the firmware, a step at a time.
  *
- * The first step builds the access unit (the sets when they changed or at
- * an IDR, then the bitstream range) in the decoder's staging and sends it,
- * with the push picture after the first unit of a start; every step then
- * looks for the frame for at most VIDEO_POLL_MS with the controller's
- * window open.  A step that finds none ends with EINPROGRESS, so the other
- * sessions take their turns while the VPU decodes; the next step comes
- * back here.  The frame that comes is copied, corrected, into the output
- * image and kept as the image's cached copy for its readback.
+ * Each step first takes the frames that have come.  When every flight is
+ * taken, or the staging the unit goes into is still the firmware's, the
+ * step waits up to VIDEO_POLL_MS for a frame and ends with EINPROGRESS, so
+ * the other sessions take their turns; the next step comes back here.
+ * Once sent, the decode is in flight and the event is over: its frame is
+ * placed in the output image when it comes (see collect).
  */
 static int
 run_decode(
@@ -2919,144 +3227,124 @@ run_decode(
 	struct video_session *video;
 	struct video_parameters *parameters;
 	struct bcm2711_vulkan_resource *image;
-	struct drv_rpi4_mmal_frame frame;
-	const uint8_t *pixels;
 	uint8_t *cpu;
-	uint64_t now;
-	uint64_t received;
-	bool starting;
-	int begun;
+	unsigned wait_ms;
+	int64_t until;
 	int error;
 	int closed;
 
-	/* The scope's session and parameters. */
+	/* The scope's session and parameters; a decode's first step starts its clock. */
 	video = command->begin->session->payload;
 	parameters = NULL;
 	if (command->begin->parameters != NULL)
 		parameters = command->begin->parameters->payload;
-	starting = false;
-	if (video->inflight != command)
-		starting = true;
+	if (video->sending != command) {
+		video->sending = command;
+		video->sending_since = clock_ticks();
+	}
 
 	/* A broken session decodes nothing more. */
 	if (video->broken) {
-		video->inflight = NULL;
+		video->sending = NULL;
 		set_status(command, VIDEO_STATUS_ERROR);
 		return 0;
 	}
 
 	/* A decode needs parameters. */
 	if (parameters == NULL) {
-		video->inflight = NULL;
+		video->sending = NULL;
 		skip(video, command, "no parameters bound", EINVAL);
 		return 0;
 	}
 
-	/* The output image and its CPU view, resolved again each step (the window keeps them while it is open). */
-	error = image_target(command, &image, &cpu);
+	/* The output picture must be an NV12 decode output with memory. */
+	error = image_target(command->view, &image, &cpu);
 	if (error != 0) {
-		video->inflight = NULL;
+		video->sending = NULL;
 		skip(video, command, "output picture not usable", error);
 		return 0;
 	}
 
-	/*
-	 * The frame about to be received may reuse the buffer the cached copy
-	 * of the last frame is in: the copy is forgotten first.
-	 */
-	forget_shadow(video);
-
-	/* Without the controller mutex: the unit is built and sent on the first step, then the frame is looked for. */
-	bcm2711_render_window_open(controller);
-	begun = 0;
-	if (starting)
-		begun = begin_decode(video, parameters, command);
-	error = begun;
-	if (begun == 0)
-		error = wait_frame(video, &frame, &pixels);
-
-	/* A frame that came is placed in the image, corrected, while the window keeps the image's view. */
-	received = 0;
-	if (error == 0) {
-		received = clock_ticks();
-		relayout(&frame, pixels, image, cpu);
+	/* Takes the frames that came; with every flight taken, waits a little for the oldest's. */
+	wait_ms = 0;
+	until = VIDEO_NO_PTS;
+	if (video->flight_count == VIDEO_FLIGHTS) {
+		wait_ms = VIDEO_POLL_MS;
+		until = video->flights[0].pts;
 	}
+
+	/* The collection. */
+	error = collect(controller, video, wait_ms, until);
+	video_stats.steps++;
+	if (error != 0) {
+		video->sending = NULL;
+		return error;
+	}
+
+	/* The collection may have found the session broken. */
+	if (video->broken) {
+		video->sending = NULL;
+		set_status(command, VIDEO_STATUS_ERROR);
+		return 0;
+	}
+
+	/* Still no room: the next step looks again, until the decode's time is over. */
+	if (video->flight_count == VIDEO_FLIGHTS) {
+		error = wait_or_skip(video, command, "no room in the decoder");
+		return error;
+	}
+
+	/* Without the controller mutex: the unit is built and sent. */
+	bcm2711_render_window_open(controller);
+	error = begin_decode(video, parameters, command);
 	closed = bcm2711_render_window_close(controller);
-	now = clock_ticks();
-	video->steps++;
 
 	/* Reports a window that did not close. */
 	if (closed != 0) {
-		video->inflight = NULL;
+		video->sending = NULL;
 		return closed;
 	}
 
-	/*
-	 * A unit that could not be built or sent, or a decoder that failed
-	 * while its frame was looked for, skips the picture; the firmware may
-	 * lack the sets, so they go again next time.
-	 */
-	if (begun != 0 ||
-	    (error != 0 && error != ETIMEDOUT)) {
-		video->inflight = NULL;
-		video->sent_sps_bytes = 0;
-		video->sent_pps_bytes = 0;
-		video_stats.skipped++;
-		if (begun != 0) {
-			skip(video, command, "access unit not sent", error);
-		} else {
-			skip(video, command, "frame not received", error);
-		}
-		return 0;
-	}
-
-	/* No frame yet: the step ends here and the next one looks again, until the decode's deadline. */
-	if (error == ETIMEDOUT && now < video->deadline)
-		return EINPROGRESS;
-
-	/* A frame that did not come in time skips the picture; too many in a row stop waiting. */
+	/* The staging is still the firmware's: waits a little for a frame and looks again. */
 	if (error == ETIMEDOUT) {
-		video->inflight = NULL;
+		until = VIDEO_NO_PTS;
+		if (video->flight_count != 0)
+			until = video->flights[0].pts;
+		error = collect(controller, video, VIDEO_POLL_MS, until);
+		if (error != 0) {
+			video->sending = NULL;
+			return error;
+		}
+
+		/* The next step looks again, until the decode's time is over. */
+		error = wait_or_skip(video, command, "no staging for the access unit");
+		return error;
+	}
+
+	/* A unit that could not be built or sent skips the picture; the firmware may lack the sets, so they go again next time. */
+	if (error != 0) {
+		video->sending = NULL;
 		video->sent_sps_bytes = 0;
 		video->sent_pps_bytes = 0;
-		video->timeouts++;
-		if (video->timeouts >= VIDEO_MAX_TIMEOUTS)
-			video->broken = true;
 		video_stats.skipped++;
-		skip(video, command, "no frame from the decoder", ETIMEDOUT);
+		skip(video, command, "access unit not sent", error);
 		return 0;
 	}
 
-	/* The decoder answered: the timeouts in a row start again, and the decode is over. */
-	video->inflight = NULL;
-	video->timeouts = 0;
-	note_decode(video, received, now);
+	/* The decode is in flight. */
+	error = add_flight(video, command);
+	video->sending = NULL;
+	if (error != 0)
+		return error;
 
-	/* Only NV12 is the image's format; another output is not this picture. */
-	if (frame.encoding != DRV_RPI4_MMAL_FRAME_NV12) {
-		forget_shadow(video);
-		skip(video, command, "decoder output is not NV12", ENOTSUP);
-		return 0;
-	}
-
-	/* The status of the picture. */
-	if ((frame.flags & DRV_RPI4_MMAL_FRAME_CORRUPTED) != 0) {
-		set_status(command, VIDEO_STATUS_ERROR);
-	} else {
-		set_status(command, VIDEO_STATUS_COMPLETE);
-	}
-
-	/* The image keeps its cached copy until the decoder's next receive. */
-	video_shadow.owner = video;
-
-	/* Succeeded: the picture is in the output image. */
+	/* Succeeded: the unit is the firmware's; its frame comes later. */
 	return 0;
 }
 
 /*
- * Builds and sends a decode's access unit, and after the first unit of a
- * start the push picture; the decode is then in flight until its deadline.
- * The caller has the window open.
+ * Builds and sends a decode's access unit into a staging area the firmware
+ * has given back (ETIMEDOUT when it has not), and after the first unit of
+ * a start the push picture.  The caller has the window open.
  */
 static int
 begin_decode(
@@ -3069,36 +3357,32 @@ begin_decode(
 	uint32_t bytes;
 	int error;
 
-	/* The decode's time stamp: its number in the session (the push's 0 is never one). */
-	video->sequence++;
-	video->pts = video->sequence;
-	video->started_at = clock_ticks();
-	video->steps = 0;
-
-	/* The unit, in the staging the firmware has given back. */
-	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
+	/* The staging, only if the firmware has given it back; the executor does not wait here. */
+	error = drv_rpi4_mmal_decoder_input(video->decoder, 0, &staging, &capacity);
 	if (error != 0)
 		return error;
+
+	/* The decode's time stamp: its number in the session (the push's 0 is never one). */
+	video->sequence++;
+
+	/* The unit, in the staging. */
 	error = build_unit(video, parameters, command, staging, capacity, &bytes);
 	if (error != 0)
 		return error;
 
 	/* Sends it with its time stamp. */
-	error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, video->pts, 0);
+	error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, video->sequence, 0);
 	if (error != 0)
 		return error;
 
-	/* The decode is in flight from here; a push that cannot go only leaves the first picture held. */
-	video->inflight = command;
-	video->sent_at = clock_ticks();
-	video->deadline = video->sent_at + kern_ms_to_ticks(VIDEO_FRAME_MS);
+	/* The first unit of a start is followed by the push; a push that cannot go only leaves the first picture held. */
 	if (!video->started) {
 		video->started = true;
 		error = send_push(video, parameters, command);
 		if (error != 0 && video->push_lines < VIDEO_PUSH_LINES) {
 			video->push_lines++;
 			kern_logf("v3d: video: decode %lld: no push picture after the first (%d); the first picture may be held\n",
-				  (long long)video->pts, error);
+				  (long long)video->sequence, error);
 		}
 	}
 
@@ -3141,8 +3425,8 @@ send_push(
 		return ENOTSUP;
 	pps_id = unused_pps_id(parameters);
 
-	/* The other staging area: the push in its first half, the slice's RBSP in its second. */
-	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
+	/* The next staging area (the others are free at a start): the push in its first half, the slice's RBSP in its second. */
+	error = drv_rpi4_mmal_decoder_input(video->decoder, VIDEO_POLL_MS, &staging, &capacity);
 	if (error != 0)
 		return error;
 	error = drv_rpi4_h264_write_push(sps, pps_id, command->frame_num + 1U, (uint32_t)command->poc + 1U,
@@ -3161,53 +3445,553 @@ send_push(
 }
 
 /*
- * Looks for the frame of the decode in flight for at most VIDEO_POLL_MS:
- * the push's frame, empty frames and late frames of earlier decodes are
- * dropped on the way.  ETIMEDOUT when none came yet.  The caller has the
- * window open.
+ * Puts a sent decode in flight: its time stamp, its output picture's view
+ * and its status query, retained until its frame is placed or it is given
+ * up, and its deadline.
  */
 static int
-wait_frame(
+add_flight(
 	struct video_session *video,
-	struct drv_rpi4_mmal_frame *frame,
-	const uint8_t **pixels)
+	const struct video_command *command)
 {
+	struct video_flight *flight;
+	struct video_pool *pool;
+	struct bcm2711_vulkan_image_view *view;
+	uint64_t now;
 	int error;
 
-	/* Frames until this decode's (or none for now). */
-	for (;;) {
-		/* The next frame, or none within the poll. */
-		error = drv_rpi4_mmal_decoder_receive(video->decoder, VIDEO_POLL_MS, frame, pixels);
-		if (error != 0)
+	/* The next flight, emptied. */
+	flight = &video->flights[video->flight_count];
+	kern_memset(flight, 0, sizeof(*flight));
+	flight->pts = video->sequence;
+	flight->command = command;
+
+	/* The output picture's view, and through it its image, stay while the frame may come. */
+	error = bcm2711_vulkan_object_retain(command->view);
+	if (error != 0)
+		return error;
+	flight->view = command->view;
+	view = command->view->payload;
+	flight->image = view->owner.parent;
+
+	/* The status query open around the decode waits for the frame: its end does not make it available before. */
+	if (command->status != NULL) {
+		error = bcm2711_vulkan_object_retain(command->status->pool);
+		if (error != 0) {
+			(void)bcm2711_vulkan_object_release(flight->view);
 			return error;
-
-		/* An empty frame carries no picture; the push's frame is not one of the stream's. */
-		if (frame->length == 0 || frame->pts == VIDEO_PUSH_PTS)
-			continue;
-
-		/* A late frame of an earlier decode (one that timed out) is dropped, said a few times; an unknown time is this one's. */
-		if (frame->pts < video->pts && frame->pts != DRV_RPI4_MMAL_FRAME_NO_TIME) {
-			if (video->late_lines < VIDEO_LATE_LINES) {
-				video->late_lines++;
-				kern_logf("v3d: video: late frame %lld dropped at decode %lld\n", (long long)frame->pts, (long long)video->pts);
-			}
-
-			continue;
 		}
 
-		/* A frame of a later picture (the decoder reordered after all) is reported, a few times, and used. */
-		if (frame->pts != video->pts &&
-		    frame->pts != DRV_RPI4_MMAL_FRAME_NO_TIME &&
-		    video->late_lines < VIDEO_LATE_LINES) {
-			video->late_lines++;
-			kern_logf("v3d: video: frame %lld came for decode %lld (the decoder reorders)\n", (long long)frame->pts, (long long)video->pts);
+		/* The query counts the decode as pending, until its frame. */
+		flight->pool = command->status->pool;
+		flight->query = command->status->query;
+		pool = flight->pool->payload;
+		if (flight->query < pool->count) {
+			flight->generation = pool->generation[flight->query];
+			pool->pending[flight->query]++;
 		}
-
-		break;
 	}
 
-	/* Succeeded: frame is the decode's. */
+	/* Its times: the decode's first step, the send, and how long the frame is waited for. */
+	now = clock_ticks();
+	flight->started_at = video->sending_since;
+	flight->sent_at = now;
+	flight->deadline = now + kern_ms_to_ticks(VIDEO_FRAME_MS);
+	video->flight_count++;
+	video_stats.sends++;
+	video_stats.depth += video->flight_count;
+
+	/* Succeeded: the decode is in flight. */
 	return 0;
+}
+
+/*
+ * Ends a decode's step that found no room: EINPROGRESS while the decode's
+ * time lasts, else the picture is skipped and the event is over.
+ */
+static int
+wait_or_skip(
+	struct video_session *video,
+	const struct video_command *command,
+	const char *reason)
+{
+	uint64_t deadline;
+	uint64_t now;
+
+	/* The decode's time lasts: the next step looks again. */
+	deadline = video->sending_since + kern_ms_to_ticks(VIDEO_FRAME_MS);
+	now = clock_ticks();
+	if (now < deadline)
+		return EINPROGRESS;
+
+	/* Its time is over: the picture is skipped. */
+	video->sending = NULL;
+	video_stats.skipped++;
+	skip(video, command, reason, ETIMEDOUT);
+
+	/* Succeeded: the event is over without the picture. */
+	return 0;
+}
+
+/*
+ * Takes the frames that have come, placing each in its flight's image.
+ *
+ * Under the controller mutex, every flight's image is resolved; then, with
+ * the window open, frames are received: until the frame of decode until
+ * has come, each receive waits up to wait_ms; after it (or with
+ * VIDEO_NO_PTS) only the frames already there are taken.  After the
+ * window, the placed flights become kept frames, and flights whose frame
+ * was lost or whose time is over are given up.  Returns a failure of the
+ * window or of a release; a decoder failure gives the flights up.
+ */
+static int
+collect(
+	struct bcm2711_render_device *controller,
+	struct video_session *video,
+	unsigned wait_ms,
+	int64_t until)
+{
+	struct drv_rpi4_mmal_frame frame;
+	struct video_flight *flight;
+	const uint8_t *pixels;
+	uint64_t limit;
+	uint64_t now;
+	unsigned timeout;
+	unsigned index;
+	unsigned taken;
+	bool reached;
+	bool awaited;
+	bool failed;
+	int error;
+	int closed;
+	int retired;
+
+	/* Each flight's image and CPU view, for the window (an image that cannot be reached loses its frame). */
+	for (index = 0; index < video->flight_count; index++) {
+		flight = &video->flights[index];
+		error = image_target(flight->view, &flight->target, &flight->cpu);
+		if (error != 0) {
+			flight->target = NULL;
+			flight->cpu = NULL;
+		}
+	}
+
+	/* Without the controller mutex: the frames, until the awaited one or none comes in time. */
+	bcm2711_render_window_open(controller);
+	reached = false;
+	if (until == VIDEO_NO_PTS)
+		reached = true;
+	failed = false;
+	limit = clock_ticks() + kern_ms_to_ticks(wait_ms);
+	for (taken = 0; taken < 2U * VIDEO_OUTPUTS; taken++) {
+		/* The wait: none once the awaited frame is here, else what is left of wait_ms. */
+		timeout = 0;
+		now = clock_ticks();
+		if (!reached && now < limit)
+			timeout = (unsigned)kern_ticks_to_ms(limit - now) + 1U;
+
+		/* The next frame, or none in time. */
+		error = drv_rpi4_mmal_decoder_receive(video->decoder, timeout, &frame, &pixels);
+		if (error == ETIMEDOUT)
+			break;
+		if (error != 0) {
+			failed = true;
+			break;
+		}
+
+		/* Placed in its flight's image, or dropped; the awaited frame ends the waiting. */
+		awaited = take_frame(video, &frame, pixels, until);
+		if (awaited)
+			reached = true;
+	}
+
+	/* The window closes. */
+	closed = bcm2711_render_window_close(controller);
+
+	/* A decoder that failed gives every flight up; the firmware may lack the sets, so they go again. */
+	if (failed) {
+		for (index = 0; index < video->flight_count; index++) {
+			if (!video->flights[index].placed)
+				video->flights[index].lost = true;
+		}
+
+		/* The sets go again, and the line says why. */
+		video->sent_sps_bytes = 0;
+		video->sent_pps_bytes = 0;
+		skip_line(video, VIDEO_NO_PTS, "frame not received", error);
+	}
+
+	/* The flights whose frames came, were lost or are overdue. */
+	retired = retire_flights(video, clock_ticks());
+
+	/* Reports a window that did not close, or a release that failed. */
+	if (closed != 0)
+		return closed;
+	if (retired != 0)
+		return retired;
+
+	/* Succeeded: the frames that came are placed. */
+	return 0;
+}
+
+/*
+ * Takes one received frame in the window: the push's frame, an empty
+ * frame and a frame of no flight go back to the firmware; a decode's frame
+ * is copied, corrected, into its image, and the flights before it that
+ * had no frame have lost theirs (the frames come in decode order).
+ * Reports whether the frame is that of decode until or a later one.
+ */
+static bool
+take_frame(
+	struct video_session *video,
+	const struct drv_rpi4_mmal_frame *frame,
+	const uint8_t *pixels,
+	int64_t until)
+{
+	struct video_flight *flight;
+	uint64_t received;
+	unsigned first;
+	unsigned found;
+	unsigned index;
+
+	/* An empty frame carries no picture; the push's frame is not one of the stream's. */
+	if (frame->length == 0 || frame->pts == VIDEO_PUSH_PTS) {
+		(void)drv_rpi4_mmal_decoder_release(video->decoder, frame->handle);
+		return false;
+	}
+
+	/* The oldest flight still waiting for its frame. */
+	for (first = 0; first < video->flight_count; first++) {
+		flight = &video->flights[first];
+		if (!flight->placed && !flight->lost)
+			break;
+	}
+
+	/* The frame's flight: by its time stamp, or the oldest waiting one when it has none. */
+	found = video->flight_count;
+	if (frame->pts == DRV_RPI4_MMAL_FRAME_NO_TIME) {
+		found = first;
+	} else {
+		for (index = first; index < video->flight_count; index++) {
+			if (video->flights[index].pts == frame->pts) {
+				found = index;
+				break;
+			}
+		}
+	}
+
+	/* A frame of no waiting flight (one given up, or one the decoder made up) goes back, said a few times. */
+	if (found == video->flight_count) {
+		if (video->late_lines < VIDEO_LATE_LINES) {
+			video->late_lines++;
+			kern_logf("v3d: video: frame %lld of no decode in flight dropped\n", (long long)frame->pts);
+		}
+
+		/* Its buffer goes back. */
+		(void)drv_rpi4_mmal_decoder_release(video->decoder, frame->handle);
+		return false;
+	}
+
+	/* The flights before it never get a frame. */
+	for (index = first; index < found; index++)
+		video->flights[index].lost = true;
+
+	/* A frame that is not NV12, or whose image cannot be reached, is not the picture. */
+	flight = &video->flights[found];
+	if (frame->encoding != DRV_RPI4_MMAL_FRAME_NV12 || flight->target == NULL) {
+		flight->lost = true;
+		(void)drv_rpi4_mmal_decoder_release(video->decoder, frame->handle);
+		if (until != VIDEO_NO_PTS && frame->pts >= until)
+			return true;
+		return false;
+	}
+
+	/* The frame, corrected, into its image; the frame stays in its buffer as the image's cached copy. */
+	received = clock_ticks();
+	relayout(frame, pixels, flight->target, flight->cpu, &flight->copy);
+	flight->placed = true;
+	flight->handle = frame->handle;
+	flight->frame_flags = frame->flags;
+	flight->received_at = received;
+	flight->place_ticks = clock_ticks() - received;
+
+	/* The awaited decode's frame, or a later one, ends the waiting. */
+	if (until != VIDEO_NO_PTS && frame->pts >= until)
+		return true;
+
+	/* Succeeded: an earlier frame is placed. */
+	return false;
+}
+
+/*
+ * Retires the flights after a collection, oldest first: a placed one
+ * writes its status and its frame becomes its image's kept copy; a lost
+ * one, or the oldest waiting one whose deadline has passed, is given up
+ * (too many timeouts in a row stop the session).  The others stay, in
+ * order.
+ */
+static int
+retire_flights(
+	struct video_session *video,
+	uint64_t now)
+{
+	struct video_flight *flight;
+	unsigned index;
+	unsigned kept;
+	int32_t status;
+	int error;
+	int result;
+
+	/* Each flight in order. */
+	result = 0;
+	kept = 0;
+	for (index = 0; index < video->flight_count; index++) {
+		flight = &video->flights[index];
+
+		/* A placed frame: its status, its costs, and its copy kept. */
+		if (flight->placed) {
+			status = VIDEO_STATUS_COMPLETE;
+			if ((flight->frame_flags & DRV_RPI4_MMAL_FRAME_CORRUPTED) != 0)
+				status = VIDEO_STATUS_ERROR;
+			video->timeouts = 0;
+			note_decode(flight, now);
+			error = finish_flight(flight, status);
+			if (result == 0)
+				result = error;
+			error = keep_held(video, flight);
+			if (result == 0)
+				result = error;
+			continue;
+		}
+
+		/* A lost frame, or the oldest waiting frame past its deadline: the picture is skipped. */
+		if (flight->lost || (kept == 0 && now >= flight->deadline)) {
+			if (!flight->lost) {
+				video->timeouts++;
+				if (video->timeouts >= VIDEO_MAX_TIMEOUTS)
+					video->broken = true;
+				skip_line(video, flight->pts, "no frame from the decoder", ETIMEDOUT);
+			} else {
+				skip_line(video, flight->pts, "frame lost", EIO);
+			}
+
+			/* The sets go again; the query says ERROR and the view goes. */
+			video->sent_sps_bytes = 0;
+			video->sent_pps_bytes = 0;
+			video_stats.skipped++;
+			error = finish_flight(flight, VIDEO_STATUS_ERROR);
+			if (result == 0)
+				result = error;
+			error = bcm2711_vulkan_object_release(flight->view);
+			if (result == 0)
+				result = error;
+			continue;
+		}
+
+		/* Still waiting: it moves up behind the ones kept before it. */
+		if (kept != index)
+			video->flights[kept] = *flight;
+		kept++;
+	}
+
+	/* The flights left. */
+	video->flight_count = kept;
+
+	/* Reports a release that failed. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: the flights left wait for their frames. */
+	return 0;
+}
+
+/*
+ * Writes a decode's status into its status query, if the query has not
+ * been reset since, and makes an ended query available with its last
+ * decode; then lets the pool go.
+ */
+static int
+finish_flight(
+	struct video_flight *flight,
+	int32_t status)
+{
+	struct video_pool *pool;
+	uint32_t query;
+	int error;
+
+	/* A decode outside a status query has none to write. */
+	if (flight->pool == NULL)
+		return 0;
+
+	/* The query, unless it was reset since the decode was sent. */
+	pool = flight->pool->payload;
+	query = flight->query;
+	if (query < pool->count && pool->generation[query] == flight->generation) {
+		/* One failed decode makes the query's status ERROR. */
+		if (status == VIDEO_STATUS_ERROR)
+			pool->status[query] = VIDEO_STATUS_ERROR;
+
+		/* The decode is no longer pending; the last one makes an ended query available. */
+		if (pool->pending[query] != 0)
+			pool->pending[query]--;
+		if (pool->pending[query] == 0 && pool->ended[query] != 0) {
+			pool->ended[query] = 0;
+			pool->available[query] = 1;
+		}
+	}
+
+	/* The pool goes. */
+	error = bcm2711_vulkan_object_release(flight->pool);
+	flight->pool = NULL;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the query has the decode's status. */
+	return 0;
+}
+
+/*
+ * Keeps a placed flight's frame as its image's cached copy: the image's
+ * older copy goes, and the oldest copy goes when there is no room.  The
+ * flight's view moves to the kept frame.
+ */
+static int
+keep_held(
+	struct video_session *video,
+	struct video_flight *flight)
+{
+	struct video_held *held;
+	unsigned index;
+	int error;
+	int result;
+
+	/* The image's older copy is not its content any more. */
+	result = 0;
+	index = 0;
+	while (index < video->held_count) {
+		if (video->held[index].image == flight->target) {
+			error = drop_held(video, index);
+			if (result == 0)
+				result = error;
+			continue;
+		}
+
+		/* Another image's copy stays. */
+		index++;
+	}
+
+	/* No room: the oldest copy goes (its image has the frame in its own memory). */
+	if (video->held_count == VIDEO_HELD) {
+		error = drop_held(video, 0);
+		if (result == 0)
+			result = error;
+	}
+
+	/* The copy, with the flight's view. */
+	held = &video->held[video->held_count];
+	held->view = flight->view;
+	held->image = flight->target;
+	held->handle = flight->handle;
+	held->copy = flight->copy;
+	video->held_count++;
+	flight->view = NULL;
+
+	/* Reports a release that failed. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: the image's readback reads the copy. */
+	return 0;
+}
+
+/* Drops a kept frame: its buffer goes back to the firmware and its view goes. */
+static int
+drop_held(
+	struct video_session *video,
+	unsigned index)
+{
+	struct bcm2711_vulkan_object *view;
+	int error;
+
+	/* The buffer back to the firmware (a broken decoder takes it back at its destruction). */
+	(void)drv_rpi4_mmal_decoder_release(video->decoder, video->held[index].handle);
+	view = video->held[index].view;
+
+	/* The later ones move up. */
+	for (; index + 1U < video->held_count; index++)
+		video->held[index] = video->held[index + 1U];
+	video->held_count--;
+
+	/* The view goes. */
+	error = bcm2711_vulkan_object_release(view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame is no image's copy. */
+	return 0;
+}
+
+/*
+ * Gives every flight up (its status ERROR) and drops every kept frame, at
+ * a reset or the session's release.
+ */
+static int
+drop_all(
+	struct video_session *video)
+{
+	struct video_flight *flight;
+	unsigned index;
+	int error;
+	int result;
+
+	/* The flights, in order. */
+	result = 0;
+	for (index = 0; index < video->flight_count; index++) {
+		flight = &video->flights[index];
+		if (flight->placed)
+			(void)drv_rpi4_mmal_decoder_release(video->decoder, flight->handle);
+		error = finish_flight(flight, VIDEO_STATUS_ERROR);
+		if (result == 0)
+			result = error;
+		error = bcm2711_vulkan_object_release(flight->view);
+		if (result == 0)
+			result = error;
+	}
+
+	/* None is in flight. */
+	video->flight_count = 0;
+
+	/* The kept frames. */
+	while (video->held_count != 0) {
+		error = drop_held(video, 0);
+		if (result == 0)
+			result = error;
+	}
+
+	/* Reports a release that failed. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: nothing of the decoder is in flight or kept. */
+	return 0;
+}
+
+/* Reports whether a flight up to decode until still waits for its frame. */
+static bool
+flight_pending(
+	const struct video_session *video,
+	int64_t until)
+{
+	unsigned index;
+
+	/* The flights in order; the oldest is the earliest. */
+	for (index = 0; index < video->flight_count; index++) {
+		if (video->flights[index].pts <= until)
+			return true;
+	}
+
+	/* Succeeded: none. */
+	return false;
 }
 
 /*
@@ -3315,10 +4099,10 @@ append_set(
 	return 0;
 }
 
-/* Resolves a decode's output picture to its NV12 image and CPU view. */
+/* Resolves a decode's output picture view to its NV12 image and CPU view. */
 static int
 image_target(
-	const struct video_command *command,
+	const struct bcm2711_vulkan_object *view_object,
 	struct bcm2711_vulkan_resource **image,
 	uint8_t **cpu)
 {
@@ -3333,9 +4117,9 @@ image_target(
 	int error;
 
 	/* The view's image must be an NV12 decode output. */
-	if (command->view == NULL)
+	if (view_object == NULL)
 		return EINVAL;
-	view = command->view->payload;
+	view = view_object->payload;
 	if (view->owner.parent == NULL)
 		return EINVAL;
 	resource = view->owner.parent->payload;
@@ -3358,16 +4142,17 @@ image_target(
 /*
  * Copies a frame from the decoder's cached memory into the image's layout,
  * row by row, with the firmware's footroom error undone: the luma rows,
- * then the chroma rows, each as wide as both layouts allow.  The part
- * copied becomes the image's cached copy (owner is set by the caller once
- * the decode is over).
+ * then the chroma rows, each as wide as both layouts allow.  copy receives
+ * where the part copied is in the decoder's memory, for the image's
+ * cached copy.
  */
 static void
 relayout(
 	const struct drv_rpi4_mmal_frame *frame,
 	const uint8_t *pixels,
 	const struct bcm2711_vulkan_resource *image,
-	uint8_t *cpu)
+	uint8_t *cpu,
+	struct video_copy *copy)
 {
 	const uint8_t *luma;
 	const uint8_t *chroma_plane;
@@ -3408,28 +4193,11 @@ relayout(
 		drv_rpi4_mmal_copy_samples(cpu + chroma + (size_t)row * pitch, chroma_plane + (size_t)row * source_pitch, width);
 
 	/* The part copied, for the image's readback. */
-	video_shadow.image = image;
-	video_shadow.luma = luma;
-	video_shadow.chroma = chroma_plane;
-	video_shadow.pitch = source_pitch;
-	video_shadow.width = width;
-	video_shadow.rows = rows;
-}
-
-/*
- * Forgets the cached copy of the last frame: owner's only, or with NULL
- * whatever there is.
- */
-static void
-forget_shadow(
-	const struct video_session *owner)
-{
-	/* Another session's copy stays. */
-	if (owner != NULL && video_shadow.owner != owner)
-		return;
-
-	/* No image has a cached copy now. */
-	kern_memset(&video_shadow, 0, sizeof(video_shadow));
+	copy->luma = luma;
+	copy->chroma = chroma_plane;
+	copy->pitch = source_pitch;
+	copy->width = width;
+	copy->rows = rows;
 }
 
 /* Reports the highest PPS id no set of a parameters object uses, for the push's own PPS. */
@@ -3459,24 +4227,22 @@ unused_pps_id(
 	return id;
 }
 
-/* Adds a finished decode to the cost line, and writes the line when its window is over. */
+/* Adds a placed decode to the cost line, and writes the line when its window is over. */
 static void
 note_decode(
-	const struct video_session *video,
-	uint64_t received,
+	const struct video_flight *flight,
 	uint64_t now)
 {
 	uint64_t frame;
 
 	/* The decode's times: to its unit sent, to its frame received, and its placing. */
-	frame = received - video->sent_at;
+	frame = flight->received_at - flight->sent_at;
 	video_stats.decodes++;
-	video_stats.steps += video->steps;
-	video_stats.send_ticks += video->sent_at - video->started_at;
+	video_stats.send_ticks += flight->sent_at - flight->started_at;
 	video_stats.frame_ticks += frame;
 	if (frame > video_stats.frame_max)
 		video_stats.frame_max = frame;
-	video_stats.place_ticks += now - received;
+	video_stats.place_ticks += flight->place_ticks;
 
 	/* The line, when the window is over. */
 	report_stats(now);
@@ -3507,12 +4273,14 @@ report_stats(
 
 	/* The averages of the window, while the boot's lines last. */
 	if (video_stats.reports < VIDEO_STATS_REPORTS) {
-		kern_logf("v3d: video: %u decodes in %llu ms (%u skipped, %u pushes, %u steps); avg_us send %llu frame %llu place %llu, max_us frame %llu; readbacks %u cached avg_us %llu, %u uncached avg_us %llu\n",
+		kern_logf("v3d: video: %u decodes in %llu ms (%u skipped, %u pushes, %u steps, depth %llu.%llu); avg_us send %llu frame %llu place %llu, max_us frame %llu; readbacks %u cached avg_us %llu, %u uncached avg_us %llu; waits %u avg_us %llu\n",
 			  (unsigned)video_stats.decodes,
 			  (unsigned long long)elapsed,
 			  (unsigned)video_stats.skipped,
 			  (unsigned)video_stats.pushes,
 			  (unsigned)video_stats.steps,
+			  (unsigned long long)(average_tenths(video_stats.depth, video_stats.sends) / 10U),
+			  (unsigned long long)(average_tenths(video_stats.depth, video_stats.sends) % 10U),
 			  (unsigned long long)average_us(video_stats.send_ticks, video_stats.decodes),
 			  (unsigned long long)average_us(video_stats.frame_ticks, video_stats.decodes),
 			  (unsigned long long)average_us(video_stats.place_ticks, video_stats.decodes),
@@ -3520,7 +4288,9 @@ report_stats(
 			  (unsigned)video_stats.cached_readbacks,
 			  (unsigned long long)average_us(video_stats.cached_ticks, video_stats.cached_readbacks),
 			  (unsigned)video_stats.uncached_readbacks,
-			  (unsigned long long)average_us(video_stats.uncached_ticks, video_stats.uncached_readbacks));
+			  (unsigned long long)average_us(video_stats.uncached_ticks, video_stats.uncached_readbacks),
+			  (unsigned)video_stats.waits,
+			  (unsigned long long)average_us(video_stats.wait_ticks, video_stats.waits));
 	}
 
 	/* The next window starts empty; the count of lines written stays. */
@@ -3551,6 +4321,20 @@ average_us(
 	return microseconds / count;
 }
 
+/* Reports the mean of a sum in tenths. */
+static uint64_t
+average_tenths(
+	uint64_t sum,
+	uint32_t count)
+{
+	/* An empty sum has no mean. */
+	if (count == 0)
+		return 0;
+
+	/* Succeeded: the mean, times ten. */
+	return sum * 10U / count;
+}
+
 /* Writes a decode's status into the status query open around it, if any. */
 static void
 set_status(
@@ -3576,8 +4360,20 @@ skip(
 	const char *reason,
 	int error)
 {
+	/* The line, then the status. */
+	skip_line(video, video->sequence, reason, error);
+	set_status(command, VIDEO_STATUS_ERROR);
+}
+
+/* Logs why a picture was skipped, a few times a session. */
+static void
+skip_line(
+	const struct video_session *video,
+	int64_t pts,
+	const char *reason,
+	int error)
+{
 	/* The first lines of a session say why; later ones only count. */
 	if (video->timeouts < VIDEO_MAX_TIMEOUTS || video->sequence < 4)
-		kern_logf("v3d: video: picture %lld skipped: %s (%d)\n", (long long)video->sequence, reason, error);
-	set_status(command, VIDEO_STATUS_ERROR);
+		kern_logf("v3d: video: picture %lld skipped: %s (%d)\n", (long long)pts, reason, error);
 }

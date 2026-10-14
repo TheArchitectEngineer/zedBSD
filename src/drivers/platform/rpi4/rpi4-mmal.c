@@ -63,6 +63,12 @@
 /* The output buffers a decoder gives at least, so the firmware never waits for the caller. */
 #define MMAL_OUTPUT_MINIMUM		3U
 
+/*
+ * The input staging areas: access units in flight at once, each in an area
+ * of its own until the firmware has given its buffers back (ws236 p008).
+ */
+#define MMAL_STAGING_AREAS		4U
+
 /* The bytes of scratch memory: the dummy bulk and an event's bulk data. */
 #define MMAL_SCRATCH_BYTES		4096U
 
@@ -129,10 +135,11 @@ struct mmal_bulk_tag {
 };
 
 /*
- * One of the two input staging areas: the input buffers and the bulks of
- * the access unit in it that the firmware has not given back.
+ * One input staging area: its memory, and the input buffers and the bulks
+ * of the access unit in it that the firmware has not given back.
  */
 struct mmal_staging {
+	struct drv_dma_buffer memory;
 	uint8_t *cpu;
 	uint64_t physical;
 	uint32_t buffers;
@@ -141,13 +148,15 @@ struct mmal_staging {
 
 /*
  * One output buffer: its bounce memory, and whether the firmware has it,
- * a received frame waits in it, or the caller holds it.
+ * a received frame waits in it, or the caller holds it.  arrival orders
+ * the frames waiting: the oldest is received first.
  */
 struct mmal_output {
 	struct drv_dma_buffer memory;
 	bool with_firmware;
 	bool ready;
 	bool held;
+	uint64_t arrival;
 	uint32_t length;
 	uint32_t flags;
 	int64_t pts;
@@ -182,14 +191,14 @@ struct drv_rpi4_mmal_decoder {
 	uint32_t output_size;
 	uint32_t output_count;
 	bool input_free[MMAL_INPUT_BUFFERS];
-	unsigned input_half[MMAL_INPUT_BUFFERS];
-	struct drv_dma_buffer staging_memory;
-	struct mmal_staging half[2];
+	unsigned input_area[MMAL_INPUT_BUFFERS];
+	struct mmal_staging areas[MMAL_STAGING_AREAS];
 	unsigned current;
 	uint32_t input_bytes;
 	struct drv_dma_buffer scratch;
 	struct mmal_output outputs[MMAL_OUTPUT_BUFFERS];
-	unsigned held_output;
+	uint32_t frames;
+	uint64_t arrivals;
 	const char *step;
 	bool output_enabled;
 	bool input_sent;
@@ -198,7 +207,7 @@ struct drv_rpi4_mmal_decoder {
 	uint32_t height;
 	uint32_t crop_width;
 	uint32_t crop_height;
-	struct mmal_bulk_tag staging_tags[2];
+	struct mmal_bulk_tag staging_tags[MMAL_STAGING_AREAS];
 	struct mmal_bulk_tag frame_tag;
 	struct mmal_bulk_tag scratch_tag;
 	bool frame_pending;
@@ -316,6 +325,7 @@ drv_rpi4_mmal_decoder_create(
 	uint32_t width,
 	uint32_t height,
 	uint32_t input_bytes,
+	uint32_t frames,
 	struct drv_rpi4_mmal_decoder **result)
 {
 	struct drv_rpi4_mmal_decoder *decoder;
@@ -330,7 +340,9 @@ drv_rpi4_mmal_decoder_create(
 	*result = NULL;
 	if (width == 0 || height == 0 || width > 4096U || height > 4096U)
 		return EINVAL;
-	if (input_bytes < 4096U || input_bytes > MMAL_MAX_SEGMENT / 2U)
+	if (input_bytes < 4096U || input_bytes > MMAL_MAX_SEGMENT - 64U)
+		return EINVAL;
+	if (frames > MMAL_OUTPUT_BUFFERS)
 		return EINVAL;
 
 	/* Opens the service the first time and takes a free decoder entry. */
@@ -360,21 +372,27 @@ drv_rpi4_mmal_decoder_create(
 	if (error != 0)
 		return error;
 
-	/* The tags the bulk completions name. */
-	decoder->staging_tags[0].decoder = decoder;
-	decoder->staging_tags[0].kind = MMAL_BULK_STAGING;
-	decoder->staging_tags[0].index = 0;
-	decoder->staging_tags[1].decoder = decoder;
-	decoder->staging_tags[1].kind = MMAL_BULK_STAGING;
-	decoder->staging_tags[1].index = 1;
+	/* The tags the bulk completions name: one for each staging area, the frame and the scratch. */
+	for (index = 0; index < MMAL_STAGING_AREAS; index++) {
+		decoder->staging_tags[index].decoder = decoder;
+		decoder->staging_tags[index].kind = MMAL_BULK_STAGING;
+		decoder->staging_tags[index].index = index;
+	}
+
+	/* The frame's and the scratch's. */
 	decoder->frame_tag.decoder = decoder;
 	decoder->frame_tag.kind = MMAL_BULK_FRAME;
 	decoder->scratch_tag.decoder = decoder;
 	decoder->scratch_tag.kind = MMAL_BULK_SCRATCH;
 
-	/* The two input staging areas (each with room to round a bulk up to four bytes) and the scratch. */
+	/* The output buffers the caller asks for at least: the frames it keeps and those in flight. */
+	decoder->frames = frames;
+
+	/* The input staging areas (each with room to round a bulk up to four bytes) and the scratch. */
 	decoder->input_bytes = input_bytes;
-	error = dma_alloc((size_t)(input_bytes + 64U) * 2U, &decoder->staging_memory);
+	error = 0;
+	for (index = 0; index < MMAL_STAGING_AREAS && error == 0; index++)
+		error = dma_alloc((size_t)input_bytes + 64U, &decoder->areas[index].memory);
 	if (error == 0)
 		error = dma_alloc(MMAL_SCRATCH_BYTES, &decoder->scratch);
 	if (error != 0) {
@@ -383,11 +401,11 @@ drv_rpi4_mmal_decoder_create(
 		return error;
 	}
 
-	/* The two areas' CPU and physical addresses, one after the other. */
-	decoder->half[0].cpu = decoder->staging_memory.address;
-	decoder->half[0].physical = bus_to_physical(decoder->staging_memory.device_address);
-	decoder->half[1].cpu = decoder->half[0].cpu + input_bytes + 64U;
-	decoder->half[1].physical = decoder->half[0].physical + input_bytes + 64U;
+	/* Each area's CPU and physical addresses. */
+	for (index = 0; index < MMAL_STAGING_AREAS; index++) {
+		decoder->areas[index].cpu = decoder->areas[index].memory.address;
+		decoder->areas[index].physical = bus_to_physical(decoder->areas[index].memory.device_address);
+	}
 
 	/* Creates the firmware's decoder component. */
 	size = drv_rpi4_mmal_build_create(message, 0, token(decoder, MMAL_KIND_COMPONENT, 0), MMAL_COMPONENT_NAME);
@@ -428,17 +446,18 @@ drv_rpi4_mmal_decoder_create(
 /*
  * Reports the input staging the next access unit goes into.
  *
- * The staging alternates between two areas; an area is reused only after
- * the firmware has given back every input buffer and completed every bulk
- * of the access unit last sent from it.
+ * The staging goes round the areas; an area is reused only after the
+ * firmware has given back every input buffer and completed every bulk of
+ * the access unit last sent from it.  A timeout of zero only looks.
  */
 int
 drv_rpi4_mmal_decoder_input(
 	struct drv_rpi4_mmal_decoder *decoder,
+	unsigned timeout_ms,
 	uint8_t **staging,
 	uint32_t *capacity)
 {
-	struct mmal_staging *half;
+	struct mmal_staging *area;
 	unsigned long enabled;
 	uint64_t deadline;
 	uint64_t observed;
@@ -448,14 +467,14 @@ drv_rpi4_mmal_decoder_input(
 	/* A broken decoder takes nothing more. */
 	if (decoder->broken)
 		return EIO;
-	half = &decoder->half[decoder->current];
+	area = &decoder->areas[decoder->current];
 
 	/*
 	 * Waits until the firmware is done with the area.  The wait's
 	 * sequence is read in the same hold of the lock as the area's counts,
 	 * so a completion between the two is not missed.
 	 */
-	deadline = sched_ticks() + kern_ms_to_ticks(MMAL_WAIT_MS) + 1U;
+	deadline = sched_ticks() + kern_ms_to_ticks(timeout_ms) + 1U;
 	for (;;) {
 		error = pump(decoder);
 		if (error != 0)
@@ -463,10 +482,13 @@ drv_rpi4_mmal_decoder_input(
 		enabled = spin_lock_irqsave(&mmal_lock);
 
 		busy = false;
-		if (half->buffers != 0 || half->bulks != 0)
+		if (area->buffers != 0 || area->bulks != 0)
 			busy = true;
 		error = 0;
-		if (busy && decoder->queue_count == 0 && !decoder->queue_overflow) {
+		if (busy && timeout_ms == 0) {
+			/* Only looking: the area is not free yet. */
+			error = ETIMEDOUT;
+		} else if (busy && decoder->queue_count == 0 && !decoder->queue_overflow) {
 			observed = waitq_sequence(&mmal_wake);
 			error = waitq_sleep(&mmal_wake, &mmal_lock, observed, deadline, 0);
 			if (error != ETIMEDOUT)
@@ -477,14 +499,16 @@ drv_rpi4_mmal_decoder_input(
 
 		if (!busy)
 			break;
+		if (error != 0 && timeout_ms == 0)
+			return error;
 		if (error != 0) {
-			kern_logf("rpi4-mmal: input staging not given back in %u ms\n", MMAL_WAIT_MS);
+			kern_logf("rpi4-mmal: input staging not given back in %u ms\n", timeout_ms);
 			return error;
 		}
 	}
 
 	/* Succeeded: the caller writes the access unit here. */
-	*staging = half->cpu;
+	*staging = area->cpu;
 	*capacity = decoder->input_bytes;
 	return 0;
 }
@@ -500,7 +524,7 @@ drv_rpi4_mmal_decoder_send(
 	int64_t pts,
 	int config)
 {
-	struct mmal_staging *half;
+	struct mmal_staging *area;
 	uint8_t message[DRV_RPI4_MMAL_BUFFER_BYTES];
 	unsigned long enabled;
 	uint64_t deadline;
@@ -508,7 +532,7 @@ drv_rpi4_mmal_decoder_send(
 	uint32_t chunk;
 	uint32_t flags;
 	unsigned index;
-	unsigned half_index;
+	unsigned area_index;
 	int error;
 
 	/* Refuses an empty or oversized unit and a broken decoder. */
@@ -516,11 +540,11 @@ drv_rpi4_mmal_decoder_send(
 		return EIO;
 	if (bytes == 0 || bytes > decoder->input_bytes)
 		return EINVAL;
-	half_index = decoder->current;
-	half = &decoder->half[half_index];
+	area_index = decoder->current;
+	area = &decoder->areas[area_index];
 
 	/* The bytes the caller wrote reach RAM, where the VPU reads them, before any bulk of them goes. */
-	kern_dcache_clean_range(half->cpu, (bytes + 3U) & ~3U);
+	kern_dcache_clean_range(area->cpu, (bytes + 3U) & ~3U);
 
 	/* Sends the unit in pieces of the input buffer size; the last ends the frame. */
 	deadline = sched_ticks() + kern_ms_to_ticks(MMAL_WAIT_MS) + 1U;
@@ -551,11 +575,11 @@ drv_rpi4_mmal_decoder_send(
 
 		/* The buffer is the firmware's until it comes back; the area until its bulk completes. */
 		decoder->input_free[index] = false;
-		decoder->input_half[index] = half_index;
+		decoder->input_area[index] = area_index;
 		enabled = spin_lock_irqsave(&mmal_lock);
 
-		half->buffers++;
-		half->bulks++;
+		area->buffers++;
+		area->bulks++;
 
 		spin_unlock_irqrestore(&mmal_lock, enabled);
 
@@ -564,7 +588,7 @@ drv_rpi4_mmal_decoder_send(
 						 decoder->input_handle, token(decoder, MMAL_KIND_INPUT, index),
 						 decoder->input_size, chunk, flags, pts);
 		error = drv_rpi4_vchiq_send_bulk(mmal_service, message, sizeof(message), DRV_RPI4_VCHIQ_BULK_TRANSMIT,
-						 half->physical + offset, (chunk + 3U) & ~3U, &decoder->staging_tags[half_index]);
+						 area->physical + offset, (chunk + 3U) & ~3U, &decoder->staging_tags[area_index]);
 		if (error != 0) {
 			decoder->broken = true;
 			kern_logf("rpi4-mmal: input not sent (%d); decoder stopped\n", error);
@@ -576,8 +600,8 @@ drv_rpi4_mmal_decoder_send(
 		decoder->input_sent = true;
 	}
 
-	/* The next unit goes into the other area. */
-	decoder->current = 1U - half_index;
+	/* The next unit goes into the next area. */
+	decoder->current = (area_index + 1U) % MMAL_STAGING_AREAS;
 
 	/* Succeeded: the firmware has the unit. */
 	return 0;
@@ -609,10 +633,10 @@ drv_rpi4_mmal_decoder_end(
 
 	/* The buffer counts against the current area until it comes back; it moves no bytes. */
 	decoder->input_free[index] = false;
-	decoder->input_half[index] = decoder->current;
+	decoder->input_area[index] = decoder->current;
 	enabled = spin_lock_irqsave(&mmal_lock);
 
-	decoder->half[decoder->current].buffers++;
+	decoder->areas[decoder->current].buffers++;
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
 
@@ -660,10 +684,9 @@ free_input(
 }
 
 /*
- * Receives the next decoded frame.
+ * Receives the oldest decoded frame not received yet.
  *
- * The output buffer the caller held since the last receive goes back to
- * the firmware first.
+ * The frame's buffer is the caller's until it releases the frame's handle.
  */
 int
 drv_rpi4_mmal_decoder_receive(
@@ -674,6 +697,7 @@ drv_rpi4_mmal_decoder_receive(
 {
 	struct mmal_output *output;
 	uint64_t deadline;
+	unsigned oldest;
 	unsigned index;
 	int error;
 
@@ -681,43 +705,45 @@ drv_rpi4_mmal_decoder_receive(
 	if (decoder->broken)
 		return EIO;
 
-	/* Gives the buffer the caller held back to the firmware. */
-	if (decoder->held_output != 0) {
-		index = decoder->held_output - 1U;
-		decoder->held_output = 0;
-		decoder->outputs[index].held = false;
-		error = give_output(decoder, index);
-		if (error != 0)
-			return error;
-	}
-
-	/* Waits for the oldest received frame. */
+	/* Waits for a received frame; of several, the one that came first. */
 	deadline = sched_ticks() + kern_ms_to_ticks(timeout_ms) + 1U;
 	for (;;) {
 		error = pump(decoder);
 		if (error != 0)
 			return error;
+
+		/* The ready frame of the earliest arrival. */
+		oldest = decoder->output_count;
 		for (index = 0; index < decoder->output_count; index++) {
-			if (decoder->outputs[index].ready)
-				break;
+			if (!decoder->outputs[index].ready)
+				continue;
+			if (oldest == decoder->output_count || decoder->outputs[index].arrival < decoder->outputs[oldest].arrival)
+				oldest = index;
 		}
 
 		/* A received frame is ready. */
-		if (index < decoder->output_count)
+		if (oldest < decoder->output_count)
 			break;
+
+		/* Only looking: none is ready. */
+		if (timeout_ms == 0)
+			return ETIMEDOUT;
+
+		/* Waits for an arrival. */
 		error = wait_queue_or(decoder, deadline);
 		if (error != 0)
 			return error;
 	}
 
-	/* The frame stays in its buffer until the next receive. */
+	/* The frame stays in its buffer until the caller releases it. */
+	index = oldest;
 	output = &decoder->outputs[index];
 	output->ready = false;
 	output->held = true;
-	decoder->held_output = index + 1U;
 
 	/* Describes the frame. */
 	kern_memset(frame, 0, sizeof(*frame));
+	frame->handle = index + 1U;
 	frame->pts = output->pts;
 	frame->flags = output->flags;
 	frame->length = output->length;
@@ -733,7 +759,37 @@ drv_rpi4_mmal_decoder_receive(
 	frame->plane_pitch[1] = output->plane_pitch[1];
 	*pixels = output->memory.address;
 
-	/* Succeeded: the frame is the caller's until the next receive. */
+	/* Succeeded: the frame is the caller's until it releases it. */
+	return 0;
+}
+
+/*
+ * Gives a received frame's buffer back to the firmware.
+ */
+int
+drv_rpi4_mmal_decoder_release(
+	struct drv_rpi4_mmal_decoder *decoder,
+	unsigned handle)
+{
+	struct mmal_output *output;
+	int error;
+
+	/* Only a frame the caller holds has a buffer to give back. */
+	if (handle == 0 || handle > decoder->output_count)
+		return EINVAL;
+	output = &decoder->outputs[handle - 1U];
+	if (!output->held)
+		return EINVAL;
+
+	/* The buffer is the firmware's again (a disabled port gets it when enabled). */
+	output->held = false;
+	if (decoder->broken)
+		return EIO;
+	error = give_output(decoder, handle - 1U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame's memory is no longer the caller's. */
 	return 0;
 }
 
@@ -817,9 +873,6 @@ drv_rpi4_mmal_decoder_flush(
 				return error;
 		}
 	}
-
-	/* The caller holds no buffer any more. */
-	decoder->held_output = 0;
 
 	/* Takes in what the flush gave back. */
 	error = pump(decoder);
@@ -972,7 +1025,7 @@ service_bulk_done(
 	enabled = spin_lock_irqsave(&mmal_lock);
 
 	if (tag->kind == MMAL_BULK_STAGING) {
-		decoder->half[tag->index].bulks--;
+		decoder->areas[tag->index].bulks--;
 	} else if (tag->kind == MMAL_BULK_FRAME) {
 		decoder->frame_pending = false;
 		decoder->frame_actual = actual;
@@ -1574,6 +1627,7 @@ enable_output(
 	count = maximum(drv_rpi4_mmal_get32(decoder->output_info, DRV_RPI4_MMAL_INFO_PORT + DRV_RPI4_MMAL_PORT_BUFFER_NUM_MIN),
 			drv_rpi4_mmal_get32(decoder->output_info, DRV_RPI4_MMAL_INFO_PORT + DRV_RPI4_MMAL_PORT_BUFFER_NUM_RECOMMENDED));
 	count = maximum(count, MMAL_OUTPUT_MINIMUM);
+	count = maximum(count, decoder->frames);
 	if (count > MMAL_OUTPUT_BUFFERS)
 		count = MMAL_OUTPUT_BUFFERS;
 
@@ -1584,6 +1638,12 @@ enable_output(
 		for (index = 0; index < decoder->output_count; index++) {
 			if (decoder->outputs[index].with_firmware) {
 				kern_logf("rpi4-mmal: output buffer %u not given back before a resize\n", index);
+				return EIO;
+			}
+
+			/* A frame the caller still reads cannot lose its memory. */
+			if (decoder->outputs[index].held) {
+				kern_logf("rpi4-mmal: output buffer %u held by the caller at a resize\n", index);
 				return EIO;
 			}
 		}
@@ -1638,10 +1698,6 @@ enable_output(
 		if (error != 0)
 			return error;
 	}
-
-	/* A replaced set of buffers has none the caller holds. */
-	if (replaced)
-		decoder->held_output = 0;
 
 	/* Succeeded: the firmware can output frames. */
 	return 0;
@@ -1887,8 +1943,8 @@ report_stall(
 	unsigned free_inputs;
 	unsigned index;
 	uint32_t msgid;
-	uint32_t bulks[2];
-	uint32_t buffers[2];
+	uint32_t bulks;
+	uint32_t buffers;
 	bool frame_pending;
 	bool scratch_pending;
 
@@ -1898,10 +1954,12 @@ report_stall(
 	count = decoder->queue_count;
 	frame_pending = decoder->frame_pending;
 	scratch_pending = decoder->scratch_pending;
-	bulks[0] = decoder->half[0].bulks;
-	bulks[1] = decoder->half[1].bulks;
-	buffers[0] = decoder->half[0].buffers;
-	buffers[1] = decoder->half[1].buffers;
+	bulks = 0;
+	buffers = 0;
+	for (index = 0; index < MMAL_STAGING_AREAS; index++) {
+		bulks += decoder->areas[index].bulks;
+		buffers += decoder->areas[index].buffers;
+	}
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
 
@@ -1920,9 +1978,9 @@ report_stall(
 	}
 
 	/* The counts in one line. */
-	kern_logf("rpi4-mmal: stall at %s: decoder %u queued %u, frame bulk %u, scratch bulk %u, staging bulks %u/%u buffers %u/%u, outputs with firmware %u/%u (enabled %u), inputs free %u/%u\n",
+	kern_logf("rpi4-mmal: stall at %s: decoder %u queued %u, frame bulk %u, scratch bulk %u, staging bulks %u buffers %u, outputs with firmware %u/%u (enabled %u), inputs free %u/%u\n",
 		  what, decoder->slot, count, frame_pending ? 1U : 0U, scratch_pending ? 1U : 0U,
-		  (unsigned)bulks[0], (unsigned)bulks[1], (unsigned)buffers[0], (unsigned)buffers[1],
+		  (unsigned)bulks, (unsigned)buffers,
 		  with_firmware, (unsigned)decoder->output_count, decoder->output_enabled ? 1U : 0U,
 		  free_inputs, (unsigned)decoder->input_count);
 
@@ -2048,7 +2106,7 @@ handle_buffer(
 		decoder->input_free[index] = true;
 		enabled = spin_lock_irqsave(&mmal_lock);
 
-		decoder->half[decoder->input_half[index]].buffers--;
+		decoder->areas[decoder->input_area[index]].buffers--;
 
 		spin_unlock_irqrestore(&mmal_lock, enabled);
 
@@ -2105,8 +2163,10 @@ handle_buffer(
 	if (error != 0)
 		return error;
 
-	/* The frame waits for the caller, with its layout. */
+	/* The frame waits for the caller, with its layout and its place among the arrivals. */
 	output->ready = true;
+	decoder->arrivals++;
+	output->arrival = decoder->arrivals;
 	output->length = length;
 	output->flags = flags;
 	output->pts = (int64_t)drv_rpi4_mmal_get64(message->bytes, DRV_RPI4_MMAL_BUFFER_PTS);
@@ -2468,9 +2528,13 @@ release_memory(
 {
 	unsigned index;
 
-	/* The staging, the scratch and the bounce buffers. */
-	if (decoder->staging_memory.address != NULL)
-		dma_free(&decoder->staging_memory);
+	/* The staging areas. */
+	for (index = 0; index < MMAL_STAGING_AREAS; index++) {
+		if (decoder->areas[index].memory.address != NULL)
+			dma_free(&decoder->areas[index].memory);
+	}
+
+	/* The scratch and the bounce buffers. */
 	if (decoder->scratch.address != NULL)
 		dma_free(&decoder->scratch);
 	for (index = 0; index < MMAL_OUTPUT_BUFFERS; index++) {
@@ -2485,14 +2549,19 @@ bulks_outstanding(
 	struct drv_rpi4_mmal_decoder *decoder)
 {
 	unsigned long enabled;
+	unsigned index;
 	bool outstanding;
 
 	/* The staging bulks and the frame and scratch receives. */
 	enabled = spin_lock_irqsave(&mmal_lock);
 
 	outstanding = false;
-	if (decoder->half[0].bulks != 0 || decoder->half[1].bulks != 0)
-		outstanding = true;
+	for (index = 0; index < MMAL_STAGING_AREAS; index++) {
+		if (decoder->areas[index].bulks != 0)
+			outstanding = true;
+	}
+
+	/* The frame and scratch receives. */
 	if (decoder->frame_pending || decoder->scratch_pending)
 		outstanding = true;
 

@@ -57,6 +57,9 @@
 /* The largest access unit of the embedded streams, with room for a rewritten SPS. */
 #define PROBE_INPUT_BYTES		(1024U * 1024U)
 
+/* How long a staging area the firmware still reads is waited for. */
+#define PROBE_INPUT_MS			1000U
+
 /* The most frames a stream has. */
 #define PROBE_MAX_FRAMES		32U
 
@@ -313,7 +316,7 @@ probe_run(
 	result.dumps_left = mode->dumps;
 
 	/* A decoder of the stream's size. */
-	error = drv_rpi4_mmal_decoder_create(stream->width, stream->height, PROBE_INPUT_BYTES, &decoder);
+	error = drv_rpi4_mmal_decoder_create(stream->width, stream->height, PROBE_INPUT_BYTES, 0, &decoder);
 	if (error != 0) {
 		kern_logf("rpi4-mmal-probe: %s run=%s decoder not created (%d)\n", stream->name, run, error);
 		return;
@@ -413,7 +416,7 @@ send_unit(
 	int error;
 
 	/* Every NAL unit of the access unit, as one frame. */
-	error = drv_rpi4_mmal_decoder_input(decoder, &staging, &capacity);
+	error = drv_rpi4_mmal_decoder_input(decoder, PROBE_INPUT_MS, &staging, &capacity);
 	if (error != 0)
 		return error;
 	error = copy_nals(stream, start, end, mode, PROBE_NALS_ALL, staging, capacity, &used);
@@ -446,7 +449,7 @@ push(
 	int error;
 
 	/* The delimiter or the sets, without a time stamp. */
-	error = drv_rpi4_mmal_decoder_input(decoder, &staging, &capacity);
+	error = drv_rpi4_mmal_decoder_input(decoder, PROBE_INPUT_MS, &staging, &capacity);
 	if (error != 0)
 		return error;
 	if (mode->push == PROBE_PUSH_DELIMITER) {
@@ -577,9 +580,11 @@ collect(
 			return;
 		}
 
-		/* An empty end of stream carries no picture. */
-		if (frame.length == 0)
+		/* An empty end of stream carries no picture; its buffer goes back. */
+		if (frame.length == 0) {
+			(void)drv_rpi4_mmal_decoder_release(decoder, frame.handle);
 			continue;
+		}
 
 		/* Identifies the picture by its checksum, else by its luma's (a chroma layout fault). */
 		sum = frame_sum(&frame, pixels, &luma);
@@ -688,6 +693,9 @@ collect(
 			result->dumps_left--;
 			dump_frame(stream, run, result->outputs - 1U, pts_display, display, match, sum, &frame, pixels);
 		}
+
+		/* The frame's buffer goes back to the firmware. */
+		(void)drv_rpi4_mmal_decoder_release(decoder, frame.handle);
 	}
 }
 

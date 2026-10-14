@@ -27,10 +27,15 @@ struct h264_dpb_entry {
 	int32_t poc[2];
 };
 
-/* One decoder owns its logical references and the separate device-slot activation history. */
+/*
+ * One decoder owns its logical references and the separate device-slot
+ * activation history.  busy masks the slots whose images are still in use
+ * by earlier pictures' readbacks: no picture is decoded into them.
+ */
 struct h264_dpb {
 	unsigned max_references;
 	unsigned slots;
+	uint32_t busy;
 	int max_long_index;
 	int started;
 	int device_started;

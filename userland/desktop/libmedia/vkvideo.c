@@ -28,11 +28,16 @@
 #endif
 #define VKVIDEO_MAX_SKIPPED 8U
 
-/* One retained picture carries its presentation time and order within the current coded-video epoch. */
+/*
+ * One retained picture carries its presentation time and order within the
+ * current coded-video epoch, and while it is in flight its ticket (zero
+ * once its pixels are in the picture).
+ */
 struct vkvideo_output {
 	struct media_picture *picture;
 	int32_t poc;
 	int64_t time_us;
+	uint32_t ticket;
 };
 
 /* One native backend owns packet conversion, parser history, GPU retirement and a bounded display reorder queue. */
@@ -48,6 +53,7 @@ struct vkvideo_decoder {
 	struct vkvideo_output pending[VKVIDEO_PENDING];
 	unsigned count;
 	unsigned depth;
+	unsigned lag;
 	unsigned generation;
 	unsigned bump;
 	int have_picture;
@@ -77,7 +83,9 @@ static void vkvideo_close(void *state);
 static int vkvideo_configure(struct vkvideo_decoder *decoder, unsigned sps_id);
 static void vkvideo_pending_free(struct vkvideo_decoder *decoder);
 static int vkvideo_pop(struct vkvideo_decoder *decoder, int64_t *time_us);
+static int vkvideo_settle(struct vkvideo_decoder *decoder, struct vkvideo_output *output);
 static int vkvideo_decode(struct vkvideo_decoder *decoder);
+static void vkvideo_dpb_reset(struct vkvideo_decoder *decoder, unsigned max_references);
 static int vkvideo_errno(int problem);
 static int vkvideo_problem(int error);
 
@@ -281,12 +289,17 @@ vkvideo_receive(
 	if (decoder->failed != 0)
 		return -decoder->failed;
 	for (;;) {
+		/* The pictures in flight wait as extra reorder depth, so the decoder takes the next ones while they are read back. */
 		if (
-			decoder->count > decoder->depth ||
+			decoder->count > decoder->depth + decoder->lag ||
 			decoder->bump != 0U ||
 			decoder->draining) {
 			if (decoder->count != 0U) {
 				found = vkvideo_pop(decoder, time_us);
+				if (found < 0) {
+					decoder->failed = -found;
+					return found;
+				}
 				if (found != 0)
 					return found;
 				continue;
@@ -311,8 +324,12 @@ vkvideo_receive(
 
 		/* Flush the preceding coded-video epoch before inserting an IDR or MMCO-5 picture. */
 		if (decoder->picture.info.flags.IdrPicFlag || decoder->picture.mmco5) {
-			if (decoder->picture.no_output_prior)
+			if (decoder->picture.no_output_prior) {
+				/* The pictures in flight retire before their CPU pictures go. */
+				if (decoder->runtime != NULL)
+					media_vkvideo_runtime_discard(decoder->runtime);
 				vkvideo_pending_free(decoder);
+			}
 			if (decoder->count != 0U) {
 				decoder->bump = decoder->count;
 				continue;
@@ -374,8 +391,10 @@ vkvideo_flush(
 {
 	struct vkvideo_decoder *decoder;
 
-	/* Seek cannot expose queued pre-seek CPU frames or retain active logical references. */
+	/* Seek cannot expose queued pre-seek CPU frames or retain active logical references; the pictures in flight retire first. */
 	decoder = state;
+	if (decoder->runtime != NULL)
+		media_vkvideo_runtime_discard(decoder->runtime);
 	vkvideo_pending_free(decoder);
 	if (decoder->current != NULL) {
 		media_picture_unref(decoder->current);
@@ -384,7 +403,7 @@ vkvideo_flush(
 
 	/* Reset parser, logical references and reusable coding state together. */
 	h264_flush(&decoder->stream);
-	h264_dpb_init(&decoder->dpb, decoder->sequence.max_num_ref_frames);
+	vkvideo_dpb_reset(decoder, decoder->sequence.max_num_ref_frames);
 	if (decoder->runtime != NULL)
 		media_vkvideo_runtime_reset(decoder->runtime);
 	decoder->have_picture = 0;
@@ -466,7 +485,7 @@ vkvideo_configure(
 		/* Allocate CPU picture storage for the new visible crop independently of the GPU image. */
 		width = (sps->pic_width_in_mbs_minus1 + 1U) * 16U - (sps->frame_crop_left_offset + sps->frame_crop_right_offset) * 2U;
 		height = (sps->pic_height_in_map_units_minus1 + 1U) * 16U - (sps->frame_crop_top_offset + sps->frame_crop_bottom_offset) * 2U;
-		pool = media_picture_pool_create(width, height, decoder->depth + 4U);
+		pool = media_picture_pool_create(width, height, decoder->depth + 4U + media_vkvideo_runtime_flights(runtime));
 		if (pool == NULL) {
 			media_vkvideo_runtime_close(runtime);
 			return ENOMEM;
@@ -486,7 +505,8 @@ vkvideo_configure(
 		decoder->stream.previous_frame_num = 0U;
 		decoder->stream.previous_frame_offset = 0U;
 		decoder->stream.reference_started = 0;
-		h264_dpb_init(&decoder->dpb, sps->max_num_ref_frames);
+		vkvideo_dpb_reset(decoder, sps->max_num_ref_frames);
+		decoder->lag = media_vkvideo_runtime_flights(runtime) - 1U;
 		decoder->configured = 1;
 		decoder->generation = 0U;
 	}
@@ -518,7 +538,7 @@ vkvideo_pending_free(
 	decoder->bump = 0U;
 }
 
-/* Extract the earliest picture order from a bounded output epoch. */
+/* Extract the earliest picture order from a bounded output epoch, completing it first when it is still in flight. */
 static int
 vkvideo_pop(
 	struct vkvideo_decoder *decoder,
@@ -527,6 +547,7 @@ vkvideo_pop(
 	unsigned earliest;
 	unsigned time_index;
 	unsigned index;
+	int error;
 
 	/* Stable selection preserves arrival order when two pictures carry an equal order count. */
 	earliest = 0U;
@@ -534,6 +555,11 @@ vkvideo_pop(
 		if (decoder->pending[index].poc < decoder->pending[earliest].poc)
 			earliest = index;
 	}
+
+	/* A picture still in flight completes now (its pixels, or nothing for a failed decode). */
+	error = vkvideo_settle(decoder, &decoder->pending[earliest]);
+	if (error != 0)
+		return -error;
 
 	/* Transfer the earliest retained picture from pending ownership to the current receive result. */
 	decoder->current = decoder->pending[earliest].picture;
@@ -567,7 +593,53 @@ vkvideo_pop(
 	return 1;
 }
 
-/* Execute and mark one prepared picture, copying only admitted output into the display queue. */
+/*
+ * Completes a pending picture still in flight.  A picture whose decode
+ * reported a failure is dropped (its clock position stays, as a missing
+ * picture's) where failed pictures are skipped, unless too many fail in a
+ * row; elsewhere, and past that, it is an error.
+ */
+static int
+vkvideo_settle(
+	struct vkvideo_decoder *decoder,
+	struct vkvideo_output *output)
+{
+	int error;
+
+	/* A picture with its pixels has nothing to wait for. */
+	if (output->ticket == 0U)
+		return 0;
+
+	/* Its submission completes, with those before it. */
+	error = media_vkvideo_runtime_finish(decoder->runtime, output->ticket);
+	output->ticket = 0U;
+#if VKVIDEO_SKIP_FAILED
+	/*
+	 * A picture whose decode reported a failure (the Raspberry Pi 4's
+	 * firmware can miss a picture, ws236) is not shown: its clock position
+	 * is consumed as a missing picture's, its marking already updated the
+	 * DPB, and the stream goes on, unless too many fail in a row.
+	 */
+	if (error == EBADMSG && decoder->skipped < VKVIDEO_MAX_SKIPPED) {
+		decoder->skipped++;
+		media_picture_unref(output->picture);
+		output->picture = NULL;
+		return 0;
+	}
+#endif
+
+	/* A failed decode ends the stream; another error is the runtime's. */
+	if (error == EBADMSG)
+		error = EIO;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picture has its pixels, and the failures in a row start again. */
+	decoder->skipped = 0;
+	return 0;
+}
+
+/* Submit and mark one prepared picture, queuing its CPU picture for display while it is decoded and read back. */
 static int
 vkvideo_decode(
 	struct vkvideo_decoder *decoder)
@@ -576,6 +648,7 @@ vkvideo_decode(
 	const StdVideoH264SequenceParameterSetVui *vui;
 	struct h264_dpb_plan plan;
 	struct media_picture *output;
+	uint32_t ticket;
 	int32_t poc;
 	int error;
 
@@ -584,6 +657,12 @@ vkvideo_decode(
 	error = vkvideo_configure(decoder, sps->seq_parameter_set_id);
 	if (error != 0)
 		return error;
+
+	/* A free submission first: the slots of the pictures still in flight are not decoded into. */
+	error = media_vkvideo_runtime_reserve(decoder->runtime);
+	if (error != 0)
+		return error;
+	decoder->dpb.busy = media_vkvideo_runtime_busy(decoder->runtime);
 
 	/* Prepare normative order and every slice's available reference set before GPU submission. */
 	error = h264_dpb_prepare(&decoder->dpb, &decoder->stream, &decoder->picture, &plan);
@@ -604,6 +683,7 @@ vkvideo_decode(
 			decoder->pending[decoder->count].picture = NULL;
 			decoder->pending[decoder->count].poc = poc;
 			decoder->pending[decoder->count].time_us = decoder->packet_time;
+			decoder->pending[decoder->count].ticket = 0U;
 			decoder->count++;
 		}
 
@@ -617,49 +697,16 @@ vkvideo_decode(
 	output = media_picture_pool_get(decoder->pool);
 	if (output == NULL)
 		return ENOMEM;
-	error = media_vkvideo_runtime_decode(decoder->runtime, &decoder->stream, &decoder->picture, &plan, output);
-#if VKVIDEO_SKIP_FAILED
-	/*
-	 * A picture whose decode reported a failure (the Raspberry Pi 4's
-	 * firmware can miss its first picture, ws236) is not shown: its
-	 * clock position is consumed as a missing picture's, its marking
-	 * still updates the DPB, and the stream goes on, unless too many fail
-	 * in a row.
-	 */
-	if (error == EBADMSG && decoder->skipped < VKVIDEO_MAX_SKIPPED) {
-		media_picture_unref(output);
-		decoder->skipped++;
-		error = h264_dpb_mark(&decoder->dpb, sps, &decoder->picture, &plan);
-		if (error != 0)
-			return error;
-		if (decoder->decode_order_times && decoder->dpb.started) {
-			if (decoder->count >= VKVIDEO_PENDING)
-				return EOVERFLOW;
-			poc = decoder->picture.info.PicOrderCnt[0];
-			if (decoder->picture.info.PicOrderCnt[1] < poc)
-				poc = decoder->picture.info.PicOrderCnt[1];
-			decoder->pending[decoder->count].picture = NULL;
-			decoder->pending[decoder->count].poc = poc;
-			decoder->pending[decoder->count].time_us = decoder->packet_time;
-			decoder->count++;
-		}
-		return 0;
-	}
-#endif
-	if (error == EBADMSG)
-		error = EIO;
+	error = media_vkvideo_runtime_submit(decoder->runtime, &decoder->stream, &decoder->picture, &plan, output, &ticket);
 	if (error != 0) {
 		media_picture_unref(output);
 		return error;
 	}
-	decoder->skipped = 0;
 
-	/* Commit reference marking only after GPU output completed successfully. */
+	/* Commit reference marking once the decode is submitted; a picture that fails later is dropped from display only. */
 	error = h264_dpb_mark(&decoder->dpb, sps, &decoder->picture, &plan);
-	if (error != 0) {
-		media_picture_unref(output);
+	if (error != 0)
 		return error;
-	}
 
 	/* Display metadata accompanies the retained CPU picture rather than the Vulkan image. */
 	h264_aspect(&decoder->stream, sps->seq_parameter_set_id, &output->aspect_num, &output->aspect_den);
@@ -691,10 +738,23 @@ vkvideo_decode(
 	decoder->pending[decoder->count].picture = output;
 	decoder->pending[decoder->count].poc = poc;
 	decoder->pending[decoder->count].time_us = decoder->packet_time;
+	decoder->pending[decoder->count].ticket = ticket;
 	decoder->count++;
 
-	/* Succeeded: the decoded CPU frame waits for its presentation position. */
+	/* Succeeded: the submitted CPU picture waits for its pixels and its presentation position. */
 	return 0;
+}
+
+/* Starts an empty reference epoch whose slots are the runtime's (references and pictures in flight). */
+static void
+vkvideo_dpb_reset(
+	struct vkvideo_decoder *decoder,
+	unsigned max_references)
+{
+	/* The logical references, then the device slots they and the pictures in flight share. */
+	h264_dpb_init(&decoder->dpb, max_references);
+	if (decoder->runtime != NULL)
+		decoder->dpb.slots = media_vkvideo_runtime_slots(decoder->runtime);
 }
 
 /* Translate typed open problems to ordinary runtime errno without ambiguous positive media-problem values. */

@@ -196,6 +196,39 @@ bcm2711_vulkan_native_job_step(
 	region = job->region;
 	event = job->cursor;
 	while (event != NULL) {
+#if CONFIG_DRIVER_BCM2711_VIDEO
+		/*
+		 * A copy, blit or upload that names an image whose decode is in
+		 * flight waits for its frame first, a step at a time: the step
+		 * ends at the command, the other sessions take their turns, and
+		 * the next step comes back here (ws236).
+		 */
+		if (event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE ||
+		    event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER ||
+		    event->opcode == GPU_OP_CMD_COPY_IMAGE ||
+		    event->opcode == GPU_OP_CMD_BLIT_IMAGE) {
+			step = clock_ticks();
+			error = bcm2711_vulkan_video_settle(controller, event->record);
+			copy_ticks += clock_ticks() - step;
+			if (error == EINPROGRESS) {
+				job->cursor = event;
+				job->region = region;
+				job->remaining = remaining;
+				job->prepare_ticks = prepare_ticks;
+				job->execute_ticks = execute_ticks;
+				job->release_ticks = release_ticks;
+				job->copy_ticks = copy_ticks;
+				return 0;
+			}
+
+			/* A wait that failed fails the job before the command runs. */
+			if (error != 0) {
+				job->prepare_failed = true;
+				return error;
+			}
+		}
+#endif
+
 		/* A whole-image upload or readback becomes a tile copy pass; ENOTSUP leaves it to the CPU. */
 		tiled = ENOTSUP;
 		if (event->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE || event->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {

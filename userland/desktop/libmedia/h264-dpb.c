@@ -182,8 +182,8 @@ h264_dpb_prepare(
 				free_index = 0;
 		}
 
-		/* Reserve one free image and retire any stale device association for that slot. */
-		if (free_index != 0 && plan->setup < 0)
+		/* Reserve one free image that no earlier picture still reads, and retire any stale device association for that slot. */
+		if (free_index != 0 && plan->setup < 0 && (dpb->busy & (1U << slot)) == 0U)
 			plan->setup = (int32_t)slot;
 		if (free_index != 0 && dpb->active[slot]) {
 			plan->deactivate[plan->deactivate_count] = (int32_t)slot;
