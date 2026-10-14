@@ -272,10 +272,12 @@ scanout_overlay(
 }
 
 /*
- * Enters the game mode for a window: the swapchain closed (libvulkan gives
- * the display back), the backend's claim.  Returns 0, or the claim's
- * failure (the window is then refused until it goes or asks again, and
- * window mode opens the swapchain again).
+ * Enters the game mode for a window: the backend's answer that the display
+ * can show it, the swapchain closed (libvulkan gives the display back), the
+ * backend's claim.  Returns 0, or the answer's or the claim's failure (the
+ * window is then refused until it goes or asks again; after a claim's
+ * failure window mode opens the swapchain again, after the answer's it was
+ * never closed).
  */
 static int
 scanout_enter(
@@ -284,6 +286,20 @@ scanout_enter(
 {
 	uint64_t started;
 	int error;
+
+	/*
+	 * Asks first, without claiming, whether the display can show the
+	 * window straight: a display that cannot (the Raspberry Pi 4's, Linux,
+	 * FreeBSD) keeps the output open, as closing and opening it again for
+	 * nothing stopped the Pi 4's firmware video decoder (ws236-p011).
+	 */
+	error = kl_backend_scanout_possible(server->backend, server->compose->mode_width, server->compose->mode_height);
+	if (error != 0) {
+		server->scanout_refused = top;
+		server->dirty = 1;
+		printf("KWL SCANOUT direct=0 reason=backend errno=%d surface=%u client=%llu output=kept\n", error, top->id, (unsigned long long)top->client->number);
+		return error;
+	}
 
 	/* The swapchain goes. */
 	started = kwl_milliseconds();

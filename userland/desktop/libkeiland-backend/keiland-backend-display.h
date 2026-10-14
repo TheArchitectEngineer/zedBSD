@@ -67,6 +67,13 @@ VkResult kl_backend_display_release(struct kl_backend *backend, const struct kl_
  * backend's zedBSD tree); elsewhere it is ENOTSUP and the compositor keeps
  * composing.
  *
+ *   kl_backend_scanout_possible tells, without claiming anything, whether
+ *       a scanout of the given size could open (a display that shows shared
+ *       images takes the size); 0, ENOTSUP, or the query's failure.  The
+ *       compositor asks it before it closes its swapchain, so an output
+ *       whose display cannot scan out is not closed and opened again for
+ *       nothing (on the Raspberry Pi 4 that closing and opening during a
+ *       video's decode stopped the firmware's decoder, ws236-p011)
  *   kl_backend_scanout_open     claims the display for an output of the
  *       given size (after the swapchain has gone); 0, ENOTSUP, or the
  *       claim's failure
@@ -81,6 +88,7 @@ VkResult kl_backend_display_release(struct kl_backend *backend, const struct kl_
 struct kl_backend_scanout;
 struct kl_backend_protocol_host;
 struct kl_backend_resource;
+int kl_backend_scanout_possible(struct kl_backend *backend, uint32_t width, uint32_t height);
 int kl_backend_scanout_open(struct kl_backend *backend, uint32_t width, uint32_t height, struct kl_backend_scanout **scanout);
 int kl_backend_scanout_present(struct kl_backend_scanout *scanout, const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer);
 void kl_backend_scanout_close(struct kl_backend_scanout *scanout);
