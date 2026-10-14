@@ -118,9 +118,18 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
   その AU を decode できる。
 - 決め（D-S3）: pts = decode の通し番号。出た buffer の pts で、どの decode command の出力かを照合する。番号が合わない枠は
   捨てる（bulk は scratch へ受けて捨てる）。
-- 確かめ（実機、p006 の最初）: B frame を含む 1080p の stream で、出力の pts が単調に増え、1 入力ごとに 1 出力が遅れなく返ること。
-- 駄目だった時（R1、§11）: libmedia を「数枚を先に submit してから待つ」形にし、executor の decode を「入力を送る」と「出力を待つ」に
-  分ける（p004 の作り直し）。
+- 確かめ（実機、p003 の後の §12 の試験）: B frame を含む 1080p の stream で、出力の pts が単調に増え、1 入力ごとに 1 出力が遅れなく返ること。
+- 駄目だった時（R1、§11）の代わり（Q1 2026-10-14 の指示で具体化）:
+  - **R1-a（本命）: executor が表示の順の出力を decode の順の command へ戻す。** decoder が遅れて表示の順に出すなら、その遅れの分だけ
+    入力が先に入っていないと出力は出ない。libmedia は 1 枚ごとに fence を待つので、executor の並べ替えだけでは止まる。そこで
+    (1) executor の decode の event を「入力を送って終わる」形にし（出力を待たない）、出力の枠は届いた時に pts（= decode の通し番号）で
+    その decode command の image へ bulk で受ける（受け取りは VCHIQ の受信の thread、image の memory は decode の記録が保持する）。
+    (2) fence・semaphore の signal は「その submit の decode の出力が全て届いた」まで遅らせる（executor の execution を出力の到着まで
+    終えない step にする。待つ step は 1 ms ごとに他の session に順を譲る）。(3) libmedia は reorder の深さ（`h264_reorder_depth`）だけ
+    decode を先に submit してから最も古い fence を待つ形にする（p005）。これで decoder は遅れの分の入力を受け取れ、出力は pts で
+    正しい image に入り、fence は decode の順に signal する。
+  - R1-b（補助）: 遅れて残った最後の数枚は、stream の終わり（drain）と seek・RESET の前に MMAL の EOS を送って押し出す。
+  - R1-a は p004 の executor と p005 の libmedia の作り直し（見積もり +6 LW）。
 
 ## 6. Vulkan Video の橋渡し（`src/drivers/gpu/bcm2711/video*.c`）
 
@@ -227,14 +236,27 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
 
 | ID | 危険 | 見込み・代わり |
 | --- | --- | --- |
-| R1 | firmware の decoder が `max_num_reorder_frames = 0` を無視し、表示の順・遅れて出す | 実機で最初に確かめる（p006）。駄目なら libmedia の先行 submit と executor の分割（§5）。B frame の無い stream（Baseline、多くの camera の動画）は影響しない |
+| R1 | firmware の decoder が `max_num_reorder_frames = 0` を無視し、表示の順・遅れて出す | p003 の後の起動時の確かめ（§12）で先に実機で確かめる。駄目なら R1-a（§5）。B frame の無い stream（Baseline、多くの camera の動画）は影響しない |
 | R2 | NV12 の出力が使えない（I420 だけ） | output を I420 にし、bulk を staging に受けて CPU で NV12 に並べ替える（1 枚 約 3 MiB の読み書き） |
 | R3 | 同期の待ちの間（10〜20 ms）V3D の executor が他の session（compositor）を進めない | 1080p30 では 1 秒に 30 回、合計 30〜60% の時間。compositor の frame が遅れたら、decode の event を「送る step」と「待つ step」に分け、待つ step は 1 ms ごとに他の session に順を譲る（executor の step の仕組みはそのまま使える） |
 | R4 | VPU の DMA が image の memory の物理 address（long bulk）を受けない | 出力を 1 GiB の下の staging（bus の窓）に受けて CPU で写す |
 | R5 | VCHIQ の初期化の手順（channel 3）が今の firmware で動かない | property の tag `VCHIQ_INIT` に切り替える |
 | R6 | 期限（2026-10-16 夕方）に実機の確かめが間に合わない | 既定 off のまま merge し、ベータ3 に送る（ユーザーの条件） |
 
-## 12. 判断（既定を選んで進める、Q1 経由でユーザーへ）
+## 12. R1 を先に確かめる試験（Q1 2026-10-14 の指示）
+
+- p003 の MMAL の client ができた時点で、Vulkan の道（p004・p005）を待たずに実機で R1 を確かめる。
+- 形: `CONFIG_DRIVER_BCM2711_VIDEO_PROBE`（既定 n、`CONFIG_BT_TEST_LOOPBACK` などと同じ試験の config）で build する kernel だけに入る
+  小さな起動時の確かめ（`src/drivers/platform/rpi4/rpi4-mmal-probe.c`）。ws083 の試験の stream（`pb-high-352-pyramid.h264`、
+  High、B の pyramid、352×288）を C の配列にして（`plan/ws236/tests/` の生成の script で作る、stream は ws083 が自分で x264 で作った物）
+  起動の後に kernel thread で 2 回 decode する: (a) stream のまま、(b) SPS の VUI を §5 の形に書き換えて。各入力ごとに
+  「入力の番号・出力の pts・出力の長さ・入力から出力までの時間」を klog に 1 行。終わりに要約の 1 行
+  `rpi4-mmal-probe: original order=… reorder0 order=… lag=…`。
+- T1 の手順: その config の image（`plan/ws236/tests/config-rpi4-mmal-probe.mk`）で Pi 4 を起動し、ssh で `dmesg | grep rpi4-mmal`。
+  合否: (b) の出力の pts が入力の順で、各入力の直後（次の入力の前）に出ること。(a) は参考（表示の順で遅れて出るはず）。
+- 判定: (b) が合えば §5 の D-S1 で p004 を進める。合わなければ R1-a に切り替える。
+
+## 13. 判断（既定を選んで進める、Q1 経由でユーザーへ）
 
 | ID | 問い | 既定（推し） |
 | --- | --- | --- |
