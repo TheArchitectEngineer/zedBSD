@@ -23,6 +23,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
 #include "userland/desktop/libvulkan/internal.h"
 #include "userland/desktop/libvulkan/codec.h"
+#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "userland/desktop/wayland/shaders.h"
 
 /* The reply blob's id, where its replies start, and the device's identity. */
 #define TEST_REPLY_BLOB		1U
@@ -60,6 +62,7 @@ static void test_pipeline(const char *directory);
 static void write_quad_pipeline(struct vulkan_writer *client, struct vulkan_object *handles, uint64_t identity, unsigned vertex, unsigned fragment, uint64_t layout, uint64_t pass);
 static void record_begin(struct vulkan_writer *writer, uint32_t opcode, uint64_t command);
 static void test_submit(const char *directory);
+static void test_compositor_shaders(void);
 
 void *
 kern_malloc(size_t bytes)
@@ -297,6 +300,7 @@ main(int argc, char **argv)
 	test_views();
 	test_pipeline(argv[1]);
 	test_submit(argv[1]);
+	test_compositor_shaders();
 	printf("%s nvrtx vk d3: %u checks, %u failures\n", failures == 0 ? "PASS" : "FAIL", checks, failures);
 	return failures == 0 ? 0 : 1;
 }
@@ -1647,4 +1651,49 @@ test_submit(const char *directory)
 	check(allocations == before, "submit: nothing leaked");
 	free(vertex_words);
 	free(fragment_words);
+}
+
+/* Every SPIR-V module the compositor embeds (wayland/shaders.h) compiles for SM75, as its pipelines need. */
+static void
+test_compositor_shaders(void)
+{
+	static const struct {
+		const char *name;
+		const uint32_t *words;
+		size_t bytes;
+		enum drv_gpu_shader_stage stage;
+	} modules[] = {
+		{ "quad.vert", kwl_quad_vert, sizeof(kwl_quad_vert), DRV_GPU_STAGE_VERTEX },
+		{ "quad.frag", kwl_quad_frag, sizeof(kwl_quad_frag), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.vert", kwl_panel_vert, sizeof(kwl_panel_vert), DRV_GPU_STAGE_VERTEX },
+		{ "panel.frag", kwl_panel_frag, sizeof(kwl_panel_frag), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel-batch.vert", kwl_batch_vert, sizeof(kwl_batch_vert), DRV_GPU_STAGE_VERTEX },
+		{ "panel-batch.frag", kwl_batch_frag, sizeof(kwl_batch_frag), DRV_GPU_STAGE_FRAGMENT },
+		{ "turn.vert", kwl_turn_vert, sizeof(kwl_turn_vert), DRV_GPU_STAGE_VERTEX },
+		{ "panel.frag mode 0", kwl_panel_frag_0, sizeof(kwl_panel_frag_0), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 1", kwl_panel_frag_1, sizeof(kwl_panel_frag_1), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 2", kwl_panel_frag_2, sizeof(kwl_panel_frag_2), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 3", kwl_panel_frag_3, sizeof(kwl_panel_frag_3), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 4", kwl_panel_frag_4, sizeof(kwl_panel_frag_4), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 5", kwl_panel_frag_5, sizeof(kwl_panel_frag_5), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 6", kwl_panel_frag_6, sizeof(kwl_panel_frag_6), DRV_GPU_STAGE_FRAGMENT },
+		{ "panel.frag mode 7", kwl_panel_frag_7, sizeof(kwl_panel_frag_7), DRV_GPU_STAGE_FRAGMENT },
+	};
+	struct nvrtx_sm75_binary *binary;
+	struct nvrtx_sm75_diagnostic diagnostic;
+	char what[96];
+	unsigned index;
+	int error;
+
+	for (index = 0; index < sizeof(modules) / sizeof(modules[0]); index++) {
+		binary = NULL;
+		memset(&diagnostic, 0, sizeof(diagnostic));
+		error = nvrtx_sm75_compile_stage(modules[index].words, modules[index].bytes / 4U, modules[index].stage, &binary, &diagnostic);
+		snprintf(what, sizeof(what), "compositor: %s compiles (%d %s)", modules[index].name, error,
+			 diagnostic.reason != NULL ? diagnostic.reason : "");
+		check(error == 0 && binary != NULL && binary->graphics != 0U && binary->texture_count <= NVRTX_VK_TEXTURES_MAX &&
+		    binary->push_bytes <= NVRTX_VK_PUSH_BYTES, what);
+		if (binary != NULL)
+			nvrtx_sm75_binary_free(binary);
+	}
 }
