@@ -23,9 +23,6 @@
 /* The most return addresses a fatal's line names (BUG-202). */
 #define FATAL_TRACE_MAX		12U
 
-/* How many pause instructions the fatal report waits for the other CPUs to park (a few milliseconds). */
-#define FATAL_SETTLE_SPINS	1000000U
-
 /* The kernel's text (vmunix.ld): a word on the stack inside it may be a return address. */
 extern char __kernel_text_virt_start[];
 extern char __kernel_text_virt_end[];
@@ -34,7 +31,6 @@ static volatile unsigned panic_in_progress;
 
 static void put_unsigned(uint64_t value, unsigned base, int upper, int width, int zero);
 static void fatal_trace(uintptr_t caller) __attribute__((noinline));
-static void fatal_settle(void);
 
 /*
  * Measures a terminated byte string.
@@ -376,8 +372,7 @@ hal_fatal(
 	int line,
 	const char *message)
 {
-	uintptr_t caller;
-	int available;
+	uint64_t output_token;
 
 	/* Parks immediately when another CPU already owns panic output. */
 	if (__atomic_exchange_n(
@@ -391,25 +386,20 @@ hal_fatal(
 			asm_hlt();
 	}
 
-	/* Reports the fatal condition through the serialized console path. */
-	hal_printf("\nfatal: %s:%d: %s\n", file, line, message);
-
-	/* The caller and the words on the stack that point into the kernel's text, on one line (BUG-202). */
-	caller = (uintptr_t)__builtin_return_address(0);
-	fatal_trace(caller);
-
 	/*
-	 * Parks the other CPUs once that is safe, and reports again: lines the
-	 * other CPUs were writing can mix into the first report, and then no
-	 * more (BUG-321).
+	 * Reports the fatal condition and, on one line, the caller and the
+	 * words on the stack that point into the kernel's text (BUG-202).  The
+	 * console stays this CPU's for the whole report, so no other CPU's
+	 * output lands inside it (BUG-321).
 	 */
-	available = amd64_smp_panic_available();
-	if (available) {
-		amd64_smp_stop_others();
-		fatal_settle();
-		hal_printf("\nfatal (other CPUs stopped): %s:%d: %s\n", file, line, message);
-		fatal_trace(caller);
-	}
+	output_token = pcat_cons_output_begin();
+	hal_printf("\nfatal: %s:%d: %s\n", file, line, message);
+	fatal_trace((uintptr_t)__builtin_return_address(0));
+	pcat_cons_output_end(output_token);
+
+	/* Stops other CPUs only after SMP panic broadcast becomes safe. */
+	if (amd64_smp_panic_available())
+		hal_cpu_panic_all();
 
 	/* Halts the panic owner permanently with interrupts disabled. */
 	asm_cli();
@@ -581,16 +571,4 @@ hal_icache_invalidate_range(
 {
 	(void)address;
 	(void)size;
-}
-
-/* Gives the stop NMI a few milliseconds to reach the other CPUs before the report is printed again. */
-static void
-fatal_settle(
-	void)
-{
-	volatile unsigned count;
-
-	/* A bounded spin; the CPUs park within microseconds of the NMI. */
-	for (count = 0; count < FATAL_SETTLE_SPINS; count++)
-		__asm__ volatile("pause");
 }

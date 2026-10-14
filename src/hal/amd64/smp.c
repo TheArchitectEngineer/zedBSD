@@ -412,35 +412,16 @@ void __attribute__((noreturn))
 hal_cpu_panic_all(
 	void)
 {
-	/* Every other CPU parks, once that is safe. */
-	amd64_smp_stop_others();
+	/* Only broadcast once every secondary can receive the terminal NMI. */
+	if (amd64_smp_panic_available()) {
+		__atomic_store_n(&stop_requested, 1U, __ATOMIC_RELEASE);
+		amd64_lapic_panic_all();
+	}
 
 	/* Early boot has no safe peer broadcast; stop the calling CPU locally. */
 	(void)hal_irq_disable();
 	for (;;)
 		asm_hlt();
-}
-
-/*
- * Parks every other CPU with the terminal stop NMI and returns, so that the
- * caller can go on alone (a fatal report that no other CPU's output mixes
- * into, BUG-321).  Before every secondary can receive the NMI it does
- * nothing.
- */
-void
-amd64_smp_stop_others(
-	void)
-{
-	int available;
-
-	/* Only broadcast once every secondary can receive the terminal NMI. */
-	available = amd64_smp_panic_available();
-	if (!available)
-		return;
-
-	/* The flag tells the NMI handler that the NMI is the stop, then the NMI goes out. */
-	__atomic_store_n(&stop_requested, 1U, __ATOMIC_RELEASE);
-	amd64_lapic_nmi_others();
 }
 
 /* Distinguishes the terminal stop NMI from an unrelated hardware fault. */

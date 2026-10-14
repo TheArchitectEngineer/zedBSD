@@ -50,6 +50,5 @@ int amd64_lapic_send_startup(uint32_t apic_id, uint8_t vector);
 int amd64_lapic_notify(uint32_t apic_id);
 int amd64_lapic_send_vector(uint32_t apic_id, uint8_t vector);
 void amd64_lapic_panic_all(void) __attribute__((noreturn));
-void amd64_lapic_nmi_others(void);
 
 #endif
