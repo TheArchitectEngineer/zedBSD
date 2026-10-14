@@ -231,6 +231,12 @@ bool
 nvrtx_stage_gr_wanted(void);
 
 /*
+ * Reports whether the boot asked for the first compute launch (nvrtx.compute=1).
+ */
+bool
+nvrtx_stage_compute_wanted(void);
+
+/*
  * Reports whether a stage may run; nvrtx.stop=<stage> stops before it.
  */
 bool

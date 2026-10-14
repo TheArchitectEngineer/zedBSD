@@ -102,7 +102,7 @@ SPIR-V ──drv_gpu_shader_parse──▶ scalar IR ──drv_gpu_shader_optimi
 | --- | --- | --- |
 | A | encoder ＋ compute の最小の lowering（3.3）＋ host の試験 1〜4 | 実装・host 済み（下の 6 節） |
 | B | loop・除算・atomic・shared・barrier | 未 |
-| C | QMD 2.2 の組み立て（P1 の投入の口に渡す、qmd.rs の事実） | 未（P1 と相談） |
+| C | 最初の compute の投入（段 P9c、`nvrtx.compute=1`）: GR の channel・compute の object・QMD 2.2・cbuf・code・launch・fence・結果の確かめ | 実装・host 済み、実機（R7c）は T 待ち（下の 8 節） |
 | D | latency の表による並べ替え、operand の再利用 | 未 |
 | E | graphics の stage（SPH、attribute、texture） | 未（p007 の 3D と一緒に） |
 
@@ -134,3 +134,71 @@ compute の dispatch がすること（3.2 の表のとおり）:
 2. cbuf 0（最低 0x200 + 16 × `storage_count` byte）: push constants を 0 から、storage の k 番目の GPU の仮想 address（low・high）と大きさを 0x200 + 16k から。`storage[k]` の (set, binding) で descriptor を引く。gl_NumWorkGroups は set `0xFFFFFFFF`（`DRV_GPU_IR_SYSTEM_SET`）binding 0 の storage で、group の数 x・y・z を持つ buffer。
 3. cbuf 1〜7: `uniforms[j]` を cbuf 1 + j に bind。
 4. 最初の確かめ: `plan/ws037/tests/sm75/const.comp`（local 32、1 buffer に 42 を書く）を 1 group で投げ、buffer の 32 語が 42 になること。次に ws101 の add.comp（a + b、n = 100 の push）。
+
+## 8. 段 C: 最初の compute の投入（2026-10-15 P3、Q1 の指示「段 C を先に。投入の口も P3 が作る」）
+
+### 8.1 流れ（nouveau の利用者の GR の channel と NVK の dispatch と同じ順、どちらも MIT）
+
+`nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1` の時だけ、P5g（golden context と scrubber）の後、P8 の前に段 **P9c** を流す（`nvrtx.stop=P9c` で飛ばせる）。
+
+1. **arena**: 最後の使える region の上端から 168 MiB 以内、2 MiB 揃え、32 MiB。GR の arena（P5g）より下。先頭に page table（`nvrtx_mmu_gr_tables` の形、VA 0x20000000〜0x28200000 の 130 MiB、PT 65 枚）、0x80000 に instance block、0x81000 に USERD、0x100000 から channel 自分の context buffer（global でない物: MAIN・PATCH。global は golden の物を共有）。
+2. **table**: context buffer は golden と同じ VA（`gr->virtual_address[]`）に privileged で map（PRIV_ACCESS_MAP は read-only、UNRESTRICTED は外す: nouveau の非 golden の promote と同じ）。0x28000000 から system memory の 10 page（ring・push 4・semaphore・program・QMD・cbuf 0・result）を coherent・volatile・非 privileged で map（`mmu.c` に `nvrtx_mmu_gr_map_system` を足した）。
+3. **vaspace**: 外部所有（P4 と同じ引数）`0x90f10003` → device に `SET_PAGE_DIRECTORY`（根 = arena の先頭）→ TLB の invalidate。nouveau の利用者の vmm も外部所有（`r535_mmu_vaspace_new(…, true)`）。
+4. **channel**: instance block に根を書く（`nvrtx_mmu_instance`）→ channel（0xc46f、`0xf1f00003`、chid 3、engine GR0、非 privileged、ring は 0x28000000、method buffer は system memory）→ **promote**（`nvrtx_gr_promote` を gr.c から公開: scrubber と同じ形で global は共有、MAIN・PATCH は新しく）→ **compute の object**（TURING_COMPUTE_A 0xc5c0、`0xc5c00003`、引数なし）→ BIND（engine GR0）→ SCHEDULE。
+5. **program**: `nvrtx_compute_first_ir()`（SPIR-V を使わず、const.comp と同じ意味の IR を手で組む: `o[gl_GlobalInvocationID.x] = 42`、local 32）→ `nvrtx_sm75_compile_ir()` → code を program の page へ。
+6. **cbuf 0**: 0x200 に result の VA（low・high）と大きさ 128（3.2 節の約束）。QMD 2.2（`nvrtx_qmd_build`、NAK の fill_qmd と同じ欄: version 2.2・global caching・call limit なし・grid 1×1×1・workgroup 32×1×1・register 数・shared 0 と carve-out 9/9/17・cbuf 0（0x300 byte）・program の 64 bit の address）。
+7. **push**: subchannel 1 に SET_OBJECT 0xc5c0、SHARED_MEMORY_WINDOW 0xfe000000・LOCAL_MEMORY_WINDOW 0xff000000（NVK の dispatch state）、INVALIDATE_SHADER_CACHES（instruction・data・constant）、SEND_PCAS_A = QMD >> 8、SEND_SIGNALING_PCAS_B = invalidate | schedule（Turing）。その後に P5 と同じ host の fence（semaphore 0x4242、release + WFI、membar、non-stall）。GPFIFO の entry 0、USERD の GP_PUT = 1、doorbell = (GR の runlist << 16) | 3。semaphore を 2 s poll。
+8. **確かめ**: result の page を 0xdeadbeef で埋めておき、0〜31 語が 42、32 語目が 0xdeadbeef のまま。
+9. **停止**（finish、P6 の前、GR の停止の前）: SCHEDULE 0 → compute の object・channel を FREE → UNSET_PAGE_DIRECTORY → vaspace を FREE。system memory は GSP の停止の後に解放。
+
+出典（MIT、Mesa 25.3.6、sha256）: `headers/nvidia/classes/clc3c0qmd.h`（QMD 2.2 の欄の位置、761286640c93…482b）、`classes/clc5c0.h`（TURING_COMPUTE_A の method、c716205f0786…1f2e）、`compiler/nak/qmd.rs`（fill_qmd、73f4daf7…6698）、`vulkan/nvk_cmd_dispatch.c`（dispatch state と launch、833d88ad7fec…53a2）、`winsys/nouveau_device.c`（Turing の shared の carve-out 32・64 KiB）。nouveau の `rm/r535/gr.c`（promote の形、MIT の notice）・`r535/vmm.c`（利用者の vmm は外部所有）。
+
+### 8.2 file
+
+| file | 中身 |
+| --- | --- |
+| `src/drivers/gpu/nvrtx/nvrtx-compute.h`・`compute-launch.c`（新） | hardware に触れない部分: `nvrtx_qmd_build`・`nvrtx_push_compute_launch`・`nvrtx_compute_first_ir` |
+| `src/drivers/gpu/nvrtx/compute.c`（新） | 段 P9c（`nvrtx_compute_start`・`_stop`・`_release`） |
+| `mmu.c`・`nvrtx-gsp.h` | `nvrtx_mmu_gr_map_system`（足しただけ） |
+| `gr.c`・`nvrtx-gpu.h` | `gr_promote` を `nvrtx_gr_promote` として公開（中身は同じ）、`struct nvrtx_compute_state`、handle 3 つ |
+| `stage.c`・`nvrtx-private.h` | `nvrtx.compute=1`（`nvrtx_stage_compute_wanted`） |
+| `gsp.c` | P5g の後に P9c、finish で `nvrtx_compute_stop`（display・gr の停止の前）、release で `nvrtx_compute_release` |
+| `platform/amd64/vmunix.mk` | NVRTX=y の時だけ 2 file |
+| `plan/ws037/tests/config-amd64-nvrtx.mk` | `NVRTX_RUN=R7c`（`nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1`） |
+
+### 8.3 確かめ（host と build）
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `60 checks, 0 failures`（段 A の 39 に加えて: QMD の欄を clc3c0qmd.h の位置で読む 11、launch の push の 14 語、最初の program を IR から compile して interpreter で 32 語が 42・33 語目は元のまま、system page の entry と範囲の拒否） |
+| `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | `PASS nvrtx gsp: 180 checks`（mmu・gr の変更の後も同じ） |
+| `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p008 build/ws037-p008/vmunix` | rc 0、`warning:` 0 行、include check・vmunix check PASS。既定 n の build は `vmunix.mk` の `ifeq` の中だけの変更なので変わらない |
+
+未実施: 実機。R7g（P5g）がまだ実機で通っていないので、R7c はその後に流す。
+
+### 8.4 T への手順（R7c、方式 B、R7g の image の系列に足す）
+
+前提: R7g が合格（`P5g ok: golden context`・`P5g ok: scrubber`）。合格していなければ R7c は流さない（P9c は P5g の後でしか動かない）。
+
+image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r7c NVRTX_RUN=R7c`（main の merge の commit で）。各 run の前に host の reboot と `prepare.sh --check`。判定は今までどおり画面の PNG（`dmesg | grep nvrtx`）。
+
+合格の印（R7g の印に加えて、P5g の後・P8 の前に）:
+
+1. `P9c begin`
+2. `P9c arena at …, own buffers … bytes`
+3. `P9c page tables at …`
+4. `P9c ok: vaspace`
+5. `P9c ok: compute channel 3 on runlist N`
+6. `P9c program: 16 instructions, 10 registers`
+7. `P9c ok: fence 0x4242 reached after N us`
+8. **`P9c ok: compute wrote 32 words of 42`**
+9. その後は R7g と同じ（P8a の行、`P8b is not in this kernel …`、`P6 ok: channel and vaspace freed`（`P6: N compute frees failed` が無い）、`P7 ok: region torn down`、login prompt）
+
+FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … status …` の行（どこで断られたか: 0x90f1・0x801813・0xc46f・0x2080012b（promote）・0xc5c0・0xa06f0104（BIND）・0xa06f0103（SCHEDULE））、`P9c fail: …` の行、`P6 channel error: …`（RC の event: engine・chid・exceptType）。fence が来ない時は `P9c fail: fence … result word 0 …` の値。`P7 fail` なら host を reboot。
+
+### 8.5 危険と未確認
+
+1. 1 つの device の下に外部所有の vaspace を 2 つ（P4 と P9c）作って、それぞれに SET_PAGE_DIRECTORY を送ってよいか（nouveau は vmm ごとに client と device を作る）。断られたら nouveau に合わせて client・device を分ける。
+2. program・QMD・cbuf を system memory（volatile）に置いた。NVK は VRAM に置く。SM が system memory から命令を読めない・遅い時は VRAM（arena）に移す。
+3. SLM（local memory）を設定していない（program は local memory を使わない。NVK も slm 0 なら設定しない）。
+4. 直列の依存の印（段 A）は遅いが正しいはず。命令の encode の正しさは既知の語 6 つと field の試験だけが見ている。実機で値が違えば、encode と制御の bit から疑う。

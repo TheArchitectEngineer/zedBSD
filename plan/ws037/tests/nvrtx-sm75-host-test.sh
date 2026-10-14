@@ -1,6 +1,7 @@
 #!/bin/sh
 # Host test of the nvrtx SM75 shader compiler (ws037-p008): known instruction words, fields, and compute modules
-# compiled and run on an interpreter of the emitted instructions.
+# compiled and run on an interpreter of the emitted instructions; and the first compute launch's QMD, push buffer,
+# program and page entries (stage C).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws037/tests/nvrtx-sm75-host-test.sh   (from anywhere)
@@ -22,5 +23,6 @@ cc $flags -Wall -Wextra -Werror -Wdeclaration-after-statement -o "$out/nvrtx-sm7
 	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-encode.c" \
 	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-compile.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" \
-	"$repo/src/drivers/gpu/compiler/optimize.c" -lm
+	"$repo/src/drivers/gpu/compiler/optimize.c" \
+	"$repo/src/drivers/gpu/nvrtx/compute-launch.c" "$repo/src/drivers/gpu/nvrtx/mmu.c" "$repo/src/drivers/gpu/nvrtx/wire.c" -lm
 "$out/nvrtx-sm75-host-test" "$out"

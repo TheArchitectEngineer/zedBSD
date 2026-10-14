@@ -361,6 +361,52 @@ nvrtx_mmu_gr_map(
 	return 0;
 }
 
+/*
+ * Maps system-memory pages into the graphics context's tables, for work.
+ *
+ * Each page at va onward gets a coherent, volatile system-memory entry
+ * that is not privileged (the compute launch's ring, push buffer, program
+ * and data, ws037-p008).  Returns EINVAL for a range the tables cannot hold
+ * or pages outside it.
+ */
+int
+nvrtx_mmu_gr_map_system(
+	uint8_t *image,
+	uint64_t va_base,
+	uint64_t va_bytes,
+	uint64_t va,
+	const uint64_t *pages,
+	size_t count)
+{
+	uint64_t entry;
+	uint64_t size;
+	size_t index;
+	size_t at;
+	int valid;
+
+	/* The tables must be ones nvrtx_mmu_gr_tables() can build. */
+	valid = mmu_gr_range_valid(va_base, va_bytes);
+	if (!valid)
+		return EINVAL;
+
+	/* The pages must lie inside the range, from a page boundary. */
+	size = (uint64_t)count * NVRTX_GSP_PAGE_SIZE;
+	if ((va & 0xfffU) != 0U)
+		return EINVAL;
+	if (va < va_base || size > va_bytes || va - va_base > va_bytes - size)
+		return EINVAL;
+
+	/* Writes each page's entry in its table. */
+	for (index = 0U; index < count; index++) {
+		at = MMU_GR_TABLES_FIRST_AT + (size_t)((va - va_base) / NVRTX_GSP_PAGE_SIZE + index) * 8U;
+		entry = (pages[index] >> MMU_ADDRESS_SHIFT) | MMU_PTE_VALID | MMU_PTE_SYSTEM | MMU_PTE_VOLATILE;
+		nvrtx_put64(image, at, entry);
+	}
+
+	/* Succeeded: the pages are mapped. */
+	return 0;
+}
+
 /* Clears a range of bytes. */
 static void
 mmu_clear(

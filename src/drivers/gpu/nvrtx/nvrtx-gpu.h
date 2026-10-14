@@ -72,6 +72,15 @@
 #define NVRTX_HANDLE_SCRUBBER_CHANNEL	0xdada0045U
 #define NVRTX_HANDLE_SCRUBBER_THREED	0xdada0046U
 
+/*
+ * The first compute launch's objects (P9c, ws037-p008): its address space
+ * (owned by the driver), its graphics channel (chid 3) and the compute
+ * object on it, in nouveau's families.
+ */
+#define NVRTX_HANDLE_COMPUTE_SPACE	0x90f10003U
+#define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
+#define NVRTX_HANDLE_COMPUTE		0xc5c00003U
+
 /* How long a call to the resource manager waits for its reply. */
 #define NVRTX_CALL_TIMEOUT_US		5000000U
 
@@ -206,6 +215,35 @@ struct nvrtx_gr_state {
 };
 
 /*
+ * The first compute launch (stage P9c, nvrtx.compute=1).
+ *
+ * The arena is a run of VRAM below the graphics arena that holds the
+ * space's page tables, the channel's instance block and USERD, and the
+ * channel's own context buffers (the global ones are the golden
+ * context's).  The system-memory buffers are the ring, the push buffer,
+ * the semaphore, the program, the QMD, constant buffer 0, the result and
+ * the method buffer.  The flags say which resource-manager objects exist,
+ * so the stop frees only those.
+ */
+struct nvrtx_compute_state {
+	uint64_t arena;
+	uint64_t physical[NVRTX_GR_BUFFER_MAX];
+	struct nvrtx_buffer ring;
+	struct nvrtx_buffer push;
+	struct nvrtx_buffer semaphore;
+	struct nvrtx_buffer program;
+	struct nvrtx_buffer qmd;
+	struct nvrtx_buffer constants;
+	struct nvrtx_buffer result;
+	struct nvrtx_buffer methods;
+	int space_made;
+	int root_set;
+	int channel_made;
+	int compute_made;
+	int scheduled;
+};
+
+/*
  * The display under the GSP (stage P8a).
  *
  * The instance memory is 64 KiB of VRAM the resource manager keeps the
@@ -281,6 +319,9 @@ struct nvrtx_gpu {
 	/* The display. */
 	struct nvrtx_display_state display;
 
+	/* The first compute launch. */
+	struct nvrtx_compute_state compute;
+
 	/* The static information P3 read, and the resource manager's own client and subdevice. */
 	uint8_t *static_info;
 	uint32_t internal_client;
@@ -341,6 +382,11 @@ void nvrtx_channel_release(struct nvrtx_gpu *gpu);
 int nvrtx_gr_start(struct nvrtx_gpu *gpu);
 void nvrtx_gr_stop(struct nvrtx_gpu *gpu);
 void nvrtx_gr_release(struct nvrtx_gpu *gpu);
+int nvrtx_gr_promote(struct nvrtx_gpu *gpu, uint32_t channel, const uint64_t *physical, bool golden);
+
+int nvrtx_compute_start(struct nvrtx_gpu *gpu);
+void nvrtx_compute_stop(struct nvrtx_gpu *gpu);
+void nvrtx_compute_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_display_start(struct nvrtx_gpu *gpu);
 void nvrtx_display_stop(struct nvrtx_gpu *gpu);

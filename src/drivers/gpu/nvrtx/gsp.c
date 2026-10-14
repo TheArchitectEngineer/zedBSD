@@ -258,6 +258,19 @@ nvrtx_gsp_start(
 		}
 	}
 
+	/* Runs the first compute program when the boot asks (nvrtx.compute=1) and does not stop before it. */
+	wanted = nvrtx_stage_compute_wanted();
+	allowed = nvrtx_stage_allowed("P9c");
+	if (wanted && !allowed)
+		nvrtx_stage_mark("P9c skipped (nvrtx.stop=P9c)");
+	if (wanted && allowed) {
+		error = nvrtx_compute_start(gpu);
+		if (error != 0) {
+			gsp_finish(gpu);
+			return error;
+		}
+	}
+
 	/* Stops before P8 when the boot asks. */
 	allowed = nvrtx_stage_allowed("P8");
 	if (!allowed) {
@@ -322,9 +335,10 @@ nvrtx_gsp_release(
 	nvrtx_buffer_free(gpu, &memory->fwsec_frts);
 	nvrtx_buffer_free(gpu, &memory->fwsec_sb);
 
-	/* Frees the buffers of the first channel and of the graphics context. */
+	/* Frees the buffers of the first channel, of the graphics context and of the compute launch. */
 	nvrtx_channel_release(gpu);
 	nvrtx_gr_release(gpu);
+	nvrtx_compute_release(gpu);
 
 	/* Frees the channel's staging buffer and the reply buffer. */
 	if (memory->staging != NULL)
@@ -807,6 +821,7 @@ gsp_finish(
 	 * channel left (R6).
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
+		nvrtx_compute_stop(gpu);
 		nvrtx_display_stop(gpu);
 		nvrtx_gr_stop(gpu);
 		nvrtx_channel_stop(gpu);
