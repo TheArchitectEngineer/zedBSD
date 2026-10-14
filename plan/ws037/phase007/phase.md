@@ -395,3 +395,10 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
    - **RAk**: main の image の既定（graphical boot・graphical login、kernel の行は出さない）＋語 `nvrtx.vk=1`＋`display-inventory`。合格: RTX の monitor に boot の logo → GSP の起動の間の一時的な黒は可 → Keiland の desktop（panel・wallpaper・Welcome の window）。
    - **RAd**（RAk が FAIL の時の切り分け）: RAk に kernel の行を画面に出す（`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、graphical boot n）。最後に見えた `N1`・`P0`・`P4m`・`P8b`・`P8c`・`P9w` の印を写真に撮る。graphical boot n なので GOP は 640x480 になり、RAk（1920x1080）とは mode が違う点に注意（切り分けの用で、合格の判定は RAk）。
    - 手順は phase006 の RA と同じ: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/rak NVRTX_RUN=RAk`、USB に書き、BIOS は CSM off・primary display が PEG、RTX の出力に monitor。
+
+## 方法 A の 1 回目（RAk、2026-10-16、ユーザーが RTX 機 10.0.30.5 を USB から素で起動、Q1 が SSH で調べた）
+
+- image `build/ws037-nvrtx/rak`（main a3cf77c12、語 `logo=logo.ppm login=graphical kmsg=quiet nvrtx.vk=1`）。kernel log は `build/q1/rak-run1/kernel.log`（197 行）。
+- 実機で通った: N0（TU106 rev a1）、`N1 gop 640x480 stride 1024 in bar1 at +0`、`P0 console 640x480 pitch 4096 kept`、P0〜P2b（GSP-RM up after 917 ms）、P3、P4、P4m（`console: bar1 0..1e0000 on the VRAM's start again`、read back both ways）、P5、P5g、P9w（fence after 866 us）、P8（outputs）、P8b の channel・EDID（1280x1024、DVI）・head 0 の armed（view 01e00280＝firmware は 640x480 を head の scaler で 1280x1024 に拡大）。
+- 止まった所: `P8b: the console is 640x480, the mode 1280x1024; the head is left to the firmware`（scanout.c:837、console の大きさが mode と違うと takeover しない）→ `P8: the GSP stays up to keep the console`、GPU device を登録しない → `/dev/gpu0` 無し → sessiond `CONSOLE reason=no-display errno=6`。
+- 原因の 2 つ: (1) GOP が 640x480（graphical boot は video= を落とすが、loader が 1920x1080 を求め、この monitor（最大 1280x1024）で 640x480 になった見込み）、(2) nvrtx が console と mode の大きさの違いを受けない（firmware は view in 640x480・out 1280x1024 で拡大していた）。
