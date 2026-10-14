@@ -145,6 +145,12 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 - compositor が記録する command は少ない（`wayland/`・`libkeiland/` の vkCmd*: BeginRenderPass・EndRenderPass・BindPipeline・BindDescriptorSets・BindVertexBuffers・PushConstants・SetViewport・SetScissor・Draw・PipelineBarrier・CopyImage・BlitImage・ClearColorImage・CopyBufferToImage・CopyImageToBuffer）。他に instance・device・memory・buffer・image・image view・sampler・descriptor・pipeline layout・shader module（SPIR-V）・graphics pipeline・render pass・framebuffer・command pool/buffer・queue submit・fence・semaphore・swapchain（display）。
 - nvrtx に今あるのは boot の時の段（P9c の compute、P9g の draw）の部品: driver が持つ vaspace と GR の channel（`compute.c`）、3D の push の組み立て（`draw-push.c`、NVK の初期化と同じ順）、SM75 の compiler（P4、`compiler/`）、VRAM の allocator と BAR1（P4m）、display の口（P8c）。どれも session・job の形ではない。
 
+- renderer の node の条件の詳細（`libvulkan/context.c` 115〜212・`instance.c` 720〜742・`device.c` 277〜281）: `GPU_GET_CAPSET` の id 4 が 156 byte 以上（wire 1、XML 1.3.269 か 1.4.343、timeline ≠ 0）、末尾の vendor の印 `0x5a424453`（"SDBZ"、byte 160/164）と flags `OPAQUE|STRICT_QUEUE|QUIESCE`（i915 は 7、`i915/render/vulkan.c` 39〜42・325〜349）、`GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY`。満たさない node は黙って飛ばされる。memory type に coherent かつ device local の物が要る（`instance.c` 1130）。submit は `GPU_COMMAND_SUBMIT`（NOTIFICATION がある時）と `GPU_COMMAND_WAIT`、`GPU_JOB_CAPACITY`・`GPU_JOB_RESERVE`。
+- `ops->scanout` がある driver は roles を `query_device` だけから取る（`gpu.c` 4486〜4499）。nvrtx は今 DISPLAY だけ（`share.c` 189）なので、renderer になる時は RENDER を足す。
+- 別の GPU で描いて nvrtx に出す道は**複写だけ**（zero copy の外の import は nvrtx・i915・venus のどれも `import_image`・`get_scanout_backing` が無く ENOTSUP → libvulkan は複写の道 `display_present_native` に落ちる。renderer で `vkCmdCopyImageToBuffer` → `GPU_RESOURCE_WRITE` 64 KiB ずつ → 枠なしの `GPU_DISPLAY_PRESENT`）。nvrtx は SHARED|COPY を出し storage の present を持つので、この道は今の P8c で受けられる。cursor の plane は共有の image だけなので、この道では compositor が cursor を自分で合成する。
+- Venus の virtio-gpu（`src/drivers/gpu/venus/`）は stream を host へ渡すが、host の capset が SDBZ の strict の形（168 byte）でなければ JOB を落とし、libvulkan に飛ばされる（`venus.c` 612〜616、`transport.c` 1845〜1895）。**素の QEMU・virglrenderer の Venus では renderer にならない**。8.2 の「代わりの道」は zedBSD 用の host の renderer が要る。
+- compositor の状態の範囲: descriptor は COMBINED_IMAGE_SAMPLER だけ、viewport・scissor は dynamic、TRIANGLE_LIST、blend は ONE / ONE_MINUS_SRC_ALPHA、filter は NEAREST・LINEAR、形式は B8G8R8A8・R8G8B8A8 UNORM、頂点は R32・R32G32・R32G32B32A32 SFLOAT、compute と dynamic rendering は無し。shader は `wayland/shaders/` の quad・panel・panel-batch・turn.vert。i915 の executor も dynamic rendering を持たない（render pass と framebuffer だけ）。
+
 ### 8.2 段（D1〜D7）。合格の印と host でできる物
 
 | 段 | すること | 確かめ |
@@ -160,4 +166,4 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 
 - 依存: D1 → D2 → D3・D4 → D5 → D6。D3 の shader は P4（compiler）の SPIR-V → SM75 が前提（desktop の shader 全て）。executor と compiler の約束（program の入力・cbuf 0 の push constant の配置・texture の binding の番号・SPH）を変える時は Q1 経由で P4 とすり合わせる。
 - 量の見込み: D2 は i915 の protocol の層の移植で数千行、D3 は compositor の command の範囲で数千行。ベータ2（10/16 夕）の残りでは D1・D2 の host の部分までが現実的で、desktop（D6）はベータ2 の後の見込み（Q1・ユーザーの判断）。
-- 代わりの道（判断を Q1 へ）: 方式 B の guest に Venus の virtio-gpu（host の renderer）を足せば、compositor は Venus で描き nvrtx の display に複写の present で出せる（D0 だけで desktop が RTX の monitor に出る）。ただし「RTX が描く」ではなく、毎 frame の CPU の複写（P8c の storage の present）になる。
+- 代わりの道（判断を Q1 へ）: 方式 B の guest に Venus の virtio-gpu（**zedBSD 用の host の renderer**。素の virglrenderer は上のとおり飛ばされる）を足せば、compositor は Venus で描き nvrtx の display に複写の present で出せる（D0 だけで desktop が RTX の monitor に出る）。ただし「RTX が描く」ではなく、毎 frame の CPU の複写（P8c の storage の present）になる。
