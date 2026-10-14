@@ -502,12 +502,15 @@ grid_vertical_auto(
 				return 0;
 		}
 
-		/* Only nonnegative physical pixel margins enter this track calculation. */
+		/* The physical frame and margins must have definite nonnegative sizes. */
 		layout_box_model(child, 0);
+		if (child->style.box_sizing != CSS_BOX_SIZING_CONTENT)
+			return 0;
 		for (side = 0; side < 4; side++) {
 			if (child->style.margin[side].unit != CSS_UNIT_PX ||
-			    child->margin[side] < 0 || child->border[side] != 0 ||
-			    child->padding[side] != 0)
+			    child->style.padding[side].unit != CSS_UNIT_PX ||
+			    child->margin[side] < 0 || child->border[side] < 0 ||
+			    child->padding[side] < 0)
 				return 0;
 		}
 	}
@@ -597,7 +600,9 @@ grid_vertical_auto(
 		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
 			child->style.height.unit = CSS_UNIT_PX;
 			content_height = layout_from_px(box->style.height.value) -
-			    child->margin[CSS_TOP] - child->margin[CSS_BOTTOM];
+			    child->margin[CSS_TOP] - child->margin[CSS_BOTTOM] -
+			    child->border[CSS_TOP] - child->border[CSS_BOTTOM] -
+			    child->padding[CSS_TOP] - child->padding[CSS_BOTTOM];
 			if (content_height < 0)
 				content_height = 0;
 			child->style.height.value = layout_to_px(content_height);
@@ -625,8 +630,12 @@ grid_vertical_auto(
 			}
 		}
 		natural_height[index] = height;
-		outer_width = width + child->margin[CSS_LEFT] + child->margin[CSS_RIGHT];
-		outer_height = height + child->margin[CSS_TOP] + child->margin[CSS_BOTTOM];
+		outer_width = width + child->margin[CSS_LEFT] + child->margin[CSS_RIGHT] +
+		    child->border[CSS_LEFT] + child->border[CSS_RIGHT] +
+		    child->padding[CSS_LEFT] + child->padding[CSS_RIGHT];
+		outer_height = height + child->margin[CSS_TOP] + child->margin[CSS_BOTTOM] +
+		    child->border[CSS_TOP] + child->border[CSS_BOTTOM] +
+		    child->padding[CSS_TOP] + child->padding[CSS_BOTTOM];
 		if (outer_width > rows[placed->row])
 			rows[placed->row] = outer_width;
 		if (outer_height > columns[placed->column])
@@ -667,7 +676,9 @@ grid_vertical_auto(
 		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
 			child->style.height.unit = CSS_UNIT_PX;
 			content_height = area_height - child->margin[CSS_TOP] -
-			    child->margin[CSS_BOTTOM];
+			    child->margin[CSS_BOTTOM] - child->border[CSS_TOP] -
+			    child->border[CSS_BOTTOM] - child->padding[CSS_TOP] -
+			    child->padding[CSS_BOTTOM];
 			if (content_height < 0)
 				content_height = 0;
 			child->style.height.value = layout_to_px(content_height);

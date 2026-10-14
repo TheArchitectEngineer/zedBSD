@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1152](queue.md) finished / p225 vertical Grid item margins。2026-10-14 11:57 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1153](queue.md) finished / p225 vertical Grid item border and padding。2026-10-14 12:01 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1151の136 PASS/366 FAIL、q1147比2 whole/2 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p225-q1153-partial-clear-20261014: [p225](phase225/phase.md) q1153-i01で子content-boxの非負px border/paddingを縦Grid auto track寄与と内容高へ反映。固定011/012/015/016が4/4 whole FAIL→PASS。独立border/paddingページはChromium 153と各4矩形一致、旧WPT14件・host CSS51/JS14/Grid48・warning0 build・Acid3差0/Acid2差1865維持。[証拠](phase225/evidence/20261014-q1153/README.md)。p225/p189/p173 whole未達、次はGrid502全再測定。共有投影/GitHub publication保留。
 
 Event ws074-p225-q1152-partial-clear-20261014: [p225](phase225/phase.md) q1152-i01の非負px marginを縦auto track内容寄与・子の利用可能高・配置に反映し、固定010/014が2/2 whole FAIL→PASS。独立2ページはChromium 153と全box一致、旧WPT12件・host CSS51/JS14/Grid48・warning0 build・Acid3差0/Acid2差1865維持。[証拠](phase225/evidence/20261014-q1152/README.md)。p225 wholeはborder/padding等が残りuncleared、p173全3,805件100%未達。共有投影/GitHub publication保留。
 

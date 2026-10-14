@@ -2,6 +2,14 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+## q1153-i01 有限部分範囲（2026-10-14 11:58 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:28 JSTまで）に適用。q1152の2×2 implicit auto vertical-lr/LTR・definite content-box・gap0・単一ASCII文字子・start/stretch経路で、子content-boxの非負px border/padding frameを物理track寄与と確定列高/行幅へ反映。margin既存維持。固定border011/015・padding012/016 whole PASS、独立frame最小ページChromium比較、旧001–010/013–014・縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならattempt unclearedで原因を記録。p225/p189/p173 wholeは範囲外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1153-i01 結果（2026-10-14 12:01 JST）
+
+Event ws074-p225-q1153-partial-clear-20261014: [証拠](evidence/20261014-q1153/README.md)。子の非負px border/paddingを縦Grid auto trackの物理外側寸法と縦文字の利用可能content高へ反映。独立border/paddingページは各4矩形がChromium 153と完全一致。固定011/012/015/016は4/4 whole FAIL→PASS、旧001–010/013–014と縦横2件もPASS。warning0 build、host CSS51/JS14/Grid48、Acid3 score100/inventory100/差0、Acid2差1865。q1153部分cleared、p225 wholeは他Grid form等でuncleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 ## q1152-i01 有限部分範囲（2026-10-14 11:53 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:23 JSTまで）に適用。q1150の2×2 implicit auto vertical-lr/LTR・definite content-box・gap0・単一ASCII文字子・start/stretch限定経路で、非負px marginだけを内容寄与・子の解決済み物理サイズ・配置へ一般的に反映。border/paddingは対象外。独立margin最小ページをChromiumと比較し、固定010/014 whole PASS、旧001–009/013・縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならattempt unclearedで原因を記録。p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
