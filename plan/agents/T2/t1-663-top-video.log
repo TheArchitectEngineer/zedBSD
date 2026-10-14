@@ -1,0 +1,96 @@
+top - up 0 days, 00:04,  23 tasks
+Tasks:  23 total,  23 running,   0 sleeping,   0 stopped,   0 zombie
+%Cpu(s):   1.5 us,  52.8 sy,  45.6 id,   0.0 ot
+MiB Mem :       8G total,       7G free,     599M used
+MiB Swap:       0B total,       0B free
+
+VM I/O: 0 page-in, 0 page-out, 0 swapped
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
+      0 root      20   0      0B      0      0 R   0.0  0.0   0:00.00 kernel
+      1 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      4 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      5 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      6 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      7 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      8 root      20   0      3M      0      0 R   0.0  0.0   0:00.00 kernel
+     10 80        20   0      3M      0      0 R   0.0  0.0   0:00.00 kernel
+     11 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     19 root      20   0      7M      0      0 R   0.0  0.0   0:00.00 kernel
+     23 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     24 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     25 1000      20   0     55M      0      0 R   0.0  0.0   0:00.00 wayland
+     36 1000      20   0     14M      0      0 R   0.0  0.0   0:00.00 keiland-ime
+     37 1000      20   0     17M      0      0 R   0.0  0.0   0:00.00 files
+     38 1000      20   0     15M      0      0 R   0.0  0.0   0:00.00 settings
+    192 root      20   0      8M      0      0 R   0.0  0.0   0:00.00 kernel
+    194 1000      20   0      8M      0      0 R   0.0  0.0   0:00.00 sshd-session: kei@notty
+    195 1000      20   0      2M      0      0 R   0.0  0.0   0:00.00 sh
+    196 1000      20   0     85M      0      0 R   0.0  0.0   0:00.00 videoplayer
+    198 root      20   0      8M      0      0 R   0.0  0.0   0:00.00 kernel
+    200 1000      20   0      8M      0      0 R   0.0  0.0   0:00.00 sshd-session: kei@notty
+    201 1000      20   0      2M      0      0 R   0.0  0.0   0:00.00 top
+top - up 0 days, 00:04,  23 tasks
+Tasks:  23 total,  23 running,   0 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  28.3 us,  70.2 sy,   1.6 id,   0.0 ot
+MiB Mem :       8G total,       7G free,     598M used
+MiB Swap:       0B total,       0B free
+
+VM I/O: 0 page-in, 0 page-out, 0 swapped
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
+      0 root      20   0      0B      0      0 R   0.0  0.0   0:00.00 kernel
+      1 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      4 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      5 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      6 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      7 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      8 root      20   0      3M      0      0 R   0.0  0.0   0:00.00 kernel
+     10 80        20   0      3M      0      0 R   0.0  0.0   0:00.00 kernel
+     11 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     19 root      20   0      7M      0      0 R   0.0  0.0   0:00.00 kernel
+     23 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     24 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     25 1000      20   0     55M      0      0 R   0.0  0.0   0:00.00 wayland
+     36 1000      20   0     14M      0      0 R   0.0  0.0   0:00.00 keiland-ime
+     37 1000      20   0     17M      0      0 R   0.0  0.0   0:00.00 files
+     38 1000      20   0     15M      0      0 R   0.0  0.0   0:00.00 settings
+    192 root      20   0      8M      0      0 R   0.0  0.0   0:00.00 kernel
+    194 1000      20   0      8M      0      0 R   0.0  0.0   0:00.00 sshd-session: kei@notty
+    195 1000      20   0      2M      0      0 R   0.0  0.0   0:00.00 sh
+    196 1000      20   0     85M      0      0 R   0.0  0.0   0:00.00 videoplayer
+    198 root      20   0      8M      0      0 R   0.0  0.0   0:00.00 kernel
+    200 1000      20   0      8M      0      0 R   0.0  0.0   0:00.00 sshd-session: kei@notty
+    201 1000      20   0      2M      0      0 R   0.0  0.0   0:00.00 top
+top - up 0 days, 00:04,  23 tasks
+Tasks:  23 total,  23 running,   0 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  19.7 us,  76.5 sy,   3.8 id,   0.0 ot
+MiB Mem :       8G total,       7G free,     599M used
+MiB Swap:       0B total,       0B free
+
+VM I/O: 0 page-in, 0 page-out, 0 swapped
+
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
+      0 root      20   0      0B      0      0 R   0.0  0.0   0:00.00 kernel
+      1 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      4 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      5 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      6 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      7 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+      8 root      20   0      3M      0      0 R   0.0  0.0   0:00.00 kernel
+     10 80        20   0      3M      0      0 R   0.0  0.0   0:00.00 kernel
+     11 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     19 root      20   0      7M      0      0 R   0.0  0.0   0:00.00 kernel
+     23 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     24 root      20   0      2M      0      0 R   0.0  0.0   0:00.00 kernel
+     25 1000      20   0     55M      0      0 R   0.0  0.0   0:00.00 wayland
+     36 1000      20   0     14M      0      0 R   0.0  0.0   0:00.00 keiland-ime
+     37 1000      20   0     17M      0      0 R   0.0  0.0   0:00.00 files
+     38 1000      20   0     15M      0      0 R   0.0  0.0   0:00.00 settings
+    192 root      20   0      8M      0      0 R   0.0  0.0   0:00.00 kernel
+    194 1000      20   0      8M      0      0 R   0.0  0.0   0:00.00 sshd-session: kei@notty
+    195 1000      20   0      2M      0      0 R   0.0  0.0   0:00.00 sh
+    196 1000      20   0     85M      0      0 R   0.0  0.0   0:00.00 videoplayer
+    198 root      20   0      8M      0      0 R   0.0  0.0   0:00.00 kernel
+    200 1000      20   0      8M      0      0 R   0.0  0.0   0:00.00 sshd-session: kei@notty
+    201 1000      20   0      2M      0      0 R   0.0  0.0   0:00.00 top

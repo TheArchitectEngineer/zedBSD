@@ -1,0 +1,17 @@
+vkvideo-probe: stream /home/kei/ws236/p-baseline-64.h264 profile 66, 64x64
+vkvideo-probe: capabilities max 1920x1088 slots 17 references 16 level 12 flags 0x2 decode 0x1
+vkvideo-probe: session 64x64, 4 slots, 3 references, 1 memory bindings
+vkvideo-probe: parameters 1 SPS, 1 PPS
+vkvideo-probe: frame 0 4b584b491029bb83f51f0a5addb2631027bcc32e97e143a7203d4d88627af41d match
+vkvideo-probe: frame 1 da27920df3505023ab95abb9a00b743c8236e75907743f976493d7d9509f735b match
+vkvideo-probe: frame 2 34415d876a04079c383ca390633c0982b3fa7b43e3cdf7e74baf7af9d1fe9c11 match
+vkvideo-probe: frame 3 43d51ffa495e355d1a126b3780d34a7a1e232e48779d27094c11e5eebf7f316e match
+vkvideo-probe: frame 4 693b11e624a7421ef9165ade213c564ef03412f380228d5172a0cd6479eb7b58 match
+vkvideo-probe: frame 5 a3d7b7b38bcd8ab5049b3e9922bbd429cb25b1d91d9e3ecada0e617c0b171bc0 match
+vkvideo-probe: frame 6 d845d25a9762f697909041481df952e393211dbe0c7e9f5f114a4c6b77182560 match
+vkvideo-probe: frame 7 289434f762aa7b3dceb29445f79867727978896c55ef1df862f312ada25fa30a match
+vkvideo-probe: frame 8 99d9d4ed81c720b3b09c653fa88d5e1fc607bc3fb1fa589bc38fe4bb5a8aea65 match
+vkvideo-probe: frame 9 ab4d06694c79f6229b22f7080aecaf504b6e749460a913453f4ab0cd12909784 match
+vkvideo-probe: 10 frames decoded, 10 match the reference
+vkvideo-probe: decode time: 10 decodes, total 60.000 ms, mean 6.000 ms, longest 11.000 ms
+rc=0
