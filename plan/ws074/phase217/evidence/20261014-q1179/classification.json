@@ -1,0 +1,293 @@
+{
+  "source": "q1177 fixed Grid502 raw callback reports",
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "count": 11,
+  "results": [
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-006.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 10 but got 60"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 10 but got 60"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 75 but got 5"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 180 but got 20"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-007.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 70 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 160 but got 0"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-008.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 70 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 160 but got 0"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-009.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 74 but got 2"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 170 but got 8"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-010.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 75 but got 3"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 173 but got 11"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-007.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 10 but got 60"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 10 but got 60"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 90 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 105 but got 5"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-008.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 10 but got 60"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 10 but got 60"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 75 but got 5"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 125 but got 25"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-009.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 70 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 105 but got 5"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-010.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 40 but got 90"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 70 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 105 but got 5"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-011.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 74 but got 2"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 113 but got 13"
+        }
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-012.html",
+      "outcome": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 2",
+          "status": 1,
+          "first_failure": "width expected 26 but got 76"
+        },
+        {
+          "name": ".grid 3",
+          "status": 1,
+          "first_failure": "offsetTop expected 75 but got 3"
+        },
+        {
+          "name": ".grid 4",
+          "status": 1,
+          "first_failure": "offsetLeft expected 173 but got 11"
+        }
+      ]
+    }
+  ]
+}

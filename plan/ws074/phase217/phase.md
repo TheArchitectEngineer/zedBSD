@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1179-i01 結果（2026-10-14 13:32 JST）
+
+Event ws074-p217-q1179-partial-clear-20261014: [証拠](evidence/20261014-q1179/README.md)。固定11 FAILのraw/WPT原本を分類。全11件で水平Grid直下の縦absolute子の初回widthが期待より50px広く、縦Grid側は横子のstatic area offsetがずれる。`inline_vertical_absolute_grid`は水平親を拒否し、`inline_vertical_room`は縦親columnsのみを読む。`grid_static_vertical_start`は縦親の横子を拒否する。次は水平固定Gridの縦absolute子inline roomを限定修正する。q1179読取部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1179-i01 有限部分範囲（2026-10-14 13:30 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（15:00 JSTまで）に適用。q1177固定Grid rawからmargin/border/padding006–010とnon-static007–012計11件の初回失敗をcallback・寸法/offset・親子writing-mode/direction・frame別に分類し、WPT原本と該当layout経路を最大3種類調べる。最小実装候補と非対象回帰を記録。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1178-i01 結果（2026-10-14 13:29 JST）
 
 Event ws074-p217-q1178-partial-clear-20261014: [証拠](evidence/20261014-q1178/README.md)。親border/paddingあり固定2×2縦Gridで、同writing-mode LTR absolute子のall-auto insetに確定static areaを適用。独立lr/rl最小ページChromium一致、固定margin-border-padding005はwhole PASS/4 callback PASS、旧004/non-static006維持。host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1178有限部分範囲cleared。次は006–016 orthogonal子/auto line、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
