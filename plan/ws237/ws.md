@@ -36,7 +36,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 ## SV7 でのまとめての確かめ（ユーザー、素の起動、段ごと）（P2 2026-10-15）
 
 2026-10-14 のユーザーの指示「SV7の確認はせずに進めて、最後に確認してデバッグで調整しましょう。」の、最後の確かめの手順。段は boot の語で選ぶ。右の語ほど左の段を全部含む。
-不具合が出たら、1 段ずつ左へ戻すと切り分けられる。既定は `copy`（今の BUG-310 の表示）のまま。
+不具合が出たら、1 段ずつ左へ戻すと切り分けられる。既定は `full`（2026-10-15、647d43d37）。`copy` は今までの BUG-310 の表示。
 
 ### 準備
 
@@ -50,11 +50,11 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 
 | 語（`zedbsd.cfg` の行） | 期待 | 見る行（`dmesg` の） |
 | --- | --- | --- |
-| `i915.gen9.display=copy`（行を足さないのと同じ） | 今の表示（BUG-310）。速い動きで tearing がありうる | `i915: gen9 display: copy (...)`、`i915: bootfb: ... presentations are copied by the GPU and then the CPU` |
-| `i915.gen9.display=flip` | 同じ解像度で、tearing が無い。window を速く動かしても横の裂け目が出ない | `i915: gen9 display: PWR_WELL_CTL2=... DC_STATE_EN=...`（readout）、`flip on pipe A, buffers at ...`、`presentations are flipped on the firmware's plane`。<br>出てはいけない行: `flip not used (...)`、`did not latch` |
+| `i915.gen9.display=copy` | 今の表示（BUG-310）。速い動きで tearing がありうる | `i915: gen9 display: using copy (asked for copy by i915.gen9.display=)`、`i915: bootfb: ... presentations are copied by the GPU and then the CPU` |
+| `i915.gen9.display=flip` | 同じ解像度で、tearing が無い。window を速く動かしても横の裂け目が出ない | `i915: gen9 display: PWR_WELL_CTL2=... DC_STATE_EN=...`（readout）、`flip on pipe A, buffers at ...`、`presentations are flipped on the firmware's plane`。<br>出てはいけない行: `flip failed (...); using copy`、`did not latch` |
 | `i915.gen9.display=backlight` | flip に加え、Settings の明るさで panel が明るく・暗くなる。最低でも真っ黒にならない | `i915: gen9 backlight: ... PWM control ... (N %)`、`the panel's brightness is offered as a backlight device`。<br>`no backlight device` の行が出たら、その理由 |
 | `i915.gen9.display=modeset` | backlight に加え、外部の DP・HDMI の monitor を挿すと、1 秒ほどで desktop に 2 つ目の画面として現れる（monitor の推奨の mode。CD clock を超える mode は使わない）。抜くと消える | `i915: gen9 node: external displays on ports B C D (connected 0x...), panel on pipe A, CD clock ... kHz, latencies ...`、<br>挿した時 `i915: gen9 outputs: port X: DP sink`（または `HDMI sink`）`, EDID 256 bytes, 1920x1080 at 148500 kHz`、`port X lit on pipe B, DPLL1, ...`、`lease ... of port X claimed`、<br>抜いた時 `port X's sink went; its display is dark and its lease ended`、`port X dark` |
-| `i915.gen9.display=full` | 今は modeset と同じ | modeset と同じ |
+| `i915.gen9.display=full`（行を足さないのと同じ。既定、2026-10-15） | 今は modeset と同じ | modeset と同じ。`i915: gen9 display: using full (asked for full by the default)` |
 
 ### sleep（どの段でも）
 
@@ -71,7 +71,8 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - 画面が乱れる・黒い・固まる: 電源を切り、`zedbsd.cfg` の行を 1 段左の語に変えて起動し直す。どの段で崩れたかを Q1 に知らせる。
   - `copy` に戻すと今の表示に戻る。
 - 外部の monitor が出ない: `dmesg` に次のどれがあるかを見る。
-  - `no external displays (the panel is not flipped or its pixel clock was not read)`: panel の flip が使えていない。flip の段の行を見る。
+  - `modeset failed (the panel is not flipped or its pixel clock was not read); using backlight`: panel の flip が使えていない。flip の段の行を見る。
+  - `modeset failed (an external display could not be lit: N)` か `(an external display's flip did not latch: 60)` と `the external displays are withdrawn`: 外部の display の mode set か flip が失敗し、その boot の間は外部の display を出さない（panel はそのまま）。
   - `port X has a sink that could not be probed`: AUX・GMBUS の読みの失敗。
   - `port X could not be lit: N`: mode set の失敗。N を知らせる。8 = pipe・DPLL・buffer の空き無し（ENOSPC）、5 = DP の link training の失敗（EIO）。
   - `did not latch`: flip の失敗。
@@ -96,3 +97,15 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - P2 の安全化の patch（失敗時に下の段・最後は copy）は、既定 FULL が 2 機種で通ったので急がない。p003〜p005 の実機で崩れた時に再開する（patch は plan/agents/p2/wrapup-20261015.patch、P2 の worktree の stash `ws237-wrapup-20261015`）。
 - 残り: p003〜p005 の実機、p006（規約の全文）。第 6 世代（Skylake）・第 9・10 世代は未確認。
 - 2026-10-15 ユーザーの決定（原文）:「Gen9は残りの安全策の作業をマージしたら終了です。UATは不要です。」→ P3 の安全化（上の段が失敗したら下の段、最後は copy）を merge したら WS237 を completed にする。p003〜p005 の実機の確かめ（U5）は不要（beta2.md の U5 を外した）。
+
+## 既定 full の安全化（2026-10-15 P3、ユーザー「はい、ではそれを安全にマージして下さい。」）
+
+P2 の途中の patch（plan/agents/p2/wrapup-20261015.patch）を完成させた。patch の中の bootfb.c は空の file（書き換えの途中で止まった跡）だったので、bootfb.c は main から戻して結線を書き直した。
+
+- 段の上限: `drv_i915_gen9_display_step()` = 起動の行（無ければ既定 full）の段を、失敗した段の一つ下で抑えた物。上限は下がるだけで、その boot の間は戻らない（`drv_i915_gen9_display_fail()`、compare and exchange で同時の失敗でも上がらない）。失敗した時は 1 行 `i915: gen9 display: <段> failed (<理由>[: <error>]); using <段>`、bind の最後に 1 行 `i915: gen9 display: using <段> (asked for <段> by i915.gen9.display= | the default)`。
+- flip の失敗 → copy: 始め（readout の不一致、display window・buffer が取れない）、実行中（flip が 100 ms で latch しない、plane の fault 割り込み（新、bit 7）、buffer を session の空間に map できない）、lease の終わりに firmware の surface が戻らない。実行中の失敗は、その frame を copy で出し、以後 copy（bootfb.c）。backlight の device と外部の display は flip が始めに失敗すると出さない（copy = WS237 の前の表示）。
+- mode set の失敗 → backlight: 始め（panel の pixel clock・CD clock が読めない、window に外部の buffer の空きが無い（panel だけの window で flip は続ける））、実行中（外部の display の mode set の失敗（DP の link training・transcoder）、外部の flip が latch しない、sleep の後に点け直せない）。全部の外部の display を消して lease を終え、sink 無しとして見せ（`the external displays are withdrawn`）、hotplug の work は port を見なくなる。session には hotplug の work が 1 秒以内に events の sequence で知らせる。panel の flip が実行中に失敗した時も、hotplug の work が同じく外部の display を下げる。pipe・DPLL・DDB の不足（ENOSPC）は失敗ではない（その claim だけ断る）。
+- backlight: panel に PWM が無い（desktop など）のは失敗ではない。一度出した backlight の device は残す（plane に触らない）。
+- 成功の経路（今 2 機種で動く full）: register の書き込みの順と値は変わらない。変わるのは plane の fault の割り込みを flip の pipe で有効にしたこと（Linux の i915 も Gen9 で有効にする。正常な機械では来ない）と、log の行（`copy (...)`・`flip not used`・`no external displays` の行が上の 2 種の行に変わった）。
+- sleep の後: `drv_i915_gen9_flip_resume()` が panel の power well・transcoder・plane を読んで 1 行 log に出す（書き込み無し）。
+- 確かめ: amd64 の vmunix の build（config/ci/config-amd64.mk、warning 0）。host 試験 gen9 flip 48・backlight 21・mode 71・modeset 80・outputs 29・boot 15 の各 check が 0 failures、新しい [run-host-gen9-display-step.sh](tests/run-host-gen9-display-step.sh)（段の上限、22 checks、2 thread の同時の失敗 200 回を含む。上限を上げてしまう変異で 8 件 FAIL になることを確かめた）。flip・mode set の実行中の失敗の道（bootfb・gen9-node の結線）は host で動かせず、読みのレビューだけ。実機・QEMU は未実施。

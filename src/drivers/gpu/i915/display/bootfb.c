@@ -36,8 +36,10 @@
  * (i915.gen9.display=flip or a later step, gen9-display.h), the frames
  * are shown by flipping that plane between two buffers of the driver's
  * instead (gen9-flip.c, WS237): no CPU copy, and no tearing.  The display
- * then reports the plane's extent and refresh.  A flip that does not latch
- * brings the copies back for the rest of the boot.
+ * then reports the plane's extent and refresh.  When the flips fail (a
+ * flip that does not latch, a plane fault, buffers that cannot be mapped)
+ * the copies come back for the rest of the boot, and the frame that found
+ * the failure is copied: the desktop stays on the screen.
  *
  * XXX: one device; the staging area and the views are kept by this file.
  */
@@ -46,6 +48,7 @@
 #include "display.h"
 #include "bootfb.h"
 #include "gen9-backlight.h"
+#include "gen9-display.h"
 #include "gen9-flip.h"
 #include "gen9-node.h"
 #include "present.h"
@@ -291,6 +294,9 @@ drv_i915_bootfb_bind_ops(
 	    (bootfb->layout.rgbx != 0) ? "RGBX" : "BGRX",
 	    (bootfb->fb_view == NULL) ? "aperture" : "own",
 	    (bootfb->flip != 0) ? "flipped on the firmware's plane" : "copied by the GPU and then the CPU");
+
+	/* Says which step the display runs at, after any step that failed to start. */
+	drv_i915_gen9_display_report();
 }
 
 /*
@@ -895,11 +901,12 @@ i915_bootfb_release(
  * next vertical blank, which the next presentation or a wait waits for.
  * Copied: the GPU copies the frame into the staging area and the CPU
  * copies it on to the framebuffer; both have completed when this returns.
- * A flip that does not latch brings the copies back and shows this frame
- * by copying.  Returns 0 with the presented sequence in the request,
- * EINVAL for a session that does not hold the lease, an empty frame or one
- * the GPU cannot address, ESTALE for another generation, or the copy's
- * error.
+ * A failure of the flips themselves (a flip that did not latch, a plane
+ * fault, buffers that could not be mapped) brings the copies back and
+ * shows this frame by copying.  Returns 0 with the presented sequence in
+ * the request, EINVAL for a session that does not hold the lease, an empty
+ * frame or one the GPU cannot address, ESTALE for another generation, or
+ * the copy's error.
  */
 static int
 i915_bootfb_present(
@@ -916,6 +923,7 @@ i915_bootfb_present(
 	uint64_t gpu_ns;
 	uint64_t cpu_ns;
 	int flipped;
+	int flip_failed;
 	int external;
 	int error;
 
@@ -948,18 +956,28 @@ i915_bootfb_present(
 		return ESTALE;
 	}
 
-	/* Flips the frame onto the firmware's plane; a flip that did not latch brings the copies back. */
+	/* Flips the frame onto the firmware's plane. */
 	flipped = 0;
+	error = 0;
 	if (bootfb->flip) {
 		error = drv_i915_gen9_flip_present(owner_device, session, object, request);
-		if (error == ETIMEDOUT) {
-			i915_bootfb_flip_failed(owner_device);
-		} else if (error != 0) {
+		if (error == 0)
+			flipped = 1;
+	}
+
+	/*
+	 * A frame that was not flipped failed on its own (the caller hears of
+	 * it), or found the flips failed: then the copies come back for it and
+	 * for the rest of the boot.
+	 */
+	if (bootfb->flip && !flipped) {
+		flip_failed = drv_i915_gen9_flip_failed();
+		if (!flip_failed) {
 			mutex_unlock(&rd->mutex);
 			return error;
-		} else {
-			flipped = 1;
 		}
+
+		i915_bootfb_flip_failed(owner_device);
 	}
 
 	/* A frame that was not flipped is copied by the GPU and then the CPU. */
@@ -1048,10 +1066,11 @@ i915_bootfb_present_copied(
  *
  * A flipped one is on the screen when its flip latches; a copied one was
  * when its presentation returned, which the panel's wait reports.  A flip
- * that does not latch brings the copies back, and the frame counts as
- * shown.  Returns 0 with the completed sequence, EINVAL for a session that
- * does not hold the lease or a sequence not presented yet, or EAGAIN
- * before the first presentation.
+ * that does not latch, or a plane fault, brings the copies back, and the
+ * frame counts as shown (the next presentation is copied).  Returns 0
+ * with the completed sequence, EINVAL for a session that does not hold the
+ * lease or a sequence not presented yet, or EAGAIN before the first
+ * presentation.
  */
 static int
 i915_bootfb_wait(
@@ -1454,9 +1473,9 @@ i915_bootfb_end_lease(
 }
 
 /*
- * Brings the copies back after a flip did not latch: the firmware's
- * surface is written back, and the framebuffer is cleared for the copied
- * frames.  The caller holds the lease mutex.
+ * Brings the copies back after the flips failed: the firmware's surface
+ * is written back, the node's step falls to copy, and the framebuffer is
+ * cleared for the copied frames.  The caller holds the lease mutex.
  */
 static void
 i915_bootfb_flip_failed(

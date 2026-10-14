@@ -18,6 +18,7 @@
 #include "device.h"
 #include "display/display.h"
 #include "display/gen9-backlight.h"
+#include "display/gen9-flip.h"
 #include "display/gen9-node.h"
 #include "display/present.h"
 #include "job.h"
@@ -471,8 +472,9 @@ i915_resume(
 	if (device == NULL || device->suspended == 0U)
 		return 0;
 
-	/* A Gen9 device that slept in D0: the panel's light and the external displays come back, then the worker serves. */
+	/* A Gen9 device that slept in D0: the panel is checked, its light and the external displays come back, then the worker serves. */
 	if (device->suspended_d0 != 0U) {
+		drv_i915_gen9_flip_resume(device);
 		drv_i915_gen9_backlight_resume(device);
 		drv_i915_gen9_node_resume(device);
 		drv_i915_worker_unpark(device);

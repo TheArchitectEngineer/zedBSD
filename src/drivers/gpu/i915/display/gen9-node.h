@@ -16,7 +16,9 @@
  * into the buffer the plane does not show and flipped to; the release
  * darkens it.  A work reads the ports' hotplug state every second: a
  * sink that comes or goes moves the display events' sequence, and a lit
- * output whose sink went is darkened and its lease ended.
+ * output whose sink went is darkened and its lease ended.  A mode set or a
+ * flip of an output that fails, or the panel's flips failing, withdraws
+ * every external display for the rest of the boot (gen9-display.h).
  *
  * bootfb.c, the panel's display, hands the operations on these display
  * ids and leases to the functions here.  None of them is called with the

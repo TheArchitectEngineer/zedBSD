@@ -210,6 +210,9 @@
 /* The first plane's flip done (GEN9_PIPE_PLANE1_FLIP_DONE). */
 #define I915_SKL_DE_PIPE_PLANE1_FLIP_DONE	(1U << 3)
 
+/* The first plane's fault: the display engine could not read its surface (GEN9_PIPE_PLANE1_FAULT). */
+#define I915_SKL_DE_PIPE_PLANE1_FAULT		(1U << 7)
+
 /*
  * The south display's backlight PWM.  A Sunrise Point or Kaby Point PCH has
  * the LPT layout: CTL1 holds the enable and the polarity, CTL2 the period
