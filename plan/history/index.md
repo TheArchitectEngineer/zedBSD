@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1136 / WS074 repeated fixed Grid auto tracks（2026-10-14）
+## 最新: q1137 / WS074 non-pixel fixed Grid auto tracks（2026-10-14）
+
+[q1137履歴](queue-q1137.md): 非px固定長/割合/calcの暗黙trackを受理、固定valid各6→10/30・computed各4→7/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1137/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1136 / WS074 repeated fixed Grid auto tracks（2026-10-14）
 
 [q1136履歴](queue-q1136.md): Grid auto列/行の複数px/autoを循環、固定valid各3→6/30・computed各3→4/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1136/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

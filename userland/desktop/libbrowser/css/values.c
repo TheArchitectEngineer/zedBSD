@@ -4619,7 +4619,7 @@ values_tracks(
 	return 0;
 }
 
-/* Parses the supported implicit-track cycle: auto and nonnegative pixel sizes. */
+/* Parses the supported implicit-track cycle: auto and nonnegative fixed sizes. */
 static int
 values_auto_tracks(
 	struct css_parse *parse,
@@ -4630,6 +4630,7 @@ values_auto_tracks(
 	struct css_track_list *list;
 	struct css_declared_track track;
 	size_t index;
+	size_t end;
 	int error;
 
 	/* Keeps the cycle in the arena so cascade and layout share the same sequence. */
@@ -4637,7 +4638,7 @@ values_auto_tracks(
 	if (list == NULL)
 		return ENOMEM;
 
-	/* Each supported track is one token after whitespace. */
+	/* Each supported track is one size token or a complete calc() function. */
 	index = 0;
 	while (index < count) {
 		index = values_skip_space(tokens, count, index);
@@ -4648,15 +4649,22 @@ values_auto_tracks(
 		if (tokens[index].type == CSS_TOKEN_IDENT &&
 		    !css_ident_equal(&tokens[index], "auto"))
 			return EINVAL;
-		error = values_one_track(parse, tokens + index, 1U, &track);
+		end = index + 1U;
+		if (tokens[index].type == CSS_TOKEN_FUNCTION) {
+			if (!css_ident_equal(&tokens[index], "calc"))
+				return EINVAL;
+			end = index + values_function_length(tokens + index, count - index);
+		}
+		if (end <= index || end > count)
+			return EINVAL;
+		error = values_one_track(parse, tokens + index, end - index, &track);
 		if (error != 0)
 			return error;
-		if (track.kind != CSS_TRACK_AUTO &&
-		    (track.kind != CSS_TRACK_LENGTH || track.size.unit != CSS_DUNIT_PX))
+		if (track.kind != CSS_TRACK_AUTO && track.kind != CSS_TRACK_LENGTH)
 			return EINVAL;
 		list->tracks[list->count] = track;
 		list->count++;
-		index++;
+		index = end;
 	}
 	if (list->count == 0U)
 		return EINVAL;
