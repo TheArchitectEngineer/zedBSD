@@ -2,6 +2,16 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1174-i01 有限部分範囲（2026-10-14 13:06 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:36 JSTまで）に適用。positioned水平LTR/RTL Grid直接absolute子の有効明示row/column areaで、一軸または両軸に明示物理insetがある場合、各明示insetはGrid領域を基準とし、未指定軸はstatic Grid area/align-self/justify-selfを保持する。最小2×2ページChromium比較、固定non-static-positioned-items001–006 whole PASS、旧all-auto positioned代表と明示inset回帰、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。縦/auto line/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+Revision（2026-10-14 13:07 JST）: 実装前の最小ページとWPT原本で、明示left/topもGrid領域原点を使い、両軸明示の子が001–006 whole基準に含まれると確認。事前承認された有限Queueの基準を満たすため、対象を片軸または両軸明示insetへ明確化。timebox/対象WPT/非対象/回帰条件は不変。旧scopeのままならwhole基準と矛盾するため本revisionをQueueにも反映。
+
+## q1174-i01 結果（2026-10-14 13:11 JST）
+
+Event ws074-p217-q1174-uncleared-20261014: [証拠](evidence/20261014-q1174/README.md)。水平Grid明示insetのGrid領域 containing block と未指定軸staticを実装。独立最小4矩形Chromium一致、固定non-static001–006の水平LTR/RTL12 callbacks PASS。一方、明示除外の縦Grid callback12 FAILのためwhole0/6、承認criteria未達でq1174-i01はuncleared。検証済み水平修正は保持し、次Queueで縦writing-modeの同問題を扱う。host CSS51/JS14/Grid48/abspos2、warning0 build、Acid3差0/Acid2差1865。p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
 ## q1173-i01 有限部分範囲（2026-10-14 13:04 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:34 JSTまで）に適用。q1172固定Grid319 FAILをWPTパス系列・最初の失敗callbackと症状で全件分類し、上位系列のWPT原本/関連layout経路を最大3種確認する。次の有限実装候補・非対象回帰条件を記録。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

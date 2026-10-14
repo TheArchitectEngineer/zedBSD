@@ -522,21 +522,38 @@ position_place(
 	layout_unit x;
 	layout_unit y;
 	layout_unit bottom_edge;
+	layout_unit area_left;
+	layout_unit area_top;
+	layout_unit area_width;
+	layout_unit area_height;
 	int has_left;
 	int has_right;
 	int has_top;
 	int has_bottom;
 	int error;
 
-	/* The offsets that are not auto, against the containing block's size. */
+	/* A definite Grid area, when supplied, is the inset containing block. */
+	area_left = containing->x;
+	area_top = containing->y;
+	area_width = containing->width;
+	area_height = containing->height;
+	if (box->static_grid_area) {
+		area_left = box->static_x -
+		    (box->static_x_from_right ? box->static_x_area_width : 0);
+		area_top = box->static_y;
+		area_width = box->static_x_area_width;
+		area_height = box->static_y_area_height;
+	}
+
+	/* The offsets that are not auto, against their containing block's size. */
 	offset = box->style.offset;
-	has_left = position_offset(&offset[CSS_LEFT], containing->width, &left);
-	has_right = position_offset(&offset[CSS_RIGHT], containing->width, &right);
-	has_top = position_offset(&offset[CSS_TOP], containing->height, &top);
-	has_bottom = position_offset(&offset[CSS_BOTTOM], containing->height, &bottom);
+	has_left = position_offset(&offset[CSS_LEFT], area_width, &left);
+	has_right = position_offset(&offset[CSS_RIGHT], area_width, &right);
+	has_top = position_offset(&offset[CSS_TOP], area_height, &top);
+	has_bottom = position_offset(&offset[CSS_BOTTOM], area_height, &bottom);
 
 	/* The room between the offsets that are set. */
-	room = containing->width;
+	room = area_width;
 	if (has_left)
 		room -= left;
 	if (has_right)
@@ -571,7 +588,7 @@ position_place(
 
 	/* A height left auto between a top and a bottom fills the room between them. */
 	if (box->style.height.unit == CSS_UNIT_AUTO && has_top && has_bottom) {
-		height = containing->height - top - bottom - box->margin[CSS_TOP] - box->margin[CSS_BOTTOM] -
+		height = area_height - top - bottom - box->margin[CSS_TOP] - box->margin[CSS_BOTTOM] -
 		    box->border[CSS_TOP] - box->padding[CSS_TOP] - box->padding[CSS_BOTTOM] - box->border[CSS_BOTTOM];
 		if (height < 0)
 			height = 0;
@@ -581,9 +598,9 @@ position_place(
 	/* Horizontally: from the left, from the right, or where it would have been. */
 	frame = position_frame(box);
 	if (has_left) {
-		x = containing->x + left + box->margin[CSS_LEFT];
+		x = area_left + left + box->margin[CSS_LEFT];
 	} else if (has_right) {
-		x = containing->x + containing->width - right - box->margin[CSS_RIGHT] - (box->width + frame);
+		x = area_left + area_width - right - box->margin[CSS_RIGHT] - (box->width + frame);
 	} else if (box->static_x_align == CSS_ALIGN_END ||
 	    box->static_x_align == CSS_ALIGN_SELF_END ||
 	    box->static_x_align == CSS_ALIGN_SELF_START ||
@@ -617,9 +634,9 @@ position_place(
 
 	/* Vertically: from the top, from the bottom, or where it would have been. */
 	if (has_top) {
-		y = containing->y + top + box->margin[CSS_TOP];
+		y = area_top + top + box->margin[CSS_TOP];
 	} else if (has_bottom) {
-		y = containing->y + containing->height - bottom - box->margin[CSS_BOTTOM] - position_outer_height(box);
+		y = area_top + area_height - bottom - box->margin[CSS_BOTTOM] - position_outer_height(box);
 	} else if (box->static_y_align == CSS_ALIGN_END ||
 	    box->static_y_align == CSS_ALIGN_SELF_END) {
 		y = box->static_y + box->static_y_area_height -

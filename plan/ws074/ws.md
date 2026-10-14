@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1173](queue.md) finished / p217 fixed Grid319 failure classification。2026-10-14 13:05 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1174](queue.md) finished / p217 positioned Grid explicit inset area。2026-10-14 13:11 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1172の183 PASS/319 FAIL、q1160比25 whole/50 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p217-q1174-uncleared-20261014: [p217](phase217/phase.md) q1174-i01で水平Grid明示insetのGrid領域 containing block と未指定軸staticを実装。[証拠](phase217/evidence/20261014-q1174/README.md)。独立4矩形Chromium一致、固定001–006の水平12 callbacks PASS、縦12 FAILでwhole0/6。q1174 uncleared、水平修正保持、次は縦Grid明示inset。host/Acid3差0維持、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1173-partial-clear-20261014: [p217](phase217/phase.md) q1173-i01固定Grid319 FAIL分類をcleared。[証拠](phase217/evidence/20261014-q1173/README.md)。alignment135が最多、上位3系列各12件の原因経路を確認。次は水平positioned Grid片軸明示insetと他軸static。p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 

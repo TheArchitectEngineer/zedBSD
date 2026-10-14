@@ -169,6 +169,7 @@ layout_grid(
 		child->static_x_align_from_right = 0;
 		child->static_y_area_height = 0;
 		child->static_y_align = CSS_ALIGN_AUTO;
+		child->static_grid_area = 0;
 	}
 
 	/* Fixed vertical grids map their logical tracks to physical axes before laying out items. */
@@ -1130,6 +1131,7 @@ grid_static_position(
 	int full_block;
 	int auto_start_row;
 	int auto_end_row;
+	int explicit_inset;
 	layout_unit available_height;
 
 	/* Other writing directions retain their existing static-position path. */
@@ -1147,13 +1149,15 @@ grid_static_position(
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->style.position != CSS_POSITION_ABSOLUTE)
 			continue;
-		if (child->style.offset[CSS_LEFT].unit != CSS_UNIT_AUTO)
-			continue;
-		if (child->style.offset[CSS_RIGHT].unit != CSS_UNIT_AUTO)
-			continue;
-		if (child->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO)
-			continue;
-		if (child->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
+		explicit_inset = child->style.offset[CSS_LEFT].unit != CSS_UNIT_AUTO ||
+		    child->style.offset[CSS_RIGHT].unit != CSS_UNIT_AUTO ||
+		    child->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO ||
+		    child->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO;
+		if (explicit_inset &&
+		    (child->style.grid_column.start <= 0 ||
+		    child->style.grid_column.end <= 0 ||
+		    child->style.grid_row.start <= 0 ||
+		    child->style.grid_row.end <= 0))
 			continue;
 
 		/* An absolute box never creates a track or enters auto-placement. */
@@ -1285,6 +1289,22 @@ grid_static_position(
 			}
 			if (child->static_y_area_height < 0)
 				child->static_y_area_height = 0;
+		}
+		/* Explicit insets use this definite Grid area as their containing block. */
+		if (explicit_inset) {
+			child->static_grid_area = 1;
+			child->static_x_area_width = 0;
+			for (index = column; index < column + column_span; index++) {
+				child->static_x_area_width += grid->columns[index];
+				if (index + 1 < column + column_span)
+					child->static_x_area_width += column_gap;
+			}
+			child->static_y_area_height = 0;
+			for (index = row; index < row + row_span; index++) {
+				child->static_y_area_height += grid->rows[index];
+				if (index + 1 < row + row_span)
+					child->static_y_area_height += row_gap;
+			}
 		}
 	}
 }

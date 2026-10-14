@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1173 / WS074 fixed Grid319 failure classification
+# q1174 / WS074 positioned Grid explicit inset area
 
-Status: finished（2026-10-14 13:04–13:05 JST）
+Status: finished（2026-10-14 13:06–13:11 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 最大90分（14:34 JSTまで）。
+Timebox: 最大90分（14:36 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1173-i01 | [ws074-p217](phase217/phase.md) partial | q1172固定Grid319 FAILをWPTパス系列・最初の失敗callbackと症状で全件分類し、上位系列のWPT原本/関連layout経路を最大3種確認する。次の有限実装候補・非対象回帰条件を記録。読取・証拠のみ、browser/runner/WPT/ABI/Master/Acid変更なし | cleared | q1172 recensus |
+| q1174-i01 | [ws074-p217](phase217/phase.md) partial | positioned水平LTR/RTL Grid直接absolute子の有効明示row/column areaで、一軸または両軸に明示物理insetがある場合、各明示insetはGrid領域を基準とし、未指定軸はstatic Grid area/align-self/justify-selfを保持する。最小2×2ページChromium比較、固定non-static-positioned-items001–006 whole PASS、旧all-auto positioned代表と明示inset回帰、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。縦/auto line/他Grid、WPT/runner/ABI/Master変更なし | uncleared（水平12 callbacks PASS、縦12 FAILのためwhole0/6） | q1173分類 |
 
-Dependency graph: q1172 recensus → q1173-i01。p217/p189/p173 wholeは部分受け入れに含めない。
+Dependency graph: q1173分類 → q1174-i01。p217/p189/p173 wholeは部分受け入れに含めない。
 
-Upcoming Work Outlook: Grid上位FAIL系列の実装、RTL字形視覚、auto lines、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: margin/border/padding位置、orthogonal stretch、RTL字形視覚、auto lines、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
 
-Outcome: Grid319 FAILを全件first callbackと系列で分類。alignment135、width96/height53/offsetLeft51/offsetTop42/他77。最大3系列各12件をWPT原本/経路で確認。次は水平positioned Grid子の片軸明示insetが他軸staticを抑止する問題を最小再現。[証拠](phase217/evidence/20261014-q1173/README.md)。読取のみ、p217/p189/p173 whole未達。
+Outcome: 最小Grid4矩形はChromiumと一致。固定non-static001–006の水平LTR/RTL12 callbacks PASS、縦12 FAILでwhole0/6。q1174-i01 uncleared、水平修正保持。host/Acid回帰なし。[証拠](phase217/evidence/20261014-q1174/README.md)。次は縦Gridの明示inset areaを別Queue。p217/p189/p173 whole未達。

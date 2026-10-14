@@ -1,0 +1,15 @@
+console: left=105,240|right=230,195|top=240,160|bottom=170,230
+viewport 1024.00 x 768.00, document height 304.00
+block <html> 0.00 0.00 1024.00 304.00
+  block <body> 8.00 8.00 1008.00 283.00
+    anonymous 8.00 8.00 1008.00 253.00
+      line 8.00 8.00 height 253.00 baseline 258.00
+        inline-block 8.00 w 250.00 h 250.00
+      block <div> 8.00 8.00 250.00 250.00
+        block <div> 113.00 248.00 10.00 10.00
+        block <div> 238.00 203.00 10.00 10.00
+        block <div> 248.00 168.00 10.00 10.00
+        block <div> 178.00 238.00 10.00 10.00
+    block <pre> 8.00 274.00 1008.00 17.00
+      line 8.00 274.00 height 17.00 baseline 287.00
+        text 8.00 w 413.23 13px "left=105,240|right=230,195|top=240,160|bottom=170,230"

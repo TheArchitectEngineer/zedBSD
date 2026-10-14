@@ -1,0 +1,21 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: inline-grid; grid-template-columns: 100px 150px; grid-template-rows: 150px 100px; }
+.grid > div { position: absolute; grid-row: 2 / 3; grid-column: 2 / 3; width: 10px; height: 10px; }
+#left { left: 5px; align-self: end; }
+#right { right: 10px; align-self: center; }
+#top { top: 10px; justify-self: end; }
+#bottom { bottom: 10px; justify-self: center; }
+</style>
+<div class="grid"><div id="left"></div><div id="right"></div><div id="top"></div><div id="bottom"></div></div>
+<pre id="result"></pre>
+<script>
+var parent = document.querySelector(".grid").getBoundingClientRect();
+var values = [];
+for (var id of ["left", "right", "top", "bottom"]) {
+  var rect = document.getElementById(id).getBoundingClientRect();
+  values.push(id + "=" + Math.round(rect.left - parent.left) + "," + Math.round(rect.top - parent.top));
+}
+document.getElementById("result").textContent = values.join("|");
+console.log(values.join("|"));
+</script>
