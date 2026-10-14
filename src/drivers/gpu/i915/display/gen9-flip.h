@@ -27,13 +27,6 @@
 struct gpu_display_present;
 struct i915_device;
 
-/*
- * Whether a Gen9 node shows its desktop by flipping (1) or by copying (0)
- * when the boot line has no i915.gen9.display=: the one place the default
- * is chosen.
- */
-#define I915_GEN9_DISPLAY_FLIP_DEFAULT	0
-
 /* How long a flip may take to latch before the flips are given up: six frames at 60 Hz. */
 #define I915_GEN9_FLIP_LATCH_MS		100U
 

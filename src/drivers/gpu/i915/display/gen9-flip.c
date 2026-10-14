@@ -40,6 +40,7 @@
  */
 
 #include "internal.h"
+#include "gen9-display.h"
 #include "gen9-flip.h"
 #include "scanout.h"
 #include <kern/kcrt.h>
@@ -57,7 +58,6 @@
 
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-display.h>
-#include <kern/boot.h>
 #include <kern/clock.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
@@ -140,7 +140,6 @@ struct i915_skl_flip {
  */
 static struct i915_skl_flip i915_skl_flip_state;
 
-static int i915_skl_flip_wanted(void);
 static void i915_skl_read(struct i915_mmio *mmio, struct i915_skl_registers *registers);
 static void i915_skl_read_transcoder(struct i915_mmio *mmio, struct i915_skl_registers *registers, unsigned transcoder);
 static void i915_skl_read_pipe(struct i915_mmio *mmio, struct i915_skl_registers *registers, unsigned pipe);
@@ -361,7 +360,7 @@ drv_i915_gen9_flip_start(
 	struct i915_gt *gt;
 	const char *fb_match;
 	unsigned pages;
-	int wanted;
+	int level;
 	int error;
 
 	flip = &i915_skl_flip_state;
@@ -373,9 +372,9 @@ drv_i915_gen9_flip_start(
 		return ENOTSUP;
 
 	/* The boot line, or the default, chooses copies or flips. */
-	wanted = i915_skl_flip_wanted();
-	if (!wanted) {
-		kern_logf("i915: gen9 display: copy (i915.gen9.display=copy or the default)\n");
+	level = drv_i915_gen9_display_level();
+	if (level < I915_GEN9_DISPLAY_FLIP) {
+		kern_logf("i915: gen9 display: copy (i915.gen9.display=%s)\n", drv_i915_gen9_display_name(level));
 		return ENOTSUP;
 	}
 
@@ -794,33 +793,6 @@ drv_i915_gen9_flip_irq(
 		flip->irq_count++;
 		drv_i915_complete(&flip->done);
 	}
-}
-
-/* Reports nonzero when the boot line, or the default, asks for flips. */
-static int
-i915_skl_flip_wanted(void)
-{
-	const struct kern_boot_parameters *parameters;
-	const char *value;
-	int different;
-
-	/* Without the boot parameters the default chooses. */
-	parameters = kern_boot_parameters_current();
-	if (parameters == NULL)
-		return I915_GEN9_DISPLAY_FLIP_DEFAULT;
-
-	/* Without i915.gen9.display= the default chooses. */
-	value = kern_boot_parameters_value(parameters, KERN_BOOT_PARAMETER_I915_GEN9_DISPLAY);
-	if (value == NULL)
-		return I915_GEN9_DISPLAY_FLIP_DEFAULT;
-
-	/* flip asks for flips; copy, the only other word, for copies. */
-	different = kern_strcmp(value, "flip");
-	if (different != 0)
-		return 0;
-
-	/* Succeeded: the boot line asks for flips. */
-	return 1;
 }
 
 /*

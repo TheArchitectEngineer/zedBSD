@@ -6,11 +6,12 @@
  */
 
 /*
- * ws237-p002: host test of the boot parameter i915.gen9.display=.
+ * ws237-p002, p003: host test of the boot parameter i915.gen9.display=.
  *
- * Links src/kern/boot.c and checks that i915.gen9.display= takes flip and
- * copy, is not an unknown parameter, refuses any other word, and leaves
- * i915.gen9= apart from it.  Built and run by run-host-boot-gen9-display.sh.
+ * Links src/kern/boot.c and checks that i915.gen9.display= takes copy,
+ * flip, backlight, modeset and full, is not an unknown parameter, refuses
+ * any other word, and leaves i915.gen9= apart from it.  Built and run by
+ * run-host-boot-gen9-display.sh.
  */
 
 #include <kern/boot.h>
@@ -56,6 +57,16 @@ main(void)
 	check(value != NULL && strcmp(value, "copy") == 0, "i915.gen9.display is copy");
 	value = kern_boot_parameters_value(&parameters, KERN_BOOT_PARAMETER_I915_GEN9);
 	check(value == NULL, "i915.gen9 is absent when only i915.gen9.display is given");
+
+	/* The later steps' words. */
+	error = parse(&parameters, "i915.gen9.display=backlight");
+	check(error == 0, "i915.gen9.display=backlight is taken");
+	error = parse(&parameters, "i915.gen9.display=modeset");
+	check(error == 0, "i915.gen9.display=modeset is taken");
+	error = parse(&parameters, "i915.gen9.display=full");
+	check(error == 0, "i915.gen9.display=full is taken");
+	value = kern_boot_parameters_value(&parameters, KERN_BOOT_PARAMETER_I915_GEN9_DISPLAY);
+	check(value != NULL && strcmp(value, "full") == 0, "i915.gen9.display is full");
 
 	/* Without the parameter it has no value. */
 	error = parse(&parameters, "i915.gen9=off");

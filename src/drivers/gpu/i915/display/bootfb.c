@@ -33,7 +33,7 @@
  * screen back when the lease ends, also when its holder exits or crashes.
  *
  * When the firmware's plane can be flipped and the boot line asks for it
- * (i915.gen9.display=flip, or I915_GEN9_DISPLAY_FLIP_DEFAULT), the frames
+ * (i915.gen9.display=flip or a later step, gen9-display.h), the frames
  * are shown by flipping that plane between two buffers of the driver's
  * instead (gen9-flip.c, WS237): no CPU copy, and no tearing.  The display
  * then reports the plane's extent and refresh.  A flip that does not latch
