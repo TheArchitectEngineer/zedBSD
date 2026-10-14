@@ -122,13 +122,40 @@ T1-642（`plan/agents/T1/results-20261015-nvrtx-r7c.md` の末尾、rombar=1、m
 - DP の出力（protocol 8・9）は link training が要るので何もしない（`P8b: protocol N is not TMDS; the picture is left alone`）。
 - 確認: nvrtx=y の kernel（`BUILD=build/ws037-y`）rc 0・warning 0・include check / vmunix check PASS。host 試験 `nvrtx-gsp-host-test.sh` PASS 222 項目（mode の導出、head の mode の method 25 語、display id・SOR control、DFP_ASSIGN_SOR の引数と返りの読み、push の jump）。実機は未実施。
 
-### T への手順（R8b の再試験、rombar=1）
+### T への手順（R8b の再試験、rombar=1。2026-10-15 夜に既定 on の語へ更新）
 
-image は main に merge した commit で `config-amd64-nvrtx.mk` の `NVRTX_RUN=R8b`（`nvrtx.gsp=1 nvrtx.disp=1`、新しい BUILD）。QEMU は `~/nvrtx/start-rombar1.sh`。run の前に host の reboot と `prepare.sh --check`。**ユーザーが monitor の前で、各 `P8b step` の印の時に信号があるかを見る**（step ごとに 5 秒止まる。screendump は 5 秒おきが望ましい）。
+image は main の `7ca217eab` 以降（P1 の直し `476ca3ba5` と既定 on を含む）で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`。boot の語は **`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`**（既定 on の後は `nvrtx.disp=1` は無い語。`disp.test=1` が帯の surface・flip・step ごとの 5 秒の待ちを出し、`resident=0` が最後に GSP を止める）。QEMU は `~/nvrtx/start-rombar1.sh`。run の前に host の reboot と `prepare.sh --check`。**ユーザーが monitor の前で、各 `P8b step` の印の時に信号があるかを見る**（step ごとに 5 秒止まる。screendump は 5 秒おきが望ましい）。全体で P8b は約 40 秒（step 4 つ × 5 秒、帯 10 秒 × 2）。
 
-合格（screendump）: `P8b begin` → `P8b head 0 armed: …` → `P8b head 0 mode: 1280x1024, view out …` → `P8b surfaces 1280x1024 pitch 5120 …` → `P8b channel c57d.0 made` → `P8b step 1` → `P8b core start notified after N us` → `P8b step 2` → `P8b core disable notified …` → `P8b step 3` → `P8b SOR n assigned to display 200 …` → `P8b core owners notified …` → `P8b step 4` → `P8b channel c57e.0 made` → `P8b core show notified …` → `P8b ok: mode set (1280x1024 on SOR n), surface A shown` → `P8b window flip notified …` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows …` → `P8 done; …` → `P6 ok …` → `P7 ok: region torn down` → login prompt。
-monitor（目視）: step 1・2 は GOP の画面のまま（または既に黒）、step 3 で信号が消えてよい、step 4 で信号が戻る（画面は GOP の残りか黒）、`surface A shown` の後 10 秒は 8 本の帯（上が白）、flip の後 10 秒は逆順。**どの step で信号が消え・戻ったか**を記録。
-FAIL の時: `P8b fail: …` と `P8b core exception …`・`P8b other …` の 2 行、`rm: control 00731152 status …` があればそれを PNG に。`P7 fail` なら host を reboot。
+合格（screendump）: `P8 ok: display, heads f, windows ff, lit 1` → `P8b begin` → `P8b head 0 armed: view … raster … clock …, SOR 1 …` → `P8b head 0 mode: 1280x1024, view out …` → `P8b surfaces 1280x1024 pitch 5120 at … and …` → `P8b channel c57d.0 made` → `P8b step 1: core channel made (5 s)` → `P8b core start notified after N us` → `P8b step 2: core start released (5 s)` → `P8b core disable notified after N us` → `P8b step 3: head disabled (5 s)` → `P8b SOR n assigned to display 200 (the firmware's was 1)` → `P8b core owners notified after N us` → `P8b step 4: head enabled (5 s)` → `P8b channel c57e.0 made` → `P8b core show notified after N us` → `P8b ok: mode set (1280x1024 on SOR n), surface A shown` → `P8b window flip notified after N us` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows the driver's surfaces` → **`P8 done; this revision ends at P8c`**（以前の `P8 done; stopping (this revision ends at P8b)` から変わった）→ `P6 ok: channel and vaspace freed`（`P8b: N channel frees failed`・`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
+- 方式 B では GOP の画面が emulated の VGA にあるので `P0 console …` の行は出ない（console の保持は方法 A の物）。`P0 skipped: …` が出たら語の `nvrtx.gsp=1` が欠けている。
+- monitor（目視）: step 1・2 は GOP の画面のまま（または既に黒）、step 3 で信号が消えてよい、step 4 で信号が戻る（画面は GOP の残りか黒）、`surface A shown` の後 10 秒は 8 本の帯（上が白）、flip の後 10 秒は逆順。**どの step で信号が消え・戻ったか**を記録。
+- FAIL の時: `P8b fail: …` と、その直後の `P8b core exception …`・`P8b other …` の 2 行、`rm: control 00731152 status …` があればそれを PNG に（次の「FAIL の読み方」で読む）。`P7 fail` なら host を reboot。
+
+### FAIL の読み方（R8b、P2 が 2026-10-15 に用意。register の意味は open-gpu-doc（MIT）`manuals/turing/tu102/dev_display_withoffset.ref.txt`）
+
+notifier が 2 秒で来ない時、`scanout_diagnose()` が 2 行を出す:
+`P8b core exception E data D code C` と `P8b other O supervisor S core state T`。
+
+| 値 | register | 読み方 |
+| --- | --- | --- |
+| E | `NV_PDISP_FE_EXCEPT(0)` 0x611020（core channel） | 11:0 = 例外の method の offset（push の method の番号、clc57d.h で引く）、14:12 = 理由: 0 なし・1 PUSHBUFFER_ERR・2 TRAP・3 RESERVED_METHOD・4 INVALID_ARG・5 INVALID_STATE・7 UNRESOLVABLE_HANDLE。31 = RESTART pending |
+| D | `NV_PDISP_FE_EXCEPTARG(0)` 0x611024 | その method の引数（送った値） |
+| C | `NV_PDISP_FE_EXCEPTERR(0)` 0x611028 | 23:0 の誤りの code（公開の意味の表は無い。値を記録） |
+| O | `NV_PDISP_FE_EVT_STAT_EXC_OTHER` 0x611854 | bit 0 = core の例外 pending、bit 16〜23 = cursor 0〜7 の例外 |
+| S | `NV_PDISP_FE_RM_INTR_STAT_CTRL_DISP` 0x611c30 | bit 0〜2 = supervisor 1〜3 の pending（modeset の処理。GSP の下では RM が処理する）、3 VBIOS_RELEASE、7 ERROR（詳細は 0x611848）、8 AWAKEN |
+| T | `NV_PDISP_FE_CHNSTATUS_CORE` 0x610630 | 3:0 stage 1（0 IDLE・1 READ_METHOD・4 CHK_CTXDMA・5 CTX_DMA_LOOKUP・6 WAIT_FOR_STG2・7 WAIT_FOR_UPD・8 EXCEPTION）、7:4 stage 2、20:16 状態（0x0b IDLE・0x0c BUSY・0x08 UNCONNECTED・0x05〜0x07 EFI_INIT1〜EFI_OPERATION）、24 FIRSTTIME、25 method FIFO not empty、26 read pending、27 notifier の書き込み pending |
+
+切り分け:
+1. **E の理由が 0 以外** → push の誤り。11:0 の method と D の値を clc57d.h（MIT）と `disp-records.c` の該当の書き手で照合（7 UNRESOLVABLE_HANDLE なら RAMHT の entry か ctxdma の handle、4 INVALID_ARG なら値の field）。
+2. **E が 0 で S の bit 0〜2 が立つ** → update が supervisor を起こし RM が処理を終えていない。前回（T1-642）の見立てと同じ形。step 3（disable）で止まれば head の消し方、step 4（owners）で止まれば SOR の割り当てか head の mode の値（`P8b head 0 mode` の行と ARMED の値）を疑う。`rm: control 00731152` の status が 0 でなければ DFP_ASSIGN_SOR の引数。
+3. **E が 0、S が 0、T の 20:16 が 0x0b（IDLE）で get = put** → core は push を全部読んで update も済んだが notifier が書かれていない → notifier の ctxdma（handle 0xf0000000、instance memory の object の 24 byte、`gv100_dmaobj_bind`）か notifier の offset（`SET_NOTIFIER_CONTROL` の OFFSET は >> 4）。T の bit 27 が立っていれば書き込みが詰まっている（ctxdma の範囲・aperture）。
+4. **T の 3:0 が 7（WAIT_FOR_UPD）** → interlock の相手（window）の update を待っている。`core show` の update は window と interlock するので、window channel の update（0x690000 + w×0x1000 の get/put）を確かめる。
+5. **T の 20:16 が EFI_*（5〜7）** → core channel が firmware（GOP）の所有のまま。RM の channel の確保（`channel c57d.0 made`）の後でもこの値なら、RM が GOP からの引き継ぎを終えていない。
+6. **`step 1` より前で止まる**（`P8b fail: …` が surfaces・channel の段）→ RM の control の status（`rm: control 20800a58 …`・`rm: class c57d …`）を読む。
+
+監視の補い（実機の結果で要れば次の版で足す。今の image には無い）: `NV_PDISP_FE_EVT_STAT_ERROR_DISP` 0x611848（S の bit 7 の詳細）、`NV_PDISP_FE_SUPERVISOR_MAIN` 0x6107a8（bit 4 = mode switch 中）、`NV_PDISP_FE_SUPERVISOR_HEAD(h)` 0x6107ac + h×4。
+
+nouveau（MIT）との照合（2026-10-15 夜、P2）: channel の確保（`r570_dmac_alloc` の handle `(class << 16) | inst`、引数 instance・offset・subdevice）、RAMHT の context（`r535_dmac_bind`: chid << 25 | client の handle & 0x3fff。nouveau は display 用の別の client を作るが、その client の handle を使う点は同じ。ここは channel を確保した主の client の handle で一貫）、window の user 領域（`r535_wndw` の user 1 → 0x690000 + w×0x1000）、core の user 領域 0x680000 は P1 の照合どおり違い無し。core の start を最初の commit と別の update で送る点だけが nouveau と違う（切り分けのため、head を変えない update）。
 
 ## P8c の設計: zedBSD の GPU の display の口へ（2026-10-15 P1、設計まで）
 
@@ -166,7 +193,7 @@ FAIL の時: `P8b fail: …` と `P8b core exception …`・`P8b other …` の 
 
 ### T への手順（R8c、rombar=1。R8b の再試験（T1-645）が PASS してから）
 
-image は `NVRTX_RUN=R8c`。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。
+image は `NVRTX_RUN=R8c`（既定 on の後の語は `nvrtx.gsp=1 nvrtx.disp.test=1`、resident は既定。P8b の帯は 3 秒ずつ）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。
 1. 起動の印: R8b の合格の印（step 1〜4、`P8b ok: …`）に続いて `P8c begin` → `P8c ok: gpu device registered, display 1280x1024 at 60020 mHz` → `P8c: the GSP stays up until power-off`（`P7` の行は出ない）→ login prompt。
 2. serial で: `display-inventory`（GPU の node が複数なら `--node=/dev/gpuN` で nvrtx の物。`DISPLAY-INVENTORY output index=0 … connected=1 … mode=1280x1024@60020 … name=nvrtx head`）。
 3. `display-control --hold=10`（同じ node）: `DISPLAY-CONTROL claim lease=1`、`DISPLAY-CONTROL present error=0`、power・refresh の行は EOPNOTSUPP（zedBSD の errno で 21）でよい（DISPLAY_CONTROL は未実装）、`DISPLAY-CONTROL done error=0`。画面の印 `P8c lease 1 claimed`・`P8c lease 1 released after 1 frames`。
@@ -203,7 +230,7 @@ Q1 の依頼（Keiland の compositor を RTX に出すまでの不足分、順�
 
 ### T への手順（R8d、rombar=1。R8c（T1-647）が PASS してから）
 
-image は main に merge した commit で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8d NVRTX_RUN=R8d`。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。GSP は止まらないので run の後は **host を reboot**。GPU の node が複数なら nvrtx の物を `--node=/dev/gpuN` で（`display-scanout` の `driver=nvrtx` で分かる）。
+image は main に merge した commit で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8d NVRTX_RUN=R8d`（語は R8c と同じ `nvrtx.gsp=1 nvrtx.disp.test=1`）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。GSP は止まらないので run の後は **host を reboot**。GPU の node が複数なら nvrtx の物を `--node=/dev/gpuN` で（`display-scanout` の `driver=nvrtx` で分かる）。
 
 1. 起動の印: R8c の印（`P8b ok: …`、`P8c begin`）に続いて `P8c channel c57a.0 made` → `P8c ok: cursor plane 64x64 at …` → `P8c ok: gpu device registered, display 1280x1024 at 60020 mHz` → `P8c: the GSP stays up until power-off` → login prompt。
 2. `display-inventory --node=/dev/gpuN`: `DISPLAY-INVENTORY sequence=1 count=1` と output の行（R8c と同じ）。
