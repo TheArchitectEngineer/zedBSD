@@ -1,0 +1,63 @@
+rpi4-vchiq: shared memory at bus c0d27000, irq 66, connecting
+rpi4-mmal-probe: started; waiting up to 15000 ms for VCHIQ
+rpi4-vchiq: connected (version 8)
+rpi4-mmal: firmware MMAL 16.1 (service version 16)
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+rpi4-mmal: request 10 (PORT_ACTION) not answered (42)
+rpi4-mmal: port action 2 failed (42)
+rpi4-mmal-probe: 352 run=a input 3 not sent (5)
+rpi4-mmal-probe: 352 run=a order=other inputs=3 outputs=0 missing=15 unknown=0 lag=0 error=5
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 56, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+rpi4-mmal-probe: 352 run=b out=0 pts=0 display=0 decode=0 sent=2 lag=1 sum=160d0b64 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=1 pts=1 display=-1 decode=-1 sent=2 lag=0 sum=c6334559 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=2 pts=2 display=-1 decode=-1 sent=3 lag=0 sum=3d53afa3 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=3 pts=3 display=-1 decode=-1 sent=4 lag=0 sum=c90d290f flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal: bulk not completed in 1000 ms; decoder stopped
+rpi4-mmal-probe: 352 run=b input 5 not sent (5)
+rpi4-mmal: decoder 0 retired with a bulk outstanding
+rpi4-mmal-probe: 352 run=b order=other inputs=5 outputs=4 missing=11 unknown=3 lag=1 error=5
+rpi4-mmal-probe: 1080 run=a decoder not created (17)
+rpi4-mmal-probe: 1080 run=b decoder not created (17)
+rpi4-mmal-probe: done
+v3d: vk: capset declares H.264 video decode (VideoCore firmware decoder)
+v3d: video: no firmware decoder for a 64x64 session (17)
+v3d: video: no firmware decoder for a 352x288 session (17)
+v3d: video: no firmware decoder for a 352x288 session (17)
+v3d: video: no firmware decoder for a 1920x1088 session (17)
+v3d: video: no firmware decoder for a 1920x1088 session (17)
+v3d: video: no firmware decoder for a 1920x1088 session (17)
+v3d: video: no firmware decoder for a 1920x1088 session (17)
