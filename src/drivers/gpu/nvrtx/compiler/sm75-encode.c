@@ -941,6 +941,24 @@ nvrtx_sm75_tex(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEM_EVICT_LOW, 3U, NVRTX_SM75_MEM_EVICT_NORMAL);
 }
 
+/* Makes a TEX a TLD, which fetches the texel at integer coordinates and an explicit level (or level zero). */
+void
+nvrtx_sm75_tex_fetch(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode; every other field is the TEX's. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_TLD);
+}
+
+/* Makes a TEX or a TLD read a constant texel offset from the register after its level of detail. */
+void
+nvrtx_sm75_tex_offset(
+	struct nvrtx_sm75_word *word)
+{
+	/* AOFFI. */
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_AOFFI, 1U, 1U);
+}
+
 /* KILL: the fragment is discarded (the predicate source PT; the guard chooses the threads). */
 void
 nvrtx_sm75_kill(

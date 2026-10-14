@@ -39,6 +39,9 @@
 /* A value without a register. */
 #define NVRTX_SM75_NO_REG		0xffffU
 
+/* The most values one IR instruction reads (a texture message's parameters). */
+#define NVRTX_SM75_MAX_SOURCES		DRV_GPU_IR_TEXTURE_MAX_PARAMS
+
 /* The most SM75 instructions one IR instruction becomes, and the end of the program (EXIT, BRA and the padding). */
 #define NVRTX_SM75_EXPANSION		40U
 #define NVRTX_SM75_TAIL			10U
@@ -138,6 +141,23 @@ struct nvrtx_sm75_lowering {
 	uint32_t loop_depth;
 };
 
+/*
+ * What one texture operation passes the sampler (nvrtx_sm75_texture_operands()):
+ * the values of its coordinates and of its level of detail (or bias;
+ * NVRTX_SM75_NOT_DEFINED for none), the level of detail mode, whether it
+ * is a fetch (TLD) rather than a sample, and its constant texel offset as
+ * the register TEX reads takes it.  Lives on the lowering's stack.
+ */
+struct nvrtx_sm75_texture_operands {
+	uint32_t u;
+	uint32_t v;
+	uint32_t lod;
+	uint32_t mode;
+	int fetch;
+	int has_offset;
+	uint32_t offset;
+};
+
 static int nvrtx_sm75_refuse(struct nvrtx_sm75_lowering *lowering, int error, const char *reason);
 static int nvrtx_sm75_prepare(struct nvrtx_sm75_lowering *lowering);
 static int nvrtx_sm75_sources(const struct drv_gpu_shader_ir_inst *instruction, uint32_t *sources);
@@ -164,6 +184,7 @@ static int nvrtx_sm75_prologue(struct nvrtx_sm75_lowering *lowering);
 static int nvrtx_sm75_lower_input(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int nvrtx_sm75_lower_output(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static int nvrtx_sm75_lower_sample(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static int nvrtx_sm75_texture_operands(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, struct nvrtx_sm75_texture_operands *operands);
 static int nvrtx_sm75_lower_kill(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static const struct drv_gpu_shader_ir_io *nvrtx_sm75_input(const struct drv_gpu_shader_ir *ir, uint32_t location);
 static void nvrtx_sm75_header(struct nvrtx_sm75_lowering *lowering);
@@ -418,7 +439,7 @@ nvrtx_sm75_prepare(
 	const struct drv_gpu_shader_ir *ir;
 	const struct drv_gpu_shader_ir_inst *instruction;
 	struct nvrtx_sm75_binary *binary;
-	uint32_t sources[4];
+	uint32_t sources[NVRTX_SM75_MAX_SOURCES];
 	uint32_t source_count;
 	uint32_t index;
 	uint32_t source;
@@ -632,6 +653,13 @@ nvrtx_sm75_sources(
 		sources[1] = instruction->src[1];
 		sources[2] = instruction->src[2];
 		return 3;
+	case DRV_GPU_IR_TEXTURE:
+		/* The message's parameters: src[1] consecutive values from src[0]. */
+		if (instruction->src[1] == 0U || instruction->src[1] > NVRTX_SM75_MAX_SOURCES)
+			break;
+		for (count = 0; count < (int)instruction->src[1]; count++)
+			sources[count] = instruction->src[0] + (uint32_t)count;
+		return count;
 	case DRV_GPU_IR_UDIV:
 	case DRV_GPU_IR_UMOD:
 	case DRV_GPU_IR_IDIV:
@@ -694,6 +722,8 @@ nvrtx_sm75_defines(
 	if (instruction->op == DRV_GPU_IR_SAMPLE_LOD)
 		return 0;
 	if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS)
+		return 0;
+	if (instruction->op == DRV_GPU_IR_TEXTURE)
 		return 0;
 	if (instruction->op == DRV_GPU_IR_STORE_STORAGE)
 		return 0;
@@ -847,6 +877,7 @@ nvrtx_sm75_lower(
 	case DRV_GPU_IR_SAMPLE:
 	case DRV_GPU_IR_SAMPLE_LOD:
 	case DRV_GPU_IR_SAMPLE_BIAS:
+	case DRV_GPU_IR_TEXTURE:
 		error = nvrtx_sm75_lower_sample(lowering, instruction);
 		return error;
 	case DRV_GPU_IR_KILL:
@@ -2103,7 +2134,7 @@ nvrtx_sm75_extend_loops(
 	const struct drv_gpu_shader_ir_inst *instruction;
 	uint32_t *first_def;
 	uint32_t begins[NVRTX_SM75_LOOP_DEPTH];
-	uint32_t sources[4];
+	uint32_t sources[NVRTX_SM75_MAX_SOURCES];
 	uint32_t depth;
 	uint32_t begin;
 	uint32_t index;
@@ -2461,34 +2492,33 @@ nvrtx_sm75_lower_output(
 }
 
 /*
- * Lowers a 2D sample: the coordinates into a pair, TEX with the image's
- * handle from constant buffer 0 (the level of detail implicit in a
- * fragment program, zero in a vertex one, or the instruction's bias or
- * level), and the four channels into two pairs that become the four
- * results' registers.
+ * Lowers a 2D texture operation: the coordinates into a pair, the level of
+ * detail and the constant texel offset (when there are any) into the
+ * register or the pair after, TEX (a sample) or TLD (a fetch) with the
+ * image's handle from constant buffer 0, and the four channels into two
+ * pairs that become the four results' registers.  The level of detail of a
+ * sample is implicit in a fragment program, zero in a vertex one, or the
+ * instruction's bias or level.
  */
 static int
 nvrtx_sm75_lower_sample(
 	struct nvrtx_sm75_lowering *lowering,
 	const struct drv_gpu_shader_ir_inst *instruction)
 {
+	struct nvrtx_sm75_texture_operands operands;
 	struct nvrtx_sm75_word word;
 	struct nvrtx_sm75_src value;
 	struct nvrtx_sm75_binary *binary;
 	uint32_t coordinates;
+	uint32_t extra;
+	uint32_t extra_count;
 	uint32_t first;
 	uint32_t second;
 	uint32_t texture;
-	uint32_t lod;
-	uint32_t mode;
 	uint32_t index;
 	int error;
 
 	binary = lowering->binary;
-
-	/* A texel offset is not compiled yet. */
-	if (instruction->component != 0U)
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "a sample with a texel offset is not compiled yet");
 
 	/* The image's texture handle. */
 	texture = NVRTX_SM75_NO_SLOT;
@@ -2505,61 +2535,100 @@ nvrtx_sm75_lower_sample(
 			return nvrtx_sm75_refuse(lowering, EINVAL, "a sample's result defined before");
 	}
 
-	/* The level of detail. */
-	lod = NVRTX_SM75_RZ;
-	mode = NVRTX_SM75_TEX_LOD_AUTO;
-	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
-		mode = NVRTX_SM75_TEX_LOD_ZERO;
-	if (instruction->op == DRV_GPU_IR_SAMPLE_LOD) {
-		mode = NVRTX_SM75_TEX_LOD_EXPLICIT;
-		lod = lowering->reg[instruction->src[2]];
-	}
-	if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
-		mode = NVRTX_SM75_TEX_LOD_BIAS;
-		lod = lowering->reg[instruction->src[2]];
-	}
+	/* What the operation passes. */
+	error = nvrtx_sm75_texture_operands(lowering, instruction, &operands);
+	if (error != 0)
+		return error;
 
-	/* The coordinates' pair and the results' two pairs. */
+	/* The registers after the coordinates: the level of detail, the offset, both as a pair, or none. */
+	extra_count = 0U;
+	if (operands.lod != NVRTX_SM75_NOT_DEFINED)
+		extra_count++;
+	if (operands.has_offset != 0)
+		extra_count++;
+
+	/* The coordinates' pair. */
 	error = nvrtx_sm75_take_pair(lowering, &coordinates);
 	if (error != 0)
 		return error;
-	error = nvrtx_sm75_take_pair(lowering, &first);
+
+	/* The level of detail's and the offset's register or pair. */
+	extra = NVRTX_SM75_RZ;
+	if (extra_count == 1U)
+		error = nvrtx_sm75_take(lowering, &extra);
+	if (extra_count == 2U)
+		error = nvrtx_sm75_take_pair(lowering, &extra);
 	if (error != 0) {
 		nvrtx_sm75_give(lowering, coordinates);
 		nvrtx_sm75_give(lowering, coordinates + 1U);
 		return error;
 	}
-	error = nvrtx_sm75_take_pair(lowering, &second);
+
+	/* The results' two pairs. */
+	error = nvrtx_sm75_take_pair(lowering, &first);
+	if (error == 0) {
+		error = nvrtx_sm75_take_pair(lowering, &second);
+		if (error != 0) {
+			nvrtx_sm75_give(lowering, first);
+			nvrtx_sm75_give(lowering, first + 1U);
+		}
+	}
 	if (error != 0) {
 		nvrtx_sm75_give(lowering, coordinates);
 		nvrtx_sm75_give(lowering, coordinates + 1U);
-		nvrtx_sm75_give(lowering, first);
-		nvrtx_sm75_give(lowering, first + 1U);
+		nvrtx_sm75_give(lowering, extra);
+		if (extra_count == 2U)
+			nvrtx_sm75_give(lowering, extra + 1U);
 		return error;
 	}
 
 	/* The coordinates. */
-	value = nvrtx_sm75_value(lowering, instruction->src[0]);
+	value = nvrtx_sm75_value(lowering, operands.u);
 	nvrtx_sm75_begin(&word);
 	nvrtx_sm75_mov(&word, coordinates, &value);
 	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	if (error == 0) {
-		value = nvrtx_sm75_value(lowering, instruction->src[1]);
+		value = nvrtx_sm75_value(lowering, operands.v);
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_mov(&word, coordinates + 1U, &value);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 	}
 
-	/* The sample. */
+	/* The level of detail, first after the coordinates. */
+	index = 0U;
+	if (error == 0 && operands.lod != NVRTX_SM75_NOT_DEFINED) {
+		value = nvrtx_sm75_value(lowering, operands.lod);
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_mov(&word, extra, &value);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+		index = 1U;
+	}
+
+	/* The offset, after the level of detail. */
+	if (error == 0 && operands.has_offset != 0) {
+		value = nvrtx_sm75_imm(operands.offset);
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_mov(&word, extra + index, &value);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+	}
+
+	/* The sample or the fetch. */
 	if (error == 0) {
 		nvrtx_sm75_begin(&word);
-		nvrtx_sm75_tex(&word, first, second, coordinates, lod, mode, NVRTX_SM75_CB_ROOT, NVRTX_SM75_CB_TEXTURES + texture * 4U);
+		nvrtx_sm75_tex(&word, first, second, coordinates, extra, operands.mode, NVRTX_SM75_CB_ROOT, NVRTX_SM75_CB_TEXTURES + texture * 4U);
+		if (operands.fetch != 0)
+			nvrtx_sm75_tex_fetch(&word);
+		if (operands.has_offset != 0)
+			nvrtx_sm75_tex_offset(&word);
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
 	}
 
-	/* The coordinates go back; the results' registers are the four values'. */
+	/* The operands go back; the results' registers are the four values'. */
 	nvrtx_sm75_give(lowering, coordinates);
 	nvrtx_sm75_give(lowering, coordinates + 1U);
+	nvrtx_sm75_give(lowering, extra);
+	if (extra_count == 2U)
+		nvrtx_sm75_give(lowering, extra + 1U);
 	lowering->reg[instruction->dst] = (uint16_t)first;
 	lowering->reg[instruction->dst + 1U] = (uint16_t)(first + 1U);
 	lowering->reg[instruction->dst + 2U] = (uint16_t)second;
@@ -2568,6 +2637,97 @@ nvrtx_sm75_lower_sample(
 		return error;
 
 	/* Succeeded: the channels are in the results' registers. */
+	return 0;
+}
+
+/*
+ * Finds what a texture operation passes: its coordinates, its level of
+ * detail value and mode, whether it fetches, and its texel offset packed as
+ * TEX takes it (u, v and r in four bits each).  A 2D sample of its own
+ * operation keeps its offset as u in bits 11..8 and v in 7..4 of the
+ * component; the general message keeps the message in bits 4..0 and the
+ * offset shifted by 8.  The general message passes no image dimension, so
+ * only the messages whose parameter count says 2D are taken: a sample
+ * (u v), a biased or levelled one (bias or lod, u v), and a fetch (u v lod).
+ */
+static int
+nvrtx_sm75_texture_operands(
+	struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	struct nvrtx_sm75_texture_operands *operands)
+{
+	uint32_t message;
+	uint32_t count;
+	uint32_t offset;
+	uint32_t first;
+
+	/* No level of detail, no fetch, no offset. */
+	operands->lod = NVRTX_SM75_NOT_DEFINED;
+	operands->mode = NVRTX_SM75_TEX_LOD_AUTO;
+	operands->fetch = 0;
+	operands->has_offset = 0;
+	operands->offset = 0U;
+
+	/* The 2D samples of their own operations: the coordinates, then the bias or the level. */
+	if (instruction->op != DRV_GPU_IR_TEXTURE) {
+		operands->u = instruction->src[0];
+		operands->v = instruction->src[1];
+		if (instruction->op == DRV_GPU_IR_SAMPLE_LOD) {
+			operands->lod = instruction->src[2];
+			operands->mode = NVRTX_SM75_TEX_LOD_EXPLICIT;
+		}
+		if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
+			operands->lod = instruction->src[2];
+			operands->mode = NVRTX_SM75_TEX_LOD_BIAS;
+		}
+
+		/* u in bits 11..8 and v in 7..4 become u in 3..0 and v in 7..4. */
+		offset = instruction->component;
+		if (offset != 0U) {
+			operands->has_offset = 1;
+			operands->offset = ((offset >> 8) & 0xfU) | (offset & 0xf0U);
+		}
+	} else {
+		/* The general message, its parameters from src[0]. */
+		message = instruction->component & 0x1fU;
+		count = instruction->src[1];
+		first = instruction->src[0];
+		if (message == DRV_GPU_IR_TEXTURE_SAMPLE && count == 2U) {
+			operands->u = first;
+			operands->v = first + 1U;
+		} else if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS && count == 3U) {
+			operands->lod = first;
+			operands->mode = NVRTX_SM75_TEX_LOD_BIAS;
+			operands->u = first + 1U;
+			operands->v = first + 2U;
+		} else if (message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD && count == 3U) {
+			operands->lod = first;
+			operands->mode = NVRTX_SM75_TEX_LOD_EXPLICIT;
+			operands->u = first + 1U;
+			operands->v = first + 2U;
+		} else if (message == DRV_GPU_IR_TEXTURE_LD && count == 3U) {
+			operands->u = first;
+			operands->v = first + 1U;
+			operands->lod = first + 2U;
+			operands->mode = NVRTX_SM75_TEX_LOD_EXPLICIT;
+			operands->fetch = 1;
+		} else {
+			return nvrtx_sm75_refuse(lowering, ENOTSUP, "a texture message other than a 2D sample or fetch (array, cube, 3D, compare, gradients, size) is not compiled yet");
+		}
+
+		/* u in bits 11..8, v in 7..4 and r in 3..0 of the offset become u in 3..0, v in 7..4 and r in 11..8. */
+		offset = (instruction->component >> 8) & 0xfffU;
+		if (offset != 0U) {
+			operands->has_offset = 1;
+			operands->offset = ((offset >> 8) & 0xfU) | (offset & 0xf0U) | ((offset & 0xfU) << 8);
+		}
+	}
+
+	/* Outside a fragment program there are no derivatives: an implicit level is level zero. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT && operands->mode == NVRTX_SM75_TEX_LOD_AUTO)
+		operands->mode = NVRTX_SM75_TEX_LOD_ZERO;
+
+	/* Succeeded: the operands are found. */
 	return 0;
 }
 
@@ -2716,7 +2876,7 @@ nvrtx_sm75_mark_store(
 		lowering->store_last = address / 4U;
 }
 
-/* Reports nonzero for the sampling operations stage E compiles. */
+/* Reports nonzero for the texture operations, which define four results. */
 static int
 nvrtx_sm75_is_sample(
 	enum drv_gpu_shader_ir_op op)
@@ -2727,6 +2887,10 @@ nvrtx_sm75_is_sample(
 	if (op == DRV_GPU_IR_SAMPLE_LOD)
 		return 1;
 	if (op == DRV_GPU_IR_SAMPLE_BIAS)
+		return 1;
+
+	/* The general sampler message. */
+	if (op == DRV_GPU_IR_TEXTURE)
 		return 1;
 
 	/* Succeeded: another operation. */
@@ -3002,7 +3166,7 @@ nvrtx_sm75_retire(
 	struct nvrtx_sm75_lowering *lowering,
 	const struct drv_gpu_shader_ir_inst *instruction)
 {
-	uint32_t sources[4];
+	uint32_t sources[NVRTX_SM75_MAX_SOURCES];
 	uint32_t value;
 	uint32_t source;
 	int is_sample;
