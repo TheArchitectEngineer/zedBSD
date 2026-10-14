@@ -75,6 +75,7 @@ static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struc
 static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_relay_cross(struct layout_tree *tree, struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit line_cross, layout_unit percentage_basis);
 static layout_unit flex_divide_nearest(layout_unit numerator, layout_unit denominator);
+static int flex_relay_column(struct layout_tree *tree, struct layout_box *box, struct flex_item *items, size_t count, layout_unit line_cross);
 static void flex_static_positions(struct layout_box *box, int row, layout_unit content_height);
 static void flex_place_line(struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit available, layout_unit gap, layout_unit cross_start, layout_unit line_cross);
 static layout_unit flex_cross_outer(const struct layout_box *item, int row);
@@ -1229,7 +1230,8 @@ flex_lay_sized(
 	child->style.margin[CSS_BOTTOM].value = layout_to_px(item->margin_end);
 	child->style.margin[CSS_BOTTOM].offset = 0;
 	align = flex_align_of(box, child);
-	if (align == CSS_ALIGN_STRETCH || child->style.width.unit != CSS_UNIT_AUTO) {
+	if ((align == CSS_ALIGN_STRETCH && box->style.flex_wrap == CSS_FLEX_NOWRAP) ||
+	    child->style.width.unit != CSS_UNIT_AUTO) {
 		error = layout_block(tree, child, box->width);
 		return error;
 	}
@@ -1240,6 +1242,74 @@ flex_lay_sized(
 		return error;
 
 	/* Succeeded: the item is laid out. */
+	return 0;
+}
+
+/* Stretches a wrapping column's auto-width items to their line's width. */
+static int
+flex_relay_column(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	struct flex_item *items,
+	size_t count,
+	layout_unit line_cross)
+{
+	struct flex_sizes saved;
+	struct layout_box *child;
+	layout_unit frame;
+	layout_unit width;
+	size_t index;
+	int error;
+
+	for (index = 0; index < count; index++) {
+		child = items[index].box;
+		if (flex_align_of(box, child) != CSS_ALIGN_STRETCH || child->style.width.unit != CSS_UNIT_AUTO)
+			continue;
+		frame = child->border[CSS_LEFT] + child->padding[CSS_LEFT] + child->padding[CSS_RIGHT] + child->border[CSS_RIGHT];
+		width = line_cross - child->margin[CSS_LEFT] - child->margin[CSS_RIGHT] - frame;
+		if (width < 0)
+			width = 0;
+
+		/* The flexed height stays; the width is the line's. */
+		saved.box_sizing = child->style.box_sizing;
+		saved.width = child->style.width;
+		saved.min_width = child->style.min_width;
+		saved.max_width = child->style.max_width;
+		saved.height = child->style.height;
+		saved.min_height = child->style.min_height;
+		saved.max_height = child->style.max_height;
+		memcpy(saved.margin, child->style.margin, sizeof(saved.margin));
+		child->style.box_sizing = CSS_BOX_SIZING_CONTENT;
+		child->style.width.unit = CSS_UNIT_PX;
+		child->style.width.value = layout_to_px(width);
+		child->style.width.offset = 0;
+		child->style.min_width.unit = CSS_UNIT_PX;
+		child->style.min_width.value = 0;
+		child->style.max_width.unit = CSS_UNIT_NONE;
+		child->style.height.unit = CSS_UNIT_PX;
+		child->style.height.value = layout_to_px(child->height);
+		child->style.height.offset = 0;
+		child->style.min_height.unit = CSS_UNIT_PX;
+		child->style.min_height.value = 0;
+		child->style.max_height.unit = CSS_UNIT_NONE;
+		child->style.margin[CSS_TOP].unit = CSS_UNIT_PX;
+		child->style.margin[CSS_TOP].value = layout_to_px(items[index].margin_start);
+		child->style.margin[CSS_TOP].offset = 0;
+		child->style.margin[CSS_BOTTOM].unit = CSS_UNIT_PX;
+		child->style.margin[CSS_BOTTOM].value = layout_to_px(items[index].margin_end);
+		child->style.margin[CSS_BOTTOM].offset = 0;
+		error = layout_block(tree, child, box->width);
+		child->style.box_sizing = saved.box_sizing;
+		child->style.width = saved.width;
+		child->style.min_width = saved.min_width;
+		child->style.max_width = saved.max_width;
+		child->style.height = saved.height;
+		child->style.min_height = saved.min_height;
+		child->style.max_height = saved.max_height;
+		memcpy(child->style.margin, saved.margin, sizeof(saved.margin));
+		if (error != 0)
+			return error;
+	}
 	return 0;
 }
 
@@ -1269,9 +1339,11 @@ flex_relay_cross(
 	int align;
 	int error;
 
-	/* A column's cross axis is width, which the normal width layout already resolves. */
-	if (!row)
+	/* A single-line column's cross axis is width, which the normal width layout already resolves. */
+	if (!row && box->style.flex_wrap == CSS_FLEX_NOWRAP)
 		return 0;
+	if (!row)
+		return flex_relay_column(tree, box, items, count, line_cross);
 
 	/* Each item that needs the definite cross size is laid out again. */
 	for (index = 0; index < count; index++) {
