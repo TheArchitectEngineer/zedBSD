@@ -708,6 +708,7 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-637 | Q1（BUG-311 の 4 回目、P3 c972a6057: SDIO の poll の busy wait で download を速く、BT の bytes の log と 2 回目の reset） | plan/bugs/BUG-311.md の末尾の節（CI の config の kernel と bluetoothd、reboot の 1 分後の dmesg、wifi up・search・list・status（EBUSY なら 30 秒後に 1 回）、BT の bytes out/in の行と bt show の全文）。Pi 4 の SD の復旧の後 | FAIL（T3、BT 未解決: a second reset was answered で local-version timeout、WiFi は sudo で up/search/list 通る） | 2026-10-15 | plan/agents/T3/results-20261015-t1-637-ws236.md |
 | T3-WS236 | P3（WS236 の CI の kernel で Vulkan Video、Q1 経由） | plan/ws236/phase005/phase.md の 3 stream と 2 mp4、vkvideo-probe、videoplayer（Pi 4 実機） | FAIL（T3、picture 0 が status -1 で hash 全不一致、picture 1 以降の画は一致、videoplayer は vulkan-video で再生 shown=73/77） | 2026-10-15 | plan/agents/T3/results-20261015-t1-637-ws236.md |
 | T1-638 | Q1（WS238 native の layout を ESP・FAT32（ZEDBSD）・UFS・swap に、/boot/boot0 と /boot/efi、P1 812a5b9e1） | plan/ws238/phase001/phase.md の T1 の手順（CI の config-amd64 の image、boot-test、mount の /boot/boot0・/boot/efi、dmesg を FAT32 に書いて host の mtools・fsck.fat、ESP は EFI だけ、smoke.suite） | 未実行 | — | — |
+| T1-639 | Q1（BUG-312 の init の fsck と /sbin/fsck、P2 19cd17a73〜0d6b1dd94） | plan/bugs/BUG-312.md の「T1 への依頼」の T-A（root-powercut.sh で 20 回の電源断、毎回 rw、最後に UFS OK）と T-B（damage-root.py → RO → init の fsck → reboot → rw、/lost+found）。T-C（Pi 4）はユーザーの確認待ち | 未実行 | — | — |
 
 
 - 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。
