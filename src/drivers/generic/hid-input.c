@@ -38,6 +38,15 @@
 #define HID_INPUT_REPORT_SIZE_MAX	(HID_REPORT_BITS_MAX / 8U + 1U)
 
 /*
+ * The EV_KEY codes that are buttons rather than a keyboard's keys, as
+ * Linux numbers them: BTN_MISC (0x100) up to the keys that follow the
+ * buttons (KEY_OK, 0x160), and BTN_TRIGGER_HAPPY (0x2c0) on.
+ */
+#define HID_INPUT_BUTTONS_FIRST		0x100U
+#define HID_INPUT_KEYS_MORE		0x160U
+#define HID_INPUT_BUTTONS_MORE		0x2c0U
+
+/*
  * One report the descriptor declares: its ID, its length in bytes (the
  * ID's byte included), and the keys it holds now.  Kept from prepare to
  * destroy.
@@ -78,6 +87,8 @@ struct hid_input {
 	struct hid_touch_state touch;
 	struct hid_touch_description touch_description;
 	unsigned touch_present;
+	/* The most fingers the touch device has had down at once, for the log (BUG-313). */
+	unsigned touch_most;
 	/*
 	 * The reports the layout refused, which a transport may report, and the
 	 * lines left in the kernel's log for the refused or dropped ones (at
@@ -102,6 +113,7 @@ static void hid_input_pen_report(struct hid_input *input, uint64_t milliseconds)
 static void hid_input_touch_report(struct hid_input *input, uint64_t milliseconds);
 static int hid_input_log_marker(struct hid_input *input);
 static uint32_t hid_input_pen_properties(const struct hid_input *input);
+static void hid_input_log_touch(const struct hid_input *input, const struct hid_input_identity *identity);
 
 /*
  * Parses a report descriptor and describes the devices it declares.
@@ -295,6 +307,73 @@ drv_hid_input_feature(
 	return 0;
 }
 
+/* Reports nonzero when the main device declares a keyboard's key (an EV_KEY that is not a button). */
+int
+drv_hid_input_has_keys(
+	const struct hid_input *input)
+{
+	size_t index;
+	uint16_t code;
+
+	/* Looks through what the main device declares. */
+	for (index = 0; index < input->capability_count; index++) {
+		/* Another kind of event, or a button. */
+		if (input->capabilities[index].type != EV_KEY)
+			continue;
+		code = input->capabilities[index].code;
+		if (code == 0U || (code >= HID_INPUT_BUTTONS_FIRST && code < HID_INPUT_KEYS_MORE))
+			continue;
+		if (code >= HID_INPUT_BUTTONS_MORE)
+			continue;
+
+		/* Succeeded: a key is declared. */
+		return 1;
+	}
+
+	/* No key. */
+	return 0;
+}
+
+/*
+ * Gives the touch device at least this many slots, as Linux's
+ * hid-multitouch takes a screen's Contact Count Maximum for the most
+ * fingers it tracks (BUG-313): ABS_MT_SLOT's range grows with them.
+ */
+int
+drv_hid_input_touch_slots(
+	struct hid_input *input,
+	unsigned contacts)
+{
+	size_t index;
+	unsigned slots;
+
+	/* Only a touch device not yet published. */
+	if (!input->touch_present)
+		return ENOENT;
+	if (input->touch_input != NULL)
+		return EBUSY;
+
+	/* No fewer than it has, no more than the state holds. */
+	slots = contacts;
+	if (slots > HID_TOUCH_SLOTS_MAX)
+		slots = HID_TOUCH_SLOTS_MAX;
+	if (slots <= input->touch_description.slots)
+		return 0;
+	input->touch_description.slots = slots;
+
+	/* ABS_MT_SLOT counts the slots from zero. */
+	for (index = 0; index < input->touch_description.axis_count; index++) {
+		if (input->touch_description.axes[index].code == ABS_MT_SLOT)
+			input->touch_description.axes[index].info.maximum = (int32_t)slots - 1;
+	}
+
+	/* The state machine starts again with every slot free. */
+	drv_hid_touch_reset(&input->touch, slots);
+
+	/* Succeeded: the device tracks that many fingers. */
+	return 0;
+}
+
 /*
  * Registers the devices a descriptor declares with the input layer.
  *
@@ -362,6 +441,10 @@ drv_hid_input_publish(
 		drv_hid_input_unpublish(input);
 		return error;
 	}
+
+	/* What was published and what was not, for a touch device's first bring-up (BUG-313). */
+	if (input->touch_present)
+		hid_input_log_touch(input, identity);
 
 	/* Succeeded: the devices are in the input layer. */
 	return 0;
@@ -763,6 +846,7 @@ hid_input_touch_report(
 {
 	const struct hid_touch_event *event;
 	size_t index;
+	unsigned down;
 	int marker;
 	int error;
 
@@ -782,6 +866,76 @@ hid_input_touch_report(
 		event = &input->touch_output.events[index];
 		drv_input_device_emit_at(input->touch_input, event->type, event->code, event->value, milliseconds);
 	}
+
+	/* The fingers down now; more than ever before leaves a line (BUG-313: whether two fingers reach the slots). */
+	down = 0U;
+	for (index = 0; index < input->touch.slot_count; index++) {
+		if (input->touch.slots[index].active)
+			down++;
+	}
+
+	/* A new most is logged once. */
+	if (down > input->touch_most) {
+		input->touch_most = down;
+		kern_logf("hid-input: %s touch: %u fingers down at once (of %u slots)\n", input->physical_path, down, input->touch.slot_count);
+	}
+}
+
+/*
+ * Logs a published touch device's slots, and what the main device beside
+ * it declares: its events by type when it is published, or that they are
+ * dropped when the transport wanted the touch device alone.
+ */
+static void
+hid_input_log_touch(
+	const struct hid_input *input,
+	const struct hid_input_identity *identity)
+{
+	unsigned counts[4];
+	const char *outcome;
+	const char *surface;
+	size_t index;
+	uint16_t type;
+
+	/* The touch device's slots. */
+	surface = "pad";
+	if ((input->touch_description.properties & (1U << INPUT_PROP_DIRECT)) != 0U)
+		surface = "screen";
+	kern_logf("hid-input: %s touch %s: %u slots\n", input->physical_path, surface, input->touch_description.slots);
+
+	/* The main device's events: keys and buttons, relative and absolute axes, and the rest. */
+	kern_memset(counts, 0, sizeof(counts));
+	for (index = 0; index < input->capability_count; index++) {
+		type = input->capabilities[index].type;
+		if (type == EV_SYN)
+			continue;
+		if (type == EV_KEY)
+			counts[0]++;
+		else if (type == EV_REL)
+			counts[1]++;
+		else if (type == EV_ABS)
+			counts[2]++;
+		else
+			counts[3]++;
+	}
+
+	/* A main device that declares nothing is not one. */
+	if (counts[0] + counts[1] + counts[2] + counts[3] == 0U)
+		return;
+
+	/* Published beside the touch device, or dropped. */
+	outcome = "published";
+	if (input->input == NULL)
+		outcome = "dropped";
+	if ((identity->flags & HID_INPUT_TOUCH_ONLY) != 0U)
+		outcome = "dropped (the touch device alone)";
+	kern_logf("hid-input: %s main device %s: keys %u, rel %u, abs %u, other %u\n",
+		  input->physical_path,
+		  outcome,
+		  counts[0],
+		  counts[1],
+		  counts[2],
+		  counts[3]);
 }
 
 /*

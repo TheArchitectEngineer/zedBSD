@@ -93,6 +93,19 @@ int drv_hid_input_touch(const struct hid_input *input, struct hid_report_touch_i
 /* Reports nonzero when the descriptor declares a touch screen (a direct touch device, not a pad). */
 int drv_hid_input_touch_screen(const struct hid_input *input);
 int drv_hid_input_feature(const struct hid_input *input, uint32_t usage, struct hid_report_feature_info *feature);
+
+/*
+ * Reports nonzero when the main device declares a keyboard's key (an EV_KEY
+ * that is not a button): a collection beside a touch screen worth publishing.
+ */
+int drv_hid_input_has_keys(const struct hid_input *input);
+
+/*
+ * Gives a touch screen or pad at least this many slots (its Contact Count
+ * Maximum, at most HID_TOUCH_SLOTS_MAX), before it is published.  ENOENT
+ * without one, EBUSY once published.
+ */
+int drv_hid_input_touch_slots(struct hid_input *input, unsigned contacts);
 int drv_hid_input_publish(struct hid_input *input, const struct hid_input_identity *identity);
 void drv_hid_input_report(struct hid_input *input, const uint8_t *report, size_t length, uint64_t milliseconds);
 unsigned drv_hid_input_malformed(const struct hid_input *input);
