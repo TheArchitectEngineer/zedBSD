@@ -38,3 +38,4 @@ repo の作成と push は Q1 が、監査の結果をユーザーに示して�
 - 残り: submodule `vendor/raspberrypi-firmware` の除去（手順は phase001/proposed/remove-submodule.md）、T1 の image の試験（rpi4・amd64 の build、FAT の中の firmware が前と byte 一致、raspi4b の boot-test）。
 - 2026-10-14 ユーザー「では作ってください。ライセンスをスクロール表示して、きちんと法的な見た目にしてほしいです。」→ ws233-p002（menuconfig の license の画面）。きっかけは、今の Build boot image が stdin を端末のまま make に渡し、license の質問が log にだけ出て止まって見える問題（Q1 の source の読み、未確かめ）。
 - 2026-10-14 ユーザー「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」→ T1-619 は取り消し。残りは submodule の除去（CI が通った後）。
+- 2026-10-14 夜 Q1: zedBSD-firmware に `nvidia-gsp/`（WS037 の GSP-RM 570.144、LICENCE.nvidia 2.1.2）を足して push（3cad3cc0aa84a5991ed558869213de764ed077ef）、zedbsd-firmware.mk の revision を更新。nvidia-gsp・intelbt・i915 を新しい cache に取り、接続先は GitHub だけで全部一致。
