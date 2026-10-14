@@ -2,6 +2,14 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+## q1149-i01 有限部分範囲（2026-10-14 11:35 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:05 JSTまで）に適用。固定WPT vertical-lr stretch009–016最大8件の同条件baselineを取得し、WPT sourceと最小2×2ページで論理track→物理寸法、auto track content contribution・free space配分、alignment/子writing-modeを切り分け、次の有限実装境界を証拠化。browser/WPT/runner/公開ABI/`plan/master.md`/Acid変更なし。p225/p189/p173 wholeは部分受け入れ外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1149-i01 結果（2026-10-14 11:38 JST）
+
+Event ws074-p225-q1149-partial-clear-20261014: [証拠](evidence/20261014-q1149/README.md)。固定WPT009–016は8/8 whole FAIL、初回差は縦子width期待20/実125・115、横子期待80/実125・115。独立2×2ページで論理列が物理xへ進む誤りをChromium 153と比較。`grid_vertical_fixed`は明示固定px track/auto heightだけで対象外、旧Grid経路は横軸サイズ/位置と縦書き子の強制stretchを使用し、`inline_vertical_room`もauto trackで縦文字寸法を得られない。次の有限scopeはmargin無し009/013の一般的auto-track軸・content contribution・縦文字の確定roomに限定し、margin有り6件は後続。q1149診断部分cleared、p225/p189/p173 whole未達。製品コード・WPT/runner/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
 ## q1146-i01 有限部分範囲（2026-10-14 11:18 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:48 JSTまで）に適用。q1142のvertical-lr/LTR inline-grid・明示固定px track・gap0・単一span・in-flow非replaced/auto寸法限定経路をhorizontal-tb子にも適用し、親の論理track軸変換と子自身の横書きintrinsic/line geometryを両立させる。2×2最小ページ、固定vertical-lr stretch005–008全whole PASS、旧001–004と旧horizontal/vertical PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加、未対応構成fallbackを確認。WPT/runner/公開ABI/`plan/master.md`変更なし。p225/p217/p189/p173 wholeは部分受け入れ外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

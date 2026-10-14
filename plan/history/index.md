@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1148 / WS074 vertical-lr sideways paint（2026-10-14）
+## 最新: q1149 / WS074 vertical Grid auto-track diagnosis（2026-10-14）
+
+[q1149履歴](queue-q1149.md): 固定009–016全8件FAIL。縦論理列が物理xに並び、子widthも強制stretchする一般的欠陥を独立2×2/Chromium比較で確認。[証拠](../ws074/phase225/evidence/20261014-q1149/README.md)。次はmargin無し009/013、共有投影/GitHub publication pending。
+
+## q1148 / WS074 vertical-lr sideways paint（2026-10-14）
 
 [q1148履歴](queue-q1148.md): 非折返しLatin縦字形は独立Fの90度回転画素完全一致、CPU/GPU通常・clip差0。固定旧WPT10/10 PASS、Acid3差0、Acid2差1865維持。[証拠](../ws074/phase220/evidence/20261014-q1148/README.md)。p220 whole未達、共有投影/GitHub publication pending。
 
