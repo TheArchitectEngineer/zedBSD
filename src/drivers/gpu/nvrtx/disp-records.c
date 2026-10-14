@@ -29,7 +29,7 @@
 #define RECORDS_RAMHT_CLIENT_MASK	0x3fffU
 
 /* A context DMA object's first word: the VRAM target, read and write, small pages. */
-#define RECORDS_CONTEXT_DMA_FLAGS	0x00000045U
+#define RECORDS_CONTEXT_DMA_FLAGS	NVRTX_DISP_CONTEXT_DMA_FLAGS
 
 /* The push buffer's registration: system memory, snooped, PCI-coherent, on subdevice 0. */
 #define RECORDS_SPACE_SYSTEM		1U
@@ -332,6 +332,21 @@ nvrtx_disp_context_dma(
 	uint64_t start,
 	uint64_t limit)
 {
+	/* The VRAM, read and write, small pages. */
+	nvrtx_disp_context_dma_flags(object, RECORDS_CONTEXT_DMA_FLAGS, start, limit);
+}
+
+/*
+ * Writes one context DMA object with its first word given (the target,
+ * the access and the page size) over a range of the VRAM.
+ */
+void
+nvrtx_disp_context_dma_flags(
+	uint8_t *object,
+	uint32_t flags,
+	uint64_t start,
+	uint64_t limit)
+{
 	uint64_t start_units;
 	uint64_t limit_units;
 
@@ -341,7 +356,7 @@ nvrtx_disp_context_dma(
 
 	/* Writes the flags, the start and the limit; the last word is left zero. */
 	records_clear(object, NVRTX_DISP_CONTEXT_DMA_BYTES);
-	nvrtx_put32(object, 0x00U, RECORDS_CONTEXT_DMA_FLAGS);
+	nvrtx_put32(object, 0x00U, flags);
 	nvrtx_put32(object, 0x04U, (uint32_t)start_units);
 	nvrtx_put32(object, 0x08U, (uint32_t)(start_units >> 32));
 	nvrtx_put32(object, 0x0cU, (uint32_t)limit_units);

@@ -261,4 +261,95 @@ void nvrtx_disp_window_update(struct nvrtx_push *push, int with_core, uint32_t w
 
 uint32_t nvrtx_disp_band_color(uint32_t band);
 
+
+/*
+ * The display's own resource-manager client and its device and subdevice
+ * (stage P8a, as nouveau makes one for its display): the channels and the
+ * display's objects belong to it, and the low 14 bits of its handle are in
+ * every hash-table entry of the display's instance memory.
+ */
+#define NVRTX_DISP_CLIENT			0xc1d00001U
+#define NVRTX_DISP_DEVICE			0xde1d0000U
+#define NVRTX_DISP_SUBDEVICE			0x5d1d0000U
+
+/* The window-immediate class, the event class, and the windows a Turing display has. */
+#define NVRTX_DISP_CLASS_WIMM			0xc57bU
+#define NVRTX_DISP_CLASS_EVENT			0x007eU
+#define NVRTX_DISP_WINDOWS			8U
+
+/* The context DMA object a window reads the shown surface through (all the VRAM, large pages). */
+/* The first word of the notifiers' and the VRAM's context DMA objects: the VRAM, read and write, small pages. */
+#define NVRTX_DISP_CONTEXT_DMA_FLAGS		0x00000045U
+
+/* An output whose resource is a SOR (the resource manager's output type), and the most heads a display has. */
+#define NVRTX_DISP_OUTPUT_SOR			2U
+#define NVRTX_DISP_HEAD_MAX			8U
+
+#define NVRTX_DISP_HANDLE_FB			0xfb000000U
+#define NVRTX_DISP_CONTEXT_DMA_FB_FLAGS		0x00000005U
+
+/* A LUT's bytes: a 32-byte header and 1025 entries of 8 bytes. */
+#define NVRTX_DISP_LUT_BYTES			0x2008U
+
+/* The event objects' parameters, the client-side flag of their notification, and a repeated notification's parameters. */
+#define NVRTX_DISP_EVENT_BYTES			24U
+#define NVRTX_DISP_EVENT_CLIENT			0x04000000U
+#define NVRTX_DISP_NOTIFICATION_BYTES		20U
+#define NVRTX_DISP_NOTIFY_REPEAT		2U
+
+/*
+ * One mode's timing as a display mode gives it: the visible size, the sync
+ * start and end and the total of each direction, the clock in kHz, and
+ * whether each sync is negative.
+ */
+struct nvrtx_disp_timing {
+	uint32_t hdisplay;
+	uint32_t hsync_start;
+	uint32_t hsync_end;
+	uint32_t htotal;
+	uint32_t vdisplay;
+	uint32_t vsync_start;
+	uint32_t vsync_end;
+	uint32_t vtotal;
+	uint32_t clock_khz;
+	int nhsync;
+	int nvsync;
+};
+
+/* What the EDID says of the sink: an HDMI sink, with audio, and its capabilities for the resource manager. */
+struct nvrtx_disp_sink {
+	int hdmi;
+	int audio;
+	uint32_t caps;
+};
+
+/*
+ * The first commit on the head the firmware lit: the head, the SOR and
+ * display id that drive it, the protocol the SOR is given, and the mode.
+ */
+struct nvrtx_disp_first {
+	uint32_t head;
+	uint32_t sor;
+	uint32_t display_id;
+	uint32_t protocol;
+	struct nvrtx_disp_mode mode;
+};
+
+void nvrtx_disp_first_core_start(struct nvrtx_push *push);
+void nvrtx_disp_first_core_mode(struct nvrtx_push *push, const struct nvrtx_disp_first *first);
+void nvrtx_disp_first_core_release(struct nvrtx_push *push, uint32_t window_interlock);
+void nvrtx_disp_first_core_olut(struct nvrtx_push *push, uint32_t head, uint64_t offset);
+void nvrtx_disp_first_window(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset, uint64_t ilut_offset);
+void nvrtx_disp_first_mode(const struct nvrtx_disp_timing *timing, struct nvrtx_disp_mode *mode);
+void nvrtx_disp_first_timing_from_armed(const uint32_t *armed, struct nvrtx_disp_timing *timing);
+int nvrtx_disp_first_edid_timing(const uint8_t *edid, size_t length, struct nvrtx_disp_timing *timing);
+void nvrtx_disp_first_edid_sink(const uint8_t *edid, size_t length, struct nvrtx_disp_sink *sink);
+void nvrtx_disp_first_avi(uint32_t *words);
+void nvrtx_disp_first_olut_fill(uint8_t *lut);
+void nvrtx_disp_first_ilut_fill(uint8_t *lut);
+void nvrtx_disp_first_event_params(uint8_t *params, uint32_t client, uint32_t notify);
+void nvrtx_disp_first_notification_params(uint8_t *params, uint32_t notify);
+void nvrtx_disp_first_display_params(uint8_t *params, size_t length, uint32_t display_id);
+void nvrtx_disp_context_dma_flags(uint8_t *object, uint32_t flags, uint64_t start, uint64_t limit);
+
 #endif

@@ -122,7 +122,7 @@ struct nvrtx_node;
 #define NVRTX_COMPUTE_ARENA_RESERVE	0xa800000ULL
 
 /* The hash-table entries the display's channels add (P8b): two objects for each of two channels. */
-#define NVRTX_DISP_RAMHT_USED_MAX	4U
+#define NVRTX_DISP_RAMHT_USED_MAX	24U
 
 /* How long a call to the resource manager waits for its reply. */
 #define NVRTX_CALL_TIMEOUT_US		5000000U
@@ -433,9 +433,31 @@ struct nvrtx_display_state {
 	int common_made;
 	int root_made;
 
-	/* P8b: the channels, their push buffers and what the takeover wrote. */
+	/* P8a: the display's own client and objects, and each output's resource, type and protocol by id bit. */
+	int client_made;
+	int device_made;
+	int subdevice_made;
+	int hotplug_made;
+	int dp_irq_made;
+	uint32_t output_or[32];
+	uint32_t output_type[32];
+	uint32_t output_protocol[32];
+
+	/* P8b: the outputs connected, what the lit output's EDID says, and the LUTs' VRAM. */
+	uint32_t connected_mask;
+	struct nvrtx_disp_sink sink;
+	struct nvrtx_disp_timing timing;
+	int timing_from_edid;
+	uint64_t olut;
+	uint64_t ilut;
+
+	/* P8b: the channels (the core, every window, window-immediate and cursor), their push buffers and what the takeover wrote. */
 	struct nvrtx_buffer core_buffer;
-	struct nvrtx_buffer window_buffer;
+	struct nvrtx_buffer window_buffers[NVRTX_DISP_WINDOWS];
+	struct nvrtx_buffer wimm_buffers[NVRTX_DISP_WINDOWS];
+	uint32_t windows_made;
+	uint32_t wimms_made;
+	uint32_t cursors_made;
 	struct nvrtx_push core_push;
 	struct nvrtx_push window_push;
 	uint32_t window;
@@ -608,6 +630,8 @@ int nvrtx_rpc_wait(struct nvrtx_gpu *gpu, uint32_t function, uint32_t sequence, 
 int nvrtx_rm_allocate(struct nvrtx_gpu *gpu, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
 int nvrtx_rm_control(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length, const uint8_t **reply, size_t *reply_length);
 int nvrtx_rm_free(struct nvrtx_gpu *gpu, uint32_t object);
+int nvrtx_rm_allocate_in(struct nvrtx_gpu *gpu, uint32_t client, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
+int nvrtx_rm_free_in(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object);
 
 int nvrtx_space_start(struct nvrtx_gpu *gpu);
 int nvrtx_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
@@ -657,6 +681,9 @@ int nvrtx_draw_stop(struct nvrtx_gpu *gpu);
 void nvrtx_draw_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_display_start(struct nvrtx_gpu *gpu);
+int nvrtx_display_inherit(struct nvrtx_gpu *gpu);
+int nvrtx_display_detect(struct nvrtx_gpu *gpu);
+int nvrtx_display_hdmi(struct nvrtx_gpu *gpu);
 void nvrtx_display_stop(struct nvrtx_gpu *gpu);
 
 int nvrtx_scanout_start(struct nvrtx_gpu *gpu);

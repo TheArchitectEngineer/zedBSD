@@ -184,7 +184,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compute-launch.c src/drivers/gpu/nv
 # P9g: the first draw on the compute launch's channel (ws037-p007, nvrtx.draw=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/draw-push.c src/drivers/gpu/nvrtx/draw.c
 # P8b: the takeover of the firmware's head, the display channels and a flip (ws037-p006, nvrtx.disp=1).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/scanout.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/disp-first.c src/drivers/gpu/nvrtx/scanout.c
 # P4m: the VRAM allocator and the BAR1 window (ws037-p005).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
 # P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
