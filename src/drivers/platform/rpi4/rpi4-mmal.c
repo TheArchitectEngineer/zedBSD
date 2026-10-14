@@ -270,6 +270,7 @@ static int port_action(struct drv_rpi4_mmal_decoder *decoder, uint32_t port_hand
 static int set_boolean(struct drv_rpi4_mmal_decoder *decoder, uint32_t port_handle, uint32_t id, uint32_t value);
 static int enable_output(struct drv_rpi4_mmal_decoder *decoder);
 static int give_output(struct drv_rpi4_mmal_decoder *decoder, unsigned index);
+static int free_input(struct drv_rpi4_mmal_decoder *decoder, uint64_t deadline, unsigned *index);
 static int pump(struct drv_rpi4_mmal_decoder *decoder);
 static int take_message(struct drv_rpi4_mmal_decoder *decoder, struct mmal_message *message);
 static int pump_buffers(struct drv_rpi4_mmal_decoder *decoder);
@@ -474,13 +475,15 @@ drv_rpi4_mmal_decoder_input(
 }
 
 /*
- * Sends the access unit written into the staging the last input call gave.
+ * Sends the access unit (or, with config, the parameter sets) written into
+ * the staging the last input call gave.
  */
 int
 drv_rpi4_mmal_decoder_send(
 	struct drv_rpi4_mmal_decoder *decoder,
 	uint32_t bytes,
-	int64_t pts)
+	int64_t pts,
+	int config)
 {
 	struct mmal_staging *half;
 	uint8_t message[DRV_RPI4_MMAL_BUFFER_BYTES];
@@ -506,30 +509,27 @@ drv_rpi4_mmal_decoder_send(
 	offset = 0;
 	while (offset < bytes) {
 		/* Waits for an input buffer the firmware has given back. */
-		for (;;) {
-			error = pump(decoder);
-			if (error != 0)
-				return error;
-			for (index = 0; index < decoder->input_count; index++) {
-				if (decoder->input_free[index])
-					break;
-			}
-			if (index < decoder->input_count)
-				break;
-			error = wait_queue_or(decoder, deadline);
-			if (error != 0) {
-				kern_logf("rpi4-mmal: no input buffer back in %u ms\n", MMAL_WAIT_MS);
-				return error;
-			}
-		}
+		error = free_input(decoder, deadline, &index);
+		if (error != 0)
+			return error;
 
-		/* The piece, and the end-of-frame flag on the last one. */
+		/*
+		 * The piece and its flags, as the BSD-3 userland's container
+		 * reader gives them: the start of the frame on the first, its end
+		 * on the last; codec configuration instead for parameter sets.
+		 */
 		chunk = bytes - offset;
 		if (chunk > decoder->input_size)
 			chunk = decoder->input_size;
 		flags = 0;
-		if (offset + chunk == bytes)
-			flags = DRV_RPI4_MMAL_FLAG_FRAME_END;
+		if (config) {
+			flags = DRV_RPI4_MMAL_FLAG_CONFIG;
+		} else {
+			if (offset == 0)
+				flags |= DRV_RPI4_MMAL_FLAG_FRAME_START;
+			if (offset + chunk == bytes)
+				flags |= DRV_RPI4_MMAL_FLAG_FRAME_END;
+		}
 
 		/* The buffer is the firmware's until it comes back; the area until its bulk completes. */
 		decoder->input_free[index] = false;
@@ -561,6 +561,80 @@ drv_rpi4_mmal_decoder_send(
 
 	/* Succeeded: the firmware has the unit. */
 	return 0;
+}
+
+/*
+ * Sends an end of stream: an empty input buffer with the end-of-stream
+ * flag and no bulk.
+ */
+int
+drv_rpi4_mmal_decoder_end(
+	struct drv_rpi4_mmal_decoder *decoder)
+{
+	uint8_t message[DRV_RPI4_MMAL_BUFFER_BYTES];
+	unsigned long enabled;
+	uint64_t deadline;
+	unsigned index;
+	int error;
+
+	/* A broken decoder takes nothing more. */
+	if (decoder->broken)
+		return EIO;
+
+	/* An input buffer the firmware has given back. */
+	deadline = sched_ticks() + kern_ms_to_ticks(MMAL_WAIT_MS) + 1U;
+	error = free_input(decoder, deadline, &index);
+	if (error != 0)
+		return error;
+
+	/* The buffer counts against the current area until it comes back; it moves no bytes. */
+	decoder->input_free[index] = false;
+	decoder->input_half[index] = decoder->current;
+	enabled = spin_lock_irqsave(&mmal_lock);
+
+	decoder->half[decoder->current].buffers++;
+
+	spin_unlock_irqrestore(&mmal_lock, enabled);
+
+	/* The empty buffer message. */
+	(void)drv_rpi4_mmal_build_buffer(message, DRV_RPI4_MMAL_MSG_BUFFER_FROM_HOST, 0, decoder->component,
+					 decoder->input_handle, token(decoder, MMAL_KIND_INPUT, index),
+					 decoder->input_size, 0, DRV_RPI4_MMAL_FLAG_EOS, DRV_RPI4_MMAL_TIME_UNKNOWN);
+	error = drv_rpi4_vchiq_send(mmal_service, message, sizeof(message));
+	if (error != 0) {
+		decoder->broken = true;
+		kern_logf("rpi4-mmal: end of stream not sent (%d); decoder stopped\n", error);
+		return error;
+	}
+
+	/* Succeeded: the firmware outputs what it holds. */
+	return 0;
+}
+
+/* Waits until deadline for an input buffer the firmware has given back; index receives it. */
+static int
+free_input(
+	struct drv_rpi4_mmal_decoder *decoder,
+	uint64_t deadline,
+	unsigned *index)
+{
+	int error;
+
+	/* Takes in what came back, then looks for a free buffer, until the deadline. */
+	for (;;) {
+		error = pump(decoder);
+		if (error != 0)
+			return error;
+		for (*index = 0; *index < decoder->input_count; (*index)++) {
+			if (decoder->input_free[*index])
+				return 0;
+		}
+		error = wait_queue_or(decoder, deadline);
+		if (error != 0) {
+			kern_logf("rpi4-mmal: no input buffer back in %u ms\n", MMAL_WAIT_MS);
+			return error;
+		}
+	}
 }
 
 /*

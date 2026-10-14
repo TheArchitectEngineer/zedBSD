@@ -121,6 +121,22 @@ Phase disposition: normal
   - 既定の `config-rpi4.mk` の program は 249 で、vkvideo-probe は入らない。
 - 次: T1 の dump と PNG を見て中身の不一致の原因を決める。run=c の結果で vulkan-video の最初の frame の遅れを直す（delimiter）。
 
+## T1-629 の結果（実機 Pi 4、2026-10-14 夜）と次の版
+
+- stall は 0 回、6 run とも error=0。run b・c は outputs=inputs で、pts は 0〜N の decode 順（R1 は効いた）。
+- run c（delimiter）でも最初の picture の遅れは直らなかった（lag_pts=1）。
+- 中身（`dump-compare.py` を T1-629 の dump で流した結果）:
+  - 違う sample は全て、参照の値が 1〜15 で、出力がそれより 1 小さい物だった（probe の 18 枚、vkvideo の frame 0 以外の全て）。値 16 以上は bit 単位で一致。
+  - deblocking の差ではなく、firmware の出力の footroom（16 未満）の値の写像と見る。
+  - ユーザーの判断で後回し。
+- vkvideo の frame 0 は空（picture 0 status -1）。libmedia は status の error を EIO として decode を止めるので、videoplayer の shown=0 もこれが原因と見る。
+- この版:
+  - **入力の buffer の flag**: 最初の piece に FRAME_START、最後に FRAME_END を付ける（BSD-3 userland の container reader と同じ）。これまでは FRAME_END だけだった。`decoder_send` に config の引数を足し、parameter set だけの buffer は CONFIG で送れる。
+  - **vulkan-video の最初の picture**: 開始（作成・RESET）の後の最初の decode で 150 ms 待っても frame が来ない時は、空の EOS の buffer（`drv_rpi4_mmal_decoder_end`）で押し出す。EOS の空の frame は捨てる。
+  - **probe の run**:
+    - run c を「SPS・PPS を CONFIG の buffer で別に送る」に変えた。
+    - run d（R1 + 最初の unit の後に EOS）を足した。EOS の後も decode が続くか（後の frame が正しいか）を確かめる。
+  - **`dump-compare.py`**: 違う sample のうち「参照 1〜15 → 1 小さい」の数を summary に出す。
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。

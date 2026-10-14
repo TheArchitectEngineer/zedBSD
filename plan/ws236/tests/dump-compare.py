@@ -9,7 +9,8 @@
 # and then `length` bytes of the frame as the decoder put them in memory.  For each record it writes:
 #   OUTDIR/<file>-<run>-<out>.png        reference | actual | |difference| for Y, then Cb and Cr, then RGB
 #   OUTDIR/<file>-<run>-<out>-alt.png    the Y difference under other readings of the bytes (pitch, height, order)
-# and OUTDIR/summary.txt, one block a record: the reference picture chosen, the error numbers, the best reading.
+# and OUTDIR/summary.txt, one block a record: the reference picture chosen, the error numbers (and how many differing
+# samples are a value of 1..15 that came out one less, the pattern T1-629 showed), the best reading.
 # The reference picture is the header's display (a checksum match), else its pts_display, else (and always reported)
 # the reference picture closest to the actual one.  A vulkan record (vkvideo-probe) is in decode order.
 # Needs ffmpeg and ffprobe, numpy and Pillow.
@@ -159,6 +160,15 @@ def numbers(actual, expected):
     y = actual[0].astype(np.int16) - expected[0].astype(np.int16)
     uv = np.concatenate([(actual[1].astype(np.int16) - expected[1].astype(np.int16)).ravel(),
                          (actual[2].astype(np.int16) - expected[2].astype(np.int16)).ravel()])
+    # How many differing samples (all planes) are a reference value of 1..15 that came out one less (the footroom).
+    footroom = 0
+    differing = 0
+    for p in range(3):
+        a = actual[p].astype(np.int16)
+        e = expected[p].astype(np.int16)
+        mask = a != e
+        differing += int(np.count_nonzero(mask))
+        footroom += int(np.count_nonzero(mask & (e >= 1) & (e <= 15) & (a == e - 1)))
     rows = np.nonzero(np.any(y != 0, axis=1))[0]
     first = None
     if len(rows):
@@ -168,7 +178,7 @@ def numbers(actual, expected):
         'y_mad': float(np.mean(np.abs(y))), 'y_max': int(np.max(np.abs(y))),
         'y_differ': float(np.mean(y != 0)) * 100.0, 'uv_mad': float(np.mean(np.abs(uv))),
         'uv_max': int(np.max(np.abs(uv))), 'uv_differ': float(np.mean(uv != 0)) * 100.0,
-        'rows_differ': len(rows), 'first': first,
+        'rows_differ': len(rows), 'first': first, 'differing': differing, 'footroom': footroom,
         'psnr_y': float('inf') if not np.any(y) else 10 * np.log10(255.0 ** 2 / np.mean(y.astype(np.float64) ** 2)),
     }
 
@@ -284,6 +294,8 @@ def main():
               'rows that differ %d of %d, first difference (row, col) %s' % (
                   n['y_mad'], n['y_max'], n['y_differ'], n['psnr_y'], n['uv_mad'], n['uv_max'], n['uv_differ'],
                   n['rows_differ'], height, n['first']), file=summary)
+        print('  differing samples %d, of which %d are a reference value 1..15 that came out one less' % (
+            n['differing'], n['footroom']), file=summary)
         for score, text, planes, m in scored[:3]:
             print('  best readings: %s: Y mad %.3f UV mad %.3f' % (text, m['y_mad'], m['uv_mad']), file=summary)
         print('%s: reference display %d (%s), Y mad %.3f, UV mad %.3f, best reading %s' % (

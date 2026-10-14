@@ -86,6 +86,13 @@
 /* The timeouts in a row after which a session stops waiting. */
 #define VIDEO_MAX_TIMEOUTS		3U
 
+/*
+ * How long the first decode after a start waits before it pushes its
+ * picture out with an end of stream: the firmware holds the first picture
+ * until more input comes (T1-626, T1-629), and a Vulkan decode has none.
+ */
+#define VIDEO_FIRST_MS			150U
+
 /* The session memory binding reported: one page the decoder never uses. */
 #define VIDEO_BIND_BYTES		4096U
 
@@ -183,6 +190,7 @@ struct video_session {
 	struct drv_rpi4_mmal_decoder *decoder;
 	bool broken;
 	unsigned timeouts;
+	bool started;
 	int64_t sequence;
 	uint8_t sent_sps[DRV_RPI4_H264_SPS_MAX + 2048U];
 	size_t sent_sps_bytes;
@@ -545,6 +553,7 @@ bcm2711_vulkan_video_run(
 			closed = bcm2711_render_window_close(controller);
 			video->sent_sps_bytes = 0;
 			video->sent_pps_bytes = 0;
+			video->started = false;
 			if (error != 0) {
 				skip(video, NULL, "flush failed", error);
 				error = 0;
@@ -2647,7 +2656,9 @@ run_decode(
 	uint32_t bytes;
 	uint32_t pitch;
 	int64_t pts;
+	unsigned wait_ms;
 	bool built;
+	bool pushed;
 	int error;
 	int closed;
 	int busy;
@@ -2690,18 +2701,36 @@ run_decode(
 		built = true;
 	if (built) {
 		drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
-		error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts);
+		error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts, 0);
 	}
+	pushed = false;
 	while (built && error == 0) {
-		error = drv_rpi4_mmal_decoder_receive(video->decoder, VIDEO_FRAME_MS, &frame, &pixels);
+		wait_ms = VIDEO_FRAME_MS;
+		if (!video->started && !pushed)
+			wait_ms = VIDEO_FIRST_MS;
+		error = drv_rpi4_mmal_decoder_receive(video->decoder, wait_ms, &frame, &pixels);
+
+		/* The first picture after a start that does not come is pushed out with an end of stream, once. */
+		if (error == ETIMEDOUT && !video->started && !pushed) {
+			kern_logf("v3d: video: decode %lld: the first picture is held; an end of stream pushes it out\n", (long long)pts);
+			pushed = true;
+			error = drv_rpi4_mmal_decoder_end(video->decoder);
+			continue;
+		}
+
+		/* The end of stream's own empty frame carries no picture. */
+		if (error == 0 && frame.length == 0)
+			continue;
 
 		/* A late frame of an earlier decode (one that timed out) is dropped; an unknown time is this one's. */
-		if (error == 0 && frame.pts < pts && frame.pts != DRV_RPI4_MMAL_FRAME_NO_TIME && frame.length != 0) {
+		if (error == 0 && frame.pts < pts && frame.pts != DRV_RPI4_MMAL_FRAME_NO_TIME) {
 			kern_logf("v3d: video: late frame %lld dropped at decode %lld\n", (long long)frame.pts, (long long)pts);
 			continue;
 		}
 		break;
 	}
+	if (error == 0)
+		video->started = true;
 	drv_rpi4_mmal_decoder_target(video->decoder, 0, 0, 0, 0);
 	busy = drv_rpi4_mmal_decoder_busy(video->decoder);
 	closed = bcm2711_render_window_close(controller);

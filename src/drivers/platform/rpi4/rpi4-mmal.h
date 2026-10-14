@@ -69,10 +69,18 @@ int drv_rpi4_mmal_decoder_input(struct drv_rpi4_mmal_decoder *decoder, uint8_t *
 /*
  * Sends the access unit written into the staging the last input call gave.
  *
- * The unit is split into the firmware's input buffers; the last carries
- * the end-of-frame flag and every one the time stamp.
+ * The unit is split into the firmware's input buffers; the first carries
+ * the start-of-frame flag, the last the end-of-frame flag, and every one
+ * the time stamp.  With config, the staging holds parameter sets only and
+ * goes as codec configuration instead (no frame flags).
  */
-int drv_rpi4_mmal_decoder_send(struct drv_rpi4_mmal_decoder *decoder, uint32_t bytes, int64_t pts);
+int drv_rpi4_mmal_decoder_send(struct drv_rpi4_mmal_decoder *decoder, uint32_t bytes, int64_t pts, int config);
+
+/*
+ * Sends an end of stream (an empty buffer): the firmware outputs every
+ * picture it holds, then an empty frame with the end-of-stream flag.
+ */
+int drv_rpi4_mmal_decoder_end(struct drv_rpi4_mmal_decoder *decoder);
 
 /*
  * Names memory the next decoded frame goes straight into.

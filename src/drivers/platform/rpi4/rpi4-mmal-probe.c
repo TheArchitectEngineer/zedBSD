@@ -9,10 +9,12 @@
  * The boot-time probe of the VideoCore H.264 decoder (ws236 design §12),
  * built only by test kernels (CONFIG_DRIVER_BCM2711_VIDEO_PROBE).
  *
- * It decodes two embedded streams with B frames, each three ways: as
+ * It decodes two embedded streams with B frames, each four ways: as
  * encoded (the control, run a), with every SPS rewritten to ask for no
- * reordering (run b), and the same with an access unit delimiter after
- * each unit (run c), which ends the picture before the next unit comes.
+ * reordering (run b), the same with the parameter sets sent apart as
+ * codec configuration (run c), as the BSD-3 userland's container reader
+ * does, and the same as b with an end of stream after the first unit
+ * (run d).
  * Each output picture is identified by the checksum of its visible bytes
  * against the reference decode, and its place in decode order is compared
  * with the input that was last sent, which shows whether the firmware
@@ -79,8 +81,12 @@
 #define PROBE_MAP_WORDS			256U
 #define PROBE_STRIP_BYTES		64U
 
-/* The access unit delimiter run c appends to each unit: it ends the picture before the next unit comes. */
-static const uint8_t probe_delimiter[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xf0 };
+/* Which NAL units of an access unit a copy takes. */
+enum probe_nals {
+	PROBE_NALS_ALL,
+	PROBE_NALS_SETS,
+	PROBE_NALS_OTHERS
+};
 
 /* One embedded stream and its reference. */
 struct probe_stream {
@@ -99,13 +105,17 @@ struct probe_stream {
 
 /*
  * How one run feeds the decoder: as encoded (a), with every SPS rewritten
- * for no reordering (b), and the same with a delimiter after each unit
- * (c); and how many of its frames go to the dump.
+ * for no reordering (b), the same with the parameter sets sent apart as
+ * codec configuration (c), and the same as b with an end of stream after
+ * the first unit (d: whether the first picture comes out, and the stream
+ * goes on, as vulkan-video's push of a held first picture needs); and how
+ * many of its frames go to the dump.
  */
 struct probe_mode {
 	const char *name;
 	int rewrite;
-	int delimiter;
+	int config;
+	int end_first;
 	unsigned dumps;
 };
 
@@ -113,16 +123,18 @@ struct probe_mode {
  * The runs of each stream: the first four frames of 352's runs and of
  * 1080's run b, and the first of 1080's others, go to the dump.
  */
-#define PROBE_MODES			3U
+#define PROBE_MODES			4U
 static const struct probe_mode probe_small_modes[PROBE_MODES] = {
-	{ "a", 0, 0, 4U },
-	{ "b", 1, 0, 4U },
-	{ "c", 1, 1, 4U }
+	{ "a", 0, 0, 0, 4U },
+	{ "b", 1, 0, 0, 4U },
+	{ "c", 1, 1, 0, 4U },
+	{ "d", 1, 0, 1, 4U }
 };
 static const struct probe_mode probe_large_modes[PROBE_MODES] = {
-	{ "a", 0, 0, 1U },
-	{ "b", 1, 0, 4U },
-	{ "c", 1, 1, 1U }
+	{ "a", 0, 0, 0, 1U },
+	{ "b", 1, 0, 0, 4U },
+	{ "c", 1, 1, 0, 1U },
+	{ "d", 1, 0, 1, 1U }
 };
 
 /*
@@ -152,6 +164,7 @@ struct probe_result {
 static void probe_main(void *argument);
 static void probe_run(const struct probe_stream *stream, const struct probe_mode *mode);
 static int send_unit(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, size_t start, size_t end, const struct probe_mode *mode, int64_t pts);
+static int copy_nals(const struct probe_stream *stream, size_t start, size_t end, const struct probe_mode *mode, enum probe_nals which, uint8_t *staging, uint32_t capacity, size_t *used);
 static void map_frame(const struct probe_stream *stream, const char *run, unsigned out, int reference, const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels);
 static unsigned frame_map(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, uint32_t *words);
 static uint32_t rows_sum(const uint8_t *plane, uint32_t pitch, uint32_t left, uint32_t width, uint32_t top, uint32_t rows);
@@ -297,6 +310,14 @@ probe_run(
 		}
 		sent++;
 		offset = end;
+		if (mode->end_first && sent == 1U) {
+			error = drv_rpi4_mmal_decoder_end(decoder);
+			if (error != 0) {
+				kern_logf("rpi4-mmal-probe: %s run=%s end of stream not sent (%d)\n", stream->name, run, error);
+				result.error = error;
+				break;
+			}
+		}
 		collect(decoder, stream, run, sent, PROBE_OUTPUT_MS, &result);
 		if (result.error != 0)
 			break;
@@ -346,8 +367,9 @@ order_name(
 }
 
 /*
- * Copies one access unit into the decoder's staging, rewriting its SPS
- * when asked, and sends it.
+ * Sends one access unit, rewriting its SPS when asked.  In run c its
+ * parameter sets go first in a buffer of their own, as codec
+ * configuration, and the rest follows as the frame.
  */
 static int
 send_unit(
@@ -360,60 +382,97 @@ send_unit(
 {
 	uint8_t *staging;
 	uint32_t capacity;
-	size_t nal_start;
-	size_t nal_end;
-	size_t written;
 	size_t used;
-	size_t cursor;
 	int error;
 
-	/* The staging the unit goes into. */
+	/* Run c: the parameter sets as configuration, when the unit has any. */
+	if (mode->config) {
+		error = drv_rpi4_mmal_decoder_input(decoder, &staging, &capacity);
+		if (error != 0)
+			return error;
+		error = copy_nals(stream, start, end, mode, PROBE_NALS_SETS, staging, capacity, &used);
+		if (error != 0)
+			return error;
+		if (used != 0) {
+			error = drv_rpi4_mmal_decoder_send(decoder, (uint32_t)used, DRV_RPI4_MMAL_FRAME_NO_TIME, 1);
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* The frame: every unit (run c: all but the parameter sets), with its decode index as the time stamp. */
 	error = drv_rpi4_mmal_decoder_input(decoder, &staging, &capacity);
 	if (error != 0)
 		return error;
+	error = copy_nals(stream, start, end, mode, mode->config ? PROBE_NALS_OTHERS : PROBE_NALS_ALL, staging, capacity, &used);
+	if (error != 0)
+		return error;
+	error = drv_rpi4_mmal_decoder_send(decoder, (uint32_t)used, pts, 0);
+	if (error != 0)
+		return error;
 
-	/* Copies each NAL unit with a four-byte start code; an SPS is rewritten in the second run. */
-	used = 0;
+	/* Succeeded: the firmware has the unit. */
+	return 0;
+}
+
+/*
+ * Copies the NAL units of [start, end) that which selects (all, the
+ * parameter sets, or all others) into staging, each with a four-byte
+ * start code; an SPS is rewritten when the mode asks.  used receives the
+ * bytes written.
+ */
+static int
+copy_nals(
+	const struct probe_stream *stream,
+	size_t start,
+	size_t end,
+	const struct probe_mode *mode,
+	enum probe_nals which,
+	uint8_t *staging,
+	uint32_t capacity,
+	size_t *used)
+{
+	size_t nal_start;
+	size_t nal_end;
+	size_t written;
+	size_t cursor;
+	unsigned type;
+	bool set;
+	int error;
+
+	/* Each unit in turn. */
+	*used = 0;
 	cursor = start;
 	for (;;) {
 		error = drv_rpi4_h264_next_nal(stream->data, end, cursor, &nal_start, &nal_end);
 		if (error != 0)
 			break;
-		if (mode->rewrite && (stream->data[nal_start] & 0x1fU) == DRV_RPI4_H264_NAL_SPS) {
-			if (capacity - used < DRV_RPI4_H264_SPS_MAX)
+		cursor = nal_end;
+		type = stream->data[nal_start] & 0x1fU;
+		set = type == DRV_RPI4_H264_NAL_SPS || type == DRV_RPI4_H264_NAL_PPS;
+		if ((which == PROBE_NALS_SETS && !set) || (which == PROBE_NALS_OTHERS && set))
+			continue;
+		if (mode->rewrite && type == DRV_RPI4_H264_NAL_SPS) {
+			if (capacity - *used < DRV_RPI4_H264_SPS_MAX)
 				return ENOSPC;
 			error = drv_rpi4_h264_sps_no_reorder(stream->data + nal_start, nal_end - nal_start,
-							     staging + used, DRV_RPI4_H264_SPS_MAX, &written);
+							     staging + *used, DRV_RPI4_H264_SPS_MAX, &written);
 			if (error != 0)
 				return error;
-			used += written;
-		} else {
-			if (capacity - used < 4U + (nal_end - nal_start))
-				return ENOSPC;
-			staging[used] = 0;
-			staging[used + 1U] = 0;
-			staging[used + 2U] = 0;
-			staging[used + 3U] = 1;
-			kern_memcpy(staging + used + 4U, stream->data + nal_start, nal_end - nal_start);
-			used += 4U + (nal_end - nal_start);
+			*used += written;
+			continue;
 		}
-		cursor = nal_end;
-	}
-
-	/* Run c ends the unit with a delimiter. */
-	if (mode->delimiter) {
-		if (capacity - used < sizeof(probe_delimiter))
+		if (capacity - *used < 4U + (nal_end - nal_start))
 			return ENOSPC;
-		kern_memcpy(staging + used, probe_delimiter, sizeof(probe_delimiter));
-		used += sizeof(probe_delimiter);
+		staging[*used] = 0;
+		staging[*used + 1U] = 0;
+		staging[*used + 2U] = 0;
+		staging[*used + 3U] = 1;
+		kern_memcpy(staging + *used + 4U, stream->data + nal_start, nal_end - nal_start);
+		*used += 4U + (nal_end - nal_start);
 	}
 
-	/* Sends the unit with its decode index as the time stamp. */
-	error = drv_rpi4_mmal_decoder_send(decoder, (uint32_t)used, pts);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the firmware has the unit. */
+	/* Succeeded: the units are in the staging. */
 	return 0;
 }
 
