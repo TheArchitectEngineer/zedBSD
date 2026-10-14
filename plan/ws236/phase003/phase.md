@@ -62,6 +62,35 @@ Phase disposition: normal
   - output の NV12 が拒まれたら I420 で試す。probe は I420 の frame も NV12 と同じ checksum にする。
 - T1 の次の依頼: image は `plan/ws236/tests/config-rpi4-video-probe.mk`（video・probe・vkvideo-probe を 1 回の起動で）。手順は phase005 と同じで、dmesg の grep に `rpi4-mmal: (trace|port|.*created|.*not configured|NV12)` の行を全て含める。
 
+## T1-625 の結果（実機 Pi 4、2026-10-14 夜）と次の版（44839b871）
+
+- COMPONENT_ENABLE まで全て SUCCESS。I420 の出力で動いた。
+- 観測:
+  - run=a: format change の中の output の DISABLE が返らない（42 = ETIMEDOUT）。
+  - run=b: 4 枚が decode の順・lag 0 で出た（R1 は有望）。ただし frame 1〜3 の checksum が不明（display/decode が -1）。その後に bulk が 1 秒で終わらず、decoder が退役した。
+  - 以後の session は全て 17（EBUSY）。退役した decoder が唯一の slot を塞いだ。
+- 直し:
+  1. **返事を待つ間に返ってきた buffer を受け取る**（`pump_buffers`、request に decoder を渡す）。firmware は EFCH の後ろに frame の BUFFER_TO_HOST を積み、その bulk を ARM が受け取るまで DISABLE に答えない、と見た。受け取る順は到着の順のまま。bulk を伴う event（256 byte 超）より後ろの buffer は取らない。
+  2. **payload_in_message**: firmware は 128 byte 以下の payload を message の中（offset 164）で送り、その時は bulk が来ない。BSD-3 の userland の client の規則。これまで無視して bulk を待っていた。bulk が 1 秒で終わらない原因の最有力。input・output の両方で、短い payload は bulk を出さない。
+  3. **input の buffer に data が付いて返る時は、userland と同じく scratch に bulk で受けて捨てる**（変えない）。log に毎回 len・short・flags を出し、本当にそうなるかを見る。
+  4. **出力の buffer の数**: 推奨の数を使う（最小・推奨・3 の最大、上限 8）。これまでは最小と 3 の最大だった。
+  5. **DPB**: R1 の SPS の `max_dec_frame_buffering` を level の MaxDpbFrames にした（以前は 4）。参照の数以上、16 以下。frame 1〜3 の不一致は DPB が小さすぎて参照が足りなかった、と見た。
+  6. **退役で塞がない**: 壊れた decoder、または bulk が残る decoder を destroy すると、MMAL の service を閉じる。firmware は service の bulk を abort し、component も落とす。次の decoder は service を開き直す。close の後も残る bulk の memory だけを永久に保持し、decoder の slot は空く。返事が来なかった request は、その decoder を broken にする。
+  7. **probe**:
+     - 輝度だけの checksum の参照を足した（`make-probe-data.py`）。全体が合わず輝度だけ合う frame は `match=luma`（chroma の配置の誤り）とする。
+     - pts（各 unit の decode の番号）で順を判定する `order_pts` を足した。pixel が違う frame でも順が分かる。
+     - 出力の順の pts の列（`pts_seq=`）を出す。
+- 1 回の起動で切り分ける log（増やした物）:
+  - `rpi4-mmal: in N: input|output I len L off O flags F pts P short S zero_copy Z`、`in N: event C len L`
+  - `bulk N: receive B bytes into the frame|scratch`、`bulk N: frame received (actual)`
+  - 最初の 400 行まで。
+  - 返事が来ない時・bulk が終わらない時の `stall at …`: 待ち行列の数・frame と scratch の bulk・staging の bulk と buffer・firmware が持つ出力の数・空いた input の数。待ち行列の先頭 8 件と、`rpi4-vchiq: service … receive queued/completed transmit queued/completed`。
+  - destroy で service を閉じる時の `destroyed …; the service is closed and opened again`。
+- 検証（host）:
+  - build は warning 0、どれも `arm64 vmunix check: PASS`。`build/ws236-vp`（video+probe）、`build/ws236-video`、`build/ws236-probe`。
+  - `run-h264-test.sh`（pb-high-352 の buffering=6 ほか）・`run-mmal-wire-test.sh`（short data の offset を追加）・`run-vchiq-wire-test.sh` は全て PASS。
+- T1 の次の依頼: T1-625 と同じ手順（image は `plan/ws236/tests/config-rpi4-video-probe.mk`）。dmesg の grep に `rpi4-mmal: (in |bulk |stall|.*destroyed)`・`rpi4-vchiq: service` を足す。
+
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。
