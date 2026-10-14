@@ -61,7 +61,7 @@ python3 $guest wait > /dev/null || { echo "FAIL no SSH at the end"; exit 1; }
 python3 $guest run 'mount | grep " on / "; sync; poweroff' > /dev/null 2>&1
 sleep 30
 python3 $guest stop > /dev/null 2>&1
-dd if="$work/disk.img" of="$work/root.ufs" bs=1048576 skip="${ROOT_SKIP_MIB:-65}" count="${ROOT_MIB:-1024}" status=none
+dd if="$work/disk.img" of="$work/root.ufs" bs=1048576 skip="${ROOT_SKIP_MIB:-321}" count="${ROOT_MIB:-1024}" status=none
 python3 plan/tools/ufs/check-volume.py "$work/root.ufs" | tail -1
 echo "root-powercut: $rounds rounds, $failures failures (logs in $work)"
 [ "$failures" -eq 0 ]
