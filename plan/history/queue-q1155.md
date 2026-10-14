@@ -2,7 +2,7 @@
 
 # q1155 / WS074 remaining Grid failure classification
 
-Status: finished（2026-10-14 12:08–12:10 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p189有限部分scope](../ws074/phase189/phase.md)に適用。最大90分。
+Status: finished（2026-10-14 12:07 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p189有限部分scope](../ws074/phase189/phase.md)に適用。最大90分。
 
 | Attempt | Phase | Scope | Outcome |
 | --- | --- | --- | --- |

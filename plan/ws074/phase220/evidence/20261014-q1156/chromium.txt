@@ -1,0 +1,1 @@
+single=8,8,102,102|single-text=99,9,11,36|multiple=8,110,102,102|multiple-text=89,111,21,36

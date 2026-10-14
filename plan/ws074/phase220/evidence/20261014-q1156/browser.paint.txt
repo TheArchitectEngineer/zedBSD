@@ -1,0 +1,26 @@
+console: single=8,8,102,102
+console: single-text=9,9,36,10
+console: multiple=8,110,102,102
+console: multiple-text=9,111,36,20
+canvas 1024.00 x 768.00 #ffffffff
+rect 8.00 8.00 102.00 1.00 #ff000000
+rect 8.00 109.00 102.00 1.00 #ff000000
+rect 8.00 9.00 1.00 100.00 #ff000000
+rect 109.00 9.00 1.00 100.00 #ff000000
+rect 8.00 110.00 102.00 1.00 #ff000000
+rect 8.00 211.00 102.00 1.00 #ff000000
+rect 8.00 111.00 1.00 100.00 #ff000000
+rect 109.00 111.00 1.00 100.00 #ff000000
+text 9.00 17.00 10px face 1 bold 0 #ff000000 "X"
+text 15.00 17.00 10px face 1 bold 0 #ff000000 " "
+text 21.00 17.00 10px face 1 bold 0 #ff000000 "XX"
+text 33.00 17.00 10px face 1 bold 0 #ff000000 " "
+text 39.00 17.00 10px face 1 bold 0 #ff000000 "X"
+text 9.00 119.00 10px face 1 bold 0 #ff000000 "X"
+text 15.00 119.00 10px face 1 bold 0 #ff000000 " "
+text 21.00 119.00 10px face 1 bold 0 #ff000000 "XX"
+text 33.00 119.00 10px face 1 bold 0 #ff000000 " "
+text 39.00 119.00 10px face 1 bold 0 #ff000000 "X"
+text 9.00 129.00 10px face 1 bold 0 #ff000000 "XX"
+text 21.00 129.00 10px face 1 bold 0 #ff000000 " "
+text 27.00 129.00 10px face 1 bold 0 #ff000000 "X"

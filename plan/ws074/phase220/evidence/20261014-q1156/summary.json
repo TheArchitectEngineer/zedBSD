@@ -1,0 +1,7 @@
+{
+  "chromium": "single=8,8,102,102|single-text=99,9,11,36|multiple=8,110,102,102|multiple-text=89,111,21,36",
+  "browser": "single=8,8,102,102|single-text=9,9,36,10|multiple=8,110,102,102|multiple-text=9,111,36,20",
+  "cpu_sha256": "d6ad43d5bf04bc017352d48422e8370bbaf70af0a93ddbd6bf818225cfef328e",
+  "gpu_sha256": "d6ad43d5bf04bc017352d48422e8370bbaf70af0a93ddbd6bf818225cfef328e",
+  "cpu_gpu_exact": true
+}

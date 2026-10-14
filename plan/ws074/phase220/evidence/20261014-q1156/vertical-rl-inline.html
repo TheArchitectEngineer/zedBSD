@@ -1,0 +1,17 @@
+<!doctype html>
+<style>
+body { font: 10px/1 monospace; }
+.vertical { writing-mode: vertical-rl; direction: ltr; width: 100px; height: 100px; border: 1px solid black; }
+</style>
+<div id="single" class="vertical"><span id="single-text">X XX X</span></div>
+<div id="multiple" class="vertical"><span id="multiple-text">X XX X<br>XX X</span></div>
+<script>
+var measures = [];
+["single", "single-text", "multiple", "multiple-text"].forEach(function (id) {
+  var rect = document.getElementById(id).getBoundingClientRect();
+  var measure = id + "=" + [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(",");
+  measures.push(measure);
+  console.log(measure);
+});
+document.body.setAttribute("data-measure", measures.join("|"));
+</script>

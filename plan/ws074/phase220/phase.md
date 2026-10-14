@@ -10,6 +10,14 @@
 
 Event ws074-p220-q1148-partial-clear-20261014: [証拠](evidence/20261014-q1148/README.md)。Latin F字形の縦描画は横字形の時計回り90度回転と画素完全一致、CPU/GPUは通常・clip含め差0/16,384。upright/非ASCIIは既存経路へ戻る。shader生成・SPIR-V検証、warning0 build、固定縦Grid8件+旧縦横2件whole PASS、host CSS51/JS14/Grid48、Acid3 score100/inventory100/差0、Acid2差1865を確認。q1148部分cleared、p220 wholeは他orientation/折返し等が残りin-progress、p225/p189/p173 whole未達。共有投影/GitHub publication保留。
 
+## q1156-i01 有限部分範囲（2026-10-14 12:08 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:38 JSTまで）に適用。q1144非Grid単一行/明示改行vertical-lr最小ページをvertical-rlへ変え、Chromium/browserのDOM矩形、layout/paint dump、CPU/GPU画像を比較。子の物理右始まり/行進行とpaint方向を切り分け、p220実装とp225 Grid依存の有限境界を記録。読取と証拠ページのみ、browser/runner/WPT/ABI/`plan/master.md`/Acid変更なし。p220/p225/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1156-i01 結果（2026-10-14 12:09 JST）
+
+Event ws074-p220-q1156-partial-clear-20261014: [非Grid vertical-rl診断](evidence/20261014-q1156/README.md)。単一/2行ASCIIのChromium矩形は右始まり縦進行、browserは左始まり横進行。layout/paint dumpでも横向き、CPU/GPUはbyte同一。inlineのbounded縦経路がvertical-lr専用であることを確認。次はp220の単純vertical-rl文字geometry/paintを有限実装し、p225固定/auto Grid右向けは別範囲。q1156診断部分cleared、p220/p225/p189/p173 whole未達。共有投影/GitHub publication保留。
+
 ## q1144-i01 有限部分範囲（2026-10-14 11:03 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:33 JSTまで）に適用。vertical-lr/LTRの非Grid text-only block内、単一非折返し文字行と明示brの複数行だけについて、inline advance/line block幅を物理height/widthへ写し、auto高さ・intrinsic幅・DOM bounds/hit/dumpを整合。float/atomic/replaced/marker、折返し、vertical-rl/RTL、縦paintは範囲外で既存経路へ戻す。10px最小fixtureの単一行物理幅10/高さ36と複数行、旧horizontal/vertical whole PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加を確認。固定vertical-lr Grid WPT2件は診断測定するがPASSはこの非Grid部分基準外。WPT/runner/公開ABI/`plan/master.md`変更なし。p220/p225/p217/p189/p173 wholeは未達を保つ。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
