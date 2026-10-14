@@ -1,0 +1,4 @@
+columns=0,0,100,10|100,0,200,10|300,0,100,10;computed=1fr 2fr 1fr
+rows=0,0,10,100|0,100,10,200|0,300,10,100;computed=1fr 2fr 1fr
+columns-mixed=0,0,50,10|50,0,100,10|150,0,200,10;computed=50px 1fr 2fr
+rows-mixed=0,0,10,50|0,50,10,100|0,150,10,200;computed=50px 1fr 2fr

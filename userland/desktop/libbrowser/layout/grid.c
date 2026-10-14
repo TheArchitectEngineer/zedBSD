@@ -1065,8 +1065,8 @@ grid_size_columns(
 	if (fr_total > 0) {
 		if (fr_total < 1.0f)
 			fr_total = 1.0f;
-		for (column = 0; column < box->style.column_count && column < grid->column_count; column++) {
-			track = &box->style.columns[column];
+		for (column = 0; column < grid->column_count; column++) {
+			track = grid_column_track(&box->style, column);
 			if (track->kind != CSS_TRACK_FR)
 				continue;
 			width = (layout_unit)((float)(available - used) * track->fr / fr_total);
@@ -1353,16 +1353,17 @@ grid_size_rows(
 	if (fr_total > 0) {
 		used = gap * (layout_unit)(grid->row_count - 1);
 		for (row = 0; row < grid->row_count; row++) {
-			if (row < box->style.row_count && box->style.rows[row].kind == CSS_TRACK_FR)
-					continue;
-				used += grid->rows[row];
-			}
+			track = grid_row_track(&box->style, row);
+			if (track->kind == CSS_TRACK_FR)
+				continue;
+			used += grid->rows[row];
+		}
 
-			/* A sum below one leaves the corresponding share unused. */
-			if (fr_total < 1.0f)
+		/* A sum below one leaves the corresponding share unused. */
+		if (fr_total < 1.0f)
 			fr_total = 1.0f;
-		for (row = 0; row < grid->row_count && row < box->style.row_count; row++) {
-			track = &box->style.rows[row];
+		for (row = 0; row < grid->row_count; row++) {
+			track = grid_row_track(&box->style, row);
 			if (track->kind != CSS_TRACK_FR)
 				continue;
 			minimum = (layout_unit)((float)(available - used) * track->fr / fr_total);

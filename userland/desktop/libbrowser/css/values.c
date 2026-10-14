@@ -4660,7 +4660,8 @@ values_auto_tracks(
 		error = values_one_track(parse, tokens + index, end - index, &track);
 		if (error != 0)
 			return error;
-		if (track.kind != CSS_TRACK_AUTO && track.kind != CSS_TRACK_LENGTH)
+		if (track.kind != CSS_TRACK_AUTO && track.kind != CSS_TRACK_LENGTH &&
+		    track.kind != CSS_TRACK_FR)
 			return EINVAL;
 		list->tracks[list->count] = track;
 		list->count++;

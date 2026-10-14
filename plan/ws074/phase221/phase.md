@@ -2,6 +2,14 @@
 
 # ws074-p221: Interop 2025 Grid parsing and CSSOM
 
+## q1138-i01 有限部分範囲（2026-10-14 10:36 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:06 JSTまで）に適用。非負`fr`を`grid-auto-columns/rows`の単一・複数cycleで読み、definite列幅/行高に明示/暗黙frをともに含めて配分する。複数frと固定値混合の最小geometry、固定valid/computed/invalid各6件の前後比較、旧implicit placement/empty-grid PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加。minmax/fit-content/area/animation、WPT/runner/公開ABI/`plan/master.md`変更なし。p221 whole/p189/p173全件100%は本部分基準外。[CSS Grid §7.2.4と§7.6](https://www.w3.org/TR/css-grid-2/#fr-unit)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。q1137 fixed length cycle出力が前提。
+
+## q1138-i01 結果（2026-10-14 10:37 JST）
+
+Event ws074-p221-q1138-partial-clear-20261014: [証拠](evidence/20261014-q1138/README.md)。暗黙frを列・行のdefinite残余配分に参加させ、1:2:1で100/200/100px、50px+1:2で50/100/200pxを確認。固定valid各10→12/30、computed各7→9/25、invalid全PASS、旧placement/empty-grid whole PASS維持。CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。q1138部分cleared、p221/p189/p173全件100%未達。minmax/fit-content等残る。共有投影/GitHub publication保留。
+
 ## q1137-i01 有限部分範囲（2026-10-14 10:33 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:03 JSTまで）に適用。`grid-auto-columns/rows`の非負固定length/percentage/calc trackを単一・複数cycleで読み、既存cascade後のcomputed CSSOMとdefinite/intrinsic寸法のlayoutを検査する。固定valid/computed/invalid各6件の前後比較、旧implicit placement/empty-grid PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加。fr/minmax/fit-content/area、WPT/runner/公開ABI/`plan/master.md`変更なし。p221 whole/p189/p173全件100%は本部分基準外。[CSS Grid §7.6](https://www.w3.org/TR/css-grid-2/#propdef-grid-auto-columns)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。q1136 list出力が前提。

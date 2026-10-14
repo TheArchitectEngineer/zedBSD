@@ -1,0 +1,27 @@
+<!doctype html>
+<div id="columns" style="display:grid;width:400px;grid-auto-flow:column;grid-template-rows:10px;grid-auto-columns:1fr 2fr 1fr">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+<div id="rows" style="display:grid;height:400px;grid-template-columns:10px;grid-auto-rows:1fr 2fr 1fr">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+<div id="columns-mixed" style="display:grid;width:350px;grid-auto-flow:column;grid-template-rows:10px;grid-auto-columns:50px 1fr 2fr">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+<div id="rows-mixed" style="display:grid;height:350px;grid-template-columns:10px;grid-auto-rows:50px 1fr 2fr">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+<script>
+["columns", "rows", "columns-mixed", "rows-mixed"].forEach(function (id) {
+  var grid = document.getElementById(id);
+  var origin = grid.getBoundingClientRect();
+  var positions = Array.from(grid.children).map(function (child) {
+    var rect = child.getBoundingClientRect();
+    return [Math.round(rect.left - origin.left), Math.round(rect.top - origin.top),
+            Math.round(rect.width), Math.round(rect.height)].join(",");
+  });
+  var property = id.indexOf("columns") === 0 ? "grid-auto-columns" : "grid-auto-rows";
+  console.log(id + "=" + positions.join("|") + ";computed=" +
+              getComputedStyle(grid).getPropertyValue(property));
+});
+</script>

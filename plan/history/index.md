@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1137 / WS074 non-pixel fixed Grid auto tracks（2026-10-14）
+## 最新: q1138 / WS074 flexible implicit Grid tracks（2026-10-14）
+
+[q1138履歴](queue-q1138.md): 暗黙frの列・行配分、固定valid各10→12/30・computed各7→9/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1138/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1137 / WS074 non-pixel fixed Grid auto tracks（2026-10-14）
 
 [q1137履歴](queue-q1137.md): 非px固定長/割合/calcの暗黙trackを受理、固定valid各6→10/30・computed各4→7/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1137/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
