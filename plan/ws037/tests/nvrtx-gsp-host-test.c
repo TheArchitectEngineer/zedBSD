@@ -823,6 +823,8 @@ test_disp(void)
 	uint8_t pb[NVRTX_DISP_PUSHBUFFER_BYTES];
 	uint8_t chan[NVRTX_DISP_CHANNEL_BYTES];
 	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
+	uint8_t assign[NVRTX_DISP_ASSIGN_SOR_BYTES];
+	struct nvrtx_disp_mode mode;
 	struct nvrtx_push push;
 	struct nvrtx_disp_surface surface;
 	uint32_t i;
@@ -862,13 +864,51 @@ test_disp(void)
 	nvrtx_disp_channel_params(chan, 2);
 	check(nvrtx_get32(chan, 0) == 2 && nvrtx_get32(chan, 12) == 0 && nvrtx_get32(chan, 32) == 1, "disp channel params");
 
-	/* The head copy names head 1's methods (0x2400 on) in the copied order. */
+	/* The mode from the armed state: the visible size from the blank's start less its end. */
 	for (i = 0; i < NVRTX_DISP_HEAD_COPIED; i++)
 		armed[i] = 0x1000U + i;
+	armed[NVRTX_DISP_ARMED_RASTER_SIZE] = 0x042a0698U;
+	armed[NVRTX_DISP_ARMED_BLANK_END] = 0x00290168U;
+	armed[NVRTX_DISP_ARMED_BLANK_START] = 0x04290668U;
+	armed[NVRTX_DISP_ARMED_PIXEL_CLOCK] = 0x066ff300U;
+	nvrtx_disp_mode_from_armed(armed, &mode);
+	check(mode.active == 0x04000500U && mode.raster_size == 0x042a0698U && mode.clock_hz == 108000000U &&
+	    mode.output_resource == 0x100eU && mode.dither == 0x100bU, "disp mode from armed");
+
+	/* The head's mode on head 1 (0x2400 on): view in and out, the raster run, then nouveau's fixed words. */
 	nvrtx_push_init(&push, memory, 64);
-	nvrtx_disp_core_head(&push, 1, armed);
-	check(push.count == 2 * NVRTX_DISP_HEAD_COPIED && nvrtx_get32(memory, 0) == 0x0004244cU &&
-	    nvrtx_get32(memory, 4) == 0x1000U && nvrtx_get32(memory, 4 * 4) == 0x00042464U, "disp core head copy");
+	nvrtx_disp_core_head_mode(&push, 1, &mode);
+	check(push.overflow == 0 && nvrtx_get32(memory, 0) == 0x0004244cU && nvrtx_get32(memory, 4) == 0x04000500U &&
+	    nvrtx_get32(memory, 8) == 0x00042458U && nvrtx_get32(memory, 12) == 0x04000500U &&
+	    nvrtx_get32(memory, 16) == 0x00102464U && nvrtx_get32(memory, 20) == 0x042a0698U &&
+	    nvrtx_get32(memory, 32) == 0x04290668U, "disp head mode view and raster");
+	check(nvrtx_get32(memory, 36) == 0x00042474U && nvrtx_get32(memory, 44) == 0x00042408U && nvrtx_get32(memory, 48) == 0 &&
+	    nvrtx_get32(memory, 52) == 0x0004240cU && nvrtx_get32(memory, 56) == 108000000U &&
+	    nvrtx_get32(memory, 60) == 0x00042428U && nvrtx_get32(memory, 68) == 0x00042430U && nvrtx_get32(memory, 72) == 0x1114U,
+	    "disp head mode control, clock and usage");
+	check(nvrtx_get32(memory, 76) == 0x00042418U && nvrtx_get32(memory, 80) == 0x100bU && nvrtx_get32(memory, 84) == 0x00042400U &&
+	    nvrtx_get32(memory, 88) == 0 && nvrtx_get32(memory, 92) == 0x00042404U && nvrtx_get32(memory, 96) == 0x100eU &&
+	    push.count == 25, "disp head mode dither, procamp, output resource");
+
+	/* The display id of head 1 and the SOR control. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_display_id(&push, 1, 0x200);
+	nvrtx_disp_core_sor(&push, 1, (1U << NVRTX_DISP_SOR_PROTOCOL_SHIFT) | 1U);
+	check(nvrtx_get32(memory, 0) == 0x00042420U && nvrtx_get32(memory, 4) == 0x200U &&
+	    nvrtx_get32(memory, 8) == 0x00040320U && nvrtx_get32(memory, 12) == 0x101U, "disp display id and SOR control");
+
+	/* The SOR assignment: 80 bytes, the display at 4, the exclusion at 8; the reply's tagged list at 40. */
+	nvrtx_disp_assign_sor_params(assign, 0x200, 0x2);
+	check(nvrtx_get32(assign, 0) == 0 && nvrtx_get32(assign, 4) == 0x200U && assign[8] == 2 && nvrtx_get32(assign, 76) == 0,
+	    "disp assign SOR params");
+	check(nvrtx_disp_assign_sor_result(assign, 0x200) == NVRTX_DISP_SOR_NONE, "disp assign SOR none");
+	nvrtx_put32(assign, 40 + 8, 0x200);
+	check(nvrtx_disp_assign_sor_result(assign, 0x200) == 1, "disp assign SOR 1");
+
+	/* The jump back to the start of a push buffer. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_push_jump(&push, 0);
+	check(push.count == 1 && nvrtx_get32(memory, 0) == 0x20000000U, "disp push jump");
 
 	/* The core update: notifier on, interlocks (none, window 0), update, notifier off. */
 	nvrtx_push_init(&push, memory, 64);
@@ -883,6 +923,7 @@ test_disp(void)
 	surface.height = 1024;
 	surface.pitch = 5120;
 	surface.handle = NVRTX_DISP_HANDLE_VRAM;
+	surface.format = NVRTX_DISP_FORMAT_A8R8G8B8;
 	nvrtx_push_init(&push, memory, 64);
 	nvrtx_disp_window_image(&push, &surface);
 	check(nvrtx_get32(memory, 0) == 0x00040308U && nvrtx_get32(memory, 4) == 1 && nvrtx_get32(memory, 8) == 0x00100224U &&

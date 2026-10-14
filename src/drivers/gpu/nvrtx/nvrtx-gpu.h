@@ -26,6 +26,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-mem.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
+struct nvrtx_node;
+
 /* The firmware directory the GSP files are read from, for every TU10x chip. */
 #define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/tu102/"
 
@@ -340,6 +342,8 @@ struct nvrtx_display_state {
 	uint32_t ramht_count;
 	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
 	uint32_t sor_control;
+	struct nvrtx_disp_mode mode;
+	uint32_t assigned_sor;
 	struct nvrtx_disp_surface surfaces[2];
 	struct nvrtx_bo surface_objects[2];
 	int core_made;
@@ -414,6 +418,13 @@ struct nvrtx_gpu {
 	uint8_t *static_info;
 	uint32_t internal_client;
 	uint32_t internal_subdevice;
+
+	/*
+	 * The registered GPU device (stage P8c), and whether the GSP stays up
+	 * for it: then detach refuses, and the GPU is kept until power-off.
+	 */
+	struct nvrtx_node *node;
+	int resident;
 
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
@@ -491,6 +502,7 @@ int nvrtx_display_start(struct nvrtx_gpu *gpu);
 void nvrtx_display_stop(struct nvrtx_gpu *gpu);
 
 int nvrtx_scanout_start(struct nvrtx_gpu *gpu);
+int nvrtx_scanout_frame(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface);
 void nvrtx_scanout_stop(struct nvrtx_gpu *gpu);
 void nvrtx_scanout_release(struct nvrtx_gpu *gpu);
 

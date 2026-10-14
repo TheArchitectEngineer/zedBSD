@@ -52,6 +52,13 @@
 #define RECORDS_CHANNEL_INSTANCE_AT	0U
 #define RECORDS_CHANNEL_SUBDEVICE_AT	32U
 
+/* The output-resource assignment's fields (570.144's layout): the display, the excluded SORs, the assigned list. */
+#define RECORDS_ASSIGN_DISPLAY_AT	4U
+#define RECORDS_ASSIGN_EXCLUDE_AT	8U
+#define RECORDS_ASSIGN_TAGGED_AT	40U
+#define RECORDS_ASSIGN_TAGGED_BYTES	8U
+#define RECORDS_ASSIGN_SOR_MAX		4U
+
 /* The windows the core's bounds and owners name: at most 8 on the Turing display. */
 #define RECORDS_WINDOW_MAX		8U
 
@@ -68,13 +75,24 @@
 #define RECORDS_NOTIFY_ENABLE		0x00001000U
 #define RECORDS_NOTIFIER_OFFSET_MASK	0x00000ff0U
 
+/* nouveau's head usage bounds: 256x256 cursors, the output LUT allowed, two output scaler taps, upscaling allowed. */
+#define RECORDS_HEAD_USAGE_BOUNDS	0x00001114U
+
+/* nouveau's processing: RGB, no chroma filter, the VESA range. */
+#define RECORDS_PROCAMP_RGB		0x00000000U
+
+/* A progressive raster (the head control's structure). */
+#define RECORDS_CONTROL_PROGRESSIVE	0x00000000U
+
+/* The pixel clock's hertz (bits 30:0; bit 31 is the 1000/1001 adjustment). */
+#define RECORDS_CLOCK_HERTZ_MASK	0x7fffffffU
+
 /* An update that releases the state the channel gathered. */
 #define RECORDS_UPDATE			0x00000001U
 
 /* The window's image: one frame between presents and a non-tearing flip; pitch layout; A8R8G8B8. */
 #define RECORDS_PRESENT_NON_TEARING	0x00000001U
 #define RECORDS_STORAGE_PITCH		0x00000010U
-#define RECORDS_FORMAT_A8R8G8B8		0x000000cfU
 #define RECORDS_PITCH_SHIFT		6U
 #define RECORDS_OFFSET_SHIFT		8U
 
@@ -202,6 +220,28 @@ nvrtx_push_one(
 }
 
 /*
+ * Writes a jump to a byte offset of the push buffer (nouveau's wind of a
+ * display channel): the channel's fetch goes on from there.
+ *
+ * A jump that does not fit writes nothing and sets the overflow flag.
+ */
+void
+nvrtx_push_jump(
+	struct nvrtx_push *push,
+	uint32_t offset)
+{
+	/* The jump takes one word. */
+	if (push->count + 1U > push->capacity) {
+		push->overflow = 1;
+		return;
+	}
+
+	/* The opcode and the word-aligned offset. */
+	nvrtx_put32(push->bytes, (size_t)push->count * 4U, NVRTX_DISP_JUMP | (offset & NVRTX_DISP_JUMP_OFFSET_MASK));
+	push->count++;
+}
+
+/*
  * Reports the hash-table slot an object's handle starts its search at.
  *
  * The handle is folded 10 bits at a time, and the channel number moves the
@@ -322,6 +362,45 @@ nvrtx_disp_channel_params(
 }
 
 /*
+ * Writes the request that assigns an output resource to one display (nouveau's
+ * acquire of a SOR under the GSP): subdevice 0, the display, the SORs not to use.
+ */
+void
+nvrtx_disp_assign_sor_params(
+	uint8_t *params,
+	uint32_t display_id,
+	uint32_t exclude_mask)
+{
+	/* Every field not named is zero: no slave display, no forced link, no flags. */
+	records_clear(params, NVRTX_DISP_ASSIGN_SOR_BYTES);
+	nvrtx_put32(params, RECORDS_ASSIGN_DISPLAY_AT, display_id);
+	params[RECORDS_ASSIGN_EXCLUDE_AT] = (uint8_t)exclude_mask;
+}
+
+/*
+ * Reports the SOR the reply assigned to a display: the first of the tagged
+ * list whose display mask has it, or NVRTX_DISP_SOR_NONE.
+ */
+uint32_t
+nvrtx_disp_assign_sor_result(
+	const uint8_t *params,
+	uint32_t display_id)
+{
+	uint32_t sor;
+	uint32_t mask;
+
+	/* Walks the tagged list in SOR order. */
+	for (sor = 0U; sor < RECORDS_ASSIGN_SOR_MAX; sor++) {
+		mask = nvrtx_get32(params, RECORDS_ASSIGN_TAGGED_AT + sor * RECORDS_ASSIGN_TAGGED_BYTES);
+		if ((mask & display_id) != 0U)
+			return sor;
+	}
+
+	/* No SOR drives the display. */
+	return NVRTX_DISP_SOR_NONE;
+}
+
+/*
  * Writes the core channel's start: its notifier object and every window's bounds.
  */
 void
@@ -348,24 +427,6 @@ nvrtx_disp_core_init(
 		nvrtx_push_method(push, NVRTX_CORE_WINDOW_FORMAT_BOUNDS + base, bounds, 2U);
 		nvrtx_push_one(push, NVRTX_CORE_WINDOW_USAGE_BOUNDS + base, RECORDS_USAGE_BOUNDS);
 	}
-}
-
-/*
- * Writes one head's state from the armed values (in nvrtx_disp_head_copied's order).
- */
-void
-nvrtx_disp_core_head(
-	struct nvrtx_push *push,
-	uint32_t head,
-	const uint32_t *armed)
-{
-	uint32_t base;
-	uint32_t index;
-
-	/* Sends each copied method with the value the head is armed with. */
-	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
-	for (index = 0U; index < NVRTX_DISP_HEAD_COPIED; index++)
-		nvrtx_push_one(push, base + nvrtx_disp_head_copied[index], armed[index]);
 }
 
 /*
@@ -419,6 +480,98 @@ nvrtx_disp_core_head_planes_off(
 }
 
 /*
+ * Writes one head's display id: the display (one bit per display) it drives, or 0 for none.
+ */
+void
+nvrtx_disp_core_display_id(
+	struct nvrtx_push *push,
+	uint32_t head,
+	uint32_t display_id)
+{
+	uint32_t base;
+
+	/* The first display-id slot of the head. */
+	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+	nvrtx_push_one(push, base + NVRTX_HEAD_DISPLAY_ID, display_id);
+}
+
+/*
+ * Writes one head's mode set in nouveau's order (its head flush): the
+ * viewport, the raster and clock, the dither, the processing and the output
+ * resource's control.
+ */
+void
+nvrtx_disp_core_head_mode(
+	struct nvrtx_push *push,
+	uint32_t head,
+	const struct nvrtx_disp_mode *mode)
+{
+	uint32_t base;
+	uint32_t raster[4];
+
+	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+
+	/* The view: the visible size in and out, unscaled. */
+	nvrtx_push_one(push, base + NVRTX_HEAD_VIEWPORT_SIZE_IN, mode->active);
+	nvrtx_push_one(push, base + NVRTX_HEAD_VIEWPORT_SIZE_OUT, mode->active);
+
+	/* The mode: the raster's four words in one run, the second vertical blank, progressive. */
+	raster[0] = mode->raster_size;
+	raster[1] = mode->sync_end;
+	raster[2] = mode->blank_end;
+	raster[3] = mode->blank_start;
+	nvrtx_push_method(push, base + NVRTX_HEAD_RASTER_SIZE, raster, 4U);
+	nvrtx_push_one(push, base + NVRTX_HEAD_RASTER_VERT_BLANK2, mode->vert_blank2);
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTROL, RECORDS_CONTROL_PROGRESSIVE);
+
+	/* The pixel clock, its maximum the same, and nouveau's usage bounds. */
+	nvrtx_push_one(push, base + NVRTX_HEAD_PIXEL_CLOCK, mode->clock_hz & RECORDS_CLOCK_HERTZ_MASK);
+	nvrtx_push_one(push, base + NVRTX_HEAD_PIXEL_CLOCK_MAX, mode->clock_hz & RECORDS_CLOCK_HERTZ_MASK);
+	nvrtx_push_one(push, base + NVRTX_HEAD_USAGE_BOUNDS, RECORDS_HEAD_USAGE_BOUNDS);
+
+	/* The dither, the processing and the output resource's control. */
+	nvrtx_push_one(push, base + NVRTX_HEAD_DITHER_CONTROL, mode->dither);
+	nvrtx_push_one(push, base + NVRTX_HEAD_PROCAMP, RECORDS_PROCAMP_RGB);
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTROL_OUTPUT_RESOURCE, mode->output_resource);
+}
+
+/*
+ * Derives a head's mode from the state the firmware armed it with.
+ *
+ * The visible size is the blank start less the blank end (as the readout
+ * of P8a shows it), not the armed viewport, which may be a scaled one.
+ */
+void
+nvrtx_disp_mode_from_armed(
+	const uint32_t *armed,
+	struct nvrtx_disp_mode *mode)
+{
+	uint32_t width;
+	uint32_t height;
+	uint32_t blank_end;
+	uint32_t blank_start;
+
+	/* The visible size from the blank's start and end. */
+	blank_end = armed[NVRTX_DISP_ARMED_BLANK_END];
+	blank_start = armed[NVRTX_DISP_ARMED_BLANK_START];
+	width = (blank_start & 0xffffU) - (blank_end & 0xffffU);
+	height = (blank_start >> 16) - (blank_end >> 16);
+	mode->active = (width & 0xffffU) | ((height & 0xffffU) << 16);
+
+	/* The raster and the clock as armed. */
+	mode->raster_size = armed[NVRTX_DISP_ARMED_RASTER_SIZE];
+	mode->sync_end = armed[NVRTX_DISP_ARMED_SYNC_END];
+	mode->blank_end = blank_end;
+	mode->blank_start = blank_start;
+	mode->vert_blank2 = armed[NVRTX_DISP_ARMED_VERT_BLANK2];
+	mode->clock_hz = armed[NVRTX_DISP_ARMED_PIXEL_CLOCK];
+
+	/* The dither and the output resource's control (its sync polarities and depth) as armed. */
+	mode->dither = armed[NVRTX_DISP_ARMED_DITHER];
+	mode->output_resource = armed[NVRTX_DISP_ARMED_OUTPUT_RESOURCE];
+}
+
+/*
  * Writes the core's update with its notifier, interlocked with the windows in the mask.
  */
 void
@@ -462,7 +615,7 @@ nvrtx_disp_window_image(
 	/* The size, the pitch layout, the format and the pitch in 64-byte units. */
 	layout[0] = size;
 	layout[1] = RECORDS_STORAGE_PITCH;
-	layout[2] = RECORDS_FORMAT_A8R8G8B8;
+	layout[2] = surface->format;
 	layout[3] = surface->pitch >> RECORDS_PITCH_SHIFT;
 	nvrtx_push_method(push, NVRTX_WINDOW_SET_SIZE, layout, 4U);
 
