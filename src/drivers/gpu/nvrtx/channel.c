@@ -282,6 +282,7 @@ nvrtx_channel_start(
 	setup.chid = CHANNEL_ID;
 	setup.space = NVRTX_HANDLE_SPACE;
 	setup.engine = engine->pick.engine;
+	setup.privileged = 0U;
 	setup.instance = engine->vram_block + CHANNEL_INSTANCE_AT;
 	setup.userd = engine->vram_block + CHANNEL_USERD_AT;
 	setup.methods = engine->methods.dma.device_address;
@@ -444,6 +445,113 @@ nvrtx_channel_release(
 	nvrtx_buffer_free(gpu, &engine->methods);
 }
 
+/*
+ * Invalidates every TLB entry of the page tables under one root in the VRAM.
+ *
+ * Returns ETIMEDOUT when the invalidate does not finish in 2 s.
+ */
+int
+nvrtx_flush_tlb(
+	struct nvrtx_gpu *gpu,
+	uint64_t root)
+{
+	int error;
+
+	/* Names the root (in the VRAM: aperture 0), then triggers the invalidate of all addresses. */
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(root >> 8));
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | CHANNEL_FLUSH_ALL_ADDRESSES);
+
+	/* Waits for the trigger to clear. */
+	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
+	if (error != 0) {
+		nvrtx_stage_mark("TLB invalidate of root %llx did not finish", (unsigned long long)root);
+		return error;
+	}
+
+	/* Succeeded: no stale translation is left. */
+	return 0;
+}
+
+/*
+ * Writes bytes of any length into the VRAM through the register window.
+ *
+ * The bytes go in pieces that each lie inside one 64 KiB step of the
+ * window.  The address and the length are whole words.
+ */
+int
+nvrtx_vram_write(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	const uint8_t *data,
+	size_t length)
+{
+	size_t piece;
+	size_t done;
+	int error;
+
+	/* Whole words only. */
+	if ((address % 4U) != 0U || (length % 4U) != 0U)
+		return EINVAL;
+
+	/* Writes up to the next 64 KiB boundary each time. */
+	done = 0U;
+	while (done < length) {
+		piece = 0x10000U - (size_t)((address + done) & 0xffffU);
+		if (piece > length - done)
+			piece = length - done;
+		error = channel_vram_write(gpu, address + done, data + done, piece);
+		if (error != 0)
+			return error;
+		done += piece;
+	}
+
+	/* Succeeded: the bytes are in the VRAM. */
+	return 0;
+}
+
+/*
+ * Clears a run of the VRAM through the register window.
+ */
+int
+nvrtx_vram_zero(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	size_t length)
+{
+	uint8_t *zeros;
+	size_t piece;
+	size_t done;
+	int error;
+
+	/* A page of zeros is written over and over. */
+	zeros = kern_calloc(1U, NVRTX_GSP_PAGE_SIZE);
+	if (zeros == NULL)
+		return ENOMEM;
+
+	/* Clears the run a page at a time. */
+	done = 0U;
+	error = 0;
+	while (done < length) {
+		piece = NVRTX_GSP_PAGE_SIZE;
+		if (piece > length - done)
+			piece = length - done;
+		error = nvrtx_vram_write(gpu, address + done, zeros, piece);
+		if (error != 0)
+			break;
+		done += piece;
+	}
+
+	kern_free(zeros);
+
+	/* Reports a write the window refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run reads as zero. */
+	return 0;
+}
+
 /* Writes bytes into the VRAM through the register window, then puts the window back. */
 static int
 channel_vram_write(
@@ -534,17 +642,10 @@ channel_flush_tlb(
 {
 	int error;
 
-	/* Names the root (in the VRAM: aperture 0), then triggers the invalidate of all addresses. */
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(gpu->engine.vram_block >> 8));
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | CHANNEL_FLUSH_ALL_ADDRESSES);
-
-	/* Waits for the trigger to clear. */
-	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
-	if (error != 0) {
-		nvrtx_stage_mark("P4 fail: TLB invalidate did not finish");
+	/* Invalidates the translations of the first address space's root. */
+	error = nvrtx_flush_tlb(gpu, gpu->engine.vram_block);
+	if (error != 0)
 		return error;
-	}
 
 	/* Succeeded: no stale translation is left. */
 	return 0;

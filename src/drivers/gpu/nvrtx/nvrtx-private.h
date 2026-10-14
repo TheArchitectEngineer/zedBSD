@@ -225,6 +225,12 @@ bool
 nvrtx_stage_gsp_wanted(void);
 
 /*
+ * Reports whether the boot asked for the graphics golden context (nvrtx.gr=1).
+ */
+bool
+nvrtx_stage_gr_wanted(void);
+
+/*
  * Reports whether a stage may run; nvrtx.stop=<stage> stops before it.
  */
 bool
