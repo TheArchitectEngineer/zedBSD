@@ -63,7 +63,8 @@ enum values_shorthand {
 	SHORT_GRID,
 	SHORT_PLACE_ITEMS,
 	SHORT_CONTAINER,
-	SHORT_BORDER_SPACING
+	SHORT_BORDER_SPACING,
+	SHORT_OVERFLOW
 };
 
 /*
@@ -221,9 +222,11 @@ static const struct values_name values_names[] = {
 	{ "left", CSS_PROP_LEFT },
 	{ "z-index", CSS_PROP_Z_INDEX },
 	{ "clear", CSS_PROP_CLEAR },
-	{ "overflow", CSS_PROP_OVERFLOW },
+	{ "overflow", SHORT_OVERFLOW },
 	{ "overflow-x", CSS_PROP_OVERFLOW_X },
 	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
+	{ "overflow-inline", CSS_PROP_OVERFLOW_INLINE },
+	{ "overflow-block", CSS_PROP_OVERFLOW_BLOCK },
 	{ "box-sizing", CSS_PROP_BOX_SIZING },
 	{ "-webkit-box-sizing", CSS_PROP_BOX_SIZING },
 	{ "content", CSS_PROP_CONTENT },
@@ -425,6 +428,8 @@ static const struct values_keyword values_writing_mode[] = {
 	{ "horizontal-tb", CSS_WRITING_HORIZONTAL_TB },
 	{ "vertical-lr", CSS_WRITING_VERTICAL_LR },
 	{ "vertical-rl", CSS_WRITING_VERTICAL_RL },
+	{ "sideways-lr", 3 },
+	{ "sideways-rl", 4 },
 	{ NULL, 0 }
 };
 
@@ -1171,6 +1176,9 @@ css_parse_property(
 		return values_grid_template(parse, tokens, count, out, out_count);
 	case SHORT_GRID:
 		return values_grid_explicit(parse, tokens, count, out, out_count);
+	case SHORT_OVERFLOW:
+		/* One keyword for both axes, or the horizontal then the vertical one. */
+		return values_pair(parse, CSS_PROP_OVERFLOW_X, CSS_PROP_OVERFLOW_Y, tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
 		/* One length for both directions, or across then down. */
 		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
@@ -1846,6 +1854,8 @@ values_single(
 	case CSS_PROP_OVERFLOW:
 	case CSS_PROP_OVERFLOW_X:
 	case CSS_PROP_OVERFLOW_Y:
+	case CSS_PROP_OVERFLOW_INLINE:
+	case CSS_PROP_OVERFLOW_BLOCK:
 		table = values_overflow;
 		break;
 	case CSS_PROP_VISIBILITY:

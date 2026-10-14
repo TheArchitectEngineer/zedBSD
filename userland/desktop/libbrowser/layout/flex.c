@@ -119,6 +119,7 @@ layout_flex(
 	struct flex_line *lines;
 	size_t line_count;
 	layout_unit cross_size;
+	layout_unit row_basis;
 	layout_unit free_space;
 	layout_unit line_gap_extra;
 	layout_unit content_cross;
@@ -153,8 +154,17 @@ layout_flex(
 	if (box->style.flex_wrap != CSS_FLEX_NOWRAP)
 		wrap = 1;
 	available = box->width;
+	/* A percentage row gap is of the definite height; an indefinite one counts as zero. */
+	row_basis = 0;
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		row_basis = layout_from_px(box->style.height.value);
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			row_basis -= box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		if (row_basis < 0)
+			row_basis = 0;
+	}
 	gap_main = flex_length(&box->style.column_gap, box->width);
-	gap_cross = flex_length(&box->style.row_gap, box->width);
+	gap_cross = flex_length(&box->style.row_gap, row_basis);
 	if (!row) {
 		available = -1;
 		if (box->style.height.unit == CSS_UNIT_PX) {
@@ -173,7 +183,7 @@ layout_flex(
 		}
 
 		/* A column's main axis is vertical: the gaps swap. */
-		gap_main = flex_length(&box->style.row_gap, box->width);
+		gap_main = flex_length(&box->style.row_gap, row_basis);
 		gap_cross = flex_length(&box->style.column_gap, box->width);
 	}
 

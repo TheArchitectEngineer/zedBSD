@@ -335,7 +335,7 @@ grid_distribute(
 		if (value == CSS_ALIGN_SPACE_BETWEEN)
 			value = CSS_ALIGN_START;
 		else if (value == CSS_ALIGN_SPACE_AROUND || value == CSS_ALIGN_SPACE_EVENLY)
-			value = CSS_ALIGN_CENTER;
+			value = free_space < 0 ? CSS_ALIGN_START : CSS_ALIGN_CENTER;
 	}
 	switch (value) {
 	case CSS_ALIGN_RIGHT:
@@ -2731,6 +2731,7 @@ grid_relay_item(
 	layout_unit content;
 	layout_unit ratio_width;
 	layout_unit ratio_height;
+	int justify;
 	int error;
 
 	/* The target content height, from the percentage or the area's stretch. */
@@ -2769,8 +2770,13 @@ grid_relay_item(
 		ratio_width = (layout_unit)item->image->width;
 		ratio_height = (layout_unit)item->image->height;
 	}
+	justify = item->style.justify_self;
+	if (justify == CSS_ALIGN_AUTO && item->parent != NULL)
+		justify = item->parent->style.justify_items;
+	if (justify == CSS_ALIGN_NORMAL || justify == CSS_ALIGN_AUTO)
+		justify = item->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
 	if (item->replaced && saved.width.unit == CSS_UNIT_AUTO && ratio_width > 0 &&
-	    ratio_height > 0 && align == CSS_ALIGN_STRETCH &&
+	    ratio_height > 0 && align == CSS_ALIGN_STRETCH && justify != CSS_ALIGN_STRETCH &&
 	    item->style.height.unit == CSS_UNIT_AUTO) {
 		/* A stretched replaced item keeps its aspect ratio in the other axis. */
 		item->style.width.value = layout_to_px(

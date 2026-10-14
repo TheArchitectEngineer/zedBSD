@@ -732,6 +732,7 @@ cascade_compute(
 		style->text_indent = parent->text_indent;
 		style->direction = parent->direction;
 		style->writing_mode = parent->writing_mode;
+		style->writing_sideways = parent->writing_sideways;
 		style->text_orientation = parent->text_orientation;
 		style->border_spacing[0] = parent->border_spacing[0];
 		style->border_spacing[1] = parent->border_spacing[1];
@@ -3383,6 +3384,11 @@ cascade_margin_property(
 	int writing_mode,
 	int direction)
 {
+	/* overflow-inline and overflow-block name the horizontal and vertical axes by the writing mode. */
+	if (property == CSS_PROP_OVERFLOW_INLINE)
+		return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_X : CSS_PROP_OVERFLOW_Y;
+	if (property == CSS_PROP_OVERFLOW_BLOCK)
+		return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_Y : CSS_PROP_OVERFLOW_X;
 	if (writing_mode == CSS_WRITING_VERTICAL_LR) {
 		switch (property) {
 		case CSS_PROP_MARGIN_INLINE_START:
@@ -3654,7 +3660,12 @@ cascade_apply(
 		style->direction = value->keyword;
 		break;
 	case CSS_PROP_WRITING_MODE:
+		style->writing_sideways = 0;
 		style->writing_mode = value->keyword;
+		if (value->keyword > CSS_WRITING_VERTICAL_RL) {
+			style->writing_sideways = value->keyword - CSS_WRITING_VERTICAL_RL;
+			style->writing_mode = CSS_WRITING_HORIZONTAL_TB;
+		}
 		break;
 	case CSS_PROP_TEXT_ORIENTATION:
 		style->text_orientation = value->keyword;
@@ -4105,6 +4116,7 @@ cascade_inherit(
 		break;
 	case CSS_PROP_WRITING_MODE:
 		style->writing_mode = parent->writing_mode;
+		style->writing_sideways = parent->writing_sideways;
 		break;
 	case CSS_PROP_TEXT_ORIENTATION:
 		style->text_orientation = parent->text_orientation;

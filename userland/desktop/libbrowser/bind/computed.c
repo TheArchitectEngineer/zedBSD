@@ -44,6 +44,8 @@ enum computed_property {
 	COMPUTED_OVERFLOW,
 	COMPUTED_OVERFLOW_X,
 	COMPUTED_OVERFLOW_Y,
+	COMPUTED_OVERFLOW_INLINE,
+	COMPUTED_OVERFLOW_BLOCK,
 	COMPUTED_BOX_SIZING,
 	COMPUTED_WIDTH,
 	COMPUTED_HEIGHT,
@@ -182,6 +184,8 @@ static const struct computed_entry computed_entries[] = {
 	{ "overflow", COMPUTED_OVERFLOW },
 	{ "overflow-x", COMPUTED_OVERFLOW_X },
 	{ "overflow-y", COMPUTED_OVERFLOW_Y },
+	{ "overflow-inline", COMPUTED_OVERFLOW_INLINE },
+	{ "overflow-block", COMPUTED_OVERFLOW_BLOCK },
 	{ "box-sizing", COMPUTED_BOX_SIZING },
 	{ "width", COMPUTED_WIDTH },
 	{ "height", COMPUTED_HEIGHT },
@@ -826,6 +830,15 @@ computed_write_keyword(
 	case COMPUTED_OVERFLOW_Y:
 		error = computed_name(computed_overflows, 5, style->overflow_y, out);
 		break;
+	case COMPUTED_OVERFLOW_INLINE:
+		/* The inline axis is the horizontal one in a horizontal writing mode. */
+		error = computed_name(computed_overflows, 5,
+		    style->writing_mode == CSS_WRITING_HORIZONTAL_TB ? style->overflow_x : style->overflow_y, out);
+		break;
+	case COMPUTED_OVERFLOW_BLOCK:
+		error = computed_name(computed_overflows, 5,
+		    style->writing_mode == CSS_WRITING_HORIZONTAL_TB ? style->overflow_y : style->overflow_x, out);
+		break;
 	case COMPUTED_BOX_SIZING:
 		error = computed_name(computed_box_sizings, 2, style->box_sizing, out);
 		break;
@@ -947,7 +960,7 @@ computed_write_keyword(
 		error = computed_name(computed_directions, 2, style->direction, out);
 		break;
 	case COMPUTED_WRITING_MODE:
-		error = computed_name(computed_writing_modes, 3, style->writing_mode, out);
+		error = style->writing_sideways != 0 ? computed_ascii(style->writing_sideways == 1 ? "sideways-lr" : "sideways-rl", out) : computed_name(computed_writing_modes, 3, style->writing_mode, out);
 		break;
 	case COMPUTED_TEXT_ORIENTATION:
 		error = computed_name(computed_text_orientations, 3, style->text_orientation, out);
