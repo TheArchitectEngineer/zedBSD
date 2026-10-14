@@ -123,6 +123,19 @@
 #define FIRMWARE_GPIO_STATUS_BYTES	4U
 #define FIRMWARE_GPIO_ANSWER_BYTES	8U
 
+/*
+ * The clock tags (Raspberry Pi firmware wiki, "Mailbox property
+ * interface") and the core clock's number in them.  A question carries
+ * the clock and its answer the rate; a change carries the clock, the rate
+ * and a third word.
+ */
+#define FIRMWARE_TAG_GET_CLOCK_RATE	0x00030002U
+#define FIRMWARE_TAG_GET_MAX_CLOCK_RATE	0x00030004U
+#define FIRMWARE_TAG_SET_CLOCK_RATE	0x00038002U
+#define FIRMWARE_CLOCK_CORE		4U
+#define FIRMWARE_CLOCK_WORDS		2U
+#define FIRMWARE_CLOCK_SET_WORDS	3U
+
 /* The firmware's direction codes in a configuration answer. */
 #define FIRMWARE_GPIO_DIRECTION_IN	0U
 #define FIRMWARE_GPIO_DIRECTION_OUT	1U
@@ -181,6 +194,37 @@ static volatile unsigned firmware_state;
  */
 static volatile unsigned busy;
 
+/*
+ * The core clock's floors, by owner (enum drv_rpi4_firmware_core_owner),
+ * in hertz; zero when the owner asks nothing.
+ *
+ * The display asks for the rate its planes need.  The video decoder asks
+ * for the highest rate while a decoder exists, so the core clock never
+ * changes under a decode: the firmware's decoder stopped answering when the
+ * display lowered and raised the clock in the middle of one (ws236-p011,
+ * T1-685).  Changed only by the holder of core_turn.
+ */
+static uint32_t core_floors[DRV_RPI4_FIRMWARE_CORE_OWNERS];
+
+/*
+ * The core clock's rates: the one the firmware ran before the first floor
+ * (run again when no owner asks), the one it was last asked for, and its
+ * highest.  Zero until the first floor reads them (core_maximum zero means
+ * not read yet); then kept for good.  Changed only by the holder of
+ * core_turn.
+ */
+static uint32_t core_base;
+static uint32_t core_rate;
+static uint32_t core_maximum;
+
+/*
+ * Whether a change of the core clock is in progress: zero when the turn
+ * is free.  Taken with an atomic test-and-set like busy, and held across
+ * the firmware requests of one change, so two owners' changes never
+ * interleave.
+ */
+static volatile unsigned core_turn;
+
 static int prepare_mailbox(const struct drv_fdt *fdt);
 static int claim_buffer(void);
 static void release_buffer(void);
@@ -192,6 +236,10 @@ static int expander_gpio(enum drv_rpi4_firmware_gpio line, uint32_t *gpio);
 static int read_gpio_config(uint32_t gpio, uint32_t *config);
 static int set_gpio_output(uint32_t gpio, uint32_t polarity, int state);
 static int set_tag_without_length(uint32_t tag);
+static int claim_core_turn(void);
+static void release_core_turn(void);
+static int read_core_limits(void);
+static int set_core_rate(uint32_t hz);
 
 /*
  * Finds the mailbox in the device tree and prepares the request buffer.
@@ -545,6 +593,72 @@ drv_rpi4_firmware_get_gpio_direction(
 }
 
 /*
+ * Sets one owner's floor of the core clock, in hertz; zero takes it away.
+ */
+int
+drv_rpi4_firmware_core_clock(
+	enum drv_rpi4_firmware_core_owner owner,
+	uint32_t hz)
+{
+	uint32_t previous;
+	uint32_t rate;
+	unsigned index;
+	int error;
+
+	/* Refuses an owner outside the enumeration. */
+	if ((unsigned)owner >= DRV_RPI4_FIRMWARE_CORE_OWNERS)
+		return EINVAL;
+
+	/* Takes the clock's turn, so the floors and the rate asked change together. */
+	error = claim_core_turn();
+	if (error != 0)
+		return error;
+
+	/* Learns, once, the rate the firmware runs without a floor and its highest. */
+	error = 0;
+	if (core_maximum == 0U)
+		error = read_core_limits();
+	if (error != 0) {
+		release_core_turn();
+		return error;
+	}
+
+	/* The owner's new floor, no higher than the firmware's highest. */
+	previous = core_floors[owner];
+	if (hz > core_maximum)
+		hz = core_maximum;
+	core_floors[owner] = hz;
+
+	/* The highest floor, or the rate from before the first floor when nobody asks. */
+	rate = 0U;
+	for (index = 0; index < DRV_RPI4_FIRMWARE_CORE_OWNERS; index++) {
+		if (core_floors[index] > rate)
+			rate = core_floors[index];
+	}
+
+	/* Nobody asks: the rate from before the first floor. */
+	if (rate == 0U)
+		rate = core_base;
+
+	/* Asks the firmware only for a change of the rate. */
+	if (rate != core_rate)
+		error = set_core_rate(rate);
+	if (error != 0) {
+		/* The firmware kept the clock: the owner's floor is what it was. */
+		core_floors[owner] = previous;
+		release_core_turn();
+		return error;
+	}
+
+	/* The firmware runs the rate now. */
+	core_rate = rate;
+	release_core_turn();
+
+	/* Succeeded: the core clock is the highest floor. */
+	return 0;
+}
+
+/*
  * Finds the mailbox, maps its registers and allocates the request buffer.
  *
  * Only the caller holding the PREPARING state runs it, so it fills the
@@ -634,6 +748,108 @@ release_buffer(void)
 {
 	/* Publishes the answer's reads before the next request may write. */
 	atomic_raw_store_release(&busy, 0U);
+}
+
+/*
+ * Takes the core clock's turn, waiting while another thread changes it.
+ *
+ * A change holds the turn for at most three firmware requests, each
+ * bounded by the mailbox's polling limit, so the wait is bounded the same
+ * way as claim_buffer()'s.
+ */
+static int
+claim_core_turn(void)
+{
+	unsigned polls;
+	int taken;
+
+	/* Tries to take the turn, sleeping a polling interval between tries. */
+	for (polls = 0; polls < 6U * MAILBOX_POLL_LIMIT; polls++) {
+		taken = atomic_raw_try_acquire_zero(&core_turn);
+		if (taken)
+			return 0;
+		kern_usleep_range(MAILBOX_POLL_US, MAILBOX_POLL_MAX_US);
+	}
+
+	/* Failed: another change held the turn for too long. */
+	kern_logf("rpi4-firmware: the core clock's turn stayed taken\n");
+	return EBUSY;
+}
+
+/* Gives the core clock's turn back. */
+static void
+release_core_turn(void)
+{
+	/* Publishes the floors and the rate before the next change reads them. */
+	atomic_raw_store_release(&core_turn, 0U);
+}
+
+/*
+ * Reads the core clock's rate now (the rate without a floor) and its
+ * highest rate, into core_base, core_rate and core_maximum.
+ */
+static int
+read_core_limits(void)
+{
+	uint32_t values[FIRMWARE_CLOCK_WORDS];
+	uint32_t answered;
+	int error;
+
+	/* The rate the firmware runs the core at now. */
+	values[0] = FIRMWARE_CLOCK_CORE;
+	values[1] = 0U;
+	error = drv_rpi4_firmware_property(FIRMWARE_TAG_GET_CLOCK_RATE, values, 2U, 2U, &answered);
+	if (error != 0)
+		return error;
+	if (answered < 8U ||
+	    values[0] != FIRMWARE_CLOCK_CORE ||
+	    values[1] == 0U)
+		return EIO;
+	core_base = values[1];
+
+	/* The highest rate the firmware runs the core at. */
+	values[0] = FIRMWARE_CLOCK_CORE;
+	values[1] = 0U;
+	error = drv_rpi4_firmware_property(FIRMWARE_TAG_GET_MAX_CLOCK_RATE, values, 2U, 2U, &answered);
+	if (error != 0)
+		return error;
+	if (answered < 8U ||
+	    values[0] != FIRMWARE_CLOCK_CORE ||
+	    values[1] == 0U)
+		return EIO;
+
+	/* Both known: the rate now is the one the firmware was last asked for. */
+	core_rate = core_base;
+	core_maximum = values[1];
+	kern_logf("rpi4-firmware: core clock %u Hz, highest %u Hz\n", (unsigned)core_base, (unsigned)core_maximum);
+
+	/* Succeeded: the limits are known for good. */
+	return 0;
+}
+
+/* Asks the firmware to run the core clock at a rate, with its turbo setting left as it is. */
+static int
+set_core_rate(
+	uint32_t hz)
+{
+	uint32_t values[FIRMWARE_CLOCK_SET_WORDS];
+	uint32_t answered;
+	int error;
+
+	/* The clock, the rate, and the third word zero, as the display's requests have always sent it. */
+	values[0] = FIRMWARE_CLOCK_CORE;
+	values[1] = hz;
+	values[2] = 0U;
+	error = drv_rpi4_firmware_property(FIRMWARE_TAG_SET_CLOCK_RATE, values, 3U, 3U, &answered);
+	if (error != 0)
+		return error;
+
+	/* Refuses an answer about another clock. */
+	if (answered < 8U || values[0] != FIRMWARE_CLOCK_CORE)
+		return EIO;
+
+	/* Succeeded: the firmware accepted the rate. */
+	return 0;
 }
 
 /*

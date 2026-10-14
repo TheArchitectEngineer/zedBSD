@@ -118,4 +118,31 @@ int drv_rpi4_firmware_set_gpio(enum drv_rpi4_firmware_gpio line, int state);
  */
 int drv_rpi4_firmware_get_gpio_direction(enum drv_rpi4_firmware_gpio line, enum drv_rpi4_firmware_gpio_direction *direction);
 
+/*
+ * The drivers that ask for a floor of the VideoCore's core clock.  The
+ * numbers index the floors; they are not the firmware's codes.
+ */
+enum drv_rpi4_firmware_core_owner {
+	DRV_RPI4_FIRMWARE_CORE_DISPLAY = 0,
+	DRV_RPI4_FIRMWARE_CORE_VIDEO = 1
+};
+
+/* How many owners the core clock's floors have. */
+#define DRV_RPI4_FIRMWARE_CORE_OWNERS		2U
+
+/* The floor that asks for the firmware's highest core clock. */
+#define DRV_RPI4_FIRMWARE_CORE_MAXIMUM		0xffffffffU
+
+/*
+ * Sets one owner's floor of the core clock, in hertz; zero takes it away.
+ *
+ * The firmware runs the core clock at the highest floor any owner asks
+ * for (no higher than its maximum), and at the rate it ran before the
+ * first floor when no owner asks.  The firmware is asked only when that
+ * rate changes.  On failure the owner's floor is what it was.  Returns
+ * EINVAL for an owner outside the enumeration, or the failure of the
+ * firmware's request.  Thread context only; the call may sleep.
+ */
+int drv_rpi4_firmware_core_clock(enum drv_rpi4_firmware_core_owner owner, uint32_t hz);
+
 #endif

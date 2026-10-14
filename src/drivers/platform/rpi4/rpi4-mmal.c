@@ -32,6 +32,7 @@
  * time.
  */
 
+#include "drivers/platform/rpi4/rpi4-firmware.h"
 #include "drivers/platform/rpi4/rpi4-mmal.h"
 #include "drivers/platform/rpi4/rpi4-mmal-wire.h"
 #include "drivers/platform/rpi4/rpi4-vchiq.h"
@@ -255,6 +256,19 @@ static struct drv_dma_device *mmal_dma;
 static struct mutex mmal_open_lock;
 static bool mmal_ready;
 
+/*
+ * Whether the decoders hold the firmware's highest core clock
+ * (drv_rpi4_firmware_core_clock's video floor).
+ *
+ * Taken before the first decoder's component is created and given back
+ * when the last decoder goes, so the core clock does not change under a
+ * decode however the display's floor moves: the firmware's decoder
+ * stopped answering, until a reboot, when the clock was lowered and raised
+ * in the middle of one (ws236-p011, T1-685).  Changed under
+ * mmal_open_lock.
+ */
+static bool mmal_floor_held;
+
 /* The trace lines left (see MMAL_TRACE_LINES); written under mmal_request_lock. */
 static unsigned mmal_trace_left = MMAL_TRACE_LINES;
 
@@ -329,6 +343,7 @@ static const char *request_name(uint32_t msgid);
 static const char *status_name(uint32_t status);
 static void release_memory(struct drv_rpi4_mmal_decoder *decoder);
 static bool bulks_outstanding(struct drv_rpi4_mmal_decoder *decoder);
+static void core_floor(void);
 
 /* The client's part of the VCHIQ service. */
 static const struct drv_rpi4_vchiq_service_ops mmal_service_ops = {
@@ -387,6 +402,9 @@ drv_rpi4_mmal_decoder_create(
 			error = EBUSY;
 	}
 
+	/* The highest core clock, before the component decodes anything. */
+	core_floor();
+
 	mutex_unlock(&mmal_open_lock);
 
 	if (error != 0)
@@ -417,7 +435,12 @@ drv_rpi4_mmal_decoder_create(
 		error = dma_alloc(MMAL_SCRATCH_BYTES, &decoder->scratch);
 	if (error != 0) {
 		release_memory(decoder);
+		mutex_lock(&mmal_open_lock);
+
 		decoder->used = false;
+		core_floor();
+
+		mutex_unlock(&mmal_open_lock);
 		return error;
 	}
 
@@ -1007,8 +1030,9 @@ drv_rpi4_mmal_decoder_destroy(
 		release_memory(decoder);
 	}
 
-	/* The entry is free for the next decoder. */
+	/* The entry is free for the next decoder; the last one gives the core clock back. */
 	decoder->used = false;
+	core_floor();
 
 	mutex_unlock(&mmal_open_lock);
 }
@@ -2176,6 +2200,15 @@ handle_buffer(
 				return error;
 		}
 
+		/*
+		 * The firmware could not fetch the buffer's bulk (T1-685: four
+		 * in a row when the core clock changed under a decode, and the
+		 * decoder stopped answering after them).  The unit is lost;
+		 * logged so a stall that follows can be traced to it.
+		 */
+		if ((flags & DRV_RPI4_MMAL_FLAG_TRANSMISSION_FAILED) != 0)
+			kern_logf("rpi4-mmal: input %u came back unread: the firmware's transfer of it failed\n", (unsigned)index);
+
 		/* The buffer is free, and its staging area has one buffer fewer. */
 		decoder->input_free[index] = true;
 		enabled = spin_lock_irqsave(&mmal_lock);
@@ -2787,4 +2820,52 @@ status_name(
 
 	/* Succeeded: the status's name. */
 	return names[status];
+}
+
+/*
+ * Makes the video floor of the core clock match the decoders: held while
+ * an entry is in use, given back when none is.  The caller holds
+ * mmal_open_lock.  A refused change is logged and leaves the floor as it
+ * was; the decoder works at the clock the firmware runs.
+ */
+static void
+core_floor(void)
+{
+	const char *what;
+	unsigned index;
+	uint32_t hz;
+	bool wanted;
+	int error;
+
+	/* Whether any decoder entry is in use. */
+	wanted = false;
+	for (index = 0; index < MMAL_DECODERS; index++) {
+		if (mmal_decoders[index].used) {
+			wanted = true;
+			break;
+		}
+	}
+
+	/* Nothing to change. */
+	if (wanted == mmal_floor_held)
+		return;
+
+	/* The highest rate while decoders exist; no floor afterwards. */
+	hz = 0U;
+	what = "given back";
+	if (wanted) {
+		hz = DRV_RPI4_FIRMWARE_CORE_MAXIMUM;
+		what = "taken";
+	}
+
+	/* Asks the firmware through the floors of the core clock. */
+	error = drv_rpi4_firmware_core_clock(DRV_RPI4_FIRMWARE_CORE_VIDEO, hz);
+	if (error != 0) {
+		kern_logf("rpi4-mmal: core clock floor %s refused (%d)\n", what, error);
+		return;
+	}
+
+	/* Succeeded: the floor matches the decoders. */
+	mmal_floor_held = wanted;
+	return;
 }
