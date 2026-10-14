@@ -1,0 +1,364 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Host test of the nvrtx GSP parts that touch no hardware (ws037-p004 4a).
+ *
+ * usage: nvrtx-gsp-host-test [FIRMWARE-DIR]
+ * FIRMWARE-DIR is a verified nvidia-gsp-firmware cache; without it the
+ * checks of the real files' containers are skipped.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <uapi/errno.h>
+
+#include "drivers/gpu/nvrtx/nvrtx-gsp.h"
+
+static unsigned failures;
+static unsigned checks;
+
+static void
+check(int ok, const char *what)
+{
+	checks++;
+	if (!ok) {
+		printf("FAIL %s\n", what);
+		failures++;
+	}
+}
+
+static uint8_t *
+read_file(const char *dir, const char *name, size_t *size)
+{
+	char path[1024];
+	FILE *f;
+	uint8_t *data;
+	long length;
+
+	snprintf(path, sizeof(path), "%s/%s", dir, name);
+	f = fopen(path, "rb");
+	if (f == NULL)
+		return NULL;
+	fseek(f, 0, SEEK_END);
+	length = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	data = malloc((size_t)length);
+	if (data == NULL || fread(data, 1, (size_t)length, f) != (size_t)length) {
+		fclose(f);
+		free(data);
+		return NULL;
+	}
+	fclose(f);
+	*size = (size_t)length;
+	return data;
+}
+
+/* Chunked pages with made-up bus addresses: chunk c at 0x40000000 + c * 2 * chunk_bytes. */
+static void
+make_pages(struct nvrtx_pages *pages, size_t page_count, size_t chunk_bytes)
+{
+	size_t c;
+
+	pages->chunk_bytes = chunk_bytes;
+	pages->page_count = page_count;
+	pages->chunk_count = (page_count * NVRTX_GSP_PAGE_SIZE + chunk_bytes - 1) / chunk_bytes;
+	pages->chunk_cpu = calloc(pages->chunk_count, sizeof(uint8_t *));
+	pages->chunk_bus = calloc(pages->chunk_count, sizeof(uint64_t));
+	for (c = 0; c < pages->chunk_count; c++) {
+		pages->chunk_cpu[c] = aligned_alloc(NVRTX_GSP_PAGE_SIZE, chunk_bytes);
+		memset(pages->chunk_cpu[c], 0xa5, chunk_bytes);
+		pages->chunk_bus[c] = 0x40000000ULL + (uint64_t)c * 2U * chunk_bytes;
+	}
+}
+
+static void
+test_wire(void)
+{
+	uint8_t b[16];
+	uint8_t element[2 * NVRTX_GSP_PAGE_SIZE];
+	unsigned i;
+
+	nvrtx_put64(b, 0, 0x1122334455667788ULL);
+	check(b[0] == 0x88 && b[7] == 0x11, "wire: put64 little-endian");
+	check(nvrtx_get64(b, 0) == 0x1122334455667788ULL, "wire: get64");
+	nvrtx_put32(b, 8, 0xdeadbeefU);
+	check(nvrtx_get32(b, 8) == 0xdeadbeefU, "wire: get32");
+
+	for (i = 0; i < sizeof(element); i++)
+		element[i] = (uint8_t)(i * 7U + 3U);
+	nvrtx_put32(element, NVRTX_ELEMENT_CHECKSUM_AT, 0);
+	nvrtx_put32(element, NVRTX_ELEMENT_CHECKSUM_AT, nvrtx_fold_checksum(element, sizeof(element)));
+	check(nvrtx_fold_checksum(element, sizeof(element)) == 0, "wire: finished element folds to zero");
+}
+
+static void
+test_layout(void)
+{
+	struct nvrtx_wpr_layout l;
+	struct nvrtx_bootloader bl;
+	struct nvrtx_wpr_sources src;
+	uint8_t record[NVRTX_WPRM_BYTES];
+	uint8_t page[NVRTX_GSP_PAGE_SIZE];
+	uint8_t args[NVRTX_RMARGS_BYTES];
+	uint8_t log[NVRTX_GSP_LOG_BYTES];
+	uint64_t vram;
+	int error;
+
+	vram = nvrtx_vram_size((8U << 4) | 10U);
+	check(vram == 8ULL << 30, "layout: VRAM size 8 GiB decoded");
+	check(nvrtx_vram_size(0x40000000U | (8U << 4) | 10U) == (8ULL << 30) / 16 * 15, "layout: fifteen sixteenths");
+	check(nvrtx_vga_workspace(vram, 0) == vram - 0x100000, "layout: invalid VGA register gives the last MiB");
+	check(nvrtx_vga_workspace(vram, 0x01fff008U) == 0x1fff00000ULL, "layout: valid VGA register address");
+	check(nvrtx_vga_workspace(vram, 0x00100008U) == vram - 0x20000, "layout: low VGA address gives the last 128 KiB");
+
+	error = nvrtx_wpr_layout(vram, vram - 0x100000, 0x1000, 0x1b34ea0, &l);
+	check(error == 0, "layout: 8 GiB fits");
+	check(l.vga == 0x1fff00000ULL, "layout: VGA workspace");
+	check(l.frts == 0x1ffe00000ULL && l.frts_size == 0x100000, "layout: FRTS");
+	check(l.boot == 0x1ffdff000ULL, "layout: bootloader");
+	check(l.image == 0x1fe2c0000ULL, "layout: image");
+	check(l.heap == 0x1f7900000ULL && l.heap_size == 0x6900000ULL, "layout: heap 105 MiB");
+	check(l.region == 0x1f7800000ULL && l.region_size == 0x8700000ULL, "layout: region 135 MiB");
+	check(l.outer_heap == 0x1f7700000ULL && l.outer_heap_size == 0x100000, "layout: outer heap");
+	check(nvrtx_wpr_layout(vram, vram - 0x100000, 0x1000, 0x40000000ULL, &l) == 0, "layout: (large image still computes)");
+	check(nvrtx_wpr_layout(64ULL << 20, (64ULL << 20) - 0x100000, 0x1000, 0x1b34ea0, &l) == EINVAL, "layout: 64 MiB VRAM refused");
+
+	nvrtx_wpr_layout(vram, vram - 0x100000, 0x1000, 0x1b34ea0, &l);
+	memset(&bl, 0, sizeof(bl));
+	bl.monitor_code_at = 0x11;
+	bl.monitor_data_at = 0x22;
+	bl.manifest_at = 0x33;
+	src.image_table = 0x1000;
+	src.boot_address = 0x2000;
+	src.boot_size = 0x1000;
+	src.signature = 0x3000;
+	src.signature_size = 0x1000;
+	src.bootloader = &bl;
+	nvrtx_wpr_record(record, &l, &src);
+	check(nvrtx_get64(record, 0) == 0xdc3aae21371a60b3ULL, "record: magic");
+	check(nvrtx_get64(record, 8) == 1, "record: revision");
+	check(nvrtx_get64(record, 24) == 0x1b34ea0, "record: image size");
+	check(nvrtx_get64(record, 48) == 0x11 && nvrtx_get64(record, 56) == 0x22 && nvrtx_get64(record, 64) == 0x33, "record: bootloader offsets");
+	check(nvrtx_get64(record, 88) == 0x1f7700000ULL && nvrtx_get64(record, 96) == 0x1f7700000ULL, "record: reserved start and outer heap");
+	check(nvrtx_get64(record, 112) == 0x1f7800000ULL, "record: region start");
+	check(nvrtx_get64(record, 168) == 0x1fff00000ULL, "record: region end");
+	check(nvrtx_get64(record, 176) == vram, "record: VRAM size");
+	check(nvrtx_get64(record, 192) == 0x100000, "record: VGA size");
+	check(nvrtx_get64(record, 248) == 0, "record: tail zero");
+
+	memset(page, 0, sizeof(page));
+	nvrtx_libos_region(page, 0, "LOGINIT", 0x5000, 0x10000);
+	nvrtx_libos_region(page, 3, "RMARGS", 0x6000, NVRTX_RMARGS_BYTES);
+	check(nvrtx_get64(page, 0) == 0x4c4f47494e4954ULL, "libos: name packed first character highest");
+	check(nvrtx_get64(page, 8) == 0x5000 && nvrtx_get64(page, 16) == 0x10000, "libos: address and size");
+	check(page[24] == 1 && page[25] == 1, "libos: contiguous in system memory");
+	check(nvrtx_get64(page, 96) == 0x524d41524753ULL, "libos: fourth entry at 96");
+
+	nvrtx_rmargs(args, 0x7000, 129);
+	check(nvrtx_get64(args, 0) == 0x7000 && nvrtx_get32(args, 8) == 129, "rmargs: queue pages");
+	check(nvrtx_get64(args, 16) == 0x1000 && nvrtx_get64(args, 24) == 0x41000, "rmargs: queue offsets");
+	check(args[48] == 1, "rmargs: stack in DMEM");
+	check(nvrtx_get32(args, 32) == 0 && args[40] == 0, "rmargs: cold start");
+
+	nvrtx_log_buffer(log, 0x80000, sizeof(log));
+	check(nvrtx_get64(log, 0) == 0 && nvrtx_get64(log, 8) == 0x80000 && nvrtx_get64(log, 8 + 15 * 8) == 0x8f000, "log: put pointer and page list");
+}
+
+static void
+test_radix3(void)
+{
+	struct nvrtx_pages image;
+	struct nvrtx_pages table;
+	size_t pages;
+	int error;
+
+	make_pages(&image, 6965, 0x100000);
+	pages = nvrtx_radix3_pages(6965);
+	check(pages == 16, "radix3: 6965 image pages need 16 table pages");
+	make_pages(&table, pages, pages * NVRTX_GSP_PAGE_SIZE);
+	error = nvrtx_radix3_fill(&image, &table);
+	check(error == 0, "radix3: fill");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 0), 0) == nvrtx_pages_bus(&table, 1), "radix3: top names middle");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 0), 8) == 0, "radix3: top rest zero");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 1), 13 * 8) == nvrtx_pages_bus(&table, 15), "radix3: middle names last bottom");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 1), 14 * 8) == 0, "radix3: middle rest zero");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 2), 0) == 0x40000000ULL, "radix3: first image page");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 2), 256 * 8) == 0x40000000ULL + 2 * 0x100000, "radix3: second chunk");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 15), (6964 % 512) * 8) == nvrtx_pages_bus(&image, 6964), "radix3: last image page");
+	check(nvrtx_get64(nvrtx_pages_cpu(&table, 15), (6965 % 512) * 8) == 0, "radix3: tail zero");
+	table.page_count = 15;
+	check(nvrtx_radix3_fill(&image, &table) == EINVAL, "radix3: wrong table size refused");
+}
+
+static void
+test_queue(void)
+{
+	struct nvrtx_pages shared;
+	struct nvrtx_channel driver;
+	struct nvrtx_channel gsp;
+	uint8_t *staging_driver;
+	uint8_t *staging_gsp;
+	uint8_t payload[20000];
+	uint8_t received[20000];
+	uint8_t *slot;
+	uint32_t function;
+	uint32_t sequence;
+	uint32_t result;
+	size_t length;
+	unsigned i;
+	unsigned round;
+	int error;
+	int ok;
+
+	make_pages(&shared, NVRTX_QUEUE_SHARED_BYTES / NVRTX_GSP_PAGE_SIZE, NVRTX_QUEUE_SHARED_BYTES);
+	check(shared.page_count == 129, "queue: shared region is 129 pages");
+	nvrtx_queue_shared_init(&shared);
+	check(nvrtx_get64(nvrtx_pages_cpu(&shared, 0), 128 * 8) == nvrtx_pages_bus(&shared, 128), "queue: page list");
+	slot = nvrtx_pages_cpu(&shared, 1);
+	check(nvrtx_get32(slot, 4) == 0x40000 && nvrtx_get32(slot, 8) == 0x1000 && nvrtx_get32(slot, 12) == 63, "queue: command header size, slot, count");
+	check(nvrtx_get32(slot, 20) == 1 && nvrtx_get32(slot, 24) == 32 && nvrtx_get32(slot, 28) == 0x1000, "queue: command header flags, reader, slots");
+
+	staging_driver = malloc(NVRTX_STAGING_BYTES);
+	staging_gsp = malloc(NVRTX_STAGING_BYTES);
+	nvrtx_channel_init(&driver, &shared, staging_driver);
+	/* The GSP's mirror: it sends in the status queue and receives from the command queue. */
+	nvrtx_channel_init(&gsp, &shared, staging_gsp);
+	gsp.command.at = NVRTX_QUEUE_STATUS_AT;
+	gsp.command.peer_at = NVRTX_QUEUE_COMMAND_AT;
+	gsp.status.at = NVRTX_QUEUE_COMMAND_AT;
+	gsp.status.peer_at = NVRTX_QUEUE_STATUS_AT;
+
+	for (i = 0; i < sizeof(payload); i++)
+		payload[i] = (uint8_t)(i * 13U + 1U);
+
+	error = nvrtx_channel_send(&driver, 72, 0, payload, 100);
+	check(error == 0, "queue: send one slot");
+	slot = nvrtx_pages_cpu(&shared, 2);
+	check(nvrtx_fold_checksum(slot, NVRTX_GSP_PAGE_SIZE) == 0, "queue: element checksum folds to zero");
+	check(nvrtx_get32(slot, 40) == 1 && nvrtx_get32(slot, 36) == 0, "queue: element slots and number");
+	check(nvrtx_get32(slot, 48) == 0x03000000 && memcmp(slot + 52, "VRPC", 4) == 0, "queue: call version and signature");
+	check(nvrtx_get32(slot, 56) == 132 && nvrtx_get32(slot, 60) == 72, "queue: call length and function");
+	check(nvrtx_get32(slot, 64) == 0xffffffffU, "queue: result pending");
+	check(nvrtx_get32(nvrtx_pages_cpu(&shared, 1), 16) == 1, "queue: write pointer moved");
+
+	error = nvrtx_channel_receive(&gsp, received, sizeof(received), &length);
+	check(error == 0 && length == 100 && memcmp(received, payload, 100) == 0, "queue: GSP side receives");
+	check(nvrtx_get32(nvrtx_pages_cpu(&shared, 65), 32) == 1, "queue: GSP read pointer in the status page");
+
+	check(nvrtx_channel_send(&driver, 1, 1, payload, NVRTX_CALL_PAYLOAD_MAX + 1) == E2BIG, "queue: too large refused");
+
+	/* Fills the command queue without the GSP reading: 62 slots usable. */
+	ok = 1;
+	for (i = 0; i < 62; i++) {
+		if (nvrtx_channel_send(&driver, 76, i, payload, 10) != 0)
+			ok = 0;
+	}
+	check(ok, "queue: 62 one-slot messages fit");
+	check(nvrtx_channel_send(&driver, 76, 99, payload, 10) == EAGAIN, "queue: full queue says EAGAIN");
+	ok = 1;
+	for (i = 0; i < 62; i++) {
+		error = nvrtx_channel_peek(&gsp, &function, &sequence, &length, &result);
+		if (error != 0 || sequence != i || function != 76)
+			ok = 0;
+		nvrtx_channel_receive(&gsp, received, sizeof(received), &length);
+	}
+	check(ok, "queue: GSP drains in order across the wrap");
+
+	/* Multi-slot replies that wrap, answered by the GSP into the status queue. */
+	ok = 1;
+	for (round = 0; round < 20; round++) {
+		error = nvrtx_channel_send(&gsp, 0x1000 + round, round, payload, 9000 + round * 400);
+		if (error != 0)
+			ok = 0;
+		error = nvrtx_channel_peek(&driver, &function, &sequence, &length, &result);
+		if (error != 0 || function != 0x1000 + round || sequence != round || length != 9000 + round * 400)
+			ok = 0;
+		memset(received, 0, sizeof(received));
+		error = nvrtx_channel_receive(&driver, received, sizeof(received), &length);
+		if (error != 0 || memcmp(received, payload, length) != 0)
+			ok = 0;
+	}
+	check(ok, "queue: multi-slot messages wrap and arrive whole");
+	check(nvrtx_channel_peek(&driver, &function, &sequence, &length, &result) == EAGAIN, "queue: empty status queue says EAGAIN");
+
+	error = nvrtx_channel_send(&gsp, 5, 5, payload, 5000);
+	error = nvrtx_channel_receive(&driver, received, 100, &length);
+	check(error == 0 && length == 5000 && memcmp(received, payload, 100) == 0, "queue: a short buffer takes the head and the message");
+}
+
+static void
+test_files(const char *dir)
+{
+	struct nvrtx_booter booter;
+	struct nvrtx_bootloader bl;
+	struct nvrtx_section section;
+	uint8_t *data;
+	size_t size;
+	size_t at;
+	int error;
+
+	data = read_file(dir, "booter_load-570.144.bin", &size);
+	check(data != NULL, "files: booter_load present");
+	if (data == NULL)
+		return;
+	error = nvrtx_booter_parse(data, size, &booter);
+	check(error == 0, "files: booter_load parses");
+	check(booter.payload_at == 0x88 && booter.payload_size == 0xe700, "files: booter_load payload");
+	check(booter.os_code_at == 0 && booter.os_code_size == 0x100, "files: booter_load code");
+	check(booter.os_data_at == 0x8500 && booter.os_data_size == 0x6200, "files: booter_load data");
+	check(booter.app_at == 0x100 && booter.app_size == 0x8400, "files: booter_load application");
+	check(booter.signature_count >= 1 && booter.signature_size > 0, "files: booter_load signatures");
+	check(nvrtx_booter_signature(&booter, 0, &at) == 0 && at + booter.signature_size <= size, "files: production signature in the file");
+	printf("info booter_load: %u signatures of %zu bytes, patch at payload +0x%x\n",
+	    booter.signature_count, booter.signature_size, booter.patch_location);
+	check(nvrtx_booter_parse(data, 100, &booter) == EINVAL, "files: truncated booter refused");
+	free(data);
+
+	data = read_file(dir, "booter_unload-570.144.bin", &size);
+	check(data != NULL && nvrtx_booter_parse(data, size, &booter) == 0, "files: booter_unload parses");
+	free(data);
+
+	data = read_file(dir, "bootloader-570.144.bin", &size);
+	check(data != NULL && nvrtx_bootloader_parse(data, size, &bl) == 0, "files: bootloader parses");
+	check(bl.payload_at == 0x64 && bl.payload_size == 0x1000, "files: bootloader payload");
+	free(data);
+
+	data = read_file(dir, "gsp-570.144.bin", &size);
+	check(data != NULL, "files: gsp present");
+	if (data == NULL)
+		return;
+	error = nvrtx_elf_section(data, size, NVRTX_GSP_IMAGE_SECTION, &section);
+	check(error == 0 && section.size == 0x1b34ea0, "files: .fwimage");
+	error = nvrtx_elf_section(data, size, NVRTX_GSP_SIGNATURE_SECTION, &section);
+	check(error == 0 && section.size == 0x1000, "files: .fwsignature_tu10x");
+	check(nvrtx_elf_section(data, size, ".nosuch", &section) == ENOENT, "files: missing section");
+	check(nvrtx_elf_section(data, 63, NVRTX_GSP_IMAGE_SECTION, &section) == EINVAL, "files: truncated ELF refused");
+	free(data);
+}
+
+int
+main(int argc, char **argv)
+{
+	test_wire();
+	test_layout();
+	test_radix3();
+	test_queue();
+	if (argc > 1)
+		test_files(argv[1]);
+	else
+		printf("skip files: no firmware directory given\n");
+
+	if (failures != 0) {
+		printf("FAIL nvrtx gsp: %u of %u checks\n", failures, checks);
+		return 1;
+	}
+	printf("PASS nvrtx gsp: %u checks\n", checks);
+	return 0;
+}

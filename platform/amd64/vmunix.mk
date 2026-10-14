@@ -157,6 +157,9 @@ AMD64_NVRTX_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_NVRTX),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/discover.c src/drivers/gpu/nvrtx/identify.c \
 	src/drivers/gpu/nvrtx/nvrtx.c src/drivers/gpu/nvrtx/stage.c
+# The GSP boot path's parts that touch no hardware (ws037-p004 4a).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/wire.c src/drivers/gpu/nvrtx/image.c \
+	src/drivers/gpu/nvrtx/layout.c src/drivers/gpu/nvrtx/radix3.c src/drivers/gpu/nvrtx/queue.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
