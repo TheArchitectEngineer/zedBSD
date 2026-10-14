@@ -65,6 +65,7 @@
  */
 
 #include "auth.h"
+#include "fallback-rules.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -106,7 +107,7 @@ static void session_runtime_clean(const char *directory);
 static void session_child(struct sessiond *daemon, struct sessiond_account *account, const char *directory, int control);
 static void session_network_group(void);
 static void session_network_notify(const struct sessiond_account *account, const char *change);
-static void session_handoff(struct sessiond *daemon, int control);
+static int session_handoff(struct sessiond *daemon, int control);
 static int session_request(struct sessiond *daemon, struct sessiond_account *account, int control, struct sessiond_exchange *exchange);
 static void session_logout(struct sessiond *daemon, int control);
 static void session_record(int type, pid_t pid, const char *user);
@@ -115,6 +116,11 @@ static void session_signal_user(uid_t uid, int signal_number);
 
 /*
  * Runs a user's session until it ends or sessiond stops.
+ *
+ * Returns 0 once a session that took the display (said READY) has ended,
+ * EIO when it ended without taking the display (an automatic login's
+ * session that hung in its start is ended, ws239-p001), or the errno value
+ * of a session that could not be started.
  */
 int
 sessiond_session_run(
@@ -126,9 +132,12 @@ sessiond_session_run(
 	char directory[64];
 	pid_t child;
 	pid_t waited;
+	long long start_ms;
+	long long now_ms;
 	int pair[2];
 	int control;
 	int leaving;
+	int hung;
 	nfds_t entries;
 	nfds_t sleep_slot;
 	nfds_t seat_slot;
@@ -188,13 +197,15 @@ sessiond_session_run(
 	/* networkd may join the user's saved Wi-Fi networks while the session is open. */
 	session_network_notify(account, "open");
 
-	/* The display goes from the greeter to the session. */
-	session_handoff(daemon, control);
+	/* The display goes from the greeter to the session, which may say READY late too. */
+	start_ms = sessiond_milliseconds();
+	daemon->session_ready = session_handoff(daemon, control);
 	sessiond_exchange_init(&exchange, control, account, NULL);
 
 	/* Waits for it to end, answering it, and giving a new input device to the user every second. */
 	status = 0;
 	leaving = 0;
+	hung = 0;
 	for (;;) {
 		waited = waitpid(child, &status, WNOHANG);
 		if (waited == child)
@@ -206,6 +217,18 @@ sessiond_session_run(
 		if (sessiond_stopping) {
 			(void)kill(-child, SIGTERM);
 			(void)kill(child, SIGTERM);
+		}
+
+		/* An automatic login's session that has not taken the display in time hangs in its start: it is ended (ws239-p001). */
+		now_ms = sessiond_milliseconds();
+		if (daemon->session_bounded &&
+		    !daemon->session_ready &&
+		    !hung &&
+		    now_ms - start_ms >= SESSIOND_GREETER_START_SECONDS * 1000LL) {
+			sessiond_log("SESSIOND SESSION not ready pid=%ld waited_ms=%lld", (long)child, now_ms - start_ms);
+			(void)kill(-child, SIGKILL);
+			(void)kill(child, SIGKILL);
+			hung = 1;
 		}
 
 		/* A request of the session, passkey's answer, or a second (less while an attempt is under way). */
@@ -285,6 +308,10 @@ sessiond_session_run(
 	/* The user's saved Wi-Fi networks are no longer joined, and a connection made with them ends. */
 	session_network_notify(account, "close");
 
+	/* A session that never took the display failed to start. */
+	if (!daemon->session_ready)
+		return EIO;
+
 	/* Succeeded: the session ran and ended. */
 	return 0;
 }
@@ -293,9 +320,9 @@ sessiond_session_run(
  * Hands the display from the greeter to the session: waits for the
  * session's READY (at most SESSION_READY_SECONDS, or until it closes its
  * end), has the greeter give the display back, and answers GO; the
- * greeter's process is then reaped.
+ * greeter's process is then reaped.  Returns 1 when the session said READY.
  */
-static void
+static int
 session_handoff(
 	struct sessiond *daemon,
 	int control)
@@ -339,6 +366,9 @@ session_handoff(
 
 	/* The greeter's process goes after. */
 	sessiond_greeter_finish(daemon);
+
+	/* Succeeded: says whether the session took the display. */
+	return ready;
 }
 
 /*
@@ -388,6 +418,11 @@ session_request(
 		session_logout(daemon, control);
 		return 1;
 	}
+
+	/* A READY after the hand-over's wait: the session took the display late (ws239-p001); answered as anything else. */
+	match = strcmp(line, "READY");
+	if (match == 0)
+		daemon->session_ready = 1;
 
 	/* Anything else. */
 	(void)write(control, "ERROR\n", 6U);
