@@ -249,6 +249,7 @@ On an IDE drive emulator such as ZuluIDE, present the image as a hard disk
 with that geometry, for example:
 
 ```ini
+[IDE]
 device = hdd
 cylinders = 2667
 heads = 8
@@ -258,9 +259,8 @@ sectors = 17
 The number of cylinders is the image's size in bytes divided by 69,632
 (8 heads × 17 sectors × 512 bytes); 2667 is that of the default image.
 
-<!-- review (2026-10-14): the geometry is the one of the user's ZuluIDE check on the PC-9821 Ra43 (device hdd, 8 heads,
-     17 sectors). The key names of the example were not checked against ZuluIDE's own documentation; correct them if
-     its file says them differently. Images of 20 MiB or less use 4 heads instead of 8. -->
+<!-- review (2026-10-14): this is the zuluide.ini the user's PC-9821 Ra43 check used (ZuluIDE firmware 2026.03.07,
+     whose source reads `device = hdd` in the [IDE] section). Images of 20 MiB or less use 4 heads instead of 8. -->
 
 ## Licenses
 
