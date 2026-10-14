@@ -103,7 +103,7 @@ static int grid_fixed_row_baseline(const struct layout_box *box, const struct gr
 static int grid_fixed_column_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *right_extent);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
-static void grid_expand_repeats(struct layout_box *box, int measuring);
+static void grid_expand_repeats(struct layout_tree *tree, struct layout_box *box);
 static int grid_collapse_tracks(struct layout_box *box, struct grid_state *grid);
 static void grid_distribute(int value, int reversed, layout_unit free_space, int tracks, layout_unit *offset, layout_unit *extra);
 static int grid_content_stretches(int value);
@@ -200,12 +200,16 @@ grid_expand_axis(
 /* Expands the auto-fill and auto-fit repeats of a horizontal grid against its definite sizes. */
 static void
 grid_expand_repeats(
-	struct layout_box *box,
-	int measuring)
+	struct layout_tree *tree,
+	struct layout_box *box)
 {
+	int measuring;
+
 	layout_unit available;
 	layout_unit gap;
 	int definite;
+
+	measuring = tree->measuring;
 
 	/* The columns: a block-level grid fills its container; others need a width of their own. */
 	gap = 0;
@@ -224,6 +228,8 @@ grid_expand_repeats(
 		available = layout_from_px(box->style.max_width.value);
 	if (available < 0 && box->style.min_width.unit == CSS_UNIT_PX)
 		available = layout_from_px(box->style.min_width.value);
+	if (available < 0 && box->style.min_width.unit == CSS_UNIT_PERCENT && box->parent != NULL)
+		available = (layout_unit)((float)box->parent->width * box->style.min_width.value / 100.0f);
 	grid_expand_axis(box->style.columns, &box->style.column_count, &box->style.column_repeat,
 	    available, gap);
 
@@ -243,6 +249,8 @@ grid_expand_repeats(
 		available = layout_from_px(box->style.max_height.value);
 	} else if (box->style.min_height.unit == CSS_UNIT_PX) {
 		available = layout_from_px(box->style.min_height.value);
+	} else if (box->style.min_height.unit == CSS_UNIT_PERCENT && tree->containing_height_definite) {
+		available = (layout_unit)((float)tree->containing_height * box->style.min_height.value / 100.0f);
 	}
 	grid_expand_axis(box->style.rows, &box->style.row_count, &box->style.row_repeat,
 	    available, gap);
@@ -452,7 +460,7 @@ layout_grid(
 		return 0;
 
 	/* Automatic repeats take their track counts from the definite size. */
-	grid_expand_repeats(box, tree->measuring);
+	grid_expand_repeats(tree, box);
 
 	/* The items, placed in their cells. */
 	memset(&grid, 0, sizeof(grid));
