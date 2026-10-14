@@ -1241,6 +1241,7 @@ list_control(
 	const struct layout_box *box)
 {
 	struct layout_box snapped;
+	struct list_shape shape;
 	struct list_area painting;
 	struct list_area area;
 	layout_unit width;
@@ -1251,6 +1252,7 @@ list_control(
 	layout_unit top;
 	layout_unit bottom;
 	int native;
+	int rounded;
 
 	/* The border box. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
@@ -1281,9 +1283,15 @@ list_control(
 		return;
 	}
 
-	/* The background color under the border box. */
-	if ((box->style.background_color >> 24) != 0)
-		list_rect(walk, box->x, box->y, width, height, box->style.background_color);
+	/* The background color under the border box, rounded as its corners are. */
+	rounded = list_border_shape(box, &shape);
+	if ((box->style.background_color >> 24) != 0) {
+		if (rounded) {
+			list_round_fill(walk, &shape, box->style.background_color);
+		} else {
+			list_rect(walk, box->x, box->y, width, height, box->style.background_color);
+		}
+	}
 
 	/* The background image, placed in the padding box and painted over the border box. */
 	painting.x = box->x;
@@ -1298,7 +1306,9 @@ list_control(
 
 	/* The platform's one pixel frame, or the style's borders. */
 	native = list_control_native(box);
-	if (native) {
+	if (rounded && !native) {
+		list_round_borders(walk, box, &shape);
+	} else if (native) {
 		pixel = LAYOUT_UNIT;
 		list_rect(walk, box->x, box->y, width, pixel, box->style.border_color[CSS_TOP]);
 		list_rect(walk, box->x, box->y + height - pixel, width, pixel, box->style.border_color[CSS_BOTTOM]);
