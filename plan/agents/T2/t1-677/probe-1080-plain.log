@@ -1,0 +1,15 @@
+vkvideo-probe: stream pb-high-1080.h264 profile 100, 1920x1088
+vkvideo-probe: capabilities max 1920x1088 slots 17 references 16 level 12 flags 0x2 decode 0x1
+vkvideo-probe: session 1920x1088, 5 slots, 4 references, 1 memory bindings
+vkvideo-probe: parameters 1 SPS, 1 PPS
+vkvideo-probe: frame 0 033b1ce3c6c4b815a32d4229a700cd9f4f3900eaf10ed775356c56819f090310
+vkvideo-probe: frame 1 dd9450e12d98557830bd50cfce52fb85e8f65508c5b1375fc7d32a7c82c81cbd
+vkvideo-probe: frame 2 502eab052fe8def56c2bc08dc7532f991188ec23ce64747ae8b6c3923183a0ce
+vkvideo-probe: frame 3 1d22661e6aa9022464355e48176fba29c92d422ccb39d40cdca8487863ef08fc
+vkvideo-probe: frame 4 b4536372f9147e7c0554634c0f0c0e39a73786025bb6cee3dffc1bed395c61b1
+vkvideo-probe: frame 5 24aa564e216cfb96be1d1be40b19c80db054dc06b0ac3153731af6c525ccd367
+vkvideo-probe: frame 6 0f13a98bce682c70a6acdad8102e40d53592c2108d165203a29b63fbe7ce3f8b
+vkvideo-probe: frame 7 c60b1e3a616d55bbad82b6b288b6ebfcfcb0706b253972e6891edd056b5929d3
+vkvideo-probe: 8 frames decoded
+vkvideo-probe: decode time: 8 decodes, total 265.000 ms, mean 33.125 ms, longest 106.000 ms
+RC=0

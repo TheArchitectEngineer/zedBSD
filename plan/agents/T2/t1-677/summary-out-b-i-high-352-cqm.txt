@@ -1,0 +1,21 @@
+i-high-352-cqm-v-000: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=i-high-352-cqm.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=0 pitch0=352 pitch1=352 planes=2 pts=0 pts_display=-1 run=v sha256=6ed724b31266911dc8860d1eae14bcac7cafd6ea67b776aca6b9b06a32ee0374 status=1 stream=vulkan sum=0 width=352
+  reference: display 0 (decode order); closest display 0 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.746
+i-high-352-cqm-v-001: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=i-high-352-cqm.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=1 pitch0=352 pitch1=352 planes=2 pts=1 pts_display=-1 run=v sha256=d7e8932dcbe693eb5ab32ef75a670e507e1ae8b2ba6590feffae812727eb6966 status=1 stream=vulkan sum=0 width=352
+  reference: display 1 (decode order); closest display 1 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.500
+i-high-352-cqm-v-002: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=i-high-352-cqm.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=2 pitch0=352 pitch1=352 planes=2 pts=2 pts_display=-1 run=v sha256=f437b52b46d04bf9e9b2f43bf7779cde596a333d8d124fe606ba773ae0289642 status=1 stream=vulkan sum=0 width=352
+  reference: display 2 (decode order); closest display 2 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.586

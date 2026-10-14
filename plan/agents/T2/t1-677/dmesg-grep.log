@@ -1,0 +1,2 @@
+v3d: video: 57 decodes in 2143 ms (0 skipped, 7 pushes, 154 steps, depth 1.0); avg_us send 263 frame 4175 place 0, max_us frame 97000; readbacks 0 cached avg_us 0, 56 uncached avg_us 464; waits 38 avg_us 4289
+v3d: video: 10 decodes in 2105 ms (0 skipped, 1 pushes, 60 steps, depth 1.0); avg_us send 500 frame 26400 place 700, max_us frame 97000; readbacks 0 cached avg_us 0, 16 uncached avg_us 14250; waits 31 avg_us 4322

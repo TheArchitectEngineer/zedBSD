@@ -1,0 +1,39 @@
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 11 of 12, slots 4 of 17, references 3 of 16, flags 0x1
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/home/kei/ws236/baseline-1080p30-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/home/kei/ws236/baseline-1080p30-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=199 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=100
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1332 heard=0 written=0 consumed=0 pictures=8 late=10 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=6 picture_us=141166 rest_us=40666
+VIDEOPLAYER Vulkan Video: 53 pictures in 2009 ms, 4 in flight; avg_us submit 6490 wait 4962 copy 25490
+VIDEOPLAYER CLOCK time_ms=2393 heard=0 written=0 consumed=0 pictures=8 late=38 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=230250 rest_us=27500
+VIDEOPLAYER CLOCK time_ms=3513 heard=0 written=0 consumed=0 pictures=8 late=66 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=259000 rest_us=14500
+VIDEOPLAYER Vulkan Video: 59 pictures in 2023 ms, 4 in flight; avg_us submit 7186 wait 3932 copy 12898
+VIDEOPLAYER CLOCK time_ms=4607 heard=0 written=0 consumed=0 pictures=8 late=94 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=247500 rest_us=18250
+VIDEOPLAYER CLOCK time_ms=5693 heard=0 written=0 consumed=0 pictures=8 late=122 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=235000 rest_us=24500
+VIDEOPLAYER Vulkan Video: 59 pictures in 2014 ms, 4 in flight; avg_us submit 7084 wait 6186 copy 15254
+VIDEOPLAYER CLOCK time_ms=6783 heard=0 written=0 consumed=0 pictures=8 late=150 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=243250 rest_us=21000
+VIDEOPLAYER CLOCK time_ms=7863 heard=0 written=0 consumed=0 pictures=8 late=178 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=244250 rest_us=17000
+VIDEOPLAYER Vulkan Video: 60 pictures in 2019 ms, 4 in flight; avg_us submit 6433 wait 3633 copy 12416
+VIDEOPLAYER CLOCK time_ms=8956 heard=0 written=0 consumed=0 pictures=8 late=206 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=248250 rest_us=17250
+VIDEOPLAYER CLOCK time_ms=10079 heard=0 written=0 consumed=0 pictures=8 late=234 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=4 picture_us=250500 rest_us=22750
+VIDEOPLAYER Vulkan Video: 56 pictures in 2004 ms, 4 in flight; avg_us submit 6535 wait 6142 copy 13250
+VIDEOPLAYER END reached dropped=0
+VIDEOPLAYER FRAMES shown=39 time_ms=10975 late=261
+VIDEOPLAYER ENDED shown=39
+VIDEOPLAYER DONE reason=timeout shown=39
+VIDEOPLAYER FRAMES shown=39 time_ms=10975 late=261
