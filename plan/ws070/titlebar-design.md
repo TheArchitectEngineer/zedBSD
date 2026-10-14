@@ -67,7 +67,7 @@ request（変更は `begin_update`〜`commit` の間だけ。menu と同じ tran
 | 5 | `remove_control` | `uint id` | |
 | 6 | `set_control_label` | `uint id`、`string label` | 表示と tooltip・overflow の行の名前 |
 | 7 | `set_control_state` | `uint id`、`uint enabled`、`uint checked` | |
-| 8 | `set_control_value` | `uint id`、`uint value` | PROGRESS の千分率（0〜1000、1001 は不定） |
+| 8 | `set_control_value` | `uint id`、`uint value` | PROGRESS の千分率（0〜1000、1001 は不定）。**version 5**（2026-10-14、[ws074-p229](../ws074/phase229/phase.md)）: BREADCRUMB にも使え、値 1（`KWL_BREADCRUMB_BOXED`）で編集していない時も角丸の箱で見せる（browser の Location）、0 で段の表示。version 5 未満の client の BREADCRUMB の値は受けない |
 | 9 | `set_control_text` | `uint id`、`string text`、`string placeholder` | SEARCH の文字列と空のときの薄い文字 |
 | 10 | `set_breadcrumb` | `uint id`、`array segments` | BREADCRUMB の段（NUL で区切った UTF-8 の列） |
 | 11 | `add_tab` | `uint id`、`string title` | 末尾に tab |
