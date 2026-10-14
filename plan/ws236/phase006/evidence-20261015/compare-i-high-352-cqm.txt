@@ -1,0 +1,3 @@
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less

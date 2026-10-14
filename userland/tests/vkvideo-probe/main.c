@@ -311,6 +311,7 @@ probe_instance(
 	static const char *const extensions[] = { "VK_KHR_get_physical_device_properties2" };
 	VkApplicationInfo application;
 	VkInstanceCreateInfo info;
+	VkPhysicalDeviceProperties properties;
 	VkResult result;
 	uint32_t count;
 
@@ -334,6 +335,12 @@ probe_instance(
 	if ((result != VK_SUCCESS && result != VK_INCOMPLETE) || count == 0U)
 		return probe_failed(result, "vkEnumeratePhysicalDevices");
 	vkGetPhysicalDeviceMemoryProperties(probe->physical, &probe->memory);
+
+	/* Whether its decoded planes are linear rows (every decoder but Intel's). */
+	vkGetPhysicalDeviceProperties(probe->physical, &properties);
+	probe->linear = 0;
+	if (properties.vendorID != 0x8086U)
+		probe->linear = 1;
 
 	/* Succeeded: a device to ask. */
 	return 0;
@@ -363,9 +370,6 @@ probe_list(
 	/* The device. */
 	vkGetPhysicalDeviceProperties(probe->physical, &properties);
 	printf("vkvideo-probe: device %s\n", properties.deviceName);
-	probe->linear = 0;
-	if (properties.vendorID != 0x8086U)
-		probe->linear = 1;
 
 	/* The queue families, each with its video properties chained. */
 	count = PROBE_FAMILIES;

@@ -1,0 +1,33 @@
+keiland-settings.instance
+session.log
+wayland-0
+== high
+VIDEOPLAYER AUDIO error=0
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPENED path=/home/kei/ws236/high-1080p30-10s.mp4 error=0 codec=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER FRAMES shown=76 time_ms=19793 late=224
+VIDEOPLAYER DONE reason=timeout shown=76
+VIDEOPLAYER FRAMES shown=76 time_ms=19793 late=224
+== baseline
+VIDEOPLAYER AUDIO error=0
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPENED path=/home/kei/ws236/baseline-1080p30-10s.mp4 error=0 codec=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER FRAMES shown=73 time_ms=20252 late=227
+VIDEOPLAYER DONE reason=timeout shown=73
+VIDEOPLAYER FRAMES shown=73 time_ms=20252 late=227
+v3d: video: 32 decodes in 2034 ms (0 skipped, 0 pushes, 293 steps); avg_us send 187 frame 34250 place 5187, max_us frame 62000; readbacks 64 cached avg_us 2531, 0 uncached avg_us 0
+v3d: video: 30 decodes in 2049 ms (0 skipped, 0 pushes, 256 steps); avg_us send 533 frame 37133 place 5100, max_us frame 67000; readbacks 60 cached avg_us 2466, 0 uncached avg_us 0
+v3d: video: 20 decodes in 7841 ms (0 skipped, 1 pushes, 206 steps); avg_us send 150 frame 37300 place 5350, max_us frame 112000; readbacks 40 cached avg_us 2525, 0 uncached avg_us 0
+v3d: video: 28 decodes in 2032 ms (0 skipped, 0 pushes, 244 steps); avg_us send 214 frame 31000 place 5392, max_us frame 51000; readbacks 56 cached avg_us 2517, 0 uncached avg_us 0
+v3d: video: 32 decodes in 2013 ms (0 skipped, 0 pushes, 266 steps); avg_us send 218 frame 31031 place 5000, max_us frame 45000; readbacks 64 cached avg_us 2578, 0 uncached avg_us 0
+v3d: video: 33 decodes in 2030 ms (0 skipped, 0 pushes, 243 steps); avg_us send 272 frame 32606 place 5151, max_us frame 44000; readbacks 66 cached avg_us 2681, 0 uncached avg_us 0
+v3d: video: 32 decodes in 2003 ms (0 skipped, 0 pushes, 274 steps); avg_us send 156 frame 31625 place 5125, max_us frame 43000; readbacks 64 cached avg_us 2656, 0 uncached avg_us 0
+v3d: video: 32 decodes in 2040 ms (0 skipped, 0 pushes, 275 steps); avg_us send 156 frame 30718 place 5000, max_us frame 44000; readbacks 64 cached avg_us 2531, 0 uncached avg_us 0
+v3d: video: 30 decodes in 2057 ms (0 skipped, 0 pushes, 232 steps); avg_us send 266 frame 32466 place 5600, max_us frame 53000; readbacks 60 cached avg_us 2783, 0 uncached avg_us 0
+v3d: video: 28 decodes in 2005 ms (0 skipped, 0 pushes, 180 steps); avg_us send 214 frame 34000 place 5107, max_us frame 67000; readbacks 56 cached avg_us 3196, 0 uncached avg_us 0
+v3d: video: 29 decodes in 2000 ms (0 skipped, 0 pushes, 232 steps); avg_us send 103 frame 31586 place 5620, max_us frame 46000; readbacks 58 cached avg_us 2896, 0 uncached avg_us 0
+v3d: video: 29 decodes in 2023 ms (0 skipped, 0 pushes, 230 steps); avg_us send 689 frame 31655 place 5896, max_us frame 50000; readbacks 58 cached avg_us 2948, 0 uncached avg_us 0

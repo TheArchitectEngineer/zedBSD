@@ -3,7 +3,7 @@
 # ws236-p006: 実機の確かめと直し
 
 Parent: [WS236](../ws.md)
-Status: in-progress（P3、2026-10-15。frame 0・1〜15 の値・速さ・BUG-314 の直しを実装し、host 試験と build（warning 0）まで済み。test-wait（T の実機、下の依頼）。agent/p3-ws236 0e9ab9880・26f94b993・a7d79ec3e）
+Status: uncleared（2026-10-15 実機: 画は全 frame が参照と一致、速さは 1080p で約 15 fps で未達。下の「実機の結果」）
 Phase disposition: normal
 
 ## 範囲
@@ -92,3 +92,16 @@ Phase disposition: normal
 - seek の確かめ（T3 まで未実施）。
 - BUG-314 は再発時に dmesg の `v3d: EIO at` の行で理由が分かる（ticket の更新は再発の後）。
 - p007（規約の全文の確認）に、この Phase で変えた C を含める。
+
+## 実機の結果（2026-10-15、Q1、Pi 4 kei@10.0.30.2、kernel main 2597b86（ユーザーの build、Bluetooth の driver は off）、QEMU 不使用）
+
+証拠: [evidence-20261015/](evidence-20261015/)。probe は `config-rpi4-video.mk` で Q1 が build（warning 0）、/lib/libmedia.so は image のまま（cksum 4012801332）。
+
+- 起動直後の dmesg: `rpi4-vchiq: connected (version 8)`、`v3d: vk: capset declares H.264 video decode`。
+- vkvideo-probe（3 本）: 全 frame が出た（`picture 0 status -1` は無い）。decode の平均 6〜12 ms/枚（T3 の時は 61〜275 ms）。dmesg に `held`・`skipped`・`late frame`・`no push picture`・`v3d: EIO` の行は無い。
+- 画: dump-compare で 3 本の全 28 frame が `differing samples 0`（frame 0 と 1〜15 の値の補正を含め、参照と bit 単位で一致）。
+- probe の hash は最初 全て MISMATCH だった。原因は probe の側: tile か線形かの判定（vendor が Intel でなければ線形）が `--list` の道にしか無く、decode の道では常に Intel の Y-tile として読んでいた（dump の線形の hash は 28/28 が参照の集合と一致）。判定を device を取る所（`probe_instance`）へ移した（`userland/tests/vkvideo-probe/main.c`）。直した probe で 3 本とも `N frames decoded, N match the reference`・rc 0。
+- Video Player（1080p30 の 10 秒、`--timeout-s=25`）: high `FRAMES shown=76 time_ms=19793 late=224`、baseline `shown=73 time_ms=20252 late=227`、`backend=vulkan-video`、error 無し。まだ遅い（約 15 fps）。
+  - dmesg の計測の行（2 秒ごと）: 約 30 decodes/2 s、`avg_us send 150〜700 frame 31000〜37000 place 5000〜5900`、`readbacks … cached avg_us 2500〜3200, 0 uncached`。
+  - つまり cached の写しは効いた（uncached の readback は 0、readback 2.5 ms）。残る遅さは 1 枚ごとに VPU の frame を約 32 ms 待つこと（1 枚ずつ直列）と place の約 5 ms。30 fps には複数の picture を同時に firmware に渡す（pipeline）か place の短縮が要る。
+- 判定: 画の正しさ（frame 0・値の補正）と BUG-314 の log の組み込みは実機で確認（EIO は起きず、log の行の実際の出力は未確認）。速さ（stream の速さで再生）は未達。seek・CPU の使用率・長時間は未実施。

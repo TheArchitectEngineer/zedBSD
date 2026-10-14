@@ -43,7 +43,7 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 | [ws236-p003](phase003/phase.md) | kernel: MMAL の `video_decode` の client（H.264、port・buffer・EOS・flush）と R1 の probe（in-progress: 実装・host 試験済み、test-wait（T1 の実機の probe）） | 10 LW | p002 |
 | [ws236-p004](phase004/phase.md) | kernel の Vulkan の executor（in-progress: 実装・build 済み、実機は p005 の依頼と一緒）: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
 | [ws236-p005](phase005/phase.md) | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験（in-progress: probe の直し済み、libmedia は無変更、test-wait（T1）） | 3 LW | p004 |
-| [ws236-p006](phase006/phase.md) | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し（in-progress: frame 0・1〜15 の値・速さ・BUG-314 を実装、T の実機待ち） | 5 LW | p005 |
+| [ws236-p006](phase006/phase.md) | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し（uncleared 2026-10-15: 画は実機で全 frame 一致、1080p は約 15 fps で速さが未達） | 5 LW | p005 |
 | [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
 
 合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。
@@ -54,3 +54,9 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 - 実機の試験（T1-653、phase006 の「T への依頼」）は未実施: 新しい kernel で Pi が起動 54 秒で停止（BUG-317）。ユーザーは「最新のカーネルでOKです。まずはビデオ再生をテストしてください。」、Pi の SD を書き直し中。
 - 再開: ユーザーの知らせの後、最新の main の CI の kernel（config/ci/config-rpi4.mk）で phase006 の手順 3〜7 を流し、結果をユーザーに伝える。止まる地点: Pi が応答しなくなったら止めてユーザーに聞く。
 - 残り: libmedia の uncached の読み（WS202・WS141）、seek、p007（規約）。
+
+## 実機の結果（2026-10-15、Q1）
+
+- Pi 4 の実機（main 2597b86）で、vkvideo-probe の 3 本の全 28 frame が参照と bit 単位で一致（frame 0 も出る）。probe の hash の不一致は probe の tile の判定の不具合で、Q1 が直した。
+- Video Player の 1080p30 は約 15 fps（shown 76・late 224）。VPU の frame を 1 枚ずつ約 32 ms 待つのが主因（cached の写しで readback は 2.5 ms に）。次は複数の picture を同時に渡す pipeline（新しい Phase の候補、ユーザーの判断で）。
+- 詳細は [phase006](phase006/phase.md) の「実機の結果」。
