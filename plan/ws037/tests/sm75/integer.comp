@@ -1,0 +1,17 @@
+#version 450
+// ws037-p008: integer arithmetic, shifts, bitwise operations and comparisons.
+layout(local_size_x = 8, local_size_y = 2) in;
+layout(std430, set = 0, binding = 0) buffer O { uint o[]; };
+layout(push_constant) uniform P { uint k; int s; } p;
+void main()
+{
+	uint i = gl_LocalInvocationIndex + gl_WorkGroupID.x * 16u;
+	uint a = i * 2654435761u + p.k;
+	int b = int(a) >> 3;
+	uint c = (a << 5) ^ (a >> 7) | (a & 0xff00u);
+	uint d = (b < p.s) ? c : ~c;
+	o[i * 4u] = a - c;
+	o[i * 4u + 1u] = uint(b) + uint(-p.s);
+	o[i * 4u + 2u] = d;
+	o[i * 4u + 3u] = (a >= c ? 1u : 0u) + (int(a) < b ? 2u : 0u) + (a == i ? 4u : 0u);
+}
