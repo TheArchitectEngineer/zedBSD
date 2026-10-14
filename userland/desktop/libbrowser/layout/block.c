@@ -47,6 +47,8 @@ layout_block(
 	layout_unit specified_height;
 	layout_unit saved_containing_height;
 	struct css_length saved_style_height;
+	layout_unit ratio_height;
+	int ratio_floor;
 	int own_context;
 	int intrinsic;
 	int height_definite;
@@ -90,6 +92,30 @@ layout_block(
 		specified_height = (layout_unit)((float)tree->containing_height * box->style.height.value / 100.0f) +
 		    layout_from_px(box->style.height.offset);
 		height_definite = 1;
+	}
+
+	/*
+	 * An auto height from aspect-ratio and the width: definite when the box
+	 * scrolls or clips (its automatic minimum is zero), otherwise a floor the
+	 * content may exceed.
+	 */
+	ratio_height = -1;
+	ratio_floor = 0;
+	if (!height_definite && box->style.aspect_ratio > 0.0f && box->style.height.unit != CSS_UNIT_PX) {
+		layout_unit frame_x;
+
+		frame_x = 0;
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			frame_x = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+		ratio_height = (layout_unit)((float)(box->width + frame_x) / box->style.aspect_ratio) - sizing;
+		if (ratio_height < 0)
+			ratio_height = 0;
+		if (box->style.overflow_x == CSS_OVERFLOW_VISIBLE && box->style.overflow_y == CSS_OVERFLOW_VISIBLE) {
+			ratio_floor = 1;
+		} else {
+			specified_height = ratio_height + sizing;
+			height_definite = 1;
+		}
 	}
 
 	/* A definite specified size becomes the nonnegative content height. */
@@ -169,6 +195,10 @@ layout_block(
 	/* An explicit height replaces the content's. */
 	if (height_definite)
 		box->height = specified_height;
+
+	/* An aspect-ratio height is the least a box that shows its overflow has. */
+	if (ratio_floor && box->height < ratio_height)
+		box->height = ratio_height;
 
 	/* max-height lowers a taller box before min-height, which wins when the constraints conflict. */
 	if (box->style.max_height.unit == CSS_UNIT_PX ||
@@ -508,8 +538,10 @@ block_width(
 	if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
 		sizing = frame;
 
-	/* An auto width fills the containing block. */
-	if (box->style.width.unit == CSS_UNIT_AUTO) {
+	/* An auto width fills the containing block, unless an aspect-ratio makes it from a pixel height. */
+	if (box->style.width.unit == CSS_UNIT_AUTO && box->style.aspect_ratio > 0.0f && box->style.height.unit == CSS_UNIT_PX) {
+		width = (layout_unit)((float)layout_from_px(box->style.height.value) * box->style.aspect_ratio) - sizing;
+	} else if (box->style.width.unit == CSS_UNIT_AUTO) {
 		width = containing_width - box->margin[CSS_LEFT] - box->margin[CSS_RIGHT] - frame;
 	} else {
 		width = block_resolve(&box->style.width, containing_width) - sizing;

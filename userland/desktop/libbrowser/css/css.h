@@ -233,6 +233,15 @@ enum css_cursor {
 	CSS_CURSOR_ZOOM_OUT
 };
 
+/* The keywords of object-fit. */
+enum css_object_fit {
+	CSS_OBJECT_FIT_FILL,
+	CSS_OBJECT_FIT_CONTAIN,
+	CSS_OBJECT_FIT_COVER,
+	CSS_OBJECT_FIT_NONE,
+	CSS_OBJECT_FIT_SCALE_DOWN
+};
+
 /* The four CSS2 text-transform computed keywords retained by each native style. */
 enum css_text_transform {
 	CSS_TEXT_TRANSFORM_NONE,
@@ -573,6 +582,14 @@ struct css_style {
 	/* The scale of transform (its value, one is no scale) and transform-origin (pixels or a percentage of the border box); a box with no children and no lines is scaled about it. */
 	struct css_length transform_scale[2];
 	struct css_length transform_origin[2];
+
+	/* aspect-ratio: the ratio as width over height (zero for none), and whether auto came with it (the initial value is auto alone). */
+	float aspect_ratio;
+	int aspect_auto;
+
+	/* object-fit and object-position (pixels or a percentage of the free room; initially 50% 50%). */
+	int object_fit;
+	struct css_length object_position[2];
 	int background_size_keyword;
 	struct css_length background_size[2];
 
