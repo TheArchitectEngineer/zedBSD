@@ -94,6 +94,8 @@ drv_rpi4_mmal_dump_add(
 			kern_logf("rpi4-mmal-probe: /dev/%s not published (%d)\n", DUMP_DEVICE_NAME, error);
 			return error;
 		}
+
+		/* The device is published once. */
 		dump_published = true;
 		kern_logf("rpi4-mmal-probe: frames are kept in /dev/%s\n", DUMP_DEVICE_NAME);
 	}
@@ -147,6 +149,8 @@ dump_read(
 			done += chunk;
 			offset += chunk;
 		}
+
+		/* Then the bytes. */
 		if (done < size && offset - start >= DRV_RPI4_MMAL_DUMP_HEADER) {
 			chunk = (size_t)(start + length - offset);
 			if (chunk > size - done)
@@ -155,6 +159,8 @@ dump_read(
 			done += chunk;
 			offset += chunk;
 		}
+
+		/* The next record starts after this one. */
 		start += length;
 	}
 

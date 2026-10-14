@@ -102,12 +102,16 @@ drv_rpi4_h264_write_sps(
 		if (sps->crop[index] > 0xffffU)
 			return EINVAL;
 	}
+
+	/* Refuses offsets outside 32 bits. */
 	if (sps->offset_for_non_ref_pic == INT32_MIN || sps->offset_for_top_to_bottom_field == INT32_MIN)
 		return EINVAL;
 	for (index = 0; index < sps->offset_count; index++) {
 		if (sps->offsets[index] == INT32_MIN)
 			return EINVAL;
 	}
+
+	/* The RBSP is written into a zeroed scratch first. */
 	kern_memset(rbsp, 0, sizeof(rbsp));
 	writer.data = rbsp;
 	writer.capacity_bits = sizeof(rbsp) * 8U;
@@ -120,6 +124,8 @@ drv_rpi4_h264_write_sps(
 		if ((sps->flags & (DRV_RPI4_H264_SPS_CONSTRAINT_SET0 << index)) != 0)
 			constraints |= 0x80U >> index;
 	}
+
+	/* The profile, the constraint flags and the level. */
 	write_bits(&writer, sps->profile_idc, 8);
 	write_bits(&writer, constraints, 8);
 	write_bits(&writer, level_number(sps->level), 8);
@@ -184,6 +190,8 @@ drv_rpi4_h264_write_sps(
 	} else {
 		write_bits(&writer, 0, 1);
 	}
+
+	/* Ends the RBSP and escapes it into the caller's buffer. */
 	write_trailing(&writer);
 	if (writer.error != 0)
 		return ENOSPC;
@@ -270,10 +278,15 @@ drv_rpi4_h264_write_pps(
 				if (sps != NULL && sps->chroma_format_idc == 3U)
 					lists += 4U;
 			}
+
 			write_scaling(&writer, &pps->scaling, lists);
 		}
+
+		/* The second chroma offset. */
 		write_se(&writer, pps->second_chroma_qp_index_offset);
 	}
+
+	/* Ends the RBSP and escapes it into the caller's buffer. */
 	write_trailing(&writer);
 	if (writer.error != 0)
 		return ENOSPC;
@@ -320,11 +333,14 @@ drv_rpi4_h264_next_nal(
 			break;
 		index++;
 	}
+
+	/* The unit ends at the next start code or the stream's end. */
 	if (index + 3U > bytes) {
 		index = bytes;
 	} else if (index > *start && stream[index - 1U] == 0) {
 		index--;
 	}
+
 	*end = index;
 
 	/* Succeeded: the unit's bytes are [start, end). */
@@ -372,6 +388,8 @@ drv_rpi4_h264_access_unit(
 			if (slice)
 				seen_slice = 1;
 		}
+
+		/* The next unit. */
 		cursor = stop;
 	}
 
@@ -602,6 +620,8 @@ unescape(
 			zeros = 0;
 			continue;
 		}
+
+		/* Stops at a full buffer. */
 		if (out >= capacity)
 			return 0;
 		rbsp[out] = nal[index];
@@ -664,6 +684,8 @@ read_ue(
 			reader->error = 1;
 			return 0;
 		}
+
+		/* One more zero bit before the value. */
 		zeros++;
 	}
 
@@ -705,6 +727,8 @@ skip_scaling_list(
 		if (next != 0) {
 			next = (last + read_se(reader) + 256) % 256;
 		}
+
+		/* A zero delta repeats the last value. */
 		if (next != 0)
 			last = next;
 		if (reader->error != 0)
@@ -861,6 +885,8 @@ write_scaling(
 			write_bits(writer, 0, 1);
 			continue;
 		}
+
+		/* The list follows. */
 		write_bits(writer, 1, 1);
 
 		/* A default list is the delta that makes the first scale zero. */
@@ -877,6 +903,8 @@ write_scaling(
 			list = scaling->list8[index - 6U];
 			size = 64U;
 		}
+
+		/* Each entry as a delta from the last. */
 		last = 8;
 		for (entry = 0; entry < size; entry++) {
 			delta = ((int32_t)list[entry] - last + 256) % 256;
@@ -940,6 +968,8 @@ pack_nal(
 			out++;
 			zeros = 0;
 		}
+
+		/* Refuses an output that does not fit. */
 		if (out >= capacity)
 			return ENOSPC;
 		output[out] = rbsp[index];

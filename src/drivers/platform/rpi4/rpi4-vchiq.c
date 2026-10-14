@@ -348,6 +348,8 @@ drv_rpi4_vchiq_open(
 			break;
 		}
 	}
+
+	/* A free entry is set up for the open. */
 	if (service != NULL) {
 		kern_memset(service, 0, sizeof(*service));
 		service->state = VCHIQ_SERVICE_OPENING;
@@ -539,6 +541,8 @@ drv_rpi4_vchiq_send_bulk(
 			queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].pagelist = index;
 			queue->inserted++;
 		}
+
+		/* The message's identifiers. */
 		data_msgid = drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_DATA, service->local_port, service->remote_port);
 		bulk_msgid = drv_rpi4_vchiq_msgid(type, service->local_port, service->remote_port);
 
@@ -639,6 +643,8 @@ drv_rpi4_vchiq_close(
 		send = true;
 		service->state = VCHIQ_SERVICE_CLOSING;
 	}
+
+	/* The CLOSE message's identifiers. */
 	msgid = drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, service->local_port, service->remote_port);
 
 	spin_unlock_irqrestore(&vchiq->lock, enabled);
@@ -658,11 +664,15 @@ drv_rpi4_vchiq_close(
 		observed = waitq_sequence(&vchiq->state_wake);
 		(void)waitq_sleep(&vchiq->state_wake, &vchiq->lock, observed, 0, 0);
 	}
+
+	/* Reports bulks the firmware never completed. */
 	if (service->receive.inserted != service->receive.completed ||
 	    service->transmit.inserted != service->transmit.completed) {
 		/* The VPU may still write the buffers; their page lists stay taken. */
 		kern_logf("rpi4-vchiq: service %08x closed with bulks outstanding\n", (unsigned)service->fourcc);
 	}
+
+	/* The entry is free for the next open. */
 	service->state = VCHIQ_SERVICE_FREE;
 
 	spin_unlock_irqrestore(&vchiq->lock, enabled);
@@ -833,6 +843,8 @@ start(
 		(void)kern_irq_unregister((int)vchiq->irq, vchiq_interrupt, vchiq);
 		return error;
 	}
+
+	/* Starts the receive thread and lets the doorbell interrupt in. */
 	thread_start(vchiq->thread);
 	kern_irq_unmask((int)vchiq->irq);
 
@@ -1136,12 +1148,16 @@ dispatch_close(
 		/* A CLOSE from an earlier use of the port is not this service's. */
 		service = NULL;
 	}
+
+	/* An open service closed by the firmware is answered and its client told. */
 	if (service != NULL) {
 		if (service->state == VCHIQ_SERVICE_OPEN) {
 			answer = true;
 			notify = true;
 			service->calling++;
 		}
+
+		/* Any service that is not free is closed now. */
 		if (service->state != VCHIQ_SERVICE_FREE)
 			service->state = VCHIQ_SERVICE_CLOSED;
 		waitq_wake_all(&vchiq->state_wake);
@@ -1307,6 +1323,8 @@ send_message(
 			kern_memcpy(payload, data, size);
 		drv_rpi4_vchiq_ring_commit(&vchiq->ring, msgid, size);
 	}
+
+	/* Sends what the receive thread had waiting and rings the VPU. */
 	flush_control(vchiq);
 	ring_vpu(vchiq, &vchiq->ring.remote->trigger);
 
@@ -1379,6 +1397,8 @@ flush_control(
 			drv_rpi4_vchiq_ring_recycle(&vchiq->ring);
 			error = drv_rpi4_vchiq_ring_reserve(&vchiq->ring, 0, &payload);
 		}
+
+		/* Gives up when no room came. */
 		if (error != 0)
 			return;
 		drv_rpi4_vchiq_ring_commit(&vchiq->ring, msgid, 0);
@@ -1521,6 +1541,8 @@ wait_connected(
 			break;
 		error = 0;
 	}
+
+	/* A link that broke meanwhile is reported. */
 	if (error == 0 && vchiq->broken)
 		error = EIO;
 
