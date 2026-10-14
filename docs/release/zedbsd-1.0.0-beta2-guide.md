@@ -114,8 +114,11 @@ USB drive to start the computer's own system again.
 ### Older Intel graphics
 
 On computers with a 6th to 10th generation Core processor (Intel Gen9 and
-Gen9.5 graphics), Kei drives the GPU's engines and Vulkan, but not yet the
-display. The screen stays at the resolution the firmware chose, its
+Gen9.5 graphics), Kei drives the GPU's engines and Vulkan and shows the
+desktop on the framebuffer the firmware set up, but does not drive the
+display yet. Each frame is copied to that framebuffer, so moving pictures
+may tear and be slower than on newer Intel graphics. The screen stays at
+the resolution the firmware chose, its
 brightness and external displays cannot be changed, and sleep is refused
 while the driver drives the GPU (see the
 [known issues](zedbsd-1.0.0-beta2-known-issues.md)). Gen9.5 (7th to 10th
@@ -123,7 +126,8 @@ generation) was checked on an 8th generation Core; the 6th generation
 (Skylake) was not.
 
 If the GPU driver gives trouble on such a computer, turn it off. Kei then
-draws on the framebuffer the firmware set up and does not use the GPU:
+has no GPU: the desktop does not start, and only the text console is shown.
+To turn it off:
 
 1. Plug the USB drive into a computer and open its small FAT partition, the
    one that holds `vmunix` and `zedbsd.cfg`.
@@ -136,7 +140,9 @@ To turn the driver on again, delete the line.
 <!-- review (2026-10-14): the code freeze of 2026-10-14 18:00 took the Gen9 driver (WS229), on by default. The steps
      follow how the image's zedbsd.cfg takes extra lines (one per line, CR LF is accepted); they were not tried by hand
      on Windows or macOS, which may not show an EFI system partition by themselves (on macOS, `diskutil mount` it
-     first). Whether sleep works with the driver off was not checked on a Gen9 machine. -->
+     first). Whether sleep works with the driver off was not checked on a Gen9 machine.
+     2026-10-14 BUG-310: the desktop on the firmware's framebuffer (i915 bootfb) is checked only by host tests so far;
+     keep this paragraph only if the SV7 check passes, otherwise say that Gen9 machines show the text console only. -->
 
 ## 5. Connect to a network
 
