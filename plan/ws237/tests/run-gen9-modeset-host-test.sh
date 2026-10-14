@@ -12,5 +12,5 @@ T=src/drivers/gpu/i915/tests/display
 OUT=${1:-build/ws237-host/modeset}
 mkdir -p "$(dirname "$OUT")"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
-i915_display_host_build "$OUT" "$T/host-gen9-modeset-test.c" plan/ws084/tests/native-decide-stubs.c
+i915_display_host_build "$OUT" "$T/host-gen9-modeset-test.c" "$T/gen9-fake-hw.c" plan/ws084/tests/native-decide-stubs.c
 "$OUT"
