@@ -3,7 +3,7 @@
 # ws236-p008: 再生の速さ: Video.mp4 を遅れなく
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-15、P3）
+Status: uncleared（2026-10-15 T2 の T1-663: probe は一致、再生は 1080p で約 4〜5 fps 表示。表示の CPU の変換が 1 枚約 60 ms、kernel の depth 1.0）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236b`）
 
@@ -130,3 +130,10 @@ Phase disposition: normal
 - V3D の sampler の format: 今の V3D の Vulkan は sampled image が RGBA8・BGRA8 だけ（`vulkan-query.c` の `format_properties`、TFU の変換も 32 bit だけ `vulkan-native-draw.c` の `conversion_supported`）。NV12 を GPU で読むには (B-1) R8_UNORM（Y）と R8G8_UNORM（UV）の sampled image（texture の state、raster→UIF の 1・2 byte の画素の tiling、linear の filter）を足す（WS141、約 8〜12 LW）、または (B-2) 新しい format を足さず、Y・UV の plane を RGBA8 の image（幅 W/4、1 texel に 4 sample）として渡し、shader が x の余りで成分を選んで bilinear を自分で組む（driver の変更なし、shader が重い。kernel の shader compiler が要る演算（整数・成分の選択・floor・fract）を持つかの確かめが要る）。
 - videoplayer と compositor の口: (B-3) videoplayer が `KL_PRESENT_NONE` で自分の Vulkan の swapchain を持ち、毎 frame NV12 を host-visible の staging（またはそのまま libmedia の readback buffer）から `vkCmdCopyBufferToImage` で 2 つの texture へ、YUV→RGB と縮小の fragment shader で全面の quad を描き、操作の bar・menu（今は CPU で描く canvas）は alpha 付きの RGBA8 の texture を上に重ねる（WS122 の videoplayer の描画の作り直し、約 6〜10 LW）。libmedia と videoplayer は別の VkDevice なので、image を直に渡すには external memory が要る。最小は CPU の NV12 の picture（HOST_CACHED の後なら安い）を staging へ 1 回写す形。(B-4) compositor に NV12 の buffer（subsurface）を渡す道は compositor の format の対応から要り、さらに大きい。
 - 合計の見込み: B-2＋B-3 で約 8〜12 LW、B-1＋B-3 で約 14〜22 LW。危険: kernel の shader compiler の対応の不足、V3D の executor が video の CPU の仕事（place・readback 約 10 ms／枚）と描画で取り合う。
+
+## 実機の結果（T2 の T1-663、2026-10-15、main 874f6448d）: uncleared
+
+- (a) vkvideo-probe 3 本 PASS（全 frame MATCH、dump-compare 28 frame とも差 0）。dmesg に DMA の不足・rpi4-mmal の error・`v3d: EIO` は無い。
+- (b) Video.mp4 FAIL: `FRAMES shown=34 time_ms=6250 late=115`（基準 late ≤5）。(c) 1080p30 FAIL: high `shown=56 late=244`、baseline `shown=53 late=247`（基準 shown ≥290）。
+- 計測: kernel `v3d: video:` 約 35〜44 decodes/2 s、**depth 1.0**（重ねが効いていない）、frame 31〜41 ms、place 約 5 ms、readback cached 約 2.5 ms。libmedia `Vulkan Video:` 4 in flight、submit 4〜5 ms、wait 28〜32 ms、copy 10.7〜14 ms。videoplayer `DRAW frames=4 picture_us≈245000 rest_us≈15000〜22750`＝**表示の 1 枚が約 60 ms（CPU の NV12→RGB と縮小）が支配的**。
+- Q1 の判定: uncleared。次は表示の道（ws236-p009 の調べ: decoder の出力を GPU・HVS で直に使う）と、kernel の depth が 1 のままの理由。結果 [results-20261015-t1-663.md](../../agents/T2/results-20261015-t1-663.md)。
