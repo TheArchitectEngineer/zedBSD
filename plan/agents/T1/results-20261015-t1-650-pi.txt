@@ -1,0 +1,56 @@
+rpi4-bt: clocks core 200000000 Hz (0), v3d 500000000 Hz (0), arm 600000000 Hz (0)
+rpi4-bt: BT_ON was level 1
+rpi4-bt: GPIO 30 function 0 -> 7, pull 2
+rpi4-bt: GPIO 31 function 0 -> 7, pull 1
+rpi4-bt: GPIO 32 function 0 -> 7, pull 1
+rpi4-bt: GPIO 33 function 0 -> 7, pull 2
+rpi4-bt: PL011 at fe201000, irq 153, clock 48000000 Hz, speed up to 3000000 baud
+rpi4-bt: the line at 115200 baud: CR cb01, IFLS 10, LCRH 78, IBRD 26, FBRD 3 (clock 48000000 Hz)
+rpi4-bt: controller ready after about 22 ms
+bt-hci: /dev/bluetooth0: Raspberry Pi 4 Bluetooth 0000:0000
+rpi4-bt: before the program's reset: FR 091 (CTS asserted, send FIFO empty, idle)
+rpi4-bt: since the last reset 0 bytes out:
+rpi4-bt: since the last reset 0 bytes in:
+rpi4-bt: the line at 115200 baud: CR cb01, IFLS 10, LCRH 78, IBRD 26, FBRD 3 (clock 48000000 Hz)
+rpi4-bt: controller ready after about 22 ms
+rpi4-bt: at the program's reset: 0 interrupts, 0 bytes in (0 with errors, 0 in transitions), 0 out, 0 own resets
+rpi4-bt: before the program's reset: FR 091 (CTS asserted, send FIFO empty, idle)
+rpi4-bt: since the last reset 4 bytes out: 01 03 0c 00
+rpi4-bt: since the last reset 7 bytes in: 04 0e 82 40 20 08 fc
+rpi4-bt: the line at 115200 baud: CR cb01, IFLS 10, LCRH 78, IBRD 26, FBRD 3 (clock 48000000 Hz)
+rpi4-bt: controller ready after about 23 ms
+rpi4-bt: at the program's reset: 1 interrupts, 7 bytes in (3 with errors, 0 in transitions), 4 out, 0 own resets
+rpi4-bt: before the program's reset: FR 091 (CTS asserted, send FIFO empty, idle)
+rpi4-bt: since the last reset 4 bytes out: 01 03 0c 00
+rpi4-bt: since the last reset 7 bytes in: 04 0e 82 40 20 08 fc
+rpi4-bt: the line at 115200 baud: CR cb01, IFLS 10, LCRH 78, IBRD 26, FBRD 3 (clock 48000000 Hz)
+rpi4-bt: controller ready after about 22 ms
+rpi4-bt: at the program's reset: 2 interrupts, 14 bytes in (6 with errors, 0 in transitions), 8 out, 0 own resets
+---SHOW
+STATE error reset Connection timed out
+POWER on
+BT SHOW state=error
+---SCAN
+ERROR no-controller
+BT SCAN devices=0
+---LOG
+<30>Jan  1 00:00:39 bluetoothd[10]: bluetoothd: 3 starts failed in a row; not trying again until restarted
+<30>Jan  1 00:00:39 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came))
+<30>Jan  1 00:00:06 bluetoothd[10]: BLUETOOTHD READY state=none uid=80
+<30>Jan  1 00:00:06 bluetoothd[10]: BLUETOOTHD SCO length=0 count=0 commands1=0x00 commands13=0x00 commands14=0x00 commands16=0x00 commands29=0x00
+<30>Jan  1 00:00:06 bluetoothd[10]: BLUETOOTHD CODECS version=0 standard=0 vendor=0 ids
+<30>Jan  1 00:00:17 bluetoothd[10]: bluetoothd: /dev/bluetooth0 state=error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came) (error 42, stray 0, malformed 0, ssp 0, sc 0)
+<30>Jan  1 00:00:17 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came))
+<30>Jan  1 00:00:28 bluetoothd[10]: bluetoothd: /dev/bluetooth0 state=error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came) (error 42, stray 0, malformed 0, ssp 0, sc 0)
+<30>Jan  1 00:00:28 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came))
+<30>Jan  1 00:00:39 bluetoothd[10]: bluetoothd: /dev/bluetooth0 state=error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came) (error 42, stray 0, malformed 0, ssp 0, sc 0)
+<30>Jan  1 00:00:39 bluetoothd[10]: bluetoothd: 3 starts failed in a row; not trying again until restarted
+<30>Jan  1 00:00:39 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error local-version Connection timed out (a second reset was answered; neither a 7-byte nor a 13-byte answer came))
+<37>Jan  1 00:17:58 sudo[426]: kei : TTY=none ; USER=root ; COMMAND=sh -c cp /sbin/bluetoothd /root/bluetoothd.orig-r6; cp /tmp/bluetoothd.r6 /sbin/bluetoothd && chmod 755 /sbin/bluetoothd; cp /tmp/vmunix.r6 /boot/boot0/vmunix; sync; cksum /sbin/bluetoothd /boot/boot0/vmunix; reboot
+<30>Jan  1 00:00:10 bluetoothd[10]: bluetoothd: /dev/bluetooth0 state=error reset Connection timed out (error 42, stray 0, malformed 0, ssp 0, sc 0)
+<30>Jan  1 00:00:10 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error reset Connection timed out)
+<30>Jan  1 00:00:15 bluetoothd[10]: bluetoothd: /dev/bluetooth0 state=error reset Connection timed out (error 42, stray 0, malformed 0, ssp 0, sc 0)
+<30>Jan  1 00:00:15 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error reset Connection timed out)
+<30>Jan  1 00:00:20 bluetoothd[10]: bluetoothd: /dev/bluetooth0 state=error reset Connection timed out (error 42, stray 0, malformed 0, ssp 0, sc 0)
+<30>Jan  1 00:00:20 bluetoothd[10]: bluetoothd: 3 starts failed in a row; not trying again until restarted
+<30>Jan  1 00:00:20 bluetoothd[10]: bluetoothd: /dev/bluetooth0 closed (error reset Connection timed out)
