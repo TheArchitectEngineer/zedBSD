@@ -320,3 +320,11 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 3. （D5、vkquad の後に）SSH で `display-events --frames=60 --hold=3 --watch=0` → `DISPLAY-EVENTS swapchain index=0 result=0`・`present index=0 frames=60 result=0`・`first-pixel index=0 result=0`・`done error=0` が合格（power の行の結果は記録だけ: power は EOPNOTSUPP の仕様）。swapchain の image を同じ node の blob として複写なしで出すか、複写で出すかは libvulkan が決める（dmesg と display-events の行で分かる範囲を記録）。
 4. その後の `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
 FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標と値）と dmesg の `nvrtx: vk: command N refused (E)`（実装の無い command）・`a stage … did not compile`・`D3 fail: the work of fence … did not finish` を記録。
+
+#### T への手順（R9k、D6 の desktop。R9v が通った後）
+
+image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9k NVRTX_RUN=R9k`（main の image と同じ graphical の boot と login、`nvrtx.gsp=1 nvrtx.vk=1`、compositor の capture、keiland-shot）。QEMU は `~/nvrtx/start-rombar1-net.sh`、run の前後に host の reboot。判定は SSH（serial・console の log は使わない）。
+1. 起動から 60 秒後に SSH で `dmesg | grep nvrtx` の全文（`P8c ok`・`P9w ok`、`nvrtx: vk: command N refused`・`D3 fail`・`a stage … did not compile` の有無）。
+2. SSH で `ps -ax | grep -E 'wayland|sessiond'`（compositor が動いているか）と `ls /dev/gpu*`。
+3. SSH で `keiland-shot /tmp/r9k.png` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` が合格の印、PNG を scp で host へ取り、結果の md に貼る（login の画面か desktop が描かれていること）。
+4. FAIL の時: compositor の log（`/var/log/` の wayland・sessiond の物、無ければ `ls /var/log` の結果）と 1 の dmesg を記録。
