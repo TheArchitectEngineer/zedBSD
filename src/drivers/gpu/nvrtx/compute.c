@@ -42,9 +42,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 #include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
 
-/* The arena: its size, and how far below the top of the last usable region it starts at most (below the graphics arena). */
+/* The arena: its size (its reserve below the top, under the graphics arena, is NVRTX_COMPUTE_ARENA_RESERVE). */
 #define COMPUTE_ARENA_BYTES		0x2000000ULL
-#define COMPUTE_ARENA_RESERVE		0xa800000ULL
 #define COMPUTE_ARENA_ALIGN_SHIFT	21U
 
 /* The arena's parts: the tables, the instance block and USERD, then the channel's own context buffers. */
@@ -280,7 +279,7 @@ compute_arena(
 	gr = &gpu->gr;
 
 	/* Takes the arena below the graphics arena, in the last usable region. */
-	error = nvrtx_mmu_vram_block(gpu->static_info, COMPUTE_ARENA_RESERVE, &candidate, &region);
+	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_COMPUTE_ARENA_RESERVE, &candidate, &region);
 	if (error != 0) {
 		nvrtx_stage_mark("P9c fail: no VRAM for the arena (%d)", error);
 		return error;

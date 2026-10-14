@@ -1,0 +1,581 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The records of the display channels (stage P8b) that touch no hardware.
+ *
+ * The push-buffer methods of the core and window channels, the hash-table
+ * entries and context DMA objects of the display's instance memory, and the
+ * resource manager's parameters for a display channel.  See nvrtx-disp.h.
+ */
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "drivers/gpu/nvrtx/nvrtx-disp.h"
+#include "drivers/gpu/nvrtx/nvrtx-gsp.h"
+
+/* A method header: the count in bits 27:18, the method's word offset in bits 13:2 (opcode 0: incrementing). */
+#define RECORDS_HEADER_COUNT_SHIFT	18U
+#define RECORDS_HEADER_METHOD_MASK	0x3ffcU
+
+/* The hash table's entry: the channel number goes in bits 31:25, the object's offset from bit 9, the client in bits 13:0. */
+#define RECORDS_RAMHT_CHID_SHIFT	25U
+#define RECORDS_RAMHT_OBJECT_SHIFT	9U
+#define RECORDS_RAMHT_CLIENT_MASK	0x3fffU
+
+/* A context DMA object's first word: the VRAM target, read and write, small pages. */
+#define RECORDS_CONTEXT_DMA_FLAGS	0x00000045U
+
+/* The push buffer's registration: system memory, snooped, PCI-coherent, on subdevice 0. */
+#define RECORDS_SPACE_SYSTEM		1U
+#define RECORDS_CACHE_SNOOP		1U
+#define RECORDS_APERTURE_COHERENT	3U
+#define RECORDS_SUBDEVICE_FIRST		1U
+
+/* The registration's fields. */
+#define RECORDS_PB_SPACE_AT		0U
+#define RECORDS_PB_ADDRESS_AT		8U
+#define RECORDS_PB_LIMIT_AT		16U
+#define RECORDS_PB_SNOOP_AT		24U
+#define RECORDS_PB_CLASS_AT		28U
+#define RECORDS_PB_INSTANCE_AT		32U
+#define RECORDS_PB_VALID_AT		36U
+#define RECORDS_PB_APERTURE_AT		40U
+#define RECORDS_PB_SUBDEVICE_AT		48U
+
+/* The channel allocation's fields. */
+#define RECORDS_CHANNEL_INSTANCE_AT	0U
+#define RECORDS_CHANNEL_SUBDEVICE_AT	32U
+
+/* The windows the core's bounds and owners name: at most 8 on the Turing display. */
+#define RECORDS_WINDOW_MAX		8U
+
+/* The window's format bounds: the packed RGB formats of 1, 2, 4 and 8 bytes. */
+#define RECORDS_FORMAT_BOUNDS_RGB	0x0000000fU
+
+/* The window's usage bounds: 0x7fff pixels a line, the input LUT allowed, two scaler taps, no upscaling. */
+#define RECORDS_USAGE_BOUNDS		0x00117fffU
+
+/* The head's cursor turned off, with the A8R8G8B8 format named. */
+#define RECORDS_CURSOR_OFF		0x000000cfU
+
+/* The core's notifier control: write the notifier at the offset (bits 11:4), notify on. */
+#define RECORDS_NOTIFY_ENABLE		0x00001000U
+#define RECORDS_NOTIFIER_OFFSET_MASK	0x00000ff0U
+
+/* An update that releases the state the channel gathered. */
+#define RECORDS_UPDATE			0x00000001U
+
+/* The window's image: one frame between presents and a non-tearing flip; pitch layout; A8R8G8B8. */
+#define RECORDS_PRESENT_NON_TEARING	0x00000001U
+#define RECORDS_STORAGE_PITCH		0x00000010U
+#define RECORDS_FORMAT_A8R8G8B8		0x000000cfU
+#define RECORDS_PITCH_SHIFT		6U
+#define RECORDS_OFFSET_SHIFT		8U
+
+/* An opaque window: depth 255, constant alpha 255, source times 1 over destination times 0. */
+#define RECORDS_COMPOSITION_DEPTH	0x00000ff0U
+#define RECORDS_CONSTANT_ALPHA		0x000000ffU
+#define RECORDS_FACTOR_SELECT		0x00004422U
+#define RECORDS_KEY_FULL_RANGE		0xffff0000U
+
+/* The format coefficients of the identity matrix (1.0 is 0x10000), 3 rows of 4. */
+#define RECORDS_COEFFICIENT_COUNT	12U
+#define RECORDS_COEFFICIENT_ONE		0x00010000U
+
+/* The colours of the test bands, A8R8G8B8: white, yellow, cyan, green, magenta, red, blue, black. */
+#define RECORDS_BAND_COUNT		8U
+
+/*
+ * The head methods the takeover copies from the armed state.
+ *
+ * The same methods nouveau's head sets on a mode set (the view, the mode,
+ * the output resource, the colour processing and the display id), so the
+ * head keeps the timing and output the firmware gave it.
+ */
+const uint32_t nvrtx_disp_head_copied[NVRTX_DISP_HEAD_COPIED] = {
+	NVRTX_HEAD_VIEWPORT_SIZE_IN,
+	NVRTX_HEAD_VIEWPORT_SIZE_OUT,
+	NVRTX_HEAD_RASTER_SIZE,
+	NVRTX_HEAD_RASTER_SYNC_END,
+	NVRTX_HEAD_RASTER_BLANK_END,
+	NVRTX_HEAD_RASTER_BLANK_START,
+	NVRTX_HEAD_RASTER_VERT_BLANK2,
+	NVRTX_HEAD_CONTROL,
+	NVRTX_HEAD_PIXEL_CLOCK,
+	NVRTX_HEAD_PIXEL_CLOCK_MAX,
+	NVRTX_HEAD_USAGE_BOUNDS,
+	NVRTX_HEAD_DITHER_CONTROL,
+	NVRTX_HEAD_PROCAMP,
+	NVRTX_HEAD_DISPLAY_ID,
+	NVRTX_HEAD_CONTROL_OUTPUT_RESOURCE
+};
+
+/*
+ * The colours of the test bands, top to bottom.
+ *
+ * Read-only for the life of the kernel.
+ */
+static const uint32_t records_bands[RECORDS_BAND_COUNT] = {
+	0xffffffffU,
+	0xffffff00U,
+	0xff00ffffU,
+	0xff00ff00U,
+	0xffff00ffU,
+	0xffff0000U,
+	0xff0000ffU,
+	0xff000000U
+};
+
+static void records_clear(uint8_t *bytes, size_t length);
+
+/*
+ * Starts a push buffer in caller-owned memory of capacity words.
+ */
+void
+nvrtx_push_init(
+	struct nvrtx_push *push,
+	uint8_t *bytes,
+	uint32_t capacity)
+{
+	/* The buffer starts empty. */
+	push->bytes = bytes;
+	push->capacity = capacity;
+	push->count = 0U;
+	push->overflow = 0;
+}
+
+/*
+ * Writes one method header and its data words (incrementing methods).
+ *
+ * A method that does not fit writes nothing and sets the overflow flag.
+ */
+void
+nvrtx_push_method(
+	struct nvrtx_push *push,
+	uint32_t method,
+	const uint32_t *values,
+	uint32_t count)
+{
+	uint32_t header;
+	uint32_t index;
+
+	/* A run too long for one header, or one past the buffer's end, is refused. */
+	if (count > NVRTX_DISP_METHOD_COUNT_MAX) {
+		push->overflow = 1;
+		return;
+	}
+
+	if (push->count + 1U + count > push->capacity) {
+		push->overflow = 1;
+		return;
+	}
+
+	/* Writes the header: the count and the method's word offset. */
+	header = (count << RECORDS_HEADER_COUNT_SHIFT) | (method & RECORDS_HEADER_METHOD_MASK);
+	nvrtx_put32(push->bytes, (size_t)push->count * 4U, header);
+	push->count++;
+
+	/* Writes the data words, one for each method from the first on. */
+	for (index = 0U; index < count; index++) {
+		nvrtx_put32(push->bytes, (size_t)push->count * 4U, values[index]);
+		push->count++;
+	}
+}
+
+/*
+ * Writes one method with one data word.
+ */
+void
+nvrtx_push_one(
+	struct nvrtx_push *push,
+	uint32_t method,
+	uint32_t value)
+{
+	/* A run of one. */
+	nvrtx_push_method(push, method, &value, 1U);
+}
+
+/*
+ * Reports the hash-table slot an object's handle starts its search at.
+ *
+ * The handle is folded 10 bits at a time, and the channel number moves the
+ * slot, as nouveau's hash does for the display's 1024-entry table.
+ */
+uint32_t
+nvrtx_disp_ramht_hash(
+	uint32_t chid,
+	uint32_t handle)
+{
+	uint32_t hash;
+	uint32_t rest;
+
+	/* Folds the handle into 10 bits. */
+	hash = 0U;
+	rest = handle;
+	while (rest != 0U) {
+		hash ^= rest & (NVRTX_DISP_RAMHT_ENTRIES - 1U);
+		rest >>= NVRTX_DISP_RAMHT_BITS;
+	}
+
+	/* Mixes the channel in above the low 6 bits. */
+	hash ^= chid << (NVRTX_DISP_RAMHT_BITS - 4U);
+
+	/* Succeeded: the slot, inside the table. */
+	return hash & (NVRTX_DISP_RAMHT_ENTRIES - 1U);
+}
+
+/*
+ * Writes one hash-table entry: the handle, then the channel, client and object's offset.
+ *
+ * The client is the low bits of the resource-manager client that owns the
+ * channel; the object's offset is from the start of the instance memory.
+ */
+void
+nvrtx_disp_ramht_entry(
+	uint8_t *entry,
+	uint32_t handle,
+	uint32_t chid,
+	uint32_t client,
+	uint32_t object_offset)
+{
+	uint32_t context;
+
+	/* Composes the context word. */
+	context = chid << RECORDS_RAMHT_CHID_SHIFT;
+	context |= client & RECORDS_RAMHT_CLIENT_MASK;
+	context |= object_offset << RECORDS_RAMHT_OBJECT_SHIFT;
+
+	/* Writes the handle the method names, then the context. */
+	nvrtx_put32(entry, 0U, handle);
+	nvrtx_put32(entry, 4U, context);
+}
+
+/*
+ * Writes one context DMA object over a range of the VRAM (start to limit, inclusive).
+ */
+void
+nvrtx_disp_context_dma(
+	uint8_t *object,
+	uint64_t start,
+	uint64_t limit)
+{
+	uint64_t start_units;
+	uint64_t limit_units;
+
+	/* The range is kept in 256-byte units. */
+	start_units = start >> 8;
+	limit_units = limit >> 8;
+
+	/* Writes the flags, the start and the limit; the last word is left zero. */
+	records_clear(object, NVRTX_DISP_CONTEXT_DMA_BYTES);
+	nvrtx_put32(object, 0x00U, RECORDS_CONTEXT_DMA_FLAGS);
+	nvrtx_put32(object, 0x04U, (uint32_t)start_units);
+	nvrtx_put32(object, 0x08U, (uint32_t)(start_units >> 32));
+	nvrtx_put32(object, 0x0cU, (uint32_t)limit_units);
+	nvrtx_put32(object, 0x10U, (uint32_t)(limit_units >> 32));
+}
+
+/*
+ * Writes the registration of a channel's push buffer in coherent system memory.
+ */
+void
+nvrtx_disp_pushbuffer_params(
+	uint8_t *params,
+	uint64_t bus_address,
+	uint32_t size,
+	uint32_t class_number,
+	uint32_t instance)
+{
+	/* Names the memory: system memory, its address and limit, snooped and PCI-coherent. */
+	records_clear(params, NVRTX_DISP_PUSHBUFFER_BYTES);
+	nvrtx_put32(params, RECORDS_PB_SPACE_AT, RECORDS_SPACE_SYSTEM);
+	nvrtx_put64(params, RECORDS_PB_ADDRESS_AT, bus_address);
+	nvrtx_put64(params, RECORDS_PB_LIMIT_AT, (uint64_t)size - 1U);
+	nvrtx_put32(params, RECORDS_PB_SNOOP_AT, RECORDS_CACHE_SNOOP);
+	nvrtx_put32(params, RECORDS_PB_APERTURE_AT, RECORDS_APERTURE_COHERENT);
+
+	/* Names the channel it belongs to; the size field's 0 is 4 KiB. */
+	nvrtx_put32(params, RECORDS_PB_CLASS_AT, class_number);
+	nvrtx_put32(params, RECORDS_PB_INSTANCE_AT, instance);
+	params[RECORDS_PB_VALID_AT] = 1U;
+	nvrtx_put32(params, RECORDS_PB_SUBDEVICE_AT, RECORDS_SUBDEVICE_FIRST);
+}
+
+/*
+ * Writes a display channel's allocation: its instance, put at 0, subdevice 0.
+ */
+void
+nvrtx_disp_channel_params(
+	uint8_t *params,
+	uint32_t instance)
+{
+	/* The instance and the subdevice; the push buffer is the one registered. */
+	records_clear(params, NVRTX_DISP_CHANNEL_BYTES);
+	nvrtx_put32(params, RECORDS_CHANNEL_INSTANCE_AT, instance);
+	nvrtx_put32(params, RECORDS_CHANNEL_SUBDEVICE_AT, RECORDS_SUBDEVICE_FIRST);
+}
+
+/*
+ * Writes the core channel's start: its notifier object and every window's bounds.
+ */
+void
+nvrtx_disp_core_init(
+	struct nvrtx_push *push,
+	uint32_t window_mask)
+{
+	uint32_t bounds[2];
+	uint32_t window;
+	uint32_t base;
+
+	/* The notifiers are read through the sync object. */
+	nvrtx_push_one(push, NVRTX_CORE_SET_CONTEXT_DMA_NOTIFIER, NVRTX_DISP_HANDLE_SYNC);
+
+	/* Allows the packed RGB formats (none rotated) and the usage every window may need. */
+	for (window = 0U; window < RECORDS_WINDOW_MAX; window++) {
+		/* A window the hardware lacks takes no method. */
+		if ((window_mask & (1U << window)) == 0U)
+			continue;
+
+		base = window * NVRTX_CORE_WINDOW_STRIDE;
+		bounds[0] = RECORDS_FORMAT_BOUNDS_RGB;
+		bounds[1] = 0U;
+		nvrtx_push_method(push, NVRTX_CORE_WINDOW_FORMAT_BOUNDS + base, bounds, 2U);
+		nvrtx_push_one(push, NVRTX_CORE_WINDOW_USAGE_BOUNDS + base, RECORDS_USAGE_BOUNDS);
+	}
+}
+
+/*
+ * Writes one head's state from the armed values (in nvrtx_disp_head_copied's order).
+ */
+void
+nvrtx_disp_core_head(
+	struct nvrtx_push *push,
+	uint32_t head,
+	const uint32_t *armed)
+{
+	uint32_t base;
+	uint32_t index;
+
+	/* Sends each copied method with the value the head is armed with. */
+	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+	for (index = 0U; index < NVRTX_DISP_HEAD_COPIED; index++)
+		nvrtx_push_one(push, base + nvrtx_disp_head_copied[index], armed[index]);
+}
+
+/*
+ * Writes one output resource's control word.
+ */
+void
+nvrtx_disp_core_sor(
+	struct nvrtx_push *push,
+	uint32_t sor,
+	uint32_t control)
+{
+	/* The owner heads and the protocol. */
+	nvrtx_push_one(push, NVRTX_CORE_SOR_SET_CONTROL + sor * NVRTX_CORE_SOR_STRIDE, control);
+}
+
+/*
+ * Gives every window to its head: windows 2h and 2h + 1 belong to head h.
+ */
+void
+nvrtx_disp_core_owners(
+	struct nvrtx_push *push,
+	uint32_t window_mask)
+{
+	uint32_t window;
+
+	/* Names the owner head of each window that exists. */
+	for (window = 0U; window < RECORDS_WINDOW_MAX; window++) {
+		/* A window the hardware lacks takes no method. */
+		if ((window_mask & (1U << window)) == 0U)
+			continue;
+
+		nvrtx_push_one(push, NVRTX_CORE_WINDOW_SET_CONTROL + window * NVRTX_CORE_WINDOW_STRIDE, window >> 1);
+	}
+}
+
+/*
+ * Turns one head's cursor and output LUT off, so no object of the firmware's is named.
+ */
+void
+nvrtx_disp_core_head_planes_off(
+	struct nvrtx_push *push,
+	uint32_t head)
+{
+	uint32_t base;
+
+	/* The cursor off and without its object; the output LUT without its object. */
+	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTROL_CURSOR, RECORDS_CURSOR_OFF);
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTEXT_DMA_CURSOR, 0U);
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTEXT_DMA_OLUT, 0U);
+}
+
+/*
+ * Writes the core's update with its notifier, interlocked with the windows in the mask.
+ */
+void
+nvrtx_disp_core_update(
+	struct nvrtx_push *push,
+	uint32_t notifier_offset,
+	uint32_t window_interlock)
+{
+	uint32_t interlock[2];
+
+	/* Asks for the notifier at its offset in the sync object. */
+	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, RECORDS_NOTIFY_ENABLE | (notifier_offset & RECORDS_NOTIFIER_OFFSET_MASK));
+
+	/* No cursor interlock; the windows the update waits for. */
+	interlock[0] = 0U;
+	interlock[1] = window_interlock;
+	nvrtx_push_method(push, NVRTX_CORE_SET_INTERLOCK_FLAGS, interlock, 2U);
+
+	/* Releases the gathered state, then turns the notifier off again. */
+	nvrtx_push_one(push, NVRTX_CORE_UPDATE, RECORDS_UPDATE);
+	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, 0U);
+}
+
+/*
+ * Writes a window's image: one surface shown whole at its own size.
+ */
+void
+nvrtx_disp_window_image(
+	struct nvrtx_push *push,
+	const struct nvrtx_disp_surface *surface)
+{
+	uint32_t size;
+	uint32_t layout[4];
+
+	/* The surface's size, used for its size, the input size and the output size. */
+	size = surface->width | (surface->height << 16);
+
+	/* Flips on a frame boundary, at most one each frame. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_PRESENT_CONTROL, RECORDS_PRESENT_NON_TEARING);
+
+	/* The size, the pitch layout, the format and the pitch in 64-byte units. */
+	layout[0] = size;
+	layout[1] = RECORDS_STORAGE_PITCH;
+	layout[2] = RECORDS_FORMAT_A8R8G8B8;
+	layout[3] = surface->pitch >> RECORDS_PITCH_SHIFT;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_SIZE, layout, 4U);
+
+	/* Where it lies: the object, then the offset in 256-byte units. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_CONTEXT_DMA_ISO, surface->handle);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_OFFSET, (uint32_t)(surface->offset >> RECORDS_OFFSET_SHIFT));
+
+	/* All of it, unscaled. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_POINT_IN, 0U);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_SIZE_IN, size);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_SIZE_OUT, size);
+}
+
+/*
+ * Writes a window's colour defaults: no input LUT, the identity matrix, opaque blending.
+ */
+void
+nvrtx_disp_window_defaults(
+	struct nvrtx_push *push)
+{
+	uint32_t coefficients[RECORDS_COEFFICIENT_COUNT];
+	uint32_t blend[7];
+	uint32_t index;
+
+	/* No input LUT object. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_CONTEXT_DMA_ILUT, 0U);
+
+	/* The identity: 1.0 on the diagonal of the 3 by 4 matrix. */
+	for (index = 0U; index < RECORDS_COEFFICIENT_COUNT; index++)
+		coefficients[index] = 0U;
+	coefficients[0] = RECORDS_COEFFICIENT_ONE;
+	coefficients[5] = RECORDS_COEFFICIENT_ONE;
+	coefficients[10] = RECORDS_COEFFICIENT_ONE;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_FMT_COEFFICIENT, coefficients, RECORDS_COEFFICIENT_COUNT);
+
+	/* Opaque: no colour key, the top depth, alpha 255, the source over nothing, keys over the full range. */
+	blend[0] = RECORDS_COMPOSITION_DEPTH;
+	blend[1] = RECORDS_CONSTANT_ALPHA;
+	blend[2] = RECORDS_FACTOR_SELECT;
+	blend[3] = RECORDS_KEY_FULL_RANGE;
+	blend[4] = RECORDS_KEY_FULL_RANGE;
+	blend[5] = RECORDS_KEY_FULL_RANGE;
+	blend[6] = RECORDS_KEY_FULL_RANGE;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_COMPOSITION_CONTROL, blend, 7U);
+}
+
+/*
+ * Writes a flip: the window's notifier at its offset, then the new surface offset.
+ */
+void
+nvrtx_disp_window_flip(
+	struct nvrtx_push *push,
+	uint64_t offset,
+	uint32_t notifier_offset)
+{
+	uint32_t notifier[2];
+
+	/* The notifier is written through the sync object at its offset. */
+	notifier[0] = NVRTX_DISP_HANDLE_SYNC;
+	notifier[1] = notifier_offset & RECORDS_NOTIFIER_OFFSET_MASK;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_CONTEXT_DMA_NOTIFIER, notifier, 2U);
+
+	/* On a frame boundary, to the new surface. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_PRESENT_CONTROL, RECORDS_PRESENT_NON_TEARING);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_OFFSET, (uint32_t)(offset >> RECORDS_OFFSET_SHIFT));
+}
+
+/*
+ * Writes a window's update, interlocked with itself and, when asked, with the core.
+ */
+void
+nvrtx_disp_window_update(
+	struct nvrtx_push *push,
+	int with_core,
+	uint32_t window)
+{
+	uint32_t interlock[2];
+
+	/* No cursor interlock; the window's own bit. */
+	interlock[0] = 0U;
+	interlock[1] = 1U << window;
+
+	/* Bit 0 holds the window's update until the core's update releases it too. */
+	if (with_core != 0)
+		interlock[0] = 1U;
+
+	/* Names the interlocks. */
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_INTERLOCK_FLAGS, interlock, 2U);
+
+	/* Releases the gathered state. */
+	nvrtx_push_one(push, NVRTX_WINDOW_UPDATE, RECORDS_UPDATE);
+}
+
+/*
+ * Reports the colour of one test band (A8R8G8B8); the bands repeat after eight.
+ */
+uint32_t
+nvrtx_disp_band_color(
+	uint32_t band)
+{
+	/* Succeeded: the band's colour. */
+	return records_bands[band % RECORDS_BAND_COUNT];
+}
+
+/* Clears a record before its fields are written, so every field not written is zero. */
+static void
+records_clear(
+	uint8_t *bytes,
+	size_t length)
+{
+	size_t at;
+
+	/* Zeroes each byte. */
+	for (at = 0U; at < length; at++)
+		bytes[at] = 0U;
+}

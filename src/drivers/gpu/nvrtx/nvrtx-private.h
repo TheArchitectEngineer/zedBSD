@@ -231,6 +231,12 @@ bool
 nvrtx_stage_gr_wanted(void);
 
 /*
+ * Reports whether the boot asked for the display takeover (nvrtx.disp=1).
+ */
+bool
+nvrtx_stage_disp_wanted(void);
+
+/*
  * Reports whether the boot asked for the first compute launch (nvrtx.compute=1).
  */
 bool
