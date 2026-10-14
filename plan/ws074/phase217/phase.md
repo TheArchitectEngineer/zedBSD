@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1190-i01 結果（2026-10-14 13:57 JST）
+
+Event ws074-p217-q1190-partial-clear-20261014: [証拠](evidence/20261014-q1190/README.md)。固定non-static009–011の水平Grid callbacks先頭縦absolute子は子frameで`inline_vertical_absolute_grid`が縦inline経路を拒否し、幅が各期待より50px増える。012は親frame/auto insetも加わり縦Grid callbacksに別のstatic位置差。次は009 borderのみを最小比較する。q1190読取部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1190-i01 有限部分範囲（2026-10-14 13:57 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（15:27 JSTまで）に適用。固定Grid rawのnon-static-positioned009–012計4件の初回失敗をcallback・寸法/offset・親子writing-mode/direction・frame・grid line/inset別に分類し、WPT原本と該当layout経路を最大3種類調べる。次の有限実装候補と非対象回帰を記録。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1188-i01 結果（2026-10-14 13:53 JST）
 
 Event ws074-p217-q1188-partial-clear-20261014: [証拠](evidence/20261014-q1188/README.md)。固定縦lr Grid直接horizontal-tb/RTL absolute子row2/col2 left/top insetにstatic areaを適用。独立最小矩形は5,10,36,40→155,110,36,40でChromium一致。固定non-static007 whole PASS/4 callback PASS、旧2 WPT、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1188有限部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。

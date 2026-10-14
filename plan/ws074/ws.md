@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1189](queue.md) active / p189 fixed Grid502 recensus。2026-10-14 13:54 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1190](queue.md) active / p217 remaining Grid non-static positioned diagnosis。2026-10-14 13:57 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+
+Event ws074-p217-q1190-partial-clear-20261014: [p217](phase217/phase.md) q1190-i01で固定non-static009–012 rawと原本を分類。[証拠](phase217/evidence/20261014-q1190/README.md)。009–011は水平Grid縦absolute子のframeによる縦inline経路拒否、012は親frame/auto inset static位置差も追加。次は009 borderのみ独立最小比較、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p189-q1189-partial-clear-20261014: [p189](phase189/phase.md) q1189-i01で固定Grid502同条件再測定。[証拠](phase189/evidence/20261014-q1189/README.md)。189→192 whole PASS、313→310 FAIL、16 callback改善、後退0、未出力0。次はnon-static009–012など残FAIL切り分け、p189/p173全3,805件100%未達、共有投影/GitHub publication保留。
 

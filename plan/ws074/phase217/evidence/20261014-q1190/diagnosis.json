@@ -1,0 +1,114 @@
+[
+  {
+    "file": 9,
+    "test_id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-009.html",
+    "outcome": "fail",
+    "raw": "plan/ws074/phase189/evidence/20261014-q1189/shard-0128/test-236.json.gz",
+    "callbacks": [
+      {
+        "name": ".grid 1",
+        "status": 1,
+        "first_failure": "width expected 40 but got 90"
+      },
+      {
+        "name": ".grid 2",
+        "status": 1,
+        "first_failure": "width expected 40 but got 90"
+      },
+      {
+        "name": ".grid 3",
+        "status": 0,
+        "first_failure": ""
+      },
+      {
+        "name": ".grid 4",
+        "status": 0,
+        "first_failure": ""
+      }
+    ]
+  },
+  {
+    "file": 10,
+    "test_id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-010.html",
+    "outcome": "fail",
+    "raw": "plan/ws074/phase189/evidence/20261014-q1189/shard-0128/test-237.json.gz",
+    "callbacks": [
+      {
+        "name": ".grid 1",
+        "status": 1,
+        "first_failure": "width expected 40 but got 90"
+      },
+      {
+        "name": ".grid 2",
+        "status": 1,
+        "first_failure": "width expected 40 but got 90"
+      },
+      {
+        "name": ".grid 3",
+        "status": 0,
+        "first_failure": ""
+      },
+      {
+        "name": ".grid 4",
+        "status": 0,
+        "first_failure": ""
+      }
+    ]
+  },
+  {
+    "file": 11,
+    "test_id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-011.html",
+    "outcome": "fail",
+    "raw": "plan/ws074/phase189/evidence/20261014-q1189/shard-0128/test-238.json.gz",
+    "callbacks": [
+      {
+        "name": ".grid 1",
+        "status": 1,
+        "first_failure": "width expected 26 but got 76"
+      },
+      {
+        "name": ".grid 2",
+        "status": 1,
+        "first_failure": "width expected 26 but got 76"
+      },
+      {
+        "name": ".grid 3",
+        "status": 0,
+        "first_failure": ""
+      },
+      {
+        "name": ".grid 4",
+        "status": 0,
+        "first_failure": ""
+      }
+    ]
+  },
+  {
+    "file": 12,
+    "test_id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-012.html",
+    "outcome": "fail",
+    "raw": "plan/ws074/phase189/evidence/20261014-q1189/shard-0128/test-239.json.gz",
+    "callbacks": [
+      {
+        "name": ".grid 1",
+        "status": 1,
+        "first_failure": "width expected 26 but got 76"
+      },
+      {
+        "name": ".grid 2",
+        "status": 1,
+        "first_failure": "width expected 26 but got 76"
+      },
+      {
+        "name": ".grid 3",
+        "status": 1,
+        "first_failure": "offsetTop expected 75 but got 3"
+      },
+      {
+        "name": ".grid 4",
+        "status": 1,
+        "first_failure": "offsetLeft expected 173 but got 11"
+      }
+    ]
+  }
+]
