@@ -142,8 +142,6 @@ share_import(
 	struct nvrtx_backing *backing;
 	struct nvrtx_resource *resource;
 
-	UNUSED_PARAMETER(session);
-
 	node = private_data;
 	backing = shared;
 	*result = NULL;
@@ -166,8 +164,9 @@ share_import(
 	resource->bytes = backing->bytes;
 	resource->backing = backing;
 
-	/* Succeeded: the session has the blob, numbered for the protocol. */
+	/* Succeeded: the session has the blob, numbered for the protocol and listed. */
 	*resource_id = nvrtx_node_resource_id(node);
+	nvrtx_node_blob_listed(node, session, resource, *resource_id);
 	*result = resource;
 	return 0;
 }

@@ -188,6 +188,13 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/draw-push.c src/drivers/gpu/nvrtx/d
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/disp-first.c src/drivers/gpu/nvrtx/scanout.c
 # P4m: the VRAM allocator and the BAR1 window (ws037-p005).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
+# D2: the Vulkan executor's object registry, sessions, transport and dispatcher (ws037-p007), with the
+# i915 executor's wire codec it shares (built here only when the i915 driver does not build it).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk-object.c src/drivers/gpu/nvrtx/vk-session.c \
+	src/drivers/gpu/nvrtx/vk-stream.c src/drivers/gpu/nvrtx/vk-dispatch.c src/drivers/gpu/nvrtx/vk-device.c
+ifneq ($(CONFIG_DRIVER_PCI_I915),y)
+AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/render/codec.c
+endif
 # P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
