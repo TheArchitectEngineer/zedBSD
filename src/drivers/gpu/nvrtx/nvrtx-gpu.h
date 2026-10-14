@@ -26,6 +26,11 @@
 /* The firmware directory the GSP files are read from, for every TU10x chip. */
 #define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/tu102/"
 
+/* The registers P1a reads: GFW's devinit is done when bit 0 of the first is set and the second's low byte is 0xFF. */
+#define NVRTX_REG_DEVINIT_LEVEL		0x118128U
+#define NVRTX_REG_DEVINIT_PROGRESS	0x118234U
+#define NVRTX_DEVINIT_COMPLETED		0xffU
+
 /* The registers P0 reads: the VRAM size and the display's VGA workspace. */
 #define NVRTX_REG_VRAM_SIZE		0x100ce0U
 #define NVRTX_REG_VGA_WORKSPACE		0x625f04U
@@ -39,11 +44,27 @@
 /* The largest GSP image the three-level table describes with one middle-level page (512 x 512 pages). */
 #define NVRTX_IMAGE_MAX_BYTES		0x40000000U
 
+/* The two falcons the boot drives: the GSP's own and the secure processor's. */
+#define NVRTX_FALCON_GSP_BASE		0x110000U
+#define NVRTX_FALCON_SEC2_BASE		0x840000U
+
+/*
+ * One falcon: its register base and, for the secure processor, its bit in
+ * the PMC enable register (from the device information table).
+ */
+struct nvrtx_falcon {
+	uint32_t base;
+	uint32_t pmc_mask;
+};
+
 /* How far the GSP boot got; each later state includes the earlier ones. */
 enum nvrtx_gsp_state {
 	NVRTX_GSP_NONE = 0,
 	NVRTX_GSP_PREPARED,
-	NVRTX_GSP_FAILED
+	NVRTX_GSP_REGION_SET,
+	NVRTX_GSP_FAILED,
+	/* A falcon did not halt or the region could not be torn down: memory is kept until power-off. */
+	NVRTX_GSP_FAILED_HOLD
 };
 
 /*
@@ -122,12 +143,17 @@ struct nvrtx_gpu {
 	struct nvrtx_booter load;
 	struct nvrtx_booter unload;
 	struct nvrtx_bootloader bootloader_desc;
+	struct nvrtx_falcon_bl falcon_bl;
 
 	/* The VBIOS read in P0 and its FWSEC program. */
 	uint8_t *vbios_data;
 	size_t vbios_size;
 	struct nvrtx_vbios vbios;
 	struct nvrtx_fwsec fwsec;
+
+	/* The two falcons. */
+	struct nvrtx_falcon gsp_falcon;
+	struct nvrtx_falcon sec2_falcon;
 
 	/* The placement in the VRAM and the memory the GSP reads. */
 	struct nvrtx_wpr_layout layout;
@@ -136,6 +162,8 @@ struct nvrtx_gpu {
 
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
+	/* Set just before FWSEC-FRTS runs: from then on the end of the boot tears the region down. */
+	int region_written;
 	volatile int worker_running;
 };
 
@@ -150,6 +178,21 @@ void nvrtx_file_unload(struct nvrtx_blob *blob);
 int nvrtx_file_load_image(struct nvrtx_gpu *gpu, const char *name);
 
 int nvrtx_rom_read(struct nvrtx_gpu *gpu);
+
+int nvrtx_poll(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t mask, uint32_t value, uint32_t timeout_us);
+int nvrtx_falcon_reset(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+void nvrtx_falcon_load_physical(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+void nvrtx_falcon_dma_system(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t context);
+uint32_t nvrtx_falcon_code_limit(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+int nvrtx_falcon_imem(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, const uint8_t *code, uint32_t length, uint32_t address, uint32_t tag, int secure);
+int nvrtx_falcon_dmem(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, const uint8_t *data, uint32_t length, uint32_t address);
+int nvrtx_falcon_boot(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t boot_address, uint32_t *mailbox0, uint32_t *mailbox1);
+
+int nvrtx_fwsec_run(struct nvrtx_gpu *gpu, const struct nvrtx_buffer *program);
+int nvrtx_booter_run(struct nvrtx_gpu *gpu, const struct nvrtx_booter *booter, uint32_t mailbox0, uint32_t mailbox1);
+int nvrtx_region_tear_down(struct nvrtx_gpu *gpu);
+void nvrtx_region_bounds(struct nvrtx_gpu *gpu, uint32_t *low, uint32_t *high);
+uint32_t nvrtx_frts_result(struct nvrtx_gpu *gpu);
 
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);

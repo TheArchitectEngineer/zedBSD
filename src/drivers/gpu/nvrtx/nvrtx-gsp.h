@@ -284,6 +284,21 @@ struct nvrtx_elf {
 	uint32_t names_index;
 };
 
+/*
+ * The falcon bootloader's descriptor: the start tag, then the code's offset and size in the payload.
+ */
+#define NVRTX_FALCON_BL_DESC_BYTES	24U
+#define NVRTX_FALCON_BL_START_TAG_AT	0U
+#define NVRTX_FALCON_BL_CODE_AT		8U
+#define NVRTX_FALCON_BL_CODE_SIZE_AT	12U
+
+/* The falcon bootloader's code, by pointer into its file. */
+struct nvrtx_falcon_bl {
+	const uint8_t *code;
+	uint32_t code_size;
+	uint32_t start_tag;
+};
+
 /* One section of an ELF file, by offset into the file. */
 struct nvrtx_section {
 	size_t at;
@@ -407,6 +422,7 @@ uint64_t nvrtx_pages_bus(const struct nvrtx_pages *pages, size_t page);
 
 int nvrtx_booter_parse(const uint8_t *file, size_t size, struct nvrtx_booter *booter);
 int nvrtx_booter_signature(const struct nvrtx_booter *booter, unsigned index, size_t *at);
+int nvrtx_falcon_bl_parse(const uint8_t *file, size_t size, struct nvrtx_falcon_bl *bl);
 int nvrtx_bootloader_parse(const uint8_t *file, size_t size, struct nvrtx_bootloader *bootloader);
 int nvrtx_elf_header(const uint8_t *header, size_t file_size, struct nvrtx_elf *elf);
 int nvrtx_elf_entry(const struct nvrtx_elf *elf, const uint8_t *table, uint32_t index, struct nvrtx_section *section);

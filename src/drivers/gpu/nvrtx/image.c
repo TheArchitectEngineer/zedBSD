@@ -176,6 +176,49 @@ nvrtx_booter_signature(
 }
 
 /*
+ * Reads the containers of the falcon bootloader that loads FWSEC (acr/bl.bin).
+ *
+ * The descriptor gives the start tag (the start address in 256-byte units)
+ * and the code's place in the payload.
+ */
+int
+nvrtx_falcon_bl_parse(
+	const uint8_t *file,
+	size_t size,
+	struct nvrtx_falcon_bl *bl)
+{
+	size_t inner;
+	size_t payload_at;
+	size_t payload_size;
+	uint32_t code_at;
+	int error;
+
+	/* Reads the file header: where the descriptor and the payload are. */
+	error = image_bin_header(file, size, &inner, &payload_at, &payload_size);
+	if (error != 0)
+		return error;
+
+	/* The descriptor must fit the file. */
+	error = image_range(size, inner, NVRTX_FALCON_BL_DESC_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Reads the start tag and the code's range in the payload. */
+	bl->start_tag = nvrtx_get32(file, inner + NVRTX_FALCON_BL_START_TAG_AT);
+	code_at = nvrtx_get32(file, inner + NVRTX_FALCON_BL_CODE_AT);
+	bl->code_size = nvrtx_get32(file, inner + NVRTX_FALCON_BL_CODE_SIZE_AT);
+
+	/* The code must lie inside the payload. */
+	error = image_range(payload_size, code_at, bl->code_size);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the code's place in the file. */
+	bl->code = file + payload_at + code_at;
+	return 0;
+}
+
+/*
  * Reads the containers of the GSP's RISC-V bootloader file.
  */
 int

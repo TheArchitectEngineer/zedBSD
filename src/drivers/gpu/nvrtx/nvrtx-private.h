@@ -175,6 +175,35 @@ nvrtx_identify(
 	struct nvrtx_chip *chip);
 
 /*
+ * The device information table: 64 words naming the engines, their
+ * registers and their reset bits in the PMC enable register.
+ */
+#define NVRTX_REG_DEVICE_INFO		0x022700U
+#define NVRTX_DEVICE_INFO_WORDS		64U
+#define NVRTX_DEVICE_INFO_KIND_MASK	0x3U
+#define NVRTX_DEVICE_INFO_INVALID	0x0U
+#define NVRTX_DEVICE_INFO_ENUM		0x2U
+#define NVRTX_DEVICE_INFO_TYPE		0x3U
+#define NVRTX_DEVICE_INFO_HAS_RESET	0x4U
+#define NVRTX_DEVICE_INFO_RESET_SHIFT	9U
+#define NVRTX_DEVICE_INFO_RESET_MASK	0x1fU
+#define NVRTX_DEVICE_INFO_TYPE_SHIFT	2U
+#define NVRTX_DEVICE_INFO_TYPE_MASK	0x1fffffffU
+#define NVRTX_DEVICE_INFO_CHAINED	0x80000000U
+
+/* The engine type of the secure processor (SEC2) that runs the booters. */
+#define NVRTX_ENGINE_SEC2		0xdU
+
+/*
+ * Finds the reset bit of one engine in the device information table.
+ */
+int
+nvrtx_device_info_reset(
+	const uint32_t *words,
+	uint32_t engine_type,
+	uint32_t *reset_bit);
+
+/*
  * Names a GPU generation for the stage marks.
  */
 const char *

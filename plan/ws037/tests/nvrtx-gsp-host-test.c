@@ -330,6 +330,15 @@ test_files(const char *dir)
 	check(bl.payload_at == 0x64 && bl.payload_size == 0x1000, "files: bootloader payload");
 	free(data);
 
+	data = read_file(dir, "bl.bin", &size);
+	{
+		struct nvrtx_falcon_bl fbl;
+
+		check(data != NULL && nvrtx_falcon_bl_parse(data, size, &fbl) == 0, "files: falcon bootloader parses");
+		check(fbl.start_tag == 0xfd && fbl.code_size == 0x200 && fbl.code == data + 0x200, "files: falcon bootloader start tag and code");
+	}
+	free(data);
+
 	data = read_file(dir, "gsp-570.144.bin", &size);
 	check(data != NULL, "files: gsp present");
 	if (data == NULL)

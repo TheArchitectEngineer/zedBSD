@@ -173,6 +173,64 @@ nvrtx_family_name(
 	return "unknown";
 }
 
+/*
+ * Finds the reset bit of one engine in the device information table.
+ *
+ * The table is 64 words.  An engine's description is a run of words: a
+ * data word, an enumeration word (which may carry the reset bit), and an
+ * engine-type word; bit 31 set means more words of the same engine follow.
+ * Returns 0 with the bit number, or ENOENT when the engine is not listed
+ * with a reset bit.
+ */
+int
+nvrtx_device_info_reset(
+	const uint32_t *words,
+	uint32_t engine_type,
+	uint32_t *reset_bit)
+{
+	uint32_t index;
+	uint32_t word;
+	uint32_t type;
+	int32_t reset;
+
+	/* Walks the words, collecting one engine's fields until its last word. */
+	type = 0xffffffffU;
+	reset = -1;
+	for (index = 0U; index < NVRTX_DEVICE_INFO_WORDS; index++) {
+		word = words[index];
+
+		/* An invalid word carries nothing and does not end an engine. */
+		if ((word & NVRTX_DEVICE_INFO_KIND_MASK) == NVRTX_DEVICE_INFO_INVALID)
+			continue;
+
+		/* An enumeration word may carry the reset bit. */
+		if ((word & NVRTX_DEVICE_INFO_KIND_MASK) == NVRTX_DEVICE_INFO_ENUM &&
+		    (word & NVRTX_DEVICE_INFO_HAS_RESET) != 0U)
+			reset = (int32_t)((word >> NVRTX_DEVICE_INFO_RESET_SHIFT) & NVRTX_DEVICE_INFO_RESET_MASK);
+
+		/* An engine-type word names the engine. */
+		if ((word & NVRTX_DEVICE_INFO_KIND_MASK) == NVRTX_DEVICE_INFO_TYPE)
+			type = (word >> NVRTX_DEVICE_INFO_TYPE_SHIFT) & NVRTX_DEVICE_INFO_TYPE_MASK;
+
+		/* More words of the same engine follow. */
+		if ((word & NVRTX_DEVICE_INFO_CHAINED) != 0U)
+			continue;
+
+		/* The engine is complete: report it when it is the one asked for. */
+		if (type == engine_type && reset >= 0) {
+			*reset_bit = (uint32_t)reset;
+			return 0;
+		}
+
+		/* Starts the next engine. */
+		type = 0xffffffffU;
+		reset = -1;
+	}
+
+	/* The engine is not listed with a reset bit. */
+	return ENOENT;
+}
+
 /* Maps the architecture field of the identity register to a generation. */
 static enum nvrtx_family
 identify_family(

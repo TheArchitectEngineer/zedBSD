@@ -15,14 +15,20 @@
  * writes are the VBIOS windows, which are put back at once.  A failure in P0
  * leaves the GPU as the firmware left it.
  *
- * The stages that write (P1 and later) are not in this revision; the worker
- * stops after P0 and gives the preparation back.
+ * P1a waits for the GPU's own firmware to finish devinit.  P1b runs
+ * FWSEC-FRTS, which sets up the protected region at the top of the VRAM;
+ * from there on a failure tears the region down once (P7's FWSEC-SB and
+ * booter_unload) and does not retry.  The stages after P1b are not in this
+ * revision: the worker tears the region down again and gives the
+ * preparation back, so the GPU ends as the firmware left it.
  */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <drivers/pci/pci.h>
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
@@ -39,6 +45,10 @@
 /* The largest small file read whole. */
 #define GSP_SMALL_FILE_MAX		0x40000U
 
+/* How long P1a waits for devinit, in microseconds (about 2,050 steps of 2 ms). */
+#define GSP_DEVINIT_TIMEOUT_US		4100000U
+#define GSP_DEVINIT_STEP_US		2000U
+
 /* The page of the queue memory that lists its pages, counted with the rest. */
 #define GSP_QUEUE_PTE_COUNT		(NVRTX_QUEUE_SHARED_BYTES / NVRTX_GSP_PAGE_SIZE)
 
@@ -48,6 +58,10 @@ static int gsp_prepare_image(struct nvrtx_gpu *gpu);
 static int gsp_prepare_placement(struct nvrtx_gpu *gpu);
 static int gsp_prepare_start(struct nvrtx_gpu *gpu);
 static int gsp_prepare_fwsec(struct nvrtx_gpu *gpu);
+static int gsp_prepare_falcons(struct nvrtx_gpu *gpu);
+static int gsp_devinit_wait(struct nvrtx_gpu *gpu);
+static int gsp_region_set(struct nvrtx_gpu *gpu);
+static void gsp_finish(struct nvrtx_gpu *gpu);
 
 /*
  * Runs the GSP boot as far as this revision goes.
@@ -87,17 +101,48 @@ nvrtx_gsp_start(
 	    (unsigned long long)(gpu->layout.region_size >> 20),
 	    (unsigned long long)(gpu->layout.heap_size >> 20));
 
-	/* Says why the boot goes no further, and gives the preparation back. */
+	/* Stops before P1a when the boot asks. */
 	allowed = nvrtx_stage_allowed("P1a");
 	if (!allowed) {
 		nvrtx_stage_mark("P1a skipped (nvrtx.stop=P1a)");
-	} else {
-		nvrtx_stage_mark("P1a is not in this kernel; stopping after P0");
+		gsp_finish(gpu);
+		return 0;
 	}
 
-	nvrtx_gsp_release(gpu);
+	/* Waits for the GPU's firmware to finish devinit. */
+	error = gsp_devinit_wait(gpu);
+	if (error != 0) {
+		gpu->state = NVRTX_GSP_FAILED;
+		gsp_finish(gpu);
+		return error;
+	}
 
-	/* Succeeded: the boot stopped after P0 with nothing written. */
+	/* Stops before P1b when the boot asks. */
+	allowed = nvrtx_stage_allowed("P1b");
+	if (!allowed) {
+		nvrtx_stage_mark("P1b skipped (nvrtx.stop=P1b)");
+		gsp_finish(gpu);
+		return 0;
+	}
+
+	/* Sets the protected region up with FWSEC-FRTS. */
+	error = gsp_region_set(gpu);
+	if (error != 0) {
+		gsp_finish(gpu);
+		return error;
+	}
+
+	/* Says why the boot goes no further; the finish tears the region down again. */
+	allowed = nvrtx_stage_allowed("P2a");
+	if (!allowed) {
+		nvrtx_stage_mark("P2a skipped (nvrtx.stop=P2a)");
+	} else {
+		nvrtx_stage_mark("P2a is not in this kernel; stopping after P1b");
+	}
+
+	gsp_finish(gpu);
+
+	/* Succeeded: the boot stopped where this revision ends. */
 	return 0;
 }
 
@@ -191,6 +236,11 @@ gsp_prepare(
 	if (error != 0)
 		return error;
 
+	/* Finds the two falcons. */
+	error = gsp_prepare_falcons(gpu);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: P1 has everything it needs. */
 	return 0;
 }
@@ -232,6 +282,10 @@ gsp_load_files(
 
 	/* Reads the falcon bootloader that loads FWSEC. */
 	error = nvrtx_file_load(GSP_FILE_FALCON_BOOTLOADER, GSP_SMALL_FILE_MAX, &gpu->falcon_bootloader);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_falcon_bl_parse(gpu->falcon_bootloader.data, gpu->falcon_bootloader.size, &gpu->falcon_bl);
 	if (error != 0)
 		return error;
 
@@ -465,4 +519,140 @@ gsp_prepare_fwsec(
 	    (unsigned)gpu->fwsec.version,
 	    (unsigned)gpu->fwsec.program_size);
 	return 0;
+}
+
+/* Finds the GSP's falcon and the secure processor with its PMC bit. */
+static int
+gsp_prepare_falcons(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t words[NVRTX_DEVICE_INFO_WORDS];
+	uint32_t bit;
+	uint32_t index;
+	int error;
+
+	/* The GSP's falcon has no PMC bit of its own. */
+	gpu->gsp_falcon.base = NVRTX_FALCON_GSP_BASE;
+	gpu->gsp_falcon.pmc_mask = 0U;
+
+	/* Reads the device information table and finds the secure processor's reset bit. */
+	for (index = 0U; index < NVRTX_DEVICE_INFO_WORDS; index++)
+		words[index] = nvrtx_rd32(gpu, NVRTX_REG_DEVICE_INFO + index * 4U);
+
+	error = nvrtx_device_info_reset(words, NVRTX_ENGINE_SEC2, &bit);
+	if (error != 0) {
+		nvrtx_stage_mark("P0 fail: no SEC2 in the device information (%d)", error);
+		return error;
+	}
+
+	gpu->sec2_falcon.base = NVRTX_FALCON_SEC2_BASE;
+	gpu->sec2_falcon.pmc_mask = 1U << bit;
+
+	/* Succeeded: both falcons are known. */
+	nvrtx_stage_mark("P0 falcons: SEC2 reset bit %u", (unsigned)bit);
+	return 0;
+}
+
+/* Runs P1a: waits for the GPU's own firmware to finish devinit. */
+static int
+gsp_devinit_wait(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t waited;
+	uint32_t level;
+	uint32_t progress;
+
+	/* Polls both registers until devinit is complete or the time is spent. */
+	nvrtx_stage_mark("P1a begin: devinit");
+	for (waited = 0U; waited <= GSP_DEVINIT_TIMEOUT_US; waited += GSP_DEVINIT_STEP_US) {
+		level = nvrtx_rd32(gpu, NVRTX_REG_DEVINIT_LEVEL);
+		progress = nvrtx_rd32(gpu, NVRTX_REG_DEVINIT_PROGRESS);
+		if ((level & 0x1U) != 0U && (progress & 0xffU) == NVRTX_DEVINIT_COMPLETED) {
+			nvrtx_stage_mark("P1a ok after %u ms", (unsigned)(waited / 1000U));
+			return 0;
+		}
+
+		kern_usleep_range(GSP_DEVINIT_STEP_US, GSP_DEVINIT_STEP_US * 2U);
+	}
+
+	/* Devinit never completed: the GPU is not used. */
+	nvrtx_stage_mark("P1a fail: devinit level %08x progress %08x", (unsigned)level, (unsigned)progress);
+	return ETIMEDOUT;
+}
+
+/* Runs P1b: checks that no region is there, then sets it up with FWSEC-FRTS. */
+static int
+gsp_region_set(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t low;
+	uint32_t high;
+	uint32_t result;
+	int error;
+
+	/* A region left by an earlier boot cannot be set up again: stop without writing. */
+	nvrtx_region_bounds(gpu, &low, &high);
+	if (high != 0U) {
+		nvrtx_stage_mark("P1b stop: region %08x-%08x already set; power cycle needed", (unsigned)low, (unsigned)high);
+		gpu->state = NVRTX_GSP_FAILED;
+		return EBUSY;
+	}
+
+	/* Lets the falcons reach system memory. */
+	error = drv_pci_device_set_bus_master(gpu->identity.pci, true);
+	if (error != 0)
+		return error;
+
+	/* Runs FWSEC-FRTS; from here on the end of the boot tears the region down. */
+	gpu->region_written = 1;
+	nvrtx_stage_mark("P1b begin: FWSEC-FRTS at %llx", (unsigned long long)gpu->layout.frts);
+	error = nvrtx_fwsec_run(gpu, &gpu->memory.fwsec_frts);
+	if (error == ETIMEDOUT) {
+		gpu->state = NVRTX_GSP_FAILED_HOLD;
+		nvrtx_stage_mark("P1b fail: FWSEC did not halt; memory kept, power cycle needed");
+		return error;
+	}
+
+	/* FWSEC's own result and the region's bounds decide the outcome. */
+	result = nvrtx_frts_result(gpu);
+	nvrtx_region_bounds(gpu, &low, &high);
+	if (error != 0 || result != 0U || high == 0U) {
+		nvrtx_stage_mark("P1b fail: error %d result %04x region %08x-%08x", error, (unsigned)result, (unsigned)low, (unsigned)high);
+		gpu->state = NVRTX_GSP_FAILED;
+		return EIO;
+	}
+
+	/* Succeeded: the region is set up. */
+	gpu->state = NVRTX_GSP_REGION_SET;
+	nvrtx_stage_mark("P1b ok: region %08x-%08x", (unsigned)low, (unsigned)high);
+	return 0;
+}
+
+/*
+ * Ends the boot: tears a region down once, then gives the preparation back.
+ *
+ * Memory a falcon may still read (one that did not halt) is kept.
+ */
+static void
+gsp_finish(
+	struct nvrtx_gpu *gpu)
+{
+	int error;
+
+	/* Keeps everything when a falcon may still be reading the memory. */
+	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
+		return;
+
+	/* Tears down a region this boot set up, or one a failed FRTS left. */
+	error = 0;
+	if (gpu->region_written != 0)
+		error = nvrtx_region_tear_down(gpu);
+	if (error == ETIMEDOUT) {
+		gpu->state = NVRTX_GSP_FAILED_HOLD;
+		nvrtx_stage_mark("P7 fail: a program did not halt; memory kept, power cycle needed");
+		return;
+	}
+
+	/* Gives the preparation back; a region that stayed is left for a power cycle. */
+	nvrtx_gsp_release(gpu);
 }

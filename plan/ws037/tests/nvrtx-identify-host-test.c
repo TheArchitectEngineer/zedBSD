@@ -71,6 +71,28 @@ main(void)
 		}
 	}
 
+	/* Finds the secure processor's reset bit in a device information table. */
+	{
+		uint32_t words[NVRTX_DEVICE_INFO_WORDS];
+		uint32_t bit;
+
+		memset(words, 0, sizeof(words));
+		words[0] = 0x80000001U | (0x5U << 12);
+		words[1] = 0x80000002U | 0x4U | (3U << 9);
+		words[2] = 0x00000003U | (0x0U << 2);
+		words[3] = 0x80000001U;
+		words[4] = 0x80000002U | 0x4U | (13U << 9);
+		words[5] = 0x00000003U | (0xdU << 2);
+		if (nvrtx_device_info_reset(words, NVRTX_ENGINE_SEC2, &bit) != 0 || bit != 13U) {
+			printf("FAIL device info: SEC2 reset bit\n");
+			failures++;
+		}
+		if (nvrtx_device_info_reset(words, 0x14U, &bit) != ENOENT) {
+			printf("FAIL device info: absent engine\n");
+			failures++;
+		}
+	}
+
 	/* Reports the verdict. */
 	if (failures != 0U)
 		return 1;

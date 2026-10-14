@@ -174,6 +174,10 @@ nvrtx_detach(
 	if (gpu->worker_running != 0)
 		return EBUSY;
 
+	/* Memory a falcon may still read stays until the power is cut. */
+	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
+		return EBUSY;
+
 	/* Removes PCI's pointer before the state goes away. */
 	error = drv_pci_device_set_driver_data(pci, NULL);
 	if (error != 0)
