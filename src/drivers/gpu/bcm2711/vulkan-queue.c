@@ -89,13 +89,17 @@ struct queue_submission {
 /*
  * An accepted submission in its session's execution queue: a heap copy of
  * the owned actions and payloads, and the next action to run.  The arrays
- * follow the structure in the same allocation.
+ * follow the structure in the same allocation.  With video, mark holds the
+ * decodes in flight its fence waits for once its actions have run.
  */
 struct queue_execution {
 	struct bcm2711_render_execution base;
 	struct bcm2711_vulkan_session *session;
 	struct queue_owner owner;
 	uint32_t cursor;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	struct bcm2711_vulkan_video_mark mark;
+#endif
 };
 
 static int check_admission(struct bcm2711_vulkan_session *session);
@@ -111,6 +115,10 @@ static bool owner_displayed(const struct queue_owner *owner);
 static bool object_displayed(const struct bcm2711_vulkan_object *object);
 static int execution_step(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, bool *done);
 static int execution_end(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, int error);
+#if CONFIG_DRIVER_BCM2711_VIDEO
+static void execution_mark(struct queue_execution *execution);
+static int execution_settle(struct bcm2711_render_device *controller, struct bcm2711_render_execution *base, bool wait);
+#endif
 static void publish_completion(struct queue_owner *owner);
 static void publish_failure(struct queue_owner *owner);
 static int release_owner(struct bcm2711_vulkan_session *session, struct queue_owner *owner);
@@ -570,6 +578,7 @@ create_execution(
 	struct queue_submission *submission)
 {
 	struct queue_execution *execution;
+	struct bcm2711_vulkan_root *root;
 	size_t bytes;
 
 	/* The arrays follow the structure; pointers keep their natural alignment. */
@@ -594,6 +603,10 @@ create_execution(
 	execution->base.end = execution_end;
 	execution->base.bytes = submission->bytes;
 	execution->base.display = owner_displayed(&execution->owner);
+
+	/* The queue's domain, whose reserved marker completes the submission. */
+	root = submission->owner.queue->payload;
+	execution->base.timeline = root->timeline;
 
 	/* Succeeded: the execution owns everything the submission prepared. */
 	return execution;
@@ -732,9 +745,6 @@ execution_step(
 	bool ran;
 	int disposed;
 	int error;
-#if CONFIG_DRIVER_BCM2711_VIDEO
-	uint32_t index;
-#endif
 
 	/* Actions run in submission order from where the last step stopped. */
 	execution = (struct queue_execution *)base;
@@ -780,6 +790,11 @@ execution_step(
 		}
 		if (!finished)
 			return 0;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+		/* The command buffer's decodes were sent; its fence waits for those still in flight. */
+		if (execution->owner.fence != NULL)
+			bcm2711_vulkan_video_mark_commands(&execution->mark, action->object->payload);
+#endif
 		disposed = bcm2711_vulkan_native_job_dispose(controller, action->job, retired);
 		action->job = NULL;
 		if (disposed != 0)
@@ -789,22 +804,13 @@ execution_step(
 
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	/*
-	 * An execution with a fence ends only when its decodes' frames are in
-	 * their images: the host may read them once the fence signals.  The
-	 * step ends meanwhile and the next one looks again (ws236).
+	 * An execution with a fence ends only when the frames of its decodes are
+	 * in their images: the host may read them once the fence signals.  It
+	 * leaves the queue now and settles meanwhile, so the session's next
+	 * decodes are sent behind it (ws236 p010).
 	 */
-	if (execution->owner.fence != NULL) {
-		for (index = 0; index < execution->owner.action_count; index++) {
-			action = &execution->owner.actions[index];
-			if (action->kind != QUEUE_COMMAND)
-				continue;
-			error = bcm2711_vulkan_video_settle_commands(controller, action->object->payload);
-			if (error == EINPROGRESS)
-				return 0;
-			if (error != 0)
-				return error;
-		}
-	}
+	if (execution->owner.fence != NULL)
+		execution_mark(execution);
 #endif
 
 	/* Succeeded: every action ran. */
@@ -840,6 +846,60 @@ execution_end(
 	/* Succeeded: the execution and everything it owned retired. */
 	return 0;
 }
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+/*
+ * Gives an execution with a fence its settle when decodes it waits for are
+ * still in flight.  An empty submission (no command buffer) waits for every
+ * decode in flight, as vkQueueWaitIdle asks; the command buffers' decodes
+ * were added to the mark as their jobs ended.
+ */
+static void
+execution_mark(
+	struct queue_execution *execution)
+{
+	uint32_t index;
+	bool commands;
+
+	/* Whether the submission has a command buffer. */
+	commands = false;
+	for (index = 0; index < execution->owner.action_count; index++) {
+		if (execution->owner.actions[index].kind == QUEUE_COMMAND)
+			commands = true;
+	}
+
+	/* A submission that only waits for the queue covers every decode in flight. */
+	if (!commands)
+		bcm2711_vulkan_video_mark_all(&execution->mark);
+
+	/* Decodes in flight to wait for give the execution its settle. */
+	if (execution->mark.generation != 0)
+		execution->base.settle = execution_settle;
+
+	/* Succeeded: the execution settles, or ends at once. */
+	return;
+}
+
+/* Tells the executor whether the frames an execution's fence waits for are in their images. */
+static int
+execution_settle(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_execution *base,
+	bool wait)
+{
+	struct queue_execution *execution;
+	int error;
+
+	/* The mark's decodes, looked for a little when the executor may wait. */
+	execution = (struct queue_execution *)base;
+	error = bcm2711_vulkan_video_settle_mark(controller, &execution->mark, wait);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the execution may end and signal its fence. */
+	return 0;
+}
+#endif
 
 /* Ends one execution's operations on its payloads and signals its fence. */
 static void

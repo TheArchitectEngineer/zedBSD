@@ -33,10 +33,17 @@
  * the image's uncached memory.  A decode's status query becomes available
  * when its frame is placed.
  *
- * The fence of a decode's submission may therefore signal before the frame
- * is in the image.  Every command that uses the image waits for the frame
- * first, so what the commands read is the same; only a host that maps an
- * image's memory and reads it without a command would see the old bytes.
+ * A submission with a fence ends, and its fence signals, only when the
+ * frames of its own decodes are in their images (an empty submission with
+ * a fence, as vkQueueWaitIdle sends, waits for every decode in flight): the
+ * host may read an image's memory once the fence has signaled.  The
+ * execution leaves the session's queue as soon as its decodes are sent and
+ * waits in the executor's settling list meanwhile, so the next decodes are
+ * sent behind it (ws236 p010; libvulkan gives every submission without a
+ * fence a private one, so waiting in the queue held the decoder to one
+ * picture).  A later submission's fence does not wait for an earlier
+ * submission's decodes; every command that uses an image waits for its
+ * frame first, so what the commands read is the same.
  *
  * A bitstream the firmware cannot take, or a frame that does not come,
  * skips the picture (the image keeps what it had) and marks the status
@@ -284,12 +291,15 @@ struct video_held {
  * (a collection's window writes only the flights' frame fields).  sending
  * is the decode being sent, from its first step (sending_since) until it
  * is sent or skipped.  self is the session's object, retained by a
- * collection that no command of the session retains.  unit is the scratch
- * a parameter set is written into (kept off the kernel stack).
+ * collection that no command of the session retains.  generation tells this
+ * session's decodes from another's in an execution's mark (the time stamps
+ * of every session count from 1).  unit is the scratch a parameter set is
+ * written into (kept off the kernel stack).
  */
 struct video_session {
 	struct bcm2711_vulkan_input_owner owner;
 	struct bcm2711_vulkan_object *self;
+	uint64_t generation;
 	uint32_t profile_idc;
 	uint32_t width;
 	uint32_t height;
@@ -518,6 +528,13 @@ static struct video_session *video_current;
 
 /* The costs of the current window (see struct video_stats); under the controller mutex. */
 static struct video_stats video_stats;
+
+/*
+ * The generation the last session with a decoder took; the next takes one
+ * more, so no two sessions share one and a mark's zero means none.  Under
+ * the controller mutex.
+ */
+static uint64_t video_generation;
 
 /*
  * Reports whether video decode can be offered now.
@@ -953,46 +970,107 @@ bcm2711_vulkan_video_settle(
 }
 
 /*
- * Waits for the frames of the decodes a command buffer recorded, before
- * the execution that ran it signals its fence: the host may read the
- * images (or the status queries) once the fence has signaled.  Zero when
- * none is in flight, EINPROGRESS while one is.  The caller holds the
- * controller mutex.
+ * Adds the newest decode in flight that a command buffer recorded to an
+ * execution's mark.
+ *
+ * Called when the command buffer's job has run, so its decodes were sent;
+ * a decode whose frame has already been placed is not in flight and adds
+ * nothing.  The caller holds the controller mutex.
  */
-int
-bcm2711_vulkan_video_settle_commands(
-	struct bcm2711_render_device *controller,
+void
+bcm2711_vulkan_video_mark_commands(
+	struct bcm2711_vulkan_video_mark *mark,
 	const struct bcm2711_vulkan_command_buffer *command)
 {
 	const struct bcm2711_vulkan_command_node *node;
 	const struct bcm2711_vulkan_record *record;
 	struct video_session *video;
-	struct bcm2711_vulkan_object *self;
-	int64_t until;
 	unsigned flight;
-	bool pending;
-	int error;
-	int released;
 
 	/* Only the session with a decoder has flights. */
 	video = video_current;
 	if (video == NULL || video->flight_count == 0)
-		return 0;
+		return;
 
-	/* The newest flight of a decode the command buffer recorded. */
-	until = VIDEO_NO_PTS;
+	/* Each decode the command buffer recorded, and its flight if it is in flight. */
 	for (node = command->first; node != NULL; node = node->next) {
 		record = (const struct bcm2711_vulkan_record *)node;
 		if (record->opcode != GPU_OP_CMD_DECODE_VIDEO)
 			continue;
 		for (flight = 0; flight < video->flight_count; flight++) {
-			if (video->flights[flight].command == (const struct video_command *)record && video->flights[flight].pts > until)
-				until = video->flights[flight].pts;
+			if (video->flights[flight].command != (const struct video_command *)record)
+				continue;
+
+			/* A newer decode of this session, or the first of the mark. */
+			if (mark->generation != video->generation || video->flights[flight].pts > mark->until) {
+				mark->generation = video->generation;
+				mark->until = video->flights[flight].pts;
+			}
 		}
 	}
 
-	/* None of its decodes is in flight. */
-	if (until == VIDEO_NO_PTS)
+	/* Succeeded: the mark covers the command buffer's decodes in flight. */
+	return;
+}
+
+/*
+ * Makes an execution's mark cover every decode in flight, for a submission
+ * that only waits for the queue (an empty submit with a fence, as
+ * vkQueueWaitIdle sends).  The caller holds the controller mutex.
+ */
+void
+bcm2711_vulkan_video_mark_all(
+	struct bcm2711_vulkan_video_mark *mark)
+{
+	struct video_session *video;
+
+	/* Only the session with a decoder has flights. */
+	video = video_current;
+	if (video == NULL || video->flight_count == 0)
+		return;
+
+	/* The newest flight is the last sent. */
+	mark->generation = video->generation;
+	mark->until = video->flights[video->flight_count - 1U].pts;
+
+	/* Succeeded: the mark covers every decode in flight. */
+	return;
+}
+
+/*
+ * Waits for the frames of the decodes an execution's mark covers, before
+ * the execution ends and its fence signals: the host may read the images
+ * (or the status queries) once the fence has signaled.
+ *
+ * Zero when they are placed or given up, or the session is gone;
+ * EINPROGRESS while one has not come.  With wait, the frames are looked
+ * for up to VIDEO_POLL_MS with the controller's window open; without, only
+ * the frames already there are taken.  The caller holds the controller
+ * mutex.
+ */
+int
+bcm2711_vulkan_video_settle_mark(
+	struct bcm2711_render_device *controller,
+	const struct bcm2711_vulkan_video_mark *mark,
+	bool wait)
+{
+	struct video_session *video;
+	struct bcm2711_vulkan_object *self;
+	unsigned wait_ms;
+	bool pending;
+	int error;
+	int released;
+
+	/* A mark of no decode, or of a session that is gone, waits for nothing. */
+	video = video_current;
+	if (mark->generation == 0 ||
+	    video == NULL ||
+	    video->generation != mark->generation)
+		return 0;
+
+	/* The covered decodes may all have their frames already. */
+	pending = flight_pending(video, mark->until);
+	if (!pending)
 		return 0;
 
 	/* The session stays while its decoder is looked at with the window open. */
@@ -1001,9 +1079,12 @@ bcm2711_vulkan_video_settle_commands(
 	if (error != 0)
 		return error;
 
-	/* The frames up to that decode's. */
-	error = collect(controller, video, VIDEO_POLL_MS, until);
-	pending = flight_pending(video, until);
+	/* The frames up to the mark's newest decode, waiting a little only when asked. */
+	wait_ms = 0;
+	if (wait)
+		wait_ms = VIDEO_POLL_MS;
+	error = collect(controller, video, wait_ms, mark->until);
+	pending = flight_pending(video, mark->until);
 	video_stats.steps++;
 	released = bcm2711_vulkan_object_release(self);
 
@@ -1013,11 +1094,11 @@ bcm2711_vulkan_video_settle_commands(
 	if (released != 0)
 		return released;
 
-	/* The frame has not come: the next step looks again. */
+	/* The frame has not come: the execution keeps settling. */
 	if (pending)
 		return EINPROGRESS;
 
-	/* Succeeded: the command buffer's decodes are in their images. */
+	/* Succeeded: the covered decodes are in their images. */
 	return 0;
 }
 
@@ -1402,8 +1483,10 @@ session_create(
 		return 0;
 	}
 
-	/* The session's own object, and the session whose decoder the commands look at. */
+	/* The session's own object, its generation, and the session whose decoder the commands look at. */
 	video->self = object;
+	video_generation++;
+	video->generation = video_generation;
 	video_current = video;
 
 	/* Replies VK_SUCCESS and the identity. */

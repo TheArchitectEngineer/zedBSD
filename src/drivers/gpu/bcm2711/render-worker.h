@@ -61,14 +61,32 @@ typedef int (*bcm2711_render_execution_step)(struct bcm2711_render_device *, str
 typedef int (*bcm2711_render_execution_end)(struct bcm2711_render_device *, struct bcm2711_render_execution *, int);
 
 /*
+ * Tells whether an execution whose actions all ran may end now: zero when it
+ * may, EINPROGRESS while work it started outside the engine (a video decode's
+ * frame) has not come, another error when looking failed.  The flag lets it
+ * wait a little for that work.  It runs under the controller mutex.
+ */
+typedef int (*bcm2711_render_execution_settle)(struct bcm2711_render_device *, struct bcm2711_render_execution *, bool);
+
+/*
  * One accepted QueueSubmit's work in its session's execution queue.  The
  * native IRQ guard protects the links; the executor alone runs and ends it.
+ *
+ * An execution with a settle leaves the queue once its actions have run, so
+ * the session's next execution runs, and waits in the session's settling
+ * list until the settle lets it end (ws236 p010).
  */
 struct bcm2711_render_execution {
 	struct bcm2711_render_execution *next;
 	struct bcm2711_render_session *session;
 	bcm2711_render_execution_step step;
 	bcm2711_render_execution_end end;
+	/* Asked after the last step when set (see bcm2711_render_execution_settle). */
+	bcm2711_render_execution_settle settle;
+	/* The queue domain of the submission, whose reserved marker completes it; zero for none. */
+	uint32_t timeline;
+	/* The execution's number in its session, from 1 in submission order; set when it is queued. */
+	uint64_t ordinal;
 	/* The staging bytes the execution's prepared work may hold, for the session's limit. */
 	uint64_t bytes;
 	/* The execution uses a run the display holds (a frame, a present copy, the cursor): it runs first. */
@@ -99,6 +117,12 @@ struct bcm2711_render_request {
 	uint64_t queued_ticks;
 	/* A parked domain completion is released once its session has executed this many executions. */
 	uint64_t required;
+	/*
+	 * The ordinal of the execution a marker completes, found when that
+	 * submission was queued; zero when it is not known.  A settling
+	 * execution holds its own marker, or, not known, every marker after it.
+	 */
+	uint64_t ordinal;
 	struct bcm2711_render_request *parked_next;
 };
 
