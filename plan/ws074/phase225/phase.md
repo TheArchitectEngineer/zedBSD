@@ -2,6 +2,14 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+## q1146-i01 有限部分範囲（2026-10-14 11:18 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:48 JSTまで）に適用。q1142のvertical-lr/LTR inline-grid・明示固定px track・gap0・単一span・in-flow非replaced/auto寸法限定経路をhorizontal-tb子にも適用し、親の論理track軸変換と子自身の横書きintrinsic/line geometryを両立させる。2×2最小ページ、固定vertical-lr stretch005–008全whole PASS、旧001–004と旧horizontal/vertical PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加、未対応構成fallbackを確認。WPT/runner/公開ABI/`plan/master.md`変更なし。p225/p217/p189/p173 wholeは部分受け入れ外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1146-i01 結果（2026-10-14 11:19 JST）
+
+Event ws074-p225-q1146-partial-clear-20261014: [証拠](evidence/20261014-q1146/README.md)。限定固定縦Grid物理軸経路にhorizontal-tb子を通し、2×2最小fixtureの空/文字の位置と寸法を確認。固定vertical-lr stretch005–008は4/4 whole FAIL→PASS、旧001–004とhorizontal/vertical旧PASS2件も維持。span2 fallbackは従来経路で非crash（準拠は主張しない）。CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/差0、Acid2差1865。q1146部分cleared、p225 wholeおよびp217/p189/p173全件100%は未達。次は固定Grid502全再測定と009–016明示Grid寸法/可変track。共有投影/GitHub publication保留。
+
 Status: uncleared（q1142の文字/WPT基準未達）
 Disposition: normal
 Parent: [WS074](../ws.md)

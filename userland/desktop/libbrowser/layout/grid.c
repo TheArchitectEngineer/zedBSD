@@ -475,7 +475,8 @@ grid_vertical_fixed(
 	/* Out-of-flow or separately sized children still use the established path. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow || child->replaced ||
-		    child->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+		    (child->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+		    child->style.writing_mode != CSS_WRITING_HORIZONTAL_TB) ||
 		    child->style.width.unit != CSS_UNIT_AUTO ||
 		    child->style.height.unit != CSS_UNIT_AUTO)
 			return 0;

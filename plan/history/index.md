@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1145 / WS074 fixed Grid502 recensus（2026-10-14）
+## 最新: q1146 / WS074 orthogonal children in fixed vertical Grid（2026-10-14）
+
+[q1146履歴](queue-q1146.md): 横書き子を固定縦Grid軸に配置し、stretch005–008 4/4 whole PASS、旧PASS・Acid3差0維持。[証拠](../ws074/phase225/evidence/20261014-q1146/README.md)。共有投影/GitHub publication pending。
+
+## q1145 / WS074 fixed Grid502 recensus（2026-10-14）
 
 [q1145履歴](queue-q1145.md): q1144後の固定Grid502は126→130 whole PASS、4 subtest改善・後退0。増分vertical-lr stretch001–004。[証拠](../ws074/phase189/evidence/20261014-q1145/README.md)。p225構成拡張とp220 paint待ち、共有投影/GitHub publication pending。
 
