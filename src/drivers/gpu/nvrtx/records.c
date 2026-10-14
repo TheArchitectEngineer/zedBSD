@@ -29,6 +29,7 @@
 #define RECORDS_SYSINFO_BAR1_AT		8U
 #define RECORDS_SYSINFO_BAR3_AT		16U
 #define RECORDS_SYSINFO_BDF_AT		32U
+#define RECORDS_SYSINFO_CONSOLE_AT	64U
 #define RECORDS_SYSINFO_USER_VA_AT	72U
 #define RECORDS_SYSINFO_MIRROR_AT	80U
 #define RECORDS_SYSINFO_MIRROR_SIZE_AT	84U
@@ -98,6 +99,9 @@ nvrtx_sysinfo(
 	/* Gives the PCI address and the highest user address. */
 	nvrtx_put64(record, RECORDS_SYSINFO_BDF_AT, values->bus_device_function);
 	nvrtx_put64(record, RECORDS_SYSINFO_USER_VA_AT, values->user_address_limit);
+
+	/* Gives the size of the firmware's console at the VRAM's start, which the resource manager keeps (0: none). */
+	nvrtx_put64(record, RECORDS_SYSINFO_CONSOLE_AT, values->console_size);
 
 	/* Gives the configuration-space copy in the register window. */
 	nvrtx_put32(record, RECORDS_SYSINFO_MIRROR_AT, RECORDS_CONFIG_MIRROR);

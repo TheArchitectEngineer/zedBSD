@@ -201,6 +201,9 @@ struct nvrtx_push {
 	int overflow;
 };
 
+/* The step of a surface's pitch the window takes (it is given the pitch in these units). */
+#define NVRTX_DISP_PITCH_UNIT		64U
+
 /*
  * One surface a window shows: linear 32-bit pixels in the VRAM.
  *
