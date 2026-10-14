@@ -3,7 +3,7 @@
  *
  * The probe's streams (pb-high-352-pyramid, ws083's test stream, and pb-high-1080,
  * encoded from ffmpeg's synthetic testsrc2), the FNV-1a checksums of their
- * reference frames in display order, and the display index of each frame
+ * reference frames in display order (whole, and luma only), and the display index of each frame
  * in decode order.
  */
 
@@ -966,6 +966,9 @@ static const uint32_t probe_small_width = 352U;
 static const uint32_t probe_small_height = 288U;
 static const uint32_t probe_small_display_sums[] = {
 	0x160d0b64U, 0x74103c3bU, 0xae382f36U, 0xb92e65f9U, 0x6988a4ddU, 0xdbd41d57U, 0x6212fcf8U, 0xe7165636U, 0x14e9d74bU, 0xa14a2b90U, 0x4b2ee236U, 0xbd904036U, 0xb952cd0cU, 0xe14d0ff2U, 0xffc2be16U
+};
+static const uint32_t probe_small_luma_sums[] = {
+	0x874317a6U, 0x2043a4cbU, 0xb91e1540U, 0x2efdf2bfU, 0x04413924U, 0x46277a03U, 0xc06b41d5U, 0xb7bf4079U, 0x4d9ae67bU, 0x5de4913cU, 0x602d1fa4U, 0xf28cab92U, 0x2755ed36U, 0xfd587a2cU, 0x545ada7eU
 };
 static const uint8_t probe_small_decode_order[] = {
 	0U, 4U, 2U, 1U, 3U, 8U, 6U, 5U, 7U, 12U, 10U, 9U, 11U, 14U, 13U
@@ -3378,6 +3381,9 @@ static const uint32_t probe_large_width = 1920U;
 static const uint32_t probe_large_height = 1080U;
 static const uint32_t probe_large_display_sums[] = {
 	0x705b6f4bU, 0x9ef634abU, 0x397de4faU, 0x8143459aU, 0x81f33be4U, 0xb1a58a5bU, 0xf743e011U, 0x1b391177U
+};
+static const uint32_t probe_large_luma_sums[] = {
+	0xe2eb4eb2U, 0xe24c1df9U, 0x7d42d536U, 0x0de0fea9U, 0x7808b46fU, 0xe22c50e9U, 0x46f8da9dU, 0x247cb6a4U
 };
 static const uint8_t probe_large_decode_order[] = {
 	0U, 3U, 1U, 2U, 6U, 4U, 5U, 7U

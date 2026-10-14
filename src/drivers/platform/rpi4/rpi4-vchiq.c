@@ -676,6 +676,43 @@ drv_rpi4_vchiq_close(
 }
 
 /*
+ * Logs a service's state, ports and bulk queues.
+ */
+void
+drv_rpi4_vchiq_report(
+	struct drv_rpi4_vchiq_service *service)
+{
+	struct rpi4_vchiq *vchiq;
+	unsigned long enabled;
+	unsigned state;
+	uint32_t local_port;
+	uint32_t remote_port;
+	uint32_t counts[4];
+
+	/* A service of no link has nothing to report. */
+	vchiq = link_get();
+	if (vchiq == NULL)
+		return;
+
+	/* Copies the fields under the lock and logs them outside it. */
+	enabled = spin_lock_irqsave(&vchiq->lock);
+
+	state = (unsigned)service->state;
+	local_port = service->local_port;
+	remote_port = service->remote_port;
+	counts[0] = service->receive.inserted;
+	counts[1] = service->receive.completed;
+	counts[2] = service->transmit.inserted;
+	counts[3] = service->transmit.completed;
+
+	spin_unlock_irqrestore(&vchiq->lock, enabled);
+
+	kern_logf("rpi4-vchiq: service %08x state %u ports %u/%u receive queued %u completed %u transmit queued %u completed %u\n",
+		  (unsigned)service->fourcc, state, (unsigned)local_port, (unsigned)remote_port,
+		  (unsigned)counts[0], (unsigned)counts[1], (unsigned)counts[2], (unsigned)counts[3]);
+}
+
+/*
  * Reads the doorbell's registers and interrupt from the tree.
  */
 static int
