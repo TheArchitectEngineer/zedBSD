@@ -1,0 +1,44 @@
+console: 105,160,66,60|5,160,66,60
+viewport 1024.00 x 768.00, document height 304.00
+block <html> 0.00 0.00 1024.00 304.00
+  block <body> 8.00 8.00 1008.00 283.00
+    anonymous 8.00 8.00 1008.00 253.00
+      line 8.00 8.00 height 253.00 baseline 258.00
+        inline-block 8.00 w 250.00 h 250.00
+        text 258.00 w 4.80 16px " "
+        inline-block 262.80 w 250.00 h 250.00
+      block <div> 8.00 8.00 250.00 250.00
+        block <div> 113.00 168.00 66.00 60.00
+          line 145.00 173.00 height 10.00 baseline 181.50
+            text 145.00 w 12.00 10px "XX"
+            text 157.00 w 6.00 10px " "
+            text 163.00 w 6.00 10px "X"
+          line 139.00 183.00 height 10.00 baseline 191.50
+            text 139.00 w 6.00 10px "X"
+            text 145.00 w 6.00 10px " "
+            text 151.00 w 18.00 10px "XXX"
+          line 163.00 193.00 height 10.00 baseline 201.50
+            text 163.00 w 6.00 10px "X"
+          line 133.00 203.00 height 10.00 baseline 211.50
+            text 133.00 w 12.00 10px "XX"
+            text 145.00 w 6.00 10px " "
+            text 151.00 w 18.00 10px "XXX"
+      block <div> 262.80 8.00 250.00 250.00
+        block <div> 267.80 168.00 66.00 60.00
+          line 299.80 173.00 height 10.00 baseline 181.50
+            text 299.80 w 12.00 10px "XX"
+            text 311.80 w 6.00 10px " "
+            text 317.80 w 6.00 10px "X"
+          line 293.80 183.00 height 10.00 baseline 191.50
+            text 293.80 w 6.00 10px "X"
+            text 299.80 w 6.00 10px " "
+            text 305.80 w 18.00 10px "XXX"
+          line 317.80 193.00 height 10.00 baseline 201.50
+            text 317.80 w 6.00 10px "X"
+          line 287.80 203.00 height 10.00 baseline 211.50
+            text 287.80 w 12.00 10px "XX"
+            text 299.80 w 6.00 10px " "
+            text 305.80 w 18.00 10px "XXX"
+    block <pre> 8.00 274.00 1008.00 17.00
+      line 8.00 274.00 height 17.00 baseline 287.00
+        text 8.00 w 194.92 13px "105,160,66,60|5,160,66,60"

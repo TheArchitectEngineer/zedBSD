@@ -290,7 +290,7 @@ inline_vertical_absolute_grid(
 				bordered_child = 1;
 		}
 		if (bordered_child) {
-			if (!horizontal_lr && !horizontal_rl)
+			if (!horizontal_lr && !horizontal_rl && !horizontal_rtl)
 				return 0;
 			for (index = 0; index < 4; index++) {
 				if (box->margin[index] != 0)

@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1193-i01 結果（2026-10-14 14:03 JST）
+
+Event ws074-p217-q1193-partial-clear-20261014: [証拠](evidence/20261014-q1193/README.md)。固定水平LTR/RTL Gridのborder-only縦RTL absolute4番目子に縦inline経路を適用。独立2矩形は105,160,66,60|5,160,66,60→105,160,70,56|5,160,70,56でChromium一致。固定non-static009 whole PASS/4 callback PASS、旧007/008、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1193有限部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1193-i01 有限部分範囲（2026-10-14 14:01 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（15:31 JSTまで）に適用。positioned horizontal-tb LTR/RTL固定2×2 inline-grid、px tracks/gap0、親frame0、直接RTL/vertical-lr（LTR親）またはRTL/vertical-rl（RTL親）auto-size ASCII absolute子row2/col2 left5/top10明示・borderのみ（padding/margin0）を縦inline経路で測る最小修正。独立LTR/RTL最小ページChromium矩形一致、固定non-static009 whole PASS/4 callback、旧007/008 whole PASS、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他frame/子/auto line、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1192-i01 結果（2026-10-14 14:01 JST）
 
 Event ws074-p217-q1192-partial-clear-20261014: [証拠](evidence/20261014-q1192/README.md)。固定水平LTR/RTL Gridのborder-only縦rl absolute2番目子に縦inline経路を適用。独立2矩形は168,100,72,50|68,100,72,50→180,88,60,62|80,88,60,62でChromium一致。固定non-static009水平2 callbacks先頭2子全通過、4番目子でFAIL、縦2 callbacks whole PASS。旧007/008、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1192有限部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
