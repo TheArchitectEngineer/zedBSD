@@ -89,9 +89,10 @@ endif
 ifeq ($(NVRTX_RUN),R9w)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.work=1 nvrtx.disp=0 nvrtx.resident=0
 endif
-# ws037-p007 D3: the GPU device as a renderer too (nvrtx.vk=1, with the work channel it implies) and vkquad, the
-# compositor's textured quad drawn offscreen through Vulkan and read back (one line: VKQUAD ok / VKQUAD fail ...).
+# ws037-p007 D3/D5: the GPU device as a renderer too (nvrtx.vk=1, with the work channel it implies); vkquad, the
+# compositor's textured quad drawn offscreen through Vulkan and read back (one line: VKQUAD ok / VKQUAD fail ...),
+# and display-events, a swapchain of the display cleared and presented through VK_KHR_display (the WSI of stage D5).
 ifeq ($(NVRTX_RUN),R9v)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.vk=1
-ZEDBSD_USER_PROGRAMS += vkquad
+ZEDBSD_USER_PROGRAMS += vkquad display-events
 endif
