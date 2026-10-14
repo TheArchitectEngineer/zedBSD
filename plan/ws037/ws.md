@@ -59,7 +59,7 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 | [p005](phase005/phase.md) | VRAM の allocator・MMU・BAR1/BAR2・GR の golden context と TU10x の scrubber・channel・GPFIFO・semaphore の fence・回復（段 P4〜P6） | in-progress（2026-10-14: copy の channel の道（VRAM の塊・5 段の表・vaspace・channel・fence・copy の fill・FREE）を実装、build と host 試験まで。golden context・scrubber・BAR1/BAR2 は未。実機は T1 待ち） | p004 | 6h〜 |
 | p006 | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本、段 P8）。text console の付け直し | planning | p005（VRAM の allocator と BAR1 の map） | 6h〜 |
 | p007 | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_ops` への統合（段 P9）、desktop の表示 | planning | p005・p006・kernel の Venus の executor と compiler（p008 の方針、[design](nvrtx-design.md) 8.0） | 6h〜 |
-| p008 | kernel の Venus の executor と shader の compiler（SPIR-V → SM75、NAK の構成を参考）の方針、別 WS にするか（design の判断の項目 8・16） | planning | p001 | 2h |
+| [p008](phase008/phase.md) | shader の compiler（SPIR-V → SM75、共有の front と IR、NAK（MIT）の事実）。WS037 の Phase に決めた（判断の項目 8・16） | in-progress（2026-10-15 P3: 段 A（compute の最小の lowering と encoder）を実装、build と host 試験（39 件）まで。GPU の確かめは p007 の投入の口の後） | p001 | 2h＋段 A〜E |
 | p009 | 規約の全文の確認、license と GPL の code との類似の監査、BLOB（GSP の firmware）の確認 | planning | 全て | 4h |
 
 各段の印（GOP の framebuffer）と段の名前の正は [design](nvrtx-design.md) の 3 節: N0 発見と ID → N1 GOP の readout → P0 GSP の起動の準備 → P1 devinit 待ち・FWSEC-FRTS → P2 booter と GSP の起動 → P3 RM の object → P4 VRAM・MMU → P5 channel・fence → P6 回復 → P7 停止 → P8 display の引き継ぎ → P9 最初の 3D の job。i915 の N0・N1・P2 と同じ考え。
