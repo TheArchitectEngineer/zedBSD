@@ -95,3 +95,4 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - 判定（Q1）: p002（readout と flip）は cleared。p003（backlight の明るさ）・p004（外部の DP・HDMI）・p005（sleep）は個別の確かめの報告が無いので in-progress のまま、ユーザーの試験の一覧（plan/beta2.md の U5）に載せた。既定の FULL は保つ。
 - P2 の安全化の patch（失敗時に下の段・最後は copy）は、既定 FULL が 2 機種で通ったので急がない。p003〜p005 の実機で崩れた時に再開する（patch は plan/agents/p2/wrapup-20261015.patch、P2 の worktree の stash `ws237-wrapup-20261015`）。
 - 残り: p003〜p005 の実機、p006（規約の全文）。第 6 世代（Skylake）・第 9・10 世代は未確認。
+- 2026-10-15 ユーザーの決定（原文）:「Gen9は残りの安全策の作業をマージしたら終了です。UATは不要です。」→ P3 の安全化（上の段が失敗したら下の段、最後は copy）を merge したら WS237 を completed にする。p003〜p005 の実機の確かめ（U5）は不要（beta2.md の U5 を外した）。

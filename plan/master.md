@@ -11,7 +11,7 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-15（Q1、新しいセッション）**: P1＝[BUG-318](bugs/BUG-318.md)（Pi の Video Player の音声の時計が 0、worktree p1 の agent/p1-bug318、WS037 の差分は stash）。P2＝WS037 nvrtx の続き（p1・p3 の wrapup の patch の回収 → R8b〜R8d・R7d、worktree p2 の agent/p2-ws037、WS237 の差分は stash）。T・B1 は未起動。
+- **2026-10-15（Q1、新しいセッション）**: P1＝[BUG-318](bugs/BUG-318.md)（Pi の Video Player の音声の時計が 0、worktree p1 の agent/p1-bug318、WS037 の差分は stash）。P2＝WS037 nvrtx の続き（p1・p3 の wrapup の patch の回収 → R8b〜R8d・R7d、worktree p2 の agent/p2-ws037、WS237 の差分は stash）。P3＝WS237 の既定 full の安全化（p2 の wrapup の patch を完成、worktree p3 の agent/p3-ws237）、merge で WS237 は completed（ユーザー「UATは不要」）。B1＝WS074 の続き（p236 から、yahoo・google の Chrome との差）。T は未起動。
 - 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。ユーザーは逐次に 1 つずつ解決する進め方。
 - Pi 4（10.0.30.2）: ユーザーが SD を書き直し、main 2597b86（Bluetooth の driver off）で起動。kei の password は kei、Q1 の公開鍵を入れた。ssh は `-o UserKnownHostsFile=build/q1/pi-known_hosts`（新しい host key ED25519 SHA256:s05AGsis…）。
 <!-- master:agents:end -->
@@ -60,7 +60,7 @@
 - WS037 RTX: R8b・R8c・R8d（ユーザーが monitor を見る）、R7d は SPH の Graphics Exception で FAIL（直しは途中、P3 の patch）。既定 on と方法 A は P1 の patch で途中。
 - BUG-315（Pi の touch）: Y の quirk は main に入った。X の端の飽和は未確認。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
 - WS239（compositor の失敗時の console の login）: p001 は main、p002 の QEMU 試験は T3 が途中で停止、結果なし。
-- WS237（Gen9 display）: 2026-10-15 ユーザーの実機で i5 の第 7・第 8 世代とも display controller OK・Keiland 使用可（p002 cleared、既定 FULL のまま）。backlight・外部 display・sleep（p003〜p005）は未確認（beta2.md U5）。
+- WS237（Gen9 display）: 2026-10-15 ユーザーの実機で i5 の第 7・第 8 世代とも display controller OK・Keiland 使用可（p002 cleared、既定 FULL のまま）。安全化（P3）の merge で終了、UAT 不要（2026-10-15 ユーザー）。
 - GitHub への記録の公開は保留。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
