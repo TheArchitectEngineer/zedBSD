@@ -23,7 +23,7 @@ cc $flags -Wall -Wextra -Werror -Wdeclaration-after-statement -o "$out/nvrtx-sm7
 	"$repo/plan/ws037/tests/nvrtx-sm75-desktop-test.c" "$repo/plan/ws037/tests/sm75-machine.c" \
 	"$repo/plan/ws037/tests/sm75-reference.c" \
 	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-encode.c" \
-	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-compile.c" \
+	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-compile.c" "$repo/src/drivers/gpu/nvrtx/compiler/sm75-schedule.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" -lm
 "$out/nvrtx-sm75-desktop-test" "$@" "$out"/spv/*.spv

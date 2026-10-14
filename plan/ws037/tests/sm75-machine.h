@@ -41,18 +41,52 @@
 #define TEST_DONE		2
 
 /*
+ * What the dependence check knows of one register or predicate: a
+ * fixed-latency write in flight (its class and cycle), the scoreboard of a
+ * variable-latency write in flight (plus one; 0 for none), the scoreboards
+ * of variable-latency reads in flight, and the last fixed-latency read.
+ */
+struct test_hazard {
+	int written;
+	uint32_t write_class;
+	uint32_t write_cycle;
+	uint32_t write_bar;
+	uint32_t read_bars;
+	int read;
+	uint32_t read_cycle;
+};
+
+/*
  * One invocation on the interpreter: its registers and predicates, where
- * it is, the scoreboards the next instruction must wait for, and its place
- * in the workgroup.
+ * it is, its place in the workgroup, and the dependence check's state: the
+ * issue cycle of the instruction running and of the next one (from the
+ * delays), each register's and predicate's writes and reads in flight, the
+ * scoreboards in use and when each was set, and what the running
+ * instruction reads, writes and sets.
  */
 struct test_thread {
 	uint32_t r[256];
 	int p[8];
 	uint32_t pc;
 	uint32_t steps;
-	uint32_t pending;
 	uint32_t local[3];
 	int state;
+
+	uint32_t cycle;
+	uint32_t next_cycle;
+	struct test_hazard gpr[256];
+	struct test_hazard predicate[8];
+	uint32_t bar_busy;
+	uint32_t bar_set_cycle[6];
+	uint32_t instruction_class;
+	uint32_t read_class;
+	uint32_t reads[16];
+	uint32_t read_count;
+	uint32_t writes[8];
+	uint32_t write_count;
+	uint32_t sets_write_bar;
+	uint32_t sets_read_bar;
+	int issued;
 };
 
 /*
@@ -104,6 +138,16 @@ uint32_t sm75_machine_cb_word(const struct test_run *run, uint32_t index, uint32
 /* The float of 32 bits, and the 32 bits of a float. */
 float sm75_machine_float(uint32_t bits);
 uint32_t sm75_machine_bits(float value);
+
+/* The latency classes the dependence check uses (Turing's, NAK's sm75_instr_latencies.rs), and a guard predicate reader. */
+#define TEST_CLASS_ALU		0U
+#define TEST_CLASS_FMA		1U
+#define TEST_CLASS_IMAD		2U
+#define TEST_CLASS_IMAD_WIDE	3U
+#define TEST_CLASS_DISPATCH	4U
+#define TEST_CLASS_DECOUPLED	5U
+#define TEST_CLASS_WIDE_ADDEND	6U
+#define TEST_CLASS_GUARD	7U
 
 /* Converts a float to a 32-bit integer toward zero as the hardware does: saturated, NaN to 0. */
 uint32_t sm75_machine_f2i(float value, int is_signed);

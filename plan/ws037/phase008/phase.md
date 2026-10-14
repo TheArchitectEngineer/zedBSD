@@ -103,7 +103,7 @@ SPIR-V ──drv_gpu_shader_parse──▶ scalar IR ──drv_gpu_shader_optimi
 | A | encoder ＋ compute の最小の lowering（3.3）＋ host の試験 1〜4 | 実装・host 済み（下の 6 節） |
 | B | loop・除算・atomic・shared・barrier | 実装・host 済み（下の 9 節） |
 | C | 最初の compute の投入（段 P9c、`nvrtx.compute=1`）: GR の channel・compute の object・QMD 2.2・cbuf・code・launch・fence・結果の確かめ | 実装・host 済み、実機（R7c）は T 待ち（下の 8 節） |
-| D | latency の表による並べ替え、operand の再利用 | 未 |
+| D | latency の表による並べ替え、operand の再利用 | 依存の印・並べ替え・register の割り当ての方針を実装・host 済み（下の 12 節）。operand の再利用は MIT の出典が無いのでしない |
 | E | graphics の stage（SPH、attribute、texture） | 頂点・fragment の最小（compositor の quad）を実装・host 済み（下の 10 節）。3D の投入（p007）は未 |
 
 ## 6. 段 A の結果（2026-10-15 P3、host と build だけ）
@@ -288,8 +288,51 @@ FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … s
 
 ### 11.4 残り（2026-10-15 P4 の時点）
 
+Q1 の判断（2026-10-15）: 2 の共有の IR の変更は**保留**（desktop の後、共有 IR の変更は Q1 の判断で。i915・V3D と共有の front に触るため）。1 の derivative も desktop で使わないので後回し。次は 4 の段 D（desktop の描画の速さに効く）。
+
 1. derivative（DDX・DDY、`SHFL.BFLY` と `FSWZADD`、NAK の from_nir）: desktop の shader は使わない。interpreter に 4 lane の quad の実行が要る。
 2. array・cube・3D・compare・size（`textureSize` = TXQ）: IR の TEXTURE に image の次元が無い。`component` の空き bit（24 以上）か新しい欄に次元と array の印を足す共有の front の変更が要る（i915・V3D の backend と共有、Q1 の判断）。
 3. depth の出力（`gl_FragDepth`）・second colour・geometry: desktop は使わない。
 4. 段 D（latency の表による並べ替え、operand の再利用）: 正しさの後。
 5. fragment の discard の後の implicit LOD の TEX（quad の helper が消える）: IR が if-convert して KILL を元の位置で出すので、discard した pixel の隣の LOD は未定義になりうる。desktop の shader で discard を使うのは libGL の fixed.frag だけ（desktop の外）。
+
+## 12. 段 D: 依存の印と並べ替え（2026-10-15 P4、host と build だけ）
+
+Q1 の指示（2026-10-15）: 段 D を、差分の試験（43 module 一致）を保ったまま進める。desktop の描画の速さに効く。
+
+### 12.1 形
+
+lowering は命令を出すだけにし、program ができてから `sm75-schedule.c`（新）の 2 つの pass を通す。どちらも命令の語から operand を読み戻す（`nvrtx_sm75_operands()`: lowering が出す全 opcode の読む register・書く register・guard・述語の読み書き・latency の分類）。emit の時に lowering の印（固定・可変・block の終わり）とこの読み戻しが一致することを確かめ、違えば拒む。
+
+1. **並べ替え**（`nvrtx_sm75_reorder()`）: 固定の命令（BRA・BSSY・BSYNC・KILL・BAR・MEMBAR・EXIT・NOP）と分岐の先で切った block の中で、list scheduler。依存は register と述語の RAW・WAR・WAW と、片方が store（STG・STS・AST・atomic）の memory の組の順。優先度は block の終わりまでの latency の重み付きの最長の道（可変 latency の見積り: TEX・TLD 100、global 300、shared 30、LDC 25、MUFU・変換・IPA・ALD 15、S2R 20。見積りは順だけに効き、正しさには効かない）。固定の命令の位置は動かないので、分岐の offset はそのまま。
+2. **依存の印**（`nvrtx_sm75_schedule()`）: 前から 1 回。固定 latency の結果は Turing の表（NAK `sm75_instr_latencies.rs` の read_after_write: ALU→ALU 4、→FMA・IMAD 5、FMA→FMA 4、IMAD.WIDE の上の半分→因数 6・加数 2、可変 latency の読み手 6。述語は ALU 4・FMA 5・guard・分岐・可変 12。WAW 2、可変の書き手は 6、固定の読みの後の可変の書きは 2）の分だけ前の命令の delay で待つ。可変 latency の命令は結果の scoreboard と読みの scoreboard（6 つから空きを、無ければ一番古いのを待って再利用）を立て、それを読む・書き換える命令だけが待つ。scoreboard は立てた命令から 2 cycle 以上後に待つ（`calc_instr_deps.rs`）。block の終わりと分岐の先は全部を待つ（全 scoreboard、固定の結果の最悪 6・述語 13）。BAR・MEMBAR の後は 6、その後の NOP は 2、EXIT は 5。
+
+register の割り当ての方針も変えた（`sm75-compile.c` の `nvrtx_sm75_take`・`_take_pair`）: 一番小さい空きではなく、**一番前に返された空き**を、62 個（hardware の 2 つと合わせて 64 = Turing の SM が 1024 thread を全部載せられる上限）の中から選ぶ。返したばかりの register をすぐ再利用しないので、並べ替えが WAR・WAW に止められにくい。62 を超える program は今までどおり先へ伸びる。
+
+出典（MIT、sha256）: `nak/sm75_instr_latencies.rs`（419b8b1d…4878）、`nak/calc_instr_deps.rs`（8c92e065…8695）、`nak/sm70.rs`（BAR・MEMBAR の実行の latency）。`sm75-schedule.c` の先頭に MIT の notice。
+
+### 12.2 確かめ（host）
+
+- **SM75 の interpreter に依存の検査を足した**（`sm75-machine.c`、compiler の読み戻しとは別に、interpreter が実際に読み書きする register と述語で調べる）: 命令ごとの issue の cycle（前の命令の delay の和）、固定 latency の結果を読む・書き換えるまでの cycle（NAK の表、NAK の最小値で）、可変 latency の結果・読みの scoreboard を待たずに読む・書く誤り、scoreboard を立てずに遅れて読む・書く誤り、立てて 2 cycle 以内に待つ誤り、使用中の scoreboard の再利用、EXIT の時に終わっていない書き込み、delay 0。分岐を実際にたどるので loop を跨いでも調べる。
+- 感度: 可変 latency の読み手への latency を 6 → 3 にすると、また RAW の scoreboard の待ちを外すと、どちらも 43 module 全てで検出（元に戻して 0）。
+- `nvrtx-sm75-host-test.sh`: 170 checks, 0 failures（compute の loop・除算・shared・atomic・barrier、graphics の quad・draw の program を含む、全て依存の検査の下で）。
+- `nvrtx-sm75-desktop-test.sh`: 43 compiled, 0 refused, 0 disagreed（200 入力ずつ、依存の検査の下で）。
+- build（`config/ci/config-amd64.mk`、nvrtx=y）: rc 0、warning 0、include・vmunix check PASS。`git diff --check` なし。
+
+### 12.3 速さの見積り（host の模型、実機ではない）
+
+各 program の EXIT までの cycle を、delay の和と、scoreboard の待ちを上の見積りの latency で数えた模型（loop は 1 回）で比べた。compositor・libkeiland・terminal の 19 module の合計: 直列の印（段 A〜E）**10577** → 依存の印 5558 → ＋並べ替え 5101 → ＋register の方針（62）**3517**（約 3 倍）。例: panel.frag の blur（mode 6）1016 → 287、glass（mode 0）916 → 269、quad.vert 185 → 38、quad.frag 208 → 151（TEX の待ちが残る）。register の数は desktop の program で 16〜64（前は 7〜56）。
+
+未実施: 実機。scoreboard の数・2 cycle の規則・表の値は NAK の事実だが、hardware で確かめたのは直列の印（R7c の compute）だけ。実機で不一致が出たら、`nvrtx_sm75_schedule()` を直列の印に戻すのが切り分けの最初（compiler の中の 1 か所）。
+
+### 12.4 段 D の残り
+
+- operand の再利用（reuse の bit 122..125）: **しない**（2026-10-15 P4 の判断）。NAK（MIT）は欄を encode するだけで、reuse の印を付ける code が無い（`ir.rs` の `add_reuse` に呼び手が無い）。reuse の cache の規則の MIT の出典が無いので、WS141・WS037 の license の方式では入れない。出典が見つかったら再考。
+- TEX の結果をすぐ使う fragment の program（quad.frag など）は TEX の latency がそのまま残る。register の割り当ての前の並べ替え（pre-RA scheduling）が要る。
+
+### 12.5 試験の道具（回帰に使う物）
+
+- `plan/ws037/tests/nvrtx-sm75-desktop-test.sh [--strict]`: desktop の全 shader（`userland/desktop/**/shaders.h`）と `plan/ws037/tests/sm75/*.vert|*.frag` を compile し、SM75 の interpreter（依存の検査つき）と IR の参照の interpreter で比べる。`--strict` は拒否も失敗にする。desktop の shader を変えた時・compiler を変えた時に流す（host だけ、約 1 分）。
+- `plan/ws037/tests/nvrtx-sm75-host-test.sh`: encode の既知の語と欄、compute の module、QMD・draw の push。
+- 共有の部品: `sm75-machine.[ch]`（SM75 の interpreter と依存の検査）、`sm75-reference.[ch]`（IR の参照 interpreter）、`sm75-desktop-extract.py`。
+- master.md の Tools・試験の一覧への登録は Q1 に依頼（P4 は master.md を書かない）。

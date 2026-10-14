@@ -11,7 +11,7 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-15（Q1、新しいセッション）**: P1 は [BUG-318](bugs/BUG-318.md) を直して終了（PWM の clock の divisor 1 → 2、63b6af5bd → main 4f4321da6、T2 の T1-657 で実機 PASS、resolved。worktree p1 に WS037 の stash）。P2＝WS037 nvrtx の続き（p1・p3 の wrapup の patch の回収 → R8b〜R8d・R7d、worktree p2 の agent/p2-ws037、WS237 の差分は stash）。P3 は WS237 の安全化を終えて終了（WS237 completed）。B1＝WS074 の続き（p236 から、yahoo・google の Chrome との差）。T1＝T1-645（RTX の R8b、~/nvrtx/v8b2）と T1-656（R7d の再試験）を流す（ユーザーの立ち会いなし）。 P4＝WS037 の shader の compiler（p008、desktop の shader を全て SM75 へ、worktree p4 の agent/p4-ws037、2026-10-15 ユーザー「サブエージェントP4を起動して、RTXコンパイラの作業をお願いします。」）。 試験の分担（2026-10-15 ユーザー「RTXのテスト, Piのテスト,で、T1とT2の2並列にします。」）: T1＝RTX（パススルーの host 10.0.10.3）、T2＝Pi 4（10.0.30.2）。 P3＝ws236-p008 Pi 4 の再生の速さ（2026-10-15 ユーザー「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」、worktree p3 の agent/p3-ws236b、Pi の確かめは T2）。
+- **2026-10-15（Q1、新しいセッション）**: P1 は [BUG-318](bugs/BUG-318.md) を直して終了（PWM の clock の divisor 1 → 2、63b6af5bd → main 4f4321da6、T2 の T1-657 で実機 PASS、resolved。worktree p1 に WS037 の stash）。P2＝WS037 nvrtx の続き（p1・p3 の wrapup の patch の回収 → R8b〜R8d・R7d、worktree p2 の agent/p2-ws037、WS237 の差分は stash）。P3 は WS237 の安全化を終えて終了（WS237 completed）。B1＝WS074 の続き（p236 から、yahoo・google の Chrome との差）。T1＝T1-645（RTX の R8b、~/nvrtx/v8b2）と T1-656（R7d の再試験）を流す（ユーザーの立ち会いなし）。 P4 は WS037 の compiler（p008: desktop の 43 shader を全て SM75 へ・段 D の latency の印と並べ替え、operand の再利用は MIT の出典が無く見送り）を終えて終了。R7d の再試験（T1-660）で compiler の不一致が出たら P4 の新しい世代へ。 試験の分担（2026-10-15 ユーザー「RTXのテスト, Piのテスト,で、T1とT2の2並列にします。」）: T1＝RTX（パススルーの host 10.0.10.3）、T2＝Pi 4（10.0.30.2）。 P3＝ws236-p008 Pi 4 の再生の速さ（2026-10-15 ユーザー「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」、worktree p3 の agent/p3-ws236b、Pi の確かめは T2）。
 - RTX の順（2026-10-15 ユーザー）:「RTXはまずはディスプレイをONにするところをクリアしてください。そのあとで実機ベアメタルに進みます。」→ P2 は R8b（パススルーで display を点ける）を最優先、R7d の SPH は区切る。方法 A（素の起動、beta2.md の U3）は R8b の PASS の後。 追記（同日 ユーザー）:「ベアメタルでRTXのテストをするのは、パススルーでデスクトップ描画ができるようになってからにします。」→ 素の起動（U3）は、パススルーで R8b→R8c→R8d と desktop（Keiland）の描画が通った後。 追記（同日 ユーザー）:「R8bは流しません。パススルーでデスクトップ描画ができるようになったあと、まとめてテストします。よって、R8の終了条件にユーザテストを入れません。あなたはパススルー環境でテストして、カーネルログから、ディスプレイ制御のエラーを見ることができます。…それが出なくなり、制御できるようになったと思われたら、R8をクリアと見なします。ユーザの目視は不要です。」→ R8 の合格は guest の kernel log に display 制御の error が無いこと（Q1 の判定）。desktop の道は nvrtx の executor（P2 の phase007 8 節 D1〜D5、Venus の代わりの道は zedBSD 用の host の renderer が要り使えない）。 追記（同日 ユーザー）:「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」「Nouveauとまったく同じ手順で動作が確認できたあとで、我々のスタイルにリファクタしましょう。」→ P2 は P8b を nouveau と同じ手順・値に揃え、R8b の合格の後に別の Phase で refactor。
 - 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。ユーザーは逐次に 1 つずつ解決する進め方。
 - Pi 4（10.0.30.2）: ユーザーが SD を書き直し、main 2597b86（Bluetooth の driver off）で起動。kei の password は kei、Q1 の公開鍵を入れた。ssh は `-o UserKnownHostsFile=build/q1/pi-known_hosts`（新しい host key ED25519 SHA256:s05AGsis…）。
@@ -31,7 +31,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md（先頭の「ユーザーが今できる試験」）・この block・[plan/agents/wrapup-20261015.md](agents/wrapup-20261015.md) を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **今の仕事: Pi4 のビデオの試験（WS236 p006、T1-653）**。ユーザーが Pi の SD を書き直し中で、「それまで何もせずに待っていてください」。書き直しの知らせの後に、Q1（または T）が最新の main の kernel で [phase006](ws236/phase006/phase.md) の「T への依頼」を流し、結果をユーザーに伝える（ユーザー「最新のカーネルでOKです。まずはビデオ再生をテストしてください。結果を教えてください。」）。起動で固まれば BUG-317（写真をもらう）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-322、WS240、q984、T1-660。次の KL_VERSION は 95。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS240、q984、T1-661。次の KL_VERSION は 95。
 4. 日程: リリースは 10/16（金）夕。
 <!-- master:next:end -->
 
@@ -942,6 +942,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 
 ## Tools
+| [plan/ws037/tests/nvrtx-sm75-desktop-test.sh](ws037/tests/nvrtx-sm75-desktop-test.sh)・[nvrtx-sm75-host-test.sh](ws037/tests/nvrtx-sm75-host-test.sh)（ws037-p008、2026-10-15） | nvrtx の SM75 の shader compiler: desktop の全 shader と `plan/ws037/tests/sm75/` を compile し、SM75 の interpreter（依存の検査つき）と IR の参照の interpreter で 200 入力ずつ比べる（`--strict`）。host-test は encode の既知の語・compute・QMD・draw の push。部品 `sm75-machine.[ch]`・`sm75-reference.[ch]`・`sm75-desktop-extract.py` |
 | [plan/ws237/tests/](ws237/tests/)（WS237、2026-10-15 completed） | i915 の Gen9・Gen9.5 の display の host 試験: `run-gen9-flip-host-test.sh`・`run-gen9-backlight-host-test.sh`・`run-gen9-mode-host-test.sh`・`run-gen9-modeset-host-test.sh`・`run-gen9-outputs-host-test.sh`・`run-host-boot-gen9-display.sh`・`run-host-gen9-display-step.sh`（段の上限）。試験の image の config `config-amd64-gen9-flip.mk` |
 | [plan/ws157/tests/run-host-jpeg-scale.py](ws157/tests/run-host-jpeg-scale.py)（ws157-p017、2026-10-13） | libjpeg-compat の 1/2・1/4・1/8 の縮小 decode を djpeg -scale と比べる（大きさ・差 ≤2・PSNR、壊した file で crash 0、ASan・UBSan） | `python3 plan/ws157/tests/run-host-jpeg-scale.py` |
 | [plan/ws172/tests/passkey-linux-host-test.sh](ws172/tests/passkey-linux-host-test.sh)（ws172-p011、2026-10-13） | Linux の Keiland の /opt/keiland/sbin/passkey（password・PIN の登録と照合、/opt/keiland/etc/passkey の行と mode 600、fido2 は fail no-key） | sudo が要る（unshare -m で試験の passwd・shadow を bind mount、host の file は変えない） |

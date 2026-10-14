@@ -25,7 +25,7 @@ flags="-std=gnu11 -O1 -g -DKERN_USER_ABI_LP64 -I$repo/include -I$repo/src -I$rep
 cc $flags -Wall -Wextra -Werror -Wdeclaration-after-statement -o "$out/nvrtx-sm75-host-test" \
 	"$repo/plan/ws037/tests/nvrtx-sm75-host-test.c" "$repo/plan/ws037/tests/sm75-machine.c" \
 	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-encode.c" \
-	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-compile.c" \
+	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-compile.c" "$repo/src/drivers/gpu/nvrtx/compiler/sm75-schedule.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" \
 	"$repo/src/drivers/gpu/nvrtx/compute-launch.c" "$repo/src/drivers/gpu/nvrtx/draw-push.c" "$repo/src/drivers/gpu/nvrtx/mmu.c" "$repo/src/drivers/gpu/nvrtx/wire.c" -lm
