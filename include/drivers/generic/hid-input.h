@@ -51,6 +51,13 @@
 #define HID_INPUT_TOUCH_ONLY		0x1U
 
 /*
+ * The interface is the mouse a touch screen emulates beside it (another
+ * interface of the same device publishes the screen, BUG-313): nothing is
+ * published, and its reports are dropped.
+ */
+#define HID_INPUT_EMULATION		0x2U
+
+/*
  * One descriptor's devices: the parsed layout, what they declare, the
  * states of the pen and touch state machines, the keys each report holds,
  * and the input devices once published.  Owned by the transport from
@@ -82,6 +89,9 @@ int drv_hid_input_report_ids(const struct hid_input *input);
 int drv_hid_input_report_short(const struct hid_input *input, const uint8_t *report, size_t length);
 unsigned drv_hid_input_kind(const struct hid_input *input);
 int drv_hid_input_touch(const struct hid_input *input, struct hid_report_touch_info *touch);
+
+/* Reports nonzero when the descriptor declares a touch screen (a direct touch device, not a pad). */
+int drv_hid_input_touch_screen(const struct hid_input *input);
 int drv_hid_input_feature(const struct hid_input *input, uint32_t usage, struct hid_report_feature_info *feature);
 int drv_hid_input_publish(struct hid_input *input, const struct hid_input_identity *identity);
 void drv_hid_input_report(struct hid_input *input, const uint8_t *report, size_t length, uint64_t milliseconds);

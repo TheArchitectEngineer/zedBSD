@@ -85,6 +85,12 @@ struct usb_hid {
 	struct usb_hid *pending_next;
 	uint8_t *buffer;
 	size_t buffer_size;
+	/*
+	 * Nonzero when the interface is a touch screen that reports its
+	 * fingers (its Device Mode set, or a descriptor without one, BUG-313):
+	 * a pointer beside it on the same device is its mouse emulation.
+	 */
+	unsigned fingers;
 	/* The name and the place of the touch screen's or pad's device of its own. */
 	char touch_name[USB_HID_TEXT_MAX];
 	char touch_physical_path[USB_HID_TEXT_MAX];
@@ -181,6 +187,8 @@ static void usb_hid_location(const struct usb_hid *hid, unsigned *bus, unsigned 
 static void usb_hid_log_hex(const struct usb_hid *hid, const char *prefix, const uint8_t *bytes, size_t length);
 static void usb_hid_log_refusal(const struct usb_hid *hid, const uint8_t *descriptor, size_t length, int error);
 static int usb_hid_set_device_mode(struct usb_hid *hid);
+static unsigned usb_hid_publish_flags(struct usb_hid *hid);
+static int usb_hid_sibling_fingers(struct usb_hid *hid);
 static void usb_hid_put_bits(uint8_t *data, uint32_t offset, uint32_t bits, uint32_t value);
 
 /* What a raw interface's transport does: its output reports (ws161-p002). */
@@ -399,8 +407,12 @@ usb_hid_attach(
 		goto fail;
 
 	/* A digitizer's fingers rather than its mouse (BUG-267); a device that refuses keeps working as it starts. */
-	if (!hid->raw)
-		(void)usb_hid_set_device_mode(hid);
+	if (!hid->raw) {
+		error = usb_hid_set_device_mode(hid);
+		hid->fingers = 0U;
+		if ((error == 0 || error == ENOENT) && drv_hid_input_touch_screen(hid->hidinput))
+			hid->fingers = 1U;
+	}
 	hid->stage = "resources";
 	usb_hid_identity(hid);
 	hid->buffer = kern_malloc(hid->buffer_size);
@@ -1367,6 +1379,8 @@ usb_hid_activate_start(
 	identity.id.vendor = usb_descriptor->vendor;
 	identity.id.product = usb_descriptor->product;
 	identity.id.version = usb_descriptor->device_release;
+	if (!hid->raw)
+		identity.flags = usb_hid_publish_flags(hid);
 
 	/*
 	 * The interface's own device, unless the interface is a touch screen
@@ -1770,6 +1784,78 @@ usb_hid_log_refusal(
 		  parsed,
 		  (unsigned)item_offset,
 		  prefix);
+}
+
+/*
+ * Chooses what of an interface is published (BUG-313: a Wacom touch
+ * screen showed as a mouse).  A Windows touch screen also declares the
+ * mouse it emulates before its Device Mode is set: as a collection beside
+ * the screen in the screen's interface, or as an interface of its own.
+ * Once the screen reports its fingers, that mouse is not published: the
+ * screen's interface publishes the screen alone, and an interface that is
+ * only a pointer beside a screen of the same device publishes nothing.
+ * Any other interface publishes everything it declares.
+ */
+static unsigned
+usb_hid_publish_flags(
+	struct usb_hid *hid)
+{
+	unsigned kind;
+	int sibling;
+
+	/* Only a pointer is a screen's emulation; a keyboard or a pen is kept. */
+	kind = drv_hid_input_kind(hid->hidinput);
+	if (kind != HID_INPUT_KIND_MOUSE && kind != HID_INPUT_KIND_TABLET)
+		return 0U;
+
+	/* The screen's own interface: the screen alone. */
+	if (hid->fingers)
+		return HID_INPUT_TOUCH_ONLY;
+
+	/* An interface beside a screen of the same device: nothing. */
+	sibling = usb_hid_sibling_fingers(hid);
+	if (sibling)
+		return HID_INPUT_EMULATION;
+
+	/* Succeeded: everything is published. */
+	return 0U;
+}
+
+/*
+ * Reports nonzero when another interface of the same device is a touch
+ * screen that reports its fingers.  The interfaces are probed in order
+ * before any is published, so a screen on an earlier interface is known.
+ */
+static int
+usb_hid_sibling_fingers(
+	struct usb_hid *hid)
+{
+	struct drv_usb_configuration *configuration;
+	struct drv_usb_interface *other;
+	struct usb_hid *other_hid;
+	unsigned count;
+	unsigned index;
+
+	/* The device's interfaces. */
+	configuration = drv_usb_device_active_configuration(hid->device);
+	if (configuration == NULL)
+		return 0;
+	count = drv_usb_configuration_interface_count(configuration);
+
+	/* Another interface this driver serves, a screen that reports its fingers. */
+	for (index = 0; index < count; index++) {
+		other = drv_usb_configuration_interface(configuration, index);
+		if (other == NULL || other == hid->interface)
+			continue;
+		if (drv_usb_interface_driver(other) != &usb_hid_driver)
+			continue;
+		other_hid = drv_usb_interface_driver_data(other);
+		if (other_hid != NULL && !other_hid->raw && other_hid->fingers)
+			return 1;
+	}
+
+	/* Succeeded in learning there is none. */
+	return 0;
 }
 
 /*
