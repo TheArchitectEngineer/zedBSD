@@ -15,6 +15,7 @@
  * the driver then waits for it to halt and reads its two mailboxes.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -81,20 +82,57 @@ nvrtx_poll(
 	uint32_t value,
 	uint32_t timeout_us)
 {
-	uint32_t waited;
+	uint64_t start;
+	uint64_t now;
 	uint32_t current;
 
 	/* Reads the register until it matches or the time is spent. */
-	for (waited = 0U; waited <= timeout_us; waited += FALCON_POLL_STEP_US) {
+	start = nvrtx_now_us();
+	for (;;) {
 		current = nvrtx_rd32(gpu, offset);
 		if ((current & mask) == value)
 			return 0;
+
+		/* The time is measured, not counted in steps: a short sleep lasts a whole tick. */
+		now = nvrtx_now_us();
+		if (now - start > timeout_us)
+			break;
 
 		kern_usleep_range(FALCON_POLL_STEP_US, FALCON_POLL_STEP_US * 2U);
 	}
 
 	/* The register never matched. */
 	return ETIMEDOUT;
+}
+
+/*
+ * Reads a monotonic time in microseconds, for the timeouts of the waits.
+ *
+ * A short sleep wakes on the next scheduler tick, so a wait that counted
+ * its steps would last many times its timeout; the waits compare this time
+ * instead.  Without a counter the tick clock is used.
+ */
+uint64_t
+nvrtx_now_us(void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t microseconds;
+	bool have;
+
+	/* Reads the counter and its rate. */
+	have = kern_rtc_read_counter(&counter, &frequency);
+	if (!have || frequency == 0U) {
+		/* No counter: the tick clock, in whole milliseconds. */
+		microseconds = clock_milliseconds(NULL) * 1000U;
+		return microseconds;
+	}
+
+	/* Scales the counter without overflowing the product. */
+	microseconds = (counter / frequency) * 1000000U + ((counter % frequency) * 1000000U) / frequency;
+
+	/* Succeeded: the time in microseconds. */
+	return microseconds;
 }
 
 /*
