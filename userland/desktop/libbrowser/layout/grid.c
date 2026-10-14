@@ -1005,6 +1005,7 @@ grid_static_vertical_start(
 	int justify;
 	int index;
 	int framed;
+	int horizontal_child;
 
 	/* Only fixed two-by-two LTR tracks have this definite physical mapping. */
 	if (box->style.position != CSS_POSITION_RELATIVE ||
@@ -1035,7 +1036,24 @@ grid_static_vertical_start(
 		    child->style.width.unit != CSS_UNIT_AUTO ||
 		    child->style.height.unit != CSS_UNIT_AUTO)
 			continue;
+		horizontal_child = !framed &&
+		    child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    child->style.direction == CSS_DIRECTION_LTR &&
+		    child->style.grid_row.start == 1 &&
+		    child->style.grid_row.end == 2 &&
+		    child->style.grid_column.start == 1 &&
+		    child->style.grid_column.end == 2 &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		/* The first horizontal child has no frame in this bounded mapping. */
+		for (index = 0; horizontal_child && index < 4; index++) {
+			if (child->border[index] != 0 || child->padding[index] != 0)
+				horizontal_child = 0;
+		}
 		if (child->style.writing_mode != box->style.writing_mode &&
+		    !horizontal_child &&
 		    !(((box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
 		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL) ||
 		    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&

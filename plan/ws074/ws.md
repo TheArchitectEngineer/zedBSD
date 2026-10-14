@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1184](queue.md) finished / p220 horizontal RTL Grid second-row vertical-rl text geometry。2026-10-14 13:44 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1185](queue.md) finished / p217 vertical Grid horizontal absolute static area。2026-10-14 13:46 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1177の189 PASS/313 FAIL、q1172比6 whole/27 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p217-q1185-partial-clear-20261014: [p217](phase217/phase.md) q1185-i01で固定縦lr/rl Grid直接横LTR absolute子へrow1/col1 static areaとjustify-right Yを適用。[証拠](phase217/evidence/20261014-q1185/README.md)。独立2矩形Chromium一致、固定non-static007縦2 callback先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid2番目横子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p220-q1184-partial-clear-20261014: [p220](phase220/phase.md) q1184-i01で水平RTL固定Grid直接vertical-rl/RTL absolute子へrow2 trackのinline roomとstatic areaを適用。[証拠](phase220/evidence/20261014-q1184/README.md)。独立矩形Chromium一致、固定non-static007水平LTR/RTL両callback PASS、縦2 callbackでfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦Grid横子static area、p220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
