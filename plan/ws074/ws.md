@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1138](queue.md) finished / p221 flexible implicit Grid tracks。2026-10-14 10:37 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1139](queue.md) finished / p221 computed Grid track range。2026-10-14 10:40 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1134の124 PASS/378 FAIL、2旧PASS後退。q1135でempty-gridはPASS回復、行track animationは旧PASSが偽陽性で一般animation機構不足と判明。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
 
@@ -479,7 +479,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p218](phase218/phase.md) | Interop 2025 CSS Grid shorthand | uncleared / q1094部分cleared | p189 q1093 Grid recensus |
 | [ws074-p219](phase219/phase.md) | Interop 2025 Grid baseline self-alignment | uncleared / q1096部分cleared | p189 q1093 Grid・p218 q1095 track |
 | [ws074-p220](phase220/phase.md) | vertical inline text geometry | in-progress / q1121–q1122部分cleared | p217 q1103・q1092診断 |
-| [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1138暗黙fr部分cleared、minmax等残 | p189 q1105固定Grid502・p218 shorthand出力 |
+| [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1139 computed負calc clamping部分cleared、minmax等残 | p189 q1105固定Grid502・p218 shorthand出力 |
 | [ws074-p222](phase222/phase.md) | Interop 2025 Grid automatic placement | in-progress / q1133固定2 WPT partial cleared、全placement再測定待ち | p221 q1132-i01 CSS state・q1132-i02暗黙track sizing |
 | [ws074-p223](phase223/phase.md) | Empty Grid intrinsic size | in-progress / q1135固定empty-grid部分cleared | p189 q1134後退診断 |
 | [ws074-p224](phase224/phase.md) | Grid track animation | in-progress / q1135診断部分cleared、実装未着手 | p189 q1134後退診断 |
@@ -942,3 +942,5 @@ Event ws074-p221-q1136-outcome-20261014: [p221 q1136](phase221/evidence/20261014
 Event ws074-p221-q1137-outcome-20261014: [p221 q1137](phase221/evidence/20261014-q1137/README.md)で非px固定長/割合/calc暗黙trackを受理。固定valid各6→10/30、computed各4→7/25、invalid全PASS、旧whole PASS/Acid3差0維持。q1137部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p221-q1138-outcome-20261014: [p221 q1138](phase221/evidence/20261014-q1138/README.md)で暗黙frの列・行配分を追加。固定valid各10→12/30、computed各7→9/25、invalid全PASS、旧whole PASS/Acid3差0維持。q1138部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p221-q1139-outcome-20261014: [p221 q1139](phase221/evidence/20261014-q1139/README.md)で負calc Grid trackのcomputed長を0pxにclamp。固定auto列/行computed各9→10/25、invalid全PASS、旧whole PASS/Acid3差0維持。q1139部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。

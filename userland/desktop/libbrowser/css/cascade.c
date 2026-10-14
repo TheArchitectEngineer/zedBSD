@@ -4202,15 +4202,21 @@ cascade_tracks(
 		tracks[index].kind = declared->kind;
 		tracks[index].minimum.unit = CSS_UNIT_AUTO;
 
-		/* Its size: an fr share, or a length. */
+		/* Its size: an fr share, or a nonnegative resolved length. */
 		if (declared->kind == CSS_TRACK_FR)
 			tracks[index].fr = declared->size.number;
-		if (declared->kind == CSS_TRACK_LENGTH)
+		if (declared->kind == CSS_TRACK_LENGTH) {
 			tracks[index].size = cascade_length(engine, &declared->size, style->font_size);
+			if (tracks[index].size.unit == CSS_UNIT_PX && tracks[index].size.value < 0)
+				tracks[index].size.value = 0;
+		}
 
-		/* Its minimum, when minmax() gave a length. */
-		if (declared->minimum_kind == CSS_TRACK_LENGTH)
+		/* Its minimum, when minmax() gave a length, has the same range. */
+		if (declared->minimum_kind == CSS_TRACK_LENGTH) {
 			tracks[index].minimum = cascade_length(engine, &declared->minimum, style->font_size);
+			if (tracks[index].minimum.unit == CSS_UNIT_PX && tracks[index].minimum.value < 0)
+				tracks[index].minimum.value = 0;
+		}
 	}
 
 	/* The number of tracks. */

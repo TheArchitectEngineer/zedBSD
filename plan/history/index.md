@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1138 / WS074 flexible implicit Grid tracks（2026-10-14）
+## 最新: q1139 / WS074 computed Grid track range（2026-10-14）
+
+[q1139履歴](queue-q1139.md): 負calc Grid trackをcomputed時0pxにclamp、固定auto列/行computed各9→10/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1139/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1138 / WS074 flexible implicit Grid tracks（2026-10-14）
 
 [q1138履歴](queue-q1138.md): 暗黙frの列・行配分、固定valid各10→12/30・computed各7→9/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1138/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

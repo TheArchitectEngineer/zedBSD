@@ -1,0 +1,7 @@
+<!doctype html>
+<div id="auto" style="display:grid;font-size:40px;grid-auto-columns:calc(10px - 0.5em)"></div>
+<div id="template" style="display:grid;font-size:40px;grid-template-columns:calc(10px - 0.5em)"></div>
+<script>
+console.log("auto=" + getComputedStyle(document.getElementById("auto")).getPropertyValue("grid-auto-columns"));
+console.log("template=" + getComputedStyle(document.getElementById("template")).getPropertyValue("grid-template-columns"));
+</script>
