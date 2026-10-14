@@ -86,6 +86,9 @@
 #define NVRTX_GSP_IMAGE_SECTION		".fwimage"
 #define NVRTX_GSP_SIGNATURE_SECTION	".fwsignature_tu10x"
 
+/* The ELF file header's size. */
+#define NVRTX_ELF_HEADER_BYTES		64U
+
 /*
  * The placement record of the GSP firmware in the top of the VRAM, 256 bytes.
  *
@@ -271,6 +274,16 @@ struct nvrtx_bootloader {
 	uint32_t monitor_code_at;
 };
 
+/* The section table of an ELF file, as its file header describes it. */
+struct nvrtx_elf {
+	size_t file_size;
+	uint64_t table_at;
+	size_t table_bytes;
+	uint32_t entry_bytes;
+	uint32_t count;
+	uint32_t names_index;
+};
+
 /* One section of an ELF file, by offset into the file. */
 struct nvrtx_section {
 	size_t at;
@@ -343,6 +356,45 @@ struct nvrtx_channel {
 	uint8_t *staging;
 };
 
+/* The two FWSEC commands: set up the protected region, and tear it down. */
+#define NVRTX_FWSEC_FRTS		0x15U
+#define NVRTX_FWSEC_SB			0x19U
+
+/*
+ * A ROM read into memory and the shape of its chain of images.
+ *
+ * A pointer at or past the end of the first image is read in the falcon
+ * image instead.  The end is where the last image ends.
+ */
+struct nvrtx_vbios {
+	const uint8_t *rom;
+	size_t size;
+	size_t image0_size;
+	size_t falcon_image;
+	size_t end;
+};
+
+/*
+ * The FWSEC program as its descriptor (version 2) describes it.
+ *
+ * The program is the code (non-secure then secure) followed by the data;
+ * program_at is its offset in the ROM bytes.  The interface table is at
+ * interface_at in the data block, which starts at dmem_at in the program.
+ */
+struct nvrtx_fwsec {
+	uint32_t version;
+	uint32_t interface_at;
+	uint32_t imem_base;
+	uint32_t imem_size;
+	uint32_t imem_secure_base;
+	uint32_t imem_secure_size;
+	uint32_t dmem_at;
+	uint32_t dmem_base;
+	uint32_t dmem_size;
+	size_t program_at;
+	uint32_t program_size;
+};
+
 uint32_t nvrtx_get32(const uint8_t *bytes, size_t at);
 uint64_t nvrtx_get64(const uint8_t *bytes, size_t at);
 void nvrtx_put8(uint8_t *bytes, size_t at, uint8_t value);
@@ -356,6 +408,9 @@ uint64_t nvrtx_pages_bus(const struct nvrtx_pages *pages, size_t page);
 int nvrtx_booter_parse(const uint8_t *file, size_t size, struct nvrtx_booter *booter);
 int nvrtx_booter_signature(const struct nvrtx_booter *booter, unsigned index, size_t *at);
 int nvrtx_bootloader_parse(const uint8_t *file, size_t size, struct nvrtx_bootloader *bootloader);
+int nvrtx_elf_header(const uint8_t *header, size_t file_size, struct nvrtx_elf *elf);
+int nvrtx_elf_entry(const struct nvrtx_elf *elf, const uint8_t *table, uint32_t index, struct nvrtx_section *section);
+int nvrtx_elf_find(const struct nvrtx_elf *elf, const uint8_t *table, const uint8_t *names, size_t names_size, const char *name, struct nvrtx_section *section);
 int nvrtx_elf_section(const uint8_t *file, size_t size, const char *name, struct nvrtx_section *section);
 
 uint64_t nvrtx_vram_size(uint32_t value);
@@ -374,5 +429,9 @@ void nvrtx_channel_init(struct nvrtx_channel *channel, const struct nvrtx_pages 
 int nvrtx_channel_send(struct nvrtx_channel *channel, uint32_t function, uint32_t sequence, const uint8_t *payload, size_t length);
 int nvrtx_channel_peek(const struct nvrtx_channel *channel, uint32_t *function, uint32_t *sequence, size_t *length, uint32_t *result);
 int nvrtx_channel_receive(struct nvrtx_channel *channel, uint8_t *payload, size_t capacity, size_t *length);
+
+int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);
+int nvrtx_vbios_fwsec(const struct nvrtx_vbios *vbios, struct nvrtx_fwsec *fwsec);
+int nvrtx_fwsec_command(uint8_t *program, const struct nvrtx_fwsec *fwsec, uint32_t command, uint64_t frts, uint64_t frts_size);
 
 #endif
