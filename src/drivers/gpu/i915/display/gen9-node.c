@@ -162,11 +162,15 @@ drv_i915_gen9_node_start(
 	uint32_t lcpll1;
 	uint32_t ctrl1;
 	uint32_t cdclk_ctl;
+	char ports[I915_SKL_OUTPUTS + 1U];
+	unsigned count;
+	unsigned port;
 	int platform;
 	int level;
 	int sku;
 	int error;
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 	mmio = &device->gt.mmio;
 
@@ -224,6 +228,8 @@ drv_i915_gen9_node_start(
 		if (error != 0)
 			drv_i915_workqueue_destroy(&node->workqueue);
 	}
+
+	/* The first look a second from now. */
 	if (error == 0) {
 		node->queues = 1;
 		drv_i915_delayed_work_init(&node->poll_work, i915_gen9_node_work, node);
@@ -232,11 +238,17 @@ drv_i915_gen9_node_start(
 		kern_logf("i915: gen9 node: the hotplug work could not start: %d; the ports are not watched\n", error);
 	}
 
+	/* The ports' letters for the log. */
+	count = 0U;
+	for (port = I915_SKL_PORT_B; port <= I915_SKL_PORT_D; port++) {
+		if ((node->outputs.present & (1U << port)) != 0U)
+			ports[count++] = (char)('A' + (int)port);
+	}
+
 	/* Succeeded: the external displays are offered. */
-	kern_logf("i915: gen9 node: external displays on ports %s%s%s (connected 0x%x), panel on pipe %c, CD clock %u kHz, latencies %u/%u/%u/%u/%u/%u/%u/%u us\n",
-	    ((node->outputs.present & (1U << I915_SKL_PORT_B)) != 0U) ? "B" : "",
-	    ((node->outputs.present & (1U << I915_SKL_PORT_C)) != 0U) ? "C" : "",
-	    ((node->outputs.present & (1U << I915_SKL_PORT_D)) != 0U) ? "D" : "",
+	ports[count] = '\0';
+	kern_logf("i915: gen9 node: external displays on ports %s (connected 0x%x), panel on pipe %c, CD clock %u kHz, latencies %u/%u/%u/%u/%u/%u/%u/%u us\n",
+	    ports,
 	    node->outputs.connected,
 	    'A' + (int)panel.pipe,
 	    cdclk,
@@ -254,6 +266,7 @@ drv_i915_gen9_node_stop(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -290,6 +303,7 @@ drv_i915_gen9_node_count(void)
 	uint32_t count;
 	unsigned index;
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -348,6 +362,7 @@ drv_i915_gen9_node_sequence(void)
 	unsigned long enabled;
 	uint64_t sequence;
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -387,6 +402,7 @@ drv_i915_gen9_node_query(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* The output under the node's lock. */
@@ -406,6 +422,8 @@ drv_i915_gen9_node_query(
 			output = &node->outputs.output[slot];
 			screen = &node->screen[slot];
 		}
+
+		/* Counted among those with a sink. */
 		found++;
 	}
 
@@ -472,6 +490,7 @@ drv_i915_gen9_node_mode(
 	UNUSED_PARAMETER(device);
 	UNUSED_PARAMETER(session);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Only an external display's id. */
@@ -543,6 +562,7 @@ drv_i915_gen9_node_claim(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Only plane 0 of an external display. */
@@ -605,6 +625,7 @@ drv_i915_gen9_node_release(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* The lease under the node's lock. */
@@ -653,6 +674,7 @@ drv_i915_gen9_node_present(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 	owner = session;
 	storage = object;
@@ -741,6 +763,7 @@ drv_i915_gen9_node_wait(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* The lease under the node's lock. */
@@ -781,6 +804,7 @@ drv_i915_gen9_node_session_close(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -871,6 +895,7 @@ i915_gen9_node_latencies(
 	int ipc;
 	int error;
 
+	/* The GT: its PCODE mailbox and registers. */
 	gt = &device->gt;
 
 	/* The two words. */
@@ -902,6 +927,7 @@ i915_gen9_node_work(
 {
 	struct i915_gen9_node *node;
 
+	/* The node the work was armed for. */
 	node = argument;
 
 	/* A stop asked: no more looks. */
@@ -1081,6 +1107,7 @@ i915_gen9_node_light(
 	struct i915_scanout *first;
 	int error;
 
+	/* The buffer the output shows first, and the panel's lease, whose mutex holds its flips off. */
 	first = &node->screen[index].buffer[0];
 	rd = &node->device->display->rd;
 	drv_i915_present_lease_init(node->device->display);
@@ -1113,6 +1140,7 @@ i915_gen9_node_end(
 	struct i915_resident_display *rd;
 	struct i915_gen9_screen *screen;
 
+	/* The display the index names. */
 	screen = &node->screen[index];
 	rd = &node->device->display->rd;
 	drv_i915_present_lease_init(node->device->display);
@@ -1172,8 +1200,12 @@ i915_gen9_node_map(
 				error = EIO;
 				break;
 			}
+
+			/* The page, uncached, in order. */
 			error = drv_i915_ppgtt_insert_uncached(vm, va + (uint64_t)page * I915_GEN9_NODE_PAGE_BYTES, dma, 1U);
 		}
+
+		/* The buffer's range. */
 		screen->map_va[index] = va;
 	}
 
@@ -1239,6 +1271,7 @@ i915_gen9_node_latch(
 	uint64_t now;
 	uint32_t live;
 
+	/* The display the index names. */
 	screen = &node->screen[index];
 
 	/* The live surface until it is the armed one, or the time is up. */
@@ -1252,6 +1285,8 @@ i915_gen9_node_latch(
 			kern_logf("i915: gen9 node: the flip of port %c to 0x%08x did not latch (live 0x%08x)\n", 'A' + (int)node->outputs.output[index].port, screen->armed, live);
 			return ETIMEDOUT;
 		}
+
+		/* A tick's sleep. */
 		kern_usleep_range(1000U, 2000U);
 	}
 

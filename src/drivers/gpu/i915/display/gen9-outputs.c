@@ -206,6 +206,7 @@ drv_i915_skl_outputs_light(
 	struct i915_skl_output *output;
 	int error;
 
+	/* The output the index names. */
 	output = &outputs->output[index];
 
 	/* A sink that is there, and not lit yet. */
@@ -270,6 +271,7 @@ drv_i915_skl_outputs_darken(
 	struct i915_skl_output *output;
 	unsigned pipe;
 
+	/* The output the index names. */
 	output = &outputs->output[index];
 
 	/* Nothing to darken. */
@@ -302,6 +304,7 @@ drv_i915_skl_outputs_flip(
 {
 	uint32_t surf_reg;
 
+	/* The plane's surface register on the output's pipe. */
 	surf_reg = I915_SKL_PLANE_SURF_1_A + outputs->output[index].config.pipe * I915_SKL_PIPE_STRIDE;
 
 	/* The surface, which arms the plane. */
@@ -517,10 +520,14 @@ i915_skl_outputs_config(
 		if ((pipes_used & (1U << pipe)) == 0U)
 			break;
 	}
+
+	/* DPLL0 is the CD clock's. */
 	for (dpll = 1; dpll <= 3U; dpll++) {
 		if ((dplls_used & (1U << dpll)) == 0U)
 			break;
 	}
+
+	/* None left, or no mode. */
 	if (pipe == I915_SKL_PIPES || dpll > 3U || output->mode.clock_khz <= 0)
 		return ENOSPC;
 
@@ -572,6 +579,7 @@ i915_skl_outputs_pipes(
 	struct i915_skl_pipe_wm *wm;
 	unsigned index;
 
+	/* No pipe lit until it is filled in. */
 	kern_memset(pipes, 0, 3U * sizeof(pipes[0]));
 
 	/* The panel. */
@@ -640,6 +648,7 @@ i915_skl_outputs_arm(
 	uint32_t surf;
 	unsigned extra;
 
+	/* The pipe's registers. */
 	offset = pipe * I915_SKL_PIPE_STRIDE;
 
 	/* The first plane's and the cursor's watermarks and DDB, and the line time. */
