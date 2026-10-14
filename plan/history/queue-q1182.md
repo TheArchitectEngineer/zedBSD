@@ -1,0 +1,13 @@
+<!-- awesome-plan project=zedbsd record=q1182 -->
+
+# q1182 / WS074 horizontal Grid vertical-lr RTL absolute text geometry
+
+Status: finished（2026-10-14 13:37–13:38 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p220有限部分scope](../ws074/phase220/phase.md)に適用。最大90分。
+
+| Attempt | Phase | Scope | Outcome |
+| --- | --- | --- | --- |
+| q1182-i01 | [p220](../ws074/phase220/phase.md) partial | 水平固定2×2 Grid直接縦左RTL absolute子、row2/col2・左上insetのrow-track inline room、最小ページ/固定non-static007水平LTR callback/旧WPT/host/Acid | cleared。最小矩形Chromium一致、固定水平LTR callback whole PASS、WPT file wholeはFAILのまま、p220 whole未達 |
+
+Outcome: 固定non-static007水平LTRの4子すべてPASS、残り3 callback FAIL。旧WPT/host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。[証拠](../ws074/phase220/evidence/20261014-q1182/README.md)。WPT/runner/ABI/Master無変更。
+
+Resume: 水平RTL Grid callbackのorthogonal子、次に縦Grid横子static area。p189/p173全3,805件100%未達。共有Queue/Master/GitHub publication pending、pushなし。

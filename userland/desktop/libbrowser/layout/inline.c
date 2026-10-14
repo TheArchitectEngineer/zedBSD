@@ -229,9 +229,11 @@ inline_vertical_absolute_grid(
 	int index;
 	int horizontal_lr;
 	int horizontal_rl;
+	int horizontal_rtl;
 
 	/* Auto or temporarily resolved pixel widths enter positioned fixed-track Grids. */
 	parent = box->parent;
+	horizontal_rtl = 0;
 	if (parent == NULL || box->style.position != CSS_POSITION_ABSOLUTE ||
 	    (box->style.width.unit != CSS_UNIT_AUTO &&
 	    box->style.width.unit != CSS_UNIT_PX) ||
@@ -255,11 +257,19 @@ inline_vertical_absolute_grid(
 		    box->style.grid_column.end == 3 &&
 		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&
 		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO;
-		if ((!horizontal_lr && !horizontal_rl) ||
-		    box->style.direction != CSS_DIRECTION_LTR ||
+		horizontal_rtl = box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    box->style.direction == CSS_DIRECTION_RTL &&
+		    box->style.grid_column.start == 2 &&
+		    box->style.grid_column.end == 3 &&
+		    box->style.grid_row.start == 2 && box->style.grid_row.end == 3 &&
+		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
+		    box->style.offset[CSS_TOP].unit == CSS_UNIT_PX &&
+		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO;
+		if ((!horizontal_lr && !horizontal_rl && !horizontal_rtl) ||
 		    parent->style.column_count != 2 || parent->style.row_count != 2 ||
+		    (!horizontal_rtl && (box->style.direction != CSS_DIRECTION_LTR ||
 		    box->style.grid_row.start != 1 || box->style.grid_row.end != 2 ||
-		    box->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO ||
+		    box->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO)) ||
 		    box->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
 			return 0;
 
@@ -282,6 +292,7 @@ inline_vertical_absolute_grid(
 	    box->style.direction != CSS_DIRECTION_LTR))
 		return 0;
 	if (box->style.direction == CSS_DIRECTION_RTL &&
+	    !(parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB && horizontal_rtl) &&
 	    (parent->style.writing_mode != box->style.writing_mode ||
 	    parent->style.column_count != 2 || parent->style.row_count != 2))
 		return 0;
@@ -383,7 +394,7 @@ inline_vertical_room(
 	if (parent != NULL && parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 	    inline_vertical_absolute_grid(box)) {
 		/* The child's logical inline axis is the row's physical height. */
-		room = layout_from_px(parent->style.rows[0].size.value);
+		room = layout_from_px(parent->style.rows[box->style.grid_row.start - 1].size.value);
 	} else {
 		if (parent == NULL || parent->style.display != CSS_DISPLAY_INLINE_GRID ||
 		    (parent->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
