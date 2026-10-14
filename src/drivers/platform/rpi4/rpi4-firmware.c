@@ -650,7 +650,14 @@ drv_rpi4_firmware_core_clock(
 		return error;
 	}
 
-	/* The firmware runs the rate now. */
+	/* The firmware runs the rate now; a change is logged with the floors that made it (they change seldom). */
+	if (rate != core_rate) {
+		kern_logf("rpi4-firmware: core clock %u Hz (display %u, video %u)\n", (unsigned)rate,
+			  (unsigned)core_floors[DRV_RPI4_FIRMWARE_CORE_DISPLAY],
+			  (unsigned)core_floors[DRV_RPI4_FIRMWARE_CORE_VIDEO]);
+	}
+
+	/* The rate asked from now on, published with the turn. */
 	core_rate = rate;
 	release_core_turn();
 
