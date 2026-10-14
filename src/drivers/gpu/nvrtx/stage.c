@@ -28,6 +28,9 @@
  *   nvrtx.disp=1          after the display's readout (P8a), the driver
  *                         takes the head the firmware lit over with its own
  *                         channels and surfaces, stage P8b
+ *   nvrtx.resident=1      after the takeover, the GSP stays up and the GPU
+ *                         is registered as a GPU device with its display
+ *                         (stage P8c); the driver keeps it until power-off
  */
 
 #include <stdarg.h>
@@ -61,6 +64,9 @@
 
 /* The whole token that asks for the first draw (ws037-p007). */
 #define STAGE_DRAW_TOKEN		"nvrtx.draw=1"
+
+/* The whole token that keeps the GSP up and registers the GPU device (ws037-p006 P8c). */
+#define STAGE_RESIDENT_TOKEN		"nvrtx.resident=1"
 
 /* The longest stop token: "nvrtx.stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		32U
@@ -133,6 +139,23 @@ nvrtx_stage_disp_wanted(void)
 		return true;
 
 	/* Without it the boot keeps the firmware's picture after the readout. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked the GPU to stay up as a GPU device (nvrtx.resident=1).
+ */
+bool
+nvrtx_stage_resident_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.resident=1 among the boot parameters. */
+	present = stage_token_present(STAGE_RESIDENT_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the boot stops the GSP at its end. */
 	return false;
 }
 

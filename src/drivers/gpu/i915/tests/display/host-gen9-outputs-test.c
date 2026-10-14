@@ -120,6 +120,7 @@ i915_host_outputs(void)
 	int panel_again;
 	int error;
 
+	/* Three ports, a DP and an HDMI sink, the outputs beside a 1080p panel. */
 	i915_host_init(&outputs);
 	i915_host_check(outputs.present == ((1U << 1) | (1U << 2) | (1U << 3)), "outputs: B to D present");
 	i915_host_check((i915_gen9_fake_get(I915_SKL_PCH_PORT_HOTPLUG) & I915_SKL_PORTB_HOTPLUG_ENABLE) != 0U, "outputs: hotplug sense on");

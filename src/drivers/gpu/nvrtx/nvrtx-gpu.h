@@ -19,10 +19,14 @@
 
 #include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
+#include <kern/lock.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
+#include "drivers/gpu/nvrtx/nvrtx-mem.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
+
+struct nvrtx_node;
 
 /* The firmware directory the GSP files are read from, for every TU10x chip. */
 #define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/tu102/"
@@ -88,8 +92,7 @@
 /*
  * The first draw's place in the compute launch's range: its system-memory
  * pages from NVRTX_DRAW_VA_PAGES (after the launch's own), and its VRAM
- * colour target at NVRTX_DRAW_VA_VRAM, which the arena keeps in its last
- * MiB.
+ * colour target at NVRTX_DRAW_VA_VRAM.
  */
 #define NVRTX_DRAW_VA_PAGES		0x28010000ULL
 #define NVRTX_DRAW_PAGES		78U
@@ -273,15 +276,31 @@ struct nvrtx_compute_state {
 };
 
 /*
+ * One run of the VRAM the driver handed out (a buffer object).
+ *
+ * The VRAM run is whole 4 KiB pages; while bar1_mapped is set the run is
+ * also mapped at bar1 in the CPU's window, so the CPU reads and writes it
+ * there.  The owner frees it with nvrtx_bo_free(), which unmaps it first.
+ */
+struct nvrtx_bo {
+	uint64_t vram;
+	uint64_t size;
+	uint64_t bar1;
+	int bar1_mapped;
+};
+
+/*
  * The first draw (stage P9g, nvrtx.draw=1), on the compute launch's
  * channel.
  *
  * The system-memory buffers are the push buffer, the four programs (a
  * vertex and a fragment program, each in one colour and textured),
  * constant buffer 0, the vertices, the texture with its header and
- * sampler, a zero page and the colour target; the VRAM colour target is
- * in the compute arena.  The flag says the 3D object exists, so the stop
- * frees it.
+ * sampler, a zero page and the colour target.  The VRAM colour target
+ * is a buffer object when the VRAM allocator is up (read back through
+ * the CPU's window when it maps), else the compute arena's last MiB (read
+ * back word by word).  The flags say what exists, so the stop and the
+ * release free only that.
  */
 struct nvrtx_draw_state {
 	struct nvrtx_buffer push;
@@ -293,8 +312,37 @@ struct nvrtx_draw_state {
 	struct nvrtx_buffer samplers;
 	struct nvrtx_buffer zero;
 	struct nvrtx_buffer target;
+	struct nvrtx_bo vram_bo;
+	int vram_bo_made;
 	uint64_t vram_target;
 	int threed_made;
+};
+
+/*
+ * The VRAM the driver hands out and the CPU's window onto it (stage P4m).
+ *
+ * The VRAM allocator covers the last usable region below the fixed arenas
+ * of P4 to P9c; the BAR1 allocator covers the window the driver's page
+ * tables map.  Following nouveau, the BAR1 root (top level) is the resource
+ * manager's, from the static information; the driver writes its own lower
+ * levels and the root's first entry.  lock serializes both allocators and
+ * the page entries; it is taken before the GPU's window_lock.  The flags
+ * say what exists, so the release gives back only that.
+ */
+struct nvrtx_memory_state {
+	struct mutex lock;
+	int ready;
+	struct nvrtx_heap vram;
+	int bar1_ready;
+	struct nvrtx_heap bar1;
+	uint64_t bar1_root;
+	uint64_t bar1_root_entry;
+	uint64_t bar1_tables;
+	uint64_t bar1_window;
+	uint64_t bar1_bus;
+	int bar1_claimed;
+	struct drv_pci_mapping bar1_mapping;
+	int bar1_mapped;
 };
 
 /*
@@ -339,7 +387,10 @@ struct nvrtx_display_state {
 	uint32_t ramht_count;
 	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
 	uint32_t sor_control;
+	struct nvrtx_disp_mode mode;
+	uint32_t assigned_sor;
 	struct nvrtx_disp_surface surfaces[2];
+	struct nvrtx_bo surface_objects[2];
 	int core_made;
 	int window_made;
 };
@@ -399,10 +450,27 @@ struct nvrtx_gpu {
 	struct nvrtx_compute_state compute;
 	struct nvrtx_draw_state draw;
 
+	/* The VRAM allocator and the BAR1 window. */
+	struct nvrtx_memory_state memory_state;
+
+	/*
+	 * Serializes the register window onto the VRAM (PRAMIN) and the TLB
+	 * invalidate, which every thread that writes the VRAM or the page
+	 * tables shares; set up when the function is kept.
+	 */
+	struct mutex window_lock;
+
 	/* The static information P3 read, and the resource manager's own client and subdevice. */
 	uint8_t *static_info;
 	uint32_t internal_client;
 	uint32_t internal_subdevice;
+
+	/*
+	 * The registered GPU device (stage P8c), and whether the GSP stays up
+	 * for it: then detach refuses, and the GPU is kept until power-off.
+	 */
+	struct nvrtx_node *node;
+	int resident;
 
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
@@ -454,9 +522,18 @@ int nvrtx_vram_zero(struct nvrtx_gpu *gpu, uint64_t address, size_t length);
 int nvrtx_vram_fill(struct nvrtx_gpu *gpu, uint64_t address, uint32_t value, size_t length);
 int nvrtx_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t *value);
 int nvrtx_flush_tlb(struct nvrtx_gpu *gpu, uint64_t root);
+int nvrtx_flush_tlb_bar(struct nvrtx_gpu *gpu, uint64_t root);
 int nvrtx_channel_start(struct nvrtx_gpu *gpu);
 void nvrtx_channel_stop(struct nvrtx_gpu *gpu);
 void nvrtx_channel_release(struct nvrtx_gpu *gpu);
+
+int nvrtx_memory_start(struct nvrtx_gpu *gpu);
+void nvrtx_memory_release(struct nvrtx_gpu *gpu);
+int nvrtx_bo_alloc(struct nvrtx_gpu *gpu, uint64_t size, uint64_t align, struct nvrtx_bo *bo);
+int nvrtx_bo_map(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+void nvrtx_bo_free(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+volatile uint8_t *nvrtx_bo_cpu(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
+uint64_t nvrtx_bo_bus(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 
 int nvrtx_gr_start(struct nvrtx_gpu *gpu);
 void nvrtx_gr_stop(struct nvrtx_gpu *gpu);
@@ -469,9 +546,9 @@ void nvrtx_compute_release(struct nvrtx_gpu *gpu);
 int nvrtx_compute_submit(struct nvrtx_gpu *gpu, uint32_t entry, uint64_t push_va, size_t length);
 int nvrtx_compute_wait(struct nvrtx_gpu *gpu, uint32_t value, uint32_t *waited);
 
-int nvrtx_draw_buffers(struct nvrtx_gpu *gpu);
+int nvrtx_draw_buffers(struct nvrtx_gpu *gpu, uint64_t arena_target);
 void nvrtx_draw_pages(const struct nvrtx_gpu *gpu, uint64_t *pages);
-int nvrtx_draw_start(struct nvrtx_gpu *gpu, uint64_t vram_target);
+int nvrtx_draw_start(struct nvrtx_gpu *gpu);
 int nvrtx_draw_stop(struct nvrtx_gpu *gpu);
 void nvrtx_draw_release(struct nvrtx_gpu *gpu);
 
@@ -479,6 +556,7 @@ int nvrtx_display_start(struct nvrtx_gpu *gpu);
 void nvrtx_display_stop(struct nvrtx_gpu *gpu);
 
 int nvrtx_scanout_start(struct nvrtx_gpu *gpu);
+int nvrtx_scanout_frame(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface);
 void nvrtx_scanout_stop(struct nvrtx_gpu *gpu);
 void nvrtx_scanout_release(struct nvrtx_gpu *gpu);
 

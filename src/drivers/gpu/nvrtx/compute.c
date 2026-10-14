@@ -54,7 +54,7 @@
 #define COMPUTE_USERD_AT		0x081000ULL
 #define COMPUTE_BUFFERS_AT		0x100000ULL
 
-/* The arena's last MiB, which the first draw's VRAM colour target takes (the context buffers stay below it). */
+/* The arena's last MiB, the first draw's VRAM colour target without the VRAM allocator (the context buffers stay below it). */
 #define COMPUTE_DRAW_AT			0x1f00000ULL
 
 /* The range: the context buffers where the golden context had them, then the launch's pages. */
@@ -181,7 +181,7 @@ nvrtx_compute_start(
 	if (wanted && !allowed)
 		nvrtx_stage_mark("P9g skipped (nvrtx.stop=P9g)");
 	if (wanted && allowed) {
-		error = nvrtx_draw_start(gpu, gpu->compute.arena + COMPUTE_DRAW_AT);
+		error = nvrtx_draw_start(gpu);
 		if (error != 0)
 			return error;
 	}
@@ -466,7 +466,7 @@ compute_buffers(
 	/* The first draw's buffers, when the boot asks for it. */
 	wanted = nvrtx_stage_draw_wanted();
 	if (wanted) {
-		error = nvrtx_draw_buffers(gpu);
+		error = nvrtx_draw_buffers(gpu, compute->arena + COMPUTE_DRAW_AT);
 		if (error != 0)
 			return error;
 	}
@@ -838,8 +838,8 @@ compute_check(
 
 /*
  * Maps the first draw's system-memory pages after the launch's, and its
- * VRAM colour target (the arena's last MiB) for work, when the boot asks
- * for the draw; maps nothing otherwise.
+ * VRAM colour target for work, when the boot asks for the draw; maps
+ * nothing otherwise.
  */
 static int
 compute_map_draw(
@@ -862,7 +862,7 @@ compute_map_draw(
 		return error;
 
 	/* The VRAM colour target. */
-	error = nvrtx_mmu_gr_map_vram(image, COMPUTE_VA_BASE, COMPUTE_VA_BYTES, NVRTX_DRAW_VA_VRAM, gpu->compute.arena + COMPUTE_DRAW_AT, NVRTX_DRAW_VRAM_BYTES);
+	error = nvrtx_mmu_gr_map_vram(image, COMPUTE_VA_BASE, COMPUTE_VA_BYTES, NVRTX_DRAW_VA_VRAM, gpu->draw.vram_target, NVRTX_DRAW_VRAM_BYTES);
 	if (error != 0)
 		return error;
 

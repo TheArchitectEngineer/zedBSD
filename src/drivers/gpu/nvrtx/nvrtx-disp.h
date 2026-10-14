@@ -51,12 +51,24 @@
 #define NVRTX_DISP_PUSHBUFFER_BYTES	56U
 #define NVRTX_DISP_CHANNEL_BYTES	40U
 
+/* The resource manager's request to assign an output resource to a display (nouveau's acquire under the GSP). */
+#define NVRTX_DISP_ASSIGN_SOR_BYTES	80U
+#define NVRTX_DISP_SOR_NONE		0xffffffffU
+
 /* The longest run of data one method header carries. */
 #define NVRTX_DISP_METHOD_COUNT_MAX	1023U
 
 /* The notifier's status (bits 31:30 of its first word): finished is 2, not begun is 0. */
 #define NVRTX_DISP_NOTIFIER_STATUS_SHIFT	30U
 #define NVRTX_DISP_NOTIFIER_FINISHED		2U
+
+/* The window's pixel formats: A8R8G8B8 is B, G, R, A in memory (BGRA8888), A8B8G8R8 is R, G, B, A. */
+#define NVRTX_DISP_FORMAT_A8R8G8B8		0xcfU
+#define NVRTX_DISP_FORMAT_A8B8G8R8		0xd5U
+
+/* A push buffer's jump: the opcode in bits 31:29, the byte offset in bits 11:2. */
+#define NVRTX_DISP_JUMP				0x20000000U
+#define NVRTX_DISP_JUMP_OFFSET_MASK		0x00000ffcU
 
 /* The core channel's methods. */
 #define NVRTX_CORE_UPDATE			0x0200U
@@ -92,11 +104,43 @@
 #define NVRTX_HEAD_CONTROL_CURSOR		0x09cU
 #define NVRTX_HEAD_CONTEXT_DMA_OLUT		0x288U
 
-/* How many head methods the takeover copies from the armed state, and where three of them are in the copy. */
+/* How many head methods the takeover reads from the armed state, and where each is in the copy. */
 #define NVRTX_DISP_HEAD_COPIED			15U
 #define NVRTX_DISP_ARMED_VIEWPORT_IN		0U
+#define NVRTX_DISP_ARMED_VIEWPORT_OUT		1U
 #define NVRTX_DISP_ARMED_RASTER_SIZE		2U
+#define NVRTX_DISP_ARMED_SYNC_END		3U
+#define NVRTX_DISP_ARMED_BLANK_END		4U
+#define NVRTX_DISP_ARMED_BLANK_START		5U
+#define NVRTX_DISP_ARMED_VERT_BLANK2		6U
+#define NVRTX_DISP_ARMED_CONTROL		7U
 #define NVRTX_DISP_ARMED_PIXEL_CLOCK		8U
+#define NVRTX_DISP_ARMED_DITHER			11U
+#define NVRTX_DISP_ARMED_OUTPUT_RESOURCE	14U
+
+/* An output resource's control: the owner heads in bits 7:0, the protocol in bits 11:8. */
+#define NVRTX_DISP_SOR_PROTOCOL_SHIFT		8U
+
+/*
+ * The parameters of a head's mode set (nouveau's view, mode, dither,
+ * procamp and output-resource methods for one head).
+ *
+ * active is the visible size (width in bits 15:0, height in 31:16), which
+ * is the viewport's input and output size; the raster words are the
+ * methods' values; clock_hz the pixel clock; dither and output_resource the
+ * methods' values.
+ */
+struct nvrtx_disp_mode {
+	uint32_t active;
+	uint32_t raster_size;
+	uint32_t sync_end;
+	uint32_t blank_end;
+	uint32_t blank_start;
+	uint32_t vert_blank2;
+	uint32_t clock_hz;
+	uint32_t dither;
+	uint32_t output_resource;
+};
 
 /* The window channel's methods. */
 #define NVRTX_WINDOW_UPDATE			0x200U
@@ -133,11 +177,12 @@ struct nvrtx_push {
 };
 
 /*
- * One surface a window shows: linear A8R8G8B8 pixels in the VRAM.
+ * One surface a window shows: linear 32-bit pixels in the VRAM.
  *
  * The offset is the surface's VRAM address (a multiple of 256), the pitch
  * the bytes from one row to the next (a multiple of 64), the handle the
- * context DMA object the window reads it through.
+ * context DMA object the window reads it through, the format the window's
+ * pixel format (NVRTX_DISP_FORMAT_*).
  */
 struct nvrtx_disp_surface {
 	uint64_t offset;
@@ -145,26 +190,32 @@ struct nvrtx_disp_surface {
 	uint32_t height;
 	uint32_t pitch;
 	uint32_t handle;
+	uint32_t format;
 };
 
-/* The head methods the takeover copies, in the order nvrtx_disp_core_head() sends them. */
+/* The head methods the takeover reads from the armed state, in the order of the NVRTX_DISP_ARMED_ indexes. */
 extern const uint32_t nvrtx_disp_head_copied[NVRTX_DISP_HEAD_COPIED];
 
 void nvrtx_push_init(struct nvrtx_push *push, uint8_t *bytes, uint32_t capacity);
 void nvrtx_push_method(struct nvrtx_push *push, uint32_t method, const uint32_t *values, uint32_t count);
 void nvrtx_push_one(struct nvrtx_push *push, uint32_t method, uint32_t value);
+void nvrtx_push_jump(struct nvrtx_push *push, uint32_t offset);
 
 uint32_t nvrtx_disp_ramht_hash(uint32_t chid, uint32_t handle);
 void nvrtx_disp_ramht_entry(uint8_t *entry, uint32_t handle, uint32_t chid, uint32_t client, uint32_t object_offset);
 void nvrtx_disp_context_dma(uint8_t *object, uint64_t start, uint64_t limit);
 void nvrtx_disp_pushbuffer_params(uint8_t *params, uint64_t bus_address, uint32_t size, uint32_t class_number, uint32_t instance);
 void nvrtx_disp_channel_params(uint8_t *params, uint32_t instance);
+void nvrtx_disp_assign_sor_params(uint8_t *params, uint32_t display_id, uint32_t exclude_mask);
+uint32_t nvrtx_disp_assign_sor_result(const uint8_t *params, uint32_t display_id);
 
 void nvrtx_disp_core_init(struct nvrtx_push *push, uint32_t window_mask);
-void nvrtx_disp_core_head(struct nvrtx_push *push, uint32_t head, const uint32_t *armed);
 void nvrtx_disp_core_sor(struct nvrtx_push *push, uint32_t sor, uint32_t control);
 void nvrtx_disp_core_owners(struct nvrtx_push *push, uint32_t window_mask);
 void nvrtx_disp_core_head_planes_off(struct nvrtx_push *push, uint32_t head);
+void nvrtx_disp_core_display_id(struct nvrtx_push *push, uint32_t head, uint32_t display_id);
+void nvrtx_disp_core_head_mode(struct nvrtx_push *push, uint32_t head, const struct nvrtx_disp_mode *mode);
+void nvrtx_disp_mode_from_armed(const uint32_t *armed, struct nvrtx_disp_mode *mode);
 void nvrtx_disp_core_update(struct nvrtx_push *push, uint32_t notifier_offset, uint32_t window_interlock);
 
 void nvrtx_disp_window_image(struct nvrtx_push *push, const struct nvrtx_disp_surface *surface);

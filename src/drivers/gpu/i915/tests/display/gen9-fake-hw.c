@@ -101,6 +101,7 @@ i915_gen9_fake_add_dp_sink(
 	struct i915_gen9_fake_sink *sink;
 	unsigned index;
 
+	/* The sink of the port: DP, with the clock recovery's swing. */
 	sink = &i915_gen9_fake.sinks[port];
 	sink->dp = 1;
 	sink->cr_swing = cr_swing;
@@ -187,6 +188,8 @@ i915_fake_set(
 			return;
 		}
 	}
+
+	/* No slot left. */
 	if (hw->used == I915_GEN9_FAKE_REGISTERS) {
 		fprintf(stderr, "model: register table full at 0x%x\n", offset);
 		return;
@@ -208,6 +211,7 @@ i915_fake_read(
 	uint32_t value;
 	unsigned bytes;
 
+	/* The model the table reaches. */
 	hw = context;
 
 	/* The transports' idle patterns are always out. */
@@ -243,6 +247,8 @@ i915_fake_read(
 			hw->gmbus_position++;
 			hw->gmbus_left--;
 		}
+
+		/* Succeeded: the bytes. */
 		return value;
 	}
 
@@ -262,6 +268,7 @@ i915_fake_write(
 	unsigned port;
 	unsigned id;
 
+	/* The model the table reaches. */
 	hw = context;
 
 	/* The log. */
@@ -315,6 +322,8 @@ i915_fake_write(
 			i915_fake_aux(hw, port, value);
 			return;
 		}
+
+		/* A write without the start clears the status bits it has as one. */
 		requests = i915_fake_get(hw, offset) & ~(value & (I915_SKL_AUX_DONE | I915_SKL_AUX_TIME_OUT_ERROR | I915_SKL_AUX_RECEIVE_ERROR));
 		i915_fake_set(hw, offset, requests);
 		return;
@@ -326,6 +335,8 @@ i915_fake_write(
 		i915_fake_set(hw, offset, value);
 		return;
 	}
+
+	/* The GMBUS's cycles. */
 	if (offset == I915_SKL_GMBUS1) {
 		i915_fake_gmbus1(hw, value);
 		return;
@@ -343,6 +354,7 @@ i915_fake_udelay(
 {
 	struct i915_gen9_fake_hw *hw;
 
+	/* The model the table reaches. */
 	hw = context;
 
 	/* Succeeded: the time is only counted. */
@@ -357,6 +369,7 @@ i915_fake_msleep(
 {
 	struct i915_gen9_fake_hw *hw;
 
+	/* The model the table reaches. */
 	hw = context;
 
 	/* Succeeded: the time is only counted. */
@@ -380,6 +393,7 @@ i915_fake_aux(
 	unsigned replied;
 	unsigned index;
 
+	/* The port's sink and data registers; the transfer counted. */
 	sink = &hw->sinks[port];
 	data = I915_SKL_AUX_DATA_A + port * 0x100U;
 	hw->aux_transfers++;
@@ -429,6 +443,7 @@ i915_fake_aux_native(
 	unsigned length;
 	unsigned index;
 
+	/* The length the header asks for; an ACK. */
 	length = (unsigned)message[3] + 1U;
 	reply[0] = 0U;
 
@@ -461,6 +476,7 @@ i915_fake_aux_i2c(
 	unsigned length;
 	unsigned index;
 
+	/* An ACK. */
 	reply[0] = 0U;
 
 	/* An address-only message just ends or starts the transaction. */
@@ -493,8 +509,10 @@ i915_fake_link_status(
 	unsigned pattern;
 	unsigned lanes;
 	unsigned lane;
+	unsigned swing;
 	uint8_t nibble;
 
+	/* Nothing done yet; the pattern and the lanes the sink was set to. */
 	memset(status, 0, 6U);
 	pattern = sink->dpcd[I915_DPCD_TRAINING_PATTERN_SET] & 0x3U;
 	lanes = sink->dpcd[I915_DPCD_LANE_COUNT_SET] & 0x1fU;
@@ -509,7 +527,10 @@ i915_fake_link_status(
 		status[lane / 2U] |= (uint8_t)(nibble << (4U * (lane & 1U)));
 
 		/* The request: the sink's swing (capped at 3), no pre-emphasis. */
-		status[4U + lane / 2U] |= (uint8_t)(((sink->cr_swing > 3U) ? 3U : sink->cr_swing) << (4U * (lane & 1U)));
+		swing = sink->cr_swing;
+		if (swing > 3U)
+			swing = 3U;
+		status[4U + lane / 2U] |= (uint8_t)(swing << (4U * (lane & 1U)));
 	}
 
 	/* The lanes are aligned once equalised. */
@@ -525,6 +546,7 @@ i915_fake_gmbus1(
 {
 	int port;
 
+	/* The cycle as written. */
 	i915_fake_set(hw, I915_SKL_GMBUS1, value);
 
 	/* The software clear ends a NAK. */

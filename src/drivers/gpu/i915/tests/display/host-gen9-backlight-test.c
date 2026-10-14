@@ -103,6 +103,7 @@ i915_host_pwm_mapping(void)
 	struct i915_skl_pwm pwm;
 	uint32_t percent;
 	uint32_t duty;
+	uint32_t back;
 	uint32_t worst;
 	int error;
 
@@ -130,9 +131,12 @@ i915_host_pwm_mapping(void)
 	worst = 0U;
 	for (percent = 0U; percent <= 100U; percent++) {
 		duty = drv_i915_skl_pwm_duty(&pwm, percent);
-		if (drv_i915_skl_pwm_percent(&pwm, duty) != percent)
+		back = drv_i915_skl_pwm_percent(&pwm, duty);
+		if (back != percent)
 			worst++;
 	}
+
+	/* None off. */
 	i915_host_check(worst == 0U, "every brightness round-trips");
 
 	/* A short period (100) still round-trips and keeps its lowest duty above zero. */
@@ -145,5 +149,7 @@ i915_host_pwm_mapping(void)
 		if (duty < pwm.min || duty > pwm.max)
 			worst++;
 	}
+
+	/* None outside. */
 	i915_host_check(worst == 0U, "period 100: every duty within the lowest and the period");
 }

@@ -80,6 +80,7 @@
 #define MMU_BLOCK_ALIGN			0x100000ULL
 
 static void mmu_clear(uint8_t *bytes, size_t length);
+static int mmu_region_usable(const uint8_t *static_info, size_t at);
 static int mmu_gr_range_valid(uint64_t va_base, uint64_t va_bytes);
 
 /*
@@ -198,6 +199,7 @@ nvrtx_mmu_vram_block(
 	uint64_t base;
 	uint64_t top;
 	uint64_t candidate;
+	int usable;
 	int found;
 
 	/* Walks the regions; the last usable one that holds the block wins. */
@@ -209,11 +211,8 @@ nvrtx_mmu_vram_block(
 		at = MMU_REGION_FIRST_AT + (size_t)index * MMU_REGION_BYTES;
 
 		/* Reserved, protected, or without compression and ISO: not for the driver. */
-		if (nvrtx_get64(static_info, at + MMU_REGION_RESERVED_AT) != 0U)
-			continue;
-		if (static_info[at + MMU_REGION_PROTECTED_AT] != 0U)
-			continue;
-		if (static_info[at + MMU_REGION_COMPRESSED_AT] == 0U || static_info[at + MMU_REGION_ISO_AT] == 0U)
+		usable = mmu_region_usable(static_info, at);
+		if (!usable)
 			continue;
 
 		/* Takes the block from the region's top, if the region holds it. */
@@ -236,6 +235,70 @@ nvrtx_mmu_vram_block(
 
 	/* Succeeded: the block is chosen. */
 	return 0;
+}
+
+/*
+ * Finds the last usable VRAM region of the static information's FB regions.
+ *
+ * Usable is what nvrtx_mmu_vram_block() takes its blocks from: neither
+ * reserved nor protected, with compression and ISO.  The region is
+ * [*base, *top).  Returns ENOSPC when no region is usable.
+ */
+int
+nvrtx_mmu_vram_region(
+	const uint8_t *static_info,
+	uint64_t *base,
+	uint64_t *top,
+	uint32_t *region)
+{
+	uint32_t count;
+	uint32_t index;
+	size_t at;
+	int usable;
+	int found;
+
+	/* Walks the regions; the last usable one wins. */
+	count = nvrtx_get32(static_info, MMU_REGION_COUNT_AT);
+	if (count > MMU_REGION_MAX)
+		count = MMU_REGION_MAX;
+	found = 0;
+	for (index = 0U; index < count; index++) {
+		/* Skips a region the driver may not use. */
+		at = MMU_REGION_FIRST_AT + (size_t)index * MMU_REGION_BYTES;
+		usable = mmu_region_usable(static_info, at);
+		if (!usable)
+			continue;
+
+		/* Records the region's bounds. */
+		*base = nvrtx_get64(static_info, at + MMU_REGION_BASE_AT);
+		*top = nvrtx_get64(static_info, at + MMU_REGION_LIMIT_AT) + 1U;
+		*region = index;
+		found = 1;
+	}
+
+	/* No region is usable. */
+	if (found == 0)
+		return ENOSPC;
+
+	/* Succeeded: the region's bounds are in *base and *top. */
+	return 0;
+}
+
+/*
+ * Encodes the page entry that maps one 4 KiB page of the VRAM for work that
+ * is not privileged: valid, the VRAM target, not volatile, kind 0 (pitch).
+ */
+uint64_t
+nvrtx_mmu_vram_pte(
+	uint64_t physical)
+{
+	uint64_t entry;
+
+	/* The page's address in the entry's address field, and the valid bit. */
+	entry = (physical >> MMU_ADDRESS_SHIFT) | MMU_PTE_VALID;
+
+	/* Succeeded: the entry. */
+	return entry;
 }
 
 /*
@@ -492,5 +555,29 @@ mmu_gr_range_valid(
 		return 0;
 
 	/* The range suits the tables. */
+	return 1;
+}
+
+/* Reports whether the FB region at an offset of the static information is one the driver may use. */
+static int
+mmu_region_usable(
+	const uint8_t *static_info,
+	size_t at)
+{
+	/* A reserved region is the firmware's. */
+	if (nvrtx_get64(static_info, at + MMU_REGION_RESERVED_AT) != 0U)
+		return 0;
+
+	/* A protected region is not readable by the driver. */
+	if (static_info[at + MMU_REGION_PROTECTED_AT] != 0U)
+		return 0;
+
+	/* The ordinary VRAM supports both compression and ISO (the display's reads). */
+	if (static_info[at + MMU_REGION_COMPRESSED_AT] == 0U)
+		return 0;
+	if (static_info[at + MMU_REGION_ISO_AT] == 0U)
+		return 0;
+
+	/* The region is usable. */
 	return 1;
 }

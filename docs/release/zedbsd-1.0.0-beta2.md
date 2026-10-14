@@ -127,8 +127,8 @@ X11 programs run on the desktop through a rootless X server, with GLX.
 - The older Intel graphics, Gen9 and Gen9.5 (the integrated GPUs of the
   6th to 10th generation Core processors), on by default. The driver runs
   the GPU's engines and Vulkan only: the picture stays on the framebuffer
-  the firmware set up, there is no Vulkan Video, and sleep is refused while
-  it drives the GPU. Gen9.5 (7th to 10th generation) was checked on the GPU
+  the firmware set up, there is no Vulkan Video, and in sleep the GPU stays
+  powered, so the battery runs down faster while asleep. Gen9.5 (7th to 10th generation) was checked on the GPU
   of an 8th generation Core; the 6th generation (Skylake), and starting
   such a computer from the USB drive by itself, were not. The
   [user guide](https://github.com/awemorris/zedBSD/blob/zedbsd-1.0.0-beta2/docs/release/zedbsd-1.0.0-beta2-guide.md#older-intel-graphics)

@@ -64,4 +64,12 @@ int drv_i915_gen9_node_wait(void *device, void *session, struct gpu_display_wait
 /* Ends the leases a closing session still holds. */
 void drv_i915_gen9_node_session_close(struct i915_device *device, void *session);
 
+/*
+ * Darkens the lit external displays for a sleep, keeping their leases and
+ * buffers, and lights them again after it on the surface they showed
+ * (WS237 p005: the device stays in D0, so nothing else is lost).
+ */
+void drv_i915_gen9_node_suspend(struct i915_device *device);
+void drv_i915_gen9_node_resume(struct i915_device *device);
+
 #endif /* DRIVERS_GPU_I915_DISPLAY_GEN9_NODE_H */

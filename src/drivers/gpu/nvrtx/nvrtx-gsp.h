@@ -674,6 +674,8 @@ int nvrtx_sequencer_save(uint8_t *payload, size_t length, uint32_t slot, uint32_
 int nvrtx_mmu_tables(uint8_t *image, uint64_t block, uint64_t va, const uint64_t *pages, size_t count);
 void nvrtx_mmu_instance(uint8_t *instance, uint64_t root, uint64_t limit);
 int nvrtx_mmu_vram_block(const uint8_t *static_info, uint64_t size, uint64_t *block, uint32_t *region);
+int nvrtx_mmu_vram_region(const uint8_t *static_info, uint64_t *base, uint64_t *top, uint32_t *region);
+uint64_t nvrtx_mmu_vram_pte(uint64_t physical);
 
 size_t nvrtx_control_call(uint8_t *call, size_t capacity, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length);
 void nvrtx_space_params(uint8_t *params);

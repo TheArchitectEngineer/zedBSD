@@ -79,6 +79,9 @@ struct i915_device {
 	 */
 	unsigned suspended;
 
+	/* Nonzero while a Gen9 device sleeps in D0 (WS237 p005): its resume only lights the display again. */
+	unsigned suspended_d0;
+
 	/* The name of the start step in progress, for the failure log. */
 	const char *stage;
 

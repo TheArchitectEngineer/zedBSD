@@ -17,19 +17,20 @@
  *      memory: a clear of the whole target, then a quad of one colour over
  *      its middle 128x128 (the programs the nvrtx compiler makes from the
  *      IR of the compositor's quad, the colour from the push constants);
- *   2. the same into a colour target in VRAM (the compute arena's last
- *      MiB), read back at a few points through the register window, so one
- *      run says whether the raster operations write system memory, VRAM or
- *      both;
+ *   2. the same into a colour target in VRAM (a buffer object of the
+ *      VRAM allocator, read back through the CPU's window; without the
+ *      allocator the compute arena's last MiB, read back at a few points
+ *      through the register window), so one run says whether the raster
+ *      operations write system memory, VRAM or both;
  *   3. the quad again into the system-memory target, textured: a 4x4
  *      pitch-linear texture of four colours sampled with nearest filtering
  *      through its texture header and sampler pools.
  *
  * Each draw is its own submission on the compute channel's ring (entries
- * 1 to 3) with its own fence.  The memory is the compute launch's: the
- * system-memory pages are mapped after the launch's own, the VRAM target
- * in the arena (compute.c).  The stop frees the 3D object before the
- * compute object and the channel.
+ * 1 to 3) with its own fence.  The compute launch's tables map the
+ * draw's system-memory pages after its own and the VRAM target
+ * (compute.c).  The stop frees the 3D object before the compute object
+ * and the channel.
  */
 
 #include <stdbool.h>
@@ -124,6 +125,7 @@ static int draw_compile(struct nvrtx_gpu *gpu, uint32_t index, const struct nvrt
 static void draw_data(struct nvrtx_gpu *gpu);
 static int draw_system(struct nvrtx_gpu *gpu, const uint32_t *gprs);
 static int draw_vram(struct nvrtx_gpu *gpu);
+static int draw_check_vram(struct nvrtx_gpu *gpu);
 static int draw_textured(struct nvrtx_gpu *gpu, const uint32_t *gprs);
 static int draw_run(struct nvrtx_gpu *gpu, uint32_t entry, uint32_t page, uint32_t pages, size_t length, uint32_t fence, const char *what);
 static int draw_check_system(struct nvrtx_gpu *gpu, int textured, const char *what);
@@ -133,15 +135,18 @@ static uint64_t draw_page_va(uint32_t page);
 static uint8_t *draw_push(struct nvrtx_gpu *gpu, uint32_t page);
 
 /*
- * Allocates the draw's system-memory buffers: the push buffer, the
+ * Allocates the draw's buffers: in system memory the push buffer, the
  * programs, constant buffer 0, the vertices, the texture with its header
- * and sampler pools, the zero page and the colour target.
+ * and sampler pools, the zero page and the colour target; in VRAM the
+ * colour target, a buffer object mapped into the CPU's window when the
+ * VRAM allocator and the window are up, else arena_target.
  *
  * Called with the compute launch's buffers, before its tables are built.
  */
 int
 nvrtx_draw_buffers(
-	struct nvrtx_gpu *gpu)
+	struct nvrtx_gpu *gpu,
+	uint64_t arena_target)
 {
 	struct nvrtx_draw_state *draw;
 	int error;
@@ -187,7 +192,19 @@ nvrtx_draw_buffers(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the buffers are clear. */
+	/* The VRAM target: a buffer object when the allocator gives one, else the arena's. */
+	draw->vram_target = arena_target;
+	error = nvrtx_bo_alloc(gpu, NVRTX_DRAW_VRAM_BYTES, NVRTX_GSP_PAGE_SIZE, &draw->vram_bo);
+	if (error == 0) {
+		draw->vram_bo_made = 1;
+		draw->vram_target = draw->vram_bo.vram;
+	}
+
+	/* The object in the CPU's window; without one the readback goes word by word. */
+	if (draw->vram_bo_made != 0)
+		(void)nvrtx_bo_map(gpu, &draw->vram_bo);
+
+	/* Succeeded: the buffers are clear, the VRAM target chosen. */
 	return 0;
 }
 
@@ -230,22 +247,21 @@ nvrtx_draw_pages(
  * into system memory, into VRAM, and textured, each checked from the CPU.
  *
  * Needs the compute launch's channel (P9c) and its tables with the draw's
- * memory; vram_target is the VRAM target's physical address.  Every draw
+ * memory (nvrtx_draw_buffers() and nvrtx_draw_pages()).  Every draw
  * runs while the fences arrive, so one run reports each; returns the first
  * failure, or 0 when all three drew what they should.
  */
 int
 nvrtx_draw_start(
-	struct nvrtx_gpu *gpu,
-	uint64_t vram_target)
+	struct nvrtx_gpu *gpu)
 {
 	uint32_t gprs[DRAW_PROGRAMS];
 	int failure;
 	int error;
 
-	/* Marks the stage and keeps where the VRAM target is. */
+	/* Marks the stage and says where the VRAM target is. */
 	nvrtx_stage_mark("P9g begin");
-	gpu->draw.vram_target = vram_target;
+	nvrtx_stage_mark("P9g VRAM target at %llx (%s)", (unsigned long long)gpu->draw.vram_target, (gpu->draw.vram_bo_made != 0) ? "buffer object" : "compute arena");
 	failure = 0;
 
 	/* The 3D object and the programs. */
@@ -337,6 +353,12 @@ nvrtx_draw_release(
 	nvrtx_buffer_free(gpu, &draw->samplers);
 	nvrtx_buffer_free(gpu, &draw->zero);
 	nvrtx_buffer_free(gpu, &draw->target);
+
+	/* The VRAM target's buffer object. */
+	if (draw->vram_bo_made != 0) {
+		nvrtx_bo_free(gpu, &draw->vram_bo);
+		draw->vram_bo_made = 0;
+	}
 }
 
 /* Makes the 3D object on the compute launch's channel. */
@@ -564,8 +586,7 @@ draw_system(
 
 /*
  * Draws the same into the VRAM target (the pipeline and the vertices stay
- * bound), and reads back the quad's corner pixels, the target's corners
- * and its middle.
+ * bound), and reads it back.
  */
 static int
 draw_vram(
@@ -573,15 +594,7 @@ draw_vram(
 {
 	struct nvrtx_draw_target target;
 	static const uint32_t clear[4] = { DRAW_FLOAT_ZERO, DRAW_FLOAT_ONE, DRAW_FLOAT_ONE, DRAW_FLOAT_ONE };
-	static const uint16_t points[DRAW_VRAM_POINTS][2] = {
-		{ 0U, 0U }, { 63U, 63U }, { 64U, 64U }, { 191U, 64U }, { 128U, 128U },
-		{ 64U, 191U }, { 191U, 191U }, { 192U, 192U }, { 255U, 255U }
-	};
 	uint8_t *push;
-	uint32_t value;
-	uint32_t want;
-	uint32_t index;
-	uint32_t right;
 	size_t at;
 	int error;
 
@@ -607,28 +620,72 @@ draw_vram(
 	if (error != 0)
 		return error;
 
-	/* Reads each point back; the first wrong one is shown. */
+	/* The pixels, through the CPU's window or word by word. */
+	error = draw_check_vram(gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the quad is in VRAM. */
+	return 0;
+}
+
+/*
+ * Checks the VRAM target: every pixel through the CPU's window when the
+ * buffer object is mapped there, else the quad's corner pixels, the
+ * target's corners and its middle through the register window.  Shows the
+ * first wrong one.
+ */
+static int
+draw_check_vram(
+	struct nvrtx_gpu *gpu)
+{
+	static const uint16_t points[DRAW_VRAM_POINTS][2] = {
+		{ 0U, 0U }, { 63U, 63U }, { 64U, 64U }, { 191U, 64U }, { 128U, 128U },
+		{ 64U, 191U }, { 191U, 191U }, { 192U, 192U }, { 255U, 255U }
+	};
+	const volatile uint32_t *pixels;
+	uint32_t value;
+	uint32_t want;
+	uint32_t index;
+	uint32_t count;
+	uint32_t right;
+	int error;
+
+	/* The window shows every pixel; the register window only the points. */
+	pixels = NULL;
+	count = DRAW_VRAM_POINTS;
+	if (gpu->draw.vram_bo_made != 0 && gpu->draw.vram_bo.bar1_mapped != 0) {
+		pixels = (const volatile uint32_t *)nvrtx_bo_cpu(gpu, &gpu->draw.vram_bo);
+		count = DRAW_SIZE * DRAW_SIZE;
+	}
+
+	/* Each pixel or point against the picture. */
 	right = 0U;
-	for (index = 0U; index < DRAW_VRAM_POINTS; index++) {
-		error = nvrtx_vram_read32(gpu, gpu->draw.vram_target + (uint64_t)points[index][1] * DRAW_PITCH + (uint64_t)points[index][0] * 4U, &value);
-		if (error != 0)
-			return error;
-		want = draw_expected(points[index][0], points[index][1], 0);
+	for (index = 0U; index < count; index++) {
+		if (pixels != NULL) {
+			value = pixels[index];
+			want = draw_expected(index % DRAW_SIZE, index / DRAW_SIZE, 0);
+		} else {
+			error = nvrtx_vram_read32(gpu, gpu->draw.vram_target + (uint64_t)points[index][1] * DRAW_PITCH + (uint64_t)points[index][0] * 4U, &value);
+			if (error != 0)
+				return error;
+			want = draw_expected(points[index][0], points[index][1], 0);
+		}
 		if (value == want) {
 			right++;
 		} else if (right == index) {
-			nvrtx_stage_mark("P9g fail: VRAM target (%u, %u) is %08x, want %08x", (unsigned)points[index][0], (unsigned)points[index][1], (unsigned)value, (unsigned)want);
+			nvrtx_stage_mark("P9g fail: VRAM target word %u is %08x, want %08x", (unsigned)index, (unsigned)value, (unsigned)want);
 		}
 	}
 
 	/* Refuses a target that did not get the draw. */
-	if (right != DRAW_VRAM_POINTS) {
-		nvrtx_stage_mark("P9g fail: VRAM target: %u of %u points right", (unsigned)right, (unsigned)DRAW_VRAM_POINTS);
+	if (right != count) {
+		nvrtx_stage_mark("P9g fail: VRAM target: %u of %u %s right", (unsigned)right, (unsigned)count, (pixels != NULL) ? "pixels" : "points");
 		return EIO;
 	}
 
-	/* Succeeded: the quad is in VRAM. */
-	nvrtx_stage_mark("P9g ok: draw wrote the VRAM target (%u points)", (unsigned)DRAW_VRAM_POINTS);
+	/* Succeeded: the VRAM holds the picture. */
+	nvrtx_stage_mark("P9g ok: draw wrote the VRAM target (%u %s right)", (unsigned)count, (pixels != NULL) ? "pixels" : "points");
 	return 0;
 }
 
