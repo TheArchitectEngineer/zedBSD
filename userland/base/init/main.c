@@ -11,6 +11,7 @@
  * Implements the zedBSD init userland command.
  */
 
+#include "root-check.h"
 #include "userland/base/service/service-config.h"
 #include "userland/base/service/rcconf.h"
 #include "userland/base/service/zsv1-server.h"
@@ -210,6 +211,9 @@ main(
 	(void)signal(SIGINT, signal_handler);
 	(void)signal(SIGTERM, signal_handler);
 	(void)signal(SIGCHLD, SIG_DFL);
+
+	/* A root the kernel could only mount read-only is checked before anything else (BUG-312). */
+	root_check();
 
 	make_runtime_directories();
 	snapshot = load_rcconf_snapshot();

@@ -385,6 +385,11 @@ override ZEDBSD_USER_PROGRAMS := $(foreach program,$(ZEDBSD_USER_PROGRAMS),\
 override ZEDBSD_USER_PROGRAMS := $(sort $(ZEDBSD_USER_PROGRAMS) at batch \
 	blkid diskpart mkfs mkswap crontab getty gettext halt hostname init logger login lp lpr mailx msgfmt ngettext \
 	cron net networkd ntpdate poweroff reboot service shutdown swapoff swapon syslogd talk wifi)
+# The checker init runs on a read-only root (BUG-312), linked statically.  Only
+# the platforms whose build links the class static carry it.
+ifneq ($(filter amd64 arm64,$(ZEDBSD_PLATFORM_DIR)),)
+override ZEDBSD_USER_PROGRAMS := $(sort $(ZEDBSD_USER_PROGRAMS) fsck)
+endif
 # Xzed cannot operate without the kernel graphics character device. Keep
 # hand-edited and older saved configurations from producing an unusable
 # userland/kernel combination.
