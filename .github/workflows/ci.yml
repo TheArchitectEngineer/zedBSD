@@ -124,8 +124,8 @@ jobs:
             | Intel Server  | x86_64  | UEFI           | `zedbsd-intel-server.img.gz` | USB image                                    |
             | Pi4 Keiland   | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4.img.gz`         | SD image                                     |
             | Pi4 Server    | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4-server.img.gz`  | SD image                                     |
-	    | NEC PC-9800   | i386    | NEC PC-9800    | `zedbsd-pc98.img.gz`         | CF image                                     |
-	    | QEMU Win64    | x86_64  | Windows        | `zedbsd-qemu.zip`            | NVMe image with QEMU binary. Run `boot.bat`. |
+            | NEC PC-9800   | i386    | NEC PC-9800    | `zedbsd-pc98.img.gz`         | CF image                                     |
+            | QEMU Win64    | x86_64  | Windows        | `zedbsd-qemu.zip`            | NVMe image with QEMU binary. Run `boot.bat`. |
 
           files: |
             artifacts/zedbsd-intel.img.gz
