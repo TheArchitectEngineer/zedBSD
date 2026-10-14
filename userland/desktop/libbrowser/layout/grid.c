@@ -98,6 +98,8 @@ static int grid_item_width(struct layout_tree *tree, struct layout_box *item, la
 static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, int justify);
 static void grid_size_rows(struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_relay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, layout_unit height, int align);
+static layout_unit grid_clamp_height(const struct layout_box *item, layout_unit content, layout_unit area, layout_unit frame);
+static layout_unit grid_clamp_height(const struct layout_box *item, layout_unit content, layout_unit area, layout_unit frame);
 static layout_unit grid_outer_height(const struct layout_box *item);
 static int grid_fixed_row_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *baseline);
 static int grid_fixed_column_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *right_extent);
@@ -655,6 +657,12 @@ layout_grid(
 			    box->style.height.unit == CSS_UNIT_PX))
 				auto_block_margin = 1;
 		}
+		/* A flexible or minmax() row of a container with a definite height is as definite. */
+		if ((auto_top || auto_bottom) && box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    item->row_span == 1 && item->row < box->style.row_count &&
+		    box->style.rows[item->row].kind != CSS_TRACK_LENGTH &&
+		    box->style.height.unit != CSS_UNIT_AUTO)
+			auto_block_margin = 1;
 		if (auto_block_margin)
 			align = CSS_ALIGN_START;
 		baseline_eligible = grid_fixed_row_baseline(box, item, &baseline);
@@ -2758,6 +2766,9 @@ grid_relay_item(
 	if (content < 0)
 		content = 0;
 
+	/* The definite height keeps within the item's own maximum and minimum heights. */
+	content = grid_clamp_height(item, content, height, frame);
+
 	/* Keep the item's style while the definite content box is laid out. */
 	saved.box_sizing = item->style.box_sizing;
 	saved.width = item->style.width;
@@ -2814,6 +2825,46 @@ grid_relay_item(
 	item->style.max_height = saved.max_height;
 	memcpy(item->style.margin, saved.margin, sizeof(saved.margin));
 	return error;
+}
+
+/* Keeps a definite content height within the item's max-height and min-height (lengths and percentages of the area). */
+static layout_unit
+grid_clamp_height(
+	const struct layout_box *item,
+	layout_unit content,
+	layout_unit area,
+	layout_unit frame)
+{
+	layout_unit limit;
+
+	/* The maximum, a length or a percentage of the area. */
+	if (item->style.max_height.unit == CSS_UNIT_PX || item->style.max_height.unit == CSS_UNIT_PERCENT) {
+		if (item->style.max_height.unit == CSS_UNIT_PX)
+			limit = layout_from_px(item->style.max_height.value);
+		else
+			limit = (layout_unit)((float)area * item->style.max_height.value / 100.0f);
+		limit += layout_from_px(item->style.max_height.offset);
+		if (item->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			limit -= frame;
+		if (limit < 0)
+			limit = 0;
+		if (content > limit)
+			content = limit;
+	}
+
+	/* The minimum. */
+	if (item->style.min_height.unit == CSS_UNIT_PX || item->style.min_height.unit == CSS_UNIT_PERCENT) {
+		if (item->style.min_height.unit == CSS_UNIT_PX)
+			limit = layout_from_px(item->style.min_height.value);
+		else
+			limit = (layout_unit)((float)area * item->style.min_height.value / 100.0f);
+		limit += layout_from_px(item->style.min_height.offset);
+		if (item->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			limit -= frame;
+		if (limit > content)
+			content = limit;
+	}
+	return content;
 }
 
 /* Measures an item's margin box's height. */
