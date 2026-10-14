@@ -117,7 +117,9 @@ enum computed_property {
 	COMPUTED_TEXT_DECORATION_LINE,
 	COMPUTED_TEXT_DECORATION_STYLE,
 	COMPUTED_TEXT_DECORATION_SKIP_INK,
-	COMPUTED_TEXT_DECORATION_COLOR
+	COMPUTED_TEXT_DECORATION_COLOR,
+	COMPUTED_WRITING_MODE,
+	COMPUTED_TEXT_ORIENTATION
 };
 
 /*
@@ -218,6 +220,8 @@ static const struct computed_entry computed_entries[] = {
 	{ "text-align", COMPUTED_TEXT_ALIGN },
 	{ "text-indent", COMPUTED_TEXT_INDENT },
 	{ "direction", COMPUTED_DIRECTION },
+	{ "writing-mode", COMPUTED_WRITING_MODE },
+	{ "text-orientation", COMPUTED_TEXT_ORIENTATION },
 	{ "white-space", COMPUTED_WHITE_SPACE },
 	{ "text-transform", COMPUTED_TEXT_TRANSFORM },
 	{ "cursor", COMPUTED_CURSOR },
@@ -279,6 +283,12 @@ static const char *const computed_text_aligns[] = { "start", "left", "right", "c
 
 /* The names of direction, by enum css_direction. */
 static const char *const computed_directions[] = { "ltr", "rtl" };
+
+/* The writing mode names, by enum css_writing_mode. */
+static const char *const computed_writing_modes[] = { "horizontal-tb", "vertical-lr", "vertical-rl" };
+
+/* The text orientation names, by enum css_text_orientation. */
+static const char *const computed_text_orientations[] = { "mixed", "upright", "sideways" };
 
 /* The canonical cursor names, indexed by enum css_cursor for computed serialization. */
 static const char *const computed_cursors[] = {
@@ -876,6 +886,12 @@ computed_write_keyword(
 		break;
 	case COMPUTED_DIRECTION:
 		error = computed_name(computed_directions, 2, style->direction, out);
+		break;
+	case COMPUTED_WRITING_MODE:
+		error = computed_name(computed_writing_modes, 3, style->writing_mode, out);
+		break;
+	case COMPUTED_TEXT_ORIENTATION:
+		error = computed_name(computed_text_orientations, 3, style->text_orientation, out);
 		break;
 	case COMPUTED_CURSOR:
 		error = computed_name(computed_cursors, sizeof(computed_cursors) / sizeof(computed_cursors[0]), style->cursor, out);

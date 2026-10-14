@@ -166,6 +166,13 @@ enum css_writing_mode {
 	CSS_WRITING_VERTICAL_RL
 };
 
+/* How glyphs are oriented in a vertical writing mode. */
+enum css_text_orientation {
+	CSS_TEXT_ORIENTATION_MIXED,
+	CSS_TEXT_ORIENTATION_UPRIGHT,
+	CSS_TEXT_ORIENTATION_SIDEWAYS
+};
+
 /* The values of overflow-x and overflow-y. */
 enum css_overflow {
 	CSS_OVERFLOW_VISIBLE,
@@ -558,6 +565,7 @@ struct css_style {
 	struct css_length text_indent;
 	int direction;
 	int writing_mode;
+	int text_orientation;
 	int container_type;
 
 	/* Tables (ws074-p037): the spacing between the cells (across, then down, in pixels), and whether the borders collapse. */

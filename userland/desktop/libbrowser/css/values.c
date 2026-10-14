@@ -262,6 +262,7 @@ static const struct values_name values_names[] = {
 	{ "clip-path", CSS_PROP_CLIP_PATH },
 	{ "direction", CSS_PROP_DIRECTION },
 	{ "writing-mode", CSS_PROP_WRITING_MODE },
+	{ "text-orientation", CSS_PROP_TEXT_ORIENTATION },
 	{ "grid-template-columns", CSS_PROP_GRID_TEMPLATE_COLUMNS },
 	{ "grid-template-rows", CSS_PROP_GRID_TEMPLATE_ROWS },
 	{ "grid-column-start", CSS_PROP_GRID_COLUMN_START },
@@ -419,6 +420,14 @@ static const struct values_keyword values_writing_mode[] = {
 	{ "horizontal-tb", CSS_WRITING_HORIZONTAL_TB },
 	{ "vertical-lr", CSS_WRITING_VERTICAL_LR },
 	{ "vertical-rl", CSS_WRITING_VERTICAL_RL },
+	{ NULL, 0 }
+};
+
+/* The glyph orientation retained for vertical inline layout. */
+static const struct values_keyword values_text_orientation[] = {
+	{ "mixed", CSS_TEXT_ORIENTATION_MIXED },
+	{ "upright", CSS_TEXT_ORIENTATION_UPRIGHT },
+	{ "sideways", CSS_TEXT_ORIENTATION_SIDEWAYS },
 	{ NULL, 0 }
 };
 
@@ -1817,6 +1826,9 @@ values_single(
 		break;
 	case CSS_PROP_WRITING_MODE:
 		table = values_writing_mode;
+		break;
+	case CSS_PROP_TEXT_ORIENTATION:
+		table = values_text_orientation;
 		break;
 	case CSS_PROP_CONTAINER_TYPE:
 		table = values_container_type;

@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1121 / WS074 vertical inline text geometry diagnosis（2026-10-14）
+## 最新: q1122 / WS074 text-orientation CSS state（2026-10-14）
+
+[q1122履歴](queue-q1122.md): CSS `text-orientation`の3値・継承/CSS-wide・CSSOMと`writing-mode` CSSOMを追加。旧PASSとAcid3差0維持。縦line/paintは後続。[証拠](../ws074/phase220/evidence/20261014-q1122/README.md)。p220部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1121 / WS074 vertical inline text geometry diagnosis（2026-10-14）
 
 [q1121履歴](queue-q1121.md): 縦書きWPT10 subtestの初回幅10/実60を非Grid/位置指定Gridで切り分け。inline/paint/geometryの縦軸表現欠落を確認。[証拠](../ws074/phase220/evidence/20261014-q1121/README.md)。p220部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

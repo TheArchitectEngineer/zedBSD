@@ -1,0 +1,39 @@
+<!doctype html>
+<style>
+#parent { writing-mode: vertical-lr; text-orientation: sideways; }
+#override { text-orientation: upright; }
+#initial { text-orientation: initial; }
+#unset { text-orientation: unset; }
+#inherit { text-orientation: inherit; }
+#invalid { text-orientation: sideways; text-orientation: diagonal; }
+</style>
+<div id="parent">
+  <div id="inherited"></div>
+  <div id="override"></div>
+  <div id="initial"></div>
+  <div id="unset"></div>
+  <div id="inherit"></div>
+  <div id="invalid"></div>
+</div>
+<div id="default"></div>
+<div id="reverse" style="writing-mode: vertical-rl; text-orientation: upright"></div>
+<script>
+function value(id) {
+  var style = getComputedStyle(document.getElementById(id));
+  return style.getPropertyValue("text-orientation") + "/" + style.textOrientation + "/" + style.writingMode;
+}
+console.log("default=" + value("default"));
+console.log("parent=" + value("parent"));
+console.log("inherited=" + value("inherited"));
+console.log("override=" + value("override"));
+console.log("initial=" + value("initial"));
+console.log("unset=" + value("unset"));
+console.log("inherit=" + value("inherit"));
+console.log("invalid=" + value("invalid"));
+console.log("reverse=" + value("reverse"));
+var changed = document.getElementById("override");
+changed.style.textOrientation = "mixed";
+console.log("changed=" + value("override"));
+changed.style.textOrientation = "bogus";
+console.log("rejected=" + value("override"));
+</script>

@@ -2,7 +2,7 @@
 
 # q1121 / WS074 vertical inline text geometry diagnosis
 
-Status: finished（2026-10-14 09:30–09:35 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p220有限部分scope](../ws074/phase220/phase.md)に適用。最大90分。
+Status: finished（2026-10-14 09:29–09:31 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p220有限部分scope](../ws074/phase220/phase.md)に適用。最大90分。
 
 | Attempt | Phase | Scope | Outcome |
 | --- | --- | --- | --- |
