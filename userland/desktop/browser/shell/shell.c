@@ -50,6 +50,26 @@
 #define SHELL_DRAG_DISTANCE	8
 #define SHELL_DRAG_SIDE		2048
 
+/* The longest reason of a failed load the shell keeps for the page that says why the start page did not open (BUG-320). */
+#define SHELL_FAILURE_MAX	512U
+
+/* The location of the page that says why the start page did not open: an HTML document in a data: URL. */
+#define SHELL_FAILURE_PREFIX	"data:text/html;charset=utf-8,"
+
+/* The page that says why the start page did not open, around the location and the reason, which are escaped (BUG-320). */
+#define SHELL_FAILURE_HEAD	"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" \
+	"<title>Page not opened</title>\n<style>\n" \
+	"body { margin: 0; background: #eef1f6; color: #1f2633; font-family: sans-serif; font-size: 15px; line-height: 1.5; }\n" \
+	".main { max-width: 640px; margin: 48px auto; background: #ffffff; border: 1px solid #d3dae6; padding: 14px 22px 16px; }\n" \
+	"h1 { margin: 0 0 8px; font-size: 22px; color: #1d2b45; }\n" \
+	"p { margin: 6px 0; word-wrap: break-word; }\n" \
+	".reason { color: #8a2b2b; }\n" \
+	"a { color: #2463b3; }\n" \
+	"</style>\n</head>\n<body>\n<div class=\"main\">\n<h1>The page could not be opened</h1>\n<p>"
+#define SHELL_FAILURE_REASON	"</p>\n<p class=\"reason\">"
+#define SHELL_FAILURE_LINK	"</p>\n<p><a href=\""
+#define SHELL_FAILURE_TAIL	"\">Try again</a></p>\n</div>\n</body>\n</html>\n"
+
 /*
  * What the window mode holds while it runs: the view, the window with its
  * titlebar and presenter, whether the view must be drawn again, and
@@ -67,6 +87,14 @@
  *
  * text_session is the view's text input's session when the window's text
  * input was last asked for (browser_view_text_session, ws177-p019).
+ *
+ * load_failure is the reason the view gave for the last load that failed
+ * (empty when it gave none), which the page that says why the start page
+ * did not open shows (BUG-320).  failure_page is that page's data: URL
+ * (NULL when the start page opened), owned until the view is gone, and
+ * failure_location the start page it stands for (the options' string):
+ * while the page is shown the titlebar shows that location, and reload
+ * tries it again.
  */
 struct shell_state {
 	struct browser_view *view;
@@ -83,6 +111,20 @@ struct shell_state {
 	int drag_press_x;
 	int drag_press_y;
 	uint64_t text_session;
+	char load_failure[SHELL_FAILURE_MAX];
+	char *failure_page;
+	const char *failure_location;
+};
+
+/*
+ * A text being built for the page that says why the start page did not
+ * open: its bytes, always ended by a NUL, how many are used and how many
+ * the allocation holds.  The builder owns the bytes until it frees them.
+ */
+struct shell_text {
+	char *bytes;
+	size_t length;
+	size_t size;
 };
 
 static void shell_show_state(struct shell_state *state);
@@ -95,6 +137,7 @@ static void shell_text_input(struct shell_state *state);
 static int shell_shortcut(struct shell_state *state, const struct shell_event *event);
 static void shell_titlebar_input(struct shell_state *state, const struct shell_titlebar_event *event);
 static void shell_go(struct shell_state *state, int steps);
+static void shell_reload(struct shell_state *state);
 static void shell_follow(struct shell_state *state, const char *target);
 static void shell_follow_typed(struct shell_state *state, const char *typed);
 static int shell_frame(struct shell_state *state);
@@ -109,6 +152,12 @@ static void shell_console(void *context, struct browser_view *view, int level, c
 static void shell_script_error(void *context, struct browser_view *view, int error);
 static void shell_touch_round(struct shell_state *state);
 static void shell_touch_pointer(struct shell_state *state, const struct shell_touch_pointer *made);
+static int shell_open_failure(struct shell_state *state, const char *location, int failure);
+static int shell_failure_shown(const struct shell_state *state);
+static int shell_failure_page(const char *location, const char *reason, struct shell_text *page);
+static int shell_text_append(struct shell_text *text, const char *bytes, size_t length);
+static int shell_text_escaped(struct shell_text *text, const char *string);
+static int shell_text_percent(struct shell_text *text, const char *bytes, size_t length);
 
 /*
  * Runs the browser in a compositor window until it is closed.
@@ -173,11 +222,15 @@ shell_run(
 		fflush(stdout);
 	}
 
-	/* The start page, read before the window opens. */
+	/* The start page, read before the window opens; one that cannot be read leaves a page that says why, so the window still opens (BUG-320). */
 	error = browser_view_load(state.view, options->start);
 	if (error != 0) {
-		shell_release(&state);
-		return 1;
+		error = shell_open_failure(&state, options->start, error);
+		if (error != 0) {
+			fprintf(stderr, "browser: cannot open %s: %s\n", options->start, strerror(error));
+			shell_release(&state);
+			return 1;
+		}
 	}
 
 	/* The window, with the page's title. */
@@ -327,6 +380,7 @@ shell_show_state(
 	const char *url;
 	int can_back;
 	int can_forward;
+	int shown;
 	int error;
 
 	/* The window's title: the page's, or its location. */
@@ -337,6 +391,11 @@ shell_show_state(
 	/* The line the tests read. */
 	printf("ZBROWSER NAVIGATE path=%s title=%s\n", url, title);
 	fflush(stdout);
+
+	/* The titlebar shows the start page that did not open in the place of the page that says why. */
+	shown = shell_failure_shown(state);
+	if (shown)
+		url = state->failure_location;
 
 	/* The titlebar; a refusal is reported and the titlebar stays as it was. */
 	can_back = browser_view_can_go(state->view, -1);
@@ -622,7 +681,7 @@ shell_titlebar_input(
 		shell_go(state, 1);
 		break;
 	case SHELL_CONTROL_RELOAD:
-		shell_go(state, 0);
+		shell_reload(state);
 		break;
 	case SHELL_CONTROL_CODE:
 		/* The sign-in code offered, typed into the page (WS169 p005); the titlebar shows the state again. */
@@ -648,6 +707,28 @@ shell_go(
 {
 	/* A failure was reported by the load callback; the history stays where it was. */
 	(void)browser_view_go(state->view, steps);
+}
+
+/*
+ * Reloads the page shown; the page that says why the start page did not
+ * open tries that start page again instead (BUG-320), resolved as the
+ * command line's was.
+ */
+static void
+shell_reload(
+	struct shell_state *state)
+{
+	int shown;
+
+	/* The start page again in the place of the page that says why it did not open (a failure is reported by the load callback). */
+	shown = shell_failure_shown(state);
+	if (shown) {
+		(void)browser_view_load(state->view, state->failure_location);
+		return;
+	}
+
+	/* Any other page, from the history's step shown. */
+	shell_go(state, 0);
 }
 
 /* Opens a typed location, resolved against the page shown, as a new step. */
@@ -757,6 +838,10 @@ shell_release(
 	browser_view_destroy(state->view);
 	state->view = NULL;
 	shell_touch_close(&state->touch);
+
+	/* The URL of the page that said why the start page did not open, which no view shows any more. */
+	free(state->failure_page);
+	state->failure_page = NULL;
 }
 
 /* The view's callback: its content changed and is drawn in the next frame. */
@@ -817,9 +902,11 @@ shell_load(
 	int error,
 	const char *reason)
 {
+	struct shell_state *shell;
+
 	/* The line the tests read. */
-	UNUSED_PARAMETER(context);
 	UNUSED_PARAMETER(view);
+	shell = context;
 	if (state == BROWSER_LOAD_STARTED)
 		printf("ZBROWSER LOADING url=%s\n", url);
 	if (state == BROWSER_LOAD_STOPPED)
@@ -827,6 +914,10 @@ shell_load(
 	if (state == BROWSER_LOAD_FAILED)
 		printf("ZBROWSER ERROR load path=%s error=%s tls=%s\n", url, strerror(error), reason);
 	fflush(stdout);
+
+	/* The reason of a failure, kept for the page that says why the start page did not open (cut to what fits). */
+	if (state == BROWSER_LOAD_FAILED)
+		snprintf(shell->load_failure, sizeof(shell->load_failure), "%s", reason);
 }
 
 /* The view's callback: a click opens a link, which the shell allows (and writes the LINK line). */
@@ -1041,4 +1132,284 @@ shell_drag_image(
 
 	/* Succeeded: the drag goes on. */
 	return 1;
+}
+
+/*
+ * Shows a page that says why the start page did not open (BUG-320): the
+ * location, the error with the view's reason, and a link that tries the
+ * location again.  Returns 0 when the page is shown.
+ */
+static int
+shell_open_failure(
+	struct shell_state *state,
+	const char *location,
+	int failure)
+{
+	struct shell_text page;
+	char reason[SHELL_FAILURE_MAX + 128U];
+	const char *shown;
+	int error;
+
+	/* The error in words, with what the view said beyond its number (for example, the certificate's). */
+	if (state->load_failure[0] != '\0') {
+		snprintf(reason, sizeof(reason), "%s: %s", strerror(failure), state->load_failure);
+	} else {
+		snprintf(reason, sizeof(reason), "%s", strerror(failure));
+	}
+
+	/* The page, as a data: URL. */
+	memset(&page, 0, sizeof(page));
+	error = shell_failure_page(location, reason, &page);
+	if (error != 0) {
+		free(page.bytes);
+		return error;
+	}
+
+	/* The page shown in the start page's place. */
+	error = browser_view_load(state->view, page.bytes);
+	if (error != 0) {
+		free(page.bytes);
+		return error;
+	}
+
+	/* The URL built is the view's now. */
+	free(page.bytes);
+
+	/* The page's location as the view keeps it, which tells later that the page is shown. */
+	shown = browser_view_url(state->view);
+	if (shown == NULL)
+		return ENOENT;
+
+	/* A copy of it, and the start page it stands for, which the titlebar and the reload use. */
+	state->failure_page = strdup(shown);
+	if (state->failure_page == NULL)
+		return ENOMEM;
+	state->failure_location = location;
+
+	/* Succeeded: the window opens on the page that says why. */
+	return 0;
+}
+
+/* Tells whether the view shows the page that says why the start page did not open. */
+static int
+shell_failure_shown(
+	const struct shell_state *state)
+{
+	const char *url;
+	int differs;
+
+	/* No such page when the start page opened. */
+	if (state->failure_page == NULL)
+		return 0;
+
+	/* The page shown, compared with it. */
+	url = browser_view_url(state->view);
+	if (url == NULL)
+		return 0;
+	differs = strcmp(url, state->failure_page);
+	if (differs != 0)
+		return 0;
+
+	/* Succeeded: that page is the one shown. */
+	return 1;
+}
+
+/* Builds the data: URL of the page that says why the location did not open, with the reason; nonzero on failure. */
+static int
+shell_failure_page(
+	const char *location,
+	const char *reason,
+	struct shell_text *page)
+{
+	struct shell_text html;
+	int error;
+
+	/* The page's head and its heading. */
+	memset(&html, 0, sizeof(html));
+	error = shell_text_append(&html, SHELL_FAILURE_HEAD, strlen(SHELL_FAILURE_HEAD));
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The location, escaped so that it is text. */
+	error = shell_text_escaped(&html, location);
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The paragraph of the reason. */
+	error = shell_text_append(&html, SHELL_FAILURE_REASON, strlen(SHELL_FAILURE_REASON));
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The reason's words. */
+	error = shell_text_escaped(&html, reason);
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The link that tries the location again, its target an attribute's value in quotes, escaped too. */
+	error = shell_text_append(&html, SHELL_FAILURE_LINK, strlen(SHELL_FAILURE_LINK));
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The link's target. */
+	error = shell_text_escaped(&html, location);
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The link's words and the end of the page. */
+	error = shell_text_append(&html, SHELL_FAILURE_TAIL, strlen(SHELL_FAILURE_TAIL));
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The data: URL's prefix. */
+	error = shell_text_append(page, SHELL_FAILURE_PREFIX, strlen(SHELL_FAILURE_PREFIX));
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The HTML, percent-encoded after the prefix. */
+	error = shell_text_percent(page, html.bytes, html.length);
+	if (error != 0) {
+		free(html.bytes);
+		return error;
+	}
+
+	/* The HTML is in the URL now. */
+	free(html.bytes);
+
+	/* Succeeded: the caller owns the URL's bytes. */
+	return 0;
+}
+
+/* Appends bytes to a text, growing it as needed; ENOMEM when it cannot grow. */
+static int
+shell_text_append(
+	struct shell_text *text,
+	const char *bytes,
+	size_t length)
+{
+	char *grown;
+	size_t size;
+
+	/* Room for the bytes and the NUL, doubling so that a run of appends stays linear. */
+	if (text->length + length + 1U > text->size) {
+		size = text->size * 2U;
+		if (size < text->length + length + 1U)
+			size = text->length + length + 1U;
+		grown = realloc(text->bytes, size);
+		if (grown == NULL)
+			return ENOMEM;
+		text->bytes = grown;
+		text->size = size;
+	}
+
+	/* The bytes, and the NUL after them. */
+	memcpy(text->bytes + text->length, bytes, length);
+	text->length += length;
+	text->bytes[text->length] = '\0';
+
+	/* Succeeded: the text ends with the bytes. */
+	return 0;
+}
+
+/* Appends a string to HTML as text, escaping the characters markup or an attribute's quotes would take; nonzero on failure. */
+static int
+shell_text_escaped(
+	struct shell_text *text,
+	const char *string)
+{
+	const char *entity;
+	size_t index;
+	int error;
+
+	/* Each byte, or the entity of a special one. */
+	for (index = 0; string[index] != '\0'; index++) {
+		entity = NULL;
+		if (string[index] == '&') {
+			entity = "&amp;";
+		} else if (string[index] == '<') {
+			entity = "&lt;";
+		} else if (string[index] == '>') {
+			entity = "&gt;";
+		} else if (string[index] == '"') {
+			entity = "&quot;";
+		}
+
+		/* The entity in the special byte's place, or the byte itself. */
+		if (entity != NULL) {
+			error = shell_text_append(text, entity, strlen(entity));
+		} else {
+			error = shell_text_append(text, string + index, 1U);
+		}
+
+		/* A text that cannot grow ends the escaping. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the string is text in the HTML. */
+	return 0;
+}
+
+/* Appends bytes percent-encoded, as a data: URL's body, keeping only the unreserved characters as they are; nonzero on failure. */
+static int
+shell_text_percent(
+	struct shell_text *text,
+	const char *bytes,
+	size_t length)
+{
+	static const char digits[] = "0123456789ABCDEF";
+	unsigned char byte;
+	char encoded[3];
+	size_t index;
+	int kept;
+	int error;
+
+	/* Each byte. */
+	for (index = 0; index < length; index++) {
+		byte = (unsigned char)bytes[index];
+
+		/* A letter, a digit and - . _ ~ stand for themselves; anything else is %XX. */
+		kept = 0;
+		if (byte >= 'A' && byte <= 'Z') {
+			kept = 1;
+		} else if (byte >= 'a' && byte <= 'z') {
+			kept = 1;
+		} else if (byte >= '0' && byte <= '9') {
+			kept = 1;
+		} else if (byte == '-' || byte == '.' || byte == '_' || byte == '~') {
+			kept = 1;
+		}
+
+		/* The byte, or its escape. */
+		if (kept) {
+			error = shell_text_append(text, bytes + index, 1U);
+		} else {
+			encoded[0] = '%';
+			encoded[1] = digits[byte >> 4];
+			encoded[2] = digits[byte & 15U];
+			error = shell_text_append(text, encoded, 3U);
+		}
+
+		/* A text that cannot grow ends the encoding. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the bytes are in the URL. */
+	return 0;
 }
