@@ -25,6 +25,7 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/nvrtx-mem.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
+#include "drivers/gpu/nvrtx/nvrtx-work.h"
 
 struct nvrtx_node;
 
@@ -88,6 +89,16 @@ struct nvrtx_node;
 
 /* The first draw's 3D object (P9g, ws037-p007), on the compute launch's channel, in nouveau's family. */
 #define NVRTX_HANDLE_DRAW		0x97000003U
+
+/*
+ * The work channel's objects (stage D1, ws037-p007): its address space
+ * (owned by the driver), its graphics channel (chid 4) and the 3D and
+ * compute objects on it, in nouveau's families.
+ */
+#define NVRTX_HANDLE_WORK_SPACE		0x90f10004U
+#define NVRTX_HANDLE_WORK_CHANNEL	0xf1f00004U
+#define NVRTX_HANDLE_WORK_THREED	0x97000004U
+#define NVRTX_HANDLE_WORK_COMPUTE	0xc5c00004U
 
 /*
  * The first draw's place in the compute launch's range: its system-memory
@@ -290,6 +301,46 @@ struct nvrtx_bo {
 };
 
 /*
+ * The work channel (stage D1, nvrtx.work=1): the graphics channel the GPU
+ * device keeps for the work it is given (nvrtx-work.h has its layout).
+ *
+ * The arena is a buffer object of the VRAM allocator holding the space's
+ * page tables, the channel's instance block and USERD, and the channel's
+ * own context buffers (the global ones are the golden context's).  The
+ * system-memory buffers are the ring, the semaphore, the fences' push
+ * buffers (one slot per ring entry) and the method buffer.  The made flags
+ * say which resource-manager objects exist, so the stop frees only those.
+ *
+ * lock serializes the submissions and the mappings: put is the next ring
+ * entry, fence the last value a submission asked the semaphore to reach,
+ * entry_fence the fence each ring entry's submission ended with (so an
+ * entry and its fence slot are reused only after that work is done).  va
+ * hands out the addresses of the runs mapped for users.  ready is set once
+ * the channel ran its first fence; nothing is submitted before.
+ */
+struct nvrtx_work_state {
+	struct nvrtx_bo arena;
+	uint64_t physical[NVRTX_GR_BUFFER_MAX];
+	struct nvrtx_buffer ring;
+	struct nvrtx_buffer semaphore;
+	struct nvrtx_buffer fences;
+	struct nvrtx_buffer methods;
+	struct nvrtx_heap va;
+	struct mutex lock;
+	uint32_t put;
+	uint32_t fence;
+	uint32_t entry_fence[NVRTX_WORK_RING_ENTRIES];
+	int arena_made;
+	int space_made;
+	int root_set;
+	int channel_made;
+	int threed_made;
+	int compute_made;
+	int scheduled;
+	int ready;
+};
+
+/*
  * The first draw (stage P9g, nvrtx.draw=1), on the compute launch's
  * channel.
  *
@@ -486,6 +537,9 @@ struct nvrtx_gpu {
 	struct nvrtx_compute_state compute;
 	struct nvrtx_draw_state draw;
 
+	/* The work channel the GPU device keeps (stage D1). */
+	struct nvrtx_work_state work;
+
 	/* The VRAM allocator and the BAR1 window. */
 	struct nvrtx_memory_state memory_state;
 
@@ -586,6 +640,15 @@ void nvrtx_compute_stop(struct nvrtx_gpu *gpu);
 void nvrtx_compute_release(struct nvrtx_gpu *gpu);
 int nvrtx_compute_submit(struct nvrtx_gpu *gpu, uint32_t entry, uint64_t push_va, size_t length);
 int nvrtx_compute_wait(struct nvrtx_gpu *gpu, uint32_t value, uint32_t *waited);
+
+int nvrtx_work_start(struct nvrtx_gpu *gpu);
+void nvrtx_work_stop(struct nvrtx_gpu *gpu);
+void nvrtx_work_release(struct nvrtx_gpu *gpu);
+int nvrtx_work_map_vram(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size, uint64_t *va);
+int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t count, uint64_t *va);
+int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
+int nvrtx_work_submit(struct nvrtx_gpu *gpu, uint64_t push_va, size_t length, uint32_t *fence);
+int nvrtx_work_wait(struct nvrtx_gpu *gpu, uint32_t fence, uint32_t timeout_us);
 
 int nvrtx_draw_buffers(struct nvrtx_gpu *gpu, uint64_t arena_target);
 void nvrtx_draw_pages(const struct nvrtx_gpu *gpu, uint64_t *pages);

@@ -84,3 +84,8 @@ ifeq ($(NVRTX_RUN),R8d)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1
 ZEDBSD_USER_PROGRAMS += display-inventory display-control display-scanout
 endif
+# ws037-p007 D1: R7 with the work channel the GPU device will keep (stage P9w: the golden context, the channel with
+# the 3D and compute objects, its first fence), stopped again at the end.
+ifeq ($(NVRTX_RUN),R9w)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.work=1 nvrtx.disp=0 nvrtx.resident=0
+endif

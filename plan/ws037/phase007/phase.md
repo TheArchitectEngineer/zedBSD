@@ -167,3 +167,32 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 - 依存: D1 → D2 → D3・D4 → D5 → D6。D3 の shader は P4（compiler）の SPIR-V → SM75 が前提（desktop の shader 全て）。executor と compiler の約束（program の入力・cbuf 0 の push constant の配置・texture の binding の番号・SPH）を変える時は Q1 経由で P4 とすり合わせる。
 - 量の見込み: D2 は i915 の protocol の層の移植で数千行、D3 は compositor の command の範囲で数千行。ベータ2（10/16 夕）の残りでは D1・D2 の host の部分までが現実的で、desktop（D6）はベータ2 の後の見込み（Q1・ユーザーの判断）。
 - 代わりの道（判断を Q1 へ）: 方式 B の guest に Venus の virtio-gpu（**zedBSD 用の host の renderer**。素の virglrenderer は上のとおり飛ばされる）を足せば、compositor は Venus で描き nvrtx の display に複写の present で出せる（D0 だけで desktop が RTX の monitor に出る）。ただし「RTX が描く」ではなく、毎 frame の CPU の複写（P8c の storage の present）になる。
+
+### 8.3 D1 の実装（2026-10-15、P2。build と host 試験まで、実機は未）
+
+`nvrtx.work=1`（新しい語、既定は off で既定の boot は不変）の時、P9c の後・P8 の前に段 **P9w** を走らせ、GPU の device が持つ描画の channel を作る。golden context（P5g）が要るので `nvrtx.work=1` は P5g も走らせる。P9c（compute.c）の作りを写し、boot の試験ではなく使い続ける部品にした。
+
+| 物 | 中身 |
+| --- | --- |
+| `work.c`（新） | arena（P4m の allocator の BO 32 MiB、2 MiB 整列: page table・instance・USERD・自分の context buffer）、driver の vaspace（`NVRTX_WORK_VA_BASE` 0x20000000 からの 512 MiB を 1 本の DIR1 の entry で。context buffer は golden context の VA に privileged、driver の page（ring・semaphore・fence の push の 8 page）は 0x28000000、0x28100000 から上を利用者の map に heap で配る）、channel（chid 4、0xc46f）・promote・3D（0xc597）と compute（0xc5c0）の object・bind・schedule、最初の submission（subchannel 0 に 3D、1 に compute の SET_OBJECT と fence）。API: `nvrtx_work_map_vram`・`nvrtx_work_map_system`（PTE を書いて TLB の invalidate）・`nvrtx_work_unmap`・`nvrtx_work_submit`（呼び手の push の segment と driver の fence の 2 entry、ring は 512 entry で wrap、entry と fence の slot はその entry の前の fence が過ぎるまで再利用しない）・`nvrtx_work_wait`（semaphore の polling、wrap を考えた比較）。停止は nouveau の順（schedule off → 3D・compute → channel → root → space）、arena は GSP の停止の後に allocator へ返す |
+| `work-records.c`・`nvrtx-work.h`（新） | hardware に触れない部分: fence の比較（`nvrtx_work_fence_passed`）、SET_OBJECT の push（`nvrtx_work_push_objects`）、layout の定数 |
+| `mmu.c` | `nvrtx_mmu_gr_pte_offset`（VA の PTE の位置。page table は 2 MiB の順に並ぶので run の PTE は表をまたいで連続）・`nvrtx_mmu_gr_entries_vram`・`_system`（既存の map の関数と同じ PTE の値を 1 列に） |
+| `gsp.c`・`stage.c`・`nvrtx.c`・`nvrtx-gpu.h`・`nvrtx-private.h` | `nvrtx.work=1`、P5g を伴わせる、P9w の段、stop と release の順（work → compute → display → gr、release は allocator の release の前）、`work.lock` |
+| `platform/amd64/vmunix.mk` | NVRTX の ifeq の中に 2 file |
+| `config-amd64-nvrtx.mk` | `NVRTX_RUN=R9w`（`nvrtx.gsp=1 nvrtx.work=1 nvrtx.disp=0 nvrtx.resident=0`） |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | `PASS nvrtx gsp: 252 checks`（work の 18 項目: PTE の位置（先頭・利用者の範囲・最後・範囲外・非整列・範囲の検査）、256 枚の page table、VRAM と system の PTE の値、fence の比較と wrap、SET_OBJECT の push の 4 語、fence の push が slot の 64 byte に入る、ring が 1 page） |
+| `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix` | rc 0・warning 0・`kernel include check: PASS (422 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| 実機（R9w） | **未実施** |
+
+未確定の危険: (1) 2 本目の GR の channel（chid 3 の P9c と同時でも別でも）を RM が受けるか（P9c は 1 本で実機 PASS）。(2) arena を allocator の BO（VRAM の下の方）に置くこと（P9c は上端の固定の reserve）。context buffer の位置に制約があれば promote で分かる（`rm: control … status …`）。(3) 1 MiB の page table の image を kern_malloc で一度に取る。
+
+#### T への手順（R9w、方式 B、rombar=0 で可）
+
+image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9w NVRTX_RUN=R9w`（merge の commit）。run の前に host の reboot と `prepare.sh --check`。判定は guest の kernel の印（screendump か `dmesg | grep nvrtx`）。
+合格: R7g の印（P5g の ok）に続いて `P9w begin` → `P9w arena at …, own buffers … bytes` → `P9w page tables at …` → `P9w ok: vaspace` → `P9w ok: work channel 4 on runlist N` → **`P9w ok: fence 1 after N us`** → `P8 ok: display …` → `P8b off (nvrtx.disp=0); stopping after P8a` → `P8 done; …` → `P6 ok: channel and vaspace freed`（**`P6: N work frees failed` が無い**）→ `P7 ok: region torn down` → login prompt。
+FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore …)` なら channel は作れたが GPU が entry を実行していない）、`rm: class … status …`・`rm: control … status …`、`P6 channel error: …` を記録。`P7 fail` なら host を reboot。

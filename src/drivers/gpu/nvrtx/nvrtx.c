@@ -237,9 +237,10 @@ nvrtx_keep(
 	if (gpu == NULL)
 		return ENOMEM;
 
-	/* The locks of the VRAM's register window and of the VRAM allocator. */
+	/* The locks of the VRAM's register window, of the VRAM allocator and of the work channel. */
 	(void)mutex_init(&gpu->window_lock, LOCK_RANK_DEVICE, "nvrtx window");
 	(void)mutex_init(&gpu->memory_state.lock, LOCK_RANK_DEVICE, "nvrtx memory");
+	(void)mutex_init(&gpu->work.lock, LOCK_RANK_DEVICE, "nvrtx work");
 
 	/* Maps the whole register window; the later stages reach far into it. */
 	error = drv_pci_device_map_bar(device->pci,

@@ -187,6 +187,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/draw-push.c src/drivers/gpu/nvrtx/d
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/scanout.c
 # P4m: the VRAM allocator and the BAR1 window (ws037-p005).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
+# P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/node.c src/drivers/gpu/nvrtx/present.c src/drivers/gpu/nvrtx/cursor.c src/drivers/gpu/nvrtx/share.c
 endif
