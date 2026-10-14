@@ -753,12 +753,15 @@ static int write_cg_rollback(struct mount *mountp, int original_error);
 static int adjust_directory_count(struct mount *mountp, uint32_t ino, int delta);
 static uint64_t quota_now(void);
 static int zero_new_block(struct mount *mountp, struct ufs_mount_state *ms, uint64_t fragment);
+static int zero_block(struct mount *mountp, struct ufs_mount_state *ms, uint64_t fragment);
 static int allocate_block_compat(struct mount *mountp, uid_t uid, gid_t gid, uint64_t *result);
 static void allocation_begin(struct ufs_allocation *context, struct mount *mountp, uid_t uid, gid_t gid);
 static int allocation_allocate(struct ufs_allocation *context, uint64_t *result);
 static void allocation_commit(struct ufs_allocation *context);
 static void allocation_abort(struct ufs_allocation *context);
 static int allocate_block(struct mount *mountp, uid_t uid, gid_t gid, uint64_t *result);
+static int allocate_indirect_block(struct inode *inode, uint64_t *result);
+static int fragment_in_volume(const struct ufs_super *super, uint64_t fragment);
 static int free_block(struct mount *mountp, uint64_t fragment, uid_t uid, gid_t gid);
 static int allocate_inode_number(struct mount *mountp, uid_t uid, gid_t gid, uint32_t *number);
 static int free_inode_number(struct mount *mountp, uint32_t number, uid_t uid, gid_t gid);
@@ -937,6 +940,8 @@ static uint64_t j3_wanted_sectors(struct mount *mountp, struct ufs_mount_state *
 static int j3_locator_write(struct mount *mountp, struct ufs_j3 *j3);
 static unsigned mountp_disk_cached(struct mount *mountp);
 static int j3_file_open(struct ufs_mount_state *ms, struct inode *root, struct inode **inode);
+static int j3_file_matches(struct ufs_mount_state *ms, struct inode *root, int *matches);
+static int j3_locator_erase(struct mount *mountp);
 static int j3_file_fill(struct ufs_mount_state *ms, struct inode *inode, uint64_t blocks, struct ufs_j3_extent *extents, unsigned capacity, unsigned *count);
 static int j3_allocate(struct ufs_mount_state *ms, struct inode *root, uint64_t sectors);
 static int j3_make(struct mount *mountp, struct ufs_mount_state *ms, struct inode *root, uint64_t sectors);
@@ -4516,7 +4521,9 @@ quota_now(
  * Zeroes a newly allocated block, because a caller may read it before
  * writing.  The zeroes are content: a journal need not log them, and they
  * reach the device before the commit that makes the block reachable.  The
- * journal's own file, which nothing reads, is not zeroed.
+ * journal's own file, which nothing reads, is not zeroed here; its
+ * indirect blocks, which a lookup does read, are zeroed where they are
+ * taken (allocate_indirect_block).
  */
 static int
 zero_new_block(
@@ -4524,12 +4531,30 @@ zero_new_block(
 	struct ufs_mount_state *ms,
 	uint64_t fragment)
 {
-	uint8_t *zero;
 	int error;
 
 	/* Leaves the journal's own blocks as they are. */
 	if (ms->j3.creating)
 		return 0;
+
+	/* Writes zeroes over the whole block. */
+	error = zero_block(mountp, ms, fragment);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the block reads as zeroes. */
+	return 0;
+}
+
+/* Writes zeroes over one block, as content. */
+static int
+zero_block(
+	struct mount *mountp,
+	struct ufs_mount_state *ms,
+	uint64_t fragment)
+{
+	uint8_t *zero;
+	int error;
 
 	/* Takes a block of zeroes. */
 	zero = kern_calloc(1, ms->super.bsize);
@@ -4780,6 +4805,71 @@ allocate_block(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Takes a block for an indirect level of a file.
+ *
+ * A lookup takes every non-zero entry of an indirect block for a block of
+ * the file, so a new one has to read as zeroes.  The allocator zeroes every
+ * block except the journal's own, whose data nothing reads; an indirect
+ * block of the journal is zeroed here.  Without it, the entries the block
+ * kept from its former owner were followed as blocks of the journal, and
+ * cutting the journal later failed on them (BUG-294).
+ */
+static int
+allocate_indirect_block(
+	struct inode *inode,
+	uint64_t *result)
+{
+	struct ufs_mount_state *ms;
+	uint64_t fragment;
+	int rollback;
+	int error;
+
+	/* Takes the mount state this call runs against. */
+	ms = state(inode->i_mount);
+
+	/* Takes the block, charged to the file's owner. */
+	error = allocate_block(inode->i_mount, inode->i_uid, inode->i_gid, &fragment);
+	if (error != 0)
+		return error;
+
+	/* Zeroes it when the allocator, filling the journal, left it as it was. */
+	if (ms->j3.creating) {
+		error = zero_block(inode->i_mount, ms, fragment);
+		if (error != 0) {
+			/* Nothing names the block yet, so it is given straight back. */
+			rollback = free_block(inode->i_mount, fragment, inode->i_uid, inode->i_gid);
+			if (rollback != 0)
+				stop_writing(inode->i_mount, "an indirect block that could not be zeroed could not be freed", rollback);
+
+			/* Failed: reports why the block could not be zeroed. */
+			return error;
+		}
+	}
+
+	/* Succeeded: the block is the caller's, and reads as zeroes. */
+	*result = fragment;
+	return 0;
+}
+
+/* Asks whether a fragment names a whole block inside the volume. */
+static int
+fragment_in_volume(
+	const struct ufs_super *super,
+	uint64_t fragment)
+{
+	/* The fragment past the last one of the volume. */
+	if (fragment >= super->size)
+		return 0;
+
+	/* A block that would run past the end of the volume. */
+	if (super->frag > super->size - fragment)
+		return 0;
+
+	/* Succeeded: the block lies inside the volume. */
+	return 1;
 }
 
 /* Gives one block back, crediting its owner's quota. */
@@ -5614,6 +5704,7 @@ bmap_ensure(
 	uint64_t fragment;
 	unsigned level;
 	unsigned depth;
+	int inside;
 	int error;
 
 	/* The first blocks of a file are named by the inode itself. */
@@ -5702,10 +5793,7 @@ bmap_ensure(
 	/* The root of that level may itself still have to be allocated. */
 	root = &ui->indirect[level];
 	if (*root == 0) {
-		error = allocate_block(inode->i_mount,
-				       inode->i_uid,
-				       inode->i_gid,
-				       &allocated_value);
+		error = allocate_indirect_block(inode, &allocated_value);
 		if (error != 0)
 			return error;	/* Failed. */
 
@@ -5776,9 +5864,18 @@ bmap_ensure(
 		if (next == 0) {
 			allocated_value = 0;
 
-			/* Takes a block and publishes it into the entry. */
-			error = allocate_block(inode->i_mount, inode->i_uid,
-					       inode->i_gid, &next);
+			/*
+			 * Takes a block: an indirect block for a level above
+			 * the last, else the file's own block.
+			 */
+			if (depth > 1U) {
+				error = allocate_indirect_block(inode, &next);
+			} else {
+				error = allocate_block(inode->i_mount, inode->i_uid,
+						       inode->i_gid, &next);
+			}
+
+			/* Publishes the block into the entry. */
 			if (error == 0) {
 				allocated_value = next;
 
@@ -5834,6 +5931,25 @@ bmap_ensure(
 			}
 
 			ui->blocks += s->bsize / UFS_SECTOR_SIZE;
+		}
+
+		/*
+		 * Refuses an entry that names no block of the volume: the
+		 * indirect block is corrupt, and its entry must not be taken
+		 * for a block of the file (BUG-294).
+		 */
+		inside = fragment_in_volume(s, next);
+		if (!inside) {
+			kern_logf("ufs: %s: inode %llu: indirect block %llu names block %llu at entry %u, outside the volume\n",
+				  inode->i_mount->m_disk->d_name,
+				  (unsigned long long)inode->i_ino,
+				  (unsigned long long)fragment,
+				  (unsigned long long)next,
+				  (unsigned)index);
+			kern_free(block);
+
+			/* Failed: the file's block map is corrupt. */
+			return EIO;
 		}
 
 		/* Follows the entry down to the next level. */
@@ -9202,6 +9318,14 @@ truncate_indirect(
 					   inode->i_gid);
 		}
 		if (error != 0) {
+			/* Names the file, the indirect block, the entry and the block it named. */
+			kern_logf("ufs: %s: inode %llu: entry %u of indirect block %llu, naming block %llu, could not be released (error %d)\n",
+				  inode->i_mount->m_disk->d_name,
+				  (unsigned long long)inode->i_ino,
+				  index,
+				  (unsigned long long)root,
+				  (unsigned long long)child,
+				  error);
 			stop_writing(inode->i_mount, "an indirect block could not be truncated", error);
 			goto out;
 		}
@@ -19250,8 +19374,16 @@ write_cached_start(
 	 * Journals the metadata unless the mount declines; a volume whose
 	 * journal cannot be opened or made goes on without one.
 	 */
-	if ((mountp->m_flags & MOUNT_NO_JOURNAL) == 0)
-		(void)j3_open(mountp, ms, root);
+	if ((mountp->m_flags & MOUNT_NO_JOURNAL) == 0) {
+		error = j3_open(mountp, ms, root);
+
+		/* Says so when a volume large enough for a journal goes on without one. */
+		if (error != 0 && error != ENOENT) {
+			kern_logf("ufs: %s: the batched journal could not be opened or made (error %d); the volume goes on without one\n",
+				  mountp->m_disk->d_name,
+				  error);
+		}
+	}
 
 	/* Delays the volume's writes in the cache from here on. */
 	ms->write_cached = 1;
@@ -21343,6 +21475,106 @@ j3_locator_write(
 }
 
 /*
+ * Erases the locator, so that the volume names no journal, and makes the
+ * erasure durable.  A volume that names none is left as it is.
+ */
+static int
+j3_locator_erase(
+	struct mount *mountp)
+{
+	uint8_t sector[SECTOR_SIZE];
+	uint8_t *locator;
+	uint64_t fragment;
+	uint64_t nonce;
+	uint64_t lba;
+	int named;
+	int error;
+
+	/* Reads the sector, so that the rest of it is kept. */
+	error = j3_super_read(mountp, sector);
+	if (error != 0)
+		return error;
+
+	/* A volume that names no journal has nothing to erase. */
+	named = j3_locator_parse(sector, &fragment, &nonce);
+	if (!named)
+		return 0;
+
+	/* Clears the locator's words, its magic first among them. */
+	locator = sector + (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) % SECTOR_SIZE;
+	kern_memset(locator, 0, 28);
+
+	/* Writes the sector back. */
+	lba = (UFS_SBLOCK_OFFSET + J3_LOCATOR_OFFSET) / SECTOR_SIZE;
+	error = write_sectors(mountp, lba, 1, sector);
+	if (error != 0)
+		return error;
+
+	/* Makes the erasure durable before the journal's file is touched. */
+	error = j3_durable(mountp);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the volume names no journal. */
+	return 0;
+}
+
+/*
+ * Asks whether the journal's file still holds the loaded journal: the file
+ * is there, its first block is the header the locator names, and its size
+ * is the journal's.
+ */
+static int
+j3_file_matches(
+	struct ufs_mount_state *ms,
+	struct inode *root,
+	int *matches)
+{
+	struct componentname component;
+	struct inode *inode;
+	struct ufs_inode_info *ui;
+	uint64_t bytes;
+	int error;
+
+	/* Answers no until the file is found to hold the journal. */
+	*matches = 0;
+
+	/* Names the file, and lets the journal's own lookup see the name. */
+	component.cn_nameptr = J3_NAME;
+	component.cn_namelen = kern_strlen(J3_NAME);
+	component.cn_flags = 0;
+	ms->j3.creating = 1;
+
+	/* Finds the file the volume has. */
+	inode = NULL;
+	error = ufs_lookup(root, &component, &inode);
+
+	/* The name is refused again from here on. */
+	ms->j3.creating = 0;
+
+	/* A volume without the file has no journal to keep. */
+	if (error == ENOENT)
+		return 0;
+
+	/* Reports why the file could not be looked up. */
+	if (error != 0)
+		return error;
+
+	/* Compares the file's first block and size with the journal's. */
+	ui = info(inode);
+	bytes = ms->j3.total_sectors * SECTOR_SIZE;
+	if (ui->direct[0] == ms->j3.header_fragment &&
+	    (uint64_t)inode->i_size == bytes)
+		*matches = 1;
+
+	/* Lets the file go. */
+	inode_release(inode);
+
+	/* Succeeded: *matches says whether the journal can be kept. */
+	return 0;
+}
+
+/*
  * Delays a mount's writes in the cache; reports whether they already were.
  */
 static unsigned
@@ -21587,9 +21819,18 @@ j3_make(
 	unsigned slot;
 	int error;
 
-	/* Allocates the file; the volume has no journal until the locator names it. */
+	/*
+	 * Unnames the old journal, durably, before its file is cut: a make
+	 * that fails after the cut must not leave a locator naming blocks
+	 * that are free again (BUG-294).
+	 */
 	j3 = &ms->j3;
 	j3->present = 0;
+	error = j3_locator_erase(mountp);
+	if (error != 0)
+		return error;
+
+	/* Allocates the file; the volume has no journal until the locator names it. */
 	error = j3_allocate(ms, root, sectors);
 	if (error != 0)
 		return error;
@@ -21655,6 +21896,7 @@ j3_open(
 {
 	struct ufs_j3 *j3;
 	uint64_t wanted;
+	int matches;
 	int error;
 
 	/* A volume too small for more than a few blocks of journal keeps none. */
@@ -21663,8 +21905,21 @@ j3_open(
 	if (wanted <= (uint64_t)ms->super.bsize / SECTOR_SIZE * 8U)
 		return ENOENT;
 
-	/* Makes the journal again when there is none or it has another size. */
-	if (!j3->present || j3->total_sectors != wanted) {
+	/*
+	 * Keeps the journal the volume names only while its file still holds
+	 * it: a make that failed after cutting the file, or an fsck that
+	 * cleared the file, leaves a locator naming blocks that are free, and
+	 * a journal reused there would write over other files (BUG-294).
+	 */
+	matches = 0;
+	if (j3->present && j3->total_sectors == wanted) {
+		error = j3_file_matches(ms, root, &matches);
+		if (error != 0)
+			return error;
+	}
+
+	/* Makes the journal again when there is none, it has another size, or its file no longer holds it. */
+	if (!matches) {
 		error = j3_make(mountp, ms, root, wanted);
 		if (error != 0)
 			return error;
