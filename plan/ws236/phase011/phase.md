@@ -162,6 +162,13 @@ Phase disposition: normal
 5. 合否: (a) `PRESENT own=1 gpu_pictures=1`、`pictures the GPU holds` の行が出る、(b) 1080p30 の 2 本が最後まで、`FRAMES … late` がほぼ 0（目安 10 以下）・shown 290 以上、(c) `DRAW picture_us` が 1 枚 数 ms（前は約 60000）、(d) PNG の色が正しい（testsrc2 の色の帯・文字が見え、緑や紫に偏らない。前の CPU の道の PNG と見比べ）、(e) `FAILED`・`execution failed` が無く、videoplayer・compositor が落ちない、(f) videoplayer の CPU の使用率が前より下がる（記録）。
 6. 止め所: Pi が応答しなくなったら止めて報告。画が出ない・色が違う時は PNG と log を返す（解析は P3）。
 
+### presenter の 2 frame 重ねの検討（2026-10-16、P3、Q1 の依頼）
+
+- 今: 1 frame ずつ（acquire → 記録 → submit → present → fence を待つ）。待つ間に CPU は次の frame を作れないが、GPU の仕事は TFU（Y・UV 約 1.4 ms の見込み）と 1 枚の quad の描画（窓の大きさの fragment、texture 2 枚）だけ。
+- 重ねる形（実装するなら）: frame の slot を 2 つ（command buffer・fence・acquire の semaphore）、picture の quad の頂点を slot ごと、前の picture は「最後に描いた frame の通し番号」を持たせて、その frame の fence が済んでから解放（videoplayer に解放待ちの列）。overlay の image は書く前に飛んでいる全 frame を待つ（GPU の picture では overlay の書き換えは bar の表示中の 250 ms ごとだけなので、待ちは稀）。見積もり 1〜2 LW。
+- 効く条件: `DRAW rest_us`（present と fence の待ち）が 1 frame の時間（30 fps で 33 ms、60 fps で 16.7 ms）に近い時。V3D の executor は compositor と videoplayer の仕事を順に流すので、compositor の 1 frame（WS141 p013 では 33 ms 級だった）が長いと fence の待ちも長くなる。その時は重ねても compositor の合成の速さが上限（表示は compositor が出す）で、60 fps には compositor 側の短縮が要る。
+- 判断: T1-679 の `DRAW picture_us`・`rest_us` と kernel の perf を見てから決める。`rest_us` が 1 frame の半分を超え、かつ compositor が 60 fps で回っている時に実装する。それ以外（compositor が律速）なら、HVS の overlay に NV12 を直に載せる案 2（WS214、compositor の合成を通らない）の方が効く。
+
 ## 残り・危険
 
 - 段 a の YUV の候補は当たらなかった（B-2 に決めた）。
