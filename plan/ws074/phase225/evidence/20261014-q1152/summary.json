@@ -1,0 +1,23 @@
+{
+  "normal_margin_grid_exact": true,
+  "leading_margin_grid_exact": true,
+  "fixed_wpt_pass": 14,
+  "fixed_wpt_fail": 0,
+  "acid3": {
+    "score": "100",
+    "complete": true,
+    "pass": true,
+    "different_pixels": 0,
+    "total_pixels": 480000
+  },
+  "acid3_inventory": {
+    "complete": true,
+    "pass_count": 100,
+    "reported_total": 100,
+    "missing": []
+  },
+  "acid2": {
+    "different_pixels": 1865,
+    "total_pixels": 120000
+  }
+}

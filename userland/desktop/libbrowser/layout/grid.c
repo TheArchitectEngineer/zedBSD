@@ -447,6 +447,9 @@ grid_vertical_auto(
 	layout_unit height;
 	layout_unit area_width;
 	layout_unit area_height;
+	layout_unit outer_width;
+	layout_unit outer_height;
+	layout_unit content_height;
 	layout_unit remaining;
 	int occupied[4];
 	size_t index;
@@ -499,11 +502,11 @@ grid_vertical_auto(
 				return 0;
 		}
 
-		/* Margins and frame edges change both intrinsic track contributions. */
+		/* Only nonnegative physical pixel margins enter this track calculation. */
 		layout_box_model(child, 0);
 		for (side = 0; side < 4; side++) {
-			if (child->style.margin[side].unit == CSS_UNIT_AUTO ||
-			    child->margin[side] != 0 || child->border[side] != 0 ||
+			if (child->style.margin[side].unit != CSS_UNIT_PX ||
+			    child->margin[side] < 0 || child->border[side] != 0 ||
 			    child->padding[side] != 0)
 				return 0;
 		}
@@ -593,7 +596,11 @@ grid_vertical_auto(
 		/* A definite inline room gives a vertical text run its physical line width. */
 		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
 			child->style.height.unit = CSS_UNIT_PX;
-			child->style.height.value = box->style.height.value;
+			content_height = layout_from_px(box->style.height.value) -
+			    child->margin[CSS_TOP] - child->margin[CSS_BOTTOM];
+			if (content_height < 0)
+				content_height = 0;
+			child->style.height.value = layout_to_px(content_height);
 			child->style.height.offset = 0;
 			child->max_content_known = 0;
 		}
@@ -618,10 +625,12 @@ grid_vertical_auto(
 			}
 		}
 		natural_height[index] = height;
-		if (width > rows[placed->row])
-			rows[placed->row] = width;
-		if (height > columns[placed->column])
-			columns[placed->column] = height;
+		outer_width = width + child->margin[CSS_LEFT] + child->margin[CSS_RIGHT];
+		outer_height = height + child->margin[CSS_TOP] + child->margin[CSS_BOTTOM];
+		if (outer_width > rows[placed->row])
+			rows[placed->row] = outer_width;
+		if (outer_height > columns[placed->column])
+			columns[placed->column] = outer_height;
 	}
 
 	/* Each auto track receives an equal share after its content minimum. */
@@ -657,7 +666,11 @@ grid_vertical_auto(
 		saved_height = child->style.height;
 		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
 			child->style.height.unit = CSS_UNIT_PX;
-			child->style.height.value = layout_to_px(area_height);
+			content_height = area_height - child->margin[CSS_TOP] -
+			    child->margin[CSS_BOTTOM];
+			if (content_height < 0)
+				content_height = 0;
+			child->style.height.value = layout_to_px(content_height);
 			child->style.height.offset = 0;
 		}
 		error = grid_lay_item(tree, child, area_width, align);
@@ -670,8 +683,8 @@ grid_vertical_auto(
 		}
 		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR && justify == CSS_ALIGN_START)
 			child->height = natural_height[index];
-		child->x = placed->row == 0 ? 0 : rows[0];
-		child->y = placed->column == 0 ? 0 : columns[0];
+		child->x = (placed->row == 0 ? 0 : rows[0]) + child->margin[CSS_LEFT];
+		child->y = (placed->column == 0 ? 0 : columns[0]) + child->margin[CSS_TOP];
 	}
 
 	/* The common Grid state no longer owns any output. */

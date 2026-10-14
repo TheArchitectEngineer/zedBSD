@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1151 / WS074 fixed Grid502 recensus（2026-10-14）
+## 最新: q1152 / WS074 vertical Grid item margins（2026-10-14）
+
+[q1152履歴](queue-q1152.md): 非負px marginをauto track寄与・子寸法・配置に反映、固定010/014 whole FAIL→PASS。独立2ページがChromiumと全box一致、旧WPT12件・Acid3差0維持。[証拠](../ws074/phase225/evidence/20261014-q1152/README.md)。border/padding残存、共有投影/GitHub publication pending。
+
+## q1151 / WS074 fixed Grid502 recensus（2026-10-14）
 
 [q1151履歴](queue-q1151.md): q1150後の固定Grid502は134→136 whole PASS、2 subtest改善・後退0。増分vertical-lr stretch009/013。[証拠](../ws074/phase189/evidence/20261014-q1151/README.md)。残件のmargin/border/padding種別も訂正、共有投影/GitHub publication pending。
 

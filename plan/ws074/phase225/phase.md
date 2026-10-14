@@ -2,6 +2,14 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+## q1152-i01 有限部分範囲（2026-10-14 11:53 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:23 JSTまで）に適用。q1150の2×2 implicit auto vertical-lr/LTR・definite content-box・gap0・単一ASCII文字子・start/stretch限定経路で、非負px marginだけを内容寄与・子の解決済み物理サイズ・配置へ一般的に反映。border/paddingは対象外。独立margin最小ページをChromiumと比較し、固定010/014 whole PASS、旧001–009/013・縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならattempt unclearedで原因を記録。p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1152-i01 結果（2026-10-14 11:57 JST）
+
+Event ws074-p225-q1152-partial-clear-20261014: [証拠](evidence/20261014-q1152/README.md)。非負px marginを縦Gridのauto track物理内容寄与・縦文字の列内利用可能高・配置に反映。余白最小ページとtop/leftを加えた別ページはChromium 153と全box一致。固定010/014は2/2 whole FAIL→PASS、旧001–009/013・縦横WPTもPASS。border011/015・padding012/016は従来経路で初回差不変。warning0 build、host CSS51/JS14/Grid48、Acid3 score100/inventory100/差0、Acid2差1865。q1152部分cleared、p225 wholeはborder/padding等が残りuncleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 Event ws074-p225-q1151-source-correction-20261014: [固定WPT原本の再確認](evidence/20261014-q1149/README.md)で009/013以外の6件を「全てmargin」と記した分類を訂正。010/014はmargin、011/015はborder、012/016はpadding。q1150が実装した外側寸法0の基準と固定009/013 PASSは不変。後続は外側寸法種別を明示して有限範囲を選ぶ。
 
 ## q1150-i01 有限部分範囲（2026-10-14 11:40 JST）

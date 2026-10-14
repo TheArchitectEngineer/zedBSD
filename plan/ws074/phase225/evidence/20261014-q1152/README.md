@@ -1,0 +1,11 @@
+# q1152-i01 — physical margins in bounded vertical Grid auto tracks
+
+The q1150 bounded 2×2 implicit auto-track path now accepts nonnegative physical pixel margins on its single ASCII text children. Each track's minimum includes the corresponding item margins; vertical text receives the column's content height after top/bottom margins, and final physical placement adds top/left margins. Border and padding still take the existing fallback path. Track sizes continue to come from content contribution and available space.
+
+The independent [margin page](margin-auto-grid.html) changed from [prior browser layout](before.txt) `a=0,0,115,20|b=115,0,115,30|c=0,30,115,20|d=115,30,125,20` to [exact Chromium 153 coordinates](after.txt): `a=0,0,20,110|b=0,120,110,48|c=130,0,20,48|d=130,120,110,110`. [Chromium record](chromium.txt) is retained. A separate [top/left margin page](leading-margin-auto-grid.html) also matches [Chromium](leading-chromium.txt) in all four rectangles; [browser output](leading-browser.txt) shows `a=13,7,20,107|b=0,124,110,48|c=130,0,20,48|d=130,124,110,107`. [Summary](summary.json) records both exact comparisons.
+
+After the final source edit, fixed Interop 2025 [vertical-lr stretch010](final-wpt-09.json) and [014](final-wpt-11.json) changed whole FAIL→PASS. Old 001–009 and 013 plus two old [vertical](final-wpt-12.json)/[horizontal](final-wpt-13.json) Grid cases remain PASS: 14/14. Inputs: WPT `2d66b9b7998bb58c336138c178323ddee857b586`, fixed manifest, localhost HTTP, three fixed fonts, 5 s settle and 20 s process bound. Border [011](fallback-wpt-011.json)/[015](fallback-wpt-015.json) and padding [012](fallback-wpt-012.json)/[016](fallback-wpt-016.json) cases remain FAIL with their prior first width mismatch, outside this Queue.
+
+[Warning-free build](build.log), host CSS rule model 51/51, JS 14/14 and Grid inline-axis 48/48 PASS. [Acid callback report](acid-report.json): Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 different pixels, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1152-i01 partial scope cleared. p225 whole still needs border, padding, other Grid forms and full conformance. p189/p173 all-focus coverage and 100% remain unmet. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.
