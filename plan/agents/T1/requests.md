@@ -742,3 +742,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-667 | Q1（WS037 R8d 再試験、cursor hide の直し 3b06400f4） | phase006 R8d | **PASS**（2026-10-16、tree ac216fcd4、cursor … hide=0・done error=0、dmesg に error 無し。[results](results-20261016-t1-667.md)） |
 | T1-669 | Q1（BUG-321、P1 の d66326021・404c94798） | BUG-321 の直し | **未実施**（boot PASS まで。loop の command が安全の検査で拒否、[results](results-20261016-t1-669.md)） |
 | T1-669-c | Q1 | BUG-321 の QEMU の多 CPU の試験 | **canceled**（2026-10-16 ユーザー「この試験はやめる: 5330 の実機（U7）での確認だけにします。」。4 並行の loop が Claude Code の安全の検査で拒否された後のユーザーの判断。起動と SSH までは済み） |
+| T1-672 | Q1（WS037 R9v、D3 vkquad と D5 display-events） | phase007 8.8 | **FAIL**（2026-10-16、tree 239a135f6、`VKQUAD fail devices 0 count=0`・`DISPLAY-EVENTS done error=-3`、dmesg に P8c・gpu device の行が無く nvrtx の error も無し。[results](results-20261016-t1-672.md)） |
