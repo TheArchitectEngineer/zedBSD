@@ -32,5 +32,14 @@ ifeq ($(NVRTX_RUN),R3)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P3
 endif
 ifeq ($(NVRTX_RUN),R4)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P4
+endif
+ifeq ($(NVRTX_RUN),R5)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P5
+endif
+ifeq ($(NVRTX_RUN),R6)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P6
+endif
+ifeq ($(NVRTX_RUN),R7)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1
 endif
