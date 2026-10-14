@@ -46,6 +46,9 @@
 /* The most frames a stream has. */
 #define PROBE_MAX_FRAMES		32U
 
+/* The encoding of an I420 frame (the decoder's default output), summed as NV12. */
+#define PROBE_ENCODING_I420		0x30323449U
+
 /* The FNV-1a 32 offset basis and prime. */
 #define PROBE_FNV_BASIS			0x811c9dc5U
 #define PROBE_FNV_PRIME			0x01000193U
@@ -393,7 +396,9 @@ frame_sum(
 	uint32_t offset_uv;
 	uint32_t row;
 	uint32_t column;
+	uint32_t offset_v;
 	const uint8_t *line;
+	const uint8_t *line_v;
 
 	/* The planes' layout, from the buffer, else the format's stride and height. */
 	pitch_y = frame->plane_pitch[0];
@@ -413,6 +418,25 @@ frame_sum(
 			sum ^= line[column];
 			sum *= PROBE_FNV_PRIME;
 		}
+	}
+
+	/* An I420 frame's chroma is two planes; it is summed interleaved, as NV12's. */
+	if (frame->encoding == PROBE_ENCODING_I420) {
+		pitch_uv = frame->width / 2U;
+		offset_v = frame->width * frame->height + pitch_uv * (frame->height / 2U);
+		for (row = 0; row < frame->crop_height / 2U; row++) {
+			line = pixels + (size_t)frame->width * frame->height + (size_t)row * pitch_uv;
+			line_v = pixels + offset_v + (size_t)row * pitch_uv;
+			for (column = 0; column < frame->crop_width / 2U; column++) {
+				sum ^= line[column];
+				sum *= PROBE_FNV_PRIME;
+				sum ^= line_v[column];
+				sum *= PROBE_FNV_PRIME;
+			}
+		}
+
+		/* Succeeded: the checksum. */
+		return sum;
 	}
 
 	/* The chroma rows. */
