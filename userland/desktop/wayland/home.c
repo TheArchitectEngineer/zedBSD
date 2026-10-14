@@ -112,14 +112,11 @@
 
 /* The applications' list, and how many it may hold. */
 #define HOME_APPS_PATH		KEILAND_SYSCONFDIR "/keiland/apps.conf"
+#define HOME_APPS_MAX		48U
 
 /* The command of a login session's Power Off, whose dialog the compositor shows itself (ws099-p037). */
 #define HOME_POWER		"@power"
 #define HOME_LOCK		"@lock"
-
-/* The page the built-in list's browser opens (shown only when the page is there). */
-#define HOME_BROWSER_START	KEILAND_DATADIR "/browser/start.html"
-#define HOME_APPS_MAX		48U
 
 /*
  * How long opening and closing take, and how far a press on the launcher
@@ -1686,7 +1683,7 @@ home_read_apps(
 		home_add_app("PDF Viewer", KEILAND_BINDIR "/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
 		home_add_app("Image Viewer", KEILAND_BINDIR "/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
 		home_add_app("Text Editor", KEILAND_BINDIR "/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
-		home_add_app("Browser", KEILAND_BINDIR "/browser " HOME_BROWSER_START, "browser web www html internet", 0x3a8fd8U, "browser");
+		home_add_app("Browser", KEILAND_BINDIR "/browser", "browser web www html internet", 0x3a8fd8U, "browser");
 	}
 
 	/* A login's session locks (ws035-p102) and ends with Power Off's dialog (ws099-p037, Log Out in it), the last icons. */

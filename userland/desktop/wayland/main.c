@@ -17,6 +17,7 @@
 #include "keymap.h"
 #include "ime.h"
 #include "data.h"
+#include "titlebar.h"
 #include "userland/desktop/paths.h"
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 #include <sys/socket.h>
@@ -904,6 +905,9 @@ event_loop(
 
 		/* The input method is looked after: started again, passed by when it does not answer (input-method.c). */
 		kwl_ime_tick(server, now);
+
+		/* A key held in a titlebar's field is pressed again when its repeat is due (titlebar-shell.c). */
+		kwl_titlebar_tick(server, now);
 		server->perf.tick_cycles += kwl_cycles() - part;
 
 		/* Allocate exactly enough poll storage for the presently live client and device set. */

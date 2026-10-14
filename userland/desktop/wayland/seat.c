@@ -1061,6 +1061,10 @@ kwl_seat_key(
 	int tapped;
 	int taken;
 
+	/* The release of a key a titlebar's field repeats ends the repeat, whatever takes the release (titlebar-shell.c). */
+	if (state == 0U)
+		kwl_titlebar_key_released(key);
+
 	/*
 	 * App Home, while it shows, takes every key (home.c), and so does an
 	 * open menu (menu-shell.c), then a titlebar's text field with the
