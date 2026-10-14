@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3 新世代。直し 7（出力を閉じない）は main に merge 済み、T2 の T1-687（依頼 7）待ち。60 fps の A1（全画面の窓の copy）を実装・build 済み、T2 の依頼 8 待ち。V1 は不採用）
+Status: in-progress（2026-10-16、P3 新世代。直し 7 は T1-687 PASS（全画面で VPU が止まらない、原因は出力の閉じ開き）。60 fps: A1（全画面の窓の copy）を merge 済み、T2 の T1-688（依頼 8）待ち。A2 は調べて、T1-688 の数の後に決める（v3d perf に worker の実の占有を足した）。V1 は不採用）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-16 新世代 `agent/p3-ws236f`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -338,6 +338,11 @@ Phase disposition: normal
 5. 合否: (a) 全画面の切り替えで `KWL SCANOUT direct=0 reason=backend errno=21 … output=kept` が出て、`KWL OUTPUT closed` が出ない、(b) 5 本とも `PLAYBACK failed` が無く、dmesg に `came back unread`・`not answered`・`no firmware decoder` が無い、(c) 記録: (ii)・(v) の shown・late、`bcm2711: display lease` の行が再生の間に出ないこと。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す（kernel は残してよい）。
 6. FAIL の時の材料: (b) が FAIL で lease の行が無ければ原因は videoplayer の作り直し側（P3 が次に追う）。lease の行があれば、その行と `came back unread` の順を報告。止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
 
+### T2 の結果（T1-687、2026-10-16、Pi 4 実機、main 37baf57ce）: 直し 7 PASS
+
+- 全画面 4 本で `KWL SCANOUT direct=0 reason=backend errno=21 … output=kept`、`KWL OUTPUT closed` 0。5 本とも `PLAYBACK failed`・`came back unread`・`not answered`・`no firmware decoder`・`execution failed` 無し、`bcm2711: display lease` の行 0、再生中の core clock の行 0。**原因は出力の閉じ開き（display の lease の release・claim）で、直し 7 で VPU は止まらなくなった**（lease の release・claim のどの要素が firmware の decoder を止めるかは未解明、Bug にするかは Q1 の判断）。結果 `plan/agents/T2/results-20261016-t1-687.md`。
+- 速さ（A1 の前）: 60p 全画面 shown 306・late 294（約 20 fps）、compose frame_ms 23〜24、`DRAW acquire_us` 19〜21 ms。30p 全画面 263/37、frame_ms 18.8。60p 窓 304/296、frame_ms 28。`v3d: perf` busy 91〜93%。
+
 ### 60 fps の続き（V1・A1、2026-10-16 P3 新世代、T1-686 で中断）
 
 - **V1（TMU が raster を読む）は不採用**: V3D 4.2 の TMU は 2D の raster の texture を sample できない（Mesa v3dv `v3dv_formats.c`「Raster format is only supported for 1D textures」、gallium v3d `v3dx_state.c`「V3D still doesn't support sampling from raster textures」、MIT）。1D・texel buffer として読み、shader で 2D の address と bilinear を組むと 1 画素に 8 回の fetch で TFU（Y・UV 約 1.4 ms）より遥かに遅い。
@@ -369,6 +374,25 @@ Phase disposition: normal
 3. 再生（各 `--timeout-s=15`、pointer は動かさない）: (i) `high-1080p60-10s.mp4 --fullscreen`、(ii) `high-1080p30-10s.mp4 --fullscreen`、(iii) `high-1080p60-10s.mp4`（窓、対照）。(ii) の 5 秒目に keiland-shot を 1 枚（撮影の frame は copy でも合成の image）。
 4. 報告: compositor の `KWL COPY`（全行）・`KWL PERF`（compose の frames・frame_ms）・`KWL SCANOUT`、videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、dmesg の `v3d: perf`（subs・passes・tfu）・`v3d: gpu tiles`・`v3d: tfu`・`execution failed`、PNG。
 5. 合否: (a) (i)(ii) で `KWL COPY window=1` が出る（bar が消えた後。出なければ reason を報告）、(b) 落ちない・`execution failed` 無し・`PLAYBACK failed` 無し、(c) PNG の色と画（前の PNG と同じ見え方、ずれ・色の入れ替わりが無い）、(d) 記録: (i) の shown・late と `KWL PERF compose frame_ms`、`DRAW acquire_us`、`v3d: tfu jobs` の 2 秒の数（前の T1-685 の窓 1080p60 は compose 23.6 fps・frame_ms 25・TFU 1 frame に 3）。(iii) は `KWL COPY window=0 reason=not-fullscreen`。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す。
+
+### A2 の調べ（2026-10-16、P3 新世代、T1-687 の log から）
+
+- **`v3d: perf` の busy は executor の占有を多く見せる**: `total` は job の最初の step から最後の step までで、step に分かれる job（decode を含む libmedia の command buffer、`EINPROGRESS` で番を譲る）は間に他の session の番を含む。T1-687 の 60p 全画面の 2 秒: subs 283・total 平均 6.5 ms（= busy 92%）に対し、exec（GPU の実行と待ち）3.1 ms・prep 0.67・xfer（video の event の CPU）0.83・rel 0.17・clean 0.19 で、和は約 5.0 ms、step に分かれた job の待ちが約 1.2 ms/sub。GPU の実行は 2 秒の約 44%、CPU を含めた実の占有は約 67% の見込み。**直し**: kernel の perf に job の step の自分の時間の和を足し、行の末尾に `worker=N%`（executor が実際に持たれていた割合）を出す（`vulkan-queue.c` が step を測り `bcm2711_vulkan_native_job_count_step`、`v3d-hardware.h` の `step_ticks`）。
+- 1 表示 frame（2 秒に 47）あたりの executor の仕事（A1 の前）: videoplayer の TFU 2 job（Y・UV、平均 1.7〜1.8 ms/job、VPU と HVS と帯域を分ける）と 240 tile の draw（約 8000 cycle/tile ≒ 3.9 ms）、compositor の窓の TFU（約 1.7 ms）と 240 tile の draw（約 3.9 ms）と **scene の capture の copy（image → buffer、240 tile 約 1.9 ms、cursor plane が cursor を出していない時に毎 frame）**、decode の event（1 表示 frame に約 2 decode、約 7 step × 0.65 ms）。A1 は compositor の TFU・draw・capture を copy 1 回（約 1.3〜1.9 ms）に置き換えるので、1 表示 frame で約 5〜6 ms 減る見込み。
+- **compositor の frame（frame_ms 24 ms）は CPU 側の Vulkan の呼びの待ちが半分以上**: `KWL PERF compose … acquire 4.3〜5.2 ms`、`rec begin 1.35・end 1.2〜1.4・submit 1.9〜2.2・present 3.5〜3.6 ms`（呼び 1 つが kernel の要求、合計約 12.7 ms）、残りが GPU の完了待ち。videoplayer の `acquire_us` 19〜21 ms は compositor が前の image を返すまでの待ち（Wayland の FIFO）で、compositor の frame の長さがそのまま出る。
+- A2（compositor の frame を 2 つ重ねる、`in_flight` 2）の範囲: compose の held の buffer・frame callback・scene の valid・layer の generation・shot が 1 frame を前提にしている（`compose.c` の `kwl_compose_complete`・`compose_completed`、`objects.c`・`shm.c`・`layer-cache.c`・`scanout.c` が `in_flight` を 0/1 で見る）。重ねると CPU 側の呼びの待ち（約 12.7 ms）の間に前の frame の GPU が進むので frame の間隔は縮むが、変更は compositor の frame の持ち主の全体に及ぶ（見積もり 4〜8 LW、i915・Venus にも効くので回帰の範囲が広い）。
+- `frame_wait_ms`（frame の後に窓の commit を最大 frame の半分待つ）は、frame callback を受けた窓がまだ commit していない（`awaiting`）時だけ効き、他に変化が無ければ frame は描かれないので、動画の全画面の律速ではない（変えない）。
+- 決め: A2 は T1-688（A1）の `KWL PERF compose`・`worker=`・shown の数を見てから。A1 の後も compositor の frame の大部分が CPU 側の呼びの待ちなら、(a) A2 の前に呼びの待ちの中身（begin・end・present が kernel で何を待つか）を調べる方が小さく効く見込み、(b) executor が実際に埋まっている（`worker` が 85% 以上）なら重ねても伸びず、videoplayer の pass（3.9 ms）か TFU（Y・UV 約 3.5 ms）を削る道（または WS214 の HVS の plane、ユーザーの判断）になる。
+
+### 確かめ（perf の worker）
+
+| 確かめ | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p3/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/p3/rpi4/vmunix` | rc 0、warning 0、`arm64 vmunix check: PASS` |
+| `sh plan/ws141/tests/vulkan-device-host-test.sh` | 32 行 PASS（前と同じ） |
+| style-check（`vulkan-native-job.c`・`vulkan-queue.c`、HEAD との差） | 新しい指摘 0 |
+
+- T2 への依頼: 単独では出さない。次に Pi の kernel を差し替える依頼（A2 か A1 の続き）に含める（`v3d: perf` の行の末尾に `worker=N%` が出ること）。
 
 ### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 

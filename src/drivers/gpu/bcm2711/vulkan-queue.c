@@ -6,6 +6,7 @@
  */
 
 /* A prepared QueueSubmit is replied to at once and runs later on the executor; a common marker completes after it. */
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
@@ -740,6 +741,7 @@ execution_step(
 	struct bcm2711_vulkan_command_buffer *command;
 	struct bcm2711_vulkan_sync *sync;
 	struct queue_action *action;
+	uint64_t entered;
 	bool finished;
 	bool retired;
 	bool ran;
@@ -771,7 +773,11 @@ execution_step(
 		if (ran)
 			return 0;
 		ran = true;
+
+		/* Runs the job's next pass; the step's own time is the worker's share in the cost report. */
+		entered = clock_ticks();
 		error = bcm2711_vulkan_native_job_step(controller, execution->session->render, action->job, &finished, &retired);
+		bcm2711_vulkan_native_job_count_step(controller, clock_ticks() - entered);
 		command = action->object->payload;
 		if (action->job->executed && (command->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0)
 			command->state = BCM2711_VULKAN_COMMAND_INVALID;

@@ -46,6 +46,12 @@ struct bcm2711_v3d_perf {
 	uint32_t draws;
 	uint64_t staged_bytes;
 	uint64_t total_ticks;
+	/*
+	 * The job steps' own time: a stepped job's total runs from its first
+	 * step to its last and includes the other sessions' turns between, so
+	 * total_ticks overstates how long the worker was held; this does not.
+	 */
+	uint64_t step_ticks;
 	uint64_t max_ticks;
 	uint64_t prepare_ticks;
 	uint64_t texture_ticks;
