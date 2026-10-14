@@ -12,7 +12,11 @@ license, WHENCE record when required, and provenance manifest.
 Every Firmware menu entry is selectable on every CPU architecture. The build
 registry supplies the same catalog to the menu, configuration saving and image
 packaging; selection follows the attached device rather than the CPU. Selecting
-a firmware package installs its data without enabling a hardware driver.
+a firmware package installs its data without enabling a hardware driver. The
+other way round, menuconfig selects the firmware a driver needs when the
+driver is turned on, and drops it when no driver that is on needs it any more
+(`config/drivers/firmware.list`); the licenses are still accepted when the
+image is built.
 
 The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, `brcmbt/`,
 `bcm43455/`, and `nvidia-gsp/`; future

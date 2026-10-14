@@ -41,14 +41,14 @@ menuconfig の Drivers の分類は WS232 p003（PC-98 の driver を Platform �
   前は rpi4 で catalog の既定が n になり、config に無い時に menu が n を出していた）。
 - `config/ci/config-rpi4.mk` に Pi の Platform の driver を明示した: GENET・WIFI・BT・AUDIO・GPU は y。VCHIQ・VIDEO は n（下の「判断が要る点」）。
   前の file はこれらの行が無く、Makefile の既定（rpi4 で y）で build されていたので、build の結果は変わらない。
-- Firmware の package（intelbt-firmware・brcmbt-firmware・bcm43455-firmware）は Firmware の menu の別の選択で、driver の選択とは結び付けていない
-  （license の同意が要り既定は無効、の既存の規則）。Pi で WiFi を使うには bcm43455-firmware、BT には brcmbt-firmware、Intel の BT には intelbt-firmware が要る。
+- Firmware の package は driver に付いて選ばれる（2026-10-14 の追加の指示、下の「driver の firmware の自動の選択」）。前はこの Phase でも
+  Firmware の menu の別の選択で、driver の選択とは結び付けていなかった。
 
 ## 判断が要る点（Q1 へ）
 
 - `CONFIG_DRIVER_BCM2711_VCHIQ` を y にするか。ユーザーは「Pi の Platform の driver は全部有効に」だが、VCHIQ は WS236 p002 の開発中（実機の確かめ前、
   表示も experimental）で、Q1 の「開発中の物は y にしない」に当たると判断して n のままにした。VIDEO・VIDEO_PROBE も n のまま。
-- menuconfig で Pi を選んだ時に bcm43455-firmware・brcmbt-firmware も自動で選ぶか（今は選ばない。license の同意の画面は Build boot image で出る）。
+- menuconfig で Pi を選んだ時に bcm43455-firmware・brcmbt-firmware も自動で選ぶか → 2026-10-14 ユーザー「yes」。下の節で実装。
 
 ## Pi の WiFi・Bluetooth が使えない件の確かめ（source と build の成果物を読んだ結果）
 
@@ -103,3 +103,30 @@ image: `config/ci/config-rpi4.mk` で build した `build/arm64/hdd-image.img`�
    （`/boot` に FAT が mount されていれば `grep -E 'disable-bt|enable_uart' /boot/config.txt` が何も出さない）。
 
 結果は dmesg の該当の行の全文と各 command の出力を返す。WiFi・BT が出ない時は、その行で WS206・WS215 のどの段で止まったかを Q1 が判定する。
+
+## driver の firmware の自動の選択（2026-10-14、P1）
+
+原文（ユーザー、Q1 経由）: 「menuconfig で Pi を選んだ時、WiFi と Bluetooth の firmware（bcm43455・brcmbt）も自動で選びますか？-->yes」
+「Intel GPUのドライバも、選択したらファームウェアも選択されるようにお願いします。そのほかのドライバも、ファームウェアを選択してください。」
+
+- 対応の表は 1 か所: `config/drivers/firmware.list`（`driver|package`）。i915 → i915-firmware、NVRTX → nvidia-gsp-firmware、AX211 → intelax211-firmware、
+  RTL8822BU → rtl8822b-firmware、USB の BT → intelbt-firmware（bluetoothd が AX211 の BT に読み込む）、BCM2711 の WiFi → bcm43455-firmware、
+  BCM2711 の BT → brcmbt-firmware。firmware の package（`userland/firmware/` の 7 つ）は全部どれかの driver に付く（source で firmware を読む所を
+  grep して確かめた: i915・nvrtx・intel-ax211・rtl8822b・bcm43455、bluetoothd の intel と broadcom。他に firmware を読む driver は無い）。Pi の boot の
+  firmware（rpi4-boot-firmware）は platform の物で user program ではないので表の外。
+- `tools/menuconfig.py`: `driver_firmware(values, platform)` = その platform で build される y の driver が要る package の集まり。driver の切り替え
+  （Drivers の menu）と CPU / Board の選択（`choose_platform`、新しい board の driver の既定）の前後で比べ、前に要って今は要らない package を外し、
+  今要る package を足す。driver と関係なく Firmware の menu で選んだ物は残る。`defaults()` も同じ（x86_64 の既定は i915 と USB の BT が y なので
+  i915-firmware・intelbt-firmware が選ばれる）。license の同意は今までどおり Build boot image の画面（と make の firmware-licenses）。
+- `config/ci/`: 有効な driver の firmware が足りなかった 3 つに intelbt-firmware を足した（`CONFIG_DRIVER_USB_BT` は Makefile の既定で y）:
+  config-intelmac.mk・config-pcat.mk・config-rpi4.mk。config-amd64.mk は足りていた。config-pc98.mk は driver が n の firmware
+  （i915・intelax211・rtl8822b）を選んでいるが、足りない物は無いので触らない。config-amd64-server.mk はユーザーの物で触らない。
+  pcat と intelmac は bluetoothd を選んでいないので、intelbt-firmware は今は使われない（driver の規則に合わせた）。
+- `plan/tools/menuconfig-target-host-test.py` に `check_driver_firmware`: 表の driver と package が実在し、firmware の package が全部表にあること、
+  x86_64 の既定の選択、GPU の NVIDIA・i915 の on・off で firmware が付いて外れること、手で選んだ rtl8822b-firmware が残ること、x86_64 から arm64
+  を選ぶと bcm43455・brcmbt が付き i915 が外れること、Pi の BT を off で brcmbt が外れること、x86_64 に戻すと Pi の物が外れ i915 が戻ること、
+  server 以外の CI の config が有効な driver の firmware を全部選んでいること。
+- 既存の試験の直し: `check_platform_drivers` は config-rpi4.mk の VCHIQ・VIDEO を n と見ていたが、main の `2a8f5054a` で y になった
+  （menuconfig で作り直された file）。ここは値を問わず行があることだけを見る形にした（x86_64 から選んだ時の既定 n は今までどおり確かめる）。
+- 確かめ: `timeout 600 make menuconfig-host-test` → `MAC-T001 firmware licenses: PASS`、`MAC-T001 menuconfig round-trip: PASS (…, the drivers' firmware
+  selected with them)`。変えた CI の 3 つは `make ZEDBSD_CONFIG=… validate-image-config` が rc 0。curses の実画面と image の build は未実施。

@@ -467,11 +467,87 @@ def check_platform_drivers() -> None:
     for key, value in expected.items():
         if values.get(key) != value:
             fail(f"the Raspberry Pi 4 chosen from x86_64 has {key}={values.get(key)}")
+    # The CI image's file names every Platform driver; VCHIQ and Vulkan Video
+    # are the user's choice there (y since 2026-10-14), so only their lines
+    # are checked.
     ci = menu.load(menu.REPO / "config" / "ci" / "config-rpi4.mk")
     text = (menu.REPO / "config" / "ci" / "config-rpi4.mk").read_text(encoding="utf-8")
     for key, value in expected.items():
+        if key in ("CONFIG_DRIVER_BCM2711_VCHIQ", "CONFIG_DRIVER_BCM2711_VIDEO"):
+            if f"{key} := {ci.get(key)}" not in text:
+                fail(f"config/ci/config-rpi4.mk does not set {key}")
+            continue
         if ci.get(key) != value or f"{key} := {value}" not in text:
             fail(f"config/ci/config-rpi4.mk does not set {key} := {value}")
+
+
+def check_driver_firmware() -> None:
+    """WS232 p004 (2026-10-14 user: "menuconfig で Pi を選んだ時、WiFi と
+    Bluetooth の firmware（bcm43455・brcmbt）も自動で選びますか？-->yes",
+    "Intel GPUのドライバも、選択したらファームウェアも選択されるように
+    お願いします。そのほかのドライバも、ファームウェアを選択してください。"):
+    a driver turned on selects its firmware, in Drivers and as a board's
+    default; turned off, its firmware goes unless another driver needs it;
+    a package chosen by hand stays; and every CI image but the user's
+    server one selects the firmware of its drivers."""
+    table = menu.driver_firmware_table()
+    drivers = {row[0] for row in menu.driver_rows()}
+    firmware = {row[0] for row in USER_PROGRAM_ROWS if row[4] == "firmware"}
+    for key, packages in table.items():
+        if key not in drivers:
+            fail(f"config/drivers/firmware.list names no driver {key}")
+        for package in packages:
+            if package not in firmware:
+                fail(f"config/drivers/firmware.list names no firmware package {package}")
+    unclaimed = firmware - {package for packages in table.values() for package in packages}
+    if unclaimed:
+        fail(f"no driver in config/drivers/firmware.list needs {sorted(unclaimed)}")
+
+    def selected(values: dict[str, object]) -> set[str]:
+        return set(values["ZEDBSD_USER_PROGRAMS"]) & firmware
+
+    # The x86_64 default: the i915 and USB Bluetooth drivers are on.
+    values = menu.defaults()
+    if selected(values) != {"i915-firmware", "intelbt-firmware"}:
+        fail(f"the x86_64 default selects {sorted(selected(values))}")
+
+    # Drivers > GPU: the NVIDIA driver brings its firmware and takes it away; so does i915.
+    gpu = {row[0]: row[2] for row in dict(menu.driver_groups("amd64"))["GPU"]}
+    nvrtx = gpu["CONFIG_DRIVER_PCI_NVRTX"]
+    i915 = gpu["CONFIG_DRIVER_PCI_I915"]
+    values["ZEDBSD_USER_PROGRAMS"].add("rtl8822b-firmware")
+    walk(menu.drivers_menu, ["GPU", f"[ ] {nvrtx}", "Back", "Back"], values)
+    if "nvidia-gsp-firmware" not in values["ZEDBSD_USER_PROGRAMS"]:
+        fail("turning the NVIDIA driver on did not select nvidia-gsp-firmware")
+    walk(menu.drivers_menu, ["GPU", f"[*] {nvrtx}", f"[*] {i915}", "Back", "Back"], values)
+    if selected(values) != {"intelbt-firmware", "rtl8822b-firmware"}:
+        fail(f"turning the GPU drivers off left {sorted(selected(values))}")
+    walk(menu.drivers_menu, ["GPU", f"[ ] {i915}", "Back", "Back"], values)
+    if "i915-firmware" not in values["ZEDBSD_USER_PROGRAMS"]:
+        fail("turning the i915 driver on did not select i915-firmware")
+
+    # The Raspberry Pi 4 from x86_64: its WiFi and Bluetooth firmware come, i915's goes.
+    walk(menu.select_cpu_board, ["CPU: x86_64", "arm64", "Back"], values)
+    if selected(values) != {"bcm43455-firmware", "brcmbt-firmware", "intelbt-firmware",
+                            "rtl8822b-firmware"}:
+        fail(f"the Raspberry Pi 4 chosen from x86_64 selects {sorted(selected(values))}")
+    pi = {row[0]: row[2] for row in dict(menu.driver_groups("rpi4"))["Platform"]}
+    walk(menu.drivers_menu, ["Platform", f"[*] {pi['CONFIG_DRIVER_BCM2711_BT']}", "Back", "Back"],
+         values)
+    if "brcmbt-firmware" in values["ZEDBSD_USER_PROGRAMS"]:
+        fail("turning the Pi's Bluetooth off kept brcmbt-firmware")
+    walk(menu.select_cpu_board, ["CPU: arm64", "x86_64", "Back"], values)
+    if selected(values) != {"i915-firmware", "intelbt-firmware", "rtl8822b-firmware"}:
+        fail(f"x86_64 chosen back from the Pi selects {sorted(selected(values))}")
+
+    # Every CI image selects the firmware of the drivers it builds (the server one is the user's).
+    for path in sorted((menu.REPO / "config" / "ci").glob("config-*.mk")):
+        if path.name == "config-amd64-server.mk":
+            continue
+        ci = menu.load(path)
+        missing = menu.driver_firmware(ci, str(ci["ZEDBSD_PLATFORM"])) - set(ci["ZEDBSD_USER_PROGRAMS"])
+        if missing:
+            fail(f"{path.name} builds drivers without {sorted(missing)}")
 
 
 def check_build_progress() -> None:
@@ -727,6 +803,7 @@ def main() -> None:
     check_menu_layout()
     check_i386_and_retro()
     check_platform_drivers()
+    check_driver_firmware()
     check_build_progress()
     check_firmware_licenses()
 
@@ -860,7 +937,8 @@ def main() -> None:
           "(6 targets, 3 amd64 Variants, obsolete capacity removed, "
           "package requirements resolved, the WS193 menu, "
           "i386 PC/AT and PC-9800 with Retro after Base and without the Desktop, "
-          "the board drivers under Platform alone, Bluetooth after WiFi)")
+          "the board drivers under Platform alone, Bluetooth after WiFi, "
+          "the drivers' firmware selected with them)")
 
 
 if __name__ == "__main__":

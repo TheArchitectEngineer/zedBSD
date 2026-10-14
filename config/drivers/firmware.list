@@ -1,0 +1,15 @@
+# driver key|firmware packages
+# The firmware each driver needs (2026-10-14 user, WS232 p004: "Intel GPUの
+# ドライバも、選択したらファームウェアも選択されるようにお願いします。その
+# ほかのドライバも、ファームウェアを選択してください。").  menuconfig adds a
+# driver's packages to the Firmware selection when the driver is turned on
+# (in Drivers, or as a board's default when a CPU or board is chosen), and
+# takes them out when it is turned off unless another driver that is on
+# still needs them.  The licenses are still accepted when the image is built.
+CONFIG_DRIVER_PCI_I915|i915-firmware
+CONFIG_DRIVER_PCI_NVRTX|nvidia-gsp-firmware
+CONFIG_DRIVER_PCI_INTEL_AX211|intelax211-firmware
+CONFIG_DRIVER_USB_RTL8822BU|rtl8822b-firmware
+CONFIG_DRIVER_USB_BT|intelbt-firmware
+CONFIG_DRIVER_BCM2711_WIFI|bcm43455-firmware
+CONFIG_DRIVER_BCM2711_BT|brcmbt-firmware
