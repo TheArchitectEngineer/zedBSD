@@ -17,7 +17,13 @@
 #include <hal/hal.h>
 #include "int.h"
 
-#define AMD64_SYS_STACK_SIZE 16384U
+/*
+ * The kernel stack of each created task.  Interrupts nest on it, and a GPU
+ * command submission with a shader compile reaches past 15 KiB before an
+ * interrupt adds its frames, so the earlier 16 KiB overran into the memory
+ * below the stack (BUG-321).
+ */
+#define AMD64_SYS_STACK_SIZE 32768U
 
 struct amd64_task {
 	struct amd64_task *next;

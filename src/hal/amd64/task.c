@@ -31,10 +31,35 @@
  */
 #define current_task ((struct amd64_task *)hal_task_get_current())
 
+/*
+ * The byte a kernel stack is filled with before its task first runs.  The
+ * lowest byte that no longer holds it marks how deep the stack has grown,
+ * because nothing else writes to a task's own stack.
+ */
+#define AMD64_STACK_FILL_BYTE 0xa5U
+#define AMD64_STACK_FILL_WORD 0xa5a5a5a5a5a5a5a5ULL
+
+/*
+ * The lowest bytes of a kernel stack, which a task must never reach.  The
+ * page-backed allocation's header lies just below the stack, so a stack
+ * that grows past its bottom corrupts the allocator before anything else
+ * notices; a task found to have written here stops the kernel instead
+ * (BUG-321).
+ */
+#define AMD64_STACK_GUARD_BYTES 128U
+
 static struct amd64_task *task_list;
 static uint8_t initial_fpregs[512] __attribute__((aligned(16)));
 static uint32_t task_count;
 static size_t task_stack_bytes;
+
+/*
+ * The deepest kernel stack use measured so far, in bytes, over every task
+ * destroyed since boot.  It only grows, by a compare-and-exchange, so each
+ * new record is reported once; zero means no task has been measured.
+ */
+static size_t task_stack_high_water;
+
 static hal_task_t xmm_selftest_main;
 static hal_task_t xmm_selftest_task;
 static volatile unsigned xmm_selftest_stage;
@@ -58,6 +83,9 @@ static void *task_signal_fpregs(struct amd64_task *task, unsigned depth);
 static void tasklist_add(struct amd64_task *task);
 static void tasklist_del(struct amd64_task *task);
 static void build_initial_stack(struct amd64_task *task, void (*start)(void *), void *argument, void *user_stack);
+static int task_stack_guard_intact(const struct amd64_task *task);
+static size_t task_stack_depth(const struct amd64_task *task);
+static void task_stack_record_depth(const struct amd64_task *task);
 
 /*
  * Initializes task state for the current CPU.
@@ -162,9 +190,12 @@ hal_task_create(
 		return NULL;
 	}
 
-	/* Initializes the inactive execution context. */
+	/* Aligns the stack, and fills it so that its guard and its deepest use can be read later. */
 	task->sys_stack = (void *)(((uintptr_t)task->sys_stack_allocation + 15U) &
 	    ~(uintptr_t)15U);
+	hal_memset(task->sys_stack, (int)AMD64_STACK_FILL_BYTE, AMD64_SYS_STACK_SIZE);
+
+	/* Initializes the inactive execution context. */
 	task->space = space;
 	task->run_cpu = -1;
 	task->target_cpu = hal_cpu_current();
@@ -525,9 +556,11 @@ hal_task_destroy(
 	/* Withdraws the task from the global registry. */
 	tasklist_del(task);
 
-	/* Releases the separately owned kernel stack when present. */
-	if (task->sys_stack != NULL)
+	/* Releases the separately owned kernel stack when present, after measuring it. */
+	if (task->sys_stack != NULL) {
+		task_stack_record_depth(task);
 		kernel_free(task->sys_stack_allocation);
+	}
 
 	/* Releases the task record last. */
 	kernel_free(task);
@@ -546,6 +579,7 @@ hal_task_context_switch(
 	void *to_fpregs;
 	hal_cpu_id_t current_cpu;
 	hal_cpu_id_t target_cpu;
+	int guard_intact;
 
 	/* Resolves both task contexts before validating the transition. */
 	to = handle;
@@ -556,6 +590,17 @@ hal_task_context_switch(
 	/* Leaves an already current task unchanged. */
 	if (to == from)
 		return;
+
+	/*
+	 * Stops at a departing task that has grown into the bottom of its
+	 * kernel stack, before the overrun corrupts the memory below it
+	 * further (BUG-321).
+	 */
+	if (from->sys_stack != NULL) {
+		guard_intact = task_stack_guard_intact(from);
+		if (!guard_intact)
+			HAL_FATAL("amd64 kernel stack overflow");
+	}
 
 	/* Requires the destination to be inactive. */
 	if (__atomic_load_n(&to->run_cpu, __ATOMIC_ACQUIRE) >= 0)
@@ -1090,6 +1135,88 @@ build_initial_stack(
 	*--stack = 0;
 	*--stack = 0;
 	task->resume_rsp = (uintptr_t)stack;
+}
+
+/* Reports whether a kernel stack's lowest bytes still hold their fill. */
+static int
+task_stack_guard_intact(
+	const struct amd64_task *task)
+{
+	const uint64_t *word;
+	size_t index;
+
+	/* Compares the guard a word at a time, from the bottom of the stack. */
+	word = task->sys_stack;
+	for (index = 0; index < AMD64_STACK_GUARD_BYTES / sizeof(*word); index++) {
+		if (word[index] != AMD64_STACK_FILL_WORD)
+			return 0;
+	}
+
+	/* Succeeded: the task has never reached its guard. */
+	return 1;
+}
+
+/* Measures how many bytes of its kernel stack a task has ever used. */
+static size_t
+task_stack_depth(
+	const struct amd64_task *task)
+{
+	const uint64_t *word;
+	size_t count;
+	size_t index;
+
+	/* Finds the lowest word that the task's own frames have overwritten. */
+	word = task->sys_stack;
+	count = AMD64_SYS_STACK_SIZE / sizeof(*word);
+	index = 0;
+	while (index < count && word[index] == AMD64_STACK_FILL_WORD)
+		index++;
+
+	/* Reports the distance from that word to the top of the stack. */
+	return (count - index) * sizeof(*word);
+}
+
+/*
+ * Checks a dead task's kernel stack and reports a new deepest use.
+ *
+ * A record past half of the stack would have overflowed the 16 KiB stacks
+ * of earlier kernels, so it is worth a line on the console.
+ */
+static void
+task_stack_record_depth(
+	const struct amd64_task *task)
+{
+	size_t depth;
+	size_t previous;
+	int guard_intact;
+	int raised;
+
+	/* Stops at a stack that was overrun after its last switch away. */
+	guard_intact = task_stack_guard_intact(task);
+	if (!guard_intact)
+		HAL_FATAL("amd64 kernel stack overflow");
+
+	/* Raises the boot-wide record when this stack went deeper than any before. */
+	depth = task_stack_depth(task);
+	previous = __atomic_load_n(&task_stack_high_water, __ATOMIC_RELAXED);
+	raised = 0;
+	while (depth > previous && !raised) {
+		raised = __atomic_compare_exchange_n(
+			&task_stack_high_water,
+			&previous,
+			depth,
+			0,
+			__ATOMIC_RELAXED,
+			__ATOMIC_RELAXED);
+	}
+
+	/* Reports a new record deep enough to matter. */
+	if (raised && depth > AMD64_SYS_STACK_SIZE / 2U) {
+		hal_printf(
+			"amd64: kernel stack high water %lu of %lu bytes\n",
+			(unsigned long)depth,
+			(unsigned long)AMD64_SYS_STACK_SIZE);
+	}
 }
 
 /*
