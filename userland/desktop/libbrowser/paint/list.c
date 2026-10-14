@@ -151,6 +151,7 @@ static void list_borders(struct list_walk *walk, const struct layout_box *box);
 static int list_point_borders(struct list_walk *walk, const struct layout_box *box);
 static void list_inline_floats(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_lines(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
+static void list_inline_decoration(struct list_walk *walk, const struct layout_decoration *decoration, layout_unit left, layout_unit baseline);
 static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline, int vertical);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
 static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
@@ -970,6 +971,12 @@ list_lines(
 	/* Each fragment of each line, on the line's baseline moved by its vertical alignment. */
 	for (index = 0; index < box->line_count; index++) {
 		line = &box->lines[index];
+
+		/* The inline boxes' backgrounds and borders go under the line's text. */
+		if (!box->vertical_inline) {
+			for (item = 0; item < line->decoration_count; item++)
+				list_inline_decoration(walk, &line->decorations[item], left + line->left, top + line->y + line->baseline);
+		}
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
 
@@ -990,6 +997,63 @@ list_lines(
 			}
 		}
 	}
+}
+
+/* Paints an inline box's background and borders over the span it covers on one line. */
+static void
+list_inline_decoration(
+	struct list_walk *walk,
+	const struct layout_decoration *decoration,
+	layout_unit left,
+	layout_unit baseline)
+{
+	struct layout_box placed;
+	layout_unit x0;
+	layout_unit x1;
+	layout_unit top;
+	layout_unit side;
+	int visible;
+
+	/* A hidden box paints nothing of its own. */
+	visible = decoration->box->style.visibility != LIST_VISIBILITY_HIDDEN;
+	if (!visible)
+		return;
+
+	/* The border box over the span: the margins are outside it, the sides the line lacks have no edge. */
+	placed = *decoration->box;
+	x0 = left + decoration->x;
+	x1 = x0 + decoration->width;
+	if (decoration->has_left)
+		x0 += placed.margin[CSS_LEFT];
+	if (decoration->has_right)
+		x1 -= placed.margin[CSS_RIGHT];
+	if (x1 <= x0)
+		return;
+	if (!decoration->has_left) {
+		placed.border[CSS_LEFT] = 0;
+		placed.padding[CSS_LEFT] = 0;
+	}
+	if (!decoration->has_right) {
+		placed.border[CSS_RIGHT] = 0;
+		placed.padding[CSS_RIGHT] = 0;
+	}
+	top = baseline + decoration->shift - decoration->ascent - placed.padding[CSS_TOP] - placed.border[CSS_TOP];
+	placed.x = x0;
+	placed.y = top;
+	side = x1 - x0 - placed.border[CSS_LEFT] - placed.padding[CSS_LEFT] - placed.padding[CSS_RIGHT] - placed.border[CSS_RIGHT];
+	placed.width = side < 0 ? 0 : side;
+	placed.height = decoration->ascent + decoration->descent;
+	placed.margin[CSS_LEFT] = 0;
+	placed.margin[CSS_RIGHT] = 0;
+
+	/* The background color, the image over it, then the borders. */
+	if ((placed.style.background_color >> 24) != 0)
+		list_rect(walk, placed.x, placed.y,
+		    placed.border[CSS_LEFT] + placed.padding[CSS_LEFT] + placed.width + placed.padding[CSS_RIGHT] + placed.border[CSS_RIGHT],
+		    placed.border[CSS_TOP] + placed.padding[CSS_TOP] + placed.height + placed.padding[CSS_BOTTOM] + placed.border[CSS_BOTTOM],
+		    placed.style.background_color);
+	list_box_background(walk, &placed);
+	list_borders(walk, &placed);
 }
 
 /* Adds a fragment's glyphs as a text item, and its underline. */

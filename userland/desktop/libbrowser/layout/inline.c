@@ -49,6 +49,7 @@ struct inline_piece {
 	int forced_break;
 	int replaced;
 	int uses_fallback;
+	int edge;
 	struct text_font font;
 };
 
@@ -85,6 +86,8 @@ struct inline_reach {
 static const uint16_t inline_space[1] = { 0x20U };
 
 static void inline_collect(struct inline_cutter *cutter, struct layout_box *box);
+static void inline_add_edge(struct inline_cutter *cutter, struct layout_box *box, int edge);
+static int inline_decorations(struct layout_tree *tree, struct layout_line *line, size_t count);
 static void inline_cut_text(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_add_replaced(struct inline_cutter *cutter, struct layout_box *box);
 static void inline_add_atomic(struct inline_cutter *cutter, struct layout_box *box);
@@ -524,9 +527,45 @@ inline_collect(
 		return;
 	}
 
-	/* An inline box's children, in order. */
+	/* An inline box's children, in order, between the spacers of its horizontal margin, border and padding. */
+	if (box->kind == LAYOUT_INLINE)
+		inline_add_edge(cutter, box, 1);
 	for (child = box->first_child; child != NULL; child = child->next)
 		inline_collect(cutter, child);
+	if (box->kind == LAYOUT_INLINE)
+		inline_add_edge(cutter, box, 2);
+}
+
+/* Adds the spacer of an inline box's left (1) or right (2) margin, border and padding: a piece of no text. */
+static void
+inline_add_edge(
+	struct inline_cutter *cutter,
+	struct layout_box *box,
+	int edge)
+{
+	struct inline_piece piece;
+	layout_unit width;
+	int left;
+	int error;
+
+	/* The sides are resolved against the block's width. */
+	layout_box_model(box, cutter->width);
+	left = edge == 1;
+	width = left ? box->margin[CSS_LEFT] + box->border[CSS_LEFT] + box->padding[CSS_LEFT] :
+	    box->margin[CSS_RIGHT] + box->border[CSS_RIGHT] + box->padding[CSS_RIGHT];
+	if (width == 0)
+		return;
+
+	/* The word before belongs to the box before. */
+	inline_flush_word(cutter);
+	memset(&piece, 0, sizeof(piece));
+	piece.box = box;
+	piece.width = width;
+	piece.edge = edge;
+	layout_font_of(cutter->tree, &box->style, &piece.font);
+	error = wb_vector_push(&cutter->pieces, &piece);
+	if (error != 0)
+		cutter->error = error;
 }
 
 /* Cuts a text box's text into words, collapsed spaces and forced breaks. */
@@ -1123,7 +1162,8 @@ inline_finish_line(
 		fragment->length = pieces[index].length;
 		fragment->font = pieces[index].font;
 		fragment->color = pieces[index].box->style.paint_color;
-		fragment->underline = pieces[index].box->style.underline;
+		fragment->underline = pieces[index].box->style.underline && pieces[index].edge == 0;
+		fragment->edge = pieces[index].edge;
 		fragment->x = x;
 		fragment->width = pieces[index].width;
 
@@ -1210,6 +1250,11 @@ inline_finish_line(
 	/* vertical-align places the pieces, and the line grows to hold them over the strut. */
 	inline_align(tree, box, &line, reach, piece_count, &above, &below);
 	free(reach);
+
+	/* The inline boxes with a background, borders or padding take their share of the line. */
+	error = inline_decorations(tree, &line, piece_count);
+	if (error != 0)
+		return error;
 
 	/* Aligns the line in the room the floats leave it: start and end are the right and the left in a right-to-left block. */
 	room = line_width - x;
@@ -1646,4 +1691,150 @@ inline_room(
 	*width = right - *left;
 	if (*width < 0)
 		*width = 0;
+}
+
+/* Tells whether an inline box paints something of its own: a background, a border or padding. */
+static int
+inline_decorated(
+	const struct layout_box *box)
+{
+	int side;
+
+	if ((box->style.background_color >> 24) != 0 || box->background != NULL)
+		return 1;
+	for (side = 0; side < 4; side++) {
+		if (box->border[side] != 0 || box->padding[side] != 0)
+			return 1;
+	}
+	return 0;
+}
+
+/*
+ * Finds, for a laid-out line, what each decorated inline box on it covers: the
+ * span of its fragments (its left and right edges when the line holds them),
+ * and how far they reach above and below the baseline.
+ */
+static int
+inline_decorations(
+	struct layout_tree *tree,
+	struct layout_line *line,
+	size_t count)
+{
+	struct layout_decoration *list;
+	struct layout_decoration *found;
+	struct layout_fragment *fragment;
+	struct layout_box *node;
+	layout_unit start;
+	layout_unit end;
+	layout_unit up;
+	layout_unit down;
+	size_t used;
+	size_t capacity;
+	size_t index;
+	size_t at;
+	int decorated;
+
+	/* A line of no inline boxes with decoration has none. */
+	list = NULL;
+	used = 0;
+	capacity = 0;
+	for (index = 0; index < count; index++) {
+		fragment = &line->fragments[index];
+		node = fragment->box;
+		if (node->kind != LAYOUT_INLINE)
+			node = node->parent;
+		for (; node != NULL && node->kind == LAYOUT_INLINE; node = node->parent) {
+			decorated = inline_decorated(node);
+			if (!decorated)
+				continue;
+
+			/* The box's record on this line, made at its first fragment. */
+			found = NULL;
+			for (at = 0; at < used; at++) {
+				if (list[at].box == node)
+					found = &list[at];
+			}
+			if (found == NULL) {
+				if (used == capacity) {
+					capacity = capacity == 0 ? 4U : capacity * 2U;
+					found = realloc(list, capacity * sizeof(*list));
+					if (found == NULL) {
+						free(list);
+						return ENOMEM;
+					}
+					list = found;
+				}
+				found = &list[used++];
+				memset(found, 0, sizeof(*found));
+				found->box = node;
+				found->x = fragment->x;
+				found->width = fragment->width;
+				found->shift = fragment->shift;
+			}
+
+			/* Its span grows to hold the fragment, and its reach with it. */
+			start = found->x;
+			end = found->x + found->width;
+			if (fragment->x < start)
+				start = fragment->x;
+			if (fragment->x + fragment->width > end)
+				end = fragment->x + fragment->width;
+			found->x = start;
+			found->width = end - start;
+			up = fragment->ascent;
+			down = fragment->descent;
+			if (fragment->edge == 0 || fragment->box != node) {
+				if (up > found->ascent)
+					found->ascent = up;
+				if (down > found->descent)
+					found->descent = down;
+			} else if (found->ascent == 0 && found->descent == 0) {
+				found->ascent = up;
+				found->descent = down;
+			}
+			if (fragment->box == node && fragment->edge == 1)
+				found->has_left = 1;
+			if (fragment->box == node && fragment->edge == 2)
+				found->has_right = 1;
+		}
+	}
+
+	/* An outer box is painted before the boxes inside it: the records go by the depth of their boxes. */
+	for (index = 1; index < used; index++) {
+		struct layout_decoration moving;
+		size_t depth_moving;
+		size_t depth_before;
+		const struct layout_box *walker;
+
+		moving = list[index];
+		depth_moving = 0;
+		for (walker = moving.box->parent; walker != NULL; walker = walker->parent)
+			depth_moving++;
+		at = index;
+		while (at > 0) {
+			depth_before = 0;
+			for (walker = list[at - 1U].box->parent; walker != NULL; walker = walker->parent)
+				depth_before++;
+			if (depth_before <= depth_moving)
+				break;
+			list[at] = list[at - 1U];
+			at--;
+		}
+		list[at] = moving;
+	}
+
+	/* The records move into the arena with the line. */
+	line->decorations = NULL;
+	line->decoration_count = 0;
+	if (used != 0) {
+		line->decorations = wb_arena_alloc(&tree->arena, used * sizeof(*list));
+		if (line->decorations == NULL) {
+			free(list);
+			return ENOMEM;
+		}
+		memcpy(line->decorations, list, used * sizeof(*list));
+		line->decoration_count = used;
+	}
+	free(list);
+	return 0;
 }

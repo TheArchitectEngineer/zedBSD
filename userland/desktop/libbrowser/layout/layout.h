@@ -87,6 +87,24 @@ struct layout_fragment {
 	layout_unit ascent;
 	layout_unit descent;
 	layout_unit shift;
+	/* A fragment of no text that stands for an inline box's left or right margin, border and padding (1 left, 2 right). */
+	int edge;
+};
+
+/*
+ * What an inline box (with a background, borders or padding) takes of one
+ * line: where its fragments start and end, how far they reach above and
+ * below the baseline, and whether the line holds its left and right edges.
+ */
+struct layout_decoration {
+	struct layout_box *box;
+	layout_unit x;
+	layout_unit width;
+	layout_unit ascent;
+	layout_unit descent;
+	layout_unit shift;
+	int has_left;
+	int has_right;
 };
 
 /*
@@ -100,6 +118,8 @@ struct layout_line {
 	layout_unit left;
 	struct layout_fragment *fragments;
 	size_t fragment_count;
+	struct layout_decoration *decorations;
+	size_t decoration_count;
 };
 
 /*
