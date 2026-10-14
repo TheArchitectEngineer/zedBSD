@@ -1,0 +1,549 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The first address space and channel of the nvrtx driver (stages P4 to P6).
+ *
+ * P4 takes a block at the top of the usable VRAM, writes the page tables of
+ * one 2 MiB range into it through the register window onto the VRAM
+ * (PRAMIN), has the resource manager make an address space the driver owns
+ * and gives it the root, and invalidates the TLBs.  The range maps three
+ * system-memory buffers: the ring of push-buffer entries, the push buffer and
+ * a semaphore page.
+ *
+ * P5 picks a copy engine on a runlist of its own, makes the channel (its
+ * instance block and USERD in the same VRAM block, its method buffer in system
+ * memory), binds and schedules it, and runs one fence: the push buffer
+ * releases a semaphore value that the CPU polls.
+ *
+ * P6 reports a channel error the firmware sent and frees the channel and the
+ * address space; the GSP's unload in P7 removes whatever is left.  See
+ * plan/ws037/phase005/phase.md.
+ */
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <kern/clock.h>
+#include <kern/kcrt.h>
+#include <kern/kmem.h>
+#include <uapi/errno.h>
+
+#include "drivers/gpu/nvrtx/nvrtx-gpu.h"
+
+/* The register window onto the VRAM: its 64 KiB-unit base register, where it shows, and its size. */
+#define CHANNEL_REG_WINDOW_BASE		0x001700U
+#define CHANNEL_WINDOW_AT		0x700000U
+#define CHANNEL_WINDOW_BYTES		0x100000U
+
+/* The VRAM block: the page tables, then the instance block, then the USERD page. */
+#define CHANNEL_BLOCK_BYTES		0x10000U
+#define CHANNEL_INSTANCE_AT		0x5000U
+#define CHANNEL_USERD_AT		0x6000U
+
+/* The mapped range: the ring page, four push-buffer pages and the semaphore page. */
+#define CHANNEL_VA			0x20000000ULL
+#define CHANNEL_RING_PAGE		0U
+#define CHANNEL_PUSH_PAGE		1U
+#define CHANNEL_PUSH_PAGES		4U
+#define CHANNEL_SEMAPHORE_PAGE		5U
+#define CHANNEL_PAGES			6U
+#define CHANNEL_RING_ENTRIES		512U
+
+/* The address-space limit written into the instance block (47-bit virtual addresses). */
+#define CHANNEL_VA_LIMIT		(1ULL << 47)
+
+/* The channel number (the resource manager keeps channel 0). */
+#define CHANNEL_ID			8U
+
+/* The TLB invalidate registers: the root, its upper half, and the trigger (bit 31) with "all addresses" (bit 0). */
+#define CHANNEL_REG_FLUSH_ROOT		0xb830a0U
+#define CHANNEL_REG_FLUSH_ROOT_UPPER	0xb830a4U
+#define CHANNEL_REG_FLUSH		0xb830b0U
+#define CHANNEL_FLUSH_TRIGGER		0x80000000U
+#define CHANNEL_FLUSH_ALL_ADDRESSES	0x1U
+#define CHANNEL_FLUSH_TIMEOUT_US	2000000U
+
+/* USERD's put and get of the ring. */
+#define CHANNEL_USERD_RING_GET		0x88U
+#define CHANNEL_USERD_RING_PUT		0x8cU
+
+/* The doorbell: runlist in bits 22:16, channel in bits 11:0. */
+#define CHANNEL_REG_DOORBELL		0xbb0090U
+
+/* The fence value and how long the CPU waits for it. */
+#define CHANNEL_FENCE_VALUE		0x1234U
+#define CHANNEL_FENCE_TIMEOUT_US	2000000U
+#define CHANNEL_FENCE_STEP_US		100U
+
+/* How long the end of P6 takes messages the firmware sent meanwhile. */
+#define CHANNEL_DRAIN_TIMEOUT_US	100000U
+
+static int channel_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
+static int channel_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t *value);
+static int channel_buffers(struct nvrtx_gpu *gpu);
+static int channel_flush_tlb(struct nvrtx_gpu *gpu);
+static int channel_fence(struct nvrtx_gpu *gpu);
+
+/*
+ * Runs stage P4: the VRAM block, the page tables, the address space and the TLB invalidate.
+ */
+int
+nvrtx_space_start(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	uint64_t pages[CHANNEL_PAGES];
+	uint8_t params[NVRTX_SPACE_PARAMS_BYTES];
+	uint8_t *image;
+	const uint8_t *reply;
+	size_t reply_length;
+	uint32_t region;
+	uint32_t check;
+	unsigned index;
+	int error;
+
+	engine = &gpu->engine;
+
+	/* Takes the VRAM block at the top of the last usable region. */
+	nvrtx_stage_mark("P4 begin");
+	error = nvrtx_mmu_vram_block(gpu->static_info, CHANNEL_BLOCK_BYTES, &engine->vram_block, &region);
+	if (error != 0) {
+		nvrtx_stage_mark("P4 fail: no usable VRAM region (%d)", error);
+		return error;
+	}
+
+	nvrtx_stage_mark("P4 vram: region %u, block at %llx", (unsigned)region, (unsigned long long)engine->vram_block);
+
+	/* Allocates the system-memory buffers the range maps. */
+	error = channel_buffers(gpu);
+	if (error != 0)
+		return error;
+
+	/* Lists the range's pages in order. */
+	pages[CHANNEL_RING_PAGE] = engine->ring.dma.device_address;
+	for (index = 0U; index < CHANNEL_PUSH_PAGES; index++)
+		pages[CHANNEL_PUSH_PAGE + index] = engine->push.dma.device_address + (uint64_t)index * NVRTX_GSP_PAGE_SIZE;
+	pages[CHANNEL_SEMAPHORE_PAGE] = engine->semaphore.dma.device_address;
+
+	/* Builds the tables in memory and copies them into the VRAM block. */
+	image = kern_malloc(NVRTX_MMU_TABLES_BYTES);
+	if (image == NULL)
+		return ENOMEM;
+
+	error = nvrtx_mmu_tables(image, engine->vram_block, CHANNEL_VA, pages, CHANNEL_PAGES);
+	if (error == 0)
+		error = channel_vram_write(gpu, engine->vram_block, image, NVRTX_MMU_TABLES_BYTES);
+	if (error == 0)
+		error = channel_vram_read32(gpu, engine->vram_block, &check);
+	if (error == 0 && check != nvrtx_get32(image, 0U)) {
+		nvrtx_stage_mark("P4 fail: root reads back %08x, wrote %08x", (unsigned)check, (unsigned)nvrtx_get32(image, 0U));
+		error = EIO;
+	}
+	kern_free(image);
+	if (error != 0)
+		return error;
+
+	nvrtx_stage_mark("P4 page tables at %llx", (unsigned long long)engine->vram_block);
+
+	/* Makes the address space the driver owns. */
+	nvrtx_space_params(params);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_SPACE, NVRTX_CLASS_SPACE, params, sizeof(params));
+	if (error != 0)
+		return error;
+
+	engine->space_made = 1;
+
+	/* Gives it the root. */
+	nvrtx_pdir_params(params, engine->vram_block, NVRTX_HANDLE_SPACE);
+	error = nvrtx_rm_control(gpu,
+	    NVRTX_HANDLE_CLIENT,
+	    NVRTX_HANDLE_DEVICE,
+	    NVRTX_CTL_SET_PAGE_DIRECTORY,
+	    params,
+	    NVRTX_PDIR_PARAMS_BYTES,
+	    &reply,
+	    &reply_length);
+	if (error != 0)
+		return error;
+
+	engine->root_set = 1;
+
+	/* Drops any stale translation of the new tables. */
+	error = channel_flush_tlb(gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the address space maps the range. */
+	nvrtx_stage_mark("P4 ok: vaspace");
+	return 0;
+}
+
+/*
+ * Runs stage P5: the copy engine, the channel and one fence.
+ */
+int
+nvrtx_channel_start(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	struct nvrtx_channel_setup setup;
+	uint8_t params[NVRTX_CHANNEL_PARAMS_BYTES];
+	uint8_t *instance;
+	const uint8_t *reply;
+	size_t reply_length;
+	int error;
+
+	engine = &gpu->engine;
+
+	/* Reads the engines and their runlists, and picks a copy engine. */
+	nvrtx_stage_mark("P5 begin");
+	kern_memset(gpu->reply, 0, NVRTX_DEVINFO_PARAMS_BYTES);
+	error = nvrtx_rm_control(gpu,
+	    gpu->internal_client,
+	    gpu->internal_subdevice,
+	    NVRTX_CTL_DEVICE_INFO,
+	    gpu->reply,
+	    NVRTX_DEVINFO_PARAMS_BYTES,
+	    &reply,
+	    &reply_length);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_devinfo_pick(reply, reply_length, &engine->pick);
+	if (error != 0) {
+		nvrtx_stage_mark("P5 fail: no copy engine of its own runlist (%d)", error);
+		return error;
+	}
+
+	/* Asks for the method buffer's size and allocates it. */
+	kern_memset(params, 0, NVRTX_METHOD_BUFFER_PARAMS_BYTES);
+	error = nvrtx_rm_control(gpu,
+	    gpu->internal_client,
+	    gpu->internal_subdevice,
+	    NVRTX_CTL_METHOD_BUFFER_SIZE,
+	    params,
+	    NVRTX_METHOD_BUFFER_PARAMS_BYTES,
+	    &reply,
+	    &reply_length);
+	if (error != 0)
+		return error;
+	if (reply_length < NVRTX_METHOD_BUFFER_PARAMS_BYTES)
+		return EIO;
+
+	engine->methods_size = nvrtx_get32(reply, 0U);
+	if (engine->methods_size == 0U || engine->methods_size > 0x100000U)
+		return EIO;
+
+	error = nvrtx_buffer_alloc(gpu, engine->methods_size, &engine->methods);
+	if (error != 0)
+		return error;
+
+	nvrtx_stage_mark("P5 copy engine %x runlist %u (graphics %u), method buffer %u",
+	    (unsigned)engine->pick.engine,
+	    (unsigned)engine->pick.runlist,
+	    (unsigned)engine->pick.graphics_runlist,
+	    (unsigned)engine->methods_size);
+
+	/* Writes the instance block (naming the page tables) and a clear USERD into the VRAM block. */
+	instance = kern_calloc(1U, NVRTX_INSTANCE_BYTES);
+	if (instance == NULL)
+		return ENOMEM;
+
+	nvrtx_mmu_instance(instance, engine->vram_block, CHANNEL_VA_LIMIT);
+	error = channel_vram_write(gpu, engine->vram_block + CHANNEL_INSTANCE_AT, instance, NVRTX_INSTANCE_BYTES);
+	kern_memset(instance, 0, NVRTX_INSTANCE_BYTES);
+	if (error == 0)
+		error = channel_vram_write(gpu, engine->vram_block + CHANNEL_USERD_AT, instance, NVRTX_INSTANCE_BYTES);
+	kern_free(instance);
+	if (error != 0)
+		return error;
+
+	/* Makes the channel. */
+	setup.ring_va = CHANNEL_VA + (uint64_t)CHANNEL_RING_PAGE * NVRTX_GSP_PAGE_SIZE;
+	setup.ring_entries = CHANNEL_RING_ENTRIES;
+	setup.chid = CHANNEL_ID;
+	setup.space = NVRTX_HANDLE_SPACE;
+	setup.engine = engine->pick.engine;
+	setup.instance = engine->vram_block + CHANNEL_INSTANCE_AT;
+	setup.userd = engine->vram_block + CHANNEL_USERD_AT;
+	setup.methods = engine->methods.dma.device_address;
+	setup.methods_size = engine->methods_size;
+	nvrtx_channel_params(params, &setup);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_CHANNEL, NVRTX_CLASS_CHANNEL, params, NVRTX_CHANNEL_PARAMS_BYTES);
+	if (error != 0)
+		return error;
+
+	engine->channel_made = 1;
+
+	/* Binds it to the copy engine and lets the scheduler run it. */
+	kern_memset(params, 0, NVRTX_BIND_PARAMS_BYTES);
+	nvrtx_put32(params, 0U, engine->pick.engine);
+	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_CHANNEL, NVRTX_CTL_BIND, params, NVRTX_BIND_PARAMS_BYTES, &reply, &reply_length);
+	if (error != 0)
+		return error;
+
+	kern_memset(params, 0, NVRTX_SCHEDULE_PARAMS_BYTES);
+	params[0] = 1U;
+	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_CHANNEL, NVRTX_CTL_SCHEDULE, params, NVRTX_SCHEDULE_PARAMS_BYTES, &reply, &reply_length);
+	if (error != 0)
+		return error;
+
+	nvrtx_stage_mark("P5 ok: channel %u on runlist %u", (unsigned)CHANNEL_ID, (unsigned)engine->pick.runlist);
+
+	/* Runs one fence through the channel. */
+	error = channel_fence(gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the channel runs work. */
+	return 0;
+}
+
+/*
+ * Runs stage P6's stop: takes the messages the firmware sent, then frees
+ * the channel and the address space.  Failures are only reported: the
+ * unload in P7 removes whatever stays.
+ */
+void
+nvrtx_channel_stop(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	uint8_t params[NVRTX_UNPDIR_PARAMS_BYTES];
+	const uint8_t *reply;
+	size_t reply_length;
+	size_t length;
+	int failures;
+	int error;
+
+	engine = &gpu->engine;
+	failures = 0;
+
+	/* Takes what the firmware sent meanwhile (a channel error is reported by the wait). */
+	if (gpu->reply != NULL)
+		(void)nvrtx_rpc_wait(gpu, 0xffffffffU, 0U, CHANNEL_DRAIN_TIMEOUT_US, &length);
+
+	/* Frees the channel. */
+	if (engine->channel_made != 0) {
+		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_CHANNEL);
+		if (error != 0)
+			failures++;
+		engine->channel_made = 0;
+	}
+
+	/* Takes the root back from the address space, then frees it. */
+	if (engine->root_set != 0) {
+		kern_memset(params, 0, sizeof(params));
+		nvrtx_put32(params, 0U, NVRTX_HANDLE_SPACE);
+		error = nvrtx_rm_control(gpu,
+		    NVRTX_HANDLE_CLIENT,
+		    NVRTX_HANDLE_DEVICE,
+		    NVRTX_CTL_UNSET_PAGE_DIRECTORY,
+		    params,
+		    sizeof(params),
+		    &reply,
+		    &reply_length);
+		if (error != 0)
+			failures++;
+		engine->root_set = 0;
+	}
+
+	if (engine->space_made != 0) {
+		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_SPACE);
+		if (error != 0)
+			failures++;
+		engine->space_made = 0;
+	}
+
+	/* Says how the stop went. */
+	if (failures == 0) {
+		nvrtx_stage_mark("P6 ok: channel and vaspace freed");
+	} else {
+		nvrtx_stage_mark("P6: %d frees failed; the unload removes the rest", failures);
+	}
+}
+
+/*
+ * Gives back the system-memory buffers of P4 and P5.
+ *
+ * Only once the GPU no longer reads them: after the GSP is stopped.
+ */
+void
+nvrtx_channel_release(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+
+	engine = &gpu->engine;
+
+	/* Frees each buffer that was allocated. */
+	nvrtx_buffer_free(gpu, &engine->ring);
+	nvrtx_buffer_free(gpu, &engine->push);
+	nvrtx_buffer_free(gpu, &engine->semaphore);
+	nvrtx_buffer_free(gpu, &engine->methods);
+}
+
+/* Writes bytes into the VRAM through the register window, then puts the window back. */
+static int
+channel_vram_write(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	const uint8_t *data,
+	size_t length)
+{
+	uint64_t base;
+	uint32_t offset;
+	uint32_t saved;
+	size_t at;
+
+	/* The range must lie inside one window position, in whole words. */
+	base = address & ~0xffffULL;
+	offset = (uint32_t)(address & 0xffffU);
+	if ((length % 4U) != 0U || offset + length > CHANNEL_WINDOW_BYTES)
+		return EINVAL;
+
+	/* Points the window at the range, writes it word by word, and puts the window back. */
+	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
+	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)(base >> 16));
+	for (at = 0U; at < length; at += 4U)
+		nvrtx_wr32(gpu, CHANNEL_WINDOW_AT + offset + (uint32_t)at, nvrtx_get32(data, at));
+	(void)nvrtx_rd32(gpu, CHANNEL_WINDOW_AT + offset);
+	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
+
+	/* Succeeded: the bytes are in the VRAM. */
+	return 0;
+}
+
+/* Reads one word of the VRAM through the register window, then puts the window back. */
+static int
+channel_vram_read32(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	uint32_t *value)
+{
+	uint32_t saved;
+
+	/* The word must be aligned. */
+	if ((address % 4U) != 0U)
+		return EINVAL;
+
+	/* Points the window at the word, reads it, and puts the window back. */
+	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
+	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)((address & ~0xffffULL) >> 16));
+	*value = nvrtx_rd32(gpu, CHANNEL_WINDOW_AT + (uint32_t)(address & 0xffffU));
+	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
+
+	/* Succeeded: the word is read. */
+	return 0;
+}
+
+/* Allocates the ring, the push buffer and the semaphore page. */
+static int
+channel_buffers(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	int error;
+
+	engine = &gpu->engine;
+
+	/* One page of ring entries. */
+	error = nvrtx_buffer_alloc(gpu, NVRTX_GSP_PAGE_SIZE, &engine->ring);
+	if (error != 0)
+		return error;
+
+	/* Four pages of push buffer. */
+	error = nvrtx_buffer_alloc(gpu, CHANNEL_PUSH_PAGES * NVRTX_GSP_PAGE_SIZE, &engine->push);
+	if (error != 0)
+		return error;
+
+	/* One page for the semaphore. */
+	error = nvrtx_buffer_alloc(gpu, NVRTX_GSP_PAGE_SIZE, &engine->semaphore);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the buffers are clear. */
+	return 0;
+}
+
+/* Invalidates every TLB entry of the driver's page tables. */
+static int
+channel_flush_tlb(
+	struct nvrtx_gpu *gpu)
+{
+	int error;
+
+	/* Names the root (in the VRAM: aperture 0), then triggers the invalidate of all addresses. */
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(gpu->engine.vram_block >> 8));
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | CHANNEL_FLUSH_ALL_ADDRESSES);
+
+	/* Waits for the trigger to clear. */
+	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
+	if (error != 0) {
+		nvrtx_stage_mark("P4 fail: TLB invalidate did not finish");
+		return error;
+	}
+
+	/* Succeeded: no stale translation is left. */
+	return 0;
+}
+
+/* Puts one fence in the channel and waits for the semaphore to reach its value. */
+static int
+channel_fence(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	const volatile uint32_t *semaphore;
+	uint64_t push_va;
+	uint64_t semaphore_va;
+	uint8_t word[4];
+	size_t length;
+	uint32_t waited;
+	uint32_t get;
+	uint32_t value;
+	int error;
+
+	engine = &gpu->engine;
+	push_va = CHANNEL_VA + (uint64_t)CHANNEL_PUSH_PAGE * NVRTX_GSP_PAGE_SIZE;
+	semaphore_va = CHANNEL_VA + (uint64_t)CHANNEL_SEMAPHORE_PAGE * NVRTX_GSP_PAGE_SIZE;
+
+	/* Clears the semaphore and writes the push buffer and its ring entry. */
+	semaphore = (const volatile uint32_t *)engine->semaphore.dma.address;
+	kern_memset(engine->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
+	length = nvrtx_push_fence((uint8_t *)engine->push.dma.address, semaphore_va, CHANNEL_FENCE_VALUE);
+	nvrtx_ring_entry((uint8_t *)engine->ring.dma.address, push_va, (uint32_t)(length / 4U));
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	/* Moves the ring's put past the entry, makes sure it reached the VRAM, and rings the doorbell. */
+	nvrtx_put32(word, 0U, 1U);
+	error = channel_vram_write(gpu, engine->vram_block + CHANNEL_USERD_AT + CHANNEL_USERD_RING_PUT, word, sizeof(word));
+	if (error != 0)
+		return error;
+
+	nvrtx_wr32(gpu, CHANNEL_REG_DOORBELL, (engine->pick.runlist << 16) | CHANNEL_ID);
+
+	/* Polls the semaphore. */
+	for (waited = 0U; waited <= CHANNEL_FENCE_TIMEOUT_US; waited += CHANNEL_FENCE_STEP_US) {
+		value = *semaphore;
+		if (value == CHANNEL_FENCE_VALUE) {
+			nvrtx_stage_mark("P5 ok: fence 0x%x reached after %u us", (unsigned)value, (unsigned)waited);
+			return 0;
+		}
+
+		kern_usleep_range(CHANNEL_FENCE_STEP_US, CHANNEL_FENCE_STEP_US * 2U);
+	}
+
+	/* The fence never came: reports how far the ring got. */
+	get = 0xffffffffU;
+	(void)channel_vram_read32(gpu, engine->vram_block + CHANNEL_USERD_AT + CHANNEL_USERD_RING_GET, &get);
+	nvrtx_stage_mark("P5 fail: fence %08x after 2 s, ring get %u put 1", (unsigned)*semaphore, (unsigned)get);
+	return ETIMEDOUT;
+}

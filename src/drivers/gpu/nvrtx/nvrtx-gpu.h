@@ -44,6 +44,17 @@
 /* The largest GSP image the three-level table describes with one middle-level page (512 x 512 pages). */
 #define NVRTX_IMAGE_MAX_BYTES		0x40000000U
 
+/* The handles the driver gives its objects of the resource manager. */
+#define NVRTX_HANDLE_CLIENT		0xc0de0001U
+#define NVRTX_HANDLE_DEVICE		0xc0de0080U
+#define NVRTX_HANDLE_SUBDEVICE		0xc0de2080U
+#define NVRTX_HANDLE_SPACE		0xc0de90f1U
+#define NVRTX_HANDLE_CHANNEL		0xc0dec46fU
+#define NVRTX_HANDLE_COPY		0xc0dec5b5U
+
+/* How long a call to the resource manager waits for its reply. */
+#define NVRTX_CALL_TIMEOUT_US		5000000U
+
 /* The two falcons the boot drives: the GSP's own and the secure processor's. */
 #define NVRTX_FALCON_GSP_BASE		0x110000U
 #define NVRTX_FALCON_SEC2_BASE		0x840000U
@@ -124,6 +135,27 @@ struct nvrtx_boot_memory {
 };
 
 /*
+ * The first address space and channel (stages P4 to P6).
+ *
+ * The VRAM block holds the page tables, the instance block and USERD; the
+ * system-memory buffers are the ring, the push buffer, the semaphore page and
+ * the method buffer.  The flags say which resource-manager objects exist, so
+ * the stop frees only those.
+ */
+struct nvrtx_engine_state {
+	uint64_t vram_block;
+	struct nvrtx_buffer ring;
+	struct nvrtx_buffer push;
+	struct nvrtx_buffer semaphore;
+	struct nvrtx_buffer methods;
+	uint32_t methods_size;
+	struct nvrtx_engine_pick pick;
+	int space_made;
+	int root_set;
+	int channel_made;
+};
+
+/*
  * One GPU the driver keeps after N1, when the boot asked for the GSP path.
  *
  * Created by the attach and owned by the PCI binding; the worker thread runs
@@ -163,6 +195,15 @@ struct nvrtx_gpu {
 	/* The last call's sequence number, and the buffer each received message is copied into. */
 	uint32_t call_sequence;
 	uint8_t *reply;
+	uint8_t *call;
+
+	/* The first address space and channel. */
+	struct nvrtx_engine_state engine;
+
+	/* The static information P3 read, and the resource manager's own client and subdevice. */
+	uint8_t *static_info;
+	uint32_t internal_client;
+	uint32_t internal_subdevice;
 
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
@@ -201,6 +242,15 @@ uint32_t nvrtx_frts_result(struct nvrtx_gpu *gpu);
 
 int nvrtx_rpc_send(struct nvrtx_gpu *gpu, uint32_t function, const uint8_t *payload, size_t length, int with_sequence, uint32_t *sequence);
 int nvrtx_rpc_wait(struct nvrtx_gpu *gpu, uint32_t function, uint32_t sequence, uint32_t timeout_us, size_t *length);
+
+int nvrtx_rm_allocate(struct nvrtx_gpu *gpu, uint32_t parent, uint32_t handle, uint32_t class_number, const uint8_t *parameters, size_t length);
+int nvrtx_rm_control(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length, const uint8_t **reply, size_t *reply_length);
+int nvrtx_rm_free(struct nvrtx_gpu *gpu, uint32_t object);
+
+int nvrtx_space_start(struct nvrtx_gpu *gpu);
+int nvrtx_channel_start(struct nvrtx_gpu *gpu);
+void nvrtx_channel_stop(struct nvrtx_gpu *gpu);
+void nvrtx_channel_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);
