@@ -50,6 +50,8 @@
 #define SESSION_READ_CODECS_V2		0x100dU
 #define SESSION_READ_ADDRESS		0x1009U
 #define SESSION_READ_LOCAL_NAME		0x0c14U
+#define SESSION_READ_PIN_TYPE		0x0c09U
+#define SESSION_READ_CLASS		0x0c23U
 #define SESSION_LE_SET_EVENT_MASK	0x2001U
 #define SESSION_LE_READ_BUFFER_SIZE	0x2002U
 #define SESSION_LE_SCAN_PARAMETERS	0x200bU
@@ -190,7 +192,8 @@ static int session_broadcom_refused(struct btd_session *session, const char *nam
 static int session_broadcom_address(struct btd_session *session);
 static void session_pause(unsigned milliseconds);
 static void session_reset_settle(struct btd_session *session);
-static const char *session_answer_sizes(struct btd_session *session);
+static const char *session_answer_patterns(struct btd_session *session, char *text, size_t size);
+static const char *session_answered(int error);
 static int session_remaining(uint64_t deadline);
 static int session_control(struct btd_session *session, unsigned long request, void *argument);
 static void session_normal_path(struct btd_session *session);
@@ -1838,6 +1841,7 @@ session_broadcom_attempt(
 	size_t length;
 	size_t records;
 	char path[256];
+	char probes[160];
 	int fast_line;
 	int broadcom;
 	int error;
@@ -1875,9 +1879,9 @@ session_broadcom_attempt(
 			session_reset_settle(session);
 			error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
 
-			/* Still no answer to it: whether a short and a long answer come tells the line from the question. */
+			/* Still no answer to it: which other questions are answered tells the line from the controller. */
 			if (error == ETIMEDOUT)
-				again = session_answer_sizes(session);
+				again = session_answer_patterns(session, probes, sizeof(probes));
 		}
 	}
 
@@ -1969,37 +1973,68 @@ session_broadcom_attempt(
 
 /*
  * Tells why the ROM does not answer Read Local Version, after a second
- * reset was answered (BUG-311): asks a question whose answer is as short
- * as the reset's (Write Scan Enable with no scan, the reset's own value:
- * 7 bytes) and one whose answer is longer (Read BD_ADDR: 13 bytes, past
- * the host's half FIFO, where its hardware flow control drops RTS).  Only
- * the long one missing means the line loses longer answers; both missing
- * means the controller stops after its reset's answer.  Returns the words
- * for the state.
+ * reset was answered (BUG-311): T1-643 found that the ROM answered only
+ * HCI_Reset, whose bytes (01 03 0c 00) are the only ones sent without
+ * bit 4 set; Read Local Version (01 01 10 00), Write Scan Enable (01 1a 0c
+ * 01 00) and Read BD_ADDR (01 09 10 00) each carry a byte with it.  Asks
+ * two questions without it, Read PIN Type (01 09 0c 00) and Read Class of
+ * Device (01 23 0c 00, a byte whose bits change later in the character),
+ * and two with it, Write Scan Enable with no scan and Read BD_ADDR:
+ *
+ * - none answered: the controller stops after its reset's answer;
+ * - only those without bit 4: the controller's receiver loses such bytes
+ *   (the line, not the questions);
+ * - Read PIN Type alone: it loses bits late in a character (its speed).
+ *
+ * Writes the words for the state into text and returns it.
  */
 static const char *
-session_answer_sizes(
-	struct btd_session *session)
+session_answer_patterns(
+	struct btd_session *session,
+	char *text,
+	size_t size)
 {
 	uint8_t no_scan;
-	int short_error;
-	int long_error;
+	int pin_error;
+	int class_error;
+	int scan_error;
+	int address_error;
 
-	/* The short answer, then the long one. */
+	/* Without bit 4, then with it. */
+	pin_error = session_command(session, SESSION_READ_PIN_TYPE, NULL, 0U, session->timing.command_ms);
+	class_error = session_command(session, SESSION_READ_CLASS, NULL, 0U, session->timing.command_ms);
 	no_scan = 0U;
-	short_error = session_command(session, SESSION_WRITE_SCAN_ENABLE, &no_scan, 1U, session->timing.command_ms);
-	long_error = session_command(session, SESSION_READ_ADDRESS, NULL, 0U, session->timing.command_ms);
+	scan_error = session_command(session, SESSION_WRITE_SCAN_ENABLE, &no_scan, 1U, session->timing.command_ms);
+	address_error = session_command(session, SESSION_READ_ADDRESS, NULL, 0U, session->timing.command_ms);
 
-	/* What came. */
-	if (short_error == 0 && long_error == 0)
-		return " (a second reset was answered; a 7-byte and a 13-byte answer came)";
-	if (short_error == 0)
-		return " (a second reset was answered; a 7-byte answer came, a 13-byte one did not)";
-	if (long_error == 0)
-		return " (a second reset was answered; a 13-byte answer came, a 7-byte one did not)";
+	/* What came, question by question. */
+	(void)snprintf(text,
+		       size,
+		       " (a second reset was answered; without bit 4: 0c09 %s, 0c23 %s; with it: 0c1a %s, 1009 %s)",
+		       session_answered(pin_error),
+		       session_answered(class_error),
+		       session_answered(scan_error),
+		       session_answered(address_error));
 
-	/* Succeeded in learning that neither came. */
-	return " (a second reset was answered; neither a 7-byte nor a 13-byte answer came)";
+	/* Succeeded: the words are written. */
+	return text;
+}
+
+/* The word for whether a question was answered. */
+static const char *
+session_answered(
+	int error)
+{
+	/* An answer came. */
+	if (error == 0)
+		return "answered";
+
+	/* None came in time. */
+	if (error == ETIMEDOUT)
+		return "no answer";
+
+	/* Something else went wrong. */
+	return "failed";
 }
 
 /*
