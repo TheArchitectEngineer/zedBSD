@@ -272,6 +272,12 @@ bool
 nvrtx_stage_draw_wanted(void);
 
 /*
+ * Reports whether the boot asked for the work channel (nvrtx.work=1).
+ */
+bool
+nvrtx_stage_work_wanted(void);
+
+/*
  * Reports whether the GPU stays up as a GPU device after the takeover: by
  * default, unless the boot says nvrtx.resident=0.
  */

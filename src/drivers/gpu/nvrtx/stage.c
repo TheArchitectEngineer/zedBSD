@@ -41,6 +41,8 @@
  *                         (and the TU10x scrubber channel), stage P5g
  *   nvrtx.compute=1       the first compute launch (P9c, a test)
  *   nvrtx.draw=1          the first draw (P9g, a test)
+ *   nvrtx.work=1          the work channel the GPU device keeps (P9w, with
+ *                         the golden context it needs; not yet by default)
  */
 
 #include <stdarg.h>
@@ -77,6 +79,9 @@
 
 /* The whole token that asks for the first draw (ws037-p007). */
 #define STAGE_DRAW_TOKEN		"nvrtx.draw=1"
+
+/* The whole token that asks for the work channel (ws037-p007 stage D1). */
+#define STAGE_WORK_TOKEN		"nvrtx.work=1"
 
 /* The whole token that stops the GSP after the takeover instead of keeping the GPU device (ws037-p006 P8c). */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
@@ -244,6 +249,23 @@ nvrtx_stage_draw_wanted(void)
 		return true;
 
 	/* Without it the boot draws nothing. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the work channel (nvrtx.work=1).
+ */
+bool
+nvrtx_stage_work_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.work=1 among the boot parameters. */
+	present = stage_token_present(STAGE_WORK_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the GPU device has no work channel. */
 	return false;
 }
 

@@ -122,6 +122,7 @@ nvrtx_gsp_start(
 	bool wanted;
 	bool forced;
 	bool resident;
+	bool work_wanted;
 	int error;
 
 	/* Stops before P0 when the boot asks. */
@@ -276,8 +277,11 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Builds the graphics golden context when the boot asks (nvrtx.gr=1) and does not stop before it. */
+	/* Builds the graphics golden context when the boot asks (nvrtx.gr=1, or the work channel that needs it) and does not stop before it. */
 	wanted = nvrtx_stage_gr_wanted();
+	work_wanted = nvrtx_stage_work_wanted();
+	if (work_wanted)
+		wanted = true;
 	allowed = nvrtx_stage_allowed("P5g");
 	if (wanted && !allowed)
 		nvrtx_stage_mark("P5g skipped (nvrtx.stop=P5g)");
@@ -296,6 +300,18 @@ nvrtx_gsp_start(
 		nvrtx_stage_mark("P9c skipped (nvrtx.stop=P9c)");
 	if (wanted && allowed) {
 		error = nvrtx_compute_start(gpu);
+		if (error != 0) {
+			gsp_end(gpu);
+			return error;
+		}
+	}
+
+	/* Makes the work channel when the boot asks (nvrtx.work=1) and does not stop before it. */
+	allowed = nvrtx_stage_allowed("P9w");
+	if (work_wanted && !allowed)
+		nvrtx_stage_mark("P9w skipped (nvrtx.stop=P9w)");
+	if (work_wanted && allowed) {
+		error = nvrtx_work_start(gpu);
 		if (error != 0) {
 			gsp_end(gpu);
 			return error;
@@ -392,10 +408,11 @@ nvrtx_gsp_release(
 	nvrtx_buffer_free(gpu, &memory->fwsec_frts);
 	nvrtx_buffer_free(gpu, &memory->fwsec_sb);
 
-	/* Frees the buffers of the first channel, of the graphics context, of the compute launch and of the display's channels. */
+	/* Frees the buffers of the first channel, of the graphics context, of the compute launch, of the work channel and of the display's channels. */
 	nvrtx_channel_release(gpu);
 	nvrtx_gr_release(gpu);
 	nvrtx_compute_release(gpu);
+	nvrtx_work_release(gpu);
 	nvrtx_scanout_release(gpu);
 	nvrtx_memory_release(gpu);
 
@@ -907,6 +924,7 @@ gsp_finish(
 	 * channel left (R6).
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
+		nvrtx_work_stop(gpu);
 		nvrtx_compute_stop(gpu);
 		nvrtx_display_stop(gpu);
 		nvrtx_gr_stop(gpu);
