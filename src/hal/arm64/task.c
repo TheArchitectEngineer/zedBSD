@@ -25,6 +25,23 @@
 #define ARM64_DISPATCH_WORDS 12U
 
 /*
+ * The byte a kernel stack is filled with before its task first runs.  The
+ * lowest byte that no longer holds it marks how deep the stack has grown,
+ * because nothing else writes to a task's own stack.
+ */
+#define ARM64_STACK_FILL_BYTE 0xa5U
+#define ARM64_STACK_FILL_WORD 0xa5a5a5a5a5a5a5a5ULL
+
+/*
+ * The lowest bytes of a kernel stack, which a task must never reach.  The
+ * page-backed allocation's header lies just below the stack, so a stack
+ * that grows past its bottom corrupts the allocator before anything else
+ * notices; a task found to have written here stops the kernel instead
+ * (BUG-321).
+ */
+#define ARM64_STACK_GUARD_BYTES 128U
+
+/*
  * Every task the HAL has made, for the memory statistics.
  *
  * The list and the two counters beside it are kept under task_list_lock.
@@ -35,6 +52,13 @@ static size_t task_stack_bytes;
 
 /* Guards task_list, task_count and task_stack_bytes; zero when free. */
 static volatile unsigned task_list_lock;
+
+/*
+ * The deepest kernel stack use measured so far, in bytes, over every task
+ * destroyed since boot.  It only grows, by a compare-and-exchange, so each
+ * new record is reported once; zero means no task has been measured.
+ */
+static size_t task_stack_high_water;
 
 /*
  * The floating-point state a new task starts with.
@@ -58,6 +82,9 @@ static void task_add(struct arm64_task *task);
 static void task_del(struct arm64_task *task);
 static void build_stack(struct arm64_task *task, void (*start)(void *), void *argument, void *user_stack_pointer);
 static struct arm64_task *running_task(void);
+static int task_stack_guard_intact(const struct arm64_task *task);
+static size_t task_stack_depth(const struct arm64_task *task);
+static void task_stack_record_depth(const struct arm64_task *task);
 static struct arm64_exception_frame *running_user_frame(void);
 static void self_task(void);
 
@@ -142,6 +169,9 @@ hal_task_create(
 	}
 
 	task->sys_stack = (void *)(((uintptr_t)task->sys_stack_allocation + 15U) & ~(uintptr_t)15U);
+
+	/* Fills the stack so that its guard and its deepest use can be read later. */
+	hal_memset(task->sys_stack, (int)ARM64_STACK_FILL_BYTE, ARM64_SYS_STACK_SIZE);
 
 	/* A new task runs nowhere and is resumed on the boot CPU unless moved. */
 	task->space = space;
@@ -492,10 +522,12 @@ hal_task_destroy(
 	if (run_cpu >= 0)
 		HAL_FATAL("destroy current arm64 task");
 
-	/* Unlists the task, then frees its stack and record. */
+	/* Unlists the task, then measures and frees its stack, then frees its record. */
 	task_del(task);
-	if (task->sys_stack != NULL)
+	if (task->sys_stack != NULL) {
+		task_stack_record_depth(task);
 		kernel_free(task->sys_stack_allocation);
+	}
 	kernel_free(task);
 }
 
@@ -516,6 +548,7 @@ hal_task_context_switch(
 	hal_cpu_id_t target_cpu;
 	uint64_t tls;
 	int run_cpu;
+	int guard_intact;
 
 	/* Resolves both tasks. */
 	cpu = arm64_percpu_current();
@@ -527,6 +560,17 @@ hal_task_context_switch(
 	/* A switch to the running task changes nothing. */
 	if (to == from)
 		return;
+
+	/*
+	 * Stops at a departing task that has grown into the bottom of its
+	 * kernel stack, before the overrun corrupts the memory below it
+	 * further (BUG-321).
+	 */
+	if (from->sys_stack != NULL) {
+		guard_intact = task_stack_guard_intact(from);
+		if (!guard_intact)
+			HAL_FATAL("arm64 kernel stack overflow");
+	}
 
 	/* Requires a destination that runs nowhere. */
 	run_cpu = __atomic_load_n(&to->run_cpu, __ATOMIC_ACQUIRE);
@@ -929,6 +973,88 @@ build_stack(
 	}
 
 	task->resume_sp = (uintptr_t)stack_pointer;
+}
+
+/* Reports whether a kernel stack's lowest bytes still hold their fill. */
+static int
+task_stack_guard_intact(
+	const struct arm64_task *task)
+{
+	const uint64_t *word;
+	size_t index;
+
+	/* Compares the guard a word at a time, from the bottom of the stack. */
+	word = task->sys_stack;
+	for (index = 0; index < ARM64_STACK_GUARD_BYTES / sizeof(*word); index++) {
+		if (word[index] != ARM64_STACK_FILL_WORD)
+			return 0;
+	}
+
+	/* Succeeded: the task has never reached its guard. */
+	return 1;
+}
+
+/* Measures how many bytes of its kernel stack a task has ever used. */
+static size_t
+task_stack_depth(
+	const struct arm64_task *task)
+{
+	const uint64_t *word;
+	size_t count;
+	size_t index;
+
+	/* Finds the lowest word that the task's own frames have overwritten. */
+	word = task->sys_stack;
+	count = ARM64_SYS_STACK_SIZE / sizeof(*word);
+	index = 0;
+	while (index < count && word[index] == ARM64_STACK_FILL_WORD)
+		index++;
+
+	/* Reports the distance from that word to the top of the stack. */
+	return (count - index) * sizeof(*word);
+}
+
+/*
+ * Checks a dead task's kernel stack and reports a new deepest use.
+ *
+ * A record past half of the stack would have overflowed the 16 KiB stacks
+ * of earlier kernels, so it is worth a line on the console.
+ */
+static void
+task_stack_record_depth(
+	const struct arm64_task *task)
+{
+	size_t depth;
+	size_t previous;
+	int guard_intact;
+	int raised;
+
+	/* Stops at a stack that was overrun after its last switch away. */
+	guard_intact = task_stack_guard_intact(task);
+	if (!guard_intact)
+		HAL_FATAL("arm64 kernel stack overflow");
+
+	/* Raises the boot-wide record when this stack went deeper than any before. */
+	depth = task_stack_depth(task);
+	previous = __atomic_load_n(&task_stack_high_water, __ATOMIC_RELAXED);
+	raised = 0;
+	while (depth > previous && !raised) {
+		raised = __atomic_compare_exchange_n(
+			&task_stack_high_water,
+			&previous,
+			depth,
+			0,
+			__ATOMIC_RELAXED,
+			__ATOMIC_RELAXED);
+	}
+
+	/* Reports a new record deep enough to matter. */
+	if (raised && depth > ARM64_SYS_STACK_SIZE / 2U) {
+		hal_printf(
+			"arm64: kernel stack high water %lu of %lu bytes\n",
+			(unsigned long)depth,
+			(unsigned long)ARM64_SYS_STACK_SIZE);
+	}
 }
 
 /* Reports the task the current CPU runs, which is the caller's. */

@@ -137,6 +137,11 @@ thread_create(
 
 /*
  * Wraps a forked HAL task in a new thread of the child process.
+ *
+ * The call takes the task over: on success the thread owns it, and on any
+ * failure the task has been destroyed, so the caller never destroys it.
+ * Some failures destroyed it and others did not, and a caller that
+ * destroyed it again freed one kernel stack twice (BUG-321).
  */
 int
 thread_fork(
@@ -152,15 +157,22 @@ thread_fork(
 	    process->vmspace == NULL ||
 	    task == NULL ||
 	    result == NULL ||
-	    hal_task_get_space(task) != process->vmspace->space)
+	    hal_task_get_space(task) != process->vmspace->space) {
+		hal_task_destroy(task);
 		return EINVAL;
+	}
 
-	/* Allocates the thread and its identifier. */
+	/* Allocates the thread. */
 	thread = kern_calloc(1, sizeof(*thread));
-	if (thread == NULL)
+	if (thread == NULL) {
+		hal_task_destroy(task);
 		return ENOMEM;
+	}
+
+	/* Reserves the thread's identifier. */
 	error = reserve_tid(thread);
 	if (error != 0) {
+		hal_task_destroy(task);
 		kern_free(thread);
 		return error;
 	}

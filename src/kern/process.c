@@ -1430,11 +1430,14 @@ fork_process(
 		goto fail;
 	}
 
-	/* Forks the calling thread into the task; the thread owns the task from here. */
+	/*
+	 * Forks the calling thread into the task.  The call owns the task from
+	 * here, and has already destroyed it when it fails.
+	 */
 	error = thread_fork(child, task, &thread);
+	task = NULL;
 	if (error != 0)
 		goto fail;
-	task = NULL;
 	signal_fork(child, parent, thread, curthread);
 	process_publish(child);
 	thread_start(thread);

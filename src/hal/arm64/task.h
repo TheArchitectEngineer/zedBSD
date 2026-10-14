@@ -4,7 +4,14 @@
 #include <hal/hal.h>
 #include "int.h"
 
-#define ARM64_SYS_STACK_SIZE 16384U
+/*
+ * The kernel stack of each created task.  Interrupts nest on it, and the
+ * deepest file system and driver paths come close to 16 KiB before an
+ * interrupt adds its frames; the amd64 kernel overran its 16 KiB stacks
+ * into the memory below them (BUG-321).
+ */
+#define ARM64_SYS_STACK_SIZE 32768U
+
 struct arm64_task {
 	struct arm64_task *next;
 	hal_space_t space;
