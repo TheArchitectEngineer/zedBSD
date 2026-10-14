@@ -450,6 +450,8 @@ struct nvrtx_display_state {
 	int timing_from_edid;
 	uint64_t olut;
 	uint64_t ilut;
+	/* The window's notifier the next flip uses (its slot's two halves in turn). */
+	uint32_t window_ntfy;
 
 	/* P8b: the channels (the core, every window, window-immediate and cursor), their push buffers and what the takeover wrote. */
 	struct nvrtx_buffer core_buffer;

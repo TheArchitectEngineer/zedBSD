@@ -309,6 +309,53 @@ nvrtx_disp_first_window(
 }
 
 /*
+ * Writes a later flip of the window as nouveau's commit of a plane alone
+ * does: the notifier at its offset, the whole image (present control,
+ * size, storage, format, pitch, object, offset, point and sizes), then a
+ * release interlocked with no core and with this window.
+ */
+void
+nvrtx_disp_first_window_flip(
+	struct nvrtx_push *push,
+	uint32_t window,
+	const struct nvrtx_disp_surface *surface,
+	uint32_t notifier_offset)
+{
+	uint32_t words[4];
+	uint32_t size;
+
+	size = (surface->height << 16) | (surface->width & 0xffffU);
+
+	/* The window's notifier, through the sync object at its offset. */
+	words[0] = NVRTX_DISP_HANDLE_SYNC;
+	words[1] = notifier_offset;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_CONTEXT_DMA_NOTIFIER, words, 2U);
+
+	/* The present control. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_PRESENT_CONTROL, FIRST_PRESENT_CONTROL);
+
+	/* The surface: its size, pitch-linear storage, format and pitch in 64-byte units. */
+	words[0] = size;
+	words[1] = FIRST_STORAGE_PITCH;
+	words[2] = surface->format;
+	words[3] = surface->pitch / NVRTX_DISP_PITCH_UNIT;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_SIZE, words, 4U);
+
+	/* Where it is read: the object, the offset, the point in, the size in and out. */
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_CONTEXT_DMA_ISO, surface->handle);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_OFFSET, (uint32_t)(surface->offset >> 8));
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_POINT_IN, 0U);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_SIZE_IN, size);
+	nvrtx_push_one(push, NVRTX_WINDOW_SET_SIZE_OUT, size);
+
+	/* Interlocked with this window alone, then released. */
+	words[0] = 0U;
+	words[1] = 1U << window;
+	nvrtx_push_method(push, NVRTX_WINDOW_SET_INTERLOCK_FLAGS, words, 2U);
+	nvrtx_push_one(push, NVRTX_WINDOW_UPDATE, FIRST_RELEASE);
+}
+
+/*
  * Computes a head's mode words from a timing: the visible size, the
  * raster's total, sync end, blank end and start counted from the sync's
  * start, a progressive second blank, the clock in hertz, and the output

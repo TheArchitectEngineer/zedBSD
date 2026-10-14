@@ -681,6 +681,14 @@ test_disp_first(void)
 		0x00080370, 0x00000001, 0x00000001,
 		0x00040200, 0x00000001,
 	};
+	static const uint32_t flip[25] = {
+		0x0008021c, 0xf0000000, 0x00000070,
+		0x00040308, 0x00000001,
+		0x00100224, 0x04000500, 0x00000010, 0x000000cf, 0x00000050,
+		0x00040240, 0xfb000000, 0x00040260, 0x00045678, 0x00040290, 0x00000000, 0x00040298, 0x04000500, 0x000402a4, 0x04000500,
+		0x00080370, 0x00000000, 0x00000001,
+		0x00040200, 0x00000001,
+	};
 	struct nvrtx_push push;
 	struct nvrtx_disp_timing timing;
 	struct nvrtx_disp_timing back;
@@ -738,6 +746,11 @@ test_disp_first(void)
 	nvrtx_push_init(&push, bytes, 1024);
 	nvrtx_disp_first_window(&push, 0, &surface, 0x60, 0x12abcd00ULL);
 	check(push_is(&push, window, 37), "first: window 0 is nouveau's 37 words");
+
+	/* A later flip: notifier (the other half), the image, no core interlock. */
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_window_flip(&push, 0, &surface, 0x70);
+	check(push_is(&push, flip, 25), "first: a flip is nouveau's commit of the plane alone (25 words)");
 
 	/* The LUTs: identity, the last repeated. */
 	nvrtx_disp_first_olut_fill(lut);

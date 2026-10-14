@@ -340,6 +340,7 @@ void nvrtx_disp_first_core_mode(struct nvrtx_push *push, const struct nvrtx_disp
 void nvrtx_disp_first_core_release(struct nvrtx_push *push, uint32_t window_interlock);
 void nvrtx_disp_first_core_olut(struct nvrtx_push *push, uint32_t head, uint64_t offset);
 void nvrtx_disp_first_window(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset, uint64_t ilut_offset);
+void nvrtx_disp_first_window_flip(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset);
 void nvrtx_disp_first_mode(const struct nvrtx_disp_timing *timing, struct nvrtx_disp_mode *mode);
 void nvrtx_disp_first_timing_from_armed(const uint32_t *armed, struct nvrtx_disp_timing *timing);
 int nvrtx_disp_first_edid_timing(const uint8_t *edid, size_t length, struct nvrtx_disp_timing *timing);
