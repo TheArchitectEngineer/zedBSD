@@ -1,0 +1,14 @@
+zedBSD 1.0.0-beta2+g9640a1c (9640a1c 2026-10-15)
+/dev/mmcblk0p2       218272     118224     100048      55% /
+vfs: no root named by the parameters; using legacy autoroot
+vfs: boot BIOS=80 MBR partition=1 devices=1
+vfs: native boot disk=mmcblk0 physical disks=1
+vfs: scan mmcblk0 geometry error=21: 4 entries
+vfs: mmcblk0 partition 1 start=00000000:00000800 data=00000000:00000800 blocks=00000000:00040000
+vfs: mmcblk0 partition 2 start=00000000:00040800 data=00000000:00040800 blocks=00000000:0006B000
+vfs: mmcblk0 partition 3 has zero blocks; not published
+vfs: mmcblk0 partition 4 has zero blocks; not published
+vfs: mounting runtime filesystems...
+vfs: runtime filesystems mounted
+vfs: boot0 (BOOT) published at /boot/boot0
+[sudo] password for kei: WRITE_OK

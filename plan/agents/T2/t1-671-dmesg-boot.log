@@ -1,0 +1,16 @@
+total 4608
+-rw-r--r-- 1 kei kei 1128726 Oct 14 20:49 baseline-1080p30-10s.mp4
+-rw-r--r-- 1 kei kei 1085309 Oct 14 20:49 high-1080p30-10s.mp4
+-rw-r--r-- 1 kei kei   16644 Oct 14 20:49 i-high-352-cqm.h264
+-rw-r--r-- 1 kei kei     195 Oct 14 20:49 i-high-352-cqm.sha256
+-rw-r--r-- 1 kei kei    1488 Oct 14 20:49 p-baseline-64.h264
+-rw-r--r-- 1 kei kei     650 Oct 14 20:49 p-baseline-64.sha256
+-rw-r--r-- 1 kei kei   15244 Oct 14 20:49 pb-high-352-pyramid.h264
+-rw-r--r-- 1 kei kei     975 Oct 14 20:49 pb-high-352-pyramid.sha256
+-rwxr-xr-x 1 kei kei   42224 Oct 14 20:49 vkvideo-probe
+sh: 1: uptime: not found
+rpi4-vchiq: shared memory at bus c0d23000, irq 66, connecting
+rpi4-vchiq: connected (version 8)
+v3d: vk: capset declares H.264 video decode (VideoCore firmware decoder)
+ls: /home/kei/Video.mp4: No such file or directory
+/bin/videoplayer
