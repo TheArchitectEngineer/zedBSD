@@ -1,0 +1,2453 @@
+{
+  "total_fail": 319,
+  "group_counts": {
+    "alignment/grid-self-alignment-non-static-positioned-items": 12,
+    "alignment/grid-self-alignment-positioned-items-with-margin-border-padding": 12,
+    "alignment/grid-self-alignment-stretch": 12,
+    "abspos/grid-positioned-items-and-autofit-tracks": 7,
+    "alignment/grid-alignment-implies-size-change": 6,
+    "alignment/grid-column-axis-alignment-positioned-items": 6,
+    "alignment/grid-row-axis-alignment-positioned-items": 6,
+    "layout-algorithm/baseline-alignment-affects-intrinsic-size": 6,
+    "alignment/grid-align-baseline": 5,
+    "alignment/grid-column-axis-self-baseline-synthesized": 5,
+    "alignment/grid-row-axis-self-baseline-synthesized": 5,
+    "grid-items/grid-minimum-size-grid-items": 5,
+    "subgrid/subgrid-baseline": 5,
+    "alignment/grid-align-baseline-flex": 4,
+    "alignment/grid-justify-baseline": 4,
+    "animation/grid-template-columns-neutral-keyframe": 4,
+    "animation/grid-template-rows-neutral-keyframe": 4,
+    "grid-definition/grid-auto-repeat-min-size": 4,
+    "alignment/grid-align-baseline-fieldset": 3,
+    "alignment/grid-align-baseline-grid": 3,
+    "alignment/grid-align-baseline-multicol": 3,
+    "alignment/grid-align-baseline-overflow": 3,
+    "alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency": 3,
+    "layout-algorithm/grid-content-distribution-must-account-for-track-sizing": 3,
+    "layout-algorithm/grid-flex-track-intrinsic-sizes": 3,
+    "abspos/grid-positioned-items-gaps": 2,
+    "alignment/grid-align-baseline-table": 2,
+    "alignment/grid-alignment-style-changes": 2,
+    "alignment/grid-content-alignment-and-self-alignment": 2,
+    "alignment/grid-content-alignment-overflow": 2,
+    "alignment/grid-content-alignment-second-pass": 2,
+    "grid-definition/flex-content-resolution-columns": 2,
+    "grid-definition/flex-content-resolution-rows": 2,
+    "grid-definition/grid-percentage-rows-indefinite-height": 2,
+    "grid-definition/grid-support-repeat": 2,
+    "grid-items/grid-items-minimum-width": 2,
+    "grid-items/grid-items-minimum-width-orthogonal": 2,
+    "grid-items/grid-items-minimum-width-vertical-lr": 2,
+    "grid-items/grid-items-minimum-width-vertical-rl": 2,
+    "grid-items/grid-items-percentage-margins-vertical-lr": 2,
+    "grid-items/grid-items-percentage-margins-vertical-rl": 2,
+    "grid-items/grid-items-percentage-paddings-vertical-lr": 2,
+    "grid-items/grid-items-percentage-paddings-vertical-rl": 2,
+    "grid-items/grid-items-relative-offsets": 2,
+    "layout-algorithm/grid-container-percentage": 2,
+    "parsing/grid-template-repeat-auto-computed-withcontent": 2,
+    "abspos/absolute-positioning-grid-container-containing-block": 1,
+    "abspos/absolute-positioning-grid-container-parent": 1,
+    "abspos/grid-positioned-items-content-alignment": 1,
+    "abspos/grid-positioned-items-content-alignment-rtl": 1,
+    "abspos/grid-positioned-items-gaps-002-rtl": 1,
+    "abspos/grid-positioned-items-gaps-rtl": 1,
+    "abspos/grid-positioned-items-implicit-grid": 1,
+    "abspos/grid-positioned-items-implicit-grid-line": 1,
+    "abspos/grid-positioned-items-padding": 1,
+    "abspos/grid-positioned-items-unknown-named-grid-line": 1,
+    "abspos/grid-positioned-items-within-grid-implicit-track": 1,
+    "abspos/grid-sizing-positioned-items": 1,
+    "abspos/positioned-grid-items-should-not-create-implicit-tracks": 1,
+    "abspos/positioned-grid-items-should-not-take-up-space": 1,
+    "alignment/grid-align": 1,
+    "alignment/grid-align-baseline-vertical": 1,
+    "alignment/grid-align-content": 1,
+    "alignment/grid-align-content-distribution": 1,
+    "alignment/grid-align-content-distribution-vertical-lr": 1,
+    "alignment/grid-align-content-distribution-vertical-rl": 1,
+    "alignment/grid-align-content-vertical-lr": 1,
+    "alignment/grid-align-content-vertical-rl": 1,
+    "alignment/grid-align-justify-margin-border-padding-vertical-lr": 1,
+    "alignment/grid-align-justify-margin-border-padding-vertical-rl": 1,
+    "alignment/grid-align-justify-overflow": 1,
+    "alignment/grid-align-justify-stretch": 1,
+    "alignment/grid-align-justify-stretch-with-orthogonal-flows": 1,
+    "alignment/grid-align-stretching-replaced-items": 1,
+    "alignment/grid-baseline": 1,
+    "alignment/grid-column-axis-alignment-sticky-positioned-items": 1,
+    "alignment/grid-container-baseline": 1,
+    "alignment/grid-content-alignment-auto-sized-tracks": 1,
+    "alignment/grid-content-alignment-with-abspos": 1,
+    "alignment/grid-content-alignment-with-span": 1,
+    "alignment/grid-content-alignment-with-span-vertical-lr": 1,
+    "alignment/grid-content-alignment-with-span-vertical-rl": 1,
+    "alignment/grid-fit-content-tracks-dont-stretch": 1,
+    "alignment/grid-gutters-and-alignment": 1,
+    "alignment/grid-item-alignment-with-orthogonal-flows": 1,
+    "alignment/grid-item-alignment-with-orthogonal-flows-vertical-lr": 1,
+    "alignment/grid-item-alignment-with-orthogonal-flows-vertical-rl": 1,
+    "alignment/grid-item-auto-margins-alignment": 1,
+    "alignment/grid-item-auto-margins-alignment-vertical-lr": 1,
+    "alignment/grid-item-auto-margins-alignment-vertical-rl": 1,
+    "alignment/grid-place-content": 1,
+    "alignment/grid-row-axis-alignment-sticky-positioned-items": 1,
+    "alignment/grid-self-alignment": 1,
+    "animation/grid-template-columns-composition": 1,
+    "animation/grid-template-columns-interpolation": 1,
+    "animation/grid-template-rows-composition": 1,
+    "animation/grid-template-rows-interpolation": 1,
+    "css-grid/grid-layout-properties": 1,
+    "css-grid/grid-tracks-stretched-with-different-flex-factors-sum": 1,
+    "css-grid/inheritance": 1,
+    "css-grid/table-grid-item": 1,
+    "grid-definition/explicit-grid-size": 1,
+    "grid-definition/flex-content-distribution": 1,
+    "grid-definition/grid-auto-fill-columns": 1,
+    "grid-definition/grid-auto-fill-rows": 1,
+    "grid-definition/grid-auto-fit-columns": 1,
+    "grid-definition/grid-auto-fit-rows": 1,
+    "grid-definition/grid-auto-repeat-intrinsic": 1,
+    "grid-definition/grid-auto-repeat-max-size": 1,
+    "grid-definition/grid-auto-repeat-max-size-001.tentative": 1,
+    "grid-definition/grid-auto-repeat-min-max-size": 1,
+    "grid-definition/grid-change-auto-repeat-tracks": 1,
+    "grid-definition/grid-change-fit-content-argument": 1,
+    "grid-definition/grid-change-intrinsic-size-with-auto-repeat-tracks": 1,
+    "grid-definition/grid-inline-auto-repeat": 1,
+    "grid-definition/grid-inline-support-flexible-lengths": 1,
+    "grid-definition/grid-inline-support-grid-template-areas": 1,
+    "grid-definition/grid-inline-support-grid-template-columns-rows": 1,
+    "grid-definition/grid-inline-support-named-grid-lines": 1,
+    "grid-definition/grid-inline-support-repeat": 1,
+    "grid-definition/grid-inline-template-columns-rows-resolved-values": 1,
+    "grid-definition/grid-limits": 1,
+    "grid-definition/grid-minimum-contribution-with-percentages": 1,
+    "grid-definition/grid-shorthand": 1,
+    "grid-definition/grid-support-flexible-lengths": 1,
+    "grid-definition/grid-support-grid-template-areas": 1,
+    "grid-definition/grid-support-grid-template-columns-rows": 1,
+    "grid-definition/grid-support-named-grid-lines": 1,
+    "grid-definition/grid-template-columns-rows-changes": 1,
+    "grid-definition/grid-template-columns-rows-resolved-values": 1,
+    "grid-items/grid-automatic-minimum-intrinsic-aspect-ratio": 1,
+    "grid-items/grid-item-dynamic-min-contribution": 1,
+    "grid-items/grid-item-min-auto-size": 1,
+    "grid-items/grid-items-minimum-height-orthogonal": 1,
+    "grid-items/grid-items-percentage-paddings": 1,
+    "grid-model/grid-box-sizing": 1,
+    "grid-model/grid-computed-value-display-floated-items": 1,
+    "grid-model/grid-container-sizing-constraints": 1,
+    "grid-model/grid-float": 1,
+    "grid-model/grid-gutters-and-flex-content": 1,
+    "grid-model/grid-gutters-and-tracks": 1,
+    "grid-model/grid-gutters-as-percentage": 1,
+    "grid-model/grid-item-accepts-first-letter": 1,
+    "grid-model/grid-item-accepts-first-line": 1,
+    "layout-algorithm/flex-and-intrinsic-sizes": 1,
+    "layout-algorithm/flex-sizing-columns-min-max-width": 1,
+    "layout-algorithm/flex-sizing-rows-min-max-height": 1,
+    "layout-algorithm/grid-automatic-minimum-for-auto-columns": 1,
+    "layout-algorithm/grid-find-fr-size-gutters": 1,
+    "layout-algorithm/grid-fit-content-percentage": 1,
+    "layout-algorithm/grid-intrinsic-size-with-orthogonal-items": 1,
+    "layout-algorithm/grid-intrinsic-track-sizes": 1,
+    "layout-algorithm/grid-item-margin-auto-columns-rows-vertical-lr": 1,
+    "layout-algorithm/grid-item-margin-auto-columns-rows-vertical-rl": 1,
+    "layout-algorithm/grid-minimum-contribution-baseline-shim": 1,
+    "layout-algorithm/grid-minimum-contribution-baseline-shim-vertical-lr": 1,
+    "layout-algorithm/grid-minimum-contribution-baseline-shim-vertical-rl": 1,
+    "parsing/grid-area-computed": 1,
+    "parsing/grid-area-invalid": 1,
+    "parsing/grid-area-shorthand": 1,
+    "parsing/grid-area-valid": 1,
+    "parsing/grid-auto-columns-computed": 1,
+    "parsing/grid-auto-columns-valid": 1,
+    "parsing/grid-auto-rows-computed": 1,
+    "parsing/grid-auto-rows-valid": 1,
+    "parsing/grid-columns-rows-get-set-multiple": 1,
+    "parsing/grid-content-sized-columns-resolution": 1,
+    "parsing/grid-shorthand": 1,
+    "parsing/grid-shorthand-serialization": 1,
+    "parsing/grid-shorthand-valid": 1,
+    "parsing/grid-template-areas-computed": 1,
+    "parsing/grid-template-areas-one-cell": 1,
+    "parsing/grid-template-areas-valid": 1,
+    "parsing/grid-template-columns-computed": 1,
+    "parsing/grid-template-columns-computed-implicit-track": 1,
+    "parsing/grid-template-columns-computed-nogrid": 1,
+    "parsing/grid-template-columns-computed-withcontent": 1,
+    "parsing/grid-template-columns-valid": 1,
+    "parsing/grid-template-rows-computed": 1,
+    "parsing/grid-template-rows-computed-implicit-track": 1,
+    "parsing/grid-template-rows-computed-nogrid": 1,
+    "parsing/grid-template-rows-computed-withcontent": 1,
+    "parsing/grid-template-rows-valid": 1,
+    "parsing/grid-template-shorthand": 1,
+    "parsing/grid-template-shorthand-areas-valid": 1,
+    "parsing/grid-template-shorthand-valid": 1,
+    "placement/grid-container-change-grid-tracks-recompute-child-positions": 1,
+    "placement/grid-container-change-named-grid-recompute-child-positions": 1,
+    "subgrid/grid-template-computed-nogrid": 1,
+    "subgrid/grid-template-valid": 1
+  },
+  "symptom_counts": {
+    "height": 53,
+    "width": 96,
+    "offsetLeft": 51,
+    "offsetTop": 42,
+    "scrollWidth": 1,
+    "assert_equals:": 22,
+    "other": 39,
+    "assert_equals: repeat(9999, 1px) should make grid height 9999px": 1,
+    "assert_equals: grid-template-columns": 1,
+    "assert_equals: gridTemplateColumns": 1,
+    "assert_equals: height": 1,
+    "padding-top": 1,
+    "assert_equals: initial value of grid-template-columns should be 150px": 1,
+    "assert_equals: getComputedStyle() display should be 'table'": 1,
+    "assert_equals: Grid item width": 1,
+    "assert_equals: grid-column-end should be canonical": 1,
+    "assert_equals: serialization should be canonical": 2,
+    "assert_equals: grid serialization should be canonical": 1,
+    "assert_equals: grid-auto-columns should be canonical": 1,
+    "assert_equals: grid-template-areas should be canonical": 1,
+    "assert_equals: table is as tall as the grid": 1
+  },
+  "first_failures": [
+    {
+      "id": "/css/css-grid/abspos/absolute-positioning-grid-container-containing-block-001.html",
+      "group": "abspos/absolute-positioning-grid-container-containing-block",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "ridArea absolute thirdRowThirdColumnSpanning2Rows2Columns\" data-offset-x=\"165\" data-offset-y=\"165\" data-expected-width=\"350\" data-expected-height=\"350\">\n  </div>\n</div>\nheight expected 530 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/absolute-positioning-grid-container-parent-001.html",
+      "group": "abspos/absolute-positioning-grid-container-parent",
+      "first_failed_callback": ".container 1",
+      "symptom": "height",
+      "message_tail": "div class=\"sizedToGridArea absolute autoRowAutoColumn\" data-offset-x=\"50\" data-offset-y=\"10\" data-expected-width=\"500\" data-expected-height=\"400\"></div>\n  </div>\n</div>\nheight expected 400 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-001.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ta-expected-width=\"30\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 1\" data-expected-width=\"30\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 30 but got 200"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-002.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ta-expected-width=\"30\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 2\" data-expected-width=\"30\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 30 but got 200"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-003.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "xpected-width=\"60\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 2 / 4\" data-expected-width=\"60\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 60 but got 200"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-004.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ta-expected-width=\"30\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 1\" data-expected-width=\"30\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 30 but got 200"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-005.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ta-expected-width=\"30\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 2\" data-expected-width=\"30\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 30 but got 200"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-006.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "xpected-width=\"65\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 2 / 4\" data-expected-width=\"65\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 65 but got 200"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-and-autofit-tracks-007.html",
+      "group": "abspos/grid-positioned-items-and-autofit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "xpected-width=\"65\" data-expected-height=\"10\"></span>\n        <span style=\"grid-column: 2 / 4\" data-expected-width=\"65\" data-expected-height=\"10\"></span>\n    </div>\n</div>\nwidth expected 65 but got 250"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-content-alignment-001.html",
+      "group": "abspos/grid-positioned-items-content-alignment",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ntentStart\">\n  <div style=\"grid-column: 1 / 2; grid-row: 1 / 2;\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"100\" data-expected-height=\"70\">\n  </div>\n</div>\nwidth expected 100 but got 400"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-content-alignment-rtl-001.html",
+      "group": "abspos/grid-positioned-items-content-alignment-rtl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "entStart\">\n  <div style=\"grid-column: 1 / 2; grid-row: 1 / 2;\" data-offset-x=\"300\" data-offset-y=\"0\" data-expected-width=\"100\" data-expected-height=\"70\">\n  </div>\n</div>\nwidth expected 100 but got 400"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-gaps-001.html",
+      "group": "abspos/grid-positioned-items-gaps",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": " <div style=\"grid-column: auto / auto; grid-row: auto / auto;\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"830\" data-expected-height=\"230\">\n  </div>\n</div>\nheight expected 230 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-gaps-002-rtl.html",
+      "group": "abspos/grid-positioned-items-gaps-002-rtl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": " 10%;\">\n  <div style=\"grid-column: 2 / 4; grid-row: 2 / 4;\" data-offset-x=\"355\" data-offset-y=\"125\" data-expected-width=\"280\" data-expected-height=\"160\">\n  </div>\n</div>\nwidth expected 280 but got 830"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-gaps-002.html",
+      "group": "abspos/grid-positioned-items-gaps",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": " 10%;\">\n  <div style=\"grid-column: 2 / 4; grid-row: 2 / 4;\" data-offset-x=\"195\" data-offset-y=\"125\" data-expected-width=\"280\" data-expected-height=\"160\">\n  </div>\n</div>\nwidth expected 280 but got 830"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-gaps-rtl-001.html",
+      "group": "abspos/grid-positioned-items-gaps-rtl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": " <div style=\"grid-column: auto / auto; grid-row: auto / auto;\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"830\" data-expected-height=\"230\">\n  </div>\n</div>\nheight expected 230 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-implicit-grid-001.html",
+      "group": "abspos/grid-positioned-items-implicit-grid",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "class=\"sizedToGridArea absolute onlySecondRowOnlySecondColumn\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"230\" data-expected-height=\"230\">\n  </div>\n</div>\nheight expected 230 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-implicit-grid-line-001.html",
+      "group": "abspos/grid-positioned-items-implicit-grid-line",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "div>\n  <div class=\"absolute sizedToGridArea endImplicitLine\" data-offset-x=\"15\" data-offset-y=\"15\" data-expected-width=\"515\" data-expected-height=\"315\">\n  </div>\n</div>\nheight expected 330 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-padding-001.html",
+      "group": "abspos/grid-positioned-items-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ss=\"absolute\" style=\"grid-column: 3 / auto; grid-row: 2 / 3;\" data-offset-x=\"315\" data-offset-y=\"65\" data-expected-width=\"215\" data-expected-height=\"150\">\n  </div>\n</div>\nwidth expected 15 but got 530"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-unknown-named-grid-line-001.html",
+      "group": "abspos/grid-positioned-items-unknown-named-grid-line",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": ">\n  <div class=\"absolute sizedToGridArea startUnknownLine\" data-offset-x=\"315\" data-offset-y=\"215\" data-expected-width=\"215\" data-expected-height=\"115\">\n  </div>\n</div>\nheight expected 330 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-positioned-items-within-grid-implicit-track-001.html",
+      "group": "abspos/grid-positioned-items-within-grid-implicit-track",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "s=\"absolute\" style=\"grid-column: auto / 1; grid-row: auto / 1;\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"215\" data-expected-height=\"115\">\n  </div>\n</div>\nwidth expected 900 but got 700"
+    },
+    {
+      "id": "/css/css-grid/abspos/grid-sizing-positioned-items-001.html",
+      "group": "abspos/grid-sizing-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "ss=\"absolute endSecondRowEndSecondColumn sizedToGridArea\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"315\" data-expected-height=\"215\">\n    </div>\n  </div>\nheight expected 1030 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/positioned-grid-items-should-not-create-implicit-tracks-001.html",
+      "group": "abspos/positioned-grid-items-should-not-create-implicit-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "pected-height=\"50\">\n  </div>\n  <div class=\"autoRowAutoColumn\" data-offset-x=\"0\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\">\n  </div>\n</div>\nheight expected 300 but got 768"
+    },
+    {
+      "id": "/css/css-grid/abspos/positioned-grid-items-should-not-take-up-space-001.html",
+      "group": "abspos/positioned-grid-items-should-not-take-up-space",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "\"150\">\n  </div>\n  <div class=\"sizedToGridArea autoRowAutoColumn\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"50\" data-expected-height=\"50\">\n  </div>\n</div>\nheight expected 150 but got 768"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-001.html",
+      "group": "alignment/grid-align-baseline",
+      "first_failed_callback": "#target > div 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"120\">line1<br>line2</div>\noffsetLeft expected 120 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-002.html",
+      "group": "alignment/grid-align-baseline",
+      "first_failed_callback": "#target > div 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"120\">line1<br>line2</div>\noffsetLeft expected 120 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-003.html",
+      "group": "alignment/grid-align-baseline",
+      "first_failed_callback": "#target > div 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"40\"><span></span><br><span></span></div>\noffsetTop expected 40 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-004.html",
+      "group": "alignment/grid-align-baseline",
+      "first_failed_callback": "#target > div 2",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div style=\"grid-area: 1 / 2 / 4 / 2;\" data-offset-y=\"100\"><span></span><br><span></span></div>\noffsetTop expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-fieldset-001.html",
+      "group": "alignment/grid-align-baseline-fieldset",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"20\"><span></span></div>\noffsetTop expected 20 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-fieldset-002.html",
+      "group": "alignment/grid-align-baseline-fieldset",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"35\"><span></span></div>\noffsetLeft expected 35 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-fieldset-003.html",
+      "group": "alignment/grid-align-baseline-fieldset",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"25\"><span></span></div>\noffsetLeft expected 25 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-001.html",
+      "group": "alignment/grid-align-baseline-flex",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"15\"><span></span></div>\noffsetTop expected 15 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-002.html",
+      "group": "alignment/grid-align-baseline-flex",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"40\"><span></span></div>\noffsetLeft expected 40 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-003.html",
+      "group": "alignment/grid-align-baseline-flex",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"45\"><span></span></div>\noffsetTop expected 45 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-004.html",
+      "group": "alignment/grid-align-baseline-flex",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"110\"><span></span></div>\noffsetLeft expected 110 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-grid-001.html",
+      "group": "alignment/grid-align-baseline-grid",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"35\"><span></span></div>\noffsetTop expected 35 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-grid-002.html",
+      "group": "alignment/grid-align-baseline-grid",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"110\"><span></span></div>\noffsetLeft expected 110 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-grid-003.html",
+      "group": "alignment/grid-align-baseline-grid",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"30\"><span></span></div>\noffsetLeft expected 30 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-multicol-001.html",
+      "group": "alignment/grid-align-baseline-multicol",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"20\"><span></span></div>\noffsetTop expected 20 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-multicol-002.html",
+      "group": "alignment/grid-align-baseline-multicol",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"105\"><span></span></div>\noffsetLeft expected 105 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-multicol-003.html",
+      "group": "alignment/grid-align-baseline-multicol",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"25\"><span></span></div>\noffsetLeft expected 25 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-overflow-001.html",
+      "group": "alignment/grid-align-baseline-overflow",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"45\"><span></span><br><span></span></div>\noffsetTop expected 45 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-overflow-002.html",
+      "group": "alignment/grid-align-baseline-overflow",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"70\"><span></span><br><span></span></div>\noffsetLeft expected 70 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-overflow-003.html",
+      "group": "alignment/grid-align-baseline-overflow",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"40\"><span></span><br><span></span></div>\noffsetLeft expected 40 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-table-001.html",
+      "group": "alignment/grid-align-baseline-table",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"45\"><span></span></div>\noffsetTop expected 45 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-table-003.html",
+      "group": "alignment/grid-align-baseline-table",
+      "first_failed_callback": ".target > * 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"45\"><span></span></div>\noffsetLeft expected 45 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-vertical.html",
+      "group": "alignment/grid-align-baseline-vertical",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "\" style=\"width: 10px; margin: 0 20px 0 0;\"></div>\n    <div data-expected-width=\"100\" data-offset-x=\"0\" class=\"firstRowFourthColumn\" style=\"width: 100px;\"></div>\n</div>\noffsetLeft expected 70 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline.html",
+      "group": "alignment/grid-align-baseline",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "=\"firstRowThirdColumn\" data-offset-x=\"400\" data-offset-y=\"40\" data-expected-width=\"200\" data-expected-height=\"20\"><div style=\"display:inline-block;\"></div></div>\n</div>\noffsetTop expected 80 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content-distribution-vertical-lr.html",
+      "group": "alignment/grid-align-content-distribution-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "d-height=\"20\"></div>\n        <div class=\"secondRowSecondColumn\" data-offset-x=\"360\" data-offset-y=\"20\" data-expected-width=\"40\" data-expected-height=\"20\"></div>\n    </div>\nwidth expected 40 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content-distribution-vertical-rl.html",
+      "group": "alignment/grid-align-content-distribution-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ted-height=\"20\"></div>\n        <div class=\"secondRowSecondColumn\" data-offset-x=\"0\" data-offset-y=\"20\" data-expected-width=\"40\" data-expected-height=\"20\"></div>\n    </div>\nwidth expected 40 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content-distribution.html",
+      "group": "alignment/grid-align-content-distribution",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "ght=\"40\"></div>\n        <div class=\"secondRowSecondColumn\" data-offset-x=\"20\" data-offset-y=\"260\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\noffsetTop expected 260 but got 40"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content-vertical-lr.html",
+      "group": "alignment/grid-align-content-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "\"50\"></div>\n        <div class=\"cell secondRowSecondColumn\" data-offset-x=\"150\" data-offset-y=\"50\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\noffsetLeft expected 50 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content-vertical-rl.html",
+      "group": "alignment/grid-align-content-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "50\"></div>\n        <div class=\"cell secondRowSecondColumn\" data-offset-x=\"130\" data-offset-y=\"50\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\noffsetLeft expected 230 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content.html",
+      "group": "alignment/grid-align-content",
+      "first_failed_callback": ".grid 5",
+      "symptom": "offsetTop",
+      "message_tail": "100\"></div>\n        <div class=\"cell secondRowSecondColumn\" data-offset-x=\"50\" data-offset-y=\"200\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\noffsetTop expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-margin-border-padding-vertical-lr.html",
+      "group": "alignment/grid-align-justify-margin-border-padding-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "=\"40\"></div>\n        <div class=\"cell secondRowSecondColumn\" data-offset-x=\"246\" data-offset-y=\"114\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\nwidth expected 475 but got 375"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-margin-border-padding-vertical-rl.html",
+      "group": "alignment/grid-align-justify-margin-border-padding-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "=\"40\"></div>\n        <div class=\"cell secondRowSecondColumn\" data-offset-x=\"202\" data-offset-y=\"114\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\nwidth expected 475 but got 375"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-overflow.html",
+      "group": "alignment/grid-align-justify-overflow",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "     <div class=\"cellWithNoOverflow thirdRowSecondColumn\" data-offset-x=\"200\" data-offset-y=\"280\" data-expected-width=\"50\" data-expected-height=\"40\"></div>\n    </div>\noffsetLeft expected -15 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-stretch-with-orthogonal-flows.html",
+      "group": "alignment/grid-align-justify-stretch-with-orthogonal-flows",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "d-height=\"40\">XXX</div>\n        <div class=\"verticalRL secondRowSecondColumn selfSelfStart\" data-expected-width=\"10\" data-expected-height=\"30\">XXX</div>\n    </div>\n</div>\nwidth expected 10 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-justify-stretch.html",
+      "group": "alignment/grid-align-justify-stretch",
+      "first_failed_callback": ".grid 3",
+      "symptom": "height",
+      "message_tail": " alignSelfStretch justifySelfStretch secondRowSecondColumn\" data-offset-x=\"100\" data-offset-y=\"200\" data-expected-width=\"90\" data-expected-height=\"40\"></div>\n    </div>\nheight expected 160 but got 200"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-stretching-replaced-items.html",
+      "group": "alignment/grid-align-stretching-replaced-items",
+      "first_failed_callback": ".grid 6",
+      "symptom": "width",
+      "message_tail": "ert_equals: \n<div class=\"grid\">\n            <img class=\"autoMargins\" src=\"/css/support/blue-100.png\" data-expected-width=\"100\" data-expected-height=\"100\">\n        </div>\nwidth expected 100 but got 500"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align.html",
+      "group": "alignment/grid-align",
+      "first_failed_callback": ".grid 9",
+      "symptom": "width",
+      "message_tail": "\n        <div class=\"cell alignSelfCenter secondRowFirstColumn\" data-offset-x=\"90\" data-offset-y=\"0\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\nwidth expected 400 but got 200"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-011.html",
+      "group": "alignment/grid-alignment-implies-size-change",
+      "first_failed_callback": ".before 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<img id=\"item\" src=\"support/100x100-green.png\" class=\" before\" data-expected-width=\"200\" data-expected-height=\"200\">\nwidth expected 200 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-012.html",
+      "group": "alignment/grid-alignment-implies-size-change",
+      "first_failed_callback": ".after 2",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<img id=\"item\" src=\"support/100x100-green.png\" class=\" before after\" data-expected-width=\"200\" data-expected-height=\"200\">\nwidth expected 200 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-013.html",
+      "group": "alignment/grid-alignment-implies-size-change",
+      "first_failed_callback": ".before 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<img id=\"item\" src=\"support/100x100-green.png\" class=\" before\" data-expected-width=\"200\" data-expected-height=\"200\">\nwidth expected 200 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-014.html",
+      "group": "alignment/grid-alignment-implies-size-change",
+      "first_failed_callback": ".after 2",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<img id=\"item\" src=\"support/100x100-green.png\" class=\" before after\" data-expected-width=\"200\" data-expected-height=\"200\">\nwidth expected 200 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-017.html",
+      "group": "alignment/grid-alignment-implies-size-change",
+      "first_failed_callback": ".after 2",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<img id=\"item\" src=\"support/100x100-green.png\" class=\" before after\" data-expected-width=\"80\" data-expected-height=\"80\">\nwidth expected 80 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-implies-size-change-018.html",
+      "group": "alignment/grid-alignment-implies-size-change",
+      "first_failed_callback": ".before 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<img id=\"item\" src=\"support/100x100-green.png\" class=\" before\" data-expected-width=\"80\" data-expected-height=\"80\">\nwidth expected 80 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-007.html",
+      "group": "alignment/grid-alignment-style-changes",
+      "first_failed_callback": ".before 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"4\">É</div>\nwidth expected 20 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-alignment-style-changes-008.html",
+      "group": "alignment/grid-alignment-style-changes",
+      "first_failed_callback": ".before 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div id=\"item1\" data-expected-width=\"20\" data-expected-height=\"50\" data-offset-y=\"0\" class=\" before\" data-offset-x=\"2\">É</div>\nwidth expected 20 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-baseline-004.html",
+      "group": "alignment/grid-baseline",
+      "first_failed_callback": ".grid, container 1",
+      "symptom": "height",
+      "message_tail": " data-offset-x=\"100\" data-offset-y=\"10\"></div>\n        <div class=\"item style3 firstRowFirstColumn target\" data-offset-x=\"0\" data-offset-y=\"20\"></div>\n    </div>\n</div>\nheight expected 120 but got 102"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-012.html",
+      "group": "alignment/grid-column-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetLeft",
+      "message_tail": " <div data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-013.html",
+      "group": "alignment/grid-column-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetLeft",
+      "message_tail": "<div data-offset-x=\"410\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 90 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-014.html",
+      "group": "alignment/grid-column-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetLeft",
+      "message_tail": "<div data-offset-x=\"205\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 45 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-015.html",
+      "group": "alignment/grid-column-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetLeft",
+      "message_tail": "ffset-x=\"410\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"verticalRL secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 90 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-016.html",
+      "group": "alignment/grid-column-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetLeft",
+      "message_tail": "offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"verticalRL secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-017.html",
+      "group": "alignment/grid-column-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "<div data-offset-x=\"150\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-sticky-positioned-items-002.html",
+      "group": "alignment/grid-column-axis-alignment-sticky-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "ass=\"item3 sticky alignSelfEnd\" data-offset-x=\"150\" data-offset-y=\"290\"></div>\n        <div class=\"item4\"></div>\n    </div>\n    <div style=\"height:2000px\"></div>\n</div>\noffsetTop expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-self-baseline-synthesized-001.html",
+      "group": "alignment/grid-column-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "ata-offset-x=\"100\" data-offset-y=\"160\" data-expected-width=\"200\" data-expected-height=\"100\">É É ÉÉ</div>\n  <div class=\"autoRowAutoColumnSpanning2 height25\"></div>\n</div>\nheight expected 200 but got 48"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-self-baseline-synthesized-002.html",
+      "group": "alignment/grid-column-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 2",
+      "symptom": "height",
+      "message_tail": "t\" data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"120\" data-expected-height=\"200\">É É ÉÉ</div>\n  <div class=\"autoRowAutoColumnSpanning2 width25\"></div>\n</div>\nheight expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-self-baseline-synthesized-003.html",
+      "group": "alignment/grid-column-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "ata-offset-x=\"100\" data-offset-y=\"60\" data-expected-width=\"200\" data-expected-height=\"100\">É É ÉÉ</div>\n  <div class=\"autoRowAutoColumnSpanning2 height25\"></div>\n</div>\noffsetTop expected 60 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-self-baseline-synthesized-004.html",
+      "group": "alignment/grid-column-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "ata-offset-x=\"100\" data-offset-y=\"85\" data-expected-width=\"200\" data-expected-height=\"100\">É É ÉÉ</div>\n  <div class=\"autoRowAutoColumnSpanning2 height25\"></div>\n</div>\noffsetTop expected 85 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-self-baseline-synthesized-005.html",
+      "group": "alignment/grid-column-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": " ÉÉ</div>\n    <div class=\"firstRowSecondColumn verticalLR bigFont\" data-offset-x=\"35\" data-offset-y=\"70\" data-expected-width=\"65\" data-expected-height=\"50\">É</div>\n</div>\nwidth expected 35 but got 120"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-container-baseline-001.html",
+      "group": "alignment/grid-container-baseline",
+      "first_failed_callback": ".wrapper 1",
+      "symptom": "offsetTop",
+      "message_tail": "et-y=\"0\"></div>\n    <div class=\"i3\"></div>\n  </div>\n  <div style=\"display: inline-block; width: 20px; height: 10px; background: black\" data-offset-y=\"40\"></div>\n</div>\noffsetTop expected 40 but got 90"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-and-self-alignment-001.html",
+      "group": "alignment/grid-content-alignment-and-self-alignment",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "d-height=\"10\">X</div>\n  <div class=\"secondRowSecondColumn\" data-offset-x=\"445\" data-offset-y=\"320\" data-expected-width=\"10\" data-expected-height=\"10\">X</div>\n</div>\noffsetLeft expected 445 but got 245"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-and-self-alignment-002.html",
+      "group": "alignment/grid-content-alignment-and-self-alignment",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "dth=\"20\" data-expected-height=\"40\"></div>\n    <div class=\"d\" data-offset-x=\"140\" data-offset-y=\"160\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n  </div>\noffsetLeft expected 70 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-auto-sized-tracks-001.html",
+      "group": "alignment/grid-content-alignment-auto-sized-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "ght=\"80\"></div>\n    <div class=\"item secondRowSecondColumn\" data-offset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"40\" data-expected-height=\"80\"></div>\n  </div>\noffsetTop expected 150 but got 80"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-overflow-001.html",
+      "group": "alignment/grid-content-alignment-overflow",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "=\"100\"></div>\n    <div class=\"secondRowSecondColumn\" data-offset-x=\"30\" data-offset-y=\"150\" data-expected-width=\"50\" data-expected-height=\"100\"></div>\n  </div>\n</div>\noffsetLeft expected -20 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-overflow-002.html",
+      "group": "alignment/grid-content-alignment-overflow",
+      "first_failed_callback": ".grid 1",
+      "symptom": "scrollWidth",
+      "message_tail": "100\"></div>\n    <div class=\"secondRowSecondColumn\" data-offset-x=\"30\" data-offset-y=\"150\" data-expected-width=\"50\" data-expected-height=\"100\"></div>\n  </div>\n</div>\nscrollWidth expected 110 but got 60"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-second-pass-001.html",
+      "group": "alignment/grid-content-alignment-second-pass",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "<div class=\"grid\">\n  <div class=\"firstRowFirstColumn verticalLR\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"100\" data-expected-height=\"50\">XX X</div>\n</div>\nheight expected 50 but got 25"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-second-pass-002.html",
+      "group": "alignment/grid-content-alignment-second-pass",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "00\" data-expected-height=\"40\">\n  <div class=\"firstRowFirstColumn\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"70\" data-expected-height=\"20\">XXX X</div>\n</div>\nwidth expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-with-abspos-001.html",
+      "group": "alignment/grid-content-alignment-with-abspos",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "d=\"item\" data-offset-x=\"329\" data-offset-y=\"269\" data-expected-width=\"142\" data-expected-height=\"62\" style=\"align-self: center; justify-self: center;\"></div>\n  </div>\noffsetLeft expected 329 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-with-span-001.html",
+      "group": "alignment/grid-content-alignment-with-span",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "-width=\"20\" data-expected-height=\"40\"></div>\n    <div class=\"d\" data-offset-x=\"140\" data-offset-y=\"160\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n  </div>\nwidth expected 160 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-with-span-vertical-lr-001.html",
+      "group": "alignment/grid-content-alignment-with-span-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "d-width=\"40\" data-expected-height=\"20\"></div>\n    <div class=\"d\" data-offset-x=\"160\" data-offset-y=\"140\" data-expected-width=\"40\" data-expected-height=\"20\"></div>\n  </div>\nwidth expected 40 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-content-alignment-with-span-vertical-rl-001.html",
+      "group": "alignment/grid-content-alignment-with-span-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ted-width=\"40\" data-expected-height=\"20\"></div>\n    <div class=\"d\" data-offset-x=\"0\" data-offset-y=\"140\" data-expected-width=\"40\" data-expected-height=\"20\"></div>\n  </div>\nwidth expected 40 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-fit-content-tracks-dont-stretch-001.html",
+      "group": "alignment/grid-fit-content-tracks-dont-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "assert_equals: \n<div class=\"grid\" data-expected-width=\"400\" data-expected-height=\"200\">\n  <div data-expected-width=\"400\" data-expected-height=\"200\">X</div>\n</div>\nheight expected 200 but got 25"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-gutters-and-alignment.html",
+      "group": "alignment/grid-gutters-and-alignment",
+      "first_failed_callback": ".grid 2",
+      "symptom": "width",
+      "message_tail": "rticalRL\" data-offset-x=\"305\" data-offset-y=\"0\" data-expected-width=\"20\" data-expected-height=\"40\">\n            <div class=\"item\"></div>\n        </div>\n    </div>\n</div>\nwidth expected 415 but got 220"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-alignment-with-orthogonal-flows-vertical-lr.html",
+      "group": "alignment/grid-item-alignment-with-orthogonal-flows-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "\" data-offset-y=\"0\">s-start</div>\n        <div class=\"item thirdRowSecondColumn  horizontalTB\" data-offset-x=\"300\" data-offset-y=\"100\">default</div>\n    </div>\n</div>\noffsetLeft expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-alignment-with-orthogonal-flows-vertical-rl.html",
+      "group": "alignment/grid-item-alignment-with-orthogonal-flows-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "\" data-offset-y=\"0\">s-start</div>\n        <div class=\"item thirdRowSecondColumn  horizontalTB\" data-offset-x=\"100\" data-offset-y=\"100\">default</div>\n    </div>\n</div>\noffsetLeft expected 300 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-alignment-with-orthogonal-flows.html",
+      "group": "alignment/grid-item-alignment-with-orthogonal-flows",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "data-offset-y=\"300\">s-start</div>\n        <div class=\"item thirdRowSecondColumn  verticalRL\" data-offset-x=\"100\" data-offset-y=\"300\">default</div>\n    </div>\n</div>\noffsetLeft expected 100 but got 180"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-auto-margins-alignment-vertical-lr.html",
+      "group": "alignment/grid-item-auto-margins-alignment-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "  <div class=\"item autoMarginBottom secondRowSecondColumn\" data-offset-x=\"290\" data-offset-y=\"100\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\noffsetLeft expected 90 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-auto-margins-alignment-vertical-rl.html",
+      "group": "alignment/grid-item-auto-margins-alignment-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "  <div class=\"item autoMarginBottom secondRowSecondColumn\" data-offset-x=\"90\" data-offset-y=\"100\" data-expected-width=\"20\" data-expected-height=\"40\"></div>\n    </div>\noffsetLeft expected 290 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-auto-margins-alignment.html",
+      "group": "alignment/grid-item-auto-margins-alignment",
+      "first_failed_callback": ".grid 7",
+      "symptom": "width",
+      "message_tail": "utoMarginBottom secondRowSecondColumn\" data-offset-x=\"40\" data-offset-y=\"200\" data-expected-width=\"20\" data-expected-height=\"40\"><div class=\"item\"></div></div>\n    </div>\nwidth expected 20 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-justify-baseline-002.html",
+      "group": "alignment/grid-justify-baseline",
+      "first_failed_callback": "#target > div 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"120\">line1<br>line2</div>\noffsetLeft expected 120 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-justify-baseline-003.html",
+      "group": "alignment/grid-justify-baseline",
+      "first_failed_callback": "#target > div 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"40\"><span></span><br><span></span></div>\noffsetTop expected 40 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-justify-baseline-004.html",
+      "group": "alignment/grid-justify-baseline",
+      "first_failed_callback": "#target > div 1",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"40\"><span></span><br><span></span></div>\noffsetTop expected 40 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-justify-baseline-005.html",
+      "group": "alignment/grid-justify-baseline",
+      "first_failed_callback": "#target > div 2",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div style=\"grid-row: 2; grid-column: span 3; justify-self: baseline;\" data-offset-x=\"100\">line1<br>line2</div>\noffsetLeft expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-place-content-001.html",
+      "group": "alignment/grid-place-content",
+      "first_failed_callback": ".grid 2",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div class=\"grid small content-box center\">\n  <div data-offset-x=\"20\" data-offset-y=\"20\">X</div>\n</div>\noffsetLeft expected 20 but got 40"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-012.html",
+      "group": "alignment/grid-row-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"150\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 200 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-013.html",
+      "group": "alignment/grid-row-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"150\" data-offset-y=\"140\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 380 but got 180"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-014.html",
+      "group": "alignment/grid-row-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"150\" data-offset-y=\"120\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 290 but got 140"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-015.html",
+      "group": "alignment/grid-row-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "ata-offset-x=\"150\" data-offset-y=\"140\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"RTL secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 380 but got 180"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-016.html",
+      "group": "alignment/grid-row-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "ata-offset-x=\"150\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"RTL secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 200 but got 100"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-017.html",
+      "group": "alignment/grid-row-axis-alignment-positioned-items",
+      "first_failed_callback": ".grid 2",
+      "symptom": "offsetLeft",
+      "message_tail": "div data-offset-x=\"240\" data-offset-y=\"150\" data-expected-width=\"60\" data-expected-height=\"40\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 340 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-sticky-positioned-items-002.html",
+      "group": "alignment/grid-row-axis-alignment-sticky-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "justifySelfEnd\" data-offset-x=\"290\" data-offset-y=\"150\"></div>\n        <div class=\"item4\"></div>\n    </div>\n    <div style=\"width: 2000px; height: 10px;\"></div>\n</div>\noffsetLeft expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-self-baseline-synthesized-001.html",
+      "group": "alignment/grid-row-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": " data-offset-x=\"75\" data-offset-y=\"100\" data-expected-width=\"125\" data-expected-height=\"200\">É É ÉÉ</div>\n  <div class=\"autoRowSpanning2AutoColumn width25\"></div>\n</div>\nwidth expected 125 but got 200"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-self-baseline-synthesized-002.html",
+      "group": "alignment/grid-row-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"120\" data-expected-height=\"200\">É É ÉÉ</div>\n  <div class=\"autoRowSpanning2AutoColumn width25\"></div>\n</div>\noffsetLeft expected 30 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-self-baseline-synthesized-003.html",
+      "group": "alignment/grid-row-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"120\" data-expected-height=\"200\">É É ÉÉ</div>\n  <div class=\"autoRowSpanning2AutoColumn width25\"></div>\n</div>\noffsetLeft expected 30 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-self-baseline-synthesized-004.html",
+      "group": "alignment/grid-row-axis-self-baseline-synthesized",
+      "first_failed_callback": ".inline-grid 1",
+      "symptom": "width",
+      "message_tail": "\" data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"120\" data-expected-height=\"200\">É É ÉÉ</div>\n  <div class=\"autoRowSpanning2AutoColumn width25\"></div>\n</div>\nwidth expected 180 but got 345"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-self-baseline-synthesized-005.html",
+      "group": "alignment/grid-row-axis-self-baseline-synthesized",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "É É ÉÉ</div>\n        <div class=\"secondRowFirstColumn bigFont\" data-offset-x=\"20\" data-offset-y=\"70\" data-expected-width=\"50\" data-expected-height=\"50\">É</div>\n    </div>\nwidth expected 20 but got 150"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-001.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "<div data-offset-x=\"105\" data-offset-y=\"160\" data-expected-width=\"60\" data-expected-height=\"40\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 120 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-002.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "<div data-offset-x=\"125\" data-offset-y=\"165\" data-expected-width=\"60\" data-expected-height=\"40\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 105 but got 5"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-003.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "<div data-offset-x=\"105\" data-offset-y=\"160\" data-expected-width=\"90\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-004.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "<div data-offset-x=\"105\" data-offset-y=\"160\" data-expected-width=\"90\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-005.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "<div data-offset-x=\"113\" data-offset-y=\"162\" data-expected-width=\"76\" data-expected-height=\"50\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 104 but got 2"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-006.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "div data-offset-x=\"116\" data-offset-y=\"163\" data-expected-width=\"76\" data-expected-height=\"50\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 16 but got 13"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-007.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"105\" data-offset-y=\"160\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 10 but got 60"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-008.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"125\" data-offset-y=\"165\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 10 but got 60"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-009.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"105\" data-offset-y=\"160\" data-expected-width=\"70\" data-expected-height=\"80\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 40 but got 90"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-010.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"105\" data-offset-y=\"160\" data-expected-width=\"70\" data-expected-height=\"80\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 40 but got 90"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-011.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"113\" data-offset-y=\"162\" data-expected-width=\"56\" data-expected-height=\"70\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 26 but got 76"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-012.html",
+      "group": "alignment/grid-self-alignment-non-static-positioned-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"111\" data-offset-y=\"153\" data-expected-width=\"56\" data-expected-height=\"70\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 26 but got 76"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-005.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": " <div data-offset-x=\"193\" data-offset-y=\"103\" data-expected-width=\"56\" data-expected-height=\"70\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 25 but got 3"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-006.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"120\" data-offset-y=\"155\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 10 but got 60"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-007.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"70\" data-expected-height=\"80\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 40 but got 90"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-008.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"70\" data-expected-height=\"80\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 40 but got 90"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-009.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"108\" data-offset-y=\"152\" data-expected-width=\"56\" data-expected-height=\"70\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 26 but got 76"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-010.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ffset-x=\"111\" data-offset-y=\"153\" data-expected-width=\"56\" data-expected-height=\"70\" class=\"secondRowSecondColumn verticalLR RTL\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nwidth expected 26 but got 76"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-011.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"210\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 290 but got 140"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-012.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"200\" data-offset-y=\"105\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 285 but got 135"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-013.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"180\" data-offset-y=\"100\" data-expected-width=\"70\" data-expected-height=\"80\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 280 but got 130"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-014.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"180\" data-offset-y=\"100\" data-expected-width=\"70\" data-expected-height=\"80\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 280 but got 130"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-015.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 3",
+      "symptom": "offsetTop",
+      "message_tail": "iv data-offset-x=\"190\" data-offset-y=\"102\" data-expected-width=\"56\" data-expected-height=\"70\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 283 but got 133"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-016.html",
+      "group": "alignment/grid-self-alignment-positioned-items-with-margin-border-padding",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "v data-offset-x=\"111\" data-offset-y=\"195\" data-expected-width=\"76\" data-expected-height=\"50\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 289 but got 287"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-005.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": " <div data-offset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"150\" data-expected-height=\"100\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-006.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "  <div data-offset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"130\" data-expected-height=\"90\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-007.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": " <div data-offset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"150\" data-expected-height=\"100\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-008.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": " <div data-offset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"150\" data-expected-height=\"100\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-009.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "rstColumn\">XX X</div>\n  <div data-offset-x=\"125\" data-offset-y=\"125\" data-expected-width=\"125\" data-expected-height=\"125\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 125 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-010.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "rstColumn\">XX X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"130\" data-expected-width=\"110\" data-expected-height=\"110\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 110 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-011.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "rstColumn\">XX X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"130\" data-expected-width=\"130\" data-expected-height=\"120\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 130 but got 40"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-012.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "rstColumn\">XX X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"130\" data-expected-width=\"130\" data-expected-height=\"120\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 130 but got 40"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-013.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "irstColumn\">XX X</div>\n  <div data-offset-x=\"125\" data-offset-y=\"125\" data-expected-width=\"125\" data-expected-height=\"125\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 80 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-014.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "irstColumn\">XX X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"130\" data-expected-width=\"110\" data-expected-height=\"110\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 80 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-015.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "irstColumn\">XX X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"130\" data-expected-width=\"130\" data-expected-height=\"120\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 80 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-016.html",
+      "group": "alignment/grid-self-alignment-stretch",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "irstColumn\">XX X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"130\" data-expected-width=\"130\" data-expected-height=\"120\" class=\"secondRowSecondColumn\">XX X</div>\n</div>\nheight expected 80 but got 20"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment.html",
+      "group": "alignment/grid-self-alignment",
+      "first_failed_callback": ".child 7",
+      "symptom": "offsetLeft",
+      "message_tail": "s: \n<div class=\"child\" style=\"writing-mode: vertical-lr; direction: rtl; align-self: self-start; justify-self: self-start;\" data-offset-x=\"0\" data-offset-y=\"10\"></div>\noffsetLeft expected 0 but got 10"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency-001.html",
+      "group": "alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency",
+      "first_failed_callback": ".inline-grid 7",
+      "symptom": "offsetLeft",
+      "message_tail": " <div class=\"firstRowSpanning2AutoColumn verticalRL width25\" data-offset-x=\"50\" data-offset-y=\"0\" data-expected-width=\"25\" data-expected-height=\"200\"></div>\n    </div>\noffsetLeft expected 50 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency-002.html",
+      "group": "alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency",
+      "first_failed_callback": ".inline-grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "ÉÉ ÉÉ É</div>\n  <div class=\"autoRowAutoColumnSpanning2 height25\" data-offset-x=\"0\" data-offset-y=\"135\" data-expected-width=\"200\" data-expected-height=\"25\"></div>\n</div>\noffsetTop expected 95 but got 0"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency-003.html",
+      "group": "alignment/grid-self-baseline-not-applied-if-sizing-cyclic-dependency",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "idth=\"50\" data-expected-height=\"20\">É</div>\n  <div class=\"item3\" data-offset-x=\"80\" data-offset-y=\"0\" data-expected-width=\"100\" data-expected-height=\"80\">É</div>\n</div>\noffsetTop expected 34 but got 0"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-composition.html",
+      "group": "animation/grid-template-columns-composition",
+      "first_failed_callback": "Compositing CSS Animations: property <grid-template-columns> underlying [50px 10%] from add [100px 100px] to add [200px 20%] at (-0.3) should be [120px calc(130px + 4%)]",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"120px calc ( 4 % + 130px ) \" but got \"50px 10 % \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      "group": "animation/grid-template-columns-interpolation",
+      "first_failed_callback": "CSS Transitions with transition-behavior:allow-discrete: property <grid-template-columns> from [1fr 1fr 1fr] to [2fr 2fr] at (-0.3) should be [1fr 1fr 1fr]",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"1fr 1fr 1fr \" but got \"2fr 2fr \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-neutral-keyframe-001.html",
+      "group": "animation/grid-template-columns-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the value of the <track-breadth> changes.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-neutral-keyframe-002.html",
+      "group": "animation/grid-template-columns-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the type of <track-size> changes.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-neutral-keyframe-003.html",
+      "group": "animation/grid-template-columns-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the size of the list changes.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-neutral-keyframe-004.html",
+      "group": "animation/grid-template-columns-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the named lines change.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "group": "animation/grid-template-rows-composition",
+      "first_failed_callback": "Compositing CSS Animations: property <grid-template-rows> underlying [50px 10%] from add [100px 100px] to add [200px 20%] at (-0.3) should be [120px calc(130px + 4%)]",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"120px calc ( 4 % + 130px ) \" but got \"50px 10 % \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      "group": "animation/grid-template-rows-interpolation",
+      "first_failed_callback": "CSS Transitions with transition-behavior:allow-discrete: property <grid-template-rows> from [1fr 1fr 1fr] to [2fr 2fr] at (-0.3) should be [1fr 1fr 1fr]",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"1fr 1fr 1fr \" but got \"2fr 2fr \""
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-neutral-keyframe-001.html",
+      "group": "animation/grid-template-rows-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the value of the <track-breadth> changes.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-neutral-keyframe-002.html",
+      "group": "animation/grid-template-rows-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the type of <track-size> changes.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-neutral-keyframe-003.html",
+      "group": "animation/grid-template-rows-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the size of the list changes.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-neutral-keyframe-004.html",
+      "group": "animation/grid-template-rows-neutral-keyframe",
+      "first_failed_callback": "Invalidate the result for the neutral keyframe if the named lines change.",
+      "symptom": "other",
+      "message_tail": "value is not a function"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/explicit-grid-size-001.html",
+      "group": "grid-definition/explicit-grid-size",
+      "first_failed_callback": ".grid 7",
+      "symptom": "offsetLeft",
+      "message_tail": "d-height=\"10\">\n    </div>\n    <div class=\"autoRowAutoColumn\" data-offset-x=\"10\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"10\">\n    </div>\n</div>\noffsetLeft expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-distribution-001.html",
+      "group": "grid-definition/flex-content-distribution",
+      "first_failed_callback": ".grid 6",
+      "symptom": "offsetTop",
+      "message_tail": "orRowsGrid alignContentEnd\">\n        <div class=\"item2\" data-offset-x=\"0\" data-offset-y=\"30\" data-expected-width=\"50\" data-expected-height=\"70\"></div>\n    </div>\n</div>\noffsetTop expected 30 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-resolution-columns-001.html",
+      "group": "grid-definition/flex-content-resolution-columns",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "iv>\n        <div class=\"sizedToGridArea firstRowSecondColumn\" data-offset-x=\"30\" data-offset-y=\"0\" data-expected-width=\"50\" data-expected-height=\"50\">XXXXX</div>\n    </div>\nwidth expected 30 but got 5"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-resolution-columns-002.html",
+      "group": "grid-definition/flex-content-resolution-columns",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "h=\"10\" data-expected-height=\"50\">XXXXX</div>\n        <div class=\"sizedToGridArea firstRowSecondColumn\" data-expected-width=\"10\" data-expected-height=\"50\"></div>\n    </div>\nwidth expected 10 but got 50"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-resolution-rows-001.html",
+      "group": "grid-definition/flex-content-resolution-rows",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "div class=\"sizedToGridArea secondRowFirstColumn\" data-offset-x=\"0\" data-offset-y=\"30\" data-expected-width=\"50\" data-expected-height=\"50\">X<br>X<br>X<br>X<br>X</div>\n</div>\nheight expected 30 but got 5"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-resolution-rows-002.html",
+      "group": "grid-definition/flex-content-resolution-rows",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "h=\"50\" data-expected-height=\"10\">XXXXX</div>\n        <div class=\"sizedToGridArea secondRowFirstColumn\" data-expected-width=\"50\" data-expected-height=\"10\"></div>\n    </div>\nheight expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-fill-columns-001.html",
+      "group": "grid-definition/grid-auto-fill-columns",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "dOnlyAutoRepeat\">\n    <div class=\"item\" style=\"grid-column: 1 / -1\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"180\" data-expected-height=\"25\"></div>\n</div>\nwidth expected 180 but got 157"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-fill-rows-001.html",
+      "group": "grid-definition/grid-auto-fill-rows",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "ridOnlyAutoRepeat\">\n    <div class=\"item\" style=\"grid-row: 1 / -1\" data-offset-y=\"0\" data-offset-x=\"0\" data-expected-height=\"180\" data-expected-width=\"25\"></div>\n</div>\nheight expected 180 but got 157"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-fit-columns-001.html",
+      "group": "grid-definition/grid-auto-fit-columns",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "dOnlyAutoRepeat\">\n    <div class=\"item\" style=\"grid-column: 1 / -1\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"180\" data-expected-height=\"25\"></div>\n</div>\nwidth expected 180 but got 157"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-fit-rows-001.html",
+      "group": "grid-definition/grid-auto-fit-rows",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "nlyAutoRepeat\">\n    <div class=\"item\" style=\"grid-row: 1 / span 6\" data-offset-y=\"0\" data-offset-x=\"0\" data-expected-height=\"180\" data-expected-width=\"25\"></div>\n</div>\nheight expected 180 but got 942"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-intrinsic-001.html",
+      "group": "grid-definition/grid-auto-repeat-intrinsic",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": ">\n    <div class=\"abs\" style=\"grid-column: 4 / 5; background: green;\" data-expected-width=\"40\" data-expected-height=\"5\" data-offset-x=\"60\" data-offset-y=\"0\"></div>\n</div>\nwidth expected 20 but got 100"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-max-size-001.tentative.html",
+      "group": "grid-definition/grid-auto-repeat-max-size-001.tentative",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "cted-width=\"300\" data-expected-height=\"200\">\n  <div class=\"item\" data-offset-x=\"200\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\"></div>\n</div>\nheight expected 200 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-max-size-002.html",
+      "group": "grid-definition/grid-auto-repeat-max-size",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "-width=\"300\" data-expected-height=\"200\">\n    <div class=\"item\" data-offset-x=\"200\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\"></div>\n  </div>\nheight expected 200 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-min-max-size-001.html",
+      "group": "grid-definition/grid-auto-repeat-min-max-size",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "cted-width=\"250\" data-expected-height=\"125\">\n  <div class=\"item\" data-offset-x=\"100\" data-offset-y=\"50\" data-expected-width=\"100\" data-expected-height=\"50\"></div>\n</div>\nwidth expected 100 but got 250"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-min-size-001.html",
+      "group": "grid-definition/grid-auto-repeat-min-size",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ted-width=\"300\" data-expected-height=\"200\">\n  <div class=\"item\" data-offset-x=\"200\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\"></div>\n</div>\nwidth expected 100 but got 300"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-min-size-002.html",
+      "group": "grid-definition/grid-auto-repeat-min-size",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "width=\"300\" data-expected-height=\"200\">\n    <div class=\"item\" data-offset-x=\"200\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\"></div>\n  </div>\nwidth expected 100 but got 300"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-min-size-003.html",
+      "group": "grid-definition/grid-auto-repeat-min-size",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "\" data-expected-width=\"75\">Cell 3</div>\n      <div id=\"cell\" data-expected-width=\"75\">Cell 4</div>\n      <div id=\"cell\" data-expected-width=\"75\">Cell 5</div>\n    </div>\nheight expected 200 but got 500"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-repeat-min-size-004.html",
+      "group": "grid-definition/grid-auto-repeat-min-size",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "cell\" data-expected-width=\"100\" data-expected-height=\"100\">Cell 4</div>\n      <div id=\"cell\" data-expected-width=\"100\" data-expected-height=\"100\">Cell 5</div>\n    </div>\nheight expected 100 but got 16"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-change-auto-repeat-tracks.html",
+      "group": "grid-definition/grid-change-auto-repeat-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": " data-offset-x=\"0\" data-offset-y=\"0\"></div>\n    <div id=\"i1-3\" data-expected-width=\"25\" data-expected-height=\"25\" data-offset-x=\"25\" data-offset-y=\"25\"></div>\n  </div>\noffsetLeft expected 25 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-change-fit-content-argument-001.html",
+      "group": "grid-definition/grid-change-fit-content-argument",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "0px);\">\n  <div id=\"item1\" class=\"autoRowAutoColumn\" data-expected-width=\"100\" data-expected-height=\"100\" data-offset-x=\"0\" data-offset-y=\"0\">XXXX XXX XX X X</div>\n</div>\nwidth expected 100 but got 375"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-change-intrinsic-size-with-auto-repeat-tracks-001.html",
+      "group": "grid-definition/grid-change-intrinsic-size-with-auto-repeat-tracks",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "v id=\"a4\" class=\"abs\" style=\"grid-column: 4 / 5; background: magenta;\" data-expected-width=\"40\" data-expected-height=\"5\" data-offset-x=\"60\" data-offset-y=\"0\"></div>\n</div>\nwidth expected 20 but got 30"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-auto-repeat-001.html",
+      "group": "grid-definition/grid-inline-auto-repeat",
+      "first_failed_callback": "'autoFillColumns' with: grid-template-columns: repeat(auto-fill, 10px); and grid-template-rows: 20px;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"20px\" not in array [\"repeat(2, 10px)\", \"10px 10px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-flexible-lengths-001.html",
+      "group": "grid-definition/grid-inline-support-flexible-lengths",
+      "first_failed_callback": "'emptyGrid' with: grid-template-columns: 1fr; and grid-template-rows: 1fr;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"1fr\" not in array [\"800px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-grid-template-areas-001.html",
+      "group": "grid-definition/grid-inline-support-grid-template-areas",
+      "first_failed_callback": "'inline-grid' with: grid-template-areas: none;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateAreas value undefined not in array [\"none\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-grid-template-columns-rows-001.html",
+      "group": "grid-definition/grid-inline-support-grid-template-columns-rows",
+      "first_failed_callback": "'grid' with: grid-template-columns: none; and grid-template-rows: none;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"none\" not in array [\"90px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-named-grid-lines-001.html",
+      "group": "grid-definition/grid-inline-support-named-grid-lines",
+      "first_failed_callback": "'emptyGrid' with: grid-template-columns: [first] auto [last]; and grid-template-rows: [first] auto [last];",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"auto\" not in array [\"[first] 0px [last]\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-repeat-001.html",
+      "group": "grid-definition/grid-inline-support-repeat",
+      "first_failed_callback": "'emptyGrid' with: grid-template-columns: repeat(1, auto); and grid-template-rows: repeat(1, auto);",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"auto\" not in array [\"0px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-template-columns-rows-resolved-values-001.html",
+      "group": "grid-definition/grid-inline-template-columns-rows-resolved-values",
+      "first_failed_callback": "'grid' with: grid-template-columns: ; and grid-template-rows: ;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"none\" not in array [\"110px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-limits-001.html",
+      "group": "grid-definition/grid-limits",
+      "first_failed_callback": "repeat(9999) should be supported in both axises",
+      "symptom": "assert_equals: repeat(9999, 1px) should make grid height 9999px",
+      "message_tail": "assert_equals: repeat(9999, 1px) should make grid height 9999px expected \"9999px\" but got \"24px\""
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-minimum-contribution-with-percentages.html",
+      "group": "grid-definition/grid-minimum-contribution-with-percentages",
+      "first_failed_callback": "auto - columns",
+      "symptom": "assert_equals: grid-template-columns",
+      "message_tail": "assert_equals: grid-template-columns expected \"100px\" but got \"auto\""
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-percentage-rows-indefinite-height-001.html",
+      "group": "grid-definition/grid-percentage-rows-indefinite-height",
+      "first_failed_callback": ".grid 2",
+      "symptom": "height",
+      "message_tail": "assert_equals: \n<div class=\"grid\" style=\"grid-template-rows: 60%;\" data-expected-height=\"25\">\n  <div class=\"firstRowFirstColumn\" data-expected-height=\"15\">X</div>\n</div>\nheight expected 25 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-percentage-rows-indefinite-height-002.html",
+      "group": "grid-definition/grid-percentage-rows-indefinite-height",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": " data-expected-height=\"25\" data-offset-y=\"0\">X</div>\n  <div style=\"grid-row: 3; grid-column: 3; background: lime;\" data-expected-height=\"5\" data-offset-y=\"20\"></div>\n</div>\nheight expected 5 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-shorthand-001.html",
+      "group": "grid-definition/grid-shorthand",
+      "first_failed_callback": "Check gutter properties initial values",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"10px\" but got \"\""
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-flexible-lengths-001.html",
+      "group": "grid-definition/grid-support-flexible-lengths",
+      "first_failed_callback": "'emptyGrid' with: grid-template-columns: 1fr; and grid-template-rows: 1fr;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"1fr\" not in array [\"800px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-grid-template-areas-001.html",
+      "group": "grid-definition/grid-support-grid-template-areas",
+      "first_failed_callback": "'grid' with: grid-template-areas: none;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateAreas value undefined not in array [\"none\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-grid-template-columns-rows-001.html",
+      "group": "grid-definition/grid-support-grid-template-columns-rows",
+      "first_failed_callback": "'grid' with: grid-template-columns: none; and grid-template-rows: none;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"none\" not in array [\"90px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-named-grid-lines-001.html",
+      "group": "grid-definition/grid-support-named-grid-lines",
+      "first_failed_callback": "'emptyGrid' with: grid-template-columns: [first] auto [last]; and grid-template-rows: [first] auto [last];",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"auto\" not in array [\"[first] 0px [last]\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-repeat-001.html",
+      "group": "grid-definition/grid-support-repeat",
+      "first_failed_callback": "'emptyGrid' with: grid-template-columns: repeat(1, auto); and grid-template-rows: repeat(1, auto);",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"auto\" not in array [\"0px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-repeat-002.html",
+      "group": "grid-definition/grid-support-repeat",
+      "first_failed_callback": "grid-template-columns: 100px repeat(2, [a]); and grid-template-rows: 100px repeat(2, [a]);",
+      "symptom": "assert_equals: gridTemplateColumns",
+      "message_tail": "assert_equals: gridTemplateColumns expected \"\" but got \"100px repeat(2, [a])\""
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-template-columns-rows-changes-001.html",
+      "group": "grid-definition/grid-template-columns-rows-changes",
+      "first_failed_callback": "#constrainedGrid 1",
+      "symptom": "width",
+      "message_tail": "0px, 50px); grid-template-rows: minmax(20px, 50px);\">\n        <div class=\"sizedToGridArea\" data-expected-width=\"30\" data-expected-height=\"20\">XXXXX XXXXXX</div>\n    </div>\nwidth expected 30 but got 50"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-template-columns-rows-resolved-values-001.html",
+      "group": "grid-definition/grid-template-columns-rows-resolved-values",
+      "first_failed_callback": "'grid' with: grid-template-columns: ; and grid-template-rows: ;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"none\" not in array [\"110px\"]"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-automatic-minimum-intrinsic-aspect-ratio-001.html",
+      "group": "grid-items/grid-automatic-minimum-intrinsic-aspect-ratio",
+      "first_failed_callback": ".container 1",
+      "symptom": "width",
+      "message_tail": " data-expected-width=\"60\" data-expected-height=\"35\">\n  <img src=\"/images/green-100x50.png\" style=\"height: 25px;\" data-expected-width=\"50\" data-expected-height=\"25\">\n</div>\nwidth expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-item-dynamic-min-contribution-001.html",
+      "group": "grid-items/grid-item-dynamic-min-contribution",
+      "first_failed_callback": "Minimum size: auto",
+      "symptom": "assert_equals: height",
+      "message_tail": "assert_equals: height expected \"100px\" but got \"0px\""
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-item-min-auto-size-001.html",
+      "group": "grid-items/grid-item-min-auto-size",
+      "first_failed_callback": "Computed min-width/min-height of specified auto inside display:none which would otherwise have been a grid item.",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"0px\" but got \"auto\""
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-height-orthogonal-001.html",
+      "group": "grid-items/grid-items-minimum-height-orthogonal",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "assert_equals: \n<div class=\"grid\">\n  <div class=\"height60\" data-expected-height=\"60\"></div>\n  <div data-expected-height=\"60\"></div>\n</div>\nheight expected 60 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-001.html",
+      "group": "grid-items/grid-items-minimum-width",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 60 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-002.html",
+      "group": "grid-items/grid-items-minimum-width",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\" data-expected-width=\"70\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 70 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-orthogonal-001.html",
+      "group": "grid-items/grid-items-minimum-width-orthogonal",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 60 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-orthogonal-002.html",
+      "group": "grid-items/grid-items-minimum-width-orthogonal",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\" data-expected-width=\"70\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 70 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-vertical-lr-001.html",
+      "group": "grid-items/grid-items-minimum-width-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-vertical-lr-002.html",
+      "group": "grid-items/grid-items-minimum-width-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\" data-expected-width=\"70\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 70 but got 30"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-vertical-rl-001.html",
+      "group": "grid-items/grid-items-minimum-width-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 60 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-minimum-width-vertical-rl-002.html",
+      "group": "grid-items/grid-items-minimum-width-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid\" data-expected-width=\"70\">\n  <div class=\"width60\" data-expected-width=\"60\"></div>\n  <div data-expected-width=\"60\"></div>\n</div>\nwidth expected 70 but got 30"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-vertical-lr-001.html",
+      "group": "grid-items/grid-items-percentage-margins-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "0\" data-expected-width=\"10\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"60\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 10 but got 50"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-vertical-lr-002.html",
+      "group": "grid-items/grid-items-percentage-margins-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "0\" data-expected-width=\"10\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"60\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 10 but got 50"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-vertical-rl-001.html",
+      "group": "grid-items/grid-items-percentage-margins-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "60\" data-expected-width=\"10\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 10 but got 50"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-margins-vertical-rl-002.html",
+      "group": "grid-items/grid-items-percentage-margins-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "60\" data-expected-width=\"10\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 10 but got 50"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-015.html",
+      "group": "grid-items/grid-items-percentage-paddings",
+      "first_failed_callback": "#target 1",
+      "symptom": "padding-top",
+      "message_tail": "position: absolute; top: 0; left: 0; grid-area: 1/1/1/1; padding: 100%; background: green;\" data-expected-padding-left=\"50\" data-expected-padding-top=\"50\"></div>\npadding-top expected \"50\" but got \"70\""
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-vertical-lr-001.html",
+      "group": "grid-items/grid-items-percentage-paddings-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "\" data-expected-width=\"60\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"60\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 60 but got 100"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-vertical-lr-002.html",
+      "group": "grid-items/grid-items-percentage-paddings-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "\" data-expected-width=\"60\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"60\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 60 but got 100"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-vertical-rl-001.html",
+      "group": "grid-items/grid-items-percentage-paddings-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "0\" data-expected-width=\"60\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 60 but got 100"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-percentage-paddings-vertical-rl-002.html",
+      "group": "grid-items/grid-items-percentage-paddings-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "0\" data-expected-width=\"60\" data-expected-height=\"10\">X</div>\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 60 but got 100"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-relative-offsets-001.html",
+      "group": "grid-items/grid-items-relative-offsets",
+      "first_failed_callback": ".grid 3",
+      "symptom": "width",
+      "message_tail": "v class=\"thirdRowThirdColumn\" style=\"right: 21px; bottom: 30px;\" data-offset-x=\"129\" data-offset-y=\"320\" data-expected-width=\"30\" data-expected-height=\"100\"></div>\n</div>\nwidth expected 90 but got 200"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-items-relative-offsets-002.html",
+      "group": "grid-items/grid-items-relative-offsets",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "class=\"thirdRowThirdColumn\" style=\"right: 30%; bottom: 70%;\" data-offset-x=\"320\" data-offset-y=\"129\" data-expected-width=\"100\" data-expected-height=\"30\"></div>\n</div>\noffsetLeft expected 10 but got 30"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-021.html",
+      "group": "grid-items/grid-minimum-size-grid-items",
+      "first_failed_callback": "grid-1.gridTemplateColumns",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"200px\" but got \"auto\""
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-022.html",
+      "group": "grid-items/grid-minimum-size-grid-items",
+      "first_failed_callback": ".grid 6",
+      "symptom": "width",
+      "message_tail": "grid\" style=\"grid-template-columns: minmax(auto, 0px);\">\n  <div data-expected-width=\"10\" style=\"width: 10px;\">XXXXXXXXXX</div>\n  <div data-expected-width=\"10\"></div>\n</div>\nwidth expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-023.html",
+      "group": "grid-items/grid-minimum-size-grid-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "div class=\"grid\" style=\"grid-template-rows: auto;\">\n  <div class=\"verticalLR\" data-expected-height=\"100\">XXXXXXXXXX</div>\n  <div data-expected-height=\"100\"></div>\n</div>\nheight expected 100 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-024.html",
+      "group": "grid-items/grid-minimum-size-grid-items",
+      "first_failed_callback": ".grid 6",
+      "symptom": "width",
+      "message_tail": "template-columns: minmax(auto, 0px) minmax(auto, 0px);\">\n  <div data-expected-width=\"10\" style=\"width: 10px;\">XXXXXXXXXX</div>\n  <div data-expected-width=\"10\"></div>\n</div>\nwidth expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-025.html",
+      "group": "grid-items/grid-minimum-size-grid-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "lass=\"grid\" style=\"grid-template-rows: auto auto;\">\n  <div class=\"verticalLR\" data-expected-height=\"100\">XXXXXXXXXX</div>\n  <div data-expected-height=\"100\"></div>\n</div>\nheight expected 100 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-layout-properties.html",
+      "group": "css-grid/grid-layout-properties",
+      "first_failed_callback": "grid-template-columns.initial",
+      "symptom": "assert_equals: initial value of grid-template-columns should be 150px",
+      "message_tail": "assert_equals: initial value of grid-template-columns should be 150px expected \"150px\" but got \"none\""
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-box-sizing-001.html",
+      "group": "grid-model/grid-box-sizing",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "h\" style=\"height: 100px;\" data-expected-width=\"200\" data-expected-height=\"144\">\n    <div class=\"item\" data-expected-width=\"154\" data-expected-height=\"100\"></div>\n  </div>\nheight expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-computed-value-display-floated-items-001.html",
+      "group": "grid-model/grid-computed-value-display-floated-items",
+      "first_failed_callback": "Test display floated 'inline-table' grid item",
+      "symptom": "assert_equals: getComputedStyle() display should be 'table'",
+      "message_tail": "assert_equals: getComputedStyle() display should be 'table' expected \"table\" but got \"inline-table\""
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-container-sizing-constraints-001.html",
+      "group": "grid-model/grid-container-sizing-constraints",
+      "first_failed_callback": ".grid 2",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"grid min-content grid-columns-minmax-100-200 grid-rows-minmax-50-100\" data-expected-width=\"100\" data-expected-height=\"100\"></div>\nwidth expected 100 but got 200"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-float-002.html",
+      "group": "grid-model/grid-float",
+      "first_failed_callback": ".container 1",
+      "symptom": "offsetLeft",
+      "message_tail": " style=\"float: left;\" class=\"gridItem secondRowSecondColumn\" data-offset-x=\"50\" data-offset-y=\"50\" data-expected-width=\"50\" data-expected-height=\"50\"></div>\n  </div>\noffsetLeft expected 50 but got 504"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-gutters-and-flex-content-001.html",
+      "group": "grid-model/grid-gutters-and-flex-content",
+      "first_failed_callback": ".grid 2",
+      "symptom": "width",
+      "message_tail": "ata-expected-width=\"401\" data-expected-height=\"50\"></div>\n        <div class=\"firstRowSecondColumn\" data-expected-width=\"150\" data-expected-height=\"50\"></div>\n    </div>\nwidth expected 401 but got 413"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-gutters-and-tracks-001.html",
+      "group": "grid-model/grid-gutters-and-tracks",
+      "first_failed_callback": ".grid 7",
+      "symptom": "width",
+      "message_tail": "/div>\n        <div style=\"grid-row: -2; grid-column-end: foo\" data-offset-x=\"2\" data-offset-y=\"122\" data-expected-width=\"15\" data-expected-height=\"77\">X X</div>\n    </div>\nwidth expected 35 but got 15"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-gutters-as-percentage-001.html",
+      "group": "grid-model/grid-gutters-as-percentage",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetTop",
+      "message_tail": "/div>\n        <div class=\"secondRowSecondColumn\" data-offset-x=\"220\" data-offset-y=\"14\" data-expected-width=\"180\" data-expected-height=\"10\">XXXXX X XX</div>\n    </div>\noffsetTop expected 14 but got 10"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-item-accepts-first-letter-001.html",
+      "group": "grid-model/grid-item-accepts-first-letter",
+      "first_failed_callback": ".grid,.inline-grid 1",
+      "symptom": "height",
+      "message_tail": "ls: \n<div class=\"grid\">\n  <div class=\"item\" data-expected-height=\"100\">The first item.</div>\n  <div class=\"item\" data-expected-height=\"100\">The second item.</div>\n</div>\nheight expected 100 but got 16"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-item-accepts-first-line-001.html",
+      "group": "grid-model/grid-item-accepts-first-line",
+      "first_failed_callback": ".grid,.inline-grid 1",
+      "symptom": "height",
+      "message_tail": "ls: \n<div class=\"grid\">\n  <div class=\"item\" data-expected-height=\"100\">The first item.</div>\n  <div class=\"item\" data-expected-height=\"100\">The second item.</div>\n</div>\nheight expected 100 but got 16"
+    },
+    {
+      "id": "/css/css-grid/grid-tracks-stretched-with-different-flex-factors-sum.html",
+      "group": "css-grid/grid-tracks-stretched-with-different-flex-factors-sum",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "ected-height=\"240\"></div>\n    <div class=\"secondRowSecondColumn\" data-offset-x=\"150\" data-offset-y=\"60\" data-expected-width=\"50\" data-expected-height=\"240\"></div>\n  </div>\nwidth expected 150 but got 0"
+    },
+    {
+      "id": "/css/css-grid/inheritance.html",
+      "group": "css-grid/inheritance",
+      "first_failed_callback": "Property grid-column-end has initial value auto",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"auto\" but got \"\""
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-001.html",
+      "group": "layout-algorithm/baseline-alignment-affects-intrinsic-size",
+      "first_failed_callback": "#grid1-auto-auto 1",
+      "symptom": "width",
+      "message_tail": "ata-expected-height=\"68\">É</div>\n    <div class=\"item verticalLR\" data-offset-x=\"12\" data-offset-y=\"206\" data-expected-width=\"80\" data-expected-height=\"78\">É</div>\n</div>\nwidth expected 112 but got 98"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-002.html",
+      "group": "layout-algorithm/baseline-alignment-affects-intrinsic-size",
+      "first_failed_callback": "#grid1-auto-auto 1",
+      "symptom": "width",
+      "message_tail": "data-expected-height=\"68\">É</div>\n    <div class=\"item verticalLR\" data-offset-x=\"12\" data-offset-y=\"206\" data-expected-width=\"80\" data-expected-height=\"78\">É</div>\n</div>\nwidth expected 40 but got 80"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-003.html",
+      "group": "layout-algorithm/baseline-alignment-affects-intrinsic-size",
+      "first_failed_callback": "#grid1-auto-auto 1",
+      "symptom": "height",
+      "message_tail": "expected-height=\"68\">É</div>\n    <div class=\"item horizontalTB\" data-offset-x=\"226\" data-offset-y=\"22\" data-expected-width=\"80\" data-expected-height=\"78\">É</div>\n</div>\nheight expected 104 but got 288"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-004.html",
+      "group": "layout-algorithm/baseline-alignment-affects-intrinsic-size",
+      "first_failed_callback": "#grid1-auto-auto 1",
+      "symptom": "height",
+      "message_tail": "-expected-height=\"68\">É</div>\n    <div class=\"item horizontalTB\" data-offset-x=\"50\" data-offset-y=\"22\" data-expected-width=\"80\" data-expected-height=\"78\">É</div>\n</div>\nheight expected 104 but got 288"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-005.html",
+      "group": "layout-algorithm/baseline-alignment-affects-intrinsic-size",
+      "first_failed_callback": "#grid1-auto-auto 1",
+      "symptom": "height",
+      "message_tail": "-expected-height=\"68\">É</div>\n    <div class=\"item horizontalTB\" data-offset-x=\"226\" data-offset-y=\"10\" data-expected-width=\"80\" data-expected-height=\"78\">É</div>\n</div>\nheight expected 92 but got 288"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/baseline-alignment-affects-intrinsic-size-006.html",
+      "group": "layout-algorithm/baseline-alignment-affects-intrinsic-size",
+      "first_failed_callback": "#grid1-auto-auto 1",
+      "symptom": "height",
+      "message_tail": "a-expected-height=\"68\">É</div>\n    <div class=\"item horizontalTB\" data-offset-x=\"50\" data-offset-y=\"10\" data-expected-width=\"80\" data-expected-height=\"78\">É</div>\n</div>\nheight expected 92 but got 288"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/flex-and-intrinsic-sizes-001.html",
+      "group": "layout-algorithm/flex-and-intrinsic-sizes",
+      "first_failed_callback": ".grid 2",
+      "symptom": "width",
+      "message_tail": "assert_equals: \n<div class=\"container\">\n  <div class=\"grid min-content\" data-expected-width=\"30\" data-expected-height=\"20\">\n    <div>XXX XXX</div>\n  </div>\n</div>\nwidth expected 30 but got 70"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/flex-sizing-columns-min-max-width-001.html",
+      "group": "layout-algorithm/flex-sizing-columns-min-max-width",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "84\">\n    <div class=\"item\" data-expected-height=\"50\" data-expected-width=\"10\"></div>\n    <div class=\"item\" data-expected-height=\"50\" data-expected-width=\"27\"></div>\n</div>\nwidth expected 84 but got 47"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/flex-sizing-rows-min-max-height-001.html",
+      "group": "layout-algorithm/flex-sizing-rows-min-max-height",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "4\">\n    <div class=\"item\" data-expected-width=\"50\" data-expected-height=\"10\"></div>\n    <div class=\"item\" data-expected-width=\"50\" data-expected-height=\"27\"></div>\n</div>\nheight expected 84 but got 47"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-automatic-minimum-for-auto-columns-001.html",
+      "group": "layout-algorithm/grid-automatic-minimum-for-auto-columns",
+      "first_failed_callback": "Check that min-width is honored when sizing auto columns.",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"40px\" but got \"auto\""
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-container-percentage-001.html",
+      "group": "layout-algorithm/grid-container-percentage",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "\n        <div class=\"firstRowFirstColumn\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"40\" data-expected-height=\"10\">\n            XX X\n        </div>\n    </div>\nwidth expected 40 but got 0"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-container-percentage-002.html",
+      "group": "layout-algorithm/grid-container-percentage",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "        <div class=\"firstRowFirstColumn\" data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"40\" data-expected-height=\"10\">\n            XX X\n        </div>\n    </div>\nheight expected 10 but got 0"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-content-distribution-must-account-for-track-sizing-001.html",
+      "group": "layout-algorithm/grid-content-distribution-must-account-for-track-sizing",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "een\" data-expected-width=\"200\" data-expected-height=\"40\">\n        <div class=\"item\" data-expected-width=\"200\" data-expected-height=\"40\">XXX XX X XX X XXX</div>\n    </div>\nheight expected 40 but got 80"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-content-distribution-must-account-for-track-sizing-002.html",
+      "group": "layout-algorithm/grid-content-distribution-must-account-for-track-sizing",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "een\" data-expected-width=\"40\" data-expected-height=\"200\">\n        <div class=\"item\" data-expected-width=\"40\" data-expected-height=\"200\">XXX XX X XX X XXX</div>\n    </div>\nwidth expected 40 but got 340"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-content-distribution-must-account-for-track-sizing-004.html",
+      "group": "layout-algorithm/grid-content-distribution-must-account-for-track-sizing",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "em1\" data-expected-width=\"110\" data-expected-height=\"40\">XXXX XXX</div>\n        <div class=\"item2\" data-expected-width=\"60\" data-expected-height=\"40\">XXX</div>\n    </div>\nwidth expected 220 but got 60"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-find-fr-size-gutters-001.html",
+      "group": "layout-algorithm/grid-find-fr-size-gutters",
+      "first_failed_callback": ".grid 10",
+      "symptom": "width",
+      "message_tail": "dth=\"100\" data-expected-height=\"40\">X<br>X<br>X<br>X</div>\n  <div data-offset-x=\"120\" data-offset-y=\"60\" data-expected-width=\"80\" data-expected-height=\"40\"></div>\n</div>\nwidth expected 200 but got 120"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-fit-content-percentage.html",
+      "group": "layout-algorithm/grid-fit-content-percentage",
+      "first_failed_callback": "fit-content(0%); min-width: 0px",
+      "symptom": "assert_equals: Grid item width",
+      "message_tail": "assert_equals: Grid item width expected 0 but got 100"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-flex-track-intrinsic-sizes-001.html",
+      "group": "layout-algorithm/grid-flex-track-intrinsic-sizes",
+      "first_failed_callback": "'grid' with: grid-template-columns: 0fr; and grid-template-rows: 0fr;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"0fr\" not in array [\"100px\"]"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-flex-track-intrinsic-sizes-002.html",
+      "group": "layout-algorithm/grid-flex-track-intrinsic-sizes",
+      "first_failed_callback": "'grid' with: grid-template-columns: 1fr auto auto auto; and grid-template-rows: 1fr auto auto auto;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"1fr auto auto auto\" not in array [\"10px 50px 50px 50px\"]"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-flex-track-intrinsic-sizes-003.html",
+      "group": "layout-algorithm/grid-flex-track-intrinsic-sizes",
+      "first_failed_callback": "auto min item 'grid' with: grid-template-columns: 0fr; and grid-template-rows: 0fr;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"0fr\" not in array [\"100px\"]"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-intrinsic-size-with-orthogonal-items.html",
+      "group": "layout-algorithm/grid-intrinsic-size-with-orthogonal-items",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "class=\"grid\" data-expected-width=\"75\" data-expected-height=\"150\">\n    <div class=\"item\" data-expected-width=\"75\" data-expected-height=\"150\">XXX XX X XXX XX X</div>\n</div>\nwidth expected 75 but got 425"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html",
+      "group": "layout-algorithm/grid-intrinsic-track-sizes",
+      "first_failed_callback": "'grid' with: grid-template-columns: auto; and grid-template-rows: auto;",
+      "symptom": "other",
+      "message_tail": "assert_in_array: gridTemplateColumns value \"auto\" not in array [\"120px\"]"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-item-margin-auto-columns-rows-vertical-lr-001.html",
+      "group": "layout-algorithm/grid-item-margin-auto-columns-rows-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "arginBottom firstRowSecondColumn\"></div>\n        <div class=\"gridItem secondRowFirstColumn\"></div>\n        <div class=\"gridItem secondRowSecondColumn\"></div>\n    </div>\nheight expected 120 but got 100"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-item-margin-auto-columns-rows-vertical-rl-001.html",
+      "group": "layout-algorithm/grid-item-margin-auto-columns-rows-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "height",
+      "message_tail": "arginBottom firstRowSecondColumn\"></div>\n        <div class=\"gridItem secondRowFirstColumn\"></div>\n        <div class=\"gridItem secondRowSecondColumn\"></div>\n    </div>\nheight expected 120 but got 100"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-minimum-contribution-baseline-shim-vertical-lr.html",
+      "group": "layout-algorithm/grid-minimum-contribution-baseline-shim-vertical-lr",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "et-y=\"0\"></div>\n  <div class=\"item2\" data-offset-x=\"50\" data-offset-y=\"50\"></div>\n  <div class=\"area\" data-expected-width=\"75\" data-expected-height=\"100\"></div>\n</div>\noffsetLeft expected 50 but got 0"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-minimum-contribution-baseline-shim-vertical-rl.html",
+      "group": "layout-algorithm/grid-minimum-contribution-baseline-shim-vertical-rl",
+      "first_failed_callback": ".grid 1",
+      "symptom": "offsetLeft",
+      "message_tail": "t-y=\"0\"></div>\n  <div class=\"item2\" data-offset-x=\"25\" data-offset-y=\"50\"></div>\n  <div class=\"area\" data-expected-width=\"75\" data-expected-height=\"100\"></div>\n</div>\noffsetLeft expected -25 but got 0"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-minimum-contribution-baseline-shim.html",
+      "group": "layout-algorithm/grid-minimum-contribution-baseline-shim",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "offset-y=\"0\"></div>\n  <div class=\"item2\" data-offset-x=\"50\" data-offset-y=\"50\"></div>\n  <div class=\"area\" data-expected-width=\"100\" data-expected-height=\"75\"></div>\n</div>\nwidth expected 100 but got 0"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-area-computed.html",
+      "group": "parsing/grid-area-computed",
+      "first_failed_callback": "Property grid-area value 'auto / auto / auto / auto'",
+      "symptom": "other",
+      "message_tail": "assert_in_array: value \"\" not in array [\"auto\", \"auto / auto / auto / auto\"]"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-area-invalid.html",
+      "group": "parsing/grid-area-invalid",
+      "first_failed_callback": "e.style['grid-area'] = \"'string'\" should not set the property value",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"\" but got \"'string'\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-area-shorthand.html",
+      "group": "parsing/grid-area-shorthand",
+      "first_failed_callback": "e.style['grid-area'] = \"auto\" should set grid-column-end",
+      "symptom": "assert_equals: grid-column-end should be canonical",
+      "message_tail": "assert_equals: grid-column-end should be canonical expected \"auto\" but got \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-area-valid.html",
+      "group": "parsing/grid-area-valid",
+      "first_failed_callback": "e.style['grid-area'] = \"auto / auto\" should set the property value",
+      "symptom": "assert_equals: serialization should be canonical",
+      "message_tail": "assert_equals: serialization should be canonical expected \"auto\" but got \"auto / auto\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      "group": "parsing/grid-auto-columns-computed",
+      "first_failed_callback": "Property grid-auto-columns value 'min-content'",
+      "symptom": "other",
+      "message_tail": "assert_true: 'min-content' is a supported value for grid-auto-columns. expected true got false"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      "group": "parsing/grid-auto-columns-valid",
+      "first_failed_callback": "e.style['grid-auto-columns'] = \"min-content\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      "group": "parsing/grid-auto-rows-computed",
+      "first_failed_callback": "Property grid-auto-rows value 'min-content'",
+      "symptom": "other",
+      "message_tail": "assert_true: 'min-content' is a supported value for grid-auto-rows. expected true got false"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      "group": "parsing/grid-auto-rows-valid",
+      "first_failed_callback": "e.style['grid-auto-rows'] = \"min-content\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-columns-rows-get-set-multiple.html",
+      "group": "parsing/grid-columns-rows-get-set-multiple",
+      "first_failed_callback": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentElement' : grid-template-columns = '400px 800px', grid-template-rows = '150px 450px'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"400px 800px\" but got \"50% 100%\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-content-sized-columns-resolution.html",
+      "group": "parsing/grid-content-sized-columns-resolution",
+      "first_failed_callback": "Element 'gridMinContentFixedAndAuto' grid-template-columns value computes to '15px 75px'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"15px 75px\" but got \"15px auto\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-shorthand-serialization.html",
+      "group": "parsing/grid-shorthand-serialization",
+      "first_failed_callback": "e.style.cssText = grid: auto-flow auto / 100px 100px should set grid",
+      "symptom": "assert_equals: grid serialization should be canonical",
+      "message_tail": "assert_equals: grid serialization should be canonical expected \"none / 100px 100px\" but got \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-shorthand-valid.html",
+      "group": "parsing/grid-shorthand-valid",
+      "first_failed_callback": "e.style['grid'] = \"none\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-shorthand.html",
+      "group": "parsing/grid-shorthand",
+      "first_failed_callback": "e.style['grid'] = \"none\" should set grid-auto-columns",
+      "symptom": "assert_equals: grid-auto-columns should be canonical",
+      "message_tail": "assert_equals: grid-auto-columns should be canonical expected \"auto\" but got \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-areas-computed.html",
+      "group": "parsing/grid-template-areas-computed",
+      "first_failed_callback": "Property grid-template-areas value 'none'",
+      "symptom": "other",
+      "message_tail": "assert_true: grid-template-areas doesn't seem to be supported in the computed style expected true got false"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-areas-one-cell.html",
+      "group": "parsing/grid-template-areas-one-cell",
+      "first_failed_callback": "\"grid-template-areas: '';\" should be invalid.",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected (string) \"\" but got (undefined) undefined"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-areas-valid.html",
+      "group": "parsing/grid-template-areas-valid",
+      "first_failed_callback": "e.style['grid-template-areas'] = \"none\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-computed-implicit-track.html",
+      "group": "parsing/grid-template-columns-computed-implicit-track",
+      "first_failed_callback": "Property grid-template-columns value 'none' computes to '10px'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"10px\" but got \"none\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-computed-nogrid.html",
+      "group": "parsing/grid-template-columns-computed-nogrid",
+      "first_failed_callback": "Property grid-template-columns value '1px [a]'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"1px [a]\" but got \"1px\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+      "group": "parsing/grid-template-columns-computed-withcontent",
+      "first_failed_callback": "Property grid-template-columns value 'none'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"300px\" but got \"none\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-computed.html",
+      "group": "parsing/grid-template-columns-computed",
+      "first_failed_callback": "Property grid-template-columns value '1px [a]'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"1px [a]\" but got \"1px\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-valid.html",
+      "group": "parsing/grid-template-columns-valid",
+      "first_failed_callback": "e.style['grid-template-columns'] = \"repeat(auto-fill, 10px)\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-repeat-auto-computed-withcontent-001.html",
+      "group": "parsing/grid-template-repeat-auto-computed-withcontent",
+      "first_failed_callback": "Property grid-template-columns value '[a] 1px [b] 2px [c d] repeat(auto-fit, [e f] 3px [g] 4px [h]) [i] 5px [k] 6px [l m] ' gridColumn = 3",
+      "symptom": "other",
+      "message_tail": "assert_true: '[a] 1px [b] 2px [c d] repeat(auto-fit, [e f] 3px [g] 4px [h]) [i] 5px [k] 6px [l m] ' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-repeat-auto-computed-withcontent-002.html",
+      "group": "parsing/grid-template-repeat-auto-computed-withcontent",
+      "first_failed_callback": "Property grid-template-rows value '[a] 1px [b] 2px [c d] repeat(auto-fit, [e f] 3px [g] 4px [h] 5px [i j]) [k] 7px [k] 8px [l m]' gridRow = 3",
+      "symptom": "other",
+      "message_tail": "assert_true: '[a] 1px [b] 2px [c d] repeat(auto-fit, [e f] 3px [g] 4px [h] 5px [i j]) [k] 7px [k] 8px [l m]' is a supported value for grid-template-rows. expected true got false"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed-implicit-track.html",
+      "group": "parsing/grid-template-rows-computed-implicit-track",
+      "first_failed_callback": "Property grid-template-rows value 'none' computes to '10px'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"10px\" but got \"none\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed-nogrid.html",
+      "group": "parsing/grid-template-rows-computed-nogrid",
+      "first_failed_callback": "Property grid-template-rows value '1px [a]'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"1px [a]\" but got \"1px\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed-withcontent.html",
+      "group": "parsing/grid-template-rows-computed-withcontent",
+      "first_failed_callback": "Property grid-template-rows value 'none'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"600px\" but got \"none\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed.html",
+      "group": "parsing/grid-template-rows-computed",
+      "first_failed_callback": "Property grid-template-rows value '1px [a]'",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"1px [a]\" but got \"1px\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-valid.html",
+      "group": "parsing/grid-template-rows-valid",
+      "first_failed_callback": "e.style['grid-template-rows'] = \"repeat(auto-fill, 10px)\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-shorthand-areas-valid.html",
+      "group": "parsing/grid-template-shorthand-areas-valid",
+      "first_failed_callback": "grid-template: none / 1px and \"grid-template-areas: \"a\";\" should be valid.",
+      "symptom": "assert_equals:",
+      "message_tail": "assert_equals: expected \"\" but got \"none / 1px\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-shorthand-valid.html",
+      "group": "parsing/grid-template-shorthand-valid",
+      "first_failed_callback": "e.style['grid-template'] = \"none / none\" should set the property value",
+      "symptom": "assert_equals: serialization should be canonical",
+      "message_tail": "assert_equals: serialization should be canonical expected \"none\" but got \"none / none\""
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-shorthand.html",
+      "group": "parsing/grid-template-shorthand",
+      "first_failed_callback": "e.style['grid-template'] = \"none\" should set grid-template-areas",
+      "symptom": "assert_equals: grid-template-areas should be canonical",
+      "message_tail": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "id": "/css/css-grid/placement/grid-container-change-grid-tracks-recompute-child-positions-001.html",
+      "group": "placement/grid-container-change-grid-tracks-recompute-child-positions",
+      "first_failed_callback": ".grid 3",
+      "symptom": "width",
+      "message_tail": "=\"0\"></div>\n        <div class=\"sizedToGridArea\" id=\"thirdGridItem\" data-expected-width=\"5\" data-expected-height=\"10\" data-offset-x=\"10\" data-offset-y=\"0\"></div>\n    </div>\nwidth expected 5 but got 10"
+    },
+    {
+      "id": "/css/css-grid/placement/grid-container-change-named-grid-recompute-child-positions-001.html",
+      "group": "placement/grid-container-change-named-grid-recompute-child-positions",
+      "first_failed_callback": ".grid 1",
+      "symptom": "width",
+      "message_tail": "\"10\"></div>\n        <div class=\"sizedToGridArea\" id=\"thirdGridItem\" data-expected-width=\"30\" data-expected-height=\"10\" data-offset-x=\"0\" data-offset-y=\"0\"></div>\n    </div>\nwidth expected 0 but got 30"
+    },
+    {
+      "id": "/css/css-grid/subgrid/grid-template-computed-nogrid.html",
+      "group": "subgrid/grid-template-computed-nogrid",
+      "first_failed_callback": "Property grid-template-columns value 'subgrid []'",
+      "symptom": "other",
+      "message_tail": "assert_true: 'subgrid []' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "id": "/css/css-grid/subgrid/grid-template-valid.html",
+      "group": "subgrid/grid-template-valid",
+      "first_failed_callback": "e.style['grid-template-rows'] = \"subgrid\" should set the property value",
+      "symptom": "other",
+      "message_tail": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "id": "/css/css-grid/subgrid/subgrid-baseline-005.html",
+      "group": "subgrid/subgrid-baseline",
+      "first_failed_callback": ".item 2",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"85\" class=\"item last\">\n        <span></span><br><span></span>\n      </div>\noffsetTop expected 85 but got 114"
+    },
+    {
+      "id": "/css/css-grid/subgrid/subgrid-baseline-006.html",
+      "group": "subgrid/subgrid-baseline",
+      "first_failed_callback": ".item 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"514\" class=\"item first\">\n        <span></span><br><span></span>\n      </div>\noffsetLeft expected 514 but got 10"
+    },
+    {
+      "id": "/css/css-grid/subgrid/subgrid-baseline-007.html",
+      "group": "subgrid/subgrid-baseline",
+      "first_failed_callback": ".item 2",
+      "symptom": "offsetTop",
+      "message_tail": "assert_equals: \n<div data-offset-y=\"58\" class=\"item last\">\n        <span></span><br><span></span>\n      </div>\noffsetTop expected 58 but got 114"
+    },
+    {
+      "id": "/css/css-grid/subgrid/subgrid-baseline-008.html",
+      "group": "subgrid/subgrid-baseline",
+      "first_failed_callback": ".item 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"514\" class=\"item first\">\n        <span></span><br><span></span>\n      </div>\noffsetLeft expected 514 but got 10"
+    },
+    {
+      "id": "/css/css-grid/subgrid/subgrid-baseline-009.html",
+      "group": "subgrid/subgrid-baseline",
+      "first_failed_callback": ".item 1",
+      "symptom": "offsetLeft",
+      "message_tail": "assert_equals: \n<div data-offset-x=\"292\" class=\"item first\">\n        <span></span><br><span></span>\n      </div>\noffsetLeft expected 292 but got 332"
+    },
+    {
+      "id": "/css/css-grid/table-grid-item-005.html",
+      "group": "css-grid/table-grid-item",
+      "first_failed_callback": "<table> grid items should fill their grid area",
+      "symptom": "assert_equals: table is as tall as the grid",
+      "message_tail": "assert_equals: table is as tall as the grid expected 400 but got 16"
+    }
+  ]
+}

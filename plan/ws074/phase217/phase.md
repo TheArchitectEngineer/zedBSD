@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1173-i01 有限部分範囲（2026-10-14 13:04 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:34 JSTまで）に適用。q1172固定Grid319 FAILをWPTパス系列・最初の失敗callbackと症状で全件分類し、上位系列のWPT原本/関連layout経路を最大3種確認する。次の有限実装候補・非対象回帰条件を記録。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1173-i01 結果（2026-10-14 13:05 JST）
+
+Event ws074-p217-q1173-partial-clear-20261014: [証拠](evidence/20261014-q1173/README.md)。固定Grid319 FAILを全件系列/first callbackで分類。alignment135が最多、width96/height53/offsetLeft51/offsetTop42/他77。最大3系列各12件のWPT原本/経路を確認。次の有限候補は水平positioned Grid子の片軸明示inset時に他軸staticを保つ一般修正、対象001–006。q1173診断部分cleared、p217/p189/p173 whole未達。読取のみ、共有投影/GitHub publication保留。
+
 ## q1171-i01 有限部分範囲（2026-10-14 12:52 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:22 JSTまで）に適用。CSS align-self:self-start/endの宣言値を保持し、従来Grid/Flex in-flow同writing-mode経路では旧start/end動作を保つ。q1168固定2×2 vertical-lr/rl LTR positioned inline-grid、明示px tracks/gap0、直接absolute auto-size ASCII子、子は逆vertical writing-mode/LTR・両axis明示span1・全offset autoに限り、子自身のblock-start/endを物理x static areaへ写す。固定column-axis010/011 whole PASS、旧column001–009・row001–011、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。auto lines/RTL親/他Grid、WPT/runner/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

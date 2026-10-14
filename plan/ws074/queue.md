@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1172 / WS074 fixed Grid502 recensus after positioned alignment
+# q1173 / WS074 fixed Grid319 failure classification
 
-Status: finished（2026-10-14 12:57–13:03 JST）
+Status: finished（2026-10-14 13:04–13:05 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 最大90分（14:27 JSTまで）。
+Timebox: 最大90分（14:34 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1172-i01 | [ws074-p189](phase189/phase.md) partial | q1160と同一固定Grid testharness502 ID・WPT/manifest/フォント/localhost HTTP/settle5s/timeout20sで4×最大128 shardを再測定し、q1160 baseline158 PASS/344 FAILとのID・whole/subtest遷移、未出力・後退を照合。raw callback gzip/checkpointを保存。読取・証拠のみ、browser/runner/WPT/ABI/Master/Acid変更なし | cleared | q1171実装 |
+| q1173-i01 | [ws074-p217](phase217/phase.md) partial | q1172固定Grid319 FAILをWPTパス系列・最初の失敗callbackと症状で全件分類し、上位系列のWPT原本/関連layout経路を最大3種確認する。次の有限実装候補・非対象回帰条件を記録。読取・証拠のみ、browser/runner/WPT/ABI/Master/Acid変更なし | cleared | q1172 recensus |
 
-Dependency graph: q1171実装 → q1172-i01。p189/p173 wholeは部分受け入れに含めない。
+Dependency graph: q1172 recensus → q1173-i01。p217/p189/p173 wholeは部分受け入れに含めない。
 
-Upcoming Work Outlook: Grid残FAIL最大群再分類、RTL字形視覚、auto lines、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: Grid上位FAIL系列の実装、RTL字形視覚、auto lines、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
 
-Outcome: 固定502件は158→183 whole PASS、344→319 FAIL、subtest PASS5195→5245、後退0。positioned列/行軸22件とmargin/border/padding3件が新規whole PASS。4 shard exit0、ID順・callback名・checkpoint/gzip502照合。[証拠](phase189/evidence/20261014-q1172/README.md)。p189/p173 whole未達。
+Outcome: Grid319 FAILを全件first callbackと系列で分類。alignment135、width96/height53/offsetLeft51/offsetTop42/他77。最大3系列各12件をWPT原本/経路で確認。次は水平positioned Grid子の片軸明示insetが他軸staticを抑止する問題を最小再現。[証拠](phase217/evidence/20261014-q1173/README.md)。読取のみ、p217/p189/p173 whole未達。
