@@ -566,6 +566,9 @@ struct css_style {
 	int background_repeat;
 	int background_attachment;
 	struct css_length background_position[2];
+
+	/* The translation of transform (x and y: pixels, or a percentage of the border box); the other transform functions are not applied. */
+	struct css_length transform_translate[2];
 	int background_size_keyword;
 	struct css_length background_size[2];
 

@@ -23,6 +23,8 @@
 
 #include "net/net.h"
 
+#include <compat/zlib/zlib.h>
+
 #include <errno.h>
 #include <netdb.h>
 #include <poll.h>
@@ -77,6 +79,22 @@ http_dump(
 	fprintf(stderr, "net: %s %d %s %s\n", path, response->status, response->content_type.data == NULL ? "" : wb_buffer_string(&response->content_type), url_text);
 }
 
+/* The fixed headers of an image's request: only the formats the decoders read. */
+#define NET_HTTP_IMAGE_HEADERS	"Accept: image/png,image/jpeg\r\n" \
+				"Accept-Language: ja,en-US;q=0.9,en;q=0.8\r\n" \
+				"Accept-Encoding: identity\r\n"
+
+/* The kind of the blocking fetches that follow (NET_FETCH_*); the browser is single-threaded. */
+static int http_fetch_kind = NET_FETCH_DOCUMENT;
+
+/* Sets what the blocking fetches that follow are for, so the Accept header follows. */
+void
+net_http_set_kind(
+	int kind)
+{
+	http_fetch_kind = kind;
+}
+
 /*
  * What the headers of a response say that the fetch uses (besides the
  * Content-Type and the cookies, kept at once).
@@ -85,7 +103,13 @@ struct http_headers {
 	size_t content_length;
 	int has_length;
 	int chunked;
+	int encoding;
 };
+
+/* The content codings of a response body that are decoded (the server may send gzip even when only identity was accepted). */
+#define HTTP_ENCODING_NONE	0
+#define HTTP_ENCODING_GZIP	1
+#define HTTP_ENCODING_DEFLATE	2
 
 /*
  * A request's connection: the socket, and its TLS for https (NULL for
@@ -97,6 +121,7 @@ struct http_connection {
 };
 
 static int http_request(const struct net_url *url, struct net_response *response, struct wb_buffer *location);
+static int http_decode_body(int encoding, struct net_response *response);
 static int http_connect(const struct net_url *url, int *descriptor);
 static int http_send_all(const struct http_connection *connection, const unsigned char *bytes, size_t length);
 static int http_receive_all(const struct http_connection *connection, struct wb_buffer *raw);
@@ -231,6 +256,22 @@ net_http_request_text(
 	int keep_alive,
 	const char *extra)
 {
+	return net_http_request_text_kind(url, request, keep_alive, extra, NET_FETCH_DOCUMENT);
+}
+
+/*
+ * The same, for a kind of fetch: an image is asked for as PNG or JPEG only
+ * (the decoders do not read WebP or AVIF, so a server that varies by Accept
+ * answers with one that they do).
+ */
+int
+net_http_request_text_kind(
+	const struct net_url *url,
+	struct wb_buffer *request,
+	int keep_alive,
+	const char *extra,
+	int kind)
+{
 	const char *target;
 	int error;
 
@@ -246,7 +287,7 @@ net_http_request_text(
 	if (error == 0 && url->port >= 0)
 		error = wb_buffer_printf(request, ":%d", url->port);
 	if (error == 0)
-		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_USER_AGENT, NET_HTTP_HEADERS);
+		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_USER_AGENT, kind == NET_FETCH_IMAGE ? NET_HTTP_IMAGE_HEADERS : NET_HTTP_HEADERS);
 	if (error == 0 && !keep_alive)
 		error = wb_buffer_append_string(request, "Connection: close\r\n");
 	if (error == 0 && extra != NULL)
@@ -433,7 +474,7 @@ http_request(
 	/* The request's text. */
 	wb_buffer_init(&request);
 	wb_buffer_init(&raw);
-	error = net_http_request_text(url, &request, 0, NULL);
+	error = net_http_request_text_kind(url, &request, 0, NULL, http_fetch_kind);
 	if (error != 0) {
 		wb_buffer_release(&request);
 		return error;
@@ -756,6 +797,10 @@ net_http_parse_response(
 		error = wb_buffer_append(&response->body, body, body_length);
 	}
 
+	/* A body in a content coding is decoded (gzip, or zlib's deflate). */
+	if (error == 0 && headers.encoding != HTTP_ENCODING_NONE)
+		error = http_decode_body(headers.encoding, response);
+
 	/* A buffer that could not grow. */
 	if (error != 0)
 		return error;
@@ -802,6 +847,15 @@ http_header(
 		if (differs == 0)
 			headers->chunked = 1;
 	}
+
+	/* The content coding of the body. */
+	found = http_header_value(line, length, "content-encoding", &value, &value_length);
+	if (found && value_length == 4U && strncasecmp(value, "gzip", 4) == 0)
+		headers->encoding = HTTP_ENCODING_GZIP;
+	if (found && value_length == 6U && strncasecmp(value, "x-gzip", 6) == 0)
+		headers->encoding = HTTP_ENCODING_GZIP;
+	if (found && value_length == 7U && strncasecmp(value, "deflate", 7) == 0)
+		headers->encoding = HTTP_ENCODING_DEFLATE;
 
 	/* Where a redirect goes. */
 	found = http_header_value(line, length, "location", &value, &value_length);
@@ -931,6 +985,118 @@ http_dechunk(
 	}
 
 	/* Succeeded: the body is decoded. */
+	return 0;
+}
+
+/* Inflates a body's bytes (a zlib stream, or raw deflate after a gzip header) into a buffer; EINVAL when they are no stream. */
+static int
+http_inflate(
+	const unsigned char *bytes,
+	size_t length,
+	int window,
+	struct wb_buffer *out)
+{
+	z_stream stream;
+	unsigned char chunk[16384];
+	int result;
+	int error;
+
+	memset(&stream, 0, sizeof(stream));
+	if (inflateInit2(&stream, window) != Z_OK)
+		return EINVAL;
+	stream.next_in = (Bytef *)(uintptr_t)bytes;
+	stream.avail_in = (uInt)length;
+	error = 0;
+	for (;;) {
+		stream.next_out = chunk;
+		stream.avail_out = sizeof(chunk);
+		result = inflate(&stream, Z_FINISH);
+		if (stream.avail_out != sizeof(chunk)) {
+			error = wb_buffer_append(out, chunk, sizeof(chunk) - stream.avail_out);
+			if (error != 0)
+				break;
+		}
+		if (result == Z_STREAM_END)
+			break;
+		if (result != Z_OK && result != Z_BUF_ERROR) {
+			error = EINVAL;
+			break;
+		}
+		if (result == Z_BUF_ERROR && stream.avail_out != 0) {
+			/* Truncated input: what was inflated is kept. */
+			break;
+		}
+	}
+	inflateEnd(&stream);
+	return error;
+}
+
+/* Decodes a response's body in place from its content coding. */
+static int
+http_decode_body(
+	int encoding,
+	struct net_response *response)
+{
+	struct wb_buffer decoded;
+	const unsigned char *bytes;
+	size_t length;
+	size_t position;
+	unsigned flags;
+	int error;
+
+	/* A gzip member: the ten byte header, the optional fields, then raw deflate and an eight byte trailer. */
+	bytes = response->body.data;
+	length = response->body.length;
+	if (length == 0)
+		return 0;
+	wb_buffer_init(&decoded);
+	error = 0;
+	if (encoding == HTTP_ENCODING_GZIP) {
+		if (length < 18U || bytes[0] != 0x1fU || bytes[1] != 0x8bU || bytes[2] != 8U) {
+			wb_buffer_release(&decoded);
+			return 0;
+		}
+		flags = bytes[3];
+		position = 10;
+		if ((flags & 4U) != 0U && position + 2U <= length)
+			position += 2U + (size_t)bytes[position] + ((size_t)bytes[position + 1U] << 8);
+		if ((flags & 8U) != 0U) {
+			while (position < length && bytes[position] != 0)
+				position++;
+			position++;
+		}
+		if ((flags & 16U) != 0U) {
+			while (position < length && bytes[position] != 0)
+				position++;
+			position++;
+		}
+		if ((flags & 2U) != 0U)
+			position += 2U;
+		if (position >= length) {
+			wb_buffer_release(&decoded);
+			return 0;
+		}
+		error = http_inflate(bytes + position, length - position, -MAX_WBITS, &decoded);
+	} else {
+		error = http_inflate(bytes, length, MAX_WBITS, &decoded);
+		if (error == EINVAL) {
+			/* Some servers send raw deflate under this name. */
+			wb_buffer_clear(&decoded);
+			error = http_inflate(bytes, length, -MAX_WBITS, &decoded);
+		}
+	}
+
+	/* A body that is no stream stays as it came. */
+	if (error == EINVAL) {
+		wb_buffer_release(&decoded);
+		return 0;
+	}
+	if (error != 0) {
+		wb_buffer_release(&decoded);
+		return error;
+	}
+	wb_buffer_release(&response->body);
+	response->body = decoded;
 	return 0;
 }
 

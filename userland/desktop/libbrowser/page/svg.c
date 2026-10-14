@@ -67,6 +67,11 @@ struct svg_style {
 	float fill_opacity;
 	float opacity;
 	enum svg_rule rule;
+	uint32_t stroke;
+	int stroke_none;
+	float stroke_width;
+	float stroke_opacity;
+	int stroke_cap;
 };
 
 /* One point of a shape's outline; a point with begin set starts a new subpath. */
@@ -74,6 +79,7 @@ struct svg_point {
 	float x;
 	float y;
 	int begin;
+	int closed;
 };
 
 /* The outline being built: its points, in device space. */
@@ -129,6 +135,10 @@ static int svg_matrix_parse(const char *text, struct svg_matrix *matrix);
 static void svg_matrix_multiply(struct svg_matrix *result, const struct svg_matrix *left, const struct svg_matrix *right);
 static int svg_walk(struct svg_canvas *canvas, const struct dom_node *node, const struct svg_matrix *parent, const struct svg_style *inherited, int depth);
 static int svg_draw_element(struct svg_canvas *canvas, const struct dom_element *element, const struct svg_matrix *matrix, const struct svg_style *style);
+static int svg_draw_use(struct svg_canvas *canvas, const struct dom_element *element, const struct svg_matrix *matrix, const struct svg_style *style, int depth);
+static int svg_draw_node(struct svg_canvas *canvas, const struct dom_element *element, const struct svg_matrix *matrix, const struct svg_style *style, int depth);
+static int svg_draw_clipped(struct svg_canvas *canvas, const struct dom_element *element, const struct svg_matrix *matrix, const struct svg_style *style, const struct dom_element *clip, int depth);
+static const struct dom_element *svg_clip_path_of(const struct dom_element *element);
 static int svg_shape_point(struct svg_shape *shape, const struct svg_matrix *matrix, float x, float y, int begin);
 static int svg_shape_path(struct svg_shape *shape, const struct svg_matrix *matrix, const char *text);
 static int svg_shape_arc(struct svg_shape *shape, const struct svg_matrix *matrix, float x0, float y0, float rx, float ry, float rotation, int large, int sweep, float x1, float y1);
@@ -136,7 +146,9 @@ static int svg_shape_ellipse(struct svg_shape *shape, const struct svg_matrix *m
 static int svg_shape_rect(struct svg_shape *shape, const struct svg_matrix *matrix, float x, float y, float width, float height, float rx, float ry);
 static int svg_shape_points(struct svg_shape *shape, const struct svg_matrix *matrix, const char *text);
 static int svg_fill(struct svg_canvas *canvas, const struct svg_shape *shape, uint32_t color, float alpha, enum svg_rule rule);
+static int svg_stroke(struct svg_canvas *canvas, const struct svg_shape *shape, const struct svg_matrix *matrix, const struct svg_style *style, uint32_t color, float alpha);
 static void svg_composite_row(struct svg_canvas *canvas, int row, uint32_t color, float alpha);
+static struct dom_element *svg_find_root(struct dom_node *node, int depth);
 static const struct dom_element *svg_find_id(const struct dom_node *node, const char *id, int depth);
 static uint32_t svg_gradient_color(const struct dom_element *svg, const char *reference, uint32_t fallback, int *found);
 static float svg_parse_attribute_number(const struct dom_element *element, const char *name, float fallback);
@@ -290,6 +302,11 @@ page_svg_render(
 	style.fill_opacity = 1.0f;
 	style.opacity = 1.0f;
 	style.rule = SVG_NONZERO;
+	style.stroke = 0xff000000U;
+	style.stroke_none = 1;
+	style.stroke_width = 1.0f;
+	style.stroke_opacity = 1.0f;
+	style.stroke_cap = 0;
 
 	/* The children, in document order. */
 	error = svg_walk(&canvas, &svg->node, &matrix, &style, 0);
@@ -360,6 +377,7 @@ svg_walk(
 	struct svg_matrix matrix;
 	struct svg_style style;
 	struct wb_buffer buffer;
+	const struct dom_element *clip;
 	const char *text;
 	int hidden;
 	int error;
@@ -406,11 +424,12 @@ svg_walk(
 		if (hidden)
 			continue;
 
-		/* A group passes both on; a shape is drawn. */
-		if (svg_name_is(element, "g") || svg_name_is(element, "a") || svg_name_is(element, "svg") || svg_name_is(element, "switch")) {
-			error = svg_walk(canvas, &element->node, &matrix, &style, depth + 1);
+		/* A clip path (clip-path="url(#id)", as an attribute or in the style attribute) masks what the element draws. */
+		clip = svg_clip_path_of(element);
+		if (clip != NULL) {
+			error = svg_draw_clipped(canvas, element, &matrix, &style, clip, depth);
 		} else {
-			error = svg_draw_element(canvas, element, &matrix, &style);
+			error = svg_draw_node(canvas, element, &matrix, &style, depth);
 		}
 		if (error != 0)
 			return error;
@@ -444,8 +463,8 @@ svg_draw_element(
 	int found;
 	int error;
 
-	/* A shape without a fill draws nothing (strokes are not drawn). */
-	if (style->fill_none)
+	/* A shape with neither a fill nor a stroke draws nothing. */
+	if (style->fill_none && style->stroke_none)
 		return 0;
 	memset(&shape, 0, sizeof(shape));
 	error = 0;
@@ -493,12 +512,24 @@ svg_draw_element(
 		if (text != NULL)
 			error = svg_shape_points(&shape, matrix, text);
 		wb_buffer_release(&buffer);
+		if (error == 0 && shape.count > 0 && svg_name_is(element, "polygon"))
+			shape.points[0].closed = 1;
+	} else if (svg_name_is(element, "line")) {
+		x = svg_parse_attribute_number(element, "x1", 0.0f);
+		y = svg_parse_attribute_number(element, "y1", 0.0f);
+		width = svg_parse_attribute_number(element, "x2", 0.0f);
+		height = svg_parse_attribute_number(element, "y2", 0.0f);
+		error = svg_shape_point(&shape, matrix, x, y, 1);
+		if (error == 0)
+			error = svg_shape_point(&shape, matrix, width, height, 0);
 	}
+	if (error == 0 && shape.count > 0 && (svg_name_is(element, "rect") || svg_name_is(element, "circle") || svg_name_is(element, "ellipse")))
+		shape.points[0].closed = 1;
 	if (error != 0) {
 		free(shape.points);
 		return error;
 	}
-	if (shape.count < 3U) {
+	if (shape.count < 2U) {
 		free(shape.points);
 		return 0;
 	}
@@ -520,8 +551,28 @@ svg_draw_element(
 	wb_buffer_release(&buffer);
 
 	/* Filled. */
-	if (alpha > 0.0f)
+	if (alpha > 0.0f && !style->fill_none && shape.count >= 3U)
 		error = svg_fill(canvas, &shape, color, alpha, style->rule);
+
+	/* Then stroked, over the fill. */
+	if (error == 0 && !style->stroke_none && style->stroke_width > 0.0f) {
+		color = style->stroke;
+		alpha = style->stroke_opacity * style->opacity;
+		wb_buffer_init(&buffer);
+		text = svg_attribute(element, "stroke", &buffer);
+		if (text != NULL && strncmp(text, "url(", 4) == 0) {
+			top = &element->node;
+			while (top->parent != NULL && top->parent->type == DOM_ELEMENT)
+				top = top->parent;
+			root = (const struct dom_element *)top;
+			color = svg_gradient_color(root, text, color, &found);
+			if (!found)
+				alpha = 0.0f;
+		}
+		wb_buffer_release(&buffer);
+		if (alpha > 0.0f)
+			error = svg_stroke(canvas, &shape, matrix, style, color, alpha);
+	}
 	free(shape.points);
 	return error;
 }
@@ -941,6 +992,36 @@ svg_style_apply(
 			else
 				style->fill_opacity = number;
 		}
+	} else if (strcmp(name, "stroke") == 0) {
+		if (strncmp(value, "url(", 4) == 0) {
+			style->stroke_none = 0;
+		} else if (svg_parse_color(value, &color, &none)) {
+			style->stroke_none = none;
+			if (!none)
+				style->stroke = color;
+		}
+	} else if (strcmp(name, "stroke-width") == 0) {
+		cursor = value;
+		if (svg_number(&cursor, &number) && number >= 0.0f)
+			style->stroke_width = number;
+	} else if (strcmp(name, "stroke-opacity") == 0) {
+		cursor = value;
+		if (svg_number(&cursor, &number)) {
+			if (*cursor == '%')
+				number /= 100.0f;
+			if (number < 0.0f)
+				number = 0.0f;
+			if (number > 1.0f)
+				number = 1.0f;
+			style->stroke_opacity = number;
+		}
+	} else if (strcmp(name, "stroke-linecap") == 0) {
+		if (strncmp(value, "round", 5) == 0)
+			style->stroke_cap = 1;
+		else if (strncmp(value, "square", 6) == 0)
+			style->stroke_cap = 2;
+		else if (strncmp(value, "butt", 4) == 0)
+			style->stroke_cap = 0;
 	} else if (strcmp(name, "fill-rule") == 0) {
 		if (strncmp(value, "evenodd", 7) == 0)
 			style->rule = SVG_EVENODD;
@@ -956,7 +1037,7 @@ svg_style_read(
 	struct svg_style *style,
 	int *hidden)
 {
-	static const char *names[] = { "fill", "fill-opacity", "opacity", "fill-rule" };
+	static const char *names[] = { "fill", "fill-opacity", "opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap" };
 	struct wb_buffer buffer;
 	char declarations[1024];
 	char name[32];
@@ -1168,6 +1249,7 @@ svg_shape_point(
 	shape->points[shape->count].x = matrix->a * x + matrix->c * y + matrix->e;
 	shape->points[shape->count].y = matrix->b * x + matrix->d * y + matrix->f;
 	shape->points[shape->count].begin = begin;
+	shape->points[shape->count].closed = 0;
 	shape->count++;
 	return 0;
 }
@@ -1337,8 +1419,8 @@ svg_shape_rect(
 
 	/* Four quarter ellipses, from the top right clockwise. */
 	for (corner = 0; corner < 4; corner++) {
-		corner_x = (corner == 0 || corner == 3) ? x + width - rx : x + rx;
-		corner_y = (corner == 0 || corner == 1) ? y + ry : y + height - ry;
+		corner_x = (corner == 0 || corner == 1) ? x + width - rx : x + rx;
+		corner_y = (corner == 0 || corner == 3) ? y + ry : y + height - ry;
 		for (step = 0; step <= SVG_CURVE_STEPS; step++) {
 			angle = ((double)corner * 90.0 - 90.0 + 90.0 * (double)step / (double)SVG_CURVE_STEPS) * 3.14159265358979 / 180.0;
 			error = svg_shape_point(shape, matrix, corner_x + rx * (float)cos(angle), corner_y + ry * (float)sin(angle), corner == 0 && step == 0);
@@ -1417,6 +1499,7 @@ svg_shape_path(
 	int count;
 	int error;
 	int need_begin;
+	size_t begin_index;
 
 	x = 0.0f;
 	y = 0.0f;
@@ -1438,6 +1521,12 @@ svg_shape_path(
 			command = *cursor;
 			cursor++;
 			if (command == 'z' || command == 'Z') {
+				for (begin_index = shape->count; begin_index > 0; begin_index--) {
+					if (shape->points[begin_index - 1U].begin) {
+						shape->points[begin_index - 1U].closed = 1;
+						break;
+					}
+				}
 				x = start_x;
 				y = start_y;
 				need_begin = 1;
@@ -1816,4 +1905,508 @@ svg_composite_row(
 		pixel[2] = blue * source_alpha + pixel[2] * (1.0f - source_alpha);
 		pixel[3] = source_alpha + pixel[3] * (1.0f - source_alpha);
 	}
+}
+
+/*
+ * Draws the bytes of an SVG image (an <img>, a CSS url() or a data: URL that
+ * names an SVG document) into a bitmap: the text is parsed into a scratch
+ * document of the page's heap and its first <svg> is drawn as an inline one.
+ *
+ * Returns 0, ENOTSUP for bytes that are not SVG, or an errno value.
+ */
+int
+page_svg_decode(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length,
+	struct img_bitmap *bitmap)
+{
+	struct dom_document *document;
+	struct html_parser *parser;
+	struct dom_element *svg;
+	struct vm_cell *root;
+	struct wb_units units;
+	size_t start;
+	int error;
+
+	/* The text must hold an <svg> start tag near its start (after a BOM, whitespace, an XML declaration or comments). */
+	start = 0;
+	if (length >= 3U && bytes[0] == 0xefU && bytes[1] == 0xbbU && bytes[2] == 0xbfU)
+		start = 3U;
+	if (length - start < 5U || memmem(bytes + start, length - start < 2048U ? length - start : 2048U, "<svg", 4) == NULL)
+		return ENOTSUP;
+
+	/* The text as UTF-16 into a scratch document, which the heap's roots keep while it is parsed. */
+	wb_units_init(&units);
+	error = wb_utf8_to_units(bytes + start, length - start, &units);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+	document = dom_document_create(page->heap);
+	if (document == NULL) {
+		wb_units_release(&units);
+		return ENOMEM;
+	}
+	root = &document->node.cell;
+	error = vm_heap_add_root(page->heap, &root);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+	error = html_parser_create(&parser, document, 0);
+	if (error == 0) {
+		error = html_parser_feed(parser, units.data, units.length);
+		if (error == 0)
+			error = html_parser_finish(parser);
+		html_parser_destroy(parser);
+	}
+	wb_units_release(&units);
+
+	/* The first svg element of the document. */
+	svg = NULL;
+	if (error == 0)
+		svg = svg_find_root(&document->node, 0);
+	if (error == 0 && svg == NULL)
+		error = ENOTSUP;
+	if (error == 0)
+		error = page_svg_render(svg, bitmap);
+	vm_heap_remove_root(page->heap, &root);
+	return error;
+}
+
+/* Finds the first svg element of a tree (depth first). */
+static struct dom_element *
+svg_find_root(
+	struct dom_node *node,
+	int depth)
+{
+	struct dom_element *found;
+	struct dom_node *child;
+
+	if (depth > SVG_DEPTH)
+		return NULL;
+	if (node->type == DOM_ELEMENT && ((struct dom_element *)node)->ns == DOM_NS_SVG &&
+	    ((struct dom_element *)node)->tag == DOM_TAG_SVG)
+		return (struct dom_element *)node;
+	for (child = node->first_child; child != NULL; child = child->next) {
+		found = svg_find_root(child, depth + 1);
+		if (found != NULL)
+			return found;
+	}
+	return NULL;
+}
+
+/* Adds a polygon of points to a shape, oriented so every polygon of a stroke winds the same way. */
+static int
+svg_stroke_polygon(
+	struct svg_shape *shape,
+	const float *xs,
+	const float *ys,
+	int count)
+{
+	struct svg_point *grown;
+	float area;
+	int index;
+	int source;
+	size_t capacity;
+
+	area = 0.0f;
+	for (index = 0; index < count; index++) {
+		source = (index + 1) % count;
+		area += xs[index] * ys[source] - xs[source] * ys[index];
+	}
+	if (shape->count + (size_t)count > SVG_POINTS_MAX)
+		return 0;
+	while (shape->count + (size_t)count > shape->capacity) {
+		capacity = shape->capacity == 0U ? 256U : shape->capacity * 2U;
+		grown = realloc(shape->points, capacity * sizeof(*grown));
+		if (grown == NULL)
+			return ENOMEM;
+		shape->points = grown;
+		shape->capacity = capacity;
+	}
+	for (index = 0; index < count; index++) {
+		source = area >= 0.0f ? index : count - 1 - index;
+		shape->points[shape->count].x = xs[source];
+		shape->points[shape->count].y = ys[source];
+		shape->points[shape->count].begin = index == 0;
+		shape->points[shape->count].closed = 1;
+		shape->count++;
+	}
+	return 0;
+}
+
+/* Adds a disc (a round join or cap) of a radius at a point. */
+static int
+svg_stroke_disc(
+	struct svg_shape *out,
+	float x,
+	float y,
+	float radius)
+{
+	float xs[16];
+	float ys[16];
+	int index;
+
+	for (index = 0; index < 16; index++) {
+		xs[index] = x + radius * (float)cos((double)index * 3.14159265358979 / 8.0);
+		ys[index] = y + radius * (float)sin((double)index * 3.14159265358979 / 8.0);
+	}
+	return svg_stroke_polygon(out, xs, ys, 16);
+}
+
+/*
+ * Strokes a shape: each segment becomes a rectangle of the stroke's width, each
+ * joint and round cap a disc (joins are round; miter and bevel corners are
+ * not told apart), all filled together as one nonzero shape.  Dashes are not
+ * drawn.
+ */
+static int
+svg_stroke(
+	struct svg_canvas *canvas,
+	const struct svg_shape *shape,
+	const struct svg_matrix *matrix,
+	const struct svg_style *style,
+	uint32_t color,
+	float alpha)
+{
+	struct svg_shape outline;
+	float xs[4];
+	float ys[4];
+	float half;
+	float scale;
+	float dx;
+	float dy;
+	float length;
+	float nx;
+	float ny;
+	float ex0;
+	float ey0;
+	float ex1;
+	float ey1;
+	size_t first;
+	size_t last;
+	size_t point;
+	size_t next;
+	size_t segments;
+	int closed;
+	int error;
+
+	/* The width in device pixels, by the transform's scale. */
+	scale = (float)sqrt((double)fabsf(matrix->a * matrix->d - matrix->b * matrix->c));
+	half = style->stroke_width * scale / 2.0f;
+	if (half <= 0.0f)
+		return 0;
+	if (half < 0.25f)
+		half = 0.25f;
+	memset(&outline, 0, sizeof(outline));
+	error = 0;
+	first = 0;
+	while (first < shape->count && error == 0) {
+		/* One subpath. */
+		last = first + 1U;
+		while (last < shape->count && !shape->points[last].begin)
+			last++;
+		closed = shape->points[first].closed;
+		segments = last - first;
+		if (!closed)
+			segments--;
+		for (point = 0; point < segments && error == 0; point++) {
+			next = first + (point + 1U) % (last - first);
+			ex0 = shape->points[first + point].x;
+			ey0 = shape->points[first + point].y;
+			ex1 = shape->points[next].x;
+			ey1 = shape->points[next].y;
+			dx = ex1 - ex0;
+			dy = ey1 - ey0;
+			length = (float)sqrt((double)(dx * dx + dy * dy));
+			if (length < 0.0001f)
+				continue;
+			dx /= length;
+			dy /= length;
+			nx = -dy * half;
+			ny = dx * half;
+
+			/* Square caps extend an open path's ends. */
+			if (!closed && style->stroke_cap == 2) {
+				if (point == 0) {
+					ex0 -= dx * half;
+					ey0 -= dy * half;
+				}
+				if (point + 1U == segments) {
+					ex1 += dx * half;
+					ey1 += dy * half;
+				}
+			}
+			xs[0] = ex0 + nx;
+			ys[0] = ey0 + ny;
+			xs[1] = ex1 + nx;
+			ys[1] = ey1 + ny;
+			xs[2] = ex1 - nx;
+			ys[2] = ey1 - ny;
+			xs[3] = ex0 - nx;
+			ys[3] = ey0 - ny;
+			error = svg_stroke_polygon(&outline, xs, ys, 4);
+
+			/* A round joint at the segment's end (and the first point of an open path with round caps). */
+			if (error == 0 && half > 0.6f && (closed || point + 1U < segments || style->stroke_cap == 1))
+				error = svg_stroke_disc(&outline, shape->points[next].x, shape->points[next].y, half);
+			if (error == 0 && half > 0.6f && point == 0 && !closed && style->stroke_cap == 1)
+				error = svg_stroke_disc(&outline, shape->points[first].x, shape->points[first].y, half);
+		}
+		first = last;
+	}
+	if (error == 0 && outline.count >= 3U)
+		error = svg_fill(canvas, &outline, color, alpha, SVG_NONZERO);
+	free(outline.points);
+	return error;
+}
+
+/* Draws one node: a group passes its matrix and style on to its children; a shape is drawn. */
+static int
+svg_draw_node(
+	struct svg_canvas *canvas,
+	const struct dom_element *element,
+	const struct svg_matrix *matrix,
+	const struct svg_style *style,
+	int depth)
+{
+	if (svg_name_is(element, "g") || svg_name_is(element, "a") || svg_name_is(element, "svg") || svg_name_is(element, "switch"))
+		return svg_walk(canvas, &element->node, matrix, style, depth + 1);
+	if (svg_name_is(element, "use"))
+		return svg_draw_use(canvas, element, matrix, style, depth);
+	return svg_draw_element(canvas, element, matrix, style);
+}
+
+/* Finds the clipPath element an element's clip-path names (url(#id)); NULL for none. */
+static const struct dom_element *
+svg_clip_path_of(
+	const struct dom_element *element)
+{
+	struct wb_buffer buffer;
+	char reference[128];
+	const struct dom_node *top;
+	const struct dom_element *found;
+	const char *text;
+	const char *start;
+	const char *style_text;
+	size_t length;
+
+	/* The attribute, or the property in the style attribute. */
+	found = NULL;
+	wb_buffer_init(&buffer);
+	text = svg_attribute(element, "clip-path", &buffer);
+	if (text == NULL) {
+		wb_buffer_release(&buffer);
+		wb_buffer_init(&buffer);
+		style_text = svg_attribute(element, "style", &buffer);
+		text = NULL;
+		if (style_text != NULL)
+			text = strstr(style_text, "clip-path");
+		if (text != NULL) {
+			text = strchr(text, ':');
+			if (text != NULL)
+				text++;
+		}
+	}
+	if (text == NULL) {
+		wb_buffer_release(&buffer);
+		return NULL;
+	}
+	while (*text == ' ')
+		text++;
+	if (strncmp(text, "url(", 4) != 0) {
+		wb_buffer_release(&buffer);
+		return NULL;
+	}
+	start = strchr(text, '#');
+	if (start == NULL) {
+		wb_buffer_release(&buffer);
+		return NULL;
+	}
+	start++;
+	length = 0;
+	while (start[length] != '\0' && start[length] != ')' && start[length] != '\'' && start[length] != '"' && length + 1U < sizeof(reference))
+		length++;
+	memcpy(reference, start, length);
+	reference[length] = '\0';
+	wb_buffer_release(&buffer);
+
+	/* The element of that id under the outermost svg. */
+	top = &element->node;
+	while (top->parent != NULL && top->parent->type == DOM_ELEMENT)
+		top = top->parent;
+	found = svg_find_id(top, reference, 0);
+	if (found != NULL && !svg_name_is(found, "clipPath"))
+		return NULL;
+	return found;
+}
+
+/* Allocates a transparent canvas of the size of another. */
+static int
+svg_canvas_like(
+	struct svg_canvas *canvas,
+	const struct svg_canvas *model)
+{
+	canvas->width = model->width;
+	canvas->height = model->height;
+	canvas->pixels = calloc((size_t)model->width * (size_t)model->height * 4U, sizeof(float));
+	canvas->coverage = calloc((size_t)model->width + 2U, sizeof(float));
+	if (canvas->pixels == NULL || canvas->coverage == NULL) {
+		free(canvas->pixels);
+		free(canvas->coverage);
+		return ENOMEM;
+	}
+	return 0;
+}
+
+/*
+ * Draws an element through a clip path: the element is drawn on a canvas of
+ * its own, the clip path's shapes (filled, nonzero, in the element's user
+ * space) make a mask on another, and the first goes onto the canvas where
+ * the second covers.
+ */
+static int
+svg_draw_clipped(
+	struct svg_canvas *canvas,
+	const struct dom_element *element,
+	const struct svg_matrix *matrix,
+	const struct svg_style *style,
+	const struct dom_element *clip,
+	int depth)
+{
+	struct svg_canvas layer;
+	struct svg_canvas mask;
+	struct svg_style plain;
+	size_t pixel;
+	size_t count;
+	float cover;
+	float alpha;
+	int channel;
+	int error;
+
+	error = svg_canvas_like(&layer, canvas);
+	if (error != 0)
+		return error;
+	error = svg_canvas_like(&mask, canvas);
+	if (error != 0) {
+		free(layer.pixels);
+		free(layer.coverage);
+		return error;
+	}
+	error = svg_draw_node(&layer, element, matrix, style, depth);
+	if (error == 0) {
+		memset(&plain, 0, sizeof(plain));
+		plain.fill = 0xffffffffU;
+		plain.fill_opacity = 1.0f;
+		plain.opacity = 1.0f;
+		plain.rule = SVG_NONZERO;
+		plain.stroke_none = 1;
+		plain.stroke_width = 1.0f;
+		plain.stroke_opacity = 1.0f;
+		error = svg_walk(&mask, &clip->node, matrix, &plain, depth + 1);
+	}
+	if (error == 0) {
+		count = (size_t)canvas->width * (size_t)canvas->height;
+		for (pixel = 0; pixel < count; pixel++) {
+			cover = mask.pixels[pixel * 4U + 3U];
+			if (cover <= 0.0f)
+				continue;
+			if (cover > 1.0f)
+				cover = 1.0f;
+			alpha = layer.pixels[pixel * 4U + 3U];
+			for (channel = 0; channel < 4; channel++)
+				canvas->pixels[pixel * 4U + (size_t)channel] = layer.pixels[pixel * 4U + (size_t)channel] * cover +
+				    canvas->pixels[pixel * 4U + (size_t)channel] * (1.0f - alpha * cover);
+		}
+	}
+	free(layer.pixels);
+	free(layer.coverage);
+	free(mask.pixels);
+	free(mask.coverage);
+	return error;
+}
+
+/* Reads an element's href (xlink:href or href) as UTF-8 text in the buffer; NULL when it has none. */
+static const char *
+svg_href(
+	const struct dom_element *element,
+	struct wb_buffer *buffer)
+{
+	size_t index;
+
+	for (index = 0; index < element->attribute_count; index++) {
+		if (!svg_same_name(element->attributes[index].name, "href"))
+			continue;
+		if (vm_string_to_utf8(element->attributes[index].value, buffer) != 0)
+			return NULL;
+		return wb_buffer_string(buffer);
+	}
+	return NULL;
+}
+
+/* Draws a <use>: the element its href names (a #id of this svg), moved by x and y, under the use's style. */
+static int
+svg_draw_use(
+	struct svg_canvas *canvas,
+	const struct dom_element *element,
+	const struct svg_matrix *matrix,
+	const struct svg_style *style,
+	int depth)
+{
+	struct svg_matrix moved;
+	struct svg_matrix shift;
+	struct svg_matrix local;
+	struct svg_matrix placed;
+	struct svg_style own;
+	struct wb_buffer buffer;
+	const struct dom_element *target;
+	const struct dom_node *top;
+	const char *text;
+	float x;
+	float y;
+	int hidden;
+	int error;
+
+	/* The target by its id, under the outermost svg. */
+	wb_buffer_init(&buffer);
+	text = svg_href(element, &buffer);
+	if (text == NULL || text[0] != '#' || depth > SVG_DEPTH) {
+		wb_buffer_release(&buffer);
+		return 0;
+	}
+	top = &element->node;
+	while (top->parent != NULL && top->parent->type == DOM_ELEMENT)
+		top = top->parent;
+	target = svg_find_id(top, text + 1, 0);
+	wb_buffer_release(&buffer);
+	if (target == NULL || target == element)
+		return 0;
+
+	/* The use's x and y move the target. */
+	x = svg_parse_attribute_number(element, "x", 0.0f);
+	y = svg_parse_attribute_number(element, "y", 0.0f);
+	shift.a = 1.0f;
+	shift.b = 0.0f;
+	shift.c = 0.0f;
+	shift.d = 1.0f;
+	shift.e = x;
+	shift.f = y;
+	svg_matrix_multiply(&moved, matrix, &shift);
+
+	/* The target's own transform and style, over the use's. */
+	placed = moved;
+	wb_buffer_init(&buffer);
+	text = svg_attribute(target, "transform", &buffer);
+	if (text != NULL && svg_matrix_parse(text, &local))
+		svg_matrix_multiply(&placed, &moved, &local);
+	wb_buffer_release(&buffer);
+	own = *style;
+	hidden = 0;
+	svg_style_read(target, &own, &hidden);
+	if (hidden)
+		return 0;
+	error = svg_draw_node(canvas, target, &placed, &own, depth + 1);
+	return error;
 }

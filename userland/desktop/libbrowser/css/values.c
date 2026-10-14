@@ -64,7 +64,8 @@ enum values_shorthand {
 	SHORT_PLACE_ITEMS,
 	SHORT_CONTAINER,
 	SHORT_BORDER_SPACING,
-	SHORT_OVERFLOW
+	SHORT_OVERFLOW,
+	SHORT_TRANSFORM
 };
 
 /*
@@ -107,6 +108,7 @@ static int values_length(const struct css_token *token, int allow_keywords, stru
 static int values_single(struct css_parse *parse, int property, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
+static int values_transform(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_four(struct css_parse *parse, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_border(struct css_parse *parse, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
@@ -223,6 +225,8 @@ static const struct values_name values_names[] = {
 	{ "z-index", CSS_PROP_Z_INDEX },
 	{ "clear", CSS_PROP_CLEAR },
 	{ "overflow", SHORT_OVERFLOW },
+	{ "transform", SHORT_TRANSFORM },
+	{ "-webkit-transform", SHORT_TRANSFORM },
 	{ "overflow-x", CSS_PROP_OVERFLOW_X },
 	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
 	{ "overflow-inline", CSS_PROP_OVERFLOW_INLINE },
@@ -1179,6 +1183,8 @@ css_parse_property(
 	case SHORT_OVERFLOW:
 		/* One keyword for both axes, or the horizontal then the vertical one. */
 		return values_pair(parse, CSS_PROP_OVERFLOW_X, CSS_PROP_OVERFLOW_Y, tokens, count, out, out_count);
+	case SHORT_TRANSFORM:
+		return values_transform(tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
 		/* One length for both directions, or across then down. */
 		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
@@ -2654,6 +2660,10 @@ values_wide_keyword(
 	case SHORT_BORDER_COLOR:
 		first = CSS_PROP_BORDER_TOP_COLOR;
 		break;
+	case SHORT_TRANSFORM:
+		values_add(out, made, CSS_PROP_TRANSFORM_X, value);
+		values_add(out, made, CSS_PROP_TRANSFORM_Y, value);
+		return;
 	case SHORT_BACKGROUND_POSITION:
 		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, value);
 		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_Y, value);
@@ -5560,4 +5570,126 @@ css_decoration_shorthand_serialize(
 cleanup:
 	wb_arena_release(&arena);
 	return error;
+}
+
+/* Adds a translation to an axis of transform: lengths of the same unit sum; another unit is not applied. */
+static void
+values_transform_add(
+	struct css_value *axis,
+	const struct css_value *value)
+{
+	if (axis->number == 0) {
+		*axis = *value;
+		return;
+	}
+	if (axis->unit == value->unit)
+		axis->number += value->number;
+}
+
+/*
+ * Parses transform into the two translations of its longhands.  Only the
+ * translate functions move a box (translate, translateX, translateY and
+ * translate3d); every other function is accepted and does nothing here.
+ */
+static int
+values_transform(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value axis[2];
+	struct css_value value;
+	const struct css_token *argument[3];
+	size_t index;
+	size_t end;
+	size_t inner;
+	size_t arguments;
+	size_t depth;
+	int which;
+	int seen;
+	int error;
+
+	/* Both axes start at zero pixels. */
+	memset(axis, 0, sizeof(axis));
+	axis[0].kind = CSS_VALUE_LENGTH;
+	axis[0].unit = CSS_DUNIT_PX;
+	axis[1] = axis[0];
+	seen = 0;
+	index = 0;
+	while (index < count) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE) {
+			index++;
+			continue;
+		}
+
+		/* none. */
+		if (tokens[index].type == CSS_TOKEN_IDENT && css_ident_equal(&tokens[index], "none") && !seen) {
+			seen = 1;
+			index++;
+			continue;
+		}
+		if (tokens[index].type != CSS_TOKEN_FUNCTION)
+			return EINVAL;
+
+		/* The function's extent: up to its closing parenthesis. */
+		depth = 1;
+		end = index + 1U;
+		while (end < count && depth > 0) {
+			if (tokens[end].type == CSS_TOKEN_FUNCTION || tokens[end].type == CSS_TOKEN_OPEN_PAREN)
+				depth++;
+			if (tokens[end].type == CSS_TOKEN_CLOSE_PAREN)
+				depth--;
+			end++;
+		}
+		if (depth != 0)
+			return EINVAL;
+
+		/* Which function it is. */
+		which = -1;
+		if (css_ident_equal(&tokens[index], "translate"))
+			which = 0;
+		else if (css_ident_equal(&tokens[index], "translatex"))
+			which = 1;
+		else if (css_ident_equal(&tokens[index], "translatey"))
+			which = 2;
+		else if (css_ident_equal(&tokens[index], "translate3d"))
+			which = 3;
+		seen = 1;
+		if (which >= 0) {
+			/* Its arguments, separated by commas (whitespace around them is skipped). */
+			arguments = 0;
+			for (inner = index + 1U; inner + 1U < end; inner++) {
+				if (tokens[inner].type == CSS_TOKEN_WHITESPACE || tokens[inner].type == CSS_TOKEN_COMMA)
+					continue;
+				if (arguments == 3U)
+					return EINVAL;
+				argument[arguments++] = &tokens[inner];
+			}
+			if (arguments == 0)
+				return EINVAL;
+			error = values_length(argument[0], 0, &value);
+			if (error != 0)
+				return error;
+			if (which == 2) {
+				values_transform_add(&axis[1], &value);
+			} else {
+				values_transform_add(&axis[0], &value);
+				if (arguments > 1U && which != 1) {
+					error = values_length(argument[1], 0, &value);
+					if (error != 0)
+						return error;
+					values_transform_add(&axis[1], &value);
+				}
+			}
+		}
+		index = end;
+	}
+	if (!seen)
+		return EINVAL;
+
+	/* Succeeded: the two translations. */
+	values_add(out, made, CSS_PROP_TRANSFORM_X, &axis[0]);
+	values_add(out, made, CSS_PROP_TRANSFORM_Y, &axis[1]);
+	return 0;
 }

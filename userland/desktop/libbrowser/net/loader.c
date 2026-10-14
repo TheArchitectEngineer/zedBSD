@@ -177,6 +177,7 @@ struct net_request {
 	void *context;
 	int error;
 	struct net_response response;
+	int kind;
 };
 
 /*
@@ -358,6 +359,19 @@ net_loader_fetch(
 	void *context,
 	struct net_request **request)
 {
+	return net_loader_fetch_kind(loader, url, NET_FETCH_DOCUMENT, done, context, request);
+}
+
+/* The same for a kind of fetch (NET_FETCH_*), which decides the Accept header. */
+int
+net_loader_fetch_kind(
+	struct net_loader *loader,
+	const char *url,
+	int kind,
+	net_request_done done,
+	void *context,
+	struct net_request **request)
+{
 	struct net_request *made;
 	int is_web;
 	int error;
@@ -372,6 +386,7 @@ net_loader_fetch(
 	made->number = loader->next_number;
 	loader->next_number++;
 	made->descriptor = -1;
+	made->kind = kind;
 	made->done = done;
 	made->context = context;
 	wb_buffer_init(&made->request);
@@ -1345,7 +1360,7 @@ loader_prepare(
 
 	/* The text, keeping the connection. */
 	wb_buffer_clear(&request->request);
-	error = net_http_request_text(&request->url, &request->request, 1, lines);
+	error = net_http_request_text_kind(&request->url, &request->request, 1, lines, request->kind);
 	wb_buffer_release(&extra);
 	if (error != 0)
 		return error;

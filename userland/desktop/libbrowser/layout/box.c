@@ -41,6 +41,7 @@ static int box_flex_items(struct layout_tree *tree, struct layout_box *box);
 static void box_anonymous_style(const struct css_style *parent, struct css_style *style);
 static void box_marker(struct layout_box *box, int ordinal);
 static void box_relative_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
+static void box_transform_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
 static void box_static_inline(struct layout_box *box, layout_unit x, layout_unit y);
 
 /*
@@ -189,6 +190,7 @@ layout_absolute(
 
 	/* The box's border box moves by the parent's content origin, and by its offsets when it is relative. */
 	box_relative_offset(box, &dx, &dy);
+	box_transform_offset(box, &dx, &dy);
 	box->x += x + dx;
 	box->y += y + dy;
 
@@ -1329,6 +1331,37 @@ box_marker(
 	default:
 		break;
 	}
+}
+
+/*
+ * Resolves the translation of a box's transform: pixels, or a percentage of
+ * the box's own border box.  It moves the box and its descendants as a
+ * relative offset does (rotation, scale and skew are not applied).
+ */
+static void
+box_transform_offset(
+	const struct layout_box *box,
+	layout_unit *dx,
+	layout_unit *dy)
+{
+	const struct css_length *translate;
+	layout_unit border_width;
+	layout_unit border_height;
+
+	/* Only a block-level box or an atomic one is transformed. */
+	if (box->kind != LAYOUT_BLOCK && !box->atomic && !box->replaced)
+		return;
+	translate = box->style.transform_translate;
+	border_width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	border_height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	if (translate[0].unit == CSS_UNIT_PX)
+		*dx += layout_from_px(translate[0].value);
+	else if (translate[0].unit == CSS_UNIT_PERCENT)
+		*dx += (layout_unit)((float)border_width * translate[0].value / 100.0f) + layout_from_px(translate[0].offset);
+	if (translate[1].unit == CSS_UNIT_PX)
+		*dy += layout_from_px(translate[1].value);
+	else if (translate[1].unit == CSS_UNIT_PERCENT)
+		*dy += (layout_unit)((float)border_height * translate[1].value / 100.0f) + layout_from_px(translate[1].offset);
 }
 
 /* Resolves a relatively positioned box's offsets: left (or minus right), top (or minus bottom); zero otherwise. */

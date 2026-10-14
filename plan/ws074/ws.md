@@ -11,6 +11,10 @@ Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
 Queue: [q1198](queue.md) finished（14:15 ごろ Codex の使用量の上限で中断、uncleared、2026-10-14 Q1 が差分を commit）/ p217 framed horizontal Grid second vertical auto-inset child。2026-10-14 14:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 
+Event ws074-p231-google-script-20261014: [p231](phase231/phase.md) B1。google.com の script（BigInt・型付き配列・currentScript・defer・URL・dynamic link ほか）と Grid の高さ（item の max-height と grid item の auto margin）。live の ink 一致 23.47%→73.28%（全体 97.30%→99.36%）、script errors 2→0。固定 WPT 1,455 ID は 483 pass のまま後退 0。
+
+Event ws074-p230-yahoo-20261014: [p230](phase230/phase.md) B1。yahoo.co.jp の top: gzip の body、for の initializer の中の関数の `in`、SVG の画像（stroke・clipPath・use・角丸 rect）、CSS `transform`（translate）、画像の Accept（png・jpeg のみ）、「…」の font fallback。header の一致 24%→53%（ink）。Acid2 差 1,865→873、固定 WPT 後退 0。
+
 Event ws074-p228-uat-20261014: [p228](phase228/phase.md) B1。UAT の指摘: inline svg の描画（google.com のロゴと icon が出る）、既定の URL を google.com に、アドレスの箱の幅と repeat は compositor 側（根拠を記録、Q1 へ）。
 
 Event ws074-p227-q1202-partial-clear-20261014: [p227](phase227/phase.md) q1202-i01 (B1) で flex の align-content・wrap-reverse・inline-flex・blockify・overflow 2値・sideways・safe。同条件 1,455 ID で whole PASS 458→481（後退 0）、静的 reftest 682→815（PASS→FAIL 4 件を記録）。
