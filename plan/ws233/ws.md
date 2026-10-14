@@ -29,3 +29,4 @@ repo の作成と push は Q1 が、監査の結果をユーザーに示して�
 - repo は public。`gh` での作成と push（upload）は許可済み（Q1 が監査の結果を確かめてから行う）。
 - firmware の directory ごとに license の file を置く。
 - make で firmware を初めて取る時に license を表示して yes/no で同意を聞く。CI は `yes | make`。
+- 初回の表示の順（2026-10-14 ユーザー「はい、何のファームウェアか、著作権表示、ライセンス文、yes/noですね。」）: 何の firmware か → 著作権表示 → license の全文 → yes/no。
