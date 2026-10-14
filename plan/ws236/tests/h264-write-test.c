@@ -10,7 +10,8 @@
  * on the host.  "rewrite FILE OUT REORDER0" parses FILE's parameter sets
  * with libmedia (as the Vulkan Video path receives them, StdVideo), writes
  * them back with drv_rpi4_h264_write_sps/pps and replaces every SPS and PPS
- * NAL unit of FILE with the written one.
+ * NAL unit of FILE with the written one.  "push FILE OUT" copies FILE with
+ * drv_rpi4_h264_write_push's picture after the first access unit (ws236-p006).
  */
 
 #include "drivers/platform/rpi4/rpi4-h264.h"
@@ -103,6 +104,50 @@ static void pps_from(const StdVideoH264PictureParameterSet *in, struct drv_rpi4_
 	}
 }
 
+static int push(const uint8_t *data, size_t bytes, const char *out)
+{
+	static struct h264_stream stream;
+	static struct h264_picture picture;
+	static uint8_t scratch[1 << 20];
+	static uint8_t unit[1 << 20];
+	struct drv_rpi4_h264_sps sps;
+	const char *reason;
+	size_t end;
+	size_t written;
+	uint32_t id;
+	FILE *file;
+	int error;
+
+	/* The first picture: its SPS, frame_num and order count. */
+	if (h264_open(&stream, data, bytes) != 0 || h264_next_picture(&stream, &picture, &reason) != 1)
+		return 3;
+	if (!picture.info.flags.is_reference)
+		return 4;
+	sps_from(&stream.sps[picture.info.seq_parameter_set_id], &sps);
+	for (id = 255; id > 0 && stream.has_pps[id]; id--)
+		;
+	error = drv_rpi4_h264_write_push(&sps, id, picture.info.frame_num + 1U, (uint32_t)picture.info.PicOrderCnt[0] + 1U,
+					 scratch, sizeof(scratch), unit, sizeof(unit), &written);
+	if (error != 0) {
+		printf("push write failed %d\n", error);
+		return 1;
+	}
+
+	/* The first access unit, the push, the rest. */
+	if (drv_rpi4_h264_access_unit(data, bytes, 0, &end) != 0)
+		return 5;
+	file = fopen(out, "wb");
+	if (file == NULL)
+		return 2;
+	fwrite(data, 1, end, file);
+	fwrite(unit, 1, written, file);
+	fwrite(data + end, 1, bytes - end, file);
+	fclose(file);
+	printf("push: pps %u frame_num %u poc %d, %zu bytes after the first %zu\n", (unsigned)id,
+	       (unsigned)picture.info.frame_num + 1U, picture.info.PicOrderCnt[0] + 1, written, end);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	static struct h264_stream stream;
@@ -123,9 +168,12 @@ int main(int argc, char **argv)
 	int error;
 	uint32_t id;
 
-	if (argc != 5 || strcmp(argv[1], "rewrite") != 0)
+	if (argc == 4 && strcmp(argv[1], "push") == 0)
+		reorder0 = -1;
+	else if (argc == 5 && strcmp(argv[1], "rewrite") == 0)
+		reorder0 = atoi(argv[4]);
+	else
 		return 2;
-	reorder0 = atoi(argv[4]);
 	file = fopen(argv[2], "rb");
 	if (file == NULL)
 		return 2;
@@ -137,6 +185,8 @@ int main(int argc, char **argv)
 		return 2;
 	fclose(file);
 	bytes = (size_t)size;
+	if (reorder0 < 0)
+		return push(data, bytes, argv[3]);
 
 	/* libmedia parses every set (the pictures advance it through the stream). */
 	if (h264_open(&stream, data, bytes) != 0)

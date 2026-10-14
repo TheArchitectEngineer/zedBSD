@@ -15,6 +15,7 @@
 #include "drivers/gpu/bcm2711/vulkan-resource.h"
 #include "drivers/gpu/bcm2711/v3d-memory.h"
 #if CONFIG_DRIVER_BCM2711_VIDEO
+#include <kern/clock.h>
 #include "drivers/gpu/bcm2711/vulkan-video.h"
 #endif
 
@@ -230,6 +231,10 @@ bcm2711_vulkan_buffer_copy_run(
 	uint32_t box[4];
 	void *destination;
 	bool known;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	uint64_t started;
+	bool cached;
+#endif
 	int error;
 
 	/* Typed pending resources remain alive across the entire synchronous controller-protected transfer. */
@@ -275,6 +280,38 @@ bcm2711_vulkan_buffer_copy_run(
 		/* Copy each equal selected row using the source and destination's independent exact numerical pitches. */
 		source_offset = spans[index * 2U].offset;
 		destination_offset = spans[index * 2U + 1U].offset;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+		/*
+		 * A decoded NV12 picture's rows come from the decoder's cached
+		 * copy of the frame when it still has one; the image's memory is
+		 * uncached and slow to read (ws236).
+		 */
+		if (record->opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER &&
+		    resources[0]->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
+			/* The rows from the cached copy, when it covers them. */
+			started = clock_ticks();
+			cached = bcm2711_vulkan_video_readback(
+				resources[0],
+				source_offset,
+				spans[index * 2U].bytes,
+				spans[index * 2U].rows,
+				(uint8_t *)cpu[1] + destination_offset,
+				spans[index * 2U + 1U].pitch);
+
+			/* Else every row comes from the image, as any image's. */
+			if (!cached) {
+				for (row = 0; row < spans[index * 2U].rows; row++) {
+					kern_memcpy((uint8_t *)cpu[1] + destination_offset, (const uint8_t *)cpu[0] + source_offset, (size_t)spans[index * 2U].bytes);
+					source_offset += spans[index * 2U].pitch;
+					destination_offset += spans[index * 2U + 1U].pitch;
+				}
+			}
+
+			/* The readback's time, for the video cost line. */
+			bcm2711_vulkan_video_readback_done(cached, clock_ticks() - started);
+			continue;
+		}
+#endif
 		for (row = 0; row < spans[index * 2U].rows; row++) {
 			kern_memcpy((uint8_t *)cpu[1] + destination_offset, (const uint8_t *)cpu[0] + source_offset, (size_t)spans[index * 2U].bytes);
 			source_offset += spans[index * 2U].pitch;

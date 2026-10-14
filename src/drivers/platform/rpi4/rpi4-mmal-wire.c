@@ -297,3 +297,48 @@ drv_rpi4_mmal_build_buffer(
 	/* Succeeded: the message's length. */
 	return DRV_RPI4_MMAL_BUFFER_BYTES;
 }
+
+/*
+ * Copies samples of a decoded frame, undoing the firmware's footroom error.
+ *
+ * Eight samples go at a time while both addresses are aligned: per byte,
+ * the high bit of 0x8e minus the low seven bits says "at most 14", the high
+ * bit of the low seven bits plus 0x7f says "at least 1", and a clear high
+ * bit of the sample "below 128".  No byte borrows or carries into the next
+ * in any of the three, nor in the final add of one.
+ */
+void
+drv_rpi4_mmal_copy_samples(
+	uint8_t *destination,
+	const uint8_t *source,
+	size_t bytes)
+{
+	uint64_t word;
+	uint64_t low;
+	uint64_t at_most_14;
+	uint64_t at_least_1;
+	uint64_t mask;
+	size_t index;
+	uint8_t sample;
+
+	/* Eight samples at a time while both addresses are aligned. */
+	index = 0;
+	if ((((uintptr_t)destination | (uintptr_t)source) & 7U) == 0) {
+		for (; index + 8U <= bytes; index += 8U) {
+			word = *(const uint64_t *)(source + index);
+			low = word & 0x7f7f7f7f7f7f7f7fULL;
+			at_most_14 = 0x8e8e8e8e8e8e8e8eULL - low;
+			at_least_1 = low + 0x7f7f7f7f7f7f7f7fULL;
+			mask = at_most_14 & at_least_1 & ~word & 0x8080808080808080ULL;
+			*(uint64_t *)(destination + index) = word + (mask >> 7);
+		}
+	}
+
+	/* The rest one at a time. */
+	for (; index < bytes; index++) {
+		sample = source[index];
+		if (sample >= 1U && sample <= 14U)
+			sample++;
+		destination[index] = sample;
+	}
+}

@@ -301,6 +301,120 @@ drv_rpi4_h264_write_pps(
 }
 
 /*
+ * Writes a picture that pushes the picture before it out of a decoder: its
+ * own PPS and one non-reference grey I slice (7.3.3, 7.3.4, 7.3.5).
+ */
+int
+drv_rpi4_h264_write_push(
+	const struct drv_rpi4_h264_sps *sps,
+	uint32_t pps_id,
+	uint32_t frame_num,
+	uint32_t poc_lsb,
+	uint8_t *scratch,
+	size_t scratch_bytes,
+	uint8_t *output,
+	size_t capacity,
+	size_t *written)
+{
+	struct drv_rpi4_h264_pps pps;
+	struct h264_writer writer;
+	uint32_t macroblocks;
+	uint32_t index;
+	uint32_t frame_bits;
+	uint32_t poc_bits;
+	size_t needed;
+	size_t pps_bytes;
+	size_t slice_bytes;
+	int error;
+
+	/* Only 4:2:0 frame pictures, whose macroblocks are coded as below, and ids H.264 can code. */
+	if (sps->chroma_format_idc != DRV_RPI4_H264_CHROMA_420 ||
+	    (sps->flags & DRV_RPI4_H264_SPS_FRAME_MBS_ONLY) == 0)
+		return ENOTSUP;
+	if (pps_id > 255U || sps->id > 31U || sps->pic_order_cnt_type > 2U)
+		return EINVAL;
+	if (sps->log2_max_frame_num_minus4 > 12U || sps->log2_max_pic_order_cnt_lsb_minus4 > 12U)
+		return EINVAL;
+	if (sps->pic_width_in_mbs_minus1 > 1023U || sps->pic_height_in_map_units_minus1 > 1023U)
+		return EINVAL;
+
+	/*
+	 * The push's own PPS: CAVLC (the slice below is CAVLC whatever the
+	 * stream codes), one reference by default, no weighted prediction,
+	 * QP 26, and the deblocking control the slice turns the filter off with.
+	 */
+	kern_memset(&pps, 0, sizeof(pps));
+	pps.flags = DRV_RPI4_H264_PPS_DEBLOCKING_CONTROL;
+	pps.sps_id = sps->id;
+	pps.pps_id = pps_id;
+	error = drv_rpi4_h264_write_pps(&pps, sps, output, capacity, &pps_bytes);
+	if (error != 0)
+		return error;
+
+	/* The slice's RBSP, a header of at most 64 bytes and one byte a macroblock, goes into a zeroed scratch. */
+	macroblocks = (sps->pic_width_in_mbs_minus1 + 1U) * (sps->pic_height_in_map_units_minus1 + 1U);
+	needed = (size_t)macroblocks + 64U;
+	if (needed > scratch_bytes)
+		return ENOSPC;
+	kern_memset(scratch, 0, needed);
+	writer.data = scratch;
+	writer.capacity_bits = needed * 8U;
+	writer.position = 0;
+	writer.error = 0;
+
+	/* The first macroblock, slice_type 7 (all I) and the PPS. */
+	write_ue(&writer, 0);
+	write_ue(&writer, 7);
+	write_ue(&writer, pps_id);
+
+	/* frame_num, and the picture order count fields of the SPS's type (the PPS has no bottom field one). */
+	frame_bits = sps->log2_max_frame_num_minus4 + 4U;
+	write_bits(&writer, frame_num & ((1U << frame_bits) - 1U), frame_bits);
+	if (sps->pic_order_cnt_type == 0) {
+		poc_bits = sps->log2_max_pic_order_cnt_lsb_minus4 + 4U;
+		write_bits(&writer, poc_lsb & ((1U << poc_bits) - 1U), poc_bits);
+	} else if (sps->pic_order_cnt_type == 1U && (sps->flags & DRV_RPI4_H264_SPS_DELTA_POC_ZERO) == 0) {
+		write_se(&writer, 0);
+	}
+
+	/*
+	 * An I slice of a non-reference picture has no reference list or
+	 * marking syntax: slice_qp_delta 0, then disable_deblocking_filter_idc
+	 * 1 (a grey picture needs no filter).
+	 */
+	write_se(&writer, 0);
+	write_ue(&writer, 1);
+
+	/*
+	 * Every macroblock: mb_type 3 (I_16x16, DC prediction, no coded luma
+	 * or chroma), intra_chroma_pred_mode 0 (DC), mb_qp_delta 0, and the
+	 * Intra 16x16 DC block's coeff_token for no coefficients ("1", as no
+	 * neighbour has any).  With no neighbours DC predicts mid-grey, so
+	 * every macroblock is grey.
+	 */
+	for (index = 0; index < macroblocks; index++) {
+		write_ue(&writer, 3);
+		write_ue(&writer, 0);
+		write_se(&writer, 0);
+		write_bits(&writer, 1, 1);
+	}
+
+	/* Ends the RBSP. */
+	write_trailing(&writer);
+	if (writer.error != 0)
+		return ENOSPC;
+
+	/* The start code, the header (nal_ref_idc 0, type 1) and the escaped body, after the PPS. */
+	error = pack_nal(0x01U, scratch, writer.position / 8U, output + pps_bytes, capacity - pps_bytes, &slice_bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: output holds the PPS and the slice. */
+	*written = pps_bytes + slice_bytes;
+	return 0;
+}
+
+/*
  * Finds the next NAL unit of an Annex B stream at or after offset.
  */
 int

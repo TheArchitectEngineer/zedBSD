@@ -200,28 +200,37 @@ check_admission(
 	struct bcm2711_render_device *controller;
 	struct bcm2711_v3d_hardware *hardware;
 	unsigned long enabled;
-	int error;
+	const char *reason;
 
 	/* The controller mutex protects the session and power owner while the IRQ guard stabilizes stop and fault publication. */
 	controller = session->render->device;
 	hardware = &controller->space.native->hardware;
 	enabled = spin_lock_irqsave(&hardware->guard);
 
-	error = 0;
-	if (session->closing ||
-	    session->render->stopping ||
-	    controller->worker.uncertain ||
-	    hardware->faulted ||
-	    !hardware->ready ||
-	    !hardware->initialized ||
-	    !controller->space.native->power.ready)
-		error = EIO;
+	reason = NULL;
+	if (session->closing) {
+		reason = "the Vulkan session is closing";
+	} else if (session->render->stopping) {
+		reason = "the session is stopping";
+	} else if (controller->worker.uncertain) {
+		reason = "the engine is uncertain after a fault";
+	} else if (hardware->faulted) {
+		reason = "the engine faulted";
+	} else if (!hardware->ready) {
+		reason = "the engine is not ready";
+	} else if (!hardware->initialized) {
+		reason = "the engine is not initialized";
+	} else if (!controller->space.native->power.ready) {
+		reason = "the engine's power is not ready";
+	}
 
 	spin_unlock_irqrestore(&hardware->guard, enabled);
 
-	/* A closed or uncertain controller supplies no new native execution or completion proof. */
-	if (error != 0)
-		return error;
+	/* A closed or uncertain controller supplies no new native execution or completion proof; the refusal says why (BUG-314). */
+	if (reason != NULL) {
+		bcm2711_render_refusal_line("queue submit", reason);
+		return EIO;
+	}
 
 	/* Succeeded: this exact controller may accept one complete ordered native submission. */
 	return 0;
@@ -757,9 +766,11 @@ execution_step(
 			return error;
 		}
 
-		/* A nominal runner success without actual DMA retirement can never signal this submission's fence. */
-		if (!retired)
+		/* A nominal runner success without actual DMA retirement can never signal this submission's fence; the refusal says why. */
+		if (!retired) {
+			bcm2711_render_refusal_line("queue execution", "a job step ended without proof its native work retired");
 			return EIO;
+		}
 		if (!finished)
 			return 0;
 		disposed = bcm2711_vulkan_native_job_dispose(controller, action->job, retired);

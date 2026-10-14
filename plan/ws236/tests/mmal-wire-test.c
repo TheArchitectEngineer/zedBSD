@@ -35,6 +35,41 @@ static unsigned fourcc_le(char a, char b, char c, char d)
 	return (unsigned)(unsigned char)a | ((unsigned)(unsigned char)b << 8) | ((unsigned)(unsigned char)c << 16) | ((unsigned)(unsigned char)d << 24);
 }
 
+/* Copies every value at every alignment with drv_rpi4_mmal_copy_samples and counts the bytes that differ from the rule. */
+static unsigned samples_wrong(void)
+{
+	static uint64_t source_words[40];
+	static uint64_t destination_words[40];
+	uint8_t *source = (uint8_t *)source_words;
+	uint8_t *destination = (uint8_t *)destination_words;
+	unsigned offset;
+	unsigned length;
+	unsigned index;
+	unsigned bad;
+	uint8_t want;
+
+	for (index = 0; index < 256U; index++)
+		source[index] = (uint8_t)index;
+	bad = 0;
+	for (offset = 0; offset < 9U; offset++) {
+		for (length = 0; length < 256U - offset; length += 7U) {
+			memset(destination, 0xa5, 320);
+			drv_rpi4_mmal_copy_samples(destination + offset, source + offset, length);
+			for (index = 0; index < 320U; index++) {
+				want = 0xa5;
+				if (index >= offset && index < offset + length) {
+					want = source[index];
+					if (want >= 1U && want <= 14U)
+						want++;
+				}
+				if (destination[index] != want)
+					bad++;
+			}
+		}
+	}
+	return bad;
+}
+
 int main(void)
 {
 	uint8_t message[DRV_RPI4_MMAL_MAX_MESSAGE];
@@ -114,6 +149,9 @@ int main(void)
 	size = drv_rpi4_mmal_build_parameter32(message, 8, 0x77, 0x88, 0x20024U, 0);
 	check(size == 44U && drv_rpi4_mmal_get32(message, 4) == 14U, "parameter id and length");
 	check(drv_rpi4_mmal_get32(message, 32) == 0x20024U && drv_rpi4_mmal_get32(message, 36) == 12U, "parameter header");
+
+	/* ws236-p006: the footroom correction. */
+	check(samples_wrong() == 0, "footroom correction");
 
 	if (failures != 0) {
 		printf("mmal-wire: %u check(s) failed\n", failures);

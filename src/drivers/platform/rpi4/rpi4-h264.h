@@ -31,6 +31,9 @@
 /* The most bytes a rewritten parameter set may take. */
 #define DRV_RPI4_H264_SPS_MAX		512U
 
+/* chroma_format_idc of 4:2:0, the only format the push picture codes. */
+#define DRV_RPI4_H264_CHROMA_420	1U
+
 /* The SPS flags, one bit each, in the order StdVideoH264SpsFlags declares them. */
 #define DRV_RPI4_H264_SPS_CONSTRAINT_SET0	0x0001U
 #define DRV_RPI4_H264_SPS_CONSTRAINT_SET1	0x0002U
@@ -123,6 +126,23 @@ int drv_rpi4_h264_write_sps(const struct drv_rpi4_h264_sps *sps, int no_reorder,
  * chroma format its scaling lists depend on.
  */
 int drv_rpi4_h264_write_pps(const struct drv_rpi4_h264_pps *pps, const struct drv_rpi4_h264_sps *sps, uint8_t *output, size_t capacity, size_t *written);
+
+/*
+ * Writes a picture that pushes the picture before it out of a decoder: a
+ * PPS of its own (CAVLC, no deblocking) with id pps_id, and one
+ * non-reference I slice whose every macroblock is grey (Intra 16x16 DC
+ * without residual).
+ *
+ * The slice follows a reference picture whose frame_num is the one before
+ * frame_num.  A non-reference picture changes neither the references nor
+ * the picture order count the stream's next picture derives, so the stream
+ * decodes on as if the push were not there.  poc_lsb is its
+ * pic_order_cnt_lsb (picture order count type 0 only).  The SPS must code
+ * 4:2:0 frame pictures in one colour plane.  The slice's RBSP is written
+ * into scratch first; output receives both NAL units, each after a start
+ * code.
+ */
+int drv_rpi4_h264_write_push(const struct drv_rpi4_h264_sps *sps, uint32_t pps_id, uint32_t frame_num, uint32_t poc_lsb, uint8_t *scratch, size_t scratch_bytes, uint8_t *output, size_t capacity, size_t *written);
 
 /*
  * Finds the next NAL unit of an Annex B stream at or after offset.
