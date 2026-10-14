@@ -113,7 +113,7 @@ Q1（2026-10-14）「R6 で RM が channel を断った時に要る GR の golde
    | 0x14 RTV_CB_GLOBAL | 6 | yes | no | no | |
    | 0x17 FECS_EVENT | 9 | yes | yes | no | |
    | 0x18 PRIV_ACCESS_MAP | 10 | yes | yes | yes | promote では bNonmapped（map しない） |
-   | （同じ物の写し） | 11 UNRESTRICTED_PRIV_ACCESS_MAP | yes | yes | yes | golden の時だけ送り、通常の channel では飛ばす |
+   | （同じ物の写し） | 11 UNRESTRICTED_PRIV_ACCESS_MAP | yes | yes | yes | 新しく取る時（golden）は ro で map して送る。global を共有する通常の channel では飛ばす |
 
    page の大きさ: 2 MiB 以上は 2 MiB、64 KiB 以上は 64 KiB、それ以外 4 KiB（揃え）。buffer は VRAM（init の物も init でない物も）。
 
