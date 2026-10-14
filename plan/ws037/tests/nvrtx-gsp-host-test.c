@@ -155,11 +155,13 @@ test_layout(void)
 
 	memset(page, 0, sizeof(page));
 	nvrtx_libos_region(page, 0, "LOGINIT", 0x5000, 0x10000);
-	nvrtx_libos_region(page, 3, "RMARGS", 0x6000, NVRTX_RMARGS_BYTES);
+	nvrtx_libos_region(page, 3, "RMARGS", 0x6000, NVRTX_RMARGS_REGION_BYTES);
 	check(nvrtx_get64(page, 0) == 0x4c4f47494e4954ULL, "libos: name packed first character highest");
 	check(nvrtx_get64(page, 8) == 0x5000 && nvrtx_get64(page, 16) == 0x10000, "libos: address and size");
 	check(page[24] == 1 && page[25] == 1, "libos: contiguous in system memory");
 	check(nvrtx_get64(page, 96) == 0x524d41524753ULL, "libos: fourth entry at 96");
+	check(nvrtx_get64(page, 112) == 0x1000, "libos: the arguments' region is one whole page (R3)");
+	check(NVRTX_RMARGS_BYTES <= NVRTX_RMARGS_REGION_BYTES, "libos: the arguments fit their region");
 
 	nvrtx_rmargs(args, 0x7000, 129);
 	check(nvrtx_get64(args, 0) == 0x7000 && nvrtx_get32(args, 8) == 129, "rmargs: queue pages");

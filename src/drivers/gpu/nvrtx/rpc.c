@@ -46,7 +46,7 @@
 #define RPC_ERROR_LOG_KIND_AT		0U
 #define RPC_ERROR_LOG_TEXT_AT		12U
 #define RPC_ERROR_LOG_TEXT_BYTES	256U
-#define RPC_ERROR_LOG_SHOWN		96U
+#define RPC_ERROR_LOG_SHOWN		40U
 
 /* The channel-error event's fields: engine, channel, kind of exception, faulting address and fault kind. */
 #define RPC_ERROR_ENGINE_AT		0U
@@ -191,7 +191,7 @@ nvrtx_rpc_wait(
 
 		/* A channel error is reported with its channel, its kind and the faulting address (P6). */
 		if (got_function == NVRTX_EVENT_CHANNEL_ERROR && *length >= RPC_ERROR_BYTES) {
-			nvrtx_stage_mark("P6 channel error: engine %x chid %u type %u fault %08x%08x kind %u",
+			nvrtx_stage_mark("P6 channel error: eng %x chid %u type %u fault %08x%08x/%u",
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_ENGINE_AT),
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_CHANNEL_AT),
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT),
