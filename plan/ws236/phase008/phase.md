@@ -87,6 +87,24 @@ Phase disposition: normal
 - fence の扱い: fence の付いた execution は、自分の command buffer の decode の frame が image に入るまで終わらない（vkvideo-probe のように decode と fence が同じ submission で、host が image を map して読む使い方を保つ）。libmedia の decode の submission は fence を持たないので待たない。
 - i915（x86）: flight 1、readback は decode の直後に submit、`returned` の semaphore は除いた（次の decode は前の readback の fence を host が待った後に submit されるので順は同じ）。x86 の実機の確かめは未実施。
 
+### 検証（host と build、2026-10-15）
+
+- build warning 0: `config/ci/config-rpi4.mk` の vmunix（`arm64 vmunix check: PASS`、cksum 3347853215）、`build/p3/rpi4/dynamic/libmedia.so`（cksum 877949414）、`config/ci/config-amd64.mk` の libmedia、`plan/ws236/tests/config-rpi4-video-probe.mk` の vmunix、VCHIQ・VIDEO を n にした rpi4 の vmunix。
+- `run-h264-test.sh`（h264-push: all PASS）・`run-mmal-wire-test.sh`・`run-vchiq-wire-test.sh` all PASS。
+- `plan/tools/style-check.py`: 変えた file で新しい指摘 0（残りは以前からの物）。`git diff --check` 問題なし。
+- 未実施: Pi 4 実機（下の T2 の依頼）、5330（i915）の Video Player の回帰。
+
+### T2 への依頼（Pi 4 実機 kei@10.0.30.2、QEMU 不要、約 30 分）
+
+1. build（agent/p3-ws236b 06ec56e2f、または Q1 の merge の後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/rpi4/vmunix build/<T>/rpi4/dynamic/libmedia.so`（warning 0）。
+2. Pi: `/boot/boot0/vmunix` と `/lib/libmedia.so` を退避して差し替え、sync、reboot。
+3. 起動後 `dmesg | grep -E 'rpi4-(vchiq|mmal)|v3d: (vk|video|EIO)'` を保存。`rpi4-mmal: no … bytes of DMA memory` が無いこと。
+4. vkvideo-probe 3 本（p006 と同じ、`--expect --time --dump`）: rc 0、全 frame MATCH、dump-compare で differing 0。
+5. Video Player（`XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 videoplayer --timeout-s=15 /home/kei/Video.mp4 2>/tmp/vp-video.log`、同じく `--timeout-s=25` で `/home/kei/ws236/high-1080p30-10s.mp4`・`baseline-1080p30-10s.mp4`）。再生中に別の ssh で `top -b -n 3 -d 2`。
+   - 報告: 各 log の `MEDIA backend=`・`FRAMES`・`DONE`・`Vulkan Video:` の行、top、再生の後の dmesg の `v3d: video:` の全行と `skipped`・`no decode in flight`・`rpi4-mmal: stall`・`v3d: EIO` の行。
+6. 合否: (a) 4 が PASS、(b) Video.mp4 の late が 5 以下（shown が約 150）、(c) 1080p30 の 10 秒で shown 290 以上。(b)(c) が届かなくても計測の行（kernel の `send frame place readbacks waits depth` と libmedia の `submit wait copy`）を全部返す（次の直しの材料）。
+7. 止め所: Pi が応答しなくなったら止めて報告（再起動の要否はユーザー）。終わったら Q1 の指示で kernel と libmedia を戻すか残す。
+
 ### 追加（2026-10-15、P3）
 
 - 60a461f97: videoplayer に計測の行だけ（1 秒ごとの CLOCK の後に `VIDEOPLAYER DRAW frames=N picture_us=… rest_us=…`、動作は不変）。Q1 が 60a461f97 まで main に merge、T2 が T1-663 で実機を流す（videoplayer の差し替え込み）。
@@ -112,21 +130,3 @@ Phase disposition: normal
 - V3D の sampler の format: 今の V3D の Vulkan は sampled image が RGBA8・BGRA8 だけ（`vulkan-query.c` の `format_properties`、TFU の変換も 32 bit だけ `vulkan-native-draw.c` の `conversion_supported`）。NV12 を GPU で読むには (B-1) R8_UNORM（Y）と R8G8_UNORM（UV）の sampled image（texture の state、raster→UIF の 1・2 byte の画素の tiling、linear の filter）を足す（WS141、約 8〜12 LW）、または (B-2) 新しい format を足さず、Y・UV の plane を RGBA8 の image（幅 W/4、1 texel に 4 sample）として渡し、shader が x の余りで成分を選んで bilinear を自分で組む（driver の変更なし、shader が重い。kernel の shader compiler が要る演算（整数・成分の選択・floor・fract）を持つかの確かめが要る）。
 - videoplayer と compositor の口: (B-3) videoplayer が `KL_PRESENT_NONE` で自分の Vulkan の swapchain を持ち、毎 frame NV12 を host-visible の staging（またはそのまま libmedia の readback buffer）から `vkCmdCopyBufferToImage` で 2 つの texture へ、YUV→RGB と縮小の fragment shader で全面の quad を描き、操作の bar・menu（今は CPU で描く canvas）は alpha 付きの RGBA8 の texture を上に重ねる（WS122 の videoplayer の描画の作り直し、約 6〜10 LW）。libmedia と videoplayer は別の VkDevice なので、image を直に渡すには external memory が要る。最小は CPU の NV12 の picture（HOST_CACHED の後なら安い）を staging へ 1 回写す形。(B-4) compositor に NV12 の buffer（subsurface）を渡す道は compositor の format の対応から要り、さらに大きい。
 - 合計の見込み: B-2＋B-3 で約 8〜12 LW、B-1＋B-3 で約 14〜22 LW。危険: kernel の shader compiler の対応の不足、V3D の executor が video の CPU の仕事（place・readback 約 10 ms／枚）と描画で取り合う。
-
-### 検証（host と build、2026-10-15）
-
-- build warning 0: `config/ci/config-rpi4.mk` の vmunix（`arm64 vmunix check: PASS`、cksum 3347853215）、`build/p3/rpi4/dynamic/libmedia.so`（cksum 877949414）、`config/ci/config-amd64.mk` の libmedia、`plan/ws236/tests/config-rpi4-video-probe.mk` の vmunix、VCHIQ・VIDEO を n にした rpi4 の vmunix。
-- `run-h264-test.sh`（h264-push: all PASS）・`run-mmal-wire-test.sh`・`run-vchiq-wire-test.sh` all PASS。
-- `plan/tools/style-check.py`: 変えた file で新しい指摘 0（残りは以前からの物）。`git diff --check` 問題なし。
-- 未実施: Pi 4 実機（下の T2 の依頼）、5330（i915）の Video Player の回帰。
-
-### T2 への依頼（Pi 4 実機 kei@10.0.30.2、QEMU 不要、約 30 分）
-
-1. build（agent/p3-ws236b 06ec56e2f、または Q1 の merge の後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/rpi4/vmunix build/<T>/rpi4/dynamic/libmedia.so`（warning 0）。
-2. Pi: `/boot/boot0/vmunix` と `/lib/libmedia.so` を退避して差し替え、sync、reboot。
-3. 起動後 `dmesg | grep -E 'rpi4-(vchiq|mmal)|v3d: (vk|video|EIO)'` を保存。`rpi4-mmal: no … bytes of DMA memory` が無いこと。
-4. vkvideo-probe 3 本（p006 と同じ、`--expect --time --dump`）: rc 0、全 frame MATCH、dump-compare で differing 0。
-5. Video Player（`XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 videoplayer --timeout-s=15 /home/kei/Video.mp4 2>/tmp/vp-video.log`、同じく `--timeout-s=25` で `/home/kei/ws236/high-1080p30-10s.mp4`・`baseline-1080p30-10s.mp4`）。再生中に別の ssh で `top -b -n 3 -d 2`。
-   - 報告: 各 log の `MEDIA backend=`・`FRAMES`・`DONE`・`Vulkan Video:` の行、top、再生の後の dmesg の `v3d: video:` の全行と `skipped`・`no decode in flight`・`rpi4-mmal: stall`・`v3d: EIO` の行。
-6. 合否: (a) 4 が PASS、(b) Video.mp4 の late が 5 以下（shown が約 150）、(c) 1080p30 の 10 秒で shown 290 以上。(b)(c) が届かなくても計測の行（kernel の `send frame place readbacks waits depth` と libmedia の `submit wait copy`）を全部返す（次の直しの材料）。
-7. 止め所: Pi が応答しなくなったら止めて報告（再起動の要否はユーザー）。終わったら Q1 の指示で kernel と libmedia を戻すか残す。
