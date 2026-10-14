@@ -306,6 +306,9 @@ nvrtx_channel_start(
 	if (error != 0)
 		return error;
 
+	/* The stop takes the channel off the scheduler before it frees it. */
+	engine->scheduled = 1;
+
 	nvrtx_stage_mark("P5 ok: channel %u on runlist %u", (unsigned)CHANNEL_ID, (unsigned)engine->pick.runlist);
 
 	/* Runs one fence through the channel. */
@@ -329,9 +332,14 @@ nvrtx_channel_start(
 }
 
 /*
- * Runs stage P6's stop: takes the messages the firmware sent, then frees
- * the channel and the address space.  Failures are only reported: the
- * unload in P7 removes whatever stays.
+ * Runs stage P6's stop: takes the messages the firmware sent, then undoes
+ * P4 and P5 in nouveau's order: the channel off the scheduler, the copy
+ * object, the channel, the root, the address space.
+ *
+ * The finish runs it before every P7, whatever nvrtx.stop says: R6 left
+ * the channel scheduled for the unload to remove, and the firmware did not
+ * answer the unload call (ETIMEDOUT) and did not stop.  Failures are only
+ * reported; the unload removes whatever stays.
  */
 void
 nvrtx_channel_stop(
@@ -351,6 +359,30 @@ nvrtx_channel_stop(
 	/* Takes what the firmware sent meanwhile (a channel error is reported by the wait). */
 	if (gpu->reply != NULL)
 		(void)nvrtx_rpc_wait(gpu, 0xffffffffU, 0U, CHANNEL_DRAIN_TIMEOUT_US, &length);
+
+	/* Takes the channel off the scheduler, so no work of it runs while it goes. */
+	if (engine->scheduled != 0) {
+		kern_memset(params, 0, sizeof(params));
+		error = nvrtx_rm_control(gpu,
+		    NVRTX_HANDLE_CLIENT,
+		    NVRTX_HANDLE_CHANNEL,
+		    NVRTX_CTL_SCHEDULE,
+		    params,
+		    NVRTX_SCHEDULE_PARAMS_BYTES,
+		    &reply,
+		    &reply_length);
+		if (error != 0)
+			failures++;
+		engine->scheduled = 0;
+	}
+
+	/* Frees the copy object, a child of the channel. */
+	if (engine->copy_made != 0) {
+		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_COPY);
+		if (error != 0)
+			failures++;
+		engine->copy_made = 0;
+	}
 
 	/* Frees the channel. */
 	if (engine->channel_made != 0) {
@@ -645,6 +677,9 @@ channel_copy_fill(
 	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_CHANNEL, NVRTX_HANDLE_COPY, NVRTX_CLASS_COPY, params, sizeof(params));
 	if (error != 0)
 		return error;
+
+	/* The stop frees the copy object before its channel. */
+	engine->copy_made = 1;
 
 	/* Writes the fill and a second fence after it, in the push buffer's second half. */
 	push = (uint8_t *)engine->push.dma.address + CHANNEL_FILL_PUSH_AT;

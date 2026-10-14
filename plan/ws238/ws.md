@@ -20,3 +20,9 @@ Related: [WS062](../ws062/ws.md)（今の native の layout: ESP に vmunix・ze
 
 - 上の 1〜4。FAT32 は Windows・macOS で普通に mount できる partition（GPT の Basic Data の type、volume label 例 `ZEDBSD`）。zedBSD の中から FAT32 に書ける（dmesg を写せる）ことも確かめる。
 - 追加（2026-10-14 ユーザー）: 「/boot/boot0がESPからFAT32に変更されたことも確認してください。boot0に加えて、ESPが/boot/efi でマウントされたらうれしいです。ESPがboot0のとき、可能ならefi, boot0で同じディスクをマウントするのがいいです。でも、もし難しければ、boot0だけでもいいです。」
+
+## Phase
+
+| Phase | 目的 | Status |
+| --- | --- | --- |
+| [ws238-p001](phase001/phase.md) | native の layout（ESP・FAT32 `ZEDBSD`・UFS・swap）、`/boot/boot0` と `/boot/efi`、文書と道具の追従、試験の手順 | in-progress（実装と host の確認まで。T1・5330 待ち） |

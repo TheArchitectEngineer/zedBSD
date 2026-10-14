@@ -147,7 +147,7 @@ On amd64 `ZEDBSD_VARIANT` chooses the disk image's layout:
 
 | Value | Image boot paths | Expected firmware behavior |
 | --- | --- | --- |
-| `native` (default) | GPT: ESP with the UEFI loader, `vmunix` and `zedbsd.cfg`; a UFS root partition mounted read-write; a swap partition | Boots with OVMF; does not boot with SeaBIOS |
+| `native` (default) | GPT: ESP with only the UEFI loader; a FAT32 partition of the Basic Data type labelled `ZEDBSD` with `vmunix`, `zedbsd.cfg` and the logo (shown at `/boot/boot0`, mountable by Windows and macOS); a UFS root partition mounted read-write; a swap partition. The running system shows the ESP at `/boot/efi` | Boots with OVMF; does not boot with SeaBIOS |
 | `hybrid` | Complete GPT/ESP plus compatibility BIOS path | Boots with OVMF and SeaBIOS |
 | `uefi` | Pure Protective MBR, primary GPT, ESP, and payload FAT32; no BIOS payload (for Apple computers) | Boots with OVMF; does not boot with SeaBIOS |
 | `bios` | Legacy MBR and BIOS payload; no GPT or ESP | Boots with SeaBIOS; does not boot with OVMF |

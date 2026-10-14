@@ -30,3 +30,8 @@ PNG: /home/awe/zedBSD-worktrees/t2/build/ws037-nvrtx/hw5/R6-a.png、R6-b.png（�
 
 ## 後始末
 QEMU は quit、host は reboot 済み。ローカルに QEMU・build は残していない。補助 script: build/ws037-nvrtx/shot5.sh・cycle.sh（repo 外）。所要 約 20 分。
+
+## R7: PASS（Q1 の依頼で続けて流した。host を reboot・`prepare.sh --check` 全 ok の後、~/nvrtx/v5R7）
+`P2b ok … after 903 ms` → `P3 ok` → `P4 ok: vaspace` → `P5 ok: channel 8 on runlist 8` → `P5 ok: fence 0x1234 reached after 541 us` → `fence 0x1235 reached after 995 us` → `P5 ok: copy engine filled 64 words` → `P8 is not in this kernel; stopping after P5` → **`P6 ok: channel and vaspace freed`** → `P7 begin: unload` → `rpc 47: reply sequence 0, sent 15` → `FWSEC-SB`・`booter_unload` → **`P7 ok: region torn down`**。P7 fail なし。
+PNG: /home/awe/zedBSD-worktrees/t2/build/ws037-nvrtx/hw5/R7-a.png
+QEMU は quit、host は reboot 済み。

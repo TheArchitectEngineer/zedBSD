@@ -341,7 +341,9 @@ The amd64 native images' `zedbsd.cfg` gets `logo=logo.ppm kmsg=quiet
 login=graphical` when the build option `ZEDBSD_GRAPHICAL_BOOT` is `y` (the
 default; the build menu's "Graphical boot").  For kernel development set it to
 `n` (the messages on the console and the console login), or edit the lines on
-a machine's ESP (`/zedbsd.cfg`): remove the three tokens or write
+the image's boot FAT32 partition labelled `ZEDBSD` (`/zedbsd.cfg` there, which
+the running system shows at `/boot/boot0/zedbsd.cfg`; the ESP holds only the
+loader since WS238): remove the three tokens or write
 `kmsg=console login=console`.
 
 ## 7c. Boot keys (amd64 UEFI)

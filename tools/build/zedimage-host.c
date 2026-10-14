@@ -612,13 +612,18 @@ pc98_cylinder_layout(
 
 /*
  * Builds the amd64 UEFI native disk: a GPT with the EFI system partition,
- * the UFS root partition and the swap partition.
+ * the boot FAT32 partition, the UFS root partition and the swap partition.
  *
- * The ESP holds the UEFI loader, the kernel and zedbsd.cfg, which the
- * loader finds on its own volume first.  The root partition is the given
- * UFS image, mounted read-write through rootpart=; the swap partition is
- * the given swap image, header and all, named by swap0=.  The partitions
- * are labelled so that the configuration can name them with PARTLABEL=.
+ * The ESP holds only the UEFI loader.  The boot partition is an ordinary
+ * FAT32 volume (the Basic Data type, labelled ZEDBSD) with the kernel,
+ * zedbsd.cfg and the logo: the loader searches every FAT volume of its disk
+ * for zedbsd.cfg and makes the one it finds boot0, and other systems mount
+ * it as a plain FAT volume, which they do not do with an ESP (WS238, so
+ * that a kernel log can be copied there and read on another machine).  The
+ * root partition is the given UFS image, mounted read-write through
+ * rootpart=; the swap partition is the given swap image, header and all,
+ * named by swap0=.  The partitions are labelled so that the configuration
+ * can name them with PARTLABEL=.
  */
 static void
 disk_create_native(
@@ -628,15 +633,21 @@ disk_create_native(
 		0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8, 0xd2, 0x11,
 		0xba, 0x4b, 0x00, 0xa0, 0xc9, 0x3e, 0xc9, 0x3b
 	};
+	static const uint8_t basic_data_type[16] = {
+		0xa2, 0xa0, 0xd0, 0xeb, 0xe5, 0xb9, 0x33, 0x44,
+		0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7
+	};
 	uint8_t mbr[512];
 	uint8_t header[512];
 	uint8_t disk_guid[16];
-	uint8_t partition_guids[3][16];
+	uint8_t partition_guids[4][16];
 	uint8_t *entries;
 	char temporary[4096];
 	FILE *file;
 	uint64_t esp_start;
 	uint64_t esp_blocks;
+	uint64_t boot_start;
+	uint64_t boot_blocks;
 	uint64_t root_start;
 	uint64_t root_blocks;
 	uint64_t swap_start;
@@ -645,6 +656,7 @@ disk_create_native(
 	uint64_t last;
 	uint32_t entry_crc;
 	uint32_t esp_serial;
+	uint32_t boot_serial;
 	uint64_t copied;
 	size_t index;
 	int descriptor;
@@ -659,11 +671,18 @@ disk_create_native(
 	if (differs != 0)
 		fail("native disk layout requires machine pcat");
 
-	/* Rejects a request that lacks an input the ESP needs. */
+	/* Rejects a request that lacks an input the ESP or the boot partition needs. */
 	if (o->kernel == NULL ||
 	    o->bootx64 == NULL ||
 	    o->kern_config == NULL)
 		fail("native disk layout requires the kernel, BOOTX64.EFI and zedbsd.cfg");
+
+	/*
+	 * Rejects a boot partition too small for FAT32, which needs 65525
+	 * clusters (about 33 MiB at one sector a cluster).
+	 */
+	if (o->fat_mib < 64)
+		fail("native disk layout requires a boot partition of at least 64 MiB");
 
 	/* Rejects a request that lacks a partition's input or the output. */
 	if (o->ufs_root == NULL ||
@@ -678,10 +697,15 @@ disk_create_native(
 	    o->fragment_kernel)
 		fail("native disk layout received an overlay-layout option");
 
-	/* Places the ESP, then the root, then swap, each on a 1 MiB boundary. */
+	/*
+	 * Places the ESP, then the boot partition, then the root, then swap,
+	 * each on a 1 MiB boundary.
+	 */
 	esp_start = 2048U;
 	esp_blocks = 64U * 2048U;
-	root_start = native_align(esp_start + esp_blocks);
+	boot_start = native_align(esp_start + esp_blocks);
+	boot_blocks = (uint64_t)o->fat_mib * 2048U;
+	root_start = native_align(boot_start + boot_blocks);
 	root_blocks = native_input_sectors(o->ufs_root);
 	swap_start = native_align(root_start + root_blocks);
 	swap_blocks = native_input_sectors(o->swap);
@@ -724,7 +748,7 @@ disk_create_native(
 
 	/* Chooses distinct GUIDs for the disk and each partition. */
 	random_guid(disk_guid);
-	for (index = 0; index < 3U; index++) {
+	for (index = 0; index < 4U; index++) {
 		/* Draws until the GUID repeats neither the disk's nor an earlier partition's. */
 		for (;;) {
 			random_guid(partition_guids[index]);
@@ -741,7 +765,7 @@ disk_create_native(
 		}
 	}
 
-	/* Describes the three partitions. */
+	/* Describes the four partitions. */
 	entries = calloc(1, 128U * 128U);
 	if (entries == NULL)
 		die("calloc GPT entries");
@@ -752,14 +776,20 @@ disk_create_native(
 		  esp_start + esp_blocks - 1U,
 		  "zedBSD EFI System");
 	gpt_entry(entries + 128U,
-		  native_root_type,
+		  basic_data_type,
 		  partition_guids[1],
+		  boot_start,
+		  boot_start + boot_blocks - 1U,
+		  "zedBSD-boot");
+	gpt_entry(entries + 256U,
+		  native_root_type,
+		  partition_guids[2],
 		  root_start,
 		  root_start + root_blocks - 1U,
 		  "zedBSD-root");
-	gpt_entry(entries + 256U,
+	gpt_entry(entries + 384U,
 		  native_swap_type,
-		  partition_guids[2],
+		  partition_guids[3],
 		  swap_start,
 		  swap_start + swap_blocks - 1U,
 		  "zedBSD-swap");
@@ -791,18 +821,31 @@ disk_create_native(
 	if (error != 0)
 		die("close native image before formatting");
 
-	/* Formats the ESP and puts the loader, the kernel and the configuration on it. */
+	/*
+	 * Chooses two different volume serials: boot0=UUID= names the boot
+	 * partition by its serial, and the ESP must not answer to it.
+	 */
 	esp_serial = random_serial();
+	boot_serial = random_serial();
+	if (boot_serial == esp_serial)
+		boot_serial ^= 0x80000000U;
+	if (boot_serial == 0U)
+		boot_serial = 1U;
+
+	/* Formats the ESP and puts only the loader on it. */
 	shell_format_pcat(temporary, esp_start * 512U, esp_start, esp_blocks, 1, "ESP", esp_serial);
 	shell_mkdir(temporary, esp_start * 512U, "/EFI");
 	shell_mkdir(temporary, esp_start * 512U, "/EFI/BOOT");
 	shell_copy(temporary, esp_start * 512U, o->bootx64, "/EFI/BOOT/BOOTX64.EFI");
-	shell_copy(temporary, esp_start * 512U, o->kernel, "/vmunix");
-	shell_copy(temporary, esp_start * 512U, o->kern_config, "/zedbsd.cfg");
+
+	/* Formats the boot partition and puts the kernel and the configuration on it. */
+	shell_format_pcat(temporary, boot_start * 512U, boot_start, boot_blocks, 1, "ZEDBSD", boot_serial);
+	shell_copy(temporary, boot_start * 512U, o->kernel, "/vmunix");
+	shell_copy(temporary, boot_start * 512U, o->kern_config, "/zedbsd.cfg");
 
 	/* The boot logo zedbsd.cfg may name (logo=logo.ppm, ws035-p096). */
 	if (o->logo != NULL)
-		shell_copy(temporary, esp_start * 512U, o->logo, "/logo.ppm");
+		shell_copy(temporary, boot_start * 512U, o->logo, "/logo.ppm");
 
 	/* Publishes the finished image. */
 	error = rename(temporary, o->output);

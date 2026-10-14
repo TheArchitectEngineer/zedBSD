@@ -111,6 +111,27 @@ The `root` user cannot log in on this release.
 To stop the computer, use **Shut Down** in the system menu. Then remove the
 USB drive to start the computer's own system again.
 
+### The ZEDBSD partition
+
+The USB drive holds a small FAT32 partition named **ZEDBSD** with the kernel
+(`vmunix`), the boot settings (`zedbsd.cfg`) and the boot logo. Windows and
+macOS show it like any USB stick when you plug the drive in. Kei shows it at
+`/boot/boot0`, and the firmware's own partition (the EFI system partition,
+which holds only the boot loader) at `/boot/efi`.
+
+To keep the kernel's messages for a report, for example when the network
+does not work, copy them to the ZEDBSD partition in the Terminal (the
+partition belongs to root, so the copy goes through `sudo`, which asks for
+the password of `kei`):
+
+```sh
+dmesg | sudo tee /boot/boot0/dmesg.txt > /dev/null
+sync
+```
+
+Then shut down, plug the USB drive into another computer and open
+`dmesg.txt` on the ZEDBSD partition.
+
 ### Older Intel graphics
 
 On computers with a 6th to 10th generation Core processor (Intel Gen9 and
@@ -129,8 +150,10 @@ If the GPU driver gives trouble on such a computer, turn it off. Kei then
 has no GPU: the desktop does not start, and only the text console is shown.
 To turn it off:
 
-1. Plug the USB drive into a computer and open its small FAT partition, the
-   one that holds `vmunix` and `zedbsd.cfg`.
+1. Plug the USB drive into a computer and open its **ZEDBSD** partition
+   (see [The ZEDBSD partition](#the-zedbsd-partition)), the one that holds
+   `vmunix` and `zedbsd.cfg`. In Kei itself the file is
+   `/boot/boot0/zedbsd.cfg`.
 2. Open `zedbsd.cfg` in a text editor, add the line `i915.gen9=off` at the
    end, and save it.
 3. Eject the USB drive and start Kei from it.
@@ -139,8 +162,9 @@ To turn the driver on again, delete the line.
 
 <!-- review (2026-10-14): the code freeze of 2026-10-14 18:00 took the Gen9 driver (WS229), on by default. The steps
      follow how the image's zedbsd.cfg takes extra lines (one per line, CR LF is accepted); they were not tried by hand
-     on Windows or macOS, which may not show an EFI system partition by themselves (on macOS, `diskutil mount` it
-     first). Whether sleep works with the driver off was not checked on a Gen9 machine.
+     on Windows or macOS. WS238 (2026-10-14) moved zedbsd.cfg from the ESP to the ZEDBSD FAT32 partition (Basic Data
+     type) so that Windows and macOS mount it by themselves; that mount is to be checked on the release image.
+     Whether sleep works with the driver off was not checked on a Gen9 machine.
      2026-10-14 BUG-310: the desktop on the firmware's framebuffer (i915 bootfb) is checked only by host tests so far;
      keep this paragraph only if the SV7 check passes, otherwise say that Gen9 machines show the text console only. -->
 

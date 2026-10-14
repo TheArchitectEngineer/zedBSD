@@ -38,7 +38,12 @@ not replace the configuration file. See the exact
 [parameter contract](../reference/kernel-boot-parameters.md).
 
 UEFI may execute the loader from an ESP while reading configuration and kernel
-from another FAT partition. After boot, inspect:
+from another FAT partition; the amd64 native image does so, with only the loader
+on the ESP and `vmunix`, `zedbsd.cfg` and the logo on a FAT32 partition of the
+Basic Data type labelled `ZEDBSD`. The FAT the configuration came from is
+`boot0` and is shown at `/boot/boot0`; the ESP the firmware started the loader
+from is shown at `/boot/efi` (the same mount twice when one partition is both).
+After boot, inspect:
 
 ```sh
 sysctl kern.boot.firmware_partition

@@ -762,7 +762,6 @@ static void
 gsp_finish(
 	struct nvrtx_gpu *gpu)
 {
-	bool allowed;
 	bool stopped;
 	uint32_t low;
 	uint32_t high;
@@ -772,15 +771,12 @@ gsp_finish(
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
 		return;
 
-	/* Frees the channel and the address space (P6) unless the boot stopped before P6. */
-	if (gpu->state == NVRTX_GSP_RUNNING) {
-		allowed = nvrtx_stage_allowed("P6");
-		if (allowed) {
-			nvrtx_channel_stop(gpu);
-		} else {
-			nvrtx_stage_mark("P6 skipped (nvrtx.stop=P6); the unload frees the objects");
-		}
-	}
+	/*
+	 * Frees the channel and the address space (P6) before every unload:
+	 * the firmware did not unload with a scheduled channel left (R6).
+	 */
+	if (gpu->state == NVRTX_GSP_RUNNING)
+		nvrtx_channel_stop(gpu);
 
 	/* Stops a GSP that runs; one that does not stop keeps its memory. */
 	stopped = false;
