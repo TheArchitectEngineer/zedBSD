@@ -2213,6 +2213,7 @@ grid_size_columns(
 	layout_unit remainder;
 	layout_unit spanned;
 	float fr_total;
+	float fr_sum;
 	size_t index;
 	int column;
 	int autos;
@@ -2312,6 +2313,7 @@ grid_size_columns(
 
 	/* The fr tracks share it by their factors (a sum under one shares only that much of it), each at least its minimum. */
 	if (fr_total > 0) {
+		fr_sum = fr_total;
 		if (fr_total < 1.0f)
 			fr_total = 1.0f;
 		for (column = 0; column < grid->column_count; column++) {
@@ -2324,8 +2326,15 @@ grid_size_columns(
 				grid->columns[column] = width;
 		}
 
-		/* The fr tracks took the room. */
-		return 0;
+		/* A sum of factors below one leaves room for the auto tracks. */
+		used = 0;
+		for (column = 0; column < grid->column_count; column++) {
+			if (grid->column_collapsed != NULL && grid->column_collapsed[column])
+				continue;
+			used += grid->columns[column];
+		}
+		if (fr_sum >= 1.0f)
+			return 0;
 	}
 
 	/* Without fr tracks, the auto tracks share the room left (not while the container is measured). */
@@ -2630,7 +2639,6 @@ grid_size_rows(
 			if (minimum > grid->rows[row])
 				grid->rows[row] = minimum;
 		}
-		return;
 	}
 
 	/* A definite height gives its free space equally to the auto rows. */
@@ -2681,6 +2689,8 @@ grid_relay_item(
 	struct grid_sizes saved;
 	layout_unit frame;
 	layout_unit content;
+	layout_unit ratio_width;
+	layout_unit ratio_height;
 	int error;
 
 	/* The target content height, from the percentage or the area's stretch. */
@@ -2713,6 +2723,19 @@ grid_relay_item(
 	item->style.box_sizing = CSS_BOX_SIZING_CONTENT;
 	item->style.width.unit = CSS_UNIT_PX;
 	item->style.width.value = layout_to_px(item->width);
+	ratio_width = item->natural_width;
+	ratio_height = item->natural_height;
+	if (item->image != NULL) {
+		ratio_width = (layout_unit)item->image->width;
+		ratio_height = (layout_unit)item->image->height;
+	}
+	if (item->replaced && saved.width.unit == CSS_UNIT_AUTO && ratio_width > 0 &&
+	    ratio_height > 0 && align == CSS_ALIGN_STRETCH &&
+	    item->style.height.unit == CSS_UNIT_AUTO) {
+		/* A stretched replaced item keeps its aspect ratio in the other axis. */
+		item->style.width.value = layout_to_px(
+		    (layout_unit)((float)content * (float)ratio_width / (float)ratio_height));
+	}
 	item->style.width.offset = 0;
 	item->style.min_width.unit = CSS_UNIT_PX;
 	item->style.min_width.value = 0;
