@@ -105,7 +105,17 @@
 #define UART_FR_TXFF			(1U << 5)
 #define UART_FR_TXFE			(1U << 7)
 
-/* LCR_H: the FIFOs on, eight bits a character (no parity, one stop bit). */
+/*
+ * LCR_H: two stop bits sent, the FIFOs on, eight bits a character, no
+ * parity.  The second stop bit is idle time a receiver of one stop bit
+ * takes as such; it gives the controller's receiver a full bit of idle
+ * line between back-to-back characters (BUG-311 round 6: the controller
+ * answered only HCI_Reset, whose bytes are the only ones without bit 4;
+ * whether a receiver that loses step inside a long run of characters is
+ * the cause is what the second stop bit tests).  The PL011 receives one
+ * stop bit whatever this says.
+ */
+#define UART_LCRH_STP2			(1U << 3)
 #define UART_LCRH_FEN			(1U << 4)
 #define UART_LCRH_WLEN8			(3U << 5)
 
@@ -1406,7 +1416,7 @@ setup_uart(
 	write_register(bt, UART_LCRH, 0U);
 	write_register(bt, UART_IBRD, integer);
 	write_register(bt, UART_FBRD, fraction);
-	write_register(bt, UART_LCRH, UART_LCRH_WLEN8 | UART_LCRH_FEN);
+	write_register(bt, UART_LCRH, UART_LCRH_WLEN8 | UART_LCRH_FEN | UART_LCRH_STP2);
 	write_register(bt, UART_IFLS, UART_IFLS_RX_HALF | UART_IFLS_TX_EIGHTH);
 
 	/* Clears the errors and every interrupt left from before. */
@@ -1415,7 +1425,14 @@ setup_uart(
 
 	/* Starts the UART with the hardware's RTS and CTS flow control. */
 	write_register(bt, UART_CR, UART_CR_UARTEN | UART_CR_TXE | UART_CR_RXE | UART_CR_RTS | UART_CR_RTSEN | UART_CR_CTSEN);
-	kern_logf("rpi4-bt: the line at %u baud: CR %04x, IFLS %02x\n", (unsigned)baud, (unsigned)read_register(bt, UART_CR), (unsigned)read_register(bt, UART_IFLS));
+	kern_logf("rpi4-bt: the line at %u baud: CR %04x, IFLS %02x, LCRH %02x, IBRD %u, FBRD %u (clock %u Hz)\n",
+		  (unsigned)baud,
+		  (unsigned)read_register(bt, UART_CR),
+		  (unsigned)read_register(bt, UART_IFLS),
+		  (unsigned)read_register(bt, UART_LCRH),
+		  (unsigned)read_register(bt, UART_IBRD),
+		  (unsigned)read_register(bt, UART_FBRD),
+		  (unsigned)bt->clock_hz);
 
 	/* Receives again: the FIFO is read, so RTS stays up. */
 	enabled = spin_lock_irqsave(&bt->lock);
