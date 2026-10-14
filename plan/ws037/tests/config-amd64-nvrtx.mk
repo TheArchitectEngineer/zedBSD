@@ -58,3 +58,8 @@ endif
 ifeq ($(NVRTX_RUN),R7c)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1
 endif
+# ws037-p007 7b/7c: R7c with the first draw on the compute channel (stage P9g: a quad into a system-memory and a VRAM
+# target, then textured).
+ifeq ($(NVRTX_RUN),R7d)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1
+endif

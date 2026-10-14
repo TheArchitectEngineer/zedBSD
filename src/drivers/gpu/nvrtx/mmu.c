@@ -470,6 +470,52 @@ nvrtx_mmu_gr_map_system(
 	return 0;
 }
 
+/*
+ * Maps a run of VRAM into the graphics context's tables, for work.
+ *
+ * Every page of the run gets a VRAM entry that is neither privileged nor
+ * read-only (the first draw's colour target, ws037-p007), so a channel of
+ * the driver's own may render into it.  Returns EINVAL for a range the
+ * tables cannot hold, a run outside it, or one not on page boundaries.
+ */
+int
+nvrtx_mmu_gr_map_vram(
+	uint8_t *image,
+	uint64_t va_base,
+	uint64_t va_bytes,
+	uint64_t va,
+	uint64_t physical,
+	uint64_t size)
+{
+	uint64_t entry;
+	uint64_t page;
+	uint64_t pages;
+	size_t at;
+	int valid;
+
+	/* The tables must be ones nvrtx_mmu_gr_tables() can build. */
+	valid = mmu_gr_range_valid(va_base, va_bytes);
+	if (!valid)
+		return EINVAL;
+
+	/* The run must be whole pages inside the range. */
+	if ((va & 0xfffU) != 0U || (physical & 0xfffU) != 0U || (size & 0xfffU) != 0U)
+		return EINVAL;
+	if (va < va_base || size > va_bytes || va - va_base > va_bytes - size)
+		return EINVAL;
+
+	/* Writes each page's entry in its table. */
+	pages = size / NVRTX_GSP_PAGE_SIZE;
+	for (page = 0U; page < pages; page++) {
+		at = MMU_GR_TABLES_FIRST_AT + (size_t)((va - va_base) / NVRTX_GSP_PAGE_SIZE + page) * 8U;
+		entry = ((physical + page * NVRTX_GSP_PAGE_SIZE) >> MMU_ADDRESS_SHIFT) | MMU_PTE_VALID;
+		nvrtx_put64(image, at, entry);
+	}
+
+	/* Succeeded: the run is mapped. */
+	return 0;
+}
+
 /* Clears a range of bytes. */
 static void
 mmu_clear(

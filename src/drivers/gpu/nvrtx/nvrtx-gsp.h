@@ -695,6 +695,7 @@ size_t nvrtx_mmu_gr_tables_bytes(uint64_t va_bytes);
 int nvrtx_mmu_gr_tables(uint8_t *image, uint64_t block, uint64_t va_base, uint64_t va_bytes);
 int nvrtx_mmu_gr_map(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size, int read_only);
 int nvrtx_mmu_gr_map_system(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, const uint64_t *pages, size_t count);
+int nvrtx_mmu_gr_map_vram(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);
 int nvrtx_vbios_fwsec(const struct nvrtx_vbios *vbios, struct nvrtx_fwsec *fwsec);

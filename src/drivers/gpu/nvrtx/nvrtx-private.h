@@ -243,6 +243,12 @@ bool
 nvrtx_stage_compute_wanted(void);
 
 /*
+ * Reports whether the boot asked for the first draw (nvrtx.draw=1).
+ */
+bool
+nvrtx_stage_draw_wanted(void);
+
+/*
  * Reports whether the boot asked the GPU to stay up as a GPU device (nvrtx.resident=1).
  */
 bool

@@ -28,5 +28,5 @@ cc $flags -Wall -Wextra -Werror -Wdeclaration-after-statement -o "$out/nvrtx-sm7
 	"$repo/src/drivers/gpu/nvrtx/compiler/sm75-compile.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" \
-	"$repo/src/drivers/gpu/nvrtx/compute-launch.c" "$repo/src/drivers/gpu/nvrtx/mmu.c" "$repo/src/drivers/gpu/nvrtx/wire.c" -lm
+	"$repo/src/drivers/gpu/nvrtx/compute-launch.c" "$repo/src/drivers/gpu/nvrtx/draw-push.c" "$repo/src/drivers/gpu/nvrtx/mmu.c" "$repo/src/drivers/gpu/nvrtx/wire.c" -lm
 "$out/nvrtx-sm75-host-test" "$out"
