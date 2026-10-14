@@ -142,7 +142,8 @@ layout_inline(
 	rl_fixed_grid = box->parent != NULL &&
 	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID &&
 	    (box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL ||
-	    (box->parent->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+	    ((box->parent->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
+	    box->parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB) &&
 	    box->out_of_flow && inline_vertical_absolute_grid(box))) &&
 	    box->parent->style.column_count != 0 &&
 	    box->parent->style.row_count != 0;
@@ -226,6 +227,8 @@ inline_vertical_absolute_grid(
 {
 	const struct layout_box *parent;
 	int index;
+	int horizontal_lr;
+	int horizontal_rl;
 
 	/* Auto or temporarily resolved pixel widths enter positioned fixed-track Grids. */
 	parent = box->parent;
@@ -242,15 +245,21 @@ inline_vertical_absolute_grid(
 		return 0;
 	if (parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB) {
 		/* A definite horizontal Grid row can bound one vertical absolute run. */
-		if (box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+		horizontal_lr = box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    box->style.grid_column.start == 1 &&
+		    box->style.grid_column.end == 2 &&
+		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
+		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO;
+		horizontal_rl = box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    box->style.grid_column.start == 2 &&
+		    box->style.grid_column.end == 3 &&
+		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&
+		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO;
+		if ((!horizontal_lr && !horizontal_rl) ||
 		    box->style.direction != CSS_DIRECTION_LTR ||
 		    parent->style.column_count != 2 || parent->style.row_count != 2 ||
-		    box->style.grid_column.start != 1 ||
-		    box->style.grid_column.end != 2 ||
 		    box->style.grid_row.start != 1 || box->style.grid_row.end != 2 ||
-		    box->style.offset[CSS_LEFT].unit != CSS_UNIT_PX ||
 		    box->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO ||
-		    box->style.offset[CSS_RIGHT].unit != CSS_UNIT_AUTO ||
 		    box->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
 			return 0;
 

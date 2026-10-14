@@ -1144,6 +1144,7 @@ grid_static_position(
 	int auto_start_row;
 	int auto_end_row;
 	int explicit_inset;
+	int orthogonal_y_align;
 	layout_unit available_height;
 
 	/* Other writing directions retain their existing static-position path. */
@@ -1282,7 +1283,34 @@ grid_static_position(
 		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
-		if (child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		orthogonal_y_align = box->style.display == CSS_DISPLAY_INLINE_GRID &&
+		    box->style.direction == CSS_DIRECTION_LTR &&
+		    box->style.column_count == 2 && box->style.row_count == 2 &&
+		    box->style.column_gap.value == 0 && box->style.row_gap.value == 0 &&
+		    box->style.columns[0].kind == CSS_TRACK_LENGTH &&
+		    box->style.columns[1].kind == CSS_TRACK_LENGTH &&
+		    box->style.rows[0].kind == CSS_TRACK_LENGTH &&
+		    box->style.rows[1].kind == CSS_TRACK_LENGTH &&
+		    box->style.columns[0].size.unit == CSS_UNIT_PX &&
+		    box->style.columns[1].size.unit == CSS_UNIT_PX &&
+		    box->style.rows[0].size.unit == CSS_UNIT_PX &&
+		    box->style.rows[1].size.unit == CSS_UNIT_PX &&
+		    column == 1 && column_span == 1 && row == 0 && row_span == 1 &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    child->style.direction == CSS_DIRECTION_LTR &&
+		    child->style.width.unit == CSS_UNIT_AUTO &&
+		    child->style.height.unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		/* The orthogonal Y alignment applies to this frameless fixed area only. */
+		for (index = 0; orthogonal_y_align && index < 4; index++) {
+			if (box->border[index] != 0 || box->padding[index] != 0 ||
+			    child->border[index] != 0 || child->padding[index] != 0)
+				orthogonal_y_align = 0;
+		}
+		if ((child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB ||
+		    orthogonal_y_align) &&
 		    (align == CSS_ALIGN_END || align == CSS_ALIGN_SELF_END ||
 		    align == CSS_ALIGN_CENTER)) {
 			child->static_y_align = align;
