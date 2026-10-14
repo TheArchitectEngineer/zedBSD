@@ -119,6 +119,7 @@ nvrtx_gsp_start(
 {
 	bool allowed;
 	bool wanted;
+	bool resident;
 	int error;
 
 	/* Stops before P0 when the boot asks. */
@@ -305,6 +306,17 @@ nvrtx_gsp_start(
 		if (error != 0) {
 			gsp_finish(gpu);
 			return error;
+		}
+	}
+
+	/* Keeps the GSP up as a GPU device when the boot asks (nvrtx.resident=1) and the head was taken over. */
+	resident = nvrtx_stage_resident_wanted();
+	if (resident && wanted && allowed) {
+		error = nvrtx_node_start(gpu);
+		if (error == 0) {
+			gpu->resident = 1;
+			nvrtx_stage_mark("P8c: the GSP stays up until power-off");
+			return 0;
 		}
 	}
 

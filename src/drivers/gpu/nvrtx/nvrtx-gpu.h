@@ -560,6 +560,8 @@ int nvrtx_scanout_frame(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *
 void nvrtx_scanout_stop(struct nvrtx_gpu *gpu);
 void nvrtx_scanout_release(struct nvrtx_gpu *gpu);
 
+int nvrtx_node_start(struct nvrtx_gpu *gpu);
+
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);
 

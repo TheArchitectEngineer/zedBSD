@@ -220,3 +220,18 @@ image は `config-amd64-nvrtx.mk` の `NVRTX_RUN=R7g`（`nvrtx.gsp=1 nvrtx.gr=1`
 `P5g begin` → `P5g ctxbufs: 9 buffers, N KiB` → `P5g arena at …, buffers … bytes` → **`P5g ok: golden context`** → **`P5g ok: scrubber`** → （4df44e40d 以降は P8a の行と `P8b is not in this kernel …`、[p006](../phase006/phase.md)）→ `P6 ok: channel and vaspace freed`（`P6: N graphics frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
 
 FAIL の時は `rm: class … status …`・`rm: control … status …` の行（どの段で断られたか: 0x90f1・0x90f10106・0xc46f・0x2080012b・0xc597・0x20800a46）を PNG に。`P7 fail` なら host を reboot。R6 の再試験（片付けの直し）が通ってから流す。
+
+## P4m: VRAM の allocator と BAR1（2026-10-15、P1、`7a60b2445`。build と host 試験まで、実機は未）
+
+Q1 の割当（P8c の前提: compositor の buffer を VRAM に置き CPU から触る）。nouveau（MIT）の GSP の BAR1 の手順と同じ:
+
+- `r535_bar_bar1_init`: BAR1 の VMM の根（PD3、4 KiB）を RM の物（static info の `bar1PdeBase`、offset 1536）に置き換える。下の段（PD2・PD1・PD0・PT）は kernel が自分の VRAM に作り、根の entry 0 を書く。`0xb80f40`（BAR1 の block）は書かない（RM が設定済み）。
+- `tu102_vmm_flush`: BAR の VMM は type = 1（全 address）| 6（全 PDB・hub の TLB だけ）、PDB = 根（RM の BAR1 の根）。
+- 段 **P4m**（P4 の後、P5 の前、`nvrtx.stop=P4m` で飛ばせる。失敗しても boot は止めず、後の段は今までどおり PRAMIN を使う）:
+  1. VRAM の allocator（`heap.c`、空き区間の配列、上から取る、解放で隣と併合）: 最後の使える region の [base, top − (P9c の reserve 168 MiB + 2 MiB))。固定の arena（P4 の block・display の instance・GR・compute）は今の場所のまま。`P4m vram: region R, heap …`。
+  2. BAR1 の表: BAR1 の大きさ（512 MiB まで）を 4 KiB の page で覆う表（`nvrtx_mmu_gr_tables` の形）を allocator から取り PRAMIN で書く → RM の根の entry 0 を表示（`P4m bar1: root R entry E, window W MiB, tables at T`）してから書き換え → hub の TLB の invalidate。
+  3. CPU の map: BAR1 の BAR を claim して uncached で map。BAR1 の窓の allocator を作る。
+  4. 自己試験: 64 KiB の BO を取り map、PRAMIN で塗った値を BAR1 で読む・BAR1 で書いた値を PRAMIN で読む → `P4m ok: bar1 W MiB at …, read back both ways`（違えば `P4m fail: bar1 reads … PRAMIN reads …` で BAR1 を使わない）。
+- BO の API（`vram.c`）: `nvrtx_bo_alloc`（VRAM）・`nvrtx_bo_map`（BAR1 に map、PTE を PRAMIN で書いて invalidate）・`nvrtx_bo_free`・`nvrtx_bo_cpu`・`nvrtx_bo_bus`。lock は memory の mutex → PRAMIN の窓と TLB の invalidate の mutex（`window_lock`、channel.c の PRAMIN の関数が取る）。P8b の surface は allocator から取る（BAR1 にも map）。
+- 確認: nvrtx=y の kernel rc 0・warning 0、host 試験に allocator・region・VRAM の PTE の 18 項目（`nvrtx-gsp-host-test.sh` 214→222 の内）。実機の確認は R8b・R8c の P4m の行（T1-645 以降）。
+- 制限: 方式 A（RTX が GOP の primary）で GOP の framebuffer を BAR1 の同じ offset に map し直すこと（text console のため）はしていない。allocator は上から取るので GOP の低い VRAM とは離れる。
