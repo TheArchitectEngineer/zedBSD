@@ -18,7 +18,7 @@
  *   browser --version | --help
  *
  * Without a headless mode it opens a compositor window on URL, or on the
- * start page the package installs (MAIN_START_PAGE).  The headless
+ * home page (MAIN_HOME_PAGE, https://www.google.com/).  The headless
  * modes (added with the engine, one per phase) draw or dump a page, or run
  * a script, without a window; the tests use them on the host and in the
  * guest.  The modes that load a page do it through a view (<browser/browser.h>),
@@ -63,8 +63,8 @@
 /* The largest window size accepted on the command line, in pixels. */
 #define MAIN_MAX_SIZE		16384UL
 
-/* The page the window opens when the command line names none. */
-#define MAIN_START_PAGE		KEILAND_DATADIR "/browser/start.html"
+/* The page the window opens on when none is named (ws074-p228, 2026-10-14 user). */
+#define MAIN_HOME_PAGE		"https://www.google.com/"
 
 /*
  * How long the headless modes let a page's timers run, in virtual
@@ -211,7 +211,7 @@ main(
 
 	/* Opens the window (on the start page when no page is named) and stays in it until it closes. */
 	if (options.shell.start == NULL)
-		options.shell.start = MAIN_START_PAGE;
+		options.shell.start = MAIN_HOME_PAGE;
 	options.shell.fonts = &options.fonts;
 	status = shell_run(&options.shell);
 	if (status != 0)

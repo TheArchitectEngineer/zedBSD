@@ -24,6 +24,7 @@ static int replaced_attribute(const struct layout_box *box, const char *name, la
 static int replaced_length(const struct css_length *length, layout_unit containing, layout_unit *value);
 static layout_unit replaced_content_size(const struct layout_box *box, layout_unit size, int first, int second);
 static int replaced_is_video(const struct layout_box *box);
+static int replaced_is_bare_svg(const struct layout_box *box);
 
 /*
  * Sets a replaced box's content width and height within its containing block.
@@ -106,6 +107,12 @@ layout_replaced_size(
 	} else if (!width_given && !height_given) {
 		width = natural_width;
 		height = natural_height;
+
+		/* An inline <svg> with a viewBox but no width or height has a ratio only: it fills its containing block's width (ws074-p228). */
+		if (replaced_is_bare_svg(box) && containing_width > 0 && natural_width > 0) {
+			width = containing_width;
+			height = (layout_unit)((int64_t)width * natural_height / natural_width);
+		}
 	}
 
 	/* max-width shrinks a wider box, and its height with it when that was not given. */
@@ -273,4 +280,27 @@ replaced_is_video(
 		return 0;
 	element = (const struct dom_element *)box->node;
 	return element->ns == DOM_NS_HTML && element->tag == DOM_TAG_VIDEO;
+}
+
+/* Tells whether a box is an inline <svg>'s with no width and no height attribute (only its viewBox's ratio). */
+static int
+replaced_is_bare_svg(
+	const struct layout_box *box)
+{
+	const struct dom_element *element;
+	layout_unit ignored;
+
+	/* An svg element's box. */
+	if (box->node == NULL || box->node->type != DOM_ELEMENT)
+		return 0;
+	element = (const struct dom_element *)box->node;
+	if (element->ns != DOM_NS_SVG || element->tag != DOM_TAG_SVG)
+		return 0;
+
+	/* Neither attribute gives a size. */
+	if (replaced_attribute(box, "width", &ignored))
+		return 0;
+	if (replaced_attribute(box, "height", &ignored))
+		return 0;
+	return 1;
 }
