@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1193](queue.md) active / p217 horizontal Grid fourth vertical RTL absolute child border。2026-10-14 14:01 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1194](queue.md) active / p217 horizontal Grid vertical absolute child padding。2026-10-14 14:03 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+
+Event ws074-p217-q1194-partial-clear-20261014: [p217](phase217/phase.md) q1194-i01で固定水平LTR/RTL Gridのpadding-only縦absolute3配置に縦inline経路を適用。[証拠](phase217/evidence/20261014-q1194/README.md)。独立6矩形Chromium一致、固定010 whole PASS/4 callback PASS。旧WPT/host/Acid3差0維持。次は011複合frame、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1193-partial-clear-20261014: [p217](phase217/phase.md) q1193-i01で固定水平LTR/RTL Gridのborder-only縦RTL absolute4番目子に縦inline経路を適用。[証拠](phase217/evidence/20261014-q1193/README.md)。独立2矩形Chromium一致、固定009 whole PASS/4 callback PASS。旧WPT/host/Acid3差0維持。次は010 padding子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
