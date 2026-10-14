@@ -1,0 +1,66 @@
+sh: 1: uptime: not found
+zedBSD 1.0.0-beta2+g9640a1c (9640a1c 2026-10-15)
+[sudo] password for kei: v3d: V9 TFU raster to UB-linear begin
+v3d: V9 TFU IRQ 2 all 64 tiled pixels
+v3d: V9 TFU UIF 96x40 us=13
+v3d: V9 TFU UIF 96x40 matches CPU layout
+v3d: V9 TFU UIF 33x9 us=8
+v3d: V9 TFU UIF 33x9 matches CPU layout
+v3d: V9 TFU UIF 1x1 us=4
+v3d: V9 TFU UIF 1x1 matches CPU layout
+v3d: V9 TFU UIF 200x150 us=58
+v3d: V9 TFU UIF 200x150 matches CPU layout
+v3d: V9 TFU UIF 256x256 us=112
+v3d: V9 TFU UIF 256x256 matches CPU layout
+v3d: V9 TFU UIF self-test passed; texture conversion uses the unit
+v3d: tfu-probe begin
+v3d: tfu-probe plane bpp=1 96x40 pitch=128 us=8 mismatches=0 first=0,0 got=00 want=00 overrun=0
+v3d: tfu-probe plane bpp=1 512x480 pitch=512 us=105 mismatches=0 first=0,0 got=00 want=00 overrun=0
+v3d: tfu-probe plane bpp=2 48x20 pitch=128 us=8 mismatches=0 first=0,0 got=00 want=00 overrun=0
+v3d: tfu-probe plane bpp=2 256x240 pitch=512 us=56 mismatches=0 first=0,0 got=00 want=00 overrun=0
+v3d: tfu-probe yuv format=0 chroma=0 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=0 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=0 chroma=1 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=0 chroma=1 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=1 chroma=0 pitch=128 written=8192 px=80808080 00000000 00000000 00000000 b4b4b4b4 00000000 00000000 00000000
+v3d: tfu-probe yuv format=1 chroma=0 matches 601=1/1 709=1/1 full=1/1
+v3d: tfu-probe yuv format=2 chroma=0 pitch=256 written=8192 px=80808080 00000000 00000000 00000000 b4b4b4b4 00000000 00000000 00000000
+v3d: tfu-probe yuv format=2 chroma=0 matches 601=1/1 709=1/1 full=1/1
+v3d: tfu-probe yuv format=3 chroma=0 pitch=128 written=8192 px=96969696 00000000 96969696 00000000 96969696 00000000 96969696 00000000
+v3d: tfu-probe yuv format=3 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=4 chroma=0 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=4 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=5 chroma=0 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=5 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=6 chroma=0 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=6 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=7 chroma=0 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=7 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=8 chroma=0 pitch=128 written=8192 px=00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=8 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=9 chroma=0 pitch=128 written=8192 px=96969696 00000000 00000000 00000000 c8c8c8c8 00000000 00000000 00000000
+v3d: tfu-probe yuv format=9 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe yuv format=10 chroma=0 pitch=128 written=8192 px=c8c8c8c8 00000000 c8c8c8c8 00000000 00000000 00000000 00000000 00000000
+v3d: tfu-probe yuv format=10 chroma=0 matches 601=0/0 709=0/0 full=0/0
+v3d: tfu-probe end
+v3d: V10 self-branch timeout/reset begin
+v3d: V10 waits 100 ms before writing
+v3d: V10 timeout observed; reset begin
+v3d: V10 reset 1 post-reset noop complete
+usage: ps [-aAdefl] [-g grouplist] [-G grouplist] [-n namelist] [-o format]... [-p proclist] [-u userlist] [-U userlist]
+0
+usage: ps [-aAdefl] [-g grouplist] [-G grouplist] [-n namelist] [-o format]... [-p proclist] [-u userlist] [-U userlist]
+/home/kei:
+Desktop
+Documents
+Downloads
+Movies
+Music
+Pictures
+ws236
+
+/var/log:
+kernel.log
+kernel.log.old
+messages
+sessiond.log
