@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は実装・build・host 試験済み、T2 の Pi 実機待ち（依頼 3））
+Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は T1-679（libvulkan が SAMPLED の照会を拒む）・T1-680（kernel が export の identity の照会に答えない）で FAIL、両方直して T2 の再試験待ち）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -161,6 +161,22 @@ Phase disposition: normal
 4. 報告: 各 log の `PRESENT`・`Vulkan Video:`（特に `pictures the GPU holds, N slots` か `pictures are read back` の理由）・`MEDIA backend=`・`PRESENTED`・`FRAMES`・`DRAW`・`CLOCK`・`DONE`・`FAILED`・`NOTICE` の行、PNG、top、dmesg の `v3d: video:`・`v3d: (EIO|execution failed)`・`rpi4-mmal: frame .* not its target`。
 5. 合否: (a) `PRESENT own=1 gpu_pictures=1`、`pictures the GPU holds` の行が出る、(b) 1080p30 の 2 本が最後まで、`FRAMES … late` がほぼ 0（目安 10 以下）・shown 290 以上、(c) `DRAW picture_us` が 1 枚 数 ms（前は約 60000）、(d) PNG の色が正しい（testsrc2 の色の帯・文字が見え、緑や紫に偏らない。前の CPU の道の PNG と見比べ）、(e) `FAILED`・`execution failed` が無く、videoplayer・compositor が落ちない、(f) videoplayer の CPU の使用率が前より下がる（記録）。
 6. 止め所: Pi が応答しなくなったら止めて報告。画が出ない・色が違う時は PNG と log を返す（解析は P3）。
+
+### T2 の結果（T1-679、2026-10-16、Pi 4 実機、main 18c4fa5d3）: FAIL → 直した
+
+- `PRESENT own=1 gpu_pictures=1 hold=6` の後、`vkGetPhysicalDeviceVideoFormatPropertiesKHR count failed (-1000023000)` と `no sampled NV12 decode images; pictures are read back`。全て readback の道（high shown 98・late 194、`DRAW picture_us` 約 50 ms/枚）。落ちない、`execution failed` 無し。PNG は Pi の image に keiland-shot が無く未実施。結果 `plan/agents/T2/results-20261016-t1-679.md`。
+- 原因: libvulkan の `vkGetPhysicalDeviceVideoFormatPropertiesKHR`（`userland/desktop/libvulkan/video.c`）が usage を DECODE_DST・DPB・TRANSFER_SRC に限り、SAMPLED を含む照会を kernel に送らずに `VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR` を返していた。
+- 直し（95c47d971）: libvulkan の mask に SAMPLED を足す（可否は kernel が答える。i915 は今まで通り拒む）。WS083 の host 試験の「手元で拒む usage」の例を COLOR_ATTACHMENT に。rpi4・amd64 の libvulkan warning 0、`plan/ws083/tests/run-host-libvulkan-video.sh`・`plan/ws202/tests/run-host-nv12-readback.sh` PASS。
+- 再試験は依頼 3 と同じ手順に `/lib/libvulkan.so` の差し替えを足す。
+- uname の版は `/etc/os-release`（userland）から来るので kernel の新旧は分からない（kernel の banner は版だけ）。kernel は `/boot/boot0/vmunix` の cksum で確かめる。
+- Pi で PNG を撮るには、keiland-shot を arm64 の dynamic の規則（`platform/common/userland-dynamic.mk`）に足し、`ZEDBSD_TEST_SCREEN_CAPTURE := y` の試験の config で compositor（`bin/wayland`）と keiland-shot を作って差し替える必要がある（共有の build の file なので Q1 の判断）。
+
+### T2 の結果（T1-680、2026-10-16、Pi 4 実機、main 7d03555d8）: FAIL → 直した
+
+- 照会は通り `pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)`（baseline 14）。続いて `vkGetMemoryFdKHR failed (-4)` と `a context of pictures the GPU holds failed (1004); pictures are read back`（libmedia が readback の context で作り直した）。全て readback の道（high shown 98・late 194）。落ちない。結果 `plan/agents/T2/results-20261016-t1-680.md`。
+- 原因: libvulkan の `vkGetMemoryFdKHR` は fd に device と driver の UUID を刻むため `vulkan_physical_identity`（`GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2` に `VkPhysicalDeviceIDProperties` を連ねた照会）を送るが、bcm2711 の kernel はこの opcode を扱わず、`VK_ERROR_DEVICE_LOST`（-4）になっていた（Venus の host だけが答えていた。native の V3D で OPAQUE_FD の allocation の export を使うのは今回が初めて）。
+- 直し: `src/drivers/gpu/bcm2711/vulkan-query.c` に `identity_query`（chain が properties2 → ID properties → 終わりの照会だけに答える。device の UUID・driver の UUID は固定の 16 byte、LUID なし、続けて普通の properties）。どの context も同じ値を返すので、libmedia（export）と videoplayer（import）の照合が合う。`plan/ws141/tests/vulkan-device-host-test.c` に libvulkan と同じ要求と読みで 2 回照会して同じ UUID になる確かめを足した（`ws236 p011 native device identity for exported allocations: PASS`、全 32 行 PASS）。rpi4 の vmunix warning 0。
+- Pi の PNG: `userland/tests/keiland-shot/Makefile` の platform に rpi4 を足し（arm64 の basic の command の規則で作れる。共有の `userland-dynamic.mk` の変更は不要だった）、`plan/ws236/tests/config-rpi4-shot.mk`（`ZEDBSD_TEST_SCREEN_CAPTURE := y` と keiland-shot）で compositor（`bin/wayland`、`KWL SHOT` を持つ）と `bin/keiland-shot`（aarch64）が build できることを確かめた。
 
 ### presenter の 2 frame 重ねの検討（2026-10-16、P3、Q1 の依頼）
 

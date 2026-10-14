@@ -28,6 +28,7 @@ static int fixed_query(struct bcm2711_vulkan_session *session, uint32_t opcode, 
 static int queue_properties(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int format_query(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int image_query(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int identity_query(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static void device_properties(VkPhysicalDeviceProperties *properties);
 static void format_properties(VkFormat format, VkFormatProperties *properties);
 static void set_float(float *destination, uint32_t bits);
@@ -48,11 +49,23 @@ bcm2711_vulkan_query_dispatch(
 
 	/* Other typed routers retain ownership of opcodes outside physical-device discovery. */
 	*handled = 0;
-	if (opcode < GPU_OP_GET_PHYSICAL_DEVICE_FEATURES || opcode > GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES)
+	if (opcode != GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2 &&
+	    (opcode < GPU_OP_GET_PHYSICAL_DEVICE_FEATURES ||
+	     opcode > GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES))
 		return 0;
 	*handled = 1;
 	if (requested != 1)
 		return EINVAL;
+
+	/* The device's identity, which an exported allocation carries to its importer (ws236-p011). */
+	if (opcode == GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2) {
+		error = identity_query(session, reader, reply);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the identity and the properties are in the reply. */
+		return 0;
+	}
 
 	/* Each physical query has its own exact client framing and output structure. */
 	switch (opcode) {
@@ -147,6 +160,79 @@ fixed_query(
 	i915_vkc_enc_VkPhysicalDeviceMemoryProperties(reply, memory);
 
 	/* Succeeded: the driver budget and coherent memory policy share stable type and heap index zero. */
+	return 0;
+}
+
+/*
+ * Answers the properties query whose chain asks for the device's identity
+ * (VkPhysicalDeviceIDProperties) and nothing else: libvulkan stamps the
+ * identity into every allocation it exports as an opaque fd, and an
+ * importer checks it against its own (ws236-p011).  The identities are
+ * fixed: the device's names this one V3D, the driver's this driver.
+ */
+static int
+identity_query(
+	struct bcm2711_vulkan_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	static const uint8_t device_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'b', 'c', 'm', '2', '7', '1', '1', 'v', '3'
+	};
+	static const uint8_t driver_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'v', '3', 'd', '-', 'v', 'k', '-', '0', '1'
+	};
+	static const uint8_t luid[VK_LUID_SIZE] = {0};
+	struct bcm2711_vulkan_object *physical;
+	VkPhysicalDeviceProperties *properties;
+	uint64_t identity;
+	uint64_t present;
+	uint64_t chained;
+	uint64_t last;
+	uint32_t outer;
+	uint32_t inner;
+
+	/* The physical device and the output chain's shape: properties2, then the ID properties, then nothing. */
+	identity = drv_i915_wire_read_u64(reader);
+	present = drv_i915_wire_read_u64(reader);
+	outer = drv_i915_wire_read_u32(reader);
+	chained = drv_i915_wire_read_u64(reader);
+	inner = drv_i915_wire_read_u32(reader);
+	last = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || present != 1)
+		return EINVAL;
+	if (outer != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 ||
+	    chained != 1 ||
+	    inner != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES ||
+	    last != 0)
+		return ENOTSUP;
+	physical = bcm2711_vulkan_object_find(session, I915_VK_OBJ_PHYSICAL_DEVICE, identity);
+	if (physical == NULL)
+		return EINVAL;
+
+	/* The ordinary properties, as the plain query gives them. */
+	properties = i915_vkc_array(reader, &session->arena, 1, sizeof(*properties));
+	if (properties == NULL)
+		return ENOMEM;
+	device_properties(properties);
+
+	/* The chain's two headers, the identity (no Windows adapter: no LUID), then the properties. */
+	drv_i915_wire_reply_u64(reply, 1);
+	drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
+	drv_i915_wire_reply_u64(reply, 1);
+	drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
+	drv_i915_wire_reply_u64(reply, 0);
+	drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+	i915_vkc_reply_bytes(reply, device_uuid, VK_UUID_SIZE);
+	drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+	i915_vkc_reply_bytes(reply, driver_uuid, VK_UUID_SIZE);
+	drv_i915_wire_reply_u64(reply, VK_LUID_SIZE);
+	i915_vkc_reply_bytes(reply, luid, VK_LUID_SIZE);
+	drv_i915_wire_reply_u32(reply, 0U);
+	drv_i915_wire_reply_u32(reply, VK_FALSE);
+	i915_vkc_enc_VkPhysicalDeviceProperties(reply, properties);
+
+	/* Succeeded: the identity every context of this device reports. */
 	return 0;
 }
 
