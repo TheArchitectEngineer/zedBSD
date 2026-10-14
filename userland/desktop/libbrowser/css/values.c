@@ -1787,6 +1787,39 @@ values_single(
 		}
 	}
 
+	/* Alignment properties also take "first baseline", "last baseline" and an overflow position. */
+	if (count > 1U && (property == CSS_PROP_JUSTIFY_CONTENT || property == CSS_PROP_JUSTIFY_ITEMS ||
+	    property == CSS_PROP_ALIGN_ITEMS || property == CSS_PROP_ALIGN_CONTENT ||
+	    property == CSS_PROP_ALIGN_SELF || property == CSS_PROP_JUSTIFY_SELF)) {
+		size_t word;
+		size_t words;
+
+		words = 0;
+		parts[0] = NULL;
+		parts[1] = NULL;
+		for (word = 0; word < count; word++) {
+			if (tokens[word].type == CSS_TOKEN_WHITESPACE)
+				continue;
+			if (tokens[word].type != CSS_TOKEN_IDENT || words >= 2U)
+				return EINVAL;
+			parts[words] = &tokens[word];
+			words++;
+		}
+		if (words != 2U)
+			return EINVAL;
+		if (css_ident_equal(parts[1], "baseline") &&
+		    (css_ident_equal(parts[0], "first") || css_ident_equal(parts[0], "last"))) {
+			/* The last baseline falls back to the end edge; the first one is the baseline. */
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_FLEX_END : CSS_ALIGN_BASELINE;
+			return 0;
+		}
+		if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))
+			return EINVAL;
+		tokens = parts[1];
+		count = 1U;
+	}
+
 	/* The other properties take one token. */
 	if (count != 1)
 		return EINVAL;

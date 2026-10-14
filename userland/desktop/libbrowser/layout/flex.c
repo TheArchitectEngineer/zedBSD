@@ -75,6 +75,7 @@ static int flex_lay_item(struct layout_tree *tree, struct layout_box *box, struc
 static int flex_lay_sized(struct layout_tree *tree, struct layout_box *box, struct flex_item *item, int row);
 static int flex_relay_cross(struct layout_tree *tree, struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit line_cross, layout_unit percentage_basis);
 static layout_unit flex_divide_nearest(layout_unit numerator, layout_unit denominator);
+static void flex_static_positions(struct layout_box *box, int row, layout_unit content_height);
 static void flex_place_line(struct layout_box *box, struct flex_item *items, size_t count, int row, layout_unit available, layout_unit gap, layout_unit cross_start, layout_unit line_cross);
 static layout_unit flex_cross_outer(const struct layout_box *item, int row);
 static int flex_align_of(const struct layout_box *box, const struct layout_box *item);
@@ -259,11 +260,172 @@ layout_flex(
 		}
 	}
 
-	/* The items are placed. */
+	/* The items are placed; the absolute children take the place a sole item would. */
+	sizing = box->height;
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		sizing = layout_from_px(box->style.height.value);
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			sizing -= box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	}
+	flex_static_positions(box, row, sizing);
 	free(items);
 
 	/* Succeeded: the container's content is laid out. */
 	return 0;
+}
+
+/* The sides a static position can take along one physical axis. */
+enum flex_side {
+	FLEX_SIDE_START,
+	FLEX_SIDE_CENTER,
+	FLEX_SIDE_END
+};
+
+/* Flips a side. */
+static int
+flex_side_flip(
+	int side)
+{
+	if (side == FLEX_SIDE_START)
+		return FLEX_SIDE_END;
+	if (side == FLEX_SIDE_END)
+		return FLEX_SIDE_START;
+	return side;
+}
+
+/*
+ * Gives the absolute children of a horizontal flex container the static
+ * position of a sole flex item: justify-content along the main axis and
+ * align-self across it.  Sides are physical (start is left or top).
+ */
+static void
+flex_static_positions(
+	struct layout_box *box,
+	int row,
+	layout_unit content_height)
+{
+	struct layout_box *child;
+	int rtl;
+	int reverse;
+	int wrap_reverse;
+	int main_start;
+	int cross_start;
+	int horizontal;
+	int vertical;
+	int value;
+	int flex;
+	int axis_start;
+
+	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+	    (box->style.direction != CSS_DIRECTION_LTR && box->style.direction != CSS_DIRECTION_RTL))
+		return;
+	rtl = box->style.direction == CSS_DIRECTION_RTL;
+	reverse = box->style.flex_direction == CSS_FLEX_ROW_REVERSE ||
+	    box->style.flex_direction == CSS_FLEX_COLUMN_REVERSE;
+	wrap_reverse = box->style.flex_wrap == CSS_FLEX_WRAP_REVERSE;
+
+	/* The physical sides where the main axis and the cross axis start. */
+	if (row) {
+		main_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
+		if (reverse)
+			main_start = flex_side_flip(main_start);
+		cross_start = wrap_reverse ? FLEX_SIDE_END : FLEX_SIDE_START;
+	} else {
+		main_start = reverse ? FLEX_SIDE_END : FLEX_SIDE_START;
+		cross_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
+		if (wrap_reverse)
+			cross_start = flex_side_flip(cross_start);
+	}
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (!child->out_of_flow || child->style.position != CSS_POSITION_ABSOLUTE)
+			continue;
+
+		/* justify-content decides the side along the main axis. */
+		value = box->style.justify_content;
+		flex = (box->style.flex_keywords & 1u) != 0;
+		axis_start = row ? (rtl ? FLEX_SIDE_END : FLEX_SIDE_START) : FLEX_SIDE_START;
+		horizontal = main_start;
+		switch (value) {
+		case CSS_ALIGN_CENTER:
+		case CSS_ALIGN_SPACE_AROUND:
+		case CSS_ALIGN_SPACE_EVENLY:
+			horizontal = FLEX_SIDE_CENTER;
+			break;
+		case CSS_ALIGN_START:
+			horizontal = flex ? main_start : axis_start;
+			break;
+		case CSS_ALIGN_END:
+			horizontal = flex ? flex_side_flip(main_start) : flex_side_flip(axis_start);
+			break;
+		case CSS_ALIGN_LEFT:
+			horizontal = row ? FLEX_SIDE_START : axis_start;
+			break;
+		case CSS_ALIGN_RIGHT:
+			horizontal = row ? FLEX_SIDE_END : axis_start;
+			break;
+		default:
+			horizontal = main_start;
+			break;
+		}
+
+		/* align-self decides the side across it. */
+		value = child->style.align_self;
+		flex = (child->style.flex_keywords & 8u) != 0;
+		if (value == CSS_ALIGN_AUTO) {
+			value = box->style.align_items;
+			flex = (box->style.flex_keywords & 4u) != 0;
+		}
+		axis_start = row ? FLEX_SIDE_START : (rtl ? FLEX_SIDE_END : FLEX_SIDE_START);
+		vertical = cross_start;
+		switch (value) {
+		case CSS_ALIGN_CENTER:
+			vertical = FLEX_SIDE_CENTER;
+			break;
+		case CSS_ALIGN_START:
+			vertical = flex ? cross_start : axis_start;
+			break;
+		case CSS_ALIGN_END:
+			vertical = flex ? flex_side_flip(cross_start) : flex_side_flip(axis_start);
+			break;
+		case CSS_ALIGN_SELF_START:
+			vertical = row ? FLEX_SIDE_START :
+			    (child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START);
+			break;
+		case CSS_ALIGN_SELF_END:
+			vertical = row ? FLEX_SIDE_END :
+			    (child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_START : FLEX_SIDE_END);
+			break;
+		default:
+			vertical = cross_start;
+			break;
+		}
+
+		/* The horizontal and vertical sides: the main axis is horizontal in a row. */
+		if (!row) {
+			value = horizontal;
+			horizontal = vertical;
+			vertical = value;
+		}
+		child->static_x = 0;
+		child->static_y = 0;
+		child->static_x_from_right = 0;
+		child->static_x_align = CSS_ALIGN_AUTO;
+		child->static_x_align_from_right = 0;
+		child->static_y_align = CSS_ALIGN_AUTO;
+		child->static_x_area_width = box->width;
+		child->static_y_area_height = content_height;
+		child->static_unsafe = 1;
+		if (horizontal == FLEX_SIDE_CENTER) {
+			child->static_x_align = CSS_ALIGN_CENTER;
+		} else if (horizontal == FLEX_SIDE_END) {
+			child->static_x_align = CSS_ALIGN_RIGHT;
+			child->static_x_align_from_right = 1;
+		}
+		if (vertical == FLEX_SIDE_CENTER)
+			child->static_y_align = CSS_ALIGN_CENTER;
+		else if (vertical == FLEX_SIDE_END)
+			child->static_y_align = CSS_ALIGN_END;
+	}
 }
 
 /*

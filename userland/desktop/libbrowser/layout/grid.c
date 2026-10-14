@@ -444,6 +444,7 @@ layout_grid(
 		child->static_y_align = CSS_ALIGN_AUTO;
 		child->static_grid_area = 0;
 		child->cb_set = 0;
+		child->static_unsafe = 0;
 	}
 
 	/* Fixed vertical grids map their logical tracks to physical axes before laying out items. */

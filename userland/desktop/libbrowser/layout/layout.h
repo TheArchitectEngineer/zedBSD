@@ -138,6 +138,8 @@ struct layout_box {
 	/* Definite Grid block-axis area, used after an absolute child's height is known. */
 	layout_unit static_y_area_height;
 	int static_y_align;
+	/* A flex container's static position centers and ends without clamping an overflow. */
+	int static_unsafe;
 	/* Definite Grid area supplies the containing block for explicit insets. */
 	int static_grid_area;
 	/*

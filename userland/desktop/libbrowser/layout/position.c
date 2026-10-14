@@ -641,7 +641,7 @@ position_place(
 
 		free_width = box->static_x_area_width - box->margin[CSS_LEFT] -
 		    (box->width + frame) - box->margin[CSS_RIGHT];
-		if (free_width < 0)
+		if (free_width < 0 && !box->static_unsafe)
 			free_width = 0;
 		x = box->static_x -
 		    (box->static_x_from_right ? box->static_x_area_width : 0) +
@@ -667,7 +667,7 @@ position_place(
 
 		free_height = box->static_y_area_height - box->margin[CSS_TOP] -
 		    position_outer_height(box) - box->margin[CSS_BOTTOM];
-		if (free_height < 0)
+		if (free_height < 0 && !box->static_unsafe)
 			free_height = 0;
 		y = box->static_y + box->margin[CSS_TOP] + free_height / 2;
 	} else {
