@@ -564,13 +564,15 @@ drv_rpi4_mmal_decoder_send(
 }
 
 /*
- * Sends an end of stream: an empty input buffer with the end-of-stream
- * flag and no bulk.
+ * Sends an empty input buffer (no bulk) that marks the end of a frame, or
+ * with end_of_stream the end of the stream.
  */
 int
-drv_rpi4_mmal_decoder_end(
-	struct drv_rpi4_mmal_decoder *decoder)
+drv_rpi4_mmal_decoder_mark(
+	struct drv_rpi4_mmal_decoder *decoder,
+	int end_of_stream)
 {
+	uint32_t flags;
 	uint8_t message[DRV_RPI4_MMAL_BUFFER_BYTES];
 	unsigned long enabled;
 	uint64_t deadline;
@@ -597,17 +599,20 @@ drv_rpi4_mmal_decoder_end(
 	spin_unlock_irqrestore(&mmal_lock, enabled);
 
 	/* The empty buffer message. */
+	flags = DRV_RPI4_MMAL_FLAG_FRAME_END;
+	if (end_of_stream)
+		flags = DRV_RPI4_MMAL_FLAG_EOS;
 	(void)drv_rpi4_mmal_build_buffer(message, DRV_RPI4_MMAL_MSG_BUFFER_FROM_HOST, 0, decoder->component,
 					 decoder->input_handle, token(decoder, MMAL_KIND_INPUT, index),
-					 decoder->input_size, 0, DRV_RPI4_MMAL_FLAG_EOS, DRV_RPI4_MMAL_TIME_UNKNOWN);
+					 decoder->input_size, 0, flags, DRV_RPI4_MMAL_TIME_UNKNOWN);
 	error = drv_rpi4_vchiq_send(mmal_service, message, sizeof(message));
 	if (error != 0) {
 		decoder->broken = true;
-		kern_logf("rpi4-mmal: end of stream not sent (%d); decoder stopped\n", error);
+		kern_logf("rpi4-mmal: empty buffer not sent (%d); decoder stopped\n", error);
 		return error;
 	}
 
-	/* Succeeded: the firmware outputs what it holds. */
+	/* Succeeded: the firmware has the mark. */
 	return 0;
 }
 

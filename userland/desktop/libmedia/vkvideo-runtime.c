@@ -739,9 +739,12 @@ media_vkvideo_runtime_decode(
 		}
 	}
 
-	/* A status failure is an actual decode error; no unverified pixels are exposed to the caller. */
+	/*
+	 * A status failure is an actual decode error; no unverified pixels are
+	 * exposed to the caller, which tells it apart by EBADMSG (ws236).
+	 */
 	if (video->status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)
-		return EIO;
+		return EBADMSG;
 	if (!video->readback_coherent) {
 		error = vkvideo_mapped_range(video, video->readback_memory, 1);
 		if (error != 0)
