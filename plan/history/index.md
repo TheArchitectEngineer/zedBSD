@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1130 / WS074 grid-auto-flow CSS state（2026-10-14）
+## 最新: q1131 / WS074 row dense Grid placement（2026-10-14）
+
+[q1131履歴](queue-q1131.md): 行denseは最小2列穴埋めを修正、固定implicit-tracks WPTは未対応auto-columns幅で0/12 FAIL維持。旧PASSとAcid3差0維持。[証拠](../ws074/phase222/evidence/20261014-q1131/README.md)。p222部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1130 / WS074 grid-auto-flow CSS state（2026-10-14）
 
 [q1130履歴](queue-q1130.md): `grid-auto-flow` CSS stateで固定valid/computed各0→7/7 subtest・whole FAIL→PASS、invalidと旧PASS、Acid3差0維持。列/dense配置は後続。[証拠](../ws074/phase221/evidence/20261014-q1130/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

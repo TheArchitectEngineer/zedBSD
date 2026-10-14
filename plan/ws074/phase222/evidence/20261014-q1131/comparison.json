@@ -1,0 +1,11 @@
+{
+  "id": "/css/css-grid/placement/grid-auto-placement-implicit-tracks-001.html",
+  "before_outcome": "fail",
+  "after_outcome": "fail",
+  "before_pass": 0,
+  "after_pass": 0,
+  "total": 12,
+  "improved": [],
+  "regressed": [],
+  "first_after_failure": "assert_equals: \n<div class=\"grid\">\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"100\" data-expected-height=\"50\">i1</div>\n  <div style=\"grid-column: span 2; grid-row: span 2;\" data-offset-x=\"0\" data-offset-y=\"50\" data-expected-width=\"200\" data-expected-height=\"100\">i2</div>\n  <div data-offset-x=\"0\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\">i3</div>\n  <div data-offset-x=\"100\" data-offset-y=\"150\" data-expected-width=\"100\" data-expected-height=\"50\">i4</div>\n</div>\nwidth expected 100 but got 494"
+}

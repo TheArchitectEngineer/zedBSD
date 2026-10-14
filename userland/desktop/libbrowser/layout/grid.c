@@ -9,7 +9,8 @@
  * Grid layout (ws074-p072), the common part of CSS Grid Layout 1: the
  * explicit column and row templates (lengths, percentages, fr, auto,
  * minmax()'s minimum), items placed by line numbers (negative from the
- * end) and spans or else row after row in the first cells that are free,
+ * end) and spans or else row after row in the first cells that are free
+ * (with row dense backfilling earlier holes),
  * implicit auto tracks for what goes past the templates, the gaps, and
  * each item laid out as a block in its area and aligned in it
  * (align-self, align-items).  Columns are sized in three steps: the fixed
@@ -18,7 +19,7 @@
  * rows are as tall as their items unless the template fixes them.  Direct
  * absolute children with definite lines use their area's static origin in
  * horizontal LTR/RTL grids, without taking part in track sizing.  Not in
- * this pass: named lines and areas, dense packing, full inline-axis
+ * this pass: named lines and areas, column flow, full inline-axis
  * alignment, order, full baseline alignment, subgrid, and auto-fill and auto-fit.
  */
 
@@ -77,7 +78,7 @@ static int grid_collect(struct layout_box *box, struct grid_state *grid);
 static void grid_resolve(const struct css_grid_place *place, int explicit_count, int *start, int *span);
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
 	layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
-static int grid_place(struct grid_state *grid);
+static int grid_place(struct grid_state *grid, int auto_flow);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_take(struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_size_columns(struct layout_tree *tree, struct layout_box *box, struct grid_state *grid, layout_unit gap);
@@ -155,7 +156,7 @@ layout_grid(
 	memset(&grid, 0, sizeof(grid));
 	error = grid_collect(box, &grid);
 	if (error == 0)
-		error = grid_place(&grid);
+		error = grid_place(&grid, box->style.grid_auto_flow);
 	if (error != 0) {
 		grid_release(&grid);
 		return error;
@@ -690,7 +691,8 @@ grid_static_position(
  */
 static int
 grid_place(
-	struct grid_state *grid)
+	struct grid_state *grid,
+	int auto_flow)
 {
 	struct grid_item *item;
 	size_t index;
@@ -755,6 +757,10 @@ grid_place(
 		item = &grid->items[index];
 		if (item->row >= 0)
 			continue;
+		if ((auto_flow & CSS_GRID_FLOW_DENSE) && !(auto_flow & CSS_GRID_FLOW_COLUMN)) {
+			cursor_row = 0;
+			cursor_column = 0;
+		}
 
 		/* A column given: the first row from the cursor where the area is free. */
 		if (item->column >= 0) {

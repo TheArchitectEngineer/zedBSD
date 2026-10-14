@@ -1,0 +1,20 @@
+<!doctype html>
+<div id="sparse" style="display:grid;width:80px;grid-template-columns:40px 40px;grid-template-rows:20px 20px;grid-auto-flow:row">
+  <div style="height:20px">a</div><div style="grid-column:span 2;height:20px">b</div><div style="height:20px">c</div>
+</div>
+<div id="dense" style="display:grid;width:80px;grid-template-columns:40px 40px;grid-template-rows:20px 20px;grid-auto-flow:row dense">
+  <div style="height:20px">a</div><div style="grid-column:span 2;height:20px">b</div><div style="height:20px">c</div>
+</div>
+<script>
+["sparse", "dense"].forEach(function (id) {
+  var grid = document.getElementById(id);
+  var origin = grid.getBoundingClientRect();
+  var positions = [];
+  Array.from(grid.children).forEach(function (child) {
+    var rect = child.getBoundingClientRect();
+    positions.push(Math.round(rect.left - origin.left) + "," +
+                   Math.round(rect.top - origin.top));
+  });
+  console.log(id + "=" + positions.join("|"));
+});
+</script>
