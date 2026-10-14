@@ -191,7 +191,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
 # i915 executor's wire codec it shares (built here only when the i915 driver does not build it).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk-object.c src/drivers/gpu/nvrtx/vk-session.c \
 	src/drivers/gpu/nvrtx/vk-stream.c src/drivers/gpu/nvrtx/vk-dispatch.c src/drivers/gpu/nvrtx/vk-device.c \
-	src/drivers/gpu/nvrtx/runtime.c
+	src/drivers/gpu/nvrtx/runtime.c src/drivers/gpu/nvrtx/vk-reply.c src/drivers/gpu/nvrtx/vk-memory.c src/drivers/gpu/nvrtx/vk-resource.c \
+	src/drivers/gpu/nvrtx/vk-node.c
 ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/render/codec.c
 endif

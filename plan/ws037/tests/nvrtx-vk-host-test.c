@@ -98,6 +98,34 @@ nvrtx_vk_heap_bytes(void *owner)
 	return 240ULL << 20;
 }
 
+/* The node's other parts the dispatcher's later handlers reach (the D3 test covers them). */
+void
+kern_logf(const char *format, ...)
+{
+	(void)format;
+}
+
+void
+nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes)
+{
+	(void)owner;
+	(void)backing;
+	(void)va;
+	(void)bytes;
+}
+
+int
+nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing)
+{
+	(void)owner;
+	(void)resource_id;
+	(void)bytes;
+	(void)cpu;
+	(void)va;
+	(void)backing;
+	return ENOENT;
+}
+
 int
 main(void)
 {

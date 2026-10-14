@@ -15,7 +15,7 @@
 
 #include <uapi/errno.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
 
 /*
  * The handlers, each owning a group of opcodes.  The list grows with the
@@ -23,7 +23,9 @@
  * recorded work); it is fixed for the node's life.
  */
 static const nvrtx_vk_route dispatch_routes[] = {
-	nvrtx_vk_device_route
+	nvrtx_vk_device_route,
+	nvrtx_vk_memory_route,
+	nvrtx_vk_resource_route
 };
 
 /*

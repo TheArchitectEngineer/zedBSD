@@ -44,8 +44,9 @@
  *   nvrtx.work=1          the work channel the GPU device keeps (P9w, with
  *                         the golden context it needs; not yet by default)
  *   nvrtx.vk=1            the GPU device is also a renderer: it takes the
- *                         Vulkan protocol's commands (ws037-p007 stage D2;
- *                         not yet by default)
+ *                         Vulkan protocol's commands and runs them on the
+ *                         work channel, which it implies (ws037-p007 stages
+ *                         D2 and D3; not yet by default)
  */
 
 #include <stdarg.h>
@@ -259,7 +260,8 @@ nvrtx_stage_draw_wanted(void)
 }
 
 /*
- * Reports whether the boot asked for the work channel (nvrtx.work=1).
+ * Reports whether the boot asked for the work channel (nvrtx.work=1), or
+ * for the renderer that runs its work there (nvrtx.vk=1).
  */
 bool
 nvrtx_stage_work_wanted(void)
@@ -268,6 +270,11 @@ nvrtx_stage_work_wanted(void)
 
 	/* Looks for nvrtx.work=1 among the boot parameters. */
 	present = stage_token_present(STAGE_WORK_TOKEN);
+	if (present)
+		return true;
+
+	/* The renderer needs the channel too. */
+	present = stage_token_present(STAGE_VK_TOKEN);
 	if (present)
 		return true;
 
