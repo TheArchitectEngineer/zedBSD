@@ -1301,10 +1301,14 @@ check_draw_push(void)
 	check(state[0x1a00U / 4U] == 0x1111U && state[0x1360U / 4U] == 0U && state[0x0fbcU / 4U] == 0xffffU && state[0x12ccU / 4U] == 0U, "writes, no blend, sample mask, no depth test");
 
 	/* The pipeline: vertex at index 1, pixel at 5, the rest off. */
-	check(state[0x2000U / 4U] == 0U && state[0x2080U / 4U] == 0x20U && state[0x20c0U / 4U] == 0x30U && state[0x2100U / 4U] == 0x40U, "stages 0, 2, 3, 4 off");
+	check(!seen[0x2000U / 4U], "stage 0 left alone, as NVK leaves it");
+	check(state[0x2080U / 4U] == 0x20U && state[0x20c0U / 4U] == 0x30U && state[0x2100U / 4U] == 0x40U, "stages 2, 3, 4 off");
 	check(state[0x2040U / 4U] == 0x11U && state[0x2054U / 4U] == 0U && state[0x2058U / 4U] == 0x28014000U, "vertex program");
 	check(state[0x204cU / 4U] == 12U && state[0x2050U / 4U] == 0U, "vertex registers and group 0");
 	check(state[0x2140U / 4U] == 0x51U && state[0x2158U / 4U] == 0x28015000U && state[0x214cU / 4U] == 8U && state[0x2150U / 4U] == 4U, "pixel program, registers, group 4");
+	check(seen[0x0f1cU / 4U] && state[0x0f1cU / 4U] == 0U, "no post-depth coverage (SET_POST_Z_PS_IMASK)");
+	check(seen[0x2a00U / 4U] && seen[(0x2a00U + 15U * 16U) / 4U] && state[0x2a00U / 4U] == 0U && state[(0x2a00U + 15U * 16U) / 4U] == 0U, "every variable pixel rate shading control off");
+	check(state[0x0754U / 4U] == 1U, "hybrid anti-alias control: one pass, centroid per fragment");
 	check(state[0x021cU / 4U] == 0x1011U, "shader caches invalidated");
 
 	/* Constant buffer 0 selected and bound to the five groups. */

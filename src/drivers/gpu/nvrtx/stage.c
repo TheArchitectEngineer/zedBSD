@@ -17,20 +17,30 @@
  * attaches while the platform discovers its devices, before the kernel parses
  * the line:
  *
- *   nvrtx.off=1           the driver does not look at the GPU at all
+ * The stages that make the display work run by default (2026-10-15, the
+ * user's decision: without the NVIDIA GPU the desktop does not run on such
+ * a machine): the GSP boot, the VRAM window (P4m), the display's readout,
+ * the takeover of the firmware's head showing the console (P8b) and the GPU
+ * device (P8c).  The test stages run only when asked.
+ *
+ *   nvrtx.off=1, nvrtx=off  the driver does not look at the GPU at all
  *   nvrtx.stop=<stage>    the driver stops before that stage
- *   nvrtx.gsp=1           the driver may go on to the GSP boot path after
- *                         N1 (the stages that write); without it the GPU is
- *                         left to the firmware after N1
+ *   nvrtx.gsp=0           the GPU is left to the firmware after N1 (the
+ *                         stages that write never run); nvrtx.gsp=1 also
+ *                         boots the GSP when the firmware's picture is
+ *                         not on the GPU or cannot be kept (a test run)
+ *   nvrtx.disp=0          the driver stops after the display's readout
+ *                         (P8a) instead of taking the firmware's head over
+ *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
+ *                         staying up as a GPU device (P8c)
+ *   nvrtx.disp.test=1     the takeover shows two test surfaces of bands,
+ *                         flips between them and waits 5 s at each step, so
+ *                         the monitor can be watched (ws037-p006 R8b..R8d)
  *   nvrtx.gr=1            after the copy channel, the driver has the
  *                         resource manager make the graphics golden context
  *                         (and the TU10x scrubber channel), stage P5g
- *   nvrtx.disp=1          after the display's readout (P8a), the driver
- *                         takes the head the firmware lit over with its own
- *                         channels and surfaces, stage P8b
- *   nvrtx.resident=1      after the takeover, the GSP stays up and the GPU
- *                         is registered as a GPU device with its display
- *                         (stage P8c); the driver keeps it until power-off
+ *   nvrtx.compute=1       the first compute launch (P9c, a test)
+ *   nvrtx.draw=1          the first draw (P9g, a test)
  */
 
 #include <stdarg.h>
@@ -47,17 +57,20 @@
 /* The handoff object that holds the raw boot command line. */
 #define STAGE_COMMAND_LINE_HANDOFF	"boot.command-line"
 
-/* The whole token that keeps the driver away from the GPU. */
+/* The whole tokens that keep the driver away from the GPU. */
 #define STAGE_OFF_TOKEN			"nvrtx.off=1"
+#define STAGE_OFF_SHORT_TOKEN		"nvrtx=off"
 
-/* The whole token that lets the driver go on to the GSP boot path. */
+/* The whole tokens that keep the GSP boot path off, and that force it on. */
+#define STAGE_GSP_OFF_TOKEN		"nvrtx.gsp=0"
 #define STAGE_GSP_TOKEN			"nvrtx.gsp=1"
 
 /* The whole token that asks for the graphics golden context. */
 #define STAGE_GR_TOKEN			"nvrtx.gr=1"
 
-/* The whole token that asks for the display takeover. */
-#define STAGE_DISP_TOKEN		"nvrtx.disp=1"
+/* The whole token that keeps the display takeover off, and the one that makes it a test. */
+#define STAGE_DISP_OFF_TOKEN		"nvrtx.disp=0"
+#define STAGE_DISP_TEST_TOKEN		"nvrtx.disp.test=1"
 
 /* The whole token that asks for the first compute launch (ws037-p008). */
 #define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
@@ -65,8 +78,8 @@
 /* The whole token that asks for the first draw (ws037-p007). */
 #define STAGE_DRAW_TOKEN		"nvrtx.draw=1"
 
-/* The whole token that keeps the GSP up and registers the GPU device (ws037-p006 P8c). */
-#define STAGE_RESIDENT_TOKEN		"nvrtx.resident=1"
+/* The whole token that stops the GSP after the takeover instead of keeping the GPU device (ws037-p006 P8c). */
+#define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
 
 /* The longest stop token: "nvrtx.stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		32U
@@ -75,15 +88,19 @@ static const char *stage_command_line(void);
 static bool stage_token_present(const char *token);
 
 /*
- * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1).
+ * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1 or nvrtx=off).
  */
 bool
 nvrtx_stage_driver_off(void)
 {
 	bool present;
 
-	/* Looks for nvrtx.off=1 among the boot parameters. */
+	/* Looks for either token among the boot parameters. */
 	present = stage_token_present(STAGE_OFF_TOKEN);
+	if (present)
+		return true;
+
+	present = stage_token_present(STAGE_OFF_SHORT_TOKEN);
 	if (present)
 		return true;
 
@@ -92,10 +109,28 @@ nvrtx_stage_driver_off(void)
 }
 
 /*
- * Reports whether the boot asked for the GSP boot path (nvrtx.gsp=1).
+ * Reports whether the GSP boot path runs: by default, unless the boot says nvrtx.gsp=0.
  */
 bool
 nvrtx_stage_gsp_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.gsp=0 among the boot parameters. */
+	present = stage_token_present(STAGE_GSP_OFF_TOKEN);
+	if (present)
+		return false;
+
+	/* The GSP boot runs by default. */
+	return true;
+}
+
+/*
+ * Reports whether the boot forced the GSP boot path (nvrtx.gsp=1), even
+ * where the firmware's picture on the GPU cannot be kept.
+ */
+bool
+nvrtx_stage_gsp_forced(void)
 {
 	bool present;
 
@@ -104,7 +139,7 @@ nvrtx_stage_gsp_wanted(void)
 	if (present)
 		return true;
 
-	/* Without it the stages that write never run. */
+	/* Without it the GSP boot keeps the firmware's picture or does not run. */
 	return false;
 }
 
@@ -126,37 +161,56 @@ nvrtx_stage_gr_wanted(void)
 }
 
 /*
- * Reports whether the boot asked for the display takeover (nvrtx.disp=1).
+ * Reports whether the display takeover runs: by default, unless the boot says nvrtx.disp=0.
  */
 bool
 nvrtx_stage_disp_wanted(void)
 {
 	bool present;
 
-	/* Looks for nvrtx.disp=1 among the boot parameters. */
-	present = stage_token_present(STAGE_DISP_TOKEN);
+	/* Looks for nvrtx.disp=0 among the boot parameters. */
+	present = stage_token_present(STAGE_DISP_OFF_TOKEN);
+	if (present)
+		return false;
+
+	/* The takeover runs by default. */
+	return true;
+}
+
+/*
+ * Reports whether the takeover is the monitor test (nvrtx.disp.test=1):
+ * test surfaces, a flip and a wait at each step instead of the console.
+ */
+bool
+nvrtx_stage_disp_test_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.disp.test=1 among the boot parameters. */
+	present = stage_token_present(STAGE_DISP_TEST_TOKEN);
 	if (present)
 		return true;
 
-	/* Without it the boot keeps the firmware's picture after the readout. */
+	/* By default the takeover shows the console and does not wait. */
 	return false;
 }
 
 /*
- * Reports whether the boot asked the GPU to stay up as a GPU device (nvrtx.resident=1).
+ * Reports whether the GPU stays up as a GPU device after the takeover: by
+ * default, unless the boot says nvrtx.resident=0.
  */
 bool
 nvrtx_stage_resident_wanted(void)
 {
 	bool present;
 
-	/* Looks for nvrtx.resident=1 among the boot parameters. */
-	present = stage_token_present(STAGE_RESIDENT_TOKEN);
+	/* Looks for nvrtx.resident=0 among the boot parameters. */
+	present = stage_token_present(STAGE_RESIDENT_OFF_TOKEN);
 	if (present)
-		return true;
+		return false;
 
-	/* Without it the boot stops the GSP at its end. */
-	return false;
+	/* The GPU device is kept by default. */
+	return true;
 }
 
 /*

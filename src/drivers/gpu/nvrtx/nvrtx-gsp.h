@@ -608,6 +608,7 @@ struct nvrtx_sysinfo_values {
 	uint64_t instance;
 	uint64_t bus_device_function;
 	uint64_t user_address_limit;
+	uint64_t console_size;
 	uint16_t vendor;
 	uint16_t device;
 	uint16_t subvendor;

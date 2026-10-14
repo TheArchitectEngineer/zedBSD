@@ -120,3 +120,44 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 - 読み（Q1、未解析）: 3D の program の SPH（Shader Program Header、vertex・fragment の header）が GR に拒まれた。compute（P9c）は SPH を使わないので通った。次は SPH の field を NVK・NAK（MIT）の値と 1 つずつ比べる。
 - PNG: `build/review/t2r7d-3.png`（Q1 の checkout）。
 - 再開の条件: SPH の直しの後に R7d を再試験。担当は次に空いた P（P3 は WS236 の Video を優先、2026-10-15）。
+
+## R7d の直し（2026-10-15、P1 の `7ce6e4019`（main の 3f87e673e）と P3 の作業中の patch を P2 が回収）
+
+- 読み: `ESR 0x405840=0xa0000` は `NV_PGRAPH_PRI_DS_HWW_ESR`（open-gpu-doc（MIT）の gv100 `dev_graphics.ref.txt`）の SPH17・SPH19 の誤り、M_PIPE_STAGE（29:24）は 0（NONE）。`0x405848=0x80000` は `DS_HWW_ESR_2` の bit 19（gv100 の文書では未定義の bit）。誤りの番号の意味は公開の文書に無い。
+- 直し 1（main に入済み、P1）: fragment の program の header の input map に position の w（IMAP_SYSTEM_VALUES_AB の bit 31）を常に立てる。NAK（MIT）`from_nir.rs` の「Required on fragment shaders, otherwise it cause a trap」と同じ。host 試験は 4 つの program の header を NAK の encode_header の値と語ごとに照合。
+- 直し 2（P3 の patch、ここで回収）: draw の push を NVK に合わせた。(a) `SET_PIPELINE_SHADER(0)`（VERTEX_CULL_BEFORE_FETCH）を書かない（NVK は type 1〜5 だけを書き、type 0 は golden context のまま）。(b) `SET_POST_Z_PS_IMASK` = 0（`nvk_shader.c`、post depth coverage 無し）。(c) `SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL(0..15)` = 0（`NVK_MME_SET_SHADING_RATE_CONTROL` の結果）。(d) `SET_HYBRID_ANTI_ALIAS_CONTROL` = 1（1 pass、centroid per fragment、`NVK_MME_SET_ANTI_ALIAS` の結果）。値と method の offset は clc597.h（MIT）で確かめた。
+- 他に照合した物（違い無し）: SPH の version 4（NAK は sm ≥ 73 で 4）、`CHECK_SPH_VERSION` 3/3・`CHECK_AAM_VERSION` 2/2（NVK と同じ）、header の type（PS 2・VTG 1）・shader type・MRT・SASS version 1、local memory と CRS の大きさ 0（SM70 の crs_size は 0）、vertex の store request（0x1c..0x1f / 0x21）、output map（position、generic 0 の xy）。
+
+| 確認 | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `159 checks, 0 failures`（draw の push に 4 項目: type 0 を書かない、POST_Z_PS_IMASK 0、VRS 16 個 0、hybrid AA 1） |
+| `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix`（p2 worktree） | rc 0・warning 0・include check / vmunix check PASS、`git diff --check` 0 |
+| 実機（R7d の再試験） | **未実施**。手順は 7 節のまま（image の語は既定 on の後 `nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1 nvrtx.disp=0 nvrtx.resident=0`、`config-amd64-nvrtx.mk` の `NVRTX_RUN=R7d`）。FAIL で同じ SPH の誤りなら、`DS_HWW_ESR` の bit の変化（17・19 が消えたか）を記録 |
+
+## 8. desktop までの段（2026-10-15 夜、P2 の洗い出し。Q1 の指示: 方式 B（passthrough）で RTX の上に Keiland の desktop が描けるまで）
+
+### 8.1 今あるもの・欠けているもの（調べた事実）
+
+- Keiland の compositor は描画を libvulkan だけで行い、出力は VK_KHR_display（`userland/desktop/wayland/display.c`・`compose.c`・`output-switch.c`・`cursor-plane.c`）。CPU で合成する道は無い（`wayland/` に software の renderer は無い）。
+- libvulkan が node を Vulkan の physical device にする条件は `GPU_CAP_CAPSET | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_COMMAND | GPU_CAP_MAPPING`（`userland/desktop/libvulkan/context.c` 124 行）。display だけの node（今の nvrtx、P8c）は、最初の renderer の node と組まれて複写の present で出る（`wsi-display-nodes.c` 406〜437 行）。
+- 方式 B の guest には renderer が無い（QEMU は emulated の `VGA` と RTX の vfio だけ、phase004 の 3.2）。したがって **nvrtx 自身が renderer（Vulkan の executor）を持たない限り、方式 B で compositor は起動しない**（P8c の display の口だけでは足りない）。
+- zedBSD の Vulkan の形は design 8.0 のとおり、kernel の中の executor（Kei GPU command protocol、`include/uapi/gpu-op.h`。i915 は `src/drivers/gpu/i915/render/`、約 2.1 万行（video を除く）、V3D は `src/drivers/gpu/bcm2711/vulkan-*.c`）。bcm2711 は i915 の `render/codec.c` をそのまま使っている（`platform/arm64/vmunix.mk`）。driver の間で hardware に依らない層を共有する前例がある。
+- compositor が記録する command は少ない（`wayland/`・`libkeiland/` の vkCmd*: BeginRenderPass・EndRenderPass・BindPipeline・BindDescriptorSets・BindVertexBuffers・PushConstants・SetViewport・SetScissor・Draw・PipelineBarrier・CopyImage・BlitImage・ClearColorImage・CopyBufferToImage・CopyImageToBuffer）。他に instance・device・memory・buffer・image・image view・sampler・descriptor・pipeline layout・shader module（SPIR-V）・graphics pipeline・render pass・framebuffer・command pool/buffer・queue submit・fence・semaphore・swapchain（display）。
+- nvrtx に今あるのは boot の時の段（P9c の compute、P9g の draw）の部品: driver が持つ vaspace と GR の channel（`compute.c`）、3D の push の組み立て（`draw-push.c`、NVK の初期化と同じ順）、SM75 の compiler（P4、`compiler/`）、VRAM の allocator と BAR1（P4m）、display の口（P8c）。どれも session・job の形ではない。
+
+### 8.2 段（D1〜D7）。合格の印と host でできる物
+
+| 段 | すること | 確かめ |
+| --- | --- | --- |
+| D0 | R8b（display を点ける）→ R8c（resident の GPU device）→ R8d（events・cursor・share）。既に実装済み、T の結果待ち | 実機（T1、ユーザーの目視） |
+| D1 | **常駐の描画の channel**: P8c の node が持つ GR の channel を 1 本（P9c の compute.c の作り方を boot の段から node の部品に移す: driver の vaspace・promote・3D と compute の object・GPFIFO の ring の wrap・semaphore の fence）。BO（VRAM と system memory）をその vaspace に map・unmap する（PTE を書いて TLB を invalidate）。submit と完了の待ち（最初は polling、後で non-stall の割り込み） | host: VA の allocator・PTE の組み立て・ring の wrap の計算。実機: `nvrtx.resident=1` の後に node の channel で clear の fence が来る（印） |
+| D2 | **executor の protocol の層**: i915 の `render/` の hardware に依らない層（codec・transport・reply・object 表・dispatch・forget・command pool/buffer の記録・descriptor・render pass・pipeline の decode・fence・sync・instance/device）を nvrtx に移す（共有できる file は bcm2711 と同じく共有、i915 の Gen の部分は外す）。node に `GPU_CAP_CAPSET | COMMAND | NOTIFICATION | JOB …`（design 8.1）、capset は nvrtx の vendor の識別 | host: Kei の stream を decode して object を作る試験（ws141 の `vulkan-stream-host-test.sh` と同じ作り） |
+| D3 | **NVIDIA の backend（compositor の範囲だけ）**: graphics pipeline（P4 の compiler の SPIR-V → SM75、SPH と code を program の領域へ）、render pass（colour target、load の clear）、draw（vertex buffer、push constant は cbuf 0、descriptor の combined image sampler は TIC・TSC の pool、viewport・scissor）、image の copy・blit・clear と buffer↔image の copy（最初は 3D の quad か copy engine、linear の image だけ）、barrier（WFI と cache の invalidate） | host: 各 command の push を decode して clc597.h で照合（`nvrtx-sm75-host-test` の draw の照合と同じ形）。実機: `userland/tests/venus-frame` の nvrtx の node |
+| D4 | **image と memory**: 全 image を pitch linear で始める（display の constraints が linear、texture も pitch の TIC で足りる）。VkDeviceMemory は VRAM の BO（host から見える物は BAR1 越し）か system memory | host: 大きさ・pitch・整列 |
+| D5 | **WSI**: node の roles に RENDER を足す（今は DISPLAY だけ）。swapchain の image は VRAM の blob、present は P8c の BLOB の flip（複写なし）| 実機: `vkdemo` か `venus-frame` の display |
+| D6 | **compositor**: Keiland が nvrtx の node で起動し desktop を描く。`/dev/gpu0` 固定の direct scanout（`libkeiland-backend-zedbsd/scanout-zedbsd.c`）は RTX が gpu0 でない時の扱いを Keiland 側（別 WS）に依頼 | 実機: 方式 B で RTX の monitor に desktop（ユーザーの目視） |
+| D7 | 方法 A（素の起動）で同じ | 実機 |
+
+- 依存: D1 → D2 → D3・D4 → D5 → D6。D3 の shader は P4（compiler）の SPIR-V → SM75 が前提（desktop の shader 全て）。executor と compiler の約束（program の入力・cbuf 0 の push constant の配置・texture の binding の番号・SPH）を変える時は Q1 経由で P4 とすり合わせる。
+- 量の見込み: D2 は i915 の protocol の層の移植で数千行、D3 は compositor の command の範囲で数千行。ベータ2（10/16 夕）の残りでは D1・D2 の host の部分までが現実的で、desktop（D6）はベータ2 の後の見込み（Q1・ユーザーの判断）。
+- 代わりの道（判断を Q1 へ）: 方式 B の guest に Venus の virtio-gpu（host の renderer）を足せば、compositor は Venus で描き nvrtx の display に複写の present で出せる（D0 だけで desktop が RTX の monitor に出る）。ただし「RTX が描く」ではなく、毎 frame の CPU の複写（P8c の storage の present）になる。
