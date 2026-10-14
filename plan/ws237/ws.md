@@ -30,3 +30,4 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | ws237-p004 | mode set と外部の display、6.0 LW | planned |
 | ws237-p005 | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | planned |
 | ws237-p006 | 規約の全文、0.5 LW | planned |
+- 2026-10-14 ユーザー「SV7の確認はせずに進めて、最後に確認してデバッグで調整しましょう。」→ p002 の実機の確かめを待たずに p003〜p005 を実装し、最後に SV7 でまとめて確かめて直す。
