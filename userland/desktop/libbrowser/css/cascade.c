@@ -3769,7 +3769,7 @@ cascade_apply(
 		cascade_align(style, 1u, &style->justify_content, value->keyword);
 		break;
 	case CSS_PROP_JUSTIFY_ITEMS:
-		cascade_align(style, 0u, &style->justify_items, value->keyword);
+		cascade_align(style, 0x200u, &style->justify_items, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_ITEMS:
 		cascade_align(style, 4u, &style->align_items, value->keyword);
@@ -3781,7 +3781,7 @@ cascade_apply(
 		cascade_align(style, 8u, &style->align_self, value->keyword);
 		break;
 	case CSS_PROP_JUSTIFY_SELF:
-		cascade_align(style, 0u, &style->justify_self, value->keyword);
+		cascade_align(style, 0x100u, &style->justify_self, value->keyword);
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = cascade_length(engine, value, style->font_size);

@@ -1706,6 +1706,8 @@ grid_static_position(
 		    justify == CSS_ALIGN_CENTER || justify == CSS_ALIGN_LEFT ||
 		    justify == CSS_ALIGN_RIGHT || justify == CSS_ALIGN_SELF_START)) {
 			child->static_x_align = justify;
+			child->static_x_safe = (child->style.justify_self != CSS_ALIGN_AUTO ?
+			    (child->style.flex_keywords & 0x1000u) : (box->style.flex_keywords & 0x2000u)) != 0;
 			if (justify == CSS_ALIGN_SELF_END)
 				child->static_x_align_from_right =
 				    child->style.direction == CSS_DIRECTION_LTR;

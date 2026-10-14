@@ -569,6 +569,11 @@ flex_static_positions(
 		safe_cross = (child->style.align_self != CSS_ALIGN_AUTO) ? (child->style.flex_keywords & 128u) != 0 : (box->style.flex_keywords & 64u) != 0;
 		child->static_x_safe = main_horizontal ? safe_main : safe_cross;
 		child->static_y_safe = main_horizontal ? safe_cross : safe_main;
+		/* A safe overflow falls back to the start edge of the axis: 2 when that is the right or bottom one. */
+		if (child->static_x_safe && (main_horizontal ? main_axis_start : cross_axis_start) == FLEX_SIDE_END)
+			child->static_x_safe = 2;
+		if (child->static_y_safe && (main_horizontal ? cross_axis_start : main_axis_start) == FLEX_SIDE_END)
+			child->static_y_safe = 2;
 		if (horizontal == FLEX_SIDE_CENTER) {
 			child->static_x_align = CSS_ALIGN_CENTER;
 		} else if (horizontal == FLEX_SIDE_END) {

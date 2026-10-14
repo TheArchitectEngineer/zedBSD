@@ -643,6 +643,12 @@ position_place(
 
 		free_width = box->static_x_area_width - box->margin[CSS_LEFT] -
 		    (box->width + frame) - box->margin[CSS_RIGHT];
+		if (free_width < 0 && box->static_x_safe == 2) {
+			/* A safe overflow starts at the right edge. */
+			x = box->static_x - (box->static_x_from_right ? box->static_x_area_width : 0) +
+			    box->margin[CSS_LEFT] + free_width;
+			goto placed_x;
+		}
 		if (free_width < 0 && (!box->static_unsafe || box->static_x_safe))
 			free_width = 0;
 		x = box->static_x -
@@ -655,6 +661,7 @@ position_place(
 		x = box->static_x + box->margin[CSS_LEFT];
 	}
 
+placed_x:
 	/* Vertically: from the top, from the bottom, or where it would have been. */
 	if (has_top) {
 		y = area_top + top + box->margin[CSS_TOP];
