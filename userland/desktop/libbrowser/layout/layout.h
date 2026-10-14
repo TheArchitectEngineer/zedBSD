@@ -242,6 +242,10 @@ struct layout_box {
 	 */
 	layout_unit max_content;
 	int max_content_known;
+
+	/* How far a sticky box is moved from where the flow put it (sticky.c). */
+	layout_unit sticky_dx;
+	layout_unit sticky_dy;
 };
 
 /*
@@ -284,6 +288,10 @@ struct layout_tree {
 	/* The content height of the current containing block, when it is definite. */
 	layout_unit containing_height;
 	int containing_height_definite;
+	/* The sticky boxes in tree order and the page scroll they are placed for (sticky.c). */
+	struct layout_box **sticky;
+	size_t sticky_count;
+	layout_unit sticky_scroll;
 };
 
 /*
@@ -305,6 +313,8 @@ void layout_absolute(struct layout_box *box, layout_unit x, layout_unit y);
 int layout_is_positioned(const struct layout_box *box);
 int layout_clips(const struct layout_box *box);
 int layout_position(struct layout_tree *tree);
+int layout_sticky_build(struct layout_tree *tree, layout_unit scroll_y);
+int layout_sticky_apply(struct layout_tree *tree, layout_unit scroll_y);
 layout_unit layout_content_width(const struct layout_box *box, int depth);
 void layout_context_begin(struct layout_tree *tree, struct layout_context *context, struct wb_vector *floats);
 void layout_context_end(struct layout_tree *tree, const struct layout_context *context);

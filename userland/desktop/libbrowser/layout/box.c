@@ -118,6 +118,11 @@ layout_build(
 	/* A box with nothing inside it that transform scales (a hairline border drawn at twice the size and halved) shrinks about its origin. */
 	box_apply_scale(root);
 
+	/* Sticky boxes sit where the page's scroll (zero until the view says) puts them. */
+	error = layout_sticky_build(tree, 0);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the tree is laid out. */
 	return 0;
 }
@@ -244,8 +249,10 @@ layout_is_positioned(
 		return 1;
 	if (box->style.position == CSS_POSITION_FIXED)
 		return 1;
+	if (box->style.position == CSS_POSITION_STICKY)
+		return 1;
 
-	/* Static and sticky boxes. */
+	/* Static boxes. */
 	return 0;
 }
 

@@ -136,6 +136,7 @@ static void list_box(struct list_walk *walk, const struct layout_box *box, const
 static void list_box_part(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth, int part);
 static void list_box_own(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth, int part);
 static void list_fade(struct list_walk *walk, size_t first, float opacity);
+static void list_scale(struct list_walk *walk, size_t first, const struct layout_box *box);
 static int list_border_shape(const struct layout_box *box, struct list_shape *shape);
 static void list_round_fill(struct list_walk *walk, const struct list_shape *shape, uint32_t color);
 static void list_round_row(struct list_walk *walk, const struct list_shape *shape, layout_unit top, layout_unit bottom, uint32_t color);
@@ -638,6 +639,10 @@ list_box_part(
 		list_outline(walk, box);
 	if (clipped)
 		list_unclip(walk);
+
+	/* A transformed box scales what was painted for it (the layout scaled a box that has nothing inside). */
+	if (box->first_child != NULL || box->lines != NULL)
+		list_scale(walk, first, box);
 
 	/* A translucent box fades what was painted for it. */
 	if (box->style.opacity < 1.0f)
@@ -2448,6 +2453,90 @@ list_fade(
 			continue;
 		alpha = (uint32_t)((float)(item->color >> 24) * opacity + 0.5f);
 		item->color = (item->color & 0x00ffffffU) | (alpha << 24);
+	}
+}
+
+/*
+ * Scales the items added since an index about the box's transform-origin by
+ * its transform scale (ws074-p235): positions and sizes, the glyphs'
+ * advances and the font's size.  A positioned box inside is painted in its
+ * own turn and is not scaled with it.
+ */
+static void
+list_scale(
+	struct list_walk *walk,
+	size_t first,
+	const struct layout_box *box)
+{
+	const struct css_length *scale;
+	const struct css_length *origin;
+	struct paint_item *item;
+	struct paint_glyph *glyphs;
+	layout_unit width;
+	layout_unit height;
+	layout_unit origin_x;
+	layout_unit origin_y;
+	float scale_x;
+	float scale_y;
+	size_t index;
+	size_t glyph;
+
+	/* Only a plain scale. */
+	scale = box->style.transform_scale;
+	if (scale[0].unit != CSS_UNIT_PX || scale[1].unit != CSS_UNIT_PX)
+		return;
+	scale_x = scale[0].value;
+	scale_y = scale[1].value;
+	if ((scale_x == 1.0f && scale_y == 1.0f) || scale_x < 0 || scale_y < 0)
+		return;
+
+	/* The origin in the document. */
+	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	origin = box->style.transform_origin;
+	origin_x = 0;
+	origin_y = 0;
+	if (origin[0].unit == CSS_UNIT_PX)
+		origin_x = layout_from_px(origin[0].value);
+	else if (origin[0].unit == CSS_UNIT_PERCENT)
+		origin_x = (layout_unit)((float)width * origin[0].value / 100.0f) + layout_from_px(origin[0].offset);
+	if (origin[1].unit == CSS_UNIT_PX)
+		origin_y = layout_from_px(origin[1].value);
+	else if (origin[1].unit == CSS_UNIT_PERCENT)
+		origin_y = (layout_unit)((float)height * origin[1].value / 100.0f) + layout_from_px(origin[1].offset);
+	origin_x += box->x;
+	origin_y += box->y;
+
+	/* Each item. */
+	for (index = first; index < walk->list->items.count; index++) {
+		item = wb_vector_at(&walk->list->items, index);
+		if (item->kind == PAINT_UNCLIP)
+			continue;
+		if (item->kind == PAINT_TEXT && item->vertical)
+			continue;
+		item->x = origin_x + (layout_unit)((float)(item->x - origin_x) * scale_x);
+		item->y = origin_y + (layout_unit)((float)(item->y - origin_y) * scale_y);
+		if (item->kind == PAINT_TEXT) {
+			unsigned pixels;
+
+			/* The glyphs' pen positions and the font follow the horizontal scale, the size the vertical one. */
+			glyphs = wb_arena_alloc(&walk->list->arena, item->glyph_count * sizeof(*glyphs));
+			if (glyphs == NULL) {
+				walk->error = ENOMEM;
+				return;
+			}
+			for (glyph = 0; glyph < item->glyph_count; glyph++) {
+				glyphs[glyph].code_point = item->glyphs[glyph].code_point;
+				glyphs[glyph].x = (layout_unit)((float)item->glyphs[glyph].x * scale_x);
+			}
+			item->glyphs = glyphs;
+			pixels = (unsigned)((float)item->font.pixels * scale_y + 0.5f);
+			item->font.pixels = pixels < 1U ? 1U : pixels;
+			item->font.size *= scale_y;
+			continue;
+		}
+		item->width = (layout_unit)((float)item->width * scale_x);
+		item->height = (layout_unit)((float)item->height * scale_y);
 	}
 }
 

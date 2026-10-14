@@ -2618,6 +2618,7 @@ view_update(
 	changed = page_needs_layout(view->page);
 	if (!changed && !view->resized) {
 		repaint = page_needs_paint(view->page);
+		repaint |= page_sticky_sync(view->page, view->scroll_y);
 		if (!repaint)
 			return 0;
 		error = page_paint(view->page);
@@ -2644,6 +2645,13 @@ view_update(
 	/* The page fits the view now, and the scroll stays inside the new document. */
 	view->resized = 0;
 	view_clamp_scroll(view);
+
+	/* The sticky boxes sit for the scroll the page has now. */
+	if (page_sticky_sync(view->page, view->scroll_y)) {
+		error = page_paint(view->page);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the page is ready to draw. */
 	return 0;
