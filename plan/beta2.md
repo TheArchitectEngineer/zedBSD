@@ -37,6 +37,7 @@
 | [WS227](ws227/ws.md) menuconfig の表示名・画像と PDF の library を Desktop へ・Linux/FreeBSD に独自の base の命令 | completed（2026-10-14） | 0 | — |
 | [WS228](ws228/ws.md) 独自実装の簡単な vi（**ベータ2 の最後の機能**、2026-10-14 ユーザー「ここまでがベータ2ですね。」） | completed（2026-10-14、QEMU の serial と console で PASS） | 0 | — |
 | [BUG-302](bugs/BUG-302.md) emacs の SKK の辞書が見つからない（UAT） | resolved（T1-594 QEMU PASS）、実機の UAT | — | ユーザー |
+| [BUG-307](bugs/BUG-307.md) UFS の fsync が volume 全体を書き出す | resolved（2026-10-14、T1-615 QEMU PASS、修正 f9f7acba9・bec395969）。負荷ありの最初の fsync の約 19 s はベータ3 の候補 | — | — |
 | [WS225](ws225/ws.md) Vulkan の header の書き直し | blocked（2026-10-13 ユーザー「まだ着手せず、ブロッキング」） | — | — |
 
 ## 既知の問題に書いて出す（ベータ3 以降）
