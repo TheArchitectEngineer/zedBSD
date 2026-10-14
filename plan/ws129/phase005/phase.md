@@ -100,3 +100,21 @@ docs/ から plan/ への link は足していない。commit a09097bc1。
 
 確かめ: 3 つの file に〔判定待ち〕が残っていない（`grep -n 判定待ち docs/release/*.md` が 0 行）、節の anchor `older-intel-graphics` は見出しのまま。
 未実施: 手順の実機の確かめ（Gen9 の機械で zedbsd.cfg を編集して off）。
+
+## 2026-10-14 夕 P1: 10/14 夕方の main（a491f9d07）までの追加と review の注記の整理
+
+Q1 の割り当て（7 項目と Q1 の追加の 2 点）。英語、既存の文体と review の comment の形。docs/ から plan/ への link は無い（`grep -n 'plan/' docs/release/zedbsd-1.0.0-beta2*.md` が 0 行）。手引きの変更は [p013](../phase013/phase.md) にも記録。
+
+- release notes（`docs/release/zedbsd-1.0.0-beta2.md`）
+  - The desktop: 画面の回転を「Settings → Display の 4 つの絵で 90°・180°・270°、すぐ反映し次の sign-in にも保つ、表示が 1 つの時だけ変えられる」に書き直した（Q1 の指摘、WS217 p004 cleared・T1-611/616 PASS、理由の文は `settings/page-display.c`）。review は「QEMU だけ、5330 の i915 は UAT 待ち」に。
+  - Applications: Notes の描く道具（WS216 p004〜p006 cleared、T1-580 QEMU PASS。筆・鉛筆・水彩・領域の塗りつぶし、筆圧、PDF に保つ。名前は `notes/menu.c`）。Browser の段落（自前の engine、Acid3 100 点で reference との pixel の差 0、google.com と inline の SVG、titlebar のアドレスの箱・1 click で全選択・key repeat（T1-618 の 1・2・3・5 PASS、QEMU）、画像は PNG・JPEG・GIF（`libbrowser/image/decode.c` に GIF の decoder があるので GIF も書いた））。yahoo.co.jp・BigInt は書かず `review (2026-10-16)` を残した。
+  - Hardware: Bluetooth（WS143 p008 cleared、2026-10-10 ユーザーの 5330 の UAT）・Vulkan Video（WS083、10/13 UAT OK）・IPv6（WS130、10/13 UAT OK）が決着したので、その review の comment を消した。BUG-303 の注記は「13400F は実機で起動、5330 は未確認」に縮めた（BUG-303 の ticket と beta2.md に 5330 の記録が無い）。WS236（Pi4 の動画）は書かず `review (2026-10-16)` だけ。
+  - For developers: PC-98 の image の partition を cylinder の境に（BUG-309）、UFS の fsync（BUG-307）、firmware を awemorris/zedBSD-firmware から取り、無ければ元の配布元から、初回に license の同意（make の yes/no、`yes | make firmware-licenses`、menuconfig の画面）（WS233、`userland/firmware/README.md`・`license-agree.sh`）。review: PC-98 は Ra43 の実機と T1-617、fsync は T1-615 の QEMU だけ、license の画面は実の端末での目視と通しの build が未実施。
+- 既知の問題（`docs/release/zedbsd-1.0.0-beta2-known-issues.md`）
+  - 足した: 負荷時の最初の fsync の約 20 s（BUG-307 の T1-615 の試験 1、修正の前と同じ、QEMU だけ）、Browser の画像（WebP・AVIF と `<img>` の SVG は出ない、GIF は最初の絵だけ、inline の SVG は stroke・clip・mask・filter・text を描かない＝`gif.c`・`svg.c`）。
+  - 外した: resolved の BUG-182・170・206/207・203 の行、comment の BUG-191・238・242 の行、Bluetooth の条件の comment。外した物は review の comment に列挙した。
+  - BUG-308 は利用者に見える影響が commit の途中の crash に限るので書かず、理由を review の comment に。
+- 利用の手引き: Bluetooth の review の comment を消した（決着）。他は p013。
+- 手引きの fsync の記述（`dd ... conv=fsync`）は host の Linux の dd の option で、BUG-307（Kei の UFS）とは関係しないので変えていない。
+
+未実施: 文書の手順の実機の確かめ（PC-98 の ZuluIDE の設定の key の名前は ZuluIDE の文書で未確認、review に記載）。

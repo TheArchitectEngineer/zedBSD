@@ -164,9 +164,6 @@ after you start the computer.
 Open **Settings** → **Bluetooth** to pair a Bluetooth keyboard or mouse
 with the Latitude 5330's built-in Bluetooth.
 
-<!-- review (2026-10-09 user): Bluetooth is in the release and is turned off at the last moment (10/16) if keyboards
-     and mice do not work on the 5330. If it is turned off, delete this section. -->
-
 ## Security notes
 
 Read these before you connect Beta 2 to a network.
@@ -215,6 +212,55 @@ packages first and offer to install the missing ones (see the
 commands that the host does not have, such as `passkey` in
 `/opt/keiland/sbin`; commands the host already has, such as `ls`, are left
 to the host.
+
+### Firmware and its licenses
+
+The firmware of devices (Wi-Fi, Bluetooth, the graphics' display and the
+Raspberry Pi 4's start) is not in the source tree. When the configuration
+selects a firmware, the build downloads it from the GitHub repository
+[awemorris/zedBSD-firmware](https://github.com/awemorris/zedBSD-firmware),
+which keeps each firmware in a directory of its own with its license, and
+from the firmware's original source only when that download fails. Either
+way the build checks the file's size and SHA-256.
+
+The first time the build fetches a firmware, it shows what the firmware is,
+its copyright notice and its whole license, and asks whether you accept the
+license:
+
+- `make` asks `yes/no` in the terminal. Any answer but yes stops the build
+  without downloading. An accepted license is not asked about again unless
+  its text changes.
+- For a build without a person at the terminal, such as CI, accept them all
+  first with `yes | make firmware-licenses`.
+- **Build boot image** in `make menuconfig` shows each license in a screen of
+  its own. Scroll to the end of the license to enable **Accept**; **Decline**
+  stops before the build. To build without a declined firmware, turn it off
+  in the **Firmware** menu.
+
+### PC-98
+
+The i386 CPU with the PC-9800 board builds `build/pc98/hdd-image.img` for
+NEC PC-9821 computers (for example with
+`make ZEDBSD_CONFIG=config/ci/config-pc98.mk disk-image`). The image's
+partitions start and end on cylinder boundaries of a disk with 8 heads and 17
+sectors a track, which models such as the PC-9821 Ra43 need to start from it.
+
+On an IDE drive emulator such as ZuluIDE, present the image as a hard disk
+with that geometry, for example:
+
+```ini
+device = hdd
+cylinders = 2667
+heads = 8
+sectors = 17
+```
+
+The number of cylinders is the image's size in bytes divided by 69,632
+(8 heads × 17 sectors × 512 bytes); 2667 is that of the default image.
+
+<!-- review (2026-10-14): the geometry is the one of the user's ZuluIDE check on the PC-9821 Ra43 (device hdd, 8 heads,
+     17 sectors). The key names of the example were not checked against ZuluIDE's own documentation; correct them if
+     its file says them differently. Images of 20 MiB or less use 4 heads instead of 8. -->
 
 ## Licenses
 
