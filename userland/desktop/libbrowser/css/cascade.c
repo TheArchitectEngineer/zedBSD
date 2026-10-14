@@ -956,6 +956,13 @@ css_initial_style(
 	style->transform_origin[0].value = 50.0f;
 	style->transform_origin[0].offset = 0;
 	style->transform_origin[1] = style->transform_origin[0];
+	style->aspect_ratio = 0.0f;
+	style->aspect_auto = 1;
+	style->object_fit = CSS_OBJECT_FIT_FILL;
+	style->object_position[0].unit = CSS_UNIT_PERCENT;
+	style->object_position[0].value = 50.0f;
+	style->object_position[0].offset = 0;
+	style->object_position[1] = style->object_position[0];
 	style->background_position[0].unit = CSS_UNIT_PERCENT;
 	style->background_position[0].value = 0;
 	style->background_position[1].unit = CSS_UNIT_PERCENT;
@@ -3693,6 +3700,19 @@ cascade_apply(
 	case CSS_PROP_TRANSFORM_Y:
 		style->transform_translate[property - CSS_PROP_TRANSFORM_X] = cascade_length(engine, value, style->font_size);
 		break;
+	case CSS_PROP_OBJECT_FIT:
+		style->object_fit = value->keyword;
+		break;
+	case CSS_PROP_OBJECT_POSITION_X:
+	case CSS_PROP_OBJECT_POSITION_Y:
+		style->object_position[property - CSS_PROP_OBJECT_POSITION_X] = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_ASPECT_RATIO:
+		style->aspect_ratio = value->number;
+		break;
+	case CSS_PROP_ASPECT_AUTO:
+		style->aspect_auto = value->number != 0.0f;
+		break;
 	case CSS_PROP_TRANSFORM_SCALE_X:
 	case CSS_PROP_TRANSFORM_SCALE_Y:
 		style->transform_scale[property - CSS_PROP_TRANSFORM_SCALE_X] = cascade_length(engine, value, style->font_size);
@@ -4151,6 +4171,19 @@ cascade_inherit(
 	case CSS_PROP_TRANSFORM_X:
 	case CSS_PROP_TRANSFORM_Y:
 		style->transform_translate[property - CSS_PROP_TRANSFORM_X] = parent->transform_translate[property - CSS_PROP_TRANSFORM_X];
+		break;
+	case CSS_PROP_OBJECT_FIT:
+		style->object_fit = parent->object_fit;
+		break;
+	case CSS_PROP_OBJECT_POSITION_X:
+	case CSS_PROP_OBJECT_POSITION_Y:
+		style->object_position[property - CSS_PROP_OBJECT_POSITION_X] = parent->object_position[property - CSS_PROP_OBJECT_POSITION_X];
+		break;
+	case CSS_PROP_ASPECT_RATIO:
+		style->aspect_ratio = parent->aspect_ratio;
+		break;
+	case CSS_PROP_ASPECT_AUTO:
+		style->aspect_auto = parent->aspect_auto;
 		break;
 	case CSS_PROP_TRANSFORM_SCALE_X:
 	case CSS_PROP_TRANSFORM_SCALE_Y:

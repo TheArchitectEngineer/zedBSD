@@ -43,6 +43,9 @@ layout_replaced_size(
 	layout_unit width;
 	layout_unit height;
 	layout_unit limit;
+	layout_unit frame_x;
+	layout_unit frame_y;
+	int ratio_override;
 	int has_ratio;
 	int width_given;
 	int height_given;
@@ -95,18 +98,52 @@ layout_replaced_size(
 	if (!height_given && box->control == DOM_CONTROL_NONE)
 		height_given = replaced_attribute(box, "height", &height);
 
+	/*
+	 * An aspect-ratio replaces the image's own ratio (auto keeps the image's
+	 * when it has one).  It relates the box-sizing boxes, so under border-box
+	 * the frame is part of both sides.
+	 */
+	ratio_override = 0;
+	frame_x = 0;
+	frame_y = 0;
+	if (box->style.aspect_ratio > 0.0f && (!box->style.aspect_auto || !has_ratio || natural_width <= 0 || natural_height <= 0)) {
+		ratio_override = 1;
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER) {
+			frame_x = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+			frame_y = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		}
+	}
+	if (!ratio_override && (natural_width <= 0 || natural_height <= 0))
+		has_ratio = 0;
+
 	/* What is not given comes from the other side through the ratio, or from the image. */
 	if (width_given && !height_given) {
 		height = natural_height;
-		if (has_ratio)
+		if (ratio_override) {
+			height = (layout_unit)((float)(width + frame_x) / box->style.aspect_ratio) - frame_y;
+		} else if (has_ratio) {
 			height = (layout_unit)((int64_t)width * natural_height / natural_width);
+		}
 	} else if (height_given && !width_given) {
 		width = natural_width;
-		if (has_ratio)
+		if (ratio_override) {
+			width = (layout_unit)((float)(height + frame_y) * box->style.aspect_ratio) - frame_x;
+		} else if (has_ratio) {
 			width = (layout_unit)((int64_t)height * natural_width / natural_height);
+		}
 	} else if (!width_given && !height_given) {
 		width = natural_width;
 		height = natural_height;
+		if (ratio_override) {
+			/* The natural height (or the default one) stays and the width follows it; an explicit ratio with a bare image keeps the image's width instead. */
+			if (natural_height <= 0)
+				height = 150 * LAYOUT_UNIT;
+			width = (layout_unit)((float)(height + frame_y) * box->style.aspect_ratio) - frame_x;
+			if (box->image != NULL && !box->style.aspect_auto && frame_x == 0 && frame_y == 0) {
+				width = natural_width;
+				height = (layout_unit)((float)width / box->style.aspect_ratio);
+			}
+		}
 
 		/* An inline <svg> with a viewBox but no width or height has a ratio only: it fills its containing block's width (ws074-p228). */
 		if (replaced_is_bare_svg(box) && containing_width > 0 && natural_width > 0) {
