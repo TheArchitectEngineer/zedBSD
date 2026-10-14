@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
-Resume point: p006（P3、2026-10-15、agent/p3-ws236 9c1595a71）: frame 0 は start の後の最初の picture を firmware が次の slice まで持つため、非参照の灰色の push picture を送って出す。1〜15 が 1 小さいのは firmware の NV12 の変換で、写す時に補正。遅さは uncached の 3 MB の読み 2 回と executor の塞がりと見て、MMAL の memory を cached・readback を cached の写しから・decode を step 化、計測の行を足した。BUG-314 の理由の log も。host 試験・build（warning 0）済み、T の実機待ち（[phase006](phase006/phase.md) の依頼）。p007 は試験の C の書き方と通しの見直しが残り。
+Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は start の後の最初の picture を firmware が次の slice まで持つため、非参照の灰色の push picture を送って出す。1〜15 が 1 小さいのは firmware の NV12 の変換で、写す時に補正。遅さは uncached の 3 MB の読み 2 回と executor の塞がりと見て、MMAL の memory を cached・readback を cached の写しから・decode を step 化、計測の行を足した。BUG-314 の理由の log も。host 試験・build（warning 0）済み、T の実機待ち（[phase006](phase006/phase.md) の依頼）。p007 は試験の C の書き方と通しの見直しが残り。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-14）

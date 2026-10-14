@@ -3,7 +3,7 @@
 # ws236-p006: 実機の確かめと直し
 
 Parent: [WS236](../ws.md)
-Status: in-progress（P3、2026-10-15。frame 0・1〜15 の値・速さ・BUG-314 の直しを実装し、host 試験と build（warning 0）まで済み。test-wait（T の実機、下の依頼）。agent/p3-ws236 9c1595a71・3a86d2026・68005a9c2）
+Status: in-progress（P3、2026-10-15。frame 0・1〜15 の値・速さ・BUG-314 の直しを実装し、host 試験と build（warning 0）まで済み。test-wait（T の実機、下の依頼）。agent/p3-ws236 0e9ab9880・26f94b993・a7d79ec3e）
 Phase disposition: normal
 
 ## 範囲
@@ -48,7 +48,7 @@ Phase disposition: normal
 - submit の ioctl（`runtime_submit`）は `runtime_ready` と `bcm2711_render_worker_submit` で、session の stop・engine の uncertain・not ready・fault の時に EIO を返すが、どちらも log を出さない（実行時の失敗だけが `v3d: command failed` の行を出す）。compositor の EIO（log なし）はこの admission の拒否と合う。
 - 直し（判定は不変）: EIO を返す submit の道に理由の 1 行 `v3d: EIO at <site>: <reason> (N more refusals since the last such line)`（1 秒に最大 1 行、間の拒否は数える）。site: `command submit`・`job reserve`・`job commit`・`job capacity`（render-worker.c）、`command`・`synchronous command`・`command execution`（render-runtime.c）、`queue submit`・`queue execution`（vulkan-queue.c）。理由は判定の式を順に言う（`bcm2711_render_refusal_reason`）。
 
-## 変えた file（9c1595a71、書き方の直し 3a86d2026・68005a9c2）
+## 変えた file（0e9ab9880、書き方の直し 26f94b993・a7d79ec3e）
 
 | file | 内容 |
 | --- | --- |
@@ -71,7 +71,7 @@ Phase disposition: normal
 
 ## T への依頼（Pi 4 実機 kei@10.0.30.2、QEMU 不要、約 25 分）
 
-1. build: merge 後の main（または agent/p3-ws236 の 68005a9c2 以降）で `make -j16 BUILD=build/<T>/ci ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/ci/vmunix`（warning 0 を確かめる）。userland は変えていない（`/lib/libmedia.so`・`/home/kei/ws236/vkvideo-probe` と stream・mp4 は T3 の時のまま使う。無ければ T3 の手順で `plan/ws236/tests/config-rpi4-video.mk` から build して複写）。probe の config は使わない（起動が戻らなかった）。
+1. build: merge 後の main（または agent/p3-ws236 の a7d79ec3e 以降）で `make -j16 BUILD=build/<T>/ci ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/ci/vmunix`（warning 0 を確かめる）。userland は変えていない（`/lib/libmedia.so`・`/home/kei/ws236/vkvideo-probe` と stream・mp4 は T3 の時のまま使う。無ければ T3 の手順で `plan/ws236/tests/config-rpi4-video.mk` から build して複写）。probe の config は使わない（起動が戻らなかった）。
 2. 実機: `/boot/boot0/vmunix` を退避して差し替え、sync、reboot、約 1 分で ssh が戻ること。
 3. `dmesg | grep -E 'rpi4-(vchiq|mmal)|v3d: (vk|video|EIO)'` の全行を保存（起動直後）。
 4. vkvideo-probe（T3 と同じ）: `vkvideo-probe --expect=/home/kei/ws236/<s>.sha256 --time --dump=/tmp/vk-<s>.dump /home/kei/ws236/<s>.h264` を `p-baseline-64`・`i-high-352-cqm`・`pb-high-352-pyramid` で各 1 回。終了 code と全出力。
