@@ -183,6 +183,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75-encode.c src/drivers/
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compute-launch.c src/drivers/gpu/nvrtx/compute.c
 # P8b: the takeover of the firmware's head, the display channels and a flip (ws037-p006, nvrtx.disp=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/scanout.c
+# P4m: the VRAM allocator and the BAR1 window (ws037-p005).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;

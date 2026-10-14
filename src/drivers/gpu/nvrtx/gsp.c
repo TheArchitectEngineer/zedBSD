@@ -230,6 +230,13 @@ nvrtx_gsp_start(
 		return error;
 	}
 
+	/* Sets the VRAM allocator and the CPU's window up unless the boot stops before them; neither stops the boot. */
+	allowed = nvrtx_stage_allowed("P4m");
+	if (!allowed)
+		nvrtx_stage_mark("P4m skipped (nvrtx.stop=P4m)");
+	if (allowed)
+		(void)nvrtx_memory_start(gpu);
+
 	/* Stops before P5 when the boot asks. */
 	allowed = nvrtx_stage_allowed("P5");
 	if (!allowed) {
@@ -355,6 +362,7 @@ nvrtx_gsp_release(
 	nvrtx_gr_release(gpu);
 	nvrtx_compute_release(gpu);
 	nvrtx_scanout_release(gpu);
+	nvrtx_memory_release(gpu);
 
 	/* Frees the channel's staging buffer and the reply buffer. */
 	if (memory->staging != NULL)

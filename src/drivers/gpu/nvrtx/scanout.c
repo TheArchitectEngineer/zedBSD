@@ -83,6 +83,7 @@
 
 static int scanout_read_armed(struct nvrtx_gpu *gpu);
 static int scanout_surfaces(struct nvrtx_gpu *gpu);
+static int scanout_surface_objects(struct nvrtx_gpu *gpu, uint64_t span);
 static int scanout_paint(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface, int reversed);
 static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push, int *made);
 static int scanout_bind(struct nvrtx_gpu *gpu, uint32_t chid, uint32_t handle, uint64_t start, uint64_t limit);
@@ -304,19 +305,29 @@ scanout_surfaces(
 	if (error != 0)
 		return error;
 
-	/* Takes two surfaces under the graphics and compute arenas' reserve, in the last usable region. */
+	/*
+	 * Takes two surfaces from the VRAM allocator (P4m), mapped in the CPU's
+	 * window when there is one; without the allocator, under the graphics
+	 * and compute arenas' reserve in the last usable region, as before.
+	 */
 	span = (uint64_t)((width * 4U + SCANOUT_PITCH_ALIGN - 1U) & ~(SCANOUT_PITCH_ALIGN - 1U)) * height;
 	span = (span + SCANOUT_SURFACE_ALIGN - 1U) & ~(SCANOUT_SURFACE_ALIGN - 1U);
-	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_COMPUTE_ARENA_RESERVE + 2U * span, &candidate, &region);
+	if (gpu->memory_state.ready != 0) {
+		error = scanout_surface_objects(gpu, span);
+	} else {
+		error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_COMPUTE_ARENA_RESERVE + 2U * span, &candidate, &region);
+		display->surface_objects[0].vram = candidate;
+		display->surface_objects[1].vram = candidate + span;
+	}
 	if (error != 0) {
 		nvrtx_stage_mark("P8b fail: no VRAM for the surfaces (%d)", error);
 		return error;
 	}
 
-	/* Describes both surfaces: the same size and pitch, one after the other, read through the VRAM object. */
+	/* Describes both surfaces: the same size and pitch, read through the VRAM object. */
 	for (index = 0U; index < 2U; index++) {
 		surface = &display->surfaces[index];
-		surface->offset = candidate + span * index;
+		surface->offset = display->surface_objects[index].vram;
 		surface->width = width;
 		surface->height = height;
 		surface->pitch = (width * 4U + SCANOUT_PITCH_ALIGN - 1U) & ~(SCANOUT_PITCH_ALIGN - 1U);
@@ -339,6 +350,32 @@ scanout_surfaces(
 	    (unsigned)display->surfaces[0].pitch,
 	    (unsigned long long)display->surfaces[0].offset,
 	    (unsigned long long)display->surfaces[1].offset);
+	return 0;
+}
+
+/* Takes the two surfaces' VRAM from the allocator and maps them in the CPU's window when it works. */
+static int
+scanout_surface_objects(
+	struct nvrtx_gpu *gpu,
+	uint64_t span)
+{
+	struct nvrtx_bo *object;
+	unsigned index;
+	int error;
+
+	/* Each surface is its own object on a 1 MiB boundary. */
+	for (index = 0U; index < 2U; index++) {
+		object = &gpu->display.surface_objects[index];
+		error = nvrtx_bo_alloc(gpu, span, SCANOUT_SURFACE_ALIGN, object);
+		if (error != 0)
+			return error;
+
+		/* The CPU's view is for later frames; P8b paints through PRAMIN, so a missing window is no failure. */
+		if (gpu->memory_state.bar1_ready != 0)
+			(void)nvrtx_bo_map(gpu, object);
+	}
+
+	/* Succeeded: both surfaces have VRAM of their own. */
 	return 0;
 }
 
