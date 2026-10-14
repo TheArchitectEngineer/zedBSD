@@ -1,0 +1,9 @@
+# q1180-i01 — horizontal Grid vertical-lr absolute text geometry
+
+A direct vertical-lr/LTR absolute ASCII child in a fixed horizontal 2×2 inline Grid can now use its definite row's physical height as vertical inline room, for the bounded first-area `left` inset case. `inline_vertical_absolute_grid` recognizes this orthogonal case and `inline_vertical_room` uses row 1's pixel track; other orthogonal children remain on their previous path.
+
+The [minimal page](horizontal-grid-vertical-abs.html) changed from `5,0,36,10` in the [before layout](browser-before.layout.txt) to `5,0,10,36` in the [after layout](browser-after.layout.txt), exactly matching [independent Chromium](chromium.dom.html). In fixed Interop 2025 [non-static positioned 007](wpt-007.json), the horizontal LTR callback's first child now passes its width10, height60 and offset checks; its first failure moved from `width expected 10 but got 60` to the second child's `width expected 30 but got 70`. The whole WPT file remains FAIL as expected for this partial scope. Previously passing [non-static 001](wpt-nonstatic-001.json) and [vertical positioned column 001](wpt-vertical-old.json) remain whole PASS. Fixed WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`, q1012 manifest, localhost HTTP, fixed fonts, 5 s settle, 20 s process bound.
+
+[Warning-free final-source build](build.log), [host CSS](css.log) 51/51, [JS](js.log) 14/14, [Grid](grid.log) 48/48 PASS. [Final-source Acid report](acid-report.json): Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 differences, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1180-i01 cleared its finite partial criteria; p220/p217/p189/p173 whole remain unmet. Next add vertical-rl child geometry and the other explicit area cases, then vertical Grid horizontal-child static area. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.

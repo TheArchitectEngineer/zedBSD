@@ -219,7 +219,7 @@ layout_inline(
 	return 0;
 }
 
-/* A direct absolute child can borrow a definite vertical Grid column's inline room. */
+/* A direct absolute child can borrow a definite Grid track's inline room. */
 static int
 inline_vertical_absolute_grid(
 	const struct layout_box *box)
@@ -240,13 +240,35 @@ inline_vertical_absolute_grid(
 	    parent->style.column_count == 0 || parent->style.row_count == 0 ||
 	    parent->style.column_gap.value != 0 || parent->style.row_gap.value != 0)
 		return 0;
-	if (parent->style.writing_mode != box->style.writing_mode &&
+	if (parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB) {
+		/* A definite horizontal Grid row can bound one vertical absolute run. */
+		if (box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+		    box->style.direction != CSS_DIRECTION_LTR ||
+		    parent->style.column_count != 2 || parent->style.row_count != 2 ||
+		    box->style.grid_column.start != 1 ||
+		    box->style.grid_column.end != 2 ||
+		    box->style.grid_row.start != 1 || box->style.grid_row.end != 2 ||
+		    box->style.offset[CSS_LEFT].unit != CSS_UNIT_PX ||
+		    box->style.offset[CSS_TOP].unit != CSS_UNIT_AUTO ||
+		    box->style.offset[CSS_RIGHT].unit != CSS_UNIT_AUTO ||
+		    box->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
+			return 0;
+
+		/* Only a frameless child in a frameless Grid uses this first mapping. */
+		for (index = 0; index < 4; index++) {
+			if (parent->border[index] != 0 || parent->padding[index] != 0 ||
+			    box->border[index] != 0 || box->padding[index] != 0)
+				return 0;
+		}
+	} else if (parent->style.writing_mode != box->style.writing_mode &&
 	    !((parent->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
 	    box->style.writing_mode == CSS_WRITING_VERTICAL_RL) ||
 	    (parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
-	    box->style.writing_mode == CSS_WRITING_VERTICAL_LR)))
+	    box->style.writing_mode == CSS_WRITING_VERTICAL_LR))) {
 		return 0;
-	if (parent->style.writing_mode != box->style.writing_mode &&
+	}
+	if (parent->style.writing_mode != CSS_WRITING_HORIZONTAL_TB &&
+	    parent->style.writing_mode != box->style.writing_mode &&
 	    (parent->style.column_count != 2 || parent->style.row_count != 2 ||
 	    box->style.direction != CSS_DIRECTION_LTR))
 		return 0;
@@ -347,24 +369,30 @@ inline_vertical_room(
 		return room;
 	}
 
-	/* A fixed vertical Grid's shortest column bounds every simple item. */
+	/* A fixed Grid track bounds the child's logical inline axis. */
 	parent = box->parent;
-	if (parent == NULL || parent->style.display != CSS_DISPLAY_INLINE_GRID ||
-	    (parent->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
-	    parent->style.writing_mode != CSS_WRITING_VERTICAL_RL) ||
-	    parent->style.direction != CSS_DIRECTION_LTR ||
-	    parent->style.column_count == 0 || parent->style.column_gap.value != 0)
-		return 0;
-	for (column = 0; column < parent->style.column_count; column++) {
-		/* A non-fixed column cannot guarantee that every child fits. */
-		if (parent->style.columns[column].kind != CSS_TRACK_LENGTH ||
-		    parent->style.columns[column].size.unit != CSS_UNIT_PX)
+	if (parent != NULL && parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+	    inline_vertical_absolute_grid(box)) {
+		/* The child's logical inline axis is the row's physical height. */
+		room = layout_from_px(parent->style.rows[0].size.value);
+	} else {
+		if (parent == NULL || parent->style.display != CSS_DISPLAY_INLINE_GRID ||
+		    (parent->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+		    parent->style.writing_mode != CSS_WRITING_VERTICAL_RL) ||
+		    parent->style.direction != CSS_DIRECTION_LTR ||
+		    parent->style.column_count == 0 || parent->style.column_gap.value != 0)
 			return 0;
+		for (column = 0; column < parent->style.column_count; column++) {
+			/* A non-fixed column cannot guarantee that every child fits. */
+			if (parent->style.columns[column].kind != CSS_TRACK_LENGTH ||
+			    parent->style.columns[column].size.unit != CSS_UNIT_PX)
+				return 0;
 
-		/* The shortest fixed column bounds every simple grid item. */
-		track = layout_from_px(parent->style.columns[column].size.value);
-		if (column == 0 || track < room)
-			room = track;
+			/* The shortest fixed column bounds every simple grid item. */
+			track = layout_from_px(parent->style.columns[column].size.value);
+			if (column == 0 || track < room)
+				room = track;
+		}
 	}
 
 	/* The item's physical frame and margins reduce that room. */
