@@ -13,7 +13,7 @@ layout(location = 0) in vec4 corner;
 
 // The item, one per instance: its exact rectangle in pixels (left, top,
 // right, bottom), its straight color, the atlas place of a glyph or an image
-// (u, v in texels) with its kind (z: 0 a rectangle, 1 a glyph, 2 an image),
+// (u, v in texels) with its kind (z: 0 rectangle, 1 glyph, 2 image, 3 sideways glyph),
 // and for an image where it starts (x, y, the unclipped rectangle's top left)
 // with its texels to a pixel (z, w), and its size in texels (x, y).
 layout(location = 1) in vec4 rect;

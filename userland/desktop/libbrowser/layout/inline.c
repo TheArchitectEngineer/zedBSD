@@ -192,6 +192,7 @@ inline_vertical_simple(
 	int depth)
 {
 	const struct layout_box *child;
+	size_t index;
 
 	/* Other formatting contexts and markers retain their established layout. */
 	if (depth > LAYOUT_DEPTH_MAX || box->out_of_flow ||
@@ -199,8 +200,19 @@ inline_vertical_simple(
 	    box->marker_length != 0)
 		return 0;
 
-	/* Text and a line break have no descendants to inspect. */
-	if (box->kind == LAYOUT_TEXT || box->kind == LAYOUT_LINE_BREAK)
+	/* Upright orientation and non-Latin shaping need a different glyph path. */
+	if (box->style.text_orientation == CSS_TEXT_ORIENTATION_UPRIGHT)
+		return 0;
+	if (box->kind == LAYOUT_TEXT) {
+		for (index = 0; index < box->text_length; index++) {
+			if (box->text[index] > 0x7fU)
+				return 0;
+		}
+		return 1;
+	}
+
+	/* A line break has no descendants to inspect. */
+	if (box->kind == LAYOUT_LINE_BREAK)
 		return 1;
 
 	/* Only the root block and inline wrappers can contain these runs. */

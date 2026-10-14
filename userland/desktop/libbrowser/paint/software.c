@@ -371,6 +371,8 @@ software_text(
 	int origin_y;
 	int column;
 	int row;
+	int pixel_x;
+	int pixel_y;
 	size_t index;
 	int error;
 
@@ -388,19 +390,30 @@ software_text(
 			continue;
 
 		/* The bitmap's top left, from the pen and the baseline. */
-		origin_x = (int)floorf(layout_to_px(item->x + item->glyphs[index].x) + 0.5f) + glyph.left;
-		origin_y = baseline - glyph.top;
+		if (item->vertical) {
+			origin_x = (int)floorf(layout_to_px(item->x) + 0.5f) + glyph.top - glyph.height;
+			origin_y = baseline +
+			    (int)floorf(layout_to_px(item->glyphs[index].x) + 0.5f) + glyph.left;
+		} else {
+			origin_x = (int)floorf(layout_to_px(item->x + item->glyphs[index].x) + 0.5f) + glyph.left;
+			origin_y = baseline - glyph.top;
+		}
 
 		/* Each covered pixel inside the clip (on whole pixels) takes the text color by its coverage. */
 		for (row = 0; row < glyph.height; row++) {
-			if (origin_y + row < clip->pixel_top || origin_y + row >= clip->pixel_bottom)
-				continue;
 			for (column = 0; column < glyph.width; column++) {
-				if (origin_x + column < clip->pixel_left || origin_x + column >= clip->pixel_right)
+				pixel_x = origin_x + column;
+				pixel_y = origin_y + row;
+				if (item->vertical) {
+					pixel_x = origin_x + glyph.height - 1 - row;
+					pixel_y = origin_y + column;
+				}
+				if (pixel_x < clip->pixel_left || pixel_x >= clip->pixel_right ||
+				    pixel_y < clip->pixel_top || pixel_y >= clip->pixel_bottom)
 					continue;
 				coverage = (float)glyph.bitmap[(size_t)row * (size_t)glyph.width + (size_t)column] / 255.0f;
 				if (coverage > 0.0f)
-					software_blend(bitmap, origin_x + column, origin_y + row, item->color, coverage, 1);
+					software_blend(bitmap, pixel_x, pixel_y, item->color, coverage, 1);
 			}
 		}
 	}

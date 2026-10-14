@@ -1,0 +1,6 @@
+viewport 128.00 x 128.00, document height 100.00
+block <html> 0.00 0.00 128.00 100.00
+  block <body> 0.00 0.00 128.00 100.00
+    block <div> 0.00 0.00 40.00 100.00
+      line 0.00 0.00 height 32.00 baseline 26.00
+        text 0.00 w 32.00 32px "字"

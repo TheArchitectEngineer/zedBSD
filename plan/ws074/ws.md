@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1147](queue.md) finished / p189 fixed Grid502 recensus after orthogonal items。2026-10-14 11:25 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1148](queue.md) finished / p220 bounded vertical-lr Latin text paint。2026-10-14 11:34 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1147の134 PASS/368 FAIL、q1145比4 whole/4 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p220-q1148-partial-clear-20261014: [p220](phase220/phase.md) q1148-i01の限定縦sideways paintをCPU/GPUで実装し、F回転画素完全一致・clip込みGPU差0、固定旧WPT10/10 PASS、warning0 build・host CSS51/JS14/Grid48・Acid3差0/Acid2差1865維持。[証拠](phase220/evidence/20261014-q1148/README.md)。p220 wholeはupright/CJK・別writing-mode・wrap/inline/装飾が残りin-progress、p173全3,805件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
 

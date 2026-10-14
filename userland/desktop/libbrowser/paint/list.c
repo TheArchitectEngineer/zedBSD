@@ -151,7 +151,7 @@ static void list_borders(struct list_walk *walk, const struct layout_box *box);
 static int list_point_borders(struct list_walk *walk, const struct layout_box *box);
 static void list_inline_floats(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
 static void list_lines(struct list_walk *walk, const struct layout_box *box, const struct layout_box *layer, int depth);
-static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline);
+static void list_fragment(struct list_walk *walk, const struct layout_fragment *fragment, layout_unit x, layout_unit baseline, int vertical);
 static void list_rect(struct list_walk *walk, layout_unit x, layout_unit y, layout_unit width, layout_unit height, uint32_t color);
 static void list_replaced(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
 static void list_image(struct list_walk *walk, const struct layout_box *box, layout_unit x, layout_unit y);
@@ -980,7 +980,14 @@ list_lines(
 			}
 
 			/* Text and replaced boxes. */
-			list_fragment(walk, fragment, left + line->left + fragment->x, top + line->y + line->baseline + fragment->shift);
+			if (box->vertical_inline) {
+				list_fragment(walk, fragment,
+				    left + line->y + line->height - line->baseline - fragment->shift,
+				    top + line->left + fragment->x, 1);
+			} else {
+				list_fragment(walk, fragment, left + line->left + fragment->x,
+				    top + line->y + line->baseline + fragment->shift, 0);
+			}
 		}
 	}
 }
@@ -991,7 +998,8 @@ list_fragment(
 	struct list_walk *walk,
 	const struct layout_fragment *fragment,
 	layout_unit x,
-	layout_unit baseline)
+	layout_unit baseline,
+	int vertical)
 {
 	struct paint_item item;
 	struct paint_item shadow;
@@ -1065,6 +1073,7 @@ list_fragment(
 	/* The text item, faded by the inline boxes around it (the block's own opacity fades it with the block). */
 	memset(&item, 0, sizeof(item));
 	item.kind = PAINT_TEXT;
+	item.vertical = vertical;
 	item.x = x;
 	item.y = baseline;
 	item.width = fragment->width;

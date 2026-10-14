@@ -1,0 +1,31 @@
+{
+  "horizontal_ink_bounds": [
+    1,
+    4,
+    14,
+    26
+  ],
+  "vertical_ink_bounds": [
+    6,
+    1,
+    28,
+    14
+  ],
+  "rotated_ink_size": [
+    22,
+    13
+  ],
+  "clockwise_90_exact": true,
+  "cpu_gpu_different_pixels": {
+    "horizontal-f": 0,
+    "vertical-f": 0,
+    "clipped-vertical-f": 0
+  },
+  "target_pixels_per_image": 16384,
+  "clipped_ink_bounds": [
+    6,
+    1,
+    16,
+    12
+  ]
+}

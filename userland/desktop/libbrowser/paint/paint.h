@@ -53,8 +53,9 @@ struct paint_glyph {
  * One display item.
  *
  * A rectangle is filled with a color, its edges covering the pixels they
- * cross in proportion.  A text item draws its glyphs from x along the
- * baseline y in its font and color.  An image item stretches its image
+ * cross in proportion.  A text item draws its glyphs from x along baseline
+ * y; a vertical item uses x as its physical baseline and advances down from
+ * y.  An image item stretches its image
  * over its rectangle: each pixel takes the image's pixel under its centre
  * (no filtering), and its edges cover the pixels they cross in proportion
  * as a rectangle's do.  The image belongs to the page, which keeps it for
@@ -62,6 +63,8 @@ struct paint_glyph {
  */
 struct paint_item {
 	int kind;
+	/* Clockwise sideways glyphs on a physical vertical inline axis. */
+	int vertical;
 	layout_unit x;
 	layout_unit y;
 	layout_unit width;

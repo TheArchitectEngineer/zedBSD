@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1147 / WS074 fixed Grid502 recensus（2026-10-14）
+## 最新: q1148 / WS074 vertical-lr sideways paint（2026-10-14）
+
+[q1148履歴](queue-q1148.md): 非折返しLatin縦字形は独立Fの90度回転画素完全一致、CPU/GPU通常・clip差0。固定旧WPT10/10 PASS、Acid3差0、Acid2差1865維持。[証拠](../ws074/phase220/evidence/20261014-q1148/README.md)。p220 whole未達、共有投影/GitHub publication pending。
+
+## q1147 / WS074 fixed Grid502 recensus（2026-10-14）
 
 [q1147履歴](queue-q1147.md): q1146後の固定Grid502は130→134 whole PASS、4 subtest改善・後退0。増分vertical-lr stretch005–008。[証拠](../ws074/phase189/evidence/20261014-q1147/README.md)。p220縦paint/p225 auto track待ち、共有投影/GitHub publication pending。
 

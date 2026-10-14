@@ -43,6 +43,7 @@
 #define GPU_KIND_RECT		0.0f
 #define GPU_KIND_GLYPH		1.0f
 #define GPU_KIND_IMAGE		2.0f
+#define GPU_KIND_VERTICAL_GLYPH	3.0f
 
 /*
  * One instance: the exact rectangle in pixels (left, top, right, bottom),
@@ -1339,15 +1340,15 @@ gpu_stage_text(
 	baseline = (int)floorf(layout_to_px(item->y - scroll_y) + 0.5f);
 
 	/* A run whose line is far outside the target draws nothing. */
-	if (baseline + (int)item->font.pixels * 2 < 0)
+	if (!item->vertical && baseline + (int)item->font.pixels * 2 < 0)
 		return 0;
-	if (baseline - (int)item->font.pixels * 2 > (int)extent.height)
+	if (!item->vertical && baseline - (int)item->font.pixels * 2 > (int)extent.height)
 		return 0;
 
 	/* Each glyph with ink. */
 	memset(&instance, 0, sizeof(instance));
 	gpu_color(item->color, instance.color);
-	instance.atlas[2] = GPU_KIND_GLYPH;
+	instance.atlas[2] = item->vertical ? GPU_KIND_VERTICAL_GLYPH : GPU_KIND_GLYPH;
 	for (index = 0; index < item->glyph_count; index++) {
 		error = text_glyph(text, &item->font, item->glyphs[index].code_point, 1, &glyph);
 		if (error != 0)
@@ -1363,14 +1364,20 @@ gpu_stage_text(
 			continue;
 
 		/* The bitmap's top left, from the pen and the baseline, on whole pixels. */
-		origin_x = (int)floorf(layout_to_px(item->x + item->glyphs[index].x) + 0.5f) + glyph.left;
-		origin_y = baseline - glyph.top;
+		if (item->vertical) {
+			origin_x = (int)floorf(layout_to_px(item->x) + 0.5f) + glyph.top - glyph.height;
+			origin_y = baseline +
+			    (int)floorf(layout_to_px(item->glyphs[index].x) + 0.5f) + glyph.left;
+		} else {
+			origin_x = (int)floorf(layout_to_px(item->x + item->glyphs[index].x) + 0.5f) + glyph.left;
+			origin_y = baseline - glyph.top;
+		}
 
 		/* The glyph's pixels inside the clip (on whole pixels); none inside draws nothing. */
 		left = origin_x;
 		top = origin_y;
-		right = origin_x + glyph.width;
-		bottom = origin_y + glyph.height;
+		right = origin_x + (item->vertical ? glyph.height : glyph.width);
+		bottom = origin_y + (item->vertical ? glyph.width : glyph.height);
 		if (left < clip->pixel_left)
 			left = clip->pixel_left;
 		if (top < clip->pixel_top)
@@ -1382,13 +1389,21 @@ gpu_stage_text(
 		if (right <= left || bottom <= top)
 			continue;
 
-		/* The instance: the cut rectangle, its atlas place moved by the same cut (the shader reads texels from there). */
+		/* The cut rectangle; sideways glyphs retain the uncut origin for rotation. */
 		instance.rect[0] = (float)left;
 		instance.rect[1] = (float)top;
 		instance.rect[2] = (float)right;
 		instance.rect[3] = (float)bottom;
-		instance.atlas[0] = (float)(atlas_x + (uint32_t)(left - origin_x));
-		instance.atlas[1] = (float)(atlas_y + (uint32_t)(top - origin_y));
+		if (item->vertical) {
+			instance.atlas[0] = (float)atlas_x;
+			instance.atlas[1] = (float)atlas_y;
+			instance.source[0] = (float)origin_x;
+			instance.source[1] = (float)origin_y;
+			instance.source[2] = (float)glyph.height;
+		} else {
+			instance.atlas[0] = (float)(atlas_x + (uint32_t)(left - origin_x));
+			instance.atlas[1] = (float)(atlas_y + (uint32_t)(top - origin_y));
+		}
 		error = wb_vector_push(&gpu->staged, &instance);
 		if (error != 0)
 			return error;

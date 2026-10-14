@@ -26,7 +26,7 @@ void main()
 	vec2 pixel = floor(gl_FragCoord.xy);
 	float coverage;
 
-	if (item_atlas.z > 1.5) {
+	if (item_atlas.z > 1.5 && item_atlas.z < 2.5) {
 		// An image: the rectangle's overlap, and the texel under the pixel's centre.
 		vec2 low = max(item_rect.xy, pixel);
 		vec2 high = min(item_rect.zw, pixel + 1.0);
@@ -44,6 +44,11 @@ void main()
 		vec2 high = min(item_rect.zw, pixel + 1.0);
 		vec2 overlap = clamp(high - low, 0.0, 1.0);
 		coverage = overlap.x * overlap.y;
+	} else if (item_atlas.z > 2.5) {
+		// A clockwise sideways glyph: destination x runs through source rows backwards.
+		ivec2 offset = ivec2(pixel - item_source.xy);
+		ivec2 texel = ivec2(item_atlas.xy) + ivec2(offset.y, int(item_source.z) - 1 - offset.x);
+		coverage = texelFetch(glyphs, texel, 0).a;
 	} else {
 		// A glyph: its texel at this pixel.
 		ivec2 texel = ivec2(item_atlas.xy + pixel - item_rect.xy);
