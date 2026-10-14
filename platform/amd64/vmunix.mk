@@ -172,6 +172,9 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/records.c src/drivers/gpu/nvrtx/rpc
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/mmu.c src/drivers/gpu/nvrtx/objects.c
 # P4 to P6 on the GPU: the address space, the channel and its fence (ws037-p005 5b-5d).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/channel.c
+# The shader compiler: SPIR-V to SM75 through the shared frontend and optimizer (ws037-p008).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75-encode.c src/drivers/gpu/nvrtx/compiler/sm75-compile.c \
+	$(filter-out $(AMD64_I915_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;

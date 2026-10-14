@@ -1,0 +1,19 @@
+#version 450
+// ws037-p008: float arithmetic, conversions, roundings, the special functions and a selection.
+layout(local_size_x = 16) in;
+layout(std430, set = 0, binding = 0) readonly buffer I { float x[]; };
+layout(std430, set = 0, binding = 1) buffer O { float o[]; };
+layout(push_constant) uniform P { float scale; uint count; } p;
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	if (i >= p.count)
+		return;
+	float v = x[i] * p.scale;
+	float r = fract(v) + floor(v) * 2.0 - abs(v - 1.5);
+	r = r + sqrt(abs(v)) - exp2(v * 0.25) + min(v, 2.0) * max(v, -1.0);
+	r = (v < 0.5) ? r : -r;
+	o[i * 3u] = r;
+	o[i * 3u + 1u] = float(int(v * 3.0)) + float(i);
+	o[i * 3u + 2u] = 1.0 / (abs(v) + 1.0);
+}

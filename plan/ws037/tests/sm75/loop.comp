@@ -1,0 +1,11 @@
+#version 450
+// ws037-p008: a loop, which stage A refuses.
+layout(local_size_x = 1) in;
+layout(std430, set = 0, binding = 0) buffer O { uint o[]; };
+void main()
+{
+	uint s = 0u;
+	for (uint i = 0u; i < o[0]; i++)
+		s += i;
+	o[1] = s;
+}
