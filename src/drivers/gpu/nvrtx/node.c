@@ -13,8 +13,8 @@
  * device has ordinary storage (RAM the CPU reads and writes), blobs in the
  * VRAM (buffer objects of P4m's allocator, mapped in the CPU's window,
  * shared between opens by share.c), transfers and CPU mappings of both, and
- * the display of present.c and cursor.c.  It has no command stream yet: the
- * 3D and compute work of the GPU device is a later stage (ws037-p007).
+ * the display of present.c and cursor.c.  With nvrtx.vk=1 it is also a
+ * renderer (runtime.c: the Vulkan protocol's commands, ws037-p007 stage D2).
  *
  * The device is never unregistered: the GSP has no path back to the firmware
  * while it runs, so the GPU is kept until power-off (detach refuses).
@@ -89,6 +89,7 @@ nvrtx_node_start(
 {
 	struct nvrtx_node *node;
 	struct thread *drain;
+	bool vk_wanted;
 	int error;
 
 	/* The display's frames need the window and a head of the driver's own. */
@@ -133,6 +134,11 @@ nvrtx_node_start(
 	node->ops.share = &nvrtx_share_ops;
 	node->ops.scanout = &nvrtx_scanout_ops;
 
+	/* With nvrtx.vk=1 the device is also a renderer (ws037-p007 stage D2). */
+	vk_wanted = nvrtx_stage_vk_wanted();
+	if (vk_wanted)
+		nvrtx_runtime_bind(node);
+
 	/* Takes the display's frames and shows the console surface. */
 	error = nvrtx_present_start(node);
 	if (error != 0) {
@@ -155,6 +161,10 @@ nvrtx_node_start(
 		node_free(node);
 		return error;
 	}
+
+	/* The renderer's worker runs once the device is registered. */
+	if (node->renderer != 0)
+		nvrtx_runtime_start(node);
 
 	/*
 	 * Starts the thread that takes the messages the GSP sends meanwhile

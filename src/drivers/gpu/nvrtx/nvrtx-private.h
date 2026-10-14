@@ -278,6 +278,12 @@ bool
 nvrtx_stage_work_wanted(void);
 
 /*
+ * Reports whether the boot asked for the renderer (nvrtx.vk=1).
+ */
+bool
+nvrtx_stage_vk_wanted(void);
+
+/*
  * Reports whether the GPU stays up as a GPU device after the takeover: by
  * default, unless the boot says nvrtx.resident=0.
  */

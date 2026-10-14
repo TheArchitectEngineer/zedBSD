@@ -447,7 +447,7 @@ test_device(void)
 	vulkan_write_u64(&client, 1);
 	vulkan_write_u32(&client, 0);
 	vulkan_write_u64(&client, 0);
-	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 3);
 	vulkan_write_u32(&client, 0);
 	vulkan_write_u32(&client, 0);
 	vulkan_write_u32(&client, 0);
@@ -469,6 +469,7 @@ test_device(void)
 	(void)reply_word(&at);
 	check(reply_word(&at) == GPU_OP_DEVICE_WAIT_IDLE && reply_word(&at) == 0, "device: idle");
 	check(nvrtx_vk_object_find(session, I915_VK_OBJ_DEVICE, 0x102) == NULL && nvrtx_vk_object_find(session, I915_VK_OBJ_QUEUE, 0x103) != NULL, "device: device forgotten, queue kept");
+	check(session->timelines == (1ULL << 3), "device: the queue's timeline recorded");
 
 	vulkan_writer_finish(&client);
 	check(nvrtx_vk_session_close(&session) == 0, "device: session closed");

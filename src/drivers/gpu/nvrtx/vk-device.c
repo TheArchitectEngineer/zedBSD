@@ -45,6 +45,9 @@
 #define DEVICE_API_VERSION		VK_MAKE_VERSION(1, 1, 0)
 #define DEVICE_DRIVER_VERSION		1U
 
+/* The timelines a queue may complete jobs on: 1 to 63 (0 is the context's own). */
+#define DEVICE_TIMELINES		64U
+
 /* The features a format the executor renders to, samples and copies has. */
 #define DEVICE_COLOUR_FEATURES	(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
 				 VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | \
@@ -737,16 +740,17 @@ device_queue(
 	struct i915_wire_writer *reply)
 {
 	uint64_t identity;
+	uint32_t timeline;
 	uint32_t family;
 
-	/* Skips up to the family, reads it, skips the index and present word, reads the identity. */
+	/* Skips up to the timeline, reads it, skips the flags, reads the family, skips the index and present word, reads the identity. */
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	timeline = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	family = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
@@ -755,12 +759,15 @@ device_queue(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Only the one family exists. */
-	if (family != 0U)
+	/* Only the one family exists; its queue's jobs complete on a timeline of 1 to 63. */
+	if (family != 0U || timeline == 0U || timeline >= DEVICE_TIMELINES)
 		return EINVAL;
 
 	/* Remembers the queue; one asked for again is already remembered, and the reply is the same. */
 	(void)device_remember(session, I915_VK_OBJ_QUEUE, identity);
+
+	/* The session's jobs may now name the queue's timeline (the runtime reads the mask). */
+	__atomic_fetch_or(&session->timelines, 1ULL << timeline, __ATOMIC_RELEASE);
 
 	/* Replies the present word and the identity. */
 	drv_i915_wire_reply_u64(reply, 1U);
