@@ -140,6 +140,20 @@ struct layout_box {
 	int static_y_align;
 	/* Definite Grid area supplies the containing block for explicit insets. */
 	int static_grid_area;
+	/*
+	 * The containing block an absolute child takes from its Grid parent's
+	 * lines (relative to the parent's content box); an edge flagged auto is
+	 * the parent's padding edge.
+	 */
+	int cb_set;
+	int cb_left_auto;
+	int cb_right_auto;
+	int cb_top_auto;
+	int cb_bottom_auto;
+	layout_unit cb_left;
+	layout_unit cb_right;
+	layout_unit cb_top;
+	layout_unit cb_bottom;
 
 	/* The box model, resolved. */
 	layout_unit x;

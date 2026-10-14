@@ -207,6 +207,10 @@ layout_absolute(
 		if (child->out_of_flow) {
 			child->static_x += content_x;
 			child->static_y += content_y;
+			child->cb_left += content_x;
+			child->cb_right += content_x;
+			child->cb_top += content_y;
+			child->cb_bottom += content_y;
 			continue;
 		}
 

@@ -82,6 +82,8 @@ static void grid_resolve(const struct css_grid_place *place, int explicit_count,
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
     layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
 static void grid_static_vertical_start(struct layout_box *box);
+static void grid_abspos_areas(struct layout_box *box, const struct grid_state *grid,
+    layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
 static int grid_place(struct grid_state *grid, int auto_flow);
 static int grid_place_row(struct grid_state *grid, int dense);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
@@ -241,6 +243,7 @@ layout_grid(
 		child->static_y_area_height = 0;
 		child->static_y_align = CSS_ALIGN_AUTO;
 		child->static_grid_area = 0;
+		child->cb_set = 0;
 	}
 
 	/* Fixed vertical grids map their logical tracks to physical axes before laying out items. */
@@ -352,6 +355,7 @@ layout_grid(
 
 	/* Absolute children use valid definite grid areas without sizing the tracks. */
 	grid_static_position(box, &grid, column_gap, row_gap, shift, row_shift);
+	grid_abspos_areas(box, &grid, column_gap, row_gap, shift, row_shift);
 
 	/* Each item in its area, aligned in it across the rows. */
 	for (index = 0; index < grid.item_count; index++) {
@@ -1534,6 +1538,176 @@ grid_static_position(
 				if (index + 1 < row + row_span)
 					child->static_y_area_height += row_gap;
 			}
+		}
+	}
+}
+
+/*
+ * Finds the lines an absolute child's placement names, as 1-based line
+ * numbers (0 when the edge is auto).  A line outside the implicit grid
+ * is auto, and a span next to a definite line counts from it.
+ */
+static void
+grid_abspos_lines(
+	const struct css_grid_place *place,
+	int explicit_count,
+	int tracks,
+	int *first,
+	int *last)
+{
+	int start;
+	int end;
+
+	start = 0;
+	end = 0;
+	if (place->start > 0)
+		start = place->start;
+	else if (place->start < 0)
+		start = explicit_count + 2 + place->start;
+	if (place->end > 0)
+		end = place->end;
+	else if (place->end < 0)
+		end = explicit_count + 2 + place->end;
+	if (start == 0 && end != 0 && place->start_span > 0)
+		start = end - place->start_span;
+	if (end == 0 && start != 0 && place->end_span > 0)
+		end = start + place->end_span;
+	if (start != 0 && end != 0 && end < start) {
+		int swap;
+
+		swap = start;
+		start = end;
+		end = swap;
+	}
+	if (start < 1 || start > tracks + 1)
+		start = 0;
+	if (end < 1 || end > tracks + 1)
+		end = 0;
+	*first = start;
+	*last = end;
+}
+
+/*
+ * Gives each absolute child of a positioned grid the containing block its
+ * lines name: the tracks' edges, or the padding edge where a line is auto.
+ */
+static void
+grid_abspos_areas(
+	struct layout_box *box,
+	const struct grid_state *grid,
+	layout_unit column_gap,
+	layout_unit row_gap,
+	layout_unit shift,
+	layout_unit row_shift)
+{
+	struct layout_box *child;
+	layout_unit begin;
+	layout_unit left;
+	layout_unit right;
+	layout_unit top;
+	layout_unit bottom;
+	layout_unit total;
+	int first_column;
+	int last_column;
+	int first_row;
+	int last_row;
+	int index;
+	int rtl;
+
+	/* The grid is the containing block only when positioned; other flows keep their paths. */
+	if (box->style.position == CSS_POSITION_STATIC ||
+	    box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+	    (box->style.direction != CSS_DIRECTION_LTR && box->style.direction != CSS_DIRECTION_RTL))
+		return;
+	rtl = box->style.direction == CSS_DIRECTION_RTL;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->style.position != CSS_POSITION_ABSOLUTE || child->static_grid_area)
+			continue;
+		if (child->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
+			continue;
+		grid_abspos_lines(&child->style.grid_column, box->style.column_count,
+		    grid->column_count, &first_column, &last_column);
+		grid_abspos_lines(&child->style.grid_row, box->style.row_count,
+		    grid->row_count, &first_row, &last_row);
+		/* The columns: logical offsets from the start of the track strip. */
+		total = column_gap * (layout_unit)(grid->column_count - 1);
+		for (index = 0; index < grid->column_count; index++)
+			total += grid->columns[index];
+		left = 0;
+		right = 0;
+		begin = 0;
+		child->cb_left_auto = 0;
+		child->cb_right_auto = 0;
+		for (index = 0; index < grid->column_count; index++) {
+			if (first_column == index + 1)
+				left = begin;
+			begin += grid->columns[index];
+			if (last_column == index + 2)
+				right = begin;
+			begin += column_gap;
+		}
+		if (first_column == grid->column_count + 1)
+			left = total;
+		if (last_column == 1)
+			right = 0;
+		if (rtl) {
+			/* The strip runs from the right: logical start is the physical right. */
+			layout_unit physical_left;
+			layout_unit physical_right;
+			int left_auto;
+			int right_auto;
+
+			left_auto = last_column == 0;
+			right_auto = first_column == 0;
+			physical_left = shift + total - right;
+			physical_right = shift + total - left;
+			child->cb_left_auto = left_auto;
+			child->cb_right_auto = right_auto;
+			child->cb_left = left_auto ? -box->padding[CSS_LEFT] : physical_left;
+			child->cb_right = right_auto ? box->width + box->padding[CSS_RIGHT] : physical_right;
+		} else {
+			child->cb_left_auto = first_column == 0;
+			child->cb_right_auto = last_column == 0;
+			child->cb_left = child->cb_left_auto ? -box->padding[CSS_LEFT] : shift + left;
+			child->cb_right = child->cb_right_auto ? box->width + box->padding[CSS_RIGHT] : shift + right;
+		}
+
+		/* The rows. */
+		total = row_gap * (layout_unit)(grid->row_count - 1);
+		for (index = 0; index < grid->row_count; index++)
+			total += grid->rows[index];
+		top = 0;
+		bottom = 0;
+		begin = 0;
+		for (index = 0; index < grid->row_count; index++) {
+			if (first_row == index + 1)
+				top = begin;
+			begin += grid->rows[index];
+			if (last_row == index + 2)
+				bottom = begin;
+			begin += row_gap;
+		}
+		if (first_row == grid->row_count + 1)
+			top = total;
+		if (last_row == 1)
+			bottom = 0;
+		child->cb_top_auto = first_row == 0;
+		child->cb_bottom_auto = last_row == 0;
+		child->cb_top = child->cb_top_auto ? -box->padding[CSS_TOP] : row_shift + top;
+		child->cb_bottom = child->cb_bottom_auto ? 0 : row_shift + bottom;
+		child->cb_set = 1;
+
+		/* The static position starts at the area's start corner. */
+		child->static_x = rtl ? child->cb_right : child->cb_left;
+		child->static_x_from_right = rtl;
+		child->static_x_area_width = child->cb_right - child->cb_left;
+		if (child->static_x_area_width < 0)
+			child->static_x_area_width = 0;
+		child->static_y = child->cb_top;
+		if (!child->cb_bottom_auto) {
+			child->static_y_area_height = child->cb_bottom - child->cb_top;
+			if (child->static_y_area_height < 0)
+				child->static_y_area_height = 0;
 		}
 	}
 }

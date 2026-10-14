@@ -526,6 +526,8 @@ position_place(
 	layout_unit area_top;
 	layout_unit area_width;
 	layout_unit area_height;
+	layout_unit saved_height;
+	int saved_definite;
 	int has_left;
 	int has_right;
 	int has_top;
@@ -537,7 +539,16 @@ position_place(
 	area_top = containing->y;
 	area_width = containing->width;
 	area_height = containing->height;
-	if (box->static_grid_area) {
+	if (box->cb_set) {
+		area_left = box->cb_left_auto ? containing->x : box->cb_left;
+		area_top = box->cb_top_auto ? containing->y : box->cb_top;
+		area_width = (box->cb_right_auto ? containing->x + containing->width : box->cb_right) - area_left;
+		area_height = (box->cb_bottom_auto ? containing->y + containing->height : box->cb_bottom) - area_top;
+		if (area_width < 0)
+			area_width = 0;
+		if (area_height < 0)
+			area_height = 0;
+	} else if (box->static_grid_area) {
 		area_left = box->static_x -
 		    (box->static_x_from_right ? box->static_x_area_width : 0);
 		area_top = box->static_y;
@@ -575,12 +586,20 @@ position_place(
 		}
 	}
 
+	/* A percentage height of the box is of its containing block's padding box. */
+	saved_height = tree->containing_height;
+	saved_definite = tree->containing_height_definite;
+	tree->containing_height = area_height;
+	tree->containing_height_definite = 1;
+
 	/* A width set, or both sides set, lays the box out in that room; otherwise it shrinks to fit. */
 	if (box->style.width.unit != CSS_UNIT_AUTO || (has_left && has_right)) {
 		error = layout_block(tree, box, room);
 	} else {
 		error = layout_shrink_to_fit(tree, box, room);
 	}
+	tree->containing_height = saved_height;
+	tree->containing_height_definite = saved_definite;
 
 	/* A box that could not be laid out stops the placing. */
 	if (error != 0)
