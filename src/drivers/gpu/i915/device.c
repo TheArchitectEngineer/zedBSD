@@ -29,6 +29,7 @@
 #include "display/display.h"
 #include "display/diagnostics.h"
 #include "display/takeover.h"
+#include "display/gen9-flip.h"
 #include "render/render.h"
 #include <kern/kcrt.h>
 #include <kern/sysctl.h>
@@ -2507,12 +2508,23 @@ i915_interim_display_irq_nothing(
 	UNUSED_PARAMETER(context);
 }
 
-/* Ignores a display interrupt; the summary is off, so none is expected. */
+/*
+ * Hands a Gen9 display interrupt to the flip display, the one display
+ * source a Gen9 node enables (display/gen9-flip.c); ignores any other,
+ * since the summary is off and none is expected.
+ */
 static void
 i915_interim_display_irq_handle(
 	void *context,
 	uint32_t master_ctl)
 {
-	UNUSED_PARAMETER(context);
-	UNUSED_PARAMETER(master_ctl);
+	struct i915_gt *gt;
+
+	/* Only a Gen9 node enables a display source. */
+	gt = context;
+	if (gt->graphics_ver != 9U)
+		return;
+
+	/* The flip display acknowledges its pipe's flip done. */
+	drv_i915_gen9_flip_irq(master_ctl);
 }

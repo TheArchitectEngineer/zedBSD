@@ -91,7 +91,8 @@ release: firmware の SURF を書き戻し → latch を待つ → text console 
 | PW1 が上がっている | `pw1-off` |
 | DC5・DC6 が立っていない | `dc-state` |
 | 灯っている pipe（transcoder が enable で state 1、それが送る pipe の plane 1 が enable）がちょうど 1 つ | `no-lit-pipe`・`several-lit-pipes` |
-| plane 1 が XRGB8888、linear、rotation 0、async flip 無し、OFFSET 0、POS 0 | `format`・`tiled`・`rotated`・`async`・`offset` |
+| plane 1 が XRGB8888、linear、rotation 0、async flip 無し、OFFSET 0（POS は見ない: 大きさと番地が同じなら plane の置き場所は変わらない。p002 で決めた） | `format`・`tiled`・`rotated`・`async`・`offset` |
+| FBC（`ILK_DPFC_CONTROL` 0x43208 の bit 31）が無効（p002 で足した: 圧縮の cache が firmware の surface を持つと、切り替えに invalidate が要る） | `fbc` |
 | SURF が 256 KiB の倍数、SURFLIVE == SURF（firmware の flip が途中でない） | `surf-align`・`surf-pending` |
 | 幅・高さが 1〜8192、STRIDE × 64 ≥ 幅 × 4 | `size`・`stride` |
 | eDP なら PSR が無効 | `psr` |
