@@ -213,6 +213,9 @@ page_load_html(
 		return error;
 
 	/* The document is parsed: DOMContentLoaded, then the window's load. */
+	error = page_deferred_run(page);
+	if (error != 0)
+		return error;
 	error = page_modules_run(page);
 	if (error != 0)
 		return error;
@@ -1005,7 +1008,9 @@ page_gather_styles(
 	/* Succeeded: the sheets match the document of this generation. */
 	page->styled_generation = page->document->generation;
 	page->styled_visits = page->visits_generation;
-	return 0;
+
+	/* The links whose sheets have arrived tell their scripts (a handler may change the document). */
+	return page_sheets_fire_links(page);
 }
 
 /* A visited paint lookup cannot consult any history outside this page. */

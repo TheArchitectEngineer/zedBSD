@@ -891,6 +891,17 @@ vm_throw_site(
 	return 1;
 }
 
+/* Reports the function names a new exception was thrown through (innermost first), or an empty text. */
+const char *
+vm_throw_stack(
+	const struct vm_realm *realm,
+	vm_value exception)
+{
+	if (realm->throw_value != exception)
+		return "";
+	return realm->throw_stack;
+}
+
 /* Owns direct invocation values without depending on conservative C-stack scanning. */
 static int
 function_retain(

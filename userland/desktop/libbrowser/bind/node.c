@@ -1468,6 +1468,10 @@ node_prototype_index(
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_META)
 			return BIND_HTML_META_ELEMENT;
 
+		/* Links expose href, rel, media and the other reflected attributes of their fetch. */
+		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_LINK)
+			return BIND_HTML_LINK_ELEMENT;
+
 		/* Objects expose data through their own reflected URL interface. */
 		if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_OBJECT)
 			return BIND_HTML_OBJECT_ELEMENT;

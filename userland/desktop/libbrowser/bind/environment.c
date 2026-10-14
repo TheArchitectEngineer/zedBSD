@@ -22,6 +22,7 @@
  */
 
 #include "bind/internal.h"
+#include "js/builtin.h"
 #include "net/net.h"
 
 #include <errno.h>
@@ -156,6 +157,7 @@ static int environment_xhr_nothing(struct vm_realm *realm, vm_value this_value, 
 static int environment_xhr_put(struct vm_realm *realm, vm_value object, const char *name, vm_value value);
 static int environment_xhr_get(struct vm_realm *realm, vm_value object, const char *name, vm_value *value);
 static int environment_xhr_fire(struct vm_realm *realm, vm_value object, const char *type);
+static int environment_install_xhr_listeners(struct vm_realm *realm, struct vm_object *prototype);
 static int environment_response(struct vm_realm *realm, const struct wb_buffer *bytes, const struct wb_buffer *url, int response_status, vm_value *result);
 static int environment_settle_promise(struct vm_realm *realm, vm_value value, int reject, vm_value *result);
 static int environment_observer_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -451,6 +453,11 @@ bind_environment_install(
 
 	/* The window's own plain properties. */
 	error = environment_install_window(window);
+	if (error != 0)
+		return error;
+
+	/* The pieces written in the page's own language (AbortController, URL, Intl, ...). */
+	error = bind_install_prelude(window);
 	if (error != 0)
 		return error;
 
@@ -764,6 +771,10 @@ environment_install_xhr(
 	if (status != 0)
 		return status;
 
+	status = environment_install_xhr_listeners(realm, prototype);
+	if (status != 0)
+		return status;
+
 	/* The constructor keeps its prototype in native data. */
 	status = js_builtin_function(realm, "XMLHttpRequest", 0, bind_illegal_constructor, environment_xhr_construct, &constructor);
 	if (status != 0)
@@ -945,6 +956,8 @@ environment_xhr_send(
 	if (status == 0)
 		status = window->host.fetch_sync(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
 	fetched = status == 0;
+	if (getenv("BROWSER_NET_DUMP") != NULL)
+		fprintf(stderr, "xhr: %.200s -> status %d bytes %lu\n", wb_buffer_string(&href), status, (unsigned long)bytes.length);
 
 	/* A successful response exposes its body and final URL. */
 	if (fetched) {
@@ -1094,7 +1107,7 @@ environment_xhr_get(
 	return vm_get(realm, object, key, value);
 }
 
-/* Calls an XMLHttpRequest handler property when it is callable. */
+/* Calls an XMLHttpRequest's onTYPE handler property and its event listeners. */
 static int
 environment_xhr_fire(
 	struct vm_realm *realm,
@@ -1104,19 +1117,23 @@ environment_xhr_fire(
 	struct bind_window *window;
 	struct vm_object *event;
 	vm_value callback;
+	vm_value dispatch;
 	vm_value event_value;
 	vm_value ignored;
 	int callable;
 	int status;
 	char name[40];
 
-	/* Finds onTYPE. */
+	/* Finds onTYPE and dispatchEvent. */
 	snprintf(name, sizeof(name), "on%s", type);
 	status = environment_xhr_get(realm, object, name, &callback);
 	if (status != 0)
 		return status;
+	status = environment_xhr_get(realm, object, "dispatchEvent", &dispatch);
+	if (status != 0)
+		return status;
 	callable = vm_value_is_callable(callback);
-	if (!callable)
+	if (!callable && !vm_value_is_callable(dispatch))
 		return 0;
 
 	/* A small event gives handlers their type and target. */
@@ -1130,7 +1147,20 @@ environment_xhr_fire(
 		status = js_builtin_value(realm, event, "target", object, VM_PROPERTY_DEFAULT);
 	if (status == 0) {
 		event_value = vm_value_cell(event);
-		status = vm_call(realm, callback, object, &event_value, 1, &ignored);
+		if (callable)
+			status = vm_call(realm, callback, object, &event_value, 1, &ignored);
+	}
+
+	/* The listeners added with addEventListener run after the handler property. */
+	if (status == VM_THROWN) {
+		window = bind_window_of(realm);
+		bind_report_exception(window, realm->exception);
+		realm->exception = VM_VALUE_UNDEFINED;
+		status = 0;
+	}
+	if (status == 0 && vm_value_is_callable(dispatch)) {
+		event_value = vm_value_cell(event);
+		status = vm_call(realm, dispatch, object, &event_value, 1, &ignored);
 	}
 
 	/* Event-handler exceptions are reported without making send throw. */
@@ -1142,6 +1172,220 @@ environment_xhr_fire(
 	}
 
 	/* Reports the call or allocation outcome. */
+	return status;
+}
+
+/* The listener methods of XMLHttpRequest, written in the page's own language. */
+static const char environment_xhr_listeners[] =
+	"(function (P) {\n"
+	"  function def(n, f) { Object.defineProperty(P, n, { value: f, writable: true, configurable: true, enumerable: false }); }\n"
+	"  def('addEventListener', function addEventListener(type, fn) {\n"
+	"    if (typeof fn !== 'function' && !(fn && typeof fn.handleEvent === 'function')) return;\n"
+	"    if (!this.__zl) Object.defineProperty(this, '__zl', { value: {}, writable: true, configurable: true });\n"
+	"    var l = this.__zl[type] || (this.__zl[type] = []);\n"
+	"    if (l.indexOf(fn) < 0) l.push(fn);\n"
+	"  });\n"
+	"  def('removeEventListener', function removeEventListener(type, fn) {\n"
+	"    var l = this.__zl && this.__zl[type], i = l ? l.indexOf(fn) : -1;\n"
+	"    if (i >= 0) l.splice(i, 1);\n"
+	"  });\n"
+	"  def('dispatchEvent', function dispatchEvent(ev) {\n"
+	"    var l = this.__zl && this.__zl[ev.type], i, f;\n"
+	"    if (l) {\n"
+	"      l = l.slice();\n"
+	"      for (i = 0; i < l.length; i++) {\n"
+	"        f = l[i];\n"
+	"        try { if (typeof f === 'function') f.call(this, ev); else f.handleEvent(ev); }\n"
+	"        catch (e) { setTimeout(function () { throw e; }, 0); }\n"
+	"      }\n"
+	"    }\n"
+	"    return true;\n"
+	"  });\n"
+	"})";
+
+/* Gives XMLHttpRequest's prototype its event listener methods. */
+static int
+environment_install_xhr_listeners(
+	struct vm_realm *realm,
+	struct vm_object *prototype)
+{
+	struct vm_string *source;
+	vm_value function;
+	vm_value argument;
+	vm_value ignored;
+	int status;
+
+	source = vm_string_from_utf8(realm->heap, environment_xhr_listeners, sizeof(environment_xhr_listeners) - 1U);
+	if (source == NULL)
+		return ENOMEM;
+	status = js_builtin_evaluate(realm, source, 0, &function);
+	if (status != 0) {
+		realm->exception = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	argument = vm_value_cell(prototype);
+	status = vm_call(realm, function, VM_VALUE_UNDEFINED, &argument, 1, &ignored);
+	if (status != 0) {
+		realm->exception = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	return 0;
+}
+
+/* structuredClone (the clone of the plain data a page keeps): written in the page's own language. */
+static const char environment_structured_clone[] =
+	"(function () {\n"
+	"  function fail(what) { return new DOMException(what + ' could not be cloned.', 'DataCloneError'); }\n"
+	"  return function structuredClone(value) {\n"
+	"    var seen = new Map();\n"
+	"    function copy(x) {\n"
+	"      var r, tag, i, keys;\n"
+	"      if (typeof x === 'function') throw fail(String(x));\n"
+	"      if (typeof x === 'symbol') throw fail('Symbol()');\n"
+	"      if (x === null || typeof x !== 'object') return x;\n"
+	"      if (seen.has(x)) return seen.get(x);\n"
+	"      tag = Object.prototype.toString.call(x);\n"
+	"      if (Array.isArray(x)) {\n"
+	"        r = new Array(x.length); seen.set(x, r);\n"
+	"        for (i = 0; i < x.length; i++) if (i in x) r[i] = copy(x[i]);\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (tag === '[object Date]') { r = new Date(x.getTime()); seen.set(x, r); return r; }\n"
+	"      if (tag === '[object RegExp]') { r = new RegExp(x.source, x.flags); seen.set(x, r); return r; }\n"
+	"      if (tag === '[object Boolean]' || tag === '[object Number]' || tag === '[object String]') {\n"
+	"        r = Object(x.valueOf()); seen.set(x, r); return r;\n"
+	"      }\n"
+	"      if (x instanceof Map) {\n"
+	"        r = new Map(); seen.set(x, r);\n"
+	"        x.forEach(function (v, k) { r.set(copy(k), copy(v)); });\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (x instanceof Set) {\n"
+	"        r = new Set(); seen.set(x, r);\n"
+	"        x.forEach(function (v) { r.add(copy(v)); });\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (x instanceof Error) {\n"
+	"        r = Object.create(Object.getPrototypeOf(x)); seen.set(x, r);\n"
+	"        Object.defineProperty(r, 'message', { value: x.message, writable: true, configurable: true });\n"
+	"        if (x.stack !== undefined) Object.defineProperty(r, 'stack', { value: x.stack, writable: true, configurable: true });\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (tag !== '[object Object]') throw fail('#<' + tag.slice(8, -1) + '>');\n"
+	"      r = {}; seen.set(x, r);\n"
+	"      keys = Object.keys(x);\n"
+	"      for (i = 0; i < keys.length; i++) r[keys[i]] = copy(x[keys[i]]);\n"
+	"      return r;\n"
+	"    }\n"
+	"    if (arguments.length === 0) throw new TypeError(\"Failed to execute 'structuredClone' on 'Window': 1 argument required, but only 0 present.\");\n"
+	"    return copy(value);\n"
+	"  };\n"
+	"})()";
+
+/* crypto.getRandomValues(typedArray): fills the array with random bytes and returns it. */
+static int
+environment_get_random_values(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+	status = js_typed_random_fill(js_argument(args, count, 0));
+	if (status == EINVAL)
+		return vm_throw_type_error(realm, "Failed to execute 'getRandomValues' on 'Crypto': The provided value is not of type '(ArrayBufferView)'.");
+	if (status != 0)
+		return status;
+	*result = js_argument(args, count, 0);
+	return 0;
+}
+
+/* crypto.randomUUID(): a version 4 UUID. */
+static int
+environment_random_uuid(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	static const char hex[] = "0123456789abcdef";
+	unsigned char bytes[16];
+	char text[37];
+	struct vm_string *string;
+	FILE *file;
+	size_t got;
+	unsigned i;
+	unsigned at;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	file = fopen("/dev/urandom", "rb");
+	if (file == NULL)
+		return EIO;
+	got = fread(bytes, 1U, sizeof(bytes), file);
+	fclose(file);
+	if (got != sizeof(bytes))
+		return EIO;
+	bytes[6] = (unsigned char)((bytes[6] & 0x0fU) | 0x40U);
+	bytes[8] = (unsigned char)((bytes[8] & 0x3fU) | 0x80U);
+	at = 0;
+	for (i = 0; i < 16U; i++) {
+		if (i == 4U || i == 6U || i == 8U || i == 10U)
+			text[at++] = '-';
+		text[at++] = hex[bytes[i] >> 4];
+		text[at++] = hex[bytes[i] & 15U];
+	}
+	string = vm_string_from_utf8(realm->heap, text, at);
+	if (string == NULL)
+		return ENOMEM;
+	*result = vm_value_cell(string);
+	return 0;
+}
+
+/* Defines the global crypto object (random values only; there is no SubtleCrypto). */
+static int
+environment_install_crypto(
+	struct vm_realm *realm)
+{
+	struct vm_object *crypto;
+	int error;
+
+	crypto = vm_object_create(realm->heap, realm->object_prototype);
+	if (crypto == NULL)
+		return ENOMEM;
+	error = js_builtin_method(realm, crypto, "getRandomValues", 1, environment_get_random_values);
+	if (error == 0)
+		error = js_builtin_method(realm, crypto, "randomUUID", 0, environment_random_uuid);
+	if (error == 0)
+		error = js_builtin_value(realm, realm->global, "crypto", vm_value_cell(crypto), VM_PROPERTY_DEFAULT);
+	return error;
+}
+
+/* Defines structuredClone on the global object. */
+static int
+environment_install_structured_clone(
+	struct vm_realm *realm)
+{
+	struct vm_string *source;
+	vm_value function;
+	int status;
+
+	/* The function made by running its source. */
+	source = vm_string_from_utf8(realm->heap, environment_structured_clone, sizeof(environment_structured_clone) - 1U);
+	if (source == NULL)
+		return ENOMEM;
+	status = js_builtin_evaluate(realm, source, 0, &function);
+	if (status != 0) {
+		/* A failure to build it leaves the global without it. */
+		realm->exception = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	status = js_builtin_value(realm, realm->global, "structuredClone", function, VM_PROPERTY_DEFAULT);
 	return status;
 }
 
@@ -1172,6 +1416,10 @@ environment_install_window(
 		error = js_builtin_method(realm, global, "btoa", 1, environment_btoa);
 	if (error == 0)
 		error = js_builtin_method(realm, global, "fetch", 1, environment_fetch);
+	if (error == 0)
+		error = environment_install_structured_clone(realm);
+	if (error == 0)
+		error = environment_install_crypto(realm);
 	if (error != 0)
 		return error;
 

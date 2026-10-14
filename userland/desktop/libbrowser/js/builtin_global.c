@@ -20,6 +20,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
 
@@ -99,6 +100,20 @@ js_builtin_evaluate(
 	if (status != 0) {
 		wb_units_release(&units);
 		return status;
+	}
+
+	/* A developer's diagnosis: BROWSER_EVAL_DUMP names a file that receives each evaluated source. */
+	if (getenv("BROWSER_EVAL_DUMP") != NULL) {
+		FILE *dump;
+		size_t at;
+
+		dump = fopen(getenv("BROWSER_EVAL_DUMP"), "ab");
+		if (dump != NULL) {
+			for (at = 0; at < units.length; at++)
+				fputc(units.data[at] < 0x7fU ? (int)units.data[at] : '?', dump);
+			fputs("\n=====\n", dump);
+			fclose(dump);
+		}
 	}
 
 	/* The run, as a script of the realm. */

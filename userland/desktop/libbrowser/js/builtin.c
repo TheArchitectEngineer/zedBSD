@@ -88,6 +88,16 @@ js_install_builtins(
 	if (error != 0)
 		return error;
 
+	/* Installs BigInt beside Number. */
+	error = js_builtin_install_bigint(realm);
+	if (error != 0)
+		return error;
+
+	/* Installs ArrayBuffer, the typed arrays and DataView (their prelude needs Array, Object and Symbol). */
+	error = js_builtin_install_typed(realm);
+	if (error != 0)
+		return error;
+
 	/* Installs the shared Math operations after numeric objects are ready. */
 	error = js_builtin_install_math(realm);
 	if (error != 0)

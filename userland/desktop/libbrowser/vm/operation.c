@@ -40,10 +40,15 @@ enum operation_type {
 	OPERATION_NUMBER,
 	OPERATION_STRING,
 	OPERATION_SYMBOL,
+	OPERATION_BIGINT,
 	OPERATION_OBJECT
 };
 
 static int operation_type(vm_value value);
+static int operation_bigint_string(struct vm_realm *realm, const struct vm_bigint *big, struct vm_string **string);
+static int operation_string_bigint(struct vm_realm *realm, vm_value string, vm_value *big);
+static int operation_mix_error(struct vm_realm *realm);
+static int operation_compare_bigint(struct vm_realm *realm, vm_value left, vm_value right, int *order);
 static int operation_exotic_primitive(struct vm_realm *realm, vm_value value, vm_value exotic, int hint, vm_value *result);
 static int operation_call_method(struct vm_realm *realm, vm_value object, const char *name, int *done, vm_value *result);
 static int operation_number_string(struct vm_realm *realm, double number, struct vm_string **string);
@@ -65,6 +70,7 @@ vm_to_boolean(
 	vm_value value)
 {
 	struct vm_string *string;
+	struct vm_bigint *big;
 	double number;
 	int is_number;
 	int is_string;
@@ -92,6 +98,11 @@ vm_to_boolean(
 			return 0;
 		return 1;
 	}
+
+	/* A BigInt is false when zero. */
+	big = vm_value_as_bigint(value);
+	if (big != NULL)
+		return !vm_bigint_is_zero(big);
 
 	/* Objects and symbols are true. */
 	return 1;
@@ -243,9 +254,51 @@ vm_to_number(
 		return 0;
 	}
 
+	/* A BigInt cannot become a number implicitly. */
+	if (cell->type == &vm_bigint_type) {
+		status = vm_throw_type_error(realm, "Cannot convert a BigInt value to a number");
+		return status;
+	}
+
 	/* A symbol cannot become a number. */
 	status = vm_throw_type_error(realm, "Cannot convert a Symbol value to a number");
 	return status;
+}
+
+/*
+ * Converts a value to a numeric (ToNumeric): a number, or a BigInt as it is.
+ */
+int
+vm_to_numeric(
+	struct vm_realm *realm,
+	vm_value value,
+	vm_value *numeric)
+{
+	vm_value primitive;
+	double number;
+	int status;
+
+	/* A number is itself. */
+	if (vm_value_is_number(value)) {
+		*numeric = value;
+		return 0;
+	}
+
+	/* An object through its primitive; a BigInt stays. */
+	status = vm_to_primitive(realm, value, VM_HINT_NUMBER, &primitive);
+	if (status != 0)
+		return status;
+	if (vm_value_as_bigint(primitive) != NULL) {
+		*numeric = primitive;
+		return 0;
+	}
+
+	/* Anything else as a number. */
+	status = vm_to_number(realm, primitive, &number);
+	if (status != 0)
+		return status;
+	*numeric = vm_value_number(number);
+	return 0;
 }
 
 /*
@@ -358,6 +411,12 @@ vm_to_string(
 			return 0;
 		}
 
+		/* A BigInt's digits. */
+		if (cell->type == &vm_bigint_type) {
+			status = operation_bigint_string(realm, (const struct vm_bigint *)cell, string);
+			return status;
+		}
+
 		/* A symbol cannot become a string implicitly. */
 		status = vm_throw_type_error(realm, "Cannot convert a Symbol value to a string");
 		return status;
@@ -447,6 +506,8 @@ vm_strict_equals(
 	int right_number;
 	int left_is_string;
 	int right_is_string;
+	struct vm_bigint *left_big;
+	struct vm_bigint *right_big;
 	int same;
 
 	/* Numbers compare by value (NaN is unequal to itself, +0 equals -0). */
@@ -472,6 +533,12 @@ vm_strict_equals(
 		return 0;
 	}
 
+	/* BigInts compare by value. */
+	left_big = vm_value_as_bigint(left);
+	right_big = vm_value_as_bigint(right);
+	if (left_big != NULL && right_big != NULL)
+		return vm_bigint_compare(left_big, right_big) == 0;
+
 	/* Everything else is the same value or not. */
 	if (left == right)
 		return 1;
@@ -496,6 +563,7 @@ vm_loose_equals(
 	double number;
 	int left_type;
 	int right_type;
+	int order;
 	int status;
 
 	/* Each step converts one side and compares again, until the types agree or cannot. */
@@ -550,6 +618,42 @@ vm_loose_equals(
 			continue;
 		}
 
+		/* A BigInt beside a number compares by value. */
+		if (left_type == OPERATION_BIGINT && right_type == OPERATION_NUMBER) {
+			status = vm_bigint_compare_double(realm->heap, (const struct vm_bigint *)vm_value_as_cell(left), vm_value_as_number(right), &order);
+			if (status != 0)
+				return status;
+			*equal = order == 0;
+			return 0;
+		}
+		if (left_type == OPERATION_NUMBER && right_type == OPERATION_BIGINT) {
+			status = vm_bigint_compare_double(realm->heap, (const struct vm_bigint *)vm_value_as_cell(right), vm_value_as_number(left), &order);
+			if (status != 0)
+				return status;
+			*equal = order == 0;
+			return 0;
+		}
+
+		/* A string beside a BigInt becomes a BigInt (unreadable: unequal). */
+		if (left_type == OPERATION_STRING && right_type == OPERATION_BIGINT) {
+			status = operation_string_bigint(realm, left, &converted);
+			if (status != 0)
+				return status;
+			if (converted == VM_VALUE_UNDEFINED)
+				return 0;
+			left = converted;
+			continue;
+		}
+		if (left_type == OPERATION_BIGINT && right_type == OPERATION_STRING) {
+			status = operation_string_bigint(realm, right, &converted);
+			if (status != 0)
+				return status;
+			if (converted == VM_VALUE_UNDEFINED)
+				return 0;
+			right = converted;
+			continue;
+		}
+
 		/* An object beside a primitive becomes its primitive. */
 		if (left_type == OPERATION_OBJECT) {
 			status = vm_to_primitive(realm, left, VM_HINT_DEFAULT, &converted);
@@ -589,6 +693,8 @@ vm_add(
 	struct vm_string *joined;
 	vm_value left_primitive;
 	vm_value right_primitive;
+	struct vm_bigint *left_big;
+	struct vm_bigint *right_big;
 	double left_number;
 	double right_number;
 	int64_t sum;
@@ -632,6 +738,18 @@ vm_add(
 		return 0;
 	}
 
+	/* BigInts add to BigInts only. */
+	left_big = vm_value_as_bigint(left_primitive);
+	right_big = vm_value_as_bigint(right_primitive);
+	if (left_big != NULL || right_big != NULL) {
+		if (left_big == NULL || right_big == NULL) {
+			status = operation_mix_error(realm);
+			return status;
+		}
+		status = vm_bigint_binary(realm, VM_NUMERIC_ADD, left_big, right_big, result);
+		return status;
+	}
+
 	/* Otherwise the numbers. */
 	status = vm_to_number(realm, left_primitive, &left_number);
 	if (status != 0)
@@ -658,6 +776,8 @@ vm_numeric(
 	vm_value right,
 	vm_value *result)
 {
+	struct vm_bigint *left_big;
+	struct vm_bigint *right_big;
 	double left_number;
 	double right_number;
 	double answer;
@@ -666,13 +786,25 @@ vm_numeric(
 	uint32_t count;
 	int status;
 
-	/* Both sides as numbers, the left first. */
-	status = vm_to_number(realm, left, &left_number);
+	/* Both sides as numerics, the left first; BigInts work with BigInts only. */
+	status = vm_to_numeric(realm, left, &left);
 	if (status != 0)
 		return status;
-	status = vm_to_number(realm, right, &right_number);
+	status = vm_to_numeric(realm, right, &right);
 	if (status != 0)
 		return status;
+	left_big = vm_value_as_bigint(left);
+	right_big = vm_value_as_bigint(right);
+	if (left_big != NULL || right_big != NULL) {
+		if (left_big == NULL || right_big == NULL) {
+			status = operation_mix_error(realm);
+			return status;
+		}
+		status = vm_bigint_binary(realm, operator, left_big, right_big, result);
+		return status;
+	}
+	left_number = vm_value_as_number(left);
+	right_number = vm_value_as_number(right);
 
 	/* Their int32 values, for the bitwise operators. */
 	left_int = (int32_t)operation_int32_of(left_number);
@@ -828,6 +960,8 @@ vm_typeof(
 		name = "string";
 	if (type == OPERATION_SYMBOL)
 		name = "symbol";
+	if (type == OPERATION_BIGINT)
+		name = "bigint";
 	callable = vm_value_is_callable(value);
 	if (callable)
 		name = "function";
@@ -1090,6 +1224,8 @@ operation_type(
 		return OPERATION_STRING;
 	if (cell->type == &vm_symbol_type)
 		return OPERATION_SYMBOL;
+	if (cell->type == &vm_bigint_type)
+		return OPERATION_BIGINT;
 
 	/* Everything else is an object. */
 	return OPERATION_OBJECT;
@@ -1147,6 +1283,8 @@ operation_compare(
 	vm_value right,
 	int *order)
 {
+	struct vm_bigint *left_big;
+	struct vm_bigint *right_big;
 	double left_number;
 	double right_number;
 	int left_is_string;
@@ -1163,6 +1301,14 @@ operation_compare(
 		if (*order > 0)
 			*order = 1;
 		return 0;
+	}
+
+	/* A BigInt compares with a BigInt, a number or a string exactly. */
+	left_big = vm_value_as_bigint(left);
+	right_big = vm_value_as_bigint(right);
+	if (left_big != NULL || right_big != NULL) {
+		status = operation_compare_bigint(realm, left, right, order);
+		return status;
 	}
 
 	/* Anything else as numbers, the left first. */
@@ -1567,5 +1713,117 @@ operation_exotic_primitive(
 	}
 
 	/* Succeeded: the primitive. */
+	return 0;
+}
+
+/* Makes a BigInt's decimal string. */
+static int
+operation_bigint_string(
+	struct vm_realm *realm,
+	const struct vm_bigint *big,
+	struct vm_string **string)
+{
+	struct wb_buffer text;
+	int error;
+
+	wb_buffer_init(&text);
+	error = vm_bigint_to_text(big, 10, &text);
+	if (error != 0) {
+		wb_buffer_release(&text);
+		return error;
+	}
+	*string = vm_string_from_utf8(realm->heap, wb_buffer_string(&text), text.length);
+	wb_buffer_release(&text);
+	if (*string == NULL)
+		return ENOMEM;
+	return 0;
+}
+
+/* Reads a string as a BigInt (StringToBigInt): undefined when it is no BigInt's numeral. */
+static int
+operation_string_bigint(
+	struct vm_realm *realm,
+	vm_value string,
+	vm_value *big)
+{
+	struct wb_buffer text;
+	int error;
+
+	*big = VM_VALUE_UNDEFINED;
+	wb_buffer_init(&text);
+	error = vm_string_to_utf8((const struct vm_string *)vm_value_as_cell(string), &text);
+	if (error != 0) {
+		wb_buffer_release(&text);
+		return error;
+	}
+	error = vm_bigint_from_text(realm->heap, wb_buffer_string(&text), text.length, big);
+	wb_buffer_release(&text);
+	if (error == EINVAL) {
+		*big = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	return error;
+}
+
+/* Throws the TypeError of mixing a BigInt with another type. */
+static int
+operation_mix_error(
+	struct vm_realm *realm)
+{
+	return vm_throw_type_error(realm, "Cannot mix BigInt and other types, use explicit conversions");
+}
+
+/* Orders two primitives when either is a BigInt: -1, 0, 1, or 2 when unordered. */
+static int
+operation_compare_bigint(
+	struct vm_realm *realm,
+	vm_value left,
+	vm_value right,
+	int *order)
+{
+	vm_value converted;
+	double number;
+	int swap;
+	int status;
+	struct vm_bigint *big;
+	vm_value other;
+
+	/* A string beside a BigInt is read as a BigInt; unreadable leaves them unordered. */
+	*order = 2;
+	if (vm_value_is_string(left)) {
+		status = operation_string_bigint(realm, left, &converted);
+		if (status != 0)
+			return status;
+		if (converted == VM_VALUE_UNDEFINED)
+			return 0;
+		left = converted;
+	}
+	if (vm_value_is_string(right)) {
+		status = operation_string_bigint(realm, right, &converted);
+		if (status != 0)
+			return status;
+		if (converted == VM_VALUE_UNDEFINED)
+			return 0;
+		right = converted;
+	}
+
+	/* Two BigInts. */
+	if (vm_value_as_bigint(left) != NULL && vm_value_as_bigint(right) != NULL) {
+		*order = vm_bigint_compare(vm_value_as_bigint(left), vm_value_as_bigint(right));
+		return 0;
+	}
+
+	/* A BigInt and a number (the other side as a number). */
+	swap = vm_value_as_bigint(left) == NULL;
+	big = vm_value_as_bigint(swap ? right : left);
+	other = swap ? left : right;
+	status = vm_to_number(realm, other, &number);
+	if (status != 0)
+		return status;
+	status = vm_bigint_compare_double(realm->heap, big, number, order);
+	if (status != 0)
+		return status;
+	if (swap && *order != 2)
+		*order = -*order;
 	return 0;
 }

@@ -79,6 +79,7 @@ enum bind_interface_index {
 	BIND_HTML_BUTTON_ELEMENT,
 	BIND_HTML_LABEL_ELEMENT,
 	BIND_HTML_META_ELEMENT,
+	BIND_HTML_LINK_ELEMENT,
 	BIND_HTML_OBJECT_ELEMENT,
 	BIND_TREE_WALKER,
 	BIND_NODE_ITERATOR,
@@ -238,6 +239,7 @@ struct bind_window {
 	int viewport_width;
 	int viewport_height;
 	const char *ready_state;
+	struct dom_node *current_script;
 	struct vm_object *location;
 	double time_origin;
 	struct vm_object *local_storage;
@@ -351,6 +353,7 @@ extern const struct bind_interface bind_html_button_element_interface;
 extern const struct bind_interface bind_html_details_element_interface;
 extern const struct bind_interface bind_html_label_element_interface;
 extern const struct bind_interface bind_html_meta_element_interface;
+extern const struct bind_interface bind_html_link_element_interface;
 extern const struct bind_interface bind_html_object_element_interface;
 extern const struct bind_interface bind_tree_walker_interface;
 extern const struct bind_interface bind_node_iterator_interface;
@@ -563,6 +566,7 @@ int bind_window_install(struct bind_window *window);
 int bind_throw_illegal(struct vm_realm *realm);
 int bind_illegal_constructor(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_string(struct vm_realm *realm, const char *ascii, vm_value *value);
+int bind_install_prelude(struct bind_window *window);
 int bind_units(struct vm_realm *realm, const uint16_t *units, size_t length, vm_value *value);
 int bind_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);
 int bind_to_atom(struct vm_realm *realm, vm_value value, int lower, struct vm_string **atom);

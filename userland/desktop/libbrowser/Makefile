@@ -28,6 +28,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/vm/realm.c \
 	$(LIBBROWSER_DIR)/vm/code.c \
 	$(LIBBROWSER_DIR)/vm/number.c \
+	$(LIBBROWSER_DIR)/vm/bigint.c \
 	$(LIBBROWSER_DIR)/vm/operation.c \
 	$(LIBBROWSER_DIR)/vm/access.c \
 	$(LIBBROWSER_DIR)/vm/spread.c \
@@ -62,6 +63,8 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/js/builtin_promise.c \
 	$(LIBBROWSER_DIR)/js/builtin_generator.c \
 	$(LIBBROWSER_DIR)/js/builtin_symbol.c \
+	$(LIBBROWSER_DIR)/js/builtin_bigint.c \
+	$(LIBBROWSER_DIR)/js/builtin_typed.c \
 	$(LIBBROWSER_DIR)/js/builtin_iterator.c \
 	$(LIBBROWSER_DIR)/js/builtin_collection.c \
 	$(LIBBROWSER_DIR)/js/builtin_uri.c \
@@ -103,6 +106,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/bind/style-sheet.c \
 	$(LIBBROWSER_DIR)/bind/cssom.c \
 	$(LIBBROWSER_DIR)/bind/environment.c \
+	$(LIBBROWSER_DIR)/bind/prelude.c \
 	$(LIBBROWSER_DIR)/bind/query.c \
 	$(LIBBROWSER_DIR)/bind/geometry.c \
 	$(LIBBROWSER_DIR)/bind/style.c \

@@ -57,6 +57,7 @@ static int document_hidden(struct vm_realm *realm, vm_value this_value, const vm
 static int document_visibility_state(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_compat_mode(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_content_type(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
+static int document_current_script(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_character_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int document_constant_string(struct vm_realm *realm, vm_value this_value, const char *text, vm_value *result);
 static int document_create_character_data(struct vm_realm *realm, vm_value this_value, int type, const vm_value *args, unsigned count, vm_value *result);
@@ -74,6 +75,7 @@ static const struct bind_attribute document_attributes[] = {
 	{ "doctype", document_doctype, NULL },
 	{ "title", document_title_get, document_title_set },
 	{ "readyState", document_ready_state, NULL },
+	{ "currentScript", document_current_script, NULL },
 	{ "fonts", document_fonts, NULL },
 	{ "cookie", document_cookie_get, document_cookie_set },
 	{ "URL", document_url, NULL },
@@ -1214,6 +1216,32 @@ document_title_set(
 
 	/* Succeeded: the title is set. */
 	return 0;
+}
+
+/* Reports the classic script element that is running, or null (currentScript). */
+static int
+document_current_script(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	struct dom_document *document;
+	struct bind_window *window;
+	int status;
+
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	status = document_this(realm, this_value, &document);
+	if (status != 0)
+		return status;
+	window = document->view;
+	if (window == NULL || window->current_script == NULL) {
+		*result = VM_VALUE_NULL;
+		return 0;
+	}
+	return bind_wrap_or_null(window, window->current_script, result);
 }
 
 /* Reports how far the document is loaded: loading, interactive or complete (readyState). */

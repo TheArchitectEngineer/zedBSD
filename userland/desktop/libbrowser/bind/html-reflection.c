@@ -84,6 +84,65 @@ static int reflection_get(struct vm_realm *realm, vm_value receiver, int tag, co
 static int reflection_set(struct vm_realm *realm, vm_value receiver, int tag, const char *name, const vm_value *args, unsigned count);
 static int reflection_equal_folded(const struct vm_string *text, const char *keyword);
 
+/* HTMLLinkElement's reflected attributes (a script that builds a link sets href and rel before inserting it). */
+#define LINK_STRING(function, attribute) \
+	static int link_##function##_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result) \
+	{ \
+		UNUSED_PARAMETER(args); \
+		UNUSED_PARAMETER(count); \
+		return reflection_get(realm, this_value, DOM_TAG_LINK, attribute, result); \
+	} \
+	static int link_##function##_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result) \
+	{ \
+		int error; \
+		error = reflection_set(realm, this_value, DOM_TAG_LINK, attribute, args, count); \
+		if (error == 0) \
+			*result = VM_VALUE_UNDEFINED; \
+		return error; \
+	}
+
+LINK_STRING(rel, "rel")
+LINK_STRING(media, "media")
+LINK_STRING(type, "type")
+LINK_STRING(as, "as")
+LINK_STRING(cross_origin, "crossorigin")
+LINK_STRING(integrity, "integrity")
+LINK_STRING(hreflang, "hreflang")
+LINK_STRING(sizes, "sizes")
+
+static int
+link_href_get(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result)
+{
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	return bind_reflect_url_get(realm, this_value, DOM_TAG_LINK, "href", result);
+}
+
+static int
+link_href_set(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result)
+{
+	return bind_reflect_url_set(realm, this_value, DOM_TAG_LINK, "href", args, count, result);
+}
+
+static const struct bind_attribute link_attributes[] = {
+	{ "href", link_href_get, link_href_set },
+	{ "rel", link_rel_get, link_rel_set },
+	{ "media", link_media_get, link_media_set },
+	{ "type", link_type_get, link_type_set },
+	{ "as", link_as_get, link_as_set },
+	{ "crossOrigin", link_cross_origin_get, link_cross_origin_set },
+	{ "integrity", link_integrity_get, link_integrity_set },
+	{ "hreflang", link_hreflang_get, link_hreflang_set },
+	{ "sizes", link_sizes_get, link_sizes_set },
+	{ NULL, NULL, NULL }
+};
+
+/* HTML links inherit the ordinary HTMLElement graph. */
+const struct bind_interface bind_html_link_element_interface = {
+	"HTMLLinkElement", BIND_HTML_ELEMENT, 0, NULL, link_attributes, NULL, NULL
+};
+
+
 /*
  * Resolves a branded URL attribute against its actual owning Document.
  */

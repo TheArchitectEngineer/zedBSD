@@ -111,7 +111,8 @@ enum vm_numeric_operator {
 	VM_NUMERIC_XOR,
 	VM_NUMERIC_SHL,
 	VM_NUMERIC_SAR,
-	VM_NUMERIC_SHR
+	VM_NUMERIC_SHR,
+	VM_NUMERIC_ADD
 };
 
 /*
@@ -141,6 +142,21 @@ enum vm_intrinsic {
 	VM_INTRINSIC_NUMBER_PROTOTYPE,
 	VM_INTRINSIC_STRING_PROTOTYPE,
 	VM_INTRINSIC_SYMBOL_PROTOTYPE,
+	VM_INTRINSIC_BIGINT_PROTOTYPE,
+	VM_INTRINSIC_ARRAY_BUFFER_PROTOTYPE,
+	VM_INTRINSIC_TYPED_ARRAY_PROTOTYPE,
+	VM_INTRINSIC_DATA_VIEW_PROTOTYPE,
+	VM_INTRINSIC_TYPED_PROTOTYPE_0,
+	VM_INTRINSIC_TYPED_PROTOTYPE_1,
+	VM_INTRINSIC_TYPED_PROTOTYPE_2,
+	VM_INTRINSIC_TYPED_PROTOTYPE_3,
+	VM_INTRINSIC_TYPED_PROTOTYPE_4,
+	VM_INTRINSIC_TYPED_PROTOTYPE_5,
+	VM_INTRINSIC_TYPED_PROTOTYPE_6,
+	VM_INTRINSIC_TYPED_PROTOTYPE_7,
+	VM_INTRINSIC_TYPED_PROTOTYPE_8,
+	VM_INTRINSIC_TYPED_PROTOTYPE_9,
+	VM_INTRINSIC_TYPED_PROTOTYPE_10,
 	VM_INTRINSIC_THROW_TYPE_ERROR,
 	VM_INTRINSIC_REGEXP_PROTOTYPE,
 	VM_INTRINSIC_REGEXP,
@@ -213,6 +229,10 @@ enum vm_object_kind {
 	VM_KIND_NUMBER,
 	VM_KIND_STRING,
 	VM_KIND_SYMBOL,
+	VM_KIND_BIGINT,
+	VM_KIND_ARRAY_BUFFER,
+	VM_KIND_TYPED_ARRAY,
+	VM_KIND_DATA_VIEW,
 	VM_KIND_DATE,
 	VM_KIND_REGEXP,
 	VM_KIND_PLATFORM,
@@ -318,6 +338,16 @@ struct vm_symbol {
 	vm_value description;
 	int private_name;
 	int registered;
+};
+
+/*
+ * A BigInt (ws074-p230): a sign and a magnitude of 32-bit limbs (least
+ * significant first, no leading zero limb) that follow the structure.
+ */
+struct vm_bigint {
+	struct vm_cell cell;
+	uint32_t length;
+	uint32_t negative;
 };
 
 /*
@@ -476,6 +506,7 @@ struct vm_realm {
 	vm_value exception;
 	vm_value throw_value;
 	uint32_t throw_line;
+	char throw_stack[200];
 	uint32_t throw_column;
 	vm_value callee;
 	vm_value new_target;
@@ -514,6 +545,7 @@ extern const struct vm_cell_type vm_string_type;
 extern const struct vm_cell_type vm_object_type;
 extern const struct vm_cell_type vm_array_type;
 extern const struct vm_cell_type vm_symbol_type;
+extern const struct vm_cell_type vm_bigint_type;
 extern const struct vm_cell_type vm_accessor_type;
 
 /* Functions (function.c). */
@@ -606,6 +638,7 @@ int vm_construct(struct vm_realm *realm, vm_value constructor, const vm_value *a
 int vm_call(struct vm_realm *realm, vm_value callee, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int vm_throw(struct vm_realm *realm, vm_value exception);
 int vm_throw_site(const struct vm_realm *realm, vm_value exception, uint32_t *line, uint32_t *column);
+const char *vm_throw_stack(const struct vm_realm *realm, vm_value exception);
 
 /* Realms (realm.c). */
 int vm_realm_create(struct vm_heap *heap, struct vm_realm **realm);
@@ -629,6 +662,27 @@ int vm_to_boolean(vm_value value);
 int vm_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
 int vm_ordinary_to_primitive(struct vm_realm *realm, vm_value value, int hint, vm_value *result);
 int vm_to_number(struct vm_realm *realm, vm_value value, double *number);
+int vm_to_numeric(struct vm_realm *realm, vm_value value, vm_value *numeric);
+
+/* BigInt (bigint.c). */
+int vm_bigint_from_double(struct vm_heap *heap, double number, vm_value *result);
+int vm_bigint_from_int64(struct vm_heap *heap, int64_t value, vm_value *result);
+int vm_bigint_from_digits(struct vm_heap *heap, const char *digits, size_t length, int radix, int negative, vm_value *result);
+int vm_bigint_from_text(struct vm_heap *heap, const char *text, size_t length, vm_value *result);
+int vm_bigint_to_text(const struct vm_bigint *big, int radix, struct wb_buffer *out);
+double vm_bigint_to_double(const struct vm_bigint *big);
+int vm_bigint_is_zero(const struct vm_bigint *big);
+int vm_bigint_compare(const struct vm_bigint *a, const struct vm_bigint *b);
+int vm_bigint_compare_double(struct vm_heap *heap, const struct vm_bigint *a, double number, int *order);
+int vm_bigint_binary(struct vm_realm *realm, int operator, const struct vm_bigint *left, const struct vm_bigint *right, vm_value *result);
+int vm_bigint_negate(struct vm_heap *heap, const struct vm_bigint *big, vm_value *result);
+int vm_bigint_add_small(struct vm_heap *heap, const struct vm_bigint *big, int64_t amount, vm_value *result);
+int vm_bigint_not(struct vm_heap *heap, const struct vm_bigint *big, vm_value *result);
+int vm_bigint_as_n(struct vm_realm *realm, uint64_t bits, int is_signed, const struct vm_bigint *big, vm_value *result);
+struct vm_bigint *vm_value_as_bigint(vm_value value);
+uint32_t vm_bigint_hash(const struct vm_bigint *big);
+uint64_t vm_bigint_to_uint64(const struct vm_bigint *big);
+int vm_bigint_from_uint64(struct vm_heap *heap, uint64_t value, vm_value *result);
 int vm_to_int32(struct vm_realm *realm, vm_value value, int32_t *number);
 int vm_to_uint32(struct vm_realm *realm, vm_value value, uint32_t *number);
 int vm_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);

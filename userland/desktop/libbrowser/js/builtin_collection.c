@@ -970,6 +970,10 @@ collection_hash(
 	if (is_string)
 		return vm_string_hash((struct vm_string *)vm_value_as_cell(key));
 
+	/* A BigInt by its digits. */
+	if (vm_value_as_bigint(key) != NULL)
+		return vm_bigint_hash(vm_value_as_bigint(key));
+
 	/* Anything else: its bits, mixed. */
 	bits = key;
 	bits ^= bits >> 33;
@@ -993,6 +997,10 @@ collection_same(
 	/* The same bits. */
 	if (left == right)
 		return 1;
+
+	/* Two BigInts of the same value. */
+	if (vm_value_as_bigint(left) != NULL && vm_value_as_bigint(right) != NULL)
+		return vm_bigint_compare(vm_value_as_bigint(left), vm_value_as_bigint(right)) == 0;
 
 	/* Two strings with the same characters. */
 	left_string = vm_value_is_string(left);

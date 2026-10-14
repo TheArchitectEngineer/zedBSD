@@ -130,6 +130,7 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_html_button_element_interface,
 	&bind_html_label_element_interface,
 	&bind_html_meta_element_interface,
+	&bind_html_link_element_interface,
 	&bind_html_object_element_interface,
 	&bind_tree_walker_interface,
 	&bind_node_iterator_interface,
@@ -352,6 +353,18 @@ bind_window_set_ready_state(
 }
 
 /*
+ * Names the script element that is running (document.currentScript), or
+ * none (NULL) when no classic script runs.
+ */
+void
+bind_window_set_current_script(
+	struct bind_window *window,
+	struct dom_node *script)
+{
+	window->current_script = script;
+}
+
+/*
  * Runs a classic script's source text in the window, then a microtask
  * checkpoint.
  *
@@ -495,6 +508,10 @@ window_report_exception(
 	if (error == 0 && known && name == NULL)
 		error = wb_buffer_printf(&line, " (at %u:%u)", (unsigned)site_line, (unsigned)site_column);
 
+	/* A developer's diagnosis: BROWSER_STACK adds the function names the exception passed through. */
+	if (error == 0 && known && getenv("BROWSER_STACK") != NULL)
+		error = wb_buffer_printf(&line, " [in %s]", vm_throw_stack(window->realm, exception));
+
 	/* Goes to the console as an error. */
 	if (error == 0)
 		bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
@@ -620,7 +637,7 @@ window_named_get_own(
 		return -status;
 	property->holder = object;
 	property->value = &property->temporary;
-	property->attributes = VM_PROPERTY_CONFIGURABLE;
+	property->attributes = VM_PROPERTY_WRITABLE | VM_PROPERTY_CONFIGURABLE;
 	return 1;
 }
 
