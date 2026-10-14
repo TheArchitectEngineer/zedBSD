@@ -281,7 +281,7 @@ inline_vertical_absolute_grid(
 		    box->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
 			return 0;
 
-		/* A border-only first vertical child can still use the row's inline room. */
+		/* A border-only vertical child can still use the row's inline room. */
 		for (index = 0; index < 4; index++) {
 			if (parent->border[index] != 0 || parent->padding[index] != 0 ||
 			    box->padding[index] != 0)
@@ -290,7 +290,7 @@ inline_vertical_absolute_grid(
 				bordered_child = 1;
 		}
 		if (bordered_child) {
-			if (!horizontal_lr)
+			if (!horizontal_lr && !horizontal_rl)
 				return 0;
 			for (index = 0; index < 4; index++) {
 				if (box->margin[index] != 0)
