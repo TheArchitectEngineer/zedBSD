@@ -8,7 +8,8 @@
 #   - the boot words of one run: NVRTX_RUN=R0 (no words: N0 and N1 only), R1 (nvrtx.gsp=1
 #     nvrtx.stop=P1a), R2 (stop=P2a), R3 (stop=P3), R4 (stop=P4), R5 (stop=P5), R6 (stop=P6) or
 #     R7 (nvrtx.gsp=1, every built stage) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (R7 and
-#     nvrtx.disp=1, the takeover of the head the GOP lit) or R8c (R8b and nvrtx.resident=1, the GPU device);
+#     nvrtx.disp=1, the takeover of the head the GOP lit) or R8c (R8b and nvrtx.resident=1, the GPU device) or
+#     R8d (R8c with the display-scanout probe: events, refresh, cursor, sharing);
 #     plan/ws037/phase004 to phase006 give what each
 #     run must show.
 # Build one image per run, each into its own BUILD:
@@ -69,4 +70,10 @@ endif
 ifeq ($(NVRTX_RUN),R8c)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1 nvrtx.resident=1
 ZEDBSD_USER_PROGRAMS += display-inventory display-control
+endif
+# ws037-p006 P8c (2): R8c's device with the display's events, refresh, cursor plane, blob sharing and scanout constraints,
+# and the probe that drives the new parts from the serial console (display-scanout) besides R8c's two.
+ifeq ($(NVRTX_RUN),R8d)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1 nvrtx.resident=1
+ZEDBSD_USER_PROGRAMS += display-inventory display-control display-scanout
 endif
