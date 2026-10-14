@@ -108,8 +108,12 @@
 /* The deepest chain a structure may carry. */
 #define VIDEO_MAX_CHAIN			8U
 
-/* The firmware decoder's input staging: the largest access unit taken. */
-#define VIDEO_INPUT_BYTES		(4U * 1024U * 1024U)
+/*
+ * The firmware decoder's input staging: the largest access unit taken.
+ * Each of the decoder's staging areas has this much (a unit in flight
+ * holds one), so four of them take as much memory as two of 4 MiB did.
+ */
+#define VIDEO_INPUT_BYTES		(2U * 1024U * 1024U)
 
 /* How long a decode waits for its frame, and for room to be sent, over all the steps. */
 #define VIDEO_FRAME_MS			500U

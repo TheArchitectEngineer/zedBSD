@@ -724,6 +724,12 @@ drv_rpi4_mmal_decoder_receive(
 		/* A received frame is ready. */
 		if (oldest < decoder->output_count)
 			break;
+
+		/* Only looking: none is ready. */
+		if (timeout_ms == 0)
+			return ETIMEDOUT;
+
+		/* Waits for an arrival. */
 		error = wait_queue_or(decoder, deadline);
 		if (error != 0)
 			return error;

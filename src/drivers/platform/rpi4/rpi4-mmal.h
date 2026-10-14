@@ -98,7 +98,7 @@ int drv_rpi4_mmal_decoder_end(struct drv_rpi4_mmal_decoder *decoder);
  *
  * pixels receives the frame's bytes in the decoder's cached bounce memory,
  * valid until the frame's handle is released or the decoder flushed.
- * ETIMEDOUT means no frame came in time.
+ * ETIMEDOUT means no frame came in time (a timeout of zero only looks).
  */
 int drv_rpi4_mmal_decoder_receive(struct drv_rpi4_mmal_decoder *decoder, unsigned timeout_ms, struct drv_rpi4_mmal_frame *frame, const uint8_t **pixels);
 
