@@ -217,6 +217,6 @@ image は `plan/ws037/tests/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`
 
 image は `config-amd64-nvrtx.mk` の `NVRTX_RUN=R7g`（`nvrtx.gsp=1 nvrtx.gr=1`）。R7 の印に加えて次が出れば合格:
 
-`P5g begin` → `P5g ctxbufs: 9 buffers, N KiB` → `P5g arena at …, buffers … bytes` → **`P5g ok: golden context`** → **`P5g ok: scrubber`** → `P8 is not in this kernel …` → `P6 ok: channel and vaspace freed`（`P6: N graphics frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
+`P5g begin` → `P5g ctxbufs: 9 buffers, N KiB` → `P5g arena at …, buffers … bytes` → **`P5g ok: golden context`** → **`P5g ok: scrubber`** → （4df44e40d 以降は P8a の行と `P8b is not in this kernel …`、[p006](../phase006/phase.md)）→ `P6 ok: channel and vaspace freed`（`P6: N graphics frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
 
 FAIL の時は `rm: class … status …`・`rm: control … status …` の行（どの段で断られたか: 0x90f1・0x90f10106・0xc46f・0x2080012b・0xc597・0x20800a46）を PNG に。`P7 fail` なら host を reboot。R6 の再試験（片付けの直し）が通ってから流す。

@@ -258,8 +258,23 @@ nvrtx_gsp_start(
 		}
 	}
 
+	/* Stops before P8 when the boot asks. */
+	allowed = nvrtx_stage_allowed("P8");
+	if (!allowed) {
+		nvrtx_stage_mark("P8 skipped (nvrtx.stop=P8)");
+		gsp_finish(gpu);
+		return 0;
+	}
+
+	/* Brings the display up under the GSP and reads what the firmware lit. */
+	error = nvrtx_display_start(gpu);
+	if (error != 0) {
+		gsp_finish(gpu);
+		return error;
+	}
+
 	/* Says why the boot goes no further; the finish runs P6's stop and P7. */
-	nvrtx_stage_mark("P8 is not in this kernel; stopping after P5");
+	nvrtx_stage_mark("P8b is not in this kernel; stopping after P8a");
 	gsp_finish(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
@@ -792,6 +807,7 @@ gsp_finish(
 	 * channel left (R6).
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
+		nvrtx_display_stop(gpu);
 		nvrtx_gr_stop(gpu);
 		nvrtx_channel_stop(gpu);
 	}
