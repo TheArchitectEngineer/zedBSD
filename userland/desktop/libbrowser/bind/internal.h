@@ -189,7 +189,7 @@ struct bind_style_context;
 
 struct html_parser;
 
-struct environment_fetch_pending;
+struct bind_request_pending;
 
 struct environment_mutation_observer;
 
@@ -244,7 +244,8 @@ struct bind_window {
 	double time_origin;
 	struct vm_object *local_storage;
 	struct vm_object *session_storage;
-	struct environment_fetch_pending *fetches;
+	struct bind_request_pending *requests;
+	unsigned long next_request;
 	struct environment_mutation_observer *mutation_observers;
 };
 
@@ -567,6 +568,7 @@ int bind_throw_illegal(struct vm_realm *realm);
 int bind_illegal_constructor(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_string(struct vm_realm *realm, const char *ascii, vm_value *value);
 int bind_install_prelude(struct bind_window *window);
+void bind_requests_release(struct bind_window *window);
 int bind_units(struct vm_realm *realm, const uint16_t *units, size_t length, vm_value *value);
 int bind_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);
 int bind_to_atom(struct vm_realm *realm, vm_value value, int lower, struct vm_string **atom);

@@ -11,6 +11,8 @@ Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
 Queue: [q1198](queue.md) finished（14:15 ごろ Codex の使用量の上限で中断、uncleared、2026-10-14 Q1 が差分を commit）/ p217 framed horizontal Grid second vertical auto-inset child。2026-10-14 14:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 
+Event ws074-p232-yahoo-feed-20261014: [p232](phase232/phase.md) B1。yahoo.co.jp のニュース feed（見出しと画像）が出る。原因は fetch の不足と、`Object.freeze` が配列の要素で EPERM を漏らして bundle が止まっていたこと、core-js が Promise を差し替えて microtask が動かなかったこと。fetch・Headers・Request・Response・Blob・FormData・TextEncoder・非同期 XHR（POST・header・status）・focus を実装。host の fetch 試験 38/38（blocking と --async）。
+
 Event ws074-p231-google-script-20261014: [p231](phase231/phase.md) B1。google.com の script（BigInt・型付き配列・currentScript・defer・URL・dynamic link ほか）と Grid の高さ（item の max-height と grid item の auto margin）。live の ink 一致 23.47%→73.28%（全体 97.30%→99.36%）、script errors 2→0。固定 WPT 1,455 ID は 483 pass のまま後退 0。
 
 Event ws074-p230-yahoo-20261014: [p230](phase230/phase.md) B1。yahoo.co.jp の top: gzip の body、for の initializer の中の関数の `in`、SVG の画像（stroke・clipPath・use・角丸 rect）、CSS `transform`（translate）、画像の Accept（png・jpeg のみ）、「…」の font fallback。header の一致 24%→53%（ink）。Acid2 差 1,865→873、固定 WPT 後退 0。
@@ -601,6 +603,10 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p224](phase224/phase.md) | Grid track animation | in-progress / q1135診断部分cleared、実装未着手 | p189 q1134後退診断 |
 | [ws074-p225](phase225/phase.md) | Vertical Grid logical axes | in-progress / q1142固定vertical-lr部分実装 | p217 q1141診断・文字itemはp220 q1122出力 |
 | [ws074-p229](phase229/phase.md) | UAT のアドレスバー（compositor 側: launcher の既定 URL、編集中の箱の幅と横 scroll、field の key repeat） | cleared（2026-10-14 Q1、T1-618・T1-620 QEMU PASS、常に箱の表示を含む） | p228（browser の MAIN_HOME_PAGE） |
+| [ws074-p228](phase228/phase.md) | UAT の指摘: inline svg の描画（google.com のロゴと icon）、既定 URL を google.com に | cleared（host、2026-10-14 B1。QEMU・実機は未実施） | p231 の土台 |
+| [ws074-p230](phase230/phase.md) | yahoo.co.jp の top（gzip の body、SVG の画像、transform、dynamic link ほか） | cleared（host、2026-10-14 B1） | p228 |
+| [ws074-p231](phase231/phase.md) | google.com の script（BigInt・型付き配列・currentScript ほか）と Grid の高さ | cleared（host、2026-10-14 B1） | p230 |
+| [ws074-p232](phase232/phase.md) | yahoo.co.jp のニュース feed（fetch・Headers・Request・Response・非同期 XHR・Blob・FormData・focus ほか） | cleared（host、2026-10-14 B1。QEMU・実機は未実施。広告の viewability と Proxy は残り） | p230・p231 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

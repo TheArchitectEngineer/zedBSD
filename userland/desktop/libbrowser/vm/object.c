@@ -598,6 +598,7 @@ vm_object_define(
 	double number;
 	uint32_t length;
 	int is_index;
+	int existing;
 	int is_length;
 	int is_number;
 	int dense;
@@ -671,9 +672,12 @@ vm_object_define(
 		return 0;
 	}
 
-	/* An index in the elements that takes other attributes leaves them for a slot. */
-	if (is_index && index < object->element_capacity)
+	/* An index in the elements that takes other attributes leaves them for a slot (an element that exists is not a new property). */
+	existing = 0;
+	if (is_index && index < object->element_capacity) {
+		existing = object->elements[index] != VM_VALUE_EMPTY;
 		object->elements[index] = VM_VALUE_EMPTY;
+	}
 
 	/* A property the shape has keeps its slot, with new attributes when they differ. */
 	if (named) {
@@ -688,8 +692,8 @@ vm_object_define(
 		return 0;
 	}
 
-	/* A new property of an object that takes none is refused. */
-	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U)
+	/* A new property of an object that takes none is refused (Object.freeze changes the attributes of what is there). */
+	if ((object->flags & VM_OBJECT_NOT_EXTENSIBLE) != 0U && !existing)
 		return EPERM;
 
 	/* A new named property. */

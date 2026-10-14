@@ -57,7 +57,7 @@ struct page_script {
 struct page_fetch_request {
 	struct page *page;
 	struct net_request *request;
-	bind_fetch_done done;
+	bind_request_done done;
 	void *done_context;
 };
 
@@ -114,7 +114,8 @@ static int script_type_module(const struct dom_element *script);
 static int script_attribute(struct page *page, const struct dom_element *element, const char *name, struct dom_attribute **attribute);
 static int script_run_file(struct page *page, const struct vm_string *src);
 static int script_ascii_equal_folded(const struct vm_string *string, const char *ascii);
-static int script_fetch(void *context, const char *href, bind_fetch_done done, void *done_context);
+static int script_request(void *context, const struct bind_request *request, bind_request_done done, void *done_context, void **handle);
+static void script_request_cancel(void *context, void *handle);
 static int script_fetch_file(struct page *page, const char *href, struct wb_buffer *bytes);
 static const struct page_prefetched *script_prefetched(const struct page *page, const char *location);
 static int script_scan_starts(const unsigned char *bytes, size_t length, size_t at, const char *lower);
@@ -126,6 +127,7 @@ static int script_scan_add(const char *base, const struct wb_buffer *src, struct
 static int script_fetch_sync(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 static void script_fetch_arrived(void *context, struct net_request *request);
 static void script_fetch_remove(struct page_fetch_request *entry);
+static void script_fetch_unlink(struct page_fetch_request *entry);
 static int script_node_inserted(void *context, struct dom_node *node);
 static int script_checkpoint(void *context);
 static int script_document_write(void *context, const uint16_t *units, size_t length);
@@ -407,7 +409,8 @@ page_start_scripts(
 	host.scroll_to = page_scroll_to;
 	host.node_inserted = script_node_inserted;
 	host.checkpoint = script_checkpoint;
-	host.fetch = script_fetch;
+	host.request = script_request;
+	host.request_cancel = script_request_cancel;
 	host.fetch_sync = script_fetch_sync;
 	host.element_at = page_element_at;
 	host.document_write = script_document_write;
@@ -494,16 +497,18 @@ script_fetch_sync(
 	return page_fetch(page->base, href, bytes, final_url);
 }
 
-/* Fetches bytes for the binding's fetch API, resolved against this page. */
+/* Starts a script's request, resolved against this page; a web resource goes through the page's loader. */
 static int
-script_fetch(
+script_request(
 	void *context,
-	const char *href,
-	bind_fetch_done done,
-	void *done_context)
+	const struct bind_request *request,
+	bind_request_done done,
+	void *done_context,
+	void **handle)
 {
 	struct page *page;
 	struct page_fetch_request *entry;
+	struct net_send send;
 	struct wb_buffer location;
 	struct wb_buffer bytes;
 	struct wb_buffer final_url;
@@ -511,15 +516,18 @@ script_fetch(
 	int response_status;
 	int kept;
 	int remote;
+	int plain;
 	int error;
 
 	/* Resolve first so remote requests can use the page's non-blocking loader. */
 	page = context;
+	*handle = NULL;
 	if (page->base == NULL)
 		return EINVAL;
 	wb_buffer_init(&location);
-	error = page_resolve_location(page->base, href, &location);
+	error = page_resolve_location(page->base, request->href, &location);
 	remote = error == 0 && net_loader_takes(wb_buffer_string(&location));
+	plain = request->method == NULL || strcmp(request->method, "GET") == 0;
 
 	/* A web resource runs with the same loader as images and inserted scripts. */
 	if (error == 0 && page->loader != NULL && remote) {
@@ -531,10 +539,15 @@ script_fetch(
 			entry->page = page;
 			entry->done = done;
 			entry->done_context = done_context;
+			send.method = request->method;
+			send.headers = request->headers;
+			send.body = request->body;
+			send.body_length = request->body_length;
 			error = wb_vector_push(&page->fetches, &entry);
 			if (error == 0) {
 				kept = 1;
-				error = net_loader_fetch(page->loader, wb_buffer_string(&location),
+				*handle = entry;
+				error = net_loader_send(page->loader, wb_buffer_string(&location), NET_FETCH_SCRIPT_API, &send,
 				    script_fetch_arrived, entry, &entry->request);
 			}
 
@@ -542,6 +555,7 @@ script_fetch(
 			if (error != 0) {
 				if (kept)
 					page->fetches.count--;
+				*handle = NULL;
 				free(entry);
 			}
 		}
@@ -551,11 +565,33 @@ script_fetch(
 		return error;
 	}
 
-	/* Local and data resources complete in this task. */
+	/* Without a loader a web resource is read at once (blocking), with the method, headers and body. */
+	if (error == 0 && remote) {
+		struct net_response response;
+
+		send.method = request->method;
+		send.headers = request->headers;
+		send.body = request->body;
+		send.body_length = request->body_length;
+		error = net_http_fetch_send(wb_buffer_string(&location), &send, &response);
+		if (error == 0)
+			done(done_context, 0, response.status, wb_buffer_string(&response.url), wb_buffer_string(&response.headers),
+			    response.body.data, response.body.length);
+		else
+			done(done_context, error, 0, NULL, "", NULL, 0);
+		if (error == 0)
+			net_response_release(&response);
+		wb_buffer_release(&location);
+		return 0;
+	}
+
+	/* Local and data resources complete in this task (only a GET reads them). */
 	wb_buffer_init(&bytes);
 	wb_buffer_init(&final_url);
+	if (error == 0 && !plain)
+		error = ENOTSUP;
 	if (error == 0)
-		error = page_fetch(page->base, href, &bytes, &final_url);
+		error = page_fetch(page->base, request->href, &bytes, &final_url);
 	response_status = 0;
 	response_url = NULL;
 	if (error == 0) {
@@ -564,14 +600,38 @@ script_fetch(
 	}
 
 	/* The binding copies the bytes before the temporary buffers go away. */
-	done(done_context, error, response_status, bytes.data, bytes.length, response_url);
+	done(done_context, error, response_status, response_url, "", bytes.data, bytes.length);
 	wb_buffer_release(&bytes);
 	wb_buffer_release(&final_url);
 	wb_buffer_release(&location);
 	return 0;
 }
 
-/* Completes one Fetch API request from the asynchronous loader. */
+/* Cancels a request the page still holds (its callback is not called). */
+static void
+script_request_cancel(
+	void *context,
+	void *handle)
+{
+	struct page *page;
+	struct page_fetch_request *entry;
+	size_t index;
+
+	/* The entry must still be in the table; completion removed the others. */
+	page = context;
+	entry = handle;
+	for (index = 0; index < page->fetches.count; index++) {
+		if (*(struct page_fetch_request **)wb_vector_at(&page->fetches, index) != entry)
+			continue;
+		if (entry->request != NULL)
+			net_request_cancel(entry->request);
+		entry->request = NULL;
+		script_fetch_remove(entry);
+		return;
+	}
+}
+
+/* Completes one script request from the asynchronous loader. */
 static void
 script_fetch_arrived(
 	void *context,
@@ -580,6 +640,7 @@ script_fetch_arrived(
 	const struct net_response *response;
 	struct page_fetch_request *entry;
 	const char *response_url;
+	const char *headers;
 	int response_status;
 	int error;
 
@@ -590,21 +651,24 @@ script_fetch_arrived(
 	response = net_request_response(request);
 	response_status = 0;
 	response_url = NULL;
+	headers = "";
 	if (error == 0) {
 		response_status = response->status;
 		response_url = wb_buffer_string(&response->url);
+		headers = wb_buffer_string(&response->headers);
 	}
 
-	/* Settlement queues Promise jobs, which this task then runs. */
-	entry->done(entry->done_context, error, response_status,
-	    response->body.data, response->body.length, response_url);
+	/* Settlement queues Promise jobs, which this task then runs; the entry is gone before the script can cancel it. */
+	script_fetch_unlink(entry);
+	entry->done(entry->done_context, error, response_status, response_url, headers,
+	    response->body.data, response->body.length);
 	(void)bind_checkpoint(entry->page->window);
-	script_fetch_remove(entry);
+	free(entry);
 }
 
-/* Removes and frees a completed Fetch API request. */
+/* Takes a request out of the page's table (the caller frees it). */
 static void
-script_fetch_remove(
+script_fetch_unlink(
 	struct page_fetch_request *entry)
 {
 	struct page_fetch_request **slot;
@@ -620,8 +684,15 @@ script_fetch_remove(
 		entry->page->fetches.count--;
 		break;
 	}
+}
 
-	/* The table no longer refers to the completed entry. */
+/* Removes and frees a request. */
+static void
+script_fetch_remove(
+	struct page_fetch_request *entry)
+{
+	/* The table no longer refers to the entry. */
+	script_fetch_unlink(entry);
 	free(entry);
 }
 
@@ -1585,6 +1656,8 @@ script_run_file(
 	wb_buffer_release(&bytes);
 	wb_buffer_release(&line);
 	wb_units_release(&units);
+	if (error != 0 && getenv("BROWSER_STACK") != NULL)
+		fprintf(stderr, "script: stopped by error %d (%s)\n", error, strerror(error));
 	if (error != 0)
 		return error;
 

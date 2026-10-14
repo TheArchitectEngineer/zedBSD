@@ -152,9 +152,25 @@ struct bind_media {
 #define BIND_MEDIA_PAUSE	2
 #define BIND_MEDIA_SEEK		3
 
-/* Completion of a resource fetched for the Fetch API. */
-typedef void (*bind_fetch_done)(void *context, int error, int status,
-				const unsigned char *bytes, size_t length, const char *url);
+/*
+ * A request a script makes (fetch and XMLHttpRequest, ws074-p232): the
+ * method, the URL (resolved by the host against the page), the header lines
+ * (each "Name: value" ending in CR LF, or NULL) and the body (NULL for none).
+ */
+struct bind_request {
+	const char *method;
+	const char *href;
+	const char *headers;
+	const unsigned char *body;
+	size_t body_length;
+};
+
+/*
+ * Completion of a request: the error (0 when a response came), its status,
+ * final URL, header lines ("Name: value" each ending in LF) and body.
+ */
+typedef void (*bind_request_done)(void *context, int error, int status, const char *url,
+				  const char *headers, const unsigned char *bytes, size_t length);
 
 /*
  * What the window asks of its host: where the console's lines go (one
@@ -201,7 +217,9 @@ struct bind_host {
 	void (*scroll_to)(void *context, double x, double y);
 	int (*node_inserted)(void *context, struct dom_node *node);
 	int (*checkpoint)(void *context);
-	int (*fetch)(void *context, const char *href, bind_fetch_done done, void *done_context);
+	/* Starts a request; done is called once, from here or later, and *handle names it for request_cancel. */
+	int (*request)(void *context, const struct bind_request *request, bind_request_done done, void *done_context, void **handle);
+	void (*request_cancel)(void *context, void *handle);
 	int (*fetch_sync)(void *context, const char *href, struct wb_buffer *bytes, struct wb_buffer *final_url);
 	struct dom_node *(*element_at)(void *context, double x, double y);
 	/* Inserts into the active parser; ENOTSUP when no insertion point exists. */
