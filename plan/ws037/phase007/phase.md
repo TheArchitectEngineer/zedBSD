@@ -120,3 +120,16 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 - 読み（Q1、未解析）: 3D の program の SPH（Shader Program Header、vertex・fragment の header）が GR に拒まれた。compute（P9c）は SPH を使わないので通った。次は SPH の field を NVK・NAK（MIT）の値と 1 つずつ比べる。
 - PNG: `build/review/t2r7d-3.png`（Q1 の checkout）。
 - 再開の条件: SPH の直しの後に R7d を再試験。担当は次に空いた P（P3 は WS236 の Video を優先、2026-10-15）。
+
+## R7d の直し（2026-10-15、P1 の `7ce6e4019`（main の 3f87e673e）と P3 の作業中の patch を P2 が回収）
+
+- 読み: `ESR 0x405840=0xa0000` は `NV_PGRAPH_PRI_DS_HWW_ESR`（open-gpu-doc（MIT）の gv100 `dev_graphics.ref.txt`）の SPH17・SPH19 の誤り、M_PIPE_STAGE（29:24）は 0（NONE）。`0x405848=0x80000` は `DS_HWW_ESR_2` の bit 19（gv100 の文書では未定義の bit）。誤りの番号の意味は公開の文書に無い。
+- 直し 1（main に入済み、P1）: fragment の program の header の input map に position の w（IMAP_SYSTEM_VALUES_AB の bit 31）を常に立てる。NAK（MIT）`from_nir.rs` の「Required on fragment shaders, otherwise it cause a trap」と同じ。host 試験は 4 つの program の header を NAK の encode_header の値と語ごとに照合。
+- 直し 2（P3 の patch、ここで回収）: draw の push を NVK に合わせた。(a) `SET_PIPELINE_SHADER(0)`（VERTEX_CULL_BEFORE_FETCH）を書かない（NVK は type 1〜5 だけを書き、type 0 は golden context のまま）。(b) `SET_POST_Z_PS_IMASK` = 0（`nvk_shader.c`、post depth coverage 無し）。(c) `SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL(0..15)` = 0（`NVK_MME_SET_SHADING_RATE_CONTROL` の結果）。(d) `SET_HYBRID_ANTI_ALIAS_CONTROL` = 1（1 pass、centroid per fragment、`NVK_MME_SET_ANTI_ALIAS` の結果）。値と method の offset は clc597.h（MIT）で確かめた。
+- 他に照合した物（違い無し）: SPH の version 4（NAK は sm ≥ 73 で 4）、`CHECK_SPH_VERSION` 3/3・`CHECK_AAM_VERSION` 2/2（NVK と同じ）、header の type（PS 2・VTG 1）・shader type・MRT・SASS version 1、local memory と CRS の大きさ 0（SM70 の crs_size は 0）、vertex の store request（0x1c..0x1f / 0x21）、output map（position、generic 0 の xy）。
+
+| 確認 | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `159 checks, 0 failures`（draw の push に 4 項目: type 0 を書かない、POST_Z_PS_IMASK 0、VRS 16 個 0、hybrid AA 1） |
+| `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix`（p2 worktree） | rc 0・warning 0・include check / vmunix check PASS、`git diff --check` 0 |
+| 実機（R7d の再試験） | **未実施**。手順は 7 節のまま（image の語は既定 on の後 `nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1 nvrtx.disp=0 nvrtx.resident=0`、`config-amd64-nvrtx.mk` の `NVRTX_RUN=R7d`）。FAIL で同じ SPH の誤りなら、`DS_HWW_ESR` の bit の変化（17・19 が消えたか）を記録 |
