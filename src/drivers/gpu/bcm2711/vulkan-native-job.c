@@ -14,6 +14,9 @@
 #include <kern/klog.h>
 #include <uapi/errno.h>
 
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/vulkan-native-job.h"
 #include "drivers/gpu/bcm2711/vulkan-barrier.h"
@@ -240,6 +243,21 @@ bcm2711_vulkan_native_job_step(
 			event = event->next;
 			continue;
 		}
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+		/* Video and status query events run on the CPU, in order, after every earlier pass (ws236). */
+		if (bcm2711_vulkan_video_event(event->opcode)) {
+			step = clock_ticks();
+			error = bcm2711_vulkan_video_run(controller, event->record);
+			copy_ticks += clock_ticks() - step;
+			if (error != 0) {
+				job->prepare_failed = true;
+				return error;
+			}
+			event = event->next;
+			continue;
+		}
+#endif
 
 		/* Measures preparation while deferring input translations until one checked publication. */
 		step = clock_ticks();

@@ -2647,8 +2647,16 @@ run_decode(
 	drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
 	bcm2711_render_window_open(controller);
 	error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts);
-	if (error == 0)
+	while (error == 0) {
 		error = drv_rpi4_mmal_decoder_receive(video->decoder, VIDEO_FRAME_MS, &frame, &pixels);
+
+		/* A late frame of an earlier decode (one that timed out) is dropped. */
+		if (error == 0 && frame.pts < pts && frame.length != 0) {
+			kern_logf("v3d: video: late frame %lld dropped at decode %lld\n", (long long)frame.pts, (long long)pts);
+			continue;
+		}
+		break;
+	}
 	drv_rpi4_mmal_decoder_target(video->decoder, 0, 0, 0, 0);
 	busy = drv_rpi4_mmal_decoder_busy(video->decoder);
 	closed = bcm2711_render_window_close(controller);

@@ -9,6 +9,9 @@
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 #include "drivers/gpu/bcm2711/vulkan-device.h"
 #include "drivers/gpu/bcm2711/vulkan-memory.h"
 
@@ -179,6 +182,11 @@ queue_properties(
 	/* The one serialized V3D runner supports graphics and transfers, with no public compute or timestamp query support. */
 	kern_memset(&properties, 0, sizeof(properties));
 	properties.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* A session promised video decode also decodes on the one family (ws236). */
+	if (bcm2711_vulkan_video_session(session))
+		properties.queueFlags |= BCM2711_VIDEO_QUEUE_DECODE;
+#endif
 	properties.queueCount = 1;
 	properties.minImageTransferGranularity.width = 1;
 	properties.minImageTransferGranularity.height = 1;
@@ -390,6 +398,14 @@ format_properties(
 						    VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
 		properties->linearTilingFeatures = properties->optimalTilingFeatures;
 	}
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* NV12 pictures are decoded into and read back by the CPU copy (ws236). */
+	if (format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
+		properties->optimalTilingFeatures = BCM2711_VIDEO_FORMAT_FEATURES | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+		properties->linearTilingFeatures = properties->optimalTilingFeatures;
+	}
+#endif
 
 	/* The scalar frontend consumes bounded 32-bit float attributes rather than foreign GPU vertex format encodings. */
 	if (format == VK_FORMAT_R32_SFLOAT ||

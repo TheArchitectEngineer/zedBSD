@@ -41,8 +41,8 @@ Resume point: 設計は review-1 を反映（[design.md](design.md) §14）。p0
 | [ws236-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)、in-progress: 第 1 版、review 待ち）: VCHIQ・MMAL の message、参考の source の license、MMAL の decode の順・遅れの設定、Vulkan Video の stateless の API との橋渡しの設計、VkImage の memory、V3D の device に queue を足すか別の device か | 6 LW | — |
 | [ws236-p002](phase002/phase.md) | kernel: VCHIQ の driver の核（WS207 p004 と共用、in-progress: 実装・host 試験済み、main に merge 済み e4c3fce22、実機は p003 の probe と一緒） | 10 LW | p001 |
 | [ws236-p003](phase003/phase.md) | kernel: MMAL の `video_decode` の client（H.264、port・buffer・EOS・flush）と R1 の probe（in-progress: 実装・host 試験済み、test-wait（T1 の実機の probe）） | 10 LW | p002 |
-| ws236-p004 | kernel の Vulkan の executor: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
-| ws236-p005 | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験 | 3 LW | p004 |
+| [ws236-p004](phase004/phase.md) | kernel の Vulkan の executor（in-progress: 実装・build 済み、実機は p005 の依頼と一緒）: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
+| [ws236-p005](phase005/phase.md) | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験（in-progress: probe の直し済み、libmedia は無変更、test-wait（T1）） | 3 LW | p004 |
 | ws236-p006 | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し | 5 LW | p005 |
 | ws236-p007 | 規約の全文の確認 | 2 LW | 全て |
 
