@@ -33,6 +33,7 @@
 #define USB_HID_DESCRIPTOR		0x21U
 #define USB_HID_REPORT_DESCRIPTOR	0x22U
 #define USB_REQUEST_GET_DESCRIPTOR	0x06U
+#define USB_HID_REQUEST_GET_REPORT	0x01U
 #define USB_HID_REQUEST_SET_PROTOCOL	0x0bU
 #define USB_HID_REQUEST_SET_REPORT	0x09U
 #define USB_HID_REPORT_TYPE_OUTPUT	2U
@@ -190,6 +191,8 @@ static int usb_hid_set_device_mode(struct usb_hid *hid);
 static unsigned usb_hid_publish_flags(struct usb_hid *hid);
 static int usb_hid_sibling_fingers(struct usb_hid *hid);
 static void usb_hid_put_bits(uint8_t *data, uint32_t offset, uint32_t bits, uint32_t value);
+static void usb_hid_contact_maximum(struct usb_hid *hid);
+static uint32_t usb_hid_get_bits(const uint8_t *data, uint32_t offset, uint32_t bits);
 
 /* What a raw interface's transport does: its output reports (ws161-p002). */
 static const struct drv_hidraw_ops usb_hid_raw_ops = {
@@ -412,6 +415,7 @@ usb_hid_attach(
 		hid->fingers = 0U;
 		if ((error == 0 || error == ENOENT) && drv_hid_input_touch_screen(hid->hidinput))
 			hid->fingers = 1U;
+		usb_hid_contact_maximum(hid);
 	}
 	hid->stage = "resources";
 	usb_hid_identity(hid);
@@ -704,6 +708,7 @@ static int
 usb_hid_fetch_layout(
 	struct usb_hid *hid)
 {
+	struct hid_report_touch_info touch;
 	uint8_t *descriptor;
 	size_t descriptor_length;
 	size_t actual;
@@ -712,6 +717,7 @@ usb_hid_fetch_layout(
 	int raw;
 	int dump;
 	int prepared;
+	int touch_error;
 	int error;
 
 	/* How long the report descriptor is. */
@@ -771,7 +777,11 @@ usb_hid_fetch_layout(
 		usb_hid_log_hex(hid, "usb-hid-rdesc", descriptor, descriptor_length);
 		usb_hid_log_refusal(hid, descriptor, descriptor_length, error);
 	} else if (error == 0) {
+		/* A touch screen's or pad's descriptor is always logged: how it lays out its fingers (BUG-313). */
 		dump = usb_hid_dump_wanted();
+		touch_error = drv_hid_input_touch(hid->hidinput, &touch);
+		if (touch_error == 0)
+			dump = 1;
 		if (dump)
 			usb_hid_log_hex(hid, "usb-hid-rdesc", descriptor, descriptor_length);
 	}
@@ -1792,9 +1802,11 @@ usb_hid_log_refusal(
  * mouse it emulates before its Device Mode is set: as a collection beside
  * the screen in the screen's interface, or as an interface of its own.
  * Once the screen reports its fingers, that mouse is not published: the
- * screen's interface publishes the screen alone, and an interface that is
- * only a pointer beside a screen of the same device publishes nothing.
- * Any other interface publishes everything it declares.
+ * screen's interface publishes the screen alone unless the rest is a pen
+ * or a keyboard with keys (T1-644: the Wacom's interface 0 also published
+ * a device of no pointer and no key), and an interface that is only a
+ * pointer beside a screen of the same device publishes nothing.  Any
+ * other interface publishes everything it declares.
  */
 static unsigned
 usb_hid_publish_flags(
@@ -1802,15 +1814,24 @@ usb_hid_publish_flags(
 {
 	unsigned kind;
 	int sibling;
+	int keys;
 
-	/* Only a pointer is a screen's emulation; a keyboard or a pen is kept. */
+	/* A pen is kept wherever it is. */
 	kind = drv_hid_input_kind(hid->hidinput);
-	if (kind != HID_INPUT_KIND_MOUSE && kind != HID_INPUT_KIND_TABLET)
+	if (kind == HID_INPUT_KIND_PEN)
 		return 0U;
 
-	/* The screen's own interface: the screen alone. */
-	if (hid->fingers)
+	/* The screen's own interface: the screen alone, unless the rest has a keyboard's keys. */
+	if (hid->fingers) {
+		keys = drv_hid_input_has_keys(hid->hidinput);
+		if (kind == HID_INPUT_KIND_KEYBOARD && keys)
+			return 0U;
 		return HID_INPUT_TOUCH_ONLY;
+	}
+
+	/* Only a pointer is a screen's emulation; a keyboard is kept. */
+	if (kind != HID_INPUT_KIND_MOUSE && kind != HID_INPUT_KIND_TABLET)
+		return 0U;
 
 	/* An interface beside a screen of the same device: nothing. */
 	sibling = usb_hid_sibling_fingers(hid);
@@ -1939,6 +1960,108 @@ usb_hid_set_device_mode(
 
 	/* Succeeded: the device reports its fingers. */
 	return 0;
+}
+
+/*
+ * Reads a touch screen's or pad's Contact Count Maximum (GET_REPORT of its
+ * feature report), the most fingers it tracks, and gives its device that
+ * many slots, as Linux's hid-multitouch does (BUG-313).  A device without
+ * the field, or one that refuses, keeps the slots its descriptor gives.
+ * The outcome is logged.
+ */
+static void
+usb_hid_contact_maximum(
+	struct usb_hid *hid)
+{
+	struct hid_report_touch_info touch;
+	struct hid_report_feature_info feature;
+	uint8_t report[1U + USB_HID_FEATURE_MAX];
+	const uint8_t *data;
+	unsigned bus;
+	unsigned address;
+	unsigned interface_number;
+	uint32_t maximum;
+	size_t length;
+	size_t actual;
+	int error;
+
+	/* Only a touch screen or a touch pad has the field. */
+	error = drv_hid_input_touch(hid->hidinput, &touch);
+	if (error != 0)
+		return;
+	error = drv_hid_input_feature(hid->hidinput, HID_REPORT_USAGE_CONTACT_COUNT_MAXIMUM, &feature);
+	if (error != 0)
+		return;
+	if (feature.data_size == 0U || feature.data_size > USB_HID_FEATURE_MAX)
+		return;
+
+	/* The report: its ID's byte when it has one, then its data. */
+	length = feature.data_size;
+	if (feature.report_id != 0U)
+		length++;
+
+	/* GET_REPORT of the feature report on the control pipe. */
+	kern_memset(report, 0, sizeof(report));
+	actual = 0;
+	error = drv_usb_control(
+		hid->device,
+		DRV_USB_DIR_IN | DRV_USB_REQUEST_CLASS | DRV_USB_RECIP_INTERFACE,
+		USB_HID_REQUEST_GET_REPORT,
+		(uint16_t)((USB_HID_REPORT_TYPE_FEATURE << 8U) | feature.report_id),
+		(uint16_t)drv_usb_interface_number(hid->interface),
+		report,
+		length,
+		USB_HID_CONTROL_TIMEOUT_MS,
+		&actual);
+
+	/* The field, after the ID's byte, when the whole report came. */
+	maximum = 0U;
+	if (error == 0 && actual < length)
+		error = EIO;
+	if (error == 0) {
+		data = report;
+		if (feature.report_id != 0U)
+			data++;
+		maximum = usb_hid_get_bits(data, feature.bit_offset, feature.bit_size);
+	}
+
+	/* The kernel's log says what the device answered. */
+	usb_hid_location(hid, &bus, &address, &interface_number);
+	kern_logf("usb-hid: usb%u device %u interface %u contact-count-maximum=%u report=%u fingers-per-report=%u error=%d\n",
+		  bus,
+		  address,
+		  interface_number,
+		  (unsigned)maximum,
+		  (unsigned)feature.report_id,
+		  (unsigned)touch.contacts,
+		  error);
+
+	/* That many slots, when the device said a number. */
+	if (error == 0 && maximum != 0U)
+		(void)drv_hid_input_touch_slots(hid->hidinput, (unsigned)maximum);
+}
+
+/* Reads a field of a report's data (bits from a bit offset, little-endian as HID's), at most 32 bits. */
+static uint32_t
+usb_hid_get_bits(
+	const uint8_t *data,
+	uint32_t offset,
+	uint32_t bits)
+{
+	uint32_t value;
+	uint32_t index;
+	uint32_t bit;
+
+	/* One bit at a time. */
+	value = 0U;
+	for (index = 0; index < bits && index < 32U; index++) {
+		bit = offset + index;
+		if ((data[bit / 8U] & (1U << (bit % 8U))) != 0U)
+			value |= 1U << index;
+	}
+
+	/* Succeeded: the field's value. */
+	return value;
 }
 
 /* Sets a field of a report's data (bits from a bit offset, little-endian as HID's), leaving the other bits. */
