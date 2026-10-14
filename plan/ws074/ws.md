@@ -11,6 +11,8 @@ Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
 Queue: [q1198](queue.md) finished（14:15 ごろ Codex の使用量の上限で中断、uncleared、2026-10-14 Q1 が差分を commit）/ p217 framed horizontal Grid second vertical auto-inset child。2026-10-14 14:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 
+Event ws074-p228-uat-20261014: [p228](phase228/phase.md) B1。UAT の指摘: inline svg の描画（google.com のロゴと icon が出る）、既定の URL を google.com に、アドレスの箱の幅と repeat は compositor 側（根拠を記録、Q1 へ）。
+
 Event ws074-p227-q1202-partial-clear-20261014: [p227](phase227/phase.md) q1202-i01 (B1) で flex の align-content・wrap-reverse・inline-flex・blockify・overflow 2値・sideways・safe。同条件 1,455 ID で whole PASS 458→481（後退 0）、静的 reftest 682→815（PASS→FAIL 4 件を記録）。
 
 Event ws074-p227-q1201-partial-clear-20261014: [p227](phase227/phase.md) q1201-i01 (B1) で flex absolute 子の static position と align キーワードの構文。同条件 1,455 ID で whole PASS 427→458、後退 0。

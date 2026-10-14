@@ -22,6 +22,7 @@
 #include "net/net.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,6 +48,7 @@ static int images_walk(struct page *page, const struct dom_node *node, const str
 static int images_source(struct page *page, const struct dom_element *element, const struct vm_string *src, struct wb_buffer *location, int *found);
 static struct page_image *images_find(const struct page *page, const char *location);
 static int images_load(struct page *page, const struct dom_element *element, const struct vm_string *src);
+static const struct img_bitmap *images_svg(struct page *page, const struct dom_element *element);
 static int images_fetch(struct page *page, const char *location, struct page_image **loaded);
 static void images_arrived(void *context, struct net_request *request);
 
@@ -112,6 +114,10 @@ page_image_of(
 	page = context;
 	if (element->ns == DOM_NS_HTML && element->tag == DOM_TAG_VIDEO)
 		return page_media_bitmap(page, element);
+
+	/* An inline <svg> is drawn once into a bitmap the table keeps (ws074-p228). */
+	if (element->ns == DOM_NS_SVG && element->tag == DOM_TAG_SVG)
+		return images_svg(page, element);
 
 	/* The element's source or data, resolved against the page's location. */
 	source_name = "src";
@@ -447,4 +453,54 @@ images_arrived(
 
 	/* The page is laid out again with it. */
 	image->page->images_generation++;
+}
+
+/*
+ * Finds the bitmap of an inline <svg> element, drawing it the first time (the
+ * table keeps it under the element's address; a later change of the svg's
+ * markup is not drawn again).  NULL for one that could not be drawn.
+ */
+static const struct img_bitmap *
+images_svg(
+	struct page *page,
+	const struct dom_element *element)
+{
+	struct page_image *image;
+	char location[48];
+	int error;
+
+	/* Drawn before. */
+	snprintf(location, sizeof(location), "svg:%p", (const void *)element);
+	image = images_find(page, location);
+	if (image != NULL) {
+		if (image->failed)
+			return NULL;
+		return &image->bitmap;
+	}
+
+	/* A new entry, drawn now. */
+	image = calloc(1, sizeof(*image));
+	if (image == NULL)
+		return NULL;
+	image->location = strdup(location);
+	if (image->location == NULL) {
+		free(image);
+		return NULL;
+	}
+	image->page = page;
+	error = page_svg_render(element, &image->bitmap);
+	if (error != 0)
+		image->failed = 1;
+
+	/* The entry goes into the table. */
+	error = wb_vector_push(&page->images, &image);
+	if (error != 0) {
+		free(image->location);
+		img_bitmap_release(&image->bitmap);
+		free(image);
+		return NULL;
+	}
+	if (image->failed)
+		return NULL;
+	return &image->bitmap;
 }
