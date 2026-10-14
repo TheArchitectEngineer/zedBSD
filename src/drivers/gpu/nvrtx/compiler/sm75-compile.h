@@ -16,9 +16,10 @@
  * the workgroup's size, and which buffer goes where in the constant
  * buffers (sm75-isa.h, NVRTX_SM75_CB_*).
  *
- * Stage A (this version) compiles compute shaders without loops, atomics,
- * shared memory, barriers or integer division; the rest is refused with a
- * reason.
+ * Stages A and B compile compute shaders: arithmetic, conversions, the
+ * special functions, storage and shared memory with their atomics,
+ * workgroup barriers and fences, integer division, and loops.  Graphics
+ * stages, textures and spilling are refused with a reason.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_COMPILER_SM75_COMPILE_H
@@ -58,9 +59,10 @@ struct nvrtx_sm75_binary {
 	/* The general registers the program needs, the hardware's two included (the QMD's register count). */
 	uint32_t gpr_count;
 
-	/* The workgroup's size and its shared memory in bytes. */
+	/* The workgroup's size, its shared memory in bytes, and the workgroup barriers it uses (the QMD's barrier count). */
 	uint32_t local_size[3];
 	uint32_t shared_bytes;
+	uint32_t barrier_count;
 
 	/* The push constant bytes the program reads (at offset 0 of constant buffer 0). */
 	uint32_t push_bytes;

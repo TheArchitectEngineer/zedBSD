@@ -101,7 +101,7 @@ SPIR-V ──drv_gpu_shader_parse──▶ scalar IR ──drv_gpu_shader_optimi
 | 段 | 内容 | 状態 |
 | --- | --- | --- |
 | A | encoder ＋ compute の最小の lowering（3.3）＋ host の試験 1〜4 | 実装・host 済み（下の 6 節） |
-| B | loop・除算・atomic・shared・barrier | 未 |
+| B | loop・除算・atomic・shared・barrier | 実装・host 済み（下の 9 節） |
 | C | 最初の compute の投入（段 P9c、`nvrtx.compute=1`）: GR の channel・compute の object・QMD 2.2・cbuf・code・launch・fence・結果の確かめ | 実装・host 済み、実機（R7c）は T 待ち（下の 8 節） |
 | D | latency の表による並べ替え、operand の再利用 | 未 |
 | E | graphics の stage（SPH、attribute、texture） | 未（p007 の 3D と一緒に） |
@@ -202,3 +202,23 @@ FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … s
 2. program・QMD・cbuf を system memory（volatile）に置いた。NVK は VRAM に置く。SM が system memory から命令を読めない・遅い時は VRAM（arena）に移す。
 3. SLM（local memory）を設定していない（program は local memory を使わない。NVK も slm 0 なら設定しない）。
 4. 直列の依存の印（段 A）は遅いが正しいはず。命令の encode の正しさは既知の語 6 つと field の試験だけが見ている。実機で値が違えば、encode と制御の bit から疑う。
+
+## 9. 段 B: loop・除算・atomic・shared memory・barrier（2026-10-15 P3、host と build だけ）
+
+| IR | SM75 | 出典の事実（NAK、MIT） |
+| --- | --- | --- |
+| LOOP_BEGIN・LOOP_END | `BSSY Bn, →BSYNC`（入れ子の深さ n、16 まで）… 本体 … `ISETP.NE P0, cond, RZ`、`@P0 BRA 先頭`（分岐の条件の欄 87..90）、`BSYNC Bn`。warp の thread が別々の回で抜けても BSYNC で揃う | BSSY 0x945（barrier 16..19、offset 34..63）、BSYNC 0x941、BRA の条件 87..90。直列の依存では分岐・BSSY・BSYNC は全部の scoreboard を待ち yield（calc_instr_deps の serial） |
+| 値の生存 | loop の前に作られ loop の中で読まれる値は loop の終わりまで register を保つ（次の回がまた読む） | — |
+| UDIV・UMOD | `u2f`→`MUFU.RCP`→`×(2^32−512)`→`f2u` で約 2^32/d、`r += hi(r × (−d × r))` で 1 回の精度の改善、`q = hi(n × r)`、`m = n − q × d`、`m ≥ d` なら `q+1`・`m−d` を 2 回（hi は IMAD.WIDE.U32 の上の register） | 一般的な固定小数点の逆数の除算（NIR の idiv の lowering と同じ考え）。RCP の誤差 ±1 ulp を interpreter で入れても正しいことを確かめた |
+| IDIV・IREM | 絶対値で UDIV/UMOD、商は符号の xor が負なら、余りは被除数が負なら `@P0 IADD3 −x` | GLSL の `%`（OpSMod）は front が IREM と除数の符号への直しに分ける |
+| ATOMIC（storage） | `ATOMG.<op>.STRONG.GPU`（0x3a8、op 87..90: ADD 0・MIN 1・MAX 2・AND 5・OR 6・XOR 7・EXCH 8、型 73..75: U32 0・S32 1）、compare-and-exchange は `ATOMG.CAS`（0x3a9、比べる値 32..39・書く値 64..71）。SUB は値を負にして ADD。述語付きは `@P0` | sm70_encode.rs の OpAtom |
+| ATOMIC（shared）・LOAD_SHARED・STORE_SHARED | `ATOMS`（0x38c）・`ATOMS.CAS`（0x38d）・`LDS`（0x984）・`STS`（0x388）、offset の register そのまま | 同 OpAtom・OpLd・OpSt の shared |
+| BARRIER | （global の fence を伴う時だけ `MEMBAR.GPU`）`BAR.SYNC 0`（0xb1d）、その後に NOP（delay 2） | OpBar、OpMemBar（0x992、scope 76..78）。NOP は calc_instr_deps の「実行の latency のある命令の後」 |
+| FENCE | `MEMBAR.GPU`（global）か `MEMBAR.CTA` | — |
+
+- 結果の記述に `barrier_count`（barrier を使えば 1、QMD の BARRIER_COUNT）を足した。shared の大きさは `shared_bytes`。
+- 1 つの IR の命令の最大の展開を 40 に（除算が約 25）。
+- 試験（`nvrtx-sm75-host-test.sh` → **76 checks, 0 failures**）: interpreter を workgroup の invocation を barrier ごとに回す形に変えた（全員が barrier に来たら次の回、barrier で待つ間に終わる invocation は失敗）。新しい module: `plan/ws037/tests/sm75/loop.comp`（invocation ごとに回数の違う入れ子の loop）・`division.comp`（固定の端の値と疑似乱数の 32 組、符号付きは OpSMod の意味）・`shared.comp`（barrier を挟んだ shared と shared の atomic）、ws101 の `atomic.comp`（全部の storage の atomic、述語付き、古い値の返り）。BSSY・BSYNC・条件付き BRA・BAR・MEMBAR・ATOMG・LDS の field の試験。拒む物の試験は texture（SAMPLE）に変えた。
+- nvrtx=y の kernel: rc 0、warning 0。
+
+段 B の残り: texture・image、graphics の stage（段 E）、spill、latency の表による並べ替え（段 D）。shared の atomic の float、64 bit の atomic は IR に無い。
