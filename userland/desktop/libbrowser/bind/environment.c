@@ -456,6 +456,11 @@ bind_environment_install(
 	if (error != 0)
 		return error;
 
+	/* The pieces written in the page's own language (AbortController, URL, Intl, ...). */
+	error = bind_install_prelude(window);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the environment is on the global object. */
 	return 0;
 }

@@ -646,6 +646,8 @@ bind_event_construct(
 	struct bind_window *window;
 	struct vm_string *type;
 	struct vm_cell *event_root;
+	struct vm_object *event_object;
+	struct vm_object *subclass;
 	vm_value value;
 	int present;
 	int status;
@@ -670,6 +672,13 @@ bind_event_construct(
 	status = vm_heap_add_root(realm->heap, &event_root);
 	if (status != 0)
 		return status;
+
+	/* A class that extends the interface gets its own prototype (new.target's). */
+	event_object = (struct vm_object *)vm_value_as_cell(*result);
+	status = vm_construct_prototype(realm, realm->new_target, event_object->prototype, &subclass);
+	if (status != 0)
+		goto cleanup;
+	event_object->prototype = subclass;
 
 	/* The init's flags. */
 	status = bind_get_option(realm, js_argument(args, count, 1), "bubbles", &present, &value);
@@ -1025,6 +1034,7 @@ event_target_construct(
 {
 	struct bind_window *window;
 	struct vm_object *object;
+	struct vm_object *prototype;
 	struct vm_cell *listeners;
 	struct vm_cell *listeners_root;
 	int status;
@@ -1044,7 +1054,12 @@ event_target_construct(
 	status = vm_heap_add_root(realm->heap, &listeners_root);
 	if (status != 0)
 		return status;
-	object = vm_object_create(realm->heap, window->prototypes[BIND_EVENT_TARGET]);
+	status = vm_construct_prototype(realm, realm->new_target, window->prototypes[BIND_EVENT_TARGET], &prototype);
+	if (status != 0) {
+		vm_heap_remove_root(realm->heap, &listeners_root);
+		return status;
+	}
+	object = vm_object_create(realm->heap, prototype);
 	if (object == NULL) {
 		vm_heap_remove_root(realm->heap, &listeners_root);
 		return ENOMEM;

@@ -564,6 +564,7 @@ int bind_window_install(struct bind_window *window);
 int bind_throw_illegal(struct vm_realm *realm);
 int bind_illegal_constructor(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int bind_string(struct vm_realm *realm, const char *ascii, vm_value *value);
+int bind_install_prelude(struct bind_window *window);
 int bind_units(struct vm_realm *realm, const uint16_t *units, size_t length, vm_value *value);
 int bind_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);
 int bind_to_atom(struct vm_realm *realm, vm_value value, int lower, struct vm_string **atom);

@@ -106,6 +106,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/bind/style-sheet.c \
 	$(LIBBROWSER_DIR)/bind/cssom.c \
 	$(LIBBROWSER_DIR)/bind/environment.c \
+	$(LIBBROWSER_DIR)/bind/prelude.c \
 	$(LIBBROWSER_DIR)/bind/query.c \
 	$(LIBBROWSER_DIR)/bind/geometry.c \
 	$(LIBBROWSER_DIR)/bind/style.c \
