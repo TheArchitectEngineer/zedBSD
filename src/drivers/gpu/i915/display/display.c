@@ -1829,20 +1829,6 @@ i915_display_native_check(
 	nd.parser_size = 0U;
 	nd.parser_sha256 = NULL;
 
-#ifdef I915_TEST_VBT
-	/*
-	 * The test build's explicit blob: its pin, and its bytes when the
-	 * parser took them.
-	 *
-	 * XXX: a test crutch for the QEMU passthrough guest without an
-	 * OpRegion; delete it once the GPU tests run on bare metal.
-	 */
-	nd.vbt_pin = drv_i915_vbt_explicit_pin(display);
-	if (display->vbt_state.source == I915_VBT_SRC_EXPLICIT_BLOB) {
-		nd.parser_size = display->vbt_state.blob_size;
-		nd.parser_sha256 = display->vbt_state.blob_sha256;
-	}
-#endif
 
 	/* The OpRegion copy the hardware probe made is what the parser consumed. */
 	if (display->vbt_state.source == I915_VBT_SRC_OPREGION && display->p2_opd != NULL && display->p2_opd->vbt_valid) {

@@ -1748,7 +1748,7 @@ struct i915_vbt_state {
 	struct i915_vbt parsed;
 	int parsed_live;
 
-	/* explicit blob bookkeeping (only filled by the test build, I915_TEST_VBT; zero in production) */
+	/* explicit blob bookkeeping (no build fills it since the test VBT was removed; always zero) */
 	const char *blob_name;
 	unsigned blob_size;
 	uint8_t blob_sha256[32];
@@ -1759,20 +1759,14 @@ struct i915_vbt_state {
 /*
  * Whether the explicit VBT is asked for.
  *
- * Only the test build (I915_TEST_VBT) carries one: the captured VBT of the
- * test machine, used when the PCI subsystem id and the SHA-256 match.  It
- * supplies the machine's configuration data; it does not make an OpRegion
- * exist (ASLS stays what the firmware left).  A production kernel takes the
- * VBT from the OpRegion or the PCI ROM, or the Linux defaults.
+ * Never: the test build's captured VBT of the test machine was removed
+ * (plan/ws233/phase001/phase.md, 2026-10-14), so the kernel takes the VBT
+ * from the OpRegion or the PCI ROM, or the Linux defaults.
  *
- * XXX: a test crutch for the QEMU passthrough guest, whose firmware presents
- * no OpRegion.  Delete it once the GPU tests run on bare metal.
+ * XXX: the explicit-blob bookkeeping it leaves (the EXPLICIT_BLOB source and
+ * origin, the blob fields) is dead and can go with the next change of vbt.c.
  */
-#ifdef I915_TEST_VBT
-#define I915_VBT_EXPLICIT 1
-#else
 #define I915_VBT_EXPLICIT 0
-#endif
 
 /*
  * The OpRegion ACPI service (opregion.c).

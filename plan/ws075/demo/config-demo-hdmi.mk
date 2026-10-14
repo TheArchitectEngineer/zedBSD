@@ -8,8 +8,7 @@
 # kmsg=quiet, Noct with its GPU accelerator) with only the differences the
 # demonstration needs.  plan/ws129/phase009/phase.md has the table of what
 # changed against the earlier demonstration configuration and why each
-# difference stays.  The passthrough VBT is chosen by build-demo-image.sh
-# (I915_TEST_VBT), not here.
+# difference stays.
 include config/ci/config-amd64.mk
 
 # display=edp keeps the machine's own LCD (the eDP panel) as the only output

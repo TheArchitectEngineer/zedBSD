@@ -32,7 +32,7 @@ FILES="$FILES --file /etc/service.d/wlwait=$Z/wlwait --file /etc/service.d/g3run
 FILES="$FILES --file /etc/keiland/run-zdesktop.sh=$G/run-zdesktop.sh --file /etc/keiland/run-g3.sh=$D/run-g3.sh"
 FILES="$FILES --file /etc/keiland/run-poweroff.sh=$Z/run-poweroff.sh --file /bin/noct=$noct --mode /bin/noct=0755"
 [ -f "$fonts/Mahora-Regular.ttf" ] && FILES="$FILES --file /usr/share/fonts/keiland.ttf=$fonts/Mahora-Regular.ttf"
-timeout 3600 make -j"$ZEDBSD_JOBS" BUILD="$BUILD" ZEDBSD_CONFIG=$D/config.mk I915_TESTS=n I915_TEST_ORACLE=n I915_TEST_VBT=y \
+timeout 3600 make -j"$ZEDBSD_JOBS" BUILD="$BUILD" ZEDBSD_CONFIG=$D/config.mk I915_TESTS=n I915_TEST_ORACLE=n \
 	I915_TEST_CAPTURE=n ZEDBSD_TEST_RC_CONF=$D/rc.conf "ZEDBSD_TEST_EXTRA_FILES=$FILES" ZEDBSD_TEST_IMAGE_TAG=ws101g3 \
 	disk-image > "$out/build.log" 2>&1 || { echo "g3-hw: BUILD FAILED ($out/build.log)"; exit 1; }
 echo "g3-hw: built $BUILD/hdd-image.img"

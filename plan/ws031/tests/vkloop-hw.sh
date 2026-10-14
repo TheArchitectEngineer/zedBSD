@@ -110,10 +110,8 @@ case "$EXTRA" in oracle*)
 	I915_TEST_ORACLE=y
 	EXTRA="${EXTRA#oracle}" ;;
 esac
-# XXX: the run is the QEMU passthrough, whose guest sees no OpRegion, so the 5330's kernel always carries the
-# test machine's captured VBT (I915_TEST_VBT=y, vendor/intel-vbt/).  Drop it once the GPU tests run on bare metal.
-# The SV7 (I915_MACHINE=sv7) has none: the driver drives no Gen9 display (plan/ws031/tests/hw-machine.sh).
-I915_TEST_VBT=${I915_TEST_VBT:-y}
+# The run is the QEMU passthrough, whose guest sees no OpRegion; the captured VBT the 5330's kernel carried was
+# removed on 2026-10-14 (ws233-p001), so the driver takes the missing-VBT defaults (plan/ws031/tests/hw-machine.sh).
 # I915_TEST_CAPTURE=y (from the environment, default n): the capture display in place of the panel -- the LCD is not
 # brought up and every presentation is copied into guest RAM for the host's pmemsave (display/capture.c)
 I915_TEST_CAPTURE=${I915_TEST_CAPTURE:-n}
@@ -122,7 +120,7 @@ BUILD=${BUILD:-build/resident}
 ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws031/tests/config-vkprobe-hw.mk}
 mkdir -p $BUILD
 # a change of flags or of the test build is not seen by make: force the rebuild and relink by hand
-FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|vbt=$I915_TEST_VBT|capture=$I915_TEST_CAPTURE"
+FLAGS="$EXTRA|${I915_TESTS:-n}|${I915_TEST_ORACLE:-n}|capture=$I915_TEST_CAPTURE"
 # the machine's boot words (I915_BOOT_EXTRA, e.g. i915.gen9=on) are in the boot config's name: make sees them itself
 [ -z "$I915_BOOT_EXTRA" ] || FLAGS="$FLAGS|boot=$I915_BOOT_EXTRA"
 [ -f $BUILD/.vkloop-flags ] && [ "$(cat $BUILD/.vkloop-flags)" = "$FLAGS" ] || {
@@ -243,7 +241,7 @@ BOOT_EXTRA=
 [ -z "$I915_BOOT_EXTRA" ] || BOOT_EXTRA="ZEDBSD_BOOT_EXTRA_LINES=$I915_BOOT_EXTRA"
 # shellcheck disable=SC2086
 plan/tools/guest/test-image.sh --no-harness "$ZEDBSD_CONFIG" "$BUILD" $FILES "I915_TESTS=${I915_TESTS:-n}" \
-	"I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" "I915_TEST_VBT=$I915_TEST_VBT" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
+	"I915_TEST_ORACLE=${I915_TEST_ORACLE:-n}" "I915_TEST_CAPTURE=$I915_TEST_CAPTURE" \
 	"ZEDBSD_TEST_CPPFLAGS=-DGPU_IOCTL_TRACE=1 $EXTRA" ZEDBSD_TEST_RC_CONF=$RC_CONF \
 	${BOOT_EXTRA:+"$BOOT_EXTRA"} ZEDBSD_TEST_IMAGE_TAG=vkprobe disk-image > $BUILD/resident-build.log 2>&1 || {
 	echo "BUILD FAILED (the image on the 5330 is NOT this tree):"

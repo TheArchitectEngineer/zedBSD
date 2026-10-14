@@ -139,13 +139,13 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 
 ```
 mkdir -p build/<W>
-make -j64 BUILD=build/<W> ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk I915_TEST_VBT=y build/<W>/vmunix > build/<W>/kernel.log 2>&1; echo "make exit=$?"
+make -j64 BUILD=build/<W> ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk build/<W>/vmunix > build/<W>/kernel.log 2>&1; echo "make exit=$?"
 grep -E ':[0-9]+:[0-9]+: warning:' build/<W>/kernel.log | wc -l
 ```
 
 `make -n` で target `build/<W>/vmunix` が i915 の source を compile することを確かめた（2026-10-01）。実行時間は未計測。
 
-### 5.2 実機の image（`plan/ws075/demo/build-demo-image.sh`、引数は `:11`、`passthrough` は `:26` で `I915_TEST_VBT=y`）
+### 5.2 実機の image（`plan/ws075/demo/build-demo-image.sh`、引数は `:11`、`passthrough` は今は何も変えない: 試験の VBT は 2026-10-14 に外した、ws233-p001）
 
 | 用途 | コマンド |
 | --- | --- |

@@ -14,9 +14,8 @@
 #
 # The image is BUILD/hdd-image.img; write it to a USB stick and boot the machine from it (UEFI), or edit the boot
 # parameters afterwards in zedbsd.cfg on its ESP (docs/reference/kernel-boot-parameters.md).
-# "passthrough" is the image for the 5330's QEMU passthrough (plan/ws075/tests/hdmi-h4-hw.sh): the guest sees no
-# OpRegion there, so the kernel carries the machine's captured VBT (I915_TEST_VBT=y).  On the machine itself the VBT
-# comes from its OpRegion and the word is left out.  Further words go to make, e.g.
+# "passthrough" is accepted for the 5330's QEMU passthrough (plan/ws075/tests/hdmi-h4-hw.sh) and changes nothing
+# since the captured VBT it put in the kernel was removed (2026-10-14, ws233-p001).  Further words go to make, e.g.
 # "ZEDBSD_BOOT_EXTRA_LINES=display=hdmi display.mode=1920x1080@60" or ZEDBSD_TEST_CPPFLAGS=-DI915_TEST_HDMI_ABSENT=1.
 # Give each variant a build directory of its own: make does not see a change of the C flags.
 # The guest harness's public key lets plan/tools/guest/guest.sh-style ssh reach root on the machine.
@@ -25,9 +24,7 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 build=${1:-build/demo-hdmi}
 [ $# -gt 0 ] && shift
-vbt=n
 if [ "${1:-}" = passthrough ]; then
-	vbt=y
 	shift
 fi
 key=plan/tmp/guest/id_ed25519.pub
@@ -39,5 +36,5 @@ plan/tools/guest/test-image.sh --no-harness plan/ws075/demo/config-demo-hdmi.mk 
 	--file /etc/keiland/apps.conf=plan/ws035/demo/apps.conf \
 	--file /usr/share/keiland/wallpaper.png=userland/desktop/wallpapers/Birch-Lake.png \
 	--file /root/.ssh/authorized_keys=$key --mode /root/.ssh/authorized_keys=0600 --mode /root/.ssh=0700 \
-	I915_TEST_VBT=$vbt ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@"
+	ZEDBSD_TEST_IMAGE_TAG=demo-hdmi "$@"
 echo "demo image: $build/hdd-image.img"

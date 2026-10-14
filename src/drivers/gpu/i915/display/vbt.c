@@ -213,70 +213,6 @@ struct bdb_block_entry {
 	u8 data[];
 };
 
-#ifdef I915_TEST_VBT
-/*
- * One pinned VBT blob: the machine it belongs to and its SHA-256.
- *
- * A row is used only when its SHA-256 is the pinned one, the bytes hold a
- * valid VBT, and the PCI subsystem id is the machine's.
- *
- * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
- * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
- * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
- * machine instead.  Delete it once the GPU tests run on bare metal.  A
- * production kernel does not contain it.
- */
-struct i915_vbt_pin {
-	/* The name the blob is logged by. */
-	const char *name;
-
-	/* The captured bytes and their length. */
-	const uint8_t *data;
-	unsigned size;
-
-	/* The PCI subsystem id of the machine the blob was read from. */
-	uint16_t subsys_vendor;
-	uint16_t subsys_device;
-
-	/* The SHA-256 of the captured blob. */
-	uint8_t sha256[32];
-};
-
-/*
- * The VBT captured from the OpRegion of the Dell Latitude 5330 the QEMU
- * passthrough test runs on (vendor/intel-vbt/README.md).
- *
- * It is platform data of the machine's vendor, and never changes.
- *
- * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
- * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
- * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
- * machine instead.  Delete it once the GPU tests run on bare metal.  A
- * production kernel does not contain it.
- */
-static const uint8_t i915_vbt_test_dell_latitude_5330[] = {
-#include "vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc"
-};
-
-/*
- * The explicit VBT blobs, one row per machine the test build carries.
- *
- * The table never changes.
- *
- * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
- * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
- * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
- * machine instead.  Delete it once the GPU tests run on bare metal.  A
- * production kernel does not contain it.
- */
-static const struct i915_vbt_pin i915_vbt_explicit_pins[] = {
-	{ "vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc",
-		i915_vbt_test_dell_latitude_5330, sizeof(i915_vbt_test_dell_latitude_5330),
-		0x1028u, 0x0b02u,
-		{ 0x3b, 0xff, 0x4a, 0x09, 0x20, 0xd5, 0x5c, 0x9a, 0xee, 0x0e, 0xa3, 0xc6, 0x78, 0x90, 0x4f, 0x98,
-		  0x2f, 0x86, 0x71, 0xc0, 0xe7, 0xb5, 0xbc, 0x97, 0xa3, 0x35, 0xe4, 0x29, 0xb2, 0x96, 0x24, 0xcd } },
-};
-#endif
 
 /*
  * The parser's world of the display that is up.
@@ -299,10 +235,6 @@ static uint32_t i915_bios_rd32(const uint8_t *bytes);
 static int i915_bios_oprom_get_vbt(struct i915_display *display, struct i915_pci *pci, const void **out, size_t *out_size);
 static int i915_bios_oprom_lift(struct i915_display *display, const volatile uint8_t *rom, size_t rom_size, size_t found, const void **out, size_t *out_size);
 static uint32_t i915_sha_rotr(uint32_t x, unsigned n);
-#ifdef I915_TEST_VBT
-static int i915_bios_explicit_blob_get(struct i915_display *display, struct i915_vbt_state *vbt, struct i915_pci *pci, const void **out, size_t *out_size);
-static const uint8_t *i915_bios_explicit_pin_for(uint16_t vendor, uint16_t device);
-#endif
 static void i915_bios_choose_source(struct i915_display *display, struct i915_vbt_state *vbt, struct i915_pci *pci, int explicit_blob, const void **out, size_t *out_size, int *origin);
 static void i915_bios_report(struct i915_vbt_state *vbt, int opregion_has_vbt, struct i915_trace *trace);
 static uint32_t i915_opregion_le32(const uint8_t *bytes);
@@ -812,10 +744,9 @@ drv_i915_bios_set_opregion_vbt(
  * Finds the VBT and runs the Linux parser on it (intel_bios_init()).
  *
  * opregion_has_vbt reports whether the same start's OpRegion step holds a
- * usable VBT; explicit_blob asks for the pinned blob of this machine, which
- * only the test build (I915_TEST_VBT) carries and a production kernel
- * ignores.  The byte source is, in order, the explicit blob, the OpRegion's
- * copy, and the PCI ROM; with none the parser takes the missing-VBT
+ * usable VBT; explicit_blob is ignored (no build carries a pinned blob any
+ * more).  The byte source is, in order, the OpRegion's copy and the PCI
+ * ROM; with none the parser takes the missing-VBT
  * defaults.  vbt is filled with what was actually done.  Returns 0, or the
  * parser's refusal (a VBT state already live, or no parser world).
  */
@@ -942,33 +873,6 @@ drv_i915_bios_driver_remove(
 	vbt->parsed_live = 0;
 }
 
-#ifdef I915_TEST_VBT
-/*
- * Returns the pinned SHA-256 of this machine's explicit blob, or NULL when
- * the build carries no row for the machine.
- *
- * The machine is the one the last VBT acquisition read the PCI subsystem id
- * of; the firmware display check compares the OpRegion's VBT against it.
- *
- * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
- * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
- * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
- * machine instead.  Delete it once the GPU tests run on bare metal.  A
- * production kernel does not contain it.
- */
-const uint8_t *
-drv_i915_vbt_explicit_pin(
-	struct i915_display *display)
-{
-	const uint8_t *pin;
-
-	/* Looks the remembered machine up in the pin table. */
-	pin = i915_bios_explicit_pin_for(display->pinned_vendor, display->pinned_device);
-
-	/* Succeeded: reports the pin, or NULL for a machine without one. */
-	return pin;
-}
-#endif
 
 /*
  * Reads where a copy of the OpRegion keeps its VBT (intel_opregion_setup()).
@@ -1760,79 +1664,6 @@ i915_sha_rotr(
 	return (x >> n) | (x << (32u - n));
 }
 
-#ifdef I915_TEST_VBT
-/*
- * Supplies this machine's explicit blob when the test build carries one for
- * it, it matches its pin, and it holds a valid VBT.
- *
- * Records every step in vbt; reports 1 with *out and *out_size set, or 0
- * (nothing is used, and the caller reports the absence).
- *
- * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
- * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
- * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
- * machine instead.  Delete it once the GPU tests run on bare metal.  A
- * production kernel does not contain it.
- */
-static int
-i915_bios_explicit_blob_get(
-	struct i915_display *display,
-	struct i915_vbt_state *vbt,
-	struct i915_pci *pci,
-	const void **out,
-	size_t *out_size)
-{
-	const struct i915_vbt_pin *pin;
-	unsigned row;
-	unsigned i;
-
-	/* Reads which machine this is, and remembers it for the pin lookup. */
-	vbt->blob_requested = 1;
-	vbt->subsys_vendor = drv_i915_pci_read16(pci, I915_VBT_PCI_SUBSYS_VENDOR);
-	vbt->subsys_device = drv_i915_pci_read16(pci, I915_VBT_PCI_SUBSYS_DEVICE);
-	display->pinned_vendor = vbt->subsys_vendor;
-	display->pinned_device = vbt->subsys_device;
-	vbt->blob_name = i915_vbt_explicit_pins[0].name;
-
-	/* Looks for the row of this machine. */
-	for (row = 0u; row < ARRAY_SIZE(i915_vbt_explicit_pins); row++) {
-		pin = &i915_vbt_explicit_pins[row];
-		if (vbt->subsys_vendor != pin->subsys_vendor)
-			continue;
-		if (vbt->subsys_device != pin->subsys_device)
-			continue;
-
-		/* Takes the machine's blob, which the test build carries. */
-		vbt->blob_subsys_ok = 1;
-		vbt->blob_name = pin->name;
-		vbt->blob_found = 1;
-		vbt->blob_size = pin->size;
-
-		/* Hashes the blob and compares it with the pin. */
-		drv_i915_sha256(pin->data, pin->size, vbt->blob_sha256);
-		vbt->blob_hash_ok = 1;
-		for (i = 0u; i < 32u; i++) {
-			if (vbt->blob_sha256[i] != pin->sha256[i])
-				vbt->blob_hash_ok = 0;
-		}
-
-		/* A blob that differs from the pin, or holds no valid VBT, is not used. */
-		vbt->blob_valid = drv_i915_vbt_validate(pin->data, pin->size);
-		if (vbt->blob_hash_ok == 0 || vbt->blob_valid == 0)
-			return 0;
-
-		/* The blob is static read-only data and stays valid for the kernel lifetime. */
-		*out = pin->data;
-		*out_size = pin->size;
-
-		/* Succeeded: the pinned blob is used. */
-		return 1;
-	}
-
-	/* No row for this machine: nothing is used. */
-	return 0;
-}
-#endif
 
 /*
  * Chooses the VBT bytes in the Linux intel_opregion_get_vbt() order.
@@ -1858,34 +1689,13 @@ i915_bios_choose_source(
 	int lifted;
 	int valid;
 
-#ifndef I915_TEST_VBT
 	UNUSED_PARAMETER(explicit_blob);
 
-#endif
 	/* Starts with no bytes. */
 	*out = NULL;
 	*out_size = 0u;
 	*origin = I915_VBT_ORIGIN_NONE;
 
-#ifdef I915_TEST_VBT
-	/*
-	 * The explicit blob, when the build asks for it.
-	 *
-	 * XXX: a test crutch.  The QEMU passthrough test runs the driver in a guest
-	 * whose firmware presents ASLS=0, so the guest has no OpRegion and no VBT;
-	 * the test build (I915_TEST_VBT) supplies the captured VBT of the one test
-	 * machine instead.  Delete it once the GPU tests run on bare metal.  A
-	 * production kernel does not contain it.
-	 */
-	if (explicit_blob != 0) {
-		lifted = i915_bios_explicit_blob_get(display, vbt, pci, out, out_size);
-		if (lifted != 0) {
-			vbt->source = I915_VBT_SRC_EXPLICIT_BLOB;
-			*origin = I915_VBT_ORIGIN_EXPLICIT_BLOB;
-		}
-	}
-
-#endif
 
 	/* The OpRegion's copy, when it holds a valid VBT. */
 	if (*out == NULL && display->opregion_vbt_buf != NULL) {
@@ -1970,30 +1780,6 @@ i915_bios_report(
 	}
 }
 
-#ifdef I915_TEST_VBT
-/* Returns the pinned SHA-256 of a machine's row, or NULL for a machine without one. */
-static const uint8_t *
-i915_bios_explicit_pin_for(
-	uint16_t vendor,
-	uint16_t device)
-{
-	unsigned row;
-
-	/* Looks for the machine's row. */
-	for (row = 0u; row < ARRAY_SIZE(i915_vbt_explicit_pins); row++) {
-		if (i915_vbt_explicit_pins[row].subsys_vendor != vendor)
-			continue;
-		if (i915_vbt_explicit_pins[row].subsys_device != device)
-			continue;
-
-		/* Succeeded: reports the row's pin. */
-		return i915_vbt_explicit_pins[row].sha256;
-	}
-
-	/* The build carries no row for the machine. */
-	return NULL;
-}
-#endif
 
 /* Reads a little-endian 32-bit value of the OpRegion. */
 static uint32_t
