@@ -3670,6 +3670,9 @@ cascade_apply(
 	case CSS_PROP_GRID_TEMPLATE_ROWS:
 		cascade_tracks(engine, style, value, style->rows, &style->row_count);
 		break;
+	case CSS_PROP_GRID_AUTO_FLOW:
+		style->grid_auto_flow = value->keyword;
+		break;
 	case CSS_PROP_GRID_COLUMN_START:
 	case CSS_PROP_GRID_COLUMN_END:
 	case CSS_PROP_GRID_ROW_START:
@@ -4106,6 +4109,9 @@ cascade_inherit(
 	case CSS_PROP_GRID_TEMPLATE_ROWS:
 		memcpy(style->rows, parent->rows, sizeof(style->rows));
 		style->row_count = parent->row_count;
+		break;
+	case CSS_PROP_GRID_AUTO_FLOW:
+		style->grid_auto_flow = parent->grid_auto_flow;
 		break;
 	case CSS_PROP_GRID_COLUMN_START:
 	case CSS_PROP_GRID_COLUMN_END:

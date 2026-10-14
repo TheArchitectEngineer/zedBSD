@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1129 / WS074 fixed Grid parsing recensus（2026-10-14）
+## 最新: q1130 / WS074 grid-auto-flow CSS state（2026-10-14）
+
+[q1130履歴](queue-q1130.md): `grid-auto-flow` CSS stateで固定valid/computed各0→7/7 subtest・whole FAIL→PASS、invalidと旧PASS、Acid3差0維持。列/dense配置は後続。[証拠](../ws074/phase221/evidence/20261014-q1130/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1129 / WS074 fixed Grid parsing recensus（2026-10-14）
 
 [q1129履歴](queue-q1129.md): 固定Grid parsing41件は6→8 whole PASS、336→399 PASS subtest、後退0・無出力0。auto-*/areas等の残33件を再分類。[証拠](../ws074/phase221/evidence/20261014-q1129/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

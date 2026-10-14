@@ -1,0 +1,63 @@
+{
+  "/css/css-grid/parsing/grid-auto-flow-computed.html": {
+    "before_outcome": "fail",
+    "after_outcome": "pass",
+    "before_pass": 0,
+    "after_pass": 7,
+    "total": 7,
+    "improved": [
+      "Property grid-auto-flow value 'row'",
+      "Property grid-auto-flow value 'column'",
+      "Property grid-auto-flow value 'row dense'",
+      "Property grid-auto-flow value 'column dense'",
+      "Property grid-auto-flow value 'dense row'",
+      "Property grid-auto-flow value 'dense column'",
+      "Property grid-auto-flow value 'dense'"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-flow-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 3,
+    "after_pass": 3,
+    "total": 3,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-flow-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "pass",
+    "before_pass": 0,
+    "after_pass": 7,
+    "total": 7,
+    "improved": [
+      "e.style['grid-auto-flow'] = \"row\" should set the property value",
+      "e.style['grid-auto-flow'] = \"column\" should set the property value",
+      "e.style['grid-auto-flow'] = \"row dense\" should set the property value",
+      "e.style['grid-auto-flow'] = \"dense row\" should set the property value",
+      "e.style['grid-auto-flow'] = \"dense\" should set the property value",
+      "e.style['grid-auto-flow'] = \"column dense\" should set the property value",
+      "e.style['grid-auto-flow'] = \"dense column\" should set the property value"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-columns-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 42,
+    "after_pass": 42,
+    "total": 42,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-rows-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 42,
+    "after_pass": 42,
+    "total": 42,
+    "improved": [],
+    "regressed": []
+  }
+}

@@ -73,3 +73,11 @@ Event ws074-p221-q1128-partial-clear-20261014: [証拠](evidence/20261014-q1128/
 ## q1129-i01 結果（2026-10-14 09:59 JST）
 
 Event ws074-p221-q1129-partial-clear-20261014: [証拠](evidence/20261014-q1129/README.md)。固定41件を全件同条件再測定し、q1123の6→8 whole PASS/35→33 FAIL、336→399 PASS subtest/930→867 FAIL、後退0・無出力0。改善はcolumns/rows-invalidのwhole2件。残33件の大群はauto-*/areas未対応、template computed行名/暗黙track、auto-repeat、area/Grid shorthand。次の有限候補は`grid-auto-flow`構文とcomputed CSSOM。q1129部分cleared、p221/p189/p173全件100%未達。browser/WPT/runner/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1130-i01 有限部分範囲（2026-10-14 10:00 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（11:30 JSTまで）に適用。`grid-auto-flow`の`row`/`column`/`dense`組合せをCSS parser・style state・CSSOM指定/計算値で受理/正規化する。CSS-wide初期/明示継承/解除も保持。最小host、固定valid/computed/invalidと旧PASS、CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加。列/dense実配置、他のauto-*・shorthand、WPT/runner/公開ABI/`plan/master.md`変更なし。p221 whole/p189/p173全件100%は本部分基準外。[CSS Grid §7.7](https://www.w3.org/TR/css-grid-2/#propdef-grid-auto-flow)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。列/denseのlayout未対応は後続の明示的残差とする。
+
+## q1130-i01 結果（2026-10-14 10:04 JST）
+
+Event ws074-p221-q1130-partial-clear-20261014: [証拠](evidence/20261014-q1130/README.md)。`grid-auto-flow`のrow/column/dense組合せをparse/style/CSSOMで保持・正規化し、initial/unset/inheritを確認。固定valid/computed各0→7/7 subtest・whole FAIL→PASS、invalid3/3 whole PASSと旧whole PASS4件維持、後退0。最小host・以前の3 fixture・CSS51/JS14/Grid48・warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。列/dense実配置は未実装・後続別scope。q1130部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。

@@ -1,0 +1,30 @@
+<!doctype html><div id="parent"><div id="child"></div></div>
+<script>
+var parent = document.getElementById("parent");
+var child = document.getElementById("child");
+var forms = [["row", "row"], ["column", "column"],
+             ["row dense", "dense"], ["dense row", "dense"],
+             ["dense", "dense"], ["column dense", "column dense"],
+             ["dense column", "column dense"]];
+var accepted = 0;
+forms.forEach(function (form) {
+  child.style.setProperty("grid-auto-flow", form[0]);
+  if (child.style.getPropertyValue("grid-auto-flow") === form[1] &&
+      getComputedStyle(child).gridAutoFlow === form[1]) accepted++;
+});
+var rejected = 0;
+["auto", "row dense column", "dense row dense"].forEach(function (value) {
+  child.style.removeProperty("grid-auto-flow");
+  child.style.setProperty("grid-auto-flow", value);
+  if (child.style.getPropertyValue("grid-auto-flow") === "") rejected++;
+});
+parent.style.setProperty("grid-auto-flow", "column dense");
+child.style.setProperty("grid-auto-flow", "inherit");
+var inherited = getComputedStyle(child).gridAutoFlow === "column dense";
+child.style.setProperty("grid-auto-flow", "initial");
+var initial = getComputedStyle(child).gridAutoFlow === "row";
+child.style.setProperty("grid-auto-flow", "unset");
+var unset = getComputedStyle(child).gridAutoFlow === "row";
+console.log("auto-flow=" + accepted + "/7 accepted," + rejected +
+            "/3 rejected," + [inherited, initial, unset].join(","));
+</script>

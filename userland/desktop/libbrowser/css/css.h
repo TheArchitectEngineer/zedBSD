@@ -437,6 +437,13 @@ struct css_track {
 	struct css_length minimum;
 };
 
+/* Auto-placement direction and optional dense packing (row is zero). */
+enum css_grid_auto_flow {
+	CSS_GRID_FLOW_ROW = 0,
+	CSS_GRID_FLOW_COLUMN = 1,
+	CSS_GRID_FLOW_DENSE = 2
+};
+
 /*
  * Where a grid item goes on one axis (ws074-p072): its start and end,
  * each a line (0 for auto; a negative line counts from the end) or a span
@@ -610,6 +617,7 @@ struct css_style {
 	int column_count;
 	struct css_track rows[CSS_TRACKS];
 	int row_count;
+	int grid_auto_flow;
 	struct css_grid_place grid_column;
 	struct css_grid_place grid_row;
 	float flex_grow;

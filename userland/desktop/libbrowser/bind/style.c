@@ -18,9 +18,9 @@
  * keep only what they parse.  The prototype has an accessor for each
  * property the style engine knows, by its CSS name and its camel-case
  * name (and "webkit" and "Webkit" ones for the -webkit- names).  A value
- * reads back as it was written: a shorthand's longhands are not split out
- * of it, and nothing is put in its canonical form.  A new declaration is
- * made each time style is read.
+ * generally reads back as written, with selected parsed values put in
+ * canonical form.  A shorthand's longhands are not split out of it.  A new
+ * declaration is made each time style is read.
  */
 
 #include "bind/internal.h"
@@ -66,6 +66,7 @@ static int style_remove_from_list(struct vm_realm *realm, struct style_list *lis
 static int style_valid(struct vm_realm *realm, const struct vm_string *name, const struct vm_string *value, int *valid);
 static int style_canonical_decoration_line(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
 static int style_canonical_grid_empty_lines(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
+static int style_canonical_grid_auto_flow(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
 static int style_decoration_parts(const struct vm_string *value, struct wb_units parts[5]);
 static int style_decoration_longhand(const struct vm_string *name);
 static int style_decoration_get(struct vm_realm *realm, const struct style_list *list, const struct vm_string *name, vm_value *result, int *present);
@@ -815,6 +816,10 @@ style_set(
 	if (status != 0)
 		goto roots_cleanup;
 	roots[1] = &value->cell;
+	status = style_canonical_grid_auto_flow(realm, name, value, &value);
+	if (status != 0)
+		goto roots_cleanup;
+	roots[1] = &value->cell;
 
 	/* The declarations as they are. */
 	status = style_read(realm, element, &list);
@@ -1179,6 +1184,75 @@ style_valid(
 		return status;
 
 	/* Succeeded: the answer is in *valid. */
+	return 0;
+}
+
+/* Puts the valid plain grid-auto-flow keywords in their canonical order. */
+static int
+style_canonical_grid_auto_flow(
+	struct vm_realm *realm,
+	const struct vm_string *name,
+	struct vm_string *value,
+	struct vm_string **out)
+{
+	struct wb_units source;
+	const char *canonical;
+	char word[7];
+	size_t index;
+	size_t length;
+	int column;
+	int dense;
+	int status;
+
+	*out = value;
+	if (!vm_string_equal_ascii(name, "grid-auto-flow"))
+		return 0;
+	wb_units_init(&source);
+	status = vm_string_append_units(value, &source);
+	if (status != 0) {
+		wb_units_release(&source);
+		return status;
+	}
+	column = 0;
+	dense = 0;
+	index = 0;
+	while (index < source.length) {
+		while (index < source.length && style_is_space(source.data[index]))
+			index++;
+		if (index == source.length)
+			break;
+		length = 0;
+		while (index < source.length && !style_is_space(source.data[index])) {
+			if (length >= sizeof(word) - 1U || source.data[index] > 127U) {
+				wb_units_release(&source);
+				return 0;
+			}
+			word[length] = (char)source.data[index];
+			if (word[length] >= 'A' && word[length] <= 'Z')
+				word[length] = (char)(word[length] + 0x20);
+			length++;
+			index++;
+		}
+		word[length] = '\0';
+		if (strcmp(word, "column") == 0)
+			column = 1;
+		else if (strcmp(word, "dense") == 0)
+			dense = 1;
+		else if (strcmp(word, "row") != 0) {
+			/* Escaped identifiers and CSS-wide values retain their spelling. */
+			wb_units_release(&source);
+			return 0;
+		}
+	}
+	wb_units_release(&source);
+	canonical = "row";
+	if (column)
+		canonical = dense ? "column dense" : "column";
+	else if (dense)
+		canonical = "dense";
+	*out = vm_atom_from_ascii(realm->heap, canonical);
+	if (*out == NULL)
+		return ENOMEM;
 	return 0;
 }
 

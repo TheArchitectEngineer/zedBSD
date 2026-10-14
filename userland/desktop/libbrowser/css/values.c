@@ -146,6 +146,7 @@ static int values_one_shadow(const struct css_token *tokens, size_t count, struc
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
 static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
 static int values_track_size(struct css_parse *parse, const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
@@ -265,6 +266,7 @@ static const struct values_name values_names[] = {
 	{ "text-orientation", CSS_PROP_TEXT_ORIENTATION },
 	{ "grid-template-columns", CSS_PROP_GRID_TEMPLATE_COLUMNS },
 	{ "grid-template-rows", CSS_PROP_GRID_TEMPLATE_ROWS },
+	{ "grid-auto-flow", CSS_PROP_GRID_AUTO_FLOW },
 	{ "grid-column-start", CSS_PROP_GRID_COLUMN_START },
 	{ "grid-column-end", CSS_PROP_GRID_COLUMN_END },
 	{ "grid-row-start", CSS_PROP_GRID_ROW_START },
@@ -1733,6 +1735,8 @@ values_single(
 	/* A grid template takes a list of tracks (ws074-p072). */
 	if (property == CSS_PROP_GRID_TEMPLATE_COLUMNS || property == CSS_PROP_GRID_TEMPLATE_ROWS)
 		return values_tracks(parse, tokens, count, value);
+	if (property == CSS_PROP_GRID_AUTO_FLOW)
+		return values_grid_auto_flow(tokens, count, value);
 
 	/* A grid line: auto, a number, or span and a number. */
 	if (property >= CSS_PROP_GRID_COLUMN_START && property <= CSS_PROP_GRID_ROW_END)
@@ -4525,11 +4529,52 @@ values_clip_path(
 	return 0;
 }
 
+/* Parses the auto-placement direction and optional dense packing. */
+static int
+values_grid_auto_flow(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	size_t index;
+	int direction;
+	int dense;
+
+	direction = -1;
+	dense = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (tokens[index].type != CSS_TOKEN_IDENT)
+			return EINVAL;
+		if (css_ident_equal(&tokens[index], "row")) {
+			if (direction >= 0)
+				return EINVAL;
+			direction = CSS_GRID_FLOW_ROW;
+		} else if (css_ident_equal(&tokens[index], "column")) {
+			if (direction >= 0)
+				return EINVAL;
+			direction = CSS_GRID_FLOW_COLUMN;
+		} else if (css_ident_equal(&tokens[index], "dense")) {
+			if (dense)
+				return EINVAL;
+			dense = CSS_GRID_FLOW_DENSE;
+		} else {
+			return EINVAL;
+		}
+	}
+	if (direction < 0 && !dense)
+		return EINVAL;
+	value->kind = CSS_VALUE_KEYWORD;
+	value->keyword = (direction == CSS_GRID_FLOW_COLUMN ? CSS_GRID_FLOW_COLUMN : CSS_GRID_FLOW_ROW) | dense;
+	return 0;
+}
+
 /*
  * Parses a grid template (ws074-p072): none, or a list of track sizes
  * (lengths, percentages, fr, auto, min-content and max-content as auto,
  * minmax(), fit-content() as auto, and repeat() with a count), the line
- * names in brackets passed by; kept in the parse's arena.
+ * names in brackets validated and passed by; kept in the parse's arena.
  */
 static int
 values_tracks(
