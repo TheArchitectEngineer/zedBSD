@@ -20,12 +20,13 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - ベータ2 の既定: 段 (1) が実機で通れば、bootfb の代わりに使う。通らなければ bootfb のまま（drop できる形）。
 - source の手本: Linux の i915 は MIT（file ごとに確かめる）。zedBSD の Gen12 の display（resident display・takeover）の作りに合わせる。
 
-## Phase（見積もりは p001 で）
+## Phase（見積もりは [p001 の design.md](phase001/design.md) §5、±50 %）
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| ws237-p001 | 設計: SKL・KBL・CFL の display の register と順（Gen12 の display の code との差）、readout、flip と vblank、backlight、試験の道（SV7 の passthrough と素の起動） | in-progress（P2） |
-| ws237-p002 | readout と primary plane の flip（段 1） | planned |
-| ws237-p003 | backlight | planned |
-| ws237-p004 | mode set と外部の display | planned |
-| ws237-p005 | 規約の全文 | planned |
+| [ws237-p001](phase001/phase.md) | 設計: SKL・KBL・CFL の display の register と順（Gen12 の display の code との差）、readout、flip と vblank、backlight、試験の道（SV7 の passthrough と素の起動） | cleared の候補（2026-10-14 P2、Q1 の判定待ち） |
+| ws237-p002 | readout と primary plane の flip（段 1）、1.5 LW | in-progress（P2） |
+| ws237-p003 | backlight、1.0 LW | planned（p002 の実機の結果の後） |
+| ws237-p004 | mode set と外部の display、6.0 LW | planned |
+| ws237-p005b | suspend・resume の display、1.5 LW（番号は Q1 が決める） | planned |
+| ws237-p005 | 規約の全文、0.5 LW | planned |
