@@ -44,6 +44,7 @@ int bcm2711_vulkan_native_job_create(struct bcm2711_vulkan_object *command, stru
 
 /* Runs the job's next step (at most one native pass); done tells that the job has finished. */
 int bcm2711_vulkan_native_job_step(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, void *payload, bool *done, bool *retired);
+void bcm2711_vulkan_native_job_count_step(struct bcm2711_render_device *controller, uint64_t ticks);
 int bcm2711_vulkan_native_job_dispose(struct bcm2711_render_device *controller, void *payload, bool retired);
 
 /* Only checked global native reset and zero external sessions authorize whole quarantine/closed-session retirement. */
