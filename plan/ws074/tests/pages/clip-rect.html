@@ -1,0 +1,10 @@
+<!doctype html>
+<style>
+body{margin:10px}
+.vh{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(1px,1px,1px,1px);border:0}
+.v2{position:absolute;left:10px;top:40px;width:120px;height:30px;background:#fcc;clip:rect(0,60px,15px,0)}
+.v3{position:absolute;left:10px;top:80px;width:200px;height:20px;background:#cfc;overflow:hidden;clip:rect(auto,100px,auto,auto);}
+</style>
+<p>visible text <a class="vh" href="#">HIDDEN LINK TEXT</a> after</p>
+<div class="v2">clipped to 60x15</div>
+<div class="v3">clip right at 100px</div>

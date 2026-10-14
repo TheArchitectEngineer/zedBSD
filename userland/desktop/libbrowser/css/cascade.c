@@ -3889,6 +3889,15 @@ cascade_apply(
 
 		/* The clip is set. */
 		break;
+	case CSS_PROP_CLIP:
+		/* rect()'s four edges, or no clip. */
+		style->clip_rect = 0;
+		if (value->kind == CSS_VALUE_INSET && value->inset != NULL) {
+			style->clip_rect = 1;
+			for (side = 0; side < 4; side++)
+				style->clip_edges[side] = cascade_length(engine, &value->inset->lengths[side], style->font_size);
+		}
+		break;
 	case CSS_PROP_VERTICAL_ALIGN:
 		/* A keyword, or a length that raises the box by it. */
 		if (value->kind == CSS_VALUE_KEYWORD) {
@@ -4046,6 +4055,10 @@ cascade_inherit(
 	case CSS_PROP_CLIP_PATH:
 		style->clip_inset = parent->clip_inset;
 		memcpy(style->clip, parent->clip, sizeof(style->clip));
+		break;
+	case CSS_PROP_CLIP:
+		style->clip_rect = parent->clip_rect;
+		memcpy(style->clip_edges, parent->clip_edges, sizeof(style->clip_edges));
 		break;
 	case CSS_PROP_WIDTH:
 		style->width = parent->width;

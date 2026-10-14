@@ -153,6 +153,7 @@ static int values_text_shadow(struct css_parse *parse, const struct css_token *t
 static int values_one_shadow(const struct css_token *tokens, size_t count, struct css_declared_shadow *shadow);
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_clip(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_auto_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
@@ -279,6 +280,7 @@ static const struct values_name values_names[] = {
 	{ "outline-color", CSS_PROP_OUTLINE_COLOR },
 	{ "outline-offset", CSS_PROP_OUTLINE_OFFSET },
 	{ "clip-path", CSS_PROP_CLIP_PATH },
+	{ "clip", CSS_PROP_CLIP },
 	{ "direction", CSS_PROP_DIRECTION },
 	{ "writing-mode", CSS_PROP_WRITING_MODE },
 	{ "text-orientation", CSS_PROP_TEXT_ORIENTATION },
@@ -1774,6 +1776,10 @@ values_single(
 	/* clip-path takes a shape. */
 	if (property == CSS_PROP_CLIP_PATH)
 		return values_clip_path(parse, tokens, count, value);
+
+	/* clip takes auto or rect(). */
+	if (property == CSS_PROP_CLIP)
+		return values_clip(parse, tokens, count, value);
 
 	/* A grid template takes a list of tracks (ws074-p072). */
 	if (property == CSS_PROP_GRID_TEMPLATE_COLUMNS || property == CSS_PROP_GRID_TEMPLATE_ROWS)
@@ -4635,6 +4641,59 @@ values_clip_path(
 		inset->lengths[3] = inset->lengths[1];
 
 	/* Succeeded: the inset is parsed. */
+	value->kind = CSS_VALUE_INSET;
+	value->inset = inset;
+	return 0;
+}
+
+/*
+ * Parses clip: auto, or rect() with four lengths or auto edges (top, right,
+ * bottom, left; separated by commas or spaces) as an inset in the parse's
+ * arena; anything else is an error.
+ */
+static int
+values_clip(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_declared_inset *inset;
+	size_t used;
+	size_t index;
+	size_t made;
+	int error;
+
+	/* auto: no clip. */
+	value->kind = CSS_VALUE_KEYWORD;
+	value->keyword = 0;
+	if (tokens[0].type == CSS_TOKEN_IDENT && css_ident_equal(&tokens[0], "auto"))
+		return 0;
+	if (tokens[0].type != CSS_TOKEN_FUNCTION || !css_ident_equal(&tokens[0], "rect"))
+		return EINVAL;
+
+	/* The arguments, between the function's name and its closing parenthesis. */
+	used = values_function_length(tokens, count);
+	if (used < 2U)
+		return EINVAL;
+	inset = wb_arena_zalloc(parse->arena, sizeof(*inset));
+	if (inset == NULL)
+		return ENOMEM;
+	made = 0;
+	for (index = 1U; index + 1U < used; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE || tokens[index].type == CSS_TOKEN_COMMA)
+			continue;
+		if (made == 4U)
+			return EINVAL;
+		error = values_length(&tokens[index], 1, &inset->lengths[made]);
+		if (error != 0)
+			return error;
+		made++;
+	}
+	if (made != 4U)
+		return EINVAL;
+
+	/* Succeeded: the rectangle is parsed. */
 	value->kind = CSS_VALUE_INSET;
 	value->inset = inset;
 	return 0;
