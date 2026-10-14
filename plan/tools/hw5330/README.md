@@ -180,7 +180,7 @@ plan/ws075/tests/hdmi-h4-hw.sh ctl hmp info registers
 - USB への書き方と、image をユーザーの機械へ運ぶ方法は plan に記録が無い（**未確認**）。build の script の説明は「write it to a USB stick and boot
   the machine from it (UEFI)」だけ（`build-demo-image.sh:13-14`）。ユーザーには path を伝え、書き方はユーザーに任せる。
 - `tools/release/kei-nightly.mk` の `Kei-nightly.zip` は Windows の QEMU（Venus）の配布物であり、5330 の USB 用ではない（`kei-nightly.mk:1-11`）。
-- 起動の後、boot の行は image の ESP の `/zedbsd.cfg` を書き換えて変えられる（`build-demo-image.sh:13-14`、
+- 起動の後、boot の行は image の FAT32 の `ZEDBSD` の partition の `/zedbsd.cfg`（WS238 から。ESP は loader だけ。動いている system では `/boot/boot0/zedbsd.cfg`）を書き換えて変えられる（`build-demo-image.sh:13-14`、
   `docs/reference/kernel-boot-parameters.md:338-343`）。同じ名前の行を 2 回書くと起動が止まる（同 :56、3.4 節）。
 
 ### 2.2 ユーザーに頼む確かめ（前例）
@@ -234,7 +234,7 @@ openssh（:19）、Settings・audiod（:23）、libkeiui（:26）、`ZEDBSD_NOCT
 | 出力 | 値 | 根拠 |
 | --- | --- | --- |
 | image | `BUILD/hdd-image.img`、2216689664 byte（約 2.1 GiB。root 1 GiB・swap 1 GiB） | `ls -la build/demo-lcd9/hdd-image.img`、`platform/amd64/vmunix.mk:1869-1870` |
-| boot の行 | `BUILD/zedbsd-native-uefi-graphical-<y/n>-kmsg-<y/n>[-<追加の行>].cfg`（ESP の `/zedbsd.cfg` になる） | `platform/amd64/vmunix.mk:1879-1880,1900-1907` |
+| boot の行 | `BUILD/zedbsd-native-uefi-graphical-<y/n>-kmsg-<y/n>[-<追加の行>].cfg`（FAT32 の `ZEDBSD` の partition の `/zedbsd.cfg` になる、WS238） | `platform/amd64/vmunix.mk:1879-1880,1900-1907` |
 | 最後の行 | `demo image: BUILD/hdd-image.img` | `build-demo-image.sh:47` |
 | 時間 | 既存の directory の差分の build で約 2 分（`build/demo-lcd9`: accounts 08:27:18 → image 08:29:00）。新しい directory からの全体の build の時間は記録が無い（**未確認**） | file の時刻 |
 
