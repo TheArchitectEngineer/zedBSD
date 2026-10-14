@@ -1,0 +1,75 @@
+== p-baseline-64
+vkvideo-probe: stream p-baseline-64.h264 profile 66, 64x64
+vkvideo-probe: capabilities max 1920x1088 slots 17 references 16 level 12 flags 0x2 decode 0x1
+vkvideo-probe: session 64x64, 4 slots, 3 references, 1 memory bindings
+vkvideo-probe: parameters 1 SPS, 1 PPS
+vkvideo-probe: picture 1 status -1
+vkvideo-probe: picture 2 status -1
+vkvideo-probe: picture 3 status -1
+vkvideo-probe: picture 4 status -1
+vkvideo-probe: picture 5 status -1
+vkvideo-probe: picture 6 status -1
+vkvideo-probe: picture 7 status -1
+vkvideo-probe: picture 8 status -1
+vkvideo-probe: picture 9 status -1
+vkvideo-probe: frame 0 18bd436223813d3065bb589f6e53c7d07ec0a2a6e3b484099dd3b3f26d62cfc7 MISMATCH (expected 4b584b491029bb83f51f0a5addb2631027bcc32e97e143a7203d4d88627af41d)
+vkvideo-probe: frame 1 cb11e05cb5da949c0e0f5b5a7cb310df35a96a22c45d1ada70d950859fe697d1 MISMATCH (expected da27920df3505023ab95abb9a00b743c8236e75907743f976493d7d9509f735b)
+vkvideo-probe: frame 2 cb11e05cb5da949c0e0f5b5a7cb310df35a96a22c45d1ada70d950859fe697d1 MISMATCH (expected 34415d876a04079c383ca390633c0982b3fa7b43e3cdf7e74baf7af9d1fe9c11)
+vkvideo-probe: frame 3 782c0f6b86d59824a1661cae6c05e333b0f8192440198671bae0da6d8d6806ae MISMATCH (expected 43d51ffa495e355d1a126b3780d34a7a1e232e48779d27094c11e5eebf7f316e)
+vkvideo-probe: frame 4 ed973eb77c6a5e4f34ef3ef93d6dbccd8d0bc0baaba9664351227acd586c1b02 MISMATCH (expected 693b11e624a7421ef9165ade213c564ef03412f380228d5172a0cd6479eb7b58)
+vkvideo-probe: frame 5 4e54b50e98e5e0faaa6cb7a19103265514cb9066106ecccd941eaf4a262a175e MISMATCH (expected a3d7b7b38bcd8ab5049b3e9922bbd429cb25b1d91d9e3ecada0e617c0b171bc0)
+vkvideo-probe: frame 6 697b54ab4eff60cd9bdbae8ddf04c39bd6dbc5e4dde890718b9852f18c1113e1 MISMATCH (expected d845d25a9762f697909041481df952e393211dbe0c7e9f5f114a4c6b77182560)
+vkvideo-probe: frame 7 603f273a8dca8baf6e7f530e91da91973e88233908d4098aad7c96ede7304b93 MISMATCH (expected 289434f762aa7b3dceb29445f79867727978896c55ef1df862f312ada25fa30a)
+vkvideo-probe: frame 8 1a52c14b11d8215c7d41e911b80e7ba7f42a80926e693314c73d55dca68e5265 MISMATCH (expected 99d9d4ed81c720b3b09c653fa88d5e1fc607bc3fb1fa589bc38fe4bb5a8aea65)
+vkvideo-probe: frame 9 2aaaa9a41141b45d665a24e02a331607df6fe1a4dad8f209d6bc0a4c6f619d0c MISMATCH (expected ab4d06694c79f6229b22f7080aecaf504b6e749460a913453f4ab0cd12909784)
+vkvideo-probe: 10 frames decoded, 0 match the reference, 9 failed
+vkvideo-probe: decode time: 10 decodes, total 266.000 ms, mean 26.600 ms, longest 216.000 ms
+rc=4
+== i-high-352-cqm
+vkvideo-probe: stream i-high-352-cqm.h264 profile 100, 352x288
+vkvideo-probe: capabilities max 1920x1088 slots 17 references 16 level 12 flags 0x2 decode 0x1
+vkvideo-probe: session 352x288, 1 slots, 0 references, 1 memory bindings
+vkvideo-probe: parameters 1 SPS, 1 PPS
+vkvideo-probe: frame 0 6f4d6de7d4a05f335272c8a637fec567f6c71ec0bbd190e06b97cb3fed6e6b16 MISMATCH (expected 6ed724b31266911dc8860d1eae14bcac7cafd6ea67b776aca6b9b06a32ee0374)
+vkvideo-probe: frame 1 b2213110a9da4b1b245cfe46fb5ca5ef89f32c65fc104aa465325922949857a9 MISMATCH (expected d7e8932dcbe693eb5ab32ef75a670e507e1ae8b2ba6590feffae812727eb6966)
+vkvideo-probe: frame 2 296da360c56f5d8a2b0624c2c8636c88368df3c597bc347a1192d26e7642146b MISMATCH (expected f437b52b46d04bf9e9b2f43bf7779cde596a333d8d124fe606ba773ae0289642)
+vkvideo-probe: 3 frames decoded, 0 match the reference
+vkvideo-probe: decode time: 3 decodes, total 227.000 ms, mean 75.666 ms, longest 211.000 ms
+rc=4
+== pb-high-352-pyramid
+vkvideo-probe: stream pb-high-352-pyramid.h264 profile 100, 352x288
+vkvideo-probe: capabilities max 1920x1088 slots 17 references 16 level 12 flags 0x2 decode 0x1
+vkvideo-probe: session 352x288, 5 slots, 4 references, 1 memory bindings
+vkvideo-probe: parameters 1 SPS, 1 PPS
+vkvideo-probe: picture 1 status -1
+vkvideo-probe: picture 2 status -1
+vkvideo-probe: picture 3 status -1
+vkvideo-probe: picture 4 status -1
+vkvideo-probe: picture 5 status -1
+vkvideo-probe: picture 6 status -1
+vkvideo-probe: picture 7 status -1
+vkvideo-probe: picture 8 status -1
+vkvideo-probe: picture 9 status -1
+vkvideo-probe: picture 10 status -1
+vkvideo-probe: picture 11 status -1
+vkvideo-probe: picture 12 status -1
+vkvideo-probe: picture 13 status -1
+vkvideo-probe: picture 14 status -1
+vkvideo-probe: frame 0 33fc92bab364ce8108d7d8ec81ae95685e3ec90967c828d98b704334b8f2f65f MISMATCH (expected 71251a9eba859a2c221d83ad534257402cbc3806f75357788913ca5a5105a45f)
+vkvideo-probe: frame 1 1f20bb5bf0b83998bddaa772d71edae9e7e33f9ac1f03c522a1ba278fc0261d7 MISMATCH (expected 021a5f6c47330df21aa2283cb71d110d30824e154742c65bbced445858068414)
+vkvideo-probe: frame 2 c9fd4001fd9c9745b8ed3e05f263a13ed7c106abf2f1f2d2d7c2f53c7943c9b2 MISMATCH (expected 64a3d0d41dae71f10bc2b42e83309b1ae8267fc26e7b92aa7cd0ed274dcc46e0)
+vkvideo-probe: frame 3 a7831404edec8503971917278388d0730be06c9c938efce421ad51db0d9fa592 MISMATCH (expected 9208ded430235c06b0e29f734780647f70b7b73dc6fcdfbd160fe63ee090037b)
+vkvideo-probe: frame 4 d961264061042752a56aa8c0308c435af6b2a9bceab623178d6ae3db3a922ad4 MISMATCH (expected 3355b0228f2b25e451936f80dd8fc5ef3e58de3b5b2164e258756e486f4ea641)
+vkvideo-probe: frame 5 442c7e3bfd4e388e34e77fc6c6fb560247d2ccdd8ee8c824ea7418ab17d11bcc MISMATCH (expected d12ec484dda1d0712ca352351c95bd6b82b955c3eab0d6b5c94a218f2ae15cda)
+vkvideo-probe: frame 6 3ea9981cd2fe108814408fa389ecd8f9dcd43bae92ce2b4a410cadd6e9e0f42f MISMATCH (expected ead571e03f0c75ed2ceba064582f18504868c7139638b9efc6ced4c920fc60af)
+vkvideo-probe: frame 7 9cf4e3506609fd1375b90ec8fea92bec4b76d74ac0f8a8526b9f9d09f014aeee MISMATCH (expected 723b3001c7ed13eaf04febb5384dd55b67f638487f89a52703828479b93ee809)
+vkvideo-probe: frame 8 3ef656273e267170db07676ef3ae3584358b377862522a6cd26939283c3e6883 MISMATCH (expected fbd19de2b412e8677fb79fbc680878fa78be8c90b66f873e5dd15ea738d9b525)
+vkvideo-probe: frame 9 be250e2adff9859958ac64499a2f440be730703c32c554370c1a93a069eff00e MISMATCH (expected 162aae6944fee8a6c9067d19749a8f4a64e3f58eb826c8b4df2aafa3896434f3)
+vkvideo-probe: frame 10 8811993af6d1ceb1b4d1a4e52bb01f42fbbe3bb8c24f8559ff01a2c88dfcb352 MISMATCH (expected b2a7cdf9c8be79af69d3242c65a6494d7c6753200f5a11bae88a4e3dad02330d)
+vkvideo-probe: frame 11 39140560da027c8f208658e17e6fd6f764b395ef9ac7ab353aa5a62ffa9ff657 MISMATCH (expected 063321087c4b5204adaacfb4e83e6de0a6599d18945b106a2e2fd289ace21da2)
+vkvideo-probe: frame 12 f9cdece31a548f82711aebfb7c0545e374c0e0915b6cfd97ce86d3abb8951aac MISMATCH (expected 4f5dc88eb659d7eb813ddc555dc5dc4a8d47762ec14c9fb5685da6c20f197271)
+vkvideo-probe: frame 13 f3a299c6e31f4b2b62c6ba99a5b8b7186eb4a131d64ea314fabc6580f8b5b3e8 MISMATCH (expected d6d14fc11e852789e2e2a59b40565c3d8f244ed2393eb68f1f65045128460147)
+vkvideo-probe: frame 14 889405dbe8632ec89fe86eae6d4192689d3123f82106dd8eabd0161f2aa7261c MISMATCH (expected defeb263a772cea37f15163e7c388383d100c3c288385627bb1c6fc54208f7c9)
+vkvideo-probe: 15 frames decoded, 0 match the reference, 14 failed
+vkvideo-probe: decode time: 15 decodes, total 310.000 ms, mean 20.666 ms, longest 210.000 ms
+rc=4

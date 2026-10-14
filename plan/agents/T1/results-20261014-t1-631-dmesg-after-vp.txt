@@ -1,0 +1,993 @@
+boot: kernel heap, process, and scheduler initialization
+I/O pool large=16 small=16 resident=1118208 budget=67108864
+boot: HAL initialized successfully. [cpu 4, memory 8192MB, timer 1ms]
+boot: CPUs ready: 4
+boot: platform device discovery
+sdhci: base=0x00000000fe340000 caps=45ee6432 present=1fff0000 version=1002
+sdhci: CMD8 response=1aa
+sdhci: mmcblk0 ready (block addressing)
+genet: at fd580000 revision 06000000 irq 189
+genet: PHY 1 id 600d84a2
+genet: en0 ready MAC dc:a6:32:e0:25:35
+usb: URB completion contract q009-release-acquire-v1
+pcie: brcmstb resetting at fd500000
+pcie: brcmstb at fd500000 revision 304
+pcie: brcmstb DMA PCI 400000000 CPU 0 size c0000000 window 100000000
+pcie: brcmstb link up, generation 2, x1
+pcie: brcmstb 01:00.0 BAR0 at c0000000 (4096 bytes)
+pcie: VL805 firmware loaded
+pcie: brcmstb 01:00.0 BAR0 at c0000000 (4096 bytes)
+xhci: pci 0000:01:00.0 id=1106:3483 sub=1106:3483 rev=01 parent=0000:00:00.0
+xhci: pci 0000:01:00.0 BAR0 type=64 size=00000000:00001000 original=00000000:c0000000/00000000:c0000004 final=00000000:c0000000/00000000:c0000004 mapped=4096
+xhci: pci 0000:01:00.0 command=0146->0142 (MEM on, MASTER off)
+xhci: pci 0000:01:00.0 caps len=20 version=0100 hcs1=05000420 hcs2=fc000031 hcc1=002841eb dboff=00000100 rtsoff=00000200 reject=00000000:ok
+usb0: xHCI, 5 root ports
+xhci: PCI controller, version=100 ports=5 slots=32 irq=175 INTx
+rpi4-audio: PWM1 at fe20c800, DMA channel 4, irq 116, clock 54000000 Hz
+rpi4-vchiq: shared memory at bus c0d31000, irq 66, connecting
+rpi4gpu: P0 begin
+rpi4-mmal-probe: started; waiting up to 15000 ms for VCHIQ
+rpi4-vchiq: connected (version 8)
+rpi4gpu: P0 hvs fe400000+8000 irq 129 (masked)
+rpi4-mmal-probe: connected; starting in 30000 ms
+rpi4gpu: P0 pv of hdmi0 fe20a000+100 irq 133 (masked)
+rpi4gpu: P0 pv of hdmi1 fe216000+100 irq 142 (masked)
+rpi4gpu: P0 hdmi0 fef00700 windows 10
+rpi4gpu: P0 hdmi1 fef05700 windows 10
+rpi4gpu: P0 dvp: disabled
+rpi4gpu: P0 l2-intc: disabled
+rpi4gpu: P0 vc5: disabled
+rpi4gpu: clk core (4) off now 200000000 Hz top 500000000 Hz
+rpi4gpu: clk hdmi (13) off now 0 Hz top 600000000 Hz
+rpi4gpu: clk bvb (14) off now 75000000 Hz top 324000000 Hz
+rpi4gpu: P0 ok
+rpi4gpu: N0 begin
+rpi4gpu: N0 firmware revision 6a7a16af
+rpi4gpu: N0 fb 1024x680 32bpp order 1 pitch 4096
+rpi4gpu: N0 fb at 3e94a000+2b0000 (handoff 1024x680 pitch 4096)
+rpi4gpu: N0 clocks ready hdmi 120000000 core 200000000 Hz
+rpi4gpu: N0 hvs on hdmi0<-ch 1 hdmi1<-ch 3 (3 none)
+rpi4gpu: N0 ch0 off mode 0 0x0 list next 0 now 0
+rpi4gpu: N0 ch1 on mode 2 1024x680 list next 1636 now 1636
+rpi4gpu: N0 ch2 off mode 0 0x0 list next 0 now 0
+rpi4gpu: N0 list words 1636..1644 planes 1
+rpi4gpu: N0 plane0 fmt 7 ord 3 1024x680 at 0,0 ptr fe94a000 p 4096
+rpi4gpu: N0 pv of hdmi0 on video on 1024x680
+rpi4gpu: N0 pv of hdmi1 off video off 0x0
+rpi4gpu: N0 ok hdmi0 ch 1 shows fb 1:1
+rpi4gpu: R0 AVI 82/02/0d color=10 repeat=00
+rpi4gpu: R0 mode 1024x680 tmds 56250000 order 3 format 1
+rpi4gpu: R0 porches h 48/104/152 v 3/5/19
+rpi4gpu: R0 begin hdmi0 1024x680 tmds 56250000
+rpi4gpu: R0 waits 100 ms before writing
+rpi4-firmware: tag 30066 not supported
+rpi4gpu: R0 display-done has no tag reply; continuing restart
+rpi4gpu: R0 ok hdmi0 ch0 list43 frame observed
+rpi4gpu: P1 begin vblank observation
+rpi4gpu: P1 frames 123 in 1s expected 59911 mHz
+rpi4gpu: P2 begin two owned buffers
+rpi4gpu: P2 waits 100 ms before writing
+rpi4gpu: P2 adopted waits 100 ms before writing
+rpi4gpu: P2 adopted waits 100 ms before writing
+rpi4gpu: P2 two flips and console adopted
+rpi4gpu: P3 begin premultiplied checker
+rpi4gpu: P3 waits 100 ms before writing
+rpi4gpu: P3 adopted waits 100 ms before writing
+rpi4gpu: P3 composed frame and console adopted
+rpi4gpu: P5 display node ready hdmi0 copy FIFO
+v3d: V0 begin
+v3d: V0 hub fec00000+4000 core fec04000+4000
+v3d: V0 irq 106 (masked) pd yes reset yes clk 5
+v3d: clk v3d (5) off now 250000000 Hz top 500000000 Hz
+v3d: V0 ok
+v3d: V1 begin native PM clock/reset/bridges
+v3d: V1 waits 100 ms before writing
+v3d: V1 native domain and bridges enabled
+v3d: V2 ready clock 500000000 min 250000000 max 500000000
+v3d: V3 hub 42554856 000e1124 00000100 00000e00
+v3d: V3 core 04443356 81001422 40078121
+v3d: V3 version 42 cores 1 PA 35 VA 35
+v3d: V4 cache range and IRQ masks ready
+v3d: V5 MMU table 12df000 scratch d29000
+v3d: V6 core/hub IRQ ready
+v3d: V7 noop begin
+v3d: V7 waits 100 ms before writing
+v3d: V7 noop IRQ 3/0 BFC 1 RFC 1 overflow 0
+v3d: V8 clear/store begin
+v3d: V8 waits 100 ms before writing
+v3d: V8 RGBA8 64x64 all 4096 pixels ff317ce0
+v3d: V9 TFU raster to UB-linear begin
+v3d: V9 waits 100 ms before writing
+v3d: V9 TFU IRQ 2 all 64 tiled pixels
+v3d: V9 TFU UIF 96x40 us=13
+v3d: V9 TFU UIF 96x40 matches CPU layout
+v3d: V9 TFU UIF 33x9 us=7
+v3d: V9 TFU UIF 33x9 matches CPU layout
+v3d: V9 TFU UIF 1x1 us=4
+v3d: V9 TFU UIF 1x1 matches CPU layout
+v3d: V9 TFU UIF 200x150 us=56
+v3d: V9 TFU UIF 200x150 matches CPU layout
+v3d: V9 TFU UIF 256x256 us=111
+v3d: V9 TFU UIF 256x256 matches CPU layout
+v3d: V9 TFU UIF self-test passed; texture conversion uses the unit
+v3d: V10 self-branch timeout/reset begin
+v3d: V10 waits 100 ms before writing
+v3d: job failed kind=0 error=42 retired=0 irq=0/0 fault=0:0
+v3d: job queues bin=100000/100005 render=10106a/10106a counters=2/2
+v3d: job status bin=20 render=0 pipeline=0
+v3d: V10 timeout observed; reset begin
+v3d: V3 hub 42554856 000e1124 00000100 00000e00
+v3d: V3 core 04443356 81001422 40078121
+v3d: V3 version 42 cores 1 PA 35 VA 35
+v3d: V7 noop IRQ 3/0 BFC 1 RFC 1 overflow 0
+v3d: V10 reset 1 post-reset noop complete
+v3d: render node ready native Vulkan/strict queue
+boot: platform devices detected: 1
+rpi4-bt: clocks core 200000000 Hz (0), v3d 500000000 Hz (0), arm 600000000 Hz (0)
+boot: parameters: coherent_pool=1M 8250.nr_uarts=0 snd_bcm2835.enable_headphones=0 cgroup_disable=memory numa_policy=interleave nvme.max_host_mem_size_mb=32 bcm2708_fb.fbwidth=1024 bcm2708_fb.fbheight=680 bcm2708_fb.fbdepth=32 bcm2708_fb.fbswap=1 numa=fake=2 system_heap.max_order=0 iommu_dma_numa_policy=interleave smsc95xx.macaddr=DC:A6:32:E0:25:35 vc_mem.mem_base=0x3ec00000 vc_mem.mem_size=0x40000000  login=graphical
+rpi4-bt: BT_ON was level 1
+xhci: port 1 reset complete portsc=40000e03
+boot: ignored 16 unknown parameters; first=coherent_pool
+xhci: enable slot doorbell begin command=400d26000
+rpi4-bt: GPIO 30 function 0 -> 7, pull 2
+boot: VFS initialization
+rpi4-bt: GPIO 31 function 0 -> 7, pull 1
+vfs: no root named by the parameters; using legacy autoroot
+rpi4-bt: GPIO 32 function 0 -> 7, pull 1
+xhci: enable slot doorbell complete
+vfs: boot BIOS=80 MBR partition=1 devices=1
+rpi4-bt: GPIO 33 function 0 -> 7, pull 2
+xhci: enable slot completion wait irq=1
+vfs: native boot disk=mmcblk0 physical disks=1
+rpi4-bt: PL011 at fe201000, irq 153, clock 48000000 Hz, speed up to 3000000 baud
+xhci: enable slot completion poll begin
+vfs: scan mmcblk0 geometry error=21: 4 entries
+xhci: enable slot completion event lock acquired
+vfs: mmcblk0 partition 1 start=00000000:00000800 data=00000000:00000800 blocks=00000000:00040000
+xhci: enable slot completion event poll done available=1 type=33
+vfs: mmcblk0 partition 2 start=00000000:00040800 data=00000000:00040800 blocks=00000000:00065800
+vfs: mmcblk0 partition 3 has zero blocks; not published
+vfs: mmcblk0 partition 4 has zero blocks; not published
+usb0: device 1 port 1 2109:3431 class 09 configuration=1 configured
+usb0: device 1 interface 0 class 09/00/00 driver=usb-hub
+rpi4-bt: controller ready after about 21 ms
+bt-hci: /dev/bluetooth0: Raspberry Pi 4 Bluetooth 0000:0000
+usb0: hub 1, 4 ports
+xhci: enable slot doorbell begin command=400d26050
+xhci: enable slot doorbell complete
+xhci: enable slot completion wait irq=1
+xhci: enable slot completion poll begin
+xhci: enable slot completion event lock acquired
+xhci: enable slot completion event poll done available=1 type=33
+usb0: device 2 port 1 05ac:024f class 00 configuration=1 configured
+vfs: mounting runtime filesystems...
+vfs: runtime filesystems mounted
+input: /dev/input/event0: 2.4G Wireless Receiver
+vfs: boot0 (BOOT) published at /boot/boot0
+usb-hid: event device usb0 device=2 interface=0 endpoint=81 report-bytes=8
+boot: memory 8388608 KiB total, 8220556 KiB free, 154400 KiB reserved
+usb0: device 2 interface 0 class 03/01/01 driver=usb-hid
+boot: starting init /sbin/init
+
+input: /dev/input/event1: 2.4G Wireless Receiver
+usb-hid: event device usb0 device=2 interface=1 endpoint=82 report-bytes=21
+usb0: device 2 interface 1 class 03/01/02 driver=usb-hid
+xhci: enable slot doorbell begin command=400d260a0
+xhci: enable slot doorbell complete
+xhci: enable slot completion wait irq=1
+xhci: enable slot completion poll begin
+xhci: enable slot completion event lock acquired
+xhci: enable slot completion event poll done available=1 type=33
+usb0: device 3 port 4 046d:c548 class 00 configuration=1 configured
+input: /dev/input/event2: USB Receiver
+usb-hid: event device usb0 device=3 interface=0 endpoint=81 report-bytes=16
+usb0: device 3 interface 0 class 03/01/01 driver=usb-hid
+input: /dev/input/event3: USB Receiver
+usb-hid: event device usb0 device=3 interface=1 endpoint=82 report-bytes=9
+usb0: device 3 interface 1 class 03/01/02 driver=usb-hid
+usb-hid-rdesc: usb0 device 3 interface 2 length=54
+usb-hid-rdesc: usb0 device 3 interface 2 0000: 06 00 ff 09 01 a1 01 85 10 95 06 75 08 15 00 26 ff 00 09 01 81 00 09 01 91 00 c0 06 00 ff 09 02
+usb-hid-rdesc: usb0 device 3 interface 2 0020: a1 01 85 11 95 13 75 08 15 00 26 ff 00 09 02 81 00 09 02 91 00 c0
+usb-hid-diag: usb0 device 3 interface 2 refused error=21 stage=parse item=0x0036 prefix=0x00
+usb-hid-diag: usb0 device 3 interface 2 attach error=21 stage=prepare
+usb0: device 3 interface 2 class 03/00/00 driver=usb-hid attach-failed error=21
+rpi4-bt: controller ready after about 22 ms
+rpi4-bt: at the program's reset: 0 interrupts, 0 bytes in (0 with errors, 0 in transitions), 0 out, 0 own resets
+rpi4-bt: in step, 0 bytes passed over
+genet: en0 link up 1000 Mbps full duplex
+genet: en0 RX/TX enabled
+v3d: vk: capset declares H.264 video decode (VideoCore firmware decoder)
+bcm43455: firmware file 43455c0-roml/43455_sdio-pno-aoe-pktfilter-pktctx-lpc-pwropt-txbf-wl11u-wfds-mfp-wowlpf-idsup-idauth-maxclients-noclminc-clm_min Version: 7.45.241 (1a2f2fa CY) CRC: 349757d5 Date: Mon 2021-11-
+rpi4-wifi: EMMC clock 250000000 Hz
+rpi4-wifi: WL_ON was level 1 (0), direction output (0)
+rpi4-wifi: GPIO 34 function 0 -> 7, pull 1
+rpi4-wifi: GPIO 35 function 0 -> 7, pull 2
+rpi4-wifi: GPIO 36 function 0 -> 7, pull 2
+rpi4-wifi: GPIO 37 function 0 -> 7, pull 2
+rpi4-wifi: GPIO 38 function 0 -> 7, pull 2
+rpi4-wifi: GPIO 39 function 0 -> 7, pull 2
+rpi4-sdio: host specification 2, capabilities 00000000 (0 MHz), firmware clock 250000000 Hz
+rpi4-wifi: SDIO card: 3 functions, OCR ffff00, memory 0, RCA 0001
+rpi4-wifi: CCCR 2, SDIO 3, capability 02, CIS at 0010ac: manufacturer 02d0 (1), card a9a6, F0 block 32, speed 58
+rpi4-wifi: bus 4 lines at 25000000 Hz
+rpi4-wifi: F1 enabled; block sizes F1 64, F2 512
+bcm43455: chip 4345 revision 6 bus type 1
+bcm43455: capabilities 18680009, extended 0000040c
+bcm43455: SDIO core 18004000, ARM CR4 18002000 (wrapper 18102000), D11 wrapper 18101000, RAM 198000 + 0c8000
+bcm43455: PMU at 18000000 revision 27, save-restore 0
+rpi4-bt: controller ready after about 22 ms
+rpi4-bt: at the program's reset: 1 interrupts, 7 bytes in (0 with errors, 0 in transitions), 8 out, 0 own resets
+rpi4-bt: in step, 0 bytes passed over
+rpi4-bt: controller ready after about 22 ms
+rpi4-bt: at the program's reset: 2 interrupts, 14 bytes in (0 with errors, 0 in transitions), 16 out, 0 own resets
+rpi4-bt: in step, 0 bytes passed over
+bcm43455: fast clock not available (42)
+rpi4-wifi: onboard Wi-Fi not published (42)
+rpi4-wifi: chip powered down
+rpi4-mmal: firmware MMAL 16.1 (service version 16)
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: event 48434645 len 96
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0 output 3231564e 352x288 (crop 352x288), 3 x 155648 bytes
+rpi4-mmal-probe: 352 run=a out=0 pts=0 pts_display=0 display=0 decode=0 match=whole sent=3 lag=2 sum=160d0b64 luma=874317a6 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=0 map ref=0 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal-probe: frames are kept in /dev/mmal-probe
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=1 pts=3 pts_display=1 display=1 decode=3 match=whole sent=4 lag=0 sum=74103c3b luma=2043a4cb flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=1 map ref=1 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=2 pts=2 pts_display=2 display=-1 decode=-1 match=none sent=5 lag=0 sum=7d74962e luma=2d2ecc58 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=2 map ref=2 Y|C|Ystrip|Cstrip .....xx........... .................. ...xx. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=3 pts=4 pts_display=3 display=3 decode=4 match=whole sent=6 lag=1 sum=b92e65f9 luma=2efdf2bf flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=3 map ref=3 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 40004 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=4 pts=40004 pts_display=-1 display=4 decode=1 match=whole sent=7 lag=5 sum=6988a4dd luma=04413924 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=4 map ref=4 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=5 pts=7 pts_display=5 display=5 decode=7 match=whole sent=8 lag=0 sum=dbd41d57 luma=46277a03 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=5 map ref=5 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 8 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=6 pts=6 pts_display=6 display=-1 decode=-1 match=none sent=9 lag=0 sum=c3fd9c97 luma=19dc5146 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=6 map ref=6 Y|C|Ystrip|Cstrip ......x........... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 9 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 8 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=7 pts=8 pts_display=7 display=-1 decode=-1 match=none sent=10 lag=0 sum=7dae8d89 luma=c38bf30e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=7 map ref=7 Y|C|Ystrip|Cstrip ......x.x......... .................. ..x.x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 10 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 40008 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=8 pts=40008 pts_display=-1 display=-1 decode=-1 match=none sent=11 lag=0 sum=ff1e182a luma=1738739e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 11 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 11 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=9 pts=11 pts_display=9 display=-1 decode=-1 match=none sent=12 lag=0 sum=f4e0d790 luma=f05b3d3c flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=9 map ref=9 Y|C|Ystrip|Cstrip .....xx........... .................. ...x.. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 12 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 10 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=10 pts=10 pts_display=10 display=-1 decode=-1 match=none sent=13 lag=0 sum=48a03173 luma=262125a1 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=10 map ref=10 Y|C|Ystrip|Cstrip .......x.......... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 13 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 12 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=11 pts=12 pts_display=11 display=-1 decode=-1 match=none sent=14 lag=0 sum=ecb07134 luma=57243964 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=a out=11 map ref=11 Y|C|Ystrip|Cstrip ......x......x.... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 14 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 40012 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=a out=12 pts=40012 pts_display=-1 display=-1 decode=-1 match=none sent=15 lag=0 sum=6b30abf4 luma=298a3d4e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal-probe: 352 run=a order=other order_pts=other inputs=15 outputs=13 missing=2 unknown=8 luma_only=0 lag=5 lag_pts=2 pts_unknown=3 error=0 pts_seq=0,3,2,4,-1,7,6,8,-1,11,10,12,-1
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=0 pts=0 pts_display=0 display=0 decode=0 match=whole sent=2 lag=1 sum=160d0b64 luma=874317a6 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=0 map ref=0 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=1 pts=1 pts_display=4 display=4 decode=1 match=whole sent=2 lag=0 sum=6988a4dd luma=04413924 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=1 map ref=4 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=2 pts=2 pts_display=2 display=-1 decode=-1 match=none sent=3 lag=0 sum=7d74962e luma=2d2ecc58 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=2 map ref=2 Y|C|Ystrip|Cstrip .....xx........... .................. ...xx. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=3 pts=3 pts_display=1 display=1 decode=3 match=whole sent=4 lag=0 sum=74103c3b luma=2043a4cb flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=3 map ref=1 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=4 pts=4 pts_display=3 display=3 decode=4 match=whole sent=5 lag=0 sum=b92e65f9 luma=2efdf2bf flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=4 map ref=3 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=5 pts=5 pts_display=8 display=-1 decode=-1 match=none sent=6 lag=0 sum=ff1e182a luma=1738739e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=5 map ref=8 Y|C|Ystrip|Cstrip ...........x...... .................. ..x... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=6 pts=6 pts_display=6 display=-1 decode=-1 match=none sent=7 lag=0 sum=c3fd9c97 luma=19dc5146 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=6 map ref=6 Y|C|Ystrip|Cstrip ......x........... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=7 pts=7 pts_display=5 display=5 decode=7 match=whole sent=8 lag=0 sum=dbd41d57 luma=46277a03 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=7 map ref=5 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 8 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 8 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=8 pts=8 pts_display=7 display=-1 decode=-1 match=none sent=9 lag=0 sum=7dae8d89 luma=c38bf30e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=8 map ref=7 Y|C|Ystrip|Cstrip ......x.x......... .................. ..x.x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 9 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 9 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=9 pts=9 pts_display=12 display=-1 decode=-1 match=none sent=10 lag=0 sum=6b30abf4 luma=298a3d4e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=9 map ref=12 Y|C|Ystrip|Cstrip .......x...x...... .................. ..x.x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 10 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 10 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=10 pts=10 pts_display=10 display=-1 decode=-1 match=none sent=11 lag=0 sum=48a03173 luma=262125a1 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=10 map ref=10 Y|C|Ystrip|Cstrip .......x.......... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 11 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 11 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=11 pts=11 pts_display=9 display=-1 decode=-1 match=none sent=12 lag=0 sum=f4e0d790 luma=f05b3d3c flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=11 map ref=9 Y|C|Ystrip|Cstrip .....xx........... .................. ...x.. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 12 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 12 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=12 pts=12 pts_display=11 display=-1 decode=-1 match=none sent=13 lag=0 sum=ecb07134 luma=57243964 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=12 map ref=11 Y|C|Ystrip|Cstrip ......x......x.... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 13 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 13 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=13 pts=13 pts_display=14 display=-1 decode=-1 match=none sent=14 lag=0 sum=da8f3bd5 luma=0add4c69 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=13 map ref=14 Y|C|Ystrip|Cstrip .....xx........... .................. ...xx. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 14 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 14 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=b out=14 pts=14 pts_display=13 display=-1 decode=-1 match=none sent=15 lag=0 sum=80e850cd luma=8e9ea7fb flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=b out=14 map ref=13 Y|C|Ystrip|Cstrip ...............x.. .................. ...x.. ......
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal-probe: 352 run=b order=other order_pts=other inputs=15 outputs=15 missing=0 unknown=10 luma_only=0 lag=1 lag_pts=1 pts_unknown=0 error=0 pts_seq=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=0 pts=0 pts_display=0 display=0 decode=0 match=whole sent=2 lag=1 sum=160d0b64 luma=874317a6 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=0 map ref=0 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=1 pts=1 pts_display=4 display=4 decode=1 match=whole sent=2 lag=0 sum=6988a4dd luma=04413924 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=1 map ref=4 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=2 pts=2 pts_display=2 display=-1 decode=-1 match=none sent=3 lag=0 sum=7d74962e luma=2d2ecc58 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=2 map ref=2 Y|C|Ystrip|Cstrip .....xx........... .................. ...xx. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=3 pts=3 pts_display=1 display=1 decode=3 match=whole sent=4 lag=0 sum=74103c3b luma=2043a4cb flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=3 map ref=1 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=4 pts=4 pts_display=3 display=3 decode=4 match=whole sent=5 lag=0 sum=b92e65f9 luma=2efdf2bf flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=4 map ref=3 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=5 pts=5 pts_display=8 display=-1 decode=-1 match=none sent=6 lag=0 sum=ff1e182a luma=1738739e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=5 map ref=8 Y|C|Ystrip|Cstrip ...........x...... .................. ..x... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=6 pts=6 pts_display=6 display=-1 decode=-1 match=none sent=7 lag=0 sum=c3fd9c97 luma=19dc5146 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=6 map ref=6 Y|C|Ystrip|Cstrip ......x........... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=7 pts=7 pts_display=5 display=5 decode=7 match=whole sent=8 lag=0 sum=dbd41d57 luma=46277a03 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=7 map ref=5 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 8 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 8 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=8 pts=8 pts_display=7 display=-1 decode=-1 match=none sent=9 lag=0 sum=7dae8d89 luma=c38bf30e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=8 map ref=7 Y|C|Ystrip|Cstrip ......x.x......... .................. ..x.x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 9 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 9 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=9 pts=9 pts_display=12 display=-1 decode=-1 match=none sent=10 lag=0 sum=6b30abf4 luma=298a3d4e flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=9 map ref=12 Y|C|Ystrip|Cstrip .......x...x...... .................. ..x.x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 10 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 10 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=10 pts=10 pts_display=10 display=-1 decode=-1 match=none sent=11 lag=0 sum=48a03173 luma=262125a1 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=10 map ref=10 Y|C|Ystrip|Cstrip .......x.......... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 11 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 11 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=11 pts=11 pts_display=9 display=-1 decode=-1 match=none sent=12 lag=0 sum=f4e0d790 luma=f05b3d3c flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=11 map ref=9 Y|C|Ystrip|Cstrip .....xx........... .................. ...x.. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 12 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 12 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=12 pts=12 pts_display=11 display=-1 decode=-1 match=none sent=13 lag=0 sum=ecb07134 luma=57243964 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=12 map ref=11 Y|C|Ystrip|Cstrip ......x......x.... .................. ....x. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 13 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 4 pts 13 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=13 pts=13 pts_display=14 display=-1 decode=-1 match=none sent=14 lag=0 sum=da8f3bd5 luma=0add4c69 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=13 map ref=14 Y|C|Ystrip|Cstrip .....xx........... .................. ...xx. ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 14 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 4 pts 14 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=c out=14 pts=14 pts_display=13 display=-1 decode=-1 match=none sent=15 lag=0 sum=80e850cd luma=8e9ea7fb flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=c out=14 map ref=13 Y|C|Ystrip|Cstrip ...............x.. .................. ...x.. ......
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal-probe: 352 run=c order=other order_pts=other inputs=15 outputs=15 missing=0 unknown=10 luma_only=0 lag=1 lag_pts=1 pts_unknown=0 error=0 pts_seq=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 1 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 8 bytes into the frame
+rpi4-mmal: bulk 0: frame received (8)
+rpi4-mmal-probe: 352 run=d out=0 pts=0 pts_display=0 display=0 decode=0 match=whole sent=1 lag=0 sum=160d0b64 luma=874317a6 flags=4 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=0 map ref=0 Y|C|Ystrip|Cstrip .................. .................. ...... ......
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 204 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=1 pts=1 pts_display=4 display=-1 decode=-1 match=none sent=2 lag=0 sum=119354f3 luma=5318f315 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=1 map ref=4 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 204 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=2 pts=2 pts_display=2 display=-1 decode=-1 match=none sent=3 lag=0 sum=c2d802c5 luma=9ce1cf66 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=2 map ref=2 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 204 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=3 pts=3 pts_display=1 display=-1 decode=-1 match=none sent=4 lag=0 sum=497633c4 luma=236313e5 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=3 map ref=1 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 204 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=4 pts=4 pts_display=3 display=-1 decode=-1 match=none sent=5 lag=0 sum=bb0cd1f7 luma=4250fd3d flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=4 map ref=3 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 204 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=5 pts=5 pts_display=8 display=-1 decode=-1 match=none sent=6 lag=0 sum=f061a5ee luma=971e16f2 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=5 map ref=8 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 204 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=6 pts=6 pts_display=6 display=-1 decode=-1 match=none sent=7 lag=0 sum=3d12edd1 luma=49253f4b flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=6 map ref=6 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 204 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=7 pts=7 pts_display=5 display=-1 decode=-1 match=none sent=8 lag=0 sum=92af6437 luma=aba565d3 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=7 map ref=5 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 8 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 204 pts 8 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=8 pts=8 pts_display=7 display=-1 decode=-1 match=none sent=9 lag=0 sum=5b4c2d92 luma=98bbdd89 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=8 map ref=7 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 9 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 204 pts 9 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=9 pts=9 pts_display=12 display=-1 decode=-1 match=none sent=10 lag=0 sum=6a3faf81 luma=42df6abf flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=9 map ref=12 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 10 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 204 pts 10 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=10 pts=10 pts_display=10 display=-1 decode=-1 match=none sent=11 lag=0 sum=73320e89 luma=05399330 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=10 map ref=10 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 11 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 204 pts 11 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=11 pts=11 pts_display=9 display=-1 decode=-1 match=none sent=12 lag=0 sum=4be453ce luma=5a492a38 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=11 map ref=9 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 12 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 152064 off 0 flags 204 pts 12 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=12 pts=12 pts_display=11 display=-1 decode=-1 match=none sent=13 lag=0 sum=eddb021a luma=2e546123 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=12 map ref=11 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 13 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 152064 off 0 flags 204 pts 13 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=13 pts=13 pts_display=14 display=-1 decode=-1 match=none sent=14 lag=0 sum=c27daa17 luma=356bd144 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=13 map ref=14 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 14 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 152064 off 0 flags 204 pts 14 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 152064 bytes into the frame
+rpi4-mmal: bulk 0: frame received (152064)
+rpi4-mmal-probe: 352 run=d out=14 pts=14 pts_display=13 display=-1 decode=-1 match=none sent=15 lag=0 sum=30461cd4 luma=fad66877 flags=204 len=152064 fmt=3231564e 352x288 crop 352x288 pitch 352/352 copy_us=0
+rpi4-mmal-probe: 352 run=d out=14 map ref=13 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxx xxxxxx xxxxxx
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal-probe: 352 run=d order=other order_pts=decode inputs=15 outputs=15 missing=0 unknown=14 luma_only=0 lag=0 lag_pts=0 pts_unknown=0 error=0 pts_seq=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1080
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1080
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 1920x1080, input 16 x 81920 bytes, output 3 x 3133440 bytes
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: event 48434645 len 96
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0 output 3231564e 1920x1088 (crop 1920x1080), 3 x 3133440 bytes
+rpi4-mmal-probe: 1080 run=a out=0 pts=0 pts_display=0 display=-1 decode=-1 match=none sent=3 lag=0 sum=1193f8b9 luma=6c208a5c flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=13000
+rpi4-mmal-probe: 1080 run=a out=0 map ref=0 Y|C|Ystrip|Cstrip xxx..x..............x......................xx.x..x...xxx............ .....xxx.x.xxxxxxxx........xxxxxxxxx...............x................ xx..............x.xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=a out=1 pts=2 pts_display=1 display=-1 decode=-1 match=none sent=4 lag=0 sum=b24a3397 luma=e397afb6 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=14000
+rpi4-mmal-probe: 1080 run=a out=1 map ref=1 Y|C|Ystrip|Cstrip xx...x...............x.....................x..x..x...xxx............ ......xxx.x.xxxxxxxxx......xxxxxxxxxxxx...........xx................ xx..............x.xx.......... ...xxx.x..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=a out=2 pts=3 pts_display=2 display=-1 decode=-1 match=none sent=5 lag=0 sum=2fe1657c luma=c32aa490 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=a out=2 map ref=2 Y|C|Ystrip|Cstrip xx.........................................x..x..x...xxx............ ......xxxx.x.xxxxxxxx......xxxxxxxxxxxx............................. xx................xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 33336 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=a out=3 pts=33336 pts_display=-1 display=-1 decode=-1 match=none sent=6 lag=0 sum=a3eb2f70 luma=d978eaa3 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=12000
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=a out=4 pts=5 pts_display=4 display=-1 decode=-1 match=none sent=7 lag=0 sum=e50f7b3c luma=9e5d16b7 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=15000
+rpi4-mmal-probe: 1080 run=a out=4 map ref=4 Y|C|Ystrip|Cstrip xx............................................x..x...xxx............ ........xxxx.xxxxxxxxxx.x..xxxxxxxxxxxx............x................ xx.................x.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=a out=5 pts=6 pts_display=5 display=-1 decode=-1 match=none sent=8 lag=0 sum=028346ac luma=5a5e7f27 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=a out=5 map ref=5 Y|C|Ystrip|Cstrip xx...............................................x...xxx............ ..........xxx.x.xxxxxxxxx..xxxxxxxxxxxxx..........x................. xx.................x.......... ...xxxxxx.xxxxxx.........xxxxx
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal-probe: 1080 run=a order=other order_pts=other inputs=8 outputs=6 missing=2 unknown=6 luma_only=0 lag=0 lag_pts=2 pts_unknown=1 error=0 pts_seq=0,2,3,-1,5,6
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1080
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1080
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 1920x1080, input 16 x 81920 bytes, output 3 x 3133440 bytes
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=0 pts=0 pts_display=0 display=-1 decode=-1 match=none sent=2 lag=0 sum=1193f8b9 luma=6c208a5c flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=b out=0 map ref=0 Y|C|Ystrip|Cstrip xxx..x..............x......................xx.x..x...xxx............ .....xxx.x.xxxxxxxx........xxxxxxxxx...............x................ xx..............x.xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=1 pts=1 pts_display=3 display=-1 decode=-1 match=none sent=2 lag=0 sum=a3eb2f70 luma=d978eaa3 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=b out=1 map ref=3 Y|C|Ystrip|Cstrip xx............................................x..x...xxx............ .......xxxx.xxxxxxxxxx.....xx.xxxxxxxxx...........xx................ xx.................x.......... ...xxxxxx.xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=2 pts=2 pts_display=1 display=-1 decode=-1 match=none sent=3 lag=0 sum=b24a3397 luma=e397afb6 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=b out=2 map ref=1 Y|C|Ystrip|Cstrip xx...x...............x.....................x..x..x...xxx............ ......xxx.x.xxxxxxxxx......xxxxxxxxxxxx...........xx................ xx..............x.xx.......... ...xxx.x..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=3 pts=3 pts_display=2 display=-1 decode=-1 match=none sent=4 lag=0 sum=2fe1657c luma=c32aa490 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=12000
+rpi4-mmal-probe: 1080 run=b out=3 map ref=2 Y|C|Ystrip|Cstrip xx.........................................x..x..x...xxx............ ......xxxx.x.xxxxxxxx......xxxxxxxxxxxx............................. xx................xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=4 pts=4 pts_display=6 display=-1 decode=-1 match=none sent=5 lag=0 sum=3adf35b0 luma=d214e762 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=14000
+rpi4-mmal-probe: 1080 run=b out=4 map ref=6 Y|C|Ystrip|Cstrip xx..x............................................x...xxx............ ...........xxxxxxxxxxxxxxx..x.xxxxxxxxxxxx........x................. xx.................x.......... ...xxxx..xxxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=5 pts=5 pts_display=4 display=-1 decode=-1 match=none sent=6 lag=0 sum=e50f7b3c luma=9e5d16b7 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=b out=5 map ref=4 Y|C|Ystrip|Cstrip xx............................................x..x...xxx............ ........xxxx.xxxxxxxxxx.x..xxxxxxxxxxxx............x................ xx.................x.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=6 pts=6 pts_display=5 display=-1 decode=-1 match=none sent=7 lag=0 sum=028346ac luma=5a5e7f27 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=11000
+rpi4-mmal-probe: 1080 run=b out=6 map ref=5 Y|C|Ystrip|Cstrip xx...............................................x...xxx............ ..........xxx.x.xxxxxxxxx..xxxxxxxxxxxxx..........x................. xx.................x.......... ...xxxxxx.xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=b out=7 pts=7 pts_display=7 display=-1 decode=-1 match=none sent=8 lag=0 sum=24de5d31 luma=4a11ab08 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=15000
+rpi4-mmal-probe: 1080 run=b out=7 map ref=7 Y|C|Ystrip|Cstrip xx..x........................................x.x.x...xxx............ ............xxxxxxxxxxxxxxx...xxxx.xxxxxxxx......................... xx.................x.......... ...xxxx...xxxxxx.........xxxxx
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal-probe: 1080 run=b order=other order_pts=other inputs=8 outputs=8 missing=0 unknown=8 luma_only=0 lag=0 lag_pts=1 pts_unknown=0 error=0 pts_seq=0,1,2,3,4,5,6,7
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1080
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1080
+rpi4-mmal: decoder 0: 1920x1080, input 16 x 81920 bytes, output 3 x 3133440 bytes
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=0 pts=0 pts_display=0 display=-1 decode=-1 match=none sent=2 lag=0 sum=1193f8b9 luma=6c208a5c flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=12000
+rpi4-mmal-probe: 1080 run=c out=0 map ref=0 Y|C|Ystrip|Cstrip xxx..x..............x......................xx.x..x...xxx............ .....xxx.x.xxxxxxxx........xxxxxxxxx...............x................ xx..............x.xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=1 pts=1 pts_display=3 display=-1 decode=-1 match=none sent=2 lag=0 sum=a3eb2f70 luma=d978eaa3 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=12000
+rpi4-mmal-probe: 1080 run=c out=1 map ref=3 Y|C|Ystrip|Cstrip xx............................................x..x...xxx............ .......xxxx.xxxxxxxxxx.....xx.xxxxxxxxx...........xx................ xx.................x.......... ...xxxxxx.xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=2 pts=2 pts_display=1 display=-1 decode=-1 match=none sent=3 lag=0 sum=b24a3397 luma=e397afb6 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=12000
+rpi4-mmal-probe: 1080 run=c out=2 map ref=1 Y|C|Ystrip|Cstrip xx...x...............x.....................x..x..x...xxx............ ......xxx.x.xxxxxxxxx......xxxxxxxxxxxx...........xx................ xx..............x.xx.......... ...xxx.x..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=3 pts=3 pts_display=2 display=-1 decode=-1 match=none sent=4 lag=0 sum=2fe1657c luma=c32aa490 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=12000
+rpi4-mmal-probe: 1080 run=c out=3 map ref=2 Y|C|Ystrip|Cstrip xx.........................................x..x..x...xxx............ ......xxxx.x.xxxxxxxx......xxxxxxxxxxxx............................. xx................xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=4 pts=4 pts_display=6 display=-1 decode=-1 match=none sent=5 lag=0 sum=3adf35b0 luma=d214e762 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=c out=4 map ref=6 Y|C|Ystrip|Cstrip xx..x............................................x...xxx............ ...........xxxxxxxxxxxxxxx..x.xxxxxxxxxxxx........x................. xx.................x.......... ...xxxx..xxxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=5 pts=5 pts_display=4 display=-1 decode=-1 match=none sent=6 lag=0 sum=e50f7b3c luma=9e5d16b7 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=c out=5 map ref=4 Y|C|Ystrip|Cstrip xx............................................x..x...xxx............ ........xxxx.xxxxxxxxxx.x..xxxxxxxxxxxx............x................ xx.................x.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=6 pts=6 pts_display=5 display=-1 decode=-1 match=none sent=7 lag=0 sum=028346ac luma=5a5e7f27 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=c out=6 map ref=5 Y|C|Ystrip|Cstrip xx...............................................x...xxx............ ..........xxx.x.xxxxxxxxx..xxxxxxxxxxxxx..........x................. xx.................x.......... ...xxxxxx.xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=c out=7 pts=7 pts_display=7 display=-1 decode=-1 match=none sent=8 lag=0 sum=24de5d31 luma=4a11ab08 flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=c out=7 map ref=7 Y|C|Ystrip|Cstrip xx..x........................................x.x.x...xxx............ ............xxxxxxxxxxxxxxx...xxxx.xxxxxxxx......................... xx.................x.......... ...xxxx...xxxxxx.........xxxxx
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal-probe: 1080 run=c order=other order_pts=other inputs=8 outputs=8 missing=0 unknown=8 luma_only=0 lag=0 lag_pts=1 pts_unknown=0 error=0 pts_seq=0,1,2,3,4,5,6,7
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1080
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1080
+rpi4-mmal: decoder 0: 1920x1080, input 16 x 81920 bytes, output 3 x 3133440 bytes
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 1 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 8 bytes into the frame
+rpi4-mmal: bulk 0: frame received (8)
+rpi4-mmal-probe: 1080 run=d out=0 pts=0 pts_display=0 display=-1 decode=-1 match=none sent=1 lag=0 sum=1193f8b9 luma=6c208a5c flags=4 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=d out=0 map ref=0 Y|C|Ystrip|Cstrip xxx..x..............x......................xx.x..x...xxx............ .....xxx.x.xxxxxxxx........xxxxxxxxx...............x................ xx..............x.xx.......... ...xxxxx..xxxxxx.........xxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 204 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=1 pts=1 pts_display=3 display=-1 decode=-1 match=none sent=2 lag=0 sum=d0246ee7 luma=f1d44a9b flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=d out=1 map ref=3 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 204 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=2 pts=2 pts_display=1 display=-1 decode=-1 match=none sent=3 lag=0 sum=1be42686 luma=a6888791 flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=17000
+rpi4-mmal-probe: 1080 run=d out=2 map ref=1 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 204 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=3 pts=3 pts_display=2 display=-1 decode=-1 match=none sent=4 lag=0 sum=dc831145 luma=44f2e03d flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=15000
+rpi4-mmal-probe: 1080 run=d out=3 map ref=2 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 204 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=4 pts=4 pts_display=6 display=-1 decode=-1 match=none sent=5 lag=0 sum=11b193b5 luma=1800fc70 flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=15000
+rpi4-mmal-probe: 1080 run=d out=4 map ref=6 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 204 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=5 pts=5 pts_display=4 display=-1 decode=-1 match=none sent=6 lag=0 sum=87c9af2b luma=ab5e1d4f flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=15000
+rpi4-mmal-probe: 1080 run=d out=5 map ref=4 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 204 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=6 pts=6 pts_display=5 display=-1 decode=-1 match=none sent=7 lag=0 sum=6ef6d6a7 luma=a50fa09f flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=15000
+rpi4-mmal-probe: 1080 run=d out=6 map ref=5 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 204 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal-probe: 1080 run=d out=7 pts=7 pts_display=7 display=-1 decode=-1 match=none sent=8 lag=0 sum=d424e7a7 luma=f6b07513 flags=204 len=3133440 fmt=3231564e 1920x1088 crop 1920x1080 pitch 1920/1920 copy_us=16000
+rpi4-mmal-probe: 1080 run=d out=7 map ref=7 Y|C|Ystrip|Cstrip xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal-probe: 1080 run=d order=other order_pts=decode inputs=8 outputs=8 missing=0 unknown=8 luma_only=0 lag=0 lag_pts=0 pts_unknown=0 error=0 pts_seq=0,1,2,3,4,5,6,7
+rpi4-mmal-probe: done
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 64x64 crop 64x64
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/6144 rec 1/6144 now 1/115200 encoding 3231564e 64x64 crop 64x64
+rpi4-mmal: decoder 0: 64x64, input 16 x 81920 bytes, output 3 x 8192 bytes
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+v3d: video: decode 1: the first picture is held; an end of stream pushes it out
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+v3d: video: decode 1: the first picture is held; an end of stream pushes it out
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 352x288 crop 352x288
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/152064 rec 1/152064 now 1/152064 encoding 3231564e 352x288 crop 352x288
+rpi4-mmal: decoder 0: 352x288, input 16 x 81920 bytes, output 3 x 155648 bytes
+v3d: video: decode 1: the first picture is held; an end of stream pushes it out
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1088
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1088
+rpi4-mmal: decoder 0: 1920x1088, input 16 x 81920 bytes, output 3 x 3133440 bytes
+v3d: video: decode 1: the first picture is held; an end of stream pushes it out
+rpi4-mmal: decoder 0 output 3231564e 1920x1088 (crop 1920x1080), 3 x 3133440 bytes
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1088
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1088
+rpi4-mmal: decoder 0: 1920x1088, input 16 x 81920 bytes, output 3 x 3133440 bytes
+v3d: video: decode 1: the first picture is held; an end of stream pushes it out
+rpi4-mmal: decoder 0 output 3231564e 1920x1088 (crop 1920x1080), 3 x 3133440 bytes
