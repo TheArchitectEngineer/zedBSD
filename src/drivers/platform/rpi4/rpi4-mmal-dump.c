@@ -46,10 +46,13 @@ static uint32_t dump_used;
 static bool dump_published;
 
 /*
- * Whether a write asked the probe to run: set by any writer, read by the
- * probe's thread, never cleared (the probe runs once).
+ * Whether a write asked the probe to run: set by the first writer, which
+ * then calls dump_on_run; never cleared (the probe runs once).
  */
 static unsigned dump_run_requested;
+
+/* What the first write starts (the probe's thread); set once before the device is published. */
+static void (*dump_on_run)(void);
 
 static ssize_t dump_read(struct file *file, void *buffer, size_t size);
 static ssize_t dump_write(struct file *file, const void *buffer, size_t size);
@@ -65,13 +68,15 @@ static const struct cdev_ops dump_ops = {
  * Publishes /dev/mmal-probe once.
  */
 int
-drv_rpi4_mmal_dump_publish(void)
+drv_rpi4_mmal_dump_publish(
+	void (*on_run)(void))
 {
 	int error;
 
 	/* Published once. */
 	if (dump_published)
 		return 0;
+	dump_on_run = on_run;
 
 	/* The device. */
 	error = cdev_register(DUMP_DEVICE_NAME, (dev_t)DUMP_DEVICE_NUMBER, &dump_ops, NULL);
@@ -86,23 +91,6 @@ drv_rpi4_mmal_dump_publish(void)
 }
 
 /*
- * Reports whether a write to /dev/mmal-probe asked the probe to run.
- */
-bool
-drv_rpi4_mmal_dump_run_requested(void)
-{
-	unsigned requested;
-
-	/* Any write sets it. */
-	requested = __atomic_load_n(&dump_run_requested, __ATOMIC_ACQUIRE);
-	if (requested == 0)
-		return false;
-
-	/* Succeeded: the probe may run. */
-	return true;
-}
-
-/*
  * Keeps a copy of one frame with its header line.
  */
 int
@@ -113,7 +101,6 @@ drv_rpi4_mmal_dump_add(
 {
 	struct dump_record *record;
 	size_t length;
-	int error;
 
 	/* Refuses a frame beyond the budgets. */
 	if (dump_count >= DUMP_RECORDS || bytes > DUMP_BUDGET - dump_used)
@@ -136,11 +123,8 @@ drv_rpi4_mmal_dump_add(
 	record->bytes = bytes;
 	dump_used += bytes;
 
-	/* Publishes the record, and the device if it is not yet. */
+	/* Publishes the record. */
 	__atomic_store_n(&dump_count, dump_count + 1U, __ATOMIC_RELEASE);
-	error = drv_rpi4_mmal_dump_publish();
-	if (error != 0)
-		return error;
 
 	/* Succeeded: the frame is kept. */
 	return 0;
@@ -153,10 +137,16 @@ dump_write(
 	const void *buffer,
 	size_t size)
 {
-	/* The bytes do not matter. */
+	unsigned expected;
+	int first;
+
+	/* The bytes do not matter; the first write starts the probe. */
 	(void)file;
 	(void)buffer;
-	__atomic_store_n(&dump_run_requested, 1U, __ATOMIC_RELEASE);
+	expected = 0;
+	first = __atomic_compare_exchange_n(&dump_run_requested, &expected, 1U, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+	if (first && dump_on_run != NULL)
+		dump_on_run();
 
 	/* Succeeded: every byte is taken. */
 	return (ssize_t)size;

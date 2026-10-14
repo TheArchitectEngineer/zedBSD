@@ -19,7 +19,6 @@
 #ifndef KERN_DRIVERS_RPI4_MMAL_DUMP_H
 #define KERN_DRIVERS_RPI4_MMAL_DUMP_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 /* The bytes of a record's header. */
@@ -33,10 +32,10 @@
  */
 int drv_rpi4_mmal_dump_add(const char *header, const uint8_t *data, uint32_t bytes);
 
-/* Publishes /dev/mmal-probe once; a write to it asks the probe to run.  Thread context only. */
-int drv_rpi4_mmal_dump_publish(void);
-
-/* Reports whether a write to /dev/mmal-probe asked the probe to run. */
-bool drv_rpi4_mmal_dump_run_requested(void);
+/*
+ * Publishes /dev/mmal-probe once; the first write to it calls on_run (in
+ * the writer's thread), which starts the probe.  Thread context only.
+ */
+int drv_rpi4_mmal_dump_publish(void (*on_run)(void));
 
 #endif
