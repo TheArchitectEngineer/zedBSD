@@ -9,3 +9,15 @@ PNG: /home/awe/zedBSD-worktrees/t1/build/ws037-nvrtx/hw6/v7c-b.png、v7c-final.p
 
 # R8b: 未実施（止めた）
 main（81ae41ad8）に R8b が無い。`plan/ws037/tests/config-amd64-nvrtx.mk` に NVRTX_RUN=R8b が無く、`nvrtx.disp`・`P8b ok` が src にも無く、phase006 に「T への手順（R8b」の節も無い。P1 の b893faeb6〜eb3ebc404 は branch agent/p1-ws037b にだけあり、main に merge されていない。merge は Q1。main に入れたら再依頼を。
+
+# T1-642: R8b（RTX の display の引き継ぎと flip、rombar=1）2026-10-15 結果: FAIL
+main 20abf069a、image `NVRTX_RUN=R8b`（build/ws037-nvrtx/v8b、host ~/nvrtx/v8b）、`~/nvrtx/start-rombar1.sh v8b`。host は reboot 後 5 分、prepare.sh --check ok のみ。ユーザーが monitor の前（起動の指示は Q1 経由）。
+screendump（10 秒おきに 14 枚、起動から約 10〜141 s）は 2 種類だけ（最初の 5 枚と 6 枚目以降が同じ）。起動から約 10 s の時点で既に下の最終の画面で、`surface A shown`・`flip` は一度も出ていない（時刻なし）。
+nvrtx の行（全行の印）:
+- `P8 ok: display, heads f, windows ff, lit 1`（head 0 SOR 1 TMDS-A、1280x1024 of 1688x1066、clock 108000000）
+- `P8b begin` → `P8b head 0 armed: view 03200500 raster 042a0698 clock 066ff300, SOR 1 00` → `P8b surfaces 1280x800 pitch 5120 at 1e8f00000 and 1e9300000` → `P8b channel c57d.0 made`
+- **`P8b fail: core owners notifier 00000000 after 2 s, get 18c put 18c`**
+- `P6 ok: channel and vaspace freed` → `P7 begin: unload` → `P7 unload call: 42` → **`P7 fail: the GSP did not stop (42); memory kept, power cycle needed`**
+`rm:` の行は画面に出ていない。guest は HLT=1 で固まりはしない。P8 の raster/viewport は 1280x1024 に対し surface は 1280x800（view 0320 0500）。解析はしない。
+PNG: /home/awe/zedBSD-worktrees/t1/build/ws037-nvrtx/hw6/v8b-6.png、v8b-14.png（同じ画面）。
+後始末: QEMU 停止、host reboot（P7 fail のため power cycle 相当）。ローカルの QEMU は起動していない。
