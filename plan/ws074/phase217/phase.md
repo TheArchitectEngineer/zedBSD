@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1161-i01 有限部分範囲（2026-10-14 12:23 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:53 JSTまで）に適用。q1160固定Grid502の残FAIL中、column-axis/row-axis positioned-items各001..017最大34 IDを抽出し、first failed subtest/症状と旧q1141比較を集計。代表縦書き/RTL/水平WPT原本とGrid absolute area・text geometry経路を読み、次の有限実装候補/回帰条件を記録。読取のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1161-i01 結果（2026-10-14 12:24 JST）
+
+Event ws074-p217-q1161-partial-clear-20261014: [固定positioned列軸/行軸34件診断](evidence/20261014-q1161/README.md)。全whole FAIL、33件で水平2/4 PASS・縦初回width期待10/実60、行軸017は水平RTL offsetLeft差も残る。absolute rootはinline縦経路でout-of-flow拒否、Grid static areaは非水平で早期return。次の有限scopeは前者の単純縦文字geometry、静的位置は別範囲。q1161診断部分cleared、p217/p189/p173全件100%未達。読取のみ、共有投影/GitHub publication保留。
+
 ## q1141-i01 有限部分範囲（2026-10-14 10:49 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:19 JSTまで）に適用。q1140固定Grid502中alignment残192 FAILのfirst failed callbackを全件抽出し、file family/width/height/offset症状、既対応と未対応の差、最大3の代表WPT sourceとlayout経路を分類する。一般的な次の有限実装範囲・回帰条件を記録する。読取のみ、browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
