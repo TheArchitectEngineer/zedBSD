@@ -11,11 +11,12 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-14 夕（Q1）: P1・P2・P3＋T1・T2＋B1**。残りは [beta2.md](beta2.md)。
-  - P1: 空き（WS233 の firmware の repo は公開・main で使用中、残りは submodule の除去と T1 の試験）。
-  - P2・P3: 空き。WS080（ld.coff）と WS234（libkeiland の DLL 版）は 2026-10-14 ユーザーの指示で保留（HAL A1・A2 の承認は記録済み）。
+- **2026-10-14 夜（Q1）: P1・P2・P3＋T1・T2＋B1**。リリースは 10/16（金）夕。ブラウザ（B1）は直前まで、WS236・WS037 は既定 off で間に合わなければ drop。
+  - P1: 空き（リリースの文書は c9a4060cf で更新、16 日に browser と WS236 の最終の更新）。
+  - P2: WS037（nvrtx、RTX 2070）の再開: p001 の締め、GSP の firmware、p003 の骨格と N0。
+  - P3: WS236（Pi4 の Vulkan Video）p003 の最小の MMAL と R1 の probe（review-1 を反映）。
+  - B1: WS074 BigInt → Google の Grid → yahoo.co.jp（p230）。
   - T1・T2: 空き。
-  - B1: WS074 の WPT（20:10 まで）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
