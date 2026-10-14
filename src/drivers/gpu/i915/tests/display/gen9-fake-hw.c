@@ -93,6 +93,7 @@ i915_gen9_fake_add_dp_sink(
 	unsigned port,
 	unsigned cr_swing)
 {
+	static const uint8_t edid_header[8] = { 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00 };
 	static const uint8_t dtd_1080p[18] = {
 		0x02, 0x3a, 0x80, 0x18, 0x71, 0x38, 0x2d, 0x40, 0x58,
 		0x2c, 0x45, 0x00, 0xc4, 0x8e, 0x21, 0x00, 0x00, 0x1e
@@ -109,11 +110,15 @@ i915_gen9_fake_add_dp_sink(
 	sink->dpcd[I915_DPCD_MAX_LINK_RATE] = I915_DPCD_LINK_BW_5_4;
 	sink->dpcd[I915_DPCD_MAX_LANE_COUNT] = (uint8_t)(4U | I915_DPCD_ENHANCED_FRAME_CAP | I915_DPCD_TPS3_SUPPORTED);
 
-	/* Succeeded: an EDID of two blocks, 1080p first, the rest a pattern. */
+	/* A pattern, then the base block's header, its 1080p timing and one extension. */
 	for (index = 0U; index < sizeof(sink->edid); index++)
 		sink->edid[index] = (uint8_t)(index * 7U + port);
+	memcpy(sink->edid, edid_header, sizeof(edid_header));
 	memset(sink->edid + 54, 0, 72);
 	memcpy(sink->edid + 54, dtd_1080p, sizeof(dtd_1080p));
+
+	/* Succeeded: an EDID of two blocks. */
+	sink->edid[126] = 1U;
 }
 
 /* Attaches an HDMI sink with the same EDID on the port's GMBUS pin. */
@@ -216,6 +221,10 @@ i915_fake_read(
 			i915_fake_set(hw, offset, value + 1U);
 		return value;
 	}
+
+	/* A plane's live surface is the one last armed: every flip latches at once. */
+	if (offset >= I915_SKL_PLANE_SURFLIVE_1_A && offset <= I915_SKL_PLANE_SURFLIVE_1_A + 0x2000U && ((offset - I915_SKL_PLANE_SURFLIVE_1_A) % 0x1000U) == 0U)
+		return i915_fake_get(hw, offset - I915_SKL_PLANE_SURFLIVE_1_A + I915_SKL_PLANE_SURF_1_A);
 
 	/* The GMBUS status: a NAK, a byte group ready, or the wait phase. */
 	if (offset == I915_SKL_GMBUS2) {

@@ -234,6 +234,19 @@
 
 /* The cursor plane's control (CURACNTR), the pipe line time (WM_LINETIME) and its field. */
 #define I915_SKL_CURCNTR_A			0x70080U
+
+/* The cursor's surface, rewritten to arm the cursor's DDB with the pipe's (i915_reg.h 3060). */
+#define I915_SKL_CURBASE_A			0x70084U
+
+/* Planes 2 and 3 of a pipe: control, surface and DDB, a plane 0x100 after the one before (i915_reg.h 3585-3749). */
+#define I915_SKL_PLANE_CTL_2_A			0x70280U
+#define I915_SKL_PLANE_SURF_2_A			0x7029cU
+#define I915_SKL_PLANE_BUF_CFG_2_A		0x7037cU
+#define I915_SKL_PLANE_SPACING			0x100U
+
+/* The display arbiter's second control: IPC (i915_reg.h 4619-4621), which lengthens every latency by 4 us. */
+#define I915_SKL_DISP_ARB_CTL2			0x45004U
+#define I915_SKL_DISP_IPC_ENABLE		(1U << 3)
 #define I915_SKL_WM_LINETIME_A			0x45270U
 #define I915_SKL_WM_LINETIME_STRIDE		0x4U
 #define I915_SKL_LINETIME_MASK			0x1ffU
