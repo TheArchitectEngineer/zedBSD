@@ -71,11 +71,28 @@ int bcm2711_vulkan_video_run(struct bcm2711_render_device *controller, const str
 int bcm2711_vulkan_video_settle(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_record *record);
 
 /*
- * Waits for the frames of the decodes a command buffer recorded, before an
- * execution with a fence ends, with the controller mutex held: zero when
- * none is in flight, EINPROGRESS while one is.
+ * The decodes in flight an execution with a fence waits for before it ends:
+ * those up to time stamp until of the session of generation generation.
+ * Zero generation: none.
  */
-int bcm2711_vulkan_video_settle_commands(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_command_buffer *command);
+struct bcm2711_vulkan_video_mark {
+	uint64_t generation;
+	int64_t until;
+};
+
+/* Adds the newest decode in flight that a command buffer recorded to a mark, after its job ran; with the controller mutex held. */
+void bcm2711_vulkan_video_mark_commands(struct bcm2711_vulkan_video_mark *mark, const struct bcm2711_vulkan_command_buffer *command);
+
+/* Makes a mark cover every decode in flight, for an empty submission with a fence; with the controller mutex held. */
+void bcm2711_vulkan_video_mark_all(struct bcm2711_vulkan_video_mark *mark);
+
+/*
+ * Waits for the frames of the decodes a mark covers, with the controller
+ * mutex held: zero when they are placed (or given up, or the session is
+ * gone), EINPROGRESS while one has not come.  wait lets it look for them a
+ * little with the controller's window open.
+ */
+int bcm2711_vulkan_video_settle_mark(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_video_mark *mark, bool wait);
 
 /* Lays out an NV12 image: the row pitch, the chroma plane's offset and the bytes. */
 void bcm2711_vulkan_video_nv12_layout(uint32_t width, uint32_t height, uint32_t *pitch, uint64_t *chroma, uint64_t *bytes);

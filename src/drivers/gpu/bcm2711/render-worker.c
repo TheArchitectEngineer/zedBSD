@@ -37,6 +37,12 @@
 /* The shortest time between two refusal lines; the refusals between are counted in the next line. */
 #define WORKER_REFUSAL_MS 1000U
 
+/* The executions one executor turn ended: how many, and the staging bytes they held, given back together. */
+struct worker_ended {
+	uint32_t count;
+	uint64_t bytes;
+};
+
 /* Constant operation-table entries need declarations before ANSI C initialization. */
 static int job_reserve(void *opaque, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **token);
 static int job_commit(void *opaque, void *private_session, void *token, struct drv_gpu_completion *completion);
@@ -64,6 +70,11 @@ static void executor_main(void *opaque);
 static bool park_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 static int parked_outcome(struct bcm2711_render_device *controller, struct bcm2711_render_request *request);
 static struct bcm2711_render_session *select_session(struct bcm2711_render_worker *worker);
+static int retire_settled(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, bool wait, struct worker_ended *ended);
+static void bind_marker(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, struct bcm2711_render_execution *execution);
+static bool marker_held(const struct bcm2711_render_session *session, const struct bcm2711_render_request *request);
+static bool session_display(const struct bcm2711_render_session *session);
+static void failure_line(struct bcm2711_render_device *controller, const struct bcm2711_render_session *session, const char *stage, int error, bool failed, bool display, uint64_t ordinal);
 static struct bcm2711_render_request *take_request(struct bcm2711_render_device *controller);
 static void finish_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 
@@ -714,6 +725,7 @@ job_reserve(
 	request->completion = completion;
 	request->supervised = true;
 	request->timeline = timeline;
+	request->ordinal = 0;
 	request->state = REQUEST_RESERVED;
 	session->pending++;
 	if (session->markers < BCM2711_RENDER_MINIMUM)
@@ -1234,10 +1246,15 @@ bcm2711_render_execution_submit(
 	}
 	session->execution_tail = execution;
 	session->submitted++;
+	execution->ordinal = session->submitted;
 	session->execution_bytes += execution->bytes;
 	session->pending++;
 	controller->worker.executions++;
 	controller->worker.execution_bytes += execution->bytes;
+
+	/* The submission's own marker, reserved before it and committed after it, learns which execution it completes. */
+	if (execution->timeline != 0)
+		bind_marker(controller, session, execution);
 
 	/* An idle session joins the round robin's tail. */
 	if (!session->ready) {
@@ -1264,8 +1281,11 @@ bcm2711_render_execution_submit(
  * Runs one step of the execution at the head of the next ready session.
  *
  * Sessions take turns a step at a time.  A stopped session's or a faulted
- * engine's executions are ended without running.  When an execution ends,
- * the completions of its session that waited for it are delivered outside every lock.
+ * engine's executions are ended without running.  An execution with a
+ * settle leaves the queue when it has run and ends from the settling list
+ * when its settle lets it; a session with only settling executions spends
+ * its turn waiting a little for the oldest.  When an execution ends, the
+ * completions of its session that waited for it are delivered outside every lock.
  */
 int
 bcm2711_render_executor_step(
@@ -1279,20 +1299,25 @@ bcm2711_render_executor_step(
 	struct bcm2711_render_request *next;
 	struct bcm2711_render_session **ready;
 	struct bcm2711_render_session *previous;
+	struct worker_ended ended;
 	unsigned long enabled;
 	uint64_t bytes;
 	struct bcm2711_v3d_perf *perf;
 	const char *stage;
 	uint64_t held;
 	uint64_t released;
+	uint64_t ordinal;
 	bool display;
-	bool allowed;
 	bool failed;
 	bool done;
-	int ended;
+	bool settles;
+	bool kept;
+	int finished_error;
+	int settled;
+	int later;
 	int error;
 
-	/* The chosen ready session runs its oldest execution. */
+	/* The chosen ready session runs its oldest execution, or has only settling ones. */
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 	session = select_session(&controller->worker);
@@ -1300,13 +1325,13 @@ bcm2711_render_executor_step(
 	display = false;
 	if (session != NULL) {
 		execution = session->execution_head;
-		display = execution->display;
+		display = session_display(session);
 	}
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Nothing waits. */
-	if (session == NULL || execution == NULL)
+	if (session == NULL)
 		return EAGAIN;
 	mutex_lock(&controller->mutex);
 	held = clock_ticks();
@@ -1328,62 +1353,100 @@ bcm2711_render_executor_step(
 	 * failed while preparing ends only its execution; any other failure is
 	 * the engine's.
 	 */
-	done = true;
+	ended.count = 0;
+	ended.bytes = 0;
+	ordinal = 0;
+	done = false;
 	failed = false;
 	stage = "cancel";
-	if (error == 0) {
-		execution->engine = true;
-		error = execution->step(controller, execution, &done);
-		stage = "step";
-		if (error != 0) {
-			done = true;
-			failed = execution->engine;
-			if (!failed)
-				stage = "prepare";
+	if (execution != NULL) {
+		ordinal = execution->ordinal;
+		done = true;
+		if (error == 0) {
+			execution->engine = true;
+			error = execution->step(controller, execution, &done);
+			stage = "step";
+			if (error != 0) {
+				done = true;
+				failed = execution->engine;
+				if (!failed)
+					stage = "prepare";
+			}
 		}
 	}
-	bytes = execution->bytes;
+
+	/* A finished execution leaves its queue before its end frees it; a submit may be linking behind it. */
+	settled = 0;
+	settles = false;
 	if (done) {
-		/* The finished execution leaves its queue before its end frees it; a submit may be linking behind it. */
 		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
 		session->execution_head = execution->next;
 		if (session->execution_head == NULL)
 			session->execution_tail = NULL;
+		execution->next = NULL;
 
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-		ended = execution->end(controller, execution, error);
-		if (ended != 0) {
-			failed = true;
-			stage = "end";
-			if (error == 0)
-				error = ended;
+		/* One that ran with a settle waits for it; one that failed or was canceled has nothing to wait for. */
+		if (error == 0 && execution->settle != NULL)
+			settles = true;
+
+		/* It joins the settling list behind the ones still there, or ends now. */
+		if (settles) {
+			enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+			if (session->settling_tail == NULL) {
+				session->settling_head = execution;
+			} else {
+				session->settling_tail->next = execution;
+			}
+
+			/* The tail names it, so the next one links behind it. */
+			session->settling_tail = execution;
+
+			spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		} else {
+			/* Any other ends now, after the earlier settling ones that may end, so the executions end in order where they can. */
+			settled = retire_settled(controller, session, false, &ended);
+			bytes = execution->bytes;
+			finished_error = execution->end(controller, execution, error);
+			ended.count++;
+			ended.bytes += bytes;
+			if (finished_error != 0) {
+				failed = true;
+				stage = "end";
+				if (error == 0)
+					error = finished_error;
+			}
 		}
 	}
 
-	/*
-	 * Says which execution failed and whether the engine went with it; a
-	 * stopped session's cancel is ordinary.  The session's counts are read
-	 * without their guard, for the log only.
-	 */
-	if (error != 0 && error != ECANCELED) {
-		allowed = bcm2711_render_failure_line(controller);
-		if (allowed) {
-			kern_logf(
-				"v3d: execution failed stage=%s error=%d engine=%u display=%u session=%llu/%llu\n",
-				stage,
-				error,
-				(unsigned)failed,
-				(unsigned)display,
-				(unsigned long long)session->executed + 1U,
-				(unsigned long long)session->submitted);
-		}
-	}
+	/* Says which execution failed and whether the engine went with it; a stopped session's cancel is ordinary. */
+	if (execution != NULL && error != 0 && error != ECANCELED)
+		failure_line(controller, session, stage, error, failed, display, ordinal);
 
-	/* A failure closes native admission before the mutex lets anyone observe it. */
+	/* A failure closes native admission before the mutex lets anyone observe it, and before the settling executions are looked at again. */
 	if (failed)
 		bcm2711_render_worker_fault(controller, error);
+
+	/*
+	 * The settling executions, the one just added among them, end when they
+	 * may; with nothing queued, the turn waits a little for the oldest.
+	 */
+	if (execution == NULL || settles) {
+		later = retire_settled(controller, session, execution == NULL, &ended);
+		if (settled == 0)
+			settled = later;
+	}
+
+	/* A settle or an end of a settling execution that failed (its line is written) is the engine's. */
+	if (settled != 0) {
+		bcm2711_render_worker_fault(controller, settled);
+		if (!failed)
+			error = settled;
+		failed = true;
+	}
 
 	/* Diagnostic: the step's hold of the mutex, without the window. */
 	held = clock_ticks() - held - (controller->worker.released_ticks - released);
@@ -1415,15 +1478,26 @@ bcm2711_render_executor_step(
 		controller->worker.ready_tail = previous;
 	session->ready_next = NULL;
 	controller->worker.display_last = display;
-	if (done) {
+
+	/*
+	 * executed counts the executions that left the queue, and the ended ones
+	 * give back their bytes.  A completion waits for executed to reach its
+	 * count, and a marker also for its own execution (or, not known, every
+	 * earlier one) to leave the settling list.
+	 */
+	if (done)
 		session->executed++;
-		session->execution_bytes -= bytes;
-		controller->worker.executions--;
-		controller->worker.execution_bytes -= bytes;
+	session->execution_bytes -= ended.bytes;
+	controller->worker.executions -= ended.count;
+	controller->worker.execution_bytes -= ended.bytes;
+	if (done || ended.count != 0) {
 		link = &controller->worker.parked;
 		while (*link != NULL) {
 			request = *link;
-			if (request->session == session && request->required <= session->executed) {
+			kept = true;
+			if (request->session == session && request->required <= session->executed)
+				kept = marker_held(session, request);
+			if (!kept) {
 				*link = request->parked_next;
 				request->parked_next = finished;
 				finished = request;
@@ -1433,9 +1507,9 @@ bcm2711_render_executor_step(
 		}
 	}
 
-	/* A session with more work takes its next turn at the tail. */
+	/* A session with more work, or with executions still settling, takes its next turn at the tail. */
 	session->ready = false;
-	if (session->execution_head != NULL) {
+	if (session->execution_head != NULL || session->settling_head != NULL) {
 		session->ready = true;
 		if (controller->worker.ready_tail == NULL) {
 			controller->worker.ready_head = session;
@@ -1454,25 +1528,234 @@ bcm2711_render_executor_step(
 		finish_request(controller, request, parked_outcome(controller, request));
 	}
 
-	/* A finished execution gives back its session's pending hold. */
-	if (done) {
+	/* The ended executions give back their session's pending holds. */
+	if (ended.count != 0) {
 		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
-		if (session->pending == 0)
+		if (session->pending < ended.count)
 			__builtin_trap();
-		session->pending--;
+		session->pending -= ended.count;
 
-		/* A drain waiting for the session sees the hold given back. */
+		/* A drain waiting for the session sees the holds given back. */
 		waitq_wake_all(&controller->worker.retired);
 
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-		/* Capacity observers see the finished execution. */
+		/* Capacity observers see the ended executions. */
 		drv_gpu_capacity_changed(controller->gpu);
 	}
 
-	/* Succeeded: one step ran or one execution ended. */
+	/* Succeeded: one step ran, or settling executions were looked at. */
 	return 0;
+}
+
+/*
+ * Ends the session's settling executions that may end, the oldest first.
+ *
+ * A stopped session's or a faulted engine's end without their settle.  The
+ * oldest may wait a little when wait is set; one that may not end yet keeps
+ * the later ones.  The ended ones are added to ended.  Reports a settle or
+ * an end that failed (the engine's), after which the rest wait for the next
+ * turn.  The caller holds the controller mutex.
+ */
+static int
+retire_settled(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_session *session,
+	bool wait,
+	struct worker_ended *ended)
+{
+	struct bcm2711_render_execution *execution;
+	unsigned long enabled;
+	uint64_t ordinal;
+	uint64_t bytes;
+	const char *stage;
+	int outcome;
+	int finished;
+	int first;
+
+	/* The oldest settling execution each time round, until none is left or one may not end yet. */
+	first = 0;
+	while (first == 0) {
+		/* The oldest, and whether a stop or a fault ends it without its settle. */
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		execution = session->settling_head;
+		outcome = 0;
+		if (session->stopping)
+			outcome = ECANCELED;
+		if (controller->space.native->hardware.faulted || controller->worker.uncertain)
+			outcome = EIO;
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		/* None is left. */
+		if (execution == NULL)
+			break;
+
+		/* Its settle, unless it ends without; only the first one looked at may wait. */
+		stage = "settle";
+		if (outcome == 0) {
+			outcome = execution->settle(controller, execution, wait);
+			wait = false;
+			if (outcome == EINPROGRESS)
+				break;
+			first = outcome;
+		}
+
+		/* It leaves the list before its end frees it. */
+		enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
+
+		session->settling_head = execution->next;
+		if (session->settling_head == NULL)
+			session->settling_tail = NULL;
+		execution->next = NULL;
+
+		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+
+		/* Its end publishes the outcome; it counts as ended with its bytes. */
+		ordinal = execution->ordinal;
+		bytes = execution->bytes;
+		finished = execution->end(controller, execution, outcome);
+		ended->count++;
+		ended->bytes += bytes;
+		if (first == 0 && finished != 0) {
+			first = finished;
+			stage = "end";
+		}
+
+		/* A failed settle or end says so; the caller faults the engine. */
+		if (first != 0)
+			failure_line(controller, session, stage, first, true, false, ordinal);
+	}
+
+	/* Reports a settle or an end that failed. */
+	if (first != 0)
+		return first;
+
+	/* Succeeded: the settling executions that may end have ended. */
+	return 0;
+}
+
+/*
+ * Tells a submission's reserved marker which execution it completes.
+ *
+ * The producer reserves the marker before the submission and commits it
+ * after, holding its queue, so the one reserved marker of the execution's
+ * domain is the submission's own.  With none or more than one, no marker
+ * learns it and the markers keep the cautious rule (see marker_held).  The
+ * caller holds the native IRQ guard.
+ */
+static void
+bind_marker(
+	struct bcm2711_render_device *controller,
+	struct bcm2711_render_session *session,
+	struct bcm2711_render_execution *execution)
+{
+	struct bcm2711_render_request *request;
+	struct bcm2711_render_request *found;
+	uint32_t count;
+	uint32_t slot;
+
+	/* The session's reserved markers of the execution's domain. */
+	found = NULL;
+	count = 0;
+	for (slot = 0; slot < BCM2711_RENDER_MARKERS; slot++) {
+		request = &controller->worker.markers[slot];
+		if (request->state != REQUEST_RESERVED)
+			continue;
+		if (request->session != session || request->timeline != execution->timeline)
+			continue;
+		found = request;
+		count++;
+	}
+
+	/* Only a single one is surely the submission's own. */
+	if (count == 1)
+		found->ordinal = execution->ordinal;
+
+	/* Succeeded: the marker knows its execution, or no marker does. */
+	return;
+}
+
+/*
+ * Tells whether a domain completion waits for a settling execution.
+ *
+ * A marker that knows its execution waits for that one to leave the
+ * settling list; one that does not waits for every settling execution its
+ * count covers.  The caller holds the native IRQ guard.
+ */
+static bool
+marker_held(
+	const struct bcm2711_render_session *session,
+	const struct bcm2711_render_request *request)
+{
+	const struct bcm2711_render_execution *execution;
+
+	/* The settling executions, oldest first. */
+	for (execution = session->settling_head; execution != NULL; execution = execution->next) {
+		if (request->ordinal != 0) {
+			/* The marker's own execution still settles. */
+			if (execution->ordinal == request->ordinal)
+				return true;
+		} else if (execution->ordinal <= request->required) {
+			/* A settling execution the marker's count covers, when it does not know its own. */
+			return true;
+		}
+	}
+
+	/* Succeeded: no settling execution holds the completion. */
+	return false;
+}
+
+/* Tells whether a session's oldest queued execution uses a run the display holds; the caller holds the native IRQ guard. */
+static bool
+session_display(
+	const struct bcm2711_render_session *session)
+{
+	/* A session with only settling executions runs nothing for the display. */
+	if (session->execution_head == NULL)
+		return false;
+
+	/* Succeeded: reports the oldest execution's mark. */
+	return session->execution_head->display;
+}
+
+/*
+ * Says which execution failed, at which stage, and whether the engine went
+ * with it, within the log's bound: ordinal is its number in the session.
+ * The session's count is read without its guard, for the log only; the
+ * caller holds the controller mutex.
+ */
+static void
+failure_line(
+	struct bcm2711_render_device *controller,
+	const struct bcm2711_render_session *session,
+	const char *stage,
+	int error,
+	bool failed,
+	bool display,
+	uint64_t ordinal)
+{
+	bool allowed;
+
+	/* A failing client cannot flood the log. */
+	allowed = bcm2711_render_failure_line(controller);
+	if (!allowed)
+		return;
+
+	/* The line, with the execution's place in its session. */
+	kern_logf(
+		"v3d: execution failed stage=%s error=%d engine=%u display=%u session=%llu/%llu\n",
+		stage,
+		error,
+		(unsigned)failed,
+		(unsigned)display,
+		(unsigned long long)ordinal,
+		(unsigned long long)session->submitted);
+
+	/* Succeeded: the failure is in the log. */
+	return;
 }
 
 /*
@@ -1480,9 +1763,11 @@ bcm2711_render_executor_step(
  *
  * A request with a domain (a producer's marker or a selected context fence)
  * completes only after every execution its session accepted before it, a
- * canceled one too: its completion proves the earlier work retired.  The
- * request's own outcome is kept for the release.  A request without a domain
- * reports decoder progress and completes at once.
+ * canceled one too: its completion proves the earlier work retired.  A
+ * producer's marker also waits while its own execution settles (ws236
+ * p010), so the fence it proves has signaled.  The request's own outcome is
+ * kept for the release.  A request without a domain reports decoder
+ * progress and completes at once.
  */
 static bool
 park_request(
@@ -1493,6 +1778,7 @@ park_request(
 	struct bcm2711_render_session *session;
 	unsigned long enabled;
 	bool parked;
+	bool held;
 
 	/* Decoder notifications do not wait. */
 	if (request->timeline == 0)
@@ -1500,11 +1786,13 @@ park_request(
 	session = request->session;
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
+	/* Earlier executions not yet run, or its own (or, not known, an earlier) one still settling, keep it. */
 	parked = false;
-	if (session->executed < session->submitted) {
+	request->required = session->submitted;
+	held = marker_held(session, request);
+	if (session->executed < session->submitted || held) {
 		request->state = REQUEST_PARKED;
 		request->canceled = error;
-		request->required = session->submitted;
 		request->parked_next = controller->worker.parked;
 		controller->worker.parked = request;
 		parked = true;
@@ -1529,17 +1817,20 @@ select_session(
 	struct bcm2711_render_worker *worker)
 {
 	struct bcm2711_render_session *session;
+	bool display;
 
-	/* After a display step, the first session whose oldest execution is not a display one. */
+	/* After a display step, the first session whose oldest execution is not a display one (or that has only settling ones). */
 	if (worker->display_last) {
 		for (session = worker->ready_head; session != NULL; session = session->ready_next) {
-			if (!session->execution_head->display)
+			display = session_display(session);
+			if (!display)
 				return session;
 		}
 	} else {
 		/* Otherwise the first display execution. */
 		for (session = worker->ready_head; session != NULL; session = session->ready_next) {
-			if (session->execution_head->display)
+			display = session_display(session);
+			if (display)
 				return session;
 		}
 	}

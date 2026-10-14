@@ -44,9 +44,15 @@ struct bcm2711_render_session {
 	 * round robin, how many executions were submitted and executed (a
 	 * parked domain completion waits for executed to reach its count), and the staging
 	 * bytes the queued executions may hold.
+	 *
+	 * The settling list holds the executions that ran and wait for their
+	 * settle to end, in submission order (ws236 p010): executed counts them
+	 * already; their bytes, pending holds and own markers stay until they end.
 	 */
 	struct bcm2711_render_execution *execution_head;
 	struct bcm2711_render_execution *execution_tail;
+	struct bcm2711_render_execution *settling_head;
+	struct bcm2711_render_execution *settling_tail;
 	struct bcm2711_render_session *ready_next;
 	bool ready;
 	uint64_t submitted;
