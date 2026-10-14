@@ -292,4 +292,4 @@ FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … s
 2. array・cube・3D・compare・size（`textureSize` = TXQ）: IR の TEXTURE に image の次元が無い。`component` の空き bit（24 以上）か新しい欄に次元と array の印を足す共有の front の変更が要る（i915・V3D の backend と共有、Q1 の判断）。
 3. depth の出力（`gl_FragDepth`）・second colour・geometry: desktop は使わない。
 4. 段 D（latency の表による並べ替え、operand の再利用）: 正しさの後。
-5. fragment の discard の後の implicit LOD の TEX（quad の helper が消える）: IR が if-convert して KILL を元の位置で出すので、discard した pixel の隣の LOD は未定義になりうる。desktop の shader で discard の後に texture を読む物があれば見直す。
+5. fragment の discard の後の implicit LOD の TEX（quad の helper が消える）: IR が if-convert して KILL を元の位置で出すので、discard した pixel の隣の LOD は未定義になりうる。desktop の shader で discard を使うのは libGL の fixed.frag だけ（desktop の外）。
