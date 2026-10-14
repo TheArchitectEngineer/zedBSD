@@ -81,6 +81,13 @@ static layout_unit flex_cross_outer(const struct layout_box *item, int row);
 static int flex_align_of(const struct layout_box *box, const struct layout_box *item);
 static layout_unit flex_length(const struct css_length *length, layout_unit basis);
 
+/* One flex line while the container's lines are being sized. */
+struct flex_line {
+	size_t start;
+	size_t end;
+	layout_unit cross;
+};
+
 /*
  * Lays out the content of a flex container: its in-flow children as flex
  * items, in lines along its main axis; sets their positions (their border
@@ -108,6 +115,15 @@ layout_flex(
 	size_t start;
 	size_t end;
 	size_t index;
+	struct flex_line *lines;
+	size_t line_count;
+	layout_unit cross_size;
+	layout_unit free_space;
+	layout_unit line_gap_extra;
+	layout_unit content_cross;
+	int first_line;
+	int value;
+	int flex;
 	int row;
 	int wrap;
 	int error;
@@ -177,8 +193,16 @@ layout_flex(
 			available = used;
 	}
 
-	/* Line by line: the items that fit, flexed, laid out and placed. */
-	cross_cursor = 0;
+	/* Line by line: the items that fit, flexed and laid out; their cross sizes decide the lines'. */
+	lines = NULL;
+	line_count = 0;
+	if (count != 0) {
+		lines = calloc(count, sizeof(*lines));
+		if (lines == NULL) {
+			free(items);
+			return ENOMEM;
+		}
+	}
 	start = 0;
 	while (start < count) {
 		/* The items of the line: all of them without wrapping or a size to wrap in. */
@@ -197,6 +221,7 @@ layout_flex(
 		/* The automatic minimums of a line that has to shrink. */
 		error = flex_auto_minimums(tree, items + start, end - start, available, gap_main);
 		if (error != 0) {
+			free(lines);
 			free(items);
 			return error;
 		}
@@ -207,6 +232,7 @@ layout_flex(
 		for (index = start; index < end; index++) {
 			error = flex_lay_item(tree, box, &items[index], row);
 			if (error != 0) {
+				free(lines);
 				free(items);
 				return error;
 			}
@@ -229,26 +255,119 @@ layout_flex(
 		if (!wrap && !row)
 			line_cross = box->width;
 
-		/* Stretch and a definite percentage cross size must reach the item's descendants too. */
+		lines[line_count].start = start;
+		lines[line_count].end = end;
+		lines[line_count].cross = line_cross;
+		line_count++;
+		start = end;
+	}
+
+	/* A wrapping container with a definite cross size shares its free space among the lines (align-content). */
+	cross_size = -1;
+	if (row && box->style.height.unit == CSS_UNIT_PX) {
+		sizing = 0;
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			sizing = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		cross_size = layout_from_px(box->style.height.value) - sizing;
+	}
+	if (!row)
+		cross_size = box->width;
+	cross_cursor = 0;
+	line_gap_extra = 0;
+	if (wrap && cross_size >= 0 && line_count != 0) {
+		used = gap_cross * (layout_unit)(line_count - 1U);
+		for (index = 0; index < line_count; index++)
+			used += lines[index].cross;
+		free_space = cross_size - used;
+		value = box->style.align_content;
+		flex = (box->style.flex_keywords & 2u) != 0;
+		if (box->style.flex_wrap == CSS_FLEX_WRAP_REVERSE && !flex) {
+			/* start and end follow the writing mode, which wrap-reverse turns around. */
+			if (value == CSS_ALIGN_START)
+				value = CSS_ALIGN_END;
+			else if (value == CSS_ALIGN_END)
+				value = CSS_ALIGN_START;
+		}
+		if (free_space < 0 && (value == CSS_ALIGN_SPACE_BETWEEN || value == CSS_ALIGN_STRETCH ||
+		    value == CSS_ALIGN_NORMAL))
+			value = CSS_ALIGN_START;
+		if (free_space < 0 && (value == CSS_ALIGN_SPACE_AROUND || value == CSS_ALIGN_SPACE_EVENLY))
+			value = CSS_ALIGN_START;
+		switch (value) {
+		case CSS_ALIGN_STRETCH:
+		case CSS_ALIGN_NORMAL:
+			for (index = 0; index < line_count; index++)
+				lines[index].cross += flex_divide_nearest(free_space, (layout_unit)line_count);
+			break;
+		case CSS_ALIGN_END:
+			cross_cursor = free_space;
+			break;
+		case CSS_ALIGN_CENTER:
+			cross_cursor = free_space / 2;
+			break;
+		case CSS_ALIGN_SPACE_BETWEEN:
+			if (line_count > 1)
+				line_gap_extra = flex_divide_nearest(free_space, (layout_unit)(line_count - 1U));
+			break;
+		case CSS_ALIGN_SPACE_AROUND:
+			cross_cursor = flex_divide_nearest(free_space, (layout_unit)(line_count * 2U));
+			line_gap_extra = flex_divide_nearest(free_space, (layout_unit)line_count);
+			break;
+		case CSS_ALIGN_SPACE_EVENLY:
+			cross_cursor = flex_divide_nearest(free_space, (layout_unit)(line_count + 1U));
+			line_gap_extra = cross_cursor;
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* Each line: its items stretched across and placed. */
+	first_line = 1;
+	content_cross = 0;
+	for (index = 0; index < line_count; index++) {
+		line_cross = lines[index].cross;
 		percentage_basis = -1;
 		if (!wrap && row && box->style.height.unit == CSS_UNIT_PX)
 			percentage_basis = line_cross;
-		error = flex_relay_cross(tree, box, items + start, end - start, row, line_cross, percentage_basis);
+		error = flex_relay_cross(tree, box, items + lines[index].start, lines[index].end - lines[index].start,
+		    row, line_cross, percentage_basis);
 		if (error != 0) {
+			free(lines);
 			free(items);
 			return error;
 		}
 
 		/* The items' places along both axes. */
-		if (cross_cursor > 0)
-			cross_cursor += gap_cross;
-		flex_place_line(box, items + start, end - start, row, available, gap_main, cross_cursor, line_cross);
+		if (!first_line) {
+			cross_cursor += gap_cross + line_gap_extra;
+			content_cross += gap_cross;
+		}
+		first_line = 0;
+		flex_place_line(box, items + lines[index].start, lines[index].end - lines[index].start, row, available,
+		    gap_main, cross_cursor, line_cross);
 		cross_cursor += line_cross;
-		start = end;
+		content_cross += line_cross;
 	}
 
+	/* wrap-reverse stacks the lines from the far cross edge: mirrors every item across the container's cross extent. */
+	if (box->style.flex_wrap == CSS_FLEX_WRAP_REVERSE && line_count != 0) {
+		layout_unit extent;
+
+		extent = cross_size >= 0 ? cross_size : cross_cursor;
+		for (index = 0; index < count; index++) {
+			child = items[index].box;
+			cross = flex_cross_outer(child, row);
+			if (row)
+				child->y = extent - (child->y - child->margin[CSS_TOP] + cross) + child->margin[CSS_TOP];
+			else
+				child->x = extent - (child->x - child->margin[CSS_LEFT] + cross) + child->margin[CSS_LEFT];
+		}
+	}
+	free(lines);
+
 	/* The container's content height: its lines' (a row's), or its items' (a column's). */
-	box->height = cross_cursor;
+	box->height = content_cross;
 	if (!row) {
 		box->height = 0;
 		for (index = 0; index < count; index++) {
