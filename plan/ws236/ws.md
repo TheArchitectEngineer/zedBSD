@@ -8,14 +8,14 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
-Resume point: p001 の設計の第 1 版（[design.md](design.md)）を書いた。review を待たずに p002（VCHIQ の核）へ。
+Resume point: 設計は review-1 を反映（[design.md](design.md) §14）。p003（MMAL の client と R1 の probe）を進め、probe を T1 の実機に出す。R1 が外れたらベータ2 は Baseline だけ。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-14）
 
 「VC6での動画再生支援に対応するWSを作れますか？見積もりをください。」
 
-## 前提（Q1 の理解、未確認の点を含む）
+## 前提（Q1 の理解、2026-10-14 の作成時。決定と設計で置き換わった点は design.md が正）
 
 - RPi4 の H.264 の decode（最大 1080p60）は VideoCore の VPU の firmware（start4.elf）の中にあり、ARM 側からは VCHIQ（mailbox と共有のメモリの message の口）越しに MMAL の `video_decode` を使う。Linux では bcm2835-codec（V4L2 の M2M）がこれを包む。H.264 の encode も同じ道にある（Pi 4 まで）。
 - HEVC（最大 4Kp60）は別の専用の block（rpivid、stateless）。公開の datasheet は無く、資料は Linux の driver（GPL）だけ。写さずに作るには register の振る舞いを独自に書き起こす必要があり、危険が大きい。
@@ -39,7 +39,7 @@ Resume point: p001 の設計の第 1 版（[design.md](design.md)）を書いた
 | ID | 内容 | 見積もり | 依存 |
 | --- | --- | --- | --- |
 | [ws236-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)、in-progress: 第 1 版、review 待ち）: VCHIQ・MMAL の message、参考の source の license、MMAL の decode の順・遅れの設定、Vulkan Video の stateless の API との橋渡しの設計、VkImage の memory、V3D の device に queue を足すか別の device か | 6 LW | — |
-| ws236-p002 | kernel: VCHIQ の driver の核（WS207 p004 と共用） | 10 LW | p001 |
+| [ws236-p002](phase002/phase.md) | kernel: VCHIQ の driver の核（WS207 p004 と共用、in-progress: 実装・host 試験済み、main に merge 済み e4c3fce22、実機は p003 の probe と一緒） | 10 LW | p001 |
 | ws236-p003 | kernel: MMAL の `video_decode` の client（H.264、port・buffer・EOS・flush） | 10 LW | p002 |
 | ws236-p004 | kernel の Vulkan の executor: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
 | ws236-p005 | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験 | 3 LW | p004 |
