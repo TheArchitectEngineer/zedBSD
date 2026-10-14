@@ -21,6 +21,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void sm75_machine_issue(struct test_run *run, struct test_thread *t, const struct nvrtx_sm75_word *word);
+static void sm75_machine_retire(struct test_run *run, struct test_thread *t);
+static uint32_t sm75_machine_read(struct test_run *run, struct test_thread *t, uint32_t reg);
+static void sm75_machine_write(struct test_run *run, struct test_thread *t, uint32_t reg, uint32_t value);
+static int sm75_machine_predicate(struct test_run *run, struct test_thread *t, uint32_t predicate, uint32_t reader);
+static void sm75_machine_predicate_write(struct test_thread *t, uint32_t predicate, int value);
+static void sm75_machine_exit_check(struct test_run *run, struct test_thread *t);
+static void sm75_machine_hazard(struct test_run *run, struct test_thread *t, const char *what, uint32_t reg);
+static uint32_t sm75_machine_class(uint32_t opcode);
+static uint32_t sm75_machine_raw(uint32_t writer, uint32_t reader);
 static void sm75_machine_texture(struct test_run *run, struct test_thread *t, const struct nvrtx_sm75_word *word);
 static int32_t sm75_machine_offset(uint32_t bits, unsigned low);
 
@@ -153,7 +163,6 @@ sm75_machine_invoke(
 	uint32_t s0;
 	uint32_t s1;
 	uint32_t s2;
-	uint32_t wait;
 	uint32_t lut;
 	uint32_t bit;
 	uint32_t value;
@@ -165,7 +174,7 @@ sm75_machine_invoke(
 
 	code = run->binary->code;
 
-	for (; t->steps < TEST_STEPS; t->steps++, t->pc++) {
+	for (; t->steps < TEST_STEPS; sm75_machine_retire(run, t), t->steps++, t->pc++) {
 		if (t->pc * 4U >= run->binary->code_words) {
 			printf("  ran past the code\n");
 			run->failed = 1;
@@ -174,20 +183,9 @@ sm75_machine_invoke(
 		memcpy(word.w, &code[t->pc * 4U], sizeof(word.w));
 		t->r[NVRTX_SM75_RZ] = 0U;
 
-		/* The serial dependences. */
-		wait = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_WAIT_LOW, NVRTX_SM75_WAIT_BITS);
-		if ((wait & t->pending) != t->pending) {
-			printf("  instruction %u does not wait for scoreboards 0x%x\n", t->pc, t->pending);
-			run->failed = 1;
-		}
-		t->pending = 0U;
-		if (nvrtx_sm75_get(&word, NVRTX_SM75_WRITE_BAR_LOW, 3U) != NVRTX_SM75_BAR_NONE)
-			t->pending |= 1U << nvrtx_sm75_get(&word, NVRTX_SM75_WRITE_BAR_LOW, 3U);
-		if (nvrtx_sm75_get(&word, NVRTX_SM75_READ_BAR_LOW, 3U) != NVRTX_SM75_BAR_NONE)
-			t->pending |= 1U << nvrtx_sm75_get(&word, NVRTX_SM75_READ_BAR_LOW, 3U);
-
-		/* The guard. */
-		guard = t->p[nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_LOW, 3U)];
+		/* The dependences: the issue cycle, the scoreboards waited for and set, the guard. */
+		sm75_machine_issue(run, t, &word);
+		guard = sm75_machine_predicate(run, t, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_LOW, 3U), TEST_CLASS_GUARD);
 		if (nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_NOT, 1U) != 0U)
 			guard = !guard;
 		opcode = (uint32_t)nvrtx_sm75_get(&word, 0U, 12U);
@@ -195,6 +193,7 @@ sm75_machine_invoke(
 
 		/* The instructions that are not of the ALU form. */
 		if (opcode == NVRTX_SM75_OP_EXIT) {
+			sm75_machine_exit_check(run, t);
 			memcpy(run->exit_regs, t->r, sizeof(run->exit_regs));
 			t->state = TEST_DONE;
 			return;
@@ -204,13 +203,14 @@ sm75_machine_invoke(
 		if (opcode == NVRTX_SM75_OP_NOP || opcode == NVRTX_SM75_OP_BSSY || opcode == NVRTX_SM75_OP_BSYNC || opcode == NVRTX_SM75_OP_MEMBAR)
 			continue;
 		if (opcode == NVRTX_SM75_OP_BAR) {
+			sm75_machine_retire(run, t);
 			t->state = TEST_AT_BARRIER;
 			t->pc++;
 			t->steps++;
 			return;
 		}
 		if (opcode == NVRTX_SM75_OP_BRA) {
-			take = t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U)];
+			take = sm75_machine_predicate(run, t, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U), TEST_CLASS_DECOUPLED);
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_NOT, 1U) != 0U)
 				take = !take;
 			if (take) {
@@ -222,26 +222,27 @@ sm75_machine_invoke(
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_ALD) {
-			t->r[dst] = run->attr_in[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U];
+			sm75_machine_write(run, t, dst, run->attr_in[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U]);
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_AST) {
-			run->attr_out[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U] = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			run->attr_out[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U] = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U));
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_IPA) {
 			/* The fragment's w is 2; a perspective input (by the header's map) arrives multiplied by it. */
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IPA_ADDRESS_LOW, 8U);
-			t->r[dst] = run->attr_in[value];
+			bit = run->attr_in[value];
 			if (value >= NVRTX_SM75_ATTR_GENERIC / 4U && value < NVRTX_SM75_ATTR_GENERIC_END / 4U) {
 				lut = (run->binary->sph[(NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (value - NVRTX_SM75_ATTR_GENERIC / 4U) * 2U) / 32U] >> ((NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (value - NVRTX_SM75_ATTR_GENERIC / 4U) * 2U) % 32U)) & 3U;
 				if (lut == NVRTX_SM75_IMAP_PERSPECTIVE)
-					t->r[dst] = sm75_machine_bits(sm75_machine_float(t->r[dst]) * 2.0f);
+					bit = sm75_machine_bits(sm75_machine_float(bit) * 2.0f);
 				if (lut == 0U) {
 					printf("  IPA of an input the header does not map\n");
 					run->failed = 1;
 				}
 			}
+			sm75_machine_write(run, t, dst, bit);
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_TEX || opcode == NVRTX_SM75_OP_TLD) {
@@ -254,7 +255,7 @@ sm75_machine_invoke(
 			return;
 		}
 		if (opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS) {
-			s0 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U)];
+			s0 = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U));
 			if ((s0 & 3U) != 0U || s0 / 4U >= run->shared_words) {
 				printf("  a shared access at %u outside the %u words\n", s0, run->shared_words);
 				run->failed = 1;
@@ -263,7 +264,7 @@ sm75_machine_invoke(
 			cell = &run->shared[s0 / 4U];
 		} else if (opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS) {
 			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U);
-			wide = ((uint64_t)t->r[s0 + 1U] << 32) | t->r[s0];
+			wide = ((uint64_t)sm75_machine_read(run, t, s0 + 1U) << 32) | sm75_machine_read(run, t, s0);
 			cell = sm75_machine_memory(run, wide);
 			if (cell == NULL)
 				return;
@@ -271,23 +272,23 @@ sm75_machine_invoke(
 			cell = NULL;
 		}
 		if (opcode == NVRTX_SM75_OP_LDS) {
-			t->r[dst] = *cell;
+			sm75_machine_write(run, t, dst, *cell);
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_STS) {
-			*cell = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			*cell = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U));
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_ATOMS_CAS || opcode == NVRTX_SM75_OP_ATOMG_CAS) {
 			value = *cell;
-			if (value == t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)])
-				*cell = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_CAS_DATA_LOW, 8U)];
-			t->r[dst] = value;
+			if (value == sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)))
+				*cell = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_CAS_DATA_LOW, 8U));
+			sm75_machine_write(run, t, dst, value);
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMG) {
 			value = *cell;
-			s1 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			s1 = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U));
 			lut = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_ATOM_OP_LOW, 4U);
 			bit = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_ATOM_TYPE_LOW, 3U);
 			if (lut == NVRTX_SM75_ATOM_ADD)
@@ -306,15 +307,15 @@ sm75_machine_invoke(
 				*cell = (bit == NVRTX_SM75_ATOM_I32) ? (((int32_t)s1 > (int32_t)value) ? s1 : value) : ((s1 > value) ? s1 : value);
 			else
 				run->failed = 1;
-			t->r[dst] = value;
+			sm75_machine_write(run, t, dst, value);
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_S2R) {
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_S2R_INDEX_LOW, 8U);
 			if (value >= NVRTX_SM75_SR_TID_X && value <= NVRTX_SM75_SR_TID_Z)
-				t->r[dst] = t->local[value - NVRTX_SM75_SR_TID_X];
+				sm75_machine_write(run, t, dst, t->local[value - NVRTX_SM75_SR_TID_X]);
 			else if (value >= NVRTX_SM75_SR_CTAID_X && value <= NVRTX_SM75_SR_CTAID_Z)
-				t->r[dst] = group[value - NVRTX_SM75_SR_CTAID_X];
+				sm75_machine_write(run, t, dst, group[value - NVRTX_SM75_SR_CTAID_X]);
 			else
 				run->failed = 1;
 			continue;
@@ -322,33 +323,49 @@ sm75_machine_invoke(
 		if (opcode == NVRTX_SM75_OP_LDC) {
 			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CB_INDEX_LOW, 5U);
 			s1 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CB_OFFSET_LOW, 16U);
-			t->r[dst] = sm75_machine_cb_word(run, s0, s1);
+			sm75_machine_write(run, t, dst, sm75_machine_cb_word(run, s0, s1));
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_MEM_TYPE_LOW, 3U) == NVRTX_SM75_MEM_B64)
-				t->r[dst + 1U] = sm75_machine_cb_word(run, s0, s1 + 4U);
+				sm75_machine_write(run, t, dst + 1U, sm75_machine_cb_word(run, s0, s1 + 4U));
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_STG) {
 			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U);
-			wide = ((uint64_t)t->r[s0 + 1U] << 32) | t->r[s0];
+			wide = ((uint64_t)sm75_machine_read(run, t, s0 + 1U) << 32) | sm75_machine_read(run, t, s0);
 			wide += (uint64_t)nvrtx_sm75_get(&word, NVRTX_SM75_MEM_OFFSET_LOW, 24U);
 			cell = sm75_machine_memory(run, wide);
 			if (cell == NULL)
 				return;
 			if (opcode == NVRTX_SM75_OP_LDG)
-				t->r[dst] = *cell;
+				sm75_machine_write(run, t, dst, *cell);
 			else
-				*cell = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+				*cell = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U));
 			continue;
 		}
 
 		/* The ALU form: the three sources by the form. */
 		alu = (uint32_t)nvrtx_sm75_get(&word, 0U, 9U);
 		form = (uint32_t)nvrtx_sm75_get(&word, 9U, 3U);
-		s0 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U)];
+
+		/* The first source, for the operations that have one. */
+		s0 = 0U;
+		if (alu != NVRTX_SM75_OP_MOV && alu != NVRTX_SM75_OP_MUFU && alu != NVRTX_SM75_OP_I2F && alu != NVRTX_SM75_OP_F2I && alu != NVRTX_SM75_OP_FRND)
+			s0 = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U));
+
+		/* The register of the third slot, for the operations that have one and FADD's moved second source; an IMAD.WIDE reads it late. */
+		s2 = 0U;
+		if (alu == NVRTX_SM75_OP_FMUL || alu == NVRTX_SM75_OP_FFMA || alu == NVRTX_SM75_OP_FMNMX || alu == NVRTX_SM75_OP_IADD3 || alu == NVRTX_SM75_OP_IMAD ||
+		    alu == NVRTX_SM75_OP_IMAD_WIDE || alu == NVRTX_SM75_OP_LOP3 || alu == NVRTX_SM75_OP_SHF ||
+		    (alu == NVRTX_SM75_OP_FADD && (form == NVRTX_SM75_FORM_IMM_SRC2 || form == NVRTX_SM75_FORM_CB_SRC2))) {
+			if (alu == NVRTX_SM75_OP_IMAD_WIDE)
+				t->read_class = TEST_CLASS_WIDE_ADDEND;
+			s2 = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U));
+			t->read_class = t->instruction_class;
+		}
+
+		/* The second source by the form. */
 		s1 = 0U;
-		s2 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U)];
 		if (form == NVRTX_SM75_FORM_REG) {
-			s1 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC1_LOW, 8U)];
+			s1 = sm75_machine_read(run, t, nvrtx_sm75_get(&word, NVRTX_SM75_SRC1_LOW, 8U));
 		} else if (form == NVRTX_SM75_FORM_IMM) {
 			s1 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IMM_LOW, 32U);
 		} else if (form == NVRTX_SM75_FORM_CB) {
@@ -363,18 +380,22 @@ sm75_machine_invoke(
 		}
 
 		/* The predicate input A, and the operation. */
-		take = t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U)];
-		if (nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_NOT, 1U) != 0U)
-			take = !take;
+		take = 1;
+		if (alu == NVRTX_SM75_OP_SEL || alu == NVRTX_SM75_OP_FMNMX || alu == NVRTX_SM75_OP_FSETP || alu == NVRTX_SM75_OP_ISETP ||
+		    alu == NVRTX_SM75_OP_IADD3 || alu == NVRTX_SM75_OP_IMAD || alu == NVRTX_SM75_OP_IMAD_WIDE || alu == NVRTX_SM75_OP_LOP3) {
+			take = sm75_machine_predicate(run, t, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U), t->instruction_class);
+			if (nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_NOT, 1U) != 0U)
+				take = !take;
+		}
 		switch (alu) {
 		case NVRTX_SM75_OP_MOV:
-			t->r[dst] = s1;
+			sm75_machine_write(run, t, dst, s1);
 			break;
 		case NVRTX_SM75_OP_SEL:
-			t->r[dst] = take ? s0 : s1;
+			sm75_machine_write(run, t, dst, take ? s0 : s1);
 			break;
 		case NVRTX_SM75_OP_FMNMX:
-			t->r[dst] = sm75_machine_bits(take ? fminf(sm75_machine_float(s0), sm75_machine_float(s1)) : fmaxf(sm75_machine_float(s0), sm75_machine_float(s1)));
+			sm75_machine_write(run, t, dst, sm75_machine_bits(take ? fminf(sm75_machine_float(s0), sm75_machine_float(s1)) : fmaxf(sm75_machine_float(s0), sm75_machine_float(s1))));
 			break;
 		case NVRTX_SM75_OP_FSETP:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CMP_LOW, 4U);
@@ -386,8 +407,7 @@ sm75_machine_invoke(
 				guard = sm75_machine_float(s0) == sm75_machine_float(s1);
 			else
 				guard = !(sm75_machine_float(s0) == sm75_machine_float(s1));
-			t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U)] = guard && take;
-			t->p[7] = 1;
+			sm75_machine_predicate_write(t, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U), guard && take);
 			break;
 		case NVRTX_SM75_OP_ISETP:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CMP_LOW, 3U);
@@ -396,8 +416,7 @@ sm75_machine_invoke(
 			} else {
 				guard = (value == NVRTX_SM75_ICMP_LT) ? (s0 < s1) : (value == NVRTX_SM75_ICMP_GE) ? (s0 >= s1) : (value == NVRTX_SM75_ICMP_EQ) ? (s0 == s1) : (s0 != s1);
 			}
-			t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U)] = guard && take;
-			t->p[7] = 1;
+			sm75_machine_predicate_write(t, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U), guard && take);
 			break;
 		case NVRTX_SM75_OP_IADD3:
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_NEG, 1U) != 0U)
@@ -406,7 +425,7 @@ sm75_machine_invoke(
 				s1 = 0U - s1;
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_NEG, 1U) != 0U)
 				s2 = 0U - s2;
-			t->r[dst] = s0 + s1 + s2;
+			sm75_machine_write(run, t, dst, s0 + s1 + s2);
 			break;
 		case NVRTX_SM75_OP_LOP3:
 			lut = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_LUT_LOW, 8U);
@@ -417,7 +436,7 @@ sm75_machine_invoke(
 				index = (((s0 >> bit) & 1U) << 2) | (((s1 >> bit) & 1U) << 1) | ((s2 >> bit) & 1U);
 				value |= ((lut >> index) & 1U) << bit;
 			}
-			t->r[dst] = value;
+			sm75_machine_write(run, t, dst, value);
 			break;
 		case NVRTX_SM75_OP_SHF:
 			wide = ((uint64_t)s2 << 32) | s0;
@@ -430,7 +449,7 @@ sm75_machine_invoke(
 			} else {
 				wide <<= s1;
 			}
-			t->r[dst] = (nvrtx_sm75_get(&word, NVRTX_SM75_SHF_HIGH, 1U) != 0U) ? (uint32_t)(wide >> 32) : (uint32_t)wide;
+			sm75_machine_write(run, t, dst, (nvrtx_sm75_get(&word, NVRTX_SM75_SHF_HIGH, 1U) != 0U) ? (uint32_t)(wide >> 32) : (uint32_t)wide);
 			break;
 		case NVRTX_SM75_OP_FADD:
 		case NVRTX_SM75_OP_FMUL:
@@ -445,32 +464,34 @@ sm75_machine_invoke(
 			} else {
 				f = sm75_machine_float(s0) + sm75_machine_float(s1);
 			}
-			t->r[dst] = sm75_machine_bits(f);
+			sm75_machine_write(run, t, dst, sm75_machine_bits(f));
 			break;
 		case NVRTX_SM75_OP_IMAD:
-			t->r[dst] = s0 * s1 + s2;
+			sm75_machine_write(run, t, dst, s0 * s1 + s2);
 			break;
 		case NVRTX_SM75_OP_IMAD_WIDE:
 			wide = (uint64_t)s0 * s1;
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U);
+			t->read_class = TEST_CLASS_WIDE_ADDEND;
 			if (value != NVRTX_SM75_RZ)
-				wide += ((uint64_t)t->r[value + 1U] << 32) | s2;
-			t->r[dst] = (uint32_t)wide;
-			t->r[dst + 1U] = (uint32_t)(wide >> 32);
+				wide += ((uint64_t)sm75_machine_read(run, t, value + 1U) << 32) | s2;
+			t->read_class = t->instruction_class;
+			sm75_machine_write(run, t, dst, (uint32_t)wide);
+			sm75_machine_write(run, t, dst + 1U, (uint32_t)(wide >> 32));
 			break;
 		case NVRTX_SM75_OP_F2I:
-			t->r[dst] = sm75_machine_f2i(sm75_machine_float(s1), (int)nvrtx_sm75_get(&word, NVRTX_SM75_F2I_SIGNED, 1U));
+			sm75_machine_write(run, t, dst, sm75_machine_f2i(sm75_machine_float(s1), (int)nvrtx_sm75_get(&word, NVRTX_SM75_F2I_SIGNED, 1U)));
 			break;
 		case NVRTX_SM75_OP_I2F:
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_I2F_SIGNED, 1U) != 0U)
-				t->r[dst] = sm75_machine_bits((float)(int32_t)s1);
+				sm75_machine_write(run, t, dst, sm75_machine_bits((float)(int32_t)s1));
 			else
-				t->r[dst] = sm75_machine_bits((float)s1);
+				sm75_machine_write(run, t, dst, sm75_machine_bits((float)s1));
 			break;
 		case NVRTX_SM75_OP_FRND:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_ROUND_LOW, 2U);
 			f = sm75_machine_float(s1);
-			t->r[dst] = sm75_machine_bits((value == NVRTX_SM75_ROUND_DOWN) ? floorf(f) : (value == NVRTX_SM75_ROUND_UP) ? ceilf(f) : (value == NVRTX_SM75_ROUND_ZERO) ? truncf(f) : nearbyintf(f));
+			sm75_machine_write(run, t, dst, sm75_machine_bits((value == NVRTX_SM75_ROUND_DOWN) ? floorf(f) : (value == NVRTX_SM75_ROUND_UP) ? ceilf(f) : (value == NVRTX_SM75_ROUND_ZERO) ? truncf(f) : nearbyintf(f)));
 			break;
 		case NVRTX_SM75_OP_MUFU:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_MUFU_LOW, 6U);
@@ -493,7 +514,7 @@ sm75_machine_invoke(
 				f = sinf(f * 6.28318530718f);
 			else
 				f = cosf(f * 6.28318530718f);
-			t->r[dst] = sm75_machine_bits(f);
+			sm75_machine_write(run, t, dst, sm75_machine_bits(f));
 			break;
 		default:
 			printf("  instruction %u: ALU opcode 0x%03x not interpreted\n", t->pc, alu);
@@ -635,15 +656,15 @@ sm75_machine_texture(
 	level = 0.0f;
 	if (mode == NVRTX_SM75_TEX_LOD_BIAS || mode == NVRTX_SM75_TEX_LOD_EXPLICIT) {
 		has_level = 1;
-		level = sm75_machine_float(t->r[extra]);
+		level = sm75_machine_float(sm75_machine_read(run, t, extra));
 		if (nvrtx_sm75_get(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS) == NVRTX_SM75_OP_TLD)
-			level = (float)(int32_t)t->r[extra];
+			level = (float)(int32_t)sm75_machine_read(run, t, extra);
 	}
 
 	/* The offset, after the level. */
 	offset = 0.0f;
 	if (nvrtx_sm75_get(word, NVRTX_SM75_TEX_AOFFI, 1U) != 0U) {
-		bits = t->r[extra + (uint32_t)has_level];
+		bits = sm75_machine_read(run, t, extra + (uint32_t)has_level);
 		offset = (float)(sm75_machine_offset(bits, 0U) * 256 + sm75_machine_offset(bits, 4U) * 16 + sm75_machine_offset(bits, 8U));
 	}
 
@@ -653,18 +674,18 @@ sm75_machine_texture(
 			printf("  TLD without an explicit level of detail\n");
 			run->failed = 1;
 		}
-		t->r[dst] = sm75_machine_bits((float)(int32_t)t->r[coordinates]);
-		t->r[dst + 1U] = sm75_machine_bits((float)(int32_t)t->r[coordinates + 1U]);
-		t->r[second] = sm75_machine_bits((float)handle);
-		t->r[second + 1U] = sm75_machine_bits(level + offset);
+		sm75_machine_write(run, t, dst, sm75_machine_bits((float)(int32_t)sm75_machine_read(run, t, coordinates)));
+		sm75_machine_write(run, t, dst + 1U, sm75_machine_bits((float)(int32_t)sm75_machine_read(run, t, coordinates + 1U)));
+		sm75_machine_write(run, t, second, sm75_machine_bits((float)handle));
+		sm75_machine_write(run, t, second + 1U, sm75_machine_bits(level + offset));
 		return;
 	}
 
 	/* A sample: the coordinates as they are. */
-	t->r[dst] = t->r[coordinates];
-	t->r[dst + 1U] = t->r[coordinates + 1U];
-	t->r[second] = sm75_machine_bits((float)handle);
-	t->r[second + 1U] = sm75_machine_bits(1.0f + level + offset);
+	sm75_machine_write(run, t, dst, sm75_machine_read(run, t, coordinates));
+	sm75_machine_write(run, t, dst + 1U, sm75_machine_read(run, t, coordinates + 1U));
+	sm75_machine_write(run, t, second, sm75_machine_bits((float)handle));
+	sm75_machine_write(run, t, second + 1U, sm75_machine_bits(1.0f + level + offset));
 }
 
 /* Reads one signed 4-bit component of a texel offset register. */
@@ -682,4 +703,356 @@ sm75_machine_offset(
 
 	/* Succeeded: the component. */
 	return value;
+}
+
+/*
+ * Issues an instruction for the dependence check: its cycle (the one
+ * before's plus that one's delay), the scoreboards it waits for (each set
+ * at least 2 cycles before, and then free: what they guarded is
+ * complete), and the ones it sets (which must be free).
+ */
+static void
+sm75_machine_issue(
+	struct test_run *run,
+	struct test_thread *t,
+	const struct nvrtx_sm75_word *word)
+{
+	uint32_t delay;
+	uint32_t wait;
+	uint32_t bar;
+	uint32_t reg;
+
+	/* The cycle, and the next one's. */
+	t->cycle = t->next_cycle;
+	delay = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_DELAY_LOW, NVRTX_SM75_DELAY_BITS);
+	if (delay == 0U) {
+		printf("  instruction %u has no delay\n", t->pc);
+		run->failed = 1;
+	}
+	t->next_cycle = t->cycle + delay;
+
+	/* The class, and nothing read or written yet. */
+	t->instruction_class = sm75_machine_class((uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS));
+	t->read_class = t->instruction_class;
+	t->read_count = 0U;
+	t->write_count = 0U;
+	t->issued = 1;
+
+	/* The scoreboards waited for. */
+	wait = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_WAIT_LOW, NVRTX_SM75_WAIT_BITS);
+	for (bar = 0U; bar < 6U; bar++) {
+		if ((wait & (1U << bar)) == 0U || (t->bar_busy & (1U << bar)) == 0U)
+			continue;
+		if (t->cycle < t->bar_set_cycle[bar] + 2U) {
+			printf("  instruction %u waits for scoreboard %u %u cycles after it was set\n", t->pc, bar, t->cycle - t->bar_set_cycle[bar]);
+			run->failed = 1;
+		}
+		for (reg = 0U; reg < 256U; reg++) {
+			t->gpr[reg].read_bars &= ~(1U << bar);
+			if (t->gpr[reg].write_bar == bar + 1U) {
+				t->gpr[reg].written = 0;
+				t->gpr[reg].write_bar = 0U;
+			}
+		}
+		t->bar_busy &= ~(1U << bar);
+	}
+
+	/* The scoreboards set, which nothing may still use. */
+	t->sets_write_bar = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_WRITE_BAR_LOW, NVRTX_SM75_BAR_BITS);
+	t->sets_read_bar = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_READ_BAR_LOW, NVRTX_SM75_BAR_BITS);
+	if ((t->sets_write_bar != NVRTX_SM75_BAR_NONE && (t->bar_busy & (1U << t->sets_write_bar)) != 0U) ||
+	    (t->sets_read_bar != NVRTX_SM75_BAR_NONE && (t->bar_busy & (1U << t->sets_read_bar)) != 0U)) {
+		printf("  instruction %u sets a scoreboard still in use\n", t->pc);
+		run->failed = 1;
+	}
+}
+
+/*
+ * Ends an instruction for the dependence check: a variable-latency one's
+ * reads and writes are in flight on its scoreboards (it must have set
+ * them), a fixed-latency one's at its cycle.
+ */
+static void
+sm75_machine_retire(
+	struct test_run *run,
+	struct test_thread *t)
+{
+	struct test_hazard *hazard;
+	uint32_t index;
+
+	/* Nothing issued. */
+	if (t->issued == 0)
+		return;
+	t->issued = 0;
+
+	/* A variable-latency instruction needs a scoreboard for what it reads and for what it writes. */
+	if (t->instruction_class == TEST_CLASS_DECOUPLED) {
+		if (t->read_count != 0U && t->sets_read_bar == NVRTX_SM75_BAR_NONE) {
+			printf("  instruction %u reads registers late without a scoreboard\n", t->pc);
+			run->failed = 1;
+		}
+		if (t->write_count != 0U && t->sets_write_bar == NVRTX_SM75_BAR_NONE) {
+			printf("  instruction %u writes registers late without a scoreboard\n", t->pc);
+			run->failed = 1;
+		}
+	}
+
+	/* The reads. */
+	for (index = 0U; index < t->read_count; index++) {
+		hazard = &t->gpr[t->reads[index]];
+		if (t->instruction_class == TEST_CLASS_DECOUPLED && t->sets_read_bar != NVRTX_SM75_BAR_NONE) {
+			hazard->read_bars |= 1U << t->sets_read_bar;
+		} else {
+			hazard->read = 1;
+			hazard->read_cycle = t->cycle;
+		}
+	}
+
+	/* The writes. */
+	for (index = 0U; index < t->write_count; index++) {
+		hazard = &t->gpr[t->writes[index]];
+		hazard->written = 1;
+		hazard->write_class = t->instruction_class;
+		hazard->write_cycle = t->cycle;
+		hazard->write_bar = 0U;
+		if (t->instruction_class == TEST_CLASS_DECOUPLED && t->sets_write_bar != NVRTX_SM75_BAR_NONE)
+			hazard->write_bar = t->sets_write_bar + 1U;
+	}
+
+	/* The scoreboards set are in use from this cycle. */
+	if (t->sets_write_bar != NVRTX_SM75_BAR_NONE) {
+		t->bar_busy |= 1U << t->sets_write_bar;
+		t->bar_set_cycle[t->sets_write_bar] = t->cycle;
+	}
+	if (t->sets_read_bar != NVRTX_SM75_BAR_NONE) {
+		t->bar_busy |= 1U << t->sets_read_bar;
+		t->bar_set_cycle[t->sets_read_bar] = t->cycle;
+	}
+}
+
+/* Reads a register for the running instruction, after its writer is done. */
+static uint32_t
+sm75_machine_read(
+	struct test_run *run,
+	struct test_thread *t,
+	uint32_t reg)
+{
+	struct test_hazard *hazard;
+
+	/* RZ is always ready. */
+	if (reg >= NVRTX_SM75_RZ)
+		return 0U;
+	hazard = &t->gpr[reg];
+
+	/* A variable-latency write in flight must have been waited for, a fixed-latency one waited out. */
+	if (hazard->written != 0 && hazard->write_bar != 0U) {
+		sm75_machine_hazard(run, t, "reads before the scoreboard of its write: R", reg);
+	} else if (hazard->written != 0 && t->cycle < hazard->write_cycle + sm75_machine_raw(hazard->write_class, t->read_class)) {
+		sm75_machine_hazard(run, t, "reads too soon after its write: R", reg);
+	}
+
+	/* Recorded for the retirement. */
+	if (t->read_count < 16U) {
+		t->reads[t->read_count] = reg;
+		t->read_count++;
+	}
+	return t->r[reg];
+}
+
+/* Writes a register for the running instruction, after the write and the reads in flight are done. */
+static void
+sm75_machine_write(
+	struct test_run *run,
+	struct test_thread *t,
+	uint32_t reg,
+	uint32_t value)
+{
+	struct test_hazard *hazard;
+	uint32_t need;
+
+	/* A write to RZ is dropped. */
+	if (reg >= NVRTX_SM75_RZ)
+		return;
+	hazard = &t->gpr[reg];
+
+	/* The write and the reads in flight on scoreboards. */
+	if (hazard->written != 0 && hazard->write_bar != 0U)
+		sm75_machine_hazard(run, t, "writes before the scoreboard of the write before: R", reg);
+	if (hazard->read_bars != 0U)
+		sm75_machine_hazard(run, t, "writes before the scoreboard of a read: R", reg);
+
+	/* A fixed-latency write before: 1 cycle, 6 for a variable-latency writer (write_after_write). */
+	need = 1U;
+	if (t->instruction_class == TEST_CLASS_DECOUPLED)
+		need = 6U;
+	if (hazard->written != 0 && hazard->write_bar == 0U && t->cycle < hazard->write_cycle + need)
+		sm75_machine_hazard(run, t, "writes too soon after the write before: R", reg);
+
+	/* A fixed-latency read before a variable-latency write: 2 cycles (write_after_read). */
+	if (t->instruction_class == TEST_CLASS_DECOUPLED && hazard->read != 0 && t->cycle < hazard->read_cycle + 2U)
+		sm75_machine_hazard(run, t, "writes too soon after a read: R", reg);
+
+	/* Recorded for the retirement, and written. */
+	if (t->write_count < 8U) {
+		t->writes[t->write_count] = reg;
+		t->write_count++;
+	}
+	t->r[reg] = value;
+}
+
+/*
+ * Reads a predicate for the running instruction (PT always), after the
+ * comparison that wrote it: 4 cycles for an ALU reader, 5 for a float or
+ * IMAD one, 12 for a guard, a branch or a variable-latency one.
+ */
+static int
+sm75_machine_predicate(
+	struct test_run *run,
+	struct test_thread *t,
+	uint32_t predicate,
+	uint32_t reader)
+{
+	struct test_hazard *hazard;
+	uint32_t need;
+
+	/* PT. */
+	if (predicate >= NVRTX_SM75_PT)
+		return 1;
+	hazard = &t->predicate[predicate];
+
+	/* The latency by the reader. */
+	need = 12U;
+	if (reader == TEST_CLASS_ALU)
+		need = 4U;
+	if (reader == TEST_CLASS_FMA || reader == TEST_CLASS_IMAD || reader == TEST_CLASS_IMAD_WIDE)
+		need = 5U;
+	if (hazard->written != 0 && t->cycle < hazard->write_cycle + need)
+		sm75_machine_hazard(run, t, "reads a predicate too soon after its comparison: P", predicate);
+
+	/* Succeeded: the predicate. */
+	return t->p[predicate];
+}
+
+/* Writes a predicate for the running instruction (a comparison, of fixed latency). */
+static void
+sm75_machine_predicate_write(
+	struct test_thread *t,
+	uint32_t predicate,
+	int value)
+{
+	/* PT is never written. */
+	if (predicate >= NVRTX_SM75_PT)
+		return;
+
+	/* In flight from this cycle. */
+	t->predicate[predicate].written = 1;
+	t->predicate[predicate].write_cycle = t->cycle;
+	t->p[predicate] = value;
+}
+
+/* Checks that EXIT, which reads the outputs, finds every register's write done. */
+static void
+sm75_machine_exit_check(
+	struct test_run *run,
+	struct test_thread *t)
+{
+	uint32_t reg;
+
+	/* Each register written. */
+	for (reg = 0U; reg < NVRTX_SM75_RZ; reg++) {
+		if (t->gpr[reg].written == 0)
+			continue;
+		if (t->gpr[reg].write_bar != 0U || t->cycle < t->gpr[reg].write_cycle + 6U)
+			sm75_machine_hazard(run, t, "EXIT before the write of R", reg);
+	}
+}
+
+/* Reports a dependence the code does not keep. */
+static void
+sm75_machine_hazard(
+	struct test_run *run,
+	struct test_thread *t,
+	const char *what,
+	uint32_t reg)
+{
+	/* The instruction and the register. */
+	printf("  instruction %u %s%u\n", t->pc, what, reg);
+	run->failed = 1;
+}
+
+/* Reports the latency class of an instruction by its opcode (NAK's op_category for SM75). */
+static uint32_t
+sm75_machine_class(
+	uint32_t opcode)
+{
+	uint32_t alu;
+
+	/* The instructions of their own 12-bit opcodes. */
+	if (opcode == NVRTX_SM75_OP_NOP)
+		return TEST_CLASS_DISPATCH;
+	if (opcode == NVRTX_SM75_OP_S2R || opcode == NVRTX_SM75_OP_LDC || opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_STG ||
+	    opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS ||
+	    opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS || opcode == NVRTX_SM75_OP_BRA || opcode == NVRTX_SM75_OP_EXIT ||
+	    opcode == NVRTX_SM75_OP_BAR || opcode == NVRTX_SM75_OP_MEMBAR || opcode == NVRTX_SM75_OP_BSSY || opcode == NVRTX_SM75_OP_BSYNC ||
+	    opcode == NVRTX_SM75_OP_ALD || opcode == NVRTX_SM75_OP_AST || opcode == NVRTX_SM75_OP_IPA || opcode == NVRTX_SM75_OP_TEX ||
+	    opcode == NVRTX_SM75_OP_TLD || opcode == NVRTX_SM75_OP_KILL)
+		return TEST_CLASS_DECOUPLED;
+
+	/* The ALU ones by their 9 bits. */
+	alu = opcode & 0x1ffU;
+	if (alu == NVRTX_SM75_OP_FADD || alu == NVRTX_SM75_OP_FMUL || alu == NVRTX_SM75_OP_FFMA)
+		return TEST_CLASS_FMA;
+	if (alu == NVRTX_SM75_OP_IMAD)
+		return TEST_CLASS_IMAD;
+	if (alu == NVRTX_SM75_OP_IMAD_WIDE)
+		return TEST_CLASS_IMAD_WIDE;
+	if (alu == NVRTX_SM75_OP_MUFU || alu == NVRTX_SM75_OP_I2F || alu == NVRTX_SM75_OP_F2I || alu == NVRTX_SM75_OP_FRND)
+		return TEST_CLASS_DECOUPLED;
+
+	/* Succeeded: MOV, SEL, FMNMX, FSETP, ISETP, IADD3, LOP3, SHF. */
+	return TEST_CLASS_ALU;
+}
+
+/*
+ * Reports the cycles from a fixed-latency register write to a read
+ * (read_after_write; an IMAD.WIDE writes as its upper half).
+ */
+static uint32_t
+sm75_machine_raw(
+	uint32_t writer,
+	uint32_t reader)
+{
+	/* A variable-latency reader. */
+	if (reader == TEST_CLASS_DECOUPLED || reader == TEST_CLASS_GUARD)
+		return 6U;
+
+	/* An IMAD.WIDE's addend. */
+	if (reader == TEST_CLASS_WIDE_ADDEND) {
+		if (writer == TEST_CLASS_ALU || writer == TEST_CLASS_DISPATCH)
+			return 5U;
+		if (writer == TEST_CLASS_IMAD_WIDE)
+			return 2U;
+		return 4U;
+	}
+
+	/* An IMAD.WIDE's factors. */
+	if (reader == TEST_CLASS_IMAD_WIDE) {
+		if (writer == TEST_CLASS_ALU || writer == TEST_CLASS_DISPATCH)
+			return 5U;
+		if (writer == TEST_CLASS_IMAD_WIDE)
+			return 6U;
+		return 4U;
+	}
+
+	/* A float or IMAD reader. */
+	if (reader == TEST_CLASS_FMA || reader == TEST_CLASS_IMAD) {
+		if (writer == TEST_CLASS_ALU || writer == TEST_CLASS_DISPATCH)
+			return 5U;
+		return 4U;
+	}
+
+	/* An ALU reader: 4 after an ALU writer, 5 after a float or IMAD one. */
+	if (writer == TEST_CLASS_ALU || writer == TEST_CLASS_DISPATCH)
+		return 4U;
+	return 5U;
 }

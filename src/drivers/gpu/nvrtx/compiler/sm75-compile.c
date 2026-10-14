@@ -16,18 +16,18 @@
  * comparison sets P0 and turns it into a Boolean at once, and a selection
  * or a guarded access turns the Boolean back into P0.
  *
- * The dependences are marked serially, which is always correct and never
- * fast: an instruction of fixed latency holds the next one back for the
- * longest latency its kind of result has (6 cycles for a register, 13 for a
- * predicate, Turing's table); an instruction of variable latency releases
- * scoreboard 0 when its result is written and scoreboard 1 when its
- * sources are read, and the next instruction waits for both.  EXIT waits
- * for every scoreboard.
+ * The dependences are marked when the program is complete
+ * (sm75-schedule.c, stage D): each read waits only as long as Turing's
+ * latency table says for its writer, or for the scoreboard of a
+ * variable-latency writer.  The lowering says of each instruction it emits
+ * whether it is of fixed or variable latency or ends a block, and the
+ * marking's reading of the instruction must agree.
  */
 
 #include "sm75-compile.h"
 #include "sm75-encode.h"
 #include "sm75-isa.h"
+#include "sm75-schedule.h"
 
 #include "drivers/gpu/compiler/optimize.h"
 #include "drivers/gpu/compiler/spirv.h"
@@ -49,7 +49,7 @@
 /* The instructions in one 128-byte line of code, to which the program is padded. */
 #define NVRTX_SM75_LINE_INSTRUCTIONS	8U
 
-/* How the next instruction must wait for one just emitted. */
+/* What kind of instruction the lowering emits (checked against the dependence marking's reading of it). */
 #define NVRTX_SM75_FIXED		0
 #define NVRTX_SM75_FIXED_PREDICATE	1
 #define NVRTX_SM75_VARIABLE_WRITE	2
@@ -58,26 +58,12 @@
 #define NVRTX_SM75_CONTROL		5
 #define NVRTX_SM75_SYNC			6
 
-/* The delay of a barrier or a memory barrier (its execution takes 5 cycles), and of the NOP after it. */
-#define NVRTX_SM75_DELAY_SYNC		6U
-#define NVRTX_SM75_DELAY_AFTER_SYNC	2U
-
 /* The deepest loop nest (one convergence barrier each), and a value not yet defined. */
 #define NVRTX_SM75_LOOP_DEPTH		16U
 #define NVRTX_SM75_NOT_DEFINED		0xffffffffU
 
 /* 2^32 less 512 as a float (0x4f7ffffe), which scales a reciprocal to a 32-bit fixed-point one. */
 #define NVRTX_SM75_RECIPROCAL_SCALE	0x4f7ffffeU
-
-/* The delays of the fixed-latency results, and of a variable-latency instruction itself. */
-#define NVRTX_SM75_DELAY_GPR		6U
-#define NVRTX_SM75_DELAY_PREDICATE	13U
-#define NVRTX_SM75_DELAY_VARIABLE	1U
-#define NVRTX_SM75_DELAY_EXIT		5U
-
-/* The scoreboards of the serial marking: the result, and the read of the sources. */
-#define NVRTX_SM75_BAR_RESULT		0U
-#define NVRTX_SM75_BAR_SOURCES		1U
 
 /* All ones, the Boolean true; the sign bit; and 1 / (2 pi) as a float, which the sine and cosine units take. */
 #define NVRTX_SM75_TRUE			0xffffffffU
@@ -119,10 +105,9 @@ struct nvrtx_sm75_lowering {
 	/* Each uniform's storage slot or constant buffer, NVRTX_SM75_NO_SLOT for neither. */
 	uint32_t *slot;
 
-	/* The code: room in instructions, instructions emitted, and the scoreboards the next one waits for. */
+	/* The code: room in instructions and instructions emitted. */
 	uint32_t capacity;
 	uint32_t count;
-	uint32_t pending;
 
 	/* The IR instruction being lowered. */
 	uint32_t index;
@@ -2960,9 +2945,12 @@ nvrtx_sm75_storage_address(
 }
 
 /*
- * Appends an instruction with its serial dependences: it waits for what
- * the instruction before left pending, and a variable-latency one leaves
- * its own scoreboards pending for the next.
+ * Appends an instruction.  Its scheduling control is set when the program
+ * is complete (sm75-schedule.c); here the kind the lowering emits it as is
+ * checked against how the dependence marking reads it back: a
+ * variable-latency kind must be an instruction with a scoreboard, a fixed
+ * one an instruction without, and a branch, convergence or barrier kind an
+ * instruction that ends its block.
  */
 static int
 nvrtx_sm75_emit(
@@ -2970,53 +2958,34 @@ nvrtx_sm75_emit(
 	struct nvrtx_sm75_word *word,
 	int kind)
 {
+	struct nvrtx_sm75_operands operands;
 	uint32_t *slot;
-	unsigned write_bar;
-	unsigned read_bar;
-	unsigned delay;
-	unsigned left;
-	unsigned wait;
-	int yield;
+	int unknown;
+	int variable;
+	int ends_block;
 
 	/* The code has room for every expansion; running out is a bug of the lowering. */
 	if (lowering->count >= lowering->capacity)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "the code outgrew its room");
 
-	/* The control by the kind. */
-	write_bar = NVRTX_SM75_BAR_NONE;
-	read_bar = NVRTX_SM75_BAR_NONE;
-	delay = NVRTX_SM75_DELAY_GPR;
-	left = 0U;
-	wait = 0U;
-	yield = 0;
-	if (kind == NVRTX_SM75_FIXED_PREDICATE) {
-		delay = NVRTX_SM75_DELAY_PREDICATE;
-	} else if (kind == NVRTX_SM75_VARIABLE_WRITE) {
-		/* The result and the sources each release a scoreboard. */
-		write_bar = NVRTX_SM75_BAR_RESULT;
-		read_bar = NVRTX_SM75_BAR_SOURCES;
-		delay = NVRTX_SM75_DELAY_VARIABLE;
-		left = (1U << NVRTX_SM75_BAR_RESULT) | (1U << NVRTX_SM75_BAR_SOURCES);
-	} else if (kind == NVRTX_SM75_VARIABLE_STORE) {
-		/* Only the sources are read later. */
-		read_bar = NVRTX_SM75_BAR_SOURCES;
-		delay = NVRTX_SM75_DELAY_VARIABLE;
-		left = 1U << NVRTX_SM75_BAR_SOURCES;
-	} else if (kind == NVRTX_SM75_VARIABLE_SPECIAL) {
-		/* Only the result is written later. */
-		write_bar = NVRTX_SM75_BAR_RESULT;
-		delay = NVRTX_SM75_DELAY_VARIABLE;
-		left = 1U << NVRTX_SM75_BAR_RESULT;
-	} else if (kind == NVRTX_SM75_CONTROL || kind == NVRTX_SM75_SYNC) {
-		/* A branch, a convergence barrier or a barrier waits for everything and yields. */
-		wait = NVRTX_SM75_WAIT_ALL;
-		yield = 1;
-		if (kind == NVRTX_SM75_SYNC)
-			delay = NVRTX_SM75_DELAY_SYNC;
-	}
+	/* How the dependence marking reads the instruction. */
+	unknown = nvrtx_sm75_operands(word->w, &operands);
+	if (unknown != 0)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "the dependence marking does not know an instruction the lowering emitted");
 
-	nvrtx_sm75_control(word, delay, yield, write_bar, read_bar, lowering->pending | wait);
-	lowering->pending = left;
+	/* The kind agrees with it. */
+	variable = 0;
+	if (kind == NVRTX_SM75_VARIABLE_WRITE || kind == NVRTX_SM75_VARIABLE_STORE || kind == NVRTX_SM75_VARIABLE_SPECIAL)
+		variable = 1;
+	ends_block = 0;
+	if (kind == NVRTX_SM75_CONTROL || kind == NVRTX_SM75_SYNC)
+		ends_block = 1;
+	if (ends_block != operands.boundary)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as a block's end that does not end one, or the reverse");
+	if (ends_block == 0 && variable != 0 && operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as variable-latency that has no scoreboard");
+	if (ends_block == 0 && variable == 0 && operands.class_of == NVRTX_SM75_CLASS_DECOUPLED)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as fixed-latency that needs a scoreboard");
 
 	/* The four words into the code. */
 	slot = lowering->binary->code + (size_t)lowering->count * NVRTX_SM75_INSTRUCTION_WORDS;
@@ -3031,40 +3000,31 @@ nvrtx_sm75_emit(
 }
 
 /*
- * Ends the program: EXIT after every scoreboard, a branch to itself (the
- * fetch ahead never runs past the end), and NOPs to a whole 128-byte line.
- * Records the code's size and the register count.
+ * Ends the program: EXIT, a branch to itself (the fetch ahead never runs
+ * past the end), and NOPs to a whole 128-byte line; then marks the
+ * dependences of every instruction.  Records the code's size and the
+ * register count.
  */
 static int
 nvrtx_sm75_finish(
 	struct nvrtx_sm75_lowering *lowering)
 {
 	struct nvrtx_sm75_word word;
-	uint32_t *slot;
+	const char *reason;
+	uint32_t instruction;
 	int error;
 
 	/* EXIT. */
 	nvrtx_sm75_begin(&word);
 	nvrtx_sm75_exit(&word);
-	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_CONTROL);
 	if (error != 0)
 		return error;
-
-	/* EXIT waits for everything and yields, as the CUDA compiler writes it. */
-	slot = lowering->binary->code + (size_t)(lowering->count - 1U) * NVRTX_SM75_INSTRUCTION_WORDS;
-	word.w[0] = slot[0];
-	word.w[1] = slot[1];
-	word.w[2] = slot[2];
-	word.w[3] = slot[3];
-	nvrtx_sm75_control(&word, NVRTX_SM75_DELAY_EXIT, 1, NVRTX_SM75_BAR_NONE, NVRTX_SM75_BAR_NONE, NVRTX_SM75_WAIT_ALL);
-	slot[2] = word.w[2];
-	slot[3] = word.w[3];
-	lowering->pending = 0U;
 
 	/* The branch to itself. */
 	nvrtx_sm75_begin(&word);
 	nvrtx_sm75_bra(&word, -1);
-	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_CONTROL);
 	if (error != 0)
 		return error;
 
@@ -3075,6 +3035,15 @@ nvrtx_sm75_finish(
 		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
 		if (error != 0)
 			return error;
+	}
+
+	/* The dependences of every instruction. */
+	reason = NULL;
+	instruction = 0U;
+	error = nvrtx_sm75_schedule(lowering->binary->code, lowering->count, &instruction, &reason);
+	if (error != 0) {
+		lowering->index = instruction;
+		return nvrtx_sm75_refuse(lowering, EINVAL, reason);
 	}
 
 	/* A graphics program's header. */

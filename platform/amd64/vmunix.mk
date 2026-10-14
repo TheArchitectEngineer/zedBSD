@@ -178,6 +178,7 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/gr.c
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display.c
 # The shader compiler: SPIR-V to SM75 through the shared frontend and optimizer (ws037-p008).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75-encode.c src/drivers/gpu/nvrtx/compiler/sm75-compile.c \
+	src/drivers/gpu/nvrtx/compiler/sm75-schedule.c \
 	$(filter-out $(AMD64_I915_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
 # P9c: the first compute launch on a graphics channel (ws037-p008 stage C, nvrtx.compute=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compute-launch.c src/drivers/gpu/nvrtx/compute.c
