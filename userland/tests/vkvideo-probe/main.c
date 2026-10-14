@@ -11,7 +11,7 @@
  * SHA-256 of each frame (ws083).
  *
  *   vkvideo-probe --list
- *   vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] STREAM.h264
+ *   vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] [--dump=FILE] STREAM.h264
  *
  * The list names each queue family with its flags and video codec
  * operations and the device's video extensions; on a device without video
@@ -30,6 +30,11 @@
  * each decode is timed from the recording of its commands to its fence, and
  * a last line gives the count, the total, the mean and the longest
  * (ws083-p008's decode times; the hashing of the frames is not counted).
+ * With --dump (ws236), each decoded picture's image is appended to FILE as
+ * it is in memory, after a 512-byte text header that describes it (the
+ * planes' offsets and pitches, the display window), in decode order; the
+ * format of the kernel probe's /dev/mmal-probe, which
+ * plan/ws236/tests/dump-compare.py compares with a reference decode.
  */
 
 #include "h264.h"
@@ -81,6 +86,7 @@ struct probe_options {
 	const char *expect;
 	uint32_t frames;
 	int time;
+	const char *dump;
 };
 
 /* The decode times of a run with --time, in nanoseconds. */
@@ -165,6 +171,7 @@ static int probe_commands(struct probe *probe);
 static void probe_status_pool(struct probe *probe);
 static int probe_decode(struct probe *probe, const struct h264_stream *stream, const struct h264_picture *picture, const struct dpb_plan *plan);
 static void probe_hash(struct probe *probe, uint32_t slot, const StdVideoH264SequenceParameterSet *sps, char text[65]);
+static int probe_dump(struct probe *probe, uint32_t slot, const StdVideoH264SequenceParameterSet *sps, FILE *file, const char *stream, uint32_t picture, int32_t status, const char *hash);
 static void probe_output_add(struct probe_output *output, int32_t poc, const char *hash);
 static void probe_output_flush(struct probe_output *output);
 static int probe_frame_compare(const void *left, const void *right);
@@ -191,7 +198,7 @@ main(
 	memset(&options, 0, sizeof(options));
 	status = probe_arguments(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: vkvideo-probe --list | vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] STREAM.h264\n");
+		fprintf(stderr, "usage: vkvideo-probe --list | vkvideo-probe [--frames=N] [--expect=FILE.sha256] [--time] [--dump=FILE] STREAM.h264\n");
 		return 2;
 	}
 
@@ -264,6 +271,13 @@ probe_arguments(
 			continue;
 		}
 
+		/* --dump=FILE: the decoded images. */
+		differs = strncmp(argument, "--dump=", 7U);
+		if (differs == 0) {
+			options->dump = argument + 7;
+			continue;
+		}
+
 		/* --expect=FILE: the reference hashes. */
 		differs = strncmp(argument, "--expect=", 9U);
 		if (differs == 0) {
@@ -279,6 +293,8 @@ probe_arguments(
 	if (options->list && options->stream != NULL)
 		return -1;
 	if (options->list && options->time)
+		return -1;
+	if (options->list && options->dump != NULL)
 		return -1;
 	if (!options->list && options->stream == NULL)
 		return -1;
@@ -1174,6 +1190,72 @@ probe_hash(
 	frame_hash(&planes, &window, text);
 }
 
+/*
+ * Appends a slot's image to the dump: a 512-byte header line (padded with
+ * spaces, ending in a newline), then the image's bytes from its start to
+ * the end of its chroma plane.
+ */
+static int
+probe_dump(
+	struct probe *probe,
+	uint32_t slot,
+	const StdVideoH264SequenceParameterSet *sps,
+	FILE *file,
+	const char *stream,
+	uint32_t picture,
+	int32_t status,
+	const char *hash)
+{
+	VkImageSubresource subresource;
+	VkSubresourceLayout luma;
+	VkSubresourceLayout chroma;
+	char header[512];
+	const char *name;
+	size_t bytes;
+	size_t written;
+	int length;
+
+	/* The two planes. */
+	memset(&subresource, 0, sizeof(subresource));
+	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+	vkGetImageSubresourceLayout(probe->device, probe->image[slot], &subresource, &luma);
+	subresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+	vkGetImageSubresourceLayout(probe->device, probe->image[slot], &subresource, &chroma);
+	bytes = (size_t)(chroma.offset + chroma.size);
+
+	/* The header: the stream's file name, the picture, its planes and its display window. */
+	name = strrchr(stream, '/');
+	name = name != NULL ? name + 1 : stream;
+	memset(header, ' ', sizeof(header));
+	length = snprintf(header, sizeof(header) - 1U,
+			  "zdump stream=vulkan file=%s run=v out=%u pts=%u pts_display=-1 display=-1 match=none sum=0 status=%d sha256=%s fmt=3231564e width=%u height=%u crop_x=%u crop_y=%u crop_width=%u crop_height=%u planes=2 offset0=%llu offset1=%llu pitch0=%llu pitch1=%llu length=%zu linear=%d",
+			  name, (unsigned)picture, (unsigned)picture, (int)status, hash, probe->extent.width, probe->extent.height,
+			  2U * sps->frame_crop_left_offset, 2U * sps->frame_crop_top_offset,
+			  (sps->pic_width_in_mbs_minus1 + 1U) * 16U - 2U * (sps->frame_crop_left_offset + sps->frame_crop_right_offset),
+			  (sps->pic_height_in_map_units_minus1 + 1U) * 16U - 2U * (sps->frame_crop_top_offset + sps->frame_crop_bottom_offset),
+			  (unsigned long long)luma.offset, (unsigned long long)chroma.offset,
+			  (unsigned long long)luma.rowPitch, (unsigned long long)chroma.rowPitch, bytes, probe->linear);
+	if (length < 0)
+		return 1;
+	if ((size_t)length < sizeof(header) - 1U)
+		header[length] = ' ';
+	header[sizeof(header) - 1U] = '\n';
+
+	/* The header and the bytes. */
+	written = fwrite(header, 1U, sizeof(header), file);
+	if (written == sizeof(header))
+		written = fwrite(probe->image_map[slot], 1U, bytes, file);
+	else
+		written = 0;
+	if (written != bytes) {
+		fprintf(stderr, "vkvideo-probe: the dump could not be written\n");
+		return 1;
+	}
+
+	/* Succeeded: the picture is in the dump. */
+	return 0;
+}
+
 /* Keeps a decoded frame for its place in the display order; a full list is printed first. */
 static void
 probe_output_add(
@@ -1276,6 +1358,7 @@ probe_run(
 	char text[65];
 	uint64_t started;
 	uint64_t elapsed;
+	FILE *dump;
 	int found;
 	int first_sps;
 	int error;
@@ -1362,6 +1445,19 @@ probe_run(
 		}
 	}
 
+	/* The dump, when asked for. */
+	dump = NULL;
+	if (options->dump != NULL) {
+		dump = fopen(options->dump, "wb");
+		if (dump == NULL) {
+			fprintf(stderr, "vkvideo-probe: %s: %s\n", options->dump, strerror(errno));
+			if (output.expect != NULL)
+				fclose(output.expect);
+			free(data);
+			return 1;
+		}
+	}
+
 	/* Picture after picture, with no decode timed yet. */
 	memset(&timing, 0, sizeof(timing));
 	frames = 0U;
@@ -1402,6 +1498,11 @@ probe_run(
 			output.failed++;
 		}
 		probe_hash(probe, (uint32_t)plan.setup, sps, text);
+		if (dump != NULL) {
+			error = probe_dump(probe, (uint32_t)plan.setup, sps, dump, options->stream, frames, (int32_t)probe->status, text);
+			if (error != 0)
+				break;
+		}
 
 		/* Counts the decode's time, from its commands to its fence; the hashing is not in it. */
 		timing.count++;
@@ -1422,6 +1523,10 @@ probe_run(
 	probe_output_flush(&output);
 	if (output.expect != NULL)
 		fclose(output.expect);
+	if (dump != NULL && fclose(dump) != 0 && error == 0) {
+		fprintf(stderr, "vkvideo-probe: %s: %s\n", options->dump, strerror(errno));
+		error = 1;
+	}
 	free(data);
 
 	/* The summary: every frame decoded, and matched when expected. */
