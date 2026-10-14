@@ -242,6 +242,7 @@ static void cascade_inherit(struct css_style *style, const struct css_style *par
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
+static void cascade_align(struct css_style *style, unsigned bit, int *field, int keyword);
 static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count, struct css_track_repeat *repeat);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
@@ -3754,22 +3755,22 @@ cascade_apply(
 		style->flex_wrap = value->keyword;
 		break;
 	case CSS_PROP_JUSTIFY_CONTENT:
-		style->justify_content = value->keyword;
+		cascade_align(style, 1u, &style->justify_content, value->keyword);
 		break;
 	case CSS_PROP_JUSTIFY_ITEMS:
-		style->justify_items = value->keyword;
+		cascade_align(style, 0u, &style->justify_items, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_ITEMS:
-		style->align_items = value->keyword;
+		cascade_align(style, 4u, &style->align_items, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_CONTENT:
-		style->align_content = value->keyword;
+		cascade_align(style, 2u, &style->align_content, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_SELF:
-		style->align_self = value->keyword;
+		cascade_align(style, 8u, &style->align_self, value->keyword);
 		break;
 	case CSS_PROP_JUSTIFY_SELF:
-		style->justify_self = value->keyword;
+		cascade_align(style, 0u, &style->justify_self, value->keyword);
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = cascade_length(engine, value, style->font_size);
@@ -3909,21 +3910,27 @@ cascade_inherit(
 		break;
 	case CSS_PROP_JUSTIFY_CONTENT:
 		style->justify_content = parent->justify_content;
+		style->flex_keywords = (style->flex_keywords & ~1u) | (parent->flex_keywords & 1u);
 		break;
 	case CSS_PROP_JUSTIFY_ITEMS:
 		style->justify_items = parent->justify_items;
+		style->flex_keywords = (style->flex_keywords & ~0u) | (parent->flex_keywords & 0u);
 		break;
 	case CSS_PROP_ALIGN_ITEMS:
 		style->align_items = parent->align_items;
+		style->flex_keywords = (style->flex_keywords & ~4u) | (parent->flex_keywords & 4u);
 		break;
 	case CSS_PROP_ALIGN_CONTENT:
 		style->align_content = parent->align_content;
+		style->flex_keywords = (style->flex_keywords & ~2u) | (parent->flex_keywords & 2u);
 		break;
 	case CSS_PROP_ALIGN_SELF:
 		style->align_self = parent->align_self;
+		style->flex_keywords = (style->flex_keywords & ~8u) | (parent->flex_keywords & 8u);
 		break;
 	case CSS_PROP_JUSTIFY_SELF:
 		style->justify_self = parent->justify_self;
+		style->flex_keywords = (style->flex_keywords & ~0u) | (parent->flex_keywords & 0u);
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = parent->row_gap;
@@ -4175,6 +4182,25 @@ cascade_inherit(
 	default:
 		break;
 	}
+}
+
+/* Stores an alignment keyword; flex-start and flex-end are start and end that remember how they were written. */
+static void
+cascade_align(
+	struct css_style *style,
+	unsigned bit,
+	int *field,
+	int keyword)
+{
+	style->flex_keywords &= ~bit;
+	if (keyword == CSS_ALIGN_FLEX_START) {
+		keyword = CSS_ALIGN_START;
+		style->flex_keywords |= bit;
+	} else if (keyword == CSS_ALIGN_FLEX_END) {
+		keyword = CSS_ALIGN_END;
+		style->flex_keywords |= bit;
+	}
+	*field = keyword;
 }
 
 /*

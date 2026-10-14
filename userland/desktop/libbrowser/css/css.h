@@ -368,7 +368,10 @@ enum css_align {
 	CSS_ALIGN_LEFT,
 	CSS_ALIGN_RIGHT,
 	CSS_ALIGN_SELF_START,
-	CSS_ALIGN_SELF_END
+	CSS_ALIGN_SELF_END,
+	/* Parsed keywords only: the cascade stores them as start and end with a flex bit. */
+	CSS_ALIGN_FLEX_START,
+	CSS_ALIGN_FLEX_END
 };
 
 /* The generic font families. */
@@ -642,6 +645,8 @@ struct css_style {
 	float flex_shrink;
 	struct css_length flex_basis;
 	int align_self;
+	/* Which of justify-content, align-content, align-items and align-self was written flex-start or flex-end. */
+	unsigned flex_keywords;
 	int justify_self;
 	int order;
 

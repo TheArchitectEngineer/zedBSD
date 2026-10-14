@@ -156,6 +156,7 @@ static int computed_write_offset(const struct css_style *style, int side, struct
 static int computed_write_font_family(const struct css_style *style, struct wb_units *out);
 static int computed_write_tracks(const struct css_track *tracks, int count, struct wb_units *out);
 static int computed_name(const char *const *names, size_t count, int value, struct wb_units *out);
+static int computed_align(int value, int flex, struct wb_units *out);
 static int computed_length(const struct css_length *length, struct wb_units *out);
 static int computed_pixels(double value, struct wb_units *out);
 static int computed_number(double value, struct wb_units *out);
@@ -960,13 +961,13 @@ computed_write_keyword(
 		error = computed_length(&style->flex_basis, out);
 		break;
 	case COMPUTED_JUSTIFY_CONTENT:
-		error = computed_name(computed_aligns, 10, style->justify_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->justify_content, out);
+		error = computed_align(style->justify_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->justify_content, (style->flex_keywords & 1u) != 0, out);
 		break;
 	case COMPUTED_JUSTIFY_ITEMS:
 		error = computed_name(computed_justifies, 14, style->justify_items, out);
 		break;
 	case COMPUTED_ALIGN_ITEMS:
-		error = computed_name(computed_aligns, 10, style->align_items, out);
+		error = computed_align(style->align_items, (style->flex_keywords & 4u) != 0, out);
 		break;
 	case COMPUTED_ALIGN_SELF:
 		if (style->align_self == CSS_ALIGN_SELF_START)
@@ -974,13 +975,13 @@ computed_write_keyword(
 		else if (style->align_self == CSS_ALIGN_SELF_END)
 			error = computed_ascii("self-end", out);
 		else
-			error = computed_name(computed_aligns, 10, style->align_self, out);
+			error = computed_align(style->align_self, (style->flex_keywords & 8u) != 0, out);
 		break;
 	case COMPUTED_JUSTIFY_SELF:
 		error = computed_name(computed_justifies, 14, style->justify_self, out);
 		break;
 	case COMPUTED_ALIGN_CONTENT:
-		error = computed_name(computed_aligns, 10, style->align_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->align_content, out);
+		error = computed_align(style->align_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->align_content, (style->flex_keywords & 2u) != 0, out);
 		break;
 	case COMPUTED_ORDER:
 		error = computed_number(style->order, out);
@@ -1294,6 +1295,27 @@ computed_write_percent(
 	if (error != 0)
 		return error;
 	error = computed_ascii(")", out);
+	return error;
+}
+
+/* Writes a flex alignment keyword; start and end keep the spelling they were written in. */
+static int
+computed_align(
+	int value,
+	int flex,
+	struct wb_units *out)
+{
+	int error;
+
+	if (value == CSS_ALIGN_START) {
+		error = computed_ascii(flex ? "flex-start" : "start", out);
+		return error;
+	}
+	if (value == CSS_ALIGN_END) {
+		error = computed_ascii(flex ? "flex-end" : "end", out);
+		return error;
+	}
+	error = computed_name(computed_aligns, 10, value, out);
 	return error;
 }
 
