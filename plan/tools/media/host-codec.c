@@ -44,7 +44,7 @@ static int host_video_open(const struct media_track *track, void **result);
 /* The native registry's GPU entry refuses host admission; only AAC is executed natively here. */
 const struct media_decoder_ops media_vkvideo_ops = {
     "unsupported-host-video", NULL, NULL, host_video_open, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 
 static void check(int condition, const char *what);
 static int host_open(struct host_playback *run, const char *path);

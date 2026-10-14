@@ -87,7 +87,7 @@ const struct media_decoder_ops media_aac_ops = {
     NULL,
     NULL,
     aac_trim,
-    aac_frame_us, NULL};
+    aac_frame_us, NULL, NULL};
 
 /* Built-in AAC has no runtime library-loading prerequisite. */
 static int

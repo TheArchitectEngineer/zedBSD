@@ -49,5 +49,6 @@ void app_frame_aspect(const struct app_frame *frame, int *num, int *den);
 void app_frame_size(const struct app_frame *frame, int *width, int *height);
 int app_frame_scale(const struct app_frame *frame, struct app_scaler **scaler, uint32_t *pixels, size_t stride, int width, int height);
 void app_scaler_free(struct app_scaler *scaler);
+int app_frame_gpu(const struct app_frame *frame, struct media_gpu_picture *gpu);
 
 #endif

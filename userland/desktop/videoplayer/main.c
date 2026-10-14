@@ -157,6 +157,16 @@ struct vp_player {
 	int32_t click_x;
 	int32_t click_y;
 
+	/*
+	 * The presenter (VP_GPU_PRESENT): whether it is open, when the overlay
+	 * (the bar, a notice, a picture the CPU scaled) was last drawn, and
+	 * whether the last frame showed it.
+	 */
+	struct vp_present present;
+	int present_open;
+	uint64_t overlay_us;
+	int overlay_shown;
+
 	/* A frame is due, the window changed size, the run ends. */
 	int dirty;
 	int resized;
@@ -200,6 +210,9 @@ static void vp_draw(struct vp_player *player, uint64_t now_us);
 static int vp_played_out(struct vp_player *player, double clock, uint64_t now_us);
 static void vp_log_clock(struct vp_player *player, double clock, int played_out, uint64_t now_us);
 static void vp_draw_picture(struct vp_player *player);
+static int vp_fit(struct vp_player *player, struct app_frame *picture, int *x, int *y, int *width, int *height);
+static void vp_draw_gpu(struct vp_player *player, uint64_t now_us, int overlay_dirty);
+static int vp_bar_visible(struct vp_player *player, uint64_t now_us);
 static void vp_notice(struct vp_player *player, int error, int problem);
 static void vp_draw_bar(struct vp_player *player, uint64_t now_us);
 static void vp_time_text(double seconds, char *text, size_t size);
@@ -227,6 +240,7 @@ main(
 	unsigned timeout;
 	unsigned width;
 	unsigned height;
+	VkResult result;
 	int status;
 	int error;
 
@@ -260,6 +274,8 @@ main(
 	window_options.width = width;
 	window_options.height = height;
 	window_options.present = KL_PRESENT_VULKAN;
+	if (VP_GPU_PRESENT)
+		window_options.present = KL_PRESENT_NONE;
 	player.window = kl_app_window_create(player.app, &window_options);
 	player.ui = kl_ui_create();
 	if (player.window == NULL || player.ui == NULL) {
@@ -270,6 +286,27 @@ main(
 
 	/* The window shows a video: in full screen the compositor may show it without composing (game mode, ws122-p005b). */
 	(void)kl_window_set_content_type(player.window, KL_CONTENT_VIDEO);
+
+	/*
+	 * The player's own presenter draws the pictures the GPU holds
+	 * (ws236-p011); the decoders are asked for them from the start.
+	 */
+	if (VP_GPU_PRESENT) {
+		result = vp_present_open(&player.present, player.window);
+		if (result != VK_SUCCESS) {
+			vp_log("FAILED operation=present step=%s result=%d", player.present.operation, (int)result);
+			vp_present_close(&player.present);
+			kl_ui_destroy(player.ui);
+			kl_app_close(player.app);
+			return 1;
+		}
+
+		/* Open; the decoders give pictures the GPU holds when the presenter can import them. */
+		player.present_open = 1;
+		if (player.present.imports_supported)
+			media_decoder_gpu_pictures(VP_GPU_HOLD);
+		vp_log("PRESENT own=1 gpu_pictures=%d hold=%u", player.present.imports_supported, VP_GPU_HOLD);
+	}
 
 	/* The menu, the style, the sound (none is no failure) and the media. */
 	(void)kl_window_set_menu(player.window, vp_menu, sizeof(vp_menu) / sizeof(vp_menu[0]));
@@ -294,6 +331,8 @@ main(
 	vp_audio_close(&player.audio);
 	app_frame_free(&player.picture);
 	app_scaler_free(player.scaler);
+	if (player.present_open)
+		vp_present_close(&player.present);
 	kl_file_chooser_destroy(player.chooser);
 	kl_ui_destroy(player.ui);
 	if (player.canvas_made)
@@ -746,6 +785,7 @@ vp_resize(
 	struct vp_player *player)
 {
 	uint32_t *pixels;
+	VkResult result;
 	int status;
 
 	/* The presenter at the window's size. */
@@ -753,6 +793,19 @@ vp_resize(
 	if (status != 0) {
 		vp_log("FAILED operation=present error=%d", status);
 		return -1;
+	}
+
+	/* The player's own presenter takes the size too; the swapchain's may differ. */
+	if (player->present_open) {
+		result = vp_present_resize(&player->present, player->width, player->height);
+		if (result != VK_SUCCESS) {
+			vp_log("FAILED operation=present step=%s result=%d", player->present.operation, (int)result);
+			return -1;
+		}
+
+		/* The frame is drawn at the swapchain's size. */
+		player->width = player->present.extent.width;
+		player->height = player->present.extent.height;
 	}
 
 	/* A canvas of its size. */
@@ -794,6 +847,7 @@ vp_draw(
 	int status;
 	int failure;
 	int played_out;
+	int overlay_dirty;
 
 	/* A decoder failure is a user-visible playback state, rather than an apparent end of the file. */
 	(void)pthread_mutex_lock(&player->media.lock);
@@ -820,6 +874,9 @@ vp_draw(
 	due = clock;
 	if (played_out)
 		due = HUGE_VAL;
+
+	/* What changed before the picture (input, the state): the overlay is drawn again for it. */
+	overlay_dirty = player->dirty;
 	picture = vp_media_take(&player->media, due, &time, &next);
 	if (picture == NULL && player->need_picture && next >= 0.0)
 		picture = vp_media_take(&player->media, next, &time, &next);
@@ -857,6 +914,12 @@ vp_draw(
 	if (!player->dirty && now_us > player->bar_until + VP_BAR_US)
 		return;
 	player->dirty = 0;
+
+	/* The player's own presenter draws the frame. */
+	if (player->present_open) {
+		vp_draw_gpu(player, now_us, overlay_dirty);
+		return;
+	}
 
 	/* The picture, the bar, and the frame shown, each timed for the DRAW line. */
 	started_us = kl_clock_us();
@@ -1037,11 +1100,9 @@ vp_draw_picture(
 	struct kl_rect whole;
 	struct kl_text_line line;
 	struct app_frame *picture;
-	double aspect;
 	int picture_width;
 	int picture_height;
-	int sar_num;
-	int sar_den;
+	int fitted;
 	int text_width;
 	int width;
 	int height;
@@ -1068,30 +1129,190 @@ vp_draw_picture(
 		return;
 	}
 
-	/* The picture's shape (square samples: the add-in reads no aspect field), fitted to the window. */
+	/* The picture fitted to the window; too small to show, nothing. */
+	fitted = vp_fit(player, picture, &x, &y, &width, &height);
+	if (!fitted)
+		return;
 	app_frame_size(picture, &picture_width, &picture_height);
-	if (picture_width <= 0 || picture_height <= 0)
-		return;
-	app_frame_aspect(picture, &sar_num, &sar_den);
-	aspect = (double)picture_width * sar_num / ((double)picture_height * sar_den);
-	width = (int)player->width;
-	height = (int)((double)width / aspect);
-	if (height > (int)player->height) {
-		height = (int)player->height;
-		width = (int)((double)height * aspect);
-	}
-
-	/* Too small to show, and where it goes. */
-	if (width < 2 || height < 2)
-		return;
-	x = ((int)player->width - width) / 2;
-	y = ((int)player->height - height) / 2;
 
 	/* Scaled straight into the frame (BGRA is the canvas's 0xAARRGGBB, opaque); the scaler is remade when the sizes change. */
 	status = app_frame_scale(picture, &player->scaler, player->pixels + (size_t)y * player->width + (size_t)x,
 	    player->width * sizeof(uint32_t), width, height);
 	if (status != 0)
 		vp_log("SCALE failed width=%d height=%d", picture_width, picture_height);
+}
+
+/*
+ * Fits a picture to the window by its shape (and its samples' aspect):
+ * its rectangle in window pixels.  Returns 0 when it is too small to show.
+ */
+static int
+vp_fit(
+	struct vp_player *player,
+	struct app_frame *picture,
+	int *x,
+	int *y,
+	int *width,
+	int *height)
+{
+	double aspect;
+	int picture_width;
+	int picture_height;
+	int sar_num;
+	int sar_den;
+
+	/* The picture's shape. */
+	app_frame_size(picture, &picture_width, &picture_height);
+	if (picture_width <= 0 || picture_height <= 0)
+		return 0;
+	app_frame_aspect(picture, &sar_num, &sar_den);
+	aspect = (double)picture_width * sar_num / ((double)picture_height * sar_den);
+
+	/* As wide as the window, unless that is too tall. */
+	*width = (int)player->width;
+	*height = (int)((double)*width / aspect);
+	if (*height > (int)player->height) {
+		*height = (int)player->height;
+		*width = (int)((double)*height * aspect);
+	}
+
+	/* Too small to show. */
+	if (*width < 2 || *height < 2)
+		return 0;
+
+	/* Succeeded: in the middle of the window. */
+	*x = ((int)player->width - *width) / 2;
+	*y = ((int)player->height - *height) / 2;
+	return 1;
+}
+
+/*
+ * Draws a frame with the player's own presenter: the picture the GPU holds
+ * as a quad (converted and scaled by the GPU), and the overlay over it --
+ * the bar, a notice, or a picture the CPU scaled -- drawn by the CPU only
+ * when it changed: on input or a change of state (overlay_dirty), for each
+ * picture the CPU scales, and four times a second while the bar shows (its
+ * time and position move).  An overlay with nothing in it is not drawn.
+ */
+static void
+vp_draw_gpu(
+	struct vp_player *player,
+	uint64_t now_us,
+	int overlay_dirty)
+{
+	struct vp_present_quad quad;
+	const struct vp_present_quad *shown;
+	uint64_t started_us;
+	uint64_t drawn_us;
+	uint64_t shown_us;
+	uint64_t after_ms;
+	VkResult result;
+	int gpu;
+	int bar;
+	int fitted;
+	int overlay;
+	int changed;
+	int status;
+
+	/* The picture the GPU holds, where it fits. */
+	started_us = kl_clock_us();
+	gpu = 0;
+	shown = NULL;
+	if (player->picture != NULL) {
+		status = app_frame_gpu(player->picture, &quad.picture);
+		if (status == 0) {
+			gpu = 1;
+			fitted = vp_fit(player, player->picture, &quad.x, &quad.y, &quad.width, &quad.height);
+			if (fitted)
+				shown = &quad;
+		}
+	}
+
+	/*
+	 * The overlay shows the bar, a picture the CPU scaled, or the notice
+	 * where there is no picture; a picture the GPU holds without the bar
+	 * needs none.
+	 */
+	bar = vp_bar_visible(player, now_us);
+	overlay = bar;
+	if (!gpu && player->picture != NULL)
+		overlay = 1;
+	if (player->picture == NULL && player->notice[0] != '\0')
+		overlay = 1;
+
+	/* Drawn again when it changed, for a picture the CPU scales, for a newly shown overlay, and while the bar moves. */
+	changed = 0;
+	if (overlay) {
+		if (overlay_dirty || !gpu || !player->overlay_shown)
+			changed = 1;
+		if (bar && now_us - player->overlay_us >= 250000U)
+			changed = 1;
+	}
+
+	/* The overlay: clear around the bar over a picture the GPU holds, else the picture or the notice on black. */
+	if (changed) {
+		kl_ui_begin(player->ui, now_us);
+		if (gpu) {
+			memset(player->pixels, 0, (size_t)player->width * player->height * sizeof(player->pixels[0]));
+		} else {
+			vp_draw_picture(player);
+		}
+
+		/* The bar over it, while it shows. */
+		vp_draw_bar(player, now_us);
+		(void)kl_ui_end(player->ui, now_us);
+		player->overlay_us = now_us;
+	}
+
+	/* Whether this frame shows the overlay, for the next one's choice. */
+	player->overlay_shown = overlay;
+
+	/* The frame, waited for: the picture shown before may be freed after it. */
+	drawn_us = kl_clock_us();
+	result = vp_present_frame(&player->present, player->pixels, (size_t)player->width, overlay, changed, shown);
+	player->draws++;
+	player->draw_picture_us += drawn_us - started_us;
+	player->draw_rest_us += kl_clock_us() - drawn_us;
+
+	/* An out-of-date swapchain is made again at the window's size; another failure is logged once for each new result. */
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+		player->resized = 1;
+	} else if (result != VK_SUCCESS && (int)result != player->present_error) {
+		vp_log("FAILED operation=frame step=%s result=%d", player->present.operation, (int)result);
+		player->present_error = (int)result;
+	}
+
+	/* The first frame shown at a new size, and how long after the size came. */
+	if (result == VK_SUCCESS && (player->width != player->presented_width || player->height != player->presented_height)) {
+		player->presented_width = player->width;
+		player->presented_height = player->height;
+		shown_us = kl_clock_us();
+		after_ms = 0U;
+		if (shown_us > player->resized_us)
+			after_ms = (shown_us - player->resized_us) / 1000U;
+		vp_log("PRESENTED width=%u height=%u after_ms=%llu gpu=%d", player->width, player->height, (unsigned long long)after_ms, gpu);
+	}
+}
+
+/* Tells whether the bar of controls shows: while paused or ended, and for a while after the pointer moved. */
+static int
+vp_bar_visible(
+	struct vp_player *player,
+	uint64_t now_us)
+{
+	unsigned state;
+
+	/* The media's state. */
+	(void)pthread_mutex_lock(&player->media.lock);
+	state = player->media.state;
+	(void)pthread_mutex_unlock(&player->media.lock);
+
+	/* Hidden while playing once its time is over. */
+	if (state == VP_PLAYING && now_us > player->bar_until)
+		return 0;
+
+	/* Succeeded: it shows. */
+	return 1;
 }
 
 /* Says in the window why a file could not be played. */

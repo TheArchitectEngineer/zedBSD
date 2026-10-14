@@ -18,6 +18,9 @@ static unsigned submissions;
 static unsigned video_waits;
 static unsigned transfer_waits;
 static int wait_failure;
+/* The create flags the format query reports, and the GPU decodes submitted with their own fence (ws236-p011). */
+static VkImageCreateFlags format_flags;
+static unsigned gpu_submissions;
 
 static void host_admission(void);
 static VkResult host_capabilities(VkPhysicalDevice physical, const VkVideoProfileInfoKHR *profile, VkVideoCapabilitiesKHR *capabilities);
@@ -39,6 +42,8 @@ static void host_decode(VkCommandBuffer command, const VkVideoDecodeInfoKHR *inf
 static void host_end_video(VkCommandBuffer command, const VkVideoEndCodingInfoKHR *info);
 static void host_barrier(VkCommandBuffer command, const VkDependencyInfo *info);
 static void host_copy(VkCommandBuffer command, VkImage image, VkImageLayout layout, VkBuffer buffer, uint32_t count, const VkBufferImageCopy *copy);
+static void host_gpu_admission(void);
+static void host_gpu_pictures(struct h264_stream *stream, struct h264_picture *picture, struct h264_dpb_plan *plan);
 
 /*
  * Exercises coincident and distinct output recording with separate video and transfer queues.
@@ -161,9 +166,13 @@ main(
 	assert(transfer_waits == 8U);
 	media_picture_unref(output);
 	media_picture_pool_close(pool);
+
+	/* Pictures the GPU holds: their admission, and their decode with its own fence and the hold of their images. */
+	host_gpu_admission();
+	host_gpu_pictures(stream, picture, &plan);
 	free(picture);
 	free(stream);
-	puts("Vulkan Video runtime host PASS (coincident/distinct, two queues, standard planes, timeout retention)");
+	puts("Vulkan Video runtime host PASS (coincident/distinct, two queues, standard planes, timeout retention, GPU pictures)");
 	return 0;
 }
 
@@ -176,6 +185,16 @@ media_log(
 	...)
 {
 	(void)format;
+}
+
+/*
+ * Asks for pictures in the CPU's memory, as the host harness reads them back.
+ */
+unsigned
+media_decoder_gpu_hold(
+	void)
+{
+	return 0U;
 }
 
 /* A command must be recorded in its own family-specific pool. */
@@ -253,7 +272,14 @@ host_submit(
 {
 	assert(count == 1U);
 	assert(submit->commandBufferCount == 1U);
-	if (queue == observed->queue) {
+	if (queue == observed->queue && observed->gpu) {
+		/* A GPU picture's decode carries the fence and nothing waits for it. */
+		assert(fence == observed->flight[0].fence);
+		assert(submit->pCommandBuffers[0] == observed->flight[0].command);
+		assert(submit->signalSemaphoreCount == 0U);
+		assert(submit->waitSemaphoreCount == 0U);
+		gpu_submissions++;
+	} else if (queue == observed->queue) {
 		assert(fence == VK_NULL_HANDLE);
 		assert(submit->pCommandBuffers[0] == observed->flight[0].command);
 		assert(submit->signalSemaphoreCount == 1U);
@@ -469,5 +495,144 @@ host_formats(
 	formats->imageType = VK_IMAGE_TYPE_2D;
 	formats->imageTiling = VK_IMAGE_TILING_OPTIMAL;
 	formats->imageUsageFlags = info->imageUsage;
+	formats->imageCreateFlags = format_flags;
 	return VK_SUCCESS;
+}
+
+/* Checks when a context gives pictures the GPU holds and how many slots it then has. */
+static void
+host_gpu_admission(
+	void)
+{
+	struct vkvideo_runtime video;
+	int error;
+
+	/* Asked for, exportable and with plane views: the slots hold every picture. */
+	memset(&video, 0, sizeof(video));
+	video.fn.vkGetPhysicalDeviceVideoCapabilitiesKHR = host_capabilities;
+	video.fn.vkGetPhysicalDeviceVideoFormatPropertiesKHR = host_formats;
+	video.extent.width = 320U;
+	video.extent.height = 192U;
+	video.max_references = 3U;
+	video.reorder = 2U;
+	video.gpu_hold = 4U;
+	video.gpu_extensions = 1;
+	video.level = STD_VIDEO_H264_LEVEL_IDC_4_1;
+	available_models = VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR;
+	refused_usage = 0U;
+	format_flags = VKVIDEO_PLANE_FLAGS;
+	error = vkvideo_capabilities(&video);
+	assert(error == 0 && video.gpu == 1);
+	assert(video.slots == 3U + 2U + video.flights + 4U + 1U);
+	assert((video.reference_usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0U);
+
+	/* Without the plane views' flags the pictures are read back. */
+	format_flags = 0U;
+	error = vkvideo_capabilities(&video);
+	assert(error == 0 && video.gpu == 0);
+	assert(video.slots == video.max_references + video.flights);
+
+	/* Without the export, or when the held pictures need more slots than the device has, too. */
+	format_flags = VKVIDEO_PLANE_FLAGS;
+	video.gpu_extensions = 0;
+	error = vkvideo_capabilities(&video);
+	assert(error == 0 && video.gpu == 0);
+	video.gpu_extensions = 1;
+	video.gpu_hold = 12U;
+	error = vkvideo_capabilities(&video);
+	assert(error == 0 && video.gpu == 0);
+	format_flags = 0U;
+}
+
+/*
+ * Decodes pictures the GPU holds: no readback is recorded, the decode
+ * carries the fence, and each picture holds its image until it is freed.
+ */
+static void
+host_gpu_pictures(
+	struct h264_stream *stream,
+	struct h264_picture *picture,
+	struct h264_dpb_plan *plan)
+{
+	struct vkvideo_runtime video;
+	struct media_picture_pool *pool;
+	struct media_picture *output;
+	struct media_gpu_picture described;
+	struct vkvideo_flight *flight;
+	uint32_t ticket;
+	unsigned copies;
+	unsigned transfers;
+	int error;
+
+	/* One flight, two images, the first being decoded into. */
+	memset(&video, 0, sizeof(video));
+	observed = &video;
+	video.extent.width = 32U;
+	video.extent.height = 16U;
+	video.image_extent = video.extent;
+	video.slots = 2U;
+	video.gpu = 1;
+	video.capabilities.minBitstreamBufferSizeAlignment = 32U;
+	video.flights = 1U;
+	video.gpu_slots = media_gpu_slots_create(2U);
+	assert(video.gpu_slots != NULL);
+	video.gpu_slots->identity = 7U;
+	video.gpu_slots->memory_bytes = 4096U;
+	video.gpu_slots->image_width = 32U;
+	video.gpu_slots->image_height = 16U;
+	flight = &video.flight[0];
+	flight->buffer_size = 4096U;
+	flight->buffer_map = calloc(1U, 4096U);
+	assert(flight->buffer_map != NULL);
+	flight->buffer_coherent = 1;
+	flight->command = (VkCommandBuffer)(uintptr_t)1U;
+	flight->transfer_command = (VkCommandBuffer)(uintptr_t)2U;
+	video.queue = (VkQueue)(uintptr_t)3U;
+	video.transfer_queue = (VkQueue)(uintptr_t)3U;
+	flight->decoded = (VkSemaphore)5U;
+	flight->fence = (VkFence)7U;
+	video.fn.vkBeginCommandBuffer = host_begin;
+	video.fn.vkEndCommandBuffer = host_end;
+	video.fn.vkResetCommandBuffer = host_reset_command;
+	video.fn.vkResetFences = host_reset_fence;
+	video.fn.vkWaitForFences = host_wait;
+	video.fn.vkQueueSubmit = host_submit;
+	video.fn.vkCmdBeginVideoCodingKHR = host_begin_video;
+	video.fn.vkCmdControlVideoCodingKHR = host_control;
+	video.fn.vkCmdDecodeVideoKHR = host_decode;
+	video.fn.vkCmdEndVideoCodingKHR = host_end_video;
+	video.fn.vkCmdPipelineBarrier2KHR = host_barrier;
+	video.fn.vkCmdCopyImageToBuffer = host_copy;
+	pool = media_picture_pool_create_gpu(32U, 16U, 2U);
+	assert(pool != NULL);
+	output = media_picture_pool_get(pool);
+	assert(output != NULL && output->luma == NULL);
+
+	/* The decode: its fence, no copy, and its image held from the submission. */
+	copies = copies_seen;
+	transfers = transfer_waits;
+	plan->setup = 0;
+	plan->reset = 1;
+	error = media_vkvideo_runtime_submit(&video, stream, picture, plan, output, &ticket);
+	assert(error == 0);
+	assert(media_vkvideo_runtime_busy(&video) == 1U);
+	error = media_vkvideo_runtime_finish(&video, ticket);
+	assert(error == 0);
+	assert(flight->state == VKVIDEO_FREE);
+	assert(gpu_submissions == 1U);
+	assert(copies_seen == copies && transfer_waits == transfers);
+
+	/* The picture describes its image, and holds it until it is freed. */
+	error = media_picture_gpu(output, &described);
+	assert(error == 0);
+	assert(described.identity == 7U && described.slot == 0U);
+	assert(described.image_width == 32U && described.width == 32U);
+	assert(media_vkvideo_runtime_busy(&video) == 1U);
+	media_picture_unref(output);
+	assert(media_vkvideo_runtime_busy(&video) == 0U);
+
+	/* The context's reference is the last one. */
+	media_gpu_slots_unref(video.gpu_slots);
+	media_picture_pool_close(pool);
+	free(flight->buffer_map);
 }

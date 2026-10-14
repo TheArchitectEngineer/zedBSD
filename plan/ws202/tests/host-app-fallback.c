@@ -21,7 +21,7 @@ static unsigned host_receive(struct app_decoder *decoder, uint64_t *sound_frames
 /* The test refuses native GPU admission; video pixels are decoded by the actual optional application library. */
 const struct media_decoder_ops media_vkvideo_ops = {
     "unsupported-host-video", NULL, NULL, host_video_open, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 
 /*
  * Supplies the production native library's ordinary diagnostic sink to this source-linked host test.

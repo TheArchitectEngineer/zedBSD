@@ -49,7 +49,11 @@ struct media_decoder_ops {
 	int (*trim)(void *state, int64_t before_us);
 	int64_t (*frame_us)(const void *state);
 	void (*picture_aspect)(const void *picture, int *num, int *den);
+	int (*picture_gpu)(const void *picture, struct media_gpu_picture *gpu);
 };
+
+/* The pictures held at once a program asked the GPU's decoders for (media_decoder_gpu_pictures), zero for none. */
+unsigned media_decoder_gpu_hold(void);
 
 /* A retained native picture owns its backend operation table and CPU representation until media_frame_free. */
 struct media_frame {

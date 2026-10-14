@@ -357,8 +357,10 @@ host_seek(
 int
 media_vkvideo_runtime_open(
 	const StdVideoH264SequenceParameterSet *sps,
+	unsigned reorder,
 	struct vkvideo_runtime **runtime)
 {
+	(void)reorder;
 	*runtime = NULL;
 	if (no_video)
 		return MEDIA_PROBLEM_DEVICE;
@@ -368,6 +370,17 @@ media_vkvideo_runtime_open(
 	(*runtime)->slots = sps->max_num_ref_frames + 1U;
 	if (sps->max_num_ref_frames == 0U)
 		(*runtime)->slots = 2U;
+	return 0;
+}
+
+/*
+ * Gives pictures in the CPU's memory, as the host stand-in fills them.
+ */
+int
+media_vkvideo_runtime_gpu(
+	const struct vkvideo_runtime *runtime)
+{
+	(void)runtime;
 	return 0;
 }
 

@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3。段 a は T2 の T1-674 で結果済み（B-2 の道）、段 b・c の kernel は実装・build・host 試験済み、段 d・e を実装中）
+Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は実装・build・host 試験済み、T2 の Pi 実機待ち（依頼 3））
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -29,10 +29,10 @@ Phase disposition: normal
 | 段 | 内容 | 主な file | 状態 |
 | --- | --- | --- | --- |
 | a | TFU の probe（起動の診断、boot の `v3d.tfu_probe=1` の時だけ）: (1) 1・2 byte の texel の raster→UIF が CPU の配置と合うか、512x480 R8・256x240 RG8 の時間（1080p の見積もり）、(2) YUV 入力の候補の設定（入力の format 0〜10、NV12 と I420 の分け方）で RGBA8 を書くか、BT.601・709・full のどれと合うか | `v3d-tfu-probe.c`（新規）、`v3d-diagnostic.c`、`v3d-job.c`・`.h`（TFU の job に chroma・U plane の address）、`native-texture.c`（1・2・4 byte の UIF の大きさと texel の offset）、`stage.c` | 済み（T1-674: R8・RG8 は使える、YUV 入力は当たらず → B-2） |
-| b | VPU の bulk を NV12 の image の memory へ直に（place を無くす）。補正（2〜15 の +1）は buffer への readback の時だけ | `vulkan-video.c`、`rpi4-mmal.c`・`.h`、`vulkan-buffer-copy.c`、`vkvideo-probe`（`--sampled`） | 実装・build・host 試験済み、T2 の probe 待ち |
-| c | V3D: R8・RG8 の sampled image、NV12 の image に SAMPLED と plane の view（PLANE_0 を R8、PLANE_1 を RG8）、snapshot（raster→UIF）を 1・2 byte の texel に（TFU と CPU の予備）。a の YUV が当たればその道（B-1）を選ぶ | `vulkan-query.c`・`vulkan-resource.c`・`vulkan-input.c`・`.h`・`native-texture.c`・`native-state.h`・`vulkan-native-draw.c`・`.h`・`native-storage.c`・`.h` | 実装・build・host 試験済み（実機は段 e と一緒） |
-| d | libmedia: GPU の picture の API（VkImage と plane の view、表示が終わるまで DPB の slot を busy に）、VkDevice を app と共有 | `userland/desktop/libmedia/` | 未着手 |
-| e | videoplayer: 描画を Vulkan に（YCbCr→RGB と縮小を shader で、自前の swapchain、KL_PRESENT_NONE）。UI は内容が変わった時だけ texture へ | `userland/desktop/videoplayer/` | 未着手 |
+| b | VPU の bulk を NV12 の image の memory へ直に（place を無くす）。補正（2〜15 の +1）は buffer への readback の時だけ | `vulkan-video.c`、`rpi4-mmal.c`・`.h`、`vulkan-buffer-copy.c`、`vkvideo-probe`（`--sampled`） | T1-677 PASS（全 frame 一致、differing 0） |
+| c | V3D: R8・RG8 の sampled image、NV12 の image に SAMPLED と plane の view（PLANE_0 を R8、PLANE_1 を RG8）、snapshot（raster→UIF）を 1・2 byte の texel に（TFU と CPU の予備）。a の YUV が当たればその道（B-1）を選ぶ | `vulkan-query.c`・`vulkan-resource.c`・`vulkan-input.c`・`.h`・`native-texture.c`・`native-state.h`・`vulkan-native-draw.c`・`.h`・`native-storage.c`・`.h`、`vulkan-video.c`（video の format の SAMPLED と plane の view の flag） | 実装・build・host 試験済み（実機は依頼 3） |
+| d | libmedia: GPU の picture（decoder の image の memory を opaque fd で export、picture が image を持つ間はその slot に decode しない）。VkDevice は共有せず、app が fd を import する | `userland/desktop/libmedia/`、`userland/desktop/media-app/decoder.c`・`.h` | 実装・build・host 試験済み（実機は依頼 3） |
+| e | videoplayer: 自前の presenter（KL_PRESENT_NONE、arm64 だけ）。picture の 2 plane を shader で YCbCr→RGB と縮小、bar・notice は内容が変わった時だけ overlay へ | `userland/desktop/videoplayer/` | 実装・build（rpi4・amd64 warning 0）、実機は依頼 3 |
 
 ## 段 a: TFU の probe（2026-10-16、P3）
 
@@ -112,8 +112,61 @@ Phase disposition: normal
 6. `dmesg | grep -E 'rpi4-mmal: frame .* not its target|kept for good|v3d: video:|v3d: (EIO|execution failed)'` を保存。
 7. 合否: (a)(b) とも rc 0・全 frame MATCH・differing 0、1080p の hash が `--sampled` の有無で同じ、`not its target's layout` の行が無い（あれば frame の pitch・chroma の値を報告）、`kept for good`・`execution failed` が無い。Video Player は今の main のまま（libmedia は変えていない）で、1 本（`baseline-1080p30-10s.mp4`）再生して落ちないこと（回帰）。
 
+### T2 の結果（T1-677、2026-10-16、Pi 4 実機、main 78354757f）: 段 b PASS
+
+- 3 本を (a) 今まで通り・(b) `--sampled` とも全 frame MATCH、dump-compare 56 件 differing 0、1080p の hash は `--sampled` の有無で同じ。dmesg に `not its target's layout`・`kept for good`・`execution failed` 無し。Video Player は前と同等（shown 39・late 261）で落ちない。結果 `plan/agents/T2/results-20261016-t1-677.md`。
+- `--sampled` の decode time が長い（1080p 33→60 ms）のは probe の測り方: `--sampled` は decode の command buffer の後ろで両 plane を uncached の image から CPU が補正しながら読む copy をし、その時間が decode time に入る。GPU の道（段 e）は readback をしない。
+
+## 段 d・e: libmedia の GPU の picture と videoplayer の自前の presenter（2026-10-16、P3）
+
+### 形（決めたこと）
+
+- **VkDevice は共有しない**。libmedia は今のまま自分の VkInstance・VkDevice で decode し、decode の image（slot）の memory を `VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT` で export する。videoplayer は自分の device に fd（dup）を import し、同じ大きさの NV12 の image（`MUTABLE_FORMAT`・`EXTENDED_USAGE`、SAMPLED）に bind して plane の view（R8・RG8）を作る。kernel の中では同じ物理の run なので、decode の `bcm2711_v3d_memory_written` が videoplayer 側の texture の snapshot を作り直させる。理由: libmedia の device は stream ごとに作り直され、app の swapchain は file を跨いで続くので、device の共有は持ち主が合わない。
+- **同期**: libmedia は picture を渡す前に decode の fence を待つ（p010: decode を含む submission の fence は自分の frame が image に入ってから signal）。videoplayer は frame の fence を待ってから前の picture を解放する（1 frame ずつ、Image Viewer と同じ）。
+- **slot の持ち**: picture は自分の slot を最後の参照が消えるまで持ち（`media_gpu_slots`、held の bit）、runtime の busy に足すので、その slot に次の decode は入らない。slot の数 = 参照 + reorder + 飛んでいる数 + app が持つ数 + 1（上限 17、超える時は飛んでいる数を 2 まで減らし、それでも超えれば readback に戻る）。
+- **arm64 だけ**: videoplayer の presenter と GPU の picture は `__aarch64__`（Pi 4）の build だけ（`VP_GPU_PRESENT`）。amd64（i915・5330）の videoplayer は前のまま（KL_PRESENT_VULKAN、CPU の変換、libmedia は readback）。libbrowser は GPU の picture を頼まないので前のまま。
+- **overlay**: bar・notice・CPU で縮小した picture（libavcodec の予備の道）は CPU の canvas に描き、内容が変わった時だけ（入力・状態、CPU の picture の毎枚、bar の表示中は 250 ms ごと）linear の BGRA の image へ写して premultiplied alpha で重ねる。GPU の picture で bar が隠れている間は overlay を描かない（CPU の画素の仕事 0）。
+
+### 作った物
+
+- libmedia（WS202 の file）:
+  - `media-decoder.h`: `struct media_gpu_picture`（identity・slot・fd・memory の大きさと type・image の大きさ・窓・colour・full_range）、`media_decoder_gpu_pictures(hold)`、`media_frame_gpu()`、`MEDIA_COLOUR_*`。`media-private.h`: ops に `picture_gpu`、`media_decoder_gpu_hold()`。`decoder.c`: その実装。`aac.c`: ops の初期化子。
+  - `picture.h`・`.c`: `struct media_gpu_slots`（context と picture が共有、held の bit、fd を最後の参照で close）、`media_gpu_slots_create/hold/held/unref`、画素を持たない pool（`media_picture_pool_create_gpu`）、最後の unref で slot を返す、`media_picture_gpu()`、GPU の picture の `media_picture_scale` は ENOTSUP。
+  - `vkvideo-runtime.c`・`.h`: `media_vkvideo_runtime_open` に reorder、GPU の判定（`vkvideo_gpu_capabilities`: hold の要求、device の external memory、video の format が SAMPLED と plane の flag を持つこと、slot の数）、instance に `VK_KHR_external_memory_capabilities`、device に external memory の 2 つ、image に flag と `VkExternalMemoryImageCreateInfo`、export の allocation と `vkGetMemoryFdKHR`（`vkvideo_gpu_export`）、decode を自分の fence で submit（`vkvideo_submit_gpu`、readback なし）、busy に held、`media_vkvideo_runtime_gpu()`。`vkvideo.c`: reorder を渡す、GPU の時は画素なしの pool、ops に `media_picture_gpu`。
+- media-app（`decoder.c`・`.h`）: `app_frame_gpu()`。
+- videoplayer（WS122 の file）:
+  - `present.c`（新規、Image Viewer の presenter から）: instance（surface・wayland surface・properties2・external memory capabilities）、device（swapchain、import できれば external memory の 2 つ）、swapchain・pass・targets、picture の pipeline（2 sampler、push 64 byte: 大きさと色の 3 行）と overlay の pipeline、import の表（identity が変わったら全部捨てる）、`present_colour`（BT.601・709・2020、limited・full）。
+  - `shaders/picture.vert`・`picture.frag`・`overlay.frag`・`regenerate.py`・`shaders.h`（glslc と spirv-val）。
+  - `main.c`: arm64 で KL_PRESENT_NONE と presenter、`media_decoder_gpu_pictures(VP_GPU_HOLD)`（import できる時）、`vp_draw_gpu`・`vp_fit`・`vp_bar_visible`、`PRESENT`・`PRESENTED … gpu=` の行。`media.c`・`videoplayer.h`: ring の上限（presenter の時は 3）、presenter の型。`Makefile`: `present.c`。
+- 試験: `plan/ws236/tests/shader-compile-host-test.c`・`run-shader-compile-test.sh`（新規、videoplayer の shader を bcm2711 の compiler で compile、picture.frag が 2 枚の texture を読む）。`plan/ws202/tests/host-vkvideo-runtime.c`（GPU の判定と、fence 付きの decode・slot の持ちの確かめを足した）、`host-native-playback.c`・`host-app-fallback.c`・`plan/tools/media/host-codec.c`（stub と ops の初期化子）。
+
+### 確かめ（host と build、2026-10-16）
+
+| 確かめ | 結果 |
+| --- | --- |
+| rpi4: `make -j16 BUILD=build/p3/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/p3/rpi4/vmunix build/p3/rpi4/dynamic/libmedia.so build/p3/rpi4/bin/videoplayer build/p3/rpi4/bin/vkvideo-probe` | warning 0、`arm64 vmunix check: PASS` |
+| amd64: `make -j16 BUILD=build/p3/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p3/amd64/bin/videoplayer build/p3/amd64/dynamic/libmedia.so` | warning 0 |
+| `sh plan/ws236/tests/run-shader-compile-test.sh` | PASS（picture.frag 39 命令、texture の uniform 2、binding 0x3、push 64 byte） |
+| `sh plan/ws202/tests/run-host-native-playback.sh`（runtime の GPU の確かめを含む、ASan/UBSan） | PASS |
+| `run-host-app-fallback.sh`・`run-host-nv12-readback.sh`・`plan/tools/media/run-host-codec.sh` | PASS |
+| `plan/tools/style-check.py`（変えた file、HEAD との差） | 新しい指摘 0 |
+
+- 未実施: Pi 実機（下の依頼 3）、5330（i915）の videoplayer の実機（amd64 の道は変えていないので build だけ）、libbrowser の build。
+
+### T2 への依頼 3（Pi 4 実機、QEMU 不要、約 30 分）: GPU の道の再生
+
+1. build（agent/p3-ws236e の段 d・e の commit、または merge 後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/rpi4/vmunix build/<T>/rpi4/dynamic/libmedia.so build/<T>/rpi4/bin/videoplayer`（warning 0）。
+2. Pi: kernel を差し替えて reboot、`/lib/libmedia.so` と videoplayer（今の置き場所）を差し替える（前の物は退避）。
+3. desktop の session で `XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 videoplayer --timeout-s=25 /home/kei/ws236/high-1080p30-10s.mp4 2>/tmp/vp-high.log`、同じく `baseline-1080p30-10s.mp4`、`/home/kei/Video.mp4`（あれば、`--timeout-s=15`）。再生の途中（約 3 秒）で `keiland-shot` の PNG を 1 枚ずつ。別の ssh で `top -b -n 3 -d 2`。
+4. 報告: 各 log の `PRESENT`・`Vulkan Video:`（特に `pictures the GPU holds, N slots` か `pictures are read back` の理由）・`MEDIA backend=`・`PRESENTED`・`FRAMES`・`DRAW`・`CLOCK`・`DONE`・`FAILED`・`NOTICE` の行、PNG、top、dmesg の `v3d: video:`・`v3d: (EIO|execution failed)`・`rpi4-mmal: frame .* not its target`。
+5. 合否: (a) `PRESENT own=1 gpu_pictures=1`、`pictures the GPU holds` の行が出る、(b) 1080p30 の 2 本が最後まで、`FRAMES … late` がほぼ 0（目安 10 以下）・shown 290 以上、(c) `DRAW picture_us` が 1 枚 数 ms（前は約 60000）、(d) PNG の色が正しい（testsrc2 の色の帯・文字が見え、緑や紫に偏らない。前の CPU の道の PNG と見比べ）、(e) `FAILED`・`execution failed` が無く、videoplayer・compositor が落ちない、(f) videoplayer の CPU の使用率が前より下がる（記録）。
+6. 止め所: Pi が応答しなくなったら止めて報告。画が出ない・色が違う時は PNG と log を返す（解析は P3）。
+
 ## 残り・危険
 
 - 段 a の YUV の候補は当たらなかった（B-2 に決めた）。
 - frame の pitch・chroma の offset が image の配置と違えば direct にならず、bounce からの CPU の写し（補正なし）が残る（log で分かる）。
-- 段 c の shader の compiler（kernel）が 2 枚の sample と行列の演算を扱えるかは未確認。
+- 段 c の shader の compiler（kernel）は picture.frag（2 枚の sample と push の行列）を host で compile できた。実機の値（色）は依頼 3 で見る。
+- 1 frame ずつ fence を待つ presenter（Image Viewer と同じ）。1080p30 の再生には十分の見込みだが、60 fps の表示で足りなければ 2 frame を重ねる（次の段）。
+- slot の数が 17 を超える stream（参照・reorder が多い）は readback の道に戻る（log の `pictures are read back`）。
+- i915（5330）の videoplayer は変えていない（arm64 だけ）。i915 で同じ道を使うには i915 の kernel に NV12 の plane の view と export が要る（範囲外）。

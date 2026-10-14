@@ -38,13 +38,60 @@
 #define MEDIA_PROBLEM_PROFILE	1005	/* a native codec's signalled profile or tools are unsupported */
 #define MEDIA_PROBLEM_BUSY	1006	/* all hardware video contexts are occupied */
 
+/* A picture's colour matrix (struct media_gpu_picture's colour). */
+#define MEDIA_COLOUR_601 0U
+#define MEDIA_COLOUR_709 1U
+#define MEDIA_COLOUR_2020 2U
+
 struct media_decoder;
 struct media_frame;
 struct media_scaler;
 
+/*
+ * A decoded picture the GPU holds, for a program that draws it with its own
+ * Vulkan device (ws236-p011): an NV12 image of the decoding context, whose
+ * memory the program imports and whose planes it samples as R8 and RG8.
+ *
+ * identity names the decoding context and changes when a new one is made
+ * (a new stream or sequence); slot names the image in it.  fd is the
+ * image memory's VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT handle, owned
+ * by the picture: a program imports a dup of it once for each (identity,
+ * slot), as an NV12 image of image_width by image_height created with
+ * VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT and VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
+ * and sampled usage, into memory of memory_bytes and memory_type.  The
+ * picture is the window x, y, width, height of it; colour is MEDIA_COLOUR_*
+ * of picture.h and full_range its range.  The samples hold the decoder's
+ * values as they are.  The image keeps the picture until the frame is freed;
+ * the program frees it only after its GPU work that samples it is done.
+ */
+struct media_gpu_picture {
+	uint64_t identity;
+	unsigned slot;
+	int fd;
+	uint64_t memory_bytes;
+	uint32_t memory_type;
+	uint32_t image_width;
+	uint32_t image_height;
+	uint32_t x;
+	uint32_t y;
+	uint32_t width;
+	uint32_t height;
+	unsigned colour;
+	int full_range;
+};
+
 /* Native availability is unconditional; per-track open reports device and profile admission. */
 int media_codec_load(void);
 const char *media_codec_reason(void);
+
+/*
+ * Asks for pictures the GPU holds (struct media_gpu_picture) from the
+ * decoders opened from now on, where the device can give them; hold is the
+ * number of pictures the program keeps at once at most (taken and not yet
+ * freed), zero for pictures in the CPU's memory as before.  A picture the
+ * GPU holds cannot be scaled by media_frame_scale.
+ */
+void media_decoder_gpu_pictures(unsigned hold);
 
 /* A track's decoder. */
 int media_decoder_open(const struct media_track *track, struct media_decoder **decoder);
@@ -65,5 +112,8 @@ void media_frame_aspect(const struct media_frame *frame, int *num, int *den);
 void media_frame_size(const struct media_frame *frame, int *width, int *height);
 int media_frame_scale(const struct media_frame *frame, struct media_scaler **scaler, uint32_t *pixels, size_t stride, int width, int height);
 void media_scaler_free(struct media_scaler *scaler);
+
+/* Describes a picture the GPU holds: 0, or ENOTSUP for a picture in the CPU's memory. */
+int media_frame_gpu(const struct media_frame *frame, struct media_gpu_picture *gpu);
 
 #endif

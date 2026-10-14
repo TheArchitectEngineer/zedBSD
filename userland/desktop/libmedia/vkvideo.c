@@ -94,7 +94,8 @@ const struct media_decoder_ops media_vkvideo_ops = {
 	"vulkan-video", vkvideo_load, vkvideo_reason, vkvideo_open, vkvideo_name,
 	vkvideo_send, vkvideo_receive, vkvideo_picture, vkvideo_sound,
 	vkvideo_flush, vkvideo_close, media_picture_unref, media_picture_size,
-	media_picture_scale, media_picture_scaler_free, NULL, NULL, media_picture_aspect};
+	media_picture_scale, media_picture_scaler_free, NULL, NULL, media_picture_aspect,
+	media_picture_gpu};
 
 /* Built-in dispatch is available; device/profile admission belongs to opening the selected track. */
 static int
@@ -185,7 +186,7 @@ vkvideo_open(
 		probe.pic_width_in_mbs_minus1 = 7U;
 		probe.pic_height_in_map_units_minus1 = 7U;
 		probe.max_num_ref_frames = 1U;
-		error = media_vkvideo_runtime_open(&probe, &runtime);
+		error = media_vkvideo_runtime_open(&probe, 0U, &runtime);
 		if (error != 0) {
 			vkvideo_close(decoder);
 			return error;
@@ -442,6 +443,8 @@ vkvideo_configure(
 	struct media_picture_pool *pool;
 	uint32_t width;
 	uint32_t height;
+	unsigned reorder;
+	int gpu;
 	int change;
 	int comparison;
 	int error;
@@ -476,7 +479,8 @@ vkvideo_configure(
 	if (change) {
 		if (decoder->count != 0U)
 			return EAGAIN;
-		error = media_vkvideo_runtime_open(sps, &runtime);
+		reorder = h264_reorder_depth(&decoder->stream, sps_id);
+		error = media_vkvideo_runtime_open(sps, reorder, &runtime);
 		if (error != 0) {
 			error = vkvideo_errno(error);
 			return error;
@@ -485,7 +489,14 @@ vkvideo_configure(
 		/* Allocate CPU picture storage for the new visible crop independently of the GPU image. */
 		width = (sps->pic_width_in_mbs_minus1 + 1U) * 16U - (sps->frame_crop_left_offset + sps->frame_crop_right_offset) * 2U;
 		height = (sps->pic_height_in_map_units_minus1 + 1U) * 16U - (sps->frame_crop_top_offset + sps->frame_crop_bottom_offset) * 2U;
-		pool = media_picture_pool_create(width, height, decoder->depth + 4U + media_vkvideo_runtime_flights(runtime));
+		gpu = media_vkvideo_runtime_gpu(runtime);
+		if (gpu) {
+			pool = media_picture_pool_create_gpu(width, height, decoder->depth + 4U + media_vkvideo_runtime_flights(runtime));
+		} else {
+			pool = media_picture_pool_create(width, height, decoder->depth + 4U + media_vkvideo_runtime_flights(runtime));
+		}
+
+		/* No pool, no pictures: the new context goes. */
 		if (pool == NULL) {
 			media_vkvideo_runtime_close(runtime);
 			return ENOMEM;

@@ -38,6 +38,14 @@ struct media_scaler {
 };
 
 /*
+ * The pictures a program keeps at once that it asked the GPU's decoders
+ * for (media_decoder_gpu_pictures), or zero for pictures in the CPU's
+ * memory.  The program sets it before opening its decoders; each decoder
+ * reads it once, when it makes its context.
+ */
+static unsigned decoder_gpu_hold;
+
+/*
  * The decoding back ends, tried in this order for each track (a back end
  * that cannot work, or does not take the codec, passes it on).
  */
@@ -407,4 +415,49 @@ media_frame_aspect(
 	*den = 1;
 	if (frame->ops->picture_aspect != NULL)
 		frame->ops->picture_aspect(frame->picture, num, den);
+}
+
+/*
+ * Asks for pictures the GPU holds from the decoders opened from now on.
+ */
+void
+media_decoder_gpu_pictures(
+	unsigned hold)
+{
+	/* The decoders opened later read it. */
+	decoder_gpu_hold = hold;
+}
+
+/*
+ * Reports the pictures held at once a program asked the GPU's decoders for.
+ */
+unsigned
+media_decoder_gpu_hold(
+	void)
+{
+	/* Zero asks for pictures in the CPU's memory. */
+	return decoder_gpu_hold;
+}
+
+/*
+ * Describes a picture the GPU holds.
+ */
+int
+media_frame_gpu(
+	const struct media_frame *frame,
+	struct media_gpu_picture *gpu)
+{
+	int error;
+
+	/* A back end without GPU pictures has only pictures in the CPU's memory. */
+	if (frame == NULL || frame->ops->picture_gpu == NULL)
+		return ENOTSUP;
+
+	/* The back end describes its picture. */
+	error = frame->ops->picture_gpu(frame->picture, gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: gpu describes the picture's image. */
+	return 0;
 }
