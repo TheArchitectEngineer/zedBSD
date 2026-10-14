@@ -132,6 +132,27 @@ void nvrtx_sm75_ldc(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t index, 
 void nvrtx_sm75_ldg(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t address);
 void nvrtx_sm75_stg(struct nvrtx_sm75_word *word, uint32_t address, uint32_t data);
 
+/* LDS and STS of a 32-bit word at a byte offset of the workgroup's shared memory in a register. */
+void nvrtx_sm75_lds(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t offset);
+void nvrtx_sm75_sts(struct nvrtx_sm75_word *word, uint32_t offset, uint32_t data);
+
+/* An atomic on a 32-bit word: global (the address a register pair) or shared (the offset a register), returning the old value. */
+void nvrtx_sm75_atomic(struct nvrtx_sm75_word *word, int shared, uint32_t dst, uint32_t address, uint32_t data, uint32_t operation, int is_signed);
+
+/* A compare and exchange: where the word equals compare, data is written; the old value is returned. */
+void nvrtx_sm75_atomic_cas(struct nvrtx_sm75_word *word, int shared, uint32_t dst, uint32_t address, uint32_t compare, uint32_t data);
+
+/* MEMBAR of a scope (NVRTX_SM75_MEMBAR_*), and BAR.SYNC of barrier 0 for the whole workgroup. */
+void nvrtx_sm75_membar(struct nvrtx_sm75_word *word, uint32_t scope);
+void nvrtx_sm75_bar(struct nvrtx_sm75_word *word);
+
+/* BSSY: the convergence barrier collects the threads at the BSYNC so many instructions after the next one; BSYNC waits for them. */
+void nvrtx_sm75_bssy(struct nvrtx_sm75_word *word, uint32_t barrier, int32_t instructions);
+void nvrtx_sm75_bsync(struct nvrtx_sm75_word *word, uint32_t barrier);
+
+/* Makes a BRA conditional: it branches where the predicate (or its negation) holds. */
+void nvrtx_sm75_bra_if(struct nvrtx_sm75_word *word, uint32_t predicate, int negate);
+
 /* EXIT, NOP, and BRA by a signed number of instructions from the next one. */
 void nvrtx_sm75_exit(struct nvrtx_sm75_word *word);
 void nvrtx_sm75_nop(struct nvrtx_sm75_word *word);

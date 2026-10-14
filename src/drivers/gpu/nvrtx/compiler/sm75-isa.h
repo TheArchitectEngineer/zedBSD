@@ -169,6 +169,16 @@
 #define NVRTX_SM75_OP_BRA		0x947U
 #define NVRTX_SM75_OP_EXIT		0x94dU
 #define NVRTX_SM75_OP_LDC		0xb82U
+#define NVRTX_SM75_OP_ATOMG		0x3a8U
+#define NVRTX_SM75_OP_ATOMG_CAS		0x3a9U
+#define NVRTX_SM75_OP_ATOMS		0x38cU
+#define NVRTX_SM75_OP_ATOMS_CAS		0x38dU
+#define NVRTX_SM75_OP_LDS		0x984U
+#define NVRTX_SM75_OP_STS		0x388U
+#define NVRTX_SM75_OP_MEMBAR		0x992U
+#define NVRTX_SM75_OP_BAR		0xb1dU
+#define NVRTX_SM75_OP_BSSY		0x945U
+#define NVRTX_SM75_OP_BSYNC		0x941U
 
 /*
  * ==== The modifiers of the instructions ====
@@ -268,6 +278,35 @@
 /* LDC: the mode (78..79, 0 indexed) and the data register a store reads (32..39). */
 #define NVRTX_SM75_LDC_MODE_LOW		78U
 #define NVRTX_SM75_STORE_DATA_LOW	32U
+
+/*
+ * The atomics: the operation (87..90), the type (73..75: 0 unsigned, 1
+ * signed 32 bits), and the compare and exchange's second data register
+ * (64..71, the compared value at 32..39).
+ */
+#define NVRTX_SM75_ATOM_OP_LOW		87U
+#define NVRTX_SM75_ATOM_ADD		0U
+#define NVRTX_SM75_ATOM_MIN		1U
+#define NVRTX_SM75_ATOM_MAX		2U
+#define NVRTX_SM75_ATOM_AND		5U
+#define NVRTX_SM75_ATOM_OR		6U
+#define NVRTX_SM75_ATOM_XOR		7U
+#define NVRTX_SM75_ATOM_EXCH		8U
+#define NVRTX_SM75_ATOM_TYPE_LOW	73U
+#define NVRTX_SM75_ATOM_U32		0U
+#define NVRTX_SM75_ATOM_I32		1U
+#define NVRTX_SM75_CAS_DATA_LOW		64U
+
+/* MEMBAR: the scope (76..78): 0 the workgroup, 2 the GPU. */
+#define NVRTX_SM75_MEMBAR_SCOPE_LOW	76U
+#define NVRTX_SM75_MEMBAR_CTA		0U
+#define NVRTX_SM75_MEMBAR_GPU		2U
+
+/* BSSY and BSYNC: the convergence barrier (16..19), BSSY's offset to its BSYNC in words from the next instruction (34..63). */
+#define NVRTX_SM75_CONVERGE_BAR_LOW	16U
+#define NVRTX_SM75_CONVERGE_BARS	16U
+#define NVRTX_SM75_BSSY_OFFSET_LOW	34U
+#define NVRTX_SM75_BSSY_OFFSET_BITS	30U
 
 /* BRA: the offset to the target in words from the next instruction (34..81). */
 #define NVRTX_SM75_BRA_OFFSET_LOW	34U

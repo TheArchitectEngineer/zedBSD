@@ -12,7 +12,7 @@ repo=$(cd "$(dirname "$0")/../../.." && pwd)
 mkdir -p "$repo/build/tmp"
 out=$(mktemp -d "$repo/build/tmp/nvrtx-sm75.XXXXXX")
 for source in "$repo"/plan/ws037/tests/sm75/*.comp "$repo/plan/ws101/tests/host/shaders/add.comp" \
-	"$repo/plan/ws101/tests/host/shaders/ids.comp"; do
+	"$repo/plan/ws101/tests/host/shaders/ids.comp" "$repo/plan/ws101/tests/host/shaders/atomic.comp"; do
 	name=$(basename "$source" .comp)
 	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$out/$name.spv" "$source"
 done
