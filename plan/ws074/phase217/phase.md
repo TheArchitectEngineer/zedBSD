@@ -16,7 +16,7 @@ Event ws074-p217-q1167-partial-clear-20261014: [証拠](evidence/20261014-q1167/
 
 ## q1166-i01 結果（2026-10-14 12:40 JST）
 
-Event ws074-p217-q1166-partial-clear-20261014: [証拠](evidence/20261014-q1166/README.md)。固定12 IDは6 whole PASS/6 FAIL。flex-start/end4件とcolumn-axis008/009は既PASS、row-axis008/009はself-start/end static area未対応、両axis010/011は逆writing-mode子の縦文字幅期待10/実60で別途text geometryが先決。次は同writing-mode row008/009の有限実装。q1166診断部分cleared、p217/p189/p173 whole未達。読取のみ、共有投影/GitHub publication保留。
+Event ws074-p217-q1166-partial-clear-20261014: [証拠](evidence/20261014-q1166/README.md)。固定12 IDは6 whole PASS/6 FAIL。flex-start/end4件とcolumn-axis008/009は既PASS、row-axis008/009はself-start/end static area未対応。訂正（2026-10-14 12:45 JST）: column-axis010/011は逆writing-mode子、row-axis010/011は逆direction子で、両者の縦文字幅期待10/実60は別原因。q1166診断部分cleared、p217/p189/p173 whole未達。読取のみ、共有投影/GitHub publication保留。
 
 ## q1165-i01 有限部分範囲（2026-10-14 12:39 JST）
 

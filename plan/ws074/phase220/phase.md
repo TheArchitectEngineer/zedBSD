@@ -2,6 +2,14 @@
 
 # ws074-p220: vertical inline text geometry
 
+## q1168-i01 有限部分範囲（2026-10-14 12:42 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:12 JSTまで）に適用。positioned LTR固定2×2 vertical-lr/rl inline-grid、明示px track/gap0の直接absolute auto-size ASCII子に限り、子が親と逆のvertical writing-modeでも縦inline geometryへ通す。固定column/row-axis010/011の縦初回width10/高さ期待一致、旧001–009代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。static area/逆direction/auto lines/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1168-i01 結果（2026-10-14 12:45 JST）
+
+Event ws074-p220-q1168-uncleared-20261014: [証拠](evidence/20261014-q1168/README.md)。column-axis010/011は逆writing-mode子で縦初回width60→10、static offset差へ進んだ。row-axis010/011は逆writing-modeではなく逆direction子であり、q1168の明示scope外のためwidth60が残る。承認criteriaを全て満たせずq1168-i01はuncleared。column側の検証済み改善は保持。旧6件PASS、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。次は別QueueでRTL縦文字寸法、後続にstatic area。p220/p217/p189/p173 whole未達。共有投影/GitHub publication保留。
+
 ## q1148-i01 有限部分範囲（2026-10-14 11:28 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:58 JSTまで）に適用。q1144の非折返しvertical-lr/LTR text-only行のLatin sideways字形を、縦の物理line/fragment座標と時計回り90度のbitmap配置でCPU/GPU描画。shadow/underlineは本scopeの対象外。非対称字形の画素参照・CPU/GPU一致、shader検証、warning0 build、旧縦/横WPT PASS、host/Acid3差0・Acid2非増加を検証。別writing-mode/複雑inline/折返し、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p225/p189/p173 wholeは部分受け入れに含めない。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

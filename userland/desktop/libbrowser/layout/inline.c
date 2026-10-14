@@ -141,7 +141,9 @@ layout_inline(
 	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID));
 	rl_fixed_grid = box->parent != NULL &&
 	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID &&
-	    box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+	    (box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL ||
+	    (box->parent->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+	    box->out_of_flow && inline_vertical_absolute_grid(box))) &&
 	    box->parent->style.column_count != 0 &&
 	    box->parent->style.row_count != 0;
 	rl_auto_grid = box->parent != NULL &&
@@ -232,10 +234,19 @@ inline_vertical_absolute_grid(
 	    box->style.box_sizing != CSS_BOX_SIZING_CONTENT ||
 	    parent->style.position != CSS_POSITION_RELATIVE ||
 	    parent->style.display != CSS_DISPLAY_INLINE_GRID ||
-	    parent->style.writing_mode != box->style.writing_mode ||
 	    parent->style.direction != CSS_DIRECTION_LTR ||
 	    parent->style.column_count == 0 || parent->style.row_count == 0 ||
 	    parent->style.column_gap.value != 0 || parent->style.row_gap.value != 0)
+		return 0;
+	if (parent->style.writing_mode != box->style.writing_mode &&
+	    !((parent->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+	    box->style.writing_mode == CSS_WRITING_VERTICAL_RL) ||
+	    (parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+	    box->style.writing_mode == CSS_WRITING_VERTICAL_LR)))
+		return 0;
+	if (parent->style.writing_mode != box->style.writing_mode &&
+	    (parent->style.column_count != 2 || parent->style.row_count != 2 ||
+	    box->style.direction != CSS_DIRECTION_LTR))
 		return 0;
 
 	/* No percentage or flexible track can provide a definite inline room. */
