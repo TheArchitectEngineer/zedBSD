@@ -98,6 +98,75 @@ static int grid_fixed_row_baseline(const struct layout_box *box, const struct gr
 static int grid_fixed_column_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *right_extent);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
+static void grid_distribute(int value, int reversed, layout_unit free_space, int tracks, layout_unit *offset, layout_unit *extra);
+static int grid_content_stretches(int value);
+
+/* Normal content distribution stretches the auto tracks. */
+static int
+grid_content_stretches(
+	int value)
+{
+	return value == CSS_ALIGN_NORMAL || value == CSS_ALIGN_STRETCH;
+}
+
+/*
+ * Resolves a content-distribution value over the free space of a track
+ * list: the physical offset of the first track (from the left or top) and
+ * the extra space added to each gap.  A reversed list starts at the far end.
+ */
+static void
+grid_distribute(
+	int value,
+	int reversed,
+	layout_unit free_space,
+	int tracks,
+	layout_unit *offset,
+	layout_unit *extra)
+{
+	*offset = 0;
+	*extra = 0;
+	if (tracks <= 0)
+		return;
+
+	/* Distribution needs positive space; an overflow falls back as the specification says. */
+	if (free_space <= 0 || (tracks == 1 && value == CSS_ALIGN_SPACE_BETWEEN)) {
+		if (value == CSS_ALIGN_SPACE_BETWEEN)
+			value = CSS_ALIGN_START;
+		else if (value == CSS_ALIGN_SPACE_AROUND || value == CSS_ALIGN_SPACE_EVENLY)
+			value = CSS_ALIGN_CENTER;
+	}
+	switch (value) {
+	case CSS_ALIGN_RIGHT:
+		*offset = free_space;
+		break;
+	case CSS_ALIGN_END:
+		if (!reversed)
+			*offset = free_space;
+		break;
+	case CSS_ALIGN_START:
+	case CSS_ALIGN_NORMAL:
+	case CSS_ALIGN_STRETCH:
+		if (reversed)
+			*offset = free_space;
+		break;
+	case CSS_ALIGN_CENTER:
+		*offset = free_space / 2;
+		break;
+	case CSS_ALIGN_SPACE_BETWEEN:
+		*extra = free_space / (layout_unit)(tracks - 1);
+		break;
+	case CSS_ALIGN_SPACE_AROUND:
+		*extra = free_space / (layout_unit)tracks;
+		*offset = *extra / 2;
+		break;
+	case CSS_ALIGN_SPACE_EVENLY:
+		*extra = free_space / (layout_unit)(tracks + 1);
+		*offset = *extra;
+		break;
+	default:
+		break;
+	}
+}
 
 /* Existing in-flow Grid paths use their logical start and end positions. */
 static int
@@ -127,6 +196,7 @@ layout_grid(
 	struct layout_box *child;
 	layout_unit column_gap;
 	layout_unit row_gap;
+	layout_unit row_gap_base;
 	layout_unit x;
 	layout_unit y;
 	layout_unit area_width;
@@ -138,6 +208,7 @@ layout_grid(
 	layout_unit used;
 	layout_unit shift;
 	layout_unit row_shift;
+	layout_unit distribution;
 	layout_unit baseline;
 	layout_unit peer_baseline;
 	layout_unit shared_baseline;
@@ -205,6 +276,8 @@ layout_grid(
 	if (box->style.row_gap.unit == CSS_UNIT_PX)
 		row_gap = layout_from_px(box->style.row_gap.value);
 
+	row_gap_base = row_gap;
+
 	/* The columns' widths. */
 	error = grid_size_columns(tree, box, &grid, column_gap);
 	if (error != 0) {
@@ -217,21 +290,12 @@ layout_grid(
 	for (position = 0; position < grid.column_count; position++)
 		used += grid.columns[position];
 	box->grid_content = used;
-	shift = 0;
 	room = box->width - used;
-	if (room > 0 && box->style.justify_content == CSS_ALIGN_CENTER)
-		shift = room / 2;
-	if (room > 0) {
-		if (box->style.justify_content == CSS_ALIGN_RIGHT ||
-		    (box->style.justify_content == CSS_ALIGN_NORMAL &&
-		    box->style.direction == CSS_DIRECTION_RTL &&
-		    box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB) ||
-		    (box->style.justify_content == CSS_ALIGN_END &&
-		    box->style.direction == CSS_DIRECTION_LTR) ||
-		    (box->style.justify_content == CSS_ALIGN_START &&
-		    box->style.direction == CSS_DIRECTION_RTL))
-			shift = room;
-	}
+	grid_distribute(box->style.justify_content,
+	    box->style.direction == CSS_DIRECTION_RTL &&
+	    box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB,
+	    room, grid.column_count, &shift, &distribution);
+	column_gap += distribution;
 
 	/* Each item laid out in its area's width. */
 	for (index = 0; index < grid.item_count; index++) {
@@ -267,7 +331,6 @@ layout_grid(
 	grid_size_rows(box, &grid, row_gap);
 	row_shift = 0;
 	if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
-	    box->style.align_content == CSS_ALIGN_CENTER &&
 	    box->style.height.unit == CSS_UNIT_PX) {
 		layout_unit available_height;
 
@@ -280,8 +343,11 @@ layout_grid(
 			used = row_gap * (layout_unit)(grid.row_count - 1);
 		for (position = 0; position < grid.row_count; position++)
 			used += grid.rows[position];
-		if (available_height > used)
-			row_shift = (available_height - used) / 2;
+		if (available_height < 0)
+			available_height = 0;
+		grid_distribute(box->style.align_content, 0, available_height - used,
+		    grid.row_count, &row_shift, &distribution);
+		row_gap += distribution;
 	}
 
 	/* Absolute children use valid definite grid areas without sizing the tracks. */
@@ -425,6 +491,7 @@ layout_grid(
 	}
 
 	/* The container's content height: its rows and the gaps between them. */
+	row_gap = row_gap_base;
 	box->height = row_gap * (layout_unit)(grid.row_count - 1);
 	if (grid.row_count == 0)
 		box->height = 0;
@@ -1862,7 +1929,8 @@ grid_size_columns(
 	}
 
 	/* Without fr tracks, the auto tracks share the room left (not while the container is measured). */
-	if (tree->measuring != 0 || available <= used)
+	if (tree->measuring != 0 || available <= used ||
+	    !grid_content_stretches(box->style.justify_content))
 		return 0;
 	autos = 0;
 	last_auto = -1;
@@ -2153,6 +2221,32 @@ grid_size_rows(
 			if (minimum > grid->rows[row])
 				grid->rows[row] = minimum;
 		}
+		return;
+	}
+
+	/* A definite height gives its free space equally to the auto rows. */
+	if (available < 0 || !grid_content_stretches(box->style.align_content))
+		return;
+	used = gap * (layout_unit)(grid->row_count - 1);
+	height = 0;
+	for (row = 0; row < grid->row_count; row++) {
+		track = grid_row_track(&box->style, row);
+		used += grid->rows[row];
+		if (track->kind == CSS_TRACK_AUTO)
+			height++;
+	}
+	if (height == 0 || available <= used)
+		return;
+	minimum = (available - used) / height;
+	spanned = available - used - minimum * height;
+	for (row = 0; row < grid->row_count; row++) {
+		track = grid_row_track(&box->style, row);
+		if (track->kind != CSS_TRACK_AUTO)
+			continue;
+		grid->rows[row] += minimum;
+		height--;
+		if (height == 0)
+			grid->rows[row] += spanned;
 	}
 }
 

@@ -962,7 +962,7 @@ css_initial_style(
 	style->z_index_auto = 1;
 
 	/* The flexible box's initial values that are not zero. */
-	style->justify_content = CSS_ALIGN_START;
+	style->justify_content = CSS_ALIGN_NORMAL;
 	style->justify_items = CSS_ALIGN_NORMAL;
 	style->align_items = CSS_ALIGN_NORMAL;
 	style->align_content = CSS_ALIGN_STRETCH;
