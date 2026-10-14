@@ -198,6 +198,14 @@ bounds_lines(
 			if (!inside)
 				continue;
 
+			/* Vertical lines advance in physical y and occupy their line's physical x band. */
+			if (box->vertical_inline) {
+				x = left + line->y;
+				y = top + line->left + fragment->x;
+				bounds_add(rect, found, x, y, line->height, fragment->width);
+				continue;
+			}
+
 			/* The fragment's run, from its ascent above the baseline to its descent below. */
 			x = left + line->left + fragment->x;
 			y = top + line->y + line->baseline + fragment->shift - fragment->ascent;

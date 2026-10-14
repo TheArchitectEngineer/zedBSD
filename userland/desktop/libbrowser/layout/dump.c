@@ -161,9 +161,16 @@ dump_lines(
 	for (index = 0; index < box->line_count; index++) {
 		line = &box->lines[index];
 		dump_indent(out, depth);
-		wb_buffer_printf(out, "line %.2f %.2f height %.2f baseline %.2f\n", (double)layout_to_px(left + line->left),
-		    (double)layout_to_px(top + line->y), (double)layout_to_px(line->height),
-		    (double)layout_to_px(top + line->y + line->baseline));
+
+		/* The vertical line reports its physical width; a horizontal line reports height. */
+		if (box->vertical_inline) {
+			wb_buffer_printf(out, "vertical line %.2f %.2f width %.2f\n", (double)layout_to_px(left + line->y),
+			    (double)layout_to_px(top + line->left), (double)layout_to_px(line->height));
+		} else {
+			wb_buffer_printf(out, "line %.2f %.2f height %.2f baseline %.2f\n", (double)layout_to_px(left + line->left),
+			    (double)layout_to_px(top + line->y), (double)layout_to_px(line->height),
+			    (double)layout_to_px(top + line->y + line->baseline));
+		}
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
 			dump_indent(out, depth + 1);
@@ -191,8 +198,13 @@ dump_lines(
 			}
 
 			/* A text fragment. */
-			wb_buffer_printf(out, "text %.2f w %.2f %upx \"", (double)layout_to_px(left + line->left + fragment->x),
-			    (double)layout_to_px(fragment->width), fragment->font.pixels);
+			if (box->vertical_inline) {
+				wb_buffer_printf(out, "text %.2f h %.2f %upx \"", (double)layout_to_px(top + line->left + fragment->x),
+				    (double)layout_to_px(fragment->width), fragment->font.pixels);
+			} else {
+				wb_buffer_printf(out, "text %.2f w %.2f %upx \"", (double)layout_to_px(left + line->left + fragment->x),
+				    (double)layout_to_px(fragment->width), fragment->font.pixels);
+			}
 			wb_units_to_utf8(fragment->text, fragment->length, out);
 			wb_buffer_append_string(out, "\"");
 			dump_shift(out, fragment);

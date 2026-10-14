@@ -1,0 +1,21 @@
+viewport 1024.00 x 768.00, document height 220.00
+block <html> 0.00 0.00 1024.00 220.00
+  block <body> 8.00 8.00 1008.00 204.00
+    block <div> 8.00 8.00 102.00 102.00
+      vertical line 9.00 9.00 width 10.00
+        text 9.00 h 6.00 10px "X"
+        text 15.00 h 6.00 10px " "
+        text 21.00 h 12.00 10px "XX"
+        text 33.00 h 6.00 10px " "
+        text 39.00 h 6.00 10px "X"
+    block <div> 8.00 110.00 102.00 102.00
+      vertical line 9.00 111.00 width 10.00
+        text 111.00 h 6.00 10px "X"
+        text 117.00 h 6.00 10px " "
+        text 123.00 h 12.00 10px "XX"
+        text 135.00 h 6.00 10px " "
+        text 141.00 h 6.00 10px "X"
+      vertical line 19.00 111.00 width 10.00
+        text 111.00 h 12.00 10px "XX"
+        text 123.00 h 6.00 10px " "
+        text 129.00 h 6.00 10px "X"

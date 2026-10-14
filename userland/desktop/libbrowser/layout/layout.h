@@ -155,6 +155,8 @@ struct layout_box {
 	/* The lines of a block with inline children. */
 	struct layout_line *lines;
 	size_t line_count;
+	/* A bounded vertical-lr text-only line mapping; line coordinates are logical until painted. */
+	int vertical_inline;
 
 	/* The text of a text box, whitespace kept as it came (the lines collapse it). */
 	const uint16_t *text;

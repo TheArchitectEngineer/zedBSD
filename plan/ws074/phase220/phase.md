@@ -2,12 +2,20 @@
 
 # ws074-p220: vertical inline text geometry
 
-Status: in-progress（q1121部分調査。whole未達）
+## q1144-i01 有限部分範囲（2026-10-14 11:03 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:33 JSTまで）に適用。vertical-lr/LTRの非Grid text-only block内、単一非折返し文字行と明示brの複数行だけについて、inline advance/line block幅を物理height/widthへ写し、auto高さ・intrinsic幅・DOM bounds/hit/dumpを整合。float/atomic/replaced/marker、折返し、vertical-rl/RTL、縦paintは範囲外で既存経路へ戻す。10px最小fixtureの単一行物理幅10/高さ36と複数行、旧horizontal/vertical whole PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加を確認。固定vertical-lr Grid WPT2件は診断測定するがPASSはこの非Grid部分基準外。WPT/runner/公開ABI/`plan/master.md`変更なし。p220/p225/p217/p189/p173 wholeは未達を保つ。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+Status: in-progress（q1144限定縦line geometry確認。paint/whole未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
 Primary Milestone: MG006（WS074を継承）
 Prerequisites: [p217 q1103設計](../phase217/evidence/20261014-q1103/README.md)、[p217 q1092縦書きhost](../phase217/evidence/20261014-q1092/README.md)。
 Scoped output dependency: [p217](../phase217/phase.md)のvertical-lr文字Grid alignmentは本Phaseの縦inline line geometry出力を待つ。p217の空vertical-rl子や他水平alignmentは独立。
+
+## q1144-i01 結果（2026-10-14 11:11 JST）
+
+Event ws074-p220-q1144-partial-clear-20261014: [証拠](evidence/20261014-q1144/README.md)。限定vertical-lr/LTRのtext-only inline行を物理座標へ写し、10px最小ページの単一行spanを36×13→10×36、明示brの2行を36×23→20×36に修正。hit/dumpも縦位置と一致。物理height20で36px文字の範囲外例は従来経路へ戻る。固定Grid stretch001/002は両whole FAIL→PASS（Grid itemのauto高さ・intrinsic幅も改善）。旧whole PASS2、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。paint dumpは字形をなお横方向に配列し、縦paint CPU/GPU・他writing-mode/折返しは未実装。q1144部分cleared、p220/p225/p217/p189/p173 whole未達。共有投影/GitHub publication保留。
 
 ## 目的と受け入れ
 

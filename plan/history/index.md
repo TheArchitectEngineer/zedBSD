@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1143 / WS074 fixed Grid502 recensus（2026-10-14）
+## 最新: q1144 / WS074 vertical-lr inline geometry（2026-10-14）
+
+[q1144履歴](queue-q1144.md): 限定縦文字span10×36・2行20×36とDOM hit/dumpを確認。固定Grid stretch001/002 whole PASS、旧PASS・Acid3差0維持。paintは横向きで後続。[証拠](../ws074/phase220/evidence/20261014-q1144/README.md)。共有投影/GitHub publication pending。
+
+## q1143 / WS074 fixed Grid502 recensus（2026-10-14）
 
 [q1143履歴](queue-q1143.md): q1142後も固定Grid502は126 PASS/376 FAIL、subtest5,163 PASS/5,842 FAILとq1140比状態変化0・旧PASS後退0。[証拠](../ws074/phase189/evidence/20261014-q1143/README.md)。p220縦文字geometry待ち、共有投影/GitHub publication pending。
 

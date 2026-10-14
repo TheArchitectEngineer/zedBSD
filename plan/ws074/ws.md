@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1143](queue.md) finished / p189 fixed Grid502 recensus after vertical axes。2026-10-14 11:02 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1144](queue.md) finished / p220 vertical-lr inline geometry。2026-10-14 11:11 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1140の126 PASS/376 FAIL、q1134比2 whole/45 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
 
@@ -955,3 +955,5 @@ Event ws074-p217-p225-addition-20261014: [p217 q1141](phase217/evidence/20261014
 Event ws074-p225-q1142-uncleared-20261014: [p225 q1142](phase225/evidence/20261014-q1142/README.md)は空2×2の縦Grid軸変換を達成したが、文字幅と固定WPT2件がFAILで試行uncleared。p220 q1122はCSS stateのみでgeometry出力ではないと依存記述を訂正。非Grid縦文字line/fragmentをp220で先に検証し、p225を再試行する。Grid/host・Acid3差0後退なし、p217/p189/p173分母と受け入れ不変。共有投影/GitHub publication保留。
 
 Event ws074-p189-q1143-outcome-20261014: [p189 q1143](phase189/evidence/20261014-q1143/README.md)でq1142後の固定Grid502を全件同条件再測定。q1140比whole/subtest状態変化0、126 PASS/376 FAIL、旧PASS後退0、ID/hash/checkpoint/raw全一致。縦書き001初回文字幅実100→60だがFAIL継続。q1143部分cleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p220-p225-q1144-outcome-20261014: [p220 q1144](phase220/evidence/20261014-q1144/README.md)で限定vertical-lr inline geometryの最小span10×36、複数line20×36、DOM hit/dumpを確認。固定Grid stretch001/002が両whole PASS、旧PASS2件・host回帰・Acid3差0維持。[p225](phase225/phase.md)のq1142 uncleared履歴は維持、他vertical Grid/paint未検証のためwhole未達。p220/p217/p189/p173全件受け入れ不変。共有投影/GitHub publication保留。

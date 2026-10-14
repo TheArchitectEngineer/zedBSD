@@ -107,6 +107,8 @@ static int inline_wraps(const struct layout_box *box);
 static void inline_line_height(struct layout_tree *tree, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
+static int inline_vertical_simple(const struct layout_box *box, int depth);
+static layout_unit inline_vertical_room(const struct layout_box *box);
 
 /*
  * Lays out a block's inline content into lines; the block's content
@@ -119,7 +121,18 @@ layout_inline(
 {
 	struct inline_cutter cutter;
 	struct layout_box *child;
+	const struct inline_piece *pieces;
+	layout_unit room;
+	layout_unit advance;
+	size_t index;
+	int vertical;
 	int error;
+
+	/* A text-only vertical-lr block can map its logical lines to physical axes. */
+	vertical = box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+	    box->style.direction == CSS_DIRECTION_LTR &&
+	    (box->style.text_align == CSS_TEXT_ALIGN_START || box->style.text_align == CSS_TEXT_ALIGN_LEFT) &&
+	    inline_vertical_simple(box, 0);
 
 	/* The floats among the content go to their sides first. */
 	error = inline_place_floats(tree, box, box, 0);
@@ -140,6 +153,28 @@ layout_inline(
 		return cutter.error;
 	}
 
+	/* Only lines that fit a definite physical inline room use this unwrapped mapping. */
+	if (vertical) {
+		room = inline_vertical_room(box);
+		advance = 0;
+		pieces = cutter.pieces.items;
+		for (index = 0; index < cutter.pieces.count; index++) {
+			/* An explicit break starts a new line's inline advance. */
+			if (pieces[index].forced_break) {
+				advance = 0;
+				continue;
+			}
+
+			/* A run beyond the room needs the established wrapping path. */
+			advance += pieces[index].width;
+			if (advance > room) {
+				vertical = 0;
+				break;
+			}
+		}
+	}
+	box->vertical_inline = vertical;
+
 	/* Packs the pieces into lines. */
 	error = inline_build_lines(tree, box, cutter.pieces.items, cutter.pieces.count);
 	wb_vector_release(&cutter.pieces);
@@ -148,6 +183,97 @@ layout_inline(
 
 	/* Succeeded: the block has its lines and its height. */
 	return 0;
+}
+
+/* Checks whether a vertical line has only text and explicit breaks. */
+static int
+inline_vertical_simple(
+	const struct layout_box *box,
+	int depth)
+{
+	const struct layout_box *child;
+
+	/* Other formatting contexts and markers retain their established layout. */
+	if (depth > LAYOUT_DEPTH_MAX || box->out_of_flow ||
+	    box->floating != CSS_FLOAT_NONE || box->atomic || box->replaced ||
+	    box->marker_length != 0)
+		return 0;
+
+	/* Text and a line break have no descendants to inspect. */
+	if (box->kind == LAYOUT_TEXT || box->kind == LAYOUT_LINE_BREAK)
+		return 1;
+
+	/* Only the root block and inline wrappers can contain these runs. */
+	if (depth != 0 && box->kind != LAYOUT_INLINE)
+		return 0;
+
+	/* Every descendant must share the vertical-lr, left-to-right mapping. */
+	if (box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	    box->style.direction != CSS_DIRECTION_LTR)
+		return 0;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (!inline_vertical_simple(child, depth + 1))
+			return 0;
+	}
+
+	/* The subtree can use one logical inline axis. */
+	return 1;
+}
+
+/* Finds definite physical inline room for the bounded vertical-lr line. */
+static layout_unit
+inline_vertical_room(
+	const struct layout_box *box)
+{
+	const struct layout_box *parent;
+	layout_unit room;
+	layout_unit track;
+	int column;
+
+	/* A physical pixel height gives a non-Grid block its inline room. */
+	room = 0;
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		room = layout_from_px(box->style.height.value);
+
+		/* Border sizing leaves less content room than its declared height. */
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			room -= box->border[CSS_TOP] + box->padding[CSS_TOP] +
+			    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+		/* A negative physical length supplies no inline room. */
+		if (room < 0)
+			room = 0;
+		return room;
+	}
+
+	/* A fixed vertical Grid's shortest column bounds every simple item. */
+	parent = box->parent;
+	if (parent == NULL || parent->style.display != CSS_DISPLAY_INLINE_GRID ||
+	    parent->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	    parent->style.direction != CSS_DIRECTION_LTR ||
+	    parent->style.column_count == 0 || parent->style.column_gap.value != 0)
+		return 0;
+	for (column = 0; column < parent->style.column_count; column++) {
+		/* A non-fixed column cannot guarantee that every child fits. */
+		if (parent->style.columns[column].kind != CSS_TRACK_LENGTH ||
+		    parent->style.columns[column].size.unit != CSS_UNIT_PX)
+			return 0;
+
+		/* The shortest fixed column bounds every simple grid item. */
+		track = layout_from_px(parent->style.columns[column].size.value);
+		if (column == 0 || track < room)
+			room = track;
+	}
+
+	/* The item's physical frame and margins reduce that room. */
+	room -= box->margin[CSS_TOP] + box->margin[CSS_BOTTOM] +
+	    box->border[CSS_TOP] + box->padding[CSS_TOP] +
+	    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+	/* A negative content room cannot hold even an empty run. */
+	if (room < 0)
+		room = 0;
+	return room;
 }
 
 /* Cuts an inline-level box's content: text, a line break, or an inline box's children. */
@@ -576,11 +702,14 @@ inline_build_lines(
 	size_t count)
 {
 	struct wb_vector lines;
+	const struct layout_line *line;
+	const struct layout_fragment *last;
 	layout_unit cursor;
 	layout_unit x;
 	layout_unit line_left;
 	layout_unit line_width;
 	layout_unit below;
+	layout_unit advance;
 	size_t start;
 	size_t index;
 	int wrap_lines;
@@ -588,7 +717,7 @@ inline_build_lines(
 	int error;
 
 	/* Lines wrap unless the block's white-space forbids it. */
-	wrap_lines = inline_wraps(box);
+	wrap_lines = !box->vertical_inline && inline_wraps(box);
 
 	/* Walks the pieces, ending a line at a forced break or when the next word does not fit. */
 	wb_vector_init(&lines, sizeof(struct layout_line));
@@ -638,7 +767,7 @@ inline_build_lines(
 		 * link with white-space: normal in a nowrap item wraps).
 		 */
 		wraps = 0;
-		if (index > start)
+		if (!box->vertical_inline && index > start)
 			wraps = inline_wraps(pieces[index - 1U].box);
 		if (wraps && !pieces[index].space && x + pieces[index].width > line_width) {
 			error = inline_finish_line(tree, box, pieces, start, index, &cursor, &lines, lines.count == 0, line_left, line_width);
@@ -685,8 +814,20 @@ inline_build_lines(
 	/* The lines now live in the arena. */
 	wb_vector_release(&lines);
 
-	/* The block is as tall as its lines. */
+	/* Horizontal lines stack downwards; vertical lines take the longest inline advance. */
 	box->height = cursor;
+	if (box->vertical_inline) {
+		box->height = 0;
+		for (index = 0; index < box->line_count; index++) {
+			line = &box->lines[index];
+			if (line->fragment_count == 0)
+				continue;
+			last = &line->fragments[line->fragment_count - 1U];
+			advance = last->x + last->width;
+			if (advance > box->height)
+				box->height = advance;
+		}
+	}
 
 	/* Succeeded: the lines are stored. */
 	return 0;

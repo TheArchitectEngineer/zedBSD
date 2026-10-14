@@ -1,0 +1,13 @@
+<!doctype html>
+<style>
+body { font: 10px/1 monospace; }
+.vertical { writing-mode: vertical-lr; direction: ltr; width: 100px; height: 100px; border: 1px solid black; }
+</style>
+<div id="single" class="vertical"><span id="single-text">X XX X</span></div>
+<div id="multiple" class="vertical"><span id="multiple-text">X XX X<br>XX X</span></div>
+<script>
+["single", "single-text", "multiple", "multiple-text"].forEach(function (id) {
+  var rect = document.getElementById(id).getBoundingClientRect();
+  console.log(id + "=" + [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(","));
+});
+</script>

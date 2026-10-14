@@ -143,17 +143,34 @@ hit_lines(
 	/* The line whose band holds the point. */
 	for (index = 0; index < box->line_count; index++) {
 		line = &box->lines[index];
-		if (y < top + line->y || y >= top + line->y + line->height)
-			continue;
+
+		/* The line occupies an x band vertically and a y band horizontally. */
+		if (box->vertical_inline) {
+			if (x < left + line->y || x >= left + line->y + line->height)
+				continue;
+		} else {
+			if (y < top + line->y || y >= top + line->y + line->height)
+				continue;
+		}
 
 		/* The fragment of that line whose run holds the point (an inline block's text was searched before). */
 		for (item = 0; item < line->fragment_count; item++) {
 			fragment = &line->fragments[item];
+
+			/* Atomic content has a separately tested box. */
 			if (fragment->box->atomic)
 				continue;
-			start = left + line->left + fragment->x;
-			if (x >= start && x < start + fragment->width)
-				return fragment->box;
+
+			/* The run's logical advance maps to the physical y or x axis. */
+			if (box->vertical_inline) {
+				start = top + line->left + fragment->x;
+				if (y >= start && y < start + fragment->width)
+					return fragment->box;
+			} else {
+				start = left + line->left + fragment->x;
+				if (x >= start && x < start + fragment->width)
+					return fragment->box;
+			}
 		}
 
 		/* The point is on the line but on no fragment. */

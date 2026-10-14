@@ -25,3 +25,5 @@ Event ws074-p225-addition-20261014: q1141でalignment192 FAIL中初回幅誤り1
 ## q1142-i01 結果（2026-10-14 10:58 JST）
 
 Event ws074-p225-q1142-uncleared-20261014: [証拠](evidence/20261014-q1142/README.md)。限定固定track経路で空2×2の物理位置・寸法は期待どおり。単一行文字itemは軸位置のみ改善し、物理幅38px（WPT Ahemでは60px）で期待10pxに届かない。固定vertical-lr stretch WPT001/002は両FAILのため、q1142-i01の明示基準は未達、Phaseもuncleared。p220 q1122を縦文字geometry出力とみなした当初の依存記述を訂正した。次はp220で非Grid文字の縦line/fragment geometryを有限範囲で実装・検証し、その出力をGridで再検証する。空Grid軸変換コードは後退ゲートPASSで保持。Acid3差0/Acid2差1865維持。共有投影/GitHub publication保留。
+
+Event ws074-p220-q1144-dependency-output-20261014: [p220 q1144](../phase220/evidence/20261014-q1144/README.md)の限定縦inline geometry出力で、p225 q1142時にFAILだった固定vertical-lr stretch001/002が両whole PASS。q1142試行の歴史的unclearedは維持し、p225 wholeは他vertical Grid/paint未検証のためuncleared。次は固定vertical-lr family全件と画素描画を別有限範囲で照合する。共有投影/GitHub publication保留。

@@ -370,6 +370,13 @@ layout_content_width(
 
 	/* Lines: the end of each line's last piece. */
 	if (box->children_inline) {
+		/* Vertical lines stack in physical x, so their block-axis widths add. */
+		if (box->vertical_inline) {
+			for (index = 0; index < box->line_count; index++)
+				widest += box->lines[index].height;
+			return widest;
+		}
+
 		for (index = 0; index < box->line_count; index++) {
 			line = &box->lines[index];
 			if (line->fragment_count == 0)
