@@ -192,7 +192,9 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk-object.c src/drivers/gpu/nvrtx/vk-session.c \
 	src/drivers/gpu/nvrtx/vk-stream.c src/drivers/gpu/nvrtx/vk-dispatch.c src/drivers/gpu/nvrtx/vk-device.c \
 	src/drivers/gpu/nvrtx/runtime.c src/drivers/gpu/nvrtx/vk-reply.c src/drivers/gpu/nvrtx/vk-memory.c src/drivers/gpu/nvrtx/vk-resource.c \
-	src/drivers/gpu/nvrtx/vk-node.c src/drivers/gpu/nvrtx/vk-layout.c src/drivers/gpu/nvrtx/vk-target.c src/drivers/gpu/nvrtx/vk-pipeline.c
+	src/drivers/gpu/nvrtx/vk-node.c src/drivers/gpu/nvrtx/vk-layout.c src/drivers/gpu/nvrtx/vk-target.c src/drivers/gpu/nvrtx/vk-pipeline.c \
+	src/drivers/gpu/nvrtx/vk-command.c src/drivers/gpu/nvrtx/vk-record.c src/drivers/gpu/nvrtx/vk-execute.c src/drivers/gpu/nvrtx/vk-queue.c \
+	src/drivers/gpu/nvrtx/exec-push.c
 ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/render/codec.c
 endif
@@ -907,7 +909,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo vkvideo-probe media-probe mediastorage display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out vkdemo vkquad vkvideo-probe media-probe mediastorage display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # Static programs (the class static, ws168-p002): linked with the static C
 # library alone and no runtime linker, as a child that sandbox_spawn starts

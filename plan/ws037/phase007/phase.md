@@ -279,3 +279,43 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 | 試験 | host: libvulkan の本物の encoder（`resources.c`・`pipeline.c`・`commands.c` などを include、ws141 の `vulkan-client-pipeline-host.c` と同じ作り）で wire を作り、executor に通し、GPU の口は host の偽物（push を記録）で、組んだ push を `clc597.h` の値で照合 | 実機の前に wire と push の両方を確かめる |
 
 段: D3a memory・buffer・image・view・sampler（＋node の blob の `blob_id`）→ D3b shader module・layout・descriptor・render pass・framebuffer・pipeline（compile）→ D3c command pool／buffer と記録 → D3d fence・semaphore・QueueSubmit と push の組み立て・実行。各段で build・host 試験、D3d の後に T1 へ（vkdemo の offscreen）。
+
+### 8.8 D3 の実装（2026-10-16、P2。build と host 試験まで、実機は R9v を T へ）
+
+8.7 の設計どおり。executor の object と記録と実行を nvrtx の中に書いた（i915 の codec を include、型・名前・構造は nvrtx の物）。
+
+| 物 | 中身 |
+| --- | --- |
+| `nvrtx-vk-objects.h`（新） | memory・buffer・image（pitch linear、pitch は幅×4 を 256 に）・view・sampler・shader module・set layout・pipeline layout・descriptor pool／set・render pass・framebuffer・pipeline・command pool／buffer・record・fence の payload |
+| `vk-reply.c`（新） | create の tail と reply、plain な destroy、errno → VkResult |
+| `vk-memory.c`（新） | Allocate（記録だけ。storage は blob の attach で、import は既存の blob）・Free・Bind（256 境界、範囲内、1 回）・Requirements（256 単位）・Commitment |
+| `vk-resource.c`（新） | Buffer・Image（2D・1 level・1 layer・1 sample・4 byte の色 format だけ、他は名前を出して FEATURE_NOT_PRESENT）・SubresourceLayout・ImageView（swizzle）・Sampler |
+| `vk-layout.c`（新） | ShaderModule・DescriptorSetLayout・PipelineLayout（push の大きさ）・PipelineCache（記録しない）・DescriptorPool（Destroy／Reset で set も）・Allocate／Free／Update（combined image sampler、view と sampler を保持） |
+| `vk-target.c`（新） | RenderPass（subpass 1・色 1 つ・depth なし）・Framebuffer（view を保持）・RenderAreaGranularity |
+| `vk-pipeline.c`（新） | CreateGraphicsPipelines: 全 record を読み、P4 の compiler（`nvrtx_sm75_compile_stage`）で vertex と fragment を SM75 に、SPH と code を executor の GPU memory（`nvrtx_vk_gpu_alloc`）へ。vertex input（float 1〜4）・topology（triangle list／strip）・blend・dynamic viewport／scissor。compute は ENOTSUP |
+| `vk-command.c`・`vk-record.c`（新） | CommandPool（Destroy／Reset で buffer も）・Allocate／Free・Begin／End／Reset、記録 15 種（＋SetLineWidth は読むだけ、PipelineBarrier は記録しない）。record は名前の object を保持、region と push は record 自身の領域 |
+| `vk-execute.c`（新） | 記録 → push buffer。session ごとの 2 MiB の run（push 1 MiB・draw ごとの cbuf0 0x500・TIC／TSC pool 2048・zero page・quad の頂点）。draw ごとに target・viewport・scissor・blend・vertex input・cbuf0（push と texture handle）・program・draw。copy／blit／buffer→image（揃う時）／image→buffer（揃う時）は executor の quad（P9g の IR）で描く（unnormalized の sampler）、揃わない buffer は CPU（BAR1 越し、それまでの push を先に走らせる）。pass と転送の間は WFI と cache の invalidate |
+| `exec-push.c`・`nvrtx-exec.h`（新） | NVK の値の method: 色 target（4 format）・viewport（固定小数点で float を作る、kernel に FPU なし）・scissor・blend・vertex input・draw・clear・barrier・TIC（swizzle）・TSC |
+| `vk-queue.c`（新） | QueueSubmit（command buffer を順に実行して待つ、fence を signal）・Fence（作成／Reset／Status）・Semaphore（順序は 1 queue の順で満たす） |
+| `vk-node.c`（新） | node の口: blob の attach（work channel へ map、backing の参照）・detach・import・executor の GPU memory・push の実行（`nvrtx_work_submit` → `nvrtx_work_wait`） |
+| `node.c`・`stage.c`・`vk-session.c`・`vk-dispatch.c` | blob_id の blob を memory に attach、`get_info` の capabilities を ops の物に、`nvrtx.vk=1` は work channel も、session の close で run を返す、拒否した opcode を kernel log に（最初の 32） |
+| `userland/tests/vkquad`（新）と `platform/common/userland-dynamic.mk`・`platform/amd64/vmunix.mk` | compositor の quad の shader（`wayland/shaders.h`）で offscreen に描いて読み戻す試験の道具（`VKQUAD ok device=… pixels=4096` か `VKQUAD fail <段> …`）。vkdemo と同じ dynamic の Vulkan client として登録 |
+| `config-amd64-nvrtx.mk` | `NVRTX_RUN=R9v`（`nvrtx.gsp=1 nvrtx.vk=1`、vkquad） |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-vk-d3-host-test.sh` | `PASS nvrtx vk d3: 98 checks`（libvulkan の writer と codec の encoder で作った wire を dispatcher に通す。memory・attach・bind・requirements・layout・import、view・sampler、compositor の quad.vert／quad.frag（glslc）の pipeline の compile、descriptor、pass、framebuffer、記録 13 件の command buffer の submit → push を解読して target（0xcf）・clear 2 回・draw 3 回（quad・copy・buffer→image）・program の address・blend・viewport（scale 32、copy の 8 と offset 18）・scissor・barrier・TIC の address と pitch・cbuf0 の handle と push、揃わない region の CPU の複写、fence の signal、漏れ無し） |
+| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 60 checks` |
+| vmunix（`build/p2/amd64`） | rc 0・warning 0 |
+| vkquad（`ZEDBSD_USER_PROGRAMS="libvulkan vkquad"`） | rc 0 |
+| 実機 | **未実施**（R9w の後に R9v を T へ） |
+
+#### T への手順（R9v、方式 B、rombar=1）
+
+前提: R9w（work channel）が通ること（R9v は同じ channel を使う）。image は `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。
+1. 起動の印: R9w の `P9w ok: fence 1 after N us` と R8c の `P8c ok: gpu device registered, …`、login prompt。
+2. serial で `vkquad` → 1 行。合格は **`VKQUAD ok device=… pixels=4096`**。
+3. `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
+FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標と値）と dmesg の `nvrtx: vk: command N refused (E)`（実装の無い command）・`a stage … did not compile`・`D3 fail: the work of fence … did not finish` を記録。

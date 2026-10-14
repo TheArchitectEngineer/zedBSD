@@ -72,8 +72,9 @@ nvrtx_vk_session_close(
 	if (closing == NULL)
 		return 0;
 
-	/* Removes every object. */
+	/* Removes every object, then gives back the submissions' run. */
 	error = nvrtx_vk_objects_close(closing);
+	nvrtx_vk_execute_close(closing);
 	if (closing->live_objects != 0U) {
 		/* Payloads still held keep the session for their destructors. */
 		if (error != 0)

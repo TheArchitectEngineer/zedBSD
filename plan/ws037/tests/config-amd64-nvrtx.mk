@@ -12,7 +12,7 @@
 #     P8a: nvrtx.disp=0 nvrtx.resident=0) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (the
 #     takeover of the head the GOP lit as the monitor test, nvrtx.disp.test=1, and nvrtx.resident=0) or R8c
 #     (R8b with the GPU device) or R8d (R8c with the display-scanout probe: events, refresh, cursor,
-#     sharing) or RA (no words: the default boot of the main image, the console kept and shown on the
+#     sharing) or R9w (the work channel, stage D1) or R9v (the renderer, stage D3, with vkquad) or RA (no words: the default boot of the main image, the console kept and shown on the
 #     taken-over head, the GPU device); plan/ws037/phase004 to phase006 give what each run must show.
 # Build one image per run, each into its own BUILD:
 #   plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r0 NVRTX_RUN=R0
@@ -88,4 +88,10 @@ endif
 # the 3D and compute objects, its first fence), stopped again at the end.
 ifeq ($(NVRTX_RUN),R9w)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.work=1 nvrtx.disp=0 nvrtx.resident=0
+endif
+# ws037-p007 D3: the GPU device as a renderer too (nvrtx.vk=1, with the work channel it implies) and vkquad, the
+# compositor's textured quad drawn offscreen through Vulkan and read back (one line: VKQUAD ok / VKQUAD fail ...).
+ifeq ($(NVRTX_RUN),R9v)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.vk=1
+ZEDBSD_USER_PROGRAMS += vkquad
 endif

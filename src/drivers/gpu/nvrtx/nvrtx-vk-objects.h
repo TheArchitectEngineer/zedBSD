@@ -262,11 +262,69 @@ struct nvrtx_vk_pipeline {
 	VkRect2D scissor;
 };
 
+/* The regions one copy, blit or clear records. */
+#define NVRTX_VK_REGIONS_MAX		16U
+
+/* A command buffer's states. */
+#define NVRTX_VK_COMMAND_INITIAL	0U
+#define NVRTX_VK_COMMAND_RECORDING	1U
+#define NVRTX_VK_COMMAND_EXECUTABLE	2U
+#define NVRTX_VK_COMMAND_INVALID	3U
+
+/* A VkFence: whether it is signaled (a submission that names it signals it once its work is done). */
+struct nvrtx_vk_fence {
+	bool signaled;
+};
+
+/* A VkCommandPool: only compared, to free and reset its command buffers with it. */
+struct nvrtx_vk_command_pool {
+	uint32_t family;
+};
+
+/*
+ * One recorded command: its opcode, the objects it names (each held while
+ * the record lives), and its values.  regions points at its own run of
+ * VkImageCopy, VkImageBlit or VkBufferImageCopy records, push at its push
+ * constant bytes.
+ */
+struct nvrtx_vk_record {
+	uint32_t opcode;
+	struct nvrtx_vk_object *objects[NVRTX_VK_SETS_MAX];
+	uint32_t object_count;
+	uint64_t offsets[NVRTX_VK_VERTEX_BINDINGS_MAX];
+	uint32_t first;
+	uint32_t count;
+	uint32_t values[6];
+	VkRect2D rect;
+	void *regions;
+	uint32_t region_count;
+	uint8_t *push;
+};
+
+/*
+ * A VkCommandBuffer: the pool it came from (only compared), its state, its
+ * records in order (a growing array) and the first error its recording
+ * met, which its End reports.
+ */
+struct nvrtx_vk_command_buffer {
+	const void *pool;
+	uint32_t state;
+	struct nvrtx_vk_record *records;
+	uint32_t record_count;
+	uint32_t record_capacity;
+	int error;
+};
+
 int nvrtx_vk_memory_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int nvrtx_vk_resource_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int nvrtx_vk_layout_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int nvrtx_vk_target_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int nvrtx_vk_pipeline_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int nvrtx_vk_command_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int nvrtx_vk_record_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+void nvrtx_vk_command_reset(struct nvrtx_vk_command_buffer *command);
+int nvrtx_vk_queue_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int nvrtx_vk_execute(struct nvrtx_vk_session *session, struct nvrtx_vk_command_buffer *command);
 
 uint32_t nvrtx_vk_result(int error);
 uint64_t nvrtx_vk_create_tail(struct i915_wire_reader *reader);

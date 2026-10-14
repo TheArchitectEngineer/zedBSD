@@ -44,6 +44,7 @@
 #define NVRTX_VK_ARENA_BYTES		(256U * 1024U)
 
 struct nvrtx_vk_object;
+struct nvrtx_vk_execute;
 
 /*
  * One executor session.
@@ -68,6 +69,8 @@ struct nvrtx_vk_session {
 	struct i915_wire_arena arena;
 	/* The timelines the session's queues complete jobs on (bit n: timeline n), set by vkGetDeviceQueue2. */
 	uint64_t timelines;
+	/* The run its submissions are written into and the executor's programs (vk-execute.c), made at the first one. */
+	struct nvrtx_vk_execute *execute;
 };
 
 /*
@@ -100,6 +103,7 @@ typedef int (*nvrtx_vk_dispatcher)(struct nvrtx_vk_session *session, uint32_t op
 
 int nvrtx_vk_session_open(void *owner, struct nvrtx_vk_session **session);
 int nvrtx_vk_session_close(struct nvrtx_vk_session **session);
+void nvrtx_vk_execute_close(struct nvrtx_vk_session *session);
 void *nvrtx_vk_arena_take(struct nvrtx_vk_session *session, size_t bytes);
 
 int nvrtx_vk_object_publish(struct nvrtx_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity, void *payload, int (*destroy)(struct nvrtx_vk_session *, void *), struct nvrtx_vk_object **object);
