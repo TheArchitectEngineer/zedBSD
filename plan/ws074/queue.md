@@ -8,6 +8,7 @@ Status: finished（2026-10-14 17:25–18:10 JST、B1。承認と timebox は q11
 | --- | --- | --- | --- |
 | q1200-i01 | [ws074-p226](phase226/phase.md) partial | auto-fill/auto-fit、水平 grid の縦書き in-flow 子、置換要素の stretch、fr<1、computed の align 名。旧 PASS 後退 0、Acid3 差 0、Acid2 非増加、warning 0 | cleared（whole 379→427） |
 | q1201-i01 | [ws074-p227](phase227/phase.md) partial | flex の absolute 子の static position と alignment keyword の構文。同上の確認 | cleared（whole 427→458） |
+| q1202-i01 | [ws074-p227](phase227/phase.md) partial | flex align-content・wrap-reverse、inline-flex、blockify、overflow 2値、sideways parse、safe。reftest 682→815、PASS→FAIL 4 | cleared（whole 458→481。reftest の4件は未解決として記録） |
 
 
 # q1199 / WS074 Grid content distribution and absolute-child containing block (B1)
