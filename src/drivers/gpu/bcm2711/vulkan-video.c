@@ -91,8 +91,8 @@
  * picture, and how many pushes it tries: the firmware holds the first
  * picture until more input comes (T1-626, T1-629), and a Vulkan decode
  * has none.  An end of stream gave it out but lost the references
- * (T1-631); the pushes are an empty frame-end mark, then an access unit
- * delimiter in a buffer of its own (see push_first).
+ * (T1-631); the pushes are the parameter sets again as configuration,
+ * then an access unit delimiter in a buffer of its own (see push_first).
  */
 #define VIDEO_FIRST_MS			150U
 #define VIDEO_PUSHES			2U
@@ -2810,14 +2810,14 @@ run_decode(
 			wait_ms = VIDEO_FIRST_MS;
 		error = drv_rpi4_mmal_decoder_receive(video->decoder, wait_ms, &frame, &pixels);
 
-		/* The first picture after a start that does not come is pushed: a frame-end mark, then a delimiter. */
+		/* The first picture after a start that does not come is pushed: the sets again, then a delimiter. */
 		if (error == ETIMEDOUT && !video->started && pushes < VIDEO_PUSHES) {
 			error = push_first(video, pushes, pts);
 			pushes++;
 			continue;
 		}
 
-		/* An empty frame (a mark's or a delimiter's) carries no picture. */
+		/* An empty frame carries no picture. */
 		if (error == 0 && frame.length == 0)
 			continue;
 
@@ -2911,9 +2911,12 @@ run_decode(
 
 /*
  * Pushes the held first picture out of the firmware without losing its
- * references: push 0 is an empty buffer marking the frame's end, push 1
- * an access unit delimiter in a buffer of its own, which starts the next
- * access unit (the next unit's slices follow it legally).
+ * references: push 0 sends the parameter sets last sent again, as codec
+ * configuration, in a buffer of their own (configuration buffers went
+ * through in T1-631); push 1 an access unit delimiter in a buffer of its
+ * own, which starts the next access unit (the next unit's slices follow
+ * it legally).  An empty end-of-frame buffer is not used: the Pi 4 did not
+ * come back from the boot that first sent one (T1-633).
  */
 static int
 push_first(
@@ -2923,12 +2926,29 @@ push_first(
 {
 	uint8_t *staging;
 	uint32_t capacity;
+	uint32_t used;
 	int error;
 
-	/* Push 0: the mark. */
+	/* The staging the push goes into. */
+	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
+	if (error != 0)
+		return error;
+
+	/* Push 0: the sets last sent, as configuration. */
 	if (push == 0) {
-		kern_logf("v3d: video: decode %lld: the first picture is held; a frame-end mark pushes it\n", (long long)pts);
-		error = drv_rpi4_mmal_decoder_mark(video->decoder, 0);
+		kern_logf("v3d: video: decode %lld: the first picture is held; the parameter sets again push it\n", (long long)pts);
+
+		/* Nothing to push without sets sent. */
+		used = (uint32_t)(video->sent_sps_bytes + video->sent_pps_bytes);
+		if (used == 0)
+			return 0;
+		if (used > capacity)
+			return ENOSPC;
+
+		/* The SPS, then the PPS. */
+		kern_memcpy(staging, video->sent_sps, video->sent_sps_bytes);
+		kern_memcpy(staging + video->sent_sps_bytes, video->sent_pps, video->sent_pps_bytes);
+		error = drv_rpi4_mmal_decoder_send(video->decoder, used, DRV_RPI4_MMAL_FRAME_NO_TIME, 1);
 		if (error != 0)
 			return error;
 
@@ -2937,9 +2957,6 @@ push_first(
 
 	/* Push 1: the delimiter, without a time stamp. */
 	kern_logf("v3d: video: decode %lld: the first picture is still held; a delimiter pushes it\n", (long long)pts);
-	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
-	if (error != 0)
-		return error;
 	if (capacity < sizeof(video_delimiter))
 		return ENOSPC;
 	kern_memcpy(staging, video_delimiter, sizeof(video_delimiter));

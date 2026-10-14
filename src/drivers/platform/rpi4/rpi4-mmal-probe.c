@@ -9,11 +9,12 @@
  * The boot-time probe of the VideoCore H.264 decoder (ws236 design §12),
  * built only by test kernels (CONFIG_DRIVER_BCM2711_VIDEO_PROBE).
  *
- * It decodes two embedded streams with B frames, each five ways: as
+ * It decodes two embedded streams with B frames, each four ways: as
  * encoded (the control, run a), with every SPS rewritten to ask for no
  * reordering (run b), and the same as b with a push after the first unit
- * (runs e, f, g; see enum probe_push) to find what makes the firmware give
- * out the first picture at once without losing its references.
+ * (runs g, f; see enum probe_push) to find what makes the firmware give
+ * out the first picture at once without losing its references.  It runs
+ * when a write to /dev/mmal-probe asks, not on the boot path.
  * Each output picture is identified by the checksum of its visible bytes
  * against the reference decode, and its place in decode order is compared
  * with the input that was last sent, which shows whether the firmware
@@ -46,11 +47,13 @@
 #define PROBE_CONNECT_MS		15000U
 
 /*
- * How long it waits after the connection before the first run, so that
- * the display's and the 3D core's start (clocks, power domains, bridges)
- * is over: in T1-626 a frame's bulk stopped while the 3D core started.
+ * How often the probe looks for the request to run.  It runs only when
+ * asked, by a write to /dev/mmal-probe after login, not on the boot path:
+ * in T1-626 a frame's bulk stopped while the 3D core started, and the Pi 4
+ * did not come back from the boot whose probe first sent an empty
+ * end-of-frame buffer (T1-633).
  */
-#define PROBE_SETTLE_MS			30000U
+#define PROBE_POLL_MS			200U
 
 /* How long it waits for an output after each input, and at the end. */
 #define PROBE_OUTPUT_MS			100U
@@ -105,22 +108,21 @@ struct probe_stream {
  * What a run sends right after the first unit, to see what makes the
  * firmware give out the first picture (it holds it until more input
  * comes; an end of stream did, but lost the references, T1-631): nothing,
- * an empty buffer marking the frame's end, an access unit delimiter in a
- * buffer of its own, or the unit's parameter sets again as codec
- * configuration in a buffer of their own.
+ * the unit's parameter sets again as codec configuration in a buffer of
+ * their own, or an access unit delimiter in a buffer of its own.  (An
+ * empty end-of-frame buffer is not tried again, T1-633.)
  */
 enum probe_push {
 	PROBE_PUSH_NONE,
-	PROBE_PUSH_MARK,
-	PROBE_PUSH_DELIMITER,
-	PROBE_PUSH_SETS
+	PROBE_PUSH_SETS,
+	PROBE_PUSH_DELIMITER
 };
 
 /*
  * How one run feeds the decoder: as encoded (a), with every SPS rewritten
  * for no reordering (b), and the same as b with each push after the first
- * unit (e: mark, f: delimiter, g: parameter sets); and how many of its
- * frames go to the dump.
+ * unit (g: parameter sets, f: delimiter); and how many of its frames go to
+ * the dump.
  */
 struct probe_mode {
 	const char *name;
@@ -133,20 +135,18 @@ struct probe_mode {
  * The runs of each stream: the first four frames of 352's runs and of
  * 1080's run b, and the first of 1080's others, go to the dump.
  */
-#define PROBE_MODES			5U
+#define PROBE_MODES			4U
 static const struct probe_mode probe_small_modes[PROBE_MODES] = {
 	{ "a", 0, PROBE_PUSH_NONE, 2U },
 	{ "b", 1, PROBE_PUSH_NONE, 2U },
-	{ "e", 1, PROBE_PUSH_MARK, 3U },
-	{ "f", 1, PROBE_PUSH_DELIMITER, 3U },
-	{ "g", 1, PROBE_PUSH_SETS, 3U }
+	{ "g", 1, PROBE_PUSH_SETS, 3U },
+	{ "f", 1, PROBE_PUSH_DELIMITER, 3U }
 };
 static const struct probe_mode probe_large_modes[PROBE_MODES] = {
 	{ "a", 0, PROBE_PUSH_NONE, 1U },
 	{ "b", 1, PROBE_PUSH_NONE, 1U },
-	{ "e", 1, PROBE_PUSH_MARK, 1U },
-	{ "f", 1, PROBE_PUSH_DELIMITER, 1U },
-	{ "g", 1, PROBE_PUSH_SETS, 1U }
+	{ "g", 1, PROBE_PUSH_SETS, 1U },
+	{ "f", 1, PROBE_PUSH_DELIMITER, 1U }
 };
 
 /* The access unit delimiter of push f (any slice types may follow). */
@@ -224,6 +224,8 @@ probe_main(
 	uint64_t deadline;
 	uint64_t now;
 	bool connected;
+	bool requested;
+	int error;
 
 	/* Says that it runs, then waits for the firmware's connection. */
 	(void)argument;
@@ -243,14 +245,17 @@ probe_main(
 		return;
 	}
 
-	/* Lets the display and the 3D core finish starting. */
-	kern_logf("rpi4-mmal-probe: connected; starting in %u ms\n", PROBE_SETTLE_MS);
-	deadline = sched_ticks() + kern_ms_to_ticks(PROBE_SETTLE_MS);
-	now = sched_ticks();
-	while (now < deadline) {
-		kern_usleep_range(100000U, 110000U);
-		now = sched_ticks();
+	/* Publishes the device and waits, asleep, until a write to it asks for the runs. */
+	error = drv_rpi4_mmal_dump_publish();
+	if (error != 0)
+		return;
+	kern_logf("rpi4-mmal-probe: connected; write to /dev/mmal-probe to run (frames are kept there)\n");
+	requested = drv_rpi4_mmal_dump_run_requested();
+	while (!requested) {
+		kern_usleep_range(PROBE_POLL_MS * 1000U, PROBE_POLL_MS * 1000U + 10000U);
+		requested = drv_rpi4_mmal_dump_run_requested();
 	}
+	kern_logf("rpi4-mmal-probe: running\n");
 
 	/* The two streams. */
 	small.name = "352";
@@ -424,9 +429,9 @@ send_unit(
 }
 
 /*
- * Sends the run's push after the first unit ([start, end)): an empty
- * frame-end mark, a delimiter in a buffer of its own, or the unit's
- * parameter sets again as codec configuration.
+ * Sends the run's push after the first unit ([start, end)): a delimiter
+ * in a buffer of its own, or the unit's parameter sets again as codec
+ * configuration.
  */
 static int
 push(
@@ -440,15 +445,6 @@ push(
 	uint32_t capacity;
 	size_t used;
 	int error;
-
-	/* The mark needs no staging. */
-	if (mode->push == PROBE_PUSH_MARK) {
-		error = drv_rpi4_mmal_decoder_mark(decoder, 0);
-		if (error != 0)
-			return error;
-
-		return 0;
-	}
 
 	/* The delimiter or the sets, without a time stamp. */
 	error = drv_rpi4_mmal_decoder_input(decoder, &staging, &capacity);
