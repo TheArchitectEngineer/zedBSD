@@ -47,6 +47,8 @@
  *     d2b1a0e4b0b38ee9cc01ed5b7dd6ab38b8a7d8722b453a81e5383c98d884e61f
  *   src/nouveau/compiler/nak/sph.rs (the shader program header's maps)
  *     e845a822a7a82822e0c07fd84cacce413146debeeaeb7484dc48deffc492c368
+ *   src/nouveau/compiler/nak/from_nir.rs (a fragment program's header always maps the position's w)
+ *     734f35b552f4225b885aef708863ad016ee034bd7289788ab92d63b607fff11a
  *   src/nouveau/headers/nvidia/classes/cla097sph.h (the header's fields, NVIDIA's MIT notice)
  *     a804dc66816ec4bd5a49be6c6745f7aa2cda31881e48472625abe4a691f0c1a3
  *   src/nouveau/compiler/nak_nir_lower_fs_inputs.c (SM70's interpolation: pass, then times 1 / w)

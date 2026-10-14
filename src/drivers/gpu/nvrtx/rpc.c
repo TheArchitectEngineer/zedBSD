@@ -55,11 +55,15 @@
 #define RPC_HALT_TIMEOUT_US		2000000U
 #define RPC_STEP_US			10U
 
-/* The firmware error report's fields: its kind, and its text of up to 256 bytes. */
+/*
+ * The firmware error report's fields: its kind, and its text of up to 256
+ * bytes, of which the line shows what fits an 80-column screen after its
+ * prefix ("Graphics Exception: Shader Program Header 17 Error" whole).
+ */
 #define RPC_ERROR_LOG_KIND_AT		0U
 #define RPC_ERROR_LOG_TEXT_AT		12U
 #define RPC_ERROR_LOG_TEXT_BYTES	256U
-#define RPC_ERROR_LOG_SHOWN		40U
+#define RPC_ERROR_LOG_SHOWN		54U
 
 /* The channel-error event's fields: engine, channel, kind of exception, faulting address and fault kind. */
 #define RPC_ERROR_ENGINE_AT		0U
@@ -484,7 +488,7 @@ rpc_error_log(
 	text[index] = '\0';
 
 	/* Shows the report. */
-	nvrtx_stage_mark("rpc: firmware error %u: %s", (unsigned)nvrtx_get32(payload, RPC_ERROR_LOG_KIND_AT), text);
+	nvrtx_stage_mark("rpc: fw error %u: %s", (unsigned)nvrtx_get32(payload, RPC_ERROR_LOG_KIND_AT), text);
 }
 
 /*
