@@ -7,10 +7,12 @@
 
 /* Linear video pictures and their CPU scaler; image tiling remains entirely inside the Vulkan implementation. */
 #include "picture.h"
+#include "media-decoder.h"
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* One decoder's reusable picture storage; live includes checked-out pictures and its idle list. */
 struct media_picture_pool {
@@ -23,6 +25,8 @@ struct media_picture_pool {
 	unsigned free_count;
 	unsigned free_max;
 	int closed;
+	/* The pool's pictures hold GPU images and have no pixels of their own (ws236-p011). */
+	int gpu;
 };
 
 /* Scaler-owned horizontal mapping and two converted row caches, independent of any decoder lifetime. */
@@ -42,6 +46,7 @@ static pthread_once_t picture_once = PTHREAD_ONCE_INIT;
 
 static void picture_initialize(void);
 static void picture_release(struct media_picture *picture);
+static void gpu_slots_release(struct media_gpu_slots *slots, unsigned slot);
 static void picture_pool_destroy(struct media_picture_pool *pool);
 static uint32_t picture_pixel(const struct media_picture *picture, uint32_t x, uint32_t y);
 static unsigned picture_clamp(int32_t value);
@@ -83,6 +88,27 @@ media_picture_pool_create(
 }
 
 /*
+ * Creates a pool of pictures the GPU holds, which have no pixels of their own.
+ */
+struct media_picture_pool *
+media_picture_pool_create_gpu(
+	uint32_t width,
+	uint32_t height,
+	unsigned free_max)
+{
+	struct media_picture_pool *pool;
+
+	/* An ordinary pool, whose pictures get no pixel storage. */
+	pool = media_picture_pool_create(width, height, free_max);
+	if (pool == NULL)
+		return NULL;
+	pool->gpu = 1;
+
+	/* Succeeded: the pool gives pictures without pixels. */
+	return pool;
+}
+
+/*
  * Obtain a picture without a fixed checked-out limit; slow consumers cannot exhaust a decoder's tiny ring.
  */
 struct media_picture *
@@ -113,18 +139,22 @@ media_picture_pool_get(
 			return NULL;
 		}
 
-		/* Compute both plane sizes from the pool's fixed even pitch. */
+		/* Compute both plane sizes from the pool's fixed even pitch; a GPU picture has none. */
 		luma = (size_t)pool->pitch * pool->height;
 		chroma = (size_t)pool->pitch * ((pool->height + 1U) / 2U);
-		picture->luma = malloc(luma + chroma);
-		if (picture->luma == NULL) {
-			free(picture);
-			pthread_mutex_unlock(&pool->lock);
-			return NULL;
+		if (pool->gpu == 0) {
+			picture->luma = malloc(luma + chroma);
+			if (picture->luma == NULL) {
+				free(picture);
+				pthread_mutex_unlock(&pool->lock);
+				return NULL;
+			}
+
+			/* The chroma plane follows the luma plane. */
+			picture->chroma = picture->luma + luma;
 		}
 
-		/* Bind fresh plane storage and dimensions to the owning pool. */
-		picture->chroma = picture->luma + luma;
+		/* Bind dimensions to the owning pool. */
 		picture->pool = pool;
 		picture->width = pool->width;
 		picture->height = pool->height;
@@ -203,6 +233,8 @@ media_picture_unref(
 {
 	struct media_picture *picture;
 	struct media_picture_pool *pool;
+	struct media_gpu_slots *slots;
+	unsigned slot;
 	int destroy;
 
 	/* Taking no picture creates no release obligation. */
@@ -218,6 +250,11 @@ media_picture_unref(
 		return;
 	}
 
+	/* The last reference lets the GPU image the picture held go, after the pool's lock. */
+	slots = picture->gpu;
+	slot = picture->gpu_slot;
+	picture->gpu = NULL;
+
 	/* Cached idle storage remains live only while its decoder-owned pool is open. */
 	if (pool->closed == 0 && pool->free_count < pool->free_max) {
 		picture->next = pool->idle;
@@ -232,6 +269,10 @@ media_picture_unref(
 
 	/* Release the pool lock before destroying its final allocation. */
 	pthread_mutex_unlock(&pool->lock);
+
+	/* The context may decode into the image again. */
+	if (slots != NULL)
+		gpu_slots_release(slots, slot);
 
 	/* No decoder or picture can reach a closed pool after the last live allocation retires. */
 	if (destroy != 0)
@@ -284,6 +325,166 @@ media_picture_aspect(
 }
 
 /*
+ * Creates the shared record of a decoding context's GPU images, with the context's reference.
+ */
+struct media_gpu_slots *
+media_gpu_slots_create(
+	unsigned count)
+{
+	struct media_gpu_slots *slots;
+	unsigned index;
+	int error;
+
+	/* No more images than the record holds. */
+	if (count == 0U || count > MEDIA_GPU_SLOTS)
+		return NULL;
+
+	/* The record, with no image held and no handle yet. */
+	slots = calloc(1U, sizeof(*slots));
+	if (slots == NULL)
+		return NULL;
+	error = pthread_mutex_init(&slots->lock, NULL);
+	if (error != 0) {
+		free(slots);
+		return NULL;
+	}
+
+	/* The context's reference, and no handle yet. */
+	slots->refs = 1U;
+	slots->count = count;
+	for (index = 0U; index < MEDIA_GPU_SLOTS; index++)
+		slots->fd[index] = -1;
+
+	/* Succeeded: the context fills the handles and holds the first reference. */
+	return slots;
+}
+
+/*
+ * Makes a picture hold one GPU image of a context: the image is not decoded
+ * into again until the picture's last reference goes.
+ */
+void
+media_gpu_slots_hold(
+	struct media_picture *picture,
+	struct media_gpu_slots *slots,
+	unsigned slot,
+	uint32_t x,
+	uint32_t y)
+{
+	/* The image is held, and the record stays while the picture does. */
+	pthread_mutex_lock(&slots->lock);
+
+	slots->held |= 1U << slot;
+	slots->refs++;
+
+	pthread_mutex_unlock(&slots->lock);
+
+	/* The picture names the image and its window's corner. */
+	picture->gpu = slots;
+	picture->gpu_slot = slot;
+	picture->gpu_x = x;
+	picture->gpu_y = y;
+}
+
+/*
+ * Reports the GPU images pictures hold, as a mask.
+ */
+uint32_t
+media_gpu_slots_held(
+	struct media_gpu_slots *slots)
+{
+	uint32_t held;
+
+	/* A context without GPU pictures holds none. */
+	if (slots == NULL)
+		return 0U;
+
+	/* The mask, as the pictures leave it. */
+	pthread_mutex_lock(&slots->lock);
+
+	held = slots->held;
+
+	pthread_mutex_unlock(&slots->lock);
+
+	/* Succeeded: the held images. */
+	return held;
+}
+
+/*
+ * Drops a reference to the record; the last closes the images' handles.
+ */
+void
+media_gpu_slots_unref(
+	struct media_gpu_slots *slots)
+{
+	unsigned refs;
+	unsigned index;
+
+	/* No record, nothing to drop. */
+	if (slots == NULL)
+		return;
+
+	/* One reference fewer. */
+	pthread_mutex_lock(&slots->lock);
+
+	slots->refs--;
+	refs = slots->refs;
+
+	pthread_mutex_unlock(&slots->lock);
+
+	/* Others still use the record. */
+	if (refs != 0U)
+		return;
+
+	/* The last one closes the handles and frees the record. */
+	for (index = 0U; index < MEDIA_GPU_SLOTS; index++) {
+		if (slots->fd[index] >= 0)
+			(void)close(slots->fd[index]);
+	}
+
+	/* The record itself. */
+	pthread_mutex_destroy(&slots->lock);
+	free(slots);
+}
+
+/*
+ * Describes a picture the GPU holds for a program that imports its image.
+ */
+int
+media_picture_gpu(
+	const void *object,
+	struct media_gpu_picture *gpu)
+{
+	const struct media_picture *picture;
+	struct media_gpu_slots *slots;
+
+	/* A picture in the CPU's memory has no image. */
+	picture = object;
+	slots = picture->gpu;
+	if (slots == NULL)
+		return ENOTSUP;
+
+	/* The context's image, its memory and the picture's window. */
+	memset(gpu, 0, sizeof(*gpu));
+	gpu->identity = slots->identity;
+	gpu->slot = picture->gpu_slot;
+	gpu->fd = slots->fd[picture->gpu_slot];
+	gpu->memory_bytes = slots->memory_bytes;
+	gpu->memory_type = slots->memory_type;
+	gpu->image_width = slots->image_width;
+	gpu->image_height = slots->image_height;
+	gpu->x = picture->gpu_x;
+	gpu->y = picture->gpu_y;
+	gpu->width = picture->width;
+	gpu->height = picture->height;
+	gpu->colour = picture->colour;
+	gpu->full_range = picture->full_range;
+
+	/* Succeeded: gpu describes the picture. */
+	return 0;
+}
+
+/*
  * Convert colour and scale a retained linear picture into the caller's ARGB canvas.
  */
 int
@@ -322,6 +523,10 @@ media_picture_scale(
 	picture = object;
 	if (picture->colour > MEDIA_COLOUR_2020)
 		return EINVAL;
+
+	/* A picture the GPU holds has no pixels for the CPU to scale. */
+	if (picture->luma == NULL)
+		return ENOTSUP;
 	error = pthread_once(&picture_once, picture_initialize);
 	if (error != 0)
 		return error;
@@ -472,6 +677,23 @@ picture_release(
 	free(picture->luma);
 	free(picture);
 	return;
+}
+
+/* Lets a freed picture's GPU image be decoded into again, and drops its reference to the record. */
+static void
+gpu_slots_release(
+	struct media_gpu_slots *slots,
+	unsigned slot)
+{
+	/* The image is free. */
+	pthread_mutex_lock(&slots->lock);
+
+	slots->held &= ~(1U << slot);
+
+	pthread_mutex_unlock(&slots->lock);
+
+	/* The picture's reference goes. */
+	media_gpu_slots_unref(slots);
 }
 
 /* Destroy a pool only when its decoder is closed and its final live picture has retired. */

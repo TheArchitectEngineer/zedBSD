@@ -8,6 +8,14 @@
 /*
  * Standard Vulkan Video execution and NV12 transfer readback, adapted from the repository's Zlib WS083 probe.
  * Optimal images are device-owned; host pictures are populated only through vkCmdCopyImageToBuffer.
+ *
+ * When the program asked for pictures the GPU holds (media_decoder_gpu_pictures,
+ * ws236-p011) and the device can give them -- sampled NV12 decode images whose
+ * planes may be viewed, memory exported as an opaque fd -- nothing is read
+ * back: the images' memory is exported once, each picture holds its image
+ * until it is freed (no picture is decoded into a held image), and a picture
+ * is complete when its decode's fence signals (the device signals it once the
+ * frame is in the image).  The slots grow by the pictures held.
  */
 #define VK_NO_PROTOTYPES
 #include "vkvideo-runtime.h"
@@ -37,6 +45,9 @@
 #else
 #define VKVIDEO_FLIGHTS 1U
 #endif
+
+/* The create flags of an image whose planes are viewed in their own formats. */
+#define VKVIDEO_PLANE_FLAGS (VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
 
 /* The completed pictures whose results are kept for the backend's later questions. */
 #define VKVIDEO_RESULTS 64U
@@ -209,6 +220,19 @@ struct vkvideo_runtime {
 	uint32_t flights;
 	uint32_t lag;
 	int late_barrier;
+	/*
+	 * Pictures the GPU holds: the pictures the program keeps at most (0:
+	 * none asked), the stream's reorder depth (the decoded pictures that
+	 * wait for their turn), whether the device has the external memory extensions,
+	 * whether this context gives them, the shared record of its images, and
+	 * the entry point that exports an image's memory.
+	 */
+	unsigned gpu_hold;
+	unsigned reorder;
+	int gpu_extensions;
+	int gpu;
+	struct media_gpu_slots *gpu_slots;
+	PFN_vkGetMemoryFdKHR vkGetMemoryFdKHR;
 	struct vkvideo_flight flight[VKVIDEO_FLIGHTS];
 	uint32_t tickets;
 	struct vkvideo_result results[VKVIDEO_RESULTS];
@@ -296,6 +320,9 @@ static void *vkvideo_library;
 /* Loader publication is immutable after one attempt and synchronized before any runtime uses it. */
 static pthread_once_t vkvideo_loader_once = PTHREAD_ONCE_INIT;
 
+/* The identities of the contexts whose pictures the GPU holds; each takes the next, from 1. */
+static uint64_t vkvideo_gpu_identity;
+
 static void vkvideo_loader(void);
 static int vkvideo_dispatch(struct vkvideo_runtime *video, int instance);
 static int vkvideo_instance(struct vkvideo_runtime *video);
@@ -303,6 +330,10 @@ static int vkvideo_resources(struct vkvideo_runtime *video);
 static int vkvideo_device(struct vkvideo_runtime *video);
 static int vkvideo_family(struct vkvideo_runtime *video);
 static int vkvideo_formats(struct vkvideo_runtime *video, VkImageUsageFlags usage);
+static int vkvideo_formats_flags(struct vkvideo_runtime *video, VkImageUsageFlags usage, VkImageCreateFlags flags);
+static void vkvideo_gpu_capabilities(struct vkvideo_runtime *video);
+static int vkvideo_gpu_export(struct vkvideo_runtime *video, uint32_t slot, const VkMemoryRequirements *requirements);
+static int vkvideo_submit_gpu(struct vkvideo_runtime *video, struct vkvideo_flight *flight);
 static int vkvideo_capabilities(struct vkvideo_runtime *video);
 static int vkvideo_allocate(struct vkvideo_runtime *video, const VkMemoryRequirements *requirements, int host, VkDeviceMemory *memory, int *coherent);
 static int vkvideo_readback(struct vkvideo_runtime *video, struct vkvideo_flight *flight);
@@ -333,6 +364,7 @@ static void vkvideo_copy_output(struct vkvideo_runtime *video, const struct vkvi
 int
 media_vkvideo_runtime_open(
 	const StdVideoH264SequenceParameterSet *sps,
+	unsigned reorder,
 	struct vkvideo_runtime **runtime)
 {
 	struct vkvideo_runtime *video;
@@ -357,6 +389,8 @@ media_vkvideo_runtime_open(
 	if (video->max_references == 0U)
 		video->max_references = 1U;
 	video->slots = video->max_references + 1U;
+	video->gpu_hold = media_decoder_gpu_hold();
+	video->reorder = reorder;
 
 	/* Profile chains are stable for the entire lifetime of this instance's resources. */
 	video->h264_profile.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR;
@@ -612,10 +646,23 @@ media_vkvideo_runtime_submit(
 	flight->crop_y = sps->frame_crop_top_offset * 2U;
 	flight->output = output;
 
-	/* The decode's and the readback's command buffers. */
+	/* The decode's command buffer. */
 	error = vkvideo_record_decode(video, flight, stream, picture, plan, aligned, offsets);
 	if (error != 0)
 		return error;
+
+	/* A picture the GPU holds holds its image from here, and its decode carries the fence. */
+	if (video->gpu) {
+		media_gpu_slots_hold(output, video->gpu_slots, flight->slot, flight->crop_x, flight->crop_y);
+		error = vkvideo_submit_gpu(video, flight);
+		if (error != 0)
+			return error;
+		video->stats.submit_ns += vkvideo_now_ns() - started;
+		*ticket = flight->ticket;
+		return 0;
+	}
+
+	/* The readback's command buffer. */
 	error = vkvideo_record_readback(video, flight, output_layout);
 	if (error != 0)
 		return error;
@@ -732,6 +779,9 @@ media_vkvideo_runtime_busy(
 			busy |= 1U << video->flight[index].slot;
 	}
 
+	/* So does each picture the GPU holds until it is freed. */
+	busy |= media_gpu_slots_held(video->gpu_slots);
+
 	/* Succeeded: the mask. */
 	return busy;
 }
@@ -821,6 +871,9 @@ media_vkvideo_runtime_close(
 	/* The instance. */
 	if (video->instance != VK_NULL_HANDLE && video->fn.vkDestroyInstance != NULL)
 		video->fn.vkDestroyInstance(video->instance, NULL);
+
+	/* The images' record stays with the pictures that still hold them; their exports keep the memory. */
+	media_gpu_slots_unref(video->gpu_slots);
 	free(video);
 }
 
@@ -842,6 +895,18 @@ vkvideo_resources(
 	error = vkvideo_session(video);
 	if (error != 0)
 		return error;
+
+	/* Pictures the GPU holds share the record of the images, which the images' exports fill. */
+	if (video->gpu) {
+		video->gpu_slots = media_gpu_slots_create(video->slots);
+		if (video->gpu_slots == NULL)
+			return ENOMEM;
+		video->gpu_slots->identity = __atomic_add_fetch(&vkvideo_gpu_identity, 1U, __ATOMIC_RELAXED);
+		video->gpu_slots->image_width = video->image_extent.width;
+		video->gpu_slots->image_height = video->image_extent.height;
+	}
+
+	/* The slots' pictures. */
 	for (slot = 0U; slot < video->slots; slot++) {
 		error = vkvideo_picture(video, slot);
 		if (error != 0)
@@ -860,6 +925,10 @@ vkvideo_resources(
 		error = vkvideo_bitstream(video, &video->flight[slot], 1024U * 1024U);
 		if (error != 0)
 			return error;
+
+		/* A picture the GPU holds is not read back. */
+		if (video->gpu)
+			continue;
 		error = vkvideo_readback(video, &video->flight[slot]);
 		if (error != 0)
 			return error;
@@ -881,6 +950,7 @@ vkvideo_picture(
 	uint32_t slot)
 {
 	VkImageCreateInfo image;
+	VkExternalMemoryImageCreateInfo external;
 	VkImageViewCreateInfo view;
 	uint32_t families[2];
 	VkMemoryRequirements requirements;
@@ -891,6 +961,18 @@ vkvideo_picture(
 	memset(&image, 0, sizeof(image));
 	image.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image.pNext = &video->profile_list;
+
+	/* A picture the GPU holds is exported, and its planes are viewed in their own formats. */
+	if (video->gpu) {
+		memset(&external, 0, sizeof(external));
+		external.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+		external.pNext = &video->profile_list;
+		external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+		image.pNext = &external;
+		image.flags = VKVIDEO_PLANE_FLAGS;
+	}
+
+	/* Its shape, usage and sharing. */
 	image.imageType = VK_IMAGE_TYPE_2D;
 	image.format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
 	image.extent.width = video->image_extent.width;
@@ -920,9 +1002,15 @@ vkvideo_picture(
 		return error;
 	}
 
-	/* Its memory, bound and mapped. */
+	/* Its memory, bound; exported when the GPU holds its pictures. */
 	video->fn.vkGetImageMemoryRequirements(video->device, video->image[slot], &requirements);
-	error = vkvideo_allocate(video, &requirements, 0, &video->image_memory[slot], NULL);
+	if (video->gpu) {
+		error = vkvideo_gpu_export(video, slot, &requirements);
+	} else {
+		error = vkvideo_allocate(video, &requirements, 0, &video->image_memory[slot], NULL);
+	}
+
+	/* No memory, no picture. */
 	if (error != 0)
 		return error;
 	result = video->fn.vkBindImageMemory(video->device, video->image[slot], video->image_memory[slot], 0U);
@@ -1292,8 +1380,12 @@ static int
 vkvideo_instance(
 	struct vkvideo_runtime *video)
 {
-	/* The required instance extension is immutable and defined by the Vulkan API, not the GPU vendor. */
-	static const char *const extensions[] = {"VK_KHR_get_physical_device_properties2"};
+	/*
+	 * The required instance extension is immutable and defined by the Vulkan
+	 * API, not the GPU vendor; the second is asked for only for pictures the
+	 * GPU holds, whose memory is exported.
+	 */
+	static const char *const extensions[] = {"VK_KHR_get_physical_device_properties2", "VK_KHR_external_memory_capabilities"};
 	VkApplicationInfo application;
 	VkInstanceCreateInfo info;
 	PFN_vkVoidFunction address;
@@ -1330,8 +1422,20 @@ vkvideo_instance(
 	info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	info.pApplicationInfo = &application;
 	info.enabledExtensionCount = 1U;
+	if (video->gpu_hold != 0U)
+		info.enabledExtensionCount = 2U;
 	info.ppEnabledExtensionNames = extensions;
 	result = video->fn.vkCreateInstance(&info, NULL, &video->instance);
+
+	/* An instance without the exporting extension reads its pictures back. */
+	if (result == VK_ERROR_EXTENSION_NOT_PRESENT && video->gpu_hold != 0U) {
+		media_log("Vulkan Video: no external memory capabilities; pictures are read back");
+		video->gpu_hold = 0U;
+		info.enabledExtensionCount = 1U;
+		result = video->fn.vkCreateInstance(&info, NULL, &video->instance);
+	}
+
+	/* No instance, no device. */
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkCreateInstance");
 		return error;
@@ -1414,6 +1518,24 @@ vkvideo_formats(
 	struct vkvideo_runtime *video,
 	VkImageUsageFlags usage)
 {
+	int error;
+
+	/* No create flag is needed. */
+	error = vkvideo_formats_flags(video, usage, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: an NV12 format takes the usage. */
+	return 0;
+}
+
+/* Find an NV12 decode format of the profile that takes every usage and create flag asked. */
+static int
+vkvideo_formats_flags(
+	struct vkvideo_runtime *video,
+	VkImageUsageFlags usage,
+	VkImageCreateFlags flags)
+{
 	VkPhysicalDeviceVideoFormatInfoKHR info;
 	VkVideoFormatPropertiesKHR formats[32];
 	VkResult result;
@@ -1452,6 +1574,8 @@ vkvideo_formats(
 		if (formats[index].imageType != VK_IMAGE_TYPE_2D || formats[index].imageTiling != VK_IMAGE_TILING_OPTIMAL)
 			continue;
 		if ((formats[index].imageUsageFlags & usage) != usage)
+			continue;
+		if ((formats[index].imageCreateFlags & flags) != flags)
 			continue;
 		return 0;
 	}
@@ -1540,6 +1664,9 @@ vkvideo_capabilities(
 		video->slots = video->max_references + video->flights;
 	}
 
+	/* Pictures the GPU holds, where the device can give them; their slots grow by the pictures held. */
+	vkvideo_gpu_capabilities(video);
+
 	/* The readbacks wait behind the newest decodes (all but two of the pictures in flight) and move the output's layout themselves. */
 	video->lag = 0U;
 	if (video->flights > 2U)
@@ -1566,8 +1693,13 @@ static int
 vkvideo_device(
 	struct vkvideo_runtime *video)
 {
-	/* Required standard extensions are process-immutable names supplied to a selected physical device. */
-	static const char *const extensions[] = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_VIDEO_QUEUE_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME};
+	/*
+	 * Required standard extensions are process-immutable names supplied to a
+	 * selected physical device; the last two export the images of pictures
+	 * the GPU holds, and are enabled only for them.
+	 */
+	static const char *const extensions[] = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_VIDEO_QUEUE_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME};
+	unsigned exporting;
 	VkPhysicalDevice devices[32];
 	VkExtensionProperties *available;
 	VkDeviceQueueCreateInfo queue[2];
@@ -1584,6 +1716,7 @@ vkvideo_device(
 	int comparison;
 	int error;
 	float priority;
+	PFN_vkVoidFunction address;
 
 	/* Bound enumeration before filling storage with driver-reported device handles. */
 	count = 0U;
@@ -1636,19 +1769,33 @@ vkvideo_device(
 			return error;
 		}
 
-		/* Match every required extension before creating a device. */
+		/* Match every required extension before creating a device, and the exporting ones. */
 		matched = 0U;
+		exporting = 0U;
 		if (result == VK_SUCCESS) {
-			for (extension = 0U; extension < 4U; extension++) {
+			for (extension = 0U; extension < 6U; extension++) {
 				for (candidate = 0U; candidate < extension_count; candidate++) {
 					comparison = strcmp(available[candidate].extensionName, extensions[extension]);
-					if (comparison == 0) {
+					if (comparison != 0)
+						continue;
+
+					/* A required one, or an exporting one. */
+					if (extension < 4U) {
 						matched++;
-						break;
+					} else {
+						exporting++;
 					}
+
+					/* The name is found. */
+					break;
 				}
 			}
 		}
+
+		/* Both exporting extensions, or none. */
+		video->gpu_extensions = 0;
+		if (exporting == 2U)
+			video->gpu_extensions = 1;
 
 		/* Release temporary extension enumeration before deciding whether this device is admitted. */
 		free(available);
@@ -1695,6 +1842,8 @@ vkvideo_device(
 			info.queueCreateInfoCount = 2U;
 		info.pQueueCreateInfos = queue;
 		info.enabledExtensionCount = 4U;
+		if (video->gpu)
+			info.enabledExtensionCount = 6U;
 		info.ppEnabledExtensionNames = extensions;
 		result = video->fn.vkCreateDevice(video->physical, &info, NULL, &video->device);
 		if (result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY)
@@ -1708,6 +1857,18 @@ vkvideo_device(
 		error = vkvideo_dispatch(video, 0);
 		if (error != 0)
 			return error;
+
+		/* Pictures the GPU holds need the export of an image's memory; without it they are read back. */
+		if (video->gpu) {
+			address = video->fn.vkGetDeviceProcAddr(video->device, "vkGetMemoryFdKHR");
+			memcpy(&video->vkGetMemoryFdKHR, &address, sizeof(address));
+			if (video->vkGetMemoryFdKHR == NULL) {
+				media_log("Vulkan Video: no vkGetMemoryFdKHR; pictures are read back");
+				video->gpu = 0;
+			}
+		}
+
+		/* The memory and the queues. */
 		video->fn.vkGetPhysicalDeviceMemoryProperties(video->physical, &video->memory);
 		video->fn.vkGetDeviceQueue(video->device, video->family, 0U, &video->queue);
 		video->fn.vkGetDeviceQueue(video->device, video->transfer_family, 0U, &video->transfer_queue);
@@ -2110,7 +2271,7 @@ vkvideo_record_decode(
 	 * does it: with pictures decoded ahead, the later decodes may still
 	 * name it as a reference in its decode layout.
 	 */
-	if (!video->late_barrier)
+	if (!video->late_barrier && !video->gpu)
 		vkvideo_barrier(video, flight->command, video->image[flight->slot], output_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_NONE, 0U);
 	result = video->fn.vkEndCommandBuffer(flight->command);
 	if (result != VK_SUCCESS) {
@@ -2295,12 +2456,17 @@ vkvideo_complete(
 	/* A status failure is an actual decode error; no unverified pixels are exposed (ws236). */
 	if (outcome == 0 && status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)
 		outcome = EBADMSG;
-	if (outcome == 0 && !discard && !flight->readback_coherent)
+	if (outcome == 0 && !discard && !video->gpu && !flight->readback_coherent)
 		outcome = vkvideo_mapped_range(video, flight->readback_memory, 1);
 
-	/* The cropped linear NV12 bytes, only after retirement and host visibility, timed for the cost line. */
+	/*
+	 * The cropped linear NV12 bytes, only after retirement and host
+	 * visibility, timed for the cost line; a picture the GPU holds is in
+	 * its image already.
+	 */
 	if (outcome == 0 && !discard) {
-		vkvideo_copy_output(video, flight);
+		if (!video->gpu)
+			vkvideo_copy_output(video, flight);
 		video->stats.pictures++;
 		started = vkvideo_now_ns();
 		video->stats.copy_ns += started - waited;
@@ -2341,6 +2507,199 @@ vkvideo_complete_all(
 
 	/* Succeeded: nothing is in flight. */
 	return 0;
+}
+
+/*
+ * Decides whether this context gives pictures the GPU holds: the program
+ * asked for them, the device exports memory, decodes into its references
+ * on the one family, and offers sampled NV12 images whose planes may be
+ * viewed, and the slots that holds every picture can hold fit the device.
+ * The slots: the references, the pictures waiting for their turn and those
+ * in flight, the pictures the program holds, and the one decoded into.
+ */
+static void
+vkvideo_gpu_capabilities(
+	struct vkvideo_runtime *video)
+{
+	uint32_t slots;
+	uint32_t limit;
+	uint32_t flights;
+	int error;
+
+	/* None asked for, none given. */
+	video->gpu = 0;
+	if (video->gpu_hold == 0U)
+		return;
+
+	/* The device must export memory and decode into the images it keeps. */
+	if (!video->gpu_extensions) {
+		media_log("Vulkan Video: no external memory; pictures are read back");
+		return;
+	}
+
+	/* And decode into the images it keeps, on the one family. */
+	if (video->distinct || video->family != video->transfer_family)
+		return;
+
+	/* Sampled NV12 images whose planes may be viewed. */
+	error = vkvideo_formats_flags(video, video->reference_usage | VK_IMAGE_USAGE_SAMPLED_BIT, VKVIDEO_PLANE_FLAGS);
+	if (error != 0) {
+		media_log("Vulkan Video: no sampled NV12 decode images; pictures are read back");
+		return;
+	}
+
+	/* Every image a picture may hold, within the device's and the decoder's limits. */
+	limit = video->capabilities.maxDpbSlots;
+	if (limit > H264_DPB_SLOTS)
+		limit = H264_DPB_SLOTS;
+	if (limit > MEDIA_GPU_SLOTS)
+		limit = MEDIA_GPU_SLOTS;
+	slots = video->max_references + video->reorder + video->flights + video->gpu_hold + 1U;
+
+	/* Fewer pictures in flight (down to two) when the images would not fit otherwise. */
+	flights = video->flights;
+	while (slots > limit && flights > 2U) {
+		flights--;
+		slots--;
+	}
+
+	/* Still too many: the pictures are read back, with every picture in flight. */
+	if (slots > limit) {
+		media_log("Vulkan Video: %u slots for pictures the GPU holds, more than %u; pictures are read back", slots, limit);
+		return;
+	}
+
+	/* Succeeded: the images are sampled ones, and there are enough of them. */
+	video->flights = flights;
+	video->slots = slots;
+	video->reference_usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+	video->gpu = 1;
+	media_log("Vulkan Video: pictures the GPU holds, %u slots (references %u, reorder %u, flights %u, held %u)",
+	    slots, video->max_references, video->reorder, video->flights, video->gpu_hold);
+}
+
+/*
+ * Allocates a picture's image memory exportable as an opaque fd, and
+ * exports it into the images' record (with its size and type, the same
+ * for every image).
+ */
+static int
+vkvideo_gpu_export(
+	struct vkvideo_runtime *video,
+	uint32_t slot,
+	const VkMemoryRequirements *requirements)
+{
+	VkExportMemoryAllocateInfo export_info;
+	VkMemoryAllocateInfo info;
+	VkMemoryGetFdInfoKHR get;
+	VkResult result;
+	uint32_t index;
+	int chosen;
+	int fd;
+	int error;
+
+	/* A device-local type the image takes, else any it takes. */
+	chosen = -1;
+	for (index = 0U; index < video->memory.memoryTypeCount; index++) {
+		if ((requirements->memoryTypeBits & (1U << index)) == 0U)
+			continue;
+		if (chosen < 0)
+			chosen = (int)index;
+		if ((video->memory.memoryTypes[index].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0U) {
+			chosen = (int)index;
+			break;
+		}
+	}
+
+	/* An image no type takes cannot be allocated. */
+	if (chosen < 0)
+		return ENODEV;
+
+	/* The allocation, exportable. */
+	memset(&export_info, 0, sizeof(export_info));
+	export_info.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+	export_info.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	memset(&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	info.pNext = &export_info;
+	info.allocationSize = requirements->size;
+	info.memoryTypeIndex = (uint32_t)chosen;
+	result = video->fn.vkAllocateMemory(video->device, &info, NULL, &video->image_memory[slot]);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkAllocateMemory export");
+		return error;
+	}
+
+	/* Its handle, kept in the record until the record's last reference. */
+	memset(&get, 0, sizeof(get));
+	get.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+	get.memory = video->image_memory[slot];
+	get.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+	fd = -1;
+	result = video->vkGetMemoryFdKHR(video->device, &get, &fd);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkGetMemoryFdKHR");
+		return error;
+	}
+
+	/* The record keeps it, with the memory's size and type. */
+	video->gpu_slots->fd[slot] = fd;
+	video->gpu_slots->memory_bytes = requirements->size;
+	video->gpu_slots->memory_type = (uint32_t)chosen;
+
+	/* Succeeded: the image's memory and its handle. */
+	return 0;
+}
+
+/*
+ * Submits the decode of a picture the GPU holds with its fence: the device
+ * signals it once the frame is in the image, and nothing is read back.
+ */
+static int
+vkvideo_submit_gpu(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight)
+{
+	VkSubmitInfo submit;
+	VkResult result;
+	int error;
+
+	/* The decode and its fence. */
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &flight->command;
+	result = video->fn.vkQueueSubmit(video->queue, 1U, &submit, flight->fence);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkQueueSubmit video");
+		video->failed = error;
+		return error;
+	}
+
+	/* The picture is in flight and completes with the fence; the first decode's layouts and a seek's reset are recorded. */
+	video->tickets++;
+	flight->ticket = video->tickets;
+	flight->state = VKVIDEO_READING;
+	video->initialized = 1;
+	video->reset = 0;
+
+	/* Succeeded: the decode is submitted. */
+	return 0;
+}
+
+/*
+ * Reports whether the context gives pictures the GPU holds.
+ */
+int
+media_vkvideo_runtime_gpu(
+	const struct vkvideo_runtime *video)
+{
+	/* A context that reads its pictures back gives none. */
+	if (video == NULL || !video->gpu)
+		return 0;
+
+	/* Succeeded: its pictures hold their images. */
+	return 1;
 }
 
 /* Reports the monotonic clock in nanoseconds. */

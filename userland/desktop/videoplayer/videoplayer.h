@@ -31,6 +31,7 @@
 #include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <vulkan/vulkan.h>
 
 /* How many decoded pictures wait at most. */
 #define VP_PICTURES		8U
@@ -43,6 +44,113 @@
 #define VP_ENDED		3U	/* played to its end */
 
 struct kl_audio_stream;
+struct kl_window;
+
+/*
+ * Whether the player draws with its own presenter and takes pictures the
+ * GPU holds (ws236-p011): on the Raspberry Pi 4 (the arm64 build), where
+ * the CPU cannot convert and scale a picture at its rate.  Elsewhere the
+ * frame is drawn by the CPU and shown by libkeiland, as before.
+ */
+#if defined(__aarch64__)
+#define VP_GPU_PRESENT		1
+#else
+#define VP_GPU_PRESENT		0
+#endif
+
+/*
+ * With the presenter, the pictures decoded ahead at most, and the pictures
+ * the player holds at once from the decoder: those, one held back by the
+ * reader, the one shown and the one being drawn.
+ */
+#define VP_GPU_PICTURES		3U
+#define VP_GPU_HOLD		(VP_GPU_PICTURES + 3U)
+
+/* The decoder images the presenter imports at most (one for each image of a decoding context). */
+#define VP_PRESENT_IMPORTS	18U
+
+/*
+ * One decoder image the presenter imported: the image over the decoder's
+ * memory, that memory, the views of its luma (R8) and chroma (RG8) planes,
+ * the set that binds them, and whether it is in the shader's layout.
+ */
+struct vp_present_import {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView luma;
+	VkImageView chroma;
+	VkDescriptorSet set;
+	int ready;
+};
+
+/* One swapchain image's view, framebuffer and the semaphore its present waits for. */
+struct vp_present_target {
+	VkImageView view;
+	VkFramebuffer framebuffer;
+	VkSemaphore rendered;
+};
+
+/*
+ * Where a frame shows a picture the GPU holds: the picture, and its
+ * rectangle in window pixels.
+ */
+struct vp_present_quad {
+	struct media_gpu_picture picture;
+	int x;
+	int y;
+	int width;
+	int height;
+};
+
+/*
+ * The player's presenter (present.c): its Vulkan device, the swapchain of
+ * the window, the overlay drawn by the CPU (bar, notices, pictures the CPU
+ * scaled) and its image, the pipelines of the picture and the overlay, and
+ * the decoder images imported (of the decoding context identity).
+ * operation names the last Vulkan call, for the failure's log line.
+ */
+struct vp_present {
+	VkInstance instance;
+	VkSurfaceKHR surface;
+	VkPhysicalDevice physical;
+	uint32_t family;
+	VkDevice device;
+	VkQueue queue;
+	VkSwapchainKHR swapchain;
+	VkFormat format;
+	VkExtent2D extent;
+	struct vp_present_target *targets;
+	uint32_t count;
+	VkRenderPass pass;
+	VkCommandPool pool;
+	VkCommandBuffer command;
+	VkFence fence;
+	VkSemaphore acquired;
+	VkSampler nearest;
+	VkSampler smooth;
+	VkDescriptorSetLayout picture_set_layout;
+	VkDescriptorSetLayout overlay_set_layout;
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet overlay_set;
+	VkPipelineLayout picture_layout;
+	VkPipelineLayout overlay_layout;
+	VkPipeline picture_pipeline;
+	VkPipeline overlay_pipeline;
+	VkBuffer vertices;
+	VkDeviceMemory vertex_memory;
+	float *vertex_map;
+	VkImage overlay;
+	VkDeviceMemory overlay_memory;
+	VkImageView overlay_view;
+	unsigned char *overlay_map;
+	size_t overlay_pitch;
+	int overlay_ready;
+	int overlay_written;
+	int imports_supported;
+	uint64_t identity;
+	struct vp_present_import imports[VP_PRESENT_IMPORTS];
+	const char *operation;
+};
 
 /*
  * The player's playback stream (audio.c): libkeiland's sound stream
@@ -94,6 +202,7 @@ struct vp_media {
 	double picture_times[VP_PICTURES];
 	unsigned picture_first;
 	unsigned picture_count;
+	unsigned picture_limit;	/* The pictures the ring holds at most (VP_PICTURES, or VP_GPU_PICTURES with the presenter). */
 	unsigned late;	/* Due pictures superseded before presentation; the window owns this count. */
 
 	/* The clock: the time at an anchor, and the anchor (the stream's position heard, or the monotonic time). */
@@ -129,6 +238,12 @@ void vp_media_pause(struct vp_media *media);
 void vp_media_seek(struct vp_media *media, double seconds);
 double vp_media_clock(struct vp_media *media);
 struct app_frame *vp_media_take(struct vp_media *media, double clock, double *time, double *next);
+
+/* The presenter (present.c). */
+VkResult vp_present_open(struct vp_present *present, struct kl_window *window);
+VkResult vp_present_resize(struct vp_present *present, uint32_t width, uint32_t height);
+VkResult vp_present_frame(struct vp_present *present, const uint32_t *pixels, size_t stride, int overlay_shown, int overlay_changed, const struct vp_present_quad *quad);
+void vp_present_close(struct vp_present *present);
 
 /* The log the tests read (main.c). */
 void vp_log(const char *format, ...) __attribute__((format(printf, 1, 2)));

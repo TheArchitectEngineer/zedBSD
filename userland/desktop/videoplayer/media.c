@@ -124,6 +124,14 @@ vp_media_init(
 	/* Nothing open. */
 	memset(media, 0, sizeof(*media));
 	media->audio = audio;
+
+	/*
+	 * The pictures decoded ahead: fewer with the presenter, whose pictures
+	 * each hold an image of the decoder until they are freed.
+	 */
+	media->picture_limit = VP_PICTURES;
+	if (VP_GPU_PRESENT)
+		media->picture_limit = VP_GPU_PICTURES;
 	(void)pthread_mutex_init(&media->lock, NULL);
 	(void)pthread_cond_init(&media->wake, NULL);
 }
@@ -771,7 +779,7 @@ media_place(
 	}
 
 	/* The ring is still full: the picture stays held back. */
-	if (media->picture_count == VP_PICTURES) {
+	if (media->picture_count >= media->picture_limit) {
 		(void)pthread_mutex_unlock(&media->lock);
 		return MEDIA_FULL;
 	}
@@ -965,7 +973,7 @@ media_wait_room(
 	/* Woken by a picture taken or a request, or after the wait. */
 	(void)pthread_mutex_lock(&media->lock);
 
-	if (media->picture_count == VP_PICTURES &&
+	if (media->picture_count >= media->picture_limit &&
 	    !media->quit &&
 	    !media->seek_wanted)
 		(void)pthread_cond_timedwait(&media->wake, &media->lock, &until);

@@ -382,6 +382,29 @@ app_frame_size(
 }
 
 /*
+ * Describes a picture the GPU holds (ws236-p011): 0, or ENOTSUP for a picture in the CPU's memory.
+ */
+int
+app_frame_gpu(
+	const struct app_frame *frame,
+	struct media_gpu_picture *gpu)
+{
+	int error;
+
+	/* Only a native picture may be held by the GPU. */
+	if (frame->native == NULL)
+		return ENOTSUP;
+
+	/* The native library describes it. */
+	error = media_frame_gpu(frame->native, gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: gpu describes the picture's image. */
+	return 0;
+}
+
+/*
  * Reports native sample aspect ratio for application presentation.
  */
 void
