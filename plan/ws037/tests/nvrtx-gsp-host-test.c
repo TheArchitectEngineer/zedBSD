@@ -524,6 +524,124 @@ test_records(void)
 	check(nvrtx_sequencer_save(seq, sizeof(seq), 8, 0) == EINVAL, "sequencer: save slot range");
 }
 
+static void
+test_mmu(void)
+{
+	static uint8_t image[NVRTX_MMU_TABLES_BYTES];
+	static uint8_t inst[NVRTX_INSTANCE_BYTES];
+	static uint8_t info[NVRTX_STATIC_INFO_BYTES];
+	uint64_t pages[3] = { 0x10000000ULL, 0x10001000ULL, 0x2345f000ULL };
+	uint64_t block;
+	uint64_t va;
+	uint32_t region;
+	size_t r;
+
+	block = 0x1f6f00000ULL;
+	va = 0x20000000ULL;
+	check(nvrtx_mmu_tables(image, block, va, pages, 3) == 0, "mmu: tables built");
+	check(nvrtx_get64(image, 0) == (((block + 0x1000) >> 4) | 2) && nvrtx_get64(image, 8) == 0, "mmu: root entry 0 to dir2 in VRAM");
+	check(nvrtx_get64(image, 0x1000) == (((block + 0x2000) >> 4) | 2), "mmu: dir2 entry 0");
+	check(nvrtx_get64(image, 0x2000 + 8) == (((block + 0x3000) >> 4) | 2) && nvrtx_get64(image, 0x2000) == 0, "mmu: dir1 entry 1 (VA 512 MiB)");
+	check(nvrtx_get64(image, 0x3000) == 0 && nvrtx_get64(image, 0x3008) == (((block + 0x4000) >> 4) | 2), "mmu: dual entry, small half");
+	check(nvrtx_get64(image, 0x4000) == ((0x10000000ULL >> 4) | 0xd) && nvrtx_get64(image, 0x4010) == ((0x2345f000ULL >> 4) | 0xd), "mmu: page entries valid, system coherent, volatile");
+	check(nvrtx_get64(image, 0x4018) == 0, "mmu: unused page entry invalid");
+	check(nvrtx_mmu_tables(image, block, va + 0x1000, pages, 3) == EINVAL, "mmu: unaligned range refused");
+
+	memset(inst, 0, sizeof(inst));
+	nvrtx_mmu_instance(inst, block, 1ULL << 47);
+	check(nvrtx_get64(inst, 0x200) == (block | 0xc00) && nvrtx_get64(inst, 0x208) == (1ULL << 47) - 1, "inst: root and limit");
+	check(nvrtx_get32(inst, 0x2a0) == (uint32_t)(block | 0xc00) && nvrtx_get32(inst, 0x2a4) == (uint32_t)((block | 0xc00) >> 32), "inst: subcontext 0");
+	check(nvrtx_get32(inst, 0x2b0) == 1 && nvrtx_get32(inst, 0x2b4) == 1 && nvrtx_get32(inst, 0x298) == 1, "inst: other subcontexts invalid, mask");
+
+	memset(info, 0, sizeof(info));
+	nvrtx_put32(info, 344, 3);
+	r = 344 + 8;
+	nvrtx_put64(info, r, 0);
+	nvrtx_put64(info, r + 8, 0x0fffffffULL);
+	info[r + 28] = 1;
+	info[r + 29] = 1;
+	r += 48;
+	nvrtx_put64(info, r, 0x10000000ULL);
+	nvrtx_put64(info, r + 8, 0x1f76fffffULL);
+	info[r + 28] = 1;
+	info[r + 29] = 1;
+	r += 48;
+	nvrtx_put64(info, r, 0x1f7700000ULL);
+	nvrtx_put64(info, r + 8, 0x1ffffffffULL);
+	nvrtx_put64(info, r + 16, 1);
+	check(nvrtx_mmu_vram_block(info, 0x10000, &block, &region) == 0 && region == 1 && block == 0x1f7600000ULL, "vram: top of the last usable region, 1 MiB aligned");
+	info[344 + 8 + 48 + 30] = 1;
+	check(nvrtx_mmu_vram_block(info, 0x10000, &block, &region) == 0 && region == 0 && block == 0x0ff00000ULL, "vram: protected region passed over");
+	nvrtx_put32(info, 344, 0);
+	check(nvrtx_mmu_vram_block(info, 0x10000, &block, &region) == ENOSPC, "vram: no region");
+}
+
+static void
+test_objects(void)
+{
+	static uint8_t params[NVRTX_DEVINFO_PARAMS_BYTES];
+	uint8_t call[64];
+	uint8_t chan[NVRTX_CHANNEL_PARAMS_BYTES];
+	uint8_t push[128];
+	uint8_t entry[8];
+	struct nvrtx_engine_pick pick;
+	struct nvrtx_channel_setup setup;
+	size_t n;
+
+	nvrtx_pdir_params(params, 0x1f6f00000ULL, 0xc0de90f1U);
+	n = nvrtx_control_call(call, sizeof(call), 0xc0de0001U, 0xc0de0080U, NVRTX_CTL_SET_PAGE_DIRECTORY, params, NVRTX_PDIR_PARAMS_BYTES);
+	check(n == 56 && nvrtx_get32(call, 0) == 0xc0de0001U && nvrtx_get32(call, 4) == 0xc0de0080U && nvrtx_get32(call, 8) == 0x801813 && nvrtx_get32(call, 16) == 32, "control: header");
+	check(nvrtx_get64(call, 24) == 0x1f6f00000ULL && nvrtx_get32(call, 32) == 4 && nvrtx_get32(call, 36) == 0 && nvrtx_get32(call, 40) == 0xc0de90f1U, "control: page directory");
+	check(nvrtx_control_call(call, 40, 0, 0, 0, params, 32) == 0, "control: small buffer refused");
+	nvrtx_space_params(params);
+	check(nvrtx_get32(params, 0) == 0 && nvrtx_get32(params, 4) == 8 && nvrtx_get32(params, 32) == 0, "space: externally owned");
+
+	memset(params, 0, sizeof(params));
+	nvrtx_put32(params, 4, 4);
+	nvrtx_put32(params, 12 + 0 * 100 + 8, 0x01);
+	nvrtx_put32(params, 12 + 0 * 100 + 12, 0);
+	nvrtx_put32(params, 12 + 1 * 100 + 8, 0x09);
+	nvrtx_put32(params, 12 + 1 * 100 + 12, 0);
+	nvrtx_put32(params, 12 + 2 * 100 + 8, 0x13);
+	nvrtx_put32(params, 12 + 2 * 100 + 12, 2);
+	nvrtx_put32(params, 12 + 3 * 100 + 8, 0x0a);
+	nvrtx_put32(params, 12 + 3 * 100 + 12, 3);
+	check(nvrtx_devinfo_pick(params, sizeof(params), &pick) == 0 && pick.engine == 0x0a && pick.runlist == 3 && pick.graphics_runlist == 0, "devinfo: copy engine of its own runlist");
+	nvrtx_put32(params, 4, 3);
+	check(nvrtx_devinfo_pick(params, sizeof(params), &pick) == ENOENT, "devinfo: none");
+	nvrtx_put32(params, 4, 40);
+	check(nvrtx_devinfo_pick(params, sizeof(params), &pick) == EINVAL, "devinfo: count too large");
+
+	setup.ring_va = 0x20000000ULL;
+	setup.ring_entries = 512;
+	setup.chid = 8;
+	setup.space = 0xc0de90f1U;
+	setup.engine = 0x0a;
+	setup.instance = 0x1f6f05000ULL;
+	setup.userd = 0x1f6f06000ULL;
+	setup.methods = 0x30000000ULL;
+	setup.methods_size = 0x8000;
+	nvrtx_channel_params(chan, &setup);
+	check(nvrtx_get64(chan, 8) == 0x20000000ULL && nvrtx_get32(chan, 16) == 512 && nvrtx_get32(chan, 28) == 0xc0de90f1U && nvrtx_get32(chan, 128) == 0x0a, "channel: ring, space, engine");
+	check(nvrtx_get32(chan, 20) == ((1u << 12) | (1u << 21)), "channel: flags (USERD index 0, page 1 fixed)");
+	check(nvrtx_get64(chan, 144) == 0x1f6f05000ULL && nvrtx_get64(chan, 152) == 0x1000 && nvrtx_get32(chan, 160) == 2 && nvrtx_get32(chan, 164) == 1, "channel: instance in VRAM");
+	check(nvrtx_get64(chan, 168) == 0x1f6f06000ULL && nvrtx_get64(chan, 176) == 0x200 && nvrtx_get64(chan, 200) == 0x200, "channel: USERD and RAMFC");
+	check(nvrtx_get64(chan, 216) == 0x30000000ULL && nvrtx_get64(chan, 224) == 0x8000 && nvrtx_get32(chan, 232) == 1 && nvrtx_get32(chan, 236) == 0, "channel: method buffer in system memory");
+	check(nvrtx_get32(chan, 244) == 0x14 && nvrtx_get32(chan, 360) == 0, "channel: internal flags, tail zero");
+
+	n = nvrtx_push_fence(push, 0x20003000ULL, 0x1234);
+	check(n == 52, "push: fence length");
+	check(nvrtx_get32(push, 0) == ((1u << 29) | (3u << 16) | (0x5c >> 2)) && nvrtx_get32(push, 4) == 0x20003000U && nvrtx_get32(push, 8) == 0 && nvrtx_get32(push, 12) == 0x1234, "push: semaphore address and value");
+	check(nvrtx_get32(push, 16) == ((1u << 29) | (1u << 16) | (0x6c >> 2)) && nvrtx_get32(push, 20) == 0x100001, "push: release with WFI");
+	check(nvrtx_get32(push, 24) == ((1u << 29) | (4u << 16) | (0x28 >> 2)) && nvrtx_get32(push, 40) == (5u << 27), "push: membar");
+	check(nvrtx_get32(push, 44) == ((1u << 29) | (1u << 16) | (0x20 >> 2)), "push: non-stall");
+	nvrtx_ring_entry(entry, 0x120004000ULL, 13);
+	check(nvrtx_get32(entry, 0) == 0x20004000U && nvrtx_get32(entry, 4) == (1u | (13u << 10)), "ring: entry");
+
+	nvrtx_free_params(params, 0xc0de0001U, 0xc0dec46fU);
+	check(nvrtx_get32(params, 0) == 0xc0de0001U && nvrtx_get32(params, 4) == 0 && nvrtx_get32(params, 8) == 0xc0dec46fU && nvrtx_get32(params, 12) == 0, "free: params");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -533,6 +651,8 @@ main(int argc, char **argv)
 	test_queue();
 	test_vbios();
 	test_records();
+	test_mmu();
+	test_objects();
 	if (argc > 1)
 		test_files(argv[1]);
 	else
