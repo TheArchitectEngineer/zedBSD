@@ -138,6 +138,7 @@ static void check_draw_push(void);
 static void check_draw_descriptors(void);
 static void check_draw_programs(void);
 static struct nvrtx_sm75_binary *compile_draw_ir(const struct nvrtx_draw_ir *program, const char *name);
+static int header_is(const uint32_t *sph, const uint32_t *want);
 static int decode_push(const uint8_t *push, size_t length, uint32_t *state, uint8_t *seen);
 static uint64_t field(const uint32_t *words, unsigned low, unsigned bits);
 static int words_are(const struct nvrtx_sm75_word *word, uint64_t low, uint64_t high);
@@ -1362,11 +1363,30 @@ check_draw_descriptors(void)
  * Compiles the draw's programs from their IR and runs them: the vertex
  * program places a corner of the quad, the one-colour fragment program
  * writes the push constants' colour, the textured one samples at the
- * interpolated coordinate.
+ * interpolated coordinate.  Each header is compared word for word with
+ * the one NAK's encode_header (sph.rs, from_nir.rs) gives the same
+ * program: word 0 the type, version 4, stage, SASS version 1 (and a
+ * fragment program's multiple targets); word 4 a vertex program's store
+ * request over its stores (0x1c, the position's x, to 0x1f or 0x21);
+ * word 5 bit 31 the position's w, always in a fragment program's input
+ * map; word 6 the generic input map; word 13 the vertex output map;
+ * word 18 colour 0's four channels.
  */
 static void
 check_draw_programs(void)
 {
+	static const uint32_t vertex_header[NVRTX_SM75_SPH_WORDS] = {
+		[0] = 0x00020481U, [4] = 0x1f01c000U, [6] = 0x00000003U, [13] = 0x0000f000U
+	};
+	static const uint32_t textured_vertex_header[NVRTX_SM75_SPH_WORDS] = {
+		[0] = 0x00020481U, [4] = 0x2101c000U, [6] = 0x00000003U, [13] = 0x0003f000U
+	};
+	static const uint32_t fragment_header[NVRTX_SM75_SPH_WORDS] = {
+		[0] = 0x00025482U, [5] = 0x80000000U, [18] = 0x0000000fU
+	};
+	static const uint32_t textured_fragment_header[NVRTX_SM75_SPH_WORDS] = {
+		[0] = 0x00025482U, [5] = 0x80000000U, [6] = 0x0000000aU, [18] = 0x0000000fU
+	};
 	static struct test_run run;
 	static struct test_thread thread;
 	static struct nvrtx_draw_ir program;
@@ -1385,6 +1405,7 @@ check_draw_programs(void)
 		return;
 	check(binary->graphics != 0U && field(binary->sph, 10U, 4U) == 1U && field(binary->sph, 400U + 28U, 4U) == 0xfU, "draw vertex header: a vertex program writing the position");
 	check(field(binary->sph, 432U, 2U) == 0U, "draw vertex writes no generic attribute");
+	check(header_is(binary->sph, vertex_header), "draw vertex header: NAK's words in full");
 	memset(&run, 0, sizeof(run));
 	run.binary = binary;
 	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
@@ -1408,6 +1429,7 @@ check_draw_programs(void)
 	if (binary == NULL)
 		return;
 	check(field(binary->sph, 432U, 2U) == 3U, "draw textured vertex writes the coordinate");
+	check(header_is(binary->sph, textured_vertex_header), "draw textured vertex header: NAK's words in full");
 	memset(&run, 0, sizeof(run));
 	run.binary = binary;
 	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
@@ -1431,6 +1453,8 @@ check_draw_programs(void)
 	if (binary == NULL)
 		return;
 	check(field(binary->sph, 10U, 4U) == 5U && field(binary->sph, 576U, 32U) == 0xfU && field(binary->sph, 192U, 64U) == 0U, "draw fragment header: colour 0, no input");
+	check(field(binary->sph, 160U + 31U, 1U) == 1U, "draw fragment header maps the position's w though it does not read it");
+	check(header_is(binary->sph, fragment_header), "draw fragment header: NAK's words in full");
 	memset(&run, 0, sizeof(run));
 	run.binary = binary;
 	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
@@ -1452,6 +1476,7 @@ check_draw_programs(void)
 	if (binary == NULL)
 		return;
 	check(binary->texture_count == 1U && field(binary->sph, 192U, 4U) == 0xaU, "draw textured fragment: one image, the coordinate in perspective");
+	check(header_is(binary->sph, textured_fragment_header), "draw textured fragment header: NAK's words in full");
 	memset(&run, 0, sizeof(run));
 	run.binary = binary;
 	handle = 5U;
@@ -1488,6 +1513,28 @@ compile_draw_ir(
 	}
 	printf("  %s: %u instructions, %u registers\n", name, binary->code_words / 4U, binary->gpr_count);
 	return binary;
+}
+
+/* Reports nonzero when a program's header holds the wanted words, each word printed where it differs. */
+static int
+header_is(
+	const uint32_t *sph,
+	const uint32_t *want)
+{
+	uint32_t index;
+	int same;
+
+	/* Every word of the header. */
+	same = 1;
+	for (index = 0U; index < NVRTX_SM75_SPH_WORDS; index++) {
+		if (sph[index] != want[index]) {
+			printf("  header word %u is %08x, want %08x\n", index, sph[index], want[index]);
+			same = 0;
+		}
+	}
+
+	/* Succeeded in comparing them. */
+	return same;
 }
 
 /*

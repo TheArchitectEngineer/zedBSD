@@ -150,7 +150,7 @@ T2 の結果（[results-20261014-nvrtx-vfio](../../agents/T2/results-20261014-nv
   - `P2a memory: libos X rmargs Y queues Z+81000` と `P2a memory: logs A B C, 10000 bytes each`（DMA の番地 = guest の物理番地。vIOMMU は無い）。
   - `P2b <t> ms: cmd put P got G; msg size S put P got G`（t = 200・1000・3000・10000）: cmd の put は我々、got は GSP が読んだ所（GSP が system info と registry を読めば 2 以上）。msg の size は GSP が status の queue の header を書くと 0x40000 になる（0 なら GSP-RM は queue の初期化まで来ていない）。
   - `P2b <t> ms: mbox M0 M1 riscv R boot B; logs L0 L1 L2`: GSP の falcon の MAILBOX0/1、RISC-V の状態（0x111240 の bit 0）、secure scratch 14（0x1180f8 の bit 26 が boot の引き渡しの完了）、3 つの log の put pointer（0 なら libos は log を書いていない）。
-  - `rpc: sequencer of N bytes`（CPU sequencer を受けた時）、`rpc: firmware error K: text`（0x1006 の誤りの報告の種類と文）。
+  - `rpc: sequencer of N bytes`（CPU sequencer を受けた時）、`rpc: fw error K: text`（0x1006 の誤りの報告の種類と文の先頭 54 字。2026-10-15 ws037-p007 の R7d の後に `firmware error` と 40 字から変えた）。
   - fail の時は `P2b fail (E): memory kept for a dump; reboot the host` を出し、**memory を返さず P7 も流さない**（log と queue を外から dump するため。どちらにしても WPR2 は host の reboot まで残る）。
 - 判定は今までどおり画面の PNG。加えて fail の時は T2 が QEMU の monitor/QMP の `pmemsave` で上の番地を dump する（下の手順）。log の中身は GSP-RM の ELF の `.fwlogging` の書式で P1 が host で解読する（serial/console log ではない）。
 

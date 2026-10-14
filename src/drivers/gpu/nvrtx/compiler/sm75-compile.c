@@ -2622,8 +2622,9 @@ nvrtx_sm75_input(
 /*
  * Completes a graphics program's header (version 4, NAK's encode_header):
  * the type and version, the SASS version 1, a fragment program's
- * multiple-target bit, the global memory bits, a vertex program's store
- * request.  The maps were set as the program was lowered.
+ * multiple-target bit and its input map's position w, the global memory
+ * bits, a vertex program's store request.  The other maps were set as the
+ * program was lowered.
  */
 static void
 nvrtx_sm75_header(
@@ -2648,6 +2649,14 @@ nvrtx_sm75_header(
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_TYPE_LOW, 5U, NVRTX_SM75_SPH_TYPE_PS);
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SHADER_TYPE_LOW, 4U, NVRTX_SM75_SPH_PIXEL);
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_MRT_ENABLE, 1U, 1U);
+
+		/*
+		 * The position's w is mapped in even when the program does not
+		 * read it: NAK sets it on every fragment program, as a trap
+		 * follows without it.  The first draw on the GPU (R7d) stopped
+		 * on a shader program header error while it was missing.
+		 */
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_IMAP_AB_LOW + NVRTX_SM75_ATTR_POSITION_W / 4U, 1U, 1U);
 	} else {
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_TYPE_LOW, 5U, NVRTX_SM75_SPH_TYPE_VTG);
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SHADER_TYPE_LOW, 4U, NVRTX_SM75_SPH_VERTEX);
