@@ -8,7 +8,8 @@
 #   - the boot words of one run: NVRTX_RUN=R0 (no words: N0 and N1 only), R1 (nvrtx.gsp=1
 #     nvrtx.stop=P1a), R2 (stop=P2a), R3 (stop=P3), R4 (stop=P4), R5 (stop=P5), R6 (stop=P6) or
 #     R7 (nvrtx.gsp=1, every built stage) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (R7 and
-#     nvrtx.disp=1, the takeover of the head the GOP lit); plan/ws037/phase004 to phase006 give what each
+#     nvrtx.disp=1, the takeover of the head the GOP lit) or R8c (R8b and nvrtx.resident=1, the GPU device);
+#     plan/ws037/phase004 to phase006 give what each
 #     run must show.
 # Build one image per run, each into its own BUILD:
 #   plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r0 NVRTX_RUN=R0
@@ -57,4 +58,10 @@ endif
 # ws037-p008 stage C: R7g with the first compute launch (stage P9c: a program the nvrtx compiler made writes 42).
 ifeq ($(NVRTX_RUN),R7c)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1
+endif
+# ws037-p006 P8c: R8b with the GSP kept up and the GPU registered as a GPU device (nvrtx.resident=1),
+# and the display probes that drive it from the serial console (display-inventory, display-control).
+ifeq ($(NVRTX_RUN),R8c)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1 nvrtx.resident=1
+ZEDBSD_USER_PROGRAMS += display-inventory display-control
 endif

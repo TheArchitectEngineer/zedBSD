@@ -178,6 +178,10 @@ nvrtx_detach(
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
 		return EBUSY;
 
+	/* A GPU device keeps the GSP up until power-off (stage P8c). */
+	if (gpu->resident != 0)
+		return EBUSY;
+
 	/* Removes PCI's pointer before the state goes away. */
 	error = drv_pci_device_set_driver_data(pci, NULL);
 	if (error != 0)
