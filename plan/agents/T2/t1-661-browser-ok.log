@@ -1,0 +1,9 @@
+Wed Oct 14 18:59:40 UTC 2026
+rc=124
+ZBROWSER MAIL listen error=0
+ZBROWSER READY width=1024 height=600 document=600
+ZBROWSER NAVIGATE path=https://www.google.com/ title=Google
+ZBROWSER TITLEBAR back=0 forward=0 path=https://www.google.com/
+ZBROWSER FRAME scroll=0 width=1024 height=600
+ZBROWSER FRAME scroll=0 width=1024 height=600
+---err

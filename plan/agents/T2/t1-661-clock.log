@@ -1,0 +1,16 @@
+Wed Oct 14 18:59:35 UTC 2026
+[sudo] password for kei: NAME        STATUS    ENABLED   PID
+audiod      running   yes       7
+bluetoothd  running   yes       8
+bootlog     running   yes       4
+cron        running   yes       23
+getty_console skipped   yes       -
+greeter     running   yes       24
+homes       completed yes       -
+netclock    stopped   yes       -
+networkd    running   yes       11
+networking  completed yes       -
+ntpdate     stopped   no        -
+sshd        running   yes       19
+syslogd     running   yes       5
+volumed     running   yes       6

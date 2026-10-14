@@ -1,0 +1,12 @@
+Thu Jan  1 00:00:04 UTC 2026
+rc=124
+ZBROWSER ERROR load path=https://www.google.com/ error=Protocol error tls=handshake: certificate verify failed: certificate is not yet valid
+ZBROWSER MAIL listen error=0
+ZBROWSER READY width=1024 height=600 document=254
+ZBROWSER NAVIGATE path=data:text/html;charset=utf-8,%3C%21DOCTYPE%20html%3E%0A%3Chtml%20lang%3D%22en%22%3E%0A%3Chead%3E%0A%3Cmeta%20charset%3D%22utf-8%22%3E%0A%3Ctitle%3EPage%20not%20opened%3C%2Ftitle%3E%0A%3Cstyle%3E%0Abody%20%7B%20margin%3A%200%3B%20background%3A%20%23eef1f6%3B%20color%3A%20%231f2633%3B%20font-family%3A%20sans-serif%3B%20font-size%3A%2015px%3B%20line-height%3A%201.5%3B%20%7D%0A.main%20%7B%20max-width%3A%20640px%3B%20margin%3A%2048px%20auto%3B%20background%3A%20%23ffffff%3B%20b
+ZBROWSER TITLEBAR back=0 forward=0 path=https://www.google.com/
+ZBROWSER FRAME scroll=0 width=1024 height=600
+---err
+[sudo] password for kei: ntpdate: clock set to 1792004454.550832066
+ntp rc=0
+Wed Oct 14 19:00:54 UTC 2026
