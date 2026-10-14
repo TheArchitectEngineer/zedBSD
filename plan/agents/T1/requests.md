@@ -710,4 +710,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-638 | Q1（WS238 native の layout を ESP・FAT32（ZEDBSD）・UFS・swap に、/boot/boot0 と /boot/efi、P1 812a5b9e1） | plan/ws238/phase001/phase.md の T1 の手順（CI の config-amd64 の image、boot-test、mount の /boot/boot0・/boot/efi、dmesg を FAT32 に書いて host の mtools・fsck.fat、ESP は EFI だけ、smoke.suite） | 未実行 | — | — |
 
 
-- 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。
+- 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。| T1-639 | Q1（WS037 R6・R7・R7g・R7 の P8a、P1） | plan/ws037/phase005・006 の末尾の手順 | PASS（R6・R7・R7g・R7 P8a とも。P8a は lit 0 で head の値の照合は未実施。実機の RTX 2070 の VFIO guest、約 40 分） | results-20261015-nvrtx-r6r7.md | — |
