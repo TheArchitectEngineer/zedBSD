@@ -324,6 +324,7 @@ static pthread_once_t vkvideo_loader_once = PTHREAD_ONCE_INIT;
 static uint64_t vkvideo_gpu_identity;
 
 static void vkvideo_loader(void);
+static int vkvideo_runtime_make(const StdVideoH264SequenceParameterSet *sps, unsigned reorder, unsigned hold, struct vkvideo_runtime **runtime);
 static int vkvideo_dispatch(struct vkvideo_runtime *video, int instance);
 static int vkvideo_instance(struct vkvideo_runtime *video);
 static int vkvideo_resources(struct vkvideo_runtime *video);
@@ -367,7 +368,7 @@ media_vkvideo_runtime_open(
 	unsigned reorder,
 	struct vkvideo_runtime **runtime)
 {
-	struct vkvideo_runtime *video;
+	unsigned hold;
 	int error;
 
 	/* The loader is optional; native media reports unavailable video without loading FFmpeg. */
@@ -378,7 +379,41 @@ media_vkvideo_runtime_open(
 		return MEDIA_PROBLEM_DEVICE;
 	}
 
+	/* The context the program asked for. */
+	hold = media_decoder_gpu_hold();
+	error = vkvideo_runtime_make(sps, reorder, hold, runtime);
+
+	/* A context whose pictures the GPU would hold but that could not be made is made again, read back. */
+	if (error != 0 && hold != 0U) {
+		media_log("Vulkan Video: a context of pictures the GPU holds failed (%d); pictures are read back", error);
+		error = vkvideo_runtime_make(sps, reorder, 0U, runtime);
+	}
+
+	/* Reports a context that could not be made. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the context owns every image, buffer and session it decodes with. */
+	return 0;
+}
+
+/*
+ * Makes a context sized for the sequence, whose pictures the GPU holds
+ * (hold of them held by the program at once) when hold is not zero and the
+ * device can.  Returns 0 or a problem (MEDIA_PROBLEM_*) or errno value.
+ */
+static int
+vkvideo_runtime_make(
+	const StdVideoH264SequenceParameterSet *sps,
+	unsigned reorder,
+	unsigned hold,
+	struct vkvideo_runtime **runtime)
+{
+	struct vkvideo_runtime *video;
+	int error;
+
 	/* The context, sized for the sequence. */
+	*runtime = NULL;
 	video = calloc(1U, sizeof(*video));
 	if (video == NULL)
 		return ENOMEM;
@@ -389,7 +424,7 @@ media_vkvideo_runtime_open(
 	if (video->max_references == 0U)
 		video->max_references = 1U;
 	video->slots = video->max_references + 1U;
-	video->gpu_hold = media_decoder_gpu_hold();
+	video->gpu_hold = hold;
 	video->reorder = reorder;
 
 	/* Profile chains are stable for the entire lifetime of this instance's resources. */
@@ -419,7 +454,7 @@ media_vkvideo_runtime_open(
 		return error;
 	}
 
-	/* Succeeded: the context owns every image, buffer and session required for standard readback. */
+	/* Succeeded: the context owns every image, buffer and session it decodes with. */
 	*runtime = video;
 	return 0;
 }
