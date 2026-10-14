@@ -13,7 +13,7 @@
 | U1 | SV7・5330 | `build/uat/main-amd64/hdd-image.img`（main 2026-10-15 01:57、sha256 c76538263025b37d…） | USB に書いて起動 | /boot/boot0・/boot/efi が見える（BUG-316）、Windows・macOS で ZEDBSD の区画が見える（WS238）、SV7 は desktop（WS237） |
 | U2 | SV7・5330 | 同上 | browser で yahoo.co.jp | feed の画像の枠が無い、画像の大きさが Chrome と同じ（ws074-p233・p234） |
 | U4 | Pi 4（OLED の touch） | T1 が main の kernel と compositor を Pi に入れた後（Q1 が知らせる） | tap・中央の swipe・上端・下端の swipe | 指の下に反応する、中央の 1 本指の swipe で desktop が変わらない（BUG-315） |
-| U6 | 5330 | `build/uat/main-amd64-u6/hdd-image.img`（main a78a4d7c8、2026-10-16 04:36、sha256 180a0e1c3515ecd2…、BUG-321 の診断入り、NVIDIA の GSP firmware は抜いた＝license の同意が要るため） | 素に起動 | 止まったら画面の `kern_free:` と `fatal:` の行の写真（BUG-321）。止まらなければ Video Player で mp4 を 1 本再生（libmedia の作りを ws236-p008 で変えた、i915 の回帰の確かめ） |
+| U7 | 5330 | `build/uat/main-amd64-u7/hdd-image.img`（main c114252f8、BUG-321 の直し入り、NVIDIA の GSP firmware は抜いた） | 素に起動、Keiland まで | fatal が無い。`kernel stack high water <N> of 32768 bytes` の行が出れば N を（16384 を越えれば原因の確証）。Video Player で mp4 を 1 本 |
 
 ## 日程
 
