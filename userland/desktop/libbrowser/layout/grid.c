@@ -1051,16 +1051,20 @@ grid_static_vertical_start(
 		    child->style.grid_column.end == 3 &&
 		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO &&
 		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX))) ||
-		    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
-		    child->style.direction == CSS_DIRECTION_RTL &&
+		    (child->style.direction == CSS_DIRECTION_RTL &&
 		    child->style.grid_row.start == 2 &&
 		    child->style.grid_row.end == 3 &&
-		    child->style.grid_column.start == 1 &&
-		    child->style.grid_column.end == 2 &&
-		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO &&
 		    child->style.offset[CSS_TOP].unit == CSS_UNIT_PX &&
 		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO &&
-		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO));
+		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO &&
+		    ((box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    child->style.grid_column.start == 1 &&
+		    child->style.grid_column.end == 2 &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO) ||
+		    (box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    child->style.grid_column.start == 2 &&
+		    child->style.grid_column.end == 3 &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_PX))));
 		/* These horizontal children have no frame in this bounded mapping. */
 		for (index = 0; horizontal_child && index < 4; index++) {
 			if (child->border[index] != 0 || child->padding[index] != 0)

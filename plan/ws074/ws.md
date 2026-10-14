@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1187](queue.md) active / p217 vertical-rl Grid third horizontal RTL absolute area。2026-10-14 13:50 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1188](queue.md) active / p217 vertical-lr Grid fourth horizontal RTL absolute area。2026-10-14 13:52 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+
+Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i01で固定縦lr Grid直接横RTL absolute子row2/col2 left/top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1188/README.md)。独立矩形Chromium一致、固定non-static007 whole PASS/4 callback PASS。旧2 WPT/host/Acid3差0維持。次はGrid subset再測定、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1187-partial-clear-20261014: [p217](phase217/phase.md) q1187-i01で固定縦rl Grid直接横RTL absolute子row2/col1 top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1187/README.md)。独立矩形Chromium一致、固定non-static007縦rl callback whole PASS、水平2 callback PASS、縦lrは4番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は縦lr4番目子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
