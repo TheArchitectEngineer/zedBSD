@@ -445,6 +445,8 @@ layout_grid(
 		child->static_grid_area = 0;
 		child->cb_set = 0;
 		child->static_unsafe = 0;
+		child->static_x_safe = 0;
+		child->static_y_safe = 0;
 	}
 
 	/* Fixed vertical grids map their logical tracks to physical axes before laying out items. */
@@ -1766,6 +1768,8 @@ grid_static_position(
 		    (align == CSS_ALIGN_END || align == CSS_ALIGN_SELF_END ||
 		    align == CSS_ALIGN_CENTER)) {
 			child->static_y_align = align;
+			child->static_y_safe = (child->style.align_self != CSS_ALIGN_AUTO ?
+			    (child->style.flex_keywords & 128u) : (box->style.flex_keywords & 64u)) != 0;
 			if (full_block) {
 				child->static_y_area_height = available_height;
 			} else if (auto_start_row) {

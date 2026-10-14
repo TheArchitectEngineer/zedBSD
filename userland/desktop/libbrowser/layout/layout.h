@@ -140,6 +140,9 @@ struct layout_box {
 	int static_y_align;
 	/* A flex container's static position centers and ends without clamping an overflow. */
 	int static_unsafe;
+	/* The alignment written safe: an overflowing box starts at the area's start instead. */
+	int static_x_safe;
+	int static_y_safe;
 	/* Definite Grid area supplies the containing block for explicit insets. */
 	int static_grid_area;
 	/*

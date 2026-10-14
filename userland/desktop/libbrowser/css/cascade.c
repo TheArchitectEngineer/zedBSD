@@ -4204,7 +4204,11 @@ cascade_align(
 	int *field,
 	int keyword)
 {
-	style->flex_keywords &= ~bit;
+	style->flex_keywords &= ~(bit | (bit << 4));
+	if ((keyword & 0x1000) != 0) {
+		keyword &= ~0x1000;
+		style->flex_keywords |= bit << 4;
+	}
 	if (keyword == CSS_ALIGN_FLEX_START) {
 		keyword = CSS_ALIGN_START;
 		style->flex_keywords |= bit;

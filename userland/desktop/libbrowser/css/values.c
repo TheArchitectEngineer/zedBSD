@@ -1824,8 +1824,11 @@ values_single(
 		}
 		if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))
 			return EINVAL;
-		tokens = parts[1];
-		count = 1U;
+		/* The position after safe or unsafe is parsed alone; safe is marked in the keyword. */
+		error = values_single(parse, property, parts[1], 1U, value);
+		if (error == 0 && css_ident_equal(parts[0], "safe"))
+			value->keyword |= 0x1000;
+		return error;
 	}
 
 	/* The other properties take one token. */

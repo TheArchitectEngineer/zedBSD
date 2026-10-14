@@ -464,6 +464,8 @@ flex_static_positions(
 	int vertical;
 	int value;
 	int flex;
+	int safe_main;
+	int safe_cross;
 	int child_inline_start;
 	int child_block_start;
 
@@ -561,6 +563,12 @@ flex_static_positions(
 		child->static_x_area_width = box->width;
 		child->static_y_area_height = content_height;
 		child->static_unsafe = 1;
+		child->static_x_safe = 0;
+		child->static_y_safe = 0;
+		safe_main = (box->style.flex_keywords & 16u) != 0;
+		safe_cross = (child->style.align_self != CSS_ALIGN_AUTO) ? (child->style.flex_keywords & 128u) != 0 : (box->style.flex_keywords & 64u) != 0;
+		child->static_x_safe = main_horizontal ? safe_main : safe_cross;
+		child->static_y_safe = main_horizontal ? safe_cross : safe_main;
 		if (horizontal == FLEX_SIDE_CENTER) {
 			child->static_x_align = CSS_ALIGN_CENTER;
 		} else if (horizontal == FLEX_SIDE_END) {
