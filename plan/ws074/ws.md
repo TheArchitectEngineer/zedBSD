@@ -607,6 +607,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p230](phase230/phase.md) | yahoo.co.jp の top（gzip の body、SVG の画像、transform、dynamic link ほか） | cleared（host、2026-10-14 B1） | p228 |
 | [ws074-p231](phase231/phase.md) | google.com の script（BigInt・型付き配列・currentScript ほか）と Grid の高さ | cleared（host、2026-10-14 B1） | p230 |
 | [ws074-p232](phase232/phase.md) | yahoo.co.jp のニュース feed（fetch・Headers・Request・Response・非同期 XHR・Blob・FormData・focus ほか） | cleared（host、2026-10-14 B1。QEMU・実機は未実施。広告の viewability と Proxy は残り） | p230・p231 |
+| [ws074-p233](phase233/phase.md) | yahoo.co.jp の feed の画像まわりの枠（`transform: scale` と `transform-origin`、hairline の枠） | cleared（host、2026-10-14 B1。QEMU・実機は未実施） | p232 |
+| [ws074-p234](phase234/phase.md) | WPT Interop 2024・2023 の layout の領域（実 site でよく使う物）の PASS を増やす | planned | p233 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 

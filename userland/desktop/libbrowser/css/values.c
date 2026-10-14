@@ -65,7 +65,8 @@ enum values_shorthand {
 	SHORT_CONTAINER,
 	SHORT_BORDER_SPACING,
 	SHORT_OVERFLOW,
-	SHORT_TRANSFORM
+	SHORT_TRANSFORM,
+	SHORT_TRANSFORM_ORIGIN
 };
 
 /*
@@ -109,6 +110,7 @@ static int values_single(struct css_parse *parse, int property, const struct css
 static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
 static int values_transform(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_transform_origin(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_four(struct css_parse *parse, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_border(struct css_parse *parse, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
@@ -227,6 +229,8 @@ static const struct values_name values_names[] = {
 	{ "overflow", SHORT_OVERFLOW },
 	{ "transform", SHORT_TRANSFORM },
 	{ "-webkit-transform", SHORT_TRANSFORM },
+	{ "transform-origin", SHORT_TRANSFORM_ORIGIN },
+	{ "-webkit-transform-origin", SHORT_TRANSFORM_ORIGIN },
 	{ "overflow-x", CSS_PROP_OVERFLOW_X },
 	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
 	{ "overflow-inline", CSS_PROP_OVERFLOW_INLINE },
@@ -1185,6 +1189,8 @@ css_parse_property(
 		return values_pair(parse, CSS_PROP_OVERFLOW_X, CSS_PROP_OVERFLOW_Y, tokens, count, out, out_count);
 	case SHORT_TRANSFORM:
 		return values_transform(tokens, count, out, out_count);
+	case SHORT_TRANSFORM_ORIGIN:
+		return values_transform_origin(tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
 		/* One length for both directions, or across then down. */
 		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
@@ -2663,6 +2669,12 @@ values_wide_keyword(
 	case SHORT_TRANSFORM:
 		values_add(out, made, CSS_PROP_TRANSFORM_X, value);
 		values_add(out, made, CSS_PROP_TRANSFORM_Y, value);
+		values_add(out, made, CSS_PROP_TRANSFORM_SCALE_X, value);
+		values_add(out, made, CSS_PROP_TRANSFORM_SCALE_Y, value);
+		return;
+	case SHORT_TRANSFORM_ORIGIN:
+		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_X, value);
+		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_Y, value);
 		return;
 	case SHORT_BACKGROUND_POSITION:
 		values_add(out, made, CSS_PROP_BACKGROUND_POSITION_X, value);
@@ -5599,8 +5611,10 @@ values_transform(
 	size_t *made)
 {
 	struct css_value axis[2];
+	struct css_value scale[2];
 	struct css_value value;
 	const struct css_token *argument[3];
+	double factor;
 	size_t index;
 	size_t end;
 	size_t inner;
@@ -5615,6 +5629,9 @@ values_transform(
 	axis[0].kind = CSS_VALUE_LENGTH;
 	axis[0].unit = CSS_DUNIT_PX;
 	axis[1] = axis[0];
+	scale[0] = axis[0];
+	scale[0].number = 1.0f;
+	scale[1] = scale[0];
 	seen = 0;
 	index = 0;
 	while (index < count) {
@@ -5656,6 +5673,46 @@ values_transform(
 		else if (css_ident_equal(&tokens[index], "translate3d"))
 			which = 3;
 		seen = 1;
+
+		/* scale, scaleX, scaleY and scale3d: numbers (or percentages) that multiply. */
+		if (css_ident_equal(&tokens[index], "scale") || css_ident_equal(&tokens[index], "scalex") ||
+		    css_ident_equal(&tokens[index], "scaley") || css_ident_equal(&tokens[index], "scale3d")) {
+			which = 0;
+			if (css_ident_equal(&tokens[index], "scalex"))
+				which = 1;
+			else if (css_ident_equal(&tokens[index], "scaley"))
+				which = 2;
+			arguments = 0;
+			for (inner = index + 1U; inner + 1U < end; inner++) {
+				if (tokens[inner].type == CSS_TOKEN_WHITESPACE || tokens[inner].type == CSS_TOKEN_COMMA)
+					continue;
+				if (arguments == 3U)
+					return EINVAL;
+				if (tokens[inner].type != CSS_TOKEN_NUMBER && tokens[inner].type != CSS_TOKEN_PERCENTAGE)
+					return EINVAL;
+				argument[arguments++] = &tokens[inner];
+			}
+			if (arguments == 0)
+				return EINVAL;
+			factor = argument[0]->number;
+			if (argument[0]->type == CSS_TOKEN_PERCENTAGE)
+				factor /= 100.0;
+			if (which == 2) {
+				scale[1].number *= (float)factor;
+			} else {
+				scale[0].number *= (float)factor;
+				if (which == 0) {
+					if (arguments > 1U) {
+						factor = argument[1]->number;
+						if (argument[1]->type == CSS_TOKEN_PERCENTAGE)
+							factor /= 100.0;
+					}
+					scale[1].number *= (float)factor;
+				}
+			}
+			index = end;
+			continue;
+		}
 		if (which >= 0) {
 			/* Its arguments, separated by commas (whitespace around them is skipped). */
 			arguments = 0;
@@ -5691,5 +5748,103 @@ values_transform(
 	/* Succeeded: the two translations. */
 	values_add(out, made, CSS_PROP_TRANSFORM_X, &axis[0]);
 	values_add(out, made, CSS_PROP_TRANSFORM_Y, &axis[1]);
+	values_add(out, made, CSS_PROP_TRANSFORM_SCALE_X, &scale[0]);
+	values_add(out, made, CSS_PROP_TRANSFORM_SCALE_Y, &scale[1]);
+	return 0;
+}
+
+/* Parses one component of transform-origin: left, center or right (top and bottom on the other axis), or a length. */
+static int
+values_transform_origin_component(
+	const struct css_token *token,
+	int *vertical,
+	int *axis,
+	struct css_value *value)
+{
+	float percent;
+
+	/* A keyword fixes its axis (center fits either). */
+	*axis = -1;
+	if (token->type == CSS_TOKEN_IDENT) {
+		if (css_ident_equal(token, "left")) {
+			percent = 0.0f;
+			*axis = 0;
+		} else if (css_ident_equal(token, "right")) {
+			percent = 100.0f;
+			*axis = 0;
+		} else if (css_ident_equal(token, "top")) {
+			percent = 0.0f;
+			*axis = 1;
+		} else if (css_ident_equal(token, "bottom")) {
+			percent = 100.0f;
+			*axis = 1;
+		} else if (css_ident_equal(token, "center")) {
+			percent = 50.0f;
+		} else {
+			return EINVAL;
+		}
+		*vertical = 0;
+		value->kind = CSS_VALUE_LENGTH;
+		value->unit = CSS_DUNIT_PERCENT;
+		value->number = percent;
+		return 0;
+	}
+	return values_length(token, 0, value);
+}
+
+/* Parses transform-origin: one or two components (a third, z, is accepted and ignored). */
+static int
+values_transform_origin(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value first;
+	struct css_value second;
+	const struct css_token *part[3];
+	size_t index;
+	size_t parts;
+	int first_axis;
+	int second_axis;
+	int vertical;
+	int error;
+
+	/* The components. */
+	parts = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (parts == 3U)
+			return EINVAL;
+		part[parts++] = &tokens[index];
+	}
+	if (parts == 0)
+		return EINVAL;
+	vertical = 0;
+	error = values_transform_origin_component(part[0], &vertical, &first_axis, &first);
+	if (error != 0)
+		return error;
+	memset(&second, 0, sizeof(second));
+	second.kind = CSS_VALUE_LENGTH;
+	second.unit = CSS_DUNIT_PERCENT;
+	second.number = 50.0f;
+	second_axis = -1;
+	if (parts > 1U) {
+		error = values_transform_origin_component(part[1], &vertical, &second_axis, &second);
+		if (error != 0)
+			return error;
+	}
+
+	/* A vertical keyword first (or a horizontal one second) swaps the two. */
+	if (first_axis == 1 || second_axis == 0) {
+		if (first_axis == 0 || second_axis == 1)
+			return EINVAL;
+		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_X, &second);
+		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_Y, &first);
+		return 0;
+	}
+	values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_X, &first);
+	values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_Y, &second);
 	return 0;
 }
