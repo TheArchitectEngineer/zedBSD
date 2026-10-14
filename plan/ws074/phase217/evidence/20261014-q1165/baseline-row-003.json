@@ -1,0 +1,73 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": ".grid 1",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": ".grid 2",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": ".grid 3",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"grid verticalLR\">\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"firstRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"30\" data-expected-height=\"70\" class=\"firstRowSecondColumn\">XX X<br>X XXX X<br>XX XXX</div>\n  <div data-offset-x=\"150\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"secondRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"150\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+    },
+    {
+      "name": ".grid 4",
+      "status": 1,
+      "message": "assert_equals: \n<div class=\"grid verticalRL\">\n  <div data-offset-x=\"240\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"firstRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"220\" data-offset-y=\"100\" data-expected-width=\"30\" data-expected-height=\"70\" class=\"firstRowSecondColumn\">XX X<br>X XXX X<br>XX XXX</div>\n  <div data-offset-x=\"90\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"secondRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"60\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 240 but got 0"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": ".grid 1",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": ".grid 2",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": ".grid 3",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"grid verticalLR\">\n  <div data-offset-x=\"0\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"firstRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"0\" data-offset-y=\"100\" data-expected-width=\"30\" data-expected-height=\"70\" class=\"firstRowSecondColumn\">XX X<br>X XXX X<br>XX XXX</div>\n  <div data-offset-x=\"150\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"secondRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"150\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+      },
+      {
+        "name": ".grid 4",
+        "status": 1,
+        "message": "assert_equals: \n<div class=\"grid verticalRL\">\n  <div data-offset-x=\"240\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"firstRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"220\" data-offset-y=\"100\" data-expected-width=\"30\" data-expected-height=\"70\" class=\"firstRowSecondColumn\">XX X<br>X XXX X<br>XX XXX</div>\n  <div data-offset-x=\"90\" data-offset-y=\"0\" data-expected-width=\"10\" data-expected-height=\"60\" class=\"secondRowFirstColumn\">X XX X</div>\n  <div data-offset-x=\"60\" data-offset-y=\"100\" data-expected-width=\"40\" data-expected-height=\"60\" class=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 240 but got 0"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-003.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:43371/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-003.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\".grid 1\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\".grid 2\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\".grid 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid verticalLR\\\">\\n  <div data-offset-x=\\\"0\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"firstRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"0\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"70\\\" class=\\\"firstRowSecondColumn\\\">XX X<br>X XXX X<br>XX XXX</div>\\n  <div data-offset-x=\\\"150\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"150\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowSecondColumn\\\">XX X<br>X XXX<br>X<br>XX XXX</div>\\n</div>\\noffsetTop expected 100 but got 0\"}\nWS074_WPT_RESULT {\"name\":\".grid 4\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid verticalRL\\\">\\n  <div data-offset-x=\\\"240\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"firstRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"220\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"70\\\" class=\\\"firstRowSecondColumn\\\">XX X<br>X XXX X<br>XX XXX</div>\\n  <div data-offset-x=\\\"90\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"60\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowSecondColumn\\\">XX X<br>X XXX<br>X<br>XX XXX</div>\\n</div>\\noffsetLeft expected 240 but got 0\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\".grid 1\",\"status\":0,\"message\":\"\"},{\"name\":\".grid 2\",\"status\":0,\"message\":\"\"},{\"name\":\".grid 3\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid verticalLR\\\">\\n  <div data-offset-x=\\\"0\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"firstRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"0\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"70\\\" class=\\\"firstRowSecondColumn\\\">XX X<br>X XXX X<br>XX XXX</div>\\n  <div data-offset-x=\\\"150\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"150\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowSecondColumn\\\">XX X<br>X XXX<br>X<br>XX XXX</div>\\n</div>\\noffsetTop expected 100 but got 0\"},{\"name\":\".grid 4\",\"status\":1,\"message\":\"assert_equals: \\n<div class=\\\"grid verticalRL\\\">\\n  <div data-offset-x=\\\"240\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"firstRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"220\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"30\\\" data-expected-height=\\\"70\\\" class=\\\"firstRowSecondColumn\\\">XX X<br>X XXX X<br>XX XXX</div>\\n  <div data-offset-x=\\\"90\\\" data-offset-y=\\\"0\\\" data-expected-width=\\\"10\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowFirstColumn\\\">X XX X</div>\\n  <div data-offset-x=\\\"60\\\" data-offset-y=\\\"100\\\" data-expected-width=\\\"40\\\" data-expected-height=\\\"60\\\" class=\\\"secondRowSecondColumn\\\">XX X<br>X XXX<br>X<br>XX XXX</div>\\n</div>\\noffsetLeft expected 240 but got 0\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

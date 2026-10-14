@@ -1039,10 +1039,17 @@ grid_static_vertical_start(
 		justify = child->style.justify_self;
 		if (justify == CSS_ALIGN_AUTO)
 			justify = box->style.justify_items;
+		/* Invalid align-self:left/right falls back to normal, the static start edge. */
+		if (align == CSS_ALIGN_NORMAL)
+			align = CSS_ALIGN_START;
+		if (justify == CSS_ALIGN_NORMAL)
+			justify = CSS_ALIGN_START;
 		if ((align != CSS_ALIGN_START && align != CSS_ALIGN_END &&
-		    align != CSS_ALIGN_CENTER) ||
+		    align != CSS_ALIGN_CENTER && align != CSS_ALIGN_LEFT &&
+		    align != CSS_ALIGN_RIGHT) ||
 		    (justify != CSS_ALIGN_START && justify != CSS_ALIGN_END &&
-		    justify != CSS_ALIGN_CENTER))
+		    justify != CSS_ALIGN_CENTER && justify != CSS_ALIGN_LEFT &&
+		    justify != CSS_ALIGN_RIGHT))
 			continue;
 
 		/* Logical columns descend; logical rows go right or left. */
@@ -1058,9 +1065,12 @@ grid_static_vertical_start(
 		child->static_x_align = align;
 		child->static_x_area_width = layout_from_px(box->style.rows[row].size.value);
 		child->static_x_align_from_right =
+		    align == CSS_ALIGN_RIGHT ||
 		    (align == CSS_ALIGN_END &&
 		    box->style.writing_mode == CSS_WRITING_VERTICAL_LR);
-		child->static_y_align = justify;
+		child->static_y_align =
+		    justify == CSS_ALIGN_RIGHT ? CSS_ALIGN_END :
+		    justify == CSS_ALIGN_LEFT ? CSS_ALIGN_START : justify;
 		child->static_y_area_height =
 		    layout_from_px(box->style.columns[column].size.value);
 	}
