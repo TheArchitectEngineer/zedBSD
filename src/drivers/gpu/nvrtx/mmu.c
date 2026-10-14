@@ -516,6 +516,83 @@ nvrtx_mmu_gr_map_vram(
 	return 0;
 }
 
+/*
+ * Reports where a page's entry lies in the graphics context's tables.
+ *
+ * The page tables follow one another in the order of their 2 MiB, so the
+ * entries of a run of pages are contiguous across the tables.  Returns the
+ * byte offset from the tables' start, or 0 for an address outside the
+ * range or not on a page boundary (the root lies at offset 0, so 0 is
+ * never an entry's place).
+ */
+size_t
+nvrtx_mmu_gr_pte_offset(
+	uint64_t va_base,
+	uint64_t va_bytes,
+	uint64_t va)
+{
+	int valid;
+
+	/* The tables must be ones nvrtx_mmu_gr_tables() can build. */
+	valid = mmu_gr_range_valid(va_base, va_bytes);
+	if (!valid)
+		return 0U;
+
+	/* The page must lie inside the range, on its boundary. */
+	if ((va & 0xfffU) != 0U)
+		return 0U;
+	if (va < va_base || va - va_base >= va_bytes)
+		return 0U;
+
+	/* Succeeded: the entry after the directories, in page order. */
+	return MMU_GR_TABLES_FIRST_AT + (size_t)((va - va_base) / NVRTX_GSP_PAGE_SIZE) * 8U;
+}
+
+/*
+ * Writes the entries of a run of VRAM pages for work, one after another.
+ *
+ * Each entry is a valid VRAM page that is neither privileged nor read-only,
+ * as nvrtx_mmu_gr_map_vram() writes; entries is pages * 8 bytes long.
+ */
+void
+nvrtx_mmu_gr_entries_vram(
+	uint8_t *entries,
+	uint64_t physical,
+	uint64_t pages)
+{
+	uint64_t page;
+	uint64_t entry;
+
+	/* Writes each page's entry. */
+	for (page = 0U; page < pages; page++) {
+		entry = ((physical + page * NVRTX_GSP_PAGE_SIZE) >> MMU_ADDRESS_SHIFT) | MMU_PTE_VALID;
+		nvrtx_put64(entries, (size_t)page * 8U, entry);
+	}
+}
+
+/*
+ * Writes the entries of system-memory pages for work, one after another.
+ *
+ * Each entry is a valid, coherent, volatile system-memory page that is not
+ * privileged, as nvrtx_mmu_gr_map_system() writes; entries is count * 8
+ * bytes long.
+ */
+void
+nvrtx_mmu_gr_entries_system(
+	uint8_t *entries,
+	const uint64_t *pages,
+	size_t count)
+{
+	uint64_t entry;
+	size_t index;
+
+	/* Writes each page's entry. */
+	for (index = 0U; index < count; index++) {
+		entry = (pages[index] >> MMU_ADDRESS_SHIFT) | MMU_PTE_VALID | MMU_PTE_SYSTEM | MMU_PTE_VOLATILE;
+		nvrtx_put64(entries, index * 8U, entry);
+	}
+}
+
 /* Clears a range of bytes. */
 static void
 mmu_clear(

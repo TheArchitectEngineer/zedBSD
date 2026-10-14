@@ -165,6 +165,12 @@ void nvrtx_sm75_ipa(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t address
  */
 void nvrtx_sm75_tex(struct nvrtx_sm75_word *word, uint32_t first, uint32_t second, uint32_t coordinates, uint32_t lod, uint32_t lod_mode, uint32_t index, uint32_t offset);
 
+/* Makes a TEX a TLD (a texel fetch at integer coordinates, an explicit level of detail mode). */
+void nvrtx_sm75_tex_fetch(struct nvrtx_sm75_word *word);
+
+/* Makes a TEX or a TLD take a constant texel offset from the register after its level of detail (AOFFI). */
+void nvrtx_sm75_tex_offset(struct nvrtx_sm75_word *word);
+
 /* KILL of the fragment (under the instruction's guard). */
 void nvrtx_sm75_kill(struct nvrtx_sm75_word *word);
 

@@ -2,7 +2,7 @@
 
 # ws037-p007: 3D の投入（段 P9g: 最初の draw）
 
-Status: in-progress（2026-10-15 P3: 7a・7b・7c を実装、build と host 試験まで。実機 R7d は T 待ち（下の 7 節））
+Status: in-progress（2026-10-15: 段 P9g（7a・7b・7c）は R7d の再試験 T1-656 で実機 PASS。次は desktop までの段 D1〜D7（8 節）。D1 は実装済み、R9w は T 待ち）
 Disposition: normal
 Parent: [WS037](../ws.md)
 依存: [p008](../phase008/phase.md) の段 E（頂点・fragment の program と SPH、2026-10-15 実装・host 済み）、段 P9c（compute の投入。2026-10-15 実機 R7c PASS: GR の channel・promote・QMD・fence の道が実機で動いた）、P5g（golden context）
@@ -134,6 +134,10 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 | `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix`（p2 worktree） | rc 0・warning 0・include check / vmunix check PASS、`git diff --check` 0 |
 | 実機（R7d の再試験） | **未実施**。手順は 7 節のまま（image の語は既定 on の後 `nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1 nvrtx.disp=0 nvrtx.resident=0`、`config-amd64-nvrtx.mk` の `NVRTX_RUN=R7d`）。FAIL で同じ SPH の誤りなら、`DS_HWW_ESR` の bit の変化（17・19 が消えたか）を記録 |
 
+## R7d の再試験の結果（T1-656、2026-10-15、RTX 2070 実機、方法 B rombar=0、main 63d0532b0）
+
+**PASS**（Q1 の判定）。P9c ok、P9g の 3 つの draw（system memory・VRAM・texture）が全て `65536 pixels right`、`P9g ok: three draws checked`、P6 ok・P7 ok。直し（fragment の header の w の imap、P1 `7ce6e4019`、と draw の push を NVK に合わせた P3 の分、`57c97fd24`）で SPH の Graphics Exception は消えた。段 P9g（7a・7b・7c）は実機で通った。
+
 ## 8. desktop までの段（2026-10-15 夜、P2 の洗い出し。Q1 の指示: 方式 B（passthrough）で RTX の上に Keiland の desktop が描けるまで）
 
 ### 8.1 今あるもの・欠けているもの（調べた事実）
@@ -167,3 +171,48 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 - 依存: D1 → D2 → D3・D4 → D5 → D6。D3 の shader は P4（compiler）の SPIR-V → SM75 が前提（desktop の shader 全て）。executor と compiler の約束（program の入力・cbuf 0 の push constant の配置・texture の binding の番号・SPH）を変える時は Q1 経由で P4 とすり合わせる。
 - 量の見込み: D2 は i915 の protocol の層の移植で数千行、D3 は compositor の command の範囲で数千行。ベータ2（10/16 夕）の残りでは D1・D2 の host の部分までが現実的で、desktop（D6）はベータ2 の後の見込み（Q1・ユーザーの判断）。
 - 代わりの道（判断を Q1 へ）: 方式 B の guest に Venus の virtio-gpu（**zedBSD 用の host の renderer**。素の virglrenderer は上のとおり飛ばされる）を足せば、compositor は Venus で描き nvrtx の display に複写の present で出せる（D0 だけで desktop が RTX の monitor に出る）。ただし「RTX が描く」ではなく、毎 frame の CPU の複写（P8c の storage の present）になる。
+
+### 8.3 D1 の実装（2026-10-15、P2。build と host 試験まで、実機は未）
+
+`nvrtx.work=1`（新しい語、既定は off で既定の boot は不変）の時、P9c の後・P8 の前に段 **P9w** を走らせ、GPU の device が持つ描画の channel を作る。golden context（P5g）が要るので `nvrtx.work=1` は P5g も走らせる。P9c（compute.c）の作りを写し、boot の試験ではなく使い続ける部品にした。
+
+| 物 | 中身 |
+| --- | --- |
+| `work.c`（新） | arena（P4m の allocator の BO 32 MiB、2 MiB 整列: page table・instance・USERD・自分の context buffer）、driver の vaspace（`NVRTX_WORK_VA_BASE` 0x20000000 からの 512 MiB を 1 本の DIR1 の entry で。context buffer は golden context の VA に privileged、driver の page（ring・semaphore・fence の push の 8 page）は 0x28000000、0x28100000 から上を利用者の map に heap で配る）、channel（chid 4、0xc46f）・promote・3D（0xc597）と compute（0xc5c0）の object・bind・schedule、最初の submission（subchannel 0 に 3D、1 に compute の SET_OBJECT と fence）。API: `nvrtx_work_map_vram`・`nvrtx_work_map_system`（PTE を書いて TLB の invalidate）・`nvrtx_work_unmap`・`nvrtx_work_submit`（呼び手の push の segment と driver の fence の 2 entry、ring は 512 entry で wrap、entry と fence の slot はその entry の前の fence が過ぎるまで再利用しない）・`nvrtx_work_wait`（semaphore の polling、wrap を考えた比較）。停止は nouveau の順（schedule off → 3D・compute → channel → root → space）、arena は GSP の停止の後に allocator へ返す |
+| `work-records.c`・`nvrtx-work.h`（新） | hardware に触れない部分: fence の比較（`nvrtx_work_fence_passed`）、SET_OBJECT の push（`nvrtx_work_push_objects`）、layout の定数 |
+| `mmu.c` | `nvrtx_mmu_gr_pte_offset`（VA の PTE の位置。page table は 2 MiB の順に並ぶので run の PTE は表をまたいで連続）・`nvrtx_mmu_gr_entries_vram`・`_system`（既存の map の関数と同じ PTE の値を 1 列に） |
+| `gsp.c`・`stage.c`・`nvrtx.c`・`nvrtx-gpu.h`・`nvrtx-private.h` | `nvrtx.work=1`、P5g を伴わせる、P9w の段、stop と release の順（work → compute → display → gr、release は allocator の release の前）、`work.lock` |
+| `platform/amd64/vmunix.mk` | NVRTX の ifeq の中に 2 file |
+| `config-amd64-nvrtx.mk` | `NVRTX_RUN=R9w`（`nvrtx.gsp=1 nvrtx.work=1 nvrtx.disp=0 nvrtx.resident=0`） |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | `PASS nvrtx gsp: 252 checks`（work の 18 項目: PTE の位置（先頭・利用者の範囲・最後・範囲外・非整列・範囲の検査）、256 枚の page table、VRAM と system の PTE の値、fence の比較と wrap、SET_OBJECT の push の 4 語、fence の push が slot の 64 byte に入る、ring が 1 page） |
+| `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix` | rc 0・warning 0・`kernel include check: PASS (422 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| 実機（R9w） | **未実施** |
+
+未確定の危険: (1) 2 本目の GR の channel（chid 3 の P9c と同時でも別でも）を RM が受けるか（P9c は 1 本で実機 PASS）。(2) arena を allocator の BO（VRAM の下の方）に置くこと（P9c は上端の固定の reserve）。context buffer の位置に制約があれば promote で分かる（`rm: control … status …`）。(3) 1 MiB の page table の image を kern_malloc で一度に取る。
+
+#### T への手順（R9w、方式 B、rombar=0 で可）
+
+image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9w NVRTX_RUN=R9w`（merge の commit）。run の前に host の reboot と `prepare.sh --check`。判定は guest の kernel の印（screendump か `dmesg | grep nvrtx`）。
+合格: R7g の印（P5g の ok）に続いて `P9w begin` → `P9w arena at …, own buffers … bytes` → `P9w page tables at …` → `P9w ok: vaspace` → `P9w ok: work channel 4 on runlist N` → **`P9w ok: fence 1 after N us`** → `P8 ok: display …` → `P8b off (nvrtx.disp=0); stopping after P8a` → `P8 done; …` → `P6 ok: channel and vaspace freed`（**`P6: N work frees failed` が無い**）→ `P7 ok: region torn down` → login prompt。
+FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore …)` なら channel は作れたが GPU が entry を実行していない）、`rm: class … status …`・`rm: control … status …`、`P6 channel error: …` を記録。`P7 fail` なら host を reboot。
+
+### 8.4 D2 の案: executor の protocol の層をどこから作るか（2026-10-15、P2。Q1 の確認待ち、code は未着手）
+
+調べた事実:
+- i915 の `render/` は i915 の型（`i915_gem_object`・`i915_session`・batch）に全体が結び付いた一枚の executor（video 抜きで約 2.1 万行）。hardware に依らない層だけを取り出す境界が無い。
+- bcm2711 の executor（`src/drivers/gpu/bcm2711/vulkan-*.c`、約 2.3 万行、video 3.6 千行を含む）は file が細かく分かれ、**i915 の `render/codec.c`・`codec.h`・`vulkan-codec.inc`・`internal.h` の wire の型を変えずに include して使う**（`vulkan-private.h`、arm64 の vmunix.mk は codec.c を filter-out で 1 回だけ link）。bcm2711 の file のうち V3D の名前（`bcm2711_buffer`・`v3d_`・`native_`）を含まない物が 24 file・約 8.5 千行（object・session・dispatch・command pool/buffer・record・descriptor・layout・pipeline の decode と state・barrier の decode・query・draw の記録・target・input・prepared）。V3D に結び付くのは memory・queue・stream・transfer・buffer-copy・uniform・native-*（約 6 千行）と video。
+
+| 案 | 内容 | 他の WS への影響 | 量 |
+| --- | --- | --- | --- |
+| **A（推す）** | i915 の codec 層（codec.c・codec.h・vulkan-codec.inc・internal.h の wire の型）を bcm2711 と同じく**変えずに include**。protocol の層は bcm2711 の V3D に依らない file を手本に nvrtx の中に書く（`src/drivers/gpu/nvrtx/vk-*.c`、型と名前は nvrtx の物、session は nvrtx の node の session、BO は P4m の VRAM の BO と D1 の work の map）。NVIDIA の backend（D3）は nvrtx の draw-push・compute-launch・P4 の compiler を使う | **無し**（i915・bcm2711 の file は読むだけ）。build: `platform/amd64/vmunix.mk` の NVRTX の ifeq の中に nvrtx の file と、i915 が n の時のために `src/drivers/gpu/i915/render/codec.c` を `filter-out` で 1 回だけ足す（arm64 と同じ形） | protocol の層 約 6〜8 千行（compositor の範囲に絞れば少ない） |
+| B | bcm2711 の V3D に依らない 24 file を中立の置き場（例 `src/drivers/gpu/vulkan/`、接頭辞も中立）へ移し、bcm2711 と nvrtx が共有 | WS141（Pi 4）の file を動かす。Pi 4 の回帰（AAT の Vulkan の試験）が要る。WS141 の担当との調整 | 移動と名前の付け替え 約 8.5 千行＋bcm2711 の呼び出し側 |
+| C | i915 の `render/` を手本に書く | 無し | A より多い（i915 は層が分かれていない） |
+
+- 推す理由: A はベータ2 の後の desktop までの道で他の WS を止めない。重複（bcm2711 と似た protocol の層が 2 つ）は、nvrtx が desktop を描けた後に B の形へ寄せる別の Phase（「executor の共有の層」）で解消する（Future Work の候補）。
+- A で最初に作る範囲（compositor が使う物だけ、8.1 の表）: instance・physical device・device・queue（capset id 4、SDBZ、flags 7、`GPU_CAP_COMMAND|CAPSET|NOTIFICATION|JOB|JOB_CAPACITY`、roles に RENDER）、memory（VRAM の BO を BAR1 越しに host から見える coherent な型も）、buffer・image（pitch linear だけ）・image view・sampler、descriptor set layout/pool/set（COMBINED_IMAGE_SAMPLER）、pipeline layout・shader module・graphics pipeline（P4 の compiler へ SPIR-V を渡す口）、render pass・framebuffer、command pool/buffer と 15 種の vkCmd の記録、queue submit（D1 の work の submit と fence）、fence・semaphore。
+- 確かめ: host 試験（ws141 の `vulkan-stream-host-test.sh` と同じ作り: libvulkan の `wire.c` で stream を作り、nvrtx の decoder で object が出来ること、reply の形）。

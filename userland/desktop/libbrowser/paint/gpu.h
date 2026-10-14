@@ -59,11 +59,7 @@ struct paint_gpu {
 	VkDescriptorSet set;
 	VkSampler sampler;
 
-	/* The unit square's six corners. */
-	VkBuffer corners;
-	VkDeviceMemory corner_memory;
-
-	/* The frame's items, host-visible and mapped, with room for capacity of them. */
+	/* The frame's items, six vertices each, host-visible and mapped, with room for capacity of them. */
 	VkBuffer instances;
 	VkDeviceMemory instance_memory;
 	void *instance_map;
