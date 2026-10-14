@@ -372,6 +372,8 @@ hal_fatal(
 	int line,
 	const char *message)
 {
+	uint64_t output_token;
+
 	/* Parks immediately when another CPU already owns panic output. */
 	if (__atomic_exchange_n(
 	    &panic_in_progress,
@@ -384,11 +386,16 @@ hal_fatal(
 			asm_hlt();
 	}
 
-	/* Reports the fatal condition through the serialized console path. */
+	/*
+	 * Reports the fatal condition and, on one line, the caller and the
+	 * words on the stack that point into the kernel's text (BUG-202).  The
+	 * console stays this CPU's for the whole report, so no other CPU's
+	 * output lands inside it (BUG-321).
+	 */
+	output_token = pcat_cons_output_begin();
 	hal_printf("\nfatal: %s:%d: %s\n", file, line, message);
-
-	/* The caller and the words on the stack that point into the kernel's text, on one line (BUG-202). */
 	fatal_trace((uintptr_t)__builtin_return_address(0));
+	pcat_cons_output_end(output_token);
 
 	/* Stops other CPUs only after SMP panic broadcast becomes safe. */
 	if (amd64_smp_panic_available())
