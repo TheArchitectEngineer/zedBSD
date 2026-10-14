@@ -32,6 +32,7 @@ python3 $guest wait > /dev/null || { echo "FAIL no SSH after the crash"; exit 1;
 python3 $guest run 'cat /root/keep.txt; echo churn $(ls /root/churn | wc -l); rm -rf /root/churn; sync'
 python3 $guest stop > /dev/null
 
-# Checks the root partition (the second GPT partition, 1 MiB + 64 MiB in).
-dd if="$GUEST_RUNTIME/disk.img" of="$work/root.ufs" bs=1048576 skip=65 count=1024 status=none
+# Checks the root partition (the third GPT partition since WS238: 1 MiB, then
+# the 64 MiB ESP and the 256 MiB ZEDBSD boot FAT32, so 321 MiB in).
+dd if="$GUEST_RUNTIME/disk.img" of="$work/root.ufs" bs=1048576 skip=321 count=1024 status=none
 python3 plan/tools/ufs/check-volume.py "$work/root.ufs" | tail -1

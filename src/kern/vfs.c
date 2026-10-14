@@ -98,6 +98,17 @@ static struct vfs_swap_control_context swap_control_context
 static unsigned vfs_boot_slot_published[KERN_BOOT_SOURCE_SLOT_COUNT]
 	__attribute__((section(".vfs_bss")));
 
+/*
+ * The private mount of the EFI system partition shown at /boot/efi, when
+ * no boot slot already holds that partition (WS238).
+ *
+ * It is made once at boot and kept for the system's lifetime, like the boot
+ * slots' mounts; NULL means the ESP is a boot slot's partition, or is not
+ * shown.  It lives in .vfs_bss with the other boot-time VFS state.
+ */
+static struct mount *vfs_efi_mount
+	__attribute__((section(".vfs_bss")));
+
 struct vfs_disk_range {
 	struct disk *leaf;
 	uint64_t first;
@@ -147,6 +158,8 @@ static int vfs_ensure_root_directory(const struct path *root, const char *name, 
 static void vfs_publish_boot_filesystems(const struct kern_boot_parameters *parameters);
 static void vfs_boot_reference_mark(const char *value, unsigned *referenced);
 static void vfs_publish_boot_slot(unsigned index, struct mount *mountp, struct disk *disk);
+static int vfs_publish_boot_directory(const char *name, struct mount *mountp);
+static void vfs_publish_efi_system_partition(void);
 static void vfs_swap_source_added(void *opaque, const char *selector);
 static int vfs_bind_boot_mount(struct mount *mountp, const struct path *directory, const char *name);
 static void vfs_log_boot_handoff(const struct kern_boot_handoff *handoff, unsigned device_count);
@@ -736,6 +749,9 @@ root_ready:
 	/* Shows the boot slots that boot files use at /boot/boot0 to /boot/boot3. */
 	vfs_publish_boot_filesystems(parameters);
 
+	/* Shows the ESP the loader came from at /boot/efi. */
+	vfs_publish_efi_system_partition();
+
 	/* Discovery publishes devices. Auxiliary filesystems require explicit mounts. */
 
 	/* Publishes the runtime boot selectors and the swap control interface. */
@@ -977,17 +993,19 @@ vfs_ensure_root_directory(
  * for the system's lifetime, and a second mount of the same partition is
  * refused (BUG-065).  A slot that a bootN: file names -- the overlay root,
  * the overlay data, or only a swap file -- is shown read-write at
- * /boot/bootN on every platform (user decision, 2026-09-27).  A slot used
- * only through a direct selector is not shown, /boot itself is a
- * directory of the root, and the ESP is left to an fstab line for
- * /boot/esp, which adopts the kernel's mount; an ESP that a bootN: file
- * names is shown at /boot/bootN as well.  Each is a bind of the private
- * mount's root, so the kernel and the namespace share one FAT state, and
- * the files in use stay readable but cannot be changed (the backing
- * claims).  A publication that fails is logged and leaves the mount
- * private; the system boots either way.
- * RPi4 also shows slot 0 without a file reference so its firmware files
- * and kernel can be updated through the running system.
+ * /boot/bootN on every platform (user decision, 2026-09-27).  Slot 0, the
+ * FAT the loader read zedbsd.cfg from, is shown even when no file names it,
+ * so that the kernel, zedbsd.cfg and the logo can be updated through the
+ * running system and a kernel log copied there for another machine to read
+ * (the Raspberry Pi 4 since BUG-288, every platform since WS238).  Another
+ * slot used only through a direct selector is not shown, and /boot itself
+ * is a directory of the root.  The ESP is shown at /boot/efi by
+ * vfs_publish_efi_system_partition(); an fstab line for /boot/esp may also
+ * adopt the kernel's mount.  Each is a bind of the private mount's root, so
+ * the kernel and the namespace share one FAT state, and the files in use
+ * stay readable but cannot be changed (the backing claims).  A publication
+ * that fails is logged and leaves the mount private; the system boots
+ * either way.
  */
 static void
 vfs_publish_boot_filesystems(
@@ -1003,10 +1021,8 @@ vfs_publish_boot_filesystems(
 	for (index = 0; index < KERN_BOOT_SOURCE_SLOT_COUNT; index++)
 		referenced[index] = 0;
 
-#if defined(HAL_BOARD_RPI4)
-	/* Exposes the firmware's boot files even when the root is native UFS. */
+	/* Exposes the boot files of slot 0 even when the root is native UFS. */
 	referenced[0] = 1;
-#endif
 
 	/* Marks the slots of the overlay root and data images. */
 	value = kern_boot_parameters_overlay_root(parameters);
@@ -1096,8 +1112,6 @@ vfs_publish_boot_slot(
 		"boot2",
 		"boot3",
 	};
-	struct path root_path;
-	struct path boot_path;
 	const char *kind;
 	int esp;
 	int error;
@@ -1106,31 +1120,10 @@ vfs_publish_boot_slot(
 	if (vfs_boot_slot_published[index])
 		return;
 
-	/* Makes sure /boot exists as a directory of the root. */
-	path_init(&root_path);
-	path_init(&boot_path);
-	error = namei_path_at(&kern_cwdinfo, "/", &root_path);
-	if (error == 0)
-		error = vfs_ensure_root_directory(&root_path, "boot", 0755U);
-	path_release(&root_path);
-
-	/* Makes sure /boot/bootN exists in it. */
-	if (error == 0)
-		error = namei_path_at(&kern_cwdinfo, "/boot", &boot_path);
-	if (error == 0)
-		error = vfs_ensure_root_directory(&boot_path, names[index], 0755U);
+	/* Shows the slot's root at /boot/bootN. */
+	error = vfs_publish_boot_directory(names[index], mountp);
 	if (error != 0) {
-		path_release(&boot_path);
-		VFS_LOG("vfs: /boot/%s unavailable (error %d); boot%u stays private\n",
-		    names[index], error, index);
-		return;
-	}
-
-	/* Shows the slot's root there. */
-	error = vfs_bind_boot_mount(mountp, &boot_path, names[index]);
-	path_release(&boot_path);
-	if (error != 0) {
-		VFS_LOG("vfs: publish boot%u at /boot/%s failed (error %d)\n",
+		VFS_LOG("vfs: publish boot%u at /boot/%s failed (error %d); it stays private\n",
 		    index, names[index], error);
 		return;
 	}
@@ -1148,6 +1141,150 @@ vfs_publish_boot_slot(
 		kind = "BOOT";
 	VFS_LOG("vfs: boot%u (%s) published at /boot/%s\n", index, kind,
 	    names[index]);
+}
+
+/*
+ * Binds a private boot mount's root at /boot/NAME, making the directories.
+ *
+ * Reports the first error: the root may be read-only, or the name taken.
+ */
+static int
+vfs_publish_boot_directory(
+	const char *name,
+	struct mount *mountp)
+{
+	struct path root_path;
+	struct path boot_path;
+	int error;
+
+	/* Makes sure /boot exists as a directory of the root. */
+	path_init(&root_path);
+	path_init(&boot_path);
+	error = namei_path_at(&kern_cwdinfo, "/", &root_path);
+	if (error == 0)
+		error = vfs_ensure_root_directory(&root_path, "boot", 0755U);
+	path_release(&root_path);
+
+	/* Makes sure /boot/NAME exists in it. */
+	if (error == 0)
+		error = namei_path_at(&kern_cwdinfo, "/boot", &boot_path);
+	if (error == 0)
+		error = vfs_ensure_root_directory(&boot_path, name, 0755U);
+	if (error != 0) {
+		path_release(&boot_path);
+		return error;
+	}
+
+	/* Shows the mount's root there. */
+	error = vfs_bind_boot_mount(mountp, &boot_path, name);
+	path_release(&boot_path);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the boot filesystem is visible at /boot/NAME. */
+	return 0;
+}
+
+/*
+ * Shows the EFI system partition the loader was started from at /boot/efi.
+ *
+ * The loader reports the GPT partition the firmware loaded it from, which
+ * on a UEFI boot is the ESP; a partition of any other type, or a boot with
+ * no such report (BIOS, MBR), shows nothing (WS238, 2026-10-14 user).  When
+ * a boot slot holds the same partition -- an ESP that also carries
+ * zedbsd.cfg is boot0 -- /boot/efi is a second bind of that slot's mount,
+ * since a partition is mounted only once (BUG-065) and both names then
+ * share one FAT state.  Otherwise the ESP is mounted privately here for
+ * the system's lifetime, and an fstab line may adopt it.  Every failure is
+ * logged and leaves the ESP unshown; the system boots either way.
+ */
+static void
+vfs_publish_efi_system_partition(
+	void)
+{
+	struct kern_boot_source_slot *slot;
+	struct mount *mountp;
+	struct disk *disk;
+	enum bootfat_type fat_type;
+	const char *selector;
+	unsigned index;
+	int differs;
+	int esp;
+	int supported;
+	int error;
+
+	/* Only a GPT partition the loader reported can be named. */
+	selector = kern_boot_source_selector(0);
+	differs = kern_strncmp(selector, "PARTUUID=", 9U);
+	if (differs != 0)
+		return;
+
+	/* Finds the partition. */
+	error = block_identity_resolve(selector, &disk);
+	if (error != 0) {
+		VFS_LOG("vfs: the loader's partition %s not found (error %d); /boot/efi not shown\n",
+		    selector, error);
+		return;
+	}
+
+	/* Only a partition of the EFI system type is the ESP. */
+	esp = partition_disk_is_efi_system(disk);
+	if (!esp) {
+		disk_release(disk);
+		return;
+	}
+
+	/* Takes a boot slot's mount of the same partition. */
+	mountp = NULL;
+	for (index = 0; index < KERN_BOOT_SOURCE_SLOT_COUNT; index++) {
+		slot = &boot_sources.slot[index];
+		if (!slot->configured || slot->mount == NULL)
+			continue;
+		if (slot->disk->d_dev == disk->d_dev) {
+			mountp = slot->mount;
+			break;
+		}
+	}
+
+	/* Mounts the ESP privately when no slot holds it. */
+	if (mountp == NULL) {
+		error = drv_fat_probe_type(disk, &fat_type);
+		if (error == 0) {
+			supported = kern_boot_source_fat_type_supported(fat_type);
+			if (!supported)
+				error = EOPNOTSUPP;
+		}
+
+		if (error == 0)
+			error = mount_private("fat", disk, 0, NULL, &vfs_efi_mount);
+		if (error != 0) {
+			disk_release(disk);
+			VFS_LOG("vfs: mount the ESP failed (error %d); /boot/efi not shown\n",
+			    error);
+			return;
+		}
+
+		/* Lets an fstab mount of the ESP show the kernel's mount. */
+		(void)mount_private_allow_adoption(vfs_efi_mount);
+		mountp = vfs_efi_mount;
+	}
+
+	/* The mount holds its own disk reference. */
+	disk_release(disk);
+
+	/* Shows the ESP's root at /boot/efi. */
+	error = vfs_publish_boot_directory("efi", mountp);
+	if (error != 0) {
+		VFS_LOG("vfs: publish the ESP at /boot/efi failed (error %d)\n",
+		    error);
+		return;
+	}
+
+	/* Records where the ESP went in the log. */
+	if (mountp == vfs_efi_mount)
+		VFS_LOG("vfs: ESP published at /boot/efi\n");
+	else
+		VFS_LOG("vfs: ESP (boot%u) published at /boot/efi\n", index);
 }
 
 /*

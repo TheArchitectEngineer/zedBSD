@@ -13,7 +13,7 @@
 #   plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [MAKE ARGUMENTS...]     (default build/demo-hdmi)
 #
 # The image is BUILD/hdd-image.img; write it to a USB stick and boot the machine from it (UEFI), or edit the boot
-# parameters afterwards in zedbsd.cfg on its ESP (docs/reference/kernel-boot-parameters.md).
+# parameters afterwards in zedbsd.cfg on its ZEDBSD FAT32 partition (WS238; docs/reference/kernel-boot-parameters.md).
 # "passthrough" is accepted for the 5330's QEMU passthrough (plan/ws075/tests/hdmi-h4-hw.sh) and changes nothing
 # since the captured VBT it put in the kernel was removed (2026-10-14, ws233-p001).  Further words go to make, e.g.
 # "ZEDBSD_BOOT_EXTRA_LINES=display=hdmi display.mode=1920x1080@60" or ZEDBSD_TEST_CPPFLAGS=-DI915_TEST_HDMI_ABSENT=1.
