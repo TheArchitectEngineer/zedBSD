@@ -550,6 +550,13 @@ struct css_style {
 	 */
 	int clip_inset;
 	struct css_length clip[4];
+	/*
+	 * clip: rect() of a positioned box: whether it is clipped, and the
+	 * rectangle's edges from the border box's top left (top, right, bottom,
+	 * left; an auto edge is the box's own edge).
+	 */
+	int clip_rect;
+	struct css_length clip_edges[4];
 	int vertical_align;
 	struct css_length vertical_offset;
 	int z_index;

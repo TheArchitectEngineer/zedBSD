@@ -24,7 +24,6 @@ static int block_owns_context(const struct layout_box *box);
 static int block_content(struct layout_tree *tree, struct layout_box *box);
 static int block_intrinsic(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
 static int block_is_intrinsic(const struct css_length *length);
-static void block_center_button(struct layout_box *box, layout_unit content_height);
 
 /*
  * Lays out a block box in a containing block of a width: its box model,
@@ -228,7 +227,7 @@ layout_block(
 	}
 
 	/* A <button> centers its content in the height it was given beyond it. */
-	block_center_button(box, content_height);
+	layout_center_button(box, content_height);
 
 	/* Succeeded: the box has its size. */
 	return 0;
@@ -239,8 +238,8 @@ layout_block(
  * content when it has a height or a min-height, and its content (the in-flow
  * children and the lines) sits in the middle of the room, not at the top.
  */
-static void
-block_center_button(
+void
+layout_center_button(
 	struct layout_box *box,
 	layout_unit content_height)
 {

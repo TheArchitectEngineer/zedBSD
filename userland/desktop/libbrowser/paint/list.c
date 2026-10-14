@@ -662,13 +662,38 @@ list_clip_path(
 	layout_unit whole;
 	int side;
 
-	/* A box without an inset is not clipped. */
-	if (!box->style.clip_inset)
-		return 0;
-
 	/* The border box, which the inset moves in from. */
 	width = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->width + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
 	height = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->height + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+
+	/* clip: rect() of a positioned box: edges from the border box's top left, an auto edge being the box's own. */
+	if (box->style.clip_rect && (box->style.position == CSS_POSITION_ABSOLUTE || box->style.position == CSS_POSITION_FIXED)) {
+		layout_unit edge[4];
+
+		for (side = 0; side < 4; side++) {
+			edge[side] = 0;
+			if (box->style.clip_edges[side].unit == CSS_UNIT_PX)
+				edge[side] = layout_from_px(box->style.clip_edges[side].value);
+		}
+		if (box->style.clip_edges[CSS_RIGHT].unit == CSS_UNIT_AUTO)
+			edge[CSS_RIGHT] = width;
+		if (box->style.clip_edges[CSS_BOTTOM].unit == CSS_UNIT_AUTO)
+			edge[CSS_BOTTOM] = height;
+		area.x = box->x + edge[CSS_LEFT];
+		area.y = box->y + edge[CSS_TOP];
+		area.width = edge[CSS_RIGHT] - edge[CSS_LEFT];
+		area.height = edge[CSS_BOTTOM] - edge[CSS_TOP];
+		if (area.width < 0)
+			area.width = 0;
+		if (area.height < 0)
+			area.height = 0;
+		list_clip_rect(walk, &area);
+		return 1;
+	}
+
+	/* A box without an inset is not clipped. */
+	if (!box->style.clip_inset)
+		return 0;
 
 	/* Each side's inset: pixels, or a percentage of the height (top, bottom) or the width (left, right). */
 	for (side = 0; side < 4; side++) {

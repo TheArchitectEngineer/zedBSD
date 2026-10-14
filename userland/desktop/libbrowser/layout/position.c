@@ -547,6 +547,7 @@ position_place(
 	layout_unit room;
 	layout_unit frame;
 	layout_unit height;
+	layout_unit content;
 	layout_unit x;
 	layout_unit y;
 	layout_unit bottom_edge;
@@ -641,7 +642,9 @@ position_place(
 		    box->border[CSS_TOP] - box->padding[CSS_TOP] - box->padding[CSS_BOTTOM] - box->border[CSS_BOTTOM];
 		if (height < 0)
 			height = 0;
+		content = box->height;
 		box->height = height;
+		layout_center_button(box, content);
 	}
 
 	/* Horizontally: from the left, from the right, or where it would have been. */

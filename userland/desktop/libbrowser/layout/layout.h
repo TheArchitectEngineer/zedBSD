@@ -315,6 +315,9 @@ int layout_clips(const struct layout_box *box);
 int layout_position(struct layout_tree *tree);
 int layout_sticky_build(struct layout_tree *tree, layout_unit scroll_y);
 int layout_sticky_apply(struct layout_tree *tree, layout_unit scroll_y);
+
+/* Centers a button's content in the height it has beyond content_height (block.c). */
+void layout_center_button(struct layout_box *box, layout_unit content_height);
 layout_unit layout_content_width(const struct layout_box *box, int depth);
 void layout_context_begin(struct layout_tree *tree, struct layout_context *context, struct wb_vector *floats);
 void layout_context_end(struct layout_tree *tree, const struct layout_context *context);
