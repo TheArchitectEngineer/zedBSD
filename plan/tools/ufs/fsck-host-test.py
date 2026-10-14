@@ -255,7 +255,7 @@ def main():
 	tree = out / "tree"
 	make_tree(tree)
 	base = out / "base.img"
-	subprocess.run([str(out / "zedimage-host"), "ufs", "64M", str(tree), str(base), "--inodes=2048"], check=True)
+	subprocess.run([str(out / "zedimage-host"), "ufs", "24M", str(tree), str(base), "--inodes=768"], check=True)
 
 	# The undamaged volume is clean.
 	code, text = run_fsck(out, base, "-n")

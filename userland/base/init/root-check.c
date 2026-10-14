@@ -66,6 +66,7 @@ root_check(
 	if (!read_only)
 		return;
 
+	/* The console says what happens. */
 	printf("init: the root file system on %s is mounted READ-ONLY: the kernel could not mount it read-write after a crash\n", device);
 	printf("init: checking %s with %s -y\n", device, ROOT_CHECK_FSCK_PATH);
 	(void)fflush(stdout);
@@ -107,11 +108,13 @@ root_check_find(
 	const struct kern_mount_info *entry;
 	uint32_t index;
 	int descriptor;
+	int found;
+	int matches;
+	int status;
 	int error;
 
-	*read_only = 0;
-
 	/* The table, as mount lists it. */
+	*read_only = 0;
 	query = calloc(1, sizeof(*query) + KERN_MOUNT_INFO_MAX * sizeof(struct kern_mount_info));
 	if (query == NULL)
 		return ENOMEM;
@@ -124,8 +127,11 @@ root_check_find(
 		free(query);
 		return error;
 	}
+
+	/* The kernel fills it. */
 	error = 0;
-	if (ioctl(descriptor, KERN_SYSTEM_GET_MOUNTS, query) < 0)
+	status = ioctl(descriptor, KERN_SYSTEM_GET_MOUNTS, query);
+	if (status < 0)
 		error = errno;
 	(void)close(descriptor);
 	if (error != 0) {
@@ -137,9 +143,11 @@ root_check_find(
 	error = ENOENT;
 	for (index = 0; index < query->count; index++) {
 		entry = &query->entries[index];
-		if (strcmp(entry->target, "/") != 0)
+		found = strcmp(entry->target, "/") == 0;
+		if (!found)
 			continue;
-		if (strcmp(entry->type, "ufs") != 0 || entry->device == 0 || entry->source[0] == '\0')
+		matches = strcmp(entry->type, "ufs") == 0;
+		if (!matches || entry->device == 0 || entry->source[0] == '\0')
 			break;
 		(void)snprintf(device, size, "/dev/%s", entry->source);
 		if ((entry->flags & MNT_RDONLY) != 0)
@@ -148,6 +156,7 @@ root_check_find(
 		break;
 	}
 
+	/* The table is no longer needed. */
 	free(query);
 
 	/* Reports a root that is not a UFS volume on a disk. */
@@ -170,6 +179,8 @@ root_check_run_fsck(
 	pid_t child;
 	pid_t waited;
 	int status;
+	int exited;
+	int code;
 
 	/* The child runs fsck. */
 	child = fork();
@@ -177,6 +188,8 @@ root_check_run_fsck(
 		fprintf(stderr, "init: cannot start %s: %s\n", ROOT_CHECK_FSCK_PATH, strerror(errno));
 		return -1;
 	}
+
+	/* The child runs fsck, or says why it could not. */
 	if (child == 0) {
 		arguments[0] = "fsck";
 		arguments[1] = "-y";
@@ -193,13 +206,15 @@ root_check_run_fsck(
 	} while (waited < 0 && errno == EINTR);
 	if (waited != child)
 		return -1;
-	if (!WIFEXITED(status))
+	exited = WIFEXITED(status);
+	if (!exited)
 		return -1;
-	if (WEXITSTATUS(status) == 127)
+	code = WEXITSTATUS(status);
+	if (code == 127)
 		return -1;
 
 	/* Succeeded: fsck's answer. */
-	return WEXITSTATUS(status);
+	return code;
 }
 
 /* Tells the console that the root stays read-only, why, and how to recover. */

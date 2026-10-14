@@ -47,15 +47,19 @@ main(
 	unsigned ignored;
 	int repair;
 	int index;
+	int is_yes;
+	int is_no;
 	int error;
 
 	/* The options, then the one device. */
 	repair = 0;
 	name = NULL;
 	for (index = 1; index < argc; index++) {
-		if (strcmp(argv[index], "-y") == 0) {
+		is_yes = strcmp(argv[index], "-y") == 0;
+		is_no = strcmp(argv[index], "-n") == 0;
+		if (is_yes) {
 			repair = 1;
-		} else if (strcmp(argv[index], "-n") == 0) {
+		} else if (is_no) {
 			repair = 0;
 		} else if (argv[index][0] == '-' || name != NULL) {
 			fsck_usage();
@@ -64,6 +68,8 @@ main(
 			name = argv[index];
 		}
 	}
+
+	/* A device is needed. */
 	if (name == NULL) {
 		fsck_usage();
 		return FSCK_EXIT_PROBLEMS;
@@ -75,10 +81,14 @@ main(
 		fprintf(stderr, "fsck: %s: %s; the volume is left as it is\n", name, strerror(error));
 		return FSCK_EXIT_PROBLEMS;
 	}
+
+	/* A clean volume. */
 	if (problems == 0) {
 		printf("fsck: %s: the volume is clean\n", name);
 		return FSCK_EXIT_CLEAN;
 	}
+
+	/* Problems, only reported without -y. */
 	if (!repair) {
 		printf("fsck: %s: %u problem(s) found; run fsck -y to repair them\n", name, problems);
 		return FSCK_EXIT_PROBLEMS;
@@ -111,17 +121,18 @@ fsck_run(
 	int error;
 	int close_error;
 
-	*problems = 0;
-	*repairs = 0;
-
-	/* The volume, its passes, then what was changed back to the device. */
+	/* The volume and its passes. */
 	error = fsck_volume_open(&volume, name, repair);
 	if (error == 0)
 		error = fsck_check(&volume);
+
+	/* What a repair leaves, and the counts. */
 	if (error == 0 && repair) {
 		printf("fsck: %s: %llu files, %llu blocks used\n", name,
 		    (unsigned long long)volume.files, (unsigned long long)volume.used_blocks);
 	}
+
+	/* The counts, whatever the outcome. */
 	*problems = volume.problems;
 	*repairs = volume.repairs;
 

@@ -105,9 +105,8 @@ fsck_problem(
 	va_list arguments;
 	const char *outcome;
 
+	/* Counted, and what is done about it. */
 	volume->problems++;
-
-	/* What is done about it. */
 	outcome = "not repaired";
 	if (repaired && volume->repair) {
 		outcome = "repaired";
@@ -140,14 +139,21 @@ fsck_file_block(
 	uint64_t index;
 	unsigned depth;
 	unsigned level;
+	int valid;
+	int error;
 
+	/* The inode. */
 	raw = fsck_inode(volume, number);
 	if (raw == NULL)
 		return UINT64_MAX;
 
 	/* A direct block. */
-	if (logical < UFS_NDADDR)
-		return fsck_get64(volume, raw, UFS_DI_DB + logical * 8U);
+	if (logical < UFS_NDADDR) {
+		pointer = fsck_get64(volume, raw, UFS_DI_DB + logical * 8U);
+		return pointer;
+	}
+
+	/* Past the direct blocks. */
 	logical -= UFS_NDADDR;
 
 	/* Which indirect pointer, and how far into its tree. */
@@ -158,6 +164,8 @@ fsck_file_block(
 		logical -= span;
 		span *= volume->super.nindir;
 	}
+
+	/* Past the triple indirect. */
 	if (depth > UFS_NIADDR)
 		return UINT64_MAX;
 
@@ -166,9 +174,11 @@ fsck_file_block(
 	for (level = depth; level > 0; level--) {
 		if (pointer == 0)
 			return 0;
-		if (!fsck_valid_block(volume, pointer))
+		valid = fsck_valid_block(volume, pointer);
+		if (!valid)
 			return 0;
-		if (fsck_read_block(volume, pointer, volume->indirect[level - 1U]) != 0)
+		error = fsck_read_block(volume, pointer, volume->indirect[level - 1U]);
+		if (error != 0)
 			return UINT64_MAX;
 		span /= volume->super.nindir;
 		index = logical / span;
@@ -213,6 +223,7 @@ fsck_pass_inodes(
 	uint32_t group;
 	uint32_t index;
 	uint32_t number;
+	int used;
 
 	/* Every group's allocated inodes; 0 and 1 are reserved and kept as they are. */
 	for (group = 0; group < volume->super.ncg; group++) {
@@ -222,7 +233,8 @@ fsck_pass_inodes(
 			number = group * volume->super.ipg + index;
 			if (number < UFS_ROOT_INO)
 				continue;
-			if (!fsck_bit(block + used_offset, index))
+			used = fsck_bit(block + used_offset, index);
+			if (!used)
 				continue;
 			fsck_check_inode(volume, number);
 			if (volume->io_error != 0)
@@ -256,11 +268,15 @@ fsck_check_inode(
 	uint32_t extsize;
 	uint16_t mode;
 	unsigned slot;
+	uint64_t pointer;
+	uint32_t nanosecond;
+	uint8_t type;
 	int needed;
 	int bad;
 	int duplicate;
 	int error;
 
+	/* The inode's kind and length. */
 	raw = fsck_inode(volume, number);
 	if (raw == NULL)
 		return;
@@ -268,7 +284,8 @@ fsck_check_inode(
 	size = fsck_get64(volume, raw, UFS_DI_SIZE);
 
 	/* A type the kernel has no file kind for: the slot is free. */
-	if (fsck_entry_type(mode) == 0 && (mode & FSCK_IFMT) != FSCK_IFCHR && (mode & FSCK_IFMT) != FSCK_IFBLK) {
+	type = fsck_entry_type(mode);
+	if (type == 0 && (mode & FSCK_IFMT) != FSCK_IFCHR && (mode & FSCK_IFMT) != FSCK_IFBLK) {
 		fsck_problem(volume, 1, "inode %u is allocated but has no file type (mode 0%o); it is freed", number, mode);
 		fsck_clear_inode(volume, number);
 		return;
@@ -288,6 +305,8 @@ fsck_check_inode(
 		fsck_clear_inode(volume, number);
 		return;
 	}
+
+	/* A directory's length in part of a record block is cut to whole ones. */
 	if ((mode & FSCK_IFMT) == FSCK_IFDIR && (size % UFS_DIRBLKSIZ) != 0) {
 		fsck_problem(volume, 1, "directory %u is %llu bytes long, not whole record blocks; it is shortened", number, (unsigned long long)size);
 		size -= size % UFS_DIRBLKSIZ;
@@ -299,7 +318,8 @@ fsck_check_inode(
 
 	/* Nanoseconds that overflow into seconds. */
 	for (slot = 0; slot < 3U; slot++) {
-		if (fsck_get32(volume, raw, nanoseconds[slot]) < FSCK_NSEC_LIMIT)
+		nanosecond = fsck_get32(volume, raw, nanoseconds[slot]);
+		if (nanosecond < FSCK_NSEC_LIMIT)
 			continue;
 		fsck_problem(volume, 1, "inode %u has a time with more than a second of nanoseconds; they are cleared", number);
 		if (volume->repair) {
@@ -320,17 +340,24 @@ fsck_check_inode(
 			fsck_inode_dirty(volume);
 		}
 	}
+
+	/* Each attribute pointer against the area's length. */
 	for (slot = 0; slot < UFS_NXADDR; slot++) {
 		needed = extsize > slot * volume->super.bsize;
-		if (needed && fsck_get64(volume, raw, UFS_DI_EXTB + slot * 8U) == 0) {
+		pointer = fsck_get64(volume, raw, UFS_DI_EXTB + slot * 8U);
+		if (needed && pointer == 0) {
 			fsck_problem(volume, 1, "inode %u's attribute area lacks block %u; it is shortened", number, slot);
 			extsize = slot * volume->super.bsize;
 			if (volume->repair) {
 				fsck_put32(volume, raw, UFS_DI_EXTSIZE, extsize);
 				fsck_inode_dirty(volume);
 			}
+
+			continue;
 		}
-		if (!needed && fsck_get64(volume, raw, UFS_DI_EXTB + slot * 8U) != 0) {
+
+		/* A pointer past the area. */
+		if (!needed && pointer != 0) {
 			fsck_problem(volume, 1, "inode %u has an attribute block past its attribute area; it is dropped", number);
 			if (volume->repair) {
 				fsck_put64(volume, raw, UFS_DI_EXTB + slot * 8U, 0);
@@ -345,9 +372,18 @@ fsck_check_inode(
 		volume->io_error = error;
 		return;
 	}
-	if (bad || duplicate) {
-		fsck_problem(volume, 1, "inode %u (%s) has a block %s; it is cleared",
-		    number, fsck_kind_name(mode), bad ? "outside the volume's data areas" : "that an earlier inode owns");
+
+	/* A block outside the data areas, or another inode's: the inode is cleared. */
+	if (bad) {
+		fsck_problem(volume, 1, "inode %u (%s) has a block outside the volume's data areas; it is cleared", number, fsck_kind_name(mode));
+		fsck_release_claimed(volume);
+		fsck_clear_inode(volume, number);
+		return;
+	}
+
+	/* Another inode's block. */
+	if (duplicate) {
+		fsck_problem(volume, 1, "inode %u (%s) has a block that an earlier inode owns; it is cleared", number, fsck_kind_name(mode));
 		fsck_release_claimed(volume);
 		fsck_clear_inode(volume, number);
 		return;
@@ -397,15 +433,16 @@ fsck_inode_blocks(
 	uint8_t *raw;
 	uint16_t mode;
 	unsigned slot;
+	int has_blocks;
+	int claim;
 	int error;
 
+	/* Nothing found or claimed yet; the pointers, copied: reading indirect blocks may move the held inode block. */
 	*bad = 0;
 	*duplicate = 0;
 	*data_blocks = 0;
 	*ext_blocks = 0;
 	volume->claimed_count = 0;
-
-	/* The pointers, copied: reading indirect blocks may move the held inode block. */
 	raw = fsck_inode(volume, number);
 	if (raw == NULL)
 		return volume->io_error;
@@ -419,13 +456,17 @@ fsck_inode_blocks(
 		ext[slot] = fsck_get64(volume, raw, UFS_DI_EXTB + slot * 8U);
 
 	/* The data blocks of a file that has them. */
-	if (fsck_has_blocks(volume, mode, size)) {
+	has_blocks = fsck_has_blocks(volume, mode, size);
+	if (has_blocks) {
 		for (slot = 0; slot < UFS_NDADDR && !*bad && !*duplicate; slot++) {
 			if (direct[slot] == 0)
 				continue;
-			if (fsck_claim(volume, direct[slot], bad, duplicate) == 0)
+			claim = fsck_claim(volume, direct[slot], bad, duplicate);
+			if (claim == 0)
 				(*data_blocks)++;
 		}
+
+		/* The trees below the indirect pointers. */
 		for (slot = 0; slot < UFS_NIADDR && !*bad && !*duplicate; slot++) {
 			error = fsck_claim_indirect(volume, indirect[slot], slot + 1U, bad, duplicate, data_blocks);
 			if (error != 0)
@@ -437,7 +478,8 @@ fsck_inode_blocks(
 	for (slot = 0; slot < UFS_NXADDR && !*bad && !*duplicate; slot++) {
 		if (ext[slot] == 0)
 			continue;
-		if (fsck_claim(volume, ext[slot], bad, duplicate) == 0)
+		claim = fsck_claim(volume, ext[slot], bad, duplicate);
+		if (claim == 0)
 			(*ext_blocks)++;
 	}
 
@@ -455,16 +497,20 @@ fsck_claim(
 {
 	uint64_t *grown;
 	uint32_t part;
+	int valid;
+	int owned;
 
 	/* A block of a data area. */
-	if (!fsck_valid_block(volume, fragment)) {
+	valid = fsck_valid_block(volume, fragment);
+	if (!valid) {
 		*bad = 1;
 		return -1;
 	}
 
 	/* Not owned already. */
 	for (part = 0; part < volume->super.frag; part++) {
-		if (fsck_bit(volume->owned, fragment + part)) {
+		owned = fsck_bit(volume->owned, fragment + part);
+		if (owned) {
 			*duplicate = 1;
 			return -1;
 		}
@@ -477,15 +523,19 @@ fsck_claim(
 			*bad = 1;
 			return -1;
 		}
+
+		/* The list, twice as long. */
 		volume->claimed = grown;
 		volume->claimed_capacity = volume->claimed_capacity * 2U + 64U;
 	}
+
+	/* The claim, and the block owned. */
 	volume->claimed[volume->claimed_count] = fragment;
 	volume->claimed_count++;
-
-	/* Succeeded: owned. */
 	for (part = 0; part < volume->super.frag; part++)
 		fsck_set_bit(volume->owned, fragment + part, 1);
+
+	/* Succeeded: owned. */
 	return 0;
 }
 
@@ -505,6 +555,7 @@ fsck_claim_indirect(
 	uint8_t *block;
 	uint64_t pointer;
 	uint32_t index;
+	int claim;
 	int error;
 
 	/* Nothing below a missing pointer. */
@@ -512,7 +563,8 @@ fsck_claim_indirect(
 		return 0;
 
 	/* The indirect block itself is a block of the file. */
-	if (fsck_claim(volume, fragment, bad, duplicate) != 0)
+	claim = fsck_claim(volume, fragment, bad, duplicate);
+	if (claim != 0)
 		return 0;
 	(*count)++;
 
@@ -526,10 +578,13 @@ fsck_claim_indirect(
 		if (pointer == 0)
 			continue;
 		if (depth == 1) {
-			if (fsck_claim(volume, pointer, bad, duplicate) == 0)
+			claim = fsck_claim(volume, pointer, bad, duplicate);
+			if (claim == 0)
 				(*count)++;
 			continue;
 		}
+
+		/* A deeper tree. */
 		error = fsck_claim_indirect(volume, pointer, depth - 1U, bad, duplicate, count);
 		if (error != 0)
 			return error;
@@ -697,15 +752,23 @@ fsck_group_maps(
 	uint32_t recorded[4];
 	uint32_t free_fragments;
 	uint32_t first_block;
+	uint32_t offset;
 	unsigned slot;
+	uint8_t kind;
 	int used;
+	int marked;
+	int owned;
 	int is_free;
 	int whole;
 	int maps_wrong;
+	int counts_wrong;
 
+	/* The group's block, its two maps and its fragments. */
 	block = fsck_group(volume, group);
-	used_map = block + fsck_get32(volume, block, UFS_CG_IUSEDOFF);
-	free_map = block + fsck_get32(volume, block, UFS_CG_FREEOFF);
+	offset = fsck_get32(volume, block, UFS_CG_IUSEDOFF);
+	used_map = block + offset;
+	offset = fsck_get32(volume, block, UFS_CG_FREEOFF);
+	free_map = block + offset;
 	start = fsck_group_start(volume, group);
 	fragments = fsck_group_fragments(volume, group);
 	memset(counts, 0, sizeof(counts));
@@ -714,29 +777,41 @@ fsck_group_maps(
 	/* The inode map: live inodes used, the reserved 0 and 1 as they are. */
 	for (index = 0; index < volume->super.ipg; index++) {
 		number = group * volume->super.ipg + index;
-		used = fsck_bit(used_map, index);
-		if (number >= UFS_ROOT_INO)
-			used = (volume->state[number] & FSCK_INODE_KIND_MASK) != FSCK_INODE_FREE;
-		if (used != fsck_bit(used_map, index)) {
+		marked = fsck_bit(used_map, index);
+		used = marked;
+		kind = FSCK_INODE_FREE;
+		if (number >= UFS_ROOT_INO) {
+			kind = volume->state[number] & FSCK_INODE_KIND_MASK;
+			used = kind != FSCK_INODE_FREE;
+		}
+
+		/* A map bit that disagrees. */
+		if (used != marked) {
 			maps_wrong = 1;
 			if (volume->repair)
 				fsck_set_bit(used_map, index, used);
 		}
+
+		/* The counts of free inodes and directories. */
 		if (!used)
 			counts[2]++;
-		if (number >= UFS_ROOT_INO && (volume->state[number] & FSCK_INODE_KIND_MASK) == FSCK_INODE_DIR)
+		if (kind == FSCK_INODE_DIR)
 			counts[0]++;
 	}
 
 	/* The free map: the data area's fragments no inode owns are free; the metadata and the tail are not. */
 	free_fragments = 0;
 	for (local = 0; local < volume->super.fpg; local++) {
-		is_free = local >= volume->super.dblkno && local < fragments && !fsck_bit(volume->owned, start + local);
-		if (is_free != fsck_bit(free_map, local)) {
+		owned = fsck_bit(volume->owned, start + local);
+		marked = fsck_bit(free_map, local);
+		is_free = local >= volume->super.dblkno && local < fragments && !owned;
+		if (is_free != marked) {
 			maps_wrong = 1;
 			if (volume->repair)
 				fsck_set_bit(free_map, local, is_free);
 		}
+
+		/* Counted when free. */
 		if (is_free)
 			free_fragments++;
 	}
@@ -746,12 +821,17 @@ fsck_group_maps(
 	for (local = first_block; local + volume->super.frag <= fragments; local += volume->super.frag) {
 		whole = 1;
 		for (part = 0; part < volume->super.frag; part++) {
-			if (fsck_bit(volume->owned, start + local + part))
+			owned = fsck_bit(volume->owned, start + local + part);
+			if (owned)
 				whole = 0;
 		}
+
+		/* A block none of whose fragments is owned. */
 		if (whole)
 			counts[1]++;
 	}
+
+	/* The fragments outside the whole blocks. */
 	counts[3] = free_fragments - counts[1] * volume->super.frag;
 
 	/* The counts as recorded, against the counts found. */
@@ -759,7 +839,14 @@ fsck_group_maps(
 	recorded[1] = fsck_get32(volume, block, UFS_CG_NBFREE);
 	recorded[2] = fsck_get32(volume, block, UFS_CG_NIFREE);
 	recorded[3] = fsck_get32(volume, block, UFS_CG_NFFREE);
-	if (maps_wrong || memcmp(recorded, counts, sizeof(counts)) != 0) {
+	counts_wrong = 0;
+	for (slot = 0; slot < 4U; slot++) {
+		if (recorded[slot] != counts[slot])
+			counts_wrong = 1;
+	}
+
+	/* A group whose maps or counts disagree is rebuilt. */
+	if (maps_wrong || counts_wrong) {
 		fsck_problem(volume, 1, "cylinder group %u: its maps or counts (%u directories, %u blocks, %u inodes, %u fragments free) disagree with the inodes (%u, %u, %u, %u); rebuilt",
 		    group, recorded[0], recorded[1], recorded[2], recorded[3], counts[0], counts[1], counts[2], counts[3]);
 		if (volume->repair) {

@@ -49,6 +49,7 @@ fsck_volume_open(
 	int flags;
 	int error;
 
+	/* Nothing is open yet. */
 	memset(volume, 0, sizeof(*volume));
 	volume->fd = -1;
 	volume->name = name;
@@ -62,11 +63,12 @@ fsck_volume_open(
 	if (volume->fd < 0)
 		return errno;
 
-	/* The medium's size, which the superblock must fit in. */
-	if (fstat(volume->fd, &status) != 0)
+	/* The medium's size, which the superblock must fit in (a device's is not known here). */
+	error = fstat(volume->fd, &status);
+	if (error != 0)
 		return errno;
 	sectors = UINT64_MAX / UFS_SECTOR_SIZE;
-	if (S_ISREG(status.st_mode))
+	if ((status.st_mode & S_IFMT) == S_IFREG)
 		sectors = (uint64_t)status.st_size / UFS_SECTOR_SIZE;
 
 	/* The superblock. */
@@ -122,9 +124,8 @@ fsck_volume_close(
 	int error;
 	int first;
 
+	/* What was changed goes back when repairing; the first error is kept. */
 	first = 0;
-
-	/* What was changed goes back when repairing. */
 	if (volume->repair && volume->fd >= 0 && volume->groups != NULL) {
 		error = fsck_inode_flush(volume);
 		if (error != 0 && first == 0)
@@ -137,12 +138,17 @@ fsck_volume_close(
 			if (error != 0 && first == 0)
 				first = error;
 		}
+
+		/* The superblock when its totals or clean flag changed. */
 		if (volume->super_dirty) {
 			error = fsck_pwrite(volume, UFS_SBLOCK_OFFSET, volume->super_raw, sizeof(volume->super_raw));
 			if (error != 0 && first == 0)
 				first = error;
 		}
-		if (fsync(volume->fd) != 0 && first == 0)
+
+		/* All of it durable. */
+		error = fsync(volume->fd);
+		if (error != 0 && first == 0)
 			first = errno;
 	}
 
@@ -227,6 +233,8 @@ fsck_inode(
 			volume->inode_block_valid = 0;
 			return NULL;
 		}
+
+		/* The block held from here on. */
 		volume->inode_block_fragment = fragment;
 		volume->inode_block_valid = 1;
 	}
@@ -290,6 +298,7 @@ fsck_valid_block(
 	uint64_t group;
 	uint64_t start;
 	uint64_t local;
+	uint32_t fragments;
 
 	/* The group the fragment falls in (the rotation offset is zero on every volume made now). */
 	group = fragment / volume->super.fpg;
@@ -305,7 +314,8 @@ fsck_valid_block(
 		return 0;
 	if ((local % volume->super.frag) != 0)
 		return 0;
-	if (local + volume->super.frag > fsck_group_fragments(volume, (uint32_t)group))
+	fragments = fsck_group_fragments(volume, (uint32_t)group);
+	if (local + volume->super.frag > fragments)
 		return 0;
 
 	/* Succeeded: a block of the data area. */
@@ -499,6 +509,10 @@ fsck_groups_load(
 	uint32_t used;
 	uint32_t free_map;
 	uint32_t next;
+	uint32_t magic;
+	uint32_t number;
+	uint32_t fragments;
+	uint32_t expected;
 	int error;
 
 	/* Every group's block. */
@@ -515,9 +529,11 @@ fsck_groups_load(
 			return error;
 
 		/* The magic, the number and the size. */
-		if (fsck_get32(volume, block, UFS_CG_MAGIC) != UFS_CG_MAGIC_VALUE ||
-		    fsck_get32(volume, block, UFS_CG_CGX) != group ||
-		    fsck_get32(volume, block, UFS_CG_NDBLK) != fsck_group_fragments(volume, group)) {
+		magic = fsck_get32(volume, block, UFS_CG_MAGIC);
+		number = fsck_get32(volume, block, UFS_CG_CGX);
+		fragments = fsck_get32(volume, block, UFS_CG_NDBLK);
+		expected = fsck_group_fragments(volume, group);
+		if (magic != UFS_CG_MAGIC_VALUE || number != group || fragments != expected) {
 			fprintf(stderr, "fsck: %s: cylinder group %u is damaged (magic, number or size); it cannot be repaired\n", volume->name, group);
 			return EINVAL;
 		}
