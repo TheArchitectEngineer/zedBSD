@@ -166,6 +166,7 @@ static void vfs_overlay_setup_release_transient(struct vfs_overlay_setup *setup)
 static VFS_HIGH int vfs_mount_overlay_root(const struct kern_boot_parameters *parameters, struct mount **root_out);
 static VFS_HIGH int vfs_resolve_native_root(const char *selector, struct disk **root_disk_out);
 static VFS_HIGH int vfs_mount_native_root(struct disk *disk, struct mount **root_out);
+static VFS_HIGH int vfs_mount_root_volume(struct fat_mount_args *args, struct mount **root_out);
 
 static const struct kern_swap_control_resolver_ops vfs_swap_resolver = {
 	.resolve_path = vfs_swap_resolve_path,
@@ -1405,8 +1406,14 @@ ufs_root_marker_matches(
 	*matches = 0;
 	path_init(&marker);
 	error = mount_private("ufs", disk, MOUNT_READ_ONLY, NULL, &mountp);
-	if (error == EOPNOTSUPP || error == EINVAL || error == EROFS)
+	if (error == EOPNOTSUPP)
 		return 0;
+
+	/* A UFS volume that cannot be read is not taken for the root, and the log says so (BUG-312). */
+	if (error == EINVAL || error == EROFS) {
+		VFS_LOG("vfs: %s: a UFS volume that could not be mounted read-only (error %d) is not taken for the root\n", disk->d_name, error);
+		return 0;
+	}
 	if (error != 0)
 		return error;
 
@@ -1689,7 +1696,7 @@ vfs_mount_legacy_root(
 	if (root_partition != NULL) {
 		disk_ref(root_partition);
 		args.fspec = root_partition->d_name;
-		error = mount_root_create("auto", 0, &args, root_out);
+		error = vfs_mount_root_volume(&args, root_out);
 		if (error != 0) {
 			disk_release(root_partition);
 			error = vfs_fail("mount legacy UFS root", error);
@@ -2002,6 +2009,45 @@ vfs_resolve_native_root(
 }
 
 /* Mounts the native root, reusing a boot slot's FAT mount when it is the same disk. */
+/*
+ * Mounts the root volume read-write, or, when the volume refuses that but
+ * can still be read, read-only (BUG-312): the boot goes on, the console
+ * says why, and init checks the volume with fsck and reboots.  A disk that
+ * is missing or holds no file system, and a lack of memory, are not
+ * retried.
+ */
+static VFS_HIGH int
+vfs_mount_root_volume(
+	struct fat_mount_args *args,
+	struct mount **root_out)
+{
+	int error;
+	int retry_error;
+
+	/* Read-write, as a root normally is. */
+	error = mount_root_create("auto", 0, args, root_out);
+	if (error == 0)
+		return 0;
+
+	/* Nothing to read, or no memory: a read-only mount fails the same way. */
+	if (error == ENXIO || error == EOPNOTSUPP || error == ENOMEM || error == EBUSY)
+		return error;
+
+	/* Read-only, for fsck. */
+	retry_error = mount_root_create("auto", MOUNT_READ_ONLY, args, root_out);
+	if (retry_error != 0) {
+		VFS_LOG("vfs: the root on %s cannot be mounted read-write (error %d) or read-only (error %d)\n", args->fspec, error, retry_error);
+		return error;
+	}
+
+	VFS_LOG("vfs: the root on %s cannot be mounted read-write (error %d; the ufs line above says why); it is mounted READ-ONLY, and init checks it with fsck\n",
+	    args->fspec,
+	    error);
+
+	/* Succeeded: a read-only root. */
+	return 0;
+}
+
 static VFS_HIGH int
 vfs_mount_native_root(
 	struct disk *disk,
@@ -2050,7 +2096,7 @@ vfs_mount_native_root(
 		}
 
 		args.fspec = disk->d_name;
-		error = mount_root_create("auto", 0, &args, root_out);
+		error = vfs_mount_root_volume(&args, root_out);
 		if (error != 0) {
 			error = vfs_fail("mount rootpart", error);
 			return error;

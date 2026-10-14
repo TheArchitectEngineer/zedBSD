@@ -931,6 +931,7 @@ static int j3_payload_sum(struct mount *mountp, struct ufs_j3 *j3, uint64_t curs
 static int j3_payload_home(struct mount *mountp, struct ufs_j3 *j3, uint64_t cursor, uint64_t lba, uint32_t count, uint8_t *payload);
 static int j3_payload_apply(struct mount *mountp, struct ufs_j3 *j3, const uint8_t *descriptor, uint32_t entries, uint64_t first, uint8_t *payload);
 static int j3_replay_slot(struct mount *mountp, struct ufs_j3 *j3, unsigned slot, uint64_t sequence, uint32_t desc_sectors, uint32_t desc_sum);
+static int j3_replay_sealed(struct mount *mountp, struct ufs_j3 *j3, unsigned slot, uint64_t sequence, uint32_t desc_sectors, uint32_t desc_sum);
 static int j3_replay(struct mount *mountp, struct ufs_mount_state *ms);
 static uint64_t j3_wanted_sectors(struct mount *mountp, struct ufs_mount_state *ms);
 static int j3_locator_write(struct mount *mountp, struct ufs_j3 *j3);
@@ -954,6 +955,7 @@ static int orphan_recover_one(struct mount *mountp, uint32_t number, const uint8
 static int orphan_scan_locked(struct mount *mountp, struct ufs_orphan_scan *scan);
 static int orphan_recover(struct mount *mountp);
 static int ufs_mount_impl(struct mount *mountp);
+static int ufs_mount_steps(struct mount *mountp, const char **step);
 static int ufs_statvfs(struct mount *mountp, struct statvfs *result);
 static int ufs_quotactl(struct mount *mountp, struct quota_control *request);
 static int ufs_snapshotctl(struct mount *mountp, struct snapshot_control *request);
@@ -17241,9 +17243,53 @@ orphan_recover(
 	return 0;
 }
 
+/*
+ * Mounts a volume (the file system type's mount operation): the steps of
+ * ufs_mount_steps(), and on a failure one log line naming the step that
+ * failed (BUG-312: a volume that could not be mounted after a power cut
+ * left nothing in the log).  A disk without a UFS superblock is not
+ * logged: the root probe and "auto" try every partition.
+ */
 static int
 ufs_mount_impl(
 	struct mount *mountp)
+{
+	const char *step;
+	const char *volume;
+	const char *access;
+	int error;
+
+	/* The steps, each naming itself before it runs. */
+	step = "reading the superblock";
+	error = ufs_mount_steps(mountp, &step);
+
+	/* A failure is logged with its step, unless the disk holds no UFS volume at all. */
+	if (error != 0 && error != EOPNOTSUPP && mountp != NULL) {
+		volume = "(no disk)";
+		if (mountp->m_disk != NULL)
+			volume = mountp->m_disk->d_name;
+		access = "read-write";
+		if ((mountp->m_flags & MOUNT_READ_ONLY) != 0)
+			access = "read-only";
+		kern_logf("ufs: %s: the volume cannot be mounted %s: %s (error %d)\n", volume, access, step, error);
+	}
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * The steps of a mount: the superblock, the journals and their replay,
+ * the snapshot, the cylinder groups and the summaries, the root directory,
+ * the quota and the orphans, and the clean flag.  *step names the step
+ * running, for the log of a failure.
+ */
+static int
+ufs_mount_steps(
+	struct mount *mountp,
+	const char **step)
 {
 	uint8_t *free_map;
 	uint32_t fragment;
@@ -17258,6 +17304,8 @@ ufs_mount_impl(
 	int free_bit;
 	int difference;
 	int cached;
+	int read_only;
+	const char *volume;
 	off_t cursor = 0;
 	uint32_t number;
 	uint8_t type;
@@ -17288,11 +17336,14 @@ ufs_mount_impl(
 	(void)mutex_init(&ms->snapshot_lock, LOCK_RANK_DEVICE, "ufs snapshot");
 
 	/* Finds the journal, if this volume carries one. */
+	*step = "finding the journal";
 	error = journal_discover(mountp, ms);
 
 	/* Applies the last commit of a batched journal before reading metadata. */
-	if (error == 0 && !ms->journal_enabled)
+	if (error == 0 && !ms->journal_enabled) {
+		*step = "replaying the batched journal";
 		error = j3_replay(mountp, ms);
+	}
 
 	/* Gives the mount up when a journal could not be read or applied. */
 	if (error != 0) {
@@ -17304,6 +17355,7 @@ ufs_mount_impl(
 	}
 
 	/* Finds the snapshot device, if this volume carries one. */
+	*step = "finding the snapshot";
 	error = snapshot_discover(mountp, ms);
 	if (error != 0) {
 		mountp->m_data = NULL;
@@ -17332,6 +17384,7 @@ ufs_mount_impl(
 	}
 
 	/* Walks every cylinder group to rebuild the free counts. */
+	*step = "reading the cylinder groups";
 	for (cg = 0; cg < ms->super.ncg; cg++) {
 		/* Reads one cylinder group. */
 		error = load_cg_locked(mountp, cg);
@@ -17350,6 +17403,7 @@ ufs_mount_impl(
 
 			/* A free fragment inside the metadata area is wrong. */
 			if (free_bit) {
+				*step = "a cylinder group marks a fragment of its metadata area free";
 				error = EINVAL;
 				break;
 			}
@@ -17364,6 +17418,7 @@ ufs_mount_impl(
 
 			/* A free fragment past the last data block is wrong. */
 			if (free_bit) {
+				*step = "a cylinder group marks a fragment past its last data block free";
 				error = EINVAL;
 				break;
 			}
@@ -17381,6 +17436,7 @@ ufs_mount_impl(
 
 			/* A volume without a root inode cannot be mounted. */
 			if (!free_bit) {
+				*step = "the root inode is not allocated";
 				error = EINVAL;
 				break;
 			}
@@ -17400,15 +17456,33 @@ ufs_mount_impl(
 	     total_nifree != ms->super.cstotal_nifree ||
 	     total_nffree != ms->super.cstotal_nffree)) {
 		/*
-		 * A volume without a journal cannot replay, so it must be
-		 * clean -- unless it is mounted write-cached, where a crash can
-		 * leave the totals behind the groups' own counts, which are
-		 * then the truth, as after a journal replay.
+		 * The groups' own counts are the truth: a write-cached mount
+		 * can leave the totals behind them at a crash, and either
+		 * journal's replay leaves them as the groups say.  A batched
+		 * journal's volume was mounted write-cached when it crashed,
+		 * whatever this mount is, and a read-only mount only reports
+		 * the totals (BUG-312: the root probe's read-only mount of a
+		 * volume that crashed was refused, so the root was not found).
+		 * Only a read-write mount of a volume without any journal, not
+		 * write-cached, must find them clean.
 		 */
 		cached = write_cached_intended(mountp, ms);
-		if (!ms->journal_enabled && !cached) {
+		read_only = (mountp->m_flags & MOUNT_READ_ONLY) != 0;
+		if (!ms->journal_enabled && !ms->j3.present && !cached && !read_only) {
+			*step = "the summary totals differ from the cylinder groups on a volume without a journal";
 			error = EINVAL;
 		} else {
+			volume = mountp->m_disk->d_name;
+			kern_logf("ufs: %s: the summary totals (%llu directories, %llu blocks, %llu inodes, %llu fragments free) differ from the cylinder groups' (%llu, %llu, %llu, %llu); the groups' are used\n",
+				  volume,
+				  (unsigned long long)ms->super.cstotal_ndir,
+				  (unsigned long long)ms->super.cstotal_nbfree,
+				  (unsigned long long)ms->super.cstotal_nifree,
+				  (unsigned long long)ms->super.cstotal_nffree,
+				  (unsigned long long)total_ndir,
+				  (unsigned long long)total_nbfree,
+				  (unsigned long long)total_nifree,
+				  (unsigned long long)total_nffree);
 			ms->super.cstotal_ndir = total_ndir;
 			ms->super.cstotal_nbfree = total_nbfree;
 			ms->super.cstotal_nifree = total_nifree;
@@ -17418,8 +17492,10 @@ ufs_mount_impl(
 	}
 
 	/* Publishes the rebuilt summaries. */
-	if (error == 0)
+	if (error == 0) {
+		*step = "rebuilding the quota usage";
 		error = ufs_quota_rebuild(mountp);
+	}
 	if (error == 0)
 		error = load_cg_locked(mountp, 0);
 	if (error != 0) {
@@ -17442,6 +17518,7 @@ ufs_mount_impl(
 		 * says.
 		 */
 		if ((mountp->m_disk->d_flags & DISK_READ_ONLY) != 0) {
+			*step = "the disk is read-only";
 			mountp->m_data = NULL;
 			ufs_state_free(ms);
 
@@ -17456,6 +17533,7 @@ ufs_mount_impl(
 		 */
 		if (summaries_rebuilt) {
 			/* Writes the rebuilt summaries back. */
+			*step = "writing the rebuilt summary totals";
 			error = write_super_summaries(mountp);
 			if (error != 0) {
 				mountp->m_data = NULL;
@@ -17468,6 +17546,7 @@ ufs_mount_impl(
 	}
 
 	/* Reads the root inode, which every walk starts from. */
+	*step = "reading the root directory's inode";
 	error = load_inode(mountp, UFS_ROOT_INO, &root);
 	if (error || root->i_type != INODE_DIR) {
 		/* Publishes the root inode as the mount point. */
@@ -17492,6 +17571,7 @@ ufs_mount_impl(
 	 * A malformed root must not become the namespace anchor.  Validate the
 	 * mandatory entries while the mount is still private and unpublished.
 	 */
+	*step = "the root directory's . and .. entries";
 	error = next_dirent(root, &cursor, &number, &type, name);
 	if (error == 0) {
 		/* The first entry of every directory names the directory. */
@@ -17510,10 +17590,14 @@ ufs_mount_impl(
 	}
 
 	/* Loads the quota configuration and recovers any orphaned inodes. */
-	if (error == 0)
+	if (error == 0) {
+		*step = "loading the quota configuration";
 		error = ufs_quota_load(mountp, root);
-	if (error == 0)
+	}
+	if (error == 0) {
+		*step = "recovering orphaned inodes";
 		error = orphan_recover(mountp);
+	}
 	if (error != 0) {
 		root->i_flags |= INODE_DEAD;
 		inode_release(root);
@@ -17530,6 +17614,7 @@ ufs_mount_impl(
 	 */
 	if (ms->writable) {
 		/* Marks the volume clean now that the mount has finished. */
+		*step = "writing the clean flag";
 		error = ufs_write_clean(mountp, 0);
 		if (error) {
 			root->i_flags |= INODE_DEAD;
@@ -17552,6 +17637,7 @@ ufs_mount_impl(
 	/* Publishes the snapshot device, if this volume carries one. */
 	if (ms->snapshot.active) {
 		/* Gives the snapshot a device of its own to be read through. */
+		*step = "publishing the snapshot device";
 		error = snapshot_disk_publish(ms);
 		if (error != 0) {
 			mountp->m_root = NULL;
@@ -21001,6 +21087,38 @@ j3_replay_slot(
 }
 
 /*
+ * Applies the transaction a slot's commit record seals, after checking
+ * that the record names a descriptor a commit could have written.
+ * Returns 0, EINVAL when the record, its descriptor or its payload do not
+ * agree (the commit did not finish), or the I/O's error.
+ */
+static int
+j3_replay_sealed(
+	struct mount *mountp,
+	struct ufs_j3 *j3,
+	unsigned slot,
+	uint64_t sequence,
+	uint32_t desc_sectors,
+	uint32_t desc_sum)
+{
+	int error;
+
+	/* Refuses a record naming a descriptor no commit could have written. */
+	if (desc_sectors == 0)
+		return EINVAL;
+	if (desc_sectors > j3->desc_sectors_max)
+		return EINVAL;
+
+	/* Applies the transaction. */
+	error = j3_replay_slot(mountp, j3, slot, sequence, desc_sectors, desc_sum);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the transaction is home. */
+	return 0;
+}
+
+/*
  * Finds the journal the superblock names and applies its newest commit that
  * is not yet applied.  A volume whose journal cannot be found or read goes
  * on as one without a journal; the mount makes a new one.
@@ -21018,6 +21136,7 @@ j3_replay(
 	uint32_t desc_sectors[2];
 	uint32_t desc_sum[2];
 	unsigned slot;
+	unsigned other;
 	int named;
 	int error;
 
@@ -21034,8 +21153,10 @@ j3_replay(
 
 	/* Loads the journal; one that does not hold together is made again. */
 	error = j3_load(mountp, ms, fragment, nonce);
-	if (error == EINVAL)
+	if (error == EINVAL) {
+		kern_logf("ufs: %s: the batched journal's header does not hold together; it is not replayed and a new journal is made\n", mountp->m_disk->d_name);
 		return 0;
+	}
 	if (error != 0)
 		return error;
 
@@ -21063,16 +21184,43 @@ j3_replay(
 	if ((mountp->m_disk->d_flags & DISK_READ_ONLY) != 0)
 		return EROFS;
 
-	/* Refuses a record naming a descriptor no commit could have written. */
-	if (desc_sectors[slot] == 0)
-		return EINVAL;
-	if (desc_sectors[slot] > j3->desc_sectors_max)
-		return EINVAL;
-
 	/* Applies the transaction. */
-	error = j3_replay_slot(mountp, j3, slot, sequence[slot], desc_sectors[slot], desc_sum[slot]);
-	if (error != 0)
+	error = j3_replay_sealed(mountp, j3, slot, sequence[slot], desc_sectors[slot], desc_sum[slot]);
+
+	/*
+	 * A record whose descriptor or payload does not match it seals a
+	 * commit that did not finish: its record reached the device and the
+	 * rest did not.  Such a commit never completed, so nothing waited on
+	 * it, and its homes were never written (they are written after the
+	 * seal).  It is dropped, and the volume is as the commit before it
+	 * left it: that one is applied when the other slot still holds it
+	 * unapplied (BUG-312: the mount failed instead).
+	 */
+	if (error == EINVAL) {
+		other = slot ^ 1U;
+		kern_logf("ufs: %s: the batched journal's newest commit %llu (slot %u) did not finish (its descriptor or payload does not match its record); it is dropped\n",
+			  mountp->m_disk->d_name,
+			  (unsigned long long)sequence[slot],
+			  slot);
+		error = 0;
+		slot = other;
+		if (sequence[other] <= j3->applied)
+			return 0;
+
+		kern_logf("ufs: %s: the batched journal's commit %llu (slot %u) before it is applied instead\n",
+			  mountp->m_disk->d_name,
+			  (unsigned long long)sequence[other],
+			  other);
+		error = j3_replay_sealed(mountp, j3, other, sequence[other], desc_sectors[other], desc_sum[other]);
+	}
+	if (error != 0) {
+		kern_logf("ufs: %s: the batched journal's commit %llu (slot %u) could not be applied (error %d)\n",
+			  mountp->m_disk->d_name,
+			  (unsigned long long)sequence[slot],
+			  slot,
+			  error);
 		return error;
+	}
 
 	/* Records the transaction as applied, durably. */
 	j3->applied = sequence[slot];
