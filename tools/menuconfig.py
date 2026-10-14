@@ -219,18 +219,49 @@ def platform_driver_rows(platform: str) -> list[list[str]]:
     return rows
 
 
+def driver_firmware_table() -> dict[str, list[str]]:
+    """config/drivers/firmware.list: the firmware packages each driver needs."""
+    return {key: packages.split()
+            for key, packages in read_rows(CONFIG_DIR / "drivers" / "firmware.list", 2)}
+
+
+def driver_firmware(values: dict[str, object], platform: str) -> set[str]:
+    """The firmware packages the drivers that are on and build for this
+    platform need."""
+    targets = {row[0]: row[3] for row in driver_rows()}
+    needed: set[str] = set()
+    for key, packages in driver_firmware_table().items():
+        if values.get(key) == "y" and applies(targets.get(key, ""), platform):
+            needed.update(packages)
+    return needed
+
+
+def follow_driver_firmware(values: dict[str, object], before: set[str]) -> None:
+    """Brings the Firmware selection in line with the drivers after a change
+    (2026-10-14 user, WS232 p004): a package the drivers needed before and
+    no longer need is taken out, and every package they need now is in.  A
+    package chosen in the Firmware menu that no driver needed is kept."""
+    after = driver_firmware(values, str(values["ZEDBSD_PLATFORM"]))
+    programs = values.setdefault("ZEDBSD_USER_PROGRAMS", set())
+    programs.difference_update(before - after)
+    programs.update(after)
+
+
 def choose_platform(values: dict[str, object], platform: str) -> None:
     """Makes the menu's target this platform.  Its Platform drivers take
     their catalog defaults: the menu shows them on this platform alone, so
     a value held from another CPU was never chosen for this board (a
     Raspberry Pi 4 chosen from the x86_64 default used to keep its onboard
-    Ethernet, Wi-Fi, Bluetooth, audio and GPU off)."""
+    Ethernet, Wi-Fi, Bluetooth, audio and GPU off).  The firmware follows
+    the drivers of the new platform."""
+    before = driver_firmware(values, str(values.get("ZEDBSD_PLATFORM", "amd64")))
     if values.get("ZEDBSD_PLATFORM") != platform:
         for row in platform_driver_rows(platform):
             if row[1] == "bool":
                 values[row[0]] = row[4]
     values["ZEDBSD_PLATFORM"] = platform
     normalize(values)
+    follow_driver_firmware(values, before)
 
 
 def driver_groups(platform: str) -> list[tuple[str, list[list[str]]]]:
@@ -277,6 +308,7 @@ def defaults() -> dict[str, object]:
     values["ZEDBSD_USER_PROGRAMS"] = {
         row[0] for row in programs if row[3] == "y"
     }
+    follow_driver_firmware(values, set())
     return values
 
 
@@ -646,7 +678,9 @@ def driver_options(screen, values: dict[str, object], rows: list[list[str]],
                     target_label(values))
             continue
         key = rows[choice][0]
+        before = driver_firmware(values, str(values["ZEDBSD_PLATFORM"]))
         values[key] = "n" if values.get(key) == "y" else "y"
+        follow_driver_firmware(values, before)
 
 
 def drivers_menu(screen, values: dict[str, object]) -> None:
