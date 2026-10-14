@@ -723,3 +723,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-646 | Q1（WS037 R7d、P3 の 3D の draw 段 P9g、merge bdd351e3e 以降、rombar=0 の方法 B、PNG で判定） | phase007 の 7 節 | 未実施 |
 | T1-647 | Q1（WS037 R8c、P1 の resident・GPU device、merge f68e6bcd0、rombar=1、T1-645 の PASS の後だけ、ユーザーが monitor を見る） | phase006 の「T への手順（R8c …）」 | 未実施（T1-645 待ち） |
 | T1-648 | Q1（BUG-312 T-B の再試験、damage-root.py の link 0 の直し b26476a52 の後） | plan/bugs/BUG-312.md の T-B | 未実施 |
+| T1-649 | Q1（BUG-313 の 2 回目の直し 2f072ff41・merge fbeec11d7、Pi 4 実機、vmunix の差し替え、ユーザーが 2〜3 本指で触る） | plan/bugs/BUG-313.md の「T への依頼（2 回目）」 | 未実施 |
