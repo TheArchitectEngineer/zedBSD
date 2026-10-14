@@ -1,0 +1,32 @@
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 11 of 12, slots 4 of 17, references 3 of 16, flags 0x1
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/home/kei/ws236/baseline-1080p30-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/home/kei/ws236/baseline-1080p30-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=137 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=119
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1165 heard=0 written=0 consumed=0 pictures=4 late=5 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=2178 heard=0 written=0 consumed=0 pictures=4 late=18 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=3370 heard=0 written=0 consumed=0 pictures=5 late=31 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=4430 heard=0 written=0 consumed=0 pictures=4 late=46 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=5663 heard=0 written=0 consumed=0 pictures=4 late=63 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=6689 heard=0 written=0 consumed=0 pictures=5 late=76 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=7715 heard=0 written=0 consumed=0 pictures=3 late=90 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=8972 heard=0 written=0 consumed=0 pictures=5 late=105 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=10016 heard=0 written=0 consumed=0 pictures=5 late=119 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=11040 heard=0 written=0 consumed=0 pictures=4 late=133 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=12095 heard=0 written=0 consumed=0 pictures=5 late=147 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=13136 heard=0 written=0 consumed=0 pictures=4 late=160 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=14189 heard=0 written=0 consumed=0 pictures=4 late=174 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=15211 heard=0 written=0 consumed=0 pictures=4 late=188 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=16460 heard=0 written=0 consumed=0 pictures=4 late=203 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=17519 heard=0 written=0 consumed=0 pictures=5 late=217 eof=0 out=0 state=1
+VIDEOPLAYER END reached dropped=0
+VIDEOPLAYER FRAMES shown=70 time_ms=18304 late=230
+VIDEOPLAYER ENDED shown=70
+VIDEOPLAYER DONE reason=timeout shown=70
+VIDEOPLAYER FRAMES shown=70 time_ms=18304 late=230
