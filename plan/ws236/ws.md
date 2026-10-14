@@ -44,6 +44,7 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 | [ws236-p004](phase004/phase.md) | kernel の Vulkan の executor（in-progress: 実装・build 済み、実機は p005 の依頼と一緒）: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
 | [ws236-p005](phase005/phase.md) | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験（in-progress: probe の直し済み、libmedia は無変更、test-wait（T1）） | 3 LW | p004 |
 | [ws236-p006](phase006/phase.md) | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し（uncleared 2026-10-15: 画は実機で全 frame 一致、1080p は約 15 fps で速さが未達） | 5 LW | p005 |
+| [ws236-p008](phase008/phase.md) | 再生の速さ: Video.mp4 を遅れなく（in-progress、P3、2026-10-15 ユーザー「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」）: VPU へ複数の unit を重ねる pipeline、place・readback の短縮 | 8 LW | p006 |
 | [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
 
 合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。
