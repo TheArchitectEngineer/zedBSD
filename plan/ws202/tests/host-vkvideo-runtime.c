@@ -53,7 +53,9 @@ main(
 	struct h264_dpb_plan plan;
 	struct media_picture_pool *pool;
 	struct media_picture *output;
+	struct vkvideo_flight *flight;
 	uint8_t bytes[4];
+	uint32_t ticket;
 	unsigned mode;
 	unsigned frame;
 	int error;
@@ -97,20 +99,21 @@ main(
 		video.slots = 2U;
 		video.distinct = (int)mode;
 		video.capabilities.minBitstreamBufferSizeAlignment = 32U;
-		video.buffer_size = 4096U;
-		video.buffer_map = calloc(1U, 4096U);
-		assert(video.buffer_map != NULL);
-		video.readback_map = calloc(1U, 768U);
-		assert(video.readback_map != NULL);
-		video.buffer_coherent = 1;
-		video.readback_coherent = 1;
-		video.command = (VkCommandBuffer)(uintptr_t)1U;
-		video.transfer_command = (VkCommandBuffer)(uintptr_t)2U;
+		video.flights = 1U;
+		flight = &video.flight[0];
+		flight->buffer_size = 4096U;
+		flight->buffer_map = calloc(1U, 4096U);
+		assert(flight->buffer_map != NULL);
+		flight->readback_map = calloc(1U, 768U);
+		assert(flight->readback_map != NULL);
+		flight->buffer_coherent = 1;
+		flight->readback_coherent = 1;
+		flight->command = (VkCommandBuffer)(uintptr_t)1U;
+		flight->transfer_command = (VkCommandBuffer)(uintptr_t)2U;
 		video.queue = (VkQueue)(uintptr_t)3U;
 		video.transfer_queue = (VkQueue)(uintptr_t)4U;
-		video.decoded = (VkSemaphore)5U;
-		video.returned = (VkSemaphore)6U;
-		video.fence = (VkFence)7U;
+		flight->decoded = (VkSemaphore)5U;
+		flight->fence = (VkFence)7U;
 		video.fn.vkBeginCommandBuffer = host_begin;
 		video.fn.vkEndCommandBuffer = host_end;
 		video.fn.vkResetCommandBuffer = host_reset_command;
@@ -127,9 +130,12 @@ main(
 			plan.reset = 0;
 			if (frame == 0U)
 				plan.reset = 1;
-			error = media_vkvideo_runtime_decode(&video, stream, picture, &plan, output);
+			error = media_vkvideo_runtime_submit(&video, stream, picture, &plan, output, &ticket);
 			assert(error == 0);
-			assert(video.inflight == 0);
+			assert(ticket == frame + 1U);
+			error = media_vkvideo_runtime_finish(&video, ticket);
+			assert(error == 0);
+			assert(flight->state == VKVIDEO_FREE);
 			assert(output->luma[31] == 47U);
 			assert(output->chroma[0] == 100U);
 			assert(output->chroma[1] == 150U);
@@ -137,18 +143,21 @@ main(
 
 		/* A fence timeout must leave the submitted runtime resources owned and in flight. */
 		wait_failure = 1;
-		error = media_vkvideo_runtime_decode(&video, stream, picture, &plan, output);
+		error = media_vkvideo_runtime_submit(&video, stream, picture, &plan, output, &ticket);
+		assert(error == 0);
+		error = media_vkvideo_runtime_finish(&video, ticket);
 		assert(error == ETIMEDOUT);
-		assert(video.inflight == 1);
+		assert(flight->state == VKVIDEO_READING);
+		assert(video.failed == ETIMEDOUT);
 		wait_failure = 0;
-		free(video.readback_map);
-		free(video.buffer_map);
+		free(flight->readback_map);
+		free(flight->buffer_map);
 	}
 
-	/* Each decode uses a separate transfer submission, with the reverse dependency from the preceding transfer. */
+	/* With one picture in flight, each decode's readback is submitted at once, behind the decode's semaphore; no reverse dependency is needed. */
 	assert(copies_seen == 8U);
 	assert(submissions == 16U);
-	assert(video_waits == 6U);
+	assert(video_waits == 0U);
 	assert(transfer_waits == 8U);
 	media_picture_unref(output);
 	media_picture_pool_close(pool);
@@ -175,7 +184,7 @@ host_begin(
 	VkCommandBuffer command,
 	const VkCommandBufferBeginInfo *info)
 {
-	assert(command == observed->command || command == observed->transfer_command);
+	assert(command == observed->flight[0].command || command == observed->flight[0].transfer_command);
 	assert(info->flags == VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 	return VK_SUCCESS;
 }
@@ -197,7 +206,7 @@ host_reset_command(
 {
 	(void)command;
 	(void)flags;
-	assert(observed->inflight == 0);
+	assert(observed->flight[0].state == VKVIDEO_READING);
 	return VK_SUCCESS;
 }
 
@@ -211,7 +220,7 @@ host_reset_fence(
 	(void)device;
 	(void)fences;
 	assert(count == 1U);
-	assert(observed->inflight == 0);
+	assert(observed->flight[0].state == VKVIDEO_READING);
 	return VK_SUCCESS;
 }
 
@@ -244,21 +253,20 @@ host_submit(
 {
 	assert(count == 1U);
 	assert(submit->commandBufferCount == 1U);
-	assert(submit->signalSemaphoreCount == 1U);
 	if (queue == observed->queue) {
 		assert(fence == VK_NULL_HANDLE);
-		assert(submit->pCommandBuffers[0] == observed->command);
-		assert(submit->pSignalSemaphores[0] == observed->decoded);
-		if (submit->waitSemaphoreCount != 0U) {
-			assert(submit->pWaitSemaphores[0] == observed->returned);
+		assert(submit->pCommandBuffers[0] == observed->flight[0].command);
+		assert(submit->signalSemaphoreCount == 1U);
+		assert(submit->pSignalSemaphores[0] == observed->flight[0].decoded);
+		if (submit->waitSemaphoreCount != 0U)
 			video_waits++;
-		}
 	} else {
 		assert(queue == observed->transfer_queue);
-		assert(fence == observed->fence);
+		assert(fence == observed->flight[0].fence);
+		assert(submit->pCommandBuffers[0] == observed->flight[0].transfer_command);
+		assert(submit->signalSemaphoreCount == 0U);
 		assert(submit->waitSemaphoreCount == 1U);
-		assert(submit->pWaitSemaphores[0] == observed->decoded);
-		assert(submit->pSignalSemaphores[0] == observed->returned);
+		assert(submit->pWaitSemaphores[0] == observed->flight[0].decoded);
 		assert(submit->pWaitDstStageMask[0] == VK_PIPELINE_STAGE_TRANSFER_BIT);
 		transfer_waits++;
 	}
@@ -274,7 +282,7 @@ host_begin_video(
 	VkCommandBuffer command,
 	const VkVideoBeginCodingInfoKHR *info)
 {
-	assert(command == observed->command);
+	assert(command == observed->flight[0].command);
 	assert(info->referenceSlotCount >= 1U);
 }
 
@@ -284,7 +292,7 @@ host_control(
 	VkCommandBuffer command,
 	const VkVideoCodingControlInfoKHR *info)
 {
-	assert(command == observed->command);
+	assert(command == observed->flight[0].command);
 	assert(info->flags == VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR);
 }
 
@@ -294,7 +302,7 @@ host_decode(
 	VkCommandBuffer command,
 	const VkVideoDecodeInfoKHR *info)
 {
-	assert(command == observed->command);
+	assert(command == observed->flight[0].command);
 	assert(info->srcBufferOffset == 0U);
 	assert(info->srcBufferRange == 32U);
 	assert(info->pSetupReferenceSlot->slotIndex == 0);
@@ -308,7 +316,7 @@ host_end_video(
 	VkCommandBuffer command,
 	const VkVideoEndCodingInfoKHR *info)
 {
-	assert(command == observed->command);
+	assert(command == observed->flight[0].command);
 	assert(info->sType == VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR);
 }
 
@@ -322,7 +330,7 @@ host_barrier(
 
 	/* Check each image barrier's stage validity for its recorded queue. */
 	for (index = 0U; index < info->imageMemoryBarrierCount; index++) {
-		if (command == observed->transfer_command) {
+		if (command == observed->flight[0].transfer_command) {
 			assert((info->pImageMemoryBarriers[index].srcStageMask & VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR) == 0U);
 			assert((info->pImageMemoryBarriers[index].dstStageMask & VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR) == 0U);
 		}
@@ -330,7 +338,7 @@ host_barrier(
 
 	/* Require buffer host-visibility barriers to be recorded on the transfer command. */
 	if (info->bufferMemoryBarrierCount != 0U) {
-		assert(command == observed->transfer_command);
+		assert(command == observed->flight[0].transfer_command);
 		assert(info->pBufferMemoryBarriers[0].dstAccessMask == VK_ACCESS_2_HOST_READ_BIT);
 	}
 }
@@ -350,7 +358,7 @@ host_copy(
 	/* Inspect exact plane-copy geometry before writing only host stand-in output. */
 	(void)image;
 	(void)buffer;
-	assert(command == observed->transfer_command);
+	assert(command == observed->flight[0].transfer_command);
 	assert(layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 	assert(count == 2U);
 	assert(copy[0].imageSubresource.aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT);
@@ -361,10 +369,10 @@ host_copy(
 	assert(copy[1].imageExtent.height == 8U);
 	assert(copy[1].bufferOffset == 512U);
 	for (index = 0U; index < 512U; index++)
-		observed->readback_map[index] = (uint8_t)(16U + index % 32U);
+		observed->flight[0].readback_map[index] = (uint8_t)(16U + index % 32U);
 	for (index = 512U; index < 768U; index += 2U) {
-		observed->readback_map[index] = 100U;
-		observed->readback_map[index + 1U] = 150U;
+		observed->flight[0].readback_map[index] = 100U;
+		observed->flight[0].readback_map[index + 1U] = 150U;
 	}
 
 	/* Count completed copy recordings independently of submission retirement. */

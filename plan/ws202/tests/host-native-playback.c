@@ -18,6 +18,7 @@
 /* A host runtime instance exists from one standard capability admission until its backend closes. */
 struct vkvideo_runtime {
 	unsigned decodes;
+	unsigned slots;
 };
 
 /* These variables belong only to the host stand-ins and never alter production implementation behavior. */
@@ -358,13 +359,15 @@ media_vkvideo_runtime_open(
 	const StdVideoH264SequenceParameterSet *sps,
 	struct vkvideo_runtime **runtime)
 {
-	(void)sps;
 	*runtime = NULL;
 	if (no_video)
 		return MEDIA_PROBLEM_DEVICE;
 	*runtime = calloc(1U, sizeof(**runtime));
 	if (*runtime == NULL)
 		return ENOMEM;
+	(*runtime)->slots = sps->max_num_ref_frames + 1U;
+	if (sps->max_num_ref_frames == 0U)
+		(*runtime)->slots = 2U;
 	return 0;
 }
 
@@ -382,15 +385,27 @@ media_vkvideo_runtime_parameters(
 }
 
 /*
+ * Has a submission free at once: the host stand-in completes each picture when it is submitted.
+ */
+int
+media_vkvideo_runtime_reserve(
+	struct vkvideo_runtime *runtime)
+{
+	(void)runtime;
+	return 0;
+}
+
+/*
  * Produces a host-only NV12 stand-in after verifying that native admission selected only real references.
  */
 int
-media_vkvideo_runtime_decode(
+media_vkvideo_runtime_submit(
 	struct vkvideo_runtime *runtime,
 	const struct h264_stream *stream,
 	const struct h264_picture *picture,
 	const struct h264_dpb_plan *plan,
-	struct media_picture *output)
+	struct media_picture *output,
+	uint32_t *ticket)
 {
 	(void)stream;
 	assert(picture->slice_count > 0U);
@@ -399,7 +414,62 @@ media_vkvideo_runtime_decode(
 	memset(output->chroma, 128, (size_t)output->pitch * ((output->height + 1U) / 2U));
 	runtime->decodes++;
 	completed_decodes++;
+	*ticket = runtime->decodes;
 	return 0;
+}
+
+/*
+ * Reports the stand-in's pictures complete: each was filled at its submission.
+ */
+int
+media_vkvideo_runtime_finish(
+	struct vkvideo_runtime *runtime,
+	uint32_t ticket)
+{
+	assert(ticket != 0U && ticket <= runtime->decodes);
+	return 0;
+}
+
+/*
+ * Has nothing in flight to discard.
+ */
+void
+media_vkvideo_runtime_discard(
+	struct vkvideo_runtime *runtime)
+{
+	(void)runtime;
+}
+
+/*
+ * Holds no slot for a picture in flight.
+ */
+uint32_t
+media_vkvideo_runtime_busy(
+	const struct vkvideo_runtime *runtime)
+{
+	(void)runtime;
+	return 0U;
+}
+
+/*
+ * Reports the references and one picture of the stand-in's session.
+ */
+uint32_t
+media_vkvideo_runtime_slots(
+	const struct vkvideo_runtime *runtime)
+{
+	return runtime->slots;
+}
+
+/*
+ * Has one picture in flight at a time, as on a device without ahead submission.
+ */
+uint32_t
+media_vkvideo_runtime_flights(
+	const struct vkvideo_runtime *runtime)
+{
+	(void)runtime;
+	return 1U;
 }
 
 /*
@@ -431,6 +501,18 @@ media_log(
 	...)
 {
 	(void)format;
+}
+
+/*
+ * Takes the probe's log destination without the engine (the stand-in's lines go nowhere).
+ */
+void
+media_set_log(
+	void (*log)(void *context, const char *line),
+	void *context)
+{
+	(void)log;
+	(void)context;
 }
 
 /* The application-only fallback stand-in records the attempt and reports an absent optional codec library. */
