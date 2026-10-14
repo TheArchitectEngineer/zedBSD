@@ -3,9 +3,9 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は T1-681 で GPU の道が動いた（色も正しい）、速さ（21 fps）が未達 → executor の VPU 待ちを譲る直しと presenter の 2 frame 重ね、T2 の依頼 4 待ち）
+Status: in-progress（2026-10-16、P3 新世代。T1-685 FAIL（全画面で VPU の decoder が止まり reboot まで戻らない）→ 直し 6（core clock の floor）を実装・host 試験済み、T2 の依頼 6 待ち。game mode は WS223 のユーザーの決定に従い実装しない）
 Phase disposition: normal
-実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e`）
+実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-16 新世代 `agent/p3-ws236f`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
 
 ## ユーザーのゴールと判断（原文と要旨）
@@ -251,9 +251,57 @@ Phase disposition: normal
 4. 報告: videoplayer の `Vulkan Video:`（flights・held）・`FULLSCREEN`・`FRAMES`・`DRAW`（acquire_us・submit_us・wait_us）、compositor の `KWL SCANOUT`（direct=1 か、direct=0 の reason）、dmesg の `v3d: perf`・`v3d: gpu tiles`・`v3d: video:`（depth・frame）・`v3d: requests`・`execution failed`、PNG。
 5. 合否: (a) (i) で `KWL SCANOUT direct=1`、(b) (i) の shown（film は 10 s・600 frame、目標 580 以上・late 20 以下、記録）、(c) (ii) が shown 290 以上・late 10 以下、(d) `Vulkan Video:` の flights 4・depth と 2 秒の picture 数（目標 120 以上）、(e) 落ちない・`execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
 
+### T2 の結果（T1-685、2026-10-16、Pi 4 実機、main f0576b990）: FAIL
+
+- `--fullscreen`（1080p60・1080p30）: `PLAYBACK failed error=5`（shown 9〜14）。dmesg: 入力 4 つが flags `0x406`（FRAME_START・FRAME_END・**TRANSMISSION_FAILED**）で返り、`v3d: video: picture 26/27 skipped: no frame from the decoder (42)`、続いて `PORT_ACTION not answered`・`decoder 0 destroyed broken`。reboot の後の 1 回目（r-a）も同じ止まり方（入力 4 つが返らず `PORT_ACTION not answered`）。以後 reboot まで `ril.video_decode not created (42)`・`no firmware decoder for a 1920x1088 session`（libmedia は CPU の decode に戻り再生は続く）。
+- compositor: `KWL SCANOUT direct=0 reason=size` → `KWL OUTPUT closed` → `reason=backend errno=21` → `KWL OUTPUT open`（`KWL MODE window switch_ms=59〜64`）→ `reason=refused`。
+- 窓の 1080p60（reboot 後）は落ちない: shown 304・late 296、decode 2 秒に 89〜95、`v3d: perf` busy 86〜91%。結果 `plan/agents/T2/results-20261016-t1-685.md`。
+
+## 直し 6（2026-10-16、P3 新世代）: 全画面の切り替えで VPU が止まる、game mode、decode の要求
+
+### 調べ
+
+1. **game mode が入らない理由**: bcm2711 の display の QUERY（`display-device.c` `output_query`）が `GPU_DISPLAY_BLOB` を立てないので、backend の `scanout_display()`（`scanout-zedbsd.c`）が `ENOTSUP`（= `EOPNOTSUPP` 21）を返す。ws223-p001 §0 の 4 と同じ。**2026-10-13 のユーザーの決定（WS223 原文「Video Playerは、Game Modeをやめます。…全画面ではコンポジターを利用しましょう。」）と、直し 5 の「Video Player を game mode に入れる」は衝突する**。Q1 の指示（2026-10-16）で game mode の道は実装しない。60 fps の道（A 合成の短縮／B HVS の plane／WS223 の見直し）はユーザーの判断として Q1 が master の未決に記録した。
+2. **VPU が止まる理由（見込み）**: 全画面への切り替えで compositor は game mode を試すために swapchain を閉じる（`scanout_enter` → `kwl_compose_output_close`）。display の lease の release は console を戻し（`bcm2711_display_flip_restore`）、**core clock を console の値へ下げる**（`lower_clock`、720p で 67 MHz 級の要求）。backend が断ると compositor は直ちに swapchain を開き直し、次の flip が **core clock を 500 MHz へ上げ直す**（`raise_clock`）。core clock は VPU（firmware の MMAL）の clock で、その 2 回の変更が decode の最中に起きた直後に入力の bulk が TRANSMISSION_FAILED で返り、firmware の decoder が答えなくなった（T1-685 の 3 回とも全画面の切り替えの時、窓の再生では起きない）。出力の閉じ開きで他に VPU に触る物（HVS の list、console の再描画、V3D の allocation）は無い。
+3. **reboot なしの回復**: firmware の MMAL の worker が答えなくなると、VCHIQ の service を閉じて開き直しても component の作成が答えない（a2・b・c）。firmware を作り直す口は無く、reboot なしの回復はできない。今の道（session の作成が失敗 → libmedia が CPU の decode に戻る）で再生は続く（T1-685 の b は shown 151）。よって**止まらないようにする**のが直し。
+4. **decode の要求**: GPU の picture の道で libmedia が 1 picture にかける kernel の要求は Begin・End（記録）・QueueSubmit・WaitForFences・ResetFences・ResetCommandBuffer・GetQueryPoolResults の 7。`vkBeginCommandBuffer` は pool の `RESET_COMMAND_BUFFER_BIT` で暗に reset する（kernel の `begin_buffer` が `bcm2711_vulkan_command_clear` する）ので、明示の reset は要らない。`v3d: decode requests` は全 client（compositor・videoplayer・libmedia）の wire の要求の数で、1 picture あたり 20 ではない（前の見立ての訂正）。
+
+### 直し
+
+- `src/drivers/platform/rpi4/rpi4-firmware.c`・`.h`: **core clock の floor の集約** `drv_rpi4_firmware_core_clock(owner, hz)`（owner は DISPLAY・VIDEO）。firmware に頼む rate は owner の floor の最大（firmware の最高の rate まで）、誰も頼まない時は最初の floor の前に firmware が回していた rate（`GET_CLOCK_RATE`・`GET_MAX_CLOCK_RATE` で 1 度だけ読む）。rate が変わる時だけ `SET_CLOCK_RATE` を送り、`rpi4-firmware: core clock N Hz (display D, video V)` を log する（変化は稀）。失敗した時は owner の floor を元に戻す。直列化は既存の request buffer と同じ atomic の turn（mutex を使わないので ws048・ws206 の host 試験はそのまま通る）。
+- `src/drivers/gpu/bcm2711/display-flip.c`: `request_clock` は display の floor として集約に頼む（display の上げ下げの規則は変えない）。
+- `src/drivers/platform/rpi4/rpi4-mmal.c`: decoder の entry が 1 つでも使われている間は VIDEO の floor を firmware の最高の rate（Pi 4 は 500 MHz）に保つ（`core_floor()`、最初の decoder の component を作る前に取り、最後の decoder が消えたら返す）。これで decode の最中は display の lease の release・claim で core clock が変わらない。入力の buffer が TRANSMISSION_FAILED で返った時に log（`rpi4-mmal: input N came back unread`）。`rpi4-mmal-wire.h`: `DRV_RPI4_MMAL_FLAG_TRANSMISSION_FAILED`。
+- `userland/desktop/libmedia/vkvideo-runtime.c`: GPU の picture の道で decode の command buffer の明示の reset を省く（次の Begin が暗に reset）。1 picture の要求 7 → 6。readback の道（amd64 の i915 を含む）は前のまま。
+- 試験: `plan/ws236/tests/core-clock-host-test.c`・`run-core-clock-test.sh`（新規、rpi4-firmware.c を mailbox と clock の tag の模型で: 最大の floor、decode 中の display の上げ下げで変化なし、decoder の後に display に従う、誰も頼まない時に元の rate、拒まれた変化で floor が残る、最高の rate で頭打ち、範囲外の owner）。`plan/ws141/tests/display-{flip,device,execute}-host-test.c` に `drv_rpi4_firmware_core_clock` の stub（同じ wire の要求を既存の property の stub へ）。
+
+### 確かめ 6（host と build）
+
+| 確かめ | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p3/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/p3/rpi4/vmunix build/p3/rpi4/dynamic/libmedia.so` | rc 0、warning 0、`arm64 vmunix check: PASS` |
+| amd64 `build/p3/amd64/dynamic/libmedia.so` | rc 0、warning 0 |
+| `sh plan/ws236/tests/run-core-clock-test.sh` | PASS（ASan/UBSan） |
+| `sh plan/ws141/tests/display-host-test.sh`・`sh plan/ws214/tests/display-p003a-host.sh` | PASS |
+| `make -f plan/ws048/tests/host-test.mk run DTB=…`・`plan/ws206/tests/firmware-smp-host-test.sh`・`gpio-host-test.sh` | PASS（rpi4-firmware.c の回帰） |
+| `sh plan/ws236/tests/run-mmal-wire-test.sh` | all PASS |
+| `sh plan/ws202/tests/run-host-native-playback.sh`・`run-host-app-fallback.sh`・`run-host-nv12-readback.sh` | PASS |
+| style-check（変えた C の file、HEAD との差） | 新しい指摘 0 |
+
+- 未実施: Pi 実機（下の依頼 6）。見込みが外れていれば（core clock の変化の log が無いのに止まる）、次の見込みは出力の閉じ開きの別の要素（console の復帰・swapchain の作り直しの間の executor の止まり）で、依頼 6 の log で切り分ける。
+
+### T2 への依頼 6（Pi 4 実機、QEMU 不要、約 30 分）
+
+1. build（agent/p3-ws236f の commit か merge 後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/rpi4/vmunix build/<T>/rpi4/dynamic/libmedia.so`（warning 0）。videoplayer・libvulkan・compositor は T1-685 のまま（compositor は CI の物でよい）。
+2. Pi: kernel と `/lib/libmedia.so` を差し替え、boot の行に `v3d.perf=1`、reboot。
+3. **reboot を挟まずに**順に（各 `--timeout-s=15`、pointer は動かさない）: (i) `high-1080p60-10s.mp4 --fullscreen`、(ii) `high-1080p30-10s.mp4 --fullscreen`、(iii) `high-1080p60-10s.mp4`（窓）、(iv) (i) をもう 1 回、(v) `baseline-1080p30-10s.mp4 --fullscreen`。(ii) の 5 秒目に keiland-shot を 1 枚（capture 入りの compositor の時だけ）。
+4. 報告: 各 run の videoplayer の `Vulkan Video:`・`FULLSCREEN`・`FRAMES`・`DRAW`（acquire_us・submit_us・wait_us）・`PLAYBACK`・`DONE`、compositor の session.log の `KWL SCANOUT`・`KWL MODE`・`KWL PERF`（compose の frame_ms）・`KWL SLOW_PASS`、dmesg の `rpi4-firmware: core clock`（全行）・`rpi4-mmal: (request .* not answered|stall|came back unread|core clock floor|not created)`・`v3d: video:`・`v3d: perf`・`bcm2711: (cadence|flip perf)`・`execution failed`。
+5. 合否: (a) 5 本とも `PLAYBACK failed` が無く、dmesg に `not answered`・`came back unread`・`no firmware decoder` が無い（reboot なしで続けて再生できる）、(b) `rpi4-firmware: core clock` の行が video の再生中（全画面の切り替えの時を含む）に出ない（出るのは compositor の起動と、再生の始まり・終わりの境だけ）、(c) 全画面の数の記録（合否ではない）: (ii)・(v) の shown・late（目標 290 以上・10 以下）、(i)・(iv) の shown、`KWL PERF compose frame_ms`、`DRAW acquire_us`。game mode は WS223 のユーザーの決定で入らない（`reason=backend errno=21` は期待どおり）。(d) `execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
+6. 止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
+
 ### ユーザーの判断が要る点（記録、P3 は先へ進む）
 
-- **窓の再生の 60 fps**: 窓では compositor の合成の pass（GPU 約 8 ms/frame の見込み）と窓の image の TFU が毎 frame 要り、videoplayer 側だけでは届かない。案は (A) compositor の合成の短縮（窓の下の層を描かない遮蔽の省略など、WS141 p013・WS211 の範囲）、(B) WS214（窓を HVS の plane に載せる）の p005 で再生中の窓を plane に載せる、(C) 60 fps は全画面（game mode）だけを目標にする。P3 は (C) の道（`--fullscreen`）を先に確かめる。
+- **窓の再生の 60 fps**: 窓では compositor の合成の pass（GPU 約 8 ms/frame の見込み）と窓の image の TFU が毎 frame 要り、videoplayer 側だけでは届かない。案は (A) compositor の合成の短縮（窓の下の層を描かない遮蔽の省略など、WS141 p013・WS211 の範囲）、(B) WS214（窓を HVS の plane に載せる）の p005 で再生中の窓を plane に載せる、(C) 60 fps は全画面（game mode）だけを目標にする。~~P3 は (C) の道（`--fullscreen`）を先に確かめる。~~ 2026-10-16 訂正（P3 新世代、Q1）: (C) の game mode は WS223 のユーザーの決定（2026-10-13「Video Playerは、Game Modeをやめます」）に反するので取らない。全画面も合成で、60 fps の道は (A)・(B)・WS223 の見直しのどれかをユーザーが選ぶ（Q1 が master の未決に記録）。
+- **全画面の切り替えの出力の閉じ開き**: WS223 の p002（`scanout-rules.c` の content の条件を `game` だけに）が入るまで、Video Player の全画面は game mode を試して swapchain を 1 回閉じて開き直す（約 60 ms の止まり、`KWL MODE window switch_ms=59〜64`）。直し 6 で VPU は止まらなくなる見込みだが、無駄な閉じ開きは WS223 p002 で消える（Q1 の割り当て）。
 - **先読みの picture 3 → 2**: 1080p60 の decode の throughput（flight 4）のため。30p の再生で揺れ（late）が増えるなら戻すか、libmedia の slot の上限（`H264_DPB_SLOTS` 17、kernel の `VIDEO_MAX_DPB_SLOTS` 17）を広げる（kernel は slot の数を使っていないので広げられるが、libmedia の DPB の表の大きさが変わる）。
 
 ## 残り・危険
