@@ -83,6 +83,7 @@ drv_rpi4_h264_write_sps(
 	uint32_t constraints;
 	uint32_t lists;
 	uint32_t index;
+	int high;
 	int error;
 
 	/* Refuses fields H.264 cannot code (7.4.2.1.1's ranges, and what Exp-Golomb here holds). */
@@ -122,7 +123,8 @@ drv_rpi4_h264_write_sps(
 	write_ue(&writer, sps->id);
 
 	/* The high profiles' chroma format, bit depths and scaling matrix. */
-	if (high_profile(sps->profile_idc)) {
+	high = high_profile(sps->profile_idc);
+	if (high) {
 		write_ue(&writer, sps->chroma_format_idc);
 		if (sps->chroma_format_idc == 3U)
 			write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_SEPARATE_PLANES) != 0, 1);
@@ -334,6 +336,7 @@ drv_rpi4_h264_access_unit(
 	size_t stop;
 	size_t cursor;
 	int seen_slice;
+	int slice;
 	int error;
 	int begins;
 
@@ -355,8 +358,11 @@ drv_rpi4_h264_access_unit(
 		}
 
 		/* A slice makes the next first slice or parameter set a boundary. */
-		if (start < stop && is_slice(stream[start]))
-			seen_slice = 1;
+		if (start < stop) {
+			slice = is_slice(stream[start]);
+			if (slice)
+				seen_slice = 1;
+		}
 		cursor = stop;
 	}
 
@@ -395,6 +401,7 @@ drv_rpi4_h264_sps_no_reorder(
 	uint32_t references;
 	uint32_t frame_mbs_only;
 	uint32_t cropping;
+	int high;
 	size_t rbsp_bytes;
 	size_t prefix_bits;
 	int error;
@@ -420,7 +427,8 @@ drv_rpi4_h264_sps_no_reorder(
 
 	/* The high profiles' chroma format, bit depths and scaling matrix. */
 	chroma = 1;
-	if (high_profile(profile)) {
+	high = high_profile(profile);
+	if (high) {
 		chroma = read_ue(&reader);
 		if (chroma == 3U)
 			(void)read_bits(&reader, 1);
@@ -433,7 +441,8 @@ drv_rpi4_h264_sps_no_reorder(
 			if (chroma == 3U)
 				lists = 12U;
 			for (list = 0; list < lists; list++) {
-				if (read_bits(&reader, 1) == 0)
+				present = read_bits(&reader, 1);
+				if (present == 0)
 					continue;
 				if (list < 6U) {
 					skip_scaling_list(&reader, 16);
@@ -534,6 +543,7 @@ starts_new_unit(
 	int seen_slice)
 {
 	uint8_t kind;
+	int slice;
 
 	/* Nothing before the first slice ends the unit. */
 	if (!seen_slice || start >= end)
@@ -546,7 +556,8 @@ starts_new_unit(
 		return 1;
 
 	/* A slice whose first_mb_in_slice is zero (a leading one bit) starts the next picture. */
-	if (is_slice(stream[start]) && start + 1U < end && (stream[start + 1U] & 0x80U) != 0)
+	slice = is_slice(stream[start]);
+	if (slice && start + 1U < end && (stream[start + 1U] & 0x80U) != 0)
 		return 1;
 
 	/* Succeeded: the unit belongs to the current access unit. */
@@ -622,11 +633,15 @@ read_ue(
 	struct h264_reader *reader)
 {
 	unsigned zeros;
+	uint32_t bit;
 	uint32_t suffix;
 
 	/* Counts the leading zeros before the one. */
 	zeros = 0;
-	while (read_bits(reader, 1) == 0) {
+	for (;;) {
+		bit = read_bits(reader, 1);
+		if (bit != 0)
+			break;
 		if (reader->error != 0 || zeros >= 31U) {
 			reader->error = 1;
 			return 0;

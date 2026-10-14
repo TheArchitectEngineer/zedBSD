@@ -283,6 +283,7 @@ drv_rpi4_mmal_decoder_create(
 	uint8_t reply[DRV_RPI4_MMAL_MAX_MESSAGE];
 	unsigned index;
 	size_t size;
+	uint32_t status;
 	int error;
 
 	/* The caller receives nothing on failure. */
@@ -347,8 +348,11 @@ drv_rpi4_mmal_decoder_create(
 	/* Creates the firmware's decoder component. */
 	size = drv_rpi4_mmal_build_create(message, 0, token(decoder, MMAL_KIND_COMPONENT, 0), MMAL_COMPONENT_NAME);
 	error = request(message, size, reply, sizeof(reply));
-	if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_CREATE_REPLY_STATUS) != 0)
-		error = EIO;
+	if (error == 0) {
+		status = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_CREATE_REPLY_STATUS);
+		if (status != 0)
+			error = EIO;
+	}
 	if (error != 0) {
 		kern_logf("rpi4-mmal: %s not created (%d)\n", MMAL_COMPONENT_NAME, error);
 		release_memory(decoder);
@@ -407,7 +411,9 @@ drv_rpi4_mmal_decoder_input(
 			return error;
 		enabled = spin_lock_irqsave(&mmal_lock);
 
-		busy = half->buffers != 0 || half->bulks != 0;
+		busy = false;
+		if (half->buffers != 0 || half->bulks != 0)
+			busy = true;
 		error = 0;
 		if (busy && decoder->queue_count == 0 && !decoder->queue_overflow) {
 			observed = waitq_sequence(&mmal_wake);
@@ -654,6 +660,7 @@ drv_rpi4_mmal_decoder_flush(
 	unsigned long enabled;
 	unsigned index;
 	size_t size;
+	uint32_t status;
 	int error;
 
 	/* A broken decoder cannot be flushed. */
@@ -686,8 +693,11 @@ drv_rpi4_mmal_decoder_flush(
 
 			spin_unlock_irqrestore(&mmal_lock, enabled);
 		}
-		if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS) != 0)
-			error = EIO;
+		if (error == 0) {
+			status = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS);
+			if (status != 0)
+				error = EIO;
+		}
 	} else {
 		error = port_action(decoder, decoder->input_handle, DRV_RPI4_MMAL_ACTION_FLUSH, NULL);
 	}
@@ -774,6 +784,7 @@ service_message(
 	struct mmal_message *slot;
 	const uint8_t *bytes;
 	unsigned long enabled;
+	uint32_t magic;
 	uint32_t msgid;
 	uint32_t owner;
 	unsigned index;
@@ -783,7 +794,8 @@ service_message(
 	bytes = data;
 	if (size < DRV_RPI4_MMAL_HEADER_BYTES)
 		return;
-	if (drv_rpi4_mmal_get32(bytes, DRV_RPI4_MMAL_HEADER_MAGIC) != DRV_RPI4_MMAL_MAGIC)
+	magic = drv_rpi4_mmal_get32(bytes, DRV_RPI4_MMAL_HEADER_MAGIC);
+	if (magic != DRV_RPI4_MMAL_MAGIC)
 		return;
 	if (size > DRV_RPI4_MMAL_MAX_MESSAGE)
 		size = DRV_RPI4_MMAL_MAX_MESSAGE;
@@ -918,14 +930,19 @@ static void
 locks_init(void)
 {
 	unsigned expected;
+	unsigned state;
 	int claimed;
 
 	/* Exactly one caller sets them up; decoders are created from thread context. */
 	expected = 0;
 	claimed = __atomic_compare_exchange_n(&mmal_locks_ready, &expected, 1U, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 	if (!claimed) {
-		while (__atomic_load_n(&mmal_locks_ready, __ATOMIC_ACQUIRE) != 2U)
+		for (;;) {
+			state = __atomic_load_n(&mmal_locks_ready, __ATOMIC_ACQUIRE);
+			if (state == 2U)
+				break;
 			kern_usleep_range(10U, 20U);
+		}
 		return;
 	}
 	spin_init(&mmal_lock, LOCK_RANK_DEVICE, "rpi4 mmal");
@@ -1051,6 +1068,7 @@ configure(
 	uint32_t count;
 	size_t size;
 	unsigned index;
+	uint32_t status;
 	int error;
 
 	/* Reads both ports. */
@@ -1134,8 +1152,11 @@ configure(
 		return error;
 	size = drv_rpi4_mmal_build_component(message, DRV_RPI4_MMAL_MSG_COMPONENT_ENABLE, 0, decoder->component);
 	error = request(message, size, reply, sizeof(reply));
-	if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS) != 0)
-		error = EIO;
+	if (error == 0) {
+		status = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS);
+		if (status != 0)
+			error = EIO;
+	}
 	if (error != 0)
 		return error;
 
@@ -1155,6 +1176,8 @@ port_info(
 	uint8_t *info)
 {
 	uint8_t message[DRV_RPI4_MMAL_MAX_MESSAGE];
+	uint32_t status;
+	uint32_t found;
 	size_t size;
 	int error;
 
@@ -1165,8 +1188,9 @@ port_info(
 		return error;
 
 	/* Refuses a port the component does not have. */
-	if (drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_STATUS) != 0 ||
-	    drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_FOUND) == 0)
+	status = drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_STATUS);
+	found = drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_FOUND);
+	if (status != 0 || found == 0)
 		return ENODEV;
 
 	/* Succeeded: info describes the port. */
@@ -1215,13 +1239,17 @@ port_action(
 	uint8_t message[DRV_RPI4_MMAL_MAX_MESSAGE];
 	uint8_t reply[DRV_RPI4_MMAL_MAX_MESSAGE];
 	size_t size;
+	uint32_t status;
 	int error;
 
 	/* Sends the action and checks its status. */
 	size = drv_rpi4_mmal_build_action(message, 0, decoder->component, port_handle, action, info);
 	error = request(message, size, reply, sizeof(reply));
-	if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS) != 0)
-		error = EIO;
+	if (error == 0) {
+		status = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS);
+		if (status != 0)
+			error = EIO;
+	}
 	if (error != 0) {
 		kern_logf("rpi4-mmal: port action %u failed (%d)\n", (unsigned)action, error);
 		return error;
@@ -1242,13 +1270,17 @@ set_boolean(
 	uint8_t message[DRV_RPI4_MMAL_MAX_MESSAGE];
 	uint8_t reply[DRV_RPI4_MMAL_MAX_MESSAGE];
 	size_t size;
+	uint32_t status;
 	int error;
 
 	/* Sends the parameter and checks its status. */
 	size = drv_rpi4_mmal_build_parameter32(message, 0, decoder->component, port_handle, id, value);
 	error = request(message, size, reply, sizeof(reply));
-	if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS) != 0)
-		error = EIO;
+	if (error == 0) {
+		status = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS);
+		if (status != 0)
+			error = EIO;
+	}
 	if (error != 0) {
 		kern_logf("rpi4-mmal: parameter %x not set (%d)\n", (unsigned)id, error);
 		return error;
@@ -1413,7 +1445,9 @@ take_message(
 	enabled = spin_lock_irqsave(&mmal_lock);
 
 	overflow = decoder->queue_overflow;
-	empty = decoder->queue_count == 0;
+	empty = true;
+	if (decoder->queue_count != 0)
+		empty = false;
 	if (!empty && !overflow) {
 		*message = decoder->queue[decoder->queue_head];
 		decoder->queue_head = (decoder->queue_head + 1U) % MMAL_QUEUE;
@@ -1459,6 +1493,7 @@ handle_buffer(
 	uint32_t bytes;
 	uint32_t pitch;
 	uint32_t chroma;
+	uint32_t planes;
 	int error;
 
 	/* The buffer's name, and what it carries. */
@@ -1522,7 +1557,8 @@ handle_buffer(
 	output->in_target = false;
 	pitch = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_PITCH);
 	chroma = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET + 4U);
-	if (drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANES) < 2U || pitch == 0) {
+	planes = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANES);
+	if (planes < 2U || pitch == 0) {
 		/* Without plane information the format's stride and height give the layout. */
 		pitch = decoder->width;
 		chroma = decoder->width * decoder->height;
@@ -1886,7 +1922,9 @@ bulks_outstanding(
 	/* The staging bulks and the frame and scratch receives. */
 	enabled = spin_lock_irqsave(&mmal_lock);
 
-	outstanding = decoder->half[0].bulks != 0 || decoder->half[1].bulks != 0;
+	outstanding = false;
+	if (decoder->half[0].bulks != 0 || decoder->half[1].bulks != 0)
+		outstanding = true;
 	if (decoder->frame_pending || decoder->scratch_pending)
 		outstanding = true;
 

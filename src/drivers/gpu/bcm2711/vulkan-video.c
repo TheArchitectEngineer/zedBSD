@@ -850,6 +850,7 @@ session_create(
 	uint32_t version;
 	uint32_t profile_idc;
 	int32_t result;
+	bool available;
 	int different;
 	int error;
 	int released;
@@ -928,7 +929,8 @@ session_create(
 
 	/* The firmware's decoder of the session's largest picture; none means no session. */
 	error = ENODEV;
-	if (bcm2711_vulkan_video_available())
+	available = bcm2711_vulkan_video_available();
+	if (available)
 		error = drv_rpi4_mmal_decoder_create(width, height, VIDEO_INPUT_BYTES, &video->decoder);
 	if (error != 0) {
 		kern_free(video);
@@ -1028,6 +1030,7 @@ session_bind(
 	struct i915_wire_writer *reply)
 {
 	struct bcm2711_vulkan_object *object;
+	struct bcm2711_vulkan_object *bound;
 	struct video_chain chain;
 	uint64_t identity;
 	uint64_t count;
@@ -1061,7 +1064,8 @@ session_bind(
 		memory = drv_i915_wire_read_u64(reader);
 		(void)drv_i915_wire_read_u64(reader);
 		(void)drv_i915_wire_read_u64(reader);
-		if (index != 0U || bcm2711_vulkan_object_find(session, I915_VK_OBJ_MEMORY, memory) == NULL)
+		bound = bcm2711_vulkan_object_find(session, I915_VK_OBJ_MEMORY, memory);
+		if (index != 0U || bound == NULL)
 			result = VK_ERROR_INITIALIZATION_FAILED;
 	}
 	if (reader->error != 0)
@@ -2190,6 +2194,7 @@ parameters_take(
 {
 	struct video_pps *pps;
 	struct video_pps *old;
+	const struct video_pps *held;
 	struct video_pps **link;
 	uint32_t index;
 	uint32_t id;
@@ -2203,7 +2208,8 @@ parameters_take(
 				return EINVAL;
 		}
 		for (pps = chain->new_pps; pps != NULL; pps = pps->next) {
-			if (find_pps(parameters, pps->fields.sps_id, pps->fields.pps_id) != NULL)
+			held = find_pps(parameters, pps->fields.sps_id, pps->fields.pps_id);
+			if (held != NULL)
 				return EINVAL;
 		}
 	}
@@ -2222,7 +2228,8 @@ parameters_take(
 	for (pps = parameters->pps; pps != NULL; pps = pps->next)
 		pps_count++;
 	for (pps = chain->new_pps; pps != NULL; pps = pps->next) {
-		if (find_pps(parameters, pps->fields.sps_id, pps->fields.pps_id) == NULL)
+		held = find_pps(parameters, pps->fields.sps_id, pps->fields.pps_id);
+		if (held == NULL)
 			pps_count++;
 	}
 	if (sps_count > parameters->max_sps || pps_count > parameters->max_pps)
@@ -2678,7 +2685,9 @@ run_decode(
 	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
 	if (error == 0)
 		error = build_unit(video, parameters, command, staging, capacity, &bytes);
-	built = error == 0;
+	built = false;
+	if (error == 0)
+		built = true;
 	if (built) {
 		drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
 		error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts);
@@ -2797,7 +2806,9 @@ build_unit(
 	pps = find_pps(parameters, command->sps_id, command->pps_id);
 	if (sps == NULL || pps == NULL)
 		return ENOENT;
-	idr = (command->picture_flags & VIDEO_PICTURE_IDR) != 0;
+	idr = false;
+	if ((command->picture_flags & VIDEO_PICTURE_IDR) != 0)
+		idr = true;
 
 	/* The SPS and the PPS, sent when new or at an IDR. */
 	unit = video->unit;
@@ -2840,9 +2851,15 @@ append_set(
 	bool force)
 {
 	bool same;
+	int difference;
 
 	/* The set is the same as the one sent before when its bytes are. */
-	same = bytes == *sent_bytes && kern_memcmp(unit, sent, bytes) == 0;
+	same = false;
+	if (bytes == *sent_bytes) {
+		difference = kern_memcmp(unit, sent, bytes);
+		if (difference == 0)
+			same = true;
+	}
 	if (same && !force)
 		return 0;
 	if (bytes > capacity - *used)
