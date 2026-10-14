@@ -1262,15 +1262,21 @@ grid_static_position(
 		    box->style.direction == CSS_DIRECTION_RTL) &&
 		    box->style.column_count == 2 && box->style.row_count == 2 &&
 		    box->style.column_gap.value == 0 && box->style.row_gap.value == 0 &&
-		    column == 0 && column_span == 1 && row == 0 && row_span == 1 &&
-		    child->style.grid_column.start == 1 && child->style.grid_column.end == 2 &&
+		    column_span == 1 && row == 0 && row_span == 1 &&
+		    child->style.grid_column.start == column + 1 &&
+		    child->style.grid_column.end == column + 2 &&
 		    child->style.grid_row.start == 1 && child->style.grid_row.end == 2 &&
+		    ((column == 0 &&
 		    child->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    justify == CSS_ALIGN_RIGHT) ||
+		    (column == 1 &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    justify == CSS_ALIGN_CENTER)) &&
 		    child->style.direction == box->style.direction &&
 		    (child->style.width.unit == CSS_UNIT_AUTO ||
 		    child->style.width.unit == CSS_UNIT_PX) &&
 		    child->style.height.unit == CSS_UNIT_AUTO &&
-		    !explicit_inset && justify == CSS_ALIGN_RIGHT;
+		    !explicit_inset;
 		for (index = 0; orthogonal_frame_auto && index < 2; index++) {
 			if (box->style.columns[index].kind != CSS_TRACK_LENGTH ||
 			    box->style.columns[index].size.unit != CSS_UNIT_PX ||
@@ -1426,7 +1432,7 @@ grid_static_position(
 				orthogonal_y_align = 0;
 		}
 		if ((child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB ||
-		    orthogonal_y_align) &&
+		    orthogonal_y_align || (orthogonal_frame_auto && column == 1)) &&
 		    (align == CSS_ALIGN_END || align == CSS_ALIGN_SELF_END ||
 		    align == CSS_ALIGN_CENTER)) {
 			child->static_y_align = align;

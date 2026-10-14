@@ -231,6 +231,7 @@ inline_vertical_absolute_grid(
 	int horizontal_rl;
 	int horizontal_rtl;
 	int horizontal_auto;
+	int horizontal_auto_rl;
 	int framed_child;
 	int framed_parent;
 
@@ -240,6 +241,7 @@ inline_vertical_absolute_grid(
 	horizontal_rl = 0;
 	horizontal_rtl = 0;
 	horizontal_auto = 0;
+	horizontal_auto_rl = 0;
 	framed_child = 0;
 	framed_parent = 0;
 	if (parent == NULL || box->style.position != CSS_POSITION_ABSOLUTE ||
@@ -286,8 +288,17 @@ inline_vertical_absolute_grid(
 		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO &&
 		    box->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
 		    box->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		horizontal_auto_rl = box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    box->style.grid_column.start == 2 &&
+		    box->style.grid_column.end == 3 &&
+		    box->style.grid_row.start == 1 &&
+		    box->style.grid_row.end == 2 &&
+		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO &&
+		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO &&
+		    box->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
+		    box->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
 		if ((!horizontal_lr && !horizontal_rl && !horizontal_rtl &&
-		    !horizontal_auto) ||
+		    !horizontal_auto && !horizontal_auto_rl) ||
 		    parent->style.column_count != 2 || parent->style.row_count != 2 ||
 		    (!horizontal_rtl && (box->style.direction != parent->style.direction ||
 		    box->style.grid_row.start != 1 || box->style.grid_row.end != 2 ||
@@ -299,16 +310,17 @@ inline_vertical_absolute_grid(
 		for (index = 0; index < 4; index++) {
 			if (parent->border[index] != 0 || parent->padding[index] != 0)
 				framed_parent = 1;
-			if (framed_parent && !horizontal_auto)
+			if (framed_parent && !horizontal_auto && !horizontal_auto_rl)
 				return 0;
 			if (box->border[index] != 0 || box->padding[index] != 0)
 				framed_child = 1;
 		}
-		if (horizontal_auto && (!framed_parent || !framed_child))
+		if ((horizontal_auto || horizontal_auto_rl) &&
+		    (!framed_parent || !framed_child))
 			return 0;
 		if (framed_child) {
 			if (!horizontal_lr && !horizontal_rl && !horizontal_rtl &&
-			    !horizontal_auto)
+			    !horizontal_auto && !horizontal_auto_rl)
 				return 0;
 		}
 	} else if (parent->style.writing_mode != box->style.writing_mode &&
@@ -326,7 +338,8 @@ inline_vertical_absolute_grid(
 	if (box->style.direction == CSS_DIRECTION_RTL &&
 	    !(parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 	    (horizontal_rtl || (parent->style.direction == CSS_DIRECTION_RTL &&
-	    (horizontal_lr || horizontal_rl || horizontal_auto)))) &&
+	    (horizontal_lr || horizontal_rl || horizontal_auto ||
+	    horizontal_auto_rl)))) &&
 	    (parent->style.writing_mode != box->style.writing_mode ||
 	    parent->style.column_count != 2 || parent->style.row_count != 2))
 		return 0;

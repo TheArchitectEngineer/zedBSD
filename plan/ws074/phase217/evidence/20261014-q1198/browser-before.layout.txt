@@ -1,0 +1,44 @@
+console: 119,8,58,40|99,8,58,40
+viewport 1024.00 x 768.00, document height 328.00
+block <html> 0.00 0.00 1024.00 328.00
+  block <body> 8.00 8.00 1008.00 307.00
+    anonymous 8.00 8.00 1008.00 277.00
+      line 8.00 8.00 height 277.00 baseline 282.00
+        inline-block 8.00 w 276.00 h 274.00
+        text 284.00 w 4.80 16px " "
+        inline-block 288.80 w 276.00 h 274.00
+      block <div> 11.00 12.00 271.00 262.00
+        block <div> 130.00 20.00 58.00 40.00
+          line 138.00 24.00 height 10.00 baseline 32.50
+            text 138.00 w 12.00 10px "XX"
+            text 150.00 w 6.00 10px " "
+            text 156.00 w 6.00 10px "X"
+          line 138.00 34.00 height 10.00 baseline 42.50
+            text 138.00 w 6.00 10px "X"
+            text 144.00 w 6.00 10px " "
+            text 150.00 w 18.00 10px "XXX"
+            text 168.00 w 6.00 10px " "
+            text 174.00 w 6.00 10px "X"
+          line 138.00 44.00 height 10.00 baseline 52.50
+            text 138.00 w 12.00 10px "XX"
+            text 150.00 w 6.00 10px " "
+            text 156.00 w 18.00 10px "XXX"
+      block <div> 291.80 12.00 271.00 262.00
+        block <div> 390.80 20.00 58.00 40.00
+          line 416.80 24.00 height 10.00 baseline 32.50
+            text 416.80 w 12.00 10px "XX"
+            text 428.80 w 6.00 10px " "
+            text 434.80 w 6.00 10px "X"
+          line 398.80 34.00 height 10.00 baseline 42.50
+            text 398.80 w 6.00 10px "X"
+            text 404.80 w 6.00 10px " "
+            text 410.80 w 18.00 10px "XXX"
+            text 428.80 w 6.00 10px " "
+            text 434.80 w 6.00 10px "X"
+          line 404.80 44.00 height 10.00 baseline 52.50
+            text 404.80 w 12.00 10px "XX"
+            text 416.80 w 6.00 10px " "
+            text 422.80 w 18.00 10px "XXX"
+    block <pre> 8.00 298.00 1008.00 17.00
+      line 8.00 298.00 height 17.00 baseline 311.00
+        text 8.00 w 171.53 13px "119,8,58,40|99,8,58,40"
