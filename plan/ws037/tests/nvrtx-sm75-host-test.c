@@ -22,6 +22,10 @@
  *      so this part checks the lowering (instruction choice, registers,
  *      addresses, predicates, the serial dependences), not the encoding.
  *   4. Refusals: a stage A does not cover is refused with a reason.
+ *   5. The first compute launch's parts (ws037-p008 stage C): the QMD 2.2
+ *      fields at the positions of NVIDIA's clc3c0qmd.h, the launch's push
+ *      buffer, the IR of the first program compiled and run, and the
+ *      system-memory page entries of the launch's tables.
  *
  *   nvrtx-sm75-host-test DIR    DIR holds const.spv, add.spv, ids.spv, float.spv, integer.spv and loop.spv
  *
@@ -31,6 +35,8 @@
 #include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
 #include "drivers/gpu/nvrtx/compiler/sm75-encode.h"
 #include "drivers/gpu/nvrtx/compiler/sm75-isa.h"
+#include "drivers/gpu/nvrtx/nvrtx-compute.h"
+#include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 #include <uapi/errno.h>
 
@@ -84,6 +90,11 @@ static void check_ids(const char *directory);
 static void check_float(const char *directory);
 static void check_integer(const char *directory);
 static void check_refusals(const char *directory);
+static void check_qmd(void);
+static void check_launch_push(void);
+static void check_first_program(void);
+static void check_system_pages(void);
+static uint64_t field(const uint32_t *words, unsigned low, unsigned bits);
 static int words_are(const struct nvrtx_sm75_word *word, uint64_t low, uint64_t high);
 static struct nvrtx_sm75_binary *compile_file(const char *directory, const char *name);
 static void bind(struct test_run *run, uint32_t set, uint32_t binding, uint32_t *words, uint32_t bytes);
@@ -137,6 +148,10 @@ main(
 	check_float(argv[1]);
 	check_integer(argv[1]);
 	check_refusals(argv[1]);
+	check_qmd();
+	check_launch_push();
+	check_first_program();
+	check_system_pages();
 
 	/* The tally. */
 	printf("nvrtx_sm75_host_test: %u checks, %u failures\n", test_checks, test_failures);
@@ -609,6 +624,175 @@ check_refusals(
 	if (diagnostic.reason != NULL)
 		printf("  loop refused: %s (instruction %u)\n", diagnostic.reason, diagnostic.instruction);
 	free(words);
+}
+
+/* Checks the QMD 2.2 fields against the positions of clc3c0qmd.h, written out here on their own. */
+static void
+check_qmd(void)
+{
+	struct nvrtx_qmd_info info;
+	uint32_t qmd[NVRTX_QMD_WORDS];
+	int error;
+
+	memset(&info, 0, sizeof(info));
+	info.program = 0x28006000ULL;
+	info.groups[0] = 3U;
+	info.groups[1] = 2U;
+	info.groups[2] = 1U;
+	info.local_size[0] = 32U;
+	info.local_size[1] = 1U;
+	info.local_size[2] = 1U;
+	info.gpr_count = 8U;
+	info.cbuf_address[0] = 0x128008000ULL;
+	info.cbuf_size[0] = 0x300U;
+	error = nvrtx_qmd_build(qmd, &info);
+	check(error == 0, "QMD builds");
+
+	/* Version 2.2, global caching, no call limit. */
+	check(field(qmd, 576U, 4U) == 2U && field(qmd, 580U, 4U) == 2U, "QMD version 2.2");
+	check(field(qmd, 134U, 1U) == 1U && field(qmd, 378U, 1U) == 1U && field(qmd, 382U, 1U) == 0U, "QMD caching, call limit, sampler index");
+
+	/* The grid, the workgroup, the registers. */
+	check(field(qmd, 384U, 32U) == 3U && field(qmd, 416U, 16U) == 2U && field(qmd, 448U, 16U) == 1U, "QMD grid");
+	check(field(qmd, 592U, 16U) == 32U && field(qmd, 608U, 16U) == 1U && field(qmd, 624U, 16U) == 1U, "QMD workgroup");
+	check(field(qmd, 648U, 9U) == 8U && field(qmd, 955U, 5U) == 0U, "QMD registers and barriers");
+
+	/* No shared memory: 32 KiB carve-outs for one and for many, 64 KiB at most (codes 9, 9, 17). */
+	check(field(qmd, 544U, 18U) == 0U && field(qmd, 562U, 7U) == 9U && field(qmd, 657U, 7U) == 9U && field(qmd, 569U, 7U) == 17U, "QMD shared memory carve-outs");
+
+	/* Constant buffer 0 and the program. */
+	check(field(qmd, 640U, 1U) == 1U && field(qmd, 641U, 7U) == 0U, "QMD constant buffer 0 valid alone");
+	check(field(qmd, 1024U, 32U) == 0x28008000U && field(qmd, 1056U, 17U) == 1U && field(qmd, 1075U, 13U) == 0x30U, "QMD constant buffer 0 address and size");
+	check(field(qmd, 1536U, 32U) == 0x28006000U && field(qmd, 1568U, 17U) == 0U, "QMD program address");
+
+	/* A misaligned program is refused. */
+	info.program = 0x28006010ULL;
+	error = nvrtx_qmd_build(qmd, &info);
+	check(error == EINVAL, "QMD refuses a misaligned program");
+}
+
+/* Checks the launch's push buffer word by word (incrementing headers on subchannel 1). */
+static void
+check_launch_push(void)
+{
+	static const uint32_t expect[] = {
+		0x20012000U, 0x0000c5c0U,
+		0x200220a8U, 0x00000000U, 0xfe000000U,
+		0x200221ecU, 0x00000000U, 0xff000000U,
+		0x20012087U, 0x00001011U,
+		0x200120adU, 0x00280070U,
+		0x200120afU, 0x00000003U
+	};
+	uint8_t push[256];
+	uint32_t word;
+	size_t length;
+	size_t index;
+	int same;
+
+	length = nvrtx_push_compute_launch(push, 0x28007000ULL);
+	check(length == sizeof(expect), "launch push length");
+
+	same = 1;
+	for (index = 0U; index < sizeof(expect) / 4U && index * 4U < length; index++) {
+		memcpy(&word, push + index * 4U, 4U);
+		if (word != expect[index]) {
+			printf("  push word %u is 0x%08x, want 0x%08x\n", (unsigned)index, word, expect[index]);
+			same = 0;
+		}
+	}
+	check(same, "launch push words");
+}
+
+/* Compiles the first program from its IR and runs it: 32 words of 42. */
+static void
+check_first_program(void)
+{
+	static struct test_run run;
+	static struct nvrtx_compute_first first;
+	struct nvrtx_sm75_binary *binary;
+	struct nvrtx_sm75_diagnostic diagnostic;
+	uint32_t out[40];
+	uint32_t index;
+	int same;
+	int error;
+
+	nvrtx_compute_first_ir(&first);
+	binary = NULL;
+	error = nvrtx_sm75_compile_ir(&first.ir, &binary, &diagnostic);
+	check(error == 0 && binary != NULL, "the first program compiles from its IR");
+	if (binary == NULL)
+		return;
+	printf("  first: %u instructions, %u registers\n", binary->code_words / 4U, binary->gpr_count);
+
+	/* One group of 32 over 40 words. */
+	memset(&run, 0, sizeof(run));
+	run.binary = binary;
+	for (index = 0U; index < 40U; index++)
+		out[index] = 0xdeadbeefU;
+	bind(&run, 0U, 0U, out, 32U * 4U);
+	run.groups[0] = 1U;
+	run.groups[1] = 1U;
+	run.groups[2] = 1U;
+	dispatch(&run);
+
+	same = 1;
+	for (index = 0U; index < 32U; index++) {
+		if (out[index] != NVRTX_COMPUTE_FIRST_VALUE)
+			same = 0;
+	}
+	if (out[32] != 0xdeadbeefU)
+		same = 0;
+	check(!run.failed && same, "the first program writes 42 at each of 32 words");
+
+	nvrtx_sm75_binary_free(binary);
+}
+
+/* Checks the system-memory page entries of a graphics range's tables. */
+static void
+check_system_pages(void)
+{
+	static uint8_t image[0x4000U + 66U * 0x1000U];
+	uint64_t pages[2];
+	uint64_t entry;
+	size_t length;
+	int error;
+
+	length = nvrtx_mmu_gr_tables_bytes(0x8200000ULL);
+	check(length == 0x4000U + 65U * 0x1000U, "tables of 130 MiB take 65 page tables");
+	error = nvrtx_mmu_gr_tables(image, 0x1f0000000ULL, 0x20000000ULL, 0x8200000ULL);
+	check(error == 0, "tables of the compute range build");
+
+	/* Two pages at 0x28000000: page tables 64, entries 0 and 1. */
+	pages[0] = 0x123456000ULL;
+	pages[1] = 0x00789a000ULL;
+	error = nvrtx_mmu_gr_map_system(image, 0x20000000ULL, 0x8200000ULL, 0x28000000ULL, pages, 2U);
+	check(error == 0, "system pages map");
+	memcpy(&entry, image + 0x4000U + 64U * 0x1000U, 8U);
+	check(entry == ((0x123456000ULL >> 4) | 0x1U | 0x4U | 0x8U), "system page entry: valid, coherent system, volatile, not privileged");
+	memcpy(&entry, image + 0x4000U + 64U * 0x1000U + 8U, 8U);
+	check(entry == ((0x00789a000ULL >> 4) | 0xdU), "second system page entry");
+
+	/* Pages past the range are refused. */
+	error = nvrtx_mmu_gr_map_system(image, 0x20000000ULL, 0x8200000ULL, 0x281ff000ULL, pages, 2U);
+	check(error == EINVAL, "system pages past the range are refused");
+}
+
+/* Reads a field of up to 64 bits from words at a bit position. */
+static uint64_t
+field(
+	const uint32_t *words,
+	unsigned low,
+	unsigned bits)
+{
+	uint64_t value;
+	unsigned bit;
+
+	value = 0U;
+	for (bit = 0U; bit < bits; bit++) {
+		if (((words[(low + bit) / 32U] >> ((low + bit) % 32U)) & 1U) != 0U)
+			value |= (uint64_t)1U << bit;
+	}
+	return value;
 }
 
 /* Reports nonzero when an instruction is the two 64-bit halves given. */

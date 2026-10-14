@@ -49,3 +49,7 @@ endif
 ifeq ($(NVRTX_RUN),R7g)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1
 endif
+# ws037-p008 stage C: R7g with the first compute launch (stage P9c: a program the nvrtx compiler made writes 42).
+ifeq ($(NVRTX_RUN),R7c)
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1
+endif
