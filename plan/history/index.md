@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1127 / WS074 calculated Grid track lengths（2026-10-14）
+## 最新: q1128 / WS074 empty Grid line-name CSSOM（2026-10-14）
+
+[q1128履歴](queue-q1128.md): 空行名`[]`のCSSOM正規化で固定columns/rows-valid各27→29/34 subtest。invalid各42/42 whole PASS・旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1128/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1127 / WS074 calculated Grid track lengths（2026-10-14）
 
 [q1127履歴](queue-q1127.md): Grid `calc()` track長で固定columns/rows-valid各19→27/34 subtest。invalid各42/42 whole PASS・旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1127/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

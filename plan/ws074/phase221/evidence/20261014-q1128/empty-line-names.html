@@ -1,0 +1,17 @@
+<!doctype html><div id="target"></div>
+<script>
+var target = document.getElementById("target");
+["grid-template-columns", "grid-template-rows"].forEach(function (property) {
+  target.style.setProperty(property, "repeat(1, [] 10px [])");
+  var repeated = target.style.getPropertyValue(property);
+  target.style.setProperty(property, "[] 150px [] 1fr []");
+  var plain = target.style.getPropertyValue(property);
+  target.style.setProperty(property, "[one] 10px [two]");
+  var named = target.style.getPropertyValue(property);
+  target.style.removeProperty(property);
+  target.style.setProperty(property, "[] [] 10px");
+  var invalid = target.style.getPropertyValue(property);
+  console.log(property + "=" + repeated + "|" + plain + "|" + named +
+              "|" + invalid);
+});
+</script>

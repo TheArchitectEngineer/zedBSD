@@ -65,6 +65,7 @@ static int style_list_remove_at(struct vm_realm *realm, struct style_list *list,
 static int style_remove_from_list(struct vm_realm *realm, struct style_list *list, const struct vm_string *name);
 static int style_valid(struct vm_realm *realm, const struct vm_string *name, const struct vm_string *value, int *valid);
 static int style_canonical_decoration_line(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
+static int style_canonical_grid_empty_lines(struct vm_realm *realm, const struct vm_string *name, struct vm_string *value, struct vm_string **out);
 static int style_decoration_parts(const struct vm_string *value, struct wb_units parts[5]);
 static int style_decoration_longhand(const struct vm_string *name);
 static int style_decoration_get(struct vm_realm *realm, const struct style_list *list, const struct vm_string *name, vm_value *result, int *present);
@@ -810,6 +811,10 @@ style_set(
 	if (status != 0)
 		goto roots_cleanup;
 	roots[1] = &value->cell;
+	status = style_canonical_grid_empty_lines(realm, name, value, &value);
+	if (status != 0)
+		goto roots_cleanup;
+	roots[1] = &value->cell;
 
 	/* The declarations as they are. */
 	status = style_read(realm, element, &list);
@@ -1175,6 +1180,76 @@ style_valid(
 
 	/* Succeeded: the answer is in *valid. */
 	return 0;
+}
+
+/* Omits empty Grid line-name groups from an already validated inline style value. */
+static int
+style_canonical_grid_empty_lines(
+	struct vm_realm *realm,
+	const struct vm_string *name,
+	struct vm_string *value,
+	struct vm_string **out)
+{
+	struct wb_units source;
+	struct wb_units canonical;
+	size_t index;
+	size_t closing;
+	size_t next;
+	uint16_t space;
+	int changed;
+	int status;
+
+	*out = value;
+	if (!vm_string_equal_ascii(name, "grid-template-columns") &&
+	    !vm_string_equal_ascii(name, "grid-template-rows"))
+		return 0;
+	wb_units_init(&source);
+	status = vm_string_append_units(value, &source);
+	if (status != 0) {
+		wb_units_release(&source);
+		return status;
+	}
+	wb_units_init(&canonical);
+	space = ' ';
+	changed = 0;
+	index = 0;
+	while (index < source.length) {
+		/* An empty group may contain whitespace but no line name. */
+		if (source.data[index] == '[') {
+			closing = index + 1U;
+			while (closing < source.length && style_is_space(source.data[closing]))
+				closing++;
+			if (closing < source.length && source.data[closing] == ']') {
+				changed = 1;
+				while (canonical.length != 0U && style_is_space(canonical.data[canonical.length - 1U]))
+					canonical.length--;
+				next = closing + 1U;
+				while (next < source.length && style_is_space(source.data[next]))
+					next++;
+				if (canonical.length != 0U && next < source.length && source.data[next] != ')') {
+					status = wb_units_append(&canonical, &space, 1U);
+					if (status != 0)
+						goto cleanup;
+				}
+				index = next;
+				continue;
+			}
+		}
+		status = wb_units_append(&canonical, source.data + index, 1U);
+		if (status != 0)
+			goto cleanup;
+		index++;
+	}
+	if (changed) {
+		*out = vm_string_from_units(realm->heap, canonical.data, canonical.length);
+		if (*out == NULL)
+			status = ENOMEM;
+	}
+
+cleanup:
+	wb_units_release(&canonical);
+	wb_units_release(&source);
+	return status;
 }
 
 /* Canonicalizes parsed decoration keywords and the complete shorthand. */

@@ -1,0 +1,373 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['grid-template-rows'] = \"none\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"10px\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"20%\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"calc(-0.5em + 10px)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"calc(0.5em + 10px)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"calc(30% + 40vw)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"5fr\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"min-content\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"max-content\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"auto\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(10px, auto)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(20%, max-content)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(calc(-0.5em + 10px), min-content)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(calc(0.5em + 10px), 5fr)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(calc(30% + 40vw), 10px)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(min-content, 20%)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(max-content, calc(-0.5em + 10px))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"minmax(auto, calc(0.5em + 10px))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"fit-content(10px)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"fit-content(20%)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"fit-content(calc(-0.5em + 10px))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"fit-content(calc(0.5em + 10px))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"fit-content(calc(30% + 40vw))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(1, [] 10px [])\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(1, [one two] 20%)\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(2, minmax(10px, auto))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(2, fit-content(20%) [three four] 30px 40px [five six])\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"min-content repeat(5, minmax(10px, auto))\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"[] 150px [] 1fr []\" should set the property value",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(auto-fill, 10px)\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(auto-fit, [one] 20%)\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(auto-fill, minmax(30px, 5fr) [two])\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"repeat(auto-fit, [three] minmax(max-content, 6em) [four])\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    },
+    {
+      "name": "e.style['grid-template-rows'] = \"[one] repeat(2, minmax(10px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(10px, auto)) [six]\" should set the property value",
+      "status": 1,
+      "message": "assert_not_equals: property should be set got disallowed value \"\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['grid-template-rows'] = \"none\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"10px\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"20%\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"calc(-0.5em + 10px)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"calc(0.5em + 10px)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"calc(30% + 40vw)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"5fr\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"min-content\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"max-content\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"auto\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(10px, auto)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(20%, max-content)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(calc(-0.5em + 10px), min-content)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(calc(0.5em + 10px), 5fr)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(calc(30% + 40vw), 10px)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(min-content, 20%)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(max-content, calc(-0.5em + 10px))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"minmax(auto, calc(0.5em + 10px))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"fit-content(10px)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"fit-content(20%)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"fit-content(calc(-0.5em + 10px))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"fit-content(calc(0.5em + 10px))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"fit-content(calc(30% + 40vw))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(1, [] 10px [])\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(1, [one two] 20%)\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(2, minmax(10px, auto))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(2, fit-content(20%) [three four] 30px 40px [five six])\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"min-content repeat(5, minmax(10px, auto))\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"[] 150px [] 1fr []\" should set the property value",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(auto-fill, 10px)\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(auto-fit, [one] 20%)\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(auto-fill, minmax(30px, 5fr) [two])\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"repeat(auto-fit, [three] minmax(max-content, 6em) [four])\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      },
+      {
+        "name": "e.style['grid-template-rows'] = \"[one] repeat(2, minmax(10px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(10px, auto)) [six]\" should set the property value",
+        "status": 1,
+        "message": "assert_not_equals: property should be set got disallowed value \"\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-template-rows-valid.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:35553/css/css-grid/parsing/grid-template-rows-valid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"10px\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"20%\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"calc(-0.5em + 10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"calc(0.5em + 10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"calc(30% + 40vw)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"5fr\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"min-content\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"max-content\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"auto\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(10px, auto)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(20%, max-content)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(calc(-0.5em + 10px), min-content)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(calc(0.5em + 10px), 5fr)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(calc(30% + 40vw), 10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(min-content, 20%)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(max-content, calc(-0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"minmax(auto, calc(0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(20%)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(calc(-0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(calc(0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(calc(30% + 40vw))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(1, [] 10px [])\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(1, [one two] 20%)\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(2, minmax(10px, auto))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(2, fit-content(20%) [three four] 30px 40px [five six])\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"min-content repeat(5, minmax(10px, auto))\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"[] 150px [] 1fr []\\\" should set the property value\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fill, 10px)\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fit, [one] 20%)\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fill, minmax(30px, 5fr) [two])\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fit, [three] minmax(max-content, 6em) [four])\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-template-rows'] = \\\"[one] repeat(2, minmax(10px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(10px, auto)) [six]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['grid-template-rows'] = \\\"none\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"10px\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"20%\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"calc(-0.5em + 10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"calc(0.5em + 10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"calc(30% + 40vw)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"5fr\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"min-content\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"max-content\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"auto\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(10px, auto)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(20%, max-content)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(calc(-0.5em + 10px), min-content)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(calc(0.5em + 10px), 5fr)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(calc(30% + 40vw), 10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(min-content, 20%)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(max-content, calc(-0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"minmax(auto, calc(0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(10px)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(20%)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(calc(-0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(calc(0.5em + 10px))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"fit-content(calc(30% + 40vw))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(1, [] 10px [])\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(1, [one two] 20%)\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(2, minmax(10px, auto))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(2, fit-content(20%) [three four] 30px 40px [five six])\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"min-content repeat(5, minmax(10px, auto))\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"[] 150px [] 1fr []\\\" should set the property value\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fill, 10px)\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fit, [one] 20%)\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fill, minmax(30px, 5fr) [two])\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"repeat(auto-fit, [three] minmax(max-content, 6em) [four])\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"},{\"name\":\"e.style['grid-template-rows'] = \\\"[one] repeat(2, minmax(10px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(10px, auto)) [six]\\\" should set the property value\",\"status\":1,\"message\":\"assert_not_equals: property should be set got disallowed value \\\"\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}
