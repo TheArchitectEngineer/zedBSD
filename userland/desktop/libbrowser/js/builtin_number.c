@@ -294,6 +294,8 @@ number_call(
 	unsigned count,
 	vm_value *result)
 {
+	struct vm_bigint *big;
+	vm_value numeric;
 	double number;
 	int status;
 
@@ -304,10 +306,16 @@ number_call(
 	if (count == 0)
 		return 0;
 
-	/* The number. */
-	status = vm_to_number(realm, args[0], &number);
+	/* The numeric: a BigInt becomes the nearest number. */
+	status = vm_to_numeric(realm, args[0], &numeric);
 	if (status != 0)
 		return status;
+	big = vm_value_as_bigint(numeric);
+	if (big != NULL) {
+		*result = vm_value_number(vm_bigint_to_double(big));
+		return 0;
+	}
+	number = vm_value_as_number(numeric);
 
 	/* Succeeded: the number. */
 	*result = vm_value_number(number);

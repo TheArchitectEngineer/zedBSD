@@ -38,6 +38,7 @@ int js_builtin_install_date(struct vm_realm *realm);
 int js_builtin_install_promise(struct vm_realm *realm);
 int js_builtin_install_generator(struct vm_realm *realm);
 int js_builtin_install_symbol(struct vm_realm *realm);
+int js_builtin_install_bigint(struct vm_realm *realm);
 int js_builtin_install_iterator(struct vm_realm *realm);
 int js_builtin_install_collection(struct vm_realm *realm);
 int js_builtin_install_uri(struct vm_realm *realm);

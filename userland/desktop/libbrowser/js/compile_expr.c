@@ -18,6 +18,7 @@
 
 #include <string.h>
 
+static void expr_bigint(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_function(struct js_function_compiler *fc, struct js_node *node, uint32_t target, const uint16_t *name, size_t length);
 static void expr_array(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
 static void expr_object(struct js_function_compiler *fc, struct js_node *node, uint32_t target);
@@ -106,6 +107,9 @@ js_compile_expression_named(
 	case JS_NODE_STRING:
 		constant = js_constant_string(fc, node->text, node->text_length);
 		js_emit2(fc, VM_OP_LOAD_CONST, target, constant);
+		break;
+	case JS_NODE_BIGINT:
+		expr_bigint(fc, node, target);
 		break;
 	case JS_NODE_REGEXP:
 		/* A new object at each evaluation, from the pattern (the body) and the flags (the raw text after it). */
@@ -1815,7 +1819,7 @@ expr_update(
 	opcode = VM_OP_INC;
 	if (node->op == JS_P_DECREMENT)
 		opcode = VM_OP_DEC;
-	js_emit2(fc, VM_OP_TO_NUMBER, target, target);
+	js_emit2(fc, VM_OP_TO_NUMERIC, target, target);
 	js_emit2(fc, opcode, updated, target);
 
 	/* The new value written back; the prefix form's value is the new one. */
@@ -2607,4 +2611,49 @@ expr_unsupported(
 
 	/* The failure. */
 	js_compile_unsupported(fc->compiler, node, what);
+}
+
+/* Loads a BigInt literal: its digits (a 0x, 0o or 0b prefix, separators, the final n) become a BigInt constant. */
+static void
+expr_bigint(
+	struct js_function_compiler *fc,
+	struct js_node *node,
+	uint32_t target)
+{
+	char digits[512];
+	vm_value value;
+	size_t index;
+	size_t count;
+	size_t length;
+	int radix;
+	int error;
+
+	/* The text without the final n. */
+	length = node->text_length;
+	if (length > 0 && node->text[length - 1] == 'n')
+		length--;
+	index = 0;
+	radix = 10;
+	if (length > 2 && node->text[0] == '0') {
+		if ((node->text[1] | 0x20U) == 'x')
+			radix = 16;
+		if ((node->text[1] | 0x20U) == 'o')
+			radix = 8;
+		if ((node->text[1] | 0x20U) == 'b')
+			radix = 2;
+		if (radix != 10)
+			index = 2;
+	}
+
+	/* The digits without separators. */
+	count = 0;
+	for (; index < length && count + 1U < sizeof(digits); index++) {
+		if (node->text[index] == '_')
+			continue;
+		digits[count++] = (char)node->text[index];
+	}
+	error = vm_bigint_from_digits(fc->compiler->realm->heap, digits, count, radix, 0, &value);
+	if (error != 0)
+		js_compile_out_of_memory(fc->compiler);
+	js_load_value(fc, target, value);
 }

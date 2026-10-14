@@ -98,6 +98,7 @@ enum vm_opcode {
 	VM_OP_DELETE_ELEM,	/* R dst, R object, R key */
 	VM_OP_DELETE_GLOBAL,	/* R dst, C key */
 	VM_OP_DEFINE_PROP,	/* R object, C key, R value (an object literal's data property) */
+	VM_OP_TO_NUMERIC,	/* R dst, R value: ToNumeric (a BigInt stays a BigInt) */
 	VM_OP_DEFINE_ELEM,	/* R object, R key, R value (the same with a computed key) */
 	VM_OP_DEFINE_GETTER,	/* R object, R key, R function */
 	VM_OP_DEFINE_SETTER,	/* R object, R key, R function */

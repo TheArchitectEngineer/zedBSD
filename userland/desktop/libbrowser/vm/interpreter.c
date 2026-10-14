@@ -691,6 +691,7 @@ interpreter_step_js(
 	case VM_OP_IN:
 	case VM_OP_NEG:
 	case VM_OP_TO_NUMBER:
+	case VM_OP_TO_NUMERIC:
 	case VM_OP_BIT_NOT:
 	case VM_OP_NOT:
 	case VM_OP_TYPEOF:
@@ -870,6 +871,8 @@ interpreter_unary(
 	vm_value operand,
 	vm_value *value)
 {
+	struct vm_bigint *big;
+	vm_value numeric;
 	double number;
 	int32_t whole;
 	int status;
@@ -886,6 +889,32 @@ interpreter_unary(
 		if (status != 0)
 			return status;
 		return 0;
+	}
+
+	/* ToNumeric: a BigInt stays a BigInt. */
+	if (opcode == VM_OP_TO_NUMERIC) {
+		status = vm_to_numeric(realm, operand, value);
+		if (status != 0)
+			return status;
+		return 0;
+	}
+
+	/* The operators that also work on a BigInt. */
+	if (opcode == VM_OP_BIT_NOT || opcode == VM_OP_NEG || opcode == VM_OP_INC || opcode == VM_OP_DEC) {
+		status = vm_to_numeric(realm, operand, &numeric);
+		if (status != 0)
+			return status;
+		big = vm_value_as_bigint(numeric);
+		if (big != NULL) {
+			if (opcode == VM_OP_BIT_NOT)
+				status = vm_bigint_not(realm->heap, big, value);
+			else if (opcode == VM_OP_NEG)
+				status = vm_bigint_negate(realm->heap, big, value);
+			else
+				status = vm_bigint_add_small(realm->heap, big, opcode == VM_OP_INC ? 1 : -1, value);
+			return status;
+		}
+		operand = numeric;
 	}
 
 	/* ~ works on the int32. */

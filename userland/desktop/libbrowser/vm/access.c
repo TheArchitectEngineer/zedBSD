@@ -952,6 +952,8 @@ vm_to_object(
 			vm_heap_remove_root(realm->heap, &wrapper_root);
 			return status;
 		}
+	} else if (vm_value_as_bigint(value) != NULL) {
+		wrapper->kind = VM_KIND_BIGINT;
 	} else {
 		wrapper->kind = VM_KIND_SYMBOL;
 	}
@@ -1575,6 +1577,10 @@ access_primitive_prototype(
 	is_string = vm_value_is_string(value);
 	if (is_string)
 		return realm->intrinsics[VM_INTRINSIC_STRING_PROTOTYPE];
+
+	/* A BigInt. */
+	if (vm_value_as_bigint(value) != NULL)
+		return realm->intrinsics[VM_INTRINSIC_BIGINT_PROTOTYPE];
 
 	/* A symbol. */
 	is_symbol = access_is_symbol(value);

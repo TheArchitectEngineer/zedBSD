@@ -1102,6 +1102,13 @@ json_property(
 		}
 	}
 
+	/* A BigInt has no JSON form. */
+	is_object = vm_value_is_object(value);
+	if (vm_value_as_bigint(value) != NULL || (is_object && ((struct vm_object *)vm_value_as_cell(value))->kind == VM_KIND_BIGINT)) {
+		status = vm_throw_type_error(realm, "Do not know how to serialize a BigInt");
+		return status;
+	}
+
 	/* The kinds of value. */
 	*written = 1;
 	if (value == VM_VALUE_NULL) {
