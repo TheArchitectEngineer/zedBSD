@@ -93,8 +93,19 @@
 #define OBJECTS_SEM_RELEASE_WFI		(1U << 20)
 #define OBJECTS_MEM_OP_MEMBAR		(5U << 27)
 
+/* The copy engine's methods and values for a fill: the constant, the component setup, the destination, the launch. */
+#define OBJECTS_COPY_SET_OBJECT		0x000U
+#define OBJECTS_COPY_LAUNCH		0x300U
+#define OBJECTS_COPY_OFFSET_OUT_UPPER	0x408U
+#define OBJECTS_COPY_LINE_LENGTH	0x418U
+#define OBJECTS_COPY_REMAP_CONST_A	0x700U
+#define OBJECTS_COPY_REMAP_COMPONENTS	0x708U
+#define OBJECTS_COPY_REMAP_FILL_A	(0x4U | (0x3U << 16))
+#define OBJECTS_COPY_LAUNCH_FILL	(0x2U | (1U << 2) | (1U << 7) | (1U << 8) | (1U << 10))
+
 static void objects_clear(uint8_t *bytes, size_t length);
 static size_t objects_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
+static size_t objects_method_on(uint8_t *push, size_t at, uint32_t subchannel, uint32_t method, uint32_t count);
 static void objects_memory(uint8_t *params, size_t at, uint64_t base, uint64_t size, uint32_t space, uint32_t cache);
 
 /*
@@ -305,6 +316,54 @@ nvrtx_push_fence(
 }
 
 /*
+ * Writes the push buffer of a copy-engine fill on a subchannel: the class
+ * bound there, the constant, and one line of words at the destination.
+ *
+ * Returns the length in bytes.
+ */
+size_t
+nvrtx_push_copy_fill(
+	uint8_t *push,
+	uint32_t subchannel,
+	uint64_t destination,
+	uint32_t words,
+	uint32_t value)
+{
+	size_t at;
+
+	/* Binds the copy class to the subchannel. */
+	at = objects_method_on(push, 0U, subchannel, OBJECTS_COPY_SET_OBJECT, 1U);
+	nvrtx_put32(push, at, NVRTX_CLASS_COPY);
+	at += 4U;
+
+	/* Fills from one 4-byte constant. */
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_REMAP_CONST_A, 1U);
+	nvrtx_put32(push, at, value);
+	at += 4U;
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_REMAP_COMPONENTS, 1U);
+	nvrtx_put32(push, at, OBJECTS_COPY_REMAP_FILL_A);
+	at += 4U;
+
+	/* The destination's virtual address, then one line of the given words (out offset, pitches, length, count). */
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_OFFSET_OUT_UPPER, 2U);
+	nvrtx_put32(push, at, (uint32_t)(destination >> 32));
+	nvrtx_put32(push, at + 4U, (uint32_t)(destination & 0xffffffffU));
+	at += 8U;
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_LINE_LENGTH, 2U);
+	nvrtx_put32(push, at, words);
+	nvrtx_put32(push, at + 4U, 1U);
+	at += 8U;
+
+	/* Launches a non-pipelined, flushed, pitch-to-pitch fill. */
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_LAUNCH, 1U);
+	nvrtx_put32(push, at, OBJECTS_COPY_LAUNCH_FILL);
+	at += 4U;
+
+	/* Succeeded: the push buffer's length. */
+	return at;
+}
+
+/*
  * Writes one ring entry pointing at a push buffer segment of a number of words.
  */
 void
@@ -348,7 +407,7 @@ objects_clear(
 		bytes[at] = 0U;
 }
 
-/* Writes an incrementing method header for subchannel 0 and returns where its data goes. */
+/* Writes an incrementing method header for subchannel 0 (the host's methods) and returns where its data goes. */
 static size_t
 objects_method(
 	uint8_t *push,
@@ -356,8 +415,26 @@ objects_method(
 	uint32_t method,
 	uint32_t count)
 {
-	/* The header: incrementing, the count, subchannel 0, the method's word address. */
-	nvrtx_put32(push, at, OBJECTS_METHOD_INCREMENT | (count << 16) | (method >> 2));
+	size_t data;
+
+	/* The host's methods go on subchannel 0. */
+	data = objects_method_on(push, at, 0U, method, count);
+
+	/* Succeeded: the data follows the header. */
+	return data;
+}
+
+/* Writes an incrementing method header for a subchannel and returns where its data goes. */
+static size_t
+objects_method_on(
+	uint8_t *push,
+	size_t at,
+	uint32_t subchannel,
+	uint32_t method,
+	uint32_t count)
+{
+	/* The header: incrementing, the count, the subchannel, the method's word address. */
+	nvrtx_put32(push, at, OBJECTS_METHOD_INCREMENT | (count << 16) | (subchannel << 13) | (method >> 2));
 
 	/* Succeeded: the data follows the header. */
 	return at + 4U;

@@ -638,6 +638,15 @@ test_objects(void)
 	nvrtx_ring_entry(entry, 0x120004000ULL, 13);
 	check(nvrtx_get32(entry, 0) == 0x20004000U && nvrtx_get32(entry, 4) == (1u | (13u << 10)), "ring: entry");
 
+	n = nvrtx_push_copy_fill(push, 4, 0x20005100ULL, 64, 0xc0ffee01U);
+	check(n == 56, "copy: fill length");
+	check(nvrtx_get32(push, 0) == ((1u << 29) | (1u << 16) | (4u << 13)) && nvrtx_get32(push, 4) == 0xc5b5, "copy: class on subchannel 4");
+	check(nvrtx_get32(push, 8) == ((1u << 29) | (1u << 16) | (4u << 13) | (0x700 >> 2)) && nvrtx_get32(push, 12) == 0xc0ffee01U, "copy: constant");
+	check(nvrtx_get32(push, 20) == (4u | (3u << 16)), "copy: remap constant A, 4-byte components");
+	check(nvrtx_get32(push, 24) == ((1u << 29) | (2u << 16) | (4u << 13) | (0x408 >> 2)) && nvrtx_get32(push, 28) == 0 && nvrtx_get32(push, 32) == 0x20005100U, "copy: destination");
+	check(nvrtx_get32(push, 40) == 64 && nvrtx_get32(push, 44) == 1, "copy: one line of 64");
+	check(nvrtx_get32(push, 48) == ((1u << 29) | (1u << 16) | (4u << 13) | (0x300 >> 2)) && nvrtx_get32(push, 52) == (2u | 4u | 0x80u | 0x100u | 0x400u), "copy: launch");
+
 	nvrtx_free_params(params, 0xc0de0001U, 0xc0dec46fU);
 	check(nvrtx_get32(params, 0) == 0xc0de0001U && nvrtx_get32(params, 4) == 0 && nvrtx_get32(params, 8) == 0xc0dec46fU && nvrtx_get32(params, 12) == 0, "free: params");
 }

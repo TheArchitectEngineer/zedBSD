@@ -42,7 +42,17 @@
 #define RPC_HALT_TIMEOUT_US		2000000U
 #define RPC_STEP_US			10U
 
+/* The channel-error event's fields: engine, channel, kind of exception, faulting address and fault kind. */
+#define RPC_ERROR_ENGINE_AT		0U
+#define RPC_ERROR_CHANNEL_AT		4U
+#define RPC_ERROR_TYPE_AT		16U
+#define RPC_ERROR_FAULT_LOW_AT		28U
+#define RPC_ERROR_FAULT_HIGH_AT		32U
+#define RPC_ERROR_FAULT_KIND_AT		36U
+#define RPC_ERROR_BYTES			40U
+
 static int rpc_sequencer(struct nvrtx_gpu *gpu, uint8_t *payload, size_t length);
+static int rpc_exchange(struct nvrtx_gpu *gpu, uint32_t function, size_t call_length, size_t *reply_length);
 
 /*
  * Puts one call in the command queue and rings the doorbell.
@@ -153,6 +163,18 @@ nvrtx_rpc_wait(
 			continue;
 		}
 
+		/* A channel error is reported with its channel, its kind and the faulting address (P6). */
+		if (got_function == NVRTX_EVENT_CHANNEL_ERROR && *length >= RPC_ERROR_BYTES) {
+			nvrtx_stage_mark("P6 channel error: engine %x chid %u type %u fault %08x%08x kind %u",
+			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_ENGINE_AT),
+			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_CHANNEL_AT),
+			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT),
+			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_HIGH_AT),
+			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_LOW_AT),
+			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_KIND_AT));
+			continue;
+		}
+
 		/* The firmware's own prints are dropped; other events are reported and dropped. */
 		if (got_function != NVRTX_EVENT_LIBOS_PRINT)
 			nvrtx_stage_mark("rpc: message %x (%zu bytes) while waiting for %x", (unsigned)got_function, *length, (unsigned)function);
@@ -160,6 +182,143 @@ nvrtx_rpc_wait(
 
 	/* The message never came. */
 	return ETIMEDOUT;
+}
+
+/*
+ * Allocates one object under the driver's client and checks the status the firmware returns.
+ */
+int
+nvrtx_rm_allocate(
+	struct nvrtx_gpu *gpu,
+	uint32_t parent,
+	uint32_t handle,
+	uint32_t class_number,
+	const uint8_t *parameters,
+	size_t length)
+{
+	struct nvrtx_object object;
+	size_t call_length;
+	size_t reply_length;
+	uint32_t status;
+	int error;
+
+	/* Builds the call. */
+	object.client = NVRTX_HANDLE_CLIENT;
+	object.parent = parent;
+	object.handle = handle;
+	object.class_number = class_number;
+	call_length = nvrtx_alloc_call(gpu->call, NVRTX_CALL_PAYLOAD_MAX, &object, parameters, length);
+	if (call_length == 0U)
+		return E2BIG;
+
+	/* Sends it and waits for the reply. */
+	error = rpc_exchange(gpu, NVRTX_CALL_ALLOCATE, call_length, &reply_length);
+	if (error != 0)
+		return error;
+
+	/* The reply's status is the resource manager's verdict. */
+	if (reply_length < NVRTX_ALLOC_HEADER_BYTES)
+		return EIO;
+	status = nvrtx_get32(gpu->reply, NVRTX_ALLOC_STATUS_AT);
+	if (status != 0U) {
+		nvrtx_stage_mark("rm: class %04x object %08x status %08x", (unsigned)class_number, (unsigned)handle, (unsigned)status);
+		return EIO;
+	}
+
+	/* Succeeded: the object exists. */
+	return 0;
+}
+
+/*
+ * Sends a control to an object and checks the status the firmware returns.
+ *
+ * The reply's parameters are left at *reply (inside gpu->reply) with their length.
+ */
+int
+nvrtx_rm_control(
+	struct nvrtx_gpu *gpu,
+	uint32_t client,
+	uint32_t object,
+	uint32_t command,
+	const uint8_t *parameters,
+	size_t length,
+	const uint8_t **reply,
+	size_t *reply_length)
+{
+	size_t call_length;
+	size_t got;
+	uint32_t status;
+	int error;
+
+	/* Builds the call. */
+	call_length = nvrtx_control_call(gpu->call, NVRTX_CALL_PAYLOAD_MAX, client, object, command, parameters, length);
+	if (call_length == 0U)
+		return E2BIG;
+
+	/* Sends it and waits for the reply. */
+	error = rpc_exchange(gpu, NVRTX_CALL_CONTROL, call_length, &got);
+	if (error != 0)
+		return error;
+
+	/* The reply's status is the resource manager's verdict. */
+	if (got < NVRTX_CONTROL_HEADER_BYTES)
+		return EIO;
+	status = nvrtx_get32(gpu->reply, NVRTX_CONTROL_STATUS_AT);
+	if (status != 0U) {
+		nvrtx_stage_mark("rm: control %08x status %08x", (unsigned)command, (unsigned)status);
+		return EIO;
+	}
+
+	/* Succeeded: the reply's parameters follow its header. */
+	*reply = gpu->reply + NVRTX_CONTROL_HEADER_BYTES;
+	*reply_length = got - NVRTX_CONTROL_HEADER_BYTES;
+	return 0;
+}
+
+/*
+ * Frees one object of the driver's client.
+ */
+int
+nvrtx_rm_free(
+	struct nvrtx_gpu *gpu,
+	uint32_t object)
+{
+	size_t reply_length;
+	int error;
+
+	/* Builds the call and waits for its reply. */
+	nvrtx_free_params(gpu->call, NVRTX_HANDLE_CLIENT, object);
+	error = rpc_exchange(gpu, NVRTX_CALL_FREE, NVRTX_FREE_PARAMS_BYTES, &reply_length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the object is gone. */
+	return 0;
+}
+
+/* Sends the call built in gpu->call and waits for its numbered reply. */
+static int
+rpc_exchange(
+	struct nvrtx_gpu *gpu,
+	uint32_t function,
+	size_t call_length,
+	size_t *reply_length)
+{
+	uint32_t sequence;
+	int error;
+
+	/* Sends the call with the next sequence number. */
+	error = nvrtx_rpc_send(gpu, function, gpu->call, call_length, 1, &sequence);
+	if (error != 0)
+		return error;
+
+	/* Waits for the reply with the same number. */
+	error = nvrtx_rpc_wait(gpu, function, sequence, NVRTX_CALL_TIMEOUT_US, reply_length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the reply is in gpu->reply. */
+	return 0;
 }
 
 /* Performs the register operations of one CPU sequencer message, in order. */

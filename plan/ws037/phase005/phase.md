@@ -63,7 +63,7 @@ Queue: Q1 の割当（2026-10-14「次は p005 … を 4a〜4e と同じ形で�
 | run | 語 | 合格の印 |
 | --- | --- | --- |
 | R5 | `nvrtx.stop=P5` | R4 の印に加えて `P4 ok: vaspace`、最後に `P7 ok: region torn down` |
-| R6 | `nvrtx.stop=P6` | R5 に加えて `P5 ok: channel 8 on runlist R`、`P5 ok: fence 0x1234 reached` |
+| R6 | `nvrtx.stop=P6` | R5 に加えて `P5 ok: channel 8 on runlist R`、`P5 ok: fence 0x1234 reached …`、`P5 ok: copy engine filled 64 words`（その前に `fence 0x1235`）。P6 は飛ばし、P7 の unload が消す |
 | R7 | （stop 無し） | R6 に加えて `P6 ok: channel and vaspace freed`、`P7 ok: region torn down` |
 
 判定は p004 と同じ（仮想の VGA の画面の PNG と serial の対話の `dmesg | grep nvrtx`、log では判定しない）。固まった時は gdbstub と QMP。
@@ -80,3 +80,15 @@ Queue: Q1 の割当（2026-10-14「次は p005 … を 4a〜4e と同じ形で�
 ## 5'. 範囲の外
 
 BAR1・BAR2 の map、VRAM の汎用の allocator、複数の channel・session、`drv_gpu_ops` への登録、display（p006）、3D（p007）。
+
+## 結果（2026-10-14、P1）
+
+| 単位 | commit | 中身 |
+| --- | --- | --- |
+| 設計 | `b49989dc6`・`476b1bd4a` | この phase.md、`config-amd64-nvrtx.mk` の R4（`stop=P4`）〜R7 |
+| 5a | `6f709626a` | `mmu.c`（VER2 の 5 段の表・instance block の PDB・FB region からの VRAM の塊）、`objects.c`（control の call・vaspace・SET_PAGE_DIRECTORY・device info・channel の 368 byte・fence の push・GPFIFO の entry・FREE） |
+| 5b〜5d | `d0db26710` | `channel.c`（P4: VRAM の塊・PRAMIN の書き込みと読み戻し・vaspace・根・TLB の invalidate。P5: device info から copy engine・method buffer・instance block と USERD・channel・BIND・SCHEDULE・fence。P6: 待ちの間の RC の event の印・channel と vaspace の FREE・UNSET_PAGE_DIRECTORY）。`rpc.c` に `nvrtx_rm_allocate`・`nvrtx_rm_control`・`nvrtx_rm_free` と RC の event の印。`gsp.c` が P3 の後に P4・P5 を呼び、終わりに P6 の停止 → P7 |
+| 5e | （この commit） | copy の object（0xc5b5、subchannel 4）と 64 word の fill（remap の定数）、その後の fence 0x1235、words の確認。`nvrtx.stop=P5e` で飛ばせる |
+
+- 検証: host 試験 `nvrtx-gsp-host-test.sh` 165 項目 PASS（表の各段の entry・dual PDE の small 側・PTE の system coherent・volatile、instance block の PDB と subcontext、FB region の選び方、control の header、device info からの選び方、channel の引数の各欄、fence と fill の method、GPFIFO の entry）。amd64 の y の kernel は rc 0・warning 0・check PASS。既定 n は `vmunix.mk` の `ifeq` の中だけの変更なので変わらない。
+- 未実施: 実機（方式 B）での R5〜R7。危険は 5 節（特に 1: copy の channel に golden context が要るか、2: PRAMIN の窓）。
