@@ -1458,6 +1458,7 @@ enable_output(
 	uint32_t count;
 	uint32_t frame;
 	unsigned index;
+	bool replaced;
 	int error;
 
 	/* The size: the firmware's, but at least a whole NV12 frame of the format. */
@@ -1474,7 +1475,9 @@ enable_output(
 		count = MMAL_OUTPUT_BUFFERS;
 
 	/* Replaces the bounce buffers when the size grew; none may be with the firmware. */
+	replaced = false;
 	if (size > decoder->output_size || count != decoder->output_count) {
+		replaced = true;
 		for (index = 0; index < decoder->output_count; index++) {
 			if (decoder->outputs[index].with_firmware) {
 				kern_logf("rpi4-mmal: output buffer %u not given back before a resize\n", index);
@@ -1510,16 +1513,24 @@ enable_output(
 		return error;
 	decoder->output_enabled = true;
 
-	/* Gives every buffer to the firmware. */
+	/*
+	 * Gives every buffer to the firmware but those whose memory was kept
+	 * and that hold a frame: one received before the port was disabled
+	 * (the format change's first frame comes right after the event), and
+	 * the one the caller holds.  They go back when the caller is done.
+	 */
 	for (index = 0; index < count; index++) {
 		decoder->outputs[index].with_firmware = false;
+		if (!replaced && (decoder->outputs[index].ready || decoder->outputs[index].held))
+			continue;
 		decoder->outputs[index].ready = false;
 		decoder->outputs[index].held = false;
 		error = give_output(decoder, index);
 		if (error != 0)
 			return error;
 	}
-	decoder->held_output = 0;
+	if (replaced)
+		decoder->held_output = 0;
 
 	/* Succeeded: the firmware can output frames. */
 	return 0;
