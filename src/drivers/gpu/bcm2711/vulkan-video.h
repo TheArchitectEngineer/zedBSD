@@ -22,6 +22,7 @@
 
 struct bcm2711_render_device;
 struct bcm2711_vulkan_resource;
+struct bcm2711_vulkan_command_buffer;
 
 /* The NV12 format and the video image usages and layouts the executor accepts. */
 #define BCM2711_VIDEO_FORMAT_NV12		1000156003U
@@ -55,10 +56,26 @@ bool bcm2711_vulkan_video_event(uint32_t opcode);
 
 /*
  * Executes one recorded video or query event in the native job, with the
- * controller mutex held.  EINPROGRESS: a decode whose frame has not come
- * yet; the job's step ends at the event and the next step runs it again.
+ * controller mutex held.  EINPROGRESS: a decode that has no room in the
+ * decoder yet, or a reset whose decodes' frames have not come; the job's
+ * step ends at the event and the next step runs it again.
  */
 int bcm2711_vulkan_video_run(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_record *record);
+
+/*
+ * Waits for the frames of the decodes in flight whose images a copy, a
+ * blit or an upload names, with the controller mutex held: zero when they
+ * are placed (or given up), EINPROGRESS while they have not come; the
+ * job's step then ends at the command and the next step calls again.
+ */
+int bcm2711_vulkan_video_settle(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_record *record);
+
+/*
+ * Waits for the frames of the decodes a command buffer recorded, before an
+ * execution with a fence ends, with the controller mutex held: zero when
+ * none is in flight, EINPROGRESS while one is.
+ */
+int bcm2711_vulkan_video_settle_commands(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_command_buffer *command);
 
 /* Lays out an NV12 image: the row pitch, the chroma plane's offset and the bytes. */
 void bcm2711_vulkan_video_nv12_layout(uint32_t width, uint32_t height, uint32_t *pitch, uint64_t *chroma, uint64_t *bytes);

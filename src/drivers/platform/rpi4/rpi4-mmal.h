@@ -10,11 +10,14 @@
  * over VCHIQ.
  *
  * A decoder is fed whole access units and hands back decoded NV12 frames.
- * The client is synchronous and simple: a caller fills the decoder's input
- * staging, sends it, and receives frames one at a time into the decoder's
- * own bounce memory, which is cached (the client keeps it coherent with the
- * VPU), so the caller reads a frame quickly.  Every bulk transfer's memory
- * stays the decoder's until the firmware has completed it.
+ * The client is synchronous and simple: a caller fills one of the decoder's
+ * input staging areas, sends it (several units may be in flight, each in
+ * an area of its own), and receives frames in the order they came into the
+ * decoder's own bounce memory, which is cached (the client keeps it
+ * coherent with the VPU), so the caller reads a frame quickly.  A received
+ * frame's buffer is the caller's until it releases it.  Every bulk
+ * transfer's memory stays the decoder's until the firmware has completed
+ * it.
  */
 
 #ifndef KERN_DRIVERS_RPI4_MMAL_H
@@ -34,10 +37,11 @@
 struct drv_rpi4_mmal_decoder;
 
 /*
- * One decoded frame: its time stamp and flags, the bytes received, and the
- * layout of the planes in them.
+ * One decoded frame: the handle that releases it, its time stamp and
+ * flags, the bytes received, and the layout of the planes in them.
  */
 struct drv_rpi4_mmal_frame {
+	unsigned handle;
 	int64_t pts;
 	uint32_t flags;
 	uint32_t length;
@@ -54,17 +58,20 @@ struct drv_rpi4_mmal_frame {
 /*
  * Creates a decoder for H.264 pictures of up to width by height samples.
  *
- * input_bytes is the size of each of the two input staging areas, the
- * largest access unit the decoder takes.  Waits for VCHIQ's connection.
- * Thread context only.
+ * input_bytes is the size of each input staging area, the largest access
+ * unit the decoder takes.  frames is the number of output buffers the
+ * decoder has at least (the frames the caller keeps and those decoding;
+ * zero for the firmware's own number, at most eight).  Waits for VCHIQ's
+ * connection.  Thread context only.
  */
-int drv_rpi4_mmal_decoder_create(uint32_t width, uint32_t height, uint32_t input_bytes, struct drv_rpi4_mmal_decoder **result);
+int drv_rpi4_mmal_decoder_create(uint32_t width, uint32_t height, uint32_t input_bytes, uint32_t frames, struct drv_rpi4_mmal_decoder **result);
 
 /*
  * Reports the input staging the next access unit goes into, waiting up to
- * one second until the firmware has finished with it.
+ * timeout_ms until the firmware has finished with it (ETIMEDOUT; zero only
+ * looks).
  */
-int drv_rpi4_mmal_decoder_input(struct drv_rpi4_mmal_decoder *decoder, uint8_t **staging, uint32_t *capacity);
+int drv_rpi4_mmal_decoder_input(struct drv_rpi4_mmal_decoder *decoder, unsigned timeout_ms, uint8_t **staging, uint32_t *capacity);
 
 /*
  * Sends the access unit written into the staging the last input call gave.
@@ -86,15 +93,23 @@ int drv_rpi4_mmal_decoder_send(struct drv_rpi4_mmal_decoder *decoder, uint32_t b
 int drv_rpi4_mmal_decoder_end(struct drv_rpi4_mmal_decoder *decoder);
 
 /*
- * Receives the next decoded frame, waiting up to timeout_ms.
+ * Receives the oldest decoded frame not received yet, waiting up to
+ * timeout_ms.
  *
  * pixels receives the frame's bytes in the decoder's cached bounce memory,
- * valid until the next receive or flush.  ETIMEDOUT means no frame came in
- * time.
+ * valid until the frame's handle is released or the decoder flushed.
+ * ETIMEDOUT means no frame came in time.
  */
 int drv_rpi4_mmal_decoder_receive(struct drv_rpi4_mmal_decoder *decoder, unsigned timeout_ms, struct drv_rpi4_mmal_frame *frame, const uint8_t **pixels);
 
-/* Drops every picture and reference the decoder holds, as at a seek. */
+/* Gives a received frame's buffer back to the firmware: handle is the frame's. */
+int drv_rpi4_mmal_decoder_release(struct drv_rpi4_mmal_decoder *decoder, unsigned handle);
+
+/*
+ * Drops every picture and reference the decoder holds, as at a seek; the
+ * frames the caller holds go back to the firmware, and their handles with
+ * them.
+ */
 int drv_rpi4_mmal_decoder_flush(struct drv_rpi4_mmal_decoder *decoder);
 
 /* Destroys a decoder; memory a bulk transfer still holds is kept, not freed. */

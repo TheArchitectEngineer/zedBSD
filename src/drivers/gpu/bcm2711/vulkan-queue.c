@@ -22,6 +22,10 @@
 #include "drivers/gpu/bcm2711/vulkan-resource.h"
 #include "drivers/gpu/bcm2711/vulkan-memory.h"
 #include "drivers/gpu/bcm2711/buffer.h"
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-command.h"
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 
 /* Submission metadata and prepared snapshots have independent finite bounds and never occupy the kernel stack. */
 #define QUEUE_BATCHES 64U
@@ -728,6 +732,9 @@ execution_step(
 	bool ran;
 	int disposed;
 	int error;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	uint32_t index;
+#endif
 
 	/* Actions run in submission order from where the last step stopped. */
 	execution = (struct queue_execution *)base;
@@ -779,6 +786,26 @@ execution_step(
 			return disposed;
 		execution->cursor++;
 	}
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/*
+	 * An execution with a fence ends only when its decodes' frames are in
+	 * their images: the host may read them once the fence signals.  The
+	 * step ends meanwhile and the next one looks again (ws236).
+	 */
+	if (execution->owner.fence != NULL) {
+		for (index = 0; index < execution->owner.action_count; index++) {
+			action = &execution->owner.actions[index];
+			if (action->kind != QUEUE_COMMAND)
+				continue;
+			error = bcm2711_vulkan_video_settle_commands(controller, action->object->payload);
+			if (error == EINPROGRESS)
+				return 0;
+			if (error != 0)
+				return error;
+		}
+	}
+#endif
 
 	/* Succeeded: every action ran. */
 	*done = true;
