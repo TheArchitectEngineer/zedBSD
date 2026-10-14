@@ -327,4 +327,4 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
 1. 起動から 60 秒後に SSH で `dmesg | grep nvrtx` の全文（`P8c ok`・`P9w ok`、`nvrtx: vk: command N refused`・`D3 fail`・`a stage … did not compile` の有無）。
 2. SSH で `ps -ax | grep -E 'wayland|sessiond'`（compositor が動いているか）と `ls /dev/gpu*`。
 3. SSH で `keiland-shot /tmp/r9k.png` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` が合格の印、PNG を scp で host へ取り、結果の md に貼る（login の画面か desktop が描かれていること）。
-4. FAIL の時: compositor の log（`/var/log/` の wayland・sessiond の物、無ければ `ls /var/log` の結果）と 1 の dmesg を記録。
+4. FAIL の時: `/var/log/sessiond.log`・`/var/log/greeter.log`（login の画面の compositor の出力）と 1 の dmesg を記録。
