@@ -39,3 +39,26 @@ Phase disposition: normal
 - decode の間（1 枚 約 10〜20 ms の見込み）executor の thread は MMAL を待つ（mutex は離すので ioctl は進むが、他の session の V3D の仕事は待つ、R3）。
 - DPB の slot の規則（active・inactive）は検べない（firmware が参照を持つ）。
 - 出力の image は 1 GiB の下の V3D の memory（VPU の DMA が直に書く）。
+
+## 自己の bug の review（2026-10-14 夜、P3 が起動した review の agent、読むだけ）と直し（e402ddc69）
+
+| 指摘 | 直し |
+| --- | --- |
+| H1 `status_pool` の解放後の使用 | decode の記録が同じ command buffer の開いた begin query を借りる（`open_query`）。session に pool を持たない |
+| H2 複数の decoder で受信の bulk が交差 | `MMAL_DECODERS` を 1 に（2 つ目の session は INITIALIZATION_FAILED → libmedia は software）。到着の順の一括の受信は残り（ベータ3） |
+| H3 到着の queue が小さい | 48 に、message は 512 byte（port info の返事 316 byte が切れていた） |
+| M4 bulk の取り消しが send lock の外 | lock の中で取り消す |
+| M5 受信の thread が send lock を待つ | 受信の thread の返事（CLOSE・PAUSE・REMOTE_USE_ACTIVE）は列に置き、送り手か受信の thread が trylock で送る。bulk の queue の空き待ちは send lock の外 |
+| M7 flush の形 | 入力を送った後で firmware の版が 15 以上の時だけ PORT_FLUSH と dummy bulk、他は PORT_ACTION FLUSH |
+| M8 返った input の bulk の長さ | 長さを 4 に丸めて受ける、長さ 0 の EOS は 8 byte |
+| M9 `decoder_input` の起き損ね | 数えと待ちの sequence を同じ lock の中で |
+| M10 destroy の後に buffer を渡す | disable の前に `output_enabled` を落とし、disable と destroy の間で pump |
+| M11 遅れた frame | pts の無い frame は今の decode の物とする |
+| M12 送った set の記録 | unit が送れなかった時は記録を消す（次で送り直す） |
+| L13 4 GiB の wrap | 送った slot の数を別に数える |
+| L14 CONNECT の取りこぼし | 繋がるまで受信の thread が 20 ms ごとに trigger を鳴らす |
+| L15 古い port の CLOSE・bulk の完了 | remote port を照合 |
+| L18 受信の slot の番号 | master の slot の範囲で検べる |
+| 他 | control の window の close の失敗を返す、parameters の容量を取る前に数える、decoder の入力の待ちも window の中、NV12 でない出力は skip、query の結果の stride の検査、SPS・PPS の値の範囲、set の書き場を session の heap に |
+
+残り（記録だけ）: M6 format change で ready の frame を捨てる（最初の SPS の時だけで影響は小さい）、L16 close の時に残った bulk の page list（log のみ）、L17 PAUSE の間も送る（firmware が PAUSE を送るのは suspend の時だけ）。
