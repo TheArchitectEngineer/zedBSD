@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は T1-679 で FAIL（libvulkan が SAMPLED の照会を拒んでいた）→ 95c47d971 で直し、T2 の再試験待ち）
+Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は T1-679（libvulkan が SAMPLED の照会を拒む）・T1-680（kernel が export の identity の照会に答えない）で FAIL、両方直して T2 の再試験待ち）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -170,6 +170,13 @@ Phase disposition: normal
 - 再試験は依頼 3 と同じ手順に `/lib/libvulkan.so` の差し替えを足す。
 - uname の版は `/etc/os-release`（userland）から来るので kernel の新旧は分からない（kernel の banner は版だけ）。kernel は `/boot/boot0/vmunix` の cksum で確かめる。
 - Pi で PNG を撮るには、keiland-shot を arm64 の dynamic の規則（`platform/common/userland-dynamic.mk`）に足し、`ZEDBSD_TEST_SCREEN_CAPTURE := y` の試験の config で compositor（`bin/wayland`）と keiland-shot を作って差し替える必要がある（共有の build の file なので Q1 の判断）。
+
+### T2 の結果（T1-680、2026-10-16、Pi 4 実機、main 7d03555d8）: FAIL → 直した
+
+- 照会は通り `pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)`（baseline 14）。続いて `vkGetMemoryFdKHR failed (-4)` と `a context of pictures the GPU holds failed (1004); pictures are read back`（libmedia が readback の context で作り直した）。全て readback の道（high shown 98・late 194）。落ちない。結果 `plan/agents/T2/results-20261016-t1-680.md`。
+- 原因: libvulkan の `vkGetMemoryFdKHR` は fd に device と driver の UUID を刻むため `vulkan_physical_identity`（`GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2` に `VkPhysicalDeviceIDProperties` を連ねた照会）を送るが、bcm2711 の kernel はこの opcode を扱わず、`VK_ERROR_DEVICE_LOST`（-4）になっていた（Venus の host だけが答えていた。native の V3D で OPAQUE_FD の allocation の export を使うのは今回が初めて）。
+- 直し: `src/drivers/gpu/bcm2711/vulkan-query.c` に `identity_query`（chain が properties2 → ID properties → 終わりの照会だけに答える。device の UUID・driver の UUID は固定の 16 byte、LUID なし、続けて普通の properties）。どの context も同じ値を返すので、libmedia（export）と videoplayer（import）の照合が合う。`plan/ws141/tests/vulkan-device-host-test.c` に libvulkan と同じ要求と読みで 2 回照会して同じ UUID になる確かめを足した（`ws236 p011 native device identity for exported allocations: PASS`、全 32 行 PASS）。rpi4 の vmunix warning 0。
+- Pi の PNG: `userland/tests/keiland-shot/Makefile` の platform に rpi4 を足し（arm64 の basic の command の規則で作れる。共有の `userland-dynamic.mk` の変更は不要だった）、`plan/ws236/tests/config-rpi4-shot.mk`（`ZEDBSD_TEST_SCREEN_CAPTURE := y` と keiland-shot）で compositor（`bin/wayland`、`KWL SHOT` を持つ）と `bin/keiland-shot`（aarch64）が build できることを確かめた。
 
 ### presenter の 2 frame 重ねの検討（2026-10-16、P3、Q1 の依頼）
 

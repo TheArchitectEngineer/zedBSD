@@ -828,6 +828,9 @@ main(
 	struct vulkan_writer writer;
 	struct vulkan_reader reader;
 	VkPhysicalDeviceProperties properties;
+	uint8_t device_uuid[2][VK_UUID_SIZE];
+	uint8_t driver_uuid[2][VK_UUID_SIZE];
+	uint8_t luid[VK_LUID_SIZE];
 	VkPhysicalDeviceFeatures features;
 	VkPhysicalDeviceMemoryProperties memory;
 	VkQueueFamilyProperties family;
@@ -915,6 +918,39 @@ main(
 	for (index = 0; index < sizeof(features); index++) {
 		assert(((uint8_t *)&features)[index] == 0);
 	}
+
+	/*
+	 * The identity query as libvulkan sends it before exporting an allocation
+	 * (external-properties.c, vulkan_physical_identity, ws236-p011): the
+	 * chain's headers, two 16-byte UUIDs and an empty LUID, then the
+	 * ordinary properties; the same answer every time.
+	 */
+	for (index = 0; index < 2U; index++) {
+		begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2, 1);
+		vulkan_write_u64(&writer, 20);
+		vulkan_write_u64(&writer, 1U);
+		vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
+		vulkan_write_u64(&writer, 1U);
+		vulkan_write_u32(&writer, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
+		vulkan_write_u64(&writer, 0U);
+		error = execute(session, &writer, &reader);
+		assert(error == 0 && vulkan_read_u64(&reader) == 1);
+		assert(vulkan_read_u32(&reader) == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 && vulkan_read_u64(&reader) == 1);
+		assert(vulkan_read_u32(&reader) == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES && vulkan_read_u64(&reader) == 0);
+		assert(vulkan_read_u64(&reader) == VK_UUID_SIZE);
+		vulkan_read_bytes(&reader, device_uuid[index], VK_UUID_SIZE);
+		assert(vulkan_read_u64(&reader) == VK_UUID_SIZE);
+		vulkan_read_bytes(&reader, driver_uuid[index], VK_UUID_SIZE);
+		assert(vulkan_read_u64(&reader) == VK_LUID_SIZE);
+		vulkan_read_bytes(&reader, luid, VK_LUID_SIZE);
+		assert(vulkan_read_u32(&reader) == 0U && vulkan_read_u32(&reader) == VK_FALSE);
+		vulkan_decode_VkPhysicalDeviceProperties(&reader, &properties);
+		assert(reader.error == VK_SUCCESS && properties.vendorID == 0x14e4 && properties.deviceID == 0x402);
+	}
+	assert(memcmp(device_uuid[0], device_uuid[1], VK_UUID_SIZE) == 0);
+	assert(memcmp(driver_uuid[0], driver_uuid[1], VK_UUID_SIZE) == 0);
+	assert(memcmp(device_uuid[0], driver_uuid[0], VK_UUID_SIZE) != 0);
+	printf("ws236 p011 native device identity for exported allocations: PASS\n");
 
 	/* Native memory type zero requires actual Normal NC allocations, without a HOST_CACHED claim. */
 	begin(&writer, wire, sizeof(wire), GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES, 1);
