@@ -146,11 +146,13 @@ drv_rpi4_vchiq_ring_init(
 	struct drv_rpi4_vchiq_slot_zero *zero;
 	struct drv_rpi4_vchiq_shared *local;
 	uint8_t *sync_slot;
+	size_t needed;
 	uint32_t half;
 	uint32_t slot;
 
 	/* Refuses memory that is too small or does not start on a slot. */
-	if (bytes < drv_rpi4_vchiq_slot_bytes())
+	needed = drv_rpi4_vchiq_slot_bytes();
+	if (bytes < needed)
 		return EINVAL;
 	if (((uintptr_t)base & VCHIQ_SLOT_MASK) != 0)
 		return EINVAL;
@@ -360,6 +362,7 @@ drv_rpi4_vchiq_ring_next(
 	uint32_t queue_index;
 	uint32_t offset;
 	uint32_t length;
+	uint32_t stride;
 	const uint8_t *header;
 
 	/* Reads the VPU's position before anything it published up to it. */
@@ -390,7 +393,8 @@ drv_rpi4_vchiq_ring_next(
 	/* Refuses a message that would run past its slot. */
 	if (length > DRV_RPI4_VCHIQ_MAX_PAYLOAD)
 		return EIO;
-	if (offset + drv_rpi4_vchiq_stride(length) > DRV_RPI4_VCHIQ_SLOT_SIZE)
+	stride = drv_rpi4_vchiq_stride(length);
+	if (offset + stride > DRV_RPI4_VCHIQ_SLOT_SIZE)
 		return EIO;
 
 	/* Succeeded: the message's id, size and payload. */

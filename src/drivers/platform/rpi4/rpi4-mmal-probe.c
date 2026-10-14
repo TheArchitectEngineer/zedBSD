@@ -109,6 +109,7 @@ probe_main(
 	struct probe_stream small;
 	struct probe_stream large;
 	uint64_t deadline;
+	uint64_t now;
 	bool connected;
 
 	/* Says that it runs, then waits for the firmware's connection. */
@@ -116,9 +117,11 @@ probe_main(
 	kern_logf("rpi4-mmal-probe: started; waiting up to %u ms for VCHIQ\n", PROBE_CONNECT_MS);
 	deadline = sched_ticks() + kern_ms_to_ticks(PROBE_CONNECT_MS);
 	connected = drv_rpi4_vchiq_connected();
-	while (!connected && sched_ticks() < deadline) {
+	now = sched_ticks();
+	while (!connected && now < deadline) {
 		kern_usleep_range(100000U, 110000U);
 		connected = drv_rpi4_vchiq_connected();
+		now = sched_ticks();
 	}
 	if (!connected) {
 		kern_logf("rpi4-mmal-probe: VCHIQ did not connect in %u ms\n", PROBE_CONNECT_MS);
@@ -430,9 +433,11 @@ static uint64_t
 now_us(void)
 {
 	struct timespec now;
+	int error;
 
 	/* The monotonic clock, or zero when it cannot be read. */
-	if (kern_clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+	error = kern_clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
 		return 0;
 
 	/* Succeeded: microseconds since boot. */

@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
-Resume point: 設計は review-1 を反映（[design.md](design.md) §14）。p003（MMAL の client と R1 の probe）を進め、probe を T1 の実機に出す。R1 が外れたらベータ2 は Baseline だけ。
+Resume point: p002〜p005 は実装・host 試験・build（warning 0）まで済み（2026-10-14 夜、agent/p3 7db5f2b0f）。T1 の実機（p003 の probe の R1 と p005 の vkvideo-probe・Video Player）の結果待ち。R1 が外れたら `vulkan-video.c` の `VIDEO_BASELINE_ONLY` を 1 に（p006）。p007 は試験の C の書き方と通しの見直しが残り。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-14）

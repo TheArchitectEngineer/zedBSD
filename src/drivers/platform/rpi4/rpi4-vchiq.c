@@ -199,6 +199,8 @@ static struct drv_rpi4_vchiq_service *service_by_port(struct rpi4_vchiq *vchiq, 
 static int send_message(struct rpi4_vchiq *vchiq, uint32_t msgid, const void *data, uint32_t size);
 static void queue_control(struct rpi4_vchiq *vchiq, uint32_t msgid);
 static void flush_control(struct rpi4_vchiq *vchiq);
+static bool bulk_open(const struct drv_rpi4_vchiq_service *service);
+static bool bulk_full(const struct vchiq_bulk_queue *queue);
 static int reserve_wait(struct rpi4_vchiq *vchiq, uint32_t size, uint8_t **payload);
 static void ring_vpu(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_event *event);
 static int wait_state(struct rpi4_vchiq *vchiq, struct drv_rpi4_vchiq_service *service, enum vchiq_service_state from, unsigned milliseconds);
@@ -413,7 +415,9 @@ drv_rpi4_vchiq_send(
 		return ENODEV;
 	enabled = spin_lock_irqsave(&vchiq->lock);
 
-	open = service->state == VCHIQ_SERVICE_OPEN;
+	open = false;
+	if (service->state == VCHIQ_SERVICE_OPEN)
+		open = true;
 	msgid = drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_DATA, service->local_port, service->remote_port);
 
 	spin_unlock_irqrestore(&vchiq->lock, enabled);
@@ -505,8 +509,8 @@ drv_rpi4_vchiq_send_bulk(
 
 		error = 0;
 		for (;;) {
-			open = service->state == VCHIQ_SERVICE_OPEN;
-			full = queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS;
+			open = bulk_open(service);
+			full = bulk_full(queue);
 			if (!open || !full)
 				break;
 			observed = waitq_sequence(&vchiq->state_wake);
@@ -528,8 +532,8 @@ drv_rpi4_vchiq_send_bulk(
 		mutex_lock(&vchiq->send_lock);
 		enabled = spin_lock_irqsave(&vchiq->lock);
 
-		open = service->state == VCHIQ_SERVICE_OPEN;
-		full = queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS;
+		open = bulk_open(service);
+		full = bulk_full(queue);
 		if (open && !full) {
 			queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].context = bulk_context;
 			queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].pagelist = index;
@@ -630,9 +634,11 @@ drv_rpi4_vchiq_close(
 	/* An open service is told to close; one the firmware closed is already closed. */
 	enabled = spin_lock_irqsave(&vchiq->lock);
 
-	send = service->state == VCHIQ_SERVICE_OPEN;
-	if (send)
+	send = false;
+	if (service->state == VCHIQ_SERVICE_OPEN) {
+		send = true;
 		service->state = VCHIQ_SERVICE_CLOSING;
+	}
 	msgid = drv_rpi4_vchiq_msgid(DRV_RPI4_VCHIQ_MSG_CLOSE, service->local_port, service->remote_port);
 
 	spin_unlock_irqrestore(&vchiq->lock, enabled);
@@ -1322,7 +1328,9 @@ flush_control(
 	for (;;) {
 		enabled = spin_lock_irqsave(&vchiq->lock);
 
-		empty = vchiq->control_count == 0;
+		empty = true;
+		if (vchiq->control_count != 0)
+			empty = false;
 		msgid = vchiq->control[vchiq->control_head];
 
 		spin_unlock_irqrestore(&vchiq->lock, enabled);
@@ -1363,6 +1371,7 @@ reserve_wait(
 	uint64_t observed;
 	uint64_t deadline;
 	uint64_t wake;
+	uint64_t now;
 	int error;
 
 	/* Gives up after the slot wait limit. */
@@ -1382,7 +1391,8 @@ reserve_wait(
 			return error;
 
 		/* Reports a VPU that kept every slot for too long. */
-		if (sched_ticks() >= deadline) {
+		now = sched_ticks();
+		if (now >= deadline) {
 			kern_logf("rpi4-vchiq: no free slot in %u ms\n", VCHIQ_SLOT_WAIT_MS);
 			return EIO;
 		}
@@ -1590,4 +1600,30 @@ load_u16(
 
 	/* Succeeded: the word. */
 	return value;
+}
+
+/* Reports whether a service is open; the caller holds the lock. */
+static bool
+bulk_open(
+	const struct drv_rpi4_vchiq_service *service)
+{
+	/* Only an open service takes bulks. */
+	if (service->state != VCHIQ_SERVICE_OPEN)
+		return false;
+
+	/* Succeeded: the service is open. */
+	return true;
+}
+
+/* Reports whether a bulk queue holds all the bulks the protocol allows; the caller holds the lock. */
+static bool
+bulk_full(
+	const struct vchiq_bulk_queue *queue)
+{
+	/* The outstanding count is the difference of the two counters. */
+	if (queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS)
+		return true;
+
+	/* Succeeded: there is room. */
+	return false;
 }
