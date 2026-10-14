@@ -343,3 +343,11 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
 - 原因（code の読みで特定）: GPU core は native の仕事をした session が閉じる時に recovery の stop（`stop_begin`・`stop_poll`）で止まったことを確かめ、stop の無い backend では device 全体を fault にする（`gpu.c` の monitor、action 3）。runtime は `recovery.fault` しか持たなかったので、vkquad の終わりで renderer が fault し、次の open（display-events）の libvulkan の最初の command が EIO で、その node は飛ばされた。
 - 直し（`runtime.c`・`nvrtx-node.h`）: `stop_begin`（session に stopping を立て、新しい frame・command・reservation を EIO で断る、待たない）と `stop_poll`（session の queued／running の仕事が無くなれば 0、まだなら EAGAIN、commit されていない reservation は数えない）。fault の最初の 1 回を `D2: the renderer faulted (E); it takes no more work` と kernel log に出す（次の切り分けのため）。build は warning 0。
 - 次: T1 で R9v を流し直す（vkquad の後の display-events が swapchain／present の行を出すこと、vkquad を 2 回流して 2 回とも ok になること）。
+
+### 8.11 R9v（T1-675、2026-10-16）: PASS（D3・D5）
+
+- `plan/agents/T1/results-20261016-t1-675.md`（main f82703504、52096d8cd 込み）。`P9w ok`、`P8c ok: gpu device registered`。
+- **vkquad 2 回連続とも `VKQUAD ok device=zedBSD nvrtx (NVIDIA Turing) pixels=4096`**（D3: 描画・転送・読み戻し、session の stop が通り 2 回目も open できる）。
+- **display-events**: surface-counter=1・display-control=1、nvrtx の head 1280x1024、swapchain result=0、present 60 frames result=0、first-pixel result=0（18 ms）、`done error=0`（D5: VK_KHR_display の swapchain で RTX の display に出た）。power off/on は -13（nvrtx の power は EOPNOTSUPP の仕様、合格の外）。
+- nvrtx の error の行・`D2: the renderer faulted` は無い。
+- 判定（Q1）: D3・D5 を実機で確認。次は D6（R9k: compositor が nvrtx で desktop を描く）。
