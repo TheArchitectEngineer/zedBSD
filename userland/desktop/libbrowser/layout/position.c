@@ -594,7 +594,9 @@ position_place(
 
 	/* A width set, or both sides set, lays the box out in that room; otherwise it shrinks to fit. */
 	if (box->style.width.unit != CSS_UNIT_AUTO || (has_left && has_right)) {
-		error = layout_block(tree, box, room);
+		/* A percentage width is of the containing block, not of the room between the offsets. */
+		error = layout_block(tree, box,
+		    box->style.width.unit == CSS_UNIT_PERCENT ? area_width : room);
 	} else {
 		error = layout_shrink_to_fit(tree, box, room);
 	}

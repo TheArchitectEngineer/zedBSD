@@ -274,10 +274,22 @@ layout_grid(
 	if (box->style.column_gap.unit == CSS_UNIT_PX)
 		column_gap = layout_from_px(box->style.column_gap.value);
 	if (box->style.column_gap.unit == CSS_UNIT_PERCENT)
-		column_gap = (layout_unit)((float)box->width * box->style.column_gap.value / 100.0f);
+		column_gap = (layout_unit)((float)box->width * box->style.column_gap.value / 100.0f) +
+		    layout_from_px(box->style.column_gap.offset);
 	row_gap = 0;
 	if (box->style.row_gap.unit == CSS_UNIT_PX)
 		row_gap = layout_from_px(box->style.row_gap.value);
+	if (box->style.row_gap.unit == CSS_UNIT_PERCENT && box->style.height.unit == CSS_UNIT_PX) {
+		/* A percentage row gap is of the definite content height. */
+		row_gap = layout_from_px(box->style.height.value);
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			row_gap -= box->border[CSS_TOP] + box->padding[CSS_TOP] +
+			    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		if (row_gap < 0)
+			row_gap = 0;
+		row_gap = (layout_unit)((float)row_gap * box->style.row_gap.value / 100.0f) +
+		    layout_from_px(box->style.row_gap.offset);
+	}
 
 	row_gap_base = row_gap;
 
