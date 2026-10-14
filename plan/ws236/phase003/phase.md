@@ -152,6 +152,18 @@ Phase disposition: normal
   - (a)「decode 0 の完了を次の入力の後にする」: libmedia は decode 0 の fence を待ってから次を submit するので、deadlock する。
   - (b) MMAL の parameter: BSD-3 の header に、decode の低遅延の parameter が無い（LOW_LATENCY は encode 用）。
   - (c) IDR の再送: 同じ idr_pic_id の IDR は、spec 上「新しい picture」と判定されない。slice header の書き換えが要る。
+## T1-633（Pi 4 が reboot 後に戻らない）の見立てと直し
+
+- 見立て:
+  - T1-632 の CI の kernel は、VCHIQ・VIDEO が y（2a8f5054a）で、b6bbc3d7a（BUG-311 の GPIO）も含んで起動した。T1-633 の kernel との差は c7b600954 の 4 つの file（vulkan-video.c、rpi4-mmal-probe.c、rpi4-mmal.c・.h）だけ（886c7809e の style は T1-633 の tree に入っていない）。
+  - その中で起動の後に新しく動いた物は、probe の run e・f・g の押し出し。順は 352 の a、b、**e（空の FRAME_END の buffer）**、f、g。userland の client は EOS 以外に長さ 0 の buffer を送らないので、e が VPU の firmware を止めた（Pi 全体が応答しない）のが最有力。確証は無い（console が無い）。
+  - source を読む限り、ARM 側の永久の wait・lock・`#if` の外への漏れは見つからなかった。probe は自分の thread で sleep し、VCHIQ・MMAL の待ちは全て期限付き。
+- 直し:
+  - 空の FRAME_END の buffer をやめた（API は EOS だけの `drv_rpi4_mmal_decoder_end` に戻した。どこからも使わない）。
+  - vulkan-video の押し出しは 2 つ。
+    1. 最後に送った SPS・PPS を CONFIG の buffer で再送する（CONFIG の buffer は T1-631 の run c で通った）。
+    2. delimiter だけの buffer。
+  - **probe を起動の道から外した**。VCHIQ の接続の後に `/dev/mmal-probe` を出し、それへの write（`echo run | sudo tee /dev/mmal-probe`）で初めて run を始める。run は a、b、g（sets）、f（delimiter）。e は除いた。
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。

@@ -77,12 +77,13 @@ int drv_rpi4_mmal_decoder_input(struct drv_rpi4_mmal_decoder *decoder, uint8_t *
 int drv_rpi4_mmal_decoder_send(struct drv_rpi4_mmal_decoder *decoder, uint32_t bytes, int64_t pts, int config);
 
 /*
- * Sends an empty buffer that marks the end of a frame, or with
- * end_of_stream the end of the stream: the firmware then outputs every
+ * Sends an end of stream (an empty buffer): the firmware outputs every
  * picture it holds and an empty frame with the end-of-stream flag, and
  * forgets its references (T1-631), so it is for the stream's end only.
+ * (An empty buffer with only the end-of-frame flag is not sent: the Pi 4
+ * did not come back from the boot that first sent one, T1-633.)
  */
-int drv_rpi4_mmal_decoder_mark(struct drv_rpi4_mmal_decoder *decoder, int end_of_stream);
+int drv_rpi4_mmal_decoder_end(struct drv_rpi4_mmal_decoder *decoder);
 
 /*
  * Names memory the next decoded frame goes straight into.

@@ -10,7 +10,8 @@
  *
  * The records are added by the probe's one thread and never change or go
  * away once published, so a reader needs no lock: the published count is
- * stored with release after the record is complete.
+ * stored with release after the record is complete.  A write to the device
+ * starts the probe (rpi4-mmal-probe.c waits for it).
  */
 
 #include "drivers/platform/rpi4/rpi4-mmal-dump.h"
@@ -40,17 +41,66 @@ struct dump_record {
 static struct dump_record dump_records[DUMP_RECORDS];
 static unsigned dump_count;
 
-/* The bytes of frames kept so far, and whether the device is published. */
+/* The bytes of frames kept so far, and whether the device is published; the probe's thread only. */
 static uint32_t dump_used;
 static bool dump_published;
 
-static ssize_t dump_read(struct file *file, void *buffer, size_t size);
+/*
+ * Whether a write asked the probe to run: set by any writer, read by the
+ * probe's thread, never cleared (the probe runs once).
+ */
+static unsigned dump_run_requested;
 
-/* The device: reads only. */
+static ssize_t dump_read(struct file *file, void *buffer, size_t size);
+static ssize_t dump_write(struct file *file, const void *buffer, size_t size);
+
+/* The device: reads the records; a write starts the probe. */
 static const struct cdev_ops dump_ops = {
 	.read = dump_read,
+	.write = dump_write,
 	.flags = CDEV_READ_NEVER_WAITS,
 };
+
+/*
+ * Publishes /dev/mmal-probe once.
+ */
+int
+drv_rpi4_mmal_dump_publish(void)
+{
+	int error;
+
+	/* Published once. */
+	if (dump_published)
+		return 0;
+
+	/* The device. */
+	error = cdev_register(DUMP_DEVICE_NAME, (dev_t)DUMP_DEVICE_NUMBER, &dump_ops, NULL);
+	if (error != 0) {
+		kern_logf("rpi4-mmal-probe: /dev/%s not published (%d)\n", DUMP_DEVICE_NAME, error);
+		return error;
+	}
+
+	/* Succeeded: the device reads the records and takes the request to run. */
+	dump_published = true;
+	return 0;
+}
+
+/*
+ * Reports whether a write to /dev/mmal-probe asked the probe to run.
+ */
+bool
+drv_rpi4_mmal_dump_run_requested(void)
+{
+	unsigned requested;
+
+	/* Any write sets it. */
+	requested = __atomic_load_n(&dump_run_requested, __ATOMIC_ACQUIRE);
+	if (requested == 0)
+		return false;
+
+	/* Succeeded: the probe may run. */
+	return true;
+}
 
 /*
  * Keeps a copy of one frame with its header line.
@@ -86,22 +136,30 @@ drv_rpi4_mmal_dump_add(
 	record->bytes = bytes;
 	dump_used += bytes;
 
-	/* Publishes the record, and the device the first time. */
+	/* Publishes the record, and the device if it is not yet. */
 	__atomic_store_n(&dump_count, dump_count + 1U, __ATOMIC_RELEASE);
-	if (!dump_published) {
-		error = cdev_register(DUMP_DEVICE_NAME, (dev_t)DUMP_DEVICE_NUMBER, &dump_ops, NULL);
-		if (error != 0) {
-			kern_logf("rpi4-mmal-probe: /dev/%s not published (%d)\n", DUMP_DEVICE_NAME, error);
-			return error;
-		}
-
-		/* The device is published once. */
-		dump_published = true;
-		kern_logf("rpi4-mmal-probe: frames are kept in /dev/%s\n", DUMP_DEVICE_NAME);
-	}
+	error = drv_rpi4_mmal_dump_publish();
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the frame is kept. */
 	return 0;
+}
+
+/* Takes any write as the request to run the probe. */
+static ssize_t
+dump_write(
+	struct file *file,
+	const void *buffer,
+	size_t size)
+{
+	/* The bytes do not matter. */
+	(void)file;
+	(void)buffer;
+	__atomic_store_n(&dump_run_requested, 1U, __ATOMIC_RELEASE);
+
+	/* Succeeded: every byte is taken. */
+	return (ssize_t)size;
 }
 
 /*
