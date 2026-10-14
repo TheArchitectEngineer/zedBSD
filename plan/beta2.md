@@ -227,3 +227,21 @@
 
 - 凍結の目標の 10/13 の後も、ベータなので UAT の Bug の直しは 10/16 の準備に間に合う範囲で続ける。新しい仕様の変更は「ベータ3 に回すか」を Q1 がユーザーに聞く。
 - Q1 は進むたびにこの表を更新し、完了した項目を消す（2026-10-09 ユーザー「都度、beta2.mdを更新していただけると、進捗がわかって助かります」）。
+
+## ユーザーの実機の UAT を通っていない項目（2026-10-14 夕 Q1、調べた agent の報告の要約）
+
+最後の 5330 の UAT の image は b67a6d7e1（10/11）。それより後の変更は 5330 の UAT を通っていない。10/12 以降のユーザーの UAT 済みは BUG-303（13400F）・BUG-309（Ra43）・WS202 p013・WS233（2026-10-14「ユーザの方で確認できました。CIが通ればOK」）と 10/13 の一括の判断の物だけ。
+
+| 区分 | 項目 | 状態 |
+| --- | --- | --- |
+| 既定の driver・kernel | WS229 Gen9（既定 on） | SV7 の passthrough の T1 だけ。素の USB 起動・6 世代は未 |
+| | WS231 AHCI（既定 y） | QEMU だけ。実機の SATA・RAID mode の ID は未 |
+| | BUG-303 TSC の較正 | 13400F は UAT 済み、5330 は未 |
+| | BUG-304・305 flush・shutdown、BUG-307 fsync | QEMU だけ |
+| | WS218 AX211 の改名・MSI-X、WS220 TCP、WS228 p004 VT の CSI | QEMU だけ |
+| | VBT の削除 | 5330 の passthrough の試験だけに影響、素の起動は影響なしの見込み |
+| desktop | WS074 p229 ブラウザの titlebar | T1-618 QEMU PASS（p010 の回帰 FAIL を P2 が調査中） |
+| | WS217 回転・BUG-306 | QEMU だけ。release notes の「Settings has no control」は古い（P1 が直す） |
+| | WS202 p012・BUG-300、WS216 Notes の道具、WS157 Photos の decode、BUG-302 SKK、WS196 useradd、WS228 vi、WS227・232 menuconfig | QEMU だけ（または T1 の差し替えだけ） |
+
+リリースの前にユーザーが見るとよい上位: (1) 5330 で最終 image を素に起動（TSC・shutdown・保存・WiFi・TCP をまとめて）、(2) SV7 など 7〜10 世代で USB から素に起動（Gen9・AHCI）、(3) ブラウザ（google.com、アドレス欄、長押し）、(4) 5330 の回転（touch・ペンの向き、Settings が消えない）、(5) SKK と Video Player のスライダー。
