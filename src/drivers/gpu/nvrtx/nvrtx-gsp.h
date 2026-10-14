@@ -153,6 +153,14 @@
  * the GPU instance, and the stack-in-DMEM flag this firmware version needs.
  */
 #define NVRTX_RMARGS_BYTES		72U
+
+/*
+ * The region the start arguments are named as to the GSP's operating system:
+ * one whole page, as both other drivers give it.  The operating system maps
+ * its regions by pages and stopped at a region of the arguments' own 72 bytes
+ * (R3: its init log ends after mapping that region).
+ */
+#define NVRTX_RMARGS_REGION_BYTES	0x1000U
 #define NVRTX_RMARGS_QUEUE_PAGES_AT	0U
 #define NVRTX_RMARGS_QUEUE_PTE_COUNT_AT	8U
 #define NVRTX_RMARGS_COMMAND_AT		16U

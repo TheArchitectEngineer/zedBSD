@@ -373,7 +373,7 @@ gsp_load_files(
 	/* Reads the GSP's RISC-V bootloader. */
 	error = nvrtx_file_load(GSP_FILE_BOOTLOADER, GSP_SMALL_FILE_MAX, &gpu->bootloader_file);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: %s not read (%d); is nvidia-gsp-firmware installed?", GSP_FILE_BOOTLOADER, error);
+		nvrtx_stage_mark("P0 fail: %s not read (%d); no firmware package?", GSP_FILE_BOOTLOADER, error);
 		return error;
 	}
 
@@ -565,7 +565,7 @@ gsp_prepare_start(
 	nvrtx_channel_init(&gpu->channel, &memory->queue_pages, memory->staging);
 
 	/* Writes the start arguments and names them in the start page. */
-	error = nvrtx_buffer_alloc(gpu, NVRTX_RMARGS_BYTES, &memory->rmargs);
+	error = nvrtx_buffer_alloc(gpu, NVRTX_RMARGS_REGION_BYTES, &memory->rmargs);
 	if (error != 0)
 		return error;
 
@@ -574,7 +574,7 @@ gsp_prepare_start(
 	    3U,
 	    "RMARGS",
 	    memory->rmargs.dma.device_address,
-	    NVRTX_RMARGS_BYTES);
+	    NVRTX_RMARGS_REGION_BYTES);
 
 	/* Succeeded: the GSP's operating system has what it starts with. */
 	return 0;
@@ -814,7 +814,7 @@ gsp_finish(
 	if (!stopped && gpu->region_written != 0) {
 		nvrtx_region_bounds(gpu, &low, &high);
 		if (high != 0U)
-			nvrtx_stage_mark("P7 left: region %08x-%08x without a started GSP; reboot the host before the next run", (unsigned)low, (unsigned)high);
+			nvrtx_stage_mark("P7 left: region %08x-%08x, no GSP started; reboot the host", (unsigned)low, (unsigned)high);
 	}
 
 	/* Gives the preparation back; a region that stayed is left for a power cycle. */
@@ -1025,13 +1025,17 @@ gsp_progress(
 	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_STATUS_AT + NVRTX_QHDR_WRITE_AT),
 	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_COMMAND_AT + NVRTX_QHDR_READ_AT));
 
-	/* The firmware's registers and its three logs' put pointers. */
-	nvrtx_stage_mark("P2b %u ms: mbox %08x %08x riscv %08x boot %08x; logs %llx %llx %llx",
+	/* The firmware's registers; a mark line holds 79 columns, so each group has its own. */
+	nvrtx_stage_mark("P2b %u ms: mbox %08x %08x riscv %08x boot %08x",
 	    (unsigned)milliseconds,
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX0),
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX1),
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_RISCV_STATUS),
-	    (unsigned)nvrtx_rd32(gpu, GSP_REG_BOOT_SCRATCH),
+	    (unsigned)nvrtx_rd32(gpu, GSP_REG_BOOT_SCRATCH));
+
+	/* The three logs' put pointers: how many words the firmware has written in each. */
+	nvrtx_stage_mark("P2b %u ms: log put %llx %llx %llx",
+	    (unsigned)milliseconds,
 	    (unsigned long long)gsp_log_put(gpu, 0U),
 	    (unsigned long long)gsp_log_put(gpu, 1U),
 	    (unsigned long long)gsp_log_put(gpu, 2U));
