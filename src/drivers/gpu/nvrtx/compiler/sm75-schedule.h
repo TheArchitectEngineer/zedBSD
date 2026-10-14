@@ -65,6 +65,15 @@ struct nvrtx_sm75_operands {
 int nvrtx_sm75_operands(const uint32_t *words, struct nvrtx_sm75_operands *operands);
 
 /*
+ * Reorders the instructions inside each block of a program so that the
+ * long-latency ones issue early; nonzero, with the instruction and a
+ * reason, when one is not known or there is no memory.  Branches,
+ * convergence and barriers, NOPs and the blocks' bounds keep their places,
+ * so every branch offset stays valid.
+ */
+int nvrtx_sm75_reorder(uint32_t *code, uint32_t count, uint32_t *instruction, const char **reason);
+
+/*
  * Sets the scheduling control of a program's instructions; nonzero, with
  * the instruction and a reason, when one is not known or a delay would
  * not fit its field.

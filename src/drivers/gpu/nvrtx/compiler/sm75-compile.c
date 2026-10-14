@@ -76,6 +76,16 @@
 #define NVRTX_SM75_LUT_XOR		0x3cU
 #define NVRTX_SM75_LUT_NOT		0x0fU
 
+/*
+ * The registers a program may use without counting against it: the
+ * register allocation spreads values over this many before it needs more,
+ * so a register is reused as late as possible and the reordering is not
+ * held back by a write after a read or a write.  62 and the hardware's two
+ * are 64, which still lets a Turing SM keep its most threads resident
+ * (65536 registers for 1024 threads).
+ */
+#define NVRTX_SM75_GPR_POOL		62U
+
 /* The colour targets a fragment program writes. */
 #define NVRTX_SM75_COLOR_TARGETS	8U
 
@@ -98,9 +108,14 @@ struct nvrtx_sm75_lowering {
 	uint16_t *reg;
 	uint32_t *last_use;
 
-	/* Which registers are taken, and one past the highest ever taken. */
+	/*
+	 * Which registers are taken, one past the highest ever taken, and when
+	 * each was given back (the instructions emitted by then, plus one; 0 for
+	 * never taken).
+	 */
 	uint8_t taken[NVRTX_SM75_GPR_USABLE];
 	uint32_t highest;
+	uint32_t freed_at[NVRTX_SM75_GPR_USABLE];
 
 	/* Each uniform's storage slot or constant buffer, NVRTX_SM75_NO_SLOT for neither. */
 	uint32_t *slot;
@@ -3037,9 +3052,16 @@ nvrtx_sm75_finish(
 			return error;
 	}
 
-	/* The dependences of every instruction. */
+	/* The instructions of each block in an order that hides latency. */
 	reason = NULL;
 	instruction = 0U;
+	error = nvrtx_sm75_reorder(lowering->binary->code, lowering->count, &instruction, &reason);
+	if (error != 0) {
+		lowering->index = instruction;
+		return nvrtx_sm75_refuse(lowering, EINVAL, reason);
+	}
+
+	/* The dependences of every instruction. */
 	error = nvrtx_sm75_schedule(lowering->binary->code, lowering->count, &instruction, &reason);
 	if (error != 0) {
 		lowering->index = instruction;
@@ -3059,57 +3081,109 @@ nvrtx_sm75_finish(
 	return 0;
 }
 
-/* Takes the lowest free register. */
+/*
+ * Takes the free register given back longest ago, among the first
+ * NVRTX_SM75_GPR_POOL or the ones in use so far, whichever are more; when
+ * none of them is free, the lowest free one.
+ */
 static int
 nvrtx_sm75_take(
 	struct nvrtx_sm75_lowering *lowering,
 	uint32_t *reg)
 {
 	uint32_t index;
+	uint32_t limit;
+	uint32_t best;
 
-	/* The first free one. */
+	/* The pool. */
+	limit = lowering->highest;
+	if (limit < NVRTX_SM75_GPR_POOL)
+		limit = NVRTX_SM75_GPR_POOL;
+	if (limit > NVRTX_SM75_GPR_USABLE)
+		limit = NVRTX_SM75_GPR_USABLE;
+
+	/* The free one of the pool given back longest ago, else the first free one at all. */
+	best = NVRTX_SM75_GPR_USABLE;
 	for (index = 0U; index < NVRTX_SM75_GPR_USABLE; index++) {
 		if (lowering->taken[index] != 0U)
 			continue;
-
-		/* It is taken from here on. */
-		lowering->taken[index] = 1U;
-		if (index + 1U > lowering->highest)
-			lowering->highest = index + 1U;
-		*reg = index;
-		return 0;
+		if (index >= limit && best != NVRTX_SM75_GPR_USABLE)
+			break;
+		if (best == NVRTX_SM75_GPR_USABLE || lowering->freed_at[index] < lowering->freed_at[best])
+			best = index;
+		if (index >= limit)
+			break;
 	}
 
-	/* Succeeded in finding none: stage A does not spill. */
-	return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+	/* None is free: stage A does not spill. */
+	if (best == NVRTX_SM75_GPR_USABLE)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+
+	/* It is taken from here on. */
+	lowering->taken[best] = 1U;
+	if (best + 1U > lowering->highest)
+		lowering->highest = best + 1U;
+	*reg = best;
+
+	/* Succeeded: the register is the caller's. */
+	return 0;
 }
 
-/* Takes the lowest free even register whose odd neighbour is free too. */
+/* Takes an even register whose odd neighbour is free too, the pair given back longest ago, as nvrtx_sm75_take() does. */
 static int
 nvrtx_sm75_take_pair(
 	struct nvrtx_sm75_lowering *lowering,
 	uint32_t *reg)
 {
 	uint32_t index;
+	uint32_t limit;
+	uint32_t best;
+	uint32_t age;
+	uint32_t best_age;
 
-	/* The first free pair. */
+	/* The pool. */
+	limit = lowering->highest;
+	if (limit < NVRTX_SM75_GPR_POOL)
+		limit = NVRTX_SM75_GPR_POOL;
+	if (limit > NVRTX_SM75_GPR_USABLE)
+		limit = NVRTX_SM75_GPR_USABLE;
+
+	/* The free pair of the pool given back longest ago, else the first free pair at all. */
+	best = NVRTX_SM75_GPR_USABLE;
+	best_age = 0U;
 	for (index = 0U; index + 1U < NVRTX_SM75_GPR_USABLE; index += 2U) {
 		if (lowering->taken[index] != 0U)
 			continue;
 		if (lowering->taken[index + 1U] != 0U)
 			continue;
+		if (index >= limit && best != NVRTX_SM75_GPR_USABLE)
+			break;
 
-		/* Both are taken from here on. */
-		lowering->taken[index] = 1U;
-		lowering->taken[index + 1U] = 1U;
-		if (index + 2U > lowering->highest)
-			lowering->highest = index + 2U;
-		*reg = index;
-		return 0;
+		/* The later of the two give-backs. */
+		age = lowering->freed_at[index];
+		if (lowering->freed_at[index + 1U] > age)
+			age = lowering->freed_at[index + 1U];
+		if (best == NVRTX_SM75_GPR_USABLE || age < best_age) {
+			best = index;
+			best_age = age;
+		}
+		if (index >= limit)
+			break;
 	}
 
-	/* Succeeded in finding none: stage A does not spill. */
-	return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+	/* None is free: stage A does not spill. */
+	if (best == NVRTX_SM75_GPR_USABLE)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
+
+	/* Both are taken from here on. */
+	lowering->taken[best] = 1U;
+	lowering->taken[best + 1U] = 1U;
+	if (best + 2U > lowering->highest)
+		lowering->highest = best + 2U;
+	*reg = best;
+
+	/* Succeeded: the pair is the caller's. */
+	return 0;
 }
 
 /* Gives a register back. */
@@ -3122,8 +3196,9 @@ nvrtx_sm75_give(
 	if (reg >= NVRTX_SM75_GPR_USABLE)
 		return;
 
-	/* Free from here on. */
+	/* Free from here on, given back now. */
 	lowering->taken[reg] = 0U;
+	lowering->freed_at[reg] = lowering->count + 1U;
 }
 
 /*

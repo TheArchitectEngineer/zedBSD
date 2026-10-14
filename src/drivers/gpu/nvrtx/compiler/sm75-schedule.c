@@ -42,7 +42,16 @@
  *   nak/sm70.rs (the latency class of each operation, the execution
  *   latency of BAR and MEMBAR)
  *
- * The pass walks the program once in order.  For every register and
+ * The reordering (nvrtx_sm75_reorder()) works inside each block of
+ * instructions between the fixed ones (branches, convergence, barriers,
+ * discards, EXIT, NOPs) and branch targets: an instruction may move past
+ * another only when neither reads or writes what the other writes, and
+ * memory accesses keep their order when either one stores.  Among the
+ * instructions whose predecessors have issued, the one with the longest
+ * latency-weighted path to the block's end goes first (a list scheduler),
+ * the latencies of variable-latency instructions estimated.
+ *
+ * The marking walks the program once in order.  For every register and
  * predicate it keeps who wrote it last and when (a cycle count from the
  * start of the block), or which scoreboard will say the write is done, and
  * which scoreboards will say the reads of it are done.  An instruction
@@ -84,6 +93,17 @@
 #define NVRTX_SM75_DELAY_EXIT_MIN	5U
 #define NVRTX_SM75_DELAY_AFTER_SYNC	2U
 
+/* The latencies the reordering assumes for the variable-latency instructions (only priorities, never correctness). */
+#define NVRTX_SM75_GUESS_TEXTURE	100U
+#define NVRTX_SM75_GUESS_GLOBAL		300U
+#define NVRTX_SM75_GUESS_SHARED		30U
+#define NVRTX_SM75_GUESS_CONSTANT	25U
+#define NVRTX_SM75_GUESS_UNIT		15U
+#define NVRTX_SM75_GUESS_SPECIAL	20U
+
+/* A pair the reordering must keep in order, and a block not yet ended. */
+#define NVRTX_SM75_NO_DEPENDENCE	0xffffffffU
+
 /* No scoreboard, no predicate, and a register never written. */
 #define NVRTX_SM75_NO_BAR		0xffU
 #define NVRTX_SM75_NO_PREDICATE		NVRTX_SM75_PT
@@ -116,6 +136,27 @@ struct nvrtx_sm75_scheduler {
 	uint32_t cycle;
 };
 
+/*
+ * One instruction of a block being reordered: its operands, its opcode, the
+ * latency-weighted path to the block's end, the predecessors not yet
+ * issued, the earliest cycle they allow, and whether it has issued.  An
+ * array of them lives for one call of nvrtx_sm75_reorder().
+ */
+struct nvrtx_sm75_node {
+	struct nvrtx_sm75_operands operands;
+	uint32_t opcode;
+	uint32_t words[NVRTX_SM75_INSTRUCTION_WORDS];
+	uint32_t priority;
+	uint32_t waiting;
+	uint32_t earliest;
+	int issued;
+};
+
+static int nvrtx_sm75_reorder_block(struct nvrtx_sm75_node *nodes, uint32_t count, uint32_t *code);
+static uint32_t nvrtx_sm75_dependence(const struct nvrtx_sm75_node *before, const struct nvrtx_sm75_node *after);
+static int nvrtx_sm75_memory_kind(uint32_t opcode);
+static uint32_t nvrtx_sm75_guess(const struct nvrtx_sm75_node *node);
+static int nvrtx_sm75_fixed(const struct nvrtx_sm75_operands *operands);
 static int nvrtx_sm75_operands_alu(const struct nvrtx_sm75_word *word, uint32_t opcode, struct nvrtx_sm75_operands *operands);
 static int nvrtx_sm75_operands_other(const struct nvrtx_sm75_word *word, uint32_t opcode, struct nvrtx_sm75_operands *operands);
 static void nvrtx_sm75_add_read(struct nvrtx_sm75_operands *operands, uint32_t reg, uint32_t read_class);
@@ -172,6 +213,97 @@ nvrtx_sm75_operands(
 		return 1;
 
 	/* Succeeded: an ALU instruction. */
+	return 0;
+}
+
+/*
+ * Reorders the instructions inside each block of a program.
+ *
+ * A block is a run of instructions that are not fixed (see
+ * nvrtx_sm75_fixed()), cut at every branch target.  Returns 0, or 1 with
+ * the instruction and the reason.
+ */
+int
+nvrtx_sm75_reorder(
+	uint32_t *code,
+	uint32_t count,
+	uint32_t *instruction,
+	const char **reason)
+{
+	struct nvrtx_sm75_node *nodes;
+	uint8_t *cut;
+	uint32_t index;
+	uint32_t start;
+	uint32_t end;
+	int unknown;
+	int error;
+
+	/* The nodes, one per instruction. */
+	nodes = kern_calloc(count + 1U, sizeof(*nodes));
+	if (nodes == NULL) {
+		*instruction = 0U;
+		*reason = "no memory for the reordering";
+		return 1;
+	}
+
+	/* Where blocks are cut: before a branch target; a fixed instruction is a cut of its own. */
+	cut = kern_calloc(count + 1U, sizeof(*cut));
+	if (cut == NULL) {
+		kern_free(nodes);
+		*instruction = 0U;
+		*reason = "no memory for the branch targets";
+		return 1;
+	}
+	nvrtx_sm75_mark_targets(code, count, cut);
+
+	/* Every instruction's operands and words. */
+	for (index = 0U; index < count; index++) {
+		unknown = nvrtx_sm75_operands(code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS, &nodes[index].operands);
+		if (unknown != 0) {
+			kern_free(cut);
+			kern_free(nodes);
+			*instruction = index;
+			*reason = "the reordering does not know an instruction";
+			return 1;
+		}
+		kern_memcpy(nodes[index].words, code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS, sizeof(nodes[index].words));
+		nodes[index].opcode = nodes[index].words[0] & 0xfffU;
+	}
+
+	/* Each block: from a cut or after a fixed instruction, up to the next of either. */
+	error = 0;
+	start = 0U;
+	while (start < count && error == 0) {
+		/* A fixed instruction stays. */
+		if (nvrtx_sm75_fixed(&nodes[start].operands) != 0) {
+			start++;
+			continue;
+		}
+
+		/* The block's end. */
+		end = start + 1U;
+		while (end < count && cut[end] == 0U && nvrtx_sm75_fixed(&nodes[end].operands) == 0)
+			end++;
+
+		/* The block's instructions in their new order. */
+		if (end - start > 1U) {
+			error = nvrtx_sm75_reorder_block(nodes + start, end - start, code + (size_t)start * NVRTX_SM75_INSTRUCTION_WORDS);
+			if (error != 0) {
+				*instruction = start;
+				*reason = "no memory for the reordering";
+			}
+		}
+		start = end;
+	}
+
+	kern_free(cut);
+	kern_free(nodes);
+
+	/* Reports a failure. */
+	if (error != 0)
+		return 1;
+
+	/* Succeeded: every block is reordered. */
 	return 0;
 }
 
@@ -309,6 +441,249 @@ nvrtx_sm75_schedule(
 	kern_free(scheduler);
 
 	/* Succeeded: every instruction has its control. */
+	return 0;
+}
+
+/*
+ * Reorders one block by list scheduling and writes it back over its code.
+ * Returns 0, or ENOMEM-like 1 when the order cannot be kept.
+ */
+static int
+nvrtx_sm75_reorder_block(
+	struct nvrtx_sm75_node *nodes,
+	uint32_t count,
+	uint32_t *code)
+{
+	uint32_t *order;
+	uint32_t before;
+	uint32_t after;
+	uint32_t latency;
+	uint32_t path;
+	uint32_t issued;
+	uint32_t best;
+	uint32_t soonest;
+	uint32_t cycle;
+
+	/* The new order. */
+	order = kern_calloc(count, sizeof(*order));
+	if (order == NULL)
+		return 1;
+
+	/* Each instruction's longest latency-weighted path to the block's end, from the last back. */
+	for (before = count; before > 0U; before--) {
+		path = nvrtx_sm75_guess(&nodes[before - 1U]);
+		for (after = before; after < count; after++) {
+			latency = nvrtx_sm75_dependence(&nodes[before - 1U], &nodes[after]);
+			if (latency == NVRTX_SM75_NO_DEPENDENCE)
+				continue;
+			if (latency + nodes[after].priority > path)
+				path = latency + nodes[after].priority;
+		}
+		nodes[before - 1U].priority = path;
+	}
+
+	/* Each instruction's predecessors. */
+	for (after = 0U; after < count; after++) {
+		nodes[after].waiting = 0U;
+		nodes[after].earliest = 0U;
+		nodes[after].issued = 0;
+		for (before = 0U; before < after; before++) {
+			latency = nvrtx_sm75_dependence(&nodes[before], &nodes[after]);
+			if (latency != NVRTX_SM75_NO_DEPENDENCE)
+				nodes[after].waiting++;
+		}
+	}
+
+	/* Issues one instruction at a time: the ready one of the highest priority that can issue now, else the soonest. */
+	cycle = 0U;
+	for (issued = 0U; issued < count; issued++) {
+		best = count;
+		soonest = count;
+		for (after = 0U; after < count; after++) {
+			if (nodes[after].issued != 0 || nodes[after].waiting != 0U)
+				continue;
+
+			/* The soonest ready one, the first in the old order among equals. */
+			if (soonest == count || nodes[after].earliest < nodes[soonest].earliest)
+				soonest = after;
+
+			/* The ready one of the highest priority that can issue at this cycle. */
+			if (nodes[after].earliest > cycle)
+				continue;
+			if (best == count || nodes[after].priority > nodes[best].priority)
+				best = after;
+		}
+
+		/* Nothing can issue now: the soonest one, later. */
+		if (best == count) {
+			best = soonest;
+			cycle = nodes[best].earliest;
+		}
+
+		/* A ready instruction always exists in a block without cycles; none means the dependences are wrong. */
+		if (best == count) {
+			kern_free(order);
+			return 1;
+		}
+
+		/* It issues, and its successors may issue after its latency. */
+		order[issued] = best;
+		nodes[best].issued = 1;
+		for (after = best + 1U; after < count; after++) {
+			latency = nvrtx_sm75_dependence(&nodes[best], &nodes[after]);
+			if (latency == NVRTX_SM75_NO_DEPENDENCE)
+				continue;
+			nodes[after].waiting--;
+			if (cycle + latency > nodes[after].earliest)
+				nodes[after].earliest = cycle + latency;
+		}
+		cycle++;
+	}
+
+	/* The block's words in the new order. */
+	for (issued = 0U; issued < count; issued++)
+		kern_memcpy(code + (size_t)issued * NVRTX_SM75_INSTRUCTION_WORDS, nodes[order[issued]].words, sizeof(nodes[0].words));
+
+	kern_free(order);
+
+	/* Succeeded: the block is reordered. */
+	return 0;
+}
+
+/*
+ * Reports the cycles an instruction must issue after an earlier one of its
+ * block (an estimate for a variable-latency result), or
+ * NVRTX_SM75_NO_DEPENDENCE when the two may swap: a read of a register or
+ * predicate the earlier one writes, a write of one it reads or writes, and
+ * two memory accesses of which one stores.
+ */
+static uint32_t
+nvrtx_sm75_dependence(
+	const struct nvrtx_sm75_node *before,
+	const struct nvrtx_sm75_node *after)
+{
+	const struct nvrtx_sm75_operands *first;
+	const struct nvrtx_sm75_operands *second;
+	uint32_t latency;
+	uint32_t i;
+	uint32_t j;
+	int first_memory;
+	int second_memory;
+
+	first = &before->operands;
+	second = &after->operands;
+	latency = NVRTX_SM75_NO_DEPENDENCE;
+
+	/* A register the second reads that the first writes: the first's result latency. */
+	for (i = 0U; i < first->write_count; i++) {
+		for (j = 0U; j < second->read_count; j++) {
+			if (first->writes[i] != second->reads[j])
+				continue;
+			if (first->class_of == NVRTX_SM75_CLASS_DECOUPLED)
+				return nvrtx_sm75_guess(before);
+			return nvrtx_sm75_raw(first->class_of, second->read_class[j]);
+		}
+	}
+
+	/* A predicate the second reads (as its guard or its source) that the first writes. */
+	if (first->predicate_write != NVRTX_SM75_NO_PREDICATE) {
+		if (first->predicate_write == second->guard)
+			return nvrtx_sm75_predicate_raw(NVRTX_SM75_CLASS_DECOUPLED);
+		if (first->predicate_write == second->predicate_read)
+			return nvrtx_sm75_predicate_raw(second->class_of);
+	}
+
+	/* A register the second writes that the first reads or writes. */
+	for (j = 0U; j < second->write_count; j++) {
+		for (i = 0U; i < first->read_count; i++) {
+			if (first->reads[i] == second->writes[j])
+				latency = 1U;
+		}
+		for (i = 0U; i < first->write_count; i++) {
+			if (first->writes[i] == second->writes[j])
+				latency = 1U;
+		}
+	}
+
+	/* A predicate the second writes that the first reads or writes. */
+	if (second->predicate_write != NVRTX_SM75_NO_PREDICATE) {
+		if (second->predicate_write == first->guard || second->predicate_write == first->predicate_read || second->predicate_write == first->predicate_write)
+			latency = 1U;
+	}
+
+	/* Two memory accesses, one of them a store or an atomic. */
+	first_memory = nvrtx_sm75_memory_kind(before->opcode);
+	second_memory = nvrtx_sm75_memory_kind(after->opcode);
+	if (first_memory != 0 && second_memory != 0 && (first_memory == 2 || second_memory == 2))
+		latency = 1U;
+
+	/* Succeeded: the order the pair needs, or none. */
+	return latency;
+}
+
+/* Reports 2 for an instruction that stores to memory (or an attribute), 1 for one that loads it, 0 for neither. */
+static int
+nvrtx_sm75_memory_kind(
+	uint32_t opcode)
+{
+	/* The stores and the atomics. */
+	if (opcode == NVRTX_SM75_OP_STG || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_AST)
+		return 2;
+	if (opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS || opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS)
+		return 2;
+
+	/* The loads. */
+	if (opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_ALD)
+		return 1;
+
+	/* Succeeded: no memory access. */
+	return 0;
+}
+
+/* Reports the latency the reordering assumes for an instruction's result. */
+static uint32_t
+nvrtx_sm75_guess(
+	const struct nvrtx_sm75_node *node)
+{
+	uint32_t alu;
+
+	/* A fixed-latency result. */
+	if (node->operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
+		return NVRTX_SM75_WORST_GPR;
+
+	/* The variable-latency ones by their opcode. */
+	if (node->opcode == NVRTX_SM75_OP_TEX || node->opcode == NVRTX_SM75_OP_TLD)
+		return NVRTX_SM75_GUESS_TEXTURE;
+	if (node->opcode == NVRTX_SM75_OP_LDG || node->opcode == NVRTX_SM75_OP_ATOMG || node->opcode == NVRTX_SM75_OP_ATOMG_CAS)
+		return NVRTX_SM75_GUESS_GLOBAL;
+	if (node->opcode == NVRTX_SM75_OP_LDS || node->opcode == NVRTX_SM75_OP_ATOMS || node->opcode == NVRTX_SM75_OP_ATOMS_CAS)
+		return NVRTX_SM75_GUESS_SHARED;
+	if (node->opcode == NVRTX_SM75_OP_LDC)
+		return NVRTX_SM75_GUESS_CONSTANT;
+	if (node->opcode == NVRTX_SM75_OP_S2R)
+		return NVRTX_SM75_GUESS_SPECIAL;
+	alu = node->opcode & 0x1ffU;
+	if (alu == NVRTX_SM75_OP_MUFU || alu == NVRTX_SM75_OP_I2F || alu == NVRTX_SM75_OP_F2I || alu == NVRTX_SM75_OP_FRND)
+		return NVRTX_SM75_GUESS_UNIT;
+
+	/* Succeeded: the attribute loads and the interpolation. */
+	return NVRTX_SM75_GUESS_UNIT;
+}
+
+/* Reports nonzero for an instruction that keeps its place: one that ends a block, or a NOP. */
+static int
+nvrtx_sm75_fixed(
+	const struct nvrtx_sm75_operands *operands)
+{
+	/* The ends of blocks. */
+	if (operands->boundary != 0)
+		return 1;
+
+	/* NOPs (the padding, and the one after a barrier). */
+	if (operands->class_of == NVRTX_SM75_CLASS_DISPATCH)
+		return 1;
+
+	/* Succeeded: it may move. */
 	return 0;
 }
 
