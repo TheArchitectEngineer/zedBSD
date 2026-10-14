@@ -263,3 +263,19 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 | 実機 | 未実施（D3 の後に vkdemo の offscreen と合わせて T1 へ） |
 
 次は D3（memory・buffer・image・descriptor・pipeline・render pass と記録の 15 種の vkCmd、D1 の work channel へ投入）。
+
+### 8.7 D3 の設計（2026-10-16、P2）
+
+範囲は Keiland の compositor と libkeiland の ui が使う物だけ（`userland/desktop/wayland`・`libkeiland/ui` の vk 呼び出しの棚卸し）: memory・buffer・image（2D、1 level・1 layer・1 sample、B8G8R8A8／R8G8B8A8 の UNORM・SRGB）・image view・sampler・shader module・descriptor set layout／pool／set／update（COMBINED_IMAGE_SAMPLER）・pipeline layout（push constant）・render pass（colour 1 つ）・framebuffer・graphics pipeline・command pool／buffer・fence・semaphore・QueueSubmit、記録する vkCmd は 15 種（BeginRenderPass・EndRenderPass・BindPipeline・BindDescriptorSets・BindVertexBuffers・PushConstants・SetViewport・SetScissor・Draw・PipelineBarrier・CopyImage・CopyBufferToImage・CopyImageToBuffer・BlitImage・ClearColorImage）。
+
+| 決め | 内容 | 理由 |
+| --- | --- | --- |
+| wire の手本 | i915 の executor（`i915/render/` の `objects.c`・`memory.c`・`image.c`・`descriptor.c`・`pipeline.c`・`render-pass.c`・`command.c`・`fence.c`・`sync.c`）。同じ libvulkan の wire を i915 の codec の decoder（`i915_vkc_dec_Vk*`）で読む | 同じ codec を include 済み（案 A）。bcm2711 の手読みより短い |
+| memory | VkDeviceMemory は記録だけ作り、storage は libvulkan が直後に出す blob（`GPU_BLOB_CREATE` の `blob_id` = memory の identity）が来た時に node が VRAM の BO（今の blob と同じ `nvrtx_backing`）を作って memory に付ける（refs を 1 つ持つ）。付けた時に work の vaspace に map し、GPU の VA を memory に持つ。free で unmap と refs を返す | i915 と同じ「storage は blob で来る」。memory type は 1 つ（DL・HV・HC）なので必ず blob が来る。blob を display が出せる（swapchain の image を複写なしで flip、D5） |
+| image | 全て pitch linear。pitch は幅×4 を 256 に揃え、offset の整列 256、大きさは pitch×高さ。`vkGetImageSubresourceLayout` はこの pitch | display の constraints（stride 64・offset 256）、TIC の pitch（32 の倍数）、render target の pitch（128 の倍数）を同時に満たす |
+| 実行 | QueueSubmit の frame の中で（worker の上で）command buffer の記録を push buffer に組み、`nvrtx_work_submit` → `nvrtx_work_wait` で終わるまで待つ（同期）。後に続く job の marker は FIFO の順で終わる | 正しさが簡単（semaphore の待ちは同じ queue の順で満たされる）。速さは後で |
+| draw | P9g の `draw-push.c`（実機 PASS）を広げる: render pass の colour target、viewport・scissor（dynamic）、blend（ONE / ONE_MINUS_SRC_ALPHA）、program（P4 の compiler の SM75 と SPH を program の領域へ）、vertex buffer、push constant は cbuf 0、combined image sampler は TIC・TSC の pool と cbuf 0 の texture handle（P4 の約束 `NVRTX_SM75_CB_TEXTURES`） | 既に hardware で通った手順 |
+| 転送 | CopyImage・BlitImage は textured quad（nearest／linear）、ClearColorImage は 3D の clear、buffer↔image は buffer を pitch linear の texture／target として描く（offset 256・pitch 128 に揃う時）、揃わない時は CPU（BAR1 越し）で複写 | 2D／copy engine の object を増やさない。compositor の複写は image↔image（shm の staging → image）が主 |
+| 試験 | host: libvulkan の本物の encoder（`resources.c`・`pipeline.c`・`commands.c` などを include、ws141 の `vulkan-client-pipeline-host.c` と同じ作り）で wire を作り、executor に通し、GPU の口は host の偽物（push を記録）で、組んだ push を `clc597.h` の値で照合 | 実機の前に wire と push の両方を確かめる |
+
+段: D3a memory・buffer・image・view・sampler（＋node の blob の `blob_id`）→ D3b shader module・layout・descriptor・render pass・framebuffer・pipeline（compile）→ D3c command pool／buffer と記録 → D3d fence・semaphore・QueueSubmit と push の組み立て・実行。各段で build・host 試験、D3d の後に T1 へ（vkdemo の offscreen）。
