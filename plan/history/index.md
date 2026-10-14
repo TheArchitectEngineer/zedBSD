@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1134 / WS074 fixed Grid502 recensus（2026-10-14）
+## 最新: q1135 / WS074 Grid recensus regression repair and animation diagnosis（2026-10-14）
+
+[q1135履歴](queue-q1135.md): 空Grid旧PASSを3→9/9へ回復、Acid3差0維持。行track animation旧PASSはcomputed CSSOM空同士の偽陽性と判明。[実装証拠](../ws074/phase223/evidence/20261014-q1135/README.md)、[診断証拠](../ws074/phase224/evidence/20261014-q1135/README.md)。p223/p224部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1134 / WS074 fixed Grid502 recensus（2026-10-14）
 
 [q1134履歴](queue-q1134.md): Grid502で110→124 whole PASS。ただし旧PASS2件後退、subtest398改善/505後退を確認。全ID/hash/checkpoint/raw照合。[証拠](../ws074/phase189/evidence/20261014-q1134/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

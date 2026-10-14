@@ -981,6 +981,10 @@ grid_size_columns(
 	if (grid->columns == NULL)
 		return ENOMEM;
 
+	/* An empty implicit grid has no track for its auto-column size to occupy. */
+	if (grid->item_count == 0 && box->style.column_count == 0)
+		return 0;
+
 	/* The fixed tracks, and the least of the fr tracks. */
 	fr_total = 0;
 	for (column = 0; column < grid->column_count; column++) {

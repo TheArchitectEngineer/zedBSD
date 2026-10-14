@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1134](queue.md) finished / p189 fixed Grid502 recensus。2026-10-14 10:24 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1134の124 PASS/378 FAIL、2旧PASS後退あり（empty-grid幅、Grid行track animation）。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
+Queue: [q1135](queue.md) finished / p223 empty Grid intrinsic size・p224 animation diagnosis。2026-10-14 10:29 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1134の124 PASS/378 FAIL、2旧PASS後退。q1135でempty-gridはPASS回復、行track animationは旧PASSが偽陽性で一般animation機構不足と判明。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -481,6 +481,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p220](phase220/phase.md) | vertical inline text geometry | in-progress / q1121–q1122部分cleared | p217 q1103・q1092診断 |
 | [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1132-i01部分cleared、他のauto track値残 | p189 q1105固定Grid502・p218 shorthand出力 |
 | [ws074-p222](phase222/phase.md) | Interop 2025 Grid automatic placement | in-progress / q1133固定2 WPT partial cleared、全placement再測定待ち | p221 q1132-i01 CSS state・q1132-i02暗黙track sizing |
+| [ws074-p223](phase223/phase.md) | Empty Grid intrinsic size | in-progress / q1135固定empty-grid部分cleared | p189 q1134後退診断 |
+| [ws074-p224](phase224/phase.md) | Grid track animation | in-progress / q1135診断部分cleared、実装未着手 | p189 q1134後退診断 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -930,3 +932,7 @@ Event ws074-p222-q1131-partial-clear-20261014: [p222](phase222/phase.md) q1131-i
 Event ws074-p221-p222-q1132-partial-clear-20261014: [p221](phase221/phase.md) i01で単一auto/非負pxのauto-columns/rows CSS state、[p222](phase222/phase.md) i02で暗黙列/行sizingへ接続。[CSS証拠](phase221/evidence/20261014-q1132/README.md)、[配置証拠](phase222/evidence/20261014-q1132/README.md)。固定valid/computed各0→3 subtest、implicit-tracks placement0→6/12（row sparse/dense全6）、旧whole PASS2・host回帰・warning0 build・Acid3差0/Acid2差1865維持。q1132両部分cleared、p221/p222/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p222-q1133-partial-clear-20261014: [p222](phase222/phase.md) q1133-i01はcolumn/column denseの配置軸転置を追加。[証拠](phase222/evidence/20261014-q1133/README.md)。固定implicit-tracksは6→12/12・sparseは4→8/8 subtest、両whole FAIL→PASS、後退0。最小4 mode・旧whole PASS4件・CSS51/JS14/Grid48・warning0 build、Acid3差0/Acid2差1865維持。q1133部分cleared、p222/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1134-p223-p224-addition-20261014: [p189 q1134](phase189/evidence/20261014-q1134/README.md)固定Grid502全再測定で旧PASS2件が後退。空Gridの暗黙列がintrinsic幅へ誤算入される問題を[p223](phase223/phase.md)、行track animation値が元値のままの問題を[p224](phase224/phase.md)に分離。p189/p173分母・受け入れ不変。次はq1135で空Grid修正とanimation経路診断。共有投影/GitHub publication保留。
+
+Event ws074-p223-p224-q1135-outcome-20261014: [p223 q1135-i01](phase223/evidence/20261014-q1135/README.md)で空Grid旧PASSを3→9/9に回復、暗黙track配置旧PASSとAcid3差0維持。[p224 q1135-i02](phase224/evidence/20261014-q1135/README.md)で行track animation旧PASSはcomputed CSSOM空同士の偽陽性と確認。実animation機構は未実装。両部分cleared、p223/p224/p189/p173全件100%未達。共有投影/GitHub publication保留。

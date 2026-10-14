@@ -1,0 +1,11 @@
+<!doctype html>
+<style>
+@keyframes change { from { grid-template-rows: 10px; } to { grid-template-rows: 30px; } }
+</style>
+<div id="plain" style="display:grid;grid-template-rows:50px"></div>
+<div id="animated" style="display:grid;grid-template-rows:50px;animation-name:change;animation-duration:100s;animation-delay:-50s"></div>
+<script>
+console.log("plain=" + getComputedStyle(document.getElementById("plain")).getPropertyValue("grid-template-rows"));
+console.log("animated=" + getComputedStyle(document.getElementById("animated")).getPropertyValue("grid-template-rows"));
+console.log("elementAnimate=" + ("animate" in Element.prototype));
+</script>
