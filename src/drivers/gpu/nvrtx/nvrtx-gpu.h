@@ -160,6 +160,8 @@ struct nvrtx_engine_state {
 	int space_made;
 	int root_set;
 	int channel_made;
+	int scheduled;
+	int copy_made;
 };
 
 /*
