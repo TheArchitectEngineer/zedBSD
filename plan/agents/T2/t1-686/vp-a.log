@@ -1,0 +1,20 @@
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER FULLSCREEN on=1 via=option
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+MEDIA backend=vulkan-video codec=h264
+VIDEOPLAYER OPEN path=/home/kei/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/vulkan-video audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/home/kei/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=159 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=18 picture=1 gpu=1
+VIDEOPLAYER PRESENTED width=1280 height=720 after_ms=11 picture=1 gpu=1
+VIDEOPLAYER CLOCK time_ms=1181 heard=0 written=0 consumed=0 pictures=0 late=12 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=31 picture_us=1451 rest_us=19645 gpu=31 acquire_us=12000 submit_us=2451 wait_us=548
+VIDEOPLAYER PLAYBACK failed error=5
+VIDEOPLAYER DONE reason=timeout shown=13
+VIDEOPLAYER FRAMES shown=13 time_ms=0 late=12
