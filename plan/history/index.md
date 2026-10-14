@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1132 / WS074 basic implicit Grid tracks（2026-10-14）
+## 最新: q1133 / WS074 column Grid auto-placement（2026-10-14）
+
+[q1133履歴](queue-q1133.md): column/column dense配置で固定implicit-tracks6→12/12、sparse4→8/8 subtest、両whole FAIL→PASS。旧PASSとAcid3差0維持。[証拠](../ws074/phase222/evidence/20261014-q1133/README.md)。p222部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1132 / WS074 basic implicit Grid tracks（2026-10-14）
 
 [q1132履歴](queue-q1132.md): 単一px/auto暗黙track CSS stateとsizingで固定placement0→6/12、columns/rows valid/computed各0→3 subtest。旧PASSとAcid3差0維持。[CSS証拠](../ws074/phase221/evidence/20261014-q1132/README.md)、[配置証拠](../ws074/phase222/evidence/20261014-q1132/README.md)。p221/p222部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

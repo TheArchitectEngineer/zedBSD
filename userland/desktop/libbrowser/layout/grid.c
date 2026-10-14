@@ -11,7 +11,8 @@
  * minmax()'s minimum), items placed by line numbers (negative from the
  * end) and spans or else row after row in the first cells that are free
  * (with row dense backfilling earlier holes),
- * implicit auto tracks for what goes past the templates, the gaps, and
+ * implicit auto tracks for what goes past the templates, row/column sparse
+ * and dense auto-placement, the gaps, and
  * each item laid out as a block in its area and aligned in it
  * (align-self, align-items).  Columns are sized in three steps: the fixed
  * ones, then the auto ones at their items' content width, then the fr
@@ -19,7 +20,7 @@
  * rows are as tall as their items unless the template fixes them.  Direct
  * absolute children with definite lines use their area's static origin in
  * horizontal LTR/RTL grids, without taking part in track sizing.  Not in
- * this pass: named lines and areas, column flow, full inline-axis
+ * this pass: named lines and areas, full inline-axis
  * alignment, order, full baseline alignment, subgrid, and auto-fill and auto-fit.
  */
 
@@ -79,6 +80,7 @@ static void grid_resolve(const struct css_grid_place *place, int explicit_count,
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
 	layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
 static int grid_place(struct grid_state *grid, int auto_flow);
+static int grid_place_row(struct grid_state *grid, int dense);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_take(struct grid_state *grid, int row, int column, int row_span, int column_span);
 static const struct css_track *grid_column_track(const struct css_style *style, int column);
@@ -698,6 +700,50 @@ grid_place(
 {
 	struct grid_item *item;
 	size_t index;
+	int exchanged;
+	int error;
+
+	/* Column flow is row flow with the grid's two axes exchanged. */
+	if (!(auto_flow & CSS_GRID_FLOW_COLUMN))
+		return grid_place_row(grid, auto_flow & CSS_GRID_FLOW_DENSE);
+	for (index = 0; index < grid->item_count; index++) {
+		item = &grid->items[index];
+		exchanged = item->column;
+		item->column = item->row;
+		item->row = exchanged;
+		exchanged = item->column_span;
+		item->column_span = item->row_span;
+		item->row_span = exchanged;
+	}
+	exchanged = grid->column_count;
+	grid->column_count = grid->row_count;
+	grid->row_count = exchanged;
+
+	/* The occupancy map is only needed inside placement, in its transposed axes. */
+	error = grid_place_row(grid, auto_flow & CSS_GRID_FLOW_DENSE);
+	exchanged = grid->column_count;
+	grid->column_count = grid->row_count;
+	grid->row_count = exchanged;
+	for (index = 0; index < grid->item_count; index++) {
+		item = &grid->items[index];
+		exchanged = item->column;
+		item->column = item->row;
+		item->row = exchanged;
+		exchanged = item->column_span;
+		item->column_span = item->row_span;
+		item->row_span = exchanged;
+	}
+	return error;
+}
+
+/* Places items in row order, optionally starting each search at the first cell. */
+static int
+grid_place_row(
+	struct grid_state *grid,
+	int dense)
+{
+	struct grid_item *item;
+	size_t index;
 	int cursor_row;
 	int cursor_column;
 	int error;
@@ -759,7 +805,7 @@ grid_place(
 		item = &grid->items[index];
 		if (item->row >= 0)
 			continue;
-		if ((auto_flow & CSS_GRID_FLOW_DENSE) && !(auto_flow & CSS_GRID_FLOW_COLUMN)) {
+		if (dense) {
 			cursor_row = 0;
 			cursor_column = 0;
 		}

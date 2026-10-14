@@ -33,3 +33,11 @@ Event ws074-p222-q1131-partial-clear-20261014: [証拠](evidence/20261014-q1131/
 ## q1132-i02 結果（2026-10-14 10:13 JST）
 
 Event ws074-p222-q1132-i02-partial-clear-20261014: [証拠](evidence/20261014-q1132/README.md)。単一固定px暗黙列/行trackをGrid sizingに使用し、未指定auto・row sparse/denseを維持。最小geometry PASS、固定implicit-tracks WPT0→6/12 subtest（row sparse/dense各3）、column flow6件はFAILでwhole未達。旧whole PASS2件、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。q1132-i02部分cleared、p222/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1133-i01 有限部分範囲（2026-10-14 10:15 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（11:45 JSTまで）に適用。`grid-auto-flow:column`と`column dense`で配置軸を転置し、既存row sparse/denseと明示位置・span・固定暗黙trackサイズを維持。最小4 mode geometry、固定implicit-tracks WPT残6 subtest、旧PASS、CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加。Grid track grammar/column sizingの別欠陥、WPT/runner/公開ABI/`plan/master.md`変更なし。p222 whole/p189/p173全件100%は本部分基準外。[CSS Grid §8.5](https://www.w3.org/TR/css-grid-2/#auto-placement-algo)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1133-i01 結果（2026-10-14 10:16 JST）
+
+Event ws074-p222-q1133-partial-clear-20261014: [証拠](evidence/20261014-q1133/README.md)。column/column dense配置を軸転置でrow sparse/denseと共通化し、項目座標・span・明示/暗黙trackを維持。固定implicit-tracks WPT6→12/12 subtest・whole FAIL→PASS、sparse WPT4→8/8・whole FAIL→PASS、後退0。最小4 mode geometry、旧whole PASS4件、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。q1133部分cleared、p222/p189/p173全件100%未達。共有投影/GitHub publication保留。
