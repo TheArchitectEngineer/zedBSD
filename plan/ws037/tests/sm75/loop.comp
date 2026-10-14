@@ -1,11 +1,16 @@
 #version 450
-// ws037-p008: a loop, which stage A refuses.
-layout(local_size_x = 1) in;
+// ws037-p008 stage B: loops whose trip count differs between the invocations of a warp, nested.
+layout(local_size_x = 32) in;
 layout(std430, set = 0, binding = 0) buffer O { uint o[]; };
 void main()
 {
+	uint g = gl_GlobalInvocationID.x;
+	uint n = g % 7u;
 	uint s = 0u;
-	for (uint i = 0u; i < o[0]; i++)
-		s += i;
-	o[1] = s;
+	for (uint i = 0u; i < n; i++) {
+		s += i * g + 1u;
+		for (uint j = 0u; j < (i & 1u) + 1u; j++)
+			s ^= j << i;
+	}
+	o[g] = s;
 }
