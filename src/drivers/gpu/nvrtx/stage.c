@@ -22,6 +22,9 @@
  *   nvrtx.gsp=1           the driver may go on to the GSP boot path after
  *                         N1 (the stages that write); without it the GPU is
  *                         left to the firmware after N1
+ *   nvrtx.gr=1            after the copy channel, the driver has the
+ *                         resource manager make the graphics golden context
+ *                         (and the TU10x scrubber channel), stage P5g
  */
 
 #include <stdarg.h>
@@ -43,6 +46,9 @@
 
 /* The whole token that lets the driver go on to the GSP boot path. */
 #define STAGE_GSP_TOKEN			"nvrtx.gsp=1"
+
+/* The whole token that asks for the graphics golden context. */
+#define STAGE_GR_TOKEN			"nvrtx.gr=1"
 
 /* The longest stop token: "nvrtx.stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		32U
@@ -81,6 +87,23 @@ nvrtx_stage_gsp_wanted(void)
 		return true;
 
 	/* Without it the stages that write never run. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the graphics golden context (nvrtx.gr=1).
+ */
+bool
+nvrtx_stage_gr_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.gr=1 among the boot parameters. */
+	present = stage_token_present(STAGE_GR_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the boot keeps to the copy channel. */
 	return false;
 }
 

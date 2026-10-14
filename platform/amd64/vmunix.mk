@@ -172,6 +172,10 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/records.c src/drivers/gpu/nvrtx/rpc
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/mmu.c src/drivers/gpu/nvrtx/objects.c
 # P4 to P6 on the GPU: the address space, the channel and its fence (ws037-p005 5b-5d).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/channel.c
+# P5g: the graphics golden context and the TU10x scrubber (ws037-p005 5f, nvrtx.gr=1).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/gr.c
+# P8a: the display under the GSP, its objects and the readout of the lit heads (ws037-p006).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display.c
 # The shader compiler: SPIR-V to SM75 through the shared frontend and optimizer (ws037-p008).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75-encode.c src/drivers/gpu/nvrtx/compiler/sm75-compile.c \
 	$(filter-out $(AMD64_I915_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)

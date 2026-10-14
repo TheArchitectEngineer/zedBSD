@@ -59,6 +59,19 @@
 #define NVRTX_HANDLE_CHANNEL		0xf1f00008U
 #define NVRTX_HANDLE_COPY		0xc5b50008U
 
+/*
+ * The graphics context's objects (5f).  The golden context's space, channel
+ * (chid 1) and 3D object take the next handles of nouveau's families; the
+ * scrubber's are the resource manager's fixed ones, by which it finds the
+ * scrubber channel of the client.
+ */
+#define NVRTX_HANDLE_GOLDEN_SPACE	0x90f10001U
+#define NVRTX_HANDLE_GOLDEN_CHANNEL	0xf1f00001U
+#define NVRTX_HANDLE_GOLDEN_THREED	0x97000001U
+#define NVRTX_HANDLE_SCRUBBER_SPACE	0xdada0042U
+#define NVRTX_HANDLE_SCRUBBER_CHANNEL	0xdada0045U
+#define NVRTX_HANDLE_SCRUBBER_THREED	0xdada0046U
+
 /* How long a call to the resource manager waits for its reply. */
 #define NVRTX_CALL_TIMEOUT_US		5000000U
 
@@ -165,6 +178,59 @@ struct nvrtx_engine_state {
 };
 
 /*
+ * The graphics context (stage P5g, nvrtx.gr=1).
+ *
+ * The arena is a run of VRAM below the first block that holds two sets of
+ * page tables (the golden context's and the scrubber's), the two channels'
+ * instance blocks and USERD, and the context buffers.  The global buffers
+ * made for the golden context stay for every later graphics channel; each
+ * buffer has the same address in both spaces.  The flags say which
+ * resource-manager objects exist, so the stop frees only those.
+ */
+struct nvrtx_gr_state {
+	uint64_t arena;
+	struct nvrtx_gr_buffer buffers[NVRTX_GR_BUFFER_MAX];
+	size_t buffer_count;
+	uint64_t golden_physical[NVRTX_GR_BUFFER_MAX];
+	uint64_t scrubber_physical[NVRTX_GR_BUFFER_MAX];
+	uint64_t virtual_address[NVRTX_GR_BUFFER_MAX];
+	struct nvrtx_buffer golden_methods;
+	struct nvrtx_buffer scrubber_methods;
+	int golden_space_made;
+	int golden_channel_made;
+	int golden_threed_made;
+	int scrubber_space_made;
+	int scrubber_channel_made;
+	int scrubber_threed_made;
+	int scrubber_enabled;
+};
+
+/*
+ * The display under the GSP (stage P8a).
+ *
+ * The instance memory is 64 KiB of VRAM the resource manager keeps the
+ * display's objects in.  The masks say which heads, windows and outputs the
+ * hardware has and which heads the firmware (GOP) lit; the first lit head,
+ * its output (SOR) and protocol are what P8b takes over.  The flags say
+ * which resource-manager objects exist, so the stop frees only those.
+ */
+struct nvrtx_display_state {
+	uint64_t instance;
+	uint32_t head_count;
+	uint32_t head_mask;
+	uint32_t window_mask;
+	uint32_t output_mask;
+	uint32_t lit_mask;
+	int gop_head_found;
+	uint32_t gop_head;
+	uint32_t gop_display_id;
+	uint32_t gop_sor;
+	uint32_t gop_protocol;
+	int common_made;
+	int root_made;
+};
+
+/*
  * One GPU the driver keeps after N1, when the boot asked for the GSP path.
  *
  * Created by the attach and owned by the PCI binding; the worker thread runs
@@ -208,6 +274,12 @@ struct nvrtx_gpu {
 
 	/* The first address space and channel. */
 	struct nvrtx_engine_state engine;
+
+	/* The graphics golden context and the scrubber. */
+	struct nvrtx_gr_state gr;
+
+	/* The display. */
+	struct nvrtx_display_state display;
 
 	/* The static information P3 read, and the resource manager's own client and subdevice. */
 	uint8_t *static_info;
@@ -259,9 +331,19 @@ int nvrtx_rm_control(struct nvrtx_gpu *gpu, uint32_t client, uint32_t object, ui
 int nvrtx_rm_free(struct nvrtx_gpu *gpu, uint32_t object);
 
 int nvrtx_space_start(struct nvrtx_gpu *gpu);
+int nvrtx_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
+int nvrtx_vram_zero(struct nvrtx_gpu *gpu, uint64_t address, size_t length);
+int nvrtx_flush_tlb(struct nvrtx_gpu *gpu, uint64_t root);
 int nvrtx_channel_start(struct nvrtx_gpu *gpu);
 void nvrtx_channel_stop(struct nvrtx_gpu *gpu);
 void nvrtx_channel_release(struct nvrtx_gpu *gpu);
+
+int nvrtx_gr_start(struct nvrtx_gpu *gpu);
+void nvrtx_gr_stop(struct nvrtx_gpu *gpu);
+void nvrtx_gr_release(struct nvrtx_gpu *gpu);
+
+int nvrtx_display_start(struct nvrtx_gpu *gpu);
+void nvrtx_display_stop(struct nvrtx_gpu *gpu);
 
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);
