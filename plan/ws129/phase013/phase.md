@@ -45,3 +45,9 @@ Q1 の割り当て（q920 (3)「menuconfig の新しい階層・keiland の prer
 - 利用の手引き `docs/release/zedbsd-1.0.0-beta2-guide.md`: Security notes を今の実装に（passwd と Settings → Users の Change Password、`sudo service stop/disable sshd`、kei は wheel で sudo できる）。有線の後挿し（BUG-168 は QEMU で直った、実機は UAT、review の comment）、Bluetooth の節（条件付き）、「Building it yourself」の節。
 - 確かめ: Settings の頁の名前（pages.c）、Users の Change Password（page-users.c）、`/etc/group` の wheel に kei、`service` の stop・disable（service-command.c）、menu の項目（tools/menuconfig.py）。docs/ から plan/ への link は無い（comment の中の名前だけ）。
 - 未実施: 手引きの手順の実機の確認（p007）。
+
+## 2026-10-14 夕 P1: 手引きの firmware と PC-98
+
+記録の本体は [p005](../phase005/phase.md) の「2026-10-14 夕 P1」。`docs/release/zedbsd-1.0.0-beta2-guide.md` の変更:
+- 「Building it yourself」に節「Firmware and its licenses」（WS233: awemorris/zedBSD-firmware から取り、失敗したら元の配布元、大きさと SHA-256 の確かめ。初回の表示と yes/no、`yes | make firmware-licenses`、menuconfig の Build boot image の画面で最後まで scroll して Accept、Decline は build しない）と節「PC-98」（BUG-309: 8 head・17 sector の cylinder の境、ZuluIDE の例 `device = hdd`・cylinders 2667・heads 8・sectors 17、cylinder の数は image の byte 数 ÷ 69,632）。review: ZuluIDE の key の名前は ZuluIDE の文書で未確認、20 MiB 以下の image は 4 head。
+- Bluetooth の節の review の comment を消した（WS143 p008 の 5330 の UAT で決着）。

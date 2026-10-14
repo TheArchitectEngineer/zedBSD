@@ -61,13 +61,14 @@ log in as `kei`. Use Beta 2 only on networks you trust. `root` cannot log in.
 - Icons of the files in `~/Desktop`, and drag and drop between apps.
 - External displays over HDMI and USB-C (DisplayPort alternate mode),
   extended or mirrored, arranged in Settings → Display.
-- Screen rotation: the desktop can turn a display by 90°, 180° or 270°,
-  for example to hold the computer upright for Notes. Touch, the pen and the
-  pointer follow the turn. In Beta 2 the angle is set by a `rotate=` line in
-  `~/.config/keiland/displays.conf`; Settings has no control for it yet.
+- Screen rotation in Settings → Display: four pictures of how the screen
+  stands turn it by 90°, 180° or 270°, for example to hold the computer
+  upright for Notes. The turn takes effect at once and is kept for the next
+  sign-in. Touch, the pen and the pointer follow the turn. The angle can be
+  changed while the display is the only one shown.
 
-<!-- review (2026-10-14): screen rotation has no Settings page in Beta 2; the line names the file because that is the
-     only way to turn it. Drop the line if a feature that needs a hand-edited file should not be announced. -->
+<!-- review (2026-10-14): rotation from Settings → Display passed in QEMU (T1-611, T1-616); the turn on the 5330's
+     Intel graphics waits for the UAT. Drop the line if that check fails. -->
 
 <!-- review: the control panel (WS192) passed in QEMU (T1-496) apart from the look, which a person judges; it and the
      lock screen (WS187) wait for the 5330 UAT (items 1 and 6). FIDO2 sign-in (WS172 p003, WS161 p006) waits for the UAT
@@ -79,7 +80,24 @@ Files, Settings, Terminal, Text Editor, Notes (handwritten notes, with a pen
 tablet, saved as PDF; editing PDF text and images), PDF Viewer, Image Viewer,
 Photos, Music (m4a), Video Player, Calendar, Mail (IMAP and SMTP), Phone
 (contacts and a message timeline; no phone line yet), System Monitor and the
-Browser (an early web browser of its own).
+Browser.
+
+Notes draws with a brush, a pencil and watercolor as well as the pen and the
+eraser, and fills an enclosed area with a color. The pen's pressure shapes
+the strokes, and the saved PDF keeps them.
+
+The Browser is an early web browser with an engine of its own. It scores
+100 in the Acid3 test, and its picture of the test matches the reference
+picture with no pixel different. It shows google.com, including the inline
+SVG pictures the page draws its logo and icons with. The address is a box in
+the window's title bar, as in other browsers: one click selects the whole
+address, and held keys repeat while you edit it. Images are shown from PNG,
+JPEG and GIF files.
+
+<!-- review (2026-10-16): browser の最終の状態で更新 -->
+
+<!-- review (2026-10-14): the Notes tools passed in QEMU (T1-580); how the pen feels with them on the 5330 waits for
+     the UAT. The Browser's title bar (T1-618) and google.com were checked in QEMU only. -->
 
 X11 programs run on the desktop through a rootless X server, with GLX.
 
@@ -121,19 +139,13 @@ X11 programs run on the desktop through a rootless X server, with GLX.
   computer can be read and written. NCQ, TRIM, hot plugging and optical
   drives are not supported yet.
 
-<!-- review (2026-10-09 user): Bluetooth (WS143) and Vulkan Video (WS083) are in, and are turned off at the last
-     moment (10/16) if they are not ready. If one is turned off, replace its line:
-     - Bluetooth off: delete the "Bluetooth keyboards and mice" line here, and add the known-issue row from the
-       known-issues draft.
-     - Vulkan Video (2026-10-11 user): on by default. It decoded every test stream on the Latitude 5330.
-       If it is turned off at the last moment, say so here and in the known issues.
-     IPv6 waits for the networkd retest (T1-500); drop "and IPv6" if it fails. -->
-
-<!-- review (2026-10-14): the TSC timer line passed in QEMU (KVM and TCG, the PIT path); the TSC path itself waits for
-     the user's check on the Core i5-13400F desktop and the 5330. Drop the line if that check fails.
+<!-- review (2026-10-14): the Core i5-13400F desktop started in the user's check on real hardware; the same change on
+     the 5330 (whose timer may now be measured with the TSC too) has not been checked there yet.
      The code freeze of 2026-10-14 18:00 took Gen9 (WS229) and AHCI (WS231); both are on by default. Gen9's GPU tests
      passed on a Let's Note SV7 (Core i5 8th generation, UHD 620) with its GPU passed through to a QEMU guest on that
      machine, so the machine's own firmware start from the USB drive is untested, as is any 6th generation part. -->
+
+<!-- review (2026-10-16): WS236 が入れば Hardware に 1 行 -->
 
 ### For developers
 
@@ -166,6 +178,26 @@ X11 programs run on the desktop through a rootless X server, with GLX.
   (the image and PDF libraries moved to Desktop), offers the i386 CPU with
   the PC-9800 and PC/AT boards, and has a Retro menu for Xzed, zwm, zshell
   and zterm.
+- The PC-98 disk image puts its partitions on cylinder boundaries, so
+  PC-9821 models such as the Ra43 start from it (see the user guide).
+- On the UFS file system, `fsync` writes the file's own data and the
+  journal, instead of writing out everything waiting on the volume several
+  times over, so saving a file (as `vi` and Settings do) takes less time.
+- Device firmware (for Wi-Fi, Bluetooth, the graphics' display and the
+  Raspberry Pi 4's start) comes from the GitHub repository
+  [awemorris/zedBSD-firmware](https://github.com/awemorris/zedBSD-firmware),
+  which keeps each firmware with its license, and from the firmware's
+  original source only when that fails; its size and SHA-256 are checked
+  either way. The first time the build fetches a firmware, it shows what the
+  firmware is, its copyright and its whole license, and asks whether you
+  accept it: `make` asks yes or no, `yes | make firmware-licenses` accepts
+  them all for an unattended build, and **Build boot image** in
+  `make menuconfig` shows each license in a screen you scroll to the end
+  before you choose Accept or Decline.
+
+<!-- review (2026-10-14): the PC-98 line rests on the user's check on a PC-9821 Ra43 and the QEMU start (T1-617). The
+     fsync line passed in QEMU only (T1-615). The license screen of Build boot image passed the host test and a
+     pseudo-terminal run; nobody has looked at it in a real terminal or built an image through it yet. -->
 
 ### Keiland on Linux and FreeBSD
 
