@@ -2,7 +2,7 @@
 
 # ws037-p006: display（段 P8）
 
-Status: in-progress（2026-10-15 P1。P8a は実機（方式 B、T1）PASS。P8c（resident の GPU の device と display の ops）を実装、build まで（`2c4d1a39f`、R8c は R8b の後）。P8b の初版（`b893faeb6`）は実機 R8b（T1-642）で FAIL（core の notifier が来ない、monitor の信号が消える、P7 の unload が 42）。nouveau の初回の commit の順（disable → DFP_ASSIGN_SOR → enable）に直した（`476ca3ba5`）、build と host 試験まで。R8b の再試験は T 待ち（下の「R8b の結果と直し」））
+Status: in-progress（2026-10-15 P1。P8a は実機（方式 B、T1）PASS。P8b は直し（`476ca3ba5`）の再試験 R8b（T1-645）待ち。P8c（resident の GPU の device と display の ops）は `2c4d1a39f` で build まで、R8c（T1-647）待ち。P8c の続き（DISPLAY_EVENTS・DISPLAY_CONTROL（refresh、power は EOPNOTSUPP）・cursor・SHARE・scanout の表）を `2791fc6e3`・`e6699aa70` で build と host 試験まで、R8d は R8c の後（下の「P8c の続き」））
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14 夜「(3) p006（display: GOP の readout と GSP の RM の display で mode set・scanout・flip）」、ユーザーの判断「display … ここまでベータ2に入れます」）
@@ -169,11 +169,61 @@ FAIL の時: `P8b fail: …` と `P8b core exception …`・`P8b other …` の 
 image は `NVRTX_RUN=R8c`。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。
 1. 起動の印: R8b の合格の印（step 1〜4、`P8b ok: …`）に続いて `P8c begin` → `P8c ok: gpu device registered, display 1280x1024 at 60020 mHz` → `P8c: the GSP stays up until power-off`（`P7` の行は出ない）→ login prompt。
 2. serial で: `display-inventory`（GPU の node が複数なら `--node=/dev/gpuN` で nvrtx の物。`DISPLAY-INVENTORY output index=0 … connected=1 … mode=1280x1024@60020 … name=nvrtx head`）。
-3. `display-control --hold=10`（同じ node）: `DISPLAY-CONTROL claim lease=1`、`DISPLAY-CONTROL present error=0`、power・refresh の行は EOPNOTSUPP（95）でよい（DISPLAY_CONTROL は未実装）、`DISPLAY-CONTROL done error=0`。画面の印 `P8c lease 1 claimed`・`P8c lease 1 released after 1 frames`。
+3. `display-control --hold=10`（同じ node）: `DISPLAY-CONTROL claim lease=1`、`DISPLAY-CONTROL present error=0`、power・refresh の行は EOPNOTSUPP（zedBSD の errno で 21）でよい（DISPLAY_CONTROL は未実装）、`DISPLAY-CONTROL done error=0`。画面の印 `P8c lease 1 claimed`・`P8c lease 1 released after 1 frames`。
 4. monitor（目視）: present の後、緑（BGRA 0xff30c060）の一面が約 20 秒（hold 10 秒 × 2）、release の後に 8 本の帯（上が白）に戻る。
 5. 後始末: GSP は止まらないので guest を止めた後 **host を reboot**。
 FAIL の時: `P8c fail: …`・`P8b fail: frame notifier …`・`P8b core exception …` の行を PNG に。
 
+## P8c の続き: events・control・cursor・SHARE・scanout の表（2026-10-15 P1、`2791fc6e3`・`e6699aa70`。build と host 試験まで、実機は未）
+
+Q1 の依頼（Keiland の compositor を RTX に出すまでの不足分、順に 1. DISPLAY_EVENTS と DISPLAY_CONTROL、2. cursor、3. SHARE と scanout の表）。すべて `CONFIG_DRIVER_PCI_NVRTX=y` の中、既定 n は不変。nouveau（MIT）と open-gpu-doc（MIT）に従い、GPL の物は使っていない。
+
+| 物 | 中身 | 出典 |
+| --- | --- | --- |
+| DISPLAY_EVENTS | `GPU_CAP_DISPLAY_EVENTS`。この ABI の events は topology の sequence（接続・切断の変化、i915 と同じ意味）で、**固定の 1**。RM の hotplug の event（`NV01_EVENT_KERNEL_CALLBACK_EX` と `NV2080_NOTIFIERS_HOTPLUG`、nouveau `r535_disp_oneinit`）はまだ取らないので動かない。vblank は ABI では DISPLAY_CONTROL の refresh、flip の完了は present（begun を待って返る）と wait（すぐ答える）が担う | i915 `drv_i915_display_events` |
+| DISPLAY_CONTROL | `GPU_CAP_DISPLAY_CONTROL`、query に `REFRESH_COUNTER`。**refresh**: head の frame counter（`NV_PDISP_RG_DPCA(head)` = 0x616330 + head×0x800 の 31:16、読みに副作用なし）を待つ間 tick ごとに読み、16 bit の差分を足して戻らない count にする（i915 `control.c` の PIPE_FRMCOUNT と同じ形、count は 1 から）。message drain の thread も毎秒読み、wrap（60 Hz で約 18 分）に追いつく。**power**: display・generation・lease（EBUSY）を確かめた後 **EOPNOTSUPP**（`GPU_DISPLAY_POWER_CONTROL` は立てない）。理由: 出力の off/on は RM の modeset（head の disable → `DFP_ASSIGN_SOR` → enable）が要り、device の ops は GSP に RPC を出さない（drain が channel の唯一の reader） | open-gpu-doc `manuals/turing/tu102/dev_display_withoffset.ref.txt`、i915 `control.c` |
+| cursor | `GPU_DISPLAY_HAS_CURSOR`、`cursor_set`・`move`・`hide`。node の起動（drain の前）に head の cursor の PIO channel（0xc57a、handle `(0xc57a << 16) \| head`）: `INTERNAL_DISPLAY_CHANNEL_PUSHBUFFER`（memory 無し・valid 0・subdevice 1）→ display root の下に alloc（16 byte、channelInstance = head）。画像は VRAM の 2 slot（64×64 A8R8G8B8、16 KiB ずつ、BAR1 越しに CPU が写す。RGBA は R と B を入れ替え、画像の外は透明）。**表示**: cursor channel（user 0x6d8000 + head×0x1000）に POINT_OUT（0x208、x 15:0・y 31:16 の 16 bit 2 の補数）と UPDATE（0x200 = 1）、core に `HEAD_SET_CONTROL_CURSOR` 0x800001cf（enable・W64_H64・A8R8G8B8）と `COMPOSITION` 0x72ff（K1 255、cursor×K1 + 画面×(1 − K1×α)＝premultiplied）、`CONTEXT_DMA_CURSOR`（core の VRAM の ctxdma）、`OFFSET_CURSOR`（>> 8）、core の update（cursor の interlock、notifier を頼むが待たない）。**移動**は cursor channel だけ。**隠す**: `CONTROL_CURSOR` 0xcf・ctxdma 0・core の update（cursor の interlock）。新しい画像は表示中でない slot に書き、前の core の update が終わる前は EBUSY（ABI の「一瞬の EBUSY」）。表示と隠すは前の update を 50 ms まで待つ。lease の終わりで隠して画像を忘れる。core の push buffer（1024 語）は wind する（GET = PUT を待ち、端なら jump と PUT = 0） | nouveau `r535_curs_init`・`r570_disp_chan_set_pushbuf`・`r535_chan_user`・`cursc37a.c`・`curs507a.c`（space: FREE ≥ 4 を 100 ms）・`headc37d_curs_set`/`curs_clr`・`corec37d_update`・`nv50_wndw_flush_set`/`flush_clr`・`nv50_dmac_wind`、open-gpu-doc `clc57a.h`・`clc57d.h` |
+| SHARE | `GPU_CAP_SHARE`。blob の VRAM を `struct nvrtx_backing`（参照の数）にし、blob・import・export が参照を持つ。export は参照を 1 つ足し、release で引く。import は同じ backing を指す新しい blob（resource id を付ける）。最後の参照で VRAM を返す（画面が読むかもしれない kept の VRAM は返さない）。`get_scanout_backing` は無し（別の device に VRAM の物理を貸さない） | i915 `resource.c` の share（same device only） |
+| scanout の表 | `query_device`: roles = DISPLAY だけ（command stream が無いので RENDER を名乗らない。libvulkan は display だけの node を最初の renderer と組む）、companion 0。`constraints`: SHARED \| COPY（FOREIGN 無し）、BGRA・RGBA、stride 64、offset 256、placement 0、DMA 上限 0。`import_image` は無し（system memory や他の device の BAR を window が読むのは未確認、design の判断 9） | i915 `scanout.c` |
+| 試験の道具 | `userland/tests/display-scanout`（新、汎用の GPU ioctl だけ）: info・device・display・events・constraints・claim・別の open の blob を export → import → client を閉じて BLOB で present・cursor の set/表示/100 回の移動/隠す/再表示・release。run は `NVRTX_RUN=R8d`（R8c と同じ boot の語に probe を足した） | — |
+
+- 置き場所: `present.c`（events・power・refresh、ops の表）、`cursor.c`（新、cursor の slot と ops）、`share.c`（新、share と scanout の ops）、`scanout.c`（cursor channel・core の待たない update・wind・frame counter）、`disp-records.c`・`nvrtx-disp.h`（PIO の引数、cursor の method、位置・pixel・frame の計算。host で試す）、`node.c`（backing、capability、drain の refresh）。`platform/amd64/vmunix.mk` の P8c の行に `cursor.c`・`share.c` を足した（NVRTX の ifeq の中）。
+- Keiland の direct scanout まで残るもの: (1) client が同じ RTX の node の blob に描く道（p007 の 3D、または CPU の描画）。(2) Keiland の scanout は `/dev/gpu0` 固定（`scanout-zedbsd.c`）で、RTX の node が gpu0 でなければ開かない。(3) 観察（未検証、ws122 の範囲）: Keiland の `scanout_import` は import の image に client の description を入れて送るが、core の `gpu_import_ioctl` は image が 0 でなければ EINVAL を返す。(4) hotplug（events の sequence を動かす）と power は RM の event・modeset が要る。
+- 未確定の危険: (1) GSP の下で CPU が RG_DPCA を読めるか（nouveau の r535 は rgpos を持たない）。counter が動かなければ refresh は ETIMEDOUT（display-control の `refresh now boundaries=0`）。(2) 隠すときの core の update は cursor channel の update 無しで cursor と interlock する（nouveau と同じ）。止まれば次の cursor の操作が EBUSY を返し続ける。(3) cursor の PIO channel の FREE が 4 に満たない → `P8c fail: cursor channel has N free entries`。(4) core の push の wind を初めて使う（cursor の変更 1 回で約 16 語、約 60 回で 1 周）→ 止まれば `P8c fail: channel at 680000 stopped, get … put …`。
+
+### 確認（P8c の続き）
+
+| 確認 | 結果 |
+| --- | --- |
+| nvrtx=y の kernel（`make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-y vmunix`） | rc 0・warning 0・`kernel include check: PASS (420 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| host 試験 `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | PASS 233 項目（P8c の cursor・control の records 11 項目を足した。firmware の cache が無いので実 file の項目は飛ばし） |
+| probe（`make … BUILD=build/ws037-y ZEDBSD_USER_PROGRAMS=display-scanout build/ws037-y/bin/display-scanout`） | rc 0（-Wall -Wextra -Werror） |
+| 既定 n | 新しい file は vmunix.mk の NVRTX の ifeq の中だけ。既定の kernel は build していない（変えた行は ifeq の中だけ） |
+| 実機（方式 B、rombar=1） | **未実施**（R8d を T へ、R8c の PASS の後） |
+
+### T への手順（R8d、rombar=1。R8c（T1-647）が PASS してから）
+
+image は main に merge した commit で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8d NVRTX_RUN=R8d`。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。GSP は止まらないので run の後は **host を reboot**。GPU の node が複数なら nvrtx の物を `--node=/dev/gpuN` で（`display-scanout` の `driver=nvrtx` で分かる）。
+
+1. 起動の印: R8c の印（`P8b ok: …`、`P8c begin`）に続いて `P8c channel c57a.0 made` → `P8c ok: cursor plane 64x64 at …` → `P8c ok: gpu device registered, display 1280x1024 at 60020 mHz` → `P8c: the GSP stays up until power-off` → login prompt。
+2. `display-inventory --node=/dev/gpuN`: `DISPLAY-INVENTORY sequence=1 count=1` と output の行（R8c と同じ）。
+3. `display-control --node=/dev/gpuN --hold=3`: `display id=1 … power=0 counter=1`、`refresh now boundaries=` 59〜61 `ms=` 約 1000 `virtual=0 error=0`、`claim lease=…`、`present error=0`、`refresh shown boundaries=` 約 60、`power state=off error=21`（EOPNOTSUPP）、`refresh-off error=0`（power が効かないので boundary は続く。ここでは 0 が正しい）、`power state=on error=21`、`refresh on boundaries=` 約 60、`done error=0`。画面は緑の一面（約 9 秒）→ 8 本の帯。
+4. `display-scanout --node=/dev/gpuN --hold=5`:
+   - `info caps=0x91cd share=1 events=1 control=1 driver=nvrtx`
+   - `device roles=0x2 companion=0 error=0`
+   - `display id=1 generation=1 flags=0x525 cursor=1 mode=1280x1024@60020`
+   - `events sequence=1 error=0`
+   - `constraints flags=0x3 formats=0x3 stride=64 offset=256 placement=0x0 error=0`
+   - `claim lease=…`（画面の印 `P8c lease N claimed`）
+   - `shared blob=0 write=0 export=0 import=0 present=0 sequence=1`
+   - `cursor set=0 show=0 moves=100 move=0 hide=0 again=0`
+   - `done error=0`（画面の印 `P8c lease N released after 1 frames`）
+5. monitor（ユーザーの目視）: 青の一面（client の blob、client を閉じた後も出たまま）5 秒 → その中央に白い 32×32 の四角（黒い縁 2 px）の cursor が 5 秒 → 右下へ約 3 秒かけて 400 px 斜めに動く → 消えて 5 秒 → 止まった所に再び出て 5 秒 → release で 8 本の帯（上が白）に戻り cursor は消える。cursor の乱れ（色・縁の欠け・ちらつき）と、動きの途切れを記録。
+
+FAIL の時: `P8c fail: …`（`cursor channel has N free entries`・`channel at 680000 stopped, get … put …`・`a flip did not begin`）、`P8b core exception …`・`P8b other …`、probe の行の error の数（zedBSD の errno: 17 = EBUSY、5 = EIO、21 = EOPNOTSUPP、3 = EINVAL、48 = EXDEV、42 = ETIMEDOUT）を PNG に。refresh が 0 なら（RG_DPCA が動かない）その旨を記録。
+
 ## Resume point
 
-P8b は実装・build・host 試験まで（`b893faeb6` と直し）。次は T の R8b（rombar=1、上の手順）とユーザーの目視。PASS なら P8c（上の設計、BAR1 の map と VRAM の BO が先）。FAIL なら印で切り分け、引き継ぎが RM に受け入れられない場合は (a) の nouveau の初回 modeset（`DFP_ASSIGN_SOR`、TMDS なら HDMI の設定、DP なら DPCD と `DP_CTRL`）を足す。
+（2026-10-15 P1 の更新）T の順: R8b の再試験（T1-645、P8b の直し）→ R8c（T1-647、GPU の device）→ R8d（上の「P8c の続き」の手順: events・refresh・cursor・SHARE・scanout の表）。どれもユーザーが RTX の monitor の前にいる時。R8b が FAIL なら印で切り分け、引き継ぎが RM に受け入れられない場合は (a) の nouveau の初回 modeset（`DFP_ASSIGN_SOR`、TMDS なら HDMI の設定、DP なら DPCD と `DP_CTRL`）を足す。R8d の後に残るもの（Keiland の direct scanout まで）: client が RTX の blob に描く道（p007）、Keiland の scanout の `/dev/gpu0` 固定、hotplug の event と power（RM の event・modeset が要る）。
+
+以前の resume（P8b の実装の時点）: P8b は実装・build・host 試験まで（`b893faeb6` と直し）。次は T の R8b（rombar=1、上の手順）とユーザーの目視。PASS なら P8c（上の設計、BAR1 の map と VRAM の BO が先）。

@@ -219,6 +219,50 @@ nvrtx_present_resource_gone(
 	mutex_unlock(&node->lock);
 }
 
+/*
+ * Brings the refresh count up to date from the head's frame counter and
+ * reports it with the time it last moved.
+ *
+ * The 16-bit counter's movement since the last reading is added, so the
+ * count never goes back; a gap of more than 65535 frames between readings
+ * counts short (the message drain reads it about each second).  The first
+ * reading only sets the base.  Takes only the IRQ-safe refresh lock.
+ */
+void
+nvrtx_present_refresh_sample(
+	struct nvrtx_node *node,
+	uint64_t *count,
+	uint64_t *time_ns)
+{
+	unsigned long irq;
+	uint32_t frame;
+	uint32_t advance;
+
+	/* Reads the head's frame counter. */
+	irq = spin_lock_irqsave(&node->refresh_lock);
+
+	frame = nvrtx_scanout_frame_counter(node->gpu);
+
+	/* Adds what it moved since the last reading; the first reading only sets the base. */
+	if (node->refresh_frame_valid != 0) {
+		advance = nvrtx_disp_frame_advance(node->refresh_frame, frame);
+		if (advance != 0U) {
+			node->refresh_count += advance;
+			node->refresh_time_ns = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+		}
+	}
+
+	/* The next reading counts from this one. */
+	node->refresh_frame = frame;
+	node->refresh_frame_valid = 1;
+
+	/* The count and its time, moved or not. */
+	*count = node->refresh_count;
+	*time_ns = node->refresh_time_ns;
+
+	spin_unlock_irqrestore(&node->refresh_lock, irq);
+}
+
 /* Describes the one display (the display query operation). */
 static int
 present_query(
@@ -622,50 +666,6 @@ present_refresh_wait(
 
 	/* Succeeded: the boundary after the cursor. */
 	return 0;
-}
-
-/*
- * Brings the refresh count up to date from the head's frame counter and
- * reports it with the time it last moved.
- *
- * The 16-bit counter's movement since the last reading is added, so the
- * count never goes back; a gap of more than 65535 frames between readings
- * counts short (the message drain reads it about each second).  The first
- * reading only sets the base.  Takes only the IRQ-safe refresh lock.
- */
-void
-nvrtx_present_refresh_sample(
-	struct nvrtx_node *node,
-	uint64_t *count,
-	uint64_t *time_ns)
-{
-	unsigned long irq;
-	uint32_t frame;
-	uint32_t advance;
-
-	/* Reads the head's frame counter. */
-	irq = spin_lock_irqsave(&node->refresh_lock);
-
-	frame = nvrtx_scanout_frame_counter(node->gpu);
-
-	/* Adds what it moved since the last reading; the first reading only sets the base. */
-	if (node->refresh_frame_valid != 0) {
-		advance = nvrtx_disp_frame_advance(node->refresh_frame, frame);
-		if (advance != 0U) {
-			node->refresh_count += advance;
-			node->refresh_time_ns = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
-		}
-	}
-
-	/* The next reading counts from this one. */
-	node->refresh_frame = frame;
-	node->refresh_frame_valid = 1;
-
-	/* The count and its time, moved or not. */
-	*count = node->refresh_count;
-	*time_ns = node->refresh_time_ns;
-
-	spin_unlock_irqrestore(&node->refresh_lock, irq);
 }
 
 /*
