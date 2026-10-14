@@ -2468,12 +2468,14 @@ vkvideo_complete(
 	}
 
 	/*
-	 * The fence and the command buffers for the submission's next picture;
-	 * a picture the GPU holds recorded no readback, so its transfer
-	 * command buffer has nothing to reset (one call less a picture).
+	 * The fence and the command buffers for the submission's next picture.
+	 * A picture the GPU holds recorded no readback, so its transfer
+	 * command buffer has nothing to reset, and its decode command buffer
+	 * is reset by the next vkBeginCommandBuffer (the pool lets a buffer be
+	 * reset one by one): two kernel requests less a picture.
 	 */
 	result = video->fn.vkResetFences(video->device, 1U, &flight->fence);
-	if (result == VK_SUCCESS)
+	if (result == VK_SUCCESS && !video->gpu)
 		result = video->fn.vkResetCommandBuffer(flight->command, 0U);
 	if (result == VK_SUCCESS && !video->gpu)
 		result = video->fn.vkResetCommandBuffer(flight->transfer_command, 0U);

@@ -76,6 +76,7 @@
 #define DRV_RPI4_MMAL_FLAG_KEYFRAME		0x0008U
 #define DRV_RPI4_MMAL_FLAG_CONFIG		0x0020U
 #define DRV_RPI4_MMAL_FLAG_CORRUPTED		0x0200U
+#define DRV_RPI4_MMAL_FLAG_TRANSMISSION_FAILED	0x0400U
 
 /* The time stamp that says "unknown". */
 #define DRV_RPI4_MMAL_TIME_UNKNOWN		((int64_t)((uint64_t)1U << 63))

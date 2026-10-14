@@ -29,6 +29,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
+#include "drivers/platform/rpi4/rpi4-firmware.h"
 
 /* What a sleeping wait sees happen: the hardware takes the next list, nothing happens, or a scripted event. */
 #define SLEEP_ADOPT	0U
@@ -148,6 +149,35 @@ drv_rpi4_firmware_property(
 	*answered = 8;
 
 	/* Succeeded: the modeled provider accepted the requested floor. */
+	return 0;
+}
+
+/*
+ * Models the firmware's core clock floors with the display as the only
+ * owner: its floor is the rate the firmware is asked for (ws236-p011).
+ */
+int
+drv_rpi4_firmware_core_clock(
+	enum drv_rpi4_firmware_core_owner owner,
+	uint32_t hz)
+{
+	uint32_t values[3];
+	uint32_t answered;
+	int error;
+
+	/* Only the display asks in this model. */
+	if (owner != DRV_RPI4_FIRMWARE_CORE_DISPLAY)
+		return EINVAL;
+
+	/* The same wire request the firmware file sends for the core clock. */
+	values[0] = 4;
+	values[1] = hz;
+	values[2] = 0;
+	error = drv_rpi4_firmware_property(0x00038002U, values, 3, 3, &answered);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the modeled firmware accepted the floor. */
 	return 0;
 }
 

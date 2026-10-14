@@ -1917,26 +1917,25 @@ lower_clock(
 	mutex_unlock(&display->flip.clock_mutex);
 }
 
-/* Sends the firmware provider's exact rate request with turbo left unchanged. */
+/*
+ * Sets the display's floor of the core clock.
+ *
+ * The firmware runs the highest floor of its owners: while a video decoder
+ * holds the highest rate, the display's lowering and raising change no
+ * clock under the decode (ws236-p011).
+ */
 static int
 request_clock(
 	uint32_t hz)
 {
-	uint32_t values[3];
-	uint32_t answered;
 	int error;
 
 	/* Leaves rounding to the same firmware provider used by R0 and Linux. */
-	values[0] = 4;
-	values[1] = hz;
-	values[2] = 0;
-	error = drv_rpi4_firmware_property(0x00038002U, values, 3, 3, &answered);
+	error = drv_rpi4_firmware_core_clock(DRV_RPI4_FIRMWARE_CORE_DISPLAY, hz);
 	if (error != 0)
 		return error;
-	if (answered < 8U || values[0] != 4)
-		return EIO;
 
-	/* Succeeded: the firmware accepted this core-clock request. */
+	/* Succeeded: the firmware accepted this core-clock floor. */
 	return 0;
 }
 
