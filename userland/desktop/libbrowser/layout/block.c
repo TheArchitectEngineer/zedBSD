@@ -24,6 +24,7 @@ static int block_owns_context(const struct layout_box *box);
 static int block_content(struct layout_tree *tree, struct layout_box *box);
 static int block_intrinsic(struct layout_tree *tree, struct layout_box *box, layout_unit containing_width);
 static int block_is_intrinsic(const struct css_length *length);
+static void block_center_button(struct layout_box *box, layout_unit content_height);
 
 /*
  * Lays out a block box in a containing block of a width: its box model,
@@ -45,6 +46,7 @@ layout_block(
 	layout_unit basis;
 	layout_unit sizing;
 	layout_unit specified_height;
+	layout_unit content_height;
 	layout_unit saved_containing_height;
 	struct css_length saved_style_height;
 	layout_unit ratio_height;
@@ -193,6 +195,7 @@ layout_block(
 		return error;
 
 	/* An explicit height replaces the content's. */
+	content_height = box->height;
 	if (height_definite)
 		box->height = specified_height;
 
@@ -224,8 +227,48 @@ layout_block(
 			box->height = height;
 	}
 
+	/* A <button> centers its content in the height it was given beyond it. */
+	block_center_button(box, content_height);
+
 	/* Succeeded: the box has its size. */
 	return 0;
+}
+
+/*
+ * Centers a <button>'s content vertically: a button is taller than its
+ * content when it has a height or a min-height, and its content (the in-flow
+ * children and the lines) sits in the middle of the room, not at the top.
+ */
+static void
+block_center_button(
+	struct layout_box *box,
+	layout_unit content_height)
+{
+	struct dom_element *element;
+	struct layout_box *child;
+	layout_unit shift;
+	size_t index;
+
+	/* Only an HTML button, taller than its content. */
+	if (box->node == NULL || box->node->type != DOM_ELEMENT)
+		return;
+	element = (struct dom_element *)box->node;
+	if (element->ns != DOM_NS_HTML || element->tag != DOM_TAG_BUTTON)
+		return;
+	if (box->height <= content_height)
+		return;
+	shift = (box->height - content_height) / 2;
+
+	/* The lines, the in-flow children, and the static positions of the others. */
+	for (index = 0; index < box->line_count; index++)
+		box->lines[index].y += shift;
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow) {
+			child->static_y += shift;
+			continue;
+		}
+		child->y += shift;
+	}
 }
 
 /*
