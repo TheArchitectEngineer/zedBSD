@@ -242,7 +242,7 @@ static void cascade_inherit(struct css_style *style, const struct css_style *par
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
-static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count);
+static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count, struct css_track_repeat *repeat);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
 static void cascade_families(struct css_style *style, const struct css_value *value);
@@ -3669,19 +3669,19 @@ cascade_apply(
 		style->border_collapse = value->keyword;
 		break;
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
-		cascade_tracks(engine, style, value, style->columns, &style->column_count);
+		cascade_tracks(engine, style, value, style->columns, &style->column_count, &style->column_repeat);
 		break;
 	case CSS_PROP_GRID_TEMPLATE_ROWS:
-		cascade_tracks(engine, style, value, style->rows, &style->row_count);
+		cascade_tracks(engine, style, value, style->rows, &style->row_count, &style->row_repeat);
 		break;
 	case CSS_PROP_GRID_AUTO_FLOW:
 		style->grid_auto_flow = value->keyword;
 		break;
 	case CSS_PROP_GRID_AUTO_COLUMNS:
-		cascade_tracks(engine, style, value, style->auto_columns, &style->auto_column_count);
+		cascade_tracks(engine, style, value, style->auto_columns, &style->auto_column_count, NULL);
 		break;
 	case CSS_PROP_GRID_AUTO_ROWS:
-		cascade_tracks(engine, style, value, style->auto_rows, &style->auto_row_count);
+		cascade_tracks(engine, style, value, style->auto_rows, &style->auto_row_count, NULL);
 		break;
 	case CSS_PROP_GRID_COLUMN_START:
 	case CSS_PROP_GRID_COLUMN_END:
@@ -4115,10 +4115,12 @@ cascade_inherit(
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
 		memcpy(style->columns, parent->columns, sizeof(style->columns));
 		style->column_count = parent->column_count;
+		style->column_repeat = parent->column_repeat;
 		break;
 	case CSS_PROP_GRID_TEMPLATE_ROWS:
 		memcpy(style->rows, parent->rows, sizeof(style->rows));
 		style->row_count = parent->row_count;
+		style->row_repeat = parent->row_repeat;
 		break;
 	case CSS_PROP_GRID_AUTO_FLOW:
 		style->grid_auto_flow = parent->grid_auto_flow;
@@ -4185,15 +4187,24 @@ cascade_tracks(
 	struct css_style *style,
 	const struct css_value *value,
 	struct css_track *tracks,
-	int *count)
+	int *count,
+	struct css_track_repeat *repeat)
 {
 	const struct css_declared_track *declared;
 	size_t index;
 
 	/* Anything but a list is no template. */
 	*count = 0;
+	if (repeat != NULL)
+		memset(repeat, 0, sizeof(*repeat));
 	if (value->kind != CSS_VALUE_TRACKS || value->tracks == NULL)
 		return;
+	if (repeat != NULL && value->tracks->repeat_length > 0 &&
+	    value->tracks->repeat_at + value->tracks->repeat_length <= CSS_TRACKS) {
+		repeat->length = value->tracks->repeat_length;
+		repeat->at = value->tracks->repeat_at;
+		repeat->fit = value->tracks->repeat_fit;
+	}
 
 	/* Each track. */
 	for (index = 0; index < value->tracks->count && index < CSS_TRACKS; index++) {

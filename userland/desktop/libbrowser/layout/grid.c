@@ -58,6 +58,9 @@ struct grid_state {
 	layout_unit *rows;
 	unsigned char *taken;
 	int taken_rows;
+	/* Tracks of an auto-fit repeat that no item uses: they take no room (NULL when none). */
+	unsigned char *column_collapsed;
+	unsigned char *row_collapsed;
 };
 
 /*
@@ -100,8 +103,197 @@ static int grid_fixed_row_baseline(const struct layout_box *box, const struct gr
 static int grid_fixed_column_baseline(const struct layout_box *box, const struct grid_item *item, layout_unit *right_extent);
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
+static void grid_expand_repeats(struct layout_box *box, int measuring);
+static int grid_collapse_tracks(struct layout_box *box, struct grid_state *grid);
 static void grid_distribute(int value, int reversed, layout_unit free_space, int tracks, layout_unit *offset, layout_unit *extra);
 static int grid_content_stretches(int value);
+
+/* The size one track of a repeat is counted at: its definite maximum, else its minimum. */
+static layout_unit
+grid_repeat_track(
+	const struct css_track *track,
+	layout_unit basis)
+{
+	const struct css_length *length;
+
+	length = &track->size;
+	if (track->kind != CSS_TRACK_LENGTH)
+		length = &track->minimum;
+	if (length->unit == CSS_UNIT_PX)
+		return layout_from_px(length->value);
+	if (length->unit == CSS_UNIT_PERCENT && basis >= 0)
+		return (layout_unit)((float)basis * length->value / 100.0f) + layout_from_px(length->offset);
+	return 0;
+}
+
+/*
+ * Puts an auto-fill or auto-fit repeat's tracks in a template as many
+ * times as fill the available size (once when it is indefinite).
+ */
+static void
+grid_expand_axis(
+	struct css_track *tracks,
+	int *count,
+	struct css_track_repeat *repeat,
+	layout_unit available,
+	layout_unit gap)
+{
+	layout_unit others;
+	layout_unit pattern;
+	layout_unit denominator;
+	layout_unit numerator;
+	int others_count;
+	int times;
+	int index;
+	int tail;
+
+	if (repeat->length <= 0 || repeat->at + repeat->length > *count)
+		return;
+
+	/* A template that is already expanded returns to its single repeat first. */
+	if (repeat->count > 1) {
+		tail = *count - (repeat->at + repeat->length * repeat->count);
+		memmove(&tracks[repeat->at + repeat->length],
+		    &tracks[repeat->at + repeat->length * repeat->count],
+		    (size_t)tail * sizeof(tracks[0]));
+		*count -= repeat->length * (repeat->count - 1);
+	}
+	repeat->count = 1;
+
+	/* The repeats that fit: the other tracks and the gaps come out of the room first. */
+	times = 1;
+	if (available >= 0) {
+		others = 0;
+		others_count = 0;
+		for (index = 0; index < *count; index++) {
+			if (index >= repeat->at && index < repeat->at + repeat->length)
+				continue;
+			others += grid_repeat_track(&tracks[index], available);
+			others_count++;
+		}
+		pattern = 0;
+		for (index = repeat->at; index < repeat->at + repeat->length; index++)
+			pattern += grid_repeat_track(&tracks[index], available);
+		denominator = pattern + gap * (layout_unit)repeat->length;
+		numerator = available - others - gap * (layout_unit)(others_count - 1);
+		if (denominator > 0 && numerator > denominator)
+			times = (int)(numerator / denominator);
+		if (times < 1)
+			times = 1;
+	}
+	if ((*count - repeat->length) + times * repeat->length > CSS_TRACKS)
+		times = (CSS_TRACKS - (*count - repeat->length)) / repeat->length;
+	if (times <= 1)
+		return;
+
+	/* Shifts the tracks after the pattern and copies the pattern. */
+	tail = *count - (repeat->at + repeat->length);
+	memmove(&tracks[repeat->at + repeat->length * times],
+	    &tracks[repeat->at + repeat->length], (size_t)tail * sizeof(tracks[0]));
+	for (index = 1; index < times; index++)
+		memcpy(&tracks[repeat->at + repeat->length * index], &tracks[repeat->at],
+		    (size_t)repeat->length * sizeof(tracks[0]));
+	*count += repeat->length * (times - 1);
+	repeat->count = times;
+}
+
+/* Expands the auto-fill and auto-fit repeats of a horizontal grid against its definite sizes. */
+static void
+grid_expand_repeats(
+	struct layout_box *box,
+	int measuring)
+{
+	layout_unit available;
+	layout_unit gap;
+	int definite;
+
+	/* The columns: a block-level grid fills its container; others need a width of their own. */
+	gap = 0;
+	if (box->style.column_gap.unit == CSS_UNIT_PX)
+		gap = layout_from_px(box->style.column_gap.value);
+	if (box->style.column_gap.unit == CSS_UNIT_PERCENT)
+		gap = (layout_unit)((float)box->width * box->style.column_gap.value / 100.0f) +
+		    layout_from_px(box->style.column_gap.offset);
+	available = -1;
+	definite = box->style.width.unit != CSS_UNIT_AUTO ||
+	    (box->style.display == CSS_DISPLAY_GRID && box->floating == CSS_FLOAT_NONE &&
+	    !box->out_of_flow);
+	if (definite && !measuring)
+		available = box->width;
+	if (available < 0 && box->style.max_width.unit == CSS_UNIT_PX)
+		available = layout_from_px(box->style.max_width.value);
+	if (available < 0 && box->style.min_width.unit == CSS_UNIT_PX)
+		available = layout_from_px(box->style.min_width.value);
+	grid_expand_axis(box->style.columns, &box->style.column_count, &box->style.column_repeat,
+	    available, gap);
+
+	/* The rows need a definite height. */
+	gap = 0;
+	available = -1;
+	if (box->style.row_gap.unit == CSS_UNIT_PX)
+		gap = layout_from_px(box->style.row_gap.value);
+	if (box->style.height.unit == CSS_UNIT_PX) {
+		available = layout_from_px(box->style.height.value);
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			available -= box->border[CSS_TOP] + box->padding[CSS_TOP] +
+			    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		if (available < 0)
+			available = 0;
+	} else if (box->style.max_height.unit == CSS_UNIT_PX) {
+		available = layout_from_px(box->style.max_height.value);
+	} else if (box->style.min_height.unit == CSS_UNIT_PX) {
+		available = layout_from_px(box->style.min_height.value);
+	}
+	grid_expand_axis(box->style.rows, &box->style.row_count, &box->style.row_repeat,
+	    available, gap);
+}
+
+/* Marks the tracks of an auto-fit repeat that hold no item (the others keep their sizes). */
+static int
+grid_collapse_tracks(
+	struct layout_box *box,
+	struct grid_state *grid)
+{
+	const struct grid_item *item;
+	size_t index;
+	int track;
+	int last;
+
+	/* Columns. */
+	if (box->style.column_repeat.fit && box->style.column_repeat.count > 0) {
+		grid->column_collapsed = calloc((size_t)grid->column_count + 1U, 1U);
+		if (grid->column_collapsed == NULL)
+			return ENOMEM;
+		last = box->style.column_repeat.at +
+		    box->style.column_repeat.length * box->style.column_repeat.count;
+		for (track = box->style.column_repeat.at; track < last && track < grid->column_count; track++)
+			grid->column_collapsed[track] = 1;
+		for (index = 0; index < grid->item_count; index++) {
+			item = &grid->items[index];
+			for (track = item->column; track < item->column + item->column_span &&
+			    track < grid->column_count; track++)
+				grid->column_collapsed[track] = 0;
+		}
+	}
+
+	/* Rows. */
+	if (box->style.row_repeat.fit && box->style.row_repeat.count > 0) {
+		grid->row_collapsed = calloc((size_t)grid->row_count + 1U, 1U);
+		if (grid->row_collapsed == NULL)
+			return ENOMEM;
+		last = box->style.row_repeat.at +
+		    box->style.row_repeat.length * box->style.row_repeat.count;
+		for (track = box->style.row_repeat.at; track < last && track < grid->row_count; track++)
+			grid->row_collapsed[track] = 1;
+		for (index = 0; index < grid->item_count; index++) {
+			item = &grid->items[index];
+			for (track = item->row; track < item->row + item->row_span &&
+			    track < grid->row_count; track++)
+				grid->row_collapsed[track] = 0;
+		}
+	}
+	return 0;
+}
 
 /* Normal content distribution stretches the auto tracks. */
 static int
@@ -259,11 +451,16 @@ layout_grid(
 	if (handled)
 		return 0;
 
+	/* Automatic repeats take their track counts from the definite size. */
+	grid_expand_repeats(box, tree->measuring);
+
 	/* The items, placed in their cells. */
 	memset(&grid, 0, sizeof(grid));
 	error = grid_collect(box, &grid);
 	if (error == 0)
 		error = grid_place(&grid, box->style.grid_auto_flow);
+	if (error == 0)
+		error = grid_collapse_tracks(box, &grid);
 	if (error != 0) {
 		grid_release(&grid);
 		return error;
@@ -298,6 +495,12 @@ layout_grid(
 	if (error != 0) {
 		grid_release(&grid);
 		return error;
+	}
+
+	/* A collapsed track and its gap take no room together. */
+	for (position = 0; grid.column_collapsed != NULL && position < grid.column_count; position++) {
+		if (grid.column_collapsed[position])
+			grid.columns[position] = -column_gap;
 	}
 
 	/* The columns side by side: where they start (justify-content moves a grid narrower than its box). */
@@ -344,6 +547,10 @@ layout_grid(
 
 	/* The rows' heights from the items. */
 	grid_size_rows(box, &grid, row_gap);
+	for (position = 0; grid.row_collapsed != NULL && position < grid.row_count; position++) {
+		if (grid.row_collapsed[position])
+			grid.rows[position] = -row_gap;
+	}
 	row_shift = 0;
 	if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 	    box->style.height.unit == CSS_UNIT_PX) {
@@ -2025,6 +2232,8 @@ grid_size_columns(
 	fr_total = 0;
 	for (column = 0; column < grid->column_count; column++) {
 		track = grid_column_track(&box->style, column);
+		if (grid->column_collapsed != NULL && grid->column_collapsed[column])
+			continue;
 		if (track->kind == CSS_TRACK_LENGTH)
 			grid->columns[column] = grid_track_length(&track->size, box->width, tree->measuring);
 		if (track->kind == CSS_TRACK_FR && tree->measuring == 0) {
@@ -2092,6 +2301,10 @@ grid_size_columns(
 	used = 0;
 	for (column = 0; column < grid->column_count; column++) {
 		track = grid_column_track(&box->style, column);
+		if (grid->column_collapsed != NULL && grid->column_collapsed[column]) {
+			available += gap;
+			continue;
+		}
 		if (track->kind == CSS_TRACK_FR && tree->measuring == 0)
 			continue;
 		used += grid->columns[column];
@@ -2103,7 +2316,8 @@ grid_size_columns(
 			fr_total = 1.0f;
 		for (column = 0; column < grid->column_count; column++) {
 			track = grid_column_track(&box->style, column);
-			if (track->kind != CSS_TRACK_FR)
+			if (track->kind != CSS_TRACK_FR ||
+			    (grid->column_collapsed != NULL && grid->column_collapsed[column]))
 				continue;
 			width = (layout_unit)((float)(available - used) * track->fr / fr_total);
 			if (width > grid->columns[column])
@@ -2122,7 +2336,8 @@ grid_size_columns(
 	last_auto = -1;
 	for (column = 0; column < grid->column_count; column++) {
 		track = grid_column_track(&box->style, column);
-		if (track->kind == CSS_TRACK_AUTO) {
+		if (track->kind == CSS_TRACK_AUTO &&
+		    !(grid->column_collapsed != NULL && grid->column_collapsed[column])) {
 			autos++;
 			last_auto = column;
 		}
@@ -2136,7 +2351,8 @@ grid_size_columns(
 	remainder = available - used - share * autos;
 	for (column = 0; column < grid->column_count; column++) {
 		track = grid_column_track(&box->style, column);
-		if (track->kind == CSS_TRACK_AUTO)
+		if (track->kind == CSS_TRACK_AUTO &&
+		    !(grid->column_collapsed != NULL && grid->column_collapsed[column]))
 			grid->columns[column] += share;
 	}
 	grid->columns[last_auto] += remainder;
@@ -2349,6 +2565,8 @@ grid_size_rows(
 	fr_total = 0;
 	for (row = 0; row < grid->row_count; row++) {
 		track = grid_row_track(&box->style, row);
+		if (grid->row_collapsed != NULL && grid->row_collapsed[row])
+			continue;
 		if (track->kind == CSS_TRACK_LENGTH)
 			grid->rows[row] = grid_track_length(&track->size, available, available < 0);
 		if (track->kind == CSS_TRACK_FR && available >= 0) {
@@ -2391,6 +2609,10 @@ grid_size_rows(
 		used = gap * (layout_unit)(grid->row_count - 1);
 		for (row = 0; row < grid->row_count; row++) {
 			track = grid_row_track(&box->style, row);
+			if (grid->row_collapsed != NULL && grid->row_collapsed[row]) {
+				used -= gap;
+				continue;
+			}
 			if (track->kind == CSS_TRACK_FR)
 				continue;
 			used += grid->rows[row];
@@ -2401,7 +2623,8 @@ grid_size_rows(
 			fr_total = 1.0f;
 		for (row = 0; row < grid->row_count; row++) {
 			track = grid_row_track(&box->style, row);
-			if (track->kind != CSS_TRACK_FR)
+			if (track->kind != CSS_TRACK_FR ||
+			    (grid->row_collapsed != NULL && grid->row_collapsed[row]))
 				continue;
 			minimum = (layout_unit)((float)(available - used) * track->fr / fr_total);
 			if (minimum > grid->rows[row])
@@ -2417,6 +2640,10 @@ grid_size_rows(
 	height = 0;
 	for (row = 0; row < grid->row_count; row++) {
 		track = grid_row_track(&box->style, row);
+		if (grid->row_collapsed != NULL && grid->row_collapsed[row]) {
+			used -= gap;
+			continue;
+		}
 		used += grid->rows[row];
 		if (track->kind == CSS_TRACK_AUTO)
 			height++;
@@ -2427,7 +2654,8 @@ grid_size_rows(
 	spanned = available - used - minimum * height;
 	for (row = 0; row < grid->row_count; row++) {
 		track = grid_row_track(&box->style, row);
-		if (track->kind != CSS_TRACK_AUTO)
+		if (track->kind != CSS_TRACK_AUTO ||
+		    (grid->row_collapsed != NULL && grid->row_collapsed[row]))
 			continue;
 		grid->rows[row] += minimum;
 		height--;
@@ -2648,4 +2876,6 @@ grid_release(
 	free(grid->columns);
 	free(grid->rows);
 	free(grid->taken);
+	free(grid->column_collapsed);
+	free(grid->row_collapsed);
 }

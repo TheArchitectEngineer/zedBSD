@@ -4740,6 +4740,35 @@ values_track_list(
 			if (depth > 0)
 				return EINVAL;
 			inner = values_skip_space(tokens, end, index + 1U);
+			if (inner < end && tokens[inner].type == CSS_TOKEN_IDENT &&
+			    (css_ident_equal(&tokens[inner], "auto-fill") || css_ident_equal(&tokens[inner], "auto-fit"))) {
+				/* One automatic repeat per list; layout chooses its count. */
+				if (list->repeat_length != 0)
+					return EINVAL;
+				comma = inner + 1U + values_split_at(tokens + inner + 1U, end - inner - 1U, CSS_TOKEN_COMMA, 0);
+				if (comma >= end)
+					return EINVAL;
+				first = list->count;
+				error = values_track_list(parse, tokens + comma + 1U, end - comma - 2U, list, depth + 1);
+				if (error != 0)
+					return error;
+				added = list->count - first;
+				if (added == 0)
+					return EINVAL;
+
+				/* Every repeated track needs a definite size for layout to count the repeats. */
+				for (inner = first; inner < list->count; inner++) {
+					if (list->tracks[inner].kind != CSS_TRACK_LENGTH &&
+					    list->tracks[inner].minimum_kind != CSS_TRACK_LENGTH)
+						return EINVAL;
+				}
+				list->repeat_at = (int)first;
+				list->repeat_length = (int)added;
+				list->repeat_fit = css_ident_equal(&tokens[values_skip_space(tokens, end, index + 1U)], "auto-fit");
+				index = end;
+				last_was_names = 0;
+				continue;
+			}
 			if (inner >= end || tokens[inner].type != CSS_TOKEN_NUMBER || !tokens[inner].integer || tokens[inner].number < 1)
 				return EINVAL;
 			times = (size_t)tokens[inner].number;

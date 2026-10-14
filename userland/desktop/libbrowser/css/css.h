@@ -437,6 +437,18 @@ struct css_track {
 	struct css_length minimum;
 };
 
+/*
+ * An auto-fill or auto-fit repeat() in a template: the tracks it repeats
+ * are template[at .. at + length) once; layout repeats them to fill the box.
+ */
+struct css_track_repeat {
+	int length;
+	int at;
+	int fit;
+	/* The times layout has put the tracks in the template (zero before). */
+	int count;
+};
+
 /* Auto-placement direction and optional dense packing (row is zero). */
 enum css_grid_auto_flow {
 	CSS_GRID_FLOW_ROW = 0,
@@ -617,6 +629,8 @@ struct css_style {
 	int column_count;
 	struct css_track rows[CSS_TRACKS];
 	int row_count;
+	struct css_track_repeat column_repeat;
+	struct css_track_repeat row_repeat;
 	struct css_track auto_columns[CSS_TRACKS];
 	int auto_column_count;
 	struct css_track auto_rows[CSS_TRACKS];
