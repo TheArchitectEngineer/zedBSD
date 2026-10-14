@@ -10,15 +10,16 @@
  *
  * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware
  * (plan/ws037/nvrtx-design.md).  The attach finds the GPU, reads its chip
- * identity (N0) and records where the firmware's picture lies (N1).  Without
- * nvrtx.gsp=1 on the boot line, or for a chip without a GSP path yet, it then
+ * identity (N0) and records where the firmware's picture lies (N1).  With
+ * nvrtx.gsp=0 on the boot line, or for a chip without a GSP path yet, it then
  * gives the function back to the firmware by refusing the bind: the
  * firmware's console keeps working, the PCI core never suspends the
  * function, and a machine without an NVIDIA GPU is not touched at all.
  *
- * With nvrtx.gsp=1 on a TU10x chip the attach keeps the function and starts
- * a worker thread that runs the GSP boot (gsp.c) once the root file system
- * holds the firmware.  The kept function refuses a system suspend.
+ * Otherwise (the default) on a TU10x chip that shows the firmware's picture
+ * (or any TU10x chip with nvrtx.gsp=1) the attach keeps the function and
+ * starts a worker thread that runs the GSP boot (gsp.c) once the root file
+ * system holds the firmware.  The kept function refuses a system suspend.
  */
 
 #include <stdbool.h>
@@ -84,8 +85,10 @@ drv_pci_nvrtx_driver_register(void)
 /*
  * Runs the read-only stages on one function, then keeps it or gives it back.
  *
- * The function is kept only with nvrtx.gsp=1 on a chip whose GSP path
- * exists; otherwise the bind is refused and it stays with the firmware.
+ * The function is kept on a chip whose GSP path exists and which shows
+ * the firmware's picture, unless the boot says nvrtx.gsp=0, or on such a
+ * chip without the picture when the boot says nvrtx.gsp=1; otherwise the
+ * bind is refused and it stays with the firmware.
  */
 static int
 nvrtx_attach(
@@ -96,6 +99,7 @@ nvrtx_attach(
 	bool off;
 	bool allowed;
 	bool gsp_wanted;
+	bool gsp_forced;
 	int error;
 
 	UNUSED_PARAMETER(id);
@@ -133,18 +137,26 @@ nvrtx_attach(
 		nvrtx_stage_mark("N1 skipped (nvrtx.stop=N1)");
 	}
 
-	/* Keeps the function for the GSP boot when the boot asks and the chip has a path. */
+	/*
+	 * Keeps the function for the GSP boot when the chip has a path and
+	 * the firmware's picture is on it (the default), or the boot forces
+	 * it (nvrtx.gsp=1); a GPU the firmware did not show anything on has
+	 * nothing the default boot would show, so it is left alone.
+	 */
 	gsp_wanted = nvrtx_stage_gsp_wanted();
-	if (gsp_wanted && device.chip.gsp_tu102 != 0) {
+	gsp_forced = nvrtx_stage_gsp_forced();
+	if (gsp_wanted && device.chip.gsp_tu102 != 0 && (device.gop_on_gpu != 0 || gsp_forced)) {
 		error = nvrtx_keep(&device);
 		if (error == 0)
 			return 0;
 
 		nvrtx_stage_mark("N1 done; the GSP boot not started (%d)", error);
 	} else if (!gsp_wanted) {
-		nvrtx_stage_mark("N1 done; %s left to the firmware (no nvrtx.gsp=1)", device.chip.name);
-	} else {
+		nvrtx_stage_mark("N1 done; %s left to the firmware (nvrtx.gsp=0)", device.chip.name);
+	} else if (device.chip.gsp_tu102 == 0) {
 		nvrtx_stage_mark("N1 done; no GSP path for %s yet", device.chip.name);
+	} else {
+		nvrtx_stage_mark("N1 done; no firmware picture on %s, left to the firmware (nvrtx.gsp=1 boots it)", device.chip.name);
 	}
 
 	/* Gives the registers and the command bits back. */

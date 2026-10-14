@@ -139,6 +139,16 @@ struct nvrtx_device {
 	int flr;
 	/* Nonzero when N1 found the firmware's picture in this GPU's VRAM window: the GPU is the primary display. */
 	int gop_on_gpu;
+	/*
+	 * That picture as the loader describes it: its offset in the VRAM
+	 * window, its size, its stride in pixels and its format (the loader's
+	 * ZBL6_FRAMEBUFFER_* code).
+	 */
+	uint64_t gop_offset;
+	uint32_t gop_width;
+	uint32_t gop_height;
+	uint32_t gop_stride;
+	uint32_t gop_format;
 };
 
 /*
@@ -213,16 +223,23 @@ nvrtx_family_name(
 	enum nvrtx_family family);
 
 /*
- * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1).
+ * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1 or nvrtx=off).
  */
 bool
 nvrtx_stage_driver_off(void);
 
 /*
- * Reports whether the boot asked for the GSP boot path (nvrtx.gsp=1).
+ * Reports whether the GSP boot path runs: by default, unless the boot says nvrtx.gsp=0.
  */
 bool
 nvrtx_stage_gsp_wanted(void);
+
+/*
+ * Reports whether the boot forced the GSP boot path (nvrtx.gsp=1), even
+ * where the firmware's picture on the GPU cannot be kept.
+ */
+bool
+nvrtx_stage_gsp_forced(void);
 
 /*
  * Reports whether the boot asked for the graphics golden context (nvrtx.gr=1).
@@ -231,10 +248,16 @@ bool
 nvrtx_stage_gr_wanted(void);
 
 /*
- * Reports whether the boot asked for the display takeover (nvrtx.disp=1).
+ * Reports whether the display takeover runs: by default, unless the boot says nvrtx.disp=0.
  */
 bool
 nvrtx_stage_disp_wanted(void);
+
+/*
+ * Reports whether the takeover is the monitor test (nvrtx.disp.test=1).
+ */
+bool
+nvrtx_stage_disp_test_wanted(void);
 
 /*
  * Reports whether the boot asked for the first compute launch (nvrtx.compute=1).
@@ -249,7 +272,8 @@ bool
 nvrtx_stage_draw_wanted(void);
 
 /*
- * Reports whether the boot asked the GPU to stay up as a GPU device (nvrtx.resident=1).
+ * Reports whether the GPU stays up as a GPU device after the takeover: by
+ * default, unless the boot says nvrtx.resident=0.
  */
 bool
 nvrtx_stage_resident_wanted(void);

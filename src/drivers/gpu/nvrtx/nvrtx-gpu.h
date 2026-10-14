@@ -340,6 +340,8 @@ struct nvrtx_memory_state {
 	uint64_t bar1_tables;
 	uint64_t bar1_window;
 	uint64_t bar1_bus;
+	/* Where the CPU's mapping of the window starts: after the console's part, else 0. */
+	uint64_t bar1_cpu_from;
 	int bar1_claimed;
 	struct drv_pci_mapping bar1_mapping;
 	int bar1_mapped;
@@ -400,6 +402,33 @@ struct nvrtx_display_state {
 	int window_made;
 	int cursor_made;
 	int core_pending;
+	/* Set once P8b shows its surface on the head: the GPU device (P8c) may take the display. */
+	int taken;
+};
+
+/*
+ * The firmware's console on the GPU the machine boots on (ws037-p006, the
+ * native boot): the picture the GOP left at the start of the VRAM window,
+ * which the window reaches in its physical mode until the resource manager
+ * makes it virtual.  When the console is kept, the resource manager is told
+ * its size (it keeps that much VRAM from offset 0, as for the vendor's
+ * driver), P4m maps the window's first pages back onto it, P8b shows it on
+ * the taken-over head, and a GSP that stops leaves the window in physical
+ * mode again.
+ *
+ * kept says the GSP boot may go on with the console; mapped says the window
+ * reaches it again (P4m).  size is the VRAM it takes in whole 64 KiB, pitch
+ * its row in bytes; bar1_block is the window's mode register as the
+ * firmware left it.
+ */
+struct nvrtx_console {
+	int kept;
+	int mapped;
+	uint64_t size;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	uint32_t bar1_block;
 };
 
 /*
@@ -459,6 +488,9 @@ struct nvrtx_gpu {
 
 	/* The VRAM allocator and the BAR1 window. */
 	struct nvrtx_memory_state memory_state;
+
+	/* The firmware's console kept through the boot (written by the worker before P0, read after). */
+	struct nvrtx_console console;
 
 	/*
 	 * Serializes the register window onto the VRAM (PRAMIN) and the TLB
@@ -536,6 +568,8 @@ void nvrtx_channel_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_memory_start(struct nvrtx_gpu *gpu);
 void nvrtx_memory_release(struct nvrtx_gpu *gpu);
+int nvrtx_console_check(struct nvrtx_gpu *gpu);
+void nvrtx_console_restore(struct nvrtx_gpu *gpu);
 int nvrtx_bo_alloc(struct nvrtx_gpu *gpu, uint64_t size, uint64_t align, struct nvrtx_bo *bo);
 int nvrtx_bo_map(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
 void nvrtx_bo_free(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);

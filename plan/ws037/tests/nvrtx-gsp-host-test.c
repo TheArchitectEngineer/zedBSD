@@ -467,6 +467,7 @@ test_records(void)
 	v.instance = 0xf0000000ULL;
 	v.bus_device_function = 0x0100;
 	v.user_address_limit = 0x00007ffffffff000ULL;
+	v.console_size = 0x7f0000ULL;
 	v.vendor = 0x10de;
 	v.device = 0x1f02;
 	v.subvendor = 0x1458;
@@ -477,6 +478,7 @@ test_records(void)
 	check(nvrtx_get64(record, 0) == 0xf6000000ULL && nvrtx_get64(record, 8) == 0xe0000000ULL && nvrtx_get64(record, 16) == 0xf0000000ULL, "sysinfo: windows");
 	check(nvrtx_get64(record, 32) == 0x100 && nvrtx_get64(record, 72) == 0x00007ffffffff000ULL, "sysinfo: BDF and user limit");
 	check(nvrtx_get32(record, 80) == 0x88000 && nvrtx_get32(record, 84) == 0x1000, "sysinfo: config mirror");
+	check(nvrtx_get64(record, 64) == 0x7f0000ULL && nvrtx_get64(record, 56) == 0U, "sysinfo: the console's size at GspSystemInfo.consoleMemSize");
 	check(nvrtx_get32(record, 88) == 0x1f0210de && nvrtx_get32(record, 92) == 0x37c21458 && nvrtx_get32(record, 96) == 0xa1, "sysinfo: PCI identity");
 	check(record[896] == 1 && record[908] == 0 && nvrtx_get64(record, 920) == 0, "sysinfo: primary, no preserved memory");
 

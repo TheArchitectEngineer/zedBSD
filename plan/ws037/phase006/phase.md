@@ -222,6 +222,35 @@ image は main に merge した commit で `plan/tools/guest/test-image.sh --no-
 
 FAIL の時: `P8c fail: …`（`cursor channel has N free entries`・`channel at 680000 stopped, get … put …`・`a flip did not begin`）、`P8b core exception …`・`P8b other …`、probe の行の error の数（zedBSD の errno: 17 = EBUSY、5 = EIO、21 = EOPNOTSUPP、3 = EINVAL、48 = EXDEV、42 = ETIMEDOUT）を PNG に。refresh が 0 なら（RG_DPCA が動かない）その旨を記録。
 
+## 既定 on と方法 A（2026-10-15、P1 の作業中の patch を P2 が回収・完成）
+
+ユーザーの判断（2026-10-15）「nvrtx を既定で on」。CONFIG は main で y 済み。runtime の段の既定と、RTX が primary の機械で素で起動する道（方法 A）を足した。build と host 試験まで、実機は未実施。
+
+| 物 | 中身 |
+| --- | --- |
+| 既定の段 | GSP の起動・P4m・P8a・P8b（引き継ぎ、**console を出す**）・P8c（GPU の device）が既定で走る。試験の段（`nvrtx.gr=1`・`compute=1`・`draw=1`）は従来どおり明示の時だけ。opt-out は `nvrtx.gsp=0`（N1 の後に firmware へ返す）・`nvrtx.disp=0`（P8a で止まる）・`nvrtx.resident=0`（引き継ぎの後に GSP を止める）・`nvrtx.off=1` / `nvrtx=off`（GPU を見ない） |
+| 既定で GSP を起こす条件 | **RTX に firmware の画面（GOP の framebuffer）がある時だけ**（P2 が足した: 画面の無い 2 枚目の RTX は既定では触らず、`N1 done; no firmware picture on …, left to the firmware (nvrtx.gsp=1 boots it)`）。`nvrtx.gsp=1` は画面の有無に関係なく起こす（方式 B の試験の run は全てこれ） |
+| console の保持（方法 A の本体） | P0 の前に `nvrtx_console_check`: GOP の画面が BAR1 の先頭（offset 0）、BAR1 が physical の mode（0xb80f40 の bit 31 が 0）、形式 BGRX8888 の時に保持（`P0 console WxH pitch P kept: N KiB at the VRAM's start`）。保持できない時は `nvrtx.gsp=1` が無ければ P0 に入らない（`P0 skipped: the console stays the firmware's`）。RM へ `GspSystemInfo.consoleMemSize`（sysinfo の +64）で大きさを渡す（open-gpu-kernel-modules（MIT）の osinit.c と同じ）。P4m で BAR1 の先頭の page を VRAM の先頭へ map し直す（`P4m console: bar1 0..N on the VRAM's start again`）。allocator と CPU の BAR1 の map は console の後から。map できなければ GSP を止めて mode を戻す |
+| P8b（既定） | 試験の帯の surface ではなく **console（VRAM の先頭、GOP の pitch）** を window に出す（`P8b console WxH pitch P at the VRAM's start` → `P8b ok: head H shows the console`）。step の 5 秒の待ち・帯・flip は `nvrtx.disp.test=1` の時だけ。console が mode の見える大きさと違う、pitch が 64 の倍数でない時は head に触れない（`ENOTSUP`、GOP のまま） |
+| 終わり | `gsp_end`: console を保持して GSP が動いていれば止めない（`P8: the GSP stays up to keep the console`、RM の unload が console の map と head を壊すため）。GSP を止めた時は BAR1 の mode を firmware の値に戻す（`P7 console: bar1 mode …`） |
+| run | `config-amd64-nvrtx.mk`: 既存の run は既定 on に合わせ opt-out の語を足した（R0 `nvrtx.gsp=0`、R7・R7g・R7c・R7d は `nvrtx.disp=0 nvrtx.resident=0`、R8b は `nvrtx.disp.test=1 nvrtx.resident=0`、R8c・R8d は `nvrtx.disp.test=1`）。新しい **RA**（語なし＝本番の既定の boot、`display-inventory`・`display-control` を image に） |
+
+未確定の危険: (1) RM が BAR1 を virtual にしてから P4m が console を map し直すまで、kernel の console の書き込みは BAR1 の fault になる（RM が BAR1 の fault で RC を起こすかは未確認）。(2) GOP の解像度と head の見える大きさが違う（scaler を使う GOP、T1-640 の 1280x800 → 1280x1024）と console を出さない。(3) GSP の firmware は CI の image（config/ci/config-amd64.mk）に入っていない（`nvidia-gsp-firmware` は license の同意が要る package）。入っていない image では P0 で firmware の読みに失敗し（`P0 fail …; the GPU is untouched`）、GOP の console のまま（function は保持され system suspend は断る）。image への収録は Q1・ユーザーの判断。
+
+### 確認
+
+| 確認 | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix`（p2 worktree） | rc 0・warning 0・`kernel include check: PASS (420 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | `PASS nvrtx gsp: 234 checks`（sysinfo の consoleMemSize の 1 項目を足した。firmware の cache が無いので実 file の項目は飛ばし） |
+| 実機（方法 A、RA） | **未実施** |
+
+### T への手順（RA、方法 A: RTX 2070 の機械（10.0.30.5）を USB から素で起動）
+
+image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/ra NVRTX_RUN=RA`（main の merge の commit、firmware の license は `yes | make firmware-licenses`）。USB に書いて RTX の出力に monitor を繋いで起動（BIOS で CSM off、primary display が PEG）。判定はユーザーの目視と写真（serial は無い）。
+合格: `N1 gop WxH … in bar1 at +0` → `P0 console … kept` → `P0 ok …` → … → `P4m console: bar1 0..… on the VRAM's start again` → `P8 ok: display … lit 1` → `P8b console …` → `P8b ok: head 0 shows the console` → `P8c ok: gpu device registered …` → login prompt が **RTX の monitor に出続ける**（GSP の起動の間に一時的に印が欠けるのは可）。`display-inventory` で nvrtx の output の行。
+FAIL の時: 最後に見えた印の写真。`P0 console …: cannot be kept`（GOP の位置・形式）、`P4m fail: the console's …`、`P8b: the console is …, the mode …`（大きさの違い）は値を記録。画面が消えたら、その直前の印。
+
 ## Resume point
 
 （2026-10-15 P1 の更新）T の順: R8b の再試験（T1-645、P8b の直し）→ R8c（T1-647、GPU の device）→ R8d（上の「P8c の続き」の手順: events・refresh・cursor・SHARE・scanout の表）。どれもユーザーが RTX の monitor の前にいる時。R8b が FAIL なら印で切り分け、引き継ぎが RM に受け入れられない場合は (a) の nouveau の初回 modeset（`DFP_ASSIGN_SOR`、TMDS なら HDMI の設定、DP なら DPCD と `DP_CTRL`）を足す。R8d の後に残るもの（Keiland の direct scanout まで）: client が RTX の blob に描く道（p007）、Keiland の scanout の `/dev/gpu0` 固定、hotplug の event と power（RM の event・modeset が要る）。

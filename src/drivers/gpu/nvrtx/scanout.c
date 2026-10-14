@@ -6,15 +6,20 @@
  */
 
 /*
- * The takeover of the firmware's head (stage P8b, nvrtx.disp=1).
+ * The takeover of the firmware's head (stage P8b, on by default, off with
+ * nvrtx.disp=0).
  *
  * After P8a found the head the firmware (GOP) lit, the driver makes the
  * display's core channel and the head's first window channel through the
  * resource manager, writes their context DMA objects and hash-table entries
  * into the display's instance memory, and sends the head the state it is
  * armed with: the same timing, the same output resource (SOR) and control,
- * so the output keeps running.  The window then shows a surface of the
- * driver's own in the VRAM, and a flip moves it to a second surface.
+ * so the output keeps running.  The window then shows the firmware's
+ * console, kept at the VRAM's start (P0 and P4m), so the console goes on
+ * where it was; the GPU device (P8c) flips away from it and back.  With
+ * nvrtx.disp.test=1 the window shows a surface of the driver's own instead,
+ * a flip moves it to a second one, and each step waits 5 s so the monitor
+ * can be watched (the R8b..R8d runs).
  *
  * The channels, the registration of their push buffers, the instance-memory
  * objects and the order of the methods are nouveau's (the GSP display
@@ -129,6 +134,7 @@
 
 static int scanout_read_armed(struct nvrtx_gpu *gpu);
 static int scanout_surfaces(struct nvrtx_gpu *gpu);
+static int scanout_console_surface(struct nvrtx_gpu *gpu, uint32_t width, uint32_t height);
 static int scanout_surface_objects(struct nvrtx_gpu *gpu, uint64_t span);
 static int scanout_paint(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface, int reversed);
 static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push, int *made);
@@ -152,10 +158,12 @@ static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
 static int scanout_cursor_write(struct nvrtx_gpu *gpu, uint32_t method, uint32_t value);
 
 /*
- * Runs stage P8b: takes the firmware's head over, shows a surface and flips.
+ * Runs stage P8b: takes the firmware's head over and shows the console on
+ * it (with the monitor test, a surface of bands and a flip).
  *
- * Without a head the firmware lit, nothing is done (the scanout rule).  A
- * failure is returned; the finish's stop frees the channels that were made.
+ * Without a head the firmware lit, or without a console the head can show,
+ * nothing is done (the scanout rule) and display.taken stays 0.  A failure
+ * is returned; the finish's stop frees the channels that were made.
  */
 int
 nvrtx_scanout_start(
@@ -164,9 +172,11 @@ nvrtx_scanout_start(
 	struct nvrtx_display_state *display;
 	uint32_t hold_us;
 	bool resident;
+	bool test;
 	int error;
 
 	display = &gpu->display;
+	test = nvrtx_stage_disp_test_wanted();
 
 	/* Shows nothing anywhere the firmware did not light. */
 	nvrtx_stage_mark("P8b begin");
@@ -187,8 +197,10 @@ nvrtx_scanout_start(
 	if (error != 0)
 		return error;
 
-	/* Places the notifiers and the two surfaces, and paints both. */
+	/* Places the notifiers and the surface to show; a console that cannot be shown leaves the head alone. */
 	error = scanout_surfaces(gpu);
+	if (error == ENOTSUP)
+		return 0;
 	if (error != 0)
 		return error;
 
@@ -211,6 +223,13 @@ nvrtx_scanout_start(
 	if (error != 0)
 		return error;
 
+	/* The console is on the head again: the takeover is done. */
+	if (!test) {
+		display->taken = 1;
+		nvrtx_stage_mark("P8b ok: head %u shows the console", (unsigned)display->gop_head);
+		return 0;
+	}
+
 	/* Leaves the first picture up, then flips to the second and leaves that up too (shorter when the GPU stays up). */
 	hold_us = SCANOUT_SHOW_US;
 	resident = nvrtx_stage_resident_wanted();
@@ -224,6 +243,7 @@ nvrtx_scanout_start(
 	scanout_hold(hold_us);
 
 	/* Succeeded: the head shows the driver's surface. */
+	display->taken = 1;
 	nvrtx_stage_mark("P8b ok: head %u shows the driver's surfaces", (unsigned)display->gop_head);
 	return 0;
 }
@@ -655,6 +675,7 @@ scanout_surfaces(
 	uint32_t width;
 	uint32_t height;
 	unsigned index;
+	bool test;
 	int error;
 
 	display = &gpu->display;
@@ -672,6 +693,16 @@ scanout_surfaces(
 	error = nvrtx_vram_zero(gpu, display->sync, SCANOUT_SYNC_BYTES);
 	if (error != 0)
 		return error;
+
+	/* Without the monitor test the head shows the console. */
+	test = nvrtx_stage_disp_test_wanted();
+	if (!test) {
+		error = scanout_console_surface(gpu, width, height);
+		if (error != 0)
+			return error;
+
+		return 0;
+	}
 
 	/*
 	 * Takes two surfaces from the VRAM allocator (P4m), mapped in the CPU's
@@ -719,6 +750,65 @@ scanout_surfaces(
 	    (unsigned)display->surfaces[0].pitch,
 	    (unsigned long long)display->surfaces[0].offset,
 	    (unsigned long long)display->surfaces[1].offset);
+	return 0;
+}
+
+/*
+ * Describes the firmware's console as both surfaces (the second is never
+ * flipped to without the test): its VRAM at the start, its size, pitch and
+ * format.  The console is shown only when it was kept (P0, P4m), has the
+ * mode's visible size and a pitch the window takes (a multiple of 64
+ * bytes); otherwise ENOTSUP leaves the head to the firmware.
+ */
+static int
+scanout_console_surface(
+	struct nvrtx_gpu *gpu,
+	uint32_t width,
+	uint32_t height)
+{
+	const struct nvrtx_console *console;
+	struct nvrtx_disp_surface *surface;
+	unsigned index;
+
+	console = &gpu->console;
+
+	/* Leaves the head alone without a console the window reaches. */
+	if (console->mapped == 0) {
+		nvrtx_stage_mark("P8b: no console kept; the head is left to the firmware");
+		return ENOTSUP;
+	}
+
+	/* Leaves the head alone when the console is not the mode's picture. */
+	if (console->width != width || console->height != height) {
+		nvrtx_stage_mark("P8b: the console is %ux%u, the mode %ux%u; the head is left to the firmware",
+		    (unsigned)console->width,
+		    (unsigned)console->height,
+		    (unsigned)width,
+		    (unsigned)height);
+		return ENOTSUP;
+	}
+
+	/* Leaves the head alone when the window cannot take the console's rows. */
+	if ((console->pitch & (NVRTX_DISP_PITCH_UNIT - 1U)) != 0U) {
+		nvrtx_stage_mark("P8b: the console's pitch %u is not a multiple of %u; the head is left to the firmware",
+		    (unsigned)console->pitch,
+		    (unsigned)NVRTX_DISP_PITCH_UNIT);
+		return ENOTSUP;
+	}
+
+	/* Describes the console as both surfaces. */
+	for (index = 0U; index < 2U; index++) {
+		surface = &gpu->display.surfaces[index];
+		surface->offset = 0U;
+		surface->width = width;
+		surface->height = height;
+		surface->pitch = console->pitch;
+		surface->handle = NVRTX_DISP_HANDLE_VRAM;
+		surface->format = NVRTX_DISP_FORMAT_A8R8G8B8;
+	}
+
+	/* Succeeded: the console is the surface to show. */
+	nvrtx_stage_mark("P8b console %ux%u pitch %u at the VRAM's start", (unsigned)width, (unsigned)height, (unsigned)console->pitch);
 	return 0;
 }
 
@@ -1172,11 +1262,20 @@ scanout_assign_sor(
 	return 0;
 }
 
-/* Marks one step of the takeover and waits, so the monitor can be watched at it. */
+/* Marks one step of the takeover; with the monitor test it waits, so the monitor can be watched at it. */
 static void
 scanout_step(
 	const char *what)
 {
+	bool test;
+
+	/* Only the mark without the test. */
+	test = nvrtx_stage_disp_test_wanted();
+	if (!test) {
+		nvrtx_stage_mark("P8b step %s", what);
+		return;
+	}
+
 	/* The mark, then the wait. */
 	nvrtx_stage_mark("P8b step %s (5 s)", what);
 	scanout_hold(SCANOUT_STEP_US);

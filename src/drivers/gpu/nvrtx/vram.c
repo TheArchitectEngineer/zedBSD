@@ -25,16 +25,27 @@
  * P4m does not fail the boot: when the window cannot be set up the later
  * stages run as before (they reach the VRAM through the register window,
  * PRAMIN) and only the users of the window find it missing.
+ *
+ * On the GPU the machine boots on, the firmware's console lies at the start
+ * of the window and of the VRAM (the GOP's mapping in the window's physical
+ * mode).  The resource manager makes the whole window virtual, so P4m maps
+ * the window's first pages back onto the console before anything else
+ * takes the window, as the vendor's driver does (open-gpu-kernel-modules,
+ * MIT: osinit.c's console size and kern_bus_gm107.c's preserved console
+ * mapping at offset 0).  The CPU's own mapping of the window starts after
+ * the console, so the console's memory is never mapped twice.
  */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
+#include "bootloader/include/amd64-handoff.h"
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
 /*
@@ -55,6 +66,21 @@
 /* Where the page tables start in the tables' block (after the root and the three directories). */
 #define VRAM_TABLES_PTE_AT		0x4000ULL
 
+/*
+ * The window's mode register (Turing's BAR1 block, nouveau's tu102 bar):
+ * bit 31 set is the virtual mode.  The bind's pending bits are in the
+ * status register, polled when the mode is put back.
+ */
+#define VRAM_REG_BAR1_BLOCK		0xb80f40U
+#define VRAM_BAR1_BLOCK_VIRTUAL		0x80000000U
+#define VRAM_REG_BAR_STATUS		0xb80f50U
+#define VRAM_BAR1_PENDING		0x00000003U
+#define VRAM_BAR1_POLLS			1000U
+#define VRAM_BAR1_POLL_US		10U
+
+/* The console's VRAM is reserved in whole 64 KiB (osinit.c's alignment). */
+#define VRAM_CONSOLE_ALIGN		0x10000ULL
+
 /* The self-test's run, and the values written each way. */
 #define VRAM_TEST_BYTES			0x10000U
 #define VRAM_TEST_FILL			0x5a5a1234U
@@ -62,6 +88,7 @@
 #define VRAM_TEST_WORD_AT		20U
 
 static int vram_bar1_tables(struct nvrtx_gpu *gpu);
+static int vram_console_map(struct nvrtx_gpu *gpu);
 static int vram_bar1_cpu(struct nvrtx_gpu *gpu);
 static int vram_bar1_test(struct nvrtx_gpu *gpu);
 static int vram_write_ptes(struct nvrtx_gpu *gpu, uint64_t bar1, uint64_t vram, uint64_t size, int clear);
@@ -93,8 +120,12 @@ nvrtx_memory_start(
 		return error;
 	}
 
+	/* A kept console holds the VRAM's start; the allocator stays above it. */
+	if (gpu->console.kept != 0 && base < gpu->console.size)
+		base = gpu->console.size;
+
 	/* The allocator covers the rest of the region, below the fixed arenas. */
-	if (top - base <= VRAM_FIXED_RESERVE) {
+	if (top <= base || top - base <= VRAM_FIXED_RESERVE) {
 		nvrtx_stage_mark("P4m fail: region %u is too small (%llx..%llx)", (unsigned)region, (unsigned long long)base, (unsigned long long)top);
 		return ENOSPC;
 	}
@@ -121,6 +152,11 @@ nvrtx_memory_start(
 		nvrtx_stage_mark("P4m: no bar1 window (%d); the later stages use PRAMIN", error);
 		return 0;
 	}
+
+	/* Gives the firmware's console its place in the window back; the caller decides what a failure means. */
+	error = vram_console_map(gpu);
+	if (error != 0)
+		return 0;
 
 	/* Maps the window for the CPU. */
 	error = vram_bar1_cpu(gpu);
@@ -319,11 +355,11 @@ nvrtx_bo_cpu(
 {
 	volatile uint8_t *window;
 
-	/* The object's place in the uncached mapping of the window. */
+	/* The object's place in the uncached mapping of the window, which starts after the console. */
 	window = (volatile uint8_t *)gpu->memory_state.bar1_mapping.address;
 
 	/* Succeeded: the object's first byte. */
-	return window + bo->bar1;
+	return window + (bo->bar1 - gpu->memory_state.bar1_cpu_from);
 }
 
 /*
@@ -337,10 +373,130 @@ nvrtx_bo_bus(
 	uint64_t physical;
 
 	/* The object's place in the window's physical range. */
-	physical = gpu->memory_state.bar1_mapping.physical_address + bo->bar1;
+	physical = gpu->memory_state.bar1_mapping.physical_address + (bo->bar1 - gpu->memory_state.bar1_cpu_from);
 
 	/* Succeeded: the address. */
 	return physical;
+}
+
+/*
+ * Decides, before the GSP boot (P0), whether the firmware's console on this
+ * GPU is kept through it.
+ *
+ * The console is kept when the loader's picture starts the VRAM window, the
+ * window is in its physical mode (so the picture is at the VRAM's start
+ * too) and the picture is in the 32-bit format the display shows (B, G, R,
+ * X in memory).  Returns 0 when the boot may go on (the console is kept, or
+ * the GPU has none: the attach kept it only for nvrtx.gsp=1), EBUSY when
+ * the console is on the GPU but cannot be kept.
+ */
+int
+nvrtx_console_check(
+	struct nvrtx_gpu *gpu)
+{
+	const struct nvrtx_device *identity;
+	struct nvrtx_console *console;
+	uint64_t bytes;
+	uint32_t block;
+
+	identity = &gpu->identity;
+	console = &gpu->console;
+
+	/* A GPU the firmware's picture is not on has no console to keep. */
+	if (identity->gop_on_gpu == 0)
+		return 0;
+
+	/* Reads the window's mode as the firmware left it. */
+	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
+	console->bar1_block = block;
+
+	/* Refuses a picture away from the window's start, which the resource manager does not keep. */
+	if (identity->gop_offset != 0U) {
+		nvrtx_stage_mark("P0 console at bar1 +%llx, not its start: cannot be kept", (unsigned long long)identity->gop_offset);
+		return EBUSY;
+	}
+
+	/* Refuses a window the firmware put in its virtual mode: the picture's VRAM is unknown. */
+	if ((block & VRAM_BAR1_BLOCK_VIRTUAL) != 0U) {
+		nvrtx_stage_mark("P0 console: bar1 is virtual (%08x): cannot be kept", (unsigned)block);
+		return EBUSY;
+	}
+
+	/* Refuses a format the display's window is not given and a picture of no size. */
+	if (identity->gop_format != ZBL6_FRAMEBUFFER_BGRX8888 ||
+	    identity->gop_width == 0U ||
+	    identity->gop_height == 0U ||
+	    identity->gop_stride < identity->gop_width) {
+		nvrtx_stage_mark("P0 console %ux%u stride %u format %u: cannot be kept",
+		    (unsigned)identity->gop_width,
+		    (unsigned)identity->gop_height,
+		    (unsigned)identity->gop_stride,
+		    (unsigned)identity->gop_format);
+		return EBUSY;
+	}
+
+	/* Describes the console and the VRAM it holds, in whole 64 KiB. */
+	bytes = (uint64_t)identity->gop_stride * 4U * identity->gop_height;
+	console->size = (bytes + VRAM_CONSOLE_ALIGN - 1U) & ~(VRAM_CONSOLE_ALIGN - 1U);
+	console->width = identity->gop_width;
+	console->height = identity->gop_height;
+	console->pitch = identity->gop_stride * 4U;
+	console->kept = 1;
+
+	/* Succeeded: the boot keeps the console. */
+	nvrtx_stage_mark("P0 console %ux%u pitch %u kept: %llu KiB at the VRAM's start",
+	    (unsigned)console->width,
+	    (unsigned)console->height,
+	    (unsigned)console->pitch,
+	    (unsigned long long)(console->size >> 10));
+	return 0;
+}
+
+/*
+ * Puts the window back in the mode the firmware left it in, once the GSP
+ * has stopped, so the console reaches its VRAM again without the resource
+ * manager's tables.  Nothing is done for a console not kept or a mode that
+ * did not change.
+ */
+void
+nvrtx_console_restore(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_console *console;
+	uint32_t block;
+	uint32_t restored;
+	uint32_t status;
+	uint32_t poll;
+
+	console = &gpu->console;
+
+	/* A console not kept has nothing to restore. */
+	if (console->kept == 0)
+		return;
+
+	/* A window still in the firmware's mode needs nothing. */
+	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
+	if (block == console->bar1_block)
+		return;
+
+	/* Writes the firmware's mode and waits for the bind to settle. */
+	nvrtx_wr32(gpu, VRAM_REG_BAR1_BLOCK, console->bar1_block);
+	status = 0U;
+	for (poll = 0U; poll < VRAM_BAR1_POLLS; poll++) {
+		status = nvrtx_rd32(gpu, VRAM_REG_BAR_STATUS);
+		if ((status & VRAM_BAR1_PENDING) == 0U)
+			break;
+
+		kern_usleep_range(VRAM_BAR1_POLL_US, VRAM_BAR1_POLL_US);
+	}
+
+	/* Says what the window was put back to; the resource manager's mapping of the console is gone. */
+	restored = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
+	console->mapped = 0;
+	nvrtx_stage_mark("P7 console: bar1 mode %08x again (was %08x, status %08x)",
+	    (unsigned)restored,
+	    (unsigned)block,
+	    (unsigned)status);
 }
 
 /*
@@ -436,17 +592,70 @@ vram_bar1_tables(
 	return 0;
 }
 
-/* Claims the window and maps it uncached for the CPU; the allocator of the window starts empty. */
+/*
+ * Points the window's first pages back at the console the firmware left at
+ * the VRAM's start, page for page, before anything else takes the window.
+ */
+static int
+vram_console_map(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_memory_state *memory;
+	struct nvrtx_console *console;
+	int error;
+
+	memory = &gpu->memory_state;
+	console = &gpu->console;
+
+	/* A GPU without a kept console has nothing to map back. */
+	if (console->kept == 0)
+		return 0;
+
+	/* The console must lie in the part of the window the tables cover. */
+	if (console->size >= memory->bar1_window) {
+		nvrtx_stage_mark("P4m fail: the console's %llu KiB do not fit the window", (unsigned long long)(console->size >> 10));
+		return ENOSPC;
+	}
+
+	/* Maps the window's start onto the VRAM's start. */
+	mutex_lock(&memory->lock);
+
+	error = vram_write_ptes(gpu, 0U, 0U, console->size, 0);
+
+	mutex_unlock(&memory->lock);
+
+	/* Reports a console the window does not reach again. */
+	if (error != 0) {
+		nvrtx_stage_mark("P4m fail: the console's pages (%d)", error);
+		return error;
+	}
+
+	/* Succeeded: the console's writes reach its VRAM again. */
+	console->mapped = 1;
+	nvrtx_stage_mark("P4m console: bar1 0..%llx on the VRAM's start again", (unsigned long long)console->size);
+	return 0;
+}
+
+/*
+ * Claims the window and maps it uncached for the CPU, after the console's
+ * part; the allocator of the window starts empty after the console.
+ */
 static int
 vram_bar1_cpu(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_memory_state *memory;
+	uint64_t from;
 	unsigned bar;
 	int error;
 
 	memory = &gpu->memory_state;
 	bar = gpu->identity.windows[1].bar;
+
+	/* The console's part of the window stays the console's. */
+	from = 0U;
+	if (gpu->console.mapped != 0)
+		from = gpu->console.size;
 
 	/* Claims the window's BAR. */
 	error = drv_pci_device_claim_bar(gpu->identity.pci, bar);
@@ -458,20 +667,21 @@ vram_bar1_cpu(
 	/* Maps the part the tables cover. */
 	error = drv_pci_device_map_bar_region(gpu->identity.pci,
 	    bar,
-	    0U,
-	    (size_t)memory->bar1_window,
+	    from,
+	    (size_t)(memory->bar1_window - from),
 	    DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
 	    &memory->bar1_mapping);
 	if (error != 0)
 		return error;
 
 	memory->bar1_mapped = 1;
+	memory->bar1_cpu_from = from;
 	memory->bar1_bus = memory->bar1_mapping.physical_address;
 
 	/* The window's runs are handed out from now on. */
 	mutex_lock(&memory->lock);
 
-	nvrtx_heap_init(&memory->bar1, 0U, memory->bar1_window);
+	nvrtx_heap_init(&memory->bar1, from, memory->bar1_window);
 	memory->bar1_ready = 1;
 
 	mutex_unlock(&memory->lock);
