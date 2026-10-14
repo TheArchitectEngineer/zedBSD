@@ -103,6 +103,7 @@
 #define UART_FR_BUSY			(1U << 3)
 #define UART_FR_RXFE			(1U << 4)
 #define UART_FR_TXFF			(1U << 5)
+#define UART_FR_TXFE			(1U << 7)
 
 /* LCR_H: the FIFOs on, eight bits a character (no parity, one stop bit). */
 #define UART_LCRH_FEN			(1U << 4)
@@ -1708,9 +1709,23 @@ bt_reset(
 {
 	struct rpi4_bt *bt;
 	unsigned long enabled;
+	uint32_t flags;
 	int error;
 
 	bt = context;
+
+	/*
+	 * What the line was doing before the reset: whether the controller let
+	 * the host send (its RTS, our CTS) and whether bytes were still waiting
+	 * in the send FIFO (BUG-311: the command after the first one got no
+	 * answer).
+	 */
+	flags = read_register(bt, UART_FR);
+	kern_logf("rpi4-bt: before the program's reset: FR %03x (CTS %s, send FIFO %s, %s)\n",
+	    flags,
+	    ((flags & UART_FR_CTS) != 0U) ? "asserted" : "not asserted",
+	    ((flags & UART_FR_TXFE) != 0U) ? "empty" : "holding bytes",
+	    ((flags & UART_FR_BUSY) != 0U) ? "busy" : "idle");
 
 	/* Keeps the worker off the line. */
 	error = park_worker(bt);

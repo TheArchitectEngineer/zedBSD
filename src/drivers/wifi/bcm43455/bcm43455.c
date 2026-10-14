@@ -65,6 +65,16 @@
 /* The bytes the valid-channel list answer takes: its count and up to the maximum. */
 #define CHANNEL_LIST_LENGTH		(4U + 4U * BCM43455_CHANNELS_MAX)
 
+/*
+ * The room asked for the firmware's version text and its capability list:
+ * brcmfmac's (ISC) BRCMF_DCMD_SMLEN for "ver" and MAX_CAPS_BUFFER_SIZE for
+ * "cap".  A get sends as many bytes as it wants back, and a request of
+ * nearly the whole 2 KiB control buffer got no answer from the 43455's
+ * firmware (BUG-311, T1-632: "firmware version not read (42)").
+ */
+#define VERSION_READ_BYTES		256U
+#define CAPABILITIES_READ_BYTES		768U
+
 /* The radio's 2.4 GHz and 5 GHz channel numbering. */
 #define BAND_2G_BASE_MHZ		2407U
 #define CHANNEL_14_MHZ			2484U
@@ -1045,7 +1055,7 @@ read_identity(
 	/* The version text of the running firmware. */
 	kern_memset(text, 0, sizeof(text));
 	answered = 0;
-	error = bcm43455_bus_iovar_get(&device->bus, "ver", text, sizeof(text) - 1U, &answered);
+	error = bcm43455_bus_iovar_get(&device->bus, "ver", text, VERSION_READ_BYTES, &answered);
 	if (error != 0) {
 		kern_logf("bcm43455: firmware version not read (%d)\n", error);
 		return error;
@@ -1060,7 +1070,7 @@ read_identity(
 	/* The capability list. */
 	kern_memset(text, 0, sizeof(text));
 	answered = 0;
-	error = bcm43455_bus_iovar_get(&device->bus, "cap", text, sizeof(text) - 1U, &answered);
+	error = bcm43455_bus_iovar_get(&device->bus, "cap", text, CAPABILITIES_READ_BYTES, &answered);
 	if (error != 0) {
 		kern_logf("bcm43455: capabilities not read (%d)\n", error);
 		return error;
