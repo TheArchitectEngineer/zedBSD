@@ -857,6 +857,100 @@ nvrtx_sm75_bra_if(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (negate != 0) ? 1U : 0U);
 }
 
+/* ALD dst = one word of the vertex's input attribute at an address (the vertex and the offset RZ). */
+void
+nvrtx_sm75_ald(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t address)
+{
+	/* The opcode, the destination, the registers RZ, the address, one component. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_ALD);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_COMPONENTS_LOW, 2U, 0U);
+}
+
+/* AST: one word of the vertex's output attribute at an address (the vertex and the offset RZ). */
+void
+nvrtx_sm75_ast(
+	struct nvrtx_sm75_word *word,
+	uint32_t address,
+	uint32_t data)
+{
+	/* The opcode, the data, the registers RZ, the address, one component. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_AST);
+	nvrtx_sm75_set(word, NVRTX_SM75_STORE_DATA_LOW, NVRTX_SM75_REG_BITS, data);
+	nvrtx_sm75_set(word, NVRTX_SM75_AST_VERTEX_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_COMPONENTS_LOW, 2U, 0U);
+}
+
+/* IPA dst = the fragment's value of the attribute at an address, at the pixel's centre, with no offset. */
+void
+nvrtx_sm75_ipa(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t address,
+	uint32_t frequency)
+{
+	/* The opcode, the destination, the address in words, the location and the frequency, the offset RZ, no predicate. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_IPA);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_IPA_ADDRESS_LOW, 8U, address >> 2);
+	nvrtx_sm75_set(word, NVRTX_SM75_IPA_FREQUENCY_LOW, 2U, frequency);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/*
+ * TEX.2D with its handle in a constant buffer: four channels into two
+ * register pairs, the coordinates from a pair, a level of detail mode and
+ * register, no fault predicate, normal eviction.
+ */
+void
+nvrtx_sm75_tex(
+	struct nvrtx_sm75_word *word,
+	uint32_t first,
+	uint32_t second,
+	uint32_t coordinates,
+	uint32_t lod,
+	uint32_t lod_mode,
+	uint32_t index,
+	uint32_t offset)
+{
+	/* The opcode and the handle's place. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_TEX);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_HANDLE_LOW, NVRTX_SM75_TEX_HANDLE_BITS, offset / 4U);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_BUFFER_LOW, 5U, index);
+
+	/* The destinations and the sources. */
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, first);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_DST2_LOW, NVRTX_SM75_REG_BITS, second);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, coordinates);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, lod);
+
+	/* 2D, all four channels, the level of detail mode, no fault predicate, normal eviction. */
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_DIM_LOW, 3U, NVRTX_SM75_TEX_DIM_2D);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_CHANNELS_LOW, 4U, 0xfU);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_LOD_LOW, 3U, lod_mode);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_EVICT_LOW, 3U, NVRTX_SM75_MEM_EVICT_NORMAL);
+}
+
+/* KILL: the fragment is discarded (the predicate source PT; the guard chooses the threads). */
+void
+nvrtx_sm75_kill(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode and the predicate source. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_KILL);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
 /* Places a source in the third source's register slot, with that slot's abs and neg; none places nothing. */
 static void
 nvrtx_sm75_place_src2(

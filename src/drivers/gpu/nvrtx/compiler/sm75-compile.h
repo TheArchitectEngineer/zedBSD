@@ -18,8 +18,11 @@
  *
  * Stages A and B compile compute shaders: arithmetic, conversions, the
  * special functions, storage and shared memory with their atomics,
- * workgroup barriers and fences, integer division, and loops.  Graphics
- * stages, textures and spilling are refused with a reason.
+ * workgroup barriers and fences, integer division, and loops.  Stage E
+ * adds vertex and fragment programs with their shader program header:
+ * attributes, interpolated inputs, colour outputs, 2D texture samples and
+ * discards.  Geometry, the other texture messages, derivatives and
+ * spilling are refused with a reason.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_COMPILER_SM75_COMPILE_H
@@ -72,6 +75,18 @@ struct nvrtx_sm75_binary {
 	uint32_t storage_count;
 	struct nvrtx_sm75_binding uniforms[NVRTX_SM75_CB_UNIFORM_MAX];
 	uint32_t uniform_count;
+
+	/* The sampled images: the k-th one's texture handle is the word at NVRTX_SM75_CB_TEXTURES + 4 * k of constant buffer 0. */
+	struct nvrtx_sm75_binding textures[NVRTX_SM75_CB_TEXTURES_MAX];
+	uint32_t texture_count;
+
+	/*
+	 * A vertex or fragment program's shader program header (version 4, 128
+	 * bytes), which the program's address points at, the code following
+	 * it; nonzero graphics says it is one (a compute program has none).
+	 */
+	uint32_t graphics;
+	uint32_t sph[NVRTX_SM75_SPH_WORDS];
 };
 
 /*
@@ -85,6 +100,9 @@ struct nvrtx_sm75_diagnostic {
 
 /* Compiles a SPIR-V compute module: 0 with the program, EINVAL or ENOTSUP with a reason, or ENOMEM. */
 int nvrtx_sm75_compile(const uint32_t *words, size_t word_count, struct nvrtx_sm75_binary **binary, struct nvrtx_sm75_diagnostic *diagnostic);
+
+/* Compiles a SPIR-V module's stage (compute, vertex or fragment), as nvrtx_sm75_compile(). */
+int nvrtx_sm75_compile_stage(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, struct nvrtx_sm75_binary **binary, struct nvrtx_sm75_diagnostic *diagnostic);
 
 /* Compiles a parsed compute program (the IR is only read). */
 int nvrtx_sm75_compile_ir(const struct drv_gpu_shader_ir *ir, struct nvrtx_sm75_binary **binary, struct nvrtx_sm75_diagnostic *diagnostic);

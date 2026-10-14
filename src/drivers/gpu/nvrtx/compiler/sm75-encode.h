@@ -150,6 +150,24 @@ void nvrtx_sm75_bar(struct nvrtx_sm75_word *word);
 void nvrtx_sm75_bssy(struct nvrtx_sm75_word *word, uint32_t barrier, int32_t instructions);
 void nvrtx_sm75_bsync(struct nvrtx_sm75_word *word, uint32_t barrier);
 
+/* ALD dst = one word of the vertex's input attribute at an address; AST: one word of the output attribute. */
+void nvrtx_sm75_ald(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t address);
+void nvrtx_sm75_ast(struct nvrtx_sm75_word *word, uint32_t address, uint32_t data);
+
+/* IPA dst = the fragment's interpolation of the attribute at an address: passed (pass) or the provoking vertex's (constant). */
+void nvrtx_sm75_ipa(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t address, uint32_t frequency);
+
+/*
+ * TEX.2D of the texture whose handle is the word at offset of constant
+ * buffer index, at the coordinates in the pair from coordinates: the four
+ * channels into the pairs first and second, with a level of detail mode and
+ * its register (RZ for none).
+ */
+void nvrtx_sm75_tex(struct nvrtx_sm75_word *word, uint32_t first, uint32_t second, uint32_t coordinates, uint32_t lod, uint32_t lod_mode, uint32_t index, uint32_t offset);
+
+/* KILL of the fragment (under the instruction's guard). */
+void nvrtx_sm75_kill(struct nvrtx_sm75_word *word);
+
 /* Makes a BRA conditional: it branches where the predicate (or its negation) holds. */
 void nvrtx_sm75_bra_if(struct nvrtx_sm75_word *word, uint32_t predicate, int negate);
 
