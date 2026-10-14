@@ -173,6 +173,9 @@ struct layout_box {
 	size_t line_count;
 	/* A bounded vertical-lr text-only line mapping; line coordinates are logical until painted. */
 	int vertical_inline;
+	/* An in-flow item of a horizontal grid whose writing mode is vertical; its inline room is the row's height (negative: unbounded). */
+	int grid_orthogonal;
+	layout_unit grid_room;
 
 	/* The text of a text box, whitespace kept as it came (the lines collapse it). */
 	const uint16_t *text;

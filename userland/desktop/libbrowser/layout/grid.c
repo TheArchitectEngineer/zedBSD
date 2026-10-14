@@ -515,6 +515,23 @@ layout_grid(
 	    room, grid.column_count, &shift, &distribution);
 	column_gap += distribution;
 
+	/* An item with a vertical writing mode lays its lines along the row's height. */
+	for (index = 0; index < grid.item_count; index++) {
+		item = &grid.items[index];
+		child = item->box;
+		child->grid_orthogonal = 0;
+		child->grid_room = -1;
+		if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+		    child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB ||
+		    child->replaced || child->atomic)
+			continue;
+		child->grid_orthogonal = 1;
+		if (item->row_span == 1 && item->row < box->style.row_count &&
+		    grid_row_track(&box->style, item->row)->kind == CSS_TRACK_LENGTH &&
+		    grid_row_track(&box->style, item->row)->size.unit == CSS_UNIT_PX)
+			child->grid_room = layout_from_px(grid_row_track(&box->style, item->row)->size.value);
+	}
+
 	/* Each item laid out in its area's width. */
 	for (index = 0; index < grid.item_count; index++) {
 		item = &grid.items[index];
@@ -527,7 +544,8 @@ layout_grid(
 		if (justify == CSS_ALIGN_NORMAL)
 			justify = item->box->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
 		if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
-		    item->box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+		    (item->box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB &&
+		    !item->box->grid_orthogonal) ||
 		    item->box->style.min_width.unit != CSS_UNIT_AUTO ||
 		    item->box->style.max_width.unit != CSS_UNIT_NONE)
 			justify = CSS_ALIGN_STRETCH;
@@ -644,7 +662,7 @@ layout_grid(
 		child->x = x + child->margin[CSS_LEFT];
 		if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 		    (child->style.width.unit != CSS_UNIT_AUTO ||
-		    (child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+		    ((child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB || child->grid_orthogonal) &&
 		    child->style.min_width.unit == CSS_UNIT_AUTO &&
 		    child->style.max_width.unit == CSS_UNIT_NONE &&
 		    child->style.margin[CSS_LEFT].unit != CSS_UNIT_AUTO &&

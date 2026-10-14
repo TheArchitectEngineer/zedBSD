@@ -129,6 +129,7 @@ layout_inline(
 	int rl_non_grid;
 	int rl_fixed_grid;
 	int rl_auto_grid;
+	int rl_orthogonal;
 	int vertical;
 	int error;
 
@@ -147,6 +148,7 @@ layout_inline(
 	    box->out_of_flow && inline_vertical_absolute_grid(box))) &&
 	    box->parent->style.column_count != 0 &&
 	    box->parent->style.row_count != 0;
+	rl_orthogonal = box->grid_orthogonal && !box->out_of_flow;
 	rl_auto_grid = box->parent != NULL &&
 	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID &&
 	    box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
@@ -157,7 +159,7 @@ layout_inline(
 	    box->style.height.unit == CSS_UNIT_PX;
 	vertical = (box->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
 	    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
-	    (rl_non_grid || rl_fixed_grid || rl_auto_grid))) &&
+	    (rl_non_grid || rl_fixed_grid || rl_auto_grid || rl_orthogonal))) &&
 	    (box->style.direction == CSS_DIRECTION_LTR ||
 	    (box->style.direction == CSS_DIRECTION_RTL && box->out_of_flow &&
 	    inline_vertical_absolute_grid(box))) &&
@@ -419,6 +421,16 @@ inline_vertical_room(
 	layout_unit room;
 	layout_unit track;
 	int column;
+
+	/* A grid item's inline room is its row's height; an auto row leaves it unbounded. */
+	if (box->grid_orthogonal && box->style.height.unit != CSS_UNIT_PX) {
+		if (box->grid_room < 0)
+			return LAYOUT_UNIT * 100000;
+		room = box->grid_room - box->margin[CSS_TOP] - box->margin[CSS_BOTTOM] -
+		    box->border[CSS_TOP] - box->padding[CSS_TOP] -
+		    box->padding[CSS_BOTTOM] - box->border[CSS_BOTTOM];
+		return room < 0 ? 0 : room;
+	}
 
 	/* A physical pixel height gives a non-Grid block its inline room. */
 	room = 0;
