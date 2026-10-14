@@ -121,7 +121,9 @@ enum computed_property {
 	COMPUTED_WRITING_MODE,
 	COMPUTED_TEXT_ORIENTATION,
 	COMPUTED_GRID_TEMPLATE_ROWS,
-	COMPUTED_GRID_AUTO_FLOW
+	COMPUTED_GRID_AUTO_FLOW,
+	COMPUTED_GRID_AUTO_COLUMNS,
+	COMPUTED_GRID_AUTO_ROWS
 };
 
 /*
@@ -251,6 +253,8 @@ static const struct computed_entry computed_entries[] = {
 	{ "grid-template-columns", COMPUTED_GRID_TEMPLATE_COLUMNS },
 	{ "grid-template-rows", COMPUTED_GRID_TEMPLATE_ROWS },
 	{ "grid-auto-flow", COMPUTED_GRID_AUTO_FLOW },
+	{ "grid-auto-columns", COMPUTED_GRID_AUTO_COLUMNS },
+	{ "grid-auto-rows", COMPUTED_GRID_AUTO_ROWS },
 	{ "text-decoration-line", COMPUTED_TEXT_DECORATION_LINE },
 	{ "text-decoration-style", COMPUTED_TEXT_DECORATION_STYLE },
 	{ "text-decoration-skip-ink", COMPUTED_TEXT_DECORATION_SKIP_INK },
@@ -1008,6 +1012,12 @@ computed_write_keyword(
 		} else {
 			error = computed_ascii("row", out);
 		}
+		break;
+	case COMPUTED_GRID_AUTO_COLUMNS:
+		error = computed_write_tracks(style->auto_columns, style->auto_column_count, out);
+		break;
+	case COMPUTED_GRID_AUTO_ROWS:
+		error = computed_write_tracks(style->auto_rows, style->auto_row_count, out);
 		break;
 	default:
 		/* transform: the engine has none. */

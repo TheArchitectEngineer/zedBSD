@@ -1,0 +1,17 @@
+{
+  "id": "/css/css-grid/placement/grid-auto-placement-implicit-tracks-001.html",
+  "before_outcome": "fail",
+  "after_outcome": "fail",
+  "before_pass": 0,
+  "after_pass": 6,
+  "total": 12,
+  "improved": [
+    ".grid 1",
+    ".grid 2",
+    ".grid 3",
+    ".grid 4",
+    ".grid 5",
+    ".grid 6"
+  ],
+  "regressed": []
+}

@@ -617,6 +617,10 @@ struct css_style {
 	int column_count;
 	struct css_track rows[CSS_TRACKS];
 	int row_count;
+	struct css_track auto_columns[CSS_TRACKS];
+	int auto_column_count;
+	struct css_track auto_rows[CSS_TRACKS];
+	int auto_row_count;
 	int grid_auto_flow;
 	struct css_grid_place grid_column;
 	struct css_grid_place grid_row;

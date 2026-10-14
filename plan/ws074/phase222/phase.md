@@ -25,3 +25,11 @@ Event ws074-p222-addition-20261014: q1130でcolumn/dense値がparse/style/CSSOM�
 ## q1131-i01 結果（2026-10-14 10:07 JST）
 
 Event ws074-p222-q1131-partial-clear-20261014: [証拠](evidence/20261014-q1131/README.md)。row denseで各auto itemのcursorを原点から再開し、明示2列/穴埋めfixtureの第3子を sparse(0,40)からdense(40,0)へ。固定implicit-tracks WPTは前後0/12 whole FAILのまま、最初の失敗は未対応`grid-auto-columns`由来の幅494/期待100。旧whole PASS4件、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。q1131部分cleared、p222/p189/p173全件100%未達。column/dense列と暗黙trackサイズは後続。共有投影/GitHub publication保留。
+
+## q1132-i02 有限部分範囲（2026-10-14 10:09 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分のq1132（11:39 JSTまで）に適用。p221 q1132-i01の単一px暗黙列/行trackをGrid sizingへ適用し、未指定auto・明示track・row dense/sparseを維持。最小2列/行geometry、固定implicit-tracks WPT前後と旧PASS、CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加。他のtrack値/複数・column flow/WPT/runner/公開ABI/`plan/master.md`変更なし。p222 whole/p189/p173全件100%は本部分基準外。[CSS Grid §7.6](https://www.w3.org/TR/css-grid-2/#propdef-grid-auto-columns)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。i01の検証済みCSS stateを着手条件とする。
+
+## q1132-i02 結果（2026-10-14 10:13 JST）
+
+Event ws074-p222-q1132-i02-partial-clear-20261014: [証拠](evidence/20261014-q1132/README.md)。単一固定px暗黙列/行trackをGrid sizingに使用し、未指定auto・row sparse/denseを維持。最小geometry PASS、固定implicit-tracks WPT0→6/12 subtest（row sparse/dense各3）、column flow6件はFAILでwhole未達。旧whole PASS2件、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。q1132-i02部分cleared、p222/p189/p173全件100%未達。共有投影/GitHub publication保留。

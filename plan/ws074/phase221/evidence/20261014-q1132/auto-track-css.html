@@ -1,0 +1,28 @@
+<!doctype html><div id="parent"><div id="child"></div></div>
+<script>
+var parent = document.getElementById("parent");
+var child = document.getElementById("child");
+["grid-auto-columns", "grid-auto-rows"].forEach(function (property) {
+  var accepted = 0;
+  ["auto", "0px", "10px"].forEach(function (value) {
+    child.style.setProperty(property, value);
+    if (child.style.getPropertyValue(property) === value &&
+        getComputedStyle(child).getPropertyValue(property) === value) accepted++;
+  });
+  var rejected = 0;
+  ["-1px", "1fr", "1px 2px", "minmax(1px, 2px)"].forEach(function (value) {
+    child.style.removeProperty(property);
+    child.style.setProperty(property, value);
+    if (child.style.getPropertyValue(property) === "") rejected++;
+  });
+  parent.style.setProperty(property, "12px");
+  child.style.setProperty(property, "inherit");
+  var inherited = getComputedStyle(child).getPropertyValue(property) === "12px";
+  child.style.setProperty(property, "initial");
+  var initial = getComputedStyle(child).getPropertyValue(property) === "auto";
+  child.style.setProperty(property, "unset");
+  var unset = getComputedStyle(child).getPropertyValue(property) === "auto";
+  console.log(property + "=" + accepted + "/3 accepted," + rejected +
+              "/4 rejected," + [inherited, initial, unset].join(","));
+});
+</script>

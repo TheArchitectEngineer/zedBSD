@@ -81,3 +81,11 @@ Event ws074-p221-q1129-partial-clear-20261014: [証拠](evidence/20261014-q1129/
 ## q1130-i01 結果（2026-10-14 10:04 JST）
 
 Event ws074-p221-q1130-partial-clear-20261014: [証拠](evidence/20261014-q1130/README.md)。`grid-auto-flow`のrow/column/dense組合せをparse/style/CSSOMで保持・正規化し、initial/unset/inheritを確認。固定valid/computed各0→7/7 subtest・whole FAIL→PASS、invalid3/3 whole PASSと旧whole PASS4件維持、後退0。最小host・以前の3 fixture・CSS51/JS14/Grid48・warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。列/dense実配置は未実装・後続別scope。q1130部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1132-i01 有限部分範囲（2026-10-14 10:09 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分のq1132（11:39 JSTまで）に適用。`grid-auto-columns/rows`の単一`auto`または非負pxをCSS parser/style/指定・computed CSSOMへ通し、initial/unset/inheritを保持。最小host、固定valid/computed/invalidの対象subtest、CSS/JS、warning0 build。他のtrack値/複数・layout/WPT/runner/公開ABI/`plan/master.md`変更なし。p221 whole/p189/p173全件100%は本部分基準外。[CSS Grid §7.6](https://www.w3.org/TR/css-grid-2/#propdef-grid-auto-columns)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。i01出力をp222 q1132-i02が利用する。
+
+## q1132-i01 結果（2026-10-14 10:13 JST）
+
+Event ws074-p221-q1132-i01-partial-clear-20261014: [証拠](evidence/20261014-q1132/README.md)。単一auto/非負pxのauto-columns/rowsをparse/style/指定・computed CSSOMへ通し、initial/unset/inheritを確認。固定valid各0→3/30、computed各0→3/25 subtest、invalid列16/16・行15/15 whole PASS維持、後退0。最小host・CSS51/JS14・warning0 build。q1132-i01部分cleared、p222-i02へ検証済みCSS stateを渡す。p221/p189/p173全件100%未達、共有投影/GitHub publication保留。

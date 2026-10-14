@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1131 / WS074 row dense Grid placement（2026-10-14）
+## 最新: q1132 / WS074 basic implicit Grid tracks（2026-10-14）
+
+[q1132履歴](queue-q1132.md): 単一px/auto暗黙track CSS stateとsizingで固定placement0→6/12、columns/rows valid/computed各0→3 subtest。旧PASSとAcid3差0維持。[CSS証拠](../ws074/phase221/evidence/20261014-q1132/README.md)、[配置証拠](../ws074/phase222/evidence/20261014-q1132/README.md)。p221/p222部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1131 / WS074 row dense Grid placement（2026-10-14）
 
 [q1131履歴](queue-q1131.md): 行denseは最小2列穴埋めを修正、固定implicit-tracks WPTは未対応auto-columns幅で0/12 FAIL維持。旧PASSとAcid3差0維持。[証拠](../ws074/phase222/evidence/20261014-q1131/README.md)。p222部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

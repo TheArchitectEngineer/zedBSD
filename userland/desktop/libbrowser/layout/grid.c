@@ -81,6 +81,8 @@ static void grid_static_position(struct layout_box *box, const struct grid_state
 static int grid_place(struct grid_state *grid, int auto_flow);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_take(struct grid_state *grid, int row, int column, int row_span, int column_span);
+static const struct css_track *grid_column_track(const struct css_style *style, int column);
+static const struct css_track *grid_row_track(const struct css_style *style, int row);
 static int grid_size_columns(struct layout_tree *tree, struct layout_box *box, struct grid_state *grid, layout_unit gap);
 static int grid_item_width(struct layout_tree *tree, struct layout_box *item, layout_unit *width);
 static int grid_lay_item(struct layout_tree *tree, struct layout_box *item, layout_unit width, int justify);
@@ -877,6 +879,28 @@ grid_take(
 	return 0;
 }
 
+/* Returns a declared column track, cycling implicit sizes after the explicit grid. */
+static const struct css_track *
+grid_column_track(
+	const struct css_style *style,
+	int column)
+{
+	if (column < style->column_count)
+		return &style->columns[column];
+	return &style->auto_columns[(column - style->column_count) % style->auto_column_count];
+}
+
+/* Returns a declared row track, cycling implicit sizes after the explicit grid. */
+static const struct css_track *
+grid_row_track(
+	const struct css_style *style,
+	int row)
+{
+	if (row < style->row_count)
+		return &style->rows[row];
+	return &style->auto_rows[(row - style->row_count) % style->auto_row_count];
+}
+
 /*
  * Sizes the columns: fixed tracks at their lengths, auto tracks at their
  * one-column items' content widths (widened for the items spanning them),
@@ -914,9 +938,7 @@ grid_size_columns(
 	/* The fixed tracks, and the least of the fr tracks. */
 	fr_total = 0;
 	for (column = 0; column < grid->column_count; column++) {
-		if (column >= box->style.column_count)
-			continue;
-		track = &box->style.columns[column];
+		track = grid_column_track(&box->style, column);
 		if (track->kind == CSS_TRACK_LENGTH)
 			grid->columns[column] = grid_track_length(&track->size, box->width, tree->measuring);
 		if (track->kind == CSS_TRACK_FR && tree->measuring == 0) {
@@ -931,13 +953,11 @@ grid_size_columns(
 		if (item->column_span != 1)
 			continue;
 		column = item->column;
-		if (column < box->style.column_count) {
-			track = &box->style.columns[column];
-			if (track->kind == CSS_TRACK_LENGTH)
-				continue;
-			if (track->kind == CSS_TRACK_FR && tree->measuring == 0)
-				continue;
-		}
+		track = grid_column_track(&box->style, column);
+		if (track->kind == CSS_TRACK_LENGTH)
+			continue;
+		if (track->kind == CSS_TRACK_FR && tree->measuring == 0)
+			continue;
 
 		/* The item's margin box at its content's width. */
 		error = grid_item_width(tree, item->box, &width);
@@ -958,7 +978,8 @@ grid_size_columns(
 		autos = 0;
 		for (column = item->column; column < item->column + item->column_span; column++) {
 			spanned += grid->columns[column];
-			if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO)
+			track = grid_column_track(&box->style, column);
+			if (track->kind == CSS_TRACK_AUTO)
 				autos++;
 		}
 
@@ -974,7 +995,8 @@ grid_size_columns(
 			continue;
 		share = (width - spanned) / autos;
 		for (column = item->column; column < item->column + item->column_span; column++) {
-			if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO)
+			track = grid_column_track(&box->style, column);
+			if (track->kind == CSS_TRACK_AUTO)
 				grid->columns[column] += share;
 		}
 	}
@@ -983,10 +1005,8 @@ grid_size_columns(
 	available = box->width - gap * (layout_unit)(grid->column_count - 1);
 	used = 0;
 	for (column = 0; column < grid->column_count; column++) {
-		track = NULL;
-		if (column < box->style.column_count)
-			track = &box->style.columns[column];
-		if (track != NULL && track->kind == CSS_TRACK_FR && tree->measuring == 0)
+		track = grid_column_track(&box->style, column);
+		if (track->kind == CSS_TRACK_FR && tree->measuring == 0)
 			continue;
 		used += grid->columns[column];
 	}
@@ -1014,7 +1034,8 @@ grid_size_columns(
 	autos = 0;
 	last_auto = -1;
 	for (column = 0; column < grid->column_count; column++) {
-		if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO) {
+		track = grid_column_track(&box->style, column);
+		if (track->kind == CSS_TRACK_AUTO) {
 			autos++;
 			last_auto = column;
 		}
@@ -1027,7 +1048,8 @@ grid_size_columns(
 	/* Give the last auto track the subpixel remainder so the grid fills its box exactly. */
 	remainder = available - used - share * autos;
 	for (column = 0; column < grid->column_count; column++) {
-		if (column >= box->style.column_count || box->style.columns[column].kind == CSS_TRACK_AUTO)
+		track = grid_column_track(&box->style, column);
+		if (track->kind == CSS_TRACK_AUTO)
 			grid->columns[column] += share;
 	}
 	grid->columns[last_auto] += remainder;
@@ -1238,8 +1260,8 @@ grid_size_rows(
 
 	/* The fixed rows, and each fractional row's minimum. */
 	fr_total = 0;
-	for (row = 0; row < grid->row_count && row < box->style.row_count; row++) {
-		track = &box->style.rows[row];
+	for (row = 0; row < grid->row_count; row++) {
+		track = grid_row_track(&box->style, row);
 		if (track->kind == CSS_TRACK_LENGTH)
 			grid->rows[row] = grid_track_length(&track->size, available, available < 0);
 		if (track->kind == CSS_TRACK_FR && available >= 0) {
@@ -1253,11 +1275,9 @@ grid_size_rows(
 		item = &grid->items[index];
 		if (item->row_span != 1 || item->row >= grid->row_count)
 			continue;
-		if (item->row < box->style.row_count) {
-			track = &box->style.rows[item->row];
-			if (track->kind == CSS_TRACK_LENGTH || (track->kind == CSS_TRACK_FR && available >= 0))
-				continue;
-		}
+		track = grid_row_track(&box->style, item->row);
+		if (track->kind == CSS_TRACK_LENGTH || (track->kind == CSS_TRACK_FR && available >= 0))
+			continue;
 
 		/* The item's outer height raises its auto row. */
 		height = grid_outer_height(item->box);

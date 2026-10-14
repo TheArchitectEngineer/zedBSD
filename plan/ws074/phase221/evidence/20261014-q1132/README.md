@@ -1,0 +1,7 @@
+# q1132-i01 — basic implicit track CSS state
+
+The parser accepts one `auto` or nonnegative pixel length for `grid-auto-columns` and `grid-auto-rows`; the cascade stores it, and specified/computed CSSOM exposes it. Initial and `unset` resolve to `auto`, and explicit `inherit` copies the parent. This is a bounded subset of [CSS Grid §7.6](https://www.w3.org/TR/css-grid-2/#propdef-grid-auto-columns). Other lengths, percentages, fractions, intrinsic sizes, functions and multiple values remain for later work.
+
+The [minimal fixture](auto-track-css.html) and `test-grid-auto-track-css.py` pass on both axes: three accepted forms, four rejected forms outside this scope, and inherit/initial/unset. The [fixed WPT comparison](comparison.json) against q1129 shows valid suites each **0→3/30** and computed suites each **0→3/25** subtests; invalid suites remain **16/16** columns and **15/15** rows whole PASS. No measured regression. All four valid/computed files remain whole FAIL because their full grammar is not implemented.
+
+`sh plan/ws074/tests/host-build.sh plain` exited 0 with [warning0 log](host-build-i01.log). Native CSS rule model 51/51 and JS14/14 passed. q1132-i01 partial cleared, supplying the verified state consumed by [q1132-i02](../../../phase222/evidence/20261014-q1132/README.md). p221/p189/p173 whole and all3,805 PASS remain uncleared. Shared projection/GitHub publication pending with Q1; no push.

@@ -970,6 +970,10 @@ css_initial_style(
 	style->justify_self = CSS_ALIGN_AUTO;
 	style->flex_shrink = 1;
 	style->flex_basis.unit = CSS_UNIT_AUTO;
+	style->auto_column_count = 1;
+	style->auto_columns[0].kind = CSS_TRACK_AUTO;
+	style->auto_row_count = 1;
+	style->auto_rows[0].kind = CSS_TRACK_AUTO;
 
 	/* The decoration's initial values that are not zero (ws074-p062): opaque, a medium outline of no style in currentcolor. */
 	style->opacity = 1;
@@ -3673,6 +3677,12 @@ cascade_apply(
 	case CSS_PROP_GRID_AUTO_FLOW:
 		style->grid_auto_flow = value->keyword;
 		break;
+	case CSS_PROP_GRID_AUTO_COLUMNS:
+		cascade_tracks(engine, style, value, style->auto_columns, &style->auto_column_count);
+		break;
+	case CSS_PROP_GRID_AUTO_ROWS:
+		cascade_tracks(engine, style, value, style->auto_rows, &style->auto_row_count);
+		break;
 	case CSS_PROP_GRID_COLUMN_START:
 	case CSS_PROP_GRID_COLUMN_END:
 	case CSS_PROP_GRID_ROW_START:
@@ -4112,6 +4122,14 @@ cascade_inherit(
 		break;
 	case CSS_PROP_GRID_AUTO_FLOW:
 		style->grid_auto_flow = parent->grid_auto_flow;
+		break;
+	case CSS_PROP_GRID_AUTO_COLUMNS:
+		memcpy(style->auto_columns, parent->auto_columns, sizeof(style->auto_columns));
+		style->auto_column_count = parent->auto_column_count;
+		break;
+	case CSS_PROP_GRID_AUTO_ROWS:
+		memcpy(style->auto_rows, parent->auto_rows, sizeof(style->auto_rows));
+		style->auto_row_count = parent->auto_row_count;
 		break;
 	case CSS_PROP_GRID_COLUMN_START:
 	case CSS_PROP_GRID_COLUMN_END:

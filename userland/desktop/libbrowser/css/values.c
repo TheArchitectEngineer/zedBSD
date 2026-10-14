@@ -146,6 +146,7 @@ static int values_one_shadow(const struct css_token *tokens, size_t count, struc
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
+static int values_auto_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_grid_auto_flow(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
 static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
@@ -267,6 +268,8 @@ static const struct values_name values_names[] = {
 	{ "grid-template-columns", CSS_PROP_GRID_TEMPLATE_COLUMNS },
 	{ "grid-template-rows", CSS_PROP_GRID_TEMPLATE_ROWS },
 	{ "grid-auto-flow", CSS_PROP_GRID_AUTO_FLOW },
+	{ "grid-auto-columns", CSS_PROP_GRID_AUTO_COLUMNS },
+	{ "grid-auto-rows", CSS_PROP_GRID_AUTO_ROWS },
 	{ "grid-column-start", CSS_PROP_GRID_COLUMN_START },
 	{ "grid-column-end", CSS_PROP_GRID_COLUMN_END },
 	{ "grid-row-start", CSS_PROP_GRID_ROW_START },
@@ -1737,6 +1740,8 @@ values_single(
 		return values_tracks(parse, tokens, count, value);
 	if (property == CSS_PROP_GRID_AUTO_FLOW)
 		return values_grid_auto_flow(tokens, count, value);
+	if (property == CSS_PROP_GRID_AUTO_COLUMNS || property == CSS_PROP_GRID_AUTO_ROWS)
+		return values_auto_tracks(parse, tokens, count, value);
 
 	/* A grid line: auto, a number, or span and a number. */
 	if (property >= CSS_PROP_GRID_COLUMN_START && property <= CSS_PROP_GRID_ROW_END)
@@ -4611,6 +4616,38 @@ values_tracks(
 		return EINVAL;
 
 	/* Succeeded: the template is parsed. */
+	return 0;
+}
+
+/* Parses the first supported implicit-track value: one auto or nonnegative pixel size. */
+static int
+values_auto_tracks(
+	struct css_parse *parse,
+	const struct css_token *tokens,
+	size_t count,
+	struct css_value *value)
+{
+	struct css_track_list *list;
+	struct css_declared_track track;
+	int error;
+
+	if (count != 1U)
+		return EINVAL;
+	if (tokens[0].type == CSS_TOKEN_IDENT && !css_ident_equal(&tokens[0], "auto"))
+		return EINVAL;
+	error = values_one_track(parse, tokens, count, &track);
+	if (error != 0)
+		return error;
+	if (track.kind != CSS_TRACK_AUTO &&
+	    (track.kind != CSS_TRACK_LENGTH || track.size.unit != CSS_DUNIT_PX))
+		return EINVAL;
+	list = wb_arena_zalloc(parse->arena, sizeof(*list));
+	if (list == NULL)
+		return ENOMEM;
+	list->tracks[0] = track;
+	list->count = 1U;
+	value->kind = CSS_VALUE_TRACKS;
+	value->tracks = list;
 	return 0;
 }
 

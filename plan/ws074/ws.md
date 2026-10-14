@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1131](queue.md) finished / p222 row dense Grid placement。2026-10-14 10:07 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1132](queue.md) finished / p221 auto track CSS state → p222 implicit sizing。2026-10-14 10:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1105の110 PASS/392 FAIL、Grid parsing41はq1129の8 PASS/33 FAIL、後続q1130で`grid-auto-flow`2 wholeが対象改善。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
 
@@ -479,8 +479,8 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p218](phase218/phase.md) | Interop 2025 CSS Grid shorthand | uncleared / q1094部分cleared | p189 q1093 Grid recensus |
 | [ws074-p219](phase219/phase.md) | Interop 2025 Grid baseline self-alignment | uncleared / q1096部分cleared | p189 q1093 Grid・p218 q1095 track |
 | [ws074-p220](phase220/phase.md) | vertical inline text geometry | in-progress / q1121–q1122部分cleared | p217 q1103・q1092診断 |
-| [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1130まで部分cleared、固定41件の後続全測定待ち | p189 q1105固定Grid502・p218 shorthand出力 |
-| [ws074-p222](phase222/phase.md) | Interop 2025 Grid automatic placement | in-progress / q1131 row dense部分cleared、column/dense列残 | p221 q1130 CSS state、p189 q1105固定Grid502 |
+| [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1132-i01部分cleared、他のauto track値残 | p189 q1105固定Grid502・p218 shorthand出力 |
+| [ws074-p222](phase222/phase.md) | Interop 2025 Grid automatic placement | in-progress / q1132-i02部分cleared、column/dense列残 | p221 q1132-i01 CSS state・q1131 row dense |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -926,3 +926,5 @@ Event ws074-p221-q1130-partial-clear-20261014: [p221](phase221/phase.md) q1130-i
 Event ws074-p222-addition-20261014: [p222](phase222/phase.md)を追加。q1130の`grid-auto-flow` CSS state後に残る行/列・dense自動配置を担当し、p221のparser/CSSOM責務と分離。q1131の行denseだけを有限選定。p189/p173分母・受け入れ不変、共有投影/GitHub publication保留。
 
 Event ws074-p222-q1131-partial-clear-20261014: [p222](phase222/phase.md) q1131-i01はrow denseのcursor再開とsparse前進の維持を確認。[証拠](phase222/evidence/20261014-q1131/README.md)。最小2列穴埋めは(0,40)→(40,0)、固定implicit-tracks WPTはauto-columns幅不足で前後0/12 whole FAIL。旧whole PASS4件、CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1131部分cleared、p222/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p221-p222-q1132-partial-clear-20261014: [p221](phase221/phase.md) i01で単一auto/非負pxのauto-columns/rows CSS state、[p222](phase222/phase.md) i02で暗黙列/行sizingへ接続。[CSS証拠](phase221/evidence/20261014-q1132/README.md)、[配置証拠](phase222/evidence/20261014-q1132/README.md)。固定valid/computed各0→3 subtest、implicit-tracks placement0→6/12（row sparse/dense全6）、旧whole PASS2・host回帰・warning0 build・Acid3差0/Acid2差1865維持。q1132両部分cleared、p221/p222/p189/p173全件100%未達。共有投影/GitHub publication保留。

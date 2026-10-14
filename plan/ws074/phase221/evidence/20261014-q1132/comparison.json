@@ -1,0 +1,72 @@
+{
+  "/css/css-grid/parsing/grid-auto-columns-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 16,
+    "after_pass": 16,
+    "total": 16,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-rows-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 15,
+    "after_pass": 15,
+    "total": 15,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-rows-computed.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 0,
+    "after_pass": 3,
+    "total": 25,
+    "improved": [
+      "Property grid-auto-rows value '1px'",
+      "Property grid-auto-rows value 'auto'",
+      "Property grid-auto-rows value '0px'"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-rows-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 0,
+    "after_pass": 3,
+    "total": 30,
+    "improved": [
+      "e.style['grid-auto-rows'] = \"1px\" should set the property value",
+      "e.style['grid-auto-rows'] = \"auto\" should set the property value",
+      "e.style['grid-auto-rows'] = \"0px\" should set the property value"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-columns-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 0,
+    "after_pass": 3,
+    "total": 30,
+    "improved": [
+      "e.style['grid-auto-columns'] = \"1px\" should set the property value",
+      "e.style['grid-auto-columns'] = \"auto\" should set the property value",
+      "e.style['grid-auto-columns'] = \"0px\" should set the property value"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-columns-computed.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 0,
+    "after_pass": 3,
+    "total": 25,
+    "improved": [
+      "Property grid-auto-columns value '1px'",
+      "Property grid-auto-columns value 'auto'",
+      "Property grid-auto-columns value '0px'"
+    ],
+    "regressed": []
+  }
+}
