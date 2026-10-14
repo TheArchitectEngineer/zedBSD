@@ -1,0 +1,143 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_verified": true,
+  "checkpoint_verified": {
+    "q1134": {
+      "checkpoint_rows": 502,
+      "gzip_raw_reports": 502
+    },
+    "q1140": {
+      "checkpoint_rows": 502,
+      "gzip_raw_reports": 502
+    }
+  },
+  "gzip_raw_verified": true,
+  "old": {
+    "outcomes": {
+      "fail": 378,
+      "pass": 124
+    },
+    "subtest_status": {
+      "0": 5118,
+      "1": 5887
+    },
+    "fail_by_directory": {
+      "abspos": 24,
+      "alignment": 192,
+      "animation": 12,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 9,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 27,
+      "parsing": 31,
+      "placement": 2,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "new": {
+    "outcomes": {
+      "fail": 376,
+      "pass": 126
+    },
+    "subtest_status": {
+      "0": 5163,
+      "1": 5842
+    },
+    "fail_by_directory": {
+      "abspos": 23,
+      "alignment": 192,
+      "animation": 12,
+      "grid-definition": 41,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 9,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 27,
+      "parsing": 31,
+      "placement": 2,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "transitions": {
+    "fail->pass": 2
+  },
+  "changed_ids": [
+    {
+      "id": "/css/css-grid/abspos/empty-grid-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-explicit-rows-001.html",
+      "before": "fail",
+      "after": "pass"
+    }
+  ],
+  "old_pass_regressions": [],
+  "subtest_transitions": {
+    "1->0": 45
+  },
+  "subtest_changed_ids": [
+    {
+      "id": "/css/css-grid/abspos/empty-grid-001.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-auto-explicit-rows-001.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-layout-properties.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      "transitions": {
+        "1->0": 7
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      "transitions": {
+        "1->0": 9
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      "transitions": {
+        "1->0": 7
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      "transitions": {
+        "1->0": 9
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed-withcontent.html",
+      "transitions": {
+        "1->0": 1
+      }
+    }
+  ]
+}

@@ -1,16 +1,16 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1139 / WS074 computed Grid track range
+# q1140 / WS074 fixed Grid502 recensus
 
-Status: finished（2026-10-14 10:38–10:40 JST）
+Status: finished（2026-10-14 10:41–10:47 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 最大90分（12:08 JSTまで）。
+Timebox: 最大90分（12:11 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1139-i01 | [ws074-p221](phase221/phase.md) partial | Grid template/auto trackのcalc後に負となる絶対長をcomputed時0pxへclampし、正値・割合・既存trackを保持。固定auto列/行computed失敗各1とtemplate代表、invalid/旧PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加。新しいtrack文法/area/animation、WPT/runner/ABI/Master変更なし | cleared（[証拠](phase221/evidence/20261014-q1139/README.md)）。p221 whole uncleared | q1137 calc length track |
+| q1140-i01 | [ws074-p189](phase189/phase.md) partial | 固定Grid適格testharness502 IDをq1134同条件（WPT commit、localhost HTTP、固定font3種、settle5秒、process20秒）で最大128件ずつ4 shard全件再測定。ID/hash/checkpoint/gzip raw、q1134 whole/subtest遷移・旧PASS後退、残FAIL群を分類。90分内に終わらない場合は実測分と未実行を別記してunclearedで止める。browser/runner/WPT/ABI/Master変更なし | cleared（[証拠](phase189/evidence/20261014-q1140/README.md)）。p189 whole uncleared | q1134固定選定・q1135–q1139実装 |
 
-Dependency graph: q1137 calc length track → q1139-i01。p221/p189/p173 wholeは部分受け入れに含めない。
+Dependency graph: q1134固定Grid502 → q1135–q1139実装 → q1140-i01。p189/p173 wholeは部分受け入れに含めない。
 
-Upcoming Work Outlook: p221 minmax/fit-contentとtemplate areas、p224の一般animation機構、alignment192など。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: alignment192（p217）とGrid definition41、parsing31、p224 animation等から次の一般欠陥を選択。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。

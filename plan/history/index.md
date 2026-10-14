@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1139 / WS074 computed Grid track range（2026-10-14）
+## 最新: q1140 / WS074 fixed Grid502 recensus（2026-10-14）
+
+[q1140履歴](queue-q1140.md): Grid502で124→126 whole PASS、45 subtest改善、後退0。全ID/hash/checkpoint/raw照合。[証拠](../ws074/phase189/evidence/20261014-q1140/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1139 / WS074 computed Grid track range（2026-10-14）
 
 [q1139履歴](queue-q1139.md): 負calc Grid trackをcomputed時0pxにclamp、固定auto列/行computed各9→10/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1139/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
