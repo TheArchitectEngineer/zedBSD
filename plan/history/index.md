@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1115 / WS074 positioned Grid auto-end inline boundary（2026-10-14）
+## 最新: q1116 / WS074 positioned Grid both-auto inline area（2026-10-14）
+
+[q1116履歴](queue-q1116.md): `auto / auto`全幅areaと明示row原点で固定行軸012–016の横書き10 subtest FAIL→PASS。縦書き差は残る。[証拠](../ws074/phase217/evidence/20261014-q1116/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1115 / WS074 positioned Grid auto-end inline boundary（2026-10-14）
 
 [q1115履歴](queue-q1115.md): `2 / auto`終端をpadding辺へ設定、固定013/014/015の当該差が次の子へ。旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1115/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

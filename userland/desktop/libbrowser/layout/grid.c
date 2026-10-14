@@ -502,6 +502,7 @@ grid_static_position(
 	int index;
 	int justify;
 	int align;
+	int full_inline;
 
 	/* Other writing directions retain their existing static-position path. */
 	if (box->style.position != CSS_POSITION_RELATIVE)
@@ -530,7 +531,15 @@ grid_static_position(
 		    &column, &column_span);
 		grid_resolve(&child->style.grid_row, box->style.row_count,
 		    &row, &row_span);
-		if (column < 0)
+		full_inline = child->style.grid_column.start == 0 &&
+		    child->style.grid_column.end == 0 &&
+		    child->style.grid_column.start_span == 0 &&
+		    child->style.grid_column.end_span == 0;
+		if (full_inline && (box->padding[CSS_LEFT] != 0 ||
+		    box->padding[CSS_RIGHT] != 0 || box->border[CSS_LEFT] != 0 ||
+		    box->border[CSS_RIGHT] != 0))
+			continue;
+		if (column < 0 && !full_inline)
 			continue;
 		if (row < 0)
 			continue;
@@ -538,7 +547,7 @@ grid_static_position(
 			continue;
 		if (row_span < 1)
 			continue;
-		if (column + column_span > box->style.column_count)
+		if (!full_inline && column + column_span > box->style.column_count)
 			continue;
 		if (row + row_span > box->style.row_count)
 			continue;
@@ -554,7 +563,10 @@ grid_static_position(
 
 		/* Track offsets include the container's content distribution and gaps. */
 		x = shift;
-		if (box->style.direction == CSS_DIRECTION_RTL) {
+		if (full_inline) {
+			x = box->style.direction == CSS_DIRECTION_RTL ? box->width : 0;
+			child->static_x_from_right = box->style.direction == CSS_DIRECTION_RTL;
+		} else if (box->style.direction == CSS_DIRECTION_RTL) {
 			/* The right edge includes the current column and every track after it. */
 			for (index = column; index < grid->column_count; index++) {
 				x += grid->columns[index];
@@ -590,10 +602,14 @@ grid_static_position(
 				child->static_x_align_from_right =
 				    justify == CSS_ALIGN_RIGHT ||
 				    (justify == CSS_ALIGN_END && box->style.direction == CSS_DIRECTION_LTR);
-			for (index = column; index < column + column_span; index++) {
-				child->static_x_area_width += grid->columns[index];
-				if (index + 1 < column + column_span)
-					child->static_x_area_width += column_gap;
+			if (full_inline) {
+				child->static_x_area_width = box->width;
+			} else {
+				for (index = column; index < column + column_span; index++) {
+					child->static_x_area_width += grid->columns[index];
+					if (index + 1 < column + column_span)
+						child->static_x_area_width += column_gap;
+				}
 			}
 			/* An auto end line reaches the opposite padding edge. */
 			if (child->style.grid_column.start == 2 &&

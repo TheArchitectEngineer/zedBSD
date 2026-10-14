@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1115](queue.md) finished / p217 positioned Grid auto-end境界。2026-10-14 09:02 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1116](queue.md) finished / p217 positioned Grid 両auto領域。2026-10-14 09:06 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -888,3 +888,5 @@ Event ws074-p217-q1113-partial-clear-20261014: [p217](phase217/phase.md) q1113-i
 Event ws074-p217-q1114-partial-clear-20261014: [p217](phase217/phase.md) q1114-i01は水平Grid絶対子の`grid-column:auto / 1`でauto始端をpadding辺へ設定。[証拠](phase217/evidence/20261014-q1114/README.md)。最小LTR/RTL start/end/centerと明示線control PASS。固定行軸012–016の水平最初の100px差が消え、次の子/軸不一致へ進んだがwhole5件FAIL。旧PASS2件、Grid/CSS/JS、warning0 build、Acid3画素差0・Acid2差1865維持。q1114部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p217-q1115-partial-clear-20261014: [p217](phase217/phase.md) q1115-i01は水平Grid絶対子の`grid-column:2 / auto`でauto終端をpadding辺へ設定。[証拠](phase217/evidence/20261014-q1115/README.md)。最小LTR/RTL start/end/centerと明示線control PASS。固定行軸013/014/015の`2 / auto`不一致が次の子へ進み、012/016は別残差でwhole5件FAIL。旧PASS2件、Grid/CSS/JS、warning0 build、Acid3画素差0・Acid2差1865維持。q1115部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p217-q1116-partial-clear-20261014: [p217](phase217/phase.md) q1116-i01は水平Gridの絶対子で`grid-column:auto / auto`の全幅inline areaと明示row原点を設定。[証拠](phase217/evidence/20261014-q1116/README.md)。固定行軸012–016の横書き10 subtest FAIL→PASS、縦書き10はwidth差でFAIL継続。旧PASS2件、Grid/CSS/JS、warning0 build、Acid3画素差0・Acid2差1865維持。q1116部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

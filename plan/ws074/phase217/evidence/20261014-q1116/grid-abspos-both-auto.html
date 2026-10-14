@@ -1,0 +1,14 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; width: 450px; height: 200px;
+  grid-template-columns: 100px 150px; grid-template-rows: 100px 100px;
+  justify-content: center; justify-items: start; }
+.grid > div { position: absolute; width: 60px; height: 10px;
+  grid-column: auto / auto; grid-row: 2 / 3; }
+.end { justify-self: end; }
+.center { justify-self: center; }
+.grid > .explicit { grid-column: 1 / 2; }
+.rtl { direction: rtl; }
+</style>
+<div class="grid"><div></div><div class="end"></div><div class="center"></div><div class="explicit"></div></div>
+<div class="grid rtl"><div></div><div class="end"></div><div class="center"></div><div class="explicit"></div></div>
