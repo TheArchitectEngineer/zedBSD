@@ -1,0 +1,105 @@
+{
+  "source": "q1117/q1118 fixed WPT callbacks",
+  "cases": [
+    {
+      "test_id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-012.html",
+      "prior_statuses": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "current_statuses": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "current_first_horizontal_errors": [
+        "",
+        "offsetLeft expected 190 but got 948"
+      ],
+      "outcome": "fail"
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-013.html",
+      "prior_statuses": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "current_statuses": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "current_first_horizontal_errors": [
+        "",
+        "offsetLeft expected 190 but got 948"
+      ],
+      "outcome": "fail"
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-014.html",
+      "prior_statuses": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "current_statuses": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "current_first_horizontal_errors": [
+        "",
+        "offsetLeft expected 190 but got 948"
+      ],
+      "outcome": "fail"
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-015.html",
+      "prior_statuses": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "current_statuses": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "current_first_horizontal_errors": [
+        "",
+        "offsetLeft expected 190 but got 948"
+      ],
+      "outcome": "fail"
+    },
+    {
+      "test_id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-016.html",
+      "prior_statuses": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "current_statuses": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "current_first_horizontal_errors": [
+        "",
+        "offsetLeft expected 190 but got 948"
+      ],
+      "outcome": "fail"
+    }
+  ]
+}

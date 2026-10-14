@@ -523,6 +523,10 @@ grid_static_position(
 	int justify;
 	int align;
 	int full_inline;
+	int full_block;
+	int auto_start_row;
+	int auto_end_row;
+	layout_unit available_height;
 
 	/* Other writing directions retain their existing static-position path. */
 	if (box->style.position != CSS_POSITION_RELATIVE)
@@ -551,6 +555,20 @@ grid_static_position(
 		    &column, &column_span);
 		grid_resolve(&child->style.grid_row, box->style.row_count,
 		    &row, &row_span);
+		available_height = 0;
+		if (box->style.align_content == CSS_ALIGN_CENTER &&
+		    box->style.height.unit == CSS_UNIT_PX &&
+		    box->padding[CSS_TOP] == 0 && box->padding[CSS_BOTTOM] == 0 &&
+		    box->border[CSS_TOP] == 0 && box->border[CSS_BOTTOM] == 0)
+			available_height = layout_from_px(box->style.height.value);
+		full_block = available_height > 0 && child->style.grid_row.start == 0 &&
+		    child->style.grid_row.end == 0 &&
+		    child->style.grid_row.start_span == 0 &&
+		    child->style.grid_row.end_span == 0;
+		auto_start_row = available_height > 0 && child->style.grid_row.start == 0 &&
+		    child->style.grid_row.end == 1;
+		auto_end_row = available_height > 0 && child->style.grid_row.start == 2 &&
+		    child->style.grid_row.end == 0;
 		full_inline = child->style.grid_column.start == 0 &&
 		    child->style.grid_column.end == 0 &&
 		    child->style.grid_column.start_span == 0 &&
@@ -561,7 +579,7 @@ grid_static_position(
 			continue;
 		if (column < 0 && !full_inline)
 			continue;
-		if (row < 0)
+		if (row < 0 && !full_block)
 			continue;
 		if (column_span < 1)
 			continue;
@@ -569,7 +587,7 @@ grid_static_position(
 			continue;
 		if (!full_inline && column + column_span > box->style.column_count)
 			continue;
-		if (row + row_span > box->style.row_count)
+		if (!full_block && row + row_span > box->style.row_count)
 			continue;
 		justify = child->style.justify_self;
 		if (justify == CSS_ALIGN_AUTO)
@@ -603,7 +621,7 @@ grid_static_position(
 		    child->style.grid_column.end == 1)
 			x = box->style.direction == CSS_DIRECTION_RTL ? box->width : 0;
 		y = child->style.grid_row.start > 0 ? row_shift : 0;
-		for (index = 0; index < row; index++)
+		for (index = 0; !full_block && index < row; index++)
 			y += grid->rows[index] + row_gap;
 		child->static_x = x;
 		child->static_y = y;
@@ -646,11 +664,21 @@ grid_static_position(
 		    (align == CSS_ALIGN_END || align == CSS_ALIGN_SELF_END ||
 		    align == CSS_ALIGN_CENTER)) {
 			child->static_y_align = align;
-			for (index = row; index < row + row_span; index++) {
-				child->static_y_area_height += grid->rows[index];
-				if (index + 1 < row + row_span)
-					child->static_y_area_height += row_gap;
+			if (full_block) {
+				child->static_y_area_height = available_height;
+			} else if (auto_start_row) {
+				child->static_y_area_height = row_shift;
+			} else if (auto_end_row) {
+				child->static_y_area_height = available_height - y;
+			} else {
+				for (index = row; index < row + row_span; index++) {
+					child->static_y_area_height += grid->rows[index];
+					if (index + 1 < row + row_span)
+						child->static_y_area_height += row_gap;
+				}
 			}
+			if (child->static_y_area_height < 0)
+				child->static_y_area_height = 0;
 		}
 	}
 }

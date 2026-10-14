@@ -1,0 +1,18 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: grid; width: 250px; height: 450px;
+  grid-template-columns: 100px 150px; grid-template-rows: 150px 100px;
+  align-content: center; justify-items: start; }
+.grid > div { position: absolute; width: 20px; height: 10px;
+  grid-column: 1 / 2; }
+.start-end { grid-row: auto / 1; align-self: end; }
+.start-center { grid-row: auto / 1; align-self: center; }
+.end-end { grid-row: 2 / auto; align-self: end; }
+.end-center { grid-row: 2 / auto; align-self: center; }
+.both-end { grid-row: auto / auto; align-self: end; }
+.both-center { grid-row: auto / auto; align-self: center; }
+.explicit { grid-row: 1 / 2; align-self: end; }
+.rtl { direction: rtl; }
+</style>
+<div class="grid"><div class="start-end"></div><div class="start-center"></div><div class="end-end"></div><div class="end-center"></div><div class="both-end"></div><div class="both-center"></div><div class="explicit"></div></div>
+<div class="grid rtl"><div class="start-end"></div><div class="end-end"></div><div class="both-end"></div></div>

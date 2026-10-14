@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1117 / WS074 positioned Grid explicit-row content shift（2026-10-14）
+## 最新: q1118 / WS074 positioned Grid auto-row block boundaries（2026-10-14）
+
+[q1118履歴](queue-q1118.md): auto row境界で固定列軸012–016の横書きLTR5 subtest FAIL→PASS。RTL共通x差と縦書き差は残る。[証拠](../ws074/phase217/evidence/20261014-q1118/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1117 / WS074 positioned Grid explicit-row content shift（2026-10-14）
 
 [q1117履歴](queue-q1117.md): 固定高さGridの中心配置で明示行/in-flow原点を移動。固定列軸012/015の最初の縦差が次の横差へ。[証拠](../ws074/phase217/evidence/20261014-q1117/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
