@@ -1,0 +1,20 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: inline-grid; direction: rtl; grid-template-columns: 100px 150px; grid-template-rows: 150px 100px; font: 10px/1 monospace; }
+.grid > div { position: absolute; grid-row: 1 / 2; }
+.grid > :first-child { writing-mode: vertical-lr; grid-column: 1 / 2; left: 5px; }
+.grid > :nth-child(2) { writing-mode: vertical-rl; grid-column: 2 / 3; right: 10px; }
+</style>
+<div class="grid"><div>X XX X</div><div>XX X<br>X XXX X<br>XX XXX</div></div>
+<pre></pre>
+<script>
+var gridRect = document.querySelector(".grid").getBoundingClientRect();
+var elements = document.querySelector(".grid").children;
+var values = [];
+for (var index = 0; index < elements.length; index++) {
+  var itemRect = elements[index].getBoundingClientRect();
+  values.push(Math.round(itemRect.left - gridRect.left) + "," + Math.round(itemRect.top - gridRect.top) + "," + Math.round(itemRect.width) + "," + Math.round(itemRect.height));
+}
+document.querySelector("pre").textContent = values.join("|");
+console.log(values.join("|"));
+</script>

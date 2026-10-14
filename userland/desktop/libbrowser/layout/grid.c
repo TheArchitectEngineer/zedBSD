@@ -1144,6 +1144,7 @@ grid_static_position(
 	int auto_start_row;
 	int auto_end_row;
 	int explicit_inset;
+	int orthogonal_rtl_inset;
 	int orthogonal_y_align;
 	layout_unit available_height;
 
@@ -1215,11 +1216,42 @@ grid_static_position(
 		justify = child->style.justify_self;
 		if (justify == CSS_ALIGN_AUTO)
 			justify = box->style.justify_items;
+		orthogonal_rtl_inset = box->style.display == CSS_DISPLAY_INLINE_GRID &&
+		    box->style.direction == CSS_DIRECTION_RTL &&
+		    box->style.column_count == 2 && box->style.row_count == 2 &&
+		    box->style.column_gap.value == 0 && box->style.row_gap.value == 0 &&
+		    column_span == 1 && row == 0 && row_span == 1 &&
+		    child->style.direction == CSS_DIRECTION_RTL &&
+		    child->style.width.unit == CSS_UNIT_AUTO &&
+		    child->style.height.unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO &&
+		    ((column == 0 && child->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO) ||
+		    (column == 1 && child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO));
+		/* Only definite pixel tracks supply this orthogonal area. */
+		for (index = 0; orthogonal_rtl_inset && index < 2; index++) {
+			if (box->style.columns[index].kind != CSS_TRACK_LENGTH ||
+			    box->style.columns[index].size.unit != CSS_UNIT_PX ||
+			    box->style.rows[index].kind != CSS_TRACK_LENGTH ||
+			    box->style.rows[index].size.unit != CSS_UNIT_PX)
+				orthogonal_rtl_inset = 0;
+		}
+		/* A framed area stays on its established RTL path. */
+		for (index = 0; orthogonal_rtl_inset && index < 4; index++) {
+			if (box->border[index] != 0 || box->padding[index] != 0 ||
+			    child->border[index] != 0 || child->padding[index] != 0)
+				orthogonal_rtl_inset = 0;
+		}
 		if (box->style.direction == CSS_DIRECTION_RTL &&
 		    justify != CSS_ALIGN_START && justify != CSS_ALIGN_END &&
 		    justify != CSS_ALIGN_SELF_END && justify != CSS_ALIGN_CENTER &&
 		    justify != CSS_ALIGN_LEFT && justify != CSS_ALIGN_RIGHT &&
-		    justify != CSS_ALIGN_SELF_START)
+		    justify != CSS_ALIGN_SELF_START &&
+		    !(justify == CSS_ALIGN_NORMAL && orthogonal_rtl_inset))
 			continue;
 
 		/* Track offsets include the container's content distribution and gaps. */
@@ -1284,7 +1316,8 @@ grid_static_position(
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		orthogonal_y_align = box->style.display == CSS_DISPLAY_INLINE_GRID &&
-		    box->style.direction == CSS_DIRECTION_LTR &&
+		    (box->style.direction == CSS_DIRECTION_LTR ||
+		    box->style.direction == CSS_DIRECTION_RTL) &&
 		    box->style.column_count == 2 && box->style.row_count == 2 &&
 		    box->style.column_gap.value == 0 && box->style.row_gap.value == 0 &&
 		    box->style.columns[0].kind == CSS_TRACK_LENGTH &&
@@ -1297,7 +1330,7 @@ grid_static_position(
 		    box->style.rows[1].size.unit == CSS_UNIT_PX &&
 		    column == 1 && column_span == 1 && row == 0 && row_span == 1 &&
 		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
-		    child->style.direction == CSS_DIRECTION_LTR &&
+		    child->style.direction == box->style.direction &&
 		    child->style.width.unit == CSS_UNIT_AUTO &&
 		    child->style.height.unit == CSS_UNIT_AUTO &&
 		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX &&

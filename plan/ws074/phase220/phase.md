@@ -2,6 +2,14 @@
 
 # ws074-p220: vertical inline text geometry
 
+## q1183-i01 結果（2026-10-14 13:42 JST）
+
+Event ws074-p220-q1183-partial-clear-20261014: [証拠](evidence/20261014-q1183/README.md)。水平RTL固定Grid直接vertical-lr/RTL・vertical-rl/RTL absolute子のrow1明示左右insetに確定row trackの縦inline roomとstatic area/Y alignmentを適用。独立2子矩形は5,0,36,10|198,0,42,30→155,0,10,36|110,0,30,42でChromium一致。固定non-static007水平RTL callbackは先頭2子を全通過、4番目vertical-rl/RTL子width40→60でFAILする。旧WPT、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1183有限部分範囲cleared、p220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1183-i01 有限部分範囲（2026-10-14 13:39 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（15:09 JSTまで）に適用。positioned horizontal-tb RTL固定2×2 inline-grid、明示px tracks/gap0、親/子frame0、直接absolute vertical-lr/RTL row1/col1 left明示とvertical-rl/RTL row1/col2 right明示のauto-size ASCII子で、確定row track inline roomを使う。独立2子最小ページChromium矩形一致、固定non-static007水平RTL callbackの最初2子全検査通過、旧水平LTR callback/非static001/縦positioned代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他orthogonal/parent frame/auto line、WPT/runner/公開ABI/`plan/master.md`変更なし。WPT全file wholeは基準外。未達ならuncleared。p220/p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1182-i01 結果（2026-10-14 13:38 JST）
 
 Event ws074-p220-q1182-partial-clear-20261014: [証拠](evidence/20261014-q1182/README.md)。水平固定Grid直接vertical-lr/RTL absolute ASCII子のrow2/col2左上insetに確定row trackの縦inline roomを適用。独立最小子矩形は105,160,36,40→105,160,40,36でChromium一致。固定non-static007水平LTR callbackは4子全PASS、他3 callback FAILでwhole file未達。旧WPT、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1182有限部分範囲cleared、p220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
