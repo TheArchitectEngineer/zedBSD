@@ -802,7 +802,10 @@ fsck_group_maps(
 	/* The free map: the data area's fragments no inode owns are free; the metadata and the tail are not. */
 	free_fragments = 0;
 	for (local = 0; local < volume->super.fpg; local++) {
-		owned = fsck_bit(volume->owned, start + local);
+		/* The last group's tail lies past the volume, where nothing is owned. */
+		owned = 0;
+		if (local < fragments)
+			owned = fsck_bit(volume->owned, start + local);
 		marked = fsck_bit(free_map, local);
 		is_free = local >= volume->super.dblkno && local < fragments && !owned;
 		if (is_free != marked) {
