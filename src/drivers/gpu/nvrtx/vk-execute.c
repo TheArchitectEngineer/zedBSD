@@ -65,8 +65,8 @@
 #define EXECUTE_CONSTANTS_SIZE		0x500U
 #define EXECUTE_CONSTANTS_SLOT		0x500U
 
-/* What one record writes at most into the push buffer, before the run is started to make room. */
-#define EXECUTE_RECORD_ROOM		8192U
+/* What one record writes at most into the push buffer (a transfer of NVRTX_VK_REGIONS_MAX quads), before the run is started to make room. */
+#define EXECUTE_RECORD_ROOM		32768U
 
 /* A texture handle: the header's index, and the sampler's from bit 20. */
 #define EXECUTE_HANDLE_SAMPLER_SHIFT	20U
