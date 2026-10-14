@@ -10,6 +10,8 @@
 
 Event ws074-p217-q1141-partial-clear-20261014: [証拠](evidence/20261014-q1141/README.md)。固定alignment残192 FAILのfirst callbackを全件分類。初回症状width110/offsetLeft37/offsetTop26/height18/other1。vertical-lr/rl stretch各16件は論理Grid軸を物理x/yへ写していないことが共通候補、positioned34件の縦subtestも関連候補。baseline43件は独立調査を要す。q1141診断部分cleared、p217/p189/p173全件100%未達。browser/WPT/runner/ABI/Master/Acid変更なし、共有投影/GitHub publication保留。
 
+Event ws074-p217-p225-split-20261014: 固定縦Gridの論理track→物理軸とsimple item配置を[p225](../phase225/phase.md)に分離。p217は一般alignment・vertical WPT全件の受け入れを保持。p225初回範囲外のvertical-rl/RTL、abspos、baseline等はp217の残差として追う。共有投影/GitHub publication保留。
+
 Status: uncleared（q1088–q1089部分cleared、RTL/縦書き/他alignment未達）
 Disposition: normal
 Parent: [WS074](../ws.md)
@@ -226,3 +228,5 @@ Event ws074-p217-q1119-partial-clear-20261014: [証拠](evidence/20261014-q1119/
 ## q1120-i01 結果（2026-10-14 09:28 JST）
 
 Event ws074-p217-q1120-partial-clear-20261014: [証拠](evidence/20261014-q1120/README.md)。`inline-grid`を独立display値・inline atomic幅とGrid item/layout経路へ接続し、CSSOM表示値も保持。最小LTR/RTL auto250px、明示400px、block Grid1008px、RTL absolute位置190px、computed display PASS。固定列軸012–016の横書きRTL5 subtest FAIL→PASS、横書き計10/10 PASS。縦書き10 subtestはFAIL継続でwhole5件FAIL。旧whole PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1120部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p225-q1142-dependency-correction-20261014: [p225 q1142](../phase225/evidence/20261014-q1142/README.md)の空Grid物理軸は改善したが文字/WPT2件は未達。[p220 q1122](../phase220/phase.md)はtext-orientation CSS stateのみで縦文字line/fragment出力ではなかったため、p217の縦文字alignment再検証はp220の未実装geometry出力とp225 Grid再試行を待つ。p217の水平alignment基準・全件分母は不変。共有投影/GitHub publication保留。

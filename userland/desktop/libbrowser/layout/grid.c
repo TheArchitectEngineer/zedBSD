@@ -76,6 +76,7 @@ struct grid_sizes {
 };
 
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
+static int grid_vertical_fixed(struct layout_tree *tree, struct layout_box *box, int *handled);
 static void grid_resolve(const struct css_grid_place *place, int explicit_count, int *start, int *span);
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
 	layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
@@ -140,6 +141,7 @@ layout_grid(
 	int auto_top;
 	int auto_bottom;
 	int auto_block_margin;
+	int handled;
 	int error;
 
 	/* The children out of the flow have their static place at the content box's corner. */
@@ -155,6 +157,14 @@ layout_grid(
 		child->static_y_area_height = 0;
 		child->static_y_align = CSS_ALIGN_AUTO;
 	}
+
+	/* Fixed vertical grids map their logical tracks to physical axes before laying out items. */
+	handled = 0;
+	error = grid_vertical_fixed(tree, box, &handled);
+	if (error != 0)
+		return error;
+	if (handled)
+		return 0;
 
 	/* The items, placed in their cells. */
 	memset(&grid, 0, sizeof(grid));
@@ -406,6 +416,159 @@ layout_grid(
 	grid_release(&grid);
 
 	/* Succeeded: the container's content is laid out. */
+	return 0;
+}
+
+/* Lays out the bounded vertical-lr fixed-track case in physical x/y axes. */
+static int
+grid_vertical_fixed(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	int *handled)
+{
+	struct grid_state grid;
+	struct grid_item *placed;
+	struct layout_box *child;
+	layout_unit columns[CSS_TRACKS + 1];
+	layout_unit rows[CSS_TRACKS + 1];
+	layout_unit area_width;
+	layout_unit area_height;
+	size_t index;
+	int column;
+	int row;
+	int align;
+	int justify;
+	int side;
+	int error;
+
+	/* Other writing modes and Grid forms retain their existing layout path. */
+	*handled = 0;
+	if (box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	    box->style.direction != CSS_DIRECTION_LTR ||
+	    box->style.display != CSS_DISPLAY_INLINE_GRID ||
+	    box->style.height.unit != CSS_UNIT_AUTO ||
+	    box->style.column_count == 0 || box->style.row_count == 0 ||
+	    box->style.column_gap.value != 0 || box->style.row_gap.value != 0)
+		return 0;
+
+	/* The explicit tracks must have definite pixel sizes. */
+	for (column = 0; column < box->style.column_count; column++) {
+		if (box->style.columns[column].kind != CSS_TRACK_LENGTH ||
+		    box->style.columns[column].size.unit != CSS_UNIT_PX)
+			return 0;
+	}
+	for (row = 0; row < box->style.row_count; row++) {
+		if (box->style.rows[row].kind != CSS_TRACK_LENGTH ||
+		    box->style.rows[row].size.unit != CSS_UNIT_PX)
+			return 0;
+	}
+
+	/* An inline grid can be laid out again at its shrink-to-fit physical width. */
+	area_width = 0;
+	for (row = 0; row < box->style.row_count; row++)
+		area_width += layout_from_px(box->style.rows[row].size.value);
+	if (box->style.width.unit != CSS_UNIT_AUTO &&
+	    (box->style.width.unit != CSS_UNIT_PX ||
+	    layout_from_px(box->style.width.value) != area_width))
+		return 0;
+
+	/* Out-of-flow or separately sized children still use the established path. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow || child->replaced ||
+		    child->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+		    child->style.width.unit != CSS_UNIT_AUTO ||
+		    child->style.height.unit != CSS_UNIT_AUTO)
+			return 0;
+		for (side = 0; side < 4; side++) {
+			if (child->style.margin[side].unit == CSS_UNIT_AUTO)
+				return 0;
+		}
+	}
+
+	/* Placement remains the common logical grid algorithm. */
+	memset(&grid, 0, sizeof(grid));
+	error = grid_collect(box, &grid);
+	if (error == 0)
+		error = grid_place(&grid, box->style.grid_auto_flow);
+	if (error != 0) {
+		grid_release(&grid);
+		return error;
+	}
+	if (grid.column_count != box->style.column_count ||
+	    grid.row_count != box->style.row_count) {
+		grid_release(&grid);
+		return 0;
+	}
+
+	/* This first physical mapping covers one track per item and start/stretch only. */
+	for (index = 0; index < grid.item_count; index++) {
+		placed = &grid.items[index];
+		if (placed->column_span != 1 || placed->row_span != 1) {
+			grid_release(&grid);
+			return 0;
+		}
+		child = placed->box;
+		align = child->style.align_self;
+		if (align == CSS_ALIGN_AUTO)
+			align = box->style.align_items;
+		if (align == CSS_ALIGN_NORMAL)
+			align = CSS_ALIGN_STRETCH;
+		justify = child->style.justify_self;
+		if (justify == CSS_ALIGN_AUTO)
+			justify = box->style.justify_items;
+		if (justify == CSS_ALIGN_NORMAL)
+			justify = CSS_ALIGN_STRETCH;
+		if ((align != CSS_ALIGN_START && align != CSS_ALIGN_STRETCH) ||
+		    (justify != CSS_ALIGN_START && justify != CSS_ALIGN_STRETCH)) {
+			grid_release(&grid);
+			return 0;
+		}
+	}
+
+	/* Columns advance downwards, while rows advance rightwards. */
+	columns[0] = 0;
+	for (column = 0; column < grid.column_count; column++)
+		columns[column + 1] = columns[column] + layout_from_px(box->style.columns[column].size.value);
+	rows[0] = 0;
+	for (row = 0; row < grid.row_count; row++)
+		rows[row + 1] = rows[row] + layout_from_px(box->style.rows[row].size.value);
+	box->width = rows[grid.row_count];
+	box->height = columns[grid.column_count];
+	box->grid_content = box->width;
+
+	/* Each item receives the physical width of its row and height of its column. */
+	for (index = 0; index < grid.item_count; index++) {
+		placed = &grid.items[index];
+		child = placed->box;
+		area_width = rows[placed->row + 1] - rows[placed->row];
+		area_height = columns[placed->column + 1] - columns[placed->column];
+		align = child->style.align_self;
+		if (align == CSS_ALIGN_AUTO)
+			align = box->style.align_items;
+		if (align == CSS_ALIGN_NORMAL)
+			align = CSS_ALIGN_STRETCH;
+		justify = child->style.justify_self;
+		if (justify == CSS_ALIGN_AUTO)
+			justify = box->style.justify_items;
+		if (justify == CSS_ALIGN_NORMAL)
+			justify = CSS_ALIGN_STRETCH;
+		error = grid_lay_item(tree, child, area_width, align);
+		if (error != 0) {
+			grid_release(&grid);
+			return error;
+		}
+		error = grid_relay_item(tree, child, area_width, area_height, justify);
+		if (error != 0) {
+			grid_release(&grid);
+			return error;
+		}
+		child->x = rows[placed->row] + child->margin[CSS_LEFT];
+		child->y = columns[placed->column] + child->margin[CSS_TOP];
+	}
+
+	/* Succeeded: the physical Grid path consumed this bounded case. */
+	grid_release(&grid);
+	*handled = 1;
 	return 0;
 }
 

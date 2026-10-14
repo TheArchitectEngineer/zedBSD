@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1141 / WS074 remaining Grid alignment triage（2026-10-14）
+## 最新: q1142 / WS074 fixed vertical-lr Grid axes（2026-10-14）
+
+[q1142履歴](queue-q1142.md): 空2×2の論理列→物理y・行→xを修正。固定WPT2件は縦文字幅期待10/実60でFAIL、試行uncleared。旧WPT・host回帰PASS、Acid3差0。[証拠](../ws074/phase225/evidence/20261014-q1142/README.md)。p220縦文字geometry出力待ち、共有投影/GitHub publication pending。
+
+## q1141 / WS074 remaining Grid alignment triage（2026-10-14）
 
 [q1141履歴](queue-q1141.md): alignment残192件の初回幅110/offsetLeft37/offsetTop26/高さ18/他1を分類、縦Grid軸変換とbaselineを別候補に整理。[証拠](../ws074/phase217/evidence/20261014-q1141/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
