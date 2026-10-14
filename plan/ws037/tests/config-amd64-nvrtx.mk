@@ -96,3 +96,14 @@ ifeq ($(NVRTX_RUN),R9v)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.vk=1
 ZEDBSD_USER_PROGRAMS += vkquad display-events
 endif
+# ws037-p007 D6: the desktop on the RTX: R9v's renderer with the graphical boot and login the main image has (sessiond
+# starts the compositor on /dev/gpu0, the RTX), the compositor's capture channel and keiland-shot (what it composes, to
+# a PNG fetched over SSH), and R9v's two probes.
+ifeq ($(NVRTX_RUN),R9k)
+ZEDBSD_GRAPHICAL_BOOT := y
+ZEDBSD_GRAPHICAL_LOGIN := y
+ZEDBSD_BOOT_KERNEL_MESSAGES := n
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.vk=1
+ZEDBSD_TEST_SCREEN_CAPTURE := y
+ZEDBSD_USER_PROGRAMS += vkquad display-events keiland-shot
+endif
