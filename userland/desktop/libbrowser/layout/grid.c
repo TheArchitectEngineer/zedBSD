@@ -1004,6 +1004,7 @@ grid_static_vertical_start(
 	int align;
 	int justify;
 	int index;
+	int framed;
 
 	/* Only fixed two-by-two LTR tracks have this definite physical mapping. */
 	if (box->style.position != CSS_POSITION_RELATIVE ||
@@ -1019,9 +1020,10 @@ grid_static_vertical_start(
 		    box->style.rows[index].size.unit != CSS_UNIT_PX)
 			return;
 	}
+	framed = 0;
 	for (index = 0; index < 4; index++) {
 		if (box->border[index] != 0 || box->padding[index] != 0)
-			return;
+			framed = 1;
 	}
 	width = layout_from_px(box->style.rows[0].size.value + box->style.rows[1].size.value);
 	if (box->width != width)
@@ -1055,6 +1057,8 @@ grid_static_vertical_start(
 		    child->style.grid_row.start > 0 &&
 		    child->style.grid_row.end > 0)
 			child->static_grid_area = 1;
+		if (framed && !child->static_grid_area)
+			continue;
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
