@@ -1852,10 +1852,22 @@ session_broadcom_attempt(
 	/* The ROM finishes its reset before the next command. */
 	session_reset_settle(session);
 
-	/* Who made the controller. */
-	error = session_step(session, "local-version", SESSION_READ_LOCAL_VERSION, NULL, 0U);
-	if (error != 0)
+	/*
+	 * Who made the controller.  A controller on a UART whose answer did not
+	 * come is asked once more after a pause (BUG-311: on the Pi 4 the ROM
+	 * answered the reset and not the question after it).
+	 */
+	error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
+	if (error == ETIMEDOUT) {
+		session_reset_settle(session);
+		error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
+	}
+	if (error == ENODEV)
 		return error;
+	if (error != 0) {
+		session_set(session, BTD_STATE_ERROR, "local-version %s", strerror(error));
+		return error;
+	}
 	if (session->returned_length < SESSION_VERSION_LENGTH) {
 		session_set(session, BTD_STATE_ERROR, "%s", "local-version short");
 		return EBADMSG;
