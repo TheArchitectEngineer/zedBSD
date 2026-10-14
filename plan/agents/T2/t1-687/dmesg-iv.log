@@ -1,0 +1,123 @@
+v3d: perf ms=3997 busy=34% subs=178 passes=64/0/63 skipped=0 draws=645 kib=214112 avg_us total=7769 prep=792 tex=123 copy=5 prog=50 rec=11 alloc=84 map=0 clean=202 exec=4185 tfu=707 bin=95 render=3191 oclean=11 rel=202 xfer=651 max_us=39000 snap=140/92/1/0 upd=0 mapped_kib=2250 largest=1920x1088f tiles=10612/10372
+v3d: gpu runs=127 k/run cycles=2243 qidle=166 qfrag=3262 qvalid=3712 qtmu=0 qsb=0 qvary=0 qstall=421 tmu=2242 tmumiss=54 tmustall=9 cle=2223 quads=237 written=237 tlbrd=120 tlbwr=158
+v3d: requests=1306 wait_us avg=52 max=2000 run_us avg=153 max=9000 freed=18 kib=31488 free_us=6000 markers_max=7 submit_lock_us avg=120 max=3000 hold_us decode=9000/cmds4/op65540 command=9000/op65540 step=4000
+v3d: decode requests=1127 cmds=7027 us=143795 ns/cmd=20463 max_us=9116/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=572 kib=8216 zero_us=13000 kept=1117 kib=205896
+v3d: release draws=645 draw_us=0 end_us=0 views cached=1689 unmapped=0
+v3d: gpu tiles copy=10372 cycles/tile=3546 draw=10612 cycles/tile=23380
+v3d: tfu jobs=93 avg_us=1354 max_us=4000
+v3d: memory kib=111776 max_kib=176908 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=3893 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=8/33000/50000/2289000 overlay=0/0/0/0
+bcm2711: flip perf ms=3893 flips=32 avg_us clean=0 raise=0 wait=8250 cursor sets=0 copies=0 records primary=32 cursor=0 overlay=0 dropped=0 lists=32 replaced=0 coalesced=0 underruns=0 pair=0/0
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1088
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1088
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 1920x1088, input 16 x 81920 bytes, output 8 x 3133440 bytes
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0 output 3231564e 1920x1088 (crop 1920x1080), 8 x 3133440 bytes
+v3d: video: 28 decodes in 3903 ms (0 skipped, 1 pushes, 120 steps, depth 2.2); avg_us send 2285 frame 53928 place 0, max_us frame 128000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2013 busy=71% subs=177 passes=57/0/57 skipped=0 draws=382 kib=284608 avg_us total=8146 prep=1016 tex=474 copy=276 prog=96 rec=5 alloc=90 map=0 clean=231 exec=3694 tfu=1152 bin=96 render=2242 oclean=5 rel=254 xfer=960 max_us=40000 snap=24/82/26/0 upd=0 mapped_kib=93600 largest=1920x1088f tiles=13500/13500
+v3d: gpu runs=114 k/run cycles=1741 qidle=260 qfrag=1884 qvalid=2259 qtmu=0 qsb=0 qvary=0 qstall=357 tmu=2400 tmumiss=45 tmustall=7 cle=1725 quads=191 written=191 tlbrd=113 tlbwr=227
+v3d: requests=1716 wait_us avg=55 max=7000 run_us avg=237 max=95000 freed=30 kib=71952 free_us=13000 markers_max=9 submit_lock_us avg=217 max=8000 hold_us decode=95000/cmds4/op65539 command=95000/op65539 step=11000
+v3d: decode requests=1537 cmds=7965 us=264644 ns/cmd=33225 max_us=95594/cmds4 objects=290
+v3d: alloc made=52 kib=118996 pmem_us=1000 zero_us=65000 reused=536 kib=58960 zero_us=45000 kept=955 kib=265432
+v3d: release draws=382 draw_us=16000 end_us=0 views cached=1497 unmapped=0
+v3d: gpu tiles copy=13650 cycles/tile=3952 draw=13350 cycles/tile=10830
+v3d: tfu jobs=108 avg_us=1888 max_us=5000
+v3d: memory kib=186344 max_kib=198508 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2038 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=14/16000/50000/568000 overlay=0/0/0/0
+bcm2711: flip perf ms=2038 flips=29 avg_us clean=0 raise=0 wait=8827 cursor sets=0 copies=0 records primary=29 cursor=0 overlay=0 dropped=0 lists=29 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 81 decodes in 2003 ms (0 skipped, 0 pushes, 288 steps, depth 2.5); avg_us send 2456 frame 58012 place 24, max_us frame 154000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2000 busy=92% subs=278 passes=93/0/94 skipped=0 draws=111 kib=377640 avg_us total=6640 prep=697 tex=212 copy=14 prog=17 rec=0 alloc=46 map=0 clean=223 exec=3269 tfu=1032 bin=82 render=1985 oclean=0 rel=223 xfer=723 max_us=27000 snap=0/139/18/0 upd=0 mapped_kib=64800 largest=1920x1088f tiles=22320/22560
+v3d: gpu runs=187 k/run cycles=1479 qidle=184 qfrag=1388 qvalid=1778 qtmu=0 qsb=0 qvary=0 qstall=377 tmu=2138 tmumiss=34 tmustall=6 cle=1461 quads=137 written=137 tlbrd=115 tlbwr=230
+v3d: requests=1783 wait_us avg=73 max=3000 run_us avg=175 max=3000 freed=1 kib=3060 free_us=1000 markers_max=8 submit_lock_us avg=163 max=4000 hold_us decode=2000/cmds4/op178 command=1000/op178 step=5000
+v3d: decode requests=1508 cmds=7496 us=209629 ns/cmd=27965 max_us=1617/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=843 kib=16896 zero_us=15000 kept=1379 kib=363804
+v3d: release draws=111 draw_us=11000 end_us=0 views cached=2222 unmapped=0
+v3d: gpu tiles copy=22560 cycles/tile=4049 draw=22320 cycles/tile=8306
+v3d: tfu jobs=157 avg_us=1828 max_us=4000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2005 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/17000/50000/51000 overlay=0/0/0/0
+bcm2711: flip perf ms=2005 flips=47 avg_us clean=0 raise=0 wait=7936 cursor sets=0 copies=0 records primary=47 cursor=0 overlay=0 dropped=0 lists=47 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 93 decodes in 2008 ms (0 skipped, 0 pushes, 345 steps, depth 2.8); avg_us send 2311 frame 56376 place 10, max_us frame 84000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2000 busy=91% subs=283 passes=96/0/96 skipped=0 draws=96 kib=321024 avg_us total=6445 prep=643 tex=166 copy=3 prog=24 rec=10 alloc=49 map=0 clean=159 exec=3123 tfu=939 bin=67 render=1950 oclean=3 rel=204 xfer=689 max_us=25000 snap=0/144/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=23040/23040
+v3d: gpu runs=192 k/run cycles=1429 qidle=154 qfrag=1298 qvalid=1706 qtmu=0 qsb=0 qvary=0 qstall=397 tmu=2077 tmumiss=28 tmustall=6 cle=1406 quads=115 written=115 tlbrd=115 tlbwr=230
+v3d: requests=1806 wait_us avg=62 max=2000 run_us avg=155 max=2000 freed=0 kib=0 free_us=0 markers_max=8 submit_lock_us avg=160 max=3000 hold_us decode=2000/cmds4/op18 command=2000/op18 step=6000
+v3d: decode requests=1522 cmds=7504 us=187085 ns/cmd=24931 max_us=2237/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=864 kib=14208 zero_us=12000 kept=1344 kib=306816
+v3d: release draws=96 draw_us=2000 end_us=0 views cached=2208 unmapped=0
+v3d: gpu tiles copy=23040 cycles/tile=4039 draw=23040 cycles/tile=7869
+v3d: tfu jobs=144 avg_us=1847 max_us=6000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2022 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/16000/50000/51000 overlay=0/0/0/0
+bcm2711: flip perf ms=2022 flips=48 avg_us clean=0 raise=0 wait=9041 cursor sets=0 copies=0 records primary=48 cursor=0 overlay=0 dropped=0 lists=48 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 94 decodes in 2016 ms (0 skipped, 0 pushes, 363 steps, depth 2.7); avg_us send 2244 frame 53340 place 0, max_us frame 81000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2004 busy=93% subs=285 passes=94/0/94 skipped=0 draws=94 kib=314336 avg_us total=6547 prep=666 tex=143 copy=7 prog=24 rec=10 alloc=91 map=0 clean=178 exec=3049 tfu=852 bin=56 render=1957 oclean=7 rel=157 xfer=863 max_us=23000 snap=0/141/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=22560/22560
+v3d: gpu runs=188 k/run cycles=1467 qidle=166 qfrag=1298 qvalid=1719 qtmu=0 qsb=0 qvary=0 qstall=410 tmu=2077 tmumiss=28 tmustall=6 cle=1448 quads=115 written=115 tlbrd=115 tlbwr=230
+v3d: requests=1825 wait_us avg=71 max=2000 run_us avg=162 max=3000 freed=0 kib=0 free_us=0 markers_max=8 submit_lock_us avg=170 max=4000 hold_us decode=3000/cmds4/op178 command=2000/op18 step=5000
+v3d: decode requests=1540 cmds=7588 us=209801 ns/cmd=27649 max_us=2653/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=846 kib=13912 zero_us=25000 kept=1316 kib=300424
+v3d: release draws=94 draw_us=1000 end_us=0 views cached=2162 unmapped=0
+v3d: gpu tiles copy=22560 cycles/tile=4280 draw=22560 cycles/tile=7953
+v3d: tfu jobs=141 avg_us=1723 max_us=4000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2021 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/17000/50000/67000 overlay=0/0/0/0
+bcm2711: flip perf ms=2021 flips=48 avg_us clean=0 raise=0 wait=7750 cursor sets=0 copies=0 records primary=48 cursor=0 overlay=0 dropped=0 lists=48 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 92 decodes in 2016 ms (0 skipped, 0 pushes, 352 steps, depth 2.6); avg_us send 2489 frame 51880 place 0, max_us frame 85000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2006 busy=92% subs=283 passes=96/0/95 skipped=0 draws=96 kib=319392 avg_us total=6530 prep=653 tex=180 copy=3 prog=21 rec=10 alloc=31 map=0 clean=194 exec=3106 tfu=869 bin=120 render=1939 oclean=3 rel=183 xfer=826 max_us=22000 snap=0/144/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=23040/22800
+v3d: gpu runs=191 k/run cycles=1445 qidle=158 qfrag=1305 qvalid=1716 qtmu=0 qsb=0 qvary=0 qstall=400 tmu=2088 tmumiss=29 tmustall=6 cle=1422 quads=116 written=116 tlbrd=114 tlbwr=230
+v3d: requests=1817 wait_us avg=56 max=2000 run_us avg=180 max=4000 freed=0 kib=0 free_us=0 markers_max=8 submit_lock_us avg=152 max=5000 hold_us decode=2000/cmds4/op178 command=2000/op178 step=5000
+v3d: decode requests=1532 cmds=7550 us=208682 ns/cmd=27640 max_us=1759/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=860 kib=14136 zero_us=9000 kept=1339 kib=305256
+v3d: release draws=96 draw_us=0 end_us=0 views cached=2199 unmapped=0
+v3d: gpu tiles copy=22800 cycles/tile=4133 draw=23040 cycles/tile=7893
+v3d: tfu jobs=144 avg_us=1708 max_us=4000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2022 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/17000/50000/67000 overlay=0/0/0/0
+bcm2711: flip perf ms=2022 flips=48 avg_us clean=0 raise=0 wait=8062 cursor sets=0 copies=0 records primary=48 cursor=0 overlay=0 dropped=0 lists=48 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 97 decodes in 2001 ms (0 skipped, 0 pushes, 360 steps, depth 2.8); avg_us send 2453 frame 54948 place 20, max_us frame 84000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2003 busy=91% subs=286 passes=96/0/96 skipped=0 draws=96 kib=321024 avg_us total=6377 prep=646 tex=143 copy=3 prog=20 rec=3 alloc=41 map=0 clean=220 exec=3062 tfu=877 bin=94 render=1951 oclean=0 rel=230 xfer=783 max_us=25000 snap=0/144/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=23040/23040
+v3d: gpu runs=192 k/run cycles=1446 qidle=154 qfrag=1298 qvalid=1696 qtmu=0 qsb=0 qvary=0 qstall=387 tmu=2077 tmumiss=28 tmustall=6 cle=1422 quads=115 written=115 tlbrd=115 tlbwr=230
+v3d: requests=1836 wait_us avg=63 max=2000 run_us avg=169 max=3000 freed=0 kib=0 free_us=0 markers_max=9 submit_lock_us avg=167 max=3000 hold_us decode=3000/cmds4/op18 command=3000/op18 step=4000
+v3d: decode requests=1550 cmds=7628 us=213087 ns/cmd=27934 max_us=2722/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=864 kib=14208 zero_us=12000 kept=1344 kib=306816
+v3d: release draws=96 draw_us=2000 end_us=1000 views cached=2208 unmapped=0
+v3d: gpu tiles copy=23040 cycles/tile=4223 draw=23040 cycles/tile=7834
+v3d: tfu jobs=144 avg_us=1743 max_us=5000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2005 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/16000/50000/67000 overlay=0/0/0/0
+bcm2711: flip perf ms=2005 flips=48 avg_us clean=20 raise=0 wait=7479 cursor sets=0 copies=0 records primary=48 cursor=0 overlay=0 dropped=0 lists=48 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 94 decodes in 2011 ms (0 skipped, 0 pushes, 356 steps, depth 2.8); avg_us send 2287 frame 53968 place 21, max_us frame 91000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+v3d: perf ms=3921 busy=40% subs=238 passes=83/0/83 skipped=0 draws=182 kib=281232 avg_us total=6651 prep=735 tex=172 copy=8 prog=16 rec=16 alloc=63 map=0 clean=201 exec=3184 tfu=886 bin=92 render=2046 oclean=0 rel=222 xfer=693 max_us=25000 snap=6/122/1/0 upd=0 mapped_kib=3600 largest=1920x1088f tiles=19920/19920
+v3d: gpu runs=166 k/run cycles=1451 qidle=142 qfrag=1374 qvalid=1761 qtmu=0 qsb=0 qvary=0 qstall=376 tmu=2054 tmumiss=29 tmustall=6 cle=1418 quads=120 written=120 tlbrd=115 tlbwr=230
+v3d: requests=1697 wait_us avg=60 max=3000 run_us avg=164 max=7000 freed=18 kib=36880 free_us=7000 markers_max=8 submit_lock_us avg=138 max=3000 hold_us decode=7000/cmds4/op65540 command=7000/op65540 step=4000
+v3d: decode requests=1459 cmds=7254 us=188356 ns/cmd=25965 max_us=6877/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=747 kib=12292 zero_us=15000 kept=1181 kib=268940
+v3d: release draws=182 draw_us=3000 end_us=0 views cached=1928 unmapped=0
+v3d: gpu tiles copy=19920 cycles/tile=4007 draw=19920 cycles/tile=8092
+v3d: tfu jobs=123 avg_us=1715 max_us=4000
+v3d: memory kib=115820 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=3842 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=10/17000/34000/2205000 overlay=0/0/0/0
+bcm2711: flip perf ms=3842 flips=41 avg_us clean=0 raise=24 wait=8048 cursor sets=0 copies=0 records primary=41 cursor=0 overlay=0 dropped=0 lists=41 replaced=0 coalesced=0 underruns=0 pair=0/0

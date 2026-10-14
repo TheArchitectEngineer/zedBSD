@@ -1,0 +1,522 @@
+v3d: perf ms=29613 busy=0% subs=2 passes=1/0/1 skipped=0 draws=99 kib=3412 avg_us total=11000 prep=2500 tex=0 copy=0 prog=1000 rec=500 alloc=0 map=0 clean=0 exec=8500 tfu=0 bin=500 render=8000 oclean=0 rel=0 xfer=0 max_us=20000 snap=6/0/0/0 upd=0 mapped_kib=0 largest=0x0- tiles=240/240
+v3d: gpu runs=2 k/run cycles=3908 qidle=88 qfrag=6717 qvalid=7089 qtmu=0 qsb=0 qvary=0 qstall=314 tmu=2901 tmumiss=83 tmustall=2 cle=3903 quads=459 written=459 tlbrd=115 tlbwr=230
+v3d: requests=12 wait_us avg=0 max=0 run_us avg=500 max=4000 freed=0 kib=0 free_us=0 markers_max=2 submit_lock_us avg=400 max=3000 hold_us decode=1000/cmds259/op132 command=1000/op132 step=2000
+v3d: decode requests=10 cmds=295 us=3718 ns/cmd=12603 max_us=1718/cmds259 objects=260
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=9 kib=156 zero_us=0 kept=29 kib=3256
+v3d: release draws=99 draw_us=0 end_us=0 views cached=38 unmapped=0
+v3d: gpu tiles copy=240 cycles/tile=2616 draw=240 cycles/tile=29953
+v3d: memory kib=98264 max_kib=98264 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=29605 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=0/29605000/29605000/29605000 overlay=0/0/0/0
+bcm2711: flip perf ms=29605 flips=1 avg_us clean=0 raise=0 wait=5000 cursor sets=0 copies=0 records primary=1 cursor=0 overlay=0 dropped=0 lists=1 replaced=0 coalesced=0 underruns=0 pair=0/0
+rpi4-mmal: firmware MMAL 16.1 (service version 16)
+rpi4-mmal: trace COMPONENT_CREATE (160 bytes) -> 44 bytes, status 0 (SUCCESS)
+rpi4-mmal: ril.video_decode created: handle 64, inputs 1, outputs 1
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 0x0 crop 0x0
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/115200 rec 1/115200 now 1/115200 encoding 30323449 320x240 crop 320x240
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1088
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1088
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 1920x1088, input 16 x 81920 bytes, output 8 x 3133440 bytes
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 1 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 0 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 2 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 3 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 4 short 0 zero_copy 0
+rpi4-mmal: in 0: event 48434645 len 96
+rpi4-mmal: in 0: output 0 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 0 off 0 flags 0 pts -9223372036854775808 short 0 zero_copy 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0 output 3231564e 1920x1088 (crop 1920x1080), 8 x 3133440 bytes
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 1 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 0 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 2 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 3 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 5 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 4 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 6 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 5 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 7 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 8 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 6 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 9 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 7 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 8 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 9 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 10 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 10 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 11 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 11 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 12 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 13 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 12 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 13 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 14 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 14 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 15 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 15 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 16 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 17 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 16 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 18 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 17 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 19 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 18 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 20 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 19 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 21 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 20 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 22 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 21 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 23 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 22 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 24 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 23 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 24 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 25 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 26 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 27 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 25 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 26 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 27 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 28 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 29 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 30 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 28 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 31 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 29 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 30 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 32 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 31 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 32 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 33 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 34 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 35 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 33 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 34 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 36 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 35 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 36 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 37 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 38 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 39 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 37 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 38 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 40 short 0 zero_copy 0
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 39 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 41 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 40 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 42 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 43 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 41 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 42 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 43 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 44 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 45 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 44 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 46 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 47 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 45 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 46 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 47 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 48 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 49 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 48 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 50 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 51 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 49 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 50 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 51 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 52 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 53 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 52 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 54 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 53 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 55 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 54 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 55 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 56 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 57 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 56 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 57 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 58 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 59 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 58 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 60 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 61 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 59 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 60 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 61 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 62 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 63 short 0 zero_copy 0
+v3d: perf ms=2005 busy=66% subs=177 passes=57/0/57 skipped=0 draws=382 kib=284608 avg_us total=7525 prep=943 tex=435 copy=169 prog=45 rec=5 alloc=73 map=0 clean=248 exec=3610 tfu=1124 bin=62 render=2276 oclean=0 rel=186 xfer=932 max_us=24000 snap=24/82/26/0 upd=0 mapped_kib=93600 largest=1920x1088f tiles=13500/13500
+v3d: gpu runs=114 k/run cycles=1739 qidle=246 qfrag=1884 qvalid=2255 qtmu=0 qsb=0 qvary=0 qstall=353 tmu=2400 tmumiss=45 tmustall=7 cle=1716 quads=191 written=191 tlbrd=113 tlbwr=227
+v3d: requests=1724 wait_us avg=56 max=2000 run_us avg=208 max=94000 freed=13 kib=24780 free_us=4000 markers_max=9 submit_lock_us avg=163 max=6000 hold_us decode=94000/cmds4/op65539 command=94000/op65539 step=8000
+v3d: decode requests=1545 cmds=7997 us=261523 ns/cmd=32702 max_us=93361/cmds4 objects=290
+v3d: alloc made=75 kib=162420 pmem_us=0 zero_us=85000 reused=513 kib=15536 zero_us=11000 kept=955 kib=265432
+v3d: release draws=382 draw_us=14000 end_us=0 views cached=1470 unmapped=0
+v3d: gpu tiles copy=13650 cycles/tile=3966 draw=13350 cycles/tile=10802
+v3d: tfu jobs=108 avg_us=1842 max_us=5000
+v3d: memory kib=186344 max_kib=198508 budget_kib=524288 refused=0 last_kib=0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 62 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+bcm2711: cadence ms=2022 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=14/33000/50000/568000 overlay=0/0/0/0
+bcm2711: flip perf ms=2022 flips=29 avg_us clean=0 raise=0 wait=8000 cursor sets=0 copies=0 records primary=29 cursor=0 overlay=0 dropped=0 lists=29 replaced=0 coalesced=0 underruns=0 pair=0/0
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 63 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 64 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 65 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 64 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 66 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 67 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 65 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 66 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 68 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 67 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 69 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 68 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 69 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 70 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 71 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 70 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 71 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 72 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 73 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 72 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 73 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 74 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 75 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 74 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 76 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 77 short 0 zero_copy 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 75 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 76 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 77 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 78 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 79 short 0 zero_copy 0
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 78 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 79 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 80 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 81 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 80 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 81 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 82 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 83 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 82 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+v3d: video: 82 decodes in 2020 ms (0 skipped, 1 pushes, 309 steps, depth 2.4); avg_us send 2609 frame 56536 place 36, max_us frame 154000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 83 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 84 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 85 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 84 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 86 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 87 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 85 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 86 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 7 len 3133440 off 0 flags 4 pts 87 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 88 short 0 zero_copy 0
+rpi4-mmal: in 0: input 1 len 0 off 0 flags 0 pts 89 short 0 zero_copy 0
+rpi4-mmal: in 0: output 0 len 3133440 off 0 flags 4 pts 88 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 90 short 0 zero_copy 0
+rpi4-mmal: in 0: output 1 len 3133440 off 0 flags 4 pts 89 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 91 short 0 zero_copy 0
+rpi4-mmal: in 0: output 2 len 3133440 off 0 flags 4 pts 90 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 3 len 3133440 off 0 flags 4 pts 91 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 92 short 0 zero_copy 0
+rpi4-mmal: in 0: output 4 len 3133440 off 0 flags 4 pts 92 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 93 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 94 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 95 short 0 zero_copy 0
+rpi4-mmal: in 0: output 5 len 3133440 off 0 flags 4 pts 93 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: output 6 len 3133440 off 0 flags 4 pts 94 short 0 zero_copy 0
+rpi4-mmal: bulk 0: receive 3133440 bytes into the frame
+rpi4-mmal: bulk 0: frame received (3133440)
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 96 short 0 zero_copy 0
+rpi4-mmal: in 0: input 0 len 0 off 0 flags 0 pts 97 short 0 zero_copy 0
+v3d: perf ms=2002 busy=92% subs=274 passes=92/0/92 skipped=0 draws=109 kib=369052 avg_us total=6737 prep=686 tex=186 copy=7 prog=36 rec=7 alloc=69 map=0 clean=182 exec=3244 tfu=1007 bin=80 render=2018 oclean=0 rel=222 xfer=821 max_us=24000 snap=0/138/17/0 upd=0 mapped_kib=61200 largest=1920x1088f tiles=22080/22080
+v3d: gpu runs=184 k/run cycles=1473 qidle=185 qfrag=1389 qvalid=1773 qtmu=0 qsb=0 qvary=0 qstall=371 tmu=2163 tmumiss=34 tmustall=6 cle=1456 quads=136 written=136 tlbrd=115 tlbwr=230
+v3d: requests=1757 wait_us avg=62 max=2000 run_us avg=161 max=3000 freed=0 kib=0 free_us=0 markers_max=8 submit_lock_us avg=168 max=4000 hold_us decode=3000/cmds4/op18 command=3000/op18 step=5000
+v3d: decode requests=1484 cmds=7389 us=193153 ns/cmd=26140 max_us=2208/cmds4 objects=281
+v3d: alloc made=2 kib=3060 pmem_us=0 zero_us=1000 reused=828 kib=13616 zero_us=19000 kept=1356 kib=355436
+v3d: release draws=109 draw_us=12000 end_us=0 views cached=2184 unmapped=0
+v3d: gpu tiles copy=22080 cycles/tile=4036 draw=22080 cycles/tile=8245
+v3d: tfu jobs=155 avg_us=1780 max_us=5000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2004 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=22/33000/50000/67000 overlay=0/0/0/0
+bcm2711: flip perf ms=2004 flips=46 avg_us clean=0 raise=0 wait=7282 cursor sets=0 copies=0 records primary=46 cursor=0 overlay=0 dropped=0 lists=46 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 93 decodes in 2017 ms (0 skipped, 0 pushes, 363 steps, depth 2.8); avg_us send 2505 frame 56043 place 21, max_us frame 81000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2001 busy=93% subs=286 passes=97/0/98 skipped=0 draws=97 kib=326000 avg_us total=6541 prep=615 tex=171 copy=6 prog=6 rec=10 alloc=41 map=0 clean=171 exec=3090 tfu=870 bin=115 render=1919 oclean=6 rel=216 xfer=895 max_us=26000 snap=0/145/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=23280/23520
+v3d: gpu runs=195 k/run cycles=1432 qidle=157 qfrag=1293 qvalid=1701 qtmu=0 qsb=0 qvary=0 qstall=397 tmu=2050 tmumiss=28 tmustall=6 cle=1411 quads=114 written=114 tlbrd=115 tlbwr=230
+v3d: requests=1838 wait_us avg=71 max=1000 run_us avg=159 max=6000 freed=0 kib=0 free_us=0 markers_max=9 submit_lock_us avg=148 max=2000 hold_us decode=2000/cmds4/op18 command=2000/op18 step=6000
+v3d: decode requests=1552 cmds=7630 us=190384 ns/cmd=24952 max_us=1472/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=877 kib=14428 zero_us=11000 kept=1363 kib=311572
+v3d: release draws=97 draw_us=1000 end_us=0 views cached=2240 unmapped=0
+v3d: gpu tiles copy=23520 cycles/tile=4069 draw=23280 cycles/tile=7889
+v3d: tfu jobs=145 avg_us=1717 max_us=4000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2039 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=24/17000/50000/51000 overlay=0/0/0/0
+bcm2711: flip perf ms=2039 flips=49 avg_us clean=0 raise=20 wait=9102 cursor sets=0 copies=0 records primary=49 cursor=0 overlay=0 dropped=0 lists=49 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 94 decodes in 2008 ms (0 skipped, 0 pushes, 340 steps, depth 2.8); avg_us send 2606 frame 55638 place 10, max_us frame 84000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2001 busy=90% subs=283 passes=94/0/93 skipped=0 draws=94 kib=312704 avg_us total=6402 prep=667 tex=159 copy=0 prog=21 rec=0 alloc=60 map=0 clean=187 exec=3088 tfu=918 bin=84 render=1915 oclean=10 rel=166 xfer=826 max_us=23000 snap=0/141/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=22560/22320
+v3d: gpu runs=187 k/run cycles=1460 qidle=169 qfrag=1305 qvalid=1733 qtmu=0 qsb=0 qvary=0 qstall=417 tmu=2089 tmumiss=29 tmustall=6 cle=1444 quads=116 written=116 tlbrd=114 tlbwr=230
+v3d: requests=1827 wait_us avg=66 max=7000 run_us avg=186 max=7000 freed=0 kib=0 free_us=0 markers_max=9 submit_lock_us avg=172 max=7000 hold_us decode=3000/cmds4/op18 command=3000/op18 step=9000
+v3d: decode requests=1544 cmds=7592 us=215050 ns/cmd=28325 max_us=2387/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=842 kib=13840 zero_us=17000 kept=1311 kib=298864
+v3d: release draws=94 draw_us=7000 end_us=0 views cached=2153 unmapped=0
+v3d: gpu tiles copy=22320 cycles/tile=4180 draw=22560 cycles/tile=7972
+v3d: tfu jobs=141 avg_us=1843 max_us=5000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2038 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/33000/50000/51000 overlay=0/0/0/0
+bcm2711: flip perf ms=2038 flips=48 avg_us clean=0 raise=0 wait=8958 cursor sets=0 copies=0 records primary=48 cursor=0 overlay=0 dropped=0 lists=48 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 92 decodes in 2008 ms (0 skipped, 0 pushes, 355 steps, depth 2.6); avg_us send 2391 frame 53793 place 0, max_us frame 83000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2001 busy=91% subs=279 passes=93/0/93 skipped=0 draws=93 kib=310992 avg_us total=6573 prep=609 tex=146 copy=3 prog=3 rec=7 alloc=53 map=0 clean=161 exec=3057 tfu=856 bin=96 render=1939 oclean=0 rel=204 xfer=759 max_us=30000 snap=0/139/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=22320/22320
+v3d: gpu runs=186 k/run cycles=1437 qidle=150 qfrag=1300 qvalid=1710 qtmu=0 qsb=0 qvary=0 qstall=399 tmu=2060 tmumiss=28 tmustall=6 cle=1411 quads=115 written=115 tlbrd=115 tlbwr=230
+v3d: requests=1782 wait_us avg=57 max=2000 run_us avg=160 max=3000 freed=0 kib=0 free_us=0 markers_max=8 submit_lock_us avg=135 max=4000 hold_us decode=2000/cmds4/op18 command=2000/op18 step=5000
+v3d: decode requests=1503 cmds=7410 us=197056 ns/cmd=26593 max_us=2010/cmds10 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=837 kib=13764 zero_us=14000 kept=1302 kib=297228
+v3d: release draws=93 draw_us=2000 end_us=0 views cached=2139 unmapped=0
+v3d: gpu tiles copy=22320 cycles/tile=4093 draw=22320 cycles/tile=7881
+v3d: tfu jobs=139 avg_us=1719 max_us=4000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2005 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/33000/50000/67000 overlay=0/0/0/0
+bcm2711: flip perf ms=2005 flips=47 avg_us clean=0 raise=21 wait=7723 cursor sets=0 copies=0 records primary=47 cursor=0 overlay=0 dropped=0 lists=47 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 95 decodes in 2007 ms (0 skipped, 0 pushes, 363 steps, depth 2.7); avg_us send 2284 frame 55442 place 21, max_us frame 83000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+v3d: perf ms=2003 busy=90% subs=280 passes=95/0/96 skipped=0 draws=95 kib=319312 avg_us total=6467 prep=703 tex=157 copy=0 prog=10 rec=3 alloc=75 map=0 clean=210 exec=3078 tfu=885 bin=89 render=1946 oclean=7 rel=203 xfer=714 max_us=23000 snap=0/143/0/0 upd=0 mapped_kib=0 largest=1920x1088f tiles=22800/23040
+v3d: gpu runs=191 k/run cycles=1446 qidle=154 qfrag=1290 qvalid=1699 qtmu=0 qsb=0 qvary=0 qstall=399 tmu=2083 tmumiss=28 tmustall=6 cle=1424 quads=114 written=114 tlbrd=115 tlbwr=230
+v3d: requests=1788 wait_us avg=62 max=3000 run_us avg=176 max=5000 freed=0 kib=0 free_us=0 markers_max=9 submit_lock_us avg=161 max=4000 hold_us decode=2000/cmds4/op18 command=2000/op18 step=8000
+v3d: decode requests=1508 cmds=7430 us=206301 ns/cmd=27766 max_us=2087/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=859 kib=14132 zero_us=21000 kept=1335 kib=305180
+v3d: release draws=95 draw_us=7000 end_us=1000 views cached=2194 unmapped=0
+v3d: gpu tiles copy=23040 cycles/tile=4203 draw=22800 cycles/tile=7871
+v3d: tfu jobs=143 avg_us=1734 max_us=4000
+v3d: memory kib=186344 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=2038 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=23/16000/50000/66000 overlay=0/0/0/0
+bcm2711: flip perf ms=2038 flips=48 avg_us clean=0 raise=0 wait=7645 cursor sets=0 copies=0 records primary=48 cursor=0 overlay=0 dropped=0 lists=48 replaced=0 coalesced=0 underruns=0 pair=0/0
+v3d: video: 91 decodes in 2002 ms (0 skipped, 0 pushes, 353 steps, depth 2.6); avg_us send 2087 frame 54032 place 0, max_us frame 90000; readbacks 0 cached avg_us 0, 0 uncached avg_us 0; waits 0 avg_us 0
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+v3d: perf ms=4015 busy=41% subs=255 passes=89/0/88 skipped=0 draws=188 kib=299664 avg_us total=6501 prep=658 tex=141 copy=0 prog=15 rec=7 alloc=70 map=0 clean=184 exec=3129 tfu=839 bin=90 render=2019 oclean=15 rel=215 xfer=701 max_us=26000 snap=6/131/1/0 upd=0 mapped_kib=3600 largest=1920x1088f tiles=21360/21120
+v3d: gpu runs=177 k/run cycles=1463 qidle=151 qfrag=1376 qvalid=1781 qtmu=0 qsb=0 qvary=0 qstall=393 tmu=2067 tmumiss=29 tmustall=6 cle=1440 quads=121 written=121 tlbrd=114 tlbwr=230
+v3d: requests=1805 wait_us avg=69 max=2000 run_us avg=165 max=7000 freed=18 kib=36880 free_us=8000 markers_max=8 submit_lock_us avg=124 max=4000 hold_us decode=7000/cmds4/op65540 command=7000/op65540 step=5000
+v3d: decode requests=1549 cmds=7698 us=189888 ns/cmd=24667 max_us=6922/cmds4 objects=281
+v3d: alloc made=0 kib=0 pmem_us=0 zero_us=0 reused=797 kib=13108 zero_us=17000 kept=1260 kib=286556
+v3d: release draws=188 draw_us=2000 end_us=0 views cached=2057 unmapped=0
+v3d: gpu tiles copy=21120 cycles/tile=4040 draw=21360 cycles/tile=8135
+v3d: tfu jobs=132 avg_us=1621 max_us=5000
+v3d: memory kib=115820 max_kib=186344 budget_kib=524288 refused=0 last_kib=0
+bcm2711: cadence ms=3893 per_s/min/med/max_us set=0/0/0/0 move=0/0/0/0 flip=11/17000/34000/2189000 overlay=0/0/0/0
+bcm2711: flip perf ms=3893 flips=43 avg_us clean=0 raise=0 wait=8627 cursor sets=0 copies=0 records primary=43 cursor=0 overlay=0 dropped=0 lists=43 replaced=0 coalesced=0 underruns=0 pair=0/0
