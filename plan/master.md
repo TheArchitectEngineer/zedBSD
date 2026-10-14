@@ -39,6 +39,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
+- boot loader の GOP の mode の選び方（2026-10-16 P2 の案、bootloader/uefi/video.c の zbl_uefi_video_select）: video= が無く 1920x1080 が無い時、今は firmware の mode のまま（RTX 機の monitor で 640x480）。案: 1920x1080 以下で面積が一番大きい mode を選ぶ（例 1280x1024）。nvrtx は 640x480 でも拡大で desktop まで行く直しを入れたので急ぎではない（boot の画面の画質）。
 - WS037: RTX に console が無い時（パススルー・GOP が別の GPU）に nvrtx が自前の surface で takeover する（`nvrtx.disp.own=1`）を既定にするか（2026-10-16 P2 の問い、desktop が出た後に聞く）。
 - （解決 2026-10-16 ユーザー、クリック）WS236 の表示の道: 案 1 を WS236 の Phase で進める、値の補正（2〜15 が 1 小さい）は表示では直さない（probe の読み戻しだけ補正）、TFU の YUV の probe はする。
 - WS204（HD Audio の録音と HFP の通話の音）・WS205（Bluetooth audio A2DP と headset）がベータ2 に入るか（WS197 の HFP は 2026-10-13 にベータ3 と決定）。
