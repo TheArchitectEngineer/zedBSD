@@ -465,6 +465,68 @@ struct nvrtx_fwsec {
 #define NVRTX_DEVICE_SHARE_AT		4U
 #define NVRTX_SUBDEVICE_PARAMS_BYTES	4U
 
+/* The FB region table in the static information. */
+#define NVRTX_STATIC_REGIONS_AT		344U
+
+/* The driver's page tables: five pages covering one 2 MiB range. */
+#define NVRTX_MMU_TABLES_BYTES		0x5000U
+#define NVRTX_MMU_RANGE_BYTES		0x200000ULL
+
+/* A channel's instance block, its RAMFC (the block's first part) and its USERD. */
+#define NVRTX_INSTANCE_BYTES		0x1000U
+#define NVRTX_RAMFC_BYTES		0x200U
+#define NVRTX_USERD_BYTES		0x200U
+
+/* The control call's header, and the parameters of the calls P4 to P6 make. */
+#define NVRTX_CONTROL_HEADER_BYTES	24U
+#define NVRTX_CONTROL_STATUS_AT		12U
+#define NVRTX_SPACE_PARAMS_BYTES	48U
+#define NVRTX_PDIR_PARAMS_BYTES		32U
+#define NVRTX_UNPDIR_PARAMS_BYTES	8U
+#define NVRTX_DEVINFO_PARAMS_BYTES	3212U
+#define NVRTX_METHOD_BUFFER_PARAMS_BYTES 4U
+#define NVRTX_CHANNEL_PARAMS_BYTES	368U
+#define NVRTX_BIND_PARAMS_BYTES		4U
+#define NVRTX_SCHEDULE_PARAMS_BYTES	2U
+#define NVRTX_COPY_PARAMS_BYTES		8U
+#define NVRTX_FREE_PARAMS_BYTES		16U
+
+/* The control commands of P4 to P6. */
+#define NVRTX_CTL_SET_PAGE_DIRECTORY	0x00801813U
+#define NVRTX_CTL_UNSET_PAGE_DIRECTORY	0x00801814U
+#define NVRTX_CTL_DEVICE_INFO		0x20801112U
+#define NVRTX_CTL_METHOD_BUFFER_SIZE	0x20802a08U
+#define NVRTX_CTL_BIND			0xa06f0104U
+#define NVRTX_CTL_SCHEDULE		0xa06f0103U
+
+/* The classes of P4 and P5. */
+#define NVRTX_CLASS_SPACE		0x90f1U
+#define NVRTX_CLASS_CHANNEL		0xc46fU
+#define NVRTX_CLASS_COPY		0xc5b5U
+
+/* The event a channel error raises. */
+#define NVRTX_EVENT_CHANNEL_ERROR	0x1004U
+
+/* The copy engine chosen for the first channel. */
+struct nvrtx_engine_pick {
+	uint32_t engine;
+	uint32_t runlist;
+	uint32_t graphics_runlist;
+};
+
+/* Where a channel's pieces are, for its allocation. */
+struct nvrtx_channel_setup {
+	uint64_t ring_va;
+	uint32_t ring_entries;
+	uint32_t chid;
+	uint32_t space;
+	uint32_t engine;
+	uint64_t instance;
+	uint64_t userd;
+	uint64_t methods;
+	uint64_t methods_size;
+};
+
 /* One resource-manager object: its client, parent, own handle and class. */
 struct nvrtx_object {
 	uint32_t client;
@@ -542,6 +604,19 @@ void nvrtx_unload_args(uint8_t *args);
 size_t nvrtx_alloc_call(uint8_t *call, size_t capacity, const struct nvrtx_object *object, const uint8_t *parameters, size_t parameters_length);
 int nvrtx_sequencer_next(const uint8_t *payload, size_t length, uint32_t *cursor, struct nvrtx_seq_command *command);
 int nvrtx_sequencer_save(uint8_t *payload, size_t length, uint32_t slot, uint32_t value);
+
+int nvrtx_mmu_tables(uint8_t *image, uint64_t block, uint64_t va, const uint64_t *pages, size_t count);
+void nvrtx_mmu_instance(uint8_t *instance, uint64_t root, uint64_t limit);
+int nvrtx_mmu_vram_block(const uint8_t *static_info, uint64_t size, uint64_t *block, uint32_t *region);
+
+size_t nvrtx_control_call(uint8_t *call, size_t capacity, uint32_t client, uint32_t object, uint32_t command, const uint8_t *parameters, size_t length);
+void nvrtx_space_params(uint8_t *params);
+void nvrtx_pdir_params(uint8_t *params, uint64_t root, uint32_t space);
+int nvrtx_devinfo_pick(const uint8_t *params, size_t length, struct nvrtx_engine_pick *pick);
+void nvrtx_channel_params(uint8_t *params, const struct nvrtx_channel_setup *setup);
+size_t nvrtx_push_fence(uint8_t *push, uint64_t semaphore, uint32_t value);
+void nvrtx_ring_entry(uint8_t *entry, uint64_t va, uint32_t words);
+void nvrtx_free_params(uint8_t *params, uint32_t client, uint32_t object);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);
 int nvrtx_vbios_fwsec(const struct nvrtx_vbios *vbios, struct nvrtx_fwsec *fwsec);

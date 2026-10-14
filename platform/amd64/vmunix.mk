@@ -168,6 +168,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/file.c src/drivers/gpu/nvrtx/memory
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/falcon.c src/drivers/gpu/nvrtx/boot.c
 # P2 of the GSP boot and its stop: the calls, the sequencer, booter_load (ws037-p004 4d).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/records.c src/drivers/gpu/nvrtx/rpc.c
+# P4 to P6: page tables, the address space and channel records (ws037-p005 5a).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/mmu.c src/drivers/gpu/nvrtx/objects.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
