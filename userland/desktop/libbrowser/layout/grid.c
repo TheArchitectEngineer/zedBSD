@@ -488,6 +488,23 @@ layout_grid(
 		    layout_from_px(box->style.row_gap.offset);
 	}
 
+	/* An item with a vertical writing mode lays its lines along the row's height. */
+	for (index = 0; index < grid.item_count; index++) {
+		item = &grid.items[index];
+		child = item->box;
+		child->grid_orthogonal = 0;
+		child->grid_room = -1;
+		if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
+		    child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB ||
+		    child->replaced || child->atomic)
+			continue;
+		child->grid_orthogonal = 1;
+		if (item->row_span == 1 && item->row < box->style.row_count &&
+		    grid_row_track(&box->style, item->row)->kind == CSS_TRACK_LENGTH &&
+		    grid_row_track(&box->style, item->row)->size.unit == CSS_UNIT_PX)
+			child->grid_room = layout_from_px(grid_row_track(&box->style, item->row)->size.value);
+	}
+
 	row_gap_base = row_gap;
 
 	/* The columns' widths. */
@@ -514,23 +531,6 @@ layout_grid(
 	    box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB,
 	    room, grid.column_count, &shift, &distribution);
 	column_gap += distribution;
-
-	/* An item with a vertical writing mode lays its lines along the row's height. */
-	for (index = 0; index < grid.item_count; index++) {
-		item = &grid.items[index];
-		child = item->box;
-		child->grid_orthogonal = 0;
-		child->grid_room = -1;
-		if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
-		    child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB ||
-		    child->replaced || child->atomic)
-			continue;
-		child->grid_orthogonal = 1;
-		if (item->row_span == 1 && item->row < box->style.row_count &&
-		    grid_row_track(&box->style, item->row)->kind == CSS_TRACK_LENGTH &&
-		    grid_row_track(&box->style, item->row)->size.unit == CSS_UNIT_PX)
-			child->grid_room = layout_from_px(grid_row_track(&box->style, item->row)->size.value);
-	}
 
 	/* Each item laid out in its area's width. */
 	for (index = 0; index < grid.item_count; index++) {
