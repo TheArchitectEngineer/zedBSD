@@ -25,6 +25,63 @@
 #define VKVIDEO_WAIT_NS 5000000000ULL
 #define VKVIDEO_SOURCE_MAX (65U * 1024U * 1024U)
 
+/*
+ * The pictures submitted ahead of the one being read back (ws236 p008).
+ * The Raspberry Pi 4's decoder (the only arm64 Vulkan Video device) takes
+ * the next pictures while one is read back; elsewhere one picture is
+ * decoded, read back and copied before the next is submitted.
+ */
+#if defined(__aarch64__)
+#define VKVIDEO_FLIGHTS 4U
+#else
+#define VKVIDEO_FLIGHTS 1U
+#endif
+
+/* The completed pictures whose results are kept for the backend's later questions. */
+#define VKVIDEO_RESULTS 64U
+
+/* A picture's submission: free, decoding (the decode submitted, its readback not yet), or reading (both submitted). */
+enum vkvideo_state {
+	VKVIDEO_FREE,
+	VKVIDEO_DECODING,
+	VKVIDEO_READING
+};
+
+/*
+ * One picture's submission and the resources it uses until its readback
+ * retires: the bitstream buffer, the decode and transfer command buffers,
+ * the semaphore between them, the readback buffer and its fence, and the
+ * status query of its own index.  ticket numbers the picture; slot is the
+ * image it decodes into; output receives the cropped picture.
+ */
+struct vkvideo_flight {
+	enum vkvideo_state state;
+	uint32_t ticket;
+	uint32_t slot;
+	uint32_t crop_x;
+	uint32_t crop_y;
+	struct media_picture *output;
+	VkBuffer buffer;
+	VkDeviceMemory buffer_memory;
+	uint8_t *buffer_map;
+	VkDeviceSize buffer_size;
+	int buffer_coherent;
+	VkBuffer readback;
+	VkDeviceMemory readback_memory;
+	uint8_t *readback_map;
+	int readback_coherent;
+	VkCommandBuffer command;
+	VkCommandBuffer transfer_command;
+	VkSemaphore decoded;
+	VkFence fence;
+};
+
+/* One completed picture's result: zero, EBADMSG for a failed decode, or the error that ended it. */
+struct vkvideo_result {
+	uint32_t ticket;
+	int error;
+};
+
 /* Standard entry points belong to a runtime's instance/device dispatch, never to a particular GPU implementation. */
 struct vkvideo_functions {
 	PFN_vkAllocateCommandBuffers vkAllocateCommandBuffers;
@@ -103,10 +160,6 @@ struct vkvideo_runtime {
 	uint32_t transfer_family;
 	VkQueue transfer_queue;
 	VkCommandPool transfer_pool;
-	VkCommandBuffer transfer_command;
-	VkSemaphore decoded;
-	VkSemaphore returned;
-	int returned_pending;
 	VkPhysicalDeviceMemoryProperties memory;
 	VkVideoDecodeH264ProfileInfoKHR h264_profile;
 	VkVideoProfileInfoKHR profile;
@@ -128,24 +181,18 @@ struct vkvideo_runtime {
 	VkImage image[H264_DPB_SLOTS + 1U];
 	VkDeviceMemory image_memory[H264_DPB_SLOTS + 1U];
 	VkImageView view[H264_DPB_SLOTS + 1U];
-	VkBuffer buffer;
-	VkDeviceMemory buffer_memory;
-	uint8_t *buffer_map;
-	VkDeviceSize buffer_size;
-	int buffer_coherent;
-	VkBuffer readback;
-	VkDeviceMemory readback_memory;
-	uint8_t *readback_map;
-	int readback_coherent;
 	VkCommandPool pool;
-	VkCommandBuffer command;
-	VkFence fence;
 	VkBool32 status_supported;
 	VkQueryPool status_pool;
-	int32_t status;
 	int initialized;
 	int reset;
-	int inflight;
+	uint32_t flights;
+	uint32_t lag;
+	int late_barrier;
+	struct vkvideo_flight flight[VKVIDEO_FLIGHTS];
+	uint32_t tickets;
+	struct vkvideo_result results[VKVIDEO_RESULTS];
+	int failed;
 };
 
 /* Entry-point names and destination offsets are immutable dispatch metadata for the process. */
@@ -237,16 +284,25 @@ static int vkvideo_family(struct vkvideo_runtime *video);
 static int vkvideo_formats(struct vkvideo_runtime *video, VkImageUsageFlags usage);
 static int vkvideo_capabilities(struct vkvideo_runtime *video);
 static int vkvideo_allocate(struct vkvideo_runtime *video, const VkMemoryRequirements *requirements, int host, VkDeviceMemory *memory, int *coherent);
-static int vkvideo_readback(struct vkvideo_runtime *video);
+static int vkvideo_readback(struct vkvideo_runtime *video, struct vkvideo_flight *flight);
 static int vkvideo_picture(struct vkvideo_runtime *video, uint32_t slot);
-static int vkvideo_bitstream(struct vkvideo_runtime *video, size_t bytes);
+static int vkvideo_bitstream(struct vkvideo_runtime *video, struct vkvideo_flight *flight, size_t bytes);
 static int vkvideo_session(struct vkvideo_runtime *video);
 static int vkvideo_commands(struct vkvideo_runtime *video);
+static int vkvideo_flight_commands(struct vkvideo_runtime *video, struct vkvideo_flight *flight);
+static void vkvideo_flight_free(struct vkvideo_runtime *video, struct vkvideo_flight *flight);
+static struct vkvideo_flight *vkvideo_oldest(struct vkvideo_runtime *video, enum vkvideo_state state);
+static int vkvideo_record_decode(struct vkvideo_runtime *video, struct vkvideo_flight *flight, const struct h264_stream *stream, const struct h264_picture *picture, const struct h264_dpb_plan *plan, VkDeviceSize range, const uint32_t *offsets);
+static int vkvideo_record_readback(struct vkvideo_runtime *video, struct vkvideo_flight *flight, VkImageLayout output_layout);
+static int vkvideo_submit_readback(struct vkvideo_runtime *video, struct vkvideo_flight *flight);
+static int vkvideo_complete(struct vkvideo_runtime *video, struct vkvideo_flight *flight, int discard);
+static int vkvideo_complete_all(struct vkvideo_runtime *video, int discard);
+static void vkvideo_store(struct vkvideo_runtime *video, uint32_t ticket, int error);
 static int vkvideo_status_pool(struct vkvideo_runtime *video);
 static int vkvideo_failed(VkResult result, const char *operation);
 static int vkvideo_mapped_range(struct vkvideo_runtime *video, VkDeviceMemory memory, int invalidate);
 static void vkvideo_barrier(struct vkvideo_runtime *video, VkCommandBuffer command, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags2 source_stage, VkAccessFlags2 source_access, VkPipelineStageFlags2 destination_stage, VkAccessFlags2 destination_access);
-static void vkvideo_copy_output(struct vkvideo_runtime *video, const StdVideoH264SequenceParameterSet *sps, struct media_picture *output);
+static void vkvideo_copy_output(struct vkvideo_runtime *video, const struct vkvideo_flight *flight);
 
 /*
  * Opens a standard H.264 decode context for one progressive sequence.
@@ -359,7 +415,10 @@ media_vkvideo_runtime_parameters(
 		pps_count++;
 	}
 
-	/* A completed submission no longer uses the old parameter object. */
+	/* The pictures in flight complete first: no submission may still use the old parameter object. */
+	error = vkvideo_complete_all(video, 0);
+	if (error != 0)
+		return error;
 	if (video->parameters != VK_NULL_HANDLE) {
 		video->fn.vkDestroyVideoSessionParametersKHR(video->device, video->parameters, NULL);
 		video->parameters = VK_NULL_HANDLE;
@@ -392,47 +451,83 @@ media_vkvideo_runtime_parameters(
 }
 
 /*
- * Submit one admitted picture and read both standard NV12 planes after queue retirement.
+ * Makes a submission free for the next picture, completing the oldest
+ * picture when every one is taken.
  */
 int
-media_vkvideo_runtime_decode(
+media_vkvideo_runtime_reserve(
+	struct vkvideo_runtime *video)
+{
+	struct vkvideo_flight *oldest;
+	uint32_t index;
+	int error;
+
+	/* A runtime that lost its device takes nothing more. */
+	if (video->failed != 0)
+		return video->failed;
+
+	/* A free submission is enough. */
+	for (index = 0U; index < video->flights; index++) {
+		if (video->flight[index].state == VKVIDEO_FREE)
+			return 0;
+	}
+
+	/* The oldest picture completes; its result waits for the backend's question. */
+	oldest = vkvideo_oldest(video, VKVIDEO_READING);
+	if (oldest == NULL)
+		oldest = vkvideo_oldest(video, VKVIDEO_DECODING);
+	error = vkvideo_complete(video, oldest, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: one submission is free. */
+	return 0;
+}
+
+/*
+ * Submits one admitted picture's decode, and the readbacks of earlier
+ * pictures that are due; ticket receives the picture's number for
+ * media_vkvideo_runtime_finish.
+ */
+int
+media_vkvideo_runtime_submit(
 	struct vkvideo_runtime *video,
 	const struct h264_stream *stream,
 	const struct h264_picture *picture,
 	const struct h264_dpb_plan *plan,
-	struct media_picture *output)
+	struct media_picture *output,
+	uint32_t *ticket)
 {
 	uint32_t offsets[H264_MAX_SLICES];
-	VkVideoPictureResourceInfoKHR resources[H264_DPB_SLOTS];
-	VkVideoReferenceSlotInfoKHR bound[H264_DPB_SLOTS * 2U];
-	VkVideoReferenceSlotInfoKHR references[H264_DPB_REFERENCES];
-	VkVideoDecodeH264DpbSlotInfoKHR reference_info[H264_DPB_REFERENCES];
-	VkVideoDecodeH264DpbSlotInfoKHR setup_info;
-	VkVideoDecodeH264PictureInfoKHR h264;
-	VkVideoReferenceSlotInfoKHR setup;
-	VkVideoBeginCodingInfoKHR begin;
-	VkVideoCodingControlInfoKHR control;
-	VkVideoDecodeInfoKHR decode;
-	VkVideoEndCodingInfoKHR end;
-	VkCommandBufferBeginInfo record;
-	VkBufferImageCopy copies[2];
-	VkBufferMemoryBarrier2 host_barrier;
-	VkDependencyInfo host_dependency;
-	VkVideoPictureResourceInfoKHR destination;
-	VkImageLayout output_layout;
-	uint32_t output_slot;
+	struct vkvideo_flight *flight;
+	const StdVideoH264SequenceParameterSet *sps;
+	VkSubmitInfo submit;
 	VkDeviceSize aligned;
 	VkDeviceSize alignment;
-	int error;
-	VkSubmitInfo submit;
-	const StdVideoH264SequenceParameterSet *sps;
+	VkImageLayout output_layout;
 	VkResult result;
-	size_t at;
-	uint32_t slice;
-	uint32_t slot;
+	uint32_t decoding;
 	uint32_t index;
-	uint32_t count;
-	VkPipelineStageFlags wait_stage;
+	uint32_t slice;
+	size_t at;
+	int error;
+
+	/* A free submission (the oldest picture completes when none is). */
+	*ticket = 0U;
+	error = media_vkvideo_runtime_reserve(video);
+	if (error != 0)
+		return error;
+	flight = NULL;
+	for (index = 0U; index < video->flights; index++) {
+		if (video->flight[index].state == VKVIDEO_FREE) {
+			flight = &video->flight[index];
+			break;
+		}
+	}
+
+	/* reserve made one free. */
+	if (flight == NULL)
+		return EIO;
 
 	/* Size and align the complete access unit before writing or submitting any part of it. */
 	at = 0U;
@@ -447,14 +542,14 @@ media_vkvideo_runtime_decode(
 	aligned = ((at + alignment - 1U) / alignment) * alignment;
 	if (aligned > VKVIDEO_SOURCE_MAX)
 		return EINVAL;
-	if (aligned > video->buffer_size) {
-		video->fn.vkUnmapMemory(video->device, video->buffer_memory);
-		video->fn.vkDestroyBuffer(video->device, video->buffer, NULL);
-		video->fn.vkFreeMemory(video->device, video->buffer_memory, NULL);
-		video->buffer = VK_NULL_HANDLE;
-		video->buffer_memory = VK_NULL_HANDLE;
-		video->buffer_map = NULL;
-		error = vkvideo_bitstream(video, (size_t)aligned);
+	if (aligned > flight->buffer_size) {
+		video->fn.vkUnmapMemory(video->device, flight->buffer_memory);
+		video->fn.vkDestroyBuffer(video->device, flight->buffer, NULL);
+		video->fn.vkFreeMemory(video->device, flight->buffer_memory, NULL);
+		flight->buffer = VK_NULL_HANDLE;
+		flight->buffer_memory = VK_NULL_HANDLE;
+		flight->buffer_map = NULL;
+		error = vkvideo_bitstream(video, flight, (size_t)aligned);
 		if (error != 0)
 			return error;
 	}
@@ -463,299 +558,172 @@ media_vkvideo_runtime_decode(
 	at = 0U;
 	for (slice = 0U; slice < picture->slice_count; slice++) {
 		offsets[slice] = (uint32_t)at;
-		video->buffer_map[at] = 0U;
-		video->buffer_map[at + 1U] = 0U;
-		video->buffer_map[at + 2U] = 1U;
-		memcpy(video->buffer_map + at + 3U, stream->data + picture->slice_offsets[slice], picture->slice_sizes[slice]);
+		flight->buffer_map[at] = 0U;
+		flight->buffer_map[at + 1U] = 0U;
+		flight->buffer_map[at + 2U] = 1U;
+		memcpy(flight->buffer_map + at + 3U, stream->data + picture->slice_offsets[slice], picture->slice_sizes[slice]);
 		at += 3U + picture->slice_sizes[slice];
 	}
 
 	/* Zero only the required alignment padding after the final slice. */
-	memset(video->buffer_map + at, 0, (size_t)aligned - at);
-	if (!video->buffer_coherent) {
-		error = vkvideo_mapped_range(video, video->buffer_memory, 0);
+	memset(flight->buffer_map + at, 0, (size_t)aligned - at);
+	if (!flight->buffer_coherent) {
+		error = vkvideo_mapped_range(video, flight->buffer_memory, 0);
 		if (error != 0)
 			return error;
 	}
 
-	/* Every slot's picture resource: its image's coded picture of the sequence. */
-	sps = &stream->sps[picture->info.seq_parameter_set_id];
-	memset(resources, 0, sizeof(resources));
-	for (slot = 0U; slot < video->slots; slot++) {
-		resources[slot].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
-		resources[slot].codedExtent.width = (sps->pic_width_in_mbs_minus1 + 1U) * 16U;
-		resources[slot].codedExtent.height = (sps->pic_height_in_map_units_minus1 + 1U) * 16U;
-		resources[slot].imageViewBinding = video->view[slot];
-	}
-
-	/* The command buffer from its start. */
-	memset(&record, 0, sizeof(record));
-	record.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	record.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	result = video->fn.vkBeginCommandBuffer(video->command, &record);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkBeginCommandBuffer");
-		return error;
-	}
-
-	/* The status query starts unavailable, outside the scope. */
-	if (video->status_pool != VK_NULL_HANDLE)
-		video->fn.vkCmdResetQueryPool(video->command, video->status_pool, 0U, 1U);
-
-	/* Initial allocation transitions occur once; coding reset after seek preserves established layouts. */
-	if (!video->initialized) {
-		for (slot = 0U; slot < video->slots; slot++)
-			vkvideo_barrier(video, video->command, video->image[slot], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, VK_PIPELINE_STAGE_2_NONE, 0U, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR);
-		if (video->distinct)
-			vkvideo_barrier(video, video->command, video->image[video->slots], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR, VK_PIPELINE_STAGE_2_NONE, 0U, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR);
-	}
-
-	/* Select either the coincident current DPB image or the distinct output image. */
-	output_slot = (uint32_t)plan->setup;
+	/* The picture's output: its slot's image, or the distinct output image. */
 	output_layout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
-	destination = resources[plan->setup];
+	flight->slot = (uint32_t)plan->setup;
 	if (video->distinct) {
-		output_slot = video->slots;
 		output_layout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
-		destination.imageViewBinding = video->view[output_slot];
+		flight->slot = video->slots;
 	}
 
-	/* The scope's slots: the references, the deactivated slots, the written picture without a slot. */
-	memset(bound, 0, sizeof(bound));
-	count = 0U;
-	for (index = 0U; index < plan->reference_count; index++) {
-		bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-		bound[count].slotIndex = plan->references[index];
-		bound[count].pPictureResource = &resources[plan->references[index]];
-		count++;
-	}
+	/* The crop of the sequence, for the copy into the CPU picture. */
+	sps = &stream->sps[picture->info.seq_parameter_set_id];
+	flight->crop_x = sps->frame_crop_left_offset * 2U;
+	flight->crop_y = sps->frame_crop_top_offset * 2U;
+	flight->output = output;
 
-	/* Deactivate stale device slots before associating the new current picture. */
-	for (index = 0U; index < plan->deactivate_count; index++) {
-		bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-		bound[count].slotIndex = plan->deactivate[index];
-		bound[count].pPictureResource = NULL;
-		count++;
-	}
-
-	/* Bind the current picture resource without an old reference-slot association. */
-	bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-	bound[count].slotIndex = -1;
-	bound[count].pPictureResource = &resources[plan->setup];
-	count++;
-
-	/* The scope, and the reset of the first decode. */
-	memset(&begin, 0, sizeof(begin));
-	begin.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
-	begin.videoSession = video->session;
-	begin.videoSessionParameters = video->parameters;
-	begin.referenceSlotCount = count;
-	begin.pReferenceSlots = bound;
-	video->fn.vkCmdBeginVideoCodingKHR(video->command, &begin);
-	if (plan->reset || video->reset) {
-		memset(&control, 0, sizeof(control));
-		control.sType = VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR;
-		control.flags = VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
-		video->fn.vkCmdControlVideoCodingKHR(video->command, &control);
-	}
-
-	/* The references with their information. */
-	memset(references, 0, sizeof(references));
-	memset(reference_info, 0, sizeof(reference_info));
-	for (index = 0U; index < plan->reference_count; index++) {
-		reference_info[index].sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
-		reference_info[index].pStdReferenceInfo = &plan->info[index];
-		references[index].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-		references[index].pNext = &reference_info[index];
-		references[index].slotIndex = plan->references[index];
-		references[index].pPictureResource = &resources[plan->references[index]];
-	}
-
-	/* The written slot, with the picture's own information. */
-	memset(&setup_info, 0, sizeof(setup_info));
-	setup_info.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
-	setup_info.pStdReferenceInfo = &plan->setup_info;
-	memset(&setup, 0, sizeof(setup));
-	setup.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-	setup.pNext = &setup_info;
-	setup.slotIndex = plan->setup;
-	setup.pPictureResource = &resources[plan->setup];
-
-	/* The decode: the slices into the written slot's picture. */
-	memset(&h264, 0, sizeof(h264));
-	h264.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR;
-	h264.pStdPictureInfo = &picture->info;
-	h264.sliceCount = picture->slice_count;
-	h264.pSliceOffsets = offsets;
-	memset(&decode, 0, sizeof(decode));
-	decode.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
-	decode.pNext = &h264;
-	decode.srcBuffer = video->buffer;
-	decode.srcBufferOffset = 0U;
-	decode.srcBufferRange = aligned;
-	decode.dstPictureResource = destination;
-	decode.pSetupReferenceSlot = &setup;
-	decode.referenceSlotCount = plan->reference_count;
-	decode.pReferenceSlots = references;
-	if (video->status_pool != VK_NULL_HANDLE)
-		video->fn.vkCmdBeginQuery(video->command, video->status_pool, 0U, 0U);
-	video->fn.vkCmdDecodeVideoKHR(video->command, &decode);
-	if (video->status_pool != VK_NULL_HANDLE)
-		video->fn.vkCmdEndQuery(video->command, video->status_pool, 0U);
-
-	/* The scope's end. */
-	memset(&end, 0, sizeof(end));
-	end.sType = VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR;
-	video->fn.vkCmdEndVideoCodingKHR(video->command, &end);
-
-	/* Read both NV12 planes in their standard sample coordinates, never an optimal image's host layout. */
-	vkvideo_barrier(video, video->command, video->image[output_slot], output_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_NONE, 0U);
-	result = video->fn.vkEndCommandBuffer(video->command);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkEndCommandBuffer video");
+	/* The decode's and the readback's command buffers. */
+	error = vkvideo_record_decode(video, flight, stream, picture, plan, aligned, offsets);
+	if (error != 0)
 		return error;
-	}
-
-	/* Begin transfer recording after the video coding scope was closed. */
-	result = video->fn.vkBeginCommandBuffer(video->transfer_command, &record);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkBeginCommandBuffer transfer");
+	error = vkvideo_record_readback(video, flight, output_layout);
+	if (error != 0)
 		return error;
-	}
 
-	/* Describe both NV12 planes using standard per-plane sample coordinates. */
-	memset(copies, 0, sizeof(copies));
-	copies[0].imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-	copies[0].imageSubresource.layerCount = 1U;
-	copies[0].imageExtent.width = video->extent.width;
-	copies[0].imageExtent.height = video->extent.height;
-	copies[0].imageExtent.depth = 1U;
-	copies[1].bufferOffset = (VkDeviceSize)video->extent.width * video->extent.height;
-	copies[1].imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-	copies[1].imageSubresource.layerCount = 1U;
-	copies[1].imageExtent.width = video->extent.width / 2U;
-	copies[1].imageExtent.height = video->extent.height / 2U;
-	copies[1].imageExtent.depth = 1U;
-	video->fn.vkCmdCopyImageToBuffer(video->transfer_command, video->image[output_slot], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, video->readback, 2U, copies);
-	vkvideo_barrier(video, video->transfer_command, video->image[output_slot], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output_layout, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_NONE, 0U);
-	memset(&host_barrier, 0, sizeof(host_barrier));
-	host_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-	host_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-	host_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-	host_barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
-	host_barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
-	host_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	host_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	host_barrier.buffer = video->readback;
-	host_barrier.size = VK_WHOLE_SIZE;
-	memset(&host_dependency, 0, sizeof(host_dependency));
-	host_dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-	host_dependency.bufferMemoryBarrierCount = 1U;
-	host_dependency.pBufferMemoryBarriers = &host_barrier;
-	video->fn.vkCmdPipelineBarrier2KHR(video->transfer_command, &host_dependency);
-	result = video->fn.vkEndCommandBuffer(video->transfer_command);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkEndCommandBuffer transfer");
-		return error;
-	}
-
-	/* Binary semaphores carry memory dependencies between dedicated video and transfer families. */
+	/* The decode signals its readback's semaphore. */
 	memset(&submit, 0, sizeof(submit));
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &video->command;
+	submit.pCommandBuffers = &flight->command;
 	submit.signalSemaphoreCount = 1U;
-	submit.pSignalSemaphores = &video->decoded;
-	wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-	if (video->returned_pending) {
-		submit.waitSemaphoreCount = 1U;
-		submit.pWaitSemaphores = &video->returned;
-		submit.pWaitDstStageMask = &wait_stage;
-	}
-
-	/* Submit decoding after attaching the preceding transfer's reverse dependency. */
+	submit.pSignalSemaphores = &flight->decoded;
 	result = video->fn.vkQueueSubmit(video->queue, 1U, &submit, VK_NULL_HANDLE);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkQueueSubmit video");
+		video->failed = error;
 		return error;
 	}
 
-	/* Retain all submission resources as soon as decoding enters the queue. */
-	video->inflight = 1;
-	video->returned_pending = 0;
-	wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-	submit.waitSemaphoreCount = 1U;
-	submit.pWaitSemaphores = &video->decoded;
-	submit.pWaitDstStageMask = &wait_stage;
-	submit.pCommandBuffers = &video->transfer_command;
-	submit.pSignalSemaphores = &video->returned;
-	result = video->fn.vkQueueSubmit(video->transfer_queue, 1U, &submit, video->fence);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkQueueSubmit transfer");
-		return error;
-	}
-
-	/* Record the reverse semaphore dependency after transfer submission succeeded. */
-	video->returned_pending = 1;
-	result = video->fn.vkWaitForFences(video->device, 1U, &video->fence, VK_TRUE, VKVIDEO_WAIT_NS);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkWaitForFences readback");
-		return error;
-	}
-
-	/* Mark both queue submissions retired only after the transfer fence completed. */
-	video->inflight = 0;
+	/* The picture is in flight from here; the first decode's layouts and a seek's reset are recorded. */
+	video->tickets++;
+	flight->ticket = video->tickets;
+	flight->state = VKVIDEO_DECODING;
 	video->initialized = 1;
 	video->reset = 0;
+	*ticket = flight->ticket;
 
-	/* The fence and the buffer for the next picture. */
-	result = video->fn.vkResetFences(video->device, 1U, &video->fence);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkResetFences");
-		return error;
+	/* The readbacks wait behind the newest decodes: the decoder takes those while the older pictures are read back. */
+	decoding = 0U;
+	for (index = 0U; index < video->flights; index++) {
+		if (video->flight[index].state == VKVIDEO_DECODING)
+			decoding++;
 	}
-
-	/* Reset video recording after resetting the retired completion fence. */
-	result = video->fn.vkResetCommandBuffer(video->command, 0U);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkResetCommandBuffer");
-		return error;
-	}
-
-	/* Reset transfer recording only after its fence has retired both submissions. */
-	result = video->fn.vkResetCommandBuffer(video->transfer_command, 0U);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkResetCommandBuffer transfer");
-		return error;
-	}
-
-	/* Whether the decode completed: its query's status, when there is one. */
-	video->status = VK_QUERY_RESULT_STATUS_COMPLETE_KHR;
-	if (video->status_pool != VK_NULL_HANDLE) {
-		result = video->fn.vkGetQueryPoolResults(video->device, video->status_pool, 0U, 1U, sizeof(video->status), &video->status, sizeof(video->status), VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
-		if (result != VK_SUCCESS) {
-			error = vkvideo_failed(result, "vkGetQueryPoolResults");
+	while (decoding > video->lag) {
+		error = vkvideo_submit_readback(video, vkvideo_oldest(video, VKVIDEO_DECODING));
+		if (error != 0)
 			return error;
-		}
+		decoding--;
 	}
 
-	/*
-	 * A status failure is an actual decode error; no unverified pixels are
-	 * exposed to the caller, which tells it apart by EBADMSG (ws236).
-	 */
-	if (video->status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)
-		return EBADMSG;
-	if (!video->readback_coherent) {
-		error = vkvideo_mapped_range(video, video->readback_memory, 1);
+	/* Succeeded: the picture is submitted; finish gives its result. */
+	return 0;
+}
+
+/*
+ * Completes a submitted picture and the ones before it: the cropped
+ * picture is in its CPU picture.  Returns 0, EBADMSG for a failed decode
+ * (no picture), or the error that ended it.
+ */
+int
+media_vkvideo_runtime_finish(
+	struct vkvideo_runtime *video,
+	uint32_t ticket)
+{
+	struct vkvideo_flight *flight;
+	struct vkvideo_result *stored;
+	uint32_t index;
+	int error;
+
+	/* Until the picture's own submission has completed. */
+	for (;;) {
+		/* A completed picture's kept result. */
+		stored = &video->results[ticket % VKVIDEO_RESULTS];
+		if (stored->ticket == ticket)
+			return stored->error;
+
+		/* The picture must still be in flight. */
+		flight = NULL;
+		for (index = 0U; index < video->flights; index++) {
+			if (video->flight[index].state != VKVIDEO_FREE && video->flight[index].ticket == ticket)
+				flight = &video->flight[index];
+		}
+
+		/* A ticket of neither is unknown (a discarded picture's result is gone). */
+		if (flight == NULL)
+			return ECANCELED;
+
+		/* The oldest picture completes first: the readbacks retire in order. */
+		flight = vkvideo_oldest(video, VKVIDEO_READING);
+		if (flight == NULL)
+			flight = vkvideo_oldest(video, VKVIDEO_DECODING);
+		error = vkvideo_complete(video, flight, 0);
 		if (error != 0)
 			return error;
 	}
+}
 
-	/* Copy cropped linear NV12 bytes only after retirement and host visibility. */
-	vkvideo_copy_output(video, sps, output);
+/*
+ * Completes every picture in flight without copying it, as at a seek: the
+ * pictures' results are gone and their CPU pictures untouched.
+ */
+void
+media_vkvideo_runtime_discard(
+	struct vkvideo_runtime *video)
+{
+	/* Each picture retires, in order. */
+	(void)vkvideo_complete_all(video, 1);
+}
 
-	/* Succeeded: the cropped CPU picture is independent of decoder and GPU image lifetime. */
-	return 0;
+/* Reports the slots whose images pictures in flight are decoded into, as a mask. */
+uint32_t
+media_vkvideo_runtime_busy(
+	const struct vkvideo_runtime *video)
+{
+	uint32_t busy;
+	uint32_t index;
+
+	/* Each submission in flight holds its slot's image. */
+	busy = 0U;
+	for (index = 0U; index < video->flights; index++) {
+		if (video->flight[index].state != VKVIDEO_FREE && video->flight[index].slot < 32U)
+			busy |= 1U << video->flight[index].slot;
+	}
+
+	/* Succeeded: the mask. */
+	return busy;
+}
+
+/* Reports the decode slots of the session (references and pictures in flight). */
+uint32_t
+media_vkvideo_runtime_slots(
+	const struct vkvideo_runtime *video)
+{
+	/* The images the session was made with. */
+	return video->slots;
+}
+
+/* Reports how many pictures may be in flight at once. */
+uint32_t
+media_vkvideo_runtime_flights(
+	const struct vkvideo_runtime *video)
+{
+	/* One per submission. */
+	return video->flights;
 }
 
 /*
@@ -767,6 +735,7 @@ media_vkvideo_runtime_close(
 {
 	uint32_t index;
 	VkResult result;
+	int inflight;
 
 	/* A null owner is valid during partial admission unwind. */
 	if (video == NULL)
@@ -777,8 +746,15 @@ media_vkvideo_runtime_close(
 		result = VK_SUCCESS;
 		if (video->fn.vkDeviceWaitIdle != NULL)
 			result = video->fn.vkDeviceWaitIdle(video->device);
+		inflight = 0;
+		for (index = 0U; index < VKVIDEO_FLIGHTS; index++) {
+			if (video->flight[index].state != VKVIDEO_FREE)
+				inflight = 1;
+		}
+
+		/* A picture in flight whose retirement could not be proven keeps the context. */
 		if (
-			video->inflight &&
+			inflight &&
 			result != VK_SUCCESS &&
 			result != VK_ERROR_DEVICE_LOST) {
 			media_log("Vulkan Video retains an unretired context after failed idle (%d)", (int)result);
@@ -788,12 +764,8 @@ media_vkvideo_runtime_close(
 		/* Destroy optional command and query resources after device retirement. */
 		if (video->status_pool != VK_NULL_HANDLE)
 			video->fn.vkDestroyQueryPool(video->device, video->status_pool, NULL);
-		if (video->fence != VK_NULL_HANDLE)
-			video->fn.vkDestroyFence(video->device, video->fence, NULL);
-		if (video->decoded != VK_NULL_HANDLE)
-			video->fn.vkDestroySemaphore(video->device, video->decoded, NULL);
-		if (video->returned != VK_NULL_HANDLE)
-			video->fn.vkDestroySemaphore(video->device, video->returned, NULL);
+		for (index = 0U; index < VKVIDEO_FLIGHTS; index++)
+			vkvideo_flight_free(video, &video->flight[index]);
 		if (video->transfer_pool != VK_NULL_HANDLE)
 			video->fn.vkDestroyCommandPool(video->device, video->transfer_pool, NULL);
 		if (video->pool != VK_NULL_HANDLE)
@@ -804,18 +776,6 @@ media_vkvideo_runtime_close(
 			video->fn.vkDestroyVideoSessionKHR(video->device, video->session, NULL);
 		for (index = 0U; index < video->session_memory_count; index++)
 			video->fn.vkFreeMemory(video->device, video->session_memory[index], NULL);
-		if (video->readback_map != NULL)
-			video->fn.vkUnmapMemory(video->device, video->readback_memory);
-		if (video->readback != VK_NULL_HANDLE)
-			video->fn.vkDestroyBuffer(video->device, video->readback, NULL);
-		if (video->readback_memory != VK_NULL_HANDLE)
-			video->fn.vkFreeMemory(video->device, video->readback_memory, NULL);
-		if (video->buffer_map != NULL)
-			video->fn.vkUnmapMemory(video->device, video->buffer_memory);
-		if (video->buffer != VK_NULL_HANDLE)
-			video->fn.vkDestroyBuffer(video->device, video->buffer, NULL);
-		if (video->buffer_memory != VK_NULL_HANDLE)
-			video->fn.vkFreeMemory(video->device, video->buffer_memory, NULL);
 		for (index = 0U; index < H264_DPB_SLOTS + 1U; index++) {
 			if (video->view[index] != VK_NULL_HANDLE)
 				video->fn.vkDestroyImageView(video->device, video->view[index], NULL);
@@ -867,13 +827,17 @@ vkvideo_resources(
 			return error;
 	}
 
-	/* Create the host source buffer before the staging readback buffer. */
-	error = vkvideo_bitstream(video, 1024U * 1024U);
-	if (error != 0)
-		return error;
-	error = vkvideo_readback(video);
-	if (error != 0)
-		return error;
+	/* Each submission's host source buffer before its staging readback buffer. */
+	for (slot = 0U; slot < video->flights; slot++) {
+		error = vkvideo_bitstream(video, &video->flight[slot], 1024U * 1024U);
+		if (error != 0)
+			return error;
+		error = vkvideo_readback(video, &video->flight[slot]);
+		if (error != 0)
+			return error;
+	}
+
+	/* The pools, and each submission's commands and synchronization. */
 	error = vkvideo_commands(video);
 	if (error != 0)
 		return error;
@@ -962,6 +926,7 @@ vkvideo_picture(
 static int
 vkvideo_bitstream(
 	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight,
 	size_t bytes)
 {
 	VkBufferCreateInfo buffer;
@@ -971,39 +936,39 @@ vkvideo_bitstream(
 	int error;
 
 	/* The buffer: whole pages, a decode's source, of the profile. */
-	video->buffer_size = ((VkDeviceSize)bytes + 4095U) & ~(VkDeviceSize)4095U;
+	flight->buffer_size = ((VkDeviceSize)bytes + 4095U) & ~(VkDeviceSize)4095U;
 	memset(&buffer, 0, sizeof(buffer));
 	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	buffer.pNext = &video->profile_list;
-	buffer.size = video->buffer_size;
+	buffer.size = flight->buffer_size;
 	buffer.usage = VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR;
 	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	result = video->fn.vkCreateBuffer(video->device, &buffer, NULL, &video->buffer);
+	result = video->fn.vkCreateBuffer(video->device, &buffer, NULL, &flight->buffer);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkCreateBuffer");
 		return error;
 	}
 
 	/* Its memory, bound and mapped. */
-	video->fn.vkGetBufferMemoryRequirements(video->device, video->buffer, &requirements);
-	error = vkvideo_allocate(video, &requirements, 1, &video->buffer_memory, &video->buffer_coherent);
+	video->fn.vkGetBufferMemoryRequirements(video->device, flight->buffer, &requirements);
+	error = vkvideo_allocate(video, &requirements, 1, &flight->buffer_memory, &flight->buffer_coherent);
 	if (error != 0)
 		return error;
-	result = video->fn.vkBindBufferMemory(video->device, video->buffer, video->buffer_memory, 0U);
+	result = video->fn.vkBindBufferMemory(video->device, flight->buffer, flight->buffer_memory, 0U);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkBindBufferMemory");
 		return error;
 	}
 
 	/* Map the newly bound compressed source allocation for host writes. */
-	result = video->fn.vkMapMemory(video->device, video->buffer_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	result = video->fn.vkMapMemory(video->device, flight->buffer_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkMapMemory");
 		return error;
 	}
 
 	/* Publish the source mapping only after mapping succeeded. */
-	video->buffer_map = map;
+	flight->buffer_map = map;
 
 	/* Succeeded: the buffer. */
 	return 0;
@@ -1078,19 +1043,17 @@ vkvideo_session(
 	return 0;
 }
 
-/* Create family-specific command pools, completion fence and cross-queue semaphores. */
+/* Create the family-specific command pools, each submission's commands and synchronization, and the status queries. */
 static int
 vkvideo_commands(
 	struct vkvideo_runtime *video)
 {
 	VkCommandPoolCreateInfo pool;
-	VkCommandBufferAllocateInfo command;
-	VkFenceCreateInfo fence;
-	VkSemaphoreCreateInfo semaphore;
 	VkResult result;
+	uint32_t index;
 	int error;
 
-	/* The pool, whose buffer is reset before each picture. */
+	/* The pool, whose buffers are reset before each picture. */
 	memset(&pool, 0, sizeof(pool));
 	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -1101,28 +1064,7 @@ vkvideo_commands(
 		return error;
 	}
 
-	/* The buffer. */
-	memset(&command, 0, sizeof(command));
-	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	command.commandPool = video->pool;
-	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command.commandBufferCount = 1U;
-	result = video->fn.vkAllocateCommandBuffers(video->device, &command, &video->command);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkAllocateCommandBuffers");
-		return error;
-	}
-
-	/* The fence. */
-	memset(&fence, 0, sizeof(fence));
-	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	result = video->fn.vkCreateFence(video->device, &fence, NULL, &video->fence);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkCreateFence");
-		return error;
-	}
-
-	/* A separate transfer command permits drivers with a dedicated video-only queue. */
+	/* A separate transfer pool permits drivers with a dedicated video-only queue. */
 	pool.queueFamilyIndex = video->transfer_family;
 	result = video->fn.vkCreateCommandPool(video->device, &pool, NULL, &video->transfer_pool);
 	if (result != VK_SUCCESS) {
@@ -1130,37 +1072,103 @@ vkvideo_commands(
 		return error;
 	}
 
-	/* Allocate the transfer command from the transfer family's pool. */
-	command.commandPool = video->transfer_pool;
-	result = video->fn.vkAllocateCommandBuffers(video->device, &command, &video->transfer_command);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkAllocateCommandBuffers transfer");
-		return error;
+	/* Each submission's command buffers, fence and semaphore. */
+	for (index = 0U; index < video->flights; index++) {
+		error = vkvideo_flight_commands(video, &video->flight[index]);
+		if (error != 0)
+			return error;
 	}
 
-	/* Create the decode-to-transfer semaphore before its reverse counterpart. */
-	memset(&semaphore, 0, sizeof(semaphore));
-	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	result = video->fn.vkCreateSemaphore(video->device, &semaphore, NULL, &video->decoded);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkCreateSemaphore decoded");
-		return error;
-	}
-
-	/* Create the transfer-to-next-decode semaphore independently. */
-	result = video->fn.vkCreateSemaphore(video->device, &semaphore, NULL, &video->returned);
-	if (result != VK_SUCCESS) {
-		error = vkvideo_failed(result, "vkCreateSemaphore returned");
-		return error;
-	}
-
-	/* The result status query, where the family has it. */
+	/* The result status queries, where the family has them. */
 	error = vkvideo_status_pool(video);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the commands. */
 	return 0;
+}
+
+/* Create one submission's decode and transfer command buffers, its readback fence and its decode-to-transfer semaphore. */
+static int
+vkvideo_flight_commands(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight)
+{
+	VkCommandBufferAllocateInfo command;
+	VkFenceCreateInfo fence;
+	VkSemaphoreCreateInfo semaphore;
+	VkResult result;
+	int error;
+
+	/* The decode's buffer. */
+	memset(&command, 0, sizeof(command));
+	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	command.commandPool = video->pool;
+	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	command.commandBufferCount = 1U;
+	result = video->fn.vkAllocateCommandBuffers(video->device, &command, &flight->command);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkAllocateCommandBuffers");
+		return error;
+	}
+
+	/* The readback's buffer, from the transfer family's pool. */
+	command.commandPool = video->transfer_pool;
+	result = video->fn.vkAllocateCommandBuffers(video->device, &command, &flight->transfer_command);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkAllocateCommandBuffers transfer");
+		return error;
+	}
+
+	/* The readback's fence. */
+	memset(&fence, 0, sizeof(fence));
+	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	result = video->fn.vkCreateFence(video->device, &fence, NULL, &flight->fence);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkCreateFence");
+		return error;
+	}
+
+	/* The decode-to-readback semaphore. */
+	memset(&semaphore, 0, sizeof(semaphore));
+	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	result = video->fn.vkCreateSemaphore(video->device, &semaphore, NULL, &flight->decoded);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkCreateSemaphore decoded");
+		return error;
+	}
+
+	/* Succeeded: the submission can carry a picture. */
+	return 0;
+}
+
+/* Destroy one submission's synchronization and buffers after device retirement (command buffers go with their pools). */
+static void
+vkvideo_flight_free(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight)
+{
+	/* The fence and the semaphore. */
+	if (flight->fence != VK_NULL_HANDLE)
+		video->fn.vkDestroyFence(video->device, flight->fence, NULL);
+	if (flight->decoded != VK_NULL_HANDLE)
+		video->fn.vkDestroySemaphore(video->device, flight->decoded, NULL);
+
+	/* The readback buffer. */
+	if (flight->readback_map != NULL)
+		video->fn.vkUnmapMemory(video->device, flight->readback_memory);
+	if (flight->readback != VK_NULL_HANDLE)
+		video->fn.vkDestroyBuffer(video->device, flight->readback, NULL);
+	if (flight->readback_memory != VK_NULL_HANDLE)
+		video->fn.vkFreeMemory(video->device, flight->readback_memory, NULL);
+
+	/* The bitstream buffer. */
+	if (flight->buffer_map != NULL)
+		video->fn.vkUnmapMemory(video->device, flight->buffer_memory);
+	if (flight->buffer != VK_NULL_HANDLE)
+		video->fn.vkDestroyBuffer(video->device, flight->buffer, NULL);
+	if (flight->buffer_memory != VK_NULL_HANDLE)
+		video->fn.vkFreeMemory(video->device, flight->buffer_memory, NULL);
 }
 
 /* Create a decode-status query only when the selected queue family exposes it. */
@@ -1173,16 +1181,15 @@ vkvideo_status_pool(
 	int error;
 
 	/* No status: every decode counts as complete. */
-	video->status = VK_QUERY_RESULT_STATUS_COMPLETE_KHR;
 	if (!video->status_supported)
 		return 0;
 
-	/* One query of the decode's profile. */
+	/* One query of the decode's profile for each submission. */
 	memset(&info, 0, sizeof(info));
 	info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 	info.pNext = &video->profile;
 	info.queryType = VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR;
-	info.queryCount = 1U;
+	info.queryCount = video->flights;
 	result = video->fn.vkCreateQueryPool(video->device, &info, NULL, &video->status_pool);
 	if (result != VK_SUCCESS) {
 		video->status_pool = VK_NULL_HANDLE;
@@ -1463,6 +1470,8 @@ vkvideo_capabilities(
 		return ENOTSUP;
 	if (video->level > video->h264_caps.maxLevelIdc)
 		return ENOTSUP;
+	video->flights = 1U;
+	video->slots = video->max_references + 1U;
 	if (video->slots > video->capabilities.maxDpbSlots || video->max_references > video->capabilities.maxActiveReferencePictures)
 		return ENOTSUP;
 	if (video->capabilities.minBitstreamBufferSizeAlignment == 0U || video->capabilities.minBitstreamBufferSizeAlignment > VKVIDEO_SOURCE_MAX)
@@ -1489,6 +1498,27 @@ vkvideo_capabilities(
 		if (error != 0)
 			return error;
 	}
+
+	/*
+	 * Pictures in flight: each holds its slot until it is read back, so
+	 * the slots grow by them within the device's limit.  Only a device
+	 * whose decode and transfer share a family and whose output is the
+	 * DPB picture takes more than one (the readback then moves the
+	 * output to the transfer layout itself).
+	 */
+	if (!video->distinct && video->family == video->transfer_family) {
+		while (video->flights < VKVIDEO_FLIGHTS && video->max_references + video->flights + 1U <= video->capabilities.maxDpbSlots)
+			video->flights++;
+		video->slots = video->max_references + video->flights;
+	}
+
+	/* The readbacks wait behind the newest decodes (all but two of the pictures in flight) and move the output's layout themselves. */
+	video->lag = 0U;
+	if (video->flights > 2U)
+		video->lag = video->flights - 2U;
+	video->late_barrier = 0;
+	if (video->flights > 1U)
+		video->late_barrier = 1;
 
 	/* Image allocation extent follows picture-access granularity, while coded extent remains the actual sequence size. */
 	granularity = video->capabilities.pictureAccessGranularity;
@@ -1725,7 +1755,8 @@ vkvideo_allocate(
 /* Allocate a linear transfer destination with standard host visibility, independent of image tiling. */
 static int
 vkvideo_readback(
-	struct vkvideo_runtime *video)
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight)
 {
 	VkBufferCreateInfo info;
 	VkMemoryRequirements requirements;
@@ -1739,32 +1770,32 @@ vkvideo_readback(
 	info.size = (VkDeviceSize)video->extent.width * video->extent.height * 3U / 2U;
 	info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	result = video->fn.vkCreateBuffer(video->device, &info, NULL, &video->readback);
+	result = video->fn.vkCreateBuffer(video->device, &info, NULL, &flight->readback);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkCreateBuffer");
 		return error;
 	}
 
 	/* Query staging-buffer memory before allocating its host-visible storage. */
-	video->fn.vkGetBufferMemoryRequirements(video->device, video->readback, &requirements);
-	error = vkvideo_allocate(video, &requirements, 1, &video->readback_memory, &video->readback_coherent);
+	video->fn.vkGetBufferMemoryRequirements(video->device, flight->readback, &requirements);
+	error = vkvideo_allocate(video, &requirements, 1, &flight->readback_memory, &flight->readback_coherent);
 	if (error != 0)
 		return error;
-	result = video->fn.vkBindBufferMemory(video->device, video->readback, video->readback_memory, 0U);
+	result = video->fn.vkBindBufferMemory(video->device, flight->readback, flight->readback_memory, 0U);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkBindBufferMemory");
 		return error;
 	}
 
 	/* Map the newly bound staging allocation for host reads. */
-	result = video->fn.vkMapMemory(video->device, video->readback_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
+	result = video->fn.vkMapMemory(video->device, flight->readback_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkMapMemory");
 		return error;
 	}
 
 	/* Publish the readback mapping only after mapping succeeded. */
-	video->readback_map = map;
+	flight->readback_map = map;
 
 	/* Succeeded: the CPU can inspect the transfer result after its fence and cache invalidation. */
 	return 0;
@@ -1837,28 +1868,456 @@ vkvideo_barrier(
 	video->fn.vkCmdPipelineBarrier2KHR(command, &dependency);
 }
 
-/* Copy the cropped coded planes into an independently retained CPU picture after GPU retirement. */
+/* Copy a submission's cropped coded planes into its independently retained CPU picture after GPU retirement. */
 static void
 vkvideo_copy_output(
 	struct vkvideo_runtime *video,
-	const StdVideoH264SequenceParameterSet *sps,
-	struct media_picture *output)
+	const struct vkvideo_flight *flight)
 {
+	struct media_picture *output;
 	unsigned row;
 	unsigned x;
 	unsigned y;
 	const uint8_t *luma;
 	const uint8_t *chroma;
 
-	/* Progressive 4:2:0 crop units are two luma samples in each direction. */
-	x = sps->frame_crop_left_offset * 2U;
-	y = sps->frame_crop_top_offset * 2U;
-	luma = video->readback_map + (size_t)y * video->extent.width + x;
-	chroma = video->readback_map + (size_t)video->extent.width * video->extent.height + (size_t)(y / 2U) * video->extent.width + x;
+	/* Progressive 4:2:0 crop units are two luma samples in each direction (the submission kept them in samples). */
+	output = flight->output;
+	x = flight->crop_x;
+	y = flight->crop_y;
+	luma = flight->readback_map + (size_t)y * video->extent.width + x;
+	chroma = flight->readback_map + (size_t)video->extent.width * video->extent.height + (size_t)(y / 2U) * video->extent.width + x;
 	for (row = 0U; row < output->height; row++)
 		memcpy(output->luma + (size_t)row * output->pitch, luma + (size_t)row * video->extent.width, output->width);
 	for (row = 0U; row < (output->height + 1U) / 2U; row++)
 		memcpy(output->chroma + (size_t)row * output->pitch, chroma + (size_t)row * video->extent.width, (output->width + 1U) & ~1U);
+}
+
+/* Reports the oldest submission in a state, or NULL. */
+static struct vkvideo_flight *
+vkvideo_oldest(
+	struct vkvideo_runtime *video,
+	enum vkvideo_state state)
+{
+	struct vkvideo_flight *oldest;
+	uint32_t index;
+
+	/* The smallest ticket of the state. */
+	oldest = NULL;
+	for (index = 0U; index < video->flights; index++) {
+		if (video->flight[index].state != state)
+			continue;
+		if (oldest == NULL || video->flight[index].ticket < oldest->ticket)
+			oldest = &video->flight[index];
+	}
+
+	/* Succeeded: the oldest, if any. */
+	return oldest;
+}
+
+/* Records one picture's decode into its submission's decode command buffer. */
+static int
+vkvideo_record_decode(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight,
+	const struct h264_stream *stream,
+	const struct h264_picture *picture,
+	const struct h264_dpb_plan *plan,
+	VkDeviceSize range,
+	const uint32_t *offsets)
+{
+	VkVideoPictureResourceInfoKHR resources[H264_DPB_SLOTS];
+	VkVideoReferenceSlotInfoKHR bound[H264_DPB_SLOTS * 2U];
+	VkVideoReferenceSlotInfoKHR references[H264_DPB_REFERENCES];
+	VkVideoDecodeH264DpbSlotInfoKHR reference_info[H264_DPB_REFERENCES];
+	VkVideoDecodeH264DpbSlotInfoKHR setup_info;
+	VkVideoDecodeH264PictureInfoKHR h264;
+	VkVideoReferenceSlotInfoKHR setup;
+	VkVideoBeginCodingInfoKHR begin;
+	VkVideoCodingControlInfoKHR control;
+	VkVideoDecodeInfoKHR decode;
+	VkVideoEndCodingInfoKHR end;
+	VkCommandBufferBeginInfo record;
+	VkVideoPictureResourceInfoKHR destination;
+	VkImageLayout output_layout;
+	const StdVideoH264SequenceParameterSet *sps;
+	VkResult result;
+	uint32_t query;
+	uint32_t slot;
+	uint32_t index;
+	uint32_t count;
+	int error;
+
+	/* Every slot's picture resource: its image's coded picture of the sequence. */
+	sps = &stream->sps[picture->info.seq_parameter_set_id];
+	memset(resources, 0, sizeof(resources));
+	for (slot = 0U; slot < video->slots; slot++) {
+		resources[slot].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+		resources[slot].codedExtent.width = (sps->pic_width_in_mbs_minus1 + 1U) * 16U;
+		resources[slot].codedExtent.height = (sps->pic_height_in_map_units_minus1 + 1U) * 16U;
+		resources[slot].imageViewBinding = video->view[slot];
+	}
+
+	/* The command buffer from its start. */
+	memset(&record, 0, sizeof(record));
+	record.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	record.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = video->fn.vkBeginCommandBuffer(flight->command, &record);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkBeginCommandBuffer");
+		return error;
+	}
+
+	/* The submission's own status query starts unavailable, outside the scope. */
+	query = (uint32_t)(flight - video->flight);
+	if (video->status_pool != VK_NULL_HANDLE)
+		video->fn.vkCmdResetQueryPool(flight->command, video->status_pool, query, 1U);
+
+	/* Initial allocation transitions occur once; coding reset after seek preserves established layouts. */
+	if (!video->initialized) {
+		for (slot = 0U; slot < video->slots; slot++)
+			vkvideo_barrier(video, flight->command, video->image[slot], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, VK_PIPELINE_STAGE_2_NONE, 0U, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR);
+		if (video->distinct)
+			vkvideo_barrier(video, flight->command, video->image[video->slots], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR, VK_PIPELINE_STAGE_2_NONE, 0U, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR);
+	}
+
+	/* Select either the coincident current DPB image or the distinct output image. */
+	output_layout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+	destination = resources[plan->setup];
+	if (video->distinct) {
+		output_layout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
+		destination.imageViewBinding = video->view[video->slots];
+	}
+
+	/* The scope's slots: the references, the deactivated slots, the written picture without a slot. */
+	memset(bound, 0, sizeof(bound));
+	count = 0U;
+	for (index = 0U; index < plan->reference_count; index++) {
+		bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+		bound[count].slotIndex = plan->references[index];
+		bound[count].pPictureResource = &resources[plan->references[index]];
+		count++;
+	}
+
+	/* Deactivate stale device slots before associating the new current picture. */
+	for (index = 0U; index < plan->deactivate_count; index++) {
+		bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+		bound[count].slotIndex = plan->deactivate[index];
+		bound[count].pPictureResource = NULL;
+		count++;
+	}
+
+	/* Bind the current picture resource without an old reference-slot association. */
+	bound[count].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+	bound[count].slotIndex = -1;
+	bound[count].pPictureResource = &resources[plan->setup];
+	count++;
+
+	/* The scope, and the reset of the first decode. */
+	memset(&begin, 0, sizeof(begin));
+	begin.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
+	begin.videoSession = video->session;
+	begin.videoSessionParameters = video->parameters;
+	begin.referenceSlotCount = count;
+	begin.pReferenceSlots = bound;
+	video->fn.vkCmdBeginVideoCodingKHR(flight->command, &begin);
+	if (plan->reset || video->reset) {
+		memset(&control, 0, sizeof(control));
+		control.sType = VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR;
+		control.flags = VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
+		video->fn.vkCmdControlVideoCodingKHR(flight->command, &control);
+	}
+
+	/* The references with their information. */
+	memset(references, 0, sizeof(references));
+	memset(reference_info, 0, sizeof(reference_info));
+	for (index = 0U; index < plan->reference_count; index++) {
+		reference_info[index].sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
+		reference_info[index].pStdReferenceInfo = &plan->info[index];
+		references[index].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+		references[index].pNext = &reference_info[index];
+		references[index].slotIndex = plan->references[index];
+		references[index].pPictureResource = &resources[plan->references[index]];
+	}
+
+	/* The written slot, with the picture's own information. */
+	memset(&setup_info, 0, sizeof(setup_info));
+	setup_info.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
+	setup_info.pStdReferenceInfo = &plan->setup_info;
+	memset(&setup, 0, sizeof(setup));
+	setup.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+	setup.pNext = &setup_info;
+	setup.slotIndex = plan->setup;
+	setup.pPictureResource = &resources[plan->setup];
+
+	/* The decode: the slices into the written slot's picture. */
+	memset(&h264, 0, sizeof(h264));
+	h264.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR;
+	h264.pStdPictureInfo = &picture->info;
+	h264.sliceCount = picture->slice_count;
+	h264.pSliceOffsets = offsets;
+	memset(&decode, 0, sizeof(decode));
+	decode.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
+	decode.pNext = &h264;
+	decode.srcBuffer = flight->buffer;
+	decode.srcBufferOffset = 0U;
+	decode.srcBufferRange = range;
+	decode.dstPictureResource = destination;
+	decode.pSetupReferenceSlot = &setup;
+	decode.referenceSlotCount = plan->reference_count;
+	decode.pReferenceSlots = references;
+	if (video->status_pool != VK_NULL_HANDLE)
+		video->fn.vkCmdBeginQuery(flight->command, video->status_pool, query, 0U);
+	video->fn.vkCmdDecodeVideoKHR(flight->command, &decode);
+	if (video->status_pool != VK_NULL_HANDLE)
+		video->fn.vkCmdEndQuery(flight->command, video->status_pool, query);
+
+	/* The scope's end. */
+	memset(&end, 0, sizeof(end));
+	end.sType = VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR;
+	video->fn.vkCmdEndVideoCodingKHR(flight->command, &end);
+
+	/*
+	 * The output goes to the transfer layout here, unless the readback
+	 * does it: with pictures decoded ahead, the later decodes may still
+	 * name it as a reference in its decode layout.
+	 */
+	if (!video->late_barrier)
+		vkvideo_barrier(video, flight->command, video->image[flight->slot], output_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_NONE, 0U);
+	result = video->fn.vkEndCommandBuffer(flight->command);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkEndCommandBuffer video");
+		return error;
+	}
+
+	/* Succeeded: the decode is recorded. */
+	return 0;
+}
+
+/* Records a picture's readback of both NV12 planes into its submission's transfer command buffer. */
+static int
+vkvideo_record_readback(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight,
+	VkImageLayout output_layout)
+{
+	VkCommandBufferBeginInfo record;
+	VkBufferImageCopy copies[2];
+	VkBufferMemoryBarrier2 host_barrier;
+	VkDependencyInfo host_dependency;
+	VkResult result;
+	int error;
+
+	/* Begin transfer recording after the video coding scope was closed. */
+	memset(&record, 0, sizeof(record));
+	record.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	record.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	result = video->fn.vkBeginCommandBuffer(flight->transfer_command, &record);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkBeginCommandBuffer transfer");
+		return error;
+	}
+
+	/* With pictures decoded ahead, the output goes to the transfer layout only now (same queue family). */
+	if (video->late_barrier)
+		vkvideo_barrier(video, flight->transfer_command, video->image[flight->slot], output_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+
+	/* Describe both NV12 planes using standard per-plane sample coordinates. */
+	memset(copies, 0, sizeof(copies));
+	copies[0].imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+	copies[0].imageSubresource.layerCount = 1U;
+	copies[0].imageExtent.width = video->extent.width;
+	copies[0].imageExtent.height = video->extent.height;
+	copies[0].imageExtent.depth = 1U;
+	copies[1].bufferOffset = (VkDeviceSize)video->extent.width * video->extent.height;
+	copies[1].imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+	copies[1].imageSubresource.layerCount = 1U;
+	copies[1].imageExtent.width = video->extent.width / 2U;
+	copies[1].imageExtent.height = video->extent.height / 2U;
+	copies[1].imageExtent.depth = 1U;
+	video->fn.vkCmdCopyImageToBuffer(flight->transfer_command, video->image[flight->slot], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, flight->readback, 2U, copies);
+	vkvideo_barrier(video, flight->transfer_command, video->image[flight->slot], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output_layout, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_NONE, 0U);
+
+	/* The host reads the buffer after the fence. */
+	memset(&host_barrier, 0, sizeof(host_barrier));
+	host_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+	host_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+	host_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	host_barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+	host_barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+	host_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	host_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	host_barrier.buffer = flight->readback;
+	host_barrier.size = VK_WHOLE_SIZE;
+	memset(&host_dependency, 0, sizeof(host_dependency));
+	host_dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	host_dependency.bufferMemoryBarrierCount = 1U;
+	host_dependency.pBufferMemoryBarriers = &host_barrier;
+	video->fn.vkCmdPipelineBarrier2KHR(flight->transfer_command, &host_dependency);
+	result = video->fn.vkEndCommandBuffer(flight->transfer_command);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkEndCommandBuffer transfer");
+		return error;
+	}
+
+	/* Succeeded: the readback is recorded. */
+	return 0;
+}
+
+/* Submits a decoding picture's readback, behind its decode's semaphore, with its fence. */
+static int
+vkvideo_submit_readback(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight)
+{
+	VkSubmitInfo submit;
+	VkPipelineStageFlags wait_stage;
+	VkResult result;
+	int error;
+
+	/* The readback waits for the decode. */
+	wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	memset(&submit, 0, sizeof(submit));
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.waitSemaphoreCount = 1U;
+	submit.pWaitSemaphores = &flight->decoded;
+	submit.pWaitDstStageMask = &wait_stage;
+	submit.commandBufferCount = 1U;
+	submit.pCommandBuffers = &flight->transfer_command;
+	result = video->fn.vkQueueSubmit(video->transfer_queue, 1U, &submit, flight->fence);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkQueueSubmit transfer");
+		video->failed = error;
+		return error;
+	}
+
+	/* Succeeded: the picture is read back when the fence signals. */
+	flight->state = VKVIDEO_READING;
+	return 0;
+}
+
+/*
+ * Completes one picture in flight: its readback is submitted if it was not
+ * (with one more picture's behind it, so the next readback runs while
+ * this picture is copied), its fence waited for and its status read, then
+ * the cropped picture is copied out unless discard.  The result is kept
+ * for media_vkvideo_runtime_finish; a failure to wait ends the runtime.
+ */
+static int
+vkvideo_complete(
+	struct vkvideo_runtime *video,
+	struct vkvideo_flight *flight,
+	int discard)
+{
+	struct vkvideo_flight *next;
+	VkResult result;
+	int32_t status;
+	int outcome;
+	int error;
+
+	/* The readbacks are submitted in order: every older decoding picture's, then this one's. */
+	while (flight->state == VKVIDEO_DECODING) {
+		error = vkvideo_submit_readback(video, vkvideo_oldest(video, VKVIDEO_DECODING));
+		if (error != 0)
+			return error;
+	}
+
+	/* The next picture's readback goes now too, so it runs while this picture is copied. */
+	next = vkvideo_oldest(video, VKVIDEO_DECODING);
+	if (next != NULL && video->lag != 0U && !discard) {
+		error = vkvideo_submit_readback(video, next);
+		if (error != 0)
+			return error;
+	}
+
+	/* The readback's fence. */
+	result = video->fn.vkWaitForFences(video->device, 1U, &flight->fence, VK_TRUE, VKVIDEO_WAIT_NS);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkWaitForFences readback");
+		video->failed = error;
+		return error;
+	}
+
+	/* The fence and both command buffers for the submission's next picture. */
+	result = video->fn.vkResetFences(video->device, 1U, &flight->fence);
+	if (result == VK_SUCCESS)
+		result = video->fn.vkResetCommandBuffer(flight->command, 0U);
+	if (result == VK_SUCCESS)
+		result = video->fn.vkResetCommandBuffer(flight->transfer_command, 0U);
+	if (result != VK_SUCCESS) {
+		error = vkvideo_failed(result, "vkResetFences or vkResetCommandBuffer");
+		video->failed = error;
+		return error;
+	}
+
+	/* Whether the decode completed: its query's status, when there is one. */
+	outcome = 0;
+	status = VK_QUERY_RESULT_STATUS_COMPLETE_KHR;
+	if (video->status_pool != VK_NULL_HANDLE) {
+		result = video->fn.vkGetQueryPoolResults(video->device, video->status_pool, (uint32_t)(flight - video->flight), 1U, sizeof(status), &status, sizeof(status), VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
+		if (result != VK_SUCCESS)
+			outcome = vkvideo_failed(result, "vkGetQueryPoolResults");
+	}
+
+	/* A status failure is an actual decode error; no unverified pixels are exposed (ws236). */
+	if (outcome == 0 && status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)
+		outcome = EBADMSG;
+	if (outcome == 0 && !discard && !flight->readback_coherent)
+		outcome = vkvideo_mapped_range(video, flight->readback_memory, 1);
+
+	/* The cropped linear NV12 bytes, only after retirement and host visibility. */
+	if (outcome == 0 && !discard)
+		vkvideo_copy_output(video, flight);
+
+	/* The result waits for its question; a discarded picture has none. */
+	if (discard)
+		outcome = ECANCELED;
+	vkvideo_store(video, flight->ticket, outcome);
+	flight->state = VKVIDEO_FREE;
+	flight->output = NULL;
+
+	/* Succeeded: the submission is free; its picture's result is kept. */
+	return 0;
+}
+
+/* Completes every picture in flight, oldest first, copying them unless discard. */
+static int
+vkvideo_complete_all(
+	struct vkvideo_runtime *video,
+	int discard)
+{
+	struct vkvideo_flight *flight;
+	int error;
+
+	/* The oldest, until none is left. */
+	for (;;) {
+		flight = vkvideo_oldest(video, VKVIDEO_READING);
+		if (flight == NULL)
+			flight = vkvideo_oldest(video, VKVIDEO_DECODING);
+		if (flight == NULL)
+			break;
+		error = vkvideo_complete(video, flight, discard);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: nothing is in flight. */
+	return 0;
+}
+
+/* Keeps a completed picture's result under its ticket. */
+static void
+vkvideo_store(
+	struct vkvideo_runtime *video,
+	uint32_t ticket,
+	int error)
+{
+	struct vkvideo_result *stored;
+
+	/* The ring's place of the ticket. */
+	stored = &video->results[ticket % VKVIDEO_RESULTS];
+	stored->ticket = ticket;
+	stored->error = error;
 }
 
 /* Classify standard Vulkan admission and execution failures without hiding allocation or input errors. */
