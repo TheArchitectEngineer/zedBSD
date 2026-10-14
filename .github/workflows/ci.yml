@@ -29,9 +29,7 @@ jobs:
           make toolchain-cache
           make -j4 toolchain
 
-      - name: Build amd64
-        # The firmware is fetched (from awemorris/zedBSD-firmware, else its upstream) after its license is accepted
-        # once; "yes |" answers that question for every selected firmware before the parallel build.
+      - name: Build intel-keiland
         run: |
           cp config/ci/config-amd64.mk config.mk
           yes | make firmware-licenses
@@ -39,15 +37,31 @@ jobs:
           mkdir -p artifacts
           gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-intel.img.gz
 
-      - name: Build arm64
+      - name: Build intel-server
+        run: |
+          cp config/ci/config-amd64-server.mk config.mk
+          yes | make firmware-licenses
+          make -j4
+          mkdir -p artifacts
+          gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-intel-server.img.gz
+
+      - name: Build pi4-keiland
         run: |
           cp config/ci/config-rpi4.mk config.mk
           yes | make firmware-licenses
           make -j4
           mkdir -p artifacts
-          gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-rpi4.img.gz
+          gzip -9 -c build/arm64/hdd-image.img > artifacts/zedbsd-rpi4.img.gz
 
-      - name: Build arm64
+      - name: Build pi4-server
+        run: |
+          cp config/ci/config-rpi4-server.mk config.mk
+          yes | make firmware-licenses
+          make -j4
+          mkdir -p artifacts
+          gzip -9 -c build/arm64/hdd-image.img > artifacts/zedbsd-rpi4-server.img.gz
+
+      - name: Build pc98
         run: |
           cp config/ci/config-pc98.mk config.mk
           yes | make firmware-licenses
@@ -56,12 +70,8 @@ jobs:
           gzip -9 -c build/pc98/hdd-image.img > artifacts/zedbsd-pc98.img.gz
 
       - name: Package zedbsd-qemu.zip
-        # Until the base package is on the rev-0 release, a failure here leaves
-        # the image release as it was.
         continue-on-error: true
         run: |
-          # The Windows package (WINQ-EMU QEMU with Venus) comes from the
-          # rev-0 release, verified by the SHA-256 in tools/release/kei-nightly.mk.
           make kei-nightly-zip
           cp build/amd64/Kei-nightly.zip artifacts/zedbsd-qemu.zip
 
@@ -108,15 +118,19 @@ jobs:
             zedBSD OS
             =========
             
-            | CPU     | Machine        | File                  | Description                                  |
-            |---------|----------------|-----------------------|----------------------------------------------|
-            | x86_64  | UEFI           | `zedbsd-intel.img.gz` | USB image                                    |
-            | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4.img.gz`  | SD image                                     |
-            | i386    | NEC PC-9800    | `zedbsd-pc98.img.gz`  | CF image                                     |
-            | x86_64  | Windows        | `zedbsd-qemu.zip`     | NVMe image with QEMU binary. Run `boot.bat`. |
+            | Image         | CPU     | Machine        | File                         | Description                                  |
+            |---------------|---------|----------------|------------------------------|----------------------------------------------|
+            | Intel Keiland | x86_64  | UEFI           | `zedbsd-intel.img.gz`        | USB image                                    |
+            | Intel Server  | x86_64  | UEFI           | `zedbsd-intel-server.img.gz` | USB image                                    |
+            | Pi4 Keiland   | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4.img.gz`         | SD image                                     |
+            | Pi4 Server    | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4-server.img.gz`  | SD image                                     |
+	    | NEC PC-9800   | i386    | NEC PC-9800    | `zedbsd-pc98.img.gz`         | CF image                                     |
+	    | QEMU Win64    | x86_64  | Windows        | `zedbsd-qemu.zip`            | NVMe image with QEMU binary. Run `boot.bat`. |
 
           files: |
             artifacts/zedbsd-intel.img.gz
+            artifacts/zedbsd-intel-server.img.gz
             artifacts/zedbsd-rpi4.img.gz
+            artifacts/zedbsd-rpi4-server.img.gz
             artifacts/zedbsd-pc98.img.gz
             artifacts/zedbsd-qemu.zip
