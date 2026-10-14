@@ -689,6 +689,12 @@ test_disp_first(void)
 		0x00080370, 0x00000000, 0x00000001,
 		0x00040200, 0x00000001,
 	};
+	static const uint32_t view[13] = {
+		0x0004244c, 0x04000500, 0x00042458, 0x04000500,
+		0x0004020c, 0x00001000, 0x00080218, 0x00000000, 0x00000004, 0x00040200, 0x00000001, 0x0004020c, 0x00000000,
+	};
+	uint32_t scaled[54];
+	uint32_t flip_core[25];
 	struct nvrtx_push push;
 	struct nvrtx_disp_timing timing;
 	struct nvrtx_disp_timing back;
@@ -728,10 +734,26 @@ test_disp_first(void)
 
 	/* The first core release: S 0, display 1, TMDS-A, head 0, then the release. */
 	commit.head = 0; commit.sor = 0; commit.display_id = 1; commit.protocol = 1;
+	commit.view_in = commit.mode.active;
 	nvrtx_push_init(&push, bytes, 1024);
 	nvrtx_disp_first_core_mode(&push, &commit);
 	nvrtx_disp_first_core_release(&push, 0);
 	check(push_is(&push, first, 54), "first: core release #1 is nouveau's 54 words");
+
+	/* A 640x480 console on the 1280x1024 mode: the view in is the console's, the view out the mode's (the firmware's 01e00280 / 04000500). */
+	memcpy(scaled, first, sizeof(scaled));
+	scaled[9] = 0x01e00280;
+	commit.view_in = 0x01e00280;
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_core_mode(&push, &commit);
+	nvrtx_disp_first_core_release(&push, 0);
+	check(push_is(&push, scaled, 54), "first: a smaller console is enlarged by the head's view");
+
+	/* A change of the view on head 1 alone, and its release interlocked with window 2. */
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_core_view(&push, 1, 0x04000500, 0x04000500);
+	nvrtx_disp_first_core_release(&push, 4);
+	check(push_is(&push, view, 13), "first: a view change is nouveau's view and a core release (13 words)");
 
 	/* The output LUT and the second release, window 0 interlocked. */
 	nvrtx_push_init(&push, bytes, 1024);
@@ -749,8 +771,15 @@ test_disp_first(void)
 
 	/* A later flip: notifier (the other half), the image, no core interlock. */
 	nvrtx_push_init(&push, bytes, 1024);
-	nvrtx_disp_first_window_flip(&push, 0, &surface, 0x70);
+	nvrtx_disp_first_window_flip(&push, 0, &surface, 0x70, 0);
 	check(push_is(&push, flip, 25), "first: a flip is nouveau's commit of the plane alone (25 words)");
+
+	/* A flip with a change of the view: the same words, interlocked with the core too. */
+	memcpy(flip_core, flip, sizeof(flip_core));
+	flip_core[21] = 0x00000001;
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_window_flip(&push, 0, &surface, 0x70, 1);
+	check(push_is(&push, flip_core, 25), "first: a flip with the head's view is interlocked with the core");
 
 	/* The LUTs: identity, the last repeated. */
 	nvrtx_disp_first_olut_fill(lut);

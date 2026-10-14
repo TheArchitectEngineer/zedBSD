@@ -470,6 +470,14 @@ struct nvrtx_display_state {
 	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
 	uint32_t sor_control;
 	struct nvrtx_disp_mode mode;
+	/*
+	 * The head's viewport input size as last released (width in bits 15:0,
+	 * height in 31:16): the size of the picture the window shows.  The
+	 * console may be smaller than the mode, which the head's scaler then
+	 * enlarges; a flip to a picture of another size changes it with the
+	 * flip.  Zero until the first commit.
+	 */
+	uint32_t view_in;
 	uint32_t assigned_sor;
 	struct nvrtx_disp_surface surfaces[2];
 	struct nvrtx_bo surface_objects[2];
