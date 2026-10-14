@@ -3488,6 +3488,7 @@ static void
 report_stats(
 	uint64_t now)
 {
+	uint64_t elapsed;
 	uint32_t reports;
 
 	/* The first decode opens the first window. */
@@ -3497,14 +3498,15 @@ report_stats(
 	}
 
 	/* A window shorter than VIDEO_STATS_MS keeps counting. */
-	if (kern_ticks_to_ms(now - video_stats.window_start) < VIDEO_STATS_MS)
+	elapsed = kern_ticks_to_ms(now - video_stats.window_start);
+	if (elapsed < VIDEO_STATS_MS)
 		return;
 
 	/* The averages of the window, while the boot's lines last. */
 	if (video_stats.reports < VIDEO_STATS_REPORTS) {
 		kern_logf("v3d: video: %u decodes in %llu ms (%u skipped, %u pushes, %u steps); avg_us send %llu frame %llu place %llu, max_us frame %llu; readbacks %u cached avg_us %llu, %u uncached avg_us %llu\n",
 			  (unsigned)video_stats.decodes,
-			  (unsigned long long)kern_ticks_to_ms(now - video_stats.window_start),
+			  (unsigned long long)elapsed,
 			  (unsigned)video_stats.skipped,
 			  (unsigned)video_stats.pushes,
 			  (unsigned)video_stats.steps,

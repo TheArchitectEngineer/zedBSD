@@ -576,13 +576,15 @@ bcm2711_render_refusal_line(
 {
 	uint64_t now;
 	uint64_t last;
+	uint64_t interval;
 	uint32_t quiet;
 	bool claimed;
 
 	/* A refusal within a second of the last line is only counted. */
 	now = clock_ticks();
+	interval = kern_ms_to_ticks(WORKER_REFUSAL_MS);
 	last = __atomic_load_n(&refusal_last, __ATOMIC_ACQUIRE);
-	if (last != 0 && now - last < kern_ms_to_ticks(WORKER_REFUSAL_MS)) {
+	if (last != 0 && now - last < interval) {
 		__atomic_add_fetch(&refusal_quiet, 1U, __ATOMIC_RELAXED);
 		return;
 	}
