@@ -287,6 +287,53 @@ drv_rpi4_firmware_property(
 	return 0;
 }
 
+#if defined(CONFIG_DRIVER_BCM2711_VCHIQ) && CONFIG_DRIVER_BCM2711_VCHIQ
+/*
+ * Posts one word to a mailbox channel other than the property channel.
+ *
+ * VCHIQ hands the firmware the bus address of its shared memory this way
+ * (channel 3).  The word takes the request buffer's turn, so it never
+ * interleaves with a property request's post and read.
+ */
+int
+drv_rpi4_firmware_mailbox_post(
+	unsigned channel,
+	uint32_t value)
+{
+	unsigned state;
+	uint32_t word;
+	int error;
+
+	/* Refuses the property channel and channels outside the four bits. */
+	if (channel == MAILBOX_CHANNEL_PROPERTY || channel > 15U)
+		return EINVAL;
+
+	/* Refuses a post before the mailbox is ready. */
+	state = atomic_raw_load_acquire(&firmware_state);
+	if (state != FIRMWARE_STATE_READY)
+		return ENODEV;
+
+	/* Takes the mailbox's turn from any property request. */
+	error = claim_buffer();
+	if (error != 0)
+		return error;
+
+	/* Waits for room in mailbox 1, then posts the word on its channel. */
+	word = (value & ~0xfU) | channel;
+	error = wait_mailbox(MAILBOX_WRITE_STATUS, MAILBOX_FULL);
+	if (error == 0)
+		kern_mmio_write32(mailbox + MAILBOX_WRITE, word);
+	release_buffer();
+
+	/* Reports a mailbox that stayed full. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the firmware has the word. */
+	return 0;
+}
+#endif
+
 /*
  * Asks the firmware to load the USB controller's firmware at a PCI address.
  */
@@ -612,8 +659,8 @@ build_request(
 /*
  * Posts the request buffer and waits until the firmware hands it back.
  *
- * Words that come back for other channels are dropped; nothing else in the
- * kernel uses the mailbox.
+ * Words that come back for other channels are dropped; the only other
+ * user, VCHIQ's post on channel 3, expects no answer.
  */
 static int
 post_request(void)

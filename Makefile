@@ -224,6 +224,11 @@ CONFIG_DRIVER_BCM2711_WIFI ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
 # The Raspberry Pi 4's onboard Bluetooth on the PL011 (ws215-p003): on by default (2026-10-13 user, D1); a build with
 # CONFIG_RPI4_SERIAL_CONSOLE=y keeps the PL011 for the console and has no Bluetooth.
 CONFIG_DRIVER_BCM2711_BT ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
+# The Pi 4's VCHIQ link to the VideoCore firmware (ws236-p002) and the H.264
+# decode it carries as Vulkan Video (ws236): experimental, off by default.
+# VIDEO needs VCHIQ and the BCM2711 GPU.
+CONFIG_DRIVER_BCM2711_VCHIQ ?= n
+CONFIG_DRIVER_BCM2711_VIDEO ?= n
 # The ACPI driver (WS049) builds on amd64; it stays off at run time when
 # the platform gives no RSDP (hal_get_arch_handoff("acpi.rsdp")).
 CONFIG_DRIVER_ACPI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -595,6 +600,8 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_BCM2711_AUDIO=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_AUDIO)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_WIFI=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_WIFI)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_BT=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_BT)),1,0) \
+	-DCONFIG_DRIVER_BCM2711_VCHIQ=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_VCHIQ)),1,0) \
+	-DCONFIG_DRIVER_BCM2711_VIDEO=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_VIDEO)),1,0) \
 	-DCONFIG_DRIVER_ACPI=$(if $(filter y,$(CONFIG_DRIVER_ACPI)),1,0) \
 	-DCONFIG_DRIVER_TYPEC=$(if $(filter y,$(CONFIG_DRIVER_TYPEC)),1,0) \
 	-DCONFIG_DRIVER_PCI_LPSS_I2C=$(if $(filter y,$(CONFIG_DRIVER_PCI_LPSS_I2C)),1,0) \

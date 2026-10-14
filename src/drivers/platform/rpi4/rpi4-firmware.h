@@ -76,6 +76,17 @@ int drv_rpi4_firmware_property(
 	unsigned capacity,
 	uint32_t *answered);
 
+#if defined(CONFIG_DRIVER_BCM2711_VCHIQ) && CONFIG_DRIVER_BCM2711_VCHIQ
+/*
+ * Posts one word to a mailbox channel other than the property channel.
+ *
+ * The low four bits of value are replaced by the channel.  The firmware
+ * gives no answer on these channels, so the call returns once the word is
+ * posted.  Serialized with property requests.  Thread context only.
+ */
+int drv_rpi4_firmware_mailbox_post(unsigned channel, uint32_t value);
+#endif
+
 /*
  * Asks the firmware to load the USB controller's firmware at a PCI address.
  */
