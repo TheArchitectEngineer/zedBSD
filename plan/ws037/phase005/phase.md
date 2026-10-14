@@ -2,7 +2,7 @@
 
 # ws037-p005: VRAM・MMU・channel・fence・回復（段 P4〜P6）
 
-Status: in-progress（2026-10-14 P1。設計を先に書いてから実装、build と host 試験まで。実機（方式 B）は T1 待ち）
+Status: in-progress（2026-10-14 P1。設計を先に書いてから実装、build と host 試験まで。方式 B の R5 は P4 の SET_PAGE_DIRECTORY が status 0x56 で FAIL → 原因（RM の確保の call の header の大きさの誤り）を直した（`b8803ff5e`）。R5〜R7 は T2 待ち）
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14「次は p005 … を 4a〜4e と同じ形で進める」）
@@ -132,3 +132,39 @@ Q1（2026-10-14）「R6 で RM が channel を断った時に要る GR の golde
 ### 5f.3 印と run（予定）
 
 `P5g begin` → `P5g ctxbufs: N buffers, M KiB` → `P5g ok: golden context`（3D の確保の status 0）→ TU10x で `P5g ok: scrubber`。run は R6 と R7 に `nvrtx.gr=1` を足した R6g・R7g。合格は今の印に加えて上の 3 行。
+
+## R5 の結果と直し（2026-10-14、P1）
+
+T2（[results-20261014-nvrtx-r3-retest3](../../agents/T2/results-20261014-nvrtx-r3-retest3.md)、QEMU の guest に VFIO で渡した実機）: R3・R4 PASS（GSP-RM が起動し、P3 の client・device・subdevice、P7 の片付けまで）。R5: `P4 vram: region 1, block at 1f3f00000` → `P4 page tables at 1f3f00000` → **`rm: control 00801813 status 00000056`**（`P4 ok: vaspace` 無し）、その後 P6・P7 は ok。
+
+### 原因
+
+- 0x00801813 は `NV0080_CTRL_CMD_DMA_SET_PAGE_DIRECTORY`（device への control、nouveau の `rm/r535/nvrm/vmm.h`）。0x56 は `NV_ERR_NOT_SUPPORTED`（open-gpu-kernel-modules の MIT の `nvstatuscodes.h`）。
+- RM の側（570.144 の MIT の `mem_mgr/dma.c` の `deviceCtrlCmdDmaSetPageDirectory`、`mem_mgr/gpu_vaspace.c` の `gvaspaceExternalRootDirCommit`）で NOT_SUPPORTED になるのは、vaspace が mirrored の時か、**vaspace が外部所有（IS_EXTERNALLY_OWNED）でも shared management でもない時**。
+- 我々は vaspace（0x90f1）を flags bit 3（外部所有）で作っていたが、**RM の確保の RPC（GSP_RM_ALLOC、103）の header を 44 byte としていた**。実際は `rpc_gsp_rm_alloc_v03_00` = hClient・hParent・hObject・hClass・status・paramsSize・flags の 7 語と reserved 4 byte の **32 byte**（nouveau の `rm/r535/nvrm/alloc.h`、ogkm の `g_rpc-structures.h`）。引数が 12 byte 後ろにずれ、GSP-RM は vaspace の flags を 0 と読んだ（外部所有にならなかった）。header の注記にも「7 語と 4 byte」と正しく書いてあり、足し算だけが誤っていた。host 試験も同じ誤った値（44）を確かめていた。
+- P3 の client・device・subdevice が通っていたのは、引数が全部 0 として読まれても確保できる物だったため（client の hClient・processID、device の hClientShare が 0 と読まれていた）。
+
+### 直し（commit `b8803ff5e`、nouveau と同じにする）
+
+| 所 | 前 | 後（nouveau と同じ） |
+| --- | --- | --- |
+| RM の確保の header | 44 byte | 32 byte（引数は header の直後） |
+| handle | client 0xc0de0001・device 0xc0de0080・subdevice 0xc0de2080・vaspace 0xc0de90f1・channel 0xc0dec46f・copy 0xc0dec5b5 | client 0xc1d00000（RM の client の範囲、nouveau の 1 つ目の client）・device 0xde1d0000・subdevice 0x5d1d0000・vaspace 0x90f10000・channel 0xf1f00008（0xf1f00000 \| chid）・copy 0xc5b50008。RM の resource server は client の handle を自分の範囲（0xc1d0xxxx）へ詰め直すことがある（ogkm の `rs_server.c`）ので、範囲の中の値にした |
+| host 試験 | 確保の call の引数が 44 から | 32 から（call[31] は 0、call[32] から引数） |
+
+- 照合して同じだった所: vaspace の引数（index 0 = GPU_NEW、flags bit 3、48 byte）、SET_PAGE_DIRECTORY の引数（physAddress・numEntries 4・flags 0 = VIDMEM・hVASpace、32 byte）と送り先（device）、control の header（24 byte）、FREE の引数（hRoot・parent 0・hObjectOld）、device の引数（hClientShare = client）、channel の確保の引数（r570 の `r570_chan_alloc`: flags の USERD の index と page・page fixed、hVASpace、engineType、instance・USERD・RAMFC は VRAM（2）・cacheAttrib 1、method buffer は system（1）・0、internal flags は user・通知なし）。
+- 違いとして残る所: nouveau は vaspace ごとに新しい client と device を作る（`r535_mmu_vaspace_new` の `nvkm_gsp_client_device_ctor`）。我々は P3 の client と device（同じ形: device と subdevice）を 1 つの vaspace に使う。木の形は同じなので今は合わせない。
+- 検証: y の kernel rc 0・warning 0・`amd64 vmunix check: PASS`、host 試験 168 項目 PASS（実物の firmware の file を含む）、`git diff --check` 0、GPL の旧名 0。
+
+### T2 への手順（R5〜R7、main の `b8803ff5e` 以降）
+
+image は `plan/ws037/tests/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`R7`（host の ~/nvrtx/v4R6・v4R7 は前の版なので作り直す）。各 run の前に host の reboot と `prepare.sh --check`。判定は今までどおり画面の PNG（`dmesg | grep nvrtx`）。
+
+| run | 合格の印 | 後始末 |
+| --- | --- | --- |
+| R5 | R4 の印（`P2b ok`・`P3 ok: client, device and subdevice`）に加えて `P4 vram: …`、`P4 page tables at …`、**`P4 ok: vaspace`**、`P5 skipped`、`P6 ok: channel and vaspace freed` か P6 の印、`P7 ok: region torn down`、login prompt | 合格なら R6 |
+| R6 | R5 に加えて `P5 copy engine …`、`P5 ok: channel 8 on runlist R`、`P5 ok: fence 0x1234 reached after N us`、（5e）`P5 ok: fence 0x1235 …` と `P5 ok: copy engine filled 64 words`、`P6 skipped`、`P7 ok` | 合格なら R7 |
+| R7 | R6 に加えて `P8 is not in this kernel; stopping after P5`、`P6 ok: channel and vaspace freed`、`P7 ok: region torn down` | — |
+
+- FAIL の時: 画面の nvrtx の全部の行（`rm: class … status …`・`rm: control … status …`・`P5 fail: fence …`・`P6 channel error: …` があればそれ）を PNG に。P5 の fence が来ない時は、guest を止める前に前回と同じ 6 つの `pmemsave`（`P2a memory:` の番地）に加えて、VRAM の塊は guest から見えないので取らない。QEMU を止め、host を reboot。次の run は流さない。
+- `P7 fail` が出たら host を reboot（次の run の前に必ず）。
