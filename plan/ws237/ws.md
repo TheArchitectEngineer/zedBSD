@@ -62,7 +62,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - 外部の monitor が出ない: `dmesg` に次のどれがあるかを見る。
   - `no external displays (the panel is not flipped or its pixel clock was not read)`: panel の flip が使えていない。flip の段の行を見る。
   - `port X has a sink that could not be probed`: AUX・GMBUS の読みの失敗。
-  - `port X could not be lit: N`: mode set の失敗。N を知らせる。28 = pipe・DPLL・buffer の空き無し、5 = DP の link training の失敗。
+  - `port X could not be lit: N`: mode set の失敗。N を知らせる。8 = pipe・DPLL・buffer の空き無し（ENOSPC）、5 = DP の link training の失敗（EIO）。
   - `did not latch`: flip の失敗。
 - 外部の monitor が出て panel が乱れる（underrun）: 2 つの pipe の watermark の分け方の問題の見込み。`latencies ...` の行を知らせる。
 
