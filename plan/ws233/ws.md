@@ -37,3 +37,4 @@ repo の作成と push は Q1 が、監査の結果をユーザーに示して�
 - 2026-10-14 Q1: `gh repo create awemorris/zedBSD-firmware --public` と push（commit ddd36a0d2f0215f4a9000d1c0796e54aeaf1a79f、68 file、SHA256SUMS 一致）。`userland/firmware/zedbsd-firmware.mk` にその SHA を記入（2fd3cc622）。host で 6 つの firmware と rpi4-boot を新しい cache に取り、全部一致。intelbt は strace で接続先が raw.githubusercontent.com（185.199.108〜111.133）だけ、git.kernel.org への接続なしを確認。
 - 残り: submodule `vendor/raspberrypi-firmware` の除去（手順は phase001/proposed/remove-submodule.md）、T1 の image の試験（rpi4・amd64 の build、FAT の中の firmware が前と byte 一致、raspi4b の boot-test）。
 - 2026-10-14 ユーザー「では作ってください。ライセンスをスクロール表示して、きちんと法的な見た目にしてほしいです。」→ ws233-p002（menuconfig の license の画面）。きっかけは、今の Build boot image が stdin を端末のまま make に渡し、license の質問が log にだけ出て止まって見える問題（Q1 の source の読み、未確かめ）。
+- 2026-10-14 ユーザー「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」→ T1-619 は取り消し。残りは submodule の除去（CI が通った後）。
