@@ -621,6 +621,13 @@ layout_grid(
 			area_height += grid.rows[position];
 		/* The item's alignment: its align-self, or the container's align-items. */
 		align = grid_in_flow_align(child->style.align_self);
+		if (child->grid_orthogonal && child->style.direction == CSS_DIRECTION_RTL) {
+			/* The item's inline axis is vertical and runs from the bottom. */
+			if (child->style.align_self == CSS_ALIGN_SELF_START)
+				align = CSS_ALIGN_END;
+			else if (child->style.align_self == CSS_ALIGN_SELF_END)
+				align = CSS_ALIGN_START;
+		}
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
@@ -674,6 +681,12 @@ layout_grid(
 				justify = child->replaced ? CSS_ALIGN_START : CSS_ALIGN_STRETCH;
 			if (justify == CSS_ALIGN_STRETCH)
 				justify = CSS_ALIGN_START;
+			if (justify == CSS_ALIGN_SELF_START && child->grid_orthogonal)
+				justify = child->style.writing_mode == CSS_WRITING_VERTICAL_RL ?
+				    CSS_ALIGN_RIGHT : CSS_ALIGN_LEFT;
+			else if (justify == CSS_ALIGN_SELF_END && child->grid_orthogonal)
+				justify = child->style.writing_mode == CSS_WRITING_VERTICAL_RL ?
+				    CSS_ALIGN_LEFT : CSS_ALIGN_RIGHT;
 			if (justify == CSS_ALIGN_SELF_START)
 				justify = child->style.direction == CSS_DIRECTION_RTL ? CSS_ALIGN_RIGHT : CSS_ALIGN_LEFT;
 			if (justify == CSS_ALIGN_SELF_END)
