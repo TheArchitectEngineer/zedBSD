@@ -11,32 +11,26 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-14 夜（Q1）: P1・P2・P3＋T1・T2＋B1**。リリースは 10/16（金）夕。ブラウザ（B1）は直前まで、WS236・WS037 は既定 off で間に合わなければ drop。
-  - P1: WS037（nvrtx、RTX 2070）の再開（2026-10-14 ユーザーの割当「P1: RTX」）: p001 の締め、GSP の firmware、p003 の骨格と N0。
-  - P2: 予約（UAT の bug の直し、2026-10-14 ユーザー「P2: reseved (UAT bug fix)」）。
-  - P3: WS236（Pi4 の Vulkan Video）p003 の最小の MMAL と R1 の probe（review-1 を反映）。
-  - B1: WS074 BigInt → Google の Grid → yahoo.co.jp（p230）。
-  - T1: 試験（ユーザー「T1: testing」）。T2: 空き。B1: Web（ユーザー「B1: Web」）。
+- **2026-10-15 夜（Q1）: 全担当を止めた**（ユーザー「B1以外のすべてをラップアップ」→ ユーザーが強制終了。B1 も p235 の後は未起動）。作業環境のサーバの再起動のための引き継ぎ。
+  - 止めた担当の作業中の差分: [plan/agents/wrapup-20261015.md](agents/wrapup-20261015.md)（P1 nvrtx の既定 on・方法 A、P2 Gen9 full の安全化、P3 R7d の SPH の直し。patch は plan/agents/p1〜p3/）。
+  - 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。**ユーザーは逐次に 1 つずつ解決する進め方に変えた**（「シーケンシャルに解決していきます」）。今の 1 つ目は **Pi4 のビデオ（WS236）**。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- 2026-10-11 夜: ユーザー「5330はほかの用途に使いませんし私はタッチしません。自由に使ってください。」→ 5330（10.0.30.3、UAT image b67a6d7）は T1・P が自由に使ってよい（元を退避）。ESP への書き込みは安全の判定の経緯があるので Q1 が扱う。Pi 4（10.0.30.2）は main 82f2dfc の image、reboot は手動（ユーザーの電源の入れ直し）。
-- 2026-10-11 夕: ユーザー「らちがあかないので、vc6の作業内容をmainにマージしてください。最新のイメージをビルドして焼きます。バグが修正されるまで再起動は手動にします。」→ P3 の VC6（agent/p3 c2e17c674、TLB copy・scene cache の全面の経路・計測の行・TFU は自己試験なしでは無効）を merge（a7ac0e4aa）。P1 の q937 review の直しと WS204 p003 audio-loop（641f5b894）、P2 の BUG-288（d25384091）も merge（f39fd61c5）。rpi4 vmunix・amd64 vmunix/wayland の build warning 0、boundary PASS。Pi 4 は BUG-288 の確認まで reboot は手動。5330 の UAT image は merge の前の b67a6d7e1 で build（SHA256 f617cff3…df21）。
-- 2026-10-11 Q1: P1 の WS197 i06 の書きかけを照合し、main に無かった直し（満杯の時に連絡先の file を書かない）と、同じ秒の item の順を決める直しを merge（d5296c23e、Phone の host 試験 PASS、Phone の named build warning 0）。残りは破棄（写しは build/q1-p1-ws197-i06-discarded.diff）。
-- 2026-10-11: Vulkan Video を既定で ON（c7aeea0c7、ユーザー）。BUG-287 の直し全部（usb-bt の Transaction Error の後の回復、同じ人の bond での phone=1、settings の store 24→64、Settings の Connect・案内、Phone app の案内、phone link の log）を merge 済み（7bfc667e7）。
-- 2026-10-10 Codex: WS197 p005 i06・i07（bee41dded）、MMS の受信（89d487814）、媒体の UAT の直し（e654733f1）、Bluetooth の自動復旧 p013（7fa0a0e9c）を main に統合済み。
-- ユーザーは BUG-287 の後の image を作り直して UAT（plan/beta2.md の「次の UAT」）。
-- 5330（10.0.30.3）: SSH は `sshpass -p kei ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no kei@10.0.30.3`、sudo は `echo kei | sudo -S`、service は `service start bluetoothd`（順に注意）。btsnoop は `/sbin/bluetoothd -s /var/tmp/x.snoop`（/var/tmp を 1777 に、daemon は uid 80 に落ちる）。
+- 2026-10-15: ユーザー「よほどのことがないかぎりすべてをmainに入れてください。」→ 担当の成果は全部 main に merge 済み（最後 0a8d7fc75）。未 merge の commit は無い（作業中の差分だけ patch で保存）。
+- 既定の変更（2026-10-15 ユーザー）: nvrtx を既定で on（pci.drivers・config-amd64.mk・ユーザーの config.mk に `CONFIG_DRIVER_PCI_NVRTX := y`、runtime の段の既定 on は P1 の patch で未完、GSP の firmware は image に未収録）、Pi の VCHIQ・VIDEO を既定で on（arm64.drivers）、Gen9 の display を既定で full（gen9-display.h）。
+- 試験の image（main）: build/amd64/hdd-image.img（02:19、WS239 の前）、build/uat/main-rpi4/hdd-image.img（WS236 の直しの前）。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
 
 <!-- master:next:start -->
-1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-318、WS240、q984、T1-656。次の KL_VERSION は 95（94 は ws074-p229 の `KL_BREADCRUMB_BOXED`、78d57e955、2026-10-14。93 は ws217-p004 の回転の API、2026-10-14。WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
-3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
+1. 新しい Q1 は AGENTS.md・plan/beta2.md（先頭の「ユーザーが今できる試験」）・この block・[plan/agents/wrapup-20261015.md](agents/wrapup-20261015.md) を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
+2. **今の仕事: Pi4 のビデオの試験（WS236 p006、T1-653）**。ユーザーが Pi の SD を書き直し中で、「それまで何もせずに待っていてください」。書き直しの知らせの後に、Q1（または T）が最新の main の kernel で [phase006](ws236/phase006/phase.md) の「T への依頼」を流し、結果をユーザーに伝える（ユーザー「最新のカーネルでOKです。まずはビデオ再生をテストしてください。結果を教えてください。」）。起動で固まれば BUG-317（写真をもらう）。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-318、WS240、q984、T1-656。次の KL_VERSION は 95。
+4. 日程: リリースは 10/16（金）夕。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
@@ -61,10 +55,12 @@
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- 5330 は zedBSD の単独起動中（Linux の作業 T1-378・TPM2 の表は Linux に戻した時）。5320 は電源オフ（WS183 p001・BUG-249・BUG-247 の実機の確認待ち）。
-- BUG-256（USB-C の AUX）: 診断の kernel の入れ替えと monitor の挿し込み待ち。
-- WS074（ブラウザ）: 2026-10-13 からユーザーの依頼で Codex のセッションが main の checkout で作業中、ベータ2 までに完了の予定。Q1 は WS074 の file（plan/ws074・libbrowser・plan/queue.md の WS074 の節・plan/history の q1000〜）を commit しない。WS153: U2〜U15 のユーザーの判断まで止める。
-- GitHub への記録の公開は保留（.sync が無い）。push はユーザーの指示の時だけ。
+- **BUG-317**（Pi の main の kernel が起動 54 秒で停止、namei の context->lock）: 解析は途中で停止、結論なし。a9f0765..73476664c で src/kern は無変更、候補は usb-hid・hid-input（BUG-313 の遅い公開）、WS236 の V3D・MMAL、rpi4-bt。
+- WS037 RTX: R8b・R8c・R8d（ユーザーが monitor を見る）、R7d は SPH の Graphics Exception で FAIL（直しは途中、P3 の patch）。既定 on と方法 A は P1 の patch で途中。
+- BUG-315（Pi の touch）: Y の quirk は main に入った。X の端の飽和は未確認。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
+- WS239（compositor の失敗時の console の login）: p001 は main、p002 の QEMU 試験は T3 が途中で停止、結果なし。
+- WS237（Gen9 display）: SV7 のユーザーの確かめ待ち。SV7 は古い image（8e2115b）だった（BUG-316、原因は古い kernel）。
+- GitHub への記録の公開は保留。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
 <!-- awesome-plan-current:end -->

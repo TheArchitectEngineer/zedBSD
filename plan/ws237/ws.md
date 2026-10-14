@@ -81,3 +81,9 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 
 - 各段が通ったら、Q1 が `src/drivers/gpu/i915/display/gen9-display.h` の `I915_GEN9_DISPLAY_DEFAULT` を通った一番右の段に変える。
 - 変えた後も `i915.gen9.display=copy` で今の表示に戻せる。
+
+## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
+
+- 2026-10-15 ユーザー: Gen9・Gen9.5 の display の制御を既定で on → `I915_GEN9_DISPLAY_DEFAULT` を FULL（main、647d43d37）。実機（SV7）では copy より上の段が未確認。
+- P2 の作業中の patch（plan/agents/p2/wrapup-20261015.patch、base 73476664c）: 上の段が失敗した時に下の段、最後は copy に戻す安全化。未完。リリースまでに入れるか、既定を下げるかの判断が要る。
+- SV7 で起動していたのは古い image（8e2115b）。main の image で確かめる（ユーザーの試験の一覧 U1）。

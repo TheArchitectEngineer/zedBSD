@@ -47,3 +47,10 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 | [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
 
 合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。
+
+## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
+
+- p006 の直し（最初の 1 枚を押し出す灰色の I slice、1〜14 の +1、cached の MMAL の memory、step の decode、cost の log、BUG-314 の EIO の log）は main に merge 済み（49a7e41f2）、build・host 試験のみ。
+- 実機の試験（T1-653、phase006 の「T への依頼」）は未実施: 新しい kernel で Pi が起動 54 秒で停止（BUG-317）。ユーザーは「最新のカーネルでOKです。まずはビデオ再生をテストしてください。」、Pi の SD を書き直し中。
+- 再開: ユーザーの知らせの後、最新の main の CI の kernel（config/ci/config-rpi4.mk）で phase006 の手順 3〜7 を流し、結果をユーザーに伝える。止まる地点: Pi が応答しなくなったら止めてユーザーに聞く。
+- 残り: libmedia の uncached の読み（WS202・WS141）、seek、p007（規約）。

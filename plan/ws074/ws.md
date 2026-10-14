@@ -1089,3 +1089,9 @@ Event ws074-p189-q1145-outcome-20261014: [p189 q1145](phase189/evidence/20261014
 Event ws074-p225-q1146-outcome-20261014: [p225 q1146](phase225/evidence/20261014-q1146/README.md)で固定vertical-lr Gridのhorizontal-tb子を限定物理軸経路に通し、stretch005–008を4/4 whole PASS。旧001–004・host回帰・Acid3差0維持。q1146部分cleared、p225/p217/p189/p173全件100%未達。次は固定Grid502再測定と009–016可変track。共有投影/GitHub publication保留。
 
 Event ws074-p189-q1147-outcome-20261014: [p189 q1147](phase189/evidence/20261014-q1147/README.md)で固定Grid502を全件同条件再測定。130→134 whole PASS、4 subtest改善、旧PASS後退0。増分vertical-lr stretch005–008、残009–016は明示Grid寸法/auto track。q1147部分cleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
+
+- p235（`position: sticky` のページの scroll、子を持つ箱の `transform: scale`）は main に merge 済み（6e74bfd3d）、host のみ。B1 は p235 の後は未起動。
+- Q1 の後始末の残り: `git worktree remove /home/awe/zedBSD-worktrees/b1-base`、b1 の build/b1p235 の wpt・wpt-base・a-*・b-*・acid*、build/ws074-suites/wpt/acid/zedbsd-acid*.html。
+- 残り: inner scroll container、子つきの rotate・skew、flex item の aspect-ratio（31 件）、GPU の経路での sticky の確かめ。

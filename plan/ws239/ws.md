@@ -16,3 +16,8 @@
 | --- | --- | --- | --- |
 | [ws239-p001](phase001/phase.md) | 調査・実装・host 試験・T の手順（`/dev/system` の `KERN_SYSTEM_SHOW_CONSOLE`、sessiond の失敗の定義と console への戻し） | in-progress（実装・build・host 試験済み、Q1 の判定待ち） | — |
 | ws239-p002 | QEMU での確かめ（T） | planned | p001 |
+
+## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
+
+- p001 は main（c17de52b2）、`/dev/system` の `KERN_SYSTEM_SHOW_CONSOLE` を追加（ユーザーの指示の範囲として Q1 承認）。
+- p002（QEMU、T1-655、case A〜D）は T3 が途中で停止、結果なし。再開は phase001 の「T の手順」から。

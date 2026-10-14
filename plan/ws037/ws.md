@@ -73,3 +73,10 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 「* R6 の「channel を残したまま止める」場合の片付け * 3D の初期状態（golden context） * display * shader の compiler ここまでベータ2に入れます。作業を続けてください。」
 → 実機（VFIO）で R0〜R6 の GPU の仕事（copy engine の fill と fence）まで通った後の判断。順: R6 の片付け → 5f（golden context と scrubber）→ p006（display）→ p007・p008（3D と shader の compiler、SPIR-V → SM75、Mesa の NAK（MIT）を参考）。既定 off（`CONFIG_DRIVER_PCI_NVRTX` 既定 n）のまま入れ、通った段まで。担当: P1 が WS238 の後に R6 の片付け〜display、shader の compiler は先に空いた P（P2 の BUG-312 の後か P3 の WS237 の後）。
 - 2026-10-14 夜 ユーザー「ESP/FAT32分離が終わったら、RTX対応を2エージェントで実施してOKです。displayとcompilerは平行にできそうです。」→ P1: R6 の片付け・golden context・display、P3: shader の compiler（WS237 を止めて移る）。P2 の BUG-312 の後の予告は取り消し。
+
+## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
+
+- main に入った物: P4m（VRAM の heap・BAR1）、P8b の直し（nouveau と同じ最初の commit、DFP_ASSIGN_SOR）、P8c（resident・GPU device・display）、display の event・control・cursor・share（R8d）、p007 の draw（P9g）、P1 の SPH の初めの直し（7ce6e4019）。
+- 実機: R7c PASS。R7d FAIL（`Graphics Exception: Shader Program Header`、ESR 0x405840=0xa0000・0x405848=0x80000）。R8b の再試験（T1-645）・R8c（T1-647）・R8d（T1-652）は未実施（ユーザーが monitor を見る）。
+- 2026-10-15 ユーザー: nvrtx を既定で on。CONFIG は y 済み。runtime の段の既定 on・opt-out・方法 A（USB から素で起動）・GSP の firmware の image への収録は P1 の作業中の patch（plan/agents/p1/wrapup-20261015.patch、base 0e33f93cf）で未完。
+- R7d の SPH の直しは P3 の patch（plan/agents/p3/wrapup-20261015.patch、base e1e8cad65、P1 の 7ce6e4019 と同じ file を変えるので手で合わせる）。
