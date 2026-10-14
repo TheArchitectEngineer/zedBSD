@@ -38,6 +38,7 @@
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
+- **2026-10-15 夜（ユーザーが休憩中、起きたら聞く）WS236 Pi のビデオの表示の道**（[phase009](ws236/phase009/phase.md)）: (1) 順は案 0（depth の直し、P3 が実装中）→ 案 1（VPU の bulk を NV12 の image へ直に、videoplayer が R8・RG8 の plane を GPU で sample して YCbCr→RGB と縮小、計 20〜31 LW）→ 後で案 2（HVS の overlay、WS214 の後 15〜25 LW）でよいか、案 2 を先にするか。(2) GPU が sample する値では firmware の「2〜15 が 1 小さい」を直さないことを許すか（probe は copy で読む形に）。(3) libmedia の API と videoplayer の作り直しを WS236 の Phase にするか別の WS か。(4) TFU の YUV 入力を Pi で試す probe をするか。T2 の数: 表示の CPU の変換が 1 枚約 60 ms で支配的。
 - WS204（HD Audio の録音と HFP の通話の音）・WS205（Bluetooth audio A2DP と headset）がベータ2 に入るか（WS197 の HFP は 2026-10-13 にベータ3 と決定）。
 - WS202 H1〜H6・J1〜J10: software は main に統合済み、判断がまだ要るかは WS202 の記録で確かめる。
 - BUG-222 を既知の問題にするか close か。
