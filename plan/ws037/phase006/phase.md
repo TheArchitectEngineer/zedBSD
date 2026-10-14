@@ -288,3 +288,15 @@ FAIL の時: 最後に見えた印の写真。`P0 console …: cannot be kept`�
 （2026-10-15 P1 の更新）T の順: R8b の再試験（T1-645、P8b の直し）→ R8c（T1-647、GPU の device）→ R8d（上の「P8c の続き」の手順: events・refresh・cursor・SHARE・scanout の表）。どれもユーザーが RTX の monitor の前にいる時。R8b が FAIL なら印で切り分け、引き継ぎが RM に受け入れられない場合は (a) の nouveau の初回 modeset（`DFP_ASSIGN_SOR`、TMDS なら HDMI の設定、DP なら DPCD と `DP_CTRL`）を足す。R8d の後に残るもの（Keiland の direct scanout まで）: client が RTX の blob に描く道（p007）、Keiland の scanout の `/dev/gpu0` 固定、hotplug の event と power（RM の event・modeset が要る）。
 
 以前の resume（P8b の実装の時点）: P8b は実装・build・host 試験まで（`b893faeb6` と直し）。次は T の R8b（rombar=1、上の手順）とユーザーの目視。PASS なら P8c（上の設計、BAR1 の map と VRAM の BO が先）。
+
+## 次の Phase の予定: nouveau と同じ手順からの整理（planned、2026-10-15 ユーザーの指示）
+
+ユーザー（原文）:「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」「Nouveauとまったく同じ手順で動作が確認できたあとで、我々のスタイルにリファクタしましょう。」
+→ 今は P8b の display の初期化を nouveau（r535/r570 の disp、dispnv50、GSP の下の道）と同じ順・値・待ちに揃える（下の「nouveau と同じ手順への揃え」）。R8b が kernel log の error 無しで通った後に、**別の Phase（WS037 の新しい番号、Q1 が割り当てる）として nvrtx の形（段の分け方・名前・file の構成）へ整理する**。
+
+| 項目 | 内容 |
+| --- | --- |
+| Status | planned |
+| 依存 | R8b（nouveau と同じ手順）の実機 PASS |
+| 範囲 | 動作を変えない整理: nouveau の手順のままの部分を nvrtx の段（P8a・P8b・P8c）と既存の部品（disp-records・scanout・present）の形に直し、試験の語（`nvrtx.disp.test=1`）の切り分けの印を戻す。ライセンスの規則（名前・comment・構造を写さない）を確かめ直す |
+| 確かめ | build・host 試験、R8b〜R8d の再試験（kernel log の error 無し） |
