@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q692（p001）、2026-10-14 から P1（Q1 の割当「P1: RTX」）
-Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。p004 の 4a〜4e（P0〜P3・P7）も実装済み（2026-10-14、build と host 試験まで）。p005 の copy の channel の道（P4〜P6）も実装済み。方式 B（awe@10.0.10.3 の Debian の VFIO、T2）で R0・R1 PASS、R2 は P7（FRTS だけの region に booter_unload）、R3 は P2b（init done が来ない、待ちの timeout も効かない）で止まった。2026-10-14 P1 が原因の解析と直し（P7 は GSP を止めた後だけ teardown、待ちは時計で測る、P2b の切り分けの印と dump の番地）を commit `1c1732db7`。再試験で R2 PASS、R3 は GSP の libos の init で停止（dump の解読で RMARGS の region が 0x48 だった所で止まった）。nouveau と P0〜P2 を照合し、違いの RMARGS の大きさを 0x1000 に合わせた（`714ab8477`）。その後 R3 は GSP-RM が動き、CPU sequencer の CORE_RESUME（opcode 8）が未実装で止まった。sequencer の全 opcode と RPC の番号・照合を nouveau と同じにした（`870aecf93`）。次は T2 の R3・R4（[p004](phase004/phase.md) の「R3 の 3 回目」）。
+Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。p004 の 4a〜4e（P0〜P3・P7）も実装済み（2026-10-14、build と host 試験まで）。p005 の copy の channel の道（P4〜P6）も実装済み。方式 B（awe@10.0.10.3 の Debian の VFIO、T2）で R0・R1 PASS、R2 は P7（FRTS だけの region に booter_unload）、R3 は P2b（init done が来ない、待ちの timeout も効かない）で止まった。2026-10-14 P1 が原因の解析と直し（P7 は GSP を止めた後だけ teardown、待ちは時計で測る、P2b の切り分けの印と dump の番地）を commit `1c1732db7`。再試験で R2 PASS、R3 は GSP の libos の init で停止（dump の解読で RMARGS の region が 0x48 だった所で止まった）。nouveau と P0〜P2 を照合し、違いの RMARGS の大きさを 0x1000 に合わせた（`714ab8477`）。その後 R3 は GSP-RM が動き、CPU sequencer の CORE_RESUME（opcode 8）が未実装で止まった。sequencer の全 opcode と RPC の番号・照合を nouveau と同じにした（`870aecf93`）。R3・R4 PASS（GSP-RM が実機で起動、P3 の objects・P7 の片付けまで）。R5 は P4 の SET_PAGE_DIRECTORY が NOT_SUPPORTED: RM の確保の RPC の header を 44 byte と誤っていた（正は 32）ため vaspace が外部所有にならなかった。直しと handle を nouveau の値に（`b8803ff5e`）。次は T2 の R5〜R7（[p005](phase005/phase.md) の「R5 の結果と直し」）。
 Target: ベータ2（2026-10-16 夕）に既定 off で入れる（2026-10-14 ユーザー、上の Status）。以前: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -57,9 +57,9 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 | [p003](phase003/phase.md) | 定数の一括の改名、driver の骨格（PCI・BAR・`CONFIG_DRIVER_PCI_NVRTX`）、段の印 N0（chip の ID を読むだけ） | in-progress（実装・build・host 試験済み、実機は T1 待ち） | p001・p002 | 4h |
 | [p004](phase004/phase.md) | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware（既定 off の firmware の package、`/lib/firmware/nvidia/tu102/`）の load、RISC-V の GSP の起動、RPC の初期化と停止（[design](nvrtx-design.md) の段 P0〜P3・P7）。4a〜4e に分け、どこで切っても既定が変わらない | in-progress（4a〜4e 実装・build・host 試験済み、実機（方式 B）は T1 待ち） | p003 | 6h〜 |
 | [p005](phase005/phase.md) | VRAM の allocator・MMU・BAR1/BAR2・GR の golden context と TU10x の scrubber・channel・GPFIFO・semaphore の fence・回復（段 P4〜P6） | in-progress（2026-10-14: copy の channel の道（VRAM の塊・5 段の表・vaspace・channel・fence・copy の fill・FREE）を実装、build と host 試験まで。golden context・scrubber・BAR1/BAR2 は未。実機は T1 待ち） | p004 | 6h〜 |
-| p006 | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本、段 P8）。text console の付け直し | planning | p005（VRAM の allocator と BAR1 の map） | 6h〜 |
+| [p006](phase006/phase.md) | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本、段 P8）。text console の付け直し | in-progress（2026-10-15: P8a（display の起動と GOP の readout）実装・build、P8b は設計まで。実機は T2 待ち） | p005（VRAM の allocator と BAR1 の map） | 6h〜 |
 | p007 | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_ops` への統合（段 P9）、desktop の表示 | planning | p005・p006・kernel の Venus の executor と compiler（p008 の方針、[design](nvrtx-design.md) 8.0） | 6h〜 |
-| p008 | kernel の Venus の executor と shader の compiler（SPIR-V → SM75、NAK の構成を参考）の方針、別 WS にするか（design の判断の項目 8・16） | planning | p001 | 2h |
+| [p008](phase008/phase.md) | shader の compiler（SPIR-V → SM75、共有の front と IR、NAK（MIT）の事実）。WS037 の Phase に決めた（判断の項目 8・16） | in-progress（2026-10-15 P3: 段 A（compute の最小の lowering と encoder）を実装、build と host 試験（39 件）まで。GPU の確かめは p007 の投入の口の後） | p001 | 2h＋段 A〜E |
 | p009 | 規約の全文の確認、license と GPL の code との類似の監査、BLOB（GSP の firmware）の確認 | planning | 全て | 4h |
 
 各段の印（GOP の framebuffer）と段の名前の正は [design](nvrtx-design.md) の 3 節: N0 発見と ID → N1 GOP の readout → P0 GSP の起動の準備 → P1 devinit 待ち・FWSEC-FRTS → P2 booter と GSP の起動 → P3 RM の object → P4 VRAM・MMU → P5 channel・fence → P6 回復 → P7 停止 → P8 display の引き継ぎ → P9 最初の 3D の job。i915 の N0・N1・P2 と同じ考え。
@@ -67,3 +67,9 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 ## 要検討・ブロック（2026-10-05、2026-10-14 に解除）
 
 2026-10-05 にユーザーの指示で要検討の状態にしてブロックした。2026-10-14 のユーザーの指示（上の Status）で解除。
+
+## 2026-10-14 夜 ユーザーの判断: ベータ2 に入れる範囲
+
+「* R6 の「channel を残したまま止める」場合の片付け * 3D の初期状態（golden context） * display * shader の compiler ここまでベータ2に入れます。作業を続けてください。」
+→ 実機（VFIO）で R0〜R6 の GPU の仕事（copy engine の fill と fence）まで通った後の判断。順: R6 の片付け → 5f（golden context と scrubber）→ p006（display）→ p007・p008（3D と shader の compiler、SPIR-V → SM75、Mesa の NAK（MIT）を参考）。既定 off（`CONFIG_DRIVER_PCI_NVRTX` 既定 n）のまま入れ、通った段まで。担当: P1 が WS238 の後に R6 の片付け〜display、shader の compiler は先に空いた P（P2 の BUG-312 の後か P3 の WS237 の後）。
+- 2026-10-14 夜 ユーザー「ESP/FAT32分離が終わったら、RTX対応を2エージェントで実施してOKです。displayとcompilerは平行にできそうです。」→ P1: R6 の片付け・golden context・display、P3: shader の compiler（WS237 を止めて移る）。P2 の BUG-312 の後の予告は取り消し。

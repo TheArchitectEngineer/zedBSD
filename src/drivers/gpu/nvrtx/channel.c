@@ -282,6 +282,7 @@ nvrtx_channel_start(
 	setup.chid = CHANNEL_ID;
 	setup.space = NVRTX_HANDLE_SPACE;
 	setup.engine = engine->pick.engine;
+	setup.privileged = 0U;
 	setup.instance = engine->vram_block + CHANNEL_INSTANCE_AT;
 	setup.userd = engine->vram_block + CHANNEL_USERD_AT;
 	setup.methods = engine->methods.dma.device_address;
@@ -306,6 +307,9 @@ nvrtx_channel_start(
 	if (error != 0)
 		return error;
 
+	/* The stop takes the channel off the scheduler before it frees it. */
+	engine->scheduled = 1;
+
 	nvrtx_stage_mark("P5 ok: channel %u on runlist %u", (unsigned)CHANNEL_ID, (unsigned)engine->pick.runlist);
 
 	/* Runs one fence through the channel. */
@@ -329,9 +333,14 @@ nvrtx_channel_start(
 }
 
 /*
- * Runs stage P6's stop: takes the messages the firmware sent, then frees
- * the channel and the address space.  Failures are only reported: the
- * unload in P7 removes whatever stays.
+ * Runs stage P6's stop: takes the messages the firmware sent, then undoes
+ * P4 and P5 in nouveau's order: the channel off the scheduler, the copy
+ * object, the channel, the root, the address space.
+ *
+ * The finish runs it before every P7, whatever nvrtx.stop says: R6 left
+ * the channel scheduled for the unload to remove, and the firmware did not
+ * answer the unload call (ETIMEDOUT) and did not stop.  Failures are only
+ * reported; the unload removes whatever stays.
  */
 void
 nvrtx_channel_stop(
@@ -351,6 +360,30 @@ nvrtx_channel_stop(
 	/* Takes what the firmware sent meanwhile (a channel error is reported by the wait). */
 	if (gpu->reply != NULL)
 		(void)nvrtx_rpc_wait(gpu, 0xffffffffU, 0U, CHANNEL_DRAIN_TIMEOUT_US, &length);
+
+	/* Takes the channel off the scheduler, so no work of it runs while it goes. */
+	if (engine->scheduled != 0) {
+		kern_memset(params, 0, sizeof(params));
+		error = nvrtx_rm_control(gpu,
+		    NVRTX_HANDLE_CLIENT,
+		    NVRTX_HANDLE_CHANNEL,
+		    NVRTX_CTL_SCHEDULE,
+		    params,
+		    NVRTX_SCHEDULE_PARAMS_BYTES,
+		    &reply,
+		    &reply_length);
+		if (error != 0)
+			failures++;
+		engine->scheduled = 0;
+	}
+
+	/* Frees the copy object, a child of the channel. */
+	if (engine->copy_made != 0) {
+		error = nvrtx_rm_free(gpu, NVRTX_HANDLE_COPY);
+		if (error != 0)
+			failures++;
+		engine->copy_made = 0;
+	}
 
 	/* Frees the channel. */
 	if (engine->channel_made != 0) {
@@ -410,6 +443,113 @@ nvrtx_channel_release(
 	nvrtx_buffer_free(gpu, &engine->push);
 	nvrtx_buffer_free(gpu, &engine->semaphore);
 	nvrtx_buffer_free(gpu, &engine->methods);
+}
+
+/*
+ * Invalidates every TLB entry of the page tables under one root in the VRAM.
+ *
+ * Returns ETIMEDOUT when the invalidate does not finish in 2 s.
+ */
+int
+nvrtx_flush_tlb(
+	struct nvrtx_gpu *gpu,
+	uint64_t root)
+{
+	int error;
+
+	/* Names the root (in the VRAM: aperture 0), then triggers the invalidate of all addresses. */
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(root >> 8));
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | CHANNEL_FLUSH_ALL_ADDRESSES);
+
+	/* Waits for the trigger to clear. */
+	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
+	if (error != 0) {
+		nvrtx_stage_mark("TLB invalidate of root %llx did not finish", (unsigned long long)root);
+		return error;
+	}
+
+	/* Succeeded: no stale translation is left. */
+	return 0;
+}
+
+/*
+ * Writes bytes of any length into the VRAM through the register window.
+ *
+ * The bytes go in pieces that each lie inside one 64 KiB step of the
+ * window.  The address and the length are whole words.
+ */
+int
+nvrtx_vram_write(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	const uint8_t *data,
+	size_t length)
+{
+	size_t piece;
+	size_t done;
+	int error;
+
+	/* Whole words only. */
+	if ((address % 4U) != 0U || (length % 4U) != 0U)
+		return EINVAL;
+
+	/* Writes up to the next 64 KiB boundary each time. */
+	done = 0U;
+	while (done < length) {
+		piece = 0x10000U - (size_t)((address + done) & 0xffffU);
+		if (piece > length - done)
+			piece = length - done;
+		error = channel_vram_write(gpu, address + done, data + done, piece);
+		if (error != 0)
+			return error;
+		done += piece;
+	}
+
+	/* Succeeded: the bytes are in the VRAM. */
+	return 0;
+}
+
+/*
+ * Clears a run of the VRAM through the register window.
+ */
+int
+nvrtx_vram_zero(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	size_t length)
+{
+	uint8_t *zeros;
+	size_t piece;
+	size_t done;
+	int error;
+
+	/* A page of zeros is written over and over. */
+	zeros = kern_calloc(1U, NVRTX_GSP_PAGE_SIZE);
+	if (zeros == NULL)
+		return ENOMEM;
+
+	/* Clears the run a page at a time. */
+	done = 0U;
+	error = 0;
+	while (done < length) {
+		piece = NVRTX_GSP_PAGE_SIZE;
+		if (piece > length - done)
+			piece = length - done;
+		error = nvrtx_vram_write(gpu, address + done, zeros, piece);
+		if (error != 0)
+			break;
+		done += piece;
+	}
+
+	kern_free(zeros);
+
+	/* Reports a write the window refused. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run reads as zero. */
+	return 0;
 }
 
 /* Writes bytes into the VRAM through the register window, then puts the window back. */
@@ -502,17 +642,10 @@ channel_flush_tlb(
 {
 	int error;
 
-	/* Names the root (in the VRAM: aperture 0), then triggers the invalidate of all addresses. */
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(gpu->engine.vram_block >> 8));
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | CHANNEL_FLUSH_ALL_ADDRESSES);
-
-	/* Waits for the trigger to clear. */
-	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
-	if (error != 0) {
-		nvrtx_stage_mark("P4 fail: TLB invalidate did not finish");
+	/* Invalidates the translations of the first address space's root. */
+	error = nvrtx_flush_tlb(gpu, gpu->engine.vram_block);
+	if (error != 0)
 		return error;
-	}
 
 	/* Succeeded: no stale translation is left. */
 	return 0;
@@ -645,6 +778,9 @@ channel_copy_fill(
 	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_CHANNEL, NVRTX_HANDLE_COPY, NVRTX_CLASS_COPY, params, sizeof(params));
 	if (error != 0)
 		return error;
+
+	/* The stop frees the copy object before its channel. */
+	engine->copy_made = 1;
 
 	/* Writes the fill and a second fence after it, in the push buffer's second half. */
 	push = (uint8_t *)engine->push.dma.address + CHANNEL_FILL_PUSH_AT;

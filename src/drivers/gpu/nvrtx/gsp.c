@@ -118,6 +118,7 @@ nvrtx_gsp_start(
 	struct nvrtx_gpu *gpu)
 {
 	bool allowed;
+	bool wanted;
 	int error;
 
 	/* Stops before P0 when the boot asks. */
@@ -244,8 +245,36 @@ nvrtx_gsp_start(
 		return error;
 	}
 
+	/* Builds the graphics golden context when the boot asks (nvrtx.gr=1) and does not stop before it. */
+	wanted = nvrtx_stage_gr_wanted();
+	allowed = nvrtx_stage_allowed("P5g");
+	if (wanted && !allowed)
+		nvrtx_stage_mark("P5g skipped (nvrtx.stop=P5g)");
+	if (wanted && allowed) {
+		error = nvrtx_gr_start(gpu);
+		if (error != 0) {
+			gsp_finish(gpu);
+			return error;
+		}
+	}
+
+	/* Stops before P8 when the boot asks. */
+	allowed = nvrtx_stage_allowed("P8");
+	if (!allowed) {
+		nvrtx_stage_mark("P8 skipped (nvrtx.stop=P8)");
+		gsp_finish(gpu);
+		return 0;
+	}
+
+	/* Brings the display up under the GSP and reads what the firmware lit. */
+	error = nvrtx_display_start(gpu);
+	if (error != 0) {
+		gsp_finish(gpu);
+		return error;
+	}
+
 	/* Says why the boot goes no further; the finish runs P6's stop and P7. */
-	nvrtx_stage_mark("P8 is not in this kernel; stopping after P5");
+	nvrtx_stage_mark("P8b is not in this kernel; stopping after P8a");
 	gsp_finish(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
@@ -293,8 +322,9 @@ nvrtx_gsp_release(
 	nvrtx_buffer_free(gpu, &memory->fwsec_frts);
 	nvrtx_buffer_free(gpu, &memory->fwsec_sb);
 
-	/* Frees the buffers of the first channel. */
+	/* Frees the buffers of the first channel and of the graphics context. */
 	nvrtx_channel_release(gpu);
+	nvrtx_gr_release(gpu);
 
 	/* Frees the channel's staging buffer and the reply buffer. */
 	if (memory->staging != NULL)
@@ -762,7 +792,6 @@ static void
 gsp_finish(
 	struct nvrtx_gpu *gpu)
 {
-	bool allowed;
 	bool stopped;
 	uint32_t low;
 	uint32_t high;
@@ -772,14 +801,15 @@ gsp_finish(
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
 		return;
 
-	/* Frees the channel and the address space (P6) unless the boot stopped before P6. */
+	/*
+	 * Frees the graphics objects, the channel and the address space (P6)
+	 * before every unload: the firmware did not unload with a scheduled
+	 * channel left (R6).
+	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
-		allowed = nvrtx_stage_allowed("P6");
-		if (allowed) {
-			nvrtx_channel_stop(gpu);
-		} else {
-			nvrtx_stage_mark("P6 skipped (nvrtx.stop=P6); the unload frees the objects");
-		}
+		nvrtx_display_stop(gpu);
+		nvrtx_gr_stop(gpu);
+		nvrtx_channel_stop(gpu);
 	}
 
 	/* Stops a GSP that runs; one that does not stop keeps its memory. */

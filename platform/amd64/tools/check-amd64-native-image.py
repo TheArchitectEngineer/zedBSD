@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Check an amd64 UEFI native disk image (WS062).
+"""Check an amd64 UEFI native disk image (WS062, WS238).
 
-The image is a GPT disk with three partitions: the EFI system partition
-holding the UEFI loader, the kernel and zedbsd.cfg; the UFS root partition
-labelled zedBSD-root; and the swap partition labelled zedBSD-swap.  The
-check reads the partition table and compares every partition's contents
-with the inputs the image was built from.  It reads the image in pieces, so
-a root of any size is checked in bounded memory.
+The image is a GPT disk with four partitions: the EFI system partition
+holding only the UEFI loader; the boot partition, a FAT32 volume of the
+Basic Data type labelled ZEDBSD, holding the kernel, zedbsd.cfg and the
+logo; the UFS root partition labelled zedBSD-root; and the swap partition
+labelled zedBSD-swap.  The check reads the partition table and compares
+every partition's contents with the inputs the image was built from.  It
+reads the image in pieces, so a root of any size is checked in bounded
+memory.
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
@@ -22,10 +24,12 @@ from pathlib import Path
 SECTOR = 512
 CHUNK = 1024 * 1024
 ESP_TYPE = bytes.fromhex("28732ac11ff8d211ba4b00a0c93ec93b")
+BASIC_DATA_TYPE = bytes.fromhex("a2a0d0ebe5b9334487c068b6b72699c7")
 ROOT_TYPE = bytes.fromhex("b67c6e51cf6ed6118ff800022d09712b")
 SWAP_TYPE = bytes.fromhex("b57c6e51cf6ed6118ff800022d09712b")
 EXPECTED = (
     (ESP_TYPE, "zedBSD EFI System"),
+    (BASIC_DATA_TYPE, "zedBSD-boot"),
     (ROOT_TYPE, "zedBSD-root"),
     (SWAP_TYPE, "zedBSD-swap"),
 )
@@ -84,16 +88,40 @@ def compare_file(image, offset: int, path: Path, length: int) -> None:
             done += want
 
 
-def compare_esp_file(image_path: Path, offset: int, name: str,
+def compare_fat_file(image_path: Path, offset: int, volume: str, name: str,
                      path: Path) -> None:
-    """Compares a file on the ESP with its input, through mtools."""
+    """Compares a file on a FAT partition with its input, through mtools."""
     result = subprocess.run(
         ["mcopy", "-n", "-i", f"{image_path}@@{offset}", f"::{name}", "-"],
         check=False, capture_output=True)
     if result.returncode != 0:
-        fail(f"ESP has no {name}")
+        fail(f"{volume} has no {name}")
     if result.stdout != path.read_bytes():
-        fail(f"ESP {name} differs from {path}")
+        fail(f"{volume} {name} differs from {path}")
+
+
+def fat_listing(image_path: Path, offset: int) -> set[str]:
+    """Lists the names in a FAT partition's root directory, through mtools."""
+    result = subprocess.run(
+        ["mdir", "-b", "-i", f"{image_path}@@{offset}", "::/"],
+        check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        fail("cannot list a FAT partition")
+    names = set()
+    for line in result.stdout.splitlines():
+        names.add(line.strip().lstrip(":").strip("/"))
+    return names
+
+
+def fat_volume(image, offset: int) -> tuple[int, str]:
+    """Reports whether a partition is FAT32 and its volume label."""
+    boot = read_at(image, offset, SECTOR)
+    if boot[510:512] != b"\x55\xaa":
+        fail(f"no FAT boot sector at {offset}")
+    sectors_per_fat_16 = struct.unpack_from("<H", boot, 22)[0]
+    if sectors_per_fat_16 != 0 or boot[82:90] != b"FAT32   ":
+        return 0, ""
+    return 1, boot[71:82].decode("ascii", "replace").rstrip()
 
 
 def main() -> None:
@@ -125,7 +153,7 @@ def main() -> None:
         if primary != backup:
             fail("primary and backup GPT entry arrays differ")
 
-        # Exactly the three expected partitions, in order, inside the usable range.
+        # Exactly the four expected partitions, in order, inside the usable range.
         extents = []
         for index in range(128):
             entry = primary[index * 128:(index + 1) * 128]
@@ -145,22 +173,36 @@ def main() -> None:
             extents.append((start, end))
 
         # The root and swap partitions hold their inputs exactly.
-        root_start, root_end = extents[1]
+        root_start, root_end = extents[2]
         compare_file(image, root_start * SECTOR, arguments.ufs_root,
                      (root_end - root_start + 1) * SECTOR)
-        swap_start, swap_end = extents[2]
+        swap_start, swap_end = extents[3]
         compare_file(image, swap_start * SECTOR, arguments.swap,
                      (swap_end - swap_start + 1) * SECTOR)
 
-    # The ESP holds the loader, the kernel and the configuration.
+        # The boot partition is FAT32 labelled ZEDBSD, so other systems mount it.
+        boot_fat32, boot_label = fat_volume(image, extents[1][0] * SECTOR)
+        if not boot_fat32:
+            fail("the boot partition is not FAT32")
+        if boot_label != "ZEDBSD":
+            fail(f"the boot partition is labelled {boot_label!r}, not ZEDBSD")
+
+    # The ESP holds only the loader: zedbsd.cfg there would make it boot0.
     esp_offset = extents[0][0] * SECTOR
-    compare_esp_file(arguments.image, esp_offset, "/EFI/BOOT/BOOTX64.EFI",
-                     arguments.bootx64)
-    compare_esp_file(arguments.image, esp_offset, "/vmunix", arguments.kernel)
-    compare_esp_file(arguments.image, esp_offset, "/zedbsd.cfg",
-                     arguments.zedbsd_config)
+    compare_fat_file(arguments.image, esp_offset, "ESP",
+                     "/EFI/BOOT/BOOTX64.EFI", arguments.bootx64)
+    if fat_listing(arguments.image, esp_offset) != {"EFI"}:
+        fail("the ESP holds more than /EFI")
+
+    # The boot partition holds the kernel, the configuration and the logo.
+    boot_offset = extents[1][0] * SECTOR
+    compare_fat_file(arguments.image, boot_offset, "boot partition",
+                     "/vmunix", arguments.kernel)
+    compare_fat_file(arguments.image, boot_offset, "boot partition",
+                     "/zedbsd.cfg", arguments.zedbsd_config)
     if arguments.logo is not None:
-        compare_esp_file(arguments.image, esp_offset, "/logo.ppm", arguments.logo)
+        compare_fat_file(arguments.image, boot_offset, "boot partition",
+                         "/logo.ppm", arguments.logo)
     print(f"check-amd64-native-image: {arguments.image}: OK")
 
 

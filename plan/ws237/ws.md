@@ -27,7 +27,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | [ws237-p001](phase001/phase.md) | 設計: SKL・KBL・CFL の display の register と順（Gen12 の display の code との差）、readout、flip と vblank、backlight、試験の道（SV7 の passthrough と素の起動） | cleared の候補（2026-10-14 P2、Q1 の判定待ち） |
 | [ws237-p002](phase002/phase.md) | readout と primary plane の flip（段 1）、1.5 LW | in-progress（P2）— 実装と host の確かめ済み（a5613f4b2）、T1（QEMU・SV7 の passthrough・5330）とユーザーの SV7 の素の起動の試験待ち |
 | [ws237-p003](phase003/phase.md) | backlight、1.0 LW | in-progress（P2）— 実装と host の確かめ済み、実機は WS の最後に SV7 でまとめて |
-| [ws237-p004](phase004/phase.md) | mode set と外部の display、6.0 LW | in-progress（P2）— register の順と計算は実装と host の確かめ済み（aa3250e12・cafce9894）、node は未着手。BUG-312 のため中断（2026-10-14） |
+| [ws237-p004](phase004/phase.md) | mode set と外部の display、6.0 LW | in-progress — register の順と計算は実装と host の確かめ済み（P2、aa3250e12・cafce9894）。P3 が引き継ぎ、偽の IO を共有の fixture に切り出して（b9b6f0e66）、node の設計を phase.md の再開点に書いた。2026-10-14 Q1 の優先の変更（WS037）で中断 |
 | ws237-p005 | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | planned |
 | ws237-p006 | 規約の全文、0.5 LW | planned |
 - 2026-10-14 ユーザー「SV7の確認はせずに進めて、最後に確認してデバッグで調整しましょう。」→ p002 の実機の確かめを待たずに p003〜p005 を実装し、最後に SV7 でまとめて確かめて直す。

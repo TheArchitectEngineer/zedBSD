@@ -275,7 +275,7 @@ nvrtx_sequencer_save(
 /*
  * Writes the allocation call for one resource-manager object.
  *
- * The call is the 44-byte header (client, parent, object, class, status,
+ * The call is the 32-byte header (client, parent, object, class, status,
  * parameter length, flags, four reserved bytes) followed by the class's
  * parameters.  Returns the call's length, or 0 when it does not fit.
  */

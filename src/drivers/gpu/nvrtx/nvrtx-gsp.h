@@ -462,8 +462,12 @@ struct nvrtx_fwsec {
 #define NVRTX_STATIC_INTERNAL_CLIENT_AT	1600U
 #define NVRTX_STATIC_UEFI_AT		1614U
 
-/* The allocation call's header and where the resource manager reports its status. */
-#define NVRTX_ALLOC_HEADER_BYTES	44U
+/*
+ * The allocation call's header (seven words and four reserved bytes, 32
+ * bytes; R5 found the parameters had been put 12 bytes late, so the space's
+ * flags were never read) and where the resource manager reports its status.
+ */
+#define NVRTX_ALLOC_HEADER_BYTES	32U
 #define NVRTX_ALLOC_STATUS_AT		16U
 
 /* The three classes of the first objects, and their parameter lengths. */
@@ -518,6 +522,55 @@ struct nvrtx_fwsec {
 /* The event a channel error raises. */
 #define NVRTX_EVENT_CHANNEL_ERROR	0x1004U
 
+/*
+ * The graphics context (5f): the controls and classes, the parameter
+ * lengths, and the context buffers the resource manager names.
+ */
+#define NVRTX_CTL_GR_BUFFERS_INFO	0x20800a32U
+#define NVRTX_CTL_PROMOTE_CONTEXT	0x2080012bU
+#define NVRTX_CTL_COPY_SERVER_PDES	0x90f10106U
+#define NVRTX_CTL_SCRUBBER		0x20800a46U
+#define NVRTX_CLASS_THREED		0xc597U
+#define NVRTX_GR_BUFFERS_INFO_BYTES	1664U
+#define NVRTX_PROMOTE_PARAMS_BYTES	560U
+#define NVRTX_COPY_PDES_PARAMS_BYTES	184U
+#define NVRTX_SCRUBBER_PARAMS_BYTES	1U
+#define NVRTX_GR_BUFFER_MAX		9U
+#define NVRTX_ENGINE_GRAPHICS		1U
+
+/* The server's reserved range in a space the resource manager shares: 512 MiB at 4 GiB. */
+#define NVRTX_SERVER_VA			0x100000000ULL
+#define NVRTX_SERVER_VA_BYTES		0x20000000ULL
+
+/*
+ * One graphics context buffer, as the resource manager describes it.
+ *
+ * The promote call names it by its buffer number.  A global buffer is made
+ * once and shared by every graphics channel; an initialized one is filled
+ * by the resource manager, which needs its physical address; a read-only one
+ * is mapped without write access.  The page is the mapping's page size
+ * (log 2) and the alignment the address's (log 2).
+ */
+struct nvrtx_gr_buffer {
+	uint32_t buffer_id;
+	uint64_t size;
+	uint32_t page_shift;
+	uint32_t align_shift;
+	int global;
+	int initialize;
+	int read_only;
+};
+
+/* One entry of a promote call: where a buffer is and what the resource manager does with it. */
+struct nvrtx_promote_entry {
+	uint64_t physical;
+	uint64_t virtual_address;
+	uint64_t size;
+	uint32_t buffer_id;
+	int initialize;
+	int nonmapped;
+};
+
 /* The copy engine chosen for the first channel. */
 struct nvrtx_engine_pick {
 	uint32_t engine;
@@ -532,6 +585,8 @@ struct nvrtx_channel_setup {
 	uint32_t chid;
 	uint32_t space;
 	uint32_t engine;
+	/* Nonzero for a privileged (admin) channel, as the golden context's is. */
+	uint32_t privileged;
 	uint64_t instance;
 	uint64_t userd;
 	uint64_t methods;
@@ -629,6 +684,14 @@ size_t nvrtx_push_fence(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_copy_fill(uint8_t *push, uint32_t subchannel, uint64_t destination, uint32_t words, uint32_t value);
 void nvrtx_ring_entry(uint8_t *entry, uint64_t va, uint32_t words);
 void nvrtx_free_params(uint8_t *params, uint32_t client, uint32_t object);
+void nvrtx_space_params_shared(uint8_t *params);
+void nvrtx_copy_pdes_params(uint8_t *params, uint64_t root, uint64_t directory2, uint64_t directory1);
+size_t nvrtx_gr_buffers(const uint8_t *info, size_t length, struct nvrtx_gr_buffer *buffers, size_t capacity);
+void nvrtx_promote_params(uint8_t *params, uint32_t client, uint32_t channel, const struct nvrtx_promote_entry *entries, size_t count);
+
+size_t nvrtx_mmu_gr_tables_bytes(uint64_t va_bytes);
+int nvrtx_mmu_gr_tables(uint8_t *image, uint64_t block, uint64_t va_base, uint64_t va_bytes);
+int nvrtx_mmu_gr_map(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size, int read_only);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);
 int nvrtx_vbios_fwsec(const struct nvrtx_vbios *vbios, struct nvrtx_fwsec *fwsec);

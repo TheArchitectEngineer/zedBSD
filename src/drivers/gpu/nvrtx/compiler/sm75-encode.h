@@ -1,0 +1,140 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The encoder of Turing (SM75) instructions (sm75-encode.c, ws037-p008).
+ *
+ * Each function fills one 128-bit instruction from operands that are
+ * already physical registers, immediates or constant buffer words.  An
+ * instruction starts with nvrtx_sm75_begin() (zero, guarded by PT, no
+ * scoreboard), gets its operation from one encode function, and may then
+ * get a guard predicate and its scheduling control.  Nothing here allocates
+ * or fails: the caller checks its operands first.  The field positions are
+ * in sm75-isa.h.
+ */
+
+#ifndef DRIVERS_GPU_NVRTX_COMPILER_SM75_ENCODE_H
+#define DRIVERS_GPU_NVRTX_COMPILER_SM75_ENCODE_H
+
+#include <stdint.h>
+
+/* What an ALU source operand is. */
+#define NVRTX_SM75_SRC_NONE	0
+#define NVRTX_SM75_SRC_REG	1
+#define NVRTX_SM75_SRC_IMM	2
+#define NVRTX_SM75_SRC_CB	3
+
+/*
+ * One instruction: four words, the first holding bits 0..31.
+ *
+ * The caller owns it; it is copied into the program's code when complete.
+ */
+struct nvrtx_sm75_word {
+	uint32_t w[4];
+};
+
+/*
+ * One source operand of an ALU instruction.
+ *
+ * value is the register number (RZ for zero), the immediate's bits, or the
+ * byte offset in constant buffer cb_index.  neg and abs are the source
+ * modifiers the operand's slot has.
+ */
+struct nvrtx_sm75_src {
+	int kind;
+	uint32_t value;
+	uint32_t cb_index;
+	int neg;
+	int abs;
+};
+
+/*
+ * ==== Fields ====
+ */
+
+/* Writes a field of up to 64 bits at a bit position. */
+void nvrtx_sm75_set(struct nvrtx_sm75_word *word, unsigned low, unsigned bits, uint64_t value);
+
+/* Reads a field of up to 64 bits at a bit position. */
+uint64_t nvrtx_sm75_get(const struct nvrtx_sm75_word *word, unsigned low, unsigned bits);
+
+/* Starts an instruction: all bits zero, guarded by PT, no scoreboard. */
+void nvrtx_sm75_begin(struct nvrtx_sm75_word *word);
+
+/* Guards an instruction by a predicate, or its negation. */
+void nvrtx_sm75_guard(struct nvrtx_sm75_word *word, unsigned predicate, int negate);
+
+/* Sets the scheduling control: the delay, the yield, the scoreboards written and read (7: none), and the ones waited for. */
+void nvrtx_sm75_control(struct nvrtx_sm75_word *word, unsigned delay, int yield, unsigned write_bar, unsigned read_bar, unsigned wait_mask);
+
+/* Makes a register, an immediate or a constant buffer source. */
+struct nvrtx_sm75_src nvrtx_sm75_reg(uint32_t reg);
+struct nvrtx_sm75_src nvrtx_sm75_imm(uint32_t bits);
+struct nvrtx_sm75_src nvrtx_sm75_cb(uint32_t index, uint32_t offset);
+
+/*
+ * ==== Instructions ====
+ */
+
+/* The ALU form shared by most arithmetic: dst, then sources 0, 1 and 2 placed by the form they make. */
+void nvrtx_sm75_alu(struct nvrtx_sm75_word *word, uint32_t opcode, uint32_t dst, const struct nvrtx_sm75_src *src0, const struct nvrtx_sm75_src *src1, const struct nvrtx_sm75_src *src2);
+
+/* MOV dst, src. */
+void nvrtx_sm75_mov(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *src);
+
+/* FADD, FMUL and FFMA (round to nearest, denormals kept). */
+void nvrtx_sm75_fadd(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b);
+void nvrtx_sm75_fmul(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b);
+void nvrtx_sm75_ffma(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, const struct nvrtx_sm75_src *c);
+
+/* FMNMX: the smaller of a and b when min, else the larger. */
+void nvrtx_sm75_fmnmx(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, int min);
+
+/* FSETP and ISETP: a predicate from a comparison (NVRTX_SM75_FCMP_*, NVRTX_SM75_ICMP_*), ANDed with PT. */
+void nvrtx_sm75_fsetp(struct nvrtx_sm75_word *word, uint32_t predicate, uint32_t compare, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b);
+void nvrtx_sm75_isetp(struct nvrtx_sm75_word *word, uint32_t predicate, uint32_t compare, int is_signed, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b);
+
+/* IADD3 dst = a + b + c (no carries). */
+void nvrtx_sm75_iadd3(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, const struct nvrtx_sm75_src *c);
+
+/* IMAD dst = a * b + c, the low 32 bits; IMAD.WIDE.U32 the 64-bit dst pair = a * b + the c pair. */
+void nvrtx_sm75_imad(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, const struct nvrtx_sm75_src *c, int is_signed);
+void nvrtx_sm75_imad_wide(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, const struct nvrtx_sm75_src *c);
+
+/* LOP3 dst = lut(a, b, c). */
+void nvrtx_sm75_lop3(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, const struct nvrtx_sm75_src *c, uint32_t lut);
+
+/* SHF: a 32-bit shift of value by count, left or right (logical or arithmetic), the count taken modulo 32. */
+void nvrtx_sm75_shift(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t value, const struct nvrtx_sm75_src *count, int right, int arithmetic);
+
+/* SEL dst = predicate (or its negation) ? a : b. */
+void nvrtx_sm75_sel(struct nvrtx_sm75_word *word, uint32_t dst, const struct nvrtx_sm75_src *a, const struct nvrtx_sm75_src *b, uint32_t predicate, int negate);
+
+/* MUFU dst = function(src) (NVRTX_SM75_MUFU_*). */
+void nvrtx_sm75_mufu(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t function, uint32_t src);
+
+/* I2F, F2I and FRND between 32-bit values, with a rounding (NVRTX_SM75_ROUND_*). */
+void nvrtx_sm75_i2f(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t src, int is_signed);
+void nvrtx_sm75_f2i(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t src, int is_signed);
+void nvrtx_sm75_frnd(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t src, uint32_t rounding);
+
+/* S2R dst = a special register (NVRTX_SM75_SR_*). */
+void nvrtx_sm75_s2r(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t special);
+
+/* LDC dst = the 32- or 64-bit word at offset in constant buffer index (a 64-bit result fills an even register pair). */
+void nvrtx_sm75_ldc(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t index, uint32_t offset, int wide);
+
+/* LDG.E and STG.E of a 32-bit word at the 64-bit address in a register pair. */
+void nvrtx_sm75_ldg(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t address);
+void nvrtx_sm75_stg(struct nvrtx_sm75_word *word, uint32_t address, uint32_t data);
+
+/* EXIT, NOP, and BRA by a signed number of instructions from the next one. */
+void nvrtx_sm75_exit(struct nvrtx_sm75_word *word);
+void nvrtx_sm75_nop(struct nvrtx_sm75_word *word);
+void nvrtx_sm75_bra(struct nvrtx_sm75_word *word, int32_t instructions);
+
+#endif /* DRIVERS_GPU_NVRTX_COMPILER_SM75_ENCODE_H */

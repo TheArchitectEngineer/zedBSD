@@ -42,6 +42,7 @@ static void box_anonymous_style(const struct css_style *parent, struct css_style
 static void box_marker(struct layout_box *box, int ordinal);
 static void box_relative_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
 static void box_transform_offset(const struct layout_box *box, layout_unit *dx, layout_unit *dy);
+static void box_apply_scale(struct layout_box *box);
 static void box_static_inline(struct layout_box *box, layout_unit x, layout_unit y);
 
 /*
@@ -113,6 +114,9 @@ layout_build(
 	error = layout_position(tree);
 	if (error != 0)
 		return error;
+
+	/* A box with nothing inside it that transform scales (a hairline border drawn at twice the size and halved) shrinks about its origin. */
+	box_apply_scale(root);
 
 	/* Succeeded: the tree is laid out. */
 	return 0;
@@ -1331,6 +1335,80 @@ box_marker(
 	default:
 		break;
 	}
+}
+
+/*
+ * Applies the scale of transform to a box that has no children and no lines
+ * (the rest of a transformed subtree is not scaled): the border box shrinks
+ * or grows about transform-origin; a border keeps at least one pixel.
+ */
+static void
+box_apply_scale(
+	struct layout_box *box)
+{
+	struct layout_box *child;
+	const struct css_length *scale;
+	const struct css_length *origin;
+	layout_unit frame_x;
+	layout_unit frame_y;
+	layout_unit border_width;
+	layout_unit border_height;
+	layout_unit origin_x;
+	layout_unit origin_y;
+	layout_unit new_width;
+	layout_unit new_height;
+	layout_unit minimum;
+	int index;
+
+	for (child = box->first_child; child != NULL; child = child->next)
+		box_apply_scale(child);
+	scale = box->style.transform_scale;
+	if (box->first_child != NULL || box->lines != NULL)
+		return;
+	if (box->kind != LAYOUT_BLOCK && !box->atomic && !box->replaced)
+		return;
+	if (scale[0].unit != CSS_UNIT_PX || scale[1].unit != CSS_UNIT_PX)
+		return;
+	if (scale[0].value == 1.0f && scale[1].value == 1.0f)
+		return;
+	if (scale[0].value < 0 || scale[1].value < 0)
+		return;
+	origin = box->style.transform_origin;
+	frame_x = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	frame_y = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	border_width = frame_x + box->width;
+	border_height = frame_y + box->height;
+
+	/* The origin, from the border box's top left. */
+	origin_x = 0;
+	origin_y = 0;
+	if (origin[0].unit == CSS_UNIT_PX)
+		origin_x = layout_from_px(origin[0].value);
+	else if (origin[0].unit == CSS_UNIT_PERCENT)
+		origin_x = (layout_unit)((float)border_width * origin[0].value / 100.0f) + layout_from_px(origin[0].offset);
+	if (origin[1].unit == CSS_UNIT_PX)
+		origin_y = layout_from_px(origin[1].value);
+	else if (origin[1].unit == CSS_UNIT_PERCENT)
+		origin_y = (layout_unit)((float)border_height * origin[1].value / 100.0f) + layout_from_px(origin[1].offset);
+
+	/* The scaled box, its border no thinner than a pixel. */
+	new_width = (layout_unit)((float)border_width * scale[0].value);
+	new_height = (layout_unit)((float)border_height * scale[1].value);
+	box->x += origin_x - (layout_unit)((float)origin_x * scale[0].value);
+	box->y += origin_y - (layout_unit)((float)origin_y * scale[1].value);
+	minimum = LAYOUT_UNIT;
+	for (index = 0; index < 4; index++) {
+		if (box->border[index] > 0) {
+			layout_unit scaled;
+
+			scaled = (layout_unit)((float)box->border[index] * scale[index % 2 == 0 ? 1 : 0].value);
+			box->border[index] = scaled < minimum ? minimum : scaled;
+		}
+	}
+	frame_x = box->border[CSS_LEFT] + box->padding[CSS_LEFT] + box->padding[CSS_RIGHT] + box->border[CSS_RIGHT];
+	frame_y = box->border[CSS_TOP] + box->padding[CSS_TOP] + box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+	box->width = new_width > frame_x ? new_width - frame_x : 0;
+	box->height = new_height > frame_y ? new_height - frame_y : 0;
 }
 
 /*

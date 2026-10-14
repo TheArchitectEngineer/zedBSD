@@ -516,8 +516,9 @@ test_records(void)
 
 		memset(params, 0x5a, sizeof(params));
 		n = nvrtx_alloc_call(call, sizeof(call), &o, params, sizeof(params));
-		check(n == 100 && nvrtx_get32(call, 0) == 0xc0de0001U && nvrtx_get32(call, 8) == 0xc0de0080U && nvrtx_get32(call, 12) == 0x80, "alloc: header handles and class");
-		check(nvrtx_get32(call, 16) == 0 && nvrtx_get32(call, 20) == 56 && nvrtx_get32(call, 24) == 0 && call[44] == 0x5a && call[99] == 0x5a, "alloc: status, length, parameters");
+		check(n == 88 && nvrtx_get32(call, 0) == 0xc0de0001U && nvrtx_get32(call, 8) == 0xc0de0080U && nvrtx_get32(call, 12) == 0x80, "alloc: header handles and class");
+		check(nvrtx_get32(call, 16) == 0 && nvrtx_get32(call, 20) == 56 && nvrtx_get32(call, 24) == 0 && nvrtx_get32(call, 28) == 0, "alloc: status, length, flags, reserved");
+		check(call[31] == 0 && call[32] == 0x5a && call[87] == 0x5a, "alloc: parameters right after the 32-byte header (R5)");
 		check(nvrtx_alloc_call(call, 60, &o, params, sizeof(params)) == 0, "alloc: small buffer refused");
 	}
 	nvrtx_put32(seq, 40, 99);
@@ -623,6 +624,7 @@ test_objects(void)
 	setup.userd = 0x1f6f06000ULL;
 	setup.methods = 0x30000000ULL;
 	setup.methods_size = 0x8000;
+	setup.privileged = 0;
 	nvrtx_channel_params(chan, &setup);
 	check(nvrtx_get64(chan, 8) == 0x20000000ULL && nvrtx_get32(chan, 16) == 512 && nvrtx_get32(chan, 28) == 0xc0de90f1U && nvrtx_get32(chan, 128) == 0x0a, "channel: ring, space, engine");
 	check(nvrtx_get32(chan, 20) == ((1u << 12) | (1u << 21)), "channel: flags (USERD index 0, page 1 fixed)");
@@ -651,6 +653,96 @@ test_objects(void)
 
 	nvrtx_free_params(params, 0xc0de0001U, 0xc0dec46fU);
 	check(nvrtx_get32(params, 0) == 0xc0de0001U && nvrtx_get32(params, 4) == 0 && nvrtx_get32(params, 8) == 0xc0dec46fU && nvrtx_get32(params, 12) == 0, "free: params");
+
+	setup.privileged = 1;
+	setup.chid = 1;
+	nvrtx_channel_params(chan, &setup);
+	check(nvrtx_get32(chan, 20) == ((1u << 8) | (1u << 21) | (1u << 5)), "channel: privileged flag, USERD index 1 page 0");
+	check(nvrtx_get32(chan, 244) == 0x15, "channel: admin privilege");
+}
+
+/* The graphics golden context's parameters and tables (ws037-p005 5f). */
+static void
+test_gr(void)
+{
+	static uint8_t info[1664];
+	static uint8_t promote[560];
+	static uint8_t pdes[184];
+	static uint8_t space[48];
+	struct nvrtx_gr_buffer buffers[NVRTX_GR_BUFFER_MAX];
+	struct nvrtx_promote_entry entries[2];
+	uint8_t *image;
+	size_t count;
+	size_t length;
+	uint64_t pte;
+
+	/* Engine 0's sizes: main, pagepool, patch, bundle, attribute, rtv, fecs event, access map. */
+	memset(info, 0, sizeof(info));
+	nvrtx_put32(info, 0x00 * 8, 0x48123);
+	nvrtx_put32(info, 0x0d * 8, 0x80000);
+	nvrtx_put32(info, 0x10 * 8, 0x8000);
+	nvrtx_put32(info, 0x11 * 8, 0x300000);
+	nvrtx_put32(info, 0x13 * 8, 0x2c0000);
+	nvrtx_put32(info, 0x14 * 8, 0x1000);
+	nvrtx_put32(info, 0x17 * 8, 0x2000);
+	nvrtx_put32(info, 0x18 * 8, 0x3000);
+	count = nvrtx_gr_buffers(info, sizeof(info), buffers, NVRTX_GR_BUFFER_MAX);
+	check(count == 9, "gr: nine buffers with the unrestricted map");
+	check(buffers[0].buffer_id == 0 && buffers[0].size == 0x49000 + 0x40000 && buffers[0].page_shift == 16 && buffers[0].initialize && !buffers[0].global, "gr: main with subcontext headers, 64 KiB pages");
+	check(buffers[1].buffer_id == 4 && buffers[1].global && !buffers[1].initialize && buffers[1].page_shift == 16, "gr: pagepool");
+	check(buffers[2].buffer_id == 2 && !buffers[2].global && buffers[2].initialize && buffers[2].page_shift == 12, "gr: patch");
+	check(buffers[3].buffer_id == 3 && buffers[3].page_shift == 21 && buffers[3].align_shift == 21, "gr: bundle, 2 MiB pages");
+	check(buffers[4].buffer_id == 5 && buffers[4].page_shift == 21 && buffers[4].align_shift == 22, "gr: attribute aligned to its size");
+	check(buffers[6].buffer_id == 9 && buffers[6].global && buffers[6].initialize, "gr: fecs event");
+	check(buffers[7].buffer_id == 10 && buffers[7].read_only && buffers[8].buffer_id == 11 && buffers[8].read_only && buffers[8].size == 0x3000, "gr: the access map and its unrestricted twin");
+	nvrtx_put32(info, 0x14 * 8, 0);
+	check(nvrtx_gr_buffers(info, sizeof(info), buffers, NVRTX_GR_BUFFER_MAX) == 0, "gr: a missing buffer refuses the list");
+	check(nvrtx_gr_buffers(info, 100, buffers, NVRTX_GR_BUFFER_MAX) == 0, "gr: short information refused");
+
+	/* The promote: header and two entries. */
+	entries[0].buffer_id = 0;
+	entries[0].initialize = 1;
+	entries[0].nonmapped = 0;
+	entries[0].virtual_address = 0x20000000ULL;
+	entries[0].physical = 0x1e8400000ULL;
+	entries[0].size = 0x89000;
+	entries[1].buffer_id = 10;
+	entries[1].initialize = 1;
+	entries[1].nonmapped = 1;
+	entries[1].virtual_address = 0x20400000ULL;
+	entries[1].physical = 0x1e8800000ULL;
+	entries[1].size = 0x3000;
+	nvrtx_promote_params(promote, 0xc1d00000U, 0xf1f00001U, entries, 2);
+	check(nvrtx_get32(promote, 0) == 1 && nvrtx_get32(promote, 4) == 0 && nvrtx_get32(promote, 12) == 0xc1d00000U && nvrtx_get32(promote, 16) == 0xf1f00001U && nvrtx_get32(promote, 40) == 2, "promote: engine, client, channel, count");
+	check(nvrtx_get64(promote, 48) == 0x1e8400000ULL && nvrtx_get64(promote, 56) == 0x20000000ULL && nvrtx_get64(promote, 64) == 0x89000 && nvrtx_get32(promote, 72) == 4 && promote[76] == 0 && promote[77] == 0 && promote[78] == 1 && promote[79] == 0, "promote: main entry");
+	check(nvrtx_get64(promote, 80) == 0x1e8800000ULL && nvrtx_get64(promote, 88) == 0 && promote[108] == 10 && promote[110] == 1 && promote[111] == 1, "promote: access map entry, not mapped");
+
+	/* The copy of the server's directories. */
+	nvrtx_copy_pdes_params(pdes, 0x1e8000000ULL, 0x1e8001000ULL, 0x1e8002000ULL);
+	check(nvrtx_get64(pdes, 8) == 0x20000000ULL && nvrtx_get64(pdes, 16) == 0x100000000ULL && nvrtx_get64(pdes, 24) == 0x11fffffffULL && nvrtx_get32(pdes, 32) == 3, "pdes: 512 MiB at 4 GiB, three levels");
+	check(nvrtx_get64(pdes, 40) == 0x1e8000000ULL && nvrtx_get64(pdes, 48) == 32 && nvrtx_get32(pdes, 56) == 1 && nvrtx_get32(pdes, 60) == 47, "pdes: root");
+	check(nvrtx_get64(pdes, 64) == 0x1e8001000ULL && nvrtx_get64(pdes, 72) == 4096 && nvrtx_get32(pdes, 84) == 38, "pdes: second level");
+	check(nvrtx_get64(pdes, 88) == 0x1e8002000ULL && nvrtx_get64(pdes, 96) == 4096 && nvrtx_get32(pdes, 108) == 29 && nvrtx_get32(pdes, 0) == 0 && nvrtx_get32(pdes, 4) == 0, "pdes: first level, subdevice 0");
+
+	nvrtx_space_params_shared(space);
+	check(nvrtx_get32(space, 0) == 0 && nvrtx_get32(space, 4) == 0, "space: shared, no flags");
+
+	/* The tables: 8 MiB at 0x20000000, then a privileged read-only page. */
+	length = nvrtx_mmu_gr_tables_bytes(0x800000ULL);
+	check(length == 0x4000 + 4 * 0x1000, "gr tables: four page tables");
+	image = calloc(1, length);
+	check(nvrtx_mmu_gr_tables(image, 0x1e8000000ULL, 0x20000000ULL, 0x800000ULL) == 0, "gr tables: built");
+	check(nvrtx_get64(image, 0) == ((0x1e8001000ULL >> 4) | 2) && nvrtx_get64(image, 0x1000) == ((0x1e8002000ULL >> 4) | 2), "gr tables: root and second level on index 0");
+	check(nvrtx_get64(image, 0x2000 + 1 * 8) == ((0x1e8003000ULL >> 4) | 2) && nvrtx_get64(image, 0x2000 + 8 * 8) == 0, "gr tables: first level entry 1, the server's entry 8 left");
+	check(nvrtx_get64(image, 0x3000 + 0 * 16 + 8) == ((0x1e8004000ULL >> 4) | 2) && nvrtx_get64(image, 0x3000 + 3 * 16 + 8) == ((0x1e8007000ULL >> 4) | 2) && nvrtx_get64(image, 0x3000 + 4 * 16 + 8) == 0, "gr tables: one page table per 2 MiB");
+	check(nvrtx_mmu_gr_map(image, 0x20000000ULL, 0x800000ULL, 0x20201000ULL, 0x1e8400000ULL, 0x2000, 1) == 0, "gr map: two pages");
+	pte = nvrtx_get64(image, 0x4000 + (0x201000 >> 12) * 8);
+	check(pte == ((0x1e8400000ULL >> 4) | 1 | (1u << 5) | (1u << 6)), "gr map: valid, VRAM, privileged, read-only");
+	check(nvrtx_get64(image, 0x4000 + (0x202000 >> 12) * 8) == ((0x1e8401000ULL >> 4) | 1 | (1u << 5) | (1u << 6)), "gr map: second page");
+	check(nvrtx_mmu_gr_map(image, 0x20000000ULL, 0x800000ULL, 0x207ff000ULL, 0x1e8400000ULL, 0x2000, 0) == EINVAL, "gr map: run past the range refused");
+	check(nvrtx_mmu_gr_tables(image, 0x1e8000000ULL, 0xf0000000ULL, 0x20000000ULL) == EINVAL, "gr tables: range into the server's refused");
+	check(nvrtx_mmu_gr_tables(image, 0x1e8000000ULL, 0x20100000ULL, 0x200000ULL) == EINVAL, "gr tables: unaligned range refused");
+	free(image);
 }
 
 int
@@ -664,6 +756,7 @@ main(int argc, char **argv)
 	test_records();
 	test_mmu();
 	test_objects();
+	test_gr();
 	if (argc > 1)
 		test_files(argv[1]);
 	else

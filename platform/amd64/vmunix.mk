@@ -172,6 +172,13 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/records.c src/drivers/gpu/nvrtx/rpc
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/mmu.c src/drivers/gpu/nvrtx/objects.c
 # P4 to P6 on the GPU: the address space, the channel and its fence (ws037-p005 5b-5d).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/channel.c
+# P5g: the graphics golden context and the TU10x scrubber (ws037-p005 5f, nvrtx.gr=1).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/gr.c
+# P8a: the display under the GSP, its objects and the readout of the lit heads (ws037-p006).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/display.c
+# The shader compiler: SPIR-V to SM75 through the shared frontend and optimizer (ws037-p008).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75-encode.c src/drivers/gpu/nvrtx/compiler/sm75-compile.c \
+	$(filter-out $(AMD64_I915_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
@@ -1104,7 +1111,7 @@ endif
 $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
-# ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ESP of the native layout, the payload FAT of the BIOS image), drawn by the
+# ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ZEDBSD FAT32 partition of the native layout (WS238), the payload FAT of the BIOS image), drawn by the
 # UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
 # (userland/desktop/artwork/kei-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
 # middle over black bars, shrunk only when the screen is smaller, and the
@@ -1191,9 +1198,12 @@ $(BUILD)/bios-hdd-image-fragmented.img: $(BUILD)/bootloader/stage1.bin \
  --fragment-kernel $@
 
 ifeq ($(ZEDBSD_VARIANT),native)
-# WS062: the native layout.  The ESP carries the UEFI loader, the kernel and
-# zedbsd.cfg; the root is a UFS partition mounted read-write through
-# rootpart=; swap is a partition of its own.  Nothing is layered: a write
+# WS062: the native layout.  WS238: the ESP carries only the UEFI loader; the
+# kernel, zedbsd.cfg and the logo are on a FAT32 partition of the Basic Data
+# type labelled ZEDBSD, which the loader finds by its zedbsd.cfg and makes
+# boot0 (/boot/boot0), and which Windows and macOS mount like any FAT volume;
+# the root is a UFS partition mounted read-write through rootpart=; swap is a
+# partition of its own.  Nothing is layered: a write
 # to the root goes to its partition, not through a loop device into a file
 # on FAT.  The root image is built from the same staged tree as the overlay
 # layout's rootfs.img, with room and inodes to be written to.  The root and
@@ -1212,6 +1222,7 @@ AMD64_GRAPHICAL_BOOT_LINES := logo=logo.ppm
 AMD64_NATIVE_ROOT_MIB ?= 1024
 AMD64_NATIVE_ROOT_INODES ?= 65536
 AMD64_NATIVE_SWAP_MIB ?= 1024
+AMD64_NATIVE_BOOT_MIB ?= 256
 # The sizes are in the names, so that changing one makes the image again.
 AMD64_NATIVE_ROOT_IMAGE := $(ZEDBSD_ROOTFS_IMAGE_DIR)/amd64-native-root-$(AMD64_NATIVE_ROOT_MIB)m.ufs
 ifneq ($(ZEDBSD_TEST_IMAGE_TAG),)
@@ -1251,7 +1262,7 @@ $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/uefi/BOOTX64.EFI \
  --kernel $(BUILD)/vmunix --bootx64 $(BUILD)/uefi/BOOTX64.EFI \
  --zedbsd-config $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) --logo $(AMD64_BOOT_LOGO) \
  --ufs-root $(AMD64_NATIVE_ROOT_IMAGE) --swapfile $(AMD64_NATIVE_SWAP_IMAGE) \
- $@.unchecked
+ --fat-size-mib $(AMD64_NATIVE_BOOT_MIB) $@.unchecked
 	$(PYTHON) platform/amd64/tools/check-amd64-native-image.py \
  --kernel $(BUILD)/vmunix --bootx64 $(BUILD)/uefi/BOOTX64.EFI \
  --zedbsd-config $(AMD64_NATIVE_UEFI_ZEDBSD_CONFIG) --logo $(AMD64_BOOT_LOGO) \
