@@ -1,10 +1,10 @@
 require zedbuild;
 
-func biosCompare(image, source, name) {
+func biosCompare(image, volume, source, name) {
     if (source == "") { return; }
     var extracted=image+".ws010-extract";
     System.shell("rm -f "+zbShellQuote(extracted));
-    var command="mcopy -n -i "+zbShellQuote(image+"@@1048576")+" "+
+    var command="mcopy -n -i "+zbShellQuote(image+"@@"+volume)+" "+
         zbShellQuote("::/"+name)+" "+zbShellQuote(extracted)+" >/dev/null && cmp "+
         zbShellQuote(extracted)+" "+zbShellQuote(source);
     var status=System.shell(command);
@@ -29,16 +29,43 @@ func biosCompareUfs(image, source, raw, machine) {
         start=first;blocks=last-first+1;
     }
     if (start == 0 || blocks == 0) { zbFail("native UFS extent is empty"); }
+    // A PC-98 partition spans whole cylinders, so the UFS image fills its
+    // first sectors and at most one cylinder less one sector stays unused.
+    var sizeTest="-eq "+blocks;
+    if (machine == "pc98") { sizeTest="-le "+blocks+" && test $(( $(stat -c %s "+zbShellQuote(source)+") / 512 + 136 )) -gt "+blocks; }
     var extracted=image+".ws013-ufs-extract";
     System.shell("rm -f "+zbShellQuote(extracted));
     var command="test $(( $(stat -c %s "+zbShellQuote(source)+") % 512 )) -eq 0 && "+
-        "test $(( $(stat -c %s "+zbShellQuote(source)+") / 512 )) -eq "+blocks+" && "+
+        "test $(( $(stat -c %s "+zbShellQuote(source)+") / 512 )) "+sizeTest+" && "+
         "dd if="+zbShellQuote(image)+" of="+zbShellQuote(extracted)+" bs=512 skip="+start+
-        " count="+blocks+" status=none && cmp "+zbShellQuote(extracted)+" "+
+        " count=$(( $(stat -c %s "+zbShellQuote(source)+") / 512 )) status=none && cmp "+zbShellQuote(extracted)+" "+
         zbShellQuote(source);
     var status=System.shell(command);
     System.shell("rm -f "+zbShellQuote(extracted));
     if (status != 0) { zbFail("native UFS differs from its input"); }
+}
+// A native PC-98 partition starts on head 0, sector 0 and ends on the last
+// head, sector 16 of the table geometry (H=4 up to 20 MiB, else H=8; S=17),
+// as NEC's tools and the Linux PC-98 image that a PC-9821 Ra43 boots lay
+// them out (BUG-309).  Returns the first live entry's data start, which is
+// the boot FAT volume, in bytes.
+func biosPc98Volume(raw) {
+    var volume=0;
+    var heads=8;if(Packed.size(raw)<=20*1048576){heads=4;}
+    var cylinder=heads*17;
+    for (n in 0..16) {
+        var e=512+n*32;
+        if (raw[e] != 0) {
+            if (raw[e+4]!=0||raw[e+5]!=0||raw[e+8]!=0||raw[e+9]!=0||raw[e+12]!=16||raw[e+13]!=heads-1) {
+                zbFail("PC-98 partition "+(n+1)+" is not on cylinder boundaries");
+            }
+            if (zbU16LE(raw,e+6)!=zbU16LE(raw,e+10)) { zbFail("PC-98 partition "+(n+1)+" IPL and data start differ"); }
+            if (volume == 0) { volume=zbU16LE(raw,e+10)*cylinder*512; }
+        }
+    }
+    if (volume < 1048576 || volume % 4096 != 0) { zbFail("PC-98 boot volume is not a 4 KiB aligned cylinder at or after 1 MiB"); }
+    if ((Packed.size(raw)/512) % cylinder != 0) { zbFail("PC-98 disk is not whole cylinders"); }
+    return volume;
 }
 func biosCompareRaw(raw, offset, source, name) {
     if (source == "") { return; }
@@ -107,6 +134,7 @@ func main(args){
     biosCompareStage1(raw,stage1Input,machine);
     if(machine=="pcat"&&(raw[446]!=128||raw[450]!=14||zbU32LE(raw,454)!=2048)){zbFail("invalid PC/AT MBR partition");}
     if(machine=="pc98"&&(raw[512]!=0xa1||raw[513]!=0x91)){zbFail("invalid PC-98 partition table");}
+    var volume=1048576;if(machine=="pc98"){volume=biosPc98Volume(raw);}
     var stage=512;if(machine=="pc98"){stage=1024;}
     if(machine=="pc98"){
         if(raw[stage+510]!=85||raw[stage+511]!=170){zbFail("invalid PC-98 LBA2 selector");}
@@ -117,7 +145,6 @@ func main(args){
     }
     biosCompareRaw(raw,stage,stage2Input,"reserved-area Stage 2");
     if(pbr!=""){
-        var volume=1048576;
         var expectedPbr=zbReadFile(pbr);
         if(Packed.size(expectedPbr)!=2048||Packed.size(raw)<volume+2560){zbFail("invalid partition PBR input or image extent");}
         var fat32=zbU16LE(raw,volume+22)==0;
@@ -134,16 +161,16 @@ func main(args){
             for(i in 512..2048){if(raw[volume+i]!=expectedPbr[i]){zbFail("partition PBR continuation differs");}}
         }
     }
-    biosCompare(image,bootzbsd,"BOOTZBSD.EXE");
-    biosCompare(image,kernel,"VMUNIX");
+    biosCompare(image,volume,bootzbsd,"BOOTZBSD.EXE");
+    biosCompare(image,volume,kernel,"VMUNIX");
     if(machine=="pc98") {
-        biosCompare(image,zedbsdConfig,"BOOTZBSD.CFG");
+        biosCompare(image,volume,zedbsdConfig,"BOOTZBSD.CFG");
     } else {
-        biosCompare(image,zedbsdConfig,"ZEDBSD.CFG");
+        biosCompare(image,volume,zedbsdConfig,"ZEDBSD.CFG");
     }
-    biosCompare(image,arch,"ROOTFS.IMG");
-    biosCompare(image,dataImage,"DATA.IMG");
-    biosCompare(image,swap,"SWAPFILE");
+    biosCompare(image,volume,arch,"ROOTFS.IMG");
+    biosCompare(image,volume,dataImage,"DATA.IMG");
+    biosCompare(image,volume,swap,"SWAPFILE");
     biosCompareUfs(image,ufsRoot,raw,machine);
     print("BIOS HDD image check: PASS");
 }
