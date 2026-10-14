@@ -120,6 +120,15 @@ struct vp_player {
 	double picture_time;
 	struct app_scaler *scaler;
 
+	/*
+	 * What the frames drawn since the last DRAW line cost (ws236 p008):
+	 * how many, the time fitting the picture into the frame took, and the
+	 * time the rest (the bar and the present) took, in microseconds.
+	 */
+	unsigned draws;
+	uint64_t draw_picture_us;
+	uint64_t draw_rest_us;
+
 	/* What the window says instead of a picture when a file could not be played ("" for nothing). */
 	char notice[160];
 	unsigned shown;
@@ -775,6 +784,8 @@ vp_draw(
 {
 	struct app_frame *picture;
 	uint64_t shown_us;
+	uint64_t started_us;
+	uint64_t drawn_us;
 	uint64_t after_ms;
 	double clock;
 	double due;
@@ -847,12 +858,17 @@ vp_draw(
 		return;
 	player->dirty = 0;
 
-	/* The picture, the bar, and the frame shown. */
+	/* The picture, the bar, and the frame shown, each timed for the DRAW line. */
+	started_us = kl_clock_us();
 	kl_ui_begin(player->ui, now_us);
 	vp_draw_picture(player);
+	drawn_us = kl_clock_us();
 	vp_draw_bar(player, now_us);
 	(void)kl_ui_end(player->ui, now_us);
 	status = kl_window_present(player->window, player->pixels, (size_t)player->width);
+	player->draws++;
+	player->draw_picture_us += drawn_us - started_us;
+	player->draw_rest_us += kl_clock_us() - drawn_us;
 	if (status == EAGAIN)
 		player->resized = 1;
 
@@ -998,6 +1014,19 @@ vp_log_clock(
 	    played_out,
 	    state);
 	player->clock_logged_us = now_us;
+
+	/* What the frames drawn since the last line cost, on average. */
+	if (player->draws != 0U) {
+		vp_log("DRAW frames=%u picture_us=%llu rest_us=%llu",
+		    player->draws,
+		    (unsigned long long)(player->draw_picture_us / player->draws),
+		    (unsigned long long)(player->draw_rest_us / player->draws));
+	}
+
+	/* The next line counts from here. */
+	player->draws = 0U;
+	player->draw_picture_us = 0U;
+	player->draw_rest_us = 0U;
 }
 
 /* Draws the picture fitted to the window, black around it (or black alone). */
