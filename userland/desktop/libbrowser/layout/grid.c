@@ -1070,6 +1070,10 @@ grid_static_vertical_start(
 		    (align == CSS_ALIGN_END &&
 		    box->style.writing_mode == CSS_WRITING_VERTICAL_LR);
 		child->static_y_align =
+		    (child->style.direction == CSS_DIRECTION_RTL &&
+		    justify == CSS_ALIGN_SELF_START) ? CSS_ALIGN_END :
+		    (child->style.direction == CSS_DIRECTION_RTL &&
+		    justify == CSS_ALIGN_SELF_END) ? CSS_ALIGN_START :
 		    justify == CSS_ALIGN_RIGHT ? CSS_ALIGN_END :
 		    justify == CSS_ALIGN_LEFT ? CSS_ALIGN_START : justify;
 		child->static_y_area_height =

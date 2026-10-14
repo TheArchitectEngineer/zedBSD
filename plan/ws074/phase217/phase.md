@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1170-i01 有限部分範囲（2026-10-14 12:49 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:19 JSTまで）に適用。q1169固定2×2 vertical-lr/rl LTR positioned inline-grid、明示px tracks/gap0、直接absolute auto-size ASCII子、同writing-mode・子direction:rtl・両axis明示span1・全offset autoに限り、justify-self:self-start/endの物理縦開始/終了を反転する。固定row-axis010/011 whole PASS、旧row001–009代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。逆writing-mode/auto lines/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1170-i01 結果（2026-10-14 12:50 JST）
+
+Event ws074-p217-q1170-partial-clear-20261014: [証拠](evidence/20261014-q1170/README.md)。固定縦Grid absolute RTL子のjustify-self:self-start/endを物理縦端へ反転し、固定row-axis010/011 whole FAIL→PASS。旧row001–009含む11件44 callbacks PASS、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。q1170部分cleared、column010/011 static areaとRTL字形視覚、p217/p189/p173 whole未達。共有投影/GitHub publication保留。
+
 ## q1167-i01 有限部分範囲（2026-10-14 12:41 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:11 JSTまで）に適用。q1165固定2×2 vertical-lr/rl LTR positioned inline-grid、明示px tracks・gap0、直接absolute auto-size ASCII子、明示span1、全offset auto・同writing-modeに限りjustify-self:self-start/endを物理列の上/下static areaへ写す。固定row-axis008/009 whole PASS、旧001–007/column008/009代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。逆writing-mode/auto lines/RTL/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

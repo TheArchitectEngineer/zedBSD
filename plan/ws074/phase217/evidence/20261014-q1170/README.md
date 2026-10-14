@@ -1,0 +1,7 @@
+# q1170-i01 — RTL vertical Grid absolute self alignment
+
+For direct absolute RTL children sharing a fixed 2×2 positioned vertical Grid's writing mode, `justify-self:self-start/end` now maps to the physical opposite column edge because the child's inline direction is reversed. The existing deferred absolute placement uses that mapped edge after text height is known. Fixed [row-axis010](wpt-row-010.json) and [011](wpt-row-011.json) changed **2/2 whole FAIL→PASS**, each 4/4 callbacks. [Row-axis001–011](wpt-row-001.json) is **11/11 whole PASS**, 44/44 callbacks. [Column-axis010](wpt-column-010.json)/[011](wpt-column-011.json) retain their corrected width and distinct static position failures.
+
+Fixed WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`, q1012 manifest, localhost HTTP, fixed fonts, 5 s settle, 20 s process bound. [Warning-free build](build.log), host CSS rule model 51/51, JS 14/14 and Grid inline-axis 48/48 PASS. [Acid report](acid-report.json): Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 differences, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1170-i01 partial scope cleared. Column-axis010/011 require opposite-writing-mode static area, and RTL glyph order still needs visual verification. p217/p189/p173 whole remain unmet. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.
