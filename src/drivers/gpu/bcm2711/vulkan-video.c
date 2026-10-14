@@ -170,8 +170,8 @@ struct video_parameters {
  *
  * Published from its creation; the recorded begins retain it, so a decode
  * always finds its decoder.  The last sets sent and the time stamp move
- * only in the native job, which runs one decode at a time.  The status
- * query of the decode in progress is borrowed from a recorded begin query.
+ * only in the native job, which runs one decode at a time.  unit is the
+ * scratch a parameter set is written into (kept off the kernel stack).
  */
 struct video_session {
 	struct bcm2711_vulkan_input_owner owner;
@@ -188,8 +188,7 @@ struct video_session {
 	size_t sent_sps_bytes;
 	uint8_t sent_pps[DRV_RPI4_H264_SPS_MAX + 2048U];
 	size_t sent_pps_bytes;
-	struct video_pool *status_pool;
-	uint32_t status_query;
+	uint8_t unit[DRV_RPI4_H264_SPS_MAX + 2048U];
 };
 
 /*
@@ -221,7 +220,9 @@ struct video_resource {
  * It starts with the common record, which the command buffer's walks read.
  * It retains every object it names until its command buffer is reset or
  * its last submission retires.  A decode and a begin query borrow the
- * begin of their coding scope, which lives in the same command buffer.
+ * begin of their coding scope, and a decode the begin query open around
+ * it (status); both live in the same command buffer, which retains the
+ * pool.
  */
 struct video_command {
 	struct bcm2711_vulkan_record record;
@@ -231,6 +232,7 @@ struct video_command {
 	struct bcm2711_vulkan_object *view;
 	struct bcm2711_vulkan_object *pool;
 	const struct video_command *begin;
+	const struct video_command *status;
 	uint32_t flags;
 	uint64_t offset;
 	uint64_t range;
@@ -287,6 +289,7 @@ static int decode_command(struct bcm2711_vulkan_session *session, uint32_t opcod
 static int retain_command(struct bcm2711_vulkan_session *session, struct video_command *command, struct bcm2711_vulkan_object *device, uint64_t session_id, uint64_t parameters_id, uint64_t buffer_id, uint64_t view_id, uint64_t pool_id);
 static int release_command(struct bcm2711_vulkan_command_node *node);
 static const struct video_command *open_scope(const struct bcm2711_vulkan_command_buffer *command);
+static const struct video_command *open_query(const struct bcm2711_vulkan_command_buffer *command);
 static void read_chain(struct i915_wire_reader *reader, struct video_chain *chain, uint32_t depth);
 static void read_fields(struct i915_wire_reader *reader, uint32_t type, struct video_chain *chain, uint32_t depth);
 static int32_t read_profile(struct i915_wire_reader *reader, uint32_t *profile_idc);
@@ -310,8 +313,8 @@ static int build_unit(struct video_session *video, const struct video_parameters
 static int append_set(uint8_t *staging, uint32_t capacity, uint32_t *used, const uint8_t *unit, size_t bytes, uint8_t *sent, size_t *sent_bytes, bool force);
 static int image_target(const struct video_command *command, struct bcm2711_vulkan_resource **image, uint64_t *physical, uint8_t **cpu);
 static void relayout(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, const struct bcm2711_vulkan_resource *image, uint8_t *cpu);
-static void set_status(struct video_session *video, int32_t status);
-static void skip(struct video_session *video, const char *reason, int error);
+static void set_status(const struct video_command *command, int32_t status);
+static void skip(struct video_session *video, const struct video_command *command, const char *reason, int error);
 
 /*
  * Whether any session has been promised video, for the log line said once.
@@ -525,6 +528,7 @@ bcm2711_vulkan_video_run(
 	struct video_pool *pool;
 	uint32_t index;
 	int error;
+	int closed;
 
 	/* The record is a video command's. */
 	command = (const struct video_command *)record;
@@ -538,13 +542,15 @@ bcm2711_vulkan_video_run(
 		if ((command->flags & VIDEO_CONTROL_RESET) != 0 && !video->broken) {
 			bcm2711_render_window_open(controller);
 			error = drv_rpi4_mmal_decoder_flush(video->decoder);
-			(void)bcm2711_render_window_close(controller);
+			closed = bcm2711_render_window_close(controller);
 			video->sent_sps_bytes = 0;
 			video->sent_pps_bytes = 0;
 			if (error != 0) {
-				skip(video, "flush failed", error);
+				skip(video, NULL, "flush failed", error);
 				error = 0;
 			}
+			if (closed != 0)
+				error = closed;
 		}
 		break;
 	case GPU_OP_CMD_DECODE_VIDEO:
@@ -559,24 +565,14 @@ bcm2711_vulkan_video_run(
 		}
 		break;
 	case GPU_OP_CMD_BEGIN_QUERY:
-		/* The decodes of the scope write this query's status; until one does it is complete. */
+		/* The decodes inside write this query's status; until one does it is complete. */
 		pool = command->pool->payload;
 		pool->status[command->query] = VIDEO_STATUS_COMPLETE;
-		if (command->begin != NULL) {
-			video = command->begin->session->payload;
-			video->status_pool = pool;
-			video->status_query = command->query;
-		}
 		break;
 	case GPU_OP_CMD_END_QUERY:
-		/* The query is available; the scope's decodes no longer write it. */
+		/* The query is available. */
 		pool = command->pool->payload;
 		pool->available[command->query] = 1;
-		if (command->begin != NULL) {
-			video = command->begin->session->payload;
-			if (video->status_pool == pool)
-				video->status_pool = NULL;
-		}
 		break;
 	default:
 		/* A begin or an end of a coding scope. */
@@ -1431,6 +1427,10 @@ record_command(
 		if (video->begin == NULL)
 			error = EINVAL;
 	}
+
+	/* A decode writes its status into the begin query open around it, if any. */
+	if (error == 0 && opcode == GPU_OP_CMD_DECODE_VIDEO)
+		video->status = open_query(command);
 	if (error == 0 && command->render_open)
 		error = ENOTSUP;
 	if (error == 0 && sizeof(*video) > BCM2711_VULKAN_RECORD_BYTES - command->recorded_bytes)
@@ -1681,6 +1681,32 @@ open_scope(
 
 	/* Succeeded: the open scope's begin, if any. */
 	return begin;
+}
+
+/* Finds the begin query open at the end of a recording (not ended since), or NULL. */
+static const struct video_command *
+open_query(
+	const struct bcm2711_vulkan_command_buffer *command)
+{
+	const struct bcm2711_vulkan_command_node *node;
+	const struct bcm2711_vulkan_record *record;
+	const struct video_command *query;
+
+	/* The last begin query, cleared by an end query of the same pool and query. */
+	query = NULL;
+	for (node = command->first; node != NULL; node = node->next) {
+		record = (const struct bcm2711_vulkan_record *)node;
+		if (record->opcode == GPU_OP_CMD_BEGIN_QUERY)
+			query = (const struct video_command *)record;
+		if (record->opcode == GPU_OP_CMD_END_QUERY &&
+		    query != NULL &&
+		    ((const struct video_command *)record)->pool == query->pool &&
+		    ((const struct video_command *)record)->query == query->query)
+			query = NULL;
+	}
+
+	/* Succeeded: the open begin query, if any. */
+	return query;
 }
 
 /*
@@ -2182,6 +2208,26 @@ parameters_take(
 		}
 	}
 
+	/* Refuses, before taking anything, sets beyond the object's capacity (new keys counted as added). */
+	sps_count = 0U;
+	for (index = 0U; index < VIDEO_SPS_IDS; index++) {
+		if (parameters->sps[index] != NULL)
+			sps_count++;
+	}
+	for (index = 0U; index < chain->new_sps_count; index++) {
+		if (parameters->sps[chain->new_sps[index]->id] == NULL)
+			sps_count++;
+	}
+	pps_count = 0U;
+	for (pps = parameters->pps; pps != NULL; pps = pps->next)
+		pps_count++;
+	for (pps = chain->new_pps; pps != NULL; pps = pps->next) {
+		if (find_pps(parameters, pps->fields.sps_id, pps->fields.pps_id) == NULL)
+			pps_count++;
+	}
+	if (sps_count > parameters->max_sps || pps_count > parameters->max_pps)
+		return EINVAL;
+
 	/* The sequence sets, each in its id's place. */
 	for (index = 0U; index < chain->new_sps_count; index++) {
 		id = chain->new_sps[index]->id;
@@ -2208,18 +2254,6 @@ parameters_take(
 		pps->next = parameters->pps;
 		parameters->pps = pps;
 	}
-
-	/* Refuses an object that now holds more sets than its capacity. */
-	sps_count = 0U;
-	for (index = 0U; index < VIDEO_SPS_IDS; index++) {
-		if (parameters->sps[index] != NULL)
-			sps_count++;
-	}
-	pps_count = 0U;
-	for (pps = parameters->pps; pps != NULL; pps = pps->next)
-		pps_count++;
-	if (sps_count > parameters->max_sps || pps_count > parameters->max_pps)
-		return EINVAL;
 
 	/* Succeeded: the sets are the object's. */
 	return 0;
@@ -2439,7 +2473,7 @@ pool_results(
 	if (object != NULL)
 		pool = object->payload;
 	if (pool == NULL || first > pool->count || count > pool->count - first ||
-	    bytes > VIDEO_QUERY_REPLY_MAX || stride < record ||
+	    bytes > VIDEO_QUERY_REPLY_MAX || stride < record || stride > bytes ||
 	    (count != 0U && (uint64_t)(count - 1U) * stride + record > bytes)) {
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_DEVICE_LOST);
 		drv_i915_wire_reply_u64(reply, 0U);
@@ -2606,6 +2640,7 @@ run_decode(
 	uint32_t bytes;
 	uint32_t pitch;
 	int64_t pts;
+	bool built;
 	int error;
 	int closed;
 	int busy;
@@ -2616,42 +2651,43 @@ run_decode(
 	if (command->begin->parameters != NULL)
 		parameters = command->begin->parameters->payload;
 	if (video->broken) {
-		set_status(video, VIDEO_STATUS_ERROR);
+		set_status(command, VIDEO_STATUS_ERROR);
 		return 0;
 	}
 	if (parameters == NULL) {
-		skip(video, "no parameters bound", EINVAL);
+		skip(video, command, "no parameters bound", EINVAL);
 		return 0;
 	}
 
 	/* The output image, its CPU view and its physical address. */
 	error = image_target(command, &image, &physical, &cpu);
 	if (error != 0) {
-		skip(video, "output picture not usable", error);
+		skip(video, command, "output picture not usable", error);
 		return 0;
 	}
 	bcm2711_vulkan_video_nv12_layout(image->width, image->height, &pitch, &chroma, &bytes_needed);
 
-	/* The access unit, in the decoder's staging. */
+	/*
+	 * Without the controller mutex: the access unit goes into the
+	 * decoder's staging (which may wait for the firmware), then it is sent
+	 * and its frame received.  Only retained objects are read meanwhile.
+	 */
+	video->sequence++;
+	pts = video->sequence;
+	bcm2711_render_window_open(controller);
 	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
 	if (error == 0)
 		error = build_unit(video, parameters, command, staging, capacity, &bytes);
-	if (error != 0) {
-		skip(video, "access unit not built", error);
-		return 0;
+	built = error == 0;
+	if (built) {
+		drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
+		error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts);
 	}
-
-	/* Sends the unit and receives its frame without the controller mutex. */
-	video->sequence++;
-	pts = video->sequence;
-	drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
-	bcm2711_render_window_open(controller);
-	error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts);
-	while (error == 0) {
+	while (built && error == 0) {
 		error = drv_rpi4_mmal_decoder_receive(video->decoder, VIDEO_FRAME_MS, &frame, &pixels);
 
-		/* A late frame of an earlier decode (one that timed out) is dropped. */
-		if (error == 0 && frame.pts < pts && frame.length != 0) {
+		/* A late frame of an earlier decode (one that timed out) is dropped; an unknown time is this one's. */
+		if (error == 0 && frame.pts < pts && frame.pts != DRV_RPI4_MMAL_FRAME_NO_TIME && frame.length != 0) {
 			kern_logf("v3d: video: late frame %lld dropped at decode %lld\n", (long long)frame.pts, (long long)pts);
 			continue;
 		}
@@ -2660,6 +2696,12 @@ run_decode(
 	drv_rpi4_mmal_decoder_target(video->decoder, 0, 0, 0, 0);
 	busy = drv_rpi4_mmal_decoder_busy(video->decoder);
 	closed = bcm2711_render_window_close(controller);
+
+	/* A unit that did not get through leaves the firmware without its sets: they go again next time. */
+	if (error != 0) {
+		video->sent_sps_bytes = 0;
+		video->sent_pps_bytes = 0;
+	}
 
 	/*
 	 * A bulk that may still write the image keeps the image's memory for
@@ -2677,6 +2719,12 @@ run_decode(
 	if (closed != 0)
 		return closed;
 
+	/* A unit that could not be built skips the picture. */
+	if (!built) {
+		skip(video, command, "access unit not built", error);
+		return 0;
+	}
+
 	/* A frame that did not come skips the picture; too many in a row stop waiting. */
 	if (error != 0) {
 		if (error == ETIMEDOUT) {
@@ -2684,10 +2732,16 @@ run_decode(
 			if (video->timeouts >= VIDEO_MAX_TIMEOUTS)
 				video->broken = true;
 		}
-		skip(video, "no frame from the decoder", error);
+		skip(video, command, "no frame from the decoder", error);
 		return 0;
 	}
 	video->timeouts = 0;
+
+	/* Only NV12 is the image's format; another output is not this picture. */
+	if (frame.encoding != DRV_RPI4_MMAL_FRAME_NV12) {
+		skip(video, command, "decoder output is not NV12", ENOTSUP);
+		return 0;
+	}
 
 	/* A frame of another picture (the decoder held one back) is reported once and still used. */
 	if (frame.pts != pts) {
@@ -2700,9 +2754,9 @@ run_decode(
 
 	/* The status of the picture. */
 	if ((frame.flags & DRV_RPI4_MMAL_FRAME_CORRUPTED) != 0) {
-		set_status(video, VIDEO_STATUS_ERROR);
+		set_status(command, VIDEO_STATUS_ERROR);
 	} else {
-		set_status(video, VIDEO_STATUS_COMPLETE);
+		set_status(command, VIDEO_STATUS_COMPLETE);
 	}
 
 	/* Succeeded: the picture is in the output image. */
@@ -2728,7 +2782,7 @@ build_unit(
 	struct bcm2711_v3d_view *view;
 	const struct drv_rpi4_h264_sps *sps;
 	const struct video_pps *pps;
-	uint8_t unit[DRV_RPI4_H264_SPS_MAX + 2048U];
+	uint8_t *unit;
 	void *source;
 	size_t written;
 	uint32_t used;
@@ -2746,12 +2800,13 @@ build_unit(
 	idr = (command->picture_flags & VIDEO_PICTURE_IDR) != 0;
 
 	/* The SPS and the PPS, sent when new or at an IDR. */
+	unit = video->unit;
 	used = 0;
-	error = drv_rpi4_h264_write_sps(sps, 1, unit, sizeof(unit), &written);
+	error = drv_rpi4_h264_write_sps(sps, 1, unit, sizeof(video->unit), &written);
 	if (error == 0)
 		error = append_set(staging, capacity, &used, unit, written, video->sent_sps, &video->sent_sps_bytes, idr);
 	if (error == 0)
-		error = drv_rpi4_h264_write_pps(&pps->fields, sps, unit, sizeof(unit), &written);
+		error = drv_rpi4_h264_write_pps(&pps->fields, sps, unit, sizeof(video->unit), &written);
 	if (error == 0)
 		error = append_set(staging, capacity, &used, unit, written, video->sent_pps, &video->sent_pps_bytes, idr);
 	if (error != 0)
@@ -2887,29 +2942,33 @@ relayout(
 		kern_memcpy(cpu + chroma + (size_t)row * pitch, pixels + source_chroma + (size_t)row * source_pitch, width);
 }
 
-/* Writes the status of the scope's status query, if one is open. */
+/* Writes a decode's status into the status query open around it, if any. */
 static void
 set_status(
-	struct video_session *video,
+	const struct video_command *command,
 	int32_t status)
 {
-	/* Only an open status query takes the status. */
-	if (video->status_pool == NULL)
+	struct video_pool *pool;
+
+	/* Only a decode inside a begin query has a status to write. */
+	if (command == NULL || command->status == NULL)
 		return;
-	if (video->status_query >= video->status_pool->count)
+	pool = command->status->pool->payload;
+	if (command->status->query >= pool->count)
 		return;
-	video->status_pool->status[video->status_query] = status;
+	pool->status[command->status->query] = status;
 }
 
 /* Skips a picture: logs why (a few times a session) and marks its status ERROR. */
 static void
 skip(
 	struct video_session *video,
+	const struct video_command *command,
 	const char *reason,
 	int error)
 {
 	/* The first lines of a session say why; later ones only count. */
 	if (video->timeouts < VIDEO_MAX_TIMEOUTS || video->sequence < 4)
 		kern_logf("v3d: video: picture %lld skipped: %s (%d)\n", (long long)video->sequence, reason, error);
-	set_status(video, VIDEO_STATUS_ERROR);
+	set_status(command, VIDEO_STATUS_ERROR);
 }

@@ -202,6 +202,7 @@ drv_rpi4_vchiq_ring_init(
 
 	/* Nothing written or read yet; no event armed or fired. */
 	ring->tx_pos = 0;
+	ring->tx_slots = 0;
 	ring->tx_data = NULL;
 	ring->rx_pos = 0;
 	ring->rx_data = NULL;
@@ -286,8 +287,7 @@ drv_rpi4_vchiq_ring_reserve(
 
 	/* A new slot must already be back from the VPU. */
 	if ((position & VCHIQ_SLOT_MASK) == 0) {
-		queue_index = position / DRV_RPI4_VCHIQ_SLOT_SIZE;
-		ahead = (int32_t)(ring->slot_queue_available - queue_index);
+		ahead = (int32_t)(ring->slot_queue_available - ring->tx_slots);
 		if (ahead <= 0)
 			return EAGAIN;
 	}
@@ -299,11 +299,12 @@ drv_rpi4_vchiq_ring_reserve(
 		((uint32_t *)padding)[1] = space - DRV_RPI4_VCHIQ_HEADER_BYTES;
 	}
 
-	/* Enters the next slot from the ARM's queue. */
+	/* Enters the next slot from the ARM's queue, counting it. */
 	if ((position & VCHIQ_SLOT_MASK) == 0) {
-		queue_index = (position / DRV_RPI4_VCHIQ_SLOT_SIZE) & VCHIQ_QUEUE_MASK;
+		queue_index = ring->tx_slots & VCHIQ_QUEUE_MASK;
 		slot = ring->local->slot_queue[queue_index];
 		ring->tx_data = slot_data(ring, slot);
+		ring->tx_slots++;
 	}
 
 	/* The header stays where the message starts; the payload follows it. */
@@ -374,7 +375,7 @@ drv_rpi4_vchiq_ring_next(
 	if (ring->rx_data == NULL) {
 		queue_index = (ring->rx_pos / DRV_RPI4_VCHIQ_SLOT_SIZE) & VCHIQ_QUEUE_MASK;
 		ring->rx_slot = ring->remote->slot_queue[queue_index];
-		if (ring->rx_slot >= DRV_RPI4_VCHIQ_MAX_SLOTS)
+		if (ring->rx_slot < ring->remote->slot_first || ring->rx_slot > ring->remote->slot_last)
 			return EIO;
 		ring->rx_data = slot_data(ring, ring->rx_slot);
 		ring->zero->slots[ring->rx_slot].use_count = 1;

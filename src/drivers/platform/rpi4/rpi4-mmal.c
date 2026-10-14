@@ -34,11 +34,16 @@
 #include <kern/waitq.h>
 #include <uapi/errno.h>
 
-/* The decoders one boot may have at once. */
-#define MMAL_DECODERS			4U
+/*
+ * The decoders one boot may have at once.  One: every decoder shares the
+ * one service, whose bulk receives pair with the firmware's sends in the
+ * order its messages came, and each decoder's caller issues its own
+ * receives; two decoders' callers could cross them.
+ */
+#define MMAL_DECODERS			1U
 
-/* The arrivals a decoder queues before its caller reads them. */
-#define MMAL_QUEUE			16U
+/* The arrivals a decoder queues before its caller reads them: every input and output buffer and events. */
+#define MMAL_QUEUE			48U
 
 /* The most input and output buffers a decoder gives the firmware. */
 #define MMAL_INPUT_BUFFERS		16U
@@ -87,7 +92,7 @@ enum mmal_bulk_kind {
 /* One message the receive thread queued, with its length. */
 struct mmal_message {
 	uint32_t size;
-	uint8_t bytes[DRV_RPI4_MMAL_EVENT_BYTES];
+	uint8_t bytes[DRV_RPI4_MMAL_MAX_MESSAGE];
 };
 
 /* The completion tag of one kind of bulk of one decoder. */
@@ -159,6 +164,7 @@ struct drv_rpi4_mmal_decoder {
 	struct mmal_output outputs[MMAL_OUTPUT_BUFFERS];
 	unsigned held_output;
 	bool output_enabled;
+	bool input_sent;
 	uint64_t target_physical;
 	uint32_t target_capacity;
 	uint32_t target_pitch;
@@ -196,6 +202,9 @@ static struct drv_rpi4_vchiq_service *mmal_service;
 static struct drv_dma_device *mmal_dma;
 static struct mutex mmal_open_lock;
 static bool mmal_ready;
+
+/* The firmware's MMAL worker version (GET_VERSION's major), read once with the service; zero if unknown. */
+static uint32_t mmal_major;
 
 /*
  * The one request in flight, its reply and the next waiter number.
@@ -377,6 +386,7 @@ drv_rpi4_mmal_decoder_input(
 	struct mmal_staging *half;
 	unsigned long enabled;
 	uint64_t deadline;
+	uint64_t observed;
 	bool busy;
 	int error;
 
@@ -385,7 +395,11 @@ drv_rpi4_mmal_decoder_input(
 		return EIO;
 	half = &decoder->half[decoder->current];
 
-	/* Waits until the firmware is done with the area. */
+	/*
+	 * Waits until the firmware is done with the area.  The wait's
+	 * sequence is read in the same hold of the lock as the area's counts,
+	 * so a completion between the two is not missed.
+	 */
 	deadline = sched_ticks() + kern_ms_to_ticks(MMAL_WAIT_MS) + 1U;
 	for (;;) {
 		error = pump(decoder);
@@ -394,12 +408,18 @@ drv_rpi4_mmal_decoder_input(
 		enabled = spin_lock_irqsave(&mmal_lock);
 
 		busy = half->buffers != 0 || half->bulks != 0;
+		error = 0;
+		if (busy && decoder->queue_count == 0 && !decoder->queue_overflow) {
+			observed = waitq_sequence(&mmal_wake);
+			error = waitq_sleep(&mmal_wake, &mmal_lock, observed, deadline, 0);
+			if (error != ETIMEDOUT)
+				error = 0;
+		}
 
 		spin_unlock_irqrestore(&mmal_lock, enabled);
 
 		if (!busy)
 			break;
-		error = wait_queue_or(decoder, deadline);
 		if (error != 0) {
 			kern_logf("rpi4-mmal: input staging not given back in %u ms\n", MMAL_WAIT_MS);
 			return error;
@@ -492,6 +512,7 @@ drv_rpi4_mmal_decoder_send(
 			return error;
 		}
 		offset += chunk;
+		decoder->input_sent = true;
 	}
 
 	/* The next unit goes into the other area. */
@@ -639,22 +660,37 @@ drv_rpi4_mmal_decoder_flush(
 	if (decoder->broken)
 		return EIO;
 
-	/* The input port, with the dummy bulk from the scratch. */
-	size = drv_rpi4_mmal_build_buffer(message, DRV_RPI4_MMAL_MSG_PORT_FLUSH, 0, decoder->component,
-					  decoder->input_handle, token(decoder, MMAL_KIND_INPUT, 0xfffU), 0, 0, 0,
-					  DRV_RPI4_MMAL_TIME_UNKNOWN);
-	enabled = spin_lock_irqsave(&mmal_lock);
+	/*
+	 * The input port: after data went in (and on a firmware that has it,
+	 * version 15 on), PORT_FLUSH with the dummy bulk that keeps it behind
+	 * the data's bulks; else the plain flush.
+	 */
+	if (decoder->input_sent && mmal_major >= 15U) {
+		size = drv_rpi4_mmal_build_buffer(message, DRV_RPI4_MMAL_MSG_PORT_FLUSH, 0, decoder->component,
+						  decoder->input_handle, token(decoder, MMAL_KIND_INPUT, 0xfffU), 0, 0, 0,
+						  DRV_RPI4_MMAL_TIME_UNKNOWN);
+		enabled = spin_lock_irqsave(&mmal_lock);
 
-	decoder->scratch_pending = true;
+		decoder->scratch_pending = true;
 
-	spin_unlock_irqrestore(&mmal_lock, enabled);
+		spin_unlock_irqrestore(&mmal_lock, enabled);
 
-	error = request_with_bulk(message, size, bus_to_physical(decoder->scratch.device_address), &decoder->scratch_tag,
-				  reply, sizeof(reply));
-	if (error == 0)
-		error = wait_bulk(decoder, false);
-	if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS) != 0)
-		error = EIO;
+		error = request_with_bulk(message, size, bus_to_physical(decoder->scratch.device_address), &decoder->scratch_tag,
+					  reply, sizeof(reply));
+		if (error == 0) {
+			error = wait_bulk(decoder, false);
+		} else {
+			enabled = spin_lock_irqsave(&mmal_lock);
+
+			decoder->scratch_pending = false;
+
+			spin_unlock_irqrestore(&mmal_lock, enabled);
+		}
+		if (error == 0 && drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS) != 0)
+			error = EIO;
+	} else {
+		error = port_action(decoder, decoder->input_handle, DRV_RPI4_MMAL_ACTION_FLUSH, NULL);
+	}
 	if (error != 0)
 		return error;
 
@@ -698,8 +734,10 @@ drv_rpi4_mmal_decoder_destroy(
 
 	/* Stops the ports and the component, and destroys it, unless the link is broken. */
 	if (!decoder->broken && decoder->component != 0) {
+		decoder->output_enabled = false;
 		(void)port_action(decoder, decoder->input_handle, DRV_RPI4_MMAL_ACTION_DISABLE, NULL);
 		(void)port_action(decoder, decoder->output_handle, DRV_RPI4_MMAL_ACTION_DISABLE, NULL);
+		(void)pump(decoder);
 		size = drv_rpi4_mmal_build_component(message, DRV_RPI4_MMAL_MSG_COMPONENT_DISABLE, 0, decoder->component);
 		(void)request(message, size, reply, sizeof(reply));
 		size = drv_rpi4_mmal_build_component(message, DRV_RPI4_MMAL_MSG_COMPONENT_DESTROY, 0, decoder->component);
@@ -747,8 +785,8 @@ service_message(
 		return;
 	if (drv_rpi4_mmal_get32(bytes, DRV_RPI4_MMAL_HEADER_MAGIC) != DRV_RPI4_MMAL_MAGIC)
 		return;
-	if (size > DRV_RPI4_MMAL_EVENT_BYTES)
-		size = DRV_RPI4_MMAL_EVENT_BYTES;
+	if (size > DRV_RPI4_MMAL_MAX_MESSAGE)
+		size = DRV_RPI4_MMAL_MAX_MESSAGE;
 	msgid = drv_rpi4_mmal_get32(bytes, DRV_RPI4_MMAL_HEADER_MSGID);
 
 	/* Buffers name their decoder in the driver area, events in the client field. */
@@ -863,6 +901,7 @@ service_open(void)
 	drv_rpi4_mmal_header(message, DRV_RPI4_MMAL_MSG_GET_VERSION, 0);
 	error = request(message, DRV_RPI4_MMAL_HEADER_BYTES, reply, sizeof(reply));
 	if (error == 0) {
+		mmal_major = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_VERSION_MAJOR);
 		kern_logf("rpi4-mmal: firmware MMAL %u.%u (service version %u)\n",
 			  (unsigned)drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_VERSION_MAJOR),
 			  (unsigned)drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_VERSION_MINOR),
@@ -1434,9 +1473,14 @@ handle_buffer(
 	if (kind == MMAL_KIND_INPUT) {
 		if (index >= decoder->input_count)
 			return 0;
-		if (length != 0) {
-			/* Unexpected data for an input buffer: received into the scratch and dropped. */
-			error = receive_bulk(decoder, bus_to_physical(decoder->scratch.device_address), 8U, false);
+		if (length != 0 || (flags & DRV_RPI4_MMAL_FLAG_EOS) != 0) {
+			/* Data with an input buffer (as the output's rule): received into the scratch and dropped. */
+			bytes = (length + 3U) & ~3U;
+			if (bytes == 0)
+				bytes = 8U;
+			if (bytes > MMAL_SCRATCH_BYTES)
+				return EIO;
+			error = receive_bulk(decoder, bus_to_physical(decoder->scratch.device_address), bytes, false);
 			if (error != 0)
 				return error;
 		}
@@ -1791,7 +1835,11 @@ decoder_of(
 	if (slot >= MMAL_DECODERS)
 		return NULL;
 
-	/* Succeeded: the decoder of the slot (a retired one still counts its bulks). */
+	/* A free or retired entry takes no arrivals. */
+	if (!mmal_decoders[slot].used)
+		return NULL;
+
+	/* Succeeded: the decoder of the slot. */
 	return &mmal_decoders[slot];
 }
 

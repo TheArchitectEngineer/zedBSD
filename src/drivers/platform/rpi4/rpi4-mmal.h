@@ -26,6 +26,10 @@
 #define DRV_RPI4_MMAL_FRAME_EOS		0x0001U
 #define DRV_RPI4_MMAL_FRAME_CORRUPTED	0x0200U
 
+/* A frame's time stamp when the firmware gave none, and the encoding of an NV12 frame. */
+#define DRV_RPI4_MMAL_FRAME_NO_TIME	((int64_t)((uint64_t)1U << 63))
+#define DRV_RPI4_MMAL_FRAME_NV12	0x3231564eU
+
 struct drv_rpi4_mmal_decoder;
 
 /*
