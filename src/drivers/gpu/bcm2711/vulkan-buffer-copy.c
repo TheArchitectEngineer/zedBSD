@@ -17,6 +17,7 @@
 #if CONFIG_DRIVER_BCM2711_VIDEO
 #include <kern/clock.h>
 #include "drivers/gpu/bcm2711/vulkan-video.h"
+#include "drivers/platform/rpi4/rpi4-mmal-wire.h"
 #endif
 
 /* One checked row sequence refers only to bytes inside a retained logical binding; offsets stay numerical until FIFO execution. */
@@ -234,6 +235,7 @@ bcm2711_vulkan_buffer_copy_run(
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	uint64_t started;
 	bool cached;
+	bool raw;
 #endif
 	int error;
 
@@ -298,13 +300,22 @@ bcm2711_vulkan_buffer_copy_run(
 				(uint8_t *)cpu[1] + destination_offset,
 				spans[index * 2U + 1U].pitch);
 
-			/* Else every row comes from the image, as any image's. */
-			if (!cached) {
-				for (row = 0; row < spans[index * 2U].rows; row++) {
+			/*
+			 * Else every row comes from the image; an image holding the
+			 * firmware's samples as they are (a sampled one) is corrected
+			 * on the way, as the cached copy is.
+			 */
+			raw = bcm2711_vulkan_video_image_raw(resources[0]);
+			for (row = 0; !cached && row < spans[index * 2U].rows; row++) {
+				if (raw) {
+					drv_rpi4_mmal_copy_samples((uint8_t *)cpu[1] + destination_offset, (const uint8_t *)cpu[0] + source_offset, (size_t)spans[index * 2U].bytes);
+				} else {
 					kern_memcpy((uint8_t *)cpu[1] + destination_offset, (const uint8_t *)cpu[0] + source_offset, (size_t)spans[index * 2U].bytes);
-					source_offset += spans[index * 2U].pitch;
-					destination_offset += spans[index * 2U + 1U].pitch;
 				}
+
+				/* The next row of each side. */
+				source_offset += spans[index * 2U].pitch;
+				destination_offset += spans[index * 2U + 1U].pitch;
 			}
 
 			/* The readback's time, for the video cost line. */

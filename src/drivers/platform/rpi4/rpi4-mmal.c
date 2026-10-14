@@ -107,6 +107,9 @@
  */
 #define MMAL_ARRIVAL_LINES		400U
 
+/* The lines a decoder writes about frames whose layout is not their target's, at most. */
+#define MMAL_LAYOUT_LINES		4U
+
 /* The firmware component that decodes video. */
 #define MMAL_COMPONENT_NAME		"ril.video_decode"
 
@@ -149,13 +152,15 @@ struct mmal_staging {
 /*
  * One output buffer: its bounce memory, and whether the firmware has it,
  * a received frame waits in it, or the caller holds it.  arrival orders
- * the frames waiting: the oldest is received first.
+ * the frames waiting: the oldest is received first.  direct says that the
+ * frame went to its target instead of the bounce memory.
  */
 struct mmal_output {
 	struct drv_dma_buffer memory;
 	bool with_firmware;
 	bool ready;
 	bool held;
+	bool direct;
 	uint64_t arrival;
 	uint32_t length;
 	uint32_t flags;
@@ -163,6 +168,18 @@ struct mmal_output {
 	uint32_t planes;
 	uint32_t plane_offset[2];
 	uint32_t plane_pitch[2];
+};
+
+/*
+ * One target of a decode's frame (see drv_rpi4_mmal_target).
+ *
+ * kept says that a transfer into the target's run did not complete, so the
+ * VPU may still write it.
+ */
+struct mmal_target {
+	struct drv_rpi4_mmal_target target;
+	bool used;
+	bool kept;
 };
 
 /*
@@ -197,6 +214,8 @@ struct drv_rpi4_mmal_decoder {
 	uint32_t input_bytes;
 	struct drv_dma_buffer scratch;
 	struct mmal_output outputs[MMAL_OUTPUT_BUFFERS];
+	struct mmal_target targets[DRV_RPI4_MMAL_TARGETS];
+	unsigned layout_lines;
 	uint32_t frames;
 	uint64_t arrivals;
 	const char *step;
@@ -294,6 +313,7 @@ static bool buffer_queued(const struct drv_rpi4_mmal_decoder *decoder);
 static void trace_arrival(const struct drv_rpi4_mmal_decoder *decoder, const struct mmal_message *message);
 static void report_stall(struct drv_rpi4_mmal_decoder *decoder, const char *what);
 static int handle_buffer(struct drv_rpi4_mmal_decoder *decoder, const struct mmal_message *message);
+static struct mmal_target *frame_target(struct drv_rpi4_mmal_decoder *decoder, const struct mmal_message *message, uint32_t offset, uint32_t bytes);
 static int handle_event(struct drv_rpi4_mmal_decoder *decoder, const struct mmal_message *message);
 static int format_changed(struct drv_rpi4_mmal_decoder *decoder, const uint8_t *data);
 static int receive_bulk(struct drv_rpi4_mmal_decoder *decoder, uint64_t physical, void *cpu, uint32_t bytes, bool frame);
@@ -743,6 +763,7 @@ drv_rpi4_mmal_decoder_receive(
 
 	/* Describes the frame. */
 	kern_memset(frame, 0, sizeof(*frame));
+	frame->direct = output->direct;
 	frame->handle = index + 1U;
 	frame->pts = output->pts;
 	frame->flags = output->flags;
@@ -761,6 +782,58 @@ drv_rpi4_mmal_decoder_receive(
 
 	/* Succeeded: the frame is the caller's until it releases it. */
 	return 0;
+}
+
+/*
+ * Sends the frame of one decode to a target instead of the bounce memory.
+ */
+int
+drv_rpi4_mmal_decoder_target(
+	struct drv_rpi4_mmal_decoder *decoder,
+	const struct drv_rpi4_mmal_target *target)
+{
+	unsigned index;
+
+	/* The run must lie in the VPU's window, and a frame needs both planes in it. */
+	if (target->physical > MMAL_BUS_RAM_LIMIT || target->bytes > MMAL_BUS_RAM_LIMIT + 1U - target->physical)
+		return EINVAL;
+	if (target->pitch == 0 || target->chroma >= target->bytes)
+		return EINVAL;
+
+	/* A free entry takes the target. */
+	for (index = 0; index < DRV_RPI4_MMAL_TARGETS; index++) {
+		if (!decoder->targets[index].used) {
+			decoder->targets[index].target = *target;
+			decoder->targets[index].used = true;
+			decoder->targets[index].kept = false;
+			return 0;
+		}
+	}
+
+	/* Every entry has a target. */
+	return EBUSY;
+}
+
+/*
+ * Removes the target of one decode.
+ */
+void
+drv_rpi4_mmal_decoder_untarget(
+	struct drv_rpi4_mmal_decoder *decoder,
+	int64_t pts,
+	bool *kept)
+{
+	unsigned index;
+
+	/* Every entry of the time stamp goes; one whose transfer did not complete is reported. */
+	*kept = false;
+	for (index = 0; index < DRV_RPI4_MMAL_TARGETS; index++) {
+		if (!decoder->targets[index].used || decoder->targets[index].target.pts != pts)
+			continue;
+		if (decoder->targets[index].kept)
+			*kept = true;
+		decoder->targets[index].used = false;
+	}
 }
 
 /*
@@ -2058,6 +2131,7 @@ handle_buffer(
 	const struct mmal_message *message)
 {
 	struct mmal_output *output;
+	struct mmal_target *target;
 	unsigned long enabled;
 	uint32_t value;
 	uint32_t kind;
@@ -2149,9 +2223,25 @@ handle_buffer(
 		return EIO;
 	}
 
-	/* Receives the frame into the buffer's bounce memory; a short payload is already there. */
+	/* A frame whose decode has a target of its layout goes there instead (a short payload never does). */
+	target = NULL;
+	if (payload == 0)
+		target = frame_target(decoder, message, offset, bytes);
+
+	/*
+	 * Receives the frame into its target, or into the buffer's bounce
+	 * memory; a short payload is already there.  A transfer into a target
+	 * that did not complete leaves the target kept: the VPU may still
+	 * write its run.
+	 */
 	error = 0;
-	if (payload == 0) {
+	output->direct = false;
+	if (target != NULL) {
+		error = receive_bulk(decoder, target->target.physical, NULL, bytes, true);
+		if (error != 0 && decoder->frame_pending)
+			target->kept = true;
+		output->direct = true;
+	} else if (payload == 0) {
 		error = receive_bulk(decoder,
 				     bus_to_physical(output->memory.device_address) + offset,
 				     (uint8_t *)output->memory.address + offset,
@@ -2178,6 +2268,80 @@ handle_buffer(
 
 	/* Succeeded: the frame is received. */
 	return 0;
+}
+
+/*
+ * Finds the target of a frame's decode, if it has one and the frame's layout is the target's.
+ *
+ * The frame must start the buffer, its luma rows must be the target's pitch
+ * apart and its chroma plane at the target's offset, and its bulk must fit
+ * the target's run.  A frame that does not fit is said a few times and goes
+ * to the bounce memory.
+ */
+static struct mmal_target *
+frame_target(
+	struct drv_rpi4_mmal_decoder *decoder,
+	const struct mmal_message *message,
+	uint32_t offset,
+	uint32_t bytes)
+{
+	struct mmal_target *target;
+	int64_t pts;
+	uint32_t planes;
+	uint32_t luma;
+	uint32_t chroma;
+	uint32_t pitch;
+	unsigned index;
+
+	/* The decode's target by the frame's time stamp. */
+	pts = (int64_t)drv_rpi4_mmal_get64(message->bytes, DRV_RPI4_MMAL_BUFFER_PTS);
+	target = NULL;
+	for (index = 0; index < DRV_RPI4_MMAL_TARGETS; index++) {
+		if (decoder->targets[index].used && decoder->targets[index].target.pts == pts)
+			target = &decoder->targets[index];
+	}
+
+	/* A decode without a target uses the bounce memory. */
+	if (target == NULL)
+		return NULL;
+
+	/* The frame's layout as the message describes it. */
+	planes = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANES);
+	luma = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET);
+	chroma = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET + 4U);
+	pitch = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_PITCH);
+
+	/* An NV12 frame starts the buffer with its luma, as the target's run starts. */
+	if (decoder->encoding != DRV_RPI4_MMAL_FRAME_NV12 ||
+	    offset != 0 ||
+	    planes < 2U ||
+	    luma != 0)
+		target = NULL;
+
+	/* Its rows and chroma plane are where the target has them. */
+	if (target != NULL) {
+		if (pitch != target->target.pitch || chroma != target->target.chroma)
+			target = NULL;
+	}
+
+	/* Its bulk fits the run. */
+	if (target != NULL && bytes > target->target.bytes)
+		target = NULL;
+
+	/* A frame of another layout goes to the bounce memory, said a few times. */
+	if (target == NULL) {
+		if (decoder->layout_lines < MMAL_LAYOUT_LINES) {
+			decoder->layout_lines++;
+			kern_logf("rpi4-mmal: frame %lld (offset %u, planes %u, luma %u, pitch %u, chroma %u, %u bytes) is not its target's layout\n",
+				  (long long)pts, (unsigned)offset, (unsigned)planes, (unsigned)luma, (unsigned)pitch, (unsigned)chroma, (unsigned)bytes);
+		}
+
+		/* The bounce memory takes the frame. */
+		return NULL;
+	}
+
+	/* Succeeded: the frame goes to its target. */
+	return target;
 }
 
 /*
@@ -2272,8 +2436,9 @@ format_changed(
 /*
  * Receives one bulk the firmware is about to send, and waits for it.
  *
- * frame says whether it lands in an output buffer (else the scratch); cpu
- * is the cached view of physical, invalidated once the bytes are there.
+ * frame says whether it is a frame (else the scratch's); cpu is the cached
+ * view of physical, invalidated once the bytes are there, or NULL for a
+ * target's run, which the CPU reaches only uncached.
  */
 static int
 receive_bulk(
@@ -2328,9 +2493,11 @@ receive_bulk(
 
 	/*
 	 * Drops every cache line of the range (a speculative read may have
-	 * filled one while the VPU wrote RAM), so the CPU reads what came.
+	 * filled one while the VPU wrote RAM), so the CPU reads what came.  A
+	 * target's run has no cached view to drop.
 	 */
-	kern_dcache_invalidate_range(cpu, bytes);
+	if (cpu != NULL)
+		kern_dcache_invalidate_range(cpu, bytes);
 
 	/* Succeeded: the bytes are in memory. */
 	return 0;

@@ -40,13 +40,29 @@ struct bcm2711_native_attribute {
 	uint32_t vertex_values;
 };
 
-/* One single-level RGBA/BGRA texture describes a strict UIF, non-XOR scratch image owned by its native job. */
+/*
+ * The texel formats a native texture has.  RGBA8 is the zero value, so a
+ * texture record cleared and filled without naming one is RGBA8.  R8 and
+ * RG8 are the planes of a two-plane YUV picture (ws236 p011).
+ */
+enum bcm2711_native_texel {
+	BCM2711_NATIVE_TEXEL_RGBA8 = 0,
+	BCM2711_NATIVE_TEXEL_R8,
+	BCM2711_NATIVE_TEXEL_RG8
+};
+
+/*
+ * One single-level texture describes a strict UIF, non-XOR scratch image owned by its native job.
+ *
+ * swap_red_blue applies only to RGBA8 (a BGRA source).
+ */
 struct bcm2711_native_texture {
 	uint32_t address;
 	uint32_t width;
 	uint32_t height;
 	uint32_t bytes;
 	uint32_t swap_red_blue;
+	enum bcm2711_native_texel texel;
 };
 
 /* One native sampler uses hardware wrap codes: repeat 0, clamp-to-edge 1, mirrored-repeat 2. */
@@ -64,6 +80,8 @@ int bcm2711_native_sampler_encode(const struct bcm2711_native_sampler *sampler, 
 int bcm2711_native_texture_size(uint32_t width, uint32_t height, uint32_t *bytes);
 int bcm2711_native_texture_size_texel(uint32_t width, uint32_t height, uint32_t texel_bytes, uint32_t *bytes);
 int bcm2711_native_texture_offset(uint32_t x, uint32_t y, uint32_t height, uint32_t texel_bytes, uint32_t *offset);
+int bcm2711_native_texel_layout(enum bcm2711_native_texel texel, uint32_t *texel_bytes, uint32_t *type);
+int bcm2711_native_texture_copy_texel(uint32_t width, uint32_t height, uint32_t texel_bytes, const void *raster, uint32_t pitch, size_t raster_bytes, void *tiled, size_t tiled_bytes);
 int bcm2711_native_texture_copy(uint32_t width, uint32_t height, const void *raster, uint32_t pitch, size_t raster_bytes, void *tiled, size_t tiled_bytes);
 int bcm2711_native_texture_copy_box(uint32_t width, uint32_t height, const void *raster, uint32_t pitch, size_t raster_bytes, void *tiled, size_t tiled_bytes, const uint32_t *box);
 

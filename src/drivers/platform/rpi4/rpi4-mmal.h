@@ -34,13 +34,35 @@
 #define DRV_RPI4_MMAL_FRAME_NO_TIME	((int64_t)((uint64_t)1U << 63))
 #define DRV_RPI4_MMAL_FRAME_NV12	0x3231564eU
 
+/* The decodes whose frames a decoder may have targets for at once. */
+#define DRV_RPI4_MMAL_TARGETS		8U
+
 struct drv_rpi4_mmal_decoder;
 
 /*
- * One decoded frame: the handle that releases it, its time stamp and
- * flags, the bytes received, and the layout of the planes in them.
+ * Where the frame of one decode goes instead of the decoder's bounce memory.
+ *
+ * physical is a contiguous run below 1 GiB of bytes bytes that the CPU
+ * reaches only uncached (the decoder neither cleans nor invalidates it).
+ * The frame goes there only when its layout is the target's: the luma rows
+ * pitch bytes apart from the run's start and the chroma plane at chroma;
+ * else it comes into the bounce memory as any frame.
+ */
+struct drv_rpi4_mmal_target {
+	int64_t pts;
+	uint64_t physical;
+	uint32_t bytes;
+	uint32_t pitch;
+	uint32_t chroma;
+};
+
+/*
+ * One decoded frame: whether it went to its target rather than the bounce
+ * memory, the handle that releases it, its time stamp and flags, the bytes
+ * received, and the layout of the planes in them.
  */
 struct drv_rpi4_mmal_frame {
+	bool direct;
 	unsigned handle;
 	int64_t pts;
 	uint32_t flags;
@@ -101,6 +123,24 @@ int drv_rpi4_mmal_decoder_end(struct drv_rpi4_mmal_decoder *decoder);
  * ETIMEDOUT means no frame came in time (a timeout of zero only looks).
  */
 int drv_rpi4_mmal_decoder_receive(struct drv_rpi4_mmal_decoder *decoder, unsigned timeout_ms, struct drv_rpi4_mmal_frame *frame, const uint8_t **pixels);
+
+/*
+ * Sends the frame of one decode to a target instead of the bounce memory.
+ *
+ * Called before the decode's unit is sent.  The target's run is the
+ * caller's to keep until it removes the target.  EBUSY when the decoder has
+ * DRV_RPI4_MMAL_TARGETS targets already.
+ */
+int drv_rpi4_mmal_decoder_target(struct drv_rpi4_mmal_decoder *decoder, const struct drv_rpi4_mmal_target *target);
+
+/*
+ * Removes the target of one decode.
+ *
+ * kept says that a frame's transfer into the target's run did not complete:
+ * the VPU may still write the run, so the caller keeps it for good.
+ * Removing a time stamp with no target does nothing.
+ */
+void drv_rpi4_mmal_decoder_untarget(struct drv_rpi4_mmal_decoder *decoder, int64_t pts, bool *kept);
 
 /* Gives a received frame's buffer back to the firmware: handle is the frame's. */
 int drv_rpi4_mmal_decoder_release(struct drv_rpi4_mmal_decoder *decoder, unsigned handle);

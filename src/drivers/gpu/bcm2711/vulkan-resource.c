@@ -26,6 +26,9 @@
 #define VULKAN_BUFFER_USAGE (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
 #define VULKAN_IMAGE_USAGE (VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
 
+/* The create flags a two-plane picture may carry so its planes can be viewed in their own formats. */
+#define VULKAN_IMAGE_PLANE_FLAGS (VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
+
 static int create_buffer(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int create_image(struct bcm2711_vulkan_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int publish_resource(struct bcm2711_vulkan_session *session, enum i915_vk_object_kind kind, struct bcm2711_vulkan_resource *description, uint64_t device_id, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -261,7 +264,7 @@ create_image(
 	if (reader->error != 0)
 		return reader->error;
 	if (info.sType != VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO ||
-	    info.flags != 0 ||
+	    (info.flags & ~VULKAN_IMAGE_PLANE_FLAGS) != 0 ||
 	    info.imageType != VK_IMAGE_TYPE_2D ||
 	    info.extent.width == 0 ||
 	    info.extent.width > 4096 ||
@@ -274,14 +277,21 @@ create_image(
 		return ENOTSUP;
 	nv12 = false;
 #if CONFIG_DRIVER_BCM2711_VIDEO
-	/* An NV12 picture only decodes, serves as a reference and is read back (ws236). */
+	/*
+	 * An NV12 picture decodes, serves as a reference, is read back, and is
+	 * sampled through views of its planes (ws236, ws236 p011).
+	 */
 	if (info.format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
 		nv12 = true;
 		if (info.usage == 0 ||
-		    (info.usage & ~(BCM2711_VIDEO_USAGE_DECODE_DST | BCM2711_VIDEO_USAGE_DECODE_DPB | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) != 0)
+		    (info.usage & ~(BCM2711_VIDEO_USAGE_DECODE_DST | BCM2711_VIDEO_USAGE_DECODE_DPB | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) != 0)
 			return ENOTSUP;
 	}
 #endif
+
+	/* Only an NV12 picture's plane views reinterpret the image's format. */
+	if (!nv12 && info.flags != 0)
+		return ENOTSUP;
 	if (!nv12 && info.format != VK_FORMAT_R8G8B8A8_UNORM && info.format != VK_FORMAT_B8G8R8A8_UNORM)
 		return ENOTSUP;
 	if (info.tiling != VK_IMAGE_TILING_LINEAR && info.tiling != VK_IMAGE_TILING_OPTIMAL)

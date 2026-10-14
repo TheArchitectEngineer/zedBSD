@@ -98,6 +98,12 @@ int bcm2711_vulkan_video_settle_mark(struct bcm2711_render_device *controller, c
 void bcm2711_vulkan_video_nv12_layout(uint32_t width, uint32_t height, uint32_t *pitch, uint64_t *chroma, uint64_t *bytes);
 
 /*
+ * Reports whether a decoded NV12 image holds the firmware's samples as they
+ * are (a sampled one), so its readback corrects them.
+ */
+bool bcm2711_vulkan_video_image_raw(const struct bcm2711_vulkan_resource *image);
+
+/*
  * Copies rows of a decoded NV12 image to a buffer from the image's cached
  * copy of its last decoded frame; false, copying nothing, when it has none
  * for those rows.  With the controller mutex held.

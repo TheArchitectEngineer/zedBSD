@@ -15,6 +15,9 @@
 #include "drivers/gpu/bcm2711/bcm2711-private.h"
 #include "drivers/gpu/bcm2711/native-state.h"
 #include "drivers/gpu/bcm2711/vulkan-native-draw.h"
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 
 /* One job's aggregate native staging includes page padding and every draw's independently uploaded inputs. */
 #define NATIVE_DRAW_BYTES (256ULL * 1024U * 1024U)
@@ -25,6 +28,28 @@ struct native_fetch {
 	uint32_t stride;
 	uint32_t source_components;
 	uint32_t components;
+};
+
+/*
+ * One sampled texture's raster source: a whole RGBA8 or BGRA8 image, or one
+ * plane of a two-plane NV12 picture (ws236 p011).
+ *
+ * offset and bytes bound the source inside the image's binding; width,
+ * height and pitch describe its raster rows of texel texels; swap selects
+ * BGRA.  It lives on the stack of one texture's preparation and borrows the
+ * image, which the descriptor or the meta draw retains.
+ */
+struct native_texture_source {
+	struct bcm2711_vulkan_resource *image;
+	uint64_t offset;
+	uint64_t bytes;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
+	enum bcm2711_native_texel texel;
+	uint32_t texel_bytes;
+	uint32_t type;
+	uint32_t swap;
 };
 
 /* One upload chunk's size, and the largest upload carved from a chunk; larger ones get storage of their own. */
@@ -51,13 +76,14 @@ struct bcm2711_vulkan_native_draw_chunk {
 static int allocate_storage(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, const struct bcm2711_shader_binary *program, unsigned fill, struct bcm2711_native_storage **storage);
 static struct bcm2711_vulkan_native_draw *pool_take(struct bcm2711_vulkan_native_draw_pool *pool);
 static int upload_take(struct bcm2711_vulkan_native_draw *draw, uint64_t bytes, uint64_t available, uint8_t **cpu, uint32_t *gpu);
-static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image);
+static struct bcm2711_native_storage *find_texture(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_resource *image, uint64_t offset);
 static int prepare_textures(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_prepared_event *event, uint64_t available);
 static int prepare_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_descriptor *descriptor, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
-static bool conversion_supported(const struct bcm2711_vulkan_resource *image, uint32_t address);
+static int texture_source(struct bcm2711_vulkan_resource *image, uint32_t plane, uint32_t swap, struct native_texture_source *source);
+static bool conversion_supported(const struct native_texture_source *source, uint32_t address);
 static uint64_t texture_area(uint32_t size);
-static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, struct bcm2711_vulkan_resource *image, const struct bcm2711_vulkan_sampler *source, uint32_t swap, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
-static int prepare_conversion(const struct bcm2711_vulkan_resource *image, uint32_t address, const struct bcm2711_native_storage *pixels, uint32_t bytes, struct bcm2711_v3d_tfu_job *tfu);
+static int prepare_texture_image(struct bcm2711_vulkan_native_draw *draw, const struct native_texture_source *texture_source, const struct bcm2711_vulkan_sampler *source, uint64_t available, struct bcm2711_vulkan_native_binding *binding);
+static int prepare_conversion(const struct native_texture_source *source, uint32_t address, const struct bcm2711_native_storage *pixels, uint32_t bytes, struct bcm2711_v3d_tfu_job *tfu);
 static int prepare_meta_texture(struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_vulkan_meta_draw *meta, uint64_t available);
 static int prepare_sampler(const struct bcm2711_vulkan_sampler *source, struct bcm2711_native_sampler *sampler);
 static struct bcm2711_native_storage *find_program(const struct bcm2711_vulkan_native_draw *draw, const struct bcm2711_shader_binary *program, uint32_t stage);
@@ -358,6 +384,7 @@ prepare_texture(
 {
 	struct bcm2711_vulkan_image_view *image_view;
 	struct bcm2711_vulkan_resource *image;
+	struct native_texture_source source;
 	uint32_t swap;
 	int error;
 
@@ -372,16 +399,19 @@ prepare_texture(
 	    descriptor->sampler->payload == NULL)
 		return EINVAL;
 	image = image_view->owner.parent->payload;
-	if (image == NULL ||
-	    (image->format != VK_FORMAT_R8G8B8A8_UNORM &&
-	    image->format != VK_FORMAT_B8G8R8A8_UNORM))
+	if (image == NULL)
 		return ENOTSUP;
 
 	/* Ordinary sampled input preserves the actual image's canonical red/blue interpretation. */
 	swap = 0;
 	if (image->format == VK_FORMAT_B8G8R8A8_UNORM)
 		swap = 1;
-	error = prepare_texture_image(draw, image, descriptor->sampler->payload, swap, available, binding);
+
+	/* The view's raster: the whole image, or the plane of a picture it reads. */
+	error = texture_source(image, image_view->plane, swap, &source);
+	if (error != 0)
+		return error;
+	error = prepare_texture_image(draw, &source, descriptor->sampler->payload, available, binding);
 	if (error != 0)
 		return error;
 
@@ -393,12 +423,12 @@ prepare_texture(
 static int
 prepare_texture_image(
 	struct bcm2711_vulkan_native_draw *draw,
-	struct bcm2711_vulkan_resource *image,
+	const struct native_texture_source *texture_source,
 	const struct bcm2711_vulkan_sampler *source,
-	uint32_t swap,
 	uint64_t available,
 	struct bcm2711_vulkan_native_binding *binding)
 {
+	struct bcm2711_vulkan_resource *image;
 	struct bcm2711_vulkan_native_texture_copy *entry;
 	struct bcm2711_native_storage *pixels;
 	uint32_t records_address;
@@ -417,16 +447,17 @@ prepare_texture_image(
 	int error;
 
 	/* Complete coherent logical raster storage is read only at execution, after previous GPU writes become visible. */
-	error = bcm2711_vulkan_resource_backing(image, 0, image->bytes, &source_view, &address, &cpu);
+	image = texture_source->image;
+	error = bcm2711_vulkan_resource_backing(image, texture_source->offset, texture_source->bytes, &source_view, &address, &cpu);
 	if (error != 0)
 		return error;
-	error = bcm2711_native_texture_size(image->width, image->height, &bytes);
+	error = bcm2711_native_texture_size_texel(texture_source->width, texture_source->height, texture_source->texel_bytes, &bytes);
 	if (error != 0)
 		return error;
 
 	/* Reuse only a snapshot within this pass, which contains no intervening image writes. */
 	entry = NULL;
-	pixels = find_texture(draw, image);
+	pixels = find_texture(draw, image, texture_source->offset);
 	if (pixels == NULL) {
 		/* A new image consumes the same bounded owner slot and staging budget as before. */
 		if (draw->texture_count == BCM2711_VULKAN_PIPELINE_SETS * BCM2711_VULKAN_LAYOUT_BINDINGS)
@@ -437,16 +468,17 @@ prepare_texture_image(
 		started = clock_ticks();
 		fills = draw->space->snapshot_fills;
 		updates = draw->space->snapshot_updates;
-		unit = draw->space->native->hardware.tfu_uif_ready && conversion_supported(image, address);
-		error = bcm2711_native_snapshot_get(
+		unit = draw->space->native->hardware.tfu_uif_ready && conversion_supported(texture_source, address);
+		error = bcm2711_native_snapshot_get_texel(
 			draw->space,
 			source_view->buffer,
 			address - source_view->address,
-			image->width,
-			image->height,
-			image->pitch,
+			texture_source->width,
+			texture_source->height,
+			texture_source->pitch,
+			texture_source->texel_bytes,
 			cpu,
-			(size_t)image->bytes,
+			(size_t)texture_source->bytes,
 			unit,
 			&entry->snapshot);
 		draw->copy_ticks += clock_ticks() - started;
@@ -457,7 +489,7 @@ prepare_texture_image(
 
 		/* A snapshot left to the unit is filled when the pass runs, before its draws. */
 		if (error == 0 && unit && draw->space->snapshot_fills != fills) {
-			error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
+			error = prepare_conversion(texture_source, address, pixels, bytes, &entry->tfu);
 			if (error == 0)
 				error = bcm2711_native_storage_clean(pixels);
 			if (error != 0) {
@@ -479,14 +511,16 @@ prepare_texture_image(
 			kind = 'f';
 		} else if (source_view->buffer->host_mapped) {
 			draw->mapped_textures++;
-			draw->mapped_bytes += image->bytes;
+			draw->mapped_bytes += texture_source->bytes;
 			kind = 'm';
 		} else {
 			draw->private_textures++;
 			kind = 'p';
 		}
-		if (kind != 0 && (uint64_t)image->width * image->height > texture_area(draw->largest_size)) {
-			draw->largest_size = image->width << 16 | image->height;
+
+		/* Keeps the largest texture obtained so, for the cost report. */
+		if (kind != 0 && (uint64_t)texture_source->width * texture_source->height > texture_area(draw->largest_size)) {
+			draw->largest_size = texture_source->width << 16 | texture_source->height;
 			draw->largest_kind = kind;
 		}
 	}
@@ -505,11 +539,19 @@ prepare_texture_image(
 		started = clock_ticks();
 		error = ENOTSUP;
 		if (draw->space->native->hardware.tfu_uif_ready)
-			error = prepare_conversion(image, address, pixels, bytes, &entry->tfu);
+			error = prepare_conversion(texture_source, address, pixels, bytes, &entry->tfu);
 		if (error == 0) {
 			entry->convert = true;
 		} else if (error == ENOTSUP) {
-			error = bcm2711_native_texture_copy(image->width, image->height, cpu, image->pitch, (size_t)image->bytes, pixels->view->buffer->address, (size_t)pixels->bytes);
+			error = bcm2711_native_texture_copy_texel(
+				texture_source->width,
+				texture_source->height,
+				texture_source->texel_bytes,
+				cpu,
+				texture_source->pitch,
+				(size_t)texture_source->bytes,
+				pixels->view->buffer->address,
+				(size_t)pixels->bytes);
 		}
 		draw->copy_ticks += clock_ticks() - started;
 		if (error != 0)
@@ -524,6 +566,7 @@ prepare_texture_image(
 	/* A newly converted or lent texture becomes this draw's entry for later draws of the pass, published only when complete. */
 	if (entry != NULL) {
 		entry->image = image;
+		entry->offset = texture_source->offset;
 		entry->pixels = pixels;
 		draw->texture_count++;
 	}
@@ -534,10 +577,11 @@ prepare_texture_image(
 		return error;
 	kern_memset(&texture, 0, sizeof(texture));
 	texture.address = pixels->view->address;
-	texture.width = image->width;
-	texture.height = image->height;
+	texture.width = texture_source->width;
+	texture.height = texture_source->height;
 	texture.bytes = bytes;
-	texture.swap_red_blue = swap;
+	texture.swap_red_blue = texture_source->swap;
+	texture.texel = texture_source->texel;
 	error = bcm2711_native_texture_encode(&texture, destination, 32);
 	if (error != 0)
 		return error;
@@ -1012,24 +1056,108 @@ write_word(
 	return;
 }
 
+/*
+ * Describes the raster a texture samples: the whole RGBA8 or BGRA8 image
+ * (plane 0), or a plane of a sampled NV12 picture -- 1 its luma as R8, 2 its
+ * interleaved chroma as RG8 at half the width and height.
+ */
+static int
+texture_source(
+	struct bcm2711_vulkan_resource *image,
+	uint32_t plane,
+	uint32_t swap,
+	struct native_texture_source *source)
+{
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	uint64_t chroma;
+	uint64_t bytes;
+	uint32_t pitch;
+#endif
+	int error;
+
+	/* A whole RGBA8 or BGRA8 image. */
+	kern_memset(source, 0, sizeof(*source));
+	source->image = image;
+	if (plane == 0) {
+		if (image->format != VK_FORMAT_R8G8B8A8_UNORM && image->format != VK_FORMAT_B8G8R8A8_UNORM)
+			return ENOTSUP;
+		source->offset = 0;
+		source->bytes = image->bytes;
+		source->width = image->width;
+		source->height = image->height;
+		source->pitch = image->pitch;
+		source->texel = BCM2711_NATIVE_TEXEL_RGBA8;
+		source->swap = swap;
+	}
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* A plane of an NV12 picture, in the decoder's layout (vulkan-video.c). */
+	if (plane != 0) {
+		if (image->format != (VkFormat)BCM2711_VIDEO_FORMAT_NV12)
+			return ENOTSUP;
+		bcm2711_vulkan_video_nv12_layout(image->width, image->height, &pitch, &chroma, &bytes);
+		if (bytes > image->bytes)
+			return EINVAL;
+		source->pitch = pitch;
+		if (plane == 1U) {
+			/* The luma rows from the image's start. */
+			source->offset = 0;
+			source->bytes = chroma;
+			source->width = image->width;
+			source->height = image->height;
+			source->texel = BCM2711_NATIVE_TEXEL_R8;
+		} else if (plane == 2U) {
+			/* The chroma rows after the luma plane, one Cb and Cr pair for every two by two samples. */
+			source->offset = chroma;
+			source->bytes = bytes - chroma;
+			source->width = (image->width + 1U) / 2U;
+			source->height = (image->height + 1U) / 2U;
+			source->texel = BCM2711_NATIVE_TEXEL_RG8;
+		} else {
+			return EINVAL;
+		}
+	}
+#else
+	/* Without video, an image has no planes. */
+	if (plane != 0)
+		return ENOTSUP;
+#endif
+
+	/* The texel's size and native type. */
+	error = bcm2711_native_texel_layout(source->texel, &source->texel_bytes, &source->type);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the source names the raster's place, extent and texels. */
+	return 0;
+}
+
 /* Reports whether the texture formatting unit can read the raster image at address. */
 static bool
 conversion_supported(
-	const struct bcm2711_vulkan_resource *image,
+	const struct native_texture_source *source,
 	uint32_t address)
 {
-	/* The unit copies 32-bit RGBA8 texels unchanged, which also keeps BGRA bytes in place. */
-	if (image->format != VK_FORMAT_R8G8B8A8_UNORM && image->format != VK_FORMAT_B8G8R8A8_UNORM)
+	/*
+	 * The unit copies texels unchanged: RGBA8 (which also keeps BGRA bytes
+	 * in place), and the R8 and RG8 planes of a picture (T1-674: the
+	 * unit's one- and two-byte UIF matched the CPU's on the Pi).
+	 */
+	if (source->texel_bytes != 1U && source->texel_bytes != 2U && source->texel_bytes != 4U)
 		return false;
 
-	/* Raster input is addressed in whole pixels from a 64-byte aligned start. */
+	/* Raster input is addressed in whole texels from a 64-byte aligned start. */
 	if ((address & 63U) != 0 ||
-	    (image->pitch & 3U) != 0 ||
-	    image->pitch / 4U < image->width)
+	    (source->pitch % source->texel_bytes) != 0 ||
+	    source->pitch / source->texel_bytes < source->width)
 		return false;
 
-	/* The stride field holds sixteen bits of pixels. */
-	return image->pitch / 4U <= 0xffffU;
+	/* The stride field holds sixteen bits of texels. */
+	if (source->pitch / source->texel_bytes > 0xffffU)
+		return false;
+
+	/* Succeeded: the unit reads this raster. */
+	return true;
 }
 
 /*
@@ -1039,21 +1167,23 @@ conversion_supported(
  */
 static int
 prepare_conversion(
-	const struct bcm2711_vulkan_resource *image,
+	const struct native_texture_source *source,
 	uint32_t address,
 	const struct bcm2711_native_storage *pixels,
 	uint32_t bytes,
 	struct bcm2711_v3d_tfu_job *tfu)
 {
 	uint64_t input_bytes;
+	bool supported;
 
 	/* Formats and layouts the unit cannot read stay with the CPU conversion. */
-	if (!conversion_supported(image, address))
+	supported = conversion_supported(source, address);
+	if (!supported)
 		return ENOTSUP;
 
-	/* The read covers every visible pixel of every row inside the image's binding. */
-	input_bytes = (uint64_t)(image->height - 1U) * image->pitch + (uint64_t)image->width * 4U;
-	if (input_bytes > image->bytes || input_bytes > 0xffffffffU)
+	/* The read covers every visible texel of every row inside the source's binding. */
+	input_bytes = (uint64_t)(source->height - 1U) * source->pitch + (uint64_t)source->width * source->texel_bytes;
+	if (input_bytes > source->bytes || input_bytes > 0xffffffffU)
 		return EINVAL;
 
 	/* The output is the whole strict UIF scratch image, without extra block padding. */
@@ -1061,8 +1191,9 @@ prepare_conversion(
 		return EINVAL;
 
 	/*
-	 * Input is raster RGBA8 (input format 0, texel type 4) of the given
-	 * stride in pixels; output is UIF without XOR (format 6) at level 0.
+	 * Input is raster (input format 0) of the texel's type, R8 0, RG8 2 or
+	 * RGBA8 4, and of the given stride in texels; output is UIF without XOR
+	 * (format 6) at level 0.
 	 */
 	kern_memset(tfu, 0, sizeof(*tfu));
 	tfu->input = address;
@@ -1070,9 +1201,9 @@ prepare_conversion(
 	tfu->output = pixels->view->address;
 	tfu->output_bytes = bytes;
 	tfu->output_format = 6U;
-	tfu->stride = image->pitch / 4U;
-	tfu->size = (image->height << 16) | image->width;
-	tfu->configuration = 4U << 9;
+	tfu->stride = source->pitch / source->texel_bytes;
+	tfu->size = (source->height << 16) | source->width;
+	tfu->configuration = source->type << 9;
 
 	/* Succeeded: the pass runs this conversion before any draw samples the pixels. */
 	return 0;
@@ -1086,6 +1217,7 @@ prepare_meta_texture(
 	uint64_t available)
 {
 	struct bcm2711_vulkan_sampler sampler;
+	struct native_texture_source source;
 	uint32_t swap;
 	int error;
 
@@ -1104,7 +1236,10 @@ prepare_meta_texture(
 	swap = 0;
 	if (!meta->raw && meta->image->format == VK_FORMAT_B8G8R8A8_UNORM)
 		swap = 1;
-	error = prepare_texture_image(draw, meta->image, &sampler, swap, available, &draw->bindings[0][0]);
+	error = texture_source(meta->image, 0, swap, &source);
+	if (error != 0)
+		return error;
+	error = prepare_texture_image(draw, &source, &sampler, available, &draw->bindings[0][0]);
 	if (error != 0)
 		return error;
 
@@ -1116,14 +1251,15 @@ prepare_meta_texture(
 static struct bcm2711_native_storage *
 find_texture(
 	const struct bcm2711_vulkan_native_draw *draw,
-	const struct bcm2711_vulkan_resource *image)
+	const struct bcm2711_vulkan_resource *image,
+	uint64_t offset)
 {
 	const struct bcm2711_vulkan_native_draw *owner;
 	uint32_t index;
 
 	/* Multiple descriptors in this draw may use the same raster with different sampler records. */
 	for (index = 0; index < draw->texture_count; index++) {
-		if (draw->textures[index].image == image)
+		if (draw->textures[index].image == image && draw->textures[index].offset == offset)
 			return draw->textures[index].pixels;
 	}
 
@@ -1131,7 +1267,7 @@ find_texture(
 	owner = draw->earlier;
 	while (owner != NULL) {
 		for (index = 0; index < owner->texture_count; index++) {
-			if (owner->textures[index].image == image)
+			if (owner->textures[index].image == image && owner->textures[index].offset == offset)
 				return owner->textures[index].pixels;
 		}
 

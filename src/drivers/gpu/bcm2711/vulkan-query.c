@@ -400,6 +400,12 @@ format_properties(
 	}
 
 #if CONFIG_DRIVER_BCM2711_VIDEO
+	/* The planes of a sampled NV12 picture are viewed as R8 (luma) and RG8 (chroma) textures (ws236 p011). */
+	if (format == VK_FORMAT_R8_UNORM || format == VK_FORMAT_R8G8_UNORM) {
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+		properties->linearTilingFeatures = properties->optimalTilingFeatures;
+	}
+
 	/* NV12 pictures are decoded into and read back by the CPU copy (ws236). */
 	if (format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
 		properties->optimalTilingFeatures = BCM2711_VIDEO_FORMAT_FEATURES | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
