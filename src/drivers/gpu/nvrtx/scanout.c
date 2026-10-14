@@ -127,6 +127,9 @@
 #define SCANOUT_REG_ERROR_DISP		0x611848U
 #define SCANOUT_REG_SUPERVISOR_MAIN	0x6107a8U
 #define SCANOUT_REG_WINDOW_EXCEPTION	0x61102cU
+#define SCANOUT_EXCEPTION_STRIDE	12U
+#define SCANOUT_REG_WINDOW_STATUS	0x610664U
+#define SCANOUT_REG_WIMM_STATUS		0x6106e4U
 
 /* The output resource's control: the heads that own it are bits 7:0. */
 #define SCANOUT_SOR_OWNER_MASK		0xffU
@@ -176,6 +179,8 @@ static int scanout_flip(struct nvrtx_gpu *gpu);
 static void scanout_hold(uint32_t microseconds);
 static uint32_t scanout_window_user(uint32_t window);
 static uint32_t scanout_window_notifier(uint32_t window);
+static uint32_t scanout_next_notifier(struct nvrtx_gpu *gpu);
+static void scanout_diagnose_window(struct nvrtx_gpu *gpu);
 static int scanout_drained(struct nvrtx_gpu *gpu, uint32_t user, uint32_t put);
 static int scanout_core_room(struct nvrtx_gpu *gpu, uint32_t words);
 static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
@@ -404,7 +409,6 @@ nvrtx_scanout_frame(
 
 	display = &gpu->display;
 	push = &display->window_push;
-	notifier = scanout_window_notifier(display->window);
 	user = scanout_window_user(display->window);
 
 	/*
@@ -424,14 +428,13 @@ nvrtx_scanout_frame(
 		nvrtx_wr32(gpu, user + SCANOUT_USER_PUT_AT, 0U);
 	}
 
-	/* Clears the window's notifier, then sends the image, the flip with the notifier, and an update of the window alone. */
+	/* Clears the window's next notifier, then sends the flip with it and the whole image, and a release of the window alone. */
+	notifier = scanout_next_notifier(gpu);
 	error = scanout_notifier_reset(gpu, notifier);
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_window_image(push, surface);
-	nvrtx_disp_window_flip(push, surface->offset, notifier);
-	nvrtx_disp_window_update(push, 0, display->window);
+	nvrtx_disp_first_window_flip(push, display->window, surface, notifier);
 	error = scanout_kick(gpu, push, user);
 	if (error != 0)
 		return error;
@@ -1204,7 +1207,8 @@ scanout_commit(
 	int error;
 
 	display = &gpu->display;
-	notifier = scanout_window_notifier(display->window);
+	display->window_ntfy = scanout_window_notifier(display->window);
+	notifier = scanout_next_notifier(gpu);
 	window_user = scanout_window_user(display->window);
 	failed = 0;
 
@@ -1267,6 +1271,7 @@ scanout_commit(
 	error = scanout_notifier_wait(gpu, notifier, 1U, window_user, "window first");
 	if (error == ETIMEDOUT) {
 		scanout_diagnose(gpu);
+		scanout_diagnose_window(gpu);
 		failed = 1;
 	} else if (error != 0) {
 		return error;
@@ -1561,31 +1566,34 @@ scanout_diagnose(
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WINDOW_EXCEPTION));
 }
 
-/* Flips the window to the second surface and waits for its notifier. */
+/* Flips the window to the second surface (nouveau's commit of a plane alone) and waits for its notifier. */
 static int
 scanout_flip(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_display_state *display;
 	uint32_t notifier;
+	uint32_t user;
 	int error;
 
 	display = &gpu->display;
-	notifier = scanout_window_notifier(display->window);
+	user = scanout_window_user(display->window);
 
-	/* Clears the window's notifier, then flips with it, on the window alone. */
+	/* Clears the window's next notifier, then flips with it, on the window alone. */
+	notifier = scanout_next_notifier(gpu);
 	error = scanout_notifier_reset(gpu, notifier);
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_window_flip(&display->window_push, display->surfaces[1].offset, notifier);
-	nvrtx_disp_window_update(&display->window_push, 0, display->window);
-	error = scanout_kick(gpu, &display->window_push, scanout_window_user(display->window));
+	nvrtx_disp_first_window_flip(&display->window_push, display->window, &display->surfaces[1], notifier);
+	error = scanout_kick(gpu, &display->window_push, user);
 	if (error != 0)
 		return error;
 
 	/* Waits until the flip has begun (the window's notifier leaves "not begun"). */
-	error = scanout_notifier_wait(gpu, notifier, 1U, scanout_window_user(display->window), "window flip");
+	error = scanout_notifier_wait(gpu, notifier, 1U, user, "window flip");
+	if (error == ETIMEDOUT)
+		scanout_diagnose_window(gpu);
 	if (error != 0)
 		return error;
 
@@ -1779,4 +1787,47 @@ scanout_window_notifier(
 {
 	/* After the core's slot, one slot for each window, the notifier in its second half. */
 	return (1U + window) * SCANOUT_WINDOW_SLOT_BYTES + SCANOUT_WINDOW_NOTIFIER_AT;
+}
+
+/*
+ * Takes the window's notifier for the next flip and moves to the other one
+ * (the two 16-byte halves of the window's slot are used in turn, as
+ * nouveau's planes do).
+ */
+static uint32_t
+scanout_next_notifier(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t notifier;
+
+	/* This flip's notifier, then the other for the next. */
+	notifier = gpu->display.window_ntfy;
+	gpu->display.window_ntfy ^= SCANOUT_NOTIFIER_BYTES;
+
+	/* Succeeded: the notifier's offset in the sync object. */
+	return notifier;
+}
+
+/* Shows the window channel's state after its notifier did not come: its exception, its status and its window-immediate channel's. */
+static void
+scanout_diagnose_window(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t window;
+
+	window = gpu->display.window;
+
+	/* The window's exception (channel 1 + window), its status, its immediate channel's status, and its get and put. */
+	nvrtx_stage_mark("P8b window %u exception %08x data %08x code %08x status %08x immediate %08x",
+	    (unsigned)window,
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION + (1U + window) * SCANOUT_EXCEPTION_STRIDE),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION_DATA + (1U + window) * SCANOUT_EXCEPTION_STRIDE),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION_CODE + (1U + window) * SCANOUT_EXCEPTION_STRIDE),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WINDOW_STATUS + window * 4U),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WIMM_STATUS + window * 4U));
+	nvrtx_stage_mark("P8b other %08x supervisor %08x core state %08x error %08x",
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_EXCEPTION_OTHER),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_SUPERVISOR),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_STATE),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_ERROR_DISP));
 }

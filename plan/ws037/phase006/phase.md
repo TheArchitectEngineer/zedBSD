@@ -336,6 +336,27 @@ image: この commit を含む main で `plan/tools/guest/test-image.sh --no-har
 合格の印（順に）: `P8 output …`（出力ごと）→ `P8 ok: display, heads f, windows ff, outputs …` → `P8b begin` → `P8b channels: core, windows ff, immediate ff, cursors f` → `P8b step 1: channels made (5 s)` → `P8b output … lit on head 0: SOR 1 TMDS-A` → `P8b connected …` → `P8b EDID …`（無ければ mode は armed）→ `P8b head 0 armed: …` → `P8b head 0 mode (…): 1280x1024 …` → `P8b surfaces …` → `P8b core mode notified after N us` → `P8b step 2: core released with the mode (5 s)` → `P8b core with window notified after N us` → `P8b window first notified after N us` → `P8b ok: mode set (1280x1024 on SOR 1), surface A shown` → `P8b window flip notified …` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows the driver's surfaces` → `P8 done; this revision ends at P8c` → `P6 ok …`（`P8b: N channel frees failed`・`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
 error に数える行は「R8 の合格の条件」の節のとおり。FAIL なら `P8b fail: …` の前後と dump の 3 行（`P8b core exception …`・`P8b other …`・`P8b error … supervisor main … window exception …`）を記録（読み方は「FAIL の読み方」）。
 
+## R8b の再試験の結果と直し（T1-662、2026-10-15、main 874f6448d、rombar=1）
+
+- 結果（`plan/agents/T1/results-20261015-t1-662.md`）: **最初の commit は通った**。`P8 ok: display, heads f, windows ff, outputs ff00`、`P8b output 200 lit on head 0: SOR 1 TMDS-A`（EDID 1280x1024 at 108000 kHz）、`P8b core mode notified after 28002 us`、`P8b core with window notified after 15039 us`、`P8b window first notified after 2 us`、`P8b ok: mode set (1280x1024 on SOR 1), surface A shown`。**失敗は 2 回目の window の update（surface B への flip）**: `P8b fail: window flip notifier 00000000 after 2 s, get c4 put c4`（push は全部読まれた）。P6 ok・P7 ok。flip の失敗では dump を出していなかった。
+- nouveau との違い（flip、`nv50_wndw_ntfy_enable`・`wndwc37e_ntfy_set`・`wndwc57e_image_set`・`wndwc37e_update`）: (1) nouveau は window の notifier を slot の 2 つの半分（0x60 と 0x70）で**交互に使う**（commit ごとに `ntfy ^= 0x10`、使う方を 0 にしてから）。nvrtx は毎回 0x60。(2) nouveau の flip は notifier の後に**image の全部**（present control・size・storage・format・pitch・ISO の object・offset・point・size in/out）を送る。nvrtx は present control と offset だけ。(3) interlock（core 0、window 1<<w）と UPDATE は同じ。semaphore は使わない（fence の無い surface）。
+- 直し: flip を nouveau の plane だけの commit と同じ 25 語に（`nvrtx_disp_first_window_flip`、host 試験で語ごとに照合）、notifier を 0x60/0x70 で交互に（最初の commit が 0x60、次の flip が 0x70、P8c の frame も同じ）。flip の失敗で window の dump（`P8b window w exception … status … immediate …`: EXCEPT(1+w)・CHNSTATUS_WIN(w) 0x610664・CHNSTATUS_WINIM(w) 0x6106e4、と core の other・supervisor・state・error）を出す。読み方: status の 3:0 が stage 1（7 = WAIT_FOR_UPD は interlock の相手待ち）、19:16 が状態（4 IDLE、5 BUSY）。
+- 確認: host 試験 PASS 275、vmunix rc 0・warning 0・check PASS。実機は未実施（R8b の再試験）。
+
+### kernel log を全部取る道（方式 B の guest の network、案）
+
+VFIO の guest に netdev が無く SSH が使えないので、判定が VGA の screendump に限られる。zedBSD は USB の CDC-ECM（QEMU の `usb-net`）を持ち、`plan/tools/guest/guest.py` が他の試験で同じ形を使っている。方式 B の QEMU（`~/nvrtx/start-rombar1.sh`）に次を足せば、guest の `dmesg` を SSH で全部取れる:
+
+```sh
+  -device qemu-xhci,id=xhci,p2=8,p3=8 \
+  -netdev user,id=net0,net=10.0.2.0/24,host=10.0.2.2,dhcpstart=10.0.2.15,dns=10.0.2.3,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22 \
+  -device usb-net,bus=xhci.0,port=2,id=ecm,netdev=net0,mac=52:54:00:33:00:01,msos-desc=on \
+```
+
+- image は harness を入れて作る（`test-image.sh` から `--no-harness` を外す: SSH の鍵と `/etc/net.conf` が入る）。接続は host の `127.0.0.1:${SSH_PORT}` だけ（AGENTS.md の SSH/QMP の例外の形）。
+- 取る物: `dmesg | grep -E 'nvrtx|P[0-9]'` の全行（GSP は残るので run の後は host の reboot）。
+- 危険: USB の xHCI を足すと guest の USB の列挙が増える（VFIO の RTX の USB-C の function 01:00.2 と別の controller）。起動の順が変わって P8 の時刻がずれる程度の見込み。T1 が script を変える（host の操作は T1・Q1）。
+
 ## 次の Phase の予定: nouveau と同じ手順からの整理（planned、2026-10-15 ユーザーの指示）
 
 ユーザー（原文）:「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」「Nouveauとまったく同じ手順で動作が確認できたあとで、我々のスタイルにリファクタしましょう。」
