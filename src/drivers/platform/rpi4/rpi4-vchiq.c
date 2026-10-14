@@ -448,6 +448,8 @@ drv_rpi4_vchiq_send_bulk(
 	uint32_t bulk_msgid;
 	uint32_t type;
 	uint16_t pagelist_type;
+	uint64_t deadline;
+	uint64_t observed;
 	unsigned index;
 	bool open;
 	bool full;
@@ -481,14 +483,27 @@ drv_rpi4_vchiq_send_bulk(
 	/* The send lock keeps the message and the bulk together. */
 	mutex_lock(&vchiq->send_lock);
 
-	/* Refuses a closed service or a full queue; else enters the bulk. */
+	/*
+	 * Refuses a closed service; waits up to the slot wait limit while the
+	 * direction's queue is full (the receive thread completes bulks
+	 * without the send lock); else enters the bulk.
+	 */
+	deadline = sched_ticks() + kern_ms_to_ticks(VCHIQ_SLOT_WAIT_MS) + 1U;
 	enabled = spin_lock_irqsave(&vchiq->lock);
 
 	queue = &service->transmit;
 	if (direction == DRV_RPI4_VCHIQ_BULK_RECEIVE)
 		queue = &service->receive;
-	open = service->state == VCHIQ_SERVICE_OPEN;
-	full = queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS;
+	for (;;) {
+		open = service->state == VCHIQ_SERVICE_OPEN;
+		full = queue->inserted - queue->completed >= VCHIQ_SERVICE_BULKS;
+		if (!open || !full)
+			break;
+		observed = waitq_sequence(&vchiq->state_wake);
+		error = waitq_sleep(&vchiq->state_wake, &vchiq->lock, observed, deadline, 0);
+		if (error == ETIMEDOUT)
+			break;
+	}
 	if (open && !full) {
 		queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].context = bulk_context;
 		queue->bulks[queue->inserted % VCHIQ_SERVICE_BULKS].pagelist = index;
