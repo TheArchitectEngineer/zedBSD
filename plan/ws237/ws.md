@@ -25,7 +25,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | ID | 内容 | 状態 |
 | --- | --- | --- |
 | [ws237-p001](phase001/phase.md) | 設計: SKL・KBL・CFL の display の register と順（Gen12 の display の code との差）、readout、flip と vblank、backlight、試験の道（SV7 の passthrough と素の起動） | cleared の候補（2026-10-14 P2、Q1 の判定待ち） |
-| [ws237-p002](phase002/phase.md) | readout と primary plane の flip（段 1）、1.5 LW | in-progress（P2）— 実装と host の確かめ済み（a5613f4b2）、T1（QEMU・SV7 の passthrough・5330）とユーザーの SV7 の素の起動の試験待ち |
+| [ws237-p002](phase002/phase.md) | readout と primary plane の flip（段 1）、1.5 LW | cleared（2026-10-15 ユーザーの実機: i5 の第 7・第 8 世代で display controller OK・Keiland 使用可） |
 | [ws237-p003](phase003/phase.md) | backlight、1.0 LW | in-progress（P2）— 実装と host の確かめ済み、実機は WS の最後に SV7 でまとめて |
 | [ws237-p004](phase004/phase.md) | mode set と外部の display、6.0 LW | in-progress（P2）— register の順と計算（aa3250e12・cafce9894）、P3 の fixture（b9b6f0e66）、outputs と node と bootfb のつなぎ込み（ee0df7e11・55063dd4d）を実装、host 試験と build 済み。SV7 の確かめは WS の最後 |
 | [ws237-p005](phase005/phase.md) | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | in-progress（P2）— ユーザーの判断 (B) D0 のまま sleep を実装、host と build 済み。SV7 は WS の最後 |
@@ -87,3 +87,11 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - 2026-10-15 ユーザー: Gen9・Gen9.5 の display の制御を既定で on → `I915_GEN9_DISPLAY_DEFAULT` を FULL（main、647d43d37）。実機（SV7）では copy より上の段が未確認。
 - P2 の作業中の patch（plan/agents/p2/wrapup-20261015.patch、base 73476664c）: 上の段が失敗した時に下の段、最後は copy に戻す安全化。未完。リリースまでに入れるか、既定を下げるかの判断が要る。
 - SV7 で起動していたのは古い image（8e2115b）。main の image で確かめる（ユーザーの試験の一覧 U1）。
+
+## ユーザーの実機の結果（2026-10-15）
+
+- ユーザー（原文）:「i5 7000系, i5 8000系、ともにi915のディスプレイコントローラOK,Keiland使用できました。記録と計画の更新をお願いします。」
+- 第 7 世代（Kaby Lake、Gen9.5）と第 8 世代（Gen9.5）の Core i5 の実機で、i915 の display controller の制御で Keiland が使えた。段の指定は報告に無いので、main の既定（`I915_GEN9_DISPLAY_DEFAULT` = FULL、647d43d37）の image と見る。
+- 判定（Q1）: p002（readout と flip）は cleared。p003（backlight の明るさ）・p004（外部の DP・HDMI）・p005（sleep）は個別の確かめの報告が無いので in-progress のまま、ユーザーの試験の一覧（plan/beta2.md の U5）に載せた。既定の FULL は保つ。
+- P2 の安全化の patch（失敗時に下の段・最後は copy）は、既定 FULL が 2 機種で通ったので急がない。p003〜p005 の実機で崩れた時に再開する（patch は plan/agents/p2/wrapup-20261015.patch、P2 の worktree の stash `ws237-wrapup-20261015`）。
+- 残り: p003〜p005 の実機、p006（規約の全文）。第 6 世代（Skylake）・第 9・10 世代は未確認。

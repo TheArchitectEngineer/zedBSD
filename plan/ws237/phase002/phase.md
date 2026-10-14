@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws237-p002 -->
 # ws237-p002: 段 (1) readout と primary plane の flip（Gen9・Gen9.5）
 
-Status: in-progress — 実装と host の確かめは済み（2026-10-14 P2）。QEMU の回帰・SV7 の passthrough（T1）と SV7 の素の起動（ユーザー）は未実施
+Status: cleared（2026-10-15 ユーザーの実機: i5 の第 7・第 8 世代で i915 の display controller OK・Keiland 使用可、main の既定 FULL の image）
 Disposition: normal
 Parent: [WS237](../ws.md)
 Queue: Q1 の起動の指示（2026-10-14、P2、worktree `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`）
