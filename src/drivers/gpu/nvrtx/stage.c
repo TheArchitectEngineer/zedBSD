@@ -56,6 +56,9 @@
 /* The whole token that asks for the display takeover. */
 #define STAGE_DISP_TOKEN		"nvrtx.disp=1"
 
+/* The whole token that asks for the first compute launch (ws037-p008). */
+#define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
+
 /* The longest stop token: "nvrtx.stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		32U
 
@@ -127,6 +130,23 @@ nvrtx_stage_disp_wanted(void)
 		return true;
 
 	/* Without it the boot keeps the firmware's picture after the readout. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the first compute launch (nvrtx.compute=1).
+ */
+bool
+nvrtx_stage_compute_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.compute=1 among the boot parameters. */
+	present = stage_token_present(STAGE_COMPUTE_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the boot runs no compute program. */
 	return false;
 }
 

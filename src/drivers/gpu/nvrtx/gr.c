@@ -75,7 +75,6 @@ static int gr_layout(struct nvrtx_gpu *gpu, bool scrubber);
 static int gr_tables(struct nvrtx_gpu *gpu, uint64_t tables_at, const uint64_t *physical, bool golden);
 static int gr_space(struct nvrtx_gpu *gpu, uint32_t handle, uint64_t tables_at);
 static int gr_channel(struct nvrtx_gpu *gpu, uint32_t handle, uint32_t space, uint32_t chid, uint64_t instance_at, const struct nvrtx_buffer *methods, bool privileged);
-static int gr_promote(struct nvrtx_gpu *gpu, uint32_t channel, const uint64_t *physical, bool golden);
 static int gr_scrubber_control(struct nvrtx_gpu *gpu, bool teardown);
 static int gr_golden(struct nvrtx_gpu *gpu);
 static int gr_scrubber(struct nvrtx_gpu *gpu);
@@ -510,13 +509,16 @@ gr_channel(
 /*
  * Hands a graphics channel its context buffers (the promote).
  *
+ * Also for the compute stage's channel (compute.c), which takes the
+ * scrubber's form: the global buffers shared, its own made.
+ *
  * For the golden context every buffer is new; the resource manager fills
  * the ones it initializes, and the access map is not mapped.  For the
  * scrubber the global buffers are the golden context's and only its own
  * buffers are filled; the unrestricted access map is left out.
  */
-static int
-gr_promote(
+int
+nvrtx_gr_promote(
 	struct nvrtx_gpu *gpu,
 	uint32_t channel,
 	const uint64_t *physical,
@@ -646,7 +648,7 @@ gr_golden(
 		return error;
 
 	/* Hands it every buffer, all new. */
-	error = gr_promote(gpu, NVRTX_HANDLE_GOLDEN_CHANNEL, gr->golden_physical, true);
+	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_GOLDEN_CHANNEL, gr->golden_physical, true);
 	if (error != 0)
 		return error;
 
@@ -708,7 +710,7 @@ gr_scrubber(
 		return error;
 
 	/* Hands it its own buffers and the shared global ones. */
-	error = gr_promote(gpu, NVRTX_HANDLE_SCRUBBER_CHANNEL, gr->scrubber_physical, false);
+	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_SCRUBBER_CHANNEL, gr->scrubber_physical, false);
 	if (error != 0)
 		return error;
 

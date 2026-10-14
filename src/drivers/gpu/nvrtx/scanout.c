@@ -272,7 +272,7 @@ scanout_read_armed(
 
 /*
  * Places the notifiers after the instance memory and the two surfaces below
- * the graphics arena's reserve, and paints the surfaces.
+ * the graphics and compute arenas' reserve, and paints the surfaces.
  */
 static int
 scanout_surfaces(
@@ -304,10 +304,10 @@ scanout_surfaces(
 	if (error != 0)
 		return error;
 
-	/* Takes two surfaces under the graphics arena's reserve, in the last usable region. */
+	/* Takes two surfaces under the graphics and compute arenas' reserve, in the last usable region. */
 	span = (uint64_t)((width * 4U + SCANOUT_PITCH_ALIGN - 1U) & ~(SCANOUT_PITCH_ALIGN - 1U)) * height;
 	span = (span + SCANOUT_SURFACE_ALIGN - 1U) & ~(SCANOUT_SURFACE_ALIGN - 1U);
-	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_GR_ARENA_RESERVE + 2U * span, &candidate, &region);
+	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_COMPUTE_ARENA_RESERVE + 2U * span, &candidate, &region);
 	if (error != 0) {
 		nvrtx_stage_mark("P8b fail: no VRAM for the surfaces (%d)", error);
 		return error;
