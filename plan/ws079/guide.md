@@ -84,8 +84,8 @@ master の優先（2026-09-30 夜）では WS079 はデモ critical の 2 番目
   `/run/user/1000/session.log` は使えない。app の stderr は session の log に入る（`userland/desktop/sessiond/session.c:589-593` が stdout・stderr を
   `session.log` に、compositor の `zwl_spawn`（`userland/desktop/wayland/home.c:774-815`）と角の swipe（`corner.c:85,801`）はそれを引き継ぐ）。
 - 新しい file（WS079 の範囲）:
-  - `plan/ws079/tests/build-demo-hw-image.sh BUILD`: `plan/ws075/demo/build-demo-image.sh` と同じ中身（apps.conf・壁紙・demo の利用者・guest の鍵・
-    `I915_TEST_VBT=y`）に `--file /usr/share/ws079-tests/a4.pdf=<make-a4-document.sh の出力>` を足す。**build-demo-image.sh の後ろの引数で
+  - `plan/ws079/tests/build-demo-hw-image.sh BUILD`: `plan/ws075/demo/build-demo-image.sh` と同じ中身（apps.conf・壁紙・demo の利用者・guest の鍵。試験の VBT（`I915_TEST_VBT=y`）は
+    2026-10-14 に外した）に `--file /usr/share/ws079-tests/a4.pdf=<make-a4-document.sh の出力>` を足す。**build-demo-image.sh の後ろの引数で
     `ZEDBSD_TEST_EXTRA_FILES` を渡すと script の中の値を置き換えて apps.conf などが落ちる**（make の command line の変数は後の物が勝つ）ので、
     script を複写して 1 行足す形にする。build-demo-image.sh は WS075 の file なので変えない。
   - `plan/ws079/tests/s8-s9-hw.sh IMAGE OUTDIR`: c5-hw.sh と同じ形で、

@@ -8,7 +8,8 @@
 # are then overwritten.  Each file is checked again against the inventory
 # after it is copied.  DIRECTORIES gives each directory's notice (what the
 # firmware is and its copyright, the text make shows before it asks about the
-# license), license files and terms, for the directory's README.md.
+# license), license files and terms, for the directory's README.md, to which
+# repo-DIRECTORY-extra.md beside DIRECTORIES is appended when it exists.
 set -eu
 
 inventory=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
@@ -48,9 +49,15 @@ grep -v '^#' "$directories" | while IFS='|' read -r directory notice licenses te
 		printf '\n%s\n\n' "$terms"
 		printf 'The files are unmodified copies of the upstream files named above. Read the license before you\n'
 		printf 'redistribute or use them.\n\n## Files\n\n| File | Size | SHA-256 |\n| --- | ---: | --- |\n'
-		grep "^$directory|" "$inventory" | while IFS='|' read -r package name url size hash; do
-			printf '| `%s` | %s | `%s` |\n' "$name" "$size" "$hash"
-		done
+		grep "^$directory|" "$inventory" | grep -v "^$directory|source/" |
+			while IFS='|' read -r package name url size hash; do
+				printf '| `%s` | %s | `%s` |\n' "$name" "$size" "$hash"
+			done
+		extra=$(dirname "$directories")/repo-$directory-extra.md
+		if test -f "$extra"; then
+			printf '\n'
+			cat "$extra"
+		fi
 	} >"$out/$directory/README.md"
 done
 

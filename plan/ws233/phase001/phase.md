@@ -116,7 +116,7 @@ QEMU・実機は使っていない（build の取り方だけの変更で、imag
 | 確かめ | command | 結果 |
 | --- | --- | --- |
 | upstream から全 file を取り直し、Makefile の値と一致 | `sh plan/ws233/tests/fetch-upstream.sh plan/ws233/tests/firmware-inventory.txt build/ws233-upstream` | 34/34 OK（git.kernel.org・GitHub raw とも応答） |
-| repo の中身を作る | `sh plan/ws233/tests/make-firmware-repo.sh … build/ws233-firmware-repo` | 43 file（firmware と license 34、README 8、SHA256SUMS）、`sha256sum --check` OK、commit `1e18621b65add96b19377e2ea0063762a618314f`（message `WIP`） |
+| repo の中身を作る | `sh plan/ws233/tests/make-firmware-repo.sh … build/ws233-firmware-repo` | 68 file（firmware と license 34、DTS の source 25、README 8、SHA256SUMS）。2026-10-14 の第 2 回で amend した（push 前）、`sha256sum --check` OK、commit `ddd36a0d2f0215f4a9000d1c0796e54aeaf1a79f`（message `WIP`） |
 | 変えた Makefile で repo（file://）から全部を取り、upstream は届かない URL | `sh plan/ws233/tests/check-repository-fetch.sh build/ws233-firmware-repo build/ws233-check4` | 7 package の 33 file（COPYING.linux は build が取らない）が全部 repo から、sha256 一致。repo を届かなくすると intelbt 8・rpi4-boot 5 が upstream へ切り替わり一致。cache の再利用は fetch 無し |
 | production の値の固定 | command line で `ZEDBSD_FIRMWARE_REPOSITORY_REVISION`・`*_ZEDBSD_URL` を渡す | 全部空のまま（無視される） |
 | placeholder を埋めた時の production の道（一時に local の commit の SHA を書き、戻した） | `make ZEDBSD_CONFIG=config/ci/config-amd64.mk I915_FIRMWARE_CACHE_ROOT=build/ws233-check3/i915 i915-firmware` | URL は `https://raw.githubusercontent.com/awemorris/zedBSD-firmware/<SHA>/i915/…`。repo が未公開なので 404 → 4 file とも upstream へ切り替わり、sha256 一致。40 桁でない値は `$(error)` |
@@ -141,8 +141,43 @@ QEMU・実機は使っていない（build の取り方だけの変更で、imag
    git remote add origin https://github.com/awemorris/zedBSD-firmware.git
    git push -u origin main
    ```
-2. **placeholder を埋める**: `userland/firmware/zedbsd-firmware.mk` の `override ZEDBSD_FIRMWARE_REPOSITORY_REVISION :=` に push した commit の SHA（今は `1e18621b65add96b19377e2ea0063762a618314f`）を書く。確かめ: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk I915_FIRMWARE_CACHE_ROOT=build/<新しい dir> i915-firmware` が `could not fetch` を出さずに通る（または `check-repository-fetch.sh` と同じ形で raw の URL を `curl -fsSI` で 34 本）。
+2. **placeholder を埋める**: `userland/firmware/zedbsd-firmware.mk` の `override ZEDBSD_FIRMWARE_REPOSITORY_REVISION :=` に push した commit の SHA（今は `ddd36a0d2f0215f4a9000d1c0796e54aeaf1a79f`）を書く。確かめ: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk I915_FIRMWARE_CACHE_ROOT=build/<新しい dir> i915-firmware` が `could not fetch` を出さずに通る（または `check-repository-fetch.sh` と同じ形で raw の URL を `curl -fsSI` で 34 本）。
 3. **submodule を外す**: [proposed/remove-submodule.md](proposed/remove-submodule.md)。
 4. **T1 への試験の依頼（案）**: image `config/ci/config-rpi4.mk`（`yes | make firmware-licenses` の後に `make -j16 disk-image`、BUILD は新しい dir）。合格: `make check-disk-image` が PASS、FAT の `start4.elf`・`fixup4.dat`・`bcm2711-rpi-4-b.dtb`・`overlays/disable-bt.dtbo`・`LICENCE.broadcom` が今の main の image と byte 一致（`plan/ws073/tests/fat-compare.py`）、`BOOT_MODE=raspi4b plan/tools/boot-test.sh IMAGE` で login prompt（DTB は image の横）。amd64 の CI の config でも `make disk-image` が通り `/lib/firmware` の file が今と同じ。上の 5 本の package の試験も流す。
 5. **新しい worktree で image を build する時**（T1・T2・Q1）: `test-image.sh` は自分で `yes | make firmware-licenses` を流す。直に make する時は先に `yes | make ZEDBSD_CONFIG=… firmware-licenses`。
 6. 監査の「判断が要る点」b・c・d をユーザーに示す。image に `COPYING.linux`（DTB の GPL-2.0）が入っていない件は別の Phase に。
+
+## 7. 第 2 回（2026-10-14、ユーザーの判断を Q1 が引用: b「入れる」、c「dts を repo に置く」、d「VBTはテスト用だったので、もう不要と思います。削除できませんか？」）
+
+### c. DTB の source を repo に
+
+- raspberrypi/linux `89586905b8603e545cce9089a81f5f35d65bc998` から、`arch/arm/boot/dts/broadcom/bcm2711-rpi-4-b.dts`・`arch/arm64/boot/dts/broadcom/bcm2711-rpi-4-b.dts`（前者を include）・`arch/arm/boot/dts/overlays/disable-bt-overlay.dts` と、それらが再帰で include する dtsi 12 個と `include/dt-bindings/` の header 10 個、計 25 file を取った（include を辿る script は scratch、取った物は inventory に `rpi4-boot|source/<元の path>|URL|大きさ|sha256` で 25 行足した。`fetch-upstream.sh` で 59 file 全部を取り直して一致）。
+- repo の `rpi4-boot/source/` に元の path の形で置き、`rpi4-boot/README.md` に source の commit・path・DTB を作る command（`cpp … | dtc -@ …`）を書いた（`plan/ws233/tests/repo-rpi4-boot-extra.md`）。
+- **確かめ**: README の command（host の cpp と dtc 1.7.2）で作った `bcm2711-rpi-4-b.dtb`・`disable-bt.dtbo` が repo の（= firmware の commit の）file と **byte 一致**。source が完全であることの証拠。
+- repo の commit: `ddd36a0d2f0215f4a9000d1c0796e54aeaf1a79f`（前の `1e18621b` を amend、push 前なので 1 commit のまま）。68 file、9,472,522 byte（.git を除く）。
+
+### b. Cypress の用途の限定
+
+`brcmbt/README.md`・`bcm43455/README.md` の License の節の先頭に太字で「Cypress の IC（ここでは Raspberry Pi 4 の CYW43455）と使う場合に限る、object code のまま、改変しない」を書き、続けて EULA の要約（object code に限る再配布、用途の限定、改変・reverse engineering の禁止）を置いた。確かめた（生成した README を読んだ）。
+
+### d. VBT・OpRegion の raw を消す準備
+
+tree の中の参照を grep した（Makefile・*.mk・src・include・userland・platform・tools・tests・docs・config・.github・plan/tools、と plan/ws* の script・guide）。直した差分（file の削除はしていない）:
+
+- `src/drivers/gpu/i915/display/{vbt.c,display.c,internal.h,vbt-parse.h}`・`tests/execution/ktest-display.c`: `unifdef -UI915_TEST_VBT`（host に unifdef 2.12 を apt で入れた）で `#ifdef I915_TEST_VBT` の部分を除いた（production の build で消えていた部分だけ。`vendor/intel-vbt/*.inc` の include はここにしか無い）。残った説明の comment を直した。explicit blob の残りの記帳（`I915_VBT_SRC_EXPLICIT_BLOB` など）は dead だが、i915 の範囲なので残し `XXX` を書いた。
+- `platform/amd64/vmunix.mk`: `I915_TEST_VBT=y` は「外した」と `$(error)` にした（黙って VBT 無しで build しないように）。`platform/amd64/tools/check-kernel-includes.noct`: 許す path から `vendor/intel-vbt/` を外した。
+- `I915_TEST_VBT` を渡していた script: `plan/ws031/tests/hw-machine.sh`・`vkloop-hw.sh`、`plan/ws075/demo/build-demo-image.sh`（`passthrough` の語は受けて何もしない）・`config-demo-hdmi.mk`、`plan/ws101/tests/demo/build-s13-image.sh`・`tests/hw/g3-hw.sh`・`gles-hw.sh`、`plan/ws004/tests/config-ax211-usb.mk`（comment）。
+- 文書: `plan/tools/hw5330/README.md`・`plan/tools/hwsv7/README.md`、`src/drivers/gpu/i915/tests/execution/README.md`・`tests/display/README.md`（`run-opregion-host-test.sh` の行）、`plan/ws075/guide.md`・`plan/ws079/guide.md`、`plan/ws031/display-ref/README.md`（外す旨を追記）。
+- 確かめ: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws233-k build/ws233-k/vmunix`（production、check-kernel-includes を含む）、同じく `I915_TESTS=y I915_TEST_SET=display_ktest`（BUILD=build/ws233-kt）と `I915_TEST_SET=execution`（ktest-display.c を compile、BUILD=build/ws233-ke）: 全部 rc 0、compiler の warning 0、`amd64 vmunix check: PASS`。`I915_TEST_VBT=y` は error で止まる。直した script は `sh -n` OK。
+- **影響（ユーザーに示すこと）**: 5330 の QEMU passthrough の guest は OpRegion が見えないので、i915 の driver は VBT 無しの既定（Linux の missing-VBT defaults: port A/B/C の既定の children、panel の既定）で動く。passthrough の GPU 試験（vkloop-hw.sh・ws075・ws101 の hw の試験）の結果は変わりうる（未確かめ）。実機（USB の image）は OpRegion の VBT を使うので影響しない。
+
+**Q1 が消す path（git rm）**:
+
+1. `vendor/intel-vbt/README.md`、`vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc`（directory ごと）
+2. `plan/ws031/display-ref/i915_vbt.bin`、`plan/ws031/display-ref/i915_opregion.bin`
+3. `src/drivers/gpu/i915/tests/display/host-opregion-test.c`（上の 2 つを読む host 試験。runner の `plan/ws031/tests/run-opregion-host-test.sh` は ws034-p049 で消え、build する所が無い）
+4. `plan/ws031/tests/vbt-host-test.c`（`i915_vbt.bin` を読む古い host 試験。build する所が無く、相手の `parity/vbt/intel_bios_port.c` も既に無い）
+5. 判断が要る: `plan/ws031/handover/increment-results/e97-e109-changes.patch`・`e97-e115-…`・`e97-e116-…`・`e97-e117-…`・`e97-e118-…`・`e97-e119-…`・`e97-e120-…`（7 本、計約 60 MB）は VBT の bytes を C の配列で含む（e119・e120 は `.bin` の binary の diff も）。WS031 の引き継ぎの記録。消すなら 7 本、または `increment-results/`（316 file、91 MB）ごと。
+- 残す: `plan/ws031/display-ref/vbt-decode.txt`（igt の decode の文。raw の bytes は含まない）。
+- 注意: tree から消しても git の履歴（main の 2026-10-03 以降の commit、GitHub の `old`）には残る。履歴から消すのは別の判断。
+- 記録の中の言及（`plan/ws031/*.md` の provenance-ledger・license-inventory・results、`plan/ws035/ws.md`、`plan/uat.md` の `I915_TEST_VBT=n`（n は error にならない））は履歴なので変えていない。

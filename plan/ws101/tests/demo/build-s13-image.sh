@@ -22,5 +22,5 @@ plan/tools/guest/test-image.sh --no-harness plan/ws101/tests/demo/config.mk "$bu
 	--file /bin/noct=$noct --mode /bin/noct=0755 \
 	--file /usr/share/keiland/wallpaper.png=userland/desktop/wallpapers/Birch-Lake.png \
 	--file /root/.ssh/authorized_keys=$key --mode /root/.ssh/authorized_keys=0600 --mode /root/.ssh=0700 \
-	I915_TEST_VBT=y ZEDBSD_TEST_IMAGE_TAG=ws101-demo
+	ZEDBSD_TEST_IMAGE_TAG=ws101-demo
 echo "s13 demo image: $build/hdd-image.img"

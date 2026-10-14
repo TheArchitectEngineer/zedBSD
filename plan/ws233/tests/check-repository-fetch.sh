@@ -47,7 +47,7 @@ check() {
 	set -f
 	for entry in $(grep "^$package|" "$inventory"); do
 		old_ifs=$IFS; IFS='|'; set -- $entry; IFS=$old_ifs
-		test "$2" = COPYING.linux && continue
+		case $2 in COPYING.linux | source/*) continue ;; esac
 		file=$cache/$2
 		if test "$(wc -c <"$file" | tr -d '[:space:]')" != "$4" ||
 			test "$(sha256sum "$file" | awk '{print $1}')" != "$5"; then

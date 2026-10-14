@@ -39,7 +39,7 @@ script が変わったら、この文書の行の番号も直す。
 
 - passthrough の QEMU の引数: `plan/ws075/tests/hdmi/h4-qemu.sh:19-34`（`-device vfio-pci,host=0000:00:02.0,x-igd-opregion=on,rombar=0`、
   `-vga std`、`-serial file:...serial.log`、`-debugcon file:...run.log`、QMP の socket 2 つ、`usb-tablet`・`usb-kbd`）。
-- passthrough の guest には OpRegion が見えないので、試験の image は kernel に 5330 の VBT を入れる（`I915_TEST_VBT=y`）。
+- passthrough の guest には OpRegion が見えない。試験の image が kernel に 5330 の VBT を入れる仕組み（`I915_TEST_VBT=y`）は 2026-10-14 に外した（ws233-p001、ユーザー「VBTはテスト用だったので、もう不要」）。passthrough の guest の driver は VBT の無い時の既定（Linux の missing-VBT defaults）で動く。
   `build-demo-image.sh` の `passthrough` の語がこれ（`plan/ws075/demo/build-demo-image.sh:15-17,26-29`）。**USB の単独起動の image には付けない**。
 - passthrough には firmware の画面（GOP の点けた pipe）が無いので、firmware の画面の引き継ぎ（takeover）の経路は passthrough では確かめられない
   （`plan/ws084/ws.md:44`）。takeover は単独の起動でだけ確かめられる。
@@ -220,7 +220,7 @@ plan/ws075/demo/build-demo-image.sh [BUILD] [passthrough] [make の引数...]   
 | 引数 | 意味 | 根拠 |
 | --- | --- | --- |
 | `BUILD`（1 つ目） | build の directory。出力は `BUILD/hdd-image.img` | `build-demo-image.sh:11,23,47` |
-| `passthrough`（2 つ目、任意） | `I915_TEST_VBT=y`（5330 の VBT を kernel に）。passthrough の試験の image だけ。USB 用には付けない | `build-demo-image.sh:15-17,25-29` |
+| `passthrough`（2 つ目、任意） | 今は何も変えない（試験の VBT を kernel に入れていたが 2026-10-14 に外した、ws233-p001） | `build-demo-image.sh` |
 | 残り | そのまま make へ（例: `ZEDBSD_NOCT_ACCEL=n`、`ZEDBSD_BOOT_EXTRA_LINES=...`、`CONFIG_PCAT_SERIAL_MIRROR=y`） | `build-demo-image.sh:17-18,45-46` |
 
 script がすること: App Home の一覧 `plan/ws035/demo/apps.conf`、壁紙（`build/ws035-wallpaper/wallpaper-1080.ppm` があれば。2026-10-01 は無いので入らない）、
@@ -408,7 +408,6 @@ ls build/wsNNN/pNNN-hw/shots/*-live.png
 | 古い IP・古い既定の host | `test-hw.sh`・`capture-hw.sh`・`menu-hw.sh` の既定は `awe@10.0.30.3`（2026-10-01 の 5330 は `10.0.10.25`） | `I915_HOST=solaris10-man` を明示 | `test-hw.sh:9,22-24`、`capture-hw.sh:10,20`、`menu-hw.sh:8,15`、`~/.ssh/config` |
 | checkout の移動で path が切れた | `gles-hw.sh`・`g3-hw.sh`・`build-s13-image.sh`・`g3-venus.sh` が `/home/awe/zedBSD-rpi4/build/...`（font・`demo-lcd9/bin/noct`・壁紙）を指すが、その directory は無い | `NOCT=/home/awe/zedBSD-claude1/build/demo-lcd9/bin/noct` を渡す（2026-10-01 に存在を確認。最新の source で作った noct かは別）。font の path は script の中で固定なので font は入らない（`[ -f ]` で飛ばす）。直すのは script の持ち主の WS | `gles-hw.sh:19`、`g3-hw.sh:20,24`、`plan/ws101/tests/demo/build-s13-image.sh:12,15` |
 | C の flag の違う image を同じ BUILD で作った | make が flag の変更を見ず、古い object のまま | 版ごとに新しい BUILD | `build-demo-image.sh:19` |
-| USB の image に `passthrough` を付けた・付けなかった | 素の 5330 は OpRegion の VBT を使い、passthrough は試験の VBT が要る | USB は付けない、passthrough は付ける。別の BUILD | `build-demo-image.sh:15-17` |
 | `ZEDBSD_BOOT_EXTRA_LINES` を上書きして `display=edp` が消えた | 構成の既定は `?=` なので command line の値で丸ごと置き換わる | 上書きするときは `display=edp` も書く | `config-demo-hdmi.mk:15` |
 | 黒い greeter の画像 | 表示していない buffer A を撮った | `*-live.png` を見る | `plan/ws075/ws.md:66`（ws075-p014） |
 | host の電源の入れ直しの直後の最初の run | i915 の start が `time_base_anomaly` で止まり compositor が起動しなかった（BUG-094、2026-09-29 に修正） | 再び起きたら同じ image で 1 回やり直し、BUG-094 を見る | `plan/bugs/BUG-085.md:40`、`plan/known-bugs.md` の BUG-094 |

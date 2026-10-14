@@ -98,7 +98,7 @@ keeps one check per old check otherwise, so the counts stay comparable.
 | DMC-FINI(running) and DMC-FINI(MMIO fault) (4) | the loader's pause and fault-at test hooks were dropped from production |
 | DS-ENOMEM (1) | the global-state allocation can no longer fail and its failure hook is gone |
 | DS-QUIRKS forced-DMI sub-case (part of 1) | the DMI match hook no longer exists; the PCI sub-cases run |
-| `intel_bios_init` fallback and VBT-EXPLICIT/CHILDREN/PANEL/DEFAULTS (7 with `I915_TEST_VBT=y`, 1 without; skipped at run time) | the VBT parser's world is a driver-wide pointer bound to the live display (`display/vbt.c` `i915_vbt_bound_world`): a second world gets EBUSY. The explicit-VBT group (6 skips and the VBT-VALIDATE check) exists only in the `I915_TEST_VBT=y` build; the "second machine (1028:0a1f)" case went with the Dell Latitude 5320 VBT on 2026-09-22 |
+| `intel_bios_init` fallback (1; skipped at run time) | the VBT parser's world is a driver-wide pointer bound to the live display (`display/vbt.c` `i915_vbt_bound_world`): a second world gets EBUSY. The explicit-VBT group (VBT-EXPLICIT/CHILDREN/PANEL/DEFAULTS skips and the VBT-VALIDATE check) went with the captured Dell Latitude 5330 VBT and the `I915_TEST_VBT` build on 2026-10-14 (ws233-p001); the "second machine (1028:0a1f)" case went with the Dell Latitude 5320 VBT on 2026-09-22 |
 
 ### ktest-display-probe.c
 

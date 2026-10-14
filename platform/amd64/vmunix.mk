@@ -200,11 +200,10 @@ endif
 # The scenarios linked change with I915_TEST_SET: a content-stable stamp relinks an existing BUILD when it changes.
 AMD64_I915_TEST_SET_STAMP := $(BUILD)/.i915-test-set
 endif
-# The i915 test VBT: I915_TEST_VBT=y builds the captured VBT of the QEMU passthrough test machine
-# (vendor/intel-vbt/) into display/vbt.c, used when the guest has no OpRegion.
-# XXX: a test crutch; delete it once the GPU tests run on bare metal.
+# The i915 test VBT (I915_TEST_VBT=y, the captured VBT of the 5330 for the QEMU passthrough guest) was removed on
+# 2026-10-14 (plan/ws233/phase001/phase.md); a caller that still asks for it is told so.
 ifeq ($(I915_TEST_VBT),y)
-AMD64_CPPFLAGS += -DI915_TEST_VBT=1
+$(error I915_TEST_VBT=y: the captured test VBT was removed (ws233-p001); drop the setting)
 endif
 # The i915 capture display: I915_TEST_CAPTURE=y leaves the display hardware alone (no modeset, no panel)
 # and captures every presentation into guest RAM that the QEMU host reads (display/capture.c).

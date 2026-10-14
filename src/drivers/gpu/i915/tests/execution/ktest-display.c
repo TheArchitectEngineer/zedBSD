@@ -318,18 +318,6 @@ static const uint8_t i915_ktest_dmc_sha256[32] = {
 	0xfe, 0xcb, 0xd5, 0x8c, 0xbb, 0x77, 0x23, 0x4b, 0xd6, 0xf2, 0x97, 0xc5, 0x44, 0xe9, 0x2c, 0xcb
 };
 
-#ifdef I915_TEST_VBT
-/*
- * The test build's explicit VBT (vendor/intel-vbt/README.md), which the
- * validation check reads whole and cut short.
- *
- * XXX: a test crutch for the QEMU passthrough guest without an OpRegion;
- * delete it with the explicit VBT once the GPU tests run on bare metal.
- */
-static const uint8_t i915_ktest_vbt_dell_latitude_5330[] = {
-#include "vendor/intel-vbt/dell-latitude-5330-1028-0b02.inc"
-};
-#endif
 
 static uint32_t i915_ktest_fake_read32(void *context, uint32_t offset);
 static void i915_ktest_fake_write32(void *context, uint32_t offset, uint32_t value);
@@ -362,9 +350,6 @@ static unsigned i915_ktest_make_vbt(struct i915_ktest_display_fixture *fx, int g
 static void i915_ktest_drm(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_drm_bounds(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_bios(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
-#ifdef I915_TEST_VBT
-static void i915_ktest_bios_blob(struct i915_ktest *ktest);
-#endif
 static void i915_ktest_vga(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_power_map(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
 static void i915_ktest_power_wells(struct i915_ktest *ktest, struct i915_ktest_display_fixture *fx);
@@ -464,9 +449,6 @@ drv_i915_ktest_display(
 
 	/* The VBT checks, the parse and the missing-VBT defaults. */
 	i915_ktest_bios(ktest, fx);
-#ifdef I915_TEST_VBT
-	i915_ktest_bios_blob(ktest);
-#endif
 
 	/*
 	 * The eDP, eDP-with-threads and one-screen modeset tests are the
@@ -1386,50 +1368,6 @@ i915_ktest_bios(
 		"bios: VBT-SHA the SHA-256 used to pin the blob matches the FIPS 180-4 'abc' vector");
 }
 
-#ifdef I915_TEST_VBT
-/*
- * Records the explicit-blob parse checks that cannot run, and tests the
- * blob's validation.
- *
- * XXX: the explicit VBT is a test crutch for the QEMU passthrough guest
- * without an OpRegion; delete this with it once the GPU tests run on bare
- * metal.
- */
-static void
-i915_ktest_bios_blob(
-	struct i915_ktest *ktest)
-{
-	static const char *const acquisitions[] = {
-		"bios: VBT-EXPLICIT not requested -> the blob is not touched; missing defaults as before",
-		"bios: VBT-EXPLICIT another machine (subsystem 1028:0b03) -> no row, nothing read; defaults",
-		"bios: VBT-EXPLICIT on the target: 8704 bytes, SHA-256 pinned, BDB 249, source = explicit blob (not OpRegion), no parser error",
-		"bios: VBT-CHILDREN from the real VBT only: A=eDP/AUX A, B=HDMI (DDC pin 2), TC1+TC2=DP Type-C/TBT, no port C (not the A/B/C defaults)",
-		"bios: VBT-PANEL type 2, 18 bpp, PPS T3 200ms/T7 80ms/T9 200ms/T10 110ms/T12 500ms, PWM backlight 200 Hz active-high controller 0, min 15 (BDB>=234 field)",
-		"bios: VBT-DEFAULTS the reference init_vbt_missing_defaults() yields the same A/B/C children as before (version 155)"
-	};
-	unsigned i;
-	int full;
-	int truncated;
-	int header_only;
-
-	/* Each of these runs the acquisition or the panel parse in the parser's driver-wide world. */
-	for (i = 0U; i < sizeof(acquisitions) / sizeof(acquisitions[0]); i++) {
-		drv_i915_ktest_skip(ktest, acquisitions[i],
-		    "the VBT parser world is a driver-wide binding held by the live display");
-	}
-
-	/* The full blob validates; truncated copies do not. */
-	full = drv_i915_vbt_validate(i915_ktest_vbt_dell_latitude_5330, sizeof(i915_ktest_vbt_dell_latitude_5330));
-	truncated = drv_i915_vbt_validate(i915_ktest_vbt_dell_latitude_5330, 4000U);
-	header_only = drv_i915_vbt_validate(i915_ktest_vbt_dell_latitude_5330, 40U);
-	drv_i915_ktest_check(
-		ktest,
-		full == 1 &&
-		    truncated == 0 &&
-		    header_only == 0,
-		"bios: VBT-VALIDATE the full blob validates; truncated copies do not");
-}
-#endif
 
 /* Tests the VGA decode callback and the decode state without a host bridge. */
 static void
