@@ -32,13 +32,14 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md（先頭の「ユーザーが今できる試験」）・この block・[plan/agents/wrapup-20261015.md](agents/wrapup-20261015.md) を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **今の仕事: Pi4 のビデオの試験（WS236 p006、T1-653）**。ユーザーが Pi の SD を書き直し中で、「それまで何もせずに待っていてください」。書き直しの知らせの後に、Q1（または T）が最新の main の kernel で [phase006](ws236/phase006/phase.md) の「T への依頼」を流し、結果をユーザーに伝える（ユーザー「最新のカーネルでOKです。まずはビデオ再生をテストしてください。結果を教えてください。」）。起動で固まれば BUG-317（写真をもらう）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS240、q984、T1-685。次の KL_VERSION は 95。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS240、q984、T1-686。次の KL_VERSION は 95。
 4. 日程: リリースは 10/16（金）夕。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
+- WS236 Pi の 60 fps（2026-10-16 P3 の切り分け、phase011）: 窓の中の 60 fps は GPU の仕事（compositor の合成の pass＋窓の TFU＋videoplayer の pass、executor 72〜90% busy）で律速、videoplayer だけでは届かない。案 (A) compositor の合成を短く（不透明の窓の下の層を描かない、WS141 p013・WS211）、(B) WS214 p005 で再生中の窓を HVS の plane に、(C) 60 fps は全画面（game mode、HVS の直の scanout）だけを目標に。P3 は (C) を先に試す。先読み 3→2 の妥協（30p の late が増えたら戻す）。
 - boot loader の GOP の mode の選び方（2026-10-16 P2 の案、bootloader/uefi/video.c の zbl_uefi_video_select）: video= が無く 1920x1080 が無い時、今は firmware の mode のまま（RTX 機の monitor で 640x480）。案: 1920x1080 以下で面積が一番大きい mode を選ぶ（例 1280x1024）。nvrtx は 640x480 でも拡大で desktop まで行く直しを入れたので急ぎではない（boot の画面の画質）。
 - WS037: RTX に console が無い時（パススルー・GOP が別の GPU）に nvrtx が自前の surface で takeover する（`nvrtx.disp.own=1`）を既定にするか（2026-10-16 P2 の問い、desktop が出た後に聞く）。
 - （解決 2026-10-16 ユーザー、クリック）WS236 の表示の道: 案 1 を WS236 の Phase で進める、値の補正（2〜15 が 1 小さい）は表示では直さない（probe の読み戻しだけ補正）、TFU の YUV の probe はする。
