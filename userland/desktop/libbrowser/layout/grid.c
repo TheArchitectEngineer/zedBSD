@@ -76,7 +76,7 @@ struct grid_sizes {
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
 static void grid_resolve(const struct css_grid_place *place, int explicit_count, int *start, int *span);
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
-	layout_unit column_gap, layout_unit row_gap, layout_unit shift);
+	layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
 static int grid_place(struct grid_state *grid);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
 static int grid_take(struct grid_state *grid, int row, int column, int row_span, int column_span);
@@ -118,6 +118,7 @@ layout_grid(
 	layout_unit room;
 	layout_unit used;
 	layout_unit shift;
+	layout_unit row_shift;
 	layout_unit baseline;
 	layout_unit peer_baseline;
 	layout_unit shared_baseline;
@@ -230,9 +231,27 @@ layout_grid(
 
 	/* The rows' heights from the items. */
 	grid_size_rows(box, &grid, row_gap);
+	row_shift = 0;
+	if (box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
+	    box->style.align_content == CSS_ALIGN_CENTER &&
+	    box->style.height.unit == CSS_UNIT_PX) {
+		layout_unit available_height;
+
+		available_height = layout_from_px(box->style.height.value);
+		if (box->style.box_sizing == CSS_BOX_SIZING_BORDER)
+			available_height -= box->border[CSS_TOP] + box->padding[CSS_TOP] +
+			    box->padding[CSS_BOTTOM] + box->border[CSS_BOTTOM];
+		used = 0;
+		if (grid.row_count > 0)
+			used = row_gap * (layout_unit)(grid.row_count - 1);
+		for (position = 0; position < grid.row_count; position++)
+			used += grid.rows[position];
+		if (available_height > used)
+			row_shift = (available_height - used) / 2;
+	}
 
 	/* Absolute children use valid definite grid areas without sizing the tracks. */
-	grid_static_position(box, &grid, column_gap, row_gap, shift);
+	grid_static_position(box, &grid, column_gap, row_gap, shift, row_shift);
 
 	/* Each item in its area, aligned in it across the rows. */
 	for (index = 0; index < grid.item_count; index++) {
@@ -253,7 +272,7 @@ layout_grid(
 			for (position = 0; position < item->column; position++)
 				x += grid.columns[position] + column_gap;
 		}
-		y = 0;
+		y = row_shift;
 		for (position = 0; position < item->row; position++)
 			y += grid.rows[position] + row_gap;
 		area_height = row_gap * (layout_unit)(item->row_span - 1);
@@ -490,7 +509,8 @@ grid_static_position(
 	const struct grid_state *grid,
 	layout_unit column_gap,
 	layout_unit row_gap,
-	layout_unit shift)
+	layout_unit shift,
+	layout_unit row_shift)
 {
 	struct layout_box *child;
 	layout_unit x;
@@ -582,7 +602,7 @@ grid_static_position(
 		if (child->style.grid_column.start == 0 &&
 		    child->style.grid_column.end == 1)
 			x = box->style.direction == CSS_DIRECTION_RTL ? box->width : 0;
-		y = 0;
+		y = child->style.grid_row.start > 0 ? row_shift : 0;
 		for (index = 0; index < row; index++)
 			y += grid->rows[index] + row_gap;
 		child->static_x = x;

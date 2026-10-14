@@ -186,3 +186,11 @@ Event ws074-p217-q1115-partial-clear-20261014: [証拠](evidence/20261014-q1115/
 ## q1116-i01 結果（2026-10-14 09:06 JST）
 
 Event ws074-p217-q1116-partial-clear-20261014: [証拠](evidence/20261014-q1116/README.md)。水平Grid絶対子の`grid-column:auto / auto`を全幅inline areaにし、明示row原点を維持。最小LTR/RTL start/end/center・明示行fixture PASS。固定行軸012–016の横書き10 subtestがFAIL→PASS、縦書き10 subtestはwidth期待10/実60でFAIL継続。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1116部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1117-i01 有限部分範囲（2026-10-14 09:07 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:37 JSTまで）に適用。水平Grid、固定pixel height、`align-content:center`、正の未使用縦余白について、明示start rowの直接absolute子とin-flow Grid itemのrow原点へcontent shiftを加算。auto start rowは対象外のまま保つ。最小explicit row/auto row/in-flow fixture、固定column-axis012–016の最初の横書きassert・次失敗、旧PASS代表、Grid/CSS/JS、warning0 build、Acid3差0・Acid2非増加で検証。percent height/他content値/縦書き、runner/WPT/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1117-i01 結果（2026-10-14 09:12 JST）
+
+Event ws074-p217-q1117-partial-clear-20261014: [証拠](evidence/20261014-q1117/README.md)。水平Grid固定高さの`align-content:center`で明示行とin-flow itemの原点をshift。最小auto/明示2行とin-flow PASS。固定列軸012/015の最初のoffsetTop差が次のoffsetLeft差へ進む。auto row 013/014/016とRTL x差が残りwhole5件FAIL。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1117部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
