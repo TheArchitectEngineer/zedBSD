@@ -11,8 +11,8 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-15（Q1、新しいセッション）**: P1＝[BUG-318](bugs/BUG-318.md)（Pi の Video Player の音声の時計が 0、worktree p1 の agent/p1-bug318、WS037 の差分は stash）。P2＝WS037 nvrtx の続き（p1・p3 の wrapup の patch の回収 → R8b〜R8d・R7d、worktree p2 の agent/p2-ws037、WS237 の差分は stash）。P3＝WS237 の既定 full の安全化（p2 の wrapup の patch を完成、worktree p3 の agent/p3-ws237）、merge で WS237 は completed（ユーザー「UATは不要」）。B1＝WS074 の続き（p236 から、yahoo・google の Chrome との差）。T1-645（RTX の R8b）は準備済みで T1 は終了: image は awe@10.0.10.3 の ~/nvrtx/v8b2（main 54a80971a、sha256 43879f22…）、host は 03:17 に reboot・`prepare.sh --check` ok。ユーザーの「開始」で新しい T1 に `~/nvrtx/start-rombar1.sh v8b2` から流させる（間が空いたら host の reboot と --check をやり直す）。 P4＝WS037 の shader の compiler（p008、desktop の shader を全て SM75 へ、worktree p4 の agent/p4-ws037、2026-10-15 ユーザー「サブエージェントP4を起動して、RTXコンパイラの作業をお願いします。」）。
-- RTX の順（2026-10-15 ユーザー）:「RTXはまずはディスプレイをONにするところをクリアしてください。そのあとで実機ベアメタルに進みます。」→ P2 は R8b（パススルーで display を点ける）を最優先、R7d の SPH は区切る。方法 A（素の起動、beta2.md の U3）は R8b の PASS の後。 追記（同日 ユーザー）:「ベアメタルでRTXのテストをするのは、パススルーでデスクトップ描画ができるようになってからにします。」→ 素の起動（U3）は、パススルーで R8b→R8c→R8d と desktop（Keiland）の描画が通った後。
+- **2026-10-15（Q1、新しいセッション）**: P1＝[BUG-318](bugs/BUG-318.md)（Pi の Video Player の音声の時計が 0、worktree p1 の agent/p1-bug318、WS037 の差分は stash）。P2＝WS037 nvrtx の続き（p1・p3 の wrapup の patch の回収 → R8b〜R8d・R7d、worktree p2 の agent/p2-ws037、WS237 の差分は stash）。P3 は WS237 の安全化を終えて終了（WS237 completed）。B1＝WS074 の続き（p236 から、yahoo・google の Chrome との差）。T1＝T1-645（RTX の R8b、~/nvrtx/v8b2）と T1-656（R7d の再試験）を流す（ユーザーの立ち会いなし）。 P4＝WS037 の shader の compiler（p008、desktop の shader を全て SM75 へ、worktree p4 の agent/p4-ws037、2026-10-15 ユーザー「サブエージェントP4を起動して、RTXコンパイラの作業をお願いします。」）。
+- RTX の順（2026-10-15 ユーザー）:「RTXはまずはディスプレイをONにするところをクリアしてください。そのあとで実機ベアメタルに進みます。」→ P2 は R8b（パススルーで display を点ける）を最優先、R7d の SPH は区切る。方法 A（素の起動、beta2.md の U3）は R8b の PASS の後。 追記（同日 ユーザー）:「ベアメタルでRTXのテストをするのは、パススルーでデスクトップ描画ができるようになってからにします。」→ 素の起動（U3）は、パススルーで R8b→R8c→R8d と desktop（Keiland）の描画が通った後。 追記（同日 ユーザー）:「R8bは流しません。パススルーでデスクトップ描画ができるようになったあと、まとめてテストします。よって、R8の終了条件にユーザテストを入れません。あなたはパススルー環境でテストして、カーネルログから、ディスプレイ制御のエラーを見ることができます。…それが出なくなり、制御できるようになったと思われたら、R8をクリアと見なします。ユーザの目視は不要です。」→ R8 の合格は guest の kernel log に display 制御の error が無いこと（Q1 の判定）。desktop の道は nvrtx の executor（P2 の phase007 8 節 D1〜D5、Venus の代わりの道は zedBSD 用の host の renderer が要り使えない）。
 - 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。ユーザーは逐次に 1 つずつ解決する進め方。
 - Pi 4（10.0.30.2）: ユーザーが SD を書き直し、main 2597b86（Bluetooth の driver off）で起動。kei の password は kei、Q1 の公開鍵を入れた。ssh は `-o UserKnownHostsFile=build/q1/pi-known_hosts`（新しい host key ED25519 SHA256:s05AGsis…）。
 <!-- master:agents:end -->
@@ -61,7 +61,7 @@
 - WS037 RTX: R8b・R8c・R8d（ユーザーが monitor を見る）、R7d は SPH の Graphics Exception で FAIL（直しは途中、P3 の patch）。既定 on と方法 A は P1 の patch で途中。
 - BUG-315（Pi の touch）: Y の quirk は main に入った。X の端の飽和は未確認。BUG-311（Pi の BT）: 7 回目は main に入った、未試験。
 - WS239（compositor の失敗時の console の login）: p001 は main、p002 の QEMU 試験は T3 が途中で停止、結果なし。
-- WS237（Gen9 display）: 2026-10-15 ユーザーの実機で i5 の第 7・第 8 世代とも display controller OK・Keiland 使用可（p002 cleared、既定 FULL のまま）。安全化（P3）の merge で終了、UAT 不要（2026-10-15 ユーザー）。
+- WS237（Gen9 display）: 2026-10-15 ユーザーの実機で i5 の第 7・第 8 世代とも display controller OK・Keiland 使用可（p002 cleared、既定 FULL のまま）。completed（2026-10-15、安全化 P3 → main 63d0532b0、UAT 不要）。
 - GitHub への記録の公開は保留。push はユーザーの指示の時だけ。
 <!-- master:blocked:end -->
 
@@ -942,6 +942,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 
 ## Tools
+| [plan/ws237/tests/](ws237/tests/)（WS237、2026-10-15 completed） | i915 の Gen9・Gen9.5 の display の host 試験: `run-gen9-flip-host-test.sh`・`run-gen9-backlight-host-test.sh`・`run-gen9-mode-host-test.sh`・`run-gen9-modeset-host-test.sh`・`run-gen9-outputs-host-test.sh`・`run-host-boot-gen9-display.sh`・`run-host-gen9-display-step.sh`（段の上限）。試験の image の config `config-amd64-gen9-flip.mk` |
 | [plan/ws157/tests/run-host-jpeg-scale.py](ws157/tests/run-host-jpeg-scale.py)（ws157-p017、2026-10-13） | libjpeg-compat の 1/2・1/4・1/8 の縮小 decode を djpeg -scale と比べる（大きさ・差 ≤2・PSNR、壊した file で crash 0、ASan・UBSan） | `python3 plan/ws157/tests/run-host-jpeg-scale.py` |
 | [plan/ws172/tests/passkey-linux-host-test.sh](ws172/tests/passkey-linux-host-test.sh)（ws172-p011、2026-10-13） | Linux の Keiland の /opt/keiland/sbin/passkey（password・PIN の登録と照合、/opt/keiland/etc/passkey の行と mode 600、fido2 は fail no-key） | sudo が要る（unshare -m で試験の passwd・shadow を bind mount、host の file は変えない） |
 | [plan/tools/hwsv7/README.md](tools/hwsv7/README.md)・[setup.sh](tools/hwsv7/setup.sh)（ws229-p005、2026-10-14） | 8 世代の Let's Note SV7（10.0.10.27、UHD 620 8086:5917、Gen9.5）の iGPU の passthrough の試験機の手引きと準備（~/bigbang/ への写しと 13 の確かめ、QEMU は起動しない）。試験の script は `I915_MACHINE=sv7` で SV7 を選ぶ（`plan/ws031/tests/hw-machine.sh`、既定は 5330） | SV7 は Linux で起動し iGPU が vfio-pci |

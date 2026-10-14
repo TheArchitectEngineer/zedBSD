@@ -3,7 +3,7 @@
 # WS237: i915 の Gen9・Gen9.5（第 6〜10 世代 Core）の display controller の制御
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 起票・着手、P2）
+Status: completed（2026-10-15 ユーザー「Gen9は残りの安全策の作業をマージしたら終了です。UATは不要です。」、安全化 P3 06dbfa855 → main 63d0532b0）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP のまま）、[BUG-310](../bugs/BUG-310.md)（bootfb: GPU で描いて GOP の framebuffer へ CPU で写す、resolved）
@@ -20,16 +20,16 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - ベータ2 の既定: 段 (1) が実機で通れば、bootfb の代わりに使う。通らなければ bootfb のまま（drop できる形）。
 - source の手本: Linux の i915 は MIT（file ごとに確かめる）。zedBSD の Gen12 の display（resident display・takeover）の作りに合わせる。
 
-## Phase（見積もりは [p001 の design.md](phase001/design.md) §5、±50 %）
+## Phase（見積もりは [design.md](design.md) §5、±50 %）
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| [ws237-p001](phase001/phase.md) | 設計: SKL・KBL・CFL の display の register と順（Gen12 の display の code との差）、readout、flip と vblank、backlight、試験の道（SV7 の passthrough と素の起動） | cleared の候補（2026-10-14 P2、Q1 の判定待ち） |
-| [ws237-p002](phase002/phase.md) | readout と primary plane の flip（段 1）、1.5 LW | cleared（2026-10-15 ユーザーの実機: i5 の第 7・第 8 世代で display controller OK・Keiland 使用可） |
-| [ws237-p003](phase003/phase.md) | backlight、1.0 LW | in-progress（P2）— 実装と host の確かめ済み、実機は WS の最後に SV7 でまとめて |
-| [ws237-p004](phase004/phase.md) | mode set と外部の display、6.0 LW | in-progress（P2）— register の順と計算（aa3250e12・cafce9894）、P3 の fixture（b9b6f0e66）、outputs と node と bootfb のつなぎ込み（ee0df7e11・55063dd4d）を実装、host 試験と build 済み。SV7 の確かめは WS の最後 |
-| [ws237-p005](phase005/phase.md) | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | in-progress（P2）— ユーザーの判断 (B) D0 のまま sleep を実装、host と build 済み。SV7 は WS の最後 |
-| ws237-p006 | 規約の全文、0.5 LW | planned |
+| [ws237-p001（Phase の directory は完了で削除、git の履歴） | 設計: SKL・KBL・CFL の display の register と順（Gen12 の display の code との差）、readout、flip と vblank、backlight、試験の道（SV7 の passthrough と素の起動） | cleared の候補（2026-10-14 P2、Q1 の判定待ち） |
+| [ws237-p002（Phase の directory は完了で削除、git の履歴） | readout と primary plane の flip（段 1）、1.5 LW | cleared（2026-10-15 ユーザーの実機: i5 の第 7・第 8 世代で display controller OK・Keiland 使用可） |
+| [ws237-p003（Phase の directory は完了で削除、git の履歴） | backlight、1.0 LW | in-progress（P2）— 実装と host の確かめ済み、実機は WS の最後に SV7 でまとめて |
+| [ws237-p004（Phase の directory は完了で削除、git の履歴） | mode set と外部の display、6.0 LW | in-progress（P2）— register の順と計算（aa3250e12・cafce9894）、P3 の fixture（b9b6f0e66）、outputs と node と bootfb のつなぎ込み（ee0df7e11・55063dd4d）を実装、host 試験と build 済み。SV7 の確かめは WS の最後 |
+| [ws237-p005（Phase の directory は完了で削除、git の履歴） | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | in-progress（P2）— ユーザーの判断 (B) D0 のまま sleep を実装、host と build 済み。SV7 は WS の最後 |
+| ws237-p006 | 規約の全文、0.5 LW | 行わない（ユーザーの決定で WS は安全化の merge で終了） |
 - 2026-10-14 ユーザー「SV7の確認はせずに進めて、最後に確認してデバッグで調整しましょう。」→ p002 の実機の確かめを待たずに p003〜p005 を実装し、最後に SV7 でまとめて確かめて直す。
 - 判断（2026-10-15 ユーザー、クリック）: Gen9 の sleep は「D0 のまま sleep（1 LW、危険小）」。PCI に driver が function を D0 のまま保つ選択を足し、Gen9 の i915 は D3hot に入らずに suspend、panel と backlight だけ消す（sleep 中の電池は悪い）。WS237 の外の src/drivers/pci/pci-power.c を変える（Q1 が許可）。
 
@@ -109,3 +109,10 @@ P2 の途中の patch（plan/agents/p2/wrapup-20261015.patch）を完成させ�
 - 成功の経路（今 2 機種で動く full）: register の書き込みの順と値は変わらない。変わるのは plane の fault の割り込みを flip の pipe で有効にしたこと（Linux の i915 も Gen9 で有効にする。正常な機械では来ない）と、log の行（`copy (...)`・`flip not used`・`no external displays` の行が上の 2 種の行に変わった）。
 - sleep の後: `drv_i915_gen9_flip_resume()` が panel の power well・transcoder・plane を読んで 1 行 log に出す（書き込み無し）。
 - 確かめ: amd64 の vmunix の build（config/ci/config-amd64.mk、warning 0）。host 試験 gen9 flip 48・backlight 21・mode 71・modeset 80・outputs 29・boot 15 の各 check が 0 failures、新しい [run-host-gen9-display-step.sh](tests/run-host-gen9-display-step.sh)（段の上限、22 checks、2 thread の同時の失敗 200 回を含む。上限を上げてしまう変異で 8 件 FAIL になることを確かめた）。flip・mode set の実行中の失敗の道（bootfb・gen9-node の結線）は host で動かせず、読みのレビューだけ。実機・QEMU は未実施。
+
+## 結果（2026-10-15、completed）
+
+- 第 7・第 8 世代の Core i5 の実機で、i915 が display controller を制御し Keiland が使えた（ユーザー、既定 full）。p001・p002 cleared。
+- 既定 full の安全化（P3、06dbfa855、main 63d0532b0）: 段の上限を失敗した段の一つ下へ下げるだけ（atomic）。flip の失敗は copy、mode set の失敗は backlight（外部の display を全部引っ込め、panel は flip のまま）。失敗は `i915: gen9 display: <段> failed (<理由>); using <段>`、bind の後に `using <段> (asked for …)` の 1 行。成功の経路の register の書き込みは不変（plane fault の割り込みの有効化と log の行だけ違う）。build（warning 0）と host 試験（flip 48・backlight 21・mode 71・modeset 80・outputs 29・boot 15・step 22）PASS。実行中の失敗の道は host で動かせずレビューだけ。
+- 制限・未確認（ユーザーの決定で UAT は不要）: backlight（p003）・外部の DP・HDMI（p004）・sleep の display（p005）は実機で未確認。外部の display の mode set が 1 回失敗すると、その boot の間は外部を出さない（再起動まで）。第 6 世代（Skylake）・第 9・10 世代は未確認。規約の全文の見直し（p006）は行っていない。
+- 残す物: [design.md](design.md)、host 試験 [tests/](tests/)（master の Tools に登録）。Phase の directory は削除（git の履歴）。
