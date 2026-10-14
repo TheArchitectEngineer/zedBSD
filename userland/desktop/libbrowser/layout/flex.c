@@ -123,6 +123,7 @@ layout_flex(
 	layout_unit line_gap_extra;
 	layout_unit content_cross;
 	int first_line;
+	int mirror;
 	int value;
 	int flex;
 	int row;
@@ -360,7 +361,10 @@ layout_flex(
 	}
 
 	/* wrap-reverse stacks the lines from the far cross edge: mirrors every item across the container's cross extent. */
-	if (box->style.flex_wrap == CSS_FLEX_WRAP_REVERSE && line_count != 0) {
+	mirror = (box->style.flex_wrap == CSS_FLEX_WRAP_REVERSE) !=
+	    (!row && box->style.direction == CSS_DIRECTION_RTL &&
+	    box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB);
+	if (mirror && line_count != 0) {
 		layout_unit extent;
 
 		extent = cross_size >= 0 ? cross_size : cross_cursor;
