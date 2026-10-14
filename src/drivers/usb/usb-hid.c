@@ -1802,11 +1802,13 @@ usb_hid_log_refusal(
  * mouse it emulates before its Device Mode is set: as a collection beside
  * the screen in the screen's interface, or as an interface of its own.
  * Once the screen reports its fingers, that mouse is not published: the
- * screen's interface publishes the screen alone unless the rest is a pen
- * or a keyboard with keys (T1-644: the Wacom's interface 0 also published
- * a device of no pointer and no key), and an interface that is only a
- * pointer beside a screen of the same device publishes nothing.  Any
- * other interface publishes everything it declares.
+ * screen's interface publishes the screen alone, and an interface that is
+ * only a pointer beside a screen of the same device publishes nothing.
+ * When the rest of the screen's interface is a pen or a keyboard with
+ * keys, it waits for its first key or pen (T1-649: the Wacom 8191's
+ * interface 0 declares a pen and a keyboard, and its main device came up
+ * beside the screen though neither had reported).  Any other interface
+ * publishes everything it declares.
  */
 static unsigned
 usb_hid_publish_flags(
@@ -1816,18 +1818,22 @@ usb_hid_publish_flags(
 	int sibling;
 	int keys;
 
-	/* A pen is kept wherever it is. */
+	/* What the interface's main device chiefly is. */
 	kind = drv_hid_input_kind(hid->hidinput);
-	if (kind == HID_INPUT_KIND_PEN)
-		return 0U;
 
-	/* The screen's own interface: the screen alone, unless the rest has a keyboard's keys. */
+	/* The screen's own interface: the screen, and a pen or a keyboard's keys once they report. */
 	if (hid->fingers) {
 		keys = drv_hid_input_has_keys(hid->hidinput);
-		if (kind == HID_INPUT_KIND_KEYBOARD && keys)
-			return 0U;
+		if (kind == HID_INPUT_KIND_PEN || keys)
+			return HID_INPUT_MAIN_LATER;
+
+		/* The rest is the mouse it emulates or a vendor's collection: the screen alone. */
 		return HID_INPUT_TOUCH_ONLY;
 	}
+
+	/* A pen is kept wherever else it is. */
+	if (kind == HID_INPUT_KIND_PEN)
+		return 0U;
 
 	/* Only a pointer is a screen's emulation; a keyboard is kept. */
 	if (kind != HID_INPUT_KIND_MOUSE && kind != HID_INPUT_KIND_TABLET)
