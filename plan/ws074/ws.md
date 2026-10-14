@@ -11,6 +11,10 @@ Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
 Queue: [q1198](queue.md) finished（14:15 ごろ Codex の使用量の上限で中断、uncleared、2026-10-14 Q1 が差分を commit）/ p217 framed horizontal Grid second vertical auto-inset child。2026-10-14 14:13 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 
+Event ws074-p227-q1201-partial-clear-20261014: [p227](phase227/phase.md) q1201-i01 (B1) で flex absolute 子の static position と align キーワードの構文。同条件 1,455 ID で whole PASS 427→458、後退 0。
+
+Event ws074-p226-q1200-partial-clear-20261014: [p226](phase226/phase.md) q1200-i01 (B1) で auto-fill/auto-fit・縦書き in-flow 子・置換要素 stretch・computed の align 名の誤りを修正。同条件で whole PASS 379→427、後退 0（21 件は enum のずれによる computed 試験の回復）。
+
 Event ws074-p226-q1199-partial-clear-20261014: [p226](phase226/phase.md) q1199-i01 (B1) で水平 Grid の content distribution・auto track stretch・absolute 子の grid line containing block を実装。[証拠](phase226/evidence/20261014-q1199/run.md)。1,455 ID で whole PASS 359→379、後退 0、Acid3 差 0/Acid2 差 1865。q1198-i01 は B1 が cleared と判定（[README](phase217/evidence/20261014-q1198/README.md)）。
 
 Event ws074-p217-q1197-partial-clear-20261014: [p217](phase217/phase.md) q1197-i01でframed水平LTR/RTL Gridのall-auto縦lr absolute先頭子を修正。[証拠](phase217/evidence/20261014-q1197/README.md)。独立2矩形Chromium一致、固定012水平2 callbacks先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は2番目縦rl子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。

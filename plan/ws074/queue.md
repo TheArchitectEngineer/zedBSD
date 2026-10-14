@@ -1,5 +1,15 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
+# q1200・q1201 / WS074 Grid の track と縦書き子、Flex absolute の static position（B1）
+
+Status: finished（2026-10-14 17:25–18:10 JST、B1。承認と timebox は q1199 と同じ）
+
+| Attempt | Phase | Exact scope | State |
+| --- | --- | --- | --- |
+| q1200-i01 | [ws074-p226](phase226/phase.md) partial | auto-fill/auto-fit、水平 grid の縦書き in-flow 子、置換要素の stretch、fr<1、computed の align 名。旧 PASS 後退 0、Acid3 差 0、Acid2 非増加、warning 0 | cleared（whole 379→427） |
+| q1201-i01 | [ws074-p227](phase227/phase.md) partial | flex の absolute 子の static position と alignment keyword の構文。同上の確認 | cleared（whole 427→458） |
+
+
 # q1199 / WS074 Grid content distribution and absolute-child containing block (B1)
 
 Status: finished（2026-10-14 17:05–17:50 JST、B1。Codex から引き継ぎ。承認: ユーザー「WS074を引き継いでWPTの続きをできますか？最大３時間のサブエージェントでお願いしたいです。」と既存の事前承認「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」の延長。Timebox 90分）
