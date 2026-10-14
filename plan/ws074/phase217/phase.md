@@ -170,3 +170,11 @@ Event ws074-p217-q1113-partial-clear-20261014: [証拠](evidence/20261014-q1113/
 ## q1114-i01 結果（2026-10-14 08:59 JST）
 
 Event ws074-p217-q1114-partial-clear-20261014: [証拠](evidence/20261014-q1114/README.md)。`grid-column:auto / 1`のauto始端をpadding辺へ設定し、track中央寄せの100px shiftを除外。最小LTR/RTL start/end/centerと明示線control PASS。固定行軸012–016の水平最初の100px差が消え、次の子/軸不一致へ進んだがwhole5件FAIL。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1114部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1115-i01 有限部分範囲（2026-10-14 09:00 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:30 JSTまで）に適用。水平LTR/RTL Gridの直接absolute子、四inset auto、`grid-column:2 / auto`のauto inline-end境界をコンテナpadding辺へ配置。中央寄せ明示line始端とpadding終端間のarea幅をprivate metadataに反映。最小LTR/RTL start/end/centerと明示線control、固定row-axis012–016の次assert、旧PASS代表、Grid/CSS/JS、warning0 build、Acid3差0・Acid2非増加で検証。`auto / auto`・縦書き、runner/WPT/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1115-i01 結果（2026-10-14 09:02 JST）
+
+Event ws074-p217-q1115-partial-clear-20261014: [証拠](evidence/20261014-q1115/README.md)。`grid-column:2 / auto`のauto終端をpadding辺へ設定し、明示始端からのarea幅を再計算。最小LTR/RTL start/end/centerと明示線control PASS。固定行軸013/014/015の当該不一致は次の子へ進み、012/016は別残差でwhole5件FAIL。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1115部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

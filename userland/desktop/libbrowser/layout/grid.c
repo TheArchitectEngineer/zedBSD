@@ -595,6 +595,13 @@ grid_static_position(
 				if (index + 1 < column + column_span)
 					child->static_x_area_width += column_gap;
 			}
+			/* An auto end line reaches the opposite padding edge. */
+			if (child->style.grid_column.start == 2 &&
+			    child->style.grid_column.end == 0)
+				child->static_x_area_width = box->style.direction == CSS_DIRECTION_RTL ?
+				    x : box->width - x;
+			if (child->static_x_area_width < 0)
+				child->static_x_area_width = 0;
 		}
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)
