@@ -29,12 +29,25 @@
 /* The GSP's doorbell for the command queue. */
 #define RPC_REG_DOORBELL		(NVRTX_FALCON_GSP_BASE + 0xc00U)
 
-/* The GSP falcon's CPU control, its alias, and the bits the sequencer uses. */
+/* The GSP falcon's CPU control and its halted bit, which the sequencer waits for. */
 #define RPC_GSP_CPU_CONTROL		(NVRTX_FALCON_GSP_BASE + 0x100U)
-#define RPC_GSP_CPU_ALIAS		(NVRTX_FALCON_GSP_BASE + 0x130U)
-#define RPC_CPU_START			0x2U
 #define RPC_CPU_HALTED			0x10U
-#define RPC_CPU_ALIAS_ENABLED		0x40U
+
+/*
+ * What the resume of the GSP's core uses: the GSP falcon's two mailboxes
+ * (the start page's address) and its application-version register, the
+ * secure processor's mailbox 0 (its result), the RISC-V core status (bit 0
+ * while it runs), and the secure scratch register whose bit 26 says the
+ * boot has handed over to the firmware.
+ */
+#define RPC_GSP_MAILBOX0		(NVRTX_FALCON_GSP_BASE + 0x040U)
+#define RPC_GSP_MAILBOX1		(NVRTX_FALCON_GSP_BASE + 0x044U)
+#define RPC_GSP_APP_VERSION		(NVRTX_FALCON_GSP_BASE + 0x080U)
+#define RPC_SEC2_MAILBOX0		(NVRTX_FALCON_SEC2_BASE + 0x040U)
+#define RPC_RISCV_STATUS		0x111240U
+#define RPC_BOOT_SCRATCH		0x1180f8U
+#define RPC_BOOT_HANDED_OVER		0x04000000U
+#define RPC_RESUME_TIMEOUT_US		2000000U
 
 /* How long a send waits for room, how long a poll command waits by default, and the step. */
 #define RPC_SEND_TIMEOUT_US		1000000U
@@ -59,6 +72,7 @@
 
 static int rpc_sequencer(struct nvrtx_gpu *gpu, uint8_t *payload, size_t length);
 static void rpc_error_log(const uint8_t *payload, size_t length);
+static int rpc_core_resume(struct nvrtx_gpu *gpu);
 static int rpc_exchange(struct nvrtx_gpu *gpu, uint32_t function, size_t call_length, size_t *reply_length);
 
 /*
@@ -81,13 +95,15 @@ nvrtx_rpc_send(
 	uint64_t now;
 	int error;
 
-	/* Numbers the call; zero means no reply is matched. */
+	/*
+	 * Numbers the call as nouveau does: a call that waits for a reply takes
+	 * the next number from zero, one sent before the GSP runs takes zero
+	 * without using a number.
+	 */
 	*sequence = 0U;
 	if (with_sequence != 0) {
-		gpu->call_sequence++;
-		if (gpu->call_sequence == 0U)
-			gpu->call_sequence = 1U;
 		*sequence = gpu->call_sequence;
+		gpu->call_sequence++;
 	}
 
 	/* Puts the call in the queue, waiting for room while the GSP reads. */
@@ -121,7 +137,9 @@ nvrtx_rpc_send(
 /*
  * Waits for the reply (or event) of a function, serving other events meanwhile.
  *
- * A nonzero sequence must match too.  The payload is left in gpu->reply with
+ * The reply is matched on its function alone, as nouveau does; the
+ * sequence is kept for the marks (design 2.6 matches it too, to be put
+ * back once the boot works).  The payload is left in gpu->reply with
  * its length.  Returns EIO when the reply carries an error result,
  * ETIMEDOUT when it did not come in time.
  */
@@ -164,7 +182,11 @@ nvrtx_rpc_wait(
 			return error;
 
 		/* The message waited for ends the wait. */
-		if (got_function == function && (sequence == 0U || got_sequence == sequence)) {
+		if (got_function == function) {
+			/* A reply with another number is shown, not refused. */
+			if (sequence != 0U && got_sequence != sequence)
+				nvrtx_stage_mark("rpc %u: reply sequence %u, sent %u", (unsigned)function, (unsigned)got_sequence, (unsigned)sequence);
+
 			if (result != 0U) {
 				nvrtx_stage_mark("rpc %u: result %08x", (unsigned)function, (unsigned)result);
 				return EIO;
@@ -201,9 +223,14 @@ nvrtx_rpc_wait(
 			continue;
 		}
 
-		/* The firmware's own prints are dropped; other events are reported and dropped. */
-		if (got_function != NVRTX_EVENT_LIBOS_PRINT)
-			nvrtx_stage_mark("rpc: message %x (%zu bytes) while waiting for %x", (unsigned)got_function, *length, (unsigned)function);
+		/* The firmware's prints, bridge updates and crash records are dropped unseen, as nouveau does. */
+		if (got_function == NVRTX_EVENT_LIBOS_PRINT ||
+		    got_function == NVRTX_EVENT_BRIDGELESS ||
+		    got_function == NVRTX_EVENT_POST_NOCAT)
+			continue;
+
+		/* Other events are reported and dropped. */
+		nvrtx_stage_mark("rpc: message %x (%zu bytes) while waiting for %x", (unsigned)got_function, *length, (unsigned)function);
 	}
 
 	/* The message never came. */
@@ -384,6 +411,7 @@ rpc_sequencer(
 			timeout = command.argument[3];
 			if (timeout == 0U)
 				timeout = RPC_POLL_DEFAULT_US;
+			(void)nvrtx_rd32(gpu, command.argument[0]);
 			(void)nvrtx_poll(gpu, command.argument[0], command.argument[1], command.argument[2], timeout);
 			break;
 		case NVRTX_SEQ_DELAY:
@@ -402,18 +430,17 @@ rpc_sequencer(
 			nvrtx_falcon_load_physical(gpu, &gpu->gsp_falcon);
 			break;
 		case NVRTX_SEQ_CORE_START:
-			current = nvrtx_rd32(gpu, RPC_GSP_CPU_CONTROL);
-			if ((current & RPC_CPU_ALIAS_ENABLED) != 0U) {
-				nvrtx_wr32(gpu, RPC_GSP_CPU_ALIAS, RPC_CPU_START);
-			} else {
-				nvrtx_wr32(gpu, RPC_GSP_CPU_CONTROL, RPC_CPU_START);
-			}
+			nvrtx_falcon_start(gpu, &gpu->gsp_falcon);
 			break;
 		case NVRTX_SEQ_CORE_WAIT_HALT:
 			(void)nvrtx_poll(gpu, RPC_GSP_CPU_CONTROL, RPC_CPU_HALTED, RPC_CPU_HALTED, RPC_HALT_TIMEOUT_US);
 			break;
+		case NVRTX_SEQ_CORE_RESUME:
+			error = rpc_core_resume(gpu);
+			if (error != 0)
+				return error;
+			break;
 		default:
-			/* The resume after a suspend is not in this revision. */
 			nvrtx_stage_mark("sequencer: opcode %u not supported", (unsigned)command.opcode);
 			return ENOTSUP;
 		}
@@ -458,4 +485,56 @@ rpc_error_log(
 
 	/* Shows the report. */
 	nvrtx_stage_mark("rpc: firmware error %u: %s", (unsigned)nvrtx_get32(payload, RPC_ERROR_LOG_KIND_AT), text);
+}
+
+/*
+ * Resumes the GSP's core at the firmware's request: the GSP falcon is put
+ * back into its RISC-V mode with the start page's address in its mailboxes,
+ * and the secure processor's booter, still loaded from P2a, is started
+ * again to hand the core back to the firmware.
+ */
+static int
+rpc_core_resume(
+	struct nvrtx_gpu *gpu)
+{
+	uint64_t libos;
+	uint32_t result;
+	uint32_t status;
+	int error;
+
+	/* Puts the GSP's falcon back into its RISC-V mode and gives it the start page. */
+	nvrtx_stage_mark("sequencer: core resume");
+	error = nvrtx_falcon_reset_engine(gpu, &gpu->gsp_falcon);
+	if (error != 0)
+		return error;
+
+	libos = gpu->memory.libos.dma.device_address;
+	nvrtx_wr32(gpu, RPC_GSP_MAILBOX0, (uint32_t)(libos & 0xffffffffU));
+	nvrtx_wr32(gpu, RPC_GSP_MAILBOX1, (uint32_t)(libos >> 32));
+
+	/* Starts the secure processor's booter again and waits for the hand-over. */
+	nvrtx_falcon_start(gpu, &gpu->sec2_falcon);
+	error = nvrtx_poll(gpu, RPC_BOOT_SCRATCH, RPC_BOOT_HANDED_OVER, RPC_BOOT_HANDED_OVER, RPC_RESUME_TIMEOUT_US);
+	if (error != 0) {
+		nvrtx_stage_mark("sequencer: resume not handed over (boot %08x)", (unsigned)nvrtx_rd32(gpu, RPC_BOOT_SCRATCH));
+		return error;
+	}
+
+	/* The booter's result is in the secure processor's mailbox 0. */
+	result = nvrtx_rd32(gpu, RPC_SEC2_MAILBOX0);
+	if (result != 0U) {
+		nvrtx_stage_mark("sequencer: resume booter %08x", (unsigned)result);
+		return EIO;
+	}
+
+	/* Tells the GSP the bootloader's version and checks that its RISC-V core runs. */
+	nvrtx_wr32(gpu, RPC_GSP_APP_VERSION, gpu->bootloader_desc.app_version);
+	status = nvrtx_rd32(gpu, RPC_RISCV_STATUS);
+	if ((status & 0x1U) == 0U) {
+		nvrtx_stage_mark("sequencer: resume left RISC-V stopped (%08x)", (unsigned)status);
+		return EIO;
+	}
+
+	/* Succeeded: the GSP's core runs the firmware again. */
+	return 0;
 }
