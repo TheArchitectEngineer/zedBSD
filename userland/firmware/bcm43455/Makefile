@@ -36,7 +36,7 @@ BCM43455_FIRMWARE_FILES ?= \
 	copyright|nonfree|debian/copyright|430523|07082fd0bb65e32c73af39a2292dd6c83f169be7427d338ba1fe34f9b86c0e30 \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f \
 	GPL-2|linux|GPL-2|18092|8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643
-BCM43455_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error
+BCM43455_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
 # installed mapping from the command line while the static manifest continues
@@ -53,7 +53,7 @@ override BCM43455_FIRMWARE_FILES := \
 	copyright|nonfree|debian/copyright|430523|07082fd0bb65e32c73af39a2292dd6c83f169be7427d338ba1fe34f9b86c0e30 \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f \
 	GPL-2|linux|GPL-2|18092|8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643
-override BCM43455_FIRMWARE_FETCH := curl --fail --location --silent --show-error
+override BCM43455_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
 override BCM43455_FIRMWARE_VERSION := 1:20260519-1~bpo13+1+rpt1

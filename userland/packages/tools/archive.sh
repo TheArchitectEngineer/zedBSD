@@ -108,7 +108,7 @@ fetch)
 
 	temporary=$(mktemp "$directory/.${archive##*/}.XXXXXX")
 	# shellcheck disable=SC2086
-	${ZEDBSD_FETCH:-curl --fail --location --silent --show-error} \
+	${ZEDBSD_FETCH:-curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5} \
 		--output "$temporary" "$url"
 	verify_archive "$temporary" "$size" "$hash" "$root"
 	mv -- "$temporary" "$archive"

@@ -44,7 +44,7 @@ override RTL8822B_FIRMWARE_VERSION := 30.20.0
 # as byte-identical metadata.
 override RTL8822B_FIRMWARE_OFFICIAL_WHENCE_SHA256 := 34f954c7d068ec4fd5fcc216471912dd3cf40ff60a7ffa8d06ff6f9b5999551f
 
-RTL8822B_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error
+RTL8822B_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 override RTL8822B_FIRMWARE_SHA256_COMMAND := sha256sum
 RTL8822B_FIRMWARE_CACHE_ROOT ?= $(if $(ZEDBSD_TOPLEVEL_BUILD),build,$(ZEDBSD_REPO_ROOT)/build)/sources/firmware/rtl8822b
 override RTL8822B_FIRMWARE_CACHE_DIR := $(RTL8822B_FIRMWARE_CACHE_ROOT)/$(RTL8822B_FIRMWARE_MIRROR_REVISION)

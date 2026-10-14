@@ -21,7 +21,7 @@ INTEL_AX211_FIRMWARE_LICENSE_SIZE ?= 2046
 INTEL_AX211_FIRMWARE_LICENSE_SHA256 ?= 16d5040c7cf851fc693b7542e20870935b99802533ea1bfd231c377a2305e5c5
 INTEL_AX211_FIRMWARE_WHENCE_SIZE ?= 425450
 INTEL_AX211_FIRMWARE_WHENCE_SHA256 ?= c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
-INTEL_AX211_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error
+INTEL_AX211_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
 # installed mapping from the command line while the static manifest continues
@@ -37,7 +37,7 @@ override INTEL_AX211_FIRMWARE_LICENSE_SIZE := 2046
 override INTEL_AX211_FIRMWARE_LICENSE_SHA256 := 16d5040c7cf851fc693b7542e20870935b99802533ea1bfd231c377a2305e5c5
 override INTEL_AX211_FIRMWARE_WHENCE_SIZE := 425450
 override INTEL_AX211_FIRMWARE_WHENCE_SHA256 := c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
-override INTEL_AX211_FIRMWARE_FETCH := curl --fail --location --silent --show-error
+override INTEL_AX211_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
 override INTEL_AX211_FIRMWARE_TAG := 20260410

@@ -21,7 +21,7 @@ I915_FIRMWARE_LICENSE_SIZE ?= 2080
 I915_FIRMWARE_LICENSE_SHA256 ?= 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
 I915_FIRMWARE_WHENCE_SIZE ?= 425450
 I915_FIRMWARE_WHENCE_SHA256 ?= c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
-I915_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error
+I915_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
 # installed mapping from the command line while the static manifest continues
@@ -38,7 +38,7 @@ override I915_FIRMWARE_LICENSE_SIZE := 2080
 override I915_FIRMWARE_LICENSE_SHA256 := 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
 override I915_FIRMWARE_WHENCE_SIZE := 425450
 override I915_FIRMWARE_WHENCE_SHA256 := c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
-override I915_FIRMWARE_FETCH := curl --fail --location --silent --show-error
+override I915_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
 override I915_FIRMWARE_TAG := 20260410

@@ -31,7 +31,7 @@ INTELBT_FIRMWARE_FILES ?= \
 	ibt-1040-0041.ddc|intel/ibt-1040-0041.ddc|9|fe272982577efdc289cfe3e8bedafca607c0b7d6c9df1aab1880e22ef930d077 \
 	LICENCE.ibt_firmware|LICENCE.ibt_firmware|2040|5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4 \
 	WHENCE|WHENCE|425450|c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
-INTELBT_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error
+INTELBT_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
 # installed mapping from the command line while the static manifest continues
@@ -48,7 +48,7 @@ override INTELBT_FIRMWARE_FILES := \
 	ibt-1040-0041.ddc|intel/ibt-1040-0041.ddc|9|fe272982577efdc289cfe3e8bedafca607c0b7d6c9df1aab1880e22ef930d077 \
 	LICENCE.ibt_firmware|LICENCE.ibt_firmware|2040|5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4 \
 	WHENCE|WHENCE|425450|c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
-override INTELBT_FIRMWARE_FETCH := curl --fail --location --silent --show-error
+override INTELBT_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
 override INTELBT_FIRMWARE_TAG := 20260410

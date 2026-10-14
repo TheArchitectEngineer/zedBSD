@@ -30,7 +30,7 @@ BRCMBT_FIRMWARE_FILES ?= \
 	BCM4345C0.hcd|bluez|debian/firmware/broadcom/BCM4345C0.hcd|63806|51c45e77ddad91a19e96dc8fb75295b2087c279940df2634b23baf71b6dea42c \
 	copyright|bluez|debian/copyright|23518|79576e5ea6740845bf71ce96ad4e31cd49797c8e1a259d64670f48554b8eb67c \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f
-BRCMBT_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error
+BRCMBT_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
 # installed mapping from the command line while the static manifest continues
@@ -44,7 +44,7 @@ override BRCMBT_FIRMWARE_FILES := \
 	BCM4345C0.hcd|bluez|debian/firmware/broadcom/BCM4345C0.hcd|63806|51c45e77ddad91a19e96dc8fb75295b2087c279940df2634b23baf71b6dea42c \
 	copyright|bluez|debian/copyright|23518|79576e5ea6740845bf71ce96ad4e31cd49797c8e1a259d64670f48554b8eb67c \
 	LICENCE.cypress|linux|LICENCE.cypress|8914|ae0db6cc4db33941148df0f67de53e76a77b1b5a46b3165edb7040aa2750015f
-override BRCMBT_FIRMWARE_FETCH := curl --fail --location --silent --show-error
+override BRCMBT_FIRMWARE_FETCH := curl --fail --location --silent --show-error --retry 3 --retry-all-errors --retry-delay 5
 endif
 
 override BRCMBT_FIRMWARE_VERSION := 1.2-9+rpt4
