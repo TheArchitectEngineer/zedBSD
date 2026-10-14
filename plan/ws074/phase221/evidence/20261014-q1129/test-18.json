@@ -1,0 +1,663 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['grid'] = \"none\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"none\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"none\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"20%\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"10px\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"10px / 20%\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_equals: expected 0 but got 1"
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"10px\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"none / 10px\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_equals: expected 0 but got 1"
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"fit-content(calc(0.5em + 10px))\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"fit-content(calc(-0.5em + 10px))\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_equals: expected 0 but got 1"
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"auto 1fr auto\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"auto 1fr auto\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"auto 1fr\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"auto 1fr auto\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"auto 1fr\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"20px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"column dense\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"10px\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"dense\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"30px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns should be canonical expected \"40px\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should not set unrelated longhands",
+      "status": 1,
+      "message": "assert_true: expected true got false"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['grid'] = \"none\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"none\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"none\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"20%\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"10px\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"10px / 20%\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"10px\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"none / 10px\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"fit-content(calc(0.5em + 10px))\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"fit-content(calc(-0.5em + 10px))\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_equals: expected 0 but got 1"
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"auto 1fr auto\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"[header-top] \\\"a a a\\\"     [header-bottom]  [main-top] \\\"b b b\\\" 1fr [main-bottom]           / auto 1fr auto\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"auto 1fr auto\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"auto 1fr\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"  \\\"a a a\\\"  \\\"b b b\\\" 1fr/ auto 1fr auto\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"auto 1fr auto\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"auto 1fr\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \" [] \\\"a a a\\\"     [] [] \\\"b b b\\\" 1fr []  / [] auto 1fr [] auto []\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"20px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"column dense\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"10px\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"10px / auto-flow dense 20px\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow should be canonical expected (string) \"dense\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows should be canonical expected (string) \"30px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns should be canonical expected \"40px\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style['grid'] = \"auto-flow dense 30px / 40px\" should not set unrelated longhands",
+        "status": 1,
+        "message": "assert_true: expected true got false"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-shorthand.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:35917/css/css-grid/parsing/grid-shorthand.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"20%\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"fit-content(calc(0.5em + 10px))\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"fit-content(calc(-0.5em + 10px))\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"auto 1fr\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"auto 1fr\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"20px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"column dense\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"dense\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"30px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"40px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"none\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"none\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"20%\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"10px / 20%\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"none / 10px\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"fit-content(calc(0.5em + 10px))\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"fit-content(calc(-0.5em + 10px))\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"fit-content(calc(-0.5em + 10px)) / fit-content(calc(0.5em + 10px))\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_equals: expected 0 but got 1\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"[header-top] \\\\\\\"a a a\\\\\\\"     [header-bottom]  [main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom]           / auto 1fr auto\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"auto 1fr\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"  \\\\\\\"a a a\\\\\\\"  \\\\\\\"b b b\\\\\\\" 1fr/ auto 1fr auto\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"auto 1fr\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\" [] \\\\\\\"a a a\\\\\\\"     [] [] \\\\\\\"b b b\\\\\\\" 1fr []  / [] auto 1fr [] auto []\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"20px\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"column dense\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"10px / auto-flow dense 20px\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow should be canonical expected (string) \\\"dense\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows should be canonical expected (string) \\\"30px\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns should be canonical expected \\\"40px\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style['grid'] = \\\"auto-flow dense 30px / 40px\\\" should not set unrelated longhands\",\"status\":1,\"message\":\"assert_true: expected true got false\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

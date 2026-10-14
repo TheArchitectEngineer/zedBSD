@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1128 / WS074 empty Grid line-name CSSOM（2026-10-14）
+## 最新: q1129 / WS074 fixed Grid parsing recensus（2026-10-14）
+
+[q1129履歴](queue-q1129.md): 固定Grid parsing41件は6→8 whole PASS、336→399 PASS subtest、後退0・無出力0。auto-*/areas等の残33件を再分類。[証拠](../ws074/phase221/evidence/20261014-q1129/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1128 / WS074 empty Grid line-name CSSOM（2026-10-14）
 
 [q1128履歴](queue-q1128.md): 空行名`[]`のCSSOM正規化で固定columns/rows-valid各27→29/34 subtest。invalid各42/42 whole PASS・旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1128/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

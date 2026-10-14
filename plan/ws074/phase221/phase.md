@@ -65,3 +65,11 @@ Event ws074-p221-q1127-partial-clear-20261014: [証拠](evidence/20261014-q1127/
 ## q1128-i01 結果（2026-10-14 09:57 JST）
 
 Event ws074-p221-q1128-partial-clear-20261014: [証拠](evidence/20261014-q1128/README.md)。JS設定された有効なGrid列/行templateで空行名`[]`のみCSSOM直列化から除去し、非空名・repeat・track・無効値を保持。固定columns/rows-valid各27→29/34 subtest、invalid各42/42 whole PASSと旧whole PASS3件維持、後退0。最小host・以前の3 fixture・CSS51/JS14/Grid48・warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1128部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1129-i01 有限部分範囲（2026-10-14 09:58 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（11:28 JSTまで）に適用。q1123と同じ固定Grid parsing41 ID/manifest/WPT/HTTP/fonts/timeout/settleで現行browserを全件再測定。whole/subtest変化・後退・初回差を比較し、最大3の次実装候補を選ぶ。読取/runner実行のみ。browser製品source/WPT/runner/公開ABI/`plan/master.md`/Acid変更なし。p221 whole/p189/p173全件100%は本部分基準外。
+
+## q1129-i01 結果（2026-10-14 09:59 JST）
+
+Event ws074-p221-q1129-partial-clear-20261014: [証拠](evidence/20261014-q1129/README.md)。固定41件を全件同条件再測定し、q1123の6→8 whole PASS/35→33 FAIL、336→399 PASS subtest/930→867 FAIL、後退0・無出力0。改善はcolumns/rows-invalidのwhole2件。残33件の大群はauto-*/areas未対応、template computed行名/暗黙track、auto-repeat、area/Grid shorthand。次の有限候補は`grid-auto-flow`構文とcomputed CSSOM。q1129部分cleared、p221/p189/p173全件100%未達。browser/WPT/runner/ABI/Master/Acid無変更、共有投影/GitHub publication保留。

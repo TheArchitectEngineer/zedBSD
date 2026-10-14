@@ -1,0 +1,93 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "grid-template: none / 1px and \"grid-template-areas: \"a\";\" should be valid.",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"none / 1px\""
+    },
+    {
+      "name": "grid-template: none / none and \"grid-template-areas: \"a\";\" should be valid.",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"none / none\""
+    },
+    {
+      "name": "grid-template: none / none and \"grid-template-areas: \"a\" \"b\" \"c\" \"d\" \"e\";\" should be valid.",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"none / none\""
+    },
+    {
+      "name": "grid-template: auto / 1px and \"grid-template-areas: \"a a a\";\" should be valid.",
+      "status": 1,
+      "message": "assert_equals: expected \"\\\"a a a\\\" / 1px\" but got \"auto / 1px\""
+    },
+    {
+      "name": "grid-template: auto / auto and \"grid-template-areas: \"a a a\";\" should be valid.",
+      "status": 1,
+      "message": "assert_equals: expected \"\\\"a a a\\\" / auto\" but got \"auto / auto\""
+    },
+    {
+      "name": "grid-template: 10px 20px 30px / 40px 50px 60px 70px and \"grid-template-areas: \"a . b .\" \"c d . e\" \"f g h .\";\" should be valid.",
+      "status": 1,
+      "message": "assert_equals: expected \"\\\"a . b .\\\" 10px \\\"c d . e\\\" 20px \\\"f g h .\\\" 30px / 40px 50px 60px 70px\" but got \"10px 20px 30px / 40px 50px 60px 70px\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "grid-template: none / 1px and \"grid-template-areas: \"a\";\" should be valid.",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"none / 1px\""
+      },
+      {
+        "name": "grid-template: none / none and \"grid-template-areas: \"a\";\" should be valid.",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"none / none\""
+      },
+      {
+        "name": "grid-template: none / none and \"grid-template-areas: \"a\" \"b\" \"c\" \"d\" \"e\";\" should be valid.",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"none / none\""
+      },
+      {
+        "name": "grid-template: auto / 1px and \"grid-template-areas: \"a a a\";\" should be valid.",
+        "status": 1,
+        "message": "assert_equals: expected \"\\\"a a a\\\" / 1px\" but got \"auto / 1px\""
+      },
+      {
+        "name": "grid-template: auto / auto and \"grid-template-areas: \"a a a\";\" should be valid.",
+        "status": 1,
+        "message": "assert_equals: expected \"\\\"a a a\\\" / auto\" but got \"auto / auto\""
+      },
+      {
+        "name": "grid-template: 10px 20px 30px / 40px 50px 60px 70px and \"grid-template-areas: \"a . b .\" \"c d . e\" \"f g h .\";\" should be valid.",
+        "status": 1,
+        "message": "assert_equals: expected \"\\\"a . b .\\\" 10px \\\"c d . e\\\" 20px \\\"f g h .\\\" 30px / 40px 50px 60px 70px\" but got \"10px 20px 30px / 40px 50px 60px 70px\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-template-shorthand-areas-valid.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:34051/css/css-grid/parsing/grid-template-shorthand-areas-valid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"grid-template: none / 1px and \\\"grid-template-areas: \\\"a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"none / 1px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-template: none / none and \\\"grid-template-areas: \\\"a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"none / none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-template: none / none and \\\"grid-template-areas: \\\"a\\\" \\\"b\\\" \\\"c\\\" \\\"d\\\" \\\"e\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"none / none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-template: auto / 1px and \\\"grid-template-areas: \\\"a a a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\"a a a\\\\\\\" / 1px\\\" but got \\\"auto / 1px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-template: auto / auto and \\\"grid-template-areas: \\\"a a a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\"a a a\\\\\\\" / auto\\\" but got \\\"auto / auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"grid-template: 10px 20px 30px / 40px 50px 60px 70px and \\\"grid-template-areas: \\\"a . b .\\\" \\\"c d . e\\\" \\\"f g h .\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\"a . b .\\\\\\\" 10px \\\\\\\"c d . e\\\\\\\" 20px \\\\\\\"f g h .\\\\\\\" 30px / 40px 50px 60px 70px\\\" but got \\\"10px 20px 30px / 40px 50px 60px 70px\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"grid-template: none / 1px and \\\"grid-template-areas: \\\"a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"none / 1px\\\"\"},{\"name\":\"grid-template: none / none and \\\"grid-template-areas: \\\"a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"none / none\\\"\"},{\"name\":\"grid-template: none / none and \\\"grid-template-areas: \\\"a\\\" \\\"b\\\" \\\"c\\\" \\\"d\\\" \\\"e\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"none / none\\\"\"},{\"name\":\"grid-template: auto / 1px and \\\"grid-template-areas: \\\"a a a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\"a a a\\\\\\\" / 1px\\\" but got \\\"auto / 1px\\\"\"},{\"name\":\"grid-template: auto / auto and \\\"grid-template-areas: \\\"a a a\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\"a a a\\\\\\\" / auto\\\" but got \\\"auto / auto\\\"\"},{\"name\":\"grid-template: 10px 20px 30px / 40px 50px 60px 70px and \\\"grid-template-areas: \\\"a . b .\\\" \\\"c d . e\\\" \\\"f g h .\\\";\\\" should be valid.\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\"a . b .\\\\\\\" 10px \\\\\\\"c d . e\\\\\\\" 20px \\\\\\\"f g h .\\\\\\\" 30px / 40px 50px 60px 70px\\\" but got \\\"10px 20px 30px / 40px 50px 60px 70px\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

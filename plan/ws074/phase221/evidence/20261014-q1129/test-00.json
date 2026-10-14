@@ -1,0 +1,383 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Property grid-area value 'auto / auto / auto / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"auto\", \"auto / auto / auto / auto\"]"
+    },
+    {
+      "name": "Property grid-row value 'auto / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"auto\", \"auto / auto\"]"
+    },
+    {
+      "name": "Property grid-column-end value 'auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"auto\" but got \"\""
+    },
+    {
+      "name": "Property grid-row value '-zπ'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"-zπ\", \"-zπ / -zπ\"]"
+    },
+    {
+      "name": "Property grid-row-start value 'AZ'",
+      "status": 1,
+      "message": "assert_equals: expected \"AZ\" but got \"\""
+    },
+    {
+      "name": "Property grid-column-start value '-_π'",
+      "status": 1,
+      "message": "assert_equals: expected \"-_π\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-end value '_9'",
+      "status": 1,
+      "message": "assert_equals: expected \"_9\" but got \"\""
+    },
+    {
+      "name": "Property grid-area value '1 / 90 -a- / auto / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"1 / 90 -a-\", \"1 / 90 -a- / auto / auto\"]"
+    },
+    {
+      "name": "Property grid-row value '2 az / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"2 az\", \"2 az / auto\"]"
+    },
+    {
+      "name": "Property grid-column value '9 / -19 zA'",
+      "status": 1,
+      "message": "assert_equals: expected \"9 / -19 zA\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value '-19'",
+      "status": 1,
+      "message": "assert_equals: expected \"-19\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value '9 -Z_'",
+      "status": 1,
+      "message": "assert_equals: expected \"9 -Z_\" but got \"\""
+    },
+    {
+      "name": "Property grid-column-start value '-44 Z'",
+      "status": 1,
+      "message": "assert_equals: expected \"-44 Z\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-end value '1 -πA'",
+      "status": 1,
+      "message": "assert_equals: expected \"1 -πA\" but got \"\""
+    },
+    {
+      "name": "Property grid-column-end value '5 π_'",
+      "status": 1,
+      "message": "assert_equals: expected \"5 π_\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'calc(1.1) -a-'",
+      "status": 1,
+      "message": "assert_equals: expected \"1 -a-\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'calc(10) -a-'",
+      "status": 1,
+      "message": "assert_equals: expected \"10 -a-\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'calc(10 + (sign(2cqw - 10px) * 5)) -a-'",
+      "status": 1,
+      "message": "assert_equals: expected \"5 -a-\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'span calc(-1)'",
+      "status": 1,
+      "message": "assert_equals: expected \"span 1\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'span calc(sibling-index() - 2)'",
+      "status": 1,
+      "message": "assert_equals: expected \"span 1\" but got \"\""
+    },
+    {
+      "name": "Property grid-area value 'span 2 i / auto / auto / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"span 2 i\", \"span 2 i / auto / auto / auto\"]"
+    },
+    {
+      "name": "Property grid-row value 'span 2 / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"span 2\", \"span 2 / auto\"]"
+    },
+    {
+      "name": "Property grid-column-start value 'span 1 i'",
+      "status": 1,
+      "message": "assert_equals: expected \"span i\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'span 1'",
+      "status": 1,
+      "message": "assert_equals: expected \"span 1\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-end value 'span 2 i'",
+      "status": 1,
+      "message": "assert_equals: expected \"span 2 i\" but got \"\""
+    },
+    {
+      "name": "Property grid-column-end value 'span 2'",
+      "status": 1,
+      "message": "assert_equals: expected \"span 2\" but got \"\""
+    },
+    {
+      "name": "Property grid-row-start value 'span i'",
+      "status": 1,
+      "message": "assert_equals: expected \"span i\" but got \"\""
+    },
+    {
+      "name": "Property grid-row value 'span i / auto'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"span i\", \"span i / auto\"]"
+    },
+    {
+      "name": "Property grid-area value 'auto / i / auto / i'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"auto / i\", \"auto / i / auto / i\"]"
+    },
+    {
+      "name": "Property grid-area value 'auto / i / 2 j'",
+      "status": 1,
+      "message": "assert_in_array: value \"\" not in array [\"auto / i / 2 j\", \"auto / i / 2 j / i\"]"
+    },
+    {
+      "name": "Property grid-area value 'auto / i / 2 j / span 3 k'",
+      "status": 1,
+      "message": "assert_equals: expected \"auto / i / 2 j / span 3 k\" but got \"\""
+    },
+    {
+      "name": "Property grid-row value 'auto / i'",
+      "status": 1,
+      "message": "assert_equals: expected \"auto / i\" but got \"\""
+    },
+    {
+      "name": "Property grid-column value '2 j / span 3 k'",
+      "status": 1,
+      "message": "assert_equals: expected \"2 j / span 3 k\" but got \"\""
+    },
+    {
+      "name": "Property grid-column-end value '\\31st'",
+      "status": 1,
+      "message": "assert_equals: expected \"\\\\31 st\" but got \"\""
+    },
+    {
+      "name": "Property grid-column-end value '\\31 st'",
+      "status": 1,
+      "message": "assert_equals: expected \"\\\\31 st\" but got \"\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Property grid-area value 'auto / auto / auto / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"auto\", \"auto / auto / auto / auto\"]"
+      },
+      {
+        "name": "Property grid-row value 'auto / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"auto\", \"auto / auto\"]"
+      },
+      {
+        "name": "Property grid-column-end value 'auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"auto\" but got \"\""
+      },
+      {
+        "name": "Property grid-row value '-zπ'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"-zπ\", \"-zπ / -zπ\"]"
+      },
+      {
+        "name": "Property grid-row-start value 'AZ'",
+        "status": 1,
+        "message": "assert_equals: expected \"AZ\" but got \"\""
+      },
+      {
+        "name": "Property grid-column-start value '-_π'",
+        "status": 1,
+        "message": "assert_equals: expected \"-_π\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-end value '_9'",
+        "status": 1,
+        "message": "assert_equals: expected \"_9\" but got \"\""
+      },
+      {
+        "name": "Property grid-area value '1 / 90 -a- / auto / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"1 / 90 -a-\", \"1 / 90 -a- / auto / auto\"]"
+      },
+      {
+        "name": "Property grid-row value '2 az / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"2 az\", \"2 az / auto\"]"
+      },
+      {
+        "name": "Property grid-column value '9 / -19 zA'",
+        "status": 1,
+        "message": "assert_equals: expected \"9 / -19 zA\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value '-19'",
+        "status": 1,
+        "message": "assert_equals: expected \"-19\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value '9 -Z_'",
+        "status": 1,
+        "message": "assert_equals: expected \"9 -Z_\" but got \"\""
+      },
+      {
+        "name": "Property grid-column-start value '-44 Z'",
+        "status": 1,
+        "message": "assert_equals: expected \"-44 Z\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-end value '1 -πA'",
+        "status": 1,
+        "message": "assert_equals: expected \"1 -πA\" but got \"\""
+      },
+      {
+        "name": "Property grid-column-end value '5 π_'",
+        "status": 1,
+        "message": "assert_equals: expected \"5 π_\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'calc(1.1) -a-'",
+        "status": 1,
+        "message": "assert_equals: expected \"1 -a-\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'calc(10) -a-'",
+        "status": 1,
+        "message": "assert_equals: expected \"10 -a-\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'calc(10 + (sign(2cqw - 10px) * 5)) -a-'",
+        "status": 1,
+        "message": "assert_equals: expected \"5 -a-\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'span calc(-1)'",
+        "status": 1,
+        "message": "assert_equals: expected \"span 1\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'span calc(sibling-index() - 2)'",
+        "status": 1,
+        "message": "assert_equals: expected \"span 1\" but got \"\""
+      },
+      {
+        "name": "Property grid-area value 'span 2 i / auto / auto / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"span 2 i\", \"span 2 i / auto / auto / auto\"]"
+      },
+      {
+        "name": "Property grid-row value 'span 2 / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"span 2\", \"span 2 / auto\"]"
+      },
+      {
+        "name": "Property grid-column-start value 'span 1 i'",
+        "status": 1,
+        "message": "assert_equals: expected \"span i\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'span 1'",
+        "status": 1,
+        "message": "assert_equals: expected \"span 1\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-end value 'span 2 i'",
+        "status": 1,
+        "message": "assert_equals: expected \"span 2 i\" but got \"\""
+      },
+      {
+        "name": "Property grid-column-end value 'span 2'",
+        "status": 1,
+        "message": "assert_equals: expected \"span 2\" but got \"\""
+      },
+      {
+        "name": "Property grid-row-start value 'span i'",
+        "status": 1,
+        "message": "assert_equals: expected \"span i\" but got \"\""
+      },
+      {
+        "name": "Property grid-row value 'span i / auto'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"span i\", \"span i / auto\"]"
+      },
+      {
+        "name": "Property grid-area value 'auto / i / auto / i'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"auto / i\", \"auto / i / auto / i\"]"
+      },
+      {
+        "name": "Property grid-area value 'auto / i / 2 j'",
+        "status": 1,
+        "message": "assert_in_array: value \"\" not in array [\"auto / i / 2 j\", \"auto / i / 2 j / i\"]"
+      },
+      {
+        "name": "Property grid-area value 'auto / i / 2 j / span 3 k'",
+        "status": 1,
+        "message": "assert_equals: expected \"auto / i / 2 j / span 3 k\" but got \"\""
+      },
+      {
+        "name": "Property grid-row value 'auto / i'",
+        "status": 1,
+        "message": "assert_equals: expected \"auto / i\" but got \"\""
+      },
+      {
+        "name": "Property grid-column value '2 j / span 3 k'",
+        "status": 1,
+        "message": "assert_equals: expected \"2 j / span 3 k\" but got \"\""
+      },
+      {
+        "name": "Property grid-column-end value '\\31st'",
+        "status": 1,
+        "message": "assert_equals: expected \"\\\\31 st\" but got \"\""
+      },
+      {
+        "name": "Property grid-column-end value '\\31 st'",
+        "status": 1,
+        "message": "assert_equals: expected \"\\\\31 st\" but got \"\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-area-computed.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:40815/css/css-grid/parsing/grid-area-computed.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Property grid-area value 'auto / auto / auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto\\\", \\\"auto / auto / auto / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row value 'auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto\\\", \\\"auto / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-end value 'auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row value '-zπ'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"-zπ\\\", \\\"-zπ / -zπ\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'AZ'\",\"status\":1,\"message\":\"assert_equals: expected \\\"AZ\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-start value '-_π'\",\"status\":1,\"message\":\"assert_equals: expected \\\"-_π\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-end value '_9'\",\"status\":1,\"message\":\"assert_equals: expected \\\"_9\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-area value '1 / 90 -a- / auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"1 / 90 -a-\\\", \\\"1 / 90 -a- / auto / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row value '2 az / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"2 az\\\", \\\"2 az / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column value '9 / -19 zA'\",\"status\":1,\"message\":\"assert_equals: expected \\\"9 / -19 zA\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value '-19'\",\"status\":1,\"message\":\"assert_equals: expected \\\"-19\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value '9 -Z_'\",\"status\":1,\"message\":\"assert_equals: expected \\\"9 -Z_\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-start value '-44 Z'\",\"status\":1,\"message\":\"assert_equals: expected \\\"-44 Z\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-end value '1 -πA'\",\"status\":1,\"message\":\"assert_equals: expected \\\"1 -πA\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-end value '5 π_'\",\"status\":1,\"message\":\"assert_equals: expected \\\"5 π_\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'calc(1.1) -a-'\",\"status\":1,\"message\":\"assert_equals: expected \\\"1 -a-\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'calc(10) -a-'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10 -a-\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'calc(10 + (sign(2cqw - 10px) * 5)) -a-'\",\"status\":1,\"message\":\"assert_equals: expected \\\"5 -a-\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'span calc(-1)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 1\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'span calc(sibling-index() - 2)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 1\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-area value 'span 2 i / auto / auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"span 2 i\\\", \\\"span 2 i / auto / auto / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row value 'span 2 / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"span 2\\\", \\\"span 2 / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-start value 'span 1 i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span i\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'span 1'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 1\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-end value 'span 2 i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 2 i\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-end value 'span 2'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 2\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row-start value 'span i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span i\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row value 'span i / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"span i\\\", \\\"span i / auto\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-area value 'auto / i / auto / i'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto / i\\\", \\\"auto / i / auto / i\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-area value 'auto / i / 2 j'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto / i / 2 j\\\", \\\"auto / i / 2 j / i\\\"]\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-area value 'auto / i / 2 j / span 3 k'\",\"status\":1,\"message\":\"assert_equals: expected \\\"auto / i / 2 j / span 3 k\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-row value 'auto / i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"auto / i\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column value '2 j / span 3 k'\",\"status\":1,\"message\":\"assert_equals: expected \\\"2 j / span 3 k\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-end value '\\\\31st'\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\\31 st\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-column-end value '\\\\31 st'\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\\31 st\\\" but got \\\"\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Property grid-area value 'auto / auto / auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto\\\", \\\"auto / auto / auto / auto\\\"]\"},{\"name\":\"Property grid-row value 'auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto\\\", \\\"auto / auto\\\"]\"},{\"name\":\"Property grid-column-end value 'auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"auto\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row value '-zπ'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"-zπ\\\", \\\"-zπ / -zπ\\\"]\"},{\"name\":\"Property grid-row-start value 'AZ'\",\"status\":1,\"message\":\"assert_equals: expected \\\"AZ\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column-start value '-_π'\",\"status\":1,\"message\":\"assert_equals: expected \\\"-_π\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-end value '_9'\",\"status\":1,\"message\":\"assert_equals: expected \\\"_9\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-area value '1 / 90 -a- / auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"1 / 90 -a-\\\", \\\"1 / 90 -a- / auto / auto\\\"]\"},{\"name\":\"Property grid-row value '2 az / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"2 az\\\", \\\"2 az / auto\\\"]\"},{\"name\":\"Property grid-column value '9 / -19 zA'\",\"status\":1,\"message\":\"assert_equals: expected \\\"9 / -19 zA\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value '-19'\",\"status\":1,\"message\":\"assert_equals: expected \\\"-19\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value '9 -Z_'\",\"status\":1,\"message\":\"assert_equals: expected \\\"9 -Z_\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column-start value '-44 Z'\",\"status\":1,\"message\":\"assert_equals: expected \\\"-44 Z\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-end value '1 -πA'\",\"status\":1,\"message\":\"assert_equals: expected \\\"1 -πA\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column-end value '5 π_'\",\"status\":1,\"message\":\"assert_equals: expected \\\"5 π_\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'calc(1.1) -a-'\",\"status\":1,\"message\":\"assert_equals: expected \\\"1 -a-\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'calc(10) -a-'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10 -a-\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'calc(10 + (sign(2cqw - 10px) * 5)) -a-'\",\"status\":1,\"message\":\"assert_equals: expected \\\"5 -a-\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'span calc(-1)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 1\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'span calc(sibling-index() - 2)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 1\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-area value 'span 2 i / auto / auto / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"span 2 i\\\", \\\"span 2 i / auto / auto / auto\\\"]\"},{\"name\":\"Property grid-row value 'span 2 / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"span 2\\\", \\\"span 2 / auto\\\"]\"},{\"name\":\"Property grid-column-start value 'span 1 i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span i\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'span 1'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 1\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-end value 'span 2 i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 2 i\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column-end value 'span 2'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span 2\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row-start value 'span i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"span i\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row value 'span i / auto'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"span i\\\", \\\"span i / auto\\\"]\"},{\"name\":\"Property grid-area value 'auto / i / auto / i'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto / i\\\", \\\"auto / i / auto / i\\\"]\"},{\"name\":\"Property grid-area value 'auto / i / 2 j'\",\"status\":1,\"message\":\"assert_in_array: value \\\"\\\" not in array [\\\"auto / i / 2 j\\\", \\\"auto / i / 2 j / i\\\"]\"},{\"name\":\"Property grid-area value 'auto / i / 2 j / span 3 k'\",\"status\":1,\"message\":\"assert_equals: expected \\\"auto / i / 2 j / span 3 k\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-row value 'auto / i'\",\"status\":1,\"message\":\"assert_equals: expected \\\"auto / i\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column value '2 j / span 3 k'\",\"status\":1,\"message\":\"assert_equals: expected \\\"2 j / span 3 k\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column-end value '\\\\31st'\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\\31 st\\\" but got \\\"\\\"\"},{\"name\":\"Property grid-column-end value '\\\\31 st'\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\\\\\\31 st\\\" but got \\\"\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}
