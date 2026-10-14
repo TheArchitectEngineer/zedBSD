@@ -140,8 +140,8 @@ desktop on the framebuffer the firmware set up, but does not drive the
 display yet. Each frame is copied to that framebuffer, so moving pictures
 may tear and be slower than on newer Intel graphics. The screen stays at
 the resolution the firmware chose, its
-brightness and external displays cannot be changed, and sleep is refused
-while the driver drives the GPU (see the
+brightness and external displays cannot be changed, and in sleep the GPU
+stays powered, so the battery runs down faster while asleep (see the
 [known issues](zedbsd-1.0.0-beta2-known-issues.md)). Gen9.5 (7th to 10th
 generation) was checked on an 8th generation Core; the 6th generation
 (Skylake) was not.
