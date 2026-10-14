@@ -61,10 +61,13 @@ struct kl_window;
 /*
  * With the presenter, the pictures decoded ahead at most, and the pictures
  * the player holds at once from the decoder: those, one held back by the
- * reader, the one shown and the one being drawn.
+ * reader, the one shown, and those the frames still on the GPU drew.
  */
 #define VP_GPU_PICTURES		3U
-#define VP_GPU_HOLD		(VP_GPU_PICTURES + 3U)
+#define VP_GPU_HOLD		(VP_GPU_PICTURES + 2U + VP_PRESENT_FRAMES)
+
+/* The frames the presenter has on the GPU at once. */
+#define VP_PRESENT_FRAMES	2U
 
 /* The decoder images the presenter imports at most (one for each image of a decoding context). */
 #define VP_PRESENT_IMPORTS	18U
@@ -106,8 +109,13 @@ struct vp_present_quad {
  * The player's presenter (present.c): its Vulkan device, the swapchain of
  * the window, the overlay drawn by the CPU (bar, notices, pictures the CPU
  * scaled) and its image, the pipelines of the picture and the overlay, and
- * the decoder images imported (of the decoding context identity).
- * operation names the last Vulkan call, for the failure's log line.
+ * the decoder images imported (of the decoding context identity).  Each
+ * frame on the GPU has a slot (command buffer, fence, acquire semaphore,
+ * and the serial of the frame in it, 0 for none); serial is the newest
+ * frame submitted and completed the newest known done.  acquire_us,
+ * submit_us and wait_us add up what the frames waited for (the caller
+ * reads and clears them).  operation names the last Vulkan call, for the
+ * failure's log line.
  */
 struct vp_present {
 	VkInstance instance;
@@ -123,9 +131,15 @@ struct vp_present {
 	uint32_t count;
 	VkRenderPass pass;
 	VkCommandPool pool;
-	VkCommandBuffer command;
-	VkFence fence;
-	VkSemaphore acquired;
+	VkCommandBuffer commands[VP_PRESENT_FRAMES];
+	VkFence fences[VP_PRESENT_FRAMES];
+	VkSemaphore acquired[VP_PRESENT_FRAMES];
+	uint64_t slot_serial[VP_PRESENT_FRAMES];
+	uint64_t serial;
+	uint64_t completed;
+	uint64_t acquire_us;
+	uint64_t submit_us;
+	uint64_t wait_us;
 	VkSampler nearest;
 	VkSampler smooth;
 	VkDescriptorSetLayout picture_set_layout;
@@ -243,6 +257,8 @@ struct app_frame *vp_media_take(struct vp_media *media, double clock, double *ti
 VkResult vp_present_open(struct vp_present *present, struct kl_window *window);
 VkResult vp_present_resize(struct vp_present *present, uint32_t width, uint32_t height);
 VkResult vp_present_frame(struct vp_present *present, const uint32_t *pixels, size_t stride, int overlay_shown, int overlay_changed, const struct vp_present_quad *quad);
+uint64_t vp_present_done(const struct vp_present *present);
+VkResult vp_present_idle(struct vp_present *present);
 void vp_present_close(struct vp_present *present);
 
 /* The log the tests read (main.c). */

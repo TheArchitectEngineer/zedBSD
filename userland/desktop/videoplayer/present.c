@@ -16,9 +16,11 @@
  * overlay over it by its premultiplied alpha: the bar of controls, a
  * notice, or a picture the CPU scaled, drawn by the CPU into ordinary
  * memory and copied into the overlay's image only when it changed.  An
- * empty overlay is not drawn.  Each frame is waited for before the next,
- * so the picture drawn may be freed and the overlay written once a frame
- * returns.
+ * empty overlay is not drawn.  Two frames may be on the GPU at once (each
+ * with its command buffer, fence and acquire semaphore): a frame waits
+ * only for the one two before it, and the overlay is written only once
+ * every frame that may read it is done.  The caller frees a picture once
+ * the frames that drew it are done (vp_present_done).
  *
  * The CPU touches no pixel of a picture the GPU holds: the device turns
  * its planes into textures and the shader converts and scales them.
@@ -33,6 +35,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 /* How long a frame may take on the GPU, in nanoseconds. */
@@ -44,8 +47,8 @@
 /* A quad's vertices: two triangles. */
 #define PRESENT_VERTICES	6U
 
-/* The quads in the vertex buffer: the overlay's unit square, then the picture's. */
-#define PRESENT_QUADS		2U
+/* The quads in the vertex buffer: the overlay's unit square, then the picture's of each frame on the GPU. */
+#define PRESENT_QUADS		(1U + VP_PRESENT_FRAMES)
 
 /* The push constants: the size, then the colour rows of the picture's shader. */
 #define PRESENT_PUSH_FLOATS	16U
@@ -71,7 +74,10 @@ static VkResult present_import(struct vp_present *present, const struct media_gp
 static VkResult present_import_make(struct vp_present *present, const struct media_gpu_picture *picture, struct vp_present_import *entry);
 static void present_import_free(struct vp_present *present, struct vp_present_import *entry);
 static void present_imports_free(struct vp_present *present);
-static void present_record(struct vp_present *present, uint32_t image, const struct vp_present_quad *quad, struct vp_present_import *picture, int overlay);
+static void present_record(struct vp_present *present, uint32_t slot, uint32_t image, const struct vp_present_quad *quad, struct vp_present_import *picture, int overlay);
+static VkResult present_wait_slot(struct vp_present *present, uint32_t slot);
+static VkResult present_wait_all(struct vp_present *present);
+static uint64_t present_clock_us(void);
 static void present_colour(const struct media_gpu_picture *picture, float *rows);
 
 /*
@@ -188,8 +194,7 @@ vp_present_resize(
 	VkResult error;
 
 	/* Nothing may still use the old images. */
-	present->operation = "vkDeviceWaitIdle";
-	error = vkDeviceWaitIdle(present->device);
+	error = present_wait_all(present);
 	if (error != VK_SUCCESS)
 		return error;
 
@@ -220,10 +225,12 @@ vp_present_resize(
 }
 
 /*
- * Shows a frame and waits for it to finish: black, the picture the GPU
- * holds where quad places it (NULL for none), and the overlay (pixels of
- * the swapchain's size, stride words a row, premultiplied) when
- * overlay_shown, copied first when overlay_changed.
+ * Shows a frame: black, the picture the GPU holds where quad places it
+ * (NULL for none), and the overlay (pixels of the swapchain's size, stride
+ * words a row, premultiplied) when overlay_shown, copied first when
+ * overlay_changed.  The frame is submitted and presented, not waited for:
+ * it is present->serial when this returns, and done once vp_present_done
+ * reports it.
  *
  * Returns VK_ERROR_OUT_OF_DATE_KHR when the swapchain no longer matches
  * the window; the caller resizes and draws again.
@@ -241,12 +248,28 @@ vp_present_frame(
 	VkSubmitInfo submit;
 	VkPresentInfoKHR info;
 	VkPipelineStageFlags stage;
+	uint64_t started;
+	uint32_t slot;
 	uint32_t image;
 	uint32_t row;
 	VkResult error;
 
-	/* The overlay's rows into its image, when they changed (a new overlay image has none yet). */
+	/* The frame's slot, free once the frame two before it is done. */
+	slot = (uint32_t)(present->serial % VP_PRESENT_FRAMES);
+	started = present_clock_us();
+	error = present_wait_slot(present, slot);
+	present->wait_us += present_clock_us() - started;
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* The overlay's rows into its image, when they changed (a new overlay image has none yet), once no frame reads it. */
 	if (overlay_shown && (overlay_changed || present->overlay_ready == 0)) {
+		started = present_clock_us();
+		error = present_wait_all(present);
+		present->wait_us += present_clock_us() - started;
+		if (error != VK_SUCCESS)
+			return error;
+
 		/* Each row, into the image's row as its pitch places it. */
 		for (row = 0; row < present->extent.height; row++)
 			memcpy(present->overlay_map + (size_t)row * present->overlay_pitch, pixels + (size_t)row * stride, (size_t)present->extent.width * 4U);
@@ -262,45 +285,52 @@ vp_present_frame(
 	}
 
 	/* The image to draw into, once the compositor has given one back. */
+	started = present_clock_us();
 	present->operation = "vkAcquireNextImageKHR";
-	error = vkAcquireNextImageKHR(present->device, present->swapchain, PRESENT_TIMEOUT, present->acquired, VK_NULL_HANDLE, &image);
+	error = vkAcquireNextImageKHR(present->device, present->swapchain, PRESENT_TIMEOUT, present->acquired[slot], VK_NULL_HANDLE, &image);
+	present->acquire_us += present_clock_us() - started;
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
 	/* The frame's commands. */
 	present->operation = "vkResetCommandBuffer";
-	error = vkResetCommandBuffer(present->command, 0U);
+	error = vkResetCommandBuffer(present->commands[slot], 0U);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Records the frame and closes the recording. */
-	present_record(present, image, quad, picture, overlay_shown && present->overlay_written);
+	present_record(present, slot, image, quad, picture, overlay_shown && present->overlay_written);
 	present->operation = "vkEndCommandBuffer";
-	error = vkEndCommandBuffer(present->command);
+	error = vkEndCommandBuffer(present->commands[slot]);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* The frame's fence starts unsignalled. */
 	present->operation = "vkResetFences";
-	error = vkResetFences(present->device, 1U, &present->fence);
+	error = vkResetFences(present->device, 1U, &present->fences[slot]);
 	if (error != VK_SUCCESS)
 		return error;
 
 	/* Submits the frame after the acquire, signalling the image's present semaphore. */
+	started = present_clock_us();
 	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	memset(&submit, 0, sizeof(submit));
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.waitSemaphoreCount = 1U;
-	submit.pWaitSemaphores = &present->acquired;
+	submit.pWaitSemaphores = &present->acquired[slot];
 	submit.pWaitDstStageMask = &stage;
 	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &present->command;
+	submit.pCommandBuffers = &present->commands[slot];
 	submit.signalSemaphoreCount = 1U;
 	submit.pSignalSemaphores = &present->targets[image].rendered;
 	present->operation = "vkQueueSubmit";
-	error = vkQueueSubmit(present->queue, 1U, &submit, present->fence);
+	error = vkQueueSubmit(present->queue, 1U, &submit, present->fences[slot]);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* The frame is on the GPU from here, under its serial. */
+	present->serial++;
+	present->slot_serial[slot] = present->serial;
 
 	/* Presents the image to the window. */
 	memset(&info, 0, sizeof(info));
@@ -312,16 +342,41 @@ vp_present_frame(
 	info.pImageIndices = &image;
 	present->operation = "vkQueuePresentKHR";
 	error = vkQueuePresentKHR(present->queue, &info);
+	present->submit_us += present_clock_us() - started;
 	if (error != VK_SUCCESS && error != VK_SUBOPTIMAL_KHR)
 		return error;
 
-	/* The frame is finished before the picture is freed and the overlay written again. */
-	present->operation = "vkWaitForFences";
-	error = vkWaitForFences(present->device, 1U, &present->fence, VK_TRUE, PRESENT_TIMEOUT);
+	/* Succeeded: the frame is on its way to the window. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Reports the serial of the newest frame known done: every frame up to it
+ * has finished on the GPU, so what it drew may be freed.
+ */
+uint64_t
+vp_present_done(
+	const struct vp_present *present)
+{
+	/* The newest waited for, or every frame after a wait for all. */
+	return present->completed;
+}
+
+/*
+ * Waits for every frame on the GPU, as before freeing everything they drew.
+ */
+VkResult
+vp_present_idle(
+	struct vp_present *present)
+{
+	VkResult error;
+
+	/* Each slot's frame. */
+	error = present_wait_all(present);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the frame is in the window. */
+	/* Succeeded: every frame is done. */
 	return VK_SUCCESS;
 }
 
@@ -332,6 +387,8 @@ void
 vp_present_close(
 	struct vp_present *present)
 {
+	uint32_t slot;
+
 	/* The device's objects, once nothing runs. */
 	if (present->device != VK_NULL_HANDLE) {
 		(void)vkDeviceWaitIdle(present->device);
@@ -365,13 +422,15 @@ vp_present_close(
 		if (present->vertex_memory != VK_NULL_HANDLE)
 			vkFreeMemory(present->device, present->vertex_memory, NULL);
 
-		/* The commands and the synchronization. */
+		/* The commands and each slot's synchronization. */
 		if (present->pool != VK_NULL_HANDLE)
 			vkDestroyCommandPool(present->device, present->pool, NULL);
-		if (present->fence != VK_NULL_HANDLE)
-			vkDestroyFence(present->device, present->fence, NULL);
-		if (present->acquired != VK_NULL_HANDLE)
-			vkDestroySemaphore(present->device, present->acquired, NULL);
+		for (slot = 0U; slot < VP_PRESENT_FRAMES; slot++) {
+			if (present->fences[slot] != VK_NULL_HANDLE)
+				vkDestroyFence(present->device, present->fences[slot], NULL);
+			if (present->acquired[slot] != VK_NULL_HANDLE)
+				vkDestroySemaphore(present->device, present->acquired[slot], NULL);
+		}
 
 		/* The pass, the swapchain and the device itself. */
 		if (present->pass != VK_NULL_HANDLE)
@@ -752,9 +811,10 @@ present_commands(
 	VkCommandBufferAllocateInfo command;
 	VkFenceCreateInfo fence;
 	VkSemaphoreCreateInfo semaphore;
+	uint32_t slot;
 	VkResult error;
 
-	/* A pool whose one buffer is reset every frame. */
+	/* A pool whose buffers are reset every frame. */
 	memset(&pool, 0, sizeof(pool));
 	pool.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -764,34 +824,34 @@ present_commands(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The buffer. */
+	/* A buffer for each frame on the GPU. */
 	memset(&command, 0, sizeof(command));
 	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	command.commandPool = present->pool;
 	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command.commandBufferCount = 1U;
+	command.commandBufferCount = VP_PRESENT_FRAMES;
 	present->operation = "vkAllocateCommandBuffers";
-	error = vkAllocateCommandBuffers(present->device, &command, &present->command);
+	error = vkAllocateCommandBuffers(present->device, &command, present->commands);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The fence the frame's end signals. */
-	memset(&fence, 0, sizeof(fence));
-	fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	present->operation = "vkCreateFence";
-	error = vkCreateFence(present->device, &fence, NULL, &present->fence);
-	if (error != VK_SUCCESS)
-		return error;
+	/* Each frame's fence, which its end signals, and the semaphore its acquire signals. */
+	for (slot = 0U; slot < VP_PRESENT_FRAMES; slot++) {
+		memset(&fence, 0, sizeof(fence));
+		fence.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		present->operation = "vkCreateFence";
+		error = vkCreateFence(present->device, &fence, NULL, &present->fences[slot]);
+		if (error != VK_SUCCESS)
+			return error;
+		memset(&semaphore, 0, sizeof(semaphore));
+		semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		present->operation = "vkCreateSemaphore";
+		error = vkCreateSemaphore(present->device, &semaphore, NULL, &present->acquired[slot]);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 
-	/* The semaphore the acquire signals. */
-	memset(&semaphore, 0, sizeof(semaphore));
-	semaphore.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	present->operation = "vkCreateSemaphore";
-	error = vkCreateSemaphore(present->device, &semaphore, NULL, &present->acquired);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Succeeded: one frame at a time can be recorded and waited for. */
+	/* Succeeded: VP_PRESENT_FRAMES frames can be on the GPU at once. */
 	return VK_SUCCESS;
 }
 
@@ -1328,8 +1388,7 @@ present_import(
 	/* A new decoding context: nothing may still read the old one's images, which go. */
 	*found = NULL;
 	if (present->identity != picture->identity) {
-		present->operation = "vkDeviceWaitIdle";
-		error = vkDeviceWaitIdle(present->device);
+		error = present_wait_all(present);
 		if (error != VK_SUCCESS)
 			return error;
 		present_imports_free(present);
@@ -1536,6 +1595,7 @@ present_imports_free(
 static void
 present_record(
 	struct vp_present *present,
+	uint32_t slot,
 	uint32_t image,
 	const struct vp_present_quad *quad,
 	struct vp_present_import *picture,
@@ -1560,7 +1620,7 @@ present_record(
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-	(void)vkBeginCommandBuffer(present->command, &begin);
+	(void)vkBeginCommandBuffer(present->commands[slot], &begin);
 
 	/* The host's writes to the overlay before the shader reads it (the first frame also leaves the preinitialized layout). */
 	memset(barriers, 0, sizeof(barriers));
@@ -1602,7 +1662,7 @@ present_record(
 
 	/* The barriers, before the fragment shader reads. */
 	if (barrier_count != 0U)
-		vkCmdPipelineBarrier(present->command, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, barrier_count, barriers);
+		vkCmdPipelineBarrier(present->commands[slot], VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U, NULL, barrier_count, barriers);
 
 	/* The pass, cleared to black. */
 	memset(&clear, 0, sizeof(clear));
@@ -1614,7 +1674,7 @@ present_record(
 	pass.renderArea.extent = present->extent;
 	pass.clearValueCount = 1U;
 	pass.pClearValues = &clear;
-	vkCmdBeginRenderPass(present->command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(present->commands[slot], &pass, VK_SUBPASS_CONTENTS_INLINE);
 
 	/* The whole image is the viewport and the scissor. */
 	memset(&viewport, 0, sizeof(viewport));
@@ -1623,10 +1683,10 @@ present_record(
 	viewport.maxDepth = 1.0f;
 	memset(&scissor, 0, sizeof(scissor));
 	scissor.extent = present->extent;
-	vkCmdSetViewport(present->command, 0U, 1U, &viewport);
-	vkCmdSetScissor(present->command, 0U, 1U, &scissor);
+	vkCmdSetViewport(present->commands[slot], 0U, 1U, &viewport);
+	vkCmdSetScissor(present->commands[slot], 0U, 1U, &scissor);
 	offset = 0U;
-	vkCmdBindVertexBuffers(present->command, 0U, 1U, &present->vertices, &offset);
+	vkCmdBindVertexBuffers(present->commands[slot], 0U, 1U, &present->vertices, &offset);
 
 	/* The picture's quad: its corners in window pixels, its window of the decoder's image, its colour rows. */
 	if (picture != NULL) {
@@ -1637,7 +1697,7 @@ present_record(
 		v1 = (float)(quad->picture.y + quad->picture.height) / (float)quad->picture.image_height;
 
 		/* The quad's two triangles, after the overlay's. */
-		corners = present->vertex_map + PRESENT_VERTICES * PRESENT_VERTEX_FLOATS;
+		corners = present->vertex_map + (size_t)(1U + slot) * PRESENT_VERTICES * PRESENT_VERTEX_FLOATS;
 		corners[0] = (float)quad->x;
 		corners[1] = (float)quad->y;
 		corners[2] = u0;
@@ -1662,10 +1722,10 @@ present_record(
 		push[0] = (float)present->extent.width;
 		push[1] = (float)present->extent.height;
 		present_colour(&quad->picture, push + 4);
-		vkCmdBindPipeline(present->command, VK_PIPELINE_BIND_POINT_GRAPHICS, present->picture_pipeline);
-		vkCmdBindDescriptorSets(present->command, VK_PIPELINE_BIND_POINT_GRAPHICS, present->picture_layout, 0U, 1U, &picture->set, 0U, NULL);
-		vkCmdPushConstants(present->command, present->picture_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(push), push);
-		vkCmdDraw(present->command, PRESENT_VERTICES, 1U, PRESENT_VERTICES, 0U);
+		vkCmdBindPipeline(present->commands[slot], VK_PIPELINE_BIND_POINT_GRAPHICS, present->picture_pipeline);
+		vkCmdBindDescriptorSets(present->commands[slot], VK_PIPELINE_BIND_POINT_GRAPHICS, present->picture_layout, 0U, 1U, &picture->set, 0U, NULL);
+		vkCmdPushConstants(present->commands[slot], present->picture_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0U, sizeof(push), push);
+		vkCmdDraw(present->commands[slot], PRESENT_VERTICES, 1U, (1U + slot) * PRESENT_VERTICES, 0U);
 	}
 
 	/* The overlay's quad over the whole image: the unit square's corners divided by one. */
@@ -1673,14 +1733,14 @@ present_record(
 		memset(push, 0, sizeof(push));
 		push[0] = 1.0f;
 		push[1] = 1.0f;
-		vkCmdBindPipeline(present->command, VK_PIPELINE_BIND_POINT_GRAPHICS, present->overlay_pipeline);
-		vkCmdBindDescriptorSets(present->command, VK_PIPELINE_BIND_POINT_GRAPHICS, present->overlay_layout, 0U, 1U, &present->overlay_set, 0U, NULL);
-		vkCmdPushConstants(present->command, present->overlay_layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, 4U * sizeof(float), push);
-		vkCmdDraw(present->command, PRESENT_VERTICES, 1U, 0U, 0U);
+		vkCmdBindPipeline(present->commands[slot], VK_PIPELINE_BIND_POINT_GRAPHICS, present->overlay_pipeline);
+		vkCmdBindDescriptorSets(present->commands[slot], VK_PIPELINE_BIND_POINT_GRAPHICS, present->overlay_layout, 0U, 1U, &present->overlay_set, 0U, NULL);
+		vkCmdPushConstants(present->commands[slot], present->overlay_layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, 4U * sizeof(float), push);
+		vkCmdDraw(present->commands[slot], PRESENT_VERTICES, 1U, 0U, 0U);
 	}
 
 	/* The pass ends with the image ready to present. */
-	vkCmdEndRenderPass(present->command);
+	vkCmdEndRenderPass(present->commands[slot]);
 }
 
 /*
@@ -1754,4 +1814,68 @@ present_colour(
 	rows[9] = (float)blue_cb;
 	rows[10] = 0.0f;
 	rows[11] = (float)(-luma_scale * luma_offset - blue_cb * chroma_offset);
+}
+
+/* Waits for the frame in a slot, if one is there, and counts it done. */
+static VkResult
+present_wait_slot(
+	struct vp_present *present,
+	uint32_t slot)
+{
+	VkResult error;
+
+	/* An empty slot has nothing to wait for. */
+	if (present->slot_serial[slot] == 0U)
+		return VK_SUCCESS;
+
+	/* The frame's fence. */
+	present->operation = "vkWaitForFences";
+	error = vkWaitForFences(present->device, 1U, &present->fences[slot], VK_TRUE, PRESENT_TIMEOUT);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* It is done, and so is every frame before it. */
+	if (present->slot_serial[slot] > present->completed)
+		present->completed = present->slot_serial[slot];
+	present->slot_serial[slot] = 0U;
+
+	/* Succeeded: the slot is free. */
+	return VK_SUCCESS;
+}
+
+/* Waits for every frame on the GPU. */
+static VkResult
+present_wait_all(
+	struct vp_present *present)
+{
+	uint32_t slot;
+	VkResult error;
+
+	/* Each slot's frame. */
+	for (slot = 0U; slot < VP_PRESENT_FRAMES; slot++) {
+		error = present_wait_slot(present, slot);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* Succeeded: every frame submitted is done. */
+	present->completed = present->serial;
+	return VK_SUCCESS;
+}
+
+/* Reads the monotonic clock in microseconds, for the frame's cost. */
+static uint64_t
+present_clock_us(
+	void)
+{
+	struct timespec now;
+	int failed;
+
+	/* The clock, or zero when it cannot be read. */
+	failed = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (failed != 0)
+		return 0U;
+
+	/* Succeeded: microseconds. */
+	return (uint64_t)now.tv_sec * 1000000U + (uint64_t)now.tv_nsec / 1000U;
 }

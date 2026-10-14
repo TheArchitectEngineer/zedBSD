@@ -70,6 +70,7 @@ static void executor_main(void *opaque);
 static bool park_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
 static int parked_outcome(struct bcm2711_render_device *controller, struct bcm2711_render_request *request);
 static struct bcm2711_render_session *select_session(struct bcm2711_render_worker *worker);
+static bool others_queued(struct bcm2711_render_worker *worker, const struct bcm2711_render_session *session);
 static int retire_settled(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, bool wait, struct worker_ended *ended);
 static void bind_marker(struct bcm2711_render_device *controller, struct bcm2711_render_session *session, struct bcm2711_render_execution *execution);
 static bool marker_held(const struct bcm2711_render_session *session, const struct bcm2711_render_request *request);
@@ -1328,6 +1329,9 @@ bcm2711_render_executor_step(
 		display = session_display(session);
 	}
 
+	/* Whether another session's execution waits behind this step. */
+	controller->worker.contended = others_queued(&controller->worker, session);
+
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
 	/* Nothing waits. */
@@ -1435,7 +1439,7 @@ bcm2711_render_executor_step(
 	 * may; with nothing queued, the turn waits a little for the oldest.
 	 */
 	if (execution == NULL || settles) {
-		later = retire_settled(controller, session, execution == NULL, &ended);
+		later = retire_settled(controller, session, execution == NULL && !controller->worker.contended, &ended);
 		if (settled == 0)
 			settled = later;
 	}
@@ -1861,6 +1865,24 @@ parked_outcome(
 
 	/* Succeeded: zero when the marker completes normally. */
 	return error;
+}
+
+/* Reports whether a ready session other than the one given has an execution queued. The caller holds the native IRQ guard. */
+static bool
+others_queued(
+	struct bcm2711_render_worker *worker,
+	const struct bcm2711_render_session *session)
+{
+	struct bcm2711_render_session *other;
+
+	/* The ready sessions, in turn order. */
+	for (other = worker->ready_head; other != NULL; other = other->ready_next) {
+		if (other != session && other->execution_head != NULL)
+			return true;
+	}
+
+	/* Succeeded: none waits. */
+	return false;
 }
 
 /* Runs executions for the controller's lifetime, sleeping while none waits. */

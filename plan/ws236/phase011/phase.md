@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は T1-679（libvulkan が SAMPLED の照会を拒む）・T1-680（kernel が export の identity の照会に答えない）で FAIL、両方直して T2 の再試験待ち）
+Status: in-progress（2026-10-16、P3。段 a は T1-674 で結果済み（B-2）、段 b は T1-677 で PASS、段 c・d・e は T1-681 で GPU の道が動いた（色も正しい）、速さ（21 fps）が未達 → executor の VPU 待ちを譲る直しと presenter の 2 frame 重ね、T2 の依頼 4 待ち）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -177,6 +177,41 @@ Phase disposition: normal
 - 原因: libvulkan の `vkGetMemoryFdKHR` は fd に device と driver の UUID を刻むため `vulkan_physical_identity`（`GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2` に `VkPhysicalDeviceIDProperties` を連ねた照会）を送るが、bcm2711 の kernel はこの opcode を扱わず、`VK_ERROR_DEVICE_LOST`（-4）になっていた（Venus の host だけが答えていた。native の V3D で OPAQUE_FD の allocation の export を使うのは今回が初めて）。
 - 直し: `src/drivers/gpu/bcm2711/vulkan-query.c` に `identity_query`（chain が properties2 → ID properties → 終わりの照会だけに答える。device の UUID・driver の UUID は固定の 16 byte、LUID なし、続けて普通の properties）。どの context も同じ値を返すので、libmedia（export）と videoplayer（import）の照合が合う。`plan/ws141/tests/vulkan-device-host-test.c` に libvulkan と同じ要求と読みで 2 回照会して同じ UUID になる確かめを足した（`ws236 p011 native device identity for exported allocations: PASS`、全 32 行 PASS）。rpi4 の vmunix warning 0。
 - Pi の PNG: `userland/tests/keiland-shot/Makefile` の platform に rpi4 を足し（arm64 の basic の command の規則で作れる。共有の `userland-dynamic.mk` の変更は不要だった）、`plan/ws236/tests/config-rpi4-shot.mk`（`ZEDBSD_TEST_SCREEN_CAPTURE := y` と keiland-shot）で compositor（`bin/wayland`、`KWL SHOT` を持つ）と `bin/keiland-shot`（aarch64）が build できることを確かめた。
+
+### T2 の結果（T1-681、2026-10-16、Pi 4 実機、main 4cd126b74）: GPU の道は動いた、速さが未達
+
+- `pictures the GPU holds, 17 slots`、`MEDIA backend=vulkan-video`、kernel の `place 0〜13 us`・`readbacks 0`、`DRAW picture_us` 45〜1095 us（前 約 225 ms）。PNG（keiland-shot、1280x720）の色は正しい（カラーバー・灰の四角・市松・時刻、Q1 も目視）。`execution failed` 無し、落ちない。
+- `PRESENTED … gpu=0` は最初の frame（picture がまだ無い）の行で、GPU の道でないことを意味しない（今回の直しで `picture=` を足し、DRAW の行に GPU の picture を描いた frame 数 `gpu=` を足した）。
+- 速さ: high 1080p30 は shown 210・late 90／10 s（約 21 fps）、baseline shown 201・late 99。`DRAW rest_us`（present と fence の待ち）27〜52 ms が支配的。kernel の video は 2 秒に 52〜73 decode、depth 1.4〜1.7、frame 37〜50 ms。
+
+## 速さの直し（2026-10-16、P3、Q1 の依頼「presenter の 2 frame 重ねと律速の切り分け」）
+
+### 見立て
+
+1 frame の時間 = videoplayer の loop の待ち（再生中は固定 10 ms）＋ `rest`（present の後に fence を待つ 27〜52 ms）。fence の待ちは V3D の executor で compositor と decode と videoplayer の仕事が順に回る時間で、その中に **decode の step が VPU を待つ 2 ms**（flight が満ちた時の `collect` と、settling だけの session の番の待ち）が含まれる。2 秒に 250 step ほどあり、executor の時間の 1〜2 割を VPU 待ちで潰していた見込み。
+
+### 直し
+
+- kernel（`render-worker.c`・`.h`、`vulkan-video.c`）: executor は step の前に「他の session に execution が並んでいるか」（`worker.contended`）を見る。並んでいる時は、settling だけの session の番も decode の step（flight が満ちた時・staging 待ち・copy の前の settle・reset）も VPU を待たずに見るだけにして、次の番にまた見る（`poll_ms`）。並んでいない時は前と同じ 2 ms。試験: `plan/ws236/tests/render-settle-host-test.c` に (e)（他の session の execution が並ぶ間の settle は wait なし、無くなれば wait あり）を足した。
+- videoplayer（`present.c`・`main.c`・`videoplayer.h`）: presenter が 2 frame を GPU に持つ（slot ごとの command buffer・fence・acquire の semaphore・picture の quad の頂点）。frame は 2 つ前の frame だけを待ち、overlay を書く時だけ全部を待つ。置き換えた picture はそれを描いた frame が済むまで `retired` に置く（`vp_present_done`）。libmedia に頼む hold を 7 に（ring 3＋reader 1＋表示 1＋GPU 上の frame 2）。再生中の loop の待ちを次の picture の時刻まで（10 ms 固定をやめる、presenter の時だけ）。DRAW の行に `gpu=`・`acquire_us`・`submit_us`・`wait_us`。
+- 試験の film: `plan/ws236/tests/make-test-mp4.sh` に 1080p60（High、level 4.2、10 s、600 frame）を足し、`high-1080p60-10s.mp4`（1.2 MB）を作った。
+
+### 確かめ（host と build）
+
+| 確かめ | 結果 |
+| --- | --- |
+| rpi4 の vmunix・videoplayer、amd64 の videoplayer | warning 0、vmunix check PASS |
+| `sh plan/ws236/tests/run-render-settle-test.sh` | 全 PASS（(e) を含む） |
+| `plan/ws141/tests/vulkan-device-host-test.sh` | 32 行 PASS |
+| style-check（変えた file、HEAD との差） | 新しい指摘 0 |
+
+### T2 への依頼 4（Pi 4 実機、約 30 分）
+
+1. build（この commit か merge 後の main）: `build/<T>/rpi4/vmunix`・`dynamic/libmedia.so`・`bin/videoplayer`（libvulkan は T1-680 のまま）、compositor と keiland-shot は T1-681 の capture 入りの物。
+2. Pi: kernel・videoplayer・libmedia を差し替え、boot の行に `v3d.perf=1` を足して reboot（executor の時間の内訳を取る）。`high-1080p60-10s.mp4` を Pi の `/home/kei/ws236/` に置く。
+3. 再生（`--timeout-s=15`）: `high-1080p30-10s.mp4`・`baseline-1080p30-10s.mp4`・`high-1080p60-10s.mp4`。各 1 回、再生の 5 秒目ころに keiland-shot。
+4. 報告: 各 log の `Vulkan Video:`（slots・flights）・`PRESENTED`・`FRAMES`・`DRAW`（gpu・acquire_us・submit_us・wait_us）・`CLOCK`・`DONE`・`FAILED`、dmesg の `v3d: perf`・`v3d: video:`・`v3d: tfu`・`execution failed`、PNG。
+5. 合否: (a) 1080p30 の 2 本が shown 290 以上・late 10 以下、(b) 1080p60 の shown（目標 590 以上、記録）、(c) DRAW の gpu が frames と同じ、(d) 落ちない・`execution failed` 無し、(e) PNG の色。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す。
 
 ### presenter の 2 frame 重ねの検討（2026-10-16、P3、Q1 の依頼）
 
