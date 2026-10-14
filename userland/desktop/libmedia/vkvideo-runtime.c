@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define VKVIDEO_BINDINGS 32U
 #define VKVIDEO_FAMILIES 64U
@@ -39,6 +40,10 @@
 
 /* The completed pictures whose results are kept for the backend's later questions. */
 #define VKVIDEO_RESULTS 64U
+
+/* How often the cost line is logged while pictures complete, and how many lines a runtime logs at most. */
+#define VKVIDEO_STATS_NS 2000000000ULL
+#define VKVIDEO_STATS_LINES 32U
 
 /* A picture's submission: free, decoding (the decode submitted, its readback not yet), or reading (both submitted). */
 enum vkvideo_state {
@@ -80,6 +85,21 @@ struct vkvideo_flight {
 struct vkvideo_result {
 	uint32_t ticket;
 	int error;
+};
+
+/*
+ * What the pictures of the last few seconds cost on the host, for the
+ * line logged every VKVIDEO_STATS_NS (ws236 p008): the time submit took,
+ * the wait for a readback's fence and the copy of the cropped picture out
+ * of the readback buffer, in nanoseconds.
+ */
+struct vkvideo_stats {
+	uint64_t window_start;
+	uint32_t lines;
+	uint32_t pictures;
+	uint64_t submit_ns;
+	uint64_t wait_ns;
+	uint64_t copy_ns;
 };
 
 /* Standard entry points belong to a runtime's instance/device dispatch, never to a particular GPU implementation. */
@@ -193,6 +213,7 @@ struct vkvideo_runtime {
 	uint32_t tickets;
 	struct vkvideo_result results[VKVIDEO_RESULTS];
 	int failed;
+	struct vkvideo_stats stats;
 };
 
 /* Entry-point names and destination offsets are immutable dispatch metadata for the process. */
@@ -298,6 +319,8 @@ static int vkvideo_submit_readback(struct vkvideo_runtime *video, struct vkvideo
 static int vkvideo_complete(struct vkvideo_runtime *video, struct vkvideo_flight *flight, int discard);
 static int vkvideo_complete_all(struct vkvideo_runtime *video, int discard);
 static void vkvideo_store(struct vkvideo_runtime *video, uint32_t ticket, int error);
+static uint64_t vkvideo_now_ns(void);
+static void vkvideo_report(struct vkvideo_runtime *video, uint64_t now);
 static int vkvideo_status_pool(struct vkvideo_runtime *video);
 static int vkvideo_failed(VkResult result, const char *operation);
 static int vkvideo_mapped_range(struct vkvideo_runtime *video, VkDeviceMemory memory, int invalidate);
@@ -506,17 +529,19 @@ media_vkvideo_runtime_submit(
 	VkDeviceSize alignment;
 	VkImageLayout output_layout;
 	VkResult result;
+	uint64_t started;
 	uint32_t decoding;
 	uint32_t index;
 	uint32_t slice;
 	size_t at;
 	int error;
 
-	/* A free submission (the oldest picture completes when none is). */
+	/* A free submission (the oldest picture completes when none is), and the time from here. */
 	*ticket = 0U;
 	error = media_vkvideo_runtime_reserve(video);
 	if (error != 0)
 		return error;
+	started = vkvideo_now_ns();
 	flight = NULL;
 	for (index = 0U; index < video->flights; index++) {
 		if (video->flight[index].state == VKVIDEO_FREE) {
@@ -629,6 +654,9 @@ media_vkvideo_runtime_submit(
 			return error;
 		decoding--;
 	}
+
+	/* The submit's time, for the cost line. */
+	video->stats.submit_ns += vkvideo_now_ns() - started;
 
 	/* Succeeded: the picture is submitted; finish gives its result. */
 	return 0;
@@ -2211,6 +2239,8 @@ vkvideo_complete(
 {
 	struct vkvideo_flight *next;
 	VkResult result;
+	uint64_t started;
+	uint64_t waited;
 	int32_t status;
 	int outcome;
 	int error;
@@ -2231,7 +2261,10 @@ vkvideo_complete(
 	}
 
 	/* The readback's fence. */
+	started = vkvideo_now_ns();
 	result = video->fn.vkWaitForFences(video->device, 1U, &flight->fence, VK_TRUE, VKVIDEO_WAIT_NS);
+	waited = vkvideo_now_ns();
+	video->stats.wait_ns += waited - started;
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkWaitForFences readback");
 		video->failed = error;
@@ -2265,9 +2298,14 @@ vkvideo_complete(
 	if (outcome == 0 && !discard && !flight->readback_coherent)
 		outcome = vkvideo_mapped_range(video, flight->readback_memory, 1);
 
-	/* The cropped linear NV12 bytes, only after retirement and host visibility. */
-	if (outcome == 0 && !discard)
+	/* The cropped linear NV12 bytes, only after retirement and host visibility, timed for the cost line. */
+	if (outcome == 0 && !discard) {
 		vkvideo_copy_output(video, flight);
+		video->stats.pictures++;
+		started = vkvideo_now_ns();
+		video->stats.copy_ns += started - waited;
+		vkvideo_report(video, started);
+	}
 
 	/* The result waits for its question; a discarded picture has none. */
 	if (discard)
@@ -2303,6 +2341,67 @@ vkvideo_complete_all(
 
 	/* Succeeded: nothing is in flight. */
 	return 0;
+}
+
+/* Reports the monotonic clock in nanoseconds. */
+static uint64_t
+vkvideo_now_ns(
+	void)
+{
+	struct timespec now;
+	int error;
+
+	/* The clock; one that cannot be read counts as zero. */
+	error = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (error != 0)
+		return 0U;
+
+	/* Succeeded: the time. */
+	return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
+}
+
+/*
+ * Logs the cost line when VKVIDEO_STATS_NS have passed since the window
+ * opened (the first VKVIDEO_STATS_LINES windows), and opens the next: the
+ * pictures copied out, and the average submit, fence wait and copy in
+ * microseconds.
+ */
+static void
+vkvideo_report(
+	struct vkvideo_runtime *video,
+	uint64_t now)
+{
+	struct vkvideo_stats *stats;
+	uint32_t pictures;
+
+	/* The first picture opens the first window. */
+	stats = &video->stats;
+	if (stats->window_start == 0U) {
+		stats->window_start = now;
+		return;
+	}
+
+	/* A window shorter than VKVIDEO_STATS_NS keeps counting. */
+	if (now - stats->window_start < VKVIDEO_STATS_NS)
+		return;
+
+	/* The averages, while the runtime's lines last. */
+	pictures = stats->pictures;
+	if (pictures != 0U && stats->lines < VKVIDEO_STATS_LINES) {
+		stats->lines++;
+		media_log("Vulkan Video: %u pictures in %llu ms, %u in flight; avg_us submit %llu wait %llu copy %llu",
+		    (unsigned)pictures, (unsigned long long)((now - stats->window_start) / 1000000ULL), (unsigned)video->flights,
+		    (unsigned long long)(stats->submit_ns / pictures / 1000ULL),
+		    (unsigned long long)(stats->wait_ns / pictures / 1000ULL),
+		    (unsigned long long)(stats->copy_ns / pictures / 1000ULL));
+	}
+
+	/* The next window starts empty. */
+	stats->window_start = now;
+	stats->pictures = 0U;
+	stats->submit_ns = 0U;
+	stats->wait_ns = 0U;
+	stats->copy_ns = 0U;
 }
 
 /* Keeps a completed picture's result under its ticket. */
