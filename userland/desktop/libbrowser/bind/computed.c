@@ -157,6 +157,7 @@ static int computed_write_font_family(const struct css_style *style, struct wb_u
 static int computed_write_tracks(const struct css_track *tracks, int count, struct wb_units *out);
 static int computed_name(const char *const *names, size_t count, int value, struct wb_units *out);
 static int computed_align(int value, int flex, struct wb_units *out);
+static void computed_blockify(struct bind_window *window, struct dom_element *element, struct css_style *style);
 static int computed_length(const struct css_length *length, struct wb_units *out);
 static int computed_pixels(double value, struct wb_units *out);
 static int computed_number(double value, struct wb_units *out);
@@ -583,6 +584,51 @@ computed_find(
 	return 0;
 }
 
+/* Turns an inline-level display into its block-level equivalent (CSS Display 3). */
+static void
+computed_blockify(
+	struct bind_window *window,
+	struct dom_element *element,
+	struct css_style *style)
+{
+	struct css_style *parent_style;
+	struct dom_node *parent;
+	int blockify;
+	int error;
+
+	if (style->display != CSS_DISPLAY_INLINE && style->display != CSS_DISPLAY_INLINE_BLOCK &&
+	    style->display != CSS_DISPLAY_INLINE_TABLE && style->display != CSS_DISPLAY_INLINE_FLEX &&
+	    style->display != CSS_DISPLAY_INLINE_GRID)
+		return;
+	blockify = style->float_side != CSS_FLOAT_NONE || style->position == CSS_POSITION_ABSOLUTE ||
+	    style->position == CSS_POSITION_FIXED;
+	parent = element->node.parent;
+	if (!blockify && parent != NULL && parent->type == DOM_ELEMENT) {
+		parent_style = malloc(sizeof(*parent_style));
+		if (parent_style == NULL)
+			return;
+		if (window->host.computed_style != NULL)
+			error = window->host.computed_style(window->host.context, (struct dom_element *)parent, parent_style);
+		else
+			error = bind_style_context_compute(window, (struct dom_element *)parent, parent_style);
+		if (error == 0 && (parent_style->display == CSS_DISPLAY_FLEX ||
+		    parent_style->display == CSS_DISPLAY_INLINE_FLEX ||
+		    parent_style->display == CSS_DISPLAY_GRID || parent_style->display == CSS_DISPLAY_INLINE_GRID))
+			blockify = 1;
+		free(parent_style);
+	}
+	if (!blockify)
+		return;
+	if (style->display == CSS_DISPLAY_INLINE_TABLE)
+		style->display = CSS_DISPLAY_TABLE;
+	else if (style->display == CSS_DISPLAY_INLINE_FLEX)
+		style->display = CSS_DISPLAY_FLEX;
+	else if (style->display == CSS_DISPLAY_INLINE_GRID)
+		style->display = CSS_DISPLAY_GRID;
+	else
+		style->display = CSS_DISPLAY_BLOCK;
+}
+
 /*
  * Writes the resolved value of a property of an element: nothing for an
  * element outside the document.
@@ -630,6 +676,10 @@ computed_write(
 		free(style);
 		return error;
 	}
+
+	/* The computed display of a floated, positioned or flex or grid item box is blockified. */
+	if (property == COMPUTED_DISPLAY)
+		computed_blockify(window, element, style);
 
 	/* Its box, for the used values. */
 	memset(&box, 0, sizeof(box));
