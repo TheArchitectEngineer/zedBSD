@@ -38,3 +38,23 @@ Time: image 21 m 09 s, guest session ~6 min. QEMU stopped.
 - sector 0（IPL）: `eb 0a 90 90 49 50 4c 31 00 00 00 1e fa fc 8c c8 ...`
 - `python3 plan/tools/pc98-boot.py /home/awe/qemu-pc98/build/qemu-system-i386 build/pc98/hdd-image.img /home/awe/zedBSD-worktrees/t2/build/t2-617` exit 0、39.7s。
 - PNG: /home/awe/zedBSD-worktrees/t2/build/t2-617/login.png （"login:" 表示）、/home/awe/zedBSD-worktrees/t2/build/t2-617/command.png （root login、`uname -a; echo WSDONE` が i386 と WSDONE を表示）
+
+## T1-615 の試験 C・D・E（T2、2026-10-14、BUG-307 の bec395969 を含む main a5d83fa78）
+
+image: `sh plan/tools/guest/build-ssh-image.sh build/bug307-after`（/home/awe/zedBSD-worktrees/t2/build/bug307-after、49 秒）。作業は /home/awe/zedBSD-worktrees/t2/build/t2-307/（volume、入力 in/、各回の *.gdb *.cmd snap-*.img chk-*.img）。GUEST_RUNTIME=build/t2-run。QEMU は host 全体で T1 と並走（port は別）。driver は /tmp/claude-1000/t2s/case.sh（試験の道具、source でない）。
+QEMU の証拠のみ。実機は未実施。
+
+道具の事実（依頼の手順からの変更）
+- `hbreak ufs_file_sync` は prologue の後に止まり `$rsp` が戻り番地にならない（1 回目の D が空振り）。`hbreak *ufs_file_sync` に変えた。
+- guest で試験の command を打つ SSH の login 自体が fsync を起こしうるので、command は gdb を付ける前に開いた SSH の中で `read go` で待たせ、gdb の `continue` の後に fifo で起動した。
+- gdb の stop packet が `warning: Invalid remote reply: fb7e3e80...` で壊れて continue が戻らない回があった（C3・C8・C11。負荷つき、-smp 4 と 1 の両方）。N 回目まで届かない回もあった（C5・C6・C10）。guest の起動直後の最初の SSH/scp が "Connection closed" になる回もあった（C5・C7）。これらは試験の結果でなく道具の不調として扱う。
+
+結果
+- D（消した file の block の再使用）: **FAIL（1 回目）/ PASS（retry）**。
+  - D 1 回目: snap-D.img の `/jour/old` 無し、`/jour/new` は 8388608 byte だが `cksum` 3451288497（host の new は 741758398、old は 624633356）、先頭 36 block (288 KiB) は一致、block 36 以降が不一致（`cmp -l` 8058173 byte）。`UFS OK`。gdb は Breakpoint 1 → file_fsync の戻り（build/t2-307/D.gdb）。
+  - D 2 回目（変更なし）: `cksum` 741758398 で一致、old 無し、`UFS OK`（D2.gdb）。
+  - 2 回で結果が違う。最初の fsync が同じ `sync /jour/new` の戻りだったか（途中の fsync で止まった可能性）は、この道具では区別できない。原因の解析はしていない。
+- E（rename の後の directory の fsync）: **PASS**。N=2、写しで `/jour/e/final` 3000 byte `cksum` 715748844（host の e1 と一致）、`/jour/e/tmp` 無し、`UFS OK`（E.gdb・chk-E.img）。
+- C（揃っていない volume、sector 63）: **PASS（ただし stop が 16 個目の file でなく 15 個目の後）**。C9（-smp 1、N=16）: f1〜f15 の `cksum` が host の c1〜c15 と全て一致、f16 無し、d1〜d15 あり（30 names）、切り出した物（chk-C9-part.img）が `UFS OK`。別回 C2（-smp 4、N=16）も f1〜f14 一致・f15/f16 無し・`UFS OK`。つまり N=16 の stop は他に 1〜2 回の fsync を数えて f16 の前に落ち、f16 の fsync の戻りでの確認にはなっていない。
+- C（揃った volume `/dev/nvme1n1`、同じ試験を 1 回）: **未実施**。C4・C6・C7・C10・C11 は gdb の不調か N に届かず（上）、有効な写しが取れなかった。
+- 既知の限界: 負荷つき（dd 並走）の gdbstub は不安定で、N=16 を厳密に合わせられない。
