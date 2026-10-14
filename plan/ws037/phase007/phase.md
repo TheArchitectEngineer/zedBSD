@@ -317,5 +317,6 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 前提: R9w（work channel）が通ること（T1-658 で PASS 済み、R9v は同じ channel を使う）。image は harness 入りで（SSH の鍵と `/etc/net.conf`）`plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。QEMU は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1-664 と同じ）。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。判定は SSH で guest の中の出力と dmesg（serial・console の log では判定しない）。
 1. SSH で `dmesg | grep nvrtx`: R9w の `P9w ok: fence 1 after N us` と R8c の `P8c ok: gpu device registered, …`。
 2. SSH で `vkquad` → 1 行。合格は **`VKQUAD ok device=… pixels=4096`**。
-3. その後の `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
+3. （D5、vkquad の後に）SSH で `display-events --frames=60 --hold=3 --watch=0` → `DISPLAY-EVENTS swapchain index=0 result=0`・`present index=0 frames=60 result=0`・`first-pixel index=0 result=0`・`done error=0` が合格（power の行の結果は記録だけ: power は EOPNOTSUPP の仕様）。swapchain の image を同じ node の blob として複写なしで出すか、複写で出すかは libvulkan が決める（dmesg と display-events の行で分かる範囲を記録）。
+4. その後の `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
 FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標と値）と dmesg の `nvrtx: vk: command N refused (E)`（実装の無い command）・`a stage … did not compile`・`D3 fail: the work of fence … did not finish` を記録。
