@@ -200,3 +200,19 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9w NVRTX_RUN=R9w`（merge の commit）。run の前に host の reboot と `prepare.sh --check`。判定は guest の kernel の印（screendump か `dmesg | grep nvrtx`）。
 合格: R7g の印（P5g の ok）に続いて `P9w begin` → `P9w arena at …, own buffers … bytes` → `P9w page tables at …` → `P9w ok: vaspace` → `P9w ok: work channel 4 on runlist N` → **`P9w ok: fence 1 after N us`** → `P8 ok: display …` → `P8b off (nvrtx.disp=0); stopping after P8a` → `P8 done; …` → `P6 ok: channel and vaspace freed`（**`P6: N work frees failed` が無い**）→ `P7 ok: region torn down` → login prompt。
 FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore …)` なら channel は作れたが GPU が entry を実行していない）、`rm: class … status …`・`rm: control … status …`、`P6 channel error: …` を記録。`P7 fail` なら host を reboot。
+
+### 8.4 D2 の案: executor の protocol の層をどこから作るか（2026-10-15、P2。Q1 の確認待ち、code は未着手）
+
+調べた事実:
+- i915 の `render/` は i915 の型（`i915_gem_object`・`i915_session`・batch）に全体が結び付いた一枚の executor（video 抜きで約 2.1 万行）。hardware に依らない層だけを取り出す境界が無い。
+- bcm2711 の executor（`src/drivers/gpu/bcm2711/vulkan-*.c`、約 2.3 万行、video 3.6 千行を含む）は file が細かく分かれ、**i915 の `render/codec.c`・`codec.h`・`vulkan-codec.inc`・`internal.h` の wire の型を変えずに include して使う**（`vulkan-private.h`、arm64 の vmunix.mk は codec.c を filter-out で 1 回だけ link）。bcm2711 の file のうち V3D の名前（`bcm2711_buffer`・`v3d_`・`native_`）を含まない物が 24 file・約 8.5 千行（object・session・dispatch・command pool/buffer・record・descriptor・layout・pipeline の decode と state・barrier の decode・query・draw の記録・target・input・prepared）。V3D に結び付くのは memory・queue・stream・transfer・buffer-copy・uniform・native-*（約 6 千行）と video。
+
+| 案 | 内容 | 他の WS への影響 | 量 |
+| --- | --- | --- | --- |
+| **A（推す）** | i915 の codec 層（codec.c・codec.h・vulkan-codec.inc・internal.h の wire の型）を bcm2711 と同じく**変えずに include**。protocol の層は bcm2711 の V3D に依らない file を手本に nvrtx の中に書く（`src/drivers/gpu/nvrtx/vk-*.c`、型と名前は nvrtx の物、session は nvrtx の node の session、BO は P4m の VRAM の BO と D1 の work の map）。NVIDIA の backend（D3）は nvrtx の draw-push・compute-launch・P4 の compiler を使う | **無し**（i915・bcm2711 の file は読むだけ）。build: `platform/amd64/vmunix.mk` の NVRTX の ifeq の中に nvrtx の file と、i915 が n の時のために `src/drivers/gpu/i915/render/codec.c` を `filter-out` で 1 回だけ足す（arm64 と同じ形） | protocol の層 約 6〜8 千行（compositor の範囲に絞れば少ない） |
+| B | bcm2711 の V3D に依らない 24 file を中立の置き場（例 `src/drivers/gpu/vulkan/`、接頭辞も中立）へ移し、bcm2711 と nvrtx が共有 | WS141（Pi 4）の file を動かす。Pi 4 の回帰（AAT の Vulkan の試験）が要る。WS141 の担当との調整 | 移動と名前の付け替え 約 8.5 千行＋bcm2711 の呼び出し側 |
+| C | i915 の `render/` を手本に書く | 無し | A より多い（i915 は層が分かれていない） |
+
+- 推す理由: A はベータ2 の後の desktop までの道で他の WS を止めない。重複（bcm2711 と似た protocol の層が 2 つ）は、nvrtx が desktop を描けた後に B の形へ寄せる別の Phase（「executor の共有の層」）で解消する（Future Work の候補）。
+- A で最初に作る範囲（compositor が使う物だけ、8.1 の表）: instance・physical device・device・queue（capset id 4、SDBZ、flags 7、`GPU_CAP_COMMAND|CAPSET|NOTIFICATION|JOB|JOB_CAPACITY`、roles に RENDER）、memory（VRAM の BO を BAR1 越しに host から見える coherent な型も）、buffer・image（pitch linear だけ）・image view・sampler、descriptor set layout/pool/set（COMBINED_IMAGE_SAMPLER）、pipeline layout・shader module・graphics pipeline（P4 の compiler へ SPIR-V を渡す口）、render pass・framebuffer、command pool/buffer と 15 種の vkCmd の記録、queue submit（D1 の work の submit と fence）、fence・semaphore。
+- 確かめ: host 試験（ws141 の `vulkan-stream-host-test.sh` と同じ作り: libvulkan の `wire.c` で stream を作り、nvrtx の decoder で object が出来ること、reply の形）。
