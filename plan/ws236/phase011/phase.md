@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3 新世代。T1-686 FAIL（直し 6 の core clock の見立ては外れ）→ 直し 7（compositor が scanout の可否を claim なしで聞き、出来ない display では出力を閉じない、display の lease の log）を実装・host 試験済み、T2 の依頼 7 待ち。60 fps の V1 は不採用、A1 は設計まで）
+Status: in-progress（2026-10-16、P3 新世代。直し 7（出力を閉じない）は main に merge 済み、T2 の T1-687（依頼 7）待ち。60 fps の A1（全画面の窓の copy）を実装・build 済み、T2 の依頼 8 待ち。V1 は不採用）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-16 新世代 `agent/p3-ws236f`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -341,7 +341,34 @@ Phase disposition: normal
 ### 60 fps の続き（V1・A1、2026-10-16 P3 新世代、T1-686 で中断）
 
 - **V1（TMU が raster を読む）は不採用**: V3D 4.2 の TMU は 2D の raster の texture を sample できない（Mesa v3dv `v3dv_formats.c`「Raster format is only supported for 1D textures」、gallium v3d `v3dx_state.c`「V3D still doesn't support sampling from raster textures」、MIT）。1D・texel buffer として読み、shader で 2D の address と bilinear を組むと 1 画素に 8 回の fetch で TFU（Y・UV 約 1.4 ms）より遥かに遅い。
-- **A1（設計まで）**: kernel は whole-image の `vkCmdCopyImage`（同じ format・大きさの raster 同士）を 0 draw の TLB の copy の pass で行う（`vulkan-native-image.c` `copy_whole`、T1-686 の perf で copy 2700 cycle/tile ≒ 240 tile で約 1.3 ms、draw は 7800〜8900 cycle/tile ≒ 約 4 ms＋窓の TFU 1.6 ms）。compositor の `compose_record` で、出力と同じ大きさ・同じ format の不透明な全画面の窓だけが映る frame（`scanout.c` の overlay の判定、glass の `fullscreen_whole`、cursor が frame に描かれない、turn・head なし）を、pass の代わりに UNDEFINED→TRANSFER_DST の barrier・copy・PRESENT_SRC の barrier で出す。i915・Venus を変えないため Broadcom（vendor 0x14e4）だけ。copy の結果は plain の不透明の quad と byte 単位で同じ、glass の whole の描き方とは alpha だけが違う（HVS の primary は固定の alpha、keiland-shot は RGB なので見えない）。videoplayer の swapchain は RGBA（wayland の WSI の最初の format）、compositor の出力は format=37（R8G8B8A8）で一致の見込み。
+- **A1（設計、下の「A1 の実装」で実装した）**: kernel は whole-image の `vkCmdCopyImage`（同じ format・大きさの raster 同士）を 0 draw の TLB の copy の pass で行う（`vulkan-native-image.c` `copy_whole`、T1-686 の perf で copy 2700 cycle/tile ≒ 240 tile で約 1.3 ms、draw は 7800〜8900 cycle/tile ≒ 約 4 ms＋窓の TFU 1.6 ms）。compositor の `compose_record` で、出力と同じ大きさ・同じ format の不透明な全画面の窓だけが映る frame（`scanout.c` の overlay の判定、glass の `fullscreen_whole`、cursor が frame に描かれない、turn・head なし）を、pass の代わりに UNDEFINED→TRANSFER_DST の barrier・copy・PRESENT_SRC の barrier で出す。i915・Venus を変えないため Broadcom（vendor 0x14e4）だけ。copy の結果は plain の不透明の quad と byte 単位で同じ、glass の whole の描き方とは alpha だけが違う（HVS の primary は固定の alpha、keiland-shot は RGB なので見えない）。videoplayer の swapchain は RGBA（wayland の WSI の最初の format）、compositor の出力は format=37（R8G8B8A8）で一致の見込み。
+
+### A1 の実装（2026-10-16、P3 新世代）: 全画面の窓だけが映る frame は copy で出す
+
+- 振る舞い: Pi 4（Broadcom の GPU）で、出力と同じ大きさ・format の不透明な全画面の窓だけが映る frame は、合成の pass（窓の image の TFU と出力の大きさの quad）をやめ、窓の image を swapchain の image へ `vkCmdCopyImage` で写す（kernel は 0 draw の TLB の copy の pass、`copy_whole`）。合成で出すことは変わらない（game mode・直の scanout ではない、WS223 の決定の中）。何かが重なる（bar・menu・popup・sub-surface・IME の候補・edge の gesture・animation・lock・cursor を frame に描く・drag）、大きさ・format が違う、透明、turn・head がある時は前と同じに描く。i915・Venus・Linux・FreeBSD は変わらない（policy が off）。
+- `compose.c`: `compose_copy_source`（判定と理由）、`compose_copy_record`（UNDEFINED→TRANSFER_DST の barrier、copy、PRESENT_SRC への barrier）、`compose_copy_log`（`KWL COPY window=0|1 reason=… surface=N frame=F` を変化の時だけ）、`compose_record` の分岐（scene は無効に、hover・shot・host image は前と同じ）、`compose_limits` の policy（vendor 0x14e4、backend の import が copy の元になれる、RGBA・BGRA の linear が TRANSFER_SRC）。`compose.h`: `KWL_COPY_VENDOR`、`kwl_import.format`、`copy_policy`・`copy_target`（swapchain が TRANSFER_DST を持つ）・`copy_shown`・`copy_reason`。`import.c`: import の format を持つ。
+- `shell.c`: `kwl_glass_whole_window`（glass の `fullscreen_whole` の窓で body が出力そのもの）。`scanout.c`: `kwl_scanout_covered`（game mode の overlay の判定を公開）。`kwl.h`: 2 つの宣言。
+- backend: `keiland-backend-gpu.h` の `kl_backend_gpu_device.copy_source`（import を TRANSFER_SRC でも作る要求）と `kl_backend_gpu_copy_source()`（その要求に従う backend か: zedBSD 1、dma-buf 0）。`gpu-buffer-zedbsd.c` は要求があれば usage に TRANSFER_SRC を足す。
+- 見込み: 1 frame の compositor の GPU は TFU 1 job（約 1.6 ms）と 240 tile の draw（約 4 ms）→ copy の 240 tile（約 1.3 ms）。videoplayer の pass（Y・UV の TFU と出力の大きさの quad）は残る。
+
+### 確かめ A1（host と build）
+
+| 確かめ | 結果 |
+| --- | --- |
+| rpi4・amd64 の `bin/wayland` | rc 0、warning 0 |
+| host の cc で `dmabuf/gpu-dmabuf.c`・`drm/display-drm.c` の syntax check | 指摘 0 |
+| `sh plan/ws213/tests/list-replay-host-test.sh`（draw list の replay、copy_image を含む） | PASS |
+| style-check（変えた file、HEAD との差） | 新しい指摘 0 |
+
+- 未実施: Pi 実機（依頼 8）。5330・Venus は policy が off なので build だけ（`KWL COPY` の行が出ないこと）。
+
+### T2 への依頼 8（Pi 4 実機、QEMU 不要、約 30 分、依頼 7 の後）
+
+1. build（A1 の commit か merge 後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=plan/ws236/tests/config-rpi4-shot.mk build/<T>/rpi4/bin/wayland build/<T>/rpi4/bin/keiland-shot`（capture 入りの compositor、warning 0）。kernel・libmedia・videoplayer・libvulkan は依頼 7 のまま。
+2. Pi: compositor を差し替え（前の物は退避）、boot の行に `v3d.perf=1`、reboot。
+3. 再生（各 `--timeout-s=15`、pointer は動かさない）: (i) `high-1080p60-10s.mp4 --fullscreen`、(ii) `high-1080p30-10s.mp4 --fullscreen`、(iii) `high-1080p60-10s.mp4`（窓、対照）。(ii) の 5 秒目に keiland-shot を 1 枚（撮影の frame は copy でも合成の image）。
+4. 報告: compositor の `KWL COPY`（全行）・`KWL PERF`（compose の frames・frame_ms）・`KWL SCANOUT`、videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、dmesg の `v3d: perf`（subs・passes・tfu）・`v3d: gpu tiles`・`v3d: tfu`・`execution failed`、PNG。
+5. 合否: (a) (i)(ii) で `KWL COPY window=1` が出る（bar が消えた後。出なければ reason を報告）、(b) 落ちない・`execution failed` 無し・`PLAYBACK failed` 無し、(c) PNG の色と画（前の PNG と同じ見え方、ずれ・色の入れ替わりが無い）、(d) 記録: (i) の shown・late と `KWL PERF compose frame_ms`、`DRAW acquire_us`、`v3d: tfu jobs` の 2 秒の数（前の T1-685 の窓 1080p60 は compose 23.6 fps・frame_ms 25・TFU 1 frame に 3）。(iii) は `KWL COPY window=0 reason=not-fullscreen`。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す。
 
 ### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 
