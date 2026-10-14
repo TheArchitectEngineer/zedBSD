@@ -737,3 +737,5 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-659 | B1 ws074-p238（BUG-320 (3)、Pi 4 で browser の GPU 描画） | **FAIL**（T2、2026-10-15、`--render-gpu` が `vkCreateRenderPass failed (-4)`、旧 lib も同じ。windowed は 2 つの error 無しだが GPU 描画の確証なし。結果 plan/agents/T2/results-20261015-t1-659.md） |
 | T1-662 | WS037 R8b 再試験（6e4be8661） | FAIL（mode set まで ok、window flip notifier 0 after 2 s） | results-20261015-t1-662.md |
 | T1-664 | Q1（WS037 R8b 再試験、P2 の flip の直し 7b5c3cac9） | phase006 R8b | **PASS**（2026-10-15、tree 4453286ce、SSH の dmesg 全文、`P8b ok: flip`・`head 0 shows the driver's surfaces`・P6/P7 ok、display の error 無し。[results](results-20261015-t1-664.md)） |
+| T1-665 | Q1（WS037 R8c、GPU の device） | phase006 R8c | **PASS**（2026-10-16、tree 1c421a58f、SSH の dmesg、P8c ok: gpu device registered、display-inventory・display-control 手順どおり、display の error 無し。[results](results-20261016-t1-665.md)） |
+| T1-666 | Q1（WS037 R8d、events・cursor・SHARE） | phase006 R8d | **FAIL**（2026-10-16、`display-scanout` の `cursor … hide=17`、dmesg 156 行 `P8c: the cursor was not hidden at the lease's end (17)`。他は手順どおり。[results](results-20261016-t1-666.md)） |
