@@ -1,0 +1,259 @@
+diff --git a/plan/ws037/tests/nvrtx-sm75-host-test.c b/plan/ws037/tests/nvrtx-sm75-host-test.c
+index b682458bd..4258c3b2d 100644
+--- a/plan/ws037/tests/nvrtx-sm75-host-test.c
++++ b/plan/ws037/tests/nvrtx-sm75-host-test.c
+@@ -140,6 +140,7 @@ static void check_draw_programs(void);
+ static struct nvrtx_sm75_binary *compile_draw_ir(const struct nvrtx_draw_ir *program, const char *name);
+ static int decode_push(const uint8_t *push, size_t length, uint32_t *state, uint8_t *seen);
+ static uint64_t field(const uint32_t *words, unsigned low, unsigned bits);
++static int header_is(const uint32_t *sph, const uint32_t *want);
+ static int words_are(const struct nvrtx_sm75_word *word, uint64_t low, uint64_t high);
+ static struct nvrtx_sm75_binary *compile_file(const char *directory, const char *name);
+ static void bind(struct test_run *run, uint32_t set, uint32_t binding, uint32_t *words, uint32_t bytes);
+@@ -1300,10 +1301,14 @@ check_draw_push(void)
+ 	check(state[0x1a00U / 4U] == 0x1111U && state[0x1360U / 4U] == 0U && state[0x0fbcU / 4U] == 0xffffU && state[0x12ccU / 4U] == 0U, "writes, no blend, sample mask, no depth test");
+ 
+ 	/* The pipeline: vertex at index 1, pixel at 5, the rest off. */
+-	check(state[0x2000U / 4U] == 0U && state[0x2080U / 4U] == 0x20U && state[0x20c0U / 4U] == 0x30U && state[0x2100U / 4U] == 0x40U, "stages 0, 2, 3, 4 off");
++	check(!seen[0x2000U / 4U], "stage 0 left alone, as NVK leaves it");
++	check(state[0x2080U / 4U] == 0x20U && state[0x20c0U / 4U] == 0x30U && state[0x2100U / 4U] == 0x40U, "stages 2, 3, 4 off");
+ 	check(state[0x2040U / 4U] == 0x11U && state[0x2054U / 4U] == 0U && state[0x2058U / 4U] == 0x28014000U, "vertex program");
+ 	check(state[0x204cU / 4U] == 12U && state[0x2050U / 4U] == 0U, "vertex registers and group 0");
+ 	check(state[0x2140U / 4U] == 0x51U && state[0x2158U / 4U] == 0x28015000U && state[0x214cU / 4U] == 8U && state[0x2150U / 4U] == 4U, "pixel program, registers, group 4");
++	check(seen[0x0f1cU / 4U] && state[0x0f1cU / 4U] == 0U, "no post-depth coverage (SET_POST_Z_PS_IMASK)");
++	check(seen[0x2a00U / 4U] && seen[(0x2a00U + 15U * 16U) / 4U] && state[0x2a00U / 4U] == 0U && state[(0x2a00U + 15U * 16U) / 4U] == 0U, "every variable pixel rate shading control off");
++	check(state[0x0754U / 4U] == 1U, "hybrid anti-alias control: one pass, centroid per fragment");
+ 	check(state[0x021cU / 4U] == 0x1011U, "shader caches invalidated");
+ 
+ 	/* Constant buffer 0 selected and bound to the five groups. */
+@@ -1370,6 +1375,32 @@ check_draw_programs(void)
+ 	static struct test_run run;
+ 	static struct test_thread thread;
+ 	static struct nvrtx_draw_ir program;
++	/*
++	 * The headers NAK's encode_header makes for the same programs (the
++	 * fields at cla097sph.h's positions): word 0 the type, version 4,
++	 * the stage, a pixel program's multiple targets, SASS version 1;
++	 * word 4 a vertex program's store request; word 5 bit 31 the
++	 * position's w, which every pixel program maps; word 6 the generic
++	 * inputs; word 13 the vertex outputs; word 18 the colour targets.
++	 */
++	static const uint32_t vertex_header[NVRTX_SM75_SPH_WORDS] = {
++		0x00020481U, 0U, 0U, 0U, 0x1f01c000U, 0U, 0x3U, 0U,
++		0U, 0U, 0U, 0U, 0U, 0xf000U
++	};
++	static const uint32_t textured_vertex_header[NVRTX_SM75_SPH_WORDS] = {
++		0x00020481U, 0U, 0U, 0U, 0x2101c000U, 0U, 0x3U, 0U,
++		0U, 0U, 0U, 0U, 0U, 0x3f000U
++	};
++	static const uint32_t fragment_header[NVRTX_SM75_SPH_WORDS] = {
++		0x00025482U, 0U, 0U, 0U, 0U, 0x80000000U, 0U, 0U,
++		0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U,
++		0U, 0U, 0xfU
++	};
++	static const uint32_t textured_fragment_header[NVRTX_SM75_SPH_WORDS] = {
++		0x00025482U, 0U, 0U, 0U, 0U, 0x80000000U, 0xaU, 0U,
++		0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U,
++		0U, 0U, 0xfU
++	};
+ 	struct nvrtx_sm75_binary *binary;
+ 	const uint32_t group[3] = { 0U, 0U, 0U };
+ 	float push[12] = { -0.5f, -0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f };
+@@ -1385,6 +1416,7 @@ check_draw_programs(void)
+ 		return;
+ 	check(binary->graphics != 0U && field(binary->sph, 10U, 4U) == 1U && field(binary->sph, 400U + 28U, 4U) == 0xfU, "draw vertex header: a vertex program writing the position");
+ 	check(field(binary->sph, 432U, 2U) == 0U, "draw vertex writes no generic attribute");
++	check(header_is(binary->sph, vertex_header), "draw vertex header is NAK's, word for word");
+ 	memset(&run, 0, sizeof(run));
+ 	run.binary = binary;
+ 	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
+@@ -1408,6 +1440,7 @@ check_draw_programs(void)
+ 	if (binary == NULL)
+ 		return;
+ 	check(field(binary->sph, 432U, 2U) == 3U, "draw textured vertex writes the coordinate");
++	check(header_is(binary->sph, textured_vertex_header), "draw textured vertex header is NAK's, word for word");
+ 	memset(&run, 0, sizeof(run));
+ 	run.binary = binary;
+ 	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
+@@ -1431,6 +1464,8 @@ check_draw_programs(void)
+ 	if (binary == NULL)
+ 		return;
+ 	check(field(binary->sph, 10U, 4U) == 5U && field(binary->sph, 576U, 32U) == 0xfU && field(binary->sph, 192U, 64U) == 0U, "draw fragment header: colour 0, no input");
++	check(field(binary->sph, 160U + 31U, 1U) == 1U, "draw fragment header maps w though the program reads no input (R7d)");
++	check(header_is(binary->sph, fragment_header), "draw fragment header is NAK's, word for word");
+ 	memset(&run, 0, sizeof(run));
+ 	run.binary = binary;
+ 	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
+@@ -1452,6 +1487,7 @@ check_draw_programs(void)
+ 	if (binary == NULL)
+ 		return;
+ 	check(binary->texture_count == 1U && field(binary->sph, 192U, 4U) == 0xaU, "draw textured fragment: one image, the coordinate in perspective");
++	check(header_is(binary->sph, textured_fragment_header), "draw textured fragment header is NAK's, word for word");
+ 	memset(&run, 0, sizeof(run));
+ 	run.binary = binary;
+ 	handle = 5U;
+@@ -1547,6 +1583,26 @@ field(
+ 	return value;
+ }
+ 
++/* Reports nonzero when a program header is the expected one in all its words, printing the first word that differs. */
++static int
++header_is(
++	const uint32_t *sph,
++	const uint32_t *want)
++{
++	unsigned index;
++
++	/* Each word against the expected one. */
++	for (index = 0U; index < NVRTX_SM75_SPH_WORDS; index++) {
++		if (sph[index] != want[index]) {
++			printf("  header word %u is %08x, want %08x\n", index, (unsigned)sph[index], (unsigned)want[index]);
++			return 0;
++		}
++	}
++
++	/* Succeeded: every word is as expected. */
++	return 1;
++}
++
+ /* Reports nonzero when an instruction is the two 64-bit halves given. */
+ static int
+ words_are(
+diff --git a/src/drivers/gpu/nvrtx/compiler/sm75-compile.c b/src/drivers/gpu/nvrtx/compiler/sm75-compile.c
+index e2153af94..79e842244 100644
+--- a/src/drivers/gpu/nvrtx/compiler/sm75-compile.c
++++ b/src/drivers/gpu/nvrtx/compiler/sm75-compile.c
+@@ -2643,11 +2643,17 @@ nvrtx_sm75_header(
+ 		return;
+ 	binary->graphics = 1U;
+ 
+-	/* The type, the version and the stage. */
++	/*
++	 * The type, the version and the stage.  A fragment program's input
++	 * map always holds the position's w, whether the program reads it or
++	 * not: NAK starts every fragment program's map with it, because the
++	 * GPU raises an exception on a header without it.
++	 */
+ 	if (ir->stage == DRV_GPU_STAGE_FRAGMENT) {
+ 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_TYPE_LOW, 5U, NVRTX_SM75_SPH_TYPE_PS);
+ 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SHADER_TYPE_LOW, 4U, NVRTX_SM75_SPH_PIXEL);
+ 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_MRT_ENABLE, 1U, 1U);
++		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_IMAP_AB_LOW + NVRTX_SM75_ATTR_POSITION_W / 4U, 1U, 1U);
+ 	} else {
+ 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_TYPE_LOW, 5U, NVRTX_SM75_SPH_TYPE_VTG);
+ 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SHADER_TYPE_LOW, 4U, NVRTX_SM75_SPH_VERTEX);
+diff --git a/src/drivers/gpu/nvrtx/compiler/sm75-isa.h b/src/drivers/gpu/nvrtx/compiler/sm75-isa.h
+index e2843f0a0..157978e12 100644
+--- a/src/drivers/gpu/nvrtx/compiler/sm75-isa.h
++++ b/src/drivers/gpu/nvrtx/compiler/sm75-isa.h
+@@ -47,6 +47,8 @@
+  *     d2b1a0e4b0b38ee9cc01ed5b7dd6ab38b8a7d8722b453a81e5383c98d884e61f
+  *   src/nouveau/compiler/nak/sph.rs (the shader program header's maps)
+  *     e845a822a7a82822e0c07fd84cacce413146debeeaeb7484dc48deffc492c368
++ *   src/nouveau/compiler/nak/from_nir.rs (a fragment program's input map always holds w)
++ *     734f35b552f4225b885aef708863ad016ee034bd7289788ab92d63b607fff11a
+  *   src/nouveau/headers/nvidia/classes/cla097sph.h (the header's fields, NVIDIA's MIT notice)
+  *     a804dc66816ec4bd5a49be6c6745f7aa2cda31881e48472625abe4a691f0c1a3
+  *   src/nouveau/compiler/nak_nir_lower_fs_inputs.c (SM70's interpolation: pass, then times 1 / w)
+diff --git a/src/drivers/gpu/nvrtx/draw-push.c b/src/drivers/gpu/nvrtx/draw-push.c
+index 9f6d60900..b90a26e7d 100644
+--- a/src/drivers/gpu/nvrtx/draw-push.c
++++ b/src/drivers/gpu/nvrtx/draw-push.c
+@@ -62,6 +62,7 @@
+ #define M_SET_SUBTILING_PERF_KNOB_A		0x0360U
+ #define M_SET_RASTER_ENABLE			0x037cU
+ #define M_SET_VERTEX_STREAM_SIZE_A		0x0600U
++#define M_SET_HYBRID_ANTI_ALIAS_CONTROL		0x0754U
+ #define M_SET_SHADER_LOCAL_MEMORY_WINDOW	0x077cU
+ #define M_SET_COLOR_TARGET_A			0x0800U
+ #define M_SET_COLOR_TARGET_STRIDE		0x40U
+@@ -80,6 +81,7 @@
+ #define M_SET_WINDOW_OFFSET_X			0x0df8U
+ #define M_SET_SCISSOR_ENABLE			0x0e00U
+ #define M_SET_SCISSOR_STRIDE			0x10U
++#define M_SET_POST_Z_PS_IMASK			0x0f1cU
+ #define M_SET_VERTEX_STREAM_SUBSTITUTE_A	0x0f84U
+ #define M_SET_SINGLE_CT_WRITE_CONTROL		0x0f90U
+ #define M_SET_CT_MRT_ENABLE			0x0facU
+@@ -174,6 +176,8 @@
+ #define M_BIND_GROUP_CONSTANT_BUFFER		0x2410U
+ #define M_BIND_GROUP_STRIDE			0x20U
+ #define M_SET_COLOR_CLAMP			0x2600U
++#define M_SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL	0x2a00U
++#define M_SET_SHADING_RATE_STRIDE		0x10U
+ 
+ /* The counts of the arrays NVK sets in full. */
+ #define DRAW_COLOR_TARGETS		8U
+@@ -183,6 +187,7 @@
+ #define DRAW_VERTEX_STREAMS		32U
+ #define DRAW_VERTEX_ATTRIBUTES		32U
+ #define DRAW_SAMPLE_ORDERS		13U
++#define DRAW_SHADING_RATE_CONTROLS	16U
+ 
+ /* The values NVK writes (the fields' meanings beside them). */
+ #define V_TRUE				1U
+@@ -225,6 +230,7 @@
+ #define V_SAMPLE_MASK_ALL		0xffffU
+ #define V_CT_WRITE_RGBA			0x1111U
+ #define V_ANTI_ALIAS_1X1		0U
++#define V_HYBRID_ONE_PASS		1U
+ 
+ /* The program groups NVK binds a vertex and a pixel program to, and a pixel program's subtiling. */
+ #define V_GROUP_VERTEX			0U
+@@ -595,8 +601,9 @@ nvrtx_push_draw_target(
+  * Writes the pipeline in NVK's order of types: a vertex program at type 1
+  * and a pixel program at type 5 (each index the same as its type, each at
+  * its header's address, in its group), the other stages off, the pixel
+- * program's tuning, then the last vertex stage's layer and clip planes,
+- * and the shader caches invalidated for the new code.
++ * program's tuning and what NVK's shading rate and anti-aliasing macros
++ * set for it, then the last vertex stage's layer and clip planes, and the
++ * shader caches invalidated for the new code.
+  *
+  * Returns where the push buffer goes on.
+  */
+@@ -610,9 +617,15 @@ nvrtx_push_draw_pipeline(
+ 	uint32_t pixel_gprs)
+ {
+ 	uint32_t type;
++	uint32_t index;
+ 
+-	/* Each type: the vertex program, the pixel program, or off. */
+-	for (type = 0U; type < NVRTX_DRAW_TYPES; type++) {
++	/*
++	 * Each type of a Vulkan stage, from the vertex program to the pixel
++	 * program: the program, or off.  Type 0 (the vertex program culling
++	 * before the fetch) is left as the golden context has it, as NVK
++	 * leaves it.
++	 */
++	for (type = NVRTX_DRAW_TYPE_VERTEX; type < NVRTX_DRAW_TYPES; type++) {
+ 		if (type == NVRTX_DRAW_TYPE_VERTEX) {
+ 			at = draw_program(push, at, type, vertex, vertex_gprs, V_GROUP_VERTEX);
+ 		} else if (type == NVRTX_DRAW_TYPE_PIXEL) {
+@@ -622,14 +635,25 @@ nvrtx_push_draw_pipeline(
+ 		}
+ 	}
+ 
+-	/* The pixel program: NVK's subtiling, no early depth, bounded culling. */
++	/* The pixel program: NVK's subtiling, no early depth, no post-depth coverage, bounded culling. */
+ 	at = draw_method(push, at, M_SET_SUBTILING_PERF_KNOB_A, 2U);
+ 	nvrtx_put32(push, at, V_SUBTILING_A);
+ 	nvrtx_put32(push, at + 4U, V_SUBTILING_B);
+ 	at += 8U;
+ 	at = draw_set(push, at, M_SET_API_MANDATED_EARLY_Z, V_FALSE);
++	at = draw_set(push, at, M_SET_POST_Z_PS_IMASK, V_FALSE);
+ 	at = draw_set(push, at, M_SET_ZCULL_BOUNDS, 0U);
+ 
++	/*
++	 * What NVK's two macros write for a pixel program without sample
++	 * shading at one sample a pixel: every variable pixel rate shading
++	 * control off (NVK_MME_SET_SHADING_RATE_CONTROL), then one pass a
++	 * pixel with the centroid per fragment (NVK_MME_SET_ANTI_ALIAS).
++	 */
++	for (index = 0U; index < DRAW_SHADING_RATE_CONTROLS; index++)
++		at = draw_set(push, at, M_SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL + index * M_SET_SHADING_RATE_STRIDE, V_FALSE);
++	at = draw_set(push, at, M_SET_HYBRID_ANTI_ALIAS_CONTROL, V_HYBRID_ONE_PASS);
++
+ 	/* The vertex program, the last before rasterization: the layer from the state, no clip planes. */
+ 	at = draw_set(push, at, M_SET_RT_LAYER, 0U);
+ 	at = draw_set(push, at, M_SET_USER_CLIP_ENABLE, 0U);

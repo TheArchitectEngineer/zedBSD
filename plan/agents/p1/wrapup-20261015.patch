@@ -1,0 +1,1337 @@
+diff --git a/plan/ws037/tests/config-amd64-nvrtx.mk b/plan/ws037/tests/config-amd64-nvrtx.mk
+index 7065f972f..e9d37e440 100644
+--- a/plan/ws037/tests/config-amd64-nvrtx.mk
++++ b/plan/ws037/tests/config-amd64-nvrtx.mk
+@@ -1,17 +1,19 @@
+ # ws037-p004: the image for the nvrtx runs on the RTX 2070 handed to a QEMU guest by VFIO
+ # (plan/ws037/phase004/phase.md section 3).  The CI amd64 image (config/ci/config-amd64.mk) with:
+-#   - the nvrtx driver built in (CONFIG_DRIVER_PCI_NVRTX, off by default),
++#   - the nvrtx driver built in (CONFIG_DRIVER_PCI_NVRTX, on by default since 2026-10-15),
+ #   - the GSP firmware package (nvidia-gsp-firmware; its license is accepted first with
+ #     "yes | make firmware-licenses", as for every image with a firmware package),
+ #   - the text console with the kernel's lines on it (no graphical boot or login), so the
+ #     stage marks are on the guest's emulated VGA screen that QMP's screendump captures,
+-#   - the boot words of one run: NVRTX_RUN=R0 (no words: N0 and N1 only), R1 (nvrtx.gsp=1
+-#     nvrtx.stop=P1a), R2 (stop=P2a), R3 (stop=P3), R4 (stop=P4), R5 (stop=P5), R6 (stop=P6) or
+-#     R7 (nvrtx.gsp=1, every built stage) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (R7 and
+-#     nvrtx.disp=1, the takeover of the head the GOP lit) or R8c (R8b and nvrtx.resident=1, the GPU device) or
+-#     R8d (R8c with the display-scanout probe: events, refresh, cursor, sharing);
+-#     plan/ws037/phase004 to phase006 give what each
+-#     run must show.
++#   - the boot words of one run.  Since 2026-10-15 the display stages run by default (the GSP boot, P4m,
++#     P8a, the takeover P8b showing the console, the GPU device P8c), so each run turns off what it does
++#     not test: NVRTX_RUN=R0 (nvrtx.gsp=0: N0 and N1 only), R1 (nvrtx.gsp=1 nvrtx.stop=P1a), R2 (stop=P2a),
++#     R3 (stop=P3), R4 (stop=P4), R5 (stop=P5), R6 (stop=P6) or R7 (nvrtx.gsp=1, every built stage up to
++#     P8a: nvrtx.disp=0 nvrtx.resident=0) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (the
++#     takeover of the head the GOP lit as the monitor test, nvrtx.disp.test=1, and nvrtx.resident=0) or R8c
++#     (R8b with the GPU device) or R8d (R8c with the display-scanout probe: events, refresh, cursor,
++#     sharing) or RA (no words: the default boot of the main image, the console kept and shown on the
++#     taken-over head, the GPU device); plan/ws037/phase004 to phase006 give what each run must show.
+ # Build one image per run, each into its own BUILD:
+ #   plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r0 NVRTX_RUN=R0
+ include config/ci/config-amd64.mk
+@@ -25,7 +27,12 @@ ZEDBSD_BOOT_KERNEL_MESSAGES := y
+ 
+ NVRTX_RUN ?= R0
+ ifeq ($(NVRTX_RUN),R0)
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=0
++endif
++# ws037-p006 method A: the main image's default boot (the console kept through the GSP boot and shown on the head).
++ifeq ($(NVRTX_RUN),RA)
+ ZEDBSD_BOOT_EXTRA_LINES :=
++ZEDBSD_USER_PROGRAMS += display-inventory display-control
+ endif
+ ifeq ($(NVRTX_RUN),R1)
+ ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P1a
+@@ -46,34 +53,34 @@ ifeq ($(NVRTX_RUN),R6)
+ ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P6
+ endif
+ ifeq ($(NVRTX_RUN),R7)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=0 nvrtx.resident=0
+ endif
+ # ws037-p005 5f: R7 with the graphics golden context and the TU10x scrubber (stage P5g).
+ ifeq ($(NVRTX_RUN),R7g)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.disp=0 nvrtx.resident=0
+ endif
+ # ws037-p006 P8b: R7 with the takeover of the head the GOP lit (needs the RTX's option ROM run, rombar=1).
+ ifeq ($(NVRTX_RUN),R8b)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0
+ endif
+ # ws037-p008 stage C: R7g with the first compute launch (stage P9c: a program the nvrtx compiler made writes 42).
+ ifeq ($(NVRTX_RUN),R7c)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.disp=0 nvrtx.resident=0
+ endif
+ # ws037-p007 7b/7c: R7c with the first draw on the compute channel (stage P9g: a quad into a system-memory and a VRAM
+ # target, then textured).
+ ifeq ($(NVRTX_RUN),R7d)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1 nvrtx.disp=0 nvrtx.resident=0
+ endif
+-# ws037-p006 P8c: R8b with the GSP kept up and the GPU registered as a GPU device (nvrtx.resident=1),
++# ws037-p006 P8c: R8b with the GSP kept up and the GPU registered as a GPU device (the default since 2026-10-15),
+ # and the display probes that drive it from the serial console (display-inventory, display-control).
+ ifeq ($(NVRTX_RUN),R8c)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1 nvrtx.resident=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1
+ ZEDBSD_USER_PROGRAMS += display-inventory display-control
+ endif
+ # ws037-p006 P8c (2): R8c's device with the display's events, refresh, cursor plane, blob sharing and scanout constraints,
+ # and the probe that drives the new parts from the serial console (display-scanout) besides R8c's two.
+ ifeq ($(NVRTX_RUN),R8d)
+-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=1 nvrtx.resident=1
++ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1
+ ZEDBSD_USER_PROGRAMS += display-inventory display-control display-scanout
+ endif
+diff --git a/plan/ws037/tests/nvrtx-gsp-host-test.c b/plan/ws037/tests/nvrtx-gsp-host-test.c
+index f20535437..96417bca7 100644
+--- a/plan/ws037/tests/nvrtx-gsp-host-test.c
++++ b/plan/ws037/tests/nvrtx-gsp-host-test.c
+@@ -467,6 +467,7 @@ test_records(void)
+ 	v.instance = 0xf0000000ULL;
+ 	v.bus_device_function = 0x0100;
+ 	v.user_address_limit = 0x00007ffffffff000ULL;
++	v.console_size = 0x7f0000ULL;
+ 	v.vendor = 0x10de;
+ 	v.device = 0x1f02;
+ 	v.subvendor = 0x1458;
+@@ -477,6 +478,7 @@ test_records(void)
+ 	check(nvrtx_get64(record, 0) == 0xf6000000ULL && nvrtx_get64(record, 8) == 0xe0000000ULL && nvrtx_get64(record, 16) == 0xf0000000ULL, "sysinfo: windows");
+ 	check(nvrtx_get64(record, 32) == 0x100 && nvrtx_get64(record, 72) == 0x00007ffffffff000ULL, "sysinfo: BDF and user limit");
+ 	check(nvrtx_get32(record, 80) == 0x88000 && nvrtx_get32(record, 84) == 0x1000, "sysinfo: config mirror");
++	check(nvrtx_get64(record, 64) == 0x7f0000ULL && nvrtx_get64(record, 56) == 0U, "sysinfo: the console's size at GspSystemInfo.consoleMemSize");
+ 	check(nvrtx_get32(record, 88) == 0x1f0210de && nvrtx_get32(record, 92) == 0x37c21458 && nvrtx_get32(record, 96) == 0xa1, "sysinfo: PCI identity");
+ 	check(record[896] == 1 && record[908] == 0 && nvrtx_get64(record, 920) == 0, "sysinfo: primary, no preserved memory");
+ 
+diff --git a/src/drivers/gpu/nvrtx/discover.c b/src/drivers/gpu/nvrtx/discover.c
+index cbe487e13..ddf967d90 100644
+--- a/src/drivers/gpu/nvrtx/discover.c
++++ b/src/drivers/gpu/nvrtx/discover.c
+@@ -184,6 +184,11 @@ nvrtx_n1_readout(
+ 	    framebuffer->physical_base - vram->bus_address < vram->size) {
+ 		offset = framebuffer->physical_base - vram->bus_address;
+ 		device->gop_on_gpu = 1;
++		device->gop_offset = offset;
++		device->gop_width = framebuffer->width;
++		device->gop_height = framebuffer->height;
++		device->gop_stride = framebuffer->stride;
++		device->gop_format = framebuffer->format;
+ 		nvrtx_stage_mark("N1 gop %ux%u stride %u in bar%u at +%llx",
+ 		    (unsigned)framebuffer->width,
+ 		    (unsigned)framebuffer->height,
+diff --git a/src/drivers/gpu/nvrtx/gsp.c b/src/drivers/gpu/nvrtx/gsp.c
+index 4bbf6e2b1..4d6f9b496 100644
+--- a/src/drivers/gpu/nvrtx/gsp.c
++++ b/src/drivers/gpu/nvrtx/gsp.c
+@@ -96,6 +96,7 @@ static int gsp_prepare_falcons(struct nvrtx_gpu *gpu);
+ static int gsp_devinit_wait(struct nvrtx_gpu *gpu);
+ static int gsp_region_set(struct nvrtx_gpu *gpu);
+ static void gsp_finish(struct nvrtx_gpu *gpu);
++static void gsp_end(struct nvrtx_gpu *gpu);
+ static int gsp_queue_setup_calls(struct nvrtx_gpu *gpu);
+ static int gsp_boot_riscv(struct nvrtx_gpu *gpu);
+ static int gsp_init_done(struct nvrtx_gpu *gpu);
+@@ -119,6 +120,7 @@ nvrtx_gsp_start(
+ {
+ 	bool allowed;
+ 	bool wanted;
++	bool forced;
+ 	bool resident;
+ 	int error;
+ 
+@@ -129,6 +131,20 @@ nvrtx_gsp_start(
+ 		return 0;
+ 	}
+ 
++	/*
++	 * Keeps the firmware's console through the boot; a GPU whose console
++	 * cannot be kept stays the firmware's unless the boot forces the GSP
++	 * (nvrtx.gsp=1, a test run without a picture to keep).
++	 */
++	error = nvrtx_console_check(gpu);
++	if (error != 0) {
++		forced = nvrtx_stage_gsp_forced();
++		if (!forced) {
++			nvrtx_stage_mark("P0 skipped: the console stays the firmware's");
++			return 0;
++		}
++	}
++
+ 	/* Prepares everything P1 and later need. */
+ 	nvrtx_stage_mark("P0 begin");
+ 	error = gsp_prepare(gpu);
+@@ -238,18 +254,25 @@ nvrtx_gsp_start(
+ 	if (allowed)
+ 		(void)nvrtx_memory_start(gpu);
+ 
++	/* Gives a console the window no longer reaches back: the GSP stops and the window's mode is restored. */
++	if (gpu->console.kept != 0 && gpu->console.mapped == 0) {
++		nvrtx_stage_mark("P4m: the console is not reached; stopping to give it back");
++		gsp_finish(gpu);
++		return EIO;
++	}
++
+ 	/* Stops before P5 when the boot asks. */
+ 	allowed = nvrtx_stage_allowed("P5");
+ 	if (!allowed) {
+ 		nvrtx_stage_mark("P5 skipped (nvrtx.stop=P5)");
+-		gsp_finish(gpu);
++		gsp_end(gpu);
+ 		return 0;
+ 	}
+ 
+ 	/* Makes the first channel and runs one fence through it. */
+ 	error = nvrtx_channel_start(gpu);
+ 	if (error != 0) {
+-		gsp_finish(gpu);
++		gsp_end(gpu);
+ 		return error;
+ 	}
+ 
+@@ -261,7 +284,7 @@ nvrtx_gsp_start(
+ 	if (wanted && allowed) {
+ 		error = nvrtx_gr_start(gpu);
+ 		if (error != 0) {
+-			gsp_finish(gpu);
++			gsp_end(gpu);
+ 			return error;
+ 		}
+ 	}
+@@ -274,7 +297,7 @@ nvrtx_gsp_start(
+ 	if (wanted && allowed) {
+ 		error = nvrtx_compute_start(gpu);
+ 		if (error != 0) {
+-			gsp_finish(gpu);
++			gsp_end(gpu);
+ 			return error;
+ 		}
+ 	}
+@@ -283,35 +306,35 @@ nvrtx_gsp_start(
+ 	allowed = nvrtx_stage_allowed("P8");
+ 	if (!allowed) {
+ 		nvrtx_stage_mark("P8 skipped (nvrtx.stop=P8)");
+-		gsp_finish(gpu);
++		gsp_end(gpu);
+ 		return 0;
+ 	}
+ 
+ 	/* Brings the display up under the GSP and reads what the firmware lit. */
+ 	error = nvrtx_display_start(gpu);
+ 	if (error != 0) {
+-		gsp_finish(gpu);
++		gsp_end(gpu);
+ 		return error;
+ 	}
+ 
+-	/* Takes the firmware's head over when the boot asks (nvrtx.disp=1) and does not stop before it. */
++	/* Takes the firmware's head over unless the boot says nvrtx.disp=0 or stops before it. */
+ 	wanted = nvrtx_stage_disp_wanted();
+ 	allowed = nvrtx_stage_allowed("P8b");
+ 	if (wanted && !allowed)
+ 		nvrtx_stage_mark("P8b skipped (nvrtx.stop=P8b)");
+ 	if (!wanted)
+-		nvrtx_stage_mark("P8b not asked (nvrtx.disp=1); stopping after P8a");
++		nvrtx_stage_mark("P8b off (nvrtx.disp=0); stopping after P8a");
+ 	if (wanted && allowed) {
+ 		error = nvrtx_scanout_start(gpu);
+ 		if (error != 0) {
+-			gsp_finish(gpu);
++			gsp_end(gpu);
+ 			return error;
+ 		}
+ 	}
+ 
+-	/* Keeps the GSP up as a GPU device when the boot asks (nvrtx.resident=1) and the head was taken over. */
++	/* Keeps the GSP up as a GPU device unless the boot says nvrtx.resident=0, once the head was taken over. */
+ 	resident = nvrtx_stage_resident_wanted();
+-	if (resident && wanted && allowed) {
++	if (resident && gpu->display.taken != 0) {
+ 		error = nvrtx_node_start(gpu);
+ 		if (error == 0) {
+ 			gpu->resident = 1;
+@@ -320,9 +343,9 @@ nvrtx_gsp_start(
+ 		}
+ 	}
+ 
+-	/* Says where the boot ends; the finish runs P8's and P6's stops and P7. */
+-	nvrtx_stage_mark("P8 done; stopping (this revision ends at P8b)");
+-	gsp_finish(gpu);
++	/* Says where the boot ends; the end keeps a console's GSP up, or runs P8's and P6's stops and P7. */
++	nvrtx_stage_mark("P8 done; this revision ends at P8c");
++	gsp_end(gpu);
+ 
+ 	/* Succeeded: the boot stopped where this revision ends. */
+ 	return 0;
+@@ -832,6 +855,33 @@ gsp_region_set(
+ 	return 0;
+ }
+ 
++/*
++ * Ends the boot after P4m, on its success or a failure: a GSP whose window
++ * holds the firmware's console again stays up (unless the boot says
++ * nvrtx.resident=0), because stopping the resource manager takes the
++ * console's mapping, and maybe the head, with it; the GPU is then kept
++ * until power-off as for the GPU device.  Otherwise the finish stops it.
++ */
++static void
++gsp_end(
++	struct nvrtx_gpu *gpu)
++{
++	bool resident;
++
++	/* Keeps a running GSP that holds the console. */
++	resident = nvrtx_stage_resident_wanted();
++	if (resident &&
++	    gpu->console.mapped != 0 &&
++	    gpu->state == NVRTX_GSP_RUNNING) {
++		gpu->resident = 1;
++		nvrtx_stage_mark("P8: the GSP stays up to keep the console");
++		return;
++	}
++
++	/* Stops the GSP and gives everything back. */
++	gsp_finish(gpu);
++}
++
+ /*
+  * Ends the boot: stops a running GSP and tears its region down once, then
+  * gives the preparation back.
+@@ -898,6 +948,10 @@ gsp_finish(
+ 			nvrtx_stage_mark("P7 left: region %08x-%08x, no GSP started; reboot the host", (unsigned)low, (unsigned)high);
+ 	}
+ 
++	/* Puts the window back in the firmware's mode, so a kept console reaches its VRAM without the resource manager. */
++	if (stopped)
++		nvrtx_console_restore(gpu);
++
+ 	/* Gives the preparation back; a region that stayed is left for a power cycle. */
+ 	nvrtx_gsp_release(gpu);
+ }
+@@ -926,6 +980,7 @@ gsp_queue_setup_calls(
+ 	    ((uint64_t)identity->address.device << 3) |
+ 	    identity->address.function;
+ 	values.user_address_limit = GSP_USER_ADDRESS_LIMIT;
++	values.console_size = gpu->console.size;
+ 	values.vendor = drv_pci_device_vendor(pci);
+ 	values.device = drv_pci_device_product(pci);
+ 	values.subvendor = drv_pci_device_subvendor(pci);
+diff --git a/src/drivers/gpu/nvrtx/node.c b/src/drivers/gpu/nvrtx/node.c
+index 86322cbe7..d75fca93f 100644
+--- a/src/drivers/gpu/nvrtx/node.c
++++ b/src/drivers/gpu/nvrtx/node.c
+@@ -8,13 +8,13 @@
+ /*
+  * The GPU device of the nvrtx driver: sessions and resources (stage P8c).
+  *
+- * With nvrtx.resident=1 and a head taken over (P8b), the worker leaves the
+- * GSP up and registers the GPU with the GPU core.  The device has ordinary
+- * storage (RAM the CPU reads and writes), blobs in the VRAM (buffer objects
+- * of P4m's allocator, mapped in the CPU's window, shared between opens by
+- * share.c), transfers and CPU mappings of both, and the display of
+- * present.c and cursor.c.  It has no command stream yet: the 3D and compute
+- * work of the GPU device is a later stage (ws037-p007).
++ * By default (unless nvrtx.resident=0) with a head taken over (P8b), the
++ * worker leaves the GSP up and registers the GPU with the GPU core.  The
++ * device has ordinary storage (RAM the CPU reads and writes), blobs in the
++ * VRAM (buffer objects of P4m's allocator, mapped in the CPU's window,
++ * shared between opens by share.c), transfers and CPU mappings of both, and
++ * the display of present.c and cursor.c.  It has no command stream yet: the
++ * 3D and compute work of the GPU device is a later stage (ws037-p007).
+  *
+  * The device is never unregistered: the GSP has no path back to the firmware
+  * while it runs, so the GPU is kept until power-off (detach refuses).
+diff --git a/src/drivers/gpu/nvrtx/nvrtx-disp.h b/src/drivers/gpu/nvrtx/nvrtx-disp.h
+index ee8aacb2b..405638b59 100644
+--- a/src/drivers/gpu/nvrtx/nvrtx-disp.h
++++ b/src/drivers/gpu/nvrtx/nvrtx-disp.h
+@@ -201,6 +201,9 @@ struct nvrtx_push {
+ 	int overflow;
+ };
+ 
++/* The step of a surface's pitch the window takes (it is given the pitch in these units). */
++#define NVRTX_DISP_PITCH_UNIT		64U
++
+ /*
+  * One surface a window shows: linear 32-bit pixels in the VRAM.
+  *
+diff --git a/src/drivers/gpu/nvrtx/nvrtx-gpu.h b/src/drivers/gpu/nvrtx/nvrtx-gpu.h
+index 3ff906129..4e219d947 100644
+--- a/src/drivers/gpu/nvrtx/nvrtx-gpu.h
++++ b/src/drivers/gpu/nvrtx/nvrtx-gpu.h
+@@ -340,6 +340,8 @@ struct nvrtx_memory_state {
+ 	uint64_t bar1_tables;
+ 	uint64_t bar1_window;
+ 	uint64_t bar1_bus;
++	/* Where the CPU's mapping of the window starts: after the console's part, else 0. */
++	uint64_t bar1_cpu_from;
+ 	int bar1_claimed;
+ 	struct drv_pci_mapping bar1_mapping;
+ 	int bar1_mapped;
+@@ -400,6 +402,33 @@ struct nvrtx_display_state {
+ 	int window_made;
+ 	int cursor_made;
+ 	int core_pending;
++	/* Set once P8b shows its surface on the head: the GPU device (P8c) may take the display. */
++	int taken;
++};
++
++/*
++ * The firmware's console on the GPU the machine boots on (ws037-p006, the
++ * native boot): the picture the GOP left at the start of the VRAM window,
++ * which the window reaches in its physical mode until the resource manager
++ * makes it virtual.  When the console is kept, the resource manager is told
++ * its size (it keeps that much VRAM from offset 0, as for the vendor's
++ * driver), P4m maps the window's first pages back onto it, P8b shows it on
++ * the taken-over head, and a GSP that stops leaves the window in physical
++ * mode again.
++ *
++ * kept says the GSP boot may go on with the console; mapped says the window
++ * reaches it again (P4m).  size is the VRAM it takes in whole 64 KiB, pitch
++ * its row in bytes; bar1_block is the window's mode register as the
++ * firmware left it.
++ */
++struct nvrtx_console {
++	int kept;
++	int mapped;
++	uint64_t size;
++	uint32_t width;
++	uint32_t height;
++	uint32_t pitch;
++	uint32_t bar1_block;
+ };
+ 
+ /*
+@@ -460,6 +489,9 @@ struct nvrtx_gpu {
+ 	/* The VRAM allocator and the BAR1 window. */
+ 	struct nvrtx_memory_state memory_state;
+ 
++	/* The firmware's console kept through the boot (written by the worker before P0, read after). */
++	struct nvrtx_console console;
++
+ 	/*
+ 	 * Serializes the register window onto the VRAM (PRAMIN) and the TLB
+ 	 * invalidate, which every thread that writes the VRAM or the page
+@@ -536,6 +568,8 @@ void nvrtx_channel_release(struct nvrtx_gpu *gpu);
+ 
+ int nvrtx_memory_start(struct nvrtx_gpu *gpu);
+ void nvrtx_memory_release(struct nvrtx_gpu *gpu);
++int nvrtx_console_check(struct nvrtx_gpu *gpu);
++void nvrtx_console_restore(struct nvrtx_gpu *gpu);
+ int nvrtx_bo_alloc(struct nvrtx_gpu *gpu, uint64_t size, uint64_t align, struct nvrtx_bo *bo);
+ int nvrtx_bo_map(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+ void nvrtx_bo_free(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+diff --git a/src/drivers/gpu/nvrtx/nvrtx-gsp.h b/src/drivers/gpu/nvrtx/nvrtx-gsp.h
+index 540f3f074..ac94990d7 100644
+--- a/src/drivers/gpu/nvrtx/nvrtx-gsp.h
++++ b/src/drivers/gpu/nvrtx/nvrtx-gsp.h
+@@ -608,6 +608,7 @@ struct nvrtx_sysinfo_values {
+ 	uint64_t instance;
+ 	uint64_t bus_device_function;
+ 	uint64_t user_address_limit;
++	uint64_t console_size;
+ 	uint16_t vendor;
+ 	uint16_t device;
+ 	uint16_t subvendor;
+diff --git a/src/drivers/gpu/nvrtx/nvrtx-private.h b/src/drivers/gpu/nvrtx/nvrtx-private.h
+index 5a189fde9..263a2d45d 100644
+--- a/src/drivers/gpu/nvrtx/nvrtx-private.h
++++ b/src/drivers/gpu/nvrtx/nvrtx-private.h
+@@ -139,6 +139,16 @@ struct nvrtx_device {
+ 	int flr;
+ 	/* Nonzero when N1 found the firmware's picture in this GPU's VRAM window: the GPU is the primary display. */
+ 	int gop_on_gpu;
++	/*
++	 * That picture as the loader describes it: its offset in the VRAM
++	 * window, its size, its stride in pixels and its format (the loader's
++	 * ZBL6_FRAMEBUFFER_* code).
++	 */
++	uint64_t gop_offset;
++	uint32_t gop_width;
++	uint32_t gop_height;
++	uint32_t gop_stride;
++	uint32_t gop_format;
+ };
+ 
+ /*
+@@ -213,17 +223,24 @@ nvrtx_family_name(
+ 	enum nvrtx_family family);
+ 
+ /*
+- * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1).
++ * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1 or nvrtx=off).
+  */
+ bool
+ nvrtx_stage_driver_off(void);
+ 
+ /*
+- * Reports whether the boot asked for the GSP boot path (nvrtx.gsp=1).
++ * Reports whether the GSP boot path runs: by default, unless the boot says nvrtx.gsp=0.
+  */
+ bool
+ nvrtx_stage_gsp_wanted(void);
+ 
++/*
++ * Reports whether the boot forced the GSP boot path (nvrtx.gsp=1), even
++ * where the firmware's picture on the GPU cannot be kept.
++ */
++bool
++nvrtx_stage_gsp_forced(void);
++
+ /*
+  * Reports whether the boot asked for the graphics golden context (nvrtx.gr=1).
+  */
+@@ -231,11 +248,17 @@ bool
+ nvrtx_stage_gr_wanted(void);
+ 
+ /*
+- * Reports whether the boot asked for the display takeover (nvrtx.disp=1).
++ * Reports whether the display takeover runs: by default, unless the boot says nvrtx.disp=0.
+  */
+ bool
+ nvrtx_stage_disp_wanted(void);
+ 
++/*
++ * Reports whether the takeover is the monitor test (nvrtx.disp.test=1).
++ */
++bool
++nvrtx_stage_disp_test_wanted(void);
++
+ /*
+  * Reports whether the boot asked for the first compute launch (nvrtx.compute=1).
+  */
+@@ -249,7 +272,8 @@ bool
+ nvrtx_stage_draw_wanted(void);
+ 
+ /*
+- * Reports whether the boot asked the GPU to stay up as a GPU device (nvrtx.resident=1).
++ * Reports whether the GPU stays up as a GPU device after the takeover: by
++ * default, unless the boot says nvrtx.resident=0.
+  */
+ bool
+ nvrtx_stage_resident_wanted(void);
+diff --git a/src/drivers/gpu/nvrtx/nvrtx.c b/src/drivers/gpu/nvrtx/nvrtx.c
+index b2a2351bf..709b6d1d3 100644
+--- a/src/drivers/gpu/nvrtx/nvrtx.c
++++ b/src/drivers/gpu/nvrtx/nvrtx.c
+@@ -10,15 +10,15 @@
+  *
+  * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware
+  * (plan/ws037/nvrtx-design.md).  The attach finds the GPU, reads its chip
+- * identity (N0) and records where the firmware's picture lies (N1).  Without
+- * nvrtx.gsp=1 on the boot line, or for a chip without a GSP path yet, it then
++ * identity (N0) and records where the firmware's picture lies (N1).  With
++ * nvrtx.gsp=0 on the boot line, or for a chip without a GSP path yet, it then
+  * gives the function back to the firmware by refusing the bind: the
+  * firmware's console keeps working, the PCI core never suspends the
+  * function, and a machine without an NVIDIA GPU is not touched at all.
+  *
+- * With nvrtx.gsp=1 on a TU10x chip the attach keeps the function and starts
+- * a worker thread that runs the GSP boot (gsp.c) once the root file system
+- * holds the firmware.  The kept function refuses a system suspend.
++ * Otherwise (the default) on a TU10x chip the attach keeps the function and
++ * starts a worker thread that runs the GSP boot (gsp.c) once the root file
++ * system holds the firmware.  The kept function refuses a system suspend.
+  */
+ 
+ #include <stdbool.h>
+@@ -84,8 +84,9 @@ drv_pci_nvrtx_driver_register(void)
+ /*
+  * Runs the read-only stages on one function, then keeps it or gives it back.
+  *
+- * The function is kept only with nvrtx.gsp=1 on a chip whose GSP path
+- * exists; otherwise the bind is refused and it stays with the firmware.
++ * The function is kept on a chip whose GSP path exists unless the boot
++ * says nvrtx.gsp=0; otherwise the bind is refused and it stays with the
++ * firmware.
+  */
+ static int
+ nvrtx_attach(
+@@ -142,7 +143,7 @@ nvrtx_attach(
+ 
+ 		nvrtx_stage_mark("N1 done; the GSP boot not started (%d)", error);
+ 	} else if (!gsp_wanted) {
+-		nvrtx_stage_mark("N1 done; %s left to the firmware (no nvrtx.gsp=1)", device.chip.name);
++		nvrtx_stage_mark("N1 done; %s left to the firmware (nvrtx.gsp=0)", device.chip.name);
+ 	} else {
+ 		nvrtx_stage_mark("N1 done; no GSP path for %s yet", device.chip.name);
+ 	}
+diff --git a/src/drivers/gpu/nvrtx/records.c b/src/drivers/gpu/nvrtx/records.c
+index 8f670b626..208b1fd27 100644
+--- a/src/drivers/gpu/nvrtx/records.c
++++ b/src/drivers/gpu/nvrtx/records.c
+@@ -29,6 +29,7 @@
+ #define RECORDS_SYSINFO_BAR1_AT		8U
+ #define RECORDS_SYSINFO_BAR3_AT		16U
+ #define RECORDS_SYSINFO_BDF_AT		32U
++#define RECORDS_SYSINFO_CONSOLE_AT	64U
+ #define RECORDS_SYSINFO_USER_VA_AT	72U
+ #define RECORDS_SYSINFO_MIRROR_AT	80U
+ #define RECORDS_SYSINFO_MIRROR_SIZE_AT	84U
+@@ -99,6 +100,9 @@ nvrtx_sysinfo(
+ 	nvrtx_put64(record, RECORDS_SYSINFO_BDF_AT, values->bus_device_function);
+ 	nvrtx_put64(record, RECORDS_SYSINFO_USER_VA_AT, values->user_address_limit);
+ 
++	/* Gives the size of the firmware's console at the VRAM's start, which the resource manager keeps (0: none). */
++	nvrtx_put64(record, RECORDS_SYSINFO_CONSOLE_AT, values->console_size);
++
+ 	/* Gives the configuration-space copy in the register window. */
+ 	nvrtx_put32(record, RECORDS_SYSINFO_MIRROR_AT, RECORDS_CONFIG_MIRROR);
+ 	nvrtx_put32(record, RECORDS_SYSINFO_MIRROR_SIZE_AT, RECORDS_CONFIG_MIRROR_SIZE);
+diff --git a/src/drivers/gpu/nvrtx/scanout.c b/src/drivers/gpu/nvrtx/scanout.c
+index 5a313b79e..038191583 100644
+--- a/src/drivers/gpu/nvrtx/scanout.c
++++ b/src/drivers/gpu/nvrtx/scanout.c
+@@ -6,15 +6,20 @@
+  */
+ 
+ /*
+- * The takeover of the firmware's head (stage P8b, nvrtx.disp=1).
++ * The takeover of the firmware's head (stage P8b, on by default, off with
++ * nvrtx.disp=0).
+  *
+  * After P8a found the head the firmware (GOP) lit, the driver makes the
+  * display's core channel and the head's first window channel through the
+  * resource manager, writes their context DMA objects and hash-table entries
+  * into the display's instance memory, and sends the head the state it is
+  * armed with: the same timing, the same output resource (SOR) and control,
+- * so the output keeps running.  The window then shows a surface of the
+- * driver's own in the VRAM, and a flip moves it to a second surface.
++ * so the output keeps running.  The window then shows the firmware's
++ * console, kept at the VRAM's start (P0 and P4m), so the console goes on
++ * where it was; the GPU device (P8c) flips away from it and back.  With
++ * nvrtx.disp.test=1 the window shows a surface of the driver's own instead,
++ * a flip moves it to a second one, and each step waits 5 s so the monitor
++ * can be watched (the R8b..R8d runs).
+  *
+  * The channels, the registration of their push buffers, the instance-memory
+  * objects and the order of the methods are nouveau's (the GSP display
+@@ -129,6 +134,7 @@
+ 
+ static int scanout_read_armed(struct nvrtx_gpu *gpu);
+ static int scanout_surfaces(struct nvrtx_gpu *gpu);
++static int scanout_console_surface(struct nvrtx_gpu *gpu, uint32_t width, uint32_t height);
+ static int scanout_surface_objects(struct nvrtx_gpu *gpu, uint64_t span);
+ static int scanout_paint(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface, int reversed);
+ static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push, int *made);
+@@ -152,10 +158,12 @@ static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
+ static int scanout_cursor_write(struct nvrtx_gpu *gpu, uint32_t method, uint32_t value);
+ 
+ /*
+- * Runs stage P8b: takes the firmware's head over, shows a surface and flips.
++ * Runs stage P8b: takes the firmware's head over and shows the console on
++ * it (with the monitor test, a surface of bands and a flip).
+  *
+- * Without a head the firmware lit, nothing is done (the scanout rule).  A
+- * failure is returned; the finish's stop frees the channels that were made.
++ * Without a head the firmware lit, or without a console the head can show,
++ * nothing is done (the scanout rule) and display.taken stays 0.  A failure
++ * is returned; the finish's stop frees the channels that were made.
+  */
+ int
+ nvrtx_scanout_start(
+@@ -164,9 +172,11 @@ nvrtx_scanout_start(
+ 	struct nvrtx_display_state *display;
+ 	uint32_t hold_us;
+ 	bool resident;
++	bool test;
+ 	int error;
+ 
+ 	display = &gpu->display;
++	test = nvrtx_stage_disp_test_wanted();
+ 
+ 	/* Shows nothing anywhere the firmware did not light. */
+ 	nvrtx_stage_mark("P8b begin");
+@@ -187,8 +197,10 @@ nvrtx_scanout_start(
+ 	if (error != 0)
+ 		return error;
+ 
+-	/* Places the notifiers and the two surfaces, and paints both. */
++	/* Places the notifiers and the surface to show; a console that cannot be shown leaves the head alone. */
+ 	error = scanout_surfaces(gpu);
++	if (error == ENOTSUP)
++		return 0;
+ 	if (error != 0)
+ 		return error;
+ 
+@@ -211,6 +223,13 @@ nvrtx_scanout_start(
+ 	if (error != 0)
+ 		return error;
+ 
++	/* The console is on the head again: the takeover is done. */
++	if (!test) {
++		display->taken = 1;
++		nvrtx_stage_mark("P8b ok: head %u shows the console", (unsigned)display->gop_head);
++		return 0;
++	}
++
+ 	/* Leaves the first picture up, then flips to the second and leaves that up too (shorter when the GPU stays up). */
+ 	hold_us = SCANOUT_SHOW_US;
+ 	resident = nvrtx_stage_resident_wanted();
+@@ -224,6 +243,7 @@ nvrtx_scanout_start(
+ 	scanout_hold(hold_us);
+ 
+ 	/* Succeeded: the head shows the driver's surface. */
++	display->taken = 1;
+ 	nvrtx_stage_mark("P8b ok: head %u shows the driver's surfaces", (unsigned)display->gop_head);
+ 	return 0;
+ }
+@@ -655,6 +675,7 @@ scanout_surfaces(
+ 	uint32_t width;
+ 	uint32_t height;
+ 	unsigned index;
++	bool test;
+ 	int error;
+ 
+ 	display = &gpu->display;
+@@ -673,6 +694,16 @@ scanout_surfaces(
+ 	if (error != 0)
+ 		return error;
+ 
++	/* Without the monitor test the head shows the console. */
++	test = nvrtx_stage_disp_test_wanted();
++	if (!test) {
++		error = scanout_console_surface(gpu, width, height);
++		if (error != 0)
++			return error;
++
++		return 0;
++	}
++
+ 	/*
+ 	 * Takes two surfaces from the VRAM allocator (P4m), mapped in the CPU's
+ 	 * window when there is one; without the allocator, under the graphics
+@@ -722,6 +753,65 @@ scanout_surfaces(
+ 	return 0;
+ }
+ 
++/*
++ * Describes the firmware's console as both surfaces (the second is never
++ * flipped to without the test): its VRAM at the start, its size, pitch and
++ * format.  The console is shown only when it was kept (P0, P4m), has the
++ * mode's visible size and a pitch the window takes (a multiple of 64
++ * bytes); otherwise ENOTSUP leaves the head to the firmware.
++ */
++static int
++scanout_console_surface(
++	struct nvrtx_gpu *gpu,
++	uint32_t width,
++	uint32_t height)
++{
++	const struct nvrtx_console *console;
++	struct nvrtx_disp_surface *surface;
++	unsigned index;
++
++	console = &gpu->console;
++
++	/* Leaves the head alone without a console the window reaches. */
++	if (console->mapped == 0) {
++		nvrtx_stage_mark("P8b: no console kept; the head is left to the firmware");
++		return ENOTSUP;
++	}
++
++	/* Leaves the head alone when the console is not the mode's picture. */
++	if (console->width != width || console->height != height) {
++		nvrtx_stage_mark("P8b: the console is %ux%u, the mode %ux%u; the head is left to the firmware",
++		    (unsigned)console->width,
++		    (unsigned)console->height,
++		    (unsigned)width,
++		    (unsigned)height);
++		return ENOTSUP;
++	}
++
++	/* Leaves the head alone when the window cannot take the console's rows. */
++	if ((console->pitch & (NVRTX_DISP_PITCH_UNIT - 1U)) != 0U) {
++		nvrtx_stage_mark("P8b: the console's pitch %u is not a multiple of %u; the head is left to the firmware",
++		    (unsigned)console->pitch,
++		    (unsigned)NVRTX_DISP_PITCH_UNIT);
++		return ENOTSUP;
++	}
++
++	/* Describes the console as both surfaces. */
++	for (index = 0U; index < 2U; index++) {
++		surface = &gpu->display.surfaces[index];
++		surface->offset = 0U;
++		surface->width = width;
++		surface->height = height;
++		surface->pitch = console->pitch;
++		surface->handle = NVRTX_DISP_HANDLE_VRAM;
++		surface->format = NVRTX_DISP_FORMAT_A8R8G8B8;
++	}
++
++	/* Succeeded: the console is the surface to show. */
++	nvrtx_stage_mark("P8b console %ux%u pitch %u at the VRAM's start", (unsigned)width, (unsigned)height, (unsigned)console->pitch);
++	return 0;
++}
++
+ /* Takes the two surfaces' VRAM from the allocator and maps them in the CPU's window when it works. */
+ static int
+ scanout_surface_objects(
+@@ -1172,11 +1262,20 @@ scanout_assign_sor(
+ 	return 0;
+ }
+ 
+-/* Marks one step of the takeover and waits, so the monitor can be watched at it. */
++/* Marks one step of the takeover; with the monitor test it waits, so the monitor can be watched at it. */
+ static void
+ scanout_step(
+ 	const char *what)
+ {
++	bool test;
++
++	/* Only the mark without the test. */
++	test = nvrtx_stage_disp_test_wanted();
++	if (!test) {
++		nvrtx_stage_mark("P8b step %s", what);
++		return;
++	}
++
+ 	/* The mark, then the wait. */
+ 	nvrtx_stage_mark("P8b step %s (5 s)", what);
+ 	scanout_hold(SCANOUT_STEP_US);
+diff --git a/src/drivers/gpu/nvrtx/stage.c b/src/drivers/gpu/nvrtx/stage.c
+index f8963d29f..643a267d6 100644
+--- a/src/drivers/gpu/nvrtx/stage.c
++++ b/src/drivers/gpu/nvrtx/stage.c
+@@ -17,20 +17,30 @@
+  * attaches while the platform discovers its devices, before the kernel parses
+  * the line:
+  *
+- *   nvrtx.off=1           the driver does not look at the GPU at all
++ * The stages that make the display work run by default (2026-10-15, the
++ * user's decision: without the NVIDIA GPU the desktop does not run on such
++ * a machine): the GSP boot, the VRAM window (P4m), the display's readout,
++ * the takeover of the firmware's head showing the console (P8b) and the GPU
++ * device (P8c).  The test stages run only when asked.
++ *
++ *   nvrtx.off=1, nvrtx=off  the driver does not look at the GPU at all
+  *   nvrtx.stop=<stage>    the driver stops before that stage
+- *   nvrtx.gsp=1           the driver may go on to the GSP boot path after
+- *                         N1 (the stages that write); without it the GPU is
+- *                         left to the firmware after N1
++ *   nvrtx.gsp=0           the GPU is left to the firmware after N1 (the
++ *                         stages that write never run); nvrtx.gsp=1 also
++ *                         boots the GSP when the firmware's picture on the
++ *                         GPU cannot be kept (a test run)
++ *   nvrtx.disp=0          the driver stops after the display's readout
++ *                         (P8a) instead of taking the firmware's head over
++ *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
++ *                         staying up as a GPU device (P8c)
++ *   nvrtx.disp.test=1     the takeover shows two test surfaces of bands,
++ *                         flips between them and waits 5 s at each step, so
++ *                         the monitor can be watched (ws037-p006 R8b..R8d)
+  *   nvrtx.gr=1            after the copy channel, the driver has the
+  *                         resource manager make the graphics golden context
+  *                         (and the TU10x scrubber channel), stage P5g
+- *   nvrtx.disp=1          after the display's readout (P8a), the driver
+- *                         takes the head the firmware lit over with its own
+- *                         channels and surfaces, stage P8b
+- *   nvrtx.resident=1      after the takeover, the GSP stays up and the GPU
+- *                         is registered as a GPU device with its display
+- *                         (stage P8c); the driver keeps it until power-off
++ *   nvrtx.compute=1       the first compute launch (P9c, a test)
++ *   nvrtx.draw=1          the first draw (P9g, a test)
+  */
+ 
+ #include <stdarg.h>
+@@ -47,17 +57,20 @@
+ /* The handoff object that holds the raw boot command line. */
+ #define STAGE_COMMAND_LINE_HANDOFF	"boot.command-line"
+ 
+-/* The whole token that keeps the driver away from the GPU. */
++/* The whole tokens that keep the driver away from the GPU. */
+ #define STAGE_OFF_TOKEN			"nvrtx.off=1"
++#define STAGE_OFF_SHORT_TOKEN		"nvrtx=off"
+ 
+-/* The whole token that lets the driver go on to the GSP boot path. */
++/* The whole tokens that keep the GSP boot path off, and that force it on. */
++#define STAGE_GSP_OFF_TOKEN		"nvrtx.gsp=0"
+ #define STAGE_GSP_TOKEN			"nvrtx.gsp=1"
+ 
+ /* The whole token that asks for the graphics golden context. */
+ #define STAGE_GR_TOKEN			"nvrtx.gr=1"
+ 
+-/* The whole token that asks for the display takeover. */
+-#define STAGE_DISP_TOKEN		"nvrtx.disp=1"
++/* The whole token that keeps the display takeover off, and the one that makes it a test. */
++#define STAGE_DISP_OFF_TOKEN		"nvrtx.disp=0"
++#define STAGE_DISP_TEST_TOKEN		"nvrtx.disp.test=1"
+ 
+ /* The whole token that asks for the first compute launch (ws037-p008). */
+ #define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
+@@ -65,8 +78,8 @@
+ /* The whole token that asks for the first draw (ws037-p007). */
+ #define STAGE_DRAW_TOKEN		"nvrtx.draw=1"
+ 
+-/* The whole token that keeps the GSP up and registers the GPU device (ws037-p006 P8c). */
+-#define STAGE_RESIDENT_TOKEN		"nvrtx.resident=1"
++/* The whole token that stops the GSP after the takeover instead of keeping the GPU device (ws037-p006 P8c). */
++#define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
+ 
+ /* The longest stop token: "nvrtx.stop=" and a stage name. */
+ #define STAGE_TOKEN_CAPACITY		32U
+@@ -75,36 +88,58 @@ static const char *stage_command_line(void);
+ static bool stage_token_present(const char *token);
+ 
+ /*
+- * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1).
++ * Reports whether the boot asked the driver to stay out entirely (nvrtx.off=1 or nvrtx=off).
+  */
+ bool
+ nvrtx_stage_driver_off(void)
+ {
+ 	bool present;
+ 
+-	/* Looks for nvrtx.off=1 among the boot parameters. */
++	/* Looks for either token among the boot parameters. */
+ 	present = stage_token_present(STAGE_OFF_TOKEN);
+ 	if (present)
+ 		return true;
+ 
++	present = stage_token_present(STAGE_OFF_SHORT_TOKEN);
++	if (present)
++		return true;
++
+ 	/* The driver looks at the GPU by default. */
+ 	return false;
+ }
+ 
+ /*
+- * Reports whether the boot asked for the GSP boot path (nvrtx.gsp=1).
++ * Reports whether the GSP boot path runs: by default, unless the boot says nvrtx.gsp=0.
+  */
+ bool
+ nvrtx_stage_gsp_wanted(void)
+ {
+ 	bool present;
+ 
++	/* Looks for nvrtx.gsp=0 among the boot parameters. */
++	present = stage_token_present(STAGE_GSP_OFF_TOKEN);
++	if (present)
++		return false;
++
++	/* The GSP boot runs by default. */
++	return true;
++}
++
++/*
++ * Reports whether the boot forced the GSP boot path (nvrtx.gsp=1), even
++ * where the firmware's picture on the GPU cannot be kept.
++ */
++bool
++nvrtx_stage_gsp_forced(void)
++{
++	bool present;
++
+ 	/* Looks for nvrtx.gsp=1 among the boot parameters. */
+ 	present = stage_token_present(STAGE_GSP_TOKEN);
+ 	if (present)
+ 		return true;
+ 
+-	/* Without it the stages that write never run. */
++	/* Without it the GSP boot keeps the firmware's picture or does not run. */
+ 	return false;
+ }
+ 
+@@ -126,37 +161,56 @@ nvrtx_stage_gr_wanted(void)
+ }
+ 
+ /*
+- * Reports whether the boot asked for the display takeover (nvrtx.disp=1).
++ * Reports whether the display takeover runs: by default, unless the boot says nvrtx.disp=0.
+  */
+ bool
+ nvrtx_stage_disp_wanted(void)
+ {
+ 	bool present;
+ 
+-	/* Looks for nvrtx.disp=1 among the boot parameters. */
+-	present = stage_token_present(STAGE_DISP_TOKEN);
++	/* Looks for nvrtx.disp=0 among the boot parameters. */
++	present = stage_token_present(STAGE_DISP_OFF_TOKEN);
++	if (present)
++		return false;
++
++	/* The takeover runs by default. */
++	return true;
++}
++
++/*
++ * Reports whether the takeover is the monitor test (nvrtx.disp.test=1):
++ * test surfaces, a flip and a wait at each step instead of the console.
++ */
++bool
++nvrtx_stage_disp_test_wanted(void)
++{
++	bool present;
++
++	/* Looks for nvrtx.disp.test=1 among the boot parameters. */
++	present = stage_token_present(STAGE_DISP_TEST_TOKEN);
+ 	if (present)
+ 		return true;
+ 
+-	/* Without it the boot keeps the firmware's picture after the readout. */
++	/* By default the takeover shows the console and does not wait. */
+ 	return false;
+ }
+ 
+ /*
+- * Reports whether the boot asked the GPU to stay up as a GPU device (nvrtx.resident=1).
++ * Reports whether the GPU stays up as a GPU device after the takeover: by
++ * default, unless the boot says nvrtx.resident=0.
+  */
+ bool
+ nvrtx_stage_resident_wanted(void)
+ {
+ 	bool present;
+ 
+-	/* Looks for nvrtx.resident=1 among the boot parameters. */
+-	present = stage_token_present(STAGE_RESIDENT_TOKEN);
++	/* Looks for nvrtx.resident=0 among the boot parameters. */
++	present = stage_token_present(STAGE_RESIDENT_OFF_TOKEN);
+ 	if (present)
+-		return true;
++		return false;
+ 
+-	/* Without it the boot stops the GSP at its end. */
+-	return false;
++	/* The GPU device is kept by default. */
++	return true;
+ }
+ 
+ /*
+diff --git a/src/drivers/gpu/nvrtx/vram.c b/src/drivers/gpu/nvrtx/vram.c
+index eaefc3135..c5a4a50c7 100644
+--- a/src/drivers/gpu/nvrtx/vram.c
++++ b/src/drivers/gpu/nvrtx/vram.c
+@@ -25,16 +25,27 @@
+  * P4m does not fail the boot: when the window cannot be set up the later
+  * stages run as before (they reach the VRAM through the register window,
+  * PRAMIN) and only the users of the window find it missing.
++ *
++ * On the GPU the machine boots on, the firmware's console lies at the start
++ * of the window and of the VRAM (the GOP's mapping in the window's physical
++ * mode).  The resource manager makes the whole window virtual, so P4m maps
++ * the window's first pages back onto the console before anything else
++ * takes the window, as the vendor's driver does (open-gpu-kernel-modules,
++ * MIT: osinit.c's console size and kern_bus_gm107.c's preserved console
++ * mapping at offset 0).  The CPU's own mapping of the window starts after
++ * the console, so the console's memory is never mapped twice.
+  */
+ 
+ #include <stdbool.h>
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include <kern/clock.h>
+ #include <kern/kcrt.h>
+ #include <kern/kmem.h>
+ #include <uapi/errno.h>
+ 
++#include "bootloader/include/amd64-handoff.h"
+ #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
+ 
+ /*
+@@ -55,6 +66,21 @@
+ /* Where the page tables start in the tables' block (after the root and the three directories). */
+ #define VRAM_TABLES_PTE_AT		0x4000ULL
+ 
++/*
++ * The window's mode register (Turing's BAR1 block, nouveau's tu102 bar):
++ * bit 31 set is the virtual mode.  The bind's pending bits are in the
++ * status register, polled when the mode is put back.
++ */
++#define VRAM_REG_BAR1_BLOCK		0xb80f40U
++#define VRAM_BAR1_BLOCK_VIRTUAL		0x80000000U
++#define VRAM_REG_BAR_STATUS		0xb80f50U
++#define VRAM_BAR1_PENDING		0x00000003U
++#define VRAM_BAR1_POLLS			1000U
++#define VRAM_BAR1_POLL_US		10U
++
++/* The console's VRAM is reserved in whole 64 KiB (osinit.c's alignment). */
++#define VRAM_CONSOLE_ALIGN		0x10000ULL
++
+ /* The self-test's run, and the values written each way. */
+ #define VRAM_TEST_BYTES			0x10000U
+ #define VRAM_TEST_FILL			0x5a5a1234U
+@@ -62,6 +88,7 @@
+ #define VRAM_TEST_WORD_AT		20U
+ 
+ static int vram_bar1_tables(struct nvrtx_gpu *gpu);
++static int vram_console_map(struct nvrtx_gpu *gpu);
+ static int vram_bar1_cpu(struct nvrtx_gpu *gpu);
+ static int vram_bar1_test(struct nvrtx_gpu *gpu);
+ static int vram_write_ptes(struct nvrtx_gpu *gpu, uint64_t bar1, uint64_t vram, uint64_t size, int clear);
+@@ -93,8 +120,12 @@ nvrtx_memory_start(
+ 		return error;
+ 	}
+ 
++	/* A kept console holds the VRAM's start; the allocator stays above it. */
++	if (gpu->console.kept != 0 && base < gpu->console.size)
++		base = gpu->console.size;
++
+ 	/* The allocator covers the rest of the region, below the fixed arenas. */
+-	if (top - base <= VRAM_FIXED_RESERVE) {
++	if (top <= base || top - base <= VRAM_FIXED_RESERVE) {
+ 		nvrtx_stage_mark("P4m fail: region %u is too small (%llx..%llx)", (unsigned)region, (unsigned long long)base, (unsigned long long)top);
+ 		return ENOSPC;
+ 	}
+@@ -122,6 +153,11 @@ nvrtx_memory_start(
+ 		return 0;
+ 	}
+ 
++	/* Gives the firmware's console its place in the window back; the caller decides what a failure means. */
++	error = vram_console_map(gpu);
++	if (error != 0)
++		return 0;
++
+ 	/* Maps the window for the CPU. */
+ 	error = vram_bar1_cpu(gpu);
+ 	if (error != 0) {
+@@ -319,11 +355,11 @@ nvrtx_bo_cpu(
+ {
+ 	volatile uint8_t *window;
+ 
+-	/* The object's place in the uncached mapping of the window. */
++	/* The object's place in the uncached mapping of the window, which starts after the console. */
+ 	window = (volatile uint8_t *)gpu->memory_state.bar1_mapping.address;
+ 
+ 	/* Succeeded: the object's first byte. */
+-	return window + bo->bar1;
++	return window + (bo->bar1 - gpu->memory_state.bar1_cpu_from);
+ }
+ 
+ /*
+@@ -337,12 +373,131 @@ nvrtx_bo_bus(
+ 	uint64_t physical;
+ 
+ 	/* The object's place in the window's physical range. */
+-	physical = gpu->memory_state.bar1_mapping.physical_address + bo->bar1;
++	physical = gpu->memory_state.bar1_mapping.physical_address + (bo->bar1 - gpu->memory_state.bar1_cpu_from);
+ 
+ 	/* Succeeded: the address. */
+ 	return physical;
+ }
+ 
++/*
++ * Decides, before the GSP boot (P0), whether the firmware's console on this
++ * GPU is kept through it.
++ *
++ * The console is kept when the loader's picture starts the VRAM window, the
++ * window is in its physical mode (so the picture is at the VRAM's start
++ * too) and the picture is in the 32-bit format the display shows (B, G, R,
++ * X in memory).  Returns 0 when the boot may go on (the console is kept, or
++ * the GPU has none), EBUSY when the console is on the GPU but cannot be kept.
++ */
++int
++nvrtx_console_check(
++	struct nvrtx_gpu *gpu)
++{
++	const struct nvrtx_device *identity;
++	struct nvrtx_console *console;
++	uint64_t bytes;
++	uint32_t block;
++
++	identity = &gpu->identity;
++	console = &gpu->console;
++
++	/* A GPU the firmware's picture is not on has no console to keep. */
++	if (identity->gop_on_gpu == 0)
++		return 0;
++
++	/* Reads the window's mode as the firmware left it. */
++	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
++	console->bar1_block = block;
++
++	/* Refuses a picture away from the window's start, which the resource manager does not keep. */
++	if (identity->gop_offset != 0U) {
++		nvrtx_stage_mark("P0 console at bar1 +%llx, not its start: cannot be kept", (unsigned long long)identity->gop_offset);
++		return EBUSY;
++	}
++
++	/* Refuses a window the firmware put in its virtual mode: the picture's VRAM is unknown. */
++	if ((block & VRAM_BAR1_BLOCK_VIRTUAL) != 0U) {
++		nvrtx_stage_mark("P0 console: bar1 is virtual (%08x): cannot be kept", (unsigned)block);
++		return EBUSY;
++	}
++
++	/* Refuses a format the display's window is not given and a picture of no size. */
++	if (identity->gop_format != ZBL6_FRAMEBUFFER_BGRX8888 ||
++	    identity->gop_width == 0U ||
++	    identity->gop_height == 0U ||
++	    identity->gop_stride < identity->gop_width) {
++		nvrtx_stage_mark("P0 console %ux%u stride %u format %u: cannot be kept",
++		    (unsigned)identity->gop_width,
++		    (unsigned)identity->gop_height,
++		    (unsigned)identity->gop_stride,
++		    (unsigned)identity->gop_format);
++		return EBUSY;
++	}
++
++	/* Describes the console and the VRAM it holds, in whole 64 KiB. */
++	bytes = (uint64_t)identity->gop_stride * 4U * identity->gop_height;
++	console->size = (bytes + VRAM_CONSOLE_ALIGN - 1U) & ~(VRAM_CONSOLE_ALIGN - 1U);
++	console->width = identity->gop_width;
++	console->height = identity->gop_height;
++	console->pitch = identity->gop_stride * 4U;
++	console->kept = 1;
++
++	/* Succeeded: the boot keeps the console. */
++	nvrtx_stage_mark("P0 console %ux%u pitch %u kept: %llu KiB at the VRAM's start",
++	    (unsigned)console->width,
++	    (unsigned)console->height,
++	    (unsigned)console->pitch,
++	    (unsigned long long)(console->size >> 10));
++	return 0;
++}
++
++/*
++ * Puts the window back in the mode the firmware left it in, once the GSP
++ * has stopped, so the console reaches its VRAM again without the resource
++ * manager's tables.  Nothing is done for a console not kept or a mode that
++ * did not change.
++ */
++void
++nvrtx_console_restore(
++	struct nvrtx_gpu *gpu)
++{
++	struct nvrtx_console *console;
++	uint32_t block;
++	uint32_t restored;
++	uint32_t status;
++	uint32_t poll;
++
++	console = &gpu->console;
++
++	/* A console not kept has nothing to restore. */
++	if (console->kept == 0)
++		return;
++
++	/* A window still in the firmware's mode needs nothing. */
++	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
++	if (block == console->bar1_block)
++		return;
++
++	/* Writes the firmware's mode and waits for the bind to settle. */
++	nvrtx_wr32(gpu, VRAM_REG_BAR1_BLOCK, console->bar1_block);
++	status = 0U;
++	for (poll = 0U; poll < VRAM_BAR1_POLLS; poll++) {
++		status = nvrtx_rd32(gpu, VRAM_REG_BAR_STATUS);
++		if ((status & VRAM_BAR1_PENDING) == 0U)
++			break;
++
++		kern_usleep_range(VRAM_BAR1_POLL_US, VRAM_BAR1_POLL_US);
++	}
++
++	/* Says what the window was put back to; the resource manager's mapping of the console is gone. */
++	restored = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
++	console->mapped = 0;
++	nvrtx_stage_mark("P7 console: bar1 mode %08x again (was %08x, status %08x)",
++	    (unsigned)restored,
++	    (unsigned)block,
++	    (unsigned)status);
++}
++
+ /*
+  * Builds the window's directories and page tables in VRAM of the allocator
+  * and points the resource manager's root at them.
+@@ -436,18 +591,71 @@ vram_bar1_tables(
+ 	return 0;
+ }
+ 
+-/* Claims the window and maps it uncached for the CPU; the allocator of the window starts empty. */
++/*
++ * Points the window's first pages back at the console the firmware left at
++ * the VRAM's start, page for page, before anything else takes the window.
++ */
++static int
++vram_console_map(
++	struct nvrtx_gpu *gpu)
++{
++	struct nvrtx_memory_state *memory;
++	struct nvrtx_console *console;
++	int error;
++
++	memory = &gpu->memory_state;
++	console = &gpu->console;
++
++	/* A GPU without a kept console has nothing to map back. */
++	if (console->kept == 0)
++		return 0;
++
++	/* The console must lie in the part of the window the tables cover. */
++	if (console->size >= memory->bar1_window) {
++		nvrtx_stage_mark("P4m fail: the console's %llu KiB do not fit the window", (unsigned long long)(console->size >> 10));
++		return ENOSPC;
++	}
++
++	/* Maps the window's start onto the VRAM's start. */
++	mutex_lock(&memory->lock);
++
++	error = vram_write_ptes(gpu, 0U, 0U, console->size, 0);
++
++	mutex_unlock(&memory->lock);
++
++	/* Reports a console the window does not reach again. */
++	if (error != 0) {
++		nvrtx_stage_mark("P4m fail: the console's pages (%d)", error);
++		return error;
++	}
++
++	/* Succeeded: the console's writes reach its VRAM again. */
++	console->mapped = 1;
++	nvrtx_stage_mark("P4m console: bar1 0..%llx on the VRAM's start again", (unsigned long long)console->size);
++	return 0;
++}
++
++/*
++ * Claims the window and maps it uncached for the CPU, after the console's
++ * part; the allocator of the window starts empty after the console.
++ */
+ static int
+ vram_bar1_cpu(
+ 	struct nvrtx_gpu *gpu)
+ {
+ 	struct nvrtx_memory_state *memory;
++	uint64_t from;
+ 	unsigned bar;
+ 	int error;
+ 
+ 	memory = &gpu->memory_state;
+ 	bar = gpu->identity.windows[1].bar;
+ 
++	/* The console's part of the window stays the console's. */
++	from = 0U;
++	if (gpu->console.mapped != 0)
++		from = gpu->console.size;
++
+ 	/* Claims the window's BAR. */
+ 	error = drv_pci_device_claim_bar(gpu->identity.pci, bar);
+ 	if (error != 0)
+@@ -458,20 +666,21 @@ vram_bar1_cpu(
+ 	/* Maps the part the tables cover. */
+ 	error = drv_pci_device_map_bar_region(gpu->identity.pci,
+ 	    bar,
+-	    0U,
+-	    (size_t)memory->bar1_window,
++	    from,
++	    (size_t)(memory->bar1_window - from),
+ 	    DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
+ 	    &memory->bar1_mapping);
+ 	if (error != 0)
+ 		return error;
+ 
+ 	memory->bar1_mapped = 1;
++	memory->bar1_cpu_from = from;
+ 	memory->bar1_bus = memory->bar1_mapping.physical_address;
+ 
+ 	/* The window's runs are handed out from now on. */
+ 	mutex_lock(&memory->lock);
+ 
+-	nvrtx_heap_init(&memory->bar1, 0U, memory->bar1_window);
++	nvrtx_heap_init(&memory->bar1, from, memory->bar1_window);
+ 	memory->bar1_ready = 1;
+ 
+ 	mutex_unlock(&memory->lock);
