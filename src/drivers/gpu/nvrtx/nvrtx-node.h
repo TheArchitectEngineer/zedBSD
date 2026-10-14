@@ -28,6 +28,7 @@
 #include <drivers/gpu/gpu-share.h>
 #include <kern/lock.h>
 #include <kern/pmem.h>
+#include <kern/waitq.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
@@ -39,6 +40,15 @@ struct nvrtx_vk_session;
 
 /* The display's topology sequence: its first value, which nothing moves yet (no hotplug events). */
 #define NVRTX_NODE_TOPOLOGY_FIRST	1U
+
+/* The markers of supervised jobs the renderer holds at once (runtime.c). */
+#define NVRTX_NODE_MARKERS		64U
+
+/* Where a queue entry is: free (a marker), reserved, queued, being run. */
+#define NVRTX_ENTRY_FREE		0U
+#define NVRTX_ENTRY_RESERVED		1U
+#define NVRTX_ENTRY_QUEUED		2U
+#define NVRTX_ENTRY_RUNNING		3U
 
 /* The two kinds of resource: ordinary storage in RAM, a blob in the VRAM. */
 #define NVRTX_RESOURCE_STORAGE		1U
@@ -83,13 +93,35 @@ struct nvrtx_resource {
 };
 
 /*
- * One open of the GPU device; it only names its node.
+ * One open of the GPU device.
+ *
+ * blobs lists its blobs by protocol number (the executor reads streams and
+ * writes replies there), vk is its executor session, and pending counts
+ * its queued frames and its reserved or queued markers (under the node's
+ * queue_lock): a drain waits until it is zero.
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
-	/* The session's blobs by protocol number (the executor reads streams and writes replies there), and its executor session. */
 	struct nvrtx_resource *blobs;
 	struct nvrtx_vk_session *vk;
+	uint32_t pending;
+};
+
+/*
+ * One entry of the renderer's queue (runtime.c): a frame (a copy of its
+ * wire, allocated with the entry and freed once run) or a marker of a
+ * supervised job (one of the node's markers, reused).  error is the result
+ * a marker completes with (EIO for one cancelled by a fault).
+ */
+struct nvrtx_node_entry {
+	struct nvrtx_node_entry *next;
+	uint32_t kind;
+	uint32_t state;
+	struct nvrtx_session *session;
+	struct drv_gpu_completion *completion;
+	int error;
+	uint32_t bytes;
+	uint8_t *wire;
 };
 
 /*
@@ -115,6 +147,12 @@ struct nvrtx_session {
  * slots exist, cursor_slot is the slot last written (the one a shown cursor
  * reads), cursor_has_image that the lease set one, cursor_visible that the
  * core shows it, cursor_point the position word last sent.
+ *
+ * The renderer (runtime.c, nvrtx.vk=1; renderer is set when it is bound):
+ * queue_lock (IRQ-safe) guards the queue from head to tail, the markers,
+ * every session's pending count and faulted; available wakes the worker,
+ * retired the drains.  faulted is set by the GPU core's fault: nothing new
+ * is taken and what is queued completes with EIO.
  */
 struct nvrtx_node {
 	struct nvrtx_gpu *gpu;
@@ -146,6 +184,14 @@ struct nvrtx_node {
 	int cursor_has_image;
 	int cursor_visible;
 	uint32_t cursor_point;
+	int renderer;
+	struct spinlock queue_lock;
+	struct wait_queue available;
+	struct wait_queue retired;
+	struct nvrtx_node_entry *head;
+	struct nvrtx_node_entry *tail;
+	struct nvrtx_node_entry markers[NVRTX_NODE_MARKERS];
+	int faulted;
 };
 
 extern const struct drv_gpu_display_ops nvrtx_display_ops;
@@ -162,6 +208,9 @@ void nvrtx_cursor_lease_end(struct nvrtx_node *node);
 int nvrtx_cursor_set(void *private_data, void *session, void *object, const struct gpu_display_cursor_image *request);
 int nvrtx_cursor_move(void *private_data, void *session, const struct gpu_display_cursor_move *request);
 int nvrtx_cursor_hide(void *private_data, void *session, const struct gpu_display_cursor_hide *request);
+
+void nvrtx_runtime_bind(struct nvrtx_node *node);
+void nvrtx_runtime_start(struct nvrtx_node *node);
 
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);
 uint32_t nvrtx_node_resource_id(struct nvrtx_node *node);

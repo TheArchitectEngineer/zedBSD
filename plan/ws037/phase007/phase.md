@@ -242,4 +242,24 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 | vmunix（`build/p2/amd64`） | rc 0・warning 0・include/vmunix check PASS |
 | 実機 | 未実施（node に CAPSET・COMMAND・NOTIFICATION・JOB はまだ付けていない: 次の D2 の残り） |
 
-D2 の残り: node の口（`get_capset` の id 4: 168 byte・SDBZ・flags 7、`command`（同期）・`commands.submit/drain`（worker）・`jobs`（reserve/commit/cancel/capacity）・`recovery.fault`、`query_device` の roles に RENDER）。その後 D3（memory・buffer・image・descriptor・pipeline・render pass と記録の 15 種の vkCmd、D1 の work channel へ投入）。
+### 8.6 D2 の node の口（2026-10-16、P2。build と host 試験まで）
+
+`nvrtx.vk=1`（新しい boot の語、既定は off: D3 が動くまで既存の machine の libvulkan が nvrtx を renderer に選ばないように）の時だけ、node が renderer になる。
+
+| 物 | 中身 |
+| --- | --- |
+| `runtime.c`（新） | `get_capset`（id 4・version 0、168 byte: wire 1・XML 1.3.269・timeline の語 1・`SDBZ`・flags 7。bcm2711 と同じ配置）、`command`（同期: session の queue が空の時だけ、node の lock の下で executor）、`commands.submit/drain`（frame の copy を node の FIFO へ、worker が順に executor → `drv_gpu_complete`。flags は CONTEXT_FENCE だけ、timeline は fence の時だけ 1〜63、byte 0 は fence だけ）、`jobs`（reserve: session の queue の timeline だけ、marker 64 個、空きが無ければ EAGAIN／commit: 前の frame の後に並べる／cancel: 通常は RESERVED だけ戻す、fault は EIO で並べる／capacity: 空きの marker の数）、`recovery.fault`（以後は受けず、並んだ物は EIO）。worker は register の後に起動し、作れなければ fault |
+| `nvrtx-node.h` | queue の entry・marker・`queue_lock`・`available`/`retired` の wait queue・session の `pending` |
+| `vk-device.c`・`nvrtx-vk.h` | `vkGetDeviceQueue2` の timeline（1〜63）を session の `timelines` に記録（jobs の reserve/capacity が見る） |
+| `node.c`・`share.c`・`stage.c` | `nvrtx.vk=1` で bind（register の前）と worker の起動（register の後）、`query_device` の roles に RENDER |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 60 checks`（queue の timeline 3 の記録を足した） |
+| vmunix（`build/p2/amd64`） | rc 0・warning 0 |
+| runtime.c の host 試験 | 無し（kernel の spinlock・waitq・thread に依る。review で確かめた: GPU core の契約（JOB に NOTIFICATION と recovery.fault、cancel の後の capacity の通知は core、drain は close で pending 0 まで）、completion はちょうど 1 回） |
+| 実機 | 未実施（D3 の後に vkdemo の offscreen と合わせて T1 へ） |
+
+次は D3（memory・buffer・image・descriptor・pipeline・render pass と記録の 15 種の vkCmd、D1 の work channel へ投入）。

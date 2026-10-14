@@ -191,7 +191,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/heap.c src/drivers/gpu/nvrtx/vram.c
 # D2: the Vulkan executor's object registry, sessions, transport and dispatcher (ws037-p007), with the
 # i915 executor's wire codec it shares (built here only when the i915 driver does not build it).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk-object.c src/drivers/gpu/nvrtx/vk-session.c \
-	src/drivers/gpu/nvrtx/vk-stream.c src/drivers/gpu/nvrtx/vk-dispatch.c src/drivers/gpu/nvrtx/vk-device.c
+	src/drivers/gpu/nvrtx/vk-stream.c src/drivers/gpu/nvrtx/vk-dispatch.c src/drivers/gpu/nvrtx/vk-device.c \
+	src/drivers/gpu/nvrtx/runtime.c
 ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/render/codec.c
 endif

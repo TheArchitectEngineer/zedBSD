@@ -2,7 +2,7 @@
 
 # ws037-p006: display（段 P8）
 
-Status: in-progress（2026-10-15 夜: **R8b PASS**（T1-664、nouveau と同じ手順）。R8c・R8d は T1。以前: 2026-10-15 P1。P8a は実機（方式 B、T1）PASS。P8b は直し（`476ca3ba5`）の再試験 R8b（T1-645）待ち。P8c（resident の GPU の device と display の ops）は `2c4d1a39f` で build まで、R8c（T1-647）待ち。P8c の続き（DISPLAY_EVENTS・DISPLAY_CONTROL（refresh、power は EOPNOTSUPP）・cursor・SHARE・scanout の表）を `2791fc6e3`・`e6699aa70` で build と host 試験まで、R8d は R8c の後（下の「P8c の続き」））
+Status: in-progress（cleared の候補、2026-10-16: **R8b・R8c・R8d が PASS**（T1-664・T1-665・T1-667、Q1 の判定、ユーザーの決定どおり目視なし）。以前の経過は下の各節）
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14 夜「(3) p006（display: GOP の readout と GSP の RM の display で mode set・scanout・flip）」、ユーザーの判断「display … ここまでベータ2に入れます」）
@@ -373,6 +373,12 @@ VFIO の guest に netdev が無く SSH が使えないので、判定が VGA �
 - nouveau との照合: 表示（位置が変わる時）は `nv50_wndw_flush_set` が cursor の point と update（`cursc37a_update`、0x200=1）を interlock 無しで送り、`interlock[CURS]` を立てない（`set.mask` が point だけ）。隠しは cursor の plane の `clr.mask` が 0（`image_clr` が無い）で `flush_clr` を通らず、head の `curs_clr` と core の update だけ。どちらも core の update の interlock は cursor 0・window 0。
 - 直し: `nvrtx_disp_core_update_cursor` の interlock を {0, 0} に（head の引数を外した）。cursor の channel の point と update（show・move）と core の methods（`headc37d_curs_set`/`_clr` と同じ値）は変えない。host 試験 `nvrtx-gsp-host-test.sh` PASS 275（cursor の update の語を 0 に）、`build/p2/amd64/vmunix` の build は warning 0。
 - 次: T1 で R8d を再試験（手順は上の「T への手順（R8d）」のまま）。
+
+### R8d の再試験（T1-667、2026-10-16）: PASS
+
+- `DISPLAY-SCANOUT cursor … hide=0`、`done error=0`、dmesg に display の制御の error の行は無い。
+- **判定: R8b・R8c・R8d とも Q1 の判定でクリア**（ユーザーの基準「kernel log に display の制御の error が無く、制御できている」、目視なし）。p006 は cleared の候補（clearance は Q1）。
+- 下の「nouveau と同じ手順からの整理」の Phase は、ゴール（RTX で desktop の描画）の後に回す（Q1、2026-10-16）。
 
 ## 次の Phase の予定: nouveau と同じ手順からの整理（planned、2026-10-15 ユーザーの指示）
 

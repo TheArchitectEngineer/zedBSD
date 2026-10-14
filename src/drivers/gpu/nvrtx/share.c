@@ -172,8 +172,8 @@ share_import(
 }
 
 /*
- * Answers the pairing query: the device shows images but renders none yet
- * (it has no command stream), so it is a display alone, with no companion.
+ * Answers the pairing query: the device shows images, and renders them too
+ * when the renderer is bound (nvrtx.vk=1); it has no companion.
  */
 static int
 share_query_device(
@@ -181,11 +181,16 @@ share_query_device(
 	void *session,
 	struct gpu_device_info *request)
 {
-	UNUSED_PARAMETER(private_data);
+	struct nvrtx_node *node;
+
 	UNUSED_PARAMETER(session);
 
-	/* A display, without a preferred renderer. */
+	node = private_data;
+
+	/* A display, and a renderer when bound; no preferred other device. */
 	request->roles = GPU_DEVICE_DISPLAY;
+	if (node->renderer != 0)
+		request->roles |= GPU_DEVICE_RENDER;
 	request->companion_id = 0U;
 
 	/* Succeeded: the roles are filled in. */

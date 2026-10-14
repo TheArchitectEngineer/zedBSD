@@ -66,6 +66,8 @@ struct nvrtx_vk_session {
 	uint32_t last_opcode;
 	uint32_t failed_opcode;
 	struct i915_wire_arena arena;
+	/* The timelines the session's queues complete jobs on (bit n: timeline n), set by vkGetDeviceQueue2. */
+	uint64_t timelines;
 };
 
 /*
