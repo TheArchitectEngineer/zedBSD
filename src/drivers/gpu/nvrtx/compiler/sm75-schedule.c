@@ -236,6 +236,7 @@ nvrtx_sm75_reorder(
 	uint32_t start;
 	uint32_t end;
 	int unknown;
+	int fixed;
 	int error;
 
 	/* The nodes, one per instruction. */
@@ -275,15 +276,22 @@ nvrtx_sm75_reorder(
 	start = 0U;
 	while (start < count && error == 0) {
 		/* A fixed instruction stays. */
-		if (nvrtx_sm75_fixed(&nodes[start].operands) != 0) {
+		fixed = nvrtx_sm75_fixed(&nodes[start].operands);
+		if (fixed != 0) {
 			start++;
 			continue;
 		}
 
-		/* The block's end. */
+		/* The block's end: the end of the code, a branch target or a fixed instruction. */
 		end = start + 1U;
-		while (end < count && cut[end] == 0U && nvrtx_sm75_fixed(&nodes[end].operands) == 0)
+		while (end < count) {
+			if (cut[end] != 0U)
+				break;
+			fixed = nvrtx_sm75_fixed(&nodes[end].operands);
+			if (fixed != 0)
+				break;
 			end++;
+		}
 
 		/* The block's instructions in their new order. */
 		if (end - start > 1U) {
@@ -607,14 +615,18 @@ nvrtx_sm75_dependence(
 
 	/* A predicate the second writes that the first reads or writes. */
 	if (second->predicate_write != NVRTX_SM75_NO_PREDICATE) {
-		if (second->predicate_write == first->guard || second->predicate_write == first->predicate_read || second->predicate_write == first->predicate_write)
+		if (second->predicate_write == first->guard ||
+		    second->predicate_write == first->predicate_read ||
+		    second->predicate_write == first->predicate_write)
 			latency = 1U;
 	}
 
 	/* Two memory accesses, one of them a store or an atomic. */
 	first_memory = nvrtx_sm75_memory_kind(before->opcode);
 	second_memory = nvrtx_sm75_memory_kind(after->opcode);
-	if (first_memory != 0 && second_memory != 0 && (first_memory == 2 || second_memory == 2))
+	if (first_memory != 0 &&
+	    second_memory != 0 &&
+	    (first_memory == 2 || second_memory == 2))
 		latency = 1U;
 
 	/* Succeeded: the order the pair needs, or none. */
@@ -627,13 +639,20 @@ nvrtx_sm75_memory_kind(
 	uint32_t opcode)
 {
 	/* The stores and the atomics. */
-	if (opcode == NVRTX_SM75_OP_STG || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_AST)
+	if (opcode == NVRTX_SM75_OP_STG ||
+	    opcode == NVRTX_SM75_OP_STS ||
+	    opcode == NVRTX_SM75_OP_AST)
 		return 2;
-	if (opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS || opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS)
+	if (opcode == NVRTX_SM75_OP_ATOMG ||
+	    opcode == NVRTX_SM75_OP_ATOMG_CAS ||
+	    opcode == NVRTX_SM75_OP_ATOMS ||
+	    opcode == NVRTX_SM75_OP_ATOMS_CAS)
 		return 2;
 
 	/* The loads. */
-	if (opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_ALD)
+	if (opcode == NVRTX_SM75_OP_LDG ||
+	    opcode == NVRTX_SM75_OP_LDS ||
+	    opcode == NVRTX_SM75_OP_ALD)
 		return 1;
 
 	/* Succeeded: no memory access. */
@@ -645,8 +664,6 @@ static uint32_t
 nvrtx_sm75_guess(
 	const struct nvrtx_sm75_node *node)
 {
-	uint32_t alu;
-
 	/* A fixed-latency result. */
 	if (node->operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
 		return NVRTX_SM75_WORST_GPR;
@@ -654,19 +671,19 @@ nvrtx_sm75_guess(
 	/* The variable-latency ones by their opcode. */
 	if (node->opcode == NVRTX_SM75_OP_TEX || node->opcode == NVRTX_SM75_OP_TLD)
 		return NVRTX_SM75_GUESS_TEXTURE;
-	if (node->opcode == NVRTX_SM75_OP_LDG || node->opcode == NVRTX_SM75_OP_ATOMG || node->opcode == NVRTX_SM75_OP_ATOMG_CAS)
+	if (node->opcode == NVRTX_SM75_OP_LDG ||
+	    node->opcode == NVRTX_SM75_OP_ATOMG ||
+	    node->opcode == NVRTX_SM75_OP_ATOMG_CAS)
 		return NVRTX_SM75_GUESS_GLOBAL;
-	if (node->opcode == NVRTX_SM75_OP_LDS || node->opcode == NVRTX_SM75_OP_ATOMS || node->opcode == NVRTX_SM75_OP_ATOMS_CAS)
+	if (node->opcode == NVRTX_SM75_OP_LDS ||
+	    node->opcode == NVRTX_SM75_OP_ATOMS ||
+	    node->opcode == NVRTX_SM75_OP_ATOMS_CAS)
 		return NVRTX_SM75_GUESS_SHARED;
 	if (node->opcode == NVRTX_SM75_OP_LDC)
 		return NVRTX_SM75_GUESS_CONSTANT;
 	if (node->opcode == NVRTX_SM75_OP_S2R)
 		return NVRTX_SM75_GUESS_SPECIAL;
-	alu = node->opcode & 0x1ffU;
-	if (alu == NVRTX_SM75_OP_MUFU || alu == NVRTX_SM75_OP_I2F || alu == NVRTX_SM75_OP_F2I || alu == NVRTX_SM75_OP_FRND)
-		return NVRTX_SM75_GUESS_UNIT;
-
-	/* Succeeded: the attribute loads and the interpolation. */
+	/* Succeeded: the special function unit, the conversions, the attribute loads and the interpolation. */
 	return NVRTX_SM75_GUESS_UNIT;
 }
 
@@ -745,7 +762,9 @@ nvrtx_sm75_operands_alu(
 	case NVRTX_SM75_OP_FADD:
 		/* A third source only as the moved second one of an immediate or constant form. */
 		operands->class_of = NVRTX_SM75_CLASS_FMA;
-		if (form == NVRTX_SM75_FORM_REG || form == NVRTX_SM75_FORM_IMM || form == NVRTX_SM75_FORM_CB)
+		if (form == NVRTX_SM75_FORM_REG ||
+		    form == NVRTX_SM75_FORM_IMM ||
+		    form == NVRTX_SM75_FORM_CB)
 			has_src2 = 0;
 		break;
 	case NVRTX_SM75_OP_FMUL:
@@ -776,7 +795,9 @@ nvrtx_sm75_operands_alu(
 		nvrtx_sm75_add_read(operands, src1, operands->class_of);
 
 	/* The register in the third slot; an IMAD.WIDE's addend is a pair it reads late. */
-	if (has_src2 != 0 && opcode == NVRTX_SM75_OP_IMAD_WIDE && src2 != NVRTX_SM75_RZ) {
+	if (has_src2 != 0 &&
+	    opcode == NVRTX_SM75_OP_IMAD_WIDE &&
+	    src2 != NVRTX_SM75_RZ) {
 		nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_DISPATCH);
 		nvrtx_sm75_add_read(operands, src2 + 1U, NVRTX_SM75_CLASS_DISPATCH);
 	} else if (has_src2 != 0) {
@@ -786,7 +807,9 @@ nvrtx_sm75_operands_alu(
 	/* The result, a pair for IMAD.WIDE. */
 	if (writes_dst != 0)
 		nvrtx_sm75_add_write(operands, dst);
-	if (writes_dst != 0 && opcode == NVRTX_SM75_OP_IMAD_WIDE && dst != NVRTX_SM75_RZ)
+	if (writes_dst != 0 &&
+	    opcode == NVRTX_SM75_OP_IMAD_WIDE &&
+	    dst != NVRTX_SM75_RZ)
 		nvrtx_sm75_add_write(operands, dst + 1U);
 
 	/* Succeeded: the operands are read. */
@@ -828,7 +851,8 @@ nvrtx_sm75_operands_other(
 	case NVRTX_SM75_OP_LDC:
 		/* A result, a pair for a 64-bit load. */
 		nvrtx_sm75_add_write(operands, dst);
-		if (nvrtx_sm75_get(word, NVRTX_SM75_MEM_TYPE_LOW, 3U) == NVRTX_SM75_MEM_B64)
+		mode = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_MEM_TYPE_LOW, 3U);
+		if (mode == NVRTX_SM75_MEM_B64)
 			nvrtx_sm75_add_write(operands, dst + 1U);
 		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_DECOUPLED);
 		break;
@@ -874,7 +898,8 @@ nvrtx_sm75_operands_other(
 		extra = 0U;
 		if (mode == NVRTX_SM75_TEX_LOD_BIAS || mode == NVRTX_SM75_TEX_LOD_EXPLICIT)
 			extra++;
-		if (nvrtx_sm75_get(word, NVRTX_SM75_TEX_AOFFI, 1U) != 0U)
+		index = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_TEX_AOFFI, 1U);
+		if (index != 0U)
 			extra++;
 		for (index = 0U; index < extra && src1 != NVRTX_SM75_RZ; index++)
 			nvrtx_sm75_add_read(operands, src1 + index, NVRTX_SM75_CLASS_DECOUPLED);
@@ -1333,7 +1358,9 @@ nvrtx_sm75_predicate_raw(
 		return 4U;
 
 	/* A float or IMAD reader. */
-	if (reader == NVRTX_SM75_CLASS_FMA || reader == NVRTX_SM75_CLASS_IMAD || reader == NVRTX_SM75_CLASS_IMAD_WIDE)
+	if (reader == NVRTX_SM75_CLASS_FMA ||
+	    reader == NVRTX_SM75_CLASS_IMAD ||
+	    reader == NVRTX_SM75_CLASS_IMAD_WIDE)
 		return 5U;
 
 	/* Succeeded: a guard, a branch or a variable-latency reader. */

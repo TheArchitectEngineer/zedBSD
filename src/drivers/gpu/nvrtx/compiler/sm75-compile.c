@@ -2990,16 +2990,22 @@ nvrtx_sm75_emit(
 
 	/* The kind agrees with it. */
 	variable = 0;
-	if (kind == NVRTX_SM75_VARIABLE_WRITE || kind == NVRTX_SM75_VARIABLE_STORE || kind == NVRTX_SM75_VARIABLE_SPECIAL)
+	if (kind == NVRTX_SM75_VARIABLE_WRITE ||
+	    kind == NVRTX_SM75_VARIABLE_STORE ||
+	    kind == NVRTX_SM75_VARIABLE_SPECIAL)
 		variable = 1;
 	ends_block = 0;
 	if (kind == NVRTX_SM75_CONTROL || kind == NVRTX_SM75_SYNC)
 		ends_block = 1;
 	if (ends_block != operands.boundary)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as a block's end that does not end one, or the reverse");
-	if (ends_block == 0 && variable != 0 && operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
+	if (ends_block == 0 &&
+	    variable != 0 &&
+	    operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as variable-latency that has no scoreboard");
-	if (ends_block == 0 && variable == 0 && operands.class_of == NVRTX_SM75_CLASS_DECOUPLED)
+	if (ends_block == 0 &&
+	    variable == 0 &&
+	    operands.class_of == NVRTX_SM75_CLASS_DECOUPLED)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as fixed-latency that needs a scoreboard");
 
 	/* The four words into the code. */
