@@ -20,6 +20,7 @@
 #include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
 
+#include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
@@ -80,6 +81,17 @@
 #define NVRTX_HANDLE_COMPUTE_SPACE	0x90f10003U
 #define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
 #define NVRTX_HANDLE_COMPUTE		0xc5c00003U
+
+/*
+ * The VRAM the graphics context's arena reserves from the top of the last
+ * usable region (P5g), and the compute arena's (P9c, below the graphics
+ * arena).  The display's surfaces (P8b) are taken below both.
+ */
+#define NVRTX_GR_ARENA_RESERVE		0x8800000ULL
+#define NVRTX_COMPUTE_ARENA_RESERVE	0xa800000ULL
+
+/* The hash-table entries the display's channels add (P8b): two objects for each of two channels. */
+#define NVRTX_DISP_RAMHT_USED_MAX	4U
 
 /* How long a call to the resource manager waits for its reply. */
 #define NVRTX_CALL_TIMEOUT_US		5000000U
@@ -244,13 +256,19 @@ struct nvrtx_compute_state {
 };
 
 /*
- * The display under the GSP (stage P8a).
+ * The display under the GSP (stages P8a and P8b).
  *
  * The instance memory is 64 KiB of VRAM the resource manager keeps the
  * display's objects in.  The masks say which heads, windows and outputs the
  * hardware has and which heads the firmware (GOP) lit; the first lit head,
  * its output (SOR) and protocol are what P8b takes over.  The flags say
  * which resource-manager objects exist, so the stop frees only those.
+ *
+ * P8b adds the core channel and the head's first window channel (their
+ * push buffers in system memory, kept until the GSP has stopped), the
+ * notifiers' 4 KiB of VRAM after the instance memory, the hash-table slots
+ * and context DMA objects it wrote into the instance memory, the head's
+ * armed state it copied, and the two test surfaces.
  */
 struct nvrtx_display_state {
 	uint64_t instance;
@@ -266,6 +284,22 @@ struct nvrtx_display_state {
 	uint32_t gop_protocol;
 	int common_made;
 	int root_made;
+
+	/* P8b: the channels, their push buffers and what the takeover wrote. */
+	struct nvrtx_buffer core_buffer;
+	struct nvrtx_buffer window_buffer;
+	struct nvrtx_push core_push;
+	struct nvrtx_push window_push;
+	uint32_t window;
+	uint64_t sync;
+	uint32_t object_next;
+	uint32_t ramht_slots[NVRTX_DISP_RAMHT_USED_MAX];
+	uint32_t ramht_count;
+	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
+	uint32_t sor_control;
+	struct nvrtx_disp_surface surfaces[2];
+	int core_made;
+	int window_made;
 };
 
 /*
@@ -374,6 +408,8 @@ int nvrtx_rm_free(struct nvrtx_gpu *gpu, uint32_t object);
 int nvrtx_space_start(struct nvrtx_gpu *gpu);
 int nvrtx_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
 int nvrtx_vram_zero(struct nvrtx_gpu *gpu, uint64_t address, size_t length);
+int nvrtx_vram_fill(struct nvrtx_gpu *gpu, uint64_t address, uint32_t value, size_t length);
+int nvrtx_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t *value);
 int nvrtx_flush_tlb(struct nvrtx_gpu *gpu, uint64_t root);
 int nvrtx_channel_start(struct nvrtx_gpu *gpu);
 void nvrtx_channel_stop(struct nvrtx_gpu *gpu);
@@ -390,6 +426,10 @@ void nvrtx_compute_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_display_start(struct nvrtx_gpu *gpu);
 void nvrtx_display_stop(struct nvrtx_gpu *gpu);
+
+int nvrtx_scanout_start(struct nvrtx_gpu *gpu);
+void nvrtx_scanout_stop(struct nvrtx_gpu *gpu);
+void nvrtx_scanout_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);

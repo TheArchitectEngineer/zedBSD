@@ -19,6 +19,7 @@
 
 #include <uapi/errno.h>
 
+#include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 static unsigned failures;
@@ -745,6 +746,95 @@ test_gr(void)
 	free(image);
 }
 
+/* The display records of P8b (ws037-p006): push words, hash-table entries, context DMA, parameters. */
+static void
+test_disp(void)
+{
+	uint8_t memory[64 * 4];
+	uint8_t small[3 * 4];
+	uint8_t entry[NVRTX_DISP_RAMHT_ENTRY_BYTES];
+	uint8_t object[NVRTX_DISP_CONTEXT_DMA_BYTES];
+	uint8_t pb[NVRTX_DISP_PUSHBUFFER_BYTES];
+	uint8_t chan[NVRTX_DISP_CHANNEL_BYTES];
+	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
+	struct nvrtx_push push;
+	struct nvrtx_disp_surface surface;
+	uint32_t i;
+
+	/* One method: header (count 1 at bit 18, method offset), then the word. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_push_one(&push, NVRTX_CORE_SET_CONTEXT_DMA_NOTIFIER, NVRTX_DISP_HANDLE_SYNC);
+	check(push.count == 2 && nvrtx_get32(memory, 0) == 0x00040208U && nvrtx_get32(memory, 4) == 0xf0000000U, "disp push one method");
+
+	/* A run that does not fit writes nothing and marks the overflow. */
+	nvrtx_push_init(&push, small, 3);
+	nvrtx_push_method(&push, 0x1004, armed, 3);
+	check(push.count == 0 && push.overflow == 1, "disp push overflow");
+
+	/* The hash folds the handle by 10 bits and moves the channel up by 6. */
+	check(nvrtx_disp_ramht_hash(0, 0xf0000000U) == 0x303U, "disp ramht hash core sync");
+	check(nvrtx_disp_ramht_hash(0, 0xf0000001U) == 0x302U, "disp ramht hash core vram");
+	check(nvrtx_disp_ramht_hash(1, 0xf0000000U) == 0x343U, "disp ramht hash window 0 sync");
+
+	/* The entry: the handle, then chid 25+, object offset 9+, client's low 14 bits. */
+	nvrtx_disp_ramht_entry(entry, 0xf0000001U, 1, 0xc1d00000U, 0x2040);
+	check(nvrtx_get32(entry, 0) == 0xf0000001U && nvrtx_get32(entry, 4) == 0x02408000U, "disp ramht entry");
+
+	/* The context DMA object over the VRAM: flags 0x45, start and limit in 256-byte units. */
+	nvrtx_disp_context_dma(object, 0x1f3e10000ULL, 0x1f3e10fffULL);
+	check(nvrtx_get32(object, 0) == 0x45U && nvrtx_get32(object, 4) == 0x01f3e100U && nvrtx_get32(object, 8) == 0 &&
+	    nvrtx_get32(object, 12) == 0x01f3e10fU && nvrtx_get32(object, 16) == 0 && nvrtx_get32(object, 20) == 0, "disp context dma");
+
+	/* The push buffer's registration (r570 layout: 56 bytes). */
+	nvrtx_disp_pushbuffer_params(pb, 0x123456000ULL, 0x1000, NVRTX_DISP_CLASS_WINDOW, 2);
+	check(nvrtx_get32(pb, 0) == 1 && nvrtx_get32(pb, 8) == 0x23456000U && nvrtx_get32(pb, 12) == 1 &&
+	    nvrtx_get32(pb, 16) == 0xfffU && nvrtx_get32(pb, 24) == 1 && nvrtx_get32(pb, 28) == 0xc57eU &&
+	    nvrtx_get32(pb, 32) == 2 && pb[36] == 1 && nvrtx_get32(pb, 40) == 3 && nvrtx_get32(pb, 44) == 0 &&
+	    nvrtx_get32(pb, 48) == 1, "disp pushbuffer params");
+
+	/* The channel's allocation (40 bytes): instance at 0, put 0, subdevice mask at 32. */
+	nvrtx_disp_channel_params(chan, 2);
+	check(nvrtx_get32(chan, 0) == 2 && nvrtx_get32(chan, 12) == 0 && nvrtx_get32(chan, 32) == 1, "disp channel params");
+
+	/* The head copy names head 1's methods (0x2400 on) in the copied order. */
+	for (i = 0; i < NVRTX_DISP_HEAD_COPIED; i++)
+		armed[i] = 0x1000U + i;
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_head(&push, 1, armed);
+	check(push.count == 2 * NVRTX_DISP_HEAD_COPIED && nvrtx_get32(memory, 0) == 0x0004244cU &&
+	    nvrtx_get32(memory, 4) == 0x1000U && nvrtx_get32(memory, 4 * 4) == 0x00042464U, "disp core head copy");
+
+	/* The core update: notifier on, interlocks (none, window 0), update, notifier off. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_update(&push, 0, 1);
+	check(push.count == 9 && nvrtx_get32(memory, 4) == 0x1000U && nvrtx_get32(memory, 8) == 0x00080218U &&
+	    nvrtx_get32(memory, 12) == 0 && nvrtx_get32(memory, 16) == 1 && nvrtx_get32(memory, 20) == 0x00040200U &&
+	    nvrtx_get32(memory, 24) == 1 && nvrtx_get32(memory, 32) == 0, "disp core update");
+
+	/* The window's image: the pitch in 64-byte units, offset in 256-byte units. */
+	surface.offset = 0x1e0000000ULL;
+	surface.width = 1280;
+	surface.height = 1024;
+	surface.pitch = 5120;
+	surface.handle = NVRTX_DISP_HANDLE_VRAM;
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_window_image(&push, &surface);
+	check(nvrtx_get32(memory, 0) == 0x00040308U && nvrtx_get32(memory, 4) == 1 && nvrtx_get32(memory, 8) == 0x00100224U &&
+	    nvrtx_get32(memory, 12) == 0x04000500U && nvrtx_get32(memory, 16) == 0x10 && nvrtx_get32(memory, 20) == 0xcfU &&
+	    nvrtx_get32(memory, 24) == 80 && nvrtx_get32(memory, 32) == 0xf0000001U && nvrtx_get32(memory, 40) == 0x01e00000U,
+	    "disp window image");
+
+	/* The window update with the core: interlock bit 0, the window's own bit. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_window_update(&push, 1, 2);
+	check(nvrtx_get32(memory, 0) == 0x00080370U && nvrtx_get32(memory, 4) == 1 && nvrtx_get32(memory, 8) == 4 &&
+	    nvrtx_get32(memory, 12) == 0x00040200U, "disp window update");
+
+	/* The bands wrap after eight. */
+	check(nvrtx_disp_band_color(0) == 0xffffffffU && nvrtx_disp_band_color(8) == 0xffffffffU &&
+	    nvrtx_disp_band_color(7) == 0xff000000U, "disp band colours");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -757,6 +847,7 @@ main(int argc, char **argv)
 	test_mmu();
 	test_objects();
 	test_gr();
+	test_disp();
 	if (argc > 1)
 		test_files(argv[1]);
 	else

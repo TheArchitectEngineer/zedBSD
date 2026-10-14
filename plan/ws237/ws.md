@@ -31,6 +31,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | [ws237-p005](phase005/phase.md) | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | in-progress（P2）— ユーザーの判断 (B) D0 のまま sleep を実装、host と build 済み。SV7 は WS の最後 |
 | ws237-p006 | 規約の全文、0.5 LW | planned |
 - 2026-10-14 ユーザー「SV7の確認はせずに進めて、最後に確認してデバッグで調整しましょう。」→ p002 の実機の確かめを待たずに p003〜p005 を実装し、最後に SV7 でまとめて確かめて直す。
+- 判断（2026-10-15 ユーザー、クリック）: Gen9 の sleep は「D0 のまま sleep（1 LW、危険小）」。PCI に driver が function を D0 のまま保つ選択を足し、Gen9 の i915 は D3hot に入らずに suspend、panel と backlight だけ消す（sleep 中の電池は悪い）。WS237 の外の src/drivers/pci/pci-power.c を変える（Q1 が許可）。
 
 ## SV7 でのまとめての確かめ（ユーザー、素の起動、段ごと）（P2 2026-10-15）
 

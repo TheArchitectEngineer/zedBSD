@@ -25,6 +25,9 @@
  *   nvrtx.gr=1            after the copy channel, the driver has the
  *                         resource manager make the graphics golden context
  *                         (and the TU10x scrubber channel), stage P5g
+ *   nvrtx.disp=1          after the display's readout (P8a), the driver
+ *                         takes the head the firmware lit over with its own
+ *                         channels and surfaces, stage P8b
  */
 
 #include <stdarg.h>
@@ -49,6 +52,9 @@
 
 /* The whole token that asks for the graphics golden context. */
 #define STAGE_GR_TOKEN			"nvrtx.gr=1"
+
+/* The whole token that asks for the display takeover. */
+#define STAGE_DISP_TOKEN		"nvrtx.disp=1"
 
 /* The whole token that asks for the first compute launch (ws037-p008). */
 #define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
@@ -107,6 +113,23 @@ nvrtx_stage_gr_wanted(void)
 		return true;
 
 	/* Without it the boot keeps to the copy channel. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the display takeover (nvrtx.disp=1).
+ */
+bool
+nvrtx_stage_disp_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.disp=1 among the boot parameters. */
+	present = stage_token_present(STAGE_DISP_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the boot keeps the firmware's picture after the readout. */
 	return false;
 }
 

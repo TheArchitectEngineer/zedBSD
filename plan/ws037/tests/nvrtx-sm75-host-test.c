@@ -21,13 +21,13 @@
  *      The interpreter decodes the same field positions the encoder uses,
  *      so this part checks the lowering (instruction choice, registers,
  *      addresses, predicates, the serial dependences), not the encoding.
- *   4. Refusals: a stage A does not cover is refused with a reason.
+ *   4. Refusals: an operation stages A and B do not cover is refused with a reason.
  *   5. The first compute launch's parts (ws037-p008 stage C): the QMD 2.2
  *      fields at the positions of NVIDIA's clc3c0qmd.h, the launch's push
  *      buffer, the IR of the first program compiled and run, and the
  *      system-memory page entries of the launch's tables.
  *
- *   nvrtx-sm75-host-test DIR    DIR holds const.spv, add.spv, ids.spv, float.spv, integer.spv and loop.spv
+ *   nvrtx-sm75-host-test DIR    DIR holds the .spv of const, add, ids, float, integer, loop, division, shared and atomic
  *
  * Nothing here is evidence about the GPU.
  */
@@ -51,8 +51,29 @@
 #define TEST_BUFFER_BASE	0x100000000ULL
 #define TEST_BUFFER_STRIDE	0x01000000ULL
 
-/* The most instructions one invocation may run. */
+/* The most instructions one invocation may run, and the most invocations a workgroup has. */
 #define TEST_STEPS		100000U
+#define TEST_THREADS		1024U
+
+/* Where an invocation stands between the rounds of its workgroup. */
+#define TEST_RUNNING		0
+#define TEST_AT_BARRIER		1
+#define TEST_DONE		2
+
+/*
+ * One invocation on the interpreter: its registers and predicates, where
+ * it is, the scoreboards the next instruction must wait for, and its place
+ * in the workgroup.
+ */
+struct test_thread {
+	uint32_t r[256];
+	int p[8];
+	uint32_t pc;
+	uint32_t steps;
+	uint32_t pending;
+	uint32_t local[3];
+	int state;
+};
 
 /*
  * One storage buffer of a run, at (set, binding): its words and size.
@@ -74,7 +95,15 @@ struct test_run {
 	struct test_buffer buffers[TEST_BUFFERS];
 	uint32_t buffer_count;
 	uint32_t groups[3];
+	uint32_t *shared;
+	uint32_t shared_words;
 	int failed;
+
+	/* A graphics run: the attribute words read (by address / 4) and written, and whether the fragment was discarded. */
+	uint32_t attr_in[256];
+	uint32_t attr_out[256];
+	uint32_t exit_regs[8];
+	int killed;
 };
 
 /* Checks counted and failed. */
@@ -90,6 +119,12 @@ static void check_ids(const char *directory);
 static void check_float(const char *directory);
 static void check_integer(const char *directory);
 static void check_refusals(const char *directory);
+static void check_loop(const char *directory);
+static void check_division(const char *directory);
+static void check_shared(const char *directory);
+static void check_atomic(const char *directory);
+static void check_quad(const char *directory);
+static struct nvrtx_sm75_binary *compile_graphics(const char *directory, const char *name, enum drv_gpu_shader_stage stage);
 static void check_qmd(void);
 static void check_launch_push(void);
 static void check_first_program(void);
@@ -99,7 +134,7 @@ static int words_are(const struct nvrtx_sm75_word *word, uint64_t low, uint64_t 
 static struct nvrtx_sm75_binary *compile_file(const char *directory, const char *name);
 static void bind(struct test_run *run, uint32_t set, uint32_t binding, uint32_t *words, uint32_t bytes);
 static void dispatch(struct test_run *run);
-static void invoke(struct test_run *run, const uint32_t local[3], const uint32_t group[3]);
+static void invoke(struct test_run *run, struct test_thread *thread, const uint32_t group[3]);
 static uint32_t *memory(struct test_run *run, uint64_t address);
 static uint32_t cb_word(const struct test_run *run, uint32_t index, uint32_t offset);
 static float as_float(uint32_t bits);
@@ -148,6 +183,11 @@ main(
 	check_float(argv[1]);
 	check_integer(argv[1]);
 	check_refusals(argv[1]);
+	check_loop(argv[1]);
+	check_division(argv[1]);
+	check_shared(argv[1]);
+	check_atomic(argv[1]);
+	check_quad(argv[1]);
 	check_qmd();
 	check_launch_push();
 	check_first_program();
@@ -297,6 +337,31 @@ check_fields(void)
 	nvrtx_sm75_shift(&word, 1U, 3U, &b, 1, 0);
 	check(nvrtx_sm75_get(&word, 24U, 8U) == 255U && nvrtx_sm75_get(&word, 64U, 8U) == 3U && nvrtx_sm75_get(&word, 73U, 2U) == 3U, "SHF right operands and type");
 	check(nvrtx_sm75_get(&word, 75U, 1U) == 1U && nvrtx_sm75_get(&word, 76U, 1U) == 1U && nvrtx_sm75_get(&word, 80U, 1U) == 1U, "SHF wrap, right, high");
+
+	/* BSSY B1 to 5 instructions on, BSYNC B1, a BRA under P0, BAR.SYNC, MEMBAR.GPU, ATOMG.ADD, LDS. */
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_bssy(&word, 1U, 5);
+	check(nvrtx_sm75_get(&word, 0U, 12U) == 0x945U && nvrtx_sm75_get(&word, 16U, 4U) == 1U && nvrtx_sm75_get(&word, 34U, 30U) == 20U && nvrtx_sm75_get(&word, 87U, 3U) == 7U, "BSSY barrier and offset");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_bsync(&word, 1U);
+	check(nvrtx_sm75_get(&word, 0U, 12U) == 0x941U && nvrtx_sm75_get(&word, 16U, 4U) == 1U, "BSYNC barrier");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_bra(&word, -3);
+	nvrtx_sm75_bra_if(&word, 0U, 0);
+	check(nvrtx_sm75_get(&word, 87U, 3U) == 0U && nvrtx_sm75_get(&word, 90U, 1U) == 0U && nvrtx_sm75_get(&word, 12U, 3U) == 7U, "BRA on P0");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_bar(&word);
+	check(nvrtx_sm75_get(&word, 0U, 12U) == 0xb1dU, "BAR.SYNC");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_membar(&word, NVRTX_SM75_MEMBAR_GPU);
+	check(nvrtx_sm75_get(&word, 0U, 12U) == 0x992U && nvrtx_sm75_get(&word, 76U, 3U) == 2U, "MEMBAR.GPU");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_atomic(&word, 0, 3U, 4U, 5U, NVRTX_SM75_ATOM_MAX, 1);
+	check(nvrtx_sm75_get(&word, 0U, 12U) == 0x3a8U && nvrtx_sm75_get(&word, 87U, 4U) == 2U && nvrtx_sm75_get(&word, 73U, 3U) == 1U && nvrtx_sm75_get(&word, 72U, 1U) == 1U, "ATOMG.MAX.S32");
+	check(nvrtx_sm75_get(&word, 16U, 8U) == 3U && nvrtx_sm75_get(&word, 24U, 8U) == 4U && nvrtx_sm75_get(&word, 32U, 8U) == 5U && nvrtx_sm75_get(&word, 81U, 3U) == 7U, "ATOMG registers");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_lds(&word, 3U, 4U);
+	check(nvrtx_sm75_get(&word, 0U, 12U) == 0x984U && nvrtx_sm75_get(&word, 73U, 3U) == 4U && nvrtx_sm75_get(&word, 24U, 8U) == 4U, "LDS");
 
 	/* MUFU.RSQ R1, R2; F2I.TRUNC.NTZ R1, R2; I2F.U32 R1, R2. */
 	nvrtx_sm75_begin(&word);
@@ -586,10 +651,380 @@ check_integer(
 	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
 }
 
-/* A loop is refused with a reason (stage A). */
+/* An operation the compiler does not cover (a derivative) is refused with a reason. */
 static void
 check_refusals(
 	const char *directory)
+{
+	static struct drv_gpu_shader_ir_inst list[2];
+	struct drv_gpu_shader_ir ir;
+	struct nvrtx_sm75_binary *binary;
+	struct nvrtx_sm75_diagnostic diagnostic;
+	int error;
+
+	(void)directory;
+	memset(&ir, 0, sizeof(ir));
+	memset(list, 0, sizeof(list));
+	list[0].op = DRV_GPU_IR_ICONST;
+	list[0].dst = 0U;
+	list[1].op = DRV_GPU_IR_DDX;
+	list[1].dst = 1U;
+	list[1].src[0] = 0U;
+	ir.stage = DRV_GPU_STAGE_COMPUTE;
+	ir.instructions = list;
+	ir.instruction_count = 2U;
+	ir.value_count = 5U;
+	ir.local_size[0] = 1U;
+	ir.local_size[1] = 1U;
+	ir.local_size[2] = 1U;
+
+	/* Refused, with a reason, and no program. */
+	binary = (struct nvrtx_sm75_binary *)1;
+	memset(&diagnostic, 0, sizeof(diagnostic));
+	error = nvrtx_sm75_compile_ir(&ir, &binary, &diagnostic);
+	check(error == ENOTSUP && binary == NULL && diagnostic.reason != NULL && diagnostic.instruction == 1U, "a derivative is refused with a reason");
+	if (diagnostic.reason != NULL)
+		printf("  derivative refused: %s (instruction %u)\n", diagnostic.reason, diagnostic.instruction);
+}
+
+/* Loops whose trip counts differ between invocations, nested. */
+static void
+check_loop(
+	const char *directory)
+{
+	static struct test_run run;
+	uint32_t o[64];
+	uint32_t g;
+	uint32_t i;
+	uint32_t j;
+	uint32_t n;
+	uint32_t sum;
+	int same;
+
+	memset(&run, 0, sizeof(run));
+	run.binary = compile_file(directory, "loop");
+	check(run.binary != NULL, "loop compiles");
+	if (run.binary == NULL)
+		return;
+
+	memset(o, 0, sizeof(o));
+	bind(&run, 0U, 0U, o, sizeof(o));
+	run.groups[0] = 2U;
+	run.groups[1] = 1U;
+	run.groups[2] = 1U;
+	dispatch(&run);
+
+	same = 1;
+	for (g = 0U; g < 64U; g++) {
+		n = g % 7U;
+		sum = 0U;
+		for (i = 0U; i < n; i++) {
+			sum += i * g + 1U;
+			for (j = 0U; j < (i & 1U) + 1U; j++)
+				sum ^= j << i;
+		}
+		if (o[g] != sum)
+			same = 0;
+	}
+	check(!run.failed && same, "loop: nested loops of different trip counts");
+
+	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
+}
+
+/* Unsigned and signed division and remainder over awkward operands. */
+static void
+check_division(
+	const char *directory)
+{
+	static const uint32_t fixed[] = {
+		100U, 7U, 0xffffffffU, 1U, 0xffffffffU, 0xffffffffU, 5U, 0xfffffffbU,
+		0x80000001U, 3U, 0xfffffff9U, 2U, 7U, 0xfffffffeU, 0xfffffff9U, 0xfffffffeU,
+		123456789U, 10U, 1U, 0x80000000U, 0x7fffffffU, 0x10001U, 0U, 3U
+	};
+	static struct test_run run;
+	uint32_t v[64];
+	uint32_t o[128];
+	uint32_t seed;
+	uint32_t g;
+	uint32_t a;
+	uint32_t b;
+	int32_t modulo;
+	int same;
+
+	memset(&run, 0, sizeof(run));
+	run.binary = compile_file(directory, "division");
+	check(run.binary != NULL, "division compiles");
+	if (run.binary == NULL)
+		return;
+
+	/* The fixed pairs, then pseudo-random ones (no zero divisor, no INT_MIN / -1). */
+	seed = 12345U;
+	for (g = 0U; g < 32U; g++) {
+		if (g * 2U < sizeof(fixed) / 4U) {
+			v[g * 2U] = fixed[g * 2U];
+			v[g * 2U + 1U] = fixed[g * 2U + 1U];
+			continue;
+		}
+		seed = seed * 1103515245U + 12345U;
+		v[g * 2U] = seed ^ (seed >> 7);
+		seed = seed * 1103515245U + 12345U;
+		v[g * 2U + 1U] = (seed >> (seed & 31U)) | 1U;
+	}
+	memset(o, 0, sizeof(o));
+	bind(&run, 0U, 0U, v, sizeof(v));
+	bind(&run, 0U, 1U, o, sizeof(o));
+	run.groups[0] = 1U;
+	run.groups[1] = 1U;
+	run.groups[2] = 1U;
+	dispatch(&run);
+
+	same = 1;
+	for (g = 0U; g < 32U; g++) {
+		a = v[g * 2U];
+		b = v[g * 2U + 1U];
+		if (o[g * 4U] != a / b || o[g * 4U + 1U] != a % b) {
+			printf("  %u / %u: %u %u\n", a, b, o[g * 4U], o[g * 4U + 1U]);
+			same = 0;
+		}
+		/* GLSL's % on ints is OpSMod: the remainder takes the divisor's sign. */
+		modulo = (int32_t)a % (int32_t)b;
+		if (modulo != 0 && ((modulo < 0) != ((int32_t)b < 0)))
+			modulo += (int32_t)b;
+		if (o[g * 4U + 2U] != (uint32_t)((int32_t)a / (int32_t)b) || o[g * 4U + 3U] != (uint32_t)modulo) {
+			printf("  %d / %d: %d %d\n", (int32_t)a, (int32_t)b, (int32_t)o[g * 4U + 2U], (int32_t)o[g * 4U + 3U]);
+			same = 0;
+		}
+	}
+	check(!run.failed && same, "division: unsigned and signed quotients and remainders");
+
+	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
+}
+
+/* Shared memory across barriers, and a shared atomic. */
+static void
+check_shared(
+	const char *directory)
+{
+	static struct test_run run;
+	uint32_t o[256];
+	uint32_t g;
+	uint32_t l;
+	uint32_t base;
+	int same;
+
+	memset(&run, 0, sizeof(run));
+	run.binary = compile_file(directory, "shared");
+	check(run.binary != NULL, "shared compiles");
+	if (run.binary == NULL)
+		return;
+	check(run.binary->barrier_count == 1U && run.binary->shared_bytes >= 65U * 4U, "shared: a barrier and the shared bytes");
+
+	memset(o, 0, sizeof(o));
+	bind(&run, 0U, 0U, o, sizeof(o));
+	run.groups[0] = 2U;
+	run.groups[1] = 1U;
+	run.groups[2] = 1U;
+	dispatch(&run);
+
+	same = 1;
+	for (g = 0U; g < 128U; g++) {
+		l = g % 64U;
+		base = g - l;
+		if (o[g * 2U] != ((base + (l + 1U) % 64U) * 3U + 1U) + ((base + 63U - l) * 3U + 1U))
+			same = 0;
+		if (o[g * 2U + 1U] != 2016U)
+			same = 0;
+	}
+	check(!run.failed && same, "shared: words across barriers and a shared atomic sum");
+
+	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
+}
+
+/* Storage buffer atomics (ws101's atomic.comp). */
+static void
+check_atomic(
+	const char *directory)
+{
+	static struct test_run run;
+	uint32_t v[128];
+	uint32_t h[28];
+	uint32_t old[128];
+	uint32_t want[28];
+	uint8_t seen[128];
+	uint32_t n;
+	uint32_t i;
+	uint32_t x;
+	int same;
+
+	memset(&run, 0, sizeof(run));
+	run.binary = compile_file(directory, "atomic");
+	check(run.binary != NULL, "atomic compiles");
+	if (run.binary == NULL)
+		return;
+
+	/* The values, the bins' start, n = 100. */
+	for (i = 0U; i < 128U; i++)
+		v[i] = i * 37U + 5U;
+	memset(h, 0, sizeof(h));
+	h[17] = 0x7fffffffU;
+	h[18] = 0x80000000U;
+	h[19] = 0xffffffffU;
+	h[20] = 0U;
+	h[21] = 0xffffffffU;
+	memcpy(want, h, sizeof(want));
+	memset(old, 0xff, sizeof(old));
+	n = 100U;
+	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], &n, sizeof(n));
+	bind(&run, 0U, 0U, v, sizeof(v));
+	bind(&run, 0U, 1U, h, sizeof(h));
+	bind(&run, 0U, 2U, old, sizeof(old));
+	run.groups[0] = 2U;
+	run.groups[1] = 1U;
+	run.groups[2] = 1U;
+	dispatch(&run);
+
+	/* The same in C. */
+	for (i = 0U; i < n; i++) {
+		x = v[i];
+		want[x % 16U]++;
+		want[16] += x;
+		if ((int32_t)(x - 1000U) < (int32_t)want[17])
+			want[17] = x - 1000U;
+		if ((int32_t)(x - 1000U) > (int32_t)want[18])
+			want[18] = x - 1000U;
+		if (x < want[19])
+			want[19] = x;
+		if (x > want[20])
+			want[20] = x;
+		want[21] &= x | 0xffff0000U;
+		want[22] |= x;
+		want[23] ^= x;
+		want[24] = 7U;
+		if (want[25] == 0U)
+			want[25] = 1U;
+		want[26]++;
+	}
+	same = memcmp(h, want, sizeof(h)) == 0;
+	memset(seen, 0, sizeof(seen));
+	for (i = 0U; i < n; i++) {
+		if (old[i] >= n || seen[old[i]])
+			same = 0;
+		else
+			seen[old[i]] = 1U;
+	}
+	if (old[n] != 0xffffffffU)
+		same = 0;
+	check(!run.failed && same, "atomic: every storage atomic, predicated, returning the old value");
+
+	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
+}
+
+/*
+ * The compositor's quad (userland/desktop/wayland/shaders/quad.vert and
+ * quad.frag): the vertex program's position and texture coordinate from
+ * the push constants and the corner, and the fragment program's sample of
+ * the interpolated coordinate into colour 0; and their headers.
+ */
+static void
+check_quad(
+	const char *directory)
+{
+	static struct test_run run;
+	static struct test_thread thread;
+	struct nvrtx_sm75_binary *binary;
+	const uint32_t group[3] = { 0U, 0U, 0U };
+	float push[8];
+	float corner[2];
+	float want;
+	uint32_t handle;
+	uint32_t index;
+	int same;
+
+	/* The vertex program. */
+	binary = compile_graphics(directory, "quad-vert", DRV_GPU_STAGE_VERTEX);
+	check(binary != NULL, "quad.vert compiles");
+	if (binary == NULL)
+		return;
+
+	/* Its header: VTG version 4, a vertex program, the corner read, the position and coordinate written. */
+	check(field(binary->sph, 0U, 5U) == 1U && field(binary->sph, 5U, 5U) == 4U && field(binary->sph, 10U, 4U) == 1U && field(binary->sph, 17U, 4U) == 1U, "quad.vert header type, version, stage");
+	check(field(binary->sph, 192U, 2U) == 3U && field(binary->sph, 194U, 126U) == 0U, "quad.vert reads the corner's two words");
+	check(field(binary->sph, 400U + 28U, 4U) == 0xfU && field(binary->sph, 432U, 2U) == 3U, "quad.vert writes the position and the coordinate");
+	check(field(binary->sph, 140U, 8U) == 28U && field(binary->sph, 152U, 8U) == 33U, "quad.vert store request");
+
+	/* Runs it for the corner (0.25, 0.75). */
+	memset(&run, 0, sizeof(run));
+	run.binary = binary;
+	push[0] = -1.0f;
+	push[1] = -0.5f;
+	push[2] = 1.0f;
+	push[3] = 0.5f;
+	push[4] = 0.0f;
+	push[5] = 0.1f;
+	push[6] = 1.0f;
+	push[7] = 0.9f;
+	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
+	corner[0] = 0.25f;
+	corner[1] = 0.75f;
+	run.attr_in[0x80U / 4U] = as_bits(corner[0]);
+	run.attr_in[0x84U / 4U] = as_bits(corner[1]);
+	memset(&thread, 0, sizeof(thread));
+	thread.p[7] = 1;
+	invoke(&run, &thread, group);
+
+	same = !run.failed && thread.state == TEST_DONE;
+	for (index = 0U; index < 2U; index++) {
+		want = push[index] + (push[2U + index] - push[index]) * corner[index];
+		if (!near(as_float(run.attr_out[0x70U / 4U + index]), want))
+			same = 0;
+		want = push[4U + index] + (push[6U + index] - push[4U + index]) * corner[index];
+		if (!near(as_float(run.attr_out[0x80U / 4U + index]), want))
+			same = 0;
+	}
+	if (as_float(run.attr_out[0x78U / 4U]) != 0.0f || as_float(run.attr_out[0x7cU / 4U]) != 1.0f)
+		same = 0;
+	check(same, "quad.vert: position and texture coordinate");
+	nvrtx_sm75_binary_free(binary);
+
+	/* The fragment program. */
+	binary = compile_graphics(directory, "quad-frag", DRV_GPU_STAGE_FRAGMENT);
+	check(binary != NULL, "quad.frag compiles");
+	if (binary == NULL)
+		return;
+
+	/* Its header: PS version 4, a pixel program, multiple targets, the coordinate in perspective, w, colour 0. */
+	check(field(binary->sph, 0U, 5U) == 2U && field(binary->sph, 5U, 5U) == 4U && field(binary->sph, 10U, 4U) == 5U && field(binary->sph, 14U, 1U) == 1U, "quad.frag header type, version, stage, targets");
+	check(field(binary->sph, 192U, 4U) == 0xaU && field(binary->sph, 160U + 31U, 1U) == 1U, "quad.frag interpolates the coordinate in perspective and reads w");
+	check(field(binary->sph, 576U, 32U) == 0xfU && field(binary->sph, 15U, 1U) == 0U, "quad.frag writes colour 0 and does not discard");
+	check(binary->texture_count == 1U && binary->textures[0].binding == 0U, "quad.frag one sampled image");
+
+	/* Runs it for the coordinate (0.3, 0.6) and the handle 77. */
+	memset(&run, 0, sizeof(run));
+	run.binary = binary;
+	handle = 77U;
+	memcpy(&run.cb[0][NVRTX_SM75_CB_TEXTURES], &handle, sizeof(handle));
+	run.attr_in[0x80U / 4U] = as_bits(0.3f);
+	run.attr_in[0x84U / 4U] = as_bits(0.6f);
+	run.attr_in[0x7cU / 4U] = as_bits(2.0f);
+	memset(&thread, 0, sizeof(thread));
+	thread.p[7] = 1;
+	invoke(&run, &thread, group);
+
+	same = !run.failed && thread.state == TEST_DONE && !run.killed;
+	if (!near(as_float(run.exit_regs[0]), 0.3f) || !near(as_float(run.exit_regs[1]), 0.6f))
+		same = 0;
+	if (as_float(run.exit_regs[2]) != 77.0f || as_float(run.exit_regs[3]) != 1.0f)
+		same = 0;
+	check(same, "quad.frag: the sample of the interpolated coordinate in R0..R3");
+	nvrtx_sm75_binary_free(binary);
+}
+
+/* Reads DIR/NAME.spv and compiles a stage of it; NULL (with the reason printed) when refused. */
+static struct nvrtx_sm75_binary *
+compile_graphics(
+	const char *directory,
+	const char *name,
+	enum drv_gpu_shader_stage stage)
 {
 	struct nvrtx_sm75_binary *binary;
 	struct nvrtx_sm75_diagnostic diagnostic;
@@ -599,12 +1034,12 @@ check_refusals(
 	FILE *file;
 	int error;
 
-	/* The loop module's words. */
-	snprintf(path, sizeof(path), "%s/loop.spv", directory);
+	snprintf(path, sizeof(path), "%s/%s.spv", directory, name);
 	file = fopen(path, "rb");
-	check(file != NULL, "loop.spv opens");
-	if (file == NULL)
-		return;
+	if (file == NULL) {
+		printf("  %s: cannot open\n", path);
+		return NULL;
+	}
 	fseek(file, 0, SEEK_END);
 	bytes = ftell(file);
 	fseek(file, 0, SEEK_SET);
@@ -612,18 +1047,20 @@ check_refusals(
 	if (words == NULL || fread(words, 1U, (size_t)bytes, file) != (size_t)bytes) {
 		fclose(file);
 		free(words);
-		check(0, "loop.spv reads");
-		return;
+		return NULL;
 	}
 	fclose(file);
 
-	/* Refused, with a reason, and no program. */
-	binary = (struct nvrtx_sm75_binary *)1;
-	error = nvrtx_sm75_compile(words, (size_t)bytes / 4U, &binary, &diagnostic);
-	check(error == ENOTSUP && binary == NULL && diagnostic.reason != NULL, "a loop is refused with a reason");
-	if (diagnostic.reason != NULL)
-		printf("  loop refused: %s (instruction %u)\n", diagnostic.reason, diagnostic.instruction);
+	binary = NULL;
+	memset(&diagnostic, 0, sizeof(diagnostic));
+	error = nvrtx_sm75_compile_stage(words, (size_t)bytes / 4U, stage, &binary, &diagnostic);
 	free(words);
+	if (error != 0) {
+		printf("  %s: refused %d: %s (instruction %u)\n", name, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?", diagnostic.instruction);
+		return NULL;
+	}
+	printf("  %s: %u instructions, %u registers\n", name, binary->code_words / 4U, binary->gpr_count);
+	return binary;
 }
 
 /* Checks the QMD 2.2 fields against the positions of clc3c0qmd.h, written out here on their own. */
@@ -902,28 +1339,78 @@ bind(
 	}
 }
 
-/* Runs every invocation of every group, one after another. */
+/*
+ * Runs every workgroup: its invocations one after another, each up to a
+ * barrier or its end; once every one has reached the barrier they all go
+ * on (a valid schedule).  An invocation that ends while another waits at a
+ * barrier is a failure.  Each workgroup has its own shared memory.
+ */
 static void
 dispatch(
 	struct test_run *run)
 {
+	static struct test_thread threads[TEST_THREADS];
 	uint32_t group[3];
-	uint32_t local[3];
 	const uint32_t *size;
+	uint32_t count;
+	uint32_t index;
+	uint32_t waiting;
+	uint32_t done;
 
 	size = run->binary->local_size;
+	count = size[0] * size[1] * size[2];
+	if (count == 0U || count > TEST_THREADS) {
+		run->failed = 1;
+		return;
+	}
+	run->shared_words = (run->binary->shared_bytes + 3U) / 4U;
+	run->shared = calloc(run->shared_words + 1U, sizeof(uint32_t));
+
 	for (group[2] = 0U; group[2] < run->groups[2]; group[2]++) {
 		for (group[1] = 0U; group[1] < run->groups[1]; group[1]++) {
 			for (group[0] = 0U; group[0] < run->groups[0]; group[0]++) {
-				for (local[2] = 0U; local[2] < size[2]; local[2]++) {
-					for (local[1] = 0U; local[1] < size[1]; local[1]++) {
-						for (local[0] = 0U; local[0] < size[0]; local[0]++)
-							invoke(run, local, group);
+				/* The workgroup's invocations and shared memory, fresh. */
+				memset(threads, 0, sizeof(threads[0]) * count);
+				memset(run->shared, 0xcd, (run->shared_words + 1U) * sizeof(uint32_t));
+				for (index = 0U; index < count; index++) {
+					threads[index].local[0] = index % size[0];
+					threads[index].local[1] = (index / size[0]) % size[1];
+					threads[index].local[2] = index / (size[0] * size[1]);
+					threads[index].p[7] = 1;
+				}
+
+				/* Rounds until every invocation is done. */
+				for (;;) {
+					for (index = 0U; index < count && !run->failed; index++) {
+						if (threads[index].state == TEST_RUNNING)
+							invoke(run, &threads[index], group);
 					}
+					if (run->failed)
+						break;
+					waiting = 0U;
+					done = 0U;
+					for (index = 0U; index < count; index++) {
+						if (threads[index].state == TEST_AT_BARRIER)
+							waiting++;
+						if (threads[index].state == TEST_DONE)
+							done++;
+					}
+					if (done == count)
+						break;
+					if (done != 0U) {
+						printf("  an invocation ended while others wait at a barrier\n");
+						run->failed = 1;
+						break;
+					}
+					for (index = 0U; index < count; index++)
+						threads[index].state = TEST_RUNNING;
+					(void)waiting;
 				}
 			}
 		}
 	}
+	free(run->shared);
+	run->shared = NULL;
 }
 
 /*
@@ -935,15 +1422,11 @@ dispatch(
 static void
 invoke(
 	struct test_run *run,
-	const uint32_t local[3],
+	struct test_thread *t,
 	const uint32_t group[3])
 {
 	const uint32_t *code;
 	struct nvrtx_sm75_word word;
-	uint32_t r[256];
-	int p[8];
-	uint32_t pc;
-	uint32_t steps;
 	uint32_t opcode;
 	uint32_t alu;
 	uint32_t form;
@@ -951,7 +1434,6 @@ invoke(
 	uint32_t s0;
 	uint32_t s1;
 	uint32_t s2;
-	uint32_t pending;
 	uint32_t wait;
 	uint32_t lut;
 	uint32_t bit;
@@ -962,56 +1444,167 @@ invoke(
 	int take;
 	float f;
 
-	memset(r, 0, sizeof(r));
-	memset(p, 0, sizeof(p));
-	p[7] = 1;
 	code = run->binary->code;
-	pending = 0U;
 
-	for (pc = 0U, steps = 0U; steps < TEST_STEPS; steps++, pc++) {
-		if (pc * 4U >= run->binary->code_words) {
+	for (; t->steps < TEST_STEPS; t->steps++, t->pc++) {
+		if (t->pc * 4U >= run->binary->code_words) {
 			printf("  ran past the code\n");
 			run->failed = 1;
 			return;
 		}
-		memcpy(word.w, &code[pc * 4U], sizeof(word.w));
-		r[NVRTX_SM75_RZ] = 0U;
+		memcpy(word.w, &code[t->pc * 4U], sizeof(word.w));
+		t->r[NVRTX_SM75_RZ] = 0U;
 
 		/* The serial dependences. */
 		wait = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_WAIT_LOW, NVRTX_SM75_WAIT_BITS);
-		if ((wait & pending) != pending) {
-			printf("  instruction %u does not wait for scoreboards 0x%x\n", pc, pending);
+		if ((wait & t->pending) != t->pending) {
+			printf("  instruction %u does not wait for scoreboards 0x%x\n", t->pc, t->pending);
 			run->failed = 1;
 		}
-		pending = 0U;
+		t->pending = 0U;
 		if (nvrtx_sm75_get(&word, NVRTX_SM75_WRITE_BAR_LOW, 3U) != NVRTX_SM75_BAR_NONE)
-			pending |= 1U << nvrtx_sm75_get(&word, NVRTX_SM75_WRITE_BAR_LOW, 3U);
+			t->pending |= 1U << nvrtx_sm75_get(&word, NVRTX_SM75_WRITE_BAR_LOW, 3U);
 		if (nvrtx_sm75_get(&word, NVRTX_SM75_READ_BAR_LOW, 3U) != NVRTX_SM75_BAR_NONE)
-			pending |= 1U << nvrtx_sm75_get(&word, NVRTX_SM75_READ_BAR_LOW, 3U);
+			t->pending |= 1U << nvrtx_sm75_get(&word, NVRTX_SM75_READ_BAR_LOW, 3U);
 
 		/* The guard. */
-		guard = p[nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_LOW, 3U)];
+		guard = t->p[nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_LOW, 3U)];
 		if (nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_NOT, 1U) != 0U)
 			guard = !guard;
 		opcode = (uint32_t)nvrtx_sm75_get(&word, 0U, 12U);
 		dst = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_DST_LOW, 8U);
 
 		/* The instructions that are not of the ALU form. */
-		if (opcode == NVRTX_SM75_OP_EXIT)
-			return;
-		if (opcode == NVRTX_SM75_OP_NOP || opcode == NVRTX_SM75_OP_BRA) {
-			printf("  instruction %u: %s before EXIT\n", pc, (opcode == NVRTX_SM75_OP_NOP) ? "NOP" : "BRA");
-			run->failed = 1;
+		if (opcode == NVRTX_SM75_OP_EXIT) {
+			memcpy(run->exit_regs, t->r, sizeof(run->exit_regs));
+			t->state = TEST_DONE;
 			return;
 		}
 		if (!guard)
 			continue;
+		if (opcode == NVRTX_SM75_OP_NOP || opcode == NVRTX_SM75_OP_BSSY || opcode == NVRTX_SM75_OP_BSYNC || opcode == NVRTX_SM75_OP_MEMBAR)
+			continue;
+		if (opcode == NVRTX_SM75_OP_BAR) {
+			t->state = TEST_AT_BARRIER;
+			t->pc++;
+			t->steps++;
+			return;
+		}
+		if (opcode == NVRTX_SM75_OP_BRA) {
+			take = t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U)];
+			if (nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_NOT, 1U) != 0U)
+				take = !take;
+			if (take) {
+				wide = nvrtx_sm75_get(&word, NVRTX_SM75_BRA_OFFSET_LOW, NVRTX_SM75_BRA_OFFSET_BITS);
+				if ((wide >> 47) != 0U)
+					wide |= ~((1ULL << 48) - 1U);
+				t->pc = (uint32_t)((int64_t)t->pc + (int64_t)wide / 4);
+			}
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_ALD) {
+			t->r[dst] = run->attr_in[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U];
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_AST) {
+			run->attr_out[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U] = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_IPA) {
+			/* The fragment's w is 2; a perspective input (by the header's map) arrives multiplied by it. */
+			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IPA_ADDRESS_LOW, 8U);
+			t->r[dst] = run->attr_in[value];
+			if (value >= NVRTX_SM75_ATTR_GENERIC / 4U && value < NVRTX_SM75_ATTR_GENERIC_END / 4U) {
+				lut = (run->binary->sph[(NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (value - NVRTX_SM75_ATTR_GENERIC / 4U) * 2U) / 32U] >> ((NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (value - NVRTX_SM75_ATTR_GENERIC / 4U) * 2U) % 32U)) & 3U;
+				if (lut == NVRTX_SM75_IMAP_PERSPECTIVE)
+					t->r[dst] = as_bits(as_float(t->r[dst]) * 2.0f);
+				if (lut == 0U) {
+					printf("  IPA of an input the header does not map\n");
+					run->failed = 1;
+				}
+			}
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_TEX) {
+			/* The texel: (u, v, the handle, 1). */
+			value = cb_word(run, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_TEX_BUFFER_LOW, 5U), (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_TEX_HANDLE_LOW, NVRTX_SM75_TEX_HANDLE_BITS) * 4U);
+			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U);
+			s1 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_TEX_DST2_LOW, 8U);
+			f = as_float(t->r[s0]);
+			lut = t->r[s0 + 1U];
+			t->r[dst] = as_bits(f);
+			t->r[dst + 1U] = lut;
+			t->r[s1] = as_bits((float)value);
+			t->r[s1 + 1U] = as_bits(1.0f);
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_KILL) {
+			run->killed = 1;
+			t->state = TEST_DONE;
+			return;
+		}
+		if (opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS) {
+			s0 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U)];
+			if ((s0 & 3U) != 0U || s0 / 4U >= run->shared_words) {
+				printf("  a shared access at %u outside the %u words\n", s0, run->shared_words);
+				run->failed = 1;
+				return;
+			}
+			cell = &run->shared[s0 / 4U];
+		} else if (opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS) {
+			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U);
+			wide = ((uint64_t)t->r[s0 + 1U] << 32) | t->r[s0];
+			cell = memory(run, wide);
+			if (cell == NULL)
+				return;
+		} else {
+			cell = NULL;
+		}
+		if (opcode == NVRTX_SM75_OP_LDS) {
+			t->r[dst] = *cell;
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_STS) {
+			*cell = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_ATOMS_CAS || opcode == NVRTX_SM75_OP_ATOMG_CAS) {
+			value = *cell;
+			if (value == t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)])
+				*cell = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_CAS_DATA_LOW, 8U)];
+			t->r[dst] = value;
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMG) {
+			value = *cell;
+			s1 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			lut = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_ATOM_OP_LOW, 4U);
+			bit = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_ATOM_TYPE_LOW, 3U);
+			if (lut == NVRTX_SM75_ATOM_ADD)
+				*cell = value + s1;
+			else if (lut == NVRTX_SM75_ATOM_AND)
+				*cell = value & s1;
+			else if (lut == NVRTX_SM75_ATOM_OR)
+				*cell = value | s1;
+			else if (lut == NVRTX_SM75_ATOM_XOR)
+				*cell = value ^ s1;
+			else if (lut == NVRTX_SM75_ATOM_EXCH)
+				*cell = s1;
+			else if (lut == NVRTX_SM75_ATOM_MIN)
+				*cell = (bit == NVRTX_SM75_ATOM_I32) ? (((int32_t)s1 < (int32_t)value) ? s1 : value) : ((s1 < value) ? s1 : value);
+			else if (lut == NVRTX_SM75_ATOM_MAX)
+				*cell = (bit == NVRTX_SM75_ATOM_I32) ? (((int32_t)s1 > (int32_t)value) ? s1 : value) : ((s1 > value) ? s1 : value);
+			else
+				run->failed = 1;
+			t->r[dst] = value;
+			continue;
+		}
 		if (opcode == NVRTX_SM75_OP_S2R) {
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_S2R_INDEX_LOW, 8U);
 			if (value >= NVRTX_SM75_SR_TID_X && value <= NVRTX_SM75_SR_TID_Z)
-				r[dst] = local[value - NVRTX_SM75_SR_TID_X];
+				t->r[dst] = t->local[value - NVRTX_SM75_SR_TID_X];
 			else if (value >= NVRTX_SM75_SR_CTAID_X && value <= NVRTX_SM75_SR_CTAID_Z)
-				r[dst] = group[value - NVRTX_SM75_SR_CTAID_X];
+				t->r[dst] = group[value - NVRTX_SM75_SR_CTAID_X];
 			else
 				run->failed = 1;
 			continue;
@@ -1019,33 +1612,33 @@ invoke(
 		if (opcode == NVRTX_SM75_OP_LDC) {
 			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CB_INDEX_LOW, 5U);
 			s1 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CB_OFFSET_LOW, 16U);
-			r[dst] = cb_word(run, s0, s1);
+			t->r[dst] = cb_word(run, s0, s1);
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_MEM_TYPE_LOW, 3U) == NVRTX_SM75_MEM_B64)
-				r[dst + 1U] = cb_word(run, s0, s1 + 4U);
+				t->r[dst + 1U] = cb_word(run, s0, s1 + 4U);
 			continue;
 		}
 		if (opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_STG) {
 			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U);
-			wide = ((uint64_t)r[s0 + 1U] << 32) | r[s0];
+			wide = ((uint64_t)t->r[s0 + 1U] << 32) | t->r[s0];
 			wide += (uint64_t)nvrtx_sm75_get(&word, NVRTX_SM75_MEM_OFFSET_LOW, 24U);
 			cell = memory(run, wide);
 			if (cell == NULL)
 				return;
 			if (opcode == NVRTX_SM75_OP_LDG)
-				r[dst] = *cell;
+				t->r[dst] = *cell;
 			else
-				*cell = r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+				*cell = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
 			continue;
 		}
 
 		/* The ALU form: the three sources by the form. */
 		alu = (uint32_t)nvrtx_sm75_get(&word, 0U, 9U);
 		form = (uint32_t)nvrtx_sm75_get(&word, 9U, 3U);
-		s0 = r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U)];
+		s0 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U)];
 		s1 = 0U;
-		s2 = r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U)];
+		s2 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U)];
 		if (form == NVRTX_SM75_FORM_REG) {
-			s1 = r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC1_LOW, 8U)];
+			s1 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC1_LOW, 8U)];
 		} else if (form == NVRTX_SM75_FORM_IMM) {
 			s1 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IMM_LOW, 32U);
 		} else if (form == NVRTX_SM75_FORM_CB) {
@@ -1054,24 +1647,24 @@ invoke(
 			s1 = s2;
 			s2 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IMM_LOW, 32U);
 		} else {
-			printf("  instruction %u: form %u\n", pc, form);
+			printf("  instruction %u: form %u\n", t->pc, form);
 			run->failed = 1;
 			return;
 		}
 
 		/* The predicate input A, and the operation. */
-		take = p[nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U)];
+		take = t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_LOW, 3U)];
 		if (nvrtx_sm75_get(&word, NVRTX_SM75_PSRC_A_NOT, 1U) != 0U)
 			take = !take;
 		switch (alu) {
 		case NVRTX_SM75_OP_MOV:
-			r[dst] = s1;
+			t->r[dst] = s1;
 			break;
 		case NVRTX_SM75_OP_SEL:
-			r[dst] = take ? s0 : s1;
+			t->r[dst] = take ? s0 : s1;
 			break;
 		case NVRTX_SM75_OP_FMNMX:
-			r[dst] = as_bits(take ? fminf(as_float(s0), as_float(s1)) : fmaxf(as_float(s0), as_float(s1)));
+			t->r[dst] = as_bits(take ? fminf(as_float(s0), as_float(s1)) : fmaxf(as_float(s0), as_float(s1)));
 			break;
 		case NVRTX_SM75_OP_FSETP:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CMP_LOW, 4U);
@@ -1083,8 +1676,8 @@ invoke(
 				guard = as_float(s0) == as_float(s1);
 			else
 				guard = !(as_float(s0) == as_float(s1));
-			p[nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U)] = guard && take;
-			p[7] = 1;
+			t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U)] = guard && take;
+			t->p[7] = 1;
 			break;
 		case NVRTX_SM75_OP_ISETP:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_CMP_LOW, 3U);
@@ -1093,8 +1686,8 @@ invoke(
 			} else {
 				guard = (value == NVRTX_SM75_ICMP_LT) ? (s0 < s1) : (value == NVRTX_SM75_ICMP_GE) ? (s0 >= s1) : (value == NVRTX_SM75_ICMP_EQ) ? (s0 == s1) : (s0 != s1);
 			}
-			p[nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U)] = guard && take;
-			p[7] = 1;
+			t->p[nvrtx_sm75_get(&word, NVRTX_SM75_PDST0_LOW, 3U)] = guard && take;
+			t->p[7] = 1;
 			break;
 		case NVRTX_SM75_OP_IADD3:
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_NEG, 1U) != 0U)
@@ -1103,7 +1696,7 @@ invoke(
 				s1 = 0U - s1;
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_NEG, 1U) != 0U)
 				s2 = 0U - s2;
-			r[dst] = s0 + s1 + s2;
+			t->r[dst] = s0 + s1 + s2;
 			break;
 		case NVRTX_SM75_OP_LOP3:
 			lut = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_LUT_LOW, 8U);
@@ -1114,7 +1707,7 @@ invoke(
 				index = (((s0 >> bit) & 1U) << 2) | (((s1 >> bit) & 1U) << 1) | ((s2 >> bit) & 1U);
 				value |= ((lut >> index) & 1U) << bit;
 			}
-			r[dst] = value;
+			t->r[dst] = value;
 			break;
 		case NVRTX_SM75_OP_SHF:
 			wide = ((uint64_t)s2 << 32) | s0;
@@ -1127,7 +1720,7 @@ invoke(
 			} else {
 				wide <<= s1;
 			}
-			r[dst] = (nvrtx_sm75_get(&word, NVRTX_SM75_SHF_HIGH, 1U) != 0U) ? (uint32_t)(wide >> 32) : (uint32_t)wide;
+			t->r[dst] = (nvrtx_sm75_get(&word, NVRTX_SM75_SHF_HIGH, 1U) != 0U) ? (uint32_t)(wide >> 32) : (uint32_t)wide;
 			break;
 		case NVRTX_SM75_OP_FADD:
 		case NVRTX_SM75_OP_FMUL:
@@ -1142,39 +1735,45 @@ invoke(
 			} else {
 				f = as_float(s0) + as_float(s1);
 			}
-			r[dst] = as_bits(f);
+			t->r[dst] = as_bits(f);
 			break;
 		case NVRTX_SM75_OP_IMAD:
-			r[dst] = s0 * s1 + s2;
+			t->r[dst] = s0 * s1 + s2;
 			break;
 		case NVRTX_SM75_OP_IMAD_WIDE:
 			wide = (uint64_t)s0 * s1;
-			wide += ((uint64_t)r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U) + 1U] << 32) | s2;
-			r[dst] = (uint32_t)wide;
-			r[dst + 1U] = (uint32_t)(wide >> 32);
+			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC2_LOW, 8U);
+			if (value != NVRTX_SM75_RZ)
+				wide += ((uint64_t)t->r[value + 1U] << 32) | s2;
+			t->r[dst] = (uint32_t)wide;
+			t->r[dst + 1U] = (uint32_t)(wide >> 32);
 			break;
 		case NVRTX_SM75_OP_F2I:
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_F2I_SIGNED, 1U) != 0U)
-				r[dst] = (uint32_t)(int32_t)truncf(as_float(s1));
+				t->r[dst] = (uint32_t)(int32_t)truncf(as_float(s1));
 			else
-				r[dst] = (uint32_t)truncf(as_float(s1));
+				t->r[dst] = (uint32_t)truncf(as_float(s1));
 			break;
 		case NVRTX_SM75_OP_I2F:
 			if (nvrtx_sm75_get(&word, NVRTX_SM75_I2F_SIGNED, 1U) != 0U)
-				r[dst] = as_bits((float)(int32_t)s1);
+				t->r[dst] = as_bits((float)(int32_t)s1);
 			else
-				r[dst] = as_bits((float)s1);
+				t->r[dst] = as_bits((float)s1);
 			break;
 		case NVRTX_SM75_OP_FRND:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_ROUND_LOW, 2U);
 			f = as_float(s1);
-			r[dst] = as_bits((value == NVRTX_SM75_ROUND_DOWN) ? floorf(f) : (value == NVRTX_SM75_ROUND_UP) ? ceilf(f) : (value == NVRTX_SM75_ROUND_ZERO) ? truncf(f) : nearbyintf(f));
+			t->r[dst] = as_bits((value == NVRTX_SM75_ROUND_DOWN) ? floorf(f) : (value == NVRTX_SM75_ROUND_UP) ? ceilf(f) : (value == NVRTX_SM75_ROUND_ZERO) ? truncf(f) : nearbyintf(f));
 			break;
 		case NVRTX_SM75_OP_MUFU:
 			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_MUFU_LOW, 6U);
 			f = as_float(s1);
-			if (value == NVRTX_SM75_MUFU_RCP)
+			if (value == NVRTX_SM75_MUFU_RCP) {
+				/* The unit is not exact: the reciprocal is off by one unit in the last place, either way. */
 				f = 1.0f / f;
+				if (isfinite(f) && f != 0.0f)
+					f = as_float(as_bits(f) + (((s1 & 1U) != 0U) ? 1U : 0xffffffffU));
+			}
 			else if (value == NVRTX_SM75_MUFU_RSQ)
 				f = 1.0f / sqrtf(f);
 			else if (value == NVRTX_SM75_MUFU_SQRT)
@@ -1187,10 +1786,10 @@ invoke(
 				f = sinf(f * 6.28318530718f);
 			else
 				f = cosf(f * 6.28318530718f);
-			r[dst] = as_bits(f);
+			t->r[dst] = as_bits(f);
 			break;
 		default:
-			printf("  instruction %u: ALU opcode 0x%03x not interpreted\n", pc, alu);
+			printf("  instruction %u: ALU opcode 0x%03x not interpreted\n", t->pc, alu);
 			run->failed = 1;
 			return;
 		}
