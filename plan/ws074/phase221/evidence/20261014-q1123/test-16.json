@@ -1,0 +1,1443 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style.cssText = grid: auto-flow auto / 100px 100px should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"none / 100px 100px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow auto / 100px 100px should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"\" but got \"30px 40px / 50px 60px\""
+    },
+    {
+      "name": "e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-template",
+      "status": 1,
+      "message": "assert_equals: grid-template serialization should be canonical expected \"30px 40px / 50px 60px\" but got \"\""
+    },
+    {
+      "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-template: 30px 40px / 50px 60px;' in its serialization",
+      "status": 1,
+      "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-template: 30px 40px / 50px 60px;' expected true got false"
+    },
+    {
+      "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-rows: auto;' in its serialization",
+      "status": 1,
+      "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-rows: auto;' expected true got false"
+    },
+    {
+      "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-columns: auto;' in its serialization",
+      "status": 1,
+      "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-columns: auto;' expected true got false"
+    },
+    {
+      "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-flow: column;' in its serialization",
+      "status": 1,
+      "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-flow: column;' expected true got false"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"20px / 10px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid-template",
+      "status": 1,
+      "message": "assert_equals: grid-template serialization should be canonical expected \"20px / 10px\" but got \"\""
+    },
+    {
+      "name": "cssText ('grid: auto-flow / 10px; grid-template-rows: 20px') must contain 'grid: 20px / 10px;' in its serialization",
+      "status": 1,
+      "message": "assert_true: cssText serialization ('grid-template-rows: 20px;') must contain contain 'grid: 20px / 10px;' expected true got false"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"repeat(2, 20px) / 10px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"repeat(2, 20px) repeat(3, 30px) / 10px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"repeat(auto-fill, 20px) / 10px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fill, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"repeat(auto-fit, 20px) / 10px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fit, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"10px / 20px\" but got \"10px / auto\""
+    },
+    {
+      "name": "e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid-template",
+      "status": 1,
+      "message": "assert_equals: grid-template serialization should be canonical expected \"10px / 20px\" but got \"\""
+    },
+    {
+      "name": "cssText ('grid: 10px / auto; grid-template-columns: 20px') must contain 'grid: 10px / 20px;' in its serialization",
+      "status": 1,
+      "message": "assert_true: cssText serialization ('grid: 10px / auto; grid-template-columns: 20px;') must contain contain 'grid: 10px / 20px;' expected true got false"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(2, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid-template-columns",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(2, 20px) repeat(3, 30px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid-template-columns",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(auto-fill, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fill, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(auto-fit, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fit, 20px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-flow: inherit should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / 2px; grid-auto-flow: row should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / 2px; grid-auto-flow: row should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / 2px; grid-auto-columns: auto should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / 2px; grid-auto-rows: auto should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: auto should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"1px / auto-flow 2px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow; grid-auto-columns: auto should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"1px / auto-flow\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: auto should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"auto-flow 1px / 2px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-auto-columns: auto should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"auto-flow 1px / none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow dense / 2px; grid-auto-rows: auto should set grid",
+      "status": 1,
+      "message": "assert_equals: grid serialization should be canonical expected \"auto-flow dense / 2px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"3px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"2px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"2px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"3px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"1px\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-columns",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-columns",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fill, 3px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fit, 3px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fill, 3px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-columns",
+      "status": 1,
+      "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-flow",
+      "status": 1,
+      "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-rows",
+      "status": 1,
+      "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fit, 3px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template: none; should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template: none; should set grid-template",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template: none; should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template: none; should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template: none; should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template: auto / auto; should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template: auto / auto; should set grid-template",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template: auto / auto; should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"none\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template: auto / auto; should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template: auto / auto; should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template",
+      "status": 1,
+      "message": "assert_equals: grid-template serialization should be canonical expected \"[header-top] \\\"a a a\\\" [header-bottom main-top] \\\"b b b\\\" 1fr [main-bottom] / auto 1fr auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"auto 1fr auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template",
+      "status": 1,
+      "message": "assert_equals: grid-template serialization should be canonical expected \"[header-top] \\\"a a a\\\" [header-bottom main-top] \\\"b b b\\\" 1fr [main-bottom] \\\"c c c\\\" \\\"d d d\\\" / auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\" \\\"c c c\\\" \\\"d d d\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template-rows",
+      "status": 1,
+      "message": "assert_equals: grid-template-rows serialization should be canonical expected \"[header-top] auto [header-bottom main-top] 1fr [main-bottom] auto auto\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fill, 3px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+      "status": 1,
+      "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+      "status": 1,
+      "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fit, 3px)\" but got \"\""
+    },
+    {
+      "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+      "status": 0,
+      "message": ""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style.cssText = grid: auto-flow auto / 100px 100px should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"none / 100px 100px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow auto / 100px 100px should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"\" but got \"30px 40px / 50px 60px\""
+      },
+      {
+        "name": "e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-template",
+        "status": 1,
+        "message": "assert_equals: grid-template serialization should be canonical expected \"30px 40px / 50px 60px\" but got \"\""
+      },
+      {
+        "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-template: 30px 40px / 50px 60px;' in its serialization",
+        "status": 1,
+        "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-template: 30px 40px / 50px 60px;' expected true got false"
+      },
+      {
+        "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-rows: auto;' in its serialization",
+        "status": 1,
+        "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-rows: auto;' expected true got false"
+      },
+      {
+        "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-columns: auto;' in its serialization",
+        "status": 1,
+        "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-columns: auto;' expected true got false"
+      },
+      {
+        "name": "cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-flow: column;' in its serialization",
+        "status": 1,
+        "message": "assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-flow: column;' expected true got false"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"20px / 10px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid-template",
+        "status": 1,
+        "message": "assert_equals: grid-template serialization should be canonical expected \"20px / 10px\" but got \"\""
+      },
+      {
+        "name": "cssText ('grid: auto-flow / 10px; grid-template-rows: 20px') must contain 'grid: 20px / 10px;' in its serialization",
+        "status": 1,
+        "message": "assert_true: cssText serialization ('grid-template-rows: 20px;') must contain contain 'grid: 20px / 10px;' expected true got false"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"repeat(2, 20px) / 10px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"repeat(2, 20px) repeat(3, 30px) / 10px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"repeat(auto-fill, 20px) / 10px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fill, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"repeat(auto-fit, 20px) / 10px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fit, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"10px / 20px\" but got \"10px / auto\""
+      },
+      {
+        "name": "e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid-template",
+        "status": 1,
+        "message": "assert_equals: grid-template serialization should be canonical expected \"10px / 20px\" but got \"\""
+      },
+      {
+        "name": "cssText ('grid: 10px / auto; grid-template-columns: 20px') must contain 'grid: 10px / 20px;' in its serialization",
+        "status": 1,
+        "message": "assert_true: cssText serialization ('grid: 10px / auto; grid-template-columns: 20px;') must contain contain 'grid: 10px / 20px;' expected true got false"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(2, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid-template-columns",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(2, 20px) repeat(3, 30px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid-template-columns",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(auto-fill, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fill, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"none / repeat(auto-fit, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fit, 20px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-flow: inherit should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / 2px; grid-auto-flow: row should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / 2px; grid-auto-flow: row should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / 2px; grid-auto-columns: auto should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / 2px; grid-auto-rows: auto should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: auto should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"1px / auto-flow 2px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow; grid-auto-columns: auto should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"1px / auto-flow\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: auto should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"auto-flow 1px / 2px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-auto-columns: auto should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"auto-flow 1px / none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow dense / 2px; grid-auto-rows: auto should set grid",
+        "status": 1,
+        "message": "assert_equals: grid serialization should be canonical expected \"auto-flow dense / 2px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"3px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"2px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"2px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"3px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"1px\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-columns",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-columns",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fill, 3px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"column\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fit, 3px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fill, 3px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-columns",
+        "status": 1,
+        "message": "assert_equals: grid-auto-columns serialization should be canonical expected (string) \"auto\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-flow",
+        "status": 1,
+        "message": "assert_equals: grid-auto-flow serialization should be canonical expected (string) \"row\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-rows",
+        "status": 1,
+        "message": "assert_equals: grid-auto-rows serialization should be canonical expected (string) \"1px\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"repeat(auto-fit, 3px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template: none; should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template: none; should set grid-template",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template: none; should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template: none; should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template: none; should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"none\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template: auto / auto; should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template: auto / auto; should set grid-template",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template: auto / auto; should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"none\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template: auto / auto; should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template: auto / auto; should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template",
+        "status": 1,
+        "message": "assert_equals: grid-template serialization should be canonical expected \"[header-top] \\\"a a a\\\" [header-bottom main-top] \\\"b b b\\\" 1fr [main-bottom] / auto 1fr auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"auto 1fr auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] / auto 1fr auto should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template",
+        "status": 1,
+        "message": "assert_equals: grid-template serialization should be canonical expected \"[header-top] \\\"a a a\\\" [header-bottom main-top] \\\"b b b\\\" 1fr [main-bottom] \\\"c c c\\\" \\\"d d d\\\" / auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"a a a\\\" \\\"b b b\\\" \\\"c c c\\\" \\\"d d d\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template:  [header-top] \"a   a   a\" [header-bottom] [main-top] \"b   b   b\" 1fr [main-bottom] \"c  c  c\" \"d  d  d\" / auto should set grid-template-rows",
+        "status": 1,
+        "message": "assert_equals: grid-template-rows serialization should be canonical expected \"[header-top] auto [header-bottom main-top] 1fr [main-bottom] auto auto\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fill, 3px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-areas",
+        "status": 1,
+        "message": "assert_equals: grid-template-areas serialization should be canonical expected (string) \"\\\"one two\\\" \\\"three four\\\"\" but got (undefined) undefined"
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-columns",
+        "status": 1,
+        "message": "assert_equals: grid-template-columns serialization should be canonical expected \"repeat(auto-fit, 3px)\" but got \"\""
+      },
+      {
+        "name": "e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \"one two\" \"three four\" should set grid-template-rows",
+        "status": 0,
+        "message": ""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-shorthand-serialization.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:43717/css/css-grid/parsing/grid-shorthand-serialization.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / 100px 100px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"\\\" but got \\\"30px 40px / 50px 60px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"30px 40px / 50px 60px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-template: 30px 40px / 50px 60px;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-template: 30px 40px / 50px 60px;' expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-rows: auto;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-rows: auto;' expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-columns: auto;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-columns: auto;' expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-flow: column;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-flow: column;' expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"20px / 10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"20px / 10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"cssText ('grid: auto-flow / 10px; grid-template-rows: 20px') must contain 'grid: 20px / 10px;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid-template-rows: 20px;') must contain contain 'grid: 20px / 10px;' expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(2, 20px) / 10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(2, 20px) repeat(3, 30px) / 10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(auto-fill, 20px) / 10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fill, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(auto-fit, 20px) / 10px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fit, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"10px / 20px\\\" but got \\\"10px / auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"10px / 20px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"cssText ('grid: 10px / auto; grid-template-columns: 20px') must contain 'grid: 10px / 20px;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 10px / auto; grid-template-columns: 20px;') must contain contain 'grid: 10px / 20px;' expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(2, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid-template-columns\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(2, 20px) repeat(3, 30px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid-template-columns\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(auto-fill, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fill, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(auto-fit, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fit, 20px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-flow: inherit should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / 2px; grid-auto-flow: row should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / 2px; grid-auto-flow: row should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / 2px; grid-auto-columns: auto should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / 2px; grid-auto-rows: auto should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"1px / auto-flow 2px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow; grid-auto-columns: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"1px / auto-flow\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"auto-flow 1px / 2px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-auto-columns: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"auto-flow 1px / none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow dense / 2px; grid-auto-rows: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"auto-flow dense / 2px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"3px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"2px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"2px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"3px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"1px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-columns\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-columns\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fill, 3px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fit, 3px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fill, 3px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fit, 3px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: none; should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: none; should set grid-template\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: none; should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: none; should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: none; should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"[header-top] \\\\\\\"a a a\\\\\\\" [header-bottom main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom] / auto 1fr auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"[header-top] \\\\\\\"a a a\\\\\\\" [header-bottom main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom] \\\\\\\"c c c\\\\\\\" \\\\\\\"d d d\\\\\\\" / auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\" \\\\\\\"c c c\\\\\\\" \\\\\\\"d d d\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"[header-top] auto [header-bottom main-top] 1fr [main-bottom] auto auto\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fill, 3px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fit, 3px)\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / 100px 100px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow auto / 100px 100px; grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"\\\" but got \\\"30px 40px / 50px 60px\\\"\"},{\"name\":\"e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: 30px 40px / 50px 60px; grid-auto-flow: column should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"30px 40px / 50px 60px\\\" but got \\\"\\\"\"},{\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-template: 30px 40px / 50px 60px;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-template: 30px 40px / 50px 60px;' expected true got false\"},{\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-rows: auto;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-rows: auto;' expected true got false\"},{\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-columns: auto;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-columns: auto;' expected true got false\"},{\"name\":\"cssText ('grid: 30px 40px / 50px 60px; grid-auto-flow: column') must contain 'grid-auto-flow: column;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 30px 40px / 50px 60px;') must contain contain 'grid-auto-flow: column;' expected true got false\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"20px / 10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: 20px should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"20px / 10px\\\" but got \\\"\\\"\"},{\"name\":\"cssText ('grid: auto-flow / 10px; grid-template-rows: 20px') must contain 'grid: 20px / 10px;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid-template-rows: 20px;') must contain contain 'grid: 20px / 10px;' expected true got false\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(2, 20px) / 10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(2, 20px) repeat(3, 30px) / 10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(2, 20px) repeat(3, 30px) should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(auto-fill, 20px) / 10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fill, 20px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fill, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"repeat(auto-fit, 20px) / 10px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-rows: repeat(auto-fit, 20px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fit, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"10px / 20px\\\" but got \\\"10px / auto\\\"\"},{\"name\":\"e.style.cssText = grid: 10px / auto; grid-template-columns: 20px should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"10px / 20px\\\" but got \\\"\\\"\"},{\"name\":\"cssText ('grid: 10px / auto; grid-template-columns: 20px') must contain 'grid: 10px / 20px;' in its serialization\",\"status\":1,\"message\":\"assert_true: cssText serialization ('grid: 10px / auto; grid-template-columns: 20px;') must contain contain 'grid: 10px / 20px;' expected true got false\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(2, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) should set grid-template-columns\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(2, 20px) repeat(3, 30px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(2, 20px) repeat(3, 30px) should set grid-template-columns\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(auto-fill, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fill, 20px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fill, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"none / repeat(auto-fit, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow / 10px; grid-template-columns: repeat(auto-fit, 20px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fit, 20px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-flow: inherit should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: 1px / 2px; grid-auto-flow: row should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / 2px; grid-auto-flow: row should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: 1px / 2px; grid-auto-columns: auto should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: 1px / 2px; grid-auto-rows: auto should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"1px / auto-flow 2px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow; grid-auto-columns: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"1px / auto-flow\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"auto-flow 1px / 2px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-auto-columns: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"auto-flow 1px / none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow dense / 2px; grid-auto-rows: auto should set grid\",\"status\":1,\"message\":\"assert_equals: grid serialization should be canonical expected \\\"auto-flow dense / 2px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"3px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"2px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / 2px; grid-auto-columns: 3px should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"2px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"3px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: 1px / auto-flow 2px; grid-auto-rows: 3px should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"1px\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-columns\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: 3px should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-columns\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(2, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fill, 3px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fill, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"column\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fit, 3px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: none / auto-flow 1px; grid-template-columns: repeat(auto-fit, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: 3px should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(2, 3px) should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fill, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fill, 3px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-columns\",\"status\":1,\"message\":\"assert_equals: grid-auto-columns serialization should be canonical expected (string) \\\"auto\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-flow\",\"status\":1,\"message\":\"assert_equals: grid-auto-flow serialization should be canonical expected (string) \\\"row\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-auto-rows\",\"status\":1,\"message\":\"assert_equals: grid-auto-rows serialization should be canonical expected (string) \\\"1px\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid: auto-flow 1px / none; grid-template-rows: repeat(auto-fit, 3px) should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"repeat(auto-fit, 3px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template: none; should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template: none; should set grid-template\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template: none; should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template: none; should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template: none; should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"none\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template: auto / auto; should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"[header-top] \\\\\\\"a a a\\\\\\\" [header-bottom main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom] / auto 1fr auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"auto 1fr auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] / auto 1fr auto should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"[header-top] auto [header-bottom main-top] 1fr [main-bottom]\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template\",\"status\":1,\"message\":\"assert_equals: grid-template serialization should be canonical expected \\\"[header-top] \\\\\\\"a a a\\\\\\\" [header-bottom main-top] \\\\\\\"b b b\\\\\\\" 1fr [main-bottom] \\\\\\\"c c c\\\\\\\" \\\\\\\"d d d\\\\\\\" / auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"a a a\\\\\\\" \\\\\\\"b b b\\\\\\\" \\\\\\\"c c c\\\\\\\" \\\\\\\"d d d\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template:  [header-top] \\\"a   a   a\\\" [header-bottom] [main-top] \\\"b   b   b\\\" 1fr [main-bottom] \\\"c  c  c\\\" \\\"d  d  d\\\" / auto should set grid-template-rows\",\"status\":1,\"message\":\"assert_equals: grid-template-rows serialization should be canonical expected \\\"[header-top] auto [header-bottom main-top] 1fr [main-bottom] auto auto\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(2, 1fr); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fill, 3px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fill, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid\",\"status\":0,\"message\":\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-areas\",\"status\":1,\"message\":\"assert_equals: grid-template-areas serialization should be canonical expected (string) \\\"\\\\\\\"one two\\\\\\\" \\\\\\\"three four\\\\\\\"\\\" but got (undefined) undefined\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-columns\",\"status\":1,\"message\":\"assert_equals: grid-template-columns serialization should be canonical expected \\\"repeat(auto-fit, 3px)\\\" but got \\\"\\\"\"},{\"name\":\"e.style.cssText = grid-template-rows: auto auto; grid-template-columns: repeat(auto-fit, 3px); grid-template-areas: \\\"one two\\\" \\\"three four\\\" should set grid-template-rows\",\"status\":0,\"message\":\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

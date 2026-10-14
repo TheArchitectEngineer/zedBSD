@@ -475,10 +475,11 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p214](phase214/phase.md) | Interop 2025 CSS Grid fit-content min-content floor | cleared / q1075系列4 ID改善・静的旧PASS維持 | p213 q1073・p189 q1074 fixed baseline |
 | [ws074-p215](phase215/phase.md) | Interop 2025 CSS Grid replaced item normal/stretch | cleared / q1076固定14 WPT全PASS・静的旧PASS維持 | p214 q1075・p189 q1074 fixed baseline |
 | [ws074-p216](phase216/phase.md) | Interop 2025 JavaScript module loading | uncleared / q1079–q1086 partial cleared | p189 q1078 module調査 |
-| [ws074-p217](phase217/phase.md) | Interop 2025 Grid alignment failures | uncleared / q1088–q1089部分cleared | p189 q1087 Grid recensus |
+| [ws074-p217](phase217/phase.md) | Interop 2025 Grid alignment failures | uncleared / q1120まで部分cleared、縦書き残 | p189 q1087 Grid recensus、p220縦inline出力 |
 | [ws074-p218](phase218/phase.md) | Interop 2025 CSS Grid shorthand | uncleared / q1094部分cleared | p189 q1093 Grid recensus |
 | [ws074-p219](phase219/phase.md) | Interop 2025 Grid baseline self-alignment | uncleared / q1096部分cleared | p189 q1093 Grid・p218 q1095 track |
-| [ws074-p220](phase220/phase.md) | vertical inline text geometry | planned / q1103設計 | p217 q1103・q1092診断 |
+| [ws074-p220](phase220/phase.md) | vertical inline text geometry | in-progress / q1121–q1122部分cleared | p217 q1103・q1092診断 |
+| [ws074-p221](phase221/phase.md) | Interop 2025 Grid parsing and CSSOM | in-progress / q1123診断 | p189 q1105固定Grid502・p218 shorthand出力 |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
@@ -902,3 +903,7 @@ Event ws074-p217-q1120-partial-clear-20261014: [p217](phase217/phase.md) q1120-i
 Event ws074-p220-q1121-partial-clear-20261014: [p220](phase220/phase.md) q1121-i01は固定列軸012–016縦書きの初回幅10/実60を非Grid最小ページと既存Grid fixtureで切り分け。[証拠](phase220/evidence/20261014-q1121/README.md)。非Grid縦書き絶対子も36×10pxで、inline line/paint/bounds/hit/dumpが横書き座標のまま。次の有限実装は非Grid vertical-lrの単一非折返し文字runに絞る。browser/runner/WPT/ABI/Master/Acid無変更、p220/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p220-q1122-partial-clear-20261014: [p220](phase220/phase.md) q1122-i01はCSS `text-orientation`の3値・継承/CSS-wide・CSSOMと`writing-mode` CSSOMを追加。[証拠](phase220/evidence/20261014-q1122/README.md)。最小host/旧WPT PASS2件、CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。縦line/paintは後続、p220/p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p221-addition-20261014: [p221](phase221/phase.md)を追加。p189 q1105の固定Grid502残392 whole FAIL中、Grid parsing/配下35件をalignment/縦文字から分離して診断・段階修正する。固定41件全PASSをp221独自受け入れとし、p189/p173の分母と受け入れは維持。q1123有限読取scopeを選定、共有投影/GitHub publication保留。
+
+Event ws074-p221-q1123-partial-clear-20261014: [p221](phase221/phase.md) q1123-i01は固定Grid parsing41件を全再測定。[証拠](phase221/evidence/20261014-q1123/README.md)。6 whole PASS/35 FAIL、336/930 subtest、no_output/process_error0。auto/areas属性欠落、track解析/直列化、area/shorthandが主群。次は`grid-template-rows` CSSOMの有限修正。browser/WPT/runner/ABI/Master/Acid無変更、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。

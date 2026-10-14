@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1122 / WS074 text-orientation CSS state（2026-10-14）
+## 最新: q1123 / WS074 fixed Grid parsing triage（2026-10-14）
+
+[q1123履歴](queue-q1123.md): 固定Grid parsing41件は6 whole PASS/35 FAIL、336/930 subtest、no_output0。auto/areas欠落、track解析/CSSOM、area/shorthandに分類。[証拠](../ws074/phase221/evidence/20261014-q1123/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1122 / WS074 text-orientation CSS state（2026-10-14）
 
 [q1122履歴](queue-q1122.md): CSS `text-orientation`の3値・継承/CSS-wide・CSSOMと`writing-mode` CSSOMを追加。旧PASSとAcid3差0維持。縦line/paintは後続。[証拠](../ws074/phase220/evidence/20261014-q1122/README.md)。p220部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

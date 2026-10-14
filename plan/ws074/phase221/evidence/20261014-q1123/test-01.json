@@ -1,0 +1,283 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "e.style['grid-area'] = \"'string'\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"'string'\""
+    },
+    {
+      "name": "e.style['grid-row'] = \"1.0\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1.0\""
+    },
+    {
+      "name": "e.style['grid-column'] = \"1 2\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1 2\""
+    },
+    {
+      "name": "e.style['grid-row-start'] = \"+-3\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"+-3\""
+    },
+    {
+      "name": "e.style['grid-column-start'] = \"0\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"0\""
+    },
+    {
+      "name": "e.style['grid-row-end'] = \"span\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"span\""
+    },
+    {
+      "name": "e.style['grid-column-end'] = \"sPaN\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"sPaN\""
+    },
+    {
+      "name": "e.style['grid-column-end'] = \"\\\"1st\\\"\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"\\\"1st\\\"\""
+    },
+    {
+      "name": "e.style['grid-column-end'] = \"1st\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1st\""
+    },
+    {
+      "name": "e.style['grid-column-start'] = \"auto 1\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto 1\""
+    },
+    {
+      "name": "e.style['grid-row-start'] = \"1 auto\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1 auto\""
+    },
+    {
+      "name": "e.style['grid-area'] = \"auto / initial\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto / initial\""
+    },
+    {
+      "name": "e.style['grid-row'] = \"auto / inherit\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto / inherit\""
+    },
+    {
+      "name": "e.style['grid-column'] = \"auto / unset\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto / unset\""
+    },
+    {
+      "name": "e.style['grid-area'] = \"auto / auto / auto / auto / auto\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto / auto / auto / auto / auto\""
+    },
+    {
+      "name": "e.style['grid-row'] = \"1 / 2 / 3\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1 / 2 / 3\""
+    },
+    {
+      "name": "e.style['grid-column'] = \"a / b / c\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"a / b / c\""
+    },
+    {
+      "name": "e.style['grid-row-end'] = \"span 1 / span 2\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"span 1 / span 2\""
+    },
+    {
+      "name": "e.style['grid-area'] = \"auto 2 auto 4\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto 2 auto 4\""
+    },
+    {
+      "name": "e.style['grid-row'] = \"33 -A0 auto\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"33 -A0 auto\""
+    },
+    {
+      "name": "e.style['grid-row'] = \"auto i 2 j span 3 k\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"auto i 2 j span 3 k\""
+    },
+    {
+      "name": "e.style['grid-row-end'] = \"1 auto\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1 auto\""
+    },
+    {
+      "name": "e.style['grid-row-end'] = \"span 1 auto\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"span 1 auto\""
+    },
+    {
+      "name": "e.style['grid-row-end'] = \"span auto 1\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"span auto 1\""
+    },
+    {
+      "name": "e.style['grid-row-end'] = \"1 auto span\" should not set the property value",
+      "status": 1,
+      "message": "assert_equals: expected \"\" but got \"1 auto span\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "e.style['grid-area'] = \"'string'\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"'string'\""
+      },
+      {
+        "name": "e.style['grid-row'] = \"1.0\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1.0\""
+      },
+      {
+        "name": "e.style['grid-column'] = \"1 2\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1 2\""
+      },
+      {
+        "name": "e.style['grid-row-start'] = \"+-3\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"+-3\""
+      },
+      {
+        "name": "e.style['grid-column-start'] = \"0\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"0\""
+      },
+      {
+        "name": "e.style['grid-row-end'] = \"span\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"span\""
+      },
+      {
+        "name": "e.style['grid-column-end'] = \"sPaN\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"sPaN\""
+      },
+      {
+        "name": "e.style['grid-column-end'] = \"\\\"1st\\\"\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"\\\"1st\\\"\""
+      },
+      {
+        "name": "e.style['grid-column-end'] = \"1st\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1st\""
+      },
+      {
+        "name": "e.style['grid-column-start'] = \"auto 1\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto 1\""
+      },
+      {
+        "name": "e.style['grid-row-start'] = \"1 auto\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1 auto\""
+      },
+      {
+        "name": "e.style['grid-area'] = \"auto / initial\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto / initial\""
+      },
+      {
+        "name": "e.style['grid-row'] = \"auto / inherit\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto / inherit\""
+      },
+      {
+        "name": "e.style['grid-column'] = \"auto / unset\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto / unset\""
+      },
+      {
+        "name": "e.style['grid-area'] = \"auto / auto / auto / auto / auto\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto / auto / auto / auto / auto\""
+      },
+      {
+        "name": "e.style['grid-row'] = \"1 / 2 / 3\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1 / 2 / 3\""
+      },
+      {
+        "name": "e.style['grid-column'] = \"a / b / c\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"a / b / c\""
+      },
+      {
+        "name": "e.style['grid-row-end'] = \"span 1 / span 2\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"span 1 / span 2\""
+      },
+      {
+        "name": "e.style['grid-area'] = \"auto 2 auto 4\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto 2 auto 4\""
+      },
+      {
+        "name": "e.style['grid-row'] = \"33 -A0 auto\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"33 -A0 auto\""
+      },
+      {
+        "name": "e.style['grid-row'] = \"auto i 2 j span 3 k\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"auto i 2 j span 3 k\""
+      },
+      {
+        "name": "e.style['grid-row-end'] = \"1 auto\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1 auto\""
+      },
+      {
+        "name": "e.style['grid-row-end'] = \"span 1 auto\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"span 1 auto\""
+      },
+      {
+        "name": "e.style['grid-row-end'] = \"span auto 1\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"span auto 1\""
+      },
+      {
+        "name": "e.style['grid-row-end'] = \"1 auto span\" should not set the property value",
+        "status": 1,
+        "message": "assert_equals: expected \"\" but got \"1 auto span\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-area-invalid.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:43881/css/css-grid/parsing/grid-area-invalid.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"e.style['grid-area'] = \\\"'string'\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"'string'\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row'] = \\\"1.0\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1.0\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column'] = \\\"1 2\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 2\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-start'] = \\\"+-3\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"+-3\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column-start'] = \\\"0\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"0\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-end'] = \\\"span\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column-end'] = \\\"sPaN\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"sPaN\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column-end'] = \\\"\\\\\\\"1st\\\\\\\"\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"\\\\\\\"1st\\\\\\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column-end'] = \\\"1st\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1st\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column-start'] = \\\"auto 1\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto 1\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-start'] = \\\"1 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-area'] = \\\"auto / initial\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / initial\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row'] = \\\"auto / inherit\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / inherit\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column'] = \\\"auto / unset\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / unset\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-area'] = \\\"auto / auto / auto / auto / auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / auto / auto / auto / auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row'] = \\\"1 / 2 / 3\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 / 2 / 3\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-column'] = \\\"a / b / c\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"a / b / c\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-end'] = \\\"span 1 / span 2\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span 1 / span 2\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-area'] = \\\"auto 2 auto 4\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto 2 auto 4\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row'] = \\\"33 -A0 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"33 -A0 auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row'] = \\\"auto i 2 j span 3 k\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto i 2 j span 3 k\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-end'] = \\\"1 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-end'] = \\\"span 1 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span 1 auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-end'] = \\\"span auto 1\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span auto 1\\\"\"}\nWS074_WPT_RESULT {\"name\":\"e.style['grid-row-end'] = \\\"1 auto span\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 auto span\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"e.style['grid-area'] = \\\"'string'\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"'string'\\\"\"},{\"name\":\"e.style['grid-row'] = \\\"1.0\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1.0\\\"\"},{\"name\":\"e.style['grid-column'] = \\\"1 2\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 2\\\"\"},{\"name\":\"e.style['grid-row-start'] = \\\"+-3\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"+-3\\\"\"},{\"name\":\"e.style['grid-column-start'] = \\\"0\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"0\\\"\"},{\"name\":\"e.style['grid-row-end'] = \\\"span\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span\\\"\"},{\"name\":\"e.style['grid-column-end'] = \\\"sPaN\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"sPaN\\\"\"},{\"name\":\"e.style['grid-column-end'] = \\\"\\\\\\\"1st\\\\\\\"\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"\\\\\\\"1st\\\\\\\"\\\"\"},{\"name\":\"e.style['grid-column-end'] = \\\"1st\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1st\\\"\"},{\"name\":\"e.style['grid-column-start'] = \\\"auto 1\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto 1\\\"\"},{\"name\":\"e.style['grid-row-start'] = \\\"1 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 auto\\\"\"},{\"name\":\"e.style['grid-area'] = \\\"auto / initial\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / initial\\\"\"},{\"name\":\"e.style['grid-row'] = \\\"auto / inherit\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / inherit\\\"\"},{\"name\":\"e.style['grid-column'] = \\\"auto / unset\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / unset\\\"\"},{\"name\":\"e.style['grid-area'] = \\\"auto / auto / auto / auto / auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto / auto / auto / auto / auto\\\"\"},{\"name\":\"e.style['grid-row'] = \\\"1 / 2 / 3\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 / 2 / 3\\\"\"},{\"name\":\"e.style['grid-column'] = \\\"a / b / c\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"a / b / c\\\"\"},{\"name\":\"e.style['grid-row-end'] = \\\"span 1 / span 2\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span 1 / span 2\\\"\"},{\"name\":\"e.style['grid-area'] = \\\"auto 2 auto 4\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto 2 auto 4\\\"\"},{\"name\":\"e.style['grid-row'] = \\\"33 -A0 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"33 -A0 auto\\\"\"},{\"name\":\"e.style['grid-row'] = \\\"auto i 2 j span 3 k\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"auto i 2 j span 3 k\\\"\"},{\"name\":\"e.style['grid-row-end'] = \\\"1 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 auto\\\"\"},{\"name\":\"e.style['grid-row-end'] = \\\"span 1 auto\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span 1 auto\\\"\"},{\"name\":\"e.style['grid-row-end'] = \\\"span auto 1\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"span auto 1\\\"\"},{\"name\":\"e.style['grid-row-end'] = \\\"1 auto span\\\" should not set the property value\",\"status\":1,\"message\":\"assert_equals: expected \\\"\\\" but got \\\"1 auto span\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

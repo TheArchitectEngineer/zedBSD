@@ -1,0 +1,333 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Property grid-template-columns value 'none'",
+      "status": 1,
+      "message": "assert_equals: expected \"300px\" but got \"none\""
+    },
+    {
+      "name": "Property grid-template-columns value '20%'",
+      "status": 1,
+      "message": "assert_equals: expected \"60px\" but got \"20%\""
+    },
+    {
+      "name": "Property grid-template-columns value 'calc(-0.5em + 10px)'",
+      "status": 1,
+      "message": "assert_true: 'calc(-0.5em + 10px)' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value 'calc(0.5em + 10px)'",
+      "status": 1,
+      "message": "assert_true: 'calc(0.5em + 10px)' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value 'calc(30% + 40px)'",
+      "status": 1,
+      "message": "assert_true: 'calc(30% + 40px)' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value '5fr'",
+      "status": 1,
+      "message": "assert_equals: expected \"300px\" but got \"5fr\""
+    },
+    {
+      "name": "Property grid-template-columns value 'min-content'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'max-content'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"300px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'minmax(10px, auto)'",
+      "status": 1,
+      "message": "assert_equals: expected \"300px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'minmax(20%, max-content)'",
+      "status": 1,
+      "message": "assert_equals: expected \"60px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'minmax(min-content, calc(-0.5em + 10px))'",
+      "status": 1,
+      "message": "assert_true: 'minmax(min-content, calc(-0.5em + 10px))' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value 'minmax(auto, 0)'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px\" but got \"0px\""
+    },
+    {
+      "name": "Property grid-template-columns value 'fit-content(70px)'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'fit-content(20%)'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'fit-content(calc(-0.5em + 10px))'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px\" but got \"auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(1, 10px)'",
+      "status": 0,
+      "message": ""
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(1, [one two] 20%)'",
+      "status": 1,
+      "message": "assert_equals: expected \"[one two] 60px\" but got \"20%\""
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(2, minmax(10px, auto))'",
+      "status": 1,
+      "message": "assert_equals: expected \"160px 140px\" but got \"auto auto\""
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(2, fit-content(20%) [three four] 30px 40px [five six])'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px [three four] 30px 40px [five six] 0px [three four] 30px 40px [five six]\" but got \"auto 30px 40px auto 30px 40px\""
+    },
+    {
+      "name": "Property grid-template-columns value 'min-content repeat(5, minmax(10px, auto))'",
+      "status": 1,
+      "message": "assert_equals: expected \"30px 54px 54px 54px 54px 54px\" but got \"auto auto auto auto auto auto\""
+    },
+    {
+      "name": "Property grid-template-columns value '[] 150px [] 1fr []'",
+      "status": 1,
+      "message": "assert_equals: expected \"150px 150px\" but got \"150px 1fr\""
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(auto-fill, 200px)'",
+      "status": 1,
+      "message": "assert_true: 'repeat(auto-fill, 200px)' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(auto-fit, [one] 20%)'",
+      "status": 1,
+      "message": "assert_true: 'repeat(auto-fit, [one] 20%)' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(auto-fill, minmax(100px, 5fr) [two])'",
+      "status": 1,
+      "message": "assert_true: 'repeat(auto-fill, minmax(100px, 5fr) [two])' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])'",
+      "status": 1,
+      "message": "assert_true: 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]'",
+      "status": 1,
+      "message": "assert_true: '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]'",
+      "status": 1,
+      "message": "assert_true: '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]'",
+      "status": 1,
+      "message": "assert_true: '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]' is a supported value for grid-template-columns. expected true got false"
+    },
+    {
+      "name": "Property grid-template-columns value '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]'",
+      "status": 1,
+      "message": "assert_true: '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]' is a supported value for grid-template-columns. expected true got false"
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Property grid-template-columns value 'none'",
+        "status": 1,
+        "message": "assert_equals: expected \"300px\" but got \"none\""
+      },
+      {
+        "name": "Property grid-template-columns value '20%'",
+        "status": 1,
+        "message": "assert_equals: expected \"60px\" but got \"20%\""
+      },
+      {
+        "name": "Property grid-template-columns value 'calc(-0.5em + 10px)'",
+        "status": 1,
+        "message": "assert_true: 'calc(-0.5em + 10px)' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value 'calc(0.5em + 10px)'",
+        "status": 1,
+        "message": "assert_true: 'calc(0.5em + 10px)' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value 'calc(30% + 40px)'",
+        "status": 1,
+        "message": "assert_true: 'calc(30% + 40px)' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value '5fr'",
+        "status": 1,
+        "message": "assert_equals: expected \"300px\" but got \"5fr\""
+      },
+      {
+        "name": "Property grid-template-columns value 'min-content'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'max-content'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"300px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'minmax(10px, auto)'",
+        "status": 1,
+        "message": "assert_equals: expected \"300px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'minmax(20%, max-content)'",
+        "status": 1,
+        "message": "assert_equals: expected \"60px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'minmax(min-content, calc(-0.5em + 10px))'",
+        "status": 1,
+        "message": "assert_true: 'minmax(min-content, calc(-0.5em + 10px))' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value 'minmax(auto, 0)'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px\" but got \"0px\""
+      },
+      {
+        "name": "Property grid-template-columns value 'fit-content(70px)'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'fit-content(20%)'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'fit-content(calc(-0.5em + 10px))'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px\" but got \"auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(1, 10px)'",
+        "status": 0,
+        "message": ""
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(1, [one two] 20%)'",
+        "status": 1,
+        "message": "assert_equals: expected \"[one two] 60px\" but got \"20%\""
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(2, minmax(10px, auto))'",
+        "status": 1,
+        "message": "assert_equals: expected \"160px 140px\" but got \"auto auto\""
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(2, fit-content(20%) [three four] 30px 40px [five six])'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px [three four] 30px 40px [five six] 0px [three four] 30px 40px [five six]\" but got \"auto 30px 40px auto 30px 40px\""
+      },
+      {
+        "name": "Property grid-template-columns value 'min-content repeat(5, minmax(10px, auto))'",
+        "status": 1,
+        "message": "assert_equals: expected \"30px 54px 54px 54px 54px 54px\" but got \"auto auto auto auto auto auto\""
+      },
+      {
+        "name": "Property grid-template-columns value '[] 150px [] 1fr []'",
+        "status": 1,
+        "message": "assert_equals: expected \"150px 150px\" but got \"150px 1fr\""
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(auto-fill, 200px)'",
+        "status": 1,
+        "message": "assert_true: 'repeat(auto-fill, 200px)' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(auto-fit, [one] 20%)'",
+        "status": 1,
+        "message": "assert_true: 'repeat(auto-fit, [one] 20%)' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(auto-fill, minmax(100px, 5fr) [two])'",
+        "status": 1,
+        "message": "assert_true: 'repeat(auto-fill, minmax(100px, 5fr) [two])' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])'",
+        "status": 1,
+        "message": "assert_true: 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]'",
+        "status": 1,
+        "message": "assert_true: '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]'",
+        "status": 1,
+        "message": "assert_true: '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]'",
+        "status": 1,
+        "message": "assert_true: '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]' is a supported value for grid-template-columns. expected true got false"
+      },
+      {
+        "name": "Property grid-template-columns value '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]'",
+        "status": 1,
+        "message": "assert_true: '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]' is a supported value for grid-template-columns. expected true got false"
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:45387/css/css-grid/parsing/grid-template-columns-computed-withcontent.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '20%'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px\\\" but got \\\"20%\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'calc(-0.5em + 10px)'\",\"status\":1,\"message\":\"assert_true: 'calc(-0.5em + 10px)' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'calc(0.5em + 10px)'\",\"status\":1,\"message\":\"assert_true: 'calc(0.5em + 10px)' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'calc(30% + 40px)'\",\"status\":1,\"message\":\"assert_true: 'calc(30% + 40px)' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '5fr'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"5fr\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'min-content'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'max-content'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'minmax(10px, auto)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'minmax(20%, max-content)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'minmax(min-content, calc(-0.5em + 10px))'\",\"status\":1,\"message\":\"assert_true: 'minmax(min-content, calc(-0.5em + 10px))' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'minmax(auto, 0)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"0px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'fit-content(70px)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'fit-content(20%)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'fit-content(calc(-0.5em + 10px))'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(1, 10px)'\",\"status\":0,\"message\":\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(1, [one two] 20%)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"[one two] 60px\\\" but got \\\"20%\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(2, minmax(10px, auto))'\",\"status\":1,\"message\":\"assert_equals: expected \\\"160px 140px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(2, fit-content(20%) [three four] 30px 40px [five six])'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px [three four] 30px 40px [five six] 0px [three four] 30px 40px [five six]\\\" but got \\\"auto 30px 40px auto 30px 40px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'min-content repeat(5, minmax(10px, auto))'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px 54px 54px 54px 54px 54px\\\" but got \\\"auto auto auto auto auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '[] 150px [] 1fr []'\",\"status\":1,\"message\":\"assert_equals: expected \\\"150px 150px\\\" but got \\\"150px 1fr\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(auto-fill, 200px)'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fill, 200px)' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(auto-fit, [one] 20%)'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fit, [one] 20%)' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(auto-fill, minmax(100px, 5fr) [two])'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fill, minmax(100px, 5fr) [two])' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]'\",\"status\":1,\"message\":\"assert_true: '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]'\",\"status\":1,\"message\":\"assert_true: '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]'\",\"status\":1,\"message\":\"assert_true: '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_RESULT {\"name\":\"Property grid-template-columns value '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]'\",\"status\":1,\"message\":\"assert_true: '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]' is a supported value for grid-template-columns. expected true got false\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Property grid-template-columns value 'none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"none\\\"\"},{\"name\":\"Property grid-template-columns value '20%'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px\\\" but got \\\"20%\\\"\"},{\"name\":\"Property grid-template-columns value 'calc(-0.5em + 10px)'\",\"status\":1,\"message\":\"assert_true: 'calc(-0.5em + 10px)' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value 'calc(0.5em + 10px)'\",\"status\":1,\"message\":\"assert_true: 'calc(0.5em + 10px)' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value 'calc(30% + 40px)'\",\"status\":1,\"message\":\"assert_true: 'calc(30% + 40px)' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value '5fr'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"5fr\\\"\"},{\"name\":\"Property grid-template-columns value 'min-content'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'max-content'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'minmax(10px, auto)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"300px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'minmax(20%, max-content)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'minmax(min-content, calc(-0.5em + 10px))'\",\"status\":1,\"message\":\"assert_true: 'minmax(min-content, calc(-0.5em + 10px))' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value 'minmax(auto, 0)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"0px\\\"\"},{\"name\":\"Property grid-template-columns value 'fit-content(70px)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'fit-content(20%)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'fit-content(calc(-0.5em + 10px))'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px\\\" but got \\\"auto\\\"\"},{\"name\":\"Property grid-template-columns value 'repeat(1, 10px)'\",\"status\":0,\"message\":\"\"},{\"name\":\"Property grid-template-columns value 'repeat(1, [one two] 20%)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"[one two] 60px\\\" but got \\\"20%\\\"\"},{\"name\":\"Property grid-template-columns value 'repeat(2, minmax(10px, auto))'\",\"status\":1,\"message\":\"assert_equals: expected \\\"160px 140px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Property grid-template-columns value 'repeat(2, fit-content(20%) [three four] 30px 40px [five six])'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px [three four] 30px 40px [five six] 0px [three four] 30px 40px [five six]\\\" but got \\\"auto 30px 40px auto 30px 40px\\\"\"},{\"name\":\"Property grid-template-columns value 'min-content repeat(5, minmax(10px, auto))'\",\"status\":1,\"message\":\"assert_equals: expected \\\"30px 54px 54px 54px 54px 54px\\\" but got \\\"auto auto auto auto auto auto\\\"\"},{\"name\":\"Property grid-template-columns value '[] 150px [] 1fr []'\",\"status\":1,\"message\":\"assert_equals: expected \\\"150px 150px\\\" but got \\\"150px 1fr\\\"\"},{\"name\":\"Property grid-template-columns value 'repeat(auto-fill, 200px)'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fill, 200px)' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value 'repeat(auto-fit, [one] 20%)'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fit, [one] 20%)' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value 'repeat(auto-fill, minmax(100px, 5fr) [two])'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fill, minmax(100px, 5fr) [two])' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])'\",\"status\":1,\"message\":\"assert_true: 'repeat(auto-fit, [three] minmax(max-content, 6em) [four])' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]'\",\"status\":1,\"message\":\"assert_true: '[a] 21px [b] repeat(auto-fill, [c] 22px [d] 23px [e]) [f] 24px [g]' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]'\",\"status\":1,\"message\":\"assert_true: '[a] 21px [b c] repeat(auto-fill, [d e] 22px [f g h] 23px [i j k l]) [m n] 24px [o]' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]'\",\"status\":1,\"message\":\"assert_true: '[a] repeat(2, [b] 20px [c d] 21px [e f g]) [h i] repeat(auto-fit, [j] 22px [k l m] 23px [n o p q]) [r s]' is a supported value for grid-template-columns. expected true got false\"},{\"name\":\"Property grid-template-columns value '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]'\",\"status\":1,\"message\":\"assert_true: '[one] repeat(2, minmax(50px, auto)) [two] 30px [three] repeat(auto-fill, 10px) 40px [four five] repeat(2, minmax(200px, auto)) [six]' is a supported value for grid-template-columns. expected true got false\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

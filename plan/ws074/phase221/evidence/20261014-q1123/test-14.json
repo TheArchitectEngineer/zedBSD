@@ -1,0 +1,453 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Element 'gridMinContentFixedAndAuto' grid-template-columns value computes to '15px 75px'",
+      "status": 1,
+      "message": "assert_equals: expected \"15px 75px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridAutoAndAuto' grid-template-columns value computes to '45px 45px'",
+      "status": 1,
+      "message": "assert_equals: expected \"45px 45px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMinContentAndMinContentFixed' grid-template-columns value computes to '20px 30px'",
+      "status": 1,
+      "message": "assert_equals: expected \"20px 30px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMinContent' grid-template-columns value computes to '70px 20px'",
+      "status": 1,
+      "message": "assert_equals: expected \"70px 20px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridFixedMinContentAndMaxContent' grid-template-columns value computes to '10px 80px'",
+      "status": 1,
+      "message": "assert_equals: expected \"10px 80px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridFixedMaxContentAndMinContent' grid-template-columns value computes to '60px 30px'",
+      "status": 1,
+      "message": "assert_equals: expected \"60px 30px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMinContentAndMaxContentFixed' grid-template-columns value computes to '20px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"20px 70px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Element 'gridMaxContentFixedAndAuto' grid-template-columns value computes to '65px 25px'",
+      "status": 1,
+      "message": "assert_equals: expected \"65px 25px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridAutoMinContent' grid-template-columns value computes to '70px 20px'",
+      "status": 1,
+      "message": "assert_equals: expected \"70px 20px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridAutoMaxContent' grid-template-columns value computes to '20px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"20px 70px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMinContentFixed' grid-template-columns value computes to '70px 20px'",
+      "status": 1,
+      "message": "assert_equals: expected \"70px 20px\" but got \"auto 35px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMaxContentFixed' grid-template-columns value computes to '55px 35px'",
+      "status": 1,
+      "message": "assert_equals: expected \"55px 35px\" but got \"auto 35px\""
+    },
+    {
+      "name": "Element 'gridMinContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '0px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 40px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridAutoAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 30px'",
+      "status": 1,
+      "message": "assert_equals: expected \"10px 30px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMinContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 40px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '0px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 70px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridFixedMinContentAndMaxContentUnsortedConstrained' grid-template-columns value computes to '10px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"10px 70px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridFixedMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '10px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"10px 40px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMinContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 90px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 90px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Element 'gridMaxContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"10px 40px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridAutoMinContentUnsortedConstrained' grid-template-columns value computes to '0px 60px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 60px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridAutoMaxContentUnsortedConstrained' grid-template-columns value computes to '0px 90px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 90px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '50px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"50px 40px\" but got \"auto 35px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '40px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"40px 70px\" but got \"auto 35px\""
+    },
+    {
+      "name": "Element 'gridMinContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 90px'",
+      "status": 1,
+      "message": "assert_equals: expected \"15px 90px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridAutoAndAutoUnsorted' grid-template-columns value computes to '60px 30px'",
+      "status": 1,
+      "message": "assert_equals: expected \"60px 30px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMinContentAndMinContentFixedUnsorted' grid-template-columns value computes to '0px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 40px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMinContentUnsorted' grid-template-columns value computes to '0px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 70px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridFixedMinContentAndMaxContentUnsorted' grid-template-columns value computes to '10px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"10px 70px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridFixedMaxContentAndMinContentUnsorted' grid-template-columns value computes to '50px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"50px 40px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMinContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '0px 90px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 90px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Element 'gridMaxContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"15px 70px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridAutoMinContentUnsorted' grid-template-columns value computes to '50px 60px'",
+      "status": 1,
+      "message": "assert_equals: expected \"50px 60px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridAutoMaxContentUnsorted' grid-template-columns value computes to '0px 90px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 90px\" but got \"auto auto\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMinContentFixedUnsorted' grid-template-columns value computes to '50px 40px'",
+      "status": 1,
+      "message": "assert_equals: expected \"50px 40px\" but got \"auto 35px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '40px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"40px 70px\" but got \"auto 35px\""
+    },
+    {
+      "name": "Element 'gridMinContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 95px'",
+      "status": 1,
+      "message": "assert_equals: expected \"15px 95px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridMaxContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 135px'",
+      "status": 1,
+      "message": "assert_equals: expected \"15px 135px\" but got \"15px auto\""
+    },
+    {
+      "name": "Element 'gridMinContentFixedAndFixedFixedAndAuto' grid-template-columns value computes to '20px 20px 60px'",
+      "status": 1,
+      "message": "assert_equals: expected \"20px 20px 60px\" but got \"20px 30px auto\""
+    },
+    {
+      "name": "Element 'gridAutoAndFixedFixedAndMaxContentFixed' grid-template-columns value computes to '110px 20px 20px'",
+      "status": 1,
+      "message": "assert_equals: expected \"110px 20px 20px\" but got \"auto 30px 20px\""
+    },
+    {
+      "name": "Element 'gridMaxContentAndMaxContentFixedAndMaxContent' grid-template-columns value computes to '70px 20px 50px'",
+      "status": 1,
+      "message": "assert_equals: expected \"70px 20px 50px\" but got \"auto 20px auto\""
+    },
+    {
+      "name": "Element 'gridAutoAndMinContentFixedAndMinContent' grid-template-columns value computes to '55px 30px 65px'",
+      "status": 1,
+      "message": "assert_equals: expected \"55px 30px 65px\" but got \"auto 30px auto\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Element 'gridMinContentFixedAndAuto' grid-template-columns value computes to '15px 75px'",
+        "status": 1,
+        "message": "assert_equals: expected \"15px 75px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridAutoAndAuto' grid-template-columns value computes to '45px 45px'",
+        "status": 1,
+        "message": "assert_equals: expected \"45px 45px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMinContentAndMinContentFixed' grid-template-columns value computes to '20px 30px'",
+        "status": 1,
+        "message": "assert_equals: expected \"20px 30px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMinContent' grid-template-columns value computes to '70px 20px'",
+        "status": 1,
+        "message": "assert_equals: expected \"70px 20px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridFixedMinContentAndMaxContent' grid-template-columns value computes to '10px 80px'",
+        "status": 1,
+        "message": "assert_equals: expected \"10px 80px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridFixedMaxContentAndMinContent' grid-template-columns value computes to '60px 30px'",
+        "status": 1,
+        "message": "assert_equals: expected \"60px 30px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMinContentAndMaxContentFixed' grid-template-columns value computes to '20px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"20px 70px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Element 'gridMaxContentFixedAndAuto' grid-template-columns value computes to '65px 25px'",
+        "status": 1,
+        "message": "assert_equals: expected \"65px 25px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridAutoMinContent' grid-template-columns value computes to '70px 20px'",
+        "status": 1,
+        "message": "assert_equals: expected \"70px 20px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridAutoMaxContent' grid-template-columns value computes to '20px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"20px 70px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMinContentFixed' grid-template-columns value computes to '70px 20px'",
+        "status": 1,
+        "message": "assert_equals: expected \"70px 20px\" but got \"auto 35px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMaxContentFixed' grid-template-columns value computes to '55px 35px'",
+        "status": 1,
+        "message": "assert_equals: expected \"55px 35px\" but got \"auto 35px\""
+      },
+      {
+        "name": "Element 'gridMinContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '0px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 40px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridAutoAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 30px'",
+        "status": 1,
+        "message": "assert_equals: expected \"10px 30px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMinContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 40px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '0px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 70px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridFixedMinContentAndMaxContentUnsortedConstrained' grid-template-columns value computes to '10px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"10px 70px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridFixedMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '10px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"10px 40px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMinContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 90px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 90px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Element 'gridMaxContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"10px 40px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridAutoMinContentUnsortedConstrained' grid-template-columns value computes to '0px 60px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 60px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridAutoMaxContentUnsortedConstrained' grid-template-columns value computes to '0px 90px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 90px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '50px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"50px 40px\" but got \"auto 35px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '40px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"40px 70px\" but got \"auto 35px\""
+      },
+      {
+        "name": "Element 'gridMinContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 90px'",
+        "status": 1,
+        "message": "assert_equals: expected \"15px 90px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridAutoAndAutoUnsorted' grid-template-columns value computes to '60px 30px'",
+        "status": 1,
+        "message": "assert_equals: expected \"60px 30px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMinContentAndMinContentFixedUnsorted' grid-template-columns value computes to '0px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 40px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMinContentUnsorted' grid-template-columns value computes to '0px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 70px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridFixedMinContentAndMaxContentUnsorted' grid-template-columns value computes to '10px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"10px 70px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridFixedMaxContentAndMinContentUnsorted' grid-template-columns value computes to '50px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"50px 40px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMinContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '0px 90px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 90px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Element 'gridMaxContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"15px 70px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridAutoMinContentUnsorted' grid-template-columns value computes to '50px 60px'",
+        "status": 1,
+        "message": "assert_equals: expected \"50px 60px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridAutoMaxContentUnsorted' grid-template-columns value computes to '0px 90px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 90px\" but got \"auto auto\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMinContentFixedUnsorted' grid-template-columns value computes to '50px 40px'",
+        "status": 1,
+        "message": "assert_equals: expected \"50px 40px\" but got \"auto 35px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '40px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"40px 70px\" but got \"auto 35px\""
+      },
+      {
+        "name": "Element 'gridMinContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 95px'",
+        "status": 1,
+        "message": "assert_equals: expected \"15px 95px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridMaxContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 135px'",
+        "status": 1,
+        "message": "assert_equals: expected \"15px 135px\" but got \"15px auto\""
+      },
+      {
+        "name": "Element 'gridMinContentFixedAndFixedFixedAndAuto' grid-template-columns value computes to '20px 20px 60px'",
+        "status": 1,
+        "message": "assert_equals: expected \"20px 20px 60px\" but got \"20px 30px auto\""
+      },
+      {
+        "name": "Element 'gridAutoAndFixedFixedAndMaxContentFixed' grid-template-columns value computes to '110px 20px 20px'",
+        "status": 1,
+        "message": "assert_equals: expected \"110px 20px 20px\" but got \"auto 30px 20px\""
+      },
+      {
+        "name": "Element 'gridMaxContentAndMaxContentFixedAndMaxContent' grid-template-columns value computes to '70px 20px 50px'",
+        "status": 1,
+        "message": "assert_equals: expected \"70px 20px 50px\" but got \"auto 20px auto\""
+      },
+      {
+        "name": "Element 'gridAutoAndMinContentFixedAndMinContent' grid-template-columns value computes to '55px 30px 65px'",
+        "status": 1,
+        "message": "assert_equals: expected \"55px 30px 65px\" but got \"auto 30px auto\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-content-sized-columns-resolution.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:46357/css/css-grid/parsing/grid-content-sized-columns-resolution.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Element 'gridMinContentFixedAndAuto' grid-template-columns value computes to '15px 75px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 75px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoAndAuto' grid-template-columns value computes to '45px 45px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"45px 45px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentAndMinContentFixed' grid-template-columns value computes to '20px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 30px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMinContent' grid-template-columns value computes to '70px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridFixedMinContentAndMaxContent' grid-template-columns value computes to '10px 80px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 80px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridFixedMaxContentAndMinContent' grid-template-columns value computes to '60px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px 30px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentAndMaxContentFixed' grid-template-columns value computes to '20px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 70px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentFixedAndAuto' grid-template-columns value computes to '65px 25px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"65px 25px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoMinContent' grid-template-columns value computes to '70px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoMaxContent' grid-template-columns value computes to '20px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 70px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMinContentFixed' grid-template-columns value computes to '70px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px\\\" but got \\\"auto 35px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMaxContentFixed' grid-template-columns value computes to '55px 35px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"55px 35px\\\" but got \\\"auto 35px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '0px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 40px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 30px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 40px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '0px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 70px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridFixedMinContentAndMaxContentUnsortedConstrained' grid-template-columns value computes to '10px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 70px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridFixedMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '10px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 40px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 40px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoMinContentUnsortedConstrained' grid-template-columns value computes to '0px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 60px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoMaxContentUnsortedConstrained' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '50px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 40px\\\" but got \\\"auto 35px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '40px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"40px 70px\\\" but got \\\"auto 35px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 90px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoAndAutoUnsorted' grid-template-columns value computes to '60px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px 30px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentAndMinContentFixedUnsorted' grid-template-columns value computes to '0px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 40px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMinContentUnsorted' grid-template-columns value computes to '0px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 70px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridFixedMinContentAndMaxContentUnsorted' grid-template-columns value computes to '10px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 70px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridFixedMaxContentAndMinContentUnsorted' grid-template-columns value computes to '50px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 40px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 70px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoMinContentUnsorted' grid-template-columns value computes to '50px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 60px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoMaxContentUnsorted' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMinContentFixedUnsorted' grid-template-columns value computes to '50px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 40px\\\" but got \\\"auto 35px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '40px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"40px 70px\\\" but got \\\"auto 35px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 95px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 95px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 135px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 135px\\\" but got \\\"15px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMinContentFixedAndFixedFixedAndAuto' grid-template-columns value computes to '20px 20px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 20px 60px\\\" but got \\\"20px 30px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoAndFixedFixedAndMaxContentFixed' grid-template-columns value computes to '110px 20px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"110px 20px 20px\\\" but got \\\"auto 30px 20px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridMaxContentAndMaxContentFixedAndMaxContent' grid-template-columns value computes to '70px 20px 50px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px 50px\\\" but got \\\"auto 20px auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Element 'gridAutoAndMinContentFixedAndMinContent' grid-template-columns value computes to '55px 30px 65px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"55px 30px 65px\\\" but got \\\"auto 30px auto\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Element 'gridMinContentFixedAndAuto' grid-template-columns value computes to '15px 75px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 75px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridAutoAndAuto' grid-template-columns value computes to '45px 45px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"45px 45px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMinContentAndMinContentFixed' grid-template-columns value computes to '20px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 30px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMinContent' grid-template-columns value computes to '70px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridFixedMinContentAndMaxContent' grid-template-columns value computes to '10px 80px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 80px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridFixedMaxContentAndMinContent' grid-template-columns value computes to '60px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px 30px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMinContentAndMaxContentFixed' grid-template-columns value computes to '20px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 70px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Element 'gridMaxContentFixedAndAuto' grid-template-columns value computes to '65px 25px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"65px 25px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridAutoMinContent' grid-template-columns value computes to '70px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridAutoMaxContent' grid-template-columns value computes to '20px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 70px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMaxContentAndMinContentFixed' grid-template-columns value computes to '70px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px\\\" but got \\\"auto 35px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMaxContentFixed' grid-template-columns value computes to '55px 35px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"55px 35px\\\" but got \\\"auto 35px\\\"\"},{\"name\":\"Element 'gridMinContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '0px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 40px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridAutoAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 30px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMinContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 40px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '0px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 70px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridFixedMinContentAndMaxContentUnsortedConstrained' grid-template-columns value computes to '10px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 70px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridFixedMaxContentAndMinContentUnsortedConstrained' grid-template-columns value computes to '10px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 40px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMinContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Element 'gridMaxContentFixedAndAutoUnsortedConstrained' grid-template-columns value computes to '10px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 40px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridAutoMinContentUnsortedConstrained' grid-template-columns value computes to '0px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 60px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridAutoMaxContentUnsortedConstrained' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMaxContentAndMinContentFixedUnsortedConstrained' grid-template-columns value computes to '50px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 40px\\\" but got \\\"auto 35px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMaxContentFixedUnsortedConstrained' grid-template-columns value computes to '40px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"40px 70px\\\" but got \\\"auto 35px\\\"\"},{\"name\":\"Element 'gridMinContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 90px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridAutoAndAutoUnsorted' grid-template-columns value computes to '60px 30px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"60px 30px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMinContentAndMinContentFixedUnsorted' grid-template-columns value computes to '0px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 40px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMinContentUnsorted' grid-template-columns value computes to '0px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 70px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridFixedMinContentAndMaxContentUnsorted' grid-template-columns value computes to '10px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"10px 70px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridFixedMaxContentAndMinContentUnsorted' grid-template-columns value computes to '50px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 40px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMinContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Element 'gridMaxContentFixedAndAutoUnsorted' grid-template-columns value computes to '15px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 70px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridAutoMinContentUnsorted' grid-template-columns value computes to '50px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 60px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridAutoMaxContentUnsorted' grid-template-columns value computes to '0px 90px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 90px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Element 'gridMaxContentAndMinContentFixedUnsorted' grid-template-columns value computes to '50px 40px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 40px\\\" but got \\\"auto 35px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMaxContentFixedUnsorted' grid-template-columns value computes to '40px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"40px 70px\\\" but got \\\"auto 35px\\\"\"},{\"name\":\"Element 'gridMinContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 95px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 95px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridMaxContentFixedAndAutoAboveLimits' grid-template-columns value computes to '15px 135px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 135px\\\" but got \\\"15px auto\\\"\"},{\"name\":\"Element 'gridMinContentFixedAndFixedFixedAndAuto' grid-template-columns value computes to '20px 20px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"20px 20px 60px\\\" but got \\\"20px 30px auto\\\"\"},{\"name\":\"Element 'gridAutoAndFixedFixedAndMaxContentFixed' grid-template-columns value computes to '110px 20px 20px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"110px 20px 20px\\\" but got \\\"auto 30px 20px\\\"\"},{\"name\":\"Element 'gridMaxContentAndMaxContentFixedAndMaxContent' grid-template-columns value computes to '70px 20px 50px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"70px 20px 50px\\\" but got \\\"auto 20px auto\\\"\"},{\"name\":\"Element 'gridAutoAndMinContentFixedAndMinContent' grid-template-columns value computes to '55px 30px 65px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"55px 30px 65px\\\" but got \\\"auto 30px auto\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}

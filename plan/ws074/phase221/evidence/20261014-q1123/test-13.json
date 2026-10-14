@@ -1,0 +1,433 @@
+{
+  "outcome": "fail",
+  "result_callbacks": [
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFixedElement' : grid-template-columns = '7px 11px', grid-template-rows = '17px 2px'",
+      "status": 1,
+      "message": "assert_equals: expected \"17px 2px\" but got \"\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentElement' : grid-template-columns = '400px 800px', grid-template-rows = '150px 450px'",
+      "status": 1,
+      "message": "assert_equals: expected \"400px 800px\" but got \"50% 100%\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentWithoutSize' : grid-template-columns = '3.5px 7px', grid-template-rows = '4px 12px'",
+      "status": 1,
+      "message": "assert_equals: expected \"3.5px 7px\" but got \"50% 100%\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoElement' : grid-template-columns = '0px 17px', grid-template-rows = '0px 3px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 17px\" but got \"auto auto\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithEMElement' : grid-template-columns = '100px 120px', grid-template-rows = '150px 170px'",
+      "status": 1,
+      "message": "assert_equals: expected \"150px 170px\" but got \"\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithThreeItems' : grid-template-columns = '15px 0px 100px', grid-template-rows = '120px 18px 0px'",
+      "status": 1,
+      "message": "assert_equals: expected \"15px 0px 100px\" but got \"15px auto 100px\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFitContentAndFitAvailable' : grid-template-columns = 'none', grid-template-rows = 'none'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContent' : grid-template-columns = '0px 0px', grid-template-rows = '0px 0px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 0px\" but got \"auto auto\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContentWithChildrenElement' : grid-template-columns = '7px 17px', grid-template-rows = '16px 3px'",
+      "status": 1,
+      "message": "assert_equals: expected \"7px 17px\" but got \"auto auto\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndFixed' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'",
+      "status": 1,
+      "message": "assert_equals: expected \"240px 15px\" but got \"30% 15px\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndMinMaxContent' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'",
+      "status": 1,
+      "message": "assert_equals: expected \"240px 15px\" but got \"30% 15px\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionFraction' : grid-template-columns = '320px 480px', grid-template-rows = '225px 375px'",
+      "status": 1,
+      "message": "assert_equals: expected \"320px 480px\" but got \"2fr 3fr\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionMinMax' : grid-template-columns = '45px 755px', grid-template-rows = '586px 14px'",
+      "status": 1,
+      "message": "assert_equals: expected \"45px 755px\" but got \"45px 2fr\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcCalc' : grid-template-columns = '200px 100px', grid-template-rows = '150px 75px'",
+      "status": 1,
+      "message": "assert_equals: expected \"200px 100px\" but got \"none\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndFixed' : grid-template-columns = '400px 80px', grid-template-rows = '88px 150px'",
+      "status": 1,
+      "message": "assert_equals: expected \"400px 80px\" but got \"none\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndMinMax' : grid-template-columns = '190px 80px', grid-template-rows = '150px 53px'",
+      "status": 1,
+      "message": "assert_equals: expected \"190px 80px\" but got \"none\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcInsideMinMax' : grid-template-columns = '400px 120px', grid-template-rows = '150px 175px'",
+      "status": 1,
+      "message": "assert_equals: expected \"400px 120px\" but got \"none\""
+    },
+    {
+      "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoInsideMinMax' : grid-template-columns = '0px 30px', grid-template-rows = '132px 60px'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 30px\" but got \"auto 30px\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '18px 22px', element.style.gridTemplateColumns = '18px 22px', grid-template-rows = '66px 70px', element.style.gridTemplateRows = '66px 70px'",
+      "status": 1,
+      "message": "assert_equals: expected \"66px 70px\" but got \"\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '440px 640px', element.style.gridTemplateColumns = '55% 80%', grid-template-rows = '240px 378px', element.style.gridTemplateRows = '40% 63%'",
+      "status": 1,
+      "message": "assert_equals: expected \"440px 640px\" but got \"55% 80%\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 0px', element.style.gridTemplateColumns = 'auto auto', grid-template-rows = '0px 0px', element.style.gridTemplateRows = 'auto auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 0px\" but got \"auto auto\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 160px 22px', element.style.gridTemplateColumns = 'auto 16em 22px', grid-template-rows = '336px 100px 0px', element.style.gridTemplateRows = '56% 10em auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"0px 160px 22px\" but got \"auto 160px 22px\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 20px', element.style.gridTemplateColumns = '16em minmax(16px, 20px)', grid-template-rows = '90px 0px', element.style.gridTemplateRows = 'minmax(10%, 15%) auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"90px 0px\" but got \"\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 640px', element.style.gridTemplateColumns = '16em 2fr', grid-template-rows = '600px 0px', element.style.gridTemplateRows = '14fr auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"160px 640px\" but got \"160px 2fr\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '25px 20px', element.style.gridTemplateColumns = 'calc(25px) calc(2em)', grid-template-rows = '0px 60px', element.style.gridTemplateRows = 'auto calc(10%)'",
+      "status": 1,
+      "message": "assert_equals: expected \"25px 20px\" but got \"none\""
+    },
+    {
+      "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '345px 92px', element.style.gridTemplateColumns = 'calc(25px + 40%) minmax(min-content, calc(10% + 12px))', grid-template-rows = '100px 0px', element.style.gridTemplateRows = 'minmax(calc(75% - 350px), max-content) auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"345px 92px\" but got \"none\""
+    },
+    {
+      "name": "Test setting wrong/invalid values through CSS",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = 'none auto', grid-template-rows = 'none auto'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = 'none 16em', grid-template-rows = 'none 56%'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = 'none none', grid-template-rows = 'none none'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = 'auto none', grid-template-rows = 'auto none'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = 'auto none 16em', grid-template-rows = 'auto 18em none'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = '-webkit-fit-content -webkit-fit-content', grid-template-rows = '-webkit-fit-available -webkit-fit-available'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = '-10px minmax(16px, 32px)', grid-template-rows = 'minmax(10%, 15%) -10vw'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"-10px 32px\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = '10px minmax(16px, -1vw)', grid-template-rows = 'minmax(-1%, 15%) 10vw'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"10px -10.24px\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = '10px calc(16px 30px)', grid-template-rows = 'calc(25px + auto) 2em'",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting bad JS values: grid-template-columns = 'minmax(min-content, calc() 250px', grid-template-rows = 'calc(2em('",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting grid-template-columns and grid-template-rows to 'inherit' through JS",
+      "status": 1,
+      "message": "assert_equals: expected \"50px 750px [last]\" but got \"50px 1fr\""
+    },
+    {
+      "name": "Test the default value",
+      "status": 1,
+      "message": "assert_equals: expected \"none\" but got \"\""
+    },
+    {
+      "name": "Test setting grid-template-columns and grid-template-rows to 'initial' through JS",
+      "status": 1,
+      "message": "assert_equals: expected \"1200px [middle] 55px\" but got \"150% 55px\""
+    }
+  ],
+  "completion": {
+    "tests": [
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFixedElement' : grid-template-columns = '7px 11px', grid-template-rows = '17px 2px'",
+        "status": 1,
+        "message": "assert_equals: expected \"17px 2px\" but got \"\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentElement' : grid-template-columns = '400px 800px', grid-template-rows = '150px 450px'",
+        "status": 1,
+        "message": "assert_equals: expected \"400px 800px\" but got \"50% 100%\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentWithoutSize' : grid-template-columns = '3.5px 7px', grid-template-rows = '4px 12px'",
+        "status": 1,
+        "message": "assert_equals: expected \"3.5px 7px\" but got \"50% 100%\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoElement' : grid-template-columns = '0px 17px', grid-template-rows = '0px 3px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 17px\" but got \"auto auto\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithEMElement' : grid-template-columns = '100px 120px', grid-template-rows = '150px 170px'",
+        "status": 1,
+        "message": "assert_equals: expected \"150px 170px\" but got \"\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithThreeItems' : grid-template-columns = '15px 0px 100px', grid-template-rows = '120px 18px 0px'",
+        "status": 1,
+        "message": "assert_equals: expected \"15px 0px 100px\" but got \"15px auto 100px\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFitContentAndFitAvailable' : grid-template-columns = 'none', grid-template-rows = 'none'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContent' : grid-template-columns = '0px 0px', grid-template-rows = '0px 0px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 0px\" but got \"auto auto\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContentWithChildrenElement' : grid-template-columns = '7px 17px', grid-template-rows = '16px 3px'",
+        "status": 1,
+        "message": "assert_equals: expected \"7px 17px\" but got \"auto auto\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndFixed' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'",
+        "status": 1,
+        "message": "assert_equals: expected \"240px 15px\" but got \"30% 15px\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndMinMaxContent' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'",
+        "status": 1,
+        "message": "assert_equals: expected \"240px 15px\" but got \"30% 15px\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionFraction' : grid-template-columns = '320px 480px', grid-template-rows = '225px 375px'",
+        "status": 1,
+        "message": "assert_equals: expected \"320px 480px\" but got \"2fr 3fr\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionMinMax' : grid-template-columns = '45px 755px', grid-template-rows = '586px 14px'",
+        "status": 1,
+        "message": "assert_equals: expected \"45px 755px\" but got \"45px 2fr\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcCalc' : grid-template-columns = '200px 100px', grid-template-rows = '150px 75px'",
+        "status": 1,
+        "message": "assert_equals: expected \"200px 100px\" but got \"none\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndFixed' : grid-template-columns = '400px 80px', grid-template-rows = '88px 150px'",
+        "status": 1,
+        "message": "assert_equals: expected \"400px 80px\" but got \"none\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndMinMax' : grid-template-columns = '190px 80px', grid-template-rows = '150px 53px'",
+        "status": 1,
+        "message": "assert_equals: expected \"190px 80px\" but got \"none\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcInsideMinMax' : grid-template-columns = '400px 120px', grid-template-rows = '150px 175px'",
+        "status": 1,
+        "message": "assert_equals: expected \"400px 120px\" but got \"none\""
+      },
+      {
+        "name": "Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoInsideMinMax' : grid-template-columns = '0px 30px', grid-template-rows = '132px 60px'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 30px\" but got \"auto 30px\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '18px 22px', element.style.gridTemplateColumns = '18px 22px', grid-template-rows = '66px 70px', element.style.gridTemplateRows = '66px 70px'",
+        "status": 1,
+        "message": "assert_equals: expected \"66px 70px\" but got \"\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '440px 640px', element.style.gridTemplateColumns = '55% 80%', grid-template-rows = '240px 378px', element.style.gridTemplateRows = '40% 63%'",
+        "status": 1,
+        "message": "assert_equals: expected \"440px 640px\" but got \"55% 80%\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 0px', element.style.gridTemplateColumns = 'auto auto', grid-template-rows = '0px 0px', element.style.gridTemplateRows = 'auto auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 0px\" but got \"auto auto\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 160px 22px', element.style.gridTemplateColumns = 'auto 16em 22px', grid-template-rows = '336px 100px 0px', element.style.gridTemplateRows = '56% 10em auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"0px 160px 22px\" but got \"auto 160px 22px\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 20px', element.style.gridTemplateColumns = '16em minmax(16px, 20px)', grid-template-rows = '90px 0px', element.style.gridTemplateRows = 'minmax(10%, 15%) auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"90px 0px\" but got \"\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 640px', element.style.gridTemplateColumns = '16em 2fr', grid-template-rows = '600px 0px', element.style.gridTemplateRows = '14fr auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"160px 640px\" but got \"160px 2fr\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '25px 20px', element.style.gridTemplateColumns = 'calc(25px) calc(2em)', grid-template-rows = '0px 60px', element.style.gridTemplateRows = 'auto calc(10%)'",
+        "status": 1,
+        "message": "assert_equals: expected \"25px 20px\" but got \"none\""
+      },
+      {
+        "name": "Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '345px 92px', element.style.gridTemplateColumns = 'calc(25px + 40%) minmax(min-content, calc(10% + 12px))', grid-template-rows = '100px 0px', element.style.gridTemplateRows = 'minmax(calc(75% - 350px), max-content) auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"345px 92px\" but got \"none\""
+      },
+      {
+        "name": "Test setting wrong/invalid values through CSS",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = 'none auto', grid-template-rows = 'none auto'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = 'none 16em', grid-template-rows = 'none 56%'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = 'none none', grid-template-rows = 'none none'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = 'auto none', grid-template-rows = 'auto none'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = 'auto none 16em', grid-template-rows = 'auto 18em none'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = '-webkit-fit-content -webkit-fit-content', grid-template-rows = '-webkit-fit-available -webkit-fit-available'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = '-10px minmax(16px, 32px)', grid-template-rows = 'minmax(10%, 15%) -10vw'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"-10px 32px\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = '10px minmax(16px, -1vw)', grid-template-rows = 'minmax(-1%, 15%) 10vw'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"10px -10.24px\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = '10px calc(16px 30px)', grid-template-rows = 'calc(25px + auto) 2em'",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting bad JS values: grid-template-columns = 'minmax(min-content, calc() 250px', grid-template-rows = 'calc(2em('",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting grid-template-columns and grid-template-rows to 'inherit' through JS",
+        "status": 1,
+        "message": "assert_equals: expected \"50px 750px [last]\" but got \"50px 1fr\""
+      },
+      {
+        "name": "Test the default value",
+        "status": 1,
+        "message": "assert_equals: expected \"none\" but got \"\""
+      },
+      {
+        "name": "Test setting grid-template-columns and grid-template-rows to 'initial' through JS",
+        "status": 1,
+        "message": "assert_equals: expected \"1200px [middle] 55px\" but got \"150% 55px\""
+      }
+    ],
+    "status": 0,
+    "message": ""
+  },
+  "json_errors": [],
+  "test_id": "/css/css-grid/parsing/grid-columns-rows-get-set-multiple.html",
+  "focus": [
+    "layout"
+  ],
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "program_sha256": "5b6b533edabe77cf74b759e484c3b767bd1689d2879167c0381c7f5b5479aaa8",
+  "command": [
+    "/home/awe/zedBSD-claude1/build/ws074-host/plain/browser",
+    "--run",
+    "--settle-ms=5000",
+    "--font=userland/desktop/fonts/Mahora-Regular.ttf",
+    "--mono-font=userland/desktop/fonts/JetBrainsMono-Regular.ttf",
+    "--fallback-font=userland/desktop/fonts/DroidSansFallbackFull.ttf",
+    "http://127.0.0.1:41499/css/css-grid/parsing/grid-columns-rows-get-set-multiple.html"
+  ],
+  "returncode": 0,
+  "stdout": "WS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFixedElement' : grid-template-columns = '7px 11px', grid-template-rows = '17px 2px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"17px 2px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentElement' : grid-template-columns = '400px 800px', grid-template-rows = '150px 450px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"400px 800px\\\" but got \\\"50% 100%\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentWithoutSize' : grid-template-columns = '3.5px 7px', grid-template-rows = '4px 12px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"3.5px 7px\\\" but got \\\"50% 100%\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoElement' : grid-template-columns = '0px 17px', grid-template-rows = '0px 3px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 17px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithEMElement' : grid-template-columns = '100px 120px', grid-template-rows = '150px 170px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"150px 170px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithThreeItems' : grid-template-columns = '15px 0px 100px', grid-template-rows = '120px 18px 0px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 0px 100px\\\" but got \\\"15px auto 100px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFitContentAndFitAvailable' : grid-template-columns = 'none', grid-template-rows = 'none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContent' : grid-template-columns = '0px 0px', grid-template-rows = '0px 0px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 0px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContentWithChildrenElement' : grid-template-columns = '7px 17px', grid-template-rows = '16px 3px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"7px 17px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndFixed' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"240px 15px\\\" but got \\\"30% 15px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndMinMaxContent' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"240px 15px\\\" but got \\\"30% 15px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionFraction' : grid-template-columns = '320px 480px', grid-template-rows = '225px 375px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"320px 480px\\\" but got \\\"2fr 3fr\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionMinMax' : grid-template-columns = '45px 755px', grid-template-rows = '586px 14px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"45px 755px\\\" but got \\\"45px 2fr\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcCalc' : grid-template-columns = '200px 100px', grid-template-rows = '150px 75px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 100px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndFixed' : grid-template-columns = '400px 80px', grid-template-rows = '88px 150px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"400px 80px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndMinMax' : grid-template-columns = '190px 80px', grid-template-rows = '150px 53px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"190px 80px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcInsideMinMax' : grid-template-columns = '400px 120px', grid-template-rows = '150px 175px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"400px 120px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoInsideMinMax' : grid-template-columns = '0px 30px', grid-template-rows = '132px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 30px\\\" but got \\\"auto 30px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '18px 22px', element.style.gridTemplateColumns = '18px 22px', grid-template-rows = '66px 70px', element.style.gridTemplateRows = '66px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"66px 70px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '440px 640px', element.style.gridTemplateColumns = '55% 80%', grid-template-rows = '240px 378px', element.style.gridTemplateRows = '40% 63%'\",\"status\":1,\"message\":\"assert_equals: expected \\\"440px 640px\\\" but got \\\"55% 80%\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 0px', element.style.gridTemplateColumns = 'auto auto', grid-template-rows = '0px 0px', element.style.gridTemplateRows = 'auto auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 0px\\\" but got \\\"auto auto\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 160px 22px', element.style.gridTemplateColumns = 'auto 16em 22px', grid-template-rows = '336px 100px 0px', element.style.gridTemplateRows = '56% 10em auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 160px 22px\\\" but got \\\"auto 160px 22px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 20px', element.style.gridTemplateColumns = '16em minmax(16px, 20px)', grid-template-rows = '90px 0px', element.style.gridTemplateRows = 'minmax(10%, 15%) auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"90px 0px\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 640px', element.style.gridTemplateColumns = '16em 2fr', grid-template-rows = '600px 0px', element.style.gridTemplateRows = '14fr auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"160px 640px\\\" but got \\\"160px 2fr\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '25px 20px', element.style.gridTemplateColumns = 'calc(25px) calc(2em)', grid-template-rows = '0px 60px', element.style.gridTemplateRows = 'auto calc(10%)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"25px 20px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '345px 92px', element.style.gridTemplateColumns = 'calc(25px + 40%) minmax(min-content, calc(10% + 12px))', grid-template-rows = '100px 0px', element.style.gridTemplateRows = 'minmax(calc(75% - 350px), max-content) auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"345px 92px\\\" but got \\\"none\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting wrong/invalid values through CSS\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = 'none auto', grid-template-rows = 'none auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = 'none 16em', grid-template-rows = 'none 56%'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = 'none none', grid-template-rows = 'none none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = 'auto none', grid-template-rows = 'auto none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = 'auto none 16em', grid-template-rows = 'auto 18em none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = '-webkit-fit-content -webkit-fit-content', grid-template-rows = '-webkit-fit-available -webkit-fit-available'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = '-10px minmax(16px, 32px)', grid-template-rows = 'minmax(10%, 15%) -10vw'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"-10px 32px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = '10px minmax(16px, -1vw)', grid-template-rows = 'minmax(-1%, 15%) 10vw'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"10px -10.24px\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = '10px calc(16px 30px)', grid-template-rows = 'calc(25px + auto) 2em'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting bad JS values: grid-template-columns = 'minmax(min-content, calc() 250px', grid-template-rows = 'calc(2em('\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting grid-template-columns and grid-template-rows to 'inherit' through JS\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 750px [last]\\\" but got \\\"50px 1fr\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test the default value\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"}\nWS074_WPT_RESULT {\"name\":\"Test setting grid-template-columns and grid-template-rows to 'initial' through JS\",\"status\":1,\"message\":\"assert_equals: expected \\\"1200px [middle] 55px\\\" but got \\\"150% 55px\\\"\"}\nWS074_WPT_COMPLETE {\"tests\":[{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFixedElement' : grid-template-columns = '7px 11px', grid-template-rows = '17px 2px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"17px 2px\\\" but got \\\"\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentElement' : grid-template-columns = '400px 800px', grid-template-rows = '150px 450px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"400px 800px\\\" but got \\\"50% 100%\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithPercentWithoutSize' : grid-template-columns = '3.5px 7px', grid-template-rows = '4px 12px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"3.5px 7px\\\" but got \\\"50% 100%\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoElement' : grid-template-columns = '0px 17px', grid-template-rows = '0px 3px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 17px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithEMElement' : grid-template-columns = '100px 120px', grid-template-rows = '150px 170px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"150px 170px\\\" but got \\\"\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithThreeItems' : grid-template-columns = '15px 0px 100px', grid-template-rows = '120px 18px 0px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"15px 0px 100px\\\" but got \\\"15px auto 100px\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFitContentAndFitAvailable' : grid-template-columns = 'none', grid-template-rows = 'none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContent' : grid-template-columns = '0px 0px', grid-template-rows = '0px 0px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 0px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxContentWithChildrenElement' : grid-template-columns = '7px 17px', grid-template-rows = '16px 3px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"7px 17px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndFixed' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"240px 15px\\\" but got \\\"30% 15px\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithMinMaxAndMinMaxContent' : grid-template-columns = '240px 15px', grid-template-rows = '120px 210px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"240px 15px\\\" but got \\\"30% 15px\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionFraction' : grid-template-columns = '320px 480px', grid-template-rows = '225px 375px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"320px 480px\\\" but got \\\"2fr 3fr\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithFractionMinMax' : grid-template-columns = '45px 755px', grid-template-rows = '586px 14px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"45px 755px\\\" but got \\\"45px 2fr\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcCalc' : grid-template-columns = '200px 100px', grid-template-rows = '150px 75px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"200px 100px\\\" but got \\\"none\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndFixed' : grid-template-columns = '400px 80px', grid-template-rows = '88px 150px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"400px 80px\\\" but got \\\"none\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcAndMinMax' : grid-template-columns = '190px 80px', grid-template-rows = '150px 53px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"190px 80px\\\" but got \\\"none\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithCalcInsideMinMax' : grid-template-columns = '400px 120px', grid-template-rows = '150px 175px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"400px 120px\\\" but got \\\"none\\\"\"},{\"name\":\"Test getting grid-template-columns and grid-template-rows set through CSS for element 'gridWithAutoInsideMinMax' : grid-template-columns = '0px 30px', grid-template-rows = '132px 60px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 30px\\\" but got \\\"auto 30px\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '18px 22px', element.style.gridTemplateColumns = '18px 22px', grid-template-rows = '66px 70px', element.style.gridTemplateRows = '66px 70px'\",\"status\":1,\"message\":\"assert_equals: expected \\\"66px 70px\\\" but got \\\"\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '440px 640px', element.style.gridTemplateColumns = '55% 80%', grid-template-rows = '240px 378px', element.style.gridTemplateRows = '40% 63%'\",\"status\":1,\"message\":\"assert_equals: expected \\\"440px 640px\\\" but got \\\"55% 80%\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 0px', element.style.gridTemplateColumns = 'auto auto', grid-template-rows = '0px 0px', element.style.gridTemplateRows = 'auto auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 0px\\\" but got \\\"auto auto\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '0px 160px 22px', element.style.gridTemplateColumns = 'auto 16em 22px', grid-template-rows = '336px 100px 0px', element.style.gridTemplateRows = '56% 10em auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"0px 160px 22px\\\" but got \\\"auto 160px 22px\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 20px', element.style.gridTemplateColumns = '16em minmax(16px, 20px)', grid-template-rows = '90px 0px', element.style.gridTemplateRows = 'minmax(10%, 15%) auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"90px 0px\\\" but got \\\"\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '160px 640px', element.style.gridTemplateColumns = '16em 2fr', grid-template-rows = '600px 0px', element.style.gridTemplateRows = '14fr auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"160px 640px\\\" but got \\\"160px 2fr\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '25px 20px', element.style.gridTemplateColumns = 'calc(25px) calc(2em)', grid-template-rows = '0px 60px', element.style.gridTemplateRows = 'auto calc(10%)'\",\"status\":1,\"message\":\"assert_equals: expected \\\"25px 20px\\\" but got \\\"none\\\"\"},{\"name\":\"Test getting and setting grid-template-rows and grid-template-columns through JS: grid-template-columns = '345px 92px', element.style.gridTemplateColumns = 'calc(25px + 40%) minmax(min-content, calc(10% + 12px))', grid-template-rows = '100px 0px', element.style.gridTemplateRows = 'minmax(calc(75% - 350px), max-content) auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"345px 92px\\\" but got \\\"none\\\"\"},{\"name\":\"Test setting wrong/invalid values through CSS\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = 'none auto', grid-template-rows = 'none auto'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = 'none 16em', grid-template-rows = 'none 56%'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = 'none none', grid-template-rows = 'none none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = 'auto none', grid-template-rows = 'auto none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = 'auto none 16em', grid-template-rows = 'auto 18em none'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = '-webkit-fit-content -webkit-fit-content', grid-template-rows = '-webkit-fit-available -webkit-fit-available'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = '-10px minmax(16px, 32px)', grid-template-rows = 'minmax(10%, 15%) -10vw'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"-10px 32px\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = '10px minmax(16px, -1vw)', grid-template-rows = 'minmax(-1%, 15%) 10vw'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"10px -10.24px\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = '10px calc(16px 30px)', grid-template-rows = 'calc(25px + auto) 2em'\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting bad JS values: grid-template-columns = 'minmax(min-content, calc() 250px', grid-template-rows = 'calc(2em('\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting grid-template-columns and grid-template-rows to 'inherit' through JS\",\"status\":1,\"message\":\"assert_equals: expected \\\"50px 750px [last]\\\" but got \\\"50px 1fr\\\"\"},{\"name\":\"Test the default value\",\"status\":1,\"message\":\"assert_equals: expected \\\"none\\\" but got \\\"\\\"\"},{\"name\":\"Test setting grid-template-columns and grid-template-rows to 'initial' through JS\",\"status\":1,\"message\":\"assert_equals: expected \\\"1200px [middle] 55px\\\" but got \\\"150% 55px\\\"\"}],\"status\":0,\"message\":\"\"}\n",
+  "stderr": "",
+  "settle_ms": 5000,
+  "process_timeout": 20
+}
