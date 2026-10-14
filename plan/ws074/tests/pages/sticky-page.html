@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>sticky against the page</title>
+<style>
+body { margin: 0; font: 14px sans-serif; }
+#wrap { width: 600px; height: 1500px; background: #eef; position: relative; }
+.head { position: sticky; top: 30px; height: 40px; background: #c33; color: #fff; }
+.side { position: sticky; top: 0; width: 100px; height: 60px; background: #393; }
+.foot { position: sticky; bottom: 10px; height: 50px; background: #36c; color: #fff; }
+.limit { height: 100px; background: #fc0; }
+</style>
+<div id="wrap">
+<div class="head">header top:30 (expect y=30)</div>
+<div style="height:200px"></div>
+<div class="side">side top:0, natural y=240 (stays)</div>
+<div style="height:900px"></div>
+<div class="foot">footer bottom:10 (expect y=540..590)</div>
+<div class="limit">end</div>
+</div>

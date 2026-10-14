@@ -310,6 +310,7 @@ int page_net_result(const struct net_request *request, const unsigned char **byt
 int page_load_images(struct page *page);
 void page_set_viewport(struct page *page, int width, int height);
 void page_set_fonts(struct page *page, const struct text_font_paths *paths);
+int page_sticky_sync(struct page *page, layout_unit scroll_y);
 void page_set_scroll(struct page *page, double x, double y);
 
 /* The geometry and the selectors of scripts (geometry.c, ws074-p031). */

@@ -588,6 +588,21 @@ cleanup:
 }
 
 /*
+ * Moves the sticky boxes of the layout for the page's scroll; reports
+ * whether any moved (the display list is then built again).
+ */
+int
+page_sticky_sync(
+	struct page *page,
+	layout_unit scroll_y)
+{
+	/* Only a laid out page with sticky boxes has any. */
+	if (!page->laid_out)
+		return 0;
+	return layout_sticky_apply(&page->layout, scroll_y);
+}
+
+/*
  * Builds the display list of the laid out page.
  */
 int
