@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 /*
@@ -49,6 +50,7 @@ static int access_collect(struct vm_heap *heap, struct vm_object *object, struct
 static int access_key_listed(const struct wb_vector *keys, size_t count, vm_value key);
 static int access_is_symbol(vm_value value);
 static struct vm_object *access_primitive_prototype(struct vm_realm *realm, vm_value value);
+static int access_base_error(struct vm_realm *realm, vm_value base, vm_value key, const char *verb, const char *gerund);
 static int access_set_primitive(struct vm_realm *realm, vm_value base, vm_value key, vm_value value, int strict);
 static int access_wrap_string(struct vm_realm *realm, struct vm_object *wrapper, struct vm_string *string);
 static int access_descriptor_allowed(const struct vm_object *object, int found, const struct vm_descriptor *current, const struct vm_descriptor *descriptor);
@@ -83,7 +85,7 @@ vm_get(
 	/* undefined and null have no properties. */
 	*result = VM_VALUE_UNDEFINED;
 	if (base == VM_VALUE_UNDEFINED || base == VM_VALUE_NULL) {
-		status = vm_throw_type_error(realm, "Cannot read properties of undefined or null");
+		status = access_base_error(realm, base, key, "read", "reading");
 		return status;
 	}
 
@@ -226,7 +228,7 @@ vm_set(
 
 	/* undefined and null have no properties. */
 	if (base == VM_VALUE_UNDEFINED || base == VM_VALUE_NULL) {
-		status = vm_throw_type_error(realm, "Cannot set properties of undefined or null");
+		status = access_base_error(realm, base, key, "set", "setting");
 		return status;
 	}
 
@@ -1842,4 +1844,34 @@ access_get_length_attributes(
 	found = vm_object_get_own_ordinary(array, length_key, &property);
 	if (found)
 		*attributes = property.attributes;
+}
+
+/* Throws the TypeError of a property read or write on undefined or null, naming the property as engines do. */
+static int
+access_base_error(
+	struct vm_realm *realm,
+	vm_value base,
+	vm_value key,
+	const char *verb,
+	const char *gerund)
+{
+	struct wb_buffer name;
+	char text[300];
+	const char *what;
+	int status;
+
+	what = base == VM_VALUE_NULL ? "null" : "undefined";
+	wb_buffer_init(&name);
+	if (vm_value_is_string(key)) {
+		(void)vm_string_to_utf8((const struct vm_string *)vm_value_as_cell(key), &name);
+	} else if (vm_value_is_int32(key)) {
+		(void)wb_buffer_printf(&name, "%d", (int)vm_value_as_int32(key));
+	}
+	if (name.length != 0)
+		snprintf(text, sizeof(text), "Cannot %s properties of %s (%s '%.200s')", verb, what, gerund, wb_buffer_string(&name));
+	else
+		snprintf(text, sizeof(text), "Cannot %s properties of %s", verb, what);
+	wb_buffer_release(&name);
+	status = vm_throw_type_error(realm, text);
+	return status;
 }

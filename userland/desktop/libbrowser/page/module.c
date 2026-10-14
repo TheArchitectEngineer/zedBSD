@@ -35,6 +35,7 @@ page_modules_init(
 	struct page *page)
 {
 	wb_vector_init(&page->module_scripts, sizeof(struct page_inline_module *));
+	wb_vector_init(&page->deferred_scripts, sizeof(struct dom_element *));
 }
 
 /* Removes all module roots before the page's realm and heap are freed. */
@@ -54,6 +55,7 @@ page_modules_release(
 		free(entry);
 	}
 	wb_vector_release(&page->module_scripts);
+	wb_vector_release(&page->deferred_scripts);
 }
 
 /* Saves one inline parser script's source without running it during parsing. */

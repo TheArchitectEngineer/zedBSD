@@ -34,6 +34,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 /* The header's slots. */
@@ -104,6 +105,7 @@ static int interpreter_super_construct(struct interpreter *run, const vm_value *
 static int interpreter_super_construct_array(struct interpreter *run, vm_value array, vm_value *result);
 static int interpreter_args_rest(struct vm_realm *realm, vm_value arguments, uint32_t first, vm_value *result);
 static struct vm_function *interpreter_function(const struct vm_realm *realm, uint32_t base);
+static void interpreter_note_stack(const struct interpreter *run);
 static int interpreter_is_strict(const struct interpreter *run);
 static double interpreter_f64(vm_value bits);
 static vm_value interpreter_bits(double number);
@@ -1785,6 +1787,7 @@ interpreter_unwind(
 		realm->throw_line = 0;
 		realm->throw_column = 0;
 		vm_code_position(run->code, throw_pc, &realm->throw_line, &realm->throw_column);
+		interpreter_note_stack(run);
 	}
 
 	/* Looks for a handler in each frame outwards. */
@@ -2207,4 +2210,47 @@ interpreter_bits(
 
 	/* Reports the bits. */
 	return bits;
+}
+
+/* Records where each frame stands, from the throwing frame outwards (line:column of its running instruction), for a developer's diagnosis. */
+static void
+interpreter_note_stack(
+	const struct interpreter *run)
+{
+	struct vm_realm *realm;
+	struct vm_function *function;
+	const struct vm_code *code;
+	uint32_t base;
+	uint32_t caller;
+	uint32_t pc;
+	uint32_t line;
+	uint32_t column;
+	size_t used;
+	unsigned depth;
+	int written;
+
+	realm = run->realm;
+	realm->throw_stack[0] = '\0';
+	used = 0;
+	base = run->base;
+	code = run->code;
+	pc = run->pc;
+	for (depth = 0; depth < 12U; depth++) {
+		line = 0;
+		column = 0;
+		vm_code_position(code, pc, &line, &column);
+		written = snprintf(realm->throw_stack + used, sizeof(realm->throw_stack) - used, "%s%u:%u", used == 0 ? "" : " < ", (unsigned)line, (unsigned)column);
+		if (written < 0 || (size_t)written >= sizeof(realm->throw_stack) - used)
+			break;
+		used += (size_t)written;
+		caller = (uint32_t)realm->stack[base + FRAME_CALLER];
+		if (caller == 0U)
+			break;
+		pc = (uint32_t)realm->stack[base + FRAME_RETURN] - INTERPRETER_CALL_WORDS;
+		base = caller - 1U;
+		function = interpreter_function(realm, base);
+		code = function->code;
+	}
+	if (getenv("BROWSER_STACK_ALL") != NULL)
+		fprintf(stderr, "throw: %s\n", realm->throw_stack);
 }

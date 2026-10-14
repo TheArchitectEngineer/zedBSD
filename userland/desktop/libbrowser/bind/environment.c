@@ -157,6 +157,7 @@ static int environment_xhr_nothing(struct vm_realm *realm, vm_value this_value, 
 static int environment_xhr_put(struct vm_realm *realm, vm_value object, const char *name, vm_value value);
 static int environment_xhr_get(struct vm_realm *realm, vm_value object, const char *name, vm_value *value);
 static int environment_xhr_fire(struct vm_realm *realm, vm_value object, const char *type);
+static int environment_install_xhr_listeners(struct vm_realm *realm, struct vm_object *prototype);
 static int environment_response(struct vm_realm *realm, const struct wb_buffer *bytes, const struct wb_buffer *url, int response_status, vm_value *result);
 static int environment_settle_promise(struct vm_realm *realm, vm_value value, int reject, vm_value *result);
 static int environment_observer_construct(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
@@ -765,6 +766,10 @@ environment_install_xhr(
 	if (status != 0)
 		return status;
 
+	status = environment_install_xhr_listeners(realm, prototype);
+	if (status != 0)
+		return status;
+
 	/* The constructor keeps its prototype in native data. */
 	status = js_builtin_function(realm, "XMLHttpRequest", 0, bind_illegal_constructor, environment_xhr_construct, &constructor);
 	if (status != 0)
@@ -1095,7 +1100,7 @@ environment_xhr_get(
 	return vm_get(realm, object, key, value);
 }
 
-/* Calls an XMLHttpRequest handler property when it is callable. */
+/* Calls an XMLHttpRequest's onTYPE handler property and its event listeners. */
 static int
 environment_xhr_fire(
 	struct vm_realm *realm,
@@ -1105,19 +1110,23 @@ environment_xhr_fire(
 	struct bind_window *window;
 	struct vm_object *event;
 	vm_value callback;
+	vm_value dispatch;
 	vm_value event_value;
 	vm_value ignored;
 	int callable;
 	int status;
 	char name[40];
 
-	/* Finds onTYPE. */
+	/* Finds onTYPE and dispatchEvent. */
 	snprintf(name, sizeof(name), "on%s", type);
 	status = environment_xhr_get(realm, object, name, &callback);
 	if (status != 0)
 		return status;
+	status = environment_xhr_get(realm, object, "dispatchEvent", &dispatch);
+	if (status != 0)
+		return status;
 	callable = vm_value_is_callable(callback);
-	if (!callable)
+	if (!callable && !vm_value_is_callable(dispatch))
 		return 0;
 
 	/* A small event gives handlers their type and target. */
@@ -1131,7 +1140,20 @@ environment_xhr_fire(
 		status = js_builtin_value(realm, event, "target", object, VM_PROPERTY_DEFAULT);
 	if (status == 0) {
 		event_value = vm_value_cell(event);
-		status = vm_call(realm, callback, object, &event_value, 1, &ignored);
+		if (callable)
+			status = vm_call(realm, callback, object, &event_value, 1, &ignored);
+	}
+
+	/* The listeners added with addEventListener run after the handler property. */
+	if (status == VM_THROWN) {
+		window = bind_window_of(realm);
+		bind_report_exception(window, realm->exception);
+		realm->exception = VM_VALUE_UNDEFINED;
+		status = 0;
+	}
+	if (status == 0 && vm_value_is_callable(dispatch)) {
+		event_value = vm_value_cell(event);
+		status = vm_call(realm, dispatch, object, &event_value, 1, &ignored);
 	}
 
 	/* Event-handler exceptions are reported without making send throw. */
@@ -1144,6 +1166,63 @@ environment_xhr_fire(
 
 	/* Reports the call or allocation outcome. */
 	return status;
+}
+
+/* The listener methods of XMLHttpRequest, written in the page's own language. */
+static const char environment_xhr_listeners[] =
+	"(function (P) {\n"
+	"  function def(n, f) { Object.defineProperty(P, n, { value: f, writable: true, configurable: true, enumerable: false }); }\n"
+	"  def('addEventListener', function addEventListener(type, fn) {\n"
+	"    if (typeof fn !== 'function' && !(fn && typeof fn.handleEvent === 'function')) return;\n"
+	"    if (!this.__zl) Object.defineProperty(this, '__zl', { value: {}, writable: true, configurable: true });\n"
+	"    var l = this.__zl[type] || (this.__zl[type] = []);\n"
+	"    if (l.indexOf(fn) < 0) l.push(fn);\n"
+	"  });\n"
+	"  def('removeEventListener', function removeEventListener(type, fn) {\n"
+	"    var l = this.__zl && this.__zl[type], i = l ? l.indexOf(fn) : -1;\n"
+	"    if (i >= 0) l.splice(i, 1);\n"
+	"  });\n"
+	"  def('dispatchEvent', function dispatchEvent(ev) {\n"
+	"    var l = this.__zl && this.__zl[ev.type], i, f;\n"
+	"    if (l) {\n"
+	"      l = l.slice();\n"
+	"      for (i = 0; i < l.length; i++) {\n"
+	"        f = l[i];\n"
+	"        try { if (typeof f === 'function') f.call(this, ev); else f.handleEvent(ev); }\n"
+	"        catch (e) { setTimeout(function () { throw e; }, 0); }\n"
+	"      }\n"
+	"    }\n"
+	"    return true;\n"
+	"  });\n"
+	"})";
+
+/* Gives XMLHttpRequest's prototype its event listener methods. */
+static int
+environment_install_xhr_listeners(
+	struct vm_realm *realm,
+	struct vm_object *prototype)
+{
+	struct vm_string *source;
+	vm_value function;
+	vm_value argument;
+	vm_value ignored;
+	int status;
+
+	source = vm_string_from_utf8(realm->heap, environment_xhr_listeners, sizeof(environment_xhr_listeners) - 1U);
+	if (source == NULL)
+		return ENOMEM;
+	status = js_builtin_evaluate(realm, source, 0, &function);
+	if (status != 0) {
+		realm->exception = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	argument = vm_value_cell(prototype);
+	status = vm_call(realm, function, VM_VALUE_UNDEFINED, &argument, 1, &ignored);
+	if (status != 0) {
+		realm->exception = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	return 0;
 }
 
 /* structuredClone (the clone of the plain data a page keeps): written in the page's own language. */

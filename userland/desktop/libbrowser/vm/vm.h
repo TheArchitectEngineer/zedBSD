@@ -506,6 +506,7 @@ struct vm_realm {
 	vm_value exception;
 	vm_value throw_value;
 	uint32_t throw_line;
+	char throw_stack[200];
 	uint32_t throw_column;
 	vm_value callee;
 	vm_value new_target;
@@ -637,6 +638,7 @@ int vm_construct(struct vm_realm *realm, vm_value constructor, const vm_value *a
 int vm_call(struct vm_realm *realm, vm_value callee, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 int vm_throw(struct vm_realm *realm, vm_value exception);
 int vm_throw_site(const struct vm_realm *realm, vm_value exception, uint32_t *line, uint32_t *column);
+const char *vm_throw_stack(const struct vm_realm *realm, vm_value exception);
 
 /* Realms (realm.c). */
 int vm_realm_create(struct vm_heap *heap, struct vm_realm **realm);

@@ -213,6 +213,9 @@ page_load_html(
 		return error;
 
 	/* The document is parsed: DOMContentLoaded, then the window's load. */
+	error = page_deferred_run(page);
+	if (error != 0)
+		return error;
 	error = page_modules_run(page);
 	if (error != 0)
 		return error;

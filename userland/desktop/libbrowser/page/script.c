@@ -636,6 +636,8 @@ page_run_script_element(
 {
 	struct page *page;
 	struct dom_attribute *src;
+	struct dom_attribute *defer;
+	struct dom_attribute *async;
 	struct dom_node *child;
 	const struct dom_character_data *data;
 	struct wb_units text;
@@ -657,8 +659,21 @@ page_run_script_element(
 	if (error != 0)
 		return error;
 	if (src != NULL) {
+		/* A parser-inserted external classic script with defer (and not async) waits until parsing ends. */
+		error = script_attribute(page, script, "defer", &defer);
+		if (error == 0)
+			error = script_attribute(page, script, "async", &async);
+		if (error != 0)
+			return error;
+		if (defer != NULL && async == NULL) {
+			error = wb_vector_push(&page->deferred_scripts, &script);
+			return error;
+		}
+
 		/* A fatal external-script failure must also stop the parser. */
+		bind_window_set_current_script(page->window, &script->node);
 		error = script_run_file(page, src->value);
+		bind_window_set_current_script(page->window, NULL);
 		if (error != 0)
 			return error;
 
@@ -680,8 +695,10 @@ page_run_script_element(
 	name = "(inline)";
 	if (page->base != NULL)
 		name = page->base;
+	bind_window_set_current_script(page->window, &script->node);
 	if (error == 0)
 		error = bind_run_script(page->window, text.data, text.length, name);
+	bind_window_set_current_script(page->window, NULL);
 	wb_units_release(&text);
 	if (error != 0)
 		return error;
@@ -836,8 +853,10 @@ script_prepare_dynamic(
 	name = page->base;
 	if (name == NULL)
 		name = "(inline)";
+	bind_window_set_current_script(page->window, &script->node);
 	if (error == 0)
 		error = bind_run_script(page->window, text.data, text.length, name);
+	bind_window_set_current_script(page->window, NULL);
 	wb_units_release(&text);
 
 	/* Succeeded, or memory ran out. */
@@ -1003,8 +1022,11 @@ script_finish(
 
 	/* Successful bytes run; a fetch failure skips execution. */
 	error = 0;
-	if (!entry->failed)
+	if (!entry->failed) {
+		bind_window_set_current_script(entry->page->window, &entry->element->node);
 		error = bind_run_script(entry->page->window, entry->source.data, entry->source.length, entry->location);
+		bind_window_set_current_script(entry->page->window, NULL);
+	}
 	event_type = "load";
 	if (entry->failed)
 		event_type = "error";
@@ -2051,5 +2073,30 @@ script_scan_add(
 	}
 
 	/* Succeeded: the script is one to fetch ahead. */
+	return 0;
+}
+
+/* Runs the parser-inserted deferred scripts, in document order, once parsing has ended. */
+int
+page_deferred_run(
+	struct page *page)
+{
+	struct dom_element *script;
+	struct dom_attribute *src;
+	size_t index;
+	int error;
+
+	for (index = 0; index < page->deferred_scripts.count; index++) {
+		script = *(struct dom_element **)wb_vector_at(&page->deferred_scripts, index);
+		error = script_attribute(page, script, "src", &src);
+		if (error != 0 || src == NULL)
+			return error;
+		bind_window_set_current_script(page->window, &script->node);
+		error = script_run_file(page, src->value);
+		bind_window_set_current_script(page->window, NULL);
+		if (error != 0)
+			return error;
+	}
+	page->deferred_scripts.count = 0;
 	return 0;
 }

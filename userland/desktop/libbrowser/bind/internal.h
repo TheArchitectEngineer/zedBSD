@@ -238,6 +238,7 @@ struct bind_window {
 	int viewport_width;
 	int viewport_height;
 	const char *ready_state;
+	struct dom_node *current_script;
 	struct vm_object *location;
 	double time_origin;
 	struct vm_object *local_storage;

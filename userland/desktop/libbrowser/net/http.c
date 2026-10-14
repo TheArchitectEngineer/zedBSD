@@ -54,6 +54,29 @@
 				"Accept-Language: ja,en-US;q=0.9,en;q=0.8\r\n" \
 				"Accept-Encoding: identity\r\n"
 
+/* Writes a response's body into the directory BROWSER_NET_DUMP names, and lists it on the standard error. */
+static void
+http_dump(
+	const char *url_text,
+	const struct net_response *response)
+{
+	static unsigned counter;
+	char path[512];
+	const char *directory;
+	FILE *file;
+
+	directory = getenv("BROWSER_NET_DUMP");
+	if (directory == NULL || directory[0] == '\0')
+		return;
+	snprintf(path, sizeof(path), "%s/%04u.bin", directory, counter++);
+	file = fopen(path, "wb");
+	if (file != NULL) {
+		fwrite(response->body.data, 1U, response->body.length, file);
+		fclose(file);
+	}
+	fprintf(stderr, "net: %s %d %s %s\n", path, response->status, response->content_type.data == NULL ? "" : wb_buffer_string(&response->content_type), url_text);
+}
+
 /*
  * What the headers of a response say that the fetch uses (besides the
  * Content-Type and the cookies, kept at once).
@@ -156,6 +179,9 @@ net_http_fetch(
 		net_response_release(response);
 		return error;
 	}
+
+	/* A developer's trace: BROWSER_NET_DUMP names a directory that receives every response body. */
+	http_dump(url_text, response);
 
 	/* Succeeded: the response is there. */
 	return 0;

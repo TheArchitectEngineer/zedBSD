@@ -129,6 +129,28 @@ static const char typed_prelude[] =
 	"  });\n"
 	"})";
 
+/* WeakRef and FinalizationRegistry: the target is held strongly (nothing is collected early, so a deref never fails). */
+static const char typed_weak_prelude[] =
+	"(function (g) {\n"
+	"  function def(o, name, f) { Object.defineProperty(o, name, { value: f, writable: true, configurable: true, enumerable: false }); }\n"
+	"  function WeakRef(target) {\n"
+	"    if (!new.target) throw new TypeError(\"Constructor WeakRef requires 'new'\");\n"
+	"    if ((typeof target !== 'object' && typeof target !== 'function') || target === null) throw new TypeError('WeakRef: invalid target');\n"
+	"    Object.defineProperty(this, '__target', { value: target });\n"
+	"  }\n"
+	"  def(WeakRef.prototype, 'deref', function deref() { return this.__target; });\n"
+	"  Object.defineProperty(WeakRef.prototype, Symbol.toStringTag, { value: 'WeakRef', configurable: true });\n"
+	"  function FinalizationRegistry(cleanup) {\n"
+	"    if (!new.target) throw new TypeError(\"Constructor FinalizationRegistry requires 'new'\");\n"
+	"    if (typeof cleanup !== 'function') throw new TypeError('FinalizationRegistry: cleanup must be callable');\n"
+	"  }\n"
+	"  def(FinalizationRegistry.prototype, 'register', function register() {});\n"
+	"  def(FinalizationRegistry.prototype, 'unregister', function unregister() { return false; });\n"
+	"  Object.defineProperty(FinalizationRegistry.prototype, Symbol.toStringTag, { value: 'FinalizationRegistry', configurable: true });\n"
+	"  def(g, 'WeakRef', WeakRef);\n"
+	"  def(g, 'FinalizationRegistry', FinalizationRegistry);\n"
+	"})";
+
 /* Marks a view's buffer object. */
 static void
 typed_view_trace(
@@ -1286,6 +1308,7 @@ js_builtin_install_typed(
 	struct vm_function *data_view;
 	struct vm_object *prototype;
 	struct vm_object *base_prototype;
+	struct vm_string *text;
 	vm_value source;
 	vm_value function;
 	vm_value arguments[3];
@@ -1415,14 +1438,10 @@ js_builtin_install_typed(
 
 	/* The page-language half, run once over %TypedArray%.prototype. */
 	source = VM_VALUE_UNDEFINED;
-	{
-		struct vm_string *text;
-
-		text = vm_string_from_utf8(realm->heap, typed_prelude, sizeof(typed_prelude) - 1U);
-		if (text == NULL)
-			return ENOMEM;
-		source = vm_value_cell(text);
-	}
+	text = vm_string_from_utf8(realm->heap, typed_prelude, sizeof(typed_prelude) - 1U);
+	if (text == NULL)
+		return ENOMEM;
+	source = vm_value_cell(text);
 	status = js_builtin_evaluate(realm, (const struct vm_string *)vm_value_as_cell(source), 0, &function);
 	if (status != 0)
 		return status;
@@ -1430,6 +1449,18 @@ js_builtin_install_typed(
 	arguments[1] = vm_value_cell(base);
 	arguments[2] = VM_VALUE_UNDEFINED;
 	status = vm_call(realm, function, VM_VALUE_UNDEFINED, arguments, 2, &ignored);
+	if (status != 0)
+		return status;
+
+	/* WeakRef and FinalizationRegistry on the global object. */
+	text = vm_string_from_utf8(realm->heap, typed_weak_prelude, sizeof(typed_weak_prelude) - 1U);
+	if (text == NULL)
+		return ENOMEM;
+	status = js_builtin_evaluate(realm, text, 0, &function);
+	if (status != 0)
+		return status;
+	arguments[0] = vm_value_cell(realm->global);
+	status = vm_call(realm, function, VM_VALUE_UNDEFINED, arguments, 1, &ignored);
 	if (status != 0)
 		return status;
 
