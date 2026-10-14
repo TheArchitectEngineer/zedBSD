@@ -420,6 +420,18 @@ kl_backend_gpu_frame_fence_type(
 	return 0;
 }
 
+/*
+ * Reports that the dma-buf imports keep their images sampled only: their
+ * importability is checked for sampling alone.
+ */
+int
+kl_backend_gpu_copy_source(
+	void)
+{
+	/* Succeeded: no image is made a copy's source here. */
+	return 0;
+}
+
 /* Decodes one aligned wire word without relying on the payload's alignment. */
 static uint32_t
 gpu_word(

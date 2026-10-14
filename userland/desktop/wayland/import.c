@@ -58,12 +58,13 @@ kwl_import_adopt(
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
 
-	/* The image, its memory and its size, drawn opaque until set_alpha says otherwise. */
+	/* The image, its memory, size and format, drawn opaque until set_alpha says otherwise. */
 	import->image = image;
 	import->memory = memory;
 	import->width = width;
 	import->height = height;
 	import->draw = KWL_DRAW_OPAQUE;
+	import->format = format;
 
 	/* Its own number, which tells it apart from an earlier import at the same address (ws213-p003). */
 	import->generation = kwl_compose_generation(compose);
