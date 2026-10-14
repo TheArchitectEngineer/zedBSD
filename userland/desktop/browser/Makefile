@@ -16,8 +16,8 @@ KEILAND_BROWSER_SOURCES := $(KEILAND_BROWSER_DIR)/main.c \
 	$(KEILAND_BROWSER_DIR)/shell/mail.c \
 	userland/desktop/picture/png-write.c
 
-# The pages the browser brings: the start page it opens without an argument (App Home starts it with
-# the same page) and the pages it links to.
+# The pages the browser brings: a start page that works without the network (opened by giving its path;
+# without an argument the browser opens its home page, as App Home starts it) and the pages it links to.
 KEILAND_BROWSER_DATA := /usr/share/browser/start.html=$(KEILAND_BROWSER_DIR)/data/start.html \
 	/usr/share/browser/about.html=$(KEILAND_BROWSER_DIR)/data/about.html \
 	/usr/share/browser/text.html=$(KEILAND_BROWSER_DIR)/data/text.html

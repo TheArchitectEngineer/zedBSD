@@ -74,7 +74,10 @@
 #define SEARCH_TEXT_INSET	30
 #define CRUMB_TEXT_INSET	10
 
-/* The search field's width (and the least it shrinks to), the breadcrumb's least width. */
+/*
+ * The search field's width (and the least it shrinks to), the breadcrumb's
+ * least width (the least of the field it becomes while its path is edited).
+ */
 #define SEARCH_WIDTH		220
 #define SEARCH_LEAST		150
 #define CRUMB_LEAST		120
@@ -94,9 +97,9 @@
 #define TAB_ATTENTION		10
 #define TAB_GAP			4
 
-/* The least a window's title gives way to its tabs, and the gap between the title and them. */
-#define TAB_TITLE_LEAST		56
-#define TAB_TITLE_GAP		18
+/* The least a window's title gives way to its tabs or its controls, and the gap between the title and them. */
+#define TITLE_LEAST		56
+#define TITLE_GAP		18
 
 /* The most tabs one window lays out. */
 #define SHELL_TABS		KWL_TITLEBAR_TABS_MAX
@@ -119,6 +122,17 @@
 #define FIELD_KEY_RIGHT		106U
 #define FIELD_KEY_END		107U
 #define FIELD_KEY_DELETE	111U
+
+/* The modifier keys (evdev codes): a press of one leaves a held key repeating. */
+#define FIELD_KEY_LEFTCTRL	29U
+#define FIELD_KEY_LEFTSHIFT	42U
+#define FIELD_KEY_RIGHTSHIFT	54U
+#define FIELD_KEY_LEFTALT	56U
+#define FIELD_KEY_CAPSLOCK	58U
+#define FIELD_KEY_RIGHTCTRL	97U
+#define FIELD_KEY_RIGHTALT	100U
+#define FIELD_KEY_LEFTMETA	125U
+#define FIELD_KEY_RIGHTMETA	126U
 
 /* The suggestions' list: its rows' height, its padding, its least width, its gap under the field, the longest label kept. */
 #define SUGGEST_ROW		28
@@ -233,7 +247,10 @@ struct shell_strip {
  * character boundaries).  box is where the field was last drawn (on the
  * output, box_known once it was), under which its suggestions drop down.
  * preedit is what the input method composes in it (BUG-177), drawn at the
- * cursor and not part of the text; empty for none.
+ * cursor and not part of the text; empty for none.  scroll is the byte
+ * offset of the first character shown (on a character boundary): a text
+ * wider than the field scrolls so that the cursor stays in sight
+ * (ws074-p229, a long URL).
  */
 struct shell_field {
 	struct kwl_object *surface;
@@ -249,6 +266,7 @@ struct shell_field {
 	int32_t box_width;
 	int32_t box_height;
 	char preedit[KWL_TITLEBAR_TEXT_MAX + 1U];
+	size_t scroll;
 };
 
 /*
@@ -286,6 +304,12 @@ struct shell_logged {
  * with the keyboard, a key whose press the field took (so its release is
  * taken too), the field's suggestions and whether a press on one waits
  * for its release (which is taken too), and the layouts logged.
+ *
+ * repeat_key is the key the field repeats while it is held (0 for none,
+ * ws074-p229): after the keyboards' delay and then at their rate, as the
+ * compositor tells the applications to repeat (wl_keyboard.repeat_info), it
+ * is pressed again at repeat_next (kwl_milliseconds' clock); repeat_count
+ * counts the presses again of one hold, for its log line.
  */
 struct shell_titlebar {
 	struct shell_hit hits[SHELL_HITS];
@@ -301,6 +325,9 @@ struct shell_titlebar {
 	struct shell_suggestions suggestions;
 	unsigned suggestion_pressed;
 	uint32_t eaten_key;
+	uint32_t repeat_key;
+	uint64_t repeat_next;
+	unsigned repeat_count;
 	struct shell_logged logged[SHELL_LOGGED];
 };
 
@@ -311,7 +338,11 @@ struct shell_titlebar {
 static struct shell_titlebar shell_titlebar;
 
 static unsigned shell_mode(struct kwl_object *surface, struct kwl_titlebar_model **model, struct kwl_object **titlebar);
-static unsigned shell_layout(struct kwl_server *server, const struct kwl_titlebar_state *state, unsigned docked, const struct kwl_menu_area *area, unsigned has_menu, struct shell_item *items, int32_t *crumb_width, unsigned *overflow, unsigned *compact_search);
+static unsigned shell_layout(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_state *state, unsigned docked, const struct kwl_menu_area *area, unsigned has_menu, struct shell_item *items, int32_t *crumb_width, unsigned *overflow, unsigned *compact_search);
+static int32_t shell_controls_need(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_model *model);
+static unsigned shell_has_menu(struct kwl_object *surface);
+static unsigned shell_crumb_edited(struct kwl_object *surface, const struct kwl_titlebar_control *control);
+static int32_t shell_crumb_least(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_control *control);
 static int32_t shell_item_width(struct kwl_server *server, const struct kwl_titlebar_control *control, int32_t size, unsigned compact_search);
 static unsigned shell_side(const struct kwl_titlebar_control *control);
 static int32_t shell_crumb_full(struct kwl_server *server, const struct kwl_titlebar_control *control);
@@ -320,6 +351,8 @@ static void shell_draw_button(struct kwl_server *server, struct kwl_list *comman
 static void shell_draw_search(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
 static void shell_draw_crumbs(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
 static void shell_draw_field_text(struct kwl_server *server, struct kwl_list *command, int32_t x, int32_t baseline, int32_t width, const float *ink, float fade);
+static void shell_field_scroll(struct kwl_server *server, int32_t room);
+static int32_t shell_field_char_width(struct kwl_server *server, size_t at, size_t *next);
 static void shell_draw_progress(struct kwl_server *server, struct kwl_list *command, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t size, float fade);
 static int32_t shell_tab_natural(struct kwl_server *server, const struct kwl_titlebar_tab *tab);
 static int32_t shell_tabs_need(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_model *model);
@@ -339,6 +372,11 @@ static const struct shell_hit *shell_hit_at(int32_t x, int32_t y);
 static void shell_act(struct kwl_server *server, const struct shell_hit *hit);
 static void shell_focus(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_control *control, unsigned edit);
 static void shell_field_done(struct kwl_server *server, uint32_t how);
+static int shell_field_press(struct kwl_server *server, uint32_t key);
+static void shell_repeat_start(struct kwl_server *server, uint32_t key);
+static void shell_repeat_stop(void);
+static unsigned shell_key_modifier(uint32_t key);
+static unsigned shell_key_repeats(uint32_t key);
 static void shell_field_changed(struct kwl_server *server);
 static void shell_field_insert(const char *text, size_t length);
 static void shell_field_erase(int forward);
@@ -366,7 +404,8 @@ kwl_titlebar_frame(
 
 /*
  * Tells how wide a window's title may be drawn: the menu's share in menu
- * mode, a fifth of the room with controls.
+ * mode, a fifth of the room with controls or tabs, less when they would
+ * not fit beside it (the title gives way first, down to its least).
  */
 int32_t
 kwl_titlebar_title_limit(
@@ -388,25 +427,36 @@ kwl_titlebar_title_limit(
 		return limit;
 	}
 
-	/* Otherwise the controls take most of the room; the title is the window's name. */
+	/*
+	 * Otherwise the controls or the tabs take most of the room; the title is
+	 * the window's name, a fifth of it, and the room they would like.
+	 */
 	limit = available / 5;
-	if (mode != KWL_TITLEBAR_TABS)
+	if (mode == KWL_TITLEBAR_TABS) {
+		need = shell_tabs_need(server, surface, model);
+	} else if (mode == KWL_TITLEBAR_CONTROLS) {
+		need = shell_controls_need(server, surface, model);
+	} else {
+		return limit;
+	}
+
+	/* Controls or tabs that fit as they would like leave the title its fifth. */
+	if (available - TITLE_GAP - need >= limit)
 		return limit;
 
-	/* Tabs that fit as they would like leave the title its fifth. */
-	need = shell_tabs_need(server, surface, model);
-	if (available - TAB_TITLE_GAP - need >= limit)
-		return limit;
-
-	/* Otherwise the title gives them its room, down to its least (never more than the fifth). */
-	least = TAB_TITLE_LEAST;
+	/*
+	 * Otherwise the title gives them its room, down to its least (never more
+	 * than the fifth), before any control gives way (ws074-p229: the
+	 * browser's address field in a narrow window).
+	 */
+	least = TITLE_LEAST;
 	if (least > limit)
 		least = limit;
-	limit = available - TAB_TITLE_GAP - need;
+	limit = available - TITLE_GAP - need;
 	if (limit < least)
 		limit = least;
 
-	/* Succeeded: the title's share beside the tabs. */
+	/* Succeeded: the title's share beside the controls or the tabs. */
 	return limit;
 }
 
@@ -628,7 +678,8 @@ kwl_titlebar_motion(
  * Handles a key for a field with the keyboard: the keys edit it, Enter,
  * Esc and Tab end it, and Down without suggestions ends it and goes on to
  * the window.  Keys with Alt or Super, and Ctrl keys other than the
- * editing ones, go on (to the compositor's shortcuts and the menus).  Returns 1
+ * editing ones, go on (to the compositor's shortcuts and the menus).  A key
+ * the field took repeats while it is held (kwl_titlebar_tick).  Returns 1
  * when the key was the field's.
  */
 int
@@ -637,11 +688,12 @@ kwl_titlebar_key(
 	uint32_t key,
 	uint32_t state)
 {
-	struct shell_field *field;
-	uint32_t modifiers;
-	uint32_t keysym;
-	char character;
-	int known;
+	unsigned modifier;
+	int taken;
+
+	/* The release of the key being repeated ends its repeat. */
+	if (state == 0U && key == shell_titlebar.repeat_key)
+		shell_repeat_stop();
 
 	/* The release of a key the field took is its too. */
 	if (state == 0U) {
@@ -651,130 +703,96 @@ kwl_titlebar_key(
 		return 1;
 	}
 
-	/* Only a field with the keyboard takes keys; a window that lost the keyboard leaves its field. */
-	field = &shell_titlebar.field;
-	if (field->surface == NULL)
-		return 0;
-	if (server->focus != field->surface) {
-		shell_field_done(server, KWL_TEXT_LEFT);
-		return 0;
-	}
+	/*
+	 * A press of any other key than a modifier ends the repeat of the key
+	 * held before, as an application's repeat does; a modifier pressed while
+	 * an arrow is held (Shift, to select) leaves it repeating.
+	 */
+	modifier = shell_key_modifier(key);
+	if (modifier == 0U)
+		shell_repeat_stop();
 
-	/* Alt and Super keys are not the field's. */
-	modifiers = server->modifiers;
-	if ((modifiers & (SEAT_ALT | SEAT_META)) != 0U)
+	/* The press edits the field, moves in it or ends it; a key the field does not take goes on. */
+	taken = shell_field_press(server, key);
+	if (taken == 0)
 		return 0;
 
-	/* With Ctrl: select all, and the clipboard's keys (which do nothing here); others go on. */
-	if ((modifiers & SEAT_CTRL) != 0U) {
-		if (key == FIELD_KEY_A) {
-			field->anchor = 0;
-			field->cursor = field->length;
-		} else if (key != FIELD_KEY_C && key != FIELD_KEY_X && key != FIELD_KEY_V && key != FIELD_KEY_Z) {
-			return 0;
-		}
+	/* A key that edits or moves repeats while it is held. */
+	if (modifier == 0U)
+		shell_repeat_start(server, key);
 
-		/* The key and its release are the field's. */
-		shell_titlebar.eaten_key = key;
-		server->dirty = 1;
-		return 1;
-	}
+	/* Succeeded: the key was the field's. */
+	return 1;
+}
+
+/*
+ * Follows a key's release before anything takes it (seat.c): the release
+ * of the key the field repeats ends the repeat, whatever the release goes
+ * to (a menu or App Home that opened over the field while it was held).
+ */
+void
+kwl_titlebar_key_released(
+	uint32_t key)
+{
+	/* Only the key being repeated. */
+	if (shell_titlebar.repeat_key == 0U || key != shell_titlebar.repeat_key)
+		return;
+
+	/* The hold is over. */
+	shell_repeat_stop();
+}
+
+/*
+ * Presses the key held in the field with the keyboard again when its next
+ * press is due (ws074-p229): after the keyboards' delay, then at their
+ * rate, as wl_keyboard.repeat_info tells the applications to repeat.  The
+ * main loop calls it once a pass (its poll waits 10 ms at most).
+ */
+void
+kwl_titlebar_tick(
+	struct kwl_server *server,
+	uint64_t now)
+{
+	struct kwl_object *surface;
+	uint64_t interval;
+	int taken;
+
+	/* Nothing is held. */
+	if (shell_titlebar.repeat_key == 0U)
+		return;
 
 	/*
-	 * Without suggestions, Down ends the field as Tab does and goes on to
-	 * the window, which moves into what the field found (Settings' search
-	 * results, ws089-p012): the key and its release are the window's.
+	 * A field that lost the keyboard (or the lock screen, the login screen
+	 * or App Home took the keys), or a repeat the settings turned off,
+	 * ends the repeat.
 	 */
-	if (key == FIELD_KEY_DOWN && shell_titlebar.suggestions.count == 0U) {
-		shell_field_done(server, KWL_TEXT_LEFT);
-		return 0;
+	surface = kwl_titlebar_field_surface(server);
+	if (surface == NULL || server->repeat_rate <= 0) {
+		shell_repeat_stop();
+		return;
 	}
 
-	/* The press and its release are the field's from here on. */
-	shell_titlebar.eaten_key = key;
-	server->dirty = 1;
+	/* Not due yet. */
+	if (now < shell_titlebar.repeat_next)
+		return;
 
-	/* With suggestions shown: Up and Down light one, Enter takes the lit one, Esc takes the list away. */
-	if (shell_titlebar.suggestions.count != 0U) {
-		/* Down lights the next one. */
-		if (key == FIELD_KEY_DOWN) {
-			if (shell_titlebar.suggestions.lit + 1 < (int)shell_titlebar.suggestions.count)
-				shell_titlebar.suggestions.lit++;
-			return 1;
-		}
+	/*
+	 * The next press an interval after this one was due, from now when the
+	 * loop fell a whole interval behind (as the input method repeats,
+	 * BUG-172), so that a late pass does not type a burst.
+	 */
+	interval = 1000U / (uint64_t)server->repeat_rate;
+	if (interval == 0U)
+		interval = 1U;
+	shell_titlebar.repeat_next += interval;
+	if (shell_titlebar.repeat_next <= now)
+		shell_titlebar.repeat_next = now + interval;
 
-		/* Up the one before (none above the first). */
-		if (key == FIELD_KEY_UP) {
-			if (shell_titlebar.suggestions.lit >= 0)
-				shell_titlebar.suggestions.lit--;
-			return 1;
-		}
-
-		/* Enter takes the lit one. */
-		if ((key == FIELD_KEY_ENTER || key == FIELD_KEY_KPENTER) && shell_titlebar.suggestions.lit >= 0) {
-			shell_suggest_apply(server, shell_titlebar.suggestions.lit);
-			return 1;
-		}
-
-		/* Esc takes the list away. */
-		if (key == FIELD_KEY_ESC) {
-			shell_suggest_clear(server);
-			return 1;
-		}
-	}
-
-	/* Each key that edits, moves or ends. */
-	switch (key) {
-	case FIELD_KEY_ESC:
-		shell_field_done(server, KWL_TEXT_CANCELLED);
-		return 1;
-	case FIELD_KEY_ENTER:
-	case FIELD_KEY_KPENTER:
-		shell_field_done(server, KWL_TEXT_SUBMITTED);
-		return 1;
-	case FIELD_KEY_TAB:
-		shell_field_done(server, KWL_TEXT_LEFT);
-		return 1;
-	case FIELD_KEY_BACKSPACE:
-		shell_field_erase(0);
-		shell_field_changed(server);
-		return 1;
-	case FIELD_KEY_DELETE:
-		shell_field_erase(1);
-		shell_field_changed(server);
-		return 1;
-	case FIELD_KEY_LEFT:
-		field->cursor = shell_field_step(field->cursor, -1);
-		break;
-	case FIELD_KEY_RIGHT:
-		field->cursor = shell_field_step(field->cursor, 1);
-		break;
-	case FIELD_KEY_HOME:
-		field->cursor = 0;
-		break;
-	case FIELD_KEY_END:
-		field->cursor = field->length;
-		break;
-	default:
-		/* A character of the US layout is typed; any other key does nothing. */
-		known = kwl_menu_keysym(key, modifiers, &keysym);
-		if (known == 0 || keysym < 0x20U || keysym > 0x7eU)
-			return 1;
-		character = (char)keysym;
-		shell_field_insert(&character, 1U);
-		shell_field_changed(server);
-		return 1;
-	}
-
-	/* A move without Shift leaves no selection. */
-	if ((modifiers & SEAT_SHIFT) == 0U)
-		field->anchor = field->cursor;
-
-	/* The input method hears where the cursor is. */
-	kwl_ime_field_changed(server);
-
-	/* Succeeded: the key moved the cursor. */
-	return 1;
+	/* The press again; a key the field no longer takes (with Alt held now) ends the repeat. */
+	shell_titlebar.repeat_count++;
+	taken = shell_field_press(server, shell_titlebar.repeat_key);
+	if (taken == 0)
+		shell_repeat_stop();
 }
 
 /*
@@ -1382,14 +1400,17 @@ shell_mode(
 }
 
 /*
- * Lays out a state's controls in an area: each control's side, width and
+ * Lays out a window's controls in an area: each control's side, width and
  * whether it is shown, and the breadcrumb's width; reports how many items
  * there are, whether "..." is needed, and whether the search became a
- * button.
+ * button.  The breadcrumb is at most as wide as its parts, but while its
+ * path is edited the field takes all the room left (ws074-p229: the
+ * browser's address) and does not give way.
  */
 static unsigned
 shell_layout(
 	struct kwl_server *server,
+	struct kwl_object *surface,
 	const struct kwl_titlebar_state *state,
 	unsigned docked,
 	const struct kwl_menu_area *area,
@@ -1407,6 +1428,7 @@ shell_layout(
 	unsigned victim;
 	unsigned pass;
 	unsigned crumb;
+	unsigned edited;
 	int32_t size;
 	int32_t needed;
 	int32_t available;
@@ -1432,15 +1454,14 @@ shell_layout(
 			crumb = count;
 	}
 
-	/* The room, and the least the breadcrumb needs. */
+	/* The room, the least the breadcrumb needs, and whether its path is being edited. */
 	available = area->right - area->x;
 	*compact_search = 0;
 	crumb_least = 0;
+	edited = 0;
 	if (crumb != SHELL_ITEMS) {
-		full = shell_crumb_full(server, items[crumb].control);
-		crumb_least = full;
-		if (crumb_least > CRUMB_LEAST)
-			crumb_least = CRUMB_LEAST;
+		crumb_least = shell_crumb_least(server, surface, items[crumb].control);
+		edited = shell_crumb_edited(surface, items[crumb].control);
 	}
 
 	/* What is shown is measured again after each step of giving way. */
@@ -1500,8 +1521,11 @@ shell_layout(
 				victim = index - 1U;
 		}
 
-		/* Else the breadcrumb. */
-		if (victim == SHELL_ITEMS && crumb != SHELL_ITEMS && items[crumb].shown != 0U)
+		/* Else the breadcrumb, unless its path is being edited (a field with the keyboard stays). */
+		if (victim == SHELL_ITEMS &&
+		    crumb != SHELL_ITEMS &&
+		    items[crumb].shown != 0U &&
+		    edited == 0U)
 			victim = crumb;
 
 		/* Only the primary controls are left: they stay, whatever the room. */
@@ -1516,12 +1540,12 @@ shell_layout(
 		}
 	}
 
-	/* The breadcrumb takes what is left. */
+	/* The breadcrumb takes what is left: as much as its parts need, all of it while its path is edited. */
 	*crumb_width = 0;
 	if (crumb != SHELL_ITEMS && items[crumb].shown != 0U) {
 		*crumb_width = available - needed + crumb_least;
 		full = shell_crumb_full(server, items[crumb].control);
-		if (*crumb_width > full)
+		if (*crumb_width > full && edited == 0U)
 			*crumb_width = full;
 		if (*crumb_width < 0)
 			*crumb_width = 0;
@@ -1602,6 +1626,112 @@ shell_crumb_full(
 	return width;
 }
 
+/*
+ * Tells the room a window's controls would like before any gives way: each
+ * control at its width (the search a field), the breadcrumb at its least
+ * with the gaps beside it, and "..." for a window with a menu (a floating
+ * titlebar's buttons, the larger of the two).
+ */
+static int32_t
+shell_controls_need(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	const struct kwl_titlebar_model *model)
+{
+	const struct kwl_titlebar_control *control;
+	unsigned has_menu;
+	unsigned crumb_seen;
+	unsigned index;
+	unsigned side;
+	int32_t need;
+
+	/* Each control and the gap after it; the first breadcrumb at its least (shell_layout gives no other one room). */
+	need = 0;
+	crumb_seen = 0;
+	for (index = 0; index < model->shown.control_count; index++) {
+		control = &model->shown.controls[index];
+		side = shell_side(control);
+
+		/* A control at its width; the first breadcrumb at its least, with the gaps between the sides. */
+		if (side != SIDE_CRUMB) {
+			need += shell_item_width(server, control, CONTROL_SIZE, 0U) + CONTROL_GAP;
+		} else if (crumb_seen == 0U) {
+			need += shell_crumb_least(server, surface, control) + 2 * SIDE_GAP;
+			crumb_seen = 1;
+		}
+	}
+
+	/* "..." for the window's menu. */
+	has_menu = shell_has_menu(surface);
+	if (has_menu != 0U)
+		need += CONTROL_SIZE + SIDE_GAP;
+
+	/* Succeeded: the room the controls would like. */
+	return need;
+}
+
+/* Tells whether a window has a menu, which "..." at the right end of its titlebar holds. */
+static unsigned
+shell_has_menu(
+	struct kwl_object *surface)
+{
+	const struct kwl_menu_item *tops[1];
+	const struct kwl_menu_model *menu;
+	struct kwl_object *place;
+	unsigned has_menu;
+
+	/* A menu with a top item. */
+	has_menu = 0;
+	menu = kwl_menu_of_surface(surface, &place);
+	if (menu != NULL)
+		has_menu = kwl_menu_children(menu, KWL_MENU_ROOT, tops, 1U);
+
+	/* Succeeded: whether there is one. */
+	return has_menu;
+}
+
+/* Tells whether a window's breadcrumb is the field with the keyboard (its path being edited). */
+static unsigned
+shell_crumb_edited(
+	struct kwl_object *surface,
+	const struct kwl_titlebar_control *control)
+{
+	/* The field is this window's and this control's. */
+	if (shell_titlebar.field.surface != surface || shell_titlebar.field.id != control->id)
+		return 0;
+
+	/* Succeeded: the path is being edited. */
+	return 1;
+}
+
+/*
+ * Tells the least width a breadcrumb gives way at: its parts' width up to
+ * CRUMB_LEAST, and CRUMB_LEAST while its path is edited (the field shows
+ * the whole path, not the parts).
+ */
+static int32_t
+shell_crumb_least(
+	struct kwl_server *server,
+	struct kwl_object *surface,
+	const struct kwl_titlebar_control *control)
+{
+	int32_t least;
+	unsigned edited;
+
+	/* The field being edited. */
+	edited = shell_crumb_edited(surface, control);
+	if (edited != 0U)
+		return CRUMB_LEAST;
+
+	/* The parts, when they are narrower than the least. */
+	least = shell_crumb_full(server, control);
+	if (least > CRUMB_LEAST)
+		least = CRUMB_LEAST;
+
+	/* Succeeded: the least. */
+	return least;
+}
+
 /* Draws a window's controls in an area, and records where they are. */
 static void
 shell_draw_controls(
@@ -1657,7 +1787,7 @@ shell_draw_controls(
 		recording = 1;
 
 	/* The layout. */
-	count = shell_layout(server, &model->shown, docked, area, has_menu, items, &crumb_width, &overflow, &compact);
+	count = shell_layout(server, surface, &model->shown, docked, area, has_menu, items, &crumb_width, &overflow, &compact);
 	size = CONTROL_SIZE;
 	if (docked != 0U)
 		size = CONTROL_SIZE_DOCKED;
@@ -2042,7 +2172,12 @@ shell_draw_crumbs(
 	}
 }
 
-/* Draws the field's text from x on a baseline within a width: the selection's tint, the text and the cursor. */
+/*
+ * Draws the field's text from x on a baseline within a width: the
+ * selection's tint, the text and the cursor.  A text wider than the field
+ * is drawn from its first character shown (shell_field_scroll), as many
+ * whole characters as fit, so that the cursor stays in sight (ws074-p229).
+ */
 static void
 shell_draw_field_text(
 	struct kwl_server *server,
@@ -2057,7 +2192,13 @@ shell_draw_field_text(
 	char before[KWL_TITLEBAR_TEXT_MAX + 1U];
 	char shown[2U * KWL_TITLEBAR_TEXT_MAX + 1U];
 	size_t preedit_length;
+	size_t shown_length;
+	size_t first;
+	size_t at;
+	size_t next;
 	int32_t preedit_width;
+	int32_t shown_width;
+	int32_t character_width;
 	float colour[4];
 	size_t start;
 	size_t end;
@@ -2066,8 +2207,14 @@ shell_draw_field_text(
 	int32_t cursor_x;
 	unsigned kept;
 
-	/* The selection's ends in order. */
+	/* The input method's preedit, and the first character shown: the text to the cursor and the preedit fit. */
 	field = &shell_titlebar.field;
+	preedit_length = strlen(field->preedit);
+	preedit_width = glass_text_width(server, SIZE_BAR, field->preedit);
+	shell_field_scroll(server, width - preedit_width);
+	first = field->scroll;
+
+	/* The selection's ends in order, an end before the first character shown at it. */
 	start = field->anchor;
 	end = field->cursor;
 	if (start > end) {
@@ -2075,15 +2222,21 @@ shell_draw_field_text(
 		end = field->anchor;
 	}
 
-	/* Where the selection's ends and the cursor are: the widths of the text before them. */
-	memcpy(before, field->text, start);
-	before[start] = '\0';
+	/* A selection that starts out of sight is tinted from the field's start. */
+	if (start < first)
+		start = first;
+	if (end < first)
+		end = first;
+
+	/* Where the selection's ends and the cursor are: the widths of the text shown before them. */
+	memcpy(before, field->text + first, start - first);
+	before[start - first] = '\0';
 	start_x = glass_text_width(server, SIZE_BAR, before);
-	memcpy(before, field->text, end);
-	before[end] = '\0';
+	memcpy(before, field->text + first, end - first);
+	before[end - first] = '\0';
 	end_x = glass_text_width(server, SIZE_BAR, before);
-	memcpy(before, field->text, field->cursor);
-	before[field->cursor] = '\0';
+	memcpy(before, field->text + first, field->cursor - first);
+	before[field->cursor - first] = '\0';
 	cursor_x = glass_text_width(server, SIZE_BAR, before);
 
 	/*
@@ -2102,12 +2255,29 @@ shell_draw_field_text(
 		kwl_accent_done(server, kept);
 	}
 
-	/* The text with the input method's preedit at the cursor (BUG-177), underlined; the cursor after it. */
-	preedit_length = strlen(field->preedit);
-	memcpy(shown, field->text, field->cursor);
-	memcpy(shown + field->cursor, field->preedit, preedit_length);
-	memcpy(shown + field->cursor + preedit_length, field->text + field->cursor, field->length - field->cursor + 1U);
-	preedit_width = glass_text_width(server, SIZE_BAR, field->preedit);
+	/* The text shown up to the cursor, with the preedit at the cursor (BUG-177). */
+	shown_length = field->cursor - first;
+	memcpy(shown, field->text + first, shown_length);
+	memcpy(shown + shown_length, field->preedit, preedit_length);
+	shown_length += preedit_length;
+	shown_width = cursor_x + preedit_width;
+
+	/* The characters after the cursor, as many as fit whole (no dots: the cursor may be at the field's end). */
+	at = field->cursor;
+	while (at < field->length) {
+		character_width = shell_field_char_width(server, at, &next);
+
+		/* A character that would pass the field's end is the first one not shown. */
+		if (shown_width + character_width > width)
+			break;
+		memcpy(shown + shown_length, field->text + at, next - at);
+		shown_length += next - at;
+		shown_width += character_width;
+		at = next;
+	}
+
+	/* The text, the preedit underlined; the cursor after it. */
+	shown[shown_length] = '\0';
 	shell_colour(colour, ink, fade);
 	glass_draw_text(server, command, SIZE_BAR, x, baseline, shown, width, colour);
 	if (preedit_length != 0U && cursor_x <= width)
@@ -2117,6 +2287,103 @@ shell_draw_field_text(
 	cursor_x += preedit_width;
 	if (cursor_x <= width)
 		glass_draw_solid(server, command, (float)(x + cursor_x), (float)(baseline - 13), 1.5f, 16.0f, 0.0f, colour);
+}
+
+/*
+ * Moves the field's first character shown so that the text from it to the
+ * cursor fits in a room (the field's width less the preedit's): forward
+ * when the cursor went past the field's end, to the cursor when it went
+ * before the first one, and back while the text from there to its end
+ * still fits (a text that got shorter shows as much as it can).
+ */
+static void
+shell_field_scroll(
+	struct kwl_server *server,
+	int32_t room)
+{
+	struct shell_field *field;
+	size_t previous;
+	size_t next;
+	size_t at;
+	int32_t before;
+	int32_t tail;
+	int32_t character_width;
+
+	/* Within the text (a suggestion or the client's text may have made it shorter). */
+	field = &shell_titlebar.field;
+	if (field->scroll > field->length)
+		field->scroll = field->length;
+
+	/* On a character's first byte. */
+	while (field->scroll > 0U && ((unsigned char)field->text[field->scroll] & 0xc0U) == 0x80U)
+		field->scroll--;
+
+	/* A cursor before the first character shown brings the text back to it. */
+	if (field->scroll > field->cursor)
+		field->scroll = field->cursor;
+
+	/* The width of the text from the first character shown to the cursor. */
+	before = 0;
+	at = field->scroll;
+	while (at < field->cursor) {
+		character_width = shell_field_char_width(server, at, &next);
+		before += character_width;
+		at = next;
+	}
+
+	/* Forward, a character at a time, until the text before the cursor fits. */
+	while (before > room && field->scroll < field->cursor) {
+		character_width = shell_field_char_width(server, field->scroll, &next);
+		before -= character_width;
+		field->scroll = next;
+	}
+
+	/* The width of the text from the first character shown to its end. */
+	tail = before;
+	at = field->cursor;
+	while (at < field->length) {
+		character_width = shell_field_char_width(server, at, &next);
+		tail += character_width;
+		at = next;
+	}
+
+	/* Back, a character at a time, while the text from there to its end still fits. */
+	while (field->scroll > 0U) {
+		previous = shell_field_step(field->scroll, -1);
+		character_width = shell_field_char_width(server, previous, &next);
+
+		/* The character before would push the cursor or the text's end out of the room. */
+		if (tail + character_width > room)
+			break;
+		tail += character_width;
+		field->scroll = previous;
+	}
+}
+
+/* Measures the field's character at a byte offset, and finds the offset after it. */
+static int32_t
+shell_field_char_width(
+	struct kwl_server *server,
+	size_t at,
+	size_t *next)
+{
+	char character[8];
+	size_t length;
+	int32_t width;
+
+	/* The character's bytes (a broken sequence's first few). */
+	*next = shell_field_step(at, 1);
+	length = *next - at;
+	if (length >= sizeof(character))
+		length = sizeof(character) - 1U;
+	memcpy(character, shell_titlebar.field.text + at, length);
+	character[length] = '\0';
+
+	/* Its width as the field's text draws it. */
+	width = glass_text_width(server, SIZE_BAR, character);
+
+	/* Succeeded: the width. */
+	return width;
 }
 
 /* Draws a progress control: a short bar with the share done in the accent (a third of it when the share is not known). */
@@ -2318,9 +2585,6 @@ shell_tabs_need(
 	struct kwl_object *surface,
 	const struct kwl_titlebar_model *model)
 {
-	const struct kwl_menu_item *tops[1];
-	const struct kwl_menu_model *menu;
-	struct kwl_object *place;
 	unsigned has_menu;
 	unsigned index;
 	int32_t need;
@@ -2335,10 +2599,7 @@ shell_tabs_need(
 		need += CONTROL_SIZE + TAB_GAP;
 
 	/* "..." for the window's menu. */
-	has_menu = 0;
-	menu = kwl_menu_of_surface(surface, &place);
-	if (menu != NULL)
-		has_menu = kwl_menu_children(menu, KWL_MENU_ROOT, tops, 1U);
+	has_menu = shell_has_menu(surface);
 	if (has_menu != 0U)
 		need += CONTROL_SIZE + SIDE_GAP;
 	return need;
@@ -2900,8 +3161,9 @@ shell_release(
 
 /*
  * Finds the place in the field's text nearest to a point across it: the
- * character boundary whose text before it is as wide as the point is from
- * where the text starts.
+ * character boundary whose text before it, from the first character shown
+ * (shell_field_scroll), is as wide as the point is from where the text
+ * starts.
  */
 static size_t
 shell_field_at(
@@ -2909,29 +3171,29 @@ shell_field_at(
 	int32_t text_x,
 	int32_t x)
 {
-	char before[KWL_TITLEBAR_TEXT_MAX + 1U];
 	struct shell_field *field;
 	int32_t target;
 	int32_t width;
 	int32_t previous;
+	int32_t character_width;
 	size_t at;
 	size_t next;
 
-	/* Left of the text is its start. */
+	/* Left of the text shown is its first character shown. */
 	field = &shell_titlebar.field;
+	at = field->scroll;
+	if (at > field->length)
+		at = field->length;
 	target = x - text_x;
 	if (target <= 0)
-		return 0;
+		return at;
 
 	/* Each character in turn, until the text before the next boundary reaches the point. */
-	at = 0;
 	previous = 0;
 	while (at < field->length) {
 		/* The width of the text up to the next boundary. */
-		next = shell_field_step(at, 1);
-		memcpy(before, field->text, next);
-		before[next] = '\0';
-		width = glass_text_width(server, SIZE_BAR, before);
+		character_width = shell_field_char_width(server, at, &next);
+		width = previous + character_width;
 
 		/* The point is within this character: the nearer of its two ends. */
 		if (width >= target) {
@@ -3026,6 +3288,7 @@ shell_focus(
 	field->anchor = 0;
 	field->cursor = length;
 	field->box_known = 0;
+	field->scroll = 0;
 
 	/* A search given the keyboard to go on editing (KL_FOCUS_EDIT, ws177-p043) has nothing selected, the cursor at its end. */
 	if (edit != 0U && control->role == KWL_CONTROL_SEARCH)
@@ -3042,6 +3305,242 @@ shell_focus(
 	kwl_ime_field_changed(server);
 }
 
+/*
+ * Carries out a press for the field with the keyboard (a key held pressed
+ * again too): edits it, moves in it or ends it.  Returns 1 when the key
+ * was the field's, 0 when it goes on.
+ */
+static int
+shell_field_press(
+	struct kwl_server *server,
+	uint32_t key)
+{
+	struct shell_field *field;
+	uint32_t modifiers;
+	uint32_t keysym;
+	char character;
+	int known;
+
+	/* Only a field with the keyboard takes keys; a window that lost the keyboard leaves its field. */
+	field = &shell_titlebar.field;
+	if (field->surface == NULL)
+		return 0;
+	if (server->focus != field->surface) {
+		shell_field_done(server, KWL_TEXT_LEFT);
+		return 0;
+	}
+
+	/* Alt and Super keys are not the field's. */
+	modifiers = server->modifiers;
+	if ((modifiers & (SEAT_ALT | SEAT_META)) != 0U)
+		return 0;
+
+	/* With Ctrl: select all, and the clipboard's keys (which do nothing here); others go on. */
+	if ((modifiers & SEAT_CTRL) != 0U) {
+		if (key == FIELD_KEY_A) {
+			field->anchor = 0;
+			field->cursor = field->length;
+		} else if (key != FIELD_KEY_C && key != FIELD_KEY_X && key != FIELD_KEY_V && key != FIELD_KEY_Z) {
+			return 0;
+		}
+
+		/* The key and its release are the field's. */
+		shell_titlebar.eaten_key = key;
+		server->dirty = 1;
+		return 1;
+	}
+
+	/*
+	 * Without suggestions, Down ends the field as Tab does and goes on to
+	 * the window, which moves into what the field found (Settings' search
+	 * results, ws089-p012): the key and its release are the window's.
+	 */
+	if (key == FIELD_KEY_DOWN && shell_titlebar.suggestions.count == 0U) {
+		shell_field_done(server, KWL_TEXT_LEFT);
+		return 0;
+	}
+
+	/* The press and its release are the field's from here on. */
+	shell_titlebar.eaten_key = key;
+	server->dirty = 1;
+
+	/* With suggestions shown: Up and Down light one, Enter takes the lit one, Esc takes the list away. */
+	if (shell_titlebar.suggestions.count != 0U) {
+		/* Down lights the next one. */
+		if (key == FIELD_KEY_DOWN) {
+			if (shell_titlebar.suggestions.lit + 1 < (int)shell_titlebar.suggestions.count)
+				shell_titlebar.suggestions.lit++;
+			return 1;
+		}
+
+		/* Up the one before (none above the first). */
+		if (key == FIELD_KEY_UP) {
+			if (shell_titlebar.suggestions.lit >= 0)
+				shell_titlebar.suggestions.lit--;
+			return 1;
+		}
+
+		/* Enter takes the lit one. */
+		if ((key == FIELD_KEY_ENTER || key == FIELD_KEY_KPENTER) && shell_titlebar.suggestions.lit >= 0) {
+			shell_suggest_apply(server, shell_titlebar.suggestions.lit);
+			return 1;
+		}
+
+		/* Esc takes the list away. */
+		if (key == FIELD_KEY_ESC) {
+			shell_suggest_clear(server);
+			return 1;
+		}
+	}
+
+	/* Each key that edits, moves or ends. */
+	switch (key) {
+	case FIELD_KEY_ESC:
+		shell_field_done(server, KWL_TEXT_CANCELLED);
+		return 1;
+	case FIELD_KEY_ENTER:
+	case FIELD_KEY_KPENTER:
+		shell_field_done(server, KWL_TEXT_SUBMITTED);
+		return 1;
+	case FIELD_KEY_TAB:
+		shell_field_done(server, KWL_TEXT_LEFT);
+		return 1;
+	case FIELD_KEY_BACKSPACE:
+		shell_field_erase(0);
+		shell_field_changed(server);
+		return 1;
+	case FIELD_KEY_DELETE:
+		shell_field_erase(1);
+		shell_field_changed(server);
+		return 1;
+	case FIELD_KEY_LEFT:
+		field->cursor = shell_field_step(field->cursor, -1);
+		break;
+	case FIELD_KEY_RIGHT:
+		field->cursor = shell_field_step(field->cursor, 1);
+		break;
+	case FIELD_KEY_HOME:
+		field->cursor = 0;
+		break;
+	case FIELD_KEY_END:
+		field->cursor = field->length;
+		break;
+	default:
+		/* A character of the US layout is typed; any other key does nothing. */
+		known = kwl_menu_keysym(key, modifiers, &keysym);
+		if (known == 0 || keysym < 0x20U || keysym > 0x7eU)
+			return 1;
+		character = (char)keysym;
+		shell_field_insert(&character, 1U);
+		shell_field_changed(server);
+		return 1;
+	}
+
+	/* A move without Shift leaves no selection. */
+	if ((modifiers & SEAT_SHIFT) == 0U)
+		field->anchor = field->cursor;
+
+	/* The input method hears where the cursor is. */
+	kwl_ime_field_changed(server);
+
+	/* Succeeded: the key moved the cursor. */
+	return 1;
+}
+
+/*
+ * Starts the repeat of a key the field took while it is held: its first
+ * press again comes after the keyboards' delay (kwl_titlebar_tick).
+ */
+static void
+shell_repeat_start(
+	struct kwl_server *server,
+	uint32_t key)
+{
+	uint64_t now;
+	unsigned repeats;
+
+	/* A key that ended the field (Enter, Esc, Tab), one that must not be done again, or no repeat at all (rate 0) repeats nothing. */
+	repeats = shell_key_repeats(key);
+	if (shell_titlebar.field.surface == NULL ||
+	    repeats == 0U ||
+	    server->repeat_rate <= 0)
+		return;
+
+	/* The clock the loop's ticks are on; without it nothing repeats. */
+	now = kwl_milliseconds();
+	if (now == UINT64_MAX)
+		return;
+
+	/* The key repeats from the delay on (a negative delay is none). */
+	shell_titlebar.repeat_key = key;
+	shell_titlebar.repeat_next = now;
+	if (server->repeat_delay_ms > 0)
+		shell_titlebar.repeat_next += (uint64_t)server->repeat_delay_ms;
+	shell_titlebar.repeat_count = 0;
+}
+
+/* Ends the repeat of a held key; a hold that repeated is logged (the tests read how often). */
+static void
+shell_repeat_stop(void)
+{
+	/* Nothing repeats. */
+	if (shell_titlebar.repeat_key == 0U)
+		return;
+
+	/* The log line of a hold that was pressed again. */
+	if (shell_titlebar.repeat_count != 0U)
+		printf("KWL TITLEBAR repeat key=%u count=%u\n", shell_titlebar.repeat_key, shell_titlebar.repeat_count);
+
+	/* No key repeats any more. */
+	shell_titlebar.repeat_key = 0;
+	shell_titlebar.repeat_count = 0;
+}
+
+/* Tells whether a key is a modifier (or Caps Lock), whose press leaves a held key repeating. */
+static unsigned
+shell_key_modifier(
+	uint32_t key)
+{
+	/* The modifiers. */
+	switch (key) {
+	case FIELD_KEY_LEFTCTRL:
+	case FIELD_KEY_LEFTSHIFT:
+	case FIELD_KEY_RIGHTSHIFT:
+	case FIELD_KEY_LEFTALT:
+	case FIELD_KEY_CAPSLOCK:
+	case FIELD_KEY_RIGHTCTRL:
+	case FIELD_KEY_RIGHTALT:
+	case FIELD_KEY_LEFTMETA:
+	case FIELD_KEY_RIGHTMETA:
+		return 1;
+	default:
+		break;
+	}
+
+	/* Any other key. */
+	return 0;
+}
+
+/* Tells whether a key the field took repeats while it is held: not the keys that end the field. */
+static unsigned
+shell_key_repeats(
+	uint32_t key)
+{
+	/* Enter, Esc and Tab are done once (as the input method never repeats Enter and Esc). */
+	switch (key) {
+	case FIELD_KEY_ESC:
+	case FIELD_KEY_ENTER:
+	case FIELD_KEY_KPENTER:
+	case FIELD_KEY_TAB:
+		return 0;
+	default:
+		break;
+	}
+
+	/* The keys that edit or move, and the characters. */
+	return 1;
+}
+
 /* Ends the field's editing and tells the client how. */
 static void
 shell_field_done(
@@ -3052,7 +3551,8 @@ shell_field_done(
 	struct kwl_object *titlebar;
 	struct kwl_object *surface;
 
-	/* The field and its suggestions go first (the event may make the client change its controls); the input method stops serving it. */
+	/* The field, its suggestions and a key it repeats go first (the event may make the client change its controls); the input method stops serving it. */
+	shell_repeat_stop();
 	surface = shell_titlebar.field.surface;
 	shell_titlebar.field.surface = NULL;
 	shell_titlebar.field.preedit[0] = '\0';
