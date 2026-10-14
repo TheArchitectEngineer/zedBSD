@@ -89,10 +89,23 @@ endif
 ifeq ($(NVRTX_RUN),R9w)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.work=1 nvrtx.disp=0 nvrtx.resident=0
 endif
-# ws037-p007 D3/D5: the GPU device as a renderer too (nvrtx.vk=1, with the work channel it implies); vkquad, the
+# ws037-p007 D3/D5: R8c's GPU device (in the VFIO guest the firmware's console is on the emulated VGA, not the RTX, so the
+# takeover needs nvrtx.disp.test=1's own surfaces; without it the head is left to the firmware and no device is
+# registered, T1-672) as a renderer too (nvrtx.vk=1, with the work channel it implies); vkquad, the
 # compositor's textured quad drawn offscreen through Vulkan and read back (one line: VKQUAD ok / VKQUAD fail ...),
 # and display-events, a swapchain of the display cleared and presented through VK_KHR_display (the WSI of stage D5).
 ifeq ($(NVRTX_RUN),R9v)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.vk=1
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1
 ZEDBSD_USER_PROGRAMS += vkquad display-events
+endif
+# ws037-p007 D6: the desktop on the RTX: R9v's renderer with the graphical boot and login the main image has (sessiond
+# starts the compositor on /dev/gpu0, the RTX), the compositor's capture channel and keiland-shot (what it composes, to
+# a PNG fetched over SSH), and R9v's two probes.
+ifeq ($(NVRTX_RUN),R9k)
+ZEDBSD_GRAPHICAL_BOOT := y
+ZEDBSD_GRAPHICAL_LOGIN := y
+ZEDBSD_BOOT_KERNEL_MESSAGES := n
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1
+ZEDBSD_TEST_SCREEN_CAPTURE := y
+ZEDBSD_USER_PROGRAMS += vkquad display-events keiland-shot
 endif

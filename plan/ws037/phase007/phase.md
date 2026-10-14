@@ -314,9 +314,24 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 
 #### T への手順（R9v、方式 B、rombar=1）
 
-前提: R9w（work channel）が通ること（T1-658 で PASS 済み、R9v は同じ channel を使う）。image は harness 入りで（SSH の鍵と `/etc/net.conf`）`plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。QEMU は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1-664 と同じ）。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。判定は SSH で guest の中の出力と dmesg（serial・console の log では判定しない）。
+前提: R9w（work channel）が通ること（T1-658 で PASS 済み、R9v は同じ channel を使う）。語は `nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1`: 方式 B の guest では firmware の console が RTX に無いので、`nvrtx.disp.test=1`（自前の帯の surface での takeover、R8c と同じ）が無いと head は firmware のままで GPU device（P8c）が登録されない（T1-672 の FAIL の原因）。起動の印に `P8c ok: gpu device registered` が要る。image は harness 入りで（SSH の鍵と `/etc/net.conf`）`plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。QEMU は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1-664 と同じ）。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。判定は SSH で guest の中の出力と dmesg（serial・console の log では判定しない）。
 1. SSH で `dmesg | grep nvrtx`: R9w の `P9w ok: fence 1 after N us` と R8c の `P8c ok: gpu device registered, …`。
 2. SSH で `vkquad` → 1 行。合格は **`VKQUAD ok device=… pixels=4096`**。
 3. （D5、vkquad の後に）SSH で `display-events --frames=60 --hold=3 --watch=0` → `DISPLAY-EVENTS swapchain index=0 result=0`・`present index=0 frames=60 result=0`・`first-pixel index=0 result=0`・`done error=0` が合格（power の行の結果は記録だけ: power は EOPNOTSUPP の仕様）。swapchain の image を同じ node の blob として複写なしで出すか、複写で出すかは libvulkan が決める（dmesg と display-events の行で分かる範囲を記録）。
 4. その後の `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
 FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標と値）と dmesg の `nvrtx: vk: command N refused (E)`（実装の無い command）・`a stage … did not compile`・`D3 fail: the work of fence … did not finish` を記録。
+
+#### T への手順（R9k、D6 の desktop。R9v が通った後）
+
+image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9k NVRTX_RUN=R9k`（main の image と同じ graphical の boot と login、`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1`、compositor の capture、keiland-shot）。QEMU は `~/nvrtx/start-rombar1-net.sh`、run の前後に host の reboot。判定は SSH（serial・console の log は使わない）。
+1. 起動から 60 秒後に SSH で `dmesg | grep nvrtx` の全文（`P8c ok`・`P9w ok`、`nvrtx: vk: command N refused`・`D3 fail`・`a stage … did not compile` の有無）。
+2. SSH で `ps -ax | grep -E 'wayland|sessiond'`（compositor が動いているか）と `ls /dev/gpu*`。
+3. SSH で `keiland-shot /tmp/r9k.png` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` が合格の印、PNG を scp で host へ取り、結果の md に貼る（login の画面か desktop が描かれていること）。
+4. FAIL の時: `/var/log/sessiond.log`・`/var/log/greeter.log`（login の画面の compositor の出力）と 1 の dmesg を記録。
+
+### 8.9 R9v（T1-672、2026-10-16）: FAIL（語の不足）と直し
+
+- `plan/agents/T1/results-20261016-t1-672.md`。dmesg: P9w ok（fence 1 after 517 us）、P8 ok、`P8b: no console kept; the head is left to the firmware`、`P8 done; this revision ends at P8c`、P6 ok・P7 unload。P8c の行が無く GPU device は登録されず、`vkquad` → `VKQUAD fail devices 0 count=0`、`display-events` → `done error=-3`。executor（D3）には届いていない。
+- 原因: 方式 B の guest では GOP の console が emulated の VGA にあり RTX に無いので、既定の takeover（console を見せる）は head を firmware に残し、P8c（resident）は `display.taken` が無いので走らない。R8c・R8d は `nvrtx.disp.test=1`（自前の帯の surface）で takeover していた。
+- 直し: R9v と R9k の語に `nvrtx.disp.test=1` を足した（`config-amd64-nvrtx.mk`、8.8 と R9k の手順の前提）。code は変えない。
+- 後の課題（desktop が通った後に Q1 と決める）: console の無い時（方式 B、または GOP が別の GPU）にも、renderer を求められたら自前の黒い surface で takeover して device を登録するか。
