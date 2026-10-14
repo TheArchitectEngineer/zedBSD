@@ -32,3 +32,6 @@ repo の作成と push は Q1 が、監査の結果をユーザーに示して�
 - 初回の表示の順（2026-10-14 ユーザー「はい、何のファームウェアか、著作権表示、ライセンス文、yes/noですね。」）: 何の firmware か → 著作権表示 → license の全文 → yes/no。
 - 判断（2026-10-14 ユーザー、クリック）: Cypress の brcmbt・bcm43455 は「入れる」。RPi4 の DTB は「dts を repo に置く」。VBT・OpRegion の raw（vendor/intel-vbt、plan/ws031/display-ref/）は「VBTはテスト用だったので、もう不要と思います。削除できませんか？」→ P1 が参照を調べ、Q1 が git rm する。
 - P1 の 36966480d（取り方の切り替え・同意の表示・RPi4 の firmware の取り方・CI）を main に merge（placeholder は空で今の取り方のまま）。
+- 2026-10-14 Q1: P1 の 5090f6202（DTB の source、Cypress の README、VBT の参照の除去）を merge。VBT・OpRegion の raw と読む試験 6 file を git rm（531dfe8d4）。`plan/ws031/handover/increment-results/` の patch 7 本（VBT の bytes を含む、約 60 MB）は未決（ユーザーに確認）。
+- 2026-10-14 Q1: `gh repo create awemorris/zedBSD-firmware --public` と push（commit ddd36a0d2f0215f4a9000d1c0796e54aeaf1a79f、68 file、SHA256SUMS 一致）。`userland/firmware/zedbsd-firmware.mk` にその SHA を記入（2fd3cc622）。host で 6 つの firmware と rpi4-boot を新しい cache に取り、全部一致。intelbt は strace で接続先が raw.githubusercontent.com（185.199.108〜111.133）だけ、git.kernel.org への接続なしを確認。
+- 残り: submodule `vendor/raspberrypi-firmware` の除去（手順は phase001/proposed/remove-submodule.md）、T1 の image の試験（rpi4・amd64 の build、FAT の中の firmware が前と byte 一致、raspi4b の boot-test）。
