@@ -208,6 +208,9 @@ CONFIG_DRIVER_PCI_AHCI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 # (2026-09-29 user decision).
 CONFIG_DRIVER_PCI_VENUS ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_DRIVER_PCI_I915 ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+# The NVIDIA Turing-and-later driver (ws037) is off by default: it only reads
+# the chip identity so far and leaves the GPU to the firmware.
+CONFIG_DRIVER_PCI_NVRTX ?= n
 # HD Audio is on by default where its driver builds (amd64); a config written
 # by the menu names it explicitly.
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -593,6 +596,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_AHCI=$(if $(filter y,$(CONFIG_DRIVER_PCI_AHCI)),1,0) \
 	-DCONFIG_DRIVER_PCI_VENUS=$(if $(filter y,$(CONFIG_DRIVER_PCI_VENUS)),1,0) \
 	-DCONFIG_DRIVER_PCI_I915=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915)),1,0) \
+	-DCONFIG_DRIVER_PCI_NVRTX=$(if $(filter y,$(CONFIG_DRIVER_PCI_NVRTX)),1,0) \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
