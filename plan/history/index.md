@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1120 / WS074 inline-grid intrinsic width（2026-10-14）
+## 最新: q1121 / WS074 vertical inline text geometry diagnosis（2026-10-14）
+
+[q1121履歴](queue-q1121.md): 縦書きWPT10 subtestの初回幅10/実60を非Grid/位置指定Gridで切り分け。inline/paint/geometryの縦軸表現欠落を確認。[証拠](../ws074/phase220/evidence/20261014-q1121/README.md)。p220部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1120 / WS074 inline-grid intrinsic width（2026-10-14）
 
 [q1120履歴](queue-q1120.md): `inline-grid`の独立表示値とatomic自動幅で固定列軸012–016の横書きRTL5 subtest FAIL→PASS。水平10/10 PASS、縦書き10は残る。旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1120/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

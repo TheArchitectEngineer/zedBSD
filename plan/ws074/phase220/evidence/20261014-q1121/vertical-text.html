@@ -1,0 +1,13 @@
+<!doctype html>
+<style>
+body { font: 10px/1 monospace; }
+.h { width: 100px; height: 100px; border: 1px solid black; }
+.vlr { writing-mode: vertical-lr; }
+.vrl { writing-mode: vertical-rl; }
+.p { position: relative; }
+.p > div { position: absolute; }
+</style>
+<div class="h vlr">X XX X</div>
+<div class="h vrl">X XX X</div>
+<div class="h p vlr"><div>X XX X</div></div>
+<div class="h p vrl"><div>X XX X</div></div>
