@@ -92,3 +92,43 @@ BAR1・BAR2 の map、VRAM の汎用の allocator、複数の channel・session�
 
 - 検証: host 試験 `nvrtx-gsp-host-test.sh` 165 項目 PASS（表の各段の entry・dual PDE の small 側・PTE の system coherent・volatile、instance block の PDB と subcontext、FB region の選び方、control の header、device info からの選び方、channel の引数の各欄、fence と fill の method、GPFIFO の entry）。amd64 の y の kernel は rc 0・warning 0・check PASS。既定 n は `vmunix.mk` の `ifeq` の中だけの変更なので変わらない。
 - 未実施: 実機（方式 B）での R5〜R7。危険は 5 節（特に 1: copy の channel に golden context が要るか、2: PRAMIN の窓）。
+
+## 5f の設計（2026-10-14、P1。GR の golden context と TU10x の scrubber、未実装）
+
+Q1（2026-10-14）「R6 で RM が channel を断った時に要る GR の golden context と TU10x の scrubber を … run の語（例 `nvrtx.gr=1`）で選べるように」。この節は実装の前の設計と、集めた事実（値は参照の header を temp で compile した物、`plan/ws037/temp/offsets/gr.c`・`fifo.c`、commit しない）。**実装は次の P1 の世代で行う**（context の大きさのため、2026-10-14 Q1 の許可で区切った）。
+
+### 5f.1 流れ（nouveau の r535/r570 の gr の oneinit と同じ順）
+
+`nvrtx.gr=1` の時だけ、P5 の channel の前に次を流す（無ければ今の copy の channel の道のまま）。
+
+1. **context buffer の情報**: RM の内部の subdevice に control 0x20800a32（GET_CONTEXT_BUFFERS_INFO、引数は 8 engine × 26 entry × {size u32, alignment u32} = 1664 byte、0 で送り返りを読む）。engine 0 の entry だけを使う。entry の番号（engine ID）→ promote の buffer ID・global・init・ro の対応:
+
+   | engine ID | buffer ID | global | init | ro | 備考 |
+   | --- | --- | --- | --- | --- | --- |
+   | 0x00 GRAPHICS | 0 MAIN | no | yes | no | 大きさ = 4 KiB 揃え + 64 page（subcontext の header） |
+   | 0x10 PATCH | 2 | no | yes | no | |
+   | 0x11 BUNDLE_CB | 3 | yes | no | no | |
+   | 0x0d PAGEPOOL | 4 | yes | no | no | |
+   | 0x13 ATTRIBUTE_CB | 5 | yes | no | no | VA の揃えは大きさの 2 の冪 |
+   | 0x14 RTV_CB_GLOBAL | 6 | yes | no | no | |
+   | 0x17 FECS_EVENT | 9 | yes | yes | no | |
+   | 0x18 PRIV_ACCESS_MAP | 10 | yes | yes | yes | promote では bNonmapped（map しない） |
+   | （同じ物の写し） | 11 UNRESTRICTED_PRIV_ACCESS_MAP | yes | yes | yes | golden の時だけ送り、通常の channel では飛ばす |
+
+   page の大きさ: 2 MiB 以上は 2 MiB、64 KiB 以上は 64 KiB、それ以外 4 KiB（揃え）。buffer は VRAM（init の物も init でない物も）。
+
+2. **golden の address space**: device の下に vaspace（0x90f1）を **外部所有でなく**（flags 0）作り、vaspace に control 0x90f10106（COPY_SERVER_RESERVED_PDES、184 byte: hSubDevice 0・subDeviceId 4・pageSize 8 = 512 MiB・virtAddrLo 16 = 0x1_0000_0000・virtAddrHi 24 = +512 MiB − 1・numLevelsToCopy 32 = 3・levels[6] 40〜（各 24 byte: physAddress 0・size 8・aperture 16 = 1・pageShift 20））。levels は上から root（size 32、shift 47）・PD2（size 4096、shift 38）・PD1（size 4096、shift 29）。kernel は VA 4 GiB〜4.5 GiB をこの予約に空けておく（その範囲の表を自分の物で埋めない）。
+3. **golden の channel**: VRAM に 0x12000 の塊（instance +0、USERD +0x1000、method buffer +0x2000、**method buffer も VRAM**）、chid 1（RM の予約の次）、engine GR0（1）、runq 0、**priv**（flags の bit 5 と internal flags の ADMIN = 1）、GPFIFO の VA 0・長さ 0x1000（投入はしない）。nouveau はこの channel に join（instance block の PDB を書くこと）をしない。
+4. **promote**: その vaspace の device の subdevice に control 0x2080012b（PROMOTE_CTX、560 byte: engineType 0 = 1・hClient 4・ChID 8・hChanClient 12 = 自分の client・hObject 16 = channel・hVirtMemory 20・virtAddress 24・size 32・entryCount 40・promoteEntry[16] 48〜 各 32 byte: gpuPhysAddr 0・gpuVirtAddr 8・size 16・physAttr 24 = 4・bufferId 28（u16）・bInitialize 30・bNonmapped 31）。golden では全部の buffer を新しく取り、init の物だけ物理と大きさを書き、map する物は VA を書く（PTE の priv の bit 5 を立て、PRIV_ACCESS_MAP は ro）。
+5. **3D の object**（class 0xc597、引数なし）を channel に作る → RM が golden context を作る。その後 3D の object と channel を FREE（RM は context を保持する）。global の buffer は保持し、以後の GR の channel で共有する。
+6. **scrubber（TU102・TU104・TU106 だけ）**: 別の vaspace（外部所有でない、handle は nouveau の 0xdada0042 の系統。zedBSD は自分の handle）・別の chid・engine GR0・非 priv の channel（VRAM に 0x2000 + method buffer の大きさ）→ promote（golden でない形: global は共有、non-global は新しく）→ 3D の object → 内部の subdevice に control 0x20800a46（INIT_BUG4208224_WAR、1 byte: bTeardown 0）。停止の時は bTeardown 1 を送ってから FREE。
+
+### 5f.2 未確認（実装の前に決める）
+
+1. **外部所有でない vaspace で、GPU はどの page table を使うか**。kernel が golden の VMM に map した context buffer の VA を、RM の側の root から引けるのか（COPY_SERVER_RESERVED_PDES の向き: 「server の PDE を client に写す」か逆か）。ogkm の sparse の範囲に RM の実装が無いので、nouveau の `r535_mmu_vaspace_new` と `nvkm_vmm` の join の関係をもう一度読む（`vmm->rm.external` が false の時に `nvkm_vmm_join` が呼ばれるか）。
+2. 今の 5 段の表の builder は 2 MiB の 1 範囲・4 KiB の page だけ。golden には数 MiB の buffer が複数あるので、範囲を増やす（PD1 の entry ごとに PD0、2 MiB ごとに PT）か、64 KiB の page（LPT、dual PDE の下半分）を使う形に広げる。VRAM の塊も 64 KiB では足りないので、VRAM の arena（例 64 MiB、上端から）を取る。
+3. golden の channel に join が要らないなら、instance block は RM が書く。要るなら kernel が書く。
+
+### 5f.3 印と run（予定）
+
+`P5g begin` → `P5g ctxbufs: N buffers, M KiB` → `P5g ok: golden context`（3D の確保の status 0）→ TU10x で `P5g ok: scrubber`。run は R6 と R7 に `nvrtx.gr=1` を足した R6g・R7g。合格は今の印に加えて上の 3 行。
