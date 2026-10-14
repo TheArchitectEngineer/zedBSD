@@ -1,0 +1,20 @@
+#version 450
+// ws037-p008 stage B: shared memory across a barrier, and shared atomics.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) buffer O { uint o[]; };
+shared uint s[64];
+shared uint total;
+void main()
+{
+	uint l = gl_LocalInvocationID.x;
+	uint g = gl_GlobalInvocationID.x;
+	if (l == 0u)
+		total = 0u;
+	s[l] = g * 3u + 1u;
+	barrier();
+	atomicAdd(total, l);
+	uint x = s[(l + 1u) % 64u] + s[63u - l];
+	barrier();
+	o[g * 2u] = x;
+	o[g * 2u + 1u] = total;
+}
