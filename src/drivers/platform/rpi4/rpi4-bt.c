@@ -106,16 +106,12 @@
 #define UART_FR_TXFE			(1U << 7)
 
 /*
- * LCR_H: two stop bits sent, the FIFOs on, eight bits a character, no
- * parity.  The second stop bit is idle time a receiver of one stop bit
- * takes as such; it gives the controller's receiver a full bit of idle
- * line between back-to-back characters (BUG-311 round 6: the controller
- * answered only HCI_Reset, whose bytes are the only ones without bit 4;
- * whether a receiver that loses step inside a long run of characters is
- * the cause is what the second stop bit tests).  The PL011 receives one
- * stop bit whatever this says.
+ * LCR_H: the FIFOs on, eight bits a character, no parity, one stop bit.
+ * Not two (BUG-311 round 6): with STP2 this PL011 also wants a second stop
+ * bit on receiving, and the controller's back-to-back answer to HCI_Reset
+ * (04 0e 04 01 03 0c 00, one stop bit) came in as 04 0e 82 40 20 08 fc
+ * with framing errors -- exactly what such a receiver makes of it.
  */
-#define UART_LCRH_STP2			(1U << 3)
 #define UART_LCRH_FEN			(1U << 4)
 #define UART_LCRH_WLEN8			(3U << 5)
 
@@ -280,6 +276,7 @@ struct rpi4_bt {
 	uint64_t quiet_dropped;
 	uint64_t self_resets;
 	uint8_t seen_in[SEEN_BYTES];
+	uint8_t seen_in_errors[SEEN_BYTES];
 	unsigned seen_in_count;
 	uint8_t seen_out[SEEN_BYTES];
 	unsigned seen_out_count;
@@ -1156,9 +1153,13 @@ interrupt_handler(
 			bt->rx_errors++;
 		received = 1U;
 
-		/* The first bytes since the program's reset, for its log line. */
-		if (bt->seen_in_count < SEEN_BYTES)
+		/* The first bytes since the program's reset and their error bits (DR 8 to 11), for its log lines. */
+		if (bt->seen_in_count < SEEN_BYTES) {
 			bt->seen_in[bt->seen_in_count] = (uint8_t)entry;
+			bt->seen_in_errors[bt->seen_in_count] = (uint8_t)((entry & UART_DR_ERRORS) >> 8);
+		}
+
+		/* Counted on past them, until the count would wrap. */
 		if (bt->seen_in_count != ~0U)
 			bt->seen_in_count++;
 	}
@@ -1416,7 +1417,7 @@ setup_uart(
 	write_register(bt, UART_LCRH, 0U);
 	write_register(bt, UART_IBRD, integer);
 	write_register(bt, UART_FBRD, fraction);
-	write_register(bt, UART_LCRH, UART_LCRH_WLEN8 | UART_LCRH_FEN | UART_LCRH_STP2);
+	write_register(bt, UART_LCRH, UART_LCRH_WLEN8 | UART_LCRH_FEN);
 	write_register(bt, UART_IFLS, UART_IFLS_RX_HALF | UART_IFLS_TX_EIGHTH);
 
 	/* Clears the errors and every interrupt left from before. */
@@ -2477,13 +2478,16 @@ log_seen(
 {
 	unsigned long enabled;
 	uint8_t seen_in[SEEN_BYTES];
+	uint8_t seen_in_errors[SEEN_BYTES];
 	uint8_t seen_out[SEEN_BYTES];
 	unsigned in_count;
 	unsigned out_count;
 	char in_text[SEEN_BYTES * 3U + 1U];
+	char error_text[SEEN_BYTES * 2U + 1U];
 	char out_text[SEEN_BYTES * 3U + 1U];
 	unsigned index;
 	unsigned shown;
+	unsigned errors;
 
 	/* A copy of the bytes, taken under the lock. */
 	enabled = spin_lock_irqsave(&bt->lock);
@@ -2491,6 +2495,7 @@ log_seen(
 	in_count = bt->seen_in_count;
 	out_count = bt->seen_out_count;
 	kern_memcpy(seen_in, bt->seen_in, sizeof(seen_in));
+	kern_memcpy(seen_in_errors, bt->seen_in_errors, sizeof(seen_in_errors));
 	kern_memcpy(seen_out, bt->seen_out, sizeof(seen_out));
 
 	spin_unlock_irqrestore(&bt->lock, enabled);
@@ -2511,9 +2516,20 @@ log_seen(
 	for (index = 0; index < shown; index++)
 		(void)kern_snprintf(in_text + index * 3U, sizeof(in_text) - index * 3U, " %02x", seen_in[index]);
 
-	/* One line each. */
+	/* The error bits of each byte in, as a hexadecimal digit (1 framing, 2 parity, 4 break, 8 overrun), and whether any is set. */
+	error_text[0] = '\0';
+	errors = 0U;
+	for (index = 0; index < shown; index++) {
+		(void)kern_snprintf(error_text + index * 2U, sizeof(error_text) - index * 2U, " %x", (unsigned)seen_in_errors[index]);
+		if (seen_in_errors[index] != 0U)
+			errors = 1U;
+	}
+
+	/* One line each; the errors' line only when a byte had one. */
 	kern_logf("rpi4-bt: since the last reset %u bytes out:%s\n", out_count, out_text);
 	kern_logf("rpi4-bt: since the last reset %u bytes in:%s\n", in_count, in_text);
+	if (errors)
+		kern_logf("rpi4-bt: their errors (1 framing, 2 parity, 4 break, 8 overrun):%s\n", error_text);
 }
 
 /*
