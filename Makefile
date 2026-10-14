@@ -229,6 +229,8 @@ CONFIG_DRIVER_BCM2711_BT ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
 # VIDEO needs VCHIQ and the BCM2711 GPU.
 CONFIG_DRIVER_BCM2711_VCHIQ ?= n
 CONFIG_DRIVER_BCM2711_VIDEO ?= n
+# A test kernel's boot-time probe of the decoder's output order (ws236 design §12).
+CONFIG_DRIVER_BCM2711_VIDEO_PROBE ?= n
 # The ACPI driver (WS049) builds on amd64; it stays off at run time when
 # the platform gives no RSDP (hal_get_arch_handoff("acpi.rsdp")).
 CONFIG_DRIVER_ACPI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -602,6 +604,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_BCM2711_BT=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_BT)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_VCHIQ=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_VCHIQ)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_VIDEO=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_VIDEO)),1,0) \
+	-DCONFIG_DRIVER_BCM2711_VIDEO_PROBE=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_VIDEO_PROBE)),1,0) \
 	-DCONFIG_DRIVER_ACPI=$(if $(filter y,$(CONFIG_DRIVER_ACPI)),1,0) \
 	-DCONFIG_DRIVER_TYPEC=$(if $(filter y,$(CONFIG_DRIVER_TYPEC)),1,0) \
 	-DCONFIG_DRIVER_PCI_LPSS_I2C=$(if $(filter y,$(CONFIG_DRIVER_PCI_LPSS_I2C)),1,0) \

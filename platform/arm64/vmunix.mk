@@ -129,6 +129,17 @@ ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-vchiq.c \
 	src/drivers/platform/rpi4/rpi4-vchiq-wire.c
 endif
 
+# The VideoCore's H.264 decoder over MMAL (ws236-p003), for the video decode
+# and the test kernels' probe of it.
+ifneq ($(filter y,$(CONFIG_DRIVER_BCM2711_VIDEO) $(CONFIG_DRIVER_BCM2711_VIDEO_PROBE)),)
+ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmal.c \
+	src/drivers/platform/rpi4/rpi4-mmal-wire.c \
+	src/drivers/platform/rpi4/rpi4-h264.c
+endif
+ifeq ($(CONFIG_DRIVER_BCM2711_VIDEO_PROBE),y)
+ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmal-probe.c
+endif
+
 # USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.
 ARM64_USB_SOURCES :=
 ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB) $(CONFIG_DRIVER_USB_STORAGE) $(CONFIG_DRIVER_USB_CDC_NCM) $(CONFIG_DRIVER_USB_CDC_ECM) $(CONFIG_DRIVER_USB_CCID) $(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_USB_RTL8822BU)),)

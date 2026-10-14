@@ -102,6 +102,20 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
     length が 128 以下なら message の中（payload_in_message）。input の buffer は decoder が読み終えると BUFFER_TO_HOST で戻る。
   - output: BUFFER_TO_HOST（length、pts、flags）が来たら、その場で BULK_RX を出す。宛先はその pts の decode の出力の image（§7）。
     RX_DONE の後で同じ buffer を BUFFER_FROM_HOST で渡し直す。EOS・長さ 0 の buffer は bulk なしで渡し直す。
+- bulk の規則（review-1 S4、userland の BSD-3 の client と同じにする）:
+
+| ID | 規則 |
+| --- | --- |
+| (a) | 受信の bulk の長さは buffer の length を 4 の倍数に丸める（受け手の memory はその分の余白を持つ） |
+| (b) | EOS で長さ 0 の出力の buffer にも 8 byte の受信の bulk を出す |
+| (c) | 256 byte を超える EVENT_TO_HOST の data は message の後に bulk で来る（受信の bulk を出して受ける） |
+| (d) | `payload_in_message` は OPAQUE の encoding と clock の port だけ。H.264 の input は長さによらず常に bulk（送信の長さも 4 に丸める） |
+| (e) | bulk を送った port の flush は `PORT_FLUSH`（buffer の message の形）に 8 byte の dummy の送信の bulk を付け、返事を待つ。出力の port は `PORT_ACTION FLUSH` |
+| (f) | 長さ 0 の EOS の input は `BUFFER_FROM_HOST_ZEROLEN` と 8 byte の bulk（この WS では EOS を送らない） |
+| (g) | 1 AU が input の buffer_size を超えれば複数の buffer に分け、最後だけ FRAME_END（review-1 M4） |
+| (h) | `MMAL_PARAMETER_VIDEO_TIMESTAMP_FIFO`（0x20024）・`MMAL_PARAMETER_VIDEO_INTERPOLATE_TIMESTAMPS`（0x2002f）を明示に false（pts を絵に結び付けたまま出す、review-1 S5） |
+| (i) | bulk の宛先・元の memory は RX_DONE・TX_DONE（か abort）まで解放も再利用もしない。出力の `offset + 丸めた length` が宛先を超える枠は bounce に受ける（review-1 S3） |
+
 - flush: PORT_ACTION FLUSH（input・output）で decoder の中の参照を捨てる（Vulkan の RESET、§6.5）。
 - 終わり: PORT_ACTION DISABLE、COMPONENT_DISABLE、COMPONENT_DESTROY。
 
@@ -119,17 +133,13 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
 - 決め（D-S3）: pts = decode の通し番号。出た buffer の pts で、どの decode command の出力かを照合する。番号が合わない枠は
   捨てる（bulk は scratch へ受けて捨てる）。
 - 確かめ（実機、p003 の後の §12 の試験）: B frame を含む 1080p の stream で、出力の pts が単調に増え、1 入力ごとに 1 出力が遅れなく返ること。
-- 駄目だった時（R1、§11）の代わり（Q1 2026-10-14 の指示で具体化）:
-  - **R1-a（本命）: executor が表示の順の出力を decode の順の command へ戻す。** decoder が遅れて表示の順に出すなら、その遅れの分だけ
-    入力が先に入っていないと出力は出ない。libmedia は 1 枚ごとに fence を待つので、executor の並べ替えだけでは止まる。そこで
-    (1) executor の decode の event を「入力を送って終わる」形にし（出力を待たない）、出力の枠は届いた時に pts（= decode の通し番号）で
-    その decode command の image へ bulk で受ける（受け取りは VCHIQ の受信の thread、image の memory は decode の記録が保持する）。
-    (2) fence・semaphore の signal は「その submit の decode の出力が全て届いた」まで遅らせる（executor の execution を出力の到着まで
-    終えない step にする。待つ step は 1 ms ごとに他の session に順を譲る）。(3) libmedia は reorder の深さ（`h264_reorder_depth`）だけ
-    decode を先に submit してから最も古い fence を待つ形にする（p005）。これで decoder は遅れの分の入力を受け取れ、出力は pts で
-    正しい image に入り、fence は decode の順に signal する。
-  - R1-b（補助）: 遅れて残った最後の数枚は、stream の終わり（drain）と seek・RESET の前に MMAL の EOS を送って押し出す。
-  - R1-a は p004 の executor と p005 の libmedia の作り直し（見積もり +6 LW）。
+- 駄目だった時（R1、§11）の代わり（review-1 S6 と Q1 2026-10-14 の判断で改訂）: **ベータ2 では VIDEO_CAPABILITIES で profile 66（Baseline）だけを出す。**
+  Baseline には B frame が無く並べ替えの遅れが 0 なので、decoder は入力ごとにすぐ出す。Main・High の stream は libmedia が
+  profile の不一致で software に落ちる。旧 R1-a（executor が pts で戻し libmedia が先に submit）は、libmedia の decode k+1 の submit が
+  transfer k の semaphore を待つ鎖と V3D の 1 本の FIFO で deadlock する（review-1 S6）ので採らず、順の外の retire か decode 専用の
+  queue を含む再設計としてベータ3 に送る。
+- 注（review-1 S6 (i)）: H.264 の Annex C の出力の順は bumping で決まり、`max_num_reorder_frames` を使うかは decoder の実装次第。
+  D-S1 は規格が保証する道ではなく、firmware の実装に頼る hack で、実機の §12 の確かめを必須とする。
 
 ## 6. Vulkan Video の橋渡し（`src/drivers/gpu/bcm2711/video*.c`）
 
@@ -236,7 +246,7 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
 
 | ID | 危険 | 見込み・代わり |
 | --- | --- | --- |
-| R1 | firmware の decoder が `max_num_reorder_frames = 0` を無視し、表示の順・遅れて出す | p003 の後の起動時の確かめ（§12）で先に実機で確かめる。駄目なら R1-a（§5）。B frame の無い stream（Baseline、多くの camera の動画）は影響しない |
+| R1 | firmware の decoder が `max_num_reorder_frames = 0` を無視し、表示の順・遅れて出す | p003 の後の起動時の確かめ（§12）で先に実機で確かめる。駄目ならベータ2 は Baseline だけ（§5）、Main・High はベータ3。B frame の無い stream（Baseline、多くの camera の動画）は影響しない |
 | R2 | NV12 の出力が使えない（I420 だけ） | output を I420 にし、bulk を staging に受けて CPU で NV12 に並べ替える（1 枚 約 3 MiB の読み書き） |
 | R3 | 同期の待ちの間（10〜20 ms）V3D の executor が他の session（compositor）を進めない | 1080p30 では 1 秒に 30 回、合計 30〜60% の時間。compositor の frame が遅れたら、decode の event を「送る step」と「待つ step」に分け、待つ step は 1 ms ごとに他の session に順を譲る（executor の step の仕組みはそのまま使える） |
 | R4 | VPU の DMA が image の memory の物理 address（long bulk）を受けない | 出力を 1 GiB の下の staging（bus の窓）に受けて CPU で写す |
@@ -249,12 +259,16 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
 - 形: `CONFIG_DRIVER_BCM2711_VIDEO_PROBE`（既定 n、`CONFIG_BT_TEST_LOOPBACK` などと同じ試験の config）で build する kernel だけに入る
   小さな起動時の確かめ（`src/drivers/platform/rpi4/rpi4-mmal-probe.c`）。ws083 の試験の stream（`pb-high-352-pyramid.h264`、
   High、B の pyramid、352×288）を C の配列にして（`plan/ws236/tests/` の生成の script で作る、stream は ws083 が自分で x264 で作った物）
-  起動の後に kernel thread で 2 回 decode する: (a) stream のまま、(b) SPS の VUI を §5 の形に書き換えて。各入力ごとに
-  「入力の番号・出力の pts・出力の長さ・入力から出力までの時間」を klog に 1 行。終わりに要約の 1 行
-  `rpi4-mmal-probe: original order=… reorder0 order=… lag=…`。
+  起動の後に kernel thread で 2 回 decode する: (a) stream のまま（対照）、(b) SPS の VUI を §5 の形に書き換えて。TIMESTAMP_FIFO・
+  INTERPOLATE は false（§4 (h)）。各出力の絵（crop の NV12）の checksum（FNV-1a 32）を、host で ffmpeg が decode した参照の
+  decode の順・表示の順の checksum の表（`plan/ws236/tests/` の生成の script が作り probe に埋める）と照らし、各入力ごとに
+  「入力の番号・出た絵が decode の順の何番か・入力から出力までの遅れ（入力の数）」を klog に 1 行。終わりに要約の 1 行
+  `rpi4-mmal-probe: run=a order=display lag=… / run=b order=decode lag=0` の形（order は decode・display・other）。
+  (a) で display と遅れが見えなければ、firmware の既定がもう decode の順で、判定は不能として報告する（review-1 S5）。
 - T1 の手順: その config の image（`plan/ws236/tests/config-rpi4-mmal-probe.mk`）で Pi 4 を起動し、ssh で `dmesg | grep rpi4-mmal`。
-  合否: (b) の出力の pts が入力の順で、各入力の直後（次の入力の前）に出ること。(a) は参考（表示の順で遅れて出るはず）。
-- 判定: (b) が合えば §5 の D-S1 で p004 を進める。合わなければ R1-a に切り替える。
+  合否: (b) が order=decode・lag=0 で、(a) が order=display（対照が効いている）。同じ起動で、1080p の 1 枚の decode の時間、
+  long bulk（1 GiB を超える物理 address の受け）、channel 3 の初期化、gpu_mem の不足の有無（MMAL の error）も log に出る。
+- 判定: (b) が合えば §5 の D-S1 で p004 を進める。合わなければ Baseline だけを出す（§5）。
 
 ## 13. 判断（既定を選んで進める、Q1 経由でユーザーへ）
 
@@ -265,3 +279,33 @@ Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書�
 | J3 | config の名前 | 既存に合わせて `CONFIG_DRIVER_BCM2711_VCHIQ`・`CONFIG_DRIVER_BCM2711_VIDEO`（依頼の仮の名 `RPI4_*` から変えた） |
 | J4 | vkvideo-probe の de-tile を Intel の時だけにする（§8） | 直す（p005） |
 | J5 | VUI の書き換え（§5）で decoder の出す順を変えるのは、app の bitstream の意味を変えない範囲の書き換え（出す順の指示だけ）で、規格の外の動きではない | この形で進める |
+
+## 14. review-1（2026-10-14）への対応
+
+[review-1](review-1.md)。Q1 の判断（2026-10-14）: 期限までの最短の道を採る。p003 は最小（同期、EOS なし、NV12、bounce に受ける）で §4 の bulk の規則を守り、
+§12 の probe を先に T1 の実機へ。R1 が外れたらベータ2 は Baseline だけ。WS141 の V3D の executor・libmedia（WS202）・vkvideo-probe（WS083）の
+変更は #if・既定 off の範囲で WS236 の範囲として許可。libvulkan の変更が要れば止めて Q1 へ。gpu_mem（config.txt）はまだ変えない。
+
+| 指摘 | 対応 |
+| --- | --- |
+| S1 status query | p004: V3D の executor に RESULT_STATUS_ONLY の query pool（create・destroy・get results・cmd reset・begin・end、decode の成否を書く）。§10 に「libmedia の log で Vulkan Video が選ばれた」を足す。§8 の「libvulkan 無変更」は query pool を V3D で持つ前提で維持 |
+| S2 待つ間の mutex | p004: decode の event は「送る step」と「受ける step」に分け、受ける step は render window で mutex を離して MMAL を最大 1 ms 待ち、来ていなければ step を返して他の session に順を譲る。受信の thread は controller の mutex を取らない（lock の順は controller → mmal → vchiq） |
+| S3 DMA の寿命 | §4 (i)。p003 の client は bulk の宛先を完了まで持ち、timeout の後に遅れて来た枠は client の bounce に受けて捨てる。p004 は image の memory を decode の記録が完了まで保持する |
+| S4 bulk の規則 | §4 の表 (a)〜(g)、p003 の host の試験 |
+| S5 R1 の判定 | §12（checksum と対照、TIMESTAMP_FIFO・INTERPOLATE を false） |
+| S6 R1-a | §5（Baseline だけ、R1-a はベータ3） |
+| M1 | p004: SEPARATE_REFERENCE_IMAGES を立てる |
+| M2 | p004: video の有無は VCHIQ の接続と MMAL の service の open で決め、session の open の時点の capset で固定（latch）。QUEUE_FAMILY_VIDEO_PROPERTIES は capset が 176 の session では必ず答える |
+| M3 | p004 の範囲に全て入れる（見積もりを +4 LW） |
+| M4 | §4 (g) |
+| M5 | 変えない（Q1 の判断）。§12 の試験で不足が分かれば Q1 へ |
+| M6 | §12 の試験で 3 MiB の NC の copy の時間も測る（probe が bounce から読む時間） |
+| M7 | p002 で実装済み（PAUSE・REMOTE_USE への返事、CONNECT を ARM から、bulk の actual -1、方向ごとの上限 4、message と bulk の組を send lock で直列） |
+| M8 | p004: RESET の後に出力の buffer を渡し直す、component は session の作成で作り失敗をその場で返す |
+| M9 | §10 に「on の時の既存の desktop」と libmedia の道を足す（p005） |
+| m1〜m9 | m1 StdVideo の enum、m2 VUI は全体を合成（bitstream_restriction の他の値は制限しない値）、m3 ARM の EABI で測った（下）、m4 reserve_wait、m6 stream を `plan/ws236/tests/` に複写、m7 #if、m8 staging の `max_segment_size` を 4 MiB 以上に、m9 level 4.2 の制限は記録 |
+
+m3: MMAL の message の大きさと offset は、userland の BSD-3 の header を `clang --target=armv7a-linux-gnueabihf` で compile した object の
+symbol の大きさで測った（2026-10-14、P3 の scratchpad、commit しない）。buffer 296・event 304・port_info 316・port_info_set 304・port_action 100・
+param_set 424・component_create 160・create の返事 44・version 40・header 24、MMAL_PORT_T 64・ES_FORMAT 32・ES の union 44・BUFFER_HEADER 56（pts は 32）。
+parameter の id: ZERO_COPY 0x4、VIDEO_TIMESTAMP_FIFO 0x20024、VIDEO_DECODE_ERROR_CONCEALMENT 0x20025、VIDEO_INTERPOLATE_TIMESTAMPS 0x2002f。

@@ -48,6 +48,9 @@
 #if CONFIG_DRIVER_BCM2711_VCHIQ
 #include "drivers/platform/rpi4/rpi4-vchiq.h"
 #endif
+#if CONFIG_DRIVER_BCM2711_VIDEO_PROBE
+#include "drivers/platform/rpi4/rpi4-mmal-probe.h"
+#endif
 
 /*
  * How much of memory at the device tree's address may be read.
@@ -180,6 +183,10 @@ kern_platform_init(
 	 * whose video decode uses it; a board without it boots without them.
 	 */
 	(void)drv_rpi4_vchiq_init(rpi4->fdt_phys);
+#endif
+#if CONFIG_DRIVER_BCM2711_VIDEO_PROBE
+	/* A test kernel probes the decoder's output order once VCHIQ connects. */
+	(void)drv_rpi4_mmal_probe_start();
 #endif
 
 #if CONFIG_DRIVER_BCM2711_GPU

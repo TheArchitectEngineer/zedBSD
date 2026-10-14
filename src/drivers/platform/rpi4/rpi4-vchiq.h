@@ -78,7 +78,8 @@ int drv_rpi4_vchiq_send(struct drv_rpi4_vchiq_service *service, const void *data
  * physical and bytes name physically contiguous memory the VPU reads
  * (TRANSMIT) or writes (RECEIVE); the memory must not be touched by the CPU
  * until bulk_done reports the transfer.  size zero sends no message.
- * Thread context only.
+ * Waits up to one second while the direction already has the four bulks
+ * the protocol allows outstanding.  Thread context only.
  */
 int drv_rpi4_vchiq_send_bulk(struct drv_rpi4_vchiq_service *service, const void *data, uint32_t size, unsigned direction, uint64_t physical, uint32_t bytes, void *bulk_context);
 
