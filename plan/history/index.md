@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1124 / WS074 Grid template rows CSSOM（2026-10-14）
+## 最新: q1125 / WS074 nonnegative Grid track sizes（2026-10-14）
+
+[q1125履歴](queue-q1125.md): Grid track負長/割合を拒否し、固定columns/rows-invalid各33→40/42 subtest、valid各19/34維持。旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1125/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1124 / WS074 Grid template rows CSSOM（2026-10-14）
 
 [q1124履歴](queue-q1124.md): 行trackのCSSOM返却で固定6件のsubtest6 FAIL→PASS、逆0。whole6件は行名/暗黙track等が残る。旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1124/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

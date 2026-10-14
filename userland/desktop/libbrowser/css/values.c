@@ -4668,7 +4668,9 @@ values_one_track(
 	size_t count,
 	struct css_declared_track *track)
 {
+	struct css_value limit;
 	size_t comma;
+	size_t end;
 	size_t start;
 	int is_minmax;
 	int is_fit;
@@ -4682,6 +4684,26 @@ values_one_track(
 	if (tokens[0].type == CSS_TOKEN_FUNCTION) {
 		is_fit = css_ident_equal(&tokens[0], "fit-content");
 		if (is_fit) {
+			/* Its one length or percentage is nonnegative, even though this pass sizes it as auto. */
+			if (count < 3U)
+				return EINVAL;
+			start = values_skip_space(tokens, count - 1U, 1U);
+			end = count - 1U;
+			while (end > start && tokens[end - 1U].type == CSS_TOKEN_WHITESPACE)
+				end--;
+			if (end - start == 1U) {
+				error = values_length(&tokens[start], 0, &limit);
+				if (error != 0 || limit.number < 0)
+					return EINVAL;
+			} else {
+				/* Keep accepted calc() lengths for later computed-value range checking. */
+				if (tokens[start].type != CSS_TOKEN_FUNCTION || !css_ident_equal(&tokens[start], "calc"))
+					return EINVAL;
+				if (values_function_length(tokens + start, end - start) != end - start)
+					return EINVAL;
+			}
+
+			/* The supported layout still treats a valid fit-content track as auto. */
 			track->kind = CSS_TRACK_AUTO;
 			return 0;
 		}
@@ -4718,6 +4740,7 @@ values_track_size(
 	struct css_value *size)
 {
 	int same;
+	int error;
 
 	/* The size is one token, whitespace after it aside. */
 	while (count > 1U && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
@@ -4754,7 +4777,12 @@ values_track_size(
 
 	/* A length or a percentage. */
 	*kind = CSS_TRACK_LENGTH;
-	return values_length(&tokens[0], 0, size);
+	error = values_length(&tokens[0], 0, size);
+	if (error != 0)
+		return error;
+	if (size->number < 0)
+		return EINVAL;
+	return 0;
 }
 
 /* Finds the first token of a type (and a delimiter's character) outside functions and brackets; count when none. */
