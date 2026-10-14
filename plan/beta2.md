@@ -13,6 +13,7 @@
 | U1 | SV7・5330 | `build/uat/main-amd64/hdd-image.img`（main 2026-10-15 01:57、sha256 c76538263025b37d…） | USB に書いて起動 | /boot/boot0・/boot/efi が見える（BUG-316）、Windows・macOS で ZEDBSD の区画が見える（WS238）、SV7 は desktop（WS237） |
 | U2 | SV7・5330 | 同上 | browser で yahoo.co.jp | feed の画像の枠が無い、画像の大きさが Chrome と同じ（ws074-p233・p234） |
 | U4 | Pi 4（OLED の touch） | T1 が main の kernel と compositor を Pi に入れた後（Q1 が知らせる） | tap・中央の swipe・上端・下端の swipe | 指の下に反応する、中央の 1 本指の swipe で desktop が変わらない（BUG-315） |
+| U8 | RTX 機（10.0.30.5、i5-13400F＋RTX 2070） | `build/ws037-nvrtx/rak/hdd-image.img`（main a3cf77c12、WS037 RAk: main の既定＋`nvrtx.vk=1`、sha256 6a96a228…） | USB に書いて素で起動（BIOS: CSM off、primary display は PEG、monitor は RTX） | logo → GSP の起動の間に少し黒くなってよい → RTX の monitor に Keiland の desktop。出なければ最後の画面の写真（診断の RAd の image を Q1 が作る） |
 
 ## 日程
 
