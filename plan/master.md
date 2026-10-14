@@ -19,6 +19,7 @@
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
+- 2026-10-15 ユーザー「Pi4はBluetoothドライバのカーネルモードエラーでうまく動作しない…一度Bluetoothをmainから外してください」→ config/ci/config-rpi4.mk と config.mk で CONFIG_DRIVER_BCM2711_BT・CONFIG_DRIVER_USB_BT を n（8e8d69ae2）。userland の bluetoothd・bt・brcmbt-firmware は残した。build はユーザー。
 - 2026-10-15: ユーザー「よほどのことがないかぎりすべてをmainに入れてください。」→ 担当の成果は全部 main に merge 済み（最後 0a8d7fc75）。未 merge の commit は無い（作業中の差分だけ patch で保存）。
 - 既定の変更（2026-10-15 ユーザー）: nvrtx を既定で on（pci.drivers・config-amd64.mk・ユーザーの config.mk に `CONFIG_DRIVER_PCI_NVRTX := y`、runtime の段の既定 on は P1 の patch で未完、GSP の firmware は image に未収録）、Pi の VCHIQ・VIDEO を既定で on（arm64.drivers）、Gen9 の display を既定で full（gen9-display.h）。
 - 試験の image（main）: build/amd64/hdd-image.img（02:19、WS239 の前）、build/uat/main-rpi4/hdd-image.img（WS236 の直しの前）。
