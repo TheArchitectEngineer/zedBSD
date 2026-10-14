@@ -2,6 +2,14 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
+## q1160-i01 有限部分範囲（2026-10-14 12:20 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:50 JSTまで）に適用。q1154固定Grid502と同じID/WPT/metadata/runner/font/5秒settle/20秒processで4 bounded shardを全再測定。ID/hash/checkpoint/gzip rawを照合し、whole/subtest遷移・旧PASS後退・残FAILを分類。読取のみ、browser/runner/WPT/ABI/`plan/master.md`/Acid変更なし。p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1160-i01 結果（2026-10-14 12:22 JST）
+
+Event ws074-p189-q1160-partial-clear-20261014: [固定Grid502全再測定](evidence/20261014-q1160/README.md)でq1154の142→158 whole PASS、360→344 FAIL。改善16件は縦右Grid stretch001–016、subtest16改善・旧PASS/subtest後退0。502 ID/hash/checkpoint/gzip raw一致。q1160診断部分cleared、p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
 ## q1155-i01 有限部分範囲（2026-10-14 12:07 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:37 JSTまで）に適用。q1154固定Grid502の残360 whole FAILをWPTパス、subtest失敗数、初回失敗メッセージ/期待・実測で機械分類し、代表原本を確認して次の有限実装候補と検証境界を記録する。読取のみ、browser/runner/WPT/ABI/`plan/master.md`/Acid変更なし。p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

@@ -1,0 +1,374 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_verified": true,
+  "checkpoint_verified": {
+    "0": {
+      "checkpoint_rows": 128,
+      "gzip_raw_reports": 128
+    },
+    "128": {
+      "checkpoint_rows": 128,
+      "gzip_raw_reports": 128
+    },
+    "256": {
+      "checkpoint_rows": 128,
+      "gzip_raw_reports": 128
+    },
+    "384": {
+      "checkpoint_rows": 118,
+      "gzip_raw_reports": 118
+    }
+  },
+  "gzip_raw_verified": true,
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "old": {
+    "outcomes": {
+      "pass": 142,
+      "fail": 360
+    },
+    "subtest_status": {
+      "0": 5179,
+      "1": 5826
+    }
+  },
+  "new": {
+    "outcomes": {
+      "pass": 158,
+      "fail": 344
+    },
+    "subtest_status": {
+      "0": 5195,
+      "1": 5810
+    }
+  },
+  "transitions": {
+    "fail->pass": 16
+  },
+  "changed_ids": [
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-003.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-005.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-006.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-007.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-008.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-009.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-010.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-011.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-012.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-013.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-014.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-015.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-016.html",
+      "before": "fail",
+      "after": "pass"
+    }
+  ],
+  "old_pass_regressions": [],
+  "subtest_changed_ids": [
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-001.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-002.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-003.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-004.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-005.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-006.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-007.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-008.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-009.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-010.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-011.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-012.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-013.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-014.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-015.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-rl-016.html",
+      "before": [
+        [
+          ".grid 1",
+          1
+        ]
+      ],
+      "after": [
+        [
+          ".grid 1",
+          0
+        ]
+      ]
+    }
+  ]
+}
