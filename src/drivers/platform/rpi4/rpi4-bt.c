@@ -109,10 +109,17 @@
 #define UART_LCRH_FEN			(1U << 4)
 #define UART_LCRH_WLEN8			(3U << 5)
 
-/* CR: the UART, its sending and receiving, and the RTS and CTS flow control done by the hardware. */
+/*
+ * CR: the UART, its sending and receiving, the RTS output, and the RTS and
+ * CTS flow control done by the hardware.  RTS (the complement of nUARTRTS,
+ * PL011 TRM) is set with RTSEn, as Linux's amba-pl011 does for a line
+ * with hardware flow control (BUG-311: without it the controller's longer
+ * answers never came).
+ */
 #define UART_CR_UARTEN			(1U << 0)
 #define UART_CR_TXE			(1U << 8)
 #define UART_CR_RXE			(1U << 9)
+#define UART_CR_RTS			(1U << 11)
 #define UART_CR_RTSEN			(1U << 14)
 #define UART_CR_CTSEN			(1U << 15)
 
@@ -1407,7 +1414,8 @@ setup_uart(
 	write_register(bt, UART_ICR, UART_INT_ALL);
 
 	/* Starts the UART with the hardware's RTS and CTS flow control. */
-	write_register(bt, UART_CR, UART_CR_UARTEN | UART_CR_TXE | UART_CR_RXE | UART_CR_RTSEN | UART_CR_CTSEN);
+	write_register(bt, UART_CR, UART_CR_UARTEN | UART_CR_TXE | UART_CR_RXE | UART_CR_RTS | UART_CR_RTSEN | UART_CR_CTSEN);
+	kern_logf("rpi4-bt: the line at %u baud: CR %04x, IFLS %02x\n", (unsigned)baud, (unsigned)read_register(bt, UART_CR), (unsigned)read_register(bt, UART_IFLS));
 
 	/* Receives again: the FIFO is read, so RTS stays up. */
 	enabled = spin_lock_irqsave(&bt->lock);

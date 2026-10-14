@@ -41,6 +41,7 @@
 #define SESSION_WRITE_SSP_MODE		0x0c56U
 #define SESSION_WRITE_LE_HOST		0x0c6dU
 #define SESSION_WRITE_SC_HOST		0x0c7aU
+#define SESSION_WRITE_SCAN_ENABLE	0x0c1aU
 #define SESSION_READ_LOCAL_VERSION	0x1001U
 #define SESSION_READ_COMMANDS		0x1002U
 #define SESSION_READ_FEATURES		0x1003U
@@ -189,6 +190,7 @@ static int session_broadcom_refused(struct btd_session *session, const char *nam
 static int session_broadcom_address(struct btd_session *session);
 static void session_pause(unsigned milliseconds);
 static void session_reset_settle(struct btd_session *session);
+static const char *session_answer_sizes(struct btd_session *session);
 static int session_remaining(uint64_t deadline);
 static int session_control(struct btd_session *session, unsigned long request, void *argument);
 static void session_normal_path(struct btd_session *session);
@@ -1872,14 +1874,22 @@ session_broadcom_attempt(
 		if (error == 0) {
 			session_reset_settle(session);
 			error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
+
+			/* Still no answer to it: whether a short and a long answer come tells the line from the question. */
+			if (error == ETIMEDOUT)
+				again = session_answer_sizes(session);
 		}
 	}
+
+	/* A node that went, or a question not answered. */
 	if (error == ENODEV)
 		return error;
 	if (error != 0) {
 		session_set(session, BTD_STATE_ERROR, "local-version %s%s", strerror(error), again);
 		return error;
 	}
+
+	/* An answer too short to hold the version. */
 	if (session->returned_length < SESSION_VERSION_LENGTH) {
 		session_set(session, BTD_STATE_ERROR, "%s", "local-version short");
 		return EBADMSG;
@@ -1955,6 +1965,41 @@ session_broadcom_attempt(
 
 	/* Succeeded: patched. */
 	return 0;
+}
+
+/*
+ * Tells why the ROM does not answer Read Local Version, after a second
+ * reset was answered (BUG-311): asks a question whose answer is as short
+ * as the reset's (Write Scan Enable with no scan, the reset's own value:
+ * 7 bytes) and one whose answer is longer (Read BD_ADDR: 13 bytes, past
+ * the host's half FIFO, where its hardware flow control drops RTS).  Only
+ * the long one missing means the line loses longer answers; both missing
+ * means the controller stops after its reset's answer.  Returns the words
+ * for the state.
+ */
+static const char *
+session_answer_sizes(
+	struct btd_session *session)
+{
+	uint8_t no_scan;
+	int short_error;
+	int long_error;
+
+	/* The short answer, then the long one. */
+	no_scan = 0U;
+	short_error = session_command(session, SESSION_WRITE_SCAN_ENABLE, &no_scan, 1U, session->timing.command_ms);
+	long_error = session_command(session, SESSION_READ_ADDRESS, NULL, 0U, session->timing.command_ms);
+
+	/* What came. */
+	if (short_error == 0 && long_error == 0)
+		return " (a second reset was answered; a 7-byte and a 13-byte answer came)";
+	if (short_error == 0)
+		return " (a second reset was answered; a 7-byte answer came, a 13-byte one did not)";
+	if (long_error == 0)
+		return " (a second reset was answered; a 13-byte answer came, a 7-byte one did not)";
+
+	/* Succeeded in learning that neither came. */
+	return " (a second reset was answered; neither a 7-byte nor a 13-byte answer came)";
 }
 
 /*
