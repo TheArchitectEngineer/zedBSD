@@ -907,3 +907,5 @@ Event ws074-p220-q1122-partial-clear-20261014: [p220](phase220/phase.md) q1122-i
 Event ws074-p221-addition-20261014: [p221](phase221/phase.md)を追加。p189 q1105の固定Grid502残392 whole FAIL中、Grid parsing/配下35件をalignment/縦文字から分離して診断・段階修正する。固定41件全PASSをp221独自受け入れとし、p189/p173の分母と受け入れは維持。q1123有限読取scopeを選定、共有投影/GitHub publication保留。
 
 Event ws074-p221-q1123-partial-clear-20261014: [p221](phase221/phase.md) q1123-i01は固定Grid parsing41件を全再測定。[証拠](phase221/evidence/20261014-q1123/README.md)。6 whole PASS/35 FAIL、336/930 subtest、no_output/process_error0。auto/areas属性欠落、track解析/直列化、area/shorthandが主群。次は`grid-template-rows` CSSOMの有限修正。browser/WPT/runner/ABI/Master/Acid無変更、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p221-q1124-partial-clear-20261014: [p221](phase221/phase.md) q1124-i01は`grid-template-rows` computed CSSOMを既存列track serializerで返す。[証拠](phase221/evidence/20261014-q1124/README.md)。固定行側6件でsubtest6 FAIL→PASS・逆0、whole6件はFAIL継続。旧whole PASS3件、CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1124部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。

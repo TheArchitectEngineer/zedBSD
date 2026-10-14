@@ -1,0 +1,20 @@
+<!doctype html>
+<style>
+#tracks { display: grid; grid-template-columns: 10px 20px; grid-template-rows: 15px 2fr auto; }
+#none { display: grid; }
+#nongrid { grid-template-rows: 25px; }
+</style>
+<div id="tracks"></div><div id="none"></div><div id="nongrid"></div>
+<script>
+function rows(id) {
+  var style = getComputedStyle(document.getElementById(id));
+  return style.getPropertyValue("grid-template-rows") + "/" + style.gridTemplateRows;
+}
+console.log("tracks=" + rows("tracks"));
+console.log("columns=" + getComputedStyle(document.getElementById("tracks")).gridTemplateColumns);
+console.log("none=" + rows("none"));
+console.log("nongrid=" + rows("nongrid"));
+var changed = document.getElementById("tracks");
+changed.style.gridTemplateRows = "5px 7px";
+console.log("changed=" + rows("tracks"));
+</script>

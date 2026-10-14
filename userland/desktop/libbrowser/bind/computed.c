@@ -119,7 +119,8 @@ enum computed_property {
 	COMPUTED_TEXT_DECORATION_SKIP_INK,
 	COMPUTED_TEXT_DECORATION_COLOR,
 	COMPUTED_WRITING_MODE,
-	COMPUTED_TEXT_ORIENTATION
+	COMPUTED_TEXT_ORIENTATION,
+	COMPUTED_GRID_TEMPLATE_ROWS
 };
 
 /*
@@ -150,7 +151,7 @@ static int computed_write_percent(const struct css_length *length, struct wb_uni
 static int computed_write_url_quoted(const struct vm_string *text, struct wb_units *out);
 static int computed_write_offset(const struct css_style *style, int side, struct wb_units *out);
 static int computed_write_font_family(const struct css_style *style, struct wb_units *out);
-static int computed_write_tracks(const struct css_style *style, struct wb_units *out);
+static int computed_write_tracks(const struct css_track *tracks, int count, struct wb_units *out);
 static int computed_name(const char *const *names, size_t count, int value, struct wb_units *out);
 static int computed_length(const struct css_length *length, struct wb_units *out);
 static int computed_pixels(double value, struct wb_units *out);
@@ -247,6 +248,7 @@ static const struct computed_entry computed_entries[] = {
 	{ "outline-color", COMPUTED_OUTLINE_COLOR },
 	{ "transform", COMPUTED_TRANSFORM },
 	{ "grid-template-columns", COMPUTED_GRID_TEMPLATE_COLUMNS },
+	{ "grid-template-rows", COMPUTED_GRID_TEMPLATE_ROWS },
 	{ "text-decoration-line", COMPUTED_TEXT_DECORATION_LINE },
 	{ "text-decoration-style", COMPUTED_TEXT_DECORATION_STYLE },
 	{ "text-decoration-skip-ink", COMPUTED_TEXT_DECORATION_SKIP_INK },
@@ -988,7 +990,10 @@ computed_write_keyword(
 		error = computed_color(style->outline_color, out);
 		break;
 	case COMPUTED_GRID_TEMPLATE_COLUMNS:
-		error = computed_write_tracks(style, out);
+		error = computed_write_tracks(style->columns, style->column_count, out);
+		break;
+	case COMPUTED_GRID_TEMPLATE_ROWS:
+		error = computed_write_tracks(style->rows, style->row_count, out);
 		break;
 	default:
 		/* transform: the engine has none. */
@@ -1084,12 +1089,13 @@ computed_write_font_family(
 }
 
 /*
- * Writes grid-template-columns as the style has the tracks (none, or each
+ * Writes one grid-template axis as the style has the tracks (none, or each
  * track's length, fraction or auto; the used sizes are not kept).
  */
 static int
 computed_write_tracks(
-	const struct css_style *style,
+	const struct css_track *tracks,
+	int count,
 	struct wb_units *out)
 {
 	const struct css_track *track;
@@ -1097,14 +1103,14 @@ computed_write_tracks(
 	int error;
 
 	/* No tracks is none. */
-	if (style->column_count == 0) {
+	if (count == 0) {
 		error = computed_ascii("none", out);
 		return error;
 	}
 
 	/* Each track, separated by spaces. */
-	for (index = 0; index < style->column_count; index++) {
-		track = &style->columns[index];
+	for (index = 0; index < count; index++) {
+		track = &tracks[index];
 
 		/* A space before all but the first. */
 		if (index > 0) {
