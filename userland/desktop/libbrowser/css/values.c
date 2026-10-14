@@ -4587,10 +4587,12 @@ values_track_list(
 	size_t first;
 	size_t added;
 	int is_repeat;
+	int last_was_names;
 	int error;
 
 	/* Walks the list: whitespace, bracketed names, repeat() and tracks. */
 	index = 0;
+	last_was_names = 0;
 	while (index < count) {
 		/* Whitespace between tracks. */
 		if (tokens[index].type == CSS_TOKEN_WHITESPACE) {
@@ -4598,11 +4600,23 @@ values_track_list(
 			continue;
 		}
 
-		/* Line names in brackets are passed by. */
+		/* Validate one group of line names; their values are not stored yet. */
 		if (tokens[index].type == CSS_TOKEN_OPEN_SQUARE) {
-			while (index < count && tokens[index].type != CSS_TOKEN_CLOSE_SQUARE)
-				index++;
+			if (last_was_names)
+				return EINVAL;
 			index++;
+			while (index < count && tokens[index].type != CSS_TOKEN_CLOSE_SQUARE) {
+				if (tokens[index].type != CSS_TOKEN_WHITESPACE &&
+				    (tokens[index].type != CSS_TOKEN_IDENT ||
+				    css_ident_equal(&tokens[index], "auto") ||
+				    css_ident_equal(&tokens[index], "span")))
+					return EINVAL;
+				index++;
+			}
+			if (index == count)
+				return EINVAL;
+			index++;
+			last_was_names = 1;
 			continue;
 		}
 
@@ -4641,6 +4655,7 @@ values_track_list(
 
 			/* On past the function. */
 			index = end;
+			last_was_names = 0;
 			continue;
 		}
 
@@ -4655,6 +4670,7 @@ values_track_list(
 
 		/* On past it. */
 		index = end;
+		last_was_names = 0;
 	}
 
 	/* Succeeded: the tracks are appended. */

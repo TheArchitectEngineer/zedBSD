@@ -1,0 +1,25 @@
+<!doctype html><div id="target"></div>
+<script>
+var target = document.getElementById("target");
+var bad = ["[one] 10px [two] [three]", "[auto] 1px", "[span] 1px",
+           "[one 2] 1px", "[one 1px", "repeat(2, [auto] 1px)"];
+var good = ["[one two] 10px [three]", "[] 150px [] 1fr []",
+            "repeat(1, [] 10px [])", "repeat(1, [one two] 20%)",
+            "repeat(2, fit-content(20%) [three four] 30px 40px [five six])"];
+["grid-template-columns", "grid-template-rows"].forEach(function (property) {
+  var badCount = 0;
+  var goodCount = 0;
+  bad.forEach(function (value) {
+    target.style.removeProperty(property);
+    target.style.setProperty(property, value);
+    if (target.style.getPropertyValue(property) === "") badCount++;
+  });
+  good.forEach(function (value) {
+    target.style.removeProperty(property);
+    target.style.setProperty(property, value);
+    if (target.style.getPropertyValue(property) !== "") goodCount++;
+  });
+  console.log(property + "=" + badCount + "/" + bad.length + " rejected," +
+              goodCount + "/" + good.length + " accepted");
+});
+</script>

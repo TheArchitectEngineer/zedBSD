@@ -1,0 +1,71 @@
+{
+  "/css/css-grid/abspos/positioned-grid-descendants-001.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 100,
+    "after_pass": 100,
+    "total": 100,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/alignment/grid-alignment-style-changes-001.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 6,
+    "after_pass": 6,
+    "total": 6,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-columns-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 16,
+    "after_pass": 16,
+    "total": 16,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-columns-invalid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "pass",
+    "before_pass": 40,
+    "after_pass": 42,
+    "total": 42,
+    "improved": [
+      "e.style['grid-template-columns'] = \"[one] 10px [two] [three]\" should not set the property value",
+      "e.style['grid-template-columns'] = \"[auto] 1px\" should not set the property value"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-columns-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 19,
+    "after_pass": 19,
+    "total": 34,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-rows-invalid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "pass",
+    "before_pass": 40,
+    "after_pass": 42,
+    "total": 42,
+    "improved": [
+      "e.style['grid-template-rows'] = \"[one] 10px [two] [three]\" should not set the property value",
+      "e.style['grid-template-rows'] = \"[auto] 1px\" should not set the property value"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-rows-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 19,
+    "after_pass": 19,
+    "total": 34,
+    "improved": [],
+    "regressed": []
+  }
+}
