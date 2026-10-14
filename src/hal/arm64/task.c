@@ -168,9 +168,8 @@ hal_task_create(
 		return NULL;
 	}
 
+	/* Aligns the stack, and fills it so that its guard and its deepest use can be read later. */
 	task->sys_stack = (void *)(((uintptr_t)task->sys_stack_allocation + 15U) & ~(uintptr_t)15U);
-
-	/* Fills the stack so that its guard and its deepest use can be read later. */
 	hal_memset(task->sys_stack, (int)ARM64_STACK_FILL_BYTE, ARM64_SYS_STACK_SIZE);
 
 	/* A new task runs nowhere and is resumed on the boot CPU unless moved. */

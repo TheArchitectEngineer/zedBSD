@@ -59,6 +59,7 @@ static size_t task_stack_bytes;
  * new record is reported once; zero means no task has been measured.
  */
 static size_t task_stack_high_water;
+
 static hal_task_t xmm_selftest_main;
 static hal_task_t xmm_selftest_task;
 static volatile unsigned xmm_selftest_stage;
@@ -189,13 +190,12 @@ hal_task_create(
 		return NULL;
 	}
 
-	/* Initializes the inactive execution context. */
+	/* Aligns the stack, and fills it so that its guard and its deepest use can be read later. */
 	task->sys_stack = (void *)(((uintptr_t)task->sys_stack_allocation + 15U) &
 	    ~(uintptr_t)15U);
-
-	/* Fills the stack so that its guard and its deepest use can be read later. */
 	hal_memset(task->sys_stack, (int)AMD64_STACK_FILL_BYTE, AMD64_SYS_STACK_SIZE);
 
+	/* Initializes the inactive execution context. */
 	task->space = space;
 	task->run_cpu = -1;
 	task->target_cpu = hal_cpu_current();
