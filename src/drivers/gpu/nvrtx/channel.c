@@ -81,6 +81,14 @@
 #define CHANNEL_FENCE_TIMEOUT_US	2000000U
 #define CHANNEL_FENCE_STEP_US		100U
 
+/* The copy fill: its subchannel, where its push buffer and its words go, how many, and the values. */
+#define CHANNEL_COPY_SUBCHANNEL		4U
+#define CHANNEL_FILL_PUSH_AT		0x2000U
+#define CHANNEL_FILL_AT			0x100U
+#define CHANNEL_FILL_WORDS		64U
+#define CHANNEL_FILL_VALUE		0xc0ffee01U
+#define CHANNEL_FILL_FENCE_VALUE	0x1235U
+
 /* How long the end of P6 takes messages the firmware sent meanwhile. */
 #define CHANNEL_DRAIN_TIMEOUT_US	100000U
 
@@ -89,6 +97,9 @@ static int channel_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t
 static int channel_buffers(struct nvrtx_gpu *gpu);
 static int channel_flush_tlb(struct nvrtx_gpu *gpu);
 static int channel_fence(struct nvrtx_gpu *gpu);
+static int channel_submit(struct nvrtx_gpu *gpu, size_t push_at, size_t length, uint32_t index);
+static int channel_wait(struct nvrtx_gpu *gpu, uint32_t expected, uint32_t put);
+static int channel_copy_fill(struct nvrtx_gpu *gpu);
 
 /*
  * Runs stage P4: the VRAM block, the page tables, the address space and the TLB invalidate.
@@ -197,6 +208,7 @@ nvrtx_channel_start(
 	uint8_t *instance;
 	const uint8_t *reply;
 	size_t reply_length;
+	bool allowed;
 	int error;
 
 	engine = &gpu->engine;
@@ -298,6 +310,17 @@ nvrtx_channel_start(
 
 	/* Runs one fence through the channel. */
 	error = channel_fence(gpu);
+	if (error != 0)
+		return error;
+
+	/* Has the copy engine fill words, unless the boot stops before the copy. */
+	allowed = nvrtx_stage_allowed("P5e");
+	if (!allowed) {
+		nvrtx_stage_mark("P5e skipped (nvrtx.stop=P5e)");
+		return 0;
+	}
+
+	error = channel_copy_fill(gpu);
 	if (error != 0)
 		return error;
 
@@ -495,45 +518,59 @@ channel_flush_tlb(
 	return 0;
 }
 
-/* Puts one fence in the channel and waits for the semaphore to reach its value. */
+/* Points ring entry index at a push-buffer segment, moves the ring's put past it, and rings the doorbell. */
 static int
-channel_fence(
-	struct nvrtx_gpu *gpu)
+channel_submit(
+	struct nvrtx_gpu *gpu,
+	size_t push_at,
+	size_t length,
+	uint32_t index)
 {
 	struct nvrtx_engine_state *engine;
-	const volatile uint32_t *semaphore;
 	uint64_t push_va;
-	uint64_t semaphore_va;
 	uint8_t word[4];
-	size_t length;
-	uint32_t waited;
-	uint32_t get;
-	uint32_t value;
 	int error;
 
 	engine = &gpu->engine;
-	push_va = CHANNEL_VA + (uint64_t)CHANNEL_PUSH_PAGE * NVRTX_GSP_PAGE_SIZE;
-	semaphore_va = CHANNEL_VA + (uint64_t)CHANNEL_SEMAPHORE_PAGE * NVRTX_GSP_PAGE_SIZE;
+	push_va = CHANNEL_VA + (uint64_t)CHANNEL_PUSH_PAGE * NVRTX_GSP_PAGE_SIZE + push_at;
 
-	/* Clears the semaphore and writes the push buffer and its ring entry. */
-	semaphore = (const volatile uint32_t *)engine->semaphore.dma.address;
-	kern_memset(engine->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
-	length = nvrtx_push_fence((uint8_t *)engine->push.dma.address, semaphore_va, CHANNEL_FENCE_VALUE);
-	nvrtx_ring_entry((uint8_t *)engine->ring.dma.address, push_va, (uint32_t)(length / 4U));
+	/* Writes the entry; the push buffer is already complete in memory. */
+	nvrtx_ring_entry((uint8_t *)engine->ring.dma.address + (size_t)index * 8U, push_va, (uint32_t)(length / 4U));
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 
-	/* Moves the ring's put past the entry, makes sure it reached the VRAM, and rings the doorbell. */
-	nvrtx_put32(word, 0U, 1U);
+	/* Moves the put in USERD (the window's read-back makes sure it reached the VRAM). */
+	nvrtx_put32(word, 0U, index + 1U);
 	error = channel_vram_write(gpu, engine->vram_block + CHANNEL_USERD_AT + CHANNEL_USERD_RING_PUT, word, sizeof(word));
 	if (error != 0)
 		return error;
 
+	/* Tells the host the channel has work. */
 	nvrtx_wr32(gpu, CHANNEL_REG_DOORBELL, (engine->pick.runlist << 16) | CHANNEL_ID);
 
-	/* Polls the semaphore. */
+	/* Succeeded: the segment is submitted. */
+	return 0;
+}
+
+/* Polls the semaphore until it holds a value; reports how far the ring got when it does not. */
+static int
+channel_wait(
+	struct nvrtx_gpu *gpu,
+	uint32_t expected,
+	uint32_t put)
+{
+	struct nvrtx_engine_state *engine;
+	const volatile uint32_t *semaphore;
+	uint32_t waited;
+	uint32_t value;
+	uint32_t get;
+
+	engine = &gpu->engine;
+	semaphore = (const volatile uint32_t *)engine->semaphore.dma.address;
+
+	/* Polls until the value is there or the time is spent. */
 	for (waited = 0U; waited <= CHANNEL_FENCE_TIMEOUT_US; waited += CHANNEL_FENCE_STEP_US) {
 		value = *semaphore;
-		if (value == CHANNEL_FENCE_VALUE) {
+		if (value == expected) {
 			nvrtx_stage_mark("P5 ok: fence 0x%x reached after %u us", (unsigned)value, (unsigned)waited);
 			return 0;
 		}
@@ -541,9 +578,97 @@ channel_fence(
 		kern_usleep_range(CHANNEL_FENCE_STEP_US, CHANNEL_FENCE_STEP_US * 2U);
 	}
 
-	/* The fence never came: reports how far the ring got. */
+	/* The value never came: reports the semaphore and the ring's get. */
 	get = 0xffffffffU;
 	(void)channel_vram_read32(gpu, engine->vram_block + CHANNEL_USERD_AT + CHANNEL_USERD_RING_GET, &get);
-	nvrtx_stage_mark("P5 fail: fence %08x after 2 s, ring get %u put 1", (unsigned)*semaphore, (unsigned)get);
+	nvrtx_stage_mark("P5 fail: fence %08x after 2 s, ring get %u put %u", (unsigned)*semaphore, (unsigned)get, (unsigned)put);
 	return ETIMEDOUT;
+}
+
+/* Puts one fence in the channel and waits for the semaphore to reach its value. */
+static int
+channel_fence(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	uint64_t semaphore_va;
+	size_t length;
+	int error;
+
+	engine = &gpu->engine;
+	semaphore_va = CHANNEL_VA + (uint64_t)CHANNEL_SEMAPHORE_PAGE * NVRTX_GSP_PAGE_SIZE;
+
+	/* Clears the semaphore page and writes the fence at the start of the push buffer. */
+	kern_memset(engine->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
+	length = nvrtx_push_fence((uint8_t *)engine->push.dma.address, semaphore_va, CHANNEL_FENCE_VALUE);
+
+	/* Submits it as ring entry 0 and waits. */
+	error = channel_submit(gpu, 0U, length, 0U);
+	if (error != 0)
+		return error;
+
+	error = channel_wait(gpu, CHANNEL_FENCE_VALUE, 1U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the channel ran the fence. */
+	return 0;
+}
+
+/* Has the copy engine fill words of the semaphore page, then a second fence, and checks the words. */
+static int
+channel_copy_fill(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_engine_state *engine;
+	uint8_t params[NVRTX_COPY_PARAMS_BYTES];
+	const volatile uint32_t *words;
+	uint64_t semaphore_va;
+	uint8_t *push;
+	size_t length;
+	uint32_t index;
+	int error;
+
+	engine = &gpu->engine;
+	semaphore_va = CHANNEL_VA + (uint64_t)CHANNEL_SEMAPHORE_PAGE * NVRTX_GSP_PAGE_SIZE;
+
+	/* Makes the copy object on the channel (version 1, the channel's copy engine). */
+	kern_memset(params, 0, sizeof(params));
+	nvrtx_put32(params, 0U, 1U);
+	nvrtx_put32(params, 4U, engine->pick.engine);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_CHANNEL, NVRTX_HANDLE_COPY, NVRTX_CLASS_COPY, params, sizeof(params));
+	if (error != 0)
+		return error;
+
+	/* Writes the fill and a second fence after it, in the push buffer's second half. */
+	push = (uint8_t *)engine->push.dma.address + CHANNEL_FILL_PUSH_AT;
+	length = nvrtx_push_copy_fill(push, CHANNEL_COPY_SUBCHANNEL, semaphore_va + CHANNEL_FILL_AT, CHANNEL_FILL_WORDS, CHANNEL_FILL_VALUE);
+	length += nvrtx_push_fence(push + length, semaphore_va, CHANNEL_FILL_FENCE_VALUE);
+
+	/* Submits it as ring entry 1 and waits for the second fence. */
+	error = channel_submit(gpu, CHANNEL_FILL_PUSH_AT, length, 1U);
+	if (error != 0)
+		return error;
+
+	error = channel_wait(gpu, CHANNEL_FILL_FENCE_VALUE, 2U);
+	if (error != 0)
+		return error;
+
+	/* Every filled word must hold the value, and the word after them must not. */
+	words = (const volatile uint32_t *)((uint8_t *)engine->semaphore.dma.address + CHANNEL_FILL_AT);
+	for (index = 0U; index < CHANNEL_FILL_WORDS; index++) {
+		if (words[index] != CHANNEL_FILL_VALUE) {
+			nvrtx_stage_mark("P5 fail: copy fill word %u is %08x", (unsigned)index, (unsigned)words[index]);
+			return EIO;
+		}
+	}
+
+	if (words[CHANNEL_FILL_WORDS] == CHANNEL_FILL_VALUE) {
+		nvrtx_stage_mark("P5 fail: copy fill ran past its length");
+		return EIO;
+	}
+
+	/* Succeeded: the copy engine wrote the words. */
+	nvrtx_stage_mark("P5 ok: copy engine filled %u words", (unsigned)CHANNEL_FILL_WORDS);
+	return 0;
 }
