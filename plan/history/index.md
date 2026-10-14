@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1119 / WS074 inline-grid intrinsic width diagnosis（2026-10-14）
+## 最新: q1120 / WS074 inline-grid intrinsic width（2026-10-14）
+
+[q1120履歴](queue-q1120.md): `inline-grid`の独立表示値とatomic自動幅で固定列軸012–016の横書きRTL5 subtest FAIL→PASS。水平10/10 PASS、縦書き10は残る。旧PASSとAcid3差0維持。[証拠](../ws074/phase217/evidence/20261014-q1120/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1119 / WS074 inline-grid intrinsic width diagnosis（2026-10-14）
 
 [q1119履歴](queue-q1119.md): `inline-grid`がblock-level1008px自動幅になり、固定RTL offsetLeft差を生む。distinct display enum/atomic経路を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1119/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

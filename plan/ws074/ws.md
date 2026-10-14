@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1119](queue.md) finished / p217 inline-grid intrinsic width診断。2026-10-14 09:20 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1120](queue.md) active / p217 inline-grid intrinsic width。2026-10-14 09:21 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。textdecoration全16 testharnessは16 PASS/0 FAIL・179/179 subtest、p191 cleared。p189単一HTTP shard100件はq1024時点9 PASS/68 FAIL/3 harness error/7 no completion/13 no output。details testharnessはq1032時点6 PASS/10 FAIL/2 no_output、後続2件追加PASS。q1040固定crashtest48件local PASS。q1060固定静的reftest1,561件は660 local PASS/901 pixel FAIL/0 error/0 timeout。q1056比21 PASS増/1新規FAIL。q1054〜q1055で旧359 DOCTYPE load errorを解消、122 PASS/237 pixel FAILへ移動。旧PASS→FAIL8件はq1057 gap5件・q1058 Flex2件・q1059 textarea1件で全て局所回復。script関連407/variant6はrunner未対応。q1046〜q1052のXHTML/Flex修正で固定10件を10/10 local pixel exact PASS、p195・p197〜p199・p202〜p204 cleared、p196はscript付きXHTML未達。p189/p190 runner coverageとp173全3,805件100%は未達。Acid3 score100/100・pixel差0/480000、p100 wholeは別に未達。
 <!-- awesome-plan-current:end -->
 
@@ -896,3 +896,5 @@ Event ws074-p217-q1117-partial-clear-20261014: [p217](phase217/phase.md) q1117-i
 Event ws074-p217-q1118-partial-clear-20261014: [p217](phase217/phase.md) q1118-i01は水平Gridのauto row始端/終端/両端をpadding端とshift済み明示lineから計算。[証拠](phase217/evidence/20261014-q1118/README.md)。固定列軸012–016の横書きLTR5 subtest FAIL→PASS、RTL5件は共通offsetLeft期待190/実948、縦書きもFAIL継続。旧PASS2件、Grid/CSS/JS、warning0 build、Acid3画素差0・Acid2差1865維持。q1118部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p217-q1119-partial-clear-20261014: [p217](phase217/phase.md) q1119-i01は固定RTL共通x差の親幅を追跡。[証拠](phase217/evidence/20261014-q1119/README.md)。`inline-grid`がCSS表示値でgridへ畳まれ、atomic/intrinsic width経路を通らず1008pxに広がる。WPTの250px期待との差がRTL offsetLeftを説明。次は表示値を分離しGrid計算を保持する有限実装。browser/runner/WPT/ABI/Master/Acid無変更、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p217-q1120-partial-clear-20261014: [p217](phase217/phase.md) q1120-i01は`inline-grid`の独立display値・inline atomic幅・Gridレイアウト/CSSOMを保持。[証拠](phase217/evidence/20261014-q1120/README.md)。固定列軸012–016の横書きRTL5 subtestがFAIL→PASS、水平計10/10 PASS。縦書き10はFAIL継続、whole5件FAIL。旧PASS2件・host回帰・warning0 build、Acid3差0/Acid2差1865維持。q1120部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。

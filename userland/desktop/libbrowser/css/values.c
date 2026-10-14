@@ -386,7 +386,7 @@ static const struct values_keyword values_display[] = {
 	{ "-webkit-box", CSS_DISPLAY_BLOCK },
 	{ "-webkit-inline-box", CSS_DISPLAY_INLINE_BLOCK },
 	{ "grid", CSS_DISPLAY_GRID },
-	{ "inline-grid", CSS_DISPLAY_GRID },
+	{ "inline-grid", CSS_DISPLAY_INLINE_GRID },
 	{ "flow-root", CSS_DISPLAY_BLOCK },
 	{ "contents", CSS_DISPLAY_CONTENTS },
 	{ NULL, 0 }

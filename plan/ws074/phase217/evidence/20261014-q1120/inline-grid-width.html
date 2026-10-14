@@ -1,0 +1,20 @@
+<!doctype html>
+<style>
+.inline { display: inline-grid; position: relative;
+  grid-template-columns: 100px 150px; grid-template-rows: 150px;
+  justify-items: start; }
+.wide { width: 400px; }
+.rtl { direction: rtl; }
+.block { display: grid; position: relative;
+  grid-template-columns: 100px 150px; grid-template-rows: 150px; }
+.inline > div { position: absolute; grid-row: 1 / 2; grid-column: 1 / 2;
+  width: 60px; height: 10px; }
+</style>
+<div id="inline" class="inline"><div></div></div><br>
+<div class="inline rtl"><div></div></div><br>
+<div class="inline wide"><div></div></div><br>
+<div id="block" class="block"></div>
+<script>
+console.log("inline-grid-display=" + getComputedStyle(document.getElementById("inline")).display);
+console.log("block-grid-display=" + getComputedStyle(document.getElementById("block")).display);
+</script>

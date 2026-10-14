@@ -355,7 +355,7 @@ layout_content_width(
 		return box->width;
 
 	/* A grid or a table is as wide as its columns at their content's sizes (ws074-p072, ws074-p037). */
-	if (box->style.display == CSS_DISPLAY_GRID)
+	if (box->style.display == CSS_DISPLAY_GRID || box->style.display == CSS_DISPLAY_INLINE_GRID)
 		return box->grid_content;
 	if (box->style.display == CSS_DISPLAY_TABLE || box->style.display == CSS_DISPLAY_INLINE_TABLE)
 		return box->grid_content;

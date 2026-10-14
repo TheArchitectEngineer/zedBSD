@@ -210,3 +210,11 @@ Event ws074-p217-q1118-partial-clear-20261014: [証拠](evidence/20261014-q1118/
 ## q1119-i01 結果（2026-10-14 09:20 JST）
 
 Event ws074-p217-q1119-partial-clear-20261014: [証拠](evidence/20261014-q1119/README.md)。固定RTL共通offsetLeft期待190/実948は親`inline-grid`の自動幅が250pxでなく1008pxに広がることに起因。CSS表示値のgridへの畳み込みによりatomic/intrinsic-width経路を通らない。次はdistinct enumでinline-gridを保持しGrid item/layout/width経路へ分配する有限実装。q1119部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
+## q1120-i01 有限部分範囲（2026-10-14 09:21 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:51 JSTまで）に適用。`display:inline-grid`をdistinct内部display値として保持し、inline-level atomicのshrink-to-fit幅へ通しつつGrid item/layout/intrinsic width経路を維持。最小auto幅250px/explicit幅/block-grid/RTL absolute fixture、固定column-axis012–016水平subtest、旧PASS代表、CSS/JS/Grid、warning0 build、Acid3差0・Acid2非増加で検証。WPT/runner/公開ABI/`plan/master.md`変更なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1120-i01 結果（2026-10-14 09:28 JST）
+
+Event ws074-p217-q1120-partial-clear-20261014: [証拠](evidence/20261014-q1120/README.md)。`inline-grid`を独立display値・inline atomic幅とGrid item/layout経路へ接続し、CSSOM表示値も保持。最小LTR/RTL auto250px、明示400px、block Grid1008px、RTL absolute位置190px、computed display PASS。固定列軸012–016の横書きRTL5 subtest FAIL→PASS、横書き計10/10 PASS。縦書き10 subtestはFAIL継続でwhole5件FAIL。旧whole PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1120部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
