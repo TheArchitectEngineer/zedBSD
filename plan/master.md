@@ -13,8 +13,7 @@
 <!-- master:agents:start -->
 - **2026-10-14 夕（Q1）: P1・P2・P3＋T1・T2＋B1**。残りは [beta2.md](beta2.md)。
   - P1: 空き（WS233 の firmware の repo は公開・main で使用中、残りは submodule の除去と T1 の試験）。
-  - P2: WS080（ld.coff）の実装の予定。D1〜D17 の見直しの番号をユーザーに確認中。HAL A1・A2 は承認済み。design-reviewer が WS080 の設計を review 中。
-  - P3: WS234（libkeiland の DLL 版）の p001 の設計。
+  - P2・P3: 空き。WS080（ld.coff）と WS234（libkeiland の DLL 版）は 2026-10-14 ユーザーの指示で保留（HAL A1・A2 の承認は記録済み）。
   - T1・T2: 空き。
   - B1: WS074 の WPT（20:10 まで）。
 <!-- master:agents:end -->

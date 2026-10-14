@@ -3,7 +3,7 @@
 # WS234: libkeiland の DLL 版（zedBSD 用と Windows 用）で、同じ .exe が zedBSD と Windows の両方で動く
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-14 ユーザーが起票、設計から始める）
+Status: planning・**保留**（2026-10-14 ユーザーが起票。同日「すみません、WS080とWS234はいったん保留します。」で保留。p001 の設計は始めた直後に止めた、成果なし）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -34,4 +34,4 @@ Depends on: [WS080](../ws080/ws.md)（`ld.coff`、zedBSD で PE/COFF の EXE と
 
 | ID | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| ws234-p001 | 設計: API の範囲（今の libkeiland の API との関係）、ABI の切り替え（header の呼び出し規約の macro）、CRT の部分集合、zedBSD 用の DLL の作り方（toolchain・link・import）、Windows 用の backend（Win64・D3D12・DirectWrite か自前の font）、build と配布、試験の方法、Phase の分割 | planned | WS080 の design.md |
+| ws234-p001 | 設計: API の範囲（今の libkeiland の API との関係）、ABI の切り替え（header の呼び出し規約の macro）、CRT の部分集合、zedBSD 用の DLL の作り方（toolchain・link・import）、Windows 用の backend（Win64・D3D12・DirectWrite か自前の font）、build と配布、試験の方法、Phase の分割 | planned（保留） | WS080 の design.md |
