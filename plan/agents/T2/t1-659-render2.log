@@ -1,0 +1,29 @@
+VULKAN decoder failed status=21 sequence=22492
+VULKAN reply failed result=-4 sequence=22492 device lost
+browser: cannot draw on the GPU: vkCreateRenderPass failed (-4)
+gpu rc=1
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_PARAMETER_SET (44 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 2: status 0 (SUCCESS) found 0 handle 1 buffers min 1/2048 rec 20/81920 now 1/2048 encoding 34363248 1920x1088 crop 1920x1088
+rpi4-mmal: trace PORT_INFO_GET (36 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: port 3: status 0 (SUCCESS) found 0 handle 2 buffers min 1/3133440 rec 1/3133440 now 1/3133440 encoding 3231564e 1920x1088 crop 1920x1088
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_ENABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0: 1920x1088, input 16 x 81920 bytes, output 3 x 3133440 bytes
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_INFO_SET (304 bytes) -> 316 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: decoder 0 output 3231564e 1920x1088 (crop 1920x1080), 3 x 3133440 bytes
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace PORT_ACTION (100 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DISABLE (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+rpi4-mmal: trace COMPONENT_DESTROY (28 bytes) -> 28 bytes, status 0 (SUCCESS)
+hid-input: usb0/port1/device5/interface0 touch: 1 fingers down at once (of 10 slots)
+v3d: command failed opcode=82 error=21 bytes=300
+v3d: command failed opcode=82 error=21 bytes=300

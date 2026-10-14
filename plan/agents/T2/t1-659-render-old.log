@@ -1,0 +1,5 @@
+[sudo] password for kei: VULKAN decoder failed status=21 sequence=22527
+VULKAN reply failed result=-4 sequence=22527 device lost
+browser: cannot draw on the GPU: vkCreateRenderPass failed (-4)
+old gpu rc=1
+[sudo] password for kei: 877025225 1463856 /lib/libbrowser.so

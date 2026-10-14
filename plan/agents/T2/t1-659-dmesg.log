@@ -1,0 +1,26 @@
+v3d: V9 TFU UIF 1x1 us=7
+v3d: V9 TFU UIF 1x1 matches CPU layout
+v3d: V9 TFU UIF 200x150 us=57
+v3d: V9 TFU UIF 200x150 matches CPU layout
+v3d: V9 TFU UIF 256x256 us=110
+v3d: V9 TFU UIF 256x256 matches CPU layout
+v3d: V9 TFU UIF self-test passed; texture conversion uses the unit
+v3d: V10 self-branch timeout/reset begin
+v3d: V10 waits 100 ms before writing
+v3d: job failed kind=0 error=42 retired=0 irq=0/0 fault=0:0
+v3d: job queues bin=100000/100005 render=10106a/10106a counters=2/2
+v3d: job status bin=20 render=0 pipeline=0
+v3d: V10 timeout observed; reset begin
+v3d: V3 hub 42554856 000e1124 00000100 00000e00
+v3d: V3 core 04443356 81001422 40078121
+v3d: V3 version 42 cores 1 PA 35 VA 35
+v3d: V7 noop IRQ 3/0 BFC 1 RFC 1 overflow 0
+v3d: V10 reset 1 post-reset noop complete
+v3d: render node ready native Vulkan/strict queue
+v3d: vk: capset declares H.264 video decode (VideoCore firmware decoder)
+---
+0
+/home/kei/t1-659.out:0
+/home/kei/t1-659.err:0
+session.log
+wayland-0

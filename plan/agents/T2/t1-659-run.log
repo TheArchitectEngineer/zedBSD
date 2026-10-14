@@ -1,0 +1,23 @@
+session.log
+wayland-0
+exit=124
+v3d: video: 25 decodes in 2039 ms (0 skipped, 0 pushes, 258 steps); avg_us send 1320 frame 37960 place 5080, max_us frame 113000; readbacks 50 cached avg_us 2600, 0 uncached avg_us 0
+v3d: video: 26 decodes in 2056 ms (0 skipped, 0 pushes, 282 steps); avg_us send 1269 frame 36192 place 4961, max_us frame 113000; readbacks 52 cached avg_us 2403, 0 uncached avg_us 0
+v3d: video: 26 decodes in 2138 ms (0 skipped, 0 pushes, 299 steps); avg_us send 3500 frame 40384 place 5500, max_us frame 114000; readbacks 52 cached avg_us 2615, 0 uncached avg_us 0
+v3d: video: 27 decodes in 2053 ms (0 skipped, 0 pushes, 313 steps); avg_us send 1703 frame 36851 place 5185, max_us frame 113000; readbacks 54 cached avg_us 2444, 0 uncached avg_us 0
+v3d: video: 2 decodes in 33677 ms (0 skipped, 1 pushes, 23 steps); avg_us send 500 frame 69500 place 5500, max_us frame 106000; readbacks 4 cached avg_us 2500, 0 uncached avg_us 0
+v3d: video: 28 decodes in 2022 ms (0 skipped, 0 pushes, 242 steps); avg_us send 178 frame 31321 place 5464, max_us frame 48000; readbacks 56 cached avg_us 2696, 0 uncached avg_us 0
+v3d: video: 33 decodes in 2059 ms (0 skipped, 0 pushes, 260 steps); avg_us send 181 frame 31333 place 5727, max_us frame 42000; readbacks 66 cached avg_us 2742, 0 uncached avg_us 0
+v3d: video: 36 decodes in 2051 ms (0 skipped, 0 pushes, 310 steps); avg_us send 111 frame 30888 place 4833, max_us frame 41000; readbacks 72 cached avg_us 2444, 0 uncached avg_us 0
+v3d: video: 33 decodes in 2007 ms (0 skipped, 0 pushes, 275 steps); avg_us send 121 frame 30666 place 5575, max_us frame 37000; readbacks 66 cached avg_us 2545, 0 uncached avg_us 0
+v3d: video: 35 decodes in 2029 ms (0 skipped, 0 pushes, 301 steps); avg_us send 171 frame 30828 place 5171, max_us frame 46000; readbacks 70 cached avg_us 2614, 0 uncached avg_us 0
+v3d: video: 35 decodes in 2027 ms (0 skipped, 0 pushes, 301 steps); avg_us send 285 frame 30714 place 5114, max_us frame 36000; readbacks 70 cached avg_us 2614, 0 uncached avg_us 0
+v3d: video: 33 decodes in 2013 ms (0 skipped, 0 pushes, 279 steps); avg_us send 30 frame 30787 place 5484, max_us frame 37000; readbacks 66 cached avg_us 2484, 0 uncached avg_us 0
+v3d: video: 34 decodes in 2007 ms (0 skipped, 0 pushes, 296 steps); avg_us send 294 frame 31794 place 4882, max_us frame 54000; readbacks 68 cached avg_us 2750, 0 uncached avg_us 0
+v3d: video: 33 decodes in 80060 ms (0 skipped, 1 pushes, 292 steps); avg_us send 1393 frame 34909 place 5030, max_us frame 169000; readbacks 66 cached avg_us 2545, 0 uncached avg_us 0
+v3d: video: 10 decodes in 2031 ms (0 skipped, 0 pushes, 85 steps); avg_us send 400 frame 42400 place 7200, max_us frame 71000; readbacks 20 cached avg_us 2900, 0 uncached avg_us 0
+v3d: video: 22 decodes in 2015 ms (0 skipped, 0 pushes, 226 steps); avg_us send 1772 frame 39590 place 5272, max_us frame 113000; readbacks 44 cached avg_us 3045, 0 uncached avg_us 0
+v3d: video: 28 decodes in 2046 ms (0 skipped, 0 pushes, 279 steps); avg_us send 1428 frame 37321 place 5178, max_us frame 112000; readbacks 56 cached avg_us 2571, 0 uncached avg_us 0
+v3d: video: 27 decodes in 2025 ms (0 skipped, 0 pushes, 279 steps); avg_us send 1407 frame 36925 place 5222, max_us frame 113000; readbacks 54 cached avg_us 2555, 0 uncached avg_us 0
+v3d: video: 29 decodes in 2038 ms (0 skipped, 0 pushes, 267 steps); avg_us send 1551 frame 37896 place 5448, max_us frame 113000; readbacks 58 cached avg_us 2741, 0 uncached avg_us 0
+v3d: video: 24 decodes in 2066 ms (0 skipped, 0 pushes, 242 steps); avg_us send 1625 frame 39708 place 5500, max_us frame 113000; readbacks 48 cached avg_us 2541, 0 uncached avg_us 0
