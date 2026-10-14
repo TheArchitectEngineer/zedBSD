@@ -983,15 +983,19 @@ i915_irq_handler_body(
 	}
 
 	/*
-	 * A Gen9 GT serves its banks and reopens the master control; its
-	 * display sources stay disabled while the display is not driven, so a
-	 * display bit is only counted (gen8_irq_handler()).
+	 * A Gen9 GT serves its banks and reopens the master control.  Its
+	 * display sources stay disabled except the flip display's flip done
+	 * (display/gen9-flip.c, WS237), which the display table acknowledges
+	 * (gen8_irq_handler()).
 	 */
 	if (gen9 != 0) {
 		irq->gt_irq_count++;
 		i915_gen8_gt_irq_handler(irq, master_ctl);
-		if ((master_ctl & ~I915_IRQ_GEN8_GT_BITS) != 0U)
+		if ((master_ctl & ~I915_IRQ_GEN8_GT_BITS) != 0U) {
 			irq->display_irq_count++;
+			if (irq->display_ops != NULL)
+				irq->display_ops->handle(irq->display_context, master_ctl);
+		}
 
 		/* Re-enables the master interrupt now the sources are handled. */
 		i915_master_intr_enable(irq);

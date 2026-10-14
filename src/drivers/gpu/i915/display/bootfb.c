@@ -32,12 +32,20 @@
  * console does not draw (it would draw over the frames); it is given the
  * screen back when the lease ends, also when its holder exits or crashes.
  *
+ * When the firmware's plane can be flipped and the boot line asks for it
+ * (i915.gen9.display=flip, or I915_GEN9_DISPLAY_FLIP_DEFAULT), the frames
+ * are shown by flipping that plane between two buffers of the driver's
+ * instead (gen9-flip.c, WS237): no CPU copy, and no tearing.  The display
+ * then reports the plane's extent and refresh.  A flip that does not latch
+ * brings the copies back for the rest of the boot.
+ *
  * XXX: one device; the staging area and the views are kept by this file.
  */
 
 #include "internal.h"
 #include "display.h"
 #include "bootfb.h"
+#include "gen9-flip.h"
 #include "present.h"
 #include "scanout.h"
 #include "takeover.h"
@@ -110,6 +118,14 @@ struct i915_bootfb {
 	struct i915_ppgtt *map_vm;
 	uint64_t map_va;
 
+	/* Nonzero while presentations are flipped (gen9-flip.c) rather than copied. */
+	int flip;
+
+	/* The extent and refresh the display reports: the flipped plane's, else the framebuffer's at 60 Hz. */
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh_millihz;
+
 	/* Frames shown in all, and the copy times summed since the last timing line. */
 	uint64_t frames;
 	uint64_t gpu_ns;
@@ -132,13 +148,14 @@ static int i915_bootfb_mode(void *device, void *session, struct gpu_display_mode
 static int i915_bootfb_claim(void *device, void *session, struct gpu_display_claim *request);
 static int i915_bootfb_release(void *device, void *session, const struct gpu_display_release *request);
 static int i915_bootfb_present(void *device, void *session, void *object, struct gpu_display_present *request);
+static int i915_bootfb_wait(void *device, void *session, struct gpu_display_wait *request);
 
 /*
  * The display operations of the boot framebuffer display.
  *
- * Query, mode, claim, release and present are its own; the wait and the
- * event sequence are the panel's, which read only the lease and, without a
- * panel, never touch the hardware.  There is no display control (no power,
+ * Query, mode, claim, release, present and wait are its own; the event
+ * sequence is the panel's, which reads only the lease and, without a
+ * panel, never touches the hardware.  There is no display control (no power,
  * no refresh), no cursor plane, and presents wait under the open's
  * admission (no DRV_GPU_DISPLAY_UNGATED).  The table never changes.
  */
@@ -148,7 +165,7 @@ static const struct drv_gpu_display_ops i915_bootfb_ops = {
 	i915_bootfb_claim,
 	i915_bootfb_release,
 	i915_bootfb_present,
-	drv_i915_present_display_wait,
+	i915_bootfb_wait,
 	drv_i915_display_events,
 	NULL,
 	NULL,
@@ -170,6 +187,8 @@ static void i915_bootfb_time(uint64_t gpu_ns, uint64_t cpu_ns, uint32_t width, u
 static int i915_bootfb_map(struct i915_device *device, struct i915_ppgtt *vm);
 static void i915_bootfb_unmap(struct i915_device *device);
 static void i915_bootfb_end_lease(struct i915_device *device);
+static void i915_bootfb_flip_failed(struct i915_device *device);
+static int i915_bootfb_present_copied(struct i915_device *device, void *session, void *object, const struct gpu_display_present *request, uint32_t *copy_width, uint32_t *copy_height, uint64_t *gpu_ns, uint64_t *cpu_ns);
 
 /*
  * Binds the boot framebuffer display when the node is a Gen9 one
@@ -236,19 +255,32 @@ drv_i915_bootfb_bind_ops(
 		return;
 	}
 
+	/* The framebuffer's extent at 60 Hz, unless the firmware's plane is flipped. */
+	bootfb->width = bootfb->layout.width;
+	bootfb->height = bootfb->layout.height;
+	bootfb->refresh_millihz = I915_BOOTFB_REFRESH_MILLIHZ;
+
+	/* Flips the firmware's plane when the boot line asks for it and the plane allows it (WS237). */
+	error = drv_i915_gen9_flip_start(device, bootfb->layout.fb_physical);
+	if (error == 0) {
+		bootfb->flip = 1;
+		drv_i915_gen9_flip_extent(&bootfb->width, &bootfb->height, &bootfb->refresh_millihz);
+	}
+
 	/* The display and the display-only pairing (the capture node's: the same identity and formats), with their capabilities. */
 	bootfb->bound = 1;
 	ops->display = &i915_bootfb_ops;
 	ops->scanout = &drv_i915_capture_scanout_ops;
 	ops->capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS;
 
-	kern_logf("i915: bootfb: %ux%u on the firmware's framebuffer at 0x%llx (stride %u, %s, %s view); presentations are copied by the GPU and then the CPU\n",
+	kern_logf("i915: bootfb: %ux%u on the firmware's framebuffer at 0x%llx (stride %u, %s, %s view); presentations are %s\n",
 	    bootfb->layout.width,
 	    bootfb->layout.height,
 	    (unsigned long long)bootfb->layout.fb_physical,
 	    bootfb->layout.fb_stride_bytes,
 	    (bootfb->layout.rgbx != 0) ? "RGBX" : "BGRX",
-	    (bootfb->fb_view == NULL) ? "aperture" : "own");
+	    (bootfb->fb_view == NULL) ? "aperture" : "own",
+	    (bootfb->flip != 0) ? "flipped on the firmware's plane" : "copied by the GPU and then the CPU");
 }
 
 /*
@@ -317,9 +349,10 @@ drv_i915_bootfb_fini(
 	struct i915_bootfb *bootfb;
 	int error;
 
-	UNUSED_PARAMETER(device);
-
 	bootfb = &i915_bootfb_display;
+
+	/* The flip buffers go first, unless the plane still shows one. */
+	drv_i915_gen9_flip_fini(device);
 
 	/* A mapped staging area stays, with everything else. */
 	if (bootfb->map_vm != NULL) {
@@ -615,13 +648,13 @@ i915_bootfb_query(
 	request->max_frame_bytes = I915_BOOTFB_MAX_FRAME_BYTES;
 
 	/* The firmware's extent is the current, preferred and largest one. */
-	request->current_width = bootfb->layout.width;
-	request->current_height = bootfb->layout.height;
-	request->preferred_width = bootfb->layout.width;
-	request->preferred_height = bootfb->layout.height;
-	request->max_width = bootfb->layout.width;
-	request->max_height = bootfb->layout.height;
-	request->refresh_millihz = I915_BOOTFB_REFRESH_MILLIHZ;
+	request->current_width = bootfb->width;
+	request->current_height = bootfb->height;
+	request->preferred_width = bootfb->width;
+	request->preferred_height = bootfb->height;
+	request->max_width = bootfb->width;
+	request->max_height = bootfb->height;
+	request->refresh_millihz = bootfb->refresh_millihz;
 
 	/* The firmware does not tell the panel's physical size. */
 	request->physical_width_mm = 0U;
@@ -665,9 +698,9 @@ i915_bootfb_mode(
 		if (request->index != 0U)
 			return EINVAL;
 
-		request->width = bootfb->layout.width;
-		request->height = bootfb->layout.height;
-		request->refresh_millihz = I915_BOOTFB_REFRESH_MILLIHZ;
+		request->width = bootfb->width;
+		request->height = bootfb->height;
+		request->refresh_millihz = bootfb->refresh_millihz;
 		return 0;
 	}
 
@@ -676,10 +709,10 @@ i915_bootfb_mode(
 	if (request->width == 0U || request->height == 0U) {
 		/* An empty extent shows nothing. */
 		refused = 1;
-	} else if (request->width > bootfb->layout.width || request->height > bootfb->layout.height) {
+	} else if (request->width > bootfb->width || request->height > bootfb->height) {
 		/* The framebuffer has no room for a larger one. */
 		refused = 1;
-	} else if (request->refresh_millihz != 0U && request->refresh_millihz != I915_BOOTFB_REFRESH_MILLIHZ) {
+	} else if (request->refresh_millihz != 0U && request->refresh_millihz != bootfb->refresh_millihz) {
 		/* The display has one refresh. */
 		refused = 1;
 	}
@@ -690,14 +723,14 @@ i915_bootfb_mode(
 		    request->width,
 		    request->height,
 		    request->refresh_millihz,
-		    bootfb->layout.width,
-		    bootfb->layout.height,
-		    I915_BOOTFB_REFRESH_MILLIHZ);
+		    bootfb->width,
+		    bootfb->height,
+		    bootfb->refresh_millihz);
 		return EINVAL;
 	}
 
 	/* The display's refresh is the mode's. */
-	request->refresh_millihz = I915_BOOTFB_REFRESH_MILLIHZ;
+	request->refresh_millihz = bootfb->refresh_millihz;
 
 	/* Succeeded: the mode is shown unscaled. */
 	return 0;
@@ -748,9 +781,17 @@ i915_bootfb_claim(
 	rd->sequence = 0U;
 	request->lease = rd->lease;
 
-	/* The text console stops drawing over the frames, and its text goes from the screen. */
+	/*
+	 * The text console stops drawing over the frames.  Copied frames
+	 * start on a cleared framebuffer; flipped ones on cleared buffers,
+	 * while the plane keeps the firmware's surface until the first one.
+	 */
 	kern_text_suspend();
-	i915_bootfb_clear();
+	if (i915_bootfb_display.flip) {
+		drv_i915_gen9_flip_claim(owner_device);
+	} else {
+		i915_bootfb_clear();
+	}
 
 	mutex_unlock(&rd->mutex);
 
@@ -798,11 +839,16 @@ i915_bootfb_release(
 /*
  * Shows a frame of the lease holder (the display present operation).
  *
- * The GPU copies the frame into the staging area and the CPU copies it on
- * to the framebuffer; both have completed when this returns.  Returns 0
- * with the completed sequence in the request, EINVAL for a session that
- * does not hold the lease, an empty frame or one the GPU cannot address,
- * ESTALE for another generation, or the copy's error.
+ * Flipped: the GPU draws the frame into the buffer the firmware's plane
+ * does not show and the plane is pointed at it; the flip latches at the
+ * next vertical blank, which the next presentation or a wait waits for.
+ * Copied: the GPU copies the frame into the staging area and the CPU
+ * copies it on to the framebuffer; both have completed when this returns.
+ * A flip that does not latch brings the copies back and shows this frame
+ * by copying.  Returns 0 with the presented sequence in the request,
+ * EINVAL for a session that does not hold the lease, an empty frame or one
+ * the GPU cannot address, ESTALE for another generation, or the copy's
+ * error.
  */
 static int
 i915_bootfb_present(
@@ -816,9 +862,9 @@ i915_bootfb_present(
 	struct i915_bootfb *bootfb;
 	uint32_t copy_width;
 	uint32_t copy_height;
-	uint64_t started;
-	uint64_t copied;
-	uint64_t shown;
+	uint64_t gpu_ns;
+	uint64_t cpu_ns;
+	int flipped;
 	int error;
 
 	owner_device = device;
@@ -841,18 +887,80 @@ i915_bootfb_present(
 		return ESTALE;
 	}
 
-	/* The part of the frame the framebuffer has room for. */
-	error = drv_i915_bootfb_clip(&bootfb->layout, request->width, request->height, &copy_width, &copy_height);
-	if (error != 0) {
-		mutex_unlock(&rd->mutex);
-		return error;
+	/* Flips the frame onto the firmware's plane; a flip that did not latch brings the copies back. */
+	flipped = 0;
+	if (bootfb->flip) {
+		error = drv_i915_gen9_flip_present(owner_device, session, object, request);
+		if (error == ETIMEDOUT) {
+			i915_bootfb_flip_failed(owner_device);
+		} else if (error != 0) {
+			mutex_unlock(&rd->mutex);
+			return error;
+		} else {
+			flipped = 1;
+		}
 	}
+
+	/* A frame that was not flipped is copied by the GPU and then the CPU. */
+	gpu_ns = 0U;
+	cpu_ns = 0U;
+	copy_width = 0U;
+	copy_height = 0U;
+	if (!flipped) {
+		error = i915_bootfb_present_copied(owner_device, session, object, request, &copy_width, &copy_height, &gpu_ns, &cpu_ns);
+		if (error != 0) {
+			mutex_unlock(&rd->mutex);
+			return error;
+		}
+	}
+
+	/* A shown or armed presentation: the display shows this lease's frames, and the sequence advances. */
+	rd->active = 1;
+	rd->sequence++;
+	rd->present_tick = sched_ticks();
+	request->sequence = rd->sequence;
+	bootfb->frames++;
+
+	/* How long the two copies took, in the log now and then (gen9-flip.c logs the flips). */
+	if (!flipped)
+		i915_bootfb_time(gpu_ns, cpu_ns, copy_width, copy_height);
+
+	mutex_unlock(&rd->mutex);
+
+	/* Succeeded: the frame is on the screen, or its flip is armed. */
+	return 0;
+}
+
+/*
+ * Copies a frame on to the framebuffer: the GPU into the staging area,
+ * then the CPU row by row.  Reports the extent copied and the two copies'
+ * times.  Returns 0, or the clip's or the GPU copy's error.
+ */
+static int
+i915_bootfb_present_copied(
+	struct i915_device *device,
+	void *session,
+	void *object,
+	const struct gpu_display_present *request,
+	uint32_t *copy_width,
+	uint32_t *copy_height,
+	uint64_t *gpu_ns,
+	uint64_t *cpu_ns)
+{
+	uint64_t started;
+	uint64_t copied;
+	uint64_t shown;
+	int error;
+
+	/* The part of the frame the framebuffer has room for. */
+	error = drv_i915_bootfb_clip(&i915_bootfb_display.layout, request->width, request->height, copy_width, copy_height);
+	if (error != 0)
+		return error;
 
 	/* The GPU copies the frame into the staging area and has completed when this returns. */
 	started = drv_i915_perf_now();
-	error = i915_bootfb_copy(owner_device, session, object, request, copy_width, copy_height);
+	error = i915_bootfb_copy(device, session, object, request, *copy_width, *copy_height);
 	if (error != 0) {
-		mutex_unlock(&rd->mutex);
 		kern_logf("i915: bootfb: the GPU copy of a %ux%u frame failed: %d\n",
 		    request->width,
 		    request->height,
@@ -862,22 +970,86 @@ i915_bootfb_present(
 
 	/* The CPU copies the rows on to the framebuffer. */
 	copied = drv_i915_perf_now();
-	i915_bootfb_show(request, copy_width, copy_height);
+	i915_bootfb_show(request, *copy_width, *copy_height);
 	shown = drv_i915_perf_now();
 
-	/* A completed presentation: the display shows this lease's frames, and the sequence advances. */
-	rd->active = 1;
-	rd->sequence++;
-	rd->present_tick = sched_ticks();
-	request->sequence = rd->sequence;
-	bootfb->frames++;
+	/* The two copies' times. */
+	*gpu_ns = copied - started;
+	*cpu_ns = shown - copied;
 
-	/* How long the two copies took, in the log now and then. */
-	i915_bootfb_time(copied - started, shown - copied, copy_width, copy_height);
+	/* Succeeded: the frame is on the framebuffer. */
+	return 0;
+}
+
+/*
+ * Waits until the newest presentation of the lease holder is on the
+ * screen (the display wait operation).
+ *
+ * A flipped one is on the screen when its flip latches; a copied one was
+ * when its presentation returned, which the panel's wait reports.  A flip
+ * that does not latch brings the copies back, and the frame counts as
+ * shown.  Returns 0 with the completed sequence, EINVAL for a session that
+ * does not hold the lease or a sequence not presented yet, or EAGAIN
+ * before the first presentation.
+ */
+static int
+i915_bootfb_wait(
+	void *device,
+	void *session,
+	struct gpu_display_wait *request)
+{
+	struct i915_device *owner_device;
+	struct i915_resident_display *rd;
+	uint64_t latched_tick;
+	int error;
+
+	owner_device = device;
+	rd = &owner_device->display->rd;
+
+	/* A copied presentation completed when it returned. */
+	if (!i915_bootfb_display.flip) {
+		error = drv_i915_present_display_wait(device, session, request);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the panel's wait reported the completion. */
+		return 0;
+	}
+
+	/* Reads the lease and waits for the flip under its mutex. */
+	drv_i915_present_lease_init(owner_device->display);
+	mutex_lock(&rd->mutex);
+
+	/* Only the lease holder waits, and only for a sequence it presented. */
+	if (rd->owner != session || rd->lease != request->lease || request->sequence > rd->sequence) {
+		mutex_unlock(&rd->mutex);
+		return EINVAL;
+	}
+
+	/* Nothing has been presented yet. */
+	if (rd->sequence == 0U) {
+		mutex_unlock(&rd->mutex);
+		return EAGAIN;
+	}
+
+	/* The newest flip latches; the tick it did so at is its completion. */
+	latched_tick = rd->present_tick;
+	if (i915_bootfb_display.flip) {
+		error = drv_i915_gen9_flip_wait(&latched_tick);
+		if (error != 0) {
+			i915_bootfb_flip_failed(owner_device);
+			latched_tick = sched_ticks();
+		}
+	}
+
+	/* The newest sequence, the tick it completed at, and the one generation. */
+	request->completed_sequence = rd->sequence;
+	request->present_time_ns = latched_tick * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+	request->generation = I915_BOOTFB_GENERATION;
 
 	mutex_unlock(&rd->mutex);
 
-	/* Succeeded: the frame is on the screen. */
+	/* Succeeded: the sequence has completed. */
 	return 0;
 }
 
@@ -1150,8 +1322,16 @@ i915_bootfb_end_lease(
 	struct i915_device *device)
 {
 	struct i915_resident_display *rd;
+	int error;
 
 	rd = &device->display->rd;
+
+	/* The plane gets the firmware's surface back; one that does not come back ends the flips. */
+	if (i915_bootfb_display.flip) {
+		error = drv_i915_gen9_flip_release(device);
+		if (error != 0)
+			i915_bootfb_display.flip = 0;
+	}
 
 	/* The GPU no longer names the staging area through the owner's space. */
 	i915_bootfb_unmap(device);
@@ -1170,4 +1350,21 @@ i915_bootfb_end_lease(
 
 	/* The text console draws its retained screen again. */
 	kern_text_resume();
+}
+
+/*
+ * Brings the copies back after a flip did not latch: the firmware's
+ * surface is written back, and the framebuffer is cleared for the copied
+ * frames.  The caller holds the lease mutex.
+ */
+static void
+i915_bootfb_flip_failed(
+	struct i915_device *device)
+{
+	/* The flips end for the rest of the boot. */
+	drv_i915_gen9_flip_stop(device);
+	i915_bootfb_display.flip = 0;
+
+	/* The copied frames start on a cleared framebuffer. */
+	i915_bootfb_clear();
 }
