@@ -1,18 +1,18 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1165 / WS074 fixed vertical Grid absolute left and right
+# q1166 / WS074 positioned Grid flex and self alignment diagnosis
 
-Status: finished（2026-10-14 12:39–12:42 JST）
+Status: finished（2026-10-14 12:39–12:40 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
 Timebox: 最大90分（14:09 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1165-i01 | [ws074-p217](phase217/phase.md) partial | q1164固定2×2 vertical-lr/rl LTR positioned inline-grid・明示px tracks・gap0・直接absolute auto-size ASCII子・明示span1・全offset autoに限定し、left/rightの物理軸配置をWPT原本に従い設定。固定column-axis003/004・row-axis003/004のwhole PASS、旧001/002/005代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を検証。他alignment/auto lines/RTL/他Grid、WPT/runner/ABI/Master変更なし | cleared | q1164 end/center area |
+| q1166-i01 | [ws074-p217](phase217/phase.md) partial | 固定column-axis/row-axis positioned-items006–011の12 IDを同条件測定し、flex-start/end・self-start/endのwhole/subtest結果、期待/実測位置と既存CSS値・Grid静的配置経路を分類。次の有限実装範囲を証拠化。読取診断のみ、browser/runner/WPT/ABI/Master/Acid変更なし | cleared | q1165 left/right area |
 
-Dependency graph: q1164 end/center area → q1165-i01。p217/p189/p173 wholeは部分受け入れに含めない。
+Dependency graph: q1165 left/right area → q1166-i01。p217/p189/p173 wholeは部分受け入れに含めない。
 
-Upcoming Work Outlook: flex/self alignment、auto lines、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: self alignment実装候補、auto lines、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
 
-Outcome: 固定column/row-axis003/004の4件whole FAIL→PASS、旧001/002/005の6件維持、10件40 callbacks PASS。host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。[証拠](phase217/evidence/20261014-q1165/README.md)。p217/p189/p173 whole未達。
+Outcome: 固定12 ID中6 whole PASS/6 FAIL。row-axis008/009はself-start/end static area未対応、010/011両axisは子の逆writing-modeで縦文字幅60/期待10。次はrow008/009の有限実装、逆writing-modeは独立。読取のみ。[証拠](phase217/evidence/20261014-q1166/README.md)。p217/p189/p173 whole未達。

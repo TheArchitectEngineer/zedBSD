@@ -2,11 +2,19 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1166-i01 有限部分範囲（2026-10-14 12:39 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:09 JSTまで）に適用。固定column-axis/row-axis positioned-items006–011の12 IDを同条件測定し、flex-start/end・self-start/endのwhole/subtest結果、期待/実測位置と既存CSS値・Grid静的配置経路を分類する。次の有限実装範囲を証拠化。読取診断のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1166-i01 結果（2026-10-14 12:40 JST）
+
+Event ws074-p217-q1166-partial-clear-20261014: [証拠](evidence/20261014-q1166/README.md)。固定12 IDは6 whole PASS/6 FAIL。flex-start/end4件とcolumn-axis008/009は既PASS、row-axis008/009はself-start/end static area未対応、両axis010/011は逆writing-mode子の縦文字幅期待10/実60で別途text geometryが先決。次は同writing-mode row008/009の有限実装。q1166診断部分cleared、p217/p189/p173 whole未達。読取のみ、共有投影/GitHub publication保留。
+
 ## q1165-i01 有限部分範囲（2026-10-14 12:39 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:09 JSTまで）に適用。q1164固定2×2 vertical-lr/rl LTR positioned inline-grid、明示px tracks・gap0、直接absolute auto-size ASCII子、明示span1、全offset autoに限り、left/rightの物理軸配置をWPT原本に従い設定。固定column-axis003/004・row-axis003/004 whole PASS、旧001/002/005代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他alignment/auto lines/RTL/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
 
-## q1165-i01 結果（2026-10-14 12:42 JST）
+## q1165-i01 結果（2026-10-14 12:39 JST）
 
 Event ws074-p217-q1165-partial-clear-20261014: [証拠](evidence/20261014-q1165/README.md)。固定縦Grid absolute子の物理left/rightを正しく配置し、無効なalign-self:left/rightのnormal fallbackをstatic startへ写す。固定column/row-axis003/004の4件whole FAIL→PASS、旧6件含む10件40 callbacks PASS。host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。q1165部分cleared、p217/p189/p173 whole未達。共有投影/GitHub publication保留。
 
