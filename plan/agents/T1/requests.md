@@ -702,6 +702,7 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-631 | Q1（WS236 の Vulkan の道の frame 0 と videoplayer、P3 b671fc4d9。ユーザー「Video Player で、実際に Vulkan Video で表示されることを優先」） | P3 の手順 1〜8（config-rpi4-video-probe.mk の vmunix に差し替え（CI の kernel を /root/vmunix.ci-20261014 に退避）、probe の dump、vkvideo-probe 3 stream、videoplayer の high・baseline、終わったら CI の kernel に戻す、dump-compare） | 実施済み（結果を Q1 へ） | plan/agents/T1/results-20261014-t1-631.md | 約 25 分 |
 | T1-632 | Q1（BUG-311 の 2 回目、P2 ce45241dc: WiFi は download を ALP で HT は後、BT は電源の pulse と reset の後の待ち） | 手順は plan/bugs/BUG-311.md の「T1 への依頼（2 回目）」（config-rpi4.mk の kernel と /sbin/bluetoothd の両方を差し替え、dmesg、wifi search/list、bt show/scan） | FAIL（WiFi は firmware download まで進み `firmware version not read (42)`、BT は controller error のまま） | results-20261014-t1-632.md | 約 10 分 |
 | T1-633 | Q1（WS236 の押し出しの直しと libmedia の失敗の picture の skip、P3 c7b600954。Q1 判断: libmedia の arm64 の skip は可） | P3 の手順 1〜9（config-rpi4-video-probe.mk の vmunix と libmedia.so を差し替え、10 run の probe、vkvideo-probe、videoplayer、終わったら CI の kernel と元の libmedia.so に戻す）。T1-632（同じ Pi 4）の後に流す | 未実行 | — | — |
+| T1-634 | Q1（BUG-311 の 3 回目、P2 fd386e251: WiFi の ver・cap の要求の大きさ、BT の FR の log と再送） | plan/bugs/BUG-311.md の末尾の手順（config-rpi4.mk の kernel と /sbin/bluetoothd を差し替え、wifi の dmesg と command、BT の FR の行と bt show）。T1-633（同じ Pi 4）の後 | 未実行 | — | — |
 
 
 - 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。
