@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Damages a disk image's UFS root so that the kernel cannot mount it read-write but can mount it read-only (BUG-312).
 
-An unused inode of group 0 is marked allocated, as a regular file with one link that no directory names and a time
-whose nanoseconds overflow, and the volume is marked not clean.  At the next boot the kernel's read-write mount scans
+An unused inode (the first free one of any group) is marked allocated, as a regular file with no link (an orphan) and
+a time whose nanoseconds overflow, and the volume is marked not clean.  At the next boot the kernel's read-write mount scans
 for orphaned inodes (the volume is not clean), cannot load that inode and refuses the mount; the read-only mount does
-not scan, so the kernel mounts the root READ-ONLY (K4) and init runs fsck -y on it (I1).  fsck clears the time, links
-the file into /lost+found and rebuilds the group's counts, and init reboots; the next boot mounts the root read-write.
+not scan, so the kernel mounts the root READ-ONLY (K4) and init runs fsck -y on it (I1).  fsck clears or reconnects the
+inode and rebuilds the group's counts, and init reboots; the next boot mounts the root read-write.
 
     python3 -I plan/tools/ufs/damage-root.py IMAGE [ROOT_SKIP_MIB [ROOT_MIB]]   (defaults 321 and 1024, the native layout since WS238)
 """
@@ -46,11 +46,12 @@ def main():
 		number = group * fs.ipg + index
 		volume[used + index // 8] |= 1 << (index % 8)
 
-		# A regular file with one link, no directory naming it, and an overflowing time.
+		# A regular file with no link (an orphan, which the kernel's scan reads only when the link count is 0) and an
+		# overflowing time.
 		inode = table + index * 256
 		volume[inode:inode + 256] = bytes(256)
 		struct.pack_into("<H", volume, inode + 0, 0o100644)
-		struct.pack_into("<H", volume, inode + 2, 1)
+		struct.pack_into("<H", volume, inode + 2, 0)
 		struct.pack_into("<I", volume, inode + 68, 2000000000)
 
 		# The volume not clean, so that the read-write mount scans for orphans.
