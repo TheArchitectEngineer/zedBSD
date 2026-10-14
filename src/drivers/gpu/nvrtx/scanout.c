@@ -21,13 +21,16 @@
  * a flip moves it to a second one, and each step waits 5 s so the monitor
  * can be watched (the R8b..R8d runs).
  *
- * The channels, the registration of their push buffers, the instance-memory
- * objects and the order of the methods are nouveau's (the GSP display
- * channels of r535/r570, the Turing core and window classes); the head's
- * values are read back from the armed state instead of being computed from
- * a mode, which is the takeover nouveau's readout of an inherited output
- * makes possible.  Nothing is shown anywhere but on the head the firmware
- * lit (the scanout rule of plan/ws037/nvrtx-design.md, section 2).
+ * The order and the values are nouveau's on a Turing GPU under the GSP
+ * (r535/r570 display channels, the Turing core, window, window-immediate
+ * and cursor classes; hardware facts): every channel is made first (the
+ * core, then for each head its two windows with their window-immediate
+ * channels and its cursor), the core gets its start without a release,
+ * the lit output is inherited and the sinks detected, and the first commit
+ * gives the head its mode from the sink's preferred timing (the armed
+ * timing when there is no EDID) in two core releases around the window's
+ * first image.  Nothing is shown anywhere but on the head the firmware lit
+ * (the scanout rule of plan/ws037/nvrtx-design.md, section 2).
  */
 
 #include <stdbool.h>
@@ -35,6 +38,7 @@
 #include <stdint.h>
 
 #include <kern/clock.h>
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
@@ -87,14 +91,28 @@
 /* The most words one frame's methods take in a window's push buffer (the image, the flip and the update). */
 #define SCANOUT_FRAME_WORDS_MAX		64U
 
-/* The display's common object (P8a's) and the control that assigns an output resource to a display. */
-#define SCANOUT_HANDLE_COMMON		0x00730000U
-#define SCANOUT_CTL_ASSIGN_SOR		0x00731152U
+/* The SOR capability nouveau reads once for each SOR output (its caps area's word at 0x13c). */
+#define SCANOUT_REG_SOR_CAPS		0x64013cU
+
+/* The heads' HDMI infoframe registers: the AVI's control and words, the vendor frame's control, one block of 0x400 for each head. */
+#define SCANOUT_REG_AVI_CONTROL		0x6f0000U
+#define SCANOUT_REG_AVI_HEADER		0x6f0008U
+#define SCANOUT_REG_VSI_CONTROL		0x6f0100U
+#define SCANOUT_INFOFRAME_STRIDE	0x400U
+#define SCANOUT_INFOFRAME_ENABLE	0x00000001U
+#define SCANOUT_VSI_DISABLE_MASK	0x00010001U
+
+/* The LUTs: the head's output LUT and the window's input LUT, in the VRAM after the notifiers. */
+#define SCANOUT_OLUT_AFTER_INSTANCE	0x11000U
+#define SCANOUT_ILUT_AFTER_INSTANCE	0x14000U
 
 /* The protocols of a TMDS output (single link A or B, dual link): the takeover drives only these. */
 #define SCANOUT_PROTOCOL_TMDS_A		1U
 #define SCANOUT_PROTOCOL_TMDS_B		2U
 #define SCANOUT_PROTOCOL_TMDS_DUAL	5U
+
+/* The clock from which a dual-link TMDS output uses both links. */
+#define SCANOUT_DUAL_LINK_KHZ		165000U
 
 /* How long each step of the takeover waits after its mark, so the monitor can be watched at it. */
 #define SCANOUT_STEP_US			5000000U
@@ -106,6 +124,9 @@
 #define SCANOUT_REG_EXCEPTION_OTHER	0x611854U
 #define SCANOUT_REG_SUPERVISOR		0x611c30U
 #define SCANOUT_REG_CORE_STATE		0x610630U
+#define SCANOUT_REG_ERROR_DISP		0x611848U
+#define SCANOUT_REG_SUPERVISOR_MAIN	0x6107a8U
+#define SCANOUT_REG_WINDOW_EXCEPTION	0x61102cU
 
 /* The output resource's control: the heads that own it are bits 7:0. */
 #define SCANOUT_SOR_OWNER_MASK		0xffU
@@ -137,17 +158,20 @@ static int scanout_surfaces(struct nvrtx_gpu *gpu);
 static int scanout_console_surface(struct nvrtx_gpu *gpu, uint32_t width, uint32_t height);
 static int scanout_surface_objects(struct nvrtx_gpu *gpu, uint64_t span);
 static int scanout_paint(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface, int reversed);
-static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push, int *made);
-static int scanout_bind(struct nvrtx_gpu *gpu, uint32_t chid, uint32_t handle, uint64_t start, uint64_t limit);
+static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push);
+static int scanout_bind(struct nvrtx_gpu *gpu, uint32_t chid, uint32_t handle, uint32_t flags, uint64_t start, uint64_t limit);
+static int scanout_channels(struct nvrtx_gpu *gpu);
+static int scanout_cursor_channel(struct nvrtx_gpu *gpu, uint32_t head);
+static int scanout_mode(struct nvrtx_gpu *gpu);
+static int scanout_luts(struct nvrtx_gpu *gpu);
+static int scanout_commit(struct nvrtx_gpu *gpu);
+static void scanout_infoframes(struct nvrtx_gpu *gpu);
+static int scanout_release_core(struct nvrtx_gpu *gpu, uint32_t window_interlock, const char *what);
 static int scanout_kick(struct nvrtx_gpu *gpu, struct nvrtx_push *push, uint32_t user);
 static int scanout_notifier_reset(struct nvrtx_gpu *gpu, uint32_t offset);
 static int scanout_notifier_wait(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t least, uint32_t user, const char *what);
-static int scanout_take_head(struct nvrtx_gpu *gpu);
-static int scanout_core_update(struct nvrtx_gpu *gpu, uint32_t window_interlock, const char *what);
-static int scanout_assign_sor(struct nvrtx_gpu *gpu);
 static void scanout_step(const char *what);
 static void scanout_diagnose(struct nvrtx_gpu *gpu);
-static int scanout_show(struct nvrtx_gpu *gpu);
 static int scanout_flip(struct nvrtx_gpu *gpu);
 static void scanout_hold(uint32_t microseconds);
 static uint32_t scanout_window_user(uint32_t window);
@@ -158,12 +182,14 @@ static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
 static int scanout_cursor_write(struct nvrtx_gpu *gpu, uint32_t method, uint32_t value);
 
 /*
- * Runs stage P8b: takes the firmware's head over and shows the console on
- * it (with the monitor test, a surface of bands and a flip).
+ * Runs stage P8b: makes the display's channels, inherits the output the
+ * firmware lit, detects the sinks and commits the first mode on the lit
+ * head, showing the console on it (with the monitor test, a surface of
+ * bands and a flip).
  *
  * Without a head the firmware lit, or without a console the head can show,
- * nothing is done (the scanout rule) and display.taken stays 0.  A failure
- * is returned; the finish's stop frees the channels that were made.
+ * nothing is committed (the scanout rule) and display.taken stays 0.  A
+ * failure is returned; the finish's stop frees the channels that were made.
  */
 int
 nvrtx_scanout_start(
@@ -178,48 +204,70 @@ nvrtx_scanout_start(
 	display = &gpu->display;
 	test = nvrtx_stage_disp_test_wanted();
 
-	/* Shows nothing anywhere the firmware did not light. */
+	/* The notifiers live in 4 KiB after the instance memory, cleared. */
 	nvrtx_stage_mark("P8b begin");
+	display->sync = display->instance + SCANOUT_SYNC_AFTER_INSTANCE;
+	error = nvrtx_vram_zero(gpu, display->sync, SCANOUT_SYNC_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Makes every channel, the core's start first. */
+	error = scanout_channels(gpu);
+	if (error != 0)
+		return error;
+
+	scanout_step("1: channels made");
+
+	/* Inherits the lit output and detects the sinks. */
+	error = nvrtx_display_inherit(gpu);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_display_detect(gpu);
+	if (error != 0)
+		return error;
+
+	/* Shows nothing anywhere the firmware did not light. */
 	if (display->gop_head_found == 0) {
-		nvrtx_stage_mark("P8b: no head lit by the firmware; nothing taken over");
+		nvrtx_stage_mark("P8b: no head lit by the firmware; nothing committed");
 		return 0;
 	}
 
 	/* The head's first window is the one it shows; the hardware must have it. */
 	display->window = display->gop_head * 2U;
-	if ((display->window_mask & (1U << display->window)) == 0U) {
+	if ((display->windows_made & (1U << display->window)) == 0U) {
 		nvrtx_stage_mark("P8b fail: window %u of head %u is absent", (unsigned)display->window, (unsigned)display->gop_head);
 		return ENODEV;
 	}
 
-	/* Reads the state the head and its output are armed with. */
+	nvrtx_push_init(&display->window_push, (uint8_t *)display->window_buffers[display->window].dma.address, SCANOUT_PUSH_WORDS);
+	display->window_made = 1;
+	if ((display->cursors_made & (1U << display->gop_head)) != 0U)
+		display->cursor_made = 1;
+
+	/* Reads the armed state for the log and the checks, then the mode from the EDID or the armed timing. */
 	error = scanout_read_armed(gpu);
 	if (error != 0)
 		return error;
 
-	/* Places the notifiers and the surface to show; a console that cannot be shown leaves the head alone. */
+	error = scanout_mode(gpu);
+	if (error != 0)
+		return error;
+
+	/* Places the surface to show; a console that cannot be shown leaves the head alone. */
 	error = scanout_surfaces(gpu);
 	if (error == ENOTSUP)
 		return 0;
 	if (error != 0)
 		return error;
 
-	/* Makes the core channel, then sets the head's mode as nouveau's first commit does. */
-	error = scanout_channel(gpu, NVRTX_DISP_CLASS_CORE, 0U, &display->core_buffer, &display->core_push, &display->core_made);
+	/* The identity LUTs. */
+	error = scanout_luts(gpu);
 	if (error != 0)
 		return error;
 
-	scanout_step("1: core channel made");
-	error = scanout_take_head(gpu);
-	if (error != 0)
-		return error;
-
-	/* Makes the head's window channel and shows the first surface on it. */
-	error = scanout_channel(gpu, NVRTX_DISP_CLASS_WINDOW, display->window, &display->window_buffer, &display->window_push, &display->window_made);
-	if (error != 0)
-		return error;
-
-	error = scanout_show(gpu);
+	/* The first commit. */
+	error = scanout_commit(gpu);
 	if (error != 0)
 		return error;
 
@@ -249,13 +297,16 @@ nvrtx_scanout_start(
 }
 
 /*
- * Frees the window and core channels before the display's root; failures are only shown.
+ * Frees every channel P8b made before the display's root: the cursors, the
+ * window-immediate channels, the windows, the core.  Failures are only
+ * shown.
  */
 void
 nvrtx_scanout_stop(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_display_state *display;
+	uint32_t index;
 	uint32_t handle;
 	int failures;
 	int error;
@@ -263,27 +314,44 @@ nvrtx_scanout_stop(
 	display = &gpu->display;
 	failures = 0;
 
-	/* Frees the cursor channel (P8c) first. */
-	if (display->cursor_made != 0) {
-		handle = (NVRTX_DISP_CLASS_CURSOR << 16) | display->gop_head;
-		error = nvrtx_rm_free(gpu, handle);
-		if (error != 0)
-			failures++;
-		display->cursor_made = 0;
+	/* Frees each cursor, window-immediate and window channel that was made. */
+	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
+		if ((display->cursors_made & (1U << index)) != 0U) {
+			handle = (NVRTX_DISP_CLASS_CURSOR << 16) | index;
+			error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
+			if (error != 0)
+				failures++;
+		}
 	}
 
-	/* Frees the window channel, then the core channel. */
-	if (display->window_made != 0) {
-		handle = (NVRTX_DISP_CLASS_WINDOW << 16) | display->window;
-		error = nvrtx_rm_free(gpu, handle);
-		if (error != 0)
-			failures++;
-		display->window_made = 0;
+	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
+		if ((display->wimms_made & (1U << index)) != 0U) {
+			handle = (NVRTX_DISP_CLASS_WIMM << 16) | index;
+			error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
+			if (error != 0)
+				failures++;
+		}
 	}
 
+	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
+		if ((display->windows_made & (1U << index)) != 0U) {
+			handle = (NVRTX_DISP_CLASS_WINDOW << 16) | index;
+			error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
+			if (error != 0)
+				failures++;
+		}
+	}
+
+	display->cursors_made = 0U;
+	display->wimms_made = 0U;
+	display->windows_made = 0U;
+	display->cursor_made = 0;
+	display->window_made = 0;
+
+	/* Frees the core channel. */
 	if (display->core_made != 0) {
 		handle = NVRTX_DISP_CLASS_CORE << 16;
-		error = nvrtx_rm_free(gpu, handle);
+		error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
 		if (error != 0)
 			failures++;
 		display->core_made = 0;
@@ -303,9 +371,14 @@ void
 nvrtx_scanout_release(
 	struct nvrtx_gpu *gpu)
 {
+	uint32_t index;
+
 	/* Frees each push buffer that was allocated. */
 	nvrtx_buffer_free(gpu, &gpu->display.core_buffer);
-	nvrtx_buffer_free(gpu, &gpu->display.window_buffer);
+	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
+		nvrtx_buffer_free(gpu, &gpu->display.window_buffers[index]);
+		nvrtx_buffer_free(gpu, &gpu->display.wimm_buffers[index]);
+	}
 }
 
 /*
@@ -373,52 +446,25 @@ nvrtx_scanout_frame(
 }
 
 /*
- * Makes the taken-over head's cursor channel (stage P8c): the resource
- * manager is told the PIO channel has no push buffer, then makes it under
- * the display root (nouveau's r535_curs_init).  Runs before the GPU device
- * is registered, while the worker is still the channel's only caller; the
- * stop frees it.  A failure leaves the display without a cursor plane.
+ * Reports whether the taken-over head has its cursor channel (stage P8c):
+ * P8b makes every head's cursor channel with the others, as nouveau does.
+ * Without it the display has no cursor plane.
  */
 int
 nvrtx_scanout_cursor_start(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_display_state *display;
-	uint8_t registration[NVRTX_DISP_PUSHBUFFER_BYTES];
-	uint8_t params[NVRTX_DISP_PIO_CHANNEL_BYTES];
-	const uint8_t *reply;
-	size_t reply_length;
-	uint32_t handle;
-	int error;
 
 	display = &gpu->display;
 
-	/* Registers the head's cursor channel without a push buffer. */
-	nvrtx_disp_pio_pushbuffer_params(registration, NVRTX_DISP_CLASS_CURSOR, display->gop_head);
-	error = nvrtx_rm_control(gpu,
-	    gpu->internal_client,
-	    gpu->internal_subdevice,
-	    SCANOUT_CTL_PUSHBUFFER,
-	    registration,
-	    sizeof(registration),
-	    &reply,
-	    &reply_length);
-	if (error != 0) {
-		nvrtx_stage_mark("P8c: cursor channel registration failed (%d)", error);
-		return error;
-	}
-
-	/* Makes the channel under the display root, the head as its instance. */
-	handle = (NVRTX_DISP_CLASS_CURSOR << 16) | display->gop_head;
-	nvrtx_disp_pio_channel_params(params, display->gop_head);
-	error = nvrtx_rm_allocate(gpu, SCANOUT_HANDLE_ROOT, handle, NVRTX_DISP_CLASS_CURSOR, params, sizeof(params));
-	if (error != 0) {
-		nvrtx_stage_mark("P8c: cursor channel allocation failed (%d)", error);
-		return error;
+	/* The head's cursor channel was made with the others. */
+	if (display->cursor_made == 0) {
+		nvrtx_stage_mark("P8c: head %u has no cursor channel", (unsigned)display->gop_head);
+		return ENODEV;
 	}
 
 	/* Succeeded: the head's cursor takes a position and an update. */
-	display->cursor_made = 1;
 	nvrtx_stage_mark("P8c channel %04x.%u made", (unsigned)NVRTX_DISP_CLASS_CURSOR, (unsigned)display->gop_head);
 	return 0;
 }
@@ -688,12 +734,6 @@ scanout_surfaces(
 		return EINVAL;
 	}
 
-	/* The notifiers live in 4 KiB after the instance memory, cleared. */
-	display->sync = display->instance + SCANOUT_SYNC_AFTER_INSTANCE;
-	error = nvrtx_vram_zero(gpu, display->sync, SCANOUT_SYNC_BYTES);
-	if (error != 0)
-		return error;
-
 	/* Without the monitor test the head shows the console. */
 	test = nvrtx_stage_disp_test_wanted();
 	if (!test) {
@@ -730,7 +770,7 @@ scanout_surfaces(
 		surface->width = width;
 		surface->height = height;
 		surface->pitch = (width * 4U + SCANOUT_PITCH_ALIGN - 1U) & ~(SCANOUT_PITCH_ALIGN - 1U);
-		surface->handle = NVRTX_DISP_HANDLE_VRAM;
+		surface->handle = NVRTX_DISP_HANDLE_FB;
 		surface->format = NVRTX_DISP_FORMAT_A8R8G8B8;
 	}
 
@@ -803,7 +843,7 @@ scanout_console_surface(
 		surface->width = width;
 		surface->height = height;
 		surface->pitch = console->pitch;
-		surface->handle = NVRTX_DISP_HANDLE_VRAM;
+		surface->handle = NVRTX_DISP_HANDLE_FB;
 		surface->format = NVRTX_DISP_FORMAT_A8R8G8B8;
 	}
 
@@ -873,11 +913,11 @@ scanout_paint(
 }
 
 /*
- * Makes one display channel: its push buffer, the buffer's registration,
- * the channel object, and its two context DMA objects.
- *
- * *made is set as soon as the channel object exists, so the stop frees it
- * even when a later step fails.
+ * Makes one display channel of the display's client: registers its push
+ * buffer (one page of coherent system memory) with the resource manager,
+ * makes it under the display root with its put at the start, and for a
+ * core or window channel binds the notifiers' object and the VRAM's.
+ * push, when given, is set up over the buffer.
  */
 static int
 scanout_channel(
@@ -885,8 +925,7 @@ scanout_channel(
 	uint32_t class_number,
 	uint32_t instance,
 	struct nvrtx_buffer *buffer,
-	struct nvrtx_push *push,
-	int *made)
+	struct nvrtx_push *push)
 {
 	uint8_t registration[NVRTX_DISP_PUSHBUFFER_BYTES];
 	uint8_t params[NVRTX_DISP_CHANNEL_BYTES];
@@ -901,7 +940,8 @@ scanout_channel(
 	if (error != 0)
 		return error;
 
-	nvrtx_push_init(push, (uint8_t *)buffer->dma.address, SCANOUT_PUSH_WORDS);
+	if (push != NULL)
+		nvrtx_push_init(push, (uint8_t *)buffer->dma.address, SCANOUT_PUSH_WORDS);
 
 	/* Registers the push buffer with the resource manager, for this class and instance. */
 	nvrtx_disp_pushbuffer_params(registration, buffer->dma.device_address, SCANOUT_PUSH_BYTES, class_number, instance);
@@ -919,11 +959,13 @@ scanout_channel(
 	/* Makes the channel under the display root, its put at the start. */
 	handle = (class_number << 16) | instance;
 	nvrtx_disp_channel_params(params, instance);
-	error = nvrtx_rm_allocate(gpu, SCANOUT_HANDLE_ROOT, handle, class_number, params, sizeof(params));
+	error = nvrtx_rm_allocate_in(gpu, NVRTX_DISP_CLIENT, SCANOUT_HANDLE_ROOT, handle, class_number, params, sizeof(params));
 	if (error != 0)
 		return error;
 
-	*made = 1;
+	/* A window-immediate channel has no objects. */
+	if (class_number == NVRTX_DISP_CLASS_WIMM)
+		return 0;
 
 	/* The core is channel 0 of the hash table; window w is channel 1 + w. */
 	chid = NVRTX_DISP_CHID_CORE;
@@ -931,16 +973,386 @@ scanout_channel(
 		chid = NVRTX_DISP_CHID_WINDOW_FIRST + instance;
 
 	/* Gives it the notifiers' object and the whole VRAM's. */
-	error = scanout_bind(gpu, chid, NVRTX_DISP_HANDLE_SYNC, gpu->display.sync, gpu->display.sync + SCANOUT_SYNC_BYTES - 1U);
+	error = scanout_bind(gpu, chid, NVRTX_DISP_HANDLE_SYNC, NVRTX_DISP_CONTEXT_DMA_FLAGS, gpu->display.sync, gpu->display.sync + SCANOUT_SYNC_BYTES - 1U);
 	if (error != 0)
 		return error;
 
-	error = scanout_bind(gpu, chid, NVRTX_DISP_HANDLE_VRAM, 0U, gpu->layout.vram_size - 1U);
+	error = scanout_bind(gpu, chid, NVRTX_DISP_HANDLE_VRAM, NVRTX_DISP_CONTEXT_DMA_FLAGS, 0U, gpu->layout.vram_size - 1U);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the channel takes methods. */
-	nvrtx_stage_mark("P8b channel %04x.%u made", (unsigned)class_number, (unsigned)instance);
+	return 0;
+}
+
+/*
+ * Makes every display channel in nouveau's order: the core (and sends its
+ * start, without a release), then for each head its first window with its
+ * window-immediate channel, its second window with its own, and its cursor.
+ * Each SOR output's capability word is read as nouveau's encoder reads it.
+ */
+static int
+scanout_channels(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	struct nvrtx_buffer *buffer;
+	uint32_t head;
+	uint32_t window;
+	uint32_t index;
+	int error;
+
+	display = &gpu->display;
+
+	/* The core channel. */
+	error = scanout_channel(gpu, NVRTX_DISP_CLASS_CORE, 0U, &display->core_buffer, &display->core_push);
+	if (error != 0)
+		return error;
+
+	display->core_made = 1;
+
+	/* The core's start: the channel's get is read first, then the start is sent without a release. */
+	(void)nvrtx_rd32(gpu, SCANOUT_REG_CORE_USER + SCANOUT_USER_GET_AT);
+	nvrtx_disp_first_core_start(&display->core_push);
+	error = scanout_kick(gpu, &display->core_push, SCANOUT_REG_CORE_USER);
+	if (error != 0)
+		return error;
+
+	/* Each SOR output's capability. */
+	for (index = 0U; index < 32U; index++) {
+		if ((display->output_mask & (1U << index)) == 0U)
+			continue;
+		if (display->output_type[index] != NVRTX_DISP_OUTPUT_SOR)
+			continue;
+
+		(void)nvrtx_rd32(gpu, SCANOUT_REG_SOR_CAPS);
+	}
+
+	/* Each head's two windows, each with its window-immediate channel, then its cursor. */
+	for (head = 0U; head < NVRTX_DISP_HEAD_MAX; head++) {
+		if ((display->head_mask & (1U << head)) == 0U)
+			continue;
+
+		for (window = head * 2U; window < head * 2U + 2U; window++) {
+			if ((display->window_mask & (1U << window)) == 0U)
+				continue;
+
+			buffer = &display->window_buffers[window];
+			error = scanout_channel(gpu, NVRTX_DISP_CLASS_WINDOW, window, buffer, NULL);
+			if (error != 0)
+				return error;
+
+			display->windows_made |= 1U << window;
+
+			buffer = &display->wimm_buffers[window];
+			error = scanout_channel(gpu, NVRTX_DISP_CLASS_WIMM, window, buffer, NULL);
+			if (error != 0)
+				return error;
+
+			display->wimms_made |= 1U << window;
+		}
+
+		error = scanout_cursor_channel(gpu, head);
+		if (error != 0)
+			return error;
+
+		display->cursors_made |= 1U << head;
+	}
+
+	/* Succeeded: every channel exists. */
+	nvrtx_stage_mark("P8b channels: core, windows %x, immediate %x, cursors %x",
+	    (unsigned)display->windows_made,
+	    (unsigned)display->wimms_made,
+	    (unsigned)display->cursors_made);
+	return 0;
+}
+
+/*
+ * Makes a head's cursor channel: the resource manager is told the PIO
+ * channel has no push buffer, then makes it under the display root.
+ */
+static int
+scanout_cursor_channel(
+	struct nvrtx_gpu *gpu,
+	uint32_t head)
+{
+	uint8_t registration[NVRTX_DISP_PUSHBUFFER_BYTES];
+	uint8_t params[NVRTX_DISP_PIO_CHANNEL_BYTES];
+	const uint8_t *reply;
+	size_t reply_length;
+	uint32_t handle;
+	int error;
+
+	/* Registers the cursor channel without a push buffer. */
+	nvrtx_disp_pio_pushbuffer_params(registration, NVRTX_DISP_CLASS_CURSOR, head);
+	error = nvrtx_rm_control(gpu,
+	    gpu->internal_client,
+	    gpu->internal_subdevice,
+	    SCANOUT_CTL_PUSHBUFFER,
+	    registration,
+	    sizeof(registration),
+	    &reply,
+	    &reply_length);
+	if (error != 0)
+		return error;
+
+	/* Makes the channel under the display root, the head as its instance. */
+	handle = (NVRTX_DISP_CLASS_CURSOR << 16) | head;
+	nvrtx_disp_pio_channel_params(params, head);
+	error = nvrtx_rm_allocate_in(gpu, NVRTX_DISP_CLIENT, SCANOUT_HANDLE_ROOT, handle, NVRTX_DISP_CLASS_CURSOR, params, sizeof(params));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the head's cursor channel exists. */
+	return 0;
+}
+
+/*
+ * Sets the first commit's mode: the EDID's preferred timing, or the armed
+ * timing when there is none; the view and surfaces take its visible size.
+ */
+static int
+scanout_mode(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	const char *source;
+
+	display = &gpu->display;
+
+	/* The timing the commit uses. */
+	source = "EDID";
+	if (display->timing_from_edid == 0) {
+		nvrtx_disp_first_timing_from_armed(display->armed, &display->timing);
+		source = "armed";
+	}
+
+	nvrtx_disp_first_mode(&display->timing, &display->mode);
+	nvrtx_stage_mark("P8b head %u mode (%s): %ux%u, total %ux%u, clock %u kHz, output %08x",
+	    (unsigned)display->gop_head,
+	    source,
+	    (unsigned)display->timing.hdisplay,
+	    (unsigned)display->timing.vdisplay,
+	    (unsigned)display->timing.htotal,
+	    (unsigned)display->timing.vtotal,
+	    (unsigned)display->timing.clock_khz,
+	    (unsigned)display->mode.output_resource);
+
+	/* A mode with no size is refused. */
+	if (display->timing.hdisplay == 0U || display->timing.vdisplay == 0U)
+		return EINVAL;
+
+	/* Succeeded: the mode is set. */
+	return 0;
+}
+
+/* Writes the identity output and input LUTs into the VRAM after the notifiers. */
+static int
+scanout_luts(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	uint8_t *lut;
+	int error;
+
+	display = &gpu->display;
+	display->olut = display->instance + SCANOUT_OLUT_AFTER_INSTANCE;
+	display->ilut = display->instance + SCANOUT_ILUT_AFTER_INSTANCE;
+
+	/* One LUT's bytes in memory at a time. */
+	lut = kern_malloc(NVRTX_DISP_LUT_BYTES);
+	if (lut == NULL)
+		return ENOMEM;
+
+	nvrtx_disp_first_olut_fill(lut);
+	error = nvrtx_vram_write(gpu, display->olut, lut, NVRTX_DISP_LUT_BYTES);
+	if (error == 0) {
+		nvrtx_disp_first_ilut_fill(lut);
+		error = nvrtx_vram_write(gpu, display->ilut, lut, NVRTX_DISP_LUT_BYTES);
+	}
+
+	kern_free(lut);
+
+	/* Reports a LUT that could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: both LUTs are in the VRAM. */
+	return 0;
+}
+
+/*
+ * Commits the first mode on the lit head as nouveau's first commit does:
+ * the window's surface object; the core's methods (the output taken off
+ * and given back with its protocol, the HDMI controls and infoframes in
+ * between for an HDMI sink, the head's mode, every window's owner) and
+ * its release, waited for; the head's output LUT; the window's first
+ * image, released interlocked with the core; the core's second release,
+ * interlocked with the window, waited for; and the window's notifier.
+ * As nouveau, a notifier that does not come is shown and the commit goes
+ * on; any such is reported at the end as EIO.
+ */
+static int
+scanout_commit(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	struct nvrtx_disp_first first;
+	uint32_t notifier;
+	uint32_t window_user;
+	int failed;
+	int error;
+
+	display = &gpu->display;
+	notifier = scanout_window_notifier(display->window);
+	window_user = scanout_window_user(display->window);
+	failed = 0;
+
+	/* The window's object for the surface it shows (all the VRAM, large pages). */
+	error = scanout_bind(gpu, NVRTX_DISP_CHID_WINDOW_FIRST + display->window, NVRTX_DISP_HANDLE_FB, NVRTX_DISP_CONTEXT_DMA_FB_FLAGS, 0U, gpu->layout.vram_size - 1U);
+	if (error != 0)
+		return error;
+
+	/* Its notifier, cleared before the commit. */
+	error = scanout_notifier_reset(gpu, notifier);
+	if (error != 0)
+		return error;
+
+	/* The output off; for an HDMI sink the HDMI controls and the infoframes; the output on with the head's mode and the owners. */
+	first.head = display->gop_head;
+	first.sor = display->gop_sor;
+	first.display_id = display->gop_display_id;
+	first.protocol = display->gop_protocol;
+	if (first.protocol == SCANOUT_PROTOCOL_TMDS_DUAL) {
+		/* A dual link drives only a clock of 165 MHz or more to a DVI sink; below that, link A alone. */
+		if (display->timing.clock_khz < SCANOUT_DUAL_LINK_KHZ || display->sink.hdmi != 0)
+			first.protocol = SCANOUT_PROTOCOL_TMDS_A;
+	}
+	first.mode = display->mode;
+	if (display->sink.hdmi != 0) {
+		error = nvrtx_display_hdmi(gpu);
+		if (error != 0)
+			return error;
+
+		scanout_infoframes(gpu);
+	}
+
+	nvrtx_disp_first_core_mode(&display->core_push, &first);
+	error = scanout_release_core(gpu, 0U, "core mode");
+	if (error == ETIMEDOUT)
+		failed = 1;
+	else if (error != 0)
+		return error;
+
+	scanout_step("2: core released with the mode");
+
+	/* The head's output LUT. */
+	nvrtx_disp_first_core_olut(&display->core_push, display->gop_head, display->olut);
+
+	/* The window's first image, released with the core; its get is read first. */
+	(void)nvrtx_rd32(gpu, window_user + SCANOUT_USER_GET_AT);
+	nvrtx_disp_first_window(&display->window_push, display->window, &display->surfaces[0], notifier, display->ilut);
+	error = scanout_kick(gpu, &display->window_push, window_user);
+	if (error != 0)
+		return error;
+
+	/* The core's second release, interlocked with the window. */
+	error = scanout_release_core(gpu, 1U << display->window, "core with window");
+	if (error == ETIMEDOUT)
+		failed = 1;
+	else if (error != 0)
+		return error;
+
+	/* The window's flip has begun. */
+	error = scanout_notifier_wait(gpu, notifier, 1U, window_user, "window first");
+	if (error == ETIMEDOUT) {
+		scanout_diagnose(gpu);
+		failed = 1;
+	} else if (error != 0) {
+		return error;
+	}
+
+	/* Reports a commit a notifier did not confirm. */
+	if (failed != 0) {
+		nvrtx_stage_mark("P8b fail: the first commit was not confirmed");
+		return EIO;
+	}
+
+	/* Succeeded: the head shows the first surface. */
+	nvrtx_stage_mark("P8b ok: mode set (%ux%u on SOR %u), surface A shown",
+	    (unsigned)display->surfaces[0].width,
+	    (unsigned)display->surfaces[0].height,
+	    (unsigned)display->gop_sor);
+	return 0;
+}
+
+/*
+ * Writes the lit head's HDMI infoframes as nouveau's HDMI enable does: the
+ * AVI frame of the RGB picture, and the vendor frame turned off (a mode
+ * without an HDMI code or 3D has none).
+ */
+static void
+scanout_infoframes(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t words[5];
+	uint32_t base;
+	uint32_t index;
+	uint32_t value;
+
+	base = gpu->display.gop_head * SCANOUT_INFOFRAME_STRIDE;
+	nvrtx_disp_first_avi(words);
+
+	/* The AVI frame off, its five words, then on. */
+	value = nvrtx_rd32(gpu, SCANOUT_REG_AVI_CONTROL + base);
+	nvrtx_wr32(gpu, SCANOUT_REG_AVI_CONTROL + base, value & ~SCANOUT_INFOFRAME_ENABLE);
+	for (index = 0U; index < 5U; index++)
+		nvrtx_wr32(gpu, SCANOUT_REG_AVI_HEADER + base + index * 4U, words[index]);
+	value = nvrtx_rd32(gpu, SCANOUT_REG_AVI_CONTROL + base);
+	nvrtx_wr32(gpu, SCANOUT_REG_AVI_CONTROL + base, value | SCANOUT_INFOFRAME_ENABLE);
+
+	/* The vendor frame off. */
+	value = nvrtx_rd32(gpu, SCANOUT_REG_VSI_CONTROL + base);
+	nvrtx_wr32(gpu, SCANOUT_REG_VSI_CONTROL + base, value & ~SCANOUT_VSI_DISABLE_MASK);
+}
+
+/*
+ * Sends a core release with the windows in the mask interlocked, after
+ * clearing the core's notifier, and waits for it.  A notifier that does
+ * not come shows the display's error state and returns ETIMEDOUT.
+ */
+static int
+scanout_release_core(
+	struct nvrtx_gpu *gpu,
+	uint32_t window_interlock,
+	const char *what)
+{
+	struct nvrtx_display_state *display;
+	int error;
+
+	display = &gpu->display;
+
+	/* Clears the notifier, then sends the release. */
+	error = scanout_notifier_reset(gpu, SCANOUT_CORE_NOTIFIER_AT);
+	if (error != 0)
+		return error;
+
+	nvrtx_disp_first_core_release(&display->core_push, window_interlock);
+	error = scanout_kick(gpu, &display->core_push, SCANOUT_REG_CORE_USER);
+	if (error != 0)
+		return error;
+
+	/* Waits for the core to finish it. */
+	error = scanout_notifier_wait(gpu, SCANOUT_CORE_NOTIFIER_AT, NVRTX_DISP_NOTIFIER_FINISHED, SCANOUT_REG_CORE_USER, what);
+	if (error == ETIMEDOUT) {
+		scanout_diagnose(gpu);
+		return ETIMEDOUT;
+	}
+
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the core has released the state. */
 	return 0;
 }
 
@@ -953,6 +1365,7 @@ scanout_bind(
 	struct nvrtx_gpu *gpu,
 	uint32_t chid,
 	uint32_t handle,
+	uint32_t flags,
 	uint64_t start,
 	uint64_t limit)
 {
@@ -976,7 +1389,7 @@ scanout_bind(
 		return ENOSPC;
 
 	/* Writes the object over the range. */
-	nvrtx_disp_context_dma(object, start, limit);
+	nvrtx_disp_context_dma_flags(object, flags, start, limit);
 	error = nvrtx_vram_write(gpu, display->instance + display->object_next, object, sizeof(object));
 	if (error != 0)
 		return error;
@@ -999,7 +1412,7 @@ scanout_bind(
 	}
 
 	/* Enters the handle with the channel, the low bits of the owning client, and the object's offset. */
-	client = NVRTX_HANDLE_CLIENT;
+	client = NVRTX_DISP_CLIENT;
 	nvrtx_disp_ramht_entry(entry, handle, chid, client, display->object_next);
 	error = nvrtx_vram_write(gpu, display->instance + (uint64_t)slot * NVRTX_DISP_RAMHT_ENTRY_BYTES, entry, sizeof(entry));
 	if (error != 0)
@@ -1105,163 +1518,6 @@ scanout_notifier_wait(
 	return ETIMEDOUT;
 }
 
-/*
- * Sets the taken-over head's mode in the steps of nouveau's first commit.
- *
- * 1. The core's start (its notifier object and every window's bounds) is
- *    released alone first, changing no head: when its notifier does not
- *    come, the channel's objects are wrong and the head is left as it is.
- *    (nouveau releases the start with the first commit; the separate update
- *    only splits the failure.)
- * 2. The disable: the head's output LUT and cursor off, its display id
- *    cleared and its output resource released (no owner), as nouveau's
- *    flush of a modeset does before the enable.
- * 3. The resource manager assigns an output resource to the display
- *    (nouveau's acquire under the GSP).
- * 4. The enable: the display id, the output resource's control (the owner
- *    head and the protocol), the head's mode (view, raster, clock, dither,
- *    processing, output resource), then every window to its head, released
- *    by the core alone (nouveau's assignment of the windows).
- *
- * Each update waits for the core's notifier; a missing one shows the
- * display's error state and fails.
- */
-static int
-scanout_take_head(
-	struct nvrtx_gpu *gpu)
-{
-	struct nvrtx_display_state *display;
-	struct nvrtx_push *push;
-	uint32_t control;
-	int error;
-
-	display = &gpu->display;
-	push = &display->core_push;
-
-	/* 1: the core's start, released alone. */
-	nvrtx_disp_core_init(push, display->window_mask);
-	error = scanout_core_update(gpu, 0U, "core start");
-	if (error != 0)
-		return error;
-
-	scanout_step("2: core start released");
-
-	/* 2: the disable of the head and its output resource. */
-	nvrtx_disp_core_head_planes_off(push, display->gop_head);
-	nvrtx_disp_core_display_id(push, display->gop_head, 0U);
-	nvrtx_disp_core_sor(push, display->gop_sor, 0U);
-	error = scanout_core_update(gpu, 0U, "core disable");
-	if (error != 0)
-		return error;
-
-	scanout_step("3: head disabled");
-
-	/* 3: the output resource the resource manager assigns to the display. */
-	error = scanout_assign_sor(gpu);
-	if (error != 0)
-		return error;
-
-	/* 4: the enable, then the windows' owners, in one update of the core alone. */
-	control = (display->gop_protocol << NVRTX_DISP_SOR_PROTOCOL_SHIFT) | (1U << display->gop_head);
-	nvrtx_disp_core_display_id(push, display->gop_head, display->gop_display_id);
-	nvrtx_disp_core_sor(push, display->assigned_sor, control);
-	nvrtx_disp_core_head_mode(push, display->gop_head, &display->mode);
-	nvrtx_disp_core_owners(push, display->window_mask);
-	error = scanout_core_update(gpu, 0U, "core owners");
-	if (error != 0)
-		return error;
-
-	scanout_step("4: head enabled");
-
-	/* Succeeded: the core drives the head with the firmware's mode. */
-	return 0;
-}
-
-/*
- * Releases what the core channel gathered, with its notifier, interlocked
- * with the windows in the mask, and waits for the notifier; a missing one
- * shows the display's error state.
- */
-static int
-scanout_core_update(
-	struct nvrtx_gpu *gpu,
-	uint32_t window_interlock,
-	const char *what)
-{
-	struct nvrtx_display_state *display;
-	int error;
-
-	display = &gpu->display;
-
-	/* Clears the notifier, then sends the update. */
-	error = scanout_notifier_reset(gpu, SCANOUT_CORE_NOTIFIER_AT);
-	if (error != 0)
-		return error;
-
-	nvrtx_disp_core_update(&display->core_push, SCANOUT_CORE_NOTIFIER_AT, window_interlock);
-	error = scanout_kick(gpu, &display->core_push, SCANOUT_REG_CORE_USER);
-	if (error != 0)
-		return error;
-
-	/* Waits for the core to finish it. */
-	error = scanout_notifier_wait(gpu, SCANOUT_CORE_NOTIFIER_AT, NVRTX_DISP_NOTIFIER_FINISHED, SCANOUT_REG_CORE_USER, what);
-	if (error != 0) {
-		scanout_diagnose(gpu);
-		return error;
-	}
-
-	/* Succeeded: the core has released the state. */
-	return 0;
-}
-
-/*
- * Has the resource manager assign an output resource to the firmware's
- * display (nouveau's acquire of a SOR under the GSP) and keeps its index.
- */
-static int
-scanout_assign_sor(
-	struct nvrtx_gpu *gpu)
-{
-	struct nvrtx_display_state *display;
-	uint8_t params[NVRTX_DISP_ASSIGN_SOR_BYTES];
-	const uint8_t *reply;
-	size_t reply_length;
-	int error;
-
-	display = &gpu->display;
-
-	/* Asks for any SOR (none excluded) for the display. */
-	nvrtx_disp_assign_sor_params(params, display->gop_display_id, 0U);
-	error = nvrtx_rm_control(gpu,
-	    NVRTX_HANDLE_CLIENT,
-	    SCANOUT_HANDLE_COMMON,
-	    SCANOUT_CTL_ASSIGN_SOR,
-	    params,
-	    sizeof(params),
-	    &reply,
-	    &reply_length);
-	if (error != 0) {
-		nvrtx_stage_mark("P8b fail: SOR assignment (%d)", error);
-		return error;
-	}
-
-	/* The reply names the SOR whose display mask has the display. */
-	display->assigned_sor = NVRTX_DISP_SOR_NONE;
-	if (reply_length >= NVRTX_DISP_ASSIGN_SOR_BYTES)
-		display->assigned_sor = nvrtx_disp_assign_sor_result(reply, display->gop_display_id);
-	if (display->assigned_sor == NVRTX_DISP_SOR_NONE) {
-		nvrtx_stage_mark("P8b fail: no SOR assigned to display %x", (unsigned)display->gop_display_id);
-		return ENODEV;
-	}
-
-	/* Succeeded: the display has its SOR. */
-	nvrtx_stage_mark("P8b SOR %u assigned to display %x (the firmware's was %u)",
-	    (unsigned)display->assigned_sor,
-	    (unsigned)display->gop_display_id,
-	    (unsigned)display->gop_sor);
-	return 0;
-}
-
 /* Marks one step of the takeover; with the monitor test it waits, so the monitor can be watched at it. */
 static void
 scanout_step(
@@ -1297,42 +1553,12 @@ scanout_diagnose(
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_EXCEPTION_OTHER),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_SUPERVISOR),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_STATE));
-}
 
-/*
- * Shows the first surface: the window's image and colour defaults
- * interlocked with a core update that turns the head's cursor and output
- * LUT off.
- */
-static int
-scanout_show(
-	struct nvrtx_gpu *gpu)
-{
-	struct nvrtx_display_state *display;
-	int error;
-
-	display = &gpu->display;
-
-	/* The window: the first surface, no input LUT, the identity matrix, opaque; held for the core. */
-	nvrtx_disp_window_image(&display->window_push, &display->surfaces[0]);
-	nvrtx_disp_window_defaults(&display->window_push);
-	nvrtx_disp_window_update(&display->window_push, 1, display->window);
-	error = scanout_kick(gpu, &display->window_push, scanout_window_user(display->window));
-	if (error != 0)
-		return error;
-
-	/* The core: no cursor and no output LUT object, released together with the window. */
-	nvrtx_disp_core_head_planes_off(&display->core_push, display->gop_head);
-	error = scanout_core_update(gpu, 1U << display->window, "core show");
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the head shows the first surface. */
-	nvrtx_stage_mark("P8b ok: mode set (%ux%u on SOR %u), surface A shown",
-	    (unsigned)display->surfaces[0].width,
-	    (unsigned)display->surfaces[0].height,
-	    (unsigned)display->assigned_sor);
-	return 0;
+	/* The display's error detail, the supervisor's mode switch, and window 0's exception. */
+	nvrtx_stage_mark("P8b error %08x supervisor main %08x window exception %08x",
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_ERROR_DISP),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_SUPERVISOR_MAIN),
+	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WINDOW_EXCEPTION));
 }
 
 /* Flips the window to the second surface and waits for its notifier. */

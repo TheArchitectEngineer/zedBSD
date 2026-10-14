@@ -289,6 +289,53 @@ FAIL の時: 最後に見えた印の写真。`P0 console …: cannot be kept`�
 
 以前の resume（P8b の実装の時点）: P8b は実装・build・host 試験まで（`b893faeb6` と直し）。次は T の R8b（rombar=1、上の手順）とユーザーの目視。PASS なら P8c（上の設計、BAR1 の map と VRAM の BO が先）。
 
+## nouveau と同じ手順への揃え（2026-10-15 夜、P2。build と host 試験まで、実機は T1 の R8b 待ち）
+
+ユーザーの指示（原文）:「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」→ T1-645（R8b FAIL: core start の notifier 00000000、core state aa0c0007 = stage1 WAIT_FOR_UPD・BUSY・notifier の書き込み pending、exception 0x80 = UPDATE の method で理由なし）の後、P8a・P8b を nouveau（Linux の `drivers/gpu/drm/nouveau/`、MIT の r535/r570 の disp・dispnv50・nvif）の GSP の下の手順に揃えた。値はハードウェア・firmware の事実として使い、名前・構造・comment は写していない（guardrail の WS037 の規則）。nouveau の手順の書き出し（RPC と値、instance memory の書き込み、push の dword、待ち）は P2 の作業の文書（scratchpad、commit しない）。
+
+### 照合の表（nouveau の関数 → 送る物 → nvrtx → 差）
+
+| # | nouveau | 送る物・値 | nvrtx（今） | 差 |
+| --- | --- | --- | --- | --- |
+| 1 | `r535_disp_oneinit` の instance memory | 64 KiB の VRAM、`WRITE_INST_MEM` 0x20800a49（内部の client/subdevice、addr・0x10000・FBMEM 2・WC 2）。memory は 0 で埋めない | `display_instance`。全体の 0 埋めをやめた | 位置（nouveau は instmem の任意、nvrtx は copy の block の 1 MiB 下） |
+| 2 | `nvkm_gsp_client_device_ctor` | display 用の client `0xc1d0000N`（NV01_ROOT、hClient・processID 0xffffffff）、device 0xde1d0000（hClientShare）、subdevice 0x5d1d0000 | `display_client`: client **0xc1d00001**、同じ device・subdevice | client の番号（nouveau は空きの最小、1 か 2）。RAMHT の CID = 1 |
+| 3 | 同 | NV04_DISPLAY_COMMON 0x00730000（device の下、引数なし） | 同（display の client の下に移した） | なし |
+| 4 | 同 | `GET_STATIC_INFO`・`BRIGHTC_STATE_LOAD`（status 0x56）・`DP_SET_MANUAL_DISPLAYPORT`・`GET_NUM_HEADS`・`GET_ALL_HEAD_MASK`・`GET_SUPPORTED`（0x730107） | `display_counts`（DP manual 以降を display の client で） | なし |
+| 5 | `r535_outp_new`・`r535_conn_new`・`r570_dp_get_caps` | 出力ごと（id の順）に `OR_GET_INFO`、type が 0 でなければ `GET_CONNECTOR_DATA` 0x730250（72 B）、DP なら `DP_GET_CAPS` 0x731369（sorIndex ~0） | `display_outputs`（新） | なし |
+| 6 | `nvkm_gsp_device_event_ctor` ×2 | event 0x007e0000（class 0x7e、subdevice の下、notifyIndex 0x04000001）と `EVENT_SET_NOTIFICATION` 0x20800301（event 1、action 2）、DP IRQ 0x007e0001（0x04000007、event 7） | `display_event`（新） | なし。GSP からの event の message は drain・rpc_wait が読み捨てる |
+| 7 | `nvkm_ramht_new` | instance の 0〜0x1fff を 0 で埋める | `nvrtx_display_start` | なし |
+| 8 | `nvkm_gsp_intr_stall`・`nvkm_inth_allow` | RPC なし。CPU の割り込みの leaf を許可（0xb81000/0xb81200 + leaf×4） | **しない** | **意図した差**: nvrtx は割り込みの handler を持たず、許可すると handler の無い割り込みが来る恐れ（Q1 に報告済み） |
+| 9 | `r535_disp_init` | root 0xc5700000（class 0xc570、device の下、引数なし） | 同（display の client） | なし |
+| 10 | `nv50_core_new`・`nv50_dmac_create` | core: push 4 KiB の coherent sysmem、`CHANNEL_PUSHBUFFER` 0x20800a58（56 B）、alloc 0xc57d0000（40 B: instance 0・offset 0・subDeviceId 1）、ctxdma sync 0xf0000000（0x2000、flags 0x45、SYNC..+0xfff）と vram 0xf0000001（0x2020、0..RAMU-1）、RAMHT の context = chid<<25 \| off<<9 \| CID | `scanout_channel`（display の client） | VRAM の ctxdma の limit（nouveau は `ram_user`、nvrtx は VRAM の大きさ） |
+| 11 | `corec57d_init` | `SET_CONTEXT_DMA_NOTIFIER` と 8 window の bounds（0xf・0・0x117fff）、release なし、PUT 0xa8 | `nvrtx_disp_first_core_start`、GET を読んでから kick | なし（host 試験で 42 語を照合） |
+| 12 | `corec37d_caps_init`・`sorc37d_get_caps` | caps の object は RM に無い。SOR の出力ごとに 0x64013c を読む | SOR の出力ごとに読む | なし |
+| 13 | `nv50_head_create` | head ごとに window 2h（channel・ctxdma 2 つ）と wimm 2h（0xc57b、ctxdma なし）、window 2h+1 と wimm、cursor h（PIO、push なし、valid 0） | `scanout_channels`・`scanout_cursor_channel` | なし（以前は core と window 0 だけ。**T1-645 の止まりの見立ての本命**: core の window の bounds が、まだ無い window channel の update を待った） |
+| 14 | `nv50_display_read_hw_state`・`r535_outp_inherit` | 出力ごとに head 0〜nr-1 の `GET_ACTIVE` 0x73010c を一致まで、一致で `OR_GET_INFO` | `nvrtx_display_inherit`（新、channel の後） | P8a の終わりの readout は P8b が走らない時だけ（log のため） |
+| 15 | `nouveau_connector_detect`・`r535_outp_detect`・`r535_tmds_edid_get` | 出力ごとに `GET_CONNECT_STATE` 0x730108、接続なら `DFP_GET_INFO` 0x731140、TMDS なら `GET_EDID_V2` 0x730245 | `nvrtx_display_detect`（新） | なし |
+| 16 | fbdev の mode | EDID の preferred mode（read_hw_state は head の mode を読まない） | EDID の最初の detailed timing。EDID が無ければ ARMED の timing | ARMED を使う場合だけ |
+| 17 | `nv50_sor_atomic_enable` | 引き継いだ出力に `DFP_ASSIGN_SOR` を**送らない** | 送らない（P1 の 476ca3ba5 で足した物を外した） | なし |
+| 18 | `nv50_hdmi_enable` | HDMI の sink だけ: `SET_HDMI_ENABLE` 0x730273、`SET_HDMI_SINK_CAPS` 0x730293、AVI の register 0x6f0008〜（head×0x400）、VSI を off | `nvrtx_display_hdmi`・`scanout_infoframes` | AVI は CEA の code の無い mode の値（VIC 0）だけ。音声（EDID に音声がある時の `SET_OD_PACKET`・`SET_HDMI_AUDIO_MUTESTREAM`・0x6f00c0/cc・`SET_ELD_AUDIO_CAPS`）は**未実装**（ELD の組み立てが要る。最初の UPDATE の後なので picture には関わらない、Q1 に報告済み） |
+| 19 | commit の core #1 | display id 0・SOR(S) 0 → display id・SOR(S) = P<<8\|1<<head → view in/out・raster 4 語・0x2074=1・control 0・clock・clock max・usage 0x1114・output resource 0xfc000040\|極性 → 8 window の owner → notifier 0x1000・interlock 0/0・UPDATE・notifier 0。待ち FINISHED（2 s） | `nvrtx_disp_first_core_mode`・`_core_release`・`scanout_release_core` | なし（host 試験で 54 語を照合） |
+| 20 | commit の OLUT・window・core #2 | OLUT（0x2280: 0x40509・~0・0xf0000001・LUT>>8）、window 0（fb ctxdma 0xfb000000 flags 0x05、notifier 0x60、present 1、size・storage 0x10・format 0xcf・pitch>>6、ISO・offset・point・size in/out、ILUT（0x440: 0x40508・0xf0000001・LUT>>8）、blend 0xff0・0xff・0x7722・~key×4、interlock 1/1<<w、UPDATE）、core #2（interlock window）、window の notifier BEGUN | `nvrtx_disp_first_core_olut`・`_window`・`scanout_commit` | なし（host 試験で 14 語と 37 語を照合）。LUT は identity（OLUT 16 bit、ILUT half float） |
+| 21 | 待ちの失敗 | notifier が来なくても log を出して続ける | 同じく続け、最後に `P8b fail: the first commit was not confirmed`（EIO） | nvrtx は最後に失敗を返す（P8c の登録をしない） |
+
+- 試験の語（`nvrtx.disp.test=1`）の時だけの差: step の印の 5 秒の待ち（channel の後、core #1 の後）、帯の surface と flip。既定（console）では待たない。
+- 新しい印: `P8 output %x: SOR n TMDS-A`（P8a）、`P8b channels: core, windows ff, immediate ff, cursors f`、`P8b output %x lit on head n: SOR n …`、`P8b connected %x`、`P8b EDID %x: N bytes, preferred WxH at K kHz, DVI|HDMI`、`P8b head n mode (EDID|armed): …`、`P8b ok: mode set …`。失敗の dump に `P8b error … supervisor main … window exception …`（0x611848・0x6107a8・0x61102c）を足した。
+
+### 確認
+
+| 確認 | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | `PASS nvrtx gsp: 274 checks`（nouveau の dword との照合: core の start 42 語、core #1 54 語、OLUT と core #2 14 語、window 37 語。raster の式、ARMED からの逆算、EDID の timing と HDMI・音声の判定、LUT、AVI の 5 語） |
+| `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix` | rc 0・warning 0・`kernel include check: PASS (423 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| 実機（R8b） | **未実施**（T1 へ） |
+
+### T への手順（R8b、方式 B rombar=1、合格は kernel log に display の制御の error が無いこと）
+
+image: この commit を含む main で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`（語 `nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。
+合格の印（順に）: `P8 output …`（出力ごと）→ `P8 ok: display, heads f, windows ff, outputs …` → `P8b begin` → `P8b channels: core, windows ff, immediate ff, cursors f` → `P8b step 1: channels made (5 s)` → `P8b output … lit on head 0: SOR 1 TMDS-A` → `P8b connected …` → `P8b EDID …`（無ければ mode は armed）→ `P8b head 0 armed: …` → `P8b head 0 mode (…): 1280x1024 …` → `P8b surfaces …` → `P8b core mode notified after N us` → `P8b step 2: core released with the mode (5 s)` → `P8b core with window notified after N us` → `P8b window first notified after N us` → `P8b ok: mode set (1280x1024 on SOR 1), surface A shown` → `P8b window flip notified …` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows the driver's surfaces` → `P8 done; this revision ends at P8c` → `P6 ok …`（`P8b: N channel frees failed`・`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
+error に数える行は「R8 の合格の条件」の節のとおり。FAIL なら `P8b fail: …` の前後と dump の 3 行（`P8b core exception …`・`P8b other …`・`P8b error … supervisor main … window exception …`）を記録（読み方は「FAIL の読み方」）。
+
 ## 次の Phase の予定: nouveau と同じ手順からの整理（planned、2026-10-15 ユーザーの指示）
 
 ユーザー（原文）:「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」「Nouveauとまったく同じ手順で動作が確認できたあとで、我々のスタイルにリファクタしましょう。」

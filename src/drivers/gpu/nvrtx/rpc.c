@@ -253,6 +253,30 @@ nvrtx_rm_allocate(
 	const uint8_t *parameters,
 	size_t length)
 {
+	int error;
+
+	/* The driver's own client. */
+	error = nvrtx_rm_allocate_in(gpu, NVRTX_HANDLE_CLIENT, parent, handle, class_number, parameters, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the object exists. */
+	return 0;
+}
+
+/*
+ * Allocates one object under a given client and checks the status the firmware returns.
+ */
+int
+nvrtx_rm_allocate_in(
+	struct nvrtx_gpu *gpu,
+	uint32_t client,
+	uint32_t parent,
+	uint32_t handle,
+	uint32_t class_number,
+	const uint8_t *parameters,
+	size_t length)
+{
 	struct nvrtx_object object;
 	size_t call_length;
 	size_t reply_length;
@@ -260,7 +284,7 @@ nvrtx_rm_allocate(
 	int error;
 
 	/* Builds the call. */
-	object.client = NVRTX_HANDLE_CLIENT;
+	object.client = client;
 	object.parent = parent;
 	object.handle = handle;
 	object.class_number = class_number;
@@ -340,11 +364,31 @@ nvrtx_rm_free(
 	struct nvrtx_gpu *gpu,
 	uint32_t object)
 {
+	int error;
+
+	/* The driver's own client. */
+	error = nvrtx_rm_free_in(gpu, NVRTX_HANDLE_CLIENT, object);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the object is gone. */
+	return 0;
+}
+
+/*
+ * Frees one object of a given client (the client itself when object is the client's handle).
+ */
+int
+nvrtx_rm_free_in(
+	struct nvrtx_gpu *gpu,
+	uint32_t client,
+	uint32_t object)
+{
 	size_t reply_length;
 	int error;
 
 	/* Builds the call and waits for its reply. */
-	nvrtx_free_params(gpu->call, NVRTX_HANDLE_CLIENT, object);
+	nvrtx_free_params(gpu->call, client, object);
 	error = rpc_exchange(gpu, NVRTX_CALL_FREE, NVRTX_FREE_PARAMS_BYTES, &reply_length);
 	if (error != 0)
 		return error;

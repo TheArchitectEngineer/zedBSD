@@ -620,6 +620,159 @@ test_work(void)
 	check(NVRTX_WORK_RING_ENTRIES * 8 == 0x1000 && (NVRTX_WORK_RING_ENTRIES & (NVRTX_WORK_RING_ENTRIES - 1)) == 0, "work: ring is one page, a power of two");
 }
 
+/* Compares a push buffer's words with the expected ones, printing the first difference. */
+static int
+push_is(const struct nvrtx_push *push, const uint32_t *want, uint32_t count)
+{
+	uint32_t i;
+
+	if (push->overflow || push->count != count) {
+		printf("  push has %u words (overflow %d), want %u\n", (unsigned)push->count, push->overflow, (unsigned)count);
+		return 0;
+	}
+	for (i = 0; i < count; i++) {
+		if (nvrtx_get32(push->bytes, i * 4U) != want[i]) {
+			printf("  push word %u is %08x, want %08x\n", (unsigned)i, (unsigned)nvrtx_get32(push->bytes, i * 4U), (unsigned)want[i]);
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* P8b as nouveau: the first commit's words compared with nouveau's (dumped from its class headers). */
+static void
+test_disp_first(void)
+{
+	static uint8_t bytes[4096];
+	static uint8_t lut[NVRTX_DISP_LUT_BYTES];
+	static uint8_t edid[256];
+	static const uint32_t start[42] = {
+		0x00040208, 0xf0000000,
+		0x00081004, 0x0000000f, 0x00000000, 0x00041010, 0x00117fff,
+		0x00081084, 0x0000000f, 0x00000000, 0x00041090, 0x00117fff,
+		0x00081104, 0x0000000f, 0x00000000, 0x00041110, 0x00117fff,
+		0x00081184, 0x0000000f, 0x00000000, 0x00041190, 0x00117fff,
+		0x00081204, 0x0000000f, 0x00000000, 0x00041210, 0x00117fff,
+		0x00081284, 0x0000000f, 0x00000000, 0x00041290, 0x00117fff,
+		0x00081304, 0x0000000f, 0x00000000, 0x00041310, 0x00117fff,
+		0x00081384, 0x0000000f, 0x00000000, 0x00041390, 0x00117fff,
+	};
+	static const uint32_t first[54] = {
+		0x00042020, 0x00000000, 0x00040300, 0x00000000, 0x00042020, 0x00000001, 0x00040300, 0x00000101,
+		0x0004204c, 0x04000500, 0x00042058, 0x04000500,
+		0x00102064, 0x042a0698, 0x0002006f, 0x00280167, 0x04280667,
+		0x00042074, 0x00000001, 0x00042008, 0x00000000, 0x0004200c, 0x066ff300, 0x00042028, 0x066ff300,
+		0x00042030, 0x00001114, 0x00042004, 0xfc000040,
+		0x00041000, 0x00000000, 0x00041080, 0x00000000, 0x00041100, 0x00000001, 0x00041180, 0x00000001,
+		0x00041200, 0x00000002, 0x00041280, 0x00000002, 0x00041300, 0x00000003, 0x00041380, 0x00000003,
+		0x0004020c, 0x00001000, 0x00080218, 0x00000000, 0x00000000, 0x00040200, 0x00000001, 0x0004020c, 0x00000000,
+	};
+	static const uint32_t second[14] = {
+		0x00102280, 0x00040509, 0xffffffff, 0xf0000001, 0x00123456,
+		0x0004020c, 0x00001000, 0x00080218, 0x00000000, 0x00000001, 0x00040200, 0x00000001, 0x0004020c, 0x00000000,
+	};
+	static const uint32_t window[37] = {
+		0x0008021c, 0xf0000000, 0x00000060,
+		0x00040308, 0x00000001,
+		0x00100224, 0x04000500, 0x00000010, 0x000000cf, 0x00000050,
+		0x00040240, 0xfb000000, 0x00040260, 0x00045678, 0x00040290, 0x00000000, 0x00040298, 0x04000500, 0x000402a4, 0x04000500,
+		0x000c0440, 0x00040508, 0xf0000001, 0x0012abcd,
+		0x001c02ec, 0x00000ff0, 0x000000ff, 0x00007722, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000,
+		0x00080370, 0x00000001, 0x00000001,
+		0x00040200, 0x00000001,
+	};
+	struct nvrtx_push push;
+	struct nvrtx_disp_timing timing;
+	struct nvrtx_disp_timing back;
+	struct nvrtx_disp_first commit;
+	struct nvrtx_disp_surface surface;
+	struct nvrtx_disp_sink sink;
+	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
+	uint32_t avi[5];
+
+	/* The core's start: 42 words, no release. */
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_core_start(&push);
+	check(push_is(&push, start, 42), "first: core start is nouveau's 42 words");
+
+	/* The 1280x1024@60 DMT timing gives nouveau's raster words. */
+	memset(&timing, 0, sizeof(timing));
+	timing.hdisplay = 1280; timing.hsync_start = 1328; timing.hsync_end = 1440; timing.htotal = 1688;
+	timing.vdisplay = 1024; timing.vsync_start = 1025; timing.vsync_end = 1028; timing.vtotal = 1066;
+	timing.clock_khz = 108000;
+	memset(&commit, 0, sizeof(commit));
+	nvrtx_disp_first_mode(&timing, &commit.mode);
+	check(commit.mode.raster_size == 0x042a0698 && commit.mode.sync_end == 0x0002006f && commit.mode.blank_end == 0x00280167 && commit.mode.blank_start == 0x04280667, "first: raster words from the timing");
+	check(commit.mode.output_resource == 0xfc000040 && commit.mode.clock_hz == 108000000, "first: output resource and clock");
+
+	/* The armed words give the timing back. */
+	memset(armed, 0, sizeof(armed));
+	armed[NVRTX_DISP_ARMED_RASTER_SIZE] = commit.mode.raster_size;
+	armed[NVRTX_DISP_ARMED_SYNC_END] = commit.mode.sync_end;
+	armed[NVRTX_DISP_ARMED_BLANK_END] = commit.mode.blank_end;
+	armed[NVRTX_DISP_ARMED_BLANK_START] = commit.mode.blank_start;
+	armed[NVRTX_DISP_ARMED_PIXEL_CLOCK] = commit.mode.clock_hz;
+	armed[NVRTX_DISP_ARMED_OUTPUT_RESOURCE] = 0xfc00004c;
+	nvrtx_disp_first_timing_from_armed(armed, &back);
+	check(back.hdisplay == 1280 && back.hsync_start == 1328 && back.hsync_end == 1440 && back.htotal == 1688, "first: armed horizontal timing");
+	check(back.vdisplay == 1024 && back.vsync_start == 1025 && back.vsync_end == 1028 && back.vtotal == 1066 && back.clock_khz == 108000, "first: armed vertical timing and clock");
+	check(back.nhsync == 1 && back.nvsync == 1, "first: armed polarities");
+
+	/* The first core release: S 0, display 1, TMDS-A, head 0, then the release. */
+	commit.head = 0; commit.sor = 0; commit.display_id = 1; commit.protocol = 1;
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_core_mode(&push, &commit);
+	nvrtx_disp_first_core_release(&push, 0);
+	check(push_is(&push, first, 54), "first: core release #1 is nouveau's 54 words");
+
+	/* The output LUT and the second release, window 0 interlocked. */
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_core_olut(&push, 0, 0x12345600ULL);
+	nvrtx_disp_first_core_release(&push, 1);
+	check(push_is(&push, second, 14), "first: OLUT and core release #2 are nouveau's 14 words");
+
+	/* The window's image, LUT, blend and release. */
+	memset(&surface, 0, sizeof(surface));
+	surface.offset = 0x4567800ULL; surface.width = 1280; surface.height = 1024; surface.pitch = 5120;
+	surface.handle = NVRTX_DISP_HANDLE_FB; surface.format = NVRTX_DISP_FORMAT_A8R8G8B8;
+	nvrtx_push_init(&push, bytes, 1024);
+	nvrtx_disp_first_window(&push, 0, &surface, 0x60, 0x12abcd00ULL);
+	check(push_is(&push, window, 37), "first: window 0 is nouveau's 37 words");
+
+	/* The LUTs: identity, the last repeated. */
+	nvrtx_disp_first_olut_fill(lut);
+	check(nvrtx_get32(lut, 0) == 0 && nvrtx_get32(lut, 0x1c) == 0, "first: OLUT header clear");
+	check(lut[0x20 + 8] == 0x40 && lut[0x20 + 8 + 1] == 0 && lut[0x20 + 8 + 2] == 0x40 && lut[0x20 + 8 + 4] == 0x40, "first: OLUT entry 1 is 64");
+	check(lut[0x20 + 1023 * 8] == 0xc0 && lut[0x20 + 1023 * 8 + 1] == 0xff && lut[0x20 + 1024 * 8] == 0xc0 && lut[0x20 + 1024 * 8 + 1] == 0xff, "first: OLUT entry 1023 is 0xffc0, repeated");
+	nvrtx_disp_first_ilut_fill(lut);
+	check(lut[0x20] == 0 && lut[0x21] == 0, "first: ILUT entry 0 is 0");
+	check(lut[0x20 + 8] == 0x00 && lut[0x20 + 9] == 0x14, "first: ILUT entry 1 is half 2^-10 (0x1400)");
+	check(lut[0x20 + 512 * 8] == 0x00 && lut[0x20 + 512 * 8 + 1] == 0x38, "first: ILUT entry 512 is half 0.5 (0x3800)");
+	check(lut[0x20 + 1023 * 8] == 0xfe && lut[0x20 + 1023 * 8 + 1] == 0x3b && lut[0x20 + 1024 * 8] == 0xfe && lut[0x20 + 1024 * 8 + 1] == 0x3b, "first: ILUT entry 1023 is 0x3bfe, repeated");
+
+	/* The AVI infoframe of an RGB full-range non-CEA mode. */
+	nvrtx_disp_first_avi(avi);
+	check(avi[0] == 0x000d0282 && avi[1] == 0x0808104f && avi[2] == 0 && avi[3] == 0 && avi[4] == 0, "first: AVI words");
+
+	/* The EDID's preferred timing: a 1280x1024@60 descriptor, +H +V. */
+	memset(edid, 0, sizeof(edid));
+	edid[54] = 0x30; edid[55] = 0x2a; edid[56] = 0x00; edid[57] = 0x98; edid[58] = 0x51; edid[59] = 0x00; edid[60] = 0x2a; edid[61] = 0x40;
+	edid[62] = 0x30; edid[63] = 0x70; edid[64] = 0x13; edid[65] = 0x00; edid[71] = 0x1e;
+	check(nvrtx_disp_first_edid_timing(edid, 128, &back) == 0, "first: EDID timing read");
+	check(back.hdisplay == 1280 && back.hsync_start == 1328 && back.hsync_end == 1440 && back.htotal == 1688, "first: EDID horizontal");
+	check(back.vdisplay == 1024 && back.vsync_start == 1025 && back.vsync_end == 1028 && back.vtotal == 1066 && back.clock_khz == 108000 && back.nhsync == 0 && back.nvsync == 0, "first: EDID vertical, clock, polarities");
+
+	/* The sink: a CEA extension with the HDMI block and basic audio. */
+	edid[126] = 1;
+	edid[128] = 0x02; edid[129] = 0x03; edid[130] = 0x0c; edid[131] = 0x40;
+	edid[132] = 0x67; edid[133] = 0x03; edid[134] = 0x0c; edid[135] = 0x00; edid[136] = 0x10; edid[137] = 0x00; edid[138] = 0x00; edid[139] = 0x00;
+	nvrtx_disp_first_edid_sink(edid, 256, &sink);
+	check(sink.hdmi == 1 && sink.audio == 1 && sink.caps == 0, "first: HDMI sink with audio, no forum block");
+	edid[126] = 0;
+	nvrtx_disp_first_edid_sink(edid, 256, &sink);
+	check(sink.hdmi == 0 && sink.audio == 0, "first: no extension, a DVI sink");
+}
+
 /* P4m: the range allocator, the usable region's bounds and the VRAM page entry. */
 static void
 test_heap(void)
@@ -1056,6 +1209,7 @@ main(int argc, char **argv)
 	test_records();
 	test_mmu();
 	test_work();
+	test_disp_first();
 	test_heap();
 	test_objects();
 	test_gr();
