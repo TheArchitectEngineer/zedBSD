@@ -2467,11 +2467,15 @@ vkvideo_complete(
 		return error;
 	}
 
-	/* The fence and both command buffers for the submission's next picture. */
+	/*
+	 * The fence and the command buffers for the submission's next picture;
+	 * a picture the GPU holds recorded no readback, so its transfer
+	 * command buffer has nothing to reset (one call less a picture).
+	 */
 	result = video->fn.vkResetFences(video->device, 1U, &flight->fence);
 	if (result == VK_SUCCESS)
 		result = video->fn.vkResetCommandBuffer(flight->command, 0U);
-	if (result == VK_SUCCESS)
+	if (result == VK_SUCCESS && !video->gpu)
 		result = video->fn.vkResetCommandBuffer(flight->transfer_command, 0U);
 	if (result != VK_SUCCESS) {
 		error = vkvideo_failed(result, "vkResetFences or vkResetCommandBuffer");
