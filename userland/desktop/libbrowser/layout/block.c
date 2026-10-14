@@ -112,6 +112,7 @@ layout_block(
 	saved_height_definite = tree->containing_height_definite;
 	if (!height_definite && box->kind == LAYOUT_BLOCK && box->style.display == CSS_DISPLAY_INLINE &&
 	    box->parent != NULL && box->parent->style.display != CSS_DISPLAY_FLEX &&
+	    box->parent->style.display != CSS_DISPLAY_INLINE_FLEX &&
 	    box->parent->style.display != CSS_DISPLAY_GRID &&
 	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID) {
 		tree->containing_height = saved_containing_height;
@@ -366,6 +367,7 @@ layout_auto_margins(
 	if (box->parent != NULL && box->parent->style.direction == CSS_DIRECTION_RTL)
 		rtl = 1;
 	if (rtl && (box->parent->style.display == CSS_DISPLAY_FLEX ||
+	    box->parent->style.display == CSS_DISPLAY_INLINE_FLEX ||
 	    box->parent->style.display == CSS_DISPLAY_GRID ||
 	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID))
 		rtl = 0;
@@ -398,7 +400,7 @@ block_content(
 	box->collapsed_bottom = box->margin[CSS_BOTTOM];
 
 	/* The flex items, the grid items, the lines, or the children. */
-	if (box->style.display == CSS_DISPLAY_FLEX) {
+	if (box->style.display == CSS_DISPLAY_FLEX || box->style.display == CSS_DISPLAY_INLINE_FLEX) {
 		error = layout_flex(tree, box);
 	} else if (box->style.display == CSS_DISPLAY_GRID || box->style.display == CSS_DISPLAY_INLINE_GRID) {
 		error = layout_grid(tree, box);
@@ -445,7 +447,7 @@ block_owns_context(
 		return 1;
 	if (box->style.display == CSS_DISPLAY_TABLE_CELL)
 		return 1;
-	if (box->style.display == CSS_DISPLAY_FLEX)
+	if (box->style.display == CSS_DISPLAY_FLEX || box->style.display == CSS_DISPLAY_INLINE_FLEX)
 		return 1;
 	if (box->style.display == CSS_DISPLAY_GRID || box->style.display == CSS_DISPLAY_INLINE_GRID)
 		return 1;
@@ -455,7 +457,7 @@ block_owns_context(
 		return 1;
 
 	/* A flex or grid item. */
-	if (box->parent->style.display == CSS_DISPLAY_FLEX)
+	if (box->parent->style.display == CSS_DISPLAY_FLEX || box->parent->style.display == CSS_DISPLAY_INLINE_FLEX)
 		return 1;
 	if (box->parent->style.display == CSS_DISPLAY_GRID ||
 	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID)

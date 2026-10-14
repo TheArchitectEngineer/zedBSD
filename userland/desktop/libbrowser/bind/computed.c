@@ -266,7 +266,7 @@ static const struct computed_entry computed_entries[] = {
 /* The names of display, by enum css_display. */
 static const char *const computed_displays[] = {
 	"inline", "block", "inline-block", "list-item", "none", "table", "table-row", "table-cell", "flex", "contents", "grid",
-	"table-row-group", "table-caption", "inline-table", "table-column", "inline-grid"
+	"table-row-group", "table-caption", "inline-table", "table-column", "inline-grid", "inline-flex"
 };
 
 /* The names of position, by enum css_position. */

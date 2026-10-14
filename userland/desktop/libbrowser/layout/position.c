@@ -361,7 +361,7 @@ layout_content_width(
 		return box->grid_content;
 
 	/* A physical horizontal flex main axis is as wide as its items before they flexed. */
-	if (box->style.display == CSS_DISPLAY_FLEX &&
+	if ((box->style.display == CSS_DISPLAY_FLEX || box->style.display == CSS_DISPLAY_INLINE_FLEX) &&
 	    ((box->style.flex_direction == CSS_FLEX_ROW || box->style.flex_direction == CSS_FLEX_ROW_REVERSE) !=
 	    (box->style.writing_mode == CSS_WRITING_VERTICAL_LR))) {
 		width = layout_flex_content_width(box);

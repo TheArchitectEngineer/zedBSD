@@ -415,6 +415,8 @@ box_build_element(
 		atomic = 1;
 	if (parent != NULL && kind == LAYOUT_BLOCK && !replaced && style->display == CSS_DISPLAY_INLINE_GRID)
 		atomic = 1;
+	if (parent != NULL && kind == LAYOUT_BLOCK && !replaced && style->display == CSS_DISPLAY_INLINE_FLEX)
+		atomic = 1;
 
 	/* An absolutely positioned or fixed box is a block out of the flow (the root stays in it). */
 	out_of_flow = 0;
@@ -893,6 +895,7 @@ box_fix_children(
 
 	/* A flex or grid container's children are its items (ws074-p035, ws074-p072). */
 	if (box->kind != LAYOUT_INLINE && (box->style.display == CSS_DISPLAY_FLEX ||
+	    box->style.display == CSS_DISPLAY_INLINE_FLEX ||
 	    box->style.display == CSS_DISPLAY_GRID || box->style.display == CSS_DISPLAY_INLINE_GRID)) {
 		error = box_flex_items(tree, box);
 		return error;
@@ -994,7 +997,8 @@ box_table_fix(
 	}
 
 	/* A flex or grid container's rows and cells are items. */
-	if (display == CSS_DISPLAY_FLEX || display == CSS_DISPLAY_GRID || display == CSS_DISPLAY_INLINE_GRID)
+	if (display == CSS_DISPLAY_FLEX || display == CSS_DISPLAY_INLINE_FLEX ||
+	    display == CSS_DISPLAY_GRID || display == CSS_DISPLAY_INLINE_GRID)
 		return 0;
 
 	/* Another box: its runs of table parts in anonymous tables. */
