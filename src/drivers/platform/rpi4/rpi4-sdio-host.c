@@ -21,7 +21,8 @@
  *   pause of two bus clock cycles.  The capabilities register's base clock
  *   is not trusted either; the firmware's clock rate is.
  *
- * Commands and data move by PIO, polled with short bounded busy waits.
+ * Commands and data move by PIO, polled with short bounded busy waits
+ * (pause_us: real busy waits, not the scheduler's sleep).
  * Only the card's interrupt uses the interrupt line: its handler disarms
  * it, which stops the level the controller raises, and wakes the thread
  * that serves the card, which rearms it afterwards.
@@ -146,9 +147,8 @@
 #define WRITE_PAUSE_MAX_HZ	400000U
 #define WRITE_PAUSE_STOPPED_US	10U
 
-/* How long the host polls between two looks at a register. */
+/* How long the host pauses between two looks at a register (a real busy wait, see pause_us). */
 #define POLL_US			5U
-#define POLL_MAX_US		10U
 
 /* How long a reset, a stable clock, a command and one block of data may take. */
 #define RESET_TIMEOUT_US	100000U
@@ -168,6 +168,7 @@ static int wait_present_clear(struct drv_rpi4_sdio_host *host, uint32_t bits, un
 static void write_enables_locked(struct drv_rpi4_sdio_host *host);
 static uint32_t read_register(struct drv_rpi4_sdio_host *host, unsigned offset);
 static void write_register(struct drv_rpi4_sdio_host *host, unsigned offset, uint32_t value);
+static void pause_us(unsigned us);
 
 /*
  * Prepares the controller for an SDIO card.
@@ -636,7 +637,7 @@ reset_lines_locked(
 			return 0;
 
 		/* Lets the reset run a little longer. */
-		kern_usleep_range(POLL_US, POLL_MAX_US);
+		pause_us(POLL_US);
 	}
 
 	/* Reports a controller that stayed in reset. */
@@ -744,7 +745,7 @@ program_clock_locked(
 		}
 
 		/* Lets the clock settle a little longer. */
-		kern_usleep_range(POLL_US, POLL_MAX_US);
+		pause_us(POLL_US);
 	}
 
 	/* Gives up on a clock that never settled. */
@@ -1034,7 +1035,7 @@ wait_status(
 		}
 
 		/* Lets the bus move a little further. */
-		kern_usleep_range(POLL_US, POLL_MAX_US);
+		pause_us(POLL_US);
 	}
 
 	/* Reports an event that never came. */
@@ -1062,7 +1063,7 @@ wait_present_clear(
 			return 0;
 
 		/* Lets the previous command finish. */
-		kern_usleep_range(POLL_US, POLL_MAX_US);
+		pause_us(POLL_US);
 	}
 
 	/* Reports lines that stayed busy. */
@@ -1122,7 +1123,7 @@ write_register(
 	unsigned offset,
 	uint32_t value)
 {
-	unsigned pause_us;
+	unsigned pause;
 
 	/* Writes through the kernel's device accessor. */
 	kern_mmio_write32(host->registers + offset, value);
@@ -1132,8 +1133,47 @@ write_register(
 		return;
 
 	/* Waits two cycles of the bus clock, rounded up to whole microseconds. */
-	pause_us = WRITE_PAUSE_STOPPED_US;
+	pause = WRITE_PAUSE_STOPPED_US;
 	if (host->card_clock_hz != 0)
-		pause_us = (WRITE_PAUSE_CYCLES * 1000000U + host->card_clock_hz - 1U) / host->card_clock_hz;
-	kern_usleep_range(pause_us, pause_us + 1U);
+		pause = (WRITE_PAUSE_CYCLES * 1000000U + host->card_clock_hz - 1U) / host->card_clock_hz;
+	pause_us(pause);
+}
+
+/*
+ * Waits at least us microseconds by watching the monotonic counter, without
+ * giving the CPU up.
+ *
+ * kern_usleep_range() yields until the next scheduler tick, so each of its
+ * pauses lasts a millisecond or more; a poll that pauses that long per look
+ * moved the Wi-Fi firmware download about one 64-byte block a millisecond
+ * (BUG-311: about 20 seconds, and the interface stayed busy meanwhile),
+ * and stretched every timeout counted in pauses.  Without a counter it
+ * falls back to that sleep.
+ */
+static void
+pause_us(
+	unsigned us)
+{
+	uint64_t start;
+	uint64_t now;
+	uint64_t frequency;
+	uint64_t ticks;
+	bool counter;
+
+	/* The counter, and the counts the pause takes. */
+	counter = kern_rtc_read_counter(&start, &frequency);
+	if (!counter || frequency == 0) {
+		kern_usleep_range(us, us + 1U);
+		return;
+	}
+	ticks = ((uint64_t)us * frequency + 999999U) / 1000000U;
+
+	/* Watches the counter until the counts have passed. */
+	for (;;) {
+		counter = kern_rtc_read_counter(&now, &frequency);
+		if (!counter)
+			break;
+		if (now - start >= ticks)
+			break;
+	}
 }

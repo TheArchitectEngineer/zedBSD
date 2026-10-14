@@ -1830,6 +1830,7 @@ session_broadcom_attempt(
 	int fast)
 {
 	const char *reason;
+	const char *again;
 	uint16_t manufacturer;
 	uint8_t *file;
 	size_t length;
@@ -1853,19 +1854,30 @@ session_broadcom_attempt(
 	session_reset_settle(session);
 
 	/*
-	 * Who made the controller.  A controller on a UART whose answer did not
-	 * come is asked once more after a pause (BUG-311: on the Pi 4 the ROM
-	 * answered the reset and not the question after it).
+	 * Who made the controller.  On a UART whose answer did not come, the
+	 * ROM is reset once more and asked again (BUG-311: on the Pi 4 the ROM
+	 * answered the reset and not the question after it); whether the second
+	 * reset is answered tells a controller that stopped listening after its
+	 * first answer from one that does not take this question, and the state
+	 * says which.
 	 */
 	error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
+	again = "";
 	if (error == ETIMEDOUT) {
 		session_reset_settle(session);
-		error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
+		error = session_command(session, SESSION_RESET, NULL, 0U, session->timing.command_ms);
+		again = " (a second reset was answered)";
+		if (error != 0)
+			again = " (a second reset was not answered either)";
+		if (error == 0) {
+			session_reset_settle(session);
+			error = session_command(session, SESSION_READ_LOCAL_VERSION, NULL, 0U, session->timing.command_ms);
+		}
 	}
 	if (error == ENODEV)
 		return error;
 	if (error != 0) {
-		session_set(session, BTD_STATE_ERROR, "local-version %s", strerror(error));
+		session_set(session, BTD_STATE_ERROR, "local-version %s%s", strerror(error), again);
 		return error;
 	}
 	if (session->returned_length < SESSION_VERSION_LENGTH) {
