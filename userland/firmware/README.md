@@ -14,8 +14,8 @@ registry supplies the same catalog to the menu, configuration saving and image
 packaging; selection follows the attached device rather than the CPU. Selecting
 a firmware package installs its data without enabling a hardware driver.
 
-The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, `brcmbt/`, and
-`bcm43455/`; future
+The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, `brcmbt/`,
+`bcm43455/`, and `nvidia-gsp/`; future
 RTL8822C support owns a separate `rtl8822c/` entry. RTL8822B uses its frozen GitHub
 acquisition mirror. AX211 uses the official `linux-firmware` tag `20260410`
 dereferenced commit and installs the exact `-89.ucode`, PNVM, complete Intel
@@ -63,6 +63,19 @@ package installs the plain `LICENCE.cypress` and `GPL-2` of the official
 linux-firmware commit above together with the full `debian/copyright` and
 the manifest. Only the Raspberry Pi 4 image configuration selects it.
 Its focused check is `plan/ws206/tests/bcm43455-firmware-package-test.sh`.
+`nvidia-gsp/` (package `nvidia-gsp-firmware`) uses the same official
+linux-firmware commit and installs NVIDIA's GSP-RM firmware 570.144 for
+Turing, which the nvrtx driver boots (plan/ws037/nvrtx-design.md section 9):
+`nvidia/tu102/gsp/gsp-570.144.bin`, `bootloader-570.144.bin`,
+`booter_load-570.144.bin`, `booter_unload-570.144.bin`, and
+`nvidia/tu102/acr/bl.bin`, together with the complete `LICENCE.nvidia`,
+WHENCE, and manifest.  WHENCE links the tu104 and tu106 names to tu102; the
+files are installed once below tu102 and the driver reads that directory for
+every TU10x chip.  `LICENCE.nvidia` permits redistribution of the unmodified
+binaries solely for use on an operating system under an OSI-approved open
+source license, with a copy of the license, and forbids reverse engineering
+and translation; nvrtx reads only the container headers needed to place the
+images.
 Every entry is default-off, and ordinary builds perform no firmware fetch.
 
 Every file a package fetches is also kept, byte for byte and with its license
