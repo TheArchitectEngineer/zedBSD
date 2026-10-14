@@ -84,7 +84,7 @@
 static int scanout_read_armed(struct nvrtx_gpu *gpu);
 static int scanout_surfaces(struct nvrtx_gpu *gpu);
 static int scanout_paint(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface, int reversed);
-static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push);
+static int scanout_channel(struct nvrtx_gpu *gpu, uint32_t class_number, uint32_t instance, struct nvrtx_buffer *buffer, struct nvrtx_push *push, int *made);
 static int scanout_bind(struct nvrtx_gpu *gpu, uint32_t chid, uint32_t handle, uint64_t start, uint64_t limit);
 static int scanout_kick(struct nvrtx_gpu *gpu, struct nvrtx_push *push, uint32_t user);
 static int scanout_notifier_reset(struct nvrtx_gpu *gpu, uint32_t offset);
@@ -136,21 +136,19 @@ nvrtx_scanout_start(
 		return error;
 
 	/* Makes the core channel, then gives it the head's state and the windows' owners. */
-	error = scanout_channel(gpu, NVRTX_DISP_CLASS_CORE, 0U, &display->core_buffer, &display->core_push);
+	error = scanout_channel(gpu, NVRTX_DISP_CLASS_CORE, 0U, &display->core_buffer, &display->core_push, &display->core_made);
 	if (error != 0)
 		return error;
 
-	display->core_made = 1;
 	error = scanout_take_head(gpu);
 	if (error != 0)
 		return error;
 
 	/* Makes the head's window channel and shows the first surface on it. */
-	error = scanout_channel(gpu, NVRTX_DISP_CLASS_WINDOW, display->window, &display->window_buffer, &display->window_push);
+	error = scanout_channel(gpu, NVRTX_DISP_CLASS_WINDOW, display->window, &display->window_buffer, &display->window_push, &display->window_made);
 	if (error != 0)
 		return error;
 
-	display->window_made = 1;
 	error = scanout_show(gpu);
 	if (error != 0)
 		return error;
@@ -381,6 +379,9 @@ scanout_paint(
 /*
  * Makes one display channel: its push buffer, the buffer's registration,
  * the channel object, and its two context DMA objects.
+ *
+ * *made is set as soon as the channel object exists, so the stop frees it
+ * even when a later step fails.
  */
 static int
 scanout_channel(
@@ -388,7 +389,8 @@ scanout_channel(
 	uint32_t class_number,
 	uint32_t instance,
 	struct nvrtx_buffer *buffer,
-	struct nvrtx_push *push)
+	struct nvrtx_push *push,
+	int *made)
 {
 	uint8_t registration[NVRTX_DISP_PUSHBUFFER_BYTES];
 	uint8_t params[NVRTX_DISP_CHANNEL_BYTES];
@@ -424,6 +426,8 @@ scanout_channel(
 	error = nvrtx_rm_allocate(gpu, SCANOUT_HANDLE_ROOT, handle, class_number, params, sizeof(params));
 	if (error != 0)
 		return error;
+
+	*made = 1;
 
 	/* The core is channel 0 of the hash table; window w is channel 1 + w. */
 	chid = NVRTX_DISP_CHID_CORE;
