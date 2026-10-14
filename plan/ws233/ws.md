@@ -30,3 +30,5 @@ repo の作成と push は Q1 が、監査の結果をユーザーに示して�
 - firmware の directory ごとに license の file を置く。
 - make で firmware を初めて取る時に license を表示して yes/no で同意を聞く。CI は `yes | make`。
 - 初回の表示の順（2026-10-14 ユーザー「はい、何のファームウェアか、著作権表示、ライセンス文、yes/noですね。」）: 何の firmware か → 著作権表示 → license の全文 → yes/no。
+- 判断（2026-10-14 ユーザー、クリック）: Cypress の brcmbt・bcm43455 は「入れる」。RPi4 の DTB は「dts を repo に置く」。VBT・OpRegion の raw（vendor/intel-vbt、plan/ws031/display-ref/）は「VBTはテスト用だったので、もう不要と思います。削除できませんか？」→ P1 が参照を調べ、Q1 が git rm する。
+- P1 の 36966480d（取り方の切り替え・同意の表示・RPi4 の firmware の取り方・CI）を main に merge（placeholder は空で今の取り方のまま）。
