@@ -31,3 +31,9 @@
 | UEFI・CSM | （未記入） | 素の起動（A）で GOP が出るか |
 | QEMU・OVMF の版 | （未記入） | B のとき |
 | reset の手段 | （未記入） | Turing は FLR が無いことが多い（**p001 で確かめる**）。bus reset・`reset_method` |
+
+## 2026-10-14 夜 Q1: 方式 B の host が用意できた
+
+- `ssh awe@10.0.10.3`（Debian 13、kernel 6.12.111、鍵の login、sudo は password 無し）。ユーザー「RTX搭載ホストは awe@10.0.10.3 です。」。同じ 13400F の desktop に Debian を入れた物（以前の 10.0.30.5 の zedBSD は無い）。
+- `plan/tools/hwrtx/prepare.sh awe@10.0.10.3` → reboot → `--check` が全部 ok: intel_iommu=on、TU106 の 4 function（01:00.0 VGA 10de:1f02、.1 audio 10de:10f9、.2 USB 10de:1ada、.3 UCSI 10de:1adb）が 1 つの IOMMU group で全部 vfio-pci、nouveau 無し、KVM、OVMF、QEMU 10.0.13。
+- network: onboard の RTL8111（04:00.0）。RTL8127（03:00.0）も見える（WS235）。memory 31 GiB、disk 409 GiB 空き。host の画面は無い（ssh だけ）。
