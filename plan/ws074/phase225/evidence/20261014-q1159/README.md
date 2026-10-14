@@ -1,0 +1,9 @@
+# q1159-i01 — bounded implicit auto vertical-rl Grid tracks
+
+The bounded 2×2 implicit auto-track path now accepts vertical-rl/LTR as well as vertical-lr/LTR. It retains physical intrinsic content plus nonnegative pixel margin, border and padding contributions, shares remaining room between the two rows and columns, and places row 1 from the right physical edge. A vertical-rl text child receives its resolved column content height; its line bands and sideways glyph paint use the q1157 right-start geometry. Other Grid forms retain the established path.
+
+The independent [border](border-auto-grid.html) and [padding](padding-auto-grid.html) 2×2 pages each compare four item rectangles against Chromium 153. [Summary](summary.json) records exact 4/4 coordinate-and-size matches for each. Fixed Interop 2025 [vertical-rl stretch009](wpt-009.json)–[016](wpt-016.json) changed whole FAIL→PASS, covering no frame, margins, borders and padding with both vertical and horizontal children. Previously passing vertical-rl001–008, vertical-lr001–016 and two old vertical/horizontal Grid cases remained **26/26 whole PASS**. Inputs: WPT `2d66b9b7998bb58c336138c178323ddee857b586`, fixed manifest, localhost HTTP, fixed fonts, 5 s settle, 20 s process bound.
+
+[Warning-free build](build.log), host CSS rule model 51/51, JS 14/14 and Grid inline-axis 48/48 PASS. [Acid callback report](acid-report.json): Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 different pixels, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1159-i01 partial scope cleared. p225 whole still needs other Grid forms and full conformance. p189/p173 all-focus100% remain unmet. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.

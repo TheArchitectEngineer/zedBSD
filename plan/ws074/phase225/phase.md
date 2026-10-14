@@ -2,6 +2,14 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+## q1159-i01 有限部分範囲（2026-10-14 12:17 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:47 JSTまで）に適用。q1150–q1153の2×2 implicit auto vertical-lr/LTR・definite content-box・gap0・単一ASCII文字子・start/stretch・非負px margin/border/padding経路をvertical-rlへ一般化。親物理行を右→左、子単純縦文字を解決済み列高/右端行で配置。固定vertical-rl stretch009–016 whole PASS、独立auto frameページChromium比較、旧rl001–008/lr001–016/縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他Grid/WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1159-i01 結果（2026-10-14 12:20 JST）
+
+Event ws074-p225-q1159-partial-clear-20261014: [証拠](evidence/20261014-q1159/README.md)。2×2縦Grid implicit auto trackをvertical-rl/LTRへ拡張し、物理行を右→左へ配置、子縦右文字の確定列content高とframe寄与を維持。独立border/padding各4矩形がChromium 153と一致。固定縦右stretch009–016は8/8 whole FAIL→PASS、旧縦右8+縦左16+縦横2 PASS、warning0 build、host CSS51/JS14/Grid48、Acid3差0/Acid2差1865。q1159部分cleared、p225 wholeは他Grid form等でuncleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 ## q1158-i01 有限部分範囲（2026-10-14 12:14 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:44 JSTまで）に適用。q1142のvertical-lr/LTR inline-grid・明示固定px track・gap0・span1・in-flow非replaced/auto寸法・start/stretch経路をvertical-rlへ一般化。親論理行を物理右→左に配置し、子vertical-rl単純文字へ確定列高を渡す。固定vertical-rl stretch001–008 whole PASS、独立2×2固定Grid矩形Chromium比較、旧vertical-lr001–016/縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。暗黙auto tracks/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

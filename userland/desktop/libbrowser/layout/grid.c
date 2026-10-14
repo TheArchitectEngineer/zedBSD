@@ -464,7 +464,8 @@ grid_vertical_auto(
 	/* Leaves other Grid forms to the existing layout path. */
 	*handled = 0;
 	if (box->style.display != CSS_DISPLAY_INLINE_GRID ||
-	    box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	    (box->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+	    box->style.writing_mode != CSS_WRITING_VERTICAL_RL) ||
 	    box->style.direction != CSS_DIRECTION_LTR ||
 	    box->style.width.unit != CSS_UNIT_PX ||
 	    box->style.height.unit != CSS_UNIT_PX ||
@@ -482,7 +483,7 @@ grid_vertical_auto(
 	/* Every item must use the bounded text and box model. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow || child->replaced ||
-		    (child->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+		    (child->style.writing_mode != box->style.writing_mode &&
 		    child->style.writing_mode != CSS_WRITING_HORIZONTAL_TB) ||
 		    child->style.width.unit != CSS_UNIT_AUTO ||
 		    child->style.height.unit != CSS_UNIT_AUTO)
@@ -492,7 +493,7 @@ grid_vertical_auto(
 		text_box = child->first_child;
 		if (text_box == NULL || text_box->kind != LAYOUT_TEXT ||
 		    text_box->next != NULL ||
-		    (child->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    (child->style.writing_mode == box->style.writing_mode &&
 		    child->style.text_orientation == CSS_TEXT_ORIENTATION_UPRIGHT))
 			return 0;
 
@@ -597,7 +598,7 @@ grid_vertical_auto(
 		saved_height = child->style.height;
 
 		/* A definite inline room gives a vertical text run its physical line width. */
-		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
+		if (child->style.writing_mode == box->style.writing_mode) {
 			child->style.height.unit = CSS_UNIT_PX;
 			content_height = layout_from_px(box->style.height.value) -
 			    child->margin[CSS_TOP] - child->margin[CSS_BOTTOM] -
@@ -616,7 +617,7 @@ grid_vertical_auto(
 			return error;
 		}
 		height = child->height;
-		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
+		if (child->style.writing_mode == box->style.writing_mode) {
 			height = 0;
 
 			/* The last glyph of each line gives its natural inline advance. */
@@ -673,7 +674,7 @@ grid_vertical_auto(
 		if (justify == CSS_ALIGN_NORMAL)
 			justify = CSS_ALIGN_STRETCH;
 		saved_height = child->style.height;
-		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
+		if (child->style.writing_mode == box->style.writing_mode) {
 			child->style.height.unit = CSS_UNIT_PX;
 			content_height = area_height - child->margin[CSS_TOP] -
 			    child->margin[CSS_BOTTOM] - child->border[CSS_TOP] -
@@ -692,9 +693,17 @@ grid_vertical_auto(
 			grid_release(&grid);
 			return error;
 		}
-		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR && justify == CSS_ALIGN_START)
+		if (child->style.writing_mode == box->style.writing_mode && justify == CSS_ALIGN_START)
 			child->height = natural_height[index];
-		child->x = (placed->row == 0 ? 0 : rows[0]) + child->margin[CSS_LEFT];
+		if (box->style.writing_mode == CSS_WRITING_VERTICAL_RL) {
+			/* The row's block-start edge is on the physical right. */
+			child->x = box->width - (placed->row == 0 ? 0 : rows[0]) -
+			    child->margin[CSS_RIGHT] - child->border[CSS_LEFT] -
+			    child->padding[CSS_LEFT] - child->width -
+			    child->padding[CSS_RIGHT] - child->border[CSS_RIGHT];
+		} else {
+			child->x = (placed->row == 0 ? 0 : rows[0]) + child->margin[CSS_LEFT];
+		}
 		child->y = (placed->column == 0 ? 0 : columns[0]) + child->margin[CSS_TOP];
 	}
 

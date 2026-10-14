@@ -125,23 +125,35 @@ layout_inline(
 	layout_unit room;
 	layout_unit advance;
 	size_t index;
+	int rl_non_grid;
+	int rl_fixed_grid;
+	int rl_auto_grid;
 	int vertical;
 	int error;
 
 	/* Bounded text-only vertical blocks map logical lines to physical axes. */
-	vertical = (box->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
-	    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
-	    ((box->style.width.unit == CSS_UNIT_PX &&
+	rl_non_grid = box->style.width.unit == CSS_UNIT_PX &&
 	    box->style.height.unit == CSS_UNIT_PX &&
 	    box->style.box_sizing == CSS_BOX_SIZING_CONTENT &&
 	    (box->parent == NULL ||
 	    (box->parent->style.display != CSS_DISPLAY_GRID &&
-	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID))) ||
-	    (box->parent != NULL &&
+	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID));
+	rl_fixed_grid = box->parent != NULL &&
 	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID &&
 	    box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
 	    box->parent->style.column_count != 0 &&
-	    box->parent->style.row_count != 0)))) &&
+	    box->parent->style.row_count != 0;
+	rl_auto_grid = box->parent != NULL &&
+	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID &&
+	    box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+	    box->parent->style.column_count == 0 &&
+	    box->parent->style.row_count == 0 &&
+	    box->parent->style.width.unit == CSS_UNIT_PX &&
+	    box->parent->style.height.unit == CSS_UNIT_PX &&
+	    box->style.height.unit == CSS_UNIT_PX;
+	vertical = (box->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
+	    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+	    (rl_non_grid || rl_fixed_grid || rl_auto_grid))) &&
 	    box->style.direction == CSS_DIRECTION_LTR &&
 	    (box->style.text_align == CSS_TEXT_ALIGN_START || box->style.text_align == CSS_TEXT_ALIGN_LEFT) &&
 	    inline_vertical_simple(box, 0, box->style.writing_mode);

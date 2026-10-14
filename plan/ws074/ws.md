@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1158](queue.md) finished / p225 fixed vertical-rl Grid tracks。2026-10-14 12:16 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1159](queue.md) finished / p225 vertical-rl implicit auto Grid tracks。2026-10-14 12:20 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1154の142 PASS/360 FAIL、q1151比6 whole/6 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p225-q1159-partial-clear-20261014: [p225](phase225/phase.md) q1159-i01で2×2縦右implicit auto Gridの物理行右→左と子縦文字の確定列高・frame寄与を実装。固定vertical-rl stretch009–016が8/8 whole FAIL→PASS、独立border/padding各4矩形はChromium 153一致。[証拠](phase225/evidence/20261014-q1159/README.md)。旧rl8/lr16/縦横2、host・warning0 build・Acid3差0/Acid2差1865維持。p225/p189/p173 whole未達、次は固定Grid502再測定。共有投影/GitHub publication保留。
 
 Event ws074-p225-q1158-partial-clear-20261014: [p225](phase225/phase.md) q1158-i01で明示固定px縦右Gridの行を物理右→左へ配置し、子縦右文字の固定列roomを解決。固定vertical-rl stretch001–008が8/8 whole FAIL→PASS、独立2×2空/文字ページはChromium 153と全矩形一致。[証拠](phase225/evidence/20261014-q1158/README.md)。旧縦左16+縦横2、host・warning0 build・Acid3差0/Acid2差1865維持。p225/p189/p173 whole未達、次は縦右暗黙auto track。共有投影/GitHub publication保留。
 
