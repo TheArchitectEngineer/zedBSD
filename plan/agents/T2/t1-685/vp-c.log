@@ -1,0 +1,52 @@
+VIDEOPLAYER PRESENT own=1 gpu_pictures=1 hold=6
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video: pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)
+VIDEOPLAYER Vulkan Video vkCreateVideoSessionKHR failed (-3)
+VIDEOPLAYER Vulkan Video: a context of pictures the GPU holds failed (1004); pictures are read back
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 12 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+VIDEOPLAYER Vulkan Video vkCreateVideoSessionKHR failed (-3)
+CODEC load error=0 major=63 reason=
+MEDIA backend=libavcodec codec=h264
+VIDEOPLAYER OPEN path=/home/kei/ws236/high-1080p60-10s.mp4 width=1920 height=1080 duration_ms=10000 video=h264/libavcodec audio=none/none container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/home/kei/ws236/high-1080p60-10s.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=88 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=23 picture=0 gpu=0
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=1164 heard=0 written=0 consumed=0 pictures=2 late=2 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=14 picture_us=40500 rest_us=24428 gpu=0 acquire_us=2071 submit_us=9071 wait_us=1428
+VIDEOPLAYER CLOCK time_ms=2210 heard=0 written=0 consumed=0 pictures=2 late=15 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=13 picture_us=57769 rest_us=13692 gpu=0 acquire_us=923 submit_us=5307 wait_us=846
+VIDEOPLAYER CLOCK time_ms=3247 heard=0 written=0 consumed=0 pictures=2 late=28 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=13 picture_us=59000 rest_us=12384 gpu=0 acquire_us=692 submit_us=4461 wait_us=1461
+VIDEOPLAYER CLOCK time_ms=4293 heard=0 written=0 consumed=0 pictures=2 late=43 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=47666 rest_us=12666 gpu=0 acquire_us=600 submit_us=4533 wait_us=1133
+VIDEOPLAYER CLOCK time_ms=5305 heard=0 written=0 consumed=0 pictures=2 late=57 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=14 picture_us=50142 rest_us=12214 gpu=0 acquire_us=571 submit_us=5714 wait_us=857
+VIDEOPLAYER CLOCK time_ms=6358 heard=0 written=0 consumed=0 pictures=2 late=71 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=14 picture_us=53000 rest_us=10500 gpu=0 acquire_us=785 submit_us=4642 wait_us=714
+VIDEOPLAYER CLOCK time_ms=7411 heard=0 written=0 consumed=0 pictures=2 late=87 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=16 picture_us=46062 rest_us=11187 gpu=0 acquire_us=687 submit_us=4875 wait_us=1062
+VIDEOPLAYER FRAMES shown=100 time_ms=3250 late=96
+VIDEOPLAYER CLOCK time_ms=8437 heard=0 written=0 consumed=0 pictures=2 late=102 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=48333 rest_us=12333 gpu=0 acquire_us=600 submit_us=5000 wait_us=1000
+VIDEOPLAYER CLOCK time_ms=9471 heard=0 written=0 consumed=0 pictures=2 late=117 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=48666 rest_us=12533 gpu=0 acquire_us=266 submit_us=4666 wait_us=933
+VIDEOPLAYER CLOCK time_ms=10499 heard=0 written=0 consumed=0 pictures=2 late=132 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=47333 rest_us=13600 gpu=0 acquire_us=466 submit_us=5200 wait_us=1066
+VIDEOPLAYER CLOCK time_ms=11520 heard=0 written=0 consumed=0 pictures=2 late=146 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=14 picture_us=49928 rest_us=15428 gpu=0 acquire_us=1000 submit_us=5571 wait_us=2571
+VIDEOPLAYER CLOCK time_ms=12563 heard=0 written=0 consumed=0 pictures=2 late=160 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=14 picture_us=52214 rest_us=12857 gpu=0 acquire_us=1214 submit_us=4928 wait_us=857
+VIDEOPLAYER CLOCK time_ms=13627 heard=0 written=0 consumed=0 pictures=2 late=175 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=48933 rest_us=12266 gpu=0 acquire_us=733 submit_us=5066 wait_us=1333
+VIDEOPLAYER CLOCK time_ms=14672 heard=0 written=0 consumed=0 pictures=2 late=190 eof=0 out=0 state=1
+VIDEOPLAYER DRAW frames=15 picture_us=47600 rest_us=12733 gpu=0 acquire_us=533 submit_us=5333 wait_us=666
+VIDEOPLAYER FRAMES shown=200 time_ms=6583 late=196
+VIDEOPLAYER DONE reason=timeout shown=200
+VIDEOPLAYER FRAMES shown=200 time_ms=15116 late=196
+rc=0
