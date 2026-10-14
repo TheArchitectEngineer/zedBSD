@@ -75,10 +75,13 @@ endif
 endif
 ifneq ($(filter rtl8822b-firmware,$(ZEDBSD_USER_PROGRAMS)),)
 firmware-licenses: rtl8822b-firmware-license
+firmware-licenses-pending: rtl8822b-firmware-license-pending
 endif
-.PHONY: rtl8822b-firmware-license
+.PHONY: rtl8822b-firmware-license rtl8822b-firmware-license-pending
 rtl8822b-firmware-license:
 	@if test ! -d '$(RTL8822B_FIRMWARE_CACHE_DIR)'; then $(RTL8822B_FIRMWARE_LICENSE_COMMAND); fi
+rtl8822b-firmware-license-pending:
+	@if test ! -d '$(RTL8822B_FIRMWARE_CACHE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(RTL8822B_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,rtl8822b-firmware,Realtek RTL8822B firmware,i386 pc98 amd64,n,package,,y,firmware,firmware/rtl8822b,,,data,$(RTL8822B_FIRMWARE_DATA),,))
 override USERLAND_rtl8822b-firmware_DATA := $(RTL8822B_FIRMWARE_DATA)

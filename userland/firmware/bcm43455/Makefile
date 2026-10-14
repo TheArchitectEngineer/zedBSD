@@ -97,10 +97,13 @@ endif
 endif
 ifneq ($(filter bcm43455-firmware,$(ZEDBSD_USER_PROGRAMS)),)
 firmware-licenses: bcm43455-firmware-license
+firmware-licenses-pending: bcm43455-firmware-license-pending
 endif
-.PHONY: bcm43455-firmware-license
+.PHONY: bcm43455-firmware-license bcm43455-firmware-license-pending
 bcm43455-firmware-license:
 	@if test ! -d '$(BCM43455_FIRMWARE_CACHE_DIR)'; then $(BCM43455_FIRMWARE_LICENSE_COMMAND); fi
+bcm43455-firmware-license-pending:
+	@if test ! -d '$(BCM43455_FIRMWARE_CACHE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(BCM43455_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,bcm43455-firmware,Broadcom BCM43455 SDIO WiFi firmware,*,n,package,,y,firmware,firmware/bcm43455,,,data,$(BCM43455_FIRMWARE_DATA),,))
 override USERLAND_bcm43455-firmware_DATA := $(BCM43455_FIRMWARE_DATA)

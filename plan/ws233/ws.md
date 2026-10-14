@@ -19,6 +19,7 @@ Source: 2026-10-14 ユーザー「リポジトリ awemorris/zedBSD-firmware を�
 | ID | 内容 | 状態 |
 | --- | --- | --- |
 | [ws233-p001](phase001/phase.md) | 一覧と license の監査、repo の中身の準備（local）、build の取り方の変更、初回の license の同意（yes/no） | in-progress（P1 の実装と host の確かめは済み。Q1 の push・placeholder・submodule の除去と T1 の image の試験が残り） |
+| [ws233-p002](phase002/phase.md) | menuconfig の Build boot image で firmware の license を TUI（scroll、Accept/Decline）で聞く | in-progress（P1 の実装と host の確かめは済み。端末での目視は未実施） |
 
 repo の作成と push は Q1 が、監査の結果をユーザーに示してから行う。
 

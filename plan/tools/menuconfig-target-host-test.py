@@ -446,7 +446,7 @@ def check_build_progress() -> None:
         menu.REPO = tree
         (tree / "Makefile").write_text(
             "disk-image: first second\n\t@true\nfirst:\n\t@true\nsecond:\n\t@true\n"
-            "broken:\n", encoding="utf-8")
+            "broken:\nfirmware-licenses-pending:\n\t@true\n", encoding="utf-8")
         values = {"ZEDBSD_PLATFORM": "amd64"}
         menu.build_boot_image(None, values, tree / "config.mk")
         if not results or results[-1][0] != "Build succeeded.":
@@ -454,12 +454,210 @@ def check_build_progress() -> None:
         counted = [entry for entry in drawn if entry[2] in ("first", "second", "disk-image")]
         if len(counted) != 3 or counted[-1][0] != 3 or counted[-1][1] != 3:
             fail(f"the progress counted {drawn}")
-        (tree / "Makefile").write_text("disk-image:\n\t@echo the step that failed; false\n", encoding="utf-8")
+        (tree / "Makefile").write_text("disk-image:\n\t@echo the step that failed; false\n"
+                                       "firmware-licenses-pending:\n\t@true\n", encoding="utf-8")
         menu.build_boot_image(None, values, tree / "config.mk")
         if not results[-1][0].startswith("Build failed") or "the step that failed" not in results[-1]:
             fail(f"a failed build did not show the log's end: {results[-1]}")
     finally:
         menu.REPO, menu.choose, menu.save, menu.draw_progress, menu.message = real
+
+
+class _TextScreen:
+    """A screen of a given size drawn into an array of characters, with the
+    attributes of each cell and the keys it answers with, for the license
+    agreement (WS233 p002)."""
+
+    def __init__(self, height: int, width: int, keys: list[int]):
+        self.height, self.width = height, width
+        self.keys = list(keys)
+        self.cells = [[" "] * width for _ in range(height)]
+        self.attrs = [[0] * width for _ in range(height)]
+        self.frames: list[str] = []
+
+    def getmaxyx(self):
+        return self.height, self.width
+
+    def keypad(self, _flag):
+        return None
+
+    def erase(self):
+        self.cells = [[" "] * self.width for _ in range(self.height)]
+        self.attrs = [[0] * self.width for _ in range(self.height)]
+
+    def addnstr(self, y, x, text, length, attr=0):
+        if not 0 <= y < self.height or not 0 <= x < self.width:
+            raise menu.curses.error("out of the screen")
+        for offset, character in enumerate(text[:length]):
+            if x + offset >= self.width:
+                break
+            self.cells[y][x + offset] = character
+            self.attrs[y][x + offset] = attr
+
+    def refresh(self):
+        self.frames.append(self.text())
+
+    def getch(self):
+        if not self.keys:
+            fail("the license screen asked for more keys than the test gave")
+        return self.keys.pop(0)
+
+    def text(self) -> str:
+        return "\n".join("".join(row).rstrip() for row in self.cells)
+
+    def attr_of(self, needle: str) -> int:
+        for y, row in enumerate(self.cells):
+            line = "".join(row)
+            x = line.find(needle)
+            if x >= 0:
+                return self.attrs[y][x]
+        fail(f"{needle} is not on the screen")
+        return 0
+
+
+def check_firmware_licenses() -> None:
+    """WS233 p002 (2026-10-14 user: the firmware licenses in the build menu,
+    scrolled and looking like a legal document): make lists the licenses the
+    build would ask about without asking, an acceptance is recorded by
+    license-agree.sh in the same line the interactive question writes, a
+    declined license starts no build, the build's make never reads the
+    terminal, and the agreement screen at 80x24, 120x40 and too small."""
+    directory = scratch_directory("licenses")
+    config = REPO / "config" / "ci" / "config-rpi4.mk"
+    roots = {name: directory / "firmware" / name
+             for name in ("rtl8822b", "brcmbt", "bcm43455", "rpi4-boot")}
+    extra = (f"RTL8822B_FIRMWARE_CACHE_ROOT={roots['rtl8822b']}",
+             f"BRCMBT_FIRMWARE_CACHE_ROOT={roots['brcmbt']}",
+             f"BCM43455_FIRMWARE_CACHE_ROOT={roots['bcm43455']}",
+             f"RPI4_BOOT_FIRMWARE_CACHE_ROOT={roots['rpi4-boot']}")
+    pending = menu.firmware_licenses_pending(config, extra)
+    if isinstance(pending, str):
+        fail(f"make firmware-licenses-pending failed: {pending}")
+    names = [entry["package"] for entry in pending]
+    if sorted(names) != ["bcm43455-firmware", "brcmbt-firmware", "rpi4-boot-firmware",
+                         "rtl8822b-firmware"]:
+        fail(f"the pending licenses of the Raspberry Pi 4 are {names}")
+    for entry in pending:
+        data = Path(entry["text"]).read_bytes()
+        if len(data) != int(entry["size"]) or \
+                __import__("hashlib").sha256(data).hexdigest() != entry["sha256"]:
+            fail(f"the license text of {entry['package']} is not the declared one")
+        if not Path(entry["notice"]).is_file():
+            fail(f"the notice of {entry['package']} is missing")
+        # The screen folds paragraphs, but every word of the license stays, in order.
+        text = data.decode("utf-8")
+        if " ".join(menu.license_paragraphs(text)).split() != text.split():
+            fail(f"the screen's license of {entry['package']} is not the license's words")
+
+    # The acceptance the menu records is the line the interactive question writes.
+    entry = next(item for item in pending if item["package"] == "rpi4-boot-firmware")
+    error = menu.accept_license(entry)
+    if error is not None:
+        fail(f"accepting {entry['package']} failed: {error}")
+    asked_root = directory / "asked"
+    asked_root.mkdir()
+    answered = subprocess.run(
+        ["sh", str(menu.license_script()), entry["package"], str(asked_root / "license-accepted"),
+         entry["notice"], entry["name"], entry["size"], entry["sha256"], "",
+         "file://" + entry["text"], "curl", "--fail", "--silent", "--show-error"],
+        cwd=REPO, input="yes\n", text=True, check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if answered.returncode != 0:
+        fail(f"the interactive question did not accept: {answered.stderr}")
+    recorded = Path(entry["record"]).read_text(encoding="utf-8")
+    if recorded != (asked_root / "license-accepted").read_text(encoding="utf-8") or \
+            recorded != f"{entry['sha256']}  {entry['name']}\n":
+        fail(f"the menu's record {recorded!r} differs from the question's")
+    again = menu.firmware_licenses_pending(config, extra)
+    if isinstance(again, str) or "rpi4-boot-firmware" in [item["package"] for item in again] \
+            or len(again) != 3:
+        fail(f"an accepted license is still pending: {again}")
+    # A text that is not the one shown is not recorded.
+    forged = dict(entry, sha256="0" * 64, record=str(directory / "forged-accepted"))
+    if menu.accept_license(forged) is None or Path(forged["record"]).exists():
+        fail("an acceptance of a text never shown was recorded")
+
+    # The agreement at 80x24 and 120x40: Accept stays dim until the end has
+    # been shown; End reaches it and Enter on Accept (after Tab) accepts.
+    entry = next(item for item in again if item["package"] == "brcmbt-firmware")
+    frames: dict[str, str] = {}
+    for height, width in ((24, 80), (40, 120)):
+        screen = _TextScreen(height, width, [menu.curses.KEY_DOWN, ord("a"), 10])
+        if menu.license_screen(screen, entry, 2, 4):
+            fail(f"{height}x{width}: Accept or Enter agreed before the end was shown")
+        first = screen.frames[0]
+        for needle in ("Firmware License Agreement", "brcmbt-firmware", "License 2 of 4",
+                       "1. THE FIRMWARE", "Lines 1-", "[ Accept ]", "[ Decline ]",
+                       "Scroll to the end of the license to enable Accept."):
+            if needle not in first:
+                fail(f"{height}x{width}: the agreement does not show {needle!r}:\n{first}")
+        screen = _TextScreen(height, width, [menu.curses.KEY_END, 9, 10])
+        accepted = menu.license_screen(screen, entry, 2, 4)
+        if not accepted or "(100%)" not in screen.frames[-1] or \
+                "Tab switches, Enter confirms, D declines." not in screen.frames[-1]:
+            fail(f"{height}x{width}: End, Tab and Enter did not accept:\n{screen.frames[-1]}")
+        frames[f"{width}x{height}-top"] = first
+        frames[f"{width}x{height}-end"] = screen.frames[-2]
+        dim = _TextScreen(height, width, [ord("d")])
+        menu.license_screen(dim, entry, 2, 4)
+        if not dim.attr_of("[ Accept ]") & menu.curses.A_DIM:
+            fail(f"{height}x{width}: Accept is not dim before the end")
+        for line in frames[f"{width}x{height}-top"].splitlines():
+            if len(line) > width:
+                fail(f"{height}x{width}: a line runs off the screen: {line}")
+    small = _TextScreen(10, 30, [ord("a"), 10, ord("d")])
+    if menu.license_screen(small, entry) or "too small" not in small.frames[0]:
+        fail(f"a too small terminal did not say so or accepted:\n{small.frames[0]}")
+    frames["30x10"] = small.frames[0]
+    for name, text in frames.items():
+        (directory / f"screen-{name}.txt").write_text(text + "\n", encoding="utf-8")
+
+    # Declining starts no build and says what to do; the build's make reads no terminal.
+    started: list[dict] = []
+    said: list[list[str]] = []
+
+    class _Process:
+        stdout: list[str] = []
+
+        def wait(self):
+            return 0
+
+    def popen(arguments, **options):
+        started.append(dict(options, arguments=arguments))
+        return _Process()
+
+    real = (menu.choose, menu.save, menu.message, menu.license_screen, menu.firmware_licenses_pending,
+            menu.accept_license, menu.draw_progress, menu.subprocess.Popen, menu.subprocess.run)
+    runs: list[dict] = []
+    menu.choose = lambda _screen, _title, _labels, _target, _selected=0: 0
+    menu.save = lambda _path, _values: None
+    menu.message = lambda _screen, _title, lines, _target: said.append(list(lines))
+    menu.draw_progress = lambda *_arguments: None
+    menu.firmware_licenses_pending = lambda _config, _extra=(): [dict(entry), dict(pending[0])]
+    menu.accept_license = lambda _entry: fail("a declined license was recorded")
+    menu.license_screen = lambda _screen, _entry, _number=1, _count=1: False
+    try:
+        menu.build_boot_image(None, {"ZEDBSD_PLATFORM": "rpi4"}, directory / "config.mk")
+        if started or not said or "brcmbt-firmware" not in said[-1][0] or \
+                not any("Firmware menu" in line for line in said[-1]):
+            fail(f"a declined license started the build or said {said}")
+        menu.firmware_licenses_pending = lambda _config, _extra=(): []
+
+        def run(arguments, **options):
+            runs.append(dict(options, arguments=arguments))
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        menu.subprocess.Popen = popen
+        menu.subprocess.run = run
+        menu.build_boot_image(None, {"ZEDBSD_PLATFORM": "rpi4"}, directory / "config.mk")
+    finally:
+        (menu.choose, menu.save, menu.message, menu.license_screen, menu.firmware_licenses_pending,
+         menu.accept_license, menu.draw_progress, menu.subprocess.Popen, menu.subprocess.run) = real
+    if len(started) != 1 or started[0].get("stdin") is not subprocess.DEVNULL:
+        fail(f"the build's make is not run with its input closed: {started}")
+    if not runs or any(item.get("stdin") is not subprocess.DEVNULL for item in runs):
+        fail(f"the build's counting make is not run with its input closed: {runs}")
+    print(f"MAC-T001 firmware licenses: PASS (screens in {directory})")
 
 
 class _FakeScreen:
@@ -486,6 +684,7 @@ def main() -> None:
     check_i386_and_retro()
     check_pc98_platform_drivers()
     check_build_progress()
+    check_firmware_licenses()
 
     template = menu.defaults()
 

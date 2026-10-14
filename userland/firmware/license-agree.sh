@@ -4,6 +4,8 @@
 #
 # usage: license-agree.sh PACKAGE RECORD NOTICE LICENSE-NAME SIZE SHA-256 \
 #            REPOSITORY-URL UPSTREAM-URL FETCH-COMMAND...
+#        ZEDBSD_FIRMWARE_LICENSE_MODE=pending license-agree.sh (the same arguments)
+#        ZEDBSD_FIRMWARE_LICENSE_MODE=accept license-agree.sh PACKAGE RECORD LICENSE-NAME SIZE SHA-256
 #
 # RECORD lists the accepted license texts, one "SHA-256  NAME" line each.
 # When it already names SHA-256 nothing is shown.  Otherwise the license text
@@ -19,23 +21,50 @@
 # Nothing is written to the standard output, so make may run this from
 # $(shell).  The exit status is 0 when the license is accepted.
 #
+# Two modes serve a front end that asks in its own way (tools/menuconfig.py,
+# plan/ws233/phase002/phase.md) and never ask anything:
+#   pending  fetches and checks the license text as above when RECORD does not
+#            name it, and prints one line, PACKAGE NOTICE LICENSE-TEXT RECORD
+#            LICENSE-NAME SIZE SHA-256 separated by tabs; nothing when it does.
+#   accept   records the acceptance of the text pending kept, after checking
+#            it again.  Only this script writes RECORD.
+#
 # One lock beside the cache roots keeps two packages (make -j) from asking at
 # the same time.
 set -eu
 
-if test $# -lt 9; then
+mode=${ZEDBSD_FIRMWARE_LICENSE_MODE:-ask}
+case $mode in
+ask | pending) minimum=9 ;;
+accept) minimum=5 ;;
+*)
+	echo "license-agree: unknown ZEDBSD_FIRMWARE_LICENSE_MODE: $mode" >&2
+	exit 2
+	;;
+esac
+if test $# -lt $minimum; then
 	echo "license-agree: too few arguments" >&2
 	exit 2
 fi
 package=$1
 record=$2
-notice=$3
-name=$4
-size=$5
-hash=$6
-repository=$7
-upstream=$8
-shift 8
+if test "$mode" = accept; then
+	notice=
+	name=$3
+	size=$4
+	hash=$5
+	repository=
+	upstream=
+	shift 5
+else
+	notice=$3
+	name=$4
+	size=$5
+	hash=$6
+	repository=$7
+	upstream=$8
+	shift 8
+fi
 
 accepted() {
 	test -f "$record" && grep -qx "$hash  $name" "$record"
@@ -61,6 +90,17 @@ valid() {
 		test "$(wc -c <"$1" | tr -d '[:space:]')" = "$size" &&
 		test "$(sha256sum "$1" | awk '{print $1}')" = "$hash"
 }
+record_acceptance() {
+	printf '%s  %s\n' "$hash" "$name" >>"$record"
+}
+if test "$mode" = accept; then
+	if ! valid "$text"; then
+		echo "$package: the license text $text that was shown is missing or changed; nothing recorded" >&2
+		exit 1
+	fi
+	record_acceptance
+	exit 0
+fi
 if ! valid "$text"; then
 	part=$text.part
 	if test -z "$repository" || ! "$@" --output "$part" "$repository/$name"; then
@@ -74,6 +114,11 @@ if ! valid "$text"; then
 		exit 1
 	fi
 	mv -- "$part" "$text"
+fi
+
+if test "$mode" = pending; then
+	printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$package" "$notice" "$text" "$record" "$name" "$size" "$hash"
+	exit 0
 fi
 
 {
@@ -102,7 +147,7 @@ printf '%s\n' "$answer" >&2
 
 case $answer in
 yes | y)
-	printf '%s  %s\n' "$hash" "$name" >>"$record"
+	record_acceptance
 	echo "$package: license accepted" >&2
 	;;
 *)

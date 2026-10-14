@@ -9,6 +9,7 @@ import curses
 import os
 import re
 import subprocess
+import textwrap
 from pathlib import Path
 
 
@@ -757,6 +758,289 @@ def user_program_rows() -> list[list[str]]:
     return rows
 
 
+# Firmware licenses (plan/ws233/phase002/phase.md).  The build fetches a
+# firmware package only after its license is accepted once; make records the
+# acceptance and asks on its standard input, which this menu cannot give it,
+# so the menu asks first, in a screen of its own, through the same script.
+LICENSE_SMALLEST = (12, 40)
+LICENSE_STATEMENT = ("By selecting Accept, you confirm that you have read and agree "
+                     "to be bound by the license terms above.")
+LICENSE_STATEMENT_SHORT = "I have read and accept the license terms above."
+
+
+def license_script() -> Path:
+    return REPO / "userland" / "firmware" / "license-agree.sh"
+
+
+def firmware_licenses_pending(config: Path, extra: tuple[str, ...] = ()) -> list[dict[str, str]] | str:
+    """The selected firmware whose license the build would ask about, each with
+    its notice, its checked license text and its record (make
+    firmware-licenses-pending, which asks nothing), or the reason it failed."""
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-s", f"ZEDBSD_CONFIG={config}", *extra,
+         "firmware-licenses-pending"],
+        cwd=REPO, check=False, text=True, errors="replace",
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        return (result.stderr.strip() or f"make exited with {result.returncode}")
+    entries = []
+    keys = ("package", "notice", "text", "record", "name", "size", "sha256")
+    for line in result.stdout.splitlines():
+        fields = line.split("\t")
+        if len(fields) != len(keys):
+            return f"malformed line from make firmware-licenses-pending: {line}"
+        entry = dict(zip(keys, fields))
+        for key in ("notice", "text", "record"):
+            entry[key] = str(REPO / entry[key])
+        entries.append(entry)
+    return entries
+
+
+def accept_license(entry: dict[str, str]) -> str | None:
+    """Records that the license shown was accepted (license-agree.sh, mode
+    accept, which alone writes the record); None, or the reason it failed."""
+    result = subprocess.run(
+        ["sh", str(license_script()), entry["package"], entry["record"], entry["name"],
+         entry["size"], entry["sha256"]],
+        cwd=REPO, check=False, text=True, errors="replace",
+        env=dict(os.environ, ZEDBSD_FIRMWARE_LICENSE_MODE="accept"),
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode != 0:
+        return result.stdout.strip() or f"license-agree.sh exited with {result.returncode}"
+    return None
+
+
+def license_document(entry: dict[str, str]) -> list[tuple[str, str]]:
+    """The agreement's text as (line, kind) pairs, kind heading or body: what
+    the firmware is, its copyright notice, and the whole license as written."""
+    notice = Path(entry["notice"]).read_text(encoding="utf-8", errors="replace").rstrip("\n")
+    description, _blank, copyright_notice = notice.partition("\n\n")
+    license_text = Path(entry["text"]).read_text(encoding="utf-8", errors="replace").rstrip("\n")
+    document: list[tuple[str, str]] = [("1. THE FIRMWARE", "heading"), ("", "body")]
+    document += [(line, "field") for line in description.splitlines()]
+    document += [("", "body"), ("2. COPYRIGHT NOTICE", "heading"), ("", "body")]
+    document += [(line, "body") for line in copyright_notice.splitlines()]
+    document += [("", "body"), (f"3. LICENSE ({entry['name']})", "heading"), ("", "body")]
+    document += [(line, "body") for line in license_paragraphs(license_text)]
+    return document
+
+
+# A list item or heading of a license: a bullet, a run of #, or (1), (a), (iv), 1. or a).
+LICENSE_ITEM = re.compile(r"^(\s*)(?:[*\-•]|#+|\((?:[0-9]{1,2}|[a-z]|[ivx]{1,4})\)|(?:[0-9]{1,2}|[a-z])[.)])\s+")
+
+
+def license_paragraphs(text: str) -> list[str]:
+    """The license with the line breaks of its filled paragraphs taken out,
+    so that a narrow screen folds whole paragraphs instead of leaving a word
+    on a line of its own; every word, blank line, list item and short line
+    (a line that ends well before the text's width, as an address or a
+    copyright line does) stays as written."""
+    lines = [line.expandtabs(8).rstrip() for line in text.splitlines()]
+    longest = max((len(line) for line in lines), default=0)
+    paragraphs: list[str] = []
+    continuation = -1
+    previous = 0
+    for line in lines:
+        indent = len(line) - len(line.lstrip())
+        item = LICENSE_ITEM.match(line)
+        joins = (line and paragraphs and paragraphs[-1] and not item and
+                 indent == continuation and previous >= longest * 6 // 10)
+        previous = len(line)
+        if joins:
+            paragraphs[-1] += " " + line.strip()
+            continue
+        paragraphs.append(line)
+        continuation = len(item.group(0)) if item else indent
+        if not line:
+            continuation = -1
+    return paragraphs
+
+
+def wrap_document(document: list[tuple[str, str]], width: int) -> list[tuple[str, str]]:
+    """The document folded to the width, every line kept as written and only
+    broken where it is longer; a continuation keeps the line's indent."""
+    rows = []
+    for line, kind in document:
+        line = line.expandtabs(8).rstrip()
+        if len(line) <= width:
+            rows.append((line, kind))
+            continue
+        indent = line[:len(line) - len(line.lstrip())]
+        field = re.match(r"^\w[\w ]*:\s+", line) if kind == "field" else LICENSE_ITEM.match(line)
+        if field:
+            indent = " " * len(field.group(0))
+        if len(indent) > width // 2:
+            indent = ""
+        for part in textwrap.wrap(line, width, subsequent_indent=indent,
+                                  break_long_words=True, break_on_hyphens=False) or [""]:
+            rows.append((part, kind))
+    return rows
+
+
+def license_visible(height: int, width: int) -> int:
+    """How many lines of the agreement the screen shows (0: too small): the
+    frame takes the rows between the two heading rows and the five rows of
+    position, statement (two), buttons and hint."""
+    if height < LICENSE_SMALLEST[0] or width < LICENSE_SMALLEST[1]:
+        return 0
+    return height - 9
+
+
+def license_statement(width: int) -> list[str]:
+    """The statement above the buttons, in at most two lines of the width."""
+    lines = textwrap.wrap(LICENSE_STATEMENT, width)
+    return lines if len(lines) <= 2 else textwrap.wrap(LICENSE_STATEMENT_SHORT, width)[:2]
+
+
+def draw_license(screen, entry: dict[str, str], number: int, count: int,
+                 rows: list[tuple[str, str]], offset: int, enabled: bool,
+                 focus: int) -> None:
+    """Draws the agreement, its text from line offset of rows."""
+    screen.erase()
+    height, width = screen.getmaxyx()
+    if license_visible(height, width) == 0:
+        lines = textwrap.wrap(
+            "The terminal is too small to show the license (at least "
+            f"{LICENSE_SMALLEST[1]}x{LICENSE_SMALLEST[0]}). Enlarge it, or press D to decline.",
+            max(1, width))
+        for row, line in enumerate(lines[:height]):
+            addstr(screen, row, 0, line, width)
+        screen.refresh()
+        return
+    title = " Firmware License Agreement "
+    addstr(screen, 0, 0, " " * width, width, curses.A_REVERSE)
+    addstr(screen, 0, max(0, (width - len(title)) // 2), title, width,
+           curses.A_REVERSE | curses.A_BOLD)
+    counter = f"License {number} of {count}"
+    addstr(screen, 1, 2, entry["package"], width - 4 - len(counter) - 2, curses.A_BOLD)
+    addstr(screen, 1, max(2, width - 2 - len(counter)), counter, len(counter))
+    top, bottom = 2, height - 6
+    visible = license_visible(height, width)
+    inner = width - 6
+    addstr(screen, top, 1, "┌" + "─" * (width - 4) + "┐", width - 2)
+    for row in range(visible):
+        y = top + 1 + row
+        addstr(screen, y, 1, "│", 1)
+        addstr(screen, y, width - 2, "│", 1)
+        index = offset + row
+        if index < len(rows):
+            text, kind = rows[index]
+            attr = curses.A_BOLD if kind == "heading" else curses.A_NORMAL
+            addstr(screen, y, 3, text, inner, attr)
+    addstr(screen, bottom, 1, "└" + "─" * (width - 4) + "┘", width - 2)
+    last = min(len(rows), offset + visible)
+    percent = 100 * last // max(1, len(rows))
+    position = f"Lines {offset + 1}-{last} of {len(rows)} ({percent}%)"
+    keys = "↑↓ PgUp PgDn Home End"
+    addstr(screen, bottom + 1, 2, position, width - 4)
+    if len(position) + len(keys) + 6 <= width:
+        addstr(screen, bottom + 1, width - 2 - len(keys), keys, len(keys))
+    for row, line in enumerate(license_statement(width - 4)):
+        addstr(screen, bottom + 2 + row, 2, line, width - 4)
+    accept, decline = "[ Accept ]", "[ Decline ]"
+    start = max(2, (width - len(accept) - len(decline) - 4) // 2)
+    accept_attr = curses.A_DIM if not enabled else curses.A_NORMAL
+    if focus == 0:
+        accept_attr |= curses.A_REVERSE
+    addstr(screen, bottom + 4, start, accept, width - start, accept_attr)
+    addstr(screen, bottom + 4, start + len(accept) + 4, decline,
+           width - start - len(accept) - 4,
+           curses.A_REVERSE if focus == 1 else curses.A_NORMAL)
+    hint = ("Tab switches, Enter confirms, D declines." if enabled else
+            "Scroll to the end of the license to enable Accept.")
+    if len(hint) > width - 4:
+        hint = "Tab, Enter, D: decline." if enabled else "Scroll to the end to accept."
+    addstr(screen, height - 1, 2, hint, width - 4)
+    screen.refresh()
+
+
+def license_screen(screen, entry: dict[str, str], number: int = 1, count: int = 1) -> bool:
+    """Shows one firmware's license agreement and returns whether it was
+    accepted.  Accept can be chosen only once the end of the license has been
+    on the screen, so the whole text was put before the reader; Decline has
+    the focus first, so a stray Enter does not agree."""
+    document = license_document(entry)
+    offset = 0
+    focus = 1
+    enabled = False
+    while True:
+        height, width = screen.getmaxyx()
+        rows = wrap_document(document, max(1, width - 6))
+        visible = license_visible(height, width)
+        if visible > 0:
+            offset = max(0, min(offset, len(rows) - visible))
+            if offset + visible >= len(rows):
+                enabled = True
+        draw_license(screen, entry, number, count, rows, offset, enabled, focus)
+        key = screen.getch()
+        page = max(1, visible - 1)
+        if key in (ord("d"), ord("D"), ord("q"), ord("Q"), 27):
+            return False
+        if visible == 0:
+            continue
+        if key in (curses.KEY_UP, ord("k")):
+            offset -= 1
+        elif key in (curses.KEY_DOWN, ord("j")):
+            offset += 1
+        elif key in (curses.KEY_PPAGE, ord("b")):
+            offset -= page
+        elif key in (curses.KEY_NPAGE, ord(" ")):
+            offset += page
+        elif key in (curses.KEY_HOME, ord("g")):
+            offset = 0
+        elif key in (curses.KEY_END, ord("G")):
+            offset = len(rows)
+        elif key in (curses.KEY_LEFT, curses.KEY_RIGHT, 9, curses.KEY_BTAB):
+            focus = 1 - focus
+        elif key in (ord("a"), ord("A")) and enabled:
+            return True
+        elif key in (10, 13, curses.KEY_ENTER):
+            if focus == 1:
+                return False
+            if enabled:
+                return True
+        offset = max(0, offset)
+
+
+def declined_lines(entry: dict[str, str], unread: list[dict[str, str]]) -> list[str]:
+    """What the build menu says when a license is declined."""
+    package = entry["package"]
+    lines = [f"The license of {package} was declined,", "so the boot image was not built.", ""]
+    if package == "rpi4-boot-firmware":
+        lines += ["A Raspberry Pi 4 cannot boot without its boot firmware,",
+                  "so it cannot be left out of the image."]
+    else:
+        lines += [f"To build without it, turn {package} off in the",
+                  "Firmware menu and choose Build boot image again."]
+    if unread:
+        lines += ["", "Not yet shown: " + ", ".join(item["package"] for item in unread)]
+    return lines
+
+
+def settle_firmware_licenses(screen, values: dict[str, object], output: Path) -> bool:
+    """Shows the license of each selected firmware not yet accepted and
+    records each acceptance; False (after saying why) when the build must not
+    start."""
+    pending = firmware_licenses_pending(output)
+    if isinstance(pending, str):
+        message(screen, "Firmware licenses",
+                ["The firmware licenses could not be read:", ""] + pending.splitlines()[-12:],
+                target_label(values))
+        return False
+    for index, entry in enumerate(pending):
+        if not license_screen(screen, entry, index + 1, len(pending)):
+            message(screen, "Build canceled", declined_lines(entry, pending[index + 1:]),
+                    target_label(values))
+            return False
+        error = accept_license(entry)
+        if error is not None:
+            message(screen, "Firmware licenses",
+                    [f"The acceptance of {entry['package']} could not be recorded:", ""] +
+                    error.splitlines()[-12:], target_label(values))
+            return False
+    return True
+
+
 def build_log(values: dict[str, object]) -> Path:
     """Where Build boot image writes make's output: the build directory of the target."""
     platform = str(values["ZEDBSD_PLATFORM"])
@@ -796,11 +1080,16 @@ def build_boot_image(screen, values: dict[str, object], output: Path) -> None:
     if answer != 0:
         return
     save(output, values)
+    if not settle_firmware_licenses(screen, values, output):
+        return
     jobs = os.environ.get("ZEDBSD_JOBS") or str(os.cpu_count() or 1)
     common = ["make", "--no-print-directory", "--trace", f"ZEDBSD_CONFIG={output}"]
     draw_progress(screen, values, 0, 1, "counting what to build...")
+    # make never reads this menu's terminal: a question it would ask (a firmware
+    # license not settled above) fails at once and says why in the log.
     planned = subprocess.run(common + ["-n", "disk-image"], cwd=REPO, check=False,
-                             text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                             text=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     total = sum(1 for line in planned.stdout.splitlines() if trace_target(line))
     log = build_log(values)
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -810,6 +1099,7 @@ def build_boot_image(screen, values: dict[str, object], output: Path) -> None:
     try:
         with log.open("w", encoding="utf-8") as stream:
             process = subprocess.Popen(common + [f"-j{jobs}", "disk-image"], cwd=REPO,
+                                       stdin=subprocess.DEVNULL,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        text=True, errors="replace")
             assert process.stdout is not None

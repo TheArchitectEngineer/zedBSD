@@ -82,10 +82,13 @@ endif
 endif
 ifneq ($(filter intelax211-firmware,$(ZEDBSD_USER_PROGRAMS)),)
 firmware-licenses: intelax211-firmware-license
+firmware-licenses-pending: intelax211-firmware-license-pending
 endif
-.PHONY: intelax211-firmware-license
+.PHONY: intelax211-firmware-license intelax211-firmware-license-pending
 intelax211-firmware-license:
 	@if test ! -d '$(INTEL_AX211_FIRMWARE_CACHE_DIR)'; then $(INTEL_AX211_FIRMWARE_LICENSE_COMMAND); fi
+intelax211-firmware-license-pending:
+	@if test ! -d '$(INTEL_AX211_FIRMWARE_CACHE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(INTEL_AX211_FIRMWARE_LICENSE_COMMAND); fi
 
 $(eval $(call ZEDBSD_USERLAND_PACKAGE,intelax211-firmware,Intel AX211 firmware,amd64,n,package,,y,firmware,firmware/intelax211,,,data,$(INTEL_AX211_FIRMWARE_DATA),,))
 override USERLAND_intelax211-firmware_DATA := $(INTEL_AX211_FIRMWARE_DATA)
