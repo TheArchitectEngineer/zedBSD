@@ -3,7 +3,7 @@
 # WS037: nvrtx — NVIDIA GeForce RTX 2000 以降（Turing〜Blackwell）の GPU driver
 
 <!-- awesome-plan-current:start -->
-Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete
+Status: incomplete（2026-10-14 ユーザー「事情が変わりました。16日夕方までに利用できるトークン量が、Max 20xプラン1週間分、増えました。つまり、RTX対応ができる可能性があります。やりましょう。」でブロックとベータ4 の指定を解き再開、目標はベータ2（10/16 夕）。既定 off で入れ、間に合わない部分は drop）。以前: planning（要検討・ブロック、2026-10-05）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2

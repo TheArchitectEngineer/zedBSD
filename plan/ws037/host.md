@@ -7,7 +7,7 @@
 
 | 項目 | 値 | 備考 |
 | --- | --- | --- |
-| host の名前・IP | （未記入） | centris から ssh で届くか |
+| host の名前・IP | 10.0.30.5（Core i5-13400F の desktop、zedBSD が動く。13400F は iGPU 無し、画面は RTX 2070 だけ） | 2026-10-14 ユーザー「ssh kei@10.0.30.5 で、Intel Core i5 13400Fのマシンにログインできます。」。この checkout からの公開鍵の認証は拒否（2026-10-14 Q1）、ユーザーに確認中 |
 | ssh の利用者・鍵 | （未記入） | centris の `~/.ssh/config` に alias（例 `nvrtx-host`）を Q1 が作る |
 | OS | （未記入） | Linux（版）か、それ以外 |
 | sudo | （未記入） | password 無しか |
