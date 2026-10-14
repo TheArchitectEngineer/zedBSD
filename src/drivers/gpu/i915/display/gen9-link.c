@@ -11,8 +11,8 @@
  * The order is the Linux kernel 6.8.12's for display 9 (MIT):
  * hsw_prepare_dp_ddi_buffers() and hsw_set_signal_levels() with
  * skl_ddi_set_iboost() for the buffers; intel_ddi_prepare_link_retrain()
- * for the transport; intel_dp_prepare_link_train() (DOWNSPREAD_CTRL,
- * LINK_BW_SET), intel_dp_link_training_clock_recovery() and
+ * for the transport; intel_dp_prepare_link_train() (LINK_BW_SET,
+ * DOWNSPREAD_CTRL), intel_dp_link_training_clock_recovery() and
  * intel_dp_link_training_channel_equalization() for the training, with
  * TPS3 when the sink takes it; intel_ddi_set_idle_link_train() and
  * intel_dp_stop_link_train() after it.  LTTPRs are left in their
@@ -163,17 +163,17 @@ drv_i915_skl_dp_train(
 	(void)drv_i915_skl_read(io, buf_ctl);
 	io->udelay(io->context, I915_SKL_BUF_ACTIVE_US);
 
-	/* The sink's link: no downspread, 8b/10b, then the rate and the lanes. */
-	config[0] = 0U;
-	config[1] = I915_DPCD_SET_ANSI_8B10B;
-	error = drv_i915_skl_dpcd_write(io, dp->port, I915_DPCD_DOWNSPREAD_CTRL, config, 2U);
-	if (error != 0)
-		return EIO;
+	/* The sink's link (intel_dp_prepare_link_train): the rate and the lanes, then no downspread and 8b/10b. */
 	config[0] = drv_i915_skl_dpcd_rate_code(link->port_khz);
 	config[1] = (uint8_t)link->lanes;
 	if (enhanced)
 		config[1] |= I915_DPCD_LANE_COUNT_ENHANCED_FRAME_EN;
 	error = drv_i915_skl_dpcd_write(io, dp->port, I915_DPCD_LINK_BW_SET, config, 2U);
+	if (error != 0)
+		return EIO;
+	config[0] = 0U;
+	config[1] = I915_DPCD_SET_ANSI_8B10B;
+	error = drv_i915_skl_dpcd_write(io, dp->port, I915_DPCD_DOWNSPREAD_CTRL, config, 2U);
 	if (error != 0)
 		return EIO;
 
