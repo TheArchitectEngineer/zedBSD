@@ -12,7 +12,8 @@
 | --- | --- | --- | --- | --- |
 | U1 | SV7・5330 | `build/uat/main-amd64/hdd-image.img`（main 2026-10-15 01:57、sha256 c76538263025b37d…） | USB に書いて起動 | /boot/boot0・/boot/efi が見える（BUG-316）、Windows・macOS で ZEDBSD の区画が見える（WS238）、SV7 は desktop（WS237） |
 | U2 | SV7・5330 | 同上 | browser で yahoo.co.jp | feed の画像の枠が無い、画像の大きさが Chrome と同じ（ws074-p233・p234） |
-| U3 | RTX 機 | Q1 に「RTX の画面の試験をする」と言うだけ | 試験の担当が起動、monitor を見る | 「P8b step N」ごとに画面が出るか（R8b） |
+| U4 | Pi 4（OLED の touch） | T1 が main の kernel と compositor を Pi に入れた後（Q1 が知らせる） | tap・中央の swipe・上端・下端の swipe | 指の下に反応する、中央の 1 本指の swipe で desktop が変わらない（BUG-315） |
+| U3 | RTX 機 | main の USB の image で素で起動（P1 の既定 on・方法 A の merge 待ち、Q1 が知らせる） | 起動して画面を見る | RTX の画面に console・desktop が出るか |
 
 ## 日程
 
