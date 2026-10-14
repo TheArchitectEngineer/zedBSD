@@ -17273,6 +17273,8 @@ ufs_mount_impl(
 			access = "read-only";
 		kern_logf("ufs: %s: the volume cannot be mounted %s: %s (error %d)\n", volume, access, step, error);
 	}
+
+	/* Reports the failure. */
 	if (error != 0)
 		return error;
 
@@ -17594,6 +17596,8 @@ ufs_mount_steps(
 		*step = "loading the quota configuration";
 		error = ufs_quota_load(mountp, root);
 	}
+
+	/* The orphans after the quota, which their retirement credits. */
 	if (error == 0) {
 		*step = "recovering orphaned inodes";
 		error = orphan_recover(mountp);
@@ -21207,12 +21211,15 @@ j3_replay(
 		if (sequence[other] <= j3->applied)
 			return 0;
 
+		/* The commit before it, which its home writes never followed. */
 		kern_logf("ufs: %s: the batched journal's commit %llu (slot %u) before it is applied instead\n",
 			  mountp->m_disk->d_name,
 			  (unsigned long long)sequence[other],
 			  other);
 		error = j3_replay_sealed(mountp, j3, other, sequence[other], desc_sectors[other], desc_sum[other]);
 	}
+
+	/* A commit that could not be applied fails the mount. */
 	if (error != 0) {
 		kern_logf("ufs: %s: the batched journal's commit %llu (slot %u) could not be applied (error %d)\n",
 			  mountp->m_disk->d_name,
