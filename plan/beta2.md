@@ -28,6 +28,7 @@
 
 - 2026-10-13 のユーザーの判断: UAT 待ちは全部 cleared。WS049・WS100・WS127・WS128・WS142・WS182・WS183・WS200・WS120・WS168・WS178・WS187 は completed、WS014・WS044・WS048・WS118・WS139 は close、WS195 は cancel。WS004・WS009・WS046・WS074・WS095・WS155・WS157・WS171・WS172・WS196・WS217 はベータ2 へ。WS197 の HFP はベータ3。WS172 はベータ2 では設計まで。BUG-165・287・288・290・291・293・295・296・298 は resolved（実機 OK）。
 - 2026-10-15 ブラウザ（B1、merge d1fbf4fbd）: ws074-p233 yahoo の feed の画像の枠を解消（`transform: scale`・`transform-origin`）、p234 `aspect-ratio`・`object-fit`・`object-position` を実装（aspect-ratio の reftest 73→138 PASS）。host のみ、QEMU・実機は未実施。
+- 2026-10-15 ユーザーの決定: (1) U1・U3 は main に入れ main で試せるように、U1〜U3 を 1 つの USB の image で試せたら知らせる。(2)「nvrtxを既定でONにしてください。どうでNVIDIA GPUが動かなかったらデスクトップも動かないので…OFFにする必要性がない」→ pci.drivers・config-amd64.mk・config.mk で y（Q1 647d43d37）、runtime の段の既定 on と方法 A（USB から素で起動）は P1。(3)「Pi4のビデオでコードも既定でON。i915のGen9、Gen9.5, Gen9のディスプレイ制御も既定でON」→ arm64.drivers の VCHIQ・VIDEO を y、`I915_GEN9_DISPLAY_DEFAULT` を FULL（Q1）。(4)「止まっている作業は後回しにして、できる作業に移ってください。」
 - 動いている実装: P1 WS217 p003（回転に合わせた入力の座標）、P2 WS145 p005（印刷の Linux・FreeBSD）→ WS161 の build → WS172 p004b の設計、P3 WS156 p006（Linux の D-Bus の通知）→ WS051 p005b → WS081 → WS033 p001。
 - T1 の待ち（QEMU）: T1-583 画面の回転（WS217 p002b）、T1-584 Photos の大きな JPEG（WS157 p015・p017）、T1-585 TCP の損失の時と 60 秒を超える転送（WS220 p005）、T1-586 画面 keyboard の遅れの計測（低い優先度）。5330 が届けば T1-582（BUG-300 の切り分け）。
 - main に入って試験待ちの物: WS216 Notes の描く道具（p004〜p006 cleared、p007 は 5330 のユーザーの確かめ）、WS220 TCP（p003・p004 cleared、p005 は T1-585）、BUG-300 の直し（終わりの判定、50% の原因は 5330 の log 待ち）。
