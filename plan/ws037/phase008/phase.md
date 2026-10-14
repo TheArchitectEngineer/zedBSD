@@ -103,7 +103,7 @@ SPIR-V ──drv_gpu_shader_parse──▶ scalar IR ──drv_gpu_shader_optimi
 | A | encoder ＋ compute の最小の lowering（3.3）＋ host の試験 1〜4 | 実装・host 済み（下の 6 節） |
 | B | loop・除算・atomic・shared・barrier | 実装・host 済み（下の 9 節） |
 | C | 最初の compute の投入（段 P9c、`nvrtx.compute=1`）: GR の channel・compute の object・QMD 2.2・cbuf・code・launch・fence・結果の確かめ | 実装・host 済み、実機（R7c）は T 待ち（下の 8 節） |
-| D | latency の表による並べ替え、operand の再利用 | 依存の印・並べ替え・register の割り当ての方針を実装・host 済み（下の 12 節）。operand の再利用は未 |
+| D | latency の表による並べ替え、operand の再利用 | 依存の印・並べ替え・register の割り当ての方針を実装・host 済み（下の 12 節）。operand の再利用は MIT の出典が無いのでしない |
 | E | graphics の stage（SPH、attribute、texture） | 頂点・fragment の最小（compositor の quad）を実装・host 済み（下の 10 節）。3D の投入（p007）は未 |
 
 ## 6. 段 A の結果（2026-10-15 P3、host と build だけ）
@@ -327,5 +327,12 @@ register の割り当ての方針も変えた（`sm75-compile.c` の `nvrtx_sm75
 
 ### 12.4 段 D の残り
 
-- operand の再利用（reuse の bit 122..125）: 未。
+- operand の再利用（reuse の bit 122..125）: **しない**（2026-10-15 P4 の判断）。NAK（MIT）は欄を encode するだけで、reuse の印を付ける code が無い（`ir.rs` の `add_reuse` に呼び手が無い）。reuse の cache の規則の MIT の出典が無いので、WS141・WS037 の license の方式では入れない。出典が見つかったら再考。
 - TEX の結果をすぐ使う fragment の program（quad.frag など）は TEX の latency がそのまま残る。register の割り当ての前の並べ替え（pre-RA scheduling）が要る。
+
+### 12.5 試験の道具（回帰に使う物）
+
+- `plan/ws037/tests/nvrtx-sm75-desktop-test.sh [--strict]`: desktop の全 shader（`userland/desktop/**/shaders.h`）と `plan/ws037/tests/sm75/*.vert|*.frag` を compile し、SM75 の interpreter（依存の検査つき）と IR の参照の interpreter で比べる。`--strict` は拒否も失敗にする。desktop の shader を変えた時・compiler を変えた時に流す（host だけ、約 1 分）。
+- `plan/ws037/tests/nvrtx-sm75-host-test.sh`: encode の既知の語と欄、compute の module、QMD・draw の push。
+- 共有の部品: `sm75-machine.[ch]`（SM75 の interpreter と依存の検査）、`sm75-reference.[ch]`（IR の参照 interpreter）、`sm75-desktop-extract.py`。
+- master.md の Tools・試験の一覧への登録は Q1 に依頼（P4 は master.md を書かない）。
