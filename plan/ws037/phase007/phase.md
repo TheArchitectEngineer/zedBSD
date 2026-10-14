@@ -314,8 +314,8 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 
 #### T への手順（R9v、方式 B、rombar=1）
 
-前提: R9w（work channel）が通ること（R9v は同じ channel を使う）。image は `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。
-1. 起動の印: R9w の `P9w ok: fence 1 after N us` と R8c の `P8c ok: gpu device registered, …`、login prompt。
-2. serial で `vkquad` → 1 行。合格は **`VKQUAD ok device=… pixels=4096`**。
-3. `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
+前提: R9w（work channel）が通ること（T1-658 で PASS 済み、R9v は同じ channel を使う）。image は harness 入りで（SSH の鍵と `/etc/net.conf`）`plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。QEMU は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1-664 と同じ）。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。判定は SSH で guest の中の出力と dmesg（serial・console の log では判定しない）。
+1. SSH で `dmesg | grep nvrtx`: R9w の `P9w ok: fence 1 after N us` と R8c の `P8c ok: gpu device registered, …`。
+2. SSH で `vkquad` → 1 行。合格は **`VKQUAD ok device=… pixels=4096`**。
+3. その後の `dmesg | grep nvrtx` の全文を取る（`nvrtx: vk: …` の行、`D3 fail: …`、`P6 channel error: …`、`rpc: …` があれば記録）。
 FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標と値）と dmesg の `nvrtx: vk: command N refused (E)`（実装の無い command）・`a stage … did not compile`・`D3 fail: the work of fence … did not finish` を記録。
