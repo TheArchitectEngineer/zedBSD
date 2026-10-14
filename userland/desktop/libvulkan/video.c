@@ -195,8 +195,12 @@ vkGetPhysicalDeviceVideoFormatPropertiesKHR(
 	if (status != VK_SUCCESS)
 		return status;
 
-	/* Decode pictures may also be copied into a staging buffer for host readback. */
-	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	/*
+	 * Decode pictures may also be copied into a staging buffer for host
+	 * readback, and sampled through views of their planes; the renderer
+	 * answers which of these its decoder's pictures take (ws236-p011).
+	 */
+	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	if ((pVideoFormatInfo->imageUsage & ~video_usage) != 0)
 		return VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR;
 

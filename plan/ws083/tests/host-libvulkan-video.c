@@ -837,9 +837,9 @@ test_formats(void)
 	list.pProfiles = &profile;
 	memset(&info, 0, sizeof(info));
 	info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR;
-	info.imageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_SAMPLED_BIT;
+	info.imageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-	/* Without a profile list, and with a usage beyond decode, the query is refused locally. */
+	/* Without a profile list, and with a usage beyond decode, readback and sampling, the query is refused locally. */
 	before = transactions;
 	status = vkGetPhysicalDeviceVideoFormatPropertiesKHR(&physical, &info, &count, NULL);
 	assert(status == VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR);
