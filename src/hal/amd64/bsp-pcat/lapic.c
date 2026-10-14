@@ -441,15 +441,26 @@ void __attribute__((noreturn))
 amd64_lapic_panic_all(
 	void)
 {
-	/* Waits best-effort for an earlier ICR before broadcasting the NMI. */
-	(void)wait_icr();
-	write_reg(LAPIC_ICR_HIGH, 0);
-	write_reg(LAPIC_ICR_LOW, 0x000c0400U);
+	/* Every other CPU gets the NMI. */
+	amd64_lapic_nmi_others();
 	(void)hal_irq_disable();
 
 	/* Halts the panic-broadcasting CPU permanently. */
 	for (;;)
 		asm_hlt();
+}
+
+/*
+ * Broadcasts an NMI to every CPU but the current one and returns.
+ */
+void
+amd64_lapic_nmi_others(
+	void)
+{
+	/* Waits best-effort for an earlier ICR, then sends the NMI to all excluding self. */
+	(void)wait_icr();
+	write_reg(LAPIC_ICR_HIGH, 0);
+	write_reg(LAPIC_ICR_LOW, 0x000c0400U);
 }
 
 /* Reads one volatile local APIC register. */

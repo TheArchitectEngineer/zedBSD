@@ -264,9 +264,15 @@ kern_free(
 
 	kernel_heap_lock_leave(enabled);
 
-	/* Releases the physical memory outside the lock. */
-	if (large == NULL)
+	/* An unknown pointer stops the kernel; the line before the stop names it and the code that freed it (BUG-321). */
+	if (large == NULL) {
+		hal_printf("\nkern_free: %lx is not a kernel allocation (freed from %lx)\n",
+			   (unsigned long)address,
+			   (unsigned long)(uintptr_t)__builtin_return_address(0));
 		HAL_FATAL("invalid kernel allocation free");
+	}
+
+	/* Releases the physical memory outside the lock. */
 	if (hal_pmem_free(&memory.paddr, memory.size) != HAL_OK)
 		HAL_FATAL("kernel large allocation free failed");
 }
