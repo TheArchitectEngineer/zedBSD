@@ -91,6 +91,36 @@ Phase disposition: normal
   - `run-h264-test.sh`（pb-high-352 の buffering=6 ほか）・`run-mmal-wire-test.sh`（short data の offset を追加）・`run-vchiq-wire-test.sh` は全て PASS。
 - T1 の次の依頼: T1-625 と同じ手順（image は `plan/ws236/tests/config-rpi4-video-probe.mk`）。dmesg の grep に `rpi4-mmal: (in |bulk |stall|.*destroyed)`・`rpi4-vchiq: service` を足す。
 
+## T1-626 の結果（実機 Pi 4、2026-10-14 夜）と次の版（26729bb11・210a4724c）
+
+- 前進:
+  - 352 run=a・1080 run=a・1080 run=b は error=0 で完走した。
+  - 2 回目以降の session も作れた。vkCreateVideoSessionKHR は成功し、videoplayer は vulkan-video の backend を選んだ。
+- 中身: 一致は 352 run=a の 4 枚だけで、1080 は全て不一致（luma も）。
+  - 1080 は run=a と run=b で同じ picture の sum が一致する（出力は決定的）。IDR も違う。
+  - 352 run=a では、参照に使われる B（display 2・6）の出力が違う。それを参照する b（1・3・5）は一致する。内部の decode は正しく、出力側に何かが起きている可能性がある。data 待ち。
+- 順:
+  - run=a は display 順で出る（P の pts は firmware が補間した値: 40004 = 前の pts + 40000）。
+  - run=b の 1080 は decode 順・pts は 0〜7 で正しい（R1 は順の面では成立）。
+  - 最初の picture は次の入力が来るまで出ない（vkvideo の picture 0 の 42 の原因）。
+- 止まる: 352 run=b の frame の bulk が完了しなかった。v3d の起動（clock・power domain・bridge）と同時刻だった。
+- 道具: vkvideo-probe は package の platform が amd64 だけで、rpi4 の image に入らなかった。
+- この版:
+  - **生の frame の取り出し（ユーザーの依頼、最優先）**:
+    - probe が各 run の最初の数枚を受け取ったままの bytes で保持し、`/dev/mmal-probe` で読めるようにした（`rpi4-mmal-dump.c`。512 byte の header + 生の bytes）。
+    - vkvideo-probe に `--dump=FILE` を足した（同じ形式）。
+    - host の `plan/ws236/tests/dump-compare.py` は、ffmpeg の正解と並べた PNG を作る（正解・実際・差分。Y、Cb・Cr、RGB）。別の読み方（pitch・chroma の開始・NV12/NV21/I420/YV12）の比較 PNG と summary.txt も作る。合成の dump で動作を確かめた。
+  - probe:
+    - 帯と縦帯の checksum の地図を参照と照合して log に出す。
+    - run=c（R1 に加えて各 unit の後に access unit delimiter）を足した。
+    - VCHIQ の接続後に 30 秒待ってから始める。
+  - vkvideo-probe の platform に rpi4 を足した（既定 n）。
+  - format change の時に、受信済みの frame と caller が持つ buffer を捨てない（frame 0 の欠け）。
+- 検証（host）:
+  - `build/ws236-vp`・`build/ws236-video`・`build/ws236-probe` は warning 0・vmunix check PASS。arm64 の `bin/vkvideo-probe` も build できた。
+  - 既定の `config-rpi4.mk` の program は 249 で、vkvideo-probe は入らない。
+- 次: T1 の dump と PNG を見て中身の不一致の原因を決める。run=c の結果で vulkan-video の最初の frame の遅れを直す（delimiter）。
+
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。
