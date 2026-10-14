@@ -3,7 +3,7 @@
 # WS236: Raspberry Pi 4（VideoCore VI）の動画の再生の hardware 支援
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-14 起票。見積もりだけで、まだ実施しない）
+Status: incomplete（2026-10-14 ユーザー「WS236を実装します。」、P3。code freeze の後だが「完了しなかったらDropが可能」の条件でベータ2 に向けて着手。driver は既定 off で入れ、実機の確かめが金曜 16 日の夕方のリリースまでに済まなければベータ3 へ）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
