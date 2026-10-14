@@ -395,6 +395,7 @@ drv_i915_skl_dp_link(
 	unsigned rate;
 	unsigned lanes;
 
+	/* No link until one carries the mode. */
 	kern_memset(link, 0, sizeof(*link));
 
 	/* The data the mode needs in kB/s (intel_dp_link_required at 24 bpp). */
@@ -405,12 +406,14 @@ drv_i915_skl_dp_link(
 		if (rates[rate] > sink_max_khz)
 			break;
 
+		/* Each lane count up to the sink's. */
 		for (lanes = 1U; lanes <= sink_max_lanes && lanes <= 4U; lanes <<= 1) {
 			/* The data a link carries in kB/s (intel_dp_max_data_rate, 8b/10b): port clock times lanes. */
 			available = (uint64_t)rates[rate] * lanes;
 			if (needed > available)
 				continue;
 
+			/* The first link that carries it, and its M and N. */
 			link->port_khz = rates[rate];
 			link->lanes = lanes;
 			drv_i915_skl_dp_m_n(link, pixel_khz);
@@ -492,6 +495,7 @@ drv_i915_skl_dp_train_delay_us(
 {
 	unsigned interval;
 
+	/* The sink's interval, without the extended-format flag. */
 	interval = rd_interval & I915_DPCD_TRAINING_AUX_RD_MASK;
 
 	/* Clock recovery. */
@@ -499,6 +503,7 @@ drv_i915_skl_dp_train_delay_us(
 		if (interval == 0U || dpcd_rev >= I915_SKL_DPCD_REV_14)
 			return I915_SKL_CR_DELAY_US;
 
+		/* The sink's interval. */
 		return interval * I915_SKL_RD_INTERVAL_UNIT_US;
 	}
 
@@ -522,6 +527,7 @@ drv_i915_skl_dpll_dp(
 {
 	uint32_t code;
 
+	/* No words until the rate has a code. */
 	kern_memset(words, 0, sizeof(*words));
 
 	/* The code of the link clock, half the port clock. */
@@ -596,7 +602,9 @@ drv_i915_skl_dpll_hdmi(
 	unsigned pdiv;
 	unsigned kdiv;
 	unsigned central_code;
+	unsigned qdiv_mode;
 
+	/* No words until a divider fits. */
 	kern_memset(words, 0, sizeof(*words));
 
 	/* The AFE clock in Hz. */
@@ -614,6 +622,7 @@ drv_i915_skl_dpll_hdmi(
 			list_count = (unsigned)sizeof(odd);
 		}
 
+		/* Each central frequency, until a deviation of zero. */
 		for (c = 0U; c < 3U && best_deviation != 0U; c++) {
 			for (i = 0U; i < list_count; i++) {
 				/* The DCO frequency and its deviation from the centre, in 1/10000. */
@@ -628,6 +637,7 @@ drv_i915_skl_dpll_hdmi(
 						continue;
 				}
 
+				/* The best divider so far. */
 				best_deviation = deviation;
 				best_central = central[c];
 				best_p = list[i];
@@ -708,6 +718,7 @@ drv_i915_skl_dpll_hdmi(
 		return EINVAL;
 	}
 
+	/* P2's code. */
 	switch (p2) {
 	case 5U:
 		kdiv = 0U;
@@ -740,7 +751,10 @@ drv_i915_skl_dpll_hdmi(
 	/* The words: HDMI mode with the override, then the two configurations. */
 	words->ctrl1 = 1U | (1U << I915_SKL_DPLL_CTRL1_HDMI_SHIFT);
 	words->cfgcr1 = I915_SKL_CFGCR1_FREQ_ENABLE | ((uint32_t)dco_fraction << I915_SKL_CFGCR1_DCO_FRACTION_SHIFT) | (uint32_t)dco_integer;
-	words->cfgcr2 = (p1 << I915_SKL_CFGCR2_QDIV_RATIO_SHIFT) | (((p1 == 1U) ? 0U : 1U) << I915_SKL_CFGCR2_QDIV_MODE_SHIFT) |
+	qdiv_mode = 1U;
+	if (p1 == 1U)
+		qdiv_mode = 0U;
+	words->cfgcr2 = (p1 << I915_SKL_CFGCR2_QDIV_RATIO_SHIFT) | (qdiv_mode << I915_SKL_CFGCR2_QDIV_MODE_SHIFT) |
 	    (kdiv << I915_SKL_CFGCR2_KDIV_SHIFT) | (pdiv << I915_SKL_CFGCR2_PDIV_SHIFT) | central_code;
 	words->port_khz = pixel_khz;
 
@@ -799,6 +813,7 @@ drv_i915_skl_buf_trans(
 			return i915_skl_y_trans_hdmi;
 		}
 
+		/* The common table elsewhere. */
 		*count = (unsigned)(sizeof(i915_skl_trans_hdmi) / sizeof(i915_skl_trans_hdmi[0]));
 		return i915_skl_trans_hdmi;
 	}
@@ -1053,6 +1068,8 @@ drv_i915_skl_wm_compute(
 			if (cursor[level].min_ddb > cursor_size)
 				cursor_size = cursor[level].min_ddb;
 		}
+
+		/* A pipe whose cursor needs its whole share does not fit. */
 		if (cursor_size >= size)
 			return ENOSPC;
 		pipes[pipe].cursor_start = pipes[pipe].ddb_end - cursor_size;
@@ -1069,6 +1086,8 @@ drv_i915_skl_wm_compute(
 			chosen = level;
 			break;
 		}
+
+		/* A plane that fits at no level does not fit. */
 		if (chosen < 0)
 			return ENOSPC;
 
@@ -1197,6 +1216,7 @@ i915_skl_plane_wm(
 	uint32_t blocks;
 	uint32_t lines;
 	uint32_t previous_blocks;
+	uint32_t line_blocks;
 	uint32_t interim;
 	unsigned level;
 
@@ -1238,8 +1258,9 @@ i915_skl_plane_wm(
 		blocks = i915_skl_fixed_round_up(selected) + 1U;
 		lines = (selected + blocks_per_line - 1U) / blocks_per_line;
 		if (level > 0U) {
-			if (blocks < i915_skl_fixed_round_up(blocks_per_line))
-				blocks = i915_skl_fixed_round_up(blocks_per_line);
+			line_blocks = i915_skl_fixed_round_up(blocks_per_line);
+			if (blocks < line_blocks)
+				blocks = line_blocks;
 			blocks++;
 			if (previous_blocks > blocks)
 				blocks = previous_blocks;

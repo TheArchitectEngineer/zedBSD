@@ -119,6 +119,7 @@ drv_i915_skl_ddi_io_power(
 	uint32_t state;
 	int error;
 
+	/* The well's state bit. */
 	state = I915_SKL_PW_DDI_STATE(port);
 
 	/* On: the request and the state. */
@@ -209,6 +210,7 @@ drv_i915_skl_output_on(
 	uint32_t value;
 	int error;
 
+	/* The transcoder's and the pipe's registers. */
 	transcoder_offset = config->pipe * I915_SKL_TRANSCODER_STRIDE;
 	pipe_offset = config->pipe * I915_SKL_PIPE_STRIDE;
 
@@ -231,6 +233,8 @@ drv_i915_skl_output_on(
 			(void)drv_i915_skl_dp_sink_power(io, dp, I915_DPCD_SET_POWER_D0);
 			error = drv_i915_skl_dp_train(io, dp, &config->link);
 		}
+
+		/* A training that failed stops what was started. */
 		if (error != 0) {
 			drv_i915_skl_ddi_buffer_off(io, config->port);
 			(void)drv_i915_skl_ddi_io_power(io, config->port, 0);
@@ -251,6 +255,8 @@ drv_i915_skl_output_on(
 			drv_i915_skl_dpll_off(io, config->dpll);
 			return error;
 		}
+
+		/* The transcoder's clock from the port. */
 		drv_i915_skl_write(io, I915_SKL_TRANS_CLK_SEL_A + config->pipe * I915_SKL_TRANS_CLK_SEL_STRIDE, (config->port + 1U) << I915_SKL_TRANS_CLK_SEL_PORT_SHIFT);
 	}
 
@@ -302,6 +308,7 @@ drv_i915_skl_output_off(
 	uint32_t transcoder_offset;
 	uint32_t pipe_offset;
 
+	/* The transcoder's and the pipe's registers. */
 	transcoder_offset = config->pipe * I915_SKL_TRANSCODER_STRIDE;
 	pipe_offset = config->pipe * I915_SKL_PIPE_STRIDE;
 
@@ -343,6 +350,7 @@ drv_i915_skl_write_pipe_wm(
 	uint32_t offset;
 	unsigned level;
 
+	/* The pipe's registers, and a level that is off. */
 	offset = pipe * I915_SKL_PIPE_STRIDE;
 	kern_memset(&off, 0, sizeof(off));
 
@@ -382,6 +390,7 @@ drv_i915_skl_plane_on(
 	uint32_t offset;
 	uint32_t control;
 
+	/* The pipe's registers. */
 	offset = pipe * I915_SKL_PIPE_STRIDE;
 
 	/* The control: on, XRGB8888 in either order, linear, upright. */
@@ -407,6 +416,7 @@ drv_i915_skl_plane_off(
 {
 	uint32_t offset;
 
+	/* The pipe's registers. */
 	offset = pipe * I915_SKL_PIPE_STRIDE;
 
 	/* The control, then the surface which arms it. */
@@ -423,15 +433,18 @@ drv_i915_skl_wait_vblank(
 {
 	uint32_t counter;
 	uint32_t first;
+	uint32_t now;
 	unsigned waited;
 
+	/* The pipe's frame counter. */
 	counter = I915_SKL_PIPE_FRMCOUNT_A + pipe * I915_SKL_PIPE_STRIDE;
 
 	/* The counter now, then again every millisecond. */
 	first = drv_i915_skl_read(io, counter);
 	for (waited = 0U; waited < I915_SKL_VBLANK_WAIT_MS; waited++) {
 		io->msleep(io->context, 1U);
-		if (drv_i915_skl_read(io, counter) != first)
+		now = drv_i915_skl_read(io, counter);
+		if (now != first)
 			return 0;
 	}
 
@@ -539,6 +552,7 @@ i915_skl_transcoder_timings(
 {
 	uint32_t offset;
 
+	/* The transcoder's registers. */
 	offset = transcoder * I915_SKL_TRANSCODER_STRIDE;
 
 	/* No vertical sync shift for a progressive mode. */
@@ -564,6 +578,7 @@ i915_skl_transcoder_m_n(
 {
 	uint32_t offset;
 
+	/* The transcoder's registers. */
 	offset = transcoder * I915_SKL_TRANSCODER_STRIDE;
 
 	/* Data M with the transfer unit, data N, link M, then link N. */
