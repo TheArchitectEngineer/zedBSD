@@ -80,7 +80,8 @@ static int grid_vertical_fixed(struct layout_tree *tree, struct layout_box *box,
 static int grid_vertical_auto(struct layout_tree *tree, struct layout_box *box, int *handled);
 static void grid_resolve(const struct css_grid_place *place, int explicit_count, int *start, int *span);
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
-	layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
+    layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
+static void grid_static_vertical_start(struct layout_box *box);
 static int grid_place(struct grid_state *grid, int auto_flow);
 static int grid_place_row(struct grid_state *grid, int dense);
 static int grid_fits(const struct grid_state *grid, int row, int column, int row_span, int column_span);
@@ -975,6 +976,85 @@ grid_resolve(
 	*start = first;
 }
 
+/* Gives a bounded vertical Grid's absolute start items their physical area edge. */
+static void
+grid_static_vertical_start(
+	struct layout_box *box)
+{
+	struct layout_box *child;
+	layout_unit x;
+	layout_unit y;
+	layout_unit width;
+	int column;
+	int column_span;
+	int row;
+	int row_span;
+	int align;
+	int justify;
+	int index;
+
+	/* Only fixed two-by-two LTR tracks have this definite physical mapping. */
+	if (box->style.position != CSS_POSITION_RELATIVE ||
+	    box->style.display != CSS_DISPLAY_INLINE_GRID ||
+	    box->style.direction != CSS_DIRECTION_LTR ||
+	    box->style.column_count != 2 || box->style.row_count != 2 ||
+	    box->style.column_gap.value != 0 || box->style.row_gap.value != 0)
+		return;
+	for (index = 0; index < 2; index++) {
+		if (box->style.columns[index].kind != CSS_TRACK_LENGTH ||
+		    box->style.columns[index].size.unit != CSS_UNIT_PX ||
+		    box->style.rows[index].kind != CSS_TRACK_LENGTH ||
+		    box->style.rows[index].size.unit != CSS_UNIT_PX)
+			return;
+	}
+	for (index = 0; index < 4; index++) {
+		if (box->border[index] != 0 || box->padding[index] != 0)
+			return;
+	}
+	width = layout_from_px(box->style.rows[0].size.value + box->style.rows[1].size.value);
+	if (box->width != width)
+		return;
+
+	/* Absolute children keep their sizing and are positioned after Grid layout. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->style.position != CSS_POSITION_ABSOLUTE ||
+		    child->style.writing_mode != box->style.writing_mode ||
+		    child->style.width.unit != CSS_UNIT_AUTO ||
+		    child->style.height.unit != CSS_UNIT_AUTO)
+			continue;
+		for (index = 0; index < 4; index++) {
+			if (child->style.offset[index].unit != CSS_UNIT_AUTO)
+				break;
+		}
+		if (index != 4)
+			continue;
+		grid_resolve(&child->style.grid_column, 2, &column, &column_span);
+		grid_resolve(&child->style.grid_row, 2, &row, &row_span);
+		if (column < 0 || column >= 2 || row < 0 || row >= 2 ||
+		    column_span != 1 || row_span != 1)
+			continue;
+		align = child->style.align_self;
+		if (align == CSS_ALIGN_AUTO)
+			align = box->style.align_items;
+		justify = child->style.justify_self;
+		if (justify == CSS_ALIGN_AUTO)
+			justify = box->style.justify_items;
+		if (align != CSS_ALIGN_START || justify != CSS_ALIGN_START)
+			continue;
+
+		/* Logical columns descend; logical rows go right or left. */
+		y = column == 0 ? 0 : layout_from_px(box->style.columns[0].size.value);
+		x = row == 0 ? 0 : layout_from_px(box->style.rows[0].size.value);
+		if (box->style.writing_mode == CSS_WRITING_VERTICAL_RL) {
+			child->static_x = box->width - x;
+			child->static_x_from_right = 1;
+		} else {
+			child->static_x = x;
+		}
+		child->static_y = y;
+	}
+}
+
 /* Gives a direct absolute child the origin of its definite grid area. */
 static void
 grid_static_position(
@@ -1004,8 +1084,10 @@ grid_static_position(
 	/* Other writing directions retain their existing static-position path. */
 	if (box->style.position != CSS_POSITION_RELATIVE)
 		return;
-	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB)
+	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB) {
+		grid_static_vertical_start(box);
 		return;
+	}
 	if (box->style.direction != CSS_DIRECTION_LTR &&
 	    box->style.direction != CSS_DIRECTION_RTL)
 		return;

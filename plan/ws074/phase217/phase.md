@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1163-i01 有限部分範囲（2026-10-14 12:29 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:59 JSTまで）に適用。positioned vertical-lr/rl LTR inline-grid、2×2明示固定px tracks・gap0、直接absolute auto-size ASCII子、grid-column/row両方明示span1、全offset auto、両axis start配置に限定。論理列→物理y・行→物理x（rl右端）のstatic areaを渡し、固定column-axis001/row-axis001 whole PASS、独立2×2最小ページChromium比較、旧水平/縦Grid WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他alignment/auto lines/RTL/他Grid/WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1163-i01 結果（2026-10-14 12:31 JST）
+
+Event ws074-p217-q1163-partial-clear-20261014: [証拠](evidence/20261014-q1163/README.md)。固定2×2縦Gridの直接absolute auto子で両axis start・明示span1に限り、論理列→物理y/行→物理x（rl右端）のstatic areaを設定。独立lr/rl全8矩形Chromium 153一致、固定column-axis001/row-axis001が2/2 whole FAIL→PASS。旧縦Grid32+縦横2 PASS、warning0 build、host CSS51/JS14/Grid48、Acid3差0/Acid2差1865。q1163部分cleared、p217 wholeは他alignment/auto lines/RTL等、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 ## q1161-i01 有限部分範囲（2026-10-14 12:23 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:53 JSTまで）に適用。q1160固定Grid502の残FAIL中、column-axis/row-axis positioned-items各001..017最大34 IDを抽出し、first failed subtest/症状と旧q1141比較を集計。代表縦書き/RTL/水平WPT原本とGrid absolute area・text geometry経路を読み、次の有限実装候補/回帰条件を記録。読取のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
