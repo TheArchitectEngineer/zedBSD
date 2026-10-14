@@ -104,7 +104,7 @@ SPIR-V ──drv_gpu_shader_parse──▶ scalar IR ──drv_gpu_shader_optimi
 | B | loop・除算・atomic・shared・barrier | 実装・host 済み（下の 9 節） |
 | C | 最初の compute の投入（段 P9c、`nvrtx.compute=1`）: GR の channel・compute の object・QMD 2.2・cbuf・code・launch・fence・結果の確かめ | 実装・host 済み、実機（R7c）は T 待ち（下の 8 節） |
 | D | latency の表による並べ替え、operand の再利用 | 未 |
-| E | graphics の stage（SPH、attribute、texture） | 未（p007 の 3D と一緒に） |
+| E | graphics の stage（SPH、attribute、texture） | 頂点・fragment の最小（compositor の quad）を実装・host 済み（下の 10 節）。3D の投入（p007）は未 |
 
 ## 6. 段 A の結果（2026-10-15 P3、host と build だけ）
 
@@ -222,3 +222,23 @@ FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … s
 - nvrtx=y の kernel: rc 0、warning 0。
 
 段 B の残り: texture・image、graphics の stage（段 E）、spill、latency の表による並べ替え（段 D）。shared の atomic の float、64 bit の atomic は IR に無い。
+
+## 10. 段 E: 頂点・fragment の program（2026-10-15 P3、host と build だけ）
+
+目標（Q1）: Keiland の compositor が使う程度（全画面の quad の頂点、texture の sample、単色・blend）。最初の対象は `userland/desktop/wayland/shaders/quad.vert`・`quad.frag`。
+
+| IR | SM75 | 出典の事実（MIT） |
+| --- | --- | --- |
+| 頂点の LOAD_INPUT（location L、成分 c） | `ALD R, a[0x80 + 16L + 4c]`（vertex・offset は RZ、1 成分）。vertex 番号・instance 番号は a[0x2fc]・a[0x2f8] | NAK の OpALd（0x321、address 40..49）、nak_private.h の NAK_ATTR_* |
+| 頂点の STORE_OUTPUT | 位置 a[0x70 + 4c]、point size a[0x6c]、location L は a[0x80 + 16L + 4c] へ `AST` | OpASt（0x322、data 32..39、vertex 64..71） |
+| fragment の LOAD_INPUT | `IPA`（frequency pass、flat は constant）。perspective の入力は program の始めに `IPA a[0x7c]`（w）と `MUFU.RCP` で 1/w を作り、毎回掛ける。gl_FragCoord は a[0x70 + 4c] | OpIpa（0x326、address/4 は 64..71、frequency 78..79）、nak_nir_lower_fs_inputs.c の SM70 の道 |
+| fragment の STORE_OUTPUT（colour L） | 書く location を昇順に R0 から 4 つずつ割り当て（割り当てから外す）、`MOV` でそこへ。EXIT で hardware が読む | from_nir.rs の OpRegOut の順 |
+| SAMPLE・SAMPLE_LOD・SAMPLE_BIAS（2D） | 座標を register の組へ、`TEX`（handle は cbuf 0 の `0x400 + 4k` の語、opcode 0xb60）、結果は 2 つの組（4 成分）。LOD は fragment は implicit、頂点は zero、明示・bias は src2 | OpTex の CBuf の形（handle の位置 40..58、2 つ目の dst 64..71、次元 61..63、channel 72..75、LOD mode 87..89）、nak_nir_lower_tex.c の src0/src1 の詰め方 |
+| KILL | `ISETP P0`、`@P0 KILL`（0x95b） | OpKill |
+| SPH（version 4、128 byte） | type・version 4・stage・SASS version 1・fragment の MRT_ENABLE・KILLS_PIXELS・global memory の bit・頂点の store request、input map（頂点は bit、fragment は 2 bit の補間の種類）、output map、colour target | sph.rs の encode_header、cla097sph.h の欄 |
+
+- 公開の API: `nvrtx_sm75_compile_stage(words, count, stage, ...)`（compute・vertex・fragment）。結果に `graphics`・`sph[32]`・`textures[]`（sampled image の (set, binding)、handle の語の順）を足した。graphics の program は SPH の 128 byte の後に code を置き、program の address は SPH を指す（NVK と同じ形）。3D の投入の側（p007）がこの配置で upload する。
+- cbuf 0 の約束に `0x400 + 4k`: k 番目の sampled image の texture handle（tic の index は 19:0、tsc の index は 31:20、Turing の NVK の descriptor と同じ）を足した（sm75-isa.h）。
+- 試験（`nvrtx-sm75-host-test.sh` → **88 checks, 0 failures**）: quad.vert と quad.frag を glslc で SPIR-V にして compile し、SPH の欄（type・version・stage・input と output の map・store request・colour target・perspective の補間）を確かめ、interpreter で走らせる（ALD・AST・IPA（SPH の map が perspective なら w = 2 を掛けて返す）・TEX（handle と座標を返す）・KILL・EXIT の R0..R3）。頂点の位置と texture の座標、fragment の R0..R3 が C の計算と一致した。
+- nvrtx=y の kernel: rc 0、warning 0。
+- 残り: blend・単色は 3D の state（p007）で、shader の側は今のままで足りる。panel.vert/frag・cell など他の desktop の shader、derivative（DDX/DDY）、texel offset、array・cube、depth の出力、geometry、TEXTURE（一般の message）は未。

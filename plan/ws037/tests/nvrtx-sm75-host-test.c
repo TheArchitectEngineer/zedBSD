@@ -98,6 +98,12 @@ struct test_run {
 	uint32_t *shared;
 	uint32_t shared_words;
 	int failed;
+
+	/* A graphics run: the attribute words read (by address / 4) and written, and whether the fragment was discarded. */
+	uint32_t attr_in[256];
+	uint32_t attr_out[256];
+	uint32_t exit_regs[8];
+	int killed;
 };
 
 /* Checks counted and failed. */
@@ -117,6 +123,8 @@ static void check_loop(const char *directory);
 static void check_division(const char *directory);
 static void check_shared(const char *directory);
 static void check_atomic(const char *directory);
+static void check_quad(const char *directory);
+static struct nvrtx_sm75_binary *compile_graphics(const char *directory, const char *name, enum drv_gpu_shader_stage stage);
 static void check_qmd(void);
 static void check_launch_push(void);
 static void check_first_program(void);
@@ -179,6 +187,7 @@ main(
 	check_division(argv[1]);
 	check_shared(argv[1]);
 	check_atomic(argv[1]);
+	check_quad(argv[1]);
 	check_qmd();
 	check_launch_push();
 	check_first_program();
@@ -642,7 +651,7 @@ check_integer(
 	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
 }
 
-/* An operation outside stages A and B (a texture sample) is refused with a reason. */
+/* An operation the compiler does not cover (a derivative) is refused with a reason. */
 static void
 check_refusals(
 	const char *directory)
@@ -658,10 +667,9 @@ check_refusals(
 	memset(list, 0, sizeof(list));
 	list[0].op = DRV_GPU_IR_ICONST;
 	list[0].dst = 0U;
-	list[1].op = DRV_GPU_IR_SAMPLE;
+	list[1].op = DRV_GPU_IR_DDX;
 	list[1].dst = 1U;
 	list[1].src[0] = 0U;
-	list[1].src[1] = 0U;
 	ir.stage = DRV_GPU_STAGE_COMPUTE;
 	ir.instructions = list;
 	ir.instruction_count = 2U;
@@ -674,9 +682,9 @@ check_refusals(
 	binary = (struct nvrtx_sm75_binary *)1;
 	memset(&diagnostic, 0, sizeof(diagnostic));
 	error = nvrtx_sm75_compile_ir(&ir, &binary, &diagnostic);
-	check(error == ENOTSUP && binary == NULL && diagnostic.reason != NULL && diagnostic.instruction == 1U, "a texture sample is refused with a reason");
+	check(error == ENOTSUP && binary == NULL && diagnostic.reason != NULL && diagnostic.instruction == 1U, "a derivative is refused with a reason");
 	if (diagnostic.reason != NULL)
-		printf("  sample refused: %s (instruction %u)\n", diagnostic.reason, diagnostic.instruction);
+		printf("  derivative refused: %s (instruction %u)\n", diagnostic.reason, diagnostic.instruction);
 }
 
 /* Loops whose trip counts differ between invocations, nested. */
@@ -909,6 +917,150 @@ check_atomic(
 	check(!run.failed && same, "atomic: every storage atomic, predicated, returning the old value");
 
 	nvrtx_sm75_binary_free((struct nvrtx_sm75_binary *)run.binary);
+}
+
+/*
+ * The compositor's quad (userland/desktop/wayland/shaders/quad.vert and
+ * quad.frag): the vertex program's position and texture coordinate from
+ * the push constants and the corner, and the fragment program's sample of
+ * the interpolated coordinate into colour 0; and their headers.
+ */
+static void
+check_quad(
+	const char *directory)
+{
+	static struct test_run run;
+	static struct test_thread thread;
+	struct nvrtx_sm75_binary *binary;
+	const uint32_t group[3] = { 0U, 0U, 0U };
+	float push[8];
+	float corner[2];
+	float want;
+	uint32_t handle;
+	uint32_t index;
+	int same;
+
+	/* The vertex program. */
+	binary = compile_graphics(directory, "quad-vert", DRV_GPU_STAGE_VERTEX);
+	check(binary != NULL, "quad.vert compiles");
+	if (binary == NULL)
+		return;
+
+	/* Its header: VTG version 4, a vertex program, the corner read, the position and coordinate written. */
+	check(field(binary->sph, 0U, 5U) == 1U && field(binary->sph, 5U, 5U) == 4U && field(binary->sph, 10U, 4U) == 1U && field(binary->sph, 17U, 4U) == 1U, "quad.vert header type, version, stage");
+	check(field(binary->sph, 192U, 2U) == 3U && field(binary->sph, 194U, 126U) == 0U, "quad.vert reads the corner's two words");
+	check(field(binary->sph, 400U + 28U, 4U) == 0xfU && field(binary->sph, 432U, 2U) == 3U, "quad.vert writes the position and the coordinate");
+	check(field(binary->sph, 140U, 8U) == 28U && field(binary->sph, 152U, 8U) == 33U, "quad.vert store request");
+
+	/* Runs it for the corner (0.25, 0.75). */
+	memset(&run, 0, sizeof(run));
+	run.binary = binary;
+	push[0] = -1.0f;
+	push[1] = -0.5f;
+	push[2] = 1.0f;
+	push[3] = 0.5f;
+	push[4] = 0.0f;
+	push[5] = 0.1f;
+	push[6] = 1.0f;
+	push[7] = 0.9f;
+	memcpy(&run.cb[0][NVRTX_SM75_CB_PUSH], push, sizeof(push));
+	corner[0] = 0.25f;
+	corner[1] = 0.75f;
+	run.attr_in[0x80U / 4U] = as_bits(corner[0]);
+	run.attr_in[0x84U / 4U] = as_bits(corner[1]);
+	memset(&thread, 0, sizeof(thread));
+	thread.p[7] = 1;
+	invoke(&run, &thread, group);
+
+	same = !run.failed && thread.state == TEST_DONE;
+	for (index = 0U; index < 2U; index++) {
+		want = push[index] + (push[2U + index] - push[index]) * corner[index];
+		if (!near(as_float(run.attr_out[0x70U / 4U + index]), want))
+			same = 0;
+		want = push[4U + index] + (push[6U + index] - push[4U + index]) * corner[index];
+		if (!near(as_float(run.attr_out[0x80U / 4U + index]), want))
+			same = 0;
+	}
+	if (as_float(run.attr_out[0x78U / 4U]) != 0.0f || as_float(run.attr_out[0x7cU / 4U]) != 1.0f)
+		same = 0;
+	check(same, "quad.vert: position and texture coordinate");
+	nvrtx_sm75_binary_free(binary);
+
+	/* The fragment program. */
+	binary = compile_graphics(directory, "quad-frag", DRV_GPU_STAGE_FRAGMENT);
+	check(binary != NULL, "quad.frag compiles");
+	if (binary == NULL)
+		return;
+
+	/* Its header: PS version 4, a pixel program, multiple targets, the coordinate in perspective, w, colour 0. */
+	check(field(binary->sph, 0U, 5U) == 2U && field(binary->sph, 5U, 5U) == 4U && field(binary->sph, 10U, 4U) == 5U && field(binary->sph, 14U, 1U) == 1U, "quad.frag header type, version, stage, targets");
+	check(field(binary->sph, 192U, 4U) == 0xaU && field(binary->sph, 160U + 31U, 1U) == 1U, "quad.frag interpolates the coordinate in perspective and reads w");
+	check(field(binary->sph, 576U, 32U) == 0xfU && field(binary->sph, 15U, 1U) == 0U, "quad.frag writes colour 0 and does not discard");
+	check(binary->texture_count == 1U && binary->textures[0].binding == 0U, "quad.frag one sampled image");
+
+	/* Runs it for the coordinate (0.3, 0.6) and the handle 77. */
+	memset(&run, 0, sizeof(run));
+	run.binary = binary;
+	handle = 77U;
+	memcpy(&run.cb[0][NVRTX_SM75_CB_TEXTURES], &handle, sizeof(handle));
+	run.attr_in[0x80U / 4U] = as_bits(0.3f);
+	run.attr_in[0x84U / 4U] = as_bits(0.6f);
+	run.attr_in[0x7cU / 4U] = as_bits(2.0f);
+	memset(&thread, 0, sizeof(thread));
+	thread.p[7] = 1;
+	invoke(&run, &thread, group);
+
+	same = !run.failed && thread.state == TEST_DONE && !run.killed;
+	if (!near(as_float(run.exit_regs[0]), 0.3f) || !near(as_float(run.exit_regs[1]), 0.6f))
+		same = 0;
+	if (as_float(run.exit_regs[2]) != 77.0f || as_float(run.exit_regs[3]) != 1.0f)
+		same = 0;
+	check(same, "quad.frag: the sample of the interpolated coordinate in R0..R3");
+	nvrtx_sm75_binary_free(binary);
+}
+
+/* Reads DIR/NAME.spv and compiles a stage of it; NULL (with the reason printed) when refused. */
+static struct nvrtx_sm75_binary *
+compile_graphics(
+	const char *directory,
+	const char *name,
+	enum drv_gpu_shader_stage stage)
+{
+	struct nvrtx_sm75_binary *binary;
+	struct nvrtx_sm75_diagnostic diagnostic;
+	char path[512];
+	uint32_t *words;
+	long bytes;
+	FILE *file;
+	int error;
+
+	snprintf(path, sizeof(path), "%s/%s.spv", directory, name);
+	file = fopen(path, "rb");
+	if (file == NULL) {
+		printf("  %s: cannot open\n", path);
+		return NULL;
+	}
+	fseek(file, 0, SEEK_END);
+	bytes = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	words = malloc((size_t)bytes);
+	if (words == NULL || fread(words, 1U, (size_t)bytes, file) != (size_t)bytes) {
+		fclose(file);
+		free(words);
+		return NULL;
+	}
+	fclose(file);
+
+	binary = NULL;
+	memset(&diagnostic, 0, sizeof(diagnostic));
+	error = nvrtx_sm75_compile_stage(words, (size_t)bytes / 4U, stage, &binary, &diagnostic);
+	free(words);
+	if (error != 0) {
+		printf("  %s: refused %d: %s (instruction %u)\n", name, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?", diagnostic.instruction);
+		return NULL;
+	}
+	printf("  %s: %u instructions, %u registers\n", name, binary->code_words / 4U, binary->gpr_count);
+	return binary;
 }
 
 /* Checks the QMD 2.2 fields against the positions of clc3c0qmd.h, written out here on their own. */
@@ -1324,6 +1476,7 @@ invoke(
 
 		/* The instructions that are not of the ALU form. */
 		if (opcode == NVRTX_SM75_OP_EXIT) {
+			memcpy(run->exit_regs, t->r, sizeof(run->exit_regs));
 			t->state = TEST_DONE;
 			return;
 		}
@@ -1348,6 +1501,47 @@ invoke(
 				t->pc = (uint32_t)((int64_t)t->pc + (int64_t)wide / 4);
 			}
 			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_ALD) {
+			t->r[dst] = run->attr_in[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U];
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_AST) {
+			run->attr_out[nvrtx_sm75_get(&word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS) / 4U] = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_STORE_DATA_LOW, 8U)];
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_IPA) {
+			/* The fragment's w is 2; a perspective input (by the header's map) arrives multiplied by it. */
+			value = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_IPA_ADDRESS_LOW, 8U);
+			t->r[dst] = run->attr_in[value];
+			if (value >= NVRTX_SM75_ATTR_GENERIC / 4U && value < NVRTX_SM75_ATTR_GENERIC_END / 4U) {
+				lut = (run->binary->sph[(NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (value - NVRTX_SM75_ATTR_GENERIC / 4U) * 2U) / 32U] >> ((NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (value - NVRTX_SM75_ATTR_GENERIC / 4U) * 2U) % 32U)) & 3U;
+				if (lut == NVRTX_SM75_IMAP_PERSPECTIVE)
+					t->r[dst] = as_bits(as_float(t->r[dst]) * 2.0f);
+				if (lut == 0U) {
+					printf("  IPA of an input the header does not map\n");
+					run->failed = 1;
+				}
+			}
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_TEX) {
+			/* The texel: (u, v, the handle, 1). */
+			value = cb_word(run, (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_TEX_BUFFER_LOW, 5U), (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_TEX_HANDLE_LOW, NVRTX_SM75_TEX_HANDLE_BITS) * 4U);
+			s0 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U);
+			s1 = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_TEX_DST2_LOW, 8U);
+			f = as_float(t->r[s0]);
+			lut = t->r[s0 + 1U];
+			t->r[dst] = as_bits(f);
+			t->r[dst + 1U] = lut;
+			t->r[s1] = as_bits((float)value);
+			t->r[s1 + 1U] = as_bits(1.0f);
+			continue;
+		}
+		if (opcode == NVRTX_SM75_OP_KILL) {
+			run->killed = 1;
+			t->state = TEST_DONE;
+			return;
 		}
 		if (opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS) {
 			s0 = t->r[nvrtx_sm75_get(&word, NVRTX_SM75_SRC0_LOW, 8U)];

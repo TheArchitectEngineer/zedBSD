@@ -16,6 +16,10 @@ for source in "$repo"/plan/ws037/tests/sm75/*.comp "$repo/plan/ws101/tests/host/
 	name=$(basename "$source" .comp)
 	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$out/$name.spv" "$source"
 done
+for source in "$repo/userland/desktop/wayland/shaders/quad.vert" "$repo/userland/desktop/wayland/shaders/quad.frag"; do
+	name=$(basename "$source" | tr . -)
+	glslc --target-env=vulkan1.0 -o "$out/$name.spv" "$source"
+done
 flags="-std=gnu11 -O1 -g -DKERN_USER_ABI_LP64 -I$repo/include -I$repo/src -I$repo -idirafter $repo/libc/include \
 -fsanitize=address,undefined -fno-sanitize=alignment"
 cc $flags -Wall -Wextra -Werror -Wdeclaration-after-statement -o "$out/nvrtx-sm75-host-test" \

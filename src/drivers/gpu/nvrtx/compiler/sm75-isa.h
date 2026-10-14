@@ -43,12 +43,54 @@
  *     8c92e065aa043dcb259cb0bc0ef7436ec692b9b5d10321969fd5adc3d6178695
  *   src/nouveau/compiler/nak/sm75_instr_latencies.rs (the latencies)
  *     419b8b1d25fb16ddc8ae726768b15e593d3b84f467cc6bb59101eb39bf764878
- *   src/nouveau/compiler/nak_private.h (the special register numbers)
+ *   src/nouveau/compiler/nak_private.h (the special register numbers, the attribute addresses)
+ *     d2b1a0e4b0b38ee9cc01ed5b7dd6ab38b8a7d8722b453a81e5383c98d884e61f
+ *   src/nouveau/compiler/nak/sph.rs (the shader program header's maps)
+ *     e845a822a7a82822e0c07fd84cacce413146debeeaeb7484dc48deffc492c368
+ *   src/nouveau/headers/nvidia/classes/cla097sph.h (the header's fields, NVIDIA's MIT notice)
+ *     a804dc66816ec4bd5a49be6c6745f7aa2cda31881e48472625abe4a691f0c1a3
+ *   src/nouveau/compiler/nak_nir_lower_fs_inputs.c (SM70's interpolation: pass, then times 1 / w)
  * The constant buffer layout (NVRTX_SM75_CB_*) is zedBSD's own.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_COMPILER_SM75_ISA_H
 #define DRIVERS_GPU_NVRTX_COMPILER_SM75_ISA_H
+
+/*
+ * ==== The shader program header (version 4, NVIDIA's cla097sph.h) ====
+ *
+ * 32 words before a graphics program's code: the type and version, what
+ * the program does, and the maps of the attributes it reads and writes.
+ */
+#define NVRTX_SM75_SPH_WORDS		32U
+#define NVRTX_SM75_SPH_BYTES		128U
+#define NVRTX_SM75_SPH_TYPE_LOW		0U
+#define NVRTX_SM75_SPH_TYPE_VTG		1U
+#define NVRTX_SM75_SPH_TYPE_PS		2U
+#define NVRTX_SM75_SPH_VERSION_LOW	5U
+#define NVRTX_SM75_SPH_VERSION		4U
+#define NVRTX_SM75_SPH_SHADER_TYPE_LOW	10U
+#define NVRTX_SM75_SPH_VERTEX		1U
+#define NVRTX_SM75_SPH_PIXEL		5U
+#define NVRTX_SM75_SPH_MRT_ENABLE	14U
+#define NVRTX_SM75_SPH_KILLS_PIXELS	15U
+#define NVRTX_SM75_SPH_GLOBAL_STORE	16U
+#define NVRTX_SM75_SPH_SASS_VERSION_LOW	17U
+#define NVRTX_SM75_SPH_LOAD_OR_STORE	26U
+#define NVRTX_SM75_SPH_STORE_REQ_START_LOW	140U
+#define NVRTX_SM75_SPH_STORE_REQ_END_LOW	152U
+#define NVRTX_SM75_SPH_IMAP_AB_LOW	160U
+#define NVRTX_SM75_SPH_IMAP_GENERIC_LOW	192U
+#define NVRTX_SM75_SPH_IMAP_C_VTG_LOW	336U
+#define NVRTX_SM75_SPH_IMAP_C_PS_LOW	464U
+#define NVRTX_SM75_SPH_OMAP_AB_LOW	400U
+#define NVRTX_SM75_SPH_OMAP_GENERIC_LOW	432U
+#define NVRTX_SM75_SPH_OMAP_TARGETS_LOW	576U
+
+/* A fragment input's interpolation in the header's map: constant (flat), perspective, screen-linear. */
+#define NVRTX_SM75_IMAP_CONSTANT	1U
+#define NVRTX_SM75_IMAP_PERSPECTIVE	2U
+#define NVRTX_SM75_IMAP_SCREEN_LINEAR	3U
 
 /* An instruction is four 32-bit words, the first holding bit 0. */
 #define NVRTX_SM75_INSTRUCTION_WORDS	4U
@@ -179,6 +221,11 @@
 #define NVRTX_SM75_OP_BAR		0xb1dU
 #define NVRTX_SM75_OP_BSSY		0x945U
 #define NVRTX_SM75_OP_BSYNC		0x941U
+#define NVRTX_SM75_OP_ALD		0x321U
+#define NVRTX_SM75_OP_AST		0x322U
+#define NVRTX_SM75_OP_IPA		0x326U
+#define NVRTX_SM75_OP_TEX		0xb60U
+#define NVRTX_SM75_OP_KILL		0x95bU
 
 /*
  * ==== The modifiers of the instructions ====
@@ -308,6 +355,54 @@
 #define NVRTX_SM75_BSSY_OFFSET_LOW	34U
 #define NVRTX_SM75_BSSY_OFFSET_BITS	30U
 
+/*
+ * The attribute loads and stores of the vertex stage: ALD's vertex (32..39)
+ * and AST's (64..71), the offset register (24..31, RZ), the attribute
+ * address (40..49) and the components less one (74..75); AST's data
+ * (32..39).
+ */
+#define NVRTX_SM75_ATTR_ADDRESS_LOW	40U
+#define NVRTX_SM75_ATTR_ADDRESS_BITS	10U
+#define NVRTX_SM75_ATTR_COMPONENTS_LOW	74U
+#define NVRTX_SM75_AST_VERTEX_LOW	64U
+
+/* IPA: the attribute's address in words (64..71), the location (76..77, 0 the pixel's centre) and the frequency (78..79: 0 pass, 1 constant). */
+#define NVRTX_SM75_IPA_ADDRESS_LOW	64U
+#define NVRTX_SM75_IPA_FREQUENCY_LOW	78U
+#define NVRTX_SM75_IPA_PASS		0U
+#define NVRTX_SM75_IPA_CONSTANT		1U
+
+/*
+ * TEX with its handle in a constant buffer: the handle's word offset
+ * (40..53) and buffer (54..58), the second destination pair (64..71, RZ for
+ * none), the coordinates' first register (24..31) and the second source
+ * (32..39, the level of detail), the dimension (61..63: 1 2D), the
+ * channels (72..75), the level of detail mode (87..89: 0 implicit, 1 zero,
+ * 2 bias, 3 explicit), the fault predicate (81..83) and the eviction
+ * priority (84..86).
+ */
+#define NVRTX_SM75_TEX_HANDLE_LOW	40U
+#define NVRTX_SM75_TEX_HANDLE_BITS	14U
+#define NVRTX_SM75_TEX_BUFFER_LOW	54U
+#define NVRTX_SM75_TEX_DST2_LOW		64U
+#define NVRTX_SM75_TEX_DIM_LOW		61U
+#define NVRTX_SM75_TEX_DIM_2D		1U
+#define NVRTX_SM75_TEX_CHANNELS_LOW	72U
+#define NVRTX_SM75_TEX_LOD_LOW		87U
+#define NVRTX_SM75_TEX_LOD_AUTO		0U
+#define NVRTX_SM75_TEX_LOD_ZERO		1U
+#define NVRTX_SM75_TEX_LOD_BIAS		2U
+#define NVRTX_SM75_TEX_LOD_EXPLICIT	3U
+
+/* The attribute addresses (NAK's NAK_ATTR_*): the position, the point size, the first generic one (16 bytes each), the instance and the vertex numbers. */
+#define NVRTX_SM75_ATTR_POINT_SIZE	0x06cU
+#define NVRTX_SM75_ATTR_POSITION	0x070U
+#define NVRTX_SM75_ATTR_POSITION_W	0x07cU
+#define NVRTX_SM75_ATTR_GENERIC		0x080U
+#define NVRTX_SM75_ATTR_GENERIC_END	0x280U
+#define NVRTX_SM75_ATTR_INSTANCE_ID	0x2f8U
+#define NVRTX_SM75_ATTR_VERTEX_ID	0x2fcU
+
 /* BRA: the offset to the target in words from the next instruction (34..81). */
 #define NVRTX_SM75_BRA_OFFSET_LOW	34U
 #define NVRTX_SM75_BRA_OFFSET_BITS	48U
@@ -330,5 +425,14 @@
 #define NVRTX_SM75_CB_STORAGE_MAX	32U
 #define NVRTX_SM75_CB_UNIFORM_FIRST	1U
 #define NVRTX_SM75_CB_UNIFORM_MAX	7U
+
+/*
+ * The texture handles: from NVRTX_SM75_CB_TEXTURES of constant buffer 0, one
+ * word per sampled image the shader uses, in the order of its uniform list
+ * (the dispatch writes the texture header index in bits 19:0 and the
+ * sampler's in 31:20, as NVK's descriptors on Turing).
+ */
+#define NVRTX_SM75_CB_TEXTURES		0x400U
+#define NVRTX_SM75_CB_TEXTURES_MAX	32U
 
 #endif /* DRIVERS_GPU_NVRTX_COMPILER_SM75_ISA_H */
