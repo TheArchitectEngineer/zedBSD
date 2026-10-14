@@ -27,6 +27,9 @@
 /* Setting a dynamic script's async property to false preserves insertion order. */
 #define DOM_NODE_SCRIPT_ORDERED 0x0002U
 
+/* A link's stylesheet has loaded (or failed) and its load or error event has been queued. */
+#define DOM_NODE_LINK_LOADED 0x0004U
+
 /*
  * The kinds of node, numbered as the DOM's nodeType numbers them.
  */

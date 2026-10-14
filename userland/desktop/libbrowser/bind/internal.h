@@ -79,6 +79,7 @@ enum bind_interface_index {
 	BIND_HTML_BUTTON_ELEMENT,
 	BIND_HTML_LABEL_ELEMENT,
 	BIND_HTML_META_ELEMENT,
+	BIND_HTML_LINK_ELEMENT,
 	BIND_HTML_OBJECT_ELEMENT,
 	BIND_TREE_WALKER,
 	BIND_NODE_ITERATOR,
@@ -352,6 +353,7 @@ extern const struct bind_interface bind_html_button_element_interface;
 extern const struct bind_interface bind_html_details_element_interface;
 extern const struct bind_interface bind_html_label_element_interface;
 extern const struct bind_interface bind_html_meta_element_interface;
+extern const struct bind_interface bind_html_link_element_interface;
 extern const struct bind_interface bind_html_object_element_interface;
 extern const struct bind_interface bind_tree_walker_interface;
 extern const struct bind_interface bind_node_iterator_interface;

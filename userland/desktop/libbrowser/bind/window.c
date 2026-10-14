@@ -130,6 +130,7 @@ static const struct bind_interface *const window_interfaces[BIND_INTERFACES] = {
 	&bind_html_button_element_interface,
 	&bind_html_label_element_interface,
 	&bind_html_meta_element_interface,
+	&bind_html_link_element_interface,
 	&bind_html_object_element_interface,
 	&bind_tree_walker_interface,
 	&bind_node_iterator_interface,

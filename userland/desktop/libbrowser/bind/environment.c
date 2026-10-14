@@ -956,6 +956,8 @@ environment_xhr_send(
 	if (status == 0)
 		status = window->host.fetch_sync(window->host.context, wb_buffer_string(&href), &bytes, &final_url);
 	fetched = status == 0;
+	if (getenv("BROWSER_NET_DUMP") != NULL)
+		fprintf(stderr, "xhr: %.200s -> status %d bytes %lu\n", wb_buffer_string(&href), status, (unsigned long)bytes.length);
 
 	/* A successful response exposes its body and final URL. */
 	if (fetched) {

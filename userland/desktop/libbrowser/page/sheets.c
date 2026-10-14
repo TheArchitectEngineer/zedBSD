@@ -90,6 +90,7 @@ page_sheets_init(
 {
 	/* No sheet yet. */
 	wb_vector_init(&page->sheets, sizeof(struct page_sheet *));
+	wb_vector_init(&page->link_events, sizeof(struct page_link_event));
 	page->sheets_generation = 0;
 	page->styled_sheets = 0;
 	page->styling = 0;
@@ -163,6 +164,7 @@ page_sheets_release(
 
 	/* The table itself. */
 	wb_vector_release(&page->sheets);
+	wb_vector_release(&page->link_events);
 }
 
 /* Adds the sheets of a node and its descendants in tree order. */
@@ -315,6 +317,7 @@ sheets_add_link(
 	struct wb_buffer href;
 	struct wb_buffer location;
 	const struct css_media *chain[CSS_MEDIA_CHAIN_MAX];
+	struct page_link_event event;
 	int is_sheet;
 	int error;
 
@@ -357,6 +360,16 @@ sheets_add_link(
 	error = sheets_add_loaded(page, entry, chain, 1);
 	if (error != 0)
 		return error;
+
+	/* A link whose sheet is in (or failed) has its load or error event queued, once. */
+	if ((element->node.flags & DOM_NODE_LINK_LOADED) == 0U && (entry->sheet != NULL || entry->failed)) {
+		event.element = element;
+		event.failed = entry->failed;
+		element->node.flags |= DOM_NODE_LINK_LOADED;
+		error = wb_vector_push(&page->link_events, &event);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the link's sheet is in the engine, or on its way. */
 	return 0;
@@ -897,4 +910,36 @@ sheets_free(
 	free(entry->text);
 	free(entry->location);
 	free(entry);
+}
+
+/*
+ * Fires the load (or error) event of the links whose sheets arrived since
+ * the last styling; a handler may change the document, which styles it again.
+ */
+int
+page_sheets_fire_links(
+	struct page *page)
+{
+	struct page_link_event *list;
+	size_t count;
+	size_t index;
+	int canceled;
+	int error;
+
+	/* The events are taken out of the page first: a handler may style the page again. */
+	count = page->link_events.count;
+	if (count == 0)
+		return 0;
+	list = malloc(count * sizeof(*list));
+	if (list == NULL)
+		return ENOMEM;
+	memcpy(list, page->link_events.items, count * sizeof(*list));
+	page->link_events.count = 0;
+
+	/* Each element's event. */
+	error = 0;
+	for (index = 0; index < count && error == 0; index++)
+		error = bind_fire_event(page->window, &list[index].element->node, list[index].failed ? "error" : "load", 0, &canceled);
+	free(list);
+	return error;
 }

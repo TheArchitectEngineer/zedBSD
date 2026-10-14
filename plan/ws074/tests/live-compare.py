@@ -69,7 +69,7 @@ def render_chromium(url, width, height, out):
     shutil.rmtree(profile, ignore_errors=True)
     command = ["chromium", "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
                "--force-device-scale-factor=1", "--user-data-dir=" + profile, "--virtual-time-budget=5000",
-               "--user-agent=" + AGENT, "--window-size=%d,%d" % (width, height), "--screenshot=" + out, url]
+               "--user-agent=" + AGENT, "--accept-lang=ja,en-US;q=0.9,en;q=0.8", "--window-size=%d,%d" % (width, height), "--screenshot=" + out, url]
     subprocess.run(command, env=env, capture_output=True, timeout=120)
     shutil.rmtree(profile, ignore_errors=True)
     if not os.path.exists(out):

@@ -95,6 +95,12 @@ struct page_prefetched {
  * whose serial box_index_serial is, made when a script first asks after a
  * layout (geometry.c).
  */
+/* A link element whose stylesheet arrived (or failed), waiting for its load or error event. */
+struct page_link_event {
+	struct dom_element *element;
+	int failed;
+};
+
 struct page {
 	struct vm_heap *heap;
 	struct dom_document *document;
@@ -125,6 +131,7 @@ struct page {
 	uint32_t images_generation;
 	uint32_t laid_out_images;
 	struct wb_vector sheets;
+	struct wb_vector link_events;
 	uint32_t sheets_generation;
 	uint32_t styled_sheets;
 	struct wb_vector scripts;
@@ -214,6 +221,7 @@ void page_modules_release(struct page *page);
 int page_module_enqueue(struct page *page, struct dom_element *script);
 int page_modules_run(struct page *page);
 int page_deferred_run(struct page *page);
+int page_sheets_fire_links(struct page *page);
 
 /* The parser-blocking scripts fetched before a document is parsed (script.c, BUG-207). */
 int page_scan_scripts(const char *base, const unsigned char *bytes, size_t length, struct wb_vector *locations);

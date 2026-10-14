@@ -1008,7 +1008,9 @@ page_gather_styles(
 	/* Succeeded: the sheets match the document of this generation. */
 	page->styled_generation = page->document->generation;
 	page->styled_visits = page->visits_generation;
-	return 0;
+
+	/* The links whose sheets have arrived tell their scripts (a handler may change the document). */
+	return page_sheets_fire_links(page);
 }
 
 /* A visited paint lookup cannot consult any history outside this page. */
