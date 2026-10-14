@@ -24,9 +24,12 @@
 #include <stdint.h>
 
 #include <drivers/gpu/gpu.h>
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/pmem.h>
+#include <kern/sched.h>
+#include <kern/thread.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
@@ -43,6 +46,13 @@
 /* A blob's VRAM is on this boundary (a window's surface address is a multiple of 256). */
 #define NODE_BLOB_ALIGN			0x10000ULL
 
+/* How long each turn of the message drain takes messages, and its pause after a failed turn. */
+#define NODE_DRAIN_TURN_US		1000000U
+#define NODE_DRAIN_PAUSE_US		1000000U
+
+/* Matches no function: the drain takes every message until its turn ends. */
+#define NODE_DRAIN_NO_FUNCTION		0xffffffffU
+
 /* The page the storage is allocated in. */
 #define NODE_PAGE_BYTES			4096U
 
@@ -57,6 +67,7 @@ static int node_resource_write(void *private_data, void *session, void *object, 
 static int node_resource_map(void *private_data, void *session, void *object, struct drv_gpu_mapping *mapping);
 static int node_range(const struct nvrtx_resource *resource, uint64_t offset, uint32_t bytes);
 static void node_free(struct nvrtx_node *node);
+static void node_drain(void *argument);
 
 /*
  * Registers the GPU as a GPU device after the takeover (stage P8c).
@@ -70,6 +81,7 @@ nvrtx_node_start(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_node *node;
+	struct thread *drain;
 	int error;
 
 	/* The display's frames need the window and a head of the driver's own. */
@@ -124,6 +136,20 @@ nvrtx_node_start(
 		nvrtx_stage_mark("P8c fail: register (%d)", error);
 		node_free(node);
 		return error;
+	}
+
+	/*
+	 * Starts the thread that takes the messages the GSP sends meanwhile
+	 * (channel errors, display events), as nouveau's message worker does,
+	 * so its queue never fills.  Without it the device still works for a
+	 * while, so a failure is only shown.
+	 */
+	error = kthread_create(node_drain, gpu, SCHED_PRIORITY_DEFAULT, &drain);
+	if (error == 0) {
+		drain->detached = 1;
+		thread_start(drain);
+	} else {
+		nvrtx_stage_mark("P8c: no message drain (%d)", error);
 	}
 
 	/* Succeeded: the GPU is a GPU device; the GSP stays up for it. */
@@ -495,4 +521,28 @@ node_free(
 
 	/* Frees the node. */
 	kern_free(node);
+}
+
+/*
+ * Takes the messages the GSP sends while the device is up, a turn at a
+ * time, until power-off.  The worker that made the device has ended, and
+ * the device's operations make no calls to the GSP, so this thread is the
+ * channel's only reader.  The wait shows the channel errors it meets.
+ */
+static void
+node_drain(
+	void *argument)
+{
+	struct nvrtx_gpu *gpu;
+	size_t length;
+	int error;
+
+	gpu = argument;
+
+	/* Takes messages turn after turn; a turn ends when its time is spent. */
+	for (;;) {
+		error = nvrtx_rpc_wait(gpu, NODE_DRAIN_NO_FUNCTION, 0U, NODE_DRAIN_TURN_US, &length);
+		if (error != 0 && error != ETIMEDOUT)
+			kern_usleep_range(NODE_DRAIN_PAUSE_US, NODE_DRAIN_PAUSE_US);
+	}
 }

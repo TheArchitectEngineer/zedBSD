@@ -161,7 +161,7 @@ FAIL の時: `P8b fail: …` と `P8b core exception …`・`P8b other …` の 
 | `config-amd64-nvrtx.mk` | `NVRTX_RUN=R8c`（`nvrtx.gsp=1 nvrtx.disp=1 nvrtx.resident=1`、`display-inventory`・`display-control` を image に） |
 
 - 範囲の外・後の段: `GPU_CAP_DISPLAY_EVENTS`（vblank・hotplug）・`DISPLAY_CONTROL`（power・refresh）・cursor・scanout の表（`query_device`・`constraints`）・SHARE（Keiland の direct scanout は他の fd からの import が要る）・3D と compute の投入（p007）。Keiland の compositor は libvulkan（Venus の executor）を通るので、RTX の画面に出るには p007 が要る。
-- 危険: resident の間、GSP が送る非同期の message（RC・hotplug など）を誰も読まない（nouveau は msgq の worker を持つ）。queue が埋まると RM が止まりうる。長く動かす前に drain の thread を足す（後の段）。
+- resident の間に GSP が送る非同期の message（RC・hotplug など）は、登録の後に起こす drain の thread（`node_drain`、1 秒ずつ `nvrtx_rpc_wait` で受けて捨てる。RC は `P6 channel error: …`、知らない message は `rpc: message …` の印）が読む（nouveau の msgq の worker と同じ役）。device の ops は GSP に RPC を出さないので reader は 1 つ。
 - 確認: nvrtx=y の kernel rc 0・warning 0・include check / vmunix check PASS、host 試験 222 PASS（P8c の ops は hardware の上だけで host の builder は無い）。実機は未実施。
 
 ### T への手順（R8c、rombar=1。R8b の再試験（T1-645）が PASS してから）
