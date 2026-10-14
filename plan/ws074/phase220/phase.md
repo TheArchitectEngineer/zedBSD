@@ -10,6 +10,14 @@
 
 Event ws074-p220-q1148-partial-clear-20261014: [証拠](evidence/20261014-q1148/README.md)。Latin F字形の縦描画は横字形の時計回り90度回転と画素完全一致、CPU/GPUは通常・clip含め差0/16,384。upright/非ASCIIは既存経路へ戻る。shader生成・SPIR-V検証、warning0 build、固定縦Grid8件+旧縦横2件whole PASS、host CSS51/JS14/Grid48、Acid3 score100/inventory100/差0、Acid2差1865を確認。q1148部分cleared、p220 wholeは他orientation/折返し等が残りin-progress、p225/p189/p173 whole未達。共有投影/GitHub publication保留。
 
+## q1157-i01 有限部分範囲（2026-10-14 12:10 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:40 JSTまで）に適用。非Grid、明示px content width/height、vertical-rl/LTR、text-align start/left、ASCII sideways、単一非折返しrunと明示br、float/atomic/replaced/marker無しに限定。既存vertical-lr inline幾何/CPU-GPU縦paintを右端からの行進行へ拡張し、q1156最小ページの矩形/画像・hit/dump、旧縦左/横書きWPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を検証。Grid本体/WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1157-i01 結果（2026-10-14 12:13 JST）
+
+Event ws074-p220-q1157-partial-clear-20261014: [証拠](evidence/20261014-q1157/README.md)。非Grid・確定px content width/heightのASCII vertical-rl/LTRを既存縦inline幾何/時計回り縦paintへ通し、行を右から左へ配置。単一/2行DOM矩形・hit/dump、非対称F画素の縦左版から8px移動した完全一致とCPU/GPU一致を確認。旧縦左Grid16+縦横2 whole PASS、縦右Grid対照FAIL不変、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。q1157部分cleared、p220 wholeは他writing-mode/折返し等、p225はGrid物理行反転、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 ## q1156-i01 有限部分範囲（2026-10-14 12:08 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:38 JSTまで）に適用。q1144非Grid単一行/明示改行vertical-lr最小ページをvertical-rlへ変え、Chromium/browserのDOM矩形、layout/paint dump、CPU/GPU画像を比較。子の物理右始まり/行進行とpaint方向を切り分け、p220実装とp225 Grid依存の有限境界を記録。読取と証拠ページのみ、browser/runner/WPT/ABI/`plan/master.md`/Acid変更なし。p220/p225/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

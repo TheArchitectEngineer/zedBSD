@@ -1,0 +1,7 @@
+single=8,8,102,102
+single-text=99,9,10,36
+multiple=8,110,102,102
+multiple-text=89,111,20,36
+hit=104,14:single-text
+hit=95,120:multiple-text
+hit=50,50:single

@@ -1,0 +1,7 @@
+console: single=8,8,102,102
+console: single-text=99,9,10,36
+console: multiple=8,110,102,102
+console: multiple-text=89,111,20,36
+console: hit=104,14:single-text
+console: hit=95,120:multiple-text
+console: hit=50,50:single

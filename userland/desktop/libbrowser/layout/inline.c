@@ -107,7 +107,7 @@ static int inline_wraps(const struct layout_box *box);
 static void inline_line_height(struct layout_tree *tree, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
-static int inline_vertical_simple(const struct layout_box *box, int depth);
+static int inline_vertical_simple(const struct layout_box *box, int depth, int mode);
 static layout_unit inline_vertical_room(const struct layout_box *box);
 
 /*
@@ -128,11 +128,18 @@ layout_inline(
 	int vertical;
 	int error;
 
-	/* A text-only vertical-lr block can map its logical lines to physical axes. */
-	vertical = box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+	/* Bounded text-only vertical blocks map logical lines to physical axes. */
+	vertical = (box->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
+	    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+	    box->style.width.unit == CSS_UNIT_PX &&
+	    box->style.height.unit == CSS_UNIT_PX &&
+	    box->style.box_sizing == CSS_BOX_SIZING_CONTENT &&
+	    (box->parent == NULL ||
+	    (box->parent->style.display != CSS_DISPLAY_GRID &&
+	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID)))) &&
 	    box->style.direction == CSS_DIRECTION_LTR &&
 	    (box->style.text_align == CSS_TEXT_ALIGN_START || box->style.text_align == CSS_TEXT_ALIGN_LEFT) &&
-	    inline_vertical_simple(box, 0);
+	    inline_vertical_simple(box, 0, box->style.writing_mode);
 
 	/* The floats among the content go to their sides first. */
 	error = inline_place_floats(tree, box, box, 0);
@@ -180,6 +187,11 @@ layout_inline(
 	wb_vector_release(&cutter.pieces);
 	if (error != 0)
 		return error;
+	if (vertical && box->style.writing_mode == CSS_WRITING_VERTICAL_RL) {
+		/* The first block-axis line starts at the physical right edge. */
+		for (index = 0; index < box->line_count; index++)
+			box->lines[index].y = box->width - box->lines[index].y - box->lines[index].height;
+	}
 
 	/* Succeeded: the block has its lines and its height. */
 	return 0;
@@ -189,7 +201,8 @@ layout_inline(
 static int
 inline_vertical_simple(
 	const struct layout_box *box,
-	int depth)
+	int depth,
+	int mode)
 {
 	const struct layout_box *child;
 	size_t index;
@@ -219,12 +232,12 @@ inline_vertical_simple(
 	if (depth != 0 && box->kind != LAYOUT_INLINE)
 		return 0;
 
-	/* Every descendant must share the vertical-lr, left-to-right mapping. */
-	if (box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	/* Every descendant must share the root's vertical, left-to-right mapping. */
+	if (box->style.writing_mode != mode ||
 	    box->style.direction != CSS_DIRECTION_LTR)
 		return 0;
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (!inline_vertical_simple(child, depth + 1))
+		if (!inline_vertical_simple(child, depth + 1, mode))
 			return 0;
 	}
 

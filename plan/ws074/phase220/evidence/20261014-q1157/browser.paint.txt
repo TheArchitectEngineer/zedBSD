@@ -1,0 +1,29 @@
+console: single=8,8,102,102
+console: single-text=99,9,10,36
+console: multiple=8,110,102,102
+console: multiple-text=89,111,20,36
+console: hit=104,14:single-text
+console: hit=95,120:multiple-text
+console: hit=50,50:single
+canvas 1024.00 x 768.00 #ffffffff
+rect 8.00 8.00 102.00 1.00 #ff000000
+rect 8.00 109.00 102.00 1.00 #ff000000
+rect 8.00 9.00 1.00 100.00 #ff000000
+rect 109.00 9.00 1.00 100.00 #ff000000
+rect 8.00 110.00 102.00 1.00 #ff000000
+rect 8.00 211.00 102.00 1.00 #ff000000
+rect 8.00 111.00 1.00 100.00 #ff000000
+rect 109.00 111.00 1.00 100.00 #ff000000
+text 101.00 9.00 10px face 1 bold 0 #ff000000 "X"
+text 101.00 15.00 10px face 1 bold 0 #ff000000 " "
+text 101.00 21.00 10px face 1 bold 0 #ff000000 "XX"
+text 101.00 33.00 10px face 1 bold 0 #ff000000 " "
+text 101.00 39.00 10px face 1 bold 0 #ff000000 "X"
+text 101.00 111.00 10px face 1 bold 0 #ff000000 "X"
+text 101.00 117.00 10px face 1 bold 0 #ff000000 " "
+text 101.00 123.00 10px face 1 bold 0 #ff000000 "XX"
+text 101.00 135.00 10px face 1 bold 0 #ff000000 " "
+text 101.00 141.00 10px face 1 bold 0 #ff000000 "X"
+text 91.00 111.00 10px face 1 bold 0 #ff000000 "XX"
+text 91.00 123.00 10px face 1 bold 0 #ff000000 " "
+text 91.00 129.00 10px face 1 bold 0 #ff000000 "X"

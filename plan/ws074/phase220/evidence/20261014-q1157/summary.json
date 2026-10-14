@@ -1,0 +1,21 @@
+{
+  "single_and_two_line_rects": [
+    "single=8,8,102,102",
+    "single-text=99,9,10,36",
+    "multiple=8,110,102,102",
+    "multiple-text=89,111,20,36"
+  ],
+  "hits": [
+    "hit=104,14:single-text",
+    "hit=95,120:multiple-text",
+    "hit=50,50:single"
+  ],
+  "f_ink_pixels": 138,
+  "f_right_shift_px": 8,
+  "f_translation_exact": true,
+  "f_cpu_gpu_exact": true,
+  "page_cpu_gpu_exact": true,
+  "build_warning_count": 0,
+  "wpt_old_pass": 18,
+  "wpt_rl_control": "fail"
+}
