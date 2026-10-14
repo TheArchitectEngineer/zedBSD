@@ -1418,6 +1418,8 @@ handle_buffer(
 	uint32_t offset;
 	uint32_t flags;
 	uint32_t bytes;
+	uint32_t pitch;
+	uint32_t chroma;
 	int error;
 
 	/* The buffer's name, and what it carries. */
@@ -1474,11 +1476,18 @@ handle_buffer(
 	 * (once); any other goes to the buffer's bounce memory.
 	 */
 	output->in_target = false;
+	pitch = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_PITCH);
+	chroma = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET + 4U);
+	if (drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANES) < 2U || pitch == 0) {
+		/* Without plane information the format's stride and height give the layout. */
+		pitch = decoder->width;
+		chroma = decoder->width * decoder->height;
+	}
 	if (decoder->target_capacity != 0 &&
 	    offset == 0 &&
 	    bytes <= decoder->target_capacity &&
-	    drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_PITCH) == decoder->target_pitch &&
-	    drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET + 4U) == decoder->target_chroma) {
+	    pitch == decoder->target_pitch &&
+	    chroma == decoder->target_chroma) {
 		output->in_target = true;
 		error = receive_bulk(decoder, decoder->target_physical, bytes, true);
 		decoder->target_capacity = 0;
