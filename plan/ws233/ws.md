@@ -21,3 +21,11 @@ Source: 2026-10-14 ユーザー「リポジトリ awemorris/zedBSD-firmware を�
 | ws233-p001 | 一覧と license の監査、repo の中身の準備（local）、build の取り方の変更 | in-progress（P1） |
 
 repo の作成と push は Q1 が、監査の結果をユーザーに示してから行う。
+
+## 決定（2026-10-14 ユーザー）
+
+「それでよいです。ghコマンドで作ること、アップロードすることを許可します。ファームウェアのディレクトリごとにライセンスファイルもわかりやすく置くのがよいです。makeで個別ファームウェアをダウンロードしたとき、初回は ライセンス表示と Agree するかの yes/no があるのがいいと思います。CIでは yes | make でいいのでは。」
+
+- repo は public。`gh` での作成と push（upload）は許可済み（Q1 が監査の結果を確かめてから行う）。
+- firmware の directory ごとに license の file を置く。
+- make で firmware を初めて取る時に license を表示して yes/no で同意を聞く。CI は `yes | make`。
