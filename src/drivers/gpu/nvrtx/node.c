@@ -394,11 +394,14 @@ node_get_info(
 	void *session,
 	struct gpu_info *info)
 {
-	UNUSED_PARAMETER(private_data);
+	struct nvrtx_node *node;
+
 	UNUSED_PARAMETER(session);
 
-	/* The capabilities and the limits of the resources. */
-	info->capabilities = NODE_CAPABILITIES;
+	node = private_data;
+
+	/* The capabilities (the renderer's too when it is bound) and the limits of the resources. */
+	info->capabilities = node->ops.capabilities;
 	info->max_resources = NODE_MAX_RESOURCES;
 	info->max_resource_bytes = NODE_MAX_RESOURCE_BYTES;
 
@@ -557,6 +560,21 @@ node_blob_create(
 	resource->kind = NVRTX_RESOURCE_BLOB;
 	resource->bytes = request->bytes;
 	resource->backing = backing;
+
+	/*
+	 * A blob of the renderer's made for a VkDeviceMemory (its blob_id is the
+	 * memory's identity) is that memory's storage: the memory takes a
+	 * reference to the backing and the work channel maps it.
+	 */
+	if (request->blob_id != 0U && node->renderer != 0) {
+		error = nvrtx_vk_node_blob_attach(node, session, request->blob_id, backing, request->bytes);
+		if (error != 0) {
+			nvrtx_bo_free(node->gpu, &backing->bo);
+			kern_free(backing);
+			kern_free(resource);
+			return error;
+		}
+	}
 
 	/* Succeeded: the blob is the session's, numbered for the protocol and listed. */
 	*resource_id = nvrtx_node_resource_id(node);

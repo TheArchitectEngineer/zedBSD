@@ -98,6 +98,61 @@ nvrtx_vk_heap_bytes(void *owner)
 	return 240ULL << 20;
 }
 
+/* The node's other parts the dispatcher's later handlers reach (the D3 test covers them). */
+void
+kern_logf(const char *format, ...)
+{
+	(void)format;
+}
+
+void
+nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes)
+{
+	(void)owner;
+	(void)backing;
+	(void)va;
+	(void)bytes;
+}
+
+int
+nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing)
+{
+	(void)owner;
+	(void)resource_id;
+	(void)bytes;
+	(void)cpu;
+	(void)va;
+	(void)backing;
+	return ENOENT;
+}
+
+int
+nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va)
+{
+	(void)owner;
+	(void)bytes;
+	(void)token;
+	(void)cpu;
+	(void)va;
+	return ENOMEM;
+}
+
+void
+nvrtx_vk_gpu_free(void *owner, void *token)
+{
+	(void)owner;
+	(void)token;
+}
+
+int
+nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes)
+{
+	(void)owner;
+	(void)va;
+	(void)bytes;
+	return EIO;
+}
+
 int
 main(void)
 {

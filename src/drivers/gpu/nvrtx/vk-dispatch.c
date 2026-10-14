@@ -13,9 +13,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/klog.h>
 #include <uapi/errno.h>
 
-#include "drivers/gpu/nvrtx/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
+
+/* The refusals shown so far (only the first ones are; the node's lock guards the count). */
+#define DISPATCH_SHOWN_MAX		32U
+
+static unsigned dispatch_shown;
+
+static void dispatch_refused(uint32_t opcode, int error);
 
 /*
  * The handlers, each owning a group of opcodes.  The list grows with the
@@ -23,7 +31,15 @@
  * recorded work); it is fixed for the node's life.
  */
 static const nvrtx_vk_route dispatch_routes[] = {
-	nvrtx_vk_device_route
+	nvrtx_vk_device_route,
+	nvrtx_vk_memory_route,
+	nvrtx_vk_resource_route,
+	nvrtx_vk_layout_route,
+	nvrtx_vk_target_route,
+	nvrtx_vk_pipeline_route,
+	nvrtx_vk_command_route,
+	nvrtx_vk_record_route,
+	nvrtx_vk_queue_route
 };
 
 /*
@@ -44,20 +60,39 @@ nvrtx_vk_dispatch(
 	int handled;
 	int error;
 
-	/* Asks each handler until one takes the command. */
+	/* Asks each handler until one takes the command; one that refuses it is shown. */
 	handled = 0;
 	for (index = 0U; index < sizeof(dispatch_routes) / sizeof(dispatch_routes[0]); index++) {
 		error = dispatch_routes[index](session, opcode, requested, reader, reply, &handled);
-		if (error != 0)
+		if (error != 0) {
+			dispatch_refused(opcode, error);
 			return error;
+		}
 		if (handled != 0)
 			break;
 	}
 
-	/* Refuses a command no handler owns. */
-	if (handled == 0)
+	/* Refuses, and shows, a command no handler owns. */
+	if (handled == 0) {
+		dispatch_refused(opcode, ENOTSUP);
 		return ENOTSUP;
+	}
 
 	/* Succeeded: one handler ran the command. */
 	return 0;
+}
+
+/* Shows a command the executor refused (the frame fails with it), the first ones only. */
+static void
+dispatch_refused(
+	uint32_t opcode,
+	int error)
+{
+	/* Only the first ones. */
+	if (dispatch_shown >= DISPATCH_SHOWN_MAX)
+		return;
+	dispatch_shown++;
+
+	/* The opcode and the error. */
+	kern_logf("nvrtx: vk: command %u refused (%d)\n", (unsigned)opcode, error);
 }

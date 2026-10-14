@@ -212,6 +212,8 @@ int nvrtx_cursor_hide(void *private_data, void *session, const struct gpu_displa
 void nvrtx_runtime_bind(struct nvrtx_node *node);
 void nvrtx_runtime_start(struct nvrtx_node *node);
 
+int nvrtx_vk_node_blob_attach(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t blob_id, struct nvrtx_backing *backing, uint64_t bytes);
+
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);
 uint32_t nvrtx_node_resource_id(struct nvrtx_node *node);
 void nvrtx_node_blob_listed(struct nvrtx_node *node, struct nvrtx_session *session, struct nvrtx_resource *resource, uint32_t resource_id);

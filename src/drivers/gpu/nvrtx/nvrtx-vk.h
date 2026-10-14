@@ -44,6 +44,7 @@
 #define NVRTX_VK_ARENA_BYTES		(256U * 1024U)
 
 struct nvrtx_vk_object;
+struct nvrtx_vk_execute;
 
 /*
  * One executor session.
@@ -68,6 +69,8 @@ struct nvrtx_vk_session {
 	struct i915_wire_arena arena;
 	/* The timelines the session's queues complete jobs on (bit n: timeline n), set by vkGetDeviceQueue2. */
 	uint64_t timelines;
+	/* The run its submissions are written into and the executor's programs (vk-execute.c), made at the first one. */
+	struct nvrtx_vk_execute *execute;
 };
 
 /*
@@ -100,6 +103,7 @@ typedef int (*nvrtx_vk_dispatcher)(struct nvrtx_vk_session *session, uint32_t op
 
 int nvrtx_vk_session_open(void *owner, struct nvrtx_vk_session **session);
 int nvrtx_vk_session_close(struct nvrtx_vk_session **session);
+void nvrtx_vk_execute_close(struct nvrtx_vk_session *session);
 void *nvrtx_vk_arena_take(struct nvrtx_vk_session *session, size_t bytes);
 
 int nvrtx_vk_object_publish(struct nvrtx_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity, void *payload, int (*destroy)(struct nvrtx_vk_session *, void *), struct nvrtx_vk_object **object);
@@ -115,6 +119,13 @@ int nvrtx_vk_stream_execute(struct nvrtx_vk_session *session, const void *wire, 
 int nvrtx_vk_dispatch(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
 /*
+ * Attaches the storage of a blob created for a VkDeviceMemory (the blob's
+ * blob_id is the memory's identity): the CPU's view, the GPU's address and
+ * the node's backing, which the memory holds until it is destroyed (vk-memory.c).
+ */
+int nvrtx_vk_memory_attach(struct nvrtx_vk_session *session, uint64_t identity, uint64_t bytes, uint8_t *cpu, uint64_t va, void *backing);
+
+/*
  * Finds a blob of the owner's (the node's session) by its resource id and
  * gives its CPU view: the first byte and the length.  Provided by the
  * node (node.c); the transport reads command streams from blobs and writes
@@ -125,5 +136,37 @@ int nvrtx_vk_blob(void *owner, uint32_t resource_id, uint8_t **cpu, uint64_t *by
 /* The owner's GPU: its PCI product, and the bytes of VRAM the CPU's window gives the executor's memory. */
 uint32_t nvrtx_vk_device_id(void *owner);
 uint64_t nvrtx_vk_heap_bytes(void *owner);
+
+/*
+ * Gives back the storage of a VkDeviceMemory once nothing holds it: the
+ * GPU's mapping of the run at va and the reference to the blob's backing
+ * the memory took when the blob was attached.  Provided by the node; the
+ * caller holds the node's lock.
+ */
+void nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes);
+
+/*
+ * Takes a blob of the owner's as the storage of an imported VkDeviceMemory
+ * of bytes (provided by the node): maps it for the GPU, holds its backing,
+ * and gives the CPU's view, the GPU's address and the backing, which
+ * nvrtx_vk_memory_detach() gives back.  The caller holds the node's lock.
+ */
+int nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing);
+
+/*
+ * The executor's own GPU memory (programs, push buffers, texture and
+ * sampler tables), provided by the node: a run of bytes the CPU writes at
+ * *cpu and the GPU reads at *va, and its release.  The token names the
+ * run to the node.
+ */
+int nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
+void nvrtx_vk_gpu_free(void *owner, void *token);
+
+/*
+ * Runs a push buffer of bytes at va on the GPU's work channel and waits
+ * until the GPU has done it (provided by the node).  Returns 0, or EIO
+ * when the work did not finish.
+ */
+int nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
 
 #endif
