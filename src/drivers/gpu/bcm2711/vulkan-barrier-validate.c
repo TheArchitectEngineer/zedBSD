@@ -8,6 +8,9 @@
 /* Native synchronization supports one serialized graphics family and one complete coherent colour subresource per image. */
 #include <uapi/errno.h>
 
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 #include "drivers/gpu/bcm2711/vulkan-barrier.h"
 #include "drivers/gpu/bcm2711/vulkan-memory.h"
 
@@ -182,6 +185,16 @@ validate_image(
 	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
 		required = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		break;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DST:
+		/* A decode output (ws236). */
+		required = BCM2711_VIDEO_USAGE_DECODE_DST;
+		break;
+	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DPB:
+		/* A decode reference (ws236). */
+		required = BCM2711_VIDEO_USAGE_DECODE_DPB;
+		break;
+#endif
 	default:
 		break;
 	}
@@ -216,6 +229,12 @@ colour_layout(
 	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
 	case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
 		break;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DST:
+	case (VkImageLayout)BCM2711_VIDEO_LAYOUT_DECODE_DPB:
+		/* The layouts of decoded pictures (ws236). */
+		break;
+#endif
 	default:
 		return ENOTSUP;
 	}

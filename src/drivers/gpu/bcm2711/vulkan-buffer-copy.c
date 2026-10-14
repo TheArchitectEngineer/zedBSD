@@ -14,6 +14,9 @@
 #include "drivers/gpu/bcm2711/vulkan-buffer-copy.h"
 #include "drivers/gpu/bcm2711/vulkan-resource.h"
 #include "drivers/gpu/bcm2711/v3d-memory.h"
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 
 /* One checked row sequence refers only to bytes inside a retained logical binding; offsets stay numerical until FIFO execution. */
 struct copy_span {
@@ -32,6 +35,9 @@ static int decode_copy(struct bcm2711_vulkan_session *session, struct i915_wire_
 static int resolve_resources(const struct bcm2711_vulkan_buffer_copy *copy, struct bcm2711_vulkan_object *device, struct bcm2711_vulkan_resource *resources[2], void *cpu[2]);
 static int release_copy(struct bcm2711_vulkan_command_node *node);
 static bool written_box(const struct bcm2711_vulkan_buffer_copy *copy, uint32_t box[4]);
+#if CONFIG_DRIVER_BCM2711_VIDEO
+static int prepare_plane(const VkBufferImageCopy *region, const struct bcm2711_vulkan_resource *image, uint32_t buffer_slot, uint32_t image_slot, struct copy_span spans[2]);
+#endif
 
 /*
  * Records one complete reply-free buffer transfer with all byte or image regions and independently retained resources.
@@ -379,8 +385,18 @@ resolve_resources(
 			usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 			if (index != 0)
 				usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+			/* A decoded NV12 picture may be read back, plane by plane (ws236). */
+			if (resources[index]->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12 &&
+			    copy->record.opcode == GPU_OP_CMD_COPY_IMAGE_TO_BUFFER) {
+				/* Accepted. */
+			} else if (resources[index]->format != VK_FORMAT_R8G8B8A8_UNORM && resources[index]->format != VK_FORMAT_B8G8R8A8_UNORM) {
+				return ENOTSUP;
+			}
+#else
 			if (resources[index]->format != VK_FORMAT_R8G8B8A8_UNORM && resources[index]->format != VK_FORMAT_B8G8R8A8_UNORM)
 				return ENOTSUP;
+#endif
 		}
 
 		/* Complete same-device binding and actual transfer permission precede any coherent pointer resolution. */
@@ -497,6 +513,21 @@ prepare_spans(
 		buffer_slot = 1U - image_slot;
 		image = resources[image_slot];
 		image_region = &copy->regions.images[index];
+#if CONFIG_DRIVER_BCM2711_VIDEO
+		/* An NV12 plane has its own size, texel and place (ws236). */
+		if (image->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
+			error = prepare_plane(image_region, image, buffer_slot, image_slot, spans);
+			if (error != 0)
+				return error;
+			error = validate_span(&spans[0], resources[0]);
+			if (error != 0)
+				return error;
+			error = validate_span(&spans[1], resources[1]);
+			if (error != 0)
+				return error;
+			return 0;
+		}
+#endif
 		if (image_region->imageSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
 		    image_region->imageSubresource.mipLevel != 0 ||
 		    image_region->imageSubresource.baseArrayLayer != 0 ||
@@ -684,3 +715,82 @@ written_box(
 	/* Succeeded: the box covers every written pixel of the image. */
 	return true;
 }
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+/*
+ * Prepares the rows of one NV12 plane region read back to a buffer: plane
+ * 0 is one byte a texel over the whole picture, plane 1 two bytes (a Cb
+ * and a Cr) over half the width and height, at the chroma plane's offset.
+ */
+static int
+prepare_plane(
+	const VkBufferImageCopy *region,
+	const struct bcm2711_vulkan_resource *image,
+	uint32_t buffer_slot,
+	uint32_t image_slot,
+	struct copy_span spans[2])
+{
+	uint64_t chroma;
+	uint64_t bytes;
+	uint64_t base;
+	uint32_t pitch;
+	uint32_t texel;
+	uint32_t plane_width;
+	uint32_t plane_height;
+	uint32_t width;
+	uint32_t height;
+	uint32_t row_length;
+
+	/* The plane: its texel, its size and where it starts. */
+	bcm2711_vulkan_video_nv12_layout(image->width, image->height, &pitch, &chroma, &bytes);
+	if (region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT) {
+		texel = 1U;
+		plane_width = image->width;
+		plane_height = image->height;
+		base = 0;
+	} else if (region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_PLANE_1_BIT) {
+		texel = 2U;
+		plane_width = (image->width + 1U) / 2U;
+		plane_height = (image->height + 1U) / 2U;
+		base = chroma;
+	} else {
+		return EINVAL;
+	}
+
+	/* One level and layer, a nonempty region inside the plane. */
+	width = region->imageExtent.width;
+	height = region->imageExtent.height;
+	if (region->imageSubresource.mipLevel != 0 ||
+	    region->imageSubresource.baseArrayLayer != 0 ||
+	    region->imageSubresource.layerCount != 1 ||
+	    region->imageOffset.x < 0 ||
+	    region->imageOffset.y < 0 ||
+	    region->imageOffset.z != 0 ||
+	    region->imageExtent.depth != 1 ||
+	    width == 0 || height == 0)
+		return EINVAL;
+	if ((uint64_t)region->imageOffset.x + width > plane_width ||
+	    (uint64_t)region->imageOffset.y + height > plane_height)
+		return EINVAL;
+
+	/* The buffer's rows: packed unless a longer row is given, aligned to the texel. */
+	row_length = region->bufferRowLength;
+	if (row_length == 0)
+		row_length = width;
+	if (row_length < width || (region->bufferOffset % texel) != 0)
+		return EINVAL;
+
+	/* The two row sequences. */
+	spans[buffer_slot].offset = region->bufferOffset;
+	spans[buffer_slot].pitch = (uint64_t)row_length * texel;
+	spans[image_slot].offset = base + (uint64_t)region->imageOffset.y * pitch + (uint64_t)region->imageOffset.x * texel;
+	spans[image_slot].pitch = pitch;
+	spans[0].bytes = (uint64_t)width * texel;
+	spans[1].bytes = spans[0].bytes;
+	spans[0].rows = height;
+	spans[1].rows = height;
+
+	/* Succeeded: the plane's rows are bounded by the caller. */
+	return 0;
+}
+#endif

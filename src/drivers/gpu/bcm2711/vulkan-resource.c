@@ -14,6 +14,10 @@
 #include "drivers/gpu/bcm2711/vulkan-resource.h"
 #include "drivers/gpu/bcm2711/v3d-memory.h"
 
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
+
 /* Existing generated record decoding is device-independent Zlib code, without a Gen12 resource implementation. */
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
@@ -181,6 +185,7 @@ create_buffer(
 	struct bcm2711_vulkan_resource description;
 	uint64_t device_id;
 	uint64_t present;
+	uint32_t allowed;
 	int error;
 
 	/* Decode the required input using the existing bounded command arena. */
@@ -199,8 +204,14 @@ create_buffer(
 	    info.flags != 0 ||
 	    info.size == 0 ||
 	    info.size > VULKAN_RESOURCE_BYTES ||
-	    info.usage == 0 ||
-	    (info.usage & ~VULKAN_BUFFER_USAGE) != 0)
+	    info.usage == 0)
+		return ENOTSUP;
+	allowed = VULKAN_BUFFER_USAGE;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* A bitstream buffer is read by the CPU into the video decoder's staging (ws236). */
+	allowed |= BCM2711_VIDEO_BUFFER_USAGE_DECODE_SRC;
+#endif
+	if ((info.usage & ~allowed) != 0)
 		return ENOTSUP;
 	error = sharing_mode(info.sharingMode, info.queueFamilyIndexCount, info.pQueueFamilyIndices);
 	if (error != 0)
@@ -231,6 +242,10 @@ create_image(
 	struct bcm2711_vulkan_resource description;
 	uint64_t device_id;
 	uint64_t present;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	uint64_t chroma;
+#endif
+	bool nv12;
 	int error;
 
 	/* The codec accepts the client's stripped external declaration; native storage capabilities remain separate. */
@@ -257,11 +272,21 @@ create_image(
 	    info.arrayLayers != 1 ||
 	    info.samples != VK_SAMPLE_COUNT_1_BIT)
 		return ENOTSUP;
-	if (info.format != VK_FORMAT_R8G8B8A8_UNORM && info.format != VK_FORMAT_B8G8R8A8_UNORM)
+	nv12 = false;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* An NV12 picture only decodes, serves as a reference and is read back (ws236). */
+	if (info.format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
+		nv12 = true;
+		if (info.usage == 0 ||
+		    (info.usage & ~(BCM2711_VIDEO_USAGE_DECODE_DST | BCM2711_VIDEO_USAGE_DECODE_DPB | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) != 0)
+			return ENOTSUP;
+	}
+#endif
+	if (!nv12 && info.format != VK_FORMAT_R8G8B8A8_UNORM && info.format != VK_FORMAT_B8G8R8A8_UNORM)
 		return ENOTSUP;
 	if (info.tiling != VK_IMAGE_TILING_LINEAR && info.tiling != VK_IMAGE_TILING_OPTIMAL)
 		return ENOTSUP;
-	if (info.usage == 0 || (info.usage & ~VULKAN_IMAGE_USAGE) != 0)
+	if (!nv12 && (info.usage == 0 || (info.usage & ~VULKAN_IMAGE_USAGE) != 0))
 		return ENOTSUP;
 	if (info.initialLayout != VK_IMAGE_LAYOUT_UNDEFINED &&
 	    (info.initialLayout != VK_IMAGE_LAYOUT_PREINITIALIZED || info.tiling != VK_IMAGE_TILING_LINEAR))
@@ -276,6 +301,11 @@ create_image(
 	description.height = info.extent.height;
 	description.pitch = (info.extent.width * 4U + 63U) & ~63U;
 	description.bytes = (uint64_t)description.pitch * info.extent.height;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* NV12 rows are the decoder's: 32-byte pitch, luma then interleaved chroma (vulkan-video.c). */
+	if (nv12)
+		bcm2711_vulkan_video_nv12_layout(info.extent.width, info.extent.height, &description.pitch, &chroma, &description.bytes);
+#endif
 	description.required_bytes = description.bytes;
 	description.alignment = 64;
 	description.usage = info.usage;
@@ -526,6 +556,11 @@ image_layout(
 	uint64_t identity;
 	uint64_t input;
 	uint64_t output;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	uint64_t chroma;
+	uint64_t bytes;
+	uint32_t pitch;
+#endif
 
 	/* Both generated input and output pointers must describe the one supported complete colour subresource. */
 	device_id = drv_i915_wire_read_u64(reader);
@@ -536,6 +571,17 @@ image_layout(
 	kern_memset(&subresource, 0, sizeof(subresource));
 	i915_vkc_dec_VkImageSubresource(reader, &session->arena, &subresource);
 	output = drv_i915_wire_read_u64(reader);
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/* The plane aspects of an NV12 picture are checked with its format below. */
+	if (reader->error != 0 ||
+	    output != 1 ||
+	    subresource.mipLevel != 0 ||
+	    subresource.arrayLayer != 0)
+		return EINVAL;
+	resource = find_resource(session, I915_VK_OBJ_IMAGE, device_id, identity);
+	if (resource == NULL)
+		return ENOTSUP;
+#else
 	if (reader->error != 0 ||
 	    output != 1 ||
 	    subresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
@@ -545,6 +591,7 @@ image_layout(
 	resource = find_resource(session, I915_VK_OBJ_IMAGE, device_id, identity);
 	if (resource == NULL || resource->tiling != VK_IMAGE_TILING_LINEAR)
 		return ENOTSUP;
+#endif
 
 	/* The first subresource starts at zero relative to the binding, never at a host pointer or GPU VA. */
 	kern_memset(&layout, 0, sizeof(layout));
@@ -552,6 +599,32 @@ image_layout(
 	layout.rowPitch = resource->pitch;
 	layout.arrayPitch = resource->bytes;
 	layout.depthPitch = resource->bytes;
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/*
+	 * An NV12 picture's planes are answered for either tiling (the private
+	 * promise libvulkan's README calls N3): its rows are linear.
+	 */
+	if (resource->format == (VkFormat)BCM2711_VIDEO_FORMAT_NV12) {
+		bcm2711_vulkan_video_nv12_layout(resource->width, resource->height, &pitch, &chroma, &bytes);
+		if (subresource.aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT) {
+			layout.offset = 0;
+			layout.size = chroma;
+		} else if (subresource.aspectMask == VK_IMAGE_ASPECT_PLANE_1_BIT) {
+			layout.offset = chroma;
+			layout.size = bytes - chroma;
+		} else {
+			return EINVAL;
+		}
+		layout.rowPitch = pitch;
+		drv_i915_wire_reply_u64(reply, 1);
+		i915_vkc_enc_VkSubresourceLayout(reply, &layout);
+		return 0;
+	}
+	if (subresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT)
+		return EINVAL;
+	if (resource->tiling != VK_IMAGE_TILING_LINEAR)
+		return ENOTSUP;
+#endif
 	drv_i915_wire_reply_u64(reply, 1);
 	i915_vkc_enc_VkSubresourceLayout(reply, &layout);
 
