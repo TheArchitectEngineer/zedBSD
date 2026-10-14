@@ -711,3 +711,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 
 
 - 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。| T1-639 | Q1（WS037 R6・R7・R7g・R7 の P8a、P1） | plan/ws037/phase005・006 の末尾の手順 | PASS（R6・R7・R7g・R7 P8a とも。P8a は lit 0 で head の値の照合は未実施。実機の RTX 2070 の VFIO guest、約 40 分） | results-20261015-nvrtx-r6r7.md | — |
+| T1-640 | Q1（WS037 R7 の P8a を 01:00.0 rombar=1 で 1 回） | 前回と同じ image、start.sh の 01:00.0 だけ rombar=1 | PASS（lit 1: head 0 SOR 1 TMDS-A、1280x1024 of 1688x1066、clock 108000000。P6 ok・P7 ok、OVMF は止まらず。モニタの実解像度の照合は未実施） | results-20261015-nvrtx-rombar1.md | 2026-10-15 |
