@@ -16,8 +16,8 @@
   - P2: 空き（BUG-307 の直しは merge 済み、T1-615 待ち）。
   - P3: 空き（BUG-306 の一部の直しと診断の log は merge 済み、T1-613 待ち）。
   - T1（新しい世代）: T1-615（BUG-307 の fsync）。
-  - T2（新しい世代、2026-10-14 ユーザー「T2を立ててテストを並列化します。」）: T1-616（回転の後の描き直し）。T1 と並列、この host の QEMU は名前・port・image を分ける。
-  - P3: 空き（回転の後の描き直しの直しは merge 済み、T1-616 待ち）。
+  - T2: 空き（T1-616 PASS）。
+  - P3: 空き（ws217-p004 cleared）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
 

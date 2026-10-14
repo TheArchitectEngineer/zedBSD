@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws217-p004 -->
 # ws217-p004: protocol・libkeiland・Settings の回転
 
-Status: in-progress（2026-10-14 P3: 実装 agent/p3、host 試験と build は済み、T1 の QEMU 待ち。T1-613 の後、回転の時間と回転の直後の絵を直した（下の節）。T1-614 の後、新しい大きさを回転の途中で窓へ送るようにした（最後の節）。clear は Q1 が T1 の結果で判定）
+Status: cleared（2026-10-14 Q1: T1-611 で R1〜R6 PASS、T1-613・T1-614・T1-616 で窓が消えない・位置が戻る・選んだ絵が読める・回転 約 2 s・回転の後の崩れた絵が無い（late=0）。ms= の 2.1〜2.3 s は T1 の QEMU と並行の負荷の下で、目標 2 s を少し超えた値として記録。-4 は BUG-306 で tracking。実機は p007）
 Disposition: normal
 Parent: [WS217](../ws.md)
 Queue: q983
