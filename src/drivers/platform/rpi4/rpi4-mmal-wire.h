@@ -71,8 +71,10 @@
 
 /* The buffer flags this client uses. */
 #define DRV_RPI4_MMAL_FLAG_EOS			0x0001U
+#define DRV_RPI4_MMAL_FLAG_FRAME_START		0x0002U
 #define DRV_RPI4_MMAL_FLAG_FRAME_END		0x0004U
 #define DRV_RPI4_MMAL_FLAG_KEYFRAME		0x0008U
+#define DRV_RPI4_MMAL_FLAG_CONFIG		0x0020U
 #define DRV_RPI4_MMAL_FLAG_CORRUPTED		0x0200U
 
 /* The time stamp that says "unknown". */
