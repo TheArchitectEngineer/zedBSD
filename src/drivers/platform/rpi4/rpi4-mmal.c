@@ -342,6 +342,8 @@ drv_rpi4_mmal_decoder_create(
 				break;
 			}
 		}
+
+		/* Every entry is in use. */
 		if (decoder == NULL)
 			error = EBUSY;
 	}
@@ -373,6 +375,8 @@ drv_rpi4_mmal_decoder_create(
 		decoder->used = false;
 		return error;
 	}
+
+	/* The two areas' CPU and physical addresses, one after the other. */
 	decoder->half[0].cpu = decoder->staging_memory.address;
 	decoder->half[0].physical = bus_to_physical(decoder->staging_memory.device_address);
 	decoder->half[1].cpu = decoder->half[0].cpu + input_bytes + 64U;
@@ -386,11 +390,15 @@ drv_rpi4_mmal_decoder_create(
 		if (status != 0)
 			error = EIO;
 	}
+
+	/* Reports a component the firmware did not create. */
 	if (error != 0) {
 		kern_logf("rpi4-mmal: %s not created (%d)\n", MMAL_COMPONENT_NAME, error);
 		drv_rpi4_mmal_decoder_destroy(decoder);
 		return error;
 	}
+
+	/* The firmware's handle of the component, named in every later request. */
 	decoder->component = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_CREATE_REPLY_HANDLE);
 
 	/* Sets the ports up and starts the component. */
@@ -552,6 +560,8 @@ drv_rpi4_mmal_decoder_send(
 			kern_logf("rpi4-mmal: input not sent (%d); decoder stopped\n", error);
 			return error;
 		}
+
+		/* The next piece; the input port has now carried data. */
 		offset += chunk;
 		decoder->input_sent = true;
 	}
@@ -634,6 +644,8 @@ free_input(
 			if (decoder->input_free[*index])
 				return 0;
 		}
+
+		/* Waits for something to come back. */
 		error = wait_queue_or(decoder, deadline);
 		if (error != 0) {
 			kern_logf("rpi4-mmal: no input buffer back in %u ms\n", MMAL_WAIT_MS);
@@ -702,6 +714,8 @@ drv_rpi4_mmal_decoder_receive(
 			if (decoder->outputs[index].ready)
 				break;
 		}
+
+		/* A received frame is ready. */
 		if (index < decoder->output_count)
 			break;
 		error = wait_queue_or(decoder, deadline);
@@ -807,6 +821,8 @@ drv_rpi4_mmal_decoder_flush(
 
 			spin_unlock_irqrestore(&mmal_lock, enabled);
 		}
+
+		/* The flush's status. */
 		if (error == 0) {
 			status = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS);
 			if (status != 0)
@@ -815,6 +831,8 @@ drv_rpi4_mmal_decoder_flush(
 	} else {
 		error = port_action(decoder, decoder->input_handle, DRV_RPI4_MMAL_ACTION_FLUSH, NULL);
 	}
+
+	/* Reports an input port that was not flushed. */
 	if (error != 0)
 		return error;
 
@@ -833,6 +851,8 @@ drv_rpi4_mmal_decoder_flush(
 				return error;
 		}
 	}
+
+	/* The caller holds no buffer any more. */
 	decoder->held_output = 0;
 
 	/* Takes in what the flush gave back. */
@@ -887,11 +907,15 @@ drv_rpi4_mmal_decoder_destroy(
 		service_reset();
 		outstanding = bulks_outstanding(decoder);
 	}
+
+	/* Keeps memory a bulk may still write and frees the rest. */
 	if (outstanding) {
 		kern_logf("rpi4-mmal: decoder %u memory kept for good: a bulk did not complete or abort\n", decoder->slot);
 	} else {
 		release_memory(decoder);
 	}
+
+	/* The entry is free for the next decoder. */
 	decoder->used = false;
 
 	mutex_unlock(&mmal_open_lock);
@@ -955,6 +979,8 @@ service_message(
 		kern_memcpy(mmal_reply.bytes, bytes, size);
 		mmal_reply_ready = true;
 	}
+
+	/* Wakes whoever waits for a reply or an arrival. */
 	waitq_wake_all(&mmal_wake);
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
@@ -987,6 +1013,8 @@ service_bulk_done(
 	} else {
 		decoder->scratch_pending = false;
 	}
+
+	/* Wakes whoever waits for the completion. */
 	waitq_wake_all(&mmal_wake);
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
@@ -1095,8 +1123,11 @@ locks_init(void)
 				break;
 			kern_usleep_range(10U, 20U);
 		}
+
 		return;
 	}
+
+	/* The caller that claimed the set-up makes the locks. */
 	spin_init(&mmal_lock, LOCK_RANK_DEVICE, "rpi4 mmal");
 	waitq_init(&mmal_wake, "rpi4 mmal");
 	(void)mutex_init(&mmal_open_lock, LOCK_RANK_DEVICE, "rpi4 mmal open");
@@ -1117,8 +1148,15 @@ request(
 	uint8_t *reply,
 	size_t capacity)
 {
+	int error;
+
 	/* A request without a bulk is a request with none. */
-	return request_with_bulk(decoder, message, size, 0, NULL, reply, capacity);
+	error = request_with_bulk(decoder, message, size, 0, NULL, reply, capacity);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: reply holds the answer. */
+	return 0;
 }
 
 /*
@@ -1195,6 +1233,8 @@ request_with_bulk(
 
 			continue;
 		}
+
+		/* Sleeps until the reply, an arrival or the deadline. */
 		observed = waitq_sequence(&mmal_wake);
 		error = waitq_sleep(&mmal_wake, &mmal_lock, observed, deadline, 0);
 		if (error == ETIMEDOUT && mmal_reply_ready)
@@ -1203,6 +1243,8 @@ request_with_bulk(
 			break;
 		error = 0;
 	}
+
+	/* Copies the reply out, the rest of the caller's buffer zeroed. */
 	copied = 0;
 	if (error == 0) {
 		copied = mmal_reply.size;
@@ -1211,6 +1253,8 @@ request_with_bulk(
 		kern_memcpy(reply, mmal_reply.bytes, copied);
 		kern_memset(reply + copied, 0, capacity - copied);
 	}
+
+	/* No request waits any more. */
 	mmal_reply_waiter = 0;
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
@@ -1225,6 +1269,7 @@ request_with_bulk(
 			report_stall(decoder, request_name(msgid));
 			decoder->broken = true;
 		}
+
 		return error;
 	}
 
@@ -1316,6 +1361,8 @@ configure(
 		decoder->step = "output format I420";
 		error = port_set(decoder, decoder->output_info);
 	}
+
+	/* Reports an output format the firmware refused in both encodings. */
 	if (error != 0)
 		return error;
 
@@ -1366,6 +1413,8 @@ configure(
 		if (status != 0)
 			error = EIO;
 	}
+
+	/* Reports a component that did not start. */
 	if (error != 0)
 		return error;
 
@@ -1483,6 +1532,8 @@ port_action(
 		if (status != 0)
 			error = EIO;
 	}
+
+	/* Reports an action that failed. */
 	if (error != 0) {
 		kern_logf("rpi4-mmal: port action %u failed (%d)\n", (unsigned)action, error);
 		return error;
@@ -1514,6 +1565,8 @@ set_boolean(
 		if (status != 0)
 			error = EIO;
 	}
+
+	/* Reports a parameter the firmware refused. */
 	if (error != 0) {
 		kern_logf("rpi4-mmal: parameter %x not set (%d)\n", (unsigned)id, error);
 		return error;
@@ -1563,16 +1616,22 @@ enable_output(
 				return EIO;
 			}
 		}
+
+		/* Frees the old buffers. */
 		for (index = 0; index < MMAL_OUTPUT_BUFFERS; index++) {
 			if (decoder->outputs[index].memory.address != NULL)
 				drv_dma_free_coherent(mmal_dma, &decoder->outputs[index].memory);
 			kern_memset(&decoder->outputs[index], 0, sizeof(decoder->outputs[index]));
 		}
+
+		/* Allocates the new ones. */
 		for (index = 0; index < count; index++) {
 			error = dma_alloc(size, &decoder->outputs[index].memory);
 			if (error != 0)
 				return error;
 		}
+
+		/* The size and count the port is enabled with. */
 		decoder->output_size = size;
 		decoder->output_count = count;
 	}
@@ -1608,6 +1667,8 @@ enable_output(
 		if (error != 0)
 			return error;
 	}
+
+	/* A replaced set of buffers has none the caller holds. */
 	if (replaced)
 		decoder->held_output = 0;
 
@@ -1668,6 +1729,8 @@ pump(
 		} else {
 			error = handle_event(decoder, &message);
 		}
+
+		/* A failed arrival leaves the decoder's state unknown. */
 		if (error != 0) {
 			decoder->broken = true;
 			return error;
@@ -1748,6 +1811,8 @@ take_buffer(
 			next = (index + 1U) % MMAL_QUEUE;
 			decoder->queue[index] = decoder->queue[next];
 		}
+
+		/* One arrival fewer: the buffer is taken. */
 		decoder->queue_count--;
 		error = 0;
 		break;
@@ -1816,6 +1881,8 @@ trace_arrival(
 			  (unsigned)drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_EVENT_LENGTH));
 		return;
 	}
+
+	/* A buffer: whose, its length, flags, time and short payload. */
 	value = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_CONTEXT);
 	kind = "other";
 	if (((value >> 12) & 0xfU) == MMAL_KIND_INPUT)
@@ -1873,11 +1940,15 @@ report_stall(
 		if (decoder->outputs[index].with_firmware)
 			with_firmware++;
 	}
+
+	/* The input buffers the firmware has given back. */
 	free_inputs = 0;
 	for (index = 0; index < decoder->input_count; index++) {
 		if (decoder->input_free[index])
 			free_inputs++;
 	}
+
+	/* The counts in one line. */
 	kern_logf("rpi4-mmal: stall at %s: decoder %u queued %u, frame bulk %u, scratch bulk %u, staging bulks %u/%u buffers %u/%u, outputs with firmware %u/%u (enabled %u), inputs free %u/%u\n",
 		  what, decoder->slot, count, frame_pending ? 1U : 0U, scratch_pending ? 1U : 0U,
 		  (unsigned)bulks[0], (unsigned)bulks[1], (unsigned)buffers[0], (unsigned)buffers[1],
@@ -1935,6 +2006,8 @@ take_message(
 		decoder->broken = true;
 		return EIO;
 	}
+
+	/* Nothing is queued. */
 	if (empty)
 		return EAGAIN;
 
@@ -2002,6 +2075,8 @@ handle_buffer(
 			if (error != 0)
 				return error;
 		}
+
+		/* The buffer is free, and its staging area has one buffer fewer. */
 		decoder->input_free[index] = true;
 		enabled = spin_lock_irqsave(&mmal_lock);
 
@@ -2043,6 +2118,7 @@ handle_buffer(
 			  (unsigned)length, (unsigned)offset, (unsigned)decoder->output_size);
 		return EIO;
 	}
+
 	/*
 	 * A frame laid out as the target expects, and fitting it, goes there
 	 * (once); any other goes to the buffer's bounce memory (where a short
@@ -2056,6 +2132,8 @@ handle_buffer(
 		pitch = decoder->width;
 		chroma = decoder->width * decoder->height;
 	}
+
+	/* Receives the frame into the target or the bounce memory; a short payload is already there. */
 	error = 0;
 	if (payload == 0 &&
 	    decoder->target_capacity != 0 &&
@@ -2069,6 +2147,8 @@ handle_buffer(
 	} else if (payload == 0) {
 		error = receive_bulk(decoder, bus_to_physical(output->memory.device_address) + offset, bytes, true);
 	}
+
+	/* Reports a frame not received. */
 	if (error != 0)
 		return error;
 
@@ -2207,11 +2287,13 @@ receive_bulk(
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
 
-	/* Queues the receive without a message. */
+	/* Traces the receive while the budget lasts. */
 	if (mmal_arrival_left > 0) {
 		mmal_arrival_left--;
 		kern_logf("rpi4-mmal: bulk %u: receive %u bytes into the %s\n", decoder->slot, (unsigned)bytes, frame ? "frame" : "scratch");
 	}
+
+	/* Queues the receive without a message. */
 	error = drv_rpi4_vchiq_send_bulk(mmal_service, NULL, 0, DRV_RPI4_VCHIQ_BULK_RECEIVE, physical, bytes, tag);
 	if (error != 0) {
 		enabled = spin_lock_irqsave(&mmal_lock);
@@ -2263,6 +2345,8 @@ wait_bulk(
 			break;
 		error = 0;
 	}
+
+	/* The transfer's actual length, for a frame. */
 	actual = decoder->frame_actual;
 
 	spin_unlock_irqrestore(&mmal_lock, enabled);
@@ -2274,6 +2358,8 @@ wait_bulk(
 		decoder->broken = true;
 		return error;
 	}
+
+	/* Traces the completion while the budget lasts. */
 	if (mmal_arrival_left > 0) {
 		mmal_arrival_left--;
 		kern_logf("rpi4-mmal: bulk %u: %s received (%d)\n", decoder->slot, frame ? "frame" : "scratch", frame ? (int)actual : 0);

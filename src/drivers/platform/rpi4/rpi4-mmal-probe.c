@@ -205,6 +205,8 @@ drv_rpi4_mmal_probe_start(void)
 		kern_logf("rpi4-mmal-probe: no thread (%d)\n", error);
 		return error;
 	}
+
+	/* Runs it. */
 	thread_start(thread);
 
 	/* Succeeded: the probe reports in the kernel log. */
@@ -234,6 +236,8 @@ probe_main(
 		connected = drv_rpi4_vchiq_connected();
 		now = sched_ticks();
 	}
+
+	/* Gives up on a firmware that never connected. */
 	if (!connected) {
 		kern_logf("rpi4-mmal-probe: VCHIQ did not connect in %u ms\n", PROBE_CONNECT_MS);
 		return;
@@ -324,6 +328,8 @@ probe_run(
 			result.error = error;
 			break;
 		}
+
+		/* One more unit is in; the next starts where it ended. */
 		sent++;
 		offset = end;
 		if (mode->push != PROBE_PUSH_NONE && sent == 1U) {
@@ -334,6 +340,8 @@ probe_run(
 				break;
 			}
 		}
+
+		/* Takes what came out. */
 		collect(decoder, stream, run, sent, PROBE_OUTPUT_MS, &result);
 		if (result.error != 0)
 			break;
@@ -434,8 +442,13 @@ push(
 	int error;
 
 	/* The mark needs no staging. */
-	if (mode->push == PROBE_PUSH_MARK)
-		return drv_rpi4_mmal_decoder_mark(decoder, 0);
+	if (mode->push == PROBE_PUSH_MARK) {
+		error = drv_rpi4_mmal_decoder_mark(decoder, 0);
+		if (error != 0)
+			return error;
+
+		return 0;
+	}
 
 	/* The delimiter or the sets, without a time stamp. */
 	error = drv_rpi4_mmal_decoder_input(decoder, &staging, &capacity);
@@ -453,6 +466,8 @@ push(
 		if (used == 0)
 			return 0;
 	}
+
+	/* Sends the push. */
 	error = drv_rpi4_mmal_decoder_send(decoder, (uint32_t)used, DRV_RPI4_MMAL_FRAME_NO_TIME,
 					   mode->push == PROBE_PUSH_SETS);
 	if (error != 0)
@@ -495,7 +510,9 @@ copy_nals(
 			break;
 		cursor = nal_end;
 		type = stream->data[nal_start] & 0x1fU;
-		set = type == DRV_RPI4_H264_NAL_SPS || type == DRV_RPI4_H264_NAL_PPS;
+		set = false;
+		if (type == DRV_RPI4_H264_NAL_SPS || type == DRV_RPI4_H264_NAL_PPS)
+			set = true;
 		if (which == PROBE_NALS_SETS && !set)
 			continue;
 		if (mode->rewrite && type == DRV_RPI4_H264_NAL_SPS) {
@@ -508,6 +525,8 @@ copy_nals(
 			*used += written;
 			continue;
 		}
+
+		/* Any other unit as it is, after a four-byte start code. */
 		if (capacity - *used < 4U + (nal_end - nal_start))
 			return ENOSPC;
 		staging[*used] = 0;
@@ -578,6 +597,8 @@ collect(
 				break;
 			}
 		}
+
+		/* Else the picture whose luma matches. */
 		for (index = 0; index < stream->frames && display < 0; index++) {
 			if (stream->luma_sums[index] == luma) {
 				display = (int)index;
@@ -586,6 +607,8 @@ collect(
 				break;
 			}
 		}
+
+		/* Its place in decode order. */
 		decode = -1;
 		for (index = 0; index < stream->frames; index++) {
 			if (display >= 0 && stream->decode_order[index] == (uint8_t)display) {
@@ -608,6 +631,8 @@ collect(
 			pts_decode = (int)frame.pts;
 			pts_display = (int)stream->decode_order[pts_decode];
 		}
+
+		/* The units sent after the picture's own, by its time stamp. */
 		pts_lag = 0;
 		if (pts_decode >= 0 && sent > (unsigned)pts_decode + 1U)
 			pts_lag = sent - (unsigned)pts_decode - 1U;
@@ -624,6 +649,8 @@ collect(
 				result->in_display_order++;
 			result->last_display = display;
 		}
+
+		/* The same by the time stamps. */
 		if (pts_decode < 0) {
 			result->pts_unknown++;
 		} else {
@@ -633,6 +660,8 @@ collect(
 				result->pts_in_display_order++;
 			result->pts_last_display = pts_display;
 		}
+
+		/* Keeps the time stamp for the run's sequence. */
 		if (result->outputs < PROBE_MAX_FRAMES)
 			result->pts[result->outputs] = pts_decode;
 		result->outputs++;
@@ -707,6 +736,8 @@ frame_sum(
 			sum *= PROBE_FNV_PRIME;
 		}
 	}
+
+	/* The luma's checksum alone. */
 	*luma = sum;
 
 	/* An I420 frame's chroma is two planes; it is summed interleaved, as NV12's. */
@@ -784,6 +815,8 @@ map_frame(
 			marks[at++] = ' ';
 		marks[at++] = words[index] == expected[index] ? '.' : 'x';
 	}
+
+	/* Logs the marks. */
 	marks[at] = '\0';
 	kern_logf("rpi4-mmal-probe: %s run=%s out=%u map ref=%d Y|C|Ystrip|Cstrip %s\n", stream->name, run, out, reference, marks);
 }
@@ -824,27 +857,45 @@ frame_map(
 		luma = pixels;
 		chroma = pixels + (size_t)frame->width * frame->height;
 	}
+
+	/* Refuses a frame whose map would not fit. */
 	if ((height + 15U) / 16U + (height / 2U + 7U) / 8U + 2U * ((width + PROBE_STRIP_BYTES - 1U) / PROBE_STRIP_BYTES) > PROBE_MAP_WORDS)
 		return 0;
 
-	/* The bands. */
+	/* The luma bands. */
 	count = 0;
 	for (top = 0; top < height; top += 16U) {
-		rows = height - top < 16U ? height - top : 16U;
+		/* The last band may be shorter. */
+		rows = 16U;
+		if (height - top < rows)
+			rows = height - top;
 		words[count++] = rows_sum(luma, pitch_y, 0, width, top, rows);
 	}
+
+	/* The chroma bands. */
 	for (top = 0; top < height / 2U; top += 8U) {
-		rows = height / 2U - top < 8U ? height / 2U - top : 8U;
+		/* The last band may be shorter. */
+		rows = 8U;
+		if (height / 2U - top < rows)
+			rows = height / 2U - top;
 		words[count++] = rows_sum(chroma, pitch_uv, 0, width, top, rows);
 	}
 
-	/* The strips. */
+	/* The luma strips. */
 	for (left = 0; left < width; left += PROBE_STRIP_BYTES) {
-		across = width - left < PROBE_STRIP_BYTES ? width - left : PROBE_STRIP_BYTES;
+		/* The last strip may be narrower. */
+		across = PROBE_STRIP_BYTES;
+		if (width - left < across)
+			across = width - left;
 		words[count++] = rows_sum(luma, pitch_y, left, across, 0, height);
 	}
+
+	/* The chroma strips. */
 	for (left = 0; left < width; left += PROBE_STRIP_BYTES) {
-		across = width - left < PROBE_STRIP_BYTES ? width - left : PROBE_STRIP_BYTES;
+		/* The last strip may be narrower. */
+		across = PROBE_STRIP_BYTES;
+		if (width - left < across)
+			across = width - left;
 		words[count++] = rows_sum(chroma, pitch_uv, left, across, 0, height / 2U);
 	}
 

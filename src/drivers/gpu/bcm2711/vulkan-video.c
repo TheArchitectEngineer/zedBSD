@@ -566,9 +566,12 @@ bcm2711_vulkan_video_run(
 				skip(video, NULL, "flush failed", error);
 				error = 0;
 			}
+
+			/* Reports a window that did not close. */
 			if (closed != 0)
 				error = closed;
 		}
+
 		break;
 	case GPU_OP_CMD_DECODE_VIDEO:
 		error = run_decode(controller, command);
@@ -580,6 +583,7 @@ bcm2711_vulkan_video_run(
 			pool->available[index] = 0;
 			pool->status[index] = 0;
 		}
+
 		break;
 	case GPU_OP_CMD_BEGIN_QUERY:
 		/* The decodes inside write this query's status; until one does it is complete. */
@@ -657,10 +661,14 @@ video_capabilities(
 			reader->error = 1;
 			break;
 		}
+
+		/* The type of the next structure in the chain. */
 		types[count] = drv_i915_wire_read_u32(reader);
 		count++;
 		present = drv_i915_wire_read_u64(reader);
 	}
+
+	/* Refuses a malformed chain. */
 	if (reader->error != 0)
 		return EINVAL;
 	if (count == 0U || types[0] != VIDEO_TYPE_CAPABILITIES)
@@ -782,6 +790,8 @@ video_format_properties(
 	} else if ((usage & ~video_usage) != 0U) {
 		result = VIDEO_ERROR_IMAGE_USAGE;
 	}
+
+	/* Reports a format the decoder does not offer. */
 	if (result != 0) {
 		drv_i915_wire_reply_u32(reply, (uint32_t)result);
 		return 0;
@@ -927,6 +937,8 @@ session_create(
 	} else if (different != 0 || version > VIDEO_STD_VERSION) {
 		result = VIDEO_ERROR_STD_VERSION;
 	}
+
+	/* Reports a profile or header version the decoder does not take. */
 	if (result != 0) {
 		drv_i915_wire_reply_u32(reply, (uint32_t)result);
 		return 0;
@@ -938,6 +950,8 @@ session_create(
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
 		return 0;
 	}
+
+	/* The session's profile and limits. */
 	video->profile_idc = profile_idc;
 	video->width = width;
 	video->height = height;
@@ -963,6 +977,8 @@ session_create(
 		kern_free(video);
 		return error;
 	}
+
+	/* The session keeps its device. */
 	video->owner.device = device;
 
 	/* Publishes the session under its identity. */
@@ -1085,6 +1101,8 @@ session_bind(
 		if (index != 0U || bound == NULL)
 			result = VK_ERROR_INITIALIZATION_FAILED;
 	}
+
+	/* Refuses a malformed request. */
 	if (reader->error != 0)
 		return EINVAL;
 
@@ -1159,6 +1177,8 @@ parameters_create(
 	} else if (template_identity != 0U && (source == NULL || source->owner.parent != owner)) {
 		result = VK_ERROR_INITIALIZATION_FAILED;
 	}
+
+	/* Reports a request the object cannot serve. */
 	if (result != 0) {
 		chain_free(&chain);
 		drv_i915_wire_reply_u32(reply, (uint32_t)result);
@@ -1172,6 +1192,8 @@ parameters_create(
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY);
 		return 0;
 	}
+
+	/* Retains the device and the owner the object lives under. */
 	error = bcm2711_vulkan_object_retain(device);
 	if (error == 0) {
 		parameters->owner.device = device;
@@ -1179,6 +1201,8 @@ parameters_create(
 		if (error == 0)
 			parameters->owner.parent = owner;
 	}
+
+	/* The capacity the application asked for. */
 	parameters->max_sps = chain.max_sps;
 	parameters->max_pps = chain.max_pps;
 
@@ -1268,6 +1292,8 @@ parameters_update(
 			result = VK_ERROR_INITIALIZATION_FAILED;
 		}
 	}
+
+	/* Records the update's sequence number when it is taken. */
 	chain_free(&chain);
 	if (result == 0)
 		parameters->update_sequence = sequence;
@@ -1360,6 +1386,8 @@ release_parameters(
 		if (error == 0)
 			error = released;
 	}
+
+	/* Frees the object. */
 	kern_free(parameters);
 	if (error != 0)
 		return error;
@@ -1435,6 +1463,8 @@ record_command(
 		(void)release_command(&video->record.node);
 		return EINVAL;
 	}
+
+	/* A command buffer that failed recording takes nothing more. */
 	if (command->recording_error != 0) {
 		released = release_command(&video->record.node);
 		if (released != 0)
@@ -1470,6 +1500,8 @@ record_command(
 	} else {
 		command->last->next = &video->record.node;
 	}
+
+	/* The record is the command buffer's last. */
 	command->last = &video->record.node;
 	command->recorded_bytes += sizeof(*video);
 
@@ -1551,6 +1583,8 @@ decode_command(
 		command->pps_id = chain.pps_id;
 		break;
 	}
+
+	/* Refuses a malformed record. */
 	chain_free(&chain);
 	if (reader->error != 0)
 		return EINVAL;
@@ -1594,6 +1628,8 @@ retain_command(
 			return error;
 		command->session = object;
 	}
+
+	/* The parameters object the scope uses. */
 	if (parameters_id != 0) {
 		object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_VIDEO_SESSION_PARAMETERS, parameters_id);
 		if (object == NULL)
@@ -1603,6 +1639,8 @@ retain_command(
 			return error;
 		command->parameters = object;
 	}
+
+	/* The bitstream buffer of a decode. */
 	if (buffer_id != 0) {
 		object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_BUFFER, buffer_id);
 		if (object == NULL)
@@ -1612,6 +1650,8 @@ retain_command(
 			return error;
 		command->buffer = object;
 	}
+
+	/* The output picture's view of a decode. */
 	if (view_id != 0) {
 		object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_IMAGE_VIEW, view_id);
 		if (object == NULL)
@@ -1621,6 +1661,8 @@ retain_command(
 			return error;
 		command->view = object;
 	}
+
+	/* The query pool of a query record. */
 	if (pool_id != 0) {
 		object = bcm2711_vulkan_object_find(session, I915_VK_OBJ_QUERY_POOL, pool_id);
 		if (object == NULL)
@@ -1658,21 +1700,29 @@ release_command(
 		if (error == 0)
 			error = released;
 	}
+
+	/* The bitstream buffer. */
 	if (command->buffer != NULL) {
 		released = bcm2711_vulkan_object_release(command->buffer);
 		if (error == 0)
 			error = released;
 	}
+
+	/* The output picture's view. */
 	if (command->view != NULL) {
 		released = bcm2711_vulkan_object_release(command->view);
 		if (error == 0)
 			error = released;
 	}
+
+	/* The query pool. */
 	if (command->pool != NULL) {
 		released = bcm2711_vulkan_object_release(command->pool);
 		if (error == 0)
 			error = released;
 	}
+
+	/* Frees the node. */
 	kern_free(command);
 	if (error != 0)
 		return error;
@@ -1801,6 +1851,7 @@ read_fields(
 				chain->profile_error = result;
 			}
 		}
+
 		break;
 	case VIDEO_TYPE_H264_PARAMETERS_CREATE:
 		/* The capacity, then the add record the create carries, if any. */
@@ -1817,6 +1868,7 @@ read_fields(
 			chain_free(&nested);
 			read_add(reader, chain);
 		}
+
 		break;
 	case VIDEO_TYPE_H264_PARAMETERS_ADD:
 		/* The sets added. */
@@ -1835,6 +1887,7 @@ read_fields(
 			(void)drv_i915_wire_read_u32(reader);
 			(void)drv_i915_wire_read_u32(reader);
 		}
+
 		break;
 	case VIDEO_TYPE_H264_PICTURE:
 		/* [present]{picture}[slice count][array]{offset}: the slice offsets are not needed (the range is sent whole). */
@@ -1854,6 +1907,8 @@ read_fields(
 			(void)drv_i915_wire_read_u32(reader);
 			(void)drv_i915_wire_read_u32(reader);
 		}
+
+		/* The slices' offsets, which follow. */
 		(void)drv_i915_wire_read_u32(reader);
 		count = drv_i915_wire_read_u64(reader);
 		if (count > (uint64_t)(reader->size - reader->offset))
@@ -2082,6 +2137,8 @@ read_add(
 			sps->has_scaling = 1;
 			read_scaling(reader, &sps->scaling);
 		}
+
+		/* The VUI, which is never sent. */
 		present = drv_i915_wire_read_u64(reader);
 		if (present != 0U)
 			reader->error = 1;
@@ -2188,6 +2245,8 @@ chain_free(
 		kern_free(chain->new_sps[index]);
 		chain->new_sps[index] = NULL;
 	}
+
+	/* The chain holds no sequence set any more. */
 	chain->new_sps_count = 0U;
 	while (chain->new_pps != NULL) {
 		pps = chain->new_pps;
@@ -2224,6 +2283,8 @@ parameters_take(
 			if (parameters->sps[chain->new_sps[index]->id] != NULL)
 				return EINVAL;
 		}
+
+		/* Nor a picture set key it holds. */
 		for (pps = chain->new_pps; pps != NULL; pps = pps->next) {
 			held = find_pps(parameters, pps->fields.sps_id, pps->fields.pps_id);
 			if (held != NULL)
@@ -2237,10 +2298,14 @@ parameters_take(
 		if (parameters->sps[index] != NULL)
 			sps_count++;
 	}
+
+	/* The new sequence sets of new keys. */
 	for (index = 0U; index < chain->new_sps_count; index++) {
 		if (parameters->sps[chain->new_sps[index]->id] == NULL)
 			sps_count++;
 	}
+
+	/* The picture sets held, and the new ones of new keys. */
 	pps_count = 0U;
 	for (pps = parameters->pps; pps != NULL; pps = pps->next)
 		pps_count++;
@@ -2249,6 +2314,8 @@ parameters_take(
 		if (held == NULL)
 			pps_count++;
 	}
+
+	/* Refuses sets beyond the object's capacity. */
 	if (sps_count > parameters->max_sps || pps_count > parameters->max_pps)
 		return EINVAL;
 
@@ -2259,6 +2326,8 @@ parameters_take(
 		parameters->sps[id] = chain->new_sps[index];
 		chain->new_sps[index] = NULL;
 	}
+
+	/* The chain holds no sequence set any more. */
 	chain->new_sps_count = 0U;
 
 	/* The picture sets, replacing any of the same key. */
@@ -2273,8 +2342,11 @@ parameters_take(
 				kern_free(old);
 				continue;
 			}
+
 			link = &(*link)->next;
 		}
+
+		/* The set joins the object's list. */
 		pps->next = parameters->pps;
 		parameters->pps = pps;
 	}
@@ -2410,12 +2482,16 @@ pool_create(
 		drv_i915_wire_reply_u64(reply, 0U);
 		return 0;
 	}
+
+	/* The pool's size, and the device it lives under. */
 	pool->count = count;
 	error = bcm2711_vulkan_object_retain(device);
 	if (error != 0) {
 		kern_free(pool);
 		return error;
 	}
+
+	/* The pool keeps its device. */
 	pool->owner.device = device;
 
 	/* Publishes the pool under its identity. */
@@ -2510,6 +2586,8 @@ pool_results(
 		if (pool->available[query] == 0)
 			result = (uint32_t)VK_NOT_READY;
 	}
+
+	/* The result, then the bytes the records take. */
 	drv_i915_wire_reply_u32(reply, result);
 	drv_i915_wire_reply_u64(reply, bytes);
 
@@ -2586,11 +2664,15 @@ record_query(
 		kern_free(query);
 		return EINVAL;
 	}
+
+	/* The command buffer the query is recorded into. */
 	command = object->payload;
 	if (command->pending != 0 || command->state != BCM2711_VULKAN_COMMAND_RECORDING) {
 		kern_free(query);
 		return EBUSY;
 	}
+
+	/* A command buffer that failed recording takes nothing more. */
 	if (command->recording_error != 0) {
 		kern_free(query);
 		return 0;
@@ -2610,6 +2692,8 @@ record_query(
 		if (query->begin == NULL)
 			error = EINVAL;
 	}
+
+	/* A query inside a render pass is not supported. */
 	if (error == 0 && command->render_open)
 		error = ENOTSUP;
 	if (error == 0 && sizeof(*query) > BCM2711_VULKAN_RECORD_BYTES - command->recorded_bytes)
@@ -2628,6 +2712,8 @@ record_query(
 	} else {
 		command->last->next = &query->record.node;
 	}
+
+	/* The record is the command buffer's last. */
 	command->last = &query->record.node;
 	command->recorded_bytes += sizeof(*query);
 
@@ -2680,6 +2766,8 @@ run_decode(
 		set_status(command, VIDEO_STATUS_ERROR);
 		return 0;
 	}
+
+	/* A decode needs parameters. */
 	if (parameters == NULL) {
 		skip(video, command, "no parameters bound", EINVAL);
 		return 0;
@@ -2691,6 +2779,8 @@ run_decode(
 		skip(video, command, "output picture not usable", error);
 		return 0;
 	}
+
+	/* The output picture's NV12 layout. */
 	bcm2711_vulkan_video_nv12_layout(image->width, image->height, &pitch, &chroma, &bytes_needed);
 
 	/*
@@ -2711,6 +2801,8 @@ run_decode(
 		drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
 		error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts, 0);
 	}
+
+	/* Waits for the frame, pushing a held first picture out. */
 	pushes = 0;
 	while (built && error == 0) {
 		wait_ms = VIDEO_FRAME_MS;
@@ -2734,8 +2826,11 @@ run_decode(
 			kern_logf("v3d: video: late frame %lld dropped at decode %lld\n", (long long)frame.pts, (long long)pts);
 			continue;
 		}
+
 		break;
 	}
+
+	/* A start is over once a frame came. */
 	if (error == 0)
 		video->started = true;
 	drv_rpi4_mmal_decoder_target(video->decoder, 0, 0, 0, 0);
@@ -2761,6 +2856,8 @@ run_decode(
 				memory->view->quarantined = true;
 		}
 	}
+
+	/* Reports a window that did not close. */
 	if (closed != 0)
 		return closed;
 
@@ -2777,9 +2874,13 @@ run_decode(
 			if (video->timeouts >= VIDEO_MAX_TIMEOUTS)
 				video->broken = true;
 		}
+
+		/* Skips the picture. */
 		skip(video, command, "no frame from the decoder", error);
 		return 0;
 	}
+
+	/* The decoder answered: the timeouts in a row start again. */
 	video->timeouts = 0;
 
 	/* Only NV12 is the image's format; another output is not this picture. */
@@ -2827,7 +2928,11 @@ push_first(
 	/* Push 0: the mark. */
 	if (push == 0) {
 		kern_logf("v3d: video: decode %lld: the first picture is held; a frame-end mark pushes it\n", (long long)pts);
-		return drv_rpi4_mmal_decoder_mark(video->decoder, 0);
+		error = drv_rpi4_mmal_decoder_mark(video->decoder, 0);
+		if (error != 0)
+			return error;
+
+		return 0;
 	}
 
 	/* Push 1: the delimiter, without a time stamp. */
@@ -2934,6 +3039,8 @@ append_set(
 		if (difference == 0)
 			same = true;
 	}
+
+	/* An unchanged set is not sent again unless forced. */
 	if (same && !force)
 		return 0;
 	if (bytes > capacity - *used)
@@ -3019,6 +3126,8 @@ relayout(
 		source_pitch = frame->width;
 		source_chroma = frame->width * frame->height;
 	}
+
+	/* The rows and the bytes of each row both layouts have. */
 	width = image->width;
 	if (width > source_pitch)
 		width = source_pitch;
