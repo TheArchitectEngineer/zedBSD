@@ -2,7 +2,7 @@
 
 # WS239: Wayland（compositor）の起動の失敗時に text console の login へ戻す
 
-- Status: planned（2026-10-15 Q1）
+- Status: incomplete（2026-10-15: p001 の実装・host 試験済み、QEMU の確かめ p002 待ち）
 - Master: [master.md](../master.md)
 - Primary Milestone: MG002（ベータ2）
 - 由来: 2026-10-15 ユーザー「あと、Waylandが起動に失敗したとき、/dev/systemを通じて、カーネルメッセージをコンソール出力につなぎ直し、グラフィカルブートを解除してttyのログインを表示してほしいです。」
@@ -14,5 +14,5 @@
 
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| ws239-p001 | 調査・実装・host 試験・T の手順 | planned | — |
+| [ws239-p001](phase001/phase.md) | 調査・実装・host 試験・T の手順（`/dev/system` の `KERN_SYSTEM_SHOW_CONSOLE`、sessiond の失敗の定義と console への戻し） | in-progress（実装・build・host 試験済み、Q1 の判定待ち） | — |
 | ws239-p002 | QEMU での確かめ（T） | planned | p001 |

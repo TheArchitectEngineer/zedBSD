@@ -453,6 +453,16 @@ _Static_assert(offsetof(struct system_sleep_request, device) == 16U,
 #define KERN_SYSTEM_SLEEP                                                   \
 	_IOWR(KERN_SYSTEM_IOC_GROUP, 19, struct system_sleep_request)
 
+/*
+ * Gives the screen back to the text console (ws239-p001): the kernel's
+ * messages go to the console again, as with the boot parameter
+ * kmsg=console, and a quiet boot's logo and spinner go.  sessiond asks for
+ * it when the graphical login cannot start, before init starts the
+ * console's getty.  Only root may ask (EPERM); asking again changes
+ * nothing.
+ */
+#define KERN_SYSTEM_SHOW_CONSOLE _IO(KERN_SYSTEM_IOC_GROUP, 21)
+
 #ifdef __cplusplus
 }
 #endif

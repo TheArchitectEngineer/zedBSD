@@ -36,6 +36,7 @@
  */
 
 #include "auth.h"
+#include "fallback-rules.h"
 #include "power-rules.h"
 
 #include <errno.h>
@@ -58,9 +59,6 @@
 /* How much of the end of the greeter's log is searched for its last word (KWL EXIT) after a failure. */
 #define GREETER_REASON_BYTES	8192
 
-/* A greeter that ends with an error within this many seconds of its start has failed. */
-#define GREETER_QUICK_SECONDS	20
-
 /* How long a greeter may take to end after a login before it is killed. */
 #define GREETER_END_SECONDS	10
 
@@ -74,11 +72,14 @@
 /*
  * One running greeter: its process, sessiond's end of the socket, the
  * request that has come in so far, and the login attempt under way.
+ * ready is set once it said READY (it took the display); a greeter that
+ * ends or hangs before that has failed to start (fallback-rules.c).
  */
 struct greeter {
 	pid_t pid;
 	int socket;
 	time_t started;
+	int ready;
 	char line[SESSIOND_LINE_MAX];
 	size_t used;
 	int logged_in;
@@ -112,6 +113,7 @@ sessiond_greeter_run(
 	enum sessiond_greeter_end end;
 	long long seat_ms;
 	long long now_ms;
+	time_t now;
 	nfds_t entries;
 	nfds_t sleep_slot;
 	nfds_t seat_slot;
@@ -129,6 +131,7 @@ sessiond_greeter_run(
 		greeter.pid = daemon->greeter_pid;
 		greeter.socket = daemon->greeter_socket;
 		greeter.started = daemon->greeter_started;
+		greeter.ready = 1;
 		daemon->greeter_pid = 0;
 		daemon->greeter_socket = -1;
 		error = greeter_account_find(&greeter_account);
@@ -198,6 +201,21 @@ sessiond_greeter_run(
 		if (greeter.exchange.logged_in) {
 			greeter.logged_in = 1;
 			break;
+		}
+
+		/* A greeter that has not taken the display in time hangs in its start: it is ended as failed (ws239-p001). */
+		now = time(NULL);
+		if (!closed &&
+		    !greeter.ready &&
+		    now - greeter.started >= SESSIOND_GREETER_START_SECONDS) {
+			sessiond_log("SESSIOND GREETER not ready pid=%ld waited_s=%ld", (long)greeter.pid, (long)(now - greeter.started));
+			sessiond_exchange_stop(&greeter.exchange);
+			greeter_kill(&greeter);
+			sessiond_sleep_forget(greeter.socket);
+			(void)close(greeter.socket);
+			memset(&greeter_account, 0, sizeof(greeter_account));
+			greeter_reason();
+			return SESSIOND_GREETER_FAILED;
 		}
 
 		/* A device that came is heard at once; the others are looked for every GREETER_SEAT_MS. */
@@ -558,9 +576,10 @@ greeter_request(
 {
 	int match;
 
-	/* The greeter is about to take the display: nothing holds it while no session runs. */
+	/* The greeter is about to take the display: nothing holds it while no session runs; it has started. */
 	match = strcmp(line, "READY");
 	if (match == 0) {
+		greeter->ready = 1;
 		sessiond_log("SESSIOND HANDOFF greeter ready: go");
 		greeter_reply(greeter, "GO");
 		return;
@@ -649,8 +668,6 @@ greeter_wait(
 	time_t now;
 	pid_t waited;
 	int status;
-	int exited;
-	int code;
 	int failed;
 
 	/* A greeter that logged a user in ends by itself; one that does not in time is ended. */
@@ -683,16 +700,11 @@ greeter_wait(
 	if (greeter->logged_in)
 		return SESSIOND_GREETER_LOGIN;
 
-	/* A greeter that ended with an error soon after it started has failed. */
+	/* A greeter that ended before it took the display, or with an error soon after it started, has failed. */
 	now = time(NULL);
-	exited = WIFEXITED(status);
-	code = WEXITSTATUS(status);
-	failed = 0;
-	if (!exited)
-		failed = 1;
-	else if (code != 0)
-		failed = 1;
-	if (failed && now - greeter->started < GREETER_QUICK_SECONDS) {
+	failed = sessiond_greeter_failed(greeter->ready, status, (long)(now - greeter->started));
+	if (failed) {
+		sessiond_log("SESSIOND GREETER failed ready=%d ran_s=%ld", greeter->ready, (long)(now - greeter->started));
 		greeter_reason();
 		return SESSIOND_GREETER_FAILED;
 	}

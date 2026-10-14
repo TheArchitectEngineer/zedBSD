@@ -10,7 +10,8 @@
  *
  * The device answers ioctls that describe the boot devices, memory, the
  * process table, and which processes use a file or a mount; it forwards the
- * swap controls to the swap layer, and lets init halt or reboot the machine.
+ * swap controls to the swap layer, lets init halt or reboot the machine, and
+ * lets root give the screen back to the text console (ws239-p001).
  *
  * An open that subscribes to classes of the system's events
  * (KERN_SYSTEM_EVENT_SUBSCRIBE, ws132-p002) reads them and polls for them
@@ -27,6 +28,7 @@
 #include "kern/kmem.h"
 #include "kern/platform.h"
 #include "kern/klog.h"
+#include "kern/text-display.h"
 #include "kern/partition.h"
 #include "kern/swap.h"
 #include "kern/uaccess.h"
@@ -71,6 +73,7 @@ static int system_get_pci_device(uintptr_t argument);
 static int system_get_usb_device(uintptr_t argument);
 static int system_get_vmstat(uintptr_t argument);
 static void system_drop_caches(void);
+static int system_show_console(void);
 static int system_get_resources(uintptr_t argument);
 static int system_get_process(uintptr_t argument);
 static int system_get_process_arguments(uintptr_t argument);
@@ -517,6 +520,9 @@ system_ioctl(
 		system_drop_caches();
 		error = 0;
 		break;
+	case KERN_SYSTEM_SHOW_CONSOLE:
+		error = system_show_console();
+		break;
 	case KERN_SYSTEM_GET_PROCESS:
 		error = system_get_process(argument);
 		break;
@@ -888,6 +894,41 @@ system_drop_caches(
 	do {
 		dropped = vm_object_cache_drain(NULL);
 	} while (dropped != 0);
+}
+
+/*
+ * Gives the screen back to the text console when the graphical login could
+ * not start (ws239-p001): kernel messages go to the console again and a
+ * quiet boot's logo goes.  Only root may ask.
+ */
+static int
+system_show_console(
+	void)
+{
+	struct ucred *credential;
+	int superuser;
+	int quiet;
+
+	/* Refuses a caller that is not root. */
+	credential = cred_current_ref();
+	superuser = cred_is_superuser(credential);
+	cred_release(credential);
+	if (!superuser)
+		return EPERM;
+
+	/* Notes whether the log was kept off the console until now (kmsg=quiet). */
+	quiet = kern_log_quiet();
+
+	/* The log is loud again, and the console draws what it kept, over the logo. */
+	kern_text_reveal();
+
+	/* The first line the console shows again says why. */
+	kern_logf("system: the console is shown again (pid %d asked; the log was %s)\n",
+		  (int)curthread->proc->pid,
+		  quiet ? "quiet" : "shown");
+
+	/* Succeeded: kernel messages reach the console. */
+	return 0;
 }
 
 /* Describes the first process at or after a process identifier. */

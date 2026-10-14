@@ -71,6 +71,17 @@ struct sessiond {
 	pid_t greeter_pid;
 	int greeter_socket;
 	time_t greeter_started;
+
+	/*
+	 * Set by main while the automatic login's session runs at boot, with
+	 * no greeter behind it (ws239-p001): a session that has not taken the
+	 * display within SESSIOND_GREETER_START_SECONDS hangs in its start and
+	 * is ended, so that it does not keep the boot logo on the screen.
+	 */
+	int session_bounded;
+
+	/* Set once the running session has said READY (it took the display), on time or late. */
+	int session_ready;
 };
 
 /* Set by SIGTERM and SIGINT: sessiond ends its greeter or session and stops. */

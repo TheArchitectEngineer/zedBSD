@@ -19,16 +19,25 @@
  *
  * It keeps to the console when the boot parameters do not ask for the
  * graphical login (login=graphical), when there is no greeter or no display,
- * and after the greeter has failed six times in a row, the waits between
- * the tries growing from 1 to 16 seconds (BUG-122: a GPU that a crashed
- * compositor left behind may take a while to be usable again): it exits 0, and
- * init starts the console's getty that the greeter service replaces.  A GPU
- * driver may publish the display (/dev/gpu0) a moment after init has started
- * the services; while the kernel reports a GPU device still attaching
- * (hw.gpu.attaching), sessiond waits for the display for a bounded time.
+ * and when the graphical login fails to start (fallback-rules.c says what a
+ * failure is): after six failures in a row, the waits between the tries
+ * growing from 1 to 16 seconds (BUG-122: a GPU that a crashed compositor
+ * left behind may take a while to be usable again), or once failures in a
+ * row have kept the screen for a minute and a half.  The automatic login's session
+ * at boot that does not take the display within a minute is ended and is
+ * the first of them.  sessiond then exits 0, and init starts the console's
+ * getty that the greeter service replaces.  When the graphical login was
+ * asked for, it first gives the screen back to the text console through
+ * /dev/system (ws239-p001): the kernel's messages go to the console again,
+ * as with kmsg=console, the boot logo goes, and a line on the console says
+ * why the console's login came.  A GPU driver may publish the display
+ * (/dev/gpu0) a moment after init has started the services; while the
+ * kernel reports a GPU device still attaching (hw.gpu.attaching), sessiond
+ * waits for the display for a bounded time.
  */
 
 #include "sessiond.h"
+#include "fallback-rules.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -39,14 +48,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <syslog.h>
 #include <time.h>
 #include <unistd.h>
-
-/* How many greeters in a row may fail before sessiond gives the console back (BUG-122: six, about half a minute in all). */
-#define MAIN_GREETER_FAILURES	6
+#include <uapi/system.h>
 
 /* The wait before the second try, in seconds, doubled for each failure after it up to the longest. */
 #define MAIN_RETRY_FIRST	1U
@@ -60,6 +68,10 @@
 
 /* The display device the greeter draws on. */
 #define MAIN_DISPLAY_PATH	"/dev/gpu0"
+
+/* The device that gives the screen back to the text console, and the console the line about it is written on. */
+#define MAIN_SYSTEM_PATH	"/dev/system"
+#define MAIN_CONSOLE_PATH	"/dev/console"
 
 /* The kernel's count of GPU devices whose node is still on its way. */
 #define MAIN_GPU_ATTACHING_SYSCTL	"hw.gpu.attaching"
@@ -89,6 +101,7 @@ static void main_stop(int signal_number);
 static void main_open_log(void);
 static int main_autologin(struct sessiond_account *account);
 static int main_autologin_allowed(const char *name);
+static void main_console_back(const char *reason);
 
 /*
  * Runs the session manager until it is stopped or gives the console back.
@@ -102,8 +115,13 @@ main(
 	struct sessiond_account account;
 	enum sessiond_greeter_end end;
 	struct sigaction action;
+	long long autologin_ms;
+	long long attempt_ms;
+	long long streak_ms;
+	long long elapsed_ms;
 	unsigned failures;
 	unsigned delay;
+	int due;
 	int graphical;
 	int console;
 	uid_t uid;
@@ -144,10 +162,12 @@ main(
 		return 0;
 	}
 
-	/* Without a greeter or a display there is no graphical login either. */
+	/* Without a greeter or a display there is no graphical login either: the console takes the screen back. */
 	ready = main_ready(&daemon);
-	if (!ready)
+	if (!ready) {
+		main_console_back("there is no greeter or no display");
 		return 0;
+	}
 
 	/* SIGTERM and SIGINT end the greeter or the session and then sessiond. */
 	memset(&action, 0, sizeof(action));
@@ -165,6 +185,7 @@ main(
 	/* The greeter, then a session for each login, until stopped. */
 	sessiond_log("SESSIOND START greeter=%s session=%s pid=%ld", daemon.greeter, daemon.session, (long)getpid());
 	failures = 0;
+	streak_ms = 0;
 
 	/* The account /etc/keiland/autologin names is logged in once at boot; its Log Out brings the greeter. */
 	memset(&account, 0, sizeof(account));
@@ -172,23 +193,43 @@ main(
 	if (error == 0) {
 		sessiond_log("SESSIOND AUTOLOGIN user=%s", account.passwd.pw_name);
 		syslog(LOG_NOTICE, "automatic login of %s", account.passwd.pw_name);
-		(void)sessiond_session_run(&daemon, &account);
+		autologin_ms = sessiond_milliseconds();
+		daemon.session_bounded = 1;
+		error = sessiond_session_run(&daemon, &account);
+		daemon.session_bounded = 0;
 		memset(&account, 0, sizeof(account));
+
+		/* A session that never took the display is the first failure to start in a row (ws239-p001). */
+		if (error != 0) {
+			sessiond_log("SESSIOND AUTOLOGIN failed errno=%d", error);
+			failures = 1;
+			streak_ms = autologin_ms;
+		}
 	}
 	while (!sessiond_stopping) {
+		/* A greeter, its start noted for the time failures in a row keep the screen. */
+		attempt_ms = sessiond_milliseconds();
 		end = sessiond_greeter_run(&daemon, &account);
 
 		/* sessiond is being stopped. */
 		if (end == SESSIOND_GREETER_STOP)
 			break;
 
-		/* A greeter that failed: after MAIN_GREETER_FAILURES in a row the console's login takes over. */
+		/* A greeter that failed to start: after enough in a row (fallback-rules.c) the console's login takes over. */
 		if (end == SESSIOND_GREETER_FAILED) {
+			/* One more failure in a row; the first of them starts the time they keep the screen. */
 			failures++;
-			if (failures >= MAIN_GREETER_FAILURES) {
-				sessiond_log("SESSIOND CONSOLE reason=greeter-failed failures=%u", failures);
+			if (failures == 1U)
+				streak_ms = attempt_ms;
+
+			/* Enough of them, by count or by time, gives the screen back to the console. */
+			elapsed_ms = sessiond_milliseconds() - streak_ms;
+			due = sessiond_console_due(failures, elapsed_ms);
+			if (due) {
+				sessiond_log("SESSIOND CONSOLE reason=greeter-failed failures=%u streak_ms=%lld", failures, elapsed_ms);
 				syslog(LOG_ERR, "the greeter failed %u times; the console login takes over", failures);
 				sessiond_seat_restore();
+				main_console_back("the graphical login failed to start");
 				return 0;
 			}
 
@@ -665,4 +706,54 @@ main_retry_delay(
 
 	/* The wait. */
 	return delay;
+}
+
+/*
+ * Gives the screen back to the text console when the graphical login asked
+ * for cannot start (ws239-p001): /dev/system sends the kernel's messages to
+ * the console again (as kmsg=console would) and ends the boot logo, and a
+ * line on the console says why the console's login comes.  init then starts
+ * the console's getty.  A failure is only noted: the getty's first read
+ * shows a quiet console too.
+ */
+static void
+main_console_back(
+	const char *reason)
+{
+	char line[160];
+	ssize_t written;
+	int descriptor;
+	int error;
+	int length;
+
+	/* The kernel's messages to the console, the logo gone. */
+	descriptor = open(MAIN_SYSTEM_PATH, O_RDONLY | O_CLOEXEC);
+	if (descriptor < 0) {
+		sessiond_log("SESSIOND CONSOLE show open errno=%d", errno);
+	} else {
+		error = ioctl(descriptor, KERN_SYSTEM_SHOW_CONSOLE);
+		if (error != 0)
+			sessiond_log("SESSIOND CONSOLE show errno=%d", errno);
+		else
+			sessiond_log("SESSIOND CONSOLE show");
+
+		/* /dev/system is not needed again. */
+		(void)close(descriptor);
+	}
+
+	/* The console the line goes to. */
+	descriptor = open(MAIN_CONSOLE_PATH, O_WRONLY | O_NOCTTY | O_CLOEXEC);
+	if (descriptor < 0)
+		return;
+
+	/* Says on the console, in one write, why its login came instead of the graphical one. */
+	length = snprintf(line, sizeof(line), "sessiond: %s; the console login takes over\n", reason);
+	if (length > 0 && (size_t)length < sizeof(line)) {
+		written = write(descriptor, line, (size_t)length);
+		if (written != (ssize_t)length)
+			sessiond_log("SESSIOND CONSOLE line lost");
+	}
+
+	/* The console is not needed again. */
+	(void)close(descriptor);
 }
