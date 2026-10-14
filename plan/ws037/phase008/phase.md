@@ -2,12 +2,12 @@
 
 # ws037-p008: shader の compiler（SPIR-V → SM75、Turing）
 
-Status: in-progress（2026-10-15 P3: 段 A を実装し、build と host の試験まで。GPU で走らせる確かめは p007 の投入の口の後）
+Status: in-progress（2026-10-15 P3: 段 A を実装し、build と host の試験まで。2026-10-15 P4: desktop の全 shader が compile でき、IR の参照と一致（11 節）。GPU で走らせる確かめは p007 の投入の口の後）
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14 夜、P3: 「WS237 を止めて WS037 の shader の compiler に移る」。ユーザー「RTX対応を2エージェントで実施してOKです。displayとcompilerは平行にできそうです。」、ベータ2 に既定 off で入れる範囲は ws.md の末尾）
 依存: なし（host で作って確かめる）。GPU で走らせる確かめは p007 の compute の投入の口（P1）と、p005 の channel に依存する。
-実行者: P3（phase-runner）
+実行者: P3（phase-runner）、2026-10-15 から P4（ユーザー「サブエージェントP4を起動して、RTXコンパイラの作業をお願いします。」）
 
 ## 1. 判断（design の判断の項目 8・16 への答え）
 
@@ -242,3 +242,54 @@ FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … s
 - 試験（`nvrtx-sm75-host-test.sh` → **88 checks, 0 failures**）: quad.vert と quad.frag を glslc で SPIR-V にして compile し、SPH の欄（type・version・stage・input と output の map・store request・colour target・perspective の補間）を確かめ、interpreter で走らせる（ALD・AST・IPA（SPH の map が perspective なら w = 2 を掛けて返す）・TEX（handle と座標を返す）・KILL・EXIT の R0..R3）。頂点の位置と texture の座標、fragment の R0..R3 が C の計算と一致した。
 - nvrtx=y の kernel: rc 0、warning 0。
 - 残り: blend・単色は 3D の state（p007）で、shader の側は今のままで足りる。panel.vert/frag・cell など他の desktop の shader、derivative（DDX/DDY）、texel offset、array・cube、depth の出力、geometry、TEXTURE（一般の message）は未。
+
+## 11. desktop の全 shader（2026-10-15 P4、host と build だけ）
+
+目標（2026-10-15 ユーザー）: パススルーで RTX の上に Keiland の desktop が描けること。compiler はその desktop の shader を全て SM75 に訳せる必要がある。
+
+### 11.1 洗い出しと結果
+
+対象は components が出荷する SPIR-V そのもの（`userland/desktop/**/shaders.h` の配列、各 `shaders/regenerate.py` が `glslc -O` で作った物）。`plan/ws037/tests/sm75-desktop-extract.py` が配列を `.spv` に書き出し、`nvrtx-sm75-desktop-test` が entry point の stage で compile する。着手の時（main 32df576bf）は 41 module のうち 40 が compile でき、拒むのは browser の `display.frag` だけだった（`texelFetch` = IR の TEXTURE の LD、「the operation is not compiled yet」）。derivative・array・cube・3D・depth の出力・compare・texture の size は desktop の shader では使われていない。
+
+| component | module（命令数・register 数、P4 の後） | 結果 |
+| --- | --- | --- |
+| compositor（`wayland/`） | quad.vert 40・11、quad.frag 16・16、panel.vert 48・13、panel.frag 344・56、panel.frag の mode 0〜7（glass・shadow・image・solid・ring・text・blur・dark glass）128・72・64・64・72・32・88・144、panel-batch.vert 40・7、panel-batch.frag 56・16、turn.vert 32・9 | 全て compile、IR と一致 |
+| libkeiland（`libkeiland/ui/`） | canvas.vert 32・9、canvas.frag 16・16 | 同 |
+| terminal | cell.vert 48・9、cell.frag 40・17 | 同 |
+| monitor | draw.vert 56・9、glyph.frag 32・16、shape.frag 232・40 | 同 |
+| notes | draw.vert 40・9、fill.frag 40・14、grain.vert 48・10、grain.frag 56・18、multiply.frag 48・14、texture.frag 32・16 | 同 |
+| files・imageview | canvas.vert 32・9、canvas.frag 16・16（各） | 同 |
+| browser（`libbrowser/paint/`） | display.vert 80・15、display.frag 200・26 | display.frag は拒否 → TEXTURE の LD を実装して compile、IR と一致 |
+| libGL（GL の固定機能、desktop の外の参考） | fixed.vert（光源 1・2・4・8・flat）376〜1104・36〜45、fixed.frag 184・23、flat 176・23 | 全て compile、IR と一致 |
+
+### 11.2 足した物
+
+| IR | SM75 | 出典（MIT、Mesa 25.3.6） |
+| --- | --- | --- |
+| TEXTURE の LD（`texelFetch`、引数 u v lod の 3 つ = 2D） | `TLD.2D.LL`（opcode 0xb66、TEX と同じ欄、level は explicit で第 2 source） | `nak/sm70_encode.rs` の OpTld、`nak_nir_lower_tex.c`（src0 = 座標、src1 = level・offset） |
+| TEXTURE の SAMPLE（u v）・SAMPLE_BIAS・SAMPLE_LOD（bias か lod、u v）＝ 2D の float でない texture（`usampler2D` など）の道 | `TEX.2D`（auto・bias・explicit） | 同 |
+| SAMPLE・SAMPLE_LOD・SAMPLE_BIAS と TEXTURE の定数の texel offset（`textureOffset` など） | AOFFI（bit 76）、level の次の register に u 3..0・v 7..4・r 11..8（各 4 bit 符号付き） | 同 |
+
+- IR の TEXTURE は image の次元を持たない（`spirv.c` は引数の数と並びだけを残す）。2D と決まる引数の数の物だけを受け、他（array・cube・3D・compare・gradient・size）は「a texture message other than a 2D sample or fetch … is not compiled yet」で拒む。array・cube・3D を訳すには IR に次元を足す必要がある（共有の front の変更、11.4）。
+- level と offset の両方がある時は偶数の register の組（NAK の vector の並び）。
+- `sm75-encode.[ch]` に `nvrtx_sm75_tex_fetch`・`nvrtx_sm75_tex_offset`、`sm75-isa.h` に `NVRTX_SM75_OP_TLD`・`NVRTX_SM75_TEX_AOFFI`。
+
+### 11.3 確かめ（host）
+
+- **差分の試験**（新）: `plan/ws037/tests/nvrtx-sm75-desktop-test.sh`。compile できた各 graphics の program を、200 組の作った入力（attribute の語、push constant、uniform buffer の語。[0,1]・[-2,2] の float と小さい整数を混ぜ、4 回に 1 回は整数だけ）で、SM75 の interpreter（`sm75-machine.c`）と、**最適化の前の parse した IR を直に走らせる参照の interpreter**（`sm75-reference.c`、新）の両方で走らせ、頂点の attribute の語・fragment の色・discard を比べる（float は 1e-4 の相対、MUFU の丸めの分）。texture は両方が同じ texel の模型（sample は (u, v, handle, 1 + level + offset)、fetch は (x, y, handle, level + offset)）で答える。IR の未定義（0 除算）の入力は数えない。
+  - 結果: `nvrtx_sm75_desktop_test: 43 compiled, 0 refused, 0 disagreed with the IR`（desktop の 41 と、compiler の試験の `sm75/texture.frag`・`texture.vert`）。各 program 200 入力。
+  - 感度の確かめ: compiler の FMIN を FMAX に入れ替えると 59 行の不一致が出た（元に戻して 0）。
+  - `--strict` で拒否も失敗にする（desktop の全 shader が compile できることの回帰）。
+- `nvrtx-sm75-host-test.sh`: **170 checks, 0 failures**（159 に、ALD・AST・IPA・TEX・TLD・AOFFI・KILL の欄を NAK の `sm70_encode.rs` の位置で 11 項目）。SM75 の interpreter は `sm75-machine.[ch]` に分けて両方の試験で共有（中身は同じ、F2I を hardware と同じ飽和に、TEX・TLD の texel の模型を上のとおりに）。
+- build: `make -j16 BUILD=build/p4/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p4/amd64/vmunix`（`CONFIG_DRIVER_PCI_NVRTX := y`）rc 0、`warning:` 0、include check・vmunix check PASS。`git diff --check` 出力なし。
+- 依存の印（直列）を NAK の表で見直した: 固定 latency の書き込みの最悪は Turing で 6（coupled ALU・FMA・IMAD・IMAD.WIDE、decoupled の読み手も 6）、述語は 12（CoupledAlu → 分岐など）で、今の 6・13 で足りる。decoupled の分類（MUFU・I2F・F2I・FRND・S2R・LDC・LDG・ALD・AST・IPA・TEX・TLD・KILL・BRA・BSSY・BSYNC・BAR）は `sm75_instr_latencies.rs` と一致。
+
+未実施: 実機。IR と SM75 の interpreter はどちらも encode の欄を同じ定義で読むので、encode の bit の正しさは既知の語と欄の試験（NAK の位置）だけが見ている。desktop の描画の確かめは p007 の投入（P2）と Keiland の Vulkan の道の後。
+
+### 11.4 残り（2026-10-15 P4 の時点）
+
+1. derivative（DDX・DDY、`SHFL.BFLY` と `FSWZADD`、NAK の from_nir）: desktop の shader は使わない。interpreter に 4 lane の quad の実行が要る。
+2. array・cube・3D・compare・size（`textureSize` = TXQ）: IR の TEXTURE に image の次元が無い。`component` の空き bit（24 以上）か新しい欄に次元と array の印を足す共有の front の変更が要る（i915・V3D の backend と共有、Q1 の判断）。
+3. depth の出力（`gl_FragDepth`）・second colour・geometry: desktop は使わない。
+4. 段 D（latency の表による並べ替え、operand の再利用）: 正しさの後。
+5. fragment の discard の後の implicit LOD の TEX（quad の helper が消える）: IR が if-convert して KILL を元の位置で出すので、discard した pixel の隣の LOD は未定義になりうる。desktop の shader で discard の後に texture を読む物があれば見直す。
