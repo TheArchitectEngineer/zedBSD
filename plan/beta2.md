@@ -13,7 +13,7 @@
 | U1 | SV7・5330 | `build/uat/main-amd64/hdd-image.img`（main 2026-10-15 01:57、sha256 c76538263025b37d…） | USB に書いて起動 | /boot/boot0・/boot/efi が見える（BUG-316）、Windows・macOS で ZEDBSD の区画が見える（WS238）、SV7 は desktop（WS237） |
 | U2 | SV7・5330 | 同上 | browser で yahoo.co.jp | feed の画像の枠が無い、画像の大きさが Chrome と同じ（ws074-p233・p234） |
 | U4 | Pi 4（OLED の touch） | T1 が main の kernel と compositor を Pi に入れた後（Q1 が知らせる） | tap・中央の swipe・上端・下端の swipe | 指の下に反応する、中央の 1 本指の swipe で desktop が変わらない（BUG-315） |
-| U3 | RTX 機 | main の USB の image で素で起動（P1 の既定 on・方法 A の merge 待ち、Q1 が知らせる） | 起動して画面を見る | RTX の画面に console・desktop が出るか |
+| U3 | RTX 機（10.0.30.5） | `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/ra NVRTX_RUN=RA`（main 7ca217eab 以降、Q1 が作る） | USB から素で起動し RTX の monitor を見る（方法 A、nvrtx の既定 on） | RTX の画面に console が出続け、login prompt まで出る。dmesg に `P0 console … kept`→`P4m console …`→`P8b ok: head 0 shows the console`→`P8c ok`（WS037 phase006 の「T への手順（RA）」）。GSP の firmware を image に入れるかの判断の後 |
 
 ## 日程
 
