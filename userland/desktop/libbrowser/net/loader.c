@@ -178,6 +178,12 @@ struct net_request {
 	int error;
 	struct net_response response;
 	int kind;
+	char *method;
+	char *headers;
+	unsigned char *body;
+	size_t body_length;
+	int has_body;
+	int plain;
 };
 
 /*
@@ -372,6 +378,24 @@ net_loader_fetch_kind(
 	void *context,
 	struct net_request **request)
 {
+	return net_loader_send(loader, url, kind, NULL, done, context, request);
+}
+
+/*
+ * Starts a request with a method, header lines and a body (send; NULL is
+ * a plain GET).  Only a plain GET is answered from or kept in the cache,
+ * and a redirect of a POST becomes a GET as a browser's does.
+ */
+int
+net_loader_send(
+	struct net_loader *loader,
+	const char *url,
+	int kind,
+	const struct net_send *send,
+	net_request_done done,
+	void *context,
+	struct net_request **request)
+{
 	struct net_request *made;
 	int is_web;
 	int error;
@@ -389,22 +413,44 @@ net_loader_fetch_kind(
 	made->kind = kind;
 	made->done = done;
 	made->context = context;
+	made->plain = 1;
 	wb_buffer_init(&made->request);
 	wb_buffer_init(&made->raw);
 	net_response_init(&made->response);
 
+	/* What a script added: the method, the header lines and the body, copied. */
+	if (send != NULL) {
+		made->plain = (send->method == NULL || strcmp(send->method, "GET") == 0) && send->headers == NULL && send->body == NULL;
+		if (send->method != NULL)
+			made->method = strdup(send->method);
+		if (send->headers != NULL)
+			made->headers = strdup(send->headers);
+		if (send->body != NULL && send->body_length > 0) {
+			made->body = malloc(send->body_length);
+			if (made->body != NULL) {
+				memcpy(made->body, send->body, send->body_length);
+				made->body_length = send->body_length;
+			}
+		}
+		if ((send->method != NULL && made->method == NULL) || (send->headers != NULL && made->headers == NULL)
+		    || (send->body != NULL && send->body_length > 0 && made->body == NULL)) {
+			loader_free(made);
+			return ENOMEM;
+		}
+		made->has_body = send->body != NULL;
+	}
+
 	/* Its URL, which must be http or https. */
 	error = net_url_parse(url, strlen(url), NULL, &made->url);
 	if (error != 0) {
-		free(made);
+		loader_free(made);
 		return error;
 	}
 
 	/* Only http and https are fetched. */
 	is_web = net_http_is_web(made->url.scheme);
 	if (!is_web) {
-		net_url_release(&made->url);
-		free(made);
+		loader_free(made);
 		return EPROTONOSUPPORT;
 	}
 
@@ -722,7 +768,9 @@ loader_begin(
 	}
 
 	/* The URL's entry, answering when it is fresh. */
-	entry = loader_cache_find(loader, wb_buffer_string(&url));
+	entry = NULL;
+	if (request->plain)
+		entry = loader_cache_find(loader, wb_buffer_string(&url));
 	wb_buffer_release(&url);
 	fresh = loader_cache_fresh(entry, now);
 	if (fresh) {
@@ -1178,6 +1226,7 @@ loader_finish(
 	wb_buffer_clear(&request->response.content_type);
 	wb_buffer_clear(&request->response.body);
 	wb_buffer_clear(&request->response.etag);
+	wb_buffer_clear(&request->response.headers);
 	request->response.max_age = -1;
 	request->response.no_store = 0;
 	request->response.no_cache = 0;
@@ -1229,6 +1278,17 @@ loader_finish(
 	if (!is_web) {
 		net_url_release(&next);
 		return EPROTONOSUPPORT;
+	}
+
+	/* A 303, or a 301 or 302 of a POST, is asked again with GET and no body; the others keep their method. */
+	if (request->response.status == 303 || ((request->response.status == 301 || request->response.status == 302)
+	    && request->method != NULL && strcmp(request->method, "POST") == 0)) {
+		free(request->method);
+		request->method = NULL;
+		free(request->body);
+		request->body = NULL;
+		request->body_length = 0;
+		request->has_body = 0;
 	}
 
 	/* The request starts again there. */
@@ -1328,6 +1388,9 @@ loader_free(
 	wb_buffer_release(&request->request);
 	wb_buffer_release(&request->raw);
 	net_response_release(&request->response);
+	free(request->method);
+	free(request->headers);
+	free(request->body);
 	free(request);
 }
 
@@ -1340,6 +1403,7 @@ static int
 loader_prepare(
 	struct net_request *request)
 {
+	struct net_send send;
 	struct wb_buffer extra;
 	const char *lines;
 	int error;
@@ -1360,7 +1424,11 @@ loader_prepare(
 
 	/* The text, keeping the connection. */
 	wb_buffer_clear(&request->request);
-	error = net_http_request_text_kind(&request->url, &request->request, 1, lines, request->kind);
+	send.method = request->method;
+	send.headers = request->headers;
+	send.body = request->has_body ? (request->body != NULL ? request->body : (const unsigned char *)"") : NULL;
+	send.body_length = request->body_length;
+	error = net_http_request_text_send(&request->url, &request->request, 1, lines, request->kind, &send);
 	wb_buffer_release(&extra);
 	if (error != 0)
 		return error;
@@ -1595,7 +1663,7 @@ loader_cache_store(
 
 	/* Only a 200 that says it may be kept, and not larger than the cache. */
 	loader = request->loader;
-	if (request->response.status != 200 || request->response.no_store)
+	if (!request->plain || request->response.status != 200 || request->response.no_store)
 		return;
 	if (request->response.max_age <= 0 && request->response.etag.length == 0)
 		return;

@@ -185,7 +185,9 @@ static int window_console_error(struct vm_realm *realm, vm_value this_value, con
 static int window_console_debug(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static int window_deliver_message(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 static void window_report_job(struct vm_realm *realm, vm_value exception, void *context);
+static void window_report_stop(struct bind_window *window, int status);
 static void window_report_exception(struct bind_window *window, vm_value exception, const char *name);
+static void window_report_stop(struct bind_window *window, int status);
 static void window_trace(struct vm_heap *heap, void *context);
 static void window_release(void *context);
 
@@ -208,7 +210,7 @@ bind_window_create(
 
 	/* Collectible hosts cannot leave asynchronous callbacks in the embedder. */
 	*window = NULL;
-	if (realm->managed && host->fetch != NULL)
+	if (realm->managed && host->request != NULL)
 		return ENOTSUP;
 
 	/* A managed realm and document belong to exactly one live window. */
@@ -406,6 +408,14 @@ bind_run_script(
 	if (status == ENOMEM)
 		return status;
 
+	/* Any other failure (the engine reached a limit it cannot report as an exception) ends the script; say so. */
+	if (status != 0) {
+		wb_buffer_init(&line);
+		if (wb_buffer_printf(&line, "Uncaught InternalError: the script stopped (%s) (%s)", strerror(status), name) == 0)
+			bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
+		wb_buffer_release(&line);
+	}
+
 	/* The microtasks the script queued. */
 	status = bind_checkpoint(window);
 	if (status != 0)
@@ -413,6 +423,20 @@ bind_run_script(
 
 	/* Succeeded: the script ran, or its error was reported. */
 	return 0;
+}
+
+/* Says that the microtask queue stopped by an error that is not an exception. */
+static void
+window_report_stop(
+	struct bind_window *window,
+	int status)
+{
+	struct wb_buffer line;
+
+	wb_buffer_init(&line);
+	if (wb_buffer_printf(&line, "Uncaught InternalError: a microtask stopped (%s)", strerror(status)) == 0)
+		bind_console(window, BIND_CONSOLE_ERROR, wb_buffer_string(&line));
+	wb_buffer_release(&line);
 }
 
 /*
@@ -435,8 +459,11 @@ bind_checkpoint(
 
 	/* Runs the jobs already queued by the script. */
 	status = vm_run_jobs(window->realm, window_report_job, window);
-	if (status != 0)
+	if (status != 0) {
+		/* A job that stops the queue by an error that is not an exception is shown, not hidden. */
+		window_report_stop(window, status);
 		return status;
+	}
 
 	/* DOM changes notify their observers as microtasks; a callback may make another change. */
 	for (;;) {

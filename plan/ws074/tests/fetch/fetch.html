@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script>
+var results = []; window.__verbose = /verbose/.test(location.search);
+function ok(name, cond, detail) { results.push((cond ? 'ok ' : 'FAIL ') + name + (cond ? '' : ' ' + detail)); }
+function done() { console.log(results.join('\n')); console.log('end'); }
+var tests = [];
+function test(name, fn) { tests.push([name, fn]); }
+
+test('fetch GET json', function () {
+  return fetch('/echo?x=1').then(function (r) {
+    ok('status', r.status === 200 && r.ok && r.statusText === 'OK', r.status);
+    ok('header reply', r.headers.get('X-Reply') === 'yes' && r.headers.get('x-reply') === 'yes', r.headers.get('X-Reply'));
+    ok('content-type', /json/.test(r.headers.get('content-type')), r.headers.get('content-type'));
+    ok('url', /\/echo\?x=1$/.test(r.url), r.url);
+    return r.json();
+  }).then(function (j) { ok('method GET', j.method === 'GET' && j.path === '/echo?x=1', JSON.stringify(j)); });
+});
+test('fetch POST json with headers', function () {
+  return fetch('/echo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': 'abc' }, body: JSON.stringify({ a: [1, 2], b: '日本語' }) })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      ok('post method', j.method === 'POST', j.method);
+      ok('post header', j.headers['x-token'] === 'abc', JSON.stringify(j.headers));
+      ok('post type', j.headers['content-type'] === 'application/json', j.headers['content-type']);
+      ok('post body', JSON.parse(j.body).b === '日本語', j.body);
+    });
+});
+test('fetch form body', function () {
+  var p = new URLSearchParams({ q: 'a b', r: 'c' });
+  return fetch('/echo', { method: 'POST', body: p }).then(function (r) { return r.json(); }).then(function (j) {
+    ok('urlencoded type', /^application\/x-www-form-urlencoded/.test(j.headers['content-type']), j.headers['content-type']);
+    ok('urlencoded body', j.body === 'q=a+b&r=c', j.body);
+  });
+});
+test('fetch FormData', function () {
+  var fd = new FormData(); fd.append('k', 'v'); fd.append('f', new Blob(['hello'], { type: 'text/plain' }), 'h.txt');
+  return fetch('/echo', { method: 'POST', body: fd }).then(function (r) { return r.json(); }).then(function (j) {
+    ok('multipart type', /^multipart\/form-data; boundary=/.test(j.headers['content-type']), j.headers['content-type']);
+    ok('multipart body', j.body.indexOf('name="k"') > 0 && j.body.indexOf('filename="h.txt"') > 0 && j.body.indexOf('hello') > 0, j.body);
+  });
+});
+test('fetch 404 and redirect', function () {
+  return fetch('/status/404').then(function (r) {
+    ok('404', r.status === 404 && !r.ok, r.status);
+    return fetch('/redirect');
+  }).then(function (r) {
+    ok('redirected', r.redirected && /\/echo$/.test(r.url) && r.status === 200, r.url + ' ' + r.redirected);
+  });
+});
+test('fetch POST 302 becomes GET', function () {
+  return fetch('/redirect', { method: 'POST', body: 'x' }).then(function (r) { return r.json(); }).then(function (j) {
+    ok('302 GET', j.method === 'GET' && j.body === '', JSON.stringify(j));
+  });
+});
+test('fetch network error', function () {
+  return fetch('http://127.0.0.1:1/').then(function () { ok('refused', false, 'resolved'); }, function (e) { ok('refused', e instanceof TypeError, String(e)); });
+});
+test('fetch abort', function () {
+  var c = new AbortController(), p = fetch('/slow', { signal: c.signal });
+  c.abort();
+  return p.then(function () { ok('abort', false, 'resolved'); }, function (e) { ok('abort', e.name === 'AbortError', String(e)); });
+});
+test('Request and Response', function () {
+  var req = new Request('/echo', { method: 'put', headers: { A: 'b' }, body: 'z' });
+  ok('request', req.method === 'PUT' && req.headers.get('a') === 'b' && /\/echo$/.test(req.url), req.method);
+  var r = new Response('{"n":5}', { status: 201, headers: { 'Content-Type': 'application/json' } });
+  ok('response', r.status === 201 && r.ok && r.headers.get('content-type') === 'application/json', r.status);
+  return r.clone().text().then(function (t) { ok('clone text', t === '{"n":5}', t); return r.json(); }).then(function (j) { ok('json', j.n === 5, j.n); });
+});
+test('Headers', function () {
+  var h = new Headers([['A', '1'], ['a', '2'], ['B', '3']]);
+  ok('combine', h.get('a') === '1, 2' && h.has('b') && !h.has('c'), h.get('a'));
+  h.set('b', '4'); h.delete('a');
+  ok('entries', Array.from(h).join('|') === 'b,4', Array.from(h).join('|'));
+});
+test('XHR GET async', function () {
+  return new Promise(function (resolve) {
+    var x = new XMLHttpRequest(), states = [];
+    x.onreadystatechange = function () { states.push(x.readyState); };
+    x.onload = function () {
+      ok('xhr status', x.status === 200 && x.statusText === 'OK', x.status);
+      ok('xhr states', states.join() === '1,2,3,4', states.join());
+      ok('xhr header', x.getResponseHeader('X-Reply') === 'yes' && /x-reply: yes/i.test(x.getAllResponseHeaders()), x.getAllResponseHeaders());
+      ok('xhr text', JSON.parse(x.responseText).method === 'GET', x.responseText);
+      resolve();
+    };
+    x.open('GET', '/echo');
+    ok('xhr unsent', x.readyState === 1, x.readyState);
+    x.send();
+    ok('xhr async', x.readyState === 1, x.readyState);
+  });
+});
+test('XHR POST json responseType', function () {
+  return new Promise(function (resolve) {
+    var x = new XMLHttpRequest();
+    x.open('POST', '/echo'); x.setRequestHeader('Content-Type', 'text/plain'); x.setRequestHeader('X-A', '1'); x.responseType = 'json';
+    x.addEventListener('load', function () {
+      ok('xhr post', x.response.method === 'POST' && x.response.body === 'data' && x.response.headers['x-a'] === '1', JSON.stringify(x.response));
+      resolve();
+    });
+    x.send('data');
+  });
+});
+test('XHR error and abort', function () {
+  return new Promise(function (resolve) {
+    var x = new XMLHttpRequest(), seen = [];
+    x.onerror = function () { seen.push('error'); };
+    x.onloadend = function () {
+      ok('xhr error', seen.join() === 'error' && x.status === 0, seen.join() + x.status);
+      var y = new XMLHttpRequest(), s2 = [];
+      y.onabort = function () { s2.push('abort'); };
+      y.onload = function () { s2.push('load'); };
+      y.open('GET', '/slow'); y.send(); y.abort();
+      ok('xhr abort', s2.join() === 'abort' && y.readyState === 0, s2.join() + y.readyState);
+      resolve();
+    };
+    x.open('GET', 'http://127.0.0.1:1/'); x.send();
+  });
+});
+test('XHR sync', function () {
+  var x = new XMLHttpRequest();
+  x.open('GET', '/echo', false); x.send();
+  ok('sync', x.status === 200 && JSON.parse(x.responseText).method === 'GET', x.status);
+});
+test('TextEncoder and Blob', function () {
+  var b = new TextEncoder().encode('日');
+  ok('encode', b.length === 3 && b[0] === 0xe6, b.length);
+  ok('decode', new TextDecoder().decode(b) === '日', 'x');
+  var blob = new Blob(['ab', 'c'], { type: 'Text/Plain' });
+  ok('blob', blob.size === 3 && blob.type === 'text/plain', blob.size);
+  return blob.text().then(function (t) { ok('blob text', t === 'abc', t); });
+});
+
+var index = 0;
+function next() {
+  if (index === tests.length) { done(); return; }
+  var t = tests[index++]; if (window.__verbose) console.log('start ' + t[0]);
+  var p;
+  try { p = Promise.resolve(t[1]()); } catch (e) { ok(t[0], false, 'threw ' + e); next(); return; }
+  p.then(next, function (e) { ok(t[0], false, 'rejected ' + e + ' ' + (e && e.stack)); next(); });
+}
+next();
+</script>

@@ -35,7 +35,7 @@ static int ownership_window(struct vm_heap *heap, const void *stack_base);
 static int ownership_failure(void);
 static int ownership_active_timer(struct vm_heap *heap, const void *stack_base);
 static int ownership_retire(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
-static int ownership_fetch(void *context, const char *href, bind_fetch_done done, void *done_context);
+static int ownership_fetch(void *context, const struct bind_request *request, bind_request_done done, void *done_context, void **handle);
 static int ownership_gc(struct vm_realm *realm, vm_value this_value, const vm_value *args, unsigned count, vm_value *result);
 
 /*
@@ -437,13 +437,13 @@ ownership_window(
 		return ENOMEM;
 
 	/* Unsupported asynchronous registration is rejected before creating a host. */
-	host.fetch = ownership_fetch;
+	host.request = ownership_fetch;
 	error = bind_window_create(realm, document, &host, &window);
 	same = 0;
 	if (error == ENOTSUP && window == NULL)
 		same = 1;
 	ownership_check(same, "managed host rejects async fetch");
-	host.fetch = NULL;
+	host.request = NULL;
 	error = bind_window_create(realm, document, &host, &window);
 	if (error != 0)
 		return error;
@@ -792,12 +792,14 @@ ownership_failure(
 static int
 ownership_fetch(
 	void *context,
-	const char *href,
-	bind_fetch_done done,
-	void *done_context)
+	const struct bind_request *request,
+	bind_request_done done,
+	void *done_context,
+	void **handle)
 {
 	UNUSED_PARAMETER(context);
-	UNUSED_PARAMETER(href);
+	UNUSED_PARAMETER(request);
+	UNUSED_PARAMETER(handle);
 	UNUSED_PARAMETER(done);
 	UNUSED_PARAMETER(done_context);
 

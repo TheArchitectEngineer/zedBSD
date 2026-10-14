@@ -91,6 +91,21 @@ struct net_response {
 	int no_store;
 	int no_cache;
 	struct wb_buffer etag;
+	/* The response headers but Set-Cookie, one "Name: value" per line, each ending in LF (ws074-p232). */
+	struct wb_buffer headers;
+};
+
+/*
+ * What a script's request adds to a plain GET (ws074-p232): the method
+ * (NULL is GET), extra header lines (each "Name: value" ending in CR LF,
+ * NULL for none; the fixed headers a name replaces are left out, and
+ * the connection's own, such as Host, are ignored) and the body (NULL for none).
+ */
+struct net_send {
+	const char *method;
+	const char *headers;
+	const unsigned char *body;
+	size_t body_length;
 };
 
 /*
@@ -135,13 +150,16 @@ int net_host_parse(const char *input, size_t length, int opaque, struct wb_buffe
 
 /* HTTP (http.c). */
 int net_http_fetch(const char *url, struct net_response *response);
+int net_http_fetch_send(const char *url, const struct net_send *send, struct net_response *response);
 void net_http_set_kind(int kind);
 int net_http_request_text(const struct net_url *url, struct wb_buffer *request, int keep_alive, const char *extra);
 int net_http_request_text_kind(const struct net_url *url, struct wb_buffer *request, int keep_alive, const char *extra, int kind);
+int net_http_request_text_send(const struct net_url *url, struct wb_buffer *request, int keep_alive, const char *extra, int kind, const struct net_send *send);
 
 /* What a request is for: the Accept header follows it (ws074-p230). */
 #define NET_FETCH_DOCUMENT	0
 #define NET_FETCH_IMAGE		1
+#define NET_FETCH_SCRIPT_API	2
 void net_response_init(struct net_response *response);
 void net_http_framing_init(struct net_http_framing *framing);
 void net_http_framing_update(struct net_http_framing *framing, const unsigned char *raw, size_t length);
@@ -170,6 +188,7 @@ int net_loader_create(struct net_loader **loader);
 void net_loader_destroy(struct net_loader *loader);
 int net_loader_fetch(struct net_loader *loader, const char *url, net_request_done done, void *context, struct net_request **request);
 int net_loader_fetch_kind(struct net_loader *loader, const char *url, int kind, net_request_done done, void *context, struct net_request **request);
+int net_loader_send(struct net_loader *loader, const char *url, int kind, const struct net_send *send, net_request_done done, void *context, struct net_request **request);
 void net_request_cancel(struct net_request *request);
 int net_request_error(const struct net_request *request);
 const struct net_response *net_request_response(const struct net_request *request);

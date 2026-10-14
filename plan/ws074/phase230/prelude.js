@@ -436,7 +436,72 @@
     def(g, 'DOMPointReadOnly', DOMPointReadOnly);
     def(g, 'DOMPoint', DOMPoint);
   }
-  if (typeof document !== 'undefined' && !('activeElement' in document)) {
+  // queueMicrotask is the global object's own property (a library that decides how to queue a microtask reads it there),
+  // and PromiseRejectionEvent exists (core-js keeps the engine's Promise when it does; its own is the fallback).
+  if (typeof g.queueMicrotask === 'function' && !Object.prototype.hasOwnProperty.call(g, 'queueMicrotask')) def(g, 'queueMicrotask', g.queueMicrotask);
+  if (!g.PromiseRejectionEvent) {
+    class PromiseRejectionEvent extends Event {
+      constructor(type, init) {
+        super(type, init);
+        init = init || {};
+        hidden(this, '_promise', init.promise); hidden(this, '_reason', init.reason);
+      }
+      get promise() { return this._promise; }
+      get reason() { return this._reason; }
+    }
+    def(g, 'PromiseRejectionEvent', PromiseRejectionEvent);
+  }
+  // The CSSOM rule interfaces scripts test with instanceof (a rule is told by what it has, as the engine's rules have no class of their own).
+  [['CSSRule', function (x) { return !!x && typeof x === 'object' && typeof x.cssText === 'string'; }],
+   ['CSSStyleRule', function (x) { return !!x && typeof x.selectorText === 'string'; }],
+   ['CSSMediaRule', function (x) { return !!x && typeof x.media === 'object' && !!x.cssRules; }],
+   ['CSSImportRule', function (x) { return !!x && typeof x.href === 'string' && !!x.styleSheet; }],
+   ['CSSFontFaceRule', function (x) { return !!x && x.type === 5; }],
+   ['CSSKeyframesRule', function (x) { return !!x && x.type === 7; }]].forEach(function (p) {
+    if (g[p[0]]) return;
+    var C = function () { throw new TypeError('Illegal constructor'); };
+    Object.defineProperty(C, 'name', { value: p[0] });
+    Object.defineProperty(C, Symbol.hasInstance, { value: p[1] });
+    def(g, p[0], C);
+  });
+  var HTMLElementPrototype = null;
+  if (typeof document !== 'undefined') {
+    // The interfaces are made when the first element is wrapped, so one is made here to find HTMLElement's prototype.
+    HTMLElementPrototype = Object.getPrototypeOf(document.createElement('div'));
+    while (HTMLElementPrototype && HTMLElementPrototype.constructor && HTMLElementPrototype.constructor.name !== 'HTMLElement')
+      HTMLElementPrototype = Object.getPrototypeOf(HTMLElementPrototype);
+  }
+  if (HTMLElementPrototype && HTMLElementPrototype.constructor && !HTMLElementPrototype.focus) {
+    // Focus (ws074-p232): the element a script focuses is document.activeElement and gets focus and blur events.
+    var focused = null;
+    var focusable = /^(a|area|button|input|select|textarea|iframe|summary)$/i;
+    var fire = function (el, type, related) {
+      var ev;
+      try { ev = new FocusEvent(type, { relatedTarget: related, bubbles: false }); } catch (e) { ev = new Event(type); }
+      el.dispatchEvent(ev);
+      try { el.dispatchEvent(new FocusEvent(type === 'focus' ? 'focusin' : 'focusout', { relatedTarget: related, bubbles: true })); } catch (e) { /* no FocusEvent */ }
+    };
+    var canFocus = function (el) {
+      return focusable.test(el.tagName) || el.hasAttribute('tabindex') || el.isContentEditable === true;
+    };
+    def(HTMLElementPrototype, 'focus', function focus() {
+      var old = focused;
+      if (!this.isConnected || !canFocus(this) || old === this) return;
+      focused = this;
+      if (old) fire(old, 'blur', this);
+      fire(this, 'focus', old);
+    });
+    def(HTMLElementPrototype, 'blur', function blur() {
+      var old = focused;
+      if (old !== this) return;
+      focused = null;
+      fire(old, 'blur', null);
+    });
+    if (!('activeElement' in document)) {
+      Object.defineProperty(document, 'activeElement', { get: function () { return focused && focused.isConnected ? focused : document.body; }, configurable: true });
+    }
+    def(document, 'hasFocus', function hasFocus() { return true; });
+  } else if (typeof document !== 'undefined' && !('activeElement' in document)) {
     Object.defineProperty(document, 'activeElement', { get: function () { return document.body; }, configurable: true });
     def(document, 'hasFocus', function hasFocus() { return true; });
   }

@@ -2,15 +2,25 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Makes userland/desktop/libbrowser/bind/prelude-source.inc from plan/ws074/phase230/prelude.js (a C string literal)."""
+"""Makes userland/desktop/libbrowser/bind/prelude-source.inc (from plan/ws074/phase230/prelude.js) and
+prelude-net.inc (from plan/ws074/phase232/net.js), each a C string literal."""
 import os
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-source = open(os.path.join(root, "plan/ws074/phase230/prelude.js"), encoding="utf-8").read()
-lines = []
-for line in source.split("\n"):
-    escaped = line.replace("\\", "\\\\").replace('"', '\\"')
-    lines.append('\t"%s\\n"' % escaped)
-text = "/* Made by plan/ws074/phase230/make-prelude.py from prelude.js; edit that and run the script. */\n"
-text += "static const char prelude_source[] =\n" + "\n".join(lines) + ";\n"
-open(os.path.join(root, "userland/desktop/libbrowser/bind/prelude-source.inc"), "w", encoding="utf-8").write(text)
+
+
+def convert(source_path, output_name, variable):
+    source = open(os.path.join(root, source_path), encoding="utf-8").read()
+    lines = []
+    for line in source.split("\n"):
+        escaped = line.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append('\t"%s\\n"' % escaped)
+    text = "/* Made by plan/ws074/phase230/make-prelude.py from %s; edit that and run the script. */\n" % source_path
+    text += "static const char %s[] =\n" % variable + "\n".join(lines) + ";\n"
+    open(os.path.join(root, "userland/desktop/libbrowser/bind", output_name), "w", encoding="utf-8").write(text)
+
+
+convert("plan/ws074/phase230/prelude.js", "prelude-source.inc", "prelude_source")
+convert("plan/ws074/phase232/net.js", "prelude-net.inc", "prelude_net_source")
+# The host build's dependency tracking sees only .c files, so prelude.c is touched to make it build again.
+os.utime(os.path.join(root, "userland/desktop/libbrowser/bind/prelude.c"))

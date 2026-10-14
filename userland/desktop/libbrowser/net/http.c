@@ -120,7 +120,7 @@ struct http_connection {
 	struct net_tls *tls;
 };
 
-static int http_request(const struct net_url *url, struct net_response *response, struct wb_buffer *location);
+static int http_request(const struct net_url *url, const struct net_send *send, struct net_response *response, struct wb_buffer *location);
 static int http_decode_body(int encoding, struct net_response *response);
 static int http_connect(const struct net_url *url, int *descriptor);
 static int http_send_all(const struct http_connection *connection, const unsigned char *bytes, size_t length);
@@ -147,6 +147,22 @@ net_http_fetch(
 	const char *url_text,
 	struct net_response *response)
 {
+	return net_http_fetch_send(url_text, NULL, response);
+}
+
+/*
+ * The same with what a script's request adds (send: the method, the header
+ * lines and the body; NULL is a plain GET); a 303, or a 301 or 302 of a
+ * POST, is asked again with GET and no body.
+ */
+int
+net_http_fetch_send(
+	const char *url_text,
+	const struct net_send *send,
+	struct net_response *response)
+{
+	struct net_send again;
+	const struct net_send *current;
 	struct net_url url;
 	struct net_url next;
 	struct wb_buffer location;
@@ -164,6 +180,7 @@ net_http_fetch(
 
 	/* Each request, then the next one a redirect names. */
 	wb_buffer_init(&location);
+	current = send;
 	for (redirects = 0;; redirects++) {
 		/* Only http and https. */
 		is_web = net_http_is_web(url.scheme);
@@ -174,7 +191,7 @@ net_http_fetch(
 
 		/* The request and its response. */
 		wb_buffer_clear(&location);
-		error = http_request(&url, response, &location);
+		error = http_request(&url, current, response, &location);
 		if (error != 0)
 			break;
 
@@ -185,6 +202,16 @@ net_http_fetch(
 		if (redirects == NET_HTTP_REDIRECTS) {
 			error = ELOOP;
 			break;
+		}
+
+		/* The method after a redirect. */
+		if (current != NULL && (response->status == 303 || ((response->status == 301 || response->status == 302)
+		    && current->method != NULL && strcmp(current->method, "POST") == 0))) {
+			again = *current;
+			again.method = NULL;
+			again.body = NULL;
+			again.body_length = 0;
+			current = &again;
 		}
 
 		/* The next URL, resolved against this one. */
@@ -224,6 +251,7 @@ net_response_release(
 	wb_buffer_release(&response->content_type);
 	wb_buffer_release(&response->body);
 	wb_buffer_release(&response->etag);
+	wb_buffer_release(&response->headers);
 }
 
 /*
@@ -240,6 +268,7 @@ net_response_init(
 	wb_buffer_init(&response->content_type);
 	wb_buffer_init(&response->body);
 	wb_buffer_init(&response->etag);
+	wb_buffer_init(&response->headers);
 	response->max_age = -1;
 }
 
@@ -272,14 +301,94 @@ net_http_request_text_kind(
 	const char *extra,
 	int kind)
 {
-	const char *target;
+	return net_http_request_text_send(url, request, keep_alive, extra, kind, NULL);
+}
+
+/* Tells whether a header block (lines each ending in CR LF) has a header of the name. */
+static int
+http_has_header(
+	const char *lines,
+	const char *name)
+{
+	const char *end;
+	size_t length;
+
+	/* Each line's start against the name and a colon. */
+	length = strlen(name);
+	while (lines != NULL && *lines != '\0') {
+		if (strncasecmp(lines, name, length) == 0 && lines[length] == ':')
+			return 1;
+		end = strchr(lines, '\n');
+		if (end == NULL)
+			break;
+		lines = end + 1;
+	}
+	return 0;
+}
+
+/* Appends the header lines a script gave, but the ones the connection decides itself. */
+static int
+http_append_script_headers(
+	struct wb_buffer *request,
+	const char *lines)
+{
+	static const char *const forbidden[] = { "host", "content-length", "connection", "transfer-encoding",
+	    "accept-encoding", "cookie", "user-agent", "te", "upgrade", "expect", NULL };
+	const char *end;
+	const char *colon;
+	size_t length;
+	size_t index;
+	int skip;
 	int error;
 
-	/* The request line: the path (at least "/") and the query. */
+	/* Each line with a name before a colon, that is not forbidden. */
+	error = 0;
+	while (error == 0 && lines != NULL && *lines != '\0') {
+		end = strchr(lines, '\n');
+		length = end == NULL ? strlen(lines) : (size_t)(end - lines) + 1U;
+		colon = memchr(lines, ':', length);
+		skip = colon == NULL || colon == lines;
+		for (index = 0; !skip && forbidden[index] != NULL; index++) {
+			if ((size_t)(colon - lines) == strlen(forbidden[index]) && strncasecmp(lines, forbidden[index], (size_t)(colon - lines)) == 0)
+				skip = 1;
+		}
+		if (!skip) {
+			error = wb_buffer_append(request, lines, length);
+			if (error == 0 && lines[length - 1U] != '\n')
+				error = wb_buffer_append_string(request, "\r\n");
+		}
+		lines += length;
+	}
+	return error;
+}
+
+/*
+ * The same, with what a script's request adds (send: the method, the
+ * headers and the body; NULL for a plain GET).  For the script kind the
+ * fixed Accept and Accept-Language are left out when the script gives them.
+ */
+int
+net_http_request_text_send(
+	const struct net_url *url,
+	struct wb_buffer *request,
+	int keep_alive,
+	const char *extra,
+	int kind,
+	const struct net_send *send)
+{
+	const char *target;
+	const char *method;
+	const char *fixed;
+	int error;
+
+	/* The request line: the method, the path (at least "/") and the query. */
+	method = "GET";
+	if (send != NULL && send->method != NULL)
+		method = send->method;
 	target = url->path;
 	if (target[0] == '\0')
 		target = "/";
-	error = wb_buffer_printf(request, "GET %s", target);
+	error = wb_buffer_printf(request, "%s %s", method, target);
 	if (error == 0 && url->query != NULL)
 		error = wb_buffer_printf(request, "?%s", url->query);
 	if (error == 0)
@@ -287,17 +396,38 @@ net_http_request_text_kind(
 	if (error == 0 && url->port >= 0)
 		error = wb_buffer_printf(request, ":%d", url->port);
 	if (error == 0)
-		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_USER_AGENT, kind == NET_FETCH_IMAGE ? NET_HTTP_IMAGE_HEADERS : NET_HTTP_HEADERS);
+		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n", NET_USER_AGENT);
+
+	/* The fixed headers; a script's request keeps its own Accept and Accept-Language. */
+	if (error == 0 && kind == NET_FETCH_SCRIPT_API) {
+		if (!http_has_header(send != NULL ? send->headers : NULL, "accept"))
+			error = wb_buffer_append_string(request, "Accept: *" "/" "*\r\n");
+		if (error == 0 && !http_has_header(send != NULL ? send->headers : NULL, "accept-language"))
+			error = wb_buffer_append_string(request, "Accept-Language: ja,en-US;q=0.9,en;q=0.8\r\n");
+		if (error == 0)
+			error = wb_buffer_append_string(request, "Accept-Encoding: identity\r\n");
+	} else if (error == 0) {
+		fixed = kind == NET_FETCH_IMAGE ? NET_HTTP_IMAGE_HEADERS : NET_HTTP_HEADERS;
+		error = wb_buffer_append_string(request, fixed);
+	}
 	if (error == 0 && !keep_alive)
 		error = wb_buffer_append_string(request, "Connection: close\r\n");
+	if (error == 0 && send != NULL)
+		error = http_append_script_headers(request, send->headers);
 	if (error == 0 && extra != NULL)
 		error = wb_buffer_append_string(request, extra);
+
+	/* The length of a body (a POST without one says zero). */
+	if (error == 0 && send != NULL && (send->body != NULL || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0))
+		error = wb_buffer_printf(request, "Content-Length: %lu\r\n", (unsigned long)(send->body == NULL ? 0U : send->body_length));
 
 	/* The cookies for the URL, and the end of the headers. */
 	if (error == 0)
 		error = net_cookie_header(url, request);
 	if (error == 0)
 		error = wb_buffer_append_string(request, "\r\n");
+	if (error == 0 && send != NULL && send->body != NULL)
+		error = wb_buffer_append(request, send->body, send->body_length);
 	if (error != 0)
 		return error;
 
@@ -462,6 +592,7 @@ net_http_framing_update(
 static int
 http_request(
 	const struct net_url *url,
+	const struct net_send *send,
 	struct net_response *response,
 	struct wb_buffer *location)
 {
@@ -474,7 +605,7 @@ http_request(
 	/* The request's text. */
 	wb_buffer_init(&request);
 	wb_buffer_init(&raw);
-	error = net_http_request_text_kind(url, &request, 0, NULL, http_fetch_kind);
+	error = net_http_request_text_send(url, &request, 0, NULL, send != NULL ? NET_FETCH_SCRIPT_API : http_fetch_kind, send);
 	if (error != 0) {
 		wb_buffer_release(&request);
 		return error;
@@ -746,6 +877,7 @@ net_http_parse_response(
 	int error;
 
 	/* The status line: HTTP/1.x, a space, the three digits. */
+	wb_buffer_clear(&response->headers);
 	text = (const char *)raw->data;
 	if (raw->length < 12U)
 		return EINVAL;
@@ -825,8 +957,16 @@ http_header(
 	int differs;
 	int error;
 
-	/* The type of the body. */
+	/* Every header but the cookies is kept for a script, one a line. */
 	error = 0;
+	found = http_header_value(line, length, "set-cookie", &value, &value_length);
+	if (!found) {
+		error = wb_buffer_append(&response->headers, line, length);
+		if (error == 0)
+			error = wb_buffer_append_byte(&response->headers, '\n');
+	}
+
+	/* The type of the body. */
 	found = http_header_value(line, length, "content-type", &value, &value_length);
 	if (found) {
 		wb_buffer_clear(&response->content_type);
