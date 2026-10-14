@@ -1049,7 +1049,8 @@ grid_static_vertical_start(
 		    align != CSS_ALIGN_RIGHT) ||
 		    (justify != CSS_ALIGN_START && justify != CSS_ALIGN_END &&
 		    justify != CSS_ALIGN_CENTER && justify != CSS_ALIGN_LEFT &&
-		    justify != CSS_ALIGN_RIGHT))
+		    justify != CSS_ALIGN_RIGHT && justify != CSS_ALIGN_SELF_START &&
+		    justify != CSS_ALIGN_SELF_END))
 			continue;
 
 		/* Logical columns descend; logical rows go right or left. */
