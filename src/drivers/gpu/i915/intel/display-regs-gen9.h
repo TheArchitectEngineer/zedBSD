@@ -7,6 +7,7 @@
  * Copyright 2003 Tungsten Graphics, Inc., Cedar Park, Texas.
  * Copyright © 2006-2016 Intel Corporation
  * Copyright © 2021 Intel Corporation
+ * Copyright © 2022 Intel Corporation
  * Copyright © 2023 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -45,6 +46,8 @@
  *     3975-3976, 4038-4043, 4279-4340, 5451-5462, 5574-5611, 5886-5942,
  *     6188-6196)
  *     efcb6385e32031ca3c5b97f7691c5ed1706c2a6709e3875ff78c2cf2eff0e626
+ *   drivers/gpu/drm/i915/display/intel_backlight_regs.h (lines 65, 81-93)
+ *     fe411d1e4987cd0cb17c45b5ddd005efab1ee5c44ca0de23a70bc03dff7c98b7
  *   drivers/gpu/drm/i915/display/intel_psr_regs.h (lines 24-27)
  *     0a207944317960d86ac7bd5ef076034bddad43c60c654746016a07a1625adf3b
  *   drivers/gpu/drm/i915/display/intel_dpll_mgr.c (lines 1824-1856, the
@@ -206,5 +209,22 @@
 
 /* The first plane's flip done (GEN9_PIPE_PLANE1_FLIP_DONE). */
 #define I915_SKL_DE_PIPE_PLANE1_FLIP_DONE	(1U << 3)
+
+/*
+ * The south display's backlight PWM.  A Sunrise Point or Kaby Point PCH has
+ * the LPT layout: CTL1 holds the enable and the polarity, CTL2 the period
+ * (31:16) and the duty (15:0).  A Cannon Point or Comet Point PCH has the
+ * Broxton layout with one controller: CTL1, then the period and the duty
+ * each in a register of its own (BLC_PWM_PCH_CTL1, _CTL2, _BXT_BLC_PWM_*1).
+ */
+#define I915_SKL_BLC_PWM_PCH_CTL1		0xc8250U
+#define I915_SKL_BLC_PWM_PCH_CTL2		0xc8254U
+#define I915_SKL_BLM_PCH_PWM_ENABLE		(1U << 31)
+#define I915_SKL_BLM_PCH_POLARITY		(1U << 29)
+#define I915_SKL_BLC_PWM_PERIOD_SHIFT		16U
+#define I915_SKL_BLC_PWM_DUTY_MASK		0xffffU
+#define I915_CNP_BLC_PWM_CTL1			0xc8250U
+#define I915_CNP_BLC_PWM_FREQ1			0xc8254U
+#define I915_CNP_BLC_PWM_DUTY1			0xc8258U
 
 #endif /* DRIVERS_GPU_I915_INTEL_DISPLAY_REGS_GEN9_H */

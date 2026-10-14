@@ -338,7 +338,7 @@ kern_boot_parameters_parse(
  * Checks the word of kmsg= (quiet or console), login= (graphical or console),
  * display= (auto, hdmi, edp or panel), i915.start= (auto or manual),
  * i915.debug= (off or display), i915.gen9= (on or off) or
- * i915.gen9.display= (flip or copy).
+ * i915.gen9.display= (copy, flip, backlight, modeset or full).
  */
 static int
 parameter_word(
@@ -419,14 +419,23 @@ parameter_word(
 	}
 
 	/*
-	 * i915.gen9.display= shows a Gen9 GPU's desktop by flipping the
-	 * firmware's plane between the driver's own buffers (flip), or by
-	 * copying every frame into the firmware's framebuffer (copy).
+	 * i915.gen9.display= tells how far the i915 drives a Gen9 GPU's
+	 * display, each word taking the steps of the words before it: copy
+	 * every frame into the firmware's framebuffer (copy), flip the
+	 * firmware's plane (flip), offer the panel's brightness (backlight),
+	 * set modes and drive external displays (modeset), and keep the
+	 * display across suspend (full).
 	 */
 	if (key == KERN_BOOT_PARAMETER_I915_GEN9_DISPLAY) {
-		other = parameter_text_is(value, length, "flip");
+		other = parameter_text_is(value, length, "copy");
 		if (!other)
-			other = parameter_text_is(value, length, "copy");
+			other = parameter_text_is(value, length, "flip");
+		if (!other)
+			other = parameter_text_is(value, length, "backlight");
+		if (!other)
+			other = parameter_text_is(value, length, "modeset");
+		if (!other)
+			other = parameter_text_is(value, length, "full");
 		if (!other)
 			return EINVAL;
 
