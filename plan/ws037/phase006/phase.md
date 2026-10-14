@@ -364,6 +364,16 @@ VFIO の guest に netdev が無く SSH が使えないので、判定が VGA �
 - **判定: R8b クリア**（ユーザーの基準「kernel log に display の制御の error が無く、制御できている」、Q1 の判定）。nouveau と同じ手順（6e4be8661）と flip の直し（7b5c3cac9: notifier を交互に、flip で image の全部）で通った。
 - 次: T1 が R8c（resident の GPU device）→ R8d（events・cursor・share）を流す。
 
+## R8c・R8d の結果（T1-665・T1-666、2026-10-16）と cursor の hide の直し
+
+- `plan/agents/T1/results-20261016-t1-665.md`・`t1-666.md`。
+- **R8c PASS**（Q1 の判定でクリア）: `P8c ok: gpu device registered, display 1280x1024 at 60019 mHz`、GSP は残る、lease 1 の claim/release、`display-inventory` count=1、`display-control` の refresh boundaries=61・present error=0・power 21（仕様）。error の行は無い。
+- **R8d FAIL**: `DISPLAY-SCANOUT cursor set=0 show=0 moves=100 move=0 hide=17 again=0`（hide が EBUSY）と dmesg の `P8c: the cursor was not hidden at the lease's end (17)`。他の行（info・device・constraints・claim・shared・events）は手順どおり。
+- 原因: cursor の表示・隠しの core の update が `SET_INTERLOCK_FLAGS` で head の cursor との interlock（`1 << head`）を求めていた。NVD 3.x の cursor の PIO channel（c37a/c57a）は自分の `SET_INTERLOCK_FLAGS`（0x204、`INTERLOCK_WITH_CORE` bit 16）を持ち、nvrtx はそれを書かないので、cursor の update は core と interlock しない。core の update は来ない cursor の update を待ち続け、notifier が FINISHED にならない → 次の hide が 50 ms の待ちで EBUSY。100 回の move（cursor の channel だけの update）も interlock を満たさない。
+- nouveau との照合: 表示（位置が変わる時）は `nv50_wndw_flush_set` が cursor の point と update（`cursc37a_update`、0x200=1）を interlock 無しで送り、`interlock[CURS]` を立てない（`set.mask` が point だけ）。隠しは cursor の plane の `clr.mask` が 0（`image_clr` が無い）で `flush_clr` を通らず、head の `curs_clr` と core の update だけ。どちらも core の update の interlock は cursor 0・window 0。
+- 直し: `nvrtx_disp_core_update_cursor` の interlock を {0, 0} に（head の引数を外した）。cursor の channel の point と update（show・move）と core の methods（`headc37d_curs_set`/`_clr` と同じ値）は変えない。host 試験 `nvrtx-gsp-host-test.sh` PASS 275（cursor の update の語を 0 に）、`build/p2/amd64/vmunix` の build は warning 0。
+- 次: T1 で R8d を再試験（手順は上の「T への手順（R8d）」のまま）。
+
 ## 次の Phase の予定: nouveau と同じ手順からの整理（planned、2026-10-15 ユーザーの指示）
 
 ユーザー（原文）:「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」「Nouveauとまったく同じ手順で動作が確認できたあとで、我々のスタイルにリファクタしましょう。」

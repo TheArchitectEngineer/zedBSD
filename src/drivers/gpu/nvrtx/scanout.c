@@ -478,7 +478,7 @@ nvrtx_scanout_cursor_start(
  *
  * As nouveau's commit of a cursor plane: the cursor channel takes the
  * position and its update, the core the cursor's control, object and
- * offset, then the core's update interlocked with the cursor.  The core's
+ * offset, then the core's update without an interlock.  The core's
  * notifier is asked for but not waited for (core_pending is set); the
  * caller first makes sure no earlier one is out (nvrtx_scanout_core_settled).
  * Returns 0, ETIMEDOUT when a channel does not take the words, or E2BIG.
@@ -545,7 +545,7 @@ nvrtx_scanout_cursor_point(
 
 /*
  * Hides the head's cursor: the core's cursor off and without its object,
- * then the core's update interlocked with the cursor (nouveau's clear of a
+ * then the core's update without an interlock (nouveau's clear of a
  * cursor plane), its notifier asked for but not waited for.  The caller
  * first makes sure no earlier one is out.
  */
@@ -1701,7 +1701,7 @@ scanout_core_room(
 }
 
 /*
- * Sends the core's update interlocked with the head's cursor, with the
+ * Sends the core's update for a cursor change (no interlock), with the
  * core's notifier asked for and not waited for: core_pending is set until
  * nvrtx_scanout_core_settled() sees it finished.
  */
@@ -1719,7 +1719,7 @@ scanout_core_send_cursor(
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_core_update_cursor(&display->core_push, SCANOUT_CORE_NOTIFIER_AT, display->gop_head);
+	nvrtx_disp_core_update_cursor(&display->core_push, SCANOUT_CORE_NOTIFIER_AT);
 	error = scanout_kick(gpu, &display->core_push, SCANOUT_REG_CORE_USER);
 	if (error != 0)
 		return error;
