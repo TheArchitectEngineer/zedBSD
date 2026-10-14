@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1142 / WS074 fixed vertical-lr Grid axes（2026-10-14）
+## 最新: q1143 / WS074 fixed Grid502 recensus（2026-10-14）
+
+[q1143履歴](queue-q1143.md): q1142後も固定Grid502は126 PASS/376 FAIL、subtest5,163 PASS/5,842 FAILとq1140比状態変化0・旧PASS後退0。[証拠](../ws074/phase189/evidence/20261014-q1143/README.md)。p220縦文字geometry待ち、共有投影/GitHub publication pending。
+
+## q1142 / WS074 fixed vertical-lr Grid axes（2026-10-14）
 
 [q1142履歴](queue-q1142.md): 空2×2の論理列→物理y・行→xを修正。固定WPT2件は縦文字幅期待10/実60でFAIL、試行uncleared。旧WPT・host回帰PASS、Acid3差0。[証拠](../ws074/phase225/evidence/20261014-q1142/README.md)。p220縦文字geometry出力待ち、共有投影/GitHub publication pending。
 

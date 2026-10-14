@@ -2,6 +2,14 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
+## q1143-i01 有限部分範囲（2026-10-14 10:59 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:29 JSTまで）に適用。q1140と同じ固定Grid適格testharness502 IDを、q1142縦Grid軸コード後に同一WPT commit/metadata、localhost HTTP、固定font3種、5秒settle/20秒processで最大128件ずつ4 shard再測定する。ID/hash/checkpoint/gzip rawとq1140 whole/subtest遷移・旧PASS後退を照合する。browser/WPT/runner/公開ABI/`plan/master.md`変更なし。90分内未完なら完了済み/未実行を分けてuncleared。p189 whole1,783件・p173全3,805件100%は部分基準外。[Guardrail](../../guardrail.md)とrunner近傍規則を適用。
+
+## q1143-i01 結果（2026-10-14 11:02 JST）
+
+Event ws074-p189-q1143-partial-clear-20261014: [証拠](evidence/20261014-q1143/README.md)。固定502 IDはq1140と同じ126 whole PASS/376 FAIL、5,163 PASS/5,842 FAIL subtest、無出力0。whole/subtest状態変化0、旧PASS後退0。ID/hash/checkpoint502行/gzip raw502件を照合。vertical-lr stretch001の初回文字幅FAILは期待10/実100→60へ変化したが未PASS。q1143-i01測定部分cleared、p189 wholeとp173全3,805件100%は未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
 ## q1140-i01 有限部分範囲（2026-10-14 10:41 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:11 JSTまで）に適用。q1134と同じ固定Grid適格testharness502 IDを同一WPT commit、localhost HTTP、固定font3種、5秒settle/20秒processで最大128件ずつ4 shard再測定。全ID/hash/checkpoint/gzip raw、q1134 whole/subtest遷移・旧PASS後退を照合し、残る共通失敗群を分類する。browser/WPT/runner/公開ABI/`plan/master.md`変更なし。90分内に完走しない場合は完了済みと未実行を分けてunclearedで止める。[Guardrail](../../guardrail.md)とrunner近傍規則を適用。p189 whole1,783件とp173全3,805件100%はこの部分受け入れに含めない。
