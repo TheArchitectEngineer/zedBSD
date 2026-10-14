@@ -82,6 +82,23 @@
 #define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
 #define NVRTX_HANDLE_COMPUTE		0xc5c00003U
 
+/* The first draw's 3D object (P9g, ws037-p007), on the compute launch's channel, in nouveau's family. */
+#define NVRTX_HANDLE_DRAW		0x97000003U
+
+/*
+ * The first draw's place in the compute launch's range: its system-memory
+ * pages from NVRTX_DRAW_VA_PAGES (after the launch's own), and its VRAM
+ * colour target at NVRTX_DRAW_VA_VRAM, which the arena keeps in its last
+ * MiB.
+ */
+#define NVRTX_DRAW_VA_PAGES		0x28010000ULL
+#define NVRTX_DRAW_PAGES		78U
+#define NVRTX_DRAW_VA_VRAM		0x28100000ULL
+#define NVRTX_DRAW_VRAM_BYTES		0x40000ULL
+
+/* The compute launch's semaphore page in its range, which the draw's fences release too. */
+#define NVRTX_COMPUTE_SEMAPHORE_VA	0x28005000ULL
+
 /*
  * The VRAM the graphics context's arena reserves from the top of the last
  * usable region (P5g), and the compute arena's (P9c, below the graphics
@@ -256,6 +273,31 @@ struct nvrtx_compute_state {
 };
 
 /*
+ * The first draw (stage P9g, nvrtx.draw=1), on the compute launch's
+ * channel.
+ *
+ * The system-memory buffers are the push buffer, the four programs (a
+ * vertex and a fragment program, each in one colour and textured),
+ * constant buffer 0, the vertices, the texture with its header and
+ * sampler, a zero page and the colour target; the VRAM colour target is
+ * in the compute arena.  The flag says the 3D object exists, so the stop
+ * frees it.
+ */
+struct nvrtx_draw_state {
+	struct nvrtx_buffer push;
+	struct nvrtx_buffer programs;
+	struct nvrtx_buffer constants;
+	struct nvrtx_buffer vertices;
+	struct nvrtx_buffer texture;
+	struct nvrtx_buffer headers;
+	struct nvrtx_buffer samplers;
+	struct nvrtx_buffer zero;
+	struct nvrtx_buffer target;
+	uint64_t vram_target;
+	int threed_made;
+};
+
+/*
  * The display under the GSP (stages P8a and P8b).
  *
  * The instance memory is 64 KiB of VRAM the resource manager keeps the
@@ -353,8 +395,9 @@ struct nvrtx_gpu {
 	/* The display. */
 	struct nvrtx_display_state display;
 
-	/* The first compute launch. */
+	/* The first compute launch, and the first draw on its channel. */
 	struct nvrtx_compute_state compute;
+	struct nvrtx_draw_state draw;
 
 	/* The static information P3 read, and the resource manager's own client and subdevice. */
 	uint8_t *static_info;
@@ -423,6 +466,14 @@ int nvrtx_gr_promote(struct nvrtx_gpu *gpu, uint32_t channel, const uint64_t *ph
 int nvrtx_compute_start(struct nvrtx_gpu *gpu);
 void nvrtx_compute_stop(struct nvrtx_gpu *gpu);
 void nvrtx_compute_release(struct nvrtx_gpu *gpu);
+int nvrtx_compute_submit(struct nvrtx_gpu *gpu, uint32_t entry, uint64_t push_va, size_t length);
+int nvrtx_compute_wait(struct nvrtx_gpu *gpu, uint32_t value, uint32_t *waited);
+
+int nvrtx_draw_buffers(struct nvrtx_gpu *gpu);
+void nvrtx_draw_pages(const struct nvrtx_gpu *gpu, uint64_t *pages);
+int nvrtx_draw_start(struct nvrtx_gpu *gpu, uint64_t vram_target);
+int nvrtx_draw_stop(struct nvrtx_gpu *gpu);
+void nvrtx_draw_release(struct nvrtx_gpu *gpu);
 
 int nvrtx_display_start(struct nvrtx_gpu *gpu);
 void nvrtx_display_stop(struct nvrtx_gpu *gpu);

@@ -59,6 +59,9 @@
 /* The whole token that asks for the first compute launch (ws037-p008). */
 #define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
 
+/* The whole token that asks for the first draw (ws037-p007). */
+#define STAGE_DRAW_TOKEN		"nvrtx.draw=1"
+
 /* The longest stop token: "nvrtx.stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		32U
 
@@ -147,6 +150,23 @@ nvrtx_stage_compute_wanted(void)
 		return true;
 
 	/* Without it the boot runs no compute program. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the first draw (nvrtx.draw=1).
+ */
+bool
+nvrtx_stage_draw_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.draw=1 among the boot parameters. */
+	present = stage_token_present(STAGE_DRAW_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the boot draws nothing. */
 	return false;
 }
 

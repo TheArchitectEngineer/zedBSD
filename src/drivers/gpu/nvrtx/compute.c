@@ -23,7 +23,9 @@
  *      "every invocation writes 42 at its index", its QMD (version 2.2)
  *      with constant buffer 0 holding the storage buffer's address, the
  *      launch and a semaphore fence after it;
- *   4. the result: 32 words of 42, and the word after them untouched.
+ *   4. the result: 32 words of 42, and the word after them untouched;
+ *   5. when the boot asks (nvrtx.draw=1), the first draw on the same
+ *      channel (draw.c, stage P9g), whose pages the tables map too.
  *
  * Nothing of the display or of the copy channel is touched.  The stop
  * undoes 2 and 1 in nouveau's order before the graphics context's stop.
@@ -52,6 +54,9 @@
 #define COMPUTE_USERD_AT		0x081000ULL
 #define COMPUTE_BUFFERS_AT		0x100000ULL
 
+/* The arena's last MiB, which the first draw's VRAM colour target takes (the context buffers stay below it). */
+#define COMPUTE_DRAW_AT			0x1f00000ULL
+
 /* The range: the context buffers where the golden context had them, then the launch's pages. */
 #define COMPUTE_VA_BASE			0x20000000ULL
 #define COMPUTE_VA_BYTES		0x8200000ULL
@@ -68,6 +73,9 @@
 #define COMPUTE_RESULT_PAGE		9U
 #define COMPUTE_PAGES			10U
 #define COMPUTE_RING_ENTRIES		512U
+
+/* The first draw's fences name the semaphore page by its address (nvrtx-gpu.h). */
+_Static_assert(COMPUTE_VA_PAGES + COMPUTE_SEMAPHORE_PAGE * 0x1000ULL == NVRTX_COMPUTE_SEMAPHORE_VA, "the semaphore page the draw names");
 
 /* The address-space limit written into the instance block (47-bit virtual addresses). */
 #define COMPUTE_VA_LIMIT		(1ULL << 47)
@@ -101,6 +109,7 @@ static int compute_channel(struct nvrtx_gpu *gpu);
 static int compute_program(struct nvrtx_gpu *gpu, uint32_t *gpr_count);
 static int compute_launch(struct nvrtx_gpu *gpu, uint32_t gpr_count);
 static int compute_check(struct nvrtx_gpu *gpu);
+static int compute_map_draw(struct nvrtx_gpu *gpu, uint8_t *image);
 static uint64_t compute_page_va(uint32_t page);
 static uint64_t compute_align(uint64_t value, uint32_t shift);
 
@@ -116,6 +125,8 @@ nvrtx_compute_start(
 	struct nvrtx_gpu *gpu)
 {
 	uint32_t gpr_count;
+	bool wanted;
+	bool allowed;
 	int error;
 
 	nvrtx_stage_mark("P9c begin");
@@ -164,6 +175,17 @@ nvrtx_compute_start(
 	if (error != 0)
 		return error;
 
+	/* Draws on the same channel when the boot asks (nvrtx.draw=1) and does not stop before it. */
+	wanted = nvrtx_stage_draw_wanted();
+	allowed = nvrtx_stage_allowed("P9g");
+	if (wanted && !allowed)
+		nvrtx_stage_mark("P9g skipped (nvrtx.stop=P9g)");
+	if (wanted && allowed) {
+		error = nvrtx_draw_start(gpu, gpu->compute.arena + COMPUTE_DRAW_AT);
+		if (error != 0)
+			return error;
+	}
+
 	/* Succeeded: the GPU ran the program the driver compiled. */
 	return 0;
 }
@@ -196,6 +218,9 @@ nvrtx_compute_stop(
 			failures++;
 		compute->scheduled = 0;
 	}
+
+	/* Frees the first draw's 3D object. */
+	failures += nvrtx_draw_stop(gpu);
 
 	/* Frees the compute object, then the channel. */
 	if (compute->compute_made != 0) {
@@ -256,6 +281,83 @@ nvrtx_compute_release(
 	nvrtx_buffer_free(gpu, &compute->constants);
 	nvrtx_buffer_free(gpu, &compute->result);
 	nvrtx_buffer_free(gpu, &compute->methods);
+
+	/* The first draw's buffers. */
+	nvrtx_draw_release(gpu);
+}
+
+/*
+ * Submits a push buffer segment of the channel: the ring entry, the ring's
+ * put in USERD past it, and the doorbell.
+ *
+ * Entries are used in order from 0 and the ring never wraps, so the put is
+ * one past the entry.  Returns 0, or the error of the write into USERD.
+ */
+int
+nvrtx_compute_submit(
+	struct nvrtx_gpu *gpu,
+	uint32_t entry,
+	uint64_t push_va,
+	size_t length)
+{
+	struct nvrtx_compute_state *compute;
+	uint8_t put[4];
+	int error;
+
+	compute = &gpu->compute;
+
+	/* The entry, written before the put that hands it to the GPU. */
+	nvrtx_ring_entry((uint8_t *)compute->ring.dma.address + (size_t)entry * 8U, push_va, (uint32_t)(length / 4U));
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	/* The ring's put in USERD. */
+	nvrtx_put32(put, 0U, entry + 1U);
+	error = nvrtx_vram_write(gpu, compute->arena + COMPUTE_USERD_AT + COMPUTE_USERD_RING_PUT, put, sizeof(put));
+	if (error != 0)
+		return error;
+
+	/* The doorbell: the graphics runlist and the channel. */
+	nvrtx_wr32(gpu, COMPUTE_REG_DOORBELL, (gpu->engine.pick.graphics_runlist << 16) | COMPUTE_CHID);
+
+	/* Succeeded: the GPU fetches the entry. */
+	return 0;
+}
+
+/*
+ * Polls the channel's semaphore until it holds a fence's value or the
+ * time, measured, is spent (2 s).
+ *
+ * Returns 0 with the microseconds waited, or ETIMEDOUT.
+ */
+int
+nvrtx_compute_wait(
+	struct nvrtx_gpu *gpu,
+	uint32_t value,
+	uint32_t *waited)
+{
+	const volatile uint32_t *semaphore;
+	uint64_t start;
+	uint64_t spent;
+	uint32_t seen;
+
+	/* The semaphore the fences release. */
+	semaphore = (const volatile uint32_t *)gpu->compute.semaphore.dma.address;
+
+	/* Looks until the value is there or the time is spent. */
+	start = nvrtx_now_us();
+	for (;;) {
+		seen = *semaphore;
+		spent = nvrtx_now_us() - start;
+		if (seen == value)
+			break;
+		if (spent > COMPUTE_FENCE_TIMEOUT_US)
+			return ETIMEDOUT;
+		kern_usleep_range(COMPUTE_FENCE_STEP_US, COMPUTE_FENCE_STEP_US * 2U);
+	}
+
+	/* Succeeded: the work before the fence is done. */
+	*waited = (uint32_t)spent;
+	return 0;
 }
 
 /*
@@ -305,8 +407,8 @@ compute_arena(
 		physical += compute_align(buffer->size, buffer->page_shift);
 	}
 
-	/* The channel's own buffers must fit the arena. */
-	if (physical > COMPUTE_ARENA_BYTES) {
+	/* The channel's own buffers must fit the arena below the draw's target. */
+	if (physical > COMPUTE_DRAW_AT) {
 		nvrtx_stage_mark("P9c fail: the context buffers need %llx of VRAM", (unsigned long long)physical);
 		return ENOSPC;
 	}
@@ -322,6 +424,7 @@ compute_buffers(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_compute_state *compute;
+	bool wanted;
 	int error;
 
 	compute = &gpu->compute;
@@ -359,6 +462,14 @@ compute_buffers(
 	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &compute->methods);
 	if (error != 0)
 		return error;
+
+	/* The first draw's buffers, when the boot asks for it. */
+	wanted = nvrtx_stage_draw_wanted();
+	if (wanted) {
+		error = nvrtx_draw_buffers(gpu);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the buffers are clear. */
 	return 0;
@@ -421,6 +532,10 @@ compute_tables(
 	/* The launch's pages. */
 	if (error == 0)
 		error = nvrtx_mmu_gr_map_system(image, COMPUTE_VA_BASE, COMPUTE_VA_BYTES, COMPUTE_VA_PAGES, pages, COMPUTE_PAGES);
+
+	/* The first draw's pages and VRAM target, when the boot asks for it. */
+	if (error == 0)
+		error = compute_map_draw(gpu, image);
 
 	/* Copies the tables into the arena, and clears the instance block and USERD. */
 	if (error == 0)
@@ -626,17 +741,13 @@ compute_launch(
 {
 	struct nvrtx_compute_state *compute;
 	struct nvrtx_qmd_info info;
-	const volatile uint32_t *semaphore;
 	uint32_t *words;
 	uint8_t *push;
-	uint8_t put[4];
 	uint64_t result_va;
 	uint64_t push_va;
-	uint64_t start;
-	uint64_t waited;
 	size_t length;
 	uint32_t index;
-	uint32_t value;
+	uint32_t waited;
 	int error;
 
 	compute = &gpu->compute;
@@ -678,34 +789,21 @@ compute_launch(
 	length = nvrtx_push_compute_launch(push, compute_page_va(COMPUTE_QMD_PAGE));
 	length += nvrtx_push_fence(push + length, compute_page_va(COMPUTE_SEMAPHORE_PAGE), COMPUTE_FENCE_VALUE);
 
-	/* Ring entry 0, the ring's put in USERD, and the doorbell. */
+	/* Ring entry 0. */
 	push_va = compute_page_va(COMPUTE_PUSH_PAGE);
-	nvrtx_ring_entry((uint8_t *)compute->ring.dma.address, push_va, (uint32_t)(length / 4U));
-	__atomic_thread_fence(__ATOMIC_SEQ_CST);
-	nvrtx_put32(put, 0U, 1U);
-	error = nvrtx_vram_write(gpu, compute->arena + COMPUTE_USERD_AT + COMPUTE_USERD_RING_PUT, put, sizeof(put));
+	error = nvrtx_compute_submit(gpu, 0U, push_va, length);
 	if (error != 0)
 		return error;
 
-	nvrtx_wr32(gpu, COMPUTE_REG_DOORBELL, (gpu->engine.pick.graphics_runlist << 16) | COMPUTE_CHID);
-
-	/* Polls the semaphore until the fence's value is there or the time, measured, is spent. */
-	semaphore = (const volatile uint32_t *)compute->semaphore.dma.address;
-	start = nvrtx_now_us();
-	for (;;) {
-		value = *semaphore;
-		waited = nvrtx_now_us() - start;
-		if (value == COMPUTE_FENCE_VALUE)
-			break;
-		if (waited > COMPUTE_FENCE_TIMEOUT_US) {
-			nvrtx_stage_mark("P9c fail: fence %08x after 2 s, result word 0 %08x", (unsigned)value, (unsigned)((const volatile uint32_t *)compute->result.dma.address)[0]);
-			return ETIMEDOUT;
-		}
-		kern_usleep_range(COMPUTE_FENCE_STEP_US, COMPUTE_FENCE_STEP_US * 2U);
+	/* Waits for the fence. */
+	error = nvrtx_compute_wait(gpu, COMPUTE_FENCE_VALUE, &waited);
+	if (error != 0) {
+		nvrtx_stage_mark("P9c fail: fence %08x after 2 s, result word 0 %08x", (unsigned)*(const volatile uint32_t *)compute->semaphore.dma.address, (unsigned)((const volatile uint32_t *)compute->result.dma.address)[0]);
+		return error;
 	}
 
 	/* Succeeded: the launch ran to its fence. */
-	nvrtx_stage_mark("P9c ok: fence 0x%x reached after %u us", (unsigned)value, (unsigned)waited);
+	nvrtx_stage_mark("P9c ok: fence 0x%x reached after %u us", (unsigned)COMPUTE_FENCE_VALUE, (unsigned)waited);
 	return 0;
 }
 
@@ -735,6 +833,40 @@ compute_check(
 
 	/* Succeeded: the program ran as compiled. */
 	nvrtx_stage_mark("P9c ok: compute wrote %u words of %u", (unsigned)NVRTX_COMPUTE_FIRST_WIDTH, (unsigned)NVRTX_COMPUTE_FIRST_VALUE);
+	return 0;
+}
+
+/*
+ * Maps the first draw's system-memory pages after the launch's, and its
+ * VRAM colour target (the arena's last MiB) for work, when the boot asks
+ * for the draw; maps nothing otherwise.
+ */
+static int
+compute_map_draw(
+	struct nvrtx_gpu *gpu,
+	uint8_t *image)
+{
+	uint64_t pages[NVRTX_DRAW_PAGES];
+	bool wanted;
+	int error;
+
+	/* Only a boot that draws has the pages. */
+	wanted = nvrtx_stage_draw_wanted();
+	if (!wanted)
+		return 0;
+
+	/* The system-memory pages in the draw's order. */
+	nvrtx_draw_pages(gpu, pages);
+	error = nvrtx_mmu_gr_map_system(image, COMPUTE_VA_BASE, COMPUTE_VA_BYTES, NVRTX_DRAW_VA_PAGES, pages, NVRTX_DRAW_PAGES);
+	if (error != 0)
+		return error;
+
+	/* The VRAM colour target. */
+	error = nvrtx_mmu_gr_map_vram(image, COMPUTE_VA_BASE, COMPUTE_VA_BYTES, NVRTX_DRAW_VA_VRAM, gpu->compute.arena + COMPUTE_DRAW_AT, NVRTX_DRAW_VRAM_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the draw's memory is in the range. */
 	return 0;
 }
 

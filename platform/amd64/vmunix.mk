@@ -181,6 +181,8 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compiler/sm75-encode.c src/drivers/
 	$(filter-out $(AMD64_I915_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
 # P9c: the first compute launch on a graphics channel (ws037-p008 stage C, nvrtx.compute=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/compute-launch.c src/drivers/gpu/nvrtx/compute.c
+# P9g: the first draw on the compute launch's channel (ws037-p007, nvrtx.draw=1).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/draw-push.c src/drivers/gpu/nvrtx/draw.c
 # P8b: the takeover of the firmware's head, the display channels and a flip (ws037-p006, nvrtx.disp=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/disp-records.c src/drivers/gpu/nvrtx/scanout.c
 endif
