@@ -3,7 +3,7 @@
 # ws074-p229: UAT のアドレスバー（compositor 側: 既定の URL、箱の幅、key repeat）
 
 P2 (2026-10-14)。親: [WS074](../ws.md)。前段: [p228](../phase228/phase.md)（B1 の調べ、browser の `MAIN_HOME_PAGE`）。
-Status: in-progress / 実装済み・**T1 の試験待ち**（T1-618 が 1〜4 を実行中。5 の箱は再試験で）。QEMU・実機は未実施。
+Status: **cleared**（2026-10-14 Q1 判定: T1-618 で 1〜3・5 が PASS（QEMU、main eea58c75c）、4 の titlebar-p010 の FAIL は試験の古さ（ws181-p009 の pill の配置）で e5c6f83b6 で試験を直し T1-620 で p010・p011・p013 PASS（main 7b5626717）。実機は未実施、ユーザーの UAT 待ち）。
 
 ## ユーザーの指摘（2026-10-14）
 

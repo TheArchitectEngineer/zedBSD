@@ -596,7 +596,7 @@ p009 → p018 → p027 → p028 → p029 → p047 → p031 → p032 → p033 →
 | [ws074-p223](phase223/phase.md) | Empty Grid intrinsic size | in-progress / q1135固定empty-grid部分cleared | p189 q1134後退診断 |
 | [ws074-p224](phase224/phase.md) | Grid track animation | in-progress / q1135診断部分cleared、実装未着手 | p189 q1134後退診断 |
 | [ws074-p225](phase225/phase.md) | Vertical Grid logical axes | in-progress / q1142固定vertical-lr部分実装 | p217 q1141診断・文字itemはp220 q1122出力 |
-| [ws074-p229](phase229/phase.md) | UAT のアドレスバー（compositor 側: launcher の既定 URL、編集中の箱の幅と横 scroll、field の key repeat） | in-progress / 実装済み・T1 の試験待ち（P2、2026-10-14） | p228（browser の MAIN_HOME_PAGE） |
+| [ws074-p229](phase229/phase.md) | UAT のアドレスバー（compositor 側: launcher の既定 URL、編集中の箱の幅と横 scroll、field の key repeat） | cleared（2026-10-14 Q1、T1-618・T1-620 QEMU PASS、常に箱の表示を含む） | p228（browser の MAIN_HOME_PAGE） |
 
 2026-10-13 / q1000-terminal-and-p179-addition: p178 の1領域試行は、参照の背景画像が欠ける全画面差のため uncleared。固定 WPT と host build warning0、Acid3 score100/100・差302056/480000、Acid2差1865/120000 の証拠は[p178](phase178/phase.md)と[q1000履歴](../history/queue-q1000.md)。原因の切り分けと修正を[p179](phase179/phase.md)として追加し、verified 出力後に p178 を再試行する。p100/WS074 の受け入れは未達。メインの共有 Queue/Project/GitHub への投影は未実施。
 
