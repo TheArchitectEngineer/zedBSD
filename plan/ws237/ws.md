@@ -28,5 +28,5 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 | ws237-p002 | readout と primary plane の flip（段 1）、1.5 LW | in-progress（P2） |
 | ws237-p003 | backlight、1.0 LW | planned（p002 の実機の結果の後） |
 | ws237-p004 | mode set と外部の display、6.0 LW | planned |
-| ws237-p005b | suspend・resume の display、1.5 LW（番号は Q1 が決める） | planned |
-| ws237-p005 | 規約の全文、0.5 LW | planned |
+| ws237-p005 | suspend・resume の display、1.5 LW（番号は 2026-10-14 Q1） | planned |
+| ws237-p006 | 規約の全文、0.5 LW | planned |
