@@ -91,7 +91,8 @@ enum css_display {
 	CSS_DISPLAY_TABLE_CAPTION,
 	CSS_DISPLAY_INLINE_TABLE,
 	CSS_DISPLAY_TABLE_COLUMN,
-	CSS_DISPLAY_INLINE_GRID
+	CSS_DISPLAY_INLINE_GRID,
+	CSS_DISPLAY_INLINE_FLEX
 };
 
 /* The values of position. */
@@ -368,7 +369,10 @@ enum css_align {
 	CSS_ALIGN_LEFT,
 	CSS_ALIGN_RIGHT,
 	CSS_ALIGN_SELF_START,
-	CSS_ALIGN_SELF_END
+	CSS_ALIGN_SELF_END,
+	/* Parsed keywords only: the cascade stores them as start and end with a flex bit. */
+	CSS_ALIGN_FLEX_START,
+	CSS_ALIGN_FLEX_END
 };
 
 /* The generic font families. */
@@ -435,6 +439,18 @@ struct css_track {
 	struct css_length size;
 	float fr;
 	struct css_length minimum;
+};
+
+/*
+ * An auto-fill or auto-fit repeat() in a template: the tracks it repeats
+ * are template[at .. at + length) once; layout repeats them to fill the box.
+ */
+struct css_track_repeat {
+	int length;
+	int at;
+	int fit;
+	/* The times layout has put the tracks in the template (zero before). */
+	int count;
 };
 
 /* Auto-placement direction and optional dense packing (row is zero). */
@@ -572,6 +588,8 @@ struct css_style {
 	struct css_length text_indent;
 	int direction;
 	int writing_mode;
+	/* sideways-lr (1) or sideways-rl (2), reported as written while the text is laid out horizontally. */
+	int writing_sideways;
 	int text_orientation;
 	int container_type;
 
@@ -617,6 +635,8 @@ struct css_style {
 	int column_count;
 	struct css_track rows[CSS_TRACKS];
 	int row_count;
+	struct css_track_repeat column_repeat;
+	struct css_track_repeat row_repeat;
 	struct css_track auto_columns[CSS_TRACKS];
 	int auto_column_count;
 	struct css_track auto_rows[CSS_TRACKS];
@@ -628,6 +648,8 @@ struct css_style {
 	float flex_shrink;
 	struct css_length flex_basis;
 	int align_self;
+	/* Which of justify-content, align-content, align-items and align-self was written flex-start or flex-end. */
+	unsigned flex_keywords;
 	int justify_self;
 	int order;
 

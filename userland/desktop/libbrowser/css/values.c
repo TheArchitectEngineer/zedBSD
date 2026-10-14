@@ -63,7 +63,8 @@ enum values_shorthand {
 	SHORT_GRID,
 	SHORT_PLACE_ITEMS,
 	SHORT_CONTAINER,
-	SHORT_BORDER_SPACING
+	SHORT_BORDER_SPACING,
+	SHORT_OVERFLOW
 };
 
 /*
@@ -221,9 +222,11 @@ static const struct values_name values_names[] = {
 	{ "left", CSS_PROP_LEFT },
 	{ "z-index", CSS_PROP_Z_INDEX },
 	{ "clear", CSS_PROP_CLEAR },
-	{ "overflow", CSS_PROP_OVERFLOW },
+	{ "overflow", SHORT_OVERFLOW },
 	{ "overflow-x", CSS_PROP_OVERFLOW_X },
 	{ "overflow-y", CSS_PROP_OVERFLOW_Y },
+	{ "overflow-inline", CSS_PROP_OVERFLOW_INLINE },
+	{ "overflow-block", CSS_PROP_OVERFLOW_BLOCK },
 	{ "box-sizing", CSS_PROP_BOX_SIZING },
 	{ "-webkit-box-sizing", CSS_PROP_BOX_SIZING },
 	{ "content", CSS_PROP_CONTENT },
@@ -386,9 +389,9 @@ static const struct values_keyword values_display[] = {
 	{ "table-column", CSS_DISPLAY_TABLE_COLUMN },
 	{ "table-column-group", CSS_DISPLAY_TABLE_COLUMN },
 	{ "flex", CSS_DISPLAY_FLEX },
-	{ "inline-flex", CSS_DISPLAY_FLEX },
+	{ "inline-flex", CSS_DISPLAY_INLINE_FLEX },
 	{ "-webkit-flex", CSS_DISPLAY_FLEX },
-	{ "-webkit-inline-flex", CSS_DISPLAY_FLEX },
+	{ "-webkit-inline-flex", CSS_DISPLAY_INLINE_FLEX },
 	{ "-webkit-box", CSS_DISPLAY_BLOCK },
 	{ "-webkit-inline-box", CSS_DISPLAY_INLINE_BLOCK },
 	{ "grid", CSS_DISPLAY_GRID },
@@ -425,6 +428,8 @@ static const struct values_keyword values_writing_mode[] = {
 	{ "horizontal-tb", CSS_WRITING_HORIZONTAL_TB },
 	{ "vertical-lr", CSS_WRITING_VERTICAL_LR },
 	{ "vertical-rl", CSS_WRITING_VERTICAL_RL },
+	{ "sideways-lr", 3 },
+	{ "sideways-rl", 4 },
 	{ NULL, 0 }
 };
 
@@ -471,11 +476,11 @@ static const struct values_keyword values_align[] = {
 	{ "auto", CSS_ALIGN_AUTO },
 	{ "normal", CSS_ALIGN_NORMAL },
 	{ "stretch", CSS_ALIGN_STRETCH },
-	{ "flex-start", CSS_ALIGN_START },
+	{ "flex-start", CSS_ALIGN_FLEX_START },
 	{ "start", CSS_ALIGN_START },
 	{ "self-start", CSS_ALIGN_SELF_START },
 	{ "left", CSS_ALIGN_LEFT },
-	{ "flex-end", CSS_ALIGN_END },
+	{ "flex-end", CSS_ALIGN_FLEX_END },
 	{ "end", CSS_ALIGN_END },
 	{ "self-end", CSS_ALIGN_SELF_END },
 	{ "right", CSS_ALIGN_RIGHT },
@@ -1171,6 +1176,9 @@ css_parse_property(
 		return values_grid_template(parse, tokens, count, out, out_count);
 	case SHORT_GRID:
 		return values_grid_explicit(parse, tokens, count, out, out_count);
+	case SHORT_OVERFLOW:
+		/* One keyword for both axes, or the horizontal then the vertical one. */
+		return values_pair(parse, CSS_PROP_OVERFLOW_X, CSS_PROP_OVERFLOW_Y, tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
 		/* One length for both directions, or across then down. */
 		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
@@ -1787,6 +1795,42 @@ values_single(
 		}
 	}
 
+	/* Alignment properties also take "first baseline", "last baseline" and an overflow position. */
+	if (count > 1U && (property == CSS_PROP_JUSTIFY_CONTENT || property == CSS_PROP_JUSTIFY_ITEMS ||
+	    property == CSS_PROP_ALIGN_ITEMS || property == CSS_PROP_ALIGN_CONTENT ||
+	    property == CSS_PROP_ALIGN_SELF || property == CSS_PROP_JUSTIFY_SELF)) {
+		size_t word;
+		size_t words;
+
+		words = 0;
+		parts[0] = NULL;
+		parts[1] = NULL;
+		for (word = 0; word < count; word++) {
+			if (tokens[word].type == CSS_TOKEN_WHITESPACE)
+				continue;
+			if (tokens[word].type != CSS_TOKEN_IDENT || words >= 2U)
+				return EINVAL;
+			parts[words] = &tokens[word];
+			words++;
+		}
+		if (words != 2U)
+			return EINVAL;
+		if (css_ident_equal(parts[1], "baseline") &&
+		    (css_ident_equal(parts[0], "first") || css_ident_equal(parts[0], "last"))) {
+			/* The last baseline falls back to the end edge; the first one is the baseline. */
+			value->kind = CSS_VALUE_KEYWORD;
+			value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_END : CSS_ALIGN_BASELINE;
+			return 0;
+		}
+		if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))
+			return EINVAL;
+		/* The position after safe or unsafe is parsed alone; safe is marked in the keyword. */
+		error = values_single(parse, property, parts[1], 1U, value);
+		if (error == 0 && css_ident_equal(parts[0], "safe"))
+			value->keyword |= 0x1000;
+		return error;
+	}
+
 	/* The other properties take one token. */
 	if (count != 1)
 		return EINVAL;
@@ -1813,6 +1857,8 @@ values_single(
 	case CSS_PROP_OVERFLOW:
 	case CSS_PROP_OVERFLOW_X:
 	case CSS_PROP_OVERFLOW_Y:
+	case CSS_PROP_OVERFLOW_INLINE:
+	case CSS_PROP_OVERFLOW_BLOCK:
 		table = values_overflow;
 		break;
 	case CSS_PROP_VISIBILITY:
@@ -3999,6 +4045,7 @@ values_flex(
 	size_t lengths[4];
 	size_t components;
 	size_t index;
+	size_t last_number;
 	int numbers;
 	int is_word;
 	int error;
@@ -4039,7 +4086,14 @@ values_flex(
 	if (components == 0 || components > 3)
 		return EINVAL;
 	numbers = 0;
+	last_number = 0;
 	for (index = 0; index < components; index++) {
+		/* The two factors are adjacent: a basis between them is invalid. */
+		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER) {
+			if (numbers > 0 && index != last_number + 1U)
+				return EINVAL;
+			last_number = index;
+		}
 		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER && tokens[starts[index]].number != 0) {
 			if (numbers == 0)
 				grow.number = (float)tokens[starts[index]].number;
@@ -4740,6 +4794,35 @@ values_track_list(
 			if (depth > 0)
 				return EINVAL;
 			inner = values_skip_space(tokens, end, index + 1U);
+			if (inner < end && tokens[inner].type == CSS_TOKEN_IDENT &&
+			    (css_ident_equal(&tokens[inner], "auto-fill") || css_ident_equal(&tokens[inner], "auto-fit"))) {
+				/* One automatic repeat per list; layout chooses its count. */
+				if (list->repeat_length != 0)
+					return EINVAL;
+				comma = inner + 1U + values_split_at(tokens + inner + 1U, end - inner - 1U, CSS_TOKEN_COMMA, 0);
+				if (comma >= end)
+					return EINVAL;
+				first = list->count;
+				error = values_track_list(parse, tokens + comma + 1U, end - comma - 2U, list, depth + 1);
+				if (error != 0)
+					return error;
+				added = list->count - first;
+				if (added == 0)
+					return EINVAL;
+
+				/* Every repeated track needs a definite size for layout to count the repeats. */
+				for (inner = first; inner < list->count; inner++) {
+					if (list->tracks[inner].kind != CSS_TRACK_LENGTH &&
+					    list->tracks[inner].minimum_kind != CSS_TRACK_LENGTH)
+						return EINVAL;
+				}
+				list->repeat_at = (int)first;
+				list->repeat_length = (int)added;
+				list->repeat_fit = css_ident_equal(&tokens[values_skip_space(tokens, end, index + 1U)], "auto-fit");
+				index = end;
+				last_was_names = 0;
+				continue;
+			}
 			if (inner >= end || tokens[inner].type != CSS_TOKEN_NUMBER || !tokens[inner].integer || tokens[inner].number < 1)
 				return EINVAL;
 			times = (size_t)tokens[inner].number;

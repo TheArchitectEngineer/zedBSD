@@ -361,7 +361,7 @@ layout_content_width(
 		return box->grid_content;
 
 	/* A physical horizontal flex main axis is as wide as its items before they flexed. */
-	if (box->style.display == CSS_DISPLAY_FLEX &&
+	if ((box->style.display == CSS_DISPLAY_FLEX || box->style.display == CSS_DISPLAY_INLINE_FLEX) &&
 	    ((box->style.flex_direction == CSS_FLEX_ROW || box->style.flex_direction == CSS_FLEX_ROW_REVERSE) !=
 	    (box->style.writing_mode == CSS_WRITING_VERTICAL_LR))) {
 		width = layout_flex_content_width(box);
@@ -526,6 +526,8 @@ position_place(
 	layout_unit area_top;
 	layout_unit area_width;
 	layout_unit area_height;
+	layout_unit saved_height;
+	int saved_definite;
 	int has_left;
 	int has_right;
 	int has_top;
@@ -537,7 +539,16 @@ position_place(
 	area_top = containing->y;
 	area_width = containing->width;
 	area_height = containing->height;
-	if (box->static_grid_area) {
+	if (box->cb_set) {
+		area_left = box->cb_left_auto ? containing->x : box->cb_left;
+		area_top = box->cb_top_auto ? containing->y : box->cb_top;
+		area_width = (box->cb_right_auto ? containing->x + containing->width : box->cb_right) - area_left;
+		area_height = (box->cb_bottom_auto ? containing->y + containing->height : box->cb_bottom) - area_top;
+		if (area_width < 0)
+			area_width = 0;
+		if (area_height < 0)
+			area_height = 0;
+	} else if (box->static_grid_area) {
 		area_left = box->static_x -
 		    (box->static_x_from_right ? box->static_x_area_width : 0);
 		area_top = box->static_y;
@@ -575,12 +586,22 @@ position_place(
 		}
 	}
 
+	/* A percentage height of the box is of its containing block's padding box. */
+	saved_height = tree->containing_height;
+	saved_definite = tree->containing_height_definite;
+	tree->containing_height = area_height;
+	tree->containing_height_definite = 1;
+
 	/* A width set, or both sides set, lays the box out in that room; otherwise it shrinks to fit. */
 	if (box->style.width.unit != CSS_UNIT_AUTO || (has_left && has_right)) {
-		error = layout_block(tree, box, room);
+		/* A percentage width is of the containing block, not of the room between the offsets. */
+		error = layout_block(tree, box,
+		    box->style.width.unit == CSS_UNIT_PERCENT ? area_width : room);
 	} else {
 		error = layout_shrink_to_fit(tree, box, room);
 	}
+	tree->containing_height = saved_height;
+	tree->containing_height_definite = saved_definite;
 
 	/* A box that could not be laid out stops the placing. */
 	if (error != 0)
@@ -606,7 +627,9 @@ position_place(
 	    box->static_x_align == CSS_ALIGN_SELF_START ||
 	    box->static_x_align == CSS_ALIGN_LEFT ||
 	    box->static_x_align == CSS_ALIGN_RIGHT) {
-		if (box->static_x_align_from_right) {
+		if (box->static_x_safe && box->static_x_area_width < box->margin[CSS_LEFT] + box->width + frame + box->margin[CSS_RIGHT]) {
+			x = box->static_x + box->margin[CSS_LEFT];
+		} else if (box->static_x_align_from_right) {
 			x = box->static_x +
 			    (box->static_x_from_right ? 0 : box->static_x_area_width) -
 			    box->margin[CSS_RIGHT] - (box->width + frame);
@@ -620,7 +643,13 @@ position_place(
 
 		free_width = box->static_x_area_width - box->margin[CSS_LEFT] -
 		    (box->width + frame) - box->margin[CSS_RIGHT];
-		if (free_width < 0)
+		if (free_width < 0 && box->static_x_safe == 2) {
+			/* A safe overflow starts at the right edge. */
+			x = box->static_x - (box->static_x_from_right ? box->static_x_area_width : 0) +
+			    box->margin[CSS_LEFT] + free_width;
+			goto placed_x;
+		}
+		if (free_width < 0 && (!box->static_unsafe || box->static_x_safe))
 			free_width = 0;
 		x = box->static_x -
 		    (box->static_x_from_right ? box->static_x_area_width : 0) +
@@ -632,11 +661,16 @@ position_place(
 		x = box->static_x + box->margin[CSS_LEFT];
 	}
 
+placed_x:
 	/* Vertically: from the top, from the bottom, or where it would have been. */
 	if (has_top) {
 		y = area_top + top + box->margin[CSS_TOP];
 	} else if (has_bottom) {
 		y = area_top + area_height - bottom - box->margin[CSS_BOTTOM] - position_outer_height(box);
+	} else if ((box->static_y_align == CSS_ALIGN_END ||
+	    box->static_y_align == CSS_ALIGN_SELF_END) && box->static_y_safe &&
+	    box->static_y_area_height < box->margin[CSS_TOP] + position_outer_height(box) + box->margin[CSS_BOTTOM]) {
+		y = box->static_y + box->margin[CSS_TOP];
 	} else if (box->static_y_align == CSS_ALIGN_END ||
 	    box->static_y_align == CSS_ALIGN_SELF_END) {
 		y = box->static_y + box->static_y_area_height -
@@ -646,7 +680,7 @@ position_place(
 
 		free_height = box->static_y_area_height - box->margin[CSS_TOP] -
 		    position_outer_height(box) - box->margin[CSS_BOTTOM];
-		if (free_height < 0)
+		if (free_height < 0 && (!box->static_unsafe || box->static_y_safe))
 			free_height = 0;
 		y = box->static_y + box->margin[CSS_TOP] + free_height / 2;
 	} else {

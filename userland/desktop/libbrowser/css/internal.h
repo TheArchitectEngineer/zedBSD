@@ -314,6 +314,8 @@ enum css_property {
 	CSS_PROP_MARGIN_BLOCK_START,
 	CSS_PROP_MARGIN_BLOCK_END,
 	CSS_PROP_TEXT_ORIENTATION,
+	CSS_PROP_OVERFLOW_INLINE,
+	CSS_PROP_OVERFLOW_BLOCK,
 	CSS_PROP_COUNT
 };
 
@@ -445,6 +447,10 @@ struct css_declared_track {
 struct css_track_list {
 	struct css_declared_track tracks[CSS_TRACKS];
 	size_t count;
+	/* The one auto-fill or auto-fit repeat(): where its tracks start, how many, and whether it is auto-fit. */
+	int repeat_at;
+	int repeat_length;
+	int repeat_fit;
 };
 
 /* A declared clip-path: inset(): its four declared lengths, top, right, bottom, left (ws074-p062). */

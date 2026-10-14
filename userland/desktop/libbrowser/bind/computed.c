@@ -44,6 +44,8 @@ enum computed_property {
 	COMPUTED_OVERFLOW,
 	COMPUTED_OVERFLOW_X,
 	COMPUTED_OVERFLOW_Y,
+	COMPUTED_OVERFLOW_INLINE,
+	COMPUTED_OVERFLOW_BLOCK,
 	COMPUTED_BOX_SIZING,
 	COMPUTED_WIDTH,
 	COMPUTED_HEIGHT,
@@ -156,6 +158,8 @@ static int computed_write_offset(const struct css_style *style, int side, struct
 static int computed_write_font_family(const struct css_style *style, struct wb_units *out);
 static int computed_write_tracks(const struct css_track *tracks, int count, struct wb_units *out);
 static int computed_name(const char *const *names, size_t count, int value, struct wb_units *out);
+static int computed_align(int value, int flex, struct wb_units *out);
+static void computed_blockify(struct bind_window *window, struct dom_element *element, struct css_style *style);
 static int computed_length(const struct css_length *length, struct wb_units *out);
 static int computed_pixels(double value, struct wb_units *out);
 static int computed_number(double value, struct wb_units *out);
@@ -180,6 +184,8 @@ static const struct computed_entry computed_entries[] = {
 	{ "overflow", COMPUTED_OVERFLOW },
 	{ "overflow-x", COMPUTED_OVERFLOW_X },
 	{ "overflow-y", COMPUTED_OVERFLOW_Y },
+	{ "overflow-inline", COMPUTED_OVERFLOW_INLINE },
+	{ "overflow-block", COMPUTED_OVERFLOW_BLOCK },
 	{ "box-sizing", COMPUTED_BOX_SIZING },
 	{ "width", COMPUTED_WIDTH },
 	{ "height", COMPUTED_HEIGHT },
@@ -265,7 +271,7 @@ static const struct computed_entry computed_entries[] = {
 /* The names of display, by enum css_display. */
 static const char *const computed_displays[] = {
 	"inline", "block", "inline-block", "list-item", "none", "table", "table-row", "table-cell", "flex", "contents", "grid",
-	"table-row-group", "table-caption", "inline-table", "table-column", "inline-grid"
+	"table-row-group", "table-caption", "inline-table", "table-column", "inline-grid", "inline-flex"
 };
 
 /* The names of position, by enum css_position. */
@@ -367,12 +373,12 @@ static const char *const computed_flex_wraps[] = { "nowrap", "wrap", "wrap-rever
 
 /* The names of the alignments, by enum css_align (stretch is normal's). */
 static const char *const computed_aligns[] = {
-	"auto", "normal", "flex-start", "flex-end", "center", "baseline", "space-between", "space-around", "space-evenly"
+	"auto", "normal", "stretch", "flex-start", "flex-end", "center", "baseline", "space-between", "space-around", "space-evenly"
 };
 
 /* Grid self-alignment uses start and end rather than Flexbox's flex-start and flex-end. */
 static const char *const computed_justifies[] = {
-	"auto", "normal", "start", "end", "center", "baseline", "space-between", "space-around", "space-evenly", "left", "right", "self-start", "self-end"
+	"auto", "normal", "stretch", "start", "end", "center", "baseline", "space-between", "space-around", "space-evenly", "left", "right", "self-start", "self-end"
 };
 
 /*
@@ -582,6 +588,51 @@ computed_find(
 	return 0;
 }
 
+/* Turns an inline-level display into its block-level equivalent (CSS Display 3). */
+static void
+computed_blockify(
+	struct bind_window *window,
+	struct dom_element *element,
+	struct css_style *style)
+{
+	struct css_style *parent_style;
+	struct dom_node *parent;
+	int blockify;
+	int error;
+
+	if (style->display != CSS_DISPLAY_INLINE && style->display != CSS_DISPLAY_INLINE_BLOCK &&
+	    style->display != CSS_DISPLAY_INLINE_TABLE && style->display != CSS_DISPLAY_INLINE_FLEX &&
+	    style->display != CSS_DISPLAY_INLINE_GRID)
+		return;
+	blockify = style->float_side != CSS_FLOAT_NONE || style->position == CSS_POSITION_ABSOLUTE ||
+	    style->position == CSS_POSITION_FIXED;
+	parent = element->node.parent;
+	if (!blockify && parent != NULL && parent->type == DOM_ELEMENT) {
+		parent_style = malloc(sizeof(*parent_style));
+		if (parent_style == NULL)
+			return;
+		if (window->host.computed_style != NULL)
+			error = window->host.computed_style(window->host.context, (struct dom_element *)parent, parent_style);
+		else
+			error = bind_style_context_compute(window, (struct dom_element *)parent, parent_style);
+		if (error == 0 && (parent_style->display == CSS_DISPLAY_FLEX ||
+		    parent_style->display == CSS_DISPLAY_INLINE_FLEX ||
+		    parent_style->display == CSS_DISPLAY_GRID || parent_style->display == CSS_DISPLAY_INLINE_GRID))
+			blockify = 1;
+		free(parent_style);
+	}
+	if (!blockify)
+		return;
+	if (style->display == CSS_DISPLAY_INLINE_TABLE)
+		style->display = CSS_DISPLAY_TABLE;
+	else if (style->display == CSS_DISPLAY_INLINE_FLEX)
+		style->display = CSS_DISPLAY_FLEX;
+	else if (style->display == CSS_DISPLAY_INLINE_GRID)
+		style->display = CSS_DISPLAY_GRID;
+	else
+		style->display = CSS_DISPLAY_BLOCK;
+}
+
 /*
  * Writes the resolved value of a property of an element: nothing for an
  * element outside the document.
@@ -629,6 +680,10 @@ computed_write(
 		free(style);
 		return error;
 	}
+
+	/* The computed display of a floated, positioned or flex or grid item box is blockified. */
+	if (property == COMPUTED_DISPLAY)
+		computed_blockify(window, element, style);
 
 	/* Its box, for the used values. */
 	memset(&box, 0, sizeof(box));
@@ -775,6 +830,15 @@ computed_write_keyword(
 	case COMPUTED_OVERFLOW_Y:
 		error = computed_name(computed_overflows, 5, style->overflow_y, out);
 		break;
+	case COMPUTED_OVERFLOW_INLINE:
+		/* The inline axis is the horizontal one in a horizontal writing mode. */
+		error = computed_name(computed_overflows, 5,
+		    style->writing_mode == CSS_WRITING_HORIZONTAL_TB ? style->overflow_x : style->overflow_y, out);
+		break;
+	case COMPUTED_OVERFLOW_BLOCK:
+		error = computed_name(computed_overflows, 5,
+		    style->writing_mode == CSS_WRITING_HORIZONTAL_TB ? style->overflow_y : style->overflow_x, out);
+		break;
 	case COMPUTED_BOX_SIZING:
 		error = computed_name(computed_box_sizings, 2, style->box_sizing, out);
 		break;
@@ -896,7 +960,7 @@ computed_write_keyword(
 		error = computed_name(computed_directions, 2, style->direction, out);
 		break;
 	case COMPUTED_WRITING_MODE:
-		error = computed_name(computed_writing_modes, 3, style->writing_mode, out);
+		error = style->writing_sideways != 0 ? computed_ascii(style->writing_sideways == 1 ? "sideways-lr" : "sideways-rl", out) : computed_name(computed_writing_modes, 3, style->writing_mode, out);
 		break;
 	case COMPUTED_TEXT_ORIENTATION:
 		error = computed_name(computed_text_orientations, 3, style->text_orientation, out);
@@ -960,13 +1024,13 @@ computed_write_keyword(
 		error = computed_length(&style->flex_basis, out);
 		break;
 	case COMPUTED_JUSTIFY_CONTENT:
-		error = computed_name(computed_aligns, 9, style->justify_content, out);
+		error = computed_align(style->justify_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->justify_content, (style->flex_keywords & 1u) != 0, out);
 		break;
 	case COMPUTED_JUSTIFY_ITEMS:
-		error = computed_name(computed_justifies, 13, style->justify_items, out);
+		error = computed_name(computed_justifies, 14, style->justify_items, out);
 		break;
 	case COMPUTED_ALIGN_ITEMS:
-		error = computed_name(computed_aligns, 9, style->align_items, out);
+		error = computed_align(style->align_items, (style->flex_keywords & 4u) != 0, out);
 		break;
 	case COMPUTED_ALIGN_SELF:
 		if (style->align_self == CSS_ALIGN_SELF_START)
@@ -974,13 +1038,13 @@ computed_write_keyword(
 		else if (style->align_self == CSS_ALIGN_SELF_END)
 			error = computed_ascii("self-end", out);
 		else
-			error = computed_name(computed_aligns, 9, style->align_self, out);
+			error = computed_align(style->align_self, (style->flex_keywords & 8u) != 0, out);
 		break;
 	case COMPUTED_JUSTIFY_SELF:
-		error = computed_name(computed_justifies, 13, style->justify_self, out);
+		error = computed_name(computed_justifies, 14, style->justify_self, out);
 		break;
 	case COMPUTED_ALIGN_CONTENT:
-		error = computed_name(computed_aligns, 9, style->align_content, out);
+		error = computed_align(style->align_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->align_content, (style->flex_keywords & 2u) != 0, out);
 		break;
 	case COMPUTED_ORDER:
 		error = computed_number(style->order, out);
@@ -1294,6 +1358,27 @@ computed_write_percent(
 	if (error != 0)
 		return error;
 	error = computed_ascii(")", out);
+	return error;
+}
+
+/* Writes a flex alignment keyword; start and end keep the spelling they were written in. */
+static int
+computed_align(
+	int value,
+	int flex,
+	struct wb_units *out)
+{
+	int error;
+
+	if (value == CSS_ALIGN_START) {
+		error = computed_ascii(flex ? "flex-start" : "start", out);
+		return error;
+	}
+	if (value == CSS_ALIGN_END) {
+		error = computed_ascii(flex ? "flex-end" : "end", out);
+		return error;
+	}
+	error = computed_name(computed_aligns, 10, value, out);
 	return error;
 }
 

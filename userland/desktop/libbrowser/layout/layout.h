@@ -138,8 +138,27 @@ struct layout_box {
 	/* Definite Grid block-axis area, used after an absolute child's height is known. */
 	layout_unit static_y_area_height;
 	int static_y_align;
+	/* A flex container's static position centers and ends without clamping an overflow. */
+	int static_unsafe;
+	/* The alignment written safe: an overflowing box starts at the area's start instead. */
+	int static_x_safe;
+	int static_y_safe;
 	/* Definite Grid area supplies the containing block for explicit insets. */
 	int static_grid_area;
+	/*
+	 * The containing block an absolute child takes from its Grid parent's
+	 * lines (relative to the parent's content box); an edge flagged auto is
+	 * the parent's padding edge.
+	 */
+	int cb_set;
+	int cb_left_auto;
+	int cb_right_auto;
+	int cb_top_auto;
+	int cb_bottom_auto;
+	layout_unit cb_left;
+	layout_unit cb_right;
+	layout_unit cb_top;
+	layout_unit cb_bottom;
 
 	/* The box model, resolved. */
 	layout_unit x;
@@ -159,6 +178,9 @@ struct layout_box {
 	size_t line_count;
 	/* A bounded vertical-lr text-only line mapping; line coordinates are logical until painted. */
 	int vertical_inline;
+	/* An in-flow item of a horizontal grid whose writing mode is vertical; its inline room is the row's height (negative: unbounded). */
+	int grid_orthogonal;
+	layout_unit grid_room;
 
 	/* The text of a text box, whitespace kept as it came (the lines collapse it). */
 	const uint16_t *text;

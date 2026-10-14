@@ -242,7 +242,8 @@ static void cascade_inherit(struct css_style *style, const struct css_style *par
 static struct css_length cascade_length(struct css_engine *engine, const struct css_value *value, float font_size);
 static void cascade_shadows(struct css_engine *engine, struct css_style *style, const struct css_value *value);
 static void cascade_text_shadow(struct css_engine *engine, struct css_style *style, const struct css_value *value);
-static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count);
+static void cascade_align(struct css_style *style, unsigned bit, int *field, int keyword);
+static void cascade_tracks(struct css_engine *engine, struct css_style *style, const struct css_value *value, struct css_track *tracks, int *count, struct css_track_repeat *repeat);
 static float cascade_font_size(struct css_engine *engine, const struct css_value *value, float parent_size);
 static int cascade_font_size_keyword(const struct css_value *value, int parent_keyword);
 static void cascade_families(struct css_style *style, const struct css_value *value);
@@ -731,6 +732,7 @@ cascade_compute(
 		style->text_indent = parent->text_indent;
 		style->direction = parent->direction;
 		style->writing_mode = parent->writing_mode;
+		style->writing_sideways = parent->writing_sideways;
 		style->text_orientation = parent->text_orientation;
 		style->border_spacing[0] = parent->border_spacing[0];
 		style->border_spacing[1] = parent->border_spacing[1];
@@ -962,7 +964,7 @@ css_initial_style(
 	style->z_index_auto = 1;
 
 	/* The flexible box's initial values that are not zero. */
-	style->justify_content = CSS_ALIGN_START;
+	style->justify_content = CSS_ALIGN_NORMAL;
 	style->justify_items = CSS_ALIGN_NORMAL;
 	style->align_items = CSS_ALIGN_NORMAL;
 	style->align_content = CSS_ALIGN_STRETCH;
@@ -3382,6 +3384,11 @@ cascade_margin_property(
 	int writing_mode,
 	int direction)
 {
+	/* overflow-inline and overflow-block name the horizontal and vertical axes by the writing mode. */
+	if (property == CSS_PROP_OVERFLOW_INLINE)
+		return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_X : CSS_PROP_OVERFLOW_Y;
+	if (property == CSS_PROP_OVERFLOW_BLOCK)
+		return writing_mode == CSS_WRITING_HORIZONTAL_TB ? CSS_PROP_OVERFLOW_Y : CSS_PROP_OVERFLOW_X;
 	if (writing_mode == CSS_WRITING_VERTICAL_LR) {
 		switch (property) {
 		case CSS_PROP_MARGIN_INLINE_START:
@@ -3653,7 +3660,12 @@ cascade_apply(
 		style->direction = value->keyword;
 		break;
 	case CSS_PROP_WRITING_MODE:
+		style->writing_sideways = 0;
 		style->writing_mode = value->keyword;
+		if (value->keyword > CSS_WRITING_VERTICAL_RL) {
+			style->writing_sideways = value->keyword - CSS_WRITING_VERTICAL_RL;
+			style->writing_mode = CSS_WRITING_HORIZONTAL_TB;
+		}
 		break;
 	case CSS_PROP_TEXT_ORIENTATION:
 		style->text_orientation = value->keyword;
@@ -3669,19 +3681,19 @@ cascade_apply(
 		style->border_collapse = value->keyword;
 		break;
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
-		cascade_tracks(engine, style, value, style->columns, &style->column_count);
+		cascade_tracks(engine, style, value, style->columns, &style->column_count, &style->column_repeat);
 		break;
 	case CSS_PROP_GRID_TEMPLATE_ROWS:
-		cascade_tracks(engine, style, value, style->rows, &style->row_count);
+		cascade_tracks(engine, style, value, style->rows, &style->row_count, &style->row_repeat);
 		break;
 	case CSS_PROP_GRID_AUTO_FLOW:
 		style->grid_auto_flow = value->keyword;
 		break;
 	case CSS_PROP_GRID_AUTO_COLUMNS:
-		cascade_tracks(engine, style, value, style->auto_columns, &style->auto_column_count);
+		cascade_tracks(engine, style, value, style->auto_columns, &style->auto_column_count, NULL);
 		break;
 	case CSS_PROP_GRID_AUTO_ROWS:
-		cascade_tracks(engine, style, value, style->auto_rows, &style->auto_row_count);
+		cascade_tracks(engine, style, value, style->auto_rows, &style->auto_row_count, NULL);
 		break;
 	case CSS_PROP_GRID_COLUMN_START:
 	case CSS_PROP_GRID_COLUMN_END:
@@ -3754,22 +3766,22 @@ cascade_apply(
 		style->flex_wrap = value->keyword;
 		break;
 	case CSS_PROP_JUSTIFY_CONTENT:
-		style->justify_content = value->keyword;
+		cascade_align(style, 1u, &style->justify_content, value->keyword);
 		break;
 	case CSS_PROP_JUSTIFY_ITEMS:
-		style->justify_items = value->keyword;
+		cascade_align(style, 0x200u, &style->justify_items, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_ITEMS:
-		style->align_items = value->keyword;
+		cascade_align(style, 4u, &style->align_items, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_CONTENT:
-		style->align_content = value->keyword;
+		cascade_align(style, 2u, &style->align_content, value->keyword);
 		break;
 	case CSS_PROP_ALIGN_SELF:
-		style->align_self = value->keyword;
+		cascade_align(style, 8u, &style->align_self, value->keyword);
 		break;
 	case CSS_PROP_JUSTIFY_SELF:
-		style->justify_self = value->keyword;
+		cascade_align(style, 0x100u, &style->justify_self, value->keyword);
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = cascade_length(engine, value, style->font_size);
@@ -3909,21 +3921,27 @@ cascade_inherit(
 		break;
 	case CSS_PROP_JUSTIFY_CONTENT:
 		style->justify_content = parent->justify_content;
+		style->flex_keywords = (style->flex_keywords & ~1u) | (parent->flex_keywords & 1u);
 		break;
 	case CSS_PROP_JUSTIFY_ITEMS:
 		style->justify_items = parent->justify_items;
+		style->flex_keywords = (style->flex_keywords & ~0u) | (parent->flex_keywords & 0u);
 		break;
 	case CSS_PROP_ALIGN_ITEMS:
 		style->align_items = parent->align_items;
+		style->flex_keywords = (style->flex_keywords & ~4u) | (parent->flex_keywords & 4u);
 		break;
 	case CSS_PROP_ALIGN_CONTENT:
 		style->align_content = parent->align_content;
+		style->flex_keywords = (style->flex_keywords & ~2u) | (parent->flex_keywords & 2u);
 		break;
 	case CSS_PROP_ALIGN_SELF:
 		style->align_self = parent->align_self;
+		style->flex_keywords = (style->flex_keywords & ~8u) | (parent->flex_keywords & 8u);
 		break;
 	case CSS_PROP_JUSTIFY_SELF:
 		style->justify_self = parent->justify_self;
+		style->flex_keywords = (style->flex_keywords & ~0u) | (parent->flex_keywords & 0u);
 		break;
 	case CSS_PROP_ROW_GAP:
 		style->row_gap = parent->row_gap;
@@ -4098,6 +4116,7 @@ cascade_inherit(
 		break;
 	case CSS_PROP_WRITING_MODE:
 		style->writing_mode = parent->writing_mode;
+		style->writing_sideways = parent->writing_sideways;
 		break;
 	case CSS_PROP_TEXT_ORIENTATION:
 		style->text_orientation = parent->text_orientation;
@@ -4115,10 +4134,12 @@ cascade_inherit(
 	case CSS_PROP_GRID_TEMPLATE_COLUMNS:
 		memcpy(style->columns, parent->columns, sizeof(style->columns));
 		style->column_count = parent->column_count;
+		style->column_repeat = parent->column_repeat;
 		break;
 	case CSS_PROP_GRID_TEMPLATE_ROWS:
 		memcpy(style->rows, parent->rows, sizeof(style->rows));
 		style->row_count = parent->row_count;
+		style->row_repeat = parent->row_repeat;
 		break;
 	case CSS_PROP_GRID_AUTO_FLOW:
 		style->grid_auto_flow = parent->grid_auto_flow;
@@ -4175,6 +4196,29 @@ cascade_inherit(
 	}
 }
 
+/* Stores an alignment keyword; flex-start and flex-end are start and end that remember how they were written. */
+static void
+cascade_align(
+	struct css_style *style,
+	unsigned bit,
+	int *field,
+	int keyword)
+{
+	style->flex_keywords &= ~(bit | (bit << 4));
+	if ((keyword & 0x1000) != 0) {
+		keyword &= ~0x1000;
+		style->flex_keywords |= bit << 4;
+	}
+	if (keyword == CSS_ALIGN_FLEX_START) {
+		keyword = CSS_ALIGN_START;
+		style->flex_keywords |= bit;
+	} else if (keyword == CSS_ALIGN_FLEX_END) {
+		keyword = CSS_ALIGN_END;
+		style->flex_keywords |= bit;
+	}
+	*field = keyword;
+}
+
 /*
  * Converts a declared grid template into computed tracks (ws074-p072):
  * lengths in pixels or percentages, fr shares, auto; none is no tracks.
@@ -4185,15 +4229,24 @@ cascade_tracks(
 	struct css_style *style,
 	const struct css_value *value,
 	struct css_track *tracks,
-	int *count)
+	int *count,
+	struct css_track_repeat *repeat)
 {
 	const struct css_declared_track *declared;
 	size_t index;
 
 	/* Anything but a list is no template. */
 	*count = 0;
+	if (repeat != NULL)
+		memset(repeat, 0, sizeof(*repeat));
 	if (value->kind != CSS_VALUE_TRACKS || value->tracks == NULL)
 		return;
+	if (repeat != NULL && value->tracks->repeat_length > 0 &&
+	    value->tracks->repeat_at + value->tracks->repeat_length <= CSS_TRACKS) {
+		repeat->length = value->tracks->repeat_length;
+		repeat->at = value->tracks->repeat_at;
+		repeat->fit = value->tracks->repeat_fit;
+	}
 
 	/* Each track. */
 	for (index = 0; index < value->tracks->count && index < CSS_TRACKS; index++) {
@@ -4216,6 +4269,12 @@ cascade_tracks(
 			tracks[index].minimum = cascade_length(engine, &declared->minimum, style->font_size);
 			if (tracks[index].minimum.unit == CSS_UNIT_PX && tracks[index].minimum.value < 0)
 				tracks[index].minimum.value = 0;
+
+			/* A maximum below the minimum is the minimum. */
+			if (declared->kind == CSS_TRACK_LENGTH && tracks[index].size.unit == CSS_UNIT_PX &&
+			    tracks[index].minimum.unit == CSS_UNIT_PX &&
+			    tracks[index].size.value < tracks[index].minimum.value)
+				tracks[index].size = tracks[index].minimum;
 		}
 	}
 
