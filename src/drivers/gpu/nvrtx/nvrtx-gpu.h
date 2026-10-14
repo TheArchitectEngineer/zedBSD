@@ -44,13 +44,20 @@
 /* The largest GSP image the three-level table describes with one middle-level page (512 x 512 pages). */
 #define NVRTX_IMAGE_MAX_BYTES		0x40000000U
 
-/* The handles the driver gives its objects of the resource manager. */
-#define NVRTX_HANDLE_CLIENT		0xc0de0001U
-#define NVRTX_HANDLE_DEVICE		0xc0de0080U
-#define NVRTX_HANDLE_SUBDEVICE		0xc0de2080U
-#define NVRTX_HANDLE_SPACE		0xc0de90f1U
-#define NVRTX_HANDLE_CHANNEL		0xc0dec46fU
-#define NVRTX_HANDLE_COPY		0xc0dec5b5U
+/*
+ * The handles the driver gives its objects of the resource manager, the
+ * values nouveau uses (R5: the space's root was refused under the earlier
+ * handles).  A client handle is in the resource server's client range,
+ * 0xc1d0 in the high half and the client's number in the low half; the
+ * resource server re-encodes a client handle outside it.  The channel's
+ * handle carries its channel number.
+ */
+#define NVRTX_HANDLE_CLIENT		0xc1d00000U
+#define NVRTX_HANDLE_DEVICE		0xde1d0000U
+#define NVRTX_HANDLE_SUBDEVICE		0x5d1d0000U
+#define NVRTX_HANDLE_SPACE		0x90f10000U
+#define NVRTX_HANDLE_CHANNEL		0xf1f00008U
+#define NVRTX_HANDLE_COPY		0xc5b50008U
 
 /* How long a call to the resource manager waits for its reply. */
 #define NVRTX_CALL_TIMEOUT_US		5000000U

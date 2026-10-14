@@ -462,8 +462,12 @@ struct nvrtx_fwsec {
 #define NVRTX_STATIC_INTERNAL_CLIENT_AT	1600U
 #define NVRTX_STATIC_UEFI_AT		1614U
 
-/* The allocation call's header and where the resource manager reports its status. */
-#define NVRTX_ALLOC_HEADER_BYTES	44U
+/*
+ * The allocation call's header (seven words and four reserved bytes, 32
+ * bytes; R5 found the parameters had been put 12 bytes late, so the space's
+ * flags were never read) and where the resource manager reports its status.
+ */
+#define NVRTX_ALLOC_HEADER_BYTES	32U
 #define NVRTX_ALLOC_STATUS_AT		16U
 
 /* The three classes of the first objects, and their parameter lengths. */
