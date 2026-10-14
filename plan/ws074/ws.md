@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1168](queue.md) finished / p220 opposite vertical writing-mode absolute text geometry。2026-10-14 12:45 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1169](queue.md) finished / p220 RTL vertical Grid absolute text geometry。2026-10-14 12:48 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1160の158 PASS/344 FAIL、q1154比16 whole/16 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p220-q1169-partial-clear-20261014: [p220](phase220/phase.md) q1169-i01で同writing-mode固定2×2縦Grid absolute子のRTLを限定縦inline寸法経路へ通す。[証拠](phase220/evidence/20261014-q1169/README.md)。row010/011幅60→10、残るoffsetTop差へ進む。旧6件/host/Acid3差0維持。字形視覚・static areaは別、p220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p220-q1168-uncleared-20261014: [p220](phase220/phase.md) q1168-i01はcolumn010/011逆writing-mode子の幅60→10を達成したが、row010/011は逆direction子と判明しcriteria未達のためattempt uncleared。[証拠](phase220/evidence/20261014-q1168/README.md)。改善コードは保持、旧6件/host/Acid3差0維持。次の有限QueueはRTL縦文字寸法、その後static area。p220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 

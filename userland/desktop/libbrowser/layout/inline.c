@@ -108,7 +108,7 @@ static void inline_line_height(struct layout_tree *tree, const struct css_style 
 static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
 static int inline_vertical_absolute_grid(const struct layout_box *box);
-static int inline_vertical_simple(const struct layout_box *box, int depth, int mode);
+static int inline_vertical_simple(const struct layout_box *box, int depth, int mode, int direction);
 static layout_unit inline_vertical_room(const struct layout_box *box);
 
 /*
@@ -157,9 +157,11 @@ layout_inline(
 	vertical = (box->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
 	    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
 	    (rl_non_grid || rl_fixed_grid || rl_auto_grid))) &&
-	    box->style.direction == CSS_DIRECTION_LTR &&
+	    (box->style.direction == CSS_DIRECTION_LTR ||
+	    (box->style.direction == CSS_DIRECTION_RTL && box->out_of_flow &&
+	    inline_vertical_absolute_grid(box))) &&
 	    (box->style.text_align == CSS_TEXT_ALIGN_START || box->style.text_align == CSS_TEXT_ALIGN_LEFT) &&
-	    inline_vertical_simple(box, 0, box->style.writing_mode);
+	    inline_vertical_simple(box, 0, box->style.writing_mode, box->style.direction);
 
 	/* The floats among the content go to their sides first. */
 	error = inline_place_floats(tree, box, box, 0);
@@ -248,6 +250,10 @@ inline_vertical_absolute_grid(
 	    (parent->style.column_count != 2 || parent->style.row_count != 2 ||
 	    box->style.direction != CSS_DIRECTION_LTR))
 		return 0;
+	if (box->style.direction == CSS_DIRECTION_RTL &&
+	    (parent->style.writing_mode != box->style.writing_mode ||
+	    parent->style.column_count != 2 || parent->style.row_count != 2))
+		return 0;
 
 	/* No percentage or flexible track can provide a definite inline room. */
 	for (index = 0; index < parent->style.column_count; index++) {
@@ -270,7 +276,8 @@ static int
 inline_vertical_simple(
 	const struct layout_box *box,
 	int depth,
-	int mode)
+	int mode,
+	int direction)
 {
 	const struct layout_box *child;
 	size_t index;
@@ -301,12 +308,12 @@ inline_vertical_simple(
 	if (depth != 0 && box->kind != LAYOUT_INLINE)
 		return 0;
 
-	/* Every descendant must share the root's vertical, left-to-right mapping. */
+	/* Every descendant must share the root's bounded vertical mapping. */
 	if (box->style.writing_mode != mode ||
-	    box->style.direction != CSS_DIRECTION_LTR)
+	    box->style.direction != direction)
 		return 0;
 	for (child = box->first_child; child != NULL; child = child->next) {
-		if (!inline_vertical_simple(child, depth + 1, mode))
+		if (!inline_vertical_simple(child, depth + 1, mode, direction))
 			return 0;
 	}
 

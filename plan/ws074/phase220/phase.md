@@ -2,6 +2,14 @@
 
 # ws074-p220: vertical inline text geometry
 
+## q1169-i01 有限部分範囲（2026-10-14 12:47 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:17 JSTまで）に適用。positioned LTR固定2×2 vertical-lr/rl inline-grid、明示px track/gap0の直接absolute auto-size ASCII子で、子が同writing-mode・direction:rtlの場合に縦inline寸法経路へ通す。固定row-axis010/011の縦初回width10/height期待値、旧001/008/009とcolumn010/011初回、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。文字描画の全面一致/static area/auto lines/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1169-i01 結果（2026-10-14 12:48 JST）
+
+Event ws074-p220-q1169-partial-clear-20261014: [証拠](evidence/20261014-q1169/README.md)。同writing-mode固定縦Grid absolute子のRTLを限定縦inline寸法経路へ通し、固定row-axis010/011の縦初回width60→10、後続offsetTop差へ進んだ。旧6件PASSとcolumn010/011幅改善維持、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865。q1169部分cleared、文字字形順序とstatic area、p220/p217/p189/p173 whole未達。共有投影/GitHub publication保留。
+
 ## q1168-i01 有限部分範囲（2026-10-14 12:42 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:12 JSTまで）に適用。positioned LTR固定2×2 vertical-lr/rl inline-grid、明示px track/gap0の直接absolute auto-size ASCII子に限り、子が親と逆のvertical writing-modeでも縦inline geometryへ通す。固定column/row-axis010/011の縦初回width10/高さ期待一致、旧001–009代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。static area/逆direction/auto lines/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
