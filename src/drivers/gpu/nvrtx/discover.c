@@ -183,6 +183,7 @@ nvrtx_n1_readout(
 	    framebuffer->physical_base >= vram->bus_address &&
 	    framebuffer->physical_base - vram->bus_address < vram->size) {
 		offset = framebuffer->physical_base - vram->bus_address;
+		device->gop_on_gpu = 1;
 		nvrtx_stage_mark("N1 gop %ux%u stride %u in bar%u at +%llx",
 		    (unsigned)framebuffer->width,
 		    (unsigned)framebuffer->height,

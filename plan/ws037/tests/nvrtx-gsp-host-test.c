@@ -445,6 +445,73 @@ test_vbios(void)
 	check(nvrtx_vbios_fwsec(&vbios, &fwsec) == ENOTSUP, "vbios: descriptor version 3 refused");
 }
 
+static void
+test_records(void)
+{
+	struct nvrtx_sysinfo_values v;
+	struct nvrtx_seq_command c;
+	uint8_t record[NVRTX_SYSINFO_BYTES];
+	uint8_t registry[512];
+	uint8_t seq[40 + 13 * 4];
+	uint32_t cursor;
+	size_t length;
+	int error;
+
+	memset(&v, 0, sizeof(v));
+	v.registers = 0xf6000000ULL;
+	v.vram = 0xe0000000ULL;
+	v.instance = 0xf0000000ULL;
+	v.bus_device_function = 0x0100;
+	v.user_address_limit = 0x00007ffffffff000ULL;
+	v.vendor = 0x10de;
+	v.device = 0x1f02;
+	v.subvendor = 0x1458;
+	v.subdevice = 0x37c2;
+	v.revision = 0xa1;
+	v.primary = 1;
+	nvrtx_sysinfo(record, &v);
+	check(nvrtx_get64(record, 0) == 0xf6000000ULL && nvrtx_get64(record, 8) == 0xe0000000ULL && nvrtx_get64(record, 16) == 0xf0000000ULL, "sysinfo: windows");
+	check(nvrtx_get64(record, 32) == 0x100 && nvrtx_get64(record, 72) == 0x00007ffffffff000ULL, "sysinfo: BDF and user limit");
+	check(nvrtx_get32(record, 80) == 0x88000 && nvrtx_get32(record, 84) == 0x1000, "sysinfo: config mirror");
+	check(nvrtx_get32(record, 88) == 0x1f0210de && nvrtx_get32(record, 92) == 0x37c21458 && nvrtx_get32(record, 96) == 0xa1, "sysinfo: PCI identity");
+	check(record[896] == 1 && record[908] == 0 && nvrtx_get64(record, 920) == 0, "sysinfo: primary, no preserved memory");
+
+	error = nvrtx_registry(registry, sizeof(registry), &length);
+	check(error == 0 && length == 8 + 3 * 16 + 20 + 22 + 19, "registry: length");
+	check(nvrtx_get32(registry, 0) == length && nvrtx_get32(registry, 4) == 3, "registry: header");
+	check(nvrtx_get32(registry, 8) == 56 && registry[12] == 1 && nvrtx_get32(registry, 16) == 1 && nvrtx_get32(registry, 20) == 4, "registry: first entry");
+	check(memcmp(registry + 56, "RMSecBusResetEnable", 20) == 0, "registry: first name");
+	check(nvrtx_get32(registry, 40) == 56 + 20 + 22 && memcmp(registry + 98, "RMDevidCheckIgnore", 19) == 0, "registry: third entry");
+	check(nvrtx_registry(registry, 60, &length) == E2BIG, "registry: small buffer refused");
+
+	memset(seq, 0, sizeof(seq));
+	nvrtx_put32(seq, 4, 11);
+	nvrtx_put32(seq, 40, NVRTX_SEQ_WRITE);
+	nvrtx_put32(seq, 44, 0x1234);
+	nvrtx_put32(seq, 48, 0x5678);
+	nvrtx_put32(seq, 52, NVRTX_SEQ_STORE);
+	nvrtx_put32(seq, 56, 0x9abc);
+	nvrtx_put32(seq, 60, 3);
+	nvrtx_put32(seq, 64, NVRTX_SEQ_CORE_RESET);
+	nvrtx_put32(seq, 68, NVRTX_SEQ_DELAY);
+	nvrtx_put32(seq, 72, 50);
+	nvrtx_put32(seq, 76, NVRTX_SEQ_CORE_START);
+	nvrtx_put32(seq, 80, NVRTX_SEQ_CORE_WAIT_HALT);
+	cursor = 0;
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && c.opcode == 0 && c.argument[0] == 0x1234 && c.argument[1] == 0x5678 && cursor == 3, "sequencer: write");
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && c.opcode == 4 && c.argument[1] == 3 && cursor == 6, "sequencer: store");
+	check(nvrtx_sequencer_save(seq, sizeof(seq), 3, 0xfeed) == 0 && nvrtx_get32(seq, 8 + 12) == 0xfeed, "sequencer: save slot");
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && c.opcode == 5 && cursor == 7, "sequencer: core reset");
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && c.opcode == 3 && c.argument[0] == 50 && cursor == 9, "sequencer: delay");
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && cursor == 10, "sequencer: core start");
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == 0 && cursor == 11, "sequencer: wait halt");
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == ENOENT, "sequencer: end");
+	nvrtx_put32(seq, 40, 99);
+	cursor = 0;
+	check(nvrtx_sequencer_next(seq, sizeof(seq), &cursor, &c) == EINVAL, "sequencer: unknown opcode");
+	check(nvrtx_sequencer_save(seq, sizeof(seq), 8, 0) == EINVAL, "sequencer: save slot range");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -453,6 +520,7 @@ main(int argc, char **argv)
 	test_radix3();
 	test_queue();
 	test_vbios();
+	test_records();
 	if (argc > 1)
 		test_files(argv[1]);
 	else

@@ -67,7 +67,6 @@
 
 static void falcon_mask(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t mask, uint32_t value);
 static int falcon_scrub_wait(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
-static int falcon_reset_engine(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 
 /*
  * Waits until a register's masked value equals the expected one.
@@ -120,12 +119,12 @@ nvrtx_falcon_reset(
 		falcon_mask(gpu, FALCON_PMC_ENABLE, falcon->pmc_mask, 0U);
 
 	/* Pulses the engine reset. */
-	error = falcon_reset_engine(gpu, falcon);
+	error = nvrtx_falcon_reset_engine(gpu, falcon);
 	if (error != 0)
 		return error;
 
 	/* Pulses it again for the enable, puts the PMC bit back and waits for the scrub. */
-	error = falcon_reset_engine(gpu, falcon);
+	error = nvrtx_falcon_reset_engine(gpu, falcon);
 	if (error != 0)
 		return error;
 
@@ -298,6 +297,32 @@ nvrtx_falcon_boot(
 	return 0;
 }
 
+/*
+ * Pulses a falcon's engine reset and waits for the scrub.
+ *
+ * This alone is how the GSP's falcon is put into its RISC-V mode before the booter starts it.
+ */
+int
+nvrtx_falcon_reset_engine(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon)
+{
+	int error;
+
+	/* Holds the engine in reset for 10 us, then lets it go. */
+	falcon_mask(gpu, falcon->base + FALCON_ENGINE_RESET, 0x1U, 0x1U);
+	kern_usleep_range(10U, 20U);
+	falcon_mask(gpu, falcon->base + FALCON_ENGINE_RESET, 0x1U, 0U);
+
+	/* Waits for the memories to be scrubbed. */
+	error = falcon_scrub_wait(gpu, falcon);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the engine is out of reset. */
+	return 0;
+}
+
 /* Changes the masked bits of a register to a value. */
 static void
 falcon_mask(
@@ -328,27 +353,5 @@ falcon_scrub_wait(
 		return error;
 
 	/* Succeeded: the memories are clean. */
-	return 0;
-}
-
-/* Pulses a falcon's engine reset and waits for the scrub. */
-static int
-falcon_reset_engine(
-	struct nvrtx_gpu *gpu,
-	const struct nvrtx_falcon *falcon)
-{
-	int error;
-
-	/* Holds the engine in reset for 10 us, then lets it go. */
-	falcon_mask(gpu, falcon->base + FALCON_ENGINE_RESET, 0x1U, 0x1U);
-	kern_usleep_range(10U, 20U);
-	falcon_mask(gpu, falcon->base + FALCON_ENGINE_RESET, 0x1U, 0U);
-
-	/* Waits for the memories to be scrubbed. */
-	error = falcon_scrub_wait(gpu, falcon);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the engine is out of reset. */
 	return 0;
 }
