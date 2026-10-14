@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1140 / WS074 fixed Grid502 recensus（2026-10-14）
+## 最新: q1141 / WS074 remaining Grid alignment triage（2026-10-14）
+
+[q1141履歴](queue-q1141.md): alignment残192件の初回幅110/offsetLeft37/offsetTop26/高さ18/他1を分類、縦Grid軸変換とbaselineを別候補に整理。[証拠](../ws074/phase217/evidence/20261014-q1141/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1140 / WS074 fixed Grid502 recensus（2026-10-14）
 
 [q1140履歴](queue-q1140.md): Grid502で124→126 whole PASS、45 subtest改善、後退0。全ID/hash/checkpoint/raw照合。[証拠](../ws074/phase189/evidence/20261014-q1140/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

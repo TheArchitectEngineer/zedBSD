@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1141-i01 有限部分範囲（2026-10-14 10:49 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:19 JSTまで）に適用。q1140固定Grid502中alignment残192 FAILのfirst failed callbackを全件抽出し、file family/width/height/offset症状、既対応と未対応の差、最大3の代表WPT sourceとlayout経路を分類する。一般的な次の有限実装範囲・回帰条件を記録する。読取のみ、browser/runner/WPT/公開ABI/`plan/master.md`変更なし、Acid/全Grid再測定なし。p217 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1141-i01 結果（2026-10-14 10:49 JST）
+
+Event ws074-p217-q1141-partial-clear-20261014: [証拠](evidence/20261014-q1141/README.md)。固定alignment残192 FAILのfirst callbackを全件分類。初回症状width110/offsetLeft37/offsetTop26/height18/other1。vertical-lr/rl stretch各16件は論理Grid軸を物理x/yへ写していないことが共通候補、positioned34件の縦subtestも関連候補。baseline43件は独立調査を要す。q1141診断部分cleared、p217/p189/p173全件100%未達。browser/WPT/runner/ABI/Master/Acid変更なし、共有投影/GitHub publication保留。
+
 Status: uncleared（q1088–q1089部分cleared、RTL/縦書き/他alignment未達）
 Disposition: normal
 Parent: [WS074](../ws.md)

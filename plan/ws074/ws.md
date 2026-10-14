@@ -9,7 +9,7 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1140](queue.md) finished / p189 fixed Grid502 recensus。2026-10-14 10:47 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1141](queue.md) finished / p217 remaining Grid alignment triage。2026-10-14 10:49 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1140の126 PASS/376 FAIL、q1134比2 whole/45 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
 
@@ -946,3 +946,5 @@ Event ws074-p221-q1138-outcome-20261014: [p221 q1138](phase221/evidence/20261014
 Event ws074-p221-q1139-outcome-20261014: [p221 q1139](phase221/evidence/20261014-q1139/README.md)で負calc Grid trackのcomputed長を0pxにclamp。固定auto列/行computed各9→10/25、invalid全PASS、旧whole PASS/Acid3差0維持。q1139部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p189-q1140-outcome-20261014: [p189 q1140](phase189/evidence/20261014-q1140/README.md)で固定Grid502を全件同条件再測定。124→126 whole PASS、45 subtest改善、旧PASS/subtest後退0。ID/hash/checkpoint/raw全一致。p189部分cleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+Event ws074-p217-q1141-outcome-20261014: [p217 q1141](phase217/evidence/20261014-q1141/README.md)で固定alignment残192 FAILの初回症状を全件分類（幅110/offsetLeft37/offsetTop26/高さ18/他1）。固定縦trackのGrid軸変換を次の一般修正候補、baselineは独立調査とした。q1141部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
