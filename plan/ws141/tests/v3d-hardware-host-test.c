@@ -793,6 +793,17 @@ bcm2711_stage_perf_on(
 }
 
 /*
+ * Leaves the texture formatting unit's probe off (v3d.tfu_probe=1 absent), as an ordinary boot has it.
+ */
+bool
+bcm2711_stage_tfu_probe(
+	void)
+{
+	/* No probe by default. */
+	return false;
+}
+
+/*
  * Consumes a log record; with the report off the executor logs none.
  */
 void

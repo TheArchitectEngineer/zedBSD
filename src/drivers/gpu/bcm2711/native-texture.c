@@ -14,6 +14,7 @@
 /* The current Vulkan image contract admits RGBA/BGRA 32-bpp extents up to 4096 pixels. */
 #define NATIVE_TEXTURE_DIMENSION 4096U
 
+static int utile_extent(uint32_t texel_bytes, uint32_t *utile_width, uint32_t *utile_height);
 static void write_bits(uint8_t *bytes, uint32_t start, uint32_t count, uint32_t field);
 
 /*
@@ -25,8 +26,37 @@ bcm2711_native_texture_size(
 	uint32_t height,
 	uint32_t *bytes)
 {
+	int error;
+
+	/* A four-byte texel's utile is four by four, so a 256-byte block covers eight by eight. */
+	error = bcm2711_native_texture_size_texel(width, height, 4U, bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: explicit XOR disable permits zero UB padding for every single-level extent. */
+	return 0;
+}
+
+/*
+ * Measures one strictly UIF, non-XOR image of one-, two- or four-byte texels.
+ *
+ * A utile is 64 bytes: eight by eight one-byte texels, eight by four two-byte
+ * texels or four by four four-byte texels.  A 256-byte UIF block holds two by
+ * two utiles, and a column is four blocks wide, so every column is 1024 bytes
+ * a block row whatever the texel size.
+ */
+int
+bcm2711_native_texture_size_texel(
+	uint32_t width,
+	uint32_t height,
+	uint32_t texel_bytes,
+	uint32_t *bytes)
+{
+	uint32_t utile_width;
+	uint32_t utile_height;
 	uint32_t columns;
 	uint32_t block_rows;
+	int error;
 
 	/* A missing output cannot receive the complete native storage requirement. */
 	if (bytes == NULL)
@@ -41,12 +71,72 @@ bcm2711_native_texture_size(
 	if (height == 0 || height > NATIVE_TEXTURE_DIMENSION)
 		return EINVAL;
 
-	/* One 32-pixel column holds four adjacent eight-by-eight, 256-byte UIF blocks per row. */
-	columns = (width + 31U) / 32U;
-	block_rows = (height + 7U) / 8U;
+	/* Finds the utile of the texel size; other sizes have no layout here. */
+	error = utile_extent(texel_bytes, &utile_width, &utile_height);
+	if (error != 0)
+		return error;
+
+	/* One column is four blocks wide, and a block row is two utiles tall. */
+	columns = (width + utile_width * 8U - 1U) / (utile_width * 8U);
+	block_rows = (height + utile_height * 2U - 1U) / (utile_height * 2U);
 	*bytes = columns * block_rows * 1024U;
 
-	/* Succeeded: explicit XOR disable permits zero UB padding for every single-level extent. */
+	/* Succeeded: the image's whole columns and block rows. */
+	return 0;
+}
+
+/*
+ * Finds the byte offset of one texel in a strictly UIF, non-XOR image.
+ *
+ * Blocks go down a four-block column before moving to the next column; the
+ * four utiles of a block and the texels of a utile are in raster order.
+ */
+int
+bcm2711_native_texture_offset(
+	uint32_t x,
+	uint32_t y,
+	uint32_t height,
+	uint32_t texel_bytes,
+	uint32_t *offset)
+{
+	uint32_t utile_width;
+	uint32_t utile_height;
+	uint32_t block_rows;
+	uint32_t column;
+	uint32_t block;
+	int error;
+
+	/* A missing output cannot receive the offset. */
+	if (offset == NULL)
+		return EINVAL;
+
+	/* Finds the utile of the texel size; other sizes have no layout here. */
+	*offset = 0;
+	error = utile_extent(texel_bytes, &utile_width, &utile_height);
+	if (error != 0)
+		return error;
+
+	/* A texel outside the image's extent limit has no place in it. */
+	if (x >= NATIVE_TEXTURE_DIMENSION ||
+	    y >= height ||
+	    height > NATIVE_TEXTURE_DIMENSION)
+		return EINVAL;
+
+	/* Resolves the column-major block. */
+	block_rows = (height + utile_height * 2U - 1U) / (utile_height * 2U);
+	column = x / (utile_width * 8U);
+	block = column * block_rows * 4U;
+	block += (y / (utile_height * 2U)) * 4U;
+	block += (x / (utile_width * 2U)) % 4U;
+
+	/* Selects the utile in the block, then the texel in the utile. */
+	*offset = block * 256U;
+	*offset += ((x / utile_width) % 2U) * 64U;
+	*offset += ((y / utile_height) % 2U) * 128U;
+	*offset += (y % utile_height) * utile_width * texel_bytes;
+	*offset += (x % utile_width) * texel_bytes;
+
+	/* Succeeded: the texel's byte offset from the image's start. */
 	return 0;
 }
 
@@ -401,6 +491,35 @@ bcm2711_native_texture_copy_box(
 	}
 
 	/* Succeeded: the widened box now holds the raster's current pixels in its exact UIF places. */
+	return 0;
+}
+
+/* Finds the width and height in texels of the 64-byte utile of one texel size. */
+static int
+utile_extent(
+	uint32_t texel_bytes,
+	uint32_t *utile_width,
+	uint32_t *utile_height)
+{
+	/* Each admitted texel size fills 64 bytes with its own rectangle. */
+	switch (texel_bytes) {
+	case 1U:
+		*utile_width = 8U;
+		*utile_height = 8U;
+		break;
+	case 2U:
+		*utile_width = 8U;
+		*utile_height = 4U;
+		break;
+	case 4U:
+		*utile_width = 4U;
+		*utile_height = 4U;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* Succeeded: the utile's texel rectangle. */
 	return 0;
 }
 

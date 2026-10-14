@@ -25,6 +25,10 @@
  *                         passed
  *   v3d.perf=1            the engine logs its cost report every two seconds
  *                         of work (none by default, ws141-p016)
+ *   v3d.tfu_probe=1       the boot diagnostic also tries the texture
+ *                         formatting unit's one- and two-byte texels and
+ *                         its YUV inputs, and logs what each wrote
+ *                         (ws236-p011)
  */
 
 #include <stdarg.h>
@@ -50,6 +54,9 @@
 
 /* The whole token that turns the engine's periodic cost report on. */
 #define STAGE_PERF_ON_TOKEN		"v3d.perf=1"
+
+/* The whole token that runs the texture formatting unit's probe at boot. */
+#define STAGE_TFU_PROBE_TOKEN		"v3d.tfu_probe=1"
 
 /* The longest stop token: a family, ".stop=" and a stage name. */
 #define STAGE_TOKEN_CAPACITY		48U
@@ -116,6 +123,26 @@ bcm2711_stage_perf_on(
 		return true;
 
 	/* No report by default. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the texture formatting unit's probe.
+ */
+bool
+bcm2711_stage_tfu_probe(
+	void)
+{
+	const char *line;
+	int present;
+
+	/* Looks for v3d.tfu_probe=1 among the boot parameters. */
+	line = stage_command_line();
+	present = kern_boot_parameters_token_present(line, STAGE_TFU_PROBE_TOKEN);
+	if (present)
+		return true;
+
+	/* No probe by default. */
 	return false;
 }
 

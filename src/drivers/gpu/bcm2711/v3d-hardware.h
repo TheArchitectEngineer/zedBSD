@@ -137,6 +137,22 @@ struct bcm2711_v3d_perf {
 };
 
 /*
+ * The storage the texture formatting unit's probe converts in.
+ *
+ * It is a part of the boot diagnostic's mapped run: an input interval and an
+ * output interval, each with its CPU pointer and GPU address.  The boot
+ * diagnostic owns it while the probe runs.
+ */
+struct bcm2711_v3d_tfu_probe_area {
+	uint8_t *input;
+	uint32_t input_address;
+	uint32_t input_bytes;
+	uint8_t *output;
+	uint32_t output_address;
+	uint32_t output_bytes;
+};
+
+/*
  * The engine retains both allocations once the MMU can fetch them.
  * The single worker owns cache/MMU commands and ready/reset counters.  guard
  * protects IRQ admission, faulted, and event latches; no waits occur under it.
@@ -183,6 +199,7 @@ struct bcm2711_v3d_hardware {
 
 int bcm2711_v3d_hardware_start(struct bcm2711_v3d *engine);
 int bcm2711_v3d_diagnostic(struct bcm2711_v3d *engine);
+int bcm2711_v3d_tfu_probe(struct bcm2711_v3d *engine, const struct bcm2711_v3d_tfu_probe_area *area);
 void bcm2711_v3d_hardware_mask(struct bcm2711_v3d *engine);
 int bcm2711_v3d_hardware_reset(struct bcm2711_v3d *engine);
 int bcm2711_v3d_hardware_pages_sync(struct bcm2711_v3d *engine, uint32_t address, uint64_t bytes);

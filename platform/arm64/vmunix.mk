@@ -206,7 +206,7 @@ ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/readout.c src/drivers/gpu/bcm2711/list.c \
 	src/drivers/gpu/bcm2711/v3d.c src/drivers/gpu/bcm2711/v3d-power.c \
 	src/drivers/gpu/bcm2711/v3d-hardware.c src/drivers/gpu/bcm2711/mmu.c \
-	src/drivers/gpu/bcm2711/v3d-job.c src/drivers/gpu/bcm2711/v3d-diagnostic.c \
+	src/drivers/gpu/bcm2711/v3d-job.c src/drivers/gpu/bcm2711/v3d-diagnostic.c src/drivers/gpu/bcm2711/v3d-tfu-probe.c \
 	src/drivers/gpu/bcm2711/cl.c src/drivers/gpu/bcm2711/qpu.c src/drivers/gpu/bcm2711/buffer.c \
 	src/drivers/gpu/bcm2711/shader.c src/drivers/gpu/bcm2711/shader-analyze.c \
 	src/drivers/gpu/bcm2711/shader-lower.c src/drivers/gpu/bcm2711/shader-output.c src/drivers/gpu/bcm2711/shader-schedule.c \

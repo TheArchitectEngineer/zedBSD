@@ -42,10 +42,19 @@ struct bcm2711_v3d_cl_job {
 	bool clean_output;
 };
 
-/* TFU input/output spans and register fields come from the private image lowering. */
+/*
+ * TFU input/output spans and register fields come from the private image lowering.
+ *
+ * chroma and u_plane are the second and third input planes of a YUV input;
+ * zero leaves the register zero, as a packed or single-plane input has it.
+ */
 struct bcm2711_v3d_tfu_job {
 	uint32_t input;
 	uint32_t input_bytes;
+	uint32_t chroma;
+	uint32_t chroma_bytes;
+	uint32_t u_plane;
+	uint32_t u_plane_bytes;
 	uint32_t output;
 	uint32_t output_bytes;
 	uint32_t output_format;

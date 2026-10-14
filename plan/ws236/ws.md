@@ -47,6 +47,7 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 | [ws236-p008](phase008/phase.md) | 再生の速さ: Video.mp4 を遅れなく（in-progress、P3、2026-10-15 ユーザー「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」）: VPU へ複数の unit を重ねる pipeline、place・readback の短縮 | 8 LW | p006 |
 | [ws236-p009](phase009/phase.md) | decoder の出力を GPU・HVS で直に使う道の調べと設計（設計済み、実装はユーザーの判断待ち、P3、2026-10-15 ユーザー「デコーダの出力は、おそらくVideoCore でテクスチャとして使える形式なのでは？それを特別に利用したらどうですか？」）: 推す順は 案 0（depth 1.0 の直し、libvulkan の私的な fence が decode を 1 枚ずつにしている見当、0.5〜2 LW）→ 案 1（videoplayer が NV12 の image を V3D で sample して描く、R8・RG8 の texture と TFU、20〜31 LW）→ 後で案 2（HVS の overlay に NV12） | 調べ 2 LW | p008 |
 | [ws236-p010](phase010/phase.md) | decode の depth（案 0、in-progress、P3、2026-10-15、実装・host 試験・build 済み、T2 の Pi 実機待ち）: libvulkan の私的な fence で decode の execution が frame まで queue を塞いでいた。kernel の executor に settling list を足し、execution は送った時点で queue を離れ、fence の signal と自分の marker だけを frame の後にした（libvulkan・libmedia は変えない） | 2 LW | p009 |
+| [ws236-p011](phase011/phase.md) | 案 1: decoder の出力を GPU の texture に、表示を GPU で（in-progress、P3、2026-10-16 ユーザーの判断「案 1 を WS236 の Phase で」）: a. TFU の probe（R8・RG8 の UIF、YUV 入力）、b. VPU の bulk を NV12 の image へ直に、c. V3D の R8・RG8 の texture と plane の view、d. libmedia の GPU の picture、e. videoplayer の描画を Vulkan に | 20〜31 LW | p009・p010 |
 | [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
 
 合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。

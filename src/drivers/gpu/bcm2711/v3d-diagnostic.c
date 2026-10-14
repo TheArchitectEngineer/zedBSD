@@ -36,6 +36,7 @@ static int run_noop(struct bcm2711_v3d *engine);
 static int run_clear(struct bcm2711_v3d *engine);
 static int run_tfu(struct bcm2711_v3d *engine);
 static int run_tfu_uif(struct bcm2711_v3d *engine, uint32_t width, uint32_t height, uint32_t pitch, uint32_t offset);
+static int run_tfu_probe(struct bcm2711_v3d *engine);
 static int run_timeout(struct bcm2711_v3d *engine);
 static uint32_t pattern_pixel(uint32_t x, uint32_t y);
 
@@ -53,6 +54,7 @@ bcm2711_v3d_diagnostic(
 	int reset_error;
 	int retired;
 	int converted;
+	bool probe;
 
 	/* Honors the ordinary native stop before any diagnostic memory publication. */
 	allowed = bcm2711_stage_allowed(BCM2711_FAMILY_V3D, "V7");
@@ -130,6 +132,17 @@ bcm2711_v3d_diagnostic(
 		} else {
 			bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU UIF unavailable %d; CPU conversion", converted);
 		}
+	}
+
+	/*
+	 * The unit's probe runs only when the boot line asks for it
+	 * (v3d.tfu_probe=1).  It logs each trial and resets the engine after one
+	 * that faults; only a failed reset fails the diagnostic.
+	 */
+	if (error == 0) {
+		probe = bcm2711_stage_tfu_probe();
+		if (probe)
+			error = run_tfu_probe(engine);
 	}
 
 	/* Intentional timeout occurs before client registration, with one retained boot owner. */
@@ -235,6 +248,33 @@ run_tfu(
 	bcm2711_stage_mark(BCM2711_FAMILY_V3D, "V9 TFU IRQ %x all 64 tiled pixels", result.hub_events);
 
 	/* Succeeded: CPU visibility and raster-to-tiled transfer agree for every pattern pixel. */
+	return 0;
+}
+
+/* Lends the diagnostic run's raster and conversion intervals to the unit's probe. */
+static int
+run_tfu_probe(
+	struct bcm2711_v3d *engine)
+{
+	struct bcm2711_v3d_tfu_probe_area area;
+	uint8_t *storage;
+	int error;
+
+	/* The raster interval is the input and the conversion interval the output. */
+	storage = engine->hardware.diagnostic->address;
+	area.input = storage + DIAGNOSTIC_TARGET_OFFSET;
+	area.input_address = DIAGNOSTIC_ADDRESS + DIAGNOSTIC_TARGET_OFFSET;
+	area.input_bytes = DIAGNOSTIC_TFU_OFFSET - DIAGNOSTIC_TARGET_OFFSET;
+	area.output = storage + DIAGNOSTIC_TFU_OFFSET;
+	area.output_address = DIAGNOSTIC_ADDRESS + DIAGNOSTIC_TFU_OFFSET;
+	area.output_bytes = DIAGNOSTIC_BYTES - DIAGNOSTIC_TFU_OFFSET;
+
+	/* Runs every trial; a failed reset after a faulting one is the only failure. */
+	error = bcm2711_v3d_tfu_probe(engine, &area);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every trial ran and logged its outcome. */
 	return 0;
 }
 
