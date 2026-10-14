@@ -77,3 +77,8 @@ execution の「queue の上での終わり」と「終わり（fence の signal
 - render-worker.c は V3D の全ての仕事（compositor を含む）の executor。settle を持たない execution の道は前と同じに保ったが、Pi の desktop 全体の回帰（compositor の描画・窓の操作）は実機で見る必要がある（上の 5 の再生中の画面と、`v3d: execution failed` の無いこと）。
 - `vkQueueWaitIdle` の空の submit は飛んでいる全ての decode を待つ。後の submission の fence は前の submission の decode を待たない（Vulkan の仕様より緩い、p008 からの約束。GPU の command・probe は影響を受けない）。
 - 表示の道（videoplayer の CPU の NV12→RGB と縮小、約 60 ms／枚）は案 1（ユーザーの判断待ち）。この Phase だけでは Video.mp4 の late は大きくは減らない見込み。
+
+## T2 の T1-668（2026-10-16）: 未実施（Pi が戻らない）
+
+- main 1872c0d84 の kernel（cksum 1299747588 8216576、warning 0）を入れて reboot した後、Pi が ping・ssh とも 10 分以上戻らない。手順 2〜6 は未実施。前の kernel は Pi の /root/vmunix.pre-t1-668（T1-663 の kernel、cksum 3938144144）。結果 [results-20261016-t1-668.md](../../agents/T2/results-20261016-t1-668.md)。
+- 次: ユーザーに Pi の電源の入れ直しと画面の写真を頼む。戻らなければ SD の FAT の /boot/boot0/vmunix を前の kernel に戻す（Pi の上では /root にあるので、SD を host で読む必要がある）。
