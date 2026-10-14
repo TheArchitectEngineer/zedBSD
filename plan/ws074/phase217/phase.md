@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1196-i01 結果（2026-10-14 14:08 JST）
+
+Event ws074-p217-q1196-partial-clear-20261014: [証拠](evidence/20261014-q1196/README.md)。固定012の親/子frame・all-auto insetを水平LTR/RTLと縦lr/rl Grid先頭子の独立4矩形で確認。水平親は縦inline経路拒否と静的X、縦親はstatic Y/Xの別問題。固定WPT raw初回失敗も維持。次は水平親のframed/all-auto縦子を有限修正する。q1196読取部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1196-i01 有限部分範囲（2026-10-14 14:07 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（15:37 JSTまで）に適用。固定non-static012の親Grid非対称margin/border/padding・子複合frame・全auto insetについて、水平LTR/RTLと縦lr/rl各先頭子を独立最小ページでChromium/ブラウザ矩形比較し、raw初回失敗と`inline_vertical_absolute_grid`/`grid_static_position`の計2経路を照合。次の有限実装候補・回帰境界を記録。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1195-i01 結果（2026-10-14 14:06 JST）
 
 Event ws074-p217-q1195-partial-clear-20261014: [証拠](evidence/20261014-q1195/README.md)。固定水平LTR/RTL Gridのmargin/border/padding複合縦absolute3配置に縦inline経路を適用。独立6矩形Chromium一致、固定non-static011 whole PASS/4 callback PASS、旧007–010、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1195有限部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
