@@ -1,0 +1,178 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_verified": true,
+  "checkpoint_verified": {
+    "0": {
+      "checkpoint_rows": 128,
+      "gzip_raw_reports": 128
+    },
+    "128": {
+      "checkpoint_rows": 128,
+      "gzip_raw_reports": 128
+    },
+    "256": {
+      "checkpoint_rows": 128,
+      "gzip_raw_reports": 128
+    },
+    "384": {
+      "checkpoint_rows": 118,
+      "gzip_raw_reports": 118
+    }
+  },
+  "gzip_raw_verified": true,
+  "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586",
+  "metadata_commit": "018c06b2c0fae50400c71585c73b7f238a2d029a",
+  "old": {
+    "outcomes": {
+      "fail": 344,
+      "pass": 158
+    },
+    "subtest_status": {
+      "0": 5195,
+      "1": 5810
+    }
+  },
+  "new": {
+    "outcomes": {
+      "fail": 319,
+      "pass": 183
+    },
+    "subtest_status": {
+      "0": 5245,
+      "1": 5760
+    }
+  },
+  "transitions": {
+    "fail->pass": 25
+  },
+  "changed_ids": [
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-003.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-005.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-006.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-007.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-008.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-009.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-010.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-011.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-003.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-005.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-006.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-007.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-008.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-009.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-010.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-011.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-003.html",
+      "before": "fail",
+      "after": "pass"
+    }
+  ],
+  "regressions": [],
+  "selected_order_and_callback_names_verified": true
+}

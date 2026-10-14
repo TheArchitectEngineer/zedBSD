@@ -2,6 +2,14 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
+## q1172-i01 有限部分範囲（2026-10-14 12:57 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:27 JSTまで）に適用。q1160と同一固定Grid testharness502 ID・WPT/manifest/フォント/localhost HTTP/settle5s/timeout20sで4×最大128 shardを再測定し、q1160 baseline158 PASS/344 FAILとのID・whole/subtest遷移、未出力・後退を照合。raw callback gzip/checkpointを保存。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。未完なら未実行を明示してuncleared。p189/p173 whole基準外。[Guardrail](../../guardrail.md)とrunner近傍規則適用。
+
+## q1172-i01 結果（2026-10-14 13:03 JST）
+
+Event ws074-p189-q1172-partial-clear-20261014: [証拠](evidence/20261014-q1172/README.md)。固定Grid502同条件4 shard exit0、ID順/全callback名とraw gzip/checkpoint502照合。q1160の158 PASS/344 FAIL→183 PASS/319 FAIL、25 whole・50 subtest改善、旧PASS/subtest後退0。増分はpositioned列/行軸001–011計22件とmargin/border/padding001–003計3件。q1172部分cleared、p189全1,783件とp173全3,805件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。
+
 ## q1160-i01 有限部分範囲（2026-10-14 12:20 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:50 JSTまで）に適用。q1154固定Grid502と同じID/WPT/metadata/runner/font/5秒settle/20秒processで4 bounded shardを全再測定。ID/hash/checkpoint/gzip rawを照合し、whole/subtest遷移・旧PASS後退・残FAILを分類。読取のみ、browser/runner/WPT/ABI/`plan/master.md`/Acid変更なし。p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
