@@ -711,4 +711,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-639 | Q1（BUG-312 の init の fsck と /sbin/fsck、P2 19cd17a73〜0d6b1dd94） | plan/bugs/BUG-312.md の「T1 への依頼」の T-A（root-powercut.sh で 20 回の電源断、毎回 rw、最後に UFS OK）と T-B（damage-root.py → RO → init の fsck → reboot → rw、/lost+found）。T-C（Pi 4）はユーザーの確認待ち | 未実行 | — | — |
 
 
-- 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。
+- 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。| T1-639 | Q1（WS037 R6・R7・R7g・R7 の P8a、P1） | plan/ws037/phase005・006 の末尾の手順 | PASS（R6・R7・R7g・R7 P8a とも。P8a は lit 0 で head の値の照合は未実施。実機の RTX 2070 の VFIO guest、約 40 分） | results-20261015-nvrtx-r6r7.md | — |
