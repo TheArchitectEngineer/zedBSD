@@ -12,11 +12,11 @@
 
 <!-- master:agents:start -->
 - **2026-10-14（Q1）: N=3（P1・P2・P3）＋T1**（ユーザー「これ以上ベータ2に機能追加しない」）。残りの実装と担当は [beta2.md](beta2.md) の「ベータ2 の残りの工数」。
-  - P1（新しい世代）: BUG-309（PC-9821 Ra43 で pc98 の disk が起動の disk と認識されない）。
+  - P1: 空き（BUG-309 の直しは merge 済み、T1-617 とユーザーの実機待ち）。
   - P2: 空き（BUG-307 の直しは merge 済み、T1-615 待ち）。
   - P3: 空き（BUG-306 の一部の直しと診断の log は merge 済み、T1-613 待ち）。
   - T1（新しい世代）: T1-615（BUG-307 の fsync）。
-  - T2: 空き（T1-616 PASS）。
+  - T2（新しい世代）: T1-617（pc98 の QEMU の起動、BUG-309）。
   - P3: 空き（ws217-p004 cleared）。
   - WS074 は Codex の別のセッションが main の checkout で作業中（commit しない）。
 <!-- master:agents:end -->
@@ -37,7 +37,7 @@
 
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・plan/beta2.md・この block・[WS197](ws197/ws.md) の先頭を読む。サブエージェントは、ユーザーが次の仕事を選んでから新しい世代で起動する。
-2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-310、WS233、q984、T1-617。次の KL_VERSION は 94（93 は ws217-p004 の回転の API、2026-10-14。WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
+2. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-310、WS233、q984、T1-618。次の KL_VERSION は 94（93 は ws217-p004 の回転の API、2026-10-14。WS210 の GPU canvas 以降。92 は p014 F2.2〜 の KL_PACING_FRAME・kl_window_frame_wait、bfab09084、91 は F2.1 の motion の合流、90 は F1・F3、89 は kl_ui_hit_still、2026-10-12）。
 3. 日程: 10/13 凍結の目標 → 10/14 RC・最終回帰（WS129 p006）→ 10/16 公開の準備（WS129 p008）、公開はユーザーの指示。Vulkan Video は既定で ON（release も）。
 <!-- master:next:end -->
 
