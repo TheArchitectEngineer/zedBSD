@@ -4227,6 +4227,12 @@ cascade_tracks(
 			tracks[index].minimum = cascade_length(engine, &declared->minimum, style->font_size);
 			if (tracks[index].minimum.unit == CSS_UNIT_PX && tracks[index].minimum.value < 0)
 				tracks[index].minimum.value = 0;
+
+			/* A maximum below the minimum is the minimum. */
+			if (declared->kind == CSS_TRACK_LENGTH && tracks[index].size.unit == CSS_UNIT_PX &&
+			    tracks[index].minimum.unit == CSS_UNIT_PX &&
+			    tracks[index].size.value < tracks[index].minimum.value)
+				tracks[index].size = tracks[index].minimum;
 		}
 	}
 
