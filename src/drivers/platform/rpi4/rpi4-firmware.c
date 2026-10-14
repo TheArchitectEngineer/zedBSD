@@ -78,13 +78,22 @@
 
 /*
  * The tags of the firmware's GPIO expander (Raspberry Pi firmware wiki,
- * "Mailbox property interface").  Each request starts with the GPIO's
- * number; the firmware overwrites that word with zero when it handled the
- * request, so a nonzero first word in the answer is a failure.
+ * "Mailbox property interface"; the configuration tags and the layouts of
+ * FreeBSD's bcm2835_firmware.h, BSD-2-Clause).  Each request starts with
+ * the GPIO's number; the firmware overwrites that word with zero when it
+ * handled the request, so a nonzero first word in the answer is a failure.
+ *
+ * The firmware handles the two setting tags but leaves their tag code as
+ * the request wrote it, zero, without the answered bit and the length
+ * (BUG-311; FreeBSD's bcm2835_mbox.c works around the same: "When setting
+ * the GPIO config or state the firmware doesn't set tag->val_len
+ * correctly").  read_answer() takes such an answer as a whole value
+ * buffer; the status word still tells success from failure.
  */
 #define FIRMWARE_TAG_GET_GPIO_STATE	0x00030041U
 #define FIRMWARE_TAG_SET_GPIO_STATE	0x00038041U
 #define FIRMWARE_TAG_GET_GPIO_CONFIG	0x00030043U
+#define FIRMWARE_TAG_SET_GPIO_CONFIG	0x00038043U
 
 /* The expander's lines are GPIO 128 and up in the firmware's numbering. */
 #define FIRMWARE_GPIO_EXPANDER_BASE	128U
@@ -99,6 +108,13 @@
  */
 #define FIRMWARE_GPIO_STATE_WORDS	2U
 #define FIRMWARE_GPIO_CONFIG_WORDS	5U
+
+/*
+ * The value words of a configuration change: the GPIO, the direction, the
+ * polarity, whether termination is on, whether it pulls up, and the level
+ * an output starts at.
+ */
+#define FIRMWARE_GPIO_SET_CONFIG_WORDS	6U
 
 /*
  * The bytes an answer must hold: the status word alone for a change, and
@@ -173,6 +189,9 @@ static int post_request(void);
 static int wait_mailbox(unsigned status_offset, uint32_t busy_bit);
 static int read_answer(uint32_t *values, unsigned capacity, uint32_t *answered);
 static int expander_gpio(enum drv_rpi4_firmware_gpio line, uint32_t *gpio);
+static int read_gpio_config(uint32_t gpio, uint32_t *config);
+static int set_gpio_output(uint32_t gpio, uint32_t polarity, int state);
+static int set_tag_without_length(uint32_t tag);
 
 /*
  * Finds the mailbox in the device tree and prepares the request buffer.
@@ -426,6 +445,7 @@ drv_rpi4_firmware_set_gpio(
 	int state)
 {
 	uint32_t values[FIRMWARE_GPIO_STATE_WORDS];
+	uint32_t config[FIRMWARE_GPIO_CONFIG_WORDS];
 	uint32_t answered;
 	uint32_t gpio;
 	int error;
@@ -439,7 +459,22 @@ drv_rpi4_firmware_set_gpio(
 	if (error != 0)
 		return error;
 
-	/* Asks the firmware to drive the line. */
+	/* Reads whether the line is an output; a state change does not drive an input. */
+	error = read_gpio_config(gpio, config);
+	if (error != 0)
+		return error;
+
+	/* An input is made an output at the new level, keeping its polarity (as an output's direction change does). */
+	if (config[1] != FIRMWARE_GPIO_DIRECTION_OUT) {
+		error = set_gpio_output(gpio, config[2], state);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the line is an output at the new level. */
+		return 0;
+	}
+
+	/* Asks the firmware to drive the output. */
 	values[0] = gpio;
 	values[1] = (uint32_t)state;
 	answered = 0;
@@ -475,7 +510,6 @@ drv_rpi4_firmware_get_gpio_direction(
 	enum drv_rpi4_firmware_gpio_direction *direction)
 {
 	uint32_t values[FIRMWARE_GPIO_CONFIG_WORDS];
-	uint32_t answered;
 	uint32_t gpio;
 	int error;
 
@@ -488,28 +522,10 @@ drv_rpi4_firmware_get_gpio_direction(
 	if (error != 0)
 		return error;
 
-	/* Asks for the line's configuration; only the GPIO goes with the question. */
-	kern_memset(values, 0, sizeof(values));
-	values[0] = gpio;
-	answered = 0;
-	error = drv_rpi4_firmware_property(
-		FIRMWARE_TAG_GET_GPIO_CONFIG,
-		values,
-		1U,
-		FIRMWARE_GPIO_CONFIG_WORDS,
-		&answered);
+	/* Reads the line's configuration. */
+	error = read_gpio_config(gpio, values);
 	if (error != 0)
 		return error;
-
-	/* Refuses an answer without the direction in it. */
-	if (answered < FIRMWARE_GPIO_ANSWER_BYTES)
-		return EIO;
-
-	/* Refuses an answer whose status word says the firmware failed. */
-	if (values[0] != FIRMWARE_GPIO_STATUS_OK) {
-		kern_logf("rpi4-firmware: GPIO %u configuration not read (%x)\n", gpio, values[0]);
-		return EIO;
-	}
 
 	/* Names the firmware's direction; any other code is not one it defines. */
 	switch (values[1]) {
@@ -753,6 +769,7 @@ read_answer(
 	uint32_t tag_code;
 	unsigned words;
 	unsigned index;
+	int without_length;
 
 	/* Drops any cached copy, so the reads see what the firmware wrote. */
 	kern_dcache_invalidate_range(message, message[PROPERTY_WORD_SIZE]);
@@ -765,8 +782,13 @@ read_answer(
 		return EIO;
 	}
 
-	/* Refuses a tag the firmware did not recognize. */
+	/* A setting tag of the GPIO expander comes back with its tag code untouched: the whole value buffer is its answer. */
 	tag_code = message[PROPERTY_WORD_TAG_CODE];
+	without_length = set_tag_without_length(message[PROPERTY_WORD_TAG]);
+	if (without_length && tag_code == PROPERTY_REQUEST)
+		tag_code = PROPERTY_TAG_ANSWERED | message[PROPERTY_WORD_CAPACITY];
+
+	/* Refuses a tag the firmware did not recognize. */
 	if ((tag_code & PROPERTY_TAG_ANSWERED) == 0) {
 		kern_logf("rpi4-firmware: tag %x not supported\n", message[PROPERTY_WORD_TAG]);
 		return ENOTSUP;
@@ -808,5 +830,109 @@ expander_gpio(
 	*gpio = FIRMWARE_GPIO_EXPANDER_BASE + (uint32_t)line;
 
 	/* Succeeded: gpio holds the line's number in the firmware's numbering. */
+	return 0;
+}
+
+/*
+ * Reads an expander line's configuration: the status word, the direction,
+ * the polarity, the termination and its pull, in that order.
+ */
+static int
+read_gpio_config(
+	uint32_t gpio,
+	uint32_t *config)
+{
+	uint32_t answered;
+	int error;
+
+	/* Asks for the line's configuration; only the GPIO goes with the question. */
+	kern_memset(config, 0, FIRMWARE_GPIO_CONFIG_WORDS * sizeof(config[0]));
+	config[0] = gpio;
+	answered = 0;
+	error = drv_rpi4_firmware_property(
+		FIRMWARE_TAG_GET_GPIO_CONFIG,
+		config,
+		1U,
+		FIRMWARE_GPIO_CONFIG_WORDS,
+		&answered);
+	if (error != 0)
+		return error;
+
+	/* Refuses an answer without the direction in it. */
+	if (answered < FIRMWARE_GPIO_ANSWER_BYTES)
+		return EIO;
+
+	/* Refuses an answer whose status word says the firmware failed. */
+	if (config[0] != FIRMWARE_GPIO_STATUS_OK) {
+		kern_logf("rpi4-firmware: GPIO %u configuration not read (%x)\n", gpio, config[0]);
+		return EIO;
+	}
+
+	/* Succeeded: config holds the line's configuration. */
+	return 0;
+}
+
+/*
+ * Makes an expander line an output at a level, with the polarity it had
+ * and no termination.
+ */
+static int
+set_gpio_output(
+	uint32_t gpio,
+	uint32_t polarity,
+	int state)
+{
+	uint32_t values[FIRMWARE_GPIO_SET_CONFIG_WORDS];
+	uint32_t answered;
+	int error;
+
+	/* The new configuration: an output at the level, the old polarity, no termination. */
+	values[0] = gpio;
+	values[1] = FIRMWARE_GPIO_DIRECTION_OUT;
+	values[2] = polarity;
+	values[3] = 0U;
+	values[4] = 0U;
+	values[5] = (uint32_t)state;
+	answered = 0;
+	error = drv_rpi4_firmware_property(
+		FIRMWARE_TAG_SET_GPIO_CONFIG,
+		values,
+		FIRMWARE_GPIO_SET_CONFIG_WORDS,
+		FIRMWARE_GPIO_SET_CONFIG_WORDS,
+		&answered);
+	if (error != 0)
+		return error;
+
+	/* Refuses an answer without its status word. */
+	if (answered < FIRMWARE_GPIO_STATUS_BYTES)
+		return EIO;
+
+	/* Refuses an answer whose status word says the firmware failed. */
+	if (values[0] != FIRMWARE_GPIO_STATUS_OK) {
+		kern_logf("rpi4-firmware: GPIO %u not made an output (%x)\n", gpio, values[0]);
+		return EIO;
+	}
+
+	kern_logf("rpi4-firmware: GPIO %u made an output at level %d\n", gpio, state);
+
+	/* Succeeded: the line is an output at the level. */
+	return 0;
+}
+
+/*
+ * Reports nonzero for a GPIO expander tag whose answer the firmware leaves
+ * without the answered bit and the length (the two setting tags).
+ */
+static int
+set_tag_without_length(
+	uint32_t tag)
+{
+	/* The state and the configuration changes. */
+	if (tag == FIRMWARE_TAG_SET_GPIO_STATE)
+		return 1;
+	if (tag == FIRMWARE_TAG_SET_GPIO_CONFIG)
+		return 1;
+
+	/* Succeeded: every other tag reports its answer. */
 	return 0;
 }

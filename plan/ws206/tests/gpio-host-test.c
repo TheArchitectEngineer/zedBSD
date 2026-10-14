@@ -64,6 +64,7 @@
 #define TAG_GET_GPIO_STATE	0x00030041U
 #define TAG_SET_GPIO_STATE	0x00038041U
 #define TAG_GET_GPIO_CONFIG	0x00030043U
+#define TAG_SET_GPIO_CONFIG	0x00038043U
 #define EXPANDER_BASE		128U
 
 /* How many CPUs the smp scenario plays and how many changes each makes. */
@@ -76,7 +77,9 @@ enum answer_mode {
 	ANSWER_STATUS_FAILED,
 	ANSWER_SHORT,
 	ANSWER_EMPTY,
-	ANSWER_BAD_DIRECTION
+	ANSWER_BAD_DIRECTION,
+	ANSWER_SET_LENGTH,
+	ANSWER_SETS_IGNORED
 };
 
 /* One CPU's part in the smp scenario. */
@@ -409,17 +412,36 @@ check_expander(void)
 	CHECK(error == 0);
 	CHECK(state == 0);
 
-	/* Driving WL_ON low sends GPIO 129 and level 0, and the model holds it. */
+	/*
+	 * Driving WL_ON low while it is an input reads its configuration and
+	 * makes it an output at level 0 with SET_GPIO_CONFIG; the firmware
+	 * answers a setting tag without the answered bit (BUG-311), which is
+	 * taken as an answer.
+	 */
+	expander_direction[1] = 0;
 	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 0);
+	CHECK(error == 0);
+	CHECK(last_tag == TAG_SET_GPIO_CONFIG);
+	CHECK(last_values[0] == EXPANDER_BASE + 1U);
+	CHECK(last_capacity == 24U);
+	CHECK(expander_direction[1] == 1U);
+	CHECK(expander_level[1] == 0);
+
+	/* Driving the output high sends GPIO 129 and level 1 with SET_GPIO_STATE. */
+	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 1);
 	CHECK(error == 0);
 	CHECK(last_tag == TAG_SET_GPIO_STATE);
 	CHECK(last_values[0] == EXPANDER_BASE + 1U);
-	CHECK(last_values[1] == 0);
-	CHECK(expander_level[1] == 0);
-	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 1);
-	CHECK(error == 0);
 	CHECK(last_values[1] == 1U);
+	CHECK(last_capacity == 8U);
 	CHECK(expander_level[1] == 1U);
+
+	/* A firmware that does set the answered bit on a change is taken as well. */
+	answer_mode = ANSWER_SET_LENGTH;
+	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 0);
+	CHECK(error == 0);
+	CHECK(expander_level[1] == 0);
+	answer_mode = ANSWER_NORMAL;
 
 	/* The direction is read with one request word in a five-word buffer. */
 	expander_direction[1] = 1U;
@@ -434,7 +456,7 @@ check_expander(void)
 	CHECK(error == 0);
 	CHECK(direction == DRV_RPI4_FIRMWARE_GPIO_INPUT);
 
-	/* A nonzero status word in the answer is a failure for all three. */
+	/* A nonzero status word in the answer is a failure for all three (a change fails at its configuration question). */
 	answer_mode = ANSWER_STATUS_FAILED;
 	error = drv_rpi4_firmware_get_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, &state);
 	CHECK(error == EIO);
@@ -443,14 +465,14 @@ check_expander(void)
 	error = drv_rpi4_firmware_get_gpio_direction(DRV_RPI4_FIRMWARE_GPIO_WL_ON, &direction);
 	CHECK(error == EIO);
 
-	/* A question answered with the status word alone lacks its answer; a change does not. */
+	/* A question answered with the status word alone lacks its answer, also the one a change asks first. */
 	answer_mode = ANSWER_SHORT;
 	error = drv_rpi4_firmware_get_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, &state);
 	CHECK(error == EIO);
 	error = drv_rpi4_firmware_get_gpio_direction(DRV_RPI4_FIRMWARE_GPIO_WL_ON, &direction);
 	CHECK(error == EIO);
 	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 1);
-	CHECK(error == 0);
+	CHECK(error == EIO);
 
 	/* An answer without even the status word is a failure. */
 	answer_mode = ANSWER_EMPTY;
@@ -462,9 +484,18 @@ check_expander(void)
 	error = drv_rpi4_firmware_get_gpio_direction(DRV_RPI4_FIRMWARE_GPIO_WL_ON, &direction);
 	CHECK(error == EIO);
 
-	/* Every accepted call posted exactly one request. */
+	/* A change the firmware did not handle leaves the GPIO in the status word: a failure, and the level stays. */
+	answer_mode = ANSWER_SETS_IGNORED;
+	expander_level[1] = 0;
+	error = drv_rpi4_firmware_set_gpio(DRV_RPI4_FIRMWARE_GPIO_WL_ON, 1);
+	CHECK(error == EIO);
+	CHECK(last_tag == TAG_SET_GPIO_STATE);
+	CHECK(expander_level[1] == 0);
+	answer_mode = ANSWER_NORMAL;
+
+	/* Every accepted call posted its requests: one each, two for a change. */
 	posted = requests_posted;
-	CHECK(posted == 15U);
+	CHECK(posted == 21U);
 }
 
 /* Runs the threads that map the block and change shared registers at once. */
@@ -579,6 +610,7 @@ answer(
 {
 	uint32_t gpio;
 	uint32_t tag;
+	int setting;
 
 	CHECK((request & 0xfU) == 8U);
 	CHECK((request & 0x3ffffff0U) == (uint32_t)BUFFER_PHYSICAL);
@@ -596,14 +628,23 @@ answer(
 
 	/* Handles the request and writes the answer over the request's words. */
 	buffer[1] = 0x80000000U;
+	setting = 0;
 	if (tag == TAG_GET_GPIO_STATE) {
 		CHECK(buffer[3] == 8U);
 		buffer[6] = expander_level[gpio - EXPANDER_BASE];
 		buffer[4] = 0x80000000U | 8U;
 	} else if (tag == TAG_SET_GPIO_STATE) {
 		CHECK(buffer[3] == 8U);
-		expander_level[gpio - EXPANDER_BASE] = buffer[6];
-		buffer[4] = 0x80000000U | 8U;
+		setting = 1;
+		if (answer_mode != ANSWER_SETS_IGNORED)
+			expander_level[gpio - EXPANDER_BASE] = buffer[6];
+	} else if (tag == TAG_SET_GPIO_CONFIG) {
+		CHECK(buffer[3] == 24U);
+		setting = 1;
+		if (answer_mode != ANSWER_SETS_IGNORED) {
+			expander_direction[gpio - EXPANDER_BASE] = buffer[6];
+			expander_level[gpio - EXPANDER_BASE] = buffer[10];
+		}
 	} else {
 		CHECK(tag == TAG_GET_GPIO_CONFIG);
 		CHECK(buffer[3] == 20U);
@@ -612,6 +653,22 @@ answer(
 		buffer[8] = 0;
 		buffer[9] = 0;
 		buffer[4] = 0x80000000U | 20U;
+	}
+
+	/*
+	 * The firmware leaves a setting tag's code as the request wrote it,
+	 * zero (BUG-311); a change it did not handle also keeps the GPIO in the
+	 * first word.
+	 */
+	if (setting) {
+		CHECK(buffer[4] == 0);
+		if (answer_mode == ANSWER_SETS_IGNORED) {
+			pending = request;
+			pending_count = 1;
+			return;
+		}
+		if (answer_mode == ANSWER_SET_LENGTH)
+			buffer[4] = 0x80000000U | buffer[3];
 	}
 	buffer[5] = 0;
 
