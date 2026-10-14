@@ -25,16 +25,24 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
 . plan/tools/guest/zwl-clients.sh
 
 # A point of the system bar's empty title: midway between the rightmost thing the docked window put there (its tabs,
-# strip buttons and controls take a press) and the left edge of the bar's minimize button (from the latest
-# "GLASS dock ... buttons=close,restore,minimize" line; a button is 30 wide).  The input method's indicator, when
-# installed, moves the buttons left, so a fixed offset can land on minimize (titlebar-p010 in T1-036).
+# strip buttons and controls take a press) and the first thing right of the title that takes a press: the bar's
+# minimize button (from the latest "GLASS dock ... buttons=close,restore,minimize" line; a button is 30 wide), and
+# since ws181-p009 (2026-10-08) the desktops' pill and the status pill, which sit just right of a docked window's
+# controls (the latest "GLASS desktops x=" line gives the first slot, 10 inside the pill; "GLASS status left=" the
+# status pill).  The input method's indicator, when installed, moves the buttons left, so a fixed offset can land
+# on minimize (titlebar-p010 in T1-036); the midpoint up to minimize landed on the status pill (T1-618).
 docked_free_x() {
-	guest "grep -E 'KWL TITLEBAR (strip|control) client=$(zwl_app_client $1) .* where=docked .* x=[-0-9]+ y=[-0-9]+ width=[0-9]+|KWL GLASS dock surface=' /tmp/zdesktop.log" |
-	    awk 'BEGIN { right = 150; minimize = 0 }
+	guest "grep -E 'KWL TITLEBAR (strip|control) client=$(zwl_app_client $1) .* where=docked .* x=[-0-9]+ y=[-0-9]+ width=[0-9]+|KWL GLASS dock surface=|KWL GLASS desktops x=|KWL GLASS status left=' /tmp/zdesktop.log" |
+	    awk 'BEGIN { right = 150; minimize = 0; desktops = 0; status = 0 }
 		/GLASS dock surface=/ { for (i = 1; i <= NF; i++) if ($i ~ /^buttons=/) { split(substr($i, 9), b, ","); minimize = b[3] - 15 } next }
+		/GLASS desktops x=/ { for (i = 1; i <= NF; i++) if ($i ~ /^x=/) desktops = substr($i, 3) - 10; next }
+		/GLASS status left=/ { for (i = 1; i <= NF; i++) if ($i ~ /^left=/) status = substr($i, 6) + 0; next }
 		{ x = ""; w = ""; for (i = 1; i <= NF; i++) { if ($i ~ /^x=/) x = substr($i, 3); if ($i ~ /^width=/) w = substr($i, 7) }
 		  if (x != "" && w != "" && x + w > right) right = x + w }
-		END { if (minimize > right + 2) print int((right + minimize) / 2); else print right + 40 }'
+		END { limit = minimize
+		      if (desktops > right && (limit == 0 || desktops < limit)) limit = desktops
+		      if (status > right && (limit == 0 || status < limit)) limit = status
+		      if (limit > right + 2) print int((right + limit) / 2); else print right + 40 }'
 }
 check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
 pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
