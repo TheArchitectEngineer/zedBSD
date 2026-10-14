@@ -182,6 +182,9 @@
 #define TX_RING_BYTES			8192U
 #define RX_BATCH			256U
 
+/* How many of the first bytes each way since a reset the log keeps (BUG-311). */
+#define SEEN_BYTES			24U
+
 /* Whether the PL011 carries the serial console in this build (CONFIG_RPI4_SERIAL_CONSOLE): then Bluetooth is off. */
 #ifdef RPI4_SERIAL_CONSOLE
 #define BT_UART_IS_CONSOLE		1
@@ -259,6 +262,10 @@ struct rpi4_bt {
 	uint64_t tx_bytes;
 	uint64_t quiet_dropped;
 	uint64_t self_resets;
+	uint8_t seen_in[SEEN_BYTES];
+	unsigned seen_in_count;
+	uint8_t seen_out[SEEN_BYTES];
+	unsigned seen_out_count;
 
 	struct mutex power_lock;
 
@@ -345,6 +352,7 @@ static void worker_wait(struct rpi4_bt *bt);
 static void worker_gap(struct rpi4_bt *bt);
 static void lost_step(struct rpi4_bt *bt, const char *why);
 static void log_counts(struct rpi4_bt *bt, const char *when, int only_if_moved);
+static void log_seen(struct rpi4_bt *bt);
 static int deliver(void *context, uint8_t type, const uint8_t *packet, size_t length);
 static uint32_t read_register(struct rpi4_bt *bt, uint32_t offset);
 static void write_register(struct rpi4_bt *bt, uint32_t offset, uint32_t value);
@@ -1130,6 +1138,12 @@ interrupt_handler(
 		if ((entry & UART_DR_ERRORS) != 0U)
 			bt->rx_errors++;
 		received = 1U;
+
+		/* The first bytes since the program's reset, for its log line. */
+		if (bt->seen_in_count < SEEN_BYTES)
+			bt->seen_in[bt->seen_in_count] = (uint8_t)entry;
+		if (bt->seen_in_count != ~0U)
+			bt->seen_in_count++;
 	}
 
 	/* Refills the send FIFO; the last byte in wakes the sender. */
@@ -1165,6 +1179,12 @@ fill_fifo_locked(
 		if ((flags & UART_FR_TXFF) != 0U)
 			break;
 		write_register(bt, UART_DR, bt->tx_ring[bt->tx_head]);
+
+		/* The first bytes since the program's reset, for its log line. */
+		if (bt->seen_out_count < SEEN_BYTES)
+			bt->seen_out[bt->seen_out_count] = bt->tx_ring[bt->tx_head];
+		if (bt->seen_out_count != ~0U)
+			bt->seen_out_count++;
 		bt->tx_head = (bt->tx_head + 1U) % TX_RING_BYTES;
 		bt->tx_used--;
 		bt->tx_written++;
@@ -1214,8 +1234,10 @@ begin_transition_locked(
 	bt->rx_head = 0U;
 	bt->rx_used = 0U;
 
-	/* No command was sent on the new line yet. */
+	/* No command was sent on the new line yet, and no byte seen. */
 	bt->sent_opcode_known = 0U;
+	bt->seen_in_count = 0U;
+	bt->seen_out_count = 0U;
 
 	/* A sender waiting for the old line gives up. */
 	waitq_wake_all(&bt->sender_wake);
@@ -1726,6 +1748,13 @@ bt_reset(
 	    ((flags & UART_FR_CTS) != 0U) ? "asserted" : "not asserted",
 	    ((flags & UART_FR_TXFE) != 0U) ? "empty" : "holding bytes",
 	    ((flags & UART_FR_BUSY) != 0U) ? "busy" : "idle");
+
+	/*
+	 * The bytes that went out and came in since the last reset (the first
+	 * SEEN_BYTES of each): whether the command after the first one left,
+	 * and what the controller answered (BUG-311).
+	 */
+	log_seen(bt);
 
 	/* Keeps the worker off the line. */
 	error = park_worker(bt);
@@ -2414,6 +2443,52 @@ log_counts(
 		(unsigned long long)dropped,
 		(unsigned long long)sent,
 		(unsigned long long)resets);
+}
+
+/* Logs, in hexadecimal, the first bytes that went out and came in since the last reset. */
+static void
+log_seen(
+	struct rpi4_bt *bt)
+{
+	unsigned long enabled;
+	uint8_t seen_in[SEEN_BYTES];
+	uint8_t seen_out[SEEN_BYTES];
+	unsigned in_count;
+	unsigned out_count;
+	char in_text[SEEN_BYTES * 3U + 1U];
+	char out_text[SEEN_BYTES * 3U + 1U];
+	unsigned index;
+	unsigned shown;
+
+	/* A copy of the bytes, taken under the lock. */
+	enabled = spin_lock_irqsave(&bt->lock);
+
+	in_count = bt->seen_in_count;
+	out_count = bt->seen_out_count;
+	kern_memcpy(seen_in, bt->seen_in, sizeof(seen_in));
+	kern_memcpy(seen_out, bt->seen_out, sizeof(seen_out));
+
+	spin_unlock_irqrestore(&bt->lock, enabled);
+
+	/* The bytes out, as text. */
+	out_text[0] = '\0';
+	shown = out_count;
+	if (shown > SEEN_BYTES)
+		shown = SEEN_BYTES;
+	for (index = 0; index < shown; index++)
+		(void)kern_snprintf(out_text + index * 3U, sizeof(out_text) - index * 3U, " %02x", seen_out[index]);
+
+	/* The bytes in, as text. */
+	in_text[0] = '\0';
+	shown = in_count;
+	if (shown > SEEN_BYTES)
+		shown = SEEN_BYTES;
+	for (index = 0; index < shown; index++)
+		(void)kern_snprintf(in_text + index * 3U, sizeof(in_text) - index * 3U, " %02x", seen_in[index]);
+
+	/* One line each. */
+	kern_logf("rpi4-bt: since the last reset %u bytes out:%s\n", out_count, out_text);
+	kern_logf("rpi4-bt: since the last reset %u bytes in:%s\n", in_count, in_text);
 }
 
 /*

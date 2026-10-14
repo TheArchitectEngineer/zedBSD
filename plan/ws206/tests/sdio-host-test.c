@@ -1745,6 +1745,17 @@ kern_pmem_to_kernel(
 	return tree_blob;
 }
 
+/* No monotonic counter: the host's pause falls back to kern_usleep_range, which the model checks. */
+bool
+kern_rtc_read_counter(
+	uint64_t *counter,
+	uint64_t *frequency_hz)
+{
+	*counter = 0;
+	*frequency_hz = 0;
+	return false;
+}
+
 /* A busy delay: it pays a pause the slow bus is owed, of two of its cycles. */
 void
 kern_usleep_range(
