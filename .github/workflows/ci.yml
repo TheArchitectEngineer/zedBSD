@@ -44,7 +44,14 @@ jobs:
           mkdir -p artifacts
           gzip -9 -c build/amd64/hdd-image.img > artifacts/zedbsd-rpi4.img.gz
 
-      - name: Package Kei-nightly.zip
+      - name: Build arm64
+        run: |
+          cp config/ci/config-pc98.mk config.mk
+          make -j4
+          mkdir -p artifacts
+          gzip -9 -c build/pc98/hdd-image.img > artifacts/zedbsd-pc98.img.gz
+
+      - name: Package zedbsd-qemu.zip
         # Until the base package is on the rev-0 release, a failure here leaves
         # the image release as it was.
         continue-on-error: true
@@ -52,7 +59,7 @@ jobs:
           # The Windows package (WINQ-EMU QEMU with Venus) comes from the
           # rev-0 release, verified by the SHA-256 in tools/release/kei-nightly.mk.
           make kei-nightly-zip
-          cp build/amd64/Kei-nightly.zip artifacts/Kei-nightly.zip
+          cp build/amd64/Kei-nightly.zip artifacts/zedbsd-qemu.zip
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -60,7 +67,7 @@ jobs:
           name: artifacts
           path: |
             artifacts/*.img.gz
-            artifacts/Kei-nightly.zip
+            artifacts/zedbsd-qemu.zip
 
   release:
     name: Create GitHub Release
@@ -99,11 +106,13 @@ jobs:
             
             | CPU     | Machine        | File                  | Description                                  |
             |---------|----------------|-----------------------|----------------------------------------------|
-            | Intel   | UEFI           | `zedbsd-intel.img.gz` | USB image                                    |
+            | x86_64  | UEFI           | `zedbsd-intel.img.gz` | USB image                                    |
             | Arm64   | Raspberry Pi 4 | `zedbsd-rpi4.img.gz`  | SD image                                     |
-            | Intel   | Windows        | `Kei-nightly.zip`     | NVMe image with QEMU binary. Run `boot.bat`. |
+            | i386    | NEC PC-9800    | `zedbsd-pc98.img.gz`  | CF image                                     |
+            | x86_64  | Windows        | `zedbsd-qemu.zip`     | NVMe image with QEMU binary. Run `boot.bat`. |
 
           files: |
             artifacts/zedbsd-intel.img.gz
             artifacts/zedbsd-rpi4.img.gz
-            artifacts/Kei-nightly.zip
+            artifacts/zedbsd-pc98.img.gz
+            artifacts/zedbsd-qemu.zip
