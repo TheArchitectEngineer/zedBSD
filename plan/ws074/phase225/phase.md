@@ -2,6 +2,8 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+Event ws074-p225-q1151-source-correction-20261014: [固定WPT原本の再確認](evidence/20261014-q1149/README.md)で009/013以外の6件を「全てmargin」と記した分類を訂正。010/014はmargin、011/015はborder、012/016はpadding。q1150が実装した外側寸法0の基準と固定009/013 PASSは不変。後続は外側寸法種別を明示して有限範囲を選ぶ。
+
 ## q1150-i01 有限部分範囲（2026-10-14 11:40 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:10 JSTまで）に適用。[q1149診断](evidence/20261014-q1149/README.md)のmargin無し009/013だけを対象に、vertical-lr/LTR inline-gridのdefinite content-box 250×250・gap0・2×2 implicit auto tracks・margin/border/padding0・span1・in-flow非replaced auto-size単一ASCII文字子・start/stretchに限定。論理列→物理y/行→x、内容寄与と残り空間によるauto track sizing、縦文字の解決済み列高でlayoutし、最小ページと固定009/013 whole PASS、旧001–008/縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。未対応構成fallback。WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならattempt uncleared、部分コード維持は後退検証時だけ。p225/p189/p173 wholeは範囲外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

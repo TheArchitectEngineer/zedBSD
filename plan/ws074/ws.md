@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1150](queue.md) finished / p225 bounded implicit auto-track axes。2026-10-14 11:48 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1147の134 PASS/368 FAIL、q1145比4 whole/4 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
+Queue: [q1151](queue.md) finished / p189 fixed Grid502 recensus after implicit auto tracks。2026-10-14 11:52 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1151の136 PASS/366 FAIL、q1147比2 whole/2 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p189-q1151-partial-clear-20261014: [p189](phase189/phase.md) q1151-i01全固定Grid502再測定は134→136 whole PASS、368→366 FAIL、vertical-lr stretch009/013の2 subtest改善、旧PASS・subtest後退0。[証拠](phase189/evidence/20261014-q1151/README.md)。q1149残件分類をmargin010/014・border011/015・padding012/016へ訂正。p189 wholeとp173全3,805件100%は未達、共有投影/GitHub publication保留。
 
 Event ws074-p225-q1150-partial-clear-20261014: [p225](phase225/phase.md) q1150-i01は2×2 implicit auto tracksの物理寸法寄与と縦論理軸配置を修正し、固定009/013が2/2 whole FAIL→PASS。250×250と300×240不等内容の最小ページはChromium 153と全box一致。旧WPT10件、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。[証拠](phase225/evidence/20261014-q1150/README.md)。p225 wholeはmargin variant等が残りuncleared、p173全件100%未達。共有投影/GitHub publication保留。
 

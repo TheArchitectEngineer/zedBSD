@@ -10,4 +10,4 @@ Status: finished（2026-10-14 11:35–11:38 JST）。Approval: このchatのユ�
 
 Outcome: 8件whole FAIL、初回幅は縦子期待20/実125または115、横子期待80/実125または115。旧Grid経路が縦論理列を物理xへ配置し、子を強制stretch、縦文字roomも未確定。次のmargin無し009/013の一般的auto track実装境界を定義。[証拠](../ws074/phase225/evidence/20261014-q1149/README.md)。browser/WPT/runner/ABI/Master/Acid無変更。
 
-Resume: p225の009/013を先に実装・検証し、margin variant010–012/014–016を後続。p173全3,805件100%未達。共有Queue/Master/GitHub publication pending、pushなし。
+Resume（2026-10-14 WPT原本再確認で種別訂正）: p225の009/013を先に実装・検証し、margin010/014・border011/015・padding012/016を後続。p173全3,805件100%未達。共有Queue/Master/GitHub publication pending、pushなし。

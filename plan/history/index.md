@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1150 / WS074 vertical implicit auto tracks（2026-10-14）
+## 最新: q1151 / WS074 fixed Grid502 recensus（2026-10-14）
+
+[q1151履歴](queue-q1151.md): q1150後の固定Grid502は134→136 whole PASS、2 subtest改善・後退0。増分vertical-lr stretch009/013。[証拠](../ws074/phase189/evidence/20261014-q1151/README.md)。残件のmargin/border/padding種別も訂正、共有投影/GitHub publication pending。
+
+## q1150 / WS074 vertical implicit auto tracks（2026-10-14）
 
 [q1150履歴](queue-q1150.md): 固定009/013 whole FAIL→PASS、250×250/300×240不等内容ページがChromiumと全box一致。旧WPT10件、Acid3差0維持。[証拠](../ws074/phase225/evidence/20261014-q1150/README.md)。margin variant残存、共有投影/GitHub publication pending。
 

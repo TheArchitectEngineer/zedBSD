@@ -14,7 +14,6 @@
         "125"
       ],
       "orthogonal_children": false,
-      "margins": false,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -44,7 +43,8 @@
           "width": 125,
           "height": 125
         }
-      ]
+      ],
+      "outer_edges": "none"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-010.html",
@@ -55,7 +55,6 @@
         "115"
       ],
       "orthogonal_children": false,
-      "margins": true,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -85,7 +84,8 @@
           "width": 110,
           "height": 110
         }
-      ]
+      ],
+      "outer_edges": "margin"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-011.html",
@@ -96,7 +96,6 @@
         "115"
       ],
       "orthogonal_children": false,
-      "margins": true,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -126,7 +125,8 @@
           "width": 120,
           "height": 130
         }
-      ]
+      ],
+      "outer_edges": "border"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-012.html",
@@ -137,7 +137,6 @@
         "115"
       ],
       "orthogonal_children": false,
-      "margins": true,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -167,7 +166,8 @@
           "width": 120,
           "height": 130
         }
-      ]
+      ],
+      "outer_edges": "padding"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-013.html",
@@ -178,7 +178,6 @@
         "125"
       ],
       "orthogonal_children": true,
-      "margins": false,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -208,7 +207,8 @@
           "width": 125,
           "height": 125
         }
-      ]
+      ],
+      "outer_edges": "none"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-014.html",
@@ -219,7 +219,6 @@
         "115"
       ],
       "orthogonal_children": true,
-      "margins": true,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -249,7 +248,8 @@
           "width": 110,
           "height": 110
         }
-      ]
+      ],
+      "outer_edges": "margin"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-015.html",
@@ -260,7 +260,6 @@
         "115"
       ],
       "orthogonal_children": true,
-      "margins": true,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -290,7 +289,8 @@
           "width": 120,
           "height": 130
         }
-      ]
+      ],
+      "outer_edges": "border"
     },
     {
       "test_id": "/css/css-grid/alignment/grid-self-alignment-stretch-vertical-lr-016.html",
@@ -301,7 +301,6 @@
         "115"
       ],
       "orthogonal_children": true,
-      "margins": true,
       "expected_boxes": [
         {
           "class": "firstRowFirstColumn",
@@ -331,7 +330,8 @@
           "width": 120,
           "height": 130
         }
-      ]
+      ],
+      "outer_edges": "padding"
     }
   ]
 }
