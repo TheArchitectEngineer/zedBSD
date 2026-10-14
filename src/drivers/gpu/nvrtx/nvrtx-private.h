@@ -256,6 +256,13 @@ nvrtx_stage_disp_wanted(void);
 /*
  * Reports whether the takeover is the monitor test (nvrtx.disp.test=1).
  */
+/*
+ * Reports whether the takeover shows the driver's own surface at once
+ * (nvrtx.disp.own=1) instead of the console.
+ */
+bool
+nvrtx_stage_disp_own_wanted(void);
+
 bool
 nvrtx_stage_disp_test_wanted(void);
 

@@ -33,6 +33,11 @@
  *                         (P8a) instead of taking the firmware's head over
  *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
  *                         staying up as a GPU device (P8c)
+ *   nvrtx.disp.own=1      the takeover shows the driver's own surface (the
+ *                         test's bands) at once, without the test's flip and
+ *                         waits: for a GPU the firmware's console is not on
+ *                         (a VFIO guest), so the GPU device is still
+ *                         registered (ws037-p007 D6)
  *   nvrtx.disp.test=1     the takeover shows two test surfaces of bands,
  *                         flips between them and waits 5 s at each step, so
  *                         the monitor can be watched (ws037-p006 R8b..R8d)
@@ -77,6 +82,9 @@
 /* The whole token that keeps the display takeover off, and the one that makes it a test. */
 #define STAGE_DISP_OFF_TOKEN		"nvrtx.disp=0"
 #define STAGE_DISP_TEST_TOKEN		"nvrtx.disp.test=1"
+
+/* The whole token that makes the takeover show the driver's own surfaces at once (no console on the GPU, no waits). */
+#define STAGE_DISP_OWN_TOKEN		"nvrtx.disp.own=1"
 
 /* The whole token that asks for the first compute launch (ws037-p008). */
 #define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
@@ -187,6 +195,24 @@ nvrtx_stage_disp_wanted(void)
 
 	/* The takeover runs by default. */
 	return true;
+}
+
+/*
+ * Reports whether the takeover shows the driver's own surface at once
+ * (nvrtx.disp.own=1) instead of the console.
+ */
+bool
+nvrtx_stage_disp_own_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.disp.own=1 among the boot parameters. */
+	present = stage_token_present(STAGE_DISP_OWN_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the takeover shows the console (or is the test). */
+	return false;
 }
 
 /*

@@ -391,3 +391,7 @@ VFIO の guest に netdev が無く SSH が使えないので、判定が VGA �
 | 依存 | R8b（nouveau と同じ手順）の実機 PASS |
 | 範囲 | 動作を変えない整理: nouveau の手順のままの部分を nvrtx の段（P8a・P8b・P8c）と既存の部品（disp-records・scanout・present）の形に直し、試験の語（`nvrtx.disp.test=1`）の切り分けの印を戻す。ライセンスの規則（名前・comment・構造を写さない）を確かめ直す |
 | 確かめ | build・host 試験、R8b〜R8d の再試験（kernel log の error 無し） |
+
+### ユーザーの目視（2026-10-16、T1-676 の run の中）
+
+ユーザー（原文）:「RTXで実画面にカラーバーが出ているのを目視しました。」→ `nvrtx.disp.test=1` の帯の surface が RTX の実の monitor に出た。P8b の mode set と scanout（nouveau と同じ手順の takeover）を実機の画面で確認（方式 B、rombar=1）。

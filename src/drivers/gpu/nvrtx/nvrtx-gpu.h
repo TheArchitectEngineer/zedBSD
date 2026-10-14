@@ -589,6 +589,13 @@ struct nvrtx_gpu {
 	struct nvrtx_node *node;
 	int resident;
 
+	/*
+	 * Set while the GPU counts in the kernel's hw.gpu.attaching (the
+	 * graphical login waits for its display while it does): from the start
+	 * of the worker that may register the device to the worker's end.
+	 */
+	int attach_counted;
+
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
 	/* Set just before FWSEC-FRTS runs: from then on the end of the boot tears the region down or reports it. */

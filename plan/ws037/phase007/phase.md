@@ -323,7 +323,7 @@ FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標
 
 #### T への手順（R9k、D6 の desktop。R9v が通った後）
 
-image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9k NVRTX_RUN=R9k`（main の image と同じ graphical の boot と login、`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1`、compositor の capture、keiland-shot）。QEMU は `~/nvrtx/start-rombar1-net.sh`、run の前後に host の reboot。判定は SSH（serial・console の log は使わない）。
+image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9k NVRTX_RUN=R9k`（main の image と同じ graphical の boot と login、`nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1`、compositor の capture、keiland-shot）。QEMU は `~/nvrtx/start-rombar1-net.sh`、run の前後に host の reboot。判定は SSH（serial・console の log は使わない）。
 1. 起動から 60 秒後に SSH で `dmesg | grep nvrtx` の全文（`P8c ok`・`P9w ok`、`nvrtx: vk: command N refused`・`D3 fail`・`a stage … did not compile` の有無）。
 2. SSH で `ps -ax | grep -E 'wayland|sessiond'`（compositor が動いているか）と `ls /dev/gpu*`。
 3. SSH で `keiland-shot /tmp/r9k.png` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` が合格の印、PNG を scp で host へ取り、結果の md に貼る（login の画面か desktop が描かれていること）。
@@ -351,3 +351,14 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
 - **display-events**: surface-counter=1・display-control=1、nvrtx の head 1280x1024、swapchain result=0、present 60 frames result=0、first-pixel result=0（18 ms）、`done error=0`（D5: VK_KHR_display の swapchain で RTX の display に出た）。power off/on は -13（nvrtx の power は EOPNOTSUPP の仕様、合格の外）。
 - nvrtx の error の行・`D2: the renderer faulted` は無い。
 - 判定（Q1）: D3・D5 を実機で確認。次は D6（R9k: compositor が nvrtx で desktop を描く）。
+
+### 8.12 R9k（T1-676、2026-10-16）: FAIL（sessiond が display を待たなかった）と直し
+
+- `plan/agents/T1/results-20261016-t1-676.md`（2 回とも同じ）。nvrtx は P9w ok・P8b ok・`P8c ok: gpu device registered`、refused・D3 fail・faulted は無し、`/dev/gpu0` はある。しかし compositor（greeter）も session も無く tty の login。`/var/log/sessiond.log` は `SESSIOND CONSOLE reason=no-display errno=6` と `SESSIOND CONSOLE show`、dmesg の `system: the console is shown again` は P0 の直後で P8c より前。
+- ユーザーは run の中で RTX の実の monitor に `nvrtx.disp.test=1` の帯（カラーバー）を目視した（2026-10-16、phase006 に記録）。
+- 原因: sessiond は `/dev/gpu0` が無い時、kernel の `hw.gpu.attaching`（GPU device が node へ向かう途中の数）が 0 なら待たずに console に戻す。i915 は attach で数えるが nvrtx は数えていなかった。さらに数えても、`nvrtx.disp.test=1` の待ち（5 s・5 s・3 s・3 s）は sessiond の待ちの上限 15 s を越える。
+- 直し:
+  - `nvrtx.c`・`nvrtx-gpu.h`: GSP の worker を始める時、GPU device と display が求められていれば（既定）`kern_gpu_attach_begin()`、worker の終わり（P8c の登録の後、または失敗）で `kern_gpu_attach_end()`。
+  - `stage.c`・`scanout.c`・`nvrtx-private.h`: 新しい語 `nvrtx.disp.own=1`: console が GPU に無い時（方式 B）、takeover は driver 自身の surface（test の帯）をすぐに出す（test の flip と待ちは無い）。`P8b ok: head N shows the driver's surface`。
+  - `config-amd64-nvrtx.mk`: R9k の語を `nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1` に。
+- build は warning 0。次: T1 で R9k を流し直す。sessiond.log に `SESSIOND DISPLAY waited_ms=…` が出て、greeter（compositor）が動き、keiland-shot が PNG を取れること。
