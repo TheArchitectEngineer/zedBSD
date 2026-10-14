@@ -68,3 +68,31 @@ P3 が決めた設計（上の「再開の手順」を細かくした物、未�
 11. fake hw に足す物: PLANE_SURFLIVE（読むと同じ pipe の PLANE_SURF の値）。node の host 試験 `tests/display/host-gen9-outputs-test.c`・`plan/ws237/tests/run-gen9-outputs-host-test.sh`（probe の DP・HDMI・無し、pipe と DPLL の割り当て、latency の解読、点灯・消灯の DDB の順、hotplug の変化）。
 
 残り: 上の 1〜11、`bootfb.c` のつなぎ込み（query・mode・claim・release・present・wait・events・session close・fini を id ≥ 2 で node へ）、build（warning 0）、p005、ws.md に SV7 の素の起動の段ごとの確かめの手順。
+
+## 2026-10-15 P2: node の実装（P3 の再開点の 1〜11）
+
+実装した（どれも `i915.gen9.display=modeset` 以上の時だけ働く。既定は copy のまま）:
+
+| file | 内容 |
+| --- | --- |
+| `display/gen9-outputs.[ch]`（ee0df7e11） | io の表の上の純粋な部分。<br>- PCODE の latency の解読と調整（`drv_i915_skl_wm_latency`。読みの 2 us、level 0 の +1 us、IPC の +4 us）<br>- port B〜D の hotplug と probe（DPCD が読めれば DP、無ければ GMBUS の EDID で HDMI。EDID は header を確かめ、extension は base が名指す時だけ）<br>- mode の選択（CD clock・HDMI 300 MHz・DP の link の限り、4096x2160 まで）<br>- pipe と DPLL の割り当て（panel のでない物）<br>- 点灯（灯っている pipe を昇順に WM・DDB を書き、plane 2・3 が無効なら DDB を外し、cursor と plane の SURF を書き戻して arm し vblank を待つ → 新しい pipe の WM → `drv_i915_skl_output_on`。失敗なら戻す）<br>- 消灯（`output_off` → その pipe の DDB を 0 → 残りを降順に）<br>- flip と live の surface |
+| `display/gen9-node.[ch]`（55063dd4d） | kernel の glue。<br>- MMIO の io の表、node の mutex（panel の `rd->mutex` より先に取る）<br>- 1 秒ごとの hotplug（i915 の timer queue の delayed work。変化で sequence を進めて `poll_notify()`、抜けた port は消灯して lease を終える）<br>- 外部の display（id 2〜4 = 1 + port）の query・mode・claim（buffer 2 枚を作って黒で点灯）・release・present（GPU の blit → SURF、前の flip の latch を tick ごとに SURFLIVE で待つ。割り込みは使わない）・wait・session close<br>- lease は上位 8 bit が port |
+| `display/gen9-flip.[ch]` | readout に panel の `htotal`・`port`・`dpll` を足し、`drv_i915_gen9_flip_panel()` で渡す。modeset の段では display window を外部の buffer（4096x2160 を 2 枚 × 3 出力）の分だけ大きく取る |
+| `display/bootfb.c` | flip が使える時に node を始める。query の数を 1 + 外部の数にし、id ≥ 2 と外部の lease の操作は node へ回す。events は node の sequence。session の close と fini も node へ回す |
+| `display/gen9-modeset.c`（PW2） | power well 2 の前に DMC の DC5・DC6 を止める（Linux の「DC off」well、`gen9_set_dc_state`） |
+| `intel/display-regs-gen9-modeset.h` | CURBASE、plane 2・3、DISP_ARB_CTL2 の IPC（i915_reg.h 3060・3585〜3749・4619〜4621） |
+| `tests/display/gen9-fake-hw.c` | SURFLIVE は armed の SURF を返す。EDID に header と extension 1 つ |
+
+確かめ（host と build だけ）:
+
+- `sh plan/ws237/tests/run-gen9-outputs-host-test.sh` 29/29。中身は latency、probe（DP・HDMI・generation）、B と C の点灯（pipe・DPLL、DDB の昇順）、flip、B の消灯（DDB の降順）、sink が抜けた時、pipe が足りない時、二重の点灯。
+- `run-gen9-modeset-host-test.sh` 80/80、`run-gen9-mode-host-test.sh` 71/71、`run-gen9-flip-host-test.sh` 48/48、`run-gen9-backlight-host-test.sh` 21/21。
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws237-p004 build/ws237-p004/vmunix` rc 0、warning 0。
+
+残り:
+
+- 実機（SV7 の素の起動）は WS の最後にまとめて。
+- 新しい file の規約の細部（paragraph の注記、条件の中の呼び出し、三項演算子）は p006 でまとめて直す。今の style-check の数は gen9-flip.c と同じ種類。
+- 制限:
+  - 外部の display は panel の pixel clock が測れた時だけ（DP の eDP で DPLL_CTRL2 の override がある時）。測れなければ log に `no external displays (the panel is not flipped or its pixel clock was not read)`。
+  - CD clock は変えない。HDMI 2.0 の scrambling、MST、audio、infoframe は無い。
