@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1133 / WS074 column Grid auto-placement（2026-10-14）
+## 最新: q1134 / WS074 fixed Grid502 recensus（2026-10-14）
+
+[q1134履歴](queue-q1134.md): Grid502で110→124 whole PASS。ただし旧PASS2件後退、subtest398改善/505後退を確認。全ID/hash/checkpoint/raw照合。[証拠](../ws074/phase189/evidence/20261014-q1134/README.md)。p189部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1133 / WS074 column Grid auto-placement（2026-10-14）
 
 [q1133履歴](queue-q1133.md): column/column dense配置で固定implicit-tracks6→12/12、sparse4→8/8 subtest、両whole FAIL→PASS。旧PASSとAcid3差0維持。[証拠](../ws074/phase222/evidence/20261014-q1133/README.md)。p222部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

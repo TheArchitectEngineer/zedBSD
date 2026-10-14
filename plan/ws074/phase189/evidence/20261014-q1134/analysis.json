@@ -1,0 +1,836 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_verified": true,
+  "checkpoint_verified": {
+    "q1105": {
+      "checkpoint_rows": 502,
+      "gzip_raw_reports": 502
+    },
+    "q1134": {
+      "checkpoint_rows": 502,
+      "gzip_raw_reports": 502
+    }
+  },
+  "gzip_raw_verified": true,
+  "old": {
+    "outcomes": {
+      "fail": 392,
+      "pass": 110
+    },
+    "subtest_status": {
+      "0": 5225,
+      "1": 5780
+    },
+    "fail_by_directory": {
+      "abspos": 23,
+      "alignment": 200,
+      "animation": 11,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 10,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 28,
+      "parsing": 35,
+      "placement": 4,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "new": {
+    "outcomes": {
+      "fail": 378,
+      "pass": 124
+    },
+    "subtest_status": {
+      "0": 5118,
+      "1": 5887
+    },
+    "fail_by_directory": {
+      "abspos": 24,
+      "alignment": 192,
+      "animation": 12,
+      "grid-definition": 42,
+      "grid-items": 28,
+      "grid-layout-properties.html": 1,
+      "grid-model": 9,
+      "grid-tracks-stretched-with-different-flex-factors-sum.html": 1,
+      "inheritance.html": 1,
+      "layout-algorithm": 27,
+      "parsing": 31,
+      "placement": 2,
+      "subgrid": 7,
+      "table-grid-item-005.html": 1
+    }
+  },
+  "transitions": {
+    "fail->pass": 16,
+    "pass->fail": 2
+  },
+  "changed_ids": [
+    {
+      "id": "/css/css-grid/abspos/empty-grid-001.html",
+      "before": "pass",
+      "after": "fail"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-003.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-005.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-006.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-007.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-004.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "before": "pass",
+      "after": "fail"
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-support-display-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-find-fr-size-gutters-002.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-flow-computed.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-flow-valid.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-invalid.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-invalid.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/placement/grid-auto-flow-sparse-001.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/placement/grid-auto-placement-implicit-tracks-001.html",
+      "before": "fail",
+      "after": "pass"
+    }
+  ],
+  "old_pass_regressions": [
+    {
+      "id": "/css/css-grid/abspos/empty-grid-001.html",
+      "before": "pass",
+      "after": "fail"
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "before": "pass",
+      "after": "fail"
+    }
+  ],
+  "subtest_transitions": {
+    "0->1": 505,
+    "1->0": 398
+  },
+  "subtest_changed_ids": [
+    {
+      "id": "/css/css-grid/abspos/empty-grid-001.html",
+      "transitions": {
+        "0->1": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-001.html",
+      "transitions": {
+        "0->1": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-002.html",
+      "transitions": {
+        "0->1": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-fieldset-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-fieldset-002.html",
+      "transitions": {
+        "0->1": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-fieldset-003.html",
+      "transitions": {
+        "0->1": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-001.html",
+      "transitions": {
+        "1->0": 24
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-002.html",
+      "transitions": {
+        "0->1": 24
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-003.html",
+      "transitions": {
+        "1->0": 8
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-flex-004.html",
+      "transitions": {
+        "0->1": 8
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-grid-001.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-grid-002.html",
+      "transitions": {
+        "0->1": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-grid-003.html",
+      "transitions": {
+        "0->1": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-multicol-001.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-multicol-002.html",
+      "transitions": {
+        "0->1": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-multicol-003.html",
+      "transitions": {
+        "0->1": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-overflow-001.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-overflow-002.html",
+      "transitions": {
+        "0->1": 5
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-overflow-003.html",
+      "transitions": {
+        "0->1": 5
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-table-001.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-baseline-table-003.html",
+      "transitions": {
+        "0->1": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-align-content.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-002.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-003.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-004.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-005.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-006.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-block-axis-alignment-auto-margins-007.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-002.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-005.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-007.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-009.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-011.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-012.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-013.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-014.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-015.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-016.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-container-baseline-001.html",
+      "transitions": {
+        "0->1": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-gutters-and-alignment.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-item-auto-margins-alignment.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-002.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-003.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-004.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-005.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-007.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-008.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-009.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-010.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-011.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-012.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-013.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-014.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-015.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-row-axis-alignment-positioned-items-016.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-002.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-003.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-004.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-005.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-011.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-012.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-013.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-014.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-015.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-columns-interpolation.html",
+      "transitions": {
+        "0->1": 5
+      }
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-composition.html",
+      "transitions": {
+        "0->1": 178
+      }
+    },
+    {
+      "id": "/css/css-grid/animation/grid-template-rows-interpolation.html",
+      "transitions": {
+        "0->1": 238
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/explicit-grid-size-001.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/flex-content-distribution-001.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-change-auto-repeat-tracks.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-flexible-lengths-001.html",
+      "transitions": {
+        "1->0": 8
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-grid-template-columns-rows-001.html",
+      "transitions": {
+        "1->0": 13
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-named-grid-lines-001.html",
+      "transitions": {
+        "1->0": 18
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-support-repeat-001.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-inline-template-columns-rows-resolved-values-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-flexible-lengths-001.html",
+      "transitions": {
+        "1->0": 8
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-grid-template-columns-rows-001.html",
+      "transitions": {
+        "1->0": 13
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-named-grid-lines-001.html",
+      "transitions": {
+        "1->0": 18
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-repeat-001.html",
+      "transitions": {
+        "1->0": 6
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-support-repeat-002.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-definition/grid-template-columns-rows-resolved-values-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-items/grid-minimum-size-grid-items-021.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-layout-properties.html",
+      "transitions": {
+        "1->0": 18
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-gutters-and-tracks-001.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/grid-model/grid-support-display-001.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/inheritance.html",
+      "transitions": {
+        "1->0": 8
+      }
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-find-fr-size-gutters-002.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/layout-algorithm/grid-intrinsic-track-sizes-001.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-columns-computed.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-columns-valid.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-flow-computed.html",
+      "transitions": {
+        "1->0": 7
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-flow-valid.html",
+      "transitions": {
+        "1->0": 7
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-rows-computed.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-auto-rows-valid.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-columns-rows-get-set-multiple.html",
+      "transitions": {
+        "1->0": 17
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-shorthand-serialization.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-computed-withcontent.html",
+      "transitions": {
+        "1->0": 1
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-invalid.html",
+      "transitions": {
+        "1->0": 9
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-columns-valid.html",
+      "transitions": {
+        "1->0": 10
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed-nogrid.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed-withcontent.html",
+      "transitions": {
+        "1->0": 2
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-computed.html",
+      "transitions": {
+        "1->0": 3
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-invalid.html",
+      "transitions": {
+        "1->0": 9
+      }
+    },
+    {
+      "id": "/css/css-grid/parsing/grid-template-rows-valid.html",
+      "transitions": {
+        "1->0": 10
+      }
+    },
+    {
+      "id": "/css/css-grid/placement/grid-auto-flow-sparse-001.html",
+      "transitions": {
+        "1->0": 4
+      }
+    },
+    {
+      "id": "/css/css-grid/placement/grid-auto-placement-implicit-tracks-001.html",
+      "transitions": {
+        "1->0": 12
+      }
+    },
+    {
+      "id": "/css/css-grid/placement/grid-container-change-grid-tracks-recompute-child-positions-001.html",
+      "transitions": {
+        "1->0": 4
+      }
+    }
+  ]
+}

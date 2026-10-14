@@ -2,6 +2,14 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
+## q1134-i01 有限部分範囲（2026-10-14 10:18 JST）
+
+このchatのユーザーによる全3,805件100%までの有限Queue事前承認を最大90分（11:48 JSTまで）に適用。q1105と同じ固定Grid適格testharness502 IDを同一WPT commit、localhost HTTP、固定font3種、5秒settle/20秒processで最大128件ずつ4 shard再測定。全ID/hash/checkpoint/gzip raw、q1105 whole/subtest遷移・旧PASS後退を照合し、残る共通失敗群を分類する。browser/WPT/runner/公開ABI/`plan/master.md`変更なし。90分内に完走しない場合は完了済みと未実行を分けてunclearedで止める。[Guardrail](../../guardrail.md)とrunner近傍規則を適用。p189 whole1,783件とp173全3,805件100%はこの部分受け入れに含めない。
+
+## q1134-i01 結果（2026-10-14 10:24 JST）
+
+Event ws074-p189-q1134-outcome-20261014: [証拠](evidence/20261014-q1134/README.md)。固定Grid502件は110→124 whole PASS、392→378 FAIL、no_output0。16 FAIL→PASSと2旧PASS→FAIL。subtestは5,225→5,118 PASS、5,780→5,887 FAIL（398改善/505後退）。後退505中416件はGrid行track animation2ファイル。empty-gridはmin-content幅0期待が200となる6件。全502 ID/hash/checkpoint/gzip rawを照合、4 shard正常終了。q1134-i01測定部分cleared、p189 wholeとp173全3,805件100%は未達。旧PASS後退の実装修正は次の有限Queueへ渡す。共有投影/GitHub publication保留。
+
 Status: uncleared（2026-10-14 q1013/q1014/q1015 partial cleared、whole 1,783件は未達）
 Disposition: normal
 Parent: [WS074](../ws.md)

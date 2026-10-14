@@ -1,16 +1,16 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1133 / WS074 column Grid auto-placement
+# q1134 / WS074 fixed Grid502 recensus
 
-Status: finished（2026-10-14 10:15–10:16 JST）
+Status: finished（2026-10-14 10:18–10:24 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 最大90分（11:45 JSTまで）。
+Timebox: 最大90分（11:48 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1133-i01 | [ws074-p222](phase222/phase.md) partial | `grid-auto-flow:column`と`column dense`で配置軸を転置し、既存row sparse/denseと明示位置・span・固定暗黙trackサイズを維持。最小4 mode geometry、固定implicit-tracks WPT残6 subtest、旧PASS、CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加。Grid track grammar/column sizingの別欠陥、WPT/runner/ABI/Master変更なし | cleared（[証拠](phase222/evidence/20261014-q1133/README.md)）。p222 whole uncleared | q1132固定WPT6/12、q1130 CSS state |
+| q1134-i01 | [ws074-p189](phase189/phase.md) partial | 固定Grid適格testharness502 IDをq1105同条件（WPT commit、localhost HTTP、固定font3種、settle5秒、process20秒）で最大128件ずつ4 shard全件再測定。ID/hash/checkpoint/gzip raw、q1105 whole/subtest遷移・後退、残FAIL群を分類。90分内に終わらない場合は実測分と未実行を別記してunclearedで止める。browser/runner/WPT/公開ABI/Master変更なし。 | cleared（[証拠](phase189/evidence/20261014-q1134/README.md)）。p189 whole uncleared | q1105固定選定・後続q1106–q1133実装 |
 
-Dependency graph: q1105固定Grid502 → q1129全41件再測定 → q1130 auto-flow CSS state → q1131 row dense配置。q1129 → q1132-i01 auto track CSS state → q1132-i02暗黙track sizing → q1133列方向配置（q1131も前提）。p220縦inlineは独立。
+Dependency graph: q1105固定Grid502 → q1134-i01。p189 whole1,783とp173全3,805の達成はこの部分受け入れに含めない。
 
-Upcoming Work Outlook: p222他のGrid placement WPT再測定、p221複数/他のauto track値とareas、p220縦inline、p217縦Grid軸。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: 旧PASS→FAILのempty-grid幅とGrid行track animationを優先調査。続いてalignment192、grid-definition42、parsing31などの一般欠陥群。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
