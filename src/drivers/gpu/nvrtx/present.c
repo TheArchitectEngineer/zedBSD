@@ -9,8 +9,9 @@
  * The display of the nvrtx GPU device (stage P8c).
  *
  * One display: the head the firmware lit and the driver took over (P8b),
- * in the mode it was lit with (the only mode, as the design's first step
- * has it).  One lease at a time, FIFO presentation of storage frames
+ * in the mode P8b set on it (the only mode, as the design's first step
+ * has it); the console, when smaller, is enlarged to it by the head.  One
+ * lease at a time, FIFO presentation of storage frames
  * (copied by the CPU into one of the node's two surfaces, then flipped to)
  * and of blobs (flipped to as they are).  A presentation returns once the
  * window's flip has begun, so a wait answers at once.  Releasing the lease,
@@ -61,7 +62,7 @@
 #define PRESENT_CLOCK_HERTZ_MASK	0x7fffffffU
 #define PRESENT_CLOCK_ADJUST		0x80000000U
 
-/* The refresh assumed when the armed raster is unreadable (60 Hz). */
+/* The refresh assumed when the mode has no raster or clock (60 Hz). */
 #define PRESENT_REFRESH_DEFAULT		60000U
 
 static int present_query(void *private_data, void *session, struct gpu_display_info *request);
@@ -129,9 +130,14 @@ nvrtx_present_start(
 	gpu = node->gpu;
 	display = &gpu->display;
 
-	/* The display's size is the takeover's surfaces', its refresh the armed raster's. */
-	node->width = display->surfaces[0].width;
-	node->height = display->surfaces[0].height;
+	/*
+	 * The display's size is the mode's visible size, its refresh the mode's
+	 * raster's.  The console surface may be smaller (the head's scaler
+	 * enlarges it); the lease's frames have the mode's size, and the head's
+	 * view follows each flip (nvrtx_scanout_frame).
+	 */
+	node->width = display->mode.active & 0xffffU;
+	node->height = display->mode.active >> 16;
 	node->refresh_millihz = present_refresh(display);
 
 	/* Each frame has the display's size, rows on 256 bytes. */
@@ -307,7 +313,7 @@ present_query(
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->max_frame_bytes = PRESENT_MAX_FRAME_BYTES;
 
-	/* The firmware's mode is the current, preferred and largest one. */
+	/* The head's mode is the current, preferred and largest one. */
 	request->current_width = node->width;
 	request->current_height = node->height;
 	request->preferred_width = node->width;
@@ -325,7 +331,7 @@ present_query(
 	return 0;
 }
 
-/* Enumerates or checks the one mode (the display mode operation): the firmware's. */
+/* Enumerates or checks the one mode (the display mode operation): the head's. */
 static int
 present_mode(
 	void *private_data,
@@ -358,7 +364,7 @@ present_mode(
 		return 0;
 	}
 
-	/* Validation: only the firmware's extent, at its refresh (0 asks for it). */
+	/* Validation: only the head's mode, at its refresh (0 asks for it). */
 	if (request->width != node->width || request->height != node->height)
 		return EINVAL;
 	if (request->refresh_millihz != 0U && request->refresh_millihz != node->refresh_millihz)
@@ -712,7 +718,7 @@ present_wait(
 	return 0;
 }
 
-/* Reports the head's refresh in millihertz from its armed pixel clock and raster. */
+/* Reports the head's refresh in millihertz from the pixel clock and raster of the mode P8b set. */
 static uint32_t
 present_refresh(
 	const struct nvrtx_display_state *display)
@@ -724,8 +730,8 @@ present_refresh(
 	uint32_t clock;
 
 	/* The raster's whole width and height (blanking included), and the clock. */
-	raster = display->armed[NVRTX_DISP_ARMED_RASTER_SIZE];
-	clock = display->armed[NVRTX_DISP_ARMED_PIXEL_CLOCK];
+	raster = display->mode.raster_size;
+	clock = display->mode.clock_hz;
 	pixels = (uint64_t)(raster & 0x7fffU) * ((raster >> 16) & 0x7fffU);
 	hertz = clock & PRESENT_CLOCK_HERTZ_MASK;
 

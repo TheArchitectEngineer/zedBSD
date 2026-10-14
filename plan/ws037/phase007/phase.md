@@ -402,3 +402,14 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 - 実機で通った: N0（TU106 rev a1）、`N1 gop 640x480 stride 1024 in bar1 at +0`、`P0 console 640x480 pitch 4096 kept`、P0〜P2b（GSP-RM up after 917 ms）、P3、P4、P4m（`console: bar1 0..1e0000 on the VRAM's start again`、read back both ways）、P5、P5g、P9w（fence after 866 us）、P8（outputs）、P8b の channel・EDID（1280x1024、DVI）・head 0 の armed（view 01e00280＝firmware は 640x480 を head の scaler で 1280x1024 に拡大）。
 - 止まった所: `P8b: the console is 640x480, the mode 1280x1024; the head is left to the firmware`（scanout.c:837、console の大きさが mode と違うと takeover しない）→ `P8: the GSP stays up to keep the console`、GPU device を登録しない → `/dev/gpu0` 無し → sessiond `CONSOLE reason=no-display errno=6`。
 - 原因の 2 つ: (1) GOP が 640x480（graphical boot は video= を落とすが、loader が 1920x1080 を求め、この monitor（最大 1280x1024）で 640x480 になった見込み）、(2) nvrtx が console と mode の大きさの違いを受けない（firmware は view in 640x480・out 1280x1024 で拡大していた）。
+
+## 方法 A の 1 回目の直し（P2、2026-10-16、未試験）
+
+- 原因（上の (2)）: `scanout_console_surface` が console と mode の大きさの一致を求め、640x480 の console・1280x1024 の mode で ENOTSUP → takeover せず GPU device も登録しない。
+- 直し（firmware と同じ形、GOP の出力先のまま。nouveau の `headc37d_view`・`nv50_head_atomic_check_view` の view in＝picture の大きさ、view out＝mode の大きさと照らした）:
+  - P8b: console が mode 以下なら受ける。最初の commit の head の viewport を in＝console（640x480）・out＝mode（1280x1024）にして head の scaler で拡大（firmware の armed の `view 01e00280`／`04000500` と同じ）。window は console の大きさのまま。mode より大きい console は従来どおり firmware に残す（head の scaler は拡大だけ）。
+  - P8c: GPU device の大きさを mode の可視の大きさにする（以前は surfaces[0]＝console の大きさ）。compositor の frame（1280x1024）と console（640x480）の間の flip では、core に viewport in を書き、window の release を core と、core の release を window と interlock する（nouveau の head と plane を一緒に commit する順）。refresh は P8b が set した mode の raster・clock から。
+  - 変えた file: `src/drivers/gpu/nvrtx/scanout.c`・`disp-first.c`・`nvrtx-disp.h`・`nvrtx-gpu.h`・`present.c`、host 試験 `plan/ws037/tests/nvrtx-gsp-host-test.c`（拡大の core の 54 語、view の変更の 13 語、core と interlock の flip）。
+- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2b build/ws037-p2b/vmunix` rc 0・warning 0・include check / vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 278 checks。`git diff --check` 0。実機は未実施。
+- 実機の確かめ（T1、RTX 機 10.0.30.5 に SSH）: 今の USB の image（RAk、main a3cf77c12）の kernel だけを差し替える（a3cf77c12 以降 `include/uapi`・`src/kern` の変更なし）。見る行: `P8b console 640x480 pitch 4096 at the VRAM's start, shown at 1280x1024`、`P8b ok: mode set (1280x1024 on SOR 1), surface A 640x480 shown`、`P8b ok: head 0 shows the console`、`P8c ok: gpu device registered, display 1280x1024`、`P8c lease N claimed`、`P8c view 1280x1024 shown at 1280x1024`。`P8b fail`・`P8c fail`・sessiond の `CONSOLE reason=no-display` が無いこと。
+- 残り（範囲外）: loader の GOP の選び方。graphical boot は 1920x1080 だけを求め、無ければ firmware の今の mode（ここでは 640x480）のまま。1920x1080 以下で一番大きい mode を選ぶ案を Q1 に送った（boot loader は別 WS の所有）。

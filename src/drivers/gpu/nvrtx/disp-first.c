@@ -177,8 +177,8 @@ nvrtx_disp_first_core_mode(
 	nvrtx_push_one(push, head_base + NVRTX_HEAD_DISPLAY_ID, first->display_id);
 	nvrtx_push_one(push, sor_method, control);
 
-	/* The view: the mode's size in and out. */
-	nvrtx_push_one(push, head_base + NVRTX_HEAD_VIEWPORT_SIZE_IN, mode->active);
+	/* The view: the picture's size in, the mode's visible size out (the head's scaler enlarges a smaller picture). */
+	nvrtx_push_one(push, head_base + NVRTX_HEAD_VIEWPORT_SIZE_IN, first->view_in);
 	nvrtx_push_one(push, head_base + NVRTX_HEAD_VIEWPORT_SIZE_OUT, mode->active);
 
 	/* The mode: the raster's four words, the second vertical blank, the control, the clock and its maximum, the usage. */
@@ -224,6 +224,29 @@ nvrtx_disp_first_core_release(
 	/* The release, then no notifier for what follows. */
 	nvrtx_push_one(push, NVRTX_CORE_UPDATE, FIRST_RELEASE);
 	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, FIRST_NOTIFY_DISABLE);
+}
+
+/*
+ * Writes a head's view without a release, as nouveau's view of a Volta or
+ * later head does: the viewport's input size (the picture the windows
+ * show) and its output size (the mode's visible size), each width in bits
+ * 15:0 and height in 31:16.  An input smaller than the output is enlarged
+ * by the head's scaler; the core's release that follows takes it in.
+ */
+void
+nvrtx_disp_first_core_view(
+	struct nvrtx_push *push,
+	uint32_t head,
+	uint32_t view_in,
+	uint32_t view_out)
+{
+	uint32_t head_base;
+
+	head_base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+
+	/* The input size, then the output size. */
+	nvrtx_push_one(push, head_base + NVRTX_HEAD_VIEWPORT_SIZE_IN, view_in);
+	nvrtx_push_one(push, head_base + NVRTX_HEAD_VIEWPORT_SIZE_OUT, view_out);
 }
 
 /*
@@ -309,17 +332,20 @@ nvrtx_disp_first_window(
 }
 
 /*
- * Writes a later flip of the window as nouveau's commit of a plane alone
- * does: the notifier at its offset, the whole image (present control,
- * size, storage, format, pitch, object, offset, point and sizes), then a
- * release interlocked with no core and with this window.
+ * Writes a later flip of the window as nouveau's commit of a plane does:
+ * the notifier at its offset, the whole image (present control, size,
+ * storage, format, pitch, object, offset, point and sizes), then a release
+ * interlocked with this window and, when with_core is nonzero, with the
+ * core (a flip that comes with a change of the head's view, which the
+ * core's release interlocked with this window then completes).
  */
 void
 nvrtx_disp_first_window_flip(
 	struct nvrtx_push *push,
 	uint32_t window,
 	const struct nvrtx_disp_surface *surface,
-	uint32_t notifier_offset)
+	uint32_t notifier_offset,
+	int with_core)
 {
 	uint32_t words[4];
 	uint32_t size;
@@ -348,8 +374,10 @@ nvrtx_disp_first_window_flip(
 	nvrtx_push_one(push, NVRTX_WINDOW_SET_SIZE_IN, size);
 	nvrtx_push_one(push, NVRTX_WINDOW_SET_SIZE_OUT, size);
 
-	/* Interlocked with this window alone, then released. */
+	/* Interlocked with this window, and with the core when the head's view changes with it, then released. */
 	words[0] = 0U;
+	if (with_core != 0)
+		words[0] = 1U;
 	words[1] = 1U << window;
 	nvrtx_push_method(push, NVRTX_WINDOW_SET_INTERLOCK_FLAGS, words, 2U);
 	nvrtx_push_one(push, NVRTX_WINDOW_UPDATE, FIRST_RELEASE);

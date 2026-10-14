@@ -91,6 +91,9 @@
 /* The most words one frame's methods take in a window's push buffer (the image, the flip and the update). */
 #define SCANOUT_FRAME_WORDS_MAX		64U
 
+/* The most words a change of the head's view takes in the core (the view's 4, the release's 9), with a margin. */
+#define SCANOUT_VIEW_WORDS_MAX		32U
+
 /* The SOR capability nouveau reads once for each SOR output (its caps area's word at 0x13c). */
 #define SCANOUT_REG_SOR_CAPS		0x64013cU
 
@@ -400,10 +403,16 @@ nvrtx_scanout_release(
  * has begun (the GPU device's frames, stage P8c).
  *
  * The window gets the surface's whole image state, so its size, pitch and
- * format may differ from the last one's.  When the push buffer has no room
- * left the channel is wound back to its start first (nouveau's wind).  The
- * caller serializes the frames.  Returns ETIMEDOUT when the flip does not
- * begin in 2 s (the window then still reads the surface it had or this one).
+ * format may differ from the last one's.  A surface of another size than
+ * the head's view (the console smaller than the mode, and a frame of the
+ * mode's size after it, or back) changes the view with the flip: the core
+ * takes the new viewport input size, the window's release is interlocked
+ * with the core and the core's with the window, as nouveau's commit of a
+ * head and its plane together.  When a push buffer has no room left it is
+ * wound back to its start first (nouveau's wind).  The caller serializes
+ * the frames and the cursor's core updates.  Returns ETIMEDOUT when the
+ * flip does not begin in 2 s (the window then still reads the surface it
+ * had or this one).
  */
 int
 nvrtx_scanout_frame(
@@ -414,11 +423,37 @@ nvrtx_scanout_frame(
 	struct nvrtx_push *push;
 	uint32_t notifier;
 	uint32_t user;
+	uint32_t view_in;
+	int with_core;
 	int error;
 
 	display = &gpu->display;
 	push = &display->window_push;
 	user = scanout_window_user(display->window);
+
+	/* The head's view changes with the flip when the surface is not of the view's size. */
+	view_in = (surface->height << 16) | (surface->width & 0xffffU);
+	with_core = 0;
+	if (view_in != display->view_in)
+		with_core = 1;
+
+	/* Writes the head's new view into the core, without a release yet, when it changes. */
+	if (with_core != 0) {
+		/* The core's notifier is about to be reused: a cursor's update still out finishes first. */
+		error = nvrtx_scanout_core_settled(gpu, SCANOUT_NOTIFIER_TIMEOUT_US);
+		if (error == EBUSY)
+			return ETIMEDOUT;
+		if (error != 0)
+			return error;
+
+		/* Makes room in the core for the view and the release after it. */
+		error = scanout_core_room(gpu, SCANOUT_VIEW_WORDS_MAX);
+		if (error != 0)
+			return error;
+
+		/* The viewport's input is the surface's size, its output the mode's visible size. */
+		nvrtx_disp_first_core_view(&display->core_push, display->gop_head, view_in, display->mode.active);
+	}
 
 	/*
 	 * Winds the buffer back to its start when the frame might not fit
@@ -437,16 +472,31 @@ nvrtx_scanout_frame(
 		nvrtx_wr32(gpu, user + SCANOUT_USER_PUT_AT, 0U);
 	}
 
-	/* Clears the window's next notifier, then sends the flip with it and the whole image, and a release of the window alone. */
+	/* Clears the window's next notifier, then sends the flip with it and the whole image, and the window's release. */
 	notifier = scanout_next_notifier(gpu);
 	error = scanout_notifier_reset(gpu, notifier);
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_first_window_flip(push, display->window, surface, notifier);
+	nvrtx_disp_first_window_flip(push, display->window, surface, notifier, with_core);
 	error = scanout_kick(gpu, push, user);
 	if (error != 0)
 		return error;
+
+	/* Completes a change of the view: the core's release, interlocked with the window, waited for. */
+	if (with_core != 0) {
+		error = scanout_release_core(gpu, 1U << display->window, NULL);
+		if (error != 0)
+			return error;
+
+		/* The head's view is the surface's size from this frame on. */
+		display->view_in = view_in;
+		nvrtx_stage_mark("P8c view %ux%u shown at %ux%u",
+		    (unsigned)surface->width,
+		    (unsigned)surface->height,
+		    (unsigned)(display->mode.active & 0xffffU),
+		    (unsigned)(display->mode.active >> 16));
+	}
 
 	/* Waits until the flip has begun. */
 	error = scanout_notifier_wait(gpu, notifier, 1U, user, NULL);
@@ -810,9 +860,12 @@ scanout_surfaces(
 /*
  * Describes the firmware's console as both surfaces (the second is never
  * flipped to without the test): its VRAM at the start, its size, pitch and
- * format.  The console is shown only when it was kept (P0, P4m), has the
- * mode's visible size and a pitch the window takes (a multiple of 64
- * bytes); otherwise ENOTSUP leaves the head to the firmware.
+ * format.  The console is shown only when it was kept (P0, P4m), is no
+ * larger than the mode's visible size and has a pitch the window takes (a
+ * multiple of 64 bytes); otherwise ENOTSUP leaves the head to the firmware.
+ * A console smaller than the mode is enlarged by the head's scaler, as the
+ * firmware itself shows it (a GOP mode of 640x480 on a monitor driven at
+ * its own mode).
  */
 static int
 scanout_console_surface(
@@ -832,9 +885,15 @@ scanout_console_surface(
 		return ENOTSUP;
 	}
 
-	/* Leaves the head alone when the console is not the mode's picture. */
-	if (console->width != width || console->height != height) {
-		nvrtx_stage_mark("P8b: the console is %ux%u, the mode %ux%u; the head is left to the firmware",
+	/* Leaves the head alone without a console size the window can show. */
+	if (console->width == 0U || console->height == 0U) {
+		nvrtx_stage_mark("P8b: the console has no size; the head is left to the firmware");
+		return ENOTSUP;
+	}
+
+	/* Leaves the head alone when the console is larger than the mode: the head's scaler only enlarges. */
+	if (console->width > width || console->height > height) {
+		nvrtx_stage_mark("P8b: the console is %ux%u, larger than the mode %ux%u; the head is left to the firmware",
 		    (unsigned)console->width,
 		    (unsigned)console->height,
 		    (unsigned)width,
@@ -850,19 +909,24 @@ scanout_console_surface(
 		return ENOTSUP;
 	}
 
-	/* Describes the console as both surfaces. */
+	/* Describes the console, at its own size, as both surfaces. */
 	for (index = 0U; index < 2U; index++) {
 		surface = &gpu->display.surfaces[index];
 		surface->offset = 0U;
-		surface->width = width;
-		surface->height = height;
+		surface->width = console->width;
+		surface->height = console->height;
 		surface->pitch = console->pitch;
 		surface->handle = NVRTX_DISP_HANDLE_FB;
 		surface->format = NVRTX_DISP_FORMAT_A8R8G8B8;
 	}
 
-	/* Succeeded: the console is the surface to show. */
-	nvrtx_stage_mark("P8b console %ux%u pitch %u at the VRAM's start", (unsigned)width, (unsigned)height, (unsigned)console->pitch);
+	/* Succeeded: the console is the surface to show, enlarged to the mode when it is smaller. */
+	nvrtx_stage_mark("P8b console %ux%u pitch %u at the VRAM's start, shown at %ux%u",
+	    (unsigned)console->width,
+	    (unsigned)console->height,
+	    (unsigned)console->pitch,
+	    (unsigned)width,
+	    (unsigned)height);
 	return 0;
 }
 
@@ -1244,6 +1308,7 @@ scanout_commit(
 			first.protocol = SCANOUT_PROTOCOL_TMDS_A;
 	}
 	first.mode = display->mode;
+	first.view_in = (display->surfaces[0].height << 16) | (display->surfaces[0].width & 0xffffU);
 	if (display->sink.hdmi != 0) {
 		error = nvrtx_display_hdmi(gpu);
 		if (error != 0)
@@ -1294,11 +1359,14 @@ scanout_commit(
 		return EIO;
 	}
 
-	/* Succeeded: the head shows the first surface. */
-	nvrtx_stage_mark("P8b ok: mode set (%ux%u on SOR %u), surface A shown",
+	/* Succeeded: the head shows the first surface, its view the surface's size. */
+	display->view_in = first.view_in;
+	nvrtx_stage_mark("P8b ok: mode set (%ux%u on SOR %u), surface A %ux%u shown",
+	    (unsigned)(display->mode.active & 0xffffU),
+	    (unsigned)(display->mode.active >> 16),
+	    (unsigned)display->gop_sor,
 	    (unsigned)display->surfaces[0].width,
-	    (unsigned)display->surfaces[0].height,
-	    (unsigned)display->gop_sor);
+	    (unsigned)display->surfaces[0].height);
 	return 0;
 }
 
@@ -1596,7 +1664,7 @@ scanout_flip(
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_first_window_flip(&display->window_push, display->window, &display->surfaces[1], notifier);
+	nvrtx_disp_first_window_flip(&display->window_push, display->window, &display->surfaces[1], notifier, 0);
 	error = scanout_kick(gpu, &display->window_push, user);
 	if (error != 0)
 		return error;

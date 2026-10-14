@@ -134,9 +134,9 @@
  * procamp and output-resource methods for one head).
  *
  * active is the visible size (width in bits 15:0, height in 31:16), which
- * is the viewport's input and output size; the raster words are the
- * methods' values; clock_hz the pixel clock; dither and output_resource the
- * methods' values.
+ * is the viewport's output size (its input is the picture's size, which the
+ * head's scaler enlarges to it); the raster words are the methods' values;
+ * clock_hz the pixel clock; dither and output_resource the methods' values.
  */
 struct nvrtx_disp_mode {
 	uint32_t active;
@@ -325,7 +325,11 @@ struct nvrtx_disp_sink {
 
 /*
  * The first commit on the head the firmware lit: the head, the SOR and
- * display id that drive it, the protocol the SOR is given, and the mode.
+ * display id that drive it, the protocol the SOR is given, the mode, and
+ * the viewport's input size (width in bits 15:0, height in 31:16): the size
+ * of the picture the window shows, which the head's scaler enlarges to the
+ * mode's visible size when it is smaller, as the firmware does with a
+ * console smaller than the monitor's mode.
  */
 struct nvrtx_disp_first {
 	uint32_t head;
@@ -333,14 +337,16 @@ struct nvrtx_disp_first {
 	uint32_t display_id;
 	uint32_t protocol;
 	struct nvrtx_disp_mode mode;
+	uint32_t view_in;
 };
 
 void nvrtx_disp_first_core_start(struct nvrtx_push *push);
 void nvrtx_disp_first_core_mode(struct nvrtx_push *push, const struct nvrtx_disp_first *first);
 void nvrtx_disp_first_core_release(struct nvrtx_push *push, uint32_t window_interlock);
+void nvrtx_disp_first_core_view(struct nvrtx_push *push, uint32_t head, uint32_t view_in, uint32_t view_out);
 void nvrtx_disp_first_core_olut(struct nvrtx_push *push, uint32_t head, uint64_t offset);
 void nvrtx_disp_first_window(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset, uint64_t ilut_offset);
-void nvrtx_disp_first_window_flip(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset);
+void nvrtx_disp_first_window_flip(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset, int with_core);
 void nvrtx_disp_first_mode(const struct nvrtx_disp_timing *timing, struct nvrtx_disp_mode *mode);
 void nvrtx_disp_first_timing_from_armed(const uint32_t *armed, struct nvrtx_disp_timing *timing);
 int nvrtx_disp_first_edid_timing(const uint8_t *edid, size_t length, struct nvrtx_disp_timing *timing);
