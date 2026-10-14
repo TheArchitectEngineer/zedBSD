@@ -17,6 +17,14 @@
 #include "drivers/gpu/bcm2711/render-device.h"
 #include "drivers/gpu/bcm2711/render-runtime.h"
 #include "drivers/gpu/bcm2711/vulkan-dispatch.h"
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+
+/* The native word after the vendor suffix ("TANZ" read little endian), and its H.264 decode bit (ws236). */
+#define VULKAN_NATIVE_MAGIC 0x5a4e4154U
+#define VULKAN_NATIVE_VIDEO_H264 1U
+#define VULKAN_NATIVE_CAPSET_BYTES 176U
+#endif
 
 #define VULKAN_CAPSET_ID 4U
 #define VULKAN_CAPSET_BYTES 168U
@@ -109,6 +117,22 @@ runtime_capset(
 	capset_word(capset->data, 160, VULKAN_VENDOR_MAGIC);
 	capset_word(capset->data, 164, VULKAN_VENDOR_FLAGS);
 	capset->bytes = VULKAN_CAPSET_BYTES;
+
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	/*
+	 * A session asked while the firmware's link is up is promised H.264
+	 * decode, for its life: the native word follows the vendor suffix.
+	 */
+	if (session->vulkan != NULL && capset->capacity >= VULKAN_NATIVE_CAPSET_BYTES) {
+		if (!bcm2711_vulkan_video_session(session->vulkan) && bcm2711_vulkan_video_available())
+			bcm2711_vulkan_video_promise(session->vulkan);
+		if (bcm2711_vulkan_video_session(session->vulkan)) {
+			capset_word(capset->data, 168, VULKAN_NATIVE_MAGIC);
+			capset_word(capset->data, 172, VULKAN_NATIVE_VIDEO_H264);
+			capset->bytes = VULKAN_NATIVE_CAPSET_BYTES;
+		}
+	}
+#endif
 
 	mutex_unlock(&session->device->mutex);
 
