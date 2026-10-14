@@ -1,0 +1,165 @@
+{
+  "eligible": 502,
+  "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+  "fixed_id_set_and_order_verified": true,
+  "callback_names_verified": true,
+  "checkpoint_and_gzip_raw_verified": {
+    "0": {
+      "selected": 128,
+      "progress_rows": 129,
+      "gzip_raw_reports": 128,
+      "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+      "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586"
+    },
+    "128": {
+      "selected": 128,
+      "progress_rows": 129,
+      "gzip_raw_reports": 128,
+      "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+      "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586"
+    },
+    "256": {
+      "selected": 128,
+      "progress_rows": 129,
+      "gzip_raw_reports": 128,
+      "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+      "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586"
+    },
+    "384": {
+      "selected": 118,
+      "progress_rows": 119,
+      "gzip_raw_reports": 118,
+      "eligible_sha256": "5fa65ed37998a0958da75da5dc9a69f85bd26a05c2f64a118072c7527f56af23",
+      "wpt_commit": "2d66b9b7998bb58c336138c178323ddee857b586"
+    }
+  },
+  "old": {
+    "outcomes": {
+      "pass": 189,
+      "fail": 313
+    },
+    "subtest_status": {
+      "0": 5272,
+      "1": 5733
+    }
+  },
+  "new": {
+    "outcomes": {
+      "pass": 192,
+      "fail": 310
+    },
+    "subtest_status": {
+      "0": 5288,
+      "1": 5717
+    }
+  },
+  "whole_transitions": {
+    "fail->pass": 3
+  },
+  "subtest_transitions": {
+    "1->0": 16
+  },
+  "changed_ids": [
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-007.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-non-static-positioned-items-008.html",
+      "before": "fail",
+      "after": "pass"
+    },
+    {
+      "id": "/css/css-grid/alignment/grid-self-alignment-positioned-items-with-margin-border-padding-005.html",
+      "before": "fail",
+      "after": "pass"
+    }
+  ],
+  "regressions": {
+    "whole_pass_to_fail": 0,
+    "subtest_pass_to_fail": 0
+  },
+  "remaining_fail_groups": [
+    [
+      "grid-self-alignment-stretch",
+      12
+    ],
+    [
+      "grid-self-alignment-positioned-items-with-margin-border-padding",
+      11
+    ],
+    [
+      "grid-positioned-items-and-autofit-tracks",
+      7
+    ],
+    [
+      "grid-alignment-implies-size-change",
+      6
+    ],
+    [
+      "grid-column-axis-alignment-positioned-items",
+      6
+    ],
+    [
+      "grid-row-axis-alignment-positioned-items",
+      6
+    ],
+    [
+      "baseline-alignment-affects-intrinsic-size",
+      6
+    ],
+    [
+      "grid-align-baseline",
+      5
+    ],
+    [
+      "grid-column-axis-self-baseline-synthesized",
+      5
+    ],
+    [
+      "grid-row-axis-self-baseline-synthesized",
+      5
+    ],
+    [
+      "grid-minimum-size-grid-items",
+      5
+    ],
+    [
+      "subgrid-baseline",
+      5
+    ],
+    [
+      "grid-align-baseline-flex",
+      4
+    ],
+    [
+      "grid-justify-baseline",
+      4
+    ],
+    [
+      "grid-self-alignment-non-static-positioned-items",
+      4
+    ],
+    [
+      "grid-template-columns-neutral-keyframe",
+      4
+    ],
+    [
+      "grid-template-rows-neutral-keyframe",
+      4
+    ],
+    [
+      "grid-auto-repeat-min-size",
+      4
+    ],
+    [
+      "grid-align-baseline-fieldset",
+      3
+    ],
+    [
+      "grid-align-baseline-grid",
+      3
+    ]
+  ]
+}

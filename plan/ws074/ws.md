@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1188](queue.md) active / p217 vertical-lr Grid fourth horizontal RTL absolute area。2026-10-14 13:52 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1189](queue.md) active / p189 fixed Grid502 recensus。2026-10-14 13:54 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+
+Event ws074-p189-q1189-partial-clear-20261014: [p189](phase189/phase.md) q1189-i01で固定Grid502同条件再測定。[証拠](phase189/evidence/20261014-q1189/README.md)。189→192 whole PASS、313→310 FAIL、16 callback改善、後退0、未出力0。次はnon-static009–012など残FAIL切り分け、p189/p173全3,805件100%未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1188-partial-clear-20261014: [p217](phase217/phase.md) q1188-i01で固定縦lr Grid直接横RTL absolute子row2/col2 left/top insetにstatic areaを適用。[証拠](phase217/evidence/20261014-q1188/README.md)。独立矩形Chromium一致、固定non-static007 whole PASS/4 callback PASS。旧2 WPT/host/Acid3差0維持。次はGrid subset再測定、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
