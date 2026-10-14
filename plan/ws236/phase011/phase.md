@@ -193,3 +193,5 @@ Phase disposition: normal
 - 1 frame ずつ fence を待つ presenter（Image Viewer と同じ）。1080p30 の再生には十分の見込みだが、60 fps の表示で足りなければ 2 frame を重ねる（次の段）。
 - slot の数が 17 を超える stream（参照・reorder が多い）は readback の道に戻る（log の `pictures are read back`）。
 - i915（5330）の videoplayer は変えていない（arm64 だけ）。i915 で同じ道を使うには i915 の kernel に NV12 の plane の view と export が要る（範囲外）。
+
+- 2026-10-16 ユーザー（T2 の T1-681 の再生の最中、OLED を目視）:「Piは少なくとも30fps、60fpsに近いフレームレートで動画が再生されました」（b4452d35d の kernel、GPU の picture の道の見込み。数は T1-681 の結果で確かめる）。
