@@ -1,0 +1,13 @@
+<!-- awesome-plan project=zedbsd record=q1147 -->
+
+# q1147 / WS074 fixed Grid502 recensus after orthogonal items
+
+Status: finished（2026-10-14 11:21–11:25 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p189有限部分scope](../ws074/phase189/phase.md)に適用。最大90分。
+
+| Attempt | Phase | Scope | Outcome |
+| --- | --- | --- | --- |
+| q1147-i01 | [p189](../ws074/phase189/phase.md) partial | q1145固定Grid502全再測定、whole/subtest遷移・旧PASS後退、ID/hash/checkpoint/raw照合、縦Grid family分類 | cleared。p189 whole uncleared |
+
+Outcome: 130→134 whole PASS、372→368 FAIL、4 subtest改善・後退0。増分はvertical-lr stretch005–008。[証拠](../ws074/phase189/evidence/20261014-q1147/README.md)。読取のみ、browser/runner/WPT/ABI/Master/Acid無変更。
+
+Resume: p225明示250px Grid/auto trackの009–016、p220 CPU/GPU縦paint。他Grid/runner残件も継続。p189/p173全件100%未達。共有Queue/Master/GitHub publication pending、pushなし。

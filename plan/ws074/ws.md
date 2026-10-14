@@ -9,8 +9,8 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1146](queue.md) finished / p225 orthogonal children in fixed vertical Grid。2026-10-14 11:19 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1145の130 PASS/372 FAIL、q1143比4 whole/4 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
+Queue: [q1147](queue.md) finished / p189 fixed Grid502 recensus after orthogonal items。2026-10-14 11:25 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1147の134 PASS/368 FAIL、q1145比4 whole/4 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
 
 Event ws074-p173-interop-resume-20261013: ユーザーが「WPTに進みます。2025を100%」と指示。既存の p173 Interop 2025 公式 focus area 全件 PASS 100% を次の優先対象にした。p173 と p100 の依存関係を、p188 の main 統合済み Acid3 検証出力に限定して整理。p100 whole の Acid2 exact/target gate は未達のまま。p173 の [候補選定と q1012 範囲](phase173/selection-snapshot.md)を記録、ユーザーが 23:49 JST 承認して開始。p101・p174〜p176 の受け入れは維持。Master の focused goal / WS priority 投影は、このセッションの編集禁止により Q1 へ pending。GitHub publication保留。
@@ -961,3 +961,5 @@ Event ws074-p220-p225-q1144-outcome-20261014: [p220 q1144](phase220/evidence/202
 Event ws074-p189-q1145-outcome-20261014: [p189 q1145](phase189/evidence/20261014-q1145/README.md)で固定Grid502を全件同条件再測定。126→130 whole PASS、4 subtest改善、旧PASS後退0。縦書きstretch001–004が増分、残005–016の構成をp225後続候補に分類。q1145部分cleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p225-q1146-outcome-20261014: [p225 q1146](phase225/evidence/20261014-q1146/README.md)で固定vertical-lr Gridのhorizontal-tb子を限定物理軸経路に通し、stretch005–008を4/4 whole PASS。旧001–004・host回帰・Acid3差0維持。q1146部分cleared、p225/p217/p189/p173全件100%未達。次は固定Grid502再測定と009–016可変track。共有投影/GitHub publication保留。
+
+Event ws074-p189-q1147-outcome-20261014: [p189 q1147](phase189/evidence/20261014-q1147/README.md)で固定Grid502を全件同条件再測定。130→134 whole PASS、4 subtest改善、旧PASS後退0。増分vertical-lr stretch005–008、残009–016は明示Grid寸法/auto track。q1147部分cleared、p189/p173全件100%未達。共有投影/GitHub publication保留。

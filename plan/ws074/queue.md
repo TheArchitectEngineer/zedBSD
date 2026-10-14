@@ -1,16 +1,16 @@
 <!-- awesome-plan project=zedbsd record=queue -->
 
-# q1146 / WS074 orthogonal children in fixed vertical Grid
+# q1147 / WS074 fixed Grid502 recensus after orthogonal items
 
-Status: finished（2026-10-14 11:19 JST）
+Status: finished（2026-10-14 11:25 JST）
 Owner: この Codex セッション単独。`plan/master.md` は変更しない。
 Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を下記有限範囲に適用。
-Timebox: 最大90分（12:48 JSTまで）。
+Timebox: 最大90分（12:51 JSTまで）。
 
 | Attempt | Phase | Exact scope | State | Dependencies |
 | --- | --- | --- | --- | --- |
-| q1146-i01 | [ws074-p225](phase225/phase.md) partial | vertical-lr/LTR・inline-grid・明示固定px track・gap0・単一span・in-flow非replaced/auto寸法の限定物理軸経路で、horizontal-tb子のstart/stretchを正しく扱う。最小2×2横書き子と固定vertical-lr stretch WPT005–008、旧001–004・horizontal/vertical PASS、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加、範囲外fallbackを確認。WPT/runner/公開ABI/Master変更なし | cleared：対象4 whole PASS、回帰維持。[証拠](phase225/evidence/20261014-q1146/README.md) | q1142縦Grid軸、q1144 text geometry、q1145固定family診断 |
+| q1147-i01 | [ws074-p189](phase189/phase.md) partial | q1145と同じ固定Grid502 ID、WPT commit/metadata/localhost/固定font3種/5秒settle/20秒processで最大128件×4 shard再測定。ID/hash/checkpoint/gzip rawを照合、whole/subtest遷移・旧PASS後退・縦Grid familyを分類。90分で未完なら残IDを明示しuncleared。browser/WPT/runner/ABI/Master変更なし | cleared：130→134 PASS、後退0。[証拠](phase189/evidence/20261014-q1147/README.md) | q1145 baseline、q1146実装 |
 
-Dependency graph: q1142軸変換 + q1144文字geometry + q1145診断 → q1146-i01。p225/p217/p189/p173 wholeは部分受け入れに含めない。
+Dependency graph: q1145 baseline + q1146実装 → q1147-i01。p189/p173 wholeは部分受け入れに含めない。
 
-Upcoming Work Outlook: 固定Grid502全再測定後、p225明示250px Grid/可変trackの009–016、p220 CPU/GPU縦paint、vertical-rl/RTLとabspos、p217 baseline、p224 animation、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: p225明示Grid寸法+auto trackの009–016を設計・実装、p220 CPU/GPU縦paint、vertical-rl/RTL/abspos、p217 baseline、p224 animation、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
