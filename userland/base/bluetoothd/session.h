@@ -113,7 +113,8 @@ enum btd_state {
  * How long the session waits (milliseconds): for a command's answer, for
  * Intel's download's end and boot; on a UART for the kernel's notice of
  * the reset the start begins with, after Broadcom's Download Minidriver,
- * for Launch RAM's answer, and for the patch to settle after it.
+ * for Launch RAM's answer, for the patch to settle after it, and after a
+ * controller's HCI reset before the next command.
  */
 struct btd_timing {
 	unsigned command_ms;
@@ -123,6 +124,7 @@ struct btd_timing {
 	unsigned minidriver_ms;
 	unsigned launch_ms;
 	unsigned settle_ms;
+	unsigned reset_settle_ms;
 };
 
 /*

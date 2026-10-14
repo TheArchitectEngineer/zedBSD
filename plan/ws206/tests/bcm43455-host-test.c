@@ -131,6 +131,7 @@ static struct {
 	uint8_t cccr_enable;
 	uint8_t ien;
 	uint8_t clock;
+	unsigned fast_requests_before_boot;
 	uint8_t window[3];
 	uint8_t watermark;
 	uint8_t sleep_control;
@@ -847,6 +848,9 @@ check_chip(void)
 	CHECK(chip.booted == 1 && chip.boot_count == 1 && chip.boot_image_ok == 1);
 	CHECK(all_zero(chip_state->bounce, sizeof(chip_state->bounce)));
 	CHECK(chip.clock == 0);
+
+	/* The download ran on the slow clock: the fast one was never asked for before the firmware ran (BUG-311). */
+	CHECK(chip.fast_requests_before_boot == 0);
 
 	/* With save-restore the frame function comes up with the HT wait, CMD14 and only the force bit. */
 	CHECK(bcm43455_chip_start(chip_state) == 0);
@@ -3004,7 +3008,8 @@ op_read_byte(
 			*value = (uint8_t)(chip.clock & 0x3fU);
 			if ((chip.clock & (BCM43455_CLOCK_ALP_REQUEST | BCM43455_CLOCK_FORCE_ALP)) != 0)
 				*value |= BCM43455_CLOCK_ALP_AVAILABLE;
-			if ((chip.clock & (BCM43455_CLOCK_HT_REQUEST | BCM43455_CLOCK_FORCE_HT)) != 0)
+			/* The fast clock needs the PMU resources the running firmware sets up (BUG-311). */
+			if (chip.booted && (chip.clock & (BCM43455_CLOCK_HT_REQUEST | BCM43455_CLOCK_FORCE_HT)) != 0)
 				*value |= BCM43455_CLOCK_HT_AVAILABLE;
 		} else if (address == BCM43455_F1_SLEEP_CONTROL) {
 			*value = chip.sleep_control;
@@ -3049,6 +3054,8 @@ op_write_byte(
 			break;
 		case BCM43455_F1_CHIP_CLOCK:
 			chip.clock = value;
+			if (!chip.booted && (value & (BCM43455_CLOCK_HT_REQUEST | BCM43455_CLOCK_FORCE_HT)) != 0)
+				chip.fast_requests_before_boot++;
 			break;
 		case BCM43455_F1_WATERMARK:
 			chip.watermark = value;

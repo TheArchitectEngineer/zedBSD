@@ -98,11 +98,12 @@ int bcm43455_chip_write_memory(struct bcm43455_chip *chip, uint32_t address, con
 int bcm43455_chip_read_memory(struct bcm43455_chip *chip, uint32_t address, uint8_t *data, size_t length);
 
 /*
- * Writes the firmware and the converted NVRAM into RAM on the fast clock,
+ * Writes the firmware and the converted NVRAM into RAM on the slow clock,
  * reads them back whole, and starts the ARM core at the firmware's reset
  * vector.
  *
- * Returns EIO when what was read back differs from what was written.
+ * Returns EIO when what was read back differs from what was written, or
+ * ETIMEDOUT when the slow clock does not come.
  */
 int bcm43455_chip_download(struct bcm43455_chip *chip, const uint8_t *firmware, size_t firmware_length, const uint8_t *nvram, size_t nvram_length);
 

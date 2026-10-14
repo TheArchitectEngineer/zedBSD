@@ -35,7 +35,7 @@
 /* How long the slow (ALP) clock may take to come, in milliseconds. */
 #define ALP_WAIT_MS			50U
 
-/* How long the fast (HT) clock may take to come. */
+/* How long a requested clock (ALP for the download, HT afterwards) may take to come. */
 #define HT_WAIT_MS			5000U
 
 /* How long function 2 may take to report ready once the firmware runs. */
@@ -61,7 +61,7 @@ static int restart_core(struct bcm43455_chip *chip, const struct bcm43455_core *
 static int halt_cores(struct bcm43455_chip *chip);
 static int read_power_unit(struct bcm43455_chip *chip);
 static int prepare_interface(struct bcm43455_chip *chip);
-static int request_fast_clock(struct bcm43455_chip *chip);
+static int request_clock(struct bcm43455_chip *chip, uint8_t request, uint8_t available, const char *name);
 static int verify_memory(struct bcm43455_chip *chip, uint32_t address, const uint8_t *expected, size_t length);
 static int wait_clock(struct bcm43455_chip *chip, uint8_t mask, unsigned timeout_ms);
 
@@ -261,10 +261,14 @@ bcm43455_chip_read_memory(
 /*
  * Writes the firmware and the NVRAM and starts the ARM core.
  *
- * The order (fast clock, firmware, read back, NVRAM below the top of RAM,
+ * The order (slow clock, firmware, read back, NVRAM below the top of RAM,
  * read back, reset vector at address 0, ARM core released, clock given
  * back) is bwfm's bwfm_sdio_load_microcode() and
- * bwfm_sdio_buscore_activate().
+ * bwfm_sdio_buscore_activate().  The download runs on the slow (ALP)
+ * clock: bwfm_sdio_preinit() sets sc_alp_only around the download, so
+ * bwfm_sdio_htclk() asks for ALP, not HT.  The fast clock needs the PMU
+ * resources the firmware sets up from the NVRAM, so before the firmware
+ * runs it never comes (BUG-311: "fast clock not available" on the Pi 4).
  */
 int
 bcm43455_chip_download(
@@ -288,8 +292,8 @@ bcm43455_chip_download(
 	if (error != 0)
 		return error;
 
-	/* Moves the download on the fast clock. */
-	error = request_fast_clock(chip);
+	/* Moves the download on the slow clock; the fast one comes only once the firmware runs. */
+	error = request_clock(chip, BCM43455_CLOCK_ALP_REQUEST, BCM43455_CLOCK_ALP_AVAILABLE, "slow");
 	if (error != 0)
 		return error;
 
@@ -332,7 +336,7 @@ bcm43455_chip_download(
 	if (error != 0)
 		return error;
 
-	/* Gives the fast clock back to the chip until the frame function starts. */
+	/* Gives the clock request back to the chip until the frame function starts. */
 	error = chip->ops->write_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, 0);
 	if (error != 0)
 		return error;
@@ -358,8 +362,8 @@ bcm43455_chip_start(
 	uint8_t capability;
 	int error;
 
-	/* Asks for the fast clock again and holds it while the frame function starts. */
-	error = request_fast_clock(chip);
+	/* Asks for the fast clock, which the running firmware provides, and holds it while the frame function starts. */
+	error = request_clock(chip, BCM43455_CLOCK_HT_REQUEST, BCM43455_CLOCK_HT_AVAILABLE, "fast");
 	if (error != 0)
 		return error;
 	error = chip->ops->read_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, &clock);
@@ -1112,27 +1116,31 @@ prepare_interface(
 }
 
 /*
- * Asks for the fast clock and waits for it.
+ * Asks for a clock (the slow ALP or the fast HT one) and waits for it, as
+ * bwfm_sdio_htclk() does: the request alone, then up to HT_WAIT_MS.
  */
 static int
-request_fast_clock(
-	struct bcm43455_chip *chip)
+request_clock(
+	struct bcm43455_chip *chip,
+	uint8_t request,
+	uint8_t available,
+	const char *name)
 {
 	int error;
 
 	/* Requests it. */
-	error = chip->ops->write_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, BCM43455_CLOCK_HT_REQUEST);
+	error = chip->ops->write_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, request);
 	if (error != 0)
 		return error;
 
 	/* Waits for it. */
-	error = wait_clock(chip, BCM43455_CLOCK_HT_AVAILABLE, HT_WAIT_MS);
+	error = wait_clock(chip, available, HT_WAIT_MS);
 	if (error != 0) {
-		kern_logf("bcm43455: fast clock not available (%d)\n", error);
+		kern_logf("bcm43455: %s clock not available (%d)\n", name, error);
 		return error;
 	}
 
-	/* Succeeded: the chip runs on the fast clock. */
+	/* Succeeded: the chip runs on the clock. */
 	return 0;
 }
 

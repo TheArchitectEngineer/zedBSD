@@ -149,6 +149,13 @@
 #define SESSION_LAUNCH_MS		1000U
 #define SESSION_SETTLE_MS		270U
 
+/*
+ * The pause after an HCI reset of a controller on a UART before the next
+ * command: this daemon's own choice (BUG-311: on the Pi 4 the ROM answered
+ * the reset and then nothing sent at once after it).
+ */
+#define SESSION_RESET_SETTLE_MS		100U
+
 /* Read Local Version's return parameters: the manufacturer's and the LMP subversion's offsets, and its length. */
 #define SESSION_VERSION_MANUFACTURER	4U
 #define SESSION_VERSION_SUBVERSION	6U
@@ -181,6 +188,7 @@ static int session_broadcom_line(struct btd_session *session, uint32_t baud);
 static int session_broadcom_refused(struct btd_session *session, const char *name, unsigned index, int error);
 static int session_broadcom_address(struct btd_session *session);
 static void session_pause(unsigned milliseconds);
+static void session_reset_settle(struct btd_session *session);
 static int session_remaining(uint64_t deadline);
 static int session_control(struct btd_session *session, unsigned long request, void *argument);
 static void session_normal_path(struct btd_session *session);
@@ -243,6 +251,7 @@ btd_session_init(
 	session->timing.minidriver_ms = SESSION_MINIDRIVER_MS;
 	session->timing.launch_ms = SESSION_LAUNCH_MS;
 	session->timing.settle_ms = SESSION_SETTLE_MS;
+	session->timing.reset_settle_ms = SESSION_RESET_SETTLE_MS;
 	session->state = BTD_STATE_STARTING;
 }
 
@@ -1619,6 +1628,9 @@ session_core(
 	if (error != 0)
 		return error;
 
+	/* A controller on a UART finishes its reset before the next command. */
+	session_reset_settle(session);
+
 	/*
 	 * Nothing from before the reset is handed out after it (a hardware
 	 * error queued during Intel's boot would start the controller again),
@@ -1836,6 +1848,9 @@ session_broadcom_attempt(
 	error = session_step(session, "reset", SESSION_RESET, NULL, 0U);
 	if (error != 0)
 		return error;
+
+	/* The ROM finishes its reset before the next command. */
+	session_reset_settle(session);
 
 	/* Who made the controller. */
 	error = session_step(session, "local-version", SESSION_READ_LOCAL_VERSION, NULL, 0U);
@@ -2084,6 +2099,9 @@ session_broadcom_load(
 	error = session_step(session, "patched-reset", SESSION_RESET, NULL, 0U);
 	if (error != 0)
 		return error;
+
+	/* The patched controller finishes its reset before the next command. */
+	session_reset_settle(session);
 
 	/* The line fast again for the rest of the session. */
 	if (fast) {
@@ -3337,4 +3355,22 @@ session_codecs(
 
 	/* Succeeded: told in the log. */
 	return 0;
+}
+
+/*
+ * Lets a controller on a UART finish an HCI reset before the next command
+ * (timing.reset_settle_ms); a controller on another bus needs no pause.
+ */
+static void
+session_reset_settle(
+	struct btd_session *session)
+{
+	/* Only a controller on a UART waits. */
+	if (!session->have_info)
+		return;
+	if (session->info.bus != BT_BUS_UART)
+		return;
+
+	/* The pause. */
+	session_pause(session->timing.reset_settle_ms);
 }

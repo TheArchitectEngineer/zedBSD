@@ -154,8 +154,18 @@
 #define FDT_SPI_BASE			32U
 #define FDT_SPI_MAX			987U
 
-/* The times, in milliseconds: this driver's own choices (see the file's comment). */
-#define POWER_LOW_MS			10U
+/*
+ * The times, in milliseconds: this driver's own choices (see the file's
+ * comment), except the power cycle's.  BT_ON stays low for the CYW43455's
+ * core buck regulator to discharge (300 ms) and the controller settles for
+ * 500 ms after BT_ON rises before a command is sent: Zephyr's Infineon
+ * driver's BT_POWER_CBUCK_DISCHARGE_TIME_MS and
+ * BT_POWER_ON_SETTLING_TIME_MS (drivers/bluetooth/hci/h4_ifx_cyw43xxx.c,
+ * Apache-2.0).  With 10 ms low and no settling the ROM answered the reset
+ * but no command after it (BUG-311, T1-630).
+ */
+#define POWER_LOW_MS			300U
+#define POWER_SETTLE_MS			500U
 #define CTS_WAIT_MS			500U
 #define CTS_POLL_MS			1U
 #define QUIET_MS			10U
@@ -1286,6 +1296,10 @@ power_cycle(
 
 	/* Records how long the controller took, for the first bring-up on a board. */
 	kern_logf("rpi4-bt: controller ready after about %u ms\n", waited);
+
+	/* Lets the controller settle the rest of the power-on time before the first command. */
+	if (waited < POWER_SETTLE_MS)
+		pause_ms(bt, POWER_SETTLE_MS - waited);
 
 	/* The quiet time, then the hunt. */
 	finish_quiet(bt);

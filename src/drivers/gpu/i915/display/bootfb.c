@@ -45,6 +45,7 @@
 #include "internal.h"
 #include "display.h"
 #include "bootfb.h"
+#include "gen9-backlight.h"
 #include "gen9-flip.h"
 #include "present.h"
 #include "scanout.h"
@@ -267,6 +268,9 @@ drv_i915_bootfb_bind_ops(
 		drv_i915_gen9_flip_extent(&bootfb->width, &bootfb->height, &bootfb->refresh_millihz);
 	}
 
+	/* Offers the panel's brightness when the boot line asks for it (WS237). */
+	drv_i915_gen9_backlight_start(device);
+
 	/* The display and the display-only pairing (the capture node's: the same identity and formats), with their capabilities. */
 	bootfb->bound = 1;
 	ops->display = &i915_bootfb_ops;
@@ -351,7 +355,8 @@ drv_i915_bootfb_fini(
 
 	bootfb = &i915_bootfb_display;
 
-	/* The flip buffers go first, unless the plane still shows one. */
+	/* The backlight device is withdrawn, then the flip buffers go, unless the plane still shows one. */
+	drv_i915_gen9_backlight_stop(device);
 	drv_i915_gen9_flip_fini(device);
 
 	/* A mapped staging area stays, with everything else. */
