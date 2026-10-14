@@ -14,7 +14,10 @@
  * reordering (run b), and the same as b with a push after the first unit
  * (runs g, f; see enum probe_push) to find what makes the firmware give
  * out the first picture at once without losing its references.  It runs
- * when a write to /dev/mmal-probe asks, not on the boot path.
+ * when a write to /dev/mmal-probe asks, in a thread that write starts: the
+ * boot path only publishes the device (T1-626: a frame's bulk stopped
+ * while the 3D core started; T1-633 and T1-634: the Pi 4 did not come back
+ * from boots with the probe's thread on the boot path).
  * Each output picture is identified by the checksum of its visible bytes
  * against the reference decode, and its place in decode order is compared
  * with the input that was last sent, which shows whether the firmware
@@ -43,17 +46,9 @@
 
 #include "drivers/platform/rpi4/rpi4-mmal-probe-data.inc"
 
-/* How long the probe waits for VCHIQ to connect after boot. */
+/* How long the probe, once asked to run, waits for VCHIQ to connect. */
 #define PROBE_CONNECT_MS		15000U
 
-/*
- * How often the probe looks for the request to run.  It runs only when
- * asked, by a write to /dev/mmal-probe after login, not on the boot path:
- * in T1-626 a frame's bulk stopped while the 3D core started, and the Pi 4
- * did not come back from the boot whose probe first sent an empty
- * end-of-frame buffer (T1-633).
- */
-#define PROBE_POLL_MS			200U
 
 /* How long it waits for an output after each input, and at the end. */
 #define PROBE_OUTPUT_MS			100U
@@ -176,6 +171,7 @@ struct probe_result {
 	int error;
 };
 
+static void probe_spawn(void);
 static void probe_main(void *argument);
 static void probe_run(const struct probe_stream *stream, const struct probe_mode *mode);
 static int send_unit(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, size_t start, size_t end, const struct probe_mode *mode, int64_t pts);
@@ -191,29 +187,43 @@ static const char *order_name(unsigned outputs, unsigned in_decode_order, unsign
 static uint64_t now_us(void);
 
 /*
- * Starts the probe's thread.
+ * Publishes the probe's device; the probe runs when it is written to.
+ *
+ * Nothing else happens on the boot path: no thread, no wait.
  */
 int
 drv_rpi4_mmal_probe_start(void)
 {
+	int error;
+
+	/* /dev/mmal-probe, whose first write calls probe_spawn. */
+	error = drv_rpi4_mmal_dump_publish(probe_spawn);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: a write starts the probe. */
+	return 0;
+}
+
+/* Starts the probe's thread (the first write to /dev/mmal-probe asks for it). */
+static void
+probe_spawn(void)
+{
 	struct thread *thread;
 	int error;
 
-	/* The probe runs once, in its own thread, after VCHIQ connects. */
+	/* The probe runs once, in its own thread. */
 	error = kthread_create(probe_main, NULL, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0) {
 		kern_logf("rpi4-mmal-probe: no thread (%d)\n", error);
-		return error;
+		return;
 	}
 
 	/* Runs it. */
 	thread_start(thread);
-
-	/* Succeeded: the probe reports in the kernel log. */
-	return 0;
 }
 
-/* Waits for VCHIQ, then runs both streams both ways. */
+/* Waits for VCHIQ, then runs each stream each way. */
 static void
 probe_main(
 	void *argument)
@@ -224,8 +234,6 @@ probe_main(
 	uint64_t deadline;
 	uint64_t now;
 	bool connected;
-	bool requested;
-	int error;
 
 	/* Says that it runs, then waits for the firmware's connection. */
 	(void)argument;
@@ -245,16 +253,7 @@ probe_main(
 		return;
 	}
 
-	/* Publishes the device and waits, asleep, until a write to it asks for the runs. */
-	error = drv_rpi4_mmal_dump_publish();
-	if (error != 0)
-		return;
-	kern_logf("rpi4-mmal-probe: connected; write to /dev/mmal-probe to run (frames are kept there)\n");
-	requested = drv_rpi4_mmal_dump_run_requested();
-	while (!requested) {
-		kern_usleep_range(PROBE_POLL_MS * 1000U, PROBE_POLL_MS * 1000U + 10000U);
-		requested = drv_rpi4_mmal_dump_run_requested();
-	}
+	/* Runs; the frames are kept in /dev/mmal-probe. */
 	kern_logf("rpi4-mmal-probe: running\n");
 
 	/* The two streams. */

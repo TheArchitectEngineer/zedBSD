@@ -185,7 +185,7 @@ kern_platform_init(
 	(void)drv_rpi4_vchiq_init(rpi4->fdt_phys);
 #endif
 #if CONFIG_DRIVER_BCM2711_VIDEO_PROBE
-	/* A test kernel probes the decoder's output order once VCHIQ connects. */
+	/* A test kernel publishes the decoder probe's device; a write to it runs the probe. */
 	(void)drv_rpi4_mmal_probe_start();
 #endif
 

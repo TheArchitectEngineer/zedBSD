@@ -164,6 +164,19 @@ Phase disposition: normal
     1. 最後に送った SPS・PPS を CONFIG の buffer で再送する（CONFIG の buffer は T1-631 の run c で通った）。
     2. delimiter だけの buffer。
   - **probe を起動の道から外した**。VCHIQ の接続の後に `/dev/mmal-probe` を出し、それへの write（`echo run | sudo tee /dev/mmal-probe`）で初めて run を始める。run は a、b、g（sets）、f（delimiter）。e は除いた。
+## T1-634（a95d41a0b の probe の kernel でも戻らない）と次の版
+
+- 事実:
+  - 同じ tree（192ea4a9f）の CI の kernel（VCHIQ=y・VIDEO=y）は約 1 分で起動した。probe の kernel（PROBE=y）だけが戻らない（T1-633・T1-634）。
+  - T1-631 の probe の kernel（tree 2ad034849）は起動した。
+  - kernel の配置（`__bss_start`・`__bss_end`）と vmunix の大きさは、631 と 633・633b で同じ（8302592 byte）。大きさ・配置の問題ではない。
+  - 631 の後に入った、probe の config だけで動く差は 2 つ。
+    1. probe の thread の動き。633 は e の空の buffer、633b は VCHIQ の接続の直後の `/dev/mmal-probe` の登録と、それに続く 200 ms ごとの眠りの polling。
+    2. 他の WS の変更（rpi4-bt.c・bcm43455-chip.c、BUG-311）との組み合わせ。CI の kernel にも入っていて、単独では起動する。
+  - source では原因を確定できなかった。`kern_usleep_range` は眠る実装で、cdev の registry は静的に初期化される。
+- 次の版:
+  - **起動の道では device の登録だけをする**。probe の thread は `/dev/mmal-probe` への最初の write で初めて作る。起動の道で動くのは cdev_register の 1 つだけ（BT・audio の device と同じ時期）。
+- 提案（安全な道）: 原因が分かるまで、実機の試験は **CI の config の kernel**（今は VCHIQ=y・VIDEO=y を含む）で行う。vkvideo-probe・videoplayer（Vulkan Video）はそれで足りる。probe の kernel は、CI の kernel で起動を確かめた後に、最後に 1 回だけ試す。
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。
