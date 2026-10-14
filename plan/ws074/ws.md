@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1190](queue.md) active / p217 remaining Grid non-static positioned diagnosis。2026-10-14 13:57 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1191](queue.md) active / p217 horizontal Grid vertical absolute child border。2026-10-14 13:58 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+
+Event ws074-p217-q1191-partial-clear-20261014: [p217](phase217/phase.md) q1191-i01で固定水平LTR/RTL Gridのborder-only縦lr absolute先頭子に縦inline経路を適用。[証拠](phase217/evidence/20261014-q1191/README.md)。独立2矩形Chromium一致、固定009水平2 callbacks先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は2番目縦rl子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1190-partial-clear-20261014: [p217](phase217/phase.md) q1190-i01で固定non-static009–012 rawと原本を分類。[証拠](phase217/evidence/20261014-q1190/README.md)。009–011は水平Grid縦absolute子のframeによる縦inline経路拒否、012は親frame/auto inset static位置差も追加。次は009 borderのみ独立最小比較、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 

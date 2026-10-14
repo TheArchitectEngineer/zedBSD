@@ -230,12 +230,14 @@ inline_vertical_absolute_grid(
 	int horizontal_lr;
 	int horizontal_rl;
 	int horizontal_rtl;
+	int bordered_child;
 
 	/* Auto or temporarily resolved pixel widths enter positioned fixed-track Grids. */
 	parent = box->parent;
 	horizontal_lr = 0;
 	horizontal_rl = 0;
 	horizontal_rtl = 0;
+	bordered_child = 0;
 	if (parent == NULL || box->style.position != CSS_POSITION_ABSOLUTE ||
 	    (box->style.width.unit != CSS_UNIT_AUTO &&
 	    box->style.width.unit != CSS_UNIT_PX) ||
@@ -279,11 +281,21 @@ inline_vertical_absolute_grid(
 		    box->style.offset[CSS_BOTTOM].unit != CSS_UNIT_AUTO)
 			return 0;
 
-		/* Only a frameless child in a frameless Grid uses this first mapping. */
+		/* A border-only first vertical child can still use the row's inline room. */
 		for (index = 0; index < 4; index++) {
 			if (parent->border[index] != 0 || parent->padding[index] != 0 ||
-			    box->border[index] != 0 || box->padding[index] != 0)
+			    box->padding[index] != 0)
 				return 0;
+			if (box->border[index] != 0)
+				bordered_child = 1;
+		}
+		if (bordered_child) {
+			if (!horizontal_lr)
+				return 0;
+			for (index = 0; index < 4; index++) {
+				if (box->margin[index] != 0)
+					return 0;
+			}
 		}
 	} else if (parent->style.writing_mode != box->style.writing_mode &&
 	    !((parent->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
