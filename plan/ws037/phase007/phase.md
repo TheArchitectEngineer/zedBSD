@@ -112,3 +112,11 @@ image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd6
 部分合格の読み方: 4 が fail で 5 が ok なら ROP は system memory に書けない（危険 2、以後 VRAM に描いて copy）。6 だけ fail なら TIC・TSC か texture の命令。
 
 FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（最初の違う pixel）と `… N of 65536 pixels wrong, middle X`（`0xdeadbeef` のままなら何も書かれていない、`0xffffff00` なら clear だけ通った）、`P9g fail: fence … did not come (semaphore …)`、`rm: class … status …`（0xc597 の確保）、`P6 channel error: …`（RC の event）。`P7 fail` なら host を reboot。
+
+## R7d の結果（T1-646、T2、2026-10-15、RTX 2070 実機、方法 B rombar=0、main 1844a35e3）
+
+- FAIL。P9c は再び ok（32 words of 42）、`P9g ok: 3D object on the compute channel`、program 0..3 の命令数・register 数の行は出た。
+- `P9g fail: fence 0x4243 of the system memory draw did not come (semaphore…`（画面の幅で切れた）、続いて `nvrtx: rpc: firmware error 13: Graphics Exception: Shader Program Heade…`、`ESR 0x405840=0xa0000`、`ESR 0x405848=0x80000`、`P6 channel error: eng 1 chid 3 type 13`。P6 ok・P7 ok。`rm: class` の行なし。VRAM・texture の draw には届かず。
+- 読み（Q1、未解析）: 3D の program の SPH（Shader Program Header、vertex・fragment の header）が GR に拒まれた。compute（P9c）は SPH を使わないので通った。次は SPH の field を NVK・NAK（MIT）の値と 1 つずつ比べる。
+- PNG: `build/review/t2r7d-3.png`（Q1 の checkout）。
+- 再開の条件: SPH の直しの後に R7d を再試験。担当は次に空いた P（P3 は WS236 の Video を優先、2026-10-15）。

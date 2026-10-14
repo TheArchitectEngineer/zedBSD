@@ -3,7 +3,8 @@
 # the old usb-hid code the glue is compared with (hid-input-old.c, git a6988363c) are compiled freestanding as the kernel
 # compiles them; the test (hid-input-host-test.c) uses the host's C library.  The glue and the old code must register the
 # same devices and emit the same events for the fixed descriptors (and the Latitude 5330's touchpad and Logitech's
-# receiver from files) and 20000 random reports each; the glue's own rules are checked too.
+# receiver from files) and 20000 random reports each; the glue's own rules are checked too (BUG-313: the Wacom 8191's
+# interface 0 from plan/bugs/BUG-313/wacom-8191-if0.rdesc, whose main device waits for its first key or pen).
 # usage: sh plan/ws143/tests/hid-input-host-test.sh   (from the repository's top; OUT= to choose the build folder)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -25,4 +26,5 @@ timeout 300 "$OUT/hid-input-host-test" check \
 	plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin \
 	plan/bugs/bug105/logi-bolt-c548-if0.rdesc plan/bugs/bug105/logi-bolt-c548-if1.rdesc \
 	plan/bugs/bug105/logi-bolt-c548-if2.rdesc \
-	plan/bugs/BUG-267/touchscreen-if0.rdesc plan/bugs/BUG-267/touchscreen-if1.rdesc
+	plan/bugs/BUG-267/touchscreen-if0.rdesc plan/bugs/BUG-267/touchscreen-if1.rdesc \
+	plan/bugs/BUG-313/wacom-8191-if0.rdesc

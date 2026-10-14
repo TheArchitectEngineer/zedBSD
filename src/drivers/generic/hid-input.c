@@ -96,8 +96,24 @@ struct hid_input {
 	 */
 	unsigned malformed;
 	unsigned log_markers;
-	/* The physical path given at publication, for the log's lines. */
+	/*
+	 * The main device's identity given at publication, kept for the log's
+	 * lines and for a main device published later: name and unique_id
+	 * point into the buffers beside them, or are NULL for none.
+	 */
 	char physical_path[64];
+	char name_text[64];
+	char unique_id_text[64];
+	const char *name;
+	const char *unique_id;
+	struct input_id id;
+	/*
+	 * Nonzero while the main device waits for its first key or pen
+	 * (HID_INPUT_MAIN_LATER): the report path then publishes it, once.
+	 * Cleared when it is published, when that fails, and on unpublish, so
+	 * nothing is registered after the transport took the devices away.
+	 */
+	unsigned main_later;
 	struct hid_report_input decoded;
 	struct hid_digitizer_output pen_output;
 	struct hid_touch_output touch_output;
@@ -114,6 +130,11 @@ static void hid_input_touch_report(struct hid_input *input, uint64_t millisecond
 static int hid_input_log_marker(struct hid_input *input);
 static uint32_t hid_input_pen_properties(const struct hid_input *input);
 static void hid_input_log_touch(const struct hid_input *input, const struct hid_input_identity *identity);
+static const char *hid_input_keep_text(char *buffer, size_t size, const char *text);
+static int hid_input_register_main(struct hid_input *input);
+static int hid_input_holds_key(const struct hid_input *input);
+static int hid_input_keyboard_key(uint16_t code);
+static void hid_input_publish_later(struct hid_input *input, const char *cause);
 
 /*
  * Parses a report descriptor and describes the devices it declares.
@@ -313,17 +334,17 @@ drv_hid_input_has_keys(
 	const struct hid_input *input)
 {
 	size_t index;
-	uint16_t code;
+	int keyboard_key;
 
 	/* Looks through what the main device declares. */
 	for (index = 0; index < input->capability_count; index++) {
-		/* Another kind of event, or a button. */
+		/* Another kind of event. */
 		if (input->capabilities[index].type != EV_KEY)
 			continue;
-		code = input->capabilities[index].code;
-		if (code == 0U || (code >= HID_INPUT_BUTTONS_FIRST && code < HID_INPUT_KEYS_MORE))
-			continue;
-		if (code >= HID_INPUT_BUTTONS_MORE)
+
+		/* A button is not a keyboard's key. */
+		keyboard_key = hid_input_keyboard_key(input->capabilities[index].code);
+		if (!keyboard_key)
 			continue;
 
 		/* Succeeded: a key is declared. */
@@ -381,10 +402,13 @@ drv_hid_input_touch_slots(
  * EV_SYN (a touch screen and nothing else) or the identity asks for the
  * touch device alone (HID_INPUT_TOUCH_ONLY; the main device's reports are
  * then dropped); a touch screen or pad is a device of its own beside it.
- * An interface that is a touch screen's mouse emulation
- * (HID_INPUT_EMULATION) publishes nothing and succeeds.  Fails with ENODEV
- * when there is no device at all, or with the input layer's error (ENOSPC
- * when it has no room); a failure leaves nothing registered.
+ * Beside a touch device, HID_INPUT_MAIN_LATER leaves the main device to
+ * the first report that holds a keyboard's key or brings a pen into
+ * range; the reports before it are dropped.  An interface that is a touch
+ * screen's mouse emulation (HID_INPUT_EMULATION) publishes nothing and
+ * succeeds.  Fails with ENODEV when there is no device at all, or with the
+ * input layer's error (ENOSPC when it has no room); a failure leaves
+ * nothing registered.
  */
 int
 drv_hid_input_publish(
@@ -392,10 +416,14 @@ drv_hid_input_publish(
 	const struct hid_input_identity *identity)
 {
 	struct input_device_info info;
+	int main_now;
 	int error;
 
-	/* The path the log's lines name the devices by. */
+	/* The identity the log's lines name the devices by, and the main device is published under. */
 	(void)kern_snprintf(input->physical_path, sizeof(input->physical_path), "%s", identity->physical_path);
+	input->name = hid_input_keep_text(input->name_text, sizeof(input->name_text), identity->name);
+	input->unique_id = hid_input_keep_text(input->unique_id_text, sizeof(input->unique_id_text), identity->unique_id);
+	input->id = identity->id;
 
 	/* A touch screen's mouse emulation: nothing is published, every report is dropped. */
 	if ((identity->flags & HID_INPUT_EMULATION) != 0U) {
@@ -403,27 +431,31 @@ drv_hid_input_publish(
 		return 0;
 	}
 
-	/* The main device's identity and what it declares. */
-	kern_memset(&info, 0, sizeof(info));
-	info.name = identity->name;
-	info.physical_path = identity->physical_path;
-	info.unique_id = identity->unique_id;
-	info.id = identity->id;
-	info.capabilities = input->capabilities;
-	info.capability_count = input->capability_count;
-	info.absolute_axes = input->absolute_axes;
-	info.absolute_axis_count = input->absolute_axis_count;
-	info.properties = hid_input_pen_properties(input);
-
 	/* The main device, unless it would declare EV_SYN alone or the transport wants the touch device alone. */
-	error = 0;
+	main_now = 0;
 	if (input->capability_count > 1U && (identity->flags & HID_INPUT_TOUCH_ONLY) == 0U)
-		error = drv_input_device_register(&info, &input->input);
+		main_now = 1;
+
+	/* Beside a touch device, a main device the transport doubts waits for its first key or pen. */
+	if (main_now &&
+	    input->touch_present &&
+	    (identity->flags & HID_INPUT_MAIN_LATER) != 0U) {
+		input->main_later = 1U;
+		main_now = 0;
+	}
+
+	/* Registers the main device now. */
+	error = 0;
+	if (main_now)
+		error = hid_input_register_main(input);
 
 	/* The touch screen's or pad's device beside it, under the same identity. */
 	if (error == 0 && input->touch_present) {
+		kern_memset(&info, 0, sizeof(info));
 		info.name = identity->touch_name;
 		info.physical_path = identity->touch_physical_path;
+		info.unique_id = identity->unique_id;
+		info.id = identity->id;
 		info.capabilities = input->touch_description.capabilities;
 		info.capability_count = input->touch_description.capability_count;
 		info.absolute_axes = input->touch_description.axes;
@@ -472,6 +504,7 @@ drv_hid_input_report(
 	int marker;
 	int error;
 	int emitted;
+	int holds_key;
 
 	/* The values of the report. */
 	error = drv_hid_report_decode(input->layout, report, length, &input->decoded);
@@ -507,6 +540,13 @@ drv_hid_input_report(
 	state = hid_input_report_state(input, input->decoded.report_id);
 	if (state == NULL)
 		return;
+
+	/* A main device that waits is published by the first report that holds a keyboard's key. */
+	if (input->main_later) {
+		holds_key = hid_input_holds_key(input);
+		if (holds_key)
+			hid_input_publish_later(input, "key");
+	}
 
 	/* The keys whose joined state changed. */
 	emitted = 0;
@@ -575,7 +615,11 @@ drv_hid_input_unpublish(
 	struct input_device *device;
 	struct input_device *touch_device;
 
-	/* The devices are forgotten before they go, so a second call finds none. */
+	/*
+	 * The devices are forgotten before they go, so a second call finds
+	 * none, and a main device that waited is never published now.
+	 */
+	input->main_later = 0U;
 	device = input->input;
 	touch_device = input->touch_input;
 	input->input = NULL;
@@ -831,6 +875,10 @@ hid_input_pen_report(
 		return;
 	}
 
+	/* A main device that waits is published by the first pen in range: the first frame that tells anything. */
+	if (input->main_later && input->pen_output.event_count > 0U)
+		hid_input_publish_later(input, "pen");
+
 	/* Hands every event of the frames to the input layer in order. */
 	for (index = 0; index < input->pen_output.event_count; index++) {
 		event = &input->pen_output.events[index];
@@ -923,10 +971,12 @@ hid_input_log_touch(
 	if (counts[0] + counts[1] + counts[2] + counts[3] == 0U)
 		return;
 
-	/* Published beside the touch device, or dropped. */
+	/* Published beside the touch device, waiting for its first key or pen, or dropped. */
 	outcome = "published";
 	if (input->input == NULL)
 		outcome = "dropped";
+	if (input->main_later)
+		outcome = "held until its first key or pen report";
 	if ((identity->flags & HID_INPUT_TOUCH_ONLY) != 0U)
 		outcome = "dropped (the touch device alone)";
 	kern_logf("hid-input: %s main device %s: keys %u, rel %u, abs %u, other %u\n",
@@ -981,4 +1031,136 @@ hid_input_pen_properties(
 
 	/* Succeeded: a pen tablet on the desk. */
 	return 1U << INPUT_PROP_POINTER;
+}
+
+/* Copies an identity's string into a buffer of the record: the buffer, or NULL for none. */
+static const char *
+hid_input_keep_text(
+	char *buffer,
+	size_t size,
+	const char *text)
+{
+	/* No string is kept as none. */
+	if (text == NULL)
+		return NULL;
+
+	/* The copy, cut at the buffer's end (the input layer refuses a longer one anyway). */
+	(void)kern_snprintf(buffer, size, "%s", text);
+
+	/* Succeeded: the record's own copy. */
+	return buffer;
+}
+
+/*
+ * Registers the main device under the identity kept at publication.  The
+ * input layer's error (ENOSPC when it has no room) leaves it unregistered.
+ */
+static int
+hid_input_register_main(
+	struct hid_input *input)
+{
+	struct input_device_info info;
+	int error;
+
+	/* The main device's identity and what it declares. */
+	kern_memset(&info, 0, sizeof(info));
+	info.name = input->name;
+	info.physical_path = input->physical_path;
+	info.unique_id = input->unique_id;
+	info.id = input->id;
+	info.capabilities = input->capabilities;
+	info.capability_count = input->capability_count;
+	info.absolute_axes = input->absolute_axes;
+	info.absolute_axis_count = input->absolute_axis_count;
+	info.properties = hid_input_pen_properties(input);
+
+	/* Registers it with the input layer. */
+	error = drv_input_device_register(&info, &input->input);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the main device is in the input layer. */
+	return 0;
+}
+
+/*
+ * Reports nonzero when the decoded report holds a keyboard's key down (a
+ * button is not one, and a keyboard's error holds none).
+ */
+static int
+hid_input_holds_key(
+	const struct hid_input *input)
+{
+	const struct hid_report_value *value;
+	size_t index;
+	int keyboard_key;
+
+	/* A keyboard that reported an error tells nothing new. */
+	if (input->decoded.keyboard_error)
+		return 0;
+
+	/* The decoded values name only the keys held down. */
+	for (index = 0; index < input->decoded.value_count; index++) {
+		/* Another kind of event. */
+		value = &input->decoded.values[index];
+		if (value->type != EV_KEY)
+			continue;
+
+		/* Succeeded: a keyboard's key is down. */
+		keyboard_key = hid_input_keyboard_key(value->code);
+		if (keyboard_key)
+			return 1;
+	}
+
+	/* No key is held. */
+	return 0;
+}
+
+/*
+ * Reports nonzero when an EV_KEY code is a keyboard's key: neither
+ * KEY_RESERVED nor a button (BTN_MISC up to KEY_OK, BTN_TRIGGER_HAPPY on).
+ */
+static int
+hid_input_keyboard_key(
+	uint16_t code)
+{
+	/* KEY_RESERVED names no key. */
+	if (code == 0U)
+		return 0;
+
+	/* The buttons' blocks. */
+	if (code >= HID_INPUT_BUTTONS_FIRST && code < HID_INPUT_KEYS_MORE)
+		return 0;
+	if (code >= HID_INPUT_BUTTONS_MORE)
+		return 0;
+
+	/* Succeeded: a keyboard's key. */
+	return 1;
+}
+
+/*
+ * Publishes the main device that waited for its first key or pen
+ * (HID_INPUT_MAIN_LATER), from the report path, before the report's events
+ * are told.  It is tried once: a failure is logged, and the main device's
+ * reports are dropped from then on.
+ */
+static void
+hid_input_publish_later(
+	struct hid_input *input,
+	const char *cause)
+{
+	int error;
+
+	/* The main device waits no more, whatever the registration gives. */
+	input->main_later = 0U;
+
+	/* Registers it as the publication would have. */
+	error = hid_input_register_main(input);
+	if (error != 0) {
+		kern_logf("hid-input: %s main device not published on its first %s report error=%d\n", input->physical_path, cause, error);
+		return;
+	}
+
+	/* Succeeded: the input layer's own line names its node. */
+	kern_logf("hid-input: %s main device published on its first %s report\n", input->physical_path, cause);
 }

@@ -58,6 +58,15 @@
 #define HID_INPUT_EMULATION		0x2U
 
 /*
+ * The interface is a touch screen whose main device beside it (a pen, a
+ * keyboard) may never report: BUG-313's Wacom screen declares both, with
+ * no key on it and no pen known.  The touch device is published now, and
+ * the main device on its first report that holds a keyboard's key or
+ * brings a pen into range.
+ */
+#define HID_INPUT_MAIN_LATER		0x4U
+
+/*
  * One descriptor's devices: the parsed layout, what they declare, the
  * states of the pen and touch state machines, the keys each report holds,
  * and the input devices once published.  Owned by the transport from
