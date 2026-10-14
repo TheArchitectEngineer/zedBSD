@@ -687,6 +687,11 @@ drv_pci_device_set_wake(
 	struct drv_pci_device *device,
 	bool wake);
 
+int
+drv_pci_device_keep_d0(
+	struct drv_pci_device *device,
+	bool keep);
+
 void
 drv_pci_device_name(
 	struct drv_pci_device *device,

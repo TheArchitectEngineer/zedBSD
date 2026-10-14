@@ -179,6 +179,7 @@ drv_i915_skl_readout_decode(
 	unsigned lit_transcoder;
 	int error;
 
+	/* Nothing found yet; the refresh assumed until the timing gives it. */
 	kern_memset(readout, 0, sizeof(*readout));
 	readout->refresh_millihz = I915_GEN9_FLIP_REFRESH_ASSUMED;
 
@@ -207,6 +208,7 @@ drv_i915_skl_readout_decode(
 		if ((registers->plane_ctl[pipe] & I915_SKL_PLANE_CTL_ENABLE) == 0U)
 			continue;
 
+		/* A lit pipe: counted, and remembered with its transcoder. */
 		readout->lit_pipes++;
 		readout->pipe = pipe;
 		lit_transcoder = transcoder;
@@ -217,11 +219,14 @@ drv_i915_skl_readout_decode(
 		readout->reason = "no-lit-pipe";
 		return EINVAL;
 	}
+
+	/* Several lit pipes: which one is the panel is not known. */
 	if (readout->lit_pipes > 1U) {
 		readout->reason = "several-lit-pipes";
 		return EINVAL;
 	}
 
+	/* The one lit pipe's transcoder. */
 	readout->transcoder = lit_transcoder;
 
 	/* The plane must scan out a surface the driver's buffers can stand in for. */
@@ -364,6 +369,7 @@ drv_i915_gen9_flip_start(
 	int level;
 	int error;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 	gt = &device->gt;
 	kern_memset(flip, 0, sizeof(*flip));
@@ -391,6 +397,7 @@ drv_i915_gen9_flip_start(
 	if (fb_physical >= gt->gmadr_base && fb_physical - gt->gmadr_base == (uint64_t)flip->readout.surf)
 		fb_match = "same";
 
+	/* What was read, in the log. */
 	i915_skl_log_readout(&registers, &flip->readout, fb_match);
 
 	/* Reports a display the flips cannot stand in for. */
@@ -433,6 +440,7 @@ drv_i915_gen9_flip_start(
 	/* The flips are used from the first presentation of a lease on. */
 	flip->ready = 1;
 
+	/* Says where the flips go. */
 	kern_logf("i915: gen9 display: flip on pipe %c, buffers at 0x%08x and 0x%08x (GGTT), the firmware's surface 0x%08x is restored on release\n",
 	    'A' + (int)flip->readout.pipe,
 	    (uint32_t)flip->buffer[0].surf,
@@ -455,6 +463,7 @@ drv_i915_gen9_flip_extent(
 {
 	struct i915_skl_flip *flip;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* The plane's extent and the timing's refresh. */
@@ -475,6 +484,7 @@ drv_i915_gen9_flip_panel(
 {
 	struct i915_skl_flip *flip;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Only a flipped panel whose timing was read. */
@@ -508,6 +518,7 @@ drv_i915_gen9_flip_claim(
 
 	UNUSED_PARAMETER(device);
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Without the flips there is nothing to ready. */
@@ -557,6 +568,7 @@ drv_i915_gen9_flip_present(
 	uint64_t copied;
 	int error;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 	owner = session;
 	storage = object;
@@ -584,6 +596,7 @@ drv_i915_gen9_flip_present(
 			return error;
 	}
 
+	/* When the wait ended. */
 	waited = drv_i915_perf_now();
 
 	/* The frame as the GPU sees it, in the order it was presented. */
@@ -622,6 +635,7 @@ drv_i915_gen9_flip_present(
 	if (error != 0)
 		return error;
 
+	/* When the copy ended. */
 	copied = drv_i915_perf_now();
 
 	/* Points the plane at the buffer (its pin keeps the address within 32 bits); it latches at the next vertical blank. */
@@ -651,6 +665,7 @@ drv_i915_gen9_flip_wait(
 	struct i915_skl_flip *flip;
 	int error;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Waits for the armed flip, if any. */
@@ -679,6 +694,7 @@ drv_i915_gen9_flip_release(
 	struct i915_skl_flip *flip;
 	int error;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Without the flips the plane never left the firmware's surface. */
@@ -699,6 +715,7 @@ drv_i915_gen9_flip_release(
 		return error;
 	}
 
+	/* Says how many flips the lease made. */
 	kern_logf("i915: gen9 display: %llu flip(s), %llu flip-done interrupt(s); the firmware's surface is back\n",
 	    (unsigned long long)flip->flips,
 	    (unsigned long long)flip->irq_count);
@@ -722,6 +739,7 @@ drv_i915_gen9_flip_stop(
 	uint32_t live;
 	int error;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Without the flips there is nothing to give up. */
@@ -737,6 +755,7 @@ drv_i915_gen9_flip_stop(
 	i915_skl_unmap(device);
 	flip->ready = 0;
 
+	/* Says why the flips end. */
 	kern_logf("i915: gen9 display: flip to 0x%08x did not latch in %u ms (live 0x%08x); the firmware's surface is %s and the copy display is used from now on\n",
 	    flip->armed,
 	    I915_GEN9_FLIP_LATCH_MS,
@@ -760,6 +779,7 @@ drv_i915_gen9_flip_fini(
 
 	UNUSED_PARAMETER(device);
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Nothing was made. */
@@ -779,6 +799,7 @@ drv_i915_gen9_flip_fini(
 		}
 	}
 
+	/* The buffers the plane does not show go. */
 	i915_skl_free_buffers(flip);
 
 	/* Forgets the flips. */
@@ -801,6 +822,7 @@ drv_i915_gen9_flip_irq(
 	uint32_t iir_reg;
 	uint32_t iir;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* Only an enabled flip interrupt is served. */
@@ -818,6 +840,7 @@ drv_i915_gen9_flip_irq(
 	if (iir == 0U)
 		return;
 
+	/* Acknowledges what was seen. */
 	drv_i915_raw_write32(flip->mmio, iir_reg, iir);
 
 	/* A flip latched: the waiter reads the live surface now. */
@@ -860,9 +883,11 @@ i915_skl_read(
 	if ((registers->power & I915_SKL_PW_2_STATE) == 0U)
 		return;
 
+	/* The transcoders A to C, behind power well 2. */
 	for (transcoder = 0U; transcoder < I915_SKL_TRANSCODER_EDP; transcoder++)
 		i915_skl_read_transcoder(mmio, registers, transcoder);
 
+	/* The pipes B and C, behind power well 2 too. */
 	for (pipe = 1U; pipe < I915_SKL_PIPES; pipe++)
 		i915_skl_read_pipe(mmio, registers, pipe);
 }
@@ -894,6 +919,7 @@ i915_skl_read_transcoder(
 		registers->link_n[transcoder] = drv_i915_raw_read32(mmio, I915_SKL_LINK_N1_A + offset);
 	}
 
+	/* Succeeded: the transcoder was read. */
 	registers->transcoder_read[transcoder] = 1;
 }
 
@@ -907,6 +933,7 @@ i915_skl_read_pipe(
 	uint32_t offset;
 	uint32_t scaler_offset;
 
+	/* The pipe's and its scalers' registers. */
 	offset = pipe * I915_SKL_PIPE_STRIDE;
 	scaler_offset = pipe * I915_SKL_PS_PIPE_STRIDE;
 
@@ -926,6 +953,7 @@ i915_skl_read_pipe(
 	registers->scaler[pipe][0] = drv_i915_raw_read32(mmio, I915_SKL_PS_1A_CTRL + scaler_offset);
 	registers->scaler[pipe][1] = drv_i915_raw_read32(mmio, I915_SKL_PS_2A_CTRL + scaler_offset);
 
+	/* Succeeded: the pipe was read. */
 	registers->pipe_read[pipe] = 1;
 }
 
@@ -954,6 +982,7 @@ i915_skl_log_readout(
 		if (!registers->transcoder_read[transcoder])
 			continue;
 
+		/* The transcoder's registers. */
 		kern_logf("i915: gen9 display: transcoder %s DDI_FUNC_CTL=0x%08x TRANSCONF=0x%08x HTOTAL=0x%08x VTOTAL=0x%08x LINK_M1=0x%08x LINK_N1=0x%08x\n",
 		    i915_skl_transcoder_name(transcoder),
 		    registers->ddi_func[transcoder],
@@ -969,6 +998,7 @@ i915_skl_log_readout(
 		if (!registers->pipe_read[pipe])
 			continue;
 
+		/* The pipe's registers. */
 		kern_logf("i915: gen9 display: pipe %c PIPESRC=0x%08x PLANE_CTL=0x%08x STRIDE=0x%08x POS=0x%08x SIZE=0x%08x SURF=0x%08x OFFSET=0x%08x SURFLIVE=0x%08x PS=0x%08x/0x%08x\n",
 		    'A' + (int)pipe,
 		    registers->pipe_src[pipe],
@@ -989,6 +1019,7 @@ i915_skl_log_readout(
 		return;
 	}
 
+	/* What the decode made of them. */
 	kern_logf("i915: gen9 display: readout pipe %c transcoder %s %ux%u stride %u %s surf 0x%08x refresh %u mHz (%s, pixel %u kHz) scaler %s fb=%s\n",
 	    'A' + (int)readout->pipe,
 	    i915_skl_transcoder_name(readout->transcoder),
@@ -1021,6 +1052,7 @@ i915_skl_decode_plane(
 	uint32_t live;
 	unsigned pipe;
 
+	/* The plane of the lit pipe. */
 	pipe = readout->pipe;
 	control = registers->plane_ctl[pipe];
 
@@ -1076,6 +1108,8 @@ i915_skl_decode_plane(
 		readout->reason = "size";
 		return EINVAL;
 	}
+
+	/* Rows at least as long as the plane is wide. */
 	if (readout->stride_bytes < readout->width * 4U) {
 		readout->reason = "stride";
 		return EINVAL;
@@ -1121,6 +1155,7 @@ i915_skl_decode_refresh(
 	uint32_t vtotal;
 	uint64_t millihz;
 
+	/* The transcoder and its DDI function. */
 	transcoder = readout->transcoder;
 	ddi_func = registers->ddi_func[transcoder];
 
@@ -1134,6 +1169,7 @@ i915_skl_decode_refresh(
 	if ((registers->dpll_ctrl2 & (1U << (port * I915_SKL_DPLL_CTRL2_BITS))) == 0U)
 		return;
 
+	/* The DPLL the port takes its clock from. */
 	dpll = (registers->dpll_ctrl2 >> (port * I915_SKL_DPLL_CTRL2_BITS + I915_SKL_DPLL_CTRL2_SELECT_SHIFT)) & I915_SKL_DPLL_CTRL2_SELECT_MASK;
 
 	/* An HDMI-mode DPLL has no fixed link rate. */
@@ -1167,6 +1203,7 @@ i915_skl_decode_refresh(
 	if (millihz < I915_SKL_FLIP_REFRESH_MIN || millihz > I915_SKL_FLIP_REFRESH_MAX)
 		return;
 
+	/* Succeeded: the refresh is the timing's. */
 	readout->refresh_millihz = (uint32_t)millihz;
 	readout->refresh_measured = 1;
 }
@@ -1231,8 +1268,10 @@ i915_skl_make_buffers(
 		if (error != 0)
 			return error;
 
+		/* Made: freed on a failure. */
 		flip->made[index] = 1;
 
+		/* Its GGTT range. */
 		error = drv_i915_scanout_pin(&flip->buffer[index], "gen9 flip");
 		if (error != 0)
 			return error;
@@ -1264,10 +1303,12 @@ i915_skl_free_buffers(
 			}
 		}
 
+		/* The backing. */
 		error = drv_i915_scanout_destroy(&flip->buffer[index]);
 		if (error != 0)
 			kern_logf("i915: gen9 display: XXX buffer %u could not be destroyed: %d\n", index, error);
 
+		/* Succeeded: the buffer is gone. */
 		flip->made[index] = 0;
 	}
 }
@@ -1292,6 +1333,7 @@ i915_skl_map(
 	unsigned page;
 	int error;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* The buffers are already in this address space. */
@@ -1322,9 +1364,11 @@ i915_skl_map(
 				break;
 			}
 
+			/* The page, uncached, in order. */
 			error = drv_i915_ppgtt_insert_uncached(vm, va + (uint64_t)page * I915_SKL_FLIP_PAGE_BYTES, dma, 1U);
 		}
 
+		/* The buffer's range. */
 		flip->map_va[index] = va;
 	}
 
@@ -1363,6 +1407,7 @@ i915_skl_unmap(
 	struct i915_skl_flip *flip;
 	unsigned index;
 
+	/* The flips of the one device. */
 	flip = &i915_skl_flip_state;
 
 	/* No address space holds the buffers. */
@@ -1400,6 +1445,7 @@ i915_skl_latch(
 	uint32_t live_reg;
 	uint32_t live;
 
+	/* The plane's live surface register. */
 	live_reg = i915_skl_plane_reg(flip, I915_SKL_PLANE_SURFLIVE_1_A);
 
 	/* Reads the live surface until it is the one asked for, or the time is up. */
@@ -1438,6 +1484,7 @@ i915_skl_arm(
 	uint32_t surf_reg;
 	uint32_t current_stride;
 
+	/* The plane's stride and surface registers. */
 	stride_reg = i915_skl_plane_reg(flip, I915_SKL_PLANE_STRIDE_1_A);
 	surf_reg = i915_skl_plane_reg(flip, I915_SKL_PLANE_SURF_1_A);
 
@@ -1501,6 +1548,7 @@ i915_skl_irq_enable(
 	uint32_t ier_reg;
 	uint32_t value;
 
+	/* The flip pipe's interrupt registers. */
 	imr_reg = I915_SKL_DE_PIPE_IMR_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE;
 	iir_reg = I915_SKL_DE_PIPE_IIR_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE;
 	ier_reg = I915_SKL_DE_PIPE_IER_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE;
@@ -1534,6 +1582,7 @@ i915_skl_irq_disable(
 	uint32_t ier_reg;
 	uint32_t value;
 
+	/* The flip pipe's interrupt registers. */
 	imr_reg = I915_SKL_DE_PIPE_IMR_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE;
 	iir_reg = I915_SKL_DE_PIPE_IIR_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE;
 	ier_reg = I915_SKL_DE_PIPE_IER_A + flip->readout.pipe * I915_SKL_DE_PIPE_IRQ_STRIDE;

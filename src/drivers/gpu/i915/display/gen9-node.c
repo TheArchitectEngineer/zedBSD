@@ -90,6 +90,10 @@ struct i915_gen9_screen {
 	uint32_t armed;
 	uint64_t latched_tick;
 
+	/* Darkened by a sleep, and the surface it showed, which the resume shows again. */
+	int slept;
+	uint32_t slept_surf;
+
 	/* The lease: its holder (NULL: free), its number, the attachment it was given for, and its presentations. */
 	void *owner;
 	uint64_t lease;
@@ -119,6 +123,9 @@ struct i915_gen9_node {
 	int queues;
 	volatile int stopping;
 
+	/* Nonzero while the system sleeps: the ports are not looked at. */
+	int sleeping;
+
 	/* The display events' sequence. */
 	struct spinlock sequence_lock;
 	uint64_t sequence;
@@ -138,7 +145,8 @@ static int i915_gen9_node_index(uint32_t display_id, unsigned *index);
 static int i915_gen9_node_lease_index(struct i915_gen9_node *node, void *session, uint64_t lease, unsigned *index);
 static int i915_gen9_node_make_buffers(struct i915_gen9_node *node, struct i915_gen9_screen *screen, const struct i915_lcd_mode *mode);
 static void i915_gen9_node_free_buffers(struct i915_gen9_screen *screen);
-static int i915_gen9_node_light(struct i915_gen9_node *node, unsigned index);
+static int i915_gen9_node_light(struct i915_gen9_node *node, unsigned index, uint32_t surf);
+static void i915_gen9_node_darken(struct i915_gen9_node *node, unsigned index);
 static void i915_gen9_node_end(struct i915_gen9_node *node, unsigned index);
 static int i915_gen9_node_map(struct i915_gen9_node *node, struct i915_gen9_screen *screen, struct i915_ppgtt *vm);
 static void i915_gen9_node_unmap(struct i915_gen9_node *node, struct i915_gen9_screen *screen);
@@ -162,11 +170,15 @@ drv_i915_gen9_node_start(
 	uint32_t lcpll1;
 	uint32_t ctrl1;
 	uint32_t cdclk_ctl;
+	char ports[I915_SKL_OUTPUTS + 1U];
+	unsigned count;
+	unsigned port;
 	int platform;
 	int level;
 	int sku;
 	int error;
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 	mmio = &device->gt.mmio;
 
@@ -224,6 +236,8 @@ drv_i915_gen9_node_start(
 		if (error != 0)
 			drv_i915_workqueue_destroy(&node->workqueue);
 	}
+
+	/* The first look a second from now. */
 	if (error == 0) {
 		node->queues = 1;
 		drv_i915_delayed_work_init(&node->poll_work, i915_gen9_node_work, node);
@@ -232,11 +246,17 @@ drv_i915_gen9_node_start(
 		kern_logf("i915: gen9 node: the hotplug work could not start: %d; the ports are not watched\n", error);
 	}
 
+	/* The ports' letters for the log. */
+	count = 0U;
+	for (port = I915_SKL_PORT_B; port <= I915_SKL_PORT_D; port++) {
+		if ((node->outputs.present & (1U << port)) != 0U)
+			ports[count++] = (char)('A' + (int)port);
+	}
+
 	/* Succeeded: the external displays are offered. */
-	kern_logf("i915: gen9 node: external displays on ports %s%s%s (connected 0x%x), panel on pipe %c, CD clock %u kHz, latencies %u/%u/%u/%u/%u/%u/%u/%u us\n",
-	    ((node->outputs.present & (1U << I915_SKL_PORT_B)) != 0U) ? "B" : "",
-	    ((node->outputs.present & (1U << I915_SKL_PORT_C)) != 0U) ? "C" : "",
-	    ((node->outputs.present & (1U << I915_SKL_PORT_D)) != 0U) ? "D" : "",
+	ports[count] = '\0';
+	kern_logf("i915: gen9 node: external displays on ports %s (connected 0x%x), panel on pipe %c, CD clock %u kHz, latencies %u/%u/%u/%u/%u/%u/%u/%u us\n",
+	    ports,
 	    node->outputs.connected,
 	    'A' + (int)panel.pipe,
 	    cdclk,
@@ -254,6 +274,7 @@ drv_i915_gen9_node_stop(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -290,6 +311,7 @@ drv_i915_gen9_node_count(void)
 	uint32_t count;
 	unsigned index;
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -348,6 +370,7 @@ drv_i915_gen9_node_sequence(void)
 	unsigned long enabled;
 	uint64_t sequence;
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -387,6 +410,7 @@ drv_i915_gen9_node_query(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* The output under the node's lock. */
@@ -406,6 +430,8 @@ drv_i915_gen9_node_query(
 			output = &node->outputs.output[slot];
 			screen = &node->screen[slot];
 		}
+
+		/* Counted among those with a sink. */
 		found++;
 	}
 
@@ -472,6 +498,7 @@ drv_i915_gen9_node_mode(
 	UNUSED_PARAMETER(device);
 	UNUSED_PARAMETER(session);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Only an external display's id. */
@@ -543,6 +570,7 @@ drv_i915_gen9_node_claim(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Only plane 0 of an external display. */
@@ -569,7 +597,7 @@ drv_i915_gen9_node_claim(
 	if (error == 0)
 		error = i915_gen9_node_make_buffers(node, screen, &output->mode);
 	if (error == 0)
-		error = i915_gen9_node_light(node, index);
+		error = i915_gen9_node_light(node, index, (uint32_t)screen->buffer[0].surf);
 	if (error == 0) {
 		screen->owner = session;
 		screen->lease = ((uint64_t)output->port << I915_GEN9_NODE_LEASE_SHIFT) | (node->next_lease & I915_GEN9_NODE_LEASE_MASK);
@@ -605,6 +633,7 @@ drv_i915_gen9_node_release(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* The lease under the node's lock. */
@@ -653,6 +682,7 @@ drv_i915_gen9_node_present(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 	owner = session;
 	storage = object;
@@ -741,6 +771,7 @@ drv_i915_gen9_node_wait(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* The lease under the node's lock. */
@@ -781,6 +812,7 @@ drv_i915_gen9_node_session_close(
 
 	UNUSED_PARAMETER(device);
 
+	/* The node, of the one device. */
 	node = &i915_gen9_node_state;
 
 	/* Nothing started. */
@@ -796,6 +828,86 @@ drv_i915_gen9_node_session_close(
 			i915_gen9_node_end(node, index);
 		}
 	}
+
+	mutex_unlock(&node->mutex);
+}
+
+/*
+ * Darkens the lit external displays for a sleep, keeping their leases and
+ * buffers: each remembers the surface it showed (the flip armed last, else
+ * the live one).
+ */
+void
+drv_i915_gen9_node_suspend(
+	struct i915_device *device)
+{
+	struct i915_gen9_node *node;
+	struct i915_gen9_screen *screen;
+	unsigned index;
+
+	UNUSED_PARAMETER(device);
+
+	/* The node, of the one device. */
+	node = &i915_gen9_node_state;
+	if (!node->started)
+		return;
+
+	/* Each lit output, under the node's lock; the ports are not looked at until the resume. */
+	mutex_lock(&node->mutex);
+
+	node->sleeping = 1;
+	for (index = 0; index < I915_SKL_OUTPUTS; index++) {
+		screen = &node->screen[index];
+		screen->slept = 0;
+		if (!node->outputs.output[index].lit)
+			continue;
+		screen->slept_surf = screen->armed;
+		if (screen->slept_surf == 0U)
+			screen->slept_surf = drv_i915_skl_outputs_live(&node->outputs, index);
+		screen->slept = 1;
+		screen->armed = 0U;
+		i915_gen9_node_darken(node, index);
+	}
+
+	mutex_unlock(&node->mutex);
+}
+
+/*
+ * Lights the external displays a sleep darkened again, on the surface
+ * each showed; one that cannot be lit stays dark (its presentations
+ * answer ENXIO) and the log says why.
+ */
+void
+drv_i915_gen9_node_resume(
+	struct i915_device *device)
+{
+	struct i915_gen9_node *node;
+	struct i915_gen9_screen *screen;
+	unsigned index;
+	int error;
+
+	UNUSED_PARAMETER(device);
+
+	/* The node, of the one device. */
+	node = &i915_gen9_node_state;
+	if (!node->started)
+		return;
+
+	/* Each output the sleep darkened, under the node's lock; then the ports are looked at again. */
+	mutex_lock(&node->mutex);
+
+	for (index = 0; index < I915_SKL_OUTPUTS; index++) {
+		screen = &node->screen[index];
+		if (!screen->slept)
+			continue;
+		screen->slept = 0;
+		error = i915_gen9_node_light(node, index, screen->slept_surf);
+		if (error != 0)
+			kern_logf("i915: gen9 node: port %c could not be lit again after the sleep: %d\n", 'A' + (int)node->outputs.output[index].port, error);
+	}
+
+	/* The ports are looked at again. */
+	node->sleeping = 0;
 
 	mutex_unlock(&node->mutex);
 }
@@ -871,6 +983,7 @@ i915_gen9_node_latencies(
 	int ipc;
 	int error;
 
+	/* The GT: its PCODE mailbox and registers. */
 	gt = &device->gt;
 
 	/* The two words. */
@@ -902,6 +1015,7 @@ i915_gen9_node_work(
 {
 	struct i915_gen9_node *node;
 
+	/* The node the work was armed for. */
 	node = argument;
 
 	/* A stop asked: no more looks. */
@@ -924,9 +1038,15 @@ i915_gen9_node_poll(
 	unsigned changed;
 	unsigned index;
 
-	/* The ports under the node's lock. */
+	/* The ports under the node's lock; none while the system sleeps. */
 	mutex_lock(&node->mutex);
 
+	if (node->sleeping) {
+		mutex_unlock(&node->mutex);
+		return;
+	}
+
+	/* Which ports changed; a lit output whose sink went is darkened and its lease ended. */
 	changed = drv_i915_skl_outputs_poll(&node->outputs);
 	for (index = 0; index < I915_SKL_OUTPUTS; index++) {
 		if (node->outputs.output[index].connected)
@@ -1068,19 +1188,21 @@ i915_gen9_node_free_buffers(
 }
 
 /*
- * Lights an output on buffer 0, with the panel's lease mutex held while
- * the panel's watermarks move (its flips write the same surface
- * register).  Returns 0, or the outputs' error.
+ * Lights an output on one of its buffers, with the panel's lease mutex
+ * held while the panel's watermarks move (its flips write the same
+ * surface register).  Returns 0, or the outputs' error.
  */
 static int
 i915_gen9_node_light(
 	struct i915_gen9_node *node,
-	unsigned index)
+	unsigned index,
+	uint32_t surf)
 {
 	struct i915_resident_display *rd;
 	struct i915_scanout *first;
 	int error;
 
+	/* The buffers' stride, and the panel's lease, whose mutex holds its flips off. */
 	first = &node->screen[index].buffer[0];
 	rd = &node->device->display->rd;
 	drv_i915_present_lease_init(node->device->display);
@@ -1088,7 +1210,7 @@ i915_gen9_node_light(
 	/* The output lit, the panel's flips held off meanwhile. */
 	mutex_lock(&rd->mutex);
 
-	error = drv_i915_skl_outputs_light(&node->outputs, index, (uint32_t)first->surf, first->stride_units, 0);
+	error = drv_i915_skl_outputs_light(&node->outputs, index, surf, first->stride_units, 0);
 
 	mutex_unlock(&rd->mutex);
 
@@ -1110,19 +1232,13 @@ i915_gen9_node_end(
 	struct i915_gen9_node *node,
 	unsigned index)
 {
-	struct i915_resident_display *rd;
 	struct i915_gen9_screen *screen;
 
+	/* The display the index names. */
 	screen = &node->screen[index];
-	rd = &node->device->display->rd;
-	drv_i915_present_lease_init(node->device->display);
 
 	/* The output dark. */
-	mutex_lock(&rd->mutex);
-
-	drv_i915_skl_outputs_darken(&node->outputs, index);
-
-	mutex_unlock(&rd->mutex);
+	i915_gen9_node_darken(node, index);
 
 	/* The buffers no longer read, unmapped and freed; the lease free. */
 	i915_gen9_node_unmap(node, screen);
@@ -1131,6 +1247,27 @@ i915_gen9_node_end(
 	screen->lease = 0U;
 	screen->armed = 0U;
 	screen->sequence = 0U;
+	screen->slept = 0;
+}
+
+/* Darkens an output, with the panel's lease mutex held while the watermarks move. */
+static void
+i915_gen9_node_darken(
+	struct i915_gen9_node *node,
+	unsigned index)
+{
+	struct i915_resident_display *rd;
+
+	/* The panel's lease. */
+	rd = &node->device->display->rd;
+	drv_i915_present_lease_init(node->device->display);
+
+	/* The output dark, the panel's flips held off meanwhile. */
+	mutex_lock(&rd->mutex);
+
+	drv_i915_skl_outputs_darken(&node->outputs, index);
+
+	mutex_unlock(&rd->mutex);
 }
 
 /*
@@ -1172,8 +1309,12 @@ i915_gen9_node_map(
 				error = EIO;
 				break;
 			}
+
+			/* The page, uncached, in order. */
 			error = drv_i915_ppgtt_insert_uncached(vm, va + (uint64_t)page * I915_GEN9_NODE_PAGE_BYTES, dma, 1U);
 		}
+
+		/* The buffer's range. */
 		screen->map_va[index] = va;
 	}
 
@@ -1239,6 +1380,7 @@ i915_gen9_node_latch(
 	uint64_t now;
 	uint32_t live;
 
+	/* The display the index names. */
 	screen = &node->screen[index];
 
 	/* The live surface until it is the armed one, or the time is up. */
@@ -1252,6 +1394,8 @@ i915_gen9_node_latch(
 			kern_logf("i915: gen9 node: the flip of port %c to 0x%08x did not latch (live 0x%08x)\n", 'A' + (int)node->outputs.output[index].port, screen->armed, live);
 			return ETIMEDOUT;
 		}
+
+		/* A tick's sleep. */
 		kern_usleep_range(1000U, 2000U);
 	}
 

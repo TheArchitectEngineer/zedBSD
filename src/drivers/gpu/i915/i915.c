@@ -17,6 +17,8 @@
 #include "command.h"
 #include "device.h"
 #include "display/display.h"
+#include "display/gen9-backlight.h"
+#include "display/gen9-node.h"
 #include "display/present.h"
 #include "job.h"
 #include "request-queue.h"
@@ -388,6 +390,7 @@ i915_suspend(
 	struct i915_product_kind kind;
 	struct i915_device *device;
 	int product_error;
+	int gen9;
 	int error;
 
 	/* An attach that already cleaned up has nothing to suspend. */
@@ -396,13 +399,19 @@ i915_suspend(
 		return 0;
 
 	/*
-	 * A Gen9 device refuses the suspend (2026-10-14 user decision U2): its
-	 * display is the firmware's, which D3hot would lose for good.
+	 * A Gen9 device's display is the firmware's, which D3hot would lose
+	 * for good: it sleeps in D0 (2026-10-15 user decision, WS237 p005),
+	 * and refuses the suspend (the 2026-10-14 decision U2) only when the
+	 * PCI core cannot keep it there.
 	 */
 	product_error = drv_i915_product_kind(device->product, &kind);
-	if (product_error == 0 && kind.graphics_ver == 9U) {
-		kern_logf("i915: suspend refused: a Gen9 device keeps the firmware's display, which D3hot would lose\n");
-		return EBUSY;
+	gen9 = product_error == 0 && kind.graphics_ver == 9U;
+	if (gen9) {
+		error = drv_pci_device_keep_d0(pci, true);
+		if (error != 0) {
+			kern_logf("i915: suspend refused: a Gen9 device keeps the firmware's display, which D3hot would lose, and it cannot stay in D0 (%d)\n", error);
+			return EBUSY;
+		}
 	}
 
 	/* Parks the request worker. */
@@ -419,6 +428,16 @@ i915_suspend(
 	/* Refuses a worker that did not park. */
 	if (error != 0)
 		return error;
+
+	/* A Gen9 device in D0 keeps everything: only the panel's light and the external displays go dark. */
+	if (gen9) {
+		drv_i915_gen9_node_suspend(device);
+		drv_i915_gen9_backlight_suspend(device);
+		device->suspended = 1U;
+		device->suspended_d0 = 1U;
+		kern_logf("i915: suspend: a Gen9 device sleeps in D0 (the display keeps its state; the panel's light and the external displays are off)\n");
+		return 0;
+	}
 
 	/* Takes the hardware down; a refusal lets the worker serve again. */
 	error = drv_i915_device_suspend_hw(device);
@@ -451,6 +470,17 @@ i915_resume(
 	device = drv_pci_device_driver_data(pci);
 	if (device == NULL || device->suspended == 0U)
 		return 0;
+
+	/* A Gen9 device that slept in D0: the panel's light and the external displays come back, then the worker serves. */
+	if (device->suspended_d0 != 0U) {
+		drv_i915_gen9_backlight_resume(device);
+		drv_i915_gen9_node_resume(device);
+		drv_i915_worker_unpark(device);
+		device->suspended = 0U;
+		device->suspended_d0 = 0U;
+		kern_logf("i915: resume: the Gen9 display is back\n");
+		return 0;
+	}
 
 	/* Brings the hardware back, then lets the worker serve. */
 	error = drv_i915_device_resume_hw(device);

@@ -76,6 +76,14 @@ struct i915_gen9_backlight {
  */
 static struct i915_gen9_backlight i915_gen9_backlight_state;
 
+/*
+ * The PWM control a sleep turned off, and whether one did (WS237 p005).
+ * Written by the suspend and the resume, which the one thread of S0 idle
+ * runs one after the other.
+ */
+static uint32_t i915_gen9_backlight_slept_control;
+static int i915_gen9_backlight_slept;
+
 static int i915_gen9_backlight_get(void *context, uint32_t *percent);
 static int i915_gen9_backlight_set(void *context, uint32_t percent);
 
@@ -196,6 +204,7 @@ drv_i915_gen9_backlight_start(
 	int lit;
 	int error;
 
+	/* The backlight of the one device. */
 	backlight = &i915_gen9_backlight_state;
 
 	/* Only a Gen9 node, once. */
@@ -255,6 +264,7 @@ drv_i915_gen9_backlight_start(
 		return;
 	}
 
+	/* Succeeded: says the device is there. */
 	kern_logf("i915: gen9 backlight: the panel's brightness is offered as a backlight device\n");
 }
 
@@ -269,6 +279,7 @@ drv_i915_gen9_backlight_stop(
 
 	UNUSED_PARAMETER(device);
 
+	/* The backlight of the one device. */
 	backlight = &i915_gen9_backlight_state;
 
 	/* Nothing was published. */
@@ -291,6 +302,7 @@ i915_gen9_backlight_get(
 	struct i915_skl_pwm pwm;
 	int error;
 
+	/* The backlight the device was registered with. */
 	backlight = context;
 
 	/* Reads and decodes the PWM. */
@@ -320,6 +332,7 @@ i915_gen9_backlight_set(
 	uint32_t duty;
 	int error;
 
+	/* The backlight the device was registered with. */
 	backlight = context;
 
 	/* Reads and decodes the PWM. */
@@ -345,6 +358,59 @@ i915_gen9_backlight_set(
 }
 
 /*
+ * Turns the panel's light off for a sleep: the PCH PWM's enable cleared
+ * when the eDP panel is lit and the PWM runs (both layouts keep the enable
+ * in CTL1).  The control word is kept for the resume.  Works whatever the
+ * step of i915.gen9.display, without the backlight device.
+ */
+void
+drv_i915_gen9_backlight_suspend(
+	struct i915_device *device)
+{
+	struct i915_mmio *mmio;
+	uint32_t control;
+	int lit;
+
+	/* Nothing to give back unless this turns the light off. */
+	mmio = &device->gt.mmio;
+	i915_gen9_backlight_slept = 0;
+
+	/* A lit panel whose PWM runs. */
+	lit = i915_gen9_backlight_panel_lit(mmio);
+	if (!lit)
+		return;
+	control = drv_i915_raw_read32(mmio, I915_SKL_BLC_PWM_PCH_CTL1);
+	if ((control & I915_SKL_BLM_PCH_PWM_ENABLE) == 0U)
+		return;
+
+	/* Succeeded: the light off, its control kept. */
+	i915_gen9_backlight_slept_control = control;
+	i915_gen9_backlight_slept = 1;
+	drv_i915_raw_write32(mmio, I915_SKL_BLC_PWM_PCH_CTL1, control & ~I915_SKL_BLM_PCH_PWM_ENABLE);
+	drv_i915_posting_read32(mmio, I915_SKL_BLC_PWM_PCH_CTL1);
+	kern_logf("i915: gen9 backlight: the panel's light is off for the sleep\n");
+}
+
+/* Turns the panel's light back on after a sleep that turned it off. */
+void
+drv_i915_gen9_backlight_resume(
+	struct i915_device *device)
+{
+	struct i915_mmio *mmio;
+
+	/* Nothing was turned off. */
+	if (!i915_gen9_backlight_slept)
+		return;
+
+	/* Succeeded: the control as it was. */
+	mmio = &device->gt.mmio;
+	i915_gen9_backlight_slept = 0;
+	drv_i915_raw_write32(mmio, I915_SKL_BLC_PWM_PCH_CTL1, i915_gen9_backlight_slept_control);
+	drv_i915_posting_read32(mmio, I915_SKL_BLC_PWM_PCH_CTL1);
+	kern_logf("i915: gen9 backlight: the panel's light is on again\n");
+}
+
+/*
  * Tells the PWM's register layout from the PCH: Cannon Point and Comet
  * Point have the Broxton one, Sunrise Point and Kaby Point the LPT one.
  * Without a PCH the bridge names (a virtual machine), the platform
@@ -367,6 +433,8 @@ i915_gen9_backlight_pch_cnp(
 		*cnp = 0;
 		return 0;
 	}
+
+	/* Cannon Point's: the second layout. */
 	if (pch.type == I915_PCH_CNP) {
 		*cnp = 1;
 		return 0;
