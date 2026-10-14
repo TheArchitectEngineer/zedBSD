@@ -359,6 +359,11 @@ struct nvrtx_memory_state {
  * notifiers' 4 KiB of VRAM after the instance memory, the hash-table slots
  * and context DMA objects it wrote into the instance memory, the head's
  * armed state it copied, and the two test surfaces.
+ *
+ * P8c adds the head's cursor channel (a PIO channel, made before the GPU
+ * device is registered) and core_pending: set while a core update the
+ * driver sent without waiting (a cursor's) may not have finished, cleared
+ * once its notifier says it has.  Both are the GPU device's, under its lock.
  */
 struct nvrtx_display_state {
 	uint64_t instance;
@@ -393,6 +398,8 @@ struct nvrtx_display_state {
 	struct nvrtx_bo surface_objects[2];
 	int core_made;
 	int window_made;
+	int cursor_made;
+	int core_pending;
 };
 
 /*
@@ -559,6 +566,12 @@ int nvrtx_scanout_start(struct nvrtx_gpu *gpu);
 int nvrtx_scanout_frame(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface);
 void nvrtx_scanout_stop(struct nvrtx_gpu *gpu);
 void nvrtx_scanout_release(struct nvrtx_gpu *gpu);
+int nvrtx_scanout_cursor_start(struct nvrtx_gpu *gpu);
+int nvrtx_scanout_cursor_show(struct nvrtx_gpu *gpu, uint64_t offset, uint32_t point);
+int nvrtx_scanout_cursor_point(struct nvrtx_gpu *gpu, uint32_t point);
+int nvrtx_scanout_cursor_clear(struct nvrtx_gpu *gpu);
+int nvrtx_scanout_core_settled(struct nvrtx_gpu *gpu, uint32_t wait_us);
+uint32_t nvrtx_scanout_frame_counter(struct nvrtx_gpu *gpu);
 
 int nvrtx_node_start(struct nvrtx_gpu *gpu);
 

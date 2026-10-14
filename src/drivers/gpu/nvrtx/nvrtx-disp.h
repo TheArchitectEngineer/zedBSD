@@ -13,8 +13,8 @@
  * methods the driver sends, the objects it writes into the display's
  * instance memory (the hash table and the context DMA objects), and the
  * parameters the resource manager takes to make a channel.  The method
- * offsets and fields are those of the core (0xc57d) and window (0xc57e)
- * classes in NVIDIA's open-gpu-doc (MIT); the instance-memory objects and
+ * offsets and fields are those of the core (0xc57d), window (0xc57e) and
+ * cursor (0xc57a) classes in NVIDIA's open-gpu-doc (MIT); the instance-memory objects and
  * the order of the methods follow nouveau's display (MIT).  Everything here
  * builds bytes in memory the caller owns, so it is tested on the host.
  */
@@ -28,6 +28,9 @@
 /* The channel classes and their handles: class in the high half, instance in the low half. */
 #define NVRTX_DISP_CLASS_CORE		0xc57dU
 #define NVRTX_DISP_CLASS_WINDOW		0xc57eU
+
+/* The cursor's immediate channel (a PIO channel, one for each head: no push buffer, no objects). */
+#define NVRTX_DISP_CLASS_CURSOR		0xc57aU
 
 /* The channel numbers the hash table knows a channel by: the core is 0, window w is 1 + w. */
 #define NVRTX_DISP_CHID_CORE		0U
@@ -50,6 +53,9 @@
 /* The resource manager's parameters: the push buffer's registration and a channel's allocation. */
 #define NVRTX_DISP_PUSHBUFFER_BYTES	56U
 #define NVRTX_DISP_CHANNEL_BYTES	40U
+
+/* The resource manager's allocation of a PIO channel (the cursor's): its instance, a notifier handle, a pointer. */
+#define NVRTX_DISP_PIO_CHANNEL_BYTES	16U
 
 /* The resource manager's request to assign an output resource to a display (nouveau's acquire under the GSP). */
 #define NVRTX_DISP_ASSIGN_SOR_BYTES	80U
@@ -101,7 +107,9 @@
 #define NVRTX_HEAD_RASTER_BLANK_START		0x070U
 #define NVRTX_HEAD_RASTER_VERT_BLANK2		0x074U
 #define NVRTX_HEAD_CONTEXT_DMA_CURSOR		0x088U
+#define NVRTX_HEAD_OFFSET_CURSOR		0x090U
 #define NVRTX_HEAD_CONTROL_CURSOR		0x09cU
+#define NVRTX_HEAD_CONTROL_CURSOR_COMPOSITION	0x0a0U
 #define NVRTX_HEAD_CONTEXT_DMA_OLUT		0x288U
 
 /* How many head methods the takeover reads from the armed state, and where each is in the copy. */
@@ -141,6 +149,23 @@ struct nvrtx_disp_mode {
 	uint32_t dither;
 	uint32_t output_resource;
 };
+
+/*
+ * The cursor's image: 64 by 64 pixels of A8R8G8B8 (premultiplied), rows
+ * packed, on a 256-byte boundary of the VRAM (the core's cursor size W64_H64).
+ */
+#define NVRTX_DISP_CURSOR_SIDE			64U
+#define NVRTX_DISP_CURSOR_BYTES			(NVRTX_DISP_CURSOR_SIDE * NVRTX_DISP_CURSOR_SIDE * 4U)
+
+/* The cursor channel's registers, from its user area: the free entries, the update and the position. */
+#define NVRTX_CURSOR_FREE			0x008U
+#define NVRTX_CURSOR_FREE_COUNT_MASK		0x3fU
+#define NVRTX_CURSOR_UPDATE			0x200U
+#define NVRTX_CURSOR_POINT_OUT			0x208U
+
+/* The head's frame counter: bits 31:16 of the raster generator's position (RG_DPCA). */
+#define NVRTX_DISP_FRAME_COUNT_SHIFT		16U
+#define NVRTX_DISP_FRAME_COUNT_MASK		0xffffU
 
 /* The window channel's methods. */
 #define NVRTX_WINDOW_UPDATE			0x200U
@@ -206,6 +231,8 @@ void nvrtx_disp_ramht_entry(uint8_t *entry, uint32_t handle, uint32_t chid, uint
 void nvrtx_disp_context_dma(uint8_t *object, uint64_t start, uint64_t limit);
 void nvrtx_disp_pushbuffer_params(uint8_t *params, uint64_t bus_address, uint32_t size, uint32_t class_number, uint32_t instance);
 void nvrtx_disp_channel_params(uint8_t *params, uint32_t instance);
+void nvrtx_disp_pio_pushbuffer_params(uint8_t *params, uint32_t class_number, uint32_t instance);
+void nvrtx_disp_pio_channel_params(uint8_t *params, uint32_t instance);
 void nvrtx_disp_assign_sor_params(uint8_t *params, uint32_t display_id, uint32_t exclude_mask);
 uint32_t nvrtx_disp_assign_sor_result(const uint8_t *params, uint32_t display_id);
 
@@ -217,6 +244,12 @@ void nvrtx_disp_core_display_id(struct nvrtx_push *push, uint32_t head, uint32_t
 void nvrtx_disp_core_head_mode(struct nvrtx_push *push, uint32_t head, const struct nvrtx_disp_mode *mode);
 void nvrtx_disp_mode_from_armed(const uint32_t *armed, struct nvrtx_disp_mode *mode);
 void nvrtx_disp_core_update(struct nvrtx_push *push, uint32_t notifier_offset, uint32_t window_interlock);
+void nvrtx_disp_core_cursor_set(struct nvrtx_push *push, uint32_t head, uint32_t handle, uint64_t offset);
+void nvrtx_disp_core_cursor_clear(struct nvrtx_push *push, uint32_t head);
+void nvrtx_disp_core_update_cursor(struct nvrtx_push *push, uint32_t notifier_offset, uint32_t head);
+uint32_t nvrtx_disp_cursor_point(int32_t x, int32_t y);
+uint32_t nvrtx_disp_cursor_pixel(uint32_t pixel, int rgba);
+uint32_t nvrtx_disp_frame_advance(uint32_t last, uint32_t now);
 
 void nvrtx_disp_window_image(struct nvrtx_push *push, const struct nvrtx_disp_surface *surface);
 void nvrtx_disp_window_defaults(struct nvrtx_push *push);

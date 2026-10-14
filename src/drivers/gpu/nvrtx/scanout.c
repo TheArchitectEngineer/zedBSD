@@ -105,6 +105,28 @@
 /* The output resource's control: the heads that own it are bits 7:0. */
 #define SCANOUT_SOR_OWNER_MASK		0xffU
 
+/* The cursor channels' user areas: one page for each head (nouveau's r535_chan_user). */
+#define SCANOUT_REG_CURSOR_USER		0x6d8000U
+#define SCANOUT_CURSOR_USER_STRIDE	0x1000U
+
+/* A cursor channel is written once it has four free entries, waited for at most 100 ms (nouveau's curs507a_space). */
+#define SCANOUT_CURSOR_SPACE_LEAST	4U
+#define SCANOUT_CURSOR_SPACE_US		100000U
+
+/* The cursor channel's update: release the gathered state (RELEASE_ELV, nouveau's cursc37a_update). */
+#define SCANOUT_CURSOR_RELEASE		0x00000001U
+
+/* How long the core channel is given to fetch what it has before more is written over it, and the polling step. */
+#define SCANOUT_DRAIN_US		100000U
+#define SCANOUT_DRAIN_STEP_US		50U
+
+/* The most words a cursor's core methods and update take (the cursor's 7, the update's 9), with a margin. */
+#define SCANOUT_CURSOR_WORDS_MAX	32U
+
+/* The heads' raster positions, whose top half counts frames (RG_DPCA): one block of 0x800 for each head. */
+#define SCANOUT_REG_RG_DPCA		0x616330U
+#define SCANOUT_RG_STRIDE		0x800U
+
 static int scanout_read_armed(struct nvrtx_gpu *gpu);
 static int scanout_surfaces(struct nvrtx_gpu *gpu);
 static int scanout_surface_objects(struct nvrtx_gpu *gpu, uint64_t span);
@@ -124,6 +146,10 @@ static int scanout_flip(struct nvrtx_gpu *gpu);
 static void scanout_hold(uint32_t microseconds);
 static uint32_t scanout_window_user(uint32_t window);
 static uint32_t scanout_window_notifier(uint32_t window);
+static int scanout_drained(struct nvrtx_gpu *gpu, uint32_t user, uint32_t put);
+static int scanout_core_room(struct nvrtx_gpu *gpu, uint32_t words);
+static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
+static int scanout_cursor_write(struct nvrtx_gpu *gpu, uint32_t method, uint32_t value);
 
 /*
  * Runs stage P8b: takes the firmware's head over, shows a surface and flips.
@@ -216,6 +242,15 @@ nvrtx_scanout_stop(
 
 	display = &gpu->display;
 	failures = 0;
+
+	/* Frees the cursor channel (P8c) first. */
+	if (display->cursor_made != 0) {
+		handle = (NVRTX_DISP_CLASS_CURSOR << 16) | display->gop_head;
+		error = nvrtx_rm_free(gpu, handle);
+		if (error != 0)
+			failures++;
+		display->cursor_made = 0;
+	}
 
 	/* Frees the window channel, then the core channel. */
 	if (display->window_made != 0) {
@@ -315,6 +350,224 @@ nvrtx_scanout_frame(
 
 	/* Succeeded: the head shows the surface. */
 	return 0;
+}
+
+/*
+ * Makes the taken-over head's cursor channel (stage P8c): the resource
+ * manager is told the PIO channel has no push buffer, then makes it under
+ * the display root (nouveau's r535_curs_init).  Runs before the GPU device
+ * is registered, while the worker is still the channel's only caller; the
+ * stop frees it.  A failure leaves the display without a cursor plane.
+ */
+int
+nvrtx_scanout_cursor_start(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	uint8_t registration[NVRTX_DISP_PUSHBUFFER_BYTES];
+	uint8_t params[NVRTX_DISP_PIO_CHANNEL_BYTES];
+	const uint8_t *reply;
+	size_t reply_length;
+	uint32_t handle;
+	int error;
+
+	display = &gpu->display;
+
+	/* Registers the head's cursor channel without a push buffer. */
+	nvrtx_disp_pio_pushbuffer_params(registration, NVRTX_DISP_CLASS_CURSOR, display->gop_head);
+	error = nvrtx_rm_control(gpu,
+	    gpu->internal_client,
+	    gpu->internal_subdevice,
+	    SCANOUT_CTL_PUSHBUFFER,
+	    registration,
+	    sizeof(registration),
+	    &reply,
+	    &reply_length);
+	if (error != 0) {
+		nvrtx_stage_mark("P8c: cursor channel registration failed (%d)", error);
+		return error;
+	}
+
+	/* Makes the channel under the display root, the head as its instance. */
+	handle = (NVRTX_DISP_CLASS_CURSOR << 16) | display->gop_head;
+	nvrtx_disp_pio_channel_params(params, display->gop_head);
+	error = nvrtx_rm_allocate(gpu, SCANOUT_HANDLE_ROOT, handle, NVRTX_DISP_CLASS_CURSOR, params, sizeof(params));
+	if (error != 0) {
+		nvrtx_stage_mark("P8c: cursor channel allocation failed (%d)", error);
+		return error;
+	}
+
+	/* Succeeded: the head's cursor takes a position and an update. */
+	display->cursor_made = 1;
+	nvrtx_stage_mark("P8c channel %04x.%u made", (unsigned)NVRTX_DISP_CLASS_CURSOR, (unsigned)display->gop_head);
+	return 0;
+}
+
+/*
+ * Shows the head's cursor: the image at a VRAM offset (64 by 64 A8R8G8B8 on
+ * a 256-byte boundary) with its top left at a position word.
+ *
+ * As nouveau's commit of a cursor plane: the cursor channel takes the
+ * position and its update, the core the cursor's control, object and
+ * offset, then the core's update interlocked with the cursor.  The core's
+ * notifier is asked for but not waited for (core_pending is set); the
+ * caller first makes sure no earlier one is out (nvrtx_scanout_core_settled).
+ * Returns 0, ETIMEDOUT when a channel does not take the words, or E2BIG.
+ */
+int
+nvrtx_scanout_cursor_show(
+	struct nvrtx_gpu *gpu,
+	uint64_t offset,
+	uint32_t point)
+{
+	struct nvrtx_display_state *display;
+	int error;
+
+	display = &gpu->display;
+
+	/* The cursor channel: the position, then its update. */
+	error = scanout_cursor_write(gpu, NVRTX_CURSOR_POINT_OUT, point);
+	if (error != 0)
+		return error;
+
+	error = scanout_cursor_write(gpu, NVRTX_CURSOR_UPDATE, SCANOUT_CURSOR_RELEASE);
+	if (error != 0)
+		return error;
+
+	/* The core, once it has room: the cursor on, read through the VRAM object. */
+	error = scanout_core_room(gpu, SCANOUT_CURSOR_WORDS_MAX);
+	if (error != 0)
+		return error;
+
+	nvrtx_disp_core_cursor_set(&display->core_push, display->gop_head, NVRTX_DISP_HANDLE_VRAM, offset);
+
+	/* The core's update with the cursor, not waited for. */
+	error = scanout_core_send_cursor(gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cursor shows from a coming frame on. */
+	return 0;
+}
+
+/*
+ * Moves the shown cursor: the cursor channel takes the position and its
+ * update alone, no core update (nouveau's legacy cursor move).
+ */
+int
+nvrtx_scanout_cursor_point(
+	struct nvrtx_gpu *gpu,
+	uint32_t point)
+{
+	int error;
+
+	/* The position, then the update. */
+	error = scanout_cursor_write(gpu, NVRTX_CURSOR_POINT_OUT, point);
+	if (error != 0)
+		return error;
+
+	error = scanout_cursor_write(gpu, NVRTX_CURSOR_UPDATE, SCANOUT_CURSOR_RELEASE);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cursor moves from a coming frame on. */
+	return 0;
+}
+
+/*
+ * Hides the head's cursor: the core's cursor off and without its object,
+ * then the core's update interlocked with the cursor (nouveau's clear of a
+ * cursor plane), its notifier asked for but not waited for.  The caller
+ * first makes sure no earlier one is out.
+ */
+int
+nvrtx_scanout_cursor_clear(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	int error;
+
+	display = &gpu->display;
+
+	/* The core, once it has room: the cursor off. */
+	error = scanout_core_room(gpu, SCANOUT_CURSOR_WORDS_MAX);
+	if (error != 0)
+		return error;
+
+	nvrtx_disp_core_cursor_clear(&display->core_push, display->gop_head);
+
+	/* The core's update with the cursor, not waited for. */
+	error = scanout_core_send_cursor(gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the cursor is gone from a coming frame on. */
+	return 0;
+}
+
+/*
+ * Reports whether the core update last sent without a wait (a cursor's)
+ * has finished, waiting for it at most wait_us.  Returns 0 when none is out
+ * (core_pending is then clear), EBUSY while it still is, or the error of
+ * reading its notifier.
+ */
+int
+nvrtx_scanout_core_settled(
+	struct nvrtx_gpu *gpu,
+	uint32_t wait_us)
+{
+	struct nvrtx_display_state *display;
+	uint64_t start;
+	uint64_t waited;
+	uint32_t word;
+	int error;
+
+	display = &gpu->display;
+
+	/* Nothing is out. */
+	if (display->core_pending == 0)
+		return 0;
+
+	/* Polls the core's notifier until it says finished or the time is spent. */
+	start = nvrtx_now_us();
+	for (;;) {
+		error = nvrtx_vram_read32(gpu, display->sync + SCANOUT_CORE_NOTIFIER_AT, &word);
+		if (error != 0)
+			return error;
+
+		/* The update is done. */
+		if ((word >> NVRTX_DISP_NOTIFIER_STATUS_SHIFT) >= NVRTX_DISP_NOTIFIER_FINISHED)
+			break;
+
+		/* Still out after the time the caller gives it. */
+		waited = nvrtx_now_us() - start;
+		if (waited >= wait_us)
+			return EBUSY;
+
+		kern_usleep_range(SCANOUT_NOTIFIER_STEP_US, SCANOUT_NOTIFIER_STEP_US * 2U);
+	}
+
+	/* Succeeded: nothing of the update reads the old state any more. */
+	display->core_pending = 0;
+	return 0;
+}
+
+/*
+ * Reports the taken-over head's frame counter: 16 bits that move by one
+ * each frame the head scans out (the raster generator's RG_DPCA), read
+ * without side effects.
+ */
+uint32_t
+nvrtx_scanout_frame_counter(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t position;
+
+	/* The head's raster position: the line in the low half, the frame in the high half. */
+	position = nvrtx_rd32(gpu, SCANOUT_REG_RG_DPCA + gpu->display.gop_head * SCANOUT_RG_STRIDE);
+
+	/* Succeeded: the frame count. */
+	return (position >> NVRTX_DISP_FRAME_COUNT_SHIFT) & NVRTX_DISP_FRAME_COUNT_MASK;
 }
 
 /* Reads the head's armed methods (in the copied order) and its output resource's control. */
@@ -1033,6 +1286,156 @@ scanout_hold(
 
 		kern_usleep_range(SCANOUT_SHOW_STEP_US, SCANOUT_SHOW_STEP_US);
 	}
+}
+
+/*
+ * Waits until a channel's get reaches a byte offset of its push buffer (its
+ * put): the channel has fetched every word it was given.
+ */
+static int
+scanout_drained(
+	struct nvrtx_gpu *gpu,
+	uint32_t user,
+	uint32_t put)
+{
+	uint64_t start;
+	uint64_t waited;
+	uint32_t get;
+
+	/* Polls the get until it stands at the put or the time is spent. */
+	start = nvrtx_now_us();
+	for (;;) {
+		get = nvrtx_rd32(gpu, user + SCANOUT_USER_GET_AT);
+		if (get == put)
+			break;
+
+		/* The channel did not fetch its words in time: shows where it stopped. */
+		waited = nvrtx_now_us() - start;
+		if (waited > SCANOUT_DRAIN_US) {
+			nvrtx_stage_mark("P8c fail: channel at %x stopped, get %x put %x", (unsigned)user, (unsigned)get, (unsigned)put);
+			return ETIMEDOUT;
+		}
+
+		kern_usleep_range(SCANOUT_DRAIN_STEP_US, SCANOUT_DRAIN_STEP_US * 2U);
+	}
+
+	/* Succeeded: the channel has every word. */
+	return 0;
+}
+
+/*
+ * Makes room for words more of the core's methods: once the core has
+ * fetched everything it was given, the buffer is wound back to its start
+ * when the words would not fit before its end (nouveau's wind: a jump to
+ * the start where the get stands, the put moved to the start, and the
+ * channel left to take the jump), so nothing unfetched is written over.
+ */
+static int
+scanout_core_room(
+	struct nvrtx_gpu *gpu,
+	uint32_t words)
+{
+	struct nvrtx_push *push;
+	int error;
+
+	push = &gpu->display.core_push;
+
+	/* The core has fetched up to its put. */
+	error = scanout_drained(gpu, SCANOUT_REG_CORE_USER, push->count * 4U);
+	if (error != 0)
+		return error;
+
+	/* The words fit before the end, with a word left for a later jump. */
+	if (push->count + words + 1U <= push->capacity)
+		return 0;
+
+	/* Jumps back to the start and moves the put there. */
+	nvrtx_push_jump(push, 0U);
+	if (push->overflow != 0)
+		return E2BIG;
+
+	push->count = 0U;
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	nvrtx_wr32(gpu, SCANOUT_REG_CORE_USER + SCANOUT_USER_PUT_AT, 0U);
+
+	/* Waits until the core has taken the jump. */
+	error = scanout_drained(gpu, SCANOUT_REG_CORE_USER, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the buffer is empty from its start. */
+	return 0;
+}
+
+/*
+ * Sends the core's update interlocked with the head's cursor, with the
+ * core's notifier asked for and not waited for: core_pending is set until
+ * nvrtx_scanout_core_settled() sees it finished.
+ */
+static int
+scanout_core_send_cursor(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_display_state *display;
+	int error;
+
+	display = &gpu->display;
+
+	/* Clears the notifier, then sends the update. */
+	error = scanout_notifier_reset(gpu, SCANOUT_CORE_NOTIFIER_AT);
+	if (error != 0)
+		return error;
+
+	nvrtx_disp_core_update_cursor(&display->core_push, SCANOUT_CORE_NOTIFIER_AT, display->gop_head);
+	error = scanout_kick(gpu, &display->core_push, SCANOUT_REG_CORE_USER);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the update is out; its notifier will say when it is done. */
+	display->core_pending = 1;
+	return 0;
+}
+
+/*
+ * Writes one register of the head's cursor channel once the channel has
+ * room for it (nouveau's curs507a_space: four free entries within 100 ms).
+ */
+static int
+scanout_cursor_write(
+	struct nvrtx_gpu *gpu,
+	uint32_t method,
+	uint32_t value)
+{
+	uint64_t start;
+	uint64_t waited;
+	uint32_t user;
+	uint32_t free_entries;
+
+	/* The head's own page of the cursor channels. */
+	user = SCANOUT_REG_CURSOR_USER + gpu->display.gop_head * SCANOUT_CURSOR_USER_STRIDE;
+
+	/* Polls the free entries until there are enough or the time is spent. */
+	start = nvrtx_now_us();
+	for (;;) {
+		free_entries = nvrtx_rd32(gpu, user + NVRTX_CURSOR_FREE) & NVRTX_CURSOR_FREE_COUNT_MASK;
+		if (free_entries >= SCANOUT_CURSOR_SPACE_LEAST)
+			break;
+
+		/* The channel did not make room in time. */
+		waited = nvrtx_now_us() - start;
+		if (waited > SCANOUT_CURSOR_SPACE_US) {
+			nvrtx_stage_mark("P8c fail: cursor channel has %u free entries", (unsigned)free_entries);
+			return ETIMEDOUT;
+		}
+
+		kern_usleep_range(SCANOUT_DRAIN_STEP_US, SCANOUT_DRAIN_STEP_US * 2U);
+	}
+
+	/* Writes the register. */
+	nvrtx_wr32(gpu, user + method, value);
+
+	/* Succeeded: the channel took the word. */
+	return 0;
 }
 
 /* Reports where one window channel's put and get are. */

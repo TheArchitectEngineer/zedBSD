@@ -20,6 +20,12 @@
  * A flip that does not begin in time leaves the display broken: nothing is
  * flipped after it, presentations fail with EIO, and a blob that may still
  * be on the screen keeps its VRAM until power-off.
+ *
+ * The display's events are its topology sequence, which stays at one: the
+ * resource manager's hotplug events are not taken yet.  Its control has
+ * refresh boundaries (the head's frame counter, polled) but no power
+ * control: switching the output off and on needs the resource manager's
+ * modeset, which the device's operations do not call (EOPNOTSUPP).
  */
 
 #include <stdbool.h>
@@ -28,7 +34,9 @@
 
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-display.h>
+#include <kern/clock.h>
 #include <kern/kcrt.h>
+#include <kern/sched.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
@@ -62,19 +70,36 @@ static int present_claim(void *private_data, void *session, struct gpu_display_c
 static int present_release(void *private_data, void *session, const struct gpu_display_release *request);
 static int present_present(void *private_data, void *session, void *object, struct gpu_display_present *request);
 static int present_wait(void *private_data, void *session, struct gpu_display_wait *request);
+static int present_events(void *private_data, void *session, uint64_t *sequence);
+static int present_power(void *private_data, void *session, const struct gpu_display_power *request);
+static int present_refresh_wait(void *private_data, void *session, struct gpu_display_refresh *request);
 
 /*
  * The display operations of the nvrtx GPU device.
  *
- * Shared by the one node; immutable.
+ * Shared by the one node; immutable.  Query, mode, claim, release, present
+ * and wait, the topology sequence, power and refresh (the display control)
+ * are here, the cursor plane in cursor.c.  Presentations wait under the
+ * open's admission (no ungated flag, no adoption wait), and there are no
+ * overlay planes.
  */
 const struct drv_gpu_display_ops nvrtx_display_ops = {
-	.query = present_query,
-	.mode = present_mode,
-	.claim = present_claim,
-	.release = present_release,
-	.present = present_present,
-	.wait = present_wait
+	present_query,
+	present_mode,
+	present_claim,
+	present_release,
+	present_present,
+	present_wait,
+	present_events,
+	present_power,
+	present_refresh_wait,
+	nvrtx_cursor_set,
+	nvrtx_cursor_move,
+	nvrtx_cursor_hide,
+	NULL,
+	0U,
+	NULL,
+	NULL
 };
 
 static uint32_t present_refresh(const struct nvrtx_display_state *display);
@@ -187,7 +212,7 @@ nvrtx_present_resource_gone(
 		if (node->broken == 0)
 			error = present_show(node, &node->gpu->display.surfaces[0]);
 		if (error != 0)
-			resource->kept = 1;
+			resource->backing->kept = 1;
 		node->shown = NULL;
 	}
 
@@ -218,14 +243,18 @@ present_query(
 	if (request->index != 0U)
 		return EINVAL;
 
-	/* The display, connected, FIFO, showing blobs; active while a lease has frames on it. */
+	/* The display, connected, FIFO, showing blobs, counting its refreshes. */
 	request->display_id = NVRTX_NODE_DISPLAY_ID;
 	request->generation = NVRTX_NODE_GENERATION;
-	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB;
+	request->flags = GPU_DISPLAY_CONNECTED | GPU_DISPLAY_FIFO | GPU_DISPLAY_BLOB | GPU_DISPLAY_REFRESH_COUNTER;
+
+	/* Active while a lease has frames on it; a cursor plane when its channel was made. */
 	mutex_lock(&node->lock);
 
 	if (node->owner != NULL && node->sequence != 0U)
 		request->flags |= GPU_DISPLAY_ACTIVE;
+	if (node->cursor_ready != 0)
+		request->flags |= GPU_DISPLAY_HAS_CURSOR;
 
 	mutex_unlock(&node->lock);
 
@@ -420,7 +449,7 @@ present_present(
 
 	/* A blob is the surface itself; storage goes into the next of the node's frames. */
 	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
-		offset = resource->bo.vram + request->offset;
+		offset = resource->backing->bo.vram + request->offset;
 		if (resource->kind != NVRTX_RESOURCE_BLOB ||
 		    (offset % PRESENT_OFFSET_ALIGN) != 0U ||
 		    (request->stride % PRESENT_PITCH_ALIGN) != 0U) {
@@ -474,6 +503,169 @@ present_present(
 
 	/* Succeeded: the frame is on the screen. */
 	return 0;
+}
+
+/*
+ * Reports the display's topology sequence (the display events operation):
+ * one, which nothing moves yet (the resource manager's hotplug events are
+ * not taken).  Any context: no lock, no hardware access, no wait.
+ */
+static int
+present_events(
+	void *private_data,
+	void *session,
+	uint64_t *sequence)
+{
+	UNUSED_PARAMETER(private_data);
+	UNUSED_PARAMETER(session);
+
+	/* Succeeded: the first and only topology. */
+	*sequence = NVRTX_NODE_TOPOLOGY_FIRST;
+	return 0;
+}
+
+/*
+ * Answers a power request for the display (the display power operation):
+ * after the checks of the display and of the lease, EOPNOTSUPP, since the
+ * output has no power control here (GPU_DISPLAY_POWER_CONTROL is not in its
+ * flags).  ENOENT for another display, ESTALE for another generation, EBUSY
+ * when this open does not hold the lease.
+ */
+static int
+present_power(
+	void *private_data,
+	void *session,
+	const struct gpu_display_power *request)
+{
+	struct nvrtx_node *node;
+	void *owner;
+
+	node = private_data;
+
+	/* Only the one display of this generation exists. */
+	if (request->display_id != NVRTX_NODE_DISPLAY_ID)
+		return ENOENT;
+	if (request->generation != NVRTX_NODE_GENERATION)
+		return ESTALE;
+
+	/* Reads who holds the lease. */
+	mutex_lock(&node->lock);
+
+	owner = node->owner;
+
+	mutex_unlock(&node->lock);
+
+	/* Only the lease's holder may ask. */
+	if (owner != session)
+		return EBUSY;
+
+	/* The output cannot be switched off and on without the resource manager's modeset. */
+	return EOPNOTSUPP;
+}
+
+/*
+ * Waits for the display's refresh boundary after the request's cursor, or
+ * reports the count at once for cursor 0 (the display refresh operation).
+ *
+ * The boundaries are the head's frames: its frame counter is read each
+ * scheduler tick while the caller waits (no interrupt is used).  Returns 0
+ * with sequence and time_ns, ENOENT for another display, ESTALE for another
+ * generation, or ETIMEDOUT.
+ */
+static int
+present_refresh_wait(
+	void *private_data,
+	void *session,
+	struct gpu_display_refresh *request)
+{
+	struct nvrtx_node *node;
+	uint64_t deadline;
+	uint64_t now;
+	uint64_t count;
+	uint64_t time_ns;
+
+	UNUSED_PARAMETER(session);
+
+	node = private_data;
+
+	/* Only the one display of this generation exists. */
+	if (request->display_id != NVRTX_NODE_DISPLAY_ID)
+		return ENOENT;
+	if (request->generation != NVRTX_NODE_GENERATION)
+		return ESTALE;
+
+	/* The deadline in scheduler ticks, rounded up. */
+	now = sched_ticks();
+	deadline = now + (request->timeout_ns * KERN_CLOCK_HZ + KERN_NSEC_PER_SEC - 1U) / KERN_NSEC_PER_SEC;
+
+	/* Until a boundary after the cursor, or the deadline. */
+	for (;;) {
+		/* The count now. */
+		nvrtx_present_refresh_sample(node, &count, &time_ns);
+
+		/* Cursor zero, or a boundary after the cursor: reported. */
+		if (request->cursor == 0U || count > request->cursor) {
+			request->sequence = count;
+			request->time_ns = time_ns;
+			request->flags = 0U;
+			break;
+		}
+
+		/* No boundary came in time. */
+		now = sched_ticks();
+		if (now >= deadline)
+			return ETIMEDOUT;
+
+		/* Looks again a tick later. */
+		sched_sleep(now + 1U);
+	}
+
+	/* Succeeded: the boundary after the cursor. */
+	return 0;
+}
+
+/*
+ * Brings the refresh count up to date from the head's frame counter and
+ * reports it with the time it last moved.
+ *
+ * The 16-bit counter's movement since the last reading is added, so the
+ * count never goes back; a gap of more than 65535 frames between readings
+ * counts short (the message drain reads it about each second).  The first
+ * reading only sets the base.  Takes only the IRQ-safe refresh lock.
+ */
+void
+nvrtx_present_refresh_sample(
+	struct nvrtx_node *node,
+	uint64_t *count,
+	uint64_t *time_ns)
+{
+	unsigned long irq;
+	uint32_t frame;
+	uint32_t advance;
+
+	/* Reads the head's frame counter. */
+	irq = spin_lock_irqsave(&node->refresh_lock);
+
+	frame = nvrtx_scanout_frame_counter(node->gpu);
+
+	/* Adds what it moved since the last reading; the first reading only sets the base. */
+	if (node->refresh_frame_valid != 0) {
+		advance = nvrtx_disp_frame_advance(node->refresh_frame, frame);
+		if (advance != 0U) {
+			node->refresh_count += advance;
+			node->refresh_time_ns = sched_ticks() * (KERN_NSEC_PER_SEC / KERN_CLOCK_HZ);
+		}
+	}
+
+	/* The next reading counts from this one. */
+	node->refresh_frame = frame;
+	node->refresh_frame_valid = 1;
+
+	/* The count and its time, moved or not. */
+	*count = node->refresh_count;
+	*time_ns = node->refresh_time_ns;
+
+	spin_unlock_irqrestore(&node->refresh_lock, irq);
 }
 
 /*
@@ -583,17 +775,20 @@ present_end_lease(
 {
 	int error;
 
+	/* The lease's cursor goes, image and all. */
+	nvrtx_cursor_lease_end(node);
+
 	/* Flips back to the console surface when a frame of the lease is up. */
 	if (node->sequence != 0U && node->broken == 0) {
 		error = present_show(node, &node->gpu->display.surfaces[0]);
 		if (error != 0 && node->shown != NULL)
-			node->shown->kept = 1;
+			node->shown->backing->kept = 1;
 		node->shown = NULL;
 	}
 
 	/* A broken display keeps the blob it may still read. */
 	if (node->shown != NULL) {
-		node->shown->kept = 1;
+		node->shown->backing->kept = 1;
 		node->shown = NULL;
 	}
 
