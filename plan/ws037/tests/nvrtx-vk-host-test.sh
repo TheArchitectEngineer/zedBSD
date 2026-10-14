@@ -16,6 +16,6 @@ cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -Wall -Wextra -Werror -ffu
 	-I"$out/client-headers" -I"$repo/include" -I"$repo/src" -I"$repo" \
 	-o "$out/vk-test" \
 	"$repo/plan/ws037/tests/nvrtx-vk-host-test.c" \
-	"$src/vk-object.c" "$src/vk-session.c" "$src/vk-stream.c" "$src/vk-dispatch.c" \
+	"$src/vk-object.c" "$src/vk-session.c" "$src/vk-stream.c" "$src/vk-dispatch.c" "$src/vk-device.c" \
 	"$repo/src/drivers/gpu/i915/render/codec.c" "$repo/userland/desktop/libvulkan/wire.c"
 "$out/vk-test"

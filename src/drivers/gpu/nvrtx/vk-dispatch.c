@@ -23,7 +23,7 @@
  * recorded work); it is fixed for the node's life.
  */
 static const nvrtx_vk_route dispatch_routes[] = {
-	NULL
+	nvrtx_vk_device_route
 };
 
 /*
@@ -47,9 +47,6 @@ nvrtx_vk_dispatch(
 	/* Asks each handler until one takes the command. */
 	handled = 0;
 	for (index = 0U; index < sizeof(dispatch_routes) / sizeof(dispatch_routes[0]); index++) {
-		if (dispatch_routes[index] == NULL)
-			continue;
-
 		error = dispatch_routes[index](session, opcode, requested, reader, reply, &handled);
 		if (error != 0)
 			return error;

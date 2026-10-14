@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
@@ -91,4 +92,36 @@ nvrtx_vk_session_close(
 
 	/* Succeeded: the session is gone. */
 	return 0;
+}
+
+/*
+ * Takes a cleared run of the session's scratch for a record the current
+ * command replies with, aligned to 8 bytes; it lives until the command
+ * returns.  Returns NULL when the scratch is full.
+ */
+void *
+nvrtx_vk_arena_take(
+	struct nvrtx_vk_session *session,
+	size_t bytes)
+{
+	struct i915_wire_arena *arena;
+	size_t start;
+	size_t length;
+
+	arena = &session->arena;
+
+	/* The run and its start rounded to 8 bytes. */
+	length = (bytes + 7U) & ~(size_t)7U;
+	start = (arena->used + 7U) & ~(size_t)7U;
+
+	/* The run must fit behind the start. */
+	if (start > arena->size || length > arena->size - start)
+		return NULL;
+
+	/* Takes it and clears it. */
+	arena->used = start + length;
+	kern_memset(arena->base + start, 0, length);
+
+	/* Succeeded: the run is the command's. */
+	return arena->base + start;
 }

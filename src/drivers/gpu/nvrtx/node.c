@@ -287,6 +287,39 @@ nvrtx_vk_blob(
 	return 0;
 }
 
+/*
+ * Gives the executor's owner's GPU's PCI product.
+ */
+uint32_t
+nvrtx_vk_device_id(
+	void *owner)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The product the attach read. */
+	return session->node->gpu->identity.product;
+}
+
+/*
+ * Gives the bytes of VRAM the executor's memory may take: what the CPU's
+ * window holds after the console's part.
+ */
+uint64_t
+nvrtx_vk_heap_bytes(
+	void *owner)
+{
+	struct nvrtx_session *session;
+	const struct nvrtx_memory_state *memory;
+
+	session = owner;
+	memory = &session->node->gpu->memory_state;
+
+	/* The window's part the blobs are mapped in. */
+	return memory->bar1_window - memory->bar1_cpu_from;
+}
+
 /* Opens a session: it names its node and has an executor session of its own. */
 static int
 node_open(

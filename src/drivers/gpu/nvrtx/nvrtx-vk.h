@@ -29,6 +29,11 @@
 
 #include "drivers/gpu/i915/render/codec.h"
 
+/* Names a parameter a function does not use (as the driver's other files do). */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(parameter) ((void)(parameter))
+#endif
+
 /* The buckets of a session's identity index (a power of two). */
 #define NVRTX_VK_OBJECT_BUCKETS		1024U
 
@@ -93,6 +98,7 @@ typedef int (*nvrtx_vk_dispatcher)(struct nvrtx_vk_session *session, uint32_t op
 
 int nvrtx_vk_session_open(void *owner, struct nvrtx_vk_session **session);
 int nvrtx_vk_session_close(struct nvrtx_vk_session **session);
+void *nvrtx_vk_arena_take(struct nvrtx_vk_session *session, size_t bytes);
 
 int nvrtx_vk_object_publish(struct nvrtx_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity, void *payload, int (*destroy)(struct nvrtx_vk_session *, void *), struct nvrtx_vk_object **object);
 struct nvrtx_vk_object *nvrtx_vk_object_find(struct nvrtx_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity);
@@ -100,6 +106,8 @@ int nvrtx_vk_object_retain(struct nvrtx_vk_object *object);
 int nvrtx_vk_object_release(struct nvrtx_vk_object *object);
 int nvrtx_vk_object_remove(struct nvrtx_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity);
 int nvrtx_vk_objects_close(struct nvrtx_vk_session *session);
+
+int nvrtx_vk_device_route(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 
 int nvrtx_vk_stream_execute(struct nvrtx_vk_session *session, const void *wire, uint32_t bytes, nvrtx_vk_dispatcher dispatch);
 int nvrtx_vk_dispatch(struct nvrtx_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -111,5 +119,9 @@ int nvrtx_vk_dispatch(struct nvrtx_vk_session *session, uint32_t opcode, uint32_
  * replies into them.
  */
 int nvrtx_vk_blob(void *owner, uint32_t resource_id, uint8_t **cpu, uint64_t *bytes);
+
+/* The owner's GPU: its PCI product, and the bytes of VRAM the CPU's window gives the executor's memory. */
+uint32_t nvrtx_vk_device_id(void *owner);
+uint64_t nvrtx_vk_heap_bytes(void *owner);
 
 #endif

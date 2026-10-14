@@ -218,3 +218,28 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 - 確かめ: host 試験（ws141 の `vulkan-stream-host-test.sh` と同じ作り: libvulkan の `wire.c` で stream を作り、nvrtx の decoder で object が出来ること、reply の形）。
 - 決定（2026-10-15 Q1）: **案 A**。i915・bcm2711 の file は動かさず include、protocol の層は nvrtx の中。着手は R8b の後。
 - Future Work の候補（Q1 が `plan/future-work.md` に載せる）: 「executor の共有の層」— nvrtx が desktop を描けた後、bcm2711 と nvrtx の V3D・NVIDIA に依らない protocol の層（object・session・dispatch・command buffer の記録・descriptor・pipeline の decode など）を中立の置き場に寄せて共有する。再考の契機: D6（compositor が nvrtx で描く）の PASS。
+
+### 8.5 D2 の実装（2026-10-15 夜、P2。build と host 試験まで）
+
+案 A（8.4）で、i915 の codec 層を変えずに include し、protocol の層を nvrtx の中に書き始めた。
+
+| 物 | 中身 |
+| --- | --- |
+| `nvrtx-vk.h`（新） | executor の session（node の session が owner、object の索引（1024 bucket の hash）と list、decode の scratch 256 KiB）、object、route と dispatcher の型、node が出す口（`nvrtx_vk_blob`: blob の CPU の view、`nvrtx_vk_device_id`・`nvrtx_vk_heap_bytes`） |
+| `vk-object.c`（新） | 型付きの wire の identity の登録（publish・find・retain・release・remove・close。最後の holder が payload を壊す） |
+| `vk-session.c`（新） | session の open/close、reply の record の scratch（`nvrtx_vk_arena_take`。i915 の `i915_vkc_array` は reader の残りで数を制限するので、stream の最後の command では使えない） |
+| `vk-stream.c`（新） | transport: reply の stream の選択（session の blob の範囲）・移動・version の probe（最後の語を release で書く）・blob の中の stream（copy してから、深さ 4・64 MiB まで） |
+| `vk-dispatch.c`（新） | opcode を持つ handler へ（今は device の route だけ） |
+| `vk-device.c`（新） | instance・physical device（1 つ、NVIDIA 0x10de、discrete、PCI の product）・features（optional 無し）・memory（1 type: device-local・host-visible・coherent、heap は BAR1 の窓の大きさ）・queue family（1 つ、graphics・compute・transfer、queue 1）・format（B8G8R8A8/R8G8B8A8 の UNORM と SRGB、頂点の R32〜R32G32B32A32 SFLOAT）・image format（2D・1 level・1 sample）・device・queue・wait idle・destroy |
+| `node.c`・`share.c`・`nvrtx-node.h` | node の session が自分の blob を protocol の番号で list に持つ（blob の作成と import で載せ、壊す時に外す）、open で executor の session を開き close で閉じる |
+| `platform/amd64/vmunix.mk` | NVRTX の ifeq に vk の 5 file、i915 が n の時だけ `i915/render/codec.c` |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 59 checks`（object の登録と 3000 個の索引、transport（reply・probe・blob の stream の copy・入れ子の上限・容量・不正）、libvulkan の writer で instance → 列挙 → family → format → memory → device → queue → idle → destroy） |
+| vmunix（`build/p2/amd64`） | rc 0・warning 0・include/vmunix check PASS |
+| 実機 | 未実施（node に CAPSET・COMMAND・NOTIFICATION・JOB はまだ付けていない: 次の D2 の残り） |
+
+D2 の残り: node の口（`get_capset` の id 4: 168 byte・SDBZ・flags 7、`command`（同期）・`commands.submit/drain`（worker）・`jobs`（reserve/commit/cancel/capacity）・`recovery.fault`、`query_device` の roles に RENDER）。その後 D3（memory・buffer・image・descriptor・pipeline・render pass と記録の 15 種の vkCmd、D1 の work channel へ投入）。

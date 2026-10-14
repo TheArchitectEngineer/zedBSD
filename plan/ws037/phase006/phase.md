@@ -2,7 +2,7 @@
 
 # ws037-p006: display（段 P8）
 
-Status: in-progress（2026-10-15 P1。P8a は実機（方式 B、T1）PASS。P8b は直し（`476ca3ba5`）の再試験 R8b（T1-645）待ち。P8c（resident の GPU の device と display の ops）は `2c4d1a39f` で build まで、R8c（T1-647）待ち。P8c の続き（DISPLAY_EVENTS・DISPLAY_CONTROL（refresh、power は EOPNOTSUPP）・cursor・SHARE・scanout の表）を `2791fc6e3`・`e6699aa70` で build と host 試験まで、R8d は R8c の後（下の「P8c の続き」））
+Status: in-progress（2026-10-15 夜: **R8b PASS**（T1-664、nouveau と同じ手順）。R8c・R8d は T1。以前: 2026-10-15 P1。P8a は実機（方式 B、T1）PASS。P8b は直し（`476ca3ba5`）の再試験 R8b（T1-645）待ち。P8c（resident の GPU の device と display の ops）は `2c4d1a39f` で build まで、R8c（T1-647）待ち。P8c の続き（DISPLAY_EVENTS・DISPLAY_CONTROL（refresh、power は EOPNOTSUPP）・cursor・SHARE・scanout の表）を `2791fc6e3`・`e6699aa70` で build と host 試験まで、R8d は R8c の後（下の「P8c の続き」））
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14 夜「(3) p006（display: GOP の readout と GSP の RM の display で mode set・scanout・flip）」、ユーザーの判断「display … ここまでベータ2に入れます」）
@@ -356,6 +356,13 @@ VFIO の guest に netdev が無く SSH が使えないので、判定が VGA �
 - image は harness を入れて作る（`test-image.sh` から `--no-harness` を外す: SSH の鍵と `/etc/net.conf` が入る）。接続は host の `127.0.0.1:${SSH_PORT}` だけ（AGENTS.md の SSH/QMP の例外の形）。
 - 取る物: `dmesg | grep -E 'nvrtx|P[0-9]'` の全行（GSP は残るので run の後は host の reboot）。
 - 危険: USB の xHCI を足すと guest の USB の列挙が増える（VFIO の RTX の USB-C の function 01:00.2 と別の controller）。起動の順が変わって P8 の時刻がずれる程度の見込み。T1 が script を変える（host の操作は T1・Q1）。
+
+## R8b の再試験の結果（T1-664、2026-10-15、main 4453286ce、rombar=1、SSH で dmesg 全文）: PASS
+
+- `plan/agents/T1/results-20261015-t1-664.md`。SSH の道は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1 が作った。既存の script は変えていない）。dmesg の全文 154 行。
+- `P8b ok: mode set (1280x1024 on SOR 1), surface A shown`、`P8b window flip notified after 1993 us`、`P8b ok: flip, surface B shown`、`P8b ok: head 0 shows the driver's surfaces`、P6 ok・P7 ok、nvrtx の error の行は無い。
+- **判定: R8b クリア**（ユーザーの基準「kernel log に display の制御の error が無く、制御できている」、Q1 の判定）。nouveau と同じ手順（6e4be8661）と flip の直し（7b5c3cac9: notifier を交互に、flip で image の全部）で通った。
+- 次: T1 が R8c（resident の GPU device）→ R8d（events・cursor・share）を流す。
 
 ## 次の Phase の予定: nouveau と同じ手順からの整理（planned、2026-10-15 ユーザーの指示）
 
