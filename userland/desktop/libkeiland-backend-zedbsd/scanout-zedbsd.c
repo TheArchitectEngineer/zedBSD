@@ -69,6 +69,46 @@ static int scanout_display(struct kl_backend_scanout *scanout);
 static int scanout_import(struct kl_backend_scanout *scanout, struct kwl_gpu_buffer_record *record);
 
 /*
+ * Tells whether a scanout of a size could open, without claiming the
+ * display: its own GPU fd asks for a connected display that shows shared
+ * images and takes the size, and is closed again.  Returns 0, ENOTSUP, or
+ * the failure of the GPU device or the query.
+ */
+int
+kl_backend_scanout_possible(
+	struct kl_backend *backend,
+	uint32_t width,
+	uint32_t height)
+{
+	struct kl_backend_scanout probe;
+	int error;
+
+	/* The size the scanout would show. */
+	(void)backend;
+	if (width == 0U || height == 0U)
+		return EINVAL;
+	memset(&probe, 0, sizeof(probe));
+	probe.width = width;
+	probe.height = height;
+
+	/* A GPU fd of the question's own, which claims nothing. */
+	probe.gpu = open(SCANOUT_DEVICE, O_RDWR | O_CLOEXEC);
+	if (probe.gpu < 0)
+		return errno;
+
+	/* The same display and size checks as an open, then the fd goes. */
+	error = scanout_display(&probe);
+	close(probe.gpu);
+
+	/* Reports why no scanout of the size can open. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: a claim of the display could show the output. */
+	return 0;
+}
+
+/*
  * Claims the display for an output of a size.  Returns 0, EBUSY while
  * another scanout is open, ENOTSUP when no display shows shared images,
  * or the failure of the GPU device or the claim.

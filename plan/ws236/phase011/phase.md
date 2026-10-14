@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3 新世代。T1-685 FAIL（全画面で VPU の decoder が止まり reboot まで戻らない）→ 直し 6（core clock の floor）を実装・host 試験済み、T2 の依頼 6 待ち。game mode は WS223 のユーザーの決定に従い実装しない）
+Status: in-progress（2026-10-16、P3 新世代。T1-686 FAIL（直し 6 の core clock の見立ては外れ）→ 直し 7（compositor が scanout の可否を claim なしで聞き、出来ない display では出力を閉じない、display の lease の log）を実装・host 試験済み、T2 の依頼 7 待ち。60 fps の V1 は不採用、A1 は設計まで）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-16 新世代 `agent/p3-ws236f`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -297,6 +297,51 @@ Phase disposition: normal
 4. 報告: 各 run の videoplayer の `Vulkan Video:`・`FULLSCREEN`・`FRAMES`・`DRAW`（acquire_us・submit_us・wait_us）・`PLAYBACK`・`DONE`、compositor の session.log の `KWL SCANOUT`・`KWL MODE`・`KWL PERF`（compose の frame_ms）・`KWL SLOW_PASS`、dmesg の `rpi4-firmware: core clock`（全行）・`rpi4-mmal: (request .* not answered|stall|came back unread|core clock floor|not created)`・`v3d: video:`・`v3d: perf`・`bcm2711: (cadence|flip perf)`・`execution failed`。
 5. 合否: (a) 5 本とも `PLAYBACK failed` が無く、dmesg に `not answered`・`came back unread`・`no firmware decoder` が無い（reboot なしで続けて再生できる）、(b) `rpi4-firmware: core clock` の行が video の再生中（全画面の切り替えの時を含む）に出ない（出るのは compositor の起動と、再生の始まり・終わりの境だけ）、(c) 全画面の数の記録（合否ではない）: (ii)・(v) の shown・late（目標 290 以上・10 以下）、(i)・(iv) の shown、`KWL PERF compose frame_ms`、`DRAW acquire_us`。game mode は WS223 のユーザーの決定で入らない（`reason=backend errno=21` は期待どおり）。(d) `execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
 6. 止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
+
+### T2 の結果（T1-686、2026-10-16、Pi 4 実機、main 514a5775c）: FAIL
+
+- 全画面の 1080p60・30 で `PLAYBACK failed error=5`（shown 13〜14 か 0）。reboot の直後の 1 本目（a・r-a）は**同じ pts 26〜29 の入力 4 つ**が TRANSMISSION_FAILED（flags 0x406）で返り、transmit queued 30 completed 26、以後 `not answered (42)`・`ril.video_decode not created`。2 回とも同じ所で壊れる（決定的）。結果 `plan/agents/T2/results-20261016-t1-686.md`。
+- **r-a の decode の間に `rpi4-firmware: core clock` の行は 1 つも無い**（VIDEO の floor が 500 MHz を保ち、display の上げ下げは集約の中で吸収された）。それでも壊れたので、直し 6 の見立て（core clock の変化）は外れ。再生中の 67→500 MHz の対（r-d・r-e）は decoder が壊れて消えた後（floor が無い）で、結果であって原因ではない。
+- 壊れる時に起きていること: compositor の `KWL CURSOR_PLANE closed`・`KWL OUTPUT closed`（game mode を試すために swapchain を閉じる → display の lease の release、console の list の復帰と text の再描画）→ backend が ENOTSUP → 出力を開き直す（lease の claim、swapchain 3 枚・layer・cursor の image の作り直し）。同じ時に videoplayer は 960x600 → 1280x720 に swapchain を作り直す。窓の再生（どちらも無い）では壊れない。
+
+## 直し 7（2026-10-16、P3 新世代）: 出力を閉じない、lease の log
+
+### 調べ（見込み）
+
+- 原因の候補は (1) display の lease の release・claim（console の list の復帰、text の再描画、出力の image の解放と確保）と (2) videoplayer の swapchain の作り直し。kernel の log に lease の行が無いので、今の log では順序が分からない。firmware の MMAL の入力の bulk（ARM → VPU）が VPU の側で失敗する仕組みは公開の資料からは決められなかった。
+- (1) の引き金は compositor が**出来ない game mode を試すために出力を閉じること**。Pi 4（bcm2711 は `GPU_DISPLAY_BLOB` を立てない）・Linux・FreeBSD（backend が ENOTSUP）では、全画面の動画の窓ごとに出力を閉じて開き直していた（WS223 review の M2 と同じ）。WS223 のユーザーの決定（Video Player は game mode を使わない）にも合う。
+
+### 直し
+
+- `libkeiland-backend/keiland-backend-display.h`: `kl_backend_scanout_possible(backend, width, height)`（claim をせずに scanout が開けるかを答える。0・ENOTSUP・照会の失敗）。zedBSD（`scanout-zedbsd.c`）は自分の GPU の fd で `scanout_display`（QUERY の BLOB と MODE の VALIDATE）だけを行って fd を閉じる。drm（Linux・FreeBSD、`drm/display-drm.c`）は ENOTSUP。
+- compositor（`wayland/scanout.c` の `scanout_enter`）: 出力を閉じる前に聞き、出来なければ窓を refused にして出力を閉じずに合成を続ける（log `KWL SCANOUT direct=0 reason=backend errno=N … output=kept`）。i915（BLOB あり）は前と同じ道（聞いて出来るので閉じて claim）。
+- kernel（`bcm2711/display-device.c`）: `bcm2711: display lease N claimed` と `… released restore_ms=R text_ms=T` を 1 行ずつ（lease の変化は稀）。もし (2) が原因なら、依頼 7 で lease の行なしに入力が失敗し、その時は videoplayer の作り直しの何が VPU を止めるかを次に追う。
+
+### 確かめ 7（host と build）
+
+| 確かめ | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p3/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/p3/rpi4/vmunix build/p3/rpi4/bin/wayland` | rc 0、warning 0、`arm64 vmunix check: PASS` |
+| amd64 `build/p3/amd64/bin/wayland` | rc 0、warning 0 |
+| host の cc で `drm/display-drm.c` の `-fsyntax-only -Wall -Wextra` | 指摘 0 |
+| `plan/tools/gpu-boundary/v1-check.sh` | PASS |
+| `plan/tools/keiland-os-boundary/check.sh` | FAIL は libbrowser の `/dev/urandom` の A1 の 2 行だけ（変更の前と同じ、この直しと無関係） |
+| `sh plan/ws141/tests/display-host-test.sh`・`sh plan/ws214/tests/display-p003a-host.sh` | PASS |
+| style-check（変えた 4 つの C、HEAD との差） | 新しい指摘 0 |
+
+### T2 への依頼 7（Pi 4 実機、QEMU 不要、約 30 分）
+
+1. build（この commit か merge 後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/<T>/rpi4/vmunix build/<T>/rpi4/bin/wayland`（warning 0）。libmedia・videoplayer・libvulkan は T1-686 のまま。
+2. Pi: `/boot/boot0/vmunix` と compositor（`bin/wayland`、今の置き場所）を差し替え（前の物は退避）、boot の行に `v3d.perf=1`、reboot。
+3. **reboot を挟まずに**順に（各 `--timeout-s=15`、pointer は動かさない）: (i) `high-1080p60-10s.mp4 --fullscreen`、(ii) `high-1080p30-10s.mp4 --fullscreen`、(iii) `high-1080p60-10s.mp4`（窓）、(iv) (i) をもう 1 回、(v) `baseline-1080p30-10s.mp4 --fullscreen`。
+4. 報告: 各 run の videoplayer の `Vulkan Video:`・`FRAMES`・`DRAW`・`PLAYBACK`・`DONE`、compositor の `KWL SCANOUT`・`KWL OUTPUT`・`KWL MODE`・`KWL PERF`、dmesg の `bcm2711: display lease`（全行）・`rpi4-firmware: core clock`・`rpi4-mmal: (request .* not answered|stall|came back unread|not created)`・`v3d: video:`・`v3d: perf`・`execution failed`。
+5. 合否: (a) 全画面の切り替えで `KWL SCANOUT direct=0 reason=backend errno=21 … output=kept` が出て、`KWL OUTPUT closed` が出ない、(b) 5 本とも `PLAYBACK failed` が無く、dmesg に `came back unread`・`not answered`・`no firmware decoder` が無い、(c) 記録: (ii)・(v) の shown・late、`bcm2711: display lease` の行が再生の間に出ないこと。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す（kernel は残してよい）。
+6. FAIL の時の材料: (b) が FAIL で lease の行が無ければ原因は videoplayer の作り直し側（P3 が次に追う）。lease の行があれば、その行と `came back unread` の順を報告。止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
+
+### 60 fps の続き（V1・A1、2026-10-16 P3 新世代、T1-686 で中断）
+
+- **V1（TMU が raster を読む）は不採用**: V3D 4.2 の TMU は 2D の raster の texture を sample できない（Mesa v3dv `v3dv_formats.c`「Raster format is only supported for 1D textures」、gallium v3d `v3dx_state.c`「V3D still doesn't support sampling from raster textures」、MIT）。1D・texel buffer として読み、shader で 2D の address と bilinear を組むと 1 画素に 8 回の fetch で TFU（Y・UV 約 1.4 ms）より遥かに遅い。
+- **A1（設計まで）**: kernel は whole-image の `vkCmdCopyImage`（同じ format・大きさの raster 同士）を 0 draw の TLB の copy の pass で行う（`vulkan-native-image.c` `copy_whole`、T1-686 の perf で copy 2700 cycle/tile ≒ 240 tile で約 1.3 ms、draw は 7800〜8900 cycle/tile ≒ 約 4 ms＋窓の TFU 1.6 ms）。compositor の `compose_record` で、出力と同じ大きさ・同じ format の不透明な全画面の窓だけが映る frame（`scanout.c` の overlay の判定、glass の `fullscreen_whole`、cursor が frame に描かれない、turn・head なし）を、pass の代わりに UNDEFINED→TRANSFER_DST の barrier・copy・PRESENT_SRC の barrier で出す。i915・Venus を変えないため Broadcom（vendor 0x14e4）だけ。copy の結果は plain の不透明の quad と byte 単位で同じ、glass の whole の描き方とは alpha だけが違う（HVS の primary は固定の alpha、keiland-shot は RGB なので見えない）。videoplayer の swapchain は RGBA（wayland の WSI の最初の format）、compositor の出力は format=37（R8G8B8A8）で一致の見込み。
 
 ### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 

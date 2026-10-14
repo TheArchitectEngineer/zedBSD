@@ -113,6 +113,24 @@ kl_backend_display_socket(
 }
 
 /*
+ * Tells that no scanout can open here (ws122-p005b, zedBSD's alone), so
+ * the compositor keeps its output open and composes a fullscreen video or
+ * game.
+ */
+int
+kl_backend_scanout_possible(
+	struct kl_backend *backend,
+	uint32_t width,
+	uint32_t height)
+{
+	/* Not on this system. */
+	(void)backend;
+	(void)width;
+	(void)height;
+	return ENOTSUP;
+}
+
+/*
  * Has no direct scanout here (ws122-p005b, zedBSD's alone): the
  * compositor keeps composing a fullscreen video or game.
  */

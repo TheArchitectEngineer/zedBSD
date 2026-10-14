@@ -14,6 +14,7 @@
 #include <kern/dcache.h>
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
@@ -817,6 +818,13 @@ output_claim(
 
 	mutex_unlock(&controller->mutex);
 
+	/*
+	 * Each lease's start is logged, so the order of a display's leases
+	 * against other drivers' lines (the firmware's video decoder,
+	 * ws236-p011) can be read from the kernel log; leases change rarely.
+	 */
+	kern_logf("bcm2711: display lease %llu claimed\n", (unsigned long long)request->lease);
+
 	/* Succeeded: this open alone may submit or release this plane. */
 	return 0;
 }
@@ -831,6 +839,9 @@ output_release(
 	struct display_device *controller;
 	struct display_session *session;
 	struct bcm2711_flip_owner owner;
+	uint64_t started;
+	uint64_t restored;
+	uint64_t finished;
 	int error;
 
 	/*
@@ -845,6 +856,7 @@ output_release(
 		return EINVAL;
 
 	/* Keeps a failed release retryable while both native targets remain device-owned. */
+	started = sched_ticks();
 	mutex_lock(&controller->mutex);
 
 	if (controller->owner != session || request->lease != session->lease) {
@@ -868,9 +880,17 @@ output_release(
 	bcm2711_display_flip_disown(controller->native);
 
 	/* Repaints retained text only after actual console scanout is confirmed. */
+	restored = sched_ticks();
 	kern_text_resume();
 
 	mutex_unlock(&controller->mutex);
+
+	/* The lease's end, with how long the console's return and its text took (see output_claim). */
+	finished = sched_ticks();
+	kern_logf("bcm2711: display lease %llu released restore_ms=%llu text_ms=%llu\n",
+		  (unsigned long long)request->lease,
+		  (unsigned long long)kern_ticks_to_ms(restored - started),
+		  (unsigned long long)kern_ticks_to_ms(finished - restored));
 
 	/* Succeeded: the native console is adopted and the lease is consumed. */
 	return 0;
