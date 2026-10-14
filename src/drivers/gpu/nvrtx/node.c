@@ -11,9 +11,10 @@
  * With nvrtx.resident=1 and a head taken over (P8b), the worker leaves the
  * GSP up and registers the GPU with the GPU core.  The device has ordinary
  * storage (RAM the CPU reads and writes), blobs in the VRAM (buffer objects
- * of P4m's allocator, mapped in the CPU's window), transfers and CPU mappings
- * of both, and the display of present.c.  It has no command stream yet: the
- * 3D and compute work of the GPU device is a later stage (ws037-p007).
+ * of P4m's allocator, mapped in the CPU's window, shared between opens by
+ * share.c), transfers and CPU mappings of both, and the display of
+ * present.c and cursor.c.  It has no command stream yet: the 3D and compute
+ * work of the GPU device is a later stage (ws037-p007).
  *
  * The device is never unregistered: the GSP has no path back to the firmware
  * while it runs, so the GPU is kept until power-off (detach refuses).
@@ -36,8 +37,12 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
 
-/* The device's capabilities: storage, VRAM blobs, transfers, CPU mappings and the display. */
-#define NODE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_DISPLAY)
+/*
+ * The device's capabilities: storage, VRAM blobs, transfers, CPU mappings,
+ * sharing of blobs, and the display with its events and its control.
+ */
+#define NODE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | \
+					 GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL)
 
 /* The largest resource, and how many one session may hold. */
 #define NODE_MAX_RESOURCE_BYTES		(64ULL << 20)
@@ -101,11 +106,13 @@ nvrtx_node_start(
 	if (node == NULL)
 		return ENOMEM;
 
-	/* Initializes the node: no lease, numbers from one. */
+	/* Initializes the node: no lease, numbers from one, the refresh count from one. */
 	(void)mutex_init(&node->lock, LOCK_RANK_DEVICE, "nvrtx node");
+	spin_init(&node->refresh_lock, LOCK_RANK_DEVICE, "nvrtx refresh");
 	node->gpu = gpu;
 	node->next_lease = 1U;
 	node->next_resource_id = 1U;
+	node->refresh_count = 1U;
 
 	/* Describes the device: its interface, its capabilities and every operation. */
 	node->ops.version = DRV_GPU_INTERFACE_VERSION;
@@ -121,6 +128,8 @@ nvrtx_node_start(
 	node->ops.resource_write = node_resource_write;
 	node->ops.resource_map = node_resource_map;
 	node->ops.display = &nvrtx_display_ops;
+	node->ops.share = &nvrtx_share_ops;
+	node->ops.scanout = &nvrtx_scanout_ops;
 
 	/* Takes the display's frames and shows the console surface. */
 	error = nvrtx_present_start(node);
@@ -129,6 +138,13 @@ nvrtx_node_start(
 		node_free(node);
 		return error;
 	}
+
+	/*
+	 * Makes the cursor plane while the worker is still the GSP's only
+	 * caller (its channel is made through the resource manager); without
+	 * it the display has no cursor plane.
+	 */
+	nvrtx_cursor_start(node);
 
 	/* Registers the device; the core publishes /dev/gpuN. */
 	error = drv_gpu_register(&node->ops, node, &node->device);
@@ -144,7 +160,7 @@ nvrtx_node_start(
 	 * so its queue never fills.  Without it the device still works for a
 	 * while, so a failure is only shown.
 	 */
-	error = kthread_create(node_drain, gpu, SCHED_PRIORITY_DEFAULT, &drain);
+	error = kthread_create(node_drain, node, SCHED_PRIORITY_DEFAULT, &drain);
 	if (error == 0) {
 		drain->detached = 1;
 		thread_start(drain);
@@ -159,6 +175,60 @@ nvrtx_node_start(
 	    (unsigned)node->height,
 	    (unsigned)node->refresh_millihz);
 	return 0;
+}
+
+/*
+ * Drops one reference to a blob's VRAM: the last one gives the VRAM back,
+ * unless the display may still read it (kept), and frees the record.
+ */
+void
+nvrtx_node_backing_put(
+	struct nvrtx_node *node,
+	struct nvrtx_backing *backing)
+{
+	uint32_t refs;
+
+	/* Counts the reference off under the node's lock. */
+	mutex_lock(&node->lock);
+
+	backing->refs--;
+	refs = backing->refs;
+
+	mutex_unlock(&node->lock);
+
+	/* Others still name the VRAM. */
+	if (refs != 0U)
+		return;
+
+	/* The VRAM and its place in the window go back, unless the display may still read it. */
+	if (backing->kept == 0)
+		nvrtx_bo_free(node->gpu, &backing->bo);
+
+	/* Frees the record. */
+	kern_free(backing);
+}
+
+/*
+ * Numbers a new blob or import for the protocol: never zero.
+ */
+uint32_t
+nvrtx_node_resource_id(
+	struct nvrtx_node *node)
+{
+	uint32_t resource_id;
+
+	/* Takes the next number, skipping zero when the count wraps. */
+	mutex_lock(&node->lock);
+
+	resource_id = node->next_resource_id;
+	node->next_resource_id++;
+	if (node->next_resource_id == 0U)
+		node->next_resource_id = 1U;
+
+	mutex_unlock(&node->lock);
+
+	/* Succeeded: the number is the resource's. */
+	return resource_id;
 }
 
 /* Opens a session: it only names its node. */
@@ -297,15 +367,20 @@ node_resource_destroy(
 	/* A blob leaves the screen first. */
 	nvrtx_present_resource_gone(node, resource);
 
-	/* Its VRAM and its place in the window go back, unless the display may still read it. */
-	if (resource->kept == 0)
-		nvrtx_bo_free(node->gpu, &resource->bo);
+	/* Drops its reference to the VRAM; the last one gives it back. */
+	nvrtx_node_backing_put(node, resource->backing);
 
 	/* Frees the record. */
 	kern_free(resource);
 }
 
-/* Creates a blob: a buffer object in the VRAM, mapped in the CPU's window. */
+/*
+ * Creates a blob: a buffer object in the VRAM, mapped in the CPU's window.
+ *
+ * The sharing flags need nothing more: every blob is VRAM the other opens
+ * of the device can import (share.c); another device cannot (no physical
+ * view is lent).
+ */
 static int
 node_blob_create(
 	void *private_data,
@@ -316,6 +391,7 @@ node_blob_create(
 {
 	struct nvrtx_node *node;
 	struct nvrtx_resource *resource;
+	struct nvrtx_backing *backing;
 	volatile uint8_t *cpu;
 	uint64_t at;
 	int error;
@@ -324,7 +400,7 @@ node_blob_create(
 
 	node = private_data;
 
-	/* The core bounded the size and refused the sharing flags. */
+	/* The core bounded the size. */
 	if (request->bytes == 0U || request->bytes > NODE_MAX_RESOURCE_BYTES)
 		return EINVAL;
 
@@ -333,34 +409,38 @@ node_blob_create(
 	if (resource == NULL)
 		return ENOMEM;
 
+	/* Allocates the backing's record. */
+	backing = kern_calloc(1U, sizeof(*backing));
+	if (backing == NULL) {
+		kern_free(resource);
+		return ENOMEM;
+	}
+
 	/* Takes the VRAM and maps it for the CPU. */
-	error = nvrtx_bo_alloc(node->gpu, request->bytes, NODE_BLOB_ALIGN, &resource->bo);
+	error = nvrtx_bo_alloc(node->gpu, request->bytes, NODE_BLOB_ALIGN, &backing->bo);
 	if (error == 0)
-		error = nvrtx_bo_map(node->gpu, &resource->bo);
+		error = nvrtx_bo_map(node->gpu, &backing->bo);
 	if (error != 0) {
-		nvrtx_bo_free(node->gpu, &resource->bo);
+		nvrtx_bo_free(node->gpu, &backing->bo);
+		kern_free(backing);
 		kern_free(resource);
 		return error;
 	}
 
 	/* Clears it through the window, so no earlier contents of the VRAM show. */
-	cpu = nvrtx_bo_cpu(node->gpu, &resource->bo);
-	for (at = 0U; at < resource->bo.size; at += 4U)
+	cpu = nvrtx_bo_cpu(node->gpu, &backing->bo);
+	for (at = 0U; at < backing->bo.size; at += 4U)
 		*(volatile uint32_t *)(volatile void *)(cpu + at) = 0U;
 
-	/* Numbers it for the protocol (never zero). */
+	/* The blob holds the backing's one reference. */
+	backing->bytes = request->bytes;
+	backing->refs = 1U;
 	resource->kind = NVRTX_RESOURCE_BLOB;
 	resource->bytes = request->bytes;
-	mutex_lock(&node->lock);
+	resource->backing = backing;
 
-	*resource_id = node->next_resource_id;
-	node->next_resource_id++;
-	if (node->next_resource_id == 0U)
-		node->next_resource_id = 1U;
-
-	mutex_unlock(&node->lock);
-
-	/* Succeeded: the blob is the session's. */
+	/* Succeeded: the blob is the session's, numbered for the protocol. */
+	*resource_id = nvrtx_node_resource_id(node);
 	*object = resource;
 	return 0;
 }
@@ -400,7 +480,7 @@ node_resource_read(
 	}
 
 	/* A blob is read byte by byte through the uncached window. */
-	source = nvrtx_bo_cpu(node->gpu, &resource->bo) + offset;
+	source = nvrtx_bo_cpu(node->gpu, &resource->backing->bo) + offset;
 	for (at = 0U; at < bytes; at++)
 		target[at] = source[at];
 
@@ -443,7 +523,7 @@ node_resource_write(
 	}
 
 	/* A blob is written byte by byte through the uncached window, then read back once so the writes have landed. */
-	target = nvrtx_bo_cpu(node->gpu, &resource->bo) + offset;
+	target = nvrtx_bo_cpu(node->gpu, &resource->backing->bo) + offset;
 	for (at = 0U; at < bytes; at++)
 		target[at] = source[at];
 	if (bytes != 0U)
@@ -479,9 +559,9 @@ node_resource_map(
 	}
 
 	/* A blob: its place in the window. */
-	mapping->physical = nvrtx_bo_bus(node->gpu, &resource->bo);
-	mapping->address = (void *)(uintptr_t)nvrtx_bo_cpu(node->gpu, &resource->bo);
-	mapping->bytes = resource->bo.size;
+	mapping->physical = nvrtx_bo_bus(node->gpu, &resource->backing->bo);
+	mapping->address = (void *)(uintptr_t)nvrtx_bo_cpu(node->gpu, &resource->backing->bo);
+	mapping->bytes = resource->backing->bo.size;
 	mapping->attributes = DRV_GPU_MAPPING_DEVICE;
 
 	/* Succeeded: the view covers the whole object. */
@@ -506,8 +586,9 @@ node_range(
 }
 
 /*
- * Frees a node that was never registered: its frames' VRAM and the node.
- * The caller then stops the GSP, which no longer shows the frames.
+ * Frees a node that was never registered: its frames' and cursor's VRAM
+ * and the node.  The caller then stops the GSP, which no longer shows the
+ * frames and frees the cursor channel.
  */
 static void
 node_free(
@@ -519,6 +600,9 @@ node_free(
 	for (index = 0U; index < 2U; index++)
 		nvrtx_bo_free(node->gpu, &node->frame_objects[index]);
 
+	/* Gives the cursor's slots back (skipped when never taken). */
+	nvrtx_bo_free(node->gpu, &node->cursor_object);
+
 	/* Frees the node. */
 	kern_free(node);
 }
@@ -528,21 +612,30 @@ node_free(
  * time, until power-off.  The worker that made the device has ended, and
  * the device's operations make no calls to the GSP, so this thread is the
  * channel's only reader.  The wait shows the channel errors it meets.
+ *
+ * After each turn (about a second) it also reads the head's frame counter,
+ * so the refresh count keeps up even while nobody waits for a boundary
+ * (the 16-bit counter wraps after about 18 minutes at 60 Hz).
  */
 static void
 node_drain(
 	void *argument)
 {
-	struct nvrtx_gpu *gpu;
+	struct nvrtx_node *node;
+	uint64_t count;
+	uint64_t time_ns;
 	size_t length;
 	int error;
 
-	gpu = argument;
+	node = argument;
 
 	/* Takes messages turn after turn; a turn ends when its time is spent. */
 	for (;;) {
-		error = nvrtx_rpc_wait(gpu, NODE_DRAIN_NO_FUNCTION, 0U, NODE_DRAIN_TURN_US, &length);
+		error = nvrtx_rpc_wait(node->gpu, NODE_DRAIN_NO_FUNCTION, 0U, NODE_DRAIN_TURN_US, &length);
 		if (error != 0 && error != ETIMEDOUT)
 			kern_usleep_range(NODE_DRAIN_PAUSE_US, NODE_DRAIN_PAUSE_US);
+
+		/* Brings the refresh count up to date. */
+		nvrtx_present_refresh_sample(node, &count, &time_ns);
 	}
 }

@@ -942,6 +942,70 @@ test_disp(void)
 	    nvrtx_disp_band_color(7) == 0xff000000U, "disp band colours");
 }
 
+/* The cursor and display-control records of P8c (ws037-p006): the PIO channel, the core's cursor methods, positions, pixels, frames. */
+static void
+test_disp_cursor(void)
+{
+	uint8_t memory[64 * 4];
+	uint8_t pb[NVRTX_DISP_PUSHBUFFER_BYTES];
+	uint8_t pio[NVRTX_DISP_PIO_CHANNEL_BYTES];
+	struct nvrtx_push push;
+	uint32_t i;
+	int zero;
+
+	/* The PIO channel's registration: class and instance, not valid, subdevice 0, no memory (r570 layout). */
+	memset(pb, 0xa5, sizeof(pb));
+	nvrtx_disp_pio_pushbuffer_params(pb, NVRTX_DISP_CLASS_CURSOR, 1);
+	check(nvrtx_get32(pb, 0) == 0 && nvrtx_get32(pb, 8) == 0 && nvrtx_get32(pb, 12) == 0 && nvrtx_get32(pb, 16) == 0 &&
+	    nvrtx_get32(pb, 24) == 0 && nvrtx_get32(pb, 28) == 0xc57aU && nvrtx_get32(pb, 32) == 1 && pb[36] == 0 &&
+	    nvrtx_get32(pb, 40) == 0 && nvrtx_get32(pb, 48) == 1, "disp cursor pushbuffer params");
+
+	/* The PIO channel's allocation (16 bytes): the instance, nothing else. */
+	memset(pio, 0xa5, sizeof(pio));
+	nvrtx_disp_pio_channel_params(pio, 1);
+	zero = 1;
+	for (i = 4; i < NVRTX_DISP_PIO_CHANNEL_BYTES; i++) {
+		if (pio[i] != 0)
+			zero = 0;
+	}
+	check(nvrtx_get32(pio, 0) == 1 && zero, "disp cursor channel params");
+
+	/* The cursor on head 0: control and composition in one run, the object, the offset in 256-byte units. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_cursor_set(&push, 0, NVRTX_DISP_HANDLE_VRAM, 0x1e0040000ULL);
+	check(push.count == 7 && nvrtx_get32(memory, 0) == 0x0008209cU && nvrtx_get32(memory, 4) == 0x800001cfU &&
+	    nvrtx_get32(memory, 8) == 0x000072ffU && nvrtx_get32(memory, 12) == 0x00042088U &&
+	    nvrtx_get32(memory, 16) == 0xf0000001U && nvrtx_get32(memory, 20) == 0x00042090U &&
+	    nvrtx_get32(memory, 24) == 0x01e00400U, "disp core cursor set");
+
+	/* The cursor off on head 1: control A8R8G8B8 disabled, no object. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_cursor_clear(&push, 1);
+	check(push.count == 4 && nvrtx_get32(memory, 0) == 0x0004249cU && nvrtx_get32(memory, 4) == 0xcfU &&
+	    nvrtx_get32(memory, 8) == 0x00042488U && nvrtx_get32(memory, 12) == 0, "disp core cursor clear");
+
+	/* The core's update with head 1's cursor: notifier on, interlocks (cursor 1, no window), update, notifier off. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_update_cursor(&push, 0, 1);
+	check(push.count == 9 && nvrtx_get32(memory, 0) == 0x0004020cU && nvrtx_get32(memory, 4) == 0x1000U &&
+	    nvrtx_get32(memory, 8) == 0x00080218U && nvrtx_get32(memory, 12) == 2 && nvrtx_get32(memory, 16) == 0 &&
+	    nvrtx_get32(memory, 20) == 0x00040200U && nvrtx_get32(memory, 24) == 1 && nvrtx_get32(memory, 32) == 0,
+	    "disp core update with the cursor");
+
+	/* Positions: x low, y high, 16-bit two's complement, held inside 16 bits. */
+	check(nvrtx_disp_cursor_point(10, 20) == 0x0014000aU, "disp cursor point");
+	check(nvrtx_disp_cursor_point(-5, -1) == 0xfffffffbU, "disp cursor point negative");
+	check(nvrtx_disp_cursor_point(40000, -40000) == 0x80007fffU, "disp cursor point held");
+
+	/* Pixels: BGRA8888 is A8R8G8B8 already, RGBA8888 swaps red and blue. */
+	check(nvrtx_disp_cursor_pixel(0x80112233U, 0) == 0x80112233U, "disp cursor pixel BGRA");
+	check(nvrtx_disp_cursor_pixel(0x80112233U, 1) == 0x80332211U, "disp cursor pixel RGBA");
+
+	/* The 16-bit frame counter's movement, across its wrap. */
+	check(nvrtx_disp_frame_advance(10, 12) == 2 && nvrtx_disp_frame_advance(5, 5) == 0 &&
+	    nvrtx_disp_frame_advance(0xfffe, 0x0001) == 3, "disp frame advance");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -956,6 +1020,7 @@ main(int argc, char **argv)
 	test_objects();
 	test_gr();
 	test_disp();
+	test_disp_cursor();
 	if (argc > 1)
 		test_files(argv[1]);
 	else

@@ -106,6 +106,33 @@
 #define RECORDS_COEFFICIENT_COUNT	12U
 #define RECORDS_COEFFICIENT_ONE		0x00010000U
 
+/*
+ * A shown cursor: enabled, A8R8G8B8, 64 by 64, its hot spot at the top left,
+ * no de-gamma (nouveau's headc37d_curs_set for a 64-pixel image).
+ */
+#define RECORDS_CURSOR_ON		0x800001cfU
+
+/*
+ * The cursor's blending: K1 255, the cursor times K1 over the picture times
+ * one less the cursor's alpha (premultiplied alpha, nouveau's composition).
+ */
+#define RECORDS_CURSOR_COMPOSITION	0x000072ffU
+
+/* Where a PIO channel's allocation names its instance. */
+#define RECORDS_PIO_INSTANCE_AT		0U
+
+/* The cursor's position fields are 16 bits each; a position is held inside them. */
+#define RECORDS_POINT_MIN		(-32768)
+#define RECORDS_POINT_MAX		32767
+#define RECORDS_POINT_FIELD_MASK	0xffffU
+#define RECORDS_POINT_Y_SHIFT		16U
+
+/* The red and blue bytes of a 32-bit pixel, which RGBA and A8R8G8B8 hold in swapped places. */
+#define RECORDS_PIXEL_LOW_BYTE		0x000000ffU
+#define RECORDS_PIXEL_THIRD_BYTE	0x00ff0000U
+#define RECORDS_PIXEL_KEPT_BYTES	0xff00ff00U
+#define RECORDS_PIXEL_SWAP_SHIFT	16U
+
 /* The colours of the test bands, A8R8G8B8: white, yellow, cyan, green, magenta, red, blue, black. */
 #define RECORDS_BAND_COUNT		8U
 
@@ -362,6 +389,37 @@ nvrtx_disp_channel_params(
 }
 
 /*
+ * Writes the push-buffer registration of a PIO channel (the cursor's): no
+ * memory and not valid, only the class, the instance and subdevice 0, as
+ * nouveau's r570_disp_chan_set_pushbuf does without a buffer.
+ */
+void
+nvrtx_disp_pio_pushbuffer_params(
+	uint8_t *params,
+	uint32_t class_number,
+	uint32_t instance)
+{
+	/* Every field not named is zero: no address space, no address, no limit, not valid. */
+	records_clear(params, NVRTX_DISP_PUSHBUFFER_BYTES);
+	nvrtx_put32(params, RECORDS_PB_CLASS_AT, class_number);
+	nvrtx_put32(params, RECORDS_PB_INSTANCE_AT, instance);
+	nvrtx_put32(params, RECORDS_PB_SUBDEVICE_AT, RECORDS_SUBDEVICE_FIRST);
+}
+
+/*
+ * Writes a PIO channel's allocation: its instance (the head), no notifier, no pointer.
+ */
+void
+nvrtx_disp_pio_channel_params(
+	uint8_t *params,
+	uint32_t instance)
+{
+	/* The instance alone, as nouveau's r535_curs_init gives it. */
+	records_clear(params, NVRTX_DISP_PIO_CHANNEL_BYTES);
+	nvrtx_put32(params, RECORDS_PIO_INSTANCE_AT, instance);
+}
+
+/*
  * Writes the request that assigns an output resource to one display (nouveau's
  * acquire of a SOR under the GSP): subdevice 0, the display, the SORs not to use.
  */
@@ -593,6 +651,149 @@ nvrtx_disp_core_update(
 	/* Releases the gathered state, then turns the notifier off again. */
 	nvrtx_push_one(push, NVRTX_CORE_UPDATE, RECORDS_UPDATE);
 	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, 0U);
+}
+
+/*
+ * Writes one head's cursor on: its control and blending, the object it is
+ * read through and its VRAM offset (nouveau's headc37d_curs_set).
+ */
+void
+nvrtx_disp_core_cursor_set(
+	struct nvrtx_push *push,
+	uint32_t head,
+	uint32_t handle,
+	uint64_t offset)
+{
+	uint32_t control[2];
+	uint32_t base;
+
+	/* The head's block of methods. */
+	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+
+	/* Shown, 64 by 64 A8R8G8B8, blended as premultiplied alpha. */
+	control[0] = RECORDS_CURSOR_ON;
+	control[1] = RECORDS_CURSOR_COMPOSITION;
+	nvrtx_push_method(push, base + NVRTX_HEAD_CONTROL_CURSOR, control, 2U);
+
+	/* Read through the object, from the offset in 256-byte units. */
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTEXT_DMA_CURSOR, handle);
+	nvrtx_push_one(push, base + NVRTX_HEAD_OFFSET_CURSOR, (uint32_t)(offset >> RECORDS_OFFSET_SHIFT));
+}
+
+/*
+ * Writes one head's cursor off and without its object (nouveau's headc37d_curs_clr).
+ */
+void
+nvrtx_disp_core_cursor_clear(
+	struct nvrtx_push *push,
+	uint32_t head)
+{
+	uint32_t base;
+
+	/* The head's block of methods. */
+	base = NVRTX_CORE_HEAD_FIRST + head * NVRTX_CORE_HEAD_STRIDE;
+
+	/* Off (its format stays A8R8G8B8), then no object. */
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTROL_CURSOR, RECORDS_CURSOR_OFF);
+	nvrtx_push_one(push, base + NVRTX_HEAD_CONTEXT_DMA_CURSOR, 0U);
+}
+
+/*
+ * Writes the core's update with its notifier, interlocked with one head's
+ * cursor and no window: the update that shows or hides the cursor together
+ * with the cursor channel's own (nouveau's corec37d_update for a cursor).
+ */
+void
+nvrtx_disp_core_update_cursor(
+	struct nvrtx_push *push,
+	uint32_t notifier_offset,
+	uint32_t head)
+{
+	uint32_t interlock[2];
+
+	/* Asks for the notifier at its offset in the sync object. */
+	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, RECORDS_NOTIFY_ENABLE | (notifier_offset & RECORDS_NOTIFIER_OFFSET_MASK));
+
+	/* The head's cursor; no window. */
+	interlock[0] = 1U << head;
+	interlock[1] = 0U;
+	nvrtx_push_method(push, NVRTX_CORE_SET_INTERLOCK_FLAGS, interlock, 2U);
+
+	/* Releases the gathered state, then turns the notifier off again. */
+	nvrtx_push_one(push, NVRTX_CORE_UPDATE, RECORDS_UPDATE);
+	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, 0U);
+}
+
+/*
+ * Reports the cursor channel's position word: x in bits 15:0 and y in bits
+ * 31:16, each a 16-bit two's complement (a cursor partly left of or above
+ * the output has a negative position).  A position outside 16 bits is held
+ * at its nearest end.
+ */
+uint32_t
+nvrtx_disp_cursor_point(
+	int32_t x,
+	int32_t y)
+{
+	uint32_t field_x;
+	uint32_t field_y;
+
+	/* Holds x inside the field. */
+	if (x < RECORDS_POINT_MIN)
+		x = RECORDS_POINT_MIN;
+	else if (x > RECORDS_POINT_MAX)
+		x = RECORDS_POINT_MAX;
+
+	/* Holds y inside the field. */
+	if (y < RECORDS_POINT_MIN)
+		y = RECORDS_POINT_MIN;
+	else if (y > RECORDS_POINT_MAX)
+		y = RECORDS_POINT_MAX;
+
+	/* Each one's low 16 bits, as nouveau's NVVAL packs a crtc position. */
+	field_x = (uint32_t)x & RECORDS_POINT_FIELD_MASK;
+	field_y = (uint32_t)y & RECORDS_POINT_FIELD_MASK;
+
+	/* Succeeded: the word the channel takes. */
+	return field_x | (field_y << RECORDS_POINT_Y_SHIFT);
+}
+
+/*
+ * Reports one pixel of a cursor image as the cursor's A8R8G8B8 word: a
+ * BGRA8888 pixel is that already, an RGBA8888 one has red and blue swapped.
+ */
+uint32_t
+nvrtx_disp_cursor_pixel(
+	uint32_t pixel,
+	int rgba)
+{
+	uint32_t red;
+	uint32_t blue;
+
+	/* B, G, R, A in memory is the cursor's own order. */
+	if (rgba == 0)
+		return pixel;
+
+	/* R, G, B, A: red in the low byte and blue in the third change places. */
+	red = pixel & RECORDS_PIXEL_LOW_BYTE;
+	blue = (pixel & RECORDS_PIXEL_THIRD_BYTE) >> RECORDS_PIXEL_SWAP_SHIFT;
+
+	/* Succeeded: green and alpha stay, red goes up, blue comes down. */
+	return (pixel & RECORDS_PIXEL_KEPT_BYTES) | (red << RECORDS_PIXEL_SWAP_SHIFT) | blue;
+}
+
+/*
+ * Reports how many frames a head's 16-bit frame counter moved from one
+ * reading to the next (modulo its wrap: a gap longer than 65535 frames
+ * counts short, never backwards).
+ */
+uint32_t
+nvrtx_disp_frame_advance(
+	uint32_t last,
+	uint32_t now)
+{
+	/* The counter's difference within its 16 bits. */
+	return (now - last) & NVRTX_DISP_FRAME_COUNT_MASK;
 }
 
 /*
