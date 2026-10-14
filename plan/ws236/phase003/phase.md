@@ -48,6 +48,20 @@ Phase disposition: normal
 - 原因: `kthread_create` は止まった thread を作り、`thread_start` で走らせる（`src/kern/main.c`・`rpi4-bt.c` などの作り）。VCHIQ の受信の thread と probe の thread の両方で `thread_start` が抜けていた（実機でも VCHIQ の受信が動かず CONNECT が返らなかった）。
 - 直し: 両方に `thread_start` を足し、probe は最初に `rpi4-mmal-probe: started; …` を必ず 1 行出す。以後は接続なし（15 秒後の 1 行）・decoder の作成の失敗・各 run の要約・`done` のどれかが必ず出る。
 
+## T1-624 の結果（実機 Pi 4、2026-10-14 夜）と次の版
+
+- `rpi4-vchiq: connected (version 8)`・`rpi4-mmal: firmware MMAL 16.1 (service version 16)` まで実機で動いた。VCHIQ の初期化（channel 3）と service の open は合格。
+- 全ての decoder の作成が `decoder not configured (13)`（13 = zedBSD の ENODEV）。configure の最初の `port_info` が ENODEV を返した。返すのは reply の status が 0 でない時か `found` が 0 の時で、BSD-3 の userland の client は `found` を読まない（status だけ）。最有力は firmware が `found` を 0 のまま返すこと。
+- 直し（この版）:
+  - `port_info` は status だけを見る。`found` は log に出す。
+  - 1 回の起動で原因を切り分ける log:
+    - 各 request の名前・送った長さ・返事の長さ・status の語と MMAL_STATUS_T の名前（最初の 96 行）。
+    - 各 port の status・found・handle・buffer の最小・推奨・今の値・encoding・大きさ。
+    - component の handle と port の数。
+    - configure が止まった段の名前（port info・input format・output format・port info again・input enable・output enable・component enable）。
+  - output の NV12 が拒まれたら I420 で試す。probe は I420 の frame も NV12 と同じ checksum にする。
+- T1 の次の依頼: image は `plan/ws236/tests/config-rpi4-video-probe.mk`（video・probe・vkvideo-probe を 1 回の起動で）。手順は phase005 と同じで、dmesg の grep に `rpi4-mmal: (trace|port|.*created|.*not configured|NV12)` の行を全て含める。
+
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。

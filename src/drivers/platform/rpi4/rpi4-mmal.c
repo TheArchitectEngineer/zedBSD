@@ -75,6 +75,14 @@
 #define MMAL_KIND_OUTPUT		2U
 #define MMAL_KIND_COMPONENT		3U
 
+/*
+ * How many request lines the trace writes: every request and its reply's
+ * status word while the budget lasts (the first decoders of a boot), so
+ * one boot shows where a decoder's set-up stops.  A refused request is
+ * always logged.
+ */
+#define MMAL_TRACE_LINES		96U
+
 /* The firmware component that decodes video. */
 #define MMAL_COMPONENT_NAME		"ril.video_decode"
 
@@ -163,6 +171,7 @@ struct drv_rpi4_mmal_decoder {
 	struct drv_dma_buffer scratch;
 	struct mmal_output outputs[MMAL_OUTPUT_BUFFERS];
 	unsigned held_output;
+	const char *step;
 	bool output_enabled;
 	bool input_sent;
 	uint64_t target_physical;
@@ -202,6 +211,9 @@ static struct drv_rpi4_vchiq_service *mmal_service;
 static struct drv_dma_device *mmal_dma;
 static struct mutex mmal_open_lock;
 static bool mmal_ready;
+
+/* The trace lines left (see MMAL_TRACE_LINES); written under mmal_request_lock. */
+static unsigned mmal_trace_left = MMAL_TRACE_LINES;
 
 /* The firmware's MMAL worker version (GET_VERSION's major), read once with the service; zero if unknown. */
 static uint32_t mmal_major;
@@ -258,6 +270,8 @@ static uint64_t bus_to_physical(uint64_t bus);
 static uint32_t token(struct drv_rpi4_mmal_decoder *decoder, uint32_t kind, uint32_t index);
 static struct drv_rpi4_mmal_decoder *decoder_of(uint32_t value);
 static uint32_t maximum(uint32_t first, uint32_t second);
+static const char *request_name(uint32_t msgid);
+static const char *status_name(uint32_t status);
 static void release_memory(struct drv_rpi4_mmal_decoder *decoder);
 static bool bulks_outstanding(struct drv_rpi4_mmal_decoder *decoder);
 
@@ -362,9 +376,13 @@ drv_rpi4_mmal_decoder_create(
 	decoder->component = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_CREATE_REPLY_HANDLE);
 
 	/* Sets the ports up and starts the component. */
+	kern_logf("rpi4-mmal: %s created: handle %u, inputs %u, outputs %u\n", MMAL_COMPONENT_NAME,
+		  (unsigned)decoder->component,
+		  (unsigned)drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_CREATE_REPLY_INPUTS),
+		  (unsigned)drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_CREATE_REPLY_OUTPUTS));
 	error = configure(decoder, width, height);
 	if (error != 0) {
-		kern_logf("rpi4-mmal: decoder not configured (%d)\n", error);
+		kern_logf("rpi4-mmal: decoder not configured (%d) at step %s\n", error, decoder->step);
 		drv_rpi4_mmal_decoder_destroy(decoder);
 		return error;
 	}
@@ -986,6 +1004,8 @@ request_with_bulk(
 	uint64_t deadline;
 	uint64_t observed;
 	uint32_t waiter;
+	uint32_t msgid;
+	uint32_t word;
 	size_t copied;
 	int error;
 
@@ -1040,10 +1060,23 @@ request_with_bulk(
 	mutex_unlock(&mmal_request_lock);
 
 	/* Reports a request that went unanswered. */
+	msgid = drv_rpi4_mmal_get32(message, DRV_RPI4_MMAL_HEADER_MSGID);
 	if (error != 0) {
-		kern_logf("rpi4-mmal: request %u not answered (%d)\n",
-			  (unsigned)drv_rpi4_mmal_get32(message, DRV_RPI4_MMAL_HEADER_MSGID), error);
+		kern_logf("rpi4-mmal: request %u (%s) not answered (%d)\n", (unsigned)msgid, request_name(msgid), error);
 		return error;
+	}
+
+	/*
+	 * Traces the request and the word where its reply's status is (byte
+	 * 24; GET_VERSION's flags there), while the budget lasts.
+	 */
+	word = 0;
+	if (copied >= DRV_RPI4_MMAL_REPLY_BYTES)
+		word = drv_rpi4_mmal_get32(reply, DRV_RPI4_MMAL_REPLY_STATUS);
+	if (mmal_trace_left > 0 && msgid != DRV_RPI4_MMAL_MSG_GET_VERSION) {
+		mmal_trace_left--;
+		kern_logf("rpi4-mmal: trace %s (%u bytes) -> %u bytes, status %u (%s)\n",
+			  request_name(msgid), (unsigned)size, (unsigned)copied, (unsigned)word, status_name(word));
 	}
 
 	/* Succeeded: reply holds the answer. */
@@ -1072,6 +1105,7 @@ configure(
 	int error;
 
 	/* Reads both ports. */
+	decoder->step = "port info";
 	error = port_info(decoder, DRV_RPI4_MMAL_PORT_INPUT, decoder->input_info);
 	if (error != 0)
 		return error;
@@ -1094,6 +1128,7 @@ configure(
 	drv_rpi4_mmal_put32(es, DRV_RPI4_MMAL_ES_CROP_Y, 0);
 	drv_rpi4_mmal_put32(es, DRV_RPI4_MMAL_ES_CROP_WIDTH, width);
 	drv_rpi4_mmal_put32(es, DRV_RPI4_MMAL_ES_CROP_HEIGHT, height);
+	decoder->step = "input format";
 	error = port_set(decoder, decoder->input_info);
 	if (error != 0)
 		return error;
@@ -1110,7 +1145,15 @@ configure(
 	drv_rpi4_mmal_put32(es, DRV_RPI4_MMAL_ES_CROP_Y, 0);
 	drv_rpi4_mmal_put32(es, DRV_RPI4_MMAL_ES_CROP_WIDTH, width);
 	drv_rpi4_mmal_put32(es, DRV_RPI4_MMAL_ES_CROP_HEIGHT, height);
+	decoder->step = "output format";
 	error = port_set(decoder, decoder->output_info);
+	if (error != 0) {
+		/* Without NV12, I420 (the decoder's own default) shows whether the rest works. */
+		kern_logf("rpi4-mmal: NV12 output refused; trying I420\n");
+		drv_rpi4_mmal_put32(format, DRV_RPI4_MMAL_FORMAT_ENCODING, DRV_RPI4_MMAL_ENCODING_I420);
+		decoder->step = "output format I420";
+		error = port_set(decoder, decoder->output_info);
+	}
 	if (error != 0)
 		return error;
 
@@ -1119,6 +1162,7 @@ configure(
 	(void)set_boolean(decoder, decoder->input_handle, MMAL_PARAMETER_INTERPOLATE, 0);
 
 	/* Reads the ports again for the buffer sizes the formats imply. */
+	decoder->step = "port info again";
 	error = port_info(decoder, DRV_RPI4_MMAL_PORT_INPUT, decoder->input_info);
 	if (error != 0)
 		return error;
@@ -1144,12 +1188,15 @@ configure(
 		decoder->input_free[index] = true;
 
 	/* Enables the input, then the output with its bounce buffers, then the component. */
+	decoder->step = "input enable";
 	error = port_action(decoder, decoder->input_handle, DRV_RPI4_MMAL_ACTION_ENABLE, decoder->input_info);
 	if (error != 0)
 		return error;
+	decoder->step = "output enable";
 	error = enable_output(decoder);
 	if (error != 0)
 		return error;
+	decoder->step = "component enable";
 	size = drv_rpi4_mmal_build_component(message, DRV_RPI4_MMAL_MSG_COMPONENT_ENABLE, 0, decoder->component);
 	error = request(message, size, reply, sizeof(reply));
 	if (error == 0) {
@@ -1176,6 +1223,9 @@ port_info(
 	uint8_t *info)
 {
 	uint8_t message[DRV_RPI4_MMAL_MAX_MESSAGE];
+	const uint8_t *port;
+	const uint8_t *format;
+	const uint8_t *es;
 	uint32_t status;
 	uint32_t found;
 	size_t size;
@@ -1187,10 +1237,31 @@ port_info(
 	if (error != 0)
 		return error;
 
-	/* Refuses a port the component does not have. */
+	/*
+	 * Refuses a port the firmware reports an error for.  The reply's
+	 * found word is logged, not required: the BSD-3 userland client reads
+	 * only the status.
+	 */
 	status = drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_STATUS);
 	found = drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_FOUND);
-	if (status != 0 || found == 0)
+	port = info + DRV_RPI4_MMAL_INFO_PORT;
+	format = port + DRV_RPI4_MMAL_PORT_BYTES;
+	es = format + DRV_RPI4_MMAL_FORMAT_BYTES;
+	kern_logf("rpi4-mmal: port %u: status %u (%s) found %u handle %u buffers min %u/%u rec %u/%u now %u/%u encoding %08x %ux%u crop %ux%u\n",
+		  (unsigned)type, (unsigned)status, status_name(status), (unsigned)found,
+		  (unsigned)drv_rpi4_mmal_get32(info, DRV_RPI4_MMAL_INFO_PORT_HANDLE),
+		  (unsigned)drv_rpi4_mmal_get32(port, DRV_RPI4_MMAL_PORT_BUFFER_NUM_MIN),
+		  (unsigned)drv_rpi4_mmal_get32(port, DRV_RPI4_MMAL_PORT_BUFFER_SIZE_MIN),
+		  (unsigned)drv_rpi4_mmal_get32(port, DRV_RPI4_MMAL_PORT_BUFFER_NUM_RECOMMENDED),
+		  (unsigned)drv_rpi4_mmal_get32(port, DRV_RPI4_MMAL_PORT_BUFFER_SIZE_RECOMMENDED),
+		  (unsigned)drv_rpi4_mmal_get32(port, DRV_RPI4_MMAL_PORT_BUFFER_NUM),
+		  (unsigned)drv_rpi4_mmal_get32(port, DRV_RPI4_MMAL_PORT_BUFFER_SIZE),
+		  (unsigned)drv_rpi4_mmal_get32(format, DRV_RPI4_MMAL_FORMAT_ENCODING),
+		  (unsigned)drv_rpi4_mmal_get32(es, DRV_RPI4_MMAL_ES_WIDTH),
+		  (unsigned)drv_rpi4_mmal_get32(es, DRV_RPI4_MMAL_ES_HEIGHT),
+		  (unsigned)drv_rpi4_mmal_get32(es, DRV_RPI4_MMAL_ES_CROP_WIDTH),
+		  (unsigned)drv_rpi4_mmal_get32(es, DRV_RPI4_MMAL_ES_CROP_HEIGHT));
+	if (status != 0)
 		return ENODEV;
 
 	/* Succeeded: info describes the port. */
@@ -1932,4 +2003,55 @@ bulks_outstanding(
 
 	/* Succeeded: whether memory is still the firmware's. */
 	return outstanding;
+}
+
+/* Names a worker request for the log. */
+static const char *
+request_name(
+	uint32_t msgid)
+{
+	/* The requests this client sends. */
+	switch (msgid) {
+	case DRV_RPI4_MMAL_MSG_GET_VERSION:
+		return "GET_VERSION";
+	case DRV_RPI4_MMAL_MSG_COMPONENT_CREATE:
+		return "COMPONENT_CREATE";
+	case DRV_RPI4_MMAL_MSG_COMPONENT_DESTROY:
+		return "COMPONENT_DESTROY";
+	case DRV_RPI4_MMAL_MSG_COMPONENT_ENABLE:
+		return "COMPONENT_ENABLE";
+	case DRV_RPI4_MMAL_MSG_COMPONENT_DISABLE:
+		return "COMPONENT_DISABLE";
+	case DRV_RPI4_MMAL_MSG_PORT_INFO_GET:
+		return "PORT_INFO_GET";
+	case DRV_RPI4_MMAL_MSG_PORT_INFO_SET:
+		return "PORT_INFO_SET";
+	case DRV_RPI4_MMAL_MSG_PORT_ACTION:
+		return "PORT_ACTION";
+	case DRV_RPI4_MMAL_MSG_PORT_PARAMETER_SET:
+		return "PORT_PARAMETER_SET";
+	case DRV_RPI4_MMAL_MSG_PORT_FLUSH:
+		return "PORT_FLUSH";
+	default:
+		return "?";
+	}
+}
+
+/* Names an MMAL status (MMAL_STATUS_T, the userland's mmal_types.h) for the log. */
+static const char *
+status_name(
+	uint32_t status)
+{
+	/* The statuses in their order. */
+	static const char *const names[16] = {
+		"SUCCESS", "ENOMEM", "ENOSPC", "EINVAL", "ENOSYS", "ENOENT", "ENXIO", "EIO",
+		"ESPIPE", "ECORRUPT", "ENOTREADY", "ECONFIG", "EISCONN", "ENOTCONN", "EAGAIN", "EFAULT"
+	};
+
+	/* Any other value is unknown. */
+	if (status >= 16U)
+		return "?";
+
+	/* Succeeded: the status's name. */
+	return names[status];
 }
