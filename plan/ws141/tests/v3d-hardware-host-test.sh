@@ -10,7 +10,7 @@ cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -Wall -Wextra -Werror \
     -Iplan/ws141/tests/host -Iinclude -Isrc -I. plan/ws141/tests/v3d-hardware-host-test.c \
     plan/ws141/tests/display-lock-host.c src/drivers/gpu/bcm2711/v3d-hardware.c \
     src/drivers/gpu/bcm2711/mmu.c src/drivers/gpu/bcm2711/v3d-job.c \
-    src/drivers/gpu/bcm2711/v3d-diagnostic.c src/drivers/gpu/bcm2711/cl.c \
+    src/drivers/gpu/bcm2711/v3d-diagnostic.c src/drivers/gpu/bcm2711/v3d-tfu-probe.c src/drivers/gpu/bcm2711/cl.c \
     src/drivers/gpu/bcm2711/v3d-memory.c src/drivers/gpu/bcm2711/render-device.c \
     src/drivers/gpu/bcm2711/share.c \
     $ws141_vulkan_sources -Wl,--gc-sections \

@@ -172,7 +172,7 @@ validate_job(
 				return error;
 		}
 	} else if (job->kind == BCM2711_V3D_JOB_TFU) {
-		/* The first implementation lowers packed RGB images, not chroma planes. */
+		/* Every plane and the output start on 64-byte boundaries. */
 		tfu = &job->command.tfu;
 		if ((tfu->input & 63U) != 0 || (tfu->output & 63U) != 0)
 			return EINVAL;
@@ -184,6 +184,24 @@ validate_job(
 		error = validate_span(engine, tfu->output, tfu->output_bytes);
 		if (error != 0)
 			return error;
+
+		/* A YUV input's other planes are mapped like its first one. */
+		if (tfu->chroma != 0) {
+			if ((tfu->chroma & 63U) != 0)
+				return EINVAL;
+			error = validate_span(engine, tfu->chroma, tfu->chroma_bytes);
+			if (error != 0)
+				return error;
+		}
+
+		/* A three-plane input's separate U plane is checked the same way. */
+		if (tfu->u_plane != 0) {
+			if ((tfu->u_plane & 63U) != 0)
+				return EINVAL;
+			error = validate_span(engine, tfu->u_plane, tfu->u_plane_bytes);
+			if (error != 0)
+				return error;
+		}
 	} else if (job->kind == BCM2711_V3D_JOB_COMPUTE) {
 		/* QPU execution requires nonempty direct workgroups and mapped code/uniforms. */
 		compute = &job->command.compute;
@@ -446,11 +464,11 @@ run_tfu(
 		return EBUSY;
 	}
 
-	/* This private packed-color lowering has no chroma or separate U-plane address. */
+	/* The input planes: the first, the chroma and the separate U plane, zero when absent. */
 	kern_mmio_write32(engine->hub.mapped + 0x40c, job->input);
 	kern_mmio_write32(engine->hub.mapped + 0x414, job->stride);
-	kern_mmio_write32(engine->hub.mapped + 0x410, 0);
-	kern_mmio_write32(engine->hub.mapped + 0x418, 0);
+	kern_mmio_write32(engine->hub.mapped + 0x410, job->chroma);
+	kern_mmio_write32(engine->hub.mapped + 0x418, job->u_plane);
 	kern_mmio_write32(engine->hub.mapped + 0x41c, job->output | (job->output_format << 3));
 	kern_mmio_write32(engine->hub.mapped + 0x420, job->size);
 	kern_mmio_write32(engine->hub.mapped + 0x424, job->coefficients[0]);
