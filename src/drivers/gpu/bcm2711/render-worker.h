@@ -154,6 +154,13 @@ struct bcm2711_render_worker {
 	struct bcm2711_render_session *ready_tail;
 	/* The last step ran a display execution: the next turn goes to another session if one is ready. */
 	bool display_last;
+	/*
+	 * Set by the executor before each step, under the native IRQ guard:
+	 * another ready session than the one stepped has an execution queued.
+	 * A step that would wait for the decoder (or a settling execution) then
+	 * only looks, so the executor goes on with the others' work (ws236-p011).
+	 */
+	bool contended;
 	struct bcm2711_render_request *parked;
 	struct thread *executor;
 	struct wait_queue executable;

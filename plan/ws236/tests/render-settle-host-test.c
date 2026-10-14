@@ -82,6 +82,7 @@ static void own_marker_test(void);
 static void unknown_marker_test(void);
 static void stop_test(void);
 static void failure_test(void);
+static void contended_test(void);
 
 /*
  * Runs the settling tests.
@@ -95,6 +96,7 @@ main(
 	unknown_marker_test();
 	stop_test();
 	failure_test();
+	contended_test();
 
 	/* Succeeded: every settling test passed. */
 	puts("ws236 p010 executor settling list: PASS");
@@ -699,5 +701,65 @@ failure_test(
 	puts("ws236 p010 failed settle faults the engine: PASS");
 
 	/* Succeeded: the failed settle faulted the engine. */
+	return;
+}
+
+/*
+ * (e) A turn of only settling executions only looks while another
+ * session's execution is queued, and waits a little once none is
+ * (ws236-p011: the executor goes on with the others' work).
+ */
+static void
+contended_test(
+	void)
+{
+	static const int answers[] = { EINPROGRESS, EINPROGRESS, EINPROGRESS, EINPROGRESS, 0 };
+	struct bcm2711_render_session first_session;
+	struct bcm2711_render_session second_session;
+	struct test_execution settling;
+	struct test_execution other;
+	unsigned settles;
+	unsigned step;
+	unsigned looked;
+	bool queued;
+	int error;
+
+	/* One session's execution runs and settles. */
+	looked = 0U;
+	test_setup();
+	test_session(&first_session);
+	test_session(&second_session);
+	test_execution(&settling, answers, 5U);
+	test_execution(&other, NULL, 0U);
+	bcm2711_render_execution_submit(&first_session, &settling.base);
+	error = bcm2711_render_executor_step(&test_controller);
+	assert(error == 0 && !settling.ended && settling.settles == 1U && !settling.waits[0]);
+
+	/* Another session's execution comes: every settle while it is queued only looks. */
+	bcm2711_render_execution_submit(&second_session, &other.base);
+	for (step = 0; step < 4U && !settling.ended; step++) {
+		queued = !other.ended;
+		settles = settling.settles;
+		error = bcm2711_render_executor_step(&test_controller);
+		assert(error == 0);
+		if (queued && settling.settles != settles && !other.ended) {
+			assert(!settling.waits[settling.settles - 1U]);
+			looked++;
+		}
+	}
+	assert(looked != 0U);
+
+	/* The other ran; with nothing else queued the settling turns wait a little again. */
+	assert(other.ended && other.end_error == 0);
+	while (!settling.ended) {
+		settles = settling.settles;
+		error = bcm2711_render_executor_step(&test_controller);
+		assert(error == 0 && settling.settles == settles + 1U);
+		assert(settling.waits[settling.settles - 1U]);
+	}
+	assert(settling.end_error == 0 && test_failures == 0);
+	puts("ws236 p011 settling turn yields to another session's execution: PASS");
+
+	/* Succeeded: the settling waits gave way to the queued work. */
 	return;
 }

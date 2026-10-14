@@ -522,6 +522,7 @@ static int keep_held(struct video_session *video, struct video_flight *flight);
 static int drop_held(struct video_session *video, unsigned index);
 static int drop_all(struct video_session *video);
 static bool flight_pending(const struct video_session *video, int64_t until);
+static unsigned poll_ms(const struct bcm2711_render_device *controller);
 static uint32_t unused_pps_id(const struct video_parameters *parameters);
 static int build_unit(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command, uint8_t *staging, uint32_t capacity, uint32_t *bytes);
 static int append_set(uint8_t *staging, uint32_t capacity, uint32_t *used, const uint8_t *unit, size_t bytes, uint8_t *sent, size_t *sent_bytes, bool force);
@@ -997,7 +998,7 @@ bcm2711_vulkan_video_settle(
 
 	/* The frames up to that decode's. */
 	started = clock_ticks();
-	error = collect(controller, video, VIDEO_POLL_MS, until);
+	error = collect(controller, video, poll_ms(controller), until);
 	pending = flight_pending(video, until);
 	video_stats.waits++;
 	video_stats.wait_ticks += clock_ticks() - started;
@@ -3311,7 +3312,7 @@ run_control(
 	/* The decodes before the reset complete first: their frames are looked for until they come or their time is over. */
 	if (video->flight_count != 0) {
 		newest = video->flights[video->flight_count - 1U].pts;
-		error = collect(controller, video, VIDEO_POLL_MS, newest);
+		error = collect(controller, video, poll_ms(controller), newest);
 		video_stats.steps++;
 		if (error != 0)
 			return error;
@@ -3406,7 +3407,7 @@ run_decode(
 	wait_ms = 0;
 	until = VIDEO_NO_PTS;
 	if (video->flight_count == VIDEO_FLIGHTS) {
-		wait_ms = VIDEO_POLL_MS;
+		wait_ms = poll_ms(controller);
 		until = video->flights[0].pts;
 	}
 
@@ -3454,7 +3455,7 @@ run_decode(
 		until = VIDEO_NO_PTS;
 		if (video->flight_count != 0)
 			until = video->flights[0].pts;
-		error = collect(controller, video, VIDEO_POLL_MS, until);
+		error = collect(controller, video, poll_ms(controller), until);
 		if (error != 0) {
 			video->sending = NULL;
 			return error;
@@ -4532,6 +4533,23 @@ relayout(
 	copy->pitch = source_pitch;
 	copy->width = width;
 	copy->rows = rows;
+}
+
+/*
+ * Gives how long a step may wait for the decoder: VIDEO_POLL_MS, or nothing
+ * while another session's execution waits behind the step, so the executor
+ * goes on with it and the step looks again at its next turn (ws236-p011).
+ */
+static unsigned
+poll_ms(
+	const struct bcm2711_render_device *controller)
+{
+	/* Others wait: only look. */
+	if (controller->worker.contended)
+		return 0U;
+
+	/* Succeeded: the executor has nothing else to do meanwhile. */
+	return VIDEO_POLL_MS;
 }
 
 /* Reports the highest PPS id no set of a parameters object uses, for the push's own PPS. */

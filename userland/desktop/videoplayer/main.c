@@ -68,6 +68,9 @@
 #define VP_END_STALL_US		500000U
 #define VP_CLOCK_LOG_US		1000000U
 
+/* The pictures replaced while a frame on the GPU may still draw them, at most. */
+#define VP_RETIRED		4U
+
 /* The evdev codes of the keys. */
 #define VP_KEY_ESC		1U
 #define VP_KEY_Q		16U
@@ -160,12 +163,24 @@ struct vp_player {
 	/*
 	 * The presenter (VP_GPU_PRESENT): whether it is open, when the overlay
 	 * (the bar, a notice, a picture the CPU scaled) was last drawn, and
-	 * whether the last frame showed it.
+	 * whether the last frame showed it.  picture_serial is the newest frame
+	 * that drew the picture shown (0 for none); a picture replaced while a
+	 * frame that drew it may be on the GPU waits in retired with that
+	 * frame's serial until the presenter reports it done.  draw_gpu counts
+	 * the frames drawn since the last DRAW line that showed a picture the
+	 * GPU holds.  next_due is the time of the next picture (-1 for none),
+	 * which the loop waits for.
 	 */
 	struct vp_present present;
 	int present_open;
 	uint64_t overlay_us;
 	int overlay_shown;
+	uint64_t picture_serial;
+	struct app_frame *retired[VP_RETIRED];
+	uint64_t retired_serial[VP_RETIRED];
+	unsigned retired_count;
+	unsigned draw_gpu;
+	double next_due;
 
 	/* A frame is due, the window changed size, the run ends. */
 	int dirty;
@@ -213,6 +228,8 @@ static void vp_draw_picture(struct vp_player *player);
 static int vp_fit(struct vp_player *player, struct app_frame *picture, int *x, int *y, int *width, int *height);
 static void vp_draw_gpu(struct vp_player *player, uint64_t now_us, int overlay_dirty);
 static int vp_bar_visible(struct vp_player *player, uint64_t now_us);
+static void vp_retire_picture(struct vp_player *player);
+static void vp_reap(struct vp_player *player, int all);
 static void vp_notice(struct vp_player *player, int error, int problem);
 static void vp_draw_bar(struct vp_player *player, uint64_t now_us);
 static void vp_time_text(double seconds, char *text, size_t size);
@@ -244,8 +261,9 @@ main(
 	int status;
 	int error;
 
-	/* libmedia's log lines (the reader's and the decoders') among the player's. */
+	/* libmedia's log lines (the reader's and the decoders') among the player's; no picture is due yet. */
 	media_set_log(vp_media_log, NULL);
+	player.next_due = -1.0;
 
 	/* The command line. */
 	status = vp_parse(argc, argv, &width, &height, &timeout, &file);
@@ -329,6 +347,9 @@ main(
 	/* Everything goes. */
 	vp_media_close(&player.media);
 	vp_audio_close(&player.audio);
+	if (player.present_open)
+		(void)vp_present_idle(&player.present);
+	vp_reap(&player, 1);
 	app_frame_free(&player.picture);
 	app_scaler_free(player.scaler);
 	if (player.present_open)
@@ -619,7 +640,7 @@ vp_action(
 		break;
 	case VP_ACTION_CLOSE:
 		vp_media_close(&player->media);
-		app_frame_free(&player->picture);
+		vp_retire_picture(player);
 		player->notice[0] = '\0';
 		vp_log("CLOSE");
 		break;
@@ -670,7 +691,7 @@ vp_open(
 	int error;
 
 	/* The media; the picture shown before goes. */
-	app_frame_free(&player->picture);
+	vp_retire_picture(player);
 	player->notice[0] = '\0';
 	error = vp_media_open(&player->media, path);
 	vp_log("OPENED path=%s error=%d codec=%d", path, error, player->media.codec_problem);
@@ -880,8 +901,9 @@ vp_draw(
 	picture = vp_media_take(&player->media, due, &time, &next);
 	if (picture == NULL && player->need_picture && next >= 0.0)
 		picture = vp_media_take(&player->media, next, &time, &next);
+	player->next_due = next;
 	if (picture != NULL) {
-		app_frame_free(&player->picture);
+		vp_retire_picture(player);
 		player->picture = picture;
 		player->picture_time = time;
 		player->need_picture = 0;
@@ -1080,16 +1102,24 @@ vp_log_clock(
 
 	/* What the frames drawn since the last line cost, on average. */
 	if (player->draws != 0U) {
-		vp_log("DRAW frames=%u picture_us=%llu rest_us=%llu",
+		vp_log("DRAW frames=%u picture_us=%llu rest_us=%llu gpu=%u acquire_us=%llu submit_us=%llu wait_us=%llu",
 		    player->draws,
 		    (unsigned long long)(player->draw_picture_us / player->draws),
-		    (unsigned long long)(player->draw_rest_us / player->draws));
+		    (unsigned long long)(player->draw_rest_us / player->draws),
+		    player->draw_gpu,
+		    (unsigned long long)(player->present.acquire_us / player->draws),
+		    (unsigned long long)(player->present.submit_us / player->draws),
+		    (unsigned long long)(player->present.wait_us / player->draws));
 	}
 
 	/* The next line counts from here. */
 	player->draws = 0U;
 	player->draw_picture_us = 0U;
 	player->draw_rest_us = 0U;
+	player->draw_gpu = 0U;
+	player->present.acquire_us = 0U;
+	player->present.submit_us = 0U;
+	player->present.wait_us = 0U;
 }
 
 /* Draws the picture fitted to the window, black around it (or black alone). */
@@ -1202,6 +1232,7 @@ vp_draw_gpu(
 {
 	struct vp_present_quad quad;
 	const struct vp_present_quad *shown;
+	uint64_t submitted;
 	uint64_t started_us;
 	uint64_t drawn_us;
 	uint64_t shown_us;
@@ -1214,8 +1245,11 @@ vp_draw_gpu(
 	int changed;
 	int status;
 
-	/* The picture the GPU holds, where it fits. */
+	/* The pictures the frames done drew go back to the decoder. */
 	started_us = kl_clock_us();
+	vp_reap(player, 0);
+
+	/* The picture the GPU holds, where it fits. */
 	gpu = 0;
 	shown = NULL;
 	if (player->picture != NULL) {
@@ -1269,7 +1303,16 @@ vp_draw_gpu(
 
 	/* The frame, waited for: the picture shown before may be freed after it. */
 	drawn_us = kl_clock_us();
+	submitted = player->present.serial;
 	result = vp_present_frame(&player->present, player->pixels, (size_t)player->width, overlay, changed, shown);
+
+	/* A frame that reached the GPU with the picture keeps the picture until it is done, even if its present failed. */
+	if (shown != NULL && player->present.serial != submitted) {
+		player->picture_serial = player->present.serial;
+		player->draw_gpu++;
+	}
+
+	/* The frame's cost, for the DRAW line. */
 	player->draws++;
 	player->draw_picture_us += drawn_us - started_us;
 	player->draw_rest_us += kl_clock_us() - drawn_us;
@@ -1290,8 +1333,79 @@ vp_draw_gpu(
 		after_ms = 0U;
 		if (shown_us > player->resized_us)
 			after_ms = (shown_us - player->resized_us) / 1000U;
-		vp_log("PRESENTED width=%u height=%u after_ms=%llu gpu=%d", player->width, player->height, (unsigned long long)after_ms, gpu);
+		vp_log("PRESENTED width=%u height=%u after_ms=%llu picture=%d gpu=%d", player->width, player->height, (unsigned long long)after_ms, player->picture != NULL, gpu);
 	}
+}
+
+/*
+ * Lets the picture shown go: at once when no frame on the GPU may still
+ * draw it, else into the retired list until its frame is done.
+ */
+static void
+vp_retire_picture(
+	struct vp_player *player)
+{
+	uint64_t done;
+
+	/* No picture. */
+	if (player->picture == NULL)
+		return;
+
+	/* Drawn by no frame still on the GPU: it goes now. */
+	done = 0U;
+	if (player->present_open)
+		done = vp_present_done(&player->present);
+	if (!player->present_open || player->picture_serial <= done) {
+		app_frame_free(&player->picture);
+		player->picture_serial = 0U;
+		return;
+	}
+
+	/* A full list waits for every frame first. */
+	if (player->retired_count == VP_RETIRED) {
+		(void)vp_present_idle(&player->present);
+		vp_reap(player, 0);
+	}
+
+	/* It waits for its frame. */
+	player->retired[player->retired_count] = player->picture;
+	player->retired_serial[player->retired_count] = player->picture_serial;
+	player->retired_count++;
+	player->picture = NULL;
+	player->picture_serial = 0U;
+}
+
+/* Frees the retired pictures whose frames are done, or all of them (the presenter idle). */
+static void
+vp_reap(
+	struct vp_player *player,
+	int all)
+{
+	uint64_t done;
+	unsigned index;
+	unsigned kept;
+
+	/* The newest frame done. */
+	done = 0U;
+	if (player->present_open)
+		done = vp_present_done(&player->present);
+
+	/* Each retired picture, freed when its frame is done; the others move up. */
+	kept = 0U;
+	for (index = 0U; index < player->retired_count; index++) {
+		if (all || player->retired_serial[index] <= done) {
+			app_frame_free(&player->retired[index]);
+			continue;
+		}
+
+		/* Still drawn by a frame on the GPU. */
+		player->retired[kept] = player->retired[index];
+		player->retired_serial[kept] = player->retired_serial[index];
+		kept++;
+	}
+
+	/* The pictures still waiting. */
+	player->retired_count = kept;
 }
 
 /* Tells whether the bar of controls shows: while paused or ended, and for a while after the pointer moved. */
@@ -1459,6 +1573,7 @@ vp_wait(
 	uint64_t now_us)
 {
 	unsigned state;
+	double until;
 	int wait;
 
 	/* Something to draw now. */
@@ -1472,6 +1587,15 @@ vp_wait(
 	wait = VP_IDLE_MS;
 	if (state == VP_PLAYING || player->need_picture)
 		wait = 10;
+
+	/* With the presenter, playing with a picture waiting: until its time, no longer. */
+	if (player->present_open && state == VP_PLAYING && player->next_due >= 0.0) {
+		until = (player->next_due - vp_media_clock(&player->media)) * 1000.0;
+		if (until < 0.0)
+			until = 0.0;
+		if (until < (double)wait)
+			wait = (int)until;
+	}
 
 	/* While the bar shows after the pointer moved, its time updates. */
 	if (now_us < player->bar_until + VP_BAR_US && wait > 100)
