@@ -820,6 +820,7 @@ static void
 test_heap(void)
 {
 	static uint8_t info[NVRTX_STATIC_INFO_BYTES];
+	static uint8_t bar1_tables[0x4000 + 128 * 0x1000];
 	static struct nvrtx_heap heap;
 	uint64_t a;
 	uint64_t b;
@@ -878,6 +879,15 @@ test_heap(void)
 	nvrtx_put32(info, 344, 0);
 	check(nvrtx_mmu_vram_region(info, &base, &top, &region) == ENOSPC, "vram: no usable region");
 	check(nvrtx_mmu_vram_pte(0x1f3f05000ULL) == ((0x1f3f05000ULL >> 4) | 1), "vram: page entry valid, VRAM, not volatile");
+
+	/* P4m's BAR1 tables with the kept console (640x480, pitch 4096) mapped before the root switches. */
+	check(nvrtx_mmu_gr_tables_bytes(0x10000000ULL) == sizeof(bar1_tables), "bar1: 128 page tables for 256 MiB");
+	check(nvrtx_mmu_gr_tables(bar1_tables, 0x1e9370000ULL, 0, 0x10000000ULL) == 0, "bar1: tables built");
+	check(nvrtx_mmu_gr_map_vram(bar1_tables, 0, 0x10000000ULL, 0, 0, 0x1e0000ULL) == 0, "bar1: console pages mapped in the image");
+	check(nvrtx_get64(bar1_tables, 0) == (((0x1e9370000ULL + 0x1000) >> 4) | 2), "bar1: root entry at the second directory");
+	check(nvrtx_get64(bar1_tables, 0x4000) == nvrtx_mmu_vram_pte(0), "bar1: console's first page on the VRAM's start");
+	check(nvrtx_get64(bar1_tables, 0x4000 + 0x1df * 8) == nvrtx_mmu_vram_pte(0x1df000ULL), "bar1: console's last page");
+	check(nvrtx_get64(bar1_tables, 0x4000 + 0x1e0 * 8) == 0, "bar1: first page after the console unmapped");
 }
 
 static void
