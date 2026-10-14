@@ -29,9 +29,10 @@
 /* How long a frame may take on the GPU, in nanoseconds. */
 #define GPU_TIMEOUT		10000000000ULL
 
-/* The unit square: two triangles of six corners, four floats each. */
+/* The unit square: two triangles of six corners, four floats each; each item has its own six vertices. */
+_Static_assert(PAINT_GPU_ATLAS_SIZE == 2048U, "paint/shaders/display.frag names the atlas size");
+
 #define GPU_CORNERS		6U
-#define GPU_CORNER_FLOATS	4U
 
 /* The fewest instances the instance buffer is made for. */
 #define GPU_INSTANCES_MIN	4096U
@@ -62,6 +63,16 @@ struct gpu_instance {
 };
 
 /*
+ * One vertex: a corner of the unit square (the fourth component is unused)
+ * and the item it belongs to, repeated at each of the item's six vertices
+ * (the Raspberry Pi's V3D takes no instance-rate input).
+ */
+struct gpu_vertex {
+	float corner[4];
+	struct gpu_instance item;
+};
+
+/*
  * One image placed in the atlas: the bitmap's serial (the key) and where
  * its pixels went.
  */
@@ -85,7 +96,7 @@ static VkResult gpu_memory(VkPhysicalDevice physical, VkDevice device, const VkM
 static VkResult gpu_pass(struct paint_gpu *gpu, VkImageLayout final_layout);
 static VkResult gpu_descriptors(struct paint_gpu *gpu);
 static VkResult gpu_atlas(struct paint_gpu *gpu);
-static VkResult gpu_corners(struct paint_gpu *gpu);
+static void gpu_vertices(struct paint_gpu *gpu);
 static VkResult gpu_instances(struct paint_gpu *gpu, size_t count);
 static void gpu_instances_free(struct paint_gpu *gpu);
 static VkResult gpu_pipeline(struct paint_gpu *gpu);
@@ -150,11 +161,6 @@ paint_gpu_open(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* The unit square. */
-	error = gpu_corners(gpu);
-	if (error != VK_SUCCESS)
-		return error;
-
 	/* Room for a first page's instances. */
 	error = gpu_instances(gpu, GPU_INSTANCES_MIN);
 	if (error != VK_SUCCESS)
@@ -211,7 +217,7 @@ paint_gpu_prepare(
 
 	/* The instances into the buffer. */
 	if (gpu->staged.count != 0)
-		memcpy(gpu->instance_map, gpu->staged.items, gpu->staged.count * sizeof(struct gpu_instance));
+		gpu_vertices(gpu);
 
 	/* Succeeded: the frame can be recorded. */
 	return VK_SUCCESS;
@@ -339,12 +345,6 @@ paint_gpu_close(
 			vkDestroyImage(gpu->device, gpu->atlas, NULL);
 		if (gpu->atlas_memory != VK_NULL_HANDLE)
 			vkFreeMemory(gpu->device, gpu->atlas_memory, NULL);
-
-		/* The unit square. */
-		if (gpu->corners != VK_NULL_HANDLE)
-			vkDestroyBuffer(gpu->device, gpu->corners, NULL);
-		if (gpu->corner_memory != VK_NULL_HANDLE)
-			vkFreeMemory(gpu->device, gpu->corner_memory, NULL);
 
 		/* The commands and the fence. */
 		if (gpu->pool != VK_NULL_HANDLE)
@@ -849,57 +849,32 @@ gpu_atlas(
 	return VK_SUCCESS;
 }
 
-/* Makes the vertex buffer of the unit square's corners. */
-static VkResult
-gpu_corners(
+/* Writes the staged items into the buffer, six vertices each. */
+static void
+gpu_vertices(
 	struct paint_gpu *gpu)
 {
-	static const float square[GPU_CORNERS * GPU_CORNER_FLOATS] = {
-		0.0f, 0.0f, 0.0f, 0.0f,
-		1.0f, 0.0f, 0.0f, 0.0f,
-		0.0f, 1.0f, 0.0f, 0.0f,
-		1.0f, 0.0f, 0.0f, 0.0f,
-		1.0f, 1.0f, 0.0f, 0.0f,
-		0.0f, 1.0f, 0.0f, 0.0f
+	static const float square[GPU_CORNERS][2] = {
+		{0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f},
+		{1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}
 	};
-	VkBufferCreateInfo buffer;
-	VkMemoryRequirements requirements;
-	void *map;
-	VkResult error;
+	const struct gpu_instance *items;
+	struct gpu_vertex *vertex;
+	size_t index;
+	size_t corner;
 
-	/* The buffer of the six corners. */
-	memset(&buffer, 0, sizeof(buffer));
-	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer.size = sizeof(square);
-	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	gpu->operation = "vkCreateBuffer";
-	error = vkCreateBuffer(gpu->device, &buffer, NULL, &gpu->corners);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Its memory. */
-	vkGetBufferMemoryRequirements(gpu->device, gpu->corners, &requirements);
-	error = gpu_memory(gpu->physical, gpu->device, &requirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &gpu->corner_memory, &gpu->operation);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Binds the memory to the buffer. */
-	gpu->operation = "vkBindBufferMemory";
-	error = vkBindBufferMemory(gpu->device, gpu->corners, gpu->corner_memory, 0U);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Writes the corners once. */
-	gpu->operation = "vkMapMemory";
-	error = vkMapMemory(gpu->device, gpu->corner_memory, 0U, VK_WHOLE_SIZE, 0U, &map);
-	if (error != VK_SUCCESS)
-		return error;
-	memcpy(map, square, sizeof(square));
-	vkUnmapMemory(gpu->device, gpu->corner_memory);
-
-	/* Succeeded: the square is ready. */
-	return VK_SUCCESS;
+	items = gpu->staged.items;
+	vertex = gpu->instance_map;
+	for (index = 0; index < gpu->staged.count; index++) {
+		for (corner = 0; corner < GPU_CORNERS; corner++) {
+			vertex->corner[0] = square[corner][0];
+			vertex->corner[1] = square[corner][1];
+			vertex->corner[2] = 0.0f;
+			vertex->corner[3] = 0.0f;
+			vertex->item = items[index];
+			vertex++;
+		}
+	}
 }
 
 /* Makes the instance buffer for a number of instances, replacing the old one. */
@@ -924,7 +899,7 @@ gpu_instances(
 	/* The buffer. */
 	memset(&buffer, 0, sizeof(buffer));
 	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer.size = (VkDeviceSize)(count * sizeof(struct gpu_instance));
+	buffer.size = (VkDeviceSize)(count * GPU_CORNERS * sizeof(struct gpu_vertex));
 	buffer.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 	buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	gpu->operation = "vkCreateBuffer";
@@ -973,7 +948,7 @@ gpu_instances_free(
 	gpu->instance_capacity = 0;
 }
 
-/* Makes the pipeline: the corners per vertex, the items per instance, straight-alpha blending. */
+/* Makes the pipeline: a corner and its item per vertex, premultiplied blending. */
 static VkResult
 gpu_pipeline(
 	struct paint_gpu *gpu)
@@ -987,7 +962,7 @@ gpu_pipeline(
 	VkPushConstantRange push;
 	VkPipelineLayoutCreateInfo layout;
 	VkPipelineShaderStageCreateInfo stages[2];
-	VkVertexInputBindingDescription bindings[2];
+	VkVertexInputBindingDescription bindings[1];
 	VkVertexInputAttributeDescription attributes[6];
 	VkPipelineVertexInputStateCreateInfo input;
 	VkPipelineInputAssemblyStateCreateInfo assembly;
@@ -1038,32 +1013,25 @@ gpu_pipeline(
 	stages[1].module = fragment;
 	stages[1].pName = "main";
 
-	/* The corners, one vec4 a vertex, and the items, five vec4 an instance. */
+	/* One binding: a vertex is its corner (a vec4) and its item's five vec4. */
 	memset(bindings, 0, sizeof(bindings));
 	bindings[0].binding = 0U;
-	bindings[0].stride = GPU_CORNER_FLOATS * sizeof(float);
+	bindings[0].stride = sizeof(struct gpu_vertex);
 	bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-	bindings[1].binding = 1U;
-	bindings[1].stride = sizeof(struct gpu_instance);
-	bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
 	/* The corner at location 0, and the item's rectangle, color, atlas place, image source and texels at 1 to 5. */
 	memset(attributes, 0, sizeof(attributes));
-	attributes[0].location = 0U;
-	attributes[0].binding = 0U;
-	attributes[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	attributes[0].offset = 0U;
-	for (index = 1U; index < 6U; index++) {
+	for (index = 0U; index < 6U; index++) {
 		attributes[index].location = index;
-		attributes[index].binding = 1U;
+		attributes[index].binding = 0U;
 		attributes[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		attributes[index].offset = (index - 1U) * 4U * (uint32_t)sizeof(float);
+		attributes[index].offset = index * 4U * (uint32_t)sizeof(float);
 	}
 
-	/* The input state: those buffers, drawn as a list of triangles. */
+	/* The input state: that buffer, drawn as a list of triangles. */
 	memset(&input, 0, sizeof(input));
 	input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	input.vertexBindingDescriptionCount = 2U;
+	input.vertexBindingDescriptionCount = 1U;
 	input.pVertexBindingDescriptions = bindings;
 	input.vertexAttributeDescriptionCount = 6U;
 	input.pVertexAttributeDescriptions = attributes;
@@ -1086,10 +1054,10 @@ gpu_pipeline(
 	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-	/* Straight alpha over the target; the target stays opaque. */
+	/* The color leaves the shader premultiplied: over the target; the target stays opaque. */
 	memset(&blend_attachment, 0, sizeof(blend_attachment));
 	blend_attachment.blendEnable = VK_TRUE;
-	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
 	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -1754,8 +1722,8 @@ gpu_record(
 	VkClearValue clear;
 	VkViewport viewport;
 	VkRect2D scissor;
-	VkBuffer buffers[2];
-	VkDeviceSize offsets[2];
+	VkBuffer buffers[1];
+	VkDeviceSize offsets[1];
 	float size[4];
 
 	/* The host's writes to the atlas before the shader reads it (the first frame also leaves the preinitialized layout). */
@@ -1807,15 +1775,13 @@ gpu_record(
 		size[1] = (float)extent.height;
 		size[2] = 0.0f;
 		size[3] = 0.0f;
-		buffers[0] = gpu->corners;
-		buffers[1] = gpu->instances;
+		buffers[0] = gpu->instances;
 		offsets[0] = 0U;
-		offsets[1] = 0U;
 		vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, gpu->pipeline);
 		vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, gpu->layout, 0U, 1U, &gpu->set, 0U, NULL);
-		vkCmdBindVertexBuffers(commands, 0U, 2U, buffers, offsets);
+		vkCmdBindVertexBuffers(commands, 0U, 1U, buffers, offsets);
 		vkCmdPushConstants(commands, gpu->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, sizeof(size), size);
-		vkCmdDraw(commands, GPU_CORNERS, (uint32_t)gpu->staged.count, 0U, 0U);
+		vkCmdDraw(commands, (uint32_t)(gpu->staged.count * GPU_CORNERS), 1U, 0U, 0U);
 	}
 
 	/* The pass ends with the image in the final layout. */

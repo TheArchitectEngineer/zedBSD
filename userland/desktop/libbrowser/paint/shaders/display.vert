@@ -8,10 +8,12 @@ layout(push_constant) uniform Frame {
 } frame;
 
 // The corner of the unit square (xy; zw unused), from the vertex buffer (no
-// gl_VertexIndex, which i915's native compiler does not take).
+// gl_VertexIndex, which i915's native compiler does not take).  Each item has
+// six vertices of its own, with the same item in each: no instance-rate input,
+// which the Raspberry Pi's V3D does not take.
 layout(location = 0) in vec4 corner;
 
-// The item, one per instance: its exact rectangle in pixels (left, top,
+// The item: its exact rectangle in pixels (left, top,
 // right, bottom), its straight color, the atlas place of a glyph or an image
 // (u, v in texels) with its kind (z: 0 rectangle, 1 glyph, 2 image, 3 sideways glyph),
 // and for an image where it starts (x, y, the unclipped rectangle's top left)
@@ -21,6 +23,10 @@ layout(location = 2) in vec4 color;
 layout(location = 3) in vec4 atlas;
 layout(location = 4) in vec4 source;
 layout(location = 5) in vec4 texels;
+
+// The position in pixels (what gl_FragCoord is at the fragment shader, which the
+// V3D's compiler does not take there): it interpolates linearly in the target.
+layout(location = 5) noperspective out vec2 pixel_position;
 
 layout(location = 0) flat out vec4 item_rect;
 layout(location = 1) flat out vec4 item_color;
@@ -37,6 +43,7 @@ void main()
 	vec2 position = mix(low, high, corner.xy);
 
 	gl_Position = vec4(position / frame.size.xy * 2.0 - 1.0, 0.0, 1.0);
+	pixel_position = position;
 	item_rect = rect;
 	item_color = color;
 	item_atlas = atlas;

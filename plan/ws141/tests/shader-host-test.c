@@ -88,7 +88,7 @@ static const struct shader_pair shader_pairs[] = {
 	{"files", files_canvas_vert, sizeof(files_canvas_vert), files_canvas_frag, sizeof(files_canvas_frag), 0, 0},
 	{"monitor shape", monitor_draw_vert, sizeof(monitor_draw_vert), monitor_shape_frag, sizeof(monitor_shape_frag), 0, 0},
 	{"monitor glyph", monitor_draw_vert, sizeof(monitor_draw_vert), monitor_glyph_frag, sizeof(monitor_glyph_frag), 0, 0},
-	{"browser paint", paint_display_vert, sizeof(paint_display_vert), paint_display_frag, sizeof(paint_display_frag), 1, 0},
+	{"browser paint", paint_display_vert, sizeof(paint_display_vert), paint_display_frag, sizeof(paint_display_frag), 0, 0},
 	{"notes fill", notes_draw_vert, sizeof(notes_draw_vert), notes_fill_frag, sizeof(notes_fill_frag), 0, 0},
 	{"notes texture", notes_draw_vert, sizeof(notes_draw_vert), notes_texture_frag, sizeof(notes_texture_frag), 0, 0},
 	{"keiland ui", keiui_canvas_vert, sizeof(keiui_canvas_vert), keiui_canvas_frag, sizeof(keiui_canvas_frag), 0, 0},
