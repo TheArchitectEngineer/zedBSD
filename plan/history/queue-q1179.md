@@ -2,7 +2,7 @@
 
 # q1179 / WS074 orthogonal positioned Grid classification
 
-Status: finished（2026-10-14 13:30–13:32 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p217有限部分scope](../ws074/phase217/phase.md)に適用。最大90分。
+Status: finished（2026-10-14 13:26–13:27 JST）。Approval: このchatのユーザー指示「Interop 2025の100%クリアまで、自走してください。ququeはあらかじめ承認します。」を[p217有限部分scope](../ws074/phase217/phase.md)に適用。最大90分。
 
 | Attempt | Phase | Scope | Outcome |
 | --- | --- | --- | --- |
@@ -11,3 +11,5 @@ Status: finished（2026-10-14 13:30–13:32 JST）。Approval: このchatのユ�
 Outcome: [分類と実装候補](../ws074/phase217/evidence/20261014-q1179/README.md)。読取のみ、browser/runner/WPT/ABI/Master無変更。
 
 Resume: 水平Grid直下の縦absolute子でrow-track inline roomを限定して最小修正、その後縦Grid横子static area。p189/p173全3,805件100%未達。共有Queue/Master/GitHub publication pending、pushなし。
+
+Time correction (2026-10-14 13:32 JST): Earlier minute labels ran ahead of the wall clock. The corrected end minute is verified by local commit `3cd8015f2 13:27:26` JST; the start minute follows the recorded Queue order. Approval, scope and outcomes did not change.
