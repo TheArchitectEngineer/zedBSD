@@ -3399,9 +3399,11 @@ relayout(
 	if (rows > frame->height)
 		rows = frame->height;
 
-	/* The luma rows, then the chroma rows. */
+	/* The luma rows. */
 	for (row = 0; row < rows; row++)
 		drv_rpi4_mmal_copy_samples(cpu + (size_t)row * pitch, luma + (size_t)row * source_pitch, width);
+
+	/* The chroma rows, half as many. */
 	for (row = 0; row < rows / 2U; row++)
 		drv_rpi4_mmal_copy_samples(cpu + chroma + (size_t)row * pitch, chroma_plane + (size_t)row * source_pitch, width);
 
@@ -3441,6 +3443,7 @@ unused_pps_id(
 
 	/* From 255 down, the first id no set has (an object holds at most 256 sets). */
 	for (id = VIDEO_PPS_IDS - 1U; id > 0; id--) {
+		/* Whether any set of the object has the id. */
 		used = false;
 		for (pps = parameters->pps; pps != NULL; pps = pps->next) {
 			if (pps->fields.pps_id == id)
