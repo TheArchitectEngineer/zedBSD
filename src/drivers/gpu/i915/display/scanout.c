@@ -94,11 +94,13 @@ const struct drv_gpu_scanout_ops drv_i915_scanout_ops = {
 };
 
 /*
- * The display-only pairing operations of the capture node.
+ * The display-only pairing operations of the capture node, and of a Gen9
+ * node's boot framebuffer display (bootfb.c), which has the same identity
+ * and formats.
  *
- * The capture display keeps its own fixed identity, which is not the
- * resident output's connector identity, so its constraints are answered
- * by its own table.  The table never changes.
+ * Both displays keep their own fixed identity, which is not the resident
+ * output's connector identity, so their constraints are answered by their
+ * own table.  The table never changes.
  */
 const struct drv_gpu_scanout_ops drv_i915_capture_scanout_ops = {
 	i915_scanout_device_query,

@@ -44,6 +44,7 @@
 #include "takeover.h"
 #include "tc-kern.h"
 #include "dp-ext-kern.h"
+#include "bootfb.h"
 #include "vbt-parse.h"
 #include "watermark.h"
 #include <kern/kcrt.h>
@@ -1066,6 +1067,9 @@ drv_i915_display_fini(
 	/* The capture area, once no address space maps it. */
 	drv_i915_capture_fini(device);
 #endif
+
+	/* The boot framebuffer display's staging area and view, once no address space maps them (BUG-310). */
+	drv_i915_bootfb_fini(device);
 }
 
 /*
@@ -1145,10 +1149,12 @@ drv_i915_display_bind_ops(
 	return;
 #endif
 
-	/* A node without a panel offers no display. */
+	/* A Gen9 node, whose display is left to the firmware, offers the firmware's framebuffer (BUG-310); another without a panel offers none. */
 	display = i915_display_live(device);
-	if (display == NULL)
+	if (display == NULL) {
+		drv_i915_bootfb_bind_ops(device, ops);
 		return;
+	}
 	if (display->rctx.lcd == NULL)
 		return;
 
@@ -1167,11 +1173,20 @@ drv_i915_display_session_close(
 	struct i915_device *device,
 	void *session)
 {
+	int bound;
+
 #ifdef I915_TEST_CAPTURE
 	/* The capture display owns the lease in the capture build. */
 	drv_i915_capture_session_close(device, session);
 	return;
 #endif
+
+	/* The boot framebuffer display owns the lease on a Gen9 node (BUG-310). */
+	bound = drv_i915_bootfb_bound(device);
+	if (bound) {
+		drv_i915_bootfb_session_close(device, session);
+		return;
+	}
 
 	/* The present path owns the lease. */
 	drv_i915_present_lease_close(device, session);

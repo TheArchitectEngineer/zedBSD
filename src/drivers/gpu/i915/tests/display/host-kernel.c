@@ -53,6 +53,7 @@
 #include <kern/platform.h>
 #include <kern/pmem.h>
 #include <kern/sched.h>
+#include <kern/text-display.h>
 #include <kern/waitq.h>
 
 #include <errno.h>
@@ -1466,6 +1467,57 @@ drv_pcat_graphics_backend_get_framebuffer(
 
 	/* Ends the test: the tested path reached a service the host does not have. */
 	i915_host_unreachable("drv_pcat_graphics_backend_get_framebuffer");
+
+	/* Not reached: i915_host_unreachable() does not return. */
+	return 0;
+}
+
+/*
+ * Stands in for kern_text_suspend(): the text console is not modelled on the host.
+ */
+void
+kern_text_suspend(void)
+{
+	/* Ends the test: the tested path reached a service the host does not have. */
+	i915_host_unreachable("kern_text_suspend");
+}
+
+/*
+ * Stands in for kern_text_resume(): the text console is not modelled on the host.
+ */
+void
+kern_text_resume(void)
+{
+	/* Ends the test: the tested path reached a service the host does not have. */
+	i915_host_unreachable("kern_text_resume");
+}
+
+/*
+ * Stands in for drv_i915_gfx_rect(): the GPU copy is not modelled on the host.
+ *
+ * Weak, so a test that includes a display source with its own stand-in
+ * (host-capture-test.c) links with that one.
+ */
+__attribute__((weak)) int
+drv_i915_gfx_rect(
+	struct i915_render_session *session,
+	const struct i915_gfx_surface *dst,
+	const struct i915_gfx_rect *dst_rect,
+	const struct i915_gfx_surface *src,
+	const struct i915_gfx_rect *src_rect,
+	const uint32_t clear[4],
+	int linear)
+{
+	UNUSED_PARAMETER(session);
+	UNUSED_PARAMETER(dst);
+	UNUSED_PARAMETER(dst_rect);
+	UNUSED_PARAMETER(src);
+	UNUSED_PARAMETER(src_rect);
+	UNUSED_PARAMETER(clear);
+	UNUSED_PARAMETER(linear);
+
+	/* Ends the test: the tested path reached a service the host does not have. */
+	i915_host_unreachable("drv_i915_gfx_rect");
 
 	/* Not reached: i915_host_unreachable() does not return. */
 	return 0;
