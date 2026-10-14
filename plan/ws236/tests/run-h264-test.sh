@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws236-p003: access units and the no-reorder SPS rewrite (rpi4-h264.c) on the host.  The ws083 streams are split into
 # access units (one per frame ffprobe counts); every SPS is rewritten, ffmpeg's trace_headers must read the new VUI
-# (max_num_reorder_frames 0, max_dec_frame_buffering = max_num_ref_frames), every SPS field before the VUI must read
+# (max_num_reorder_frames 0, max_dec_frame_buffering between max_num_ref_frames and 16: the level's MaxDpbFrames), every SPS field before the VUI must read
 # the same, and a stream without reordering must decode to the same frames.  New folder of build/tmp per run (Q1 removes old ones).  Last line "h264: all PASS".
 # usage: sh plan/ws236/tests/run-h264-test.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -29,7 +29,7 @@ for name in pb-high-352-pyramid i-high-352-cqm p-baseline-64; do
 	reorder=$(grep -m1 'max_num_reorder_frames' "$work/$name.trace" | awk '{print $NF}')
 	buffering=$(grep -m1 'max_dec_frame_buffering' "$work/$name.trace" | awk '{print $NF}')
 	[ "$refs" = 0 ] && refs=1
-	if [ "$reorder" != 0 ] || [ "$buffering" != "$refs" ]; then echo "FAIL $name: reorder=$reorder buffering=$buffering refs=$refs"; fail=1; fi
+	if [ "$reorder" != 0 ] || [ "$buffering" -lt "$refs" ] || [ "$buffering" -gt 16 ]; then echo "FAIL $name: reorder=$reorder buffering=$buffering refs=$refs"; fail=1; fi
 	# A stream without reordering decodes to the same frames; ffmpeg drops the late frames of a reordered one.
 	if [ "$name" != pb-high-352-pyramid ]; then
 		ffmpeg -v error -i "$in" -f framemd5 - | grep -v '^#' | awk -F, '{print $6}' >"$work/$name.a"

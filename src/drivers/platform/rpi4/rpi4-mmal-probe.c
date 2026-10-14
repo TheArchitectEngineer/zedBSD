@@ -14,8 +14,11 @@
  * Each output picture is identified by the checksum of its visible bytes
  * against the reference decode, and its place in decode order is compared
  * with the input that was last sent, which shows whether the firmware
- * outputs in decode order without delay.  Everything is written to the
- * kernel log, one line per output and one summary per run.
+ * outputs in decode order without delay.  The same is judged again by the
+ * output's time stamp (its unit's decode index), which holds even for a
+ * picture whose bytes differ; a picture whose luma alone matches points
+ * at a chroma layout fault.  Everything is written to the kernel log, one
+ * line per output and one summary per run.
  */
 
 #include "drivers/platform/rpi4/rpi4-mmal-probe.h"
@@ -61,18 +64,31 @@ struct probe_stream {
 	uint32_t width;
 	uint32_t height;
 	const uint32_t *display_sums;
+	const uint32_t *luma_sums;
 	const uint8_t *decode_order;
 	unsigned frames;
 };
 
-/* What one run saw. */
+/*
+ * What one run saw: the orders judged by the frames' checksums, and again
+ * by their time stamps (each unit's decode index), which a frame keeps
+ * even when its pixels differ from the reference; and the time stamps in
+ * output order.
+ */
 struct probe_result {
 	unsigned outputs;
 	unsigned in_decode_order;
 	unsigned in_display_order;
 	unsigned unknown;
+	unsigned luma_only;
 	unsigned max_lag;
 	int last_display;
+	unsigned pts_in_decode_order;
+	unsigned pts_in_display_order;
+	unsigned pts_unknown;
+	unsigned pts_max_lag;
+	int pts_last_display;
+	int pts[PROBE_MAX_FRAMES];
 	int error;
 };
 
@@ -80,7 +96,8 @@ static void probe_main(void *argument);
 static void probe_run(const struct probe_stream *stream, int rewrite);
 static int send_unit(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, size_t start, size_t end, int rewrite, int64_t pts);
 static void collect(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, const char *run, unsigned sent, unsigned timeout_ms, struct probe_result *result);
-static uint32_t frame_sum(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels);
+static uint32_t frame_sum(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, uint32_t *luma);
+static const char *order_name(unsigned outputs, unsigned in_decode_order, unsigned max_lag, unsigned in_display_order);
 static uint64_t now_us(void);
 
 /*
@@ -138,6 +155,7 @@ probe_main(
 	small.width = probe_small_width;
 	small.height = probe_small_height;
 	small.display_sums = probe_small_display_sums;
+	small.luma_sums = probe_small_luma_sums;
 	small.decode_order = probe_small_decode_order;
 	small.frames = sizeof(probe_small_decode_order);
 	large.name = "1080";
@@ -146,6 +164,7 @@ probe_main(
 	large.width = probe_large_width;
 	large.height = probe_large_height;
 	large.display_sums = probe_large_display_sums;
+	large.luma_sums = probe_large_luma_sums;
 	large.decode_order = probe_large_decode_order;
 	large.frames = sizeof(probe_large_decode_order);
 
@@ -166,10 +185,12 @@ probe_run(
 	struct drv_rpi4_mmal_decoder *decoder;
 	struct probe_result result;
 	const char *run;
-	const char *order;
+	char sequence[PROBE_MAX_FRAMES * 4U + 1U];
 	size_t offset;
 	size_t end;
+	size_t used;
 	unsigned sent;
+	unsigned index;
 	int error;
 
 	/* The run's name: a for the control, b for the rewritten stream. */
@@ -178,6 +199,7 @@ probe_run(
 		run = "b";
 	kern_memset(&result, 0, sizeof(result));
 	result.last_display = -1;
+	result.pts_last_display = -1;
 
 	/* A decoder of the stream's size. */
 	error = drv_rpi4_mmal_decoder_create(stream->width, stream->height, PROBE_INPUT_BYTES, &decoder);
@@ -211,15 +233,42 @@ probe_run(
 		collect(decoder, stream, run, sent, PROBE_DRAIN_MS, &result);
 	drv_rpi4_mmal_decoder_destroy(decoder);
 
-	/* The run's order: decode order without delay, display order, or neither. */
-	order = "other";
-	if (result.outputs != 0 && result.in_decode_order == result.outputs && result.max_lag == 0)
-		order = "decode";
-	else if (result.outputs != 0 && result.in_display_order == result.outputs)
-		order = "display";
-	kern_logf("rpi4-mmal-probe: %s run=%s order=%s inputs=%u outputs=%u missing=%u unknown=%u lag=%u error=%d\n",
-		  stream->name, run, order, sent, result.outputs, stream->frames - result.outputs,
-		  result.unknown, result.max_lag, result.error);
+	/* The time stamps in output order. */
+	used = 0;
+	sequence[0] = '\0';
+	for (index = 0; index < result.outputs && index < PROBE_MAX_FRAMES; index++) {
+		(void)kern_snprintf(sequence + used, sizeof(sequence) - used, "%s%d", index == 0 ? "" : ",", result.pts[index]);
+		used += kern_strlen(sequence + used);
+	}
+
+	/*
+	 * The run's order, by the checksums and by the time stamps: decode
+	 * order without delay, display order, or neither.
+	 */
+	kern_logf("rpi4-mmal-probe: %s run=%s order=%s order_pts=%s inputs=%u outputs=%u missing=%u unknown=%u luma_only=%u lag=%u lag_pts=%u pts_unknown=%u error=%d pts_seq=%s\n",
+		  stream->name, run,
+		  order_name(result.outputs, result.in_decode_order, result.max_lag, result.in_display_order),
+		  order_name(result.outputs, result.pts_in_decode_order, result.pts_max_lag, result.pts_in_display_order),
+		  sent, result.outputs, stream->frames - result.outputs, result.unknown, result.luma_only,
+		  result.max_lag, result.pts_max_lag, result.pts_unknown, result.error, sequence);
+}
+
+/* Names an order from the counts that agree with each. */
+static const char *
+order_name(
+	unsigned outputs,
+	unsigned in_decode_order,
+	unsigned max_lag,
+	unsigned in_display_order)
+{
+	/* Decode order without delay, display order, or neither. */
+	if (outputs != 0 && in_decode_order == outputs && max_lag == 0)
+		return "decode";
+	if (outputs != 0 && in_display_order == outputs)
+		return "display";
+
+	/* Succeeded: neither. */
+	return "other";
 }
 
 /*
@@ -305,10 +354,15 @@ collect(
 	uint64_t started;
 	uint64_t copy_us;
 	uint32_t sum;
+	uint32_t luma;
 	unsigned index;
 	unsigned lag;
+	unsigned pts_lag;
 	int display;
 	int decode;
+	int pts_display;
+	int pts_decode;
+	const char *match;
 	int error;
 
 	/* Takes frames until none comes in time. */
@@ -325,12 +379,22 @@ collect(
 		if (frame.length == 0)
 			continue;
 
-		/* Identifies the picture by its checksum. */
-		sum = frame_sum(&frame, pixels);
+		/* Identifies the picture by its checksum, else by its luma's (a chroma layout fault). */
+		sum = frame_sum(&frame, pixels, &luma);
 		display = -1;
+		match = "none";
 		for (index = 0; index < stream->frames; index++) {
 			if (stream->display_sums[index] == sum) {
 				display = (int)index;
+				match = "whole";
+				break;
+			}
+		}
+		for (index = 0; index < stream->frames && display < 0; index++) {
+			if (stream->luma_sums[index] == luma) {
+				display = (int)index;
+				match = "luma";
+				result->luma_only++;
 				break;
 			}
 		}
@@ -349,7 +413,20 @@ collect(
 		if (lag > result->max_lag)
 			result->max_lag = lag;
 
-		/* Counts the orders the output agrees with. */
+		/* Identifies the picture by its time stamp, the decode index of the unit it came from. */
+		pts_decode = -1;
+		pts_display = -1;
+		if (frame.pts >= 0 && frame.pts < (int64_t)stream->frames) {
+			pts_decode = (int)frame.pts;
+			pts_display = (int)stream->decode_order[pts_decode];
+		}
+		pts_lag = 0;
+		if (pts_decode >= 0 && sent > (unsigned)pts_decode + 1U)
+			pts_lag = sent - (unsigned)pts_decode - 1U;
+		if (pts_lag > result->pts_max_lag)
+			result->pts_max_lag = pts_lag;
+
+		/* Counts the orders the output agrees with, by checksum and by time stamp. */
 		if (decode < 0) {
 			result->unknown++;
 		} else {
@@ -359,6 +436,17 @@ collect(
 				result->in_display_order++;
 			result->last_display = display;
 		}
+		if (pts_decode < 0) {
+			result->pts_unknown++;
+		} else {
+			if (pts_decode == (int)result->outputs)
+				result->pts_in_decode_order++;
+			if (pts_display == result->pts_last_display + 1)
+				result->pts_in_display_order++;
+			result->pts_last_display = pts_display;
+		}
+		if (result->outputs < PROBE_MAX_FRAMES)
+			result->pts[result->outputs] = pts_decode;
 		result->outputs++;
 
 		/* The time to copy a frame out of the uncached bounce (the large stream only). */
@@ -373,9 +461,9 @@ collect(
 			}
 		}
 
-		kern_logf("rpi4-mmal-probe: %s run=%s out=%u pts=%lld display=%d decode=%d sent=%u lag=%u sum=%08x flags=%x len=%u fmt=%08x %ux%u crop %ux%u pitch %u/%u copy_us=%u\n",
-			  stream->name, run, result->outputs - 1U, (long long)frame.pts, display, decode, sent, lag,
-			  (unsigned)sum, (unsigned)frame.flags, (unsigned)frame.length, (unsigned)frame.encoding,
+		kern_logf("rpi4-mmal-probe: %s run=%s out=%u pts=%lld pts_display=%d display=%d decode=%d match=%s sent=%u lag=%u sum=%08x luma=%08x flags=%x len=%u fmt=%08x %ux%u crop %ux%u pitch %u/%u copy_us=%u\n",
+			  stream->name, run, result->outputs - 1U, (long long)frame.pts, pts_display, display, decode, match, sent, lag,
+			  (unsigned)sum, (unsigned)luma, (unsigned)frame.flags, (unsigned)frame.length, (unsigned)frame.encoding,
 			  (unsigned)frame.width, (unsigned)frame.height, (unsigned)frame.crop_width, (unsigned)frame.crop_height,
 			  (unsigned)frame.plane_pitch[0], (unsigned)frame.plane_pitch[1], (unsigned)copy_us);
 	}
@@ -383,12 +471,14 @@ collect(
 
 /*
  * Computes FNV-1a 32 over a frame's visible NV12 bytes: the luma rows,
- * then the interleaved chroma rows.
+ * then the interleaved chroma rows.  luma receives the checksum of the
+ * luma rows alone.
  */
 static uint32_t
 frame_sum(
 	const struct drv_rpi4_mmal_frame *frame,
-	const uint8_t *pixels)
+	const uint8_t *pixels,
+	uint32_t *luma)
 {
 	uint32_t sum;
 	uint32_t pitch_y;
@@ -419,6 +509,7 @@ frame_sum(
 			sum *= PROBE_FNV_PRIME;
 		}
 	}
+	*luma = sum;
 
 	/* An I420 frame's chroma is two planes; it is summed interleaved, as NV12's. */
 	if (frame->encoding == PROBE_ENCODING_I420) {

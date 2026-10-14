@@ -62,3 +62,10 @@ Phase disposition: normal
 | 他 | control の window の close の失敗を返す、parameters の容量を取る前に数える、decoder の入力の待ちも window の中、NV12 でない出力は skip、query の結果の stride の検査、SPS・PPS の値の範囲、set の書き場を session の heap に |
 
 残り（記録だけ）: M6 format change で ready の frame を捨てる（最初の SPS の時だけで影響は小さい）、L16 close の時に残った bulk の page list（log のみ）、L17 PAUSE の間も送る（firmware が PAUSE を送るのは suspend の時だけ）。
+
+## T1-625 を受けた直し（44839b871、詳細は [phase003](../phase003/phase.md) の T1-625 の節）
+
+- MMAL の client: 返事を待つ間に返った buffer を受け取る。message の中の短い payload は bulk を待たない。出力の buffer は推奨の数。
+- 退役で slot を塞がない: 壊れた decoder、または bulk が残る decoder の destroy は MMAL の service を閉じ、次の session が開き直す。memory だけを保持する。2 つ目の session が 17（EBUSY）で以後全て失敗することは無くなる。
+- R1 の SPS の `max_dec_frame_buffering` を level の MaxDpbFrames にした。
+- vulkan-video.c は変えていない。session の decoder は session の破棄まで持つ。壊れた session を app が破棄しない間は、次の session は作れない（app の責任）。

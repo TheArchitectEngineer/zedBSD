@@ -58,7 +58,8 @@ static void write_bits(struct h264_writer *writer, uint32_t value, unsigned coun
 static void write_ue(struct h264_writer *writer, uint32_t value);
 static int high_profile(uint32_t profile);
 static void write_se(struct h264_writer *writer, int32_t value);
-static void write_vui_no_reorder(struct h264_writer *writer, uint32_t references);
+static void write_vui_no_reorder(struct h264_writer *writer, uint32_t buffering);
+static uint32_t dpb_frames(uint32_t level_idc, uint32_t mbs, uint32_t references);
 static void write_trailing(struct h264_writer *writer);
 static void write_scaling(struct h264_writer *writer, const struct drv_rpi4_h264_scaling *scaling, uint32_t lists);
 static uint32_t level_number(uint32_t level);
@@ -83,6 +84,8 @@ drv_rpi4_h264_write_sps(
 	uint32_t constraints;
 	uint32_t lists;
 	uint32_t index;
+	uint32_t frame_rows;
+	uint32_t buffering;
 	int high;
 	int error;
 
@@ -155,6 +158,9 @@ drv_rpi4_h264_write_sps(
 	}
 
 	/* The references, the size, the field flags and the cropping. */
+	frame_rows = 2U;
+	if ((sps->flags & DRV_RPI4_H264_SPS_FRAME_MBS_ONLY) != 0)
+		frame_rows = 1U;
 	write_ue(&writer, sps->max_num_ref_frames);
 	write_bits(&writer, (sps->flags & DRV_RPI4_H264_SPS_GAPS_ALLOWED) != 0, 1);
 	write_ue(&writer, sps->pic_width_in_mbs_minus1);
@@ -171,7 +177,10 @@ drv_rpi4_h264_write_sps(
 
 	/* The VUI asking for no reordering, or none. */
 	if (no_reorder) {
-		write_vui_no_reorder(&writer, sps->max_num_ref_frames);
+		buffering = dpb_frames(level_number(sps->level),
+				       (sps->pic_width_in_mbs_minus1 + 1U) * (sps->pic_height_in_map_units_minus1 + 1U) * frame_rows,
+				       sps->max_num_ref_frames);
+		write_vui_no_reorder(&writer, buffering);
 	} else {
 		write_bits(&writer, 0, 1);
 	}
@@ -399,6 +408,11 @@ drv_rpi4_h264_sps_no_reorder(
 	uint32_t cycle;
 	uint32_t index;
 	uint32_t references;
+	uint32_t level;
+	uint32_t width_mbs;
+	uint32_t height_units;
+	uint32_t frame_rows;
+	uint32_t buffering;
 	uint32_t frame_mbs_only;
 	uint32_t cropping;
 	int high;
@@ -422,7 +436,7 @@ drv_rpi4_h264_sps_no_reorder(
 	/* profile_idc, the constraint flags, level_idc and seq_parameter_set_id. */
 	profile = read_bits(&reader, 8);
 	(void)read_bits(&reader, 8);
-	(void)read_bits(&reader, 8);
+	level = read_bits(&reader, 8);
 	(void)read_ue(&reader);
 
 	/* The high profiles' chroma format, bit depths and scaling matrix. */
@@ -472,8 +486,8 @@ drv_rpi4_h264_sps_no_reorder(
 	/* The reference frames, the picture size, the field flags and the cropping. */
 	references = read_ue(&reader);
 	(void)read_bits(&reader, 1);
-	(void)read_ue(&reader);
-	(void)read_ue(&reader);
+	width_mbs = read_ue(&reader) + 1U;
+	height_units = read_ue(&reader) + 1U;
 	frame_mbs_only = read_bits(&reader, 1);
 	if (frame_mbs_only == 0)
 		(void)read_bits(&reader, 1);
@@ -502,7 +516,11 @@ drv_rpi4_h264_sps_no_reorder(
 		write_bits(&writer, read_bits(&reader, 1), 1);
 
 	/* VUI present, with nothing but the bitstream restriction, then the trailing bits. */
-	write_vui_no_reorder(&writer, references);
+	frame_rows = 2U;
+	if (frame_mbs_only != 0)
+		frame_rows = 1U;
+	buffering = dpb_frames(level, width_mbs * height_units * frame_rows, references);
+	write_vui_no_reorder(&writer, buffering);
 	write_trailing(&writer);
 	if (writer.error != 0)
 		return ENOSPC;
@@ -779,12 +797,13 @@ write_se(
 
 /*
  * Writes vui_parameters_present_flag and VUI whose only content is the
- * bitstream restriction asking for no reordering.
+ * bitstream restriction asking for no reordering, with buffering as
+ * max_dec_frame_buffering.
  */
 static void
 write_vui_no_reorder(
 	struct h264_writer *writer,
-	uint32_t references)
+	uint32_t buffering)
 {
 	/* VUI present; no aspect, overscan, signal, chroma location, timing, HRD or picture structure. */
 	write_bits(writer, 1, 1);
@@ -805,9 +824,7 @@ write_vui_no_reorder(
 	write_ue(writer, H264_MAX_MV_LENGTH);
 	write_ue(writer, H264_MAX_MV_LENGTH);
 	write_ue(writer, 0);
-	if (references == 0)
-		references = 1;
-	write_ue(writer, references);
+	write_ue(writer, buffering);
 }
 
 /* Writes rbsp_trailing_bits: a one, then zeros to the byte boundary. */
@@ -937,4 +954,60 @@ pack_nal(
 	/* Succeeded: output holds the unit. */
 	*written = out;
 	return 0;
+}
+
+/*
+ * Reports max_dec_frame_buffering for the rewritten VUI: the level's
+ * MaxDpbFrames for the picture's size (Table A-1's MaxDpbMbs over the
+ * picture's macroblocks, at most 16), and never less than the reference
+ * frames or one.  The whole DPB the level allows leaves the decoder room
+ * for every reference and the picture being decoded.
+ */
+static uint32_t
+dpb_frames(
+	uint32_t level_idc,
+	uint32_t mbs,
+	uint32_t references)
+{
+	uint32_t largest;
+	uint32_t frames;
+
+	/* MaxDpbMbs of the level (level 1b is coded as 11 or 9 and treated as 1.1). */
+	if (level_idc <= 10U) {
+		largest = 396U;
+	} else if (level_idc <= 11U) {
+		largest = 900U;
+	} else if (level_idc <= 20U) {
+		largest = 2376U;
+	} else if (level_idc <= 21U) {
+		largest = 4752U;
+	} else if (level_idc <= 30U) {
+		largest = 8100U;
+	} else if (level_idc <= 31U) {
+		largest = 18000U;
+	} else if (level_idc <= 32U) {
+		largest = 20480U;
+	} else if (level_idc <= 41U) {
+		largest = 32768U;
+	} else if (level_idc <= 42U) {
+		largest = 34816U;
+	} else if (level_idc <= 50U) {
+		largest = 110400U;
+	} else if (level_idc <= 52U) {
+		largest = 184320U;
+	} else {
+		largest = 696320U;
+	}
+
+	/* The frames of the picture's size, bounded by 16 and by the references. */
+	frames = 16U;
+	if (mbs != 0 && largest / mbs < frames)
+		frames = largest / mbs;
+	if (frames < references)
+		frames = references;
+	if (frames == 0)
+		frames = 1U;
+
+	/* Succeeded: the buffering. */
+	return frames;
 }

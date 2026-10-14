@@ -94,4 +94,7 @@ uint16_t drv_rpi4_vchiq_peer_version(const struct drv_rpi4_vchiq_service *servic
  */
 int drv_rpi4_vchiq_close(struct drv_rpi4_vchiq_service *service);
 
+/* Logs a service's state, ports and bulk queues (for a stall's analysis). */
+void drv_rpi4_vchiq_report(struct drv_rpi4_vchiq_service *service);
+
 #endif

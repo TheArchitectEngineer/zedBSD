@@ -60,6 +60,9 @@ int main(void)
 	check(DRV_RPI4_MMAL_BUFFER_DRIVER_MAGIC == 24U && DRV_RPI4_MMAL_BUFFER_CMD == 56U + 8U, "buffer driver area and header");
 	check(DRV_RPI4_MMAL_BUFFER_PTS == 56U + 32U && DRV_RPI4_MMAL_BUFFER_PLANES == 112U, "pts and planes");
 	check(DRV_RPI4_MMAL_BUFFER_PAYLOAD_IN_MESSAGE == 160U, "payload in message at 160");
+	check(DRV_RPI4_MMAL_BUFFER_ZERO_COPY == 152U, "zero copy at 152");
+	check(DRV_RPI4_MMAL_BUFFER_SHORT_DATA == 164U, "short data at 164");
+	check(DRV_RPI4_MMAL_BUFFER_SHORT_DATA + DRV_RPI4_MMAL_SHORT_DATA_BYTES <= DRV_RPI4_MMAL_BUFFER_BYTES, "short data fits the buffer message");
 	check(DRV_RPI4_MMAL_EVENT_DATA == 44U, "event data at 44");
 	check(DRV_RPI4_MMAL_PARAMETER_VALUE == 40U, "parameter value at 40");
 	check(DRV_RPI4_MMAL_CHANGED_FORMAT == 20U && DRV_RPI4_MMAL_CHANGED_ES == 52U, "format change blocks");

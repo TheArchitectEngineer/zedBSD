@@ -195,7 +195,12 @@
 #define DRV_RPI4_MMAL_BUFFER_PLANES		112U
 #define DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET	116U
 #define DRV_RPI4_MMAL_BUFFER_PLANE_PITCH	132U
+#define DRV_RPI4_MMAL_BUFFER_ZERO_COPY		152U
 #define DRV_RPI4_MMAL_BUFFER_PAYLOAD_IN_MESSAGE	160U
+#define DRV_RPI4_MMAL_BUFFER_SHORT_DATA		164U
+
+/* The most bytes of a payload the firmware carries in the buffer message itself (no bulk follows). */
+#define DRV_RPI4_MMAL_SHORT_DATA_BYTES		128U
 
 /* The event message: client component, port type, port number, command, length, data. */
 #define DRV_RPI4_MMAL_EVENT_BYTES		304U
