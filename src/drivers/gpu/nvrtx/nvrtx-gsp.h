@@ -1,0 +1,378 @@
+/*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * The GSP boot path of the nvrtx driver: the parts that touch no hardware.
+ *
+ * The GSP firmware and the driver talk through memory the driver lays out:
+ * the firmware images and their container headers, the placement of the
+ * firmware in the top of the VRAM, the three-level table that describes the
+ * firmware image to the GSP, and the two shared-memory queues the remote
+ * procedure calls travel in.  Every layout here is written as byte offsets
+ * into a buffer and filled one field at a time, so the host tests can check
+ * each offset against the documented sizes without the hardware.
+ */
+
+#ifndef DRIVERS_GPU_NVRTX_GSP_H
+#define DRIVERS_GPU_NVRTX_GSP_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* The page the GSP understands, and the shift that converts to it. */
+#define NVRTX_GSP_PAGE_SIZE		0x1000U
+#define NVRTX_GSP_PAGE_SHIFT		12U
+
+/*
+ * The firmware container header at the start of the booter and bootloader files.
+ *
+ * Six little-endian words: magic, version, file size, offset of the inner
+ * header, offset and size of the payload.
+ */
+#define NVRTX_BIN_MAGIC			0x10deU
+#define NVRTX_BIN_VERSION		1U
+#define NVRTX_BIN_HEADER_BYTES		24U
+#define NVRTX_BIN_MAGIC_AT		0U
+#define NVRTX_BIN_VERSION_AT		4U
+#define NVRTX_BIN_SIZE_AT		8U
+#define NVRTX_BIN_INNER_AT		12U
+#define NVRTX_BIN_PAYLOAD_AT		16U
+#define NVRTX_BIN_PAYLOAD_SIZE_AT	20U
+
+/*
+ * The high-security header of a booter image (version 2), nine words.
+ *
+ * The signature words, the places inside the file that hold the patch
+ * location, the patch signature index and the signature count, and the
+ * offset of the load header.
+ */
+#define NVRTX_HS_HEADER_BYTES		36U
+#define NVRTX_HS_SIG_PROD_AT		0U
+#define NVRTX_HS_SIG_PROD_SIZE_AT	4U
+#define NVRTX_HS_PATCH_LOC_AT		8U
+#define NVRTX_HS_PATCH_SIG_AT		12U
+#define NVRTX_HS_SIG_COUNT_AT		24U
+#define NVRTX_HS_LOAD_AT		28U
+
+/*
+ * The load header of a booter image (version 2): the operating-system code
+ * and data ranges, the application count and the first application's range.
+ */
+#define NVRTX_HS_LOAD_BYTES		36U
+#define NVRTX_HS_LOAD_OS_CODE_AT	0U
+#define NVRTX_HS_LOAD_OS_CODE_SIZE_AT	4U
+#define NVRTX_HS_LOAD_OS_DATA_AT	8U
+#define NVRTX_HS_LOAD_OS_DATA_SIZE_AT	12U
+#define NVRTX_HS_LOAD_APP_COUNT_AT	16U
+#define NVRTX_HS_LOAD_APP0_AT		20U
+#define NVRTX_HS_LOAD_APP0_SIZE_AT	24U
+
+/*
+ * The descriptor inside the GSP bootloader file: the application version
+ * written to the GSP before it starts, and the manifest, monitor data and
+ * monitor code offsets the placement record names.
+ */
+#define NVRTX_RV_DESC_BYTES		56U
+#define NVRTX_RV_DESC_APP_VERSION_AT	28U
+#define NVRTX_RV_DESC_MANIFEST_AT	32U
+#define NVRTX_RV_DESC_MONITOR_DATA_AT	40U
+#define NVRTX_RV_DESC_MONITOR_CODE_AT	48U
+
+/* The two sections the driver takes from the GSP firmware's ELF file. */
+#define NVRTX_GSP_IMAGE_SECTION		".fwimage"
+#define NVRTX_GSP_SIGNATURE_SECTION	".fwsignature_tu10x"
+
+/*
+ * The placement record of the GSP firmware in the top of the VRAM, 256 bytes.
+ *
+ * The booter reads it to put the firmware image, the bootloader and the
+ * heap into the write-protected region.  Every field is a 64-bit word except
+ * the few in the tail the driver leaves zero.
+ */
+#define NVRTX_WPRM_BYTES		256U
+#define NVRTX_WPRM_MAGIC		0xdc3aae21371a60b3ULL
+#define NVRTX_WPRM_REVISION		1U
+#define NVRTX_WPRM_MAGIC_AT		0U
+#define NVRTX_WPRM_REVISION_AT		8U
+#define NVRTX_WPRM_IMAGE_TABLE_AT	16U
+#define NVRTX_WPRM_IMAGE_SIZE_AT	24U
+#define NVRTX_WPRM_BOOT_ADDRESS_AT	32U
+#define NVRTX_WPRM_BOOT_SIZE_AT		40U
+#define NVRTX_WPRM_BOOT_CODE_AT		48U
+#define NVRTX_WPRM_BOOT_DATA_AT		56U
+#define NVRTX_WPRM_BOOT_MANIFEST_AT	64U
+#define NVRTX_WPRM_SIGNATURE_AT		72U
+#define NVRTX_WPRM_SIGNATURE_SIZE_AT	80U
+#define NVRTX_WPRM_RESERVED_START_AT	88U
+#define NVRTX_WPRM_OUTER_HEAP_AT	96U
+#define NVRTX_WPRM_OUTER_HEAP_SIZE_AT	104U
+#define NVRTX_WPRM_REGION_START_AT	112U
+#define NVRTX_WPRM_HEAP_AT		120U
+#define NVRTX_WPRM_HEAP_SIZE_AT		128U
+#define NVRTX_WPRM_IMAGE_AT		136U
+#define NVRTX_WPRM_BOOT_AT		144U
+#define NVRTX_WPRM_FRTS_AT		152U
+#define NVRTX_WPRM_FRTS_SIZE_AT		160U
+#define NVRTX_WPRM_REGION_END_AT	168U
+#define NVRTX_WPRM_VRAM_SIZE_AT		176U
+#define NVRTX_WPRM_VGA_AT		184U
+#define NVRTX_WPRM_VGA_SIZE_AT		192U
+#define NVRTX_WPRM_BOOT_COUNT_AT	200U
+
+/*
+ * One memory region the GSP's operating system is told about at start, 32 bytes.
+ *
+ * An eight-character name packed into a word, the bus address, the size,
+ * the kind (1 = one contiguous range) and the location (1 = system memory).
+ */
+#define NVRTX_LIBOS_REGION_BYTES	32U
+#define NVRTX_LIBOS_REGION_COUNT	4U
+#define NVRTX_LIBOS_NAME_AT		0U
+#define NVRTX_LIBOS_ADDRESS_AT		8U
+#define NVRTX_LIBOS_SIZE_AT		16U
+#define NVRTX_LIBOS_KIND_AT		24U
+#define NVRTX_LIBOS_LOCATION_AT		25U
+#define NVRTX_LIBOS_KIND_CONTIGUOUS	1U
+#define NVRTX_LIBOS_LOCATION_SYSTEM	1U
+
+/* The three log buffers the GSP writes, each 64 KiB, and the argument page. */
+#define NVRTX_GSP_LOG_BYTES		0x10000U
+#define NVRTX_GSP_ARGS_BYTES		0x1000U
+
+/*
+ * The resource manager's start arguments (the 570.144 form), 72 bytes.
+ *
+ * Where the queues are, the suspend-resume state (all zero on a cold start),
+ * the GPU instance, and the stack-in-DMEM flag this firmware version needs.
+ */
+#define NVRTX_RMARGS_BYTES		72U
+#define NVRTX_RMARGS_QUEUE_PAGES_AT	0U
+#define NVRTX_RMARGS_QUEUE_PTE_COUNT_AT	8U
+#define NVRTX_RMARGS_COMMAND_AT		16U
+#define NVRTX_RMARGS_STATUS_AT		24U
+#define NVRTX_RMARGS_OLD_LEVEL_AT	32U
+#define NVRTX_RMARGS_SR_FLAGS_AT	36U
+#define NVRTX_RMARGS_IN_TRANSITION_AT	40U
+#define NVRTX_RMARGS_INSTANCE_AT	44U
+#define NVRTX_RMARGS_DMEM_STACK_AT	48U
+#define NVRTX_RMARGS_PROFILER_AT	56U
+#define NVRTX_RMARGS_PROFILER_SIZE_AT	64U
+
+/*
+ * The shared queue memory: a page of page addresses, then the command queue
+ * (driver to GSP), then the status queue (GSP to driver).  Each queue is a
+ * header page followed by 63 slots of one page.
+ */
+#define NVRTX_QUEUE_BYTES		0x40000U
+#define NVRTX_QUEUE_SLOT_BYTES		0x1000U
+#define NVRTX_QUEUE_SLOT_COUNT		63U
+#define NVRTX_QUEUE_COMMAND_AT		0x1000U
+#define NVRTX_QUEUE_STATUS_AT		0x41000U
+#define NVRTX_QUEUE_SHARED_BYTES	0x81000U
+
+/*
+ * The header page of one queue: the writer's eight words, then the reader's
+ * word.  Each side writes only its own words; the driver's read pointer of the
+ * status queue lives in the command queue's reader word, and the GSP's read
+ * pointer of the command queue in the status queue's reader word.
+ */
+#define NVRTX_QHDR_VERSION_AT		0U
+#define NVRTX_QHDR_SIZE_AT		4U
+#define NVRTX_QHDR_SLOT_SIZE_AT		8U
+#define NVRTX_QHDR_SLOT_COUNT_AT	12U
+#define NVRTX_QHDR_WRITE_AT		16U
+#define NVRTX_QHDR_FLAGS_AT		20U
+#define NVRTX_QHDR_READER_AT		24U
+#define NVRTX_QHDR_SLOTS_AT		28U
+#define NVRTX_QHDR_READ_AT		32U
+
+/*
+ * The frame of one message in a queue: a 48-byte element header, then the
+ * call header, then the payload.  A message spans 1 to 16 slots.
+ */
+#define NVRTX_ELEMENT_HEADER_BYTES	48U
+#define NVRTX_ELEMENT_CHECKSUM_AT	32U
+#define NVRTX_ELEMENT_SEQUENCE_AT	36U
+#define NVRTX_ELEMENT_SLOTS_AT		40U
+#define NVRTX_ELEMENT_MAX_SLOTS		16U
+
+/*
+ * The call header, 32 bytes: version, signature "VRPC" in memory, the length
+ * of header and payload, the function, the two result words (all ones when
+ * sent), the caller's sequence, and a spare word.
+ */
+#define NVRTX_CALL_HEADER_BYTES		32U
+#define NVRTX_CALL_VERSION		0x03000000U
+#define NVRTX_CALL_SIGNATURE		0x43505256U
+#define NVRTX_CALL_VERSION_AT		0U
+#define NVRTX_CALL_SIGNATURE_AT		4U
+#define NVRTX_CALL_LENGTH_AT		8U
+#define NVRTX_CALL_FUNCTION_AT		12U
+#define NVRTX_CALL_RESULT_AT		16U
+#define NVRTX_CALL_RESULT_PRIVATE_AT	20U
+#define NVRTX_CALL_SEQUENCE_AT		24U
+#define NVRTX_CALL_SPARE_AT		28U
+#define NVRTX_CALL_RESULT_PENDING	0xffffffffU
+
+/* The largest payload one message carries: sixteen slots less both headers. */
+#define NVRTX_STAGING_BYTES		(NVRTX_ELEMENT_MAX_SLOTS * NVRTX_QUEUE_SLOT_BYTES)
+#define NVRTX_CALL_PAYLOAD_MAX \
+	(NVRTX_ELEMENT_MAX_SLOTS * NVRTX_QUEUE_SLOT_BYTES - NVRTX_ELEMENT_HEADER_BYTES - NVRTX_CALL_HEADER_BYTES)
+
+/*
+ * Memory the GSP reads, described one page at a time.
+ *
+ * The kernel's DMA buffers are at most 64 KiB, so a large region is a run of
+ * chunks; each chunk is page aligned and a whole number of pages, so one page
+ * never straddles two chunks.  The CPU address and the bus address of page i
+ * are found through its chunk.  The owner keeps the chunks alive for as long
+ * as the GSP may read them.
+ */
+struct nvrtx_pages {
+	size_t chunk_count;
+	size_t chunk_bytes;
+	size_t page_count;
+	uint8_t **chunk_cpu;
+	uint64_t *chunk_bus;
+};
+
+/* A firmware file and the parts of it the boot uses, by offset into its bytes. */
+struct nvrtx_booter {
+	const uint8_t *file;
+	size_t file_size;
+	/* The payload copied to the falcon: offset into the file and length. */
+	size_t payload_at;
+	size_t payload_size;
+	/* Where in the payload the chosen signature is written before the boot. */
+	uint32_t patch_location;
+	uint32_t patch_signature;
+	uint32_t signature_count;
+	size_t signatures_at;
+	size_t signature_size;
+	uint32_t os_code_at;
+	uint32_t os_code_size;
+	uint32_t os_data_at;
+	uint32_t os_data_size;
+	uint32_t app_at;
+	uint32_t app_size;
+};
+
+/* The GSP's RISC-V bootloader file and what the placement record names of it. */
+struct nvrtx_bootloader {
+	size_t payload_at;
+	size_t payload_size;
+	uint32_t app_version;
+	uint32_t manifest_at;
+	uint32_t monitor_data_at;
+	uint32_t monitor_code_at;
+};
+
+/* One section of an ELF file, by offset into the file. */
+struct nvrtx_section {
+	size_t at;
+	size_t size;
+};
+
+/*
+ * The placement of the GSP firmware in the top of the VRAM.
+ *
+ * Computed from the VRAM size, the VGA workspace and the sizes of the
+ * images; every address is a VRAM offset.  From the top down: the VGA
+ * workspace, the FRTS region the VBIOS firmware fills, the bootloader, the
+ * firmware image, the GSP heap, the placement record's region start, and
+ * the 1 MiB heap outside the protected region.
+ */
+struct nvrtx_wpr_layout {
+	uint64_t vram_size;
+	uint64_t vga;
+	uint64_t vga_size;
+	uint64_t frts;
+	uint64_t frts_size;
+	uint64_t boot;
+	uint64_t boot_size;
+	uint64_t image;
+	uint64_t image_size;
+	uint64_t heap;
+	uint64_t heap_size;
+	uint64_t region;
+	uint64_t region_size;
+	uint64_t outer_heap;
+	uint64_t outer_heap_size;
+};
+
+/*
+ * The bus addresses and sizes the placement record points the booter at.
+ */
+struct nvrtx_wpr_sources {
+	uint64_t image_table;
+	uint64_t boot_address;
+	uint64_t boot_size;
+	uint64_t signature;
+	uint64_t signature_size;
+	const struct nvrtx_bootloader *bootloader;
+};
+
+/*
+ * One direction of the shared queue memory as the driver sees it.
+ *
+ * The pages are those of the whole shared region; the queue starts at a
+ * byte offset into them.  The writer's header is in this queue, the reader's
+ * pointer of the same queue in the other queue's header page.
+ */
+struct nvrtx_queue {
+	const struct nvrtx_pages *pages;
+	size_t at;
+	size_t peer_at;
+};
+
+/*
+ * The driver's side of the two queues.
+ *
+ * It sends in the command queue and receives from the status queue.  The
+ * element sequence counts every element the driver sends.
+ */
+struct nvrtx_channel {
+	struct nvrtx_queue command;
+	struct nvrtx_queue status;
+	uint32_t element_sequence;
+	/* One whole message (sixteen slots) while it is built and checksummed. */
+	uint8_t *staging;
+};
+
+uint32_t nvrtx_get32(const uint8_t *bytes, size_t at);
+uint64_t nvrtx_get64(const uint8_t *bytes, size_t at);
+void nvrtx_put8(uint8_t *bytes, size_t at, uint8_t value);
+void nvrtx_put32(uint8_t *bytes, size_t at, uint32_t value);
+void nvrtx_put64(uint8_t *bytes, size_t at, uint64_t value);
+uint32_t nvrtx_fold_checksum(const uint8_t *bytes, size_t length);
+
+uint8_t *nvrtx_pages_cpu(const struct nvrtx_pages *pages, size_t page);
+uint64_t nvrtx_pages_bus(const struct nvrtx_pages *pages, size_t page);
+
+int nvrtx_booter_parse(const uint8_t *file, size_t size, struct nvrtx_booter *booter);
+int nvrtx_booter_signature(const struct nvrtx_booter *booter, unsigned index, size_t *at);
+int nvrtx_bootloader_parse(const uint8_t *file, size_t size, struct nvrtx_bootloader *bootloader);
+int nvrtx_elf_section(const uint8_t *file, size_t size, const char *name, struct nvrtx_section *section);
+
+uint64_t nvrtx_vram_size(uint32_t value);
+uint64_t nvrtx_vga_workspace(uint64_t vram_size, uint32_t value);
+int nvrtx_wpr_layout(uint64_t vram_size, uint64_t vga, uint64_t boot_size, uint64_t image_size, struct nvrtx_wpr_layout *layout);
+void nvrtx_wpr_record(uint8_t *record, const struct nvrtx_wpr_layout *layout, const struct nvrtx_wpr_sources *sources);
+void nvrtx_libos_region(uint8_t *page, unsigned index, const char *name, uint64_t address, uint64_t size);
+void nvrtx_log_buffer(uint8_t *buffer, uint64_t bus, size_t size);
+void nvrtx_rmargs(uint8_t *args, uint64_t queue_pages, uint32_t pte_count);
+
+size_t nvrtx_radix3_pages(size_t image_pages);
+int nvrtx_radix3_fill(const struct nvrtx_pages *image, const struct nvrtx_pages *table);
+
+void nvrtx_queue_shared_init(const struct nvrtx_pages *shared);
+void nvrtx_channel_init(struct nvrtx_channel *channel, const struct nvrtx_pages *shared, uint8_t *staging);
+int nvrtx_channel_send(struct nvrtx_channel *channel, uint32_t function, uint32_t sequence, const uint8_t *payload, size_t length);
+int nvrtx_channel_peek(const struct nvrtx_channel *channel, uint32_t *function, uint32_t *sequence, size_t *length, uint32_t *result);
+int nvrtx_channel_receive(struct nvrtx_channel *channel, uint8_t *payload, size_t capacity, size_t *length);
+
+#endif
