@@ -739,3 +739,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-664 | Q1（WS037 R8b 再試験、P2 の flip の直し 7b5c3cac9） | phase006 R8b | **PASS**（2026-10-15、tree 4453286ce、SSH の dmesg 全文、`P8b ok: flip`・`head 0 shows the driver's surfaces`・P6/P7 ok、display の error 無し。[results](results-20261015-t1-664.md)） |
 | T1-665 | Q1（WS037 R8c、GPU の device） | phase006 R8c | **PASS**（2026-10-16、tree 1c421a58f、SSH の dmesg、P8c ok: gpu device registered、display-inventory・display-control 手順どおり、display の error 無し。[results](results-20261016-t1-665.md)） |
 | T1-666 | Q1（WS037 R8d、events・cursor・SHARE） | phase006 R8d | **FAIL**（2026-10-16、`display-scanout` の `cursor … hide=17`、dmesg 156 行 `P8c: the cursor was not hidden at the lease's end (17)`。他は手順どおり。[results](results-20261016-t1-666.md)） |
+| T1-667 | Q1（WS037 R8d 再試験、cursor hide の直し 3b06400f4） | phase006 R8d | **PASS**（2026-10-16、tree ac216fcd4、cursor … hide=0・done error=0、dmesg に error 無し。[results](results-20261016-t1-667.md)） |
