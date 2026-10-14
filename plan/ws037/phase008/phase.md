@@ -288,6 +288,8 @@ FAIL の時に PNG に残す物: `rm: class … status …`・`rm: control … s
 
 ### 11.4 残り（2026-10-15 P4 の時点）
 
+Q1 の判断（2026-10-15）: 2 の共有の IR の変更は**保留**（desktop の後、共有 IR の変更は Q1 の判断で。i915・V3D と共有の front に触るため）。1 の derivative も desktop で使わないので後回し。次は 4 の段 D（desktop の描画の速さに効く）。
+
 1. derivative（DDX・DDY、`SHFL.BFLY` と `FSWZADD`、NAK の from_nir）: desktop の shader は使わない。interpreter に 4 lane の quad の実行が要る。
 2. array・cube・3D・compare・size（`textureSize` = TXQ）: IR の TEXTURE に image の次元が無い。`component` の空き bit（24 以上）か新しい欄に次元と array の印を足す共有の front の変更が要る（i915・V3D の backend と共有、Q1 の判断）。
 3. depth の出力（`gl_FragDepth`）・second colour・geometry: desktop は使わない。
