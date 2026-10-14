@@ -1,0 +1,29 @@
+VIDEOPLAYER AUDIO error=0
+VIDEOPLAYER Vulkan Video: queue family 0 flags 0x25 operations 0x1
+VIDEOPLAYER Vulkan Video: extent 1920x1088 of 16x16..1920x1088, level 11 of 12, slots 5 of 17, references 4 of 16, flags 0x1
+MEDIA backend=vulkan-video codec=h264
+MEDIA backend=libmedia codec=aac-lc
+VIDEOPLAYER OPEN path=/home/kei/Video.mp4 width=1920 height=1080 duration_ms=6250 video=h264/vulkan-video audio=aac-lc/libmedia container=mp4 dropped=0
+VIDEOPLAYER OPENED path=/home/kei/Video.mp4 error=0 codec=0
+VIDEOPLAYER PLAY shown=0 time_ms=0
+VIDEOPLAYER READY width=960 height=600
+VIDEOPLAYER CLOCK time_ms=0 heard=0 written=0 consumed=0 pictures=0 late=0 eof=0 out=0 state=1
+VIDEOPLAYER PRESENTED width=960 height=600 after_ms=123
+VIDEOPLAYER FRAMES shown=1 time_ms=0 late=0
+VIDEOPLAYER CLOCK time_ms=0 heard=0 written=0 consumed=0 pictures=2 late=0 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=320 heard=15360 written=19456 consumed=19456 pictures=7 late=3 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=810 heard=38912 written=43008 consumed=43008 pictures=5 late=14 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=1578 heard=75776 written=79872 consumed=79872 pictures=4 late=28 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=2304 heard=110592 written=114688 consumed=114688 pictures=2 late=36 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=2688 heard=129024 written=157120 consumed=133120 pictures=8 late=43 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=3242 heard=155648 written=159744 consumed=159744 pictures=4 late=58 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=4074 heard=195584 written=199680 consumed=199680 pictures=2 late=72 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=4608 heard=221184 written=236544 consumed=225280 pictures=6 late=78 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=4906 heard=235520 written=239616 consumed=239616 pictures=6 late=88 eof=0 out=0 state=1
+VIDEOPLAYER CLOCK time_ms=5738 heard=275456 written=279552 consumed=279552 pictures=3 late=102 eof=0 out=0 state=1
+VIDEOPLAYER END reached dropped=0
+VIDEOPLAYER CLOCK time_ms=6123 heard=293904 written=298000 consumed=298000 pictures=5 late=107 eof=1 out=1 state=1
+VIDEOPLAYER FRAMES shown=38 time_ms=6123 late=111
+VIDEOPLAYER ENDED shown=38
+VIDEOPLAYER DONE reason=timeout shown=38
+VIDEOPLAYER FRAMES shown=38 time_ms=6250 late=111
