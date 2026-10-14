@@ -25,6 +25,7 @@ struct frame_planes {
 	size_t luma_pitch;
 	const uint8_t *chroma;
 	size_t chroma_pitch;
+	int linear;
 };
 
 /* The display window of a picture in pixels: its origin and extent. */

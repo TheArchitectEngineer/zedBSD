@@ -33,7 +33,7 @@ Phase disposition: normal
 ## T1 への依頼（Q1 経由）
 
 1. image: `plan/ws236/tests/config-rpi4-mmal-probe.mk`（`config/ci/config-rpi4.mk` ＋ VCHIQ ＋ probe）で agent/p3 の tree（または merge 後の main）から rpi4 の disk image を build。
-2. QEMU raspi4b（回帰）: `plan/tools/boot-test.sh` で login prompt。dmesg に `rpi4-vchiq: emulated board without a VPU; no VCHIQ` と 15 秒後に `rpi4-mmal-probe: VCHIQ did not connect in 15000 ms`、fatal・panic・stall が無い。
+2. QEMU raspi4b（回帰）: `plan/tools/boot-test.sh` で login prompt。dmesg に `rpi4-vchiq: emulated board without a VPU; no VCHIQ`、`rpi4-mmal-probe: started; waiting up to 15000 ms for VCHIQ`、15 秒後に `rpi4-mmal-probe: VCHIQ did not connect in 15000 ms`、fatal・panic・stall が無い。
 3. 実機の Pi 4: その image で起動し、login の後 30 秒待ってから `dmesg | grep -E 'rpi4-(vchiq|mmal)'` の全行を返す（ssh か serial の対話。log の判定は dmesg の行だけで）。画面の PNG（login の画面）も。
 4. 合否（Q1 が判定、design §12）:
    - 前提: `rpi4-vchiq: connected (version N)`、`rpi4-mmal: firmware MMAL x.y`、`rpi4-mmal: decoder ...`・`output 3231564e ...`（NV12）の行。
@@ -41,6 +41,12 @@ Phase disposition: normal
    - (b) が `order=display`・`other`・missing > 0 なら R1 は外れ → ベータ2 は Baseline だけ（design §5）。
    - 参考の値: 1080 の各出力の `copy_us`（3 MiB の uncached の bounce の CPU の読み）、gpu_mem の不足を示す MMAL の error の行の有無。
 5. 時間の目安: build 約 5 分、QEMU 約 3 分、実機の起動と dmesg 約 5 分。
+
+## T1-621 の結果と直し（2026-10-14）
+
+- T1-621（QEMU raspi4b、a9eb23eea の merge 後の main）: boot-test PASS、`rpi4-vchiq: emulated …` は出たが probe の行が 150 秒後も 0。
+- 原因: `kthread_create` は止まった thread を作り、`thread_start` で走らせる（`src/kern/main.c`・`rpi4-bt.c` などの作り）。VCHIQ の受信の thread と probe の thread の両方で `thread_start` が抜けていた（実機でも VCHIQ の受信が動かず CONNECT が返らなかった）。
+- 直し: 両方に `thread_start` を足し、probe は最初に `rpi4-mmal-probe: started; …` を必ず 1 行出す。以後は接続なし（15 秒後の 1 行）・decoder の作成の失敗・各 run の要約・`done` のどれかが必ず出る。
 
 ## 残り
 

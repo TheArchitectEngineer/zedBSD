@@ -24,6 +24,9 @@
 #include "drivers/gpu/bcm2711/vulkan-buffer-copy.h"
 #include "drivers/gpu/bcm2711/vulkan-record.h"
 #include "drivers/gpu/bcm2711/vulkan-transfer.h"
+#if CONFIG_DRIVER_BCM2711_VIDEO
+#include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 
 /* Each route either owns the exact opcode or leaves both cursors unchanged. */
 typedef int (*vulkan_route)(struct bcm2711_vulkan_session *, uint32_t, uint32_t, struct i915_wire_reader *, struct i915_wire_writer *, int *);
@@ -49,7 +52,11 @@ static const vulkan_route routes[] = {
 	bcm2711_vulkan_barrier_dispatch,
 	bcm2711_vulkan_buffer_copy_dispatch,
 	bcm2711_vulkan_transfer_dispatch,
-	bcm2711_vulkan_record_dispatch
+	bcm2711_vulkan_record_dispatch,
+#if CONFIG_DRIVER_BCM2711_VIDEO
+	bcm2711_vulkan_video_dispatch,
+	bcm2711_vulkan_video_query_dispatch
+#endif
 };
 
 /*

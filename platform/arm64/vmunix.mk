@@ -224,6 +224,10 @@ ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/attach.c \
 	src/drivers/gpu/bcm2711/display-device.c \
 	src/drivers/gpu/bcm2711/display-irq.c
 endif
+# The H.264 decode as Vulkan Video on the V3D device (ws236-p004), with the VideoCore firmware's decoder.
+ifeq ($(CONFIG_DRIVER_BCM2711_GPU)$(CONFIG_DRIVER_BCM2711_VIDEO),yy)
+ARM64_KERNEL_SOURCES += src/drivers/gpu/bcm2711/vulkan-video.c
+endif
 ARM64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
 ARM64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)

@@ -761,6 +761,7 @@ start(
 		(void)kern_irq_unregister((int)vchiq->irq, vchiq_interrupt, vchiq);
 		return error;
 	}
+	thread_start(vchiq->thread);
 	kern_irq_unmask((int)vchiq->irq);
 
 	/* Hands the firmware slot zero's bus address. */
