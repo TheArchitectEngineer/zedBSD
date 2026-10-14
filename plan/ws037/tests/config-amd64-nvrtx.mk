@@ -12,7 +12,7 @@
 #     P8a: nvrtx.disp=0 nvrtx.resident=0) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (the
 #     takeover of the head the GOP lit as the monitor test, nvrtx.disp.test=1, and nvrtx.resident=0) or R8c
 #     (R8b with the GPU device) or R8d (R8c with the display-scanout probe: events, refresh, cursor,
-#     sharing) or R9w (the work channel, stage D1) or R9v (the renderer, stage D3, with vkquad) or RA (no words: the default boot of the main image, the console kept and shown on the
+#     sharing) or R9w (the work channel, stage D1) or R9v (the renderer, stage D3, with vkquad) or R9k (the desktop, D6) or RAk/RAd (method A with nvrtx.vk=1, D7) or RA (no words: the default boot of the main image, the console kept and shown on the
 #     taken-over head, the GPU device); plan/ws037/phase004 to phase006 give what each run must show.
 # Build one image per run, each into its own BUILD:
 #   plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r0 NVRTX_RUN=R0
@@ -94,6 +94,23 @@ endif
 # registered, T1-672) as a renderer too (nvrtx.vk=1, with the work channel it implies); vkquad, the
 # compositor's textured quad drawn offscreen through Vulkan and read back (one line: VKQUAD ok / VKQUAD fail ...),
 # and display-events, a swapchain of the display cleared and presented through VK_KHR_display (the WSI of stage D5).
+# ws037-p007 D7 (method A): the main image's default boot (graphical boot and login, no kernel lines on the screen) with the
+# renderer (nvrtx.vk=1, off by default), so the console is kept through the GSP boot and the compositor starts on the RTX;
+# RAd is RAk with the kernel lines on the screen and no boot logo, to see the last mark when RAk fails (phase007 8.14).
+ifeq ($(NVRTX_RUN),RAk)
+ZEDBSD_GRAPHICAL_BOOT := y
+ZEDBSD_GRAPHICAL_LOGIN := y
+ZEDBSD_BOOT_KERNEL_MESSAGES := n
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.vk=1
+ZEDBSD_USER_PROGRAMS += display-inventory
+endif
+ifeq ($(NVRTX_RUN),RAd)
+ZEDBSD_GRAPHICAL_BOOT := n
+ZEDBSD_GRAPHICAL_LOGIN := y
+ZEDBSD_BOOT_KERNEL_MESSAGES := y
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.vk=1
+ZEDBSD_USER_PROGRAMS += display-inventory
+endif
 ifeq ($(NVRTX_RUN),R9v)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1
 ZEDBSD_USER_PROGRAMS += vkquad display-events
