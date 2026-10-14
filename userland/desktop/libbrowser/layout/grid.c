@@ -1041,13 +1041,17 @@ grid_static_vertical_start(
 		    child->style.direction == CSS_DIRECTION_LTR &&
 		    child->style.grid_row.start == 1 &&
 		    child->style.grid_row.end == 2 &&
-		    child->style.grid_column.start == 1 &&
+		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO &&
+		    ((child->style.grid_column.start == 1 &&
 		    child->style.grid_column.end == 2 &&
 		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
-		    child->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
-		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO &&
-		    child->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
-		/* The first horizontal child has no frame in this bounded mapping. */
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO) ||
+		    (child->style.grid_column.start == 2 &&
+		    child->style.grid_column.end == 3 &&
+		    child->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO &&
+		    child->style.offset[CSS_RIGHT].unit == CSS_UNIT_PX));
+		/* These horizontal children have no frame in this bounded mapping. */
 		for (index = 0; horizontal_child && index < 4; index++) {
 			if (child->border[index] != 0 || child->padding[index] != 0)
 				horizontal_child = 0;
