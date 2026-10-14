@@ -3,7 +3,7 @@
 # ws074-p229: UAT のアドレスバー（compositor 側: 既定の URL、箱の幅、key repeat）
 
 P2 (2026-10-14)。親: [WS074](../ws.md)。前段: [p228](../phase228/phase.md)（B1 の調べ、browser の `MAIN_HOME_PAGE`）。
-Status: in-progress / 実装済み・**T1 の試験待ち**（依頼は Q1 経由、番号は Q1 が付ける）。QEMU・実機は未実施。
+Status: in-progress / 実装済み・**T1 の試験待ち**（T1-618 が 1〜4 を実行中。5 の箱は再試験で）。QEMU・実機は未実施。
 
 ## ユーザーの指摘（2026-10-14）
 
@@ -30,6 +30,20 @@ Status: in-progress / 実装済み・**T1 の試験待ち**（依頼は Q1 経�
     - main loop（`main.c`）の pass ごとに `kwl_titlebar_tick` を呼ぶ（poll は最長 10 ms なので、誤差は最大約 10 ms）。field が keyboard を失った時・lock/login/App Home が key を取る時・設定で rate 0 にした時に止まる。押している key の release は `kwl_seat_key` の先頭で必ず見る（`kwl_titlebar_key_released`）ので、menu や App Home が release を取っても repeat は残らない。IME が field に仕える時は、IME が使わずに返した key（virtual keyboard 経由の押下）をこの timer が繰り返す（IME は返した key を自分で繰り返さない設計、`method.c`「goes back to the application, which repeats it itself」）。
 - `titlebar.h`: `kwl_titlebar_key_released`・`kwl_titlebar_tick` を宣言。`seat.c`: release の hook。`main.c`: tick の呼び出しと `titlebar.h` の include。
 
+## 追加: 編集していない時も箱（2026-10-14 ユーザーの判断）
+
+ユーザー:「編集していない時のアドレス欄は、Chrome のように常に箱で見せます。」（Q1 経由）
+
+- **選び方**: control の宣言で「常に箱」を選べるようにした。browser の Location だけが選び、Files など他のアプリの breadcrumb は今の見た目（段と矢印）のまま。理由: compositor が app_id で browser を見分ける作りは他の client（将来の別の browser・file の path の欄）に使えず、意味が control の model に無い。新しい request を足さず、既存の `set_control_value`（今は PROGRESS だけ）を BREADCRUMB にも開き、値 `KWL_BREADCRUMB_BOXED`（1）で「常に箱」を表す。
+  - protocol: `kl_titlebar_v1`（と manager）を **version 5** に上げた（`wayland/protocol.c`、`libwayland/titlebar-protocol.c`）。compositor（`wayland/titlebar.c`）は version 5 以上の client の BREADCRUMB の値 0・1 を受け、他は従来どおり protocol error。古い version で bind した client（titlebar-probe の error の試験は version 1）は変わらない。
+  - libkeiland: `KL_BREADCRUMB_BOXED`（`keiland.h`、**KL_VERSION 94**）。`kl_titlebar_set_control_value`（と `kl_window_set_control_value`）が BREADCRUMB に 0・1 を受け、古い compositor（version 5 未満）には `ENOTSUP` を返す（送らないので client が切られない）。
+  - browser（`shell/titlebar.c` `titlebar_state`）: Location に `KL_BREADCRUMB_BOXED` を毎回の状態の表示で設定（controls を宣言し直した後も付く）。`ENOTSUP` は無視して段の表示のまま。
+- **見た目**（`titlebar-shell.c` `shell_draw_crumb_box`）: 角丸の箱（白 0.55、pointer の下で 0.72、編集中の field は 0.95）。中に client の text（URL 全体）を field の text と同じ位置（`CRUMB_TEXT_INSET`）に、幅を越える分は「...」で切る。text が無ければ placeholder を薄く。段は使わない（URL を出す）。
+- **幅**: 編集中と同じ規則。`shell_crumb_field`（編集中か「常に箱」）なら段の幅の上限を外して空きを全部取り、give way せず、最小は `CRUMB_LEAST` 120 px、狭い窓では題が先に縮む（`shell_crumb_least`・`shell_controls_need` も同じ判定）。箱と編集中で幅が変わらないので、click で箱が跳ねない。
+- **click で編集**: 箱全体を field の hit として記録し、press→release（動かさない）で `shell_act` が path の field として keyboard を渡す（`shell_focus(..., edit=1)`、log `KWL TITLEBAR focus ... id=4 edit=1`）。最初の click は **URL 全体を選択**（cursor は先頭、Chrome の address bar と同じ。打てば置き換わる）。編集中の 2 回目の click は従来どおり cursor を置く・drag で選択。press が動けば従来どおり窓の移動。
+- build（`make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/bin/wayland build/amd64/bin/browser`、log `build/ws074-p229/build3.log`）: exit 0、warning 0（libkeiland・libwayland・compositor・browser を含む）。Linux の flag の `-fsyntax-only`（`titlebar-shell.c`・`wayland/titlebar.c`・`protocol.c`・`libkeiland/titlebar.c`・`libwayland/titlebar-protocol.c`）全て ok。
+- 計画の文書: [WS070 の titlebar の設計](../../ws070/titlebar-design.md) の §2.2 の表（request 8 `set_control_value` の意味、version 5）は WS070 の file なので未更新。Q1 に更新を依頼する。
+
 ## 確かめ（host）
 
 - build: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/bin/wayland`（worktree の build/、log は `build/ws074-p229/wayland-build.log`・`wayland-build2.log`）→ exit 0、warning 0（全 374 の compile が `-Wall -Wextra -Werror`）。
@@ -45,9 +59,10 @@ image: この Phase の commit を含む tree で `plan/ws074/tests/build-browse
 2. **箱の幅**: 1280x800 の画面で browser の窓（既定の大きさ）の Location を click（または Ctrl+L）で編集にする。PASS: `KWL TITLEBAR focus ... edit=` の後の `KWL TITLEBAR control client=C surface=S where=floating id=4 ... width=W` の W（browser の Location は id 4）が、編集前の幅より大きく、Back/Forward の右から Reload（と "..."）の左までの残り（目安 400 px 以上）。PNG（編集中の titlebar）を返す。長い URL（例 https://www.google.com/search?q=0123456789012345678901234567890123456789012345678901234567890123456789）を開いて編集にし、End を押した時に cursor と末尾が見える PNG も。
 3. **repeat**: 編集中の field で ← を 1.5 秒押し続ける（QMP の key down、1.5 s 待ち、key up）。PASS: zdesktop の log に `KWL TITLEBAR repeat key=105 count=N`（N は 20 前後、少なくとも 10）。BackSpace（key=14）も同様に押し続け、field の text が 10 文字以上減る（browser の log の `text` の event か PNG）。押すのをやめた後に繰り返しが続かない（count の行が 1 回だけ、以後 text が変わらない）。
 4. 回帰: `plan/tools/titlebar/titlebar-p010.sh`（CONTROLS: breadcrumb の段の click、search の入力、狭い窓の "..."）が PASS。
+5. **編集していない時の箱**（T1-618 の再試験で足す）: browser で google.com を開いた後、編集していない状態の titlebar の PNG。PASS: Location が Back/Forward の右から Reload（と "..."）の左まで広がる角丸の箱で、中に `https://www.google.com/` が出ている（段と矢印ではない）、`KWL TITLEBAR control ... id=4 ... width=W` の W が編集中と同じ。箱を 1 回 click → `KWL TITLEBAR focus ... id=4 edit=1`、URL 全体が選択された PNG、文字を打つと URL が置き換わる（browser の `text` の event）。Files（`/bin/files`）の breadcrumb は従来どおり段と矢印（PNG）。
 
 ## 残り・制限
 
 - QEMU・実機: 未実施（上の T1 の依頼）。
-- 編集していない breadcrumb の見た目（箱が無く段の文字だけ）は変えていない。browser の Location を常に箱として見せる（Chrome 風）なら別の判断が要る。
+- 編集していない時の箱は上の「追加」で対応（2026-10-14 ユーザーの判断）。
 - FreeBSD の build は未実施（変更は OS に依らない C）。

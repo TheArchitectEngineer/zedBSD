@@ -46,6 +46,13 @@
 #define KWL_PRIORITY_NORMAL		1U
 #define KWL_PRIORITY_SECONDARY		2U
 
+/*
+ * A breadcrumb's value (set_control_value, since version 5): shown as a
+ * box, like an address field, even while its path is not edited
+ * (ws074-p229, the browser's location).
+ */
+#define KWL_BREADCRUMB_BOXED		1U
+
 /* The tabs' flags, and the tab strip's options. */
 #define KWL_TAB_ACTIVE			1U
 #define KWL_TAB_ATTENTION		2U
