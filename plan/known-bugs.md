@@ -187,7 +187,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-317](bugs/BUG-317.md) | Pi 4 で main の kernel が起動 54 秒で停止（stat の namei の context->lock で cpu0 が 14 秒 spin） | reproduced（実機）/ tracking（BT の driver を off にして起動、2026-10-15） | ユーザー 2026-10-15 | BT を戻す時 |
 | [BUG-318](bugs/BUG-318.md) | Pi 4 で音声のある mp4 が Video Player で進まない（音声の consumed が 0、絵が 1 枚目で止まり slider が動かない） | reproduced（実機）/ **resolved**（2026-10-15: rpi4-audio の PWM の clock の divisor 1 → 2、63b6af5bd、T2 の T1-657 実機 PASS。音の聞こえ方はユーザー） | ユーザー 2026-10-15 | — |
 | [BUG-319](bugs/BUG-319.md) | Video Player が動画の終わりで DONE reason=eof にならず --timeout-s まで待つ（Pi 4、eof=1 は出る） | reproduced（実機）/ tracking | P1・T2 2026-10-15 | 仕様か不具合か未判断 |
-| [BUG-320](bugs/BUG-320.md) | Pi 4 で browser が起動しない（時計・最初の頁の失敗で終わる・V3D が paint の pipeline を断る） | reproduced（実機）/ scheduled | ユーザー 2026-10-15 | P1 が時計と shell を直した（T2 待ち）、GPU の描き方は B1 |
+| [BUG-320](bugs/BUG-320.md) | Pi 4 で browser が起動しない（時計・最初の頁の失敗で終わる・V3D が paint の pipeline を断る） | reproduced（実機）/ **resolved**（2026-10-15: 時計は netclock、最初の頁の失敗で理由の頁、paint は B1 p238。T2 の T1-659・T1-661） | ユーザー 2026-10-15 | — |
 | [BUG-321](bugs/BUG-321.md) | Latitude 5330 で i915 の初期化の途中に kernel が止まる（`invalid kernel allocation free`、回帰） | reproduced（実機）/ scheduled | ユーザー 2026-10-15 | P1（BUG-320 の後） |
 | [BUG-322](bugs/BUG-322.md) | Pi 4 で browser の headless `--render-gpu` が vkCreateRenderPass で device lost（-4、旧 libbrowser も同じ） | reproduced（実機）/ tracking | T2 2026-10-15 | 未割当 |
 | [BUG-176](bugs/BUG-176.md) | 起動の直後の約 10 秒「Network service is not …」と出る | reproduced（実機） / resolved（2026-10-08 夜 ユーザー「下記は実装の変更が多かったので、いったんすべてcloseします。」、Q1 の中継）。前: scheduled、低（q726: bar の起動の直後の表示を「Starting the network service...」に、UAT 待ち） | UAT 2026-10-04 | WS131・networkd（[ticket](bugs/BUG-176.md)） |
