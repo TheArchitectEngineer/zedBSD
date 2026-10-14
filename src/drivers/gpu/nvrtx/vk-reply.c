@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
@@ -162,4 +163,19 @@ nvrtx_vk_payload(
 
 	/* Succeeded: what the identity stands for. */
 	return object->payload;
+}
+
+/* Destroys a payload that holds nothing but its own storage. */
+int
+nvrtx_vk_free_payload(
+	struct nvrtx_vk_session *session,
+	void *payload)
+{
+	UNUSED_PARAMETER(session);
+
+	/* Its storage. */
+	kern_free(payload);
+
+	/* Succeeded: the payload is gone. */
+	return 0;
 }

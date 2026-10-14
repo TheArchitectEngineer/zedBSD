@@ -42,7 +42,6 @@ static int resource_create_sampler(struct nvrtx_vk_session *session, struct i915
 static int resource_buffer_destroy(struct nvrtx_vk_session *session, void *payload);
 static int resource_image_destroy(struct nvrtx_vk_session *session, void *payload);
 static int resource_view_destroy(struct nvrtx_vk_session *session, void *payload);
-static int resource_free(struct nvrtx_vk_session *session, void *payload);
 
 /*
  * Runs a buffer, image, view or sampler command; *handled stays clear for
@@ -434,7 +433,7 @@ resource_create_sampler(
 	}
 
 	/* Publishes the sampler and answers. */
-	nvrtx_vk_create_reply(session, reply, I915_VK_OBJ_SAMPLER, identity, sampler, resource_free, 0);
+	nvrtx_vk_create_reply(session, reply, I915_VK_OBJ_SAMPLER, identity, sampler, nvrtx_vk_free_payload, 0);
 
 	/* Succeeded: the reply carries the create's result. */
 	return 0;
@@ -512,20 +511,5 @@ resource_view_destroy(
 		return error;
 
 	/* Succeeded: the view is gone. */
-	return 0;
-}
-
-/* Destroys a payload that holds nothing but its own storage. */
-static int
-resource_free(
-	struct nvrtx_vk_session *session,
-	void *payload)
-{
-	UNUSED_PARAMETER(session);
-
-	/* Its storage. */
-	kern_free(payload);
-
-	/* Succeeded: the payload is gone. */
 	return 0;
 }

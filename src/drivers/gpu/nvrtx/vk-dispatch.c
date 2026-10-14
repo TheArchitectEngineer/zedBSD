@@ -25,7 +25,10 @@
 static const nvrtx_vk_route dispatch_routes[] = {
 	nvrtx_vk_device_route,
 	nvrtx_vk_memory_route,
-	nvrtx_vk_resource_route
+	nvrtx_vk_resource_route,
+	nvrtx_vk_layout_route,
+	nvrtx_vk_target_route,
+	nvrtx_vk_pipeline_route
 };
 
 /*

@@ -53,6 +53,9 @@ static void write_pair(struct vulkan_writer *writer, uint32_t opcode, uint64_t f
 static void write_bind(struct vulkan_writer *writer, uint32_t opcode, uint64_t resource, uint64_t memory, uint64_t offset);
 static void test_memory(void);
 static void test_views(void);
+static uint32_t *read_spirv(const char *directory, const char *name, size_t *bytes);
+static void write_create(struct vulkan_writer *writer, uint32_t opcode);
+static void test_pipeline(const char *directory);
 
 void *
 kern_malloc(size_t bytes)
@@ -177,11 +180,16 @@ nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
 	setvbuf(stdout, NULL, _IONBF, 0);
+	if (argc != 2) {
+		printf("usage: vk-d3-test spirv-directory\n");
+		return 2;
+	}
 	test_memory();
 	test_views();
+	test_pipeline(argv[1]);
 	printf("%s nvrtx vk d3: %u checks, %u failures\n", failures == 0 ? "PASS" : "FAIL", checks, failures);
 	return failures == 0 ? 0 : 1;
 }
@@ -557,4 +565,376 @@ test_views(void)
 
 	check(nvrtx_vk_session_close(&session) == 0, "views: session closed");
 	check(allocations == before, "views: nothing leaked");
+}
+
+/* Reads a SPIR-V module glslc wrote into the directory. */
+static uint32_t *
+read_spirv(const char *directory, const char *name, size_t *bytes)
+{
+	char path[512];
+	FILE *file;
+	uint32_t *words;
+	long length;
+
+	snprintf(path, sizeof(path), "%s/%s.spv", directory, name);
+	file = fopen(path, "rb");
+	if (file == NULL)
+		return NULL;
+	fseek(file, 0, SEEK_END);
+	length = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	words = malloc((size_t)length);
+	if (words != NULL && fread(words, 1, (size_t)length, file) != (size_t)length) {
+		free(words);
+		words = NULL;
+	}
+	fclose(file);
+	*bytes = (size_t)length;
+	return words;
+}
+
+/* A create's head: [device][present]. */
+static void
+write_create(struct vulkan_writer *writer, uint32_t opcode)
+{
+	command_begin(writer, opcode);
+	vulkan_write_u64(writer, TEST_DEVICE);
+	vulkan_write_u64(writer, 1);
+}
+
+/*
+ * The compositor's quad as its objects: shader modules of quad.vert and
+ * quad.frag, a set layout of one combined image sampler, a pipeline layout
+ * with push constants, a pool and a set updated with a view and a sampler,
+ * a render pass and a framebuffer, and the graphics pipeline, compiled.
+ */
+static void
+test_pipeline(const char *directory)
+{
+	struct nvrtx_vk_session *session;
+	struct vulkan_writer client;
+	struct vulkan_object handles[16];
+	struct nvrtx_vk_pipeline *pipeline;
+	struct nvrtx_vk_descriptor_set *set;
+	struct nvrtx_vk_render_pass *pass;
+	struct nvrtx_vk_framebuffer *framebuffer;
+	VkShaderModuleCreateInfo module;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkPushConstantRange range;
+	VkPipelineLayoutCreateInfo pipeline_layout;
+	VkDescriptorPoolSize size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkImageViewCreateInfo view;
+	VkSamplerCreateInfo sampler;
+	VkAttachmentDescription attachment;
+	VkAttachmentReference reference;
+	VkSubpassDescription subpass;
+	VkRenderPassCreateInfo render_pass;
+	VkFramebufferCreateInfo framebuffer_info;
+	VkImageView attachments[1];
+	VkPipelineShaderStageCreateInfo stages[2];
+	VkVertexInputBindingDescription vertex_binding;
+	VkVertexInputAttributeDescription vertex_attribute;
+	VkPipelineVertexInputStateCreateInfo vertex_input;
+	VkPipelineInputAssemblyStateCreateInfo assembly;
+	VkPipelineViewportStateCreateInfo viewport;
+	VkPipelineRasterizationStateCreateInfo raster;
+	VkPipelineMultisampleStateCreateInfo multisample;
+	VkPipelineColorBlendAttachmentState blend_attachment;
+	VkPipelineColorBlendStateCreateInfo blend;
+	VkDynamicState dynamic_states[2];
+	VkPipelineDynamicStateCreateInfo dynamic;
+	VkDescriptorSetLayout layouts[1];
+	uint32_t *vertex_words;
+	uint32_t *fragment_words;
+	size_t vertex_bytes;
+	size_t fragment_bytes;
+	unsigned before;
+	unsigned at;
+	unsigned index;
+	int error;
+
+	vertex_words = read_spirv(directory, "quad-vert", &vertex_bytes);
+	fragment_words = read_spirv(directory, "quad-frag", &fragment_bytes);
+	check(vertex_words != NULL && fragment_words != NULL, "pipeline: the quad's SPIR-V");
+	if (vertex_words == NULL || fragment_words == NULL)
+		return;
+
+	before = allocations;
+	check(nvrtx_vk_session_open(NULL, &session) == 0, "pipeline: session opened");
+	memset(handles, 0, sizeof(handles));
+	for (index = 0; index < 16; index++)
+		handles[index].wire_id = 0x400 + index;
+
+	/* 0x401 0x402 the modules, 0x403 the set layout, 0x404 the pipeline layout, 0x405 the pool, 0x406 the set. */
+	frame_begin(&client);
+	memset(&module, 0, sizeof(module));
+	module.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	module.codeSize = vertex_bytes;
+	module.pCode = vertex_words;
+	write_create(&client, GPU_OP_CREATE_SHADER_MODULE);
+	vulkan_encode_VkShaderModuleCreateInfo(&client, &module);
+	write_tail(&client, 0x401);
+	module.codeSize = fragment_bytes;
+	module.pCode = fragment_words;
+	write_create(&client, GPU_OP_CREATE_SHADER_MODULE);
+	vulkan_encode_VkShaderModuleCreateInfo(&client, &module);
+	write_tail(&client, 0x402);
+	memset(&binding, 0, sizeof(binding));
+	binding.binding = 0;
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	binding.descriptorCount = 1;
+	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1;
+	set_layout.pBindings = &binding;
+	write_create(&client, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	vulkan_encode_VkDescriptorSetLayoutCreateInfo(&client, &set_layout);
+	write_tail(&client, 0x403);
+	layouts[0] = (VkDescriptorSetLayout)(uintptr_t)&handles[3];
+	memset(&range, 0, sizeof(range));
+	range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	range.size = 32;
+	memset(&pipeline_layout, 0, sizeof(pipeline_layout));
+	pipeline_layout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_layout.setLayoutCount = 1;
+	pipeline_layout.pSetLayouts = layouts;
+	pipeline_layout.pushConstantRangeCount = 1;
+	pipeline_layout.pPushConstantRanges = &range;
+	write_create(&client, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	vulkan_encode_VkPipelineLayoutCreateInfo(&client, &pipeline_layout);
+	write_tail(&client, 0x404);
+	memset(&size, 0, sizeof(size));
+	size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	size.descriptorCount = 4;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 4;
+	pool.poolSizeCount = 1;
+	pool.pPoolSizes = &size;
+	write_create(&client, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	vulkan_encode_VkDescriptorPoolCreateInfo(&client, &pool);
+	write_tail(&client, 0x405);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = (VkDescriptorPool)(uintptr_t)&handles[5];
+	allocate.descriptorSetCount = 1;
+	allocate.pSetLayouts = layouts;
+	command_begin(&client, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkDescriptorSetAllocateInfo(&client, &allocate);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x406);
+	error = frame_run(session, &client);
+	check(error == 0, "pipeline: modules, layouts, pool and set made");
+	at = TEST_REPLY_AT / 4U;
+	for (index = 1; index <= 5; index++) {
+		at++;
+		check(reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x400 + index, "pipeline: an object made");
+	}
+	check(reply_u32(&at) == GPU_OP_ALLOCATE_DESCRIPTOR_SETS && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x406,
+	    "pipeline: the set allocated");
+
+	/* 0x407 an image, 0x408 its view, 0x409 a sampler; the set's binding 0 takes the view and the sampler. */
+	frame_begin(&client);
+	write_image(&client, 0x407, VK_FORMAT_B8G8R8A8_UNORM, 64, 64, 1);
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = (VkImage)(uintptr_t)&handles[7];
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_B8G8R8A8_UNORM;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 1;
+	view.subresourceRange.layerCount = 1;
+	write_create(&client, GPU_OP_CREATE_IMAGE_VIEW);
+	vulkan_encode_VkImageViewCreateInfo(&client, &view);
+	write_tail(&client, 0x408);
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	write_create(&client, GPU_OP_CREATE_SAMPLER);
+	vulkan_encode_VkSamplerCreateInfo(&client, &sampler);
+	write_tail(&client, 0x409);
+	command_begin(&client, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 0x406);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u32(&client, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x409);
+	vulkan_write_u64(&client, 0x408);
+	vulkan_write_u32(&client, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+
+	/* 0x40a a render pass of one B8G8R8A8 attachment cleared, 0x40b a framebuffer of the view. */
+	memset(&attachment, 0, sizeof(attachment));
+	attachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+	attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment.finalLayout = VK_IMAGE_LAYOUT_GENERAL;
+	memset(&reference, 0, sizeof(reference));
+	reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	memset(&subpass, 0, sizeof(subpass));
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &reference;
+	memset(&render_pass, 0, sizeof(render_pass));
+	render_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	render_pass.attachmentCount = 1;
+	render_pass.pAttachments = &attachment;
+	render_pass.subpassCount = 1;
+	render_pass.pSubpasses = &subpass;
+	write_create(&client, GPU_OP_CREATE_RENDER_PASS);
+	vulkan_encode_VkRenderPassCreateInfo(&client, &render_pass);
+	write_tail(&client, 0x40a);
+	attachments[0] = (VkImageView)(uintptr_t)&handles[8];
+	memset(&framebuffer_info, 0, sizeof(framebuffer_info));
+	framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer_info.renderPass = (VkRenderPass)(uintptr_t)&handles[10];
+	framebuffer_info.attachmentCount = 1;
+	framebuffer_info.pAttachments = attachments;
+	framebuffer_info.width = 64;
+	framebuffer_info.height = 64;
+	framebuffer_info.layers = 1;
+	write_create(&client, GPU_OP_CREATE_FRAMEBUFFER);
+	vulkan_encode_VkFramebufferCreateInfo(&client, &framebuffer_info);
+	write_tail(&client, 0x40b);
+	error = frame_run(session, &client);
+	check(error == 0, "pipeline: image, view, sampler, update, pass and framebuffer made");
+	set = nvrtx_vk_payload(session, I915_VK_OBJ_DESCRIPTOR_SET, 0x406);
+	check(set != NULL && set->slots[0].view != NULL && set->slots[0].view->identity == 0x408 && set->slots[0].sampler != NULL &&
+	    set->slots[0].sampler->identity == 0x409, "pipeline: the set's binding 0 names the view and the sampler");
+	pass = nvrtx_vk_payload(session, I915_VK_OBJ_RENDER_PASS, 0x40a);
+	check(pass != NULL && pass->colour == 1 && pass->format == VK_FORMAT_B8G8R8A8_UNORM && pass->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR,
+	    "pipeline: the render pass");
+	framebuffer = nvrtx_vk_payload(session, I915_VK_OBJ_FRAMEBUFFER, 0x40b);
+	check(framebuffer != NULL && framebuffer->width == 64 && framebuffer->view != NULL && framebuffer->view->identity == 0x408,
+	    "pipeline: the framebuffer");
+
+	/* 0x40c the graphics pipeline as pipeline_encode_graphics() writes it. */
+	frame_begin(&client);
+	memset(stages, 0, sizeof(stages));
+	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	stages[0].module = (VkShaderModule)(uintptr_t)&handles[1];
+	stages[0].pName = "main";
+	stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	stages[1].module = (VkShaderModule)(uintptr_t)&handles[2];
+	stages[1].pName = "main";
+	memset(&vertex_binding, 0, sizeof(vertex_binding));
+	vertex_binding.stride = 8;
+	memset(&vertex_attribute, 0, sizeof(vertex_attribute));
+	vertex_attribute.format = VK_FORMAT_R32G32_SFLOAT;
+	memset(&vertex_input, 0, sizeof(vertex_input));
+	vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertex_input.vertexBindingDescriptionCount = 1;
+	vertex_input.pVertexBindingDescriptions = &vertex_binding;
+	vertex_input.vertexAttributeDescriptionCount = 1;
+	vertex_input.pVertexAttributeDescriptions = &vertex_attribute;
+	memset(&assembly, 0, sizeof(assembly));
+	assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	memset(&viewport, 0, sizeof(viewport));
+	viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewport.viewportCount = 1;
+	viewport.scissorCount = 1;
+	memset(&raster, 0, sizeof(raster));
+	raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	raster.cullMode = VK_CULL_MODE_NONE;
+	raster.lineWidth = 1.0f;
+	memset(&multisample, 0, sizeof(multisample));
+	multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	memset(&blend_attachment, 0, sizeof(blend_attachment));
+	blend_attachment.blendEnable = VK_TRUE;
+	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	blend_attachment.colorWriteMask = 0xf;
+	memset(&blend, 0, sizeof(blend));
+	blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	blend.attachmentCount = 1;
+	blend.pAttachments = &blend_attachment;
+	dynamic_states[0] = VK_DYNAMIC_STATE_VIEWPORT;
+	dynamic_states[1] = VK_DYNAMIC_STATE_SCISSOR;
+	memset(&dynamic, 0, sizeof(dynamic));
+	dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamic.dynamicStateCount = 2;
+	dynamic.pDynamicStates = dynamic_states;
+	command_begin(&client, GPU_OP_CREATE_GRAPHICS_PIPELINES);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 2);
+	vulkan_write_u64(&client, 2);
+	vulkan_encode_VkPipelineShaderStageCreateInfo(&client, &stages[0]);
+	vulkan_encode_VkPipelineShaderStageCreateInfo(&client, &stages[1]);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineVertexInputStateCreateInfo(&client, &vertex_input);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineInputAssemblyStateCreateInfo(&client, &assembly);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineViewportStateCreateInfo(&client, &viewport);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineRasterizationStateCreateInfo(&client, &raster);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineMultisampleStateCreateInfo(&client, &multisample);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineColorBlendStateCreateInfo(&client, &blend);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineDynamicStateCreateInfo(&client, &dynamic);
+	vulkan_write_u64(&client, 0x404);
+	vulkan_write_u64(&client, 0x40a);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, (uint32_t)-1);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x40c);
+	error = frame_run(session, &client);
+	check(error == 0, "pipeline: the create ran");
+	at = TEST_REPLY_AT / 4U;
+	check(reply_u32(&at) == GPU_OP_CREATE_GRAPHICS_PIPELINES && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x40c,
+	    "pipeline: compiled and published");
+	pipeline = nvrtx_vk_payload(session, I915_VK_OBJ_PIPELINE, 0x40c);
+	check(pipeline != NULL && pipeline->vertex.gprs != 0 && pipeline->fragment.gprs != 0 && pipeline->fragment.texture_count == 1 &&
+	    pipeline->fragment.textures[0].set == 0 && pipeline->fragment.textures[0].binding == 0 && pipeline->vertex.texture_count == 0,
+	    "pipeline: two programs, the fragment's texture from set 0 binding 0");
+	check(pipeline != NULL && pipeline->fragment.va > pipeline->vertex.va && (pipeline->fragment.va % 256) == 0 && pipeline->push_bytes == 32,
+	    "pipeline: the programs' places and the push bytes");
+	check(pipeline != NULL && pipeline->binding_count == 1 && pipeline->bindings[0].stride == 8 && pipeline->attribute_count == 1 &&
+	    pipeline->attributes[0].format == VK_FORMAT_R32G32_SFLOAT && pipeline->blend_enable == 1 &&
+	    pipeline->blend_dst_colour == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA && pipeline->dynamic_viewport == 1 && pipeline->dynamic_scissor == 1 &&
+	    pipeline->write_mask == 0xf, "pipeline: the vertex input, blend and dynamic state");
+
+	/* The pool's destruction takes its set; closing frees everything. */
+	frame_begin(&client);
+	write_pair(&client, GPU_OP_DESTROY_DESCRIPTOR_POOL, 0x405, 0);
+	error = frame_run(session, &client);
+	check(error == 0 && nvrtx_vk_payload(session, I915_VK_OBJ_DESCRIPTOR_SET, 0x406) == NULL, "pipeline: the pool took its set");
+	check(nvrtx_vk_session_close(&session) == 0, "pipeline: session closed");
+	check(allocations == before, "pipeline: nothing leaked");
+	free(vertex_words);
+	free(fragment_words);
 }
