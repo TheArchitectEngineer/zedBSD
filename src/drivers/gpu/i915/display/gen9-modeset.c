@@ -79,7 +79,15 @@ drv_i915_skl_pw2_on(
 	const struct i915_skl_io *io)
 {
 	uint32_t power;
+	uint32_t dc_state;
 	int error;
+
+	/* The DMC may not take the display into DC5 or DC6 while power well 2 is used (gen9_set_dc_state, the "DC off" well). */
+	dc_state = drv_i915_skl_read(io, I915_SKL_DC_STATE_EN);
+	if ((dc_state & I915_SKL_DC_STATE_MASK) != 0U) {
+		drv_i915_skl_write(io, I915_SKL_DC_STATE_EN, dc_state & ~I915_SKL_DC_STATE_MASK);
+		(void)drv_i915_skl_read(io, I915_SKL_DC_STATE_EN);
+	}
 
 	/* A well already up needs nothing. */
 	power = drv_i915_skl_read(io, I915_SKL_PWR_WELL_CTL2);
