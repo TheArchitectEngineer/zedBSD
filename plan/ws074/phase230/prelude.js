@@ -414,6 +414,28 @@
     Object.defineProperty(C, 'name', { value: p[0] });
     def(g, p[0], C);
   });
+  if (!g.DOMPointReadOnly) {
+    class DOMPointReadOnly {
+      constructor(x, y, z, w) {
+        hidden(this, '_x', Number(x) || 0); hidden(this, '_y', Number(y) || 0);
+        hidden(this, '_z', Number(z) || 0); hidden(this, '_w', w === undefined ? 1 : Number(w) || 0);
+      }
+      get x() { return this._x; }
+      get y() { return this._y; }
+      get z() { return this._z; }
+      get w() { return this._w; }
+      static fromPoint(p) { p = p || {}; return new this(p.x, p.y, p.z, p.w); }
+      toJSON() { return { x: this.x, y: this.y, z: this.z, w: this.w }; }
+    }
+    class DOMPoint extends DOMPointReadOnly {
+      get x() { return this._x; } set x(v) { this._x = Number(v) || 0; }
+      get y() { return this._y; } set y(v) { this._y = Number(v) || 0; }
+      get z() { return this._z; } set z(v) { this._z = Number(v) || 0; }
+      get w() { return this._w; } set w(v) { this._w = Number(v) || 0; }
+    }
+    def(g, 'DOMPointReadOnly', DOMPointReadOnly);
+    def(g, 'DOMPoint', DOMPoint);
+  }
   if (typeof document !== 'undefined' && !('activeElement' in document)) {
     Object.defineProperty(document, 'activeElement', { get: function () { return document.body; }, configurable: true });
     def(document, 'hasFocus', function hasFocus() { return true; });

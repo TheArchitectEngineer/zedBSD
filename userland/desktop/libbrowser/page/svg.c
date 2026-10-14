@@ -137,6 +137,7 @@ static int svg_shape_rect(struct svg_shape *shape, const struct svg_matrix *matr
 static int svg_shape_points(struct svg_shape *shape, const struct svg_matrix *matrix, const char *text);
 static int svg_fill(struct svg_canvas *canvas, const struct svg_shape *shape, uint32_t color, float alpha, enum svg_rule rule);
 static void svg_composite_row(struct svg_canvas *canvas, int row, uint32_t color, float alpha);
+static struct dom_element *svg_find_root(struct dom_node *node, int depth);
 static const struct dom_element *svg_find_id(const struct dom_node *node, const char *id, int depth);
 static uint32_t svg_gradient_color(const struct dom_element *svg, const char *reference, uint32_t fallback, int *found);
 static float svg_parse_attribute_number(const struct dom_element *element, const char *name, float fallback);
@@ -1816,4 +1817,94 @@ svg_composite_row(
 		pixel[2] = blue * source_alpha + pixel[2] * (1.0f - source_alpha);
 		pixel[3] = source_alpha + pixel[3] * (1.0f - source_alpha);
 	}
+}
+
+/*
+ * Draws the bytes of an SVG image (an <img>, a CSS url() or a data: URL that
+ * names an SVG document) into a bitmap: the text is parsed into a scratch
+ * document of the page's heap and its first <svg> is drawn as an inline one.
+ *
+ * Returns 0, ENOTSUP for bytes that are not SVG, or an errno value.
+ */
+int
+page_svg_decode(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length,
+	struct img_bitmap *bitmap)
+{
+	struct dom_document *document;
+	struct html_parser *parser;
+	struct dom_element *svg;
+	struct vm_cell *root;
+	struct wb_units units;
+	size_t start;
+	int error;
+
+	/* The text must hold an <svg> start tag near its start (after a BOM, whitespace, an XML declaration or comments). */
+	start = 0;
+	if (length >= 3U && bytes[0] == 0xefU && bytes[1] == 0xbbU && bytes[2] == 0xbfU)
+		start = 3U;
+	if (length - start < 5U || memmem(bytes + start, length - start < 2048U ? length - start : 2048U, "<svg", 4) == NULL)
+		return ENOTSUP;
+
+	/* The text as UTF-16 into a scratch document, which the heap's roots keep while it is parsed. */
+	wb_units_init(&units);
+	error = wb_utf8_to_units(bytes + start, length - start, &units);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+	document = dom_document_create(page->heap);
+	if (document == NULL) {
+		wb_units_release(&units);
+		return ENOMEM;
+	}
+	root = &document->node.cell;
+	error = vm_heap_add_root(page->heap, &root);
+	if (error != 0) {
+		wb_units_release(&units);
+		return error;
+	}
+	error = html_parser_create(&parser, document, 0);
+	if (error == 0) {
+		error = html_parser_feed(parser, units.data, units.length);
+		if (error == 0)
+			error = html_parser_finish(parser);
+		html_parser_destroy(parser);
+	}
+	wb_units_release(&units);
+
+	/* The first svg element of the document. */
+	svg = NULL;
+	if (error == 0)
+		svg = svg_find_root(&document->node, 0);
+	if (error == 0 && svg == NULL)
+		error = ENOTSUP;
+	if (error == 0)
+		error = page_svg_render(svg, bitmap);
+	vm_heap_remove_root(page->heap, &root);
+	return error;
+}
+
+/* Finds the first svg element of a tree (depth first). */
+static struct dom_element *
+svg_find_root(
+	struct dom_node *node,
+	int depth)
+{
+	struct dom_element *found;
+	struct dom_node *child;
+
+	if (depth > SVG_DEPTH)
+		return NULL;
+	if (node->type == DOM_ELEMENT && ((struct dom_element *)node)->ns == DOM_NS_SVG &&
+	    ((struct dom_element *)node)->tag == DOM_TAG_SVG)
+		return (struct dom_element *)node;
+	for (child = node->first_child; child != NULL; child = child->next) {
+		found = svg_find_root(child, depth + 1);
+		if (found != NULL)
+			return found;
+	}
+	return NULL;
 }

@@ -51,6 +51,7 @@ static int images_load(struct page *page, const struct dom_element *element, con
 static const struct img_bitmap *images_svg(struct page *page, const struct dom_element *element);
 static int images_fetch(struct page *page, const char *location, struct page_image **loaded);
 static void images_arrived(void *context, struct net_request *request);
+static int images_decode(struct page *page, const unsigned char *bytes, size_t length, struct img_bitmap *bitmap);
 
 /*
  * Starts a page's table of images empty.
@@ -402,7 +403,7 @@ images_fetch(
 		wb_buffer_init(&bytes);
 		error = page_fetch(page->base, image->location, &bytes, NULL);
 		if (error == 0)
-			error = img_decode(bytes.data, bytes.length, &image->bitmap);
+			error = images_decode(page, bytes.data, bytes.length, &image->bitmap);
 		wb_buffer_release(&bytes);
 		if (error != 0)
 			image->failed = 1;
@@ -421,6 +422,22 @@ images_fetch(
 	/* Succeeded: the image is in the table. */
 	*loaded = image;
 	return 0;
+}
+
+/* Decodes an image's bytes: a raster format, or an SVG document drawn at its own size. */
+static int
+images_decode(
+	struct page *page,
+	const unsigned char *bytes,
+	size_t length,
+	struct img_bitmap *bitmap)
+{
+	int error;
+
+	error = img_decode(bytes, length, bitmap);
+	if (error == ENOTSUP)
+		error = page_svg_decode(page, bytes, length, bitmap);
+	return error;
 }
 
 /*
@@ -447,7 +464,7 @@ images_arrived(
 	if (error == 0 && (response->status < 200 || response->status > 299))
 		error = EINVAL;
 	if (error == 0)
-		error = img_decode(response->body.data, response->body.length, &image->bitmap);
+		error = images_decode(image->page, response->body.data, response->body.length, &image->bitmap);
 	if (error != 0)
 		image->failed = 1;
 

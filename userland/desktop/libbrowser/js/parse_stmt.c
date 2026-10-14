@@ -62,8 +62,26 @@ static struct js_node *stmt_binding_identifier(struct js_parser *parser);
  * code strict), then the statements.  Returns the list of statements and,
  * for a function, sets its body and checks its parameters.
  */
+static struct js_node *parse_function_body_inner(struct js_parser *parser, struct js_node *function);
+
 struct js_node *
 js_parse_function_body(
+	struct js_parser *parser,
+	struct js_node *function)
+{
+	struct js_node *body;
+	int no_in;
+
+	/* The in operator is allowed again inside a body, even one in a for statement's initializer. */
+	no_in = parser->no_in;
+	parser->no_in = 0;
+	body = parse_function_body_inner(parser, function);
+	parser->no_in = no_in;
+	return body;
+}
+
+static struct js_node *
+parse_function_body_inner(
 	struct js_parser *parser,
 	struct js_node *function)
 {
