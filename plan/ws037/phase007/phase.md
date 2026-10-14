@@ -2,7 +2,7 @@
 
 # ws037-p007: 3D の投入（段 P9g: 最初の draw）
 
-Status: in-progress（2026-10-15 P3: 7a・7b・7c を実装、build と host 試験まで。実機 R7d は T 待ち（下の 7 節））
+Status: in-progress（2026-10-15: 段 P9g（7a・7b・7c）は R7d の再試験 T1-656 で実機 PASS。次は desktop までの段 D1〜D7（8 節）。D1 は実装済み、R9w は T 待ち）
 Disposition: normal
 Parent: [WS037](../ws.md)
 依存: [p008](../phase008/phase.md) の段 E（頂点・fragment の program と SPH、2026-10-15 実装・host 済み）、段 P9c（compute の投入。2026-10-15 実機 R7c PASS: GR の channel・promote・QMD・fence の道が実機で動いた）、P5g（golden context）
@@ -133,6 +133,10 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 | `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `159 checks, 0 failures`（draw の push に 4 項目: type 0 を書かない、POST_Z_PS_IMASK 0、VRS 16 個 0、hybrid AA 1） |
 | `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix`（p2 worktree） | rc 0・warning 0・include check / vmunix check PASS、`git diff --check` 0 |
 | 実機（R7d の再試験） | **未実施**。手順は 7 節のまま（image の語は既定 on の後 `nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1 nvrtx.disp=0 nvrtx.resident=0`、`config-amd64-nvrtx.mk` の `NVRTX_RUN=R7d`）。FAIL で同じ SPH の誤りなら、`DS_HWW_ESR` の bit の変化（17・19 が消えたか）を記録 |
+
+## R7d の再試験の結果（T1-656、2026-10-15、RTX 2070 実機、方法 B rombar=0、main 63d0532b0）
+
+**PASS**（Q1 の判定）。P9c ok、P9g の 3 つの draw（system memory・VRAM・texture）が全て `65536 pixels right`、`P9g ok: three draws checked`、P6 ok・P7 ok。直し（fragment の header の w の imap、P1 `7ce6e4019`、と draw の push を NVK に合わせた P3 の分、`57c97fd24`）で SPH の Graphics Exception は消えた。段 P9g（7a・7b・7c）は実機で通った。
 
 ## 8. desktop までの段（2026-10-15 夜、P2 の洗い出し。Q1 の指示: 方式 B（passthrough）で RTX の上に Keiland の desktop が描けるまで）
 
