@@ -294,6 +294,12 @@ static void check_vendor_only(void);
 static void check_full_layer(void);
 static void check_short_reports(void);
 static void check_setup(void);
+static void check_main_later(void);
+static void check_8191_release(void);
+static void wacom_finger(uint8_t *report, unsigned finger, int tip, unsigned contact, unsigned x, unsigned y);
+static int main_later_publish(struct hid_input *input, unsigned flags);
+static unsigned events_matching(int device, uint16_t type, uint16_t code, int32_t value);
+static const struct descriptor *file_named(const char *part);
 static void fuzz_mutate(struct descriptor *descriptor, const struct descriptor *base);
 static void fuzz_generate(struct descriptor *descriptor);
 static void fuzz_item(struct descriptor *descriptor);
@@ -598,6 +604,8 @@ run_check(
 	check_full_layer();
 	check_short_reports();
 	check_setup();
+	check_main_later();
+	check_8191_release();
 
 	/* The old and the new side by side on each fixed descriptor. */
 	set_descriptor(&fixed, "boot keyboard", boot_keyboard, sizeof(boot_keyboard));
@@ -2093,4 +2101,372 @@ pad_put(
 		bit = offset + index;
 		report[1U + bit / 8U] = (uint8_t)(report[1U + bit / 8U] | (1U << (bit % 8U)));
 	}
+}
+
+/*
+ * Checks HID_INPUT_MAIN_LATER on the Wacom 8191's interface 0 (BUG-313,
+ * T1-649): a pen (report 6), ten fingers (report 13) and a keyboard
+ * (report 9) in one descriptor.  The touch device comes up alone; the main
+ * device comes up on the first report that holds a keyboard's key or brings
+ * the pen into range, never on an empty keyboard report, a finger, or a
+ * pen out of range, and never after the devices were unpublished.
+ */
+static void
+check_main_later(
+	void)
+{
+	static const uint8_t keys_up[13] = { 0x09 };
+	static const uint8_t key_a[13] = { 0x09, 0x00, 0x00, 0x04 };
+	static const uint8_t pen_away[27] = { 0x06 };
+	static const uint8_t pen_near[27] = { 0x06, 0x20, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10 };
+	static uint8_t fingers[54];
+	const struct descriptor *wacom;
+	struct hid_report_touch_info touch;
+	struct hid_input *input;
+	struct hid_input *boot;
+	size_t longest;
+	unsigned kind;
+	unsigned found;
+	int keys;
+	int screen;
+	int short_report;
+	int event;
+	int touch_event;
+	int error;
+
+	/* The fixture the script names. */
+	wacom = file_named("wacom-8191-if0");
+	check(wacom != NULL, "8191: the fixture wacom-8191-if0.rdesc is given");
+	if (wacom == NULL)
+		return;
+
+	/* What the descriptor declares: a pen, a keyboard's keys, a screen of ten fingers. */
+	error = drv_hid_input_prepare(wacom->bytes, wacom->size, &input);
+	check(error == 0, "8191: prepare");
+	if (error != 0)
+		return;
+	kind = drv_hid_input_kind(input);
+	keys = drv_hid_input_has_keys(input);
+	screen = drv_hid_input_touch_screen(input);
+	error = drv_hid_input_touch(input, &touch);
+	check(kind == HID_INPUT_KIND_PEN, "8191: the main device is a pen");
+	check(keys, "8191: the main device declares a keyboard's keys");
+	check(screen, "8191: a touch screen");
+	check(error == 0 && touch.contacts == 10U && touch.count_present, "8191: ten fingers a report, and Contact Count");
+
+	/* The reports' lengths: keyboard 13, pen 27, fingers 54 bytes, the ID's included. */
+	short_report = drv_hid_input_report_short(input, keys_up, sizeof(keys_up) - 1U);
+	check(short_report, "8191: the keyboard's report is 13 bytes");
+	short_report = drv_hid_input_report_short(input, keys_up, sizeof(keys_up));
+	check(!short_report, "8191: the keyboard's report is 13 bytes long enough");
+	short_report = drv_hid_input_report_short(input, pen_away, sizeof(pen_away) - 1U);
+	check(short_report, "8191: the pen's report is 27 bytes");
+	short_report = drv_hid_input_report_short(input, pen_away, sizeof(pen_away));
+	check(!short_report, "8191: the pen's report is 27 bytes long enough");
+	longest = drv_hid_input_report_max(input);
+	check(longest == sizeof(fingers), "8191: the longest report is the fingers' 54 bytes");
+
+	/* Published under MAIN_LATER: the touch device alone. */
+	error = main_later_publish(input, HID_INPUT_MAIN_LATER);
+	check(error == 0, "8191: publish");
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event == -1 && touch_event >= 0, "8191: the touch device alone at first");
+
+	/* An empty keyboard report, two fingers and a pen out of range bring no main device. */
+	log_reset();
+	drv_hid_input_report(input, keys_up, sizeof(keys_up), 1000);
+	memset(fingers, 0, sizeof(fingers));
+	fingers[0] = 0x0d;
+	fingers[1] = 0x01;
+	fingers[2] = 0x00;
+	fingers[3] = 0x10;
+	fingers[5] = 0x10;
+	fingers[6] = 0x11;
+	fingers[8] = 0x20;
+	fingers[10] = 0x20;
+	fingers[53] = 2;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 1010);
+	drv_hid_input_report(input, pen_away, sizeof(pen_away), 1020);
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event == -1, "8191: no main device before a key or a pen");
+	found = events_matching(touch_event, EV_ABS, ABS_MT_SLOT, 1);
+	check(found == 1U, "8191: the second finger reaches slot 1");
+	found = events_matching(touch_event, EV_ABS, ABS_MT_TRACKING_ID, -1);
+	check(found == 0U, "8191: neither finger lifted");
+
+	/* The pen in range brings the main device, a pen on the display, and its events. */
+	log_reset();
+	drv_hid_input_report(input, pen_near, sizeof(pen_near), 1030);
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event >= 0, "8191: the pen in range publishes the main device");
+	if (event >= 0) {
+		check(strcmp(fake_devices[event].name, "Wacom Test") == 0, "8191: the main device's name");
+		check(strcmp(fake_devices[event].unique_id, "8191SERIAL") == 0, "8191: the main device's unique ID");
+		check(fake_devices[event].id.product == 0x8191, "8191: the main device's product");
+		check(fake_devices[event].properties == (1U << INPUT_PROP_DIRECT), "8191: the pen is on the display");
+		found = events_matching(event, EV_KEY, BTN_TOOL_PEN, 1);
+		check(found == 1U, "8191: the pen's first report is told");
+	}
+
+	/* The devices go, the main device with them. */
+	drv_hid_input_unpublish(input);
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event == -1 && touch_event == -1, "8191: unpublished");
+	drv_hid_input_destroy(input);
+
+	/* Again: a key brings the main device instead, and tells the key. */
+	error = drv_hid_input_prepare(wacom->bytes, wacom->size, &input);
+	check(error == 0, "8191: prepare again");
+	if (error != 0)
+		return;
+	error = main_later_publish(input, HID_INPUT_MAIN_LATER);
+	check(error == 0, "8191: publish again");
+	log_reset();
+	drv_hid_input_report(input, key_a, sizeof(key_a), 2000);
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event >= 0, "8191: a key publishes the main device");
+	found = events_matching(event, EV_KEY, KEY_A, 1);
+	check(event >= 0 && found == 1U, "8191: the key is told");
+	drv_hid_input_unpublish(input);
+	drv_hid_input_destroy(input);
+
+	/* Unpublished before any key: a later key registers nothing. */
+	error = drv_hid_input_prepare(wacom->bytes, wacom->size, &input);
+	check(error == 0, "8191: prepare a third time");
+	if (error != 0)
+		return;
+	error = main_later_publish(input, HID_INPUT_MAIN_LATER);
+	check(error == 0, "8191: publish a third time");
+	drv_hid_input_unpublish(input);
+	drv_hid_input_report(input, key_a, sizeof(key_a), 3000);
+	drv_hid_input_report(input, pen_near, sizeof(pen_near), 3010);
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event == -1 && touch_event == -1, "8191: nothing registered after unpublish");
+	drv_hid_input_destroy(input);
+
+	/* Under TOUCH_ONLY the main device never comes, whatever reports. */
+	error = drv_hid_input_prepare(wacom->bytes, wacom->size, &input);
+	check(error == 0, "8191: prepare a fourth time");
+	if (error != 0)
+		return;
+	error = main_later_publish(input, HID_INPUT_TOUCH_ONLY);
+	check(error == 0, "8191: publish the touch device alone");
+	drv_hid_input_report(input, key_a, sizeof(key_a), 4000);
+	drv_hid_input_report(input, pen_near, sizeof(pen_near), 4010);
+	drv_hid_input_numbers(input, &event, &touch_event);
+	check(event == -1 && touch_event >= 0, "8191: TOUCH_ONLY keeps the touch device alone");
+	drv_hid_input_unpublish(input);
+	drv_hid_input_destroy(input);
+
+	/* Without a touch device the flag waits for nothing: a keyboard comes up at once. */
+	error = drv_hid_input_prepare(boot_keyboard, sizeof(boot_keyboard), &boot);
+	check(error == 0, "8191: prepare a boot keyboard");
+	if (error != 0)
+		return;
+	error = main_later_publish(boot, HID_INPUT_MAIN_LATER);
+	check(error == 0, "8191: publish a boot keyboard");
+	drv_hid_input_numbers(boot, &event, &touch_event);
+	check(event >= 0 && touch_event == -1, "8191: a keyboard without a touch device is published at once");
+	drv_hid_input_unpublish(boot);
+	drv_hid_input_destroy(boot);
+	printf("ok: the 8191's main device waits for its first key or pen\n");
+}
+
+/* Publishes a descriptor as usb-hid publishes the 8191's interface 0, with the flags given. */
+static int
+main_later_publish(
+	struct hid_input *input,
+	unsigned flags)
+{
+	struct hid_input_identity identity;
+	int error;
+
+	/* The identity usb-hid gives. */
+	memset(&identity, 0, sizeof(identity));
+	identity.name = "Wacom Test";
+	identity.physical_path = "usb0/port1/device5/interface0";
+	identity.unique_id = "8191SERIAL";
+	identity.touch_name = "Wacom Test Touchscreen";
+	identity.touch_physical_path = "usb0/port1/device5/interface0/touch";
+	identity.id.bustype = BUS_USB;
+	identity.id.vendor = 0x056a;
+	identity.id.product = 0x8191;
+	identity.id.version = 0x0100;
+	identity.flags = flags;
+
+	/* The glue's publication. */
+	error = drv_hid_input_publish(input, &identity);
+	return error;
+}
+
+/* Counts the recorded events of one device with this type, code and value. */
+static unsigned
+events_matching(
+	int device,
+	uint16_t type,
+	uint16_t code,
+	int32_t value)
+{
+	unsigned found;
+	size_t index;
+
+	/* Each recorded event. */
+	found = 0;
+	for (index = 0; index < fake_event_count; index++) {
+		/* Another device's, or another event. */
+		if (device < 0 || fake_events[index].device != (unsigned)device)
+			continue;
+		if (fake_events[index].type != type || fake_events[index].code != code)
+			continue;
+		if (fake_events[index].value != value)
+			continue;
+		found++;
+	}
+
+	/* The count. */
+	return found;
+}
+
+/* Finds the descriptor file whose name holds this part, NULL when none was given. */
+static const struct descriptor *
+file_named(
+	const char *part)
+{
+	const char *named;
+	size_t index;
+
+	/* Each file of the command line. */
+	for (index = 0; index < file_descriptor_count; index++) {
+		/* The first whose name holds the part. */
+		named = strstr(file_descriptors[index].name, part);
+		if (named != NULL)
+			return &file_descriptors[index];
+	}
+
+	/* None. */
+	return NULL;
+}
+
+/*
+ * Checks that the Wacom 8191's fingers are lifted (BUG-315: taps did not
+ * end on the Pi): a finger whose Tip Switch goes to 0 in a frame of its
+ * Contact Count, a frame of Contact Count 0, and one finger of two that
+ * leaves while the other stays.  Each lift is ABS_MT_TRACKING_ID -1, and
+ * the last one BTN_TOUCH 0.
+ */
+static void
+check_8191_release(
+	void)
+{
+	static uint8_t fingers[54];
+	const struct descriptor *wacom;
+	struct hid_input *input;
+	unsigned frame;
+	unsigned found;
+	int event;
+	int touch_event;
+	int error;
+
+	/* The fixture, its touch device alone as usb-hid publishes it without a key or pen. */
+	wacom = file_named("wacom-8191-if0");
+	check(wacom != NULL, "8191 release: the fixture is given");
+	if (wacom == NULL)
+		return;
+	error = drv_hid_input_prepare(wacom->bytes, wacom->size, &input);
+	check(error == 0, "8191 release: prepare");
+	if (error != 0)
+		return;
+	error = main_later_publish(input, HID_INPUT_MAIN_LATER);
+	check(error == 0, "8191 release: publish");
+	drv_hid_input_numbers(input, &event, &touch_event);
+
+	/* A tap: three frames of one finger, then its Tip Switch 0 in a frame of Contact Count 1. */
+	log_reset();
+	for (frame = 0; frame < 3U; frame++) {
+		wacom_finger(fingers, 0, 1, 0, 8000, 4800);
+		fingers[53] = 1;
+		drv_hid_input_report(input, fingers, sizeof(fingers), 1000U + frame * 10U);
+	}
+	found = events_matching(touch_event, EV_KEY, BTN_TOUCH, 1);
+	check(found == 1U, "8191 release: the tap touches once");
+	wacom_finger(fingers, 0, 0, 0, 8000, 4800);
+	fingers[53] = 1;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 1030);
+	found = events_matching(touch_event, EV_ABS, ABS_MT_TRACKING_ID, -1);
+	check(found == 1U, "8191 release: Tip Switch 0 lifts the finger");
+	found = events_matching(touch_event, EV_KEY, BTN_TOUCH, 0);
+	check(found == 1U, "8191 release: Tip Switch 0 ends the touch");
+
+	/* A tap that ends with a frame of Contact Count 0. */
+	log_reset();
+	wacom_finger(fingers, 0, 1, 1, 8000, 4800);
+	fingers[53] = 1;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 2000);
+	memset(fingers, 0, sizeof(fingers));
+	fingers[0] = 0x0d;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 2010);
+	found = events_matching(touch_event, EV_ABS, ABS_MT_TRACKING_ID, -1);
+	check(found == 1U, "8191 release: Contact Count 0 lifts the finger");
+	found = events_matching(touch_event, EV_KEY, BTN_TOUCH, 0);
+	check(found == 1U, "8191 release: Contact Count 0 ends the touch");
+
+	/* Two fingers; the first leaves, then the second. */
+	log_reset();
+	wacom_finger(fingers, 0, 1, 2, 1000, 1000);
+	wacom_finger(fingers, 1, 1, 3, 2000, 2000);
+	fingers[53] = 2;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 3000);
+	wacom_finger(fingers, 0, 0, 2, 1000, 1000);
+	wacom_finger(fingers, 1, 1, 3, 2000, 2000);
+	fingers[53] = 2;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 3010);
+	found = events_matching(touch_event, EV_ABS, ABS_MT_TRACKING_ID, -1);
+	check(found == 1U, "8191 release: the first of two fingers lifts");
+	found = events_matching(touch_event, EV_KEY, BTN_TOUCH, 0);
+	check(found == 0U, "8191 release: the second finger still touches");
+	wacom_finger(fingers, 0, 0, 3, 2000, 2000);
+	fingers[53] = 1;
+	drv_hid_input_report(input, fingers, sizeof(fingers), 3020);
+	found = events_matching(touch_event, EV_ABS, ABS_MT_TRACKING_ID, -1);
+	check(found == 2U, "8191 release: the second finger lifts");
+	found = events_matching(touch_event, EV_KEY, BTN_TOUCH, 0);
+	check(found == 1U, "8191 release: the touch ends");
+
+	/* The devices go. */
+	drv_hid_input_unpublish(input);
+	drv_hid_input_destroy(input);
+	printf("ok: the 8191's fingers are lifted\n");
+}
+
+/*
+ * Writes one finger of the 8191's report 13 (five bytes from byte 1 + 5n:
+ * Tip Switch in bit 0, the Contact Identifier in bits 4 to 7, X and Y of
+ * 16 bits) and the report's ID.  Writing finger 0 starts a new report
+ * from zero.
+ */
+static void
+wacom_finger(
+	uint8_t *report,
+	unsigned finger,
+	int tip,
+	unsigned contact,
+	unsigned x,
+	unsigned y)
+{
+	uint8_t *place;
+
+	/* A new report starts with its first finger. */
+	if (finger == 0U)
+		memset(report, 0, 54);
+	report[0] = 0x0d;
+
+	/* The finger's five bytes. */
+	place = report + 1U + 5U * finger;
+	place[0] = (uint8_t)(contact << 4);
+	if (tip)
+		place[0] |= 1U;
+	place[1] = (uint8_t)(x & 0xffU);
+	place[2] = (uint8_t)(x >> 8);
+	place[3] = (uint8_t)(y & 0xffU);
+	place[4] = (uint8_t)(y >> 8);
 }
