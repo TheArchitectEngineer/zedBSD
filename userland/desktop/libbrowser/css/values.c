@@ -1811,7 +1811,7 @@ values_single(
 		    (css_ident_equal(parts[0], "first") || css_ident_equal(parts[0], "last"))) {
 			/* The last baseline falls back to the end edge; the first one is the baseline. */
 			value->kind = CSS_VALUE_KEYWORD;
-			value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_FLEX_END : CSS_ALIGN_BASELINE;
+			value->keyword = css_ident_equal(parts[0], "last") ? CSS_ALIGN_END : CSS_ALIGN_BASELINE;
 			return 0;
 		}
 		if (!css_ident_equal(parts[0], "safe") && !css_ident_equal(parts[0], "unsafe"))

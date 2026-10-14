@@ -294,9 +294,9 @@ flex_side_flip(
 }
 
 /*
- * Gives the absolute children of a horizontal flex container the static
- * position of a sole flex item: justify-content along the main axis and
- * align-self across it.  Sides are physical (start is left or top).
+ * Gives the absolute children of a flex container the static position of
+ * a sole flex item: justify-content along the main axis and align-self
+ * across it.  Sides are physical (start is left or top).
  */
 static void
 flex_static_positions(
@@ -308,34 +308,41 @@ flex_static_positions(
 	int rtl;
 	int reverse;
 	int wrap_reverse;
+	int inline_horizontal;
+	int inline_start;
+	int block_start;
 	int main_start;
 	int cross_start;
+	int main_axis_start;
+	int cross_axis_start;
+	int main_horizontal;
+	int main_side;
+	int cross_side;
 	int horizontal;
 	int vertical;
 	int value;
 	int flex;
-	int axis_start;
+	int child_inline_start;
+	int child_block_start;
 
-	if (box->style.writing_mode != CSS_WRITING_HORIZONTAL_TB ||
-	    (box->style.direction != CSS_DIRECTION_LTR && box->style.direction != CSS_DIRECTION_RTL))
+	if ((box->style.direction != CSS_DIRECTION_LTR && box->style.direction != CSS_DIRECTION_RTL))
 		return;
 	rtl = box->style.direction == CSS_DIRECTION_RTL;
 	reverse = box->style.flex_direction == CSS_FLEX_ROW_REVERSE ||
 	    box->style.flex_direction == CSS_FLEX_COLUMN_REVERSE;
 	wrap_reverse = box->style.flex_wrap == CSS_FLEX_WRAP_REVERSE;
 
-	/* The physical sides where the main axis and the cross axis start. */
-	if (row) {
-		main_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
-		if (reverse)
-			main_start = flex_side_flip(main_start);
-		cross_start = wrap_reverse ? FLEX_SIDE_END : FLEX_SIDE_START;
-	} else {
-		main_start = reverse ? FLEX_SIDE_END : FLEX_SIDE_START;
-		cross_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
-		if (wrap_reverse)
-			cross_start = flex_side_flip(cross_start);
-	}
+	/* The physical sides where the inline axis and the block axis start. */
+	inline_horizontal = box->style.writing_mode == CSS_WRITING_HORIZONTAL_TB;
+	inline_start = rtl ? FLEX_SIDE_END : FLEX_SIDE_START;
+	block_start = box->style.writing_mode == CSS_WRITING_VERTICAL_RL ? FLEX_SIDE_END : FLEX_SIDE_START;
+
+	/* A row's main axis is the inline axis. */
+	main_axis_start = row ? inline_start : block_start;
+	cross_axis_start = row ? block_start : inline_start;
+	main_horizontal = row ? inline_horizontal : !inline_horizontal;
+	main_start = reverse ? flex_side_flip(main_axis_start) : main_axis_start;
+	cross_start = wrap_reverse ? flex_side_flip(cross_axis_start) : cross_axis_start;
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (!child->out_of_flow || child->style.position != CSS_POSITION_ABSOLUTE)
 			continue;
@@ -343,28 +350,27 @@ flex_static_positions(
 		/* justify-content decides the side along the main axis. */
 		value = box->style.justify_content;
 		flex = (box->style.flex_keywords & 1u) != 0;
-		axis_start = row ? (rtl ? FLEX_SIDE_END : FLEX_SIDE_START) : FLEX_SIDE_START;
-		horizontal = main_start;
+		main_side = main_start;
 		switch (value) {
 		case CSS_ALIGN_CENTER:
 		case CSS_ALIGN_SPACE_AROUND:
 		case CSS_ALIGN_SPACE_EVENLY:
-			horizontal = FLEX_SIDE_CENTER;
+			main_side = FLEX_SIDE_CENTER;
 			break;
 		case CSS_ALIGN_START:
-			horizontal = flex ? main_start : axis_start;
+			main_side = flex ? main_start : main_axis_start;
 			break;
 		case CSS_ALIGN_END:
-			horizontal = flex ? flex_side_flip(main_start) : flex_side_flip(axis_start);
+			main_side = flex ? flex_side_flip(main_start) : flex_side_flip(main_axis_start);
 			break;
 		case CSS_ALIGN_LEFT:
-			horizontal = row ? FLEX_SIDE_START : axis_start;
+			main_side = main_horizontal ? FLEX_SIDE_START : main_axis_start;
 			break;
 		case CSS_ALIGN_RIGHT:
-			horizontal = row ? FLEX_SIDE_END : axis_start;
+			main_side = main_horizontal ? FLEX_SIDE_END : main_axis_start;
 			break;
 		default:
-			horizontal = main_start;
+			main_side = main_start;
 			break;
 		}
 
@@ -375,37 +381,35 @@ flex_static_positions(
 			value = box->style.align_items;
 			flex = (box->style.flex_keywords & 4u) != 0;
 		}
-		axis_start = row ? FLEX_SIDE_START : (rtl ? FLEX_SIDE_END : FLEX_SIDE_START);
-		vertical = cross_start;
+		child_inline_start = child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START;
+		child_block_start = child->style.writing_mode == CSS_WRITING_VERTICAL_RL ? FLEX_SIDE_END : FLEX_SIDE_START;
 		switch (value) {
 		case CSS_ALIGN_CENTER:
-			vertical = FLEX_SIDE_CENTER;
+			cross_side = FLEX_SIDE_CENTER;
+			break;
+		case CSS_ALIGN_BASELINE:
+			cross_side = cross_axis_start;
 			break;
 		case CSS_ALIGN_START:
-			vertical = flex ? cross_start : axis_start;
+			cross_side = flex ? cross_start : cross_axis_start;
 			break;
 		case CSS_ALIGN_END:
-			vertical = flex ? flex_side_flip(cross_start) : flex_side_flip(axis_start);
+			cross_side = flex ? flex_side_flip(cross_start) : flex_side_flip(cross_axis_start);
 			break;
 		case CSS_ALIGN_SELF_START:
-			vertical = row ? FLEX_SIDE_START :
-			    (child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_END : FLEX_SIDE_START);
+			cross_side = row ? child_block_start : child_inline_start;
 			break;
 		case CSS_ALIGN_SELF_END:
-			vertical = row ? FLEX_SIDE_END :
-			    (child->style.direction == CSS_DIRECTION_RTL ? FLEX_SIDE_START : FLEX_SIDE_END);
+			cross_side = flex_side_flip(row ? child_block_start : child_inline_start);
 			break;
 		default:
-			vertical = cross_start;
+			cross_side = cross_start;
 			break;
 		}
 
-		/* The horizontal and vertical sides: the main axis is horizontal in a row. */
-		if (!row) {
-			value = horizontal;
-			horizontal = vertical;
-			vertical = value;
-		}
+		/* The horizontal and vertical sides. */
+		horizontal = main_horizontal ? main_side : cross_side;
+		vertical = main_horizontal ? cross_side : main_side;
 		child->static_x = 0;
 		child->static_y = 0;
 		child->static_x_from_right = 0;
