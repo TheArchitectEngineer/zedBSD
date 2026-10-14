@@ -2,6 +2,14 @@
 
 # ws074-p189: Interop 2025 testharness 結果取得
 
+## q1177-i01 結果（2026-10-14 13:25 JST）
+
+Event ws074-p189-q1177-partial-clear-20261014: [証拠](evidence/20261014-q1177/README.md)。固定Grid502同条件再測定は183→189 whole PASS、319→313 FAIL、27 callback改善、後退0、未出力0。同一ID/order/hash/checkpoint/rawを確認。改善はnon-static-positioned001–006の6件、残る上位はmargin/border/padding系列とstretch系列各12件。q1177有限部分範囲cleared、p189/p173全3,805件100%未達、共有投影/GitHub publication保留。
+
+## q1177-i01 有限部分範囲（2026-10-14 13:22 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:52 JSTまで）に適用。q1077固定Grid502同一ID・WPT commit・font・settle/process条件を4 shardで再測定し、q1172基準183 PASS/319 FAILとwhole/subtest差分、後退・no_outputを検証する。全raw callback/checkpointを保存し、残FAILの次候補を分類。読取と証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1172-i01 有限部分範囲（2026-10-14 12:57 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:27 JSTまで）に適用。q1160と同一固定Grid testharness502 ID・WPT/manifest/フォント/localhost HTTP/settle5s/timeout20sで4×最大128 shardを再測定し、q1160 baseline158 PASS/344 FAILとのID・whole/subtest遷移、未出力・後退を照合。raw callback gzip/checkpointを保存。読取・証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。未完なら未実行を明示してuncleared。p189/p173 whole基準外。[Guardrail](../../guardrail.md)とrunner近傍規則適用。

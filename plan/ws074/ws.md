@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1176](queue.md) finished / p217 framed vertical Grid explicit inset area。2026-10-14 13:23 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
-Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1172の183 PASS/319 FAIL、q1160比25 whole/50 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
+Queue: [q1177](queue.md) finished / p189 fixed Grid502 recensus。2026-10-14 13:25 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1177の189 PASS/313 FAIL、q1172比6 whole/27 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p189-q1177-partial-clear-20261014: [p189](phase189/phase.md) q1177-i01で固定Grid502全件同条件再測定。[証拠](phase189/evidence/20261014-q1177/README.md)。189 PASS/313 FAIL、q1172比6 whole・27 callback改善、後退0。同一ID/hash/checkpoint/raw確認。残る上位系列はmargin/border/paddingとstretch各12件、p189/p173全3,805件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p217-q1176-partial-clear-20261014: [p217](phase217/phase.md) q1176-i01でborder/padding親の縦Grid明示inset areaを修正。[証拠](phase217/evidence/20261014-q1176/README.md)。固定006 whole FAIL→PASS、001–006の6件24 callback全PASS。最小lr/rl Chromium一致、host/Acid3差0維持。次は固定Grid502再測定。p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
