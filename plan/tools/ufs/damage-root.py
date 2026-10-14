@@ -7,7 +7,7 @@ for orphaned inodes (the volume is not clean), cannot load that inode and refuse
 not scan, so the kernel mounts the root READ-ONLY (K4) and init runs fsck -y on it (I1).  fsck clears the time, links
 the file into /lost+found and rebuilds the group's counts, and init reboots; the next boot mounts the root read-write.
 
-    python3 -I plan/tools/ufs/damage-root.py IMAGE [ROOT_SKIP_MIB [ROOT_MIB]]   (defaults 65 and 1024, as root-crash.sh)
+    python3 -I plan/tools/ufs/damage-root.py IMAGE [ROOT_SKIP_MIB [ROOT_MIB]]   (defaults 321 and 1024, the native layout since WS238)
 """
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import importlib.util
@@ -23,7 +23,7 @@ SPEC.loader.exec_module(CHECKER)
 
 def main():
 	image = pathlib.Path(sys.argv[1])
-	skip = int(sys.argv[2]) if len(sys.argv) > 2 else 65
+	skip = int(sys.argv[2]) if len(sys.argv) > 2 else 321
 	size = int(sys.argv[3]) if len(sys.argv) > 3 else 1024
 	start = skip << 20
 	with image.open("r+b") as disk:
@@ -31,16 +31,23 @@ def main():
 		volume = bytearray(disk.read(size << 20))
 		fs = CHECKER.UFS(bytes(volume), runtime=True)
 
-		# An unused inode of group 0, marked allocated.
-		cg = (fs.cgstart(0) + fs.cblk) * fs.fsize
-		usedoff = struct.unpack_from("<I", volume, cg + 92)[0]
-		number = next(n for n in range(3, fs.ipg)
-			      if not volume[cg + usedoff + n // 8] & (1 << (n % 8))
-			      and struct.unpack_from("<H", volume, (fs.cgstart(0) + fs.iblk) * fs.fsize + n * 256)[0] == 0)
-		volume[cg + usedoff + number // 8] |= 1 << (number % 8)
+		# An unused inode, marked allocated: the first group with one free (group 0 can be full).
+		def free_inode():
+			for group in range(fs.ncg):
+				cg = (fs.cgstart(group) + fs.cblk) * fs.fsize
+				usedoff = struct.unpack_from("<I", volume, cg + 92)[0]
+				table = (fs.cgstart(group) + fs.iblk) * fs.fsize
+				for n in range(3 if group == 0 else 0, fs.ipg):
+					if (not volume[cg + usedoff + n // 8] & (1 << (n % 8))
+					    and struct.unpack_from("<H", volume, table + n * 256)[0] == 0):
+						return group, n, cg + usedoff, table
+			raise SystemExit(f"{image}: no free inode")
+		group, index, used, table = free_inode()
+		number = group * fs.ipg + index
+		volume[used + index // 8] |= 1 << (index % 8)
 
 		# A regular file with one link, no directory naming it, and an overflowing time.
-		inode = (fs.cgstart(0) + fs.iblk) * fs.fsize + number * 256
+		inode = table + index * 256
 		volume[inode:inode + 256] = bytes(256)
 		struct.pack_into("<H", volume, inode + 0, 0o100644)
 		struct.pack_into("<H", volume, inode + 2, 1)

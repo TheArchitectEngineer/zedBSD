@@ -182,6 +182,34 @@ layout_shrink_to_fit(
 		return error;
 	}
 
+	/* An aspect-ratio and a pixel height give an auto width (the height is the box-sizing box's, as the width would be). */
+	if (width.unit == CSS_UNIT_AUTO && !box->replaced && box->style.aspect_ratio > 0.0f && box->style.height.unit == CSS_UNIT_PX) {
+		layout_unit target;
+
+		/* The width the ratio gives, though a box that shows its overflow is no narrower than its content's least width. */
+		target = layout_from_px(box->style.height.value * box->style.aspect_ratio);
+		if (box->style.overflow_x == CSS_OVERFLOW_VISIBLE && box->style.overflow_y == CSS_OVERFLOW_VISIBLE) {
+			layout_unit frame;
+
+			frame = 0;
+			if (box->style.box_sizing == CSS_BOX_SIZING_BORDER) {
+				layout_box_model(box, room);
+				frame = position_frame(box);
+			}
+			error = layout_min_content(tree, box, &minimum);
+			if (error != 0)
+				return error;
+			if (target - frame < minimum)
+				target = minimum + frame;
+		}
+		box->style.width.unit = CSS_UNIT_PX;
+		box->style.width.value = layout_to_px(target);
+		box->style.width.offset = 0;
+		error = layout_block(tree, box, room);
+		box->style.width = width;
+		return error;
+	}
+
 	/* An indefinite percentage behaves as auto only for this measurement. */
 	if (indefinite_percentage)
 		box->style.width.unit = CSS_UNIT_AUTO;

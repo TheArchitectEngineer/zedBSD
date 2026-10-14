@@ -70,6 +70,7 @@ drv_i915_skl_ddi_buffers(
 	uint32_t base;
 	unsigned index;
 
+	/* The port's translation entries. */
 	base = I915_SKL_DDI_BUF_TRANS_A + dp->port * I915_SKL_DDI_BUF_TRANS_STRIDE;
 
 	/* Each entry's two words. */
@@ -136,6 +137,7 @@ drv_i915_skl_dp_train(
 	int enhanced;
 	int error;
 
+	/* The port's transport and buffer registers. */
 	tp_ctl = I915_SKL_DP_TP_CTL_A + dp->port * I915_SKL_PORT_STRIDE;
 	tp_status = I915_SKL_DP_TP_STATUS_A + dp->port * I915_SKL_PORT_STRIDE;
 	buf_ctl = I915_SKL_DDI_BUF_CTL_A + dp->port * I915_SKL_PORT_STRIDE;
@@ -210,6 +212,7 @@ drv_i915_skl_ddi_buffer_off(
 	uint32_t value;
 	int wait;
 
+	/* The port's buffer control. */
 	buf_ctl = I915_SKL_DDI_BUF_CTL_A + port * I915_SKL_PORT_STRIDE;
 
 	/* The buffer off. */
@@ -391,6 +394,8 @@ i915_skl_clock_recovery(
 		} else {
 			same_tries++;
 		}
+
+		/* The status this try saw, for the next comparison. */
 		kern_memcpy(before, dp->link_status, sizeof(before));
 
 		/* The highest swing is the last try. */

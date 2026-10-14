@@ -747,6 +747,12 @@ flex_base_size(
 	if (basis->unit == CSS_UNIT_PERCENT && available >= 0 && tree->measuring == 0)
 		item->base = flex_length(basis, available) - sizing;
 
+	/* A pixel height and an aspect-ratio give an auto width (an item with no flex-basis of its own). */
+	if (item->base < 0 && row && !child->replaced && child->style.aspect_ratio > 0.0f &&
+	    child->style.width.unit == CSS_UNIT_AUTO && child->style.height.unit == CSS_UNIT_PX &&
+	    basis == &child->style.width)
+		item->base = (layout_unit)((float)layout_from_px(child->style.height.value) * child->style.aspect_ratio) - sizing;
+
 	/* Otherwise the content's size: its widest line, or its height at the container's width. */
 	if (item->base < 0 && row) {
 		if (child->replaced) {

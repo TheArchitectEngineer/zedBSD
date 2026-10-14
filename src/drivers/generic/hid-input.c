@@ -261,6 +261,19 @@ drv_hid_input_touch(
 	return 0;
 }
 
+/* Reports nonzero when the descriptor declares a touch screen: a touch device that is direct, not a pad. */
+int
+drv_hid_input_touch_screen(
+	const struct hid_input *input)
+{
+	/* No touch device at all. */
+	if (!input->touch_present)
+		return 0;
+
+	/* Succeeded: a screen says it is direct. */
+	return (input->touch_description.properties & (1U << INPUT_PROP_DIRECT)) != 0U;
+}
+
 /*
  * Reports where a field of a feature report is (a Precision Touchpad's
  * mode and switches), or the layout's error for a descriptor without it.
@@ -288,9 +301,11 @@ drv_hid_input_feature(
  * The main device is registered unless it would declare nothing but
  * EV_SYN (a touch screen and nothing else) or the identity asks for the
  * touch device alone (HID_INPUT_TOUCH_ONLY; the main device's reports are
- * then dropped); a touch screen or pad is a device of its own beside it.  Fails with ENODEV when there is no device
- * at all, or with the input layer's error (ENOSPC when it has no room); a
- * failure leaves nothing registered.
+ * then dropped); a touch screen or pad is a device of its own beside it.
+ * An interface that is a touch screen's mouse emulation
+ * (HID_INPUT_EMULATION) publishes nothing and succeeds.  Fails with ENODEV
+ * when there is no device at all, or with the input layer's error (ENOSPC
+ * when it has no room); a failure leaves nothing registered.
  */
 int
 drv_hid_input_publish(
@@ -302,6 +317,12 @@ drv_hid_input_publish(
 
 	/* The path the log's lines name the devices by. */
 	(void)kern_snprintf(input->physical_path, sizeof(input->physical_path), "%s", identity->physical_path);
+
+	/* A touch screen's mouse emulation: nothing is published, every report is dropped. */
+	if ((identity->flags & HID_INPUT_EMULATION) != 0U) {
+		kern_logf("hid-input: %s is a touch screen's mouse emulation; it is not published\n", input->physical_path);
+		return 0;
+	}
 
 	/* The main device's identity and what it declares. */
 	kern_memset(&info, 0, sizeof(info));

@@ -26,3 +26,4 @@ Related: [WS062](../ws062/ws.md)（今の native の layout: ESP に vmunix・ze
 | Phase | 目的 | Status |
 | --- | --- | --- |
 | [ws238-p001](phase001/phase.md) | native の layout（ESP・FAT32 `ZEDBSD`・UFS・swap）、`/boot/boot0` と `/boot/efi`、文書と道具の追従、試験の手順 | in-progress（実装と host の確認まで。T1・5330 待ち） |
+- 2026-10-15 T1-638（T2、QEMU UEFI）PASS: ESP・ZEDBSD（FAT32）・UFS・swap、/boot/boot0 と /boot/efi の mount、dmesg を FAT32 に書いて host の mtools で読める、fsck.fat 両方 rc 0、AAT smoke 8/8。残りは 5330 の素の起動（ユーザー: Windows で ZEDBSD の drive に dmesg.txt）。

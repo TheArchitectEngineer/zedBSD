@@ -2040,8 +2040,67 @@ list_image(
 	layout_unit x,
 	layout_unit y)
 {
-	/* The image over the content box. */
-	list_image_item(walk, box->image, x, y, box->width, box->height);
+	struct list_area area;
+	layout_unit image_width;
+	layout_unit image_height;
+	layout_unit width;
+	layout_unit height;
+	layout_unit left;
+	layout_unit top;
+	float scale;
+	float scale_height;
+	const struct css_length *position;
+	int fit;
+
+	/* Without a picture, or with fill (the default), the image is stretched over the content box. */
+	fit = box->style.object_fit;
+	if (box->image == NULL || fit == CSS_OBJECT_FIT_FILL || box->width <= 0 || box->height <= 0 ||
+	    box->image->width <= 0 || box->image->height <= 0) {
+		list_image_item(walk, box->image, x, y, box->width, box->height);
+		return;
+	}
+
+	/* The size the fit gives the image: none keeps it, contain fits inside, cover covers, scale-down is the smaller of none and contain. */
+	image_width = (layout_unit)box->image->width * LAYOUT_UNIT;
+	image_height = (layout_unit)box->image->height * LAYOUT_UNIT;
+	scale = (float)box->width / (float)image_width;
+	scale_height = (float)box->height / (float)image_height;
+	if (fit == CSS_OBJECT_FIT_COVER) {
+		if (scale_height > scale)
+			scale = scale_height;
+	} else if (fit == CSS_OBJECT_FIT_CONTAIN || fit == CSS_OBJECT_FIT_SCALE_DOWN) {
+		if (scale_height < scale)
+			scale = scale_height;
+		if (fit == CSS_OBJECT_FIT_SCALE_DOWN && scale > 1.0f)
+			scale = 1.0f;
+	} else {
+		scale = 1.0f;
+	}
+	width = (layout_unit)((float)image_width * scale);
+	height = (layout_unit)((float)image_height * scale);
+
+	/* object-position places it in the content box: a percentage of the free room, or a length from the edge. */
+	position = box->style.object_position;
+	left = (layout_unit)((float)(box->width - width) * position[0].value / 100.0f);
+	top = (layout_unit)((float)(box->height - height) * position[1].value / 100.0f);
+	if (position[0].unit == CSS_UNIT_PX)
+		left = layout_from_px(position[0].value);
+	if (position[1].unit == CSS_UNIT_PX)
+		top = layout_from_px(position[1].value);
+
+	/* What reaches beyond the content box is clipped. */
+	area.x = x;
+	area.y = y;
+	area.width = box->width;
+	area.height = box->height;
+	if (width > box->width || height > box->height || left < 0 || top < 0 ||
+	    left + width > box->width || top + height > box->height) {
+		list_clip_rect(walk, &area);
+		list_image_item(walk, box->image, x + left, y + top, width, height);
+		list_unclip(walk);
+		return;
+	}
+	list_image_item(walk, box->image, x + left, y + top, width, height);
 }
 
 /* Adds an image item: an image stretched over a rectangle. */

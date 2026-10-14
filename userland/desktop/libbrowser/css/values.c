@@ -66,7 +66,9 @@ enum values_shorthand {
 	SHORT_BORDER_SPACING,
 	SHORT_OVERFLOW,
 	SHORT_TRANSFORM,
-	SHORT_TRANSFORM_ORIGIN
+	SHORT_TRANSFORM_ORIGIN,
+	SHORT_ASPECT_RATIO,
+	SHORT_OBJECT_POSITION
 };
 
 /*
@@ -110,7 +112,8 @@ static int values_single(struct css_parse *parse, int property, const struct css
 static int values_families(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static size_t values_components(const struct css_token *tokens, size_t count, size_t *starts, size_t *lengths, size_t max);
 static int values_transform(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
-static int values_transform_origin(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_aspect_ratio(const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
+static int values_transform_origin(const struct css_token *tokens, size_t count, int first_property, struct css_declaration *out, size_t *made);
 static int values_four(struct css_parse *parse, int first, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_border(struct css_parse *parse, int side, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static void values_add(struct css_declaration *out, size_t *made, int property, const struct css_value *value);
@@ -229,6 +232,9 @@ static const struct values_name values_names[] = {
 	{ "overflow", SHORT_OVERFLOW },
 	{ "transform", SHORT_TRANSFORM },
 	{ "-webkit-transform", SHORT_TRANSFORM },
+	{ "aspect-ratio", SHORT_ASPECT_RATIO },
+	{ "object-fit", CSS_PROP_OBJECT_FIT },
+	{ "object-position", SHORT_OBJECT_POSITION },
 	{ "transform-origin", SHORT_TRANSFORM_ORIGIN },
 	{ "-webkit-transform-origin", SHORT_TRANSFORM_ORIGIN },
 	{ "overflow-x", CSS_PROP_OVERFLOW_X },
@@ -670,6 +676,16 @@ static const struct values_keyword values_text_transform[] = {
 	{ "capitalize", CSS_TEXT_TRANSFORM_CAPITALIZE },
 	{ "uppercase", CSS_TEXT_TRANSFORM_UPPERCASE },
 	{ "lowercase", CSS_TEXT_TRANSFORM_LOWERCASE },
+	{ NULL, 0 }
+};
+
+/* The keywords of object-fit. */
+static const struct values_keyword values_object_fit[] = {
+	{ "fill", CSS_OBJECT_FIT_FILL },
+	{ "contain", CSS_OBJECT_FIT_CONTAIN },
+	{ "cover", CSS_OBJECT_FIT_COVER },
+	{ "none", CSS_OBJECT_FIT_NONE },
+	{ "scale-down", CSS_OBJECT_FIT_SCALE_DOWN },
 	{ NULL, 0 }
 };
 
@@ -1190,7 +1206,11 @@ css_parse_property(
 	case SHORT_TRANSFORM:
 		return values_transform(tokens, count, out, out_count);
 	case SHORT_TRANSFORM_ORIGIN:
-		return values_transform_origin(tokens, count, out, out_count);
+		return values_transform_origin(tokens, count, CSS_PROP_TRANSFORM_ORIGIN_X, out, out_count);
+	case SHORT_OBJECT_POSITION:
+		return values_transform_origin(tokens, count, CSS_PROP_OBJECT_POSITION_X, out, out_count);
+	case SHORT_ASPECT_RATIO:
+		return values_aspect_ratio(tokens, count, out, out_count);
 	case SHORT_BORDER_SPACING:
 		/* One length for both directions, or across then down. */
 		return values_pair(parse, CSS_PROP_BORDER_SPACING_X, CSS_PROP_BORDER_SPACING_Y, tokens, count, out, out_count);
@@ -1899,6 +1919,9 @@ values_single(
 		break;
 	case CSS_PROP_CONTAINER_TYPE:
 		table = values_container_type;
+		break;
+	case CSS_PROP_OBJECT_FIT:
+		table = values_object_fit;
 		break;
 	case CSS_PROP_BORDER_COLLAPSE:
 		table = values_border_collapse;
@@ -2671,6 +2694,14 @@ values_wide_keyword(
 		values_add(out, made, CSS_PROP_TRANSFORM_Y, value);
 		values_add(out, made, CSS_PROP_TRANSFORM_SCALE_X, value);
 		values_add(out, made, CSS_PROP_TRANSFORM_SCALE_Y, value);
+		return;
+	case SHORT_ASPECT_RATIO:
+		values_add(out, made, CSS_PROP_ASPECT_RATIO, value);
+		values_add(out, made, CSS_PROP_ASPECT_AUTO, value);
+		return;
+	case SHORT_OBJECT_POSITION:
+		values_add(out, made, CSS_PROP_OBJECT_POSITION_X, value);
+		values_add(out, made, CSS_PROP_OBJECT_POSITION_Y, value);
 		return;
 	case SHORT_TRANSFORM_ORIGIN:
 		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_X, value);
@@ -5753,6 +5784,68 @@ values_transform(
 	return 0;
 }
 
+/*
+ * Parses aspect-ratio: auto, a ratio (a number, optionally slash another),
+ * or both in either order.  The ratio is 0 for none (a zero or infinite
+ * ratio counts as none).
+ */
+static int
+values_aspect_ratio(
+	const struct css_token *tokens,
+	size_t count,
+	struct css_declaration *out,
+	size_t *made)
+{
+	struct css_value ratio;
+	struct css_value automatic;
+	double numerator;
+	double denominator;
+	size_t index;
+	int have_ratio;
+	int have_auto;
+
+	memset(&ratio, 0, sizeof(ratio));
+	ratio.kind = CSS_VALUE_NUMBER;
+	automatic = ratio;
+	numerator = 0;
+	denominator = 1;
+	have_ratio = 0;
+	have_auto = 0;
+	for (index = 0; index < count; index++) {
+		if (tokens[index].type == CSS_TOKEN_WHITESPACE)
+			continue;
+		if (tokens[index].type == CSS_TOKEN_IDENT && css_ident_equal(&tokens[index], "auto")) {
+			if (have_auto)
+				return EINVAL;
+			have_auto = 1;
+			continue;
+		}
+		if (tokens[index].type != CSS_TOKEN_NUMBER || have_ratio || tokens[index].number < 0)
+			return EINVAL;
+		have_ratio = 1;
+		numerator = tokens[index].number;
+		for (index++; index < count && tokens[index].type == CSS_TOKEN_WHITESPACE; index++)
+			;
+		if (index < count && tokens[index].type == CSS_TOKEN_DELIM && tokens[index].delim == '/') {
+			for (index++; index < count && tokens[index].type == CSS_TOKEN_WHITESPACE; index++)
+				;
+			if (index >= count || tokens[index].type != CSS_TOKEN_NUMBER || tokens[index].number < 0)
+				return EINVAL;
+			denominator = tokens[index].number;
+		} else {
+			index--;
+		}
+	}
+	if (!have_ratio && !have_auto)
+		return EINVAL;
+	if (have_ratio && numerator > 0 && denominator > 0)
+		ratio.number = (float)(numerator / denominator);
+	automatic.number = (have_auto || !have_ratio) ? 1.0f : 0.0f;
+	values_add(out, made, CSS_PROP_ASPECT_RATIO, &ratio);
+	values_add(out, made, CSS_PROP_ASPECT_AUTO, &automatic);
+	return 0;
+}
+
 /* Parses one component of transform-origin: left, center or right (top and bottom on the other axis), or a length. */
 static int
 values_transform_origin_component(
@@ -5797,6 +5890,7 @@ static int
 values_transform_origin(
 	const struct css_token *tokens,
 	size_t count,
+	int first_property,
 	struct css_declaration *out,
 	size_t *made)
 {
@@ -5840,11 +5934,11 @@ values_transform_origin(
 	if (first_axis == 1 || second_axis == 0) {
 		if (first_axis == 0 || second_axis == 1)
 			return EINVAL;
-		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_X, &second);
-		values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_Y, &first);
+		values_add(out, made, first_property, &second);
+		values_add(out, made, first_property + 1, &first);
 		return 0;
 	}
-	values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_X, &first);
-	values_add(out, made, CSS_PROP_TRANSFORM_ORIGIN_Y, &second);
+	values_add(out, made, first_property, &first);
+	values_add(out, made, first_property + 1, &second);
 	return 0;
 }

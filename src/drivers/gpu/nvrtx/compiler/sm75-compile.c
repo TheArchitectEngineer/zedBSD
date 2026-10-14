@@ -87,6 +87,9 @@
 #define NVRTX_SM75_LUT_XOR		0x3cU
 #define NVRTX_SM75_LUT_NOT		0x0fU
 
+/* The colour targets a fragment program writes. */
+#define NVRTX_SM75_COLOR_TARGETS	8U
+
 /* What a uniform of the IR maps to: no slot. */
 #define NVRTX_SM75_NO_SLOT		0xffffffffU
 
@@ -121,6 +124,14 @@ struct nvrtx_sm75_lowering {
 	/* The IR instruction being lowered. */
 	uint32_t index;
 
+	/* A fragment program: each colour location's first output register (NVRTX_SM75_NO_REG when not written), and the register of 1 / w. */
+	uint32_t color_reg[NVRTX_SM75_COLOR_TARGETS];
+	uint32_t inverse_w;
+
+	/* A vertex program: the attribute words its stores reach, in words (the header's store request). */
+	uint32_t store_first;
+	uint32_t store_last;
+
 	/* The loops being lowered: each one's BSSY and first instruction, innermost last. */
 	uint32_t loop_bssy[NVRTX_SM75_LOOP_DEPTH];
 	uint32_t loop_start[NVRTX_SM75_LOOP_DEPTH];
@@ -148,6 +159,17 @@ static int nvrtx_sm75_lower_shared(struct nvrtx_sm75_lowering *lowering, const s
 static int nvrtx_sm75_lower_sync(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static int nvrtx_sm75_predicate(struct nvrtx_sm75_lowering *lowering, uint32_t value);
 static int nvrtx_sm75_extend_loops(struct nvrtx_sm75_lowering *lowering);
+static int nvrtx_sm75_prepare_graphics(struct nvrtx_sm75_lowering *lowering);
+static int nvrtx_sm75_prologue(struct nvrtx_sm75_lowering *lowering);
+static int nvrtx_sm75_lower_input(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
+static int nvrtx_sm75_lower_output(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static int nvrtx_sm75_lower_sample(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static int nvrtx_sm75_lower_kill(struct nvrtx_sm75_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
+static const struct drv_gpu_shader_ir_io *nvrtx_sm75_input(const struct drv_gpu_shader_ir *ir, uint32_t location);
+static void nvrtx_sm75_header(struct nvrtx_sm75_lowering *lowering);
+static void nvrtx_sm75_sph_set(uint32_t *sph, unsigned low, unsigned bits, uint32_t value);
+static void nvrtx_sm75_mark_store(struct nvrtx_sm75_lowering *lowering, uint32_t address);
+static int nvrtx_sm75_is_sample(enum drv_gpu_shader_ir_op op);
 static int nvrtx_sm75_storage_address(struct nvrtx_sm75_lowering *lowering, uint32_t slot, uint32_t offset, uint32_t *address);
 static int nvrtx_sm75_emit(struct nvrtx_sm75_lowering *lowering, struct nvrtx_sm75_word *word, int kind);
 static int nvrtx_sm75_finish(struct nvrtx_sm75_lowering *lowering);
@@ -173,6 +195,29 @@ nvrtx_sm75_compile(
 	struct nvrtx_sm75_binary **binary,
 	struct nvrtx_sm75_diagnostic *diagnostic)
 {
+	int error;
+
+	/* The compute stage. */
+	error = nvrtx_sm75_compile_stage(words, word_count, DRV_GPU_STAGE_COMPUTE, binary, diagnostic);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the program. */
+	return 0;
+}
+
+/*
+ * Compiles one stage of a SPIR-V module (compute, vertex or fragment), as
+ * nvrtx_sm75_compile() does the compute one.
+ */
+int
+nvrtx_sm75_compile_stage(
+	const uint32_t *words,
+	size_t word_count,
+	enum drv_gpu_shader_stage stage,
+	struct nvrtx_sm75_binary **binary,
+	struct nvrtx_sm75_diagnostic *diagnostic)
+{
 	struct drv_gpu_shader_ir *ir;
 	struct drv_gpu_shader_ir optimized;
 	struct drv_gpu_shader_optimize_options options;
@@ -195,7 +240,7 @@ nvrtx_sm75_compile(
 	/* Parses the compute stage. */
 	ir = NULL;
 	parse_diagnostic.reason = NULL;
-	error = drv_gpu_shader_parse(words, word_count, DRV_GPU_STAGE_COMPUTE, &ir, &parse_diagnostic);
+	error = drv_gpu_shader_parse(words, word_count, stage, &ir, &parse_diagnostic);
 	if (error != 0) {
 		if (diagnostic != NULL) {
 			diagnostic->instruction = parse_diagnostic.word_offset;
@@ -278,6 +323,10 @@ nvrtx_sm75_compile_ir(
 
 	/* Checks the program, finds the last reads, maps the uniforms and makes room for the code. */
 	error = nvrtx_sm75_prepare(&lowering);
+
+	/* A fragment program's 1 / w first. */
+	if (error == 0)
+		error = nvrtx_sm75_prologue(&lowering);
 
 	/* Lowers every instruction in order. */
 	for (index = 0U; error == 0 && index < ir->instruction_count; index++) {
@@ -380,9 +429,9 @@ nvrtx_sm75_prepare(
 	ir = lowering->ir;
 	binary = lowering->binary;
 
-	/* Only a compute program is compiled. */
-	if (ir->stage != DRV_GPU_STAGE_COMPUTE)
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "only compute shaders are compiled (stage A)");
+	/* Compute, vertex and fragment programs are compiled. */
+	if (ir->stage != DRV_GPU_STAGE_COMPUTE && ir->stage != DRV_GPU_STAGE_VERTEX && ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "only compute, vertex and fragment shaders are compiled");
 
 	/* The per-value arrays. */
 	lowering->reg = kern_calloc(ir->value_count + 1U, sizeof(*lowering->reg));
@@ -405,12 +454,17 @@ nvrtx_sm75_prepare(
 		/* The sources of an operation stage A covers. */
 		count = nvrtx_sm75_sources(instruction, sources);
 		if (count < 0)
-			return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet (stage A)");
+			return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
 
 		/* The destination is a value of the program. */
 		defines = nvrtx_sm75_defines(instruction);
 		if (defines != 0 && instruction->dst >= ir->value_count)
 			return nvrtx_sm75_refuse(lowering, EINVAL, "a destination is not a value of the program");
+
+		/* A sample's four results are values of the program. */
+		defines = nvrtx_sm75_is_sample(instruction->op);
+		if (defines != 0 && (instruction->dst >= ir->value_count || ir->value_count - instruction->dst < 4U))
+			return nvrtx_sm75_refuse(lowering, EINVAL, "a sample's results are not values of the program");
 
 		/* Each source is a value of the program, read last here so far. */
 		source_count = (uint32_t)count;
@@ -428,6 +482,11 @@ nvrtx_sm75_prepare(
 
 	/* The uniforms' slots. */
 	error = nvrtx_sm75_map_uniforms(lowering);
+	if (error != 0)
+		return error;
+
+	/* A graphics program's outputs, inputs and header. */
+	error = nvrtx_sm75_prepare_graphics(lowering);
 	if (error != 0)
 		return error;
 
@@ -557,8 +616,22 @@ nvrtx_sm75_sources(
 	case DRV_GPU_IR_FENCE:
 		return 0;
 	case DRV_GPU_IR_LOOP_END:
+	case DRV_GPU_IR_STORE_OUTPUT:
+	case DRV_GPU_IR_KILL:
 		sources[0] = instruction->src[0];
 		return 1;
+	case DRV_GPU_IR_LOAD_INPUT:
+		return 0;
+	case DRV_GPU_IR_SAMPLE:
+		sources[0] = instruction->src[0];
+		sources[1] = instruction->src[1];
+		return 2;
+	case DRV_GPU_IR_SAMPLE_LOD:
+	case DRV_GPU_IR_SAMPLE_BIAS:
+		sources[0] = instruction->src[0];
+		sources[1] = instruction->src[1];
+		sources[2] = instruction->src[2];
+		return 3;
 	case DRV_GPU_IR_UDIV:
 	case DRV_GPU_IR_UMOD:
 	case DRV_GPU_IR_IDIV:
@@ -610,6 +683,18 @@ nvrtx_sm75_defines(
 		return 0;
 	if (instruction->op == DRV_GPU_IR_FENCE)
 		return 0;
+	if (instruction->op == DRV_GPU_IR_STORE_OUTPUT)
+		return 0;
+	if (instruction->op == DRV_GPU_IR_KILL)
+		return 0;
+
+	/* A sample defines four values, which its lowering gives registers. */
+	if (instruction->op == DRV_GPU_IR_SAMPLE)
+		return 0;
+	if (instruction->op == DRV_GPU_IR_SAMPLE_LOD)
+		return 0;
+	if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS)
+		return 0;
 	if (instruction->op == DRV_GPU_IR_STORE_STORAGE)
 		return 0;
 
@@ -652,6 +737,14 @@ nvrtx_sm75_map_uniforms(
 			binary->storage[binary->storage_count].set = uniform->set;
 			binary->storage[binary->storage_count].binding = uniform->binding;
 			binary->storage_count++;
+		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_SAMPLED_IMAGE) {
+			/* A sampled image takes the next texture handle. */
+			if (binary->texture_count == NVRTX_SM75_CB_TEXTURES_MAX)
+				return nvrtx_sm75_refuse(lowering, ENOTSUP, "more sampled images than texture handles");
+			lowering->slot[index] = binary->texture_count;
+			binary->textures[binary->texture_count].set = uniform->set;
+			binary->textures[binary->texture_count].binding = uniform->binding;
+			binary->texture_count++;
 		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_BLOCK) {
 			/* A uniform buffer takes the next constant buffer. */
 			if (binary->uniform_count == NVRTX_SM75_CB_UNIFORM_MAX)
@@ -744,6 +837,20 @@ nvrtx_sm75_lower(
 	case DRV_GPU_IR_BARRIER:
 	case DRV_GPU_IR_FENCE:
 		error = nvrtx_sm75_lower_sync(lowering, instruction);
+		return error;
+	case DRV_GPU_IR_LOAD_INPUT:
+		error = nvrtx_sm75_lower_input(lowering, instruction, dst);
+		return error;
+	case DRV_GPU_IR_STORE_OUTPUT:
+		error = nvrtx_sm75_lower_output(lowering, instruction);
+		return error;
+	case DRV_GPU_IR_SAMPLE:
+	case DRV_GPU_IR_SAMPLE_LOD:
+	case DRV_GPU_IR_SAMPLE_BIAS:
+		error = nvrtx_sm75_lower_sample(lowering, instruction);
+		return error;
+	case DRV_GPU_IR_KILL:
+		error = nvrtx_sm75_lower_kill(lowering, instruction);
 		return error;
 	case DRV_GPU_IR_CONST:
 	case DRV_GPU_IR_ICONST:
@@ -884,7 +991,7 @@ nvrtx_sm75_lower_alu(
 		nvrtx_sm75_shift(&word, dst, a.value, &b, 1, 1);
 		break;
 	default:
-		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet (stage A)");
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
 	}
 
 	/* One instruction of fixed latency. */
@@ -2065,6 +2172,559 @@ nvrtx_sm75_extend_loops(
 }
 
 /*
+ * Prepares a graphics program: a fragment program's colour outputs take
+ * R0 onward, four registers for each location it writes in ascending
+ * order (the registers the hardware reads at EXIT), which no value may
+ * take; a vertex program's store request starts empty.
+ */
+static int
+nvrtx_sm75_prepare_graphics(
+	struct nvrtx_sm75_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *instruction;
+	uint32_t written;
+	uint32_t location;
+	uint32_t index;
+	uint32_t next;
+
+	ir = lowering->ir;
+
+	/* No colour location has registers yet, and nothing is stored. */
+	for (location = 0U; location < NVRTX_SM75_COLOR_TARGETS; location++)
+		lowering->color_reg[location] = NVRTX_SM75_NO_REG;
+	lowering->inverse_w = NVRTX_SM75_NO_REG;
+	lowering->store_first = 0xffU;
+	lowering->store_last = 0U;
+
+	/* Only a fragment program has colour outputs. */
+	if (ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return 0;
+
+	/* The locations the program writes. */
+	written = 0U;
+	for (index = 0U; index < ir->instruction_count; index++) {
+		instruction = &ir->instructions[index];
+		if (instruction->op != DRV_GPU_IR_STORE_OUTPUT)
+			continue;
+		lowering->index = index;
+		if (instruction->location >= NVRTX_SM75_COLOR_TARGETS || instruction->component > 3U)
+			return nvrtx_sm75_refuse(lowering, ENOTSUP, "a fragment output other than a colour (depth, second colour)");
+		written |= 1U << instruction->location;
+	}
+	lowering->index = 0U;
+
+	/* Four registers for each, from R0, which stay taken. */
+	next = 0U;
+	for (location = 0U; location < NVRTX_SM75_COLOR_TARGETS; location++) {
+		if ((written & (1U << location)) == 0U)
+			continue;
+		lowering->color_reg[location] = next;
+		for (index = 0U; index < 4U; index++)
+			lowering->taken[next + index] = 1U;
+		next += 4U;
+	}
+	if (next > lowering->highest)
+		lowering->highest = next;
+
+	/* Succeeded: the outputs have their registers. */
+	return 0;
+}
+
+/*
+ * Starts a fragment program that interpolates in perspective: w at the
+ * pixel (the position's w, passed screen-linear) and its reciprocal, which
+ * every perspective input is multiplied by (NAK's SM70 way).
+ */
+static int
+nvrtx_sm75_prologue(
+	struct nvrtx_sm75_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *instruction;
+	const struct drv_gpu_shader_ir_io *input;
+	struct nvrtx_sm75_word word;
+	uint32_t index;
+	int perspective;
+	int error;
+
+	ir = lowering->ir;
+
+	/* Only a fragment program interpolates. */
+	if (ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return 0;
+
+	/* Whether any input is read in perspective. */
+	perspective = 0;
+	for (index = 0U; index < ir->instruction_count; index++) {
+		instruction = &ir->instructions[index];
+		if (instruction->op != DRV_GPU_IR_LOAD_INPUT || instruction->location >= 64U)
+			continue;
+		input = nvrtx_sm75_input(ir, instruction->location);
+		if (input != NULL && input->flat == 0U && input->noperspective == 0U)
+			perspective = 1;
+	}
+	if (perspective == 0)
+		return 0;
+
+	/* w, then 1 / w in a register that stays taken. */
+	error = nvrtx_sm75_take(lowering, &lowering->inverse_w);
+	if (error != 0)
+		return error;
+
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_ipa(&word, lowering->inverse_w, NVRTX_SM75_ATTR_POSITION_W, NVRTX_SM75_IPA_PASS);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+	if (error != 0)
+		return error;
+
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_mufu(&word, lowering->inverse_w, NVRTX_SM75_MUFU_RCP, lowering->inverse_w);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: 1 / w is ready. */
+	nvrtx_sm75_sph_set(lowering->binary->sph, NVRTX_SM75_SPH_IMAP_AB_LOW + NVRTX_SM75_ATTR_POSITION_W / 4U, 1U, 1U);
+	return 0;
+}
+
+/*
+ * Lowers an input: a vertex program's attribute word (ALD), its vertex or
+ * instance number; a fragment program's interpolated word (IPA, in
+ * perspective multiplied by 1 / w), or the pixel's position.  The
+ * header's input map records each.
+ */
+static int
+nvrtx_sm75_lower_input(
+	struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction,
+	uint32_t dst)
+{
+	const struct drv_gpu_shader_ir_io *input;
+	struct nvrtx_sm75_word word;
+	struct nvrtx_sm75_src a;
+	struct nvrtx_sm75_src b;
+	uint32_t *sph;
+	uint32_t address;
+	uint32_t slot;
+	uint32_t mode;
+	int error;
+
+	sph = lowering->binary->sph;
+	if (instruction->component > 3U)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "an input component past the fourth");
+
+	/* A vertex program: a generic attribute, the vertex number or the instance number. */
+	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
+		if (instruction->location < 32U) {
+			address = NVRTX_SM75_ATTR_GENERIC + instruction->location * 16U + instruction->component * 4U;
+			nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_IMAP_GENERIC_LOW + (address - NVRTX_SM75_ATTR_GENERIC) / 4U, 1U, 1U);
+		} else if (instruction->location == DRV_GPU_SHADER_LOCATION_VERTEX_INDEX) {
+			address = NVRTX_SM75_ATTR_VERTEX_ID;
+			nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_IMAP_C_VTG_LOW + (address - 0x2c0U) / 4U, 1U, 1U);
+		} else if (instruction->location == DRV_GPU_SHADER_LOCATION_INSTANCE_INDEX) {
+			address = NVRTX_SM75_ATTR_INSTANCE_ID;
+			nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_IMAP_C_VTG_LOW + (address - 0x2c0U) / 4U, 1U, 1U);
+		} else {
+			return nvrtx_sm75_refuse(lowering, ENOTSUP, "a vertex input not compiled yet");
+		}
+
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_ald(&word, dst, address);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* Only the fragment stage reads interpolated inputs. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "inputs of this stage are not compiled yet");
+
+	/* The pixel's position: screen-linear, passed. */
+	if (instruction->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
+		address = NVRTX_SM75_ATTR_POSITION + instruction->component * 4U;
+		nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_IMAP_AB_LOW + address / 4U, 1U, 1U);
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_ipa(&word, dst, address, NVRTX_SM75_IPA_PASS);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* A located input and its interpolation. */
+	input = NULL;
+	if (instruction->location < 32U)
+		input = nvrtx_sm75_input(lowering->ir, instruction->location);
+	if (input == NULL)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "a fragment input not compiled yet");
+
+	address = NVRTX_SM75_ATTR_GENERIC + instruction->location * 16U + instruction->component * 4U;
+	slot = (address - NVRTX_SM75_ATTR_GENERIC) / 4U;
+	mode = NVRTX_SM75_IMAP_PERSPECTIVE;
+	if (input->noperspective != 0U)
+		mode = NVRTX_SM75_IMAP_SCREEN_LINEAR;
+	if (input->flat != 0U)
+		mode = NVRTX_SM75_IMAP_CONSTANT;
+	nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_IMAP_GENERIC_LOW + slot * 2U, 2U, mode);
+
+	/* The interpolation: a flat input is the provoking vertex's, the others are passed. */
+	nvrtx_sm75_begin(&word);
+	if (mode == NVRTX_SM75_IMAP_CONSTANT) {
+		nvrtx_sm75_ipa(&word, dst, address, NVRTX_SM75_IPA_CONSTANT);
+	} else {
+		nvrtx_sm75_ipa(&word, dst, address, NVRTX_SM75_IPA_PASS);
+	}
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+	if (error != 0)
+		return error;
+
+	/* In perspective, times 1 / w. */
+	if (mode == NVRTX_SM75_IMAP_PERSPECTIVE) {
+		a = nvrtx_sm75_reg(dst);
+		b = nvrtx_sm75_reg(lowering->inverse_w);
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_fmul(&word, dst, &a, &b);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the input is in dst. */
+	return 0;
+}
+
+/*
+ * Lowers an output: a vertex program's attribute word (AST: the position,
+ * the point size or a generic attribute), recorded in the header's output
+ * map and store request; a fragment program's colour word, moved into the
+ * register the hardware reads it from at EXIT and recorded in the header's
+ * targets.
+ */
+static int
+nvrtx_sm75_lower_output(
+	struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	struct nvrtx_sm75_word word;
+	struct nvrtx_sm75_src value;
+	uint32_t *sph;
+	uint32_t address;
+	int error;
+
+	sph = lowering->binary->sph;
+	value = nvrtx_sm75_value(lowering, instruction->src[0]);
+	if (instruction->component > 3U)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "an output component past the fourth");
+
+	/* A fragment program: the colour's register. */
+	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_mov(&word, lowering->color_reg[instruction->location] + instruction->component, &value);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+		if (error != 0)
+			return error;
+		nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_OMAP_TARGETS_LOW + instruction->location * 4U + instruction->component, 1U, 1U);
+		return 0;
+	}
+
+	/* Only the vertex stage stores attributes. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "outputs of this stage are not compiled yet");
+
+	/* The attribute's address and its bit of the output map. */
+	if (instruction->location == DRV_GPU_IR_LOCATION_POSITION) {
+		address = NVRTX_SM75_ATTR_POSITION + instruction->component * 4U;
+		nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_OMAP_AB_LOW + address / 4U, 1U, 1U);
+	} else if (instruction->location == DRV_GPU_IR_LOCATION_POINT_SIZE) {
+		address = NVRTX_SM75_ATTR_POINT_SIZE;
+		nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_OMAP_AB_LOW + address / 4U, 1U, 1U);
+	} else if (instruction->location < 32U) {
+		address = NVRTX_SM75_ATTR_GENERIC + instruction->location * 16U + instruction->component * 4U;
+		nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_OMAP_GENERIC_LOW + (address - NVRTX_SM75_ATTR_GENERIC) / 4U, 1U, 1U);
+	} else {
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "a vertex output not compiled yet");
+	}
+
+	/* The store, which reads its data register later. */
+	nvrtx_sm75_mark_store(lowering, address);
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_ast(&word, address, value.value);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_STORE);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the attribute is written. */
+	return 0;
+}
+
+/*
+ * Lowers a 2D sample: the coordinates into a pair, TEX with the image's
+ * handle from constant buffer 0 (the level of detail implicit in a
+ * fragment program, zero in a vertex one, or the instruction's bias or
+ * level), and the four channels into two pairs that become the four
+ * results' registers.
+ */
+static int
+nvrtx_sm75_lower_sample(
+	struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	struct nvrtx_sm75_word word;
+	struct nvrtx_sm75_src value;
+	struct nvrtx_sm75_binary *binary;
+	uint32_t coordinates;
+	uint32_t first;
+	uint32_t second;
+	uint32_t texture;
+	uint32_t lod;
+	uint32_t mode;
+	uint32_t index;
+	int error;
+
+	binary = lowering->binary;
+
+	/* A texel offset is not compiled yet. */
+	if (instruction->component != 0U)
+		return nvrtx_sm75_refuse(lowering, ENOTSUP, "a sample with a texel offset is not compiled yet");
+
+	/* The image's texture handle. */
+	texture = NVRTX_SM75_NO_SLOT;
+	for (index = 0U; index < binary->texture_count; index++) {
+		if (binary->textures[index].set == instruction->location && binary->textures[index].binding == instruction->immediate)
+			texture = index;
+	}
+	if (texture == NVRTX_SM75_NO_SLOT)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "a sample names no sampled image");
+
+	/* The results must be new values. */
+	for (index = 0U; index < 4U; index++) {
+		if (lowering->reg[instruction->dst + index] != NVRTX_SM75_NO_REG)
+			return nvrtx_sm75_refuse(lowering, EINVAL, "a sample's result defined before");
+	}
+
+	/* The level of detail. */
+	lod = NVRTX_SM75_RZ;
+	mode = NVRTX_SM75_TEX_LOD_AUTO;
+	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		mode = NVRTX_SM75_TEX_LOD_ZERO;
+	if (instruction->op == DRV_GPU_IR_SAMPLE_LOD) {
+		mode = NVRTX_SM75_TEX_LOD_EXPLICIT;
+		lod = lowering->reg[instruction->src[2]];
+	}
+	if (instruction->op == DRV_GPU_IR_SAMPLE_BIAS) {
+		mode = NVRTX_SM75_TEX_LOD_BIAS;
+		lod = lowering->reg[instruction->src[2]];
+	}
+
+	/* The coordinates' pair and the results' two pairs. */
+	error = nvrtx_sm75_take_pair(lowering, &coordinates);
+	if (error != 0)
+		return error;
+	error = nvrtx_sm75_take_pair(lowering, &first);
+	if (error != 0) {
+		nvrtx_sm75_give(lowering, coordinates);
+		nvrtx_sm75_give(lowering, coordinates + 1U);
+		return error;
+	}
+	error = nvrtx_sm75_take_pair(lowering, &second);
+	if (error != 0) {
+		nvrtx_sm75_give(lowering, coordinates);
+		nvrtx_sm75_give(lowering, coordinates + 1U);
+		nvrtx_sm75_give(lowering, first);
+		nvrtx_sm75_give(lowering, first + 1U);
+		return error;
+	}
+
+	/* The coordinates. */
+	value = nvrtx_sm75_value(lowering, instruction->src[0]);
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_mov(&word, coordinates, &value);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+	if (error == 0) {
+		value = nvrtx_sm75_value(lowering, instruction->src[1]);
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_mov(&word, coordinates + 1U, &value);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_FIXED);
+	}
+
+	/* The sample. */
+	if (error == 0) {
+		nvrtx_sm75_begin(&word);
+		nvrtx_sm75_tex(&word, first, second, coordinates, lod, mode, NVRTX_SM75_CB_ROOT, NVRTX_SM75_CB_TEXTURES + texture * 4U);
+		error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_VARIABLE_WRITE);
+	}
+
+	/* The coordinates go back; the results' registers are the four values'. */
+	nvrtx_sm75_give(lowering, coordinates);
+	nvrtx_sm75_give(lowering, coordinates + 1U);
+	lowering->reg[instruction->dst] = (uint16_t)first;
+	lowering->reg[instruction->dst + 1U] = (uint16_t)(first + 1U);
+	lowering->reg[instruction->dst + 2U] = (uint16_t)second;
+	lowering->reg[instruction->dst + 3U] = (uint16_t)(second + 1U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the channels are in the results' registers. */
+	return 0;
+}
+
+/* Lowers a discard of the fragments where the Boolean holds: @P0 KILL. */
+static int
+nvrtx_sm75_lower_kill(
+	struct nvrtx_sm75_lowering *lowering,
+	const struct drv_gpu_shader_ir_inst *instruction)
+{
+	struct nvrtx_sm75_word word;
+	int error;
+
+	/* Only a fragment program discards. */
+	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
+		return nvrtx_sm75_refuse(lowering, EINVAL, "a discard outside a fragment program");
+
+	/* P0, then the KILL under it. */
+	error = nvrtx_sm75_predicate(lowering, instruction->src[0]);
+	if (error != 0)
+		return error;
+
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_kill(&word);
+	nvrtx_sm75_guard(&word, NVRTX_SM75_P0, 0);
+	error = nvrtx_sm75_emit(lowering, &word, NVRTX_SM75_CONTROL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the header says the program discards. */
+	nvrtx_sm75_sph_set(lowering->binary->sph, NVRTX_SM75_SPH_KILLS_PIXELS, 1U, 1U);
+	return 0;
+}
+
+/* Finds a fragment program's located input, or NULL. */
+static const struct drv_gpu_shader_ir_io *
+nvrtx_sm75_input(
+	const struct drv_gpu_shader_ir *ir,
+	uint32_t location)
+{
+	uint32_t index;
+
+	/* The input at the location. */
+	for (index = 0U; index < ir->input_count; index++) {
+		if (ir->inputs[index].location == location)
+			return &ir->inputs[index];
+	}
+
+	/* Succeeded in finding none. */
+	return NULL;
+}
+
+/*
+ * Completes a graphics program's header (version 4, NAK's encode_header):
+ * the type and version, the SASS version 1, a fragment program's
+ * multiple-target bit, the global memory bits, a vertex program's store
+ * request.  The maps were set as the program was lowered.
+ */
+static void
+nvrtx_sm75_header(
+	struct nvrtx_sm75_lowering *lowering)
+{
+	struct nvrtx_sm75_binary *binary;
+	const struct drv_gpu_shader_ir *ir;
+	uint32_t index;
+	int global;
+	int stores;
+
+	binary = lowering->binary;
+	ir = lowering->ir;
+
+	/* A compute program has none. */
+	if (ir->stage == DRV_GPU_STAGE_COMPUTE)
+		return;
+	binary->graphics = 1U;
+
+	/* The type, the version and the stage. */
+	if (ir->stage == DRV_GPU_STAGE_FRAGMENT) {
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_TYPE_LOW, 5U, NVRTX_SM75_SPH_TYPE_PS);
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SHADER_TYPE_LOW, 4U, NVRTX_SM75_SPH_PIXEL);
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_MRT_ENABLE, 1U, 1U);
+	} else {
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_TYPE_LOW, 5U, NVRTX_SM75_SPH_TYPE_VTG);
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SHADER_TYPE_LOW, 4U, NVRTX_SM75_SPH_VERTEX);
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_STORE_REQ_START_LOW, 8U, lowering->store_first);
+		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_STORE_REQ_END_LOW, 8U, lowering->store_last);
+	}
+	nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_VERSION_LOW, 5U, NVRTX_SM75_SPH_VERSION);
+	nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_SASS_VERSION_LOW, 4U, 1U);
+
+	/* Whether it loads or stores global memory. */
+	global = 0;
+	stores = 0;
+	for (index = 0U; index < ir->instruction_count; index++) {
+		if (ir->instructions[index].op == DRV_GPU_IR_LOAD_STORAGE)
+			global = 1;
+		if (ir->instructions[index].op == DRV_GPU_IR_STORE_STORAGE || ir->instructions[index].op == DRV_GPU_IR_ATOMIC) {
+			global = 1;
+			stores = 1;
+		}
+	}
+	nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_LOAD_OR_STORE, 1U, (uint32_t)global);
+	nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_GLOBAL_STORE, 1U, (uint32_t)stores);
+}
+
+/* Sets a field of the header. */
+static void
+nvrtx_sm75_sph_set(
+	uint32_t *sph,
+	unsigned low,
+	unsigned bits,
+	uint32_t value)
+{
+	unsigned bit;
+	uint32_t mask;
+
+	/* Each bit of the field into its word. */
+	for (bit = 0U; bit < bits; bit++) {
+		mask = 1U << ((low + bit) % 32U);
+		if (((value >> bit) & 1U) != 0U) {
+			sph[(low + bit) / 32U] |= mask;
+		} else {
+			sph[(low + bit) / 32U] &= ~mask;
+		}
+	}
+}
+
+/* Widens a vertex program's store request to an attribute word's address. */
+static void
+nvrtx_sm75_mark_store(
+	struct nvrtx_sm75_lowering *lowering,
+	uint32_t address)
+{
+	/* The first and the last word stored. */
+	if (address / 4U < lowering->store_first)
+		lowering->store_first = address / 4U;
+	if (address / 4U > lowering->store_last)
+		lowering->store_last = address / 4U;
+}
+
+/* Reports nonzero for the sampling operations stage E compiles. */
+static int
+nvrtx_sm75_is_sample(
+	enum drv_gpu_shader_ir_op op)
+{
+	/* The implicit, the explicit and the biased level of detail. */
+	if (op == DRV_GPU_IR_SAMPLE)
+		return 1;
+	if (op == DRV_GPU_IR_SAMPLE_LOD)
+		return 1;
+	if (op == DRV_GPU_IR_SAMPLE_BIAS)
+		return 1;
+
+	/* Succeeded: another operation. */
+	return 0;
+}
+
+/*
  * Computes a storage word's address into a new register pair: the
  * buffer's 64-bit address (LDC.64 from the table) plus the 32-bit byte
  * offset (IMAD.WIDE.U32 offset * 1 + address).
@@ -2244,6 +2904,9 @@ nvrtx_sm75_finish(
 			return error;
 	}
 
+	/* A graphics program's header. */
+	nvrtx_sm75_header(lowering);
+
 	/* The size and the registers (at least four, the hardware's two included). */
 	lowering->binary->code_words = lowering->count * NVRTX_SM75_INSTRUCTION_WORDS;
 	lowering->binary->gpr_count = lowering->highest + NVRTX_SM75_GPR_RESERVED;
@@ -2333,6 +2996,7 @@ nvrtx_sm75_retire(
 	uint32_t sources[4];
 	uint32_t value;
 	uint32_t source;
+	int is_sample;
 	int defines;
 	int count;
 
@@ -2350,6 +3014,18 @@ nvrtx_sm75_retire(
 		if (defines != 0 && value == instruction->dst)
 			continue;
 
+		nvrtx_sm75_give(lowering, lowering->reg[value]);
+		lowering->reg[value] = NVRTX_SM75_NO_REG;
+	}
+
+	/* A sample's results nothing reads afterwards go back at once. */
+	is_sample = nvrtx_sm75_is_sample(instruction->op);
+	for (source = 0U; is_sample != 0 && source < 4U; source++) {
+		value = instruction->dst + source;
+		if (lowering->last_use[value] > lowering->index + 1U)
+			continue;
+		if (lowering->reg[value] == NVRTX_SM75_NO_REG)
+			continue;
 		nvrtx_sm75_give(lowering, lowering->reg[value]);
 		lowering->reg[value] = NVRTX_SM75_NO_REG;
 	}
