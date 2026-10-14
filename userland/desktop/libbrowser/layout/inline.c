@@ -291,10 +291,6 @@ inline_vertical_absolute_grid(
 		if (framed_child) {
 			if (!horizontal_lr && !horizontal_rl && !horizontal_rtl)
 				return 0;
-			for (index = 0; index < 4; index++) {
-				if (box->margin[index] != 0)
-					return 0;
-			}
 		}
 	} else if (parent->style.writing_mode != box->style.writing_mode &&
 	    !((parent->style.writing_mode == CSS_WRITING_VERTICAL_LR &&

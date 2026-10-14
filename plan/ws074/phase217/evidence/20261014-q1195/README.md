@@ -1,0 +1,9 @@
+# q1195-i01 — horizontal Grid vertical absolute child margin and frame
+
+The bounded vertical inline text path now admits the three mapped absolute child placements of an unframed horizontal LTR/RTL 2×2 inline Grid when their physical margin, border and padding are present together. `inline_vertical_room` already subtracts their physical frame and margins; the additional margin rejection prevented that path. Parent frame and other child placements retain their previous path.
+
+The [minimal LTR/RTL page](horizontal-grid-vertical-abs-margin-frame.html) changed all six rectangles from `13,2,52,20|178,104,58,40|113,162,52,50|163,2,52,20|78,104,58,40|13,162,52,50` in the [before layout](browser-before.layout.txt) to `13,2,26,46|190,92,46,52|113,162,56,46|163,2,26,46|90,92,46,52|13,162,56,46` in the [after layout](browser-after.layout.txt), matching [independent Chromium](chromium.dom.html). Fixed [non-static positioned 011](wpt-011.json) is now whole PASS with all four callbacks PASS. Previously passing [007](wpt-007.json), [008](wpt-008.json), [009](wpt-009.json), and [010](wpt-010.json) remain whole PASS. Fixed WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`, q1012 manifest, localhost HTTP, fixed fonts, 5 s settle, 20 s process bound.
+
+[Warning-free build](build.log), [host CSS](css.log) 51/51, [JS](js.log) 14/14, [Grid](grid.log) 48/48 PASS. [Acid report](acid-report.json): Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 differences, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1195-i01 cleared its finite partial criteria; p217/p189/p173 whole remain unmet. Next handle the parent Grid frame and auto insets in non-static012. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.

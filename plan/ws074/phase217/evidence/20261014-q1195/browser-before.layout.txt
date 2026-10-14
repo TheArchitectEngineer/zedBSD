@@ -1,0 +1,88 @@
+console: 13,2,52,20|178,104,58,40|113,162,52,50|163,2,52,20|78,104,58,40|13,162,52,50
+viewport 1024.00 x 768.00, document height 304.00
+block <html> 0.00 0.00 1024.00 304.00
+  block <body> 8.00 8.00 1008.00 283.00
+    anonymous 8.00 8.00 1008.00 253.00
+      line 8.00 8.00 height 253.00 baseline 258.00
+        inline-block 8.00 w 250.00 h 250.00
+        text 258.00 w 4.80 16px " "
+        inline-block 262.80 w 250.00 h 250.00
+      block <div> 8.00 8.00 250.00 250.00
+        block <div> 21.00 10.00 52.00 20.00
+          line 29.00 14.00 height 10.00 baseline 22.50
+            text 29.00 w 6.00 10px "X"
+            text 35.00 w 6.00 10px " "
+            text 41.00 w 12.00 10px "XX"
+            text 53.00 w 6.00 10px " "
+            text 59.00 w 6.00 10px "X"
+        block <div> 186.00 112.00 58.00 40.00
+          line 194.00 116.00 height 10.00 baseline 124.50
+            text 194.00 w 12.00 10px "XX"
+            text 206.00 w 6.00 10px " "
+            text 212.00 w 6.00 10px "X"
+          line 194.00 126.00 height 10.00 baseline 134.50
+            text 194.00 w 6.00 10px "X"
+            text 200.00 w 6.00 10px " "
+            text 206.00 w 18.00 10px "XXX"
+            text 224.00 w 6.00 10px " "
+            text 230.00 w 6.00 10px "X"
+          line 194.00 136.00 height 10.00 baseline 144.50
+            text 194.00 w 12.00 10px "XX"
+            text 206.00 w 6.00 10px " "
+            text 212.00 w 18.00 10px "XXX"
+        block <div> 121.00 170.00 52.00 50.00
+          line 141.00 174.00 height 10.00 baseline 182.50
+            text 141.00 w 12.00 10px "XX"
+            text 153.00 w 6.00 10px " "
+            text 159.00 w 6.00 10px "X"
+          line 135.00 184.00 height 10.00 baseline 192.50
+            text 135.00 w 6.00 10px "X"
+            text 141.00 w 6.00 10px " "
+            text 147.00 w 18.00 10px "XXX"
+          line 159.00 194.00 height 10.00 baseline 202.50
+            text 159.00 w 6.00 10px "X"
+          line 129.00 204.00 height 10.00 baseline 212.50
+            text 129.00 w 12.00 10px "XX"
+            text 141.00 w 6.00 10px " "
+            text 147.00 w 18.00 10px "XXX"
+      block <div> 262.80 8.00 250.00 250.00
+        block <div> 425.80 10.00 52.00 20.00
+          line 433.80 14.00 height 10.00 baseline 22.50
+            text 433.80 w 6.00 10px "X"
+            text 439.80 w 6.00 10px " "
+            text 445.80 w 12.00 10px "XX"
+            text 457.80 w 6.00 10px " "
+            text 463.80 w 6.00 10px "X"
+        block <div> 340.80 112.00 58.00 40.00
+          line 366.80 116.00 height 10.00 baseline 124.50
+            text 366.80 w 12.00 10px "XX"
+            text 378.80 w 6.00 10px " "
+            text 384.80 w 6.00 10px "X"
+          line 348.80 126.00 height 10.00 baseline 134.50
+            text 348.80 w 6.00 10px "X"
+            text 354.80 w 6.00 10px " "
+            text 360.80 w 18.00 10px "XXX"
+            text 378.80 w 6.00 10px " "
+            text 384.80 w 6.00 10px "X"
+          line 354.80 136.00 height 10.00 baseline 144.50
+            text 354.80 w 12.00 10px "XX"
+            text 366.80 w 6.00 10px " "
+            text 372.80 w 18.00 10px "XXX"
+        block <div> 275.80 170.00 52.00 50.00
+          line 295.80 174.00 height 10.00 baseline 182.50
+            text 295.80 w 12.00 10px "XX"
+            text 307.80 w 6.00 10px " "
+            text 313.80 w 6.00 10px "X"
+          line 289.80 184.00 height 10.00 baseline 192.50
+            text 289.80 w 6.00 10px "X"
+            text 295.80 w 6.00 10px " "
+            text 301.80 w 18.00 10px "XXX"
+          line 313.80 194.00 height 10.00 baseline 202.50
+            text 313.80 w 6.00 10px "X"
+          line 283.80 204.00 height 10.00 baseline 212.50
+            text 283.80 w 12.00 10px "XX"
+            text 295.80 w 6.00 10px " "
+            text 301.80 w 18.00 10px "XXX"
+    block <pre> 8.00 274.00 1008.00 17.00
+      line 8.00 274.00 height 17.00 baseline 287.00
+        text 8.00 w 592.56 13px "13,2,52,20|178,104,58,40|113,162,52,50|163,2,52,20|78,104,58,40|13,162,52,50"
