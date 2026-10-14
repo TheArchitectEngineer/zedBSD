@@ -8,6 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
+Resume point: p001 の設計の第 1 版（[design.md](design.md)）を書いた。review を待たずに p002（VCHIQ の核）へ。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-14）
@@ -37,7 +38,7 @@ Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202
 
 | ID | 内容 | 見積もり | 依存 |
 | --- | --- | --- | --- |
-| ws236-p001 | 調査と設計: VCHIQ・MMAL の message、参考の source の license、MMAL の decode の順・遅れの設定、Vulkan Video の stateless の API との橋渡しの設計、VkImage の memory、V3D の device に queue を足すか別の device か | 6 LW | — |
+| [ws236-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)、in-progress: 第 1 版、review 待ち）: VCHIQ・MMAL の message、参考の source の license、MMAL の decode の順・遅れの設定、Vulkan Video の stateless の API との橋渡しの設計、VkImage の memory、V3D の device に queue を足すか別の device か | 6 LW | — |
 | ws236-p002 | kernel: VCHIQ の driver の核（WS207 p004 と共用） | 10 LW | p001 |
 | ws236-p003 | kernel: MMAL の `video_decode` の client（H.264、port・buffer・EOS・flush） | 10 LW | p002 |
 | ws236-p004 | kernel の Vulkan の executor: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
