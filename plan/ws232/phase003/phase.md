@@ -47,3 +47,8 @@ Parent: [WS232](../ws.md)
 
 - `docs/release/zedbsd-1.0.0-beta2-guide.md` の 204 行「has a **Retro** menu at the top」が古くなった。担当の範囲外なので Q1 に直しを依頼した（例「has a **Retro** menu, right after Base, for …」）。
 - PC-98 の SCSI の driver は無い（作るなら別の WS）。
+
+## 後の変更（2026-10-14）
+
+- Drivers の分類の規則（`menu.list` の platform の行、共通の ACPI・BCM2711 BT を PC-98 の Platform にも出す点）は [p004](../phase004/phase.md) で置き換えた:
+  Platform は選んだ board の driver だけ、他の分類はどの CPU でも同じ。PC-98 の Platform の中身（7 行）と walk の試験は p004 の `check_platform_drivers` に残した。
