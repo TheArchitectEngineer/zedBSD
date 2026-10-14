@@ -146,9 +146,9 @@ static int values_one_shadow(const struct css_token *tokens, size_t count, struc
 static int values_outline(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
 static int values_clip_path(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_tracks(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_value *value);
-static int values_track_list(const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
-static int values_one_track(const struct css_token *tokens, size_t count, struct css_declared_track *track);
-static int values_track_size(const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
+static int values_track_list(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_track_list *list, int depth);
+static int values_one_track(struct css_parse *parse, const struct css_token *tokens, size_t count, struct css_declared_track *track);
+static int values_track_size(struct css_parse *parse, const struct css_token *tokens, size_t count, int *kind, struct css_value *size);
 static size_t values_split_at(const struct css_token *tokens, size_t count, int type, uint32_t delim);
 static int values_grid_line(const struct css_token *tokens, size_t count, struct css_value *value);
 static int values_grid_pair(int start, int end, const struct css_token *tokens, size_t count, struct css_declaration *out, size_t *made);
@@ -4557,7 +4557,7 @@ values_tracks(
 	}
 
 	/* The tracks. */
-	error = values_track_list(tokens, count, list, 0);
+	error = values_track_list(parse, tokens, count, list, 0);
 	if (error != 0)
 		return error;
 
@@ -4572,6 +4572,7 @@ values_tracks(
 /* Appends the tracks of a track list (repeat() expanded, one level deep) to a list, up to its room. */
 static int
 values_track_list(
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_track_list *list,
@@ -4642,7 +4643,7 @@ values_track_list(
 
 			/* The tracks once, then again until the count (or the room) runs out. */
 			first = list->count;
-			error = values_track_list(tokens + comma + 1U, end - comma - 2U, list, depth + 1);
+			error = values_track_list(parse, tokens + comma + 1U, end - comma - 2U, list, depth + 1);
 			if (error != 0)
 				return error;
 			added = list->count - first;
@@ -4660,7 +4661,7 @@ values_track_list(
 		}
 
 		/* One track. */
-		error = values_one_track(tokens + index, end - index, &track);
+		error = values_one_track(parse, tokens + index, end - index, &track);
 		if (error != 0)
 			return error;
 		if (list->count < CSS_TRACKS) {
@@ -4680,6 +4681,7 @@ values_track_list(
 /* Parses one track: a size, minmax(minimum, size), or fit-content() (as auto). */
 static int
 values_one_track(
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	struct css_declared_track *track)
@@ -4698,6 +4700,8 @@ values_one_track(
 
 	/* A function: minmax() or fit-content(). */
 	if (tokens[0].type == CSS_TOKEN_FUNCTION) {
+		if (css_ident_equal(&tokens[0], "calc"))
+			return values_track_size(parse, tokens, count, &track->kind, &track->size);
 		is_fit = css_ident_equal(&tokens[0], "fit-content");
 		if (is_fit) {
 			/* Its one length or percentage is nonnegative, even though this pass sizes it as auto. */
@@ -4734,22 +4738,25 @@ values_one_track(
 		if (comma >= count - 1U)
 			return EINVAL;
 		start = values_skip_space(tokens, comma, 1U);
-		error = values_track_size(tokens + start, comma - start, &track->minimum_kind, &track->minimum);
+		error = values_track_size(parse, tokens + start, comma - start, &track->minimum_kind, &track->minimum);
 		if (error != 0)
 			return error;
+		if (track->minimum_kind == CSS_TRACK_FR)
+			return EINVAL;
 		start = values_skip_space(tokens, count - 1U, comma + 1U);
-		error = values_track_size(tokens + start, count - 1U - start, &track->kind, &track->size);
+		error = values_track_size(parse, tokens + start, count - 1U - start, &track->kind, &track->size);
 		return error;
 	}
 
 	/* A plain size. */
-	error = values_track_size(tokens, count, &track->kind, &track->size);
+	error = values_track_size(parse, tokens, count, &track->kind, &track->size);
 	return error;
 }
 
 /* Parses a track size: fr, auto (min-content, max-content), or a length or percentage. */
 static int
 values_track_size(
+	struct css_parse *parse,
 	const struct css_token *tokens,
 	size_t count,
 	int *kind,
@@ -4758,9 +4765,20 @@ values_track_size(
 	int same;
 	int error;
 
-	/* The size is one token, whitespace after it aside. */
+	/* A calculated length uses the existing length calculation parser. */
 	while (count > 1U && tokens[count - 1U].type == CSS_TOKEN_WHITESPACE)
 		count--;
+	if (tokens[0].type == CSS_TOKEN_FUNCTION && css_ident_equal(&tokens[0], "calc")) {
+		if (values_function_length(tokens, count) != count)
+			return EINVAL;
+		*kind = CSS_TRACK_LENGTH;
+		error = values_calc(parse, CSS_PROP_GRID_TEMPLATE_COLUMNS, tokens, count, size);
+		if (error != 0 || size->kind != CSS_VALUE_LENGTH)
+			return EINVAL;
+		return 0;
+	}
+
+	/* An ordinary size is one token. */
 	if (count != 1)
 		return EINVAL;
 	memset(size, 0, sizeof(*size));

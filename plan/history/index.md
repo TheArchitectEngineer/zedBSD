@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1126 / WS074 Grid line-name grammar（2026-10-14）
+## 最新: q1127 / WS074 calculated Grid track lengths（2026-10-14）
+
+[q1127履歴](queue-q1127.md): Grid `calc()` track長で固定columns/rows-valid各19→27/34 subtest。invalid各42/42 whole PASS・旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1127/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1126 / WS074 Grid line-name grammar（2026-10-14）
 
 [q1126履歴](queue-q1126.md): Grid行名構文の検証で固定columns/rows-invalid各40→42/42 subtest、whole FAIL→PASS。valid各19/34・旧PASSとAcid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1126/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

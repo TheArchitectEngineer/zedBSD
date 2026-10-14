@@ -1470,20 +1470,29 @@ grid_fixed_column_baseline(
 	return 1;
 }
 
-/* Resolves a track's length: pixels, or a percentage of the whole (none while measuring); anything else is zero. */
+/* Resolves a track's nonnegative length: pixels or a percentage of the definite whole. */
 static layout_unit
 grid_track_length(
 	const struct css_length *length,
 	layout_unit whole,
 	int measuring)
 {
+	layout_unit resolved;
+
 	/* Pixels. */
-	if (length->unit == CSS_UNIT_PX)
+	if (length->unit == CSS_UNIT_PX) {
+		if (length->value < 0)
+			return 0;
 		return layout_from_px(length->value);
+	}
 
 	/* A percentage of a definite whole. */
-	if (length->unit == CSS_UNIT_PERCENT && measuring == 0)
-		return (layout_unit)((float)whole * length->value / 100.0f) + layout_from_px(length->offset);
+	if (length->unit == CSS_UNIT_PERCENT && measuring == 0) {
+		resolved = (layout_unit)((float)whole * length->value / 100.0f) + layout_from_px(length->offset);
+		if (resolved < 0)
+			return 0;
+		return resolved;
+	}
 
 	/* Nothing definite. */
 	return 0;

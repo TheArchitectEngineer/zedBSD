@@ -49,3 +49,11 @@ Event ws074-p221-q1125-partial-clear-20261014: [証拠](evidence/20261014-q1125/
 ## q1126-i01 結果（2026-10-14 09:49 JST）
 
 Event ws074-p221-q1126-partial-clear-20261014: [証拠](evidence/20261014-q1126/README.md)。Grid track行名群の隣接・予約名・不正token/未閉鎖を拒否し、有効名/repeatを保持。固定columns/rows-invalidは各40→42/42 subtest、whole FAIL→PASS。valid各19/34・旧whole PASS3件維持、後退0。最小host両軸6/6拒否・5/5受理、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1126部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1127-i01 有限部分範囲（2026-10-14 09:51 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（11:21 JSTまで）に適用。Grid track直値と`minmax()`両引数で既存`calc()`長・割合を構文/計算値として受理し、computed負trackを零に丸める。最小CSSOM/幅・行高、固定columns/rows-valid・invalidと旧PASS、CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加。その他math関数/auto-repeat/行名CSSOM、WPT/runner/公開ABI/`plan/master.md`変更なし。p221 whole/p189/p173全件100%は本部分基準外。[CSS Grid §7.2.1](https://www.w3.org/TR/css-grid-2/#track-sizes)、[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1127-i01 結果（2026-10-14 09:54 JST）
+
+Event ws074-p221-q1127-partial-clear-20261014: [証拠](evidence/20261014-q1127/README.md)。Grid直値/minmax両引数の`calc()`長・割合を既存parser/cascadeで扱い、負のcomputed trackを零に丸める。minmax最小側frを拒否。固定columns/rows-valid各19→27/34 subtest、無効値各42/42 whole PASSと旧whole PASS3件維持、後退0。最小host両軸8/8受理・30px/0px geometry、CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1127部分cleared、p221/p189/p173全件100%未達。共有投影/GitHub publication保留。

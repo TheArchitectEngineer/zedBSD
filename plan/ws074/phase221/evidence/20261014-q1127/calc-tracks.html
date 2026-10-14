@@ -1,0 +1,28 @@
+<!doctype html><div id="grid"><div id="child"></div></div>
+<script>
+var grid = document.getElementById("grid");
+var child = document.getElementById("child");
+grid.style.cssText = "display:grid;width:100px;height:100px";
+var values = ["calc(-0.5em + 10px)", "calc(0.5em + 10px)",
+              "calc(30% + 40vw)", "minmax(calc(-0.5em + 10px), min-content)",
+              "minmax(calc(0.5em + 10px), 5fr)",
+              "minmax(calc(30% + 40vw), 10px)",
+              "minmax(max-content, calc(-0.5em + 10px))",
+              "minmax(auto, calc(0.5em + 10px))"];
+["grid-template-columns", "grid-template-rows"].forEach(function (property) {
+  var accepted = 0;
+  values.forEach(function (value) {
+    grid.style.removeProperty(property);
+    grid.style.setProperty(property, value);
+    if (grid.style.getPropertyValue(property) !== "") accepted++;
+  });
+  grid.style.setProperty(property, "calc(10px + 20px)");
+  var positive = child.getBoundingClientRect();
+  grid.style.setProperty(property, "calc(10px - 20px)");
+  var negative = child.getBoundingClientRect();
+  var axis = property === "grid-template-columns" ? "width" : "height";
+  console.log(property + "=" + accepted + "/" + values.length +
+              " accepted," + Math.round(positive[axis]) + " positive," +
+              Math.round(negative[axis]) + " negative");
+});
+</script>

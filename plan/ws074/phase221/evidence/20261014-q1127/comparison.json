@@ -1,0 +1,83 @@
+{
+  "/css/css-grid/abspos/positioned-grid-descendants-001.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 100,
+    "after_pass": 100,
+    "total": 100,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/alignment/grid-alignment-style-changes-001.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 6,
+    "after_pass": 6,
+    "total": 6,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-auto-columns-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 16,
+    "after_pass": 16,
+    "total": 16,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-columns-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 42,
+    "after_pass": 42,
+    "total": 42,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-columns-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 19,
+    "after_pass": 27,
+    "total": 34,
+    "improved": [
+      "e.style['grid-template-columns'] = \"calc(-0.5em + 10px)\" should set the property value",
+      "e.style['grid-template-columns'] = \"calc(0.5em + 10px)\" should set the property value",
+      "e.style['grid-template-columns'] = \"calc(30% + 40vw)\" should set the property value",
+      "e.style['grid-template-columns'] = \"minmax(calc(-0.5em + 10px), min-content)\" should set the property value",
+      "e.style['grid-template-columns'] = \"minmax(calc(0.5em + 10px), 5fr)\" should set the property value",
+      "e.style['grid-template-columns'] = \"minmax(calc(30% + 40vw), 10px)\" should set the property value",
+      "e.style['grid-template-columns'] = \"minmax(max-content, calc(-0.5em + 10px))\" should set the property value",
+      "e.style['grid-template-columns'] = \"minmax(auto, calc(0.5em + 10px))\" should set the property value"
+    ],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-rows-invalid.html": {
+    "before_outcome": "pass",
+    "after_outcome": "pass",
+    "before_pass": 42,
+    "after_pass": 42,
+    "total": 42,
+    "improved": [],
+    "regressed": []
+  },
+  "/css/css-grid/parsing/grid-template-rows-valid.html": {
+    "before_outcome": "fail",
+    "after_outcome": "fail",
+    "before_pass": 19,
+    "after_pass": 27,
+    "total": 34,
+    "improved": [
+      "e.style['grid-template-rows'] = \"calc(-0.5em + 10px)\" should set the property value",
+      "e.style['grid-template-rows'] = \"calc(0.5em + 10px)\" should set the property value",
+      "e.style['grid-template-rows'] = \"calc(30% + 40vw)\" should set the property value",
+      "e.style['grid-template-rows'] = \"minmax(calc(-0.5em + 10px), min-content)\" should set the property value",
+      "e.style['grid-template-rows'] = \"minmax(calc(0.5em + 10px), 5fr)\" should set the property value",
+      "e.style['grid-template-rows'] = \"minmax(calc(30% + 40vw), 10px)\" should set the property value",
+      "e.style['grid-template-rows'] = \"minmax(max-content, calc(-0.5em + 10px))\" should set the property value",
+      "e.style['grid-template-rows'] = \"minmax(auto, calc(0.5em + 10px))\" should set the property value"
+    ],
+    "regressed": []
+  }
+}
