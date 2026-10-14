@@ -298,6 +298,17 @@ Phase disposition: normal
 5. 合否: (a) 5 本とも `PLAYBACK failed` が無く、dmesg に `not answered`・`came back unread`・`no firmware decoder` が無い（reboot なしで続けて再生できる）、(b) `rpi4-firmware: core clock` の行が video の再生中（全画面の切り替えの時を含む）に出ない（出るのは compositor の起動と、再生の始まり・終わりの境だけ）、(c) 全画面の数の記録（合否ではない）: (ii)・(v) の shown・late（目標 290 以上・10 以下）、(i)・(iv) の shown、`KWL PERF compose frame_ms`、`DRAW acquire_us`。game mode は WS223 のユーザーの決定で入らない（`reason=backend errno=21` は期待どおり）。(d) `execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
 6. 止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
 
+### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
+
+- **表示の速さは compositor の frame の速さで決まっている**: T1-685 の窓の 1080p60（r-c）で `KWL PERF compose frames=118`／5 s（23.6 fps）、`frame_ms=25`（frame の始まりから完了まで）、videoplayer の `DRAW` も 1 秒 24 frame で `acquire_us` 26 ms（compositor が前の image を返すのを待つ）。compositor は frame を 1 つずつ（`in_flight`）出し、完了の後に窓の commit を最大 frame の半分待つ（`frame_wait_ms`、display.c）ので、frame_ms 25 ms なら 1 frame 約 40 ms。
+- **frame_ms 25 ms の中身は V3D の executor の順番待ち**: compositor 自身の GPU の仕事は窓の image の TFU（1280x720 RGBA、TFU 1 job 平均 1.7 ms）と 240 tile の 1 pass（約 2.5〜3 ms）だけ。executor（1 本）は compositor・videoplayer（Y・UV の TFU 2 job と 1 pass）・decode の step を交互に流し、`v3d: perf` busy 86〜91%・subs 280/2 s・1 sub 平均 6.2 ms。表示 1 frame（24 fps）あたり executor 約 37 ms（decode 2 picture 分を含む）。
+- **60 fps に要る量**: 表示 1 frame あたりの executor の仕事を約 37 ms から 16 ms 未満へ（半分以下）。videoplayer 側（decode の要求の削り、presenter の重ね）は合わせて数 ms で、届かない。大きい所は 1 frame に 3 回の TFU（約 5 ms）と 2 回の 240 tile の pass（約 5〜6 ms）と decode の step。
+- **削り所の候補（ユーザーの判断、Q1 が master の未決に記録済みの A・B に対応）**:
+  - A1（compositor）: 出力と同じ大きさの不透明な全画面の窓は、TFU の snapshot と quad の描画をやめ、client の image を swapchain の image へ 1 回の写し（raster→raster）で出す。compositor の 1 frame の GPU を約 4.5 ms → 2 ms 級。
+  - A2（compositor）: frame の重ね（`in_flight` を 2 に）と `frame_wait_ms` の見直しで、executor の順番待ちを frame の間隔に足さない。
+  - B（WS214 p005）: 再生中の窓・全画面を HVS の plane に載せ、compositor の合成と窓の TFU を無くす（compositor が持ち主のまま）。
+  - V1（videoplayer・kernel、要調べ）: V3D の TMU が raster の texture を読めれば、Y・UV の TFU 2 job（約 3 ms）を無くせる（読みは遅くなるので pass の時間との差し引き）。
+
 ### ユーザーの判断が要る点（記録、P3 は先へ進む）
 
 - **窓の再生の 60 fps**: 窓では compositor の合成の pass（GPU 約 8 ms/frame の見込み）と窓の image の TFU が毎 frame 要り、videoplayer 側だけでは届かない。案は (A) compositor の合成の短縮（窓の下の層を描かない遮蔽の省略など、WS141 p013・WS211 の範囲）、(B) WS214（窓を HVS の plane に載せる）の p005 で再生中の窓を plane に載せる、(C) 60 fps は全画面（game mode）だけを目標にする。~~P3 は (C) の道（`--fullscreen`）を先に確かめる。~~ 2026-10-16 訂正（P3 新世代、Q1）: (C) の game mode は WS223 のユーザーの決定（2026-10-13「Video Playerは、Game Modeをやめます」）に反するので取らない。全画面も合成で、60 fps の道は (A)・(B)・WS223 の見直しのどれかをユーザーが選ぶ（Q1 が master の未決に記録）。
