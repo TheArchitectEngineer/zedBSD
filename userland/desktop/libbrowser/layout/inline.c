@@ -230,14 +230,18 @@ inline_vertical_absolute_grid(
 	int horizontal_lr;
 	int horizontal_rl;
 	int horizontal_rtl;
+	int horizontal_auto;
 	int framed_child;
+	int framed_parent;
 
 	/* Auto or temporarily resolved pixel widths enter positioned fixed-track Grids. */
 	parent = box->parent;
 	horizontal_lr = 0;
 	horizontal_rl = 0;
 	horizontal_rtl = 0;
+	horizontal_auto = 0;
 	framed_child = 0;
+	framed_parent = 0;
 	if (parent == NULL || box->style.position != CSS_POSITION_ABSOLUTE ||
 	    (box->style.width.unit != CSS_UNIT_AUTO &&
 	    box->style.width.unit != CSS_UNIT_PX) ||
@@ -273,7 +277,17 @@ inline_vertical_absolute_grid(
 		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_PX &&
 		    box->style.offset[CSS_TOP].unit == CSS_UNIT_PX &&
 		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO;
-		if ((!horizontal_lr && !horizontal_rl && !horizontal_rtl) ||
+		horizontal_auto = box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    box->style.grid_column.start == 1 &&
+		    box->style.grid_column.end == 2 &&
+		    box->style.grid_row.start == 1 &&
+		    box->style.grid_row.end == 2 &&
+		    box->style.offset[CSS_LEFT].unit == CSS_UNIT_AUTO &&
+		    box->style.offset[CSS_RIGHT].unit == CSS_UNIT_AUTO &&
+		    box->style.offset[CSS_TOP].unit == CSS_UNIT_AUTO &&
+		    box->style.offset[CSS_BOTTOM].unit == CSS_UNIT_AUTO;
+		if ((!horizontal_lr && !horizontal_rl && !horizontal_rtl &&
+		    !horizontal_auto) ||
 		    parent->style.column_count != 2 || parent->style.row_count != 2 ||
 		    (!horizontal_rtl && (box->style.direction != parent->style.direction ||
 		    box->style.grid_row.start != 1 || box->style.grid_row.end != 2 ||
@@ -284,12 +298,17 @@ inline_vertical_absolute_grid(
 		/* A framed vertical child can still use the row's inline room. */
 		for (index = 0; index < 4; index++) {
 			if (parent->border[index] != 0 || parent->padding[index] != 0)
+				framed_parent = 1;
+			if (framed_parent && !horizontal_auto)
 				return 0;
 			if (box->border[index] != 0 || box->padding[index] != 0)
 				framed_child = 1;
 		}
+		if (horizontal_auto && (!framed_parent || !framed_child))
+			return 0;
 		if (framed_child) {
-			if (!horizontal_lr && !horizontal_rl && !horizontal_rtl)
+			if (!horizontal_lr && !horizontal_rl && !horizontal_rtl &&
+			    !horizontal_auto)
 				return 0;
 		}
 	} else if (parent->style.writing_mode != box->style.writing_mode &&
@@ -307,7 +326,7 @@ inline_vertical_absolute_grid(
 	if (box->style.direction == CSS_DIRECTION_RTL &&
 	    !(parent->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
 	    (horizontal_rtl || (parent->style.direction == CSS_DIRECTION_RTL &&
-	    (horizontal_lr || horizontal_rl)))) &&
+	    (horizontal_lr || horizontal_rl || horizontal_auto)))) &&
 	    (parent->style.writing_mode != box->style.writing_mode ||
 	    parent->style.column_count != 2 || parent->style.row_count != 2))
 		return 0;

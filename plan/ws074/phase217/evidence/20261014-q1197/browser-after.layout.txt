@@ -1,0 +1,48 @@
+console: 81,8,26,46|231,8,26,46|19,8,52,20|19,8,52,20
+viewport 1024.00 x 768.00, document height 605.00
+block <html> 0.00 0.00 1024.00 605.00
+  block <body> 8.00 8.00 1008.00 584.00
+    anonymous 8.00 8.00 1008.00 554.00
+      line 8.00 8.00 height 277.00 baseline 282.00
+        inline-block 8.00 w 276.00 h 274.00
+        text 284.00 w 4.80 16px " "
+        inline-block 288.80 w 276.00 h 274.00
+        text 564.80 w 4.80 16px " "
+        inline-block 569.59 w 276.00 h 274.00
+      line 8.00 285.00 height 277.00 baseline 559.00
+        inline-block 8.00 w 276.00 h 274.00
+      block <div> 11.00 12.00 271.00 262.00
+        block <div> 92.00 20.00 26.00 46.00
+          vertical line 100.00 24.00 width 10.00
+            text 24.00 h 6.00 10px "X"
+            text 30.00 h 6.00 10px " "
+            text 36.00 h 12.00 10px "XX"
+            text 48.00 h 6.00 10px " "
+            text 54.00 h 6.00 10px "X"
+      block <div> 291.80 12.00 271.00 262.00
+        block <div> 522.80 20.00 26.00 46.00
+          vertical line 530.80 24.00 width 10.00
+            text 24.00 h 6.00 10px "X"
+            text 30.00 h 6.00 10px " "
+            text 36.00 h 12.00 10px "XX"
+            text 48.00 h 6.00 10px " "
+            text 54.00 h 6.00 10px "X"
+      block <div> 572.59 12.00 271.00 262.00
+        block <div> 591.59 20.00 52.00 20.00
+          line 599.59 24.00 height 10.00 baseline 32.50
+            text 599.59 w 6.00 10px "X"
+            text 605.59 w 6.00 10px " "
+            text 611.59 w 12.00 10px "XX"
+            text 623.59 w 6.00 10px " "
+            text 629.59 w 6.00 10px "X"
+      block <div> 11.00 289.00 271.00 262.00
+        block <div> 30.00 297.00 52.00 20.00
+          line 38.00 301.00 height 10.00 baseline 309.50
+            text 38.00 w 6.00 10px "X"
+            text 44.00 w 6.00 10px " "
+            text 50.00 w 12.00 10px "XX"
+            text 62.00 w 6.00 10px " "
+            text 68.00 w 6.00 10px "X"
+    block <pre> 8.00 575.00 1008.00 17.00
+      line 8.00 575.00 height 17.00 baseline 588.00
+        text 8.00 w 343.06 13px "81,8,26,46|231,8,26,46|19,8,52,20|19,8,52,20"

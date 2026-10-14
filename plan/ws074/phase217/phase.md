@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1197-i01 結果（2026-10-14 14:13 JST）
+
+Event ws074-p217-q1197-partial-clear-20261014: [証拠](evidence/20261014-q1197/README.md)。framed水平LTR/RTL Gridのall-auto縦lr absolute先頭子に縦inline roomとGrid area右端static Xを適用。独立2矩形Chromium一致、固定non-static012水平2 callbacks先頭子全通過、2番目子でFAIL。縦2 callbacks初回失敗非悪化、旧007–011、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1197有限部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1197-i01 有限部分範囲（2026-10-14 14:08 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（15:38 JSTまで）に適用。positioned horizontal-tb LTR/RTL固定2×2 inline-grid、px tracks/gap0、親非対称px margin/border/padding、直接vertical-lr auto-size ASCII absolute子row1/col1明示span1・全auto inset・justify-self:right・子複合frameで、縦inline測定とGrid area右端static Xを最小修正。独立LTR/RTL最小ページChromium矩形一致、固定non-static012水平2 callback先頭子全検査通過、縦2 callback初回失敗非悪化、旧007–011 whole PASS、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。他子/auto line、WPT/runner/公開ABI/`plan/master.md`変更なし。012 wholeは基準外。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1196-i01 結果（2026-10-14 14:08 JST）
 
 Event ws074-p217-q1196-partial-clear-20261014: [証拠](evidence/20261014-q1196/README.md)。固定012の親/子frame・all-auto insetを水平LTR/RTLと縦lr/rl Grid先頭子の独立4矩形で確認。水平親は縦inline経路拒否と静的X、縦親はstatic Y/Xの別問題。固定WPT raw初回失敗も維持。次は水平親のframed/all-auto縦子を有限修正する。q1196読取部分範囲cleared、p217/p189/p173 whole未達、共有投影/GitHub publication保留。

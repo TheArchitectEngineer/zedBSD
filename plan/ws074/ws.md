@@ -9,7 +9,9 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1196](queue.md) active / p217 framed Grid auto-inset diagnosis。2026-10-14 14:07 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1197](queue.md) active / p217 framed horizontal Grid first vertical auto-inset child。2026-10-14 14:08 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+
+Event ws074-p217-q1197-partial-clear-20261014: [p217](phase217/phase.md) q1197-i01でframed水平LTR/RTL Gridのall-auto縦lr absolute先頭子を修正。[証拠](phase217/evidence/20261014-q1197/README.md)。独立2矩形Chromium一致、固定012水平2 callbacks先頭子全PASS、2番目子でfile whole FAIL継続。旧WPT/host/Acid3差0維持。次は2番目縦rl子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1196-partial-clear-20261014: [p217](phase217/phase.md) q1196-i01で固定012の親/子frame・all-auto insetを独立4矩形とrawで分類。[証拠](phase217/evidence/20261014-q1196/README.md)。水平親は縦inline経路と静的X、縦親はstatic Y/Xが不一致。次は水平親の先頭子、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
