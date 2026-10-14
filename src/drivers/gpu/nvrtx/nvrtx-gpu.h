@@ -62,6 +62,7 @@ enum nvrtx_gsp_state {
 	NVRTX_GSP_NONE = 0,
 	NVRTX_GSP_PREPARED,
 	NVRTX_GSP_REGION_SET,
+	NVRTX_GSP_RUNNING,
 	NVRTX_GSP_FAILED,
 	/* A falcon did not halt or the region could not be torn down: memory is kept until power-off. */
 	NVRTX_GSP_FAILED_HOLD
@@ -159,6 +160,9 @@ struct nvrtx_gpu {
 	struct nvrtx_wpr_layout layout;
 	struct nvrtx_boot_memory memory;
 	struct nvrtx_channel channel;
+	/* The last call's sequence number, and the buffer each received message is copied into. */
+	uint32_t call_sequence;
+	uint8_t *reply;
 
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
@@ -181,6 +185,7 @@ int nvrtx_rom_read(struct nvrtx_gpu *gpu);
 
 int nvrtx_poll(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t mask, uint32_t value, uint32_t timeout_us);
 int nvrtx_falcon_reset(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+int nvrtx_falcon_reset_engine(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 void nvrtx_falcon_load_physical(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 void nvrtx_falcon_dma_system(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t context);
 uint32_t nvrtx_falcon_code_limit(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
@@ -193,6 +198,9 @@ int nvrtx_booter_run(struct nvrtx_gpu *gpu, const struct nvrtx_booter *booter, u
 int nvrtx_region_tear_down(struct nvrtx_gpu *gpu);
 void nvrtx_region_bounds(struct nvrtx_gpu *gpu, uint32_t *low, uint32_t *high);
 uint32_t nvrtx_frts_result(struct nvrtx_gpu *gpu);
+
+int nvrtx_rpc_send(struct nvrtx_gpu *gpu, uint32_t function, const uint8_t *payload, size_t length, int with_sequence, uint32_t *sequence);
+int nvrtx_rpc_wait(struct nvrtx_gpu *gpu, uint32_t function, uint32_t sequence, uint32_t timeout_us, size_t *length);
 
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);

@@ -137,6 +137,8 @@ struct nvrtx_device {
 	struct nvrtx_chip chip;
 	/* Nonzero when the function advertises a function-level reset. */
 	int flr;
+	/* Nonzero when N1 found the firmware's picture in this GPU's VRAM window: the GPU is the primary display. */
+	int gop_on_gpu;
 };
 
 /*

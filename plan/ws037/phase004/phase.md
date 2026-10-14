@@ -2,10 +2,10 @@
 
 # ws037-p004: GSP の起動（P0〜P3・P7）と方式 B（VFIO）の試験の手順
 
-Status: planned（2026-10-14 P1 が設計を具体化。実装は Q1 の割当の後）
+Status: in-progress（2026-10-14 P1。4a〜4e を実装、build と host 試験まで。実機（方式 B）は T1 待ち）
 Disposition: normal
 Parent: [WS037](../ws.md)
-Queue: none（Q1 が作る）
+Queue: Q1 の割当（2026-10-14「p004 を 4a から順に実装して進めること」）
 依存: [p003](../phase003/phase.md) の骨格（commit `8a52c965d`）の main への統合、firmware の package `nvidia-gsp-firmware`（commit `dfa4a2592`）。試験は host 10.0.30.5 の Linux（Debian 13）と VFIO の準備（Q1、[host.md](../host.md)）。
 実行者: phase-runner（high）
 
@@ -111,3 +111,22 @@ qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 8G \
 3. GSP-RM が IOMMU の下の DMA の番地（guest の物理 → host の IOMMU）で動くこと（nouveau の注記では GSP-RM が自分で変換を扱う）。
 4. FLR が無い場合の host の reboot の要否（Q1 が run ごとに記録）。
 5. 570.144 の struct と nouveau の 535 の混在（design 10 節 6）。host 試験で大きさを合わせても、中身の意味は実機でだけ分かる。
+
+## 結果（2026-10-14、P1）
+
+実装は全部 `CONFIG_DRIVER_PCI_NVRTX=y` かつ boot の語 `nvrtx.gsp=1` かつ TU10x の時だけ動く。既定（n）の kernel は nvrtx の symbol 0（`build/ws037-k-n`、rc 0・warning 0・check PASS）。`nvrtx.gsp=1` の無い y の kernel は p003 と同じ（N0・N1 の後 ENODEV）。
+
+| 単位 | commit | 中身 |
+| --- | --- | --- |
+| 4a | `59cd3b4b9` | `nvrtx-gsp.h`・`wire.c`・`image.c`・`layout.c`・`radix3.c`・`queue.c`（hardware に触れない部品） |
+| R0 の config | `0ea563474` | `plan/ws037/tests/config-amd64-nvrtx.mk`（`NVRTX_RUN=R0〜R4`） |
+| 4b | `6229ea0b1` | attach が bind して worker を起こす（suspend は EBUSY）。`file.c`（root の mount を待ち、GSP の image は section の表だけ読んで `.fwimage` を 1 MiB の DMA の chunk へ直に）、`memory.c`、`rom.c`（PRAMIN、だめなら PROM。窓の切り替えだけ書いてすぐ戻す）、`vbios.c`（image の連鎖・BIT・falcon の表・FWSEC v2・command 欄）、`gsp.c`（P0） |
+| 4c | `0a8e41fbd` | `falcon.c`（reset・PIO・boot）、`boot.c`（FWSEC を GSP の falcon で `acr/bl.bin` 経由、booter を SEC2 で、region の解除）。P0 に device info の表から SEC2 の reset bit。P1a（devinit の完了待ち）、P1b（WPR2 が既にあれば書かずに止まる、bus master、FWSEC-FRTS、0x1438 と WPR2 で判定） |
+| 4d | `09d88f135` | `records.c`（system info 928 byte・registry 3 項目・unload・sequencer の解読）、`rpc.c`（送信と doorbell、sequence での照合、sequencer の実行）。P2a（system info と registry を積む → GSP の falcon を RISC-V の mode へ → libos の番地 → booter_load → app の版 → RISC-V の確認）、P2b（init done を 10 s 待つ） |
+| 4e | `82b183ee7` | P3（static info 1656 byte を読み、名前・VRAM・BAR1/BAR2 の根を印に。client・device・subdevice を確保）。P7（unload の call → GSP の mailbox 0x80000000 → GSP の falcon の reset → FWSEC-SB → booter_unload → WPR2 の上限 0） |
+
+- 終わり方: この版は P4 が無いので、worker は届いた段の後に必ず P7（GSP が走っていれば unload と reset、region を張っていれば SB と booter_unload）を流し、DMA の memory を返して終わる。falcon が halt しない・GSP が止まらない時は memory を返さず（`FAILED_HOLD`）、detach も EBUSY（電源断まで）。自動の再試行はしない。
+- struct の大きさと offset（system info 928・static info 1656・RM の確保の引数 120/56/4・WPR の記録 256・RMARGS 72・queue の header）は、参照の header を temp で compile して出した値（`plan/ws037/temp/offsets/`、commit しない）を事実として使い、zedBSD の code では byte の offset で 1 欄ずつ書く（構造体を写さない）。
+- host 試験: `plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS（124 項目、実物の firmware 5 file を含む）、`nvrtx-identify-host-test.sh` PASS（14 case と device info の表）。amd64 の y の kernel rc 0・warning 0・check PASS（+27 KiB）。
+- 未実施: 実機（方式 B の VFIO、方式 A）での全段。方式 B の R0〜R4 を T1 に依頼する（3.4 節）。R4 の合格は「P3 ok: client, device and subdevice」と「P7 ok: region torn down」。
+- 範囲の外のまま: P4 以降（VRAM の allocator・MMU・channel）、display（P8）、text console の切り離し（方式 A の前）、suspend、reboot・shutdown の P7（今は worker が必ず止めて終わるので要らない）。

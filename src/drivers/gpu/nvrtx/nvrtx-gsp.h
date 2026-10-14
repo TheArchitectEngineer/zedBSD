@@ -410,6 +410,96 @@ struct nvrtx_fwsec {
 	uint32_t program_size;
 };
 
+/* The call numbers of the 570.144 resource manager the boot uses. */
+#define NVRTX_CALL_FREE			10U
+#define NVRTX_CALL_UNLOAD		47U
+#define NVRTX_CALL_STATIC_INFO		65U
+#define NVRTX_CALL_CONTINUATION		71U
+#define NVRTX_CALL_SYSTEM_INFO		72U
+#define NVRTX_CALL_REGISTRY		73U
+#define NVRTX_CALL_CONTROL		76U
+#define NVRTX_CALL_ALLOCATE		103U
+
+/* The events the GSP sends on its own (numbers from 0x1000). */
+#define NVRTX_EVENT_FIRST		0x1000U
+#define NVRTX_EVENT_INIT_DONE		0x1001U
+#define NVRTX_EVENT_SEQUENCER		0x1002U
+#define NVRTX_EVENT_LIBOS_PRINT		0x100cU
+
+/* The system information's length, and the unload call's. */
+#define NVRTX_SYSINFO_BYTES		928U
+#define NVRTX_UNLOAD_ARGS_BYTES		8U
+
+/* The CPU sequencer's opcodes. */
+#define NVRTX_SEQ_WRITE			0U
+#define NVRTX_SEQ_MODIFY		1U
+#define NVRTX_SEQ_POLL			2U
+#define NVRTX_SEQ_DELAY			3U
+#define NVRTX_SEQ_STORE			4U
+#define NVRTX_SEQ_CORE_RESET		5U
+#define NVRTX_SEQ_CORE_START		6U
+#define NVRTX_SEQ_CORE_WAIT_HALT	7U
+#define NVRTX_SEQ_CORE_RESUME		8U
+
+/* The static information the firmware reports, and the fields the driver reads of it. */
+#define NVRTX_STATIC_INFO_BYTES		1656U
+#define NVRTX_STATIC_FB_LENGTH_AT	1224U
+#define NVRTX_STATIC_SHORT_NAME_AT	1324U
+#define NVRTX_STATIC_NAME_BYTES		64U
+#define NVRTX_STATIC_BAR1_ROOT_AT	1536U
+#define NVRTX_STATIC_BAR2_ROOT_AT	1544U
+#define NVRTX_STATIC_INTERNAL_CLIENT_AT	1600U
+#define NVRTX_STATIC_UEFI_AT		1614U
+
+/* The allocation call's header and where the resource manager reports its status. */
+#define NVRTX_ALLOC_HEADER_BYTES	44U
+#define NVRTX_ALLOC_STATUS_AT		16U
+
+/* The three classes of the first objects, and their parameter lengths. */
+#define NVRTX_CLASS_ROOT		0x0000U
+#define NVRTX_CLASS_DEVICE		0x0080U
+#define NVRTX_CLASS_SUBDEVICE		0x2080U
+#define NVRTX_ROOT_PARAMS_BYTES		120U
+#define NVRTX_ROOT_PROCESS_AT		4U
+#define NVRTX_DEVICE_PARAMS_BYTES	56U
+#define NVRTX_DEVICE_SHARE_AT		4U
+#define NVRTX_SUBDEVICE_PARAMS_BYTES	4U
+
+/* One resource-manager object: its client, parent, own handle and class. */
+struct nvrtx_object {
+	uint32_t client;
+	uint32_t parent;
+	uint32_t handle;
+	uint32_t class_number;
+};
+
+/* What the system information says about the GPU. */
+struct nvrtx_sysinfo_values {
+	uint64_t registers;
+	uint64_t vram;
+	uint64_t instance;
+	uint64_t bus_device_function;
+	uint64_t user_address_limit;
+	uint16_t vendor;
+	uint16_t device;
+	uint16_t subvendor;
+	uint16_t subdevice;
+	uint32_t revision;
+	int primary;
+};
+
+/*
+ * One decoded command of the CPU sequencer.
+ *
+ * The arguments by opcode: write (address, value), modify (address, mask,
+ * value), poll (address, mask, value, timeout in us, error), delay (us),
+ * store (address, slot).
+ */
+struct nvrtx_seq_command {
+	uint32_t opcode;
+	uint32_t argument[5];
+};
+
 uint32_t nvrtx_get32(const uint8_t *bytes, size_t at);
 uint64_t nvrtx_get64(const uint8_t *bytes, size_t at);
 void nvrtx_put8(uint8_t *bytes, size_t at, uint8_t value);
@@ -445,6 +535,13 @@ void nvrtx_channel_init(struct nvrtx_channel *channel, const struct nvrtx_pages 
 int nvrtx_channel_send(struct nvrtx_channel *channel, uint32_t function, uint32_t sequence, const uint8_t *payload, size_t length);
 int nvrtx_channel_peek(const struct nvrtx_channel *channel, uint32_t *function, uint32_t *sequence, size_t *length, uint32_t *result);
 int nvrtx_channel_receive(struct nvrtx_channel *channel, uint8_t *payload, size_t capacity, size_t *length);
+
+void nvrtx_sysinfo(uint8_t *record, const struct nvrtx_sysinfo_values *values);
+int nvrtx_registry(uint8_t *registry, size_t capacity, size_t *length);
+void nvrtx_unload_args(uint8_t *args);
+size_t nvrtx_alloc_call(uint8_t *call, size_t capacity, const struct nvrtx_object *object, const uint8_t *parameters, size_t parameters_length);
+int nvrtx_sequencer_next(const uint8_t *payload, size_t length, uint32_t *cursor, struct nvrtx_seq_command *command);
+int nvrtx_sequencer_save(uint8_t *payload, size_t length, uint32_t slot, uint32_t value);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);
 int nvrtx_vbios_fwsec(const struct nvrtx_vbios *vbios, struct nvrtx_fwsec *fwsec);

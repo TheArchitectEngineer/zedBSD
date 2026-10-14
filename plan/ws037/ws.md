@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q692（p001）、2026-10-14 から P1（Q1 の割当「P1: RTX」）
-Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。次は p004 の 4a（host だけの部品）から。試験は方式 B（10.0.30.5 の Linux の VFIO）、host の準備は Q1。
+Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。p004 の 4a〜4e（P0〜P3・P7）も実装済み（2026-10-14、build と host 試験まで）。次は T1 の方式 B の R0〜R4 の結果。試験は方式 B（10.0.30.5 の Linux の VFIO）、host の準備は Q1。
 Target: ベータ2（2026-10-16 夕）に既定 off で入れる（2026-10-14 ユーザー、上の Status）。以前: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 
@@ -55,7 +55,7 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 | [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp）、NAK の世代の差、正本と license の監査、interface の対応表、段の印の設計、試験の道 | in-progress（文書と review の反映済み、判断の項目を 2026-10-14 に締めた。clearance は Q1） | なし（host 無しで可） | 6h |
 | [p002](phase002/phase.md) | 試験機（RTX 2070）の調査（読むだけ）と試験の道（A: USB から素で起動、B: VFIO）、今の zedBSD が RTX 2070 の GOP に出ること | planned（host 10.0.30.5 に Linux を入れて方式 B、host の準備は Q1） | [host.md](host.md) | 3〜4h |
 | [p003](phase003/phase.md) | 定数の一括の改名、driver の骨格（PCI・BAR・`CONFIG_DRIVER_PCI_NVRTX`）、段の印 N0（chip の ID を読むだけ） | in-progress（実装・build・host 試験済み、実機は T1 待ち） | p001・p002 | 4h |
-| [p004](phase004/phase.md) | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware（既定 off の firmware の package、`/lib/firmware/nvidia/tu102/`）の load、RISC-V の GSP の起動、RPC の初期化と停止（[design](nvrtx-design.md) の段 P0〜P3・P7）。4a〜4e に分け、どこで切っても既定が変わらない | planned（設計と方式 B の試験の手順） | p003 | 6h〜 |
+| [p004](phase004/phase.md) | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware（既定 off の firmware の package、`/lib/firmware/nvidia/tu102/`）の load、RISC-V の GSP の起動、RPC の初期化と停止（[design](nvrtx-design.md) の段 P0〜P3・P7）。4a〜4e に分け、どこで切っても既定が変わらない | in-progress（4a〜4e 実装・build・host 試験済み、実機（方式 B）は T1 待ち） | p003 | 6h〜 |
 | p005 | VRAM の allocator・MMU・BAR1/BAR2・GR の golden context と TU10x の scrubber・channel・GPFIFO・semaphore の fence・回復（段 P4〜P6） | planning | p004 | 6h〜 |
 | p006 | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本、段 P8）。text console の付け直し | planning | p005（VRAM の allocator と BAR1 の map） | 6h〜 |
 | p007 | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_ops` への統合（段 P9）、desktop の表示 | planning | p005・p006・kernel の Venus の executor と compiler（p008 の方針、[design](nvrtx-design.md) 8.0） | 6h〜 |
