@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1149](queue.md) finished / p225 vertical Grid auto-track diagnosis。2026-10-14 11:38 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1150](queue.md) finished / p225 bounded implicit auto-track axes。2026-10-14 11:48 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1147の134 PASS/368 FAIL、q1145比4 whole/4 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p225-q1150-partial-clear-20261014: [p225](phase225/phase.md) q1150-i01は2×2 implicit auto tracksの物理寸法寄与と縦論理軸配置を修正し、固定009/013が2/2 whole FAIL→PASS。250×250と300×240不等内容の最小ページはChromium 153と全box一致。旧WPT10件、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。[証拠](phase225/evidence/20261014-q1150/README.md)。p225 wholeはmargin variant等が残りuncleared、p173全件100%未達。共有投影/GitHub publication保留。
 
 Event ws074-p225-q1149-partial-clear-20261014: [p225](phase225/phase.md) q1149-i01診断をcleared。固定009–016全8件FAIL、初回幅は縦子期待20/実125・115、横子期待80/実125・115。最小2×2をChromium 153と照合し、旧Gridの論理列物理x配置、強制stretch、auto-track縦文字room不足を共通原因と確認。[証拠](phase225/evidence/20261014-q1149/README.md)。次はmargin無し009/013を有限実装、margin有り6件は後続。p225/p173 whole未達、共有投影/GitHub publication保留。
 

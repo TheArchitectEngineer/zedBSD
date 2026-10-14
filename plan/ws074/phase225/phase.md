@@ -2,6 +2,14 @@
 
 # ws074-p225: Vertical Grid logical axes
 
+## q1150-i01 有限部分範囲（2026-10-14 11:40 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:10 JSTまで）に適用。[q1149診断](evidence/20261014-q1149/README.md)のmargin無し009/013だけを対象に、vertical-lr/LTR inline-gridのdefinite content-box 250×250・gap0・2×2 implicit auto tracks・margin/border/padding0・span1・in-flow非replaced auto-size単一ASCII文字子・start/stretchに限定。論理列→物理y/行→x、内容寄与と残り空間によるauto track sizing、縦文字の解決済み列高でlayoutし、最小ページと固定009/013 whole PASS、旧001–008/縦横WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。未対応構成fallback。WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならattempt uncleared、部分コード維持は後退検証時だけ。p225/p189/p173 wholeは範囲外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1150-i01 結果（2026-10-14 11:48 JST）
+
+Event ws074-p225-q1150-partial-clear-20261014: [証拠](evidence/20261014-q1150/README.md)。2×2 implicit auto trackを子の物理content寄与と残り空間で測り、論理列→物理y/行→xへ配置。250×250基準と300×240不等内容の最小ページがChromium 153と全box座標・寸法一致。固定009/013は2/2 whole FAIL→PASS、旧001–008・縦横2件もPASS。margin付き010/014は従来経路で初回差不変。warning0 build、host CSS51/JS14/Grid48、Acid3 score100/inventory100/差0、Acid2差1865。q1150部分cleared、p225 wholeはmargin等が残りuncleared、p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 ## q1149-i01 有限部分範囲（2026-10-14 11:35 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:05 JSTまで）に適用。固定WPT vertical-lr stretch009–016最大8件の同条件baselineを取得し、WPT sourceと最小2×2ページで論理track→物理寸法、auto track content contribution・free space配分、alignment/子writing-modeを切り分け、次の有限実装境界を証拠化。browser/WPT/runner/公開ABI/`plan/master.md`/Acid変更なし。p225/p189/p173 wholeは部分受け入れ外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

@@ -77,6 +77,7 @@ struct grid_sizes {
 
 static int grid_collect(struct layout_box *box, struct grid_state *grid);
 static int grid_vertical_fixed(struct layout_tree *tree, struct layout_box *box, int *handled);
+static int grid_vertical_auto(struct layout_tree *tree, struct layout_box *box, int *handled);
 static void grid_resolve(const struct css_grid_place *place, int explicit_count, int *start, int *span);
 static void grid_static_position(struct layout_box *box, const struct grid_state *grid,
 	layout_unit column_gap, layout_unit row_gap, layout_unit shift, layout_unit row_shift);
@@ -161,6 +162,11 @@ layout_grid(
 	/* Fixed vertical grids map their logical tracks to physical axes before laying out items. */
 	handled = 0;
 	error = grid_vertical_fixed(tree, box, &handled);
+	if (error != 0)
+		return error;
+	if (handled)
+		return 0;
+	error = grid_vertical_auto(tree, box, &handled);
 	if (error != 0)
 		return error;
 	if (handled)
@@ -416,6 +422,263 @@ layout_grid(
 	grid_release(&grid);
 
 	/* Succeeded: the container's content is laid out. */
+	return 0;
+}
+
+/* Lays out two implicit auto tracks on each physical axis of a definite vertical Grid. */
+static int
+grid_vertical_auto(
+	struct layout_tree *tree,
+	struct layout_box *box,
+	int *handled)
+{
+	struct grid_state grid;
+	struct grid_item *placed;
+	struct layout_box *child;
+	struct layout_box *text_box;
+	struct css_length saved_height;
+	const struct css_track *track;
+	const struct layout_line *line;
+	const struct layout_fragment *last;
+	layout_unit columns[2];
+	layout_unit rows[2];
+	layout_unit natural_height[4];
+	layout_unit width;
+	layout_unit height;
+	layout_unit area_width;
+	layout_unit area_height;
+	layout_unit remaining;
+	int occupied[4];
+	size_t index;
+	size_t line_index;
+	size_t text_index;
+	int align;
+	int justify;
+	int side;
+	int cell;
+	int error;
+
+	/* Leaves other Grid forms to the existing layout path. */
+	*handled = 0;
+	if (box->style.display != CSS_DISPLAY_INLINE_GRID ||
+	    box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	    box->style.direction != CSS_DIRECTION_LTR ||
+	    box->style.width.unit != CSS_UNIT_PX ||
+	    box->style.height.unit != CSS_UNIT_PX ||
+	    box->style.box_sizing != CSS_BOX_SIZING_CONTENT ||
+	    box->style.column_count != 0 || box->style.row_count != 0 ||
+	    box->style.column_gap.value != 0 || box->style.row_gap.value != 0)
+		return 0;
+
+	/* Padding and borders require a separate content-box mapping. */
+	for (side = 0; side < 4; side++) {
+		if (box->border[side] != 0 || box->padding[side] != 0)
+			return 0;
+	}
+
+	/* Every item must use the bounded text and box model. */
+	for (child = box->first_child; child != NULL; child = child->next) {
+		if (child->out_of_flow || child->replaced ||
+		    (child->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+		    child->style.writing_mode != CSS_WRITING_HORIZONTAL_TB) ||
+		    child->style.width.unit != CSS_UNIT_AUTO ||
+		    child->style.height.unit != CSS_UNIT_AUTO)
+			return 0;
+
+		/* The measured path uses one unwrapped sideways Latin text run. */
+		text_box = child->first_child;
+		if (text_box == NULL || text_box->kind != LAYOUT_TEXT ||
+		    text_box->next != NULL ||
+		    (child->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    child->style.text_orientation == CSS_TEXT_ORIENTATION_UPRIGHT))
+			return 0;
+
+		/* Other scripts need upright glyph metrics and shaping. */
+		for (text_index = 0; text_index < text_box->text_length; text_index++) {
+			if (text_box->text[text_index] > 0x7fU)
+				return 0;
+		}
+
+		/* Margins and frame edges change both intrinsic track contributions. */
+		layout_box_model(child, 0);
+		for (side = 0; side < 4; side++) {
+			if (child->style.margin[side].unit == CSS_UNIT_AUTO ||
+			    child->margin[side] != 0 || child->border[side] != 0 ||
+			    child->padding[side] != 0)
+				return 0;
+		}
+	}
+
+	/* Collects the items before the common placer resolves their implicit tracks. */
+	memset(&grid, 0, sizeof(grid));
+	error = grid_collect(box, &grid);
+	if (error != 0) {
+		grid_release(&grid);
+		return error;
+	}
+
+	/* Resolves each explicit line against the two implicit auto tracks. */
+	error = grid_place(&grid, box->style.grid_auto_flow);
+	if (error != 0) {
+		grid_release(&grid);
+		return error;
+	}
+
+	/* A larger or incomplete grid belongs to the general path. */
+	if (grid.column_count != 2 || grid.row_count != 2 || grid.item_count != 4) {
+		grid_release(&grid);
+		return 0;
+	}
+
+	/* Every implicit track must have the default auto sizing function. */
+	for (cell = 0; cell < 2; cell++) {
+		track = grid_column_track(&box->style, cell);
+		if (track->kind != CSS_TRACK_AUTO) {
+			grid_release(&grid);
+			return 0;
+		}
+		track = grid_row_track(&box->style, cell);
+		if (track->kind != CSS_TRACK_AUTO) {
+			grid_release(&grid);
+			return 0;
+		}
+	}
+
+	/* One item per cell keeps the item and track contributions unambiguous. */
+	memset(occupied, 0, sizeof(occupied));
+	for (index = 0; index < grid.item_count; index++) {
+		placed = &grid.items[index];
+		if (placed->column_span != 1 || placed->row_span != 1 ||
+		    placed->column < 0 || placed->column >= 2 ||
+		    placed->row < 0 || placed->row >= 2) {
+			grid_release(&grid);
+			return 0;
+		}
+		cell = placed->row * 2 + placed->column;
+		if (occupied[cell]) {
+			grid_release(&grid);
+			return 0;
+		}
+		occupied[cell] = 1;
+
+		/* The bounded painter and placement handle only start and stretch. */
+		child = placed->box;
+		align = child->style.align_self;
+		if (align == CSS_ALIGN_AUTO)
+			align = box->style.align_items;
+		if (align == CSS_ALIGN_NORMAL)
+			align = CSS_ALIGN_STRETCH;
+		justify = child->style.justify_self;
+		if (justify == CSS_ALIGN_AUTO)
+			justify = box->style.justify_items;
+		if (justify == CSS_ALIGN_NORMAL)
+			justify = CSS_ALIGN_STRETCH;
+		if ((align != CSS_ALIGN_START && align != CSS_ALIGN_STRETCH) ||
+		    (justify != CSS_ALIGN_START && justify != CSS_ALIGN_STRETCH)) {
+			grid_release(&grid);
+			return 0;
+		}
+	}
+
+	/* Measure each item's physical content extents before sharing free track room. */
+	columns[0] = 0;
+	columns[1] = 0;
+	rows[0] = 0;
+	rows[1] = 0;
+	for (index = 0; index < grid.item_count; index++) {
+		placed = &grid.items[index];
+		child = placed->box;
+		saved_height = child->style.height;
+
+		/* A definite inline room gives a vertical text run its physical line width. */
+		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
+			child->style.height.unit = CSS_UNIT_PX;
+			child->style.height.value = box->style.height.value;
+			child->style.height.offset = 0;
+			child->max_content_known = 0;
+		}
+		error = layout_max_content(tree, child, &width);
+		child->style.height = saved_height;
+		if (error != 0) {
+			grid_release(&grid);
+			return error;
+		}
+		height = child->height;
+		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
+			height = 0;
+
+			/* The last glyph of each line gives its natural inline advance. */
+			for (line_index = 0; line_index < child->line_count; line_index++) {
+				line = &child->lines[line_index];
+				if (line->fragment_count == 0)
+					continue;
+				last = &line->fragments[line->fragment_count - 1U];
+				if (last->x + last->width > height)
+					height = last->x + last->width;
+			}
+		}
+		natural_height[index] = height;
+		if (width > rows[placed->row])
+			rows[placed->row] = width;
+		if (height > columns[placed->column])
+			columns[placed->column] = height;
+	}
+
+	/* Each auto track receives an equal share after its content minimum. */
+	remaining = box->width - rows[0] - rows[1];
+	if (remaining > 0) {
+		rows[0] += remaining / 2;
+		rows[1] += remaining - remaining / 2;
+	}
+	remaining = layout_from_px(box->style.height.value) - columns[0] - columns[1];
+	if (remaining > 0) {
+		columns[0] += remaining / 2;
+		columns[1] += remaining - remaining / 2;
+	}
+	box->height = layout_from_px(box->style.height.value);
+	box->grid_content = rows[0] + rows[1];
+
+	/* Lay each item out in its physical row width and column height. */
+	for (index = 0; index < grid.item_count; index++) {
+		placed = &grid.items[index];
+		child = placed->box;
+		area_width = rows[placed->row];
+		area_height = columns[placed->column];
+		align = child->style.align_self;
+		if (align == CSS_ALIGN_AUTO)
+			align = box->style.align_items;
+		if (align == CSS_ALIGN_NORMAL)
+			align = CSS_ALIGN_STRETCH;
+		justify = child->style.justify_self;
+		if (justify == CSS_ALIGN_AUTO)
+			justify = box->style.justify_items;
+		if (justify == CSS_ALIGN_NORMAL)
+			justify = CSS_ALIGN_STRETCH;
+		saved_height = child->style.height;
+		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR) {
+			child->style.height.unit = CSS_UNIT_PX;
+			child->style.height.value = layout_to_px(area_height);
+			child->style.height.offset = 0;
+		}
+		error = grid_lay_item(tree, child, area_width, align);
+		if (error == 0 && child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB)
+			error = grid_relay_item(tree, child, area_width, area_height, justify);
+		child->style.height = saved_height;
+		if (error != 0) {
+			grid_release(&grid);
+			return error;
+		}
+		if (child->style.writing_mode == CSS_WRITING_VERTICAL_LR && justify == CSS_ALIGN_START)
+			child->height = natural_height[index];
+		child->x = placed->row == 0 ? 0 : rows[0];
+		child->y = placed->column == 0 ? 0 : columns[0];
+	}
+
+	/* The common Grid state no longer owns any output. */
+	grid_release(&grid);
+	*handled = 1;
+
+	/* Succeeded: the physical axis mapping consumed this Grid. */
 	return 0;
 }
 

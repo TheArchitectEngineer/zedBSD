@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1149 / WS074 vertical Grid auto-track diagnosis（2026-10-14）
+## 最新: q1150 / WS074 vertical implicit auto tracks（2026-10-14）
+
+[q1150履歴](queue-q1150.md): 固定009/013 whole FAIL→PASS、250×250/300×240不等内容ページがChromiumと全box一致。旧WPT10件、Acid3差0維持。[証拠](../ws074/phase225/evidence/20261014-q1150/README.md)。margin variant残存、共有投影/GitHub publication pending。
+
+## q1149 / WS074 vertical Grid auto-track diagnosis（2026-10-14）
 
 [q1149履歴](queue-q1149.md): 固定009–016全8件FAIL。縦論理列が物理xに並び、子widthも強制stretchする一般的欠陥を独立2×2/Chromium比較で確認。[証拠](../ws074/phase225/evidence/20261014-q1149/README.md)。次はmargin無し009/013、共有投影/GitHub publication pending。
 
