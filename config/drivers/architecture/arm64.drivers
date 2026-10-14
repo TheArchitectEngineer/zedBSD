@@ -7,3 +7,5 @@ CONFIG_DRIVER_BCM2711_GENET|bool|BCM2711 GENET: Raspberry Pi 4 onboard Ethernet|
 CONFIG_DRIVER_BCM2711_AUDIO|bool|BCM2711 PWM audio: Raspberry Pi 4 headphone jack|rpi4|y|
 CONFIG_DRIVER_BCM2711_WIFI|bool|BCM43455 SDIO: Raspberry Pi 4 onboard WiFi|rpi4|y|
 CONFIG_DRIVER_BCM2711_BT|bool|BCM2711 Bluetooth: Raspberry Pi 4 onboard (PL011 UART)|rpi4|y|
+CONFIG_DRIVER_BCM2711_VCHIQ|bool|BCM2711 VCHIQ: VideoCore firmware services (experimental)|rpi4|n|
+CONFIG_DRIVER_BCM2711_VIDEO|bool|BCM2711 H.264 decode as Vulkan Video (needs VCHIQ and GPU, experimental)|rpi4|n|

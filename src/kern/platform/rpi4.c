@@ -45,6 +45,9 @@
 #if CONFIG_DRIVER_BCM2711_GPU
 #include "drivers/gpu/bcm2711/bcm2711-gpu.h"
 #endif
+#if CONFIG_DRIVER_BCM2711_VCHIQ
+#include "drivers/platform/rpi4/rpi4-vchiq.h"
+#endif
 
 /*
  * How much of memory at the device tree's address may be read.
@@ -169,6 +172,14 @@ kern_platform_init(
 #if CONFIG_DRIVER_BCM2711_AUDIO
 	/* Publishes the headphone jack; a board without it boots without sound. */
 	(void)drv_rpi4_audio_init(rpi4->fdt_phys);
+#endif
+
+#if CONFIG_DRIVER_BCM2711_VCHIQ
+	/*
+	 * Starts the link to the VideoCore firmware's services before the GPU,
+	 * whose video decode uses it; a board without it boots without them.
+	 */
+	(void)drv_rpi4_vchiq_init(rpi4->fdt_phys);
 #endif
 
 #if CONFIG_DRIVER_BCM2711_GPU
