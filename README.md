@@ -52,8 +52,10 @@ GPU support is a native, Vulkan-direct stack.  It does not require
 Linux DRM/KMS or Mesa, and it does not use user-space drivers and
 compilers.
 
-Intel iGPU (gen 6th to 14th Core i) and Raspberry Pi 4 (VideoCore VI) are the current
-drivers.  NVIDIA and AMD drivers will follow soon.
+Supported GPUs:
+- Intel iGPU (i915 and Xe)
+- Raspberry Pi VideoCore (Pi4 VC6)
+- NVIDIA RTX (2000 to 5000)
 
 ---
 
@@ -83,15 +85,15 @@ Write a disk image to a USB stick, then boot from it.
 
 Supported hardware:
 
-- Dell Latitude 5330:
-    - CPU: Intel Core i5 1245P
-    - GPU: Intel Iris Xe (Xe-LP)
-    - WiFi: Intel AX211
-    - Bluetooth: Intel AX211
+- x86_64
+    - CPU: Intel Core i 6000 to 14000
+    - GPU: Intel iGPU (Gen9-12)
+    - WiFi: Intel AX211, Realtek USB WiFi
+    - Bluetooth: USB Bluetooth
     - USB: USB 3.0, USB-C DisplayPort Alt Mode
 
 - Raspberry Pi4
-    - GPU, USB, WiFi, and Ethernet are supported
+    - GPU, USB, WiFi, Bluetooth, and Ethernet are supported
 
 ### Windows (VM)
 
