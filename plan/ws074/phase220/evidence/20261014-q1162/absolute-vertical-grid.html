@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+.grid { position:relative; display:inline-grid; grid-template-columns:100px 150px; grid-template-rows:150px 100px; font:10px/1 monospace; }
+.grid > div { position:absolute; grid-column:1/2; grid-row:1/2; align-self:start; justify-self:start; }
+#lr { writing-mode:vertical-lr; }
+#rl { writing-mode:vertical-rl; }
+</style>
+<div id="lr" class="grid"><div>X XX X</div></div>
+<div id="rl" class="grid"><div>X XX X</div></div>
+<script>
+var measures=[];
+['lr','rl'].forEach(function(id){
+  var grid=document.getElementById(id), child=grid.firstElementChild;
+  var a=grid.getBoundingClientRect(), b=child.getBoundingClientRect();
+  var result=id+'='+[b.left-a.left,b.top-a.top,b.width,b.height].map(Math.round).join(',');
+  measures.push(result);console.log(result);
+  var hit=document.elementFromPoint(b.left+5,b.top+5);
+  console.log("hit-"+id+"="+(hit===child));
+});
+document.body.setAttribute('data-measure',measures.join('|'));
+</script>

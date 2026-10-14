@@ -1,0 +1,117 @@
+{
+  "chromium": "lr=0,0,10,36|rl=240,0,10,36",
+  "browser": [
+    "lr=0,0,10,36",
+    "hit-lr=true",
+    "rl=0,0,10,36",
+    "hit-rl=true"
+  ],
+  "cpu_gpu_exact": true,
+  "render_sha256": "9c60ef6b8a3c96bd698a4c9ddffb6be04fe937b97cf28101ee55d0167efb39ac",
+  "samples": {
+    "column-001": {
+      "before": "fail",
+      "after": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "before_status": 0,
+          "after_status": 0,
+          "before_first_tail": "",
+          "after_first_tail": ""
+        },
+        {
+          "name": ".grid 2",
+          "before_status": 0,
+          "after_status": 0,
+          "before_first_tail": "",
+          "after_first_tail": ""
+        },
+        {
+          "name": ".grid 3",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "lass=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 30",
+          "after_first_tail": "s=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "lass=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 30",
+          "after_first_tail": "=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 240 but got 0"
+        }
+      ]
+    },
+    "row-001": {
+      "before": "fail",
+      "after": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "before_status": 0,
+          "after_status": 0,
+          "before_first_tail": "",
+          "after_first_tail": ""
+        },
+        {
+          "name": ".grid 2",
+          "before_status": 0,
+          "after_status": 0,
+          "before_first_tail": "",
+          "after_first_tail": ""
+        },
+        {
+          "name": ".grid 3",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "lass=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 30",
+          "after_first_tail": "s=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "lass=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 30",
+          "after_first_tail": "=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 240 but got 0"
+        }
+      ]
+    },
+    "row-017": {
+      "before": "fail",
+      "after": "fail",
+      "callbacks": [
+        {
+          "name": ".grid 1",
+          "before_status": 0,
+          "after_status": 0,
+          "before_first_tail": "",
+          "after_first_tail": ""
+        },
+        {
+          "name": ".grid 2",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 340 but got 0",
+          "after_first_tail": "=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 340 but got 0"
+        },
+        {
+          "name": ".grid 3",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "lass=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 30",
+          "after_first_tail": "s=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetTop expected 100 but got 0"
+        },
+        {
+          "name": ".grid 4",
+          "before_status": 1,
+          "after_status": 1,
+          "before_first_tail": "lass=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\nheight expected 60 but got 30",
+          "after_first_tail": "=\"secondRowSecondColumn\">XX X<br>X XXX<br>X<br>XX XXX</div>\n</div>\noffsetLeft expected 240 but got 0"
+        }
+      ]
+    }
+  },
+  "old_vertical_grid_pass": 32,
+  "old_other_pass": 2
+}

@@ -10,6 +10,14 @@
 
 Event ws074-p220-q1148-partial-clear-20261014: [証拠](evidence/20261014-q1148/README.md)。Latin F字形の縦描画は横字形の時計回り90度回転と画素完全一致、CPU/GPUは通常・clip含め差0/16,384。upright/非ASCIIは既存経路へ戻る。shader生成・SPIR-V検証、warning0 build、固定縦Grid8件+旧縦横2件whole PASS、host CSS51/JS14/Grid48、Acid3 score100/inventory100/差0、Acid2差1865を確認。q1148部分cleared、p220 wholeは他orientation/折返し等が残りin-progress、p225/p189/p173 whole未達。共有投影/GitHub publication保留。
 
+## q1162-i01 有限部分範囲（2026-10-14 12:24 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:54 JSTまで）に適用。positioned vertical-lr/rl LTR inline-gridの直接absolute子、両Grid軸明示固定px track/gap0、auto物理width/height、ASCII textと明示brだけ、非replaced/非float/非marker/非uprightに限定し、既存縦inline geometry/sideways paintを適用。固定positioned列軸/行軸001と代表017の縦subtest初回width10/height60の修正を確認し、whole残差はstatic areaと分離。非Grid/旧vertical Grid/水平WPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を検証。Grid static area/WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p217/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1162-i01 結果（2026-10-14 12:28 JST）
+
+Event ws074-p220-q1162-partial-clear-20261014: [証拠](evidence/20261014-q1162/README.md)。固定px trackのpositioned縦Grid直接absolute ASCII文字子を既存縦inline/shrink-to-fit/sideways paintへ通す。最小lr/rl両子10×36px・hit/paint・CPU/GPU一致。固定positioned列軸001/行軸001・017の縦初回幅10/実60と最終高さ30の差は解消し、次はoffsetTop/offsetLeft差。3 wholeはFAILのまま。旧縦Grid32+縦横2 PASS、warning0 build、host CSS51/JS14/Grid48、Acid3差0/Acid2差1865。q1162部分cleared、p220 wholeとp217 static area/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
 ## q1157-i01 有限部分範囲（2026-10-14 12:10 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（13:40 JSTまで）に適用。非Grid、明示px content width/height、vertical-rl/LTR、text-align start/left、ASCII sideways、単一非折返しrunと明示br、float/atomic/replaced/marker無しに限定。既存vertical-lr inline幾何/CPU-GPU縦paintを右端からの行進行へ拡張し、q1156最小ページの矩形/画像・hit/dump、旧縦左/横書きWPT、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を検証。Grid本体/WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p220/p225/p189/p173 wholeは基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

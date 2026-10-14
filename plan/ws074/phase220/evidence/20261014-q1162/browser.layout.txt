@@ -1,0 +1,25 @@
+console: lr=0,0,10,30
+console: rl=0,0,10,30
+viewport 1024.00 x 768.00, document height 269.00
+block <html> 0.00 0.00 1024.00 269.00
+  block <body> 8.00 8.00 1008.00 253.00
+    line 8.00 8.00 height 253.00 baseline 258.00
+      inline-block 8.00 w 250.00 h 250.00
+      text 258.00 w 4.80 16px " "
+      inline-block 262.80 w 250.00 h 250.00
+    block <div> 8.00 8.00 250.00 250.00
+      block <div> 8.00 8.00 10.00 30.00
+        line 8.00 8.00 height 10.00 baseline 16.00
+          text 8.00 w 6.00 10px "X"
+        line 8.00 18.00 height 10.00 baseline 26.00
+          text 8.00 w 12.00 10px "XX"
+        line 8.00 28.00 height 10.00 baseline 36.00
+          text 8.00 w 6.00 10px "X"
+    block <div> 262.80 8.00 250.00 250.00
+      block <div> 262.80 8.00 10.00 30.00
+        line 262.80 8.00 height 10.00 baseline 16.00
+          text 262.80 w 6.00 10px "X"
+        line 262.80 18.00 height 10.00 baseline 26.00
+          text 262.80 w 12.00 10px "XX"
+        line 262.80 28.00 height 10.00 baseline 36.00
+          text 262.80 w 6.00 10px "X"

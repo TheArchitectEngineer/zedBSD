@@ -1,0 +1,4 @@
+lr=0,0,10,36
+hit-lr=true
+rl=0,0,10,36
+hit-rl=true

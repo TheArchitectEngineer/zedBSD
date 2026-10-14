@@ -107,6 +107,7 @@ static int inline_wraps(const struct layout_box *box);
 static void inline_line_height(struct layout_tree *tree, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_font_extent(struct layout_tree *tree, const struct text_font *font, const struct css_style *style, layout_unit *above, layout_unit *below);
 static void inline_piece_extent(struct layout_tree *tree, const struct inline_piece *piece, layout_unit *above, layout_unit *below);
+static int inline_vertical_absolute_grid(const struct layout_box *box);
 static int inline_vertical_simple(const struct layout_box *box, int depth, int mode);
 static layout_unit inline_vertical_room(const struct layout_box *box);
 
@@ -214,6 +215,45 @@ layout_inline(
 	return 0;
 }
 
+/* A direct absolute child can borrow a definite vertical Grid column's inline room. */
+static int
+inline_vertical_absolute_grid(
+	const struct layout_box *box)
+{
+	const struct layout_box *parent;
+	int index;
+
+	/* Auto or temporarily resolved pixel widths enter positioned fixed-track Grids. */
+	parent = box->parent;
+	if (parent == NULL || box->style.position != CSS_POSITION_ABSOLUTE ||
+	    (box->style.width.unit != CSS_UNIT_AUTO &&
+	    box->style.width.unit != CSS_UNIT_PX) ||
+	    box->style.height.unit != CSS_UNIT_AUTO ||
+	    box->style.box_sizing != CSS_BOX_SIZING_CONTENT ||
+	    parent->style.position != CSS_POSITION_RELATIVE ||
+	    parent->style.display != CSS_DISPLAY_INLINE_GRID ||
+	    parent->style.writing_mode != box->style.writing_mode ||
+	    parent->style.direction != CSS_DIRECTION_LTR ||
+	    parent->style.column_count == 0 || parent->style.row_count == 0 ||
+	    parent->style.column_gap.value != 0 || parent->style.row_gap.value != 0)
+		return 0;
+
+	/* No percentage or flexible track can provide a definite inline room. */
+	for (index = 0; index < parent->style.column_count; index++) {
+		if (parent->style.columns[index].kind != CSS_TRACK_LENGTH ||
+		    parent->style.columns[index].size.unit != CSS_UNIT_PX)
+			return 0;
+	}
+	for (index = 0; index < parent->style.row_count; index++) {
+		if (parent->style.rows[index].kind != CSS_TRACK_LENGTH ||
+		    parent->style.rows[index].size.unit != CSS_UNIT_PX)
+			return 0;
+	}
+
+	/* The positioned child can use the bounded sideways text path. */
+	return 1;
+}
+
 /* Checks whether a vertical line has only text and explicit breaks. */
 static int
 inline_vertical_simple(
@@ -225,7 +265,8 @@ inline_vertical_simple(
 	size_t index;
 
 	/* Other formatting contexts and markers retain their established layout. */
-	if (depth > LAYOUT_DEPTH_MAX || box->out_of_flow ||
+	if (depth > LAYOUT_DEPTH_MAX ||
+	    (box->out_of_flow && (depth != 0 || !inline_vertical_absolute_grid(box))) ||
 	    box->floating != CSS_FLOAT_NONE || box->atomic || box->replaced ||
 	    box->marker_length != 0)
 		return 0;

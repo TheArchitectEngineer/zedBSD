@@ -1,0 +1,4 @@
+console: lr=0,0,10,36
+console: hit-lr=true
+console: rl=0,0,10,36
+console: hit-rl=true

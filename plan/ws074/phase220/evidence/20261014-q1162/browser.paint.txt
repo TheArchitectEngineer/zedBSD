@@ -1,0 +1,16 @@
+console: lr=0,0,10,36
+console: hit-lr=true
+console: rl=0,0,10,36
+console: hit-rl=true
+canvas 1024.00 x 768.00 #ffffffff
+text 258.00 258.00 16px face 0 bold 0 #ff000000 " "
+text 10.00 8.00 10px face 1 bold 0 #ff000000 "X"
+text 10.00 14.00 10px face 1 bold 0 #ff000000 " "
+text 10.00 20.00 10px face 1 bold 0 #ff000000 "XX"
+text 10.00 32.00 10px face 1 bold 0 #ff000000 " "
+text 10.00 38.00 10px face 1 bold 0 #ff000000 "X"
+text 264.80 8.00 10px face 1 bold 0 #ff000000 "X"
+text 264.80 14.00 10px face 1 bold 0 #ff000000 " "
+text 264.80 20.00 10px face 1 bold 0 #ff000000 "XX"
+text 264.80 32.00 10px face 1 bold 0 #ff000000 " "
+text 264.80 38.00 10px face 1 bold 0 #ff000000 "X"

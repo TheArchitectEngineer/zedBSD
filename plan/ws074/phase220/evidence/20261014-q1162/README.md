@@ -1,0 +1,11 @@
+# q1162-i01 — bounded absolute vertical text in fixed Grid
+
+A direct absolute child of a positioned vertical-lr/rl LTR inline-grid with definite pixel row/column tracks and zero gaps can now use the existing simple sideways text path. The child remains out of flow and keeps auto sizing; its temporary shrink-to-fit pixel width also remains eligible during final layout. The path still requires a content-box child, ASCII text or explicit breaks, and no float, replaced, marker, upright or nested out-of-flow content. Grid static area placement is unchanged.
+
+The [minimal page](absolute-vertical-grid.html) gives both writing modes a 10×36px text border box with the fixed browser monospace font. [Chromium](chromium.txt) places vertical-lr at `(0,0,10,36)` and vertical-rl at `(240,0,10,36)` relative to the Grid; [browser](browser.txt) has the same 10×36 size and expected hit targets, with vertical-rl still at x0 because its static area is unresolved. The [paint dump](browser.paint.txt) advances glyphs down y, and CPU/GPU PPM output is byte-identical. [Summary](summary.json) retains the comparison.
+
+In the fixed Interop 2025 column-axis001 and row-axis001/017 [WPT callbacks](final-wpt-column-001.json), the vertical-lr/rl first failures advanced from `width expected 10 but got 60`, through a temporary final-layout `height expected 60 but got 30`, to `offsetTop expected 100 but got 0` for vertical-lr and `offsetLeft expected 240 but got 0` for vertical-rl. The horizontal RTL callback in row-axis017 still fails separately. Thus these three whole files remain FAIL; this Queue verifies the text geometry output, not static Grid area clearance. Fixed old vertical-lr/rl stretch001–016 plus two old vertical/horizontal Grid cases remain **34/34 whole PASS** under unchanged WPT commit, manifest, localhost HTTP, fixed fonts, 5 s settle, 20 s process bound.
+
+[Warning-free build](build.log), host CSS51/JS14/Grid48 PASS. [Acid](acid-report.json): score100/inventory100/100/pixel diff0 of480,000, Acid2 diff1,865 of120,000. `git diff --check` PASS; `clang-format` unavailable.
+
+q1162-i01 partial scope cleared. p220 whole, p217 positioned alignment, p189/p173 all-focus100% remain unmet. WPT, runner, public ABI, Master and Grid static area unchanged; shared projection/GitHub publication pending with Q1, no push.
