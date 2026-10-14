@@ -4,7 +4,7 @@
 
 ## q1181-i01 結果（2026-10-14 13:36 JST）
 
-Event ws074-p220-q1181-partial-clear-20261014: [証拠](evidence/20261014-q1181/README.md)。水平固定Grid直接vertical-rl/LTR absolute ASCII子に確定row trackの縦inline roomと`align-self:end`のY軸を適用。独立最小子矩形は198,0,42,30→210,0,30,42でChromium一致。固定non-static007水平LTR callbackは2番目子width30/height70/offsetを通過し、3番目RTL子width40→60でFAILする。旧WPT、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1181有限部分範囲cleared、WPT wholeとp220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+Event ws074-p220-q1181-partial-clear-20261014: [証拠](evidence/20261014-q1181/README.md)。水平固定Grid直接vertical-rl/LTR absolute ASCII子に確定row trackの縦inline roomと`align-self:end`のY軸を適用。独立最小子矩形は198,0,42,30→210,0,30,42でChromium一致。固定non-static007水平LTR callbackは2番目子width30/height70/offsetを通過し、4番目vertical-lr/RTL子width40→60でFAILする。旧WPT、host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1181有限部分範囲cleared、WPT wholeとp220/p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 ## q1181-i01 有限部分範囲（2026-10-14 13:33 JST）
 

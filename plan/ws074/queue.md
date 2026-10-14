@@ -13,4 +13,4 @@ Timebox: 最大90分（15:03 JSTまで）。
 
 Dependency graph: q1180縦左子inline room → q1181-i01。p220/p217/p189/p173 wholeは部分受け入れに含めない。
 
-Upcoming Work Outlook: 水平Grid第3 RTL子の寸法/配置と第4子、縦Grid横子static area、auto lines、stretch005–016、RTL字形視覚、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
+Upcoming Work Outlook: 水平Grid第4 vertical-lr/RTL子の寸法/配置、縦Grid横子static area、auto lines、stretch005–016、RTL字形視覚、RTL行軸017、baseline、runner未対応。共有 `plan/queue.md` / Master / GitHub publication はQ1との競合を避けpending projection。
