@@ -1,0 +1,105 @@
+pb-high-352-pyramid-v-000: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=0 pitch0=352 pitch1=352 planes=2 pts=0 pts_display=-1 run=v sha256=71251a9eba859a2c221d83ad534257402cbc3806f75357788913ca5a5105a45f status=1 stream=vulkan sum=0 width=352
+  reference: display 0 (decode order); closest display 0 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.692
+pb-high-352-pyramid-v-001: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=1 pitch0=352 pitch1=352 planes=2 pts=1 pts_display=-1 run=v sha256=3355b0228f2b25e451936f80dd8fc5ef3e58de3b5b2164e258756e486f4ea641 status=1 stream=vulkan sum=0 width=352
+  reference: display 4 (decode order); closest display 4 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.726
+pb-high-352-pyramid-v-002: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=2 pitch0=352 pitch1=352 planes=2 pts=2 pts_display=-1 run=v sha256=64a3d0d41dae71f10bc2b42e83309b1ae8267fc26e7b92aa7cd0ed274dcc46e0 status=1 stream=vulkan sum=0 width=352
+  reference: display 2 (decode order); closest display 2 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.287
+pb-high-352-pyramid-v-003: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=3 pitch0=352 pitch1=352 planes=2 pts=3 pts_display=-1 run=v sha256=021a5f6c47330df21aa2283cb71d110d30824e154742c65bbced445858068414 status=1 stream=vulkan sum=0 width=352
+  reference: display 1 (decode order); closest display 1 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.572
+pb-high-352-pyramid-v-004: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=4 pitch0=352 pitch1=352 planes=2 pts=4 pts_display=-1 run=v sha256=9208ded430235c06b0e29f734780647f70b7b73dc6fcdfbd160fe63ee090037b status=1 stream=vulkan sum=0 width=352
+  reference: display 3 (decode order); closest display 3 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.487
+pb-high-352-pyramid-v-005: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=5 pitch0=352 pitch1=352 planes=2 pts=5 pts_display=-1 run=v sha256=fbd19de2b412e8677fb79fbc680878fa78be8c90b66f873e5dd15ea738d9b525 status=1 stream=vulkan sum=0 width=352
+  reference: display 8 (decode order); closest display 8 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 23.213
+pb-high-352-pyramid-v-006: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=6 pitch0=352 pitch1=352 planes=2 pts=6 pts_display=-1 run=v sha256=ead571e03f0c75ed2ceba064582f18504868c7139638b9efc6ced4c920fc60af status=1 stream=vulkan sum=0 width=352
+  reference: display 6 (decode order); closest display 6 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.577
+pb-high-352-pyramid-v-007: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=7 pitch0=352 pitch1=352 planes=2 pts=7 pts_display=-1 run=v sha256=d12ec484dda1d0712ca352351c95bd6b82b955c3eab0d6b5c94a218f2ae15cda status=1 stream=vulkan sum=0 width=352
+  reference: display 5 (decode order); closest display 5 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.672
+pb-high-352-pyramid-v-008: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=8 pitch0=352 pitch1=352 planes=2 pts=8 pts_display=-1 run=v sha256=723b3001c7ed13eaf04febb5384dd55b67f638487f89a52703828479b93ee809 status=1 stream=vulkan sum=0 width=352
+  reference: display 7 (decode order); closest display 7 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.849
+pb-high-352-pyramid-v-009: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=9 pitch0=352 pitch1=352 planes=2 pts=9 pts_display=-1 run=v sha256=4f5dc88eb659d7eb813ddc555dc5dc4a8d47762ec14c9fb5685da6c20f197271 status=1 stream=vulkan sum=0 width=352
+  reference: display 12 (decode order); closest display 12 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 23.428
+pb-high-352-pyramid-v-010: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=10 pitch0=352 pitch1=352 planes=2 pts=10 pts_display=-1 run=v sha256=b2a7cdf9c8be79af69d3242c65a6494d7c6753200f5a11bae88a4e3dad02330d status=1 stream=vulkan sum=0 width=352
+  reference: display 10 (decode order); closest display 10 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 23.006
+pb-high-352-pyramid-v-011: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=11 pitch0=352 pitch1=352 planes=2 pts=11 pts_display=-1 run=v sha256=162aae6944fee8a6c9067d19749a8f4a64e3f58eb826c8b4df2aafa3896434f3 status=1 stream=vulkan sum=0 width=352
+  reference: display 9 (decode order); closest display 9 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 22.939
+pb-high-352-pyramid-v-012: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=12 pitch0=352 pitch1=352 planes=2 pts=12 pts_display=-1 run=v sha256=063321087c4b5204adaacfb4e83e6de0a6599d18945b106a2e2fd289ace21da2 status=1 stream=vulkan sum=0 width=352
+  reference: display 11 (decode order); closest display 11 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 23.135
+pb-high-352-pyramid-v-013: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=13 pitch0=352 pitch1=352 planes=2 pts=13 pts_display=-1 run=v sha256=defeb263a772cea37f15163e7c388383d100c3c288385627bb1c6fc54208f7c9 status=1 stream=vulkan sum=0 width=352
+  reference: display 14 (decode order); closest display 14 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 23.497
+pb-high-352-pyramid-v-014: crop_height=288 crop_width=352 crop_x=0 crop_y=0 display=-1 file=pb-high-352-pyramid.h264 fmt=3231564e height=288 length=152064 linear=1 match=none offset0=0 offset1=101376 out=14 pitch0=352 pitch1=352 planes=2 pts=14 pts_display=-1 run=v sha256=d6d14fc11e852789e2e2a59b40565c3d8f244ed2393eb68f1f65045128460147 status=1 stream=vulkan sum=0 width=352
+  reference: display 13 (decode order); closest display 13 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 288, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/101376 pitches 352/352, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 352, chroma after 288 rows, NV21: Y mad 0.000 UV mad 23.317

@@ -1,0 +1,70 @@
+p-baseline-64-v-000: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=0 pitch0=64 pitch1=64 planes=2 pts=0 pts_display=-1 run=v sha256=4b584b491029bb83f51f0a5addb2631027bcc32e97e143a7203d4d88627af41d status=1 stream=vulkan sum=0 width=64
+  reference: display 0 (decode order); closest display 0 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 75.272
+p-baseline-64-v-001: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=1 pitch0=64 pitch1=64 planes=2 pts=1 pts_display=-1 run=v sha256=da27920df3505023ab95abb9a00b743c8236e75907743f976493d7d9509f735b status=1 stream=vulkan sum=0 width=64
+  reference: display 1 (decode order); closest display 1 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 75.114
+p-baseline-64-v-002: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=2 pitch0=64 pitch1=64 planes=2 pts=2 pts_display=-1 run=v sha256=34415d876a04079c383ca390633c0982b3fa7b43e3cdf7e74baf7af9d1fe9c11 status=1 stream=vulkan sum=0 width=64
+  reference: display 2 (decode order); closest display 2 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 75.286
+p-baseline-64-v-003: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=3 pitch0=64 pitch1=64 planes=2 pts=3 pts_display=-1 run=v sha256=43d51ffa495e355d1a126b3780d34a7a1e232e48779d27094c11e5eebf7f316e status=1 stream=vulkan sum=0 width=64
+  reference: display 3 (decode order); closest display 3 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 75.007
+p-baseline-64-v-004: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=4 pitch0=64 pitch1=64 planes=2 pts=4 pts_display=-1 run=v sha256=693b11e624a7421ef9165ade213c564ef03412f380228d5172a0cd6479eb7b58 status=1 stream=vulkan sum=0 width=64
+  reference: display 4 (decode order); closest display 4 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 74.999
+p-baseline-64-v-005: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=5 pitch0=64 pitch1=64 planes=2 pts=5 pts_display=-1 run=v sha256=a3d7b7b38bcd8ab5049b3e9922bbd429cb25b1d91d9e3ecada0e617c0b171bc0 status=1 stream=vulkan sum=0 width=64
+  reference: display 5 (decode order); closest display 5 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 75.090
+p-baseline-64-v-006: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=6 pitch0=64 pitch1=64 planes=2 pts=6 pts_display=-1 run=v sha256=d845d25a9762f697909041481df952e393211dbe0c7e9f5f114a4c6b77182560 status=1 stream=vulkan sum=0 width=64
+  reference: display 6 (decode order); closest display 6 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 75.076
+p-baseline-64-v-007: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=7 pitch0=64 pitch1=64 planes=2 pts=7 pts_display=-1 run=v sha256=289434f762aa7b3dceb29445f79867727978896c55ef1df862f312ada25fa30a status=1 stream=vulkan sum=0 width=64
+  reference: display 7 (decode order); closest display 7 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 74.878
+p-baseline-64-v-008: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=8 pitch0=64 pitch1=64 planes=2 pts=8 pts_display=-1 run=v sha256=99d9d4ed81c720b3b09c653fa88d5e1fc607bc3fb1fa589bc38fe4bb5a8aea65 status=1 stream=vulkan sum=0 width=64
+  reference: display 8 (decode order); closest display 8 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 74.949
+p-baseline-64-v-009: crop_height=64 crop_width=64 crop_x=0 crop_y=0 display=-1 file=p-baseline-64.h264 fmt=3231564e height=64 length=6144 linear=1 match=none offset0=0 offset1=4096 out=9 pitch0=64 pitch1=64 planes=2 pts=9 pts_display=-1 run=v sha256=ab4d06694c79f6229b22f7080aecaf504b6e749460a913453f4ab0cd12909784 status=1 stream=vulkan sum=0 width=64
+  reference: display 9 (decode order); closest display 9 (Y mad 0.00)
+  header reading: Y mad 0.000 max 0 differ 0.00% psnr inf dB, UV mad 0.000 max 0 differ 0.00%, rows that differ 0 of 64, first difference (row, col) None
+  differing samples 0, of which 0 are a reference value 1..15 that came out one less
+  best readings: header: offsets 0/4096 pitches 64/64, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV12: Y mad 0.000 UV mad 0.000
+  best readings: pitch 64, chroma after 64 rows, NV21: Y mad 0.000 UV mad 74.821
