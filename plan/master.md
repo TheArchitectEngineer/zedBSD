@@ -944,6 +944,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 
 ## Tools
+| [plan/tools/switchbot.py](tools/switchbot.py)（2026-10-16） | SwitchBot のプラグで電源を入り切り（`list`・`status ID`・`on|off ID`・`cycle ID [秒]`）。token・secret は `~/.config/switchbot/credentials`（mode 600、tree に入れない）。プラグ AC276E42B252（Plug Mini (JP)「プラグミニ(JP) 52」）＝Pi 4 の電源（ユーザーがつなぐ）。**Q1 だけが使う**（担当は Pi が戻らない時に Q1 に頼む） |
 | [plan/ws037/tests/nvrtx-sm75-desktop-test.sh](ws037/tests/nvrtx-sm75-desktop-test.sh)・[nvrtx-sm75-host-test.sh](ws037/tests/nvrtx-sm75-host-test.sh)（ws037-p008、2026-10-15） | nvrtx の SM75 の shader compiler: desktop の全 shader と `plan/ws037/tests/sm75/` を compile し、SM75 の interpreter（依存の検査つき）と IR の参照の interpreter で 200 入力ずつ比べる（`--strict`）。host-test は encode の既知の語・compute・QMD・draw の push。部品 `sm75-machine.[ch]`・`sm75-reference.[ch]`・`sm75-desktop-extract.py` |
 | [plan/ws237/tests/](ws237/tests/)（WS237、2026-10-15 completed） | i915 の Gen9・Gen9.5 の display の host 試験: `run-gen9-flip-host-test.sh`・`run-gen9-backlight-host-test.sh`・`run-gen9-mode-host-test.sh`・`run-gen9-modeset-host-test.sh`・`run-gen9-outputs-host-test.sh`・`run-host-boot-gen9-display.sh`・`run-host-gen9-display-step.sh`（段の上限）。試験の image の config `config-amd64-gen9-flip.mk` |
 | [plan/ws157/tests/run-host-jpeg-scale.py](ws157/tests/run-host-jpeg-scale.py)（ws157-p017、2026-10-13） | libjpeg-compat の 1/2・1/4・1/8 の縮小 decode を djpeg -scale と比べる（大きさ・差 ≤2・PSNR、壊した file で crash 0、ASan・UBSan） | `python3 plan/ws157/tests/run-host-jpeg-scale.py` |
