@@ -1057,7 +1057,11 @@ grid_static_vertical_start(
 		    child->style.grid_row.start > 0 &&
 		    child->style.grid_row.end > 0)
 			child->static_grid_area = 1;
-		if (framed && !child->static_grid_area)
+		if (framed && index == 4 &&
+		    (child->style.writing_mode != box->style.writing_mode ||
+		    child->style.direction != CSS_DIRECTION_LTR))
+			continue;
+		if (framed && index != 4 && !child->static_grid_area)
 			continue;
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)

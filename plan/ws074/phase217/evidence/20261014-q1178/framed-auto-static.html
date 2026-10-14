@@ -1,0 +1,20 @@
+<!doctype html>
+<style>
+.grid { position: relative; display: inline-grid; grid-template-columns: 100px 150px; grid-template-rows: 150px 100px; font: 10px/1 monospace; border-style: solid; border-width: 5px 6px 4px 8px; padding: 1px 4px 2px 3px; }
+#lr { writing-mode: vertical-lr; }
+#rl { writing-mode: vertical-rl; }
+.grid > div { position: absolute; grid-row: 2 / 3; grid-column: 2 / 3; align-self: end; justify-self: left; margin: 2px 4px 6px 8px; border: 1px solid black; padding: 3px 2px 4px 5px; }
+</style>
+<div class="grid" id="lr"><div>X XX X</div></div>
+<div class="grid" id="rl"><div>X XX X</div></div>
+<pre id="result"></pre>
+<script>
+var values = [];
+for (var id of ["lr", "rl"]) {
+  var parent = document.getElementById(id).getBoundingClientRect();
+  var child = document.getElementById(id).querySelector("div").getBoundingClientRect();
+  values.push(id + "=" + Math.round(child.left - parent.left) + "," + Math.round(child.top - parent.top));
+}
+document.getElementById("result").textContent = values.join("|");
+console.log(values.join("|"));
+</script>

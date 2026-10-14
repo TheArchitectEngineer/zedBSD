@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1178-i01 結果（2026-10-14 13:29 JST）
+
+Event ws074-p217-q1178-partial-clear-20261014: [証拠](evidence/20261014-q1178/README.md)。親border/paddingあり固定2×2縦Gridで、同writing-mode LTR absolute子のall-auto insetに確定static areaを適用。独立lr/rl最小ページChromium一致、固定margin-border-padding005はwhole PASS/4 callback PASS、旧004/non-static006維持。host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1178有限部分範囲cleared。次は006–016 orthogonal子/auto line、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
+
+## q1178-i01 有限部分範囲（2026-10-14 13:26 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:56 JSTまで）に適用。positioned vertical-lr/rl LTR固定2×2 inline-grid、明示px tracks/gap0、非対称px border/padding親、直接absolute auto-size同writing-mode ASCII子・両axis明示span1・物理inset全autoのstatic Grid areaを最小修正する。独立最小ページChromium比較、固定positioned-items-with-margin-border-padding005 whole PASS、旧004/非static006 whole維持、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。auto lines/orthogonal子/RTL親/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
 ## q1176-i01 結果（2026-10-14 13:23 JST）
 
 Event ws074-p217-q1176-partial-clear-20261014: [証拠](evidence/20261014-q1176/README.md)。非対称border/padding親の縦Grid明示insetを、共通absolute処理が足す親frameと重複せずGrid content相対で解決。独立lr/rl最小ページChromium一致、固定non-static006 whole PASS、001–006全6件24 callback PASS。host CSS51/JS14/Grid48、warning0 build、Acid3差0/Acid2差1865維持。q1176有限部分範囲cleared。次は固定Grid502再測定、p217/p189/p173 whole未達、共有投影/GitHub publication保留。
