@@ -143,6 +143,20 @@ enum vm_intrinsic {
 	VM_INTRINSIC_STRING_PROTOTYPE,
 	VM_INTRINSIC_SYMBOL_PROTOTYPE,
 	VM_INTRINSIC_BIGINT_PROTOTYPE,
+	VM_INTRINSIC_ARRAY_BUFFER_PROTOTYPE,
+	VM_INTRINSIC_TYPED_ARRAY_PROTOTYPE,
+	VM_INTRINSIC_DATA_VIEW_PROTOTYPE,
+	VM_INTRINSIC_TYPED_PROTOTYPE_0,
+	VM_INTRINSIC_TYPED_PROTOTYPE_1,
+	VM_INTRINSIC_TYPED_PROTOTYPE_2,
+	VM_INTRINSIC_TYPED_PROTOTYPE_3,
+	VM_INTRINSIC_TYPED_PROTOTYPE_4,
+	VM_INTRINSIC_TYPED_PROTOTYPE_5,
+	VM_INTRINSIC_TYPED_PROTOTYPE_6,
+	VM_INTRINSIC_TYPED_PROTOTYPE_7,
+	VM_INTRINSIC_TYPED_PROTOTYPE_8,
+	VM_INTRINSIC_TYPED_PROTOTYPE_9,
+	VM_INTRINSIC_TYPED_PROTOTYPE_10,
 	VM_INTRINSIC_THROW_TYPE_ERROR,
 	VM_INTRINSIC_REGEXP_PROTOTYPE,
 	VM_INTRINSIC_REGEXP,
@@ -216,6 +230,9 @@ enum vm_object_kind {
 	VM_KIND_STRING,
 	VM_KIND_SYMBOL,
 	VM_KIND_BIGINT,
+	VM_KIND_ARRAY_BUFFER,
+	VM_KIND_TYPED_ARRAY,
+	VM_KIND_DATA_VIEW,
 	VM_KIND_DATE,
 	VM_KIND_REGEXP,
 	VM_KIND_PLATFORM,
@@ -662,6 +679,8 @@ int vm_bigint_not(struct vm_heap *heap, const struct vm_bigint *big, vm_value *r
 int vm_bigint_as_n(struct vm_realm *realm, uint64_t bits, int is_signed, const struct vm_bigint *big, vm_value *result);
 struct vm_bigint *vm_value_as_bigint(vm_value value);
 uint32_t vm_bigint_hash(const struct vm_bigint *big);
+uint64_t vm_bigint_to_uint64(const struct vm_bigint *big);
+int vm_bigint_from_uint64(struct vm_heap *heap, uint64_t value, vm_value *result);
 int vm_to_int32(struct vm_realm *realm, vm_value value, int32_t *number);
 int vm_to_uint32(struct vm_realm *realm, vm_value value, uint32_t *number);
 int vm_to_string(struct vm_realm *realm, vm_value value, struct vm_string **string);

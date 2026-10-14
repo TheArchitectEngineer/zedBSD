@@ -64,6 +64,7 @@ LIBBROWSER_SOURCES := $(LIBBROWSER_DIR)/base/arena.c \
 	$(LIBBROWSER_DIR)/js/builtin_generator.c \
 	$(LIBBROWSER_DIR)/js/builtin_symbol.c \
 	$(LIBBROWSER_DIR)/js/builtin_bigint.c \
+	$(LIBBROWSER_DIR)/js/builtin_typed.c \
 	$(LIBBROWSER_DIR)/js/builtin_iterator.c \
 	$(LIBBROWSER_DIR)/js/builtin_collection.c \
 	$(LIBBROWSER_DIR)/js/builtin_uri.c \

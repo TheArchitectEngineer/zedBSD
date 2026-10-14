@@ -22,6 +22,7 @@
  */
 
 #include "bind/internal.h"
+#include "js/builtin.h"
 #include "net/net.h"
 
 #include <errno.h>
@@ -1145,6 +1146,163 @@ environment_xhr_fire(
 	return status;
 }
 
+/* structuredClone (the clone of the plain data a page keeps): written in the page's own language. */
+static const char environment_structured_clone[] =
+	"(function () {\n"
+	"  function fail(what) { return new DOMException(what + ' could not be cloned.', 'DataCloneError'); }\n"
+	"  return function structuredClone(value) {\n"
+	"    var seen = new Map();\n"
+	"    function copy(x) {\n"
+	"      var r, tag, i, keys;\n"
+	"      if (typeof x === 'function') throw fail(String(x));\n"
+	"      if (typeof x === 'symbol') throw fail('Symbol()');\n"
+	"      if (x === null || typeof x !== 'object') return x;\n"
+	"      if (seen.has(x)) return seen.get(x);\n"
+	"      tag = Object.prototype.toString.call(x);\n"
+	"      if (Array.isArray(x)) {\n"
+	"        r = new Array(x.length); seen.set(x, r);\n"
+	"        for (i = 0; i < x.length; i++) if (i in x) r[i] = copy(x[i]);\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (tag === '[object Date]') { r = new Date(x.getTime()); seen.set(x, r); return r; }\n"
+	"      if (tag === '[object RegExp]') { r = new RegExp(x.source, x.flags); seen.set(x, r); return r; }\n"
+	"      if (tag === '[object Boolean]' || tag === '[object Number]' || tag === '[object String]') {\n"
+	"        r = Object(x.valueOf()); seen.set(x, r); return r;\n"
+	"      }\n"
+	"      if (x instanceof Map) {\n"
+	"        r = new Map(); seen.set(x, r);\n"
+	"        x.forEach(function (v, k) { r.set(copy(k), copy(v)); });\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (x instanceof Set) {\n"
+	"        r = new Set(); seen.set(x, r);\n"
+	"        x.forEach(function (v) { r.add(copy(v)); });\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (x instanceof Error) {\n"
+	"        r = Object.create(Object.getPrototypeOf(x)); seen.set(x, r);\n"
+	"        Object.defineProperty(r, 'message', { value: x.message, writable: true, configurable: true });\n"
+	"        if (x.stack !== undefined) Object.defineProperty(r, 'stack', { value: x.stack, writable: true, configurable: true });\n"
+	"        return r;\n"
+	"      }\n"
+	"      if (tag !== '[object Object]') throw fail('#<' + tag.slice(8, -1) + '>');\n"
+	"      r = {}; seen.set(x, r);\n"
+	"      keys = Object.keys(x);\n"
+	"      for (i = 0; i < keys.length; i++) r[keys[i]] = copy(x[keys[i]]);\n"
+	"      return r;\n"
+	"    }\n"
+	"    if (arguments.length === 0) throw new TypeError(\"Failed to execute 'structuredClone' on 'Window': 1 argument required, but only 0 present.\");\n"
+	"    return copy(value);\n"
+	"  };\n"
+	"})()";
+
+/* crypto.getRandomValues(typedArray): fills the array with random bytes and returns it. */
+static int
+environment_get_random_values(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	int status;
+
+	UNUSED_PARAMETER(this_value);
+	status = js_typed_random_fill(js_argument(args, count, 0));
+	if (status == EINVAL)
+		return vm_throw_type_error(realm, "Failed to execute 'getRandomValues' on 'Crypto': The provided value is not of type '(ArrayBufferView)'.");
+	if (status != 0)
+		return status;
+	*result = js_argument(args, count, 0);
+	return 0;
+}
+
+/* crypto.randomUUID(): a version 4 UUID. */
+static int
+environment_random_uuid(
+	struct vm_realm *realm,
+	vm_value this_value,
+	const vm_value *args,
+	unsigned count,
+	vm_value *result)
+{
+	static const char hex[] = "0123456789abcdef";
+	unsigned char bytes[16];
+	char text[37];
+	struct vm_string *string;
+	FILE *file;
+	size_t got;
+	unsigned i;
+	unsigned at;
+
+	UNUSED_PARAMETER(this_value);
+	UNUSED_PARAMETER(args);
+	UNUSED_PARAMETER(count);
+	file = fopen("/dev/urandom", "rb");
+	if (file == NULL)
+		return EIO;
+	got = fread(bytes, 1U, sizeof(bytes), file);
+	fclose(file);
+	if (got != sizeof(bytes))
+		return EIO;
+	bytes[6] = (unsigned char)((bytes[6] & 0x0fU) | 0x40U);
+	bytes[8] = (unsigned char)((bytes[8] & 0x3fU) | 0x80U);
+	at = 0;
+	for (i = 0; i < 16U; i++) {
+		if (i == 4U || i == 6U || i == 8U || i == 10U)
+			text[at++] = '-';
+		text[at++] = hex[bytes[i] >> 4];
+		text[at++] = hex[bytes[i] & 15U];
+	}
+	string = vm_string_from_utf8(realm->heap, text, at);
+	if (string == NULL)
+		return ENOMEM;
+	*result = vm_value_cell(string);
+	return 0;
+}
+
+/* Defines the global crypto object (random values only; there is no SubtleCrypto). */
+static int
+environment_install_crypto(
+	struct vm_realm *realm)
+{
+	struct vm_object *crypto;
+	int error;
+
+	crypto = vm_object_create(realm->heap, realm->object_prototype);
+	if (crypto == NULL)
+		return ENOMEM;
+	error = js_builtin_method(realm, crypto, "getRandomValues", 1, environment_get_random_values);
+	if (error == 0)
+		error = js_builtin_method(realm, crypto, "randomUUID", 0, environment_random_uuid);
+	if (error == 0)
+		error = js_builtin_value(realm, realm->global, "crypto", vm_value_cell(crypto), VM_PROPERTY_DEFAULT);
+	return error;
+}
+
+/* Defines structuredClone on the global object. */
+static int
+environment_install_structured_clone(
+	struct vm_realm *realm)
+{
+	struct vm_string *source;
+	vm_value function;
+	int status;
+
+	/* The function made by running its source. */
+	source = vm_string_from_utf8(realm->heap, environment_structured_clone, sizeof(environment_structured_clone) - 1U);
+	if (source == NULL)
+		return ENOMEM;
+	status = js_builtin_evaluate(realm, source, 0, &function);
+	if (status != 0) {
+		/* A failure to build it leaves the global without it. */
+		realm->exception = VM_VALUE_UNDEFINED;
+		return 0;
+	}
+	status = js_builtin_value(realm, realm->global, "structuredClone", function, VM_PROPERTY_DEFAULT);
+	return status;
+}
+
 /*
  * Defines the window's plain properties: the pixel ratio, the outer size
  * and position, and the window's relatives (a page without frames is its
@@ -1172,6 +1330,10 @@ environment_install_window(
 		error = js_builtin_method(realm, global, "btoa", 1, environment_btoa);
 	if (error == 0)
 		error = js_builtin_method(realm, global, "fetch", 1, environment_fetch);
+	if (error == 0)
+		error = environment_install_structured_clone(realm);
+	if (error == 0)
+		error = environment_install_crypto(realm);
 	if (error != 0)
 		return error;
 

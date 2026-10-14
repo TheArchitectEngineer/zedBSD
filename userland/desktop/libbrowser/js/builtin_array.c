@@ -335,6 +335,7 @@ array_from(
 	uint32_t length;
 	uint32_t index;
 	int callable;
+	int iterable;
 	int status;
 
 	UNUSED_PARAMETER(this_value);
@@ -355,9 +356,16 @@ array_from(
 	status = vm_heap_add_root(realm->heap, &source_root);
 	if (status != 0)
 		return status;
-	status = js_builtin_length(realm, source, &length);
+	status = vm_get_method(realm, source, vm_symbol_key(realm, VM_SYMBOL_ITERATOR), &value);
 	if (status != 0)
 		goto release_source;
+	iterable = value != VM_VALUE_UNDEFINED;
+	length = 0;
+	if (!iterable) {
+		status = js_builtin_length(realm, source, &length);
+		if (status != 0)
+			goto release_source;
+	}
 	status = array_new(realm, result);
 	if (status != 0)
 		goto release_source;
@@ -365,6 +373,30 @@ array_from(
 	status = vm_heap_add_root(realm->heap, &result_root);
 	if (status != 0)
 		goto release_source;
+
+	/* An iterable's values come from its iterator, then the mapper runs over them. */
+	if (iterable) {
+		status = vm_array_spread(realm, *result, source);
+		if (status != 0)
+			goto cleanup;
+		length = ((struct vm_object *)vm_value_as_cell(*result))->length;
+		if (mapper != VM_VALUE_UNDEFINED) {
+			for (index = 0; index < length; index++) {
+				status = array_get(realm, *result, index, &value);
+				if (status != 0)
+					goto cleanup;
+				call_args[0] = value;
+				call_args[1] = vm_value_int32((int32_t)index);
+				status = vm_call(realm, mapper, js_argument(args, count, 2), call_args, 2, &value);
+				if (status != 0)
+					goto cleanup;
+				status = vm_object_define(realm->heap, (struct vm_object *)vm_value_as_cell(*result), vm_value_int32((int32_t)index), value, VM_PROPERTY_DEFAULT);
+				if (status != 0)
+					goto cleanup;
+			}
+		}
+		length = 0;
+	}
 
 	/* Each element, mapped when asked. */
 	for (index = 0; index < length; index++) {

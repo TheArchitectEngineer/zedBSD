@@ -1202,3 +1202,40 @@ vm_bigint_hash(
 		hash = (hash ^ limbs[i]) * 16777619U;
 	return hash;
 }
+
+/* Reports a BigInt's low 64 bits (two's complement, as BigInt.asUintN(64) keeps them). */
+uint64_t
+vm_bigint_to_uint64(
+	const struct vm_bigint *big)
+{
+	const uint32_t *limbs;
+	uint64_t low;
+
+	limbs = (const uint32_t *)(big + 1);
+	low = 0;
+	if (big->length > 0)
+		low = limbs[0];
+	if (big->length > 1U)
+		low |= (uint64_t)limbs[1] << 32;
+	if (big->negative)
+		low = (uint64_t)0 - low;
+	return low;
+}
+
+/* Makes a BigInt from an unsigned 64-bit integer. */
+int
+vm_bigint_from_uint64(
+	struct vm_heap *heap,
+	uint64_t value,
+	vm_value *result)
+{
+	struct bn x;
+	int error;
+
+	error = bn_alloc(&x, 2);
+	if (error != 0)
+		return error;
+	x.d[0] = (uint32_t)value;
+	x.d[1] = (uint32_t)(value >> 32);
+	return bn_finish(heap, &x, result);
+}

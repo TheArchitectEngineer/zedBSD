@@ -217,6 +217,8 @@ vm_set(
 	struct vm_object *object;
 	vm_value ignored;
 	vm_value length_key;
+	struct vm_descriptor descriptor;
+	int handled;
 	int is_object;
 	int found;
 	int done;
@@ -271,6 +273,21 @@ vm_set(
 		if (status != 0)
 			return status;
 		return 0;
+	}
+
+	/* A typed array converts the value in the realm (a valueOf may run, a wrong BigInt type throws). */
+	if (object->kind == VM_KIND_TYPED_ARRAY && object->native_operations != NULL && object->native_operations->define != NULL) {
+		memset(&descriptor, 0, sizeof(descriptor));
+		descriptor.has = VM_HAS_VALUE | VM_HAS_WRITABLE | VM_HAS_ENUMERABLE | VM_HAS_CONFIGURABLE;
+		descriptor.value = value;
+		descriptor.attributes = VM_PROPERTY_DEFAULT;
+		handled = 0;
+		done = 0;
+		status = object->native_operations->define(realm, object, key, &descriptor, &handled, &done);
+		if (status != 0)
+			return status;
+		if (handled)
+			return 0;
 	}
 
 	/* Otherwise the ordinary assignment; an object that takes no new property refuses. */
