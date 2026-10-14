@@ -122,13 +122,18 @@ T1-642（`plan/agents/T1/results-20261015-nvrtx-r7c.md` の末尾、rombar=1、m
 - DP の出力（protocol 8・9）は link training が要るので何もしない（`P8b: protocol N is not TMDS; the picture is left alone`）。
 - 確認: nvrtx=y の kernel（`BUILD=build/ws037-y`）rc 0・warning 0・include check / vmunix check PASS。host 試験 `nvrtx-gsp-host-test.sh` PASS 222 項目（mode の導出、head の mode の method 25 語、display id・SOR control、DFP_ASSIGN_SOR の引数と返りの読み、push の jump）。実機は未実施。
 
+### R8 の合格の条件（2026-10-15 ユーザーの決定）
+
+ユーザー（原文）:「R8の終了条件にユーザテストを入れません。あなたはパススルー環境でテストして、カーネルログから、ディスプレイ制御のエラーを見ることができます。現状ではエラーがでているはずです。それが出なくなり、制御できるようになったと思われたら、R8をクリアと見なします。ユーザの目視は不要です。」
+→ R8b・R8c・R8d の合格は、**方式 B（passthrough）の guest の kernel の印（emulated の VGA の screendump、または guest の `dmesg | grep nvrtx`）に display の制御の error が無く、下の各手順の ok の印が全部出て制御できていると読めること**。ユーザーの目視は合格の条件に入れない（下の手順の「monitor（目視）」の行は参考。見られる時の記録だけ）。display の制御の error とは: `P8b fail: …`・`P8c fail: …`・`P8b core exception …`／`P8b other …`（notifier の timeout の後の dump）・`rm: control … status …`・`rm: class … status …`・`P6: N display frees failed`・`P8b: N channel frees failed`・`P7 fail …`、probe の行の `error=` が 0 でない物（power・refresh-off の EOPNOTSUPP（21）は仕様どおりで error に数えない）。
+
 ### T への手順（R8b の再試験、rombar=1。2026-10-15 夜に既定 on の語へ更新）
 
-image は main の `7ca217eab` 以降（P1 の直し `476ca3ba5` と既定 on を含む）で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`。boot の語は **`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`**（既定 on の後は `nvrtx.disp=1` は無い語。`disp.test=1` が帯の surface・flip・step ごとの 5 秒の待ちを出し、`resident=0` が最後に GSP を止める）。QEMU は `~/nvrtx/start-rombar1.sh`。run の前に host の reboot と `prepare.sh --check`。**ユーザーが monitor の前で、各 `P8b step` の印の時に信号があるかを見る**（step ごとに 5 秒止まる。screendump は 5 秒おきが望ましい）。全体で P8b は約 40 秒（step 4 つ × 5 秒、帯 10 秒 × 2）。
+image は main の `7ca217eab` 以降（P1 の直し `476ca3ba5` と既定 on を含む）で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`。boot の語は **`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`**（既定 on の後は `nvrtx.disp=1` は無い語。`disp.test=1` が帯の surface・flip・step ごとの 5 秒の待ちを出し、`resident=0` が最後に GSP を止める）。QEMU は `~/nvrtx/start-rombar1.sh`。run の前に host の reboot と `prepare.sh --check`。step ごとに 5 秒止まる（screendump は 5 秒おきが望ましい。ユーザーの目視は不要、上の「R8 の合格の条件」）。全体で P8b は約 40 秒（step 4 つ × 5 秒、帯 10 秒 × 2）。
 
 合格（screendump）: `P8 ok: display, heads f, windows ff, lit 1` → `P8b begin` → `P8b head 0 armed: view … raster … clock …, SOR 1 …` → `P8b head 0 mode: 1280x1024, view out …` → `P8b surfaces 1280x1024 pitch 5120 at … and …` → `P8b channel c57d.0 made` → `P8b step 1: core channel made (5 s)` → `P8b core start notified after N us` → `P8b step 2: core start released (5 s)` → `P8b core disable notified after N us` → `P8b step 3: head disabled (5 s)` → `P8b SOR n assigned to display 200 (the firmware's was 1)` → `P8b core owners notified after N us` → `P8b step 4: head enabled (5 s)` → `P8b channel c57e.0 made` → `P8b core show notified after N us` → `P8b ok: mode set (1280x1024 on SOR n), surface A shown` → `P8b window flip notified after N us` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows the driver's surfaces` → **`P8 done; this revision ends at P8c`**（以前の `P8 done; stopping (this revision ends at P8b)` から変わった）→ `P6 ok: channel and vaspace freed`（`P8b: N channel frees failed`・`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
 - 方式 B では GOP の画面が emulated の VGA にあるので `P0 console …` の行は出ない（console の保持は方法 A の物）。`P0 skipped: …` が出たら語の `nvrtx.gsp=1` が欠けている。
-- monitor（目視）: step 1・2 は GOP の画面のまま（または既に黒）、step 3 で信号が消えてよい、step 4 で信号が戻る（画面は GOP の残りか黒）、`surface A shown` の後 10 秒は 8 本の帯（上が白）、flip の後 10 秒は逆順。**どの step で信号が消え・戻ったか**を記録。
+- monitor（参考、合格の条件ではない）: step 1・2 は GOP の画面のまま（または既に黒）、step 3 で信号が消えてよい、step 4 で信号が戻る（画面は GOP の残りか黒）、`surface A shown` の後 10 秒は 8 本の帯（上が白）、flip の後 10 秒は逆順。**どの step で信号が消え・戻ったか**を記録。
 - FAIL の時: `P8b fail: …` と、その直後の `P8b core exception …`・`P8b other …` の 2 行、`rm: control 00731152 status …` があればそれを PNG に（次の「FAIL の読み方」で読む）。`P7 fail` なら host を reboot。
 
 ### FAIL の読み方（R8b、P2 が 2026-10-15 に用意。register の意味は open-gpu-doc（MIT）`manuals/turing/tu102/dev_display_withoffset.ref.txt`）
@@ -197,7 +202,7 @@ image は `NVRTX_RUN=R8c`（既定 on の後の語は `nvrtx.gsp=1 nvrtx.disp.te
 1. 起動の印: R8b の合格の印（step 1〜4、`P8b ok: …`）に続いて `P8c begin` → `P8c ok: gpu device registered, display 1280x1024 at 60020 mHz` → `P8c: the GSP stays up until power-off`（`P7` の行は出ない）→ login prompt。
 2. serial で: `display-inventory`（GPU の node が複数なら `--node=/dev/gpuN` で nvrtx の物。`DISPLAY-INVENTORY output index=0 … connected=1 … mode=1280x1024@60020 … name=nvrtx head`）。
 3. `display-control --hold=10`（同じ node）: `DISPLAY-CONTROL claim lease=1`、`DISPLAY-CONTROL present error=0`、power・refresh の行は EOPNOTSUPP（zedBSD の errno で 21）でよい（DISPLAY_CONTROL は未実装）、`DISPLAY-CONTROL done error=0`。画面の印 `P8c lease 1 claimed`・`P8c lease 1 released after 1 frames`。
-4. monitor（目視）: present の後、緑（BGRA 0xff30c060）の一面が約 20 秒（hold 10 秒 × 2）、release の後に 8 本の帯（上が白）に戻る。
+4. monitor（参考、合格の条件ではない）: present の後、緑（BGRA 0xff30c060）の一面が約 20 秒（hold 10 秒 × 2）、release の後に 8 本の帯（上が白）に戻る。
 5. 後始末: GSP は止まらないので guest を止めた後 **host を reboot**。
 FAIL の時: `P8c fail: …`・`P8b fail: frame notifier …`・`P8b core exception …` の行を PNG に。
 
@@ -245,7 +250,7 @@ image は main に merge した commit で `plan/tools/guest/test-image.sh --no-
    - `shared blob=0 write=0 export=0 import=0 present=0 sequence=1`
    - `cursor set=0 show=0 moves=100 move=0 hide=0 again=0`
    - `done error=0`（画面の印 `P8c lease N released after 1 frames`）
-5. monitor（ユーザーの目視）: 青の一面（client の blob、client を閉じた後も出たまま）5 秒 → その中央に白い 32×32 の四角（黒い縁 2 px）の cursor が 5 秒 → 右下へ約 3 秒かけて 400 px 斜めに動く → 消えて 5 秒 → 止まった所に再び出て 5 秒 → release で 8 本の帯（上が白）に戻り cursor は消える。cursor の乱れ（色・縁の欠け・ちらつき）と、動きの途切れを記録。
+5. monitor（参考、合格の条件ではない）: 青の一面（client の blob、client を閉じた後も出たまま）5 秒 → その中央に白い 32×32 の四角（黒い縁 2 px）の cursor が 5 秒 → 右下へ約 3 秒かけて 400 px 斜めに動く → 消えて 5 秒 → 止まった所に再び出て 5 秒 → release で 8 本の帯（上が白）に戻り cursor は消える。cursor の乱れ（色・縁の欠け・ちらつき）と、動きの途切れを記録。
 
 FAIL の時: `P8c fail: …`（`cursor channel has N free entries`・`channel at 680000 stopped, get … put …`・`a flip did not begin`）、`P8b core exception …`・`P8b other …`、probe の行の error の数（zedBSD の errno: 17 = EBUSY、5 = EIO、21 = EOPNOTSUPP、3 = EINVAL、48 = EXDEV、42 = ETIMEDOUT）を PNG に。refresh が 0 なら（RG_DPCA が動かない）その旨を記録。
 
