@@ -1,0 +1,43 @@
+# zedBSD optional firmware package manifest
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+
+package=nvidia-gsp-firmware
+package-version=570.144
+consumer=nvrtx kernel driver (src/drivers/gpu/nvrtx, plan/ws037/nvrtx-design.md section 9)
+installed-directory=/lib/firmware/nvidia/tu102
+installed-file=gsp/gsp-570.144.bin
+installed-file=gsp/bootloader-570.144.bin
+installed-file=gsp/booter_load-570.144.bin
+installed-file=gsp/booter_unload-570.144.bin
+installed-file=acr/bl.bin
+installed-alias=WHENCE links nvidia/tu104/gsp, nvidia/tu106/gsp and nvidia/tu10[46]/acr/bl.bin to tu102; the image builder installs files only, so no copies are made and nvrtx reads the tu102 directory for every TU10x chip
+not-installed=gsp/gen_bootloader-570.144.bin (not used on the Turing boot path)
+installed-license=/usr/share/licenses/nvidia-gsp-firmware/LICENCE.nvidia
+installed-whence=/usr/share/licenses/nvidia-gsp-firmware/WHENCE
+
+acquisition-repository=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
+acquisition-tag=20260410
+acquisition-tag-object=4585dd5a5f0cee08990d754701d8866d9e9266e6
+acquisition-revision=dc85ccedc9c973682fbcf4d628ca61174bcc3120
+acquisition-base-url=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain
+acquisition-url-suffix=?id=dc85ccedc9c973682fbcf4d628ca61174bcc3120
+acquisition-file=nvidia/tu102/gsp/gsp-570.144.bin size=28542040 sha256=3052aee2872182a14d8d7c069e3a14fe4642405894b24692c4aca4101dfb1809
+acquisition-file=nvidia/tu102/gsp/bootloader-570.144.bin size=4196 sha256=12e987b636c2f00fa40f42fd95097515c0817b158119c584049a37faf38f8f96
+acquisition-file=nvidia/tu102/gsp/booter_load-570.144.bin size=59272 sha256=7bb181f544a942299bbf4642da6d9bb58bfed8459725094e2ace56647cd3ec8c
+acquisition-file=nvidia/tu102/gsp/booter_unload-570.144.bin size=39304 sha256=5c7f1aa37d045cc20bb81584a830e8dfa4483f1cd63943de83a58c4be19a1782
+acquisition-file=nvidia/tu102/acr/bl.bin size=1280 sha256=01326cc997716bebb0eab9fe1f463fffa0ee586079e4ca0e5bb096ab6fcfedab
+acquisition-license-path=LICENCE.nvidia
+acquisition-license-size=6212
+acquisition-license-sha256=bc5225a57f49c5249dcf238e4ae6437811677a2a8a7f579c3d839e058653ee44
+acquisition-whence-path=WHENCE
+acquisition-whence-size=425450
+acquisition-whence-sha256=c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
+whence-origin=gsp-570.144.bin is gsp_tu10x.bin from NVIDIA-Linux-x86_64-570.144.run
+
+redistribution=unmodified-binary-only, solely for use on operating systems distributed under an OSI-approved open source license, with a copy of LICENCE.nvidia (section 2.1.2)
+reverse-engineering=forbidden by the licence; nvrtx reads only the container headers (ELF section table and the binary header layouts published by NVIDIA under MIT) needed to place the images, and never disassembles them
+usage=only with NVIDIA processors (section 2.1.3); no translation; no rental
+export=subject to United States export regulations (section 7)
+license=NVIDIA License For Customer Use of NVIDIA Software in the installed LICENCE.nvidia file
+source-tree-blob=absent
+runtime-network-fetch=forbidden

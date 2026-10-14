@@ -1,0 +1,13 @@
+Firmware: NVIDIA GSP-RM firmware 570.144 for Turing (TU102, TU104, TU106)
+Hardware: NVIDIA GeForce RTX 20xx (Turing TU10x) graphics cards, used by the
+          nvrtx driver (CONFIG_DRIVER_PCI_NVRTX)
+Files:    /lib/firmware/nvidia/tu102/gsp/gsp-570.144.bin (GSP-RM image)
+          /lib/firmware/nvidia/tu102/gsp/bootloader-570.144.bin
+          /lib/firmware/nvidia/tu102/gsp/booter_load-570.144.bin
+          /lib/firmware/nvidia/tu102/gsp/booter_unload-570.144.bin
+          /lib/firmware/nvidia/tu102/acr/bl.bin
+Source:   linux-firmware tag 20260410 (commit dc85ccedc9c973682fbcf4d628ca61174bcc3120)
+
+Copyright NVIDIA Corporation or its suppliers.  Redistributed unmodified,
+for use with an operating system distributed under an OSI-approved open
+source license, together with this license (LICENCE.nvidia section 2.1.2).
