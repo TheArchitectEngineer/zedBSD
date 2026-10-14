@@ -67,6 +67,7 @@
 #define CHANNEL_REG_FLUSH		0xb830b0U
 #define CHANNEL_FLUSH_TRIGGER		0x80000000U
 #define CHANNEL_FLUSH_ALL_ADDRESSES	0x1U
+#define CHANNEL_FLUSH_BAR		0x6U
 #define CHANNEL_FLUSH_TIMEOUT_US	2000000U
 
 /* USERD's put and get of the ring. */
@@ -97,6 +98,7 @@ static int channel_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t
 static int channel_vram_fill(struct nvrtx_gpu *gpu, uint64_t address, uint32_t value, size_t length);
 static int channel_buffers(struct nvrtx_gpu *gpu);
 static int channel_flush_tlb(struct nvrtx_gpu *gpu);
+static int channel_flush(struct nvrtx_gpu *gpu, uint64_t root, uint32_t type);
 static int channel_fence(struct nvrtx_gpu *gpu);
 static int channel_submit(struct nvrtx_gpu *gpu, size_t push_at, size_t length, uint32_t index);
 static int channel_wait(struct nvrtx_gpu *gpu, uint32_t expected, uint32_t put);
@@ -458,19 +460,35 @@ nvrtx_flush_tlb(
 {
 	int error;
 
-	/* Names the root (in the VRAM: aperture 0), then triggers the invalidate of all addresses. */
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(root >> 8));
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
-	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | CHANNEL_FLUSH_ALL_ADDRESSES);
-
-	/* Waits for the trigger to clear. */
-	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
-	if (error != 0) {
-		nvrtx_stage_mark("TLB invalidate of root %llx did not finish", (unsigned long long)root);
+	/* Invalidates all the addresses of the root. */
+	error = channel_flush(gpu, root, CHANNEL_FLUSH_ALL_ADDRESSES);
+	if (error != 0)
 		return error;
-	}
 
 	/* Succeeded: no stale translation is left. */
+	return 0;
+}
+
+/*
+ * Invalidates the hub's TLB entries of a BAR's page tables (stage P4m).
+ *
+ * nouveau's flush of a BAR's address space: all addresses, every root, the
+ * hub's TLB only.  Returns ETIMEDOUT when the invalidate does not finish in
+ * 2 s.
+ */
+int
+nvrtx_flush_tlb_bar(
+	struct nvrtx_gpu *gpu,
+	uint64_t root)
+{
+	int error;
+
+	/* Invalidates the hub's translations under the root. */
+	error = channel_flush(gpu, root, CHANNEL_FLUSH_ALL_ADDRESSES | CHANNEL_FLUSH_BAR);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the CPU's window sees the new entries. */
 	return 0;
 }
 
@@ -630,12 +648,16 @@ channel_vram_write(
 		return EINVAL;
 
 	/* Points the window at the range, writes it word by word, and puts the window back. */
+	mutex_lock(&gpu->window_lock);
+
 	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)(base >> 16));
 	for (at = 0U; at < length; at += 4U)
 		nvrtx_wr32(gpu, CHANNEL_WINDOW_AT + offset + (uint32_t)at, nvrtx_get32(data, at));
 	(void)nvrtx_rd32(gpu, CHANNEL_WINDOW_AT + offset);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
+
+	mutex_unlock(&gpu->window_lock);
 
 	/* Succeeded: the bytes are in the VRAM. */
 	return 0;
@@ -661,12 +683,16 @@ channel_vram_fill(
 		return EINVAL;
 
 	/* Points the window at the range, writes the value word by word, and puts the window back. */
+	mutex_lock(&gpu->window_lock);
+
 	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)(base >> 16));
 	for (at = 0U; at < length; at += 4U)
 		nvrtx_wr32(gpu, CHANNEL_WINDOW_AT + offset + (uint32_t)at, value);
 	(void)nvrtx_rd32(gpu, CHANNEL_WINDOW_AT + offset);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
+
+	mutex_unlock(&gpu->window_lock);
 
 	/* Succeeded: the run holds the value. */
 	return 0;
@@ -686,10 +712,14 @@ channel_vram_read32(
 		return EINVAL;
 
 	/* Points the window at the word, reads it, and puts the window back. */
+	mutex_lock(&gpu->window_lock);
+
 	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)((address & ~0xffffULL) >> 16));
 	*value = nvrtx_rd32(gpu, CHANNEL_WINDOW_AT + (uint32_t)(address & 0xffffU));
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, saved);
+
+	mutex_unlock(&gpu->window_lock);
 
 	/* Succeeded: the word is read. */
 	return 0;
@@ -901,5 +931,37 @@ channel_copy_fill(
 
 	/* Succeeded: the copy engine wrote the words. */
 	nvrtx_stage_mark("P5 ok: copy engine filled %u words", (unsigned)CHANNEL_FILL_WORDS);
+	return 0;
+}
+
+/*
+ * Names a root (in the VRAM: aperture 0) and runs one invalidate of the given
+ * type, waiting for its trigger to clear.
+ */
+static int
+channel_flush(
+	struct nvrtx_gpu *gpu,
+	uint64_t root,
+	uint32_t type)
+{
+	int error;
+
+	/* Triggers the invalidate and waits for it; one at a time, as nouveau holds its MMU lock. */
+	mutex_lock(&gpu->window_lock);
+
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(root >> 8));
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
+	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER | type);
+	error = nvrtx_poll(gpu, CHANNEL_REG_FLUSH, CHANNEL_FLUSH_TRIGGER, 0U, CHANNEL_FLUSH_TIMEOUT_US);
+
+	mutex_unlock(&gpu->window_lock);
+
+	/* Reports an invalidate that did not finish. */
+	if (error != 0) {
+		nvrtx_stage_mark("TLB invalidate of root %llx did not finish", (unsigned long long)root);
+		return error;
+	}
+
+	/* Succeeded: no stale translation is left. */
 	return 0;
 }

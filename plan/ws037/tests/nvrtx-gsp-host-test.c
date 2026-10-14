@@ -21,6 +21,7 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
+#include "drivers/gpu/nvrtx/nvrtx-mem.h"
 
 static unsigned failures;
 static unsigned checks;
@@ -580,6 +581,71 @@ test_mmu(void)
 	check(nvrtx_mmu_vram_block(info, 0x10000, &block, &region) == ENOSPC, "vram: no region");
 }
 
+/* P4m: the range allocator, the usable region's bounds and the VRAM page entry. */
+static void
+test_heap(void)
+{
+	static uint8_t info[NVRTX_STATIC_INFO_BYTES];
+	static struct nvrtx_heap heap;
+	uint64_t a;
+	uint64_t b;
+	uint64_t c;
+	uint64_t base;
+	uint64_t top;
+	uint32_t region;
+	unsigned i;
+	int ok;
+	size_t r;
+
+	nvrtx_heap_init(&heap, 0x100000ULL, 0x1100000ULL);
+	check(heap.count == 1 && heap.free_bytes == 0x1000000ULL, "heap: one free run");
+	check(nvrtx_heap_alloc(&heap, 0x1000, 0x1000, &a) == 0 && a == 0x10ff000ULL, "heap: first run from the top");
+	check(nvrtx_heap_alloc(&heap, 0x3000, 0x10000, &b) == 0 && b == 0x10f0000ULL, "heap: aligned below the first");
+	check(heap.count == 2 && heap.free[1].base == 0x10f3000ULL && heap.free[1].size == 0xc000ULL, "heap: alignment leaves a hole");
+	check(nvrtx_heap_alloc(&heap, 0x2000, 0x1000, &c) == 0 && c == 0x10fd000ULL, "heap: the hole above is used first");
+	check(nvrtx_heap_free(&heap, b, 0x3000) == 0, "heap: free a middle run");
+	check(nvrtx_heap_free(&heap, b, 0x3000) == EINVAL, "heap: double free refused");
+	check(nvrtx_heap_free(&heap, a, 0x1000) == 0 && nvrtx_heap_free(&heap, c, 0x2000) == 0, "heap: free the rest");
+	check(heap.count == 1 && heap.free[0].base == 0x100000ULL && heap.free_bytes == 0x1000000ULL, "heap: runs merge back into one");
+	check(nvrtx_heap_alloc(&heap, 0x2000000, 1, &a) == ENOSPC, "heap: too large refused");
+	check(nvrtx_heap_alloc(&heap, 0, 1, &a) == EINVAL && nvrtx_heap_alloc(&heap, 0x1000, 3, &a) == EINVAL, "heap: empty size and odd align refused");
+	check(nvrtx_heap_reserve(&heap, 0x200000ULL, 0x100000ULL) == 0 && heap.count == 2, "heap: reserve splits");
+	check(nvrtx_heap_reserve(&heap, 0x280000ULL, 0x1000ULL) == EBUSY, "heap: reserve of a taken run refused");
+	check(nvrtx_heap_free(&heap, 0x80000ULL, 0x1000ULL) == EINVAL, "heap: free outside the range refused");
+	check(nvrtx_heap_free(&heap, 0x200000ULL, 0x100000ULL) == 0 && heap.count == 1, "heap: reserved run freed and merged");
+
+	nvrtx_heap_init(&heap, 0, 0x10000000ULL);
+	ok = 1;
+	for (i = 0; i < 300; i++) {
+		if (nvrtx_heap_alloc(&heap, 0x1000, 0x1000, &a) != 0)
+			ok = 0;
+	}
+	for (i = 0; i < 300; i += 2) {
+		if (nvrtx_heap_free(&heap, 0x10000000ULL - (uint64_t)(i + 1) * 0x1000, 0x1000) != 0 && i / 2 < NVRTX_HEAP_EXTENTS_MAX - 1)
+			ok = 0;
+	}
+	check(ok && heap.count <= NVRTX_HEAP_EXTENTS_MAX, "heap: many holes stay bounded");
+
+	nvrtx_heap_init(&heap, 5, 5);
+	check(heap.count == 0 && nvrtx_heap_alloc(&heap, 1, 1, &a) == ENOSPC, "heap: empty range");
+
+	memset(info, 0, sizeof(info));
+	nvrtx_put32(info, 344, 2);
+	r = 344 + 8;
+	nvrtx_put64(info, r, 0x10000000ULL);
+	nvrtx_put64(info, r + 8, 0x1f76fffffULL);
+	info[r + 28] = 1;
+	info[r + 29] = 1;
+	r += 48;
+	nvrtx_put64(info, r, 0x1f7700000ULL);
+	nvrtx_put64(info, r + 8, 0x1ffffffffULL);
+	nvrtx_put64(info, r + 16, 1);
+	check(nvrtx_mmu_vram_region(info, &base, &top, &region) == 0 && region == 0 && base == 0x10000000ULL && top == 0x1f7700000ULL, "vram: usable region bounds");
+	nvrtx_put32(info, 344, 0);
+	check(nvrtx_mmu_vram_region(info, &base, &top, &region) == ENOSPC, "vram: no usable region");
+	check(nvrtx_mmu_vram_pte(0x1f3f05000ULL) == ((0x1f3f05000ULL >> 4) | 1), "vram: page entry valid, VRAM, not volatile");
+}
+
 static void
 test_objects(void)
 {
@@ -757,6 +823,8 @@ test_disp(void)
 	uint8_t pb[NVRTX_DISP_PUSHBUFFER_BYTES];
 	uint8_t chan[NVRTX_DISP_CHANNEL_BYTES];
 	uint32_t armed[NVRTX_DISP_HEAD_COPIED];
+	uint8_t assign[NVRTX_DISP_ASSIGN_SOR_BYTES];
+	struct nvrtx_disp_mode mode;
 	struct nvrtx_push push;
 	struct nvrtx_disp_surface surface;
 	uint32_t i;
@@ -796,13 +864,51 @@ test_disp(void)
 	nvrtx_disp_channel_params(chan, 2);
 	check(nvrtx_get32(chan, 0) == 2 && nvrtx_get32(chan, 12) == 0 && nvrtx_get32(chan, 32) == 1, "disp channel params");
 
-	/* The head copy names head 1's methods (0x2400 on) in the copied order. */
+	/* The mode from the armed state: the visible size from the blank's start less its end. */
 	for (i = 0; i < NVRTX_DISP_HEAD_COPIED; i++)
 		armed[i] = 0x1000U + i;
+	armed[NVRTX_DISP_ARMED_RASTER_SIZE] = 0x042a0698U;
+	armed[NVRTX_DISP_ARMED_BLANK_END] = 0x00290168U;
+	armed[NVRTX_DISP_ARMED_BLANK_START] = 0x04290668U;
+	armed[NVRTX_DISP_ARMED_PIXEL_CLOCK] = 0x066ff300U;
+	nvrtx_disp_mode_from_armed(armed, &mode);
+	check(mode.active == 0x04000500U && mode.raster_size == 0x042a0698U && mode.clock_hz == 108000000U &&
+	    mode.output_resource == 0x100eU && mode.dither == 0x100bU, "disp mode from armed");
+
+	/* The head's mode on head 1 (0x2400 on): view in and out, the raster run, then nouveau's fixed words. */
 	nvrtx_push_init(&push, memory, 64);
-	nvrtx_disp_core_head(&push, 1, armed);
-	check(push.count == 2 * NVRTX_DISP_HEAD_COPIED && nvrtx_get32(memory, 0) == 0x0004244cU &&
-	    nvrtx_get32(memory, 4) == 0x1000U && nvrtx_get32(memory, 4 * 4) == 0x00042464U, "disp core head copy");
+	nvrtx_disp_core_head_mode(&push, 1, &mode);
+	check(push.overflow == 0 && nvrtx_get32(memory, 0) == 0x0004244cU && nvrtx_get32(memory, 4) == 0x04000500U &&
+	    nvrtx_get32(memory, 8) == 0x00042458U && nvrtx_get32(memory, 12) == 0x04000500U &&
+	    nvrtx_get32(memory, 16) == 0x00102464U && nvrtx_get32(memory, 20) == 0x042a0698U &&
+	    nvrtx_get32(memory, 32) == 0x04290668U, "disp head mode view and raster");
+	check(nvrtx_get32(memory, 36) == 0x00042474U && nvrtx_get32(memory, 44) == 0x00042408U && nvrtx_get32(memory, 48) == 0 &&
+	    nvrtx_get32(memory, 52) == 0x0004240cU && nvrtx_get32(memory, 56) == 108000000U &&
+	    nvrtx_get32(memory, 60) == 0x00042428U && nvrtx_get32(memory, 68) == 0x00042430U && nvrtx_get32(memory, 72) == 0x1114U,
+	    "disp head mode control, clock and usage");
+	check(nvrtx_get32(memory, 76) == 0x00042418U && nvrtx_get32(memory, 80) == 0x100bU && nvrtx_get32(memory, 84) == 0x00042400U &&
+	    nvrtx_get32(memory, 88) == 0 && nvrtx_get32(memory, 92) == 0x00042404U && nvrtx_get32(memory, 96) == 0x100eU &&
+	    push.count == 25, "disp head mode dither, procamp, output resource");
+
+	/* The display id of head 1 and the SOR control. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_disp_core_display_id(&push, 1, 0x200);
+	nvrtx_disp_core_sor(&push, 1, (1U << NVRTX_DISP_SOR_PROTOCOL_SHIFT) | 1U);
+	check(nvrtx_get32(memory, 0) == 0x00042420U && nvrtx_get32(memory, 4) == 0x200U &&
+	    nvrtx_get32(memory, 8) == 0x00040320U && nvrtx_get32(memory, 12) == 0x101U, "disp display id and SOR control");
+
+	/* The SOR assignment: 80 bytes, the display at 4, the exclusion at 8; the reply's tagged list at 40. */
+	nvrtx_disp_assign_sor_params(assign, 0x200, 0x2);
+	check(nvrtx_get32(assign, 0) == 0 && nvrtx_get32(assign, 4) == 0x200U && assign[8] == 2 && nvrtx_get32(assign, 76) == 0,
+	    "disp assign SOR params");
+	check(nvrtx_disp_assign_sor_result(assign, 0x200) == NVRTX_DISP_SOR_NONE, "disp assign SOR none");
+	nvrtx_put32(assign, 40 + 8, 0x200);
+	check(nvrtx_disp_assign_sor_result(assign, 0x200) == 1, "disp assign SOR 1");
+
+	/* The jump back to the start of a push buffer. */
+	nvrtx_push_init(&push, memory, 64);
+	nvrtx_push_jump(&push, 0);
+	check(push.count == 1 && nvrtx_get32(memory, 0) == 0x20000000U, "disp push jump");
 
 	/* The core update: notifier on, interlocks (none, window 0), update, notifier off. */
 	nvrtx_push_init(&push, memory, 64);
@@ -817,6 +923,7 @@ test_disp(void)
 	surface.height = 1024;
 	surface.pitch = 5120;
 	surface.handle = NVRTX_DISP_HANDLE_VRAM;
+	surface.format = NVRTX_DISP_FORMAT_A8R8G8B8;
 	nvrtx_push_init(&push, memory, 64);
 	nvrtx_disp_window_image(&push, &surface);
 	check(nvrtx_get32(memory, 0) == 0x00040308U && nvrtx_get32(memory, 4) == 1 && nvrtx_get32(memory, 8) == 0x00100224U &&
@@ -845,6 +952,7 @@ main(int argc, char **argv)
 	test_vbios();
 	test_records();
 	test_mmu();
+	test_heap();
 	test_objects();
 	test_gr();
 	test_disp();
