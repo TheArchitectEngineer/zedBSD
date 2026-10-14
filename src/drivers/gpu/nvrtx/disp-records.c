@@ -714,23 +714,25 @@ nvrtx_disp_core_cursor_clear(
 }
 
 /*
- * Writes the core's update with its notifier, interlocked with one head's
- * cursor and no window: the update that shows or hides the cursor together
- * with the cursor channel's own (nouveau's corec37d_update for a cursor).
+ * Writes the core's update with its notifier and no interlock: the update
+ * that shows or hides the cursor (nouveau's corec37d_update for a cursor
+ * whose position changed, or one turned off).  The cursor channel's own
+ * update is not interlocked with the core (its SET_INTERLOCK_FLAGS is never
+ * written), so a core update interlocked with the cursor would wait for it
+ * forever.
  */
 void
 nvrtx_disp_core_update_cursor(
 	struct nvrtx_push *push,
-	uint32_t notifier_offset,
-	uint32_t head)
+	uint32_t notifier_offset)
 {
 	uint32_t interlock[2];
 
 	/* Asks for the notifier at its offset in the sync object. */
 	nvrtx_push_one(push, NVRTX_CORE_SET_NOTIFIER_CONTROL, RECORDS_NOTIFY_ENABLE | (notifier_offset & RECORDS_NOTIFIER_OFFSET_MASK));
 
-	/* The head's cursor; no window. */
-	interlock[0] = 1U << head;
+	/* No cursor, no window. */
+	interlock[0] = 0U;
 	interlock[1] = 0U;
 	nvrtx_push_method(push, NVRTX_CORE_SET_INTERLOCK_FLAGS, interlock, 2U);
 

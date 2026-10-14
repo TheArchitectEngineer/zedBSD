@@ -249,7 +249,7 @@ void nvrtx_disp_mode_from_armed(const uint32_t *armed, struct nvrtx_disp_mode *m
 void nvrtx_disp_core_update(struct nvrtx_push *push, uint32_t notifier_offset, uint32_t window_interlock);
 void nvrtx_disp_core_cursor_set(struct nvrtx_push *push, uint32_t head, uint32_t handle, uint64_t offset);
 void nvrtx_disp_core_cursor_clear(struct nvrtx_push *push, uint32_t head);
-void nvrtx_disp_core_update_cursor(struct nvrtx_push *push, uint32_t notifier_offset, uint32_t head);
+void nvrtx_disp_core_update_cursor(struct nvrtx_push *push, uint32_t notifier_offset);
 uint32_t nvrtx_disp_cursor_point(int32_t x, int32_t y);
 uint32_t nvrtx_disp_cursor_pixel(uint32_t pixel, int rgba);
 uint32_t nvrtx_disp_frame_advance(uint32_t last, uint32_t now);

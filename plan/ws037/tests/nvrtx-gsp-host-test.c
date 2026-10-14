@@ -1189,11 +1189,11 @@ test_disp_cursor(void)
 	check(push.count == 4 && nvrtx_get32(memory, 0) == 0x0004249cU && nvrtx_get32(memory, 4) == 0xcfU &&
 	    nvrtx_get32(memory, 8) == 0x00042488U && nvrtx_get32(memory, 12) == 0, "disp core cursor clear");
 
-	/* The core's update with head 1's cursor: notifier on, interlocks (cursor 1, no window), update, notifier off. */
+	/* The core's update for a cursor: notifier on, no interlock (cursor or window), update, notifier off. */
 	nvrtx_push_init(&push, memory, 64);
-	nvrtx_disp_core_update_cursor(&push, 0, 1);
+	nvrtx_disp_core_update_cursor(&push, 0);
 	check(push.count == 9 && nvrtx_get32(memory, 0) == 0x0004020cU && nvrtx_get32(memory, 4) == 0x1000U &&
-	    nvrtx_get32(memory, 8) == 0x00080218U && nvrtx_get32(memory, 12) == 2 && nvrtx_get32(memory, 16) == 0 &&
+	    nvrtx_get32(memory, 8) == 0x00080218U && nvrtx_get32(memory, 12) == 0 && nvrtx_get32(memory, 16) == 0 &&
 	    nvrtx_get32(memory, 20) == 0x00040200U && nvrtx_get32(memory, 24) == 1 && nvrtx_get32(memory, 32) == 0,
 	    "disp core update with the cursor");
 
