@@ -32,8 +32,17 @@
  * the window's first pages back onto the console before anything else
  * takes the window, as the vendor's driver does (open-gpu-kernel-modules,
  * MIT: osinit.c's console size and kern_bus_gm107.c's preserved console
- * mapping at offset 0).  The CPU's own mapping of the window starts after
- * the console, so the console's memory is never mapped twice.
+ * mapping at offset 0).  The console's pages are in the tables before the
+ * root's entry is switched to them, so the console's writes (the boot
+ * splash turns on every kernel line) never meet an unmapped window.  The
+ * CPU's own mapping of the window starts after the console, so the
+ * console's memory is never mapped twice.
+ *
+ * Every write of page entries is read back through PRAMIN, and the
+ * self-test that ends P4m gets one retry: when the window does not reach
+ * its run, P4m reports what the root's entry, the run's page entry, the
+ * window's mode and the MMU's last fault record hold, writes the tables
+ * again, waits and reads once more.
  */
 
 #include <stdbool.h>
@@ -87,11 +96,41 @@
 #define VRAM_TEST_WORD			0xc3c3abcdU
 #define VRAM_TEST_WORD_AT		20U
 
+/* How long the self-test's retry waits after the tables are written again. */
+#define VRAM_RETRY_WAIT_US		1000U
+
+/*
+ * The MMU's record of the last fault no fault buffer took (Turing's
+ * "other" fault, nouveau's tu102 info fault), where a BAR's faulted access
+ * lands: the address, and the word whose bit 31 says the record is valid.
+ * Read for the self-test's report only, never acknowledged.
+ */
+#define VRAM_REG_FAULT_ADDR_LO		0xb83080U
+#define VRAM_REG_FAULT_ADDR_HI		0xb83084U
+#define VRAM_REG_FAULT_INFO		0xb83090U
+
+/*
+ * What one self-test of the window read: the run's first and last words
+ * through the window, and the word written through the window as PRAMIN
+ * reads it back.  Lives on the self-test's stack.
+ */
+struct vram_probe {
+	uint32_t first;
+	uint32_t last;
+	uint32_t back;
+};
+
 static int vram_bar1_tables(struct nvrtx_gpu *gpu);
+static int vram_bar1_write_tables(struct nvrtx_gpu *gpu);
 static int vram_console_map(struct nvrtx_gpu *gpu);
 static int vram_bar1_cpu(struct nvrtx_gpu *gpu);
 static int vram_bar1_test(struct nvrtx_gpu *gpu);
+static int vram_bar1_probe(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo, struct vram_probe *probe);
+static void vram_bar1_report(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo, const struct vram_probe *probe);
+static int vram_bar1_repair(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 static int vram_write_ptes(struct nvrtx_gpu *gpu, uint64_t bar1, uint64_t vram, uint64_t size, int clear);
+static int vram_place_ptes(struct nvrtx_gpu *gpu, uint64_t at, const uint8_t *entries, uint64_t pages);
+static int vram_read64(struct nvrtx_gpu *gpu, uint64_t address, uint64_t *value);
 
 /*
  * Runs stage P4m: the VRAM allocator, then the window and its self-test.
@@ -153,7 +192,7 @@ nvrtx_memory_start(
 		return 0;
 	}
 
-	/* Gives the firmware's console its place in the window back; the caller decides what a failure means. */
+	/* Records the console's place in the window, mapped with the tables; the caller decides what a failure means. */
 	error = vram_console_map(gpu);
 	if (error != 0)
 		return 0;
@@ -509,12 +548,8 @@ vram_bar1_tables(
 {
 	struct nvrtx_memory_state *memory;
 	const struct nvrtx_window *window;
-	uint8_t entry[8];
-	uint8_t *image;
 	uint64_t tables;
 	size_t length;
-	uint32_t low;
-	uint32_t high;
 	int error;
 
 	memory = &gpu->memory_state;
@@ -550,51 +585,107 @@ vram_bar1_tables(
 	memory->bar1_tables = tables;
 
 	/* Reads the root's first entry as the resource manager left it, to show it. */
-	error = nvrtx_vram_read32(gpu, memory->bar1_root, &low);
-	if (error == 0)
-		error = nvrtx_vram_read32(gpu, memory->bar1_root + 4U, &high);
+	error = vram_read64(gpu, memory->bar1_root, &memory->bar1_root_entry);
 	if (error != 0)
 		return error;
 
-	memory->bar1_root_entry = ((uint64_t)high << 32) | low;
 	nvrtx_stage_mark("P4m bar1: root %llx entry %llx, window %llu MiB, tables at %llx",
 	    (unsigned long long)memory->bar1_root,
 	    (unsigned long long)memory->bar1_root_entry,
 	    (unsigned long long)(memory->bar1_window >> 20),
 	    (unsigned long long)tables);
 
-	/* Builds the tables in memory: every page entry invalid. */
+	/* Writes the tables and switches the root's entry to them. */
+	error = vram_bar1_write_tables(gpu);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the window's tables are in place, every page unmapped but the console's. */
+	return 0;
+}
+
+/*
+ * Writes the window's tables over the driver's VRAM and points the
+ * resource manager's root at them: every page unmapped but a kept
+ * console's, which map the VRAM's start page for page.
+ *
+ * The console's entries are in the tables before the root's entry changes,
+ * so no write of the console meets an unmapped window.  A run mapped in
+ * the window before is unmapped by it.  The root's entry is read back, so
+ * a write that went elsewhere is not taken for a window.
+ */
+static int
+vram_bar1_write_tables(
+	struct nvrtx_gpu *gpu)
+{
+	struct nvrtx_memory_state *memory;
+	struct nvrtx_console *console;
+	uint8_t entry[8];
+	uint8_t *image;
+	uint64_t found;
+	size_t length;
+	int error;
+
+	memory = &gpu->memory_state;
+	console = &gpu->console;
+	length = nvrtx_mmu_gr_tables_bytes(memory->bar1_window);
+
+	/* Allocates the tables' image in memory. */
 	image = kern_malloc(length);
 	if (image == NULL)
 		return ENOMEM;
 
-	error = nvrtx_mmu_gr_tables(image, tables, 0U, memory->bar1_window);
-	if (error == 0)
-		error = nvrtx_vram_write(gpu, tables, image, length);
+	/* Builds the tables: every page entry invalid. */
+	error = nvrtx_mmu_gr_tables(image, memory->bar1_tables, 0U, memory->bar1_window);
 
-	/* The root's first entry, as the builder made it for its own copy of the root. */
+	/* Maps a kept console that fits the window onto the VRAM's start (vram_console_map() refuses one that does not). */
+	if (error == 0 &&
+	    console->kept != 0 &&
+	    console->size < memory->bar1_window)
+		error = nvrtx_mmu_gr_map_vram(image, 0U, memory->bar1_window, 0U, 0U, console->size);
+
+	/* Writes the tables into the VRAM. */
+	if (error == 0)
+		error = nvrtx_vram_write(gpu, memory->bar1_tables, image, length);
+
+	/* Keeps the root's first entry, as the builder made it for its own copy of the root. */
 	kern_memcpy(entry, image, sizeof(entry));
 	kern_free(image);
 	if (error != 0)
 		return error;
+
+	/* Remembers the entry the root holds from now on, for the self-test's report. */
+	memory->bar1_root_ours = nvrtx_get64(entry, 0U);
 
 	/* Points the resource manager's root at the driver's second-level directory. */
 	error = nvrtx_vram_write(gpu, memory->bar1_root, entry, sizeof(entry));
 	if (error != 0)
 		return error;
 
+	/* Reads the root's entry back through PRAMIN. */
+	error = vram_read64(gpu, memory->bar1_root, &found);
+	if (error != 0)
+		return error;
+
+	/* Refuses a root whose entry did not take the driver's directories. */
+	if (found != memory->bar1_root_ours) {
+		nvrtx_stage_mark("P4m: the root's entry reads %llx, %llx written", (unsigned long long)found, (unsigned long long)memory->bar1_root_ours);
+		return EIO;
+	}
+
 	/* Drops any stale translation of the window. */
 	error = nvrtx_flush_tlb_bar(gpu, memory->bar1_root);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the window's tables are in place, every page unmapped. */
+	/* Succeeded: the root points at the tables, the hub's TLB holds nothing older. */
 	return 0;
 }
 
 /*
- * Points the window's first pages back at the console the firmware left at
- * the VRAM's start, page for page, before anything else takes the window.
+ * Records that the window's first pages point back at the console the
+ * firmware left at the VRAM's start, page for page: the tables were
+ * written with them, before anything else takes the window.
  */
 static int
 vram_console_map(
@@ -602,7 +693,6 @@ vram_console_map(
 {
 	struct nvrtx_memory_state *memory;
 	struct nvrtx_console *console;
-	int error;
 
 	memory = &gpu->memory_state;
 	console = &gpu->console;
@@ -611,23 +701,10 @@ vram_console_map(
 	if (console->kept == 0)
 		return 0;
 
-	/* The console must lie in the part of the window the tables cover. */
+	/* The console must lie in the part of the window the tables cover; the tables left it out otherwise. */
 	if (console->size >= memory->bar1_window) {
 		nvrtx_stage_mark("P4m fail: the console's %llu KiB do not fit the window", (unsigned long long)(console->size >> 10));
 		return ENOSPC;
-	}
-
-	/* Maps the window's start onto the VRAM's start. */
-	mutex_lock(&memory->lock);
-
-	error = vram_write_ptes(gpu, 0U, 0U, console->size, 0);
-
-	mutex_unlock(&memory->lock);
-
-	/* Reports a console the window does not reach again. */
-	if (error != 0) {
-		nvrtx_stage_mark("P4m fail: the console's pages (%d)", error);
-		return error;
 	}
 
 	/* Succeeded: the console's writes reach its VRAM again. */
@@ -693,17 +770,16 @@ vram_bar1_cpu(
 /*
  * Checks the window both ways on a run of its own: words written through
  * PRAMIN read back through the window, and a word written through the window
- * reads back through PRAMIN.
+ * reads back through PRAMIN.  A window that does not reach the run is
+ * reported, its tables written again, and the run read once more.
  */
 static int
 vram_bar1_test(
 	struct nvrtx_gpu *gpu)
 {
 	struct nvrtx_bo bo;
-	volatile uint32_t *words;
-	uint32_t first;
-	uint32_t last;
-	uint32_t back;
+	struct vram_probe probe;
+	int retried;
 	int error;
 
 	/* Takes a run and maps it. */
@@ -717,35 +793,169 @@ vram_bar1_test(
 		return error;
 	}
 
-	/* Fills it through PRAMIN and reads its first and last words through the window. */
-	error = nvrtx_vram_fill(gpu, bo.vram, VRAM_TEST_FILL, VRAM_TEST_BYTES);
-	words = (volatile uint32_t *)(volatile void *)nvrtx_bo_cpu(gpu, &bo);
-	first = words[0];
-	last = words[VRAM_TEST_BYTES / 4U - 1U];
+	/* Reads the run both ways. */
+	retried = 0;
+	error = vram_bar1_probe(gpu, &bo, &probe);
 
-	/* Writes one word through the window and reads it back through PRAMIN. */
-	words[VRAM_TEST_WORD_AT] = VRAM_TEST_WORD;
-	(void)words[VRAM_TEST_WORD_AT];
-	back = 0U;
-	if (error == 0)
-		error = nvrtx_vram_read32(gpu, bo.vram + VRAM_TEST_WORD_AT * 4U, &back);
+	/* Reports a window that does not reach the run, writes its tables again, waits and reads once more. */
+	if (error == EIO) {
+		vram_bar1_report(gpu, &bo, &probe);
+		retried = 1;
+
+		/* Writes the tables again, then gives the hub a moment before the second reading. */
+		error = vram_bar1_repair(gpu, &bo);
+		if (error == 0) {
+			kern_usleep_range(VRAM_RETRY_WAIT_US, VRAM_RETRY_WAIT_US);
+			error = vram_bar1_probe(gpu, &bo, &probe);
+		}
+	}
 
 	/* The run goes back either way. */
 	nvrtx_bo_free(gpu, &bo);
 
 	/* Reports a window that does not reach the VRAM. */
-	if (error != 0 ||
-	    first != VRAM_TEST_FILL ||
-	    last != VRAM_TEST_FILL ||
-	    back != VRAM_TEST_WORD) {
-		nvrtx_stage_mark("P4m fail: bar1 reads %08x %08x, PRAMIN reads %08x (%d)", (unsigned)first, (unsigned)last, (unsigned)back, error);
+	if (error != 0) {
+		nvrtx_stage_mark("P4m fail: bar1 reads %08x %08x, PRAMIN reads %08x (%d)", (unsigned)probe.first, (unsigned)probe.last, (unsigned)probe.back, error);
 		return EIO;
 	}
+
+	/* Says that the window works only since its tables were written again. */
+	if (retried != 0)
+		nvrtx_stage_mark("P4m retry: the window reads back after the tables were written again");
 
 	/* Succeeded: the window reaches the VRAM both ways. */
 	nvrtx_stage_mark("P4m ok: bar1 %llu MiB at %llx, read back both ways",
 	    (unsigned long long)(gpu->memory_state.bar1_window >> 20),
 	    (unsigned long long)gpu->memory_state.bar1_bus);
+	return 0;
+}
+
+/*
+ * Reads a mapped run both ways: EIO when the window does not reach the
+ * run's VRAM, another error when PRAMIN refuses.
+ */
+static int
+vram_bar1_probe(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_bo *bo,
+	struct vram_probe *probe)
+{
+	volatile uint32_t *words;
+	int error;
+
+	/* Starts with nothing read. */
+	probe->first = 0U;
+	probe->last = 0U;
+	probe->back = 0U;
+
+	/* Fills the run through PRAMIN. */
+	error = nvrtx_vram_fill(gpu, bo->vram, VRAM_TEST_FILL, VRAM_TEST_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Reads its first and last words through the window. */
+	words = (volatile uint32_t *)(volatile void *)nvrtx_bo_cpu(gpu, bo);
+	probe->first = words[0];
+	probe->last = words[VRAM_TEST_BYTES / 4U - 1U];
+
+	/* Writes one word through the window (the read makes sure it left the CPU) and reads it back through PRAMIN. */
+	words[VRAM_TEST_WORD_AT] = VRAM_TEST_WORD;
+	(void)words[VRAM_TEST_WORD_AT];
+	error = nvrtx_vram_read32(gpu, bo->vram + VRAM_TEST_WORD_AT * 4U, &probe->back);
+	if (error != 0)
+		return error;
+
+	/* Refuses a window whose reads did not come from the run. */
+	if (probe->first != VRAM_TEST_FILL)
+		return EIO;
+	if (probe->last != VRAM_TEST_FILL)
+		return EIO;
+
+	/* Refuses a window whose write did not reach the run. */
+	if (probe->back != VRAM_TEST_WORD)
+		return EIO;
+
+	/* Succeeded: the window reaches the run both ways. */
+	return 0;
+}
+
+/*
+ * Reports a window that did not reach the self-test's run, with what the
+ * hardware holds now; each names a different cause: the root's entry taken
+ * back from the driver's directories, a page entry that did not land, the
+ * window's mode changed, or the access faulted in the MMU.
+ */
+static void
+vram_bar1_report(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_bo *bo,
+	const struct vram_probe *probe)
+{
+	struct nvrtx_memory_state *memory;
+	uint64_t root;
+	uint64_t entry;
+	uint64_t wanted;
+	uint32_t block;
+	uint32_t fault_low;
+	uint32_t fault_high;
+	uint32_t fault_info;
+	int error;
+
+	memory = &gpu->memory_state;
+	wanted = nvrtx_mmu_vram_pte(bo->vram);
+
+	/* Reads the root's first entry and the run's first page entry back through PRAMIN. */
+	root = 0U;
+	entry = 0U;
+	error = vram_read64(gpu, memory->bar1_root, &root);
+	if (error == 0)
+		error = vram_read64(gpu, memory->bar1_tables + VRAM_TABLES_PTE_AT + (bo->bar1 / NVRTX_GSP_PAGE_SIZE) * 8U, &entry);
+
+	/* Reads the window's mode and the MMU's record of its last unbuffered fault. */
+	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
+	fault_low = nvrtx_rd32(gpu, VRAM_REG_FAULT_ADDR_LO);
+	fault_high = nvrtx_rd32(gpu, VRAM_REG_FAULT_ADDR_HI);
+	fault_info = nvrtx_rd32(gpu, VRAM_REG_FAULT_INFO);
+
+	/* Says what was found, before the tables are written again. */
+	nvrtx_stage_mark("P4m retry: bar1 reads %08x %08x, PRAMIN reads %08x", (unsigned)probe->first, (unsigned)probe->last, (unsigned)probe->back);
+	nvrtx_stage_mark("P4m retry: root entry %llx, ours %llx (%d)", (unsigned long long)root, (unsigned long long)memory->bar1_root_ours, error);
+	nvrtx_stage_mark("P4m retry: page entry %llx, wants %llx", (unsigned long long)entry, (unsigned long long)wanted);
+	nvrtx_stage_mark("P4m retry: mode %08x, fault %08x at %08x%08x", (unsigned)block, (unsigned)fault_info, (unsigned)fault_high, (unsigned)fault_low);
+}
+
+/*
+ * Writes the window's tables again in full (the console's pages with
+ * them), then the self-test's run's entries, each read back.  Nothing else
+ * is in the window yet.
+ */
+static int
+vram_bar1_repair(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_bo *bo)
+{
+	struct nvrtx_memory_state *memory;
+	int error;
+
+	memory = &gpu->memory_state;
+
+	/* Writes the tables and switches the root's entry to them again. */
+	error = vram_bar1_write_tables(gpu);
+	if (error != 0)
+		return error;
+
+	/* Maps the run again; the new tables left it out. */
+	mutex_lock(&memory->lock);
+
+	error = vram_write_ptes(gpu, bo->bar1, bo->vram, bo->size, 0);
+
+	mutex_unlock(&memory->lock);
+
+	/* Reports a run that could not be mapped again. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the tables and the run's entries are written again. */
 	return 0;
 }
 
@@ -788,16 +998,107 @@ vram_write_ptes(
 		nvrtx_put64(entries, (size_t)page * 8U, entry);
 	}
 
-	/* Writes them through PRAMIN, then drops the hub's stale translations. */
-	error = nvrtx_vram_write(gpu, at, entries, (size_t)pages * 8U);
+	/* Writes them through PRAMIN and reads them back. */
+	error = vram_place_ptes(gpu, at, entries, pages);
 	kern_free(entries);
 	if (error != 0)
 		return error;
 
+	/* Drops the hub's stale translations. */
 	error = nvrtx_flush_tlb_bar(gpu, memory->bar1_root);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the run is mapped (or unmapped). */
+	return 0;
+}
+
+/*
+ * Writes a run of page entries through PRAMIN and reads the first and the
+ * last back; a run that did not land is written once more, and EIO
+ * reports one that still did not.
+ */
+static int
+vram_place_ptes(
+	struct nvrtx_gpu *gpu,
+	uint64_t at,
+	const uint8_t *entries,
+	uint64_t pages)
+{
+	uint64_t first;
+	uint64_t last;
+	uint64_t first_wanted;
+	uint64_t last_wanted;
+	uint64_t last_at;
+	unsigned attempt;
+	int error;
+
+	/* An empty run has nothing to write. */
+	if (pages == 0U)
+		return 0;
+
+	/* The first and the last entry, and where the last lies in the run. */
+	last_at = (pages - 1U) * 8U;
+	first_wanted = nvrtx_get64(entries, 0U);
+	last_wanted = nvrtx_get64(entries, (size_t)last_at);
+
+	/* Writes the entries and checks them, twice at most. */
+	error = EIO;
+	for (attempt = 0U; attempt < 2U; attempt++) {
+		/* Writes the entries through PRAMIN. */
+		error = nvrtx_vram_write(gpu, at, entries, (size_t)pages * 8U);
+		if (error != 0)
+			return error;
+
+		/* Reads the first and the last entry back. */
+		error = vram_read64(gpu, at, &first);
+		if (error == 0)
+			error = vram_read64(gpu, at + last_at, &last);
+		if (error != 0)
+			return error;
+
+		/* Stops once both read as written. */
+		if (first == first_wanted && last == last_wanted) {
+			error = 0;
+			break;
+		}
+
+		/* Says that the entries did not land, so a second write is seen in the log. */
+		nvrtx_stage_mark("bar1: entries at %llx read %llx, %llx written", (unsigned long long)at, (unsigned long long)first, (unsigned long long)first_wanted);
+		error = EIO;
+	}
+
+	/* Reports entries that did not land after the second write. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the entries are in the VRAM. */
+	return 0;
+}
+
+/*
+ * Reads one 64-bit word of the VRAM through PRAMIN, low word first.
+ */
+static int
+vram_read64(
+	struct nvrtx_gpu *gpu,
+	uint64_t address,
+	uint64_t *value)
+{
+	uint32_t low;
+	uint32_t high;
+	int error;
+
+	/* Reads the two halves. */
+	error = nvrtx_vram_read32(gpu, address, &low);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_vram_read32(gpu, address + 4U, &high);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the word in *value. */
+	*value = ((uint64_t)high << 32) | low;
 	return 0;
 }

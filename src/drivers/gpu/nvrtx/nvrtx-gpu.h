@@ -388,6 +388,8 @@ struct nvrtx_memory_state {
 	struct nvrtx_heap bar1;
 	uint64_t bar1_root;
 	uint64_t bar1_root_entry;
+	/* The root's first entry as P4m writes it (at the driver's directories), checked when the window misbehaves. */
+	uint64_t bar1_root_ours;
 	uint64_t bar1_tables;
 	uint64_t bar1_window;
 	uint64_t bar1_bus;
