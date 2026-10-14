@@ -81,6 +81,91 @@
 /* The channel's internal flags: user privilege, and no error notifiers (type "none" = 1 in bits 3:2 and 5:4). */
 #define OBJECTS_INTERNAL_NO_NOTIFIERS	((1U << 2) | (1U << 4))
 
+/* A privileged channel: the flag's bit 5, and the admin privilege (1) in the internal flags' bits 1:0. */
+#define OBJECTS_FLAG_PRIVILEGED		(1U << 5)
+#define OBJECTS_INTERNAL_ADMIN		1U
+
+/* The copy of the server's reserved directories: the range, the level count and three levels of 24 bytes. */
+#define OBJECTS_PDES_PAGE_SIZE_AT	8U
+#define OBJECTS_PDES_LOW_AT		16U
+#define OBJECTS_PDES_HIGH_AT		24U
+#define OBJECTS_PDES_LEVELS_AT		32U
+#define OBJECTS_PDES_LEVEL_FIRST_AT	40U
+#define OBJECTS_PDES_LEVEL_BYTES	24U
+#define OBJECTS_PDES_LEVEL_ADDRESS_AT	0U
+#define OBJECTS_PDES_LEVEL_SIZE_AT	8U
+#define OBJECTS_PDES_LEVEL_APERTURE_AT	16U
+#define OBJECTS_PDES_LEVEL_SHIFT_AT	20U
+#define OBJECTS_PDES_APERTURE_VRAM	1U
+#define OBJECTS_PDES_LEVEL_COUNT	3U
+
+/* The context buffer information: engine 0's 26 entries of {size, alignment}. */
+#define OBJECTS_GR_INFO_ENTRIES		26U
+#define OBJECTS_GR_INFO_ENTRY_BYTES	8U
+
+/* The engine numbers in that table, and the promote call's buffer numbers. */
+#define OBJECTS_GR_ID_MAIN		0x00U
+#define OBJECTS_GR_ID_PAGEPOOL		0x0dU
+#define OBJECTS_GR_ID_PATCH		0x10U
+#define OBJECTS_GR_ID_BUNDLE		0x11U
+#define OBJECTS_GR_ID_ATTRIBUTE		0x13U
+#define OBJECTS_GR_ID_RTV		0x14U
+#define OBJECTS_GR_ID_FECS_EVENT	0x17U
+#define OBJECTS_GR_ID_PRIV_MAP		0x18U
+#define OBJECTS_BUFFER_MAIN		0U
+#define OBJECTS_BUFFER_PATCH		2U
+#define OBJECTS_BUFFER_BUNDLE		3U
+#define OBJECTS_BUFFER_PAGEPOOL		4U
+#define OBJECTS_BUFFER_ATTRIBUTE	5U
+#define OBJECTS_BUFFER_RTV		6U
+#define OBJECTS_BUFFER_FECS_EVENT	9U
+#define OBJECTS_BUFFER_PRIV_MAP		10U
+#define OBJECTS_BUFFER_UNRESTRICTED_MAP	11U
+
+/* The main buffer carries 64 pages of subcontext headers after the context. */
+#define OBJECTS_GR_MAIN_EXTRA		(64U * 0x1000U)
+
+/* The promote call: its header fields and the 32-byte entries. */
+#define OBJECTS_PROMOTE_ENGINE_AT	0U
+#define OBJECTS_PROMOTE_CHAN_CLIENT_AT	12U
+#define OBJECTS_PROMOTE_OBJECT_AT	16U
+#define OBJECTS_PROMOTE_COUNT_AT	40U
+#define OBJECTS_PROMOTE_ENTRIES_AT	48U
+#define OBJECTS_PROMOTE_ENTRY_BYTES	32U
+#define OBJECTS_PROMOTE_MAX		16U
+#define OBJECTS_PROMOTE_PHYSICAL_AT	0U
+#define OBJECTS_PROMOTE_VIRTUAL_AT	8U
+#define OBJECTS_PROMOTE_SIZE_AT		16U
+#define OBJECTS_PROMOTE_ATTRIBUTE_AT	24U
+#define OBJECTS_PROMOTE_BUFFER_AT	28U
+#define OBJECTS_PROMOTE_INITIALIZE_AT	30U
+#define OBJECTS_PROMOTE_NONMAPPED_AT	31U
+#define OBJECTS_PROMOTE_ATTRIBUTE_VRAM	4U
+
+/*
+ * The graphics context buffers the driver makes, in the order of the
+ * engine numbers: the table's engine number, the promote call's buffer
+ * number, and whether the buffer is global, initialized and read-only.
+ */
+struct objects_gr_kind {
+	uint32_t engine_id;
+	uint32_t buffer_id;
+	int global;
+	int initialize;
+	int read_only;
+};
+
+static const struct objects_gr_kind objects_gr_kinds[] = {
+	{ OBJECTS_GR_ID_MAIN, OBJECTS_BUFFER_MAIN, 0, 1, 0 },
+	{ OBJECTS_GR_ID_PAGEPOOL, OBJECTS_BUFFER_PAGEPOOL, 1, 0, 0 },
+	{ OBJECTS_GR_ID_PATCH, OBJECTS_BUFFER_PATCH, 0, 1, 0 },
+	{ OBJECTS_GR_ID_BUNDLE, OBJECTS_BUFFER_BUNDLE, 1, 0, 0 },
+	{ OBJECTS_GR_ID_ATTRIBUTE, OBJECTS_BUFFER_ATTRIBUTE, 1, 0, 0 },
+	{ OBJECTS_GR_ID_RTV, OBJECTS_BUFFER_RTV, 1, 0, 0 },
+	{ OBJECTS_GR_ID_FECS_EVENT, OBJECTS_BUFFER_FECS_EVENT, 1, 1, 0 },
+	{ OBJECTS_GR_ID_PRIV_MAP, OBJECTS_BUFFER_PRIV_MAP, 1, 1, 1 },
+};
+
 /* The method header: the opcode (incrementing) in bits 31:29, count 28:16, subchannel 15:13, method/4 in 11:0. */
 #define OBJECTS_METHOD_INCREMENT	(1U << 29)
 
@@ -107,6 +192,7 @@ static void objects_clear(uint8_t *bytes, size_t length);
 static size_t objects_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
 static size_t objects_method_on(uint8_t *push, size_t at, uint32_t subchannel, uint32_t method, uint32_t count);
 static void objects_memory(uint8_t *params, size_t at, uint64_t base, uint64_t size, uint32_t space, uint32_t cache);
+static uint32_t objects_log2_up(uint64_t value);
 
 /*
  * Writes a control call: the header, then the parameters.
@@ -257,6 +343,10 @@ nvrtx_channel_params(
 	flags = (setup->chid % OBJECTS_CHANNELS_PER_USERD) << OBJECTS_FLAG_USERD_INDEX_SHIFT;
 	flags |= (setup->chid / OBJECTS_CHANNELS_PER_USERD) << OBJECTS_FLAG_USERD_PAGE_SHIFT;
 	flags |= OBJECTS_FLAG_USERD_PAGE_FIXED;
+
+	/* A privileged channel says so in its flags. */
+	if (setup->privileged != 0U)
+		flags |= OBJECTS_FLAG_PRIVILEGED;
 	nvrtx_put32(params, OBJECTS_CHAN_FLAGS_AT, flags);
 
 	/* The address space and the engine. */
@@ -269,8 +359,12 @@ nvrtx_channel_params(
 	objects_memory(params, OBJECTS_CHAN_RAMFC_AT, setup->instance, NVRTX_RAMFC_BYTES, OBJECTS_SPACE_VRAM, 1U);
 	objects_memory(params, OBJECTS_CHAN_METHODS_AT, setup->methods, setup->methods_size, OBJECTS_SPACE_SYSTEM, 0U);
 
-	/* User privilege, no error notifiers. */
-	nvrtx_put32(params, OBJECTS_CHAN_INTERNAL_AT, OBJECTS_INTERNAL_NO_NOTIFIERS);
+	/* User privilege (admin for a privileged channel), no error notifiers. */
+	if (setup->privileged != 0U) {
+		nvrtx_put32(params, OBJECTS_CHAN_INTERNAL_AT, OBJECTS_INTERNAL_NO_NOTIFIERS | OBJECTS_INTERNAL_ADMIN);
+	} else {
+		nvrtx_put32(params, OBJECTS_CHAN_INTERNAL_AT, OBJECTS_INTERNAL_NO_NOTIFIERS);
+	}
 }
 
 /*
@@ -394,6 +488,201 @@ nvrtx_free_params(
 	nvrtx_put32(params, 8U, object);
 }
 
+/*
+ * Writes the parameters of an address space the resource manager shares.
+ *
+ * A new space (index 0) with no flags: not owned by the driver, so the
+ * resource manager keeps a range of it for itself (the copy of the server's
+ * directories names where).
+ */
+void
+nvrtx_space_params_shared(
+	uint8_t *params)
+{
+	/* Clears every field: index 0 and no flags. */
+	objects_clear(params, NVRTX_SPACE_PARAMS_BYTES);
+}
+
+/*
+ * Writes the parameters that hand the resource manager the driver's top three directories.
+ *
+ * The resource manager keeps 512 MiB at 4 GiB for itself and writes its
+ * entries for that range into the driver's directories: the root (4
+ * entries), the second level and the first level (512 entries each), each
+ * in the VRAM, along the path of index 0.
+ */
+void
+nvrtx_copy_pdes_params(
+	uint8_t *params,
+	uint64_t root,
+	uint64_t directory2,
+	uint64_t directory1)
+{
+	uint64_t addresses[OBJECTS_PDES_LEVEL_COUNT];
+	uint64_t sizes[OBJECTS_PDES_LEVEL_COUNT];
+	uint32_t shifts[OBJECTS_PDES_LEVEL_COUNT];
+	size_t at;
+	unsigned level;
+
+	/* The levels from the root down: their addresses, sizes and the address bit each indexes from. */
+	addresses[0] = root;
+	addresses[1] = directory2;
+	addresses[2] = directory1;
+	sizes[0] = 4U * 8U;
+	sizes[1] = 512U * 8U;
+	sizes[2] = 512U * 8U;
+	shifts[0] = 47U;
+	shifts[1] = 38U;
+	shifts[2] = 29U;
+
+	/* The range, in pieces of 512 MiB (the first level's coverage), on the device's subdevice 0. */
+	objects_clear(params, NVRTX_COPY_PDES_PARAMS_BYTES);
+	nvrtx_put64(params, OBJECTS_PDES_PAGE_SIZE_AT, NVRTX_SERVER_VA_BYTES);
+	nvrtx_put64(params, OBJECTS_PDES_LOW_AT, NVRTX_SERVER_VA);
+	nvrtx_put64(params, OBJECTS_PDES_HIGH_AT, NVRTX_SERVER_VA + NVRTX_SERVER_VA_BYTES - 1U);
+	nvrtx_put32(params, OBJECTS_PDES_LEVELS_AT, OBJECTS_PDES_LEVEL_COUNT);
+
+	/* Describes each level. */
+	for (level = 0U; level < OBJECTS_PDES_LEVEL_COUNT; level++) {
+		at = OBJECTS_PDES_LEVEL_FIRST_AT + (size_t)level * OBJECTS_PDES_LEVEL_BYTES;
+		nvrtx_put64(params, at + OBJECTS_PDES_LEVEL_ADDRESS_AT, addresses[level]);
+		nvrtx_put64(params, at + OBJECTS_PDES_LEVEL_SIZE_AT, sizes[level]);
+		nvrtx_put32(params, at + OBJECTS_PDES_LEVEL_APERTURE_AT, OBJECTS_PDES_APERTURE_VRAM);
+		nvrtx_put32(params, at + OBJECTS_PDES_LEVEL_SHIFT_AT, shifts[level]);
+	}
+}
+
+/*
+ * Reads the graphics context buffers from the resource manager's information.
+ *
+ * Takes engine 0's entries for the buffers the driver makes, in the order
+ * of their engine numbers, and adds the unrestricted copy of the access map
+ * after the access map.  The main buffer grows by its subcontext headers.
+ * The page size is 2 MiB, 64 KiB or 4 KiB by the size, and the alignment
+ * is the page's, but the attribute buffer's is its size rounded up to a
+ * power of two.  Returns the number of buffers written, 0 when the
+ * information is short or a buffer the driver needs is missing.
+ */
+size_t
+nvrtx_gr_buffers(
+	const uint8_t *info,
+	size_t length,
+	struct nvrtx_gr_buffer *buffers,
+	size_t capacity)
+{
+	const struct objects_gr_kind *kind;
+	struct nvrtx_gr_buffer *buffer;
+	uint64_t size;
+	size_t count;
+	size_t index;
+
+	/* The information must hold engine 0's table, and the list every buffer. */
+	if (length < (size_t)OBJECTS_GR_INFO_ENTRIES * OBJECTS_GR_INFO_ENTRY_BYTES)
+		return 0U;
+	if (capacity < sizeof(objects_gr_kinds) / sizeof(objects_gr_kinds[0]) + 1U)
+		return 0U;
+
+	/* Describes each buffer the driver makes. */
+	count = 0U;
+	for (index = 0U; index < sizeof(objects_gr_kinds) / sizeof(objects_gr_kinds[0]); index++) {
+		kind = &objects_gr_kinds[index];
+		size = nvrtx_get32(info, (size_t)kind->engine_id * OBJECTS_GR_INFO_ENTRY_BYTES);
+		if (size == 0U)
+			return 0U;
+
+		/* The main buffer holds the subcontext headers after the context. */
+		if (kind->buffer_id == OBJECTS_BUFFER_MAIN)
+			size = ((size + 0xfffU) & ~(uint64_t)0xfffU) + OBJECTS_GR_MAIN_EXTRA;
+
+		buffer = &buffers[count];
+		buffer->buffer_id = kind->buffer_id;
+		buffer->size = size;
+		buffer->global = kind->global;
+		buffer->initialize = kind->initialize;
+		buffer->read_only = kind->read_only;
+
+		/* The page by the size. */
+		if (size >= 0x200000U) {
+			buffer->page_shift = 21U;
+		} else if (size >= 0x10000U) {
+			buffer->page_shift = 16U;
+		} else {
+			buffer->page_shift = 12U;
+		}
+
+		/* The alignment of the page, but the attribute buffer's size's. */
+		if (kind->buffer_id == OBJECTS_BUFFER_ATTRIBUTE) {
+			buffer->align_shift = objects_log2_up(size);
+		} else {
+			buffer->align_shift = buffer->page_shift;
+		}
+		count++;
+
+		/* The access map has an unrestricted twin. */
+		if (kind->buffer_id == OBJECTS_BUFFER_PRIV_MAP) {
+			buffers[count] = *buffer;
+			buffers[count].buffer_id = OBJECTS_BUFFER_UNRESTRICTED_MAP;
+			count++;
+		}
+	}
+
+	/* Succeeded: the list of buffers. */
+	return count;
+}
+
+/*
+ * Writes the promote call that hands a graphics channel its context buffers.
+ *
+ * The call goes to the subdevice; the channel is named by the driver's
+ * client and its handle.  Each entry names the buffer, its address in the
+ * channel's space (unless not mapped), and for a buffer the resource
+ * manager fills, its VRAM address and size.  At most 16 entries.
+ */
+void
+nvrtx_promote_params(
+	uint8_t *params,
+	uint32_t client,
+	uint32_t channel,
+	const struct nvrtx_promote_entry *entries,
+	size_t count)
+{
+	const struct nvrtx_promote_entry *entry;
+	size_t at;
+	size_t index;
+
+	/* The graphics engine, and the channel. */
+	objects_clear(params, NVRTX_PROMOTE_PARAMS_BYTES);
+	nvrtx_put32(params, OBJECTS_PROMOTE_ENGINE_AT, NVRTX_ENGINE_GRAPHICS);
+	nvrtx_put32(params, OBJECTS_PROMOTE_CHAN_CLIENT_AT, client);
+	nvrtx_put32(params, OBJECTS_PROMOTE_OBJECT_AT, channel);
+
+	/* Keeps to the call's entry count. */
+	if (count > OBJECTS_PROMOTE_MAX)
+		count = OBJECTS_PROMOTE_MAX;
+	nvrtx_put32(params, OBJECTS_PROMOTE_COUNT_AT, (uint32_t)count);
+
+	/* Writes each entry. */
+	for (index = 0U; index < count; index++) {
+		entry = &entries[index];
+		at = OBJECTS_PROMOTE_ENTRIES_AT + index * OBJECTS_PROMOTE_ENTRY_BYTES;
+		nvrtx_put8(params, at + OBJECTS_PROMOTE_BUFFER_AT, (uint8_t)(entry->buffer_id & 0xffU));
+		nvrtx_put8(params, at + OBJECTS_PROMOTE_BUFFER_AT + 1U, (uint8_t)((entry->buffer_id >> 8) & 0xffU));
+		nvrtx_put8(params, at + OBJECTS_PROMOTE_INITIALIZE_AT, (uint8_t)(entry->initialize != 0));
+		nvrtx_put8(params, at + OBJECTS_PROMOTE_NONMAPPED_AT, (uint8_t)(entry->nonmapped != 0));
+
+		/* A mapped buffer's address in the channel's space. */
+		if (entry->nonmapped == 0)
+			nvrtx_put64(params, at + OBJECTS_PROMOTE_VIRTUAL_AT, entry->virtual_address);
+
+		/* A buffer the resource manager fills: its VRAM address and size. */
+		if (entry->initialize != 0) {
+			nvrtx_put64(params, at + OBJECTS_PROMOTE_PHYSICAL_AT, entry->physical);
+			nvrtx_put64(params, at + OBJECTS_PROMOTE_SIZE_AT, entry->size);
+			nvrtx_put32(params, at + OBJECTS_PROMOTE_ATTRIBUTE_AT, OBJECTS_PROMOTE_ATTRIBUTE_VRAM);
+		}
+	}
+}
+
 /* Clears a range of bytes. */
 static void
 objects_clear(
@@ -455,4 +744,20 @@ objects_memory(
 	nvrtx_put64(params, at + OBJECTS_MEMORY_SIZE_AT, size);
 	nvrtx_put32(params, at + OBJECTS_MEMORY_SPACE_AT, space);
 	nvrtx_put32(params, at + OBJECTS_MEMORY_CACHE_AT, cache);
+}
+
+/* Reports the smallest n with 2^n at least the value (the value is not 0). */
+static uint32_t
+objects_log2_up(
+	uint64_t value)
+{
+	uint32_t shift;
+
+	/* Grows the power of two until it holds the value. */
+	shift = 0U;
+	while (shift < 63U && (1ULL << shift) < value)
+		shift++;
+
+	/* Reports the exponent. */
+	return shift;
 }

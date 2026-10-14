@@ -190,3 +190,33 @@ image は `plan/ws037/tests/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`
 | R7 | R6 と同じ印（P8 の手前で止まる旨の行を含む） |
 
 `P6: N frees failed` が出た時は、その前の `rm: control a06f0103 status …`・`rm: free … status …` の行を PNG に。`P7 fail` なら host を reboot。
+
+## 5f の実装（2026-10-15、P1。build と host 試験まで、実機は未）
+
+### 5f.2 の未確認の決着（source の読み）
+
+1. **共有の vaspace の page table**: RM の `gvaspaceCopyServerReservedPdes`（ogkm-extra の `gpu_vaspace.c`）は、渡された levels（root・PD2・PD1 の物理）で RM の walker の level の instance を**置き換える**（`mmuWalkModifyLevelInstance`）。つまり RM の vaspace の root は kernel の root になり、RM は自分の範囲（4 GiB〜4.5 GiB）の entry を kernel の PD1[8] に書く。channel の instance の PDB は RM が書き、GPU は kernel の表を引く。→ kernel は context buffer を自分の表の 0x20000000〜（PD1[1]）に map すればよい。**kernel の表は COPY の control の前に VRAM に書き、以後 PD1 の page を書き直さない**（RM の PD1[8] を消さないため）。
+2. **表の範囲**: `nvrtx_mmu_gr_tables()` を足した（root・PD2・PD1・PD0 と 2 MiB ごとの PT、range は 1 つの PD1 entry の中で RM の範囲より下）。page は 4 KiB の PTE だけ（buffer の page の大きさは物理の揃えにだけ使う）。
+3. **golden の channel の join**: nouveau はしない（RM が instance block を書く）。kernel は instance block と USERD を 0 で埋めるだけ。
+
+### 実装
+
+| file | 中身 |
+| --- | --- |
+| `gr.c`（新） | P5g: `GET_CONTEXT_BUFFERS_INFO`（内部の subdevice）→ arena の配置（最後の使える region の上端の 136 MiB 以内、2 MiB 揃え、128 MiB。copy の block より下）→ golden: 表を書く・instance を 0 に・共有の vaspace（0x90f10001）と `COPY_SERVER_RESERVED_PDES`・TLB の invalidate・privileged の GR channel（chid 1、0xf1f00001、method buffer は system memory）・promote（全部新しく、init の物は物理と大きさ、PRIV_ACCESS_MAP は nonmapped）・3D（0xc597、0x97000001）→ 3D・channel・vaspace を FREE（global の buffer は残す）。TU102/104/106 は scrubber: 別の表・共有の vaspace（0xdada0042）・非 privileged の channel（chid 2、0xdada0045）・promote（global は golden の物、MAIN・PATCH は新しく、UNRESTRICTED は外す）・3D（0xdada0046）・`INIT_BUG4208224_WAR`（bTeardown 0）。停止は WAR の teardown → 3D・channel・vaspace の FREE（`nvrtx_gr_stop`、`gsp_finish` で P6 の channel の片付けの前）。 |
+| `objects.c` | `nvrtx_space_params_shared`、`nvrtx_copy_pdes_params`（184 byte）、`nvrtx_gr_buffers`（engine 0 の表から buffer の一覧、MAIN に subcontext の header 64 page、page は大きさで 2 MiB・64 KiB・4 KiB、ATTRIBUTE の揃えは大きさの 2 の冪、PRIV_ACCESS_MAP の後に UNRESTRICTED の写し）、`nvrtx_promote_params`（560 byte）、channel の privileged（flags bit 5、internal の ADMIN） |
+| `mmu.c` | `nvrtx_mmu_gr_tables_bytes`・`nvrtx_mmu_gr_tables`・`nvrtx_mmu_gr_map`（VRAM・privileged の bit 5・read-only の bit 6） |
+| `channel.c` | `nvrtx_vram_write`（64 KiB の段を跨いで書く）・`nvrtx_vram_zero`・`nvrtx_flush_tlb(root)` を公開 |
+| `stage.c` | `nvrtx.gr=1`（`nvrtx_stage_gr_wanted`）。`nvrtx.stop=P5g` で飛ばせる |
+| `gsp.c` | P5 の後に P5g（`nvrtx.gr=1` の時だけ）、finish で `nvrtx_gr_stop`、release で `nvrtx_gr_release` |
+
+- 違いとして残る所: nouveau は vaspace ごとに client と device を作るが、我々は P3 の client・device・subdevice の下に全部を作る（promote・WAR の送り先も P3 の subdevice）。RM が 1 つの device の下の複数の vaspace を断ったら、ここを nouveau に合わせる。
+- 検証: nvrtx=y の kernel rc 0・warning 0・include check / vmunix check PASS。host 試験 180 項目 PASS（gr の 31 項目: buffer の一覧と page・揃え・写し、promote の entry の各欄、COPY の levels、共有の vaspace、表の各段と 2 MiB ごとの PT・PD1[8] を空けること、PTE の priv・ro、範囲の拒否）。
+
+### T2 への手順（R7g）
+
+image は `config-amd64-nvrtx.mk` の `NVRTX_RUN=R7g`（`nvrtx.gsp=1 nvrtx.gr=1`）。R7 の印に加えて次が出れば合格:
+
+`P5g begin` → `P5g ctxbufs: 9 buffers, N KiB` → `P5g arena at …, buffers … bytes` → **`P5g ok: golden context`** → **`P5g ok: scrubber`** → `P8 is not in this kernel …` → `P6 ok: channel and vaspace freed`（`P6: N graphics frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
+
+FAIL の時は `rm: class … status …`・`rm: control … status …` の行（どの段で断られたか: 0x90f1・0x90f10106・0xc46f・0x2080012b・0xc597・0x20800a46）を PNG に。`P7 fail` なら host を reboot。R6 の再試験（片付けの直し）が通ってから流す。
