@@ -322,13 +322,15 @@ static uint64_t parse_size_bytes(const char *text);
 static uint64_t native_copy_sparse(FILE *image, uint64_t offset, const char *path);
 static uint64_t native_input_sectors(const char *path);
 static uint64_t native_align(uint64_t sector);
+static uint64_t pc98_whole_cylinders(uint64_t sectors, uint32_t heads);
+static void pc98_cylinder_layout(uint32_t heads, uint64_t root_blocks, uint64_t *sectors, uint64_t *start, uint64_t *blocks);
 static void disk_create_native(struct diskopt *o);
 static void ufs_command(int argc, char **argv);
 static void disk_create(struct diskopt *o){
     if(o->layout){disk_create_variant(o);return;}
     if(!o->machine||!o->stage1||!o->stage2||!o->pbr||!o->bootzbsd||!o->kernel||!o->output){fail("incomplete disk arguments");}
     size_t s1n,s2n,pbrn,kn,ufsn=0;uint8_t*s1=read_all(o->stage1,&s1n),*s2=read_all(o->stage2,&s2n),*pbr=read_all(o->pbr,&pbrn),*kernel=read_all(o->kernel,&kn),*ufs=o->ufs_root?read_all(o->ufs_root,&ufsn):NULL;if(s1n!=512||s1[510]!=0x55||s1[511]!=0xaa||s2n%512||pbrn!=2048||ufsn%512)fail("invalid bootloader input");
-    uint64_t sectors=(uint64_t)o->size_mib*2048,esp_start=2048,esp_blocks=o->gpt?64U*2048U:0,start=o->gpt?esp_start+esp_blocks:2048,blocks=(uint64_t)o->fat_mib*2048,offset=start*512,esp_offset=esp_start*512,stage_lba=o->gpt?34:!strcmp(o->machine,"pc98")?2:1;if(!o->gpt&&!o->ufs_root&&o->fat_mib==128&&o->size_mib==129)blocks=sectors-start;if(o->gpt){uint64_t minimum=start+blocks+33;if(o->ufs_root)fail("GPT overlay image cannot include a native UFS root");if(sectors<minimum)sectors=(minimum+2047)&~(uint64_t)2047;}uint64_t root_start=start+blocks,root_blocks=ufsn/512;if(root_blocks&&root_start+root_blocks>sectors)fail("UFS root exceeds disk image");if(stage_lba+s2n/512>(o->gpt?esp_start:start))fail("stage2 too large");char tmp[4096];snprintf(tmp,sizeof(tmp),"%s.tmp",o->output);FILE*f=fopen(tmp,"wb+");if(!f)die(tmp);if(ftruncate(fileno(f),(off_t)(sectors*512)))die("truncate image");
+    uint64_t sectors=(uint64_t)o->size_mib*2048,esp_start=2048,esp_blocks=o->gpt?64U*2048U:0,start=o->gpt?esp_start+esp_blocks:2048,blocks=(uint64_t)o->fat_mib*2048,offset=start*512,esp_offset=esp_start*512,stage_lba=o->gpt?34:!strcmp(o->machine,"pc98")?2:1;if(!o->gpt&&!o->ufs_root&&o->fat_mib==128&&o->size_mib==129)blocks=sectors-start;if(!o->gpt&&!strcmp(o->machine,"pc98")){pc98_cylinder_layout(o->size_mib<=20?4:8,ufsn/512,&sectors,&start,&blocks);offset=start*512;}if(o->gpt){uint64_t minimum=start+blocks+33;if(o->ufs_root)fail("GPT overlay image cannot include a native UFS root");if(sectors<minimum)sectors=(minimum+2047)&~(uint64_t)2047;}uint64_t root_start=start+blocks,root_blocks=ufsn/512;if(root_blocks&&root_start+root_blocks>sectors)fail("UFS root exceeds disk image");if(stage_lba+s2n/512>(o->gpt?esp_start:start))fail("stage2 too large");char tmp[4096];snprintf(tmp,sizeof(tmp),"%s.tmp",o->output);FILE*f=fopen(tmp,"wb+");if(!f)die(tmp);if(ftruncate(fileno(f),(off_t)(sectors*512)))die("truncate image");
     if(strcmp(o->machine,"pc98")){
         uint32_t sig=crc32_more(0,s2,s2n);sig=crc32_more(sig,kernel,kn);if(!sig)sig=1;p32(s1+0x1b8,sig);
         uint8_t *e=s1+0x1be;e[0]=0x80;e[1]=0xfe;e[2]=0xff;e[3]=0xff;e[4]=o->gpt?0x0c:0x0e;e[5]=0xfe;e[6]=0xff;e[7]=0xff;p32(e+8,start);p32(e+12,blocks);
@@ -336,9 +338,9 @@ static void disk_create(struct diskopt *o){
         else if(root_blocks){e=s1+0x1ce;e[4]=0xa5;e[5]=0xfe;e[6]=0xff;e[7]=0xff;p32(e+8,root_start);p32(e+12,root_blocks);}
     }
     seek_write(f,0,s1,512);
-    if(!strcmp(o->machine,"pc98")){uint32_t heads=o->size_mib<=20?4:8;uint8_t pe[64]={0};pe[0]=0xa1;pe[1]=0x91;pc98_chs(pe+4,start,heads);pc98_chs(pe+8,start,heads);pc98_chs(pe+12,(root_blocks?root_start:sectors)-1,heads);memset(pe+16,' ',16);memcpy(pe+16,"BOOT",4);if(root_blocks){pe[32]=0x21;pe[33]=0x01;pc98_chs(pe+36,root_start,heads);pc98_chs(pe+40,root_start,heads);pc98_chs(pe+44,root_start+root_blocks-1,heads);memset(pe+48,' ',16);memcpy(pe+48,"ROOT",4);}seek_write(f,512,pe,root_blocks?64:32);}seek_write(f,stage_lba*512,s2,s2n);if(root_blocks)seek_write(f,root_start*512,ufs,ufsn);
+    if(!strcmp(o->machine,"pc98")){uint32_t heads=o->size_mib<=20?4:8;uint8_t pe[64]={0};pe[0]=0xa1;pe[1]=0x91;pc98_chs(pe+4,start,heads);pc98_chs(pe+8,start,heads);pc98_chs(pe+12,(root_blocks?root_start:sectors)-1,heads);memset(pe+16,' ',16);memcpy(pe+16,"BOOT",4);if(root_blocks){pe[32]=0x21;pe[33]=0x01;pc98_chs(pe+36,root_start,heads);pc98_chs(pe+40,root_start,heads);pc98_chs(pe+44,root_start+pc98_whole_cylinders(root_blocks,heads)-1,heads);memset(pe+48,' ',16);memcpy(pe+48,"ROOT",4);}seek_write(f,512,pe,root_blocks?64:32);}seek_write(f,stage_lba*512,s2,s2n);if(root_blocks)seek_write(f,root_start*512,ufs,ufsn);
     if(o->gpt){static const uint8_t esp[16]={0x28,0x73,0x2a,0xc1,0x1f,0xf8,0xd2,0x11,0xba,0x4b,0x00,0xa0,0xc9,0x3e,0xc9,0x3b};static const uint8_t basic[16]={0xa2,0xa0,0xd0,0xeb,0xe5,0xb9,0x33,0x44,0x87,0xc0,0x68,0xb6,0xb7,0x26,0x99,0xc7};static const uint8_t bios[16]={0x48,0x61,0x68,0x21,0x49,0x64,0x6f,0x6e,0x74,0x4e,0x65,0x65,0x64,0x45,0x46,0x49};uint8_t*entries=calloc(1,128*128),h[512],disk_guid[16],partition_guids[3][16];if(!entries)die("calloc GPT entries");random_guid(disk_guid);for(size_t i=0;i<3;i++){do random_guid(partition_guids[i]);while(!memcmp(partition_guids[i],disk_guid,16)||guid_matches_any(partition_guids[i],partition_guids[0],i));}gpt_entry(entries,esp,partition_guids[0],esp_start,esp_start+esp_blocks-1,"zedBSD EFI System");gpt_entry(entries+128,basic,partition_guids[1],start,start+blocks-1,"zedBSD Payload");gpt_entry(entries+256,bios,partition_guids[2],34,esp_start-1,"zedBSD BIOS loader");uint32_t ec=crc32_more(0,entries,128*128);gpt_header(h,1,sectors-1,2,34,sectors-34,disk_guid,ec);seek_write(f,512,h,512);seek_write(f,1024,entries,128*128);seek_write(f,(sectors-33)*512,entries,128*128);gpt_header(h,sectors-1,1,sectors-33,34,sectors-34,disk_guid,ec);seek_write(f,(sectors-1)*512,h,512);free(entries);}if(fclose(f))die("close disk image before formatting");
-    char cmd[16384];uint32_t boot_serial=random_serial(),esp_serial=random_serial();if(esp_serial==boot_serial)esp_serial^=0x80000000U;if(!esp_serial)esp_serial=1;if(o->gpt)shell_format_pcat(tmp,esp_offset,esp_start,esp_blocks,1,"ESP",esp_serial);if(!strcmp(o->machine,"pc98")){uint32_t heads=o->size_mib<=20?4:8,logical=blocks/2,cluster=1;while(logical/cluster>=65525)cluster*=2;snprintf(cmd,sizeof(cmd),"mformat -i '%s'@@%llu -S 3 -N 0x%08x -R 4 -c %u -h %u -s 17 -H 2048 -T %llu -v BOOT ::",tmp,(unsigned long long)offset,boot_serial,cluster,heads,(unsigned long long)logical);if(system(cmd))fail("mformat failed");}else shell_format_pcat(tmp,offset,start,blocks,o->gpt,"BOOT",boot_serial);
+    char cmd[16384];uint32_t boot_serial=random_serial(),esp_serial=random_serial();if(esp_serial==boot_serial)esp_serial^=0x80000000U;if(!esp_serial)esp_serial=1;if(o->gpt)shell_format_pcat(tmp,esp_offset,esp_start,esp_blocks,1,"ESP",esp_serial);if(!strcmp(o->machine,"pc98")){uint32_t heads=o->size_mib<=20?4:8,logical=blocks/2,cluster=1;while(logical/cluster>=65525)cluster*=2;snprintf(cmd,sizeof(cmd),"mformat -i '%s'@@%llu -S 3 -N 0x%08x -R 4 -c %u -h %u -s 17 -H %llu -T %llu -v BOOT ::",tmp,(unsigned long long)offset,boot_serial,cluster,heads,(unsigned long long)start,(unsigned long long)logical);if(system(cmd))fail("mformat failed");}else shell_format_pcat(tmp,offset,start,blocks,o->gpt,"BOOT",boot_serial);
     f=fopen(tmp,"rb+");if(!f)die(tmp);uint8_t bpb[2048];if(fseeko(f,(off_t)offset,SEEK_SET)||fread(bpb,1,2048,f)!=2048)die("read BPB");int fat32=bpb[22]==0&&bpb[23]==0;memcpy(pbr+3,bpb+3,(fat32?0x5a:0x3e)-3);if(fat32){uint16_t reserved=(uint16_t)bpb[14]|(uint16_t)bpb[15]<<8;uint16_t backup=(uint16_t)bpb[50]|(uint16_t)bpb[51]<<8;if(!backup||backup>=reserved)fail("invalid FAT32 backup boot sector");seek_write(f,offset,pbr,512);seek_write(f,offset+(uint64_t)backup*512,pbr,512);seek_write(f,offset+1024,pbr+512,1536);}else seek_write(f,offset,pbr,2048);if(fclose(f))die("close installed partition PBR");shell_copy(tmp,offset,o->bootzbsd,"/BOOTZBSD.EXE");shell_copy(tmp,offset,o->kernel,o->gpt?"/vmunix":"/VMUNIX");if(o->kern_config)shell_copy(tmp,offset,o->kern_config,!strcmp(o->machine,"pc98")?"/BOOTZBSD.CFG":o->gpt?"/zedbsd.cfg":"/ZEDBSD.CFG");if(o->logo)shell_copy(tmp,offset,o->logo,o->gpt?"/logo.ppm":"/LOGO.PPM");if(o->gpt){if(!o->bootx64)fail("GPT image requires BOOTX64.EFI");shell_mkdir(tmp,esp_offset,"/EFI");shell_mkdir(tmp,esp_offset,"/EFI/BOOT");shell_copy(tmp,esp_offset,o->bootx64,"/EFI/BOOT/BOOTX64.EFI");}if(o->arch)shell_copy(tmp,offset,o->arch,o->gpt?"/rootfs.img":"/ROOTFS.IMG");if(o->data)shell_copy(tmp,offset,o->data,o->gpt?"/data.img":"/DATA.IMG");if(o->swap)shell_copy(tmp,offset,o->swap,o->gpt?"/swapfile":"/SWAPFILE");if(o->fragment_kernel){if(!fat32)fail("kernel fragmentation requires FAT32");fragment_fat32_root_file(tmp,offset,"VMUNIX     ");}if(rename(tmp,o->output))die("publish disk image");free(s1);free(s2);free(pbr);free(kernel);free(ufs);
 }
 
@@ -531,6 +533,81 @@ native_align(
 {
 	/* 2048 sectors of 512 bytes make one MiB. */
 	return (sector + 2047U) & ~(uint64_t)2047U;
+}
+
+/*
+ * Rounds a PC-98 sector count up to whole cylinders of the H=heads, S=17
+ * geometry that the native partition table describes.
+ */
+static uint64_t
+pc98_whole_cylinders(
+	uint64_t sectors,
+	uint32_t heads)
+{
+	uint64_t cylinder;
+
+	/* One cylinder holds one 17-sector track for each head. */
+	cylinder = (uint64_t)heads * 17U;
+
+	/* Reports the count rounded up to the next cylinder boundary. */
+	return (sectors + cylinder - 1U) / cylinder * cylinder;
+}
+
+/*
+ * Places the native PC-98 partitions on whole cylinders.
+ *
+ * NEC's fixed-disk tools, FreeBSD(98) and the Linux PC-98 image that a
+ * PC-9821 Ra43 boots all start and end every partition on a cylinder
+ * boundary, while a partition starting inside a cylinder is the observed
+ * difference of a disk that the Ra43 firmware does not offer for booting
+ * (BUG-309).  The boot partition moves to the first cylinder boundary at
+ * or after its requested start that is also 4 KiB aligned, it and the
+ * optional UFS root partition that follows it grow to whole cylinders, and
+ * the disk grows to cover them.
+ */
+static void
+pc98_cylinder_layout(
+	uint32_t heads,
+	uint64_t root_blocks,
+	uint64_t *sectors,
+	uint64_t *start,
+	uint64_t *blocks)
+{
+	uint64_t cylinder;
+	uint64_t boot_start;
+	uint64_t boot_end;
+	uint64_t disk_end;
+
+	/* One cylinder holds one 17-sector track for each head. */
+	cylinder = (uint64_t)heads * 17U;
+
+	/*
+	 * The boot partition begins at the first cylinder boundary at or
+	 * after the requested start which is also a multiple of eight
+	 * 512-byte sectors.
+	 */
+	boot_start = pc98_whole_cylinders(*start, heads);
+	while (boot_start % 8U != 0U) {
+		boot_start += cylinder;
+	}
+
+	/*
+	 * The boot partition keeps at least the requested FAT size and ends
+	 * on the last sector of a cylinder; the FAT fills all of it.
+	 */
+	boot_end = pc98_whole_cylinders(boot_start + *blocks, heads);
+
+	/* The UFS root partition, when present, also spans whole cylinders. */
+	disk_end = boot_end + pc98_whole_cylinders(root_blocks, heads);
+
+	/* The disk is whole cylinders and covers every partition. */
+	*sectors = pc98_whole_cylinders(*sectors, heads);
+	if (*sectors < disk_end) {
+		*sectors = disk_end;
+	}
+
+	*start = boot_start;
+	*blocks = boot_end - boot_start;
 }
 
 /*
