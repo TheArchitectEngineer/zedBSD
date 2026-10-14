@@ -341,7 +341,9 @@ static unsigned shell_mode(struct kwl_object *surface, struct kwl_titlebar_model
 static unsigned shell_layout(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_state *state, unsigned docked, const struct kwl_menu_area *area, unsigned has_menu, struct shell_item *items, int32_t *crumb_width, unsigned *overflow, unsigned *compact_search);
 static int32_t shell_controls_need(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_model *model);
 static unsigned shell_has_menu(struct kwl_object *surface);
-static unsigned shell_crumb_edited(struct kwl_object *surface, const struct kwl_titlebar_control *control);
+static unsigned shell_crumb_field(struct kwl_object *surface, const struct kwl_titlebar_control *control);
+static unsigned shell_crumb_boxed(struct kwl_object *surface, uint32_t id);
+static void shell_draw_crumb_box(struct kwl_server *server, struct kwl_list *command, struct kwl_object *surface, unsigned docked, const struct kwl_titlebar_control *control, int32_t x, int32_t y, int32_t width, int32_t size, const float *ink, float fade, unsigned recording);
 static int32_t shell_crumb_least(struct kwl_server *server, struct kwl_object *surface, const struct kwl_titlebar_control *control);
 static int32_t shell_item_width(struct kwl_server *server, const struct kwl_titlebar_control *control, int32_t size, unsigned compact_search);
 static unsigned shell_side(const struct kwl_titlebar_control *control);
@@ -1403,9 +1405,10 @@ shell_mode(
  * Lays out a window's controls in an area: each control's side, width and
  * whether it is shown, and the breadcrumb's width; reports how many items
  * there are, whether "..." is needed, and whether the search became a
- * button.  The breadcrumb is at most as wide as its parts, but while its
- * path is edited the field takes all the room left (ws074-p229: the
- * browser's address) and does not give way.
+ * button.  The breadcrumb is at most as wide as its parts, but as a field
+ * -- while its path is edited, or always for a box (KWL_BREADCRUMB_BOXED)
+ * -- it takes all the room left (ws074-p229: the browser's address) and
+ * does not give way.
  */
 static unsigned
 shell_layout(
@@ -1428,7 +1431,7 @@ shell_layout(
 	unsigned victim;
 	unsigned pass;
 	unsigned crumb;
-	unsigned edited;
+	unsigned as_field;
 	int32_t size;
 	int32_t needed;
 	int32_t available;
@@ -1454,14 +1457,14 @@ shell_layout(
 			crumb = count;
 	}
 
-	/* The room, the least the breadcrumb needs, and whether its path is being edited. */
+	/* The room, the least the breadcrumb needs, and whether it is a field (edited, or a box). */
 	available = area->right - area->x;
 	*compact_search = 0;
 	crumb_least = 0;
-	edited = 0;
+	as_field = 0;
 	if (crumb != SHELL_ITEMS) {
 		crumb_least = shell_crumb_least(server, surface, items[crumb].control);
-		edited = shell_crumb_edited(surface, items[crumb].control);
+		as_field = shell_crumb_field(surface, items[crumb].control);
 	}
 
 	/* What is shown is measured again after each step of giving way. */
@@ -1521,11 +1524,11 @@ shell_layout(
 				victim = index - 1U;
 		}
 
-		/* Else the breadcrumb, unless its path is being edited (a field with the keyboard stays). */
+		/* Else the breadcrumb, unless it is a field (one with the keyboard stays, and so does the box that is one). */
 		if (victim == SHELL_ITEMS &&
 		    crumb != SHELL_ITEMS &&
 		    items[crumb].shown != 0U &&
-		    edited == 0U)
+		    as_field == 0U)
 			victim = crumb;
 
 		/* Only the primary controls are left: they stay, whatever the room. */
@@ -1540,12 +1543,12 @@ shell_layout(
 		}
 	}
 
-	/* The breadcrumb takes what is left: as much as its parts need, all of it while its path is edited. */
+	/* The breadcrumb takes what is left: as much as its parts need, all of it as a field. */
 	*crumb_width = 0;
 	if (crumb != SHELL_ITEMS && items[crumb].shown != 0U) {
 		*crumb_width = available - needed + crumb_least;
 		full = shell_crumb_full(server, items[crumb].control);
-		if (*crumb_width > full && edited == 0U)
+		if (*crumb_width > full && as_field == 0U)
 			*crumb_width = full;
 		if (*crumb_width < 0)
 			*crumb_width = 0;
@@ -1690,13 +1693,21 @@ shell_has_menu(
 	return has_menu;
 }
 
-/* Tells whether a window's breadcrumb is the field with the keyboard (its path being edited). */
+/*
+ * Tells whether a window's breadcrumb is laid out as a field: its path
+ * being edited (the field with the keyboard), or a box always
+ * (KWL_BREADCRUMB_BOXED, the browser's address).
+ */
 static unsigned
-shell_crumb_edited(
+shell_crumb_field(
 	struct kwl_object *surface,
 	const struct kwl_titlebar_control *control)
 {
-	/* The field is this window's and this control's. */
+	/* A box always. */
+	if ((control->value & KWL_BREADCRUMB_BOXED) != 0U)
+		return 1;
+
+	/* Otherwise only while the field is this window's and this control's. */
 	if (shell_titlebar.field.surface != surface || shell_titlebar.field.id != control->id)
 		return 0;
 
@@ -1704,10 +1715,37 @@ shell_crumb_edited(
 	return 1;
 }
 
+/* Tells whether a window's control is a breadcrumb shown as a box always (KWL_BREADCRUMB_BOXED). */
+static unsigned
+shell_crumb_boxed(
+	struct kwl_object *surface,
+	uint32_t id)
+{
+	const struct kwl_titlebar_control *control;
+	struct kwl_titlebar_model *model;
+	struct kwl_object *titlebar;
+	unsigned mode;
+
+	/* The control as the window shows it. */
+	mode = shell_mode(surface, &model, &titlebar);
+	if (mode != KWL_TITLEBAR_CONTROLS)
+		return 0;
+	control = kwl_titlebar_control(&model->shown, id);
+	if (control == NULL || control->role != KWL_CONTROL_BREADCRUMB)
+		return 0;
+
+	/* A breadcrumb with the box's value. */
+	if ((control->value & KWL_BREADCRUMB_BOXED) == 0U)
+		return 0;
+
+	/* Succeeded: a box. */
+	return 1;
+}
+
 /*
  * Tells the least width a breadcrumb gives way at: its parts' width up to
- * CRUMB_LEAST, and CRUMB_LEAST while its path is edited (the field shows
- * the whole path, not the parts).
+ * CRUMB_LEAST, and CRUMB_LEAST as a field (edited, or a box: it shows the
+ * whole path, not the parts).
  */
 static int32_t
 shell_crumb_least(
@@ -1716,11 +1754,11 @@ shell_crumb_least(
 	const struct kwl_titlebar_control *control)
 {
 	int32_t least;
-	unsigned edited;
+	unsigned as_field;
 
-	/* The field being edited. */
-	edited = shell_crumb_edited(surface, control);
-	if (edited != 0U)
+	/* A field. */
+	as_field = shell_crumb_field(surface, control);
+	if (as_field != 0U)
 		return CRUMB_LEAST;
 
 	/* The parts, when they are narrower than the least. */
@@ -2062,8 +2100,9 @@ shell_draw_search(
 /*
  * Draws a breadcrumb in its width: as many of its last parts as fit (the
  * leading ones as "..."), arrows between them, the last one darker, each
- * lit under the pointer; or, while its path is edited, a field.  Records the
- * parts.
+ * lit under the pointer; or, while its path is edited, a field; or, for a
+ * box always (KWL_BREADCRUMB_BOXED), its text in a box.  Records the parts
+ * (the box as a field).
  */
 static void
 shell_draw_crumbs(
@@ -2103,6 +2142,12 @@ shell_draw_crumbs(
 		shell_draw_field_text(server, command, x + CRUMB_TEXT_INSET, baseline, width - 20, ink, fade);
 		if (recording != 0U)
 			shell_add_field(surface, docked, control->id, x, y, width, size, x + CRUMB_TEXT_INSET);
+		return;
+	}
+
+	/* A box always shows its text in the box, whatever its parts are. */
+	if ((control->value & KWL_BREADCRUMB_BOXED) != 0U) {
+		shell_draw_crumb_box(server, command, surface, docked, control, x, y, width, size, ink, fade, recording);
 		return;
 	}
 
@@ -2170,6 +2215,66 @@ shell_draw_crumbs(
 			pen += CRUMB_ARROW;
 		}
 	}
+}
+
+/*
+ * Draws a breadcrumb that is a box always (KWL_BREADCRUMB_BOXED, the
+ * browser's address) while it is not edited: a rounded box, paler than the
+ * field it becomes and lighter under the pointer, with the client's text
+ * (its URL) where the field's text goes, or the placeholder, paler.  The
+ * whole box is a field to press (shell_act edits it).
+ */
+static void
+shell_draw_crumb_box(
+	struct kwl_server *server,
+	struct kwl_list *command,
+	struct kwl_object *surface,
+	unsigned docked,
+	const struct kwl_titlebar_control *control,
+	int32_t x,
+	int32_t y,
+	int32_t width,
+	int32_t size,
+	const float *ink,
+	float fade,
+	unsigned recording)
+{
+	const char *text;
+	float ground[4];
+	float colour[4];
+	int32_t baseline;
+	int hovered;
+
+	/* Nothing in no room. */
+	if (width <= 0)
+		return;
+
+	/* The box, lighter under the pointer (when the control works). */
+	baseline = y + size / 2 + 5;
+	hovered = shell_hovered(server, x, y, width, size);
+	ground[0] = 1.0f;
+	ground[1] = 1.0f;
+	ground[2] = 1.0f;
+	ground[3] = 0.55f * fade;
+	if (hovered != 0 && control->enabled != 0U)
+		ground[3] = 0.72f * fade;
+	glass_draw_solid(server, command, (float)x, (float)y + 2.0f, (float)width, (float)size - 4.0f, 8.0f, ground);
+
+	/* The client's text, or the placeholder, paler. */
+	text = control->text;
+	shell_colour(colour, ink, fade);
+	if (text == NULL || text[0] == '\0') {
+		text = control->placeholder;
+		colour[3] *= 0.45f;
+	}
+
+	/* The text, when there is one, where the field's starts. */
+	if (text != NULL)
+		glass_draw_text(server, command, SIZE_BAR, x + CRUMB_TEXT_INSET, baseline, text, width - 20, colour);
+
+	/* It can be pressed. */
+	if (recording != 0U)
+		shell_add_field(surface, docked, control->id, x, y, width, size, x + CRUMB_TEXT_INSET);
 }
 
 /*
@@ -3113,6 +3218,7 @@ shell_release(
 	struct shell_field *field;
 	struct shell_hit pressed;
 	unsigned waiting;
+	unsigned boxed;
 	int moved;
 
 	/* The press ends. */
@@ -3148,15 +3254,29 @@ shell_release(
 	/* The control acts. */
 	shell_act(server, hit);
 
-	/* Succeeded: a search field that took the keyboard has its cursor where it was pressed. */
-	if (waiting != 0U &&
-	    pressed.kind == KIND_FIELD &&
-	    field->surface == pressed.surface &&
-	    field->id == pressed.id) {
-		field->cursor = shell_field_at(server, pressed.text_x, shell_titlebar.press_x);
-		field->anchor = field->cursor;
-		printf("KWL TITLEBAR caret client=%llu surface=%u id=%u cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->cursor);
+	/* A field that did not take the keyboard is done. */
+	if (waiting == 0U ||
+	    pressed.kind != KIND_FIELD ||
+	    field->surface != pressed.surface ||
+	    field->id != pressed.id)
+		return;
+
+	/*
+	 * A breadcrumb's box keeps its whole text selected, the cursor at its
+	 * start, as a browser's address field does on its first press; a
+	 * second press puts the cursor (kwl_titlebar_button).
+	 */
+	boxed = shell_crumb_boxed(pressed.surface, pressed.id);
+	if (boxed != 0U) {
+		field->anchor = field->length;
+		field->cursor = 0;
+		return;
 	}
+
+	/* Succeeded: a search field that took the keyboard has its cursor where it was pressed. */
+	field->cursor = shell_field_at(server, pressed.text_x, shell_titlebar.press_x);
+	field->anchor = field->cursor;
+	printf("KWL TITLEBAR caret client=%llu surface=%u id=%u cursor=%zu\n", (unsigned long long)pressed.surface->client->number, pressed.surface->id, pressed.id, field->cursor);
 }
 
 /*
@@ -3243,9 +3363,13 @@ shell_act(
 		return;
 	}
 
-	/* The field being edited stays as it is. */
-	if (hit->kind == KIND_FIELD)
+	/* A breadcrumb's box takes the keyboard as the field of its path (ws074-p229); the field being edited stays as it is. */
+	if (hit->kind == KIND_FIELD) {
+		if (control->role == KWL_CONTROL_BREADCRUMB &&
+		    (shell_titlebar.field.surface != hit->surface || shell_titlebar.field.id != hit->id))
+			shell_focus(server, hit->surface, control, 1U);
 		return;
+	}
 
 	/* Any other control, or a breadcrumb's part, sends its event. */
 	kwl_titlebar_send_activated(titlebar, hit->id, hit->detail, "pointer");

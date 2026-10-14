@@ -34,6 +34,7 @@
 #define TITLEBAR_VERSION_DROP	2U
 #define TITLEBAR_VERSION_SHEET	3U
 #define TITLEBAR_VERSION_SUGGEST	4U
+#define TITLEBAR_VERSION_BOXED	5U
 
 /* The compositor's bounds of one titlebar (plan/ws070/titlebar-design.md section 2.2). */
 #define TITLEBAR_CONTROLS_MAX	64U
@@ -378,7 +379,8 @@ kl_titlebar_set_control_state(
 }
 
 /*
- * Sets a progress control's share done.
+ * Sets a progress control's share done, or a breadcrumb's look
+ * (KL_BREADCRUMB_BOXED, since the protocol's version 5).
  */
 int
 kl_titlebar_set_control_value(
@@ -387,14 +389,28 @@ kl_titlebar_set_control_value(
 	unsigned value)
 {
 	struct titlebar_entry *entry;
+	uint32_t version;
 
-	/* Inside a transaction, a progress control that is there, a value it takes. */
-	if (titlebar->updating == 0U || value > KL_PROGRESS_UNKNOWN)
+	/* Inside a transaction, a control that is there. */
+	if (titlebar->updating == 0U)
 		return EINVAL;
 	entry = titlebar_control(titlebar, id);
 	if (entry == NULL)
 		return ENOENT;
-	if (entry->role != KL_CONTROL_PROGRESS)
+
+	/* A breadcrumb takes 0 or KL_BREADCRUMB_BOXED from a compositor that knows it (version 5, ws074-p229). */
+	if (entry->role == KL_CONTROL_BREADCRUMB) {
+		if (value > KL_BREADCRUMB_BOXED)
+			return EINVAL;
+		version = wl_proxy_get_version((struct wl_proxy *)titlebar->proxy);
+		if (version < TITLEBAR_VERSION_BOXED)
+			return ENOTSUP;
+		kl_titlebar_v1_set_control_value(titlebar->proxy, id, value);
+		return 0;
+	}
+
+	/* Otherwise a progress control, with a share it takes. */
+	if (entry->role != KL_CONTROL_PROGRESS || value > KL_PROGRESS_UNKNOWN)
 		return EINVAL;
 
 	/* Succeeded: the request is sent. */
@@ -753,6 +769,8 @@ titlebar_bind(
 		version = TITLEBAR_VERSION_SHEET;
 	if (search.version >= TITLEBAR_VERSION_SUGGEST)
 		version = TITLEBAR_VERSION_SUGGEST;
+	if (search.version >= TITLEBAR_VERSION_BOXED)
+		version = TITLEBAR_VERSION_BOXED;
 
 	/* The manager, bound when announced; the search ends. */
 	manager = keiui_global_bind(&search, &kl_titlebar_manager_v1_interface, version);

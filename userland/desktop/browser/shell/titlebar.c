@@ -7,8 +7,9 @@
 
 /*
  * The window's titlebar in the compositor (WS070's CONTROLS presentation): back,
- * forward, reload, and the location of the page (the parts of its path,
- * which the compositor turns into a field for the whole URL when it is edited).
+ * forward, reload, and the location of the page: a box with its URL, which
+ * the compositor turns into a field when it is pressed (KL_BREADCRUMB_BOXED;
+ * the parts of its path with an older compositor).
  *
  * The compositor draws the controls and edits the field; this file declares them
  * on the window (libkeiland's controls, WS131 p025; the compositor's titlebar
@@ -338,6 +339,15 @@ titlebar_state(
 	if (error == 0)
 		error = kl_window_set_control_text(titlebar->kui, SHELL_CONTROL_LOCATION, url, "URL or file path");
 	if (error != 0)
+		return error;
+
+	/*
+	 * The location is always a box with the URL, which a press edits, as a
+	 * browser's address field (ws074-p229, the user's decision of
+	 * 2026-10-14); an older compositor (ENOTSUP) shows the parts.
+	 */
+	error = kl_window_set_control_value(titlebar->kui, SHELL_CONTROL_LOCATION, KL_BREADCRUMB_BOXED);
+	if (error != 0 && error != ENOTSUP)
 		return error;
 
 	/* Succeeded: the titlebar shows the state. */

@@ -88,6 +88,9 @@
 /* The version that has set_suggestions (ws127-p010). */
 #define TITLEBAR_SUGGEST_VERSION	4U
 
+/* The version whose breadcrumb takes a value: KWL_BREADCRUMB_BOXED (ws074-p229, the browser's address). */
+#define TITLEBAR_BOXED_VERSION		5U
+
 static uint32_t titlebar_word(const unsigned char *bytes, size_t offset);
 static int titlebar_string(const unsigned char *bytes, size_t size, size_t offset, const char **text, size_t *next);
 static int manager_request(struct kwl_object *manager, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -825,6 +828,20 @@ titlebar_edit_control(
 		if (size != 8U)
 			return EPROTO;
 		value = titlebar_word(bytes, 4U);
+
+		/* A breadcrumb's look since version 5: 0, or always a box (KWL_BREADCRUMB_BOXED). */
+		if (control->role == KWL_CONTROL_BREADCRUMB && titlebar->version >= TITLEBAR_BOXED_VERSION) {
+			if (value > KWL_BREADCRUMB_BOXED) {
+				error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "a breadcrumb's value that is not 0 or 1");
+				return error;
+			}
+
+			/* The breadcrumb's new look. */
+			control->value = value;
+			return 0;
+		}
+
+		/* Otherwise only a progress control has a value. */
 		if (control->role != KWL_CONTROL_PROGRESS || value > TITLEBAR_VALUE_UNKNOWN) {
 			error = titlebar_fail(titlebar, ERROR_INVALID_VALUE, "a value for a control that is not progress, or above 1001");
 			return error;
