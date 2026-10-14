@@ -210,7 +210,7 @@ static const struct kl_file_filter vp_filters[] = {
 	{ "All Files", NULL }
 };
 
-static int vp_parse(int argc, char **argv, unsigned *width, unsigned *height, unsigned *timeout, const char **file);
+static int vp_parse(int argc, char **argv, unsigned *width, unsigned *height, unsigned *timeout, int *fullscreen, const char **file);
 static void vp_media_log(void *context, const char *line);
 static int vp_loop(struct vp_player *player, unsigned timeout);
 static void vp_input(struct vp_player *player, const struct kl_window_event *event);
@@ -258,6 +258,7 @@ main(
 	unsigned width;
 	unsigned height;
 	VkResult result;
+	int fullscreen;
 	int status;
 	int error;
 
@@ -266,9 +267,9 @@ main(
 	player.next_due = -1.0;
 
 	/* The command line. */
-	status = vp_parse(argc, argv, &width, &height, &timeout, &file);
+	status = vp_parse(argc, argv, &width, &height, &timeout, &fullscreen, &file);
 	if (status != 0) {
-		fprintf(stderr, "usage: videoplayer [--width=N] [--height=N] [--timeout-s=N] [FILE]\n");
+		fprintf(stderr, "usage: videoplayer [--width=N] [--height=N] [--timeout-s=N] [--fullscreen] [FILE]\n");
 		return 2;
 	}
 
@@ -335,6 +336,13 @@ main(
 	vp_log("AUDIO error=%d", error);
 	vp_media_init(&player.media, &player.audio);
 	vp_states(&player);
+
+	/* Full screen from the start when asked: the compositor may then show the pictures without composing them. */
+	if (fullscreen) {
+		kl_window_set_fullscreen(player.window, 1);
+		vp_log("FULLSCREEN on=1 via=option");
+		vp_states(&player);
+	}
 
 	/* The file named, and the loop until the window closes. */
 	if (file != NULL)
@@ -404,6 +412,7 @@ vp_parse(
 	unsigned *width,
 	unsigned *height,
 	unsigned *timeout,
+	int *fullscreen,
 	const char **file)
 {
 	int index;
@@ -413,6 +422,7 @@ vp_parse(
 	*width = VP_WIDTH;
 	*height = VP_HEIGHT;
 	*timeout = 0U;
+	*fullscreen = 0;
 	*file = NULL;
 
 	/* Each argument. */
@@ -435,6 +445,13 @@ vp_parse(
 		same = strncmp(argv[index], "--timeout-s=", 12U);
 		if (same == 0) {
 			*timeout = (unsigned)strtoul(argv[index] + 12, NULL, 10);
+			continue;
+		}
+
+		/* Full screen from the start. */
+		same = strcmp(argv[index], "--fullscreen");
+		if (same == 0) {
+			*fullscreen = 1;
 			continue;
 		}
 

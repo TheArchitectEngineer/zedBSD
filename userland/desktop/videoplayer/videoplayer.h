@@ -61,9 +61,12 @@ struct kl_window;
 /*
  * With the presenter, the pictures decoded ahead at most, and the pictures
  * the player holds at once from the decoder: those, one held back by the
- * reader, the one shown, and those the frames still on the GPU drew.
+ * reader, the one shown, and those the frames still on the GPU drew.  Two
+ * ahead, not three, leaves the decoder four pictures in flight within the
+ * 17 slots of a High-profile stream (ws236-p011: 1080p60 decoded at about
+ * 41 fps with three).
  */
-#define VP_GPU_PICTURES		3U
+#define VP_GPU_PICTURES		2U
 #define VP_GPU_HOLD		(VP_GPU_PICTURES + 2U + VP_PRESENT_FRAMES)
 
 /* The frames the presenter has on the GPU at once. */

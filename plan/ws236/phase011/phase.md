@@ -220,6 +220,42 @@ Phase disposition: normal
 - 効く条件: `DRAW rest_us`（present と fence の待ち）が 1 frame の時間（30 fps で 33 ms、60 fps で 16.7 ms）に近い時。V3D の executor は compositor と videoplayer の仕事を順に流すので、compositor の 1 frame（WS141 p013 では 33 ms 級だった）が長いと fence の待ちも長くなる。その時は重ねても compositor の合成の速さが上限（表示は compositor が出す）で、60 fps には compositor 側の短縮が要る。
 - 判断: T1-679 の `DRAW picture_us`・`rest_us` と kernel の perf を見てから決める。`rest_us` が 1 frame の半分を超え、かつ compositor が 60 fps で回っている時に実装する。それ以外（compositor が律速）なら、HVS の overlay に NV12 を直に載せる案 2（WS214、compositor の合成を通らない）の方が効く。
 
+### T2 の結果（T1-683、2026-10-16、Pi 4 実機、main a7f6474bf）と律速の切り分け
+
+- 1080p30 high: shown 270・late 30（10 s）、`DRAW` は 1 秒に 25〜29 frame、`acquire_us` 25〜32 ms・`submit_us` 1.6〜3.2 ms・`wait_us` 0.2〜0.9 ms・`picture_us` 2 ms→0。baseline: shown 250・late 50。1080p60（15 s）: shown 279・late 321、`DRAW` 1 秒に 12〜21 frame、`acquire_us` 25〜59 ms、`Vulkan Video:` 2 秒に 74〜83 picture（約 41 fps）・submit 4.4 ms・wait 14.5 ms・copy 4.5 ms、flights 3（17 slots、held 7）。落ちない、`execution failed` 無し、PNG の色は正しい。
+- `PRESENTED picture=0 gpu=0` は最初の frame（picture がまだ無い）の行だけで、続く `DRAW` は gpu=frames（18 に 17 などは最初の 1 枚）。1080p60 も GPU の picture の道に入っている（Q1 の (2) は問題なし）。
+- **表示の律速（窓）**: frame の時間の大部分が `vkAcquireNextImageKHR`（swapchain の image が compositor から戻るまで）。libvulkan の Wayland の FIFO は前の commit の frame callback を待って次を commit し、image は compositor の release まで使えない。compositor が 1 frame を出すまでの GPU の仕事が律速。
+- kernel の `v3d: perf`（1080p30、2 秒）: subs 284、passes 112（videoplayer と compositor が 1 frame に 1 つずつ）、image passes 112、TFU 168（1 frame に 3: Y・UV と compositor が窓の image を写す 1）、busy 72%（1080p60 は 86〜90%）。`v3d: gpu tiles`: draw 17604 tile × 22650 cycle（500 MHz で 45 us/tile）、copy 17780 tile × 2972 cycle。1 frame あたり GPU 約 8M cycle＝**約 16 ms**、TFU 約 3 ms、executor の CPU の準備・解放を足すと executor の時間は 1 frame に約 25 ms。窓の再生では 1 frame に videoplayer の pass と compositor の合成の pass が両方要り、60 fps（16.7 ms）には GPU の仕事を半分以下にしないと届かない。
+- **decode の律速（1080p60）**: kernel の `v3d: video` で depth 2.1（flight 3 のうち平均 2 つしか VPU に無い）、frame 49 ms。libmedia は 1 picture に submit 4.4 ms と copy（fence の reset・command buffer の reset 2 回・query の読み）4.5 ms を順にかけ、その間 flight が 1 つ空く。executor が 86% 埋まっているので、1 回 1 回の kernel の要求が V3D の pass の後ろで待つ（2 秒に要求 1740、1 picture に約 20）。
+
+### 直し 5（2026-10-16、P3）
+
+- videoplayer（`main.c`）: `--fullscreen`（起動から全画面）。content type は VIDEO なので、compositor の game mode（ws122-p005b、`KWL SCANOUT direct=1`）に入れば compositor は合成せず、窓の image を HVS がそのまま出す（bcm2711 の `GPU_DISPLAY_PRESENT` の BLOB は allocation を直に出す）。1 frame の GPU の仕事は Y・UV の TFU と出力の大きさの 1 枚の quad だけになり、compositor の pass・窓の image の TFU・copy pass が消える。
+- videoplayer（`videoplayer.h`）: 先読みの picture を 3 → 2（hold 7 → 6）。High の stream（参照 4・reorder 2）で libmedia の flight が 3 → 4 になる（17 slots の中）。
+- libmedia（`vkvideo-runtime.c`）: GPU の picture の context は readback を記録しないので、picture ごとの transfer の command buffer の reset を省く（kernel の要求が 1 picture に 1 つ減る）。
+
+### 確かめ 5（host と build）
+
+| 確かめ | 結果 |
+| --- | --- |
+| rpi4: `make -j16 BUILD=build/p3/rpi4 ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/p3/rpi4/dynamic/libmedia.so build/p3/rpi4/bin/videoplayer` | rc 0、warning 0 |
+| amd64: `make -j16 BUILD=build/p3/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p3/amd64/bin/videoplayer build/p3/amd64/dynamic/libmedia.so` | rc 0、warning 0 |
+| `sh plan/ws202/tests/run-host-native-playback.sh`・`run-host-app-fallback.sh` | PASS（plain、ASan/UBSan） |
+| style-check（変えた 3 file） | 指摘 0 |
+
+### T2 への依頼 5（Pi 4 実機、約 30 分）
+
+1. build（この commit か merge 後の main）: `build/<T>/rpi4/dynamic/libmedia.so`・`bin/videoplayer`（kernel・libvulkan は T1-683 のまま）。compositor は T1-683 の capture 入りの物（`KWL SCANOUT` の行は compositor の標準出力に出る）。
+2. Pi: libmedia・videoplayer を差し替え、boot の行に `v3d.perf=1`。
+3. 再生（`--timeout-s=15`）: (i) `high-1080p60-10s.mp4 --fullscreen`、(ii) `high-1080p30-10s.mp4 --fullscreen`、(iii) `high-1080p60-10s.mp4`（窓、比較）。pointer は動かさない。各 1 回、5 秒目ころに keiland-shot（game mode の間は撮ると合成に戻るので、(i) は撮らない回と撮る回の 2 回、撮る回は 8 秒目）。
+4. 報告: videoplayer の `Vulkan Video:`（flights・held）・`FULLSCREEN`・`FRAMES`・`DRAW`（acquire_us・submit_us・wait_us）、compositor の `KWL SCANOUT`（direct=1 か、direct=0 の reason）、dmesg の `v3d: perf`・`v3d: gpu tiles`・`v3d: video:`（depth・frame）・`v3d: requests`・`execution failed`、PNG。
+5. 合否: (a) (i) で `KWL SCANOUT direct=1`、(b) (i) の shown（film は 10 s・600 frame、目標 580 以上・late 20 以下、記録）、(c) (ii) が shown 290 以上・late 10 以下、(d) `Vulkan Video:` の flights 4・depth と 2 秒の picture 数（目標 120 以上）、(e) 落ちない・`execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
+
+### ユーザーの判断が要る点（記録、P3 は先へ進む）
+
+- **窓の再生の 60 fps**: 窓では compositor の合成の pass（GPU 約 8 ms/frame の見込み）と窓の image の TFU が毎 frame 要り、videoplayer 側だけでは届かない。案は (A) compositor の合成の短縮（窓の下の層を描かない遮蔽の省略など、WS141 p013・WS211 の範囲）、(B) WS214（窓を HVS の plane に載せる）の p005 で再生中の窓を plane に載せる、(C) 60 fps は全画面（game mode）だけを目標にする。P3 は (C) の道（`--fullscreen`）を先に確かめる。
+- **先読みの picture 3 → 2**: 1080p60 の decode の throughput（flight 4）のため。30p の再生で揺れ（late）が増えるなら戻すか、libmedia の slot の上限（`H264_DPB_SLOTS` 17、kernel の `VIDEO_MAX_DPB_SLOTS` 17）を広げる（kernel は slot の数を使っていないので広げられるが、libmedia の DPB の表の大きさが変わる）。
+
 ## 残り・危険
 
 - 段 a の YUV の候補は当たらなかった（B-2 に決めた）。
