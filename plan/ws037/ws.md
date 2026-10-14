@@ -67,3 +67,8 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 ## 要検討・ブロック（2026-10-05、2026-10-14 に解除）
 
 2026-10-05 にユーザーの指示で要検討の状態にしてブロックした。2026-10-14 のユーザーの指示（上の Status）で解除。
+
+## 2026-10-14 夜 ユーザーの判断: ベータ2 に入れる範囲
+
+「* R6 の「channel を残したまま止める」場合の片付け * 3D の初期状態（golden context） * display * shader の compiler ここまでベータ2に入れます。作業を続けてください。」
+→ 実機（VFIO）で R0〜R6 の GPU の仕事（copy engine の fill と fence）まで通った後の判断。順: R6 の片付け → 5f（golden context と scrubber）→ p006（display）→ p007・p008（3D と shader の compiler、SPIR-V → SM75、Mesa の NAK（MIT）を参考）。既定 off（`CONFIG_DRIVER_PCI_NVRTX` 既定 n）のまま入れ、通った段まで。担当: P1 が WS238 の後に R6 の片付け〜display、shader の compiler は先に空いた P（P2 の BUG-312 の後か P3 の WS237 の後）。
