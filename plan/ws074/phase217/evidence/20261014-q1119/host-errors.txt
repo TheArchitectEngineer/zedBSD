@@ -1,0 +1,5 @@
+console: Failed to load the script /resources/testharness.js: No such file or directory
+console: Failed to load the script /resources/testharnessreport.js: No such file or directory
+console: Failed to load the script /resources/check-layout-th.js: No such file or directory
+console: Uncaught ReferenceError: setup is not defined (at /tmp/zedbsd-interop2025-wpt/css/css-grid/alignment/grid-column-axis-alignment-positioned-items-012.html:2:3)
+console: Uncaught (in promise) ReferenceError: checkLayout is not defined (at 2:35)

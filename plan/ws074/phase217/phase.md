@@ -202,3 +202,11 @@ Event ws074-p217-q1117-partial-clear-20261014: [証拠](evidence/20261014-q1117/
 ## q1118-i01 結果（2026-10-14 09:17 JST）
 
 Event ws074-p217-q1118-partial-clear-20261014: [証拠](evidence/20261014-q1118/README.md)。水平Gridのauto row始端/終端/両端をpadding端とshift済み明示lineから計算し、end/centerを最終子高さで配置。最小LTR/RTLと明示行fixture PASS。固定列軸012–016の横書きLTR5 subtest FAIL→PASS、RTL5件はoffsetLeft期待190/実948、縦書き10もFAIL継続。旧PASS2件、Grid48/CSS51/JS14、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865。q1118部分cleared、p217/p189/p173全件100%未達。共有投影/GitHub publication保留。
+
+## q1119-i01 有限部分範囲（2026-10-14 09:19 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（10:49 JSTまで）に適用。固定column-axis012–016 RTLのoffsetLeft期待190/実948をlayout dumpとWPT sourceに照合し、`inline-grid` auto幅のCSS値変換、box kind/atomic、width/shrink-to-fit、Grid track/DOM geometry経路を監査。最小の次の有限実装scopeと回帰範囲を定義。読取/証拠のみ、browser/runner/WPT/公開ABI/`plan/master.md`/Acid変更なし。p217 whole/p189/p173全件100%は本部分基準外。
+
+## q1119-i01 結果（2026-10-14 09:20 JST）
+
+Event ws074-p217-q1119-partial-clear-20261014: [証拠](evidence/20261014-q1119/README.md)。固定RTL共通offsetLeft期待190/実948は親`inline-grid`の自動幅が250pxでなく1008pxに広がることに起因。CSS表示値のgridへの畳み込みによりatomic/intrinsic-width経路を通らない。次はdistinct enumでinline-gridを保持しGrid item/layout/width経路へ分配する有限実装。q1119部分cleared、p217/p189/p173全件100%未達。browser/runner/WPT/ABI/Master/Acid無変更、共有投影/GitHub publication保留。

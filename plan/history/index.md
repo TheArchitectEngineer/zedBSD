@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1118 / WS074 positioned Grid auto-row block boundaries（2026-10-14）
+## 最新: q1119 / WS074 inline-grid intrinsic width diagnosis（2026-10-14）
+
+[q1119履歴](queue-q1119.md): `inline-grid`がblock-level1008px自動幅になり、固定RTL offsetLeft差を生む。distinct display enum/atomic経路を次候補へ。[証拠](../ws074/phase217/evidence/20261014-q1119/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1118 / WS074 positioned Grid auto-row block boundaries（2026-10-14）
 
 [q1118履歴](queue-q1118.md): auto row境界で固定列軸012–016の横書きLTR5 subtest FAIL→PASS。RTL共通x差と縦書き差は残る。[証拠](../ws074/phase217/evidence/20261014-q1118/README.md)。p217部分cleared・全件100%未達、共有投影/GitHub publication pending。
 
