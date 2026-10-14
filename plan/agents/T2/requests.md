@@ -43,3 +43,4 @@
 | T1-680 | ws236-p011 依頼 3 再試験（libvulkan の SAMPLED 直し 95c47d971） | FAIL（format の照会は通ったが context の作成が 1004 で失敗、gpu=0）。results-20261016-t1-680.md |
 | T1-683 | ws236-p011 依頼 4（3e3189b6e、executor の contended の時に VPU を待たない、2 frame の presenter、1080p60） | 部分 FAIL（1080p30 shown 270/250 で目安 290 に届かず、1080p60 shown 279 gpu=0）。results-20261016-t1-683.md |
 | T1-685 | ws236-p011 依頼 5（b1c0346f8、videoplayer --fullscreen の game mode、先読み 2、command buffer reset 減） | **FAIL**（--fullscreen は 1080p60/30 とも `PLAYBACK failed error=5`・shown 9〜14、`KWL SCANOUT direct=0 reason=backend errno=21`。窓 1080p60 は shown 304・late 296・落ちない）。results-20261016-t1-685.md |
+| T1-686 | ws236-p011 依頼 6（core clock の floor の集約、reboot なし 5 本） | FAIL（全画面の失敗と decoder の喪失、core clock の行が再生中に出る、retry も同じ）| [results-20261016-t1-686.md](results-20261016-t1-686.md) |
