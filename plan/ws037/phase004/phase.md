@@ -2,7 +2,7 @@
 
 # ws037-p004: GSP の起動（P0〜P3・P7）と方式 B（VFIO）の試験の手順
 
-Status: in-progress（2026-10-14 P1。4a〜4e を実装、build と host 試験まで。実機（方式 B）は T1 待ち）
+Status: in-progress（2026-10-14 P1。4a〜4e を実装、build と host 試験まで。方式 B の R0・R1 PASS、R2 は P7 で FAIL、R3 は P2b で止まった（T2）。原因の解析と直しを commit `1c1732db7`、R2〜R4 の再試験は T2 待ち。下の「R2・R3 の結果への対応」）
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14「p004 を 4a から順に実装して進めること」）
@@ -90,8 +90,8 @@ qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 8G \
 | --- | --- | --- |
 | R0 | （nvrtx.gsp なし） | 仮想の VGA の console に `nvrtx: N0 ok chip=166 TU106` と `N1 gop … is not on this GPU`、login prompt（boot-test と同じ画面の撮り方） |
 | R1 | `nvrtx.gsp=1 nvrtx.stop=P1a` | P0 の ok（firmware の大きさ・FWSEC の desc の版・WPR の配置の行）、login prompt |
-| R2 | `nvrtx.gsp=1 nvrtx.stop=P2a` | P1a・P1b の ok（WPR2 の下限・上限）、P7 の一部（FWSEC-SB・booter_unload で WPR2 の上限が 0 に戻る、guest の shutdown の後）、login prompt |
-| R3 | `nvrtx.gsp=1 nvrtx.stop=P3` | P2b の ok（START_OK）、guest の `poweroff` の後の P7 の ok |
+| R2 | `nvrtx.gsp=1 nvrtx.stop=P2a` | P1a・P1b の ok（WPR2 の下限・上限）、`P7 left: region … without a started GSP; reboot the host before the next run`（2026-10-14 に変更、下の「R2・R3 の結果への対応」）、login prompt。**R2 の後は host を reboot** |
+| R3 | `nvrtx.gsp=1 nvrtx.stop=P3` | P2b の ok（`P2b ok: GSP-RM is up after N ms`）、続けて `P3 skipped`・`P7 begin: unload`・`P7 begin: FWSEC-SB`・`P7 booter_unload`・`P7 ok: region torn down`（P7 は boot の中で worker が流す） |
 | R4 | `nvrtx.gsp=1` | P3 の ok（client・device・subdevice）、`poweroff` の後の P7 の ok |
 
 - 判定は QMP の `screendump` の PNG（仮想の VGA の console）と、serial（`plan/tools/guest/serial.py`）での対話（`dmesg | grep nvrtx` を打って画面で読む）。serial の log を読んで判定しない（AGENTS.md）。
@@ -130,3 +130,52 @@ qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 8G \
 - host 試験: `plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS（124 項目、実物の firmware 5 file を含む）、`nvrtx-identify-host-test.sh` PASS（14 case と device info の表）。amd64 の y の kernel rc 0・warning 0・check PASS（+27 KiB）。
 - 未実施: 実機（方式 B の VFIO、方式 A）での全段。方式 B の R0〜R4 を T1 に依頼する（3.4 節）。R4 の合格は「P3 ok: client, device and subdevice」と「P7 ok: region torn down」。
 - 範囲の外のまま: P4 以降（VRAM の allocator・MMU・channel）、display（P8）、text console の切り離し（方式 A の前）、suspend、reboot・shutdown の P7（今は worker が必ず止めて終わるので要らない）。
+
+## R2・R3 の結果への対応（2026-10-14、P1）
+
+T2 の結果（[results-20261014-nvrtx-vfio](../../agents/T2/results-20261014-nvrtx-vfio.md)、QEMU の guest に VFIO で渡した実機の RTX 2070）: R0・R1 PASS。R2 は `P1b ok: region 01ffe000-01ffee00` の後 `P7 begin: FWSEC-SB` → `P7 booter_unload` → `booter: mailbox 00000029 000000ff` → `P7 fail: region still up to 01ffee00`。R3（host の warm reboot の後）は `P1b ok` → `P2a ok: RISC-V running` → `P2b begin: waiting for init done` のまま 5 分以上 ok も fail も出ず、guest は idle（RIP は HLT）。**host の warm reboot で WPR2 は消えた**（R3 の P1b が ok）。
+
+### R2 の P7 の原因（MIT の事実から）
+
+- nouveau（MIT）の TU102 の停止（`tu102_gsp_fini`）は、GSP-RM が動いている時（`gsp->running`）だけ呼ばれ、順は unload の RPC → GSP の MAILBOX0 が 0x80000000 → GSP の falcon の reset → FWSEC-SB（0x1454 の下位 16 bit = 0 を確認）→ booter_unload（MAILBOX0/1 = 0xff・0xff、WPR2 の上限が 0 なら飛ばす）。FRTS の後に GSP の起動が失敗した時に WPR2 を解く道は無い。
+- open-gpu-kernel-modules 570.144（MIT の `kernel_gsp_tu102.c`・`kernel_gsp_booter_tu102.c`・`kernel_gsp.c`、temp に取得、commit しない）も同じ: FWSEC-SB と booter_unload（`kgspTeardown_TU102`）は `kgspUnloadRm` の unload の RPC の後だけ。boot の失敗の時は teardown せず、次の boot は WPR2 が既にあると「GPU は悪い状態で reset が要るかもしれない」として断る。
+- よって **booter_unload は booter_load と GSP-RM が作った状態を解く物で、FWSEC-FRTS だけが張った region には使えない**（我々の R2 の順は両 driver の道の外）。mailbox0 の 0x29 は booter の誤りの番号で、意味は MIT の source に無い（booter は閉じた firmware、vendor の driver も数値を出すだけ）。mailbox1 の 0xff は渡した値がそのまま残った物。
+- SEC2 の reset と falcon の準備の誤りではない: R3 で同じ `nvrtx_booter_run`（SEC2 の reset・PMC・IMEM/DMEM・署名の patch）の booter_load が mailbox 0 で成功した。FWSEC-SB は result 0（`P7 FWSEC-SB error` の行が無い）。
+
+### R3 の P2b の原因の一部と、切り分けの印
+
+- **10 s で timeout しない理由**: 待ちの loop が時間を測らず「1 回 10 µs」と数えていた。`kern_usleep_range` は次の scheduler の tick（amd64 は 1000 Hz）で起きるので、1 回が 1 ms 以上かかり、10 s の待ちは 1000 s 以上になる（5 分では終わらない）。全ての待ち（`nvrtx_poll`、RPC の送受信、P1a、P5 の fence）を単調な時計（`nvrtx_now_us`、`kern_rtc_read_counter`）で測る形に直した。
+- **init done が来ない理由**は未確定（この版で切り分ける）。直しの前の版でも、message が 1 つでも来ていれば印（sequencer は無印で実行、他は `rpc: message …`）か fail が出るので、5 分の間に status の queue には何も来なかった見込みが高い（sequencer の poll の中で長く止まっていた可能性も残る、下の印で分かる）。
+- 足した印:
+  - `P2a memory: libos X rmargs Y queues Z+81000` と `P2a memory: logs A B C, 10000 bytes each`（DMA の番地 = guest の物理番地。vIOMMU は無い）。
+  - `P2b <t> ms: cmd put P got G; msg size S put P got G`（t = 200・1000・3000・10000）: cmd の put は我々、got は GSP が読んだ所（GSP が system info と registry を読めば 2 以上）。msg の size は GSP が status の queue の header を書くと 0x40000 になる（0 なら GSP-RM は queue の初期化まで来ていない）。
+  - `P2b <t> ms: mbox M0 M1 riscv R boot B; logs L0 L1 L2`: GSP の falcon の MAILBOX0/1、RISC-V の状態（0x111240 の bit 0）、secure scratch 14（0x1180f8 の bit 26 が boot の引き渡しの完了）、3 つの log の put pointer（0 なら libos は log を書いていない）。
+  - `rpc: sequencer of N bytes`（CPU sequencer を受けた時）、`rpc: firmware error K: text`（0x1006 の誤りの報告の種類と文）。
+  - fail の時は `P2b fail (E): memory kept for a dump; reboot the host` を出し、**memory を返さず P7 も流さない**（log と queue を外から dump するため。どちらにしても WPR2 は host の reboot まで残る）。
+- 判定は今までどおり画面の PNG。加えて fail の時は T2 が QEMU の monitor/QMP の `pmemsave` で上の番地を dump する（下の手順）。log の中身は GSP-RM の ELF の `.fwlogging` の書式で P1 が host で解読する（serial/console log ではない）。
+
+### P7 の直し（commit `1c1732db7`）
+
+- region の teardown（FWSEC-SB → booter_unload）は **走っていた GSP を unload して止めた後だけ**。GSP を起こしていない時（stop=P2a、P1b・P2a の失敗）は何もせず、`P7 left: region L-H without a started GSP; reboot the host before the next run` を出して memory を返す。次の run の前に host の reboot（warm で足りる、R3 で確認）。
+- R3 以降の P7 の順は nouveau・ogkm と同じ（unload の RPC → MAILBOX0 0x80000000 → GSP の falcon の reset → FWSEC-SB → SEC2 の reset → booter_unload 0xff・0xff → WPR2 の上限 0）。
+
+### 検証（P1、host）
+
+- `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws037-k-y CONFIG_DRIVER_PCI_NVRTX=y vmunix`: rc 0、warning 0、`amd64 vmunix check: PASS`。`git diff --check` 0。
+- `plan/ws037/tests/nvrtx-gsp-host-test.sh`: PASS 146 項目（この worktree に firmware の cache が無く、実物の file の 19 項目は skip。変えた file は host 試験の対象外の hardware の部分）。
+- 既定（n）の kernel は再 build していない（変えた file は全て `CONFIG_DRIVER_PCI_NVRTX=y` の時だけ compile される nvrtx の file）。
+- GPL の旧名（`temp/rename/rename-map.tsv`）が足した行に 0。
+
+### T2 への手順（方式 B、R2・R3・R4 の再試験）
+
+image は 3.3 節のまま（`config-amd64-nvrtx.mk`、`NVRTX_RUN=R2`・`R3`・`R4`、main の `1c1732db7` 以降）。各 run の前に host の WPR2 が無いこと（前の run が `P7 left`・`P2b fail`・`P7 fail` なら host を reboot）。QEMU に vIOMMU を足さない（印の番地が guest の物理番地であるため）。
+
+| run | 合格の印（`dmesg \| grep nvrtx` の画面） | 後始末 |
+| --- | --- | --- |
+| R2 | `P1a ok`、`P1b ok: region 01ffe000-01ffee00`、`P2a skipped`、`P7 left: region 01ffe000-01ffee00 without a started GSP; reboot the host before the next run`、login prompt | host を reboot |
+| R3 | `P2a memory:` 2 行、`P2a ok: RISC-V running`、`P2b 200 ms:`（等）の行、`P2b ok: GSP-RM is up after N ms`、`P3 skipped`、`P7 begin: unload`、`P7 begin: FWSEC-SB`、`P7 booter_unload`、`P7 ok: region torn down`、login prompt | 合格なら reboot 不要（次の R4 の P1b が ok なら確認になる） |
+| R4 | R3 に加えて `P3 static: …` 2 行、`P3 ok: client, device and subdevice`、`P4 skipped`、`P7 ok: region torn down` | 同上 |
+
+- **R3 で `P2b fail` が出たら**（10 s 余りで出る）: 画面の `P2b … ms` の 8 行と `P2a memory:` の 2 行を PNG で撮る。guest を止める前に、QEMU の monitor（HMP）で `pmemsave <番地> <大きさ> <file>` を 5 回: logs の 3 つ（各 `0x10000`）、queues（`0x81000`）、libos（`0x1000`）。QMP なら `{"execute":"pmemsave","arguments":{"val":<番地>,"size":<大きさ>,"filename":"<file>"}}`。file を centris に持ち帰り、path を Q1 経由で P1 へ。その後 QEMU を止め、host を reboot。R4 は流さない。
+- `P2b … ms` の行が 1 行も出ず固まった時は、gdbstub か QMP の `info registers` で guest の止まった所を見る（boot の log は取り直さない）。
+- 所要の目安: R2・R3・R4 で image の作り直し 3 つ、run 3 回（各 3〜4 分）と reboot 1〜2 回。

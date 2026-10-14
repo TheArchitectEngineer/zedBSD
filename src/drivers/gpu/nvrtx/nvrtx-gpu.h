@@ -207,7 +207,7 @@ struct nvrtx_gpu {
 
 	/* Set by the worker; read by detach only after the worker has ended. */
 	enum nvrtx_gsp_state state;
-	/* Set just before FWSEC-FRTS runs: from then on the end of the boot tears the region down. */
+	/* Set just before FWSEC-FRTS runs: from then on the end of the boot tears the region down or reports it. */
 	int region_written;
 	volatile int worker_running;
 };
@@ -225,6 +225,7 @@ int nvrtx_file_load_image(struct nvrtx_gpu *gpu, const char *name);
 int nvrtx_rom_read(struct nvrtx_gpu *gpu);
 
 int nvrtx_poll(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t mask, uint32_t value, uint32_t timeout_us);
+uint64_t nvrtx_now_us(void);
 int nvrtx_falcon_reset(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 int nvrtx_falcon_reset_engine(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 void nvrtx_falcon_load_physical(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);

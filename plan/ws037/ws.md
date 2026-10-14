@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q692（p001）、2026-10-14 から P1（Q1 の割当「P1: RTX」）
-Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。p004 の 4a〜4e（P0〜P3・P7）も実装済み（2026-10-14、build と host 試験まで）。p005 の copy の channel の道（P4〜P6）も実装済み。次は T1 の方式 B の R0〜R7 の結果。試験は方式 B（10.0.30.5 の Linux の VFIO）、host の準備は Q1。
+Resume point（2026-10-14 P1）: p001 の判断の項目を締めた（ユーザーの判断の要る点は Q1 の回答 A〜D で決着）。firmware の package `nvidia-gsp-firmware`（既定 off）と p003（骨格・N0・N1、既定 n）を commit、build と host 試験まで。p004 の 4a〜4e（P0〜P3・P7）も実装済み（2026-10-14、build と host 試験まで）。p005 の copy の channel の道（P4〜P6）も実装済み。方式 B（awe@10.0.10.3 の Debian の VFIO、T2）で R0・R1 PASS、R2 は P7（FRTS だけの region に booter_unload）、R3 は P2b（init done が来ない、待ちの timeout も効かない）で止まった。2026-10-14 P1 が原因の解析と直し（P7 は GSP を止めた後だけ teardown、待ちは時計で測る、P2b の切り分けの印と dump の番地）を commit `1c1732db7`。次は T2 の R2〜R4 の再試験（[p004](phase004/phase.md) の「R2・R3 の結果への対応」）。
 Target: ベータ2（2026-10-16 夕）に既定 off で入れる（2026-10-14 ユーザー、上の Status）。以前: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
 <!-- awesome-plan-current:end -->
 

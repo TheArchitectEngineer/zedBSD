@@ -560,20 +560,26 @@ channel_wait(
 {
 	struct nvrtx_engine_state *engine;
 	const volatile uint32_t *semaphore;
-	uint32_t waited;
+	uint64_t start;
+	uint64_t waited;
 	uint32_t value;
 	uint32_t get;
 
 	engine = &gpu->engine;
 	semaphore = (const volatile uint32_t *)engine->semaphore.dma.address;
 
-	/* Polls until the value is there or the time is spent. */
-	for (waited = 0U; waited <= CHANNEL_FENCE_TIMEOUT_US; waited += CHANNEL_FENCE_STEP_US) {
+	/* Polls until the value is there or the time, measured, is spent. */
+	start = nvrtx_now_us();
+	for (;;) {
 		value = *semaphore;
+		waited = nvrtx_now_us() - start;
 		if (value == expected) {
 			nvrtx_stage_mark("P5 ok: fence 0x%x reached after %u us", (unsigned)value, (unsigned)waited);
 			return 0;
 		}
+
+		if (waited > CHANNEL_FENCE_TIMEOUT_US)
+			break;
 
 		kern_usleep_range(CHANNEL_FENCE_STEP_US, CHANNEL_FENCE_STEP_US * 2U);
 	}

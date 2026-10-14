@@ -37,3 +37,8 @@
 - `ssh awe@10.0.10.3`（Debian 13、kernel 6.12.111、鍵の login、sudo は password 無し）。ユーザー「RTX搭載ホストは awe@10.0.10.3 です。」。同じ 13400F の desktop に Debian を入れた物（以前の 10.0.30.5 の zedBSD は無い）。
 - `plan/tools/hwrtx/prepare.sh awe@10.0.10.3` → reboot → `--check` が全部 ok: intel_iommu=on、TU106 の 4 function（01:00.0 VGA 10de:1f02、.1 audio 10de:10f9、.2 USB 10de:1ada、.3 UCSI 10de:1adb）が 1 つの IOMMU group で全部 vfio-pci、nouveau 無し、KVM、OVMF、QEMU 10.0.13。
 - network: onboard の RTL8111（04:00.0）。RTL8127（03:00.0）も見える（WS235）。memory 31 GiB、disk 409 GiB 空き。host の画面は無い（ssh だけ）。
+
+## 2026-10-14 夜 P1: WPR2 と host の reboot（T2 の R2・R3）
+
+- FWSEC-FRTS が張った WPR2 は、GSP を起こさずに解く道が無い（booter_unload は mailbox 0x29 で断る、[p004](phase004/phase.md) の「R2・R3 の結果への対応」）。**host の warm reboot（`sudo reboot`）で WPR2 は消える**（R2 の後の reboot で R3 の P1b が ok）。
+- FLR・bus reset で消えるかは未確認。

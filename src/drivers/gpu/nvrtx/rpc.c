@@ -42,6 +42,12 @@
 #define RPC_HALT_TIMEOUT_US		2000000U
 #define RPC_STEP_US			10U
 
+/* The firmware error report's fields: its kind, and its text of up to 256 bytes. */
+#define RPC_ERROR_LOG_KIND_AT		0U
+#define RPC_ERROR_LOG_TEXT_AT		12U
+#define RPC_ERROR_LOG_TEXT_BYTES	256U
+#define RPC_ERROR_LOG_SHOWN		96U
+
 /* The channel-error event's fields: engine, channel, kind of exception, faulting address and fault kind. */
 #define RPC_ERROR_ENGINE_AT		0U
 #define RPC_ERROR_CHANNEL_AT		4U
@@ -52,6 +58,7 @@
 #define RPC_ERROR_BYTES			40U
 
 static int rpc_sequencer(struct nvrtx_gpu *gpu, uint8_t *payload, size_t length);
+static void rpc_error_log(const uint8_t *payload, size_t length);
 static int rpc_exchange(struct nvrtx_gpu *gpu, uint32_t function, size_t call_length, size_t *reply_length);
 
 /*
@@ -70,7 +77,8 @@ nvrtx_rpc_send(
 	int with_sequence,
 	uint32_t *sequence)
 {
-	uint32_t waited;
+	uint64_t start;
+	uint64_t now;
 	int error;
 
 	/* Numbers the call; zero means no reply is matched. */
@@ -83,9 +91,15 @@ nvrtx_rpc_send(
 	}
 
 	/* Puts the call in the queue, waiting for room while the GSP reads. */
-	for (waited = 0U; waited <= RPC_SEND_TIMEOUT_US; waited += RPC_STEP_US) {
+	start = nvrtx_now_us();
+	for (;;) {
 		error = nvrtx_channel_send(&gpu->channel, function, *sequence, payload, length);
 		if (error != EAGAIN)
+			break;
+
+		/* Gives up when the time, measured, is spent. */
+		now = nvrtx_now_us();
+		if (now - start > RPC_SEND_TIMEOUT_US)
 			break;
 
 		kern_usleep_range(RPC_STEP_US, RPC_STEP_US * 2U);
@@ -122,17 +136,22 @@ nvrtx_rpc_wait(
 	uint32_t got_function;
 	uint32_t got_sequence;
 	uint32_t result;
-	uint32_t waited;
+	uint64_t start;
+	uint64_t now;
 	int error;
 
 	/* Takes messages until the one waited for arrives or the time is spent. */
-	waited = 0U;
-	while (waited <= timeout_us) {
+	start = nvrtx_now_us();
+	for (;;) {
+		/* Ends when the time is spent, measured: a short sleep lasts a whole tick. */
+		now = nvrtx_now_us();
+		if (now - start > timeout_us)
+			break;
+
 		/* Waits a step when nothing is there. */
 		error = nvrtx_channel_peek(&gpu->channel, &got_function, &got_sequence, length, &result);
 		if (error == EAGAIN) {
 			kern_usleep_range(RPC_STEP_US, RPC_STEP_US * 2U);
-			waited += RPC_STEP_US;
 			continue;
 		}
 
@@ -156,10 +175,17 @@ nvrtx_rpc_wait(
 
 		/* The CPU sequencer is performed at once. */
 		if (got_function == NVRTX_EVENT_SEQUENCER) {
+			nvrtx_stage_mark("rpc: sequencer of %zu bytes", *length);
 			error = rpc_sequencer(gpu, gpu->reply, *length);
 			if (error != 0)
 				return error;
 
+			continue;
+		}
+
+		/* The firmware's own error report is shown with its kind and text. */
+		if (got_function == NVRTX_EVENT_ERROR_LOG) {
+			rpc_error_log(gpu->reply, *length);
 			continue;
 		}
 
@@ -395,4 +421,41 @@ rpc_sequencer(
 
 	/* Succeeded: every command was performed. */
 	return 0;
+}
+
+/* Shows one firmware error report: its kind and the printable start of its text. */
+static void
+rpc_error_log(
+	const uint8_t *payload,
+	size_t length)
+{
+	char text[RPC_ERROR_LOG_SHOWN + 1U];
+	size_t limit;
+	size_t index;
+	char c;
+
+	/* A report too short for its kind is shown by its length only. */
+	if (length < RPC_ERROR_LOG_TEXT_AT) {
+		nvrtx_stage_mark("rpc: firmware error report of %zu bytes", length);
+		return;
+	}
+
+	/* Copies the text up to its end, the payload's end or the shown length, keeping printable characters. */
+	limit = length - RPC_ERROR_LOG_TEXT_AT;
+	if (limit > RPC_ERROR_LOG_TEXT_BYTES)
+		limit = RPC_ERROR_LOG_TEXT_BYTES;
+	if (limit > RPC_ERROR_LOG_SHOWN)
+		limit = RPC_ERROR_LOG_SHOWN;
+	for (index = 0U; index < limit; index++) {
+		c = (char)payload[RPC_ERROR_LOG_TEXT_AT + index];
+		if (c == '\0')
+			break;
+		if (c < ' ' || c > '~')
+			c = '?';
+		text[index] = c;
+	}
+	text[index] = '\0';
+
+	/* Shows the report. */
+	nvrtx_stage_mark("rpc: firmware error %u: %s", (unsigned)nvrtx_get32(payload, RPC_ERROR_LOG_KIND_AT), text);
 }

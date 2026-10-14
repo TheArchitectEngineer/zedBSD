@@ -16,9 +16,10 @@
  * leaves the GPU as the firmware left it.
  *
  * P1a waits for the GPU's own firmware to finish devinit.  P1b runs
- * FWSEC-FRTS, which sets up the protected region at the top of the VRAM;
- * from there on a failure tears the region down once (P7's FWSEC-SB and
- * booter_unload) and does not retry.  P2a queues the system information and
+ * FWSEC-FRTS, which sets up the protected region at the top of the VRAM.
+ * The region is torn down (P7's FWSEC-SB and booter_unload) only after the
+ * firmware has run and unloaded; a region without a started firmware stays
+ * until the host reboots.  Nothing is retried.  P2a queues the system information and
  * the registry, puts the GSP's falcon into RISC-V mode and runs booter_load,
  * which places the firmware in the region and starts it.  P2b waits for the
  * firmware's init-done event, performing the CPU sequencer it sends.
@@ -53,7 +54,7 @@
 /* The largest small file read whole. */
 #define GSP_SMALL_FILE_MAX		0x40000U
 
-/* How long P1a waits for devinit, in microseconds (about 2,050 steps of 2 ms). */
+/* How long P1a waits for devinit, in microseconds, and the step between its reads. */
 #define GSP_DEVINIT_TIMEOUT_US		4100000U
 #define GSP_DEVINIT_STEP_US		2000U
 
@@ -72,6 +73,12 @@
 
 /* The GSP's RISC-V core status: bit 0 set while it runs. */
 #define GSP_REG_RISCV_STATUS		0x111240U
+
+/* The secure scratch register whose bit 26 says the boot has handed over to the firmware. */
+#define GSP_REG_BOOT_SCRATCH		0x1180f8U
+
+/* When P2b shows how far the firmware got, in milliseconds after it began to wait. */
+#define GSP_PROGRESS_POINTS		4U
 
 /* The highest user address the resource manager is told of (the 47-bit user half). */
 #define GSP_USER_ADDRESS_LIMIT		0x00007ffffffff000ULL
@@ -92,6 +99,9 @@ static void gsp_finish(struct nvrtx_gpu *gpu);
 static int gsp_queue_setup_calls(struct nvrtx_gpu *gpu);
 static int gsp_boot_riscv(struct nvrtx_gpu *gpu);
 static int gsp_init_done(struct nvrtx_gpu *gpu);
+static void gsp_progress(struct nvrtx_gpu *gpu, uint32_t milliseconds);
+static uint32_t gsp_queue_word(const struct nvrtx_gpu *gpu, size_t at);
+static uint64_t gsp_log_put(const struct nvrtx_gpu *gpu, unsigned index);
 static int gsp_stop(struct nvrtx_gpu *gpu);
 static int gsp_static_info(struct nvrtx_gpu *gpu);
 static int gsp_objects(struct nvrtx_gpu *gpu);
@@ -165,7 +175,7 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before P2a when the boot asks; the finish tears the region down again. */
+	/* Stops before P2a when the boot asks; the finish reports the region it leaves. */
 	allowed = nvrtx_stage_allowed("P2a");
 	if (!allowed) {
 		nvrtx_stage_mark("P2a skipped (nvrtx.stop=P2a)");
@@ -666,19 +676,25 @@ static int
 gsp_devinit_wait(
 	struct nvrtx_gpu *gpu)
 {
-	uint32_t waited;
+	uint64_t start;
+	uint64_t waited;
 	uint32_t level;
 	uint32_t progress;
 
 	/* Polls both registers until devinit is complete or the time is spent. */
 	nvrtx_stage_mark("P1a begin: devinit");
-	for (waited = 0U; waited <= GSP_DEVINIT_TIMEOUT_US; waited += GSP_DEVINIT_STEP_US) {
+	start = nvrtx_now_us();
+	for (;;) {
 		level = nvrtx_rd32(gpu, NVRTX_REG_DEVINIT_LEVEL);
 		progress = nvrtx_rd32(gpu, NVRTX_REG_DEVINIT_PROGRESS);
+		waited = nvrtx_now_us() - start;
 		if ((level & 0x1U) != 0U && (progress & 0xffU) == NVRTX_DEVINIT_COMPLETED) {
 			nvrtx_stage_mark("P1a ok after %u ms", (unsigned)(waited / 1000U));
 			return 0;
 		}
+
+		if (waited > GSP_DEVINIT_TIMEOUT_US)
+			break;
 
 		kern_usleep_range(GSP_DEVINIT_STEP_US, GSP_DEVINIT_STEP_US * 2U);
 	}
@@ -711,7 +727,7 @@ gsp_region_set(
 	if (error != 0)
 		return error;
 
-	/* Runs FWSEC-FRTS; from here on the end of the boot tears the region down. */
+	/* Runs FWSEC-FRTS; from here on the end of the boot reports or tears down the region. */
 	gpu->region_written = 1;
 	nvrtx_stage_mark("P1b begin: FWSEC-FRTS at %llx", (unsigned long long)gpu->layout.frts);
 	error = nvrtx_fwsec_run(gpu, &gpu->memory.fwsec_frts);
@@ -737,7 +753,8 @@ gsp_region_set(
 }
 
 /*
- * Ends the boot: tears a region down once, then gives the preparation back.
+ * Ends the boot: stops a running GSP and tears its region down once, then
+ * gives the preparation back.
  *
  * Memory a falcon may still read (one that did not halt) is kept.
  */
@@ -746,6 +763,9 @@ gsp_finish(
 	struct nvrtx_gpu *gpu)
 {
 	bool allowed;
+	bool stopped;
+	uint32_t low;
+	uint32_t high;
 	int error;
 
 	/* Keeps everything when a falcon may still be reading the memory. */
@@ -763,6 +783,7 @@ gsp_finish(
 	}
 
 	/* Stops a GSP that runs; one that does not stop keeps its memory. */
+	stopped = false;
 	if (gpu->state == NVRTX_GSP_RUNNING) {
 		error = gsp_stop(gpu);
 		if (error != 0) {
@@ -770,16 +791,30 @@ gsp_finish(
 			nvrtx_stage_mark("P7 fail: the GSP did not stop (%d); memory kept, power cycle needed", error);
 			return;
 		}
+
+		stopped = true;
 	}
 
-	/* Tears down a region this boot set up, or one a failed FRTS left. */
+	/*
+	 * Tears the region down only after a GSP that ran has unloaded:
+	 * booter_unload undoes what booter_load and the firmware set up, and
+	 * refuses a region that only FWSEC-FRTS made (R2: mailbox 0x29).  A
+	 * region without a started firmware stays until the GPU loses power or
+	 * the host reboots, as the vendor's driver also leaves it.
+	 */
 	error = 0;
-	if (gpu->region_written != 0)
+	if (stopped && gpu->region_written != 0)
 		error = nvrtx_region_tear_down(gpu);
 	if (error == ETIMEDOUT) {
 		gpu->state = NVRTX_GSP_FAILED_HOLD;
 		nvrtx_stage_mark("P7 fail: a program did not halt; memory kept, power cycle needed");
 		return;
+	}
+
+	if (!stopped && gpu->region_written != 0) {
+		nvrtx_region_bounds(gpu, &low, &high);
+		if (high != 0U)
+			nvrtx_stage_mark("P7 left: region %08x-%08x without a started GSP; reboot the host before the next run", (unsigned)low, (unsigned)high);
 	}
 
 	/* Gives the preparation back; a region that stayed is left for a power cycle. */
@@ -848,6 +883,18 @@ gsp_boot_riscv(
 
 	nvrtx_stage_mark("P2a begin: booter_load");
 
+	/* Shows where the memory the firmware writes is, for a dump from outside the machine. */
+	nvrtx_stage_mark("P2a memory: libos %llx rmargs %llx queues %llx+%x",
+	    (unsigned long long)gpu->memory.libos.dma.device_address,
+	    (unsigned long long)gpu->memory.rmargs.dma.device_address,
+	    (unsigned long long)gpu->memory.queues.dma.device_address,
+	    (unsigned)NVRTX_QUEUE_SHARED_BYTES);
+	nvrtx_stage_mark("P2a memory: logs %llx %llx %llx, %x bytes each",
+	    (unsigned long long)gpu->memory.logs[0].dma.device_address,
+	    (unsigned long long)gpu->memory.logs[1].dma.device_address,
+	    (unsigned long long)gpu->memory.logs[2].dma.device_address,
+	    (unsigned)NVRTX_GSP_LOG_BYTES);
+
 	/* Allocates the buffer each received message is copied into, and the one calls are built in. */
 	gpu->reply = kern_malloc(NVRTX_STAGING_BYTES);
 	if (gpu->reply == NULL)
@@ -899,27 +946,125 @@ gsp_boot_riscv(
 	return 0;
 }
 
-/* Runs P2b: waits for the init-done event, performing the sequencer meanwhile. */
+/*
+ * Runs P2b: waits for the init-done event, performing the sequencer meanwhile.
+ *
+ * The wait is cut at a few points to show how far the firmware got.  When
+ * the event does not come, the memory is kept, so the logs and the queues
+ * can be dumped from outside the machine, and the host is rebooted.
+ */
 static int
 gsp_init_done(
 	struct nvrtx_gpu *gpu)
 {
+	static const uint32_t points_ms[GSP_PROGRESS_POINTS] = { 200U, 1000U, 3000U, GSP_INIT_DONE_TIMEOUT_US / 1000U };
+	uint64_t start;
+	uint64_t elapsed;
+	uint64_t target;
+	uint32_t slice;
 	size_t length;
-	uint8_t *log;
+	unsigned point;
 	int error;
 
-	/* Waits for the event. */
+	/* Waits for the event up to each point in turn, showing the progress at each. */
 	nvrtx_stage_mark("P2b begin: waiting for init done");
-	error = nvrtx_rpc_wait(gpu, NVRTX_EVENT_INIT_DONE, 0U, GSP_INIT_DONE_TIMEOUT_US, &length);
+	start = nvrtx_now_us();
+	error = ETIMEDOUT;
+	for (point = 0U; point < GSP_PROGRESS_POINTS; point++) {
+		elapsed = nvrtx_now_us() - start;
+		target = (uint64_t)points_ms[point] * 1000U;
+		slice = 0U;
+		if (target > elapsed)
+			slice = (uint32_t)(target - elapsed);
+
+		error = nvrtx_rpc_wait(gpu, NVRTX_EVENT_INIT_DONE, 0U, slice, &length);
+		if (error != ETIMEDOUT)
+			break;
+
+		gsp_progress(gpu, points_ms[point]);
+	}
+
+	/* Measures how long the wait lasted. */
+	elapsed = nvrtx_now_us() - start;
+
+	/* The event did not come: shows the state once more unless a point just did, and keeps the memory for a dump. */
 	if (error != 0) {
-		log = (uint8_t *)gpu->memory.logs[0].dma.address;
-		nvrtx_stage_mark("P2b fail (%d): init log put %llx", error, (unsigned long long)nvrtx_get64(log, 0U));
+		if (error != ETIMEDOUT)
+			gsp_progress(gpu, (uint32_t)(elapsed / 1000U));
+
+		gpu->state = NVRTX_GSP_FAILED_HOLD;
+		nvrtx_stage_mark("P2b fail (%d): memory kept for a dump; reboot the host", error);
 		return error;
 	}
 
 	/* Succeeded: the firmware is up. */
-	nvrtx_stage_mark("P2b ok: GSP-RM is up");
+	nvrtx_stage_mark("P2b ok: GSP-RM is up after %u ms", (unsigned)(elapsed / 1000U));
 	return 0;
+}
+
+/*
+ * Shows how far the firmware got: both queues' pointers, the firmware's
+ * mailboxes and core state, and how much each log holds.
+ */
+static void
+gsp_progress(
+	struct nvrtx_gpu *gpu,
+	uint32_t milliseconds)
+{
+	/*
+	 * The command queue's write pointer is the driver's and its read
+	 * pointer the firmware's, kept in the status queue's header page; the
+	 * status queue's header (its size is zero until the firmware writes it)
+	 * and write pointer are the firmware's.
+	 */
+	nvrtx_stage_mark("P2b %u ms: cmd put %u got %u; msg size %x put %u got %u",
+	    (unsigned)milliseconds,
+	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_COMMAND_AT + NVRTX_QHDR_WRITE_AT),
+	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_STATUS_AT + NVRTX_QHDR_READ_AT),
+	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_STATUS_AT + NVRTX_QHDR_SIZE_AT),
+	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_STATUS_AT + NVRTX_QHDR_WRITE_AT),
+	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_COMMAND_AT + NVRTX_QHDR_READ_AT));
+
+	/* The firmware's registers and its three logs' put pointers. */
+	nvrtx_stage_mark("P2b %u ms: mbox %08x %08x riscv %08x boot %08x; logs %llx %llx %llx",
+	    (unsigned)milliseconds,
+	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX0),
+	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX1),
+	    (unsigned)nvrtx_rd32(gpu, GSP_REG_RISCV_STATUS),
+	    (unsigned)nvrtx_rd32(gpu, GSP_REG_BOOT_SCRATCH),
+	    (unsigned long long)gsp_log_put(gpu, 0U),
+	    (unsigned long long)gsp_log_put(gpu, 1U),
+	    (unsigned long long)gsp_log_put(gpu, 2U));
+}
+
+/* Reads one 32-bit word of the queue memory as the other side last wrote it. */
+static uint32_t
+gsp_queue_word(
+	const struct nvrtx_gpu *gpu,
+	size_t at)
+{
+	const volatile uint32_t *word;
+
+	/* The queue memory is one contiguous buffer. */
+	word = (const volatile uint32_t *)(const void *)(gpu->memory.queue_cpu + at);
+
+	/* Succeeded: the word's current value. */
+	return *word;
+}
+
+/* Reads the put pointer at the start of one log, as the firmware last wrote it. */
+static uint64_t
+gsp_log_put(
+	const struct nvrtx_gpu *gpu,
+	unsigned index)
+{
+	const volatile uint64_t *word;
+
+	/* The pointer is the log's first word. */
+	word = (const volatile uint64_t *)gpu->memory.logs[index].dma.address;
+
+	/* Succeeded: the pointer's current value. */
+	return *word;
 }
 
 /*

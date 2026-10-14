@@ -424,6 +424,7 @@ struct nvrtx_fwsec {
 #define NVRTX_EVENT_FIRST		0x1000U
 #define NVRTX_EVENT_INIT_DONE		0x1001U
 #define NVRTX_EVENT_SEQUENCER		0x1002U
+#define NVRTX_EVENT_ERROR_LOG		0x1006U
 #define NVRTX_EVENT_LIBOS_PRINT		0x100cU
 
 /* The system information's length, and the unload call's. */
