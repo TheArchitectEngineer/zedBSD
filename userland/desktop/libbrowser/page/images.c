@@ -395,13 +395,15 @@ images_fetch(
 	image->page = page;
 	remote = net_loader_takes(image->location);
 	if (page->loader != NULL && remote) {
-		error = net_loader_fetch(page->loader, image->location, images_arrived, image, &image->request);
+		error = net_loader_fetch_kind(page->loader, image->location, NET_FETCH_IMAGE, images_arrived, image, &image->request);
 		if (error != 0)
 			image->failed = 1;
 	} else {
 		/* The bytes, then the decoding; either failing marks the image failed. */
 		wb_buffer_init(&bytes);
+		net_http_set_kind(NET_FETCH_IMAGE);
 		error = page_fetch(page->base, image->location, &bytes, NULL);
+		net_http_set_kind(NET_FETCH_DOCUMENT);
 		if (error == 0)
 			error = images_decode(page, bytes.data, bytes.length, &image->bitmap);
 		wb_buffer_release(&bytes);

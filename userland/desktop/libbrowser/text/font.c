@@ -574,6 +574,13 @@ font_measure(
 			face_index = TEXT_FACE_FALLBACK;
 	}
 
+	/* Signs neither face has (the ellipsis, arrows) come from the monospaced face when it has them. */
+	if (index == 0 && face_index != TEXT_FACE_MONO && system->faces[TEXT_FACE_MONO].open) {
+		index = truetype_glyph_index(system->faces[TEXT_FACE_MONO].face, code_point);
+		if (index != 0)
+			face_index = TEXT_FACE_MONO;
+	}
+
 	/*
 	 * A bold glyph its face's bold companion has (Mahora Bold, ws090-p020)
 	 * is drawn from it as it is; any other is widened by a pixel here.

@@ -79,6 +79,22 @@ http_dump(
 	fprintf(stderr, "net: %s %d %s %s\n", path, response->status, response->content_type.data == NULL ? "" : wb_buffer_string(&response->content_type), url_text);
 }
 
+/* The fixed headers of an image's request: only the formats the decoders read. */
+#define NET_HTTP_IMAGE_HEADERS	"Accept: image/png,image/jpeg\r\n" \
+				"Accept-Language: ja,en-US;q=0.9,en;q=0.8\r\n" \
+				"Accept-Encoding: identity\r\n"
+
+/* The kind of the blocking fetches that follow (NET_FETCH_*); the browser is single-threaded. */
+static int http_fetch_kind = NET_FETCH_DOCUMENT;
+
+/* Sets what the blocking fetches that follow are for, so the Accept header follows. */
+void
+net_http_set_kind(
+	int kind)
+{
+	http_fetch_kind = kind;
+}
+
 /*
  * What the headers of a response say that the fetch uses (besides the
  * Content-Type and the cookies, kept at once).
@@ -240,6 +256,22 @@ net_http_request_text(
 	int keep_alive,
 	const char *extra)
 {
+	return net_http_request_text_kind(url, request, keep_alive, extra, NET_FETCH_DOCUMENT);
+}
+
+/*
+ * The same, for a kind of fetch: an image is asked for as PNG or JPEG only
+ * (the decoders do not read WebP or AVIF, so a server that varies by Accept
+ * answers with one that they do).
+ */
+int
+net_http_request_text_kind(
+	const struct net_url *url,
+	struct wb_buffer *request,
+	int keep_alive,
+	const char *extra,
+	int kind)
+{
 	const char *target;
 	int error;
 
@@ -255,7 +287,7 @@ net_http_request_text(
 	if (error == 0 && url->port >= 0)
 		error = wb_buffer_printf(request, ":%d", url->port);
 	if (error == 0)
-		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_USER_AGENT, NET_HTTP_HEADERS);
+		error = wb_buffer_printf(request, "\r\nUser-Agent: %s\r\n%s", NET_USER_AGENT, kind == NET_FETCH_IMAGE ? NET_HTTP_IMAGE_HEADERS : NET_HTTP_HEADERS);
 	if (error == 0 && !keep_alive)
 		error = wb_buffer_append_string(request, "Connection: close\r\n");
 	if (error == 0 && extra != NULL)
@@ -442,7 +474,7 @@ http_request(
 	/* The request's text. */
 	wb_buffer_init(&request);
 	wb_buffer_init(&raw);
-	error = net_http_request_text(url, &request, 0, NULL);
+	error = net_http_request_text_kind(url, &request, 0, NULL, http_fetch_kind);
 	if (error != 0) {
 		wb_buffer_release(&request);
 		return error;
