@@ -1040,17 +1040,21 @@ grid_static_vertical_start(
 		    child->style.writing_mode == CSS_WRITING_VERTICAL_LR)) &&
 		    child->style.direction == CSS_DIRECTION_LTR))
 			continue;
-		for (index = 0; index < 4; index++) {
-			if (child->style.offset[index].unit != CSS_UNIT_AUTO)
-				break;
-		}
-		if (index != 4)
-			continue;
+		/* Explicit insets still use the same definite Grid area. */
 		grid_resolve(&child->style.grid_column, 2, &column, &column_span);
 		grid_resolve(&child->style.grid_row, 2, &row, &row_span);
 		if (column < 0 || column >= 2 || row < 0 || row >= 2 ||
 		    column_span != 1 || row_span != 1)
 			continue;
+		for (index = 0; index < 4; index++) {
+			if (child->style.offset[index].unit != CSS_UNIT_AUTO)
+				break;
+		}
+		if (index != 4 && child->style.grid_column.start > 0 &&
+		    child->style.grid_column.end > 0 &&
+		    child->style.grid_row.start > 0 &&
+		    child->style.grid_row.end > 0)
+			child->static_grid_area = 1;
 		align = child->style.align_self;
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
