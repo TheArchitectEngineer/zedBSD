@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1154](queue.md) finished / p189 fixed Grid502 recensus。2026-10-14 12:06 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1155](queue.md) finished / p189 remaining Grid failure classification。2026-10-14 12:10 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1154の142 PASS/360 FAIL、q1151比6 whole/6 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p189-q1155-partial-clear-20261014: [p189](phase189/phase.md) q1155-i01で固定Grid残360 FAILを全件分類。alignment176が最大、vertical-rl stretch16件全FAILの初回width差を確認。[証拠](phase189/evidence/20261014-q1155/README.md)。Gridとinlineの両方が縦右向け限定経路を持たないため、次は非Grid縦文字geometryをp220で診断。p189/p173全件100%未達、共有投影/GitHub publication保留。
 
 Event ws074-p189-q1154-partial-clear-20261014: [p189](phase189/phase.md) q1154-i01で固定Grid502全件同条件再測定。136→142 whole PASS、366→360 FAIL、縦Grid stretch010/011/012/014/015/016の6 subtest改善、旧PASS/subtest後退0。502 ID/hash/checkpoint/gzip raw一致。[証拠](phase189/evidence/20261014-q1154/README.md)。p189/p173全件100%未達。共有投影/GitHub publication保留。
 
