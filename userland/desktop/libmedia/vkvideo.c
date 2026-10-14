@@ -15,6 +15,19 @@
 
 #define VKVIDEO_PENDING 20U
 
+/*
+ * Whether a picture whose decode reported a failure is skipped instead of
+ * ending the stream, and how many may fail in a row (ws236: only the
+ * arm64 build, whose Vulkan Video device is the Raspberry Pi 4's firmware
+ * decoder; other builds keep ending the stream).
+ */
+#if defined(__aarch64__)
+#define VKVIDEO_SKIP_FAILED 1
+#else
+#define VKVIDEO_SKIP_FAILED 0
+#endif
+#define VKVIDEO_MAX_SKIPPED 8U
+
 /* One retained picture carries its presentation time and order within the current coded-video epoch. */
 struct vkvideo_output {
 	struct media_picture *picture;
@@ -43,6 +56,7 @@ struct vkvideo_decoder {
 	int failed;
 	int64_t packet_time;
 	int decode_order_times;
+	unsigned skipped;
 	struct media_picture *current;
 	uint32_t aspect_num;
 	uint32_t aspect_den;
@@ -604,10 +618,41 @@ vkvideo_decode(
 	if (output == NULL)
 		return ENOMEM;
 	error = media_vkvideo_runtime_decode(decoder->runtime, &decoder->stream, &decoder->picture, &plan, output);
+#if VKVIDEO_SKIP_FAILED
+	/*
+	 * A picture whose decode reported a failure (the Raspberry Pi 4's
+	 * firmware can miss its first picture, ws236) is not shown: its
+	 * clock position is consumed as a missing picture's, its marking
+	 * still updates the DPB, and the stream goes on, unless too many fail
+	 * in a row.
+	 */
+	if (error == EBADMSG && decoder->skipped < VKVIDEO_MAX_SKIPPED) {
+		media_picture_unref(output);
+		decoder->skipped++;
+		error = h264_dpb_mark(&decoder->dpb, sps, &decoder->picture, &plan);
+		if (error != 0)
+			return error;
+		if (decoder->decode_order_times && decoder->dpb.started) {
+			if (decoder->count >= VKVIDEO_PENDING)
+				return EOVERFLOW;
+			poc = decoder->picture.info.PicOrderCnt[0];
+			if (decoder->picture.info.PicOrderCnt[1] < poc)
+				poc = decoder->picture.info.PicOrderCnt[1];
+			decoder->pending[decoder->count].picture = NULL;
+			decoder->pending[decoder->count].poc = poc;
+			decoder->pending[decoder->count].time_us = decoder->packet_time;
+			decoder->count++;
+		}
+		return 0;
+	}
+#endif
+	if (error == EBADMSG)
+		error = EIO;
 	if (error != 0) {
 		media_picture_unref(output);
 		return error;
 	}
+	decoder->skipped = 0;
 
 	/* Commit reference marking only after GPU output completed successfully. */
 	error = h264_dpb_mark(&decoder->dpb, sps, &decoder->picture, &plan);

@@ -137,6 +137,21 @@ Phase disposition: normal
     - run c を「SPS・PPS を CONFIG の buffer で別に送る」に変えた。
     - run d（R1 + 最初の unit の後に EOS）を足した。EOS の後も decode が続くか（後の frame が正しいか）を確かめる。
   - **`dump-compare.py`**: 違う sample のうち「参照 1〜15 → 1 小さい」の数を summary に出す。
+## T1-631 の結果と次の版
+
+- frame 0 は出た。ただし保険の EOS が毎回使われていた（FRAME_START だけでは直らない）。
+- EOS は firmware の参照を捨てる。probe の run d では out1 以降の地図が全て x で、frame の flag に CORRUPTED（0x200）が立った。そのため vk の picture 1 以降は status -1、videoplayer は `PLAYBACK failed error=5`。
+- この版:
+  - **EOS をやめる**。vulkan-video は最初の picture が 150 ms 来ない時、参照を壊さない押し出しを順に試す。log に、どれで出たかが出る。
+    1. 空の FRAME_END の buffer（`drv_rpi4_mmal_decoder_mark(dec, 0)`）。
+    2. access unit delimiter だけの buffer。
+  - **probe の run を変えた**: a、b と、R1 に加えて最初の unit の後に押し出しを 1 つ送る run e（mark）・f（delimiter）・g（SPS・PPS を CONFIG で再送）。各 run の out0 の sent=1（lag 0）と、out1 以降の地図・CORRUPTED の flag で、押し出しが参照を壊さないかを見る。
+  - **libmedia（arm64 の build だけ、`VKVIDEO_SKIP_FAILED`）**: decode の status が失敗した picture は、表示せずに飛ばして続ける。DPB の marking と時計の位置は進める。連続 8 枚までで、それを超えたら従来どおり EIO で止まる。押し出しが全て効かなくても、videoplayer は frame 0 を欠くだけで再生を続ける。
+    - runtime は status の失敗を EBADMSG で返し、arm64 以外の build では従来どおり EIO に変える（x86_64 での compile を確認）。
+- 却下した案:
+  - (a)「decode 0 の完了を次の入力の後にする」: libmedia は decode 0 の fence を待ってから次を submit するので、deadlock する。
+  - (b) MMAL の parameter: BSD-3 の header に、decode の低遅延の parameter が無い（LOW_LATENCY は encode 用）。
+  - (c) IDR の再送: 同じ idr_pic_id の IDR は、spec 上「新しい picture」と判定されない。slice header の書き換えが要る。
 ## 残り
 
 - T1 の結果の判定（Q1）。R1 が合えば p004 は D-S1、外れれば Baseline だけ。

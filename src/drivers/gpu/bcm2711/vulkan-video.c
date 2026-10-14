@@ -87,11 +87,18 @@
 #define VIDEO_MAX_TIMEOUTS		3U
 
 /*
- * How long the first decode after a start waits before it pushes its
- * picture out with an end of stream: the firmware holds the first picture
- * until more input comes (T1-626, T1-629), and a Vulkan decode has none.
+ * How long the first decode after a start waits before each push of its
+ * picture, and how many pushes it tries: the firmware holds the first
+ * picture until more input comes (T1-626, T1-629), and a Vulkan decode
+ * has none.  An end of stream gave it out but lost the references
+ * (T1-631); the pushes are an empty frame-end mark, then an access unit
+ * delimiter in a buffer of its own (see push_first).
  */
 #define VIDEO_FIRST_MS			150U
+#define VIDEO_PUSHES			2U
+
+/* The access unit delimiter of the second push (any slice types may follow). */
+static const uint8_t video_delimiter[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xf0 };
 
 /* The session memory binding reported: one page the decoder never uses. */
 #define VIDEO_BIND_BYTES		4096U
@@ -318,6 +325,7 @@ static int pool_results(struct bcm2711_vulkan_session *session, struct i915_wire
 static int record_query(struct bcm2711_vulkan_session *session, uint32_t opcode, struct i915_wire_reader *reader);
 static int run_decode(struct bcm2711_render_device *controller, const struct video_command *command);
 static int build_unit(struct video_session *video, const struct video_parameters *parameters, const struct video_command *command, uint8_t *staging, uint32_t capacity, uint32_t *bytes);
+static int push_first(struct video_session *video, unsigned push, int64_t pts);
 static int append_set(uint8_t *staging, uint32_t capacity, uint32_t *used, const uint8_t *unit, size_t bytes, uint8_t *sent, size_t *sent_bytes, bool force);
 static int image_target(const struct video_command *command, struct bcm2711_vulkan_resource **image, uint64_t *physical, uint8_t **cpu);
 static void relayout(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, const struct bcm2711_vulkan_resource *image, uint8_t *cpu);
@@ -2657,8 +2665,8 @@ run_decode(
 	uint32_t pitch;
 	int64_t pts;
 	unsigned wait_ms;
+	unsigned pushes;
 	bool built;
-	bool pushed;
 	int error;
 	int closed;
 	int busy;
@@ -2703,22 +2711,21 @@ run_decode(
 		drv_rpi4_mmal_decoder_target(video->decoder, physical, (uint32_t)bytes_needed, pitch, (uint32_t)chroma);
 		error = drv_rpi4_mmal_decoder_send(video->decoder, bytes, pts, 0);
 	}
-	pushed = false;
+	pushes = 0;
 	while (built && error == 0) {
 		wait_ms = VIDEO_FRAME_MS;
-		if (!video->started && !pushed)
+		if (!video->started && pushes < VIDEO_PUSHES)
 			wait_ms = VIDEO_FIRST_MS;
 		error = drv_rpi4_mmal_decoder_receive(video->decoder, wait_ms, &frame, &pixels);
 
-		/* The first picture after a start that does not come is pushed out with an end of stream, once. */
-		if (error == ETIMEDOUT && !video->started && !pushed) {
-			kern_logf("v3d: video: decode %lld: the first picture is held; an end of stream pushes it out\n", (long long)pts);
-			pushed = true;
-			error = drv_rpi4_mmal_decoder_end(video->decoder);
+		/* The first picture after a start that does not come is pushed: a frame-end mark, then a delimiter. */
+		if (error == ETIMEDOUT && !video->started && pushes < VIDEO_PUSHES) {
+			error = push_first(video, pushes, pts);
+			pushes++;
 			continue;
 		}
 
-		/* The end of stream's own empty frame carries no picture. */
+		/* An empty frame (a mark's or a delimiter's) carries no picture. */
 		if (error == 0 && frame.length == 0)
 			continue;
 
@@ -2798,6 +2805,44 @@ run_decode(
 	}
 
 	/* Succeeded: the picture is in the output image. */
+	return 0;
+}
+
+/*
+ * Pushes the held first picture out of the firmware without losing its
+ * references: push 0 is an empty buffer marking the frame's end, push 1
+ * an access unit delimiter in a buffer of its own, which starts the next
+ * access unit (the next unit's slices follow it legally).
+ */
+static int
+push_first(
+	struct video_session *video,
+	unsigned push,
+	int64_t pts)
+{
+	uint8_t *staging;
+	uint32_t capacity;
+	int error;
+
+	/* Push 0: the mark. */
+	if (push == 0) {
+		kern_logf("v3d: video: decode %lld: the first picture is held; a frame-end mark pushes it\n", (long long)pts);
+		return drv_rpi4_mmal_decoder_mark(video->decoder, 0);
+	}
+
+	/* Push 1: the delimiter, without a time stamp. */
+	kern_logf("v3d: video: decode %lld: the first picture is still held; a delimiter pushes it\n", (long long)pts);
+	error = drv_rpi4_mmal_decoder_input(video->decoder, &staging, &capacity);
+	if (error != 0)
+		return error;
+	if (capacity < sizeof(video_delimiter))
+		return ENOSPC;
+	kern_memcpy(staging, video_delimiter, sizeof(video_delimiter));
+	error = drv_rpi4_mmal_decoder_send(video->decoder, (uint32_t)sizeof(video_delimiter), DRV_RPI4_MMAL_FRAME_NO_TIME, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the push is sent. */
 	return 0;
 }
 
