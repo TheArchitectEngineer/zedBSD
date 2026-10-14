@@ -364,10 +364,10 @@ flex_static_positions(
 			main_side = flex ? flex_side_flip(main_start) : flex_side_flip(main_axis_start);
 			break;
 		case CSS_ALIGN_LEFT:
-			main_side = main_horizontal ? FLEX_SIDE_START : main_axis_start;
+			main_side = (main_horizontal || !inline_horizontal) ? FLEX_SIDE_START : main_axis_start;
 			break;
 		case CSS_ALIGN_RIGHT:
-			main_side = main_horizontal ? FLEX_SIDE_END : main_axis_start;
+			main_side = (main_horizontal || !inline_horizontal) ? FLEX_SIDE_END : main_axis_start;
 			break;
 		default:
 			main_side = main_start;
