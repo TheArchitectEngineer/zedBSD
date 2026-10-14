@@ -98,6 +98,9 @@ struct probe {
 	VkInstance instance;
 	VkPhysicalDevice physical;
 	uint32_t family;
+
+	/* Whether decoded planes are linear rows (any decoder but Intel's, whose OPTIMAL planes are Y-tiled). */
+	int linear;
 	VkDevice device;
 	VkQueue queue;
 	VkPhysicalDeviceMemoryProperties memory;
@@ -344,6 +347,9 @@ probe_list(
 	/* The device. */
 	vkGetPhysicalDeviceProperties(probe->physical, &properties);
 	printf("vkvideo-probe: device %s\n", properties.deviceName);
+	probe->linear = 0;
+	if (properties.vendorID != 0x8086U)
+		probe->linear = 1;
 
 	/* The queue families, each with its video properties chained. */
 	count = PROBE_FAMILIES;
@@ -1158,6 +1164,7 @@ probe_hash(
 	planes.luma_pitch = (size_t)luma.rowPitch;
 	planes.chroma = probe->image_map[slot] + chroma.offset;
 	planes.chroma_pitch = (size_t)chroma.rowPitch;
+	planes.linear = probe->linear;
 
 	/* The window: the coded picture less the cropping, two pixels a crop unit (4:2:0 frames). */
 	window.x = 2U * sps->frame_crop_left_offset;
