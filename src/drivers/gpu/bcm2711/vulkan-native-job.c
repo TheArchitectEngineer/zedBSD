@@ -250,6 +250,25 @@ bcm2711_vulkan_native_job_step(
 			step = clock_ticks();
 			error = bcm2711_vulkan_video_run(controller, event->record);
 			copy_ticks += clock_ticks() - step;
+
+			/*
+			 * A decode whose picture the firmware has not given back
+			 * yet ends the step at itself: the other sessions take
+			 * their turns, and the next step runs it again to look for
+			 * the picture.
+			 */
+			if (error == EINPROGRESS) {
+				job->cursor = event;
+				job->region = region;
+				job->remaining = remaining;
+				job->prepare_ticks = prepare_ticks;
+				job->execute_ticks = execute_ticks;
+				job->release_ticks = release_ticks;
+				job->copy_ticks = copy_ticks;
+				return 0;
+			}
+
+			/* A video event that failed fails the job before anything after it runs. */
 			if (error != 0) {
 				job->prepare_failed = true;
 				return error;

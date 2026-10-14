@@ -261,4 +261,15 @@ size_t drv_rpi4_mmal_build_parameter32(uint8_t *message, uint32_t waiter, uint32
 /* Builds a buffer message for a port. */
 size_t drv_rpi4_mmal_build_buffer(uint8_t *message, uint32_t msgid, uint32_t waiter, uint32_t component, uint32_t port_handle, uint32_t context, uint32_t alloc_size, uint32_t length, uint32_t flags, int64_t pts);
 
+/*
+ * Copies samples of a decoded frame, undoing the firmware's footroom error.
+ *
+ * The decoder's NV12 output gives every sample whose true value is 2 to 15
+ * one less, in every plane; 0 and every value of 16 and above come out
+ * exact (T1-629, T1-637: every differing sample of three streams).  So
+ * a sample of 1 to 14 is written one more.  A true 1 comes out 0 and stays
+ * 0: the firmware writes 0 for both.
+ */
+void drv_rpi4_mmal_copy_samples(uint8_t *destination, const uint8_t *source, size_t bytes);
+
 #endif

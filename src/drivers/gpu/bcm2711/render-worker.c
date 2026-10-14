@@ -34,6 +34,9 @@
 /* The kernel log takes at most this many failure lines from one controller. */
 #define WORKER_FAILURE_LINES 64U
 
+/* The shortest time between two refusal lines; the refusals between are counted in the next line. */
+#define WORKER_REFUSAL_MS 1000U
+
 /* Constant operation-table entries need declarations before ANSI C initialization. */
 static int job_reserve(void *opaque, void *private_session, uint32_t timeline, struct drv_gpu_completion *completion, void **token);
 static int job_commit(void *opaque, void *private_session, void *token, struct drv_gpu_completion *completion);
@@ -63,6 +66,14 @@ static int parked_outcome(struct bcm2711_render_device *controller, struct bcm27
 static struct bcm2711_render_session *select_session(struct bcm2711_render_worker *worker);
 static struct bcm2711_render_request *take_request(struct bcm2711_render_device *controller);
 static void finish_request(struct bcm2711_render_device *controller, struct bcm2711_render_request *request, int error);
+
+/*
+ * When the last refusal line was written (ticks, 0 before the first) and
+ * the refusals not logged since: shared by every controller and caller,
+ * read and changed only with atomic operations.
+ */
+static uint64_t refusal_last;
+static uint32_t refusal_quiet;
 
 /*
  * Binds the complete supervised-job table before native Vulkan capability publication.
@@ -147,6 +158,7 @@ bcm2711_render_worker_submit(
 	struct bcm2711_render_worker *worker;
 	struct bcm2711_render_request *request;
 	unsigned long enabled;
+	const char *reason;
 	uint32_t slot;
 	uint64_t domain;
 
@@ -167,12 +179,11 @@ bcm2711_render_worker_submit(
 		return EINVAL;
 	}
 
-	/* Native stop and callback publication share this same guard. */
-	if (session->stopping ||
-	    worker->uncertain ||
-	    !controller->space.native->hardware.ready ||
-	    controller->space.native->hardware.faulted) {
+	/* Native stop and callback publication share this same guard; a refusal says why (BUG-314). */
+	reason = bcm2711_render_refusal_reason(controller, session);
+	if (reason != NULL) {
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		bcm2711_render_refusal_line("command submit", reason);
 		return EIO;
 	}
 
@@ -530,6 +541,67 @@ bcm2711_render_failure_line(
 }
 
 /*
+ * Reports why native admission is closed to a session, or NULL while it is open.
+ */
+const char *
+bcm2711_render_refusal_reason(
+	const struct bcm2711_render_device *controller,
+	const struct bcm2711_render_session *session)
+{
+	/* The session's own stop first, then the engine's state. */
+	if (session->stopping)
+		return "the session is stopping";
+	if (controller->worker.uncertain)
+		return "the engine is uncertain after a fault";
+	if (!controller->space.native->hardware.ready)
+		return "the engine is not ready";
+	if (controller->space.native->hardware.faulted)
+		return "the engine faulted";
+
+	/* Succeeded: admission is open. */
+	return NULL;
+}
+
+/*
+ * Logs a refusal with EIO, at most one line a second.
+ *
+ * The line names the site and the reason, and how many refusals went
+ * unlogged since the line before.  Callers race only for which of them
+ * writes the next line.
+ */
+void
+bcm2711_render_refusal_line(
+	const char *site,
+	const char *reason)
+{
+	uint64_t now;
+	uint64_t last;
+	uint64_t interval;
+	uint32_t quiet;
+	bool claimed;
+
+	/* A refusal within a second of the last line is only counted. */
+	now = clock_ticks();
+	interval = kern_ms_to_ticks(WORKER_REFUSAL_MS);
+	last = __atomic_load_n(&refusal_last, __ATOMIC_ACQUIRE);
+	if (last != 0 && now - last < interval) {
+		__atomic_add_fetch(&refusal_quiet, 1U, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* One caller claims the line; another that raced it is counted. */
+	claimed = __atomic_compare_exchange_n(&refusal_last, &last, now, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+	if (!claimed) {
+		__atomic_add_fetch(&refusal_quiet, 1U, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* The line, with the refusals counted since the last one. */
+	quiet = __atomic_exchange_n(&refusal_quiet, 0U, __ATOMIC_ACQ_REL);
+	kern_logf("v3d: EIO at %s: %s (%u more refusals since the last such line)\n", site, reason, (unsigned)quiet);
+}
+
+/*
  * Clears uncertainty only after the caller verifies reset, mappings and all old owners retired.
  */
 int
@@ -584,6 +656,7 @@ job_reserve(
 	struct bcm2711_render_session *session;
 	struct bcm2711_render_request *request;
 	unsigned long enabled;
+	const char *reason;
 	unsigned capacity;
 	uint64_t mask;
 	uint32_t held;
@@ -607,12 +680,11 @@ job_reserve(
 		return EINVAL;
 	}
 
-	/* Faulted or stopping namespaces cannot acquire another producer-owned callback. */
-	if (session->stopping ||
-	    controller->worker.uncertain ||
-	    !controller->space.native->hardware.ready ||
-	    controller->space.native->hardware.faulted) {
+	/* Faulted or stopping namespaces cannot acquire another producer-owned callback; a refusal says why. */
+	reason = bcm2711_render_refusal_reason(controller, session);
+	if (reason != NULL) {
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		bcm2711_render_refusal_line("job reserve", reason);
 		return EIO;
 	}
 
@@ -671,6 +743,7 @@ job_commit(
 	struct bcm2711_render_session *session;
 	struct bcm2711_render_request *request;
 	unsigned long enabled;
+	const char *reason;
 
 	/* The opaque token is compared against live slots before any dereference. */
 	controller = opaque;
@@ -683,12 +756,11 @@ job_commit(
 		return ESTALE;
 	}
 
-	/* Stop closes publication while keeping the original reservation withdrawable. */
-	if (session->stopping ||
-	    controller->worker.uncertain ||
-	    !controller->space.native->hardware.ready ||
-	    controller->space.native->hardware.faulted) {
+	/* Stop closes publication while keeping the original reservation withdrawable; a refusal says why. */
+	reason = bcm2711_render_refusal_reason(controller, session);
+	if (reason != NULL) {
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		bcm2711_render_refusal_line("job commit", reason);
 		return EIO;
 	}
 
@@ -777,6 +849,7 @@ job_capacity(
 	struct bcm2711_render_device *controller;
 	struct bcm2711_render_session *session;
 	unsigned long enabled;
+	const char *reason;
 	uint64_t mask;
 
 	/* A refused query owns no slot and reports no usable marker capacity. */
@@ -796,12 +869,11 @@ job_capacity(
 		return EINVAL;
 	}
 
-	/* Closed native admission cannot advertise capacity even if slots are numerically free. */
-	if (session->stopping ||
-	    controller->worker.uncertain ||
-	    !controller->space.native->hardware.ready ||
-	    controller->space.native->hardware.faulted) {
+	/* Closed native admission cannot advertise capacity even if slots are numerically free; a refusal says why. */
+	reason = bcm2711_render_refusal_reason(controller, session);
+	if (reason != NULL) {
 		spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
+		bcm2711_render_refusal_line("job capacity", reason);
 		return EIO;
 	}
 

@@ -21,6 +21,7 @@
 #include "drivers/gpu/bcm2711/vulkan-record.h"
 
 struct bcm2711_render_device;
+struct bcm2711_vulkan_resource;
 
 /* The NV12 format and the video image usages and layouts the executor accepts. */
 #define BCM2711_VIDEO_FORMAT_NV12		1000156003U
@@ -52,10 +53,24 @@ int bcm2711_vulkan_video_query_dispatch(struct bcm2711_vulkan_session *session, 
 /* Reports whether a recorded opcode is one this file executes in the native job. */
 bool bcm2711_vulkan_video_event(uint32_t opcode);
 
-/* Executes one recorded video or query event in the native job, with the controller mutex held. */
+/*
+ * Executes one recorded video or query event in the native job, with the
+ * controller mutex held.  EINPROGRESS: a decode whose frame has not come
+ * yet; the job's step ends at the event and the next step runs it again.
+ */
 int bcm2711_vulkan_video_run(struct bcm2711_render_device *controller, const struct bcm2711_vulkan_record *record);
 
 /* Lays out an NV12 image: the row pitch, the chroma plane's offset and the bytes. */
 void bcm2711_vulkan_video_nv12_layout(uint32_t width, uint32_t height, uint32_t *pitch, uint64_t *chroma, uint64_t *bytes);
+
+/*
+ * Copies rows of a decoded NV12 image to a buffer from the image's cached
+ * copy of its last decoded frame; false, copying nothing, when it has none
+ * for those rows.  With the controller mutex held.
+ */
+bool bcm2711_vulkan_video_readback(const struct bcm2711_vulkan_resource *image, uint64_t offset, uint64_t bytes, uint32_t rows, uint8_t *destination, uint64_t destination_pitch);
+
+/* Adds the time of an NV12 image's readback (from the cached copy or the image) to the periodic cost line. */
+void bcm2711_vulkan_video_readback_done(bool cached, uint64_t ticks);
 
 #endif

@@ -69,3 +69,27 @@ for name in pb-high-352-pyramid i-high-352-cqm p-baseline-64; do
 	echo "$name: sets written back $(wc -l <"$work/$name.sps.2") SPS lines $(wc -l <"$work/$name.pps.2") PPS lines"
 done
 [ "$fail" = 0 ] && echo "h264-write: all PASS"
+# ws236-p006: the push picture (drv_rpi4_h264_write_push) after the first access unit decodes, in ffmpeg, to one extra
+# mid-grey frame and leaves every frame of the stream as it was (the push changes no reference and no order count).
+fail=0
+for name in pb-high-352-pyramid i-high-352-cqm p-baseline-64; do
+	in="$repo/plan/ws236/tests/$name.h264"
+	UBSAN_OPTIONS=halt_on_error=1 "$work/h264-write" push "$in" "$work/$name.p.h264" >"$work/$name.p.log"
+	ffmpeg -v error -i "$in" -f framemd5 - | grep -v '^#' | awk -F, '{print $6}' >"$work/$name.p.a"
+	ffmpeg -v error -i "$work/$name.p.h264" -f framemd5 - | grep -v '^#' | awk -F, '{print $6}' >"$work/$name.p.b"
+	ffmpeg -v error -i "$work/$name.p.h264" -f rawvideo -pix_fmt yuv420p - >"$work/$name.p.yuv"
+	if ! python3 -I - "$work/$name.p.a" "$work/$name.p.b" "$work/$name.p.yuv" <<'PY'
+import sys
+a = open(sys.argv[1]).read().split()
+b = open(sys.argv[2]).read().split()
+raw = open(sys.argv[3], 'rb').read()
+size = len(raw) // len(b) if b else 0
+extra = [i for i in range(len(b)) if len(b) == len(a) + 1 and b[:i] + b[i + 1:] == a]
+grey = bool(extra) and set(raw[extra[0] * size:(extra[0] + 1) * size]) == {128}
+print('push: %d frames, %d after the push, the extra one at %s, grey %s' % (len(a), len(b), extra[:1], grey))
+sys.exit(0 if extra and grey else 1)
+PY
+	then echo "FAIL $name: the push changed the stream's frames"; fail=1; fi
+	echo "$name: $(cat "$work/$name.p.log")"
+done
+[ "$fail" = 0 ] && echo "h264-push: all PASS"

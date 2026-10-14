@@ -191,10 +191,12 @@ runtime_command(
 		session->vulkan->synchronous = false;
 	}
 
-	/* Native faults remain visible even if the protocol encoded an ordinary Vulkan result. */
+	/* Native faults remain visible even if the protocol encoded an ordinary Vulkan result; the refusal says why. */
 	uncertain = runtime_uncertain(controller);
-	if (uncertain && error == 0)
+	if (uncertain && error == 0) {
 		error = EIO;
+		bcm2711_render_refusal_line("synchronous command", "the engine became uncertain or faulted during it");
+	}
 
 	mutex_unlock(&controller->mutex);
 
@@ -383,9 +385,11 @@ execute_command(
 	if (uncertain) {
 		*retired = false;
 
-		/* Native uncertainty cannot accompany a successful common command notification. */
-		if (error == 0)
+		/* Native uncertainty cannot accompany a successful common command notification; the refusal says why. */
+		if (error == 0) {
 			error = EIO;
+			bcm2711_render_refusal_line("command execution", "the engine became uncertain or faulted during it");
+		}
 	}
 
 	/* A refused decoder never permits the notification to masquerade as successful receipt. */
@@ -419,7 +423,7 @@ runtime_ready(
 {
 	struct bcm2711_render_device *controller;
 	unsigned long enabled;
-	int error;
+	const char *reason;
 
 	/* A closed namespace cannot route a command even if native hardware is still ready. */
 	if (session->vulkan == NULL || session->vulkan->closing)
@@ -427,18 +431,15 @@ runtime_ready(
 	controller = session->device;
 	enabled = spin_lock_irqsave(&controller->space.native->hardware.guard);
 
-	error = 0;
-	if (session->stopping ||
-	    controller->worker.uncertain ||
-	    !controller->space.native->hardware.ready ||
-	    controller->space.native->hardware.faulted)
-		error = EIO;
+	reason = bcm2711_render_refusal_reason(controller, session);
 
 	spin_unlock_irqrestore(&controller->space.native->hardware.guard, enabled);
 
-	/* Stopping or uncertain namespaces cannot publish fresh callbacks, replies or native work. */
-	if (error != 0)
-		return error;
+	/* Stopping or uncertain namespaces cannot publish fresh callbacks, replies or native work; the refusal says why (BUG-314). */
+	if (reason != NULL) {
+		bcm2711_render_refusal_line("command", reason);
+		return EIO;
+	}
 
 	/* Succeeded: the caller may execute or queue a frame for this exact native namespace. */
 	return 0;

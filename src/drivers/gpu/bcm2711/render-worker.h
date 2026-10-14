@@ -165,6 +165,19 @@ void bcm2711_render_worker_fault(struct bcm2711_render_device *controller, int e
 
 /* Tells whether one more failure line fits the log's bound; the caller holds the controller mutex. */
 bool bcm2711_render_failure_line(struct bcm2711_render_device *controller);
+
+/*
+ * Reports why native admission is closed to a session, or NULL while it is
+ * open: the session stopping, the engine uncertain after a fault, the
+ * engine not ready, or a fault.  The caller holds the native IRQ guard.
+ */
+const char *bcm2711_render_refusal_reason(const struct bcm2711_render_device *controller, const struct bcm2711_render_session *session);
+
+/*
+ * Logs a refusal with EIO at site for reason, at most one line a second
+ * (BUG-314: a submit's EIO had no line); the caller holds no spinlock.
+ */
+void bcm2711_render_refusal_line(const char *site, const char *reason);
 int bcm2711_render_worker_recovered(struct bcm2711_render_device *controller);
 
 /* Counts an opened or closed session for the marker minimum; EBUSY when no more may open.  The closer reports the capacity change outside the mutex. */

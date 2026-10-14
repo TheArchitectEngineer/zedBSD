@@ -20,6 +20,16 @@
  * queues what arrives (replies, returned buffers, events) and counts bulk
  * completions; the caller's thread does everything else, so the client
  * never sends from the receive thread.
+ *
+ * The bulk memory (the input staging, the scratch and the output buffers)
+ * is ordinary cached RAM below 1 GiB, kept coherent by hand: the VPU does
+ * not snoop the ARM caches, so what the CPU wrote is cleaned to RAM before
+ * a bulk sends it, and a received range is invalidated after its bulk
+ * completes.  The CPU never writes the output buffers or the scratch other
+ * than that (a short payload copied in is cleaned at once), so no dirty
+ * line can be written back over what a bulk brought.  A frame in cached
+ * memory is cheap to read; uncached memory is read one bus transaction at a
+ * time.
  */
 
 #include "drivers/platform/rpi4/rpi4-mmal.h"
@@ -27,6 +37,7 @@
 #include "drivers/platform/rpi4/rpi4-vchiq.h"
 #include <drivers/generic/dma.h>
 #include <kern/clock.h>
+#include <kern/dcache.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
@@ -137,7 +148,6 @@ struct mmal_output {
 	bool with_firmware;
 	bool ready;
 	bool held;
-	bool in_target;
 	uint32_t length;
 	uint32_t flags;
 	int64_t pts;
@@ -183,10 +193,6 @@ struct drv_rpi4_mmal_decoder {
 	const char *step;
 	bool output_enabled;
 	bool input_sent;
-	uint64_t target_physical;
-	uint32_t target_capacity;
-	uint32_t target_pitch;
-	uint32_t target_chroma;
 	uint32_t encoding;
 	uint32_t width;
 	uint32_t height;
@@ -281,10 +287,11 @@ static void report_stall(struct drv_rpi4_mmal_decoder *decoder, const char *what
 static int handle_buffer(struct drv_rpi4_mmal_decoder *decoder, const struct mmal_message *message);
 static int handle_event(struct drv_rpi4_mmal_decoder *decoder, const struct mmal_message *message);
 static int format_changed(struct drv_rpi4_mmal_decoder *decoder, const uint8_t *data);
-static int receive_bulk(struct drv_rpi4_mmal_decoder *decoder, uint64_t physical, uint32_t bytes, bool frame);
+static int receive_bulk(struct drv_rpi4_mmal_decoder *decoder, uint64_t physical, void *cpu, uint32_t bytes, bool frame);
 static int wait_bulk(struct drv_rpi4_mmal_decoder *decoder, bool frame);
 static int wait_queue_or(struct drv_rpi4_mmal_decoder *decoder, uint64_t deadline);
 static int dma_alloc(size_t bytes, struct drv_dma_buffer *buffer);
+static void dma_free(struct drv_dma_buffer *buffer);
 static uint64_t bus_to_physical(uint64_t bus);
 static uint32_t token(struct drv_rpi4_mmal_decoder *decoder, uint32_t kind, uint32_t index);
 static struct drv_rpi4_mmal_decoder *decoder_of(uint32_t value);
@@ -512,6 +519,9 @@ drv_rpi4_mmal_decoder_send(
 	half_index = decoder->current;
 	half = &decoder->half[half_index];
 
+	/* The bytes the caller wrote reach RAM, where the VPU reads them, before any bulk of them goes. */
+	kern_dcache_clean_range(half->cpu, (bytes + 3U) & ~3U);
+
 	/* Sends the unit in pieces of the input buffer size; the last ends the frame. */
 	deadline = sched_ticks() + kern_ms_to_ticks(MMAL_WAIT_MS) + 1U;
 	offset = 0;
@@ -650,24 +660,6 @@ free_input(
 }
 
 /*
- * Names memory the next decoded frame goes straight into.
- */
-void
-drv_rpi4_mmal_decoder_target(
-	struct drv_rpi4_mmal_decoder *decoder,
-	uint64_t physical,
-	uint32_t capacity,
-	uint32_t pitch,
-	uint32_t chroma_offset)
-{
-	/* Only the caller's thread reads the target, in pump. */
-	decoder->target_physical = physical;
-	decoder->target_capacity = capacity;
-	decoder->target_pitch = pitch;
-	decoder->target_chroma = chroma_offset;
-}
-
-/*
  * Receives the next decoded frame.
  *
  * The output buffer the caller held since the last receive goes back to
@@ -739,30 +731,9 @@ drv_rpi4_mmal_decoder_receive(
 	frame->plane_offset[1] = output->plane_offset[1];
 	frame->plane_pitch[0] = output->plane_pitch[0];
 	frame->plane_pitch[1] = output->plane_pitch[1];
-	frame->in_target = output->in_target;
 	*pixels = output->memory.address;
-	if (output->in_target)
-		*pixels = NULL;
 
 	/* Succeeded: the frame is the caller's until the next receive. */
-	return 0;
-}
-
-/*
- * Reports whether a bulk transfer of the decoder may still move memory.
- */
-int
-drv_rpi4_mmal_decoder_busy(
-	struct drv_rpi4_mmal_decoder *decoder)
-{
-	bool outstanding;
-
-	/* Any staging, frame or scratch bulk not completed. */
-	outstanding = bulks_outstanding(decoder);
-	if (outstanding)
-		return 1;
-
-	/* Succeeded: nothing of the decoder's moves. */
 	return 0;
 }
 
@@ -1042,12 +1013,17 @@ service_open(void)
 	if (mmal_ready)
 		return 0;
 
-	/* The window decoders allocate their bulk memory in. */
+	/*
+	 * The window decoders allocate their bulk memory in.  It is marked
+	 * coherent so the CPU reaches it through the cached direct map; the
+	 * client keeps it coherent with the VPU by hand (see the top of the
+	 * file).
+	 */
 	if (mmal_dma == NULL) {
 		kern_memset(&constraints, 0, sizeof(constraints));
 		constraints.address_bits = 32U;
 		constraints.max_segment_size = MMAL_MAX_SEGMENT;
-		constraints.coherent = 0;
+		constraints.coherent = 1;
 		error = drv_dma_device_create_window(&constraints, MMAL_BUS_RAM, MMAL_BUS_RAM_LIMIT, &mmal_dma);
 		if (error != 0)
 			return error;
@@ -1615,7 +1591,7 @@ enable_output(
 		/* Frees the old buffers. */
 		for (index = 0; index < MMAL_OUTPUT_BUFFERS; index++) {
 			if (decoder->outputs[index].memory.address != NULL)
-				drv_dma_free_coherent(mmal_dma, &decoder->outputs[index].memory);
+				dma_free(&decoder->outputs[index].memory);
 			kern_memset(&decoder->outputs[index], 0, sizeof(decoder->outputs[index]));
 		}
 
@@ -2032,9 +2008,6 @@ handle_buffer(
 	uint32_t offset;
 	uint32_t flags;
 	uint32_t bytes;
-	uint32_t pitch;
-	uint32_t chroma;
-	uint32_t planes;
 	uint32_t payload;
 	int error;
 
@@ -2066,7 +2039,7 @@ handle_buffer(
 				bytes = 8U;
 			if (bytes > MMAL_SCRATCH_BYTES)
 				return EIO;
-			error = receive_bulk(decoder, bus_to_physical(decoder->scratch.device_address), bytes, false);
+			error = receive_bulk(decoder, bus_to_physical(decoder->scratch.device_address), decoder->scratch.address, bytes, false);
 			if (error != 0)
 				return error;
 		}
@@ -2094,12 +2067,16 @@ handle_buffer(
 		return error;
 	}
 
-	/* A short payload came in the message: copied to the start of the bounce memory, without a bulk. */
-	output->in_target = false;
+	/*
+	 * A short payload came in the message: copied to the start of the
+	 * bounce memory, without a bulk, and cleaned, so no dirty line of it
+	 * is written back over a later frame's bulk.
+	 */
 	if (payload != 0) {
 		if (payload > decoder->output_size)
 			return EIO;
 		kern_memcpy(output->memory.address, message->bytes + DRV_RPI4_MMAL_BUFFER_SHORT_DATA, payload);
+		kern_dcache_clean_range(output->memory.address, payload);
 		length = payload;
 		offset = 0;
 	}
@@ -2114,33 +2091,14 @@ handle_buffer(
 		return EIO;
 	}
 
-	/*
-	 * A frame laid out as the target expects, and fitting it, goes there
-	 * (once); any other goes to the buffer's bounce memory (where a short
-	 * payload already is).
-	 */
-	pitch = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_PITCH);
-	chroma = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET + 4U);
-	planes = drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANES);
-	if (planes < 2U || pitch == 0) {
-		/* Without plane information the format's stride and height give the layout. */
-		pitch = decoder->width;
-		chroma = decoder->width * decoder->height;
-	}
-
-	/* Receives the frame into the target or the bounce memory; a short payload is already there. */
+	/* Receives the frame into the buffer's bounce memory; a short payload is already there. */
 	error = 0;
-	if (payload == 0 &&
-	    decoder->target_capacity != 0 &&
-	    offset == 0 &&
-	    bytes <= decoder->target_capacity &&
-	    pitch == decoder->target_pitch &&
-	    chroma == decoder->target_chroma) {
-		output->in_target = true;
-		error = receive_bulk(decoder, decoder->target_physical, bytes, true);
-		decoder->target_capacity = 0;
-	} else if (payload == 0) {
-		error = receive_bulk(decoder, bus_to_physical(output->memory.device_address) + offset, bytes, true);
+	if (payload == 0) {
+		error = receive_bulk(decoder,
+				     bus_to_physical(output->memory.device_address) + offset,
+				     (uint8_t *)output->memory.address + offset,
+				     bytes,
+				     true);
 	}
 
 	/* Reports a frame not received. */
@@ -2184,7 +2142,7 @@ handle_event(
 	if (length > DRV_RPI4_MMAL_EVENT_DATA_BYTES) {
 		if (length > MMAL_SCRATCH_BYTES)
 			return EIO;
-		error = receive_bulk(decoder, bus_to_physical(decoder->scratch.device_address), (length + 3U) & ~3U, false);
+		error = receive_bulk(decoder, bus_to_physical(decoder->scratch.device_address), decoder->scratch.address, (length + 3U) & ~3U, false);
 		if (error != 0)
 			return error;
 		data = decoder->scratch.address;
@@ -2254,12 +2212,14 @@ format_changed(
 /*
  * Receives one bulk the firmware is about to send, and waits for it.
  *
- * frame says whether it lands in an output buffer (else the scratch).
+ * frame says whether it lands in an output buffer (else the scratch); cpu
+ * is the cached view of physical, invalidated once the bytes are there.
  */
 static int
 receive_bulk(
 	struct drv_rpi4_mmal_decoder *decoder,
 	uint64_t physical,
+	void *cpu,
 	uint32_t bytes,
 	bool frame)
 {
@@ -2305,6 +2265,12 @@ receive_bulk(
 	error = wait_bulk(decoder, frame);
 	if (error != 0)
 		return error;
+
+	/*
+	 * Drops every cache line of the range (a speculative read may have
+	 * filled one while the VPU wrote RAM), so the CPU reads what came.
+	 */
+	kern_dcache_invalidate_range(cpu, bytes);
 
 	/* Succeeded: the bytes are in memory. */
 	return 0;
@@ -2401,7 +2367,7 @@ wait_queue_or(
 	return 0;
 }
 
-/* Allocates zeroed DMA memory in the VPU's window. */
+/* Allocates zeroed cached DMA memory in the VPU's window. */
 static int
 dma_alloc(
 	size_t bytes,
@@ -2409,7 +2375,7 @@ dma_alloc(
 {
 	int error;
 
-	/* Page-aligned uncached memory below 1 GiB. */
+	/* Page-aligned memory below 1 GiB, reached through the cached direct map. */
 	error = drv_dma_alloc_coherent(mmal_dma, bytes, 4096U, buffer);
 	if (error != 0) {
 		kern_memset(buffer, 0, sizeof(*buffer));
@@ -2417,9 +2383,26 @@ dma_alloc(
 		return error;
 	}
 
-	/* Succeeded: the memory is zero. */
+	/* The zeros reach RAM and leave the cache, so no dirty line can later land on what a bulk brought. */
 	kern_memset(buffer->address, 0, bytes);
+	kern_dcache_invalidate_range(buffer->address, bytes);
+
+	/* Succeeded: the memory is zero, in RAM. */
 	return 0;
+}
+
+/*
+ * Frees DMA memory with no cache line of it left: a dirty line (the push's
+ * scratch half of a staging area is never cleaned) written back later
+ * would land on the memory's next owner, which may not use the cache.
+ */
+static void
+dma_free(
+	struct drv_dma_buffer *buffer)
+{
+	/* Writes back and drops every line, then gives the memory back. */
+	kern_dcache_invalidate_range(buffer->address, buffer->size);
+	drv_dma_free_coherent(mmal_dma, buffer);
 }
 
 /* Converts a bus address in the VPU's window to the physical address. */
@@ -2487,12 +2470,12 @@ release_memory(
 
 	/* The staging, the scratch and the bounce buffers. */
 	if (decoder->staging_memory.address != NULL)
-		drv_dma_free_coherent(mmal_dma, &decoder->staging_memory);
+		dma_free(&decoder->staging_memory);
 	if (decoder->scratch.address != NULL)
-		drv_dma_free_coherent(mmal_dma, &decoder->scratch);
+		dma_free(&decoder->scratch);
 	for (index = 0; index < MMAL_OUTPUT_BUFFERS; index++) {
 		if (decoder->outputs[index].memory.address != NULL)
-			drv_dma_free_coherent(mmal_dma, &decoder->outputs[index].memory);
+			dma_free(&decoder->outputs[index].memory);
 	}
 }
 

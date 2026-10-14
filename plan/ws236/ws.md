@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
-Resume point: p002〜p005 は実装・host 試験・build（warning 0）まで済み（2026-10-14 夜、agent/p3 7db5f2b0f）。T1 の実機（p003 の probe の R1 と p005 の vkvideo-probe・Video Player）の結果待ち。R1 が外れたら `vulkan-video.c` の `VIDEO_BASELINE_ONLY` を 1 に（p006）。p007 は試験の C の書き方と通しの見直しが残り。
+Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は start の後の最初の picture を firmware が次の slice まで持つため、非参照の灰色の push picture を送って出す。1〜15 が 1 小さいのは firmware の NV12 の変換で、写す時に補正。遅さは uncached の 3 MB の読み 2 回と executor の塞がりと見て、MMAL の memory を cached・readback を cached の写しから・decode を step 化、計測の行を足した。BUG-314 の理由の log も。host 試験・build（warning 0）済み、T の実機待ち（[phase006](phase006/phase.md) の依頼）。p007 は試験の C の書き方と通しの見直しが残り。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-14）
@@ -43,7 +43,7 @@ Resume point: p002〜p005 は実装・host 試験・build（warning 0）まで�
 | [ws236-p003](phase003/phase.md) | kernel: MMAL の `video_decode` の client（H.264、port・buffer・EOS・flush）と R1 の probe（in-progress: 実装・host 試験済み、test-wait（T1 の実機の probe）） | 10 LW | p002 |
 | [ws236-p004](phase004/phase.md) | kernel の Vulkan の executor（in-progress: 実装・build 済み、実機は p005 の依頼と一緒）: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
 | [ws236-p005](phase005/phase.md) | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験（in-progress: probe の直し済み、libmedia は無変更、test-wait（T1）） | 3 LW | p004 |
-| [ws236-p006](phase006/phase.md) | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し | 5 LW | p005 |
+| [ws236-p006](phase006/phase.md) | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し（in-progress: frame 0・1〜15 の値・速さ・BUG-314 を実装、T の実機待ち） | 5 LW | p005 |
 | [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
 
 合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。
