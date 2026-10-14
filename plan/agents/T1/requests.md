@@ -706,6 +706,7 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-635 | Q1（BUG-312 の kernel の直し K1〜K4、P2 3d99cdb06。UFS の mount の変更なので回帰） | QEMU で amd64 と raspi4b の CI の image の boot-test、amd64 の image で書き込みの途中の QEMU の kill を 3 回繰り返し、毎回の起動で / が rw か、`ufs:` の log の行、journal の replay の行 | 未実行 | — | — |
 | T1-636 | Q1（WS080 p002 の GS base・swapgs の回帰、P1 a06d5d75d・6c7c991b1、**main に merge していない branch agent/p1 の tree**） | plan/ws080/phase002/phase.md の T1 への手順 1〜8（agent/p1 6c7c991b1 の tree で config-amd64.mk の image に GSBASE-PROBE.ELF・SMP-STRESS.ELF、QEMU -smp 4、boot-test、probe、NMI、同時、AAT smoke と POSIX-R2、network） | 取り消し（2026-10-14 ユーザー「作業が増えたので、ld.coffはふたたびペンディングにします。」） | — | — |
 | T1-637 | Q1（BUG-311 の 4 回目、P3 c972a6057: SDIO の poll の busy wait で download を速く、BT の bytes の log と 2 回目の reset） | plan/bugs/BUG-311.md の末尾の節（CI の config の kernel と bluetoothd、reboot の 1 分後の dmesg、wifi up・search・list・status（EBUSY なら 30 秒後に 1 回）、BT の bytes out/in の行と bt show の全文）。Pi 4 の SD の復旧の後 | 未実行 | — | — |
+| T1-638 | Q1（WS238 native の layout を ESP・FAT32（ZEDBSD）・UFS・swap に、/boot/boot0 と /boot/efi、P1 812a5b9e1） | plan/ws238/phase001/phase.md の T1 の手順（CI の config-amd64 の image、boot-test、mount の /boot/boot0・/boot/efi、dmesg を FAT32 に書いて host の mtools・fsck.fat、ESP は EFI だけ、smoke.suite） | 未実行 | — | — |
 
 
 - 2026-10-14 ユーザー「古いものは今クリアして削除してしまいます。」→ 途中・待ちのまま残っていた T1-044・T1-180・T1-335・T1-337・T1-532 の行を消した（Q1）。
