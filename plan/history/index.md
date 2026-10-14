@@ -2,7 +2,11 @@
 
 # Past Log
 
-## 最新: q1135 / WS074 Grid recensus regression repair and animation diagnosis（2026-10-14）
+## 最新: q1136 / WS074 repeated fixed Grid auto tracks（2026-10-14）
+
+[q1136履歴](queue-q1136.md): Grid auto列/行の複数px/autoを循環、固定valid各3→6/30・computed各3→4/25、invalid全PASS。Acid3差0維持。[証拠](../ws074/phase221/evidence/20261014-q1136/README.md)。p221部分cleared・全件100%未達、共有投影/GitHub publication pending。
+
+## q1135 / WS074 Grid recensus regression repair and animation diagnosis（2026-10-14）
 
 [q1135履歴](queue-q1135.md): 空Grid旧PASSを3→9/9へ回復、Acid3差0維持。行track animation旧PASSはcomputed CSSOM空同士の偽陽性と判明。[実装証拠](../ws074/phase223/evidence/20261014-q1135/README.md)、[診断証拠](../ws074/phase224/evidence/20261014-q1135/README.md)。p223/p224部分cleared・全件100%未達、共有投影/GitHub publication pending。
 

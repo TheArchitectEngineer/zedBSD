@@ -1,0 +1,2 @@
+columns=0,0,20,10|20,0,30,10|50,0,20,10;inline=20px 30px;computed=20px 30px
+rows=0,0,10,30|0,30,10,40|0,70,10,30;inline=30px 40px;computed=30px 40px

@@ -4619,7 +4619,7 @@ values_tracks(
 	return 0;
 }
 
-/* Parses the first supported implicit-track value: one auto or nonnegative pixel size. */
+/* Parses the supported implicit-track cycle: auto and nonnegative pixel sizes. */
 static int
 values_auto_tracks(
 	struct css_parse *parse,
@@ -4629,23 +4629,39 @@ values_auto_tracks(
 {
 	struct css_track_list *list;
 	struct css_declared_track track;
+	size_t index;
 	int error;
 
-	if (count != 1U)
-		return EINVAL;
-	if (tokens[0].type == CSS_TOKEN_IDENT && !css_ident_equal(&tokens[0], "auto"))
-		return EINVAL;
-	error = values_one_track(parse, tokens, count, &track);
-	if (error != 0)
-		return error;
-	if (track.kind != CSS_TRACK_AUTO &&
-	    (track.kind != CSS_TRACK_LENGTH || track.size.unit != CSS_DUNIT_PX))
-		return EINVAL;
+	/* Keeps the cycle in the arena so cascade and layout share the same sequence. */
 	list = wb_arena_zalloc(parse->arena, sizeof(*list));
 	if (list == NULL)
 		return ENOMEM;
-	list->tracks[0] = track;
-	list->count = 1U;
+
+	/* Each supported track is one token after whitespace. */
+	index = 0;
+	while (index < count) {
+		index = values_skip_space(tokens, count, index);
+		if (index == count)
+			break;
+		if (list->count >= CSS_TRACKS)
+			return EINVAL;
+		if (tokens[index].type == CSS_TOKEN_IDENT &&
+		    !css_ident_equal(&tokens[index], "auto"))
+			return EINVAL;
+		error = values_one_track(parse, tokens + index, 1U, &track);
+		if (error != 0)
+			return error;
+		if (track.kind != CSS_TRACK_AUTO &&
+		    (track.kind != CSS_TRACK_LENGTH || track.size.unit != CSS_DUNIT_PX))
+			return EINVAL;
+		list->tracks[list->count] = track;
+		list->count++;
+		index++;
+	}
+	if (list->count == 0U)
+		return EINVAL;
+
+	/* Succeeded: cascade receives the repeating implicit-track pattern. */
 	value->kind = CSS_VALUE_TRACKS;
 	value->tracks = list;
 	return 0;

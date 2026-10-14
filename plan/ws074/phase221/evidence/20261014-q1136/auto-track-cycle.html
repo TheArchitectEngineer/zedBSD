@@ -1,0 +1,21 @@
+<!doctype html>
+<div id="columns" style="display:grid;grid-auto-flow:column;grid-template-rows:10px;grid-auto-columns:20px 30px">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+<div id="rows" style="display:grid;grid-template-columns:10px;grid-auto-rows:30px 40px">
+  <div>A</div><div>B</div><div>C</div>
+</div>
+<script>
+["columns", "rows"].forEach(function (id) {
+  var grid = document.getElementById(id);
+  var origin = grid.getBoundingClientRect();
+  var positions = Array.from(grid.children).map(function (child) {
+    var rect = child.getBoundingClientRect();
+    return [Math.round(rect.left - origin.left), Math.round(rect.top - origin.top),
+            Math.round(rect.width), Math.round(rect.height)].join(",");
+  });
+  var property = id === "columns" ? "grid-auto-columns" : "grid-auto-rows";
+  console.log(id + "=" + positions.join("|") + ";inline=" + grid.style.getPropertyValue(property) +
+              ";computed=" + getComputedStyle(grid).getPropertyValue(property));
+});
+</script>

@@ -2,6 +2,14 @@
 
 # ws074-p221: Interop 2025 Grid parsing and CSSOM
 
+## q1136-i01 有限部分範囲（2026-10-14 10:30 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（12:00 JSTまで）に適用。`grid-auto-columns/rows`の空白区切り単一/複数`auto`・非負px trackを`CSS_TRACKS`上限でparseし、暗黙track循環・computed/inline CSSOMを確認する。固定valid/computed/invalid各6件の前後比較、明示/暗黙trackと空Gridの旧PASS代表、CSS/JS/Grid host、warning0 build、Acid3差0/Acid2非増加。他のtrack値、WPT/runner/公開ABI/`plan/master.md`変更なし。p221 whole/p189/p173全件100%は本部分基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。q1132単一trackとq1135空Grid出力が前提。
+
+## q1136-i01 結果（2026-10-14 10:32 JST）
+
+Event ws074-p221-q1136-partial-clear-20261014: [証拠](evidence/20261014-q1136/README.md)。単一auto/pxの上限付き循環listをparseし、最小fixtureの列20/30/20・行30/40/30pxとinline/computed CSSOMを確認。固定valid各3→6/30、computed各3→4/25、invalid全PASS、旧placement/empty-grid whole PASS維持。CSS51/JS14/Grid48、warning0 build、Acid3 score100/inventory100/画素差0、Acid2差1865維持。q1136部分cleared、p221/p189/p173全件100%未達。他のtrack種・calc・area等残る。共有投影/GitHub publication保留。
+
 Status: in-progress（q1123部分診断）
 Disposition: normal
 Parent: [WS074](../ws.md)
