@@ -9,12 +9,16 @@
  * The nvrtx PCI driver: registration and attach.
  *
  * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware
- * (plan/ws037/nvrtx-design.md).  This revision has only the stages that read:
- * the attach finds the GPU, reads its chip identity (N0) and records where the
- * firmware's picture lies (N1), then gives the function back to the firmware
- * by refusing the bind.  The firmware's console keeps working, the PCI core
- * never suspends the function, and a machine without an NVIDIA GPU is not
- * touched at all.
+ * (plan/ws037/nvrtx-design.md).  The attach finds the GPU, reads its chip
+ * identity (N0) and records where the firmware's picture lies (N1).  Without
+ * nvrtx.gsp=1 on the boot line, or for a chip without a GSP path yet, it then
+ * gives the function back to the firmware by refusing the bind: the
+ * firmware's console keeps working, the PCI core never suspends the
+ * function, and a machine without an NVIDIA GPU is not touched at all.
+ *
+ * With nvrtx.gsp=1 on a TU10x chip the attach keeps the function and starts
+ * a worker thread that runs the GSP boot (gsp.c) once the root file system
+ * holds the firmware.  The kept function refuses a system suspend.
  */
 
 #include <stdbool.h>
@@ -24,12 +28,20 @@
 #include <drivers/pci/pci-nvrtx.h>
 #include <drivers/pci/pci.h>
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
+#include <kern/sched.h>
+#include <kern/thread.h>
 #include <uapi/errno.h>
 
+#include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
 static int nvrtx_attach(struct drv_pci_device *pci, const struct drv_pci_id *id);
 static int nvrtx_detach(struct drv_pci_device *pci, unsigned flags);
+static int nvrtx_suspend(struct drv_pci_device *pci);
+static int nvrtx_keep(struct nvrtx_device *device);
+static void nvrtx_worker(void *argument);
+static void nvrtx_give_back(struct nvrtx_gpu *gpu);
 
 /*
  * Registers the nvrtx PCI driver for NVIDIA display-class functions.
@@ -54,7 +66,7 @@ drv_pci_nvrtx_driver_register(void)
 		nvrtx_attach,
 		nvrtx_detach,
 		NULL,
-		NULL,
+		nvrtx_suspend,
 		NULL,
 		{ 0U, 0U, 0U, 0U }
 	};
@@ -70,11 +82,10 @@ drv_pci_nvrtx_driver_register(void)
 }
 
 /*
- * Runs the read-only stages on one function and gives it back.
+ * Runs the read-only stages on one function, then keeps it or gives it back.
  *
- * The attach always refuses the bind in this revision: the stages that would
- * keep the function (the GSP boot, nvrtx.gsp=1) are not built yet, so the
- * function stays with the firmware whatever N0 found.
+ * The function is kept only with nvrtx.gsp=1 on a chip whose GSP path
+ * exists; otherwise the bind is refused and it stays with the firmware.
  */
 static int
 nvrtx_attach(
@@ -122,33 +133,178 @@ nvrtx_attach(
 		nvrtx_stage_mark("N1 skipped (nvrtx.stop=N1)");
 	}
 
-	/* Gives the registers and the command bits back before saying what happens next. */
-	nvrtx_n0_release(&device);
-
-	/* Says why the function stays with the firmware. */
+	/* Keeps the function for the GSP boot when the boot asks and the chip has a path. */
 	gsp_wanted = nvrtx_stage_gsp_wanted();
-	if (!gsp_wanted) {
-		nvrtx_stage_mark("N1 done; %s left to the firmware (no nvrtx.gsp=1)",
-		    device.chip.name);
-	} else if (device.chip.gsp_tu102 == 0) {
-		nvrtx_stage_mark("N1 done; no GSP path for %s yet", device.chip.name);
+	if (gsp_wanted && device.chip.gsp_tu102 != 0) {
+		error = nvrtx_keep(&device);
+		if (error == 0)
+			return 0;
+
+		nvrtx_stage_mark("N1 done; the GSP boot not started (%d)", error);
+	} else if (!gsp_wanted) {
+		nvrtx_stage_mark("N1 done; %s left to the firmware (no nvrtx.gsp=1)", device.chip.name);
 	} else {
-		nvrtx_stage_mark("N1 done; the GSP boot (P0) is not in this kernel");
+		nvrtx_stage_mark("N1 done; no GSP path for %s yet", device.chip.name);
 	}
+
+	/* Gives the registers and the command bits back. */
+	nvrtx_n0_release(&device);
 
 	/* Refuses the bind: the function keeps its firmware state and is never suspended by PCI. */
 	return ENODEV;
 }
 
-/* Detaches nothing: the attach never binds in this revision. */
+/* Gives a kept function back once its worker has ended. */
 static int
 nvrtx_detach(
 	struct drv_pci_device *pci,
 	unsigned flags)
 {
-	UNUSED_PARAMETER(pci);
+	struct nvrtx_gpu *gpu;
+	int error;
+
 	UNUSED_PARAMETER(flags);
 
-	/* Succeeded: no state was kept. */
+	/* A function the attach did not keep has nothing to give back. */
+	gpu = drv_pci_device_driver_data(pci);
+	if (gpu == NULL)
+		return 0;
+
+	/* The worker owns the GPU while it runs. */
+	if (gpu->worker_running != 0)
+		return EBUSY;
+
+	/* Memory a falcon may still read stays until the power is cut. */
+	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
+		return EBUSY;
+
+	/* Removes PCI's pointer before the state goes away. */
+	error = drv_pci_device_set_driver_data(pci, NULL);
+	if (error != 0)
+		return error;
+
+	/* Gives back the registers, the DMA memory and the state. */
+	nvrtx_give_back(gpu);
+
+	/* Succeeded: PCI may clear the binding. */
 	return 0;
+}
+
+/* Refuses a system suspend while the driver keeps the function: the GSP has no suspend path yet. */
+static int
+nvrtx_suspend(
+	struct drv_pci_device *pci)
+{
+	UNUSED_PARAMETER(pci);
+
+	/* Refused: the system stays up rather than lose the GSP's state. */
+	return EBUSY;
+}
+
+/*
+ * Keeps a function for the GSP boot and starts its worker.
+ *
+ * The N0 mapping of one page is replaced by the whole register window; the
+ * claim and the saved command bits pass to the kept state.  On a failure
+ * nothing is kept and the caller releases what N0 took.
+ */
+static int
+nvrtx_keep(
+	struct nvrtx_device *device)
+{
+	struct nvrtx_gpu *gpu;
+	struct thread *thread;
+	int error;
+
+	/* Allocates the kept state. */
+	gpu = kern_calloc(1U, sizeof(*gpu));
+	if (gpu == NULL)
+		return ENOMEM;
+
+	/* Maps the whole register window; the later stages reach far into it. */
+	error = drv_pci_device_map_bar(device->pci,
+	    device->windows[0].bar,
+	    DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
+	    &gpu->registers);
+	if (error != 0) {
+		kern_free(gpu);
+		return error;
+	}
+
+	/* Finds the DMA device the GSP's memory comes from. */
+	gpu->dma = drv_pci_device_dma(device->pci);
+	if (gpu->dma == NULL) {
+		drv_pci_device_unmap_bar(device->pci, &gpu->registers);
+		kern_free(gpu);
+		return ENODEV;
+	}
+
+	/* Takes over N0's state; its one-page mapping is no longer needed. */
+	drv_pci_device_unmap_bar(device->pci, &device->registers);
+	device->registers.address = NULL;
+	gpu->identity = *device;
+
+	/* Makes the state PCI's to hand back at detach. */
+	error = drv_pci_device_set_driver_data(device->pci, gpu);
+	if (error != 0) {
+		drv_pci_device_unmap_bar(device->pci, &gpu->registers);
+		kern_free(gpu);
+		return error;
+	}
+
+	/* Creates the worker that runs the GSP boot. */
+	error = kthread_create(nvrtx_worker, gpu, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0) {
+		(void)drv_pci_device_set_driver_data(device->pci, NULL);
+		drv_pci_device_unmap_bar(device->pci, &gpu->registers);
+		kern_free(gpu);
+		return error;
+	}
+
+	/*
+	 * worker_running tells detach that the worker owns the GPU; the worker
+	 * clears it last.  Nobody joins the thread; its end releases it.
+	 */
+	gpu->worker_running = 1;
+	thread->detached = 1;
+	thread_start(thread);
+
+	/* Succeeded: the function is kept and the GSP boot runs in the background. */
+	nvrtx_stage_mark("N1 done; %s kept for the GSP boot", gpu->identity.chip.name);
+	return 0;
+}
+
+/* Runs the GSP boot on its own thread. */
+static void
+nvrtx_worker(
+	void *argument)
+{
+	struct nvrtx_gpu *gpu;
+
+	gpu = argument;
+
+	/* Runs the boot as far as this revision goes; it reports its own result. */
+	(void)nvrtx_gsp_start(gpu);
+
+	/* Hands the GPU back to detach. */
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	gpu->worker_running = 0;
+}
+
+/* Gives back the kept registers, the DMA memory, N0's claim and command bits, and the state. */
+static void
+nvrtx_give_back(
+	struct nvrtx_gpu *gpu)
+{
+	/* Frees whatever the boot still holds. */
+	nvrtx_gsp_release(gpu);
+
+	/* Unmaps the register window. */
+	drv_pci_device_unmap_bar(gpu->identity.pci, &gpu->registers);
+
+	/* Releases N0's claim and restores the command bits. */
+	nvrtx_n0_release(&gpu->identity);
+
+	/* Frees the state. */
+	kern_free(gpu);
 }

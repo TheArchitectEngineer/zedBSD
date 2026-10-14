@@ -176,6 +176,49 @@ nvrtx_booter_signature(
 }
 
 /*
+ * Reads the containers of the falcon bootloader that loads FWSEC (acr/bl.bin).
+ *
+ * The descriptor gives the start tag (the start address in 256-byte units)
+ * and the code's place in the payload.
+ */
+int
+nvrtx_falcon_bl_parse(
+	const uint8_t *file,
+	size_t size,
+	struct nvrtx_falcon_bl *bl)
+{
+	size_t inner;
+	size_t payload_at;
+	size_t payload_size;
+	uint32_t code_at;
+	int error;
+
+	/* Reads the file header: where the descriptor and the payload are. */
+	error = image_bin_header(file, size, &inner, &payload_at, &payload_size);
+	if (error != 0)
+		return error;
+
+	/* The descriptor must fit the file. */
+	error = image_range(size, inner, NVRTX_FALCON_BL_DESC_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Reads the start tag and the code's range in the payload. */
+	bl->start_tag = nvrtx_get32(file, inner + NVRTX_FALCON_BL_START_TAG_AT);
+	code_at = nvrtx_get32(file, inner + NVRTX_FALCON_BL_CODE_AT);
+	bl->code_size = nvrtx_get32(file, inner + NVRTX_FALCON_BL_CODE_SIZE_AT);
+
+	/* The code must lie inside the payload. */
+	error = image_range(payload_size, code_at, bl->code_size);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the code's place in the file. */
+	bl->code = file + payload_at + code_at;
+	return 0;
+}
+
+/*
  * Reads the containers of the GSP's RISC-V bootloader file.
  */
 int
@@ -208,7 +251,133 @@ nvrtx_bootloader_parse(
 }
 
 /*
- * Finds a section of a 64-bit little-endian ELF file by name.
+ * Reads the ELF file header: where the section table is and how it is laid out.
+ *
+ * The header is the first 64 bytes of a file of file_size bytes.  Returns
+ * EINVAL unless it is a 64-bit little-endian ELF header whose section table
+ * fits the file.
+ */
+int
+nvrtx_elf_header(
+	const uint8_t *header,
+	size_t file_size,
+	struct nvrtx_elf *elf)
+{
+	uint64_t table_bytes;
+	int error;
+
+	/* The identification must say 64-bit little-endian ELF. */
+	if (header[0] != 0x7fU ||
+	    header[1] != 'E' ||
+	    header[2] != 'L' ||
+	    header[3] != 'F')
+		return EINVAL;
+	if (header[IMAGE_ELF_CLASS_AT] != IMAGE_ELF_CLASS_64)
+		return EINVAL;
+	if (header[IMAGE_ELF_DATA_AT] != IMAGE_ELF_DATA_LITTLE)
+		return EINVAL;
+
+	/* Reads the section table's place, its entry size and count, and the names section's index. */
+	elf->file_size = file_size;
+	elf->table_at = nvrtx_get64(header, IMAGE_ELF_SECTIONS_AT);
+	elf->entry_bytes = image_get16(header, IMAGE_ELF_SECTION_SIZE_AT);
+	elf->count = image_get16(header, IMAGE_ELF_SECTION_COUNT_AT);
+	elf->names_index = image_get16(header, IMAGE_ELF_NAMES_INDEX_AT);
+
+	/* The entries must be whole headers, and the names section one of them. */
+	if (elf->entry_bytes < IMAGE_SECTION_HEADER_BYTES || elf->names_index >= elf->count)
+		return EINVAL;
+
+	/* The whole table must lie inside the file. */
+	table_bytes = (uint64_t)elf->entry_bytes * elf->count;
+	error = image_range(file_size, elf->table_at, table_bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the table can be read. */
+	elf->table_bytes = (size_t)table_bytes;
+	return 0;
+}
+
+/*
+ * Finds the file range of one section from the section table.
+ */
+int
+nvrtx_elf_entry(
+	const struct nvrtx_elf *elf,
+	const uint8_t *table,
+	uint32_t index,
+	struct nvrtx_section *section)
+{
+	size_t header;
+	uint64_t at;
+	uint64_t length;
+	int error;
+
+	/* Refuses an index beyond the table. */
+	if (index >= elf->count)
+		return EINVAL;
+
+	/* Reads the section's offset and size. */
+	header = (size_t)elf->entry_bytes * index;
+	at = nvrtx_get64(table, header + IMAGE_SECTION_OFFSET_AT);
+	length = nvrtx_get64(table, header + IMAGE_SECTION_SIZE_AT);
+
+	/* The section's contents must lie inside the file. */
+	error = image_range(elf->file_size, at, length);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the section's range. */
+	section->at = (size_t)at;
+	section->size = (size_t)length;
+	return 0;
+}
+
+/*
+ * Finds a section by name, given the section table and the names section's bytes.
+ *
+ * Returns ENOENT when no section has the name.
+ */
+int
+nvrtx_elf_find(
+	const struct nvrtx_elf *elf,
+	const uint8_t *table,
+	const uint8_t *names,
+	size_t names_size,
+	const char *name,
+	struct nvrtx_section *section)
+{
+	uint32_t index;
+	uint32_t name_at;
+	int equal;
+	int error;
+
+	/* Compares each section's name with the one asked for. */
+	for (index = 0U; index < elf->count; index++) {
+		/* Reads where the section's name is in the names section. */
+		name_at = nvrtx_get32(table, (size_t)elf->entry_bytes * index + IMAGE_SECTION_NAME_AT);
+		equal = image_name_equal(names, names_size, name_at, name);
+
+		/* A section of another name is passed over. */
+		if (equal == 0)
+			continue;
+
+		/* Reads the named section's range. */
+		error = nvrtx_elf_entry(elf, table, index, section);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the section is found. */
+		return 0;
+	}
+
+	/* No section has the name. */
+	return ENOENT;
+}
+
+/*
+ * Finds a section of a 64-bit little-endian ELF file held whole in memory.
  *
  * Returns 0 with the section's file range, ENOENT when no section has the
  * name, or EINVAL when the file or its section table does not fit.
@@ -220,77 +389,31 @@ nvrtx_elf_section(
 	const char *name,
 	struct nvrtx_section *section)
 {
-	uint64_t table;
-	uint32_t entry_bytes;
-	uint32_t count;
-	uint32_t names_index;
-	uint64_t names_at;
-	uint64_t header;
-	uint64_t at;
-	uint64_t length;
-	uint32_t index;
+	struct nvrtx_elf elf;
+	struct nvrtx_section names;
 	int error;
-	int equal;
 
-	/* The file header must be there and say 64-bit little-endian ELF. */
+	/* The file header must be there. */
 	error = image_range(size, 0U, IMAGE_ELF_HEADER_BYTES);
 	if (error != 0)
 		return error;
 
-	if (file[0] != 0x7fU ||
-	    file[1] != 'E' ||
-	    file[2] != 'L' ||
-	    file[3] != 'F')
-		return EINVAL;
-	if (file[IMAGE_ELF_CLASS_AT] != IMAGE_ELF_CLASS_64)
-		return EINVAL;
-	if (file[IMAGE_ELF_DATA_AT] != IMAGE_ELF_DATA_LITTLE)
-		return EINVAL;
-
-	/* Finds the section table and checks that it fits the file. */
-	table = nvrtx_get64(file, IMAGE_ELF_SECTIONS_AT);
-	entry_bytes = image_get16(file, IMAGE_ELF_SECTION_SIZE_AT);
-	count = image_get16(file, IMAGE_ELF_SECTION_COUNT_AT);
-	names_index = image_get16(file, IMAGE_ELF_NAMES_INDEX_AT);
-
-	/* The table's entries must be whole headers, and the names section one of them. */
-	if (entry_bytes < IMAGE_SECTION_HEADER_BYTES || names_index >= count)
-		return EINVAL;
-
-	/* The whole table must lie inside the file. */
-	error = image_range(size, table, (uint64_t)entry_bytes * count);
+	/* Reads the header and finds the names section. */
+	error = nvrtx_elf_header(file, size, &elf);
 	if (error != 0)
 		return error;
 
-	/* Finds the section that holds the names. */
-	header = table + (uint64_t)entry_bytes * names_index;
-	names_at = nvrtx_get64(file, (size_t)header + IMAGE_SECTION_OFFSET_AT);
+	error = nvrtx_elf_entry(&elf, file + elf.table_at, elf.names_index, &names);
+	if (error != 0)
+		return error;
 
-	/* Compares each section's name with the one asked for. */
-	for (index = 0U; index < count; index++) {
-		header = table + (uint64_t)entry_bytes * index;
-		at = names_at + nvrtx_get32(file, (size_t)header + IMAGE_SECTION_NAME_AT);
-		equal = image_name_equal(file, size, at, name);
+	/* Looks the name up. */
+	error = nvrtx_elf_find(&elf, file + elf.table_at, file + names.at, names.size, name, section);
+	if (error != 0)
+		return error;
 
-		/* A section of another name is passed over. */
-		if (equal == 0)
-			continue;
-
-		/* The named section's contents must fit the file. */
-		at = nvrtx_get64(file, (size_t)header + IMAGE_SECTION_OFFSET_AT);
-		length = nvrtx_get64(file, (size_t)header + IMAGE_SECTION_SIZE_AT);
-		error = image_range(size, at, length);
-		if (error != 0)
-			return error;
-
-		/* Succeeded: the section is found. */
-		section->at = (size_t)at;
-		section->size = (size_t)length;
-		return 0;
-	}
-
-	/* No section has the name. */
-	return ENOENT;
+	/* Succeeded: the section is found. */
+	return 0;
 }
 
 /* Reports EINVAL unless the range [at, at + length) lies inside size bytes. */

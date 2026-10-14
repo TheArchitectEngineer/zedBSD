@@ -330,6 +330,15 @@ test_files(const char *dir)
 	check(bl.payload_at == 0x64 && bl.payload_size == 0x1000, "files: bootloader payload");
 	free(data);
 
+	data = read_file(dir, "bl.bin", &size);
+	{
+		struct nvrtx_falcon_bl fbl;
+
+		check(data != NULL && nvrtx_falcon_bl_parse(data, size, &fbl) == 0, "files: falcon bootloader parses");
+		check(fbl.start_tag == 0xfd && fbl.code_size == 0x200 && fbl.code == data + 0x200, "files: falcon bootloader start tag and code");
+	}
+	free(data);
+
 	data = read_file(dir, "gsp-570.144.bin", &size);
 	check(data != NULL, "files: gsp present");
 	if (data == NULL)
@@ -343,6 +352,99 @@ test_files(const char *dir)
 	free(data);
 }
 
+static void
+put_image(uint8_t *rom, size_t base, unsigned units, unsigned type, int last)
+{
+	rom[base] = 0x55;
+	rom[base + 1] = 0xaa;
+	rom[base + 0x18] = 0x40;
+	memcpy(rom + base + 0x40, "PCIR", 4);
+	rom[base + 0x40 + 0x0a] = 0x18;
+	rom[base + 0x40 + 0x10] = (uint8_t)units;
+	rom[base + 0x40 + 0x14] = (uint8_t)type;
+	memcpy(rom + base + 0x60, "NPDE", 4);
+	rom[base + 0x60 + 8] = (uint8_t)units;
+	rom[base + 0x60 + 0x0a] = last ? 0x80 : 0;
+}
+
+static void
+test_vbios(void)
+{
+	static uint8_t rom[0x1600];
+	struct nvrtx_vbios vbios;
+	struct nvrtx_fwsec fwsec;
+	uint8_t program[0x200];
+	unsigned sum;
+	unsigned i;
+	int error;
+
+	memset(rom, 0, sizeof(rom));
+	put_image(rom, 0, 2, 0x00, 0);
+	memcpy(rom + 0x100, "\xff\xb8" "BIT", 5);
+	rom[0x109] = 6;
+	rom[0x10a] = 2;
+	rom[0x10c] = 'x';
+	rom[0x112] = 'p';
+	rom[0x113] = 2;
+	rom[0x114] = 4;
+	rom[0x116] = 0x00;
+	rom[0x117] = 0x02;
+	nvrtx_put32(rom, 0x200, 0x500);
+	sum = 0;
+	for (i = 0; i < 0x400; i++)
+		sum += rom[i];
+	rom[0x3ff] = (uint8_t)(0x100 - (sum & 0xff));
+	put_image(rom, 0x400, 1, 0x03, 0);
+	put_image(rom, 0x600, 8, 0xe0, 1);
+	rom[0x700] = 1;
+	rom[0x701] = 4;
+	rom[0x702] = 6;
+	rom[0x703] = 2;
+	rom[0x704] = 0x10;
+	rom[0x70a] = 0x85;
+	nvrtx_put32(rom, 0x70c, 0x600);
+	nvrtx_put32(rom, 0x800, 1U | (2U << 8) | (0x40U << 16));
+	nvrtx_put32(rom, 0x800 + 16, 0x10);
+	nvrtx_put32(rom, 0x800 + 20, 0x0);
+	nvrtx_put32(rom, 0x800 + 24, 0x100);
+	nvrtx_put32(rom, 0x800 + 32, 0x80);
+	nvrtx_put32(rom, 0x800 + 36, 0x80);
+	nvrtx_put32(rom, 0x800 + 40, 0x100);
+	nvrtx_put32(rom, 0x800 + 44, 0x0);
+	nvrtx_put32(rom, 0x800 + 48, 0x100);
+	rom[0x940 + 0x10] = 1;
+	rom[0x940 + 0x11] = 4;
+	rom[0x940 + 0x12] = 8;
+	rom[0x940 + 0x13] = 2;
+	nvrtx_put32(rom, 0x940 + 0x14, 3);
+	nvrtx_put32(rom, 0x940 + 0x1c, 4);
+	nvrtx_put32(rom, 0x940 + 0x20, 0x40);
+	nvrtx_put32(rom, 0x940 + 0x40 + 8, 0x80);
+
+	error = nvrtx_vbios_walk(rom, sizeof(rom), &vbios);
+	check(error == 0, "vbios: chain walks");
+	check(vbios.image0_size == 0x400 && vbios.falcon_image == 0x600 && vbios.end == 0x1600, "vbios: first image, falcon image, end");
+	error = nvrtx_vbios_fwsec(&vbios, &fwsec);
+	check(error == 0, "vbios: FWSEC found through BIT and the falcon table");
+	check(fwsec.version == 2 && fwsec.program_at == 0x840 && fwsec.program_size == 0x200, "vbios: FWSEC program place");
+	check(fwsec.imem_size == 0x100 && fwsec.imem_secure_size == 0x80 && fwsec.dmem_at == 0x100 && fwsec.dmem_size == 0x100, "vbios: FWSEC descriptor");
+
+	memcpy(program, rom + fwsec.program_at, sizeof(program));
+	error = nvrtx_fwsec_command(program, &fwsec, NVRTX_FWSEC_FRTS, 0x1ffe00000ULL, 0x100000);
+	check(error == 0, "fwsec: FRTS command written");
+	check(nvrtx_get32(program, 0x100 + 0x40 + 44) == 0x15, "fwsec: command word");
+	check(nvrtx_get32(program, 0x180) == 1 && nvrtx_get32(program, 0x184) == 24 && nvrtx_get32(program, 0x194) == 2, "fwsec: read request");
+	check(nvrtx_get32(program, 0x180 + 24) == 1 && nvrtx_get32(program, 0x180 + 28) == 20, "fwsec: region header");
+	check(nvrtx_get32(program, 0x180 + 32) == 0x1ffe00 && nvrtx_get32(program, 0x180 + 36) == 0x100 && nvrtx_get32(program, 0x180 + 40) == 2, "fwsec: region in 4 KiB units of the VRAM");
+
+	rom[0x3ff] ^= 1;
+	check(nvrtx_vbios_walk(rom, sizeof(rom), &vbios) == EINVAL, "vbios: bad checksum refused");
+	rom[0x3ff] ^= 1;
+	nvrtx_put32(rom, 0x800, 1U | (3U << 8) | (0x40U << 16));
+	nvrtx_vbios_walk(rom, sizeof(rom), &vbios);
+	check(nvrtx_vbios_fwsec(&vbios, &fwsec) == ENOTSUP, "vbios: descriptor version 3 refused");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -350,6 +452,7 @@ main(int argc, char **argv)
 	test_layout();
 	test_radix3();
 	test_queue();
+	test_vbios();
 	if (argc > 1)
 		test_files(argv[1]);
 	else
