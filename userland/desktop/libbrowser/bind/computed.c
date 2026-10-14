@@ -367,12 +367,12 @@ static const char *const computed_flex_wraps[] = { "nowrap", "wrap", "wrap-rever
 
 /* The names of the alignments, by enum css_align (stretch is normal's). */
 static const char *const computed_aligns[] = {
-	"auto", "normal", "flex-start", "flex-end", "center", "baseline", "space-between", "space-around", "space-evenly"
+	"auto", "normal", "stretch", "flex-start", "flex-end", "center", "baseline", "space-between", "space-around", "space-evenly"
 };
 
 /* Grid self-alignment uses start and end rather than Flexbox's flex-start and flex-end. */
 static const char *const computed_justifies[] = {
-	"auto", "normal", "start", "end", "center", "baseline", "space-between", "space-around", "space-evenly", "left", "right", "self-start", "self-end"
+	"auto", "normal", "stretch", "start", "end", "center", "baseline", "space-between", "space-around", "space-evenly", "left", "right", "self-start", "self-end"
 };
 
 /*
@@ -960,13 +960,13 @@ computed_write_keyword(
 		error = computed_length(&style->flex_basis, out);
 		break;
 	case COMPUTED_JUSTIFY_CONTENT:
-		error = computed_name(computed_aligns, 9, style->justify_content, out);
+		error = computed_name(computed_aligns, 10, style->justify_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->justify_content, out);
 		break;
 	case COMPUTED_JUSTIFY_ITEMS:
-		error = computed_name(computed_justifies, 13, style->justify_items, out);
+		error = computed_name(computed_justifies, 14, style->justify_items, out);
 		break;
 	case COMPUTED_ALIGN_ITEMS:
-		error = computed_name(computed_aligns, 9, style->align_items, out);
+		error = computed_name(computed_aligns, 10, style->align_items, out);
 		break;
 	case COMPUTED_ALIGN_SELF:
 		if (style->align_self == CSS_ALIGN_SELF_START)
@@ -974,13 +974,13 @@ computed_write_keyword(
 		else if (style->align_self == CSS_ALIGN_SELF_END)
 			error = computed_ascii("self-end", out);
 		else
-			error = computed_name(computed_aligns, 9, style->align_self, out);
+			error = computed_name(computed_aligns, 10, style->align_self, out);
 		break;
 	case COMPUTED_JUSTIFY_SELF:
-		error = computed_name(computed_justifies, 13, style->justify_self, out);
+		error = computed_name(computed_justifies, 14, style->justify_self, out);
 		break;
 	case COMPUTED_ALIGN_CONTENT:
-		error = computed_name(computed_aligns, 9, style->align_content, out);
+		error = computed_name(computed_aligns, 10, style->align_content == CSS_ALIGN_STRETCH ? CSS_ALIGN_NORMAL : style->align_content, out);
 		break;
 	case COMPUTED_ORDER:
 		error = computed_number(style->order, out);
