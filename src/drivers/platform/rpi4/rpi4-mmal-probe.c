@@ -95,6 +95,7 @@ drv_rpi4_mmal_probe_start(void)
 		kern_logf("rpi4-mmal-probe: no thread (%d)\n", error);
 		return error;
 	}
+	thread_start(thread);
 
 	/* Succeeded: the probe reports in the kernel log. */
 	return 0;
@@ -110,8 +111,9 @@ probe_main(
 	uint64_t deadline;
 	bool connected;
 
-	/* Waits for the firmware's connection. */
+	/* Says that it runs, then waits for the firmware's connection. */
 	(void)argument;
+	kern_logf("rpi4-mmal-probe: started; waiting up to %u ms for VCHIQ\n", PROBE_CONNECT_MS);
 	deadline = sched_ticks() + kern_ms_to_ticks(PROBE_CONNECT_MS);
 	connected = drv_rpi4_vchiq_connected();
 	while (!connected && sched_ticks() < deadline) {
