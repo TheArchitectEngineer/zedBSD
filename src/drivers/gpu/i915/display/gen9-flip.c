@@ -42,6 +42,7 @@
 #include "internal.h"
 #include "gen9-display.h"
 #include "gen9-flip.h"
+#include "gen9-outputs.h"
 #include "scanout.h"
 #include <kern/kcrt.h>
 
@@ -406,6 +407,8 @@ drv_i915_gen9_flip_start(
 
 	/* Claims a display window for two buffers; one claimed before is used as it is. */
 	pages = drv_i915_skl_flip_window_pages(flip->readout.stride_bytes * flip->readout.height);
+	if (level >= I915_GEN9_DISPLAY_MODESET)
+		pages += I915_SKL_OUTPUTS * drv_i915_skl_flip_window_pages(I915_SKL_OUTPUT_MAX_WIDTH * I915_SKL_OUTPUT_MAX_HEIGHT * 4U);
 	error = drv_i915_gt_display_window_init(flip->gm, pages);
 	if (error != 0 && error != EBUSY) {
 		kern_logf("i915: gen9 display: flip not used (the display window of %u pages could not be claimed: %d); the copy display is used\n",
@@ -458,6 +461,35 @@ drv_i915_gen9_flip_extent(
 	*width = flip->readout.width;
 	*height = flip->readout.height;
 	*refresh_millihz = flip->readout.refresh_millihz;
+}
+
+/*
+ * Describes the flipped panel for the external outputs (gen9-outputs.c):
+ * its pipe, port and DPLL, its plane's width, and its line total and
+ * pixel clock, which its watermarks are computed from.  Returns 0, or
+ * ENOENT when the flips are not used or the pixel clock was not measured.
+ */
+int
+drv_i915_gen9_flip_panel(
+	struct i915_skl_panel *panel)
+{
+	struct i915_skl_flip *flip;
+
+	flip = &i915_skl_flip_state;
+
+	/* Only a flipped panel whose timing was read. */
+	if (!flip->ready || !flip->readout.refresh_measured || flip->readout.pixel_khz == 0U)
+		return ENOENT;
+
+	/* Succeeded: the panel as its registers say. */
+	kern_memset(panel, 0, sizeof(*panel));
+	panel->pipe = flip->readout.pipe;
+	panel->port = flip->readout.port;
+	panel->dpll = flip->readout.dpll;
+	panel->hdisplay = flip->readout.width;
+	panel->htotal = flip->readout.htotal;
+	panel->pixel_khz = flip->readout.pixel_khz;
+	return 0;
 }
 
 /*
@@ -1114,6 +1146,10 @@ i915_skl_decode_refresh(
 	if (port_khz == 0U)
 		return;
 
+	/* The port and the DPLL, for the external outputs (gen9-outputs.c). */
+	readout->port = port;
+	readout->dpll = dpll;
+
 	/* The pixel clock the link carries. */
 	readout->pixel_khz = drv_i915_skl_dp_pixel_khz(registers->link_m[transcoder] & I915_SKL_LINK_MN_MASK, registers->link_n[transcoder] & I915_SKL_LINK_MN_MASK, port_khz);
 	if (readout->pixel_khz == 0U)
@@ -1121,6 +1157,7 @@ i915_skl_decode_refresh(
 
 	/* The frame's totals. */
 	htotal = ((registers->htotal[transcoder] >> I915_SKL_TIMING_TOTAL_SHIFT) & I915_SKL_TIMING_FIELD_MASK) + 1U;
+	readout->htotal = htotal;
 	vtotal = ((registers->vtotal[transcoder] >> I915_SKL_TIMING_TOTAL_SHIFT) & I915_SKL_TIMING_FIELD_MASK) + 1U;
 
 	/* The frames a second, in millihertz, rounded to the nearest. */

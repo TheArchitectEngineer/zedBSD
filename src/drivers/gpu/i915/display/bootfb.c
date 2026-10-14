@@ -47,6 +47,7 @@
 #include "bootfb.h"
 #include "gen9-backlight.h"
 #include "gen9-flip.h"
+#include "gen9-node.h"
 #include "present.h"
 #include "scanout.h"
 #include "takeover.h"
@@ -150,6 +151,7 @@ static int i915_bootfb_claim(void *device, void *session, struct gpu_display_cla
 static int i915_bootfb_release(void *device, void *session, const struct gpu_display_release *request);
 static int i915_bootfb_present(void *device, void *session, void *object, struct gpu_display_present *request);
 static int i915_bootfb_wait(void *device, void *session, struct gpu_display_wait *request);
+static int i915_bootfb_events(void *device, void *session, uint64_t *sequence);
 
 /*
  * The display operations of the boot framebuffer display.
@@ -167,7 +169,7 @@ static const struct drv_gpu_display_ops i915_bootfb_ops = {
 	i915_bootfb_release,
 	i915_bootfb_present,
 	i915_bootfb_wait,
-	drv_i915_display_events,
+	i915_bootfb_events,
 	NULL,
 	NULL,
 	NULL,
@@ -271,6 +273,10 @@ drv_i915_bootfb_bind_ops(
 	/* Offers the panel's brightness when the boot line asks for it (WS237). */
 	drv_i915_gen9_backlight_start(device);
 
+	/* Offers the external displays beside a flipped panel when the boot line asks for the mode set (WS237). */
+	if (bootfb->flip)
+		drv_i915_gen9_node_start(device);
+
 	/* The display and the display-only pairing (the capture node's: the same identity and formats), with their capabilities. */
 	bootfb->bound = 1;
 	ops->display = &i915_bootfb_ops;
@@ -322,6 +328,9 @@ drv_i915_bootfb_session_close(
 	if (device->display == NULL)
 		return;
 
+	/* The external displays' leases first, without the panel's lease mutex (gen9-node.h). */
+	drv_i915_gen9_node_session_close(device, session);
+
 	rd = &device->display->rd;
 
 	/* A lease that was never prepared was never held. */
@@ -355,7 +364,8 @@ drv_i915_bootfb_fini(
 
 	bootfb = &i915_bootfb_display;
 
-	/* The backlight device is withdrawn, then the flip buffers go, unless the plane still shows one. */
+	/* The external displays go dark, the backlight device is withdrawn, then the flip buffers go, unless the plane still shows one. */
+	drv_i915_gen9_node_stop(device);
 	drv_i915_gen9_backlight_stop(device);
 	drv_i915_gen9_flip_fini(device);
 
@@ -623,22 +633,28 @@ i915_bootfb_query(
 {
 	struct i915_device *owner_device;
 	struct i915_bootfb *bootfb;
+	int error;
 
 	UNUSED_PARAMETER(session);
 
 	owner_device = device;
 	bootfb = &i915_bootfb_display;
 
-	/* One display exists. */
-	request->count = 1U;
+	/* The panel's display, and an external one for each sink attached (gen9-node.c). */
+	request->count = 1U + drv_i915_gen9_node_count();
 
 	/* Only the count was asked for. */
 	if (request->index == GPU_DISPLAY_COUNT_ONLY)
 		return 0;
 
-	/* Only display 0 exists. */
-	if (request->index != 0U)
-		return EINVAL;
+	/* An external display. */
+	if (request->index != 0U) {
+		error = drv_i915_gen9_node_query(device, request->index - 1U, request);
+		if (error != 0)
+			return error;
+		request->count = 1U + drv_i915_gen9_node_count();
+		return 0;
+	}
 
 	/* The display and its state: active while a lease has frames on it. */
 	request->display_id = I915_BOOTFB_DISPLAY_ID;
@@ -683,11 +699,19 @@ i915_bootfb_mode(
 {
 	struct i915_bootfb *bootfb;
 	int refused;
-
-	UNUSED_PARAMETER(device);
-	UNUSED_PARAMETER(session);
+	int external;
+	int error;
 
 	bootfb = &i915_bootfb_display;
+
+	/* An external display's modes are the node's (gen9-node.c). */
+	external = drv_i915_gen9_node_owns_display(request->display_id);
+	if (external) {
+		error = drv_i915_gen9_node_mode(device, session, request);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Only the one display of this generation exists. */
 	if (request->display_id != I915_BOOTFB_DISPLAY_ID)
@@ -757,9 +781,20 @@ i915_bootfb_claim(
 {
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
+	int external;
+	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
+
+	/* An external display is the node's (gen9-node.c). */
+	external = drv_i915_gen9_node_owns_display(request->display_id);
+	if (external) {
+		error = drv_i915_gen9_node_claim(device, session, request);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Only plane 0 of the one display of this generation exists. */
 	if (request->display_id != I915_BOOTFB_DISPLAY_ID)
@@ -819,9 +854,20 @@ i915_bootfb_release(
 {
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
+	int external;
+	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
+
+	/* An external display's lease is the node's (gen9-node.c). */
+	external = drv_i915_gen9_node_owns_lease(request->lease);
+	if (external) {
+		error = drv_i915_gen9_node_release(device, session, request);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Ends the lease under its mutex. */
 	drv_i915_present_lease_init(owner_device->display);
@@ -870,11 +916,21 @@ i915_bootfb_present(
 	uint64_t gpu_ns;
 	uint64_t cpu_ns;
 	int flipped;
+	int external;
 	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
 	bootfb = &i915_bootfb_display;
+
+	/* An external display's frame is the node's (gen9-node.c). */
+	external = drv_i915_gen9_node_owns_lease(request->lease);
+	if (external) {
+		error = drv_i915_gen9_node_present(device, session, object, request);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Checks the lease and the frame, and shows it, under the lease mutex. */
 	drv_i915_present_lease_init(owner_device->display);
@@ -1006,10 +1062,20 @@ i915_bootfb_wait(
 	struct i915_device *owner_device;
 	struct i915_resident_display *rd;
 	uint64_t latched_tick;
+	int external;
 	int error;
 
 	owner_device = device;
 	rd = &owner_device->display->rd;
+
+	/* An external display's wait is the node's (gen9-node.c). */
+	external = drv_i915_gen9_node_owns_lease(request->lease);
+	if (external) {
+		error = drv_i915_gen9_node_wait(device, session, request);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* A copied presentation completed when it returned. */
 	if (!i915_bootfb_display.flip) {
@@ -1055,6 +1121,36 @@ i915_bootfb_wait(
 	mutex_unlock(&rd->mutex);
 
 	/* Succeeded: the sequence has completed. */
+	return 0;
+}
+
+/*
+ * Reports the display topology's sequence (the display events operation):
+ * the external displays' while they are offered (a sink that comes or
+ * goes moves it), else the panel's.  Any context.
+ */
+static int
+i915_bootfb_events(
+	void *device,
+	void *session,
+	uint64_t *sequence)
+{
+	uint64_t external;
+	int error;
+
+	/* The external displays' sequence. */
+	external = drv_i915_gen9_node_sequence();
+	if (external != 0U) {
+		*sequence = external;
+		return 0;
+	}
+
+	/* The panel's. */
+	error = drv_i915_display_events(device, session, sequence);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the sequence is sampled. */
 	return 0;
 }
 
