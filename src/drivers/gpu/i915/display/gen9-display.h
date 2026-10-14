@@ -33,9 +33,10 @@
 
 /*
  * The step a Gen9 node takes when the boot line has no i915.gen9.display=:
- * the one place the default is chosen.
+ * the one place the default is chosen (full, 2026-10-15 user: Gen9 display
+ * control on by default).
  */
-#define I915_GEN9_DISPLAY_DEFAULT	I915_GEN9_DISPLAY_COPY
+#define I915_GEN9_DISPLAY_DEFAULT	I915_GEN9_DISPLAY_FULL
 
 /* Reports the step a word of i915.gen9.display= names, or -1 for another word. */
 int drv_i915_gen9_display_word(const char *word);
