@@ -117,6 +117,7 @@ struct mmal_output {
 	bool with_firmware;
 	bool ready;
 	bool held;
+	bool in_target;
 	uint32_t length;
 	uint32_t flags;
 	int64_t pts;
@@ -158,6 +159,10 @@ struct drv_rpi4_mmal_decoder {
 	struct mmal_output outputs[MMAL_OUTPUT_BUFFERS];
 	unsigned held_output;
 	bool output_enabled;
+	uint64_t target_physical;
+	uint32_t target_capacity;
+	uint32_t target_pitch;
+	uint32_t target_chroma;
 	uint32_t encoding;
 	uint32_t width;
 	uint32_t height;
@@ -497,6 +502,24 @@ drv_rpi4_mmal_decoder_send(
 }
 
 /*
+ * Names memory the next decoded frame goes straight into.
+ */
+void
+drv_rpi4_mmal_decoder_target(
+	struct drv_rpi4_mmal_decoder *decoder,
+	uint64_t physical,
+	uint32_t capacity,
+	uint32_t pitch,
+	uint32_t chroma_offset)
+{
+	/* Only the caller's thread reads the target, in pump. */
+	decoder->target_physical = physical;
+	decoder->target_capacity = capacity;
+	decoder->target_pitch = pitch;
+	decoder->target_chroma = chroma_offset;
+}
+
+/*
  * Receives the next decoded frame.
  *
  * The output buffer the caller held since the last receive goes back to
@@ -566,9 +589,30 @@ drv_rpi4_mmal_decoder_receive(
 	frame->plane_offset[1] = output->plane_offset[1];
 	frame->plane_pitch[0] = output->plane_pitch[0];
 	frame->plane_pitch[1] = output->plane_pitch[1];
+	frame->in_target = output->in_target;
 	*pixels = output->memory.address;
+	if (output->in_target)
+		*pixels = NULL;
 
 	/* Succeeded: the frame is the caller's until the next receive. */
+	return 0;
+}
+
+/*
+ * Reports whether a bulk transfer of the decoder may still move memory.
+ */
+int
+drv_rpi4_mmal_decoder_busy(
+	struct drv_rpi4_mmal_decoder *decoder)
+{
+	bool outstanding;
+
+	/* Any staging, frame or scratch bulk not completed. */
+	outstanding = bulks_outstanding(decoder);
+	if (outstanding)
+		return 1;
+
+	/* Succeeded: nothing of the decoder's moves. */
 	return 0;
 }
 
@@ -1425,7 +1469,22 @@ handle_buffer(
 			  (unsigned)length, (unsigned)offset, (unsigned)decoder->output_size);
 		return EIO;
 	}
-	error = receive_bulk(decoder, bus_to_physical(output->memory.device_address) + offset, bytes, true);
+	/*
+	 * A frame laid out as the target expects, and fitting it, goes there
+	 * (once); any other goes to the buffer's bounce memory.
+	 */
+	output->in_target = false;
+	if (decoder->target_capacity != 0 &&
+	    offset == 0 &&
+	    bytes <= decoder->target_capacity &&
+	    drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_PITCH) == decoder->target_pitch &&
+	    drv_rpi4_mmal_get32(message->bytes, DRV_RPI4_MMAL_BUFFER_PLANE_OFFSET + 4U) == decoder->target_chroma) {
+		output->in_target = true;
+		error = receive_bulk(decoder, decoder->target_physical, bytes, true);
+		decoder->target_capacity = 0;
+	} else {
+		error = receive_bulk(decoder, bus_to_physical(output->memory.device_address) + offset, bytes, true);
+	}
 	if (error != 0)
 		return error;
 
