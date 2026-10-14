@@ -249,6 +249,21 @@ struct touch_group {
 };
 
 /*
+ * A touch screen whose fingers do not reach the range it declares
+ * (BUG-315): its USB vendor and product, and the place across and down
+ * that its fingers really read at the output's right and bottom edges.  A
+ * zero keeps that axis's declared maximum.
+ *
+ * Instances live only in the constant table below.
+ */
+struct touch_quirk {
+	uint16_t vendor;
+	uint16_t product;
+	int32_t maximum_x;
+	int32_t maximum_y;
+};
+
+/*
  * What one report has done so far: its time, the clients told something by
  * wl_touch (each hears one frame at the end), and whether the pointer moved
  * or clicked for a client (a wl_pointer.frame at the end).
@@ -260,6 +275,22 @@ struct touch_report {
 	struct kwl_client *heard[TOUCH_HEARD_MAX];
 	unsigned heard_count;
 	unsigned pointer_activity;
+};
+
+/*
+ * The touch screens whose declared range is not where their fingers reach
+ * (BUG-315), looked up by read_axes when a screen is added.
+ *
+ * The 13.3-inch OLED's Wacom panel (056a:8191) declares Y 0..9599, but a
+ * finger at the bottom edge of the picture reads about 6450 (T1-649: the
+ * taps along the bottom read 5848..6446, never more); the top edge reads
+ * 0 and X spans its declared 0..16383.  Mapped by the declared maximum,
+ * the lower third of the picture could not be touched, and every finger
+ * landed a third higher than it was.  The table is constant and lives as
+ * long as the process.
+ */
+static const struct touch_quirk touch_quirks[] = {
+	{ 0x056aU, 0x8191U, 0, 6450 },
 };
 
 /*
@@ -289,6 +320,7 @@ static struct touch_group group;
 
 static struct touch_screen *screen_of(struct kwl_input_device *input);
 static int read_axes(struct touch_screen *screen);
+static void read_quirk(struct touch_screen *screen);
 static void read_report(struct kwl_server *server, struct touch_screen *screen);
 static void contact_begin(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
 static void contact_move(struct kwl_server *server, struct touch_screen *screen, unsigned slot, struct touch_report *report);
@@ -864,6 +896,9 @@ read_axes(
 	if (screen->axis_y.maximum <= screen->axis_y.minimum)
 		return EINVAL;
 
+	/* A screen known to declare more than its fingers reach maps by where they reach (BUG-315). */
+	read_quirk(screen);
+
 	/* The slot the next report's finger events address until one names another. */
 	memset(&slot, 0, sizeof(slot));
 	error = kl_backend_input_absinfo(descriptor, ABS_MT_SLOT, &slot);
@@ -873,6 +908,65 @@ read_axes(
 
 	/* Succeeded: the touch screen's places can be mapped onto the output. */
 	return 0;
+}
+
+/*
+ * Narrows a touch screen's range to where its fingers reach when the
+ * screen is one of touch_quirks (BUG-315); any other keeps its declared
+ * range.
+ */
+static void
+read_quirk(
+	struct touch_screen *screen)
+{
+	const struct touch_quirk *quirk;
+	struct input_id identity;
+	unsigned index;
+	int error;
+
+	/* The node's USB vendor and product; a node without them has no quirk. */
+	memset(&identity, 0, sizeof(identity));
+	error = kl_backend_input_id(screen->input->fd, &identity);
+	if (error != 0)
+		return;
+
+	/* Only a USB device's vendor and product name it. */
+	if (identity.bustype != BUS_USB)
+		return;
+
+	/* The quirk of that vendor and product. */
+	quirk = NULL;
+	for (index = 0; index < sizeof(touch_quirks) / sizeof(touch_quirks[0]); index++) {
+		/* Another vendor's. */
+		if (touch_quirks[index].vendor != identity.vendor)
+			continue;
+
+		/* Another product's. */
+		if (touch_quirks[index].product != identity.product)
+			continue;
+
+		/* This screen's. */
+		quirk = &touch_quirks[index];
+		break;
+	}
+
+	/* None: the declared range is where the fingers reach. */
+	if (quirk == NULL)
+		return;
+
+	/* One line lets a test see that the screen has a quirk, and the range it declares. */
+	printf("KWL TOUCH quirk device=%s vendor=%04x product=%04x declared x=%d..%d y=%d..%d\n", screen->input->path, identity.vendor,
+	       identity.product, screen->axis_x.minimum, screen->axis_x.maximum, screen->axis_y.minimum, screen->axis_y.maximum);
+
+	/* Across: only a maximum inside the declared range, above its minimum, is taken. */
+	if (quirk->maximum_x > screen->axis_x.minimum &&
+	    quirk->maximum_x < screen->axis_x.maximum)
+		screen->axis_x.maximum = quirk->maximum_x;
+
+	/* Succeeded: down, the same (kwl_touch_add's line shows the range used). */
+	if (quirk->maximum_y > screen->axis_y.minimum &&
+	    quirk->maximum_y < screen->axis_y.maximum)
+		screen->axis_y.maximum = quirk->maximum_y;
 }
 
 /*

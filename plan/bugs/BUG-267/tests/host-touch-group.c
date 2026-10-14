@@ -17,6 +17,12 @@
  * desktops' swipe and App Home's swipe do.  It checks where each finger
  * went: to the client (wl_touch down, motion, cancel) or to the shell
  * (the press, the pointer's way, the release).
+ *
+ * BUG-315 adds the Pi 4's 13.3-inch OLED panel (Wacom 056a:8191) as a
+ * second touch screen with its declared range (X 0..16383, Y 0..9599) and
+ * its quirk (its fingers reach Y 6450 at the bottom), and the short taps
+ * and the one-finger swipes in the middle that must stay the client's,
+ * also right after a tap the shell took at an edge.
  * usage: host-touch-group
  */
 
@@ -26,6 +32,7 @@
 #include "userland/desktop/wayland/edge.h"
 #include <keiland/keiland.h>
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -39,6 +46,17 @@
 
 /* How many fingers one report of a scenario names at most. */
 #define FINGERS_MAX	4U
+
+/* The Pi 4's OLED panel (BUG-315): its USB identity, its declared range, and the Y its fingers reach at the bottom edge. */
+#define OLED_VENDOR	0x056aU
+#define OLED_PRODUCT	0x8191U
+#define OLED_X_MAX	16383
+#define OLED_Y_MAX	9599
+#define OLED_Y_REACH	6450
+
+/* The descriptors of the two touch screens' nodes. */
+#define INPUT_FD	3
+#define OLED_FD		4
 
 /* The ID of the desktop surface (Files' desktop, client 3 surface 19 in the UAT's log) and of its client's wl_touch. */
 #define DESKTOP_ID	19U
@@ -63,6 +81,8 @@ struct seen {
 	unsigned ups;
 	unsigned motions;
 	unsigned cancels;
+	int32_t down_x;
+	int32_t down_y;
 };
 
 /* The checks that failed, and those that ran. */
@@ -74,6 +94,12 @@ static struct kwl_server server;
 
 /* The touch screen's evdev node, whose frame each report fills. */
 static struct kwl_input_device input;
+
+/* The Pi 4's OLED panel's evdev node (BUG-315), filled the same way. */
+static struct kwl_input_device oled;
+
+/* The node the next report is made for: input, or oled. */
+static struct kwl_input_device *target;
 
 /* The client with wl_touch, its wl_touch and its desktop surface over the whole output. */
 static struct kwl_client files;
@@ -113,6 +139,12 @@ static void test_other_in_middle(void);
 static void test_joined_far(void);
 static void test_top_pair(void);
 static void test_top_in_bar(void);
+static void test_short_tap(void);
+static void test_middle_swipe(void);
+static void test_edge_tap_then_middle(void);
+static void test_edge_pair_then_middle(void);
+static void test_oled_range(void);
+static int32_t scale_axis(const struct kwl_cursor_axis *axis, uint32_t size);
 
 /* Runs every scenario and reports how many checks failed. */
 int
@@ -138,11 +170,18 @@ main(
 	desktop.kind = KWL_SURFACE;
 	desktop.id = DESKTOP_ID;
 
-	/* The touch screen node. */
-	input.fd = 3;
+	/* The touch screen node; the reports are made for it. */
+	input.fd = INPUT_FD;
 	snprintf(input.path, sizeof(input.path), "/dev/input/event3");
 	error = kwl_touch_add(&input);
 	check(error == 0, "the touch screen is taken");
+	target = &input;
+
+	/* The OLED panel's node (BUG-315). */
+	oled.fd = OLED_FD;
+	snprintf(oled.path, sizeof(oled.path), "/dev/input/event5");
+	error = kwl_touch_add(&oled);
+	check(error == 0, "the OLED panel is taken");
 
 	/* Each scenario of the UAT's swipes, and what must stay as it was. */
 	test_right_pair();
@@ -160,7 +199,15 @@ main(
 	test_top_pair();
 	test_top_in_bar();
 
-	/* The touch screen goes. */
+	/* BUG-315: taps and one-finger swipes, and the OLED panel's range. */
+	test_short_tap();
+	test_middle_swipe();
+	test_edge_tap_then_middle();
+	test_edge_pair_then_middle();
+	test_oled_range();
+
+	/* The touch screens go. */
+	kwl_touch_remove(&server, &oled, 1);
 	kwl_touch_remove(&server, &input, 1);
 
 	/* A failed check fails the test. */
@@ -210,18 +257,18 @@ report_add(
 	struct input_event *event;
 
 	/* A report longer than the frame is a mistake of the test. */
-	if (input.frame_count >= KWL_INPUT_FRAME_MAX) {
+	if (target->frame_count >= KWL_INPUT_FRAME_MAX) {
 		check(0, "a report fits the frame");
 		return;
 	}
 
 	/* Succeeded: the event is the report's next. */
-	event = &input.frame[input.frame_count];
+	event = &target->frame[target->frame_count];
 	memset(event, 0, sizeof(*event));
 	event->type = type;
 	event->code = code;
 	event->value = value;
-	input.frame_count++;
+	target->frame_count++;
 }
 
 /* Applies the report made so far at a time (milliseconds), as the evdev frame would. */
@@ -231,12 +278,12 @@ report_send(
 {
 	/* The compositor's clock follows the report. */
 	clock_ms = time;
-	input.frame_time_us = (uint64_t)time * 1000U;
+	target->frame_time_us = (uint64_t)time * 1000U;
 
 	/* The report's end, and the next starts empty. */
 	report_add(EV_SYN, SYN_REPORT, 0);
-	kwl_touch_frame(&server, &input, time);
-	input.frame_count = 0;
+	kwl_touch_frame(&server, target, time);
+	target->frame_count = 0;
 }
 
 /* Adds a finger touching in a slot to the report being made. */
@@ -627,10 +674,18 @@ kl_backend_input_absinfo(
 	uint32_t axis,
 	struct input_absinfo *info)
 {
-	(void)descriptor;
+	/* The OLED panel's axes are its declared range (BUG-315). */
+	memset(info, 0, sizeof(*info));
+	if (descriptor == OLED_FD) {
+		if (axis == ABS_MT_POSITION_X) {
+			info->maximum = OLED_X_MAX;
+		} else if (axis == ABS_MT_POSITION_Y) {
+			info->maximum = OLED_Y_MAX;
+		}
+		return 0;
+	}
 
 	/* Each axis touch.c asks for. */
-	memset(info, 0, sizeof(*info));
 	if (axis == ABS_MT_POSITION_X) {
 		info->maximum = OUTPUT_WIDTH - 1;
 	} else if (axis == ABS_MT_POSITION_Y) {
@@ -638,6 +693,24 @@ kl_backend_input_absinfo(
 	}
 
 	/* Succeeded: the range. */
+	return 0;
+}
+
+/* Reads a node's identity: the OLED panel is a USB device, the other has none. */
+int
+kl_backend_input_id(
+	int descriptor,
+	struct input_id *id)
+{
+	/* The first touch screen does not say who it is. */
+	memset(id, 0, sizeof(*id));
+	if (descriptor != OLED_FD)
+		return ENOTTY;
+
+	/* Succeeded: the OLED panel's vendor and product. */
+	id->bustype = BUS_USB;
+	id->vendor = OLED_VENDOR;
+	id->product = OLED_PRODUCT;
 	return 0;
 }
 
@@ -809,15 +882,20 @@ kwl_emit(
 	const void *payload,
 	size_t size)
 {
+	const int32_t *words;
+
 	(void)client;
 	(void)object;
-	(void)payload;
-	(void)size;
 
-	/* Each wl_touch event the client hears (frames are not counted). */
+	/* Each wl_touch event the client hears (frames are not counted); a down's place is kept, in pixels. */
+	words = payload;
 	switch (opcode) {
 	case 0:
 		seen.downs++;
+		if (size >= 6U * sizeof(int32_t)) {
+			seen.down_x = words[4] / 256;
+			seen.down_y = words[5] / 256;
+		}
 		break;
 	case 1:
 		seen.ups++;
@@ -985,6 +1063,66 @@ kwl_pointer_absolute(
 	struct kwl_server *unused)
 {
 	(void)unused;
+}
+
+/* Places the pointer where a finger put it. */
+void
+kwl_pointer_warp_to(
+	struct kwl_server *shell,
+	int32_t x,
+	int32_t y)
+{
+	/* Succeeded: the pointer is there. */
+	shell->pointer_x = x;
+	shell->pointer_y = y;
+}
+
+/*
+ * Maps a touch screen's place onto the output as heads.c does for the
+ * anchor at the angle 0: each axis's range onto the output's pixels, in
+ * 1/256 pixels, anything beyond the range on the edge.
+ */
+void
+kwl_output_absolute(
+	struct kwl_server *shell,
+	unsigned slot,
+	unsigned direct,
+	const struct kwl_cursor_axis *across,
+	const struct kwl_cursor_axis *down,
+	int32_t *x,
+	int32_t *y)
+{
+	(void)slot;
+	(void)direct;
+
+	/* Across. */
+	*x = scale_axis(across, shell->width);
+
+	/* Succeeded: down. */
+	*y = scale_axis(down, shell->height);
+}
+
+/* Scales one axis's value onto a size in 1/256 pixels, as cursor-box.c's geometry_scale does. */
+static int32_t
+scale_axis(
+	const struct kwl_cursor_axis *axis,
+	uint32_t size)
+{
+	int64_t offset;
+	int64_t range;
+
+	/* The low end, and below it, is the first pixel. */
+	if (axis->value <= axis->minimum)
+		return 0;
+
+	/* The high end, and above it, is the last pixel. */
+	if (axis->value >= axis->maximum)
+		return ((int32_t)size - 1) * 256;
+
+	/* Succeeded: between them, linearly, rounding down. */
+	offset = (int64_t)axis->value - axis->minimum;
+	range = (int64_t)axis->maximum - axis->minimum;
+	return (int32_t)((offset * ((int64_t)size - 1) * 256) / range);
 }
 
 /* Delivers a button through the shell to a client (no client of the pointer here). */
@@ -1297,4 +1435,180 @@ test_top_in_bar(
 	report_send(14200);
 	check(seen.motion_y == 170, "top-bar: the shell follows the finger in the bar");
 	check(seen.shell_releases == 1 && seen.downs == 0, "top-bar: the shell hears the release, the client nothing");
+}
+
+/*
+ * BUG-315: a short tap in the middle (80 ms, the finger trembling a pixel,
+ * as the OLED panel's taps of 0.07 to 0.15 s): the client hears it touch,
+ * move and lift, and the shell nothing.  A second tap soon after is the
+ * client's again (nothing of the first was left behind).
+ */
+static void
+test_short_tap(
+	void)
+{
+	/* The finger touches, trembles and lifts. */
+	scenario_begin("short tap in the middle");
+	finger_down(0, 301, 900, 600);
+	report_send(20000);
+	finger_move(0, 901, 600);
+	report_send(20010);
+	finger_move(0, 901, 601);
+	report_send(20020);
+	finger_up(0);
+	report_send(20080);
+	check(seen.downs == 1 && seen.ups == 1, "tap: the client hears it touch and lift");
+	check(seen.motions == 2, "tap: the client hears it tremble");
+	check(seen.shell_presses == 0 && seen.cancels == 0, "tap: the shell hears nothing, the client is not cancelled");
+
+	/* Another tap 120 ms later, elsewhere: the client's again. */
+	finger_down(0, 302, 1200, 900);
+	report_send(20200);
+	finger_up(0);
+	report_send(20270);
+	check(seen.downs == 2 && seen.ups == 2, "tap: the next tap is the client's too");
+	check(seen.down_x == 1200 && seen.down_y == 900, "tap: the next tap is where it touched");
+	check(seen.shell_presses == 0, "tap: the shell still hears nothing");
+}
+
+/* BUG-315: one finger swiping left in the middle, short and quick, stays the client's: no desktop's swipe. */
+static void
+test_middle_swipe(
+	void)
+{
+	unsigned step;
+
+	/* The finger touches and swipes left 25 pixels a report. */
+	scenario_begin("one-finger swipe in the middle");
+	finger_down(0, 311, 1000, 640);
+	report_send(21000);
+	for (step = 1; step <= 6; step++) {
+		finger_move(0, 1000 - 25 * (int32_t)step, 640);
+		report_send(21000 + 10 * step);
+	}
+	finger_up(0);
+	report_send(21080);
+
+	/* The client heard all of it. */
+	check(seen.shell_presses == 0, "middle-swipe: the shell hears no press");
+	check(seen.cancels == 0, "middle-swipe: the client is not cancelled");
+	check(seen.downs == 1 && seen.motions == 6 && seen.ups == 1, "middle-swipe: the client hears the touch, every motion and the lift");
+}
+
+/*
+ * BUG-315: a tap on the right edge (the OLED panel's X saturates at the
+ * edge: 16383, the last column), which the shell takes as its press and
+ * releases; a finger in the middle 50 ms after the lift is the client's,
+ * not the edge's group nor the shell's.
+ */
+static void
+test_edge_tap_then_middle(
+	void)
+{
+	unsigned step;
+
+	/* The tap on the edge: the shell's press and release. */
+	scenario_begin("tap on the right edge, then a swipe in the middle");
+	finger_down(0, 321, OUTPUT_WIDTH - 1, 700);
+	report_send(22000);
+	finger_move(0, OUTPUT_WIDTH - 1, 701);
+	report_send(22010);
+	finger_up(0);
+	report_send(22070);
+	check(seen.shell_presses == 1 && seen.shell_releases == 1, "edge-tap: the shell hears the press and the release");
+
+	/* A finger in the middle soon after swipes left. */
+	finger_down(1, 322, 900, 650);
+	report_send(22120);
+	for (step = 1; step <= 5; step++) {
+		finger_move(1, 900 - 25 * (int32_t)step, 650);
+		report_send(22120 + 10 * step);
+	}
+	finger_up(1);
+	report_send(22200);
+
+	/* It was the client's. */
+	check(seen.downs == 1 && seen.ups == 1, "edge-tap: the middle finger is the client's");
+	check(seen.motions == 5, "edge-tap: the client hears the middle finger move");
+	check(seen.shell_presses == 1, "edge-tap: the shell hears no second press");
+}
+
+/*
+ * BUG-315: two fingers on the left edge (the OLED panel reads both at
+ * X 0, 11 ms apart) swipe right and lift: the shell's swipe; then one
+ * finger in the middle is the client's.
+ */
+static void
+test_edge_pair_then_middle(
+	void)
+{
+	unsigned step;
+
+	/* The pair on the edge. */
+	scenario_begin("pair on the left edge, then one finger in the middle");
+	finger_down(0, 331, 0, 400);
+	report_send(23000);
+	finger_down(1, 332, 0, 420);
+	report_send(23011);
+	for (step = 1; step <= 6; step++) {
+		finger_move(0, 30 * (int32_t)step, 400);
+		finger_move(1, 30 * (int32_t)step, 420);
+		report_send(23011 + 10 * step);
+	}
+	finger_up(0);
+	finger_up(1);
+	report_send(23100);
+	check(seen.shell_presses == 1 && seen.shell_releases == 1, "edge-pair: the shell hears one press and its release");
+	check(seen.downs == 0, "edge-pair: the client hears neither finger");
+
+	/* One finger in the middle 100 ms later. */
+	finger_down(0, 333, 1000, 700);
+	report_send(23200);
+	finger_move(0, 960, 700);
+	report_send(23210);
+	finger_up(0);
+	report_send(23260);
+	check(seen.downs == 1 && seen.ups == 1, "edge-pair: the middle finger is the client's");
+	check(seen.shell_presses == 1, "edge-pair: the shell hears no second press");
+}
+
+/*
+ * BUG-315: the OLED panel maps by where its fingers reach: Y 6450 is the
+ * bottom row, half of it the middle, and the top edge the top row; X
+ * keeps its declared range.
+ */
+static void
+test_oled_range(
+	void)
+{
+	/* The reports are the OLED panel's. */
+	scenario_begin("the OLED panel's range");
+	target = &oled;
+
+	/* A tap at the bottom edge (T1-649's bottom-right tap read 15785,6445): the bottom strip's, so the shell's. */
+	finger_down(0, 341, 15785, 6445);
+	report_send(24000);
+	finger_up(0);
+	report_send(24070);
+	check(seen.shell_presses == 1 && seen.shell_releases == 1, "oled: the bottom tap is in the bottom strip");
+	check(seen.press_y >= OUTPUT_HEIGHT - 2, "oled: the bottom tap is on the bottom row");
+	check(seen.press_x == (int32_t)((int64_t)15785 * (OUTPUT_WIDTH - 1) / OLED_X_MAX), "oled: X keeps its declared range");
+
+	/* A tap halfway down. */
+	finger_down(0, 342, 8192, OLED_Y_REACH / 2);
+	report_send(24200);
+	finger_up(0);
+	report_send(24270);
+	check(seen.downs == 1, "oled: the client hears the middle tap");
+	check(seen.down_y == (OUTPUT_HEIGHT - 1) / 2, "oled: halfway down the reach is the middle row");
+
+	/* A tap at the top edge: the top band's, so the shell's. */
+	finger_down(0, 343, 8192, 1);
+	report_send(24400);
+	finger_up(0);
+	report_send(24470);
+	check(seen.shell_presses == 2 && seen.press_y == 0, "oled: the top edge is the top row");
+
+	/* The reports are the first screen's again. */
+	target = &input;
 }
