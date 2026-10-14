@@ -137,7 +137,8 @@ ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmal.c \
 	src/drivers/platform/rpi4/rpi4-h264.c
 endif
 ifeq ($(CONFIG_DRIVER_BCM2711_VIDEO_PROBE),y)
-ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmal-probe.c
+ARM64_KERNEL_SOURCES += src/drivers/platform/rpi4/rpi4-mmal-probe.c \
+	src/drivers/platform/rpi4/rpi4-mmal-dump.c
 endif
 
 # USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.

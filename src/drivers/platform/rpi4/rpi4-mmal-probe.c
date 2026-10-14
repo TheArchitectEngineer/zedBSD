@@ -9,19 +9,24 @@
  * The boot-time probe of the VideoCore H.264 decoder (ws236 design §12),
  * built only by test kernels (CONFIG_DRIVER_BCM2711_VIDEO_PROBE).
  *
- * It decodes two embedded streams with B frames, each twice: as encoded
- * (the control) and with every SPS rewritten to ask for no reordering.
+ * It decodes two embedded streams with B frames, each three ways: as
+ * encoded (the control, run a), with every SPS rewritten to ask for no
+ * reordering (run b), and the same with an access unit delimiter after
+ * each unit (run c), which ends the picture before the next unit comes.
  * Each output picture is identified by the checksum of its visible bytes
  * against the reference decode, and its place in decode order is compared
  * with the input that was last sent, which shows whether the firmware
  * outputs in decode order without delay.  The same is judged again by the
  * output's time stamp (its unit's decode index), which holds even for a
  * picture whose bytes differ; a picture whose luma alone matches points
- * at a chroma layout fault.  Everything is written to the kernel log, one
- * line per output and one summary per run.
+ * at a chroma layout fault, and a map of band and strip checksums shows
+ * where a picture differs.  Everything is written to the kernel log, one
+ * line per output and one summary per run; a few frames are kept as they
+ * came for /dev/mmal-probe (rpi4-mmal-dump.c).
  */
 
 #include "drivers/platform/rpi4/rpi4-mmal-probe.h"
+#include "drivers/platform/rpi4/rpi4-mmal-dump.h"
 #include "drivers/platform/rpi4/rpi4-mmal.h"
 #include "drivers/platform/rpi4/rpi4-h264.h"
 #include "drivers/platform/rpi4/rpi4-vchiq.h"
@@ -38,6 +43,13 @@
 
 /* How long the probe waits for VCHIQ to connect after boot. */
 #define PROBE_CONNECT_MS		15000U
+
+/*
+ * How long it waits after the connection before the first run, so that
+ * the display's and the 3D core's start (clocks, power domains, bridges)
+ * is over: in T1-626 a frame's bulk stopped while the 3D core started.
+ */
+#define PROBE_SETTLE_MS			30000U
 
 /* How long it waits for an output after each input, and at the end. */
 #define PROBE_OUTPUT_MS			100U
@@ -56,17 +68,61 @@
 #define PROBE_FNV_BASIS			0x811c9dc5U
 #define PROBE_FNV_PRIME			0x01000193U
 
+/* An NV12 frame's encoding. */
+#define PROBE_ENCODING_NV12		0x3231564eU
+
+/*
+ * A frame's map: the checksums of its bands (16 luma rows, 8 chroma rows)
+ * and strips (64 bytes across, luma then chroma), the most words of one,
+ * and the bytes of a strip.
+ */
+#define PROBE_MAP_WORDS			256U
+#define PROBE_STRIP_BYTES		64U
+
+/* The access unit delimiter run c appends to each unit: it ends the picture before the next unit comes. */
+static const uint8_t probe_delimiter[] = { 0x00, 0x00, 0x00, 0x01, 0x09, 0xf0 };
+
 /* One embedded stream and its reference. */
 struct probe_stream {
 	const char *name;
+	const char *file;
 	const uint8_t *data;
 	size_t bytes;
 	uint32_t width;
 	uint32_t height;
 	const uint32_t *display_sums;
 	const uint32_t *luma_sums;
+	const uint32_t *maps;
 	const uint8_t *decode_order;
 	unsigned frames;
+};
+
+/*
+ * How one run feeds the decoder: as encoded (a), with every SPS rewritten
+ * for no reordering (b), and the same with a delimiter after each unit
+ * (c); and how many of its frames go to the dump.
+ */
+struct probe_mode {
+	const char *name;
+	int rewrite;
+	int delimiter;
+	unsigned dumps;
+};
+
+/*
+ * The runs of each stream: the first four frames of 352's runs and of
+ * 1080's run b, and the first of 1080's others, go to the dump.
+ */
+#define PROBE_MODES			3U
+static const struct probe_mode probe_small_modes[PROBE_MODES] = {
+	{ "a", 0, 0, 4U },
+	{ "b", 1, 0, 4U },
+	{ "c", 1, 1, 4U }
+};
+static const struct probe_mode probe_large_modes[PROBE_MODES] = {
+	{ "a", 0, 0, 1U },
+	{ "b", 1, 0, 4U },
+	{ "c", 1, 1, 1U }
 };
 
 /*
@@ -89,12 +145,17 @@ struct probe_result {
 	unsigned pts_max_lag;
 	int pts_last_display;
 	int pts[PROBE_MAX_FRAMES];
+	unsigned dumps_left;
 	int error;
 };
 
 static void probe_main(void *argument);
-static void probe_run(const struct probe_stream *stream, int rewrite);
-static int send_unit(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, size_t start, size_t end, int rewrite, int64_t pts);
+static void probe_run(const struct probe_stream *stream, const struct probe_mode *mode);
+static int send_unit(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, size_t start, size_t end, const struct probe_mode *mode, int64_t pts);
+static void map_frame(const struct probe_stream *stream, const char *run, unsigned out, int reference, const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels);
+static unsigned frame_map(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, uint32_t *words);
+static uint32_t rows_sum(const uint8_t *plane, uint32_t pitch, uint32_t left, uint32_t width, uint32_t top, uint32_t rows);
+static void dump_frame(const struct probe_stream *stream, const char *run, unsigned out, int pts_display, int display, const char *match, uint32_t sum, const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels);
 static void collect(struct drv_rpi4_mmal_decoder *decoder, const struct probe_stream *stream, const char *run, unsigned sent, unsigned timeout_ms, struct probe_result *result);
 static uint32_t frame_sum(const struct drv_rpi4_mmal_frame *frame, const uint8_t *pixels, uint32_t *luma);
 static const char *order_name(unsigned outputs, unsigned in_decode_order, unsigned max_lag, unsigned in_display_order);
@@ -128,6 +189,7 @@ probe_main(
 {
 	struct probe_stream small;
 	struct probe_stream large;
+	unsigned index;
 	uint64_t deadline;
 	uint64_t now;
 	bool connected;
@@ -148,31 +210,44 @@ probe_main(
 		return;
 	}
 
+	/* Lets the display and the 3D core finish starting. */
+	kern_logf("rpi4-mmal-probe: connected; starting in %u ms\n", PROBE_SETTLE_MS);
+	deadline = sched_ticks() + kern_ms_to_ticks(PROBE_SETTLE_MS);
+	now = sched_ticks();
+	while (now < deadline) {
+		kern_usleep_range(100000U, 110000U);
+		now = sched_ticks();
+	}
+
 	/* The two streams. */
 	small.name = "352";
+	small.file = "pb-high-352-pyramid.h264";
 	small.data = probe_small_stream;
 	small.bytes = sizeof(probe_small_stream);
 	small.width = probe_small_width;
 	small.height = probe_small_height;
 	small.display_sums = probe_small_display_sums;
 	small.luma_sums = probe_small_luma_sums;
+	small.maps = probe_small_maps;
 	small.decode_order = probe_small_decode_order;
 	small.frames = sizeof(probe_small_decode_order);
 	large.name = "1080";
+	large.file = "pb-high-1080.h264";
 	large.data = probe_large_stream;
 	large.bytes = sizeof(probe_large_stream);
 	large.width = probe_large_width;
 	large.height = probe_large_height;
 	large.display_sums = probe_large_display_sums;
 	large.luma_sums = probe_large_luma_sums;
+	large.maps = probe_large_maps;
 	large.decode_order = probe_large_decode_order;
 	large.frames = sizeof(probe_large_decode_order);
 
-	/* The control and the rewritten stream of each. */
-	probe_run(&small, 0);
-	probe_run(&small, 1);
-	probe_run(&large, 0);
-	probe_run(&large, 1);
+	/* Each stream three ways. */
+	for (index = 0; index < PROBE_MODES; index++)
+		probe_run(&small, &probe_small_modes[index]);
+	for (index = 0; index < PROBE_MODES; index++)
+		probe_run(&large, &probe_large_modes[index]);
 	kern_logf("rpi4-mmal-probe: done\n");
 }
 
@@ -180,7 +255,7 @@ probe_main(
 static void
 probe_run(
 	const struct probe_stream *stream,
-	int rewrite)
+	const struct probe_mode *mode)
 {
 	struct drv_rpi4_mmal_decoder *decoder;
 	struct probe_result result;
@@ -193,13 +268,12 @@ probe_run(
 	unsigned index;
 	int error;
 
-	/* The run's name: a for the control, b for the rewritten stream. */
-	run = "a";
-	if (rewrite)
-		run = "b";
+	/* The run's name and dumps. */
+	run = mode->name;
 	kern_memset(&result, 0, sizeof(result));
 	result.last_display = -1;
 	result.pts_last_display = -1;
+	result.dumps_left = mode->dumps;
 
 	/* A decoder of the stream's size. */
 	error = drv_rpi4_mmal_decoder_create(stream->width, stream->height, PROBE_INPUT_BYTES, &decoder);
@@ -215,7 +289,7 @@ probe_run(
 		error = drv_rpi4_h264_access_unit(stream->data, stream->bytes, offset, &end);
 		if (error != 0)
 			break;
-		error = send_unit(decoder, stream, offset, end, rewrite, (int64_t)sent);
+		error = send_unit(decoder, stream, offset, end, mode, (int64_t)sent);
 		if (error != 0) {
 			kern_logf("rpi4-mmal-probe: %s run=%s input %u not sent (%d)\n", stream->name, run, sent, error);
 			result.error = error;
@@ -281,7 +355,7 @@ send_unit(
 	const struct probe_stream *stream,
 	size_t start,
 	size_t end,
-	int rewrite,
+	const struct probe_mode *mode,
 	int64_t pts)
 {
 	uint8_t *staging;
@@ -305,7 +379,7 @@ send_unit(
 		error = drv_rpi4_h264_next_nal(stream->data, end, cursor, &nal_start, &nal_end);
 		if (error != 0)
 			break;
-		if (rewrite && (stream->data[nal_start] & 0x1fU) == DRV_RPI4_H264_NAL_SPS) {
+		if (mode->rewrite && (stream->data[nal_start] & 0x1fU) == DRV_RPI4_H264_NAL_SPS) {
 			if (capacity - used < DRV_RPI4_H264_SPS_MAX)
 				return ENOSPC;
 			error = drv_rpi4_h264_sps_no_reorder(stream->data + nal_start, nal_end - nal_start,
@@ -324,6 +398,14 @@ send_unit(
 			used += 4U + (nal_end - nal_start);
 		}
 		cursor = nal_end;
+	}
+
+	/* Run c ends the unit with a delimiter. */
+	if (mode->delimiter) {
+		if (capacity - used < sizeof(probe_delimiter))
+			return ENOSPC;
+		kern_memcpy(staging + used, probe_delimiter, sizeof(probe_delimiter));
+		used += sizeof(probe_delimiter);
 	}
 
 	/* Sends the unit with its decode index as the time stamp. */
@@ -362,6 +444,7 @@ collect(
 	int decode;
 	int pts_display;
 	int pts_decode;
+	int reference;
 	const char *match;
 	int error;
 
@@ -466,6 +549,16 @@ collect(
 			  (unsigned)sum, (unsigned)luma, (unsigned)frame.flags, (unsigned)frame.length, (unsigned)frame.encoding,
 			  (unsigned)frame.width, (unsigned)frame.height, (unsigned)frame.crop_width, (unsigned)frame.crop_height,
 			  (unsigned)frame.plane_pitch[0], (unsigned)frame.plane_pitch[1], (unsigned)copy_us);
+
+		/* Where it differs from its reference (the matched picture, else its time stamp's), and the dump. */
+		reference = display;
+		if (reference < 0)
+			reference = pts_display;
+		map_frame(stream, run, result->outputs - 1U, reference, &frame, pixels);
+		if (result->dumps_left > 0) {
+			result->dumps_left--;
+			dump_frame(stream, run, result->outputs - 1U, pts_display, display, match, sum, &frame, pixels);
+		}
 	}
 }
 
@@ -541,6 +634,181 @@ frame_sum(
 
 	/* Succeeded: the checksum. */
 	return sum;
+}
+
+/*
+ * Logs where a frame differs from the reference picture's map: a '.' for
+ * each band and strip that matches, an 'x' for each that does not.
+ */
+static void
+map_frame(
+	const struct probe_stream *stream,
+	const char *run,
+	unsigned out,
+	int reference,
+	const struct drv_rpi4_mmal_frame *frame,
+	const uint8_t *pixels)
+{
+	uint32_t words[PROBE_MAP_WORDS];
+	char marks[PROBE_MAP_WORDS + 4U];
+	const uint32_t *expected;
+	unsigned count;
+	unsigned bands_y;
+	unsigned bands_c;
+	unsigned strips;
+	unsigned index;
+	unsigned at;
+
+	/* Only an NV12 frame of the stream's size with a known reference. */
+	if (reference < 0 || (unsigned)reference >= stream->frames || pixels == NULL)
+		return;
+	if (frame->encoding != PROBE_ENCODING_NV12 || frame->crop_width != stream->width || frame->crop_height != stream->height)
+		return;
+	count = frame_map(frame, pixels, words);
+	if (count == 0)
+		return;
+	expected = stream->maps + (size_t)reference * count;
+
+	/* The marks: luma bands, chroma bands, luma strips, chroma strips, with a space between. */
+	bands_y = (stream->height + 15U) / 16U;
+	bands_c = (stream->height / 2U + 7U) / 8U;
+	strips = (stream->width + PROBE_STRIP_BYTES - 1U) / PROBE_STRIP_BYTES;
+	at = 0;
+	for (index = 0; index < count; index++) {
+		if (index == bands_y || index == bands_y + bands_c || index == bands_y + bands_c + strips)
+			marks[at++] = ' ';
+		marks[at++] = words[index] == expected[index] ? '.' : 'x';
+	}
+	marks[at] = '\0';
+	kern_logf("rpi4-mmal-probe: %s run=%s out=%u map ref=%d Y|C|Ystrip|Cstrip %s\n", stream->name, run, out, reference, marks);
+}
+
+/*
+ * Computes a frame's map (see PROBE_MAP_WORDS) as make-probe-data.py does
+ * over the reference: each band's rows, then each strip's columns down
+ * every row.  Returns the number of words, zero if it does not fit.
+ */
+static unsigned
+frame_map(
+	const struct drv_rpi4_mmal_frame *frame,
+	const uint8_t *pixels,
+	uint32_t *words)
+{
+	const uint8_t *luma;
+	const uint8_t *chroma;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch_y;
+	uint32_t pitch_uv;
+	uint32_t top;
+	uint32_t left;
+	uint32_t rows;
+	uint32_t across;
+	unsigned count;
+
+	/* The planes, as frame_sum finds them. */
+	width = frame->crop_width;
+	height = frame->crop_height;
+	pitch_y = frame->plane_pitch[0];
+	pitch_uv = frame->plane_pitch[1];
+	luma = pixels + frame->plane_offset[0];
+	chroma = pixels + frame->plane_offset[1];
+	if (frame->planes < 2U || pitch_y == 0) {
+		pitch_y = frame->width;
+		pitch_uv = frame->width;
+		luma = pixels;
+		chroma = pixels + (size_t)frame->width * frame->height;
+	}
+	if ((height + 15U) / 16U + (height / 2U + 7U) / 8U + 2U * ((width + PROBE_STRIP_BYTES - 1U) / PROBE_STRIP_BYTES) > PROBE_MAP_WORDS)
+		return 0;
+
+	/* The bands. */
+	count = 0;
+	for (top = 0; top < height; top += 16U) {
+		rows = height - top < 16U ? height - top : 16U;
+		words[count++] = rows_sum(luma, pitch_y, 0, width, top, rows);
+	}
+	for (top = 0; top < height / 2U; top += 8U) {
+		rows = height / 2U - top < 8U ? height / 2U - top : 8U;
+		words[count++] = rows_sum(chroma, pitch_uv, 0, width, top, rows);
+	}
+
+	/* The strips. */
+	for (left = 0; left < width; left += PROBE_STRIP_BYTES) {
+		across = width - left < PROBE_STRIP_BYTES ? width - left : PROBE_STRIP_BYTES;
+		words[count++] = rows_sum(luma, pitch_y, left, across, 0, height);
+	}
+	for (left = 0; left < width; left += PROBE_STRIP_BYTES) {
+		across = width - left < PROBE_STRIP_BYTES ? width - left : PROBE_STRIP_BYTES;
+		words[count++] = rows_sum(chroma, pitch_uv, left, across, 0, height / 2U);
+	}
+
+	/* Succeeded: the map's words. */
+	return count;
+}
+
+/* Computes FNV-1a 32 over width bytes from column left of each of rows rows from row top. */
+static uint32_t
+rows_sum(
+	const uint8_t *plane,
+	uint32_t pitch,
+	uint32_t left,
+	uint32_t width,
+	uint32_t top,
+	uint32_t rows)
+{
+	const uint8_t *line;
+	uint32_t sum;
+	uint32_t row;
+	uint32_t column;
+
+	/* Row by row, left to right. */
+	sum = PROBE_FNV_BASIS;
+	for (row = 0; row < rows; row++) {
+		line = plane + (size_t)(top + row) * pitch + left;
+		for (column = 0; column < width; column++) {
+			sum ^= line[column];
+			sum *= PROBE_FNV_PRIME;
+		}
+	}
+
+	/* Succeeded: the checksum. */
+	return sum;
+}
+
+/*
+ * Keeps a frame's bytes, exactly as the decoder gave them, with a header
+ * that describes them, in /dev/mmal-probe (rpi4-mmal-dump.h).
+ */
+static void
+dump_frame(
+	const struct probe_stream *stream,
+	const char *run,
+	unsigned out,
+	int pts_display,
+	int display,
+	const char *match,
+	uint32_t sum,
+	const struct drv_rpi4_mmal_frame *frame,
+	const uint8_t *pixels)
+{
+	char header[DRV_RPI4_MMAL_DUMP_HEADER];
+	int error;
+
+	/* A frame that went straight to a target is not in the bounce memory. */
+	if (pixels == NULL)
+		return;
+	(void)kern_snprintf(header, sizeof(header),
+			    "zdump stream=%s file=%s run=%s out=%u pts=%lld pts_display=%d display=%d match=%s sum=%08x fmt=%08x width=%u height=%u crop_width=%u crop_height=%u planes=%u offset0=%u offset1=%u pitch0=%u pitch1=%u length=%u flags=%x",
+			    stream->name, stream->file, run, out, (long long)frame->pts, pts_display, display, match, (unsigned)sum,
+			    (unsigned)frame->encoding, (unsigned)frame->width, (unsigned)frame->height,
+			    (unsigned)frame->crop_width, (unsigned)frame->crop_height, (unsigned)frame->planes,
+			    (unsigned)frame->plane_offset[0], (unsigned)frame->plane_offset[1],
+			    (unsigned)frame->plane_pitch[0], (unsigned)frame->plane_pitch[1],
+			    (unsigned)frame->length, (unsigned)frame->flags);
+	error = drv_rpi4_mmal_dump_add(header, pixels, frame->length);
+	if (error != 0)
+		kern_logf("rpi4-mmal-probe: %s run=%s out=%u not dumped (%d)\n", stream->name, run, out, error);
 }
 
 /* Reports the monotonic time in microseconds. */

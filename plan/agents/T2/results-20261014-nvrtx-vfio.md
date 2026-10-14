@@ -21,3 +21,14 @@ phase004 の 3.2 節のとおり。ただし image は `if=virtio` では zedBSD
 - 後の状態: R2 の QEMU は止めた。host の GPU は WPR2 が残った状態（`power cycle needed`）。次の run の前に host の再起動が要る（未実施）。
 - host の ~/nvrtx/R0〜R4/hdd-image.img（約 2.2 GB ずつ）は置いたまま。
 - 所要: image の scp 約 1 分、run 3 回で約 12 分。
+
+## 追記: host 再起動後の R3（2026-10-14 夜、Q1 の続行指示）
+host を `sudo systemctl reboot` → 戻って `prepare.sh --check` が全部 ok（11 行、TU106 の 4 function が vfio-pci）。同じ command line で R3（`nvrtx.gsp=1 nvrtx.stop=P3`）。
+
+| run | 判定 | nvrtx の行 | PNG |
+| --- | --- | --- | --- |
+| R3 | FAIL（P2b） | P0 は R1 と同じ（`P0 ok vram 8192M wpr2 1f7800000+135M heap 105M`）、`P1a begin: devinit`、`P1a ok after 0 ms`、`P1b begin: FWSEC-FRTS at 1ffe00000`、`P1b ok: region 01ffe000-01ffee00`（warm reboot 後は `already set` が出ず、WPR2 は消えていた）、`P2a begin: booter_load`、`P2a ok: RISC-V running`、`P2b begin: waiting for init done`。**`P2b ok: GSP-RM is up` が出ない**（起動から約 5 分以上経っても `P2b ok`・`P2b fail` のどちらも出ない） | R3-boot.png、R3-dmesg.png、R3-dmesg2.png、R3-dmesg3.png |
+
+- guest は固まっていない: QMP `info registers` は RIP=ffffffff80373e26 CPL=0 HLT=1（idle）、login・dmesg の入力に応答する（kernel の symbol は未調査）。nvrtx の P2b の待ちだけが終わらない。
+- login 後に `poweroff` を打った（R3-poweroff.png に入力まで）。QEMU は自分で終了した。その後の P7 の行は画面が消えて撮れていない（`P7 ok` かは未確認）。次の run の前に host の再起動が要るかも未確認。
+- R4 は P2b が通らないので流していない（未実施）。QEMU は止まっている。解析はしていない。

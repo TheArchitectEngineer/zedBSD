@@ -383,31 +383,70 @@ def check_i386_and_retro() -> None:
         resolves(path, platform)
 
 
-def check_pc98_platform_drivers() -> None:
-    """WS232 (2026-10-14 user: "PC98のマウスとかSCSIとかすべてのドライバは、
-    DriversのPlatformに入れてください"): on the PC-9800, Drivers > Platform
-    holds every PC-98 driver, the always-built ones shown checked and kept
-    as they are, ahead of the shared rows, and GPU and Ethernet no longer
-    hold the PC-98's graphics and LGY-98; on the other CPUs the categories
-    are as they were."""
+def check_platform_drivers() -> None:
+    """WS232 p004 (2026-10-14 user: "WiFiとBluetoothのドライバですが、
+    プラットフォームによって選べるドライバが変わらない実装にしてください。
+    Platformドライバだけ変えます。また、PiのドライバはPlatformにまとめて
+    いいです。", "PiのGPUとPlatformドライバにSDも入れましょう。Piの
+    プラットフォームドライバはコンフィグですべて有効にしておいてください。"):
+    Drivers has Bluetooth right after WiFi; every category but Platform is
+    the same on every CPU; Platform holds the chosen board's drivers alone,
+    the always-built ones too (p003: every PC-98 driver), and choosing the
+    Raspberry Pi 4 turns its Platform drivers on but the experimental
+    VCHIQ and Vulkan Video."""
+    categories = ["Disk", "Input", "GPU", "Audio", "Ethernet", "WiFi",
+                  "Bluetooth", "USB", "Platform"]
+    platforms = ("amd64", "i386", "pc98", "rpi4", "sun4u", "x68k")
+    shared = None
+    for platform in platforms:
+        groups = menu.driver_groups(platform)
+        if [title for title, _rows in groups] != categories:
+            fail(f"the Drivers of {platform} are {[title for title, _rows in groups]}")
+        lists = [(title, [row[0] for row in rows]) for title, rows in groups
+                 if title != "Platform"]
+        if shared is None:
+            shared = lists
+        elif lists != shared:
+            fail(f"the Drivers of {platform} differ outside Platform: {lists}")
+        catalog = [row for path in menu.architecture_files()
+                   for row in menu.read_rows(path, 6)
+                   if row[3] != "*" and menu.applies(row[3], platform)]
+        if dict(groups)["Platform"] != catalog:
+            fail(f"the Platform of {platform} is {dict(groups)['Platform']}")
+    keys = {key for _title, listed in shared for key in listed}
+    if not {"CONFIG_DRIVER_PCI_INTEL_AX211", "CONFIG_DRIVER_USB_RTL8822BU"} <= \
+            set(dict(shared)["WiFi"]) or dict(shared)["Bluetooth"] != ["CONFIG_DRIVER_USB_BT"]:
+        fail(f"WiFi or Bluetooth lists {dict(shared)}")
+    if any(key.startswith("CONFIG_DRIVER_BCM2711_") or key in (
+            "CONFIG_DRIVER_GRAPHICS", "CONFIG_DRIVER_LGY98", "CONFIG_DRIVER_ACPI")
+           for key in keys):
+        fail(f"a board's driver is outside Platform: {shared}")
+    pi = [row[2] for row in dict(menu.driver_groups("rpi4"))["Platform"]]
+    for label in ("BCM2711 SDHCI controller", "BCM2711 GENET: Raspberry Pi 4 onboard Ethernet",
+                  "BCM43455 SDIO: Raspberry Pi 4 onboard WiFi",
+                  "BCM43455 Bluetooth: Raspberry Pi 4 onboard (PL011 UART)",
+                  "BCM2711 PWM audio: Raspberry Pi 4 headphone jack",
+                  "BCM2711 GPU: HVS display and V3D (experimental)"):
+        if label not in pi:
+            fail(f"the Raspberry Pi 4's Platform has no {label}: {pi}")
+
+    # The PC-9800 (p003): its drivers, a fixed one chosen, the LGY-98 toggled.
     fixed = [row[2] for row in menu.read_rows(
         menu.CONFIG_DIR / "drivers" / "architecture" / "pc98.drivers", 6)
         if row[1] == "fixed"]
     pc98 = [f"[*] {label}" for label in fixed] + [
         "[*] Cirrus Core Graph graphics", "[ ] LGY-98 Ethernet adapter"]
-    shared = ["[*] ACPI AML interpreter, events and Embedded Controller",
-              "[*] BCM2711 Bluetooth: Raspberry Pi 4 onboard (PL011 UART)"]
     if "PC-98 bus mouse" not in fixed:
         fail(f"pc98.drivers does not name the bus mouse: {fixed}")
     values = menu.defaults()
-    values["ZEDBSD_PLATFORM"] = "pc98"
-    menu.normalize(values)
-    values.update({"CONFIG_DRIVER_GRAPHICS": "y", "CONFIG_DRIVER_LGY98": "n",
-                   "CONFIG_DRIVER_ACPI": "y", "CONFIG_DRIVER_BCM2711_BT": "y"})
+    menu.choose_platform(values, "pc98")
+    values.update({"CONFIG_DRIVER_GRAPHICS": "y", "CONFIG_DRIVER_LGY98": "n"})
     shown = walk(menu.drivers_menu,
                  ["Platform", "[ ] LGY-98 Ethernet adapter", "[*] PC-98 bus mouse",
-                  "Back", "GPU", "Back", "Ethernet", "Back", "Back"], values)
-    if shown[1] != ("Platform", pc98 + shared + ["Back"]):
+                  "Back", "Back"], values)
+    if shown[0] != ("Drivers", categories + ["Back"]):
+        fail(f"Drivers shows {shown[0]}")
+    if shown[1] != ("Platform", pc98 + ["Back"]):
         fail(f"the PC-9800's Platform is {shown[1]}")
     if values["CONFIG_DRIVER_LGY98"] != "y":
         fail("Platform did not turn the LGY-98 on")
@@ -415,19 +454,24 @@ def check_pc98_platform_drivers() -> None:
         fail(f"choosing a fixed driver showed {shown[3]}")
     if "-" in values:
         fail("choosing a fixed driver set a value")
-    for title, index in (("GPU", 6), ("Ethernet", 8)):
-        if shown[index][0] != title or any(
-                "Cirrus" in label or "Framebuffer" in label or "LGY-98" in label
-                for label in shown[index][1]):
-            fail(f"the PC-9800's {title} still holds a Platform driver: {shown[index]}")
 
-    for platform in ("amd64", "i386", "rpi4", "sun4u", "x68k"):
-        groups = dict(menu.driver_groups(platform))
-        if [row[2] for row in groups["Platform"]] != [label[4:] for label in shared]:
-            fail(f"the Platform of {platform} changed: {groups['Platform']}")
-        if "CONFIG_DRIVER_GRAPHICS" not in {row[0] for row in groups["GPU"]} or \
-                "CONFIG_DRIVER_LGY98" not in {row[0] for row in groups["Ethernet"]}:
-            fail(f"GPU or Ethernet of {platform} changed")
+    # The Raspberry Pi 4 chosen from the x86_64 default, and its config.mk.
+    values = menu.defaults()
+    shown = walk(menu.select_cpu_board, ["CPU: x86_64", "arm64", "Back"], values)
+    if values["ZEDBSD_PLATFORM"] != "rpi4":
+        fail(f"choosing arm64 made {values['ZEDBSD_PLATFORM']}")
+    expected = {"CONFIG_DRIVER_BCM2711_GENET": "y", "CONFIG_DRIVER_BCM2711_WIFI": "y",
+                "CONFIG_DRIVER_BCM2711_BT": "y", "CONFIG_DRIVER_BCM2711_AUDIO": "y",
+                "CONFIG_DRIVER_BCM2711_GPU": "y", "CONFIG_DRIVER_BCM2711_VCHIQ": "n",
+                "CONFIG_DRIVER_BCM2711_VIDEO": "n", "CONFIG_DRIVER_USB_BT": "y"}
+    for key, value in expected.items():
+        if values.get(key) != value:
+            fail(f"the Raspberry Pi 4 chosen from x86_64 has {key}={values.get(key)}")
+    ci = menu.load(menu.REPO / "config" / "ci" / "config-rpi4.mk")
+    text = (menu.REPO / "config" / "ci" / "config-rpi4.mk").read_text(encoding="utf-8")
+    for key, value in expected.items():
+        if ci.get(key) != value or f"{key} := {value}" not in text:
+            fail(f"config/ci/config-rpi4.mk does not set {key} := {value}")
 
 
 def check_build_progress() -> None:
@@ -682,7 +726,7 @@ def main() -> None:
     check_fonts_menu()
     check_menu_layout()
     check_i386_and_retro()
-    check_pc98_platform_drivers()
+    check_platform_drivers()
     check_build_progress()
     check_firmware_licenses()
 
@@ -816,7 +860,7 @@ def main() -> None:
           "(6 targets, 3 amd64 Variants, obsolete capacity removed, "
           "package requirements resolved, the WS193 menu, "
           "i386 PC/AT and PC-9800 with Retro after Base and without the Desktop, "
-          "the PC-98 drivers under Platform)")
+          "the board drivers under Platform alone, Bluetooth after WiFi)")
 
 
 if __name__ == "__main__":

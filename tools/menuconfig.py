@@ -178,7 +178,7 @@ def all_option_files() -> list[Path]:
               CONFIG_DIR / "drivers" / "pci.drivers",
               CONFIG_DIR / "drivers" / "usb.drivers",
               CONFIG_DIR / "drivers" / "generic.drivers"]
-    result.extend(sorted((CONFIG_DIR / "drivers" / "architecture").glob("*.drivers")))
+    result.extend(architecture_files())
     return result
 
 
@@ -202,50 +202,63 @@ def driver_defaults(platform: str) -> dict[str, str]:
     return values
 
 
-def platform_driver_rows(key: str, platform: str) -> list[list[str]]:
-    """The rows a platform's entry in config/drivers/menu.list stands for:
-    "fixed" for the always-built drivers whose rows name the platform (not
-    those every platform builds), or one driver key with the label of the
-    row that names the platform."""
-    found = []
-    for path in all_option_files():
+def architecture_files() -> list[Path]:
+    return sorted((CONFIG_DIR / "drivers" / "architecture").glob("*.drivers"))
+
+
+def platform_driver_rows(platform: str) -> list[list[str]]:
+    """Drivers > Platform on a platform: the rows of the architecture
+    catalogs that name it, the always-built (fixed) ones too, in the
+    catalogs' order."""
+    rows = []
+    for path in architecture_files():
         for row in read_rows(path, 6):
-            if row[3] == "*" or not applies(row[3], platform):
-                continue
-            if key == "fixed" and row[1] == "fixed":
-                found.append(row)
-            elif row[0] == key and row[1] == "bool":
-                return [row]
-    if not found:
-        raise SystemExit(f"config/drivers/menu.list: {platform} has no driver {key}")
-    return found
+            if row[3] != "*" and applies(row[3], platform) and \
+                    (row[1] == "fixed" or row[0].startswith("CONFIG_DRIVER_")):
+                rows.append(row)
+    return rows
+
+
+def choose_platform(values: dict[str, object], platform: str) -> None:
+    """Makes the menu's target this platform.  Its Platform drivers take
+    their catalog defaults: the menu shows them on this platform alone, so
+    a value held from another CPU was never chosen for this board (a
+    Raspberry Pi 4 chosen from the x86_64 default used to keep its onboard
+    Ethernet, Wi-Fi, Bluetooth, audio and GPU off)."""
+    if values.get("ZEDBSD_PLATFORM") != platform:
+        for row in platform_driver_rows(platform):
+            if row[1] == "bool":
+                values[row[0]] = row[4]
+    values["ZEDBSD_PLATFORM"] = platform
+    normalize(values)
 
 
 def driver_groups(platform: str) -> list[tuple[str, list[list[str]]]]:
     """The functional categories on a platform, each containing its driver
-    rows.  The shared rows of config/drivers/menu.list place every
-    configurable driver whatever the CPU; the platform's own rows move its
-    drivers, the fixed ones too, into a category ahead of the shared rows
-    there and out of the shared category they were in."""
-    groups: dict[str, list[list[str]]] = {}
-    assigned = {}
-    moved = set()
-    for title, targets, keys in read_rows(CONFIG_DIR / "drivers" / "menu.list", 3):
-        groups.setdefault(title, [])
-        if targets != "*" and not applies(targets, platform):
-            continue
+    rows.  config/drivers/menu.list places every bus driver, the same on
+    every CPU; Platform holds the architecture catalogs' drivers of this
+    platform alone (2026-10-14 user, WS232 p004)."""
+    board = {row[0] for path in architecture_files()
+             for row in read_rows(path, 6) if row[0] != "-"}
+    catalog = {row[0]: row for row in driver_rows()}
+    groups: list[tuple[str, list[list[str]]]] = []
+    assigned = set()
+    for title, keys in read_rows(CONFIG_DIR / "drivers" / "menu.list", 2):
+        rows = []
         for key in keys.split():
-            if key in (assigned if targets == "*" else moved):
-                raise SystemExit(f"driver {key} is assigned to more than one category")
-            if targets == "*":
-                assigned[key] = title
-                continue
-            moved.add(key)
-            groups[title].extend(platform_driver_rows(key, platform))
-    for row in driver_rows():
-        if row[0] not in moved:
-            groups.setdefault(assigned.get(row[0], "Platform"), []).append(row)
-    return [(title, rows) for title, rows in groups.items() if rows]
+            if key in board:
+                raise SystemExit(f"config/drivers/menu.list: {key} is a Platform driver")
+            if key in assigned or key not in catalog:
+                raise SystemExit(f"config/drivers/menu.list: {key} is unknown or listed twice")
+            assigned.add(key)
+            rows.append(catalog[key])
+        if title == "Platform":
+            rows.extend(platform_driver_rows(platform))
+        groups.append((title, rows))
+    missing = sorted(set(catalog) - board - assigned)
+    if missing:
+        raise SystemExit(f"config/drivers/menu.list: no category for {' '.join(missing)}")
+    return [(title, rows) for title, rows in groups if rows]
 
 
 def defaults() -> dict[str, object]:
@@ -637,7 +650,7 @@ def driver_options(screen, values: dict[str, object], rows: list[list[str]],
 
 
 def drivers_menu(screen, values: dict[str, object]) -> None:
-    """Drivers: Disk, Input, GPU, Audio, Ethernet, WiFi, USB and Platform."""
+    """Drivers: Disk, Input, GPU, Audio, Ethernet, WiFi, Bluetooth, USB and Platform."""
     groups = driver_groups(str(values["ZEDBSD_PLATFORM"]))
     selected = 0
     while True:
@@ -678,9 +691,8 @@ def select_cpu_board(screen, values: dict[str, object]) -> None:
                            next((i for i, item in enumerate(cpus)
                                  if current and item[0] == current[0]), 0))
             if index is not None and not (current and current[0] == cpus[index][0]):
-                values["ZEDBSD_PLATFORM"] = next(
-                    item[2] for item in MENU_CPUS if item[0] == cpus[index][0])
-                normalize(values)
+                choose_platform(values, next(
+                    item[2] for item in MENU_CPUS if item[0] == cpus[index][0]))
             continue
         boards = [item for item in MENU_CPUS
                   if current is not None and item[0] == current[0]]
@@ -692,8 +704,7 @@ def select_cpu_board(screen, values: dict[str, object]) -> None:
         index = choose(screen, "Board", [item[3] for item in boards],
                        target_label(values), boards.index(current))
         if index is not None:
-            values["ZEDBSD_PLATFORM"] = boards[index][2]
-            normalize(values)
+            choose_platform(values, boards[index][2])
 
 
 def boot_options(screen, values: dict[str, object]) -> None:
