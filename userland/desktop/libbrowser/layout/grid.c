@@ -706,7 +706,7 @@ grid_vertical_auto(
 	return 0;
 }
 
-/* Lays out the bounded vertical-lr fixed-track case in physical x/y axes. */
+/* Lays out bounded fixed vertical tracks in physical x/y axes. */
 static int
 grid_vertical_fixed(
 	struct layout_tree *tree,
@@ -730,7 +730,8 @@ grid_vertical_fixed(
 
 	/* Other writing modes and Grid forms retain their existing layout path. */
 	*handled = 0;
-	if (box->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	if ((box->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+	    box->style.writing_mode != CSS_WRITING_VERTICAL_RL) ||
 	    box->style.direction != CSS_DIRECTION_LTR ||
 	    box->style.display != CSS_DISPLAY_INLINE_GRID ||
 	    box->style.height.unit != CSS_UNIT_AUTO ||
@@ -762,7 +763,7 @@ grid_vertical_fixed(
 	/* Out-of-flow or separately sized children still use the established path. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->out_of_flow || child->replaced ||
-		    (child->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+		    (child->style.writing_mode != box->style.writing_mode &&
 		    child->style.writing_mode != CSS_WRITING_HORIZONTAL_TB) ||
 		    child->style.width.unit != CSS_UNIT_AUTO ||
 		    child->style.height.unit != CSS_UNIT_AUTO)
@@ -813,7 +814,7 @@ grid_vertical_fixed(
 		}
 	}
 
-	/* Columns advance downwards, while rows advance rightwards. */
+	/* Columns advance downwards; rows advance in the writing mode's block direction. */
 	columns[0] = 0;
 	for (column = 0; column < grid.column_count; column++)
 		columns[column + 1] = columns[column] + layout_from_px(box->style.columns[column].size.value);
@@ -850,7 +851,14 @@ grid_vertical_fixed(
 			grid_release(&grid);
 			return error;
 		}
-		child->x = rows[placed->row] + child->margin[CSS_LEFT];
+		if (box->style.writing_mode == CSS_WRITING_VERTICAL_RL) {
+			/* The row's block-start edge is on the physical right. */
+			child->x = box->width - rows[placed->row] - child->margin[CSS_RIGHT] -
+			    child->border[CSS_LEFT] - child->padding[CSS_LEFT] - child->width -
+			    child->padding[CSS_RIGHT] - child->border[CSS_RIGHT];
+		} else {
+			child->x = rows[placed->row] + child->margin[CSS_LEFT];
+		}
 		child->y = columns[placed->column] + child->margin[CSS_TOP];
 	}
 

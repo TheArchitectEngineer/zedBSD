@@ -131,12 +131,17 @@ layout_inline(
 	/* Bounded text-only vertical blocks map logical lines to physical axes. */
 	vertical = (box->style.writing_mode == CSS_WRITING_VERTICAL_LR ||
 	    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
-	    box->style.width.unit == CSS_UNIT_PX &&
+	    ((box->style.width.unit == CSS_UNIT_PX &&
 	    box->style.height.unit == CSS_UNIT_PX &&
 	    box->style.box_sizing == CSS_BOX_SIZING_CONTENT &&
 	    (box->parent == NULL ||
 	    (box->parent->style.display != CSS_DISPLAY_GRID &&
-	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID)))) &&
+	    box->parent->style.display != CSS_DISPLAY_INLINE_GRID))) ||
+	    (box->parent != NULL &&
+	    box->parent->style.display == CSS_DISPLAY_INLINE_GRID &&
+	    box->parent->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+	    box->parent->style.column_count != 0 &&
+	    box->parent->style.row_count != 0)))) &&
 	    box->style.direction == CSS_DIRECTION_LTR &&
 	    (box->style.text_align == CSS_TEXT_ALIGN_START || box->style.text_align == CSS_TEXT_ALIGN_LEFT) &&
 	    inline_vertical_simple(box, 0, box->style.writing_mode);
@@ -274,7 +279,8 @@ inline_vertical_room(
 	/* A fixed vertical Grid's shortest column bounds every simple item. */
 	parent = box->parent;
 	if (parent == NULL || parent->style.display != CSS_DISPLAY_INLINE_GRID ||
-	    parent->style.writing_mode != CSS_WRITING_VERTICAL_LR ||
+	    (parent->style.writing_mode != CSS_WRITING_VERTICAL_LR &&
+	    parent->style.writing_mode != CSS_WRITING_VERTICAL_RL) ||
 	    parent->style.direction != CSS_DIRECTION_LTR ||
 	    parent->style.column_count == 0 || parent->style.column_gap.value != 0)
 		return 0;

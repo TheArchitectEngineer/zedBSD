@@ -1,0 +1,9 @@
+# q1158-i01 — bounded fixed vertical-rl Grid tracks
+
+The bounded inline-grid path for definite pixel column/row tracks now maps vertical-rl/LTR rows from the physical right edge. A start-aligned child's border box is placed at that row's right edge after the right margin; a stretched item fills its row as before. The bounded vertical inline room accepts fixed vertical-rl Grid columns, reusing q1157's right-start line geometry and clockwise sideways paint. This path still requires explicit px tracks, gap0, span1, in-flow non-replaced auto-size children, and start/stretch alignment. Implicit auto tracks retain the existing path.
+
+The independent [2×2 page](vertical-rl-fixed-grid.html) has empty and single-text grids with borders. [All eight item rectangles and both grid sizes](summary.json) agree exactly with Chromium 153. Fixed Interop 2025 [vertical-rl stretch001](wpt-001.json)–[008](wpt-008.json) changed whole FAIL→PASS, including vertical and horizontal children with margins, border and padding. Fixed vertical-lr stretch001–016 and two older vertical/horizontal Grid cases remain **18/18 whole PASS**. Inputs: WPT `2d66b9b7998bb58c336138c178323ddee857b586`, fixed manifest, localhost HTTP, three fixed fonts, 5 s settle, 20 s process bound.
+
+[Warning-free build](build.log), host CSS rule model 51/51, JS 14/14 and Grid inline-axis 48/48 PASS. [Acid callback report](acid-report.json): Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 different pixels, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1158-i01 partial scope cleared. p225 whole still needs implicit auto vertical-rl tracks and other Grid forms; p189/p173 all-focus100% remain unmet. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.
