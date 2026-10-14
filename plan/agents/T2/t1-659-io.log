@@ -1,0 +1,7 @@
+---out
+ZBROWSER MAIL listen error=0
+ZBROWSER READY width=1024 height=600 document=292
+ZBROWSER NAVIGATE path=/home/kei/t1-659.html title=/home/kei/t1-659.html
+ZBROWSER TITLEBAR back=0 forward=0 path=/home/kei/t1-659.html
+ZBROWSER FRAME scroll=0 width=1024 height=600
+---err

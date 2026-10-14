@@ -1,0 +1,8 @@
+VULKAN decoder failed status=21 sequence=22422
+VULKAN reply failed result=-4 sequence=22422 device lost
+browser: cannot draw on the GPU: vkCreateRenderPass failed (-4)
+gpu rc=1
+cpu rc=0
+-rw-r--r-- 1 kei kei 768015 Jan  1 00:27 t1-659-cpu.ppm
+cmp: t1-659-gpu.ppm: No such file or directory
+1738402236 768015 t1-659-cpu.ppm

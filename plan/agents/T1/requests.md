@@ -733,3 +733,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-656 | Q1（WS037 R7d の再試験、SPH の直し a21d20de0、rombar=0） | phase007 の 7 節 | **PASS**（2026-10-15、main 63d0532b0、3 draw とも 65536 pixels right。[results](results-20261015-t1-656.md)） |
 | T1-658 | Q1（WS037 R9w、常駐の描画 channel、main 9fd744da8 以降） | phase007 の 8.3 | **PASS**（2026-10-15、main fc00e79e7、`P9w ok: fence 1 after 610 us`、work frees failed 無し。[results](results-20261015-t1-658.md)） |
 | T1-657 | BUG-318 の直し（rpi4-audio の PWM clock 分周）の Pi 4 実機の確かめ | **PASS**（T2、2026-10-15、結果 plan/agents/T2/results-20261015-t1-657.md） |
+| T1-659 | B1 ws074-p238（BUG-320 (3)、Pi 4 で browser の GPU 描画） | **FAIL**（T2、2026-10-15、`--render-gpu` が `vkCreateRenderPass failed (-4)`、旧 lib も同じ。windowed は 2 つの error 無しだが GPU 描画の確証なし。結果 plan/agents/T2/results-20261015-t1-659.md） |
