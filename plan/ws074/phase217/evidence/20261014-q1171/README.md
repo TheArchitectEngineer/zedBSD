@@ -1,0 +1,9 @@
+# q1171-i01 — opposite vertical writing-mode absolute self alignment
+
+CSS parsing now retains `align-self:self-start/end` rather than collapsing the value to `start/end` before Grid can compare the child's writing mode. Existing in-flow Grid and Flex paths explicitly map these two values to their prior start/end behavior. Computed `align-self` exposes the retained values: the [fixture](align-self-computed.html) reports [`self-start` and `self-end`](align-self-computed.txt). In the bounded positioned LTR fixed 2×2 vertical-lr/rl inline-grid static area, a direct absolute child using the opposite vertical writing mode now aligns its block self-start/end with its own physical right/left edge after width is known.
+
+Fixed [column-axis010](wpt-column-010.json) and [011](wpt-column-011.json) changed **2/2 whole FAIL→PASS**. Fixed [column-axis001–011](wpt-column-001.json) and [row-axis001–011](wpt-row-001.json) are **22/22 whole PASS**, 88/88 callbacks. The full 22 ran after the layout/parser change; four target/RTL controls reran after the final CSSOM serialization correction. Fixed WPT commit `2d66b9b7998bb58c336138c178323ddee857b586`, q1012 manifest, localhost HTTP, fixed fonts, 5 s settle, 20 s process bound.
+
+[Warning-free build](build.log), host CSS rule model 51/51, CSSOM 12/12, JS 14/14, Grid inline-axis 48/48 and Flex negative justify 5/5 PASS. [Acid report](acid-report.json) after the final source edit: Acid3 score100/inventory100/100 and 0/480,000 different pixels; Acid2 1,865/120,000 differences, unchanged. `git diff --check` PASS; `clang-format` unavailable.
+
+q1171-i01 partial scope cleared. Positioned auto Grid lines, RTL parent, baseline and other Grid families remain. Visual RTL glyph order also needs separate verification. p217/p189/p173 all-focus100% remain unmet. WPT, runner, public ABI and Master unchanged; shared projection/GitHub publication pending with Q1, no push.

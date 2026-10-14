@@ -2,6 +2,14 @@
 
 # ws074-p217: Interop 2025 Grid alignment failures
 
+## q1171-i01 有限部分範囲（2026-10-14 12:52 JST）
+
+このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:22 JSTまで）に適用。CSS align-self:self-start/endの宣言値を保持し、従来Grid/Flex in-flow同writing-mode経路では旧start/end動作を保つ。q1168固定2×2 vertical-lr/rl LTR positioned inline-grid、明示px tracks/gap0、直接absolute auto-size ASCII子、子は逆vertical writing-mode/LTR・両axis明示span1・全offset autoに限り、子自身のblock-start/endを物理x static areaへ写す。固定column-axis010/011 whole PASS、旧column001–009・row001–011、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。auto lines/RTL親/他Grid、WPT/runner/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。
+
+## q1171-i01 結果（2026-10-14 12:56 JST）
+
+Event ws074-p217-q1171-partial-clear-20261014: [証拠](evidence/20261014-q1171/README.md)。CSS align-self:self-start/endの区別を保ち、従来in-flow Grid/Flexには旧start/endを明示写像。固定逆writing-mode縦Grid absolute子のself edgeを物理xへ写し、column010/011 whole FAIL→PASS。column/row001–011の22件88 callbacks PASS、computed self値・host CSS51/CSSOM12/JS14/Grid48/Flex5、warning0 build、Acid3差0/Acid2差1865。q1171部分cleared、p217/p189/p173 whole未達。共有投影/GitHub publication保留。
+
 ## q1170-i01 有限部分範囲（2026-10-14 12:49 JST）
 
 このchatの全3,805件100%までの有限Queue事前承認を最大90分（14:19 JSTまで）に適用。q1169固定2×2 vertical-lr/rl LTR positioned inline-grid、明示px tracks/gap0、直接absolute auto-size ASCII子、同writing-mode・子direction:rtl・両axis明示span1・全offset autoに限り、justify-self:self-start/endの物理縦開始/終了を反転する。固定row-axis010/011 whole PASS、旧row001–009代表、host CSS/JS/Grid、warning0 build、Acid3差0/Acid2非増加を確認。逆writing-mode/auto lines/他Grid、WPT/runner/公開ABI/`plan/master.md`変更なし。未達ならuncleared。p217/p189/p173 whole基準外。[Guardrail](../../guardrail.md)、[C全文](../../coding-style.md)、[browser component全文](../../standards/browser-component.md)適用。

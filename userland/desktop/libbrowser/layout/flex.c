@@ -1244,6 +1244,10 @@ flex_align_of(
 	align = item->style.align_self;
 	if (align == CSS_ALIGN_AUTO)
 		align = box->style.align_items;
+	if (align == CSS_ALIGN_SELF_START)
+		align = CSS_ALIGN_START;
+	if (align == CSS_ALIGN_SELF_END)
+		align = CSS_ALIGN_END;
 	if (align == CSS_ALIGN_NORMAL)
 		align = CSS_ALIGN_STRETCH;
 

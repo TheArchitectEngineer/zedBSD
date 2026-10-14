@@ -99,6 +99,17 @@ static int grid_fixed_column_baseline(const struct layout_box *box, const struct
 static layout_unit grid_track_length(const struct css_length *length, layout_unit whole, int measuring);
 static void grid_release(struct grid_state *grid);
 
+/* Existing in-flow Grid paths use their logical start and end positions. */
+static int
+grid_in_flow_align(int align)
+{
+	if (align == CSS_ALIGN_SELF_START)
+		return CSS_ALIGN_START;
+	if (align == CSS_ALIGN_SELF_END)
+		return CSS_ALIGN_END;
+	return align;
+}
+
 /*
  * Lays out the content of a grid container: its in-flow children as grid
  * items in their areas; sets their positions (their border boxes relative
@@ -301,7 +312,7 @@ layout_grid(
 		for (position = item->row; position < item->row + item->row_span; position++)
 			area_height += grid.rows[position];
 		/* The item's alignment: its align-self, or the container's align-items. */
-		align = child->style.align_self;
+		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
@@ -571,7 +582,7 @@ grid_vertical_auto(
 
 		/* The bounded painter and placement handle only start and stretch. */
 		child = placed->box;
-		align = child->style.align_self;
+		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
@@ -664,7 +675,7 @@ grid_vertical_auto(
 		child = placed->box;
 		area_width = rows[placed->row];
 		area_height = columns[placed->column];
-		align = child->style.align_self;
+		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
@@ -807,7 +818,7 @@ grid_vertical_fixed(
 			return 0;
 		}
 		child = placed->box;
-		align = child->style.align_self;
+		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
@@ -841,7 +852,7 @@ grid_vertical_fixed(
 		child = placed->box;
 		area_width = rows[placed->row + 1] - rows[placed->row];
 		area_height = columns[placed->column + 1] - columns[placed->column];
-		align = child->style.align_self;
+		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (align == CSS_ALIGN_NORMAL)
@@ -1018,9 +1029,15 @@ grid_static_vertical_start(
 	/* Absolute children keep their sizing and are positioned after Grid layout. */
 	for (child = box->first_child; child != NULL; child = child->next) {
 		if (child->style.position != CSS_POSITION_ABSOLUTE ||
-		    child->style.writing_mode != box->style.writing_mode ||
 		    child->style.width.unit != CSS_UNIT_AUTO ||
 		    child->style.height.unit != CSS_UNIT_AUTO)
+			continue;
+		if (child->style.writing_mode != box->style.writing_mode &&
+		    !(((box->style.writing_mode == CSS_WRITING_VERTICAL_LR &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_RL) ||
+		    (box->style.writing_mode == CSS_WRITING_VERTICAL_RL &&
+		    child->style.writing_mode == CSS_WRITING_VERTICAL_LR)) &&
+		    child->style.direction == CSS_DIRECTION_LTR))
 			continue;
 		for (index = 0; index < 4; index++) {
 			if (child->style.offset[index].unit != CSS_UNIT_AUTO)
@@ -1046,7 +1063,8 @@ grid_static_vertical_start(
 			justify = CSS_ALIGN_START;
 		if ((align != CSS_ALIGN_START && align != CSS_ALIGN_END &&
 		    align != CSS_ALIGN_CENTER && align != CSS_ALIGN_LEFT &&
-		    align != CSS_ALIGN_RIGHT) ||
+		    align != CSS_ALIGN_RIGHT && align != CSS_ALIGN_SELF_START &&
+		    align != CSS_ALIGN_SELF_END) ||
 		    (justify != CSS_ALIGN_START && justify != CSS_ALIGN_END &&
 		    justify != CSS_ALIGN_CENTER && justify != CSS_ALIGN_LEFT &&
 		    justify != CSS_ALIGN_RIGHT && justify != CSS_ALIGN_SELF_START &&
@@ -1063,11 +1081,18 @@ grid_static_vertical_start(
 			child->static_x = x;
 		}
 		child->static_y = y;
-		child->static_x_align = align;
+		if (align == CSS_ALIGN_SELF_START)
+			child->static_x_align = child->style.writing_mode ==
+			    CSS_WRITING_VERTICAL_RL ? CSS_ALIGN_RIGHT : CSS_ALIGN_LEFT;
+		else if (align == CSS_ALIGN_SELF_END)
+			child->static_x_align = child->style.writing_mode ==
+			    CSS_WRITING_VERTICAL_RL ? CSS_ALIGN_LEFT : CSS_ALIGN_RIGHT;
+		else
+			child->static_x_align = align;
 		child->static_x_area_width = layout_from_px(box->style.rows[row].size.value);
 		child->static_x_align_from_right =
-		    align == CSS_ALIGN_RIGHT ||
-		    (align == CSS_ALIGN_END &&
+		    child->static_x_align == CSS_ALIGN_RIGHT ||
+		    (child->static_x_align == CSS_ALIGN_END &&
 		    box->style.writing_mode == CSS_WRITING_VERTICAL_LR);
 		child->static_y_align =
 		    (child->style.direction == CSS_DIRECTION_RTL &&
@@ -1238,7 +1263,7 @@ grid_static_position(
 			if (child->static_x_area_width < 0)
 				child->static_x_area_width = 0;
 		}
-		align = child->style.align_self;
+		align = grid_in_flow_align(child->style.align_self);
 		if (align == CSS_ALIGN_AUTO)
 			align = box->style.align_items;
 		if (child->style.writing_mode == CSS_WRITING_HORIZONTAL_TB &&
@@ -2065,7 +2090,7 @@ grid_fixed_row_baseline(
 		return 0;
 
 	/* Only members with a baseline preference join the row's group. */
-	align = child->style.align_self;
+	align = grid_in_flow_align(child->style.align_self);
 	if (align == CSS_ALIGN_AUTO)
 		align = box->style.align_items;
 	if (align != CSS_ALIGN_BASELINE)

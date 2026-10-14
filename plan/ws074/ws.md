@@ -9,9 +9,11 @@ Related Milestones: MG002
 Objectives: O1, O2
 Parent: [Master](../master.md)
 Owner: Q1（プロジェクト全体）。この Codex セッションがユーザーの指示で WS074 の Queue を単独管理し、WPT 2025 に進む。`master.md` は変更しない。
-Queue: [q1170](queue.md) finished / p217 RTL vertical Grid absolute self alignment。2026-10-14 12:50 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
+Queue: [q1171](queue.md) finished / p217 opposite vertical writing-mode absolute self alignment。2026-10-14 12:56 JST。ユーザーは目標達成までの後続有限Queueも事前承認。
 Resume point: Interop 2025 固定3,805 unique ID・19領域。最新の同条件全件測定はtestharness対象1,455の223 PASS/1,232 nonPASS（q1068）、静的reftest1,561の662 PASS/899 pixel FAIL（q1062）、crashtest48 PASS。残るtestharness328とscripted reftest407/variant6はrunner未対応。Grid502最新の全測定はq1160の158 PASS/344 FAIL、q1154比16 whole/16 subtest改善、旧PASS後退0。行track animation旧PASSは偽陽性と判明し一般animation機構不足。Acid3 score100/inventory100/画素差0/480000、Acid2差1865/120000。p189/p190 runner coverage、p173全3,805件100%とp100 wholeは未達。
 <!-- awesome-plan-current:end -->
+
+Event ws074-p217-q1171-partial-clear-20261014: [p217](phase217/phase.md) q1171-i01でCSS align-self:self-start/endを保持し、逆writing-mode縦Grid absolute子の物理端へ写す。[証拠](phase217/evidence/20261014-q1171/README.md)。column010/011 whole FAIL→PASS、column/row001–011の22件88 callbacks PASS。computed値・host・warning0 build・Acid3差0維持。p217/p189/p173 whole未達、共有投影/GitHub publication保留。
 
 Event ws074-p217-q1170-partial-clear-20261014: [p217](phase217/phase.md) q1170-i01でRTL子のjustify-self:self-start/endを物理縦端へ反転。[証拠](phase217/evidence/20261014-q1170/README.md)。row010/011 whole FAIL→PASS、row001–011の11件44 callbacks PASS。host・warning0 build・Acid3差0維持。column010/011 static areaとRTL字形視覚、p217/p189/p173 whole未達。共有投影/GitHub publication保留。
 

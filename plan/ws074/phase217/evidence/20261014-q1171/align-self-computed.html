@@ -1,0 +1,10 @@
+<!doctype html>
+<style>
+#first { align-self: self-start; }
+#last { align-self: self-end; }
+</style>
+<div id="first"></div><div id="last"></div>
+<script>
+console.log("first=" + getComputedStyle(document.getElementById("first")).alignSelf);
+console.log("last=" + getComputedStyle(document.getElementById("last")).alignSelf);
+</script>

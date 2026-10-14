@@ -1900,8 +1900,7 @@ values_single(
 			return EINVAL;
 		if (property == CSS_PROP_JUSTIFY_CONTENT ||
 		    property == CSS_PROP_ALIGN_ITEMS ||
-		    property == CSS_PROP_ALIGN_CONTENT ||
-		    property == CSS_PROP_ALIGN_SELF) {
+		    property == CSS_PROP_ALIGN_CONTENT) {
 			if (keyword == CSS_ALIGN_SELF_START)
 				keyword = CSS_ALIGN_START;
 			if (keyword == CSS_ALIGN_SELF_END)

@@ -969,7 +969,12 @@ computed_write_keyword(
 		error = computed_name(computed_aligns, 9, style->align_items, out);
 		break;
 	case COMPUTED_ALIGN_SELF:
-		error = computed_name(computed_aligns, 9, style->align_self, out);
+		if (style->align_self == CSS_ALIGN_SELF_START)
+			error = computed_ascii("self-start", out);
+		else if (style->align_self == CSS_ALIGN_SELF_END)
+			error = computed_ascii("self-end", out);
+		else
+			error = computed_name(computed_aligns, 9, style->align_self, out);
 		break;
 	case COMPUTED_JUSTIFY_SELF:
 		error = computed_name(computed_justifies, 13, style->justify_self, out);
