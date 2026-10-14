@@ -254,6 +254,8 @@ probe_plane(
 		for (x = 0; x < width * texel_bytes; x++)
 			input[y * pitch + x] = probe_plane_byte(x / texel_bytes, y, x % texel_bytes);
 	}
+
+	/* Fills the output, so a texel the unit did not write cannot match. */
 	kern_memset(output, PROBE_FILL, output_bytes + PROBE_GUARD);
 
 	/* The texture type of the texel size. */
@@ -284,6 +286,8 @@ probe_plane(
 		kern_logf("v3d: tfu-probe plane bpp=%u %ux%u error %d\n", texel_bytes, width, height, error);
 		return probe_recover(engine);
 	}
+
+	/* Makes the unit's output visible to the CPU. */
 	kern_dcache_invalidate_range(output, output_bytes + PROBE_GUARD);
 	kern_io_read_barrier();
 
@@ -314,6 +318,8 @@ probe_plane(
 						first_got = output[offset + channel];
 						first_want = wanted;
 					}
+
+					/* Counts every differing byte. */
 					mismatches++;
 				}
 			}
@@ -326,6 +332,8 @@ probe_plane(
 		finished = 0;
 		frequency = 1;
 	}
+
+	/* One line holds the shape, the time, the mismatch count and the first difference. */
 	kern_logf(
 		"v3d: tfu-probe plane bpp=%u %ux%u pitch=%u us=%llu mismatches=%u first=%u,%u got=%02x want=%02x overrun=%u\n",
 		texel_bytes,
@@ -386,6 +394,8 @@ probe_yuv(
 		job.command.tfu.u_plane = area->input_address + PROBE_CHROMA_OFFSET;
 		job.command.tfu.u_plane_bytes = chroma_bytes;
 	}
+
+	/* RGBA8 strict UIF output from the trial's input format. */
 	job.command.tfu.output = area->output_address;
 	job.command.tfu.output_bytes = output_bytes;
 	job.command.tfu.output_format = PROBE_OUTPUT_UIF;
@@ -408,6 +418,8 @@ probe_yuv(
 			error);
 		return probe_recover(engine);
 	}
+
+	/* Makes the unit's output visible to the CPU. */
 	kern_dcache_invalidate_range(area->output, output_bytes + PROBE_GUARD);
 	kern_io_read_barrier();
 
@@ -526,6 +538,8 @@ probe_yuv_judge(
 					if (difference > PROBE_TOLERANCE || difference < -PROBE_TOLERANCE)
 						close = false;
 				}
+
+				/* Counts a region all of whose channels are close. */
 				if (close)
 					matches[matrix][order]++;
 			}
@@ -555,6 +569,8 @@ probe_yuv_judge(
 			kern_logf("v3d: tfu-probe yuv format=%u chroma=%u MATCH %s bgra\n", trial->format, (unsigned)trial->chroma, probe_matrix_names[matrix]);
 		}
 	}
+
+	/* The counts of every matrix and order, which show a near miss too. */
 	kern_logf(
 		"v3d: tfu-probe yuv format=%u chroma=%u matches 601=%u/%u 709=%u/%u full=%u/%u\n",
 		trial->format,
