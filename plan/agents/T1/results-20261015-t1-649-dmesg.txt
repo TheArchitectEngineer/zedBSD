@@ -1,0 +1,74 @@
+input: /dev/input/event0: 2.4G Wireless Receiver
+usb-hid: event device usb0 device=2 interface=0 endpoint=81 report-bytes=8
+usb0: device 2 interface 0 class 03/01/01 driver=usb-hid
+input: /dev/input/event1: 2.4G Wireless Receiver
+usb-hid: event device usb0 device=2 interface=1 endpoint=82 report-bytes=21
+usb0: device 2 interface 1 class 03/01/02 driver=usb-hid
+input: /dev/input/event2: USB Receiver
+usb-hid: event device usb0 device=4 interface=0 endpoint=81 report-bytes=16
+usb0: device 4 interface 0 class 03/01/01 driver=usb-hid
+input: /dev/input/event3: USB Receiver
+usb-hid: event device usb0 device=4 interface=1 endpoint=82 report-bytes=9
+usb0: device 4 interface 1 class 03/01/02 driver=usb-hid
+usb-hid-rdesc: usb0 device 4 interface 2 length=54
+usb-hid-rdesc: usb0 device 4 interface 2 0000: 06 00 ff 09 01 a1 01 85 10 95 06 75 08 15 00 26 ff 00 09 01 81 00 09 01 91 00 c0 06 00 ff 09 02
+usb-hid-rdesc: usb0 device 4 interface 2 0020: a1 01 85 11 95 13 75 08 15 00 26 ff 00 09 02 81 00 09 02 91 00 c0
+usb-hid-diag: usb0 device 4 interface 2 refused error=21 stage=parse item=0x0036 prefix=0x00
+usb-hid-diag: usb0 device 4 interface 2 attach error=21 stage=prepare
+usb0: device 4 interface 2 class 03/00/00 driver=usb-hid attach-failed error=21
+usb-hid-rdesc: usb0 device 5 interface 0 length=946
+usb-hid-rdesc: usb0 device 5 interface 0 0000: 05 0d 09 02 a1 01 85 06 09 20 35 00 45 00 15 00 25 01 a1 00 09 42 09 44 09 5a 09 45 09 3c 09 32
+usb-hid-rdesc: usb0 device 5 interface 0 0020: 75 01 95 06 81 02 95 02 81 03 05 01 09 30 65 11 55 0d 47 ff 3f 00 00 26 ff 3f 75 10 95 01 81 02
+usb-hid-rdesc: usb0 device 5 interface 0 0040: 75 08 81 03 09 31 47 7f 25 00 00 26 7f 25 75 10 95 01 81 02 75 08 81 03 05 0d 09 30 65 00 55 00
+usb-hid-rdesc: usb0 device 5 interface 0 0060: 45 00 26 00 10 75 10 81 02 09 3d 09 3e 65 14 55 00 35 a6 45 5a 15 a6 25 5a 75 08 95 02 81 02 06
+usb-hid-rdesc: usb0 device 5 interface 0 0080: 0d ff 65 00 55 00 35 00 45 00 15 00 25 00 75 10 95 01 81 03 75 10 95 01 81 03 0a 32 01 25 3f 75
+usb-hid-rdesc: usb0 device 5 interface 0 00a0: 08 81 02 75 20 95 02 81 03 75 10 95 01 81 03 c0 c0 05 0d 09 04 a1 01 85 0d 05 0d 09 22 a1 02 09
+usb-hid-rdesc: usb0 device 5 interface 0 00c0: 42 15 00 25 01 75 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10
+usb-hid-rdesc: usb0 device 5 interface 0 00e0: 55 0e 65 11 09 30 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42
+usb-hid-rdesc: usb0 device 5 interface 0 0100: 15 00 25 01 75 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55
+usb-hid-rdesc: usb0 device 5 interface 0 0120: 0e 65 11 09 30 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15
+usb-hid-rdesc: usb0 device 5 interface 0 0140: 00 25 01 75 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e
+usb-hid-rdesc: usb0 device 5 interface 0 0160: 65 11 09 30 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00
+usb-hid-rdesc: usb0 device 5 interface 0 0180: 25 01 75 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65
+usb-hid-rdesc: usb0 device 5 interface 0 01a0: 11 09 30 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00 25
+usb-hid-rdesc: usb0 device 5 interface 0 01c0: 01 75 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65 11
+usb-hid-rdesc: usb0 device 5 interface 0 01e0: 09 30 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00 25 01
+usb-hid-rdesc: usb0 device 5 interface 0 0200: 75 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65 11 09
+usb-hid-rdesc: usb0 device 5 interface 0 0220: 30 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00 25 01 75
+usb-hid-rdesc: usb0 device 5 interface 0 0240: 01 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65 11 09 30
+usb-hid-rdesc: usb0 device 5 interface 0 0260: 35 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00 25 01 75 01
+usb-hid-rdesc: usb0 device 5 interface 0 0280: 95 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65 11 09 30 35
+usb-hid-rdesc: usb0 device 5 interface 0 02a0: 00 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00 25 01 75 01 95
+usb-hid-rdesc: usb0 device 5 interface 0 02c0: 01 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65 11 09 30 35 00
+usb-hid-rdesc: usb0 device 5 interface 0 02e0: 46 ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 09 22 a1 02 09 42 15 00 25 01 75 01 95 01
+usb-hid-rdesc: usb0 device 5 interface 0 0300: 81 02 95 03 81 01 09 51 75 04 25 0f 95 01 81 02 05 01 26 ff 3f 75 10 55 0e 65 11 09 30 35 00 46
+usb-hid-rdesc: usb0 device 5 interface 0 0320: ff 3f 81 02 26 7f 25 46 7f 25 09 31 81 02 05 0d c0 27 ff ff 00 00 75 10 95 01 09 56 81 02 09 54
+usb-hid-rdesc: usb0 device 5 interface 0 0340: 15 00 25 7f 95 01 75 08 81 02 85 0a 09 55 95 01 25 0a b1 02 c0 05 01 09 06 a1 01 85 09 05 07 19
+usb-hid-rdesc: usb0 device 5 interface 0 0360: e0 29 e7 15 00 25 01 75 01 95 08 81 02 95 01 75 08 81 01 95 05 75 01 05 08 19 01 29 05 91 02 95
+usb-hid-rdesc: usb0 device 5 interface 0 0380: 01 75 03 91 01 95 0a 75 08 15 00 25 65 05 07 19 00 29 65 81 00 c0 05 0d 09 0e a1 01 85 21 09 22
+usb-hid-rdesc: usb0 device 5 interface 0 03a0: a1 00 09 52 09 53 15 00 25 0a 75 08 95 02 b1 02 c0 c0
+usb-hid: usb0 device 5 interface 0 device-mode=2 report=33 bytes=3 error=0
+usb-hid: usb0 device 5 interface 0 contact-count-maximum=10 report=10 fingers-per-report=10 error=0
+input: /dev/input/event4: HIDTOUCH
+input: /dev/input/event5: HIDTOUCH Touchscreen
+hid-input: usb0/port1/device5/interface0 touch screen: 10 slots
+hid-input: usb0/port1/device5/interface0 main device published: keys 110, rel 0, abs 5, other 0
+usb-hid: event device usb0 device=5 interface=0 endpoint=81 report-bytes=54
+usb0: device 5 interface 0 class 03/00/00 driver=usb-hid
+usb-hid-rdesc: usb0 device 5 interface 1 length=28
+usb-hid-rdesc: usb0 device 5 interface 1 0000: 06 00 ff 09 01 a1 01 85 01 09 01 75 08 95 3f 81 02 85 02 09 ff 75 08 95 3f 91 02 c0
+usb-hid-diag: usb0 device 5 interface 1 refused error=3 stage=parse item=0x000f prefix=0x81
+usb-hid-diag: usb0 device 5 interface 1 attach error=3 stage=prepare
+usb0: device 5 interface 1 class 03/00/00 driver=usb-hid attach-failed error=3
+hid-input: usb0/port1/device5/interface2 is a touch screen's mouse emulation; it is not published
+usb-hid: event device usb0 device=5 interface=2 endpoint=83 report-bytes=7
+usb0: device 5 interface 2 class 03/00/00 driver=usb-hid
+total 0
+crw------- 1 root wheel 0 Jan  1  1970 bridge
+crw------- 1 kei  kei   0 Jan  1  1970 event0
+crw------- 1 kei  kei   0 Jan  1  1970 event1
+crw------- 1 kei  kei   0 Jan  1  1970 event2
+crw------- 1 kei  kei   0 Jan  1  1970 event3
+crw------- 1 kei  kei   0 Jan  1  1970 event4
+crw------- 1 kei  kei   0 Jan  1  1970 event5
+1784796363 8232960 /boot/boot0/vmunix
