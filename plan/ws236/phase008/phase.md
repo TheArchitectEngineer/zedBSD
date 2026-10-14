@@ -87,6 +87,32 @@ Phase disposition: normal
 - fence の扱い: fence の付いた execution は、自分の command buffer の decode の frame が image に入るまで終わらない（vkvideo-probe のように decode と fence が同じ submission で、host が image を map して読む使い方を保つ）。libmedia の decode の submission は fence を持たないので待たない。
 - i915（x86）: flight 1、readback は decode の直後に submit、`returned` の semaphore は除いた（次の decode は前の readback の fence を host が待った後に submit されるので順は同じ）。x86 の実機の確かめは未実施。
 
+### 追加（2026-10-15、P3）
+
+- 60a461f97: videoplayer に計測の行だけ（1 秒ごとの CLOCK の後に `VIDEOPLAYER DRAW frames=N picture_us=… rest_us=…`、動作は不変）。Q1 が 60a461f97 まで main に merge、T2 が T1-663 で実機を流す（videoplayer の差し替え込み）。
+- e0a0f341c: libmedia の runtime の API の変更に WS202 の host 試験を追従（`plan/ws202/tests/host-vkvideo-runtime.c`・`host-native-playback.c`。後者は main で既に壊れていた `media_set_log` の stub も足した）。`run-host-native-playback.sh`・`run-host-nv12-readback.sh` PASS（plain・ASan/UBSan）。WS202 の plan の file なので Q1 の確認を求める。
+- p006 の数の読み直し: 1080p で decode は 15 fps（shown＋late／時間）なのに表示は 3.8 fps（shown／時間）。UI の 1 回が約 250 ms＝videoplayer の表示の道（毎 frame CPU で NV12→RGB と bilinear の縮小、`media_picture_scale`、1 枚 230 万回の画素変換と 170 万回の blend、と kl_window_present）が 2 つ目の詰まり。decode を 30 fps にしても late はこのままでは減らない見込み。T2 の `DRAW` の行で縮小と present のどちらかを確かめる。
+
+## 次の候補（Q1・ユーザーの判断待ち、T2 の `copy`・`DRAW` の数の後）
+
+### HOST_CACHED の memory 型（libmedia の uncached の読み）
+
+- 詰まり: libmedia の `vkvideo_copy_output` が uncached（Normal-NC）の readback buffer から 3 MB を読む（推定 20〜40 ms／枚）。T2 の libmedia の行の `copy` で確かめる。
+- 差分の見積もり（約 4〜6 LW、WS141 の file）: `vulkan-query.c` に型 1（HOST_VISIBLE|HOST_COHERENT|HOST_CACHED、DEVICE_LOCAL なし、heap 0）、`vulkan-resource.c` の memoryTypeBits（usage が TRANSFER_SRC/DST だけの buffer に bit 1、image は bit 0 だけ）、`vulkan-memory.c`・`buffer.c`（型 1 の割り当てと userland への cacheable の mmap、`buffer->uncached` を前提にした検査の見直し）、`vulkan-buffer-copy.c`（型 1 を宛先にする CPU の copy の前に clean+invalidate、後に invalidate、元にする時は先に clean。tile/TFU の道は ENOTSUP で CPU へ）、libmedia の `vkvideo_allocate`（host が読む buffer は HOST_CACHED を優先）。libvulkan は変えない見込み（coherent の型は filter を通る）。
+- 効果の見込み: userland の写し 20〜40 ms → 約 2 ms、kernel の cache の保守 +1〜2 ms。
+
+### 表示の縮小（videoplayer の毎 frame の CPU の画素の仕事）
+
+案 A（つなぎ、約 2〜3 LW、libmedia の `picture.c` だけ）:
+- `media_picture_scale` を、出力の画素ごとに YUV のまま bilinear（luma 4 点、chroma 4 点）して 1 回だけ RGB に変換する形にする（今は出力の行ごとに入力の 2 行全部を RGB に変換してから blend）。変換の回数が 230 万 → 58 万、blend が無くなる。さらに出力の行を 2〜4 の thread に分ける（Pi 4 は 4 core）。
+- 見込み: 1 枚 50 ms 超 → 10〜15 ms（1 thread）→ 4〜6 ms（4 thread）。
+- 欠点: guardrail「画像の処理は GPU で」に対して、CPU の今の道を速くするだけ（新しい CPU の道は足さない）。出力の画素は丸めの差で今と 1 程度ずれ得る（WS202 の `host-picture.c` の期待値を見直す）。
+
+案 B（本来、GPU で変換と縮小）を最小にするなら要る物:
+- V3D の sampler の format: 今の V3D の Vulkan は sampled image が RGBA8・BGRA8 だけ（`vulkan-query.c` の `format_properties`、TFU の変換も 32 bit だけ `vulkan-native-draw.c` の `conversion_supported`）。NV12 を GPU で読むには (B-1) R8_UNORM（Y）と R8G8_UNORM（UV）の sampled image（texture の state、raster→UIF の 1・2 byte の画素の tiling、linear の filter）を足す（WS141、約 8〜12 LW）、または (B-2) 新しい format を足さず、Y・UV の plane を RGBA8 の image（幅 W/4、1 texel に 4 sample）として渡し、shader が x の余りで成分を選んで bilinear を自分で組む（driver の変更なし、shader が重い。kernel の shader compiler が要る演算（整数・成分の選択・floor・fract）を持つかの確かめが要る）。
+- videoplayer と compositor の口: (B-3) videoplayer が `KL_PRESENT_NONE` で自分の Vulkan の swapchain を持ち、毎 frame NV12 を host-visible の staging（またはそのまま libmedia の readback buffer）から `vkCmdCopyBufferToImage` で 2 つの texture へ、YUV→RGB と縮小の fragment shader で全面の quad を描き、操作の bar・menu（今は CPU で描く canvas）は alpha 付きの RGBA8 の texture を上に重ねる（WS122 の videoplayer の描画の作り直し、約 6〜10 LW）。libmedia と videoplayer は別の VkDevice なので、image を直に渡すには external memory が要る。最小は CPU の NV12 の picture（HOST_CACHED の後なら安い）を staging へ 1 回写す形。(B-4) compositor に NV12 の buffer（subsurface）を渡す道は compositor の format の対応から要り、さらに大きい。
+- 合計の見込み: B-2＋B-3 で約 8〜12 LW、B-1＋B-3 で約 14〜22 LW。危険: kernel の shader compiler の対応の不足、V3D の executor が video の CPU の仕事（place・readback 約 10 ms／枚）と描画で取り合う。
+
 ### 検証（host と build、2026-10-15）
 
 - build warning 0: `config/ci/config-rpi4.mk` の vmunix（`arm64 vmunix check: PASS`、cksum 3347853215）、`build/p3/rpi4/dynamic/libmedia.so`（cksum 877949414）、`config/ci/config-amd64.mk` の libmedia、`plan/ws236/tests/config-rpi4-video-probe.mk` の vmunix、VCHIQ・VIDEO を n にした rpi4 の vmunix。
