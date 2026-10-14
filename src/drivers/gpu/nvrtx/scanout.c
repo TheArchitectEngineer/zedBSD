@@ -204,6 +204,7 @@ nvrtx_scanout_start(
 	uint32_t hold_us;
 	bool resident;
 	bool test;
+	bool own;
 	int error;
 
 	display = &gpu->display;
@@ -277,9 +278,17 @@ nvrtx_scanout_start(
 		return error;
 
 	/* The console is on the head again: the takeover is done. */
-	if (!test) {
+	own = nvrtx_stage_disp_own_wanted();
+	if (!test && !own) {
 		display->taken = 1;
 		nvrtx_stage_mark("P8b ok: head %u shows the console", (unsigned)display->gop_head);
+		return 0;
+	}
+
+	/* The driver's own surface is on the head, without the test's flip and waits: the takeover is done. */
+	if (!test) {
+		display->taken = 1;
+		nvrtx_stage_mark("P8b ok: head %u shows the driver's surface", (unsigned)display->gop_head);
 		return 0;
 	}
 
@@ -725,6 +734,7 @@ scanout_surfaces(
 	uint32_t height;
 	unsigned index;
 	bool test;
+	bool own;
 	int error;
 
 	display = &gpu->display;
@@ -737,9 +747,10 @@ scanout_surfaces(
 		return EINVAL;
 	}
 
-	/* Without the monitor test the head shows the console. */
+	/* Without the monitor test or the driver's own surface the head shows the console. */
 	test = nvrtx_stage_disp_test_wanted();
-	if (!test) {
+	own = nvrtx_stage_disp_own_wanted();
+	if (!test && !own) {
 		error = scanout_console_surface(gpu, width, height);
 		if (error != 0)
 			return error;

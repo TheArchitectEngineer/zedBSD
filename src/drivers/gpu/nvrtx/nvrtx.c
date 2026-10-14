@@ -31,6 +31,7 @@
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
+#include <kern/sysctl.h>
 #include <kern/thread.h>
 #include <uapi/errno.h>
 
@@ -230,6 +231,8 @@ nvrtx_keep(
 {
 	struct nvrtx_gpu *gpu;
 	struct thread *thread;
+	bool resident;
+	bool display;
 	int error;
 
 	/* Allocates the kept state. */
@@ -288,6 +291,20 @@ nvrtx_keep(
 	 */
 	gpu->worker_running = 1;
 	thread->detached = 1;
+
+	/*
+	 * A boot that keeps the GPU up as a GPU device with its display (the
+	 * default) publishes /dev/gpuN only at the worker's last stage (P8c):
+	 * until the worker ends, the GPU counts as attaching, so the graphical
+	 * login waits for its display instead of giving the console back.
+	 */
+	resident = nvrtx_stage_resident_wanted();
+	display = nvrtx_stage_disp_wanted();
+	if (resident && display) {
+		gpu->attach_counted = 1;
+		kern_gpu_attach_begin();
+	}
+
 	thread_start(thread);
 
 	/* Succeeded: the function is kept and the GSP boot runs in the background. */
@@ -306,6 +323,12 @@ nvrtx_worker(
 
 	/* Runs the boot as far as this revision goes; it reports its own result. */
 	(void)nvrtx_gsp_start(gpu);
+
+	/* The device is published by now, or never will be: the GPU no longer counts as attaching. */
+	if (gpu->attach_counted != 0) {
+		gpu->attach_counted = 0;
+		kern_gpu_attach_end();
+	}
 
 	/* Hands the GPU back to detach. */
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
