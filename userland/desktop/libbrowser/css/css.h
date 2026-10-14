@@ -569,6 +569,10 @@ struct css_style {
 
 	/* The translation of transform (x and y: pixels, or a percentage of the border box); the other transform functions are not applied. */
 	struct css_length transform_translate[2];
+
+	/* The scale of transform (its value, one is no scale) and transform-origin (pixels or a percentage of the border box); a box with no children and no lines is scaled about it. */
+	struct css_length transform_scale[2];
+	struct css_length transform_origin[2];
 	int background_size_keyword;
 	struct css_length background_size[2];
 

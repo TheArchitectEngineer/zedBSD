@@ -948,6 +948,14 @@ css_initial_style(
 	style->transform_translate[0].value = 0;
 	style->transform_translate[0].offset = 0;
 	style->transform_translate[1] = style->transform_translate[0];
+	style->transform_scale[0].unit = CSS_UNIT_PX;
+	style->transform_scale[0].value = 1.0f;
+	style->transform_scale[0].offset = 0;
+	style->transform_scale[1] = style->transform_scale[0];
+	style->transform_origin[0].unit = CSS_UNIT_PERCENT;
+	style->transform_origin[0].value = 50.0f;
+	style->transform_origin[0].offset = 0;
+	style->transform_origin[1] = style->transform_origin[0];
 	style->background_position[0].unit = CSS_UNIT_PERCENT;
 	style->background_position[0].value = 0;
 	style->background_position[1].unit = CSS_UNIT_PERCENT;
@@ -3685,6 +3693,14 @@ cascade_apply(
 	case CSS_PROP_TRANSFORM_Y:
 		style->transform_translate[property - CSS_PROP_TRANSFORM_X] = cascade_length(engine, value, style->font_size);
 		break;
+	case CSS_PROP_TRANSFORM_SCALE_X:
+	case CSS_PROP_TRANSFORM_SCALE_Y:
+		style->transform_scale[property - CSS_PROP_TRANSFORM_SCALE_X] = cascade_length(engine, value, style->font_size);
+		break;
+	case CSS_PROP_TRANSFORM_ORIGIN_X:
+	case CSS_PROP_TRANSFORM_ORIGIN_Y:
+		style->transform_origin[property - CSS_PROP_TRANSFORM_ORIGIN_X] = cascade_length(engine, value, style->font_size);
+		break;
 	case CSS_PROP_BORDER_COLLAPSE:
 		style->border_collapse = value->keyword;
 		break;
@@ -4135,6 +4151,14 @@ cascade_inherit(
 	case CSS_PROP_TRANSFORM_X:
 	case CSS_PROP_TRANSFORM_Y:
 		style->transform_translate[property - CSS_PROP_TRANSFORM_X] = parent->transform_translate[property - CSS_PROP_TRANSFORM_X];
+		break;
+	case CSS_PROP_TRANSFORM_SCALE_X:
+	case CSS_PROP_TRANSFORM_SCALE_Y:
+		style->transform_scale[property - CSS_PROP_TRANSFORM_SCALE_X] = parent->transform_scale[property - CSS_PROP_TRANSFORM_SCALE_X];
+		break;
+	case CSS_PROP_TRANSFORM_ORIGIN_X:
+	case CSS_PROP_TRANSFORM_ORIGIN_Y:
+		style->transform_origin[property - CSS_PROP_TRANSFORM_ORIGIN_X] = parent->transform_origin[property - CSS_PROP_TRANSFORM_ORIGIN_X];
 		break;
 	case CSS_PROP_BORDER_SPACING_X:
 	case CSS_PROP_BORDER_SPACING_Y:
