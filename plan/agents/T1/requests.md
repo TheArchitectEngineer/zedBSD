@@ -722,4 +722,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-645 | Q1（WS037 R8b 再試験、P8b 修正 67bd0f9f8・merge 156506208、rombar=1、ユーザーが各「P8b step」で monitor を見る。P4m の行も確かめる） | phase006 の「T への手順（R8b の再試験、rombar=1）」 | 未実施（ユーザーの立ち会い待ち） |
 | T1-646 | Q1（WS037 R7d、P3 の 3D の draw 段 P9g、merge bdd351e3e 以降、rombar=0 の方法 B、PNG で判定） | phase007 の 7 節 | 未実施 |
 | T1-647 | Q1（WS037 R8c、P1 の resident・GPU device、merge f68e6bcd0、rombar=1、T1-645 の PASS の後だけ、ユーザーが monitor を見る） | phase006 の「T への手順（R8c …）」 | 未実施（T1-645 待ち） |
-| T1-648 | Q1（BUG-312 T-B の再試験、damage-root.py の link 0 の直し b26476a52 の後） | plan/bugs/BUG-312.md の T-B | 未実施 |
+| T1-648 | Q1（BUG-312 T-B の再試験、damage-root.py の link 0 の直し b26476a52 の後） | plan/bugs/BUG-312.md の T-B | 完了（T3）: PASS、注2点 plan/agents/T3/t1-648.md |
