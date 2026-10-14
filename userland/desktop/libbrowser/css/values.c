@@ -4032,6 +4032,7 @@ values_flex(
 	size_t lengths[4];
 	size_t components;
 	size_t index;
+	size_t last_number;
 	int numbers;
 	int is_word;
 	int error;
@@ -4072,7 +4073,14 @@ values_flex(
 	if (components == 0 || components > 3)
 		return EINVAL;
 	numbers = 0;
+	last_number = 0;
 	for (index = 0; index < components; index++) {
+		/* The two factors are adjacent: a basis between them is invalid. */
+		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER) {
+			if (numbers > 0 && index != last_number + 1U)
+				return EINVAL;
+			last_number = index;
+		}
 		if (lengths[index] == 1 && tokens[starts[index]].type == CSS_TOKEN_NUMBER && tokens[starts[index]].number != 0) {
 			if (numbers == 0)
 				grow.number = (float)tokens[starts[index]].number;
