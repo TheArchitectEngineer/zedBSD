@@ -2,7 +2,7 @@
 
 # ws037-p004: GSP の起動（P0〜P3・P7）と方式 B（VFIO）の試験の手順
 
-Status: in-progress（2026-10-14 P1。4a〜4e を実装、build と host 試験まで。方式 B の R0・R1 PASS、R2 は P7 で FAIL、R3 は P2b で止まった（T2）。原因の解析と直しを commit `1c1732db7`、R2〜R4 の再試験は T2 待ち。下の「R2・R3 の結果への対応」）
+Status: in-progress（2026-10-14 P1。4a〜4e を実装、build と host 試験まで。方式 B の R0・R1 PASS、R2 は P7 で FAIL、R3 は P2b で止まった（T2）。原因の解析と直しを commit `1c1732db7`。再試験で R2 PASS、R3 は libos の init で止まった。nouveau との照合で RMARGS の region の大きさの違いを直した（`714ab8477`）。R3・R4 の再試験は T2 待ち。下の「R2・R3 の結果への対応」と「再試験の R3（libos で停止）と nouveau との照合」）
 Disposition: normal
 Parent: [WS037](../ws.md)
 Queue: Q1 の割当（2026-10-14「p004 を 4a から順に実装して進めること」）
@@ -179,3 +179,64 @@ image は 3.3 節のまま（`config-amd64-nvrtx.mk`、`NVRTX_RUN=R2`・`R3`・`
 - **R3 で `P2b fail` が出たら**（10 s 余りで出る）: 画面の `P2b … ms` の 8 行と `P2a memory:` の 2 行を PNG で撮る。guest を止める前に、QEMU の monitor（HMP）で `pmemsave <番地> <大きさ> <file>` を 5 回: logs の 3 つ（各 `0x10000`）、queues（`0x81000`）、libos（`0x1000`）。QMP なら `{"execute":"pmemsave","arguments":{"val":<番地>,"size":<大きさ>,"filename":"<file>"}}`。file を centris に持ち帰り、path を Q1 経由で P1 へ。その後 QEMU を止め、host を reboot。R4 は流さない。
 - `P2b … ms` の行が 1 行も出ず固まった時は、gdbstub か QMP の `info registers` で guest の止まった所を見る（boot の log は取り直さない）。
 - 所要の目安: R2・R3・R4 で image の作り直し 3 つ、run 3 回（各 3〜4 分）と reboot 1〜2 回。
+
+## 再試験の R3（libos で停止）と nouveau との照合（2026-10-14、P1）
+
+T2 の再試験（[results-20261014-nvrtx-retest](../../agents/T2/results-20261014-nvrtx-retest.md)、QEMU の guest に VFIO で渡した実機）: R2 PASS（`P7 left`）。R3 は `P2a ok: RISC-V running` の後、200・1000・3000・10000 ms のどれも
+`cmd put 2 got 0; msg size 0 put 0 got 0`、`mbox 000000ca 00000000 riscv 00000035 boot 11000000`、10 s で `P2b fail (42)`（timeout の直しは効いた）。dump: T2 の `build/ws037-nvrtx/dump3/`。
+
+### dump の解読（host で、P1）
+
+- **libos の args の page**（7fe00000）: 4 つの region（LOGINIT 7fe01000+0x10000、LOGINTR 7fe11000+0x10000、LOGRM 7fe21000+0x10000、RMARGS 7fe31000+**0x48**）、kind 1・loc 1。
+- **rmargs**: queues 7f800000、PTE 0x81（129）、cmd 0x1000、stat 0x41000、bDmemStack 1。nouveau の r570 と同じ。
+- **LOGINIT**（log0）: put = 0x16（22 語）。GSP は PTE の並びの上に log を書いた（= **GSP は system memory を DMA で読み書きできている**。vIOMMU 無しの VFIO で guest の物理 = IOVA の前提は正しい）。22 語は 7 つの record（先頭の語は metadata の番地 0x5bb9xxx、次は時刻、残りが引数）:
+  1. `0x61800001fe2c0000` = FB の 0x1fe2c0000（我々の配置の ELF の場所）
+  2. `0x61800001f7900000`・`0x6900000` = FB の 0x1f7900000 から 105 MiB（我々の heap、P0 の行と一致）
+  3. `0x61800001fe180000`・`0x80000`（heap の上端の 512 KiB）
+  4. 引数なし
+  5. `0x10e`
+  6. `0x5b42000`・**`0x48`** = libos が RMARGS の region を ELF の `.section_task_rm_args_buffer_instance`（0x5b42000、**0x1000**）へ map した記録。大きさは我々が渡した 0x48
+  7. 引数なし → ここで止まった（MAILBOX0 = 0xca）
+- LOGINTR・LOGRM は PTE の並びのまま（put 0）= RM の task は始まっていない。cmdq の got 0、msgq の header 0 も同じ意味。
+- WPR の配置（record 1〜3）・radix3（booter_load が成功し libos が WPR の image から走った）・libos の args の DMA は正しく読めている。
+- `mbox 0xca`・`riscv 0x35`・`boot 0x11000000` の意味は MIT の source に無い（libos の停止の番号と RISC-V の状態の bit）。0x1180f8 の bit 26（boot の stage 3 の引き渡しの完了、ogkm の `dev_gc6_island_addendum.h`）は 0。MAILBOX0 は我々が書いた libos の番地（7fe00000）が GSP に 0xca で上書きされた。
+
+### nouveau（r535 の道、TU10x、r570 の値）との照合
+
+照合に使った file は全て MIT（`subdev/gsp/tu102.c`・`base.c`・`fwsec.c`、`rm/r535/gsp.c`・`rpc.c`、`rm/r570/gsp.c`・`rm.c`・`nvrm/gsp.h`、`falcon/base.c`・`fw.c`・`gm200.c`・`gp102.c`、`engine/sec2/tu102.c`）と open-gpu-kernel-modules 570.144 の MIT の `kernel_gsp_tu102.c`・`kernel_gsp.c`。GPL の部分は使っていない。
+
+| 段 | nouveau | nvrtx | 判定 |
+| --- | --- | --- | --- |
+| VRAM の大きさ | 0x100ce0 の lmag・lsc、bit 30 で 15/16 | 同じ | 同じ |
+| VGA workspace | 0x625f04 の bit 3、無効なら FB−1 MiB、下すぎれば FB−128 KiB | 同じ | 同じ |
+| WPR の配置 | FRTS 1 MiB を VGA の 128 KiB 揃えの下、boot 4 KiB 揃え、ELF 64 KiB 揃え、heap = 0 + 8 MiB + align(96 KiB×GiB) + align(96 MiB)（r570 の libos2）、WPR = heap − meta の 1 MiB 揃え、非 WPR heap 1 MiB | 同じ（105 MiB、dump の record 2 と一致） | 同じ |
+| WPR meta | magic・revision・radix3・ELF の大きさ・bootloader（番地・大きさ・code/data/manifest）・signature（0x1000）・rsvd = 非 WPR heap・各 offset・`gspFwWprEnd` = VGA の 128 KiB 揃え・fbSize・VGA・bootCount 0・verified 0 | 同じ（host 試験の値） | 同じ |
+| radix3 | lvl0 → lvl1 → lvl2 → image の page | 同じ | 同じ（booter_load 成功） |
+| libos の args の page | 0x1000、LOGINIT・LOGINTR・LOGRM 各 0x10000（先頭 8 byte の後に PTE）、RMARGS、kind 1・loc 1、id8 の詰め方 | RMARGS の大きさが **0x48** | **違う → 0x1000 に合わせた** |
+| rmargs の中身 | r570: 共有 memory・PTE 数・cmd/stat の offset、sr 0、bDmemStack 1 | 同じ（dump） | 同じ |
+| queue の初期の header | tx: version 0・size 0x40000・msgSize 0x1000・msgCount 63・writePtr 0・flags 1・rxHdrOff 32・entryOff 0x1000 | 同じ | 同じ |
+| system info | BAR0/1/3 の番地、BDF、maxUserVa、config の写し 0x88000+0x1000、PCI の ID、ACPI（handle があれば DOD・JT・CAPS を埋め bValid 1）、bIsPrimary、bPreserve 0 | ACPI の欄は 0（bValid 0） | 違い（RM の段の物、libos では読まない。動いた後に見る） |
+| registry | RMSecBusResetEnable・RMForcePcieConfigSave・RMDevidCheckIgnore = 1 | 同じ | 同じ |
+| system info・registry の投入の時期 | oneinit（FRTS の前）に cmdq へ、doorbell 0x110c00 = 0 | P2a（FRTS の後、GSP の reset の前）に cmdq へ、doorbell | 順の違い。どちらも後に GSP の falcon の reset が来るので GSP が見る物は同じ（P0 で GPU に書かない設計のまま） |
+| FWSEC-FRTS | falcon の reset（disable: 0x048・0x014、reset_eng 0x3c0 の pulse・scrub、enable: scrub 待ち・0x084 = boot0）→ 0x624 bit 7・0x10c = 0 → bl を IMEM の上端・desc を DMEM → ctx 0x600 → 起動・halt 待ち 2 s → 0x1438 の上位 | 同じ | 同じ（R2・R3 で ok） |
+| GSP を RISC-V へ | reset_eng（0x3c0 の pulse 10 µs、0x040 を触って 0x10c の bit 1・2 が 0 まで） | 同じ | 同じ |
+| GSP の MAILBOX0/1 | libos の args の番地 | 同じ | 同じ |
+| booter_load | SEC2 の reset（PMC 込み）→ 0x624・0x10c → os code・app（secure）・os data を PIO → MAILBOX0/1 = WPR meta → 0x104 = os code の offset → 0x100 = 2 → halt 待ち → MAILBOX0 = 0 | 同じ | 同じ（R3 で ok） |
+| 起動の後 | GSP+0x080 = bootloader の app の版、0x111240 bit 0 を確認、INIT_DONE を poll（その間の sequencer を実行） | 同じ | 同じ |
+
+**直し（commit `714ab8477`）**: RMARGS を 1 page（0x1000）で確保し、libos の args にも 0x1000 で名指す（nouveau と ogkm の `kgspSetupLibosInitArgs` と同じ。ELF の受け側の section も 0x1000）。host 試験に「RMARGS の region が 0x1000」を足した（167 項目 PASS、実物の firmware の file を含む）。印の行は 79 桁の枠に収まるように分けた: `P2b <t> ms: mbox …`・`P2b <t> ms: log put L0 L1 L2` を別の行に、`P7 left: region L-H, no GSP started; reboot the host`、`P6 channel error` と `P0 fail` を短く、firmware の誤りの文は 40 文字まで。
+
+- 検証: y の kernel（`build/ws037-k-y`）rc 0・warning 0・`amd64 vmunix check: PASS`、`git diff --check` 0、GPL の旧名 0。
+- 見立て: libos は RMARGS を自分の 0x1000 の section へ page 単位で map するので、0x48 の region を受けて止まった（record 6 の直後で停止）。**未確認**（libos の停止の番号 0xca の意味は公開されていない）。直らない時は system info の ACPI の欄を次に疑う（RM の段に入ってからの物なので、LOGRM に書き込みがあるかで分かる）。
+
+### T2 への手順（R3・R4 の再試験、main の `714ab8477` 以降）
+
+前と同じ（3.3 節の image、`NVRTX_RUN=R3`・`R4`、各 run の前に host の reboot と `prepare.sh --check`）。
+
+| run | 合格の印 | 後始末 |
+| --- | --- | --- |
+| R3 | `P2a ok: RISC-V running`、`P2b 200 ms: cmd put 2 got 2; msg size 40000 …`（GSP が cmdq を読み msgq を作る）、`P2b ok: GSP-RM is up after N ms`、`P3 skipped`、`P7 begin: unload`、`P7 begin: FWSEC-SB`、`P7 booter_unload`、`P7 ok: region torn down`、login prompt | 合格なら続けて R4（reboot は要らない見込み。P1b が ok なら確認になる） |
+| R4 | R3 に加えて `P3 static:` 2 行、`P3 ok: client, device and subdevice`、`P4 skipped`、`P7 ok: region torn down` | — |
+
+- R3 が `P2b fail` の時: 画面の `P2b … ms` の行（今は 1 時点 3 行、`log put` の行を含む）を PNG に撮り、前回と同じ 6 つの `pmemsave`（logs 3 つ、queues、libos、rmargs）。番地は `P2a memory:` の行から。その後 QEMU を止め host を reboot。R4 は流さない。
+- `log put` の 1 つ目が 0x16 のまま（前回と同じ所で停止）なら、dump の log0 の record を P1 が前回と比べる。LOGRM の put が 0 でなくなれば RM の task まで進んだ印。
