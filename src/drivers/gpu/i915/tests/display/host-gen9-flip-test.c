@@ -326,13 +326,17 @@ i915_host_skl_refusal(
 {
 	struct i915_skl_readout readout;
 	char what[96];
+	int same;
 	int error;
 
 	/* Decodes and compares the reason. */
 	error = drv_i915_skl_readout_decode(registers, &readout);
 	snprintf(what, sizeof(what), "refused: %s", reason);
-	i915_host_check(error == EINVAL && readout.reason != NULL && strcmp(readout.reason, reason) == 0, what);
-	if (readout.reason != NULL && strcmp(readout.reason, reason) != 0)
+	same = 0;
+	if (readout.reason != NULL)
+		same = strcmp(readout.reason, reason) == 0;
+	i915_host_check(error == EINVAL && same, what);
+	if (readout.reason != NULL && !same)
 		printf("  got %s\n", readout.reason);
 }
 

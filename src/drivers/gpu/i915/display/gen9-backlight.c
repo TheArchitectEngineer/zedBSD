@@ -196,6 +196,7 @@ drv_i915_gen9_backlight_start(
 	int lit;
 	int error;
 
+	/* The backlight of the one device. */
 	backlight = &i915_gen9_backlight_state;
 
 	/* Only a Gen9 node, once. */
@@ -255,6 +256,7 @@ drv_i915_gen9_backlight_start(
 		return;
 	}
 
+	/* Succeeded: says the device is there. */
 	kern_logf("i915: gen9 backlight: the panel's brightness is offered as a backlight device\n");
 }
 
@@ -269,6 +271,7 @@ drv_i915_gen9_backlight_stop(
 
 	UNUSED_PARAMETER(device);
 
+	/* The backlight of the one device. */
 	backlight = &i915_gen9_backlight_state;
 
 	/* Nothing was published. */
@@ -291,6 +294,7 @@ i915_gen9_backlight_get(
 	struct i915_skl_pwm pwm;
 	int error;
 
+	/* The backlight the device was registered with. */
 	backlight = context;
 
 	/* Reads and decodes the PWM. */
@@ -320,6 +324,7 @@ i915_gen9_backlight_set(
 	uint32_t duty;
 	int error;
 
+	/* The backlight the device was registered with. */
 	backlight = context;
 
 	/* Reads and decodes the PWM. */
@@ -367,6 +372,8 @@ i915_gen9_backlight_pch_cnp(
 		*cnp = 0;
 		return 0;
 	}
+
+	/* Cannon Point's: the second layout. */
 	if (pch.type == I915_PCH_CNP) {
 		*cnp = 1;
 		return 0;

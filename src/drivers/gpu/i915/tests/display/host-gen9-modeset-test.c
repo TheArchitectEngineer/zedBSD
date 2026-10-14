@@ -79,6 +79,7 @@ i915_host_check_ddc(void)
 	uint32_t word;
 	int error;
 
+	/* A DP sink on B and an HDMI sink on C. */
 	i915_gen9_fake_reset();
 	i915_gen9_fake_add_dp_sink(I915_SKL_PORT_B, 1U);
 	i915_gen9_fake_add_hdmi_sink(I915_SKL_PORT_C);
@@ -138,6 +139,7 @@ i915_host_check_power(void)
 	unsigned writes;
 	int error;
 
+	/* Nothing attached. */
 	i915_gen9_fake_reset();
 
 	/* Power well 2, then again with nothing written. */
@@ -186,6 +188,7 @@ i915_host_check_dp_output(void)
 	int surface_at;
 	int error;
 
+	/* A DP sink on B, the frames running. */
 	i915_gen9_fake_reset();
 	i915_gen9_fake_add_dp_sink(I915_SKL_PORT_B, 1U);
 	i915_gen9_fake.frames_run = 1;
@@ -274,6 +277,7 @@ i915_host_check_dp_failure(void)
 	struct i915_skl_dp_port dp;
 	int error;
 
+	/* A DP sink on D that recovers its clock only at swing 4. */
 	i915_gen9_fake_reset();
 	i915_gen9_fake_add_dp_sink(I915_SKL_PORT_D, 4U);
 
@@ -309,6 +313,7 @@ i915_host_check_hdmi_output(void)
 	uint32_t value;
 	int error;
 
+	/* An HDMI sink on C. */
 	i915_gen9_fake_reset();
 	i915_gen9_fake_add_hdmi_sink(I915_SKL_PORT_C);
 
@@ -357,6 +362,7 @@ i915_host_check_watermarks(void)
 	static const uint16_t latency[8] = { 2U, 4U, 10U, 18U, 28U, 40U, 60U, 90U };
 	struct i915_skl_pipe_wm pipes[3];
 
+	/* Nothing attached. */
 	i915_gen9_fake_reset();
 
 	/* One 1080p pipe B. */
@@ -384,6 +390,7 @@ i915_host_check_hotplug(void)
 {
 	int error;
 
+	/* Nothing attached. */
 	i915_gen9_fake_reset();
 
 	/* The enables. */

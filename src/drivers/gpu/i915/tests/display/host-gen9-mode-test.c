@@ -79,6 +79,7 @@ i915_host_cdclk(void)
 	uint32_t vco_8640;
 	uint32_t vco_8100;
 
+	/* A running, locked DPLL0 at either VCO. */
 	locked = (1U << 31) | (1U << 30);
 	vco_8640 = I915_SKL_LINK_RATE_1080 << I915_SKL_DPLL_CTRL1_RATE_SHIFT;
 	vco_8100 = I915_SKL_LINK_RATE_1350 << I915_SKL_DPLL_CTRL1_RATE_SHIFT;
@@ -284,6 +285,7 @@ i915_host_watermarks(void)
 {
 	struct i915_skl_pipe_wm pipes[3];
 	struct i915_skl_wm_level level;
+	unsigned pipe;
 	int error;
 
 	/* One 1080p pipe: the whole DBUF, 32 cursor blocks, every level. */
@@ -313,13 +315,15 @@ i915_host_watermarks(void)
 
 	/* Three 4K pipes: levels 6 and 7 do not fit and are off. */
 	memset(pipes, 0, sizeof(pipes));
-	for (unsigned pipe = 0U; pipe < 3U; pipe++) {
+	for (pipe = 0U; pipe < 3U; pipe++) {
 		pipes[pipe].active = 1;
 		pipes[pipe].hdisplay = 3840U;
 		pipes[pipe].htotal = 4400U;
 		pipes[pipe].pixel_khz = 594000U;
 		pipes[pipe].plane_width = 3840U;
 	}
+
+	/* Their split. */
 	error = drv_i915_skl_wm_compute(pipes, i915_host_latency);
 	i915_host_check(error == 0 && pipes[1].ddb_start == 297U && pipes[1].ddb_end == 594U && pipes[1].cursor_start == 552U, "wm three pipes split");
 	i915_host_check(i915_host_level_is(&pipes[2].level[5], 188U, 6U) && !pipes[2].level[6].enable && !pipes[2].level[7].enable, "wm three pipes trim levels 6 and 7");

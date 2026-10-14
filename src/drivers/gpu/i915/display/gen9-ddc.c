@@ -121,6 +121,7 @@ drv_i915_skl_aux_xfer(
 	unsigned index;
 	unsigned received;
 
+	/* The port's AUX control and data registers. */
 	ctl = I915_SKL_AUX_CTL_A + port * I915_SKL_PORT_STRIDE;
 	data = I915_SKL_AUX_DATA_A + port * I915_SKL_PORT_STRIDE;
 
@@ -136,6 +137,8 @@ drv_i915_skl_aux_xfer(
 			break;
 		io->msleep(io->context, 1U);
 	}
+
+	/* A channel that stayed busy. */
 	if (tries == I915_SKL_AUX_IDLE_TRIES)
 		return -EBUSY;
 
@@ -164,6 +167,8 @@ drv_i915_skl_aux_xfer(
 			io->udelay(io->context, I915_SKL_AUX_ERROR_PAUSE_US);
 			continue;
 		}
+
+		/* A transfer done ends the loop. */
 		if ((status & I915_SKL_AUX_DONE) != 0U)
 			break;
 	}
@@ -301,10 +306,14 @@ drv_i915_skl_aux_edid(
 				error = -received;
 				break;
 			}
+
+			/* A short read is an error. */
 			if (received != (int)I915_SKL_AUX_MAX_BYTES + 1) {
 				error = EIO;
 				break;
 			}
+
+			/* The 16 bytes. */
 			kern_memcpy(edid + block * I915_EDID_BLOCK_BYTES + done, reply + 1, I915_SKL_AUX_MAX_BYTES);
 		}
 	}
@@ -417,12 +426,16 @@ i915_skl_aux_message(
 {
 	uint8_t send[I915_SKL_AUX_HEADER + I915_SKL_AUX_MAX_BYTES];
 	unsigned send_bytes;
+	unsigned length;
 	unsigned tries;
 	uint8_t code;
 	int received;
 
-	/* The header, alone for an address-only message, else with the length and any data. */
-	i915_skl_aux_header(send, request, address, (size == 0U) ? 1U : size);
+	/* The header, alone for an address-only message (its length field says one byte), else with the length and any data. */
+	length = size;
+	if (length == 0U)
+		length = 1U;
+	i915_skl_aux_header(send, request, address, length);
 	send_bytes = I915_SKL_AUX_BARE_HEADER;
 	if (size != 0U) {
 		send_bytes = I915_SKL_AUX_HEADER;
@@ -445,6 +458,8 @@ i915_skl_aux_message(
 			io->udelay(io->context, I915_SKL_AUX_DEFER_PAUSE_US);
 			continue;
 		}
+
+		/* Anything else is a NAK. */
 		if ((code & I915_DP_AUX_NATIVE_REPLY_MASK) != I915_DP_AUX_NATIVE_REPLY_ACK)
 			return -EIO;
 
@@ -454,6 +469,8 @@ i915_skl_aux_message(
 				io->udelay(io->context, I915_SKL_AUX_DEFER_PAUSE_US);
 				continue;
 			}
+
+			/* Anything else from I2C is a NAK. */
 			if ((code & I915_DP_AUX_I2C_REPLY_MASK) != I915_DP_AUX_I2C_REPLY_ACK)
 				return -EIO;
 		}
@@ -518,6 +535,7 @@ i915_skl_gmbus_block(
 		if (error != 0)
 			return error;
 
+		/* Four bytes, the first lowest. */
 		word = drv_i915_skl_read(io, I915_SKL_GMBUS3);
 		for (taken = 0U; taken < 4U && left != 0U; taken++) {
 			*bytes = (uint8_t)(word & 0xffU);
