@@ -61,6 +61,15 @@ image: この Phase の commit を含む tree で `plan/ws074/tests/build-browse
 4. 回帰: `plan/tools/titlebar/titlebar-p010.sh`（CONTROLS: breadcrumb の段の click、search の入力、狭い窓の "..."）が PASS。
 5. **編集していない時の箱**（T1-618 の再試験で足す）: browser で google.com を開いた後、編集していない状態の titlebar の PNG。PASS: Location が Back/Forward の右から Reload（と "..."）の左まで広がる角丸の箱で、中に `https://www.google.com/` が出ている（段と矢印ではない）、`KWL TITLEBAR control ... id=4 ... width=W` の W が編集中と同じ。箱を 1 回 click → `KWL TITLEBAR focus ... id=4 edit=1`、URL 全体が選択された PNG、文字を打つと URL が置き換わる（browser の `text` の event）。Files（`/bin/files`）の breadcrumb は従来どおり段と矢印（PNG）。
 
+## T1-618 の結果と p010 の FAIL（2026-10-14）
+
+T1-618（main eea58c75c、7e089184b でも同じ）: 1・2・3・5 PASS（Location の幅 117→642、repeat count=28、箱と 1 回の click で全選択、Files は段のまま）。4 の `plan/tools/titlebar/titlebar-p010.sh` が FAIL: docked の double click の後の `GLASS undock surface=8` が MISSING、続く narrow の 5 行も MISSING。
+
+- **原因（試験の側、p229 ではない）**: undock の double click の x は `docked_free_x`（docked の control の右端と bar の minimize の中点）。ws181-p009（2026-10-08 の UAT）から、窓が docked の間は desktops の pill と status の pill が docked の control のすぐ右に来る（`shell.c` `bar_layout`）。T1-618 の画面（`/home/awe/zedBSD-worktrees/t1/build/review/t1-618/p010/docked.png`）では Preview の右端 756、desktops の pill 約 781、status の pill 909〜993、minimize 1184 で、中点の約 962 は status の pill（press は control panel）に当たり、undock にならない。narrow の 5 行はその続き: 1 つ目の窓が docked のまま（docked の窓が desktop を持つ、WS181）なので 2 つ目の probe も docked で開き（narrow.png、`client=2 ... where=docked`）、floating の行が出ない。
+- **p229 の変更が効かない根拠（source）**: docked の probe（Files の control、breadcrumb は箱でも編集中でもない）の配置は p229 の前と同じ（段の幅の上限・give way は `shell_crumb_field` が 0 の時は従来どおり）。題「Files」「Narrow」は短く、題の縮み方は効かない（380 px の窓は 1/5 が 46 < 56 なので題の幅も変わらない）。p010 の最後の PASS は T1-281（2026-10-07、ws181-p009 の前）で、それ以後 T1-618 まで p010 は流れていない。75a6bdc86（p229 の前）で流した記録は無い（未実施）。
+- **直し**: `titlebar-p010.sh`・`titlebar-p011.sh`・`titlebar-p013.sh` の `docked_free_x`（3 つとも同じ関数）の右の限りを、minimize と、最新の `KWL GLASS desktops x=`（最初の slot、pill の左は x−10）と `KWL GLASS status left=` のうち docked の control より右で最も左の物にした。T1-618 の値で計算すると 756 と 781 の中点の 768（bar の題の範囲、どの pill にも当たらない）。awk を同じ行で模擬して 768 を確かめた。`sh -n` 3 本 ok。
+- **T1 の再試験（p010 だけ）**: この commit を含む tree で menu の image（`plan/tools/titlebar/build-menu-image.sh build/<T>`）を作り、guest を起こして `plan/tools/titlebar/titlebar-p010.sh build/<T>/p010`。PASS: 最後の行 `titlebar-p010: PASS`（`GLASS undock surface=8 ok` と narrow の 5 行 ok）。p011・p013 は同じ関数の直しなので、時間があれば同じ image で流す（任意）。
+
 ## 残り・制限
 
 - QEMU・実機: 未実施（上の T1 の依頼）。
