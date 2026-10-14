@@ -2177,6 +2177,7 @@ vfs_mount_root_volume(
 		return error;
 	}
 
+	/* The console says why the root is read-only. */
 	VFS_LOG("vfs: the root on %s cannot be mounted read-write (error %d; the ufs line above says why); it is mounted READ-ONLY, and init checks it with fsck\n",
 	    args->fspec,
 	    error);
