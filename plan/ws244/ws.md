@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: p001（棚卸しと方針）から。
+Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47c）。**2026-10-16 ユーザーの分割**: Gen12（5330）の display は書き直し → [WS245](../ws245/ws.md) に移した。この WS の残りは (1) **Gen9 の display（display/gen9-*.c）を guardrail に沿って直す**（file の先頭の「code は自前、順序と表は Linux」などの出典の宣言を消し、表・順序の値は block ごとに「Cited: …」、参考にした手順は「Procedure referenced: …」を付ける。code が写しなら書き直す）、(2) GT（gt-power.c・workarounds.c・verify-workarounds.c の「Follows Linux …」の関数）、(3) compiler・render（Mesa の手順の言及）、(4) intel/ の header（データは block ごとの引用に、file の先頭の MIT の表示と出典を消す）、(5) display の自前の file の言及の確認、(6) 最後に license の package（userland/base/licenses/i915-driver/）の整理。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-16）
@@ -16,6 +16,8 @@ Resume point: p001（棚卸しと方針）から。
 「code・コメント・構造:については、MITであっても写してはいけません。もしかして写した箇所があるんですか？」
 「範囲を全部の WS に広げます。」
 「i915はWSを立てて、すぐに対処してください。」
+「Gen12（5330）のディスプレイは書き直します。WSを立ててください。Gen9 のディスプレイはガードレールにそって修正してください。」（→ Gen12 は WS245）
+「ガードレイルに、ファイル上部には参考にしたことや引用したことを一切書かず、該当箇所にブロック単位で記載することを明記してください。」
 
 ## 背景
 
