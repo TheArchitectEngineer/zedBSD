@@ -20,16 +20,26 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * zedBSD's bounds of the operational start: the size of one copied event, the
+ * most events read while waiting for one, and the time each step may take.
+ */
 #define INTEL_AX211_RUNTIME_START_EVENT_CAPACITY 4096U
 #define INTEL_AX211_RUNTIME_START_EVENT_LIMIT 64U
 #define INTEL_AX211_RUNTIME_START_ALIVE_TIMEOUT_US 1000000U
 #define INTEL_AX211_RUNTIME_START_COMMAND_TIMEOUT_US 1000000U
 #define INTEL_AX211_RUNTIME_START_PNVM_TIMEOUT_US 2000000U
 #define INTEL_AX211_RUNTIME_START_INIT_TIMEOUT_US 2000000U
+
+/*
+ * The sizes of the answers the start accepts: the smallest and largest country
+ * answer, and the one-word status answer.
+ */
 #define INTEL_AX211_RUNTIME_START_MCC_RESPONSE_MIN 20U
 #define INTEL_AX211_RUNTIME_START_MCC_RESPONSE_MAX 460U
 #define INTEL_AX211_RUNTIME_START_GENERIC_RESPONSE_SIZE 4U
 
+/* The results of the operational start coordinator. */
 enum intel_ax211_runtime_start_result {
 	INTEL_AX211_RUNTIME_START_OK = 0,
 	INTEL_AX211_RUNTIME_START_INVALID = 1,
@@ -46,6 +56,9 @@ enum intel_ax211_runtime_start_result {
 	INTEL_AX211_RUNTIME_START_RUNTIME = 12
 };
 
+/*
+ * Where the session is; the two STOP_REQUIRED states await a cleanup retry.
+ */
 enum intel_ax211_runtime_start_state {
 	INTEL_AX211_RUNTIME_START_STATE_IDLE = 0,
 	INTEL_AX211_RUNTIME_START_STATE_STARTING = 1,
@@ -124,10 +137,10 @@ int drv_intel_ax211_runtime_start_init(
 	const struct intel_ax211_protocol_command_table *command_table,
 	const struct intel_ax211_protocol_nvm *nvm, int ltr_enabled,
 	uint32_t generation_seed);
-int
-drv_intel_ax211_runtime_start_run(struct intel_ax211_runtime_start *session);
-int
-drv_intel_ax211_runtime_start_stop(struct intel_ax211_runtime_start *session);
+int drv_intel_ax211_runtime_start_run(
+	struct intel_ax211_runtime_start *session);
+int drv_intel_ax211_runtime_start_stop(
+	struct intel_ax211_runtime_start *session);
 int drv_intel_ax211_runtime_start_cleanup(
 	struct intel_ax211_runtime_start *session);
 int drv_intel_ax211_runtime_start_mcc(
