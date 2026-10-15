@@ -8,8 +8,8 @@ Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q1202（P3、ws039-p001、2026-10-15 夕）
-Resume point: P3 が q1202 で p001 を再開し [design.md](design.md)・[amdrdna-license-audit.md](amdrdna-license-audit.md) を書いた（2026-10-15 夕）。design-reviewer の review（design-review.md、33 件）を反映済み。次は Q1 の clearance の判定 → p002（A0・A1）。design の 15 節の判断の項目 12 件（既定つき）はユーザー待ち。Phase は design の 16 節の p002〜p011（p011 = session と GPU device の登録、新規）。調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/（約 600 MB の source と note は消さない。temp/linux に amdgpu_dm を sparse で足した）。[p007](phase007/phase.md) の 7.2（Mesa の tarball は /home/awe/zedBSD-worktrees/p5/build/mesa、消さない）。
+Queue: q1210（P3、ws039-p001 の design.md の改訂 2、2026-10-15 夜）
+Resume point: P3 が q1210 で [design.md](design.md) の改訂 2（§15 の回答 12 件と RX 5600 XT の到着を反映。段 A0〜A13、Phase p002〜p016、必須 79〜121 LW）を書いた（2026-10-15 夜）。次は design-reviewer の改訂 2 の review（design-review-2.md）→ blocker・major の反映 → Q1 の clearance の判定 → p002（A0・A1・A1v、実機の RX 5600 XT で読むだけ）。design の 15 節の新しい問い 12 件（既定つき）はユーザー待ち。調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/（約 600 MB の source と note は消さない）。[p007](phase007/phase.md) の 7.8（P3 とのすり合わせは p008 の最初）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -30,7 +30,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-[design.md](design.md) の 16 節の表が正（p002〜p011、計 43〜70 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（in-progress、design.md 済み・review 待ち）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
+[design.md](design.md) の 16 節の表が正（改訂 2: p002〜p016、必須 79〜121 LW。下の「再開と計画」の表は 2026-10-15 昼の案で、段の順と p011 以降が違う）。作った Phase: [p001](phase001/phase.md) 調べと設計（in-progress、design.md 済み・review 待ち）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
 
 ## 要検討・ブロック（2026-10-05）
 
