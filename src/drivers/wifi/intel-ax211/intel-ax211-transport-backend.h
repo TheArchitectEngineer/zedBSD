@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 
+/* The results of the transport backend adapter. */
 enum intel_ax211_transport_backend_result {
 	INTEL_AX211_TRANSPORT_BACKEND_OK = 0,
 	INTEL_AX211_TRANSPORT_BACKEND_INVALID = 1,
@@ -28,6 +29,9 @@ enum intel_ax211_transport_backend_result {
 };
 
 /*
+ * The transport operations of one device, carried out on its BAR and DMA
+ * memory.
+ *
  * The owning controller must serialize ISR, runtime, reset, and MMIO access
  * to this object.  The adapter deliberately contains no independent lock:
  * both its monotonic-clock latch and the referenced MMIO ownership depth are

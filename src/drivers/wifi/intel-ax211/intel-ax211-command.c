@@ -15,14 +15,14 @@
 #include <kern/kcrt.h>
 
 
-static int ax211_command_transaction_valid( const struct intel_ax211_command_transaction *transaction);
+static int ax211_command_transaction_valid(const struct intel_ax211_command_transaction *transaction);
 static int ax211_command_request_valid(const struct intel_ax211_command_request *request);
 static int ax211_command_prepare_result(int result);
-static uint32_t ax211_command_next_generation( struct intel_ax211_command_transaction *transaction);
-static int ax211_command_inactive_event_result( const struct intel_ax211_command_transaction *transaction, uint8_t index, uint32_t hardware_epoch);
+static uint32_t ax211_command_next_generation(struct intel_ax211_command_transaction *transaction);
+static int ax211_command_inactive_event_result(const struct intel_ax211_command_transaction *transaction, uint8_t index, uint32_t hardware_epoch);
 static int ax211_command_protocol_result(int result);
 static void ax211_command_entry_clear(struct intel_ax211_command_transaction *transaction, uint8_t index);
-static int ax211_command_inactive_handle_result( const struct intel_ax211_command_transaction *transaction, const struct intel_ax211_command_handle *handle);
+static int ax211_command_inactive_handle_result(const struct intel_ax211_command_transaction *transaction, const struct intel_ax211_command_handle *handle);
 
 /*
  * Binds logical command metadata to one empty transport command ring.
@@ -34,20 +34,30 @@ drv_intel_ax211_command_transaction_init(
 	size_t max_pending,
 	uint32_t hardware_epoch)
 {
-	/* Handles the transaction availability. */
-	if (transaction == NULL || transport == NULL || hardware_epoch == 0U ||
-	    max_pending == 0U || max_pending > INTEL_AX211_COMMAND_MAX_PENDING) {
-		/* Returns the computed result. */
+	size_t pending;
+
+	/* Refuses missing objects, an unset epoch and a pending limit out of range. */
+	if (transaction == NULL ||
+	    transport == NULL ||
+	    hardware_epoch == 0U ||
+	    max_pending == 0U ||
+	    max_pending > INTEL_AX211_COMMAND_MAX_PENDING) {
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 
-	/* Checks the drv intel ax211 transport command pending count result. */
-	if (!transport->rings_initialized || transport->command_prepared ||
-	    transport->command_reset_required ||
-	    drv_intel_ax211_transport_command_pending_count(transport) != 0U) {
-		/* Returns the computed result. */
+	/* Refuses a command ring that is not set up, or that holds a prepared command. */
+	if (!transport->rings_initialized ||
+	    transport->command_prepared ||
+	    transport->command_reset_required) {
 		return INTEL_AX211_COMMAND_INVALID;
 	}
+
+	/* Refuses a command ring that still holds commands. */
+	pending = drv_intel_ax211_transport_command_pending_count(transport);
+	if (pending != 0U)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Binds the transaction to the ring; handle generations start at 1. */
 	kern_memset(transaction, 0, sizeof(*transaction));
 	transaction->transport = transport;
 	transaction->max_pending = max_pending;
@@ -55,39 +65,43 @@ drv_intel_ax211_command_transaction_init(
 	transaction->hardware_epoch = hardware_epoch;
 	transaction->initialized = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded: the transaction accepts commands. */
 	return INTEL_AX211_COMMAND_OK;
 }
 
 /*
- * Implements the drv intel ax211 command nvm access complete encode operation.
+ * Encodes the payload of the NVM handoff command, one zero word.
  */
 int
 drv_intel_ax211_command_nvm_handoff_encode(
 	uint8_t output[4])
 {
-	/* Handles the output availability. */
+	/* Refuses a missing output buffer. */
 	if (output == NULL)
 		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Writes the zero word. */
 	kern_memset(output, 0, 4U);
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_COMMAND_OK;
 }
 
 /*
- * Implements the drv intel ax211 command nvm get info encode operation.
+ * Encodes the payload of the NVM query command, one zero word.
  */
 int
 drv_intel_ax211_command_nvm_query_encode(
 	uint8_t output[4])
 {
-	/* Handles the output availability. */
+	/* Refuses a missing output buffer. */
 	if (output == NULL)
 		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Writes the zero word. */
 	kern_memset(output, 0, 4U);
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_COMMAND_OK;
 }
 
@@ -106,25 +120,41 @@ drv_intel_ax211_command_submit(
 	struct intel_ax211_command_handle submitted;
 	struct intel_ax211_command_entry *entry;
 	int abort_result;
+	int valid;
 	int result;
 
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction) ||
-	    !ax211_command_request_valid(request) || handle == NULL ||
-	    timeout == 0U || now > UINT64_MAX - timeout) {
-		/* Returns the computed result. */
+	/* Refuses an unusable transaction. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Refuses a malformed request. */
+	valid = ax211_command_request_valid(request);
+	if (!valid)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Refuses a missing handle and a timeout that is zero or overflows the clock. */
+	if (handle == NULL ||
+	    timeout == 0U ||
+	    now > UINT64_MAX - timeout) {
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 
-	/* Handles the transaction condition. */
+	/*
+	 * Refuses new commands once a command was abandoned: the ring is no
+	 * longer trusted.
+	 */
 	if (transaction->poisoned)
 		return INTEL_AX211_COMMAND_POISONED;
 
-	/* Handles the transaction condition. */
+	/* Refuses a command beyond the pending limit. */
 	if (transaction->pending_count >= transaction->max_pending)
 		return INTEL_AX211_COMMAND_FULL;
 
-	/* Handles the request condition. */
+	/*
+	 * Prepares the command in its slot, inline or through the external
+	 * buffer.
+	 */
 	if (request->payload_length <=
 	    INTEL_AX211_COMMAND_INLINE_PAYLOAD_SIZE) {
 		result = drv_intel_ax211_transport_command_prepare_inline(
@@ -138,25 +168,28 @@ drv_intel_ax211_command_submit(
 			&submitted.token);
 	}
 
-	/* Checks the operation result. */
+	/* Reports why the command could not be prepared. */
 	if (result != INTEL_AX211_TRANSPORT_OK) {
-		/* Obtains the ax211 command prepare result result. */
 		error = ax211_command_prepare_result(result);
-
-		/* Failed. */
 		return error;
 	}
 
-	/* Handles the entry condition. */
+	/*
+	 * Refuses a slot that the transaction still tracks: the ring and the
+	 * transaction disagree.
+	 */
 	entry = &transaction->entry[submitted.token.index];
 	if (entry->active) {
-		/* Handles the abort result condition. */
+		/*
+		 * Undoes the prepared slot; a failed undo leaves the ring
+		 * untrusted.
+		 */
 		abort_result = drv_intel_ax211_transport_command_abort_prepared(
 			transaction->transport, &submitted.token);
 		if (abort_result != INTEL_AX211_TRANSPORT_OK)
 			transaction->poisoned = 1U;
 
-		/* Returns the computed result. */
+		/* Reports the disagreement as a transport failure. */
 		return INTEL_AX211_COMMAND_TRANSPORT_FAILED;
 	}
 
@@ -182,41 +215,41 @@ drv_intel_ax211_command_submit(
 	transaction->pending_count++;
 	*handle = submitted;
 
-	/* Checks the operation result. */
+	/* Rings the doorbell. */
 	result = drv_intel_ax211_transport_command_publish(
 		transaction->transport, &submitted.token);
 	if (result == INTEL_AX211_TRANSPORT_OK)
 		return INTEL_AX211_COMMAND_OK;
+
+	/* An ambiguous doorbell may have reached the device: the slot stays owned. */
 	if (result == INTEL_AX211_TRANSPORT_AMBIGUOUS) {
 		entry->abandoned = 1U;
 		transaction->poisoned = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_DOORBELL_FAILED;
 	}
 
-	/* A definite pre-doorbell failure may safely undo the prepared slot. */
-
-	/* Handles the abort result condition. */
+	/*
+	 * A definite pre-doorbell failure may safely undo the prepared slot.  The slot
+	 * is forgotten when the undo succeeds.
+	 */
 	abort_result = drv_intel_ax211_transport_command_abort_prepared(
 		transaction->transport, &submitted.token);
 	if (abort_result == INTEL_AX211_TRANSPORT_OK) {
 		drv_intel_ax211_scrub(entry, sizeof(*entry));
 		transaction->pending_count--;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_TRANSPORT_FAILED;
 	}
 
+	/* A failed undo leaves the slot owned and the ring untrusted. */
 	entry->abandoned = 1U;
 	transaction->poisoned = 1U;
 
-	/* Returns the computed result. */
+	/* Reports the failed doorbell. */
 	return INTEL_AX211_COMMAND_TRANSPORT_FAILED;
-}
+	}
 
 /*
- * Implements the drv intel ax211 command submit nvm access complete operation.
+ * Submits the NVM handoff command.
  */
 int
 drv_intel_ax211_command_submit_nvm_handoff(
@@ -228,13 +261,14 @@ drv_intel_ax211_command_submit_nvm_handoff(
 	int error;
 	struct intel_ax211_command_request request;
 	uint8_t payload[4];
+	int result;
 
-	/* Checks the drv intel ax211 command nvm access complete encode result. */
-	if (drv_intel_ax211_command_nvm_handoff_encode(payload) !=
-	    INTEL_AX211_COMMAND_OK) {
-		/* Returns the computed result. */
+	/* Encodes the payload. */
+	result = drv_intel_ax211_command_nvm_handoff_encode(payload);
+	if (result != INTEL_AX211_COMMAND_OK)
 		return INTEL_AX211_COMMAND_INVALID;
-	}
+
+	/* Describes the command: no answer payload is expected. */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
 	request.command.opcode =
@@ -246,16 +280,18 @@ drv_intel_ax211_command_submit_nvm_handoff(
 	request.minimum_response_length = 0U;
 	request.maximum_response_length = 0U;
 
-	/* Obtains the drv intel ax211 command submit result. */
+	/* Submits it. */
 	error = drv_intel_ax211_command_submit(transaction, &request,
-							 now, timeout, handle);
+						 now, timeout, handle);
+	if (error != INTEL_AX211_COMMAND_OK)
+		return error;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the command is pending. */
+	return INTEL_AX211_COMMAND_OK;
 }
 
 /*
- * Implements the drv intel ax211 command submit nvm get info operation.
+ * Submits the NVM query command.
  */
 int
 drv_intel_ax211_command_submit_nvm_query(
@@ -267,13 +303,14 @@ drv_intel_ax211_command_submit_nvm_query(
 	int error;
 	struct intel_ax211_command_request request;
 	uint8_t payload[4];
+	int result;
 
-	/* Checks the drv intel ax211 command nvm get info encode result. */
-	if (drv_intel_ax211_command_nvm_query_encode(payload) !=
-	    INTEL_AX211_COMMAND_OK) {
-		/* Returns the computed result. */
+	/* Encodes the payload. */
+	result = drv_intel_ax211_command_nvm_query_encode(payload);
+	if (result != INTEL_AX211_COMMAND_OK)
 		return INTEL_AX211_COMMAND_INVALID;
-	}
+
+	/* Describes the command and the exact size of its answer. */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE;
 	request.command.opcode = INTEL_AX211_PROTOCOL_NVM_QUERY_OPCODE;
@@ -286,12 +323,14 @@ drv_intel_ax211_command_submit_nvm_query(
 	request.maximum_response_length =
 		INTEL_AX211_PROTOCOL_NVM_QUERY_SIZE;
 
-	/* Obtains the drv intel ax211 command submit result. */
+	/* Submits it. */
 	error = drv_intel_ax211_command_submit(transaction, &request,
-							 now, timeout, handle);
+						 now, timeout, handle);
+	if (error != INTEL_AX211_COMMAND_OK)
+		return error;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the command is pending. */
+	return INTEL_AX211_COMMAND_OK;
 }
 
 /*
@@ -314,73 +353,76 @@ drv_intel_ax211_command_complete(
 	struct intel_ax211_event event;
 	uint8_t wire_group;
 	int protocol_result;
+	int valid;
 	int result;
 	int transport_result;
 
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction) ||
-	    event_bytes == NULL || response_length == NULL ||
+	/* Refuses an unusable transaction. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Refuses missing buffers and an unset epoch. */
+	if (event_bytes == NULL ||
+	    response_length == NULL ||
 	    hardware_epoch == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 
-	/* Handles the hardware epoch condition. */
+	/* Refuses an event of an earlier firmware epoch. */
 	if (hardware_epoch != transaction->hardware_epoch)
 		return INTEL_AX211_COMMAND_STALE;
+
+	/* Decodes the event header. */
 	result =
 		drv_intel_ax211_event_decode(event_bytes, event_length, &event);
-
-	/* Checks the operation result. */
 	if (result != INTEL_AX211_SUCCESS)
 		return INTEL_AX211_COMMAND_MALFORMED;
 
-	/* Handles the event condition. */
+	/* An unsolicited notification is not the answer to a command. */
 	if ((event.queue & 0x80U) != 0U)
 		return INTEL_AX211_COMMAND_OUT_OF_ORDER;
 
-	/* Handles the entry condition. */
+	/* Classifies an answer for a slot that is not pending. */
 	entry = &transaction->entry[event.index];
 	if (!entry->active) {
-		/* Obtains the ax211 command inactive event result result. */
 		error = ax211_command_inactive_event_result(
 			transaction, event.index, hardware_epoch);
-
-		/* Failed. */
 		return error;
 	}
 
-	/* Handles the event condition. */
+	/* Refuses an answer from another ring. */
 	if (event.queue != entry->pending.queue)
 		return INTEL_AX211_COMMAND_OUT_OF_ORDER;
 
-	/* Handles the transport result condition. */
+	/* Refuses an answer that is not for the oldest pending command. */
 	transport_result = drv_intel_ax211_transport_command_oldest(
 		transaction->transport, &oldest);
 	if (transport_result != INTEL_AX211_TRANSPORT_OK ||
 	    oldest.queue != event.queue || oldest.index != event.index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_OUT_OF_ORDER;
 	}
+
+	/* Builds the message the protocol layer validates. */
 	kern_memset(&message, 0, sizeof(message));
 	message.opcode = event.command.opcode;
 	wire_group = event.flags &
 		     (uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
-
 	/*
 	 * Firmware reports the LONG_GROUP carrier used for an API-89 legacy
 	 * command.  Restore its logical group only for the matching pending
 	 * token; genuine long-group commands retain their wire identity.
 	 */
 	if (entry->pending.group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
-	    wire_group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC_WIDE)
+	    wire_group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC_WIDE) {
 		message.group = INTEL_AX211_PROTOCOL_FAMILY_CLASSIC;
-	else
+	} else {
 		message.group = wire_group;
+	}
 
 	/*
-	 * Response layout comes from the pinned command-version table, not
-	 * wire.
+	 * The response layout comes from the pinned command-version table, not from
+	 * the wire.
 	 */
 	message.version = entry->pending.response_version;
 	message.flags = event.flags;
@@ -389,40 +431,46 @@ drv_intel_ax211_command_complete(
 	message.generation = hardware_epoch;
 	message.payload = event_bytes + event.payload_offset;
 	message.payload_length = event.payload_length;
+
+	/* Validates the answer against what the slot is waiting for. */
 	protocol_result = drv_intel_ax211_protocol_command_response_validate(
 		&message, &entry->pending);
 	result = ax211_command_protocol_result(protocol_result);
 	*response_length = 0U;
-	/* Handles the response availability. */
+
+	/* Refuses a valid answer that does not fit the caller's buffer. */
 	if (result == INTEL_AX211_COMMAND_OK &&
 	    (message.payload_length > response_capacity ||
 	     (message.payload_length != 0U && response == NULL))) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_BUFFER_TOO_SMALL;
 	}
 
-	/* Handles the transport result condition. */
+	/* Retires the slot; a failed retirement leaves the ring untrusted. */
 	transport_result = drv_intel_ax211_transport_command_complete(
 		transaction->transport, &oldest);
 	if (transport_result != INTEL_AX211_TRANSPORT_OK) {
 		entry->abandoned = 1U;
 		transaction->poisoned = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_TRANSPORT_FAILED;
 	}
 
-	/* Checks the operation result. */
+	/* Copies a valid answer to the caller. */
 	if (result == INTEL_AX211_COMMAND_OK && message.payload_length != 0U)
 		kern_memcpy(response, message.payload, message.payload_length);
 
-	/* Checks the operation result. */
+	/* Reports the length of a valid answer. */
 	if (result == INTEL_AX211_COMMAND_OK)
 		*response_length = message.payload_length;
+
+	/* Forgets the slot and remembers what completed in it. */
 	ax211_command_entry_clear(transaction, event.index);
 
-	/* Returns the computed result. */
-	return result;
+	/* Reports a failed answer. */
+	if (result != INTEL_AX211_COMMAND_OK)
+		return result;
+
+	/* Succeeded: the answer is in the caller's buffer. */
+	return INTEL_AX211_COMMAND_OK;
 }
 
 /*
@@ -435,39 +483,45 @@ drv_intel_ax211_command_cancel(
 {
 	int error;
 	struct intel_ax211_command_entry *entry;
+	int valid;
 
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction) || handle == NULL ||
+	/* Refuses an unusable transaction. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Refuses a missing handle or one of an earlier firmware epoch. */
+	if (handle == NULL ||
 	    handle->hardware_epoch != transaction->hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 
-	/* Handles the entry condition. */
+	/* Classifies a handle whose slot is not pending. */
 	entry = &transaction->entry[handle->token.index];
 	if (!entry->active) {
-		/* Obtains the ax211 command inactive handle result result. */
 		error = ax211_command_inactive_handle_result(
 			transaction, handle);
-
-		/* Failed. */
 		return error;
 	}
 
-	/* Handles the entry condition. */
+	/* Refuses a handle of an earlier command in the same slot. */
 	if (entry->logical_generation != handle->generation ||
 	    entry->pending.queue != handle->token.queue) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_STALE;
 	}
 
-	/* Handles the entry condition. */
+	/* Refuses a second cancel of the same command. */
 	if (entry->abandoned)
 		return INTEL_AX211_COMMAND_DUPLICATE;
+
+	/*
+	 * Abandons the command.  Its slot stays owned by the device, so the ring is no
+	 * longer trusted for new commands.
+	 */
 	entry->abandoned = 1U;
 	transaction->poisoned = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded: the command is abandoned. */
 	return INTEL_AX211_COMMAND_OK;
 }
 
@@ -482,41 +536,51 @@ drv_intel_ax211_command_timeout_oldest(
 {
 	struct intel_ax211_command_entry *entry;
 	struct intel_ax211_ring_token oldest;
+	int valid;
 	int result;
 
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction) || handle == NULL)
+	/* Refuses an unusable transaction. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
 		return INTEL_AX211_COMMAND_INVALID;
 
-	/* Handles the transaction condition. */
+	/* Refuses a missing handle. */
+	if (handle == NULL)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Nothing is pending. */
 	if (transaction->pending_count == 0U)
 		return INTEL_AX211_COMMAND_EMPTY;
 
-	/* Checks the operation result. */
+	/* Finds the oldest command on the ring. */
 	result = drv_intel_ax211_transport_command_oldest(
 		transaction->transport, &oldest);
 	if (result != INTEL_AX211_TRANSPORT_OK)
 		return INTEL_AX211_COMMAND_MALFORMED;
 
-	/* Handles the entry condition. */
+	/* Refuses a ring whose oldest slot the transaction does not track. */
 	entry = &transaction->entry[oldest.index];
 	if (!entry->active)
 		return INTEL_AX211_COMMAND_MALFORMED;
+
+	/* Reports which command is the oldest. */
 	handle->token = oldest;
 	handle->generation = entry->logical_generation;
 	handle->hardware_epoch = transaction->hardware_epoch;
 
-	/* Handles the entry condition. */
+	/* An abandoned command already poisoned the ring. */
 	if (entry->abandoned)
 		return INTEL_AX211_COMMAND_POISONED;
 
-	/* Handles the now condition. */
+	/* The oldest command still has time. */
 	if (now < entry->deadline)
 		return INTEL_AX211_COMMAND_PENDING;
+
+	/* Abandons the late command; its slot stays owned by the device. */
 	entry->abandoned = 1U;
 	transaction->poisoned = 1U;
 
-	/* Returns the computed result. */
+	/* Reports the timeout. */
 	return INTEL_AX211_COMMAND_TIMEOUT;
 }
 
@@ -529,21 +593,24 @@ drv_intel_ax211_command_cancel_all(
 {
 	size_t index;
 	int found;
+	int valid;
 
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction))
+	/* Nothing to abandon without a usable transaction. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
 		return;
+
+	/* Abandons every pending command. */
 	found = 0;
-	/* Process each remaining element. */
 	for (index = 0U; index < INTEL_AX211_COMMAND_ENTRY_COUNT; index++) {
-		/* Handles the transaction condition. */
+		/* Only a pending slot is abandoned. */
 		if (transaction->entry[index].active) {
 			transaction->entry[index].abandoned = 1U;
 			found = 1;
 		}
 	}
 
-	/* Handles the found condition. */
+	/* An abandoned command leaves the ring untrusted. */
 	if (found)
 		transaction->poisoned = 1U;
 }
@@ -556,23 +623,31 @@ drv_intel_ax211_command_after_device_reset(
 	struct intel_ax211_command_transaction *transaction,
 	uint32_t hardware_epoch)
 {
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction) ||
-	    hardware_epoch == 0U ||
+	size_t pending;
+	int valid;
+
+	/* Refuses an unusable transaction. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
+		return INTEL_AX211_COMMAND_INVALID;
+
+	/* Refuses an unset epoch or the epoch the transaction already has. */
+	if (hardware_epoch == 0U ||
 	    hardware_epoch == transaction->hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 
-	/* Checks the drv intel ax211 transport command pending count result. */
-	if (drv_intel_ax211_transport_command_pending_count(
-		    transaction->transport) != 0U ||
+	/* Refuses a command ring that the reset has not emptied and cleaned. */
+	pending = drv_intel_ax211_transport_command_pending_count(
+		transaction->transport);
+	if (pending != 0U ||
 	    transaction->transport->command_prepared ||
 	    transaction->transport->command_reset_required ||
 	    !transaction->transport->command_reset_completed) {
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_TRANSPORT_FAILED;
 	}
+
+	/* Forgets every slot and starts the new epoch with a trusted ring. */
 	drv_intel_ax211_scrub(transaction->entry, sizeof(transaction->entry));
 	drv_intel_ax211_scrub(transaction->last_generation,
 			      sizeof(transaction->last_generation));
@@ -583,74 +658,93 @@ drv_intel_ax211_command_after_device_reset(
 	transaction->poisoned = 0U;
 	transaction->transport->command_reset_completed = 0U;
 
-	/* Handles the transaction condition. */
+	/* Keeps handle generations nonzero. */
 	if (transaction->next_generation == 0U)
 		transaction->next_generation = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded: the transaction accepts commands of the new epoch. */
 	return INTEL_AX211_COMMAND_OK;
 }
 
 /*
- * Implements the drv intel ax211 command pending count operation.
+ * Reports how many commands are pending.
  */
 size_t
 drv_intel_ax211_command_pending_count(
 	const struct intel_ax211_command_transaction *transaction)
 {
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction))
+	int valid;
+
+	/* An unusable transaction has nothing pending. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
 		return 0U;
 
-	/* Returns the computed result. */
+	/* Reports the count. */
 	return transaction->pending_count;
 }
 
 /*
- * Implements the drv intel ax211 command is poisoned operation.
+ * Reports whether an abandoned command left the ring untrusted.
  */
 int
 drv_intel_ax211_command_is_poisoned(
 	const struct intel_ax211_command_transaction *transaction)
 {
-	/* Checks the ax211 command transaction valid result. */
-	if (!ax211_command_transaction_valid(transaction))
+	int valid;
+
+	/* An unusable transaction is not reported as poisoned. */
+	valid = ax211_command_transaction_valid(transaction);
+	if (!valid)
 		return 0;
 
-	/* Returns the computed result. */
-	return transaction->poisoned != 0U;
+	/* Reports the poisoned ring. */
+	if (transaction->poisoned != 0U)
+		return 1;
+
+	/* Reports a trusted ring. */
+	return 0;
 }
 
-/* Validates one bound logical transaction without inspecting DMA storage. */
+/*
+ * Reports whether a transaction is bound and consistent: 1 when it is, 0 when
+ * not.
+ */
 static int
 ax211_command_transaction_valid(
 	const struct intel_ax211_command_transaction *transaction)
 {
-	/* Handles the transaction availability. */
-	if (transaction == NULL || !transaction->initialized ||
-	    transaction->transport == NULL || transaction->hardware_epoch == 0U) {
-		/* Succeeded. */
+	/* Rejects an unbound transaction. */
+	if (transaction == NULL ||
+	    !transaction->initialized ||
+	    transaction->transport == NULL ||
+	    transaction->hardware_epoch == 0U) {
 		return 0;
 	}
 
-	/* Handles the transaction condition. */
+	/* Rejects a pending limit or count out of range. */
 	if (transaction->max_pending == 0U ||
 	    transaction->max_pending > INTEL_AX211_COMMAND_MAX_PENDING ||
 	    transaction->pending_count > transaction->max_pending) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The transaction is usable. */
 	return 1;
 }
 
-/* Validates one bounded inline request before reserving hardware state. */
+/*
+ * Reports whether a request fits the ring and the protocol: 1 when it does, 0
+ * when not.
+ */
 static int
 ax211_command_request_valid(
 	const struct intel_ax211_command_request *request)
 {
-	/* Handles the request availability. */
+	/*
+	 * Rejects an unknown version, an oversized payload or inconsistent
+	 * answer bounds.
+	 */
 	if (request == NULL ||
 	    request->command.version == INTEL_AX211_PROTOCOL_UNKNOWN_VERSION ||
 	    request->payload_length >
@@ -660,32 +754,31 @@ ax211_command_request_valid(
 	    request->minimum_response_length >
 		    request->maximum_response_length ||
 	    request->maximum_response_length > INTEL_AX211_MAX_COMMAND_PAYLOAD) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The request is usable. */
 	return 1;
 }
 
-/* Maps a definite pre-doorbell transport result. */
+/* Maps a transport failure before the doorbell to the command result. */
 static int
 ax211_command_prepare_result(
 	int result)
 {
-	/* Checks the operation result. */
+	/* The ring has no free slot. */
 	if (result == INTEL_AX211_TRANSPORT_FULL)
 		return INTEL_AX211_COMMAND_FULL;
 
-	/* Checks the operation result. */
+	/* The transport refused the request. */
 	if (result == INTEL_AX211_TRANSPORT_INVALID)
 		return INTEL_AX211_COMMAND_INVALID;
 
-	/* Checks the operation result. */
+	/* The command could not be written into its slot. */
 	if (result == INTEL_AX211_TRANSPORT_IO)
 		return INTEL_AX211_COMMAND_ENCODE_FAILED;
 
-	/* Returns the computed result. */
+	/* Any other failure is a transport failure. */
 	return INTEL_AX211_COMMAND_TRANSPORT_FAILED;
 }
 
@@ -696,14 +789,13 @@ ax211_command_next_generation(
 {
 	uint32_t generation;
 
+	/* Hands out the next generation and skips zero when the counter wraps. */
 	generation = transaction->next_generation;
 	transaction->next_generation++;
-
-	/* Handles the transaction condition. */
 	if (transaction->next_generation == 0U)
 		transaction->next_generation = 1U;
 
-	/* Returns the computed result. */
+	/* Reports the generation handed out. */
 	return generation;
 }
 
@@ -714,14 +806,11 @@ ax211_command_inactive_event_result(
 	uint8_t index,
 	uint32_t hardware_epoch)
 {
-	/* Handles the transaction condition. */
+	/* An event for a slot completed in this epoch is a repeat. */
 	if (transaction->last_completion_epoch[index] == hardware_epoch &&
-	    hardware_epoch != 0U) {
-		/* Returns the computed result. */
+	    hardware_epoch != 0U)
 		return INTEL_AX211_COMMAND_DUPLICATE;
-	}
-
-	/* Returns the computed result. */
+	/* Any other event for an idle slot belongs to an earlier epoch. */
 	return INTEL_AX211_COMMAND_STALE;
 }
 
@@ -730,22 +819,17 @@ static int
 ax211_command_protocol_result(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each protocol result to the command result. */
 	switch (result) {
 	case INTEL_AX211_PROTOCOL_OK:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_OK;
 	case INTEL_AX211_PROTOCOL_FAILED:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_FIRMWARE_FAILED;
 	case INTEL_AX211_PROTOCOL_UNSUPPORTED:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_VERSION_MISMATCH;
 	case INTEL_AX211_PROTOCOL_STALE:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_STALE;
 	case INTEL_AX211_PROTOCOL_TOKEN_MISMATCH:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_OUT_OF_ORDER;
 	case INTEL_AX211_PROTOCOL_TRUNCATED:
 	case INTEL_AX211_PROTOCOL_OVERSIZED:
@@ -753,7 +837,6 @@ ax211_command_protocol_result(
 	case INTEL_AX211_PROTOCOL_MISSING:
 	case INTEL_AX211_PROTOCOL_DUPLICATE:
 	default:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_MALFORMED;
 	}
 }
@@ -781,14 +864,14 @@ ax211_command_inactive_handle_result(
 	const struct intel_ax211_command_transaction *transaction,
 	const struct intel_ax211_command_handle *handle)
 {
-	/* Handles the transaction condition. */
+	/*
+	 * A handle of the command that completed last in the slot is a repeat.
+	 */
 	if (transaction->last_generation[handle->token.index] ==
 		    handle->generation &&
-	    handle->generation != 0U) {
-		/* Returns the computed result. */
+	    handle->generation != 0U)
 		return INTEL_AX211_COMMAND_DUPLICATE;
-	}
 
-	/* Returns the computed result. */
+	/* Any other handle names an earlier command. */
 	return INTEL_AX211_COMMAND_STALE;
 }

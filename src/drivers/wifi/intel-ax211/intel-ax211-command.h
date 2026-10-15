@@ -20,11 +20,17 @@
 #include "intel-ax211-protocol.h"
 #include "intel-ax211-transport.h"
 
+/*
+ * The size of the command ring, the most commands pending at once (one slot
+ * stays free so a full ring differs from an empty one), and the largest
+ * payload inline in a slot and in the external buffer.
+ */
 #define INTEL_AX211_COMMAND_ENTRY_COUNT 256U
 #define INTEL_AX211_COMMAND_MAX_PENDING 255U
 #define INTEL_AX211_COMMAND_INLINE_PAYLOAD_SIZE 316U
 #define INTEL_AX211_COMMAND_EXTERNAL_PAYLOAD_SIZE 4088U
 
+/* The results of the command transactions. */
 enum intel_ax211_command_result {
 	INTEL_AX211_COMMAND_OK = 0,
 	INTEL_AX211_COMMAND_INVALID = 1,
@@ -45,12 +51,22 @@ enum intel_ax211_command_result {
 	INTEL_AX211_COMMAND_TRANSPORT_FAILED = 16
 };
 
+/*
+ * What a caller holds for one submitted command.
+ *
+ * The ring token names the slot; the generation tells this command from an
+ * earlier one in the same slot, and the epoch ties it to one firmware run.
+ */
 struct intel_ax211_command_handle {
 	struct intel_ax211_ring_token token;
 	uint32_t generation;
 	uint32_t hardware_epoch;
 };
 
+/*
+ * One command to submit, with the bounds and the layout version of its
+ * answer.
+ */
 struct intel_ax211_command_request {
 	struct intel_ax211_command_id command;
 	const void *payload;
@@ -60,6 +76,12 @@ struct intel_ax211_command_request {
 	size_t maximum_response_length;
 };
 
+/*
+ * What one ring slot is waiting for.
+ *
+ * An abandoned entry stays active: the device may still own the slot, so it
+ * is not reused until the device is reset.
+ */
 struct intel_ax211_command_entry {
 	uint8_t active;
 	uint8_t abandoned;
@@ -68,6 +90,14 @@ struct intel_ax211_command_entry {
 	struct intel_ax211_protocol_pending_command pending;
 };
 
+/*
+ * The commands pending on one command ring of one firmware epoch.
+ *
+ * A poisoned transaction accepts no new command, because a command was
+ * abandoned in a slot the device may still own.  The last-generation and
+ * last-epoch arrays remember what completed in each slot, so a repeated
+ * answer or handle is told from a stale one.
+ */
 struct intel_ax211_command_transaction {
 	struct intel_ax211_transport *transport;
 	size_t max_pending;
