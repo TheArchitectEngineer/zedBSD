@@ -145,6 +145,9 @@ main(
 	unsigned commits;
 	unsigned presents;
 	unsigned submits;
+	VkImage images[3];
+	uint32_t count;
+	uint32_t index;
 	VkResult error;
 
 	fx_setup();
@@ -401,6 +404,41 @@ main(
 	assert(fk.shown[1] == 0 && fk.shown[2] == 0 && fk.releases == 0U);
 	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
 	assert(fk.releases == 1U);
+
+	/*
+	 * (x) ws236-p011 A3: on the Raspberry Pi 4's GPU a primary chain made
+	 * alone is direct.  Its images are the shared images the display
+	 * shows, a present submits only the waits (no copy), and a display
+	 * rectangle other than the whole image is refused.  Another vendor
+	 * (every scenario above) keeps the copy.
+	 */
+	fx_physical.properties.vendorID = 0x14e4U;
+	primary_surface = fx_surface(0U, FX_WIDTH, FX_HEIGHT);
+	primary = fx_swapchain(primary_surface, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 3U, VK_NULL_HANDLE);
+	assert(swapchain_get(primary)->direct == VK_TRUE);
+	assert(swapchain_get(primary)->group->borrowed == VK_TRUE);
+	count = 3U;
+	error = vkGetSwapchainImagesKHR((VkDevice)fx.device, primary, &count, images);
+	assert(error == VK_SUCCESS && count == 3U);
+	for (index = 0U; index < count; index++)
+		assert(images[index] == swapchain_get(primary)->presentation[index].shared_image);
+	submits = fx.submits;
+	commits = fx.wsi_copies;
+	presents = fk.presents;
+	fx_primary(primary, primary_acquired);
+	fx_settle();
+	assert(fx.submits == submits + 1U);
+	assert(fx.wsi_copies == commits);
+	assert(fk.presents == presents + 1U);
+	error = fx_acquire(primary, primary_acquired, 0U, &image);
+	assert(error == VK_SUCCESS);
+	error = fx_present(primary, image, primary_acquired, 1, 0, 0, 32U, 32U);
+	assert(error == VK_ERROR_INITIALIZATION_FAILED);
+	vkDestroySwapchainKHR((VkDevice)fx.device, primary, NULL);
+	assert(fk.releases == 2U);
+	fx_physical.properties.vendorID = 0U;
+	printf("(x) a direct primary presents without a copy: ok\n");
+
 	vulkan_wsi_device_finish(fx.device);
 	printf("vulkan-overlay-host: PASS\n");
 	return 0;
@@ -1095,6 +1133,7 @@ vulkan_wsi_shared_image_create(
 	struct VkDevice_T *device,
 	VkFormat format,
 	VkExtent2D extent,
+	VkImageUsageFlags usage,
 	const VkAllocationCallbacks *allocator,
 	const struct gpu_placement *placement,
 	VkImage *image,
@@ -1106,6 +1145,7 @@ vulkan_wsi_shared_image_create(
 
 	(void)device;
 	(void)format;
+	(void)usage;
 	(void)allocator;
 	(void)placement;
 	created = calloc(1, sizeof(*created));

@@ -18,12 +18,17 @@
 /*
  * Creates one shared GPU image using renderer requirements and real row layout.
  * The returned fd and Vulkan objects have separate, explicit ownership.
+ *
+ * usage adds uses beyond a copy's destination and a sampled image: a direct
+ * swapchain's application uses, when the application draws into the shared
+ * image itself (ws236-p011); 0 otherwise.
  */
 VkResult
 vulkan_wsi_shared_image_create(
 	struct VkDevice_T *device,
 	VkFormat format,
 	VkExtent2D extent,
+	VkImageUsageFlags usage,
 	const VkAllocationCallbacks *allocator,
 	const struct gpu_placement *placement,
 	VkImage *image,
@@ -79,7 +84,7 @@ vulkan_wsi_shared_image_create(
 	create.samples = VK_SAMPLE_COUNT_1_BIT;
 	create.tiling = VK_IMAGE_TILING_LINEAR;
 	create.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-	    VK_IMAGE_USAGE_SAMPLED_BIT;
+	    VK_IMAGE_USAGE_SAMPLED_BIT | usage;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	error = vkCreateImage((VkDevice)device, &create, allocator, image);

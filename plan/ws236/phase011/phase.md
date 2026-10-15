@@ -437,6 +437,30 @@ Phase disposition: normal
 - LINEAR の image に描くことは bcm2711 では OPTIMAL と同じ（同じ raster）だが、kernel の image の作成の検査（export、placement の付いた allocation、usage の組）で拒まれたら、今の道へ戻る（作成時に 1 回だけ、log 1 行）。
 - display の placement（HVS が読める、1 GiB の下の連続）の付いた allocation に compositor が直に描く。今も copy の写し先として GPU が書いているので、GPU からの書きは今と同じ。
 
+### A3 の実装（2026-10-16、P3 新世代、design-reviewer の review 待ち）
+
+- `wsi-image.c`・`wsi-internal.h`: `vulkan_wsi_shared_image_create` に追加の usage。
+- `wsi-swapchain.c`: `WSI_DIRECT_VENDOR`（0x14e4）、group の `borrowed`、chain の `direct`、job の `bare`。`swapchain_create(…, alone, …)`（`vkCreateSwapchainKHR` は VK_TRUE、shared は VK_FALSE）。`swapchain_direct_eligible`（単独・cursor/overlay でない・import_image・GPU_CAP_SHARE・paired の Windows host でない・vendor・EXCLUSIVE・usage が TRANSFER/SAMPLED/STORAGE/COLOR_ATTACHMENT だけで linear の feature が全て支える）、`swapchain_direct_create`（借りる group、app の usage 付きの共有の image、失敗は何も残さず今の道へ）。`swapchain_group_free`（borrowed は破棄しない）、`swapchain_native_images_free`（direct は `swapchain_owned` を外して破棄）。`present_prepare`（direct への矩形は全体だけ）、`present_bare`・`present_record`（bare は slot の fence だけ用意し、記録しない）・`present_recording_key`（bare は key なし）・`present_submit`（bare は command buffer 0）。
+- 試験: `plan/ws214/tests/vulkan-overlay-host.c` に (x)（vendor を 0x14e4 にして単独の primary の chain が direct、`vkGetSwapchainImagesKHR` が共有の image、present が submit 1 回・copy 0・native の present 1 回、全体でない矩形は `VK_ERROR_INITIALIZATION_FAILED`、破棄で lease の release）。stub の引数（`vulkan-cursor-host.c` も）と `userland/tests/gpu-share/main.c` の呼びを新しい引数に。
+
+### 確かめ A3（host と build）
+
+| 確かめ | 結果 |
+| --- | --- |
+| rpi4・amd64 の `dynamic/libvulkan.so`、amd64 `bin/gpu-share-test` | rc 0、warning 0 |
+| `sh plan/ws214/tests/vulkan-overlay-host.sh`（ordinary と ASan/UBSan、(x) を含む） | PASS |
+| `sh plan/ws141/tests/vulkan-cursor-host.sh` | PASS |
+| style-check（変えた file、HEAD との差） | 新しい指摘 0 |
+
+### T2 への依頼 10（Pi 4 実機、QEMU 不要、約 40 分、A3 の review の後）
+
+1. build（A3 の commit か merge 後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=plan/ws236/tests/config-rpi4-shot.mk build/<T>/rpi4/dynamic/libvulkan.so build/<T>/rpi4/bin/wayland build/<T>/rpi4/bin/keiland-shot`（warning 0）。kernel は main（`worker=` 入り）、libmedia・videoplayer は今のまま。
+2. Pi: `/lib/libvulkan.so`（全 app が使う）・compositor・kernel を差し替え（前の物は退避）、boot の行に `v3d.perf=1`、reboot。
+3. (a) desktop が出る（compositor の display の swapchain が direct）、(b) `high-1080p60-10s.mp4 --fullscreen --timeout-s=15` と窓、`high-1080p30-10s.mp4 --fullscreen`、(c) Settings・Terminal・browser（あれば）を開いて閉じる、窓の大きさを変える、(d) (b) の 30p 全画面の 5 秒目に keiland-shot。
+4. 報告: videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、compositor の `KWL PERF compose`・`rec`・`KWL COPY`、dmesg の `v3d: perf`（`passes=`・`worker=`）・`v3d: gpu tiles`・`execution failed`、PNG、(c) の各 app の見え方（画が出る、崩れない）。
+5. 合否: (a)〜(c) で画が出て落ちない、`execution failed` 無し、PNG の色・画が正しい、`v3d: perf` の image の pass が 1 表示 frame に 1 つ（A1 の copy）に減る（2 秒の `passes=R/0/I` の I が R と同じ程度）。記録: 60p 全画面の shown・late、compose frame_ms、acquire_us。
+6. 戻し: 失敗した時は `/lib/libvulkan.so` を退避の物に戻して reboot（全 app が影響を受けるので最初に戻す）。
+
 ### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 
 - **表示の速さは compositor の frame の速さで決まっている**: T1-685 の窓の 1080p60（r-c）で `KWL PERF compose frames=118`／5 s（23.6 fps）、`frame_ms=25`（frame の始まりから完了まで）、videoplayer の `DRAW` も 1 秒 24 frame で `acquire_us` 26 ms（compositor が前の image を返すのを待つ）。compositor は frame を 1 つずつ（`in_flight`）出し、完了の後に窓の commit を最大 frame の半分待つ（`frame_wait_ms`、display.c）ので、frame_ms 25 ms なら 1 frame 約 40 ms。
