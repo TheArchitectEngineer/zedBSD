@@ -1,9 +1,14 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private firmware-file contract
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private firmware-file contract.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_FIRMWARE_H
