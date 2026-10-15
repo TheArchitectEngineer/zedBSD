@@ -8,7 +8,7 @@
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1200 / q1200-i01 | P1（kernel-and-driver-designer、worktree p1・agent/p1-ws245、基点 ec06bb53a） | [ws245-p001](ws245/phase001/phase.md) | design.md 改訂 3: design-review.md（レビュー 2）の反映、display 12・13 の全機種への書き直し、display 11 の Phase、3 回目のレビュー。source は変えない | in-progress |
+| q1200 / q1200-i01 | P1（kernel-and-driver-designer、worktree p1・agent/p1-ws245、基点 ec06bb53a） | [ws245-p001](ws245/phase001/phase.md) | design.md 改訂 3: design-review.md（レビュー 2）の反映、display 12・13 の全機種への書き直し、display 11 の Phase、3 回目のレビュー。source は変えない | 担当の作業は終了（改訂 3・3a、レビュー 2・3 を全件反映、294006a3c、merge c89238520、P1 は返却）。p001 の clearance は design.md §7 の #0〜#22 のユーザーの回答の後 |
 | q1201 / q1201-i01 | P2（phase-runner、worktree p2・agent/p2-ws248、基点 a3424a08a の次） | [ws248-p001](ws248/phase001/phase.md) → [ws248-p002](ws248/phase002/phase.md) | AX211 の driver の出典の表記と規約の全文（2026-10-15 ユーザー「これもWSを作ってコードを整理しましょう。サブエージェントを1つ割り当ててください。」）。動作は変えない | p001 cleared（9f94ae7b1、merge 5156df835）、p002 in-progress |
 | q1202 / q1202-i01 | P3（kernel-and-driver-designer、worktree p3・agent/p3-ws039、基点 main） | [ws039-p001](ws039/phase001/phase.md) | AMD RDNA の調べと設計の再開: 欠けた note の調べ、design.md、license の監査の表、design-reviewer。code は書かない（2026-10-15 ユーザー「もう1つサブエージェントを立てます。AMD RDNAドライバを書く既存WSの作業をします。…」） | 担当の作業は終了（design.md・レビュー 1 回・反映、ef8235e60、merge 427d0a664、P3 は返却）。p001 の clearance は design.md §15 の 12 件のユーザーの回答の後 |
 | q1203 / q1203-i01 | P5（phase-runner、worktree p5・agent/p5-ws039、基点 main） | [ws039-p007](ws039/phase007/phase.md) | GFX10 の shader の compiler の再開（7.2 の再開点: encode → 既知の語の試験 → compute の lowering → waitcnt → interpreter）。host の試験と build まで、実機なし（2026-10-15 ユーザー「N=3で続けましょう。」、WS039 の開始の承認と担当 2 人の決定の範囲） | in-progress |
