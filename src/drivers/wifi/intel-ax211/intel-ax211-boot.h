@@ -25,6 +25,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * zedBSD's bounds of the first boot: the size of one copied event, the most
+ * events read while waiting for one, and the time each step may take.
+ */
 #define INTEL_AX211_BOOT_EVENT_CAPACITY 4096U
 #define INTEL_AX211_BOOT_EVENT_LIMIT 64U
 #define INTEL_AX211_BOOT_ALIVE_TIMEOUT_US 1000000U
@@ -32,6 +36,7 @@
 #define INTEL_AX211_BOOT_PNVM_TIMEOUT_US 2000000U
 #define INTEL_AX211_BOOT_INIT_TIMEOUT_US 2000000U
 
+/* The results of the first-boot coordinator. */
 enum intel_ax211_boot_result {
 	INTEL_AX211_BOOT_OK = 0,
 	INTEL_AX211_BOOT_INVALID = 1,
@@ -47,12 +52,16 @@ enum intel_ax211_boot_result {
 	INTEL_AX211_BOOT_STOP_REQUIRED = 11
 };
 
+/* The results of the controller's receive_event operation. */
 enum intel_ax211_boot_receive_result {
 	INTEL_AX211_BOOT_RECEIVE_OK = 0,
 	INTEL_AX211_BOOT_RECEIVE_TIMEOUT = 1,
 	INTEL_AX211_BOOT_RECEIVE_IO = 2
 };
 
+/*
+ * Where the coordinator is; the two STOP_REQUIRED states await a cleanup retry.
+ */
 enum intel_ax211_boot_state {
 	INTEL_AX211_BOOT_STATE_IDLE = 0,
 	INTEL_AX211_BOOT_STATE_RUNNING = 1,
@@ -61,6 +70,10 @@ enum intel_ax211_boot_state {
 	INTEL_AX211_BOOT_STATE_STOP_REQUIRED_NO_DMA = 4
 };
 
+/*
+ * What the controller reports about one event it copied into the coordinator's
+ * buffer.
+ */
 struct intel_ax211_boot_received_event {
 	size_t length;
 	uint32_t generation;
@@ -68,6 +81,8 @@ struct intel_ax211_boot_received_event {
 };
 
 /*
+ * What the first-boot coordinator needs from the PCI controller.
+ *
  * These operations are the controller-owned seams which existing private
  * subsystems cannot provide on their own.  receive_epoch_begin drains every
  * queued event and atomically stamps all later events with generation; failure
@@ -102,6 +117,8 @@ struct intel_ax211_boot_ops {
 };
 
 /*
+ * The first boot of the device: one read-NVM firmware pass, then a stop.
+ *
  * The PCI controller owns one instance for its entire lifetime.  generation
  * begins as the caller's last retired epoch seed and advances for every run,
  * skipping zero after wrap.  The command table and NVM result remain valid
