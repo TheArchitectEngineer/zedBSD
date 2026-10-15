@@ -39,10 +39,16 @@
  * console's memory is never mapped twice.
  *
  * Every write of page entries is read back through PRAMIN, and the
- * self-test that ends P4m gets one retry: when the window does not reach
- * its run, P4m reports what the root's entry, the run's page entry, the
- * window's mode and the MMU's last fault record hold, writes the tables
- * again, waits and reads once more.
+ * self-test that ends P4m recovers in rounds: when the window does not
+ * reach its run, P4m reports what the root's entry, the run's page entry,
+ * the window's mode and the MMU's fault record hold, then clears the fault
+ * record, writes the tables again, binds the window to its instance block
+ * again (under the root that block names, should it differ from the static
+ * information's), and waits longer between the later readings.  The hub
+ * keeps its MMU state over a warm reboot (the GSP stays up until
+ * power-off, the function is never reset), so a record of an earlier
+ * boot's fault is shown before the tables are written, for telling a
+ * later failure's cause.
  */
 
 #include <stdbool.h>
@@ -96,18 +102,48 @@
 #define VRAM_TEST_WORD			0xc3c3abcdU
 #define VRAM_TEST_WORD_AT		20U
 
-/* How long the self-test's retry waits after the tables are written again. */
+/* How many recovery rounds the self-test runs, and the wait of the first; each later round waits twice as long. */
+#define VRAM_RETRY_ROUNDS		6U
 #define VRAM_RETRY_WAIT_US		1000U
+
+/* The rounds that do more than clear the fault record and invalidate: the tables written again, the window bound again. */
+#define VRAM_RETRY_ROUND_TABLES		2U
+#define VRAM_RETRY_ROUND_BIND		3U
 
 /*
  * The MMU's record of the last fault no fault buffer took (Turing's
  * "other" fault, nouveau's tu102 info fault), where a BAR's faulted access
- * lands: the address, and the word whose bit 31 says the record is valid.
- * Read for the self-test's report only, never acknowledged.
+ * lands: the address, the instance word whose low bits name the engine
+ * (4 is BAR1), and the information word (bits 4:0 the fault's type, 2 an
+ * invalid page entry; bits 14:8 the client, 0x07 the CPU's read and 0x08
+ * its posted write through a BAR; bits 19:16 the access, 0 a read and 1 a
+ * write; bit 31 the record's validity).  The status word's bits 7:0 say
+ * which window's accesses were dropped (bit 1 BAR1 in its virtual mode)
+ * and bit 31 that a record waits; each clears when written as 1.
  */
 #define VRAM_REG_FAULT_ADDR_LO		0xb83080U
 #define VRAM_REG_FAULT_ADDR_HI		0xb83084U
+#define VRAM_REG_FAULT_INST_LO		0xb83088U
 #define VRAM_REG_FAULT_INFO		0xb83090U
+#define VRAM_REG_FAULT_STATUS		0xb83094U
+#define VRAM_FAULT_STATUS_CLEAR		0x800000ffU
+#define VRAM_FAULT_ENGINE_MASK		0x1ffU
+#define VRAM_FAULT_TYPE_MASK		0x1fU
+#define VRAM_FAULT_CLIENT_SHIFT		8U
+#define VRAM_FAULT_CLIENT_MASK		0x7fU
+#define VRAM_FAULT_ACCESS_SHIFT		16U
+#define VRAM_FAULT_ACCESS_MASK		0xfU
+
+/*
+ * The window's mode register names the instance block the window is
+ * bound to: its page number in bits 27:0 and its target in bits 29:28 (0
+ * the VRAM).  The block's field at 0x200 names the root, with the tables'
+ * format in its low bits.
+ */
+#define VRAM_BAR1_BLOCK_PTR_MASK	0x0fffffffU
+#define VRAM_BAR1_BLOCK_TARGET_MASK	0x30000000U
+#define VRAM_INSTANCE_ROOT_AT		0x200U
+#define VRAM_INSTANCE_ROOT_MASK		(~0xfffULL)
 
 /*
  * What one self-test of the window read: the run's first and last words
@@ -127,6 +163,10 @@ static int vram_bar1_cpu(struct nvrtx_gpu *gpu);
 static int vram_bar1_test(struct nvrtx_gpu *gpu);
 static int vram_bar1_probe(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo, struct vram_probe *probe);
 static void vram_bar1_report(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo, const struct vram_probe *probe);
+static void vram_fault_show(struct nvrtx_gpu *gpu, const char *when);
+static int vram_bar1_recover(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo, struct vram_probe *probe, const char **how);
+static int vram_bar1_revive(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo, unsigned round, const char **how);
+static int vram_bar1_rebind(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 static int vram_bar1_repair(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 static int vram_write_ptes(struct nvrtx_gpu *gpu, uint64_t bar1, uint64_t vram, uint64_t size, int clear);
 static int vram_place_ptes(struct nvrtx_gpu *gpu, uint64_t at, const uint8_t *entries, uint64_t pages);
@@ -550,6 +590,8 @@ vram_bar1_tables(
 	const struct nvrtx_window *window;
 	uint64_t tables;
 	size_t length;
+	uint32_t status;
+	uint32_t info;
 	int error;
 
 	memory = &gpu->memory_state;
@@ -594,6 +636,12 @@ vram_bar1_tables(
 	    (unsigned long long)memory->bar1_root_entry,
 	    (unsigned long long)(memory->bar1_window >> 20),
 	    (unsigned long long)tables);
+
+	/* Shows a fault record the MMU still holds (one of an earlier boot survives a warm reboot), to tell a later failure's cause from. */
+	status = nvrtx_rd32(gpu, VRAM_REG_FAULT_STATUS);
+	info = nvrtx_rd32(gpu, VRAM_REG_FAULT_INFO);
+	if ((status & VRAM_FAULT_STATUS_CLEAR) != 0U || info != 0U)
+		vram_fault_show(gpu, "bar1 before the tables");
 
 	/* Writes the tables and switches the root's entry to them. */
 	error = vram_bar1_write_tables(gpu);
@@ -771,7 +819,7 @@ vram_bar1_cpu(
  * Checks the window both ways on a run of its own: words written through
  * PRAMIN read back through the window, and a word written through the window
  * reads back through PRAMIN.  A window that does not reach the run is
- * reported, its tables written again, and the run read once more.
+ * reported and recovered in rounds, the run read again after each.
  */
 static int
 vram_bar1_test(
@@ -779,7 +827,7 @@ vram_bar1_test(
 {
 	struct nvrtx_bo bo;
 	struct vram_probe probe;
-	int retried;
+	const char *how;
 	int error;
 
 	/* Takes a run and maps it. */
@@ -794,20 +842,13 @@ vram_bar1_test(
 	}
 
 	/* Reads the run both ways. */
-	retried = 0;
+	how = NULL;
 	error = vram_bar1_probe(gpu, &bo, &probe);
 
-	/* Reports a window that does not reach the run, writes its tables again, waits and reads once more. */
+	/* Reports a window that does not reach the run, then recovers it in rounds. */
 	if (error == EIO) {
 		vram_bar1_report(gpu, &bo, &probe);
-		retried = 1;
-
-		/* Writes the tables again, then gives the hub a moment before the second reading. */
-		error = vram_bar1_repair(gpu, &bo);
-		if (error == 0) {
-			kern_usleep_range(VRAM_RETRY_WAIT_US, VRAM_RETRY_WAIT_US);
-			error = vram_bar1_probe(gpu, &bo, &probe);
-		}
+		error = vram_bar1_recover(gpu, &bo, &probe, &how);
 	}
 
 	/* The run goes back either way. */
@@ -819,9 +860,9 @@ vram_bar1_test(
 		return EIO;
 	}
 
-	/* Says that the window works only since its tables were written again. */
-	if (retried != 0)
-		nvrtx_stage_mark("P4m retry: the window reads back after the tables were written again");
+	/* Says that the window works only since a recovery round. */
+	if (how != NULL)
+		nvrtx_stage_mark("P4m retry: the window reads back after %s", how);
 
 	/* Succeeded: the window reaches the VRAM both ways. */
 	nvrtx_stage_mark("P4m ok: bar1 %llu MiB at %llx, read back both ways",
@@ -896,9 +937,6 @@ vram_bar1_report(
 	uint64_t entry;
 	uint64_t wanted;
 	uint32_t block;
-	uint32_t fault_low;
-	uint32_t fault_high;
-	uint32_t fault_info;
 	int error;
 
 	memory = &gpu->memory_state;
@@ -911,17 +949,213 @@ vram_bar1_report(
 	if (error == 0)
 		error = vram_read64(gpu, memory->bar1_tables + VRAM_TABLES_PTE_AT + (bo->bar1 / NVRTX_GSP_PAGE_SIZE) * 8U, &entry);
 
-	/* Reads the window's mode and the MMU's record of its last unbuffered fault. */
+	/* Reads the window's mode. */
 	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
-	fault_low = nvrtx_rd32(gpu, VRAM_REG_FAULT_ADDR_LO);
-	fault_high = nvrtx_rd32(gpu, VRAM_REG_FAULT_ADDR_HI);
-	fault_info = nvrtx_rd32(gpu, VRAM_REG_FAULT_INFO);
 
-	/* Says what was found, before the tables are written again. */
+	/* Says what was found, before anything is changed. */
 	nvrtx_stage_mark("P4m retry: bar1 reads %08x %08x, PRAMIN reads %08x", (unsigned)probe->first, (unsigned)probe->last, (unsigned)probe->back);
 	nvrtx_stage_mark("P4m retry: root entry %llx, ours %llx (%d)", (unsigned long long)root, (unsigned long long)memory->bar1_root_ours, error);
-	nvrtx_stage_mark("P4m retry: page entry %llx, wants %llx", (unsigned long long)entry, (unsigned long long)wanted);
-	nvrtx_stage_mark("P4m retry: mode %08x, fault %08x at %08x%08x", (unsigned)block, (unsigned)fault_info, (unsigned)fault_high, (unsigned)fault_low);
+	nvrtx_stage_mark("P4m retry: page entry %llx, wants %llx, mode %08x", (unsigned long long)entry, (unsigned long long)wanted, (unsigned)block);
+	vram_fault_show(gpu, "retry");
+}
+
+/*
+ * Shows the MMU's record of the last unbuffered fault and the fault status,
+ * decoded: which engine's access it was (4 is this window), the fault's
+ * type (2 an invalid page entry), the client (the CPU's read 07 or posted
+ * write 08) and the access (0 read, 1 write).  Nothing is acknowledged.
+ */
+static void
+vram_fault_show(
+	struct nvrtx_gpu *gpu,
+	const char *when)
+{
+	uint32_t status;
+	uint32_t low;
+	uint32_t high;
+	uint32_t instance;
+	uint32_t info;
+
+	/* Reads the status and the record. */
+	status = nvrtx_rd32(gpu, VRAM_REG_FAULT_STATUS);
+	low = nvrtx_rd32(gpu, VRAM_REG_FAULT_ADDR_LO);
+	high = nvrtx_rd32(gpu, VRAM_REG_FAULT_ADDR_HI);
+	instance = nvrtx_rd32(gpu, VRAM_REG_FAULT_INST_LO);
+	info = nvrtx_rd32(gpu, VRAM_REG_FAULT_INFO);
+
+	/* Says what the MMU holds, raw and decoded. */
+	nvrtx_stage_mark("P4m %s: fault status %08x, record %08x at %08x%08x: engine %x type %u client %02x access %u",
+	    when,
+	    (unsigned)status,
+	    (unsigned)info,
+	    (unsigned)high,
+	    (unsigned)low,
+	    (unsigned)(instance & VRAM_FAULT_ENGINE_MASK),
+	    (unsigned)(info & VRAM_FAULT_TYPE_MASK),
+	    (unsigned)((info >> VRAM_FAULT_CLIENT_SHIFT) & VRAM_FAULT_CLIENT_MASK),
+	    (unsigned)((info >> VRAM_FAULT_ACCESS_SHIFT) & VRAM_FAULT_ACCESS_MASK));
+}
+
+/*
+ * Recovers a window that did not reach the self-test's run, in rounds:
+ * each clears the fault record and invalidates the hub's TLB, the second
+ * writes the tables again first, the third binds the window to its
+ * instance block again, and every round waits twice as long as the one
+ * before (1 ms to 32 ms) before the run is read again.  On success *how
+ * names the round that worked; EIO reports a window that never read back,
+ * another error one the recovery could not touch.
+ */
+static int
+vram_bar1_recover(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_bo *bo,
+	struct vram_probe *probe,
+	const char **how)
+{
+	unsigned round;
+	unsigned wait;
+	int error;
+
+	/* Tries each round until the run reads back. */
+	for (round = 1U; round <= VRAM_RETRY_ROUNDS; round++) {
+		/* Does the round's recovery. */
+		error = vram_bar1_revive(gpu, bo, round, how);
+		if (error != 0)
+			return error;
+
+		/* Gives the hub the round's moment before the reading. */
+		wait = VRAM_RETRY_WAIT_US << (round - 1U);
+		kern_usleep_range(wait, wait);
+
+		/* Reads the run both ways; a run that reads back ends the recovery. */
+		error = vram_bar1_probe(gpu, bo, probe);
+		if (error == 0)
+			return 0;
+		if (error != EIO)
+			return error;
+
+		/* Says what this round read, so the log tells which rounds did nothing. */
+		nvrtx_stage_mark("P4m retry %u (%s): bar1 reads %08x %08x, PRAMIN reads %08x",
+		    round,
+		    *how,
+		    (unsigned)probe->first,
+		    (unsigned)probe->last,
+		    (unsigned)probe->back);
+	}
+
+	/* The window never read back. */
+	return EIO;
+}
+
+/*
+ * Does one recovery round's work before the run is read again, and names
+ * it in *how.  Every round clears the fault record (a record left valid is
+ * cleared the same way by nouveau's fault handler) and invalidates the
+ * hub's TLB for the window's root; the second round writes the tables
+ * again first and the third binds the window again.
+ */
+static int
+vram_bar1_revive(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_bo *bo,
+	unsigned round,
+	const char **how)
+{
+	struct nvrtx_memory_state *memory;
+	int error;
+
+	memory = &gpu->memory_state;
+
+	/* Does what the round is for. */
+	if (round == VRAM_RETRY_ROUND_TABLES) {
+		/* The tables, the root's entry and the run's entries written again. */
+		*how = "the tables were written again";
+		error = vram_bar1_repair(gpu, bo);
+		if (error != 0)
+			return error;
+	} else if (round == VRAM_RETRY_ROUND_BIND) {
+		/* The window bound to its instance block again, under the root that block names. */
+		*how = "the window was bound again";
+		error = vram_bar1_rebind(gpu, bo);
+		if (error != 0)
+			return error;
+	} else if (round == 1U) {
+		/* The fault record cleared and the TLB invalidated once more. */
+		*how = "the fault record was cleared";
+	} else {
+		/* Only a longer wait, for a hub busy with the resource manager's own work. */
+		*how = "a longer wait";
+	}
+
+	/* Clears the dropped-access bits and the record's validity, and drops any stale translation of the window. */
+	nvrtx_wr32(gpu, VRAM_REG_FAULT_STATUS, VRAM_FAULT_STATUS_CLEAR);
+	error = nvrtx_flush_tlb_bar(gpu, memory->bar1_root);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the round's work is done. */
+	return 0;
+}
+
+/*
+ * Binds the window to its instance block again: reads the root the block
+ * names and, when it is not the static information's, adopts it and writes
+ * the tables under it; then writes the window's mode register with the
+ * value it holds, which makes the hub load the block again, and waits for
+ * the bind to settle.
+ */
+static int
+vram_bar1_rebind(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_bo *bo)
+{
+	struct nvrtx_memory_state *memory;
+	uint64_t instance;
+	uint64_t named;
+	uint32_t block;
+	uint32_t status;
+	int error;
+
+	memory = &gpu->memory_state;
+
+	/* Only a window in its virtual mode on an instance block in the VRAM can be bound again. */
+	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
+	if ((block & VRAM_BAR1_BLOCK_VIRTUAL) == 0U || (block & VRAM_BAR1_BLOCK_TARGET_MASK) != 0U) {
+		nvrtx_stage_mark("P4m retry: bar1 mode %08x is not virtual in the VRAM; not bound again", (unsigned)block);
+		return EIO;
+	}
+
+	/* Reads the root the instance block names. */
+	instance = (uint64_t)(block & VRAM_BAR1_BLOCK_PTR_MASK) << 12;
+	error = vram_read64(gpu, instance + VRAM_INSTANCE_ROOT_AT, &named);
+	if (error != 0)
+		return error;
+
+	named &= VRAM_INSTANCE_ROOT_MASK;
+	nvrtx_stage_mark("P4m retry: instance block %llx names root %llx, the static information %llx",
+	    (unsigned long long)instance,
+	    (unsigned long long)named,
+	    (unsigned long long)memory->bar1_root);
+
+	/* Adopts a root named elsewhere and writes the tables under it. */
+	if (named != 0U && named != memory->bar1_root) {
+		memory->bar1_root = named;
+		error = vram_bar1_repair(gpu, bo);
+		if (error != 0)
+			return error;
+	}
+
+	/* Binds the window again and waits for the bind to settle. */
+	nvrtx_wr32(gpu, VRAM_REG_BAR1_BLOCK, block);
+	error = nvrtx_poll(gpu, VRAM_REG_BAR_STATUS, VRAM_BAR1_PENDING, 0U, VRAM_BAR1_POLLS * VRAM_BAR1_POLL_US);
+	if (error != 0) {
+		status = nvrtx_rd32(gpu, VRAM_REG_BAR_STATUS);
+		nvrtx_stage_mark("P4m retry: the bind of bar1 did not settle (status %08x)", (unsigned)status);
+		return error;
+	}
+
+	/* Succeeded: the hub holds the instance block again. */
+	return 0;
 }
 
 /*
