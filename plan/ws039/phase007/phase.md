@@ -112,7 +112,7 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 | A | encode ＋ compute の最小（算術・比較・変換・特殊関数・storage・push・system value）＋ 1〜3 の試験 | 済（2026-10-15、host） |
 | B | loop・除算・atomic・shared・barrier・fence | 済（2026-10-15、host） |
 | E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 済（2026-10-15、host。TEXTURE は SAMPLE・BIAS・LOD・LD の 4 種） |
-| F | desktop の全 shader の差分の試験（5 節の 4） | 未 |
+| F | desktop の全 shader の差分の試験（5 節の 4） | 済（2026-10-15、host、44 module × 200 回） |
 | D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 未 |
 
 ## 7. 記録
@@ -172,11 +172,17 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 | `src/amd/registers/gfx10-rsrc.json` | （Mesa の既定 MIT） | `ab6deb6cea2daf6ef546b8ae5eff105d5939c9d8cd76a710f9f8064e6a2cf820` | export 先、GFX10_FORMAT、SQ_BUF_RSRC_WORD1/3、OOB_SELECT |
 | `src/amd/registers/gfx9.json` | （Mesa の既定 MIT） | `081fbfd1251fb5c6f4b7b6a218ba217e21346e824a04ec8146ab0d1d389ddb06` | DST_SEL の enum（SQ_SEL_XYZW01） |
 
-（`aco_opcodes.py`・`aco_assembler.cpp`・`aco_insert_NOPs.cpp`・`aco_insert_waitcnt.cpp`・`README-ISA.md`・`aco_lower_to_hw_instr.cpp`・`radv_shader_args.c`・`gfx10.json`・`nir_lower_idiv.c` は 1 節の表。監査の表の file `plan/ws039/amdrdna-compiler-license-audit.md` は P5 の所有 path の外なので、作るかどうか Q1 に聞く。）
+（`aco_opcodes.py`・`aco_assembler.cpp`・`aco_insert_NOPs.cpp`・`README-ISA.md`・`aco_lower_to_hw_instr.cpp`・`radv_shader_args.c`・`gfx10.json`・`nir_lower_idiv.c` は 1 節の表。compiler が引用する 20 file の全部と確かめの結果は監査の表 [amdrdna-compiler-license-audit.md](../amdrdna-compiler-license-audit.md)（2026-10-15 Q1 の許可で作成）。）
 
-### 7.6 再開点（2026-10-15 q1203 の段 E の後）
+### 7.6 段 F（2026-10-15 q1203、続き）
 
-1. 段 F: desktop の全 shader（`userland/desktop/**/shaders.h` の 44 module）を compile し、graphics-test と同じ形で 200 入力ずつ参照と比べる（nvrtx の `nvrtx-sm75-desktop-test.sh`・`sm75-desktop-extract.py` の形）。拒まれる op があれば足す（TEXTURE の他の message、POINT_COORD、PRIMITIVE_ID、SECOND_COLOR など）。
-2. whole quad の fragment での storage 書き込み（helper lane を生きている mask で外す guard）。
-3. 段 D（速さ）: uniform の値を SGPR のまま使う、定数を inline のまま使う、label・分岐の前の全部の待ちを減らす、待ちを counter の数で。
-4. P3 とのすり合わせ（`struct amdrdna_gfx10_program`・`amdrdna_gfx10_registers` の field、資源の表の配置、T#・S# は driver が作る）、vmunix.mk への compiler の 4 file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）、license の監査の表の file。
+- `plan/ws039/tests/gfx10-desktop-extract.py`（`userland/desktop/**/shaders.h` の SPIR-V を entry point の stage の拡張子で書き出す）と `amdrdna-compiler-desktop-test.sh`（全 module を compile、graphics-test で 200 回ずつ参照と比べ、llvm-mc で disassemble）。desktop は 44 module（vertex 18・fragment 26、compute は無い）。
+- 結果: 最初の実行で libGL の `fixed_frag`・`fixed_flat_frag` が FAIL（全 lane を discard した wave の早い終わりで exec を 0 にせずに `exp null done vm` していた → valid mask が全 lane になる不具合）。早い終わりに `s_mov_b32 exec_lo, 0` を足して直し、host 試験にこれを確かめる `uniform_discard.frag` を加えた（直す前の code で FAIL することを確かめた）。直した後: **44 module 全部 compile、44 × 200 回 PASS、44 program の disassemble に誤り無し**（約 21 秒）。host 試験も PASS（graphics 7 module）。
+- 監査の表 [amdrdna-compiler-license-audit.md](../amdrdna-compiler-license-audit.md) を作った（2026-10-15 Q1 の許可）。
+
+### 7.7 再開点（2026-10-15 q1203 の段 F の後）
+
+1. 段 D（速さ）: uniform の値を SGPR のまま使う（push・UBO・descriptor の語を VALU の operand に直接）、定数を inline・literal のまま使う（今は CONST ごとに v_mov）、label・分岐の前の全部の待ちを減らす（loop の中の待ちを counter の数で）、VGPR の予約（VS の param 4 個ずつ）を減らす。速さの物差し（命令数・待ちの数）を desktop の試験に出す。
+2. whole quad の fragment での storage 書き込み（helper lane を生きている mask で外す guard）と、IR の TEXTURE の他の message（RESINFO・比較・derivative）、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR（desktop は使わない）。
+3. P3 とのすり合わせ（`struct amdrdna_gfx10_program`・`struct amdrdna_gfx10_registers` の field、資源の表の配置、T#・S# は driver が作る、SPI_PS_INPUT_ADDR は ENA と同じ値）、vmunix.mk への compiler の 4 file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）、実機での確かめ（`v_rcp_iflag_f32` の精度に頼る除算、Navi1x の valid mask、早い終わり）。
+4. 回帰の道具として Master の Tools に登録してほしいもの（Q1 に依頼）: `plan/ws039/tests/amdrdna-compiler-host-test.sh`、`plan/ws039/tests/amdrdna-compiler-desktop-test.sh`（部品 `gfx10-machine.[ch]`・`gfx10-reference.[ch]`・`gfx10-texture.[ch]`・`gfx10-*-test.c`・`gfx10-compare-words.py`・`gfx10-desktop-extract.py`・`shaders/`）。
