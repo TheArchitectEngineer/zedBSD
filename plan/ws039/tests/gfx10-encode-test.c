@@ -386,6 +386,11 @@ memory_cases(void)
 	inst.count = 1U;
 	failed |= emit("buffer_load_dword v1, v2, s[4:7], s9 offen offset:12 glc", &inst);
 
+	inst = make(AMDRDNA_GFX10_KIND_BUFFER, AMDRDNA_GFX10_BUFFER_LOAD_DWORD, V(1), V(2), S(4), AMDRDNA_GFX10_ZERO);
+	inst.flags = AMDRDNA_GFX10_FLAG_OFFSET_ADDRESS | AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT | AMDRDNA_GFX10_FLAG_DEVICE_COHERENT;
+	inst.count = 1U;
+	failed |= emit("buffer_load_dword v1, v2, s[4:7], 0 offen glc dlc", &inst);
+
 	inst = make(AMDRDNA_GFX10_KIND_BUFFER, AMDRDNA_GFX10_BUFFER_STORE_DWORD, 0U, V(2), S(4), AMDRDNA_GFX10_ZERO);
 	inst.src[3] = (uint16_t)V(1);
 	inst.flags = AMDRDNA_GFX10_FLAG_OFFSET_ADDRESS;

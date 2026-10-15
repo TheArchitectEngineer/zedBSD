@@ -30,7 +30,8 @@
  * (struct amdrdna_gfx10_inst.flags).
  *
  * GLOBALLY_COHERENT makes a buffer access go past the per-unit cache (and
- * an atomic return the old value); OFFSET_ADDRESS and INDEX_ADDRESS say
+ * an atomic return the old value), DEVICE_COHERENT makes a load go past the
+ * per-array cache too; OFFSET_ADDRESS and INDEX_ADDRESS say
  * that a buffer access's address register is a byte offset or a record
  * index; UNNORMALIZED reads an image at texel coordinates; LAST ends the
  * exports of a program and VALID_MASK says the export carries the lanes
@@ -42,6 +43,7 @@
 #define AMDRDNA_GFX10_FLAG_UNNORMALIZED		0x08U
 #define AMDRDNA_GFX10_FLAG_LAST			0x10U
 #define AMDRDNA_GFX10_FLAG_VALID_MASK		0x20U
+#define AMDRDNA_GFX10_FLAG_DEVICE_COHERENT	0x40U
 
 /*
  * The kind of an instruction: which form it is written in.

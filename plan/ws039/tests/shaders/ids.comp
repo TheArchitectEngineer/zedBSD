@@ -1,0 +1,18 @@
+#version 450
+// ws039-p007: the compute built-ins of a 3D workgroup, written at the invocation's global linear index.
+layout(local_size_x = 4, local_size_y = 3, local_size_z = 2) in;
+layout(std430, set = 0, binding = 0) buffer Out { uint words[]; };
+void main()
+{
+	uvec3 total = gl_NumWorkGroups * gl_WorkGroupSize;
+	uvec3 id = gl_GlobalInvocationID;
+	uint at = (id.x + total.x * (id.y + total.y * id.z)) * 8u;
+	words[at] = gl_LocalInvocationID.x;
+	words[at + 1u] = gl_LocalInvocationID.y;
+	words[at + 2u] = gl_LocalInvocationID.z;
+	words[at + 3u] = gl_LocalInvocationIndex;
+	words[at + 4u] = gl_WorkGroupID.x;
+	words[at + 5u] = gl_WorkGroupID.y;
+	words[at + 6u] = gl_WorkGroupID.z;
+	words[at + 7u] = gl_NumWorkGroups.x + 10u * gl_NumWorkGroups.y + 100u * gl_NumWorkGroups.z;
+}

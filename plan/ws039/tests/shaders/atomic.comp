@@ -1,0 +1,42 @@
+#version 450
+// ws039-p007: storage buffer atomics, some under a predicate, some returning the old value; the compare-and-swaps
+// that return touch a word of their own lane (one matching, one not), so the order of the lanes does not matter.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { uint v[]; };
+layout(std430, set = 0, binding = 1) buffer Totals {
+	uint bins[16];
+	uint total;
+	int smin;
+	int smax;
+	uint umin;
+	uint umax;
+	uint band;
+	uint bor;
+	uint bxor;
+	uint swapped;
+	uint cas;
+	uint count;
+};
+layout(std430, set = 0, binding = 2) buffer Old { uint old[]; };
+layout(push_constant) uniform Push { uint n; } p;
+void main()
+{
+	uint i = gl_GlobalInvocationID.x;
+	if (i < p.n + 20u) {
+		uint x = v[i];
+		atomicAdd(bins[x % 16u], 1u);
+		atomicAdd(total, x);
+		atomicMin(smin, int(x));
+		atomicMax(smax, int(x));
+		atomicMin(umin, x);
+		atomicMax(umax, x);
+		atomicAnd(band, x | 0xffff0000u);
+		atomicOr(bor, x & 0x0f0f0f0fu);
+		atomicXor(bxor, x);
+		atomicExchange(swapped, 7u);
+		uint mine = old[i + 128u];
+		old[i + 256u] = atomicCompSwap(old[i + 128u], mine, i) + atomicCompSwap(old[i + 192u], old[i + 192u] + 1u, i);
+		atomicCompSwap(cas, 0xffffffffu, i);
+		old[i] = atomicAdd(count, 1u);
+	}
+}

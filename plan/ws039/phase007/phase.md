@@ -24,6 +24,7 @@ Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-
 | `src/amd/compiler/aco_insert_NOPs.cpp` | MIT | `f25ed0cf369737118e4873472af7cbe3628da057851e07f7b82918f2b1e79409` | GFX10 の hazard（`handle_instruction_gfx10`: VMEMtoScalarWrite、SMEMtoVectorWrite、VcmpxExecWAR、LdsBranchVmemWAR、NSA）と緩和の命令 |
 | `src/amd/compiler/aco_insert_waitcnt.cpp` | MIT | `5171bd9899f00a6fc3e8f811dd36f9fc211296a4fc197b59c2f0c78f4766a749` | 待ちの counter の種類（vm・exp・lgkm・vs）と GFX10 の s_waitcnt の欄 |
 | `src/amd/compiler/README-ISA.md` | （Mesa の既定 MIT、`docs/license.rst`） | `6698da9ade24f469cb2b1046a529d8663fece6ea334ee31cf57dc857a6ca5251` | GFX10 の hazard の説明、DS は m0 を使わない、DLC/GLC |
+| `src/compiler/nir/nir_lower_idiv.c` | MIT（file の notice） | `5882ef003f429104ce25a3c6ddb8607b9330fe6d02b4be5197d90e90dc448a1c` | 整数の除算の手順（`emit_udiv`: 浮動小数の逆数 × 4294966784.0 → Newton 1 回 → 2 回の補正）と定数 0x4f7ffffe（2026-10-15 q1203 で追加） |
 | `src/amd/compiler/aco_lower_to_hw_instr.cpp` | MIT | 監査の表 | discard の早い終わり（exec 0 で null の export done vm、s_endpgm） |
 | `src/amd/common/nir/ac_nir_prerast_utils.c` | MIT | 監査の表 | 頂点の export の順（位置が先、最後の位置に done、Navi1x は POS0 に valid mask） |
 | `src/amd/vulkan/radv_shader_args.c` | MIT | `a21869c49a640b9d3a4cd6ef0e036faf7dfcbc6137348b0cb7d1c78872a2ecc2` | 入力の register の並び（CS: user SGPR → TGID x,y,z、VGPR v0..v2 = local id。legacy VS: v0 = vertex id、v3 = instance id。PS: user SGPR → prim mask、VGPR は SPI_PS_INPUT_ENA の bit の順） |
@@ -108,8 +109,8 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 
 | 段 | 内容 | 状態 |
 | --- | --- | --- |
-| A | encode ＋ compute の最小（算術・比較・変換・特殊関数・storage・push・system value）＋ 1〜3 の試験 | 未 |
-| B | loop・除算・atomic・shared・barrier・fence | 未 |
+| A | encode ＋ compute の最小（算術・比較・変換・特殊関数・storage・push・system value）＋ 1〜3 の試験 | 済（2026-10-15、host） |
+| B | loop・除算・atomic・shared・barrier・fence | 済（2026-10-15、host） |
 | E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 未 |
 | F | desktop の全 shader の差分の試験（5 節の 4） | 未 |
 | D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 未 |
@@ -139,3 +140,17 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 - `gfx10-encode.[ch]`: 機械の命令の record（`struct amdrdna_gfx10_inst`）、形式ごとの書き出し（scalar 2/1/比較/定数/control/分岐、scalar load、vector 1/2/比較/wide（短い形に収まらなければ wide へ自動で）、補間、shared、buffer、image、export）、読み書きする register の範囲と結果を待つ counter（`amdrdna_gfx10_describe`）。欄の位置は block ごとに `aco_assembler.cpp` の関数名を出典に書いた。
 - 試験 `plan/ws039/tests/amdrdna-compiler-host-test.sh`（`gfx10-encode-test.c`・`gfx10-compare-words.py`）: 85 個の命令を encode し、同じ命令の文を `llvm-mc-19 -mcpu=gfx1010 -show-encoding` で encode した語と比べる → **85 一致、0 差**。register の記述の 5 例も確かめる。
 - kernel の flag（clang `--target=x86_64-unknown-none`、amd64 の `AMD64_CFLAGS` と `-Wdeclaration-after-statement`、gcc `-std=c99 -fsyntax-only` も）で warning 0。
+- `gfx10-compile.[ch]`（段 A・B、compute）: IR の値は全部 VGPR（最小の空きを定義で取り、最後の読みの後で返す。loop の前の値で loop の中で読むものは loop の終わりまで）。descriptor は prologue で SGPR に読む（storage・uniform の V#、4 個ずつ）。push と UBO の語は scalar の一時（8 個を順に）へ読んで v_mov。比較は VCC → v_cndmask で全 1/0。loop は exec を保存 → 終わりで `s_and_b32 exec, exec, vcc` と `s_cbranch_execnz`。述語つきの storage・shared・atomic は `s_and_saveexec_b32` で lane を絞る。除算は `nir_lower_idiv.c` の `emit_udiv` の手順（出典を Procedure referenced で書いた）、符号つきは絶対値で割って符号を xor と引き算で付ける。storage の load は GLC・DLC（README-ISA の L0/L1 の節）。atomic は使われる時だけ GLC で古い値を返す。shared は DS（M0 は使わない）。barrier・fence は s_waitcnt・s_waitcnt_vscnt の後に s_barrier。資源の表の配置は push → storage の V# → uniform の V#（`struct amdrdna_gfx10_program` に offset）。
+- `gfx10-wait.[ch]`: 各命令の前に、読み書きする register が待つ counter を 0 まで待つ（export の読みは export の counter）。GFX10.1 の 4 つの hazard（VMEMtoScalarWrite・SMEMtoVectorWrite・VcmpxExecWAR・LdsBranchVmemWAR、`aco_insert_NOPs.cpp` の手順を Procedure referenced）を破る命令を置く。label と分岐の前では全部を待ち、開いている hazard を全部破る（どの道から label に来ても空の状態）。M0 の scalar 書きの直後の補間の前に s_nop（zedBSD の用心）。組み立て: 分岐の距離の解決、距離 0x3f の分岐の後に s_nop を入れて並べ直す、最後に s_code_end で prefetch の 3 line ＋ 16 語の境界まで詰める。
+- 試験（host、`amdrdna-compiler-host-test.sh` に追加）: `gfx10-machine.[ch]`（GFX10 の wave32 の interpreter。語を自分で decode する。memory の命令の結果の register を counter の待ちの前に読み書きしたら FAIL、4 つの hazard と距離 0x3f の分岐も FAIL）、`gfx10-reference.[ch]`（IR を workgroup の全 invocation で lockstep に走らせる参照）、`gfx10-compute-test.c`（同じ乱数の入力で両方を走らせ storage を語ごとに比べる。sin・cos を含む program だけ相対 1e-5 の許容）、`shaders/*.comp` 10 個（ids・float・integer・loop・uniform・division・atomic・shared・trig・half）。各 program の code を `llvm-mc-19 -disassemble` に通し、全語が gfx1010 の命令として decode されること。
+- 結果（2026-10-15、`plan/ws039/tests/amdrdna-compiler-host-test.sh`）: known words 86 一致 0 差、compute 10 module × 16 回 PASS（3D の workgroup・3 wave の shared と barrier・分岐の分かれる loop を含む）、10 program の disassemble に誤り無し。試験が効くことの確かめ: compiler の FMAX→FMIN・ASR→SHR の取り違え、待ちの省略をわざと入れると FAIL になった（戻した）。除算は逆数が 1 ulp 小さい時も PASS（1 ulp 大きいと 3 などで外れる。Mesa・LLVM と同じ前提で、hardware の `v_rcp_iflag_f32` がそれより大きくならないことに頼る。実機で確かめる項目）。
+- kernel の flag（zedBSD の target clang `x86_64-unknown-zedbsd`、`AMD64_CFLAGS`＋`-Wdeclaration-after-statement`）で 3 file とも warning 0。
+- ユーザーの判断（2026-10-15、Q1 経由のクリック「mnemonic は使ってよい」）: AMD の公開の RDNA1 ISA の命令名（s_mov_b32 など）は code の名前・comment に使ってよい。Mesa（ACO）の source の symbol（aco_opcode の enum 名・関数名・型名）は写さない。→ opcode・register の名前（`AMDRDNA_GFX10_V_ADD_F32`・`AMDRDNA_GFX10_VCC_LO` など）はこの規則で確定。
+
+### 7.4 再開点（2026-10-15 q1203 の終わり時点）
+
+1. 段 E（頂点・fragment）: `prepare` は今 compute だけを通す。VS（user SGPR 5、v0 vertex id・v3 instance id、頂点の V# から `buffer_load_format_xyzw idxen`、`exp pos0`（Navi1x は valid mask）・param）、PS（SPI_PS_INPUT_ENA の順の VGPR、m0 に prim mask、`v_interp_p1/p2`・flat は `v_interp_mov`、`exp mrt` done vm、KILL は生きている mask と早い終わり）、texture（T#・S# を SGPR へ、`image_sample`・`_lz`・`_l`・`_b`・`_o`）、UBO は済み。interpreter に VINTRP・MIMG・EXP と頂点・pixel の入力、参照に graphics の入出力を足す。
+2. `gfx10-program.c`: `amdrdna_gfx10_program_registers()`（RSRC1/2、SPI_PS_INPUT_ENA/ADDR、COL_FORMAT、VS_OUT_CONFIG、POS_FORMAT、PA_CL_VS_OUT_CNTL、SPI_PS_INPUT_CNTL）と生の buffer の V#（`amdrdna_gfx10_raw_buffer_descriptor`）。値は `gfx10.json`・`gfx10-rsrc.json`・`ac_descriptors.c` から block ごとに出典。試験の machine の `machine_raw_descriptor` の word3（0x31016fac）は仮の値なので、この関数ができたら置き換える。
+3. 段 F: desktop の全 shader の差分の試験（5 節の 4）。
+4. 段 D（速さ）: 今は uniform な値も VGPR へ写し、定数を v_mov し、label と分岐の前で全部を待つ。
+5. P3 とのすり合わせ（3 節の program の形。design 9.2 は「差分は無い」と記録済み）、license の監査の表（`plan/ws039/amdrdna-compiler-license-audit.md`、nir_lower_idiv.c を含む）、vmunix.mk への compiler の file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）。

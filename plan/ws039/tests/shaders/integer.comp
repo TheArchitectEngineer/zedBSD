@@ -1,0 +1,19 @@
+#version 450
+// ws039-p007: integer arithmetic, shifts, bitwise operations, comparisons and selections.
+layout(local_size_x = 8, local_size_y = 4) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { uint v[]; };
+layout(std430, set = 0, binding = 1) buffer Out { uint o[]; };
+layout(push_constant) uniform Push { uint k; int s; } p;
+void main()
+{
+	uint i = gl_LocalInvocationIndex + gl_WorkGroupID.x * 32u;
+	uint a = v[i] * 2654435761u + p.k;
+	int b = int(a) >> (p.k & 7u);
+	uint c = (a << 5) ^ (a >> 7) | (a & 0xff00u);
+	uint d = (b < p.s) ? c : ~c;
+	o[i * 5u] = a - c;
+	o[i * 5u + 1u] = uint(b) + uint(-p.s) * 3u;
+	o[i * 5u + 2u] = d ^ (v[i + 1u] >> (v[i] & 31u));
+	o[i * 5u + 3u] = (a >= c ? 1u : 0u) + (int(a) < b ? 2u : 0u) + (a == i ? 4u : 0u) + (a != v[i] ? 8u : 0u) + (c < d ? 16u : 0u) + (b >= p.s ? 32u : 0u);
+	o[i * 5u + 4u] = uint(int(v[i]) >> (v[i + 2u] & 31u)) + (v[i] << (v[i + 3u] & 31u));
+}
