@@ -28,7 +28,8 @@ for mode in ordinary sanitize; do
 	    timeout 60 "$out/$mode" > "$out/$mode-on.out" 2> "$out/$mode-on.log"
 	grep -q 'vulkan-overlay-host: PASS' "$out/$mode-on.out"
 	lines=$(grep -c '^WSI OVERLAY ' "$out/$mode-on.log" || true)
-	other=$(grep -v "$pattern" "$out/$mode-on.log" | grep -c . || true)
+	# The swapchains' route lines (ws236-p012) are not the overlay log's.
+	other=$(grep -v "$pattern" "$out/$mode-on.log" | grep -v '^VK SWAPCHAIN direct=' | grep -c . || true)
 	echo "$mode: overlay log lines=$lines unexpected=$other"
 	test "$other" = 0
 	# Every path appears; a fast commit names no failed condition; expiry, idle flush and ENOSPC are named.
