@@ -80,7 +80,9 @@ drv_intel_ax211_init_api89_validate(
 	if (error != INTEL_AX211_PROTOCOL_OK)
 		return error;
 
-	/* Succeeded: the image lists every initialization command as expected. */
+	/*
+	 * Succeeded: the image lists every initialization command as expected.
+	 */
 	return INTEL_AX211_PROTOCOL_OK;
 }
 
@@ -98,7 +100,10 @@ drv_intel_ax211_init_stage_select_encode(
 	if (output == NULL)
 		return INTEL_AX211_PROTOCOL_INVALID;
 
-	/* Selects the flags of the profile: none for runtime, STORE_READ to stop after the NVM. */
+	/*
+	 * Selects the flags of the profile: none for runtime, STORE_READ to
+	 * stop after the NVM.
+	 */
 	if (profile == INTEL_AX211_INIT_PROFILE_RUNTIME) {
 		flags = 0U;
 	} else if (profile == INTEL_AX211_INIT_PROFILE_STORE_READ) {
@@ -138,7 +143,10 @@ drv_intel_ax211_init_stage_select_decode(
 	if (length > INTEL_AX211_INIT_STAGE_SELECT_SIZE)
 		return INTEL_AX211_PROTOCOL_OVERSIZED;
 
-	/* Maps the flags back to the profile; any other flag set is not one the driver sends. */
+	/*
+	 * Maps the flags back to the profile; any other flag set is not one the
+	 * driver sends.
+	 */
 	flags = ax211_init_get_le32(bytes);
 	if (flags == 0U) {
 		decoded = INTEL_AX211_INIT_PROFILE_RUNTIME;
@@ -193,16 +201,16 @@ ax211_init_version_require_absent(
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, group, opcode, &version);
 
-	/* A command the table does not name is what the driver expects. */
-	if (result == INTEL_AX211_PROTOCOL_MISSING)
-		return INTEL_AX211_PROTOCOL_OK;
-
 	/* A listed version would change the layout the driver encodes. */
 	if (result == INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_PROTOCOL_UNSUPPORTED;
 
 	/* Reports why the table could not be read. */
-	return result;
+	if (result != INTEL_AX211_PROTOCOL_MISSING)
+		return result;
+
+	/* Succeeded: the table does not name the command, as expected. */
+	return INTEL_AX211_PROTOCOL_OK;
 }
 
 /*

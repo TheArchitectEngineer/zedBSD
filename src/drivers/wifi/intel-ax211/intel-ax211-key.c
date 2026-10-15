@@ -103,7 +103,10 @@ drv_intel_ax211_key_add_encode(
 	if (request->kind == INTEL_AX211_KEY_GROUP_KEY)
 		flags |= AX211_KEY_APPLIES_TO_GROUP;
 
-	/* Writes the add action, the station, the key index, the flags and the key. */
+	/*
+	 * Writes the add action, the station, the key index, the flags and the
+	 * key.
+	 */
 	ax211_key_put_le32(output, AX211_KEY_ACTION_ADD);
 	ax211_key_put_le32(output + 4U, AX211_KEY_STATION_MASK);
 	ax211_key_put_le32(output + 8U, request->key_index);
@@ -150,7 +153,9 @@ drv_intel_ax211_key_remove_encode(
 	if (kind == INTEL_AX211_KEY_GROUP_KEY)
 		flags |= AX211_KEY_APPLIES_TO_GROUP;
 
-	/* Writes the remove action, the station, the key index and the flags. */
+	/*
+	 * Writes the remove action, the station, the key index and the flags.
+	 */
 	ax211_key_put_le32(output, AX211_KEY_ACTION_REMOVE);
 	ax211_key_put_le32(output + 4U, AX211_KEY_STATION_MASK);
 	ax211_key_put_le32(output + 8U, key_index);
@@ -174,7 +179,10 @@ drv_intel_ax211_key_command_scrub(
 	if (command == NULL)
 		return;
 
-	/* Writes through a volatile pointer so the clearing is not optimized away. */
+	/*
+	 * Writes through a volatile pointer so the clearing is not optimized
+	 * away.
+	 */
 	bytes = command;
 	for (index = 0U; index < INTEL_AX211_KEY_COMMAND_SIZE; index++)
 		bytes[index] = 0U;
@@ -319,7 +327,9 @@ drv_intel_ax211_key_state_activate(
 		/* Looks for the group key among the active group keys. */
 		group_index = 0U;
 		while (group_index < INTEL_AX211_KEY_INDEX_LIMIT && !found) {
-			/* Stops at the matching slot, or moves to the next one. */
+			/*
+			 * Stops at the matching slot, or moves to the next one.
+			 */
 			if (state->active_group[group_index] ==
 			    group_generation) {
 				found = 1;

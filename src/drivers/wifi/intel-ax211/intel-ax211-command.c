@@ -36,7 +36,10 @@ drv_intel_ax211_command_transaction_init(
 {
 	size_t pending;
 
-	/* Refuses missing objects, an unset epoch and a pending limit out of range. */
+	/*
+	 * Refuses missing objects, an unset epoch and a pending limit out of
+	 * range.
+	 */
 	if (transaction == NULL ||
 	    transport == NULL ||
 	    hardware_epoch == 0U ||
@@ -45,7 +48,10 @@ drv_intel_ax211_command_transaction_init(
 		return INTEL_AX211_COMMAND_INVALID;
 	}
 
-	/* Refuses a command ring that is not set up, or that holds a prepared command. */
+	/*
+	 * Refuses a command ring that is not set up, or that holds a prepared
+	 * command.
+	 */
 	if (!transport->rings_initialized ||
 	    transport->command_prepared ||
 	    transport->command_reset_required) {
@@ -133,7 +139,10 @@ drv_intel_ax211_command_submit(
 	if (!valid)
 		return INTEL_AX211_COMMAND_INVALID;
 
-	/* Refuses a missing handle and a timeout that is zero or overflows the clock. */
+	/*
+	 * Refuses a missing handle and a timeout that is zero or overflows the
+	 * clock.
+	 */
 	if (handle == NULL ||
 	    timeout == 0U ||
 	    now > UINT64_MAX - timeout) {
@@ -221,7 +230,10 @@ drv_intel_ax211_command_submit(
 	if (result == INTEL_AX211_TRANSPORT_OK)
 		return INTEL_AX211_COMMAND_OK;
 
-	/* An ambiguous doorbell may have reached the device: the slot stays owned. */
+	/*
+	 * An ambiguous doorbell may have reached the device: the slot stays
+	 * owned.
+	 */
 	if (result == INTEL_AX211_TRANSPORT_AMBIGUOUS) {
 		entry->abandoned = 1U;
 		transaction->poisoned = 1U;
@@ -408,6 +420,7 @@ drv_intel_ax211_command_complete(
 	message.opcode = event.command.opcode;
 	wire_group = event.flags &
 		     (uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
+
 	/*
 	 * Firmware reports the LONG_GROUP carrier used for an API-89 legacy
 	 * command.  Restore its logical group only for the matching pending
@@ -789,7 +802,9 @@ ax211_command_next_generation(
 {
 	uint32_t generation;
 
-	/* Hands out the next generation and skips zero when the counter wraps. */
+	/*
+	 * Hands out the next generation and skips zero when the counter wraps.
+	 */
 	generation = transaction->next_generation;
 	transaction->next_generation++;
 	if (transaction->next_generation == 0U)
@@ -810,6 +825,7 @@ ax211_command_inactive_event_result(
 	if (transaction->last_completion_epoch[index] == hardware_epoch &&
 	    hardware_epoch != 0U)
 		return INTEL_AX211_COMMAND_DUPLICATE;
+
 	/* Any other event for an idle slot belongs to an earlier epoch. */
 	return INTEL_AX211_COMMAND_STALE;
 }
