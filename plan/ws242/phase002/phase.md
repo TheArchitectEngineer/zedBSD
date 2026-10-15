@@ -56,6 +56,12 @@ NAK の encoder は SM70 以降で 1 本（SM の番号の比較で分岐）、l
 
 driver との口（Q1 経由で P2 に渡した、2026-10-16）: driver の呼び手 4 か所（`vk-pipeline.c`・`draw.c`・`compute.c`・`vk-execute.c`）が chip の表の SM（TU10x・TU11x → 75、GA10x → 86、AD10x → 89）で `_sm` の関数を呼ぶ。呼び手を変えるまでは今と同じ SM75 の code。
 
+### 3.1 出典の block ごとの注記（2026-10-16、Q1 経由のユーザーの指示「その2つのファイルは、まずブロックごとに引用元を示してください。」「レイテンシの表は、データなので、引用で済むように思います。引用元を明示すればいいと思います。」）
+
+- `sm75-isa.h`・`sm75-schedule.c` の Mesa の値を持つ block の上に、出典（Mesa 25.3.6 の path、関数・表の名前、行の範囲）を 1 つずつ書いた。zedBSD の物（cbuf の割り当て、追跡の数、並べ替えの見積り）は「zedBSD's own」。EXIT の delay 5 は Mesa ではなく CUDA の出す語から。
+- `sm75-isa.h` は #define の値だけなので、Collabora の MIT の notice を外し、header を Zlib（SPDX）に、出典の一覧（sha256）は残した。`sm75-schedule.c` の notice は、表の入れ子の形（reader → writer の if の並び）と scoreboard の選び方が NAK に沿うので、Q1 の判断まで残した。
+- 動作は不変: SM75 の 55 module の出力は byte 単位で同じ、host 試験 287 checks 0 failures、vmunix は warning 0。
+
 ## 4. 確かめ（host と build、2026-10-16 P4）
 
 | コマンド | 結果 |
