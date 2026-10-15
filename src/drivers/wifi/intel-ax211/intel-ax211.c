@@ -115,38 +115,54 @@ static int ax211_ignored_firmware_tlv(uint32_t type);
 static int ax211_pnvm_finish(const struct intel_ax211_pnvm_manifest *candidate, int active, int version_seen, int hardware_match, uint16_t mac_type, uint16_t rf_id, struct intel_ax211_pnvm_manifest *manifest);
 
 /*
- * Implements the drv intel ax211 identity matches operation.
+ * Reports whether a PCI identity is the one supported AX211: 1 when it is, 0
+ * when not.
  */
 int
 drv_intel_ax211_identity_matches(
 	const struct intel_ax211_identity *identity)
 {
-	/* Handles the identity availability. */
+	/* Rejects a missing identity. */
 	if (identity == NULL)
 		return 0;
 
-	/* Returns the computed result. */
-	return identity->vendor == INTEL_AX211_PCI_VENDOR_ID &&
-	       identity->device == INTEL_AX211_PCI_DEVICE_ID &&
-	       identity->subvendor == INTEL_AX211_PCI_SUBVENDOR_ID &&
-	       identity->subdevice == INTEL_AX211_PCI_SUBDEVICE_ID &&
-	       identity->revision == INTEL_AX211_PCI_REVISION;
+	/* Rejects another vendor, device or subsystem. */
+	if (identity->vendor != INTEL_AX211_PCI_VENDOR_ID ||
+	    identity->device != INTEL_AX211_PCI_DEVICE_ID ||
+	    identity->subvendor != INTEL_AX211_PCI_SUBVENDOR_ID ||
+	    identity->subdevice != INTEL_AX211_PCI_SUBDEVICE_ID) {
+		return 0;
+	}
+
+	/* Rejects another revision. */
+	if (identity->revision != INTEL_AX211_PCI_REVISION)
+		return 0;
+
+	/* The identity is the supported one. */
+	return 1;
 }
 
 /*
- * Implements the drv intel ax211 mac type supported operation.
+ * Reports whether a MAC type is So or SoF: 1 when it is, 0 when not.
  */
 int
 drv_intel_ax211_mac_type_supported(
 	uint16_t mac_type)
 {
-	/* Returns the computed result. */
-	return mac_type == INTEL_AX211_SILICON_SO ||
-	       mac_type == INTEL_AX211_SILICON_SOF;
+	/* Rejects any other MAC. */
+	if (mac_type != INTEL_AX211_SILICON_SO &&
+	    mac_type != INTEL_AX211_SILICON_SOF) {
+		return 0;
+	}
+
+	/* The MAC is supported. */
+	return 1;
 }
 
 /*
- * Implements the drv intel ax211 firmware parse operation.
+ * Parses the pinned firmware file into *manifest: its version, API and radio
+ * profile, the loader image, the command-version table and the runtime
+ * sections.
  */
 int
 drv_intel_ax211_firmware_parse(
@@ -154,16 +170,21 @@ drv_intel_ax211_firmware_parse(
 	size_t length,
 	struct intel_ax211_firmware_manifest *manifest)
 {
-	uint32_t index_local;
-	uint32_t index_local1;
+	uint32_t api_index;
+	uint32_t capability_index;
 	struct intel_ax211_section *section;
 	uint32_t destination;
+	uint32_t word;
+	uint32_t magic;
 	int separator;
-	uint32_t type, tlv_length;
+	int ignored;
+	uint32_t type;
+	uint32_t tlv_length;
 	const uint8_t *data;
 	int result;
 	struct intel_ax211_firmware_manifest parsed;
-	size_t offset, span;
+	size_t offset;
+	size_t span;
 	size_t cpu_separator = SIZE_MAX;
 	size_t paging_separator = SIZE_MAX;
 	uint32_t seen = 0;
@@ -172,180 +193,188 @@ drv_intel_ax211_firmware_parse(
 	size_t init_sections = 0;
 	size_t wow_sections = 0;
 
-	/* Handles the bytes availability. */
+	/* Refuses missing arguments. */
 	if (bytes == NULL || manifest == NULL)
 		return INTEL_AX211_INVALID;
 
-	/* Checks the current data length. */
+	/* Refuses a file shorter than its header. */
 	if (length < INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE)
 		return INTEL_AX211_TRUNCATED;
 
-	/* Checks the ax211 get le32 result. */
-	if (ax211_get_le32(bytes) != 0U ||
-	    ax211_get_le32(bytes + 4U) != INTEL_AX211_FIRMWARE_FILE_MAGIC) {
-		/* Returns the computed result. */
+	/* Refuses a header without the zero word and the magic. */
+	word = ax211_get_le32(bytes);
+	magic = ax211_get_le32(bytes + 4U);
+	if (word != 0U || magic != INTEL_AX211_FIRMWARE_FILE_MAGIC)
 		return INTEL_AX211_INVALID;
-	}
 
+	/* Takes the header's version and build. */
 	kern_memset(&parsed, 0, sizeof(parsed));
 	parsed.header_version = ax211_get_le32(bytes + 72U);
 	parsed.build = ax211_get_le32(bytes + 76U);
 	offset = INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE;
 
-	/* Process each remaining element. */
+	/* Parses the records one after another. */
 	while (offset < length) {
-		/* Checks the current data length. */
+		/* Refuses a record header cut short. */
 		if (length - offset < INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE)
 			return INTEL_AX211_TRUNCATED;
 		type = ax211_get_le32(bytes + offset);
 		tlv_length = ax211_get_le32(bytes + offset + 4U);
 		offset += INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE;
 
-		/* Checks the operation result. */
+		/* Refuses a record body beyond the file. */
 		result = ax211_tlv_span(tlv_length, length - offset, &span);
 		if (result != INTEL_AX211_SUCCESS)
 			return result;
 		data = bytes + offset;
 
-		/* Dispatch the selected syntax or record type. */
+		/* Takes the record by its type. */
 		switch (type) {
 		case AX211_RECORD_RUNTIME_SECTION:
-
-			/* Handles the tlv length condition. */
+			/* Refuses a section without its destination. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the parsed condition. */
+			/* Refuses a section beyond the limit. */
 			if (parsed.runtime_count >= INTEL_AX211_FIRMWARE_SECTION_LIMIT)
 				return INTEL_AX211_OVERFLOW;
 			destination = ax211_get_le32(data);
 			separator = 0;
 
-			/* Handles the destination condition. */
+			/* A mark destination separates the section groups. */
 			if (destination == INTEL_AX211_UPPER_CPU_IMAGE_MARK) {
-				/* Checks the ax211 get le32 result. */
-				if (tlv_length != 8U ||
-				    ax211_get_le32(data + 4U) != 0U) {
-					/* Returns the computed result. */
+				/* Refuses a mark of another length. */
+				if (tlv_length != 8U)
 					return INTEL_AX211_INVALID;
-				}
 
-				/* Handles the cpu separator condition. */
+				/* Refuses a mark whose second word is set. */
+				word = ax211_get_le32(data + 4U);
+				if (word != 0U)
+					return INTEL_AX211_INVALID;
+
+				/* Refuses a second mark. */
 				if (cpu_separator != SIZE_MAX)
 					return INTEL_AX211_DUPLICATE;
 				cpu_separator = parsed.runtime_count;
 				separator = 1;
 			} else if (destination ==
 				   INTEL_AX211_PAGED_IMAGE_MARK) {
-				/* Checks the ax211 get le32 result. */
-				if (tlv_length != 8U ||
-				    ax211_get_le32(data + 4U) != 0U) {
-					/* Returns the computed result. */
+				/* Refuses a mark of another length. */
+				if (tlv_length != 8U)
 					return INTEL_AX211_INVALID;
-				}
 
-				/* Handles the paging separator condition. */
+				/* Refuses a mark whose second word is set. */
+				word = ax211_get_le32(data + 4U);
+				if (word != 0U)
+					return INTEL_AX211_INVALID;
+
+				/* Refuses a second mark. */
 				if (paging_separator != SIZE_MAX)
 					return INTEL_AX211_DUPLICATE;
 				paging_separator = parsed.runtime_count;
 				separator = 1;
 			} else if (tlv_length == 4U) {
-				/* Returns the computed result. */
+				/* Refuses an empty section. */
 				return INTEL_AX211_INVALID;
 			}
 
+			/* Records the section; a mark has no bytes. */
 			section = &parsed.runtime[parsed.runtime_count++];
 			section->destination = destination;
 			section->file_offset = offset + 4U;
-			section->length =
-				separator ? 0U : (size_t)tlv_length - 4U;
+			if (separator)
+				section->length = 0U;
+			else
+				section->length = (size_t)tlv_length - 4U;
 			break;
 		case AX211_RECORD_INIT_SECTION:
-			/* Handles the tlv length condition. */
+			/* Refuses a section without its destination. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the init sections condition. */
+			/* Counts the section against the limit. */
 			if (++init_sections > INTEL_AX211_FIRMWARE_SECTION_LIMIT)
 				return INTEL_AX211_OVERFLOW;
 			break;
 		case AX211_RECORD_WAKE_SECTION:
-			/* Handles the tlv length condition. */
+			/* Refuses a section without its destination. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the wow sections condition. */
+			/* Counts the section against the limit. */
 			if (++wow_sections > INTEL_AX211_FIRMWARE_SECTION_LIMIT)
 				return INTEL_AX211_OVERFLOW;
 			break;
 		case AX211_RECORD_RADIO_PROFILE:
-			/* Handles the seen condition. */
+			/* Refuses a second radio profile. */
 			if ((seen & 1U) != 0U)
 				return INTEL_AX211_DUPLICATE;
 
-			/* Handles the tlv length condition. */
+			/* Refuses a profile of another length. */
 			if (tlv_length != 4U)
 				return INTEL_AX211_INVALID;
 			seen |= 1U;
 			parsed.radio_profile = ax211_get_le32(data);
 			break;
 		case AX211_RECORD_CPU_COUNT:
-			/* Handles the seen condition. */
+			/* Refuses a second CPU count. */
 			if ((seen & 2U) != 0U)
 				return INTEL_AX211_DUPLICATE;
 
-			/* Handles the tlv length condition. */
+			/* Refuses a count of another length. */
 			if (tlv_length != 4U)
 				return INTEL_AX211_INVALID;
 			seen |= 2U;
 			parsed.cpu_count = ax211_get_le32(data);
 
-			/* Handles the parsed condition. */
+			/* Refuses a count other than 1 or 2. */
 			if (parsed.cpu_count == 0U || parsed.cpu_count > 2U)
 				return INTEL_AX211_INVALID;
 			break;
 		case AX211_RECORD_INTERFACE_FLAGS:
-
-			/* Handles the tlv length condition. */
+			/* Refuses flags of another length. */
 			if (tlv_length != 8U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the index local condition. */
-			index_local = ax211_get_le32(data);
-			if (index_local >= 4U)
+			/* Refuses an index beyond the four words. */
+			api_index = ax211_get_le32(data);
+			if (api_index >= 4U)
 				return INTEL_AX211_OVERFLOW;
 
-			/* Handles the api seen condition. */
-			if ((api_seen & (uint8_t)(1U << index_local)) != 0U)
+			/* Refuses a second word of the same index. */
+			if ((api_seen & (uint8_t)(1U << api_index)) != 0U)
 				return INTEL_AX211_DUPLICATE;
-			api_seen |= (uint8_t)(1U << index_local);
-			parsed.api_changes[index_local] =
+			api_seen |= (uint8_t)(1U << api_index);
+			parsed.api_changes[api_index] =
 				ax211_get_le32(data + 4U);
 			break;
 		case AX211_RECORD_FEATURE_FLAGS:
-
-			/* Handles the tlv length condition. */
+			/* Refuses flags of another length. */
 			if (tlv_length != 8U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the index local1 condition. */
-			index_local1 = ax211_get_le32(data);
-			if (index_local1 >= 5U)
+			/* Refuses an index beyond the five words. */
+			capability_index = ax211_get_le32(data);
+			if (capability_index >= 5U)
 				return INTEL_AX211_OVERFLOW;
 
-			/* Handles the capa seen condition. */
-			if ((capa_seen & (uint8_t)(1U << index_local1)) != 0U)
+			/* Refuses a second word of the same index. */
+			if ((capa_seen & (uint8_t)(1U << capability_index)) !=
+			    0U) {
 				return INTEL_AX211_DUPLICATE;
-			capa_seen |= (uint8_t)(1U << index_local1);
-			parsed.capabilities[index_local1] =
+			}
+
+			/* Records the word. */
+			capa_seen |= (uint8_t)(1U << capability_index);
+			parsed.capabilities[capability_index] =
 				ax211_get_le32(data + 4U);
 			break;
 		case AX211_RECORD_IMAGE_VERSION:
-			/* Handles the seen condition. */
+			/* Refuses a second version. */
 			if ((seen & 4U) != 0U)
 				return INTEL_AX211_DUPLICATE;
 
-			/* Handles the tlv length condition. */
+			/* Refuses a version of another length. */
 			if (tlv_length != 12U)
 				return INTEL_AX211_INVALID;
 			seen |= 4U;
@@ -354,11 +383,11 @@ drv_intel_ax211_firmware_parse(
 			parsed.api_serial = ax211_get_le32(data + 8U);
 			break;
 		case AX211_RECORD_LOADER_IMAGE:
-			/* Handles the seen condition. */
+			/* Refuses a second loader image. */
 			if ((seen & 8U) != 0U)
 				return INTEL_AX211_DUPLICATE;
 
-			/* Handles the tlv length condition. */
+			/* Refuses an empty loader image. */
 			if (tlv_length == 0U)
 				return INTEL_AX211_INVALID;
 			seen |= 8U;
@@ -366,11 +395,11 @@ drv_intel_ax211_firmware_parse(
 			parsed.iml_length = tlv_length;
 			break;
 		case AX211_RECORD_COMMAND_VERSION_TABLE:
-			/* Handles the seen condition. */
+			/* Refuses a second table. */
 			if ((seen & 16U) != 0U)
 				return INTEL_AX211_DUPLICATE;
 
-			/* Handles the tlv length condition. */
+			/* Refuses an empty table and one of partial entries. */
 			if (tlv_length == 0U || (tlv_length & 3U) != 0U)
 				return INTEL_AX211_INVALID;
 			seen |= 16U;
@@ -378,65 +407,74 @@ drv_intel_ax211_firmware_parse(
 			parsed.command_versions_length = tlv_length;
 			break;
 		default:
-			/* Checks the ax211 ignored firmware tlv result. */
-			if (!ax211_ignored_firmware_tlv(type))
+			/* Refuses a type that is not known to be skippable. */
+			ignored = ax211_ignored_firmware_tlv(type);
+			if (!ignored)
 				return INTEL_AX211_UNSUPPORTED;
 			break;
 		}
 
+		/* Moves to the next record. */
 		offset += span;
 	}
 
-	/* Handles the seen condition. */
-	if ((seen & 31U) != 31U || parsed.runtime_count == 0U ||
-	    cpu_separator == SIZE_MAX || paging_separator == SIZE_MAX) {
-		/* Returns the computed result. */
+	/* Refuses an image without a required record or a mark. */
+	if ((seen & 31U) != 31U ||
+	    parsed.runtime_count == 0U ||
+	    cpu_separator == SIZE_MAX ||
+	    paging_separator == SIZE_MAX) {
 		return INTEL_AX211_MISSING;
 	}
 
-	/* Handles the cpu separator condition. */
-	if (cpu_separator == 0U || paging_separator <= cpu_separator + 1U ||
+	/* Refuses an image with an empty section group. */
+	if (cpu_separator == 0U ||
+	    paging_separator <= cpu_separator + 1U ||
 	    paging_separator + 1U >= parsed.runtime_count) {
-		/* Returns the computed result. */
 		return INTEL_AX211_MISSING;
 	}
 
-	/* Handles the parsed condition. */
+	/* Refuses an image of another version. */
 	if (parsed.api_major != INTEL_AX211_FIRMWARE_API ||
 	    parsed.api_minor != INTEL_AX211_FIRMWARE_MINOR ||
 	    parsed.api_serial != INTEL_AX211_FIRMWARE_SERIAL) {
-		/* Returns the computed result. */
 		return INTEL_AX211_IDENTITY_MISMATCH;
 	}
+
+	/* Succeeded: counts the section groups and reports the manifest. */
 	parsed.lmac_count = cpu_separator;
 	parsed.umac_count = paging_separator - cpu_separator - 1U;
 	parsed.paging_count = parsed.runtime_count - paging_separator - 1U;
 	*manifest = parsed;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 sku equal operation.
+ * Reports whether two board signatures are equal: 1 when they are, 0 when
+ * not.
  */
 int
 drv_intel_ax211_sku_equal(
 	const struct intel_ax211_board_signature *left,
 	const struct intel_ax211_board_signature *right)
 {
-	/* Handles the left availability. */
+	/* Rejects missing signatures. */
 	if (left == NULL || right == NULL)
 		return 0;
 
-	/* Returns the computed result. */
-	return left->data[0] == right->data[0] &&
-	       left->data[1] == right->data[1] &&
-	       left->data[2] == right->data[2];
+	/* Rejects a differing word. */
+	if (left->data[0] != right->data[0] ||
+	    left->data[1] != right->data[1] ||
+	    left->data[2] != right->data[2]) {
+		return 0;
+	}
+
+	/* The signatures are equal. */
+	return 1;
 }
 
 /*
- * Implements the drv intel ax211 pnvm parse operation.
+ * Selects the PNVM data of the board sku names and checks that it is for the
+ * given MAC and radio.
  */
 int
 drv_intel_ax211_pnvm_select(
@@ -447,14 +485,14 @@ drv_intel_ax211_pnvm_select(
 	uint16_t rf_id,
 	struct intel_ax211_pnvm_manifest *manifest)
 {
-	int error;
 	struct intel_ax211_board_signature found;
 	uint16_t found_mac;
 	uint16_t found_rf;
 	struct intel_ax211_section *section;
 	size_t data_length;
 	uint32_t destination;
-	uint32_t type, tlv_length;
+	uint32_t type;
+	uint32_t tlv_length;
 	size_t span;
 	const uint8_t *data;
 	int result;
@@ -464,45 +502,50 @@ drv_intel_ax211_pnvm_select(
 	int version_seen = 0;
 	int hardware_match = 0;
 
-	/* Handles the bytes availability. */
+	/* Refuses missing arguments. */
 	if (bytes == NULL || sku == NULL || manifest == NULL)
 		return INTEL_AX211_INVALID;
 	kern_memset(&candidate, 0, sizeof(candidate));
 
-	/* Process each remaining element. */
+	/* Parses the records one after another. */
 	while (offset < length) {
-		/* Checks the current data length. */
+		/* Refuses a record header cut short. */
 		if (length - offset < INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE)
 			return INTEL_AX211_TRUNCATED;
 		type = ax211_get_le32(bytes + offset);
 		tlv_length = ax211_get_le32(bytes + offset + 4U);
 		offset += INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE;
 
-		/* Checks the operation result. */
+		/* Refuses a record body beyond the file. */
 		result = ax211_tlv_span(tlv_length, length - offset, &span);
 		if (result != INTEL_AX211_SUCCESS)
 			return result;
 		data = bytes + offset;
 
-		/* Handles the type condition. */
+		/* Takes the record by its type. */
 		if (type == AX211_RECORD_PNVM_BOARD) {
-			/* Handles the tlv length condition. */
+			/* Refuses a signature of another length. */
 			if (tlv_length != 12U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the active condition. */
+			/* Finishes the board that was being collected. */
 			if (active) {
-				/* Checks the operation result. */
+				/* Succeeded: the board was found. */
 				result = ax211_pnvm_finish(
 					&candidate, active, version_seen,
 					hardware_match, mac_type, rf_id,
 					manifest);
 				if (result == INTEL_AX211_SUCCESS)
-					return result;
+					return INTEL_AX211_SUCCESS;
+
+				/*
+				 * Reports a failure other than another radio.
+				 */
 				if (result != INTEL_AX211_IDENTITY_MISMATCH)
 					return result;
 			}
 
+			/* Starts the next board; collects it only for sku. */
 			found.data[0] = ax211_get_le32(data);
 			found.data[1] = ax211_get_le32(data + 4U);
 			found.data[2] = ax211_get_le32(data + 8U);
@@ -512,28 +555,30 @@ drv_intel_ax211_pnvm_select(
 			kern_memset(&candidate, 0, sizeof(candidate));
 			candidate.sku = found;
 		} else if (type == AX211_RECORD_PNVM_REVISION) {
-			/* Handles the tlv length condition. */
+			/* Refuses a revision without its word. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the active condition. */
+			/* Records the revision of the collected board. */
 			if (active) {
-				/* Handles the version seen condition. */
+				/* Refuses a second revision. */
 				if (version_seen)
 					return INTEL_AX211_DUPLICATE;
 				version_seen = 1;
 				candidate.version = ax211_get_le32(data);
 			}
 		} else if (type == AX211_RECORD_HARDWARE_KIND) {
-			/* Handles the tlv length condition. */
+			/* Refuses a hardware kind without its two codes. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the active condition. */
+			/* Records a hardware kind of the collected board. */
 			if (active) {
 				found_mac = ax211_get_le16(data);
 
-				/* Handles the found mac condition. */
+				/*
+				 * Notes a kind that is the given MAC and radio.
+				 */
 				found_rf = ax211_get_le16(data + 2U);
 				if (found_mac == mac_type &&
 				    found_rf == rf_id) {
@@ -543,32 +588,32 @@ drv_intel_ax211_pnvm_select(
 				}
 			}
 		} else if (type == AX211_RECORD_RUNTIME_SECTION) {
-			/* Handles the tlv length condition. */
+			/* Refuses a section without its destination. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Handles the active condition. */
+			/* Records a section of the collected board. */
 			destination = ax211_get_le32(data);
 			if (active &&
 			    destination != INTEL_AX211_PNVM_IMAGE_MARK) {
-				/* Handles the data length condition. */
+				/* Refuses an empty section. */
 				data_length = (size_t)tlv_length - 4U;
 				if (data_length == 0U)
 					return INTEL_AX211_INVALID;
 
-				/* Handles the candidate condition. */
+				/* Refuses a section beyond the limit. */
 				if (candidate.section_count >=
 				    INTEL_AX211_PNVM_SECTION_LIMIT) {
-					/* Returns the computed result. */
 					return INTEL_AX211_OVERFLOW;
 				}
 
-				/* Handles the candidate condition. */
+				/* Refuses a total length that overflows. */
 				if (candidate.total_length >
 				    SIZE_MAX - data_length) {
-					/* Returns the computed result. */
 					return INTEL_AX211_OVERFLOW;
 				}
+
+				/* Records the section. */
 				section = &candidate.section
 						   [candidate.section_count++];
 				section->destination = destination;
@@ -577,24 +622,27 @@ drv_intel_ax211_pnvm_select(
 				candidate.total_length += data_length;
 			}
 		} else {
-			/* Returns the computed result. */
+			/* Refuses any other type. */
 			return INTEL_AX211_UNSUPPORTED;
 		}
 
+		/* Moves to the next record. */
 		offset += span;
 	}
 
-	/* Obtains the ax211 pnvm finish result. */
-	error =
-		ax211_pnvm_finish(&candidate, active, version_seen,
-				  hardware_match, mac_type, rf_id, manifest);
+	/* Finishes the last board. */
+	result = ax211_pnvm_finish(&candidate, active, version_seen,
+				   hardware_match, mac_type, rf_id, manifest);
+	if (result != INTEL_AX211_SUCCESS)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: *manifest holds the board's data. */
+	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 pnvm inspect operation.
+ * Counts what a PNVM file holds: its boards, revisions, hardware kinds and
+ * sections.
  */
 int
 drv_intel_ax211_pnvm_inspect(
@@ -602,48 +650,52 @@ drv_intel_ax211_pnvm_inspect(
 	size_t length,
 	struct intel_ax211_pnvm_inventory *inventory)
 {
-	uint16_t mac_type, rf_type;
+	uint16_t mac_type;
+	uint16_t rf_type;
 	size_t section_length;
-	uint32_t type, tlv_length;
+	uint32_t destination;
+	uint32_t type;
+	uint32_t tlv_length;
 	size_t span;
 	const uint8_t *data;
+	int supported;
 	int result;
 	struct intel_ax211_pnvm_inventory found;
 	size_t offset = 0;
 
-	/* Handles the bytes availability. */
+	/* Refuses missing arguments. */
 	if (bytes == NULL || inventory == NULL)
 		return INTEL_AX211_INVALID;
 	kern_memset(&found, 0, sizeof(found));
 
-	/* Process each remaining element. */
+	/* Counts the records one after another. */
 	while (offset < length) {
-		/* Checks the current data length. */
+		/* Refuses a record header cut short. */
 		if (length - offset < INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE)
 			return INTEL_AX211_TRUNCATED;
 		type = ax211_get_le32(bytes + offset);
 		tlv_length = ax211_get_le32(bytes + offset + 4U);
 		offset += INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE;
 
-		/* Checks the operation result. */
+		/* Refuses a record body beyond the file. */
 		result = ax211_tlv_span(tlv_length, length - offset, &span);
 		if (result != INTEL_AX211_SUCCESS)
 			return result;
 		data = bytes + offset;
 
-		/* Handles the type condition. */
+		/* Counts the record by its type. */
 		if (type == AX211_RECORD_PNVM_BOARD) {
-			/* Handles the tlv length condition. */
+			/* Refuses a signature of another length. */
 			if (tlv_length != 12U)
 				return INTEL_AX211_INVALID;
 			found.sku_count++;
 		} else if (type == AX211_RECORD_PNVM_REVISION) {
-			/* Handles the tlv length condition. */
+			/* Refuses a revision without its word. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 			found.version_count++;
 		} else if (type == AX211_RECORD_HARDWARE_KIND) {
-			/* Handles the tlv length condition. */
+			/* Refuses a hardware kind without its two codes. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 			mac_type = ax211_get_le16(data);
@@ -651,73 +703,78 @@ drv_intel_ax211_pnvm_inspect(
 			found.hardware_type_count++;
 
 			/*
-			 * Checks the drv intel ax211 mac type supported result.
+			 * Counts a kind with a supported MAC and the GF radio.
 			 */
-			if (drv_intel_ax211_mac_type_supported(mac_type) &&
-			    rf_type == INTEL_AX211_RADIO_GF)
+			supported =
+				drv_intel_ax211_mac_type_supported(mac_type);
+			if (supported && rf_type == INTEL_AX211_RADIO_GF)
 				found.supported_hardware_type_count++;
 		} else if (type == AX211_RECORD_RUNTIME_SECTION) {
-			/* Handles the tlv length condition. */
+			/* Refuses a section without its destination. */
 			if (tlv_length < 4U)
 				return INTEL_AX211_INVALID;
 
-			/* Checks the ax211 get le32 result. */
-			if (ax211_get_le32(data) !=
-			    INTEL_AX211_PNVM_IMAGE_MARK) {
-				/* Handles the section length condition. */
+			/* Counts a section that is not a mark. */
+			destination = ax211_get_le32(data);
+			if (destination != INTEL_AX211_PNVM_IMAGE_MARK) {
+				/* Refuses an empty section. */
 				section_length = (size_t)tlv_length - 4U;
 				if (section_length == 0U)
 					return INTEL_AX211_INVALID;
 
-				/* Handles the found condition. */
+				/* Refuses a total length that overflows. */
 				if (found.total_section_length >
 				    SIZE_MAX - section_length) {
-					/* Returns the computed result. */
 					return INTEL_AX211_OVERFLOW;
 				}
+
+				/* Counts the section. */
 				found.total_section_length += section_length;
 				found.section_count++;
 			}
 		} else {
-			/* Returns the computed result. */
+			/* Refuses any other type. */
 			return INTEL_AX211_UNSUPPORTED;
 		}
 
+		/* Moves to the next record. */
 		offset += span;
 	}
 
-	/* Handles the found condition. */
-	if (found.sku_count == 0U || found.version_count == 0U ||
-	    found.hardware_type_count == 0U || found.section_count == 0U) {
-		/* Returns the computed result. */
+	/* Refuses a file without boards, revisions, kinds or sections. */
+	if (found.sku_count == 0U ||
+	    found.version_count == 0U ||
+	    found.hardware_type_count == 0U ||
+	    found.section_count == 0U) {
 		return INTEL_AX211_MISSING;
 	}
-	*inventory = found;
 
-	/* Returns the computed result. */
+	/* Succeeded: reports the counts. */
+	*inventory = found;
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 context info gen3 encode operation.
+ * Encodes the boot context as the 104 little-endian bytes the device reads.
  */
 int
 drv_intel_ax211_boot_context_encode(
 	uint8_t output[104],
 	const struct intel_ax211_boot_context *context)
 {
-	/* Handles the output availability. */
+	/* Refuses missing arguments. */
 	if (output == NULL || context == NULL)
 		return INTEL_AX211_INVALID;
 
-	/* Handles the context condition. */
+	/* Refuses ring size codes other than the rings' sizes. */
 	if (context->command_ring_size_code !=
 		    INTEL_AX211_COMMAND_RING_CB_SIZE ||
 	    context->response_ring_size_code !=
 		    INTEL_AX211_RX_RING_CB_SIZE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
+
+	/* Succeeded: writes every field at its offset. */
 	kern_memset(output, 0, INTEL_AX211_BOOT_CONTEXT_SIZE);
 	ax211_put_le16(output, context->version);
 	ax211_put_le16(output + 2U, INTEL_AX211_BOOT_CONTEXT_SIZE / 4U);
@@ -745,13 +802,11 @@ drv_intel_ax211_boot_context_encode(
 	ax211_put_le16(output + 86U, context->status_page_vector);
 	ax211_put_le64(output + 88U, context->scratch_area_address);
 	ax211_put_le32(output + 96U, context->scratch_area_size);
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 rx transfer descriptor encode operation.
+ * Encodes one receive transfer descriptor: the buffer id and its address.
  */
 int
 drv_intel_ax211_rx_transfer_descriptor_encode(
@@ -759,19 +814,20 @@ drv_intel_ax211_rx_transfer_descriptor_encode(
 	uint16_t buffer_id,
 	uint64_t address)
 {
-	/* Handles the output availability. */
+	/* Refuses a missing output. */
 	if (output == NULL)
 		return INTEL_AX211_INVALID;
+
+	/* Succeeded: writes the id and the address. */
 	kern_memset(output, 0, INTEL_AX211_RX_TRANSFER_DESCRIPTOR_SIZE);
 	ax211_put_le16(output, buffer_id);
 	ax211_put_le64(output + 8U, address);
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 rx completion descriptor decode operation.
+ * Decodes one receive completion descriptor: the buffer it filled and its
+ * flags.
  */
 int
 drv_intel_ax211_rx_completion_descriptor_decode(
@@ -779,18 +835,18 @@ drv_intel_ax211_rx_completion_descriptor_decode(
 	uint16_t *buffer_id,
 	uint8_t *flags)
 {
-	/* Handles the input availability. */
+	/* Refuses missing arguments. */
 	if (input == NULL || buffer_id == NULL || flags == NULL)
 		return INTEL_AX211_INVALID;
+
+	/* Succeeded: reads the id and the flags. */
 	*buffer_id = ax211_get_le16(input + 4U);
 	*flags = input[6];
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 tfd encode operation.
+ * Encodes one TFD from buffer_count transfer buffers.
  */
 int
 drv_intel_ax211_tfd_encode(
@@ -801,38 +857,42 @@ drv_intel_ax211_tfd_encode(
 	size_t offset;
 	size_t index;
 
-	/* Handles the output availability. */
-	if (output == NULL || buffers == NULL || buffer_count == 0U ||
+	/* Refuses missing arguments and a buffer count out of range. */
+	if (output == NULL ||
+	    buffers == NULL ||
+	    buffer_count == 0U ||
 	    buffer_count > INTEL_AX211_TRANSFER_DESCRIPTOR_BUFFERS) {
-		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
+
+	/* Writes the buffer count. */
 	kern_memset(output, 0, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 	ax211_put_le16(output, (uint16_t)buffer_count);
 
-	/* Process each remaining element. */
+	/* Writes each buffer's length and address. */
 	for (index = 0; index < buffer_count; index++) {
 		offset = 2U + index * 10U;
 
-		/* Handles the buffers condition. */
+		/* Clears the TFD and refuses an empty or oversized buffer. */
 		if (buffers[index].length == 0U ||
 		    buffers[index].length > INTEL_AX211_TRANSFER_BUFFER_LENGTH_MAX) {
 			drv_intel_ax211_scrub(output, INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE);
 
-			/* Returns the computed result. */
+			/* Reports the failure. */
 			return INTEL_AX211_INVALID;
 		}
 
+		/* Writes the buffer. */
 		ax211_put_le16(output + offset, buffers[index].length);
 		ax211_put_le64(output + offset + 2U, buffers[index].address);
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 narrow command encode operation.
+ * Encodes the 4-byte narrow command header.
  */
 int
 drv_intel_ax211_narrow_command_encode(
@@ -841,20 +901,20 @@ drv_intel_ax211_narrow_command_encode(
 	uint8_t flags,
 	const struct intel_ax211_ring_token *token)
 {
-	/* Handles the output availability. */
+	/* Refuses missing arguments. */
 	if (output == NULL || token == NULL)
 		return INTEL_AX211_INVALID;
+
+	/* Succeeded: writes the opcode, the flags and the slot. */
 	output[0] = opcode;
 	output[1] = flags;
 	output[2] = token->index;
 	output[3] = token->queue;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 wide command encode operation.
+ * Encodes the 8-byte wide command header.
  */
 int
 drv_intel_ax211_wide_command_encode(
@@ -863,12 +923,17 @@ drv_intel_ax211_wide_command_encode(
 	uint16_t payload_length,
 	const struct intel_ax211_ring_token *token)
 {
-	/* Handles the output availability. */
-	if (output == NULL || command == NULL || token == NULL ||
+	/* Refuses missing arguments and an oversized payload. */
+	if (output == NULL ||
+	    command == NULL ||
+	    token == NULL ||
 	    payload_length > INTEL_AX211_MAX_COMMAND_PAYLOAD) {
-		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
+
+	/*
+	 * Succeeded: writes the command, the slot, the length and the version.
+	 */
 	output[0] = command->opcode;
 	output[1] = command->group;
 	output[2] = token->index;
@@ -876,13 +941,11 @@ drv_intel_ax211_wide_command_encode(
 	ax211_put_le16(output + 4U, payload_length);
 	output[6] = 0;
 	output[7] = command->version;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 event decode operation.
+ * Decodes the header of one received event and locates its payload.
  */
 int
 drv_intel_ax211_event_decode(
@@ -893,23 +956,25 @@ drv_intel_ax211_event_decode(
 	uint32_t length_flags;
 	size_t frame_length;
 
-	/* Handles the bytes availability. */
+	/* Refuses missing arguments. */
 	if (bytes == NULL || event == NULL)
 		return INTEL_AX211_INVALID;
 
-	/* Checks the current data length. */
+	/* Refuses an event shorter than its header. */
 	if (length < INTEL_AX211_EVENT_HEADER_SIZE)
 		return INTEL_AX211_TRUNCATED;
 	length_flags = ax211_get_le32(bytes);
 
-	/* Handles the frame length condition. */
+	/* Refuses a frame shorter than a command header. */
 	frame_length = (size_t)(length_flags & 0x3fffU);
 	if (frame_length < INTEL_AX211_NARROW_COMMAND_HEADER_SIZE)
 		return INTEL_AX211_INVALID;
 
-	/* Handles the frame length condition. */
+	/* Refuses a frame beyond the event. */
 	if (frame_length > length - 4U)
 		return INTEL_AX211_TRUNCATED;
+
+	/* Succeeded: describes the command, the slot and the payload. */
 	kern_memset(event, 0, sizeof(*event));
 	event->command.opcode = bytes[4];
 	event->flags = bytes[5];
@@ -918,13 +983,11 @@ drv_intel_ax211_event_decode(
 	event->rx_queue = (uint8_t)((length_flags >> 16) & 0x3fU);
 	event->payload_offset = INTEL_AX211_EVENT_HEADER_SIZE;
 	event->payload_length = frame_length - 4U;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 ring init operation.
+ * Initializes an empty ring of a power-of-two capacity.
  */
 int
 drv_intel_ax211_ring_init(
@@ -932,87 +995,87 @@ drv_intel_ax211_ring_init(
 	uint8_t queue,
 	uint16_t capacity)
 {
-	/* Handles the ring availability. */
-	if (ring == NULL || capacity == 0U ||
+	/* Refuses a missing ring and a capacity that is not a power of two. */
+	if (ring == NULL ||
+	    capacity == 0U ||
 	    capacity > INTEL_AX211_COMMAND_RING_SIZE ||
 	    (capacity & (uint16_t)(capacity - 1U)) != 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_INVALID;
 	}
+
+	/* Succeeded: the ring is empty. */
 	kern_memset(ring, 0, sizeof(*ring));
 	ring->capacity = capacity;
 	ring->queue = queue;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 ring reserve operation.
+ * Reserves the next slot of a ring.
  */
 int
 drv_intel_ax211_ring_reserve(
 	struct intel_ax211_ring *ring,
 	struct intel_ax211_ring_token *token)
 {
-	/* Handles the ring availability. */
+	/* Refuses missing arguments and an uninitialized ring. */
 	if (ring == NULL || token == NULL || ring->capacity == 0U)
 		return INTEL_AX211_INVALID;
 
-	/* Handles the ring condition. */
+	/* Refuses a full ring. */
 	if (ring->used == ring->capacity)
 		return INTEL_AX211_FULL;
+
+	/* Succeeded: reports the slot and advances the head. */
 	token->queue = ring->queue;
 	token->index = (uint8_t)ring->head;
 	ring->head = (uint16_t)((ring->head + 1U) & (ring->capacity - 1U));
 	ring->used++;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 ring complete operation.
+ * Retires the oldest slot of a ring, which token must name.
  */
 int
 drv_intel_ax211_ring_complete(
 	struct intel_ax211_ring *ring,
 	const struct intel_ax211_ring_token *token)
 {
-	/* Handles the ring availability. */
+	/* Refuses missing arguments and an uninitialized ring. */
 	if (ring == NULL || token == NULL || ring->capacity == 0U)
 		return INTEL_AX211_INVALID;
 
-	/* Handles the ring condition. */
-	if (ring->used == 0U || token->queue != ring->queue ||
+	/* Refuses an empty ring and a token that is not the oldest slot. */
+	if (ring->used == 0U ||
+	    token->queue != ring->queue ||
 	    token->index != (uint8_t)ring->tail) {
-		/* Returns the computed result. */
 		return INTEL_AX211_STALE;
 	}
+
+	/* Succeeded: advances the tail. */
 	ring->tail = (uint16_t)((ring->tail + 1U) & (ring->capacity - 1U));
 	ring->used--;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 ring available operation.
+ * Returns the number of free slots of a ring; 0 for an invalid ring.
  */
 size_t
 drv_intel_ax211_ring_available(
 	const struct intel_ax211_ring *ring)
 {
-	/* Handles the ring availability. */
+	/* An invalid ring has no free slot. */
 	if (ring == NULL || ring->capacity == 0U || ring->used > ring->capacity)
 		return 0;
 
-	/* Returns the computed result. */
+	/* Reports the free slots. */
 	return (size_t)(ring->capacity - ring->used);
 }
 
 /*
- * Implements the drv intel ax211 scrub operation.
+ * Clears memory through a volatile pointer, so that the clearing stays.
  */
 void
 drv_intel_ax211_scrub(
@@ -1021,17 +1084,17 @@ drv_intel_ax211_scrub(
 {
 	volatile uint8_t *bytes = (volatile uint8_t *)memory;
 
-	/* Handles the memory availability. */
+	/* Nothing to clear. */
 	if (memory == NULL)
 		return;
 
-	/* Process each remaining element. */
+	/* Clears every byte. */
 	while (length-- != 0U)
 		*bytes++ = 0;
 }
 
 /*
- * Implements the drv intel ax211 staging set operation.
+ * Copies data into a staging buffer, clearing it first.
  */
 int
 drv_intel_ax211_staging_set(
@@ -1039,57 +1102,58 @@ drv_intel_ax211_staging_set(
 	const void *data,
 	size_t length)
 {
-	/* Handles the staging availability. */
+	/* Refuses a missing buffer and missing data. */
 	if (staging == NULL || (data == NULL && length != 0U))
 		return INTEL_AX211_INVALID;
 	drv_intel_ax211_staging_clear(staging);
 
-	/* Checks the current data length. */
+	/* Refuses data larger than the buffer. */
 	if (length > sizeof(staging->bytes))
 		return INTEL_AX211_OVERFLOW;
 
-	/* Checks the current data length. */
+	/* Succeeded: copies the data. */
 	if (length != 0U)
 		kern_memcpy(staging->bytes, data, length);
 	staging->length = length;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
 
 /*
- * Implements the drv intel ax211 staging clear operation.
+ * Clears a staging buffer.
  */
 void
 drv_intel_ax211_staging_clear(
 	struct intel_ax211_staging *staging)
 {
-	/* Handles the staging availability. */
+	/* Nothing to clear. */
 	if (staging == NULL)
 		return;
+
+	/* Clears the bytes and the length. */
 	drv_intel_ax211_scrub(staging->bytes, sizeof(staging->bytes));
 	staging->length = 0;
 }
-/* Supports the ax211 get le16 operation. */
+
+/* Reads a little-endian 16-bit value. */
 static uint16_t
 ax211_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the value from its two bytes, least significant first. */
 	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
 }
 
-/* Supports the ax211 get le32 operation. */
+/* Reads a little-endian 32-bit value. */
 static uint32_t
 ax211_get_le32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
 	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-/* Supports the ax211 put le16 operation. */
+/* Stores a 16-bit value little-endian. */
 static void
 ax211_put_le16(
 	uint8_t *bytes,
@@ -1099,7 +1163,7 @@ ax211_put_le16(
 	bytes[1] = (uint8_t)(value >> 8);
 }
 
-/* Supports the ax211 put le32 operation. */
+/* Stores a 32-bit value little-endian. */
 static void
 ax211_put_le32(
 	uint8_t *bytes,
@@ -1111,7 +1175,7 @@ ax211_put_le32(
 	bytes[3] = (uint8_t)(value >> 24);
 }
 
-/* Supports the ax211 put le64 operation. */
+/* Stores a 64-bit value little-endian. */
 static void
 ax211_put_le64(
 	uint8_t *bytes,
@@ -1119,12 +1183,15 @@ ax211_put_le64(
 {
 	unsigned int index;
 
-	/* Process each remaining element. */
+	/* Stores the eight bytes, least significant first. */
 	for (index = 0; index < 8; index++)
 		bytes[index] = (uint8_t)(value >> (index * 8));
 }
 
-/* Supports the ax211 tlv span operation. */
+/*
+ * Rounds a record length up to whole words and checks that the record fits
+ * in what remains of the file.
+ */
 static int
 ax211_tlv_span(
 	uint32_t value,
@@ -1133,50 +1200,92 @@ ax211_tlv_span(
 {
 	size_t length = (size_t)value;
 
-	/* Checks the current data length. */
+	/* Refuses a length that overflows when rounded. */
 	if (length > SIZE_MAX - 3U)
 		return INTEL_AX211_OVERFLOW;
 
-	/* Checks the current data length. */
+	/* Refuses a rounded length beyond the file. */
 	length = (length + 3U) & ~(size_t)3U;
 	if (length > remaining)
 		return INTEL_AX211_TRUNCATED;
-	*span = length;
 
-	/* Returns the computed result. */
+	/* Succeeded: reports the span. */
+	*span = length;
 	return INTEL_AX211_SUCCESS;
 }
 
-/* Supports the ax211 ignored firmware tlv operation. */
+/*
+ * Reports whether a firmware record type is one the parser skips: 1 when it
+ * is, 0 when not.
+ */
 static int
 ax211_ignored_firmware_tlv(
 	uint32_t type)
 {
-	/* Handles the type condition. */
+	/* Types 1 to 18 and the records between the sections and the flags. */
 	if ((type >= 1U && type <= 18U) ||
-	    (type >= AX211_RECORD_WAKE_SECTION && type <= AX211_RECORD_CALIBRATION_DEFAULTS) ||
-	    (type >= AX211_RECORD_CIPHER_SCHEMES && type <= AX211_RECORD_SCAN_CHANNEL_LIMIT) ||
-	    type == AX211_RECORD_PAGED_SIZE || type == AX211_RECORD_SNIFFER_SECTION ||
-	    type == AX211_RECORD_SDIO_DMA_ADDRESS || type == AX211_RECORD_TRACE_DESTINATION ||
-	    type == AX211_RECORD_TRACE_SETUP || type == AX211_RECORD_TRACE_TRIGGER ||
-	    (type >= AX211_RECORD_BACKGROUND_SCAN_LIMITS && type <= AX211_RECORD_LOWER_CPU_TRACE_ADDRESSES) ||
-	    (type >= AX211_RECORD_RECOVERY_BUFFER && type <= AX211_RECORD_RADIO_INTEGRATION_REVISION) ||
-	    type == AX211_RECORD_PNVM_REVISION || type == AX211_RECORD_PNVM_BOARD ||
-	    type == 65U || (type >= AX211_RECORD_SECTION_TABLE_ADDRESS && type <= 69U) ||
-	    type == AX211_RECORD_PNVM_PAYLOAD || type == AX211_RECORD_STATION_LIMIT ||
-	    type == 0x101U || type == AX211_RECORD_BEACON_LIMIT ||
-	    (type >= 0x1000000U && type <= 0x1000004U) ||
-	    (type >= AX211_RECORD_TRACE_RANGE_FIRST && type <= AX211_RECORD_TRACE_RANGE_LAST) ||
-	    type == 0x100000bU || type == 0x100000cU || type == 1092U) {
-		/* Reports operation failure. */
+	    (type >= AX211_RECORD_WAKE_SECTION &&
+	     type <= AX211_RECORD_CALIBRATION_DEFAULTS) ||
+	    (type >= AX211_RECORD_CIPHER_SCHEMES &&
+	     type <= AX211_RECORD_SCAN_CHANNEL_LIMIT)) {
 		return 1;
 	}
 
-	/* Succeeded. */
+	/* The paging, sniffer, SDIO and trace records. */
+	if (type == AX211_RECORD_PAGED_SIZE ||
+	    type == AX211_RECORD_SNIFFER_SECTION ||
+	    type == AX211_RECORD_SDIO_DMA_ADDRESS ||
+	    type == AX211_RECORD_TRACE_DESTINATION ||
+	    type == AX211_RECORD_TRACE_SETUP ||
+	    type == AX211_RECORD_TRACE_TRIGGER) {
+		return 1;
+	}
+
+	/* The scan-limit to trace-address and recovery to revision ranges. */
+	if ((type >= AX211_RECORD_BACKGROUND_SCAN_LIMITS &&
+	     type <= AX211_RECORD_LOWER_CPU_TRACE_ADDRESSES) ||
+	    (type >= AX211_RECORD_RECOVERY_BUFFER &&
+	     type <= AX211_RECORD_RADIO_INTEGRATION_REVISION)) {
+		return 1;
+	}
+
+	/* The PNVM records and the address records 65 to 69. */
+	if (type == AX211_RECORD_PNVM_REVISION ||
+	    type == AX211_RECORD_PNVM_BOARD ||
+	    type == 65U ||
+	    (type >= AX211_RECORD_SECTION_TABLE_ADDRESS && type <= 69U) ||
+	    type == AX211_RECORD_PNVM_PAYLOAD) {
+		return 1;
+	}
+
+	/* The station and beacon limits, and type 0x101. */
+	if (type == AX211_RECORD_STATION_LIMIT ||
+	    type == 0x101U ||
+	    type == AX211_RECORD_BEACON_LIMIT) {
+		return 1;
+	}
+
+	/* The debug configuration records. */
+	if ((type >= 0x1000000U && type <= 0x1000004U) ||
+	    (type >= AX211_RECORD_TRACE_RANGE_FIRST &&
+	     type <= AX211_RECORD_TRACE_RANGE_LAST) ||
+	    type == 0x100000bU ||
+	    type == 0x100000cU) {
+		return 1;
+	}
+
+	/* Type 1092. */
+	if (type == 1092U)
+		return 1;
+
+	/* The type is not skipped. */
 	return 0;
 }
 
-/* Supports the ax211 pnvm finish operation. */
+/*
+ * Finishes one collected PNVM board: reports it in *manifest when it has a
+ * revision, sections, and the given MAC and radio.
+ */
 static int
 ax211_pnvm_finish(
 	const struct intel_ax211_pnvm_manifest *candidate,
@@ -1187,22 +1296,22 @@ ax211_pnvm_finish(
 	uint16_t rf_id,
 	struct intel_ax211_pnvm_manifest *manifest)
 {
-	/* Handles the active condition. */
+	/* No board of the signature was collected. */
 	if (!active)
 		return INTEL_AX211_MISSING;
 
-	/* Handles the version seen condition. */
+	/* Refuses a board without a revision or sections. */
 	if (!version_seen || candidate->section_count == 0U)
 		return INTEL_AX211_MISSING;
 
-	/* Handles the hardware match condition. */
-	if (!hardware_match || candidate->mac_type != mac_type ||
+	/* Refuses a board for another MAC or radio. */
+	if (!hardware_match ||
+	    candidate->mac_type != mac_type ||
 	    candidate->rf_id != rf_id) {
-		/* Returns the computed result. */
 		return INTEL_AX211_IDENTITY_MISMATCH;
 	}
-	*manifest = *candidate;
 
-	/* Returns the computed result. */
+	/* Succeeded: reports the board. */
+	*manifest = *candidate;
 	return INTEL_AX211_SUCCESS;
 }
