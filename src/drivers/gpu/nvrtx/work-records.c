@@ -17,12 +17,23 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/nvrtx-work.h"
 
-/* A method header: incrementing, then the count, the subchannel and the method's word address. */
+/*
+ * A method header: incrementing, then the count, the subchannel and the
+ * method's word address.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/headers/nv_push.h
+ * (NVC0_FIFO_PKHDR_SQ).
+ */
 #define WORK_METHOD_INCREMENT		(1U << 29)
 #define WORK_METHOD_COUNT_SHIFT		16U
 #define WORK_METHOD_SUBCHANNEL_SHIFT	13U
 
-/* The method that binds a class to a subchannel. */
+/*
+ * The method that binds a class to a subchannel.
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (NVC46F_SET_OBJECT).
+ */
 #define WORK_SET_OBJECT			0x0000U
 
 static size_t work_method(uint8_t *push, size_t at, uint32_t subchannel, uint32_t method, uint32_t count);

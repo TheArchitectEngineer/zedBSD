@@ -26,9 +26,9 @@ static unsigned dispatch_shown;
 static void dispatch_refused(uint32_t opcode, int error);
 
 /*
- * The handlers, each owning a group of opcodes.  The list grows with the
- * executor's stages (D2: the instance and device; D3: the objects and the
- * recorded work); it is fixed for the node's life.
+ * The handlers, each owning a group of opcodes: the instance and device,
+ * the objects and the recorded work.  The list is fixed for the node's
+ * life.
  */
 static const nvrtx_vk_route dispatch_routes[] = {
 	nvrtx_vk_device_route,

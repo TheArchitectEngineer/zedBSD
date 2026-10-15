@@ -29,8 +29,9 @@
 /*
  * The 3D class of Turing, and the subchannel it is bound to.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
- * (nvk_queue_init_context_state).
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (TURING_A) and
+ * src/nouveau/vulkan/nvk_queue.c (nvk_queue_init_context_state).
  */
 #define NVRTX_DRAW_CLASS		0xc597U
 #define NVRTX_DRAW_SUBCHANNEL		0U
@@ -39,13 +40,22 @@
  * The pipeline's program types (SET_PIPELINE_SHADER), also used as their
  * indices.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_shader.c (the program types).
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_PIPELINE_SHADER_TYPE_*) and src/nouveau/vulkan/nvk_shader.c
+ * (mesa_to_nv9097_shader_type).
  */
 #define NVRTX_DRAW_TYPE_VERTEX		1U
 #define NVRTX_DRAW_TYPE_PIXEL		5U
 #define NVRTX_DRAW_TYPES		6U
 
-/* The colour target format the draw renders (A8B8G8R8: red in the lowest byte of a word). */
+/*
+ * The colour target format the draw renders (A8B8G8R8: red in the lowest
+ * byte of a word).
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_COLOR_TARGET_FORMAT_V_A8B8G8R8).
+ */
 #define NVRTX_DRAW_FORMAT_A8B8G8R8	0xd5U
 
 /* The push constants the draw's programs read: the quad's corners, its texture's part, its colour. */
@@ -57,7 +67,14 @@
 /* The most instructions one of the draw's programs has. */
 #define NVRTX_DRAW_IR_INSTRUCTIONS	32U
 
-/* A texture header and a sampler (Turing's TIC and TSC entries) are eight words each. */
+/*
+ * A texture header and a sampler (Turing's TIC and TSC entries) are eight
+ * words each.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597tex.h (the 256-bit
+ * NVC597_TEXHEAD_PITCH_* and NVC597_TEXSAMP* layouts).
+ */
 #define NVRTX_DRAW_TIC_WORDS		8U
 #define NVRTX_DRAW_TSC_WORDS		8U
 

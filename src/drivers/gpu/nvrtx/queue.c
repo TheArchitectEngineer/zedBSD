@@ -30,7 +30,13 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* The command queue's header values the driver writes once. */
+/*
+ * The command queue's header values the driver writes once.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_shared_init).
+ */
 #define QUEUE_VERSION			0U
 #define QUEUE_FLAGS_SWAP_RX		1U
 #define QUEUE_READER_OFFSET		NVRTX_QHDR_READ_AT
@@ -47,6 +53,10 @@ static void queue_copy_out(const struct nvrtx_queue *queue, uint32_t first, size
  *
  * Writes the page list, clears both header pages and writes the command
  * queue's header.  The status queue's header is the GSP's to write.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_shared_init).
  */
 void
 nvrtx_queue_shared_init(
@@ -123,6 +133,10 @@ nvrtx_channel_init(
  * Returns 0 when the message is in the queue and its write pointer moved,
  * EAGAIN when the GSP has not yet freed enough slots, or E2BIG when the
  * payload does not fit one message.  The caller rings the doorbell.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
+ * (r535_gsp_cmdq_push).
  */
 int
 nvrtx_channel_send(
@@ -213,6 +227,10 @@ nvrtx_channel_send(
  *
  * Returns 0 with its function, the caller's sequence, the payload length and
  * the result word, or EAGAIN when no whole message is there.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
+ * (r535_gsp_msgq_peek).
  */
 int
 nvrtx_channel_peek(
@@ -270,6 +288,10 @@ nvrtx_channel_peek(
  * Copies its payload (up to the capacity, the rest dropped) and gives its
  * slots back.  Returns EAGAIN when no whole message is there; the payload
  * length is reported in full even when it was cut.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
+ * (r535_gsp_msgq_recv_one_elem).
  */
 int
 nvrtx_channel_receive(

@@ -8,33 +8,12 @@
 /*
  * The parts of the first 3D draw that touch no hardware (see nvrtx-draw.h).
  *
- * The methods, their order and their values are the ones Mesa's NVK (MIT)
- * sends on Turing: the queue's draw state (nvk_push_draw_state_init), a
- * rendering's colour targets (nvk_CmdBeginRendering), the dynamic state of
- * a draw (nvk_flush_*_state), a program's binding (nvk_shader_fill_push),
- * the clear (nvk_CmdClearAttachments) and the draw itself, which NVK sends
- * through a macro and the driver sends directly (nvk_mme_build_draw_loop).
- * The method numbers and fields come from NVIDIA's class headers as Mesa
- * carries them (MIT), the texture header and sampler from NIL's and NVK's
- * fill (MIT).  Sources (SHA-256, Mesa 25.3.6):
- *   src/nouveau/headers/nvidia/classes/clc597.h
- *     4b47ff263696df6377c693088353a5bff366a8e11d5c8cac1825c2333d8ce39d
- *   src/nouveau/headers/nvidia/classes/clc597tex.h
- *     15f53cf3b6ef907cceae946143d94184aa115f843cd11b1aad13a23bba0d2595
- *   src/nouveau/headers/nvidia/classes/cl9097tex.h
- *     0b1bc445c0c46401769ec77fc8b97f9fae3c5644054ec7f847cf887d25141162
- *   src/nouveau/vulkan/nvk_cmd_draw.c
- *     1efce3602df6caa20ddc9735847f6e184e1d6dc698a052655943c83bbd63f927
- *   src/nouveau/vulkan/nvk_cmd_clear.c
- *     2eee334032cd1f60dee172b402a295f62af3163cb161f63e2b7591675c2e3515
- *   src/nouveau/vulkan/nvk_shader.c
- *     57d46463518031ec13315dd705ad2f1d7079857900d3df5b7c5c30b9db255ba0
- *   src/nouveau/vulkan/nvk_sampler.c
- *     119f8e76c14884331720e2bec42c10ca44eb10d91df2965d6eee0b8b4169cb85
- *   src/nouveau/nil/descriptor.rs
- *     b46b470d2360c8351d52057a414b96ec126c830a1c5fad9f26d7b4f0778a369e
- * The code is zedBSD's own.  The kernel has no floating point, so the
- * floats the methods take are built from their bits.
+ * It builds the method stream of the queue's draw state, a rendering's
+ * colour targets, a draw's dynamic state, a program's binding, the clear
+ * and the draw itself, and the words of a texture header and a sampler.
+ *
+ * The kernel has no floating point, so the floats the methods take are
+ * built from their bits.
  */
 
 #include <stddef.h>
@@ -46,7 +25,10 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 /*
- * ==== TURING_A's methods (clc597.h) ====
+ * The 3D class's methods (TURING_A) and the strides of their arrays.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (the NVC597_* methods).
  */
 #define M_SET_OBJECT				0x0000U
 #define M_SET_ALIASED_LINE_WIDTH_ENABLE		0x020cU
@@ -179,7 +161,12 @@
 #define M_SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL	0x2a00U
 #define M_SET_SHADING_RATE_STRIDE		0x10U
 
-/* The counts of the arrays NVK sets in full. */
+/*
+ * The counts of the arrays the queue's state sets in full.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_push_draw_state_init, nvk_mme_set_shading_rate_control).
+ */
 #define DRAW_COLOR_TARGETS		8U
 #define DRAW_SCISSORS			16U
 #define DRAW_GROUPS			5U
@@ -189,7 +176,13 @@
 #define DRAW_SAMPLE_ORDERS		13U
 #define DRAW_SHADING_RATE_CONTROLS	16U
 
-/* The values NVK writes (the fields' meanings beside them). */
+/*
+ * The values of the queue's state (the fields' meanings beside them).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (the fields of the NVC597_*
+ * methods) and src/nouveau/vulkan/nvk_cmd_draw.c (nvk_push_draw_state_init).
+ */
 #define V_TRUE				1U
 #define V_FALSE				0U
 #define V_RENDER_ENABLE_TRUE		1U
@@ -217,11 +210,28 @@
 #define V_GROUP_VALID			1U
 #define V_GROUP_SLOT_SHIFT		4U
 
-/* A colour target: pitch layout, and the null target NVK writes for one not used. */
+/*
+ * A colour target: pitch layout, and the width of the null target written
+ * for one not used.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_COLOR_TARGET_MEMORY) and src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_CmdBeginRendering).
+ */
 #define V_TARGET_LAYOUT_PITCH		(1U << 12)
 #define V_TARGET_NULL_WIDTH		64U
 
-/* The draw's raster state: the viewport's swizzle and clip, fill, front face, the masks. */
+/*
+ * The draw's raster state: the viewport's swizzle and clip, fill, front
+ * face, the masks.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (the fields of the NVC597_*
+ * methods) and src/nouveau/vulkan/nvk_cmd_draw.c (nvk_flush_vp_state,
+ * nvk_flush_rs_state, nvk_flush_ms_state, nvk_flush_cb_state,
+ * nvk_mme_set_anti_alias).
+ */
 #define V_VIEWPORT_SWIZZLE_IDENTITY	0x6420U
 #define V_Z_CLIP_ZERO_TO_W		1U
 #define V_VIEWPORT_CLIP_DRAW		0x181dU
@@ -232,34 +242,79 @@
 #define V_ANTI_ALIAS_1X1		0U
 #define V_HYBRID_ONE_PASS		1U
 
-/* The program groups NVK binds a vertex and a pixel program to, and a pixel program's subtiling. */
+/*
+ * The program groups a vertex and a pixel program are bound to, and a pixel
+ * program's subtiling.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_shader.c
+ * (nvk_pipeline_bind_group, nvk_shader_fill_push).
+ */
 #define V_GROUP_VERTEX			0U
 #define V_GROUP_PIXEL			4U
 #define V_SUBTILING_A			0x20164010U
 #define V_SUBTILING_B			0x20U
 
-/* The shader caches a push buffer's draws read: instructions, global data, constants. */
+/*
+ * The shader caches a push buffer's draws read: instructions, global data,
+ * constants.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_INVALIDATE_SHADER_CACHES_NO_WFI).
+ */
 #define V_INVALIDATE_SHADERS		0x1011U
 
-/* A vertex attribute: active two floats, or inactive four (zero). */
+/*
+ * A vertex attribute: active two floats, or inactive four (zero).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_VERTEX_ATTRIBUTE_A, NVC597_SET_VERTEX_STREAM_A_FORMAT) and
+ * src/nouveau/vulkan/nvk_cmd_draw.c (nvk_flush_vi_state).
+ */
 #define V_ATTRIBUTE_R32_G32_FLOAT	((4U << 21) | (7U << 27))
 #define V_ATTRIBUTE_INACTIVE		((1U << 6) | (1U << 21) | (7U << 27))
 #define V_STREAM_ENABLE			(1U << 12)
 
-/* The clear: by its rectangle, all four channels of target 0. */
+/*
+ * The clear: by its rectangle, all four channels of target 0.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (NVC597_CLEAR_SURFACE,
+ * NVC597_SET_CLEAR_SURFACE_CONTROL, NVC597_SET_RENDER_ENABLE_OVERRIDE) and
+ * src/nouveau/vulkan/nvk_cmd_clear.c (nvk_CmdClearAttachments).
+ */
 #define V_CLEAR_USE_RECT		(1U << 4)
 #define V_CLEAR_RGBA			0x3cU
 #define V_RENDER_ALWAYS			1U
 #define V_RENDER_USE_ENABLE		0U
 
-/* The draw: a triangle list, the instance iterated from the first. */
+/*
+ * The draw: a triangle list, the instance iterated from the first.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (NVC597_BEGIN) and
+ * src/nouveau/vulkan/nvk_cmd_draw.c (nvk_mme_build_draw_loop).
+ */
 #define V_BEGIN_TRIANGLES		(4U | (1U << 31))
 
-/* An incrementing method header on the 3D subchannel (the channel class's format). */
+/*
+ * An incrementing method header on the 3D subchannel (the channel class's
+ * format).
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nv_push.h
+ * (NVC0_FIFO_PKHDR_SQ).
+ */
 #define DRAW_METHOD_INCREMENT		(1U << 29)
 
 /*
- * ==== The texture header (pitch) and the sampler (clc597tex.h, cl9097tex.h) ====
+ * The texture header (pitch) and the sampler.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597tex.h (NVC597_TEXHEAD_PITCH_*),
+ * src/nouveau/headers/nvidia/classes/cl9097tex.h (NV9097_TEXSAMP*),
+ * src/nouveau/nil/descriptor.rs (nvb097_fill_image_view_desc) and
+ * src/nouveau/vulkan/nvk_sampler.c (nvk_sampler_get_header).
  */
 #define TIC_COMPONENTS_A8B8G8R8		0x08U
 #define TIC_TYPE_UNORM			2U
@@ -281,7 +336,8 @@
 #define TSC_CUBE_AUTO_SPAN_SEAM		2U
 
 /*
- * ==== The IR of the draw's programs: their value numbers ====
+ * The IR of the draw's programs: the float constants they load, by their
+ * bits.
  */
 #define IR_FLOAT_ZERO			0x00000000U
 #define IR_FLOAT_ONE			0x3f800000U
@@ -297,13 +353,13 @@ static void draw_ir_load(struct drv_gpu_shader_ir_inst *list, uint32_t *count, u
 static void draw_ir_store(struct drv_gpu_shader_ir_inst *list, uint32_t *count, uint32_t location, uint32_t component, uint32_t value);
 
 /*
- * Writes the 3D class's binding and the state NVK's queue starts with, in
- * NVK's order, without what needs its macros (the private register writes,
- * the macro scratch): the render and compression enables, the colour
- * target selection, the blend, cache, attribute and point defaults, the
- * window and viewport defaults, every scissor off, the constant buffer
- * groups emptied, the vertex substitute (a zero page) and every vertex
- * stream off, with Turing's 3D class.
+ * Writes the 3D class's binding and the state a queue starts with,
+ * without what needs macros (the private register writes, the macro
+ * scratch): the render and compression enables, the colour target
+ * selection, the blend, cache, attribute and point defaults, the window
+ * and viewport defaults, every scissor off, the constant buffer groups
+ * emptied, the vertex substitute (a zero page) and every vertex stream off,
+ * with Turing's 3D class.
  *
  * Returns where the push buffer goes on.
  */
@@ -323,11 +379,14 @@ nvrtx_push_draw_init(
 }
 
 /*
- * Writes the 3D class's binding and the state NVK's queue starts with, as
+ * Writes the 3D class's binding and the state a queue starts with, as
  * nvrtx_push_draw_init does, for the generation's 3D class (Turing's,
  * Ampere's or Ada's: their methods are the same for this state).
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_push_draw_state_init).
  */
 size_t
 nvrtx_push_draw_init_class(
@@ -336,6 +395,12 @@ nvrtx_push_draw_init_class(
 	uint64_t zero_page,
 	uint32_t threed_class)
 {
+	/*
+	 * Turing's variable pixel rate sample order.
+	 *
+	 * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+	 * (nvk_push_draw_state_init).
+	 */
 	static const uint32_t sample_order[DRAW_SAMPLE_ORDERS] = {
 		0xa23eb139U, 0xfb72ea61U, 0xd950c843U, 0x88fac4e5U, 0x1ab3e1b6U,
 		0xa98fedc2U, 0x2107654bU, 0xe0539773U, 0x698badcfU, 0x71032547U,
@@ -445,7 +510,7 @@ nvrtx_push_draw_init_class(
 	for (index = 0U; index < DRAW_SCISSORS; index++)
 		at = draw_set(push, at, M_SET_SCISSOR_ENABLE + index * M_SET_SCISSOR_STRIDE, V_FALSE);
 
-	/* Several colour targets, and Turing's variable pixel rate sample order (the blob's values NVK copies). */
+	/* Several colour targets, and Turing's variable pixel rate sample order. */
 	at = draw_set(push, at, M_SET_CT_MRT_ENABLE, V_TRUE);
 	at = draw_method(push, at, M_SET_VARIABLE_PIXEL_RATE_SAMPLE_ORDER, DRAW_SAMPLE_ORDERS);
 	for (index = 0U; index < DRAW_SAMPLE_ORDERS; index++) {
@@ -474,7 +539,7 @@ nvrtx_push_draw_init_class(
 	nvrtx_put32(push, at + 4U, (uint32_t)(zero_page & 0xffffffffU));
 	at += 8U;
 
-	/* The pixel programs' watermarks (the blob's, as NVK sets them for Turing's 64 warps a TPC). */
+	/* The pixel programs' watermarks (for Turing's 64 warps a TPC). */
 	at = draw_set(push, at, M_SET_PS_WARP_WATERMARKS, V_PS_WARP_WATERMARKS);
 	at = draw_set(push, at, M_SET_PS_REGISTER_WATERMARKS, V_PS_REGISTER_WATERMARKS);
 
@@ -489,9 +554,12 @@ nvrtx_push_draw_init_class(
 
 /*
  * Selects constant buffer 0 (its size and address) and binds it to slot 0
- * of every program group, as NVK does once for its root table.
+ * of every program group, once for the root table.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_mme_select_cb0, nvk_push_draw_state_init).
  */
 size_t
 nvrtx_push_draw_constants(
@@ -519,12 +587,16 @@ nvrtx_push_draw_constants(
 
 /*
  * Writes one draw's target and state: the surface clip, colour target 0
- * pitch-linear (NVK's linear target) and the seven others null, no depth
- * target, one sample; the viewport over the whole target with depth 0 to
- * 1; filled triangles, no culling; every sample, no depth, stencil, logic
- * operation or blending, all four channels written.
+ * pitch-linear and the seven others null, no depth target, one sample;
+ * the viewport over the whole target with depth 0 to 1; filled triangles,
+ * no culling; every sample, no depth, stencil, logic operation or
+ * blending, all four channels written.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_CmdBeginRendering, nvk_flush_vp_state, nvk_flush_rs_state,
+ * nvk_flush_ms_state, nvk_flush_ds_state, nvk_flush_cb_state).
  */
 size_t
 nvrtx_push_draw_target(
@@ -568,7 +640,7 @@ nvrtx_push_draw_target(
 	at = draw_set(push, at, M_SET_ZT_SELECT, 0U);
 	at = draw_set(push, at, M_SET_ANTI_ALIAS, V_ANTI_ALIAS_1X1);
 
-	/* Viewport 0 over the target: scale and offset half its size, depth 0 to 1 (nvk_flush_vp_state). */
+	/* Viewport 0 over the target: scale and offset half its size, depth 0 to 1. */
 	at = draw_method(push, at, M_SET_VIEWPORT_SCALE_X, 6U);
 	nvrtx_put32(push, at, half_width);
 	nvrtx_put32(push, at + 4U, half_height);
@@ -586,7 +658,7 @@ nvrtx_push_draw_target(
 	at = draw_set(push, at, M_SET_VIEWPORT_COORDINATE_SWIZZLE, V_VIEWPORT_SWIZZLE_IDENTITY);
 	at = draw_set(push, at, M_SET_VIEWPORT_Z_CLIP, V_Z_CLIP_ZERO_TO_W);
 
-	/* Rasterization: on, clipped in depth by the geometry clipper, filled, not culled (nvk_flush_rs_state). */
+	/* Rasterization: on, clipped in depth by the geometry clipper, filled, not culled. */
 	at = draw_set(push, at, M_SET_RASTER_ENABLE, V_TRUE);
 	at = draw_set(push, at, M_SET_VIEWPORT_CLIP_CONTROL, V_VIEWPORT_CLIP_DRAW);
 	at = draw_method(push, at, M_SET_FRONT_POLYGON_MODE, 2U);
@@ -597,19 +669,19 @@ nvrtx_push_draw_target(
 	at = draw_set(push, at, M_OGL_SET_FRONT_FACE, V_FRONT_FACE_CCW);
 	at = draw_set(push, at, M_SET_PROVOKING_VERTEX, 0U);
 
-	/* Samples: no alpha to coverage, every sample (nvk_flush_ms_state). */
+	/* Samples: no alpha to coverage, every sample. */
 	at = draw_set(push, at, M_SET_ANTI_ALIAS_ALPHA_CONTROL, 0U);
 	at = draw_method(push, at, M_SET_SAMPLE_MASK_X0_Y0, 4U);
 	for (index = 0U; index < 4U; index++)
 		nvrtx_put32(push, at + index * 4U, V_SAMPLE_MASK_ALL);
 	at += 16U;
 
-	/* No depth or stencil test (nvk_flush_ds_state). */
+	/* No depth or stencil test. */
 	at = draw_set(push, at, M_SET_DEPTH_TEST, V_FALSE);
 	at = draw_set(push, at, M_SET_DEPTH_WRITE, V_FALSE);
 	at = draw_set(push, at, M_SET_STENCIL_TEST, V_FALSE);
 
-	/* Colour: no logic operation or blending, all four channels, target 0 at location 0 (nvk_flush_cb_state). */
+	/* Colour: no logic operation or blending, all four channels, target 0 at location 0. */
 	at = draw_set(push, at, M_SET_LOGIC_OP, V_FALSE);
 	at = draw_set(push, at, M_SET_BLEND, V_FALSE);
 	at = draw_set(push, at, M_SET_CT_WRITE, V_CT_WRITE_RGBA);
@@ -621,16 +693,20 @@ nvrtx_push_draw_target(
 }
 
 /*
- * Writes the pipeline in NVK's order of types: a vertex program at type 1
- * and a pixel program at type 5 (each index the same as its type, each at
+ * Writes the pipeline in the order of its types: a vertex program at type
+ * 1 and a pixel program at type 5 (each index the same as its type, each at
  * its header's address, in its group), the other stages off, the pixel
- * program's tuning and what NVK's shading rate and anti-aliasing macros
- * set for it, then the last vertex stage's layer and clip planes.  The
+ * program's tuning and what the shading rate and anti-aliasing macros set
+ * for it, then the last vertex stage's layer and clip planes.  The
  * shader caches are not touched: nvrtx_push_draw_invalidate() empties them
  * once at the push buffer's start, so draws one after another do not wait
  * for each other's idle.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_shader.c
+ * (nvk_shader_fill_push) and src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_mme_set_shading_rate_control, nvk_mme_set_anti_alias).
  */
 size_t
 nvrtx_push_draw_pipeline(
@@ -647,8 +723,7 @@ nvrtx_push_draw_pipeline(
 	/*
 	 * Each type of a Vulkan stage, from the vertex program to the pixel
 	 * program: the program, or off.  Type 0 (the vertex program culling
-	 * before the fetch) is left as the golden context has it, as NVK
-	 * leaves it.
+	 * before the fetch) is left as the golden context has it.
 	 */
 	for (type = NVRTX_DRAW_TYPE_VERTEX; type < NVRTX_DRAW_TYPES; type++) {
 		if (type == NVRTX_DRAW_TYPE_VERTEX) {
@@ -660,7 +735,7 @@ nvrtx_push_draw_pipeline(
 		}
 	}
 
-	/* The pixel program: NVK's subtiling, no early depth, no post-depth coverage, bounded culling. */
+	/* The pixel program: its subtiling, no early depth, no post-depth coverage, bounded culling. */
 	at = draw_method(push, at, M_SET_SUBTILING_PERF_KNOB_A, 2U);
 	nvrtx_put32(push, at, V_SUBTILING_A);
 	nvrtx_put32(push, at + 4U, V_SUBTILING_B);
@@ -670,10 +745,10 @@ nvrtx_push_draw_pipeline(
 	at = draw_set(push, at, M_SET_ZCULL_BOUNDS, 0U);
 
 	/*
-	 * What NVK's two macros write for a pixel program without sample
-	 * shading at one sample a pixel: every variable pixel rate shading
-	 * control off (NVK_MME_SET_SHADING_RATE_CONTROL), then one pass a
-	 * pixel with the centroid per fragment (NVK_MME_SET_ANTI_ALIAS).
+	 * What the shading rate and anti-aliasing macros write for a pixel
+	 * program without sample shading at one sample a pixel: every
+	 * variable pixel rate shading control off, then one pass a pixel with
+	 * the centroid per fragment.
 	 */
 	for (index = 0U; index < DRAW_SHADING_RATE_CONTROLS; index++)
 		at = draw_set(push, at, M_SET_VARIABLE_PIXEL_RATE_SHADING_CONTROL + index * M_SET_SHADING_RATE_STRIDE, V_FALSE);
@@ -695,11 +770,14 @@ nvrtx_push_draw_pipeline(
  *
  * The CPU writes programs and constants between runs, and a push buffer
  * starts after the run before it finished, so one invalidation at its
- * start serves every draw in it, as NVK's queue does at a command
- * buffer's start.  The form that waits for idle (0x021c) is not used: on
- * every draw it drained the pipeline.
+ * start serves every draw in it, as at a command buffer's start.  The form
+ * that waits for idle (0x021c) is not used: on every draw it drained the
+ * pipeline.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_cmd_buffer_begin_graphics).
  */
 size_t
 nvrtx_push_draw_invalidate(
@@ -716,9 +794,12 @@ nvrtx_push_draw_invalidate(
 /*
  * Writes the vertex input: attribute 0 two floats from stream 0, the
  * others inactive; stream 0 per vertex at the buffer with its stride and
- * size (nvk_flush_vi_state and NVK's binding macro).
+ * size.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_vi_state, nvk_mme_bind_vb).
  */
 size_t
 nvrtx_push_draw_vertices(
@@ -758,10 +839,12 @@ nvrtx_push_draw_vertices(
 
 /*
  * Writes the texture header pool and the sampler pool (their addresses
- * and last indices), each followed by the invalidation of its cache, as
- * NVK's queue state does.
+ * and last indices), each followed by the invalidation of its cache.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_state_update).
  */
 size_t
 nvrtx_push_draw_textures(
@@ -798,6 +881,9 @@ nvrtx_push_draw_textures(
  * all four channels of layer 0.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_clear.c
+ * (nvk_CmdClearAttachments).
  */
 size_t
 nvrtx_push_draw_clear(
@@ -835,10 +921,13 @@ nvrtx_push_draw_clear(
 
 /*
  * Writes a draw of a triangle list: the bases zero, one instance, then
- * BEGIN, the vertex range and END, as NVK's draw macro sends them on
- * Turing.
+ * BEGIN, the vertex range and END, sent directly rather than through a
+ * draw macro.
  *
  * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_mme_build_draw_loop).
  */
 size_t
 nvrtx_push_draw_triangles(
@@ -866,9 +955,12 @@ nvrtx_push_draw_triangles(
 
 /*
  * Writes the texture header of a pitch-linear 2D texture of A8B8G8R8
- * UNORM, NIL's Maxwell-and-later pitch header for a view of one level:
- * the format and its swizzle, the address, the pitch, the size, and
- * NIL's quality, promotion, border and spread fields.
+ * UNORM, the Maxwell-and-later pitch header for a view of one level: the
+ * format and its swizzle, the address, the pitch, the size, and the
+ * quality, promotion, border and spread fields.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/nil/descriptor.rs
+ * (nvb097_fill_image_view_desc).
  */
 void
 nvrtx_draw_texture_header(
@@ -905,7 +997,7 @@ nvrtx_draw_texture_header(
 	draw_field(header, 151U, 4U, TIC_TYPE_TWO_D_NO_MIPMAP);
 	draw_field(header, 160U, 16U, texture->height - 1U);
 
-	/* NIL's sector promotion, border from the sampler, normalized coordinates and spread functions. */
+	/* The sector promotion, border from the sampler, normalized coordinates and spread functions. */
 	draw_field(header, 155U, 2U, TIC_PROMOTE_TO_2_V);
 	draw_field(header, 157U, 3U, TIC_BORDER_SAMPLER_COLOR);
 	draw_field(header, 191U, 1U, 1U);
@@ -914,10 +1006,13 @@ nvrtx_draw_texture_header(
 }
 
 /*
- * Writes a sampler as NVK fills one for nearest filtering with clamped
- * coordinates and one level: clamp to edge in each direction, NVK's font
- * filter and sRGB border fields, point filters, the seamless cube setting,
- * no reduction, the header's normalization, levels of detail 0 to 0.
+ * Writes a sampler for nearest filtering with clamped coordinates and one
+ * level: clamp to edge in each direction, the font filter and sRGB border
+ * fields, point filters, the seamless cube setting, no reduction, the
+ * header's normalization, levels of detail 0 to 0.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c
+ * (nvk_sampler_get_header).
  */
 void
 nvrtx_draw_sampler(
@@ -1124,7 +1219,7 @@ draw_set(
 	return at + 4U;
 }
 
-/* Writes colour target index as NVK's null target: no address, disabled, compressed. */
+/* Writes colour target index as a null target: no address, disabled, compressed. */
 static size_t
 draw_null_target(
 	uint8_t *push,
@@ -1144,7 +1239,7 @@ draw_null_target(
 	nvrtx_put32(push, at + 32U, 0U);
 	at += 36U;
 
-	/* Its compression as NVK leaves it. */
+	/* Its compression left on. */
 	at = draw_set(push, at, M_SET_COLOR_COMPRESSION + index * 4U, V_TRUE);
 
 	/* Succeeded: past the target. */

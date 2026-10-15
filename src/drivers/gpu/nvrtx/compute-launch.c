@@ -20,7 +20,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 /*
- * ==== QMD version 2.2: the bit positions of its fields ====
+ * QMD version 2.2: the bit positions of its fields, and the version it
+ * names.
  *
  * Values referenced: Mesa 25.3.6
  * src/nouveau/headers/nvidia/classes/clc3c0qmd.h (NVC3C0_QMDV02_02_*).
@@ -64,8 +65,9 @@
  * Turing's shared memory carve-outs in KiB, and the warps an SM holds (the
  * shared configuration's inputs).
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs (the shared
- * memory configuration).
+ * Values referenced: Mesa 25.3.6 src/nouveau/winsys/nouveau_device.c
+ * (init_shared_mem_sizes, max_warps_per_mp_for_sm) and
+ * src/nouveau/compiler/nak/qmd.rs (gv100_get_hw_smem_sizes).
  */
 #define QMD_SHARED_SMALL_KIB		32U
 #define QMD_SHARED_LARGE_KIB		64U
@@ -73,7 +75,8 @@
 #define QMD_THREADS_PER_WARP		32U
 
 /*
- * ==== TURING_COMPUTE_A's methods ====
+ * The compute class's methods (TURING_COMPUTE_A) and the fields of the
+ * ones that take flags.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/headers/nvidia/classes/clc5c0.h
  * (NVC5C0_*).
@@ -93,13 +96,19 @@
 /*
  * The shared and local memory windows, at the top of the low 4 GiB.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/hw_runner.rs (the
- * shared and local windows).
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/hw_runner.rs
+ * (Runner::run_raw) and src/nouveau/vulkan/nvk_cmd_dispatch.c
+ * (nvk_push_dispatch_state_init).
  */
 #define COMPUTE_SHARED_WINDOW		0xfe000000U
 #define COMPUTE_LOCAL_WINDOW		0xff000000U
 
-/* An incrementing method header (the channel class's format). */
+/*
+ * An incrementing method header (the channel class's format).
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nv_push.h
+ * (NVC0_FIFO_PKHDR_SQ).
+ */
 #define COMPUTE_METHOD_INCREMENT	(1U << 29)
 
 static void qmd_set(uint32_t *qmd, unsigned low, unsigned bits, uint64_t value);
@@ -216,7 +225,7 @@ nvrtx_qmd_build(
  * Returns the length in bytes.
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_dispatch.c
- * (the dispatch state and the launch).
+ * (nvk_push_dispatch_state_init, nvk_CmdDispatchBase).
  */
 size_t
 nvrtx_push_compute_launch(
@@ -373,8 +382,11 @@ qmd_shared_config(
 
 /*
  * Picks the smallest carve-out that holds as many workgroups of the
- * shared memory as asked, as many as the largest one allows
- * (gv100_pick_smem_size_kb with Turing's 32 and 64 KiB).
+ * shared memory as asked, as many as the largest one allows (Turing's 32
+ * and 64 KiB).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs
+ * (gv100_pick_smem_size_kb).
  */
 static uint32_t
 qmd_pick_shared(

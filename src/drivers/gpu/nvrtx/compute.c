@@ -8,8 +8,8 @@
 /*
  * The first compute launch (the compute-test stage, nvrtx.compute=1).
  *
-  * After the golden context (golden-context) the driver makes a graphics
-  * channel of its own and runs one compute program on it:
+ * After the golden context (golden-context) the driver makes a graphics
+ * channel of its own and runs one compute program on it:
  *
  *   1. an address space the driver owns, over page tables in an arena of
  *      VRAM below the graphics arena; the tables map the channel's context
@@ -82,11 +82,29 @@ _Static_assert(COMPUTE_VA_PAGES + COMPUTE_SEMAPHORE_PAGE * 0x1000ULL == NVRTX_CO
 /* The channel number on the graphics runlist (the golden context took 1, the scrubber 2). */
 #define COMPUTE_CHID			3U
 
-/* USERD's put of the ring, and the doorbell: runlist in bits 22:16, channel in bits 11:0. */
+/*
+ * USERD's put of the ring, and the doorbell: runlist in bits 22:16,
+ * channel in bits 11:0.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (Nvc46fControl_struct), NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/turing/tu102/dev_vm.h
+ * (NV_VIRTUAL_FUNCTION_DOORBELL) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/vfn/tu102.c (tu102_vfn_new) and
+ * drivers/gpu/drm/nouveau/nvkm/engine/fifo/tu102.c
+ * (tu102_chan_doorbell_handle).
+ */
 #define COMPUTE_USERD_RING_PUT		0x8cU
 #define COMPUTE_REG_DOORBELL		0xbb0090U
 
-/* The promote's numbers of the unrestricted access map, which a channel sharing the global buffers leaves out. */
+/*
+ * The promote's number of the unrestricted access map, which a channel
+ * sharing the global buffers leaves out.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gr.h
+ * (NV2080_CTRL_GPU_PROMOTE_CTX_BUFFER_ID_UNRESTRICTED_PRIV_ACCESS_MAP).
+ */
 #define COMPUTE_BUFFER_UNRESTRICTED_MAP	11U
 
 /* The fence value, how long the CPU waits for it, and how often it looks. */
@@ -113,11 +131,11 @@ static uint64_t compute_page_va(uint32_t page);
 static uint64_t compute_align(uint64_t value, uint32_t shift);
 
 /*
-  * Runs the compute-test stage: the space, the channel, the program, the
-  * launch and the check of its result.
+ * Runs the compute-test stage: the space, the channel, the program, the
+ * launch and the check of its result.
  *
-  * Needs the golden context of golden-context.  A failure is returned; the
-  * finish's stop frees whatever objects were made.
+ * Needs the golden context of golden-context.  A failure is returned; the
+ * finish's stop frees whatever objects were made.
  */
 int
 nvrtx_compute_start(
@@ -742,7 +760,7 @@ compute_program(
  * it, submits them, and waits for the fence.
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_dispatch.c
- * (the dispatch).
+ * (nvk_CmdDispatchBase, nvk_cmd_upload_qmd).
  */
 static int
 compute_launch(

@@ -8,7 +8,6 @@
 /*
  * The parts of the Vulkan executor's push buffer that touch no hardware
  * (see nvrtx-exec.h).
- *
  */
 
 #include <stdbool.h>
@@ -22,7 +21,10 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 /*
- * ==== TURING_A's methods (clc597.h) ====
+ * The 3D class's methods (TURING_A) and the strides of their arrays.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (the NVC597_* methods).
  */
 #define M_WAIT_FOR_IDLE				0x0110U
 #define M_SET_INSTANCE_COUNT			0x0220U
@@ -76,13 +78,30 @@
 #define M_SET_SAMPLE_MASK_X0_Y0			0x0fbcU
 #define M_SET_SINGLE_CT_WRITE_CONTROL		0x0f90U
 
-/* The other colour targets, which are left null. */
+/*
+ * The colour targets, the ones after target 0 left null.
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_push_draw_state_init, nvk_CmdBeginRendering).
+ */
 #define EXEC_COLOR_TARGETS			8U
 
-/* An incrementing method header on the 3D subchannel (0). */
+/*
+ * An incrementing method header on the 3D subchannel (0).
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nv_push.h
+ * (NVC0_FIFO_PKHDR_SQ).
+ */
 #define EXEC_METHOD_INCREMENT			(1U << 29)
 
-/* The values written (the fields' meanings beside them). */
+/*
+ * The values written (the fields' meanings beside them).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (the fields of the NVC597_*
+ * methods) and src/nouveau/vulkan/nvk_cmd_draw.c (nvk_CmdBeginRendering,
+ * nvk_flush_vp_state, nvk_flush_rs_state, nvk_flush_ms_state).
+ */
 #define V_TRUE					1U
 #define V_FALSE					0U
 #define V_FLOAT_ONE				0x3f800000U
@@ -103,13 +122,25 @@
 #define V_STREAM_ENABLE				(1U << 12)
 #define V_INVALIDATE_CONSTANTS			(1U << 12)
 
-/* The colour target formats (COLOR_TARGET_FORMAT). */
+/*
+ * The colour target formats (COLOR_TARGET_FORMAT).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_COLOR_TARGET_FORMAT_V_*).
+ */
 #define V_TARGET_A8R8G8B8			0xcfU
 #define V_TARGET_A8RL8GL8BL8			0xd0U
 #define V_TARGET_A8B8G8R8			0xd5U
 #define V_TARGET_A8BL8GL8RL8			0xd6U
 
-/* A vertex attribute: inactive, its component widths and its type (float). */
+/*
+ * A vertex attribute: inactive, its component widths and its type (float).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_VERTEX_ATTRIBUTE_A).
+ */
 #define V_ATTRIBUTE_INACTIVE			(1U << 6)
 #define V_ATTRIBUTE_OFFSET_SHIFT		7U
 #define V_ATTRIBUTE_WIDTHS_SHIFT		21U
@@ -120,7 +151,12 @@
 #define V_WIDTHS_R32				0x12U
 #define V_WIDTHS_INACTIVE			0x01U
 
-/* The draw: the topology, the instances iterated from the first. */
+/*
+ * The draw: the topology, the instances iterated from the first.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h (NVC597_BEGIN).
+ */
 #define V_BEGIN_TRIANGLES			4U
 #define V_BEGIN_TRIANGLE_STRIP			5U
 #define V_BEGIN_ITERATE				(1U << 31)
@@ -128,7 +164,10 @@
 /*
  * The blend's operations and factors (the OGL values).
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c (nvk_flush_cb_state).
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597.h
+ * (NVC597_SET_BLEND_COLOR_OP, NVC597_SET_BLEND_COLOR_SOURCE_COEFF) and
+ * src/nouveau/vulkan/nvk_cmd_draw.c (nvk_flush_cb_state).
  */
 #define V_BLEND_ADD				0x8006U
 #define V_BLEND_SUBTRACT			0x800aU
@@ -147,7 +186,11 @@
 #define V_FACTOR_ONE_MINUS_DST_COLOR		0x4307U
 
 /*
- * ==== The texture header (pitch) and the sampler (clc597tex.h, cl9097tex.h) ====
+ * The texture header (pitch) and the sampler.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597tex.h (NVC597_TEXHEAD_PITCH_*,
+ * NVC597_TEXSAMP*).
  */
 #define TIC_COMPONENTS_A8B8G8R8			0x08U
 #define TIC_TYPE_UNORM				2U
@@ -176,7 +219,13 @@
 #define TSC_CUBE_AUTO_SPAN_SEAM			2U
 #define TSC_FORCE_UNNORMALIZED			1U
 
-/* The words of a texture header and of a sampler. */
+/*
+ * The words of a texture header and of a sampler.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597tex.h (the 256-bit
+ * NVC597_TEXHEAD_PITCH_* and NVC597_TEXSAMP* layouts).
+ */
 #define EXEC_TIC_WORDS				8U
 #define EXEC_TSC_WORDS				8U
 
@@ -497,7 +546,7 @@ nvrtx_exec_blend(
  * Returns where the push buffer goes on.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
- * (nvk_flush_vi_state and its binding macro).
+ * (nvk_flush_vi_state, nvk_mme_bind_vb).
  */
 size_t
 nvrtx_exec_vertex(
@@ -674,8 +723,8 @@ nvrtx_exec_barrier(
  * A8B8G8R8 (red in the lowest byte) and the sources move the image's
  * channels and a view's swizzle into place.  sRGB is read as UNORM.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/nil/descriptor.rs (the texture
- * header of a pitch image).
+ * Values referenced: Mesa 25.3.6 src/nouveau/nil/descriptor.rs
+ * (nvb097_fill_image_view_desc).
  */
 void
 nvrtx_exec_texture_header(
@@ -739,8 +788,8 @@ nvrtx_exec_texture_header(
  * and sRGB border fields, the filters (nearest or linear, one level), the
  * seamless cube setting and the coordinates' normalization.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c (the
- * sampler).
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c
+ * (nvk_sampler_get_header).
  */
 void
 nvrtx_exec_sampler_words(
