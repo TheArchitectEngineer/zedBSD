@@ -32,7 +32,7 @@ N0 identify、N1 console、P0 layout、P1a devinit、P1b frts、P2a booter、P2b
 ## 残り
 
 1. **本文に出典の名前が残る 3 file**: draw-push.c（40）・scanout.c（21）・disp-records.c（16）。file の上部の出典の一覧（draw-push.c）も block ごとへ。
-2. **定数ごとの出典**: channel.c など、出典の書かれていない定数・register の値に、block ごとに Value(s) referenced: を付ける（ユーザーの指摘: channel.c）。nvrtx の全 file を定数・構造体・関数ごとに監査する。
+2. **定数ごとの出典**（2026-10-16 ユーザー:「disp-records.c ... 定数にreferencedがない／draw-push.c ... ファイルヘッダにまとめてreferenceが書かれている／このパターンをnvrtx内すべてのファイルで修正してください。」、進め方はクリック「次のセッションで」。一覧: [unreferenced-defines.md](unreferenced-defines.md)、60 file・403 block。disp-first.c は済み（5aa6d52d5）。file の先頭の出典の一覧は draw-push.c ほか、Values/Procedure referenced: を block ごとへ。推奨の進め方: file の群ごとに担当を並列に起動、Q1 が merge と build・host 試験）: channel.c など、出典の書かれていない定数・register の値に、block ごとに Value(s) referenced: を付ける（ユーザーの指摘: channel.c）。nvrtx の全 file を定数・構造体・関数ごとに監査する。
 3. **（済み、Q1 の commit は下）段の名前（N0・N1・P0〜P9p）の改名**: log（nvrtx_stage_mark の行）と comment の両方で、開発の段の名前を説明的な名前（例 P9c → compute launch、P4m → VRAM window）に変える。comment には約 600 か所。log の名前を照合する試験・道具（plan/ws037/tests・plan/tools・T の手順）を追従させる。
 4. vram.c の 2 つの open-gpu-kernel-modules の path（osinit.c・kern_bus_gm107.c）は手元の取得物に無く未確認。確かめる。
 5. 確かめ: build warning 0、nvrtx の host 試験（sm75・vk-d3・vk。gsp の host 試験は WS242 の未追従で compile が通らない）。
