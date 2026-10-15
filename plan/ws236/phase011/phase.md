@@ -375,6 +375,11 @@ Phase disposition: normal
 4. 報告: compositor の `KWL COPY`（全行）・`KWL PERF`（compose の frames・frame_ms）・`KWL SCANOUT`、videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、dmesg の `v3d: perf`（subs・passes・tfu）・`v3d: gpu tiles`・`v3d: tfu`・`execution failed`、PNG。
 5. 合否: (a) (i)(ii) で `KWL COPY window=1` が出る（bar が消えた後。出なければ reason を報告）、(b) 落ちない・`execution failed` 無し・`PLAYBACK failed` 無し、(c) PNG の色と画（前の PNG と同じ見え方、ずれ・色の入れ替わりが無い）、(d) 記録: (i) の shown・late と `KWL PERF compose frame_ms`、`DRAW acquire_us`、`v3d: tfu jobs` の 2 秒の数（前の T1-685 の窓 1080p60 は compose 23.6 fps・frame_ms 25・TFU 1 frame に 3）。(iii) は `KWL COPY window=0 reason=not-fullscreen`。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す。
 
+### T2 の結果（T1-689、2026-10-16、診断）の読み
+
+- 全画面 60p: shown 303・late 297、`worker=` 61〜64%（executor が実際に持たれた割合、busy 84% より小さい）、compose frame_ms 25.3〜25.6、rec の begin 1.4〜1.9・end 1.4・submit 2.2・present 3.8〜4.2 ms、kernel の要求の wait 84〜86 us・run 154〜200 us。kernel の処理は 1 要求 0.25 ms 程度で、1 往復 1.4〜4 ms の残りは kernel の外。
+- `kern.perf=1` の報告は出ていた（行は `sched:` ではなく `kern: perf` で始まる。不具合ではない）。desktop の静止時は 2 秒に switches 約 9 千・woken 約 5 千、**再生中は switches 18〜20 万・woken 12〜13 万・preempted 約 4 万**（20 倍）、preempted の最長の待ちは 4〜11 ms（videoplayer の thread が 476 個の switch の後ろで 11 ms 待った例）。何かが毎秒数万回起きて寝る（短い timeout の poll・spin の yield など）か、CPU の取り合いで往復が遅れている見込み。video の step は 2 秒に約 440 で、decode の poll の空回りではない。誰かは依頼 10 の `ps` の CPU 時間で見る。
+
 ### A2 の調べ（2026-10-16、P3 新世代、T1-687 の log から）
 
 - **`v3d: perf` の busy は executor の占有を多く見せる**: `total` は job の最初の step から最後の step までで、step に分かれる job（decode を含む libmedia の command buffer、`EINPROGRESS` で番を譲る）は間に他の session の番を含む。T1-687 の 60p 全画面の 2 秒: subs 283・total 平均 6.5 ms（= busy 92%）に対し、exec（GPU の実行と待ち）3.1 ms・prep 0.67・xfer（video の event の CPU）0.83・rel 0.17・clean 0.19 で、和は約 5.0 ms、step に分かれた job の待ちが約 1.2 ms/sub。GPU の実行は 2 秒の約 44%、CPU を含めた実の占有は約 67% の見込み。**直し**: kernel の perf に job の step の自分の時間の和を足し、行の末尾に `worker=N%`（executor が実際に持たれていた割合）を出す（`vulkan-queue.c` が step を測り `bcm2711_vulkan_native_job_count_step`、`v3d-hardware.h` の `step_ticks`）。
@@ -458,6 +463,7 @@ Phase disposition: normal
 2. Pi: `/lib/libvulkan.so`（全 app が使う）・compositor・kernel を差し替え（前の物は退避）、boot の行に `v3d.perf=1`、reboot。
 3. (a) desktop が出る（compositor の display の swapchain が direct）、(b) `high-1080p60-10s.mp4 --fullscreen --timeout-s=15` と窓、`high-1080p30-10s.mp4 --fullscreen`、(c) Settings・Terminal・browser（あれば）を開いて閉じる、窓の大きさを変える、(d) (b) の 30p 全画面の 5 秒目に keiland-shot。
 4. 報告: videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、compositor の `KWL PERF compose`・`rec`・`KWL COPY`、dmesg の `v3d: perf`（`passes=`・`worker=`）・`v3d: gpu tiles`・`execution failed`、PNG、(c) の各 app の見え方（画が出る、崩れない）。
+   - CPU の内訳（T1-689 で再生中に context switch が 2 秒に約 19 万・起床 12 万と、desktop の静止時（約 9 千）の 20 倍だった。誰が回しているかを見る）: 60p 全画面の再生の直前と直後に `ps -e -o pid,time,comm` と `sysctl hw.cputimes` を保存。boot の行に `kern.perf=1` も足す（再生中の `kern: perf` の行、`sched:` ではなく `kern: perf` で始まる）。
 5. 合否: (a)〜(c) で画が出て落ちない、`execution failed` 無し、PNG の色・画が正しい、`v3d: perf` の image の pass が 1 表示 frame に 1 つ（A1 の copy）に減る（2 秒の `passes=R/0/I` の I が R と同じ程度）。記録: 60p 全画面の shown・late、compose frame_ms、acquire_us。
 6. 戻し: 失敗した時は `/lib/libvulkan.so` を退避の物に戻して reboot（全 app が影響を受けるので最初に戻す）。
 
