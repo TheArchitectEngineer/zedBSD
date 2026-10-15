@@ -6,8 +6,8 @@
  */
 
 /*
-  * The VRAM allocator and the CPU's window onto the VRAM (the vram-window
-  * stage).
+ * The VRAM allocator and the CPU's window onto the VRAM (the vram-window
+ * stage).
  *
  * The allocator hands out runs of the last usable VRAM region below the
  * fixed arenas the earlier stages place at its top (the first block, the
@@ -81,11 +81,16 @@
 #define VRAM_TABLES_PTE_AT		0x4000ULL
 
 /*
- * The window's mode register (Turing's BAR1 block): bit 31 set is the virtual mode.  The bind's pending bits are in the
- * status register, polled when the mode is put back.
+ * The window's mode register (Turing's BAR1 block): bit 31 set is the
+ * virtual mode.  The bind's pending bits are in the status register, polled
+ * when the mode is put back.
  *
  * Values referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/bar/tu102.c.
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bar/tu102.c (tu102_bar_bar1_init,
+ * tu102_bar_bar1_fini, tu102_bar_bar1_wait) and NVIDIA
+ * open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/turing/tu102/dev_vm.h
+ * (NV_VIRTUAL_FUNCTION_PRIV_BAR1_BLOCK, NV_VIRTUAL_FUNCTION_PRIV_BIND_STATUS).
  */
 #define VRAM_REG_BAR1_BLOCK		0xb80f40U
 #define VRAM_BAR1_BLOCK_VIRTUAL		0x80000000U
@@ -94,7 +99,12 @@
 #define VRAM_BAR1_POLLS			1000U
 #define VRAM_BAR1_POLL_US		10U
 
-/* The console's VRAM is reserved in whole 64 KiB (osinit.c's alignment). */
+/*
+ * The console's VRAM is reserved in whole 64 KiB.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/arch/nvalloc/unix/src/osinit.c (RmSetConsolePreservationParams).
+ */
 #define VRAM_CONSOLE_ALIGN		0x10000ULL
 
 /* The self-test's run, and the values written each way. */
@@ -123,7 +133,11 @@
  * and bit 31 that a record waits; each clears when written as 1.
  *
  * Values referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/fault/tu102.c (the info fault).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/fault/tu102.c (tu102_fault_info_fault)
+ * and NVIDIA open-gpu-doc manuals/turing/tu104/dev_vm.ref.txt
+ * (NV_VIRTUAL_FUNCTION_PRIV_MMU_FAULT_INST_LO_ENGINE_ID,
+ * NV_VIRTUAL_FUNCTION_PRIV_MMU_FAULT_INFO,
+ * NV_VIRTUAL_FUNCTION_PRIV_MMU_FAULT_STATUS).
  */
 #define VRAM_REG_FAULT_ADDR_LO		0xb83080U
 #define VRAM_REG_FAULT_ADDR_HI		0xb83084U
@@ -143,6 +157,12 @@
  * bound to: its page number in bits 27:0 and its target in bits 29:28 (0
  * the VRAM).  The block's field at 0x200 names the root, with the tables'
  * format in its low bits.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/turing/tu102/dev_vm.h
+ * (NV_VIRTUAL_FUNCTION_PRIV_BAR1_BLOCK_PTR,
+ * NV_VIRTUAL_FUNCTION_PRIV_BAR1_BLOCK_TARGET) and NVIDIA open-gpu-doc
+ * manuals/turing/tu104/dev_ram.ref.txt (NV_RAMIN_PAGE_DIR_BASE_LO).
  */
 #define VRAM_BAR1_BLOCK_PTR_MASK	0x0fffffffU
 #define VRAM_BAR1_BLOCK_TARGET_MASK	0x30000000U
@@ -587,8 +607,9 @@ nvrtx_console_restore(
  * and points the resource manager's root at them.
  *
  * Procedure referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/bar.c (the window's root
- * from the static information, the lower levels and the flush).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/bar.c (r535_bar_bar1_init,
+ * r535_bar_flush: the window's root from the static information, the lower
+ * levels and the flush).
  */
 static int
 vram_bar1_tables(
@@ -744,9 +765,10 @@ vram_bar1_write_tables(
  * written with them, before anything else takes the window.
  *
  * Procedure referenced: NVIDIA open-gpu-kernel-modules 570.144
- * src/nvidia/arch/nvalloc/unix/src/osinit.c and
- * src/nvidia/src/kernel/gpu/bus/arch/maxwell/kern_bus_gm107.c (the console's
- * size and its mapping kept at offset 0).
+ * src/nvidia/arch/nvalloc/unix/src/osinit.c
+ * (RmSetConsolePreservationParams, the console's size) and
+ * src/nvidia/src/kernel/gpu/bus/arch/maxwell/kern_bus_gm107.c
+ * (kbusInitBar1_GM107, its mapping kept at offset 0).
  */
 static int
 vram_console_map(

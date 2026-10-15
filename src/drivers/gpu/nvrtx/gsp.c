@@ -51,7 +51,13 @@
 /* The largest small file read whole. */
 #define GSP_SMALL_FILE_MAX		0x40000U
 
-/* How long devinit waits for devinit, in microseconds, and the step between its reads. */
+/*
+ * How long devinit waits for devinit, in microseconds, and the step between its
+ * reads.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/devinit/tu102.c (tu102_devinit_wait).
+ */
 #define GSP_DEVINIT_TIMEOUT_US		4100000U
 #define GSP_DEVINIT_STEP_US		2000U
 
@@ -60,15 +66,35 @@
 #define GSP_UNLOAD_TIMEOUT_US		2000000U
 #define GSP_UNLOADED_TIMEOUT_US		2000000U
 
-/* The GSP falcon's mailbox 0 reads this once the firmware has unloaded. */
+/*
+ * The GSP falcon's mailbox 0 reads this once the firmware has unloaded.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_fini).
+ */
 #define GSP_UNLOADED			0x80000000U
 
-/* The GSP falcon's registers the start writes: the two mailboxes and the application version. */
+/*
+ * The GSP falcon's registers the start writes: the two mailboxes and the
+ * application version.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer, r535_gsp_init) and nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_oneinit).
+ */
 #define GSP_REG_MAILBOX0		(NVRTX_FALCON_GSP_BASE + 0x040U)
 #define GSP_REG_MAILBOX1		(NVRTX_FALCON_GSP_BASE + 0x044U)
 #define GSP_REG_APP_VERSION		(NVRTX_FALCON_GSP_BASE + 0x080U)
 
-/* The secure scratch register whose bit 26 says the boot has handed over to the firmware. */
+/*
+ * The secure scratch register whose bit 26 says the boot has handed over to the
+ * firmware.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer).
+ */
 #define GSP_REG_BOOT_SCRATCH		0x1180f8U
 
 /* When gsp-init shows how far the firmware got, in milliseconds after it began to wait. */
@@ -613,7 +639,13 @@ gsp_prepare_image(
 	return 0;
 }
 
-/* Places the firmware in the VRAM and writes the record the booter reads. */
+/*
+ * Places the firmware in the VRAM and writes the record the booter reads.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_oneinit,
+ * tu102_gsp_wpr_meta_init).
+ */
 static int
 gsp_prepare_placement(
 	struct nvrtx_gpu *gpu)
@@ -678,7 +710,14 @@ gsp_prepare_placement(
 	return 0;
 }
 
-/* Prepares the GSP's start page, its three logs, the start arguments and the queues. */
+/*
+ * Prepares the GSP's start page, its three logs, the start arguments and the
+ * queues.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_libos_init,
+ * r535_gsp_shared_init, r535_gsp_rmargs_init).
+ */
 static int
 gsp_prepare_start(
 	struct nvrtx_gpu *gpu)
@@ -901,7 +940,12 @@ gsp_prepare_falcons(
 	return 0;
 }
 
-/* Runs devinit: waits for the GPU's own firmware to finish devinit. */
+/*
+ * Runs devinit: waits for the GPU's own firmware to finish devinit.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/devinit/tu102.c (tu102_devinit_wait).
+ */
 static int
 gsp_devinit_wait(
 	struct nvrtx_gpu *gpu)
@@ -934,7 +978,12 @@ gsp_devinit_wait(
 	return ETIMEDOUT;
 }
 
-/* Runs frts: checks that no region is there, then sets it up with FWSEC-FRTS. */
+/*
+ * Runs frts: checks that no region is there, then sets it up with FWSEC-FRTS.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_frts).
+ */
 static int
 gsp_region_set(
 	struct nvrtx_gpu *gpu)
@@ -1036,6 +1085,9 @@ gsp_finish(
  * Returns 0 when the memory may be given back: the GSP is stopped, or it
  * never ran.  Returns EBUSY when a falcon may still read the memory (one
  * that did not halt, now or earlier), which is then kept until power-off.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_fini).
  */
 static int
 gsp_teardown(
@@ -1106,7 +1158,15 @@ gsp_teardown(
 	return 0;
 }
 
-/* Queues the two calls the firmware reads first: the system information and the registry. */
+/*
+ * Queues the two calls the firmware reads first: the system information and the
+ * registry.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/gsp.c
+ * (r570_gsp_set_system_info) and nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_rpc_set_registry).
+ */
 static int
 gsp_queue_setup_calls(
 	struct nvrtx_gpu *gpu)
@@ -1157,7 +1217,14 @@ gsp_queue_setup_calls(
 	return 0;
 }
 
-/* Runs booter: queues the first calls, puts the GSP in RISC-V mode, and starts it through booter_load. */
+/*
+ * Runs booter: queues the first calls, puts the GSP in RISC-V mode, and starts
+ * it through booter_load.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_init,
+ * tu102_gsp_booter_load) and nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_init).
+ */
 static int
 gsp_boot_riscv(
 	struct nvrtx_gpu *gpu)
@@ -1239,6 +1306,9 @@ gsp_boot_riscv(
  * The wait is cut at a few points to show how far the firmware got.  When
  * the event does not come, the memory is kept, so the logs and the queues
  * can be dumped from outside the machine, and the host is rebooted.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_init).
  */
 static int
 gsp_init_done(
@@ -1368,6 +1438,10 @@ gsp_log_put(
  *
  * The region is torn down afterwards by the finish.  Returns ETIMEDOUT when
  * the firmware did not unload in time.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_fini) and
+ * nvkm/subdev/gsp/tu102.c (tu102_gsp_fini).
  */
 static int
 gsp_stop(
@@ -1402,7 +1476,14 @@ gsp_stop(
 	return 0;
 }
 
-/* Asks the firmware for its static information and marks what it says about the GPU. */
+/*
+ * Asks the firmware for its static information and marks what it says about the
+ * GPU.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/gsp.c
+ * (r570_gsp_get_static_info).
+ */
 static int
 gsp_static_info(
 	struct nvrtx_gpu *gpu)

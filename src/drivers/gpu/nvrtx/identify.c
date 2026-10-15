@@ -24,7 +24,12 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
-/* The architecture numbers of the identity register this driver knows. */
+/*
+ * The architecture numbers of the identity register this driver knows.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/device/base.c (nvkm_device_ctor).
+ */
 #define IDENTIFY_ARCH_TURING		0x16U
 #define IDENTIFY_ARCH_AMPERE		0x17U
 #define IDENTIFY_ARCH_HOPPER		0x18U
@@ -32,7 +37,18 @@
 #define IDENTIFY_ARCH_BLACKWELL_DC	0x1aU
 #define IDENTIFY_ARCH_BLACKWELL		0x1bU
 
-/* The GSP heap's part for its operating system and its least size (libos 2 on Turing, libos 3 after). */
+/*
+ * The GSP heap's part for its operating system and its least size (libos 2 on
+ * Turing, libos 3 after).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gsp.h
+ * (GSP_FW_HEAP_PARAM_OS_SIZE_LIBOS2,
+ * GSP_FW_HEAP_PARAM_OS_SIZE_LIBOS3_BAREMETAL,
+ * GSP_FW_HEAP_SIZE_OVERRIDE_LIBOS2_MIN_MB,
+ * GSP_FW_HEAP_SIZE_OVERRIDE_LIBOS3_BAREMETAL_MIN_MB) and
+ * nvkm/subdev/gsp/rm/r570/rm.c (r570_wpr_libos2, r570_wpr_libos3).
+ */
 #define IDENTIFY_MIB			0x100000ULL
 #define IDENTIFY_HEAP_OS_TURING		0ULL
 #define IDENTIFY_HEAP_MIN_TURING	(64ULL * IDENTIFY_MIB)
@@ -253,6 +269,9 @@ static enum nvrtx_family identify_family(uint32_t architecture);
  * the driver never drives (older generations, a virtual function, a
  * big-endian or unreadable identity), and ENOTSUP for a newer chip number
  * it does not know.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/device/base.c (nvkm_device_ctor).
  */
 int
 nvrtx_identify(
@@ -353,6 +372,9 @@ nvrtx_family_name(
  * engine-type word; bit 31 set means more words of the same engine follow.
  * Returns 0 with the bit number, or ENOENT when the engine is not listed
  * with a reset bit.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/top/gk104.c (gk104_top_parse).
  */
 int
 nvrtx_device_info_reset(

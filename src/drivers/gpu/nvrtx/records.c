@@ -24,7 +24,13 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* The system information's fields the driver fills; every other byte is zero. */
+/*
+ * The system information's fields the driver fills; every other byte is zero.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gsp.h (GspSystemInfo)
+ * and nvkm/subdev/gsp/rm/r570/gsp.c (r570_gsp_set_system_info).
+ */
 #define RECORDS_SYSINFO_BAR0_AT		0U
 #define RECORDS_SYSINFO_BAR1_AT		8U
 #define RECORDS_SYSINFO_BAR3_AT		16U
@@ -38,16 +44,36 @@
 #define RECORDS_SYSINFO_REVISION_AT	96U
 #define RECORDS_SYSINFO_PRIMARY_AT	896U
 
-/* The copy of the PCI configuration space in the register window. */
+/*
+ * The copy of the PCI configuration space in the register window.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/pci/gp100.c (gp100_pci_func).
+ */
 #define RECORDS_CONFIG_MIRROR		0x088000U
 #define RECORDS_CONFIG_MIRROR_SIZE	0x1000U
 
-/* The registry: its header, one 16-byte entry per tunable, then the names; every tunable is a 32-bit number. */
+/*
+ * The registry: its header, one 16-byte entry per tunable, then the names;
+ * every tunable is a 32-bit number.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h
+ * (PACKED_REGISTRY_TABLE, PACKED_REGISTRY_ENTRY) and
+ * nvkm/subdev/gsp/rm/r535/gsp.c (REGISTRY_TABLE_ENTRY_TYPE_DWORD).
+ */
 #define RECORDS_REGISTRY_HEADER		8U
 #define RECORDS_REGISTRY_ENTRY		16U
 #define RECORDS_REGISTRY_TYPE_NUMBER	1U
 
-/* The sequencer payload: the command count in words, and the commands after the eight saved registers. */
+/*
+ * The sequencer payload: the command count in words, and the commands after the
+ * eight saved registers.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h
+ * (rpc_run_cpu_sequencer_v17_00).
+ */
 #define RECORDS_SEQUENCER_COUNT_AT	4U
 #define RECORDS_SEQUENCER_SAVE_AT	8U
 #define RECORDS_SEQUENCER_COMMANDS_AT	40U
@@ -65,6 +91,10 @@ struct records_tunable {
  * The tunables every boot passes: secondary bus reset allowed, the PCI
  * configuration kept over a reset, and no check of the device ID against the
  * firmware's own list of products.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_registry_entries).
  */
 static const struct records_tunable records_tunables[] = {
 	{ "RMSecBusResetEnable", 1U },
@@ -79,6 +109,10 @@ static size_t records_strlen(const char *text);
  *
  * The record is NVRTX_SYSINFO_BYTES long; fields not written are zero (no
  * ACPI data, no virtual functions).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/gsp.c
+ * (r570_gsp_set_system_info).
  */
 void
 nvrtx_sysinfo(
@@ -120,6 +154,10 @@ nvrtx_sysinfo(
  * Writes the registry of tunables.
  *
  * Returns 0 with the registry's length, or E2BIG when it does not fit.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_rpc_set_registry).
  */
 int
 nvrtx_registry(
@@ -170,6 +208,10 @@ nvrtx_registry(
 
 /*
  * Writes the arguments of the unload call for a plain unload (not a suspend).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_rpc_unloading_guest_driver).
  */
 void
 nvrtx_unload_args(
@@ -188,6 +230,10 @@ nvrtx_unload_args(
  * The cursor counts words of the command list.  Returns 0 with the command,
  * ENOENT when the list is done, or EINVAL for an unknown opcode or a command
  * running past the payload.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_msg_run_cpu_sequencer).
  */
 int
 nvrtx_sequencer_next(
@@ -282,6 +328,10 @@ nvrtx_sequencer_save(
  * The call is the 32-byte header (client, parent, object, class, status,
  * parameter length, flags, four reserved bytes) followed by the class's
  * parameters.  Returns the call's length, or 0 when it does not fit.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/alloc.c
+ * (r535_gsp_rpc_rm_alloc_get).
  */
 size_t
 nvrtx_alloc_call(

@@ -17,11 +17,11 @@
  * attaches while the platform discovers its devices, before the kernel parses
  * the line:
  *
-  * The stages that make the display work run by default (without them the
-  * desktop does not run on a machine whose display is on the NVIDIA GPU): the
-  * GSP boot, the VRAM window (vram-window), the display's readout, the
-  * takeover of the firmware's head showing the console (takeover) and the GPU
-  * device (gpu-device).  The test stages run only when asked.
+ * The stages that make the display work run by default (without them the
+ * desktop does not run on a machine whose display is on the NVIDIA GPU): the
+ * GSP boot, the VRAM window (vram-window), the display's readout, the
+ * takeover of the firmware's head showing the console (takeover) and the GPU
+ * device (gpu-device).  The test stages run only when asked.
  *
  *   nvrtx.off=1, nvrtx=off  the driver does not look at the GPU at all
  *   nvrtx.stop=<stage>    the driver stops before that stage

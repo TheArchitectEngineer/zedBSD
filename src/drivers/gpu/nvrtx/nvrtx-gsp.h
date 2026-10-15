@@ -23,7 +23,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The page the GSP understands, and the shift that converts to it. */
+/*
+ * The page the GSP understands, and the shift that converts to it.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/include/nvkm/subdev/gsp.h (GSP_PAGE_SHIFT,
+ * GSP_PAGE_SIZE).
+ */
 #define NVRTX_GSP_PAGE_SIZE		0x1000U
 #define NVRTX_GSP_PAGE_SHIFT		12U
 
@@ -32,6 +38,10 @@
  *
  * Six little-endian words: magic, version, file size, offset of the inner
  * header, offset and size of the payload.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/include/nvfw/fw.h
+ * (struct nvfw_bin_hdr) and nvkm/falcon/fw.c (nvkm_falcon_fw_ctor_hs, the
+ * magic).
  */
 #define NVRTX_BIN_MAGIC			0x10deU
 #define NVRTX_BIN_VERSION		1U
@@ -49,6 +59,9 @@
  * The signature words, the places inside the file that hold the patch
  * location, the patch signature index and the signature count, and the
  * offset of the load header.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/include/nvfw/hs.h
+ * (struct nvfw_hs_header_v2).
  */
 #define NVRTX_HS_HEADER_BYTES		36U
 #define NVRTX_HS_SIG_PROD_AT		0U
@@ -63,6 +76,9 @@
 /*
  * The load header of a booter image (version 2): the operating-system code
  * and data ranges, the application count and the first application's range.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/include/nvfw/hs.h
+ * (struct nvfw_hs_load_header_v2).
  */
 #define NVRTX_HS_LOAD_BYTES		36U
 #define NVRTX_HS_LOAD_OS_CODE_AT	0U
@@ -77,6 +93,9 @@
  * The descriptor inside the GSP bootloader file: the application version
  * written to the GSP before it starts, and the manifest, monitor data and
  * monitor code offsets the placement record names.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/arch/nvalloc/common/inc/rmRiscvUcode.h (RM_RISCV_UCODE_DESC).
  */
 #define NVRTX_RV_DESC_BYTES		56U
 #define NVRTX_RV_DESC_APP_VERSION_AT	28U
@@ -87,6 +106,9 @@
 /*
  * The section the driver takes the image from in the GSP firmware's ELF
  * file; the signature's section is the chip family's (its profile).
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_oneinit).
  */
 #define NVRTX_GSP_IMAGE_SECTION		".fwimage"
 
@@ -99,6 +121,10 @@
  * The booter reads it to put the firmware image, the bootloader and the
  * heap into the write-protected region.  Every field is a 64-bit word except
  * the few in the tail the driver leaves zero.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/arch/nvalloc/common/inc/gsp/gsp_fw_wpr_meta.h (GspFwWprMeta,
+ * GSP_FW_WPR_META_MAGIC, GSP_FW_WPR_META_REVISION).
  */
 #define NVRTX_WPRM_BYTES		256U
 #define NVRTX_WPRM_MAGIC		0xdc3aae21371a60b3ULL
@@ -135,6 +161,12 @@
  *
  * An eight-character name packed into a word, the bus address, the size,
  * the kind (1 = one contiguous range) and the location (1 = system memory).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h
+ * (LibosMemoryRegionInitArgument, LIBOS_MEMORY_REGION_CONTIGUOUS,
+ * LIBOS_MEMORY_REGION_LOC_SYSMEM) and nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_libos_init).
  */
 #define NVRTX_LIBOS_REGION_BYTES	32U
 #define NVRTX_LIBOS_REGION_COUNT	4U
@@ -146,7 +178,13 @@
 #define NVRTX_LIBOS_KIND_CONTIGUOUS	1U
 #define NVRTX_LIBOS_LOCATION_SYSTEM	1U
 
-/* The three log buffers the GSP writes, each 64 KiB, and the argument page. */
+/*
+ * The three log buffers the GSP writes, each 64 KiB, and the argument page.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_libos_init,
+ * r535_gsp_rmargs_init).
+ */
 #define NVRTX_GSP_LOG_BYTES		0x10000U
 #define NVRTX_GSP_ARGS_BYTES		0x1000U
 
@@ -155,6 +193,9 @@
  *
  * Where the queues are, the suspend-resume state (all zero on a cold start),
  * the GPU instance, and the stack-in-DMEM flag this firmware version needs.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/inc/kernel/gpu/gsp/gsp_init_args.h (GSP_ARGUMENTS_CACHED).
  */
 #define NVRTX_RMARGS_BYTES		72U
 
@@ -163,6 +204,11 @@
  * one whole page, as both other drivers give it.  The operating system maps
  * its regions by pages and stopped at a region of the arguments' own 72 bytes
  * (R3: its init log ends after mapping that region).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/inc/kernel/gpu/gsp/gsp_init_args.h (GSP_ARGUMENTS_CACHED,
+ * MESSAGE_QUEUE_INIT_ARGUMENTS, GSP_SR_INIT_ARGUMENTS) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_rmargs_init).
  */
 #define NVRTX_RMARGS_REGION_BYTES	0x1000U
 #define NVRTX_RMARGS_QUEUE_PAGES_AT	0U
@@ -181,6 +227,9 @@
  * The shared queue memory: a page of page addresses, then the command queue
  * (driver to GSP), then the status queue (GSP to driver).  Each queue is a
  * header page followed by 63 slots of one page.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_shared_init).
  */
 #define NVRTX_QUEUE_BYTES		0x40000U
 #define NVRTX_QUEUE_SLOT_BYTES		0x1000U
@@ -194,6 +243,10 @@
  * word.  Each side writes only its own words; the driver's read pointer of the
  * status queue lives in the command queue's reader word, and the GSP's read
  * pointer of the command queue in the status queue's reader word.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h (msgqTxHeader,
+ * msgqRxHeader).
  */
 #define NVRTX_QHDR_VERSION_AT		0U
 #define NVRTX_QHDR_SIZE_AT		4U
@@ -208,6 +261,10 @@
 /*
  * The frame of one message in a queue: a 48-byte element header, then the
  * call header, then the payload.  A message spans 1 to 16 slots.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/inc/kernel/gpu/gsp/message_queue_priv.h (GSP_MSG_QUEUE_ELEMENT,
+ * GSP_MSG_QUEUE_ELEMENT_SIZE_MAX).
  */
 #define NVRTX_ELEMENT_HEADER_BYTES	48U
 #define NVRTX_ELEMENT_CHECKSUM_AT	32U
@@ -219,6 +276,11 @@
  * The call header, 32 bytes: version, signature "VRPC" in memory, the length
  * of header and payload, the function, the two result words (all ones when
  * sent), the caller's sequence, and a spare word.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h
+ * (rpc_message_header_v03_00) and nvkm/subdev/gsp/rm/r535/rpc.c
+ * (r535_gsp_rpc_get).
  */
 #define NVRTX_CALL_HEADER_BYTES		32U
 #define NVRTX_CALL_VERSION		0x03000000U
@@ -308,6 +370,9 @@ struct nvrtx_elf {
 
 /*
  * The falcon bootloader's descriptor: the start tag, then the code's offset and size in the payload.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/include/nvfw/fw.h
+ * (struct nvfw_bl_desc).
  */
 #define NVRTX_FALCON_BL_DESC_BYTES	24U
 #define NVRTX_FALCON_BL_START_TAG_AT	0U
@@ -393,10 +458,21 @@ struct nvrtx_channel {
 	uint8_t *staging;
 };
 
-/* The size of one FWSEC signature of a version 3 descriptor. */
+/*
+ * The size of one FWSEC signature of a version 3 descriptor.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c
+ * (nvkm_gsp_fwsec_v3).
+ */
 #define NVRTX_FWSEC_SIGNATURE_BYTES	384U
 
-/* The two FWSEC commands: set up the protected region, and tear it down. */
+/*
+ * The two FWSEC commands: set up the protected region, and tear it down.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c
+ * (NVFW_FALCON_APPIF_DMEMMAPPER_CMD_FRTS, NVFW_FALCON_APPIF_DMEMMAPPER_CMD_SB).
+ */
 #define NVRTX_FWSEC_FRTS		0x15U
 #define NVRTX_FWSEC_SB			0x19U
 
@@ -449,7 +525,14 @@ struct nvrtx_fwsec {
 	uint32_t program_size;
 };
 
-/* The call numbers of the 570.144 resource manager the boot uses. */
+/*
+ * The call numbers of the 570.144 resource manager the boot uses.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/rpcfn.h (FREE,
+ * UNLOADING_GUEST_DRIVER, GET_GSP_STATIC_INFO, CONTINUATION_RECORD,
+ * GSP_SET_SYSTEM_INFO, SET_REGISTRY, GSP_RM_CONTROL, GSP_RM_ALLOC).
+ */
 #define NVRTX_CALL_FREE			10U
 #define NVRTX_CALL_UNLOAD		47U
 #define NVRTX_CALL_STATIC_INFO		65U
@@ -459,7 +542,14 @@ struct nvrtx_fwsec {
 #define NVRTX_CALL_CONTROL		76U
 #define NVRTX_CALL_ALLOCATE		103U
 
-/* The events the GSP sends on its own (numbers from 0x1000). */
+/*
+ * The events the GSP sends on its own (numbers from 0x1000).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/msgfn.h (FIRST_EVENT,
+ * GSP_INIT_DONE, GSP_RUN_CPU_SEQUENCER, OS_ERROR_LOG, UCODE_LIBOS_PRINT,
+ * PERF_BRIDGELESS_INFO_UPDATE, GSP_POST_NOCAT_RECORD).
+ */
 #define NVRTX_EVENT_FIRST		0x1000U
 #define NVRTX_EVENT_INIT_DONE		0x1001U
 #define NVRTX_EVENT_SEQUENCER		0x1002U
@@ -468,11 +558,22 @@ struct nvrtx_fwsec {
 #define NVRTX_EVENT_BRIDGELESS		0x100fU
 #define NVRTX_EVENT_POST_NOCAT		0x1020U
 
-/* The system information's length, and the unload call's. */
+/*
+ * The system information's length, and the unload call's.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gsp.h (GspSystemInfo)
+ * and nvkm/subdev/gsp/rm/r535/nvrm/gsp.h (rpc_unloading_guest_driver_v1F_07).
+ */
 #define NVRTX_SYSINFO_BYTES		928U
 #define NVRTX_UNLOAD_ARGS_BYTES		8U
 
-/* The CPU sequencer's opcodes. */
+/*
+ * The CPU sequencer's opcodes.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/arch/nvalloc/common/inc/rmgspseq.h (GSP_SEQ_BUF_OPCODE).
+ */
 #define NVRTX_SEQ_WRITE			0U
 #define NVRTX_SEQ_MODIFY		1U
 #define NVRTX_SEQ_POLL			2U
@@ -483,7 +584,15 @@ struct nvrtx_fwsec {
 #define NVRTX_SEQ_CORE_WAIT_HALT	7U
 #define NVRTX_SEQ_CORE_RESUME		8U
 
-/* The static information the firmware reports, and the fields the driver reads of it. */
+/*
+ * The static information the firmware reports, and the fields the driver reads
+ * of it.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gsp.h
+ * (GspStaticConfigInfo: fb_length, gpuShortNameString, bar1PdeBase,
+ * bar2PdeBase, hInternalClient, bIsEfiInit).
+ */
 #define NVRTX_STATIC_INFO_BYTES		1656U
 #define NVRTX_STATIC_FB_LENGTH_AT	1224U
 #define NVRTX_STATIC_SHORT_NAME_AT	1324U
@@ -497,11 +606,23 @@ struct nvrtx_fwsec {
  * The allocation call's header (seven words and four reserved bytes, 32
  * bytes; R5 found the parameters had been put 12 bytes late, so the space's
  * flags were never read) and where the resource manager reports its status.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/alloc.h
+ * (rpc_gsp_rm_alloc_v03_00).
  */
 #define NVRTX_ALLOC_HEADER_BYTES	32U
 #define NVRTX_ALLOC_STATUS_AT		16U
 
-/* The three classes of the first objects, and their parameter lengths. */
+/*
+ * The three classes of the first objects, and their parameter lengths.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/cl0000.h (NV01_ROOT,
+ * NV0000_ALLOC_PARAMETERS), class/cl0080.h (NV01_DEVICE_0,
+ * NV0080_ALLOC_PARAMETERS) and class/cl2080.h (NV20_SUBDEVICE_0,
+ * NV2080_ALLOC_PARAMETERS).
+ */
 #define NVRTX_CLASS_ROOT		0x0000U
 #define NVRTX_CLASS_DEVICE		0x0080U
 #define NVRTX_CLASS_SUBDEVICE		0x2080U
@@ -511,19 +632,48 @@ struct nvrtx_fwsec {
 #define NVRTX_DEVICE_SHARE_AT		4U
 #define NVRTX_SUBDEVICE_PARAMS_BYTES	4U
 
-/* The FB region table in the static information. */
+/*
+ * The FB region table in the static information.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gsp.h
+ * (GspStaticConfigInfo, fbRegionInfoParams).
+ */
 #define NVRTX_STATIC_REGIONS_AT		344U
 
 /* The driver's page tables: five pages covering one 2 MiB range. */
 #define NVRTX_MMU_TABLES_BYTES		0x5000U
 #define NVRTX_MMU_RANGE_BYTES		0x200000ULL
 
-/* A channel's instance block, its RAMFC (the block's first part) and its USERD. */
+/*
+ * A channel's instance block, its RAMFC (the block's first part) and its USERD.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/fifo/gf100.c (gf100_chan_inst),
+ * nvkm/engine/fifo/gv100.c (gv100_chan_userd) and
+ * nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_alloc).
+ */
 #define NVRTX_INSTANCE_BYTES		0x1000U
 #define NVRTX_RAMFC_BYTES		0x200U
 #define NVRTX_USERD_BYTES		0x200U
 
-/* The control call's header, and the parameters of the calls address-space to channel-stop make. */
+/*
+ * The control call's header, and the parameters of the calls address-space to
+ * channel-stop make.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/ctrl.h
+ * (rpc_gsp_rm_control_v03_00); NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080dma.h
+ * (NV0080_CTRL_DMA_SET_PAGE_DIRECTORY_PARAMS,
+ * NV0080_CTRL_DMA_UNSET_PAGE_DIRECTORY_PARAMS), ctrl/ctrl2080/ctrl2080fifo.h
+ * (NV2080_CTRL_FIFO_GET_DEVICE_INFO_TABLE_PARAMS), ctrl/ctrl2080/ctrl2080ce.h
+ * (NV2080_CTRL_CE_GET_FAULT_METHOD_BUFFER_SIZE_PARAMS), alloc/alloc_channel.h
+ * (NV_CHANNEL_ALLOC_PARAMS), ctrl/ctrla06f/ctrla06fgpfifo.h
+ * (NVA06F_CTRL_BIND_PARAMS, NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS),
+ * class/clb0b5sw.h (NVB0B5_ALLOCATION_PARAMETERS) and nvos.h
+ * (NV_VASPACE_ALLOCATION_PARAMETERS, NVOS00_PARAMETERS).
+ */
 #define NVRTX_CONTROL_HEADER_BYTES	24U
 #define NVRTX_CONTROL_STATUS_AT		12U
 #define NVRTX_SPACE_PARAMS_BYTES	48U
@@ -537,7 +687,18 @@ struct nvrtx_fwsec {
 #define NVRTX_COPY_PARAMS_BYTES		8U
 #define NVRTX_FREE_PARAMS_BYTES		16U
 
-/* The control commands of address-space to channel-stop. */
+/*
+ * The control commands of address-space to channel-stop.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080dma.h
+ * (NV0080_CTRL_CMD_DMA_SET_PAGE_DIRECTORY,
+ * NV0080_CTRL_CMD_DMA_UNSET_PAGE_DIRECTORY), ctrl/ctrl2080/ctrl2080fifo.h
+ * (NV2080_CTRL_CMD_FIFO_GET_DEVICE_INFO_TABLE), ctrl/ctrl2080/ctrl2080ce.h
+ * (NV2080_CTRL_CMD_CE_GET_FAULT_METHOD_BUFFER_SIZE) and
+ * ctrl/ctrla06f/ctrla06fgpfifo.h (NVA06F_CTRL_CMD_BIND,
+ * NVA06F_CTRL_CMD_GPFIFO_SCHEDULE).
+ */
 #define NVRTX_CTL_SET_PAGE_DIRECTORY	0x00801813U
 #define NVRTX_CTL_UNSET_PAGE_DIRECTORY	0x00801814U
 #define NVRTX_CTL_DEVICE_INFO		0x20801112U
@@ -545,17 +706,40 @@ struct nvrtx_fwsec {
 #define NVRTX_CTL_BIND			0xa06f0104U
 #define NVRTX_CTL_SCHEDULE		0xa06f0103U
 
-/* The classes of address-space and copy-channel on Turing (a generation's own are its profile's). */
+/*
+ * The classes of address-space and copy-channel on Turing (a generation's own
+ * are its profile's).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/cl90f1.h (FERMI_VASPACE_A), class/clc46f.h
+ * (TURING_CHANNEL_GPFIFO_A) and class/clc5b5.h (TURING_DMA_COPY_A).
+ */
 #define NVRTX_CLASS_SPACE		0x90f1U
 #define NVRTX_CLASS_CHANNEL		0xc46fU
 #define NVRTX_CLASS_COPY		0xc5b5U
 
-/* The event a channel error raises. */
+/*
+ * The event a channel error raises.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/msgfn.h (RC_TRIGGERED).
+ */
 #define NVRTX_EVENT_CHANNEL_ERROR	0x1004U
 
 /*
  * The graphics context (5f): the controls and classes, the parameter
  * lengths, and the context buffers the resource manager names.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_CMD_INTERNAL_STATIC_KGR_GET_CONTEXT_BUFFERS_INFO,
+ * NV2080_CTRL_CMD_INTERNAL_KGR_INIT_BUG4208224_WAR and their parameters),
+ * ctrl/ctrl2080/ctrl2080gpu.h (NV2080_CTRL_CMD_GPU_PROMOTE_CTX,
+ * NV2080_CTRL_GPU_PROMOTE_CTX_PARAMS), ctrl/ctrl90f1.h
+ * (NV90F1_CTRL_CMD_VASPACE_COPY_SERVER_RESERVED_PDES and its parameters),
+ * class/clc597.h (TURING_A) and class/cl2080_notification.h
+ * (NV2080_ENGINE_TYPE_GRAPHICS); Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/gr.h (R515_GR_MAX_CTXBUFS).
  */
 #define NVRTX_CTL_GR_BUFFERS_INFO	0x20800a32U
 #define NVRTX_CTL_PROMOTE_CONTEXT	0x2080012bU
@@ -569,7 +753,14 @@ struct nvrtx_fwsec {
 #define NVRTX_GR_BUFFER_MAX		9U
 #define NVRTX_ENGINE_GRAPHICS		1U
 
-/* The server's reserved range in a space the resource manager shares: 512 MiB at 4 GiB. */
+/*
+ * The server's reserved range in a space the resource manager shares: 512 MiB
+ * at 4 GiB.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/vmm.h
+ * (SPLIT_VAS_SERVER_RM_MANAGED_VA_START, SPLIT_VAS_SERVER_RM_MANAGED_VA_SIZE).
+ */
 #define NVRTX_SERVER_VA			0x100000000ULL
 #define NVRTX_SERVER_VA_BYTES		0x20000000ULL
 

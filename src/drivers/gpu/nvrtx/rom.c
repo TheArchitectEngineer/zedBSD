@@ -27,18 +27,38 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The instance-memory window: its base register (in 64 KiB units) and where it shows in the registers. */
+/*
+ * The instance-memory window: its base register (in 64 KiB units) and where it
+ * shows in the registers.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowramin.c (pramin_init,
+ * pramin_read).
+ */
 #define ROM_REG_WINDOW_BASE		0x001700U
 #define ROM_WINDOW_AT			0x700000U
 #define ROM_WINDOW_FALLBACK_OFFSET	0xf0000U
 
-/* The VGA-workspace register: valid bit, location field (1 = VRAM) and address field. */
+/*
+ * The VGA-workspace register: valid bit, location field (1 = VRAM) and address
+ * field.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowramin.c (pramin_init).
+ */
 #define ROM_VGA_VALID			0x8U
 #define ROM_VGA_LOCATION_MASK		0x3U
 #define ROM_VGA_IN_VRAM			0x1U
 #define ROM_VGA_ADDRESS_MASK		0xffffff00U
 
-/* The ROM's own window in the registers, and the PCI configuration word whose bit 0 shadows it. */
+/*
+ * The ROM's own window in the registers, and the PCI configuration word whose
+ * bit 0 shadows it.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowrom.c (nvbios_prom_read) and
+ * nvkm/subdev/pci/base.c (nvkm_pci_rom_shadow).
+ */
 #define ROM_PROM_AT			0x300000U
 #define ROM_PCI_SHADOW			0x50U
 #define ROM_PCI_SHADOW_ON		0x1U
@@ -112,7 +132,13 @@ rom_copy(
 	}
 }
 
-/* Reads the display's copy of the VBIOS in the VRAM, when the display made one. */
+/*
+ * Reads the display's copy of the VBIOS in the VRAM, when the display made one.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowramin.c (pramin_init,
+ * pramin_read, pramin_fini).
+ */
 static int
 rom_from_vram(
 	struct nvrtx_gpu *gpu,
@@ -149,7 +175,14 @@ rom_from_vram(
 	return 0;
 }
 
-/* Reads the ROM through its window, with the shadow turned off for the read. */
+/*
+ * Reads the ROM through its window, with the shadow turned off for the read.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadowrom.c (nvbios_prom_init,
+ * nvbios_prom_read, nvbios_prom_fini) and nvkm/subdev/pci/base.c
+ * (nvkm_pci_rom_shadow).
+ */
 static int
 rom_from_prom(
 	struct nvrtx_gpu *gpu,
