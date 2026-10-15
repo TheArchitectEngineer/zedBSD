@@ -31,6 +31,7 @@
 ### Q1 の次の手順
 
 <!-- master:next:start -->
+0. **2026-10-16 の引き継ぎ: まず [plan/agents/handover-20261016.md](agents/handover-20261016.md) を読む**（担当の状態、T1-697 の待ち、著作権の規則、未決の判断）。
 1. 新しい Q1 は AGENTS.md・plan/beta2.md（先頭の「ユーザーが今できる試験」）・この block・[plan/agents/wrapup-20261015.md](agents/wrapup-20261015.md) を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **今の仕事: Pi4 のビデオの試験（WS236 p006、T1-653）**。ユーザーが Pi の SD を書き直し中で、「それまで何もせずに待っていてください」。書き直しの知らせの後に、Q1（または T）が最新の main の kernel で [phase006](ws236/phase006/phase.md) の「T への依頼」を流し、結果をユーザーに伝える（ユーザー「最新のカーネルでOKです。まずはビデオ再生をテストしてください。結果を教えてください。」）。起動で固まれば BUG-317（写真をもらう）。
 3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS245、q984、T1-698。次の KL_VERSION は 95。
