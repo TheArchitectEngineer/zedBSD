@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's graphics pipelines (ws037-p007 stage D3).
+ * The executor's graphics pipelines.
  *
  * A pipeline's vertex and fragment modules are compiled for SM75 by the
  * nvrtx compiler (compiler/sm75.c) when the pipeline is created,

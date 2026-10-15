@@ -7,7 +7,7 @@
 
 /*
  * The work channel's arithmetic and push buffers, which touch no hardware
- * (ws037-p007 stage D1; the host test runs them).
+ * (a host test runs them).
  */
 
 #include <stdbool.h>

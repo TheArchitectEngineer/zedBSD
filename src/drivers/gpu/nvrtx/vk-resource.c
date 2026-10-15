@@ -6,8 +6,7 @@
  */
 
 /*
- * The executor's buffers, images, image views and samplers (ws037-p007
- * stage D3).
+ * The executor's buffers, images, image views and samplers.
  *
  * An image is 2D, of one level, one layer and one sample, in one of the
  * four-byte colour formats, laid out pitch linear: its rows are the width

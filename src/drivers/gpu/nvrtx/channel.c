@@ -21,8 +21,7 @@
  * releases a semaphore value that the CPU polls.
  *
  * P6 reports a channel error the firmware sent and frees the channel and the
- * address space; the GSP's unload in P7 removes whatever is left.  See
- * plan/ws037/phase005/phase.md.
+ * address space; the GSP's unload in P7 removes whatever is left.
  */
 
 #include <stdbool.h>

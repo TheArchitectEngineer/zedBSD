@@ -6,7 +6,7 @@
  */
 
 /*
- * The work channel (stage D1, ws037-p007, nvrtx.work=1).
+ * The work channel (P9w, nvrtx.work=1).
  *
  * After the golden context (P5g) and the VRAM allocator (P4m) the driver
  * makes the graphics channel the GPU device keeps for the work it is given,
@@ -93,7 +93,7 @@
  * How long a wait looks at the semaphore without sleeping before it sleeps
  * between looks: a sleep lasts at least a scheduler tick (1 ms), many
  * times the few tens of microseconds the GPU takes for most work, so the
- * work that ends soon is seen as it ends (ws037-p007 9, F2).
+ * work that ends soon is seen as it ends.
  */
 #define WORK_SPIN_US			2000U
 
@@ -113,7 +113,7 @@ static uint64_t work_semaphore_timer(const struct nvrtx_gpu *gpu, size_t at);
 static uint64_t work_align(uint64_t value, uint32_t shift);
 
 /*
- * Runs stage D1: the arena, the space, the channel with both classes and
+ * Runs P9w: the arena, the space, the channel with both classes and
  * its first fence.
  *
  * Needs the golden context of P5g and the VRAM allocator of P4m.  A failure

@@ -8,11 +8,10 @@
 /*
  * Internal interface of the nvrtx driver (NVIDIA Turing and later GPUs).
  *
- * The driver is brought up one stage at a time (plan/ws037/nvrtx-design.md,
- * section 3).  This revision has the stages that only read: N0 finds the
- * GPU and reads its chip identity, N1 records where the firmware's picture
- * lives.  Nothing is written to the GPU and the function is left to the
- * firmware afterwards.
+  * The driver is brought up one stage at a time.  This revision has the stages
+  * that only read: N0 finds the GPU and reads its chip identity, N1 records
+  * where the firmware's picture lives.  Nothing is written to the GPU and the
+  * function is left to the firmware afterwards.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_PRIVATE_H

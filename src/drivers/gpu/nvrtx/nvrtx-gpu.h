@@ -78,7 +78,7 @@ struct nvrtx_node;
 #define NVRTX_HANDLE_SCRUBBER_THREED	0xdada0046U
 
 /*
- * The first compute launch's objects (P9c, ws037-p008): its address space
+ * The first compute launch's objects (P9c): its address space
  * (owned by the driver), its graphics channel (chid 3) and the compute
  * object on it, in nouveau's families.
  */
@@ -86,11 +86,11 @@ struct nvrtx_node;
 #define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
 #define NVRTX_HANDLE_COMPUTE		0xc5c00003U
 
-/* The first draw's 3D object (P9g, ws037-p007), on the compute launch's channel, in nouveau's family. */
+/* The first draw's 3D object (P9g), on the compute launch's channel, in nouveau's family. */
 #define NVRTX_HANDLE_DRAW		0x97000003U
 
 /*
- * The work channel's objects (stage D1, ws037-p007): its address space
+ * The work channel's objects (P9w): its address space
  * (owned by the driver), its graphics channel (chid 4) and the 3D and
  * compute objects on it, in nouveau's families.
  */
@@ -302,7 +302,7 @@ struct nvrtx_bo {
 };
 
 /*
- * The work channel (stage D1, nvrtx.work=1): the graphics channel the GPU
+ * The work channel (P9w, nvrtx.work=1): the graphics channel the GPU
  * device keeps for the work it is given (nvrtx-work.h has its layout).
  *
  * The arena is a buffer object of the VRAM allocator holding the space's
@@ -497,7 +497,7 @@ struct nvrtx_display_state {
 };
 
 /*
- * The firmware's console on the GPU the machine boots on (ws037-p006, the
+ * The firmware's console on the GPU the machine boots on (the
  * native boot): the picture the GOP left at the start of the VRAM window,
  * which the window reaches in its physical mode until the resource manager
  * makes it virtual.  When the console is kept, the resource manager is told
@@ -583,7 +583,7 @@ struct nvrtx_gpu {
 	struct nvrtx_compute_state compute;
 	struct nvrtx_draw_state draw;
 
-	/* The work channel the GPU device keeps (stage D1). */
+	/* The work channel the GPU device keeps (P9w). */
 	struct nvrtx_work_state work;
 
 	/* The VRAM allocator and the BAR1 window. */

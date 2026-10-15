@@ -8,7 +8,7 @@
 /*
  * The work channel of the nvrtx driver: the parts that touch no hardware.
  *
- * The work channel (ws037-p007 stage D1, work.c) is the graphics channel
+ * The work channel (work.c) is the graphics channel
  * the GPU device keeps for the work it is given: one address space the
  * driver owns over the 512 MiB at NVRTX_WORK_VA_BASE, whose low part holds
  * the graphics context's buffers at the golden context's addresses, then

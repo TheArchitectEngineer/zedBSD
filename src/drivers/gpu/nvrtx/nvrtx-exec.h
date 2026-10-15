@@ -6,7 +6,7 @@
  */
 
 /*
- * The push buffer the Vulkan executor runs (ws037-p007 stage D3).
+ * The push buffer the Vulkan executor runs.
  *
  * exec-push.c writes the 3D class's methods for what one recorded command
  * needs, touching no hardware, so the host test checks them as the kernel

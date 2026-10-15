@@ -429,7 +429,7 @@ nvrtx_mmu_gr_map(
  *
  * Each page at va onward gets a coherent, volatile system-memory entry
  * that is not privileged (the compute launch's ring, push buffer, program
- * and data, ws037-p008).  Returns EINVAL for a range the tables cannot hold
+ * and data).  Returns EINVAL for a range the tables cannot hold
  * or pages outside it.
  */
 int
@@ -474,7 +474,7 @@ nvrtx_mmu_gr_map_system(
  * Maps a run of VRAM into the graphics context's tables, for work.
  *
  * Every page of the run gets a VRAM entry that is neither privileged nor
- * read-only (the first draw's colour target, ws037-p007), so a channel of
+ * read-only (the first draw's colour target), so a channel of
  * the driver's own may render into it.  Returns EINVAL for a range the
  * tables cannot hold, a run outside it, or one not on page boundaries.
  */

@@ -5512,9 +5512,8 @@ nvrtx_sm75_header(
 
 		/*
 		 * The position's w is mapped in even when the program does not
-		 * read it, as a trap follows without it.  The first draw on
-		 * the GPU (R7d) stopped on a shader program header error
-		 * while it was missing.
+		 * read it, as a trap follows without it.  A first draw
+		 * without it stopped on a shader program header error.
 		 *
 		 * Procedure referenced: Mesa 25.3.6
 		 * src/nouveau/compiler/nak/from_nir.rs (the position's w in a

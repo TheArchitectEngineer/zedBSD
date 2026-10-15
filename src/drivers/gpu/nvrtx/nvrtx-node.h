@@ -8,14 +8,13 @@
 /*
  * The GPU device of the nvrtx driver (stage P8c, nvrtx.resident=1).
  *
- * After the takeover of the firmware's head (P8b) the GSP stays up and the
- * GPU is registered with the GPU core as a device with storage, blobs in
- * the VRAM, transfers, CPU mappings, sharing of blobs between its opens and
- * one display: the head the firmware lit, in the mode it lit it with
- * (plan/ws037/phase006), with its refresh boundaries, its cursor plane and
- * its scanout constraints.  node.c holds the sessions and resources,
- * present.c the display's operations, cursor.c the cursor plane, share.c
- * the sharing and the scanout operations.
+  * After the takeover of the firmware's head (P8b) the GSP stays up and the
+  * GPU is registered with the GPU core as a device with storage, blobs in the
+  * VRAM, transfers, CPU mappings, sharing of blobs between its opens and one
+  * display: the head the firmware lit, in the mode it lit it with, with its
+  * refresh boundaries, its cursor plane and its scanout constraints.  node.c
+  * holds the sessions and resources, present.c the display's operations,
+  * cursor.c the cursor plane, share.c the sharing and the scanout operations.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_NODE_H
@@ -128,16 +127,16 @@ struct nvrtx_node_entry {
 };
 
 /*
- * The counts nvrtx.vk.perf=1 writes into the kernel log every 5 s
- * (ws037-p007 9): runs and run_us are the push buffers the work channel ran
- * and the time from their submission to their fence; copies and copy_bytes
- * the transfers the CPU did through the window; frames the renderer's
- * frames, wait_us the time they waited for the node's lock and held_us the
- * time they held it; flips the presentations and flip_us the time their
- * flips waited for the head.  Whoever does the work adds with relaxed
- * atomics; the message drain takes and clears them.
+  * The counts nvrtx.vk.perf=1 writes into the kernel log every 5 s: runs and
+  * run_us are the push buffers the work channel ran and the time from their
+  * submission to their fence; copies and copy_bytes the transfers the CPU did
+  * through the window; frames the renderer's frames, wait_us the time they
+  * waited for the node's lock and held_us the time they held it; flips the
+  * presentations and flip_us the time their flips waited for the head.
+  * Whoever does the work adds with relaxed atomics; the message drain takes
+  * and clears them.
  *
- * The GPU's side of the runs (ws241-p001): timed the runs the GPU's timer
+ * The GPU's side of the runs: timed the runs the GPU's timer
  * measured and gpu_us their time on the GPU, run_max_us and gpu_max_us
  * the longest of each kind; draws and quads the application's and the
  * executor's own draws in them, push_bytes their push buffers.  streams,

@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's memory (ws037-p007 stage D3): VkDeviceMemory, the binding
+ * The executor's memory: VkDeviceMemory, the binding
  * of buffers and images to it, and what they require of it.
  *
  * An allocation is only a record until its storage arrives: libvulkan

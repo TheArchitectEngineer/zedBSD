@@ -14,7 +14,7 @@
  * VRAM (buffer objects of P4m's allocator, mapped in the CPU's window,
  * shared between opens by share.c), transfers and CPU mappings of both, and
  * the display of present.c and cursor.c.  With nvrtx.vk=1 it is also a
- * renderer (runtime.c: the Vulkan protocol's commands, ws037-p007 stage D2).
+ * renderer (runtime.c: the Vulkan protocol's commands).
  *
  * The device is not unregistered while the machine runs: the GSP has no
  * path back to the firmware while it runs, so the GPU is kept until the
@@ -154,7 +154,7 @@ nvrtx_node_start(
 	node->ops.share = &nvrtx_share_ops;
 	node->ops.scanout = &nvrtx_scanout_ops;
 
-	/* With nvrtx.vk=1 the device is also a renderer (ws037-p007 stage D2). */
+	/* With nvrtx.vk=1 the device is also a renderer. */
 	vk_wanted = nvrtx_stage_vk_wanted();
 	if (vk_wanted)
 		nvrtx_runtime_bind(node);

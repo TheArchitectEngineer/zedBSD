@@ -7,7 +7,7 @@
 
 /*
  * The executor's objects: wire identities of a kind and what they stand
- * for (ws037-p007 stage D2).
+ * for.
  *
  * An identity is published once, found by kind and identity, and removed
  * when the client destroys it; what it stands for (the payload) lives on

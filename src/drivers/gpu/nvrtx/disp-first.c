@@ -7,7 +7,7 @@
 
 /*
  * The records of the display's first commit that touch no hardware (stage
- * P8b, ws037-p006).
+ * P8b).
  *
  * The takeover sends what nouveau sends on a Turing GPU under the GSP when
  * it starts its display and commits the first mode on a head the firmware

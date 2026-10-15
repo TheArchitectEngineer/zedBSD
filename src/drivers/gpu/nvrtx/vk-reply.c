@@ -6,8 +6,8 @@
  */
 
 /*
- * What the executor's create and destroy commands share (ws037-p007 stage
- * D3): the tail of a create, its reply, the plain destroy, and the result
+ * What the executor's create and destroy commands share: the
+ * tail of a create, its reply, the plain destroy, and the result
  * an errno becomes on the wire.
  */
 

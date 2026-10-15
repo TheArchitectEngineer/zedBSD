@@ -17,9 +17,9 @@
  * attaches while the platform discovers its devices, before the kernel parses
  * the line:
  *
- * The stages that make the display work run by default (2026-10-15, the
- * user's decision: without the NVIDIA GPU the desktop does not run on such
- * a machine): the GSP boot, the VRAM window (P4m), the display's readout,
+ * The stages that make the display work run by default (without them the
+ * desktop does not run on a machine whose display is on the NVIDIA GPU):
+ * the GSP boot, the VRAM window (P4m), the display's readout,
  * the takeover of the firmware's head showing the console (P8b) and the GPU
  * device (P8c).  The test stages run only when asked.
  *
@@ -37,22 +37,22 @@
  *                         test's bands) at once, without the test's flip and
  *                         waits: for a GPU the firmware's console is not on
  *                         (a VFIO guest), so the GPU device is still
- *                         registered (ws037-p007 D6)
+ *                         registered
  *   nvrtx.disp.test=1     the takeover shows two test surfaces of bands,
  *                         flips between them and waits 5 s at each step, so
- *                         the monitor can be watched (ws037-p006 R8b..R8d)
+ *                         the monitor can be watched
  *   nvrtx.gr=1            after the copy channel, the driver has the
  *                         resource manager make the graphics golden context
  *                         (and the TU10x scrubber channel), stage P5g
  *   nvrtx.compute=1       the first compute launch (P9c, a test)
  *   nvrtx.draw=1          the first draw (P9g, a test)
  *   nvrtx.work=1          the work channel the GPU device keeps (P9w, with
- *                         the golden context it needs; not yet by default)
+ *                         the golden context it needs; the renderer implies
+ *                         it)
  *   nvrtx.vk=0            the GPU device is a display alone; by default it
  *                         is also a renderer that takes the Vulkan
  *                         protocol's commands and runs them on the work
- *                         channel, which it implies (ws037-p007 stages D2
- *                         and D3; the default since 2026-10-16)
+ *                         channel, which it implies
  */
 
 #include <stdarg.h>
@@ -87,22 +87,22 @@
 /* The whole token that makes the takeover show the driver's own surfaces at once (no console on the GPU, no waits). */
 #define STAGE_DISP_OWN_TOKEN		"nvrtx.disp.own=1"
 
-/* The whole token that asks for the first compute launch (ws037-p008). */
+/* The whole token that asks for the first compute launch. */
 #define STAGE_COMPUTE_TOKEN		"nvrtx.compute=1"
 
-/* The whole token that asks for the first draw (ws037-p007). */
+/* The whole token that asks for the first draw. */
 #define STAGE_DRAW_TOKEN		"nvrtx.draw=1"
 
-/* The whole token that asks for the work channel (ws037-p007 stage D1). */
+/* The whole token that asks for the work channel. */
 #define STAGE_WORK_TOKEN		"nvrtx.work=1"
 
-/* The whole token that makes the GPU device a renderer (ws037-p007 stage D2). */
+/* The whole token that makes the GPU device a renderer. */
 #define STAGE_VK_OFF_TOKEN		"nvrtx.vk=0"
 
-/* The whole token that asks for the renderer's and the display's counts every 5 s (ws037-p007 9). */
+/* The whole token that asks for the renderer's and the display's counts every 5 s. */
 #define STAGE_VK_PERF_TOKEN		"nvrtx.vk.perf=1"
 
-/* The whole token that stops the GSP after the takeover instead of keeping the GPU device (ws037-p006 P8c). */
+/* The whole token that stops the GSP after the takeover instead of keeping the GPU device. */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
 
 /* The longest stop token: "nvrtx.stop=" and a stage name. */

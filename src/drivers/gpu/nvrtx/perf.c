@@ -6,7 +6,7 @@
  */
 
 /*
- * The GPU's performance level (ws241-p001).
+ * The GPU's performance level.
  *
  * The resource manager in the GSP chooses the clocks of the GPU's
  * performance states by itself; the driver gives it no advice.  After the

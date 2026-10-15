@@ -6,8 +6,7 @@
  */
 
 /*
- * The running of a command buffer's records on the GPU (ws037-p007 stage
- * D3).
+ * The running of a command buffer's records on the GPU.
  *
  * Each session has a run of the executor's GPU memory for its
  * submissions: the push buffer, a constant buffer 0 for each draw, the
@@ -88,7 +87,7 @@
  * A buffer read as a texture: the texture header holds the address from
  * bit 5 and the pitch from bit 5, so the texture starts on the 32-byte
  * boundary at or before the region and the region begins that many pixels
- * into its rows (ws037-p007 9, F3).
+ * into its rows.
  */
 #define EXECUTE_TEXTURE_START_ALIGN	32U
 #define EXECUTE_TEXTURE_PITCH_ALIGN	32U

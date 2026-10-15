@@ -6,8 +6,7 @@
  */
 
 /*
- * The executor's instance, physical-device, device and queue commands
- * (ws037-p007 stage D2).
+ * The executor's instance, physical-device, device and queue commands.
  *
  * Each command's wire is the one libvulkan sends (userland/desktop/
  * libvulkan: instance.c, device.c), and its records travel through the

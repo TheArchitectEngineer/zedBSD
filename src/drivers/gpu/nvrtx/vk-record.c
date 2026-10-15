@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's recorded commands (ws037-p007 stage D3): each vkCmd*
+ * The executor's recorded commands: each vkCmd*
  * libvulkan records arrives as [opcode][0][command buffer] and its
  * arguments, with no reply, and is kept as a record of its command buffer
  * until a submission runs it (vk-execute.c).

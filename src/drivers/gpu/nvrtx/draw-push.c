@@ -628,7 +628,7 @@ nvrtx_push_draw_target(
  * set for it, then the last vertex stage's layer and clip planes.  The
  * shader caches are not touched: nvrtx_push_draw_invalidate() empties them
  * once at the push buffer's start, so draws one after another do not wait
- * for each other's idle (ws241-p001).
+ * for each other's idle.
  *
  * Returns where the push buffer goes on.
  */
@@ -697,7 +697,7 @@ nvrtx_push_draw_pipeline(
  * starts after the run before it finished, so one invalidation at its
  * start serves every draw in it, as NVK's queue does at a command
  * buffer's start.  The form that waits for idle (0x021c) is not used: on
- * every draw it drained the pipeline (ws241-p001).
+ * every draw it drained the pipeline.
  *
  * Returns where the push buffer goes on.
  */

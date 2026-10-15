@@ -6,7 +6,7 @@
  */
 
 /*
- * The first 3D draw of nvrtx (stage P9g, ws037-p007).
+ * The first 3D draw of nvrtx (stage P9g).
  *
  * draw-push.c holds the parts that touch no hardware, so the host test
  * runs them as the kernel does: the push buffers that set up the 3D class

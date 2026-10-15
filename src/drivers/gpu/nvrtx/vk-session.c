@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's sessions (ws037-p007 stage D2): one for each open of the
+ * The executor's sessions: one for each open of the
  * node, with its objects and the scratch its commands decode into.
  */
 

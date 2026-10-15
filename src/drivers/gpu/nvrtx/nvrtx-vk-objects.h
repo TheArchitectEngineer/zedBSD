@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's objects (ws037-p007 stage D3): what a published identity
+ * The executor's objects: what a published identity
  * of each kind stands for, and the handlers that make them.
  *
  * Every image is pitch linear, four bytes a pixel: the display, the

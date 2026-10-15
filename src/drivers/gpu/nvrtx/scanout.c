@@ -19,7 +19,7 @@
  * where it was; the GPU device (P8c) flips away from it and back.  With
  * nvrtx.disp.test=1 the window shows a surface of the driver's own instead,
  * a flip moves it to a second one, and each step waits 5 s so the monitor
- * can be watched (the R8b..R8d runs).
+ * can be watched.
  *
  * The order and the values are nouveau's on a Turing GPU under the GSP
  * (r535/r570 display channels, the Turing core, window, window-immediate
@@ -30,7 +30,7 @@
  * gives the head its mode from the sink's preferred timing (the armed
  * timing when there is no EDID) in two core releases around the window's
  * first image.  Nothing is shown anywhere but on the head the firmware lit
- * (the scanout rule of plan/ws037/nvrtx-design.md, section 2).
+ * (the firmware's output is the only output the driver scans out).
  */
 
 #include <stdbool.h>

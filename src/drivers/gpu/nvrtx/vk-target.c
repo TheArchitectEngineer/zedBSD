@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's render passes and framebuffers (ws037-p007 stage D3).
+ * The executor's render passes and framebuffers.
  *
  * A render pass is one subpass writing at most one colour attachment and
  * no depth; anything else is refused by name.  A framebuffer holds the

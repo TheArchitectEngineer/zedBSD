@@ -23,8 +23,7 @@
  *
  * The protected region FWSEC sets up (FRTS) is torn down by FWSEC's SB
  * command and then by booter_unload, once each, after the GSP firmware has
- * unloaded; a region that stays is reported and left for a power cycle
- * (plan/ws037/nvrtx-design.md, 3.1).
+ * unloaded; a region that stays is reported and left for a power cycle.
  */
 
 #include <stddef.h>

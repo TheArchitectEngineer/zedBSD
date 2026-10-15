@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's command pools and command buffers (ws037-p007 stage D3):
+ * The executor's command pools and command buffers:
  * their allocation, and the begin, end and reset of a recording.  The
  * recorded commands themselves are vk-record.c's.
  *

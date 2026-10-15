@@ -9,7 +9,7 @@
  * The GSP boot of the nvrtx driver.
  *
  * Stage P0 prepares everything the later stages need before anything is
- * written that cannot be taken back (plan/ws037/nvrtx-design.md, section 2):
+ * written that cannot be taken back:
  * the firmware files, the DMA memory the GSP reads, the placement of the
  * firmware in the VRAM, and the two FWSEC programs from the VBIOS.  The only
  * writes are the VBIOS windows, which are put back at once.  A failure in P0

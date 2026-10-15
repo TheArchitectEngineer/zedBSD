@@ -23,7 +23,7 @@
  * node's lock only to check the lease and to send its flip, and waits for
  * the head's refresh that begins the flip without it, so the renderer and
  * the cursor, which take the node's lock, are not held up by the display's
- * refresh (ws037-p007 9, F1).
+ * refresh.
  *
  * A flip that does not begin in time leaves the display broken: nothing is
  * flipped after it, presentations fail with EIO, and a blob that may still

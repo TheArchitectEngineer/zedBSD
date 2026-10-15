@@ -9,7 +9,7 @@
  * The range allocator of the nvrtx driver, which touches no hardware.
  *
  * One allocator hands out runs of the VRAM the driver may use (the buffer
- * objects, page tables and surfaces, ws037-p005 stage P4m); a second one
+ * objects, page tables and surfaces, from P4m on); a second one
  * hands out runs of the CPU's window onto the VRAM (BAR1).  Both keep the
  * free runs in order, take a new run from the highest free run that holds
  * it (away from the low VRAM the firmware's picture lies in), and merge a

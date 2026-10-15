@@ -6,7 +6,7 @@
  */
 
 /*
- * The GPU device's Vulkan transport (ws037-p007 stage D2, nvrtx.vk=1).
+ * The GPU device's Vulkan transport (nvrtx.vk=1).
  *
  * With the executor bound, the node is a renderer libvulkan opens: it
  * reports the protocol's capset, runs command frames (synchronously, or

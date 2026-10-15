@@ -6,7 +6,7 @@
  */
 
 /*
- * The Vulkan executor of the nvrtx GPU device (ws037-p007 stage D2).
+ * The Vulkan executor of the nvrtx GPU device.
  *
  * libvulkan sends the Kei GPU command protocol (uapi/gpu-op.h) to a GPU
  * node; the executor decodes it in the kernel and does the work on the

@@ -6,7 +6,7 @@
  */
 
 /*
- * The first draw (stage P9g, ws037-p007, nvrtx.draw=1).
+ * The first draw (stage P9g, nvrtx.draw=1).
  *
  * After the first compute launch (P9c) has run on its graphics channel,
  * the driver makes a 3D object (TURING_A) on the same channel, the way NVK

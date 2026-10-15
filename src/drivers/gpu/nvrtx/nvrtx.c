@@ -8,25 +8,24 @@
 /*
  * The nvrtx PCI driver: registration and attach.
  *
- * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware
- * (plan/ws037/nvrtx-design.md).  The attach finds the GPU, reads its chip
- * identity (N0) and records where the firmware's picture lies (N1).  With
- * nvrtx.gsp=0 on the boot line, or for a chip without a GSP path yet, it then
- * gives the function back to the firmware by refusing the bind: the
- * firmware's console keeps working, the PCI core never suspends the
- * function, and a machine without an NVIDIA GPU is not touched at all.
+  * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware.  The
+  * attach finds the GPU, reads its chip identity (N0) and records where the
+  * firmware's picture lies (N1).  With nvrtx.gsp=0 on the boot line, or for a
+  * chip without a GSP path yet, it then gives the function back to the
+  * firmware by refusing the bind: the firmware's console keeps working, the
+  * PCI core never suspends the function, and a machine without an NVIDIA GPU
+  * is not touched at all.
  *
  * Otherwise (the default) on a chip of a verified family (TU10x) that shows
  * the firmware's picture, or on any Turing, Ampere or Ada chip with
- * nvrtx.gsp=1 (plan/ws242: GTX 16, RTX 30 and RTX 40 are not yet seen on
+ * nvrtx.gsp=1 (GTX 16, RTX 30 and RTX 40 are not yet seen on
  * real hardware, so they boot only when asked), the attach keeps the function and
  * starts a worker thread that runs the GSP boot (gsp.c) once the root file
  * system holds the firmware.  The kept function refuses a system suspend.
  *
  * At the reboot or the shutdown of the machine the PCI shutdown hook stops
  * a GSP kept up (the GPU device, then P7), so the hub's state of this boot
- * and the protected region are not carried into the next boot (2026-10-16,
- * the user's decision: the GSP is stopped at the reboot).
+ * and the protected region are not carried into the next boot.
  */
 
 #include <stdbool.h>

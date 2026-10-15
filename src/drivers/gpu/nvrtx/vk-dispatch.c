@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's dispatcher (ws037-p007 stage D2): each command goes to
+ * The executor's dispatcher: each command goes to
  * the one handler that owns its opcode.
  */
 

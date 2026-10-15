@@ -6,8 +6,7 @@
  */
 
 /*
- * The executor's submissions, fences and semaphores (ws037-p007 stage
- * D3).
+ * The executor's submissions, fences and semaphores.
  *
  * vkQueueSubmit runs its command buffers on the GPU in order and waits
  * for them before it answers (vk-execute.c), so a submission's work is

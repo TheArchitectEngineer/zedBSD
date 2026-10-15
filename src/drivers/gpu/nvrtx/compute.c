@@ -6,7 +6,7 @@
  */
 
 /*
- * The first compute launch (stage P9c, ws037-p008 stage C, nvrtx.compute=1).
+ * The first compute launch (stage P9c, nvrtx.compute=1).
  *
  * After the golden context (P5g) the driver makes a graphics channel of its
  * own and runs one compute program on it, the way nouveau makes a user's

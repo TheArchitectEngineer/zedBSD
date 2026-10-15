@@ -6,7 +6,7 @@
  */
 
 /*
- * What the node gives the Vulkan executor (ws037-p007 stage D3): the
+ * What the node gives the Vulkan executor: the
  * storage of its memory (a blob's VRAM, mapped in the work channel's
  * space), the executor's own GPU memory, and the running of its push
  * buffers on the work channel.
