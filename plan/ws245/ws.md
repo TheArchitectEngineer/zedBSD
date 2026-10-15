@@ -24,7 +24,7 @@ Resume point: design-review.md（2 回目のレビュー、blocker 4・major 18�
 
 「5は、(1) a、(2) 5330のみ、(3) Linuxのコードを参考にする、(4) Linuxを優先、でおねがいします。」
 1. 逃げ道の形は (a): 口（xd.h）を p002 で決め、own の file は最初からその口だけを呼ぶ。口の実装を旧（薄い adapter、p011 で削除）と xd で丸ごと切り替える（状態を混ぜない）。
-2. 対象は 5330（ADL-P）だけ。Tiger Lake（5320 など display 12）は支えない。
+2. 「5330のみ」。Q1 は当初「Tiger Lake（display 12）は支えない」と記録したが誤り（2026-10-15 ユーザーの補足「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」「記録が食い違っているだけです。」）。display 9・12・13 は実機で動いている機能で落とさない。xd は display 12（Tiger Lake、5320）と display 13（ADL-P、5330）の両方を持つ。display 10・11 は今も支えていない（範囲外）。
 3. 手順は Linux の code を参考にする（Tiger Lake・Alchemist の PRM は補助）。guardrail のまま、code・comment・構造は写さず、値は block ごとに Value(s) referenced:、参考にした手順は Procedure referenced: <版> <path> (<関数>) を付ける。
 4. PRM と Linux（5330 で動いている実績）の値・手順が食い違う時は Linux を優先する。
 

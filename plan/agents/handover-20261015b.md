@@ -48,7 +48,7 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 
 - p001 の [design.md](../ws245/design.md)（P2、6bccaef57、main の merge 4625f0a3e）: 接頭辞 `xd`、Phase p002〜p012、36 LW。**敵対的レビューはまだ通っていない。**
 - レビュー 1（[design-review-1.md](../ws245/design-review-1.md)、079d8080a、P2 の子の design-reviewer の報告を Q1 が要約）: blocker 6（B1 は記録の取り消しで解決済み）・major 19・minor 14。Q1 が元の資料で確かめたのは B2（rawclk 19200 kHz）・B6（PWR_WELL_CTL2 0x00000c03）・M1（crawl yes・squash no）・M8（tc-kern.c が実在）だけ。
-- ユーザーの決定（5a5a849be、ws.md）: (1) 口 xd.h を p002 で決め、実装を旧の薄い adapter と xd でまるごと切り替える、(2) 対象は 5330 だけ（Tiger Lake は支えない）、(3) 手順は Linux の code を参考にする（code・comment・構造は写さず、block ごとに Value(s)/Procedure referenced:）、(4) PRM と Linux が食い違えば Linux を優先。
+- ユーザーの決定（5a5a849be、ws.md）: (1) 口 xd.h を p002 で決め、実装を旧の薄い adapter と xd でまるごと切り替える、(2) 「5330のみ」（Q1 は「Tiger Lake は支えない」と記録したが誤り。display 12 は実機で動作確認済みで xd に含める、2026-10-15 訂正）、(3) 手順は Linux の code を参考にする（code・comment・構造は写さず、block ごとに Value(s)/Procedure referenced:）、(4) PRM と Linux が食い違えば Linux を優先。
 - 次: P1 の改訂と 2 回目のレビューを merge → レビュー 2 の指摘も反映 → もう一度レビュー → design.md 第 7 節の残りの判断をユーザーに → p002 から実装（Queue の承認が要る）。
 
 ## 残っている仕事（優先の順は新しい Q1 がユーザーに確かめる）
@@ -75,3 +75,5 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 
 - ユーザーの指示で P1 を停止・通常のラップアップ。P1 は改訂を書き終えていて 7cdf5879d を提出、Q1 が実在・§8 の数（直した 36・直さない 2）を確かめて merge（280c9fdba、日付の 4 行を直して衝突を解いた）。記録は ws245/ws.md・phase001。
 - 動いている担当は無い。WS245 の次は design-review.md の反映（未着手）。
+
+- 訂正（2026-10-15）: WS245 の決定 2 の記録（Tiger Lake を支えない）は誤り。ユーザー「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」。xd は display 12・13 を持つ。display 12 の差の設計はレビュー 2 の反映と一緒に次の改訂で。

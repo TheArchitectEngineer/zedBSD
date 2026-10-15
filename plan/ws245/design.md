@@ -10,7 +10,7 @@
 決定の要約（この改訂で設計に入れた物）:
 1. 口 `xd.h` を p003 で決め、own の file は最初からその口だけを呼ぶ。口の実装は旧 code への薄い adapter と xd の 2 つで、
    boot の語で丸ごと切り替える（状態を混ぜない）。adapter は p012 で消す（§6.1）。
-2. 対象は 5330（ADL-P、display 13）だけ。display 12（Tiger Lake、5320）の分岐は持たない（§7 の未決からも外した。帰結は §4.4）。
+2. 「5330のみ」。xd は display 12（Tiger Lake、5320）と display 13（ADL-P、5330）の両方を持つ（2026-10-15 ユーザーの補足「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」「記録が食い違っているだけです。」）。改訂 2 で書いた「display 12 の分岐は持たない」は誤りで取り消した。display 12 の差（W1・T5・PLL の enable・Type-C の流れ・PSR など）の設計は次の改訂で足す（§4.4）。
 3. 手順の第一の出典は Linux v6.8.12 の code。Intel の公開の PRM（TGL・ACM）は register の意味と値の補助。code・comment・構造は写さず、
    値は block ごとに「Value(s) referenced:」、手順は「Procedure referenced: <版> <path> (<関数>)」を付ける（§5.4）。
 4. PRM と Linux の値・手順が食い違う時は Linux を優先する（5330 で動いている実績）。
@@ -447,7 +447,7 @@ struct i915_xd_ops { /* §6.1: 口の実装の表。p003 では old の adapter 
 - hotplug: HDMI（DDI B）と USB-C DP（TC1/TC2）の plug/unplug で topology の event、head の claim で 2 画面、unplug で window を抜ける、TC の partner gone。
 - suspend/resume: DC9 を通って戻り、次の present で灯る。
 - log: `i915: N0: …`、`i915: takeover: …`、`i915: gen9 …`（Gen9 は無関係）、試験の一覧が読む文言は p011 で列挙。
-- **決定 2 の帰結（M19）**: 今の code は display 12（Tiger Lake、Latitude 5320）の分岐を持つが、実機で確かめた記録は無い。xd は display 13 だけを持ち、`device-info` が display 12 を返す node は「display なし（bootfb のまま、i915 の display の段を飛ばす）」にする。5320 の i915 の display はこの WS で失われる（ユーザーの決定 2。戻すなら別の WS で表 W1・T5・PLL の enable・PSR の差を足す）。
+- **display 12（M19、2026-10-15 訂正）**: 今の code の display 12（Tiger Lake、Latitude 5320）の分岐は実機で動作確認済み（2026-10-15 ユーザーの補足「Tiger Lakeは実機で動作確認済みです。display 10,11以外は動作確認済みです。」「記録が食い違っているだけです。」）。xd は display 12 と 13 の両方を持ち、display 12 の差は次の改訂で設計する。それまでの下の文（改訂 2 の誤った方針）は取り消し: xd は display 13 だけを持ち、`device-info` が display 12 を返す node は「display なし（bootfb のまま、i915 の display の段を飛ばす）」にする。5320 の i915 の display はこの WS で失われる（ユーザーの決定 2。戻すなら別の WS で表 W1・T5・PLL の enable・PSR の差を足す）。
 
 ## 5. データの扱い（register の offset・bit・表）
 
@@ -659,7 +659,7 @@ B1（記録の誤り）は Q1 が取り消し済み。下の表は B2〜B6・M1�
 | M16 §5.4 が guardrail と食い違う | 直した（決定 3） | Procedure referenced に Linux の関数を書く規則に | §5.4 |
 | M17 module が Linux の file と 1 対 1 | 直した | 境界の根拠（hardware の単位）の列を足し、25 → 19（opregion→vbt、pcode→io、phy+hdmi→ddi、dkl→tc、pps+backlight→panel、trans+plane→pipe、wm→dbuf）。残る 1 対 1 は hardware/規格が 1 単位の物 | §3.2 |
 | M18 LW の過小評価と換算 | 直した | 1 LW ≈ 1〜2 時間で揃え、足した作業を数えて 36 → 51 LW | §6.2 |
-| M19 Tiger Lake を支えない事は機能を失う | 直した（決定 2） | display 12 の分岐は持たない。5320 の i915 の display は失われる（bootfb）。§7 から外し §4.4 に帰結を書いた | §4.4 |
+| M19 Tiger Lake を支えない事は機能を失う | 指摘どおり（2026-10-15 訂正: display 12 は実機で動作確認済み、xd に含める。設計は次の改訂） | display 12 の分岐は持たない。5320 の i915 の display は失われる（bootfb）。§7 から外し §4.4 に帰結を書いた | §4.4 |
 | m1 ADL の公開 PRM の有無の再確認 | 直さない | 決定 3 で PRM は補助になり、ADL-P の版の有無は設計を止めない。2026-10-15 の索引の確認を記録に残す（再確認はしていない） | §0.1 |
 | m2 DPLL4 | 直した | `adlp_plls` は DPLL0/1・TBT・TC PLL 1..4。DPLL4 は無い | §2.1、§2.6 |
 | m3 CFGCR0 の WA | 直した | `ehl_combo_pll_div_frac_wa_needed`（ADL-P・38.4 MHz で小数を半分）。5330 の 0x00e001a5 の 0x3800 = 0x7000 / 2 | §1、§2.6、T3 |
