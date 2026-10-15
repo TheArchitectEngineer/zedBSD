@@ -369,6 +369,13 @@ struct vulkan_context {
 	 * and it is what lets the video extensions be named at all.
 	 */
 	VkBool32 video_h264;
+	/*
+	 * The native renderer's promise that a swapchain's application may draw
+	 * into the shared images themselves (ws236-p012): optimal and linear
+	 * images have the same backing, and layouts and ownership are kept per
+	 * resource.  Only the native word can set it.
+	 */
+	VkBool32 direct_swapchain;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;

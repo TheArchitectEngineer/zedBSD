@@ -19,12 +19,21 @@
 #include "drivers/gpu/bcm2711/vulkan-dispatch.h"
 #if CONFIG_DRIVER_BCM2711_VIDEO
 #include "drivers/gpu/bcm2711/vulkan-video.h"
+#endif
 
 /* The native word after the vendor suffix ("TANZ" read little endian), and its H.264 decode bit (ws236). */
 #define VULKAN_NATIVE_MAGIC 0x5a4e4154U
 #define VULKAN_NATIVE_VIDEO_H264 1U
+
+/*
+ * The native word's direct swapchain bit (ws236-p012): an optimal and a
+ * linear image have the same raster backing, and an image's layout and
+ * queue family ownership are kept per resource (an importer's own image
+ * of the same memory is not changed by them).  libvulkan then lets a
+ * swapchain's application draw into its shared images, with no copy.
+ */
+#define VULKAN_NATIVE_DIRECT_SWAPCHAIN 2U
 #define VULKAN_NATIVE_CAPSET_BYTES 176U
-#endif
 
 #define VULKAN_CAPSET_ID 4U
 #define VULKAN_CAPSET_BYTES 168U
@@ -83,6 +92,7 @@ runtime_capset(
 	struct gpu_capset *capset)
 {
 	struct bcm2711_render_session *session;
+	uint32_t native;
 	int error;
 
 	/* Only this controller's completed Vulkan namespace may negotiate its implemented protocol. */
@@ -118,21 +128,28 @@ runtime_capset(
 	capset_word(capset->data, 164, VULKAN_VENDOR_FLAGS);
 	capset->bytes = VULKAN_CAPSET_BYTES;
 
+	/* Every session's swapchains may be direct (ws236-p012). */
+	native = VULKAN_NATIVE_DIRECT_SWAPCHAIN;
+
 #if CONFIG_DRIVER_BCM2711_VIDEO
 	/*
 	 * A session asked while the firmware's link is up is promised H.264
-	 * decode, for its life: the native word follows the vendor suffix.
+	 * decode, for its life.
 	 */
 	if (session->vulkan != NULL && capset->capacity >= VULKAN_NATIVE_CAPSET_BYTES) {
 		if (!bcm2711_vulkan_video_session(session->vulkan) && bcm2711_vulkan_video_available())
 			bcm2711_vulkan_video_promise(session->vulkan);
-		if (bcm2711_vulkan_video_session(session->vulkan)) {
-			capset_word(capset->data, 168, VULKAN_NATIVE_MAGIC);
-			capset_word(capset->data, 172, VULKAN_NATIVE_VIDEO_H264);
-			capset->bytes = VULKAN_NATIVE_CAPSET_BYTES;
-		}
+		if (bcm2711_vulkan_video_session(session->vulkan))
+			native |= VULKAN_NATIVE_VIDEO_H264;
 	}
 #endif
+
+	/* The native word follows the vendor suffix, when the reply has room for it. */
+	if (capset->capacity >= VULKAN_NATIVE_CAPSET_BYTES) {
+		capset_word(capset->data, 168, VULKAN_NATIVE_MAGIC);
+		capset_word(capset->data, 172, native);
+		capset->bytes = VULKAN_NATIVE_CAPSET_BYTES;
+	}
 
 	mutex_unlock(&session->device->mutex);
 

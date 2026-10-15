@@ -3,7 +3,7 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3 新世代。直し 7 は T1-687 PASS（全画面で VPU が止まらない、原因は出力の閉じ開き）。60 fps: A1（全画面の窓の copy）を merge 済み、T2 の T1-688（依頼 8）待ち。A2 は調べて、T1-688 の数の後に決める（v3d perf に worker の実の占有を足した）。V1 は不採用）
+Status: in-progress（2026-10-16、P3 新世代。直し 7 は T1-687 PASS（全画面で VPU が止まらない、原因は出力の閉じ開き）。60 fps: A1（全画面の窓の copy）は T1-688 PASS（速さは変わらず）。A3 は [ws236-p012](../phase012/phase.md) に分けた。律速は往復の待ちと CPU の取り合い（T1-689）。V1 は不採用）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-16 新世代 `agent/p3-ws236f`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
@@ -404,68 +404,9 @@ Phase disposition: normal
 - 全画面で `KWL COPY window=1 reason=none`、窓は `window=0 reason=not-fullscreen`。落ちない、PNG の色・画は正しい（`build/review/t1-688-pi.png`、撮影の frame は合成）。60p 全画面 305/295・compose frame_ms 23.5〜24.6・videoplayer の acquire 約 20 ms、30p 全画面 243/57、60p 窓 305/295・frame_ms 27.6〜30。draw の tile は 1 表示 frame に 240（videoplayer だけ）に減ったが、frame の速さは同じ。
 - 読み: `passes=47/0/140`（2 秒）＝ 1 表示 frame に image の pass が 3 つ: A1 の copy と、**libvulkan の present の copy が 2 つ**（videoplayer の Wayland の swapchain、compositor の display の swapchain。下の A3）。compositor の frame 24 ms のうち CPU 側の呼びが約 12 ms（acquire 4・begin 1.3・end 1.1・submit 1.9・present 3.1〜3.8、present は copy の command の submit）、残りは GPU の完了待ち。律速は GPU の量ではなく、present ごとの copy の submit と executor の順番待ちを含む往復の連鎖。
 
-## A3 の設計（2026-10-16、P3 新世代、Q1 の委任「製品の挙動を変えない描画の最適化」）: Pi 4 では swapchain の image を共有の image そのものにして present の copy を無くす
+## A3（Pi の WSI の direct の swapchain）は [ws236-p012](../phase012/phase.md) へ移した
 
-### 今の形と問題
-
-- libvulkan の WSI（`userland/desktop/libvulkan/wsi-swapchain.c`）は、app が描く swapchain の image（`group->images[i]`、OPTIMAL）と、compositor・display に渡す共有の image（`presentation[i].shared_image`、LINEAR、export した allocation を `platform->import_image` で native に登録）を分ける。`vkQueuePresentKHR` ごとに `present_record` が copy の command（`present_copy_shared`: barrier、`vkCmdCopyImage`、外の queue family への release の barrier）を記録し（同じ image の 2 回目からは記録を使い回す）、`present_submit` が app の待ちの semaphore とともに submit し、present の worker が fence の後に native の present（Wayland の commit、display の `GPU_DISPLAY_PRESENT_SYNC`）をする。
-- bcm2711 の kernel では OPTIMAL と LINEAR の image は同じ raster の backing（`vulkan-resource.c`「Optimal images use the same native raster backing」）で、format の linear と optimal の feature も同じ（`vulkan-query.c`）。copy は同じ形の byte を写すだけの上乗せで、1 present に 240 tile の copy の pass（約 1.3〜2 ms）と、その pass が executor で他の session の後ろに並ぶ待ちが足される。i915 は OPTIMAL が tiled なので copy が要る。
-
-### 約束（振る舞い）
-
-- **direct の chain**: 次を全て満たす swapchain は、app の image を共有の image そのものにする（`vkGetSwapchainImagesKHR` が返すのは共有の image、LINEAR）。present は copy を記録・submit せず、app の待ちの semaphore だけの command buffer 無しの submit（fence を得るため）をして、前と同じ native の present に進む。
-  1. GPU が direct を選ぶ device: `VkPhysicalDeviceProperties.vendorID` が Broadcom（0x14e4、Pi 4 の V3D。i915 は Intel、Venus は host の GPU の vendor なので変わらない）。正しさは下の 3 で保ち、vendor は速さの方針（他の GPU では LINEAR に描くと遅い）。
-  2. `vkCreateSwapchainKHR` で 1 つだけ作る chain（`vkCreateSharedSwapchainsKHR` の group を共有する chain は今のまま）、cursor・overlay の plane の surface でない、`platform->import_image` がある（今の GPU の共有の道）、paired の Windows host の文脈（`copy_display`）でない。
-  3. app の usage（`imageUsage`）の全てを format の `linearTilingFeatures` が支える（COLOR_ATTACHMENT・SAMPLED・TRANSFER_SRC/DST・STORAGE を feature で確かめる。支えない usage があれば今の copy の道）。
-  - 上のどれかを満たさない chain、direct の作成が失敗した chain（native の image の作成・import の失敗）は今の道（copy）。
-- **acquire**: 今と同じ。image i は app の状態が AVAILABLE で、かつ `platform->image_available(presentation[i].native_image)`（compositor・display がその共有の image を手放した）時だけ返る。今も copy の写し先 i が空いていないと acquire しないので、app が描く先が共有の image になっても、compositor が読む間に app が書くことは無い（同じ条件）。
-- **layout**: app の image は app の barrier（PRESENT_SRC）のまま present される。direct では WSI は layout の barrier も外の queue family の release もしない（kernel は image の resource ごとに layout を持ち、compositor・display は同じ allocation を自分の image として import して自分の layout で扱う。bcm2711 は queue family の ownership を使わない）。再 acquire の後の app の barrier（oldLayout UNDEFINED か PRESENT_SRC）は今と同じに通る（今も copy の後に app の image は PRESENT_SRC に戻される）。
-- **書いたことの印**: app の render pass・copy の出力は kernel の buffer の generation を進める（今の共有の image への copy と同じ）ので、compositor の TFU の snapshot の作り直し（`bcm2711_v3d_memory_written`）と A1 の copy の範囲の絞り（generation）は今と同じに働く。
-- **display の矩形**（`VkDisplayPresentInfoKHR`、今の利用は compositor の cursor plane だけで、cursor は direct にしない）: direct の chain への present で src と dst が image の全体と同じなら無視、それ以外は `VK_ERROR_INITIALIZATION_FAILED`（写し先が無いので合成できない。他の不正な矩形と同じ返し方）。
-- **破棄**: 共有の image は chain の `presentation` が持つ（今と同じく native の alias → image → memory の順に破棄）。group は images の handle を借りるだけ（`borrowed`）で、group の解放はそれを破棄しない。swapchain の image を app が `vkDestroyImage` できない印（`swapchain_owned`）は native の image を破棄する前に外す。
-
-### 変える物
-
-- `wsi-image.c` `vulkan_wsi_shared_image_create`: 引数に追加の usage（direct の時の app の usage、今の道は 0）。
-- `wsi-swapchain.c`: `swapchain_create` に「単独の作成か」、`struct vulkan_swapchain` に `direct`、`struct wsi_image_group` に `borrowed`。`swapchain_direct_eligible`（上の 1〜3）、direct の時の作成（group は空の images の表、native の image を app の usage 付きで作り、group の images に入れる。失敗したら native を捨て、普通の group の image を作って今の道へ）、`swapchain_group_free`（borrowed は破棄しない）、`swapchain_native_images_free`（direct は `swapchain_owned` を外してから）。present: `present_prepare` の矩形の判定（direct）、`present_record`（direct の target は copy を記録しない。job の target が全て direct なら command buffer を作らず記録もしない、fence の slot だけ用意）、`present_submit`（その時は command buffer 0 個で submit）。
-- i915・Venus・Linux・FreeBSD の compositor・app、cursor・overlay の plane、`vkCreateSharedSwapchainsKHR`、copy の道（readback）は変えない。
-
-### 回帰の範囲（Pi の全ての Vulkan の app）
-
-- compositor の display の swapchain（direct になる。A1 の copy・合成の pass・scene の capture と restore（TRANSFER_SRC/DST）・shot の copy が共有の image に直に効く。display の present は `GPU_DISPLAY_PRESENT_SYNC` の BLOB のまま）。cursor plane（direct にしない、今のまま）。HVS の overlay の plane（WS214、overlay の surface は direct にしない）。
-- Wayland の app: videoplayer（自前の presenter）、keiland の toolkit の app（Settings・Files・Terminal など、`KL_PRESENT_VULKAN`）、browser（libbrowser の Vulkan の present）、Image Viewer、vkdemo・wltest。全て direct になる。窓の resize（swapchain の作り直し、oldSwapchain）、全画面の切り替え、最小化・復帰、画面の回転なし。
-- 確かめ（T2、Pi 実機）: (a) 起動して desktop が出る（compositor の display）、(b) videoplayer の 60p 全画面と窓（`KWL PERF compose frame_ms`、shown・late、`v3d: perf` の image の pass が 1 表示 frame に 1 つ＝A1 の copy だけになる、`worker=`）、(c) Settings・Terminal・browser を開いて閉じる、窓の resize、(d) keiland-shot の PNG の色・画、(e) `execution failed` 無し。5330（i915）・Venus は direct にならないので build だけ（`vendorID` が違う）。
-- host 試験: libvulkan の WSI の host 試験（`plan/ws083`・`plan/ws141` などの既存の host の swapchain の試験があれば流す。direct の判定の表は新しい小さな host 試験で）。
-
-### 危険
-
-- LINEAR の image に描くことは bcm2711 では OPTIMAL と同じ（同じ raster）だが、kernel の image の作成の検査（export、placement の付いた allocation、usage の組）で拒まれたら、今の道へ戻る（作成時に 1 回だけ、log 1 行）。
-- display の placement（HVS が読める、1 GiB の下の連続）の付いた allocation に compositor が直に描く。今も copy の写し先として GPU が書いているので、GPU からの書きは今と同じ。
-
-### A3 の実装（2026-10-16、P3 新世代、design-reviewer の review 待ち）
-
-- `wsi-image.c`・`wsi-internal.h`: `vulkan_wsi_shared_image_create` に追加の usage。
-- `wsi-swapchain.c`: `WSI_DIRECT_VENDOR`（0x14e4）、group の `borrowed`、chain の `direct`、job の `bare`。`swapchain_create(…, alone, …)`（`vkCreateSwapchainKHR` は VK_TRUE、shared は VK_FALSE）。`swapchain_direct_eligible`（単独・cursor/overlay でない・import_image・GPU_CAP_SHARE・paired の Windows host でない・vendor・EXCLUSIVE・usage が TRANSFER/SAMPLED/STORAGE/COLOR_ATTACHMENT だけで linear の feature が全て支える）、`swapchain_direct_create`（借りる group、app の usage 付きの共有の image、失敗は何も残さず今の道へ）。`swapchain_group_free`（borrowed は破棄しない）、`swapchain_native_images_free`（direct は `swapchain_owned` を外して破棄）。`present_prepare`（direct への矩形は全体だけ）、`present_bare`・`present_record`（bare は slot の fence だけ用意し、記録しない）・`present_recording_key`（bare は key なし）・`present_submit`（bare は command buffer 0）。
-- 試験: `plan/ws214/tests/vulkan-overlay-host.c` に (x)（vendor を 0x14e4 にして単独の primary の chain が direct、`vkGetSwapchainImagesKHR` が共有の image、present が submit 1 回・copy 0・native の present 1 回、全体でない矩形は `VK_ERROR_INITIALIZATION_FAILED`、破棄で lease の release）。stub の引数（`vulkan-cursor-host.c` も）と `userland/tests/gpu-share/main.c` の呼びを新しい引数に。
-
-### 確かめ A3（host と build）
-
-| 確かめ | 結果 |
-| --- | --- |
-| rpi4・amd64 の `dynamic/libvulkan.so`、amd64 `bin/gpu-share-test` | rc 0、warning 0 |
-| `sh plan/ws214/tests/vulkan-overlay-host.sh`（ordinary と ASan/UBSan、(x) を含む） | PASS |
-| `sh plan/ws141/tests/vulkan-cursor-host.sh` | PASS |
-| style-check（変えた file、HEAD との差） | 新しい指摘 0 |
-
-### T2 への依頼 10（Pi 4 実機、QEMU 不要、約 40 分、A3 の review の後）
-
-1. build（A3 の commit か merge 後の main）: `make -j16 BUILD=build/<T>/rpi4 ZEDBSD_CONFIG=plan/ws236/tests/config-rpi4-shot.mk build/<T>/rpi4/dynamic/libvulkan.so build/<T>/rpi4/bin/wayland build/<T>/rpi4/bin/keiland-shot`（warning 0）。kernel は main（`worker=` 入り）、libmedia・videoplayer は今のまま。
-2. Pi: `/lib/libvulkan.so`（全 app が使う）・compositor・kernel を差し替え（前の物は退避）、boot の行に `v3d.perf=1`、reboot。
-3. (a) desktop が出る（compositor の display の swapchain が direct）、(b) `high-1080p60-10s.mp4 --fullscreen --timeout-s=15` と窓、`high-1080p30-10s.mp4 --fullscreen`、(c) Settings・Terminal・browser（あれば）を開いて閉じる、窓の大きさを変える、(d) (b) の 30p 全画面の 5 秒目に keiland-shot。
-4. 報告: videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、compositor の `KWL PERF compose`・`rec`・`KWL COPY`、dmesg の `v3d: perf`（`passes=`・`worker=`）・`v3d: gpu tiles`・`execution failed`、PNG、(c) の各 app の見え方（画が出る、崩れない）。
-   - CPU の内訳（T1-689 で再生中に context switch が 2 秒に約 19 万・起床 12 万と、desktop の静止時（約 9 千）の 20 倍だった。誰が回しているかを見る）: 60p 全画面の再生の直前と直後に `ps -e -o pid,time,comm` と `sysctl hw.cputimes` を保存。boot の行に `kern.perf=1` も足す（再生中の `kern: perf` の行、`sched:` ではなく `kern: perf` で始まる）。
-5. 合否: (a)〜(c) で画が出て落ちない、`execution failed` 無し、PNG の色・画が正しい、`v3d: perf` の image の pass が 1 表示 frame に 1 つ（A1 の copy）に減る（2 秒の `passes=R/0/I` の I が R と同じ程度）。記録: 60p 全画面の shown・late、compose frame_ms、acquire_us。
-6. 戻し: 失敗した時は `/lib/libvulkan.so` を退避の物に戻して reboot（全 app が影響を受けるので最初に戻す）。
+- 2026-10-16 Q1 の判断（design-reviewer の review-1 の m7）: A3 は WS236 の独立の Phase（ws236-p012）。設計・実装・review への対応・T2 への依頼 10 はそちら。
 
 ### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 

@@ -52,14 +52,14 @@
 #define WSI_PRESENT_SLOTS	8U
 
 /*
- * The GPU whose swapchains are direct where they can be (ws236-p011): its
- * PCI vendor, VkPhysicalDeviceProperties.vendorID, the Raspberry Pi 4's
- * Broadcom V3D.  Its optimal and linear images have the same raster
- * backing, so an application can draw straight into the shared image and
- * a present needs no copy; on other GPUs a linear image is slower to draw
- * into, and their swapchains keep the copy.
+ * The diagnostic switch of direct swapchains (ws236-p012): "0" makes every
+ * chain copy at its presents as before.  And the request of a
+ * VK_KHR_display surface's maker (the compositor's output) that its chain
+ * be direct: "1"; a display application that does not ask keeps the copy,
+ * which also composes VkDisplayPresentInfoKHR rectangles.
  */
-#define WSI_DIRECT_VENDOR	0x14e4U
+#define WSI_DIRECT_VARIABLE		"VULKAN_ZEDBSD_DIRECT"
+#define WSI_DIRECT_DISPLAY_VARIABLE	"VULKAN_ZEDBSD_DIRECT_DISPLAY"
 
 /* One ordinary bound image whose allocation lives with a shared image group. */
 struct wsi_image {
@@ -94,7 +94,7 @@ struct wsi_image_group {
 	uint32_t references;
 	/*
 	 * The images are a direct swapchain's shared images, which its
-	 * presentation owns and destroys (ws236-p011); the group only names
+	 * presentation owns and destroys (ws236-p012); the group only names
 	 * them and never destroys them.
 	 */
 	VkBool32 borrowed;
@@ -114,7 +114,7 @@ struct vulkan_swapchain {
 	uint32_t presentation_count;
 	VkBool32 gpu_present;
 	/*
-	 * A direct chain (ws236-p011): the application's images are the shared
+	 * A direct chain (ws236-p012): the application's images are the shared
 	 * images themselves (the group borrows presentation's), and a present
 	 * submits only the waits, with no copy.  Set once at creation.
 	 */
@@ -253,7 +253,7 @@ struct wsi_present_job {
 	VkBool32 submitted;
 	VkBool32 reserved;
 	/*
-	 * Every target the job presents is a direct chain's (ws236-p011): the
+	 * Every target the job presents is a direct chain's (ws236-p012): the
 	 * job records no copy and submits no command buffer, only the waits.
 	 */
 	VkBool32 bare;
@@ -349,7 +349,7 @@ static void swapchain_group_free(struct wsi_image_group *group);
 static VkResult swapchain_image_create(struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info, struct wsi_image *image);
 static VkResult swapchain_readback_create(struct vulkan_swapchain *chain);
 static VkResult swapchain_native_images_create(struct vulkan_swapchain *chain, VkImageUsageFlags usage);
-static VkBool32 swapchain_direct_eligible(const struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info, VkBool32 alone);
+static VkBool32 swapchain_direct_eligible(const struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info, VkBool32 alone, const char **reason);
 static VkResult swapchain_direct_create(struct vulkan_swapchain *chain, const VkSwapchainCreateInfoKHR *info);
 static VkBool32 present_bare(const struct wsi_present_job *job);
 static void swapchain_native_images_free(struct vulkan_swapchain *chain);
@@ -1003,6 +1003,7 @@ swapchain_create(
 	struct vulkan_surface *surface;
 	struct vulkan_object *object;
 	const char *log_variable;
+	const char *reason;
 	VkResult error;
 	VkBool32 direct;
 	size_t bytes;
@@ -1112,15 +1113,28 @@ swapchain_create(
 
 	/*
 	 * A direct chain's images are its shared images themselves
-	 * (ws236-p011).  A direct creation that fails leaves no group or
-	 * shared image behind, and the chain takes the ordinary route below.
+	 * (ws236-p012).  A direct creation the renderer or the backend
+	 * refuses (a format, a feature or a creation it does not take) leaves
+	 * no group or shared image behind, and the chain takes the ordinary
+	 * route below; any other failure fails the creation, as it would on
+	 * the ordinary route.
 	 */
-	direct = swapchain_direct_eligible(chain, info, alone);
+	direct = swapchain_direct_eligible(chain, info, alone, &reason);
 	if (direct != VK_FALSE) {
 		error = swapchain_direct_create(chain, info);
-		if (error != VK_SUCCESS)
+		if (error == VK_ERROR_FORMAT_NOT_SUPPORTED ||
+		    error == VK_ERROR_FEATURE_NOT_PRESENT ||
+		    error == VK_ERROR_INITIALIZATION_FAILED) {
 			direct = VK_FALSE;
+			reason = "refused";
+		} else if (error != VK_SUCCESS) {
+			goto cleanup;
+		}
 	}
+
+	/* Each chain's route, one line on the error stream (a chain is made rarely). */
+	fprintf(stderr, "VK SWAPCHAIN direct=%u reason=%s width=%u height=%u images=%u\n",
+		(unsigned)(direct != VK_FALSE), reason, info->imageExtent.width, info->imageExtent.height, info->minImageCount);
 
 	/* A direct chain is complete: its shared images are made and given to the native backend. */
 	if (direct != VK_FALSE) {
@@ -1523,7 +1537,7 @@ swapchain_group_free(
 	/* Application image destruction is forbidden, but the owning WSI may retire it. */
 	allocator = swapchain_allocator(&group->allocator);
 	for (index = 0U; index < group->count; index++) {
-		/* A borrowed image is its direct chain's presentation's to destroy (ws236-p011). */
+		/* A borrowed image is its direct chain's presentation's to destroy (ws236-p012). */
 		if (group->borrowed != VK_FALSE)
 			continue;
 
@@ -1607,7 +1621,7 @@ swapchain_image_create(
  * Creates independent GPU scanout images even when application VkImages are shared across chains.
  *
  * usage adds a direct chain's application uses to each shared image
- * (ws236-p011); 0 for the images a present copies into.
+ * (ws236-p012); 0 for the images a present copies into.
  */
 static VkResult
 swapchain_native_images_create(
@@ -1707,7 +1721,7 @@ swapchain_native_images_free(
 		if (chain->presentation[index].native_image != NULL && chain->surface->platform->destroy_image != NULL)
 			chain->surface->platform->destroy_image(chain->presentation[index].native_image);
 
-		/* A direct chain's shared image was also the application's; it stops being a swapchain image first (ws236-p011). */
+		/* A direct chain's shared image was also the application's; it stops being a swapchain image first (ws236-p012). */
 		if (chain->direct != VK_FALSE && chain->presentation[index].shared_image != VK_NULL_HANDLE) {
 			image = vulkan_image(chain->presentation[index].shared_image);
 			if (image != NULL)
@@ -1733,79 +1747,102 @@ swapchain_native_images_free(
 }
 
 /*
- * Tells whether a new chain can be direct (ws236-p011): the application
+ * Tells whether a new chain can be direct (ws236-p012): the application
  * draws into the shared images themselves and a present copies nothing.
  *
- * Only a chain made alone (not one of vkCreateSharedSwapchainsKHR's group),
- * of an ordinary plane (not a cursor or an overlay), on the GPU route to a
- * native backend, of the GPU that gains by it (WSI_DIRECT_VENDOR), whose
- * linear images support every use the application asked for.
+ * The renderer must promise it (the native word's direct swapchain bit:
+ * optimal and linear images share their backing, layouts and ownership
+ * are kept per resource), and the chain must be one made alone (not one of
+ * vkCreateSharedSwapchainsKHR's group), of an ordinary plane (not a cursor
+ * or an overlay), on the GPU route to a native backend, exclusive, and of
+ * uses a linear image of its format supports.  A VK_KHR_display surface is
+ * direct only when its maker asks (VULKAN_ZEDBSD_DIRECT_DISPLAY=1, the
+ * compositor's output); VULKAN_ZEDBSD_DIRECT=0 turns direct chains off.
+ * reason receives the first reason a chain is not direct ("none" if it is).
  */
 static VkBool32
 swapchain_direct_eligible(
 	const struct vulkan_swapchain *chain,
 	const VkSwapchainCreateInfoKHR *info,
-	VkBool32 alone)
+	VkBool32 alone,
+	const char **reason)
 {
 	struct vulkan_context *context;
-	VkFormatProperties properties;
-	VkFormatFeatureFlags needed;
-	uint32_t paired;
+	VkImageFormatProperties properties;
+	const char *setting;
+	VkResult error;
+	int same;
+
+	/* The diagnostic switch turns every direct chain off. */
+	*reason = "disabled";
+	setting = getenv(WSI_DIRECT_VARIABLE);
+	if (setting != NULL) {
+		same = strcmp(setting, "0");
+		if (same == 0)
+			return VK_FALSE;
+	}
+
+	/* The renderer's promise, and a renderer whose display is not a copied host's. */
+	*reason = "renderer";
+	context = chain->device->object.context;
+	if (context->direct_swapchain == VK_FALSE || context->copy_display != VK_FALSE)
+		return VK_FALSE;
+	if ((context->capabilities & GPU_CAP_SHARE) == 0U)
+		return VK_FALSE;
 
 	/* A chain whose images a shared creation gives other chains too keeps them apart from any one chain's shared images. */
+	*reason = "shared";
 	if (alone == VK_FALSE)
 		return VK_FALSE;
 
 	/* The cursor and overlay planes keep their copies (a cursor shows an earlier copy again, an overlay a part). */
+	*reason = "plane";
 	if (chain->surface->cursor != VK_FALSE || chain->surface->overlay != VK_FALSE)
 		return VK_FALSE;
 
 	/* Only the GPU route to a native backend shares images at all. */
+	*reason = "route";
 	if (chain->surface->platform->import_image == NULL)
 		return VK_FALSE;
-	context = chain->device->object.context;
-	if ((context->capabilities & GPU_CAP_SHARE) == 0U)
-		return VK_FALSE;
 
-	/* A paired Windows host (its wire version) maps its scanout memory in its own way. */
-	paired = VK_MAKE_VERSION(1, 4, 343);
-	if (context->xml_version == paired && context->copy_display == VK_FALSE)
-		return VK_FALSE;
-
-	/* Only the GPU whose optimal and linear images are the same raster gains by it. */
-	if (chain->device->physical->properties.vendorID != WSI_DIRECT_VENDOR)
-		return VK_FALSE;
+	/* A VK_KHR_display surface may be asked for a rectangle the copy composes; only its maker's request makes it direct. */
+	*reason = "display";
+	if (chain->surface->display_mode != NULL) {
+		setting = getenv(WSI_DIRECT_DISPLAY_VARIABLE);
+		if (setting == NULL)
+			return VK_FALSE;
+		same = strcmp(setting, "1");
+		if (same != 0)
+			return VK_FALSE;
+	}
 
 	/* One exclusive owner, as the shared image is made. */
+	*reason = "sharing";
 	if (info->imageSharingMode != VK_SHARING_MODE_EXCLUSIVE)
 		return VK_FALSE;
 
-	/* Uses whose feature a linear image may lack are not taken. */
-	if ((info->imageUsage & ~(VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-				  VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-				  VK_IMAGE_USAGE_SAMPLED_BIT |
-				  VK_IMAGE_USAGE_STORAGE_BIT |
-				  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) != 0U)
+	/* A linear image of the format takes the application's uses besides the shared image's own. */
+	*reason = "usage";
+	error = vkGetPhysicalDeviceImageFormatProperties(
+		(VkPhysicalDevice)chain->device->physical,
+		info->imageFormat,
+		VK_IMAGE_TYPE_2D,
+		VK_IMAGE_TILING_LINEAR,
+		info->imageUsage | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		0U,
+		&properties);
+	if (error != VK_SUCCESS)
 		return VK_FALSE;
-
-	/* The format features each asked use needs. */
-	needed = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-	if ((info->imageUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0U)
-		needed |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
-	if ((info->imageUsage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
-		needed |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
-
-	/* A linear image of the format has them all. */
-	vkGetPhysicalDeviceFormatProperties((VkPhysicalDevice)chain->device->physical, info->imageFormat, &properties);
-	if ((properties.linearTilingFeatures & needed) != needed)
+	if (properties.maxExtent.width < info->imageExtent.width || properties.maxExtent.height < info->imageExtent.height)
 		return VK_FALSE;
 
 	/* Succeeded: the chain can draw into its shared images. */
+	*reason = "none";
 	return VK_TRUE;
 }
 
 /*
- * Makes a direct chain's images (ws236-p011): the shared images, with the
+ * Makes a direct chain's images (ws236-p012): the shared images, with the
  * application's uses, given to the native backend, and a group that only
  * names them.  On failure nothing of the attempt is left (no group, no
  * shared image), so the chain can take the ordinary route.
@@ -2287,7 +2324,7 @@ present_prepare(
 
 		/*
 		 * A direct chain has no separate image to compose a rectangle into
-		 * (ws236-p011): only the whole image, unscaled, is shown.
+		 * (ws236-p012): only the whole image, unscaled, is shown.
 		 */
 		if (job->has_display != VK_FALSE && chain->direct != VK_FALSE) {
 			if (job->display.srcRect.offset.x != 0 ||
@@ -2463,7 +2500,7 @@ present_record(
 	uint32_t index;
 	VkResult error;
 
-	/* A job of direct chains alone records nothing (ws236-p011). */
+	/* A job of direct chains alone records nothing (ws236-p012). */
 	job->bare = present_bare(job);
 
 	/* What the copy command buffer is to hold, which picks a slot that already holds it. */
@@ -2474,9 +2511,16 @@ present_record(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* A bare job needs only the slot's fence: its submission carries no command buffer. */
-	if (job->bare != VK_FALSE)
+	/*
+	 * A bare job needs only the slot's fence: its submission carries no
+	 * command buffer, and the slot keeps no recording (a later copying job
+	 * on it records afresh, making the slot's pool and command buffer
+	 * first when it has none).
+	 */
+	if (job->bare != VK_FALSE) {
+		memset(&job->completion->recording, 0, sizeof(job->completion->recording));
 		return VK_SUCCESS;
+	}
 
 	/* A completed slot keeps command storage in its actual queue family. */
 	allocator = swapchain_allocator(&job->allocator);
@@ -2572,7 +2616,7 @@ present_record(
 }
 
 /*
- * Tells whether a job presents only direct chains' images (ws236-p011): an
+ * Tells whether a job presents only direct chains' images (ws236-p012): an
  * ordinary-plane job whose every accepted target is a direct chain, at
  * least one.  Such a job records and submits no copy.
  */
@@ -2624,7 +2668,7 @@ present_recording_key(
 	key = &job->recording;
 	memset(key, 0, sizeof(*key));
 
-	/* A bare job records nothing (ws236-p011). */
+	/* A bare job records nothing (ws236-p012). */
 	if (job->bare != VK_FALSE)
 		return;
 
@@ -2743,7 +2787,8 @@ present_slots_forget(
 
 		/* Releases what the recording held; a failure leaves it for the slot's next Begin, which resets it too. */
 		command = completion->command;
-		(void)vkResetCommandBuffer(command, 0U);
+		if (command != VK_NULL_HANDLE)
+			(void)vkResetCommandBuffer(command, 0U);
 
 		/* The slot is free again, holding no recording. */
 		pthread_mutex_lock(&swapchain_mutex);
@@ -3139,7 +3184,7 @@ present_submit(
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &job->command;
 
-	/* A bare job's submission carries only the waits and the fence (ws236-p011). */
+	/* A bare job's submission carries only the waits and the fence (ws236-p012). */
 	if (job->bare != VK_FALSE) {
 		submit.commandBufferCount = 0U;
 		submit.pCommandBuffers = NULL;

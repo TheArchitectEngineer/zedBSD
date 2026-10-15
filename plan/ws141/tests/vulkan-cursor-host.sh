@@ -28,7 +28,7 @@ for mode in ordinary sanitize; do
 	    timeout 60 "$out/$mode" 2> "$out/$mode-on.log"
 	lines=$(grep -c '^VK CURSOR ' "$out/$mode-on.log" || true)
 	fast=$(grep -c '^VK CURSOR .* path=fast ' "$out/$mode-on.log" || true)
-	other=$(grep -v '^VK CURSOR ticket=[0-9]* path=[a-z]* result=-\{0,1\}[0-9]* outcome=[a-z]* image=[0-9]* x=-\{0,1\}[0-9]* y=-\{0,1\}[0-9]* depth=[0-9]* call_ns=[0-9]* mutex=[0-9]* queue=[0-9]* publish=[0-9]* fence=[0-9]* lock=[0-9]* set=[0-9]* done=[0-9]* retries=[0-9]* why=[a-z]*$' "$out/$mode-on.log" | grep -c . || true)
+	other=$(grep -v '^VK CURSOR ticket=[0-9]* path=[a-z]* result=-\{0,1\}[0-9]* outcome=[a-z]* image=[0-9]* x=-\{0,1\}[0-9]* y=-\{0,1\}[0-9]* depth=[0-9]* call_ns=[0-9]* mutex=[0-9]* queue=[0-9]* publish=[0-9]* fence=[0-9]* lock=[0-9]* set=[0-9]* done=[0-9]* retries=[0-9]* why=[a-z]*$' "$out/$mode-on.log" | grep -v '^VK SWAPCHAIN direct=' | grep -c . || true)
 	echo "$mode: cursor log lines=$lines fast=$fast unexpected=$other"
 	test "$lines" -gt 20
 	test "$fast" -gt 5

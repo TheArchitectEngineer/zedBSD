@@ -21,7 +21,7 @@
  *
  * usage adds uses beyond a copy's destination and a sampled image: a direct
  * swapchain's application uses, when the application draws into the shared
- * image itself (ws236-p011); 0 otherwise.
+ * image itself (ws236-p012); 0 otherwise.
  */
 VkResult
 vulkan_wsi_shared_image_create(
