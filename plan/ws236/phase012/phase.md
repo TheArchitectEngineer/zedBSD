@@ -109,3 +109,18 @@ Phase disposition: normal
 5. 合否: (a)〜(f) で画が出て崩れない・落ちない、`execution failed`・`a pass writes a run the display reads`・`came back unread`・`not answered` が 0、PNG の色・画が正しい、`v3d: perf` の 2 秒の `passes=R/0/I` の I が R と同じ程度（1 表示 frame に image の pass 1 つ）、(e) の前後で `v3d: memory kib=` が戻る（増え続けない）。記録: 60p・30p 全画面と窓の shown・late（T1-688 と比べる）、compose frame_ms、acquire_us、`worker=`。
 6. 戻し: 画が出ない・落ちる時は最初に `/lib/libvulkan.so` を退避の物に戻して reboot（全 app が影響を受ける）。Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
 7. T1（別の機会、起動の確かめに含める）: 5330（i915）・QEMU（Venus）・RTX の desktop の起動の log に `VK SWAPCHAIN direct=0 reason=renderer` が出る（direct にならない）。
+
+## design-reviewer の review-1（2026-10-16、Q1 が要旨を写した）
+
+結論: blocker 0（bcm2711 の display の PRESENT_SYNC は adoption まで返らず、前の front の holds-- はその後、compositor は current・front に参照の数を持ち frame の fence の後で release するので、「共有の image が手放されるまで acquire しない」gating は正しい）。major 8・minor 7。
+
+- M1 vendorID 0x14e4 は正しさの前提（barrier は cache を触らず layout の更新だけ、OPTIMAL＝raster は bcm2711 の性質）。Venus が v3dv の host に載る時・Pi 5 も 0x14e4 → kernel の capset の native の word に direct 可の bit。
+- M2 VK_KHR_display の部分の矩形の拒否は仕様違反・委任の外 → display の chain は compositor の opt-in の時だけ。
+- M3 direct では compositor の frame の全ての pass が display の印を持ち executor の順（render-worker.c:1826-1843）が変わる → 明記と T2 の合否に worker=・decode の健全さ・late の比較。
+- M4 command buffer 0 の submit も worker の順番を待つ → 期待値と次の手（action 0 の fast path）を書く。
+- M5 失敗から戻す条件が広い → FORMAT_NOT_SUPPORTED・FEATURE_NOT_PRESENT・INITIALIZATION_FAILED だけ、alias を先に捨てる順。
+- M6 present の slot の key と present_slots_forget の NULL の command → key 0・slot 0・NULL を飛ばす。
+- M7 試験が競合と失敗の道を検出できない → kernel の出力先の検査の log、強制失敗の host 試験、作り直しの繰り返しの前後の memory。
+- M8 回帰の範囲の抜け（libegl・xserver・terminal・notes・monitor・mview・display-events、turn・heads・VT・display の off/on・mode の変更・lock、nvrtx）。
+- minor: m1 acquire の安全の根拠の場所、m2 usage は vkGetPhysicalDeviceImageFormatProperties(LINEAR)、m3 CONCURRENT は direct にしない、m4 stub の host 試験 2 本、m5 単独の作成は明示の引数、m6 env で切れる・作成ごとの log、m7 独立の Phase。
+- Q1 の判断（2026-10-16、ユーザーは就寝中、製品の挙動を変えない形を選んだ）: M1 capset の bit（WS141 の範囲として許可）、M2 opt-in（第三者の KHR_display の app は今の道）、M3 印の意味を保つ、m7 ws236-p012。P3 は 849ea5b1a で全て対応（P3 の報告）。T2 の T1-690・T1 の T1-691 で確かめる。
