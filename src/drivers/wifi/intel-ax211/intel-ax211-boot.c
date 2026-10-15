@@ -946,9 +946,13 @@ ax211_boot_notification_accept(
 		return INTEL_AX211_BOOT_PROTOCOL;
 	}
 
-	/* Reports the validation's outcome. */
+	/* Reports a rejected notification. */
 	result = ax211_boot_protocol_result(result);
-	return result;
+	if (result != INTEL_AX211_BOOT_OK)
+		return result;
+
+	/* Succeeded: the notification is recorded. */
+	return INTEL_AX211_BOOT_OK;
 }
 
 /* Selects the ALIVE SKU and publishes an exact copied PNVM image. */
