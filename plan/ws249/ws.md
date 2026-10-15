@@ -3,11 +3,11 @@
 # WS249: BCM43455（Raspberry Pi 4 の WiFi）の driver の出典の表記と規約の整理
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-15 作成、担当は未割当）
+Status: planned（2026-10-15 作成。WS248 の後に P2 が q1205 で行う予定）
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS248](../ws248/ws.md)（AX211 での同じ整理、手順の手本）、[WS215](../ws215/ws.md)（Pi 4 の Bluetooth、同じ chip）
-Resume point: 担当の割り当て待ち（N=3 の枠が空いた時、WS248 を終えた P2 が手本の文脈を持つ）。
+Resume point: WS248 の後に P2（q1205、予約。2026-10-15 ユーザー「WS248のあとでOKです。」）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
