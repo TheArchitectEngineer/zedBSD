@@ -9,10 +9,7 @@
  * The display under the GSP (stage P8a: bring-up).
  *
  * The resource manager owns the display hardware's state machine.  The
- * driver brings the display up in the order and with the values nouveau
- * uses on a Turing GPU under the GSP (r535 display bring-up with the 570
- * numbers of the system controls; the values are hardware and firmware
- * facts): the display's instance memory (64 KiB of VRAM) is given to the
+ * driver brings the display up in this order: the display's instance memory (64 KiB of VRAM) is given to the
  * resource manager; the display gets a client, device and subdevice of its
  * own with the common object the display controls go to; the windows,
  * heads and outputs are read, each output's resource and connector; the
@@ -150,6 +147,11 @@ static const char *display_protocol_name(uint32_t protocol);
  * Runs stage P8a: the display's instance memory, its objects and the readout of the lit heads.
  *
  * A failure is returned; the finish's stop frees the objects that were made.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_disp_oneinit), with the system controls' numbers of NVIDIA
+ * open-gpu-kernel-modules 570.144.
  */
 int
 nvrtx_display_start(
@@ -179,7 +181,7 @@ nvrtx_display_start(
 
 	display->common_made = 1;
 
-	/* Reads the windows and heads, and declares DisplayPort handled by hand (as nouveau does). */
+	/* Reads the windows and heads, and declares DisplayPort handled by hand. */
 	error = display_counts(gpu);
 	if (error != 0)
 		return error;
@@ -351,12 +353,15 @@ display_instance(
 }
 
 /*
- * Finds the output the firmware lit and its head (nouveau's inherit of an
- * output, stage P8b): for each output with a resource, in the order of its
+ * Finds the output the firmware lit and its head (stage P8b): for each output with a resource, in the order of its
  * id, asks each head which display it drives until one drives this output,
  * then asks the output's resource and protocol.  The first lit output is
  * the one taken over.  Returns 0 (with gop_head_found clear when nothing
  * is lit) or the error of a control.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the inherit of a
+ * lit output).
  */
 int
 nvrtx_display_inherit(
@@ -423,11 +428,14 @@ nvrtx_display_inherit(
 }
 
 /*
- * Detects the connected outputs (nouveau's probe of the connectors, stage
- * P8b): each output with a resource is asked whether a sink is connected;
+ * Detects the connected outputs (stage P8b): each output with a resource is asked whether a sink is connected;
  * a connected one is asked its flat-panel information, and a connected
  * TMDS output its EDID, which for the lit output gives the preferred
  * timing and the HDMI facts.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the connectors'
+ * probe).
  */
 int
 nvrtx_display_detect(
@@ -486,7 +494,9 @@ nvrtx_display_detect(
 
 /*
  * Tells the resource manager the lit output drives an HDMI sink, and the
- * sink's capabilities (nouveau's HDMI enable before the first commit).
+ * sink's capabilities, before the first commit.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the HDMI enable).
  */
 int
 nvrtx_display_hdmi(
@@ -710,7 +720,10 @@ display_event(
  * Reads the windows and heads, loads the brightness state and takes DisplayPort by hand.
  *
  * The brightness state is "not supported" (the driver evaluates no ACPI
- * method for it), as nouveau sends when the method is absent.
+ * method for it).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the brightness state
+ * sent when the method is absent).
  */
 static int
 display_counts(

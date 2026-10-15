@@ -11,8 +11,8 @@
  * Before any graphics channel can run, the resource manager builds a golden
  * context: the state every new graphics context starts from.  It does so
  * when a 3D object is made on a privileged graphics channel whose context
- * buffers the driver has made and handed over (promoted).  The order is
- * nouveau's: read the buffers' sizes, make an address space the resource
+ * buffers the driver has made and handed over (promoted).  The order:
+ * read the buffers' sizes, make an address space the resource
  * manager shares (it keeps 512 MiB at 4 GiB of it, through the driver's
  * directories), make the channel, promote the buffers, make the 3D object,
  * then free the 3D object, the channel and the space.  The global buffers
@@ -86,6 +86,10 @@ static uint64_t gr_align(uint64_t value, uint32_t shift);
  *
  * The copy channel of P5 is already running.  A failure is returned; the
  * finish's stop frees whatever objects were made.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gr.c (r535_gr_oneinit,
+ * r535_gr_get_ctxbufs_info, r535_gr_promote_ctx).
  */
 int
 nvrtx_gr_start(
@@ -127,7 +131,7 @@ nvrtx_gr_start(
 }
 
 /*
- * Undoes P5g's objects in nouveau's order before the unload.
+ * Undoes P5g's objects before the unload.
  *
  * The scrubber is told to tear down first, then its 3D object, channel and
  * space go; whatever the golden context's run left is freed the same way.

@@ -99,9 +99,12 @@ nvrtx_rpc_send(
 	int error;
 
 	/*
-	 * Numbers the call as nouveau does: a call that waits for a reply takes
-	 * the next number from zero, one sent before the GSP runs takes zero
-	 * without using a number.
+	 * Numbers the call: a call that waits for a reply takes the next number
+	 * from zero, one sent before the GSP runs takes zero without using a
+	 * number.
+	 *
+	 * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
+	 * (r535_gsp_rpc_send).
 	 */
 	*sequence = 0U;
 	if (with_sequence != 0) {
@@ -140,11 +143,13 @@ nvrtx_rpc_send(
 /*
  * Waits for the reply (or event) of a function, serving other events meanwhile.
  *
- * The reply is matched on its function alone, as nouveau does; the
- * sequence is kept for the marks (design 2.6 matches it too, to be put
- * back once the boot works).  The payload is left in gpu->reply with
+ * The reply is matched on its function alone; the sequence is kept for
+ * the marks.  The payload is left in gpu->reply with
  * its length.  Returns EIO when the reply carries an error result,
  * ETIMEDOUT when it did not come in time.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c
+ * (r535_gsp_msg_recv, r535_gsp_rpc_poll).
  */
 int
 nvrtx_rpc_wait(
@@ -226,7 +231,7 @@ nvrtx_rpc_wait(
 			continue;
 		}
 
-		/* The firmware's prints, bridge updates and crash records are dropped unseen, as nouveau does. */
+		/* The firmware's prints, bridge updates and crash records are dropped unseen. */
 		if (got_function == NVRTX_EVENT_LIBOS_PRINT ||
 		    got_function == NVRTX_EVENT_BRIDGELESS ||
 		    got_function == NVRTX_EVENT_POST_NOCAT)

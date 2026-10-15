@@ -51,11 +51,15 @@ struct nvrtx_node;
 
 /*
  * The handles the driver gives its objects of the resource manager, the
- * values nouveau uses (R5: the space's root was refused under the earlier
- * handles).  A client handle is in the resource server's client range,
+ * values below (the space's root is refused under other handles).  A
+ * client handle is in the resource server's client range,
  * 0xc1d0 in the high half and the client's number in the low half; the
  * resource server re-encodes a client handle outside it.  The channel's
  * handle carries its channel number.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/client.c, device.c and
+ * vmm.c (the handles of the client, device, subdevice and address space).
  */
 #define NVRTX_HANDLE_CLIENT		0xc1d00000U
 #define NVRTX_HANDLE_DEVICE		0xde1d0000U
@@ -66,7 +70,7 @@ struct nvrtx_node;
 
 /*
  * The graphics context's objects (5f).  The golden context's space, channel
- * (chid 1) and 3D object take the next handles of nouveau's families; the
+ * (chid 1) and 3D object take the next handles of the same families; the
  * scrubber's are the resource manager's fixed ones, by which it finds the
  * scrubber channel of the client.
  */
@@ -80,19 +84,19 @@ struct nvrtx_node;
 /*
  * The first compute launch's objects (P9c): its address space
  * (owned by the driver), its graphics channel (chid 3) and the compute
- * object on it, in nouveau's families.
+ * object on it, in the same families.
  */
 #define NVRTX_HANDLE_COMPUTE_SPACE	0x90f10003U
 #define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
 #define NVRTX_HANDLE_COMPUTE		0xc5c00003U
 
-/* The first draw's 3D object (P9g), on the compute launch's channel, in nouveau's family. */
+/* The first draw's 3D object (P9g), on the compute launch's channel, in the same family. */
 #define NVRTX_HANDLE_DRAW		0x97000003U
 
 /*
  * The work channel's objects (P9w): its address space
  * (owned by the driver), its graphics channel (chid 4) and the 3D and
- * compute objects on it, in nouveau's families.
+ * compute objects on it, in the same families.
  */
 #define NVRTX_HANDLE_WORK_SPACE		0x90f10004U
 #define NVRTX_HANDLE_WORK_CHANNEL	0xf1f00004U
@@ -379,11 +383,15 @@ struct nvrtx_draw_state {
  *
  * The VRAM allocator covers the last usable region below the fixed arenas
  * of P4 to P9c; the BAR1 allocator covers the window the driver's page
- * tables map.  Following nouveau, the BAR1 root (top level) is the resource
+ * tables map.  The BAR1 root (top level) is the resource
  * manager's, from the static information; the driver writes its own lower
  * levels and the root's first entry.  lock serializes both allocators and
  * the page entries; it is taken before the GPU's window_lock.  The flags
  * say what exists, so the release gives back only that.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/bar.c (the BAR1 root from
+ * the static information).
  */
 struct nvrtx_memory_state {
 	struct mutex lock;

@@ -412,9 +412,13 @@ execute_compile(
 }
 
 /*
- * Starts a push buffer: the 3D class's state NVK's queue starts with, the
+ * Starts a push buffer: the 3D class's state a queue starts with, the
  * header and sampler pools, and the shader caches emptied; nothing of the
  * run's parts is used yet.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state) and nvk_cmd_draw.c
+ * (nvk_push_draw_state_init).
  */
 static void
 execute_start(

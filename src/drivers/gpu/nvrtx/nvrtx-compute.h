@@ -23,7 +23,12 @@
 
 #include "drivers/gpu/compiler/ir.h"
 
-/* The compute class of Turing, and the subchannel it is bound to (NVK's). */
+/*
+ * The compute class of Turing, and the subchannel it is bound to.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state).
+ */
 #define NVRTX_CLASS_COMPUTE		0xc5c0U
 #define NVRTX_COMPUTE_SUBCHANNEL	1U
 

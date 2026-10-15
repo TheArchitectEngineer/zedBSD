@@ -53,7 +53,10 @@ nvrtx_work_fence_passed(
 
 /*
  * Writes the push buffer that binds the 3D and compute classes to their
- * subchannels (0 and 1, as NVK binds them).
+ * subchannels (0 and 1).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state).
  *
  * Returns the length in bytes.
  */

@@ -19,8 +19,7 @@
  * for the engine to be ready, and the scrub is reported in another
  * register), it copies a signed program from system memory by its own DMA,
  * and its boot ROM is told where the signature is and which engine and
- * ucode it is before the start.  The steps follow nouveau's GA102 falcon
- * (Linux v6.19, falcon/ga102.c, MIT).
+ * ucode it is before the start.
  */
 
 #include <stdbool.h>
@@ -509,6 +508,10 @@ nvrtx_falcon_riscv_running(
  * 256-byte units, so bus + source of data must be a multiple of 256 (code
  * is addressed from bus itself).  Returns EINVAL for a length or an address
  * the DMA cannot take, ETIMEDOUT when a block does not finish.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c (ga102_flcn_dma_init,
+ * ga102_flcn_dma_xfer, ga102_flcn_fw_load).
  */
 int
 nvrtx_falcon_dma_load(
@@ -577,6 +580,9 @@ nvrtx_falcon_dma_load(
  * Tells an Ampere or later falcon's boot ROM about the program it starts:
  * where its signature is in the data memory, its engine and its ucode
  * number.  The start itself is nvrtx_falcon_boot's.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c (ga102_flcn_fw_boot).
  */
 void
 nvrtx_falcon_boot_rom(
@@ -608,7 +614,11 @@ falcon_mask(
 	nvrtx_wr32(gpu, offset, (current & ~mask) | value);
 }
 
-/* Waits for a falcon's memories to finish scrubbing after a reset. */
+/* Waits for a falcon's memories to finish scrubbing after a reset. *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c
+ * (ga102_flcn_reset_wait_mem_scrubbing).
+ */
 static int
 falcon_scrub_wait(
 	struct nvrtx_gpu *gpu,
@@ -647,6 +657,9 @@ falcon_scrub_wait(
  *
  * A Turing falcon has nothing to select.  Returns ETIMEDOUT when the
  * selection does not complete.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c (ga102_flcn_select).
  */
 static int
 falcon_select(
@@ -678,8 +691,11 @@ falcon_select(
 /*
  * Waits up to 150 us for an Ampere falcon to say it is ready for a reset.
  *
- * The wait is advice: a falcon that does not say so is reset anyway, as
- * nouveau does.  A Turing falcon has no such bit.
+ * The wait is advice: a falcon that does not say so is reset anyway.  A
+ * Turing falcon has no such bit.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c
+ * (ga102_flcn_reset_prep).
  */
 static void
 falcon_reset_ready(

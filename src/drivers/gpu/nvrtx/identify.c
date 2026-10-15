@@ -13,10 +13,8 @@
  * identity registers into a chip record, and points the chip at its family
  * record: what its generation needs from the GSP boot path (the firmware
  * files, the falcons' loading, the registers that moved, the heap) and the
- * class numbers and formats the later stages use.  The values are hardware
- * facts as nouveau's GSP path (Linux v6.19, r570) and NVIDIA's open-gpu-doc
- * class headers (MIT) give them.  It touches no hardware, so the host test
- * links it alone.
+ * class numbers and formats the later stages use.  It touches no hardware,
+ * so the host test links it alone.
  */
 
 #include <stddef.h>
@@ -55,6 +53,11 @@ struct identify_entry {
  * TU102, TU104 and TU106 (GeForce RTX 20): the firmware below tu102, the
  * falcon bootloader for FWSEC, and the graphics scrubber channel.  The
  * family the driver was brought up and seen working on (RTX 2070).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c, tu116.c, ga102.c and
+ * ad102.c (the families' firmware and boot paths), and NVIDIA open-gpu-doc
+ * (the class numbers).
  */
 static const struct nvrtx_profile identify_tu10x = {
 	"TU10x",

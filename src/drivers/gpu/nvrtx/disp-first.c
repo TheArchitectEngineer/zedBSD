@@ -9,10 +9,9 @@
  * The records of the display's first commit that touch no hardware (stage
  * P8b).
  *
- * The takeover sends what nouveau sends on a Turing GPU under the GSP when
- * it starts its display and commits the first mode on a head the firmware
- * lit (r535/r570 display, the Turing core and window classes; the values
- * are hardware facts): the core's start (its notifier object and every
+ * The takeover sends this when it starts the display and commits the
+ * first mode on a head the firmware lit (the Turing core and window
+ * classes): the core's start (its notifier object and every
  * window's usage bounds, without a release), then one core release with
  * the output's control, the head's mode and every window's owner, the
  * head's output LUT, the window's image and input LUT released interlocked
@@ -122,6 +121,9 @@ static void first_put16(uint8_t *bytes, uint32_t at, uint16_t value);
 /*
  * Writes the core's start: the notifier's object, and every window's
  * format and usage bounds, without a release.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * and corec57d.c (the core's start).
  */
 void
 nvrtx_disp_first_core_start(
@@ -148,6 +150,9 @@ nvrtx_disp_first_core_start(
  * Writes the first commit's core methods up to its release: the output
  * taken off the head and given back with its protocol, the head's view,
  * raster, clock, usage and output resource, and every window's owner.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * and headc57d.c (the first commit's core release).
  */
 void
 nvrtx_disp_first_core_mode(
@@ -224,11 +229,14 @@ nvrtx_disp_first_core_release(
 }
 
 /*
- * Writes a head's view without a release, as nouveau's view of a Volta or
- * later head does: the viewport's input size (the picture the windows
+ * Writes a head's view without a release, for a Volta or later head: the
+ * viewport's input size (the picture the windows
  * show) and its output size (the mode's visible size), each width in bits
  * 15:0 and height in 31:16.  An input smaller than the output is enlarged
  * by the head's scaler; the core's release that follows takes it in.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/dispnv50/headc37d.c (headc37d_view).
  */
 void
 nvrtx_disp_first_core_view(
@@ -274,6 +282,10 @@ nvrtx_disp_first_core_olut(
  * storage is the window's storage word for a pitch-linear surface: the
  * layout field set on Turing, zero from Ampere on, whose window has no
  * layout field (the context DMA object's kind says pitch there).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c (the window's image released
+ * interlocked with the core).
  */
 void
 nvrtx_disp_first_window(
@@ -334,13 +346,16 @@ nvrtx_disp_first_window(
 }
 
 /*
- * Writes a later flip of the window as nouveau's commit of a plane does:
- * the notifier at its offset, the whole image (present control, size,
+ * Writes a later flip of the window: the notifier at its offset, the whole image (present control, size,
  * storage, format, pitch, object, offset, point and sizes), then a release
  * interlocked with this window and, when with_core is nonzero, with the
  * core (a flip that comes with a change of the head's view, which the
  * core's release interlocked with this window then completes).  storage is
  * as for nvrtx_disp_first_window.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c and wndwc37e.c (the window's
+ * image and update).
  */
 void
 nvrtx_disp_first_window_flip(

@@ -14,8 +14,7 @@
  * down.  Those stages keep their fixed places; new users (the display's
  * surfaces, the buffer objects of the GPU device) take their VRAM here.
  *
- * The window (BAR1) follows nouveau's GSP path (r535's BAR code): the
- * resource manager owns the window's root page table, whose address the
+ * The window (BAR1): the resource manager owns the window's root page table, whose address the
  * static information gives; the driver builds the lower levels for the
  * first part of the window in its own VRAM, writes the root's first entry
  * to point at them, and invalidates the hub's TLB with the root named.  A
@@ -30,9 +29,8 @@
  * of the window and of the VRAM (the GOP's mapping in the window's physical
  * mode).  The resource manager makes the whole window virtual, so P4m maps
  * the window's first pages back onto the console before anything else
- * takes the window, as the vendor's driver does (open-gpu-kernel-modules,
- * MIT: osinit.c's console size and kern_bus_gm107.c's preserved console
- * mapping at offset 0).  The console's pages are in the tables before the
+ * takes the window (the console's size, and its mapping kept at offset
+ * 0).  The console's pages are in the tables before the
  * root's entry is switched to them, so the console's writes (the boot
  * splash turns on every kernel line) never meet an unmapped window.  The
  * CPU's own mapping of the window starts after the console, so the
@@ -82,9 +80,11 @@
 #define VRAM_TABLES_PTE_AT		0x4000ULL
 
 /*
- * The window's mode register (Turing's BAR1 block, nouveau's tu102 bar):
- * bit 31 set is the virtual mode.  The bind's pending bits are in the
+ * The window's mode register (Turing's BAR1 block): bit 31 set is the virtual mode.  The bind's pending bits are in the
  * status register, polled when the mode is put back.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bar/tu102.c.
  */
 #define VRAM_REG_BAR1_BLOCK		0xb80f40U
 #define VRAM_BAR1_BLOCK_VIRTUAL		0x80000000U
@@ -112,7 +112,7 @@
 
 /*
  * The MMU's record of the last fault no fault buffer took (Turing's
- * "other" fault, nouveau's tu102 info fault), where a BAR's faulted access
+ * "other" fault), where a BAR's faulted access
  * lands: the address, the instance word whose low bits name the engine
  * (4 is BAR1), and the information word (bits 4:0 the fault's type, 2 an
  * invalid page entry; bits 14:8 the client, 0x07 the CPU's read and 0x08
@@ -120,6 +120,9 @@
  * write; bit 31 the record's validity).  The status word's bits 7:0 say
  * which window's accesses were dropped (bit 1 BAR1 in its virtual mode)
  * and bit 31 that a record waits; each clears when written as 1.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/fault/tu102.c (the info fault).
  */
 #define VRAM_REG_FAULT_ADDR_LO		0xb83080U
 #define VRAM_REG_FAULT_ADDR_HI		0xb83084U
@@ -581,6 +584,10 @@ nvrtx_console_restore(
 /*
  * Builds the window's directories and page tables in VRAM of the allocator
  * and points the resource manager's root at them.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/bar.c (the window's root
+ * from the static information, the lower levels and the flush).
  */
 static int
 vram_bar1_tables(
@@ -734,6 +741,11 @@ vram_bar1_write_tables(
  * Records that the window's first pages point back at the console the
  * firmware left at the VRAM's start, page for page: the tables were
  * written with them, before anything else takes the window.
+ *
+ * Procedure referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/arch/nvalloc/unix/src/osinit.c and
+ * src/nvidia/src/kernel/gpu/bus/arch/maxwell/kern_bus_gm107.c (the console's
+ * size and its mapping kept at offset 0).
  */
 static int
 vram_console_map(
@@ -1053,8 +1065,7 @@ vram_bar1_recover(
 
 /*
  * Does one recovery round's work before the run is read again, and names
- * it in *how.  Every round clears the fault record (a record left valid is
- * cleared the same way by nouveau's fault handler) and invalidates the
+ * it in *how.  Every round clears the fault record and invalidates the
  * hub's TLB for the window's root; the second round writes the tables
  * again first and the third binds the window again.
  */

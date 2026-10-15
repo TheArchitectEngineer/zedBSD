@@ -40,7 +40,12 @@
 /* The most words one ring entry carries (its length field, bits 30:10 of its upper word). */
 #define NVRTX_WORK_SEGMENT_WORDS_MAX	0x1fffffU
 
-/* The two classes the channel has, on the subchannels NVK puts them on. */
+/*
+ * The two classes the channel has, and their subchannels.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state).
+ */
 #define NVRTX_WORK_SUBCHANNEL_THREED	0U
 #define NVRTX_WORK_SUBCHANNEL_COMPUTE	1U
 

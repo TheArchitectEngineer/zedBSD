@@ -188,9 +188,11 @@ nvrtx_node_start(
 
 	/*
 	 * Starts the thread that takes the messages the GSP sends meanwhile
-	 * (channel errors, display events), as nouveau's message worker does,
-	 * so its queue never fills.  Without it the device still works for a
+	 * (channel errors, display events), so its queue never fills.  Without it the device still works for a
 	 * while, so a failure is only shown.
+	 *
+	 * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+	 * (r535_gsp_msgq_work).
 	 */
 	error = kthread_create(node_drain, node, SCHED_PRIORITY_DEFAULT, &drain);
 	if (error == 0) {

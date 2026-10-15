@@ -14,8 +14,6 @@
  * viewport and scissor, the blend of the target, the vertex input, a draw,
  * a clear of a rectangle, the barrier between work that writes an image
  * and work that reads it, and the texture header and sampler of a view.
- * The methods and values are NVK's on Turing (Mesa 25.3.6, MIT; the class
- * headers it carries, see draw-push.c); the code is zedBSD's own.
  *
  * The kernel has no floating point: the floats a method takes are built
  * from their bits, and the viewport's arithmetic is done in fixed point.

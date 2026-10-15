@@ -336,13 +336,18 @@ nvrtx_channel_start(
 
 /*
  * Runs stage P6's stop: takes the messages the firmware sent, then undoes
- * P4 and P5 in nouveau's order: the channel off the scheduler, the copy
+ * P4 and P5: the channel off the scheduler, the copy
  * object, the channel, the root, the address space.
  *
- * The finish runs it before every P7, whatever nvrtx.stop says: R6 left
- * the channel scheduled for the unload to remove, and the firmware did not
- * answer the unload call (ETIMEDOUT) and did not stop.  Failures are only
+ * The finish runs it before every P7, whatever nvrtx.stop says: when the
+ * channel was left scheduled for the unload to remove, the firmware did
+ * not answer the unload call (ETIMEDOUT) and did not stop.  Failures are only
  * reported; the unload removes whatever stays.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_stop)
+ * and Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/fifo/chan.c
+ * (nvkm_chan_del).
  */
 void
 nvrtx_channel_stop(
@@ -471,9 +476,11 @@ nvrtx_flush_tlb(
 /*
  * Invalidates the hub's TLB entries of a BAR's page tables (stage P4m).
  *
- * nouveau's flush of a BAR's address space: all addresses, every root, the
- * hub's TLB only.  Returns ETIMEDOUT when the invalidate does not finish in
- * 2 s.
+ * The flush of a BAR's address space: all addresses, every root, the hub's
+ * TLB only.  Returns ETIMEDOUT when the invalidate does not finish in 2 s.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c
+ * (tu102_vmm_flush).
  */
 int
 nvrtx_flush_tlb_bar(
@@ -950,7 +957,7 @@ channel_flush(
 {
 	int error;
 
-	/* Triggers the invalidate and waits for it; one at a time, as nouveau holds its MMU lock. */
+	/* Triggers the invalidate and waits for it, one at a time. */
 	mutex_lock(&gpu->window_lock);
 
 	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(root >> 8));

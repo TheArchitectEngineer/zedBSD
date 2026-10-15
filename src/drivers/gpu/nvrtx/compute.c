@@ -9,8 +9,7 @@
  * The first compute launch (stage P9c, nvrtx.compute=1).
  *
  * After the golden context (P5g) the driver makes a graphics channel of its
- * own and runs one compute program on it, the way nouveau makes a user's
- * graphics channel and NVK launches a dispatch (both MIT):
+ * own and runs one compute program on it:
  *
  *   1. an address space the driver owns, over page tables in an arena of
  *      VRAM below the graphics arena; the tables map the channel's context
@@ -28,7 +27,7 @@
  *      channel (draw.c, stage P9g), whose pages the tables map too.
  *
  * Nothing of the display or of the copy channel is touched.  The stop
- * undoes 2 and 1 in nouveau's order before the graphics context's stop.
+ * undoes 2 and 1 before the graphics context's stop.
  */
 
 #include <stdbool.h>
@@ -191,10 +190,15 @@ nvrtx_compute_start(
 }
 
 /*
- * Undoes P9c's objects in nouveau's order before the graphics context's
+ * Undoes P9c's objects before the graphics context's
  * stop: the channel off the scheduler, the compute object, the channel, the
  * root, the space.  Failures are counted and shown; the unload removes the
  * rest.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_stop)
+ * and Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/fifo/chan.c
+ * (nvkm_chan_del).
  */
 void
 nvrtx_compute_stop(
@@ -598,6 +602,9 @@ compute_space(
  * Makes the graphics channel: its instance block naming the tables, the
  * channel on the graphics engine, the promote, the compute object, the bind
  * and the schedule.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_alloc).
  */
 static int
 compute_channel(
@@ -733,6 +740,9 @@ compute_program(
 /*
  * Fills constant buffer 0 and the QMD, writes the launch and a fence after
  * it, submits them, and waits for the fence.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_dispatch.c
+ * (the dispatch).
  */
 static int
 compute_launch(

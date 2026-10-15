@@ -14,8 +14,7 @@
  * GPU is in and writes it into the kernel log, and when the boot asks
  * (nvrtx.boost=1) it asks the resource manager to hold the GPU at its
  * highest state until power-off, then reads the state again.  The
- * controls are the subdevice's performance controls of NVIDIA's MIT
- * headers (open-gpu-kernel-modules, ctrl2080perf.h).
+ * controls are the subdevice's performance controls.
  *
  * It runs during the boot's stages, before the message drain starts, so
  * the calls do not share the GSP's queues with the drain.  Nothing here
@@ -33,7 +32,13 @@
 #include "drivers/gpu/nvrtx/nvrtx-compute.h"
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The controls: the current performance state, and a boost of it. */
+/*
+ * The controls: the current performance state, and a boost of it.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080perf.h
+ * (NV2080_CTRL_CMD_PERF_GET_CURRENT_PSTATE, NV2080_CTRL_CMD_PERF_BOOST).
+ */
 #define PERF_CTL_CURRENT_STATE		0x20802068U
 #define PERF_CTL_BOOST			0x2080200aU
 

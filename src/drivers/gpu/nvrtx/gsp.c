@@ -867,8 +867,11 @@ gsp_prepare_falcons(
 	gpu->gsp_falcon.style = style;
 
 	/*
-	 * From Ampere on the secure processor is reset without its PMC bit, as
-	 * nouveau's GSP path does (the device table moved and changed its form).
+	 * From Ampere on the secure processor is reset without its PMC bit (the
+	 * device table moved and changed its form).
+	 *
+	 * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c
+	 * (ga102_gsp_reset, ga102_gsp_flcn).
 	 */
 	if (style == NVRTX_FALCON_BOOT_ROM) {
 		gpu->sec2_falcon.base = NVRTX_FALCON_SEC2_BASE;

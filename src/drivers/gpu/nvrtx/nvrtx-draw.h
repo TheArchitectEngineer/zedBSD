@@ -10,7 +10,7 @@
  *
  * draw-push.c holds the parts that touch no hardware, so the host test
  * runs them as the kernel does: the push buffers that set up the 3D class
- * (TURING_A) the way NVK sets up its queue, point it at a colour target,
+ * (TURING_A) as a queue is set up, point it at a colour target,
  * bind the programs, the vertex buffer, constant buffer 0 and the texture
  * pools, clear and draw; and the IR of the draw's programs (a quad placed
  * by push constants, filled with one colour or with a texture).  draw.c
@@ -26,11 +26,21 @@
 
 #include "drivers/gpu/compiler/ir.h"
 
-/* The 3D class of Turing, and the subchannel it is bound to (NVK's). */
+/*
+ * The 3D class of Turing, and the subchannel it is bound to.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state).
+ */
 #define NVRTX_DRAW_CLASS		0xc597U
 #define NVRTX_DRAW_SUBCHANNEL		0U
 
-/* The pipeline's program types (SET_PIPELINE_SHADER), which NVK also uses as their indices. */
+/*
+ * The pipeline's program types (SET_PIPELINE_SHADER), also used as their
+ * indices.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_shader.c (the program types).
+ */
 #define NVRTX_DRAW_TYPE_VERTEX		1U
 #define NVRTX_DRAW_TYPE_PIXEL		5U
 #define NVRTX_DRAW_TYPES		6U
@@ -90,7 +100,14 @@ struct nvrtx_draw_ir {
 	struct drv_gpu_shader_ir_uniform uniform;
 };
 
-/* Writes the 3D class's binding and the state NVK gives a new queue; reports where the push buffer goes on. */
+/*
+ * Writes the 3D class's binding and the state a new queue is given; reports
+ * where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state) and nvk_cmd_draw.c
+ * (nvk_push_draw_state_init).
+ */
 size_t nvrtx_push_draw_init(uint8_t *push, size_t at, uint64_t zero_page);
 
 /* Writes the same binding and state for a generation's 3D class; reports where the push buffer goes on. */

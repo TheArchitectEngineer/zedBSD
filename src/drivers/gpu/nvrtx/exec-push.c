@@ -9,15 +9,6 @@
  * The parts of the Vulkan executor's push buffer that touch no hardware
  * (see nvrtx-exec.h).
  *
- * The methods and their values are the ones Mesa's NVK (MIT) sends on
- * Turing for the same state: a rendering's colour target
- * (nvk_CmdBeginRendering), the viewport and scissor (nvk_flush_vp_state),
- * the blend (nvk_flush_cb_state), the vertex input (nvk_flush_vi_state and
- * its binding macro), the draw (nvk_mme_build_draw), the clear
- * (nvk_CmdClearAttachments), a barrier (nvk_cmd_flush_wait_dep and
- * nvk_cmd_invalidate_deps), the texture header of a pitch image (NIL) and
- * a sampler (nvk_sampler.c).  Sources (SHA-256, Mesa 25.3.6) are listed
- * in draw-push.c; the code is zedBSD's own.
  */
 
 #include <stdbool.h>
@@ -91,7 +82,7 @@
 /* An incrementing method header on the 3D subchannel (0). */
 #define EXEC_METHOD_INCREMENT			(1U << 29)
 
-/* The values NVK writes (the fields' meanings beside them). */
+/* The values written (the fields' meanings beside them). */
 #define V_TRUE					1U
 #define V_FALSE					0U
 #define V_FLOAT_ONE				0x3f800000U
@@ -134,7 +125,11 @@
 #define V_BEGIN_TRIANGLE_STRIP			5U
 #define V_BEGIN_ITERATE				(1U << 31)
 
-/* The blend's operations and factors (the OGL values NVK uses). */
+/*
+ * The blend's operations and factors (the OGL values).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c (nvk_flush_cb_state).
+ */
 #define V_BLEND_ADD				0x8006U
 #define V_BLEND_SUBTRACT			0x800aU
 #define V_BLEND_REVERSE_SUBTRACT		0x800bU
@@ -245,6 +240,9 @@ nvrtx_exec_target_format(
  * stencil or logic operation, target 0 the one written.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_CmdBeginRendering).
  */
 size_t
 nvrtx_exec_target(
@@ -331,11 +329,14 @@ nvrtx_exec_target(
 
 /*
  * Writes viewport 0 from a VkViewport's six floats (x, y, width, height,
- * min depth, max depth, as their bits), as NVK does: the scale half the
+ * min depth, max depth, as their bits): the scale half the
  * size, the offset its corner plus that, the depth's scale its range, and
  * the clip its rectangle and depth range.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_vp_state).
  */
 size_t
 nvrtx_exec_viewport(
@@ -417,6 +418,9 @@ nvrtx_exec_viewport(
  * excluded.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_vp_state).
  */
 size_t
 nvrtx_exec_scissor(
@@ -443,6 +447,9 @@ nvrtx_exec_scissor(
  * and alpha operations and factors, and the channels written.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_cb_state).
  */
 size_t
 nvrtx_exec_blend(
@@ -488,6 +495,9 @@ nvrtx_exec_blend(
  * stride, size and rate, or disabled.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_vi_state and its binding macro).
  */
 size_t
 nvrtx_exec_vertex(
@@ -547,6 +557,9 @@ nvrtx_exec_vertex(
  * BEGIN with the topology, the vertex range and END.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_mme_build_draw).
  */
 size_t
 nvrtx_exec_draw(
@@ -589,6 +602,9 @@ nvrtx_exec_draw(
  * whatever the render enable says.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_clear.c
+ * (nvk_CmdClearAttachments).
  */
 size_t
 nvrtx_exec_clear(
@@ -632,6 +648,9 @@ nvrtx_exec_clear(
  * caches are invalidated.
  *
  * Returns where the push buffer goes on.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_buffer.c
+ * (nvk_cmd_flush_wait_dep, nvk_cmd_invalidate_deps).
  */
 size_t
 nvrtx_exec_barrier(
@@ -654,6 +673,9 @@ nvrtx_exec_barrier(
  * channels (B8G8R8A8 or R8G8B8A8): the header reads the bytes as
  * A8B8G8R8 (red in the lowest byte) and the sources move the image's
  * channels and a view's swizzle into place.  sRGB is read as UNORM.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/nil/descriptor.rs (the texture
+ * header of a pitch image).
  */
 void
 nvrtx_exec_texture_header(
@@ -704,7 +726,7 @@ nvrtx_exec_texture_header(
 	exec_field(header, 151U, 4U, TIC_TYPE_TWO_D_NO_MIPMAP);
 	exec_field(header, 160U, 16U, height - 1U);
 
-	/* NIL's sector promotion, border from the sampler, normalized coordinates and spread functions. */
+	/* The sector promotion, border from the sampler, normalized coordinates and spread functions. */
 	exec_field(header, 155U, 2U, TIC_PROMOTE_TO_2_V);
 	exec_field(header, 157U, 3U, TIC_BORDER_SAMPLER_COLOR);
 	exec_field(header, 191U, 1U, 1U);
@@ -713,9 +735,12 @@ nvrtx_exec_texture_header(
 }
 
 /*
- * Writes a sampler as NVK fills one: the address modes, the font filter
+ * Writes a sampler: the address modes, the font filter
  * and sRGB border fields, the filters (nearest or linear, one level), the
  * seamless cube setting and the coordinates' normalization.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c (the
+ * sampler).
  */
 void
 nvrtx_exec_sampler_words(

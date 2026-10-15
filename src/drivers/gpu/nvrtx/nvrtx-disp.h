@@ -14,9 +14,8 @@
  * instance memory (the hash table and the context DMA objects), and the
  * parameters the resource manager takes to make a channel.  The method
  * offsets and fields are those of the core (0xc57d), window (0xc57e) and
- * cursor (0xc57a) classes in NVIDIA's open-gpu-doc (MIT); the instance-memory objects and
- * the order of the methods follow nouveau's display (MIT).  Everything here
- * builds bytes in memory the caller owns, so it is tested on the host.
+ * cursor (0xc57a) classes.  Everything here builds bytes in memory the
+ * caller owns, so it is tested on the host.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_DISP_H
@@ -62,7 +61,12 @@
 /* The resource manager's allocation of a PIO channel (the cursor's): its instance, a notifier handle, a pointer. */
 #define NVRTX_DISP_PIO_CHANNEL_BYTES	16U
 
-/* The resource manager's request to assign an output resource to a display (nouveau's acquire under the GSP). */
+/*
+ * The resource manager's request to assign an output resource to a display.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (the output resource's acquire).
+ */
 #define NVRTX_DISP_ASSIGN_SOR_BYTES	80U
 #define NVRTX_DISP_SOR_NONE		0xffffffffU
 
@@ -84,7 +88,11 @@
 #define NVRTX_DISP_JUMP				0x20000000U
 #define NVRTX_DISP_JUMP_OFFSET_MASK		0x00000ffcU
 
-/* The core channel's methods. */
+/*
+ * The core channel's methods.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define NVRTX_CORE_UPDATE			0x0200U
 #define NVRTX_CORE_SET_CONTEXT_DMA_NOTIFIER	0x0208U
 #define NVRTX_CORE_SET_NOTIFIER_CONTROL		0x020cU
@@ -98,7 +106,11 @@
 #define NVRTX_CORE_HEAD_FIRST			0x2000U
 #define NVRTX_CORE_HEAD_STRIDE			0x0400U
 
-/* The head methods the takeover sets, as offsets inside one head's block. */
+/*
+ * The head methods the takeover sets, as offsets inside one head's block.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define NVRTX_HEAD_PROCAMP			0x000U
 #define NVRTX_HEAD_CONTROL_OUTPUT_RESOURCE	0x004U
 #define NVRTX_HEAD_CONTROL			0x008U
@@ -138,13 +150,17 @@
 #define NVRTX_DISP_SOR_PROTOCOL_SHIFT		8U
 
 /*
- * The parameters of a head's mode set (nouveau's view, mode, dither,
- * procamp and output-resource methods for one head).
+ * The parameters of a head's mode set (the view, mode, dither, procamp and
+ * output-resource methods for one head).
  *
  * active is the visible size (width in bits 15:0, height in 31:16), which
  * is the viewport's output size (its input is the picture's size, which the
  * head's scaler enlarges to it); the raster words are the methods' values;
  * clock_hz the pixel clock; dither and output_resource the methods' values.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/dispnv50/head907d.c and headc57d.c (the head's
+ * methods).
  */
 struct nvrtx_disp_mode {
 	uint32_t active;
@@ -175,7 +191,11 @@ struct nvrtx_disp_mode {
 #define NVRTX_DISP_FRAME_COUNT_SHIFT		16U
 #define NVRTX_DISP_FRAME_COUNT_MASK		0xffffU
 
-/* The window channel's methods. */
+/*
+ * The window channel's methods.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define NVRTX_WINDOW_UPDATE			0x200U
 #define NVRTX_WINDOW_SET_CONTEXT_DMA_NOTIFIER	0x21cU
 #define NVRTX_WINDOW_SET_NOTIFIER_CONTROL	0x220U
@@ -272,9 +292,13 @@ uint32_t nvrtx_disp_band_color(uint32_t band);
 
 /*
  * The display's own resource-manager client and its device and subdevice
- * (stage P8a, as nouveau makes one for its display): the channels and the
+ * (stage P8a): the channels and the
  * display's objects belong to it, and the low 14 bits of its handle are in
  * every hash-table entry of the display's instance memory.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the display's own
+ * client).
  */
 #define NVRTX_DISP_CLIENT			0xc1d00001U
 #define NVRTX_DISP_DEVICE			0xde1d0000U

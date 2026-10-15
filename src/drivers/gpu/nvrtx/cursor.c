@@ -10,8 +10,8 @@
  *
  * The taken-over head's hardware cursor shows a 64 by 64 A8R8G8B8 image
  * with premultiplied alpha over the window, at a position the cursor's own
- * PIO channel takes (scanout.c, after nouveau's cursor plane: the core's
- * cursor methods and the cursor channel's position and update).  The image
+ * PIO channel takes (scanout.c: the core's cursor methods and the cursor
+ * channel's position and update).  The image
  * is copied into one of two slots of a buffer object in the VRAM, so a
  * shown cursor keeps reading the old slot until the core's update that
  * names the new one has finished; a new image while that update is still

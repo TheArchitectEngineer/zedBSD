@@ -10,8 +10,8 @@
  *
  * After the golden context (P5g) and the VRAM allocator (P4m) the driver
  * makes the graphics channel the GPU device keeps for the work it is given,
- * the way the first compute launch (compute.c) makes its channel and NVK
- * keeps one channel with both classes (both MIT):
+ * the way the first compute launch (compute.c) makes its channel, with
+ * both classes on the one channel:
  *
  *   1. an arena of the VRAM allocator for the space's page tables, the
  *      channel's instance block and USERD, and its own context buffers;
@@ -27,8 +27,7 @@
  * Afterwards nvrtx_work_submit() hands a push buffer segment to the
  * channel followed by a fence of the driver's, nvrtx_work_wait() polls for
  * a fence, and the map calls write the space's page entries for a run and
- * drop the stale translations.  The stop undoes 3 and 2 in nouveau's order
- * before the graphics context's stop.
+ * drop the stale translations.  The stop undoes 3 and 2 before the graphics context's stop.
  */
 
 #include <stdbool.h>
@@ -187,10 +186,15 @@ nvrtx_work_start(
 }
 
 /*
- * Undoes D1's objects in nouveau's order before the graphics context's
+ * Undoes P9w's objects before the graphics context's
  * stop: the channel off the scheduler, the 3D and compute objects, the
  * channel, the root, the space.  Failures are counted and shown; the
  * unload removes the rest.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_stop)
+ * and Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/fifo/chan.c
+ * (nvkm_chan_del).
  */
 void
 nvrtx_work_stop(

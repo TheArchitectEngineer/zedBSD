@@ -19,7 +19,7 @@
  * falcon differently: the falcon copies the code and the data by its own
  * DMA from a buffer in system memory, the signature the fuses ask for is
  * patched in by the driver, and the falcon's boot ROM is told where it is
- * before the start (nouveau's GA102 path, Linux v6.19, MIT).
+ * before the start.
  *
  * The protected region FWSEC sets up (FRTS) is torn down by FWSEC's SB
  * command and then by booter_unload, once each, after the GSP firmware has
@@ -341,6 +341,10 @@ nvrtx_frts_result(
  * The program's copy already carries its command and the signature the
  * fuses ask for (P0).  The falcon is reset, copies the code (all secure)
  * and the data by DMA, and its boot ROM checks the signature and starts it.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/falcon/ga102.c (ga102_flcn_fw_load,
+ * ga102_flcn_fw_boot).
  */
 static int
 boot_fwsec_rom(
@@ -400,6 +404,10 @@ boot_fwsec_rom(
  * secure) and the data by DMA, and its boot ROM checks the signature and
  * starts the application.  The copy is kept when the processor does not
  * halt, as it may still be reading it.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_booter_ctor)
+ * and nvkm/falcon/ga102.c (ga102_flcn_fw_load, ga102_flcn_fw_boot).
  */
 static int
 boot_booter_rom(
