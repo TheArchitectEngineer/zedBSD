@@ -43,11 +43,15 @@
 #define LAYOUT_FRTS_BYTES		(1ULL * LAYOUT_MIB)
 #define LAYOUT_TOP_ALIGN		(128ULL * LAYOUT_KIB)
 
-/* The heap the GSP's resource manager gets on Turing (operating system 0, base 8 MiB, at least 64 MiB). */
+/*
+ * The heap the GSP's resource manager gets, Turing to Ada: a base of 8 MiB,
+ * 96 KiB for each GiB of VRAM and room for the clients' allocations, on top
+ * of its operating system's part, and at least a least size; both of those
+ * are the generation's (its profile).
+ */
 #define LAYOUT_HEAP_BASE		(8ULL * LAYOUT_MIB)
 #define LAYOUT_HEAP_PER_GIB		(96ULL * LAYOUT_KIB)
 #define LAYOUT_HEAP_CLIENTS		(48ULL * LAYOUT_KIB * 2048ULL)
-#define LAYOUT_HEAP_MIN			(64ULL * LAYOUT_MIB)
 
 /* The heap outside the protected region. */
 #define LAYOUT_OUTER_HEAP_BYTES		(1ULL * LAYOUT_MIB)
@@ -86,6 +90,22 @@ nvrtx_vram_size(
 }
 
 /*
+ * Decodes the VRAM size from the register Ampere and later report it in: whole MiB.
+ */
+uint64_t
+nvrtx_vram_size_mib(
+	uint32_t value)
+{
+	uint64_t size;
+
+	/* The register counts MiB. */
+	size = (uint64_t)value << 20;
+
+	/* Succeeded: the size in bytes. */
+	return size;
+}
+
+/*
  * Finds the VGA workspace from the display's workspace register.
  *
  * Without the valid bit the workspace is the last MiB.  A valid address below
@@ -118,7 +138,9 @@ nvrtx_vga_workspace(
 /*
  * Computes the placement of the GSP firmware below the VGA workspace.
  *
- * Returns EINVAL when the VRAM is too small to hold the pieces.
+ * heap_os is the part of the heap the GSP's operating system takes and
+ * heap_min the least the heap may be (the generation's).  Returns EINVAL
+ * when the VRAM is too small to hold the pieces.
  */
 int
 nvrtx_wpr_layout(
@@ -126,6 +148,8 @@ nvrtx_wpr_layout(
 	uint64_t vga,
 	uint64_t boot_size,
 	uint64_t image_size,
+	uint64_t heap_os,
+	uint64_t heap_min,
 	struct nvrtx_wpr_layout *layout)
 {
 	uint64_t gib;
@@ -154,13 +178,18 @@ nvrtx_wpr_layout(
 
 	/* The heap grows with the VRAM and holds the clients' allocations. */
 	gib = (vram_size + LAYOUT_GIB - 1U) / LAYOUT_GIB;
-	heap_size = LAYOUT_HEAP_BASE;
+	heap_size = heap_os;
+	heap_size += LAYOUT_HEAP_BASE;
 	heap_size += layout_align_up(LAYOUT_HEAP_PER_GIB * gib, LAYOUT_MIB);
 	heap_size += layout_align_up(LAYOUT_HEAP_CLIENTS, LAYOUT_MIB);
 
 	/* A small VRAM still gives the heap its minimum. */
-	if (heap_size < LAYOUT_HEAP_MIN)
-		heap_size = LAYOUT_HEAP_MIN;
+	if (heap_size < heap_min)
+		heap_size = heap_min;
+
+	/* Refuses a VRAM whose room below the image cannot hold the heap, the record and the outer heap. */
+	if (layout->image < heap_size + 4ULL * LAYOUT_MIB)
+		return EINVAL;
 
 	/* The heap sits below the image on a MiB and fills the gap up to it. */
 	layout->heap = layout_align_down(layout->image - heap_size, LAYOUT_MIB);

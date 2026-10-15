@@ -105,9 +105,12 @@
 /* "Not supported": the brightness state the driver has no ACPI method to load. */
 #define DISPLAY_STATUS_NOT_SUPPORTED	0x56U
 
-/* The objects: the common object and the Turing display root. */
+/*
+ * The objects: the common object and the display root (its class is the
+ * generation's, the profile's class_display; the handle keeps Turing's
+ * number on every generation, as a handle is only the driver's name).
+ */
 #define DISPLAY_CLASS_COMMON		0x0073U
-#define DISPLAY_CLASS_ROOT		0xc570U
 #define DISPLAY_HANDLE_COMMON		0x00730000U
 #define DISPLAY_HANDLE_ROOT		0xc5700000U
 
@@ -201,7 +204,7 @@ nvrtx_display_start(
 		return error;
 
 	/* Makes the Turing display root under the display's device. */
-	error = nvrtx_rm_allocate_in(gpu, NVRTX_DISP_CLIENT, NVRTX_DISP_DEVICE, DISPLAY_HANDLE_ROOT, DISPLAY_CLASS_ROOT, NULL, 0U);
+	error = nvrtx_rm_allocate_in(gpu, NVRTX_DISP_CLIENT, NVRTX_DISP_DEVICE, DISPLAY_HANDLE_ROOT, gpu->identity.chip.profile->class_display, NULL, 0U);
 	if (error != 0)
 		return error;
 

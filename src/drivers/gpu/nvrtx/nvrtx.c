@@ -16,8 +16,10 @@
  * firmware's console keeps working, the PCI core never suspends the
  * function, and a machine without an NVIDIA GPU is not touched at all.
  *
- * Otherwise (the default) on a TU10x chip that shows the firmware's picture
- * (or any TU10x chip with nvrtx.gsp=1) the attach keeps the function and
+ * Otherwise (the default) on a chip of a verified family (TU10x) that shows
+ * the firmware's picture, or on any Turing, Ampere or Ada chip with
+ * nvrtx.gsp=1 (plan/ws242: GTX 16, RTX 30 and RTX 40 are not yet seen on
+ * real hardware, so they boot only when asked), the attach keeps the function and
  * starts a worker thread that runs the GSP boot (gsp.c) once the root file
  * system holds the firmware.  The kept function refuses a system suspend.
  *
@@ -97,10 +99,10 @@ drv_pci_nvrtx_driver_register(void)
 /*
  * Runs the read-only stages on one function, then keeps it or gives it back.
  *
- * The function is kept on a chip whose GSP path exists and which shows
- * the firmware's picture, unless the boot says nvrtx.gsp=0, or on such a
- * chip without the picture when the boot says nvrtx.gsp=1; otherwise the
- * bind is refused and it stays with the firmware.
+ * The function is kept on a chip of a verified family whose GSP path
+ * exists and which shows the firmware's picture, unless the boot says
+ * nvrtx.gsp=0, or on any chip with a GSP path when the boot says
+ * nvrtx.gsp=1; otherwise the bind is refused and it stays with the firmware.
  */
 static int
 nvrtx_attach(
@@ -108,6 +110,7 @@ nvrtx_attach(
 	const struct drv_pci_id *id)
 {
 	struct nvrtx_device device;
+	const struct nvrtx_profile *profile;
 	bool off;
 	bool allowed;
 	bool gsp_wanted;
@@ -157,7 +160,10 @@ nvrtx_attach(
 	 */
 	gsp_wanted = nvrtx_stage_gsp_wanted();
 	gsp_forced = nvrtx_stage_gsp_forced();
-	if (gsp_wanted && device.chip.gsp_tu102 != 0 && (device.gop_on_gpu != 0 || gsp_forced)) {
+	profile = device.chip.profile;
+	if (gsp_wanted &&
+	    profile != NULL &&
+	    ((profile->verified != 0 && device.gop_on_gpu != 0) || gsp_forced)) {
 		error = nvrtx_keep(&device);
 		if (error == 0)
 			return 0;
@@ -165,8 +171,12 @@ nvrtx_attach(
 		nvrtx_stage_mark("N1 done; the GSP boot not started (%d)", error);
 	} else if (!gsp_wanted) {
 		nvrtx_stage_mark("N1 done; %s left to the firmware (nvrtx.gsp=0)", device.chip.name);
-	} else if (device.chip.gsp_tu102 == 0) {
+	} else if (profile == NULL) {
 		nvrtx_stage_mark("N1 done; no GSP path for %s yet", device.chip.name);
+	} else if (profile->verified == 0) {
+		nvrtx_stage_mark("N1 done; %s (%s) not yet seen on hardware, left to the firmware (nvrtx.gsp=1 boots it)",
+		    device.chip.name,
+		    profile->name);
 	} else {
 		nvrtx_stage_mark("N1 done; no firmware picture on %s, left to the firmware (nvrtx.gsp=1 boots it)", device.chip.name);
 	}

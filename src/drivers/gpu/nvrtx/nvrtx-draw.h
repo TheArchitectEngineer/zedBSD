@@ -93,6 +93,9 @@ struct nvrtx_draw_ir {
 /* Writes the 3D class's binding and the state NVK gives a new queue; reports where the push buffer goes on. */
 size_t nvrtx_push_draw_init(uint8_t *push, size_t at, uint64_t zero_page);
 
+/* Writes the same binding and state for a generation's 3D class; reports where the push buffer goes on. */
+size_t nvrtx_push_draw_init_class(uint8_t *push, size_t at, uint64_t zero_page, uint32_t threed_class);
+
 /* Writes constant buffer 0's selection and its binding to every program group; reports where the push buffer goes on. */
 size_t nvrtx_push_draw_constants(uint8_t *push, size_t at, uint64_t address, uint32_t size);
 

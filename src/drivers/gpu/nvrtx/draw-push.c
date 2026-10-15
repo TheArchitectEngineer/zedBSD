@@ -303,7 +303,7 @@ static void draw_ir_store(struct drv_gpu_shader_ir_inst *list, uint32_t *count, 
  * target selection, the blend, cache, attribute and point defaults, the
  * window and viewport defaults, every scissor off, the constant buffer
  * groups emptied, the vertex substitute (a zero page) and every vertex
- * stream off.
+ * stream off, with Turing's 3D class.
  *
  * Returns where the push buffer goes on.
  */
@@ -312,6 +312,29 @@ nvrtx_push_draw_init(
 	uint8_t *push,
 	size_t at,
 	uint64_t zero_page)
+{
+	size_t end;
+
+	/* The same state as any generation's, with Turing's class. */
+	end = nvrtx_push_draw_init_class(push, at, zero_page, NVRTX_DRAW_CLASS);
+
+	/* Succeeded: where the push buffer goes on. */
+	return end;
+}
+
+/*
+ * Writes the 3D class's binding and the state NVK's queue starts with, as
+ * nvrtx_push_draw_init does, for the generation's 3D class (Turing's,
+ * Ampere's or Ada's: their methods are the same for this state).
+ *
+ * Returns where the push buffer goes on.
+ */
+size_t
+nvrtx_push_draw_init_class(
+	uint8_t *push,
+	size_t at,
+	uint64_t zero_page,
+	uint32_t threed_class)
 {
 	static const uint32_t sample_order[DRAW_SAMPLE_ORDERS] = {
 		0xa23eb139U, 0xfb72ea61U, 0xd950c843U, 0x88fac4e5U, 0x1ab3e1b6U,
@@ -322,7 +345,7 @@ nvrtx_push_draw_init(
 	uint32_t slot;
 
 	/* Binds the 3D class to its subchannel. */
-	at = draw_set(push, at, M_SET_OBJECT, NVRTX_DRAW_CLASS);
+	at = draw_set(push, at, M_SET_OBJECT, threed_class);
 
 	/* No tessellation, rendering on, compression on, one colour target. */
 	at = draw_set(push, at, M_SET_TESSELLATION_PARAMETERS, 0U);

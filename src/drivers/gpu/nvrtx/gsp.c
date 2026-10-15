@@ -47,13 +47,6 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The firmware files, below the firmware directory. */
-#define GSP_FILE_IMAGE			"gsp/gsp-570.144.bin"
-#define GSP_FILE_BOOTLOADER		"gsp/bootloader-570.144.bin"
-#define GSP_FILE_BOOTER_LOAD		"gsp/booter_load-570.144.bin"
-#define GSP_FILE_BOOTER_UNLOAD		"gsp/booter_unload-570.144.bin"
-#define GSP_FILE_FALCON_BOOTLOADER	"acr/bl.bin"
-
 /* The largest small file read whole. */
 #define GSP_SMALL_FILE_MAX		0x40000U
 
@@ -73,9 +66,6 @@
 #define GSP_REG_MAILBOX0		(NVRTX_FALCON_GSP_BASE + 0x040U)
 #define GSP_REG_MAILBOX1		(NVRTX_FALCON_GSP_BASE + 0x044U)
 #define GSP_REG_APP_VERSION		(NVRTX_FALCON_GSP_BASE + 0x080U)
-
-/* The GSP's RISC-V core status: bit 0 set while it runs. */
-#define GSP_REG_RISCV_STATUS		0x111240U
 
 /* The secure scratch register whose bit 26 says the boot has handed over to the firmware. */
 #define GSP_REG_BOOT_SCRATCH		0x1180f8U
@@ -525,12 +515,15 @@ static int
 gsp_load_files(
 	struct nvrtx_gpu *gpu)
 {
+	const struct nvrtx_profile *profile;
 	int error;
 
+	profile = gpu->identity.chip.profile;
+
 	/* Reads the GSP's RISC-V bootloader. */
-	error = nvrtx_file_load(GSP_FILE_BOOTLOADER, GSP_SMALL_FILE_MAX, &gpu->bootloader_file);
+	error = nvrtx_file_load(profile->bootloader_file, GSP_SMALL_FILE_MAX, &gpu->bootloader_file);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: %s not read (%d); no firmware package?", GSP_FILE_BOOTLOADER, error);
+		nvrtx_stage_mark("P0 fail: %s not read (%d); no firmware package?", profile->bootloader_file, error);
 		return error;
 	}
 
@@ -539,7 +532,7 @@ gsp_load_files(
 		return error;
 
 	/* Reads the two booters the secure processor runs. */
-	error = nvrtx_file_load(GSP_FILE_BOOTER_LOAD, GSP_SMALL_FILE_MAX, &gpu->booter_load);
+	error = nvrtx_file_load(profile->booter_load_file, GSP_SMALL_FILE_MAX, &gpu->booter_load);
 	if (error != 0)
 		return error;
 
@@ -547,7 +540,7 @@ gsp_load_files(
 	if (error != 0)
 		return error;
 
-	error = nvrtx_file_load(GSP_FILE_BOOTER_UNLOAD, GSP_SMALL_FILE_MAX, &gpu->booter_unload);
+	error = nvrtx_file_load(profile->booter_unload_file, GSP_SMALL_FILE_MAX, &gpu->booter_unload);
 	if (error != 0)
 		return error;
 
@@ -555,14 +548,16 @@ gsp_load_files(
 	if (error != 0)
 		return error;
 
-	/* Reads the falcon bootloader that loads FWSEC. */
-	error = nvrtx_file_load(GSP_FILE_FALCON_BOOTLOADER, GSP_SMALL_FILE_MAX, &gpu->falcon_bootloader);
-	if (error != 0)
-		return error;
+	/* Reads the falcon bootloader that loads FWSEC, where the generation has one. */
+	if (profile->falcon_bootloader_file != NULL) {
+		error = nvrtx_file_load(profile->falcon_bootloader_file, GSP_SMALL_FILE_MAX, &gpu->falcon_bootloader);
+		if (error != 0)
+			return error;
 
-	error = nvrtx_falcon_bl_parse(gpu->falcon_bootloader.data, gpu->falcon_bootloader.size, &gpu->falcon_bl);
-	if (error != 0)
-		return error;
+		error = nvrtx_falcon_bl_parse(gpu->falcon_bootloader.data, gpu->falcon_bootloader.size, &gpu->falcon_bl);
+		if (error != 0)
+			return error;
+	}
 
 	/* Succeeded: the small files are read. */
 	nvrtx_stage_mark("P0 files: booters %zu/%zu bytes, bootloader %zu bytes",
@@ -584,9 +579,9 @@ gsp_prepare_image(
 	memory = &gpu->memory;
 
 	/* Reads the image and its signature into DMA memory. */
-	error = nvrtx_file_load_image(gpu, GSP_FILE_IMAGE);
+	error = nvrtx_file_load_image(gpu, gpu->identity.chip.profile->image_file);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: %s not read (%d)", GSP_FILE_IMAGE, error);
+		nvrtx_stage_mark("P0 fail: %s not read (%d)", gpu->identity.chip.profile->image_file, error);
 		return error;
 	}
 
@@ -622,13 +617,16 @@ static int
 gsp_prepare_placement(
 	struct nvrtx_gpu *gpu)
 {
+	const struct nvrtx_profile *profile;
 	struct nvrtx_boot_memory *memory;
 	struct nvrtx_wpr_sources sources;
+	uint32_t vram_register;
 	uint64_t vram_size;
 	uint64_t vga;
 	int error;
 
 	memory = &gpu->memory;
+	profile = gpu->identity.chip.profile;
 
 	/* Copies the bootloader's payload into DMA memory. */
 	error = nvrtx_buffer_alloc(gpu, gpu->bootloader_desc.payload_size, &memory->bootloader);
@@ -639,12 +637,24 @@ gsp_prepare_placement(
 	    gpu->bootloader_file.data + gpu->bootloader_desc.payload_at,
 	    gpu->bootloader_desc.payload_size);
 
-	/* Reads the VRAM size and the VGA workspace. */
-	vram_size = nvrtx_vram_size(nvrtx_rd32(gpu, NVRTX_REG_VRAM_SIZE));
+	/* Reads the VRAM size, in the form the generation reports it, and the VGA workspace. */
+	vram_register = nvrtx_rd32(gpu, profile->vram_size_register);
+	if (profile->vram_size_in_mib != 0) {
+		vram_size = nvrtx_vram_size_mib(vram_register);
+	} else {
+		vram_size = nvrtx_vram_size(vram_register);
+	}
+
 	vga = nvrtx_vga_workspace(vram_size, nvrtx_rd32(gpu, NVRTX_REG_VGA_WORKSPACE));
 
-	/* Computes the placement. */
-	error = nvrtx_wpr_layout(vram_size, vga, gpu->bootloader_desc.payload_size, memory->image_size, &gpu->layout);
+	/* Computes the placement, with the generation's heap. */
+	error = nvrtx_wpr_layout(vram_size,
+	    vga,
+	    gpu->bootloader_desc.payload_size,
+	    memory->image_size,
+	    profile->heap_os_bytes,
+	    profile->heap_min_bytes,
+	    &gpu->layout);
 	if (error != 0) {
 		nvrtx_stage_mark("P0 fail: VRAM of %lluM too small", (unsigned long long)(vram_size >> 20));
 		return error;
@@ -744,6 +754,11 @@ gsp_prepare_fwsec(
 {
 	struct nvrtx_boot_memory *memory;
 	const uint8_t *program;
+	uint32_t wanted_version;
+	uint32_t fuse_register;
+	uint32_t fuse;
+	size_t buffer_size;
+	unsigned index;
 	int error;
 
 	memory = &gpu->memory;
@@ -762,18 +777,56 @@ gsp_prepare_fwsec(
 		return error;
 	}
 
-	/* Copies the program twice, once for each command. */
+	/* The descriptor's version must be the one the generation's falcon loads: 2 by the bootloader, 3 by DMA. */
+	wanted_version = 2U;
+	if (gpu->identity.chip.profile->falcon_style == NVRTX_FALCON_BOOT_ROM)
+		wanted_version = 3U;
+	if (gpu->fwsec.version != wanted_version) {
+		nvrtx_stage_mark("P0 fail: FWSEC v%u where v%u is loaded", (unsigned)gpu->fwsec.version, (unsigned)wanted_version);
+		return ENOTSUP;
+	}
+
+	/* The copies hold the program and, for version 3, the data's last DMA block whole. */
+	buffer_size = gpu->fwsec.program_size;
+	if ((size_t)gpu->fwsec.dmem_at + gpu->fwsec.dmem_load_size > buffer_size)
+		buffer_size = (size_t)gpu->fwsec.dmem_at + gpu->fwsec.dmem_load_size;
+
+	/* Copies the program twice, once for each command; the buffers start zeroed. */
 	program = gpu->vbios_data + gpu->fwsec.program_at;
-	error = nvrtx_buffer_alloc(gpu, gpu->fwsec.program_size, &memory->fwsec_frts);
+	error = nvrtx_buffer_alloc(gpu, buffer_size, &memory->fwsec_frts);
 	if (error != 0)
 		return error;
 
 	kern_memcpy(memory->fwsec_frts.dma.address, program, gpu->fwsec.program_size);
-	error = nvrtx_buffer_alloc(gpu, gpu->fwsec.program_size, &memory->fwsec_sb);
+	error = nvrtx_buffer_alloc(gpu, buffer_size, &memory->fwsec_sb);
 	if (error != 0)
 		return error;
 
 	kern_memcpy(memory->fwsec_sb.dma.address, program, gpu->fwsec.program_size);
+
+	/* Version 3: both copies carry the signature the GPU's fuse asks for. */
+	if (gpu->fwsec.version == 3U) {
+		fuse = 0U;
+		fuse_register = nvrtx_fwsec_fuse_register(&gpu->fwsec);
+		if (fuse_register != 0U)
+			fuse = nvrtx_rd32(gpu, fuse_register);
+
+		error = nvrtx_fwsec_fuse_index(&gpu->fwsec, fuse, &index);
+		if (error != 0) {
+			nvrtx_stage_mark("P0 fail: no FWSEC signature for fuse %08x (versions %04x)",
+			    (unsigned)fuse,
+			    (unsigned)gpu->fwsec.signature_versions);
+			return error;
+		}
+
+		error = nvrtx_fwsec_sign((uint8_t *)memory->fwsec_frts.dma.address, &gpu->fwsec, &gpu->vbios, index);
+		if (error != 0)
+			return error;
+
+		error = nvrtx_fwsec_sign((uint8_t *)memory->fwsec_sb.dma.address, &gpu->fwsec, &gpu->vbios, index);
+		if (error != 0)
+			return error;
+	}
 
 	/* Tells the first copy to set up the region and the second to tear it down. */
 	error = nvrtx_fwsec_command((uint8_t *)memory->fwsec_frts.dma.address,
@@ -802,13 +855,28 @@ gsp_prepare_falcons(
 	struct nvrtx_gpu *gpu)
 {
 	uint32_t words[NVRTX_DEVICE_INFO_WORDS];
+	enum nvrtx_falcon_style style;
 	uint32_t bit;
 	uint32_t index;
 	int error;
 
 	/* The GSP's falcon has no PMC bit of its own. */
+	style = gpu->identity.chip.profile->falcon_style;
 	gpu->gsp_falcon.base = NVRTX_FALCON_GSP_BASE;
 	gpu->gsp_falcon.pmc_mask = 0U;
+	gpu->gsp_falcon.style = style;
+
+	/*
+	 * From Ampere on the secure processor is reset without its PMC bit, as
+	 * nouveau's GSP path does (the device table moved and changed its form).
+	 */
+	if (style == NVRTX_FALCON_BOOT_ROM) {
+		gpu->sec2_falcon.base = NVRTX_FALCON_SEC2_BASE;
+		gpu->sec2_falcon.pmc_mask = 0U;
+		gpu->sec2_falcon.style = style;
+		nvrtx_stage_mark("P0 falcons: boot ROM loading (%s)", gpu->identity.chip.profile->name);
+		return 0;
+	}
 
 	/* Reads the device information table and finds the secure processor's reset bit. */
 	for (index = 0U; index < NVRTX_DEVICE_INFO_WORDS; index++)
@@ -822,6 +890,7 @@ gsp_prepare_falcons(
 
 	gpu->sec2_falcon.base = NVRTX_FALCON_SEC2_BASE;
 	gpu->sec2_falcon.pmc_mask = 1U << bit;
+	gpu->sec2_falcon.style = style;
 
 	/* Succeeded: both falcons are known. */
 	nvrtx_stage_mark("P0 falcons: SEC2 reset bit %u", (unsigned)bit);
@@ -1092,6 +1161,7 @@ gsp_boot_riscv(
 	uint64_t libos;
 	uint64_t record;
 	uint32_t status;
+	bool running;
 	int error;
 
 	nvrtx_stage_mark("P2a begin: booter_load");
@@ -1123,7 +1193,7 @@ gsp_boot_riscv(
 		return error;
 
 	/* Puts the GSP's falcon into RISC-V mode and gives it the start page. */
-	error = nvrtx_falcon_reset_engine(gpu, &gpu->gsp_falcon);
+	error = nvrtx_falcon_riscv_mode(gpu, &gpu->gsp_falcon);
 	if (error != 0)
 		return error;
 
@@ -1147,8 +1217,8 @@ gsp_boot_riscv(
 
 	/* Tells the GSP the bootloader's version and checks that its RISC-V core runs. */
 	nvrtx_wr32(gpu, GSP_REG_APP_VERSION, gpu->bootloader_desc.app_version);
-	status = nvrtx_rd32(gpu, GSP_REG_RISCV_STATUS);
-	if ((status & 0x1U) == 0U) {
+	running = nvrtx_falcon_riscv_running(gpu, &gpu->gsp_falcon, &status);
+	if (!running) {
 		nvrtx_stage_mark("P2a fail: the RISC-V core is not running (%08x)", (unsigned)status);
 		return EIO;
 	}
@@ -1224,6 +1294,11 @@ gsp_progress(
 	struct nvrtx_gpu *gpu,
 	uint32_t milliseconds)
 {
+	uint32_t status;
+
+	/* Reads the RISC-V core's status register of the generation. */
+	(void)nvrtx_falcon_riscv_running(gpu, &gpu->gsp_falcon, &status);
+
 	/*
 	 * The command queue's write pointer is the driver's and its read
 	 * pointer the firmware's, kept in the status queue's header page; the
@@ -1243,7 +1318,7 @@ gsp_progress(
 	    (unsigned)milliseconds,
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX0),
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX1),
-	    (unsigned)nvrtx_rd32(gpu, GSP_REG_RISCV_STATUS),
+	    (unsigned)status,
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_BOOT_SCRATCH));
 
 	/* The three logs' put pointers: how many words the firmware has written in each. */

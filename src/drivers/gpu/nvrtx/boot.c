@@ -15,6 +15,12 @@
  * on the secure processor (SEC2) and are written whole: the non-secure code,
  * the secure code, and the data, with the production signature patched in.
  *
+ * From Ampere on (a profile's NVRTX_FALCON_BOOT_ROM) both are given to the
+ * falcon differently: the falcon copies the code and the data by its own
+ * DMA from a buffer in system memory, the signature the fuses ask for is
+ * patched in by the driver, and the falcon's boot ROM is told where it is
+ * before the start (nouveau's GA102 path, Linux v6.19, MIT).
+ *
  * The protected region FWSEC sets up (FRTS) is torn down by FWSEC's SB
  * command and then by booter_unload, once each, after the GSP firmware has
  * unloaded; a region that stays is reported and left for a power cycle
@@ -64,6 +70,10 @@
 /* The mailbox values booter_unload takes for a plain unload. */
 #define BOOT_UNLOAD_ARGUMENT		0xffU
 
+static int boot_fwsec_rom(struct nvrtx_gpu *gpu, const struct nvrtx_buffer *program);
+static int boot_booter_rom(struct nvrtx_gpu *gpu, const struct nvrtx_booter *booter, uint32_t mailbox0, uint32_t mailbox1);
+static int boot_halt_result(const char *what, int error, uint32_t mailbox0, uint32_t mailbox1);
+
 /*
  * Runs one FWSEC program (FRTS or SB) on the GSP's falcon.
  *
@@ -86,6 +96,16 @@ nvrtx_fwsec_run(
 
 	falcon = &gpu->gsp_falcon;
 	fwsec = &gpu->fwsec;
+
+	/* An Ampere or later falcon loads FWSEC itself, checked by its boot ROM. */
+	if (falcon->style == NVRTX_FALCON_BOOT_ROM) {
+		error = boot_fwsec_rom(gpu, program);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: FWSEC ran its command. */
+		return 0;
+	}
 
 	/* Resets the falcon and lets it load from physical memory. */
 	error = nvrtx_falcon_reset(gpu, falcon);
@@ -168,6 +188,16 @@ nvrtx_booter_run(
 	int error;
 
 	falcon = &gpu->sec2_falcon;
+
+	/* An Ampere or later secure processor loads the booter itself, checked by its boot ROM. */
+	if (falcon->style == NVRTX_FALCON_BOOT_ROM) {
+		error = boot_booter_rom(gpu, booter, mailbox0, mailbox1);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the booter ran. */
+		return 0;
+	}
 
 	/* Resets the processor. */
 	error = nvrtx_falcon_reset(gpu, falcon);
@@ -304,4 +334,191 @@ nvrtx_frts_result(
 
 	/* Succeeded: the result code. */
 	return value >> 16;
+}
+
+/*
+ * Runs one FWSEC program (FRTS or SB) on an Ampere or later GSP falcon.
+ *
+ * The program's copy already carries its command and the signature the
+ * fuses ask for (P0).  The falcon is reset, copies the code (all secure)
+ * and the data by DMA, and its boot ROM checks the signature and starts it.
+ */
+static int
+boot_fwsec_rom(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_buffer *program)
+{
+	const struct nvrtx_falcon *falcon;
+	const struct nvrtx_fwsec *fwsec;
+	uint32_t mailbox0;
+	uint32_t mailbox1;
+	int error;
+
+	falcon = &gpu->gsp_falcon;
+	fwsec = &gpu->fwsec;
+
+	/* Resets the falcon. */
+	error = nvrtx_falcon_reset(gpu, falcon);
+	if (error != 0)
+		return error;
+
+	/* Copies the code, then the data in whole blocks. */
+	error = nvrtx_falcon_dma_load(gpu, falcon, program->dma.device_address, 0U, fwsec->imem_size, fwsec->imem_base, 1, 1);
+	if (error != 0)
+		return error;
+
+	error = nvrtx_falcon_dma_load(gpu,
+	    falcon,
+	    program->dma.device_address,
+	    fwsec->dmem_at,
+	    fwsec->dmem_load_size,
+	    fwsec->dmem_base,
+	    0,
+	    0);
+	if (error != 0)
+		return error;
+
+	/* Tells the boot ROM where the signature is and which ucode it checks, then starts at 0. */
+	nvrtx_falcon_boot_rom(gpu, falcon, fwsec->signature_at, fwsec->engine_id, fwsec->ucode_id);
+	mailbox0 = 0U;
+	mailbox1 = 0U;
+	error = nvrtx_falcon_boot(gpu, falcon, 0U, &mailbox0, &mailbox1);
+
+	/* The halt and mailbox 0 decide the outcome. */
+	error = boot_halt_result("fwsec", error, mailbox0, mailbox1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: FWSEC ran its command. */
+	return 0;
+}
+
+/*
+ * Runs a booter on an Ampere or later secure processor.
+ *
+ * The payload is copied into DMA memory with the signature the fuses ask
+ * for patched in; the processor is reset, copies the application (all
+ * secure) and the data by DMA, and its boot ROM checks the signature and
+ * starts the application.  The copy is kept when the processor does not
+ * halt, as it may still be reading it.
+ */
+static int
+boot_booter_rom(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_booter *booter,
+	uint32_t mailbox0,
+	uint32_t mailbox1)
+{
+	const struct nvrtx_falcon *falcon;
+	struct nvrtx_buffer payload;
+	uint32_t fuse_register;
+	uint32_t fuse;
+	unsigned index;
+	size_t signature_at;
+	uint8_t *bytes;
+	int error;
+
+	falcon = &gpu->sec2_falcon;
+
+	/* A booter without its meta data cannot be described to the boot ROM. */
+	if (booter->has_meta == 0)
+		return EINVAL;
+
+	/* The boot ROM finds the signature in the data, so it must lie there. */
+	if (booter->patch_location < booter->os_data_at)
+		return EINVAL;
+
+	/* Reads the fuse the booter's signature is chosen by (none: the last one). */
+	fuse = 0U;
+	fuse_register = nvrtx_booter_fuse_register(booter->engine_id, booter->ucode_id);
+	if (fuse_register != 0U)
+		fuse = nvrtx_rd32(gpu, fuse_register);
+
+	error = nvrtx_booter_fuse_index(booter, fuse, &index);
+	if (error != 0) {
+		nvrtx_stage_mark("booter: no signature for fuse %08x (version %u)", (unsigned)fuse, (unsigned)booter->fuse_version);
+		return error;
+	}
+
+	error = nvrtx_booter_signature(booter, index, &signature_at);
+	if (error != 0)
+		return error;
+
+	/* Copies the payload into DMA memory and patches the signature into it. */
+	payload.allocated = 0;
+	error = nvrtx_buffer_alloc(gpu, booter->payload_size, &payload);
+	if (error != 0)
+		return error;
+
+	bytes = (uint8_t *)payload.dma.address;
+	kern_memcpy(bytes, booter->file + booter->payload_at, booter->payload_size);
+	kern_memcpy(bytes + booter->patch_location, booter->file + signature_at, booter->signature_size);
+
+	/* Resets the processor. */
+	error = nvrtx_falcon_reset(gpu, falcon);
+	if (error != 0) {
+		nvrtx_buffer_free(gpu, &payload);
+		return error;
+	}
+
+	/* Copies the application into the code at 0, then the data at 0. */
+	error = nvrtx_falcon_dma_load(gpu, falcon, payload.dma.device_address, booter->app_at, booter->app_size, 0U, 1, 1);
+	if (error == 0) {
+		error = nvrtx_falcon_dma_load(gpu,
+		    falcon,
+		    payload.dma.device_address,
+		    booter->os_data_at,
+		    booter->os_data_size,
+		    0U,
+		    0,
+		    0);
+	}
+
+	if (error != 0) {
+		nvrtx_buffer_free(gpu, &payload);
+		return error;
+	}
+
+	/* Tells the boot ROM where the signature is in the data and which ucode it checks, then starts the application. */
+	nvrtx_falcon_boot_rom(gpu, falcon, booter->patch_location - booter->os_data_at, booter->engine_id, booter->ucode_id);
+	error = nvrtx_falcon_boot(gpu, falcon, booter->app_at, &mailbox0, &mailbox1);
+
+	/* A processor that did not halt may still read the copy, which is then kept. */
+	if (error != ETIMEDOUT)
+		nvrtx_buffer_free(gpu, &payload);
+
+	/* The halt and mailbox 0 decide the outcome. */
+	error = boot_halt_result("booter", error, mailbox0, mailbox1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the booter ran. */
+	return 0;
+}
+
+/*
+ * Turns a falcon's halt into the result: the boot's error when it did not
+ * halt, EIO for a nonzero mailbox 0, both shown with the mailboxes.
+ */
+static int
+boot_halt_result(
+	const char *what,
+	int error,
+	uint32_t mailbox0,
+	uint32_t mailbox1)
+{
+	/* A falcon that did not halt. */
+	if (error != 0) {
+		nvrtx_stage_mark("%s: no halt (mailbox %08x %08x)", what, (unsigned)mailbox0, (unsigned)mailbox1);
+		return error;
+	}
+
+	/* A nonzero mailbox is the program's error. */
+	if (mailbox0 != 0U) {
+		nvrtx_stage_mark("%s: mailbox %08x %08x", what, (unsigned)mailbox0, (unsigned)mailbox1);
+		return EIO;
+	}
+
+	/* Succeeded: the program ran to its halt with no error. */
+	return 0;
 }

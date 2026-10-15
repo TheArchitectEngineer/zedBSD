@@ -1,13 +1,16 @@
-# zedBSD optional NVIDIA GSP-RM firmware package (Turing TU10x, 570.144)
+# zedBSD optional NVIDIA GSP-RM firmware package (Turing, Ampere, Ada; 570.144)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # The nvrtx driver (src/drivers/gpu/nvrtx, plan/ws037/nvrtx-design.md
-# section 9) boots NVIDIA's GSP-RM on a Turing GPU from these files: the
-# GSP-RM image, its RISC-V bootloader, the SEC2 booter load and unload
-# images, and the falcon bootloader that runs the VBIOS FWSEC.  WHENCE links
-# the tu104 and tu106 names to tu102; the image builder installs files only,
-# so the files are installed once below tu102 and the driver reads that
-# directory for every TU10x chip instead of carrying 85 MB of copies.
+# section 9, plan/ws242/phase001/phase.md) boots NVIDIA's GSP-RM on a
+# Turing, Ampere or Ada GPU from these files: the GSP-RM images (one for
+# Turing, one for Ampere and Ada), the RISC-V bootloaders, the SEC2 booter
+# load and unload images, and the falcon bootloader that runs the VBIOS
+# FWSEC on Turing.  WHENCE links tu104, tu106 and tu117 to tu102 and tu116,
+# ga103 to ga107 to ga102, ad103 to ad107 to ad102, and the Ada GSP-RM image
+# to ga102's; the image builder installs files only, so every file is
+# installed once and the driver maps each chip to the directories it reads
+# instead of carrying copies.
 include $(dir $(lastword $(MAKEFILE_LIST)))../../base/package.mk
 include $(if $(ZEDBSD_TOPLEVEL_BUILD),userland/firmware,$(ZEDBSD_REPO_ROOT)/userland/firmware)/zedbsd-firmware.mk
 
@@ -29,6 +32,15 @@ NVIDIA_GSP_FIRMWARE_FILES ?= \
 	booter_load-570.144.bin|nvidia/tu102/gsp/booter_load-570.144.bin|59272|7bb181f544a942299bbf4642da6d9bb58bfed8459725094e2ace56647cd3ec8c \
 	booter_unload-570.144.bin|nvidia/tu102/gsp/booter_unload-570.144.bin|39304|5c7f1aa37d045cc20bb81584a830e8dfa4483f1cd63943de83a58c4be19a1782 \
 	bl.bin|nvidia/tu102/acr/bl.bin|1280|01326cc997716bebb0eab9fe1f463fffa0ee586079e4ca0e5bb096ab6fcfedab \
+	tu116-booter_load-570.144.bin|nvidia/tu116/gsp/booter_load-570.144.bin|59016|9bd01804b4b91d92904e7735b025e07a3c935bc6fb92e3833e85c297546025b9 \
+	tu116-booter_unload-570.144.bin|nvidia/tu116/gsp/booter_unload-570.144.bin|39048|bf4a2b778722dde57850839bb9f7651ae29592ce85d6df4160d2d228ff430156 \
+	ga102-gsp-570.144.bin|nvidia/ga102/gsp/gsp-570.144.bin|63571696|a8c3ebeed280323aedb51c061f321e73379cce7a9ae643a33dd03915df027f7f \
+	ga102-bootloader-570.144.bin|nvidia/ga102/gsp/bootloader-570.144.bin|24684|82428f532240727e95bb3083fbaaba9b2cc7b937314323f2d546ce7245f27fad \
+	ga102-booter_load-570.144.bin|nvidia/ga102/gsp/booter_load-570.144.bin|61304|4497e3eff7e95c774b8a569d17b27c08c9650158d10b229d2be81cdcad9a085b \
+	ga102-booter_unload-570.144.bin|nvidia/ga102/gsp/booter_unload-570.144.bin|41080|8e63db5b78d7d3e349f20a2d11099c3d7109081393cb09ffc0a28133324ae009 \
+	ad102-bootloader-570.144.bin|nvidia/ad102/gsp/bootloader-570.144.bin|36972|65ab2e6b6e0fca95365c4deac79a34582abcfeb15b6ae234138f22e7183118a8 \
+	ad102-booter_load-570.144.bin|nvidia/ad102/gsp/booter_load-570.144.bin|57720|8b293e19b637c5e22c87a2428d1c71bb13e0904e8a88ac6b3c6c1f2679c6e37a \
+	ad102-booter_unload-570.144.bin|nvidia/ad102/gsp/booter_unload-570.144.bin|41592|975b85a14ded8e430d30f000c3c1afdd55c15dee04f35ff9dfd876acd7e67186 \
 	LICENCE.nvidia|LICENCE.nvidia|6212|bc5225a57f49c5249dcf238e4ae6437811677a2a8a7f579c3d839e058653ee44 \
 	WHENCE|WHENCE|425450|c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
 # The package directory of the zedBSD firmware repository; empty fetches
@@ -50,6 +62,15 @@ override NVIDIA_GSP_FIRMWARE_FILES := \
 	booter_load-570.144.bin|nvidia/tu102/gsp/booter_load-570.144.bin|59272|7bb181f544a942299bbf4642da6d9bb58bfed8459725094e2ace56647cd3ec8c \
 	booter_unload-570.144.bin|nvidia/tu102/gsp/booter_unload-570.144.bin|39304|5c7f1aa37d045cc20bb81584a830e8dfa4483f1cd63943de83a58c4be19a1782 \
 	bl.bin|nvidia/tu102/acr/bl.bin|1280|01326cc997716bebb0eab9fe1f463fffa0ee586079e4ca0e5bb096ab6fcfedab \
+	tu116-booter_load-570.144.bin|nvidia/tu116/gsp/booter_load-570.144.bin|59016|9bd01804b4b91d92904e7735b025e07a3c935bc6fb92e3833e85c297546025b9 \
+	tu116-booter_unload-570.144.bin|nvidia/tu116/gsp/booter_unload-570.144.bin|39048|bf4a2b778722dde57850839bb9f7651ae29592ce85d6df4160d2d228ff430156 \
+	ga102-gsp-570.144.bin|nvidia/ga102/gsp/gsp-570.144.bin|63571696|a8c3ebeed280323aedb51c061f321e73379cce7a9ae643a33dd03915df027f7f \
+	ga102-bootloader-570.144.bin|nvidia/ga102/gsp/bootloader-570.144.bin|24684|82428f532240727e95bb3083fbaaba9b2cc7b937314323f2d546ce7245f27fad \
+	ga102-booter_load-570.144.bin|nvidia/ga102/gsp/booter_load-570.144.bin|61304|4497e3eff7e95c774b8a569d17b27c08c9650158d10b229d2be81cdcad9a085b \
+	ga102-booter_unload-570.144.bin|nvidia/ga102/gsp/booter_unload-570.144.bin|41080|8e63db5b78d7d3e349f20a2d11099c3d7109081393cb09ffc0a28133324ae009 \
+	ad102-bootloader-570.144.bin|nvidia/ad102/gsp/bootloader-570.144.bin|36972|65ab2e6b6e0fca95365c4deac79a34582abcfeb15b6ae234138f22e7183118a8 \
+	ad102-booter_load-570.144.bin|nvidia/ad102/gsp/booter_load-570.144.bin|57720|8b293e19b637c5e22c87a2428d1c71bb13e0904e8a88ac6b3c6c1f2679c6e37a \
+	ad102-booter_unload-570.144.bin|nvidia/ad102/gsp/booter_unload-570.144.bin|41592|975b85a14ded8e430d30f000c3c1afdd55c15dee04f35ff9dfd876acd7e67186 \
 	LICENCE.nvidia|LICENCE.nvidia|6212|bc5225a57f49c5249dcf238e4ae6437811677a2a8a7f579c3d839e058653ee44 \
 	WHENCE|WHENCE|425450|c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527
 override NVIDIA_GSP_FIRMWARE_ZEDBSD_URL := $(if $(ZEDBSD_FIRMWARE_REPOSITORY_URL),$(ZEDBSD_FIRMWARE_REPOSITORY_URL)/nvidia-gsp)
@@ -61,23 +82,41 @@ override NVIDIA_GSP_FIRMWARE_TAG := 20260410
 override NVIDIA_GSP_FIRMWARE_TAG_OBJECT := 4585dd5a5f0cee08990d754701d8866d9e9266e6
 override NVIDIA_GSP_FIRMWARE_VERSION := 570.144
 override NVIDIA_GSP_FIRMWARE_SHA256_COMMAND := sha256sum
-override NVIDIA_GSP_FIRMWARE_FILE_COUNT := 7
+override NVIDIA_GSP_FIRMWARE_FILE_COUNT := 16
 
 NVIDIA_GSP_FIRMWARE_CACHE_ROOT ?= $(if $(ZEDBSD_TOPLEVEL_BUILD),build,$(ZEDBSD_REPO_ROOT)/build)/sources/firmware/nvidia-gsp
-override NVIDIA_GSP_FIRMWARE_CACHE_DIR := $(NVIDIA_GSP_FIRMWARE_CACHE_ROOT)/$(NVIDIA_GSP_FIRMWARE_REVISION)
+# The cache holds one file set of one revision.  The set grew from Turing's
+# seven files to sixteen (ws242-p001); a cache of the old set keeps its own
+# directory, so it is never mistaken for a broken cache of the new one.
+override NVIDIA_GSP_FIRMWARE_SET := tu-ga-ad
+override NVIDIA_GSP_FIRMWARE_CACHE_DIR := $(NVIDIA_GSP_FIRMWARE_CACHE_ROOT)/$(NVIDIA_GSP_FIRMWARE_REVISION)-$(NVIDIA_GSP_FIRMWARE_SET)
 override NVIDIA_GSP_FIRMWARE_CACHE_NAMES := $(foreach entry,$(NVIDIA_GSP_FIRMWARE_FILES),$(word 1,$(subst |, ,$(entry))))
 override NVIDIA_GSP_FIRMWARE_CACHE_FILES := $(addprefix $(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/,$(NVIDIA_GSP_FIRMWARE_CACHE_NAMES))
 override NVIDIA_GSP_FIRMWARE_MANIFEST := userland/firmware/nvidia-gsp/nvidia-gsp-firmware.manifest
-override NVIDIA_GSP_FIRMWARE_DIR := /lib/firmware/nvidia/tu102
+override NVIDIA_GSP_FIRMWARE_DIR := /lib/firmware/nvidia
 override NVIDIA_GSP_FIRMWARE_LICENSE_DIR := /usr/share/licenses/nvidia-gsp-firmware
 
-# The installed names, below the tu102 directory the driver reads.
+# The installed names, below the chip directories the driver reads.  The
+# image builder installs files only, so each file is installed once, under the
+# directory WHENCE gives it, and the driver maps a chip to the directories
+# (src/drivers/gpu/nvrtx/identify.c): TU116 and TU117 take the tu102 image,
+# bootloader and falcon bootloader with their own booters, every GA10x chip
+# ga102, and every AD10x chip ad102 with the ga102 image.
 override NVIDIA_GSP_FIRMWARE_DATA := \
-	$(NVIDIA_GSP_FIRMWARE_DIR)/gsp/gsp-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/gsp-570.144.bin \
-	$(NVIDIA_GSP_FIRMWARE_DIR)/gsp/bootloader-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/bootloader-570.144.bin \
-	$(NVIDIA_GSP_FIRMWARE_DIR)/gsp/booter_load-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/booter_load-570.144.bin \
-	$(NVIDIA_GSP_FIRMWARE_DIR)/gsp/booter_unload-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/booter_unload-570.144.bin \
-	$(NVIDIA_GSP_FIRMWARE_DIR)/acr/bl.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/bl.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu102/gsp/gsp-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/gsp-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu102/gsp/bootloader-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/bootloader-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu102/gsp/booter_load-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/booter_load-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu102/gsp/booter_unload-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/booter_unload-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu102/acr/bl.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/bl.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu116/gsp/booter_load-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/tu116-booter_load-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/tu116/gsp/booter_unload-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/tu116-booter_unload-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ga102/gsp/gsp-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ga102-gsp-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ga102/gsp/bootloader-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ga102-bootloader-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ga102/gsp/booter_load-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ga102-booter_load-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ga102/gsp/booter_unload-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ga102-booter_unload-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ad102/gsp/bootloader-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ad102-bootloader-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ad102/gsp/booter_load-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ad102-booter_load-570.144.bin \
+	$(NVIDIA_GSP_FIRMWARE_DIR)/ad102/gsp/booter_unload-570.144.bin=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/ad102-booter_unload-570.144.bin \
 	$(NVIDIA_GSP_FIRMWARE_LICENSE_DIR)/LICENCE.nvidia=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/LICENCE.nvidia \
 	$(NVIDIA_GSP_FIRMWARE_LICENSE_DIR)/WHENCE=$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)/WHENCE \
 	/usr/share/zedbsd/packages/nvidia-gsp-firmware.manifest=$(NVIDIA_GSP_FIRMWARE_MANIFEST)
@@ -99,7 +138,7 @@ nvidia-gsp-firmware-license:
 nvidia-gsp-firmware-license-pending:
 	@if test ! -d '$(NVIDIA_GSP_FIRMWARE_CACHE_DIR)'; then ZEDBSD_FIRMWARE_LICENSE_MODE=pending $(NVIDIA_GSP_FIRMWARE_LICENSE_COMMAND); fi
 
-$(eval $(call ZEDBSD_USERLAND_PACKAGE,nvidia-gsp-firmware,NVIDIA GSP firmware for Turing,amd64,n,package,,y,firmware,firmware/nvidia-gsp,,,data,$(NVIDIA_GSP_FIRMWARE_DATA),,))
+$(eval $(call ZEDBSD_USERLAND_PACKAGE,nvidia-gsp-firmware,NVIDIA GSP firmware for Turing Ampere and Ada,amd64,n,package,,y,firmware,firmware/nvidia-gsp,,,data,$(NVIDIA_GSP_FIRMWARE_DATA),,))
 override USERLAND_nvidia-gsp-firmware_DATA := $(NVIDIA_GSP_FIRMWARE_DATA)
 ZEDBSD_USERLAND_DOWNLOAD_TARGETS += nvidia-gsp-firmware
 

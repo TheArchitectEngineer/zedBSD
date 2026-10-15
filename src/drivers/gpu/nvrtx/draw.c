@@ -369,7 +369,7 @@ draw_object(
 	int error;
 
 	/* TURING_A, no parameters (as the golden context's). */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, NVRTX_HANDLE_DRAW, NVRTX_CLASS_THREED, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, NVRTX_HANDLE_DRAW, gpu->identity.chip.profile->class_threed, NULL, 0U);
 	if (error != 0) {
 		nvrtx_stage_mark("P9g fail: the 3D object was refused (%d)", error);
 		return error;

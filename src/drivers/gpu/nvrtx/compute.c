@@ -641,7 +641,7 @@ compute_channel(
 		return ENOMEM;
 
 	nvrtx_channel_params(params, &setup);
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_COMPUTE_CHANNEL, NVRTX_CLASS_CHANNEL, params, NVRTX_CHANNEL_PARAMS_BYTES);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_COMPUTE_CHANNEL, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
 	if (error != 0) {
 		kern_free(params);
 		return error;
@@ -657,7 +657,7 @@ compute_channel(
 	}
 
 	/* The compute object. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, NVRTX_HANDLE_COMPUTE, NVRTX_CLASS_COMPUTE, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, NVRTX_HANDLE_COMPUTE, gpu->identity.chip.profile->class_compute, NULL, 0U);
 	if (error != 0) {
 		kern_free(params);
 		return error;

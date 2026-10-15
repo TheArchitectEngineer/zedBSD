@@ -447,7 +447,8 @@ nvrtx_push_stamp(
 
 /*
  * Writes the push buffer of a copy-engine fill on a subchannel: the class
- * bound there, the constant, and one line of words at the destination.
+ * bound there (the generation's copy class), the constant, and one line of
+ * words at the destination.
  *
  * Returns the length in bytes.
  */
@@ -455,6 +456,7 @@ size_t
 nvrtx_push_copy_fill(
 	uint8_t *push,
 	uint32_t subchannel,
+	uint32_t copy_class,
 	uint64_t destination,
 	uint32_t words,
 	uint32_t value)
@@ -463,7 +465,7 @@ nvrtx_push_copy_fill(
 
 	/* Binds the copy class to the subchannel. */
 	at = objects_method_on(push, 0U, subchannel, OBJECTS_COPY_SET_OBJECT, 1U);
-	nvrtx_put32(push, at, NVRTX_CLASS_COPY);
+	nvrtx_put32(push, at, copy_class);
 	at += 4U;
 
 	/* Fills from one 4-byte constant. */

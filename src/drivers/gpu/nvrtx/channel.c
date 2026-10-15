@@ -291,7 +291,7 @@ nvrtx_channel_start(
 	setup.methods = engine->methods.dma.device_address;
 	setup.methods_size = engine->methods_size;
 	nvrtx_channel_params(params, &setup);
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_CHANNEL, NVRTX_CLASS_CHANNEL, params, NVRTX_CHANNEL_PARAMS_BYTES);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_CHANNEL, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
 	if (error != 0)
 		return error;
 
@@ -894,7 +894,7 @@ channel_copy_fill(
 	kern_memset(params, 0, sizeof(params));
 	nvrtx_put32(params, 0U, 1U);
 	nvrtx_put32(params, 4U, engine->pick.engine);
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_CHANNEL, NVRTX_HANDLE_COPY, NVRTX_CLASS_COPY, params, sizeof(params));
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_CHANNEL, NVRTX_HANDLE_COPY, gpu->identity.chip.profile->class_copy, params, sizeof(params));
 	if (error != 0)
 		return error;
 
@@ -903,7 +903,12 @@ channel_copy_fill(
 
 	/* Writes the fill and a second fence after it, in the push buffer's second half. */
 	push = (uint8_t *)engine->push.dma.address + CHANNEL_FILL_PUSH_AT;
-	length = nvrtx_push_copy_fill(push, CHANNEL_COPY_SUBCHANNEL, semaphore_va + CHANNEL_FILL_AT, CHANNEL_FILL_WORDS, CHANNEL_FILL_VALUE);
+	length = nvrtx_push_copy_fill(push,
+	    CHANNEL_COPY_SUBCHANNEL,
+	    gpu->identity.chip.profile->class_copy,
+	    semaphore_va + CHANNEL_FILL_AT,
+	    CHANNEL_FILL_WORDS,
+	    CHANNEL_FILL_VALUE);
 	length += nvrtx_push_fence(push + length, semaphore_va, CHANNEL_FILL_FENCE_VALUE);
 
 	/* Submits it as ring entry 1 and waits for the second fence. */
