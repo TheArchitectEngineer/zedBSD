@@ -566,6 +566,40 @@ drv_acpi_os_table(
 }
 
 /*
+ * Lends the bytes of a firmware table found by its signature.
+ *
+ * The lookup runs under the interpreter lock, because the first lookup of a
+ * table reads its copy, and LoadTable, which looks tables up from inside the
+ * interpreter, would otherwise race with it.
+ */
+int
+drv_acpi_table_lookup(
+	const char *signature,
+	const uint8_t **data,
+	size_t *length)
+{
+	int error;
+
+	/* No tables are known before the attachment found them, or on a platform without them. */
+	if (firmware.tables == NULL)
+		return ENODEV;
+
+	/* Looks the table up in the root table's list, as LoadTable does. */
+	mutex_lock(&interpreter_lock);
+
+	error = drv_acpi_firmware_find(&firmware, signature, "", "", data, length);
+
+	mutex_unlock(&interpreter_lock);
+
+	/* Reports a signature the firmware does not list, or a copy that could not be read. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: data and length name the kernel's copy of the table. */
+	return 0;
+}
+
+/*
  * Puts the machine in ACPI mode when the namespace did not load, so that
  * its fixed hardware still works (BUG-196): without ACPI_ENABLE written to
  * SMI_CMD, SCI_EN stays clear, and a press of the power button turns an

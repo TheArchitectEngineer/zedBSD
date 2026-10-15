@@ -1,0 +1,69 @@
+diff -u -r a/include/drivers/acpi/acpi.h b/include/drivers/acpi/acpi.h
+--- a/include/drivers/acpi/acpi.h	2026-10-16 00:15:21.410113853 +0900
++++ b/include/drivers/acpi/acpi.h	2026-10-16 00:15:21.566113530 +0900
+@@ -246,6 +246,21 @@
+ struct drv_acpi_node *
+ drv_acpi_root(void);
+ 
++/*
++ * Lends the bytes of a firmware table found by its signature.
++ *
++ * The first table the root table lists with that signature is reported;
++ * its bytes are the kernel's copy and stay valid for the life of the
++ * system, so the caller reads them in place and never frees them.  Returns
++ * ENODEV before the tables are found or when the platform has none, and
++ * ENOENT when no listed table carries the signature.
++ */
++int
++drv_acpi_table_lookup(
++	const char *signature,
++	const uint8_t **data,
++	size_t *length);
++
+ int
+ drv_acpi_walk(
+ 	struct drv_acpi_node *scope,
+diff -u -r a/src/drivers/acpi/acpi-kern.c b/src/drivers/acpi/acpi-kern.c
+--- a/src/drivers/acpi/acpi-kern.c	2026-10-16 00:15:21.414113844 +0900
++++ b/src/drivers/acpi/acpi-kern.c	2026-10-16 00:15:21.566113530 +0900
+@@ -566,6 +566,40 @@
+ }
+ 
+ /*
++ * Lends the bytes of a firmware table found by its signature.
++ *
++ * The lookup runs under the interpreter lock, because the first lookup of a
++ * table reads its copy, and LoadTable, which looks tables up from inside the
++ * interpreter, would otherwise race with it.
++ */
++int
++drv_acpi_table_lookup(
++	const char *signature,
++	const uint8_t **data,
++	size_t *length)
++{
++	int error;
++
++	/* No tables are known before the attachment found them, or on a platform without them. */
++	if (firmware.tables == NULL)
++		return ENODEV;
++
++	/* Looks the table up in the root table's list, as LoadTable does. */
++	mutex_lock(&interpreter_lock);
++
++	error = drv_acpi_firmware_find(&firmware, signature, "", "", data, length);
++
++	mutex_unlock(&interpreter_lock);
++
++	/* Reports a signature the firmware does not list, or a copy that could not be read. */
++	if (error != 0)
++		return error;
++
++	/* Succeeded: data and length name the kernel's copy of the table. */
++	return 0;
++}
++
++/*
+  * Puts the machine in ACPI mode when the namespace did not load, so that
+  * its fixed hardware still works (BUG-196): without ACPI_ENABLE written to
+  * SMI_CMD, SCI_EN stays clear, and a press of the power button turns an
