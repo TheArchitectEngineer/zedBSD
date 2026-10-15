@@ -202,8 +202,8 @@
 /*
  * The region the start arguments are named as to the GSP's operating system:
  * one whole page, as both other drivers give it.  The operating system maps
- * its regions by pages and stopped at a region of the arguments' own 72 bytes
- * (R3: its init log ends after mapping that region).
+ * its regions by pages and stops at a region of the arguments' own 72 bytes
+ * (its init log ends after mapping that region).
  *
  * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
  * src/nvidia/inc/kernel/gpu/gsp/gsp_init_args.h (GSP_ARGUMENTS_CACHED,
@@ -604,8 +604,8 @@ struct nvrtx_fwsec {
 
 /*
  * The allocation call's header (seven words and four reserved bytes, 32
- * bytes; R5 found the parameters had been put 12 bytes late, so the space's
- * flags were never read) and where the resource manager reports its status.
+ * bytes; parameters put 12 bytes late leave the space's flags unread) and
+ * where the resource manager reports its status.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/alloc.h

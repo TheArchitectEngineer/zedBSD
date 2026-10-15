@@ -152,7 +152,7 @@ nvrtx_runtime_start(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	nvrtx_stage_mark("D2: no renderer worker (%d)", error);
+	nvrtx_stage_mark("renderer: no renderer worker (%d)", error);
 }
 
 /*
@@ -663,7 +663,7 @@ runtime_fault(
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
 	if (first)
-		nvrtx_stage_mark("D2: the renderer faulted (%d); it takes no more work", error);
+		nvrtx_stage_mark("renderer: the renderer faulted (%d); it takes no more work", error);
 }
 
 /*

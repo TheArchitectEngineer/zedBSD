@@ -1105,7 +1105,7 @@ gsp_teardown(
 	/*
 	 * Frees the graphics objects, the channel and the address space (channel-stop)
 	 * before every unload: the firmware did not unload with a scheduled
-	 * channel left (R6).
+	 * channel left.
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
 		nvrtx_work_stop(gpu);
@@ -1131,7 +1131,7 @@ gsp_teardown(
 	/*
 	 * Tears the region down only after a GSP that ran has unloaded:
 	 * booter_unload undoes what booter_load and the firmware set up, and
-	 * refuses a region that only FWSEC-FRTS made (R2: mailbox 0x29).  A
+	 * refuses a region that only FWSEC-FRTS made (it answers with mailbox 0x29).  A
 	 * region without a started firmware stays until the GPU loses power or
 	 * the host reboots, as the vendor's driver also leaves it.
 	 */
