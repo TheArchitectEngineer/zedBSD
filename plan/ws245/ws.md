@@ -57,6 +57,12 @@ Resume point: 2026-10-15 夜 中断。Phase の表を「段ごとに 5330 で回
 - 既に main に入った p002（土台）・p004（VBT・EDID）の新しい file（呼ばれない）と、止めた p006 の途中の差分（p1 の worktree、未 commit）の扱いは、作り直しの中で決める（ユーザーに確かめる）。
 - 作り直すまで WS245 の実装は止める。
 
+## 5330 の素の起動の確かめ（2026-10-15 夜）
+
+- U10（`build/uat/ws245-amd64/hdd-image.img`、main 1716c14bc、p002・p004 の merge を含む）: 普通の起動で graphical の login・session・compositor・内蔵 LCD・backlight（brightness=100）、GPU の投入 2〜4.6 ms、device lost 0。ユーザー「問題なく使えてます。」→ 今の main は 5330 で動く（passthrough は VBT が無く panel が点かないので使わない、ユーザー「ベアメタルにしましょう」）。
+- kernel の binary の比べ（Q1、sha256）: p002 の 2 つ目以降と p004 の xd の file は呼ばれず binary を変えない。binary を変えたのは p002 の 1 つ目（9e78e62f8、own の型の分離と Gen9 の移設）と AX211 の整理。
+- 観測（未解析）: Ctrl+Shift の console の起動で `/bin/wayland` を ssh から root で手で起動すると、GPU の仕事が 1 回約 2 秒（GPU 自身は 16 ms）で時間切れ → device lost。普通の起動では出ない。最初の普通の起動（boot-000001、log が 0 byte）で backlight が消えて何も写らなかった原因は不明。
+
 ## §7 の回答（2026-10-15 夕 ユーザー、1 件ずつクリック）
 
 | # | 回答 | 既定の案との差 |
