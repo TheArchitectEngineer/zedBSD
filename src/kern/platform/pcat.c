@@ -50,6 +50,9 @@
 #if CONFIG_DRIVER_PCI_NVRTX
 #include <drivers/pci/pci-nvrtx.h>
 #endif
+#if CONFIG_DRIVER_PCI_AMDRDNA
+#include <drivers/pci/pci-amdrdna.h>
+#endif
 #if CONFIG_DRIVER_PCI_HDA
 #include <drivers/pci/pci-hda.h>
 #endif
@@ -175,6 +178,9 @@ kern_platform_init(
 #if CONFIG_DRIVER_PCI_NVRTX
 	int nvrtx_error;
 #endif
+#if CONFIG_DRIVER_PCI_AMDRDNA
+	int amdrdna_error;
+#endif
 #if CONFIG_DRIVER_PCI_HDA
 	int hda_error;
 #endif
@@ -293,6 +299,13 @@ kern_platform_init(
 	nvrtx_error = drv_pci_nvrtx_driver_register();
 	if (nvrtx_error != 0)
 		kern_logf("pci: nvrtx driver registration failed (%d)\n", nvrtx_error);
+
+#endif
+#if CONFIG_DRIVER_PCI_AMDRDNA
+	/* Offers AMD GPUs to the amdrdna driver, which reads them and keeps the RDNA ones. */
+	amdrdna_error = drv_pci_amdrdna_driver_register();
+	if (amdrdna_error != 0)
+		kern_logf("pci: amdrdna driver registration failed (%d)\n", amdrdna_error);
 
 #endif
 #if CONFIG_DRIVER_PCI_HDA

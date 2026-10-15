@@ -210,9 +210,15 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/perf.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/node.c src/drivers/gpu/nvrtx/present.c src/drivers/gpu/nvrtx/cursor.c src/drivers/gpu/nvrtx/share.c
 endif
-# The AMD RDNA driver (ws039): the driver's files, then the shader compiler's (ws039-p007).
+# The AMD RDNA driver: the driver's files, then the shader compiler's.
 AMD64_AMDRDNA_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_AMDRDNA),y)
+AMD64_AMDRDNA_SOURCES += src/drivers/gpu/amdrdna/amdrdna.c src/drivers/gpu/amdrdna/stage.c \
+	src/drivers/gpu/amdrdna/mmio.c src/drivers/gpu/amdrdna/identify.c src/drivers/gpu/amdrdna/readout.c \
+	src/drivers/gpu/amdrdna/vbios.c src/drivers/gpu/amdrdna/control.c src/drivers/gpu/amdrdna/bytes.c \
+	src/drivers/gpu/amdrdna/block-table.c src/drivers/gpu/amdrdna/boot-database.c \
+	src/drivers/gpu/amdrdna/vbios-table.c src/drivers/gpu/amdrdna/layout.c src/drivers/gpu/amdrdna/products.c \
+	src/drivers/gpu/amdrdna/dcn-registers.c src/drivers/gpu/amdrdna/picture.c
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;

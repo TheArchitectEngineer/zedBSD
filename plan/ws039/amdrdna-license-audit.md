@@ -19,7 +19,7 @@
 1. **Linux の amd の取得範囲はほぼ MIT**（2191 file のうち MIT 2182。GPL-2.0-only 1、GPL-2.0+ 2、GPL-2.0 OR MIT 5、表記なし 1）。下の表で参照した file のうち MIT でないのは `amdgpu_vm_pt.c`（GPL-2.0 OR MIT）だけ。今の規則では license に依らず**データ（値・表）と手順の参考だけ**を使い、code・comment・構造・symbol の名前は写さないので、GPL の file でも扱いは同じ（Guardrail、2026-10-15 ユーザー「GPLなコードを引用しても、引用ならライセンスは影響しない」）。
 2. **Mesa の `src/amd` は MIT 563・表記なし 128**。表記なしの物（`registers/*.json`・`docs/license.rst`）は Mesa の既定（`docs/license.rst`: 大部分 MIT、file ごとに SPDX を見よ）に従う。
 3. **BLOB**: Navi10 の firmware は AMD の `LICENSE.amdgpu`（SHA-256 `572872598565dc3513470de971a32bf9db301f47afeef3636345eadae33b2eee`。要点: binary の形の再配布可、notice の再掲が条件、reverse engineering・decompile・disassemble の禁止。`WHENCE` の SHA-256 `c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527`）。base の system・kernel・repository の source には入れず、`userland/firmware/` の既定 off の package（design の 4.1）にし、driver が file から load する。driver は MIT の header（`amdgpu_ucode.h`）が定める container の欄だけを読み、payload を解析しない。source の中に firmware に当たる byte の配列は、取得範囲では golden の register の表（データ）だけで、BLOB は無い（p010 で再確認）。
-4. VBIOS（AtomBIOS）は読まない（post 済みの印と scratch の register だけ）。repository に入れない。
+4. VBIOS（AtomBIOS）は A1v で data の表の header と欄を読む（読むだけ。改訂 2 から。p002 の実装）。image は repository に入れない（試験は実機から取り出した image を `plan/ws039/temp/` に置いて使う）。
 5. **p007（compiler）の出典は Mesa 25.0.7**（P5 の tarball、SHA-256 は [phase007](phase007/phase.md) の表。下の Mesa 25.3.6 の表の同名の file は driver の側の参照で、p007 の block の comment と P5 の `amdrdna-compiler-license-audit.md` は 25.0.7 の版と SHA-256 を使う。review M9）。
 6. **zedBSD の code は Zlib**。出典の copyright・MIT の表示は付けない（データの引用なので）。file の先頭に出典を書かず、block ごとに「Value(s) referenced:」「Procedure referenced:」を書く（design の 13.2）。
 
@@ -157,6 +157,9 @@
 | `drivers/gpu/drm/amd/display/dc/dcn20/dcn20_vmid.c` | `baf71783929a93374ab4226e583d8e995546c9ea7e2308e7d9926390248f243f` | MIT | 読むだけ（DCN の VMID、使わない） |
 | `drivers/gpu/drm/amd/display/dc/core/dc_vm_helper.c` | `c88bf46f06671539b95f007435824d5a1c75fda21522e55a00327a51f2a87414` | MIT | 読むだけ |
 | `drivers/gpu/drm/amd/display/dc/dccg/dcn20/dcn20_dccg.c` | `ac064ac2c4bf420fd8b6e25042ef5eb0666876ef6609e651df780d0ad6ac7dd4` | MIT | 読むだけ（DPP の clock の DTO、触らない） |
+| `drivers/gpu/drm/amd/include/asic_reg/smuio/smuio_11_0_0_offset.h` | `6e56a7eb344d3e68912889a0d8d0356136ded1f97146a2733eb9fd66028ff407` | MIT | 値（ROM の address・data の register。p002 で追加） |
+| `drivers/gpu/drm/amd/include/atomfirmware.h` | `be8817aba46ed37ad412da72e5cf07d3777c850aa98f0463f85b1db7a8a53c10` | MIT | 値（rom header、data・command の表の並び、firmwareinfo v3.x、vram_usagebyfirmware、command の attribute。p002 で追加） |
+| `drivers/gpu/drm/amd/pm/swsmu/inc/smu_v11_0_pptable.h` | `2a2975d08ce2b4f9b8867d77b32e3b3930e975929d7a7ede8f46c84a24da5fea` | MIT | 値（powerplay の表の header の欄。p002 で追加） |
 
 取得範囲に無く note が名前だけ挙げた file（読んでいない、値を取らない）: `amdgpu/amdgpu_dpm.c`、`include/amd_asic_type.h`、`include/uapi/linux/kfd_ioctl.h`、`amdgpu/{cik,si,vi}.c`。
 

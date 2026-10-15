@@ -246,6 +246,21 @@ drv_acpi_lookup(
 struct drv_acpi_node *
 drv_acpi_root(void);
 
+/*
+ * Lends the bytes of a firmware table found by its signature.
+ *
+ * The first table the root table lists with that signature is reported;
+ * its bytes are the kernel's copy and stay valid for the life of the
+ * system, so the caller reads them in place and never frees them.  Returns
+ * ENODEV before the tables are found or when the platform has none, and
+ * ENOENT when no listed table carries the signature.
+ */
+int
+drv_acpi_table_lookup(
+	const char *signature,
+	const uint8_t **data,
+	size_t *length);
+
 int
 drv_acpi_walk(
 	struct drv_acpi_node *scope,
