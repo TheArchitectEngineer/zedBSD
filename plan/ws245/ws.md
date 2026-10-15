@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: design-review.md（2 回目のレビュー、blocker 4・major 18・minor 16）の指摘を design.md の §8 の形で反映 → 必要ならもう一度レビュー → §7 の判断 #0〜#10 をユーザーに → p002 から実装（Queue の承認が要る）。Phase の表は design.md の 6.2 節（p002〜p013、51 LW ±40%）に display 12 の差と display 11 の Phase を足す（次の改訂）。
+Resume point: q1200（P1、2026-10-15 夕）で改訂 3 中。design-review.md（2 回目のレビュー、blocker 4・major 18・minor 16）の指摘を design.md の §8 の形で反映 → 必要ならもう一度レビュー → §7 の判断 #0〜#10 をユーザーに → p002 から実装（Queue の承認が要る）。Phase の表は design.md の 6.2 節（p002〜p013、51 LW ±40%）に display 12 の差と display 11 の Phase を足す（次の改訂）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）

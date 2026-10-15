@@ -33,14 +33,14 @@
 0. **まず [plan/agents/handover-20261015b.md](agents/handover-20261015b.md) を読む**（この session の異常と点検、未完の担当、ユーザーの判断待ち、残っている仕事）。
 1. 新しい Q1 は AGENTS.md・この block・plan/beta2.md の先頭（「ユーザーが今できる試験」）を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge_one の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`。memory の verify-merge-before-reporting）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS248、q1200（q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS248、q1201（q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
 4. 日付（2026-10-15 ユーザー「host の時計は 2026-10-15（木）です。10-16は明らかにおかしいです。」）: 10-15 04:36 以降の記録が 1 日進んだ 2026-10-16 と書かれていたので、出来事の日付を 2026-10-15 に直した（予定の 7 行は 10-16 のまま）。日付は host の時計（`date`）で書く。 記録の整合を保つ手順は [record-integrity.md](record-integrity.md)（AGENTS.md の「記録の整合」）。LW は 1 LW ≈ 実時間 15〜25 分（2026-10-14 の較正、10-15 に正と承認）。
 <!-- master:next:end -->
 
 ### ユーザーの未決の判断
 
 <!-- master:open-decisions:start -->
-- WS247 を completed にする前の 2 点: (1) 出典の 2 つ目以降の path の省略（約 73 か所）を認めるか、(2) sm75.c の「the SM75 code the CUDA compiler emits」（3 か所）の扱い（Q1 の勧め: 公開の source か実機の測定で裏付けて書き換える）。WS245 の design.md §7 の判断 #0〜#10 はレビュー 2 の反映の後にまとめて聞く。
+- （解決 2026-10-15 ユーザー、クリック）WS247 の 2 点: (1) path の省略は「省略を認める」、(2) sm75.c の出典はユーザーの 8c8b74671（CUDA → SASS）で「解決（今のまま）」→ WS247 completed。WS245 の design.md §7 の判断 #0〜#10 は改訂 3 の後にまとめて聞く。
 - （解決 2026-10-15 ユーザー）nvrtx の sm75-schedule.c の Collabora の著作権表示:「削除してOKです。削除済みと思います。」→ 178e969d0 で削除済み（今は compiler/sm75.c、nvrtx に Collabora・Red Hat の語なし）。
 - （解決 2026-10-15 ユーザー）WS242: 「GTX 16・RTX 30・40 はデフォルトで有効にします。」→ 記録のみ、実装は WS247 の後（[WS242](ws242/ws.md)）。
 - （解決 2026-10-15 ユーザー「再起動の時にGSPを、止めます」）WS037: reboot・shutdown の時に P7（GSP の unload）を流し、GPU の hub の状態を次の boot に持ち越さない。P2 が実装。
@@ -553,7 +553,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | incomplete（p001 の棚卸しを中断） | p001 の「残り」 |
 | [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md 改訂 2 は main、レビュー 2 の反映が残る） | ws.md の Resume point |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
-| [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | incomplete（p001〜p003 cleared） | ユーザーの判断 2 点（path の省略、CUDA の出典） |
+| [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -599,6 +599,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-15 16:10ごろ（ユーザー）:「WS247とWS245をN=2で開始しましょう。途中でinconsistencyがあればその都度直します。全体のチェックはスキップします。」→ WS245 は P1 が q1200（design.md 改訂 3）。WS247 の判断（クリック）: path の省略は「省略を認める」、sm75.c の SASS の出典は「解決（今のまま）」→ WS247 completed。
 - 2026-10-15 夕（このセッションのユーザーの決定、Q1 が記録）:
   - WS247 の作業（「WS247の作業を行います。」）と compiler にも（「sm75.[ch]にも同じルールを適用して監査、修正して」）、p002 を担当 1 つで。
   - nvrtx の compiler の Collabora の著作権表示:「削除してOKです。」（削除済み）。CUDA の出力を出典にした値は「In/Out でしか見ていない」との考え（扱いは未決）。

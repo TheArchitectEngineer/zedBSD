@@ -2,6 +2,14 @@
 
 # Queue / all-agent index
 
+## 2026-10-15 夕: WS245（q1200〜）
+
+承認: 2026-10-15 ユーザー「WS247とWS245をN=2で開始しましょう。途中でinconsistencyがあればその都度直します。全体のチェックはスキップします。」。WS247 は同日のユーザーの判断 2 点で completed（担当の作業なし）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1200 / q1200-i01 | P1（kernel-and-driver-designer、worktree p1・agent/p1-ws245、基点 ec06bb53a） | [ws245-p001](ws245/phase001/phase.md) | design.md 改訂 3: design-review.md（レビュー 2）の反映、display 12・13 の全機種への書き直し、display 11 の Phase、3 回目のレビュー。source は変えない | in-progress |
+
 ## 2026-10-15: WS247・WS245（q984〜q995）
 
 承認はユーザーの各指示（各 phase.md の Approval）。
