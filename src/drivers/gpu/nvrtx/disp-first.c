@@ -6,8 +6,8 @@
  */
 
 /*
- * The records of the display's first commit that touch no hardware (stage
- * takeover).
+ * The records of the display's first commit that touch no hardware (the
+ * takeover stage).
  *
  * The takeover sends this when it starts the display and commits the
  * first mode on a head the firmware lit (the Turing core and window
@@ -30,81 +30,189 @@
 #include "drivers/gpu/nvrtx/nvrtx-disp.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* The core's start: every window may show packed RGB of 1 to 8 bytes, nothing rotated. */
+/*
+ * The core's start: every window may show packed RGB of 1 to 8 bytes,
+ * nothing rotated.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec57d.c
+ * (corec57d_init) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_WINDOW_FORMATS		0x0000000fU
 #define FIRST_WINDOW_ROTATED		0x00000000U
 
-/* A window's usage bounds: 0x7fff pixels a line, an input LUT, two scaler taps, no upscaling. */
+/*
+ * A window's usage bounds: 0x7fff pixels a line, an input LUT, two scaler
+ * taps, no upscaling.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec57d.c
+ * (corec57d_init) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_WINDOW_USAGE		0x00117fffU
 
-/* The head's usage bounds: a 256 by 256 cursor, an output LUT, two scaler taps, upscaling. */
+/*
+ * The head's usage bounds: a 256 by 256 cursor, an output LUT, two scaler
+ * taps, upscaling.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/corec57d.c
+ * (corec57d_init) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_HEAD_USAGE		0x00001114U
 
-/* The head's second vertical blank in a progressive mode, and its control (not interlaced). */
+/*
+ * The head's second vertical blank in a progressive mode, and its control
+ * (not interlaced).
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_mode) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_VERT_BLANK2_PROGRESSIVE	0x00000001U
 #define FIRST_HEAD_CONTROL		0x00000000U
 
-/* The output resource: no extra packet window, 24-bit 4:4:4, the sync polarities in bits 2 and 3. */
+/*
+ * The output resource: no extra packet window, 24-bit 4:4:4, the sync
+ * polarities in bits 2 and 3.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_or) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_OUTPUT_RESOURCE		0xfc000040U
 #define FIRST_OUTPUT_HSYNC_NEGATIVE	0x00000004U
 #define FIRST_OUTPUT_VSYNC_NEGATIVE	0x00000008U
 
-/* The output LUT: interpolated, direct 10-bit, 1029 entries; its scale; read through the VRAM object. */
+/*
+ * The output LUT: interpolated, direct 10-bit, 1029 entries; its scale; read
+ * through the VRAM object.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_olut_set) and NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_OLUT_CONTROL		0x00040509U
 #define FIRST_OLUT_SCALE		0xffffffffU
 
-/* The input LUT: not interpolated, direct 10-bit, 1029 entries. */
+/*
+ * The input LUT: not interpolated, direct 10-bit, 1029 entries.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_ilut_set) and NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define FIRST_ILUT_CONTROL		0x00040508U
 
-/* The window's present control: one frame at least, begin without tearing. */
+/*
+ * The window's present control: one frame at least, begin without tearing.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_image_set) and NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define FIRST_PRESENT_CONTROL		0x00000001U
 
-/* The window's blending: depth 255, constant alpha 255, the source over the picture as premultiplied. */
+/*
+ * The window's blending: depth 255, constant alpha 255, the source over the
+ * picture as premultiplied.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc37e.c
+ * (wndwc37e_blend_set) and NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define FIRST_COMPOSITION_DEPTH		0x00000ff0U
 #define FIRST_COMPOSITION_ALPHA		0x000000ffU
 #define FIRST_COMPOSITION_FACTORS	0x00007722U
 #define FIRST_COMPOSITION_KEY		0xffff0000U
 
-/* The notifier control: write the notifier at the offset, with or without asking for it. */
+/*
+ * The notifier control: write the notifier at the offset, with or without
+ * asking for it.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc37e.c
+ * (wndwc37e_ntfy_set) and NVIDIA open-gpu-doc classes/display/clc57d.h and
+ * clc57e.h.
+ */
 #define FIRST_NOTIFY_ENABLE		0x00001000U
 #define FIRST_NOTIFY_DISABLE		0x00000000U
 
-/* A release: the state gathered so far. */
+/*
+ * A release: the state gathered so far.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc37e.c
+ * (wndwc37e_update) and NVIDIA open-gpu-doc classes/display/clc57d.h and
+ * clc57e.h.
+ */
 #define FIRST_RELEASE			0x00000001U
 
-/* The core's methods besides nvrtx-disp.h's: the head's output LUT. */
+/*
+ * The core's methods besides nvrtx-disp.h's: the head's output LUT.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h.
+ */
 #define FIRST_HEAD_OLUT_CONTROL		0x280U
 
-/* The window's methods besides nvrtx-disp.h's: the input LUT's control. */
+/*
+ * The window's methods besides nvrtx-disp.h's: the input LUT's control.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57e.h.
+ */
 #define FIRST_WINDOW_ILUT_CONTROL	0x440U
 
-/* The LUTs: a 32-byte header, then 1024 entries of 8 bytes and the last repeated. */
+/*
+ * The LUTs: a 32-byte header, then 1024 entries of 8 bytes and the last
+ * repeated.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_olut_load) and wndwc57e.c (wndwc57e_ilut_load).
+ */
 #define FIRST_LUT_HEADER_BYTES		0x20U
 #define FIRST_LUT_ENTRIES		1024U
 #define FIRST_LUT_ENTRY_BYTES		8U
 
-/* The EDID: its block, the first detailed timing, an extension's tag and where its data blocks end. */
+/*
+ * The EDID: its block, the first detailed timing, an extension's tag and
+ * where its data blocks end.
+ *
+ * Values referenced: VESA E-EDID Standard Release A2 and CTA-861 (the base
+ * block and the CTA extension).
+ */
 #define FIRST_EDID_BLOCK_BYTES		128U
 #define FIRST_EDID_TIMING_AT		54U
 #define FIRST_EDID_EXTENSIONS_AT	126U
 #define FIRST_EDID_CEA_TAG		0x02U
 #define FIRST_EDID_CEA_AUDIO		0x40U
 
-/* The CEA data blocks: the vendor-specific tag and the two vendors' identifiers (low byte first). */
+/*
+ * The CEA data blocks: the vendor-specific tag and the two vendors'
+ * identifiers (low byte first).
+ *
+ * Values referenced: CTA-861 (the vendor-specific data block) and the HDMI
+ * specifications (the HDMI and HDMI Forum identifiers).
+ */
 #define FIRST_CEA_VENDOR_TAG		3U
 #define FIRST_CEA_HDMI_OUI		0x000c03U
 #define FIRST_CEA_FORUM_OUI		0xc45dd8U
 
-/* The HDMI forum block's capability byte: SCDC present, and scrambling below 340 MHz. */
+/*
+ * The HDMI forum block's capability byte: SCDC present, and scrambling below
+ * 340 MHz.
+ *
+ * Values referenced: the HDMI 2.0 specification (the HDMI Forum
+ * vendor-specific data block).
+ */
 #define FIRST_FORUM_SCDC		0x80U
 #define FIRST_FORUM_LOW_RATES		0x08U
 
-/* The HDMI sink capabilities the resource manager is told. */
+/*
+ * The HDMI sink capabilities the resource manager is told.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h (the HDMI sink
+ * capabilities).
+ */
 #define FIRST_SINK_GT_340		0x00000001U
 #define FIRST_SINK_LTE_340		0x00000002U
 #define FIRST_SINK_SCDC			0x00000004U
 
-/* The AVI infoframe: type, version 2, 13 bytes; RGB with the active aspect, the aspect as the picture's, full range. */
+/*
+ * The AVI infoframe: type, version 2, 13 bytes; RGB with the active aspect,
+ * the aspect as the picture's, full range.
+ *
+ * Values referenced: CTA-861 (the AVI InfoFrame).
+ */
 #define FIRST_AVI_TYPE			0x82U
 #define FIRST_AVI_VERSION		0x02U
 #define FIRST_AVI_LENGTH		0x0dU
