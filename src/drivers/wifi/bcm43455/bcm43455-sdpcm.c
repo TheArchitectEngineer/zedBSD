@@ -32,7 +32,9 @@
 #define HEADER_FLOW_CONTROL	8U
 #define HEADER_MAX_SEQUENCE	9U
 
-/* The channel byte: the channel in its low four bits, flags in its high four. */
+/*
+ * The channel byte: the channel in its low four bits, flags in its high four.
+ */
 #define CHANNEL_MASK		0x0fU
 #define FLAGS_SHIFT		4U
 
@@ -83,7 +85,10 @@ bcm43455_sdpcm_decode(
 	header->flow_control = frame[HEADER_FLOW_CONTROL];
 	header->max_sequence = frame[HEADER_MAX_SEQUENCE];
 
-	/* A frame of only a header carries the credit and no payload; its offset is not used. */
+	/*
+	 * A frame of only a header carries the credit and no payload; its
+	 * offset is not used.
+	 */
 	if (length == BCM43455_SDPCM_HEADER_LENGTH)
 		return 0;
 
@@ -135,7 +140,10 @@ bcm43455_sdpcm_window(
 {
 	unsigned window;
 
-	/* The credit is the distance from the next sequence to the last one granted, modulo 256. */
+	/*
+	 * The credit is the distance from the next sequence to the last one
+	 * granted, modulo 256.
+	 */
 	window = (unsigned)((uint8_t)(max_sequence - sequence));
 
 	/*
@@ -162,7 +170,9 @@ bcm43455_sdpcm_padded_length(
 {
 	size_t remainder;
 
-	/* A frame that fits one block moves in byte mode, in four-byte units. */
+	/*
+	 * A frame that fits one block moves in byte mode, in four-byte units.
+	 */
 	if (block_size == 0 || length <= block_size) {
 		remainder = length % BYTE_MODE_UNIT;
 		if (remainder != 0)

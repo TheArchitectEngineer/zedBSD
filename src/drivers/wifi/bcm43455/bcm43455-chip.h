@@ -23,7 +23,10 @@
 
 #include "drivers/wifi/bcm43455/bcm43455.h"
 
-/* The most bytes one backplane transfer moves, and the size of the bounce buffer. */
+/*
+ * The most bytes one backplane transfer moves, and the size of the bounce
+ * buffer.
+ */
 #define BCM43455_CHIP_TRANSFER_MAX	2048U
 
 /*

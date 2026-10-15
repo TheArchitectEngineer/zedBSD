@@ -59,7 +59,10 @@
  */
 #define CLM_TYPE_CLM			2U
 
-/* The NVRAM key of the board's placeholder address, and an address's text length. */
+/*
+ * The NVRAM key of the board's placeholder address, and an address's text
+ * length.
+ */
 #define MAC_KEY				"macaddr"
 #define MAC_KEY_LENGTH			7U
 #define MAC_TEXT_LENGTH			17U
@@ -105,12 +108,17 @@ bcm43455_firmware_check(
 	/* Copies the printable text from the mark on, up to its end. */
 	copied = 0;
 	while (copied + 1U < version_capacity && offset + copied < length) {
-		/* The text ends at its NUL or at the first byte that is not text. */
+		/*
+		 * The text ends at its NUL or at the first byte that is not
+		 * text.
+		 */
 		if (firmware[offset + copied] < 0x20U || firmware[offset + copied] > 0x7eU)
 			break;
 		version[copied] = (char)firmware[offset + copied];
 		copied++;
 	}
+
+	/* Ends the copied text. */
 	version[copied] = '\0';
 
 	/* Succeeded: the image names this chip. */
@@ -222,7 +230,9 @@ bcm43455_nvram_pack(
 		if (!setting)
 			continue;
 
-		/* Refuses a list that would not fit with its end and its word. */
+		/*
+		 * Refuses a list that would not fit with its end and its word.
+		 */
 		line_length = last - first;
 		if (line_length + 1U > capacity - used)
 			return ENOSPC;
@@ -239,11 +249,13 @@ bcm43455_nvram_pack(
 	if (settings == 0)
 		return EINVAL;
 
-	/* Ends the list with a NUL and pads it to whole words. */
+	/* Ends the list with a NUL. */
 	if (used + 1U > capacity)
 		return ENOSPC;
 	blob[used] = 0;
 	used++;
+
+	/* Pads the list to whole words. */
 	while ((used % 4U) != 0) {
 		if (used + 1U > capacity)
 			return ENOSPC;
@@ -251,7 +263,10 @@ bcm43455_nvram_pack(
 		used++;
 	}
 
-	/* Appends the length word: the words in the low half, their complement in the high half. */
+	/*
+	 * Appends the length word: the words in the low half, their complement
+	 * in the high half.
+	 */
 	if (used + 4U > capacity)
 		return ENOSPC;
 	words = (uint32_t)(used / 4U);
@@ -349,7 +364,9 @@ bcm43455_nvram_place(
 	uint64_t top;
 	uint64_t start;
 
-	/* Refuses a blob that is not whole words, or nowhere to put the answer. */
+	/*
+	 * Refuses a blob that is not whole words, or nowhere to put the answer.
+	 */
 	if (address == NULL ||
 	    blob_length == 0 ||
 	    (blob_length % 4U) != 0)
@@ -359,7 +376,10 @@ bcm43455_nvram_place(
 	if ((uint64_t)blob_length + (uint64_t)firmware_length > (uint64_t)ram_size)
 		return EINVAL;
 
-	/* The blob ends at the top of RAM, so its length word is RAM's last word. */
+	/*
+	 * The blob ends at the top of RAM, so its length word is RAM's last
+	 * word.
+	 */
 	top = (uint64_t)ram_base + (uint64_t)ram_size;
 	start = top - (uint64_t)blob_length;
 
@@ -451,7 +471,9 @@ line_bounds(
 		end++;
 	*next = end + 1U;
 
-	/* Drops the spaces, tabs and carriage returns before the line's text. */
+	/*
+	 * Drops the spaces, tabs and carriage returns before the line's text.
+	 */
 	*first = start;
 	while (*first < end) {
 		blank = is_blank(text[*first]);
@@ -473,7 +495,10 @@ line_bounds(
 	return 1;
 }
 
-/* Reports whether a trimmed line is a key=value setting rather than a comment or blank. */
+/*
+ * Reports whether a trimmed line is a key=value setting rather than a comment
+ * or blank.
+ */
 static int
 is_setting(
 	const uint8_t *text,
@@ -526,7 +551,10 @@ hex_digit(
 	return EINVAL;
 }
 
-/* Reports whether a byte is a space, a tab or a carriage return around a line's text. */
+/*
+ * Reports whether a byte is a space, a tab or a carriage return around a line's
+ * text.
+ */
 static int
 is_blank(
 	uint8_t character)

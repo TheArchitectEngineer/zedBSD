@@ -3,11 +3,11 @@
 # WS249: BCM43455（Raspberry Pi 4 の WiFi）の driver の出典の表記と規約の整理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 cleared、P2 が q1205 で p002 を実行中）
+Status: incomplete（2026-10-15 作成。p001・p002 cleared。実機（Pi 4）の WiFi の確かめが T の結果待ち）
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS248](../ws248/ws.md)（AX211 での同じ整理、手順の手本）、[WS215](../ws215/ws.md)（Pi 4 の Bluetooth、同じ chip）
-Resume point: q1205（P2）の p002。
+Resume point: T による Pi 4（10.0.30.2）の WiFi の確かめ（scan・WPA2 接続・通信）。その結果を Q1 が判定してから WS を完了する。WHD の 2 file の path は不明のまま（ユーザー確認済み、p001 の結果）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -36,4 +36,4 @@ Resume point: q1205（P2）の p002。
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 出典の表記: file の先頭の出典を除き block ごとの Value(s)/Procedure referenced: へ、本文の出典の名前の除去、出典と一致する symbol 名の付け直し | cleared（2026-10-15、q1205、P2） |
-| [p002](phase002/phase.md) | 規約の全文の見直し | in-progress（q1205、P2） |
+| [p002](phase002/phase.md) | 規約の全文の見直し | cleared（2026-10-15、q1205、P2） |

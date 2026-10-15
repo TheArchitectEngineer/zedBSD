@@ -39,6 +39,14 @@
 #include <uapi/errno.h>
 
 /*
+ * Marks a parameter the function's contract passes but this driver does not
+ * need.
+ */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+#endif
+
+/*
  * The key timeout the supplicant reports a missing handshake message after, in
  * milliseconds.
  *
@@ -125,7 +133,10 @@ bcm43455_station_reset(
 {
 	unsigned long enabled;
 
-	/* Forgets the scan, the networks found and the connection, erasing the PMK. */
+	/*
+	 * Forgets the scan, the networks found and the connection, erasing the
+	 * PMK.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	scan_clear_locked(device);
@@ -152,9 +163,12 @@ bcm43455_station_event(
 	unsigned long enabled;
 	int wake;
 
-	(void)length;
+	UNUSED_PARAMETER(length);
 
-	/* Latches what the event says, under the lock the poll takes them under. */
+	/*
+	 * Latches what the event says, under the lock the poll takes them
+	 * under.
+	 */
 	wake = 0;
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
@@ -264,7 +278,10 @@ uint64_t
 bcm43455_station_data_generation_locked(
 	const struct bcm43455_device *device)
 {
-	/* Only a connection the firmware joined, and has not lost, carries data. */
+	/*
+	 * Only a connection the firmware joined, and has not lost, carries
+	 * data.
+	 */
 	if (device->connection.state != BCM43455_CONNECT_JOINING)
 		return 0;
 	if (device->connection.lost)
@@ -289,10 +306,12 @@ radio_scan_channel_start(
 	struct bcm43455_device *device;
 	unsigned long enabled;
 	uint16_t chanspec;
+	int usable;
 	int error;
 
-	(void)step_deadline_ticks;
+	UNUSED_PARAMETER(step_deadline_ticks);
 
+	/* The context is the device the station drives. */
 	device = context;
 
 	/* Refuses a channel the chip's bands do not have. */
@@ -300,11 +319,15 @@ radio_scan_channel_start(
 	if (chanspec == 0)
 		return EINVAL;
 
-	/* Puts the channel in the scan slot unless a scan of another generation, or an unfinished channel, holds it. */
+	/*
+	 * Puts the channel in the scan slot unless a scan of another
+	 * generation, or an unfinished channel, holds it.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
+	usable = runtime_usable_locked(device);
 	error = 0;
-	if (!runtime_usable_locked(device)) {
+	if (!usable) {
 		error = ENETDOWN;
 	} else if (device->scan.state != BCM43455_SCAN_IDLE && device->scan.generation != generation) {
 		error = EBUSY;
@@ -334,7 +357,9 @@ radio_scan_channel_start(
 	/* The bus thread sends the escan request. */
 	bcm43455_bus_request_work(&device->bus);
 
-	/* Succeeded: the ready, the networks and the end follow from the poll. */
+	/*
+	 * Succeeded: the ready, the networks and the end follow from the poll.
+	 */
 	return 0;
 }
 
@@ -359,6 +384,7 @@ radio_scan_stop(
 	unsigned layout;
 	int error;
 
+	/* The context is the device the station drives. */
 	device = context;
 
 	/*
@@ -430,6 +456,7 @@ radio_disconnect(
 	unsigned leave;
 	int error;
 
+	/* The context is the device the station drives. */
 	device = context;
 
 	/*
@@ -540,11 +567,16 @@ radio_fullmac_connect(
 	struct bcm43455_device *device;
 	unsigned long enabled;
 	uint16_t chanspec;
+	int usable;
 	int error;
 
+	/* The context is the device the station drives. */
 	device = context;
 
-	/* Refuses a firmware without its supplicant, and a channel the chip does not have. */
+	/*
+	 * Refuses a firmware without its supplicant, and a channel the chip
+	 * does not have.
+	 */
 	if (request == NULL || request->generation == 0)
 		return EINVAL;
 	if (!device->identity.supplicant)
@@ -553,11 +585,15 @@ radio_fullmac_connect(
 	if (chanspec == 0)
 		return EINVAL;
 
-	/* Copies the request unless another generation's connection still holds the slot. */
+	/*
+	 * Copies the request unless another generation's connection still holds
+	 * the slot.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
+	usable = runtime_usable_locked(device);
 	error = 0;
-	if (!runtime_usable_locked(device)) {
+	if (!usable) {
 		error = ENETDOWN;
 	} else if (device->connection.state != BCM43455_CONNECT_IDLE) {
 		error = EBUSY;
@@ -622,7 +658,9 @@ channel_passive(
 	return 1;
 }
 
-/* Tells whether the bus thread serves the device; the caller holds ring_lock. */
+/*
+ * Tells whether the bus thread serves the device; the caller holds ring_lock.
+ */
 static int
 runtime_usable_locked(
 	const struct bcm43455_device *device)
@@ -658,15 +696,16 @@ scan_drop_locked(
 	struct bcm43455_scan_ring *ring;
 	struct bcm43455_scan_entry *entry;
 
-	ring = &device->scan_ring;
-
 	/* Clears the entries from the oldest on. */
+	ring = &device->scan_ring;
 	while (ring->count != 0) {
 		entry = &ring->entries[ring->head];
 		kern_memset(entry, 0, sizeof(*entry));
 		ring->head = (ring->head + 1U) % ring->capacity;
 		ring->count--;
 	}
+
+	/* An empty ring starts again at its first entry. */
 	ring->head = 0;
 }
 
@@ -699,13 +738,18 @@ scan_event_locked(
 	size_t first;
 	int error;
 
+	/*
+	 * Only a channel the bus thread started, or the firmware scans, takes
+	 * results.
+	 */
 	scan = &device->scan;
-
-	/* Only a channel the bus thread started, or the firmware scans, takes results. */
 	if (scan->state != BCM43455_SCAN_ISSUING && scan->state != BCM43455_SCAN_RUNNING)
 		return;
 
-	/* A result that names its scan must name this one; an end without data is this scan's. */
+	/*
+	 * A result that names its scan must name this one; an end without data
+	 * is this scan's.
+	 */
 	data = frame + event->data_start;
 	error = bcm43455_escan_result_decode(data, event->data_length, &sync_id, &count, &first);
 	if (error == 0 && sync_id != scan->sync_id)
@@ -770,25 +814,35 @@ scan_results_locked(
 	size_t bss_length;
 	int error;
 
+	/* Finds the first description of the networks the ring takes. */
 	ring = &device->scan_ring;
-
-	/* Finds the first description. */
 	error = bcm43455_escan_result_decode(data, length, &sync_id, &count, &offset);
 	if (error != 0)
 		return;
 
-	/* Converts each description into the next entry; a full ring or a malformed one drops it. */
+	/*
+	 * Converts each description into the next entry; a full ring or a
+	 * malformed one drops it.
+	 */
 	for (i = 0; i < count; i++) {
 		error = bcm43455_bss_length(data, length, offset, &bss_length);
 		if (error != 0)
 			break;
 
-		/* A full ring drops the network; the core hears it on the next scan. */
+		/*
+		 * A full ring drops the network; the core hears it on the next
+		 * scan.
+		 */
 		if (ring->count == ring->capacity) {
 			ring->dropped++;
 			offset += bss_length;
 			continue;
 		}
+
+		/*
+		 * Turns the description into a probe response in the next free
+		 * entry.
+		 */
 		entry = &ring->entries[(ring->head + ring->count) % ring->capacity];
 		error = bcm43455_bss_to_frame(
 			data + offset,
@@ -807,6 +861,8 @@ scan_results_locked(
 			kern_memset(entry, 0, sizeof(*entry));
 			ring->dropped++;
 		}
+
+		/* Moves on to the next description. */
 		offset += bss_length;
 	}
 }
@@ -824,9 +880,11 @@ connect_event_locked(
 	struct bcm43455_connection *connection;
 	struct bcm43455_connect_outcome outcome;
 
+	/*
+	 * Only a connection the bus thread took, and nobody cancelled, hears
+	 * events.
+	 */
 	connection = &device->connection;
-
-	/* Only a connection the bus thread took, and nobody cancelled, hears events. */
 	if (connection->state == BCM43455_CONNECT_IDLE || connection->state == BCM43455_CONNECT_REQUESTED)
 		return;
 	if (connection->cancel)
@@ -844,6 +902,9 @@ connect_event_locked(
 	 * than the plain loss.
 	 */
 	if (connection->lost) {
+		/*
+		 * Takes a wrong key's evidence over an unreported plain loss.
+		 */
 		if (outcome.step == BCM43455_CONNECT_LOST &&
 		    outcome.error == EACCES &&
 		    connection->lost_error == ECONNRESET &&
@@ -851,6 +912,8 @@ connect_event_locked(
 			connection->lost_error = EACCES;
 			*wake = 1;
 		}
+
+		/* Takes nothing else after the loss. */
 		return;
 	}
 
@@ -916,6 +979,8 @@ work_scan(
 		device->scan.state = BCM43455_SCAN_ISSUING;
 		taken = 1;
 	}
+
+	/* Samples the scan the request belongs to. */
 	generation = device->scan.generation;
 	step = device->scan.step;
 	channel = device->scan.channel;
@@ -928,7 +993,10 @@ work_scan(
 		return 0;
 	*handled = 1;
 
-	/* Builds the escan variable for the one channel, probing only where the domain allows it. */
+	/*
+	 * Builds the escan variable for the one channel, probing only where the
+	 * domain allows it.
+	 */
 	chanspec = bcm43455_chanspec_from_channel(device->identity.io_type, channel);
 	error = bcm43455_escan_encode(
 		request,
@@ -968,7 +1036,9 @@ work_scan(
 	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
-	if (device->scan.generation == generation && device->scan.step == step && device->scan.sync_id == sync_id) {
+	if (device->scan.generation == generation &&
+	    device->scan.step == step &&
+	    device->scan.sync_id == sync_id) {
 		if (device->scan.state == BCM43455_SCAN_ISSUING) {
 			if (outcome == 0) {
 				device->scan.ready_pending = 1;
@@ -1030,6 +1100,8 @@ work_connect(
 		device->connection.state = BCM43455_CONNECT_ISSUING;
 		taken = 1;
 	}
+
+	/* Samples the connection the request belongs to. */
 	generation = device->connection.generation;
 	bss = device->connection.bss;
 
@@ -1040,7 +1112,10 @@ work_connect(
 		return 0;
 	*handled = 1;
 
-	/* Sends the connection's commands; the key message is erased whatever came of them. */
+	/*
+	 * Sends the connection's commands; the key message is erased whatever
+	 * came of them.
+	 */
 	outcome = 0;
 	error = connect_commands(device, generation, &bss, &outcome);
 	kern_memset(device->work_key, 0, sizeof(device->work_key));
@@ -1067,13 +1142,18 @@ work_connect(
 				device->connection.lost = 1;
 				device->connection.lost_error = connect_error(outcome);
 			}
+
+			/* The failed connection's settings are undone below. */
 			taken = 1;
 		}
 	}
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
-	/* Undoes a failed connection's settings: the firmware leaves whatever it began. */
+	/*
+	 * Undoes a failed connection's settings: the firmware leaves whatever
+	 * it began.
+	 */
 	if (taken) {
 		kern_logf("bcm43455: connection's commands failed (%d)\n", outcome);
 		error = bcm43455_bus_thread_control(&device->bus, BCM43455_COMMAND_LEAVE, 1, NULL, 0, NULL, 0, NULL, &outcome);
@@ -1129,7 +1209,9 @@ connect_commands(
 	if (error != 0 || *outcome != 0)
 		return error;
 
-	/* The firmware's own supplicant runs the four-way and group handshakes. */
+	/*
+	 * The firmware's own supplicant runs the four-way and group handshakes.
+	 */
 	error = send_bsscfg_u32(device, generation, "bsscfg:sup_wpa", 1, outcome);
 	if (error != 0 || *outcome != 0)
 		return error;
@@ -1146,6 +1228,10 @@ connect_commands(
 		*outcome = ECANCELED;
 		return 0;
 	}
+
+	/*
+	 * Sets the key timeout, which a firmware without it also does without.
+	 */
 	error = send_bsscfg_u32(device, generation, "bsscfg:sup_wpa_tmo", SUPPLICANT_KEY_TIMEOUT_MS, &optional);
 	if (error != 0)
 		return error;
@@ -1154,13 +1240,17 @@ connect_commands(
 		return 0;
 	}
 
-	/* The PMK, as the supplicant's key; its message is erased right after. */
+	/*
+	 * The PMK, as the supplicant's key; its message is erased right after.
+	 */
 	error = send_command(device, generation, BCM43455_COMMAND_SUPPLICANT_KEY, device->work_key, sizeof(device->work_key), outcome);
 	kern_memset(device->work_key, 0, sizeof(device->work_key));
 	if (error != 0 || *outcome != 0)
 		return error;
 
-	/* The join: the SSID, the access point the core chose and its channel. */
+	/*
+	 * The join: the SSID, the access point the core chose and its channel.
+	 */
 	chanspec = bcm43455_chanspec_from_channel(device->identity.io_type, bss->channel);
 	error = bcm43455_join_encode(
 		device->work_buffer,
@@ -1174,12 +1264,17 @@ connect_commands(
 		*outcome = error;
 		return 0;
 	}
+
+	/* Sends the join, then clears the request. */
 	error = send_command(device, generation, BCM43455_COMMAND_JOIN, device->work_buffer, length, outcome);
 	kern_memset(device->work_buffer, 0, length);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the bus still works; outcome says whether the firmware joins. */
+	/*
+	 * Succeeded: the bus still works; outcome says whether the firmware
+	 * joins.
+	 */
 	return 0;
 }
 
@@ -1272,7 +1367,9 @@ send_bsscfg_u32(
 	return 0;
 }
 
-/* Tells whether disconnect cancelled the connection, or another took its place. */
+/*
+ * Tells whether disconnect cancelled the connection, or another took its place.
+ */
 static int
 connection_cancelled(
 	struct bcm43455_device *device,
@@ -1281,7 +1378,7 @@ connection_cancelled(
 	unsigned long enabled;
 	int cancelled;
 
-	/* Samples the slot. */
+	/* Samples whether the slot's connection was cancelled or replaced. */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	cancelled = 0;
@@ -1338,9 +1435,12 @@ report_scan(
 	int found;
 	int error;
 
+	/* Reports from the ring of networks found. */
 	ring = &device->scan_ring;
 
-	/* Takes the ready, which lets the core accept the channel's networks. */
+	/*
+	 * Takes the ready, which lets the core accept the channel's networks.
+	 */
 	ready = 0;
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
@@ -1358,7 +1458,10 @@ report_scan(
 	if (ready)
 		(void)wlan_station_report_scan_channel_ready(device->station, generation, step);
 
-	/* Reports the networks of the ready channel, dropping those of an older one. */
+	/*
+	 * Reports the networks of the ready channel, dropping those of an older
+	 * one.
+	 */
 	for (;;) {
 		found = 0;
 		enabled = spin_lock_irqsave(&device->ring_lock);
@@ -1366,7 +1469,10 @@ report_scan(
 		while (ring->count != 0) {
 			entry = &ring->entries[ring->head];
 
-			/* A network of the channel the core accepts results for is reported. */
+			/*
+			 * A network of the channel the core accepts results for
+			 * is reported.
+			 */
 			if (entry->generation == device->scan.generation &&
 			    entry->step == device->scan.step &&
 			    device->scan.state != BCM43455_SCAN_IDLE) {
@@ -1401,7 +1507,10 @@ report_scan(
 			kern_logf("bcm43455: scan result on channel %u not taken (%d)\n", channel, error);
 	}
 
-	/* Takes the end once every network before it was reported, and an error. */
+	/*
+	 * Takes the end once every network before it was reported, and an
+	 * error.
+	 */
 	complete = 0;
 	failed = 0;
 	enabled = spin_lock_irqsave(&device->ring_lock);
@@ -1409,11 +1518,15 @@ report_scan(
 	generation = device->scan.generation;
 	step = device->scan.step;
 	error = device->scan.error;
-	if (device->scan.complete_pending && device->scan.ready_reported && ring->count == 0) {
+	if (device->scan.complete_pending &&
+	    device->scan.ready_reported &&
+	    ring->count == 0) {
 		device->scan.complete_pending = 0;
 		device->restarts = 0;
 		complete = 1;
 	}
+
+	/* Takes the scan's error. */
 	if (device->scan.error_pending) {
 		device->scan.error_pending = 0;
 		failed = 1;
@@ -1421,7 +1534,7 @@ report_scan(
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
-	/* Reports them. */
+	/* Tells the core the channel's end and the scan's error. */
 	if (complete)
 		(void)wlan_station_report_scan_channel_complete(device->station, generation, step);
 	if (failed)
@@ -1443,9 +1556,8 @@ report_connection(
 	int lost;
 	int lost_error;
 
-	connection = &device->connection;
-
 	/* Takes what was latched and not yet told. */
+	connection = &device->connection;
 	associated = 0;
 	authorized = 0;
 	lost = 0;
@@ -1458,11 +1570,15 @@ report_connection(
 			connection->associated_reported = 1;
 			associated = 1;
 		}
+
+		/* The authorization also starts the restart count afresh. */
 		if (connection->authorized && !connection->authorized_reported) {
 			connection->authorized_reported = 1;
 			device->restarts = 0;
 			authorized = 1;
 		}
+
+		/* The loss is told once. */
 		if (connection->lost && !connection->lost_reported) {
 			connection->lost_reported = 1;
 			lost = 1;
@@ -1471,7 +1587,10 @@ report_connection(
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
-	/* Tells the core's FullMAC engine, which opens or closes the controlled port itself. */
+	/*
+	 * Tells the core's FullMAC engine, which opens or closes the controlled
+	 * port itself.
+	 */
 	if (associated)
 		(void)wlan_station_report_fullmac_event(device->station, generation, WLAN_FULLMAC_EVENT_ASSOCIATED);
 	if (authorized)
@@ -1513,8 +1632,12 @@ report_failure(
 			device->connection.lost_reported = 1;
 			connection_lost = 1;
 		}
+
+		/* A running scan fails with the bus. */
 		if (device->scan.state != BCM43455_SCAN_IDLE)
 			scan_failed = 1;
+
+		/* An open interface asks for a restart, up to the limit. */
 		if (device->opened && device->restarts < BCM43455_RESTARTS_MAX) {
 			device->restarts++;
 			device->restart_pending = 1;
@@ -1530,7 +1653,10 @@ report_failure(
 	if (scan_failed)
 		(void)wlan_station_report_scan_error(device->station, scan_generation, EIO);
 
-	/* Asks the retirement thread for the restart, or says why there is none. */
+	/*
+	 * Asks the retirement thread for the restart, or says why there is
+	 * none.
+	 */
 	if (restart) {
 		wlan_station_restart_request(device->station);
 	} else if (connection_lost || scan_failed) {
@@ -1561,11 +1687,16 @@ deliver_frames(
 		if (!taken)
 			break;
 
-		/* The station refuses a frame of an older connection, or one before the port opens. */
+		/*
+		 * The station refuses a frame of an older connection, or one
+		 * before the port opens.
+		 */
 		error = wlan_station_report_ethernet(device->station, generation, frame, length);
 		if (error != 0)
 			device->net->rx_dropped++;
 	}
+
+	/* Clears the last frame's bytes. */
 	kern_memset(frame, 0, sizeof(frame));
 
 	/* Reports how many frames were taken. */

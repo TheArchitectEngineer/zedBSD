@@ -57,6 +57,7 @@ struct bcm43455_bus_ops {
 	void (*power_down)(void *context);
 };
 
+/* One chip on its bus: opaque to the board's driver, which only passes it back. */
 struct bcm43455_device;
 
 /*
