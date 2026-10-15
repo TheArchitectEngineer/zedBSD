@@ -2,6 +2,22 @@
 
 # Queue / all-agent index
 
+## 2026-10-16: WS247・WS245（q984〜q995）
+
+承認はユーザーの各指示（各 phase.md の Approval）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q984 | P1 | [ws247-p001](ws247/phase001/phase.md) | nvrtx の GSP・boot・memory の 21 file の出典 | cleared（c88130a3e を merge） |
+| q985 | P2 | ws247-p001 | display・channel の 11 file | cleared（c0cd135d9 を merge） |
+| q986 | P3 | ws247-p001 | draw・compute・vk の 27 file | cleared（97f772767 を merge） |
+| q987 | P1 | [ws247-p003](ws247/phase003/phase.md) | compiler/sm75.h | cleared（593a10b91） |
+| q988 | P2 | ws247-p003 | sm75.c 1〜3026 行 | cleared（f2ed1701a） |
+| q989 | P3 | ws247-p003 | sm75.c 3027 行〜 | cleared（028a0b640） |
+| q990 | P1 | [ws247-p002](ws247/phase002/phase.md) | 規約の全文の見直し | cleared（c8bab8ab6） |
+| q991 | P2 → P1 | [ws245-p001](ws245/phase001/phase.md) | Gen12 display の書き直しの設計 | in-progress（design.md 6bccaef57 は main、レビュー 1 は design-review-1.md、P1 が改訂中、2 回目のレビュー中） |
+| q992〜q995 | P1〜P3 | （架空の ws245-p002〜p005） | Q1 が実在しない design.md の Phase で投入した | uncleared・成果なし。q992・q993 は Q1 が止めた、q994・q995 は担当が前提の不在で未着手のまま返した。記録は 485ad5be6 で取り消し |
+
 ## 2026-10-13 WS074 の独立 lane
 
 [q1000](history/queue-q1000.md) は p178 初回試行 uncleared、[q1001](history/queue-q1001.md) は p179 cleared、[q1002](history/queue-q1002.md) は p178 得点位置の部分 scope cleared、[q1003](history/queue-q1003.md) は p180 cleared、[q1004](history/queue-q1004.md) は p181 cleared。[q1005](history/queue-q1005.md) は p182 cleared。[q1006](history/queue-q1006.md) は p183 cleared。[q1007](history/queue-q1007.md) は p184 cleared。[q1008](history/queue-q1008.md) は p185 cleared。[q1009](history/queue-q1009.md) は p186 の sharp 単一 scope cleared。[q1010](history/queue-q1010.md) は p187 cleared。[q1011](history/queue-q1011.md) は p188 cleared、Acid3 得点100/100・pixel差0/480000（ユーザー目標達成）、Acid2差1865/120000不変。ユーザーの最大90分 Queue 自動反復指示に基づく実行は目標達成で終了し、次 Queue は未選定。p178 whole/p100 whole は別の受入が残り未達。メインセッションの q924〜q939 と同じ番号を使わない。`master.md` は変更しない。
