@@ -752,3 +752,5 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-684 | ws037 方法 A の 3 回目（eec32eab4、P4m の直し、reboot 5 回） | PASS | results-20261016-t1-684.md |
 | T1-691 | Q1（ws236-p012 A3 の Pi 以外は不変、3361f8c19） | ws236-p012 | **RTX 実機 PASS**（`VK SWAPCHAIN direct=0 reason=renderer` 6 行・direct=1 無し、P8c ok）。run 1 は P4m fail（間欠、再 boot で ok）。QEMU Venus は未実施（image の build が clang の toolchain を作り始めたので中止）。[results](results-20261016-t1-691.md) |
 | T1-692 | WS037 方法 A の P4m の BAR1 の間欠 2 回目の直し（RTX 機で reboot 10 回） | PASS（10/10、run 6 は retry round 3 で ok） | results-20261016-t1-692.md |
+| T1-693 | WS037 reboot・shutdown で GSP を止める（RTX 機で reboot 10 回、7d3fb21c5） | phase007 | **FAIL**（`P4m bar1 before the tables` が 11 回とも出る。P4m ok・P8c ok・session は通る。P7 の行は log に残らず取れない。[results](results-20261016-t1-693.md)） |
+| T1-694 | QEMU の nvme を pcie-root-port の下に置いた reboot・poweroff 3 回ずつ | phase007 | PASS（reset・停止・次の boot の login・fsck 修復なし。shutdown の 2 行は取れず。[results](results-20261016-t1-694.md)） |
