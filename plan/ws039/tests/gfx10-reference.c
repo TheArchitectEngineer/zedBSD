@@ -31,8 +31,10 @@ struct reference_run {
 	int *undefined;
 	uint8_t *shared;
 	uint32_t shared_bytes;
+	struct reference_graphics *graphics;
 };
 
+static const char *run_lanes(struct reference_run *run);
 static void execute(struct reference_run *run, const struct drv_gpu_shader_ir_inst *inst, uint32_t lane);
 static uint32_t *value(struct reference_run *run, uint32_t index, uint32_t lane);
 static float as_float(uint32_t bits);
@@ -53,14 +55,6 @@ reference_run_group(
 	int *undefined)
 {
 	struct reference_run run;
-	const struct drv_gpu_shader_ir_inst *inst;
-	uint32_t begins[REFERENCE_LOOPS];
-	uint8_t *saved[REFERENCE_LOOPS];
-	uint32_t depth;
-	uint32_t pc;
-	uint32_t steps;
-	uint32_t lane;
-	int any;
 
 	*undefined = 0;
 	memset(&run, 0, sizeof(run));
@@ -73,6 +67,53 @@ reference_run_group(
 	run.shared = calloc(ir->shared_bytes + 4U, 1U);
 
 	/* The values of every lane, and every lane running. */
+	return run_lanes(&run);
+}
+
+/* Runs one wave of a vertex or pixel program. */
+const char *
+reference_run_graphics(
+	const struct drv_gpu_shader_ir *ir,
+	struct reference_memory *memory,
+	struct reference_graphics *graphics,
+	int *undefined)
+{
+	static const uint32_t no_group[3] = { 0U, 0U, 0U };
+	struct reference_run run;
+
+	*undefined = 0;
+	memset(&run, 0, sizeof(run));
+	memset(graphics->output, 0, sizeof(graphics->output));
+	memset(graphics->written, 0, sizeof(graphics->written));
+	memset(graphics->killed, 0, sizeof(graphics->killed));
+	run.ir = ir;
+	run.memory = memory;
+	run.group_id = no_group;
+	run.undefined = undefined;
+	run.lanes = graphics->lanes;
+	run.graphics = graphics;
+	run.shared = calloc(4U, 1U);
+	return run_lanes(&run);
+}
+
+/* Runs the program over the lanes in lockstep. */
+static const char *
+run_lanes(
+	struct reference_run *run_state)
+{
+	const struct drv_gpu_shader_ir *ir;
+	const struct drv_gpu_shader_ir_inst *inst;
+	uint32_t begins[REFERENCE_LOOPS];
+	uint8_t *saved[REFERENCE_LOOPS];
+	uint32_t depth;
+	uint32_t pc;
+	uint32_t steps;
+	uint32_t lane;
+	int any;
+	struct reference_run run;
+
+	run = *run_state;
+	ir = run.ir;
 	run.values = calloc((size_t)ir->value_count * run.lanes + 1U, sizeof(*run.values));
 	run.active = malloc(run.lanes);
 	if (run.values == NULL || run.active == NULL) {
@@ -81,6 +122,10 @@ reference_run_group(
 		return "no memory";
 	}
 	memset(run.active, 1, run.lanes);
+	if (run.graphics != NULL) {
+		for (lane = 0U; lane < run.lanes; lane++)
+			run.active[lane] = run.graphics->run[lane];
+	}
 
 	/* The instructions in order for every running lane, the loops repeated. */
 	depth = 0U;
@@ -125,6 +170,12 @@ reference_run_group(
 			}
 			depth--;
 			memcpy(run.active, saved[depth], run.lanes);
+			if (run.graphics != NULL) {
+				for (lane = 0U; lane < run.lanes; lane++) {
+					if (run.graphics->killed[lane] != 0U)
+						run.active[lane] = 0U;
+				}
+			}
 			free(saved[depth]);
 			pc++;
 			continue;
@@ -447,6 +498,94 @@ execute(
 
 			storage_store(run, inst->location, a, atomic_apply(inst->immediate, old, b, c));
 			*d = old;
+		}
+		break;
+	case DRV_GPU_IR_LOAD_INPUT:
+		if (run->graphics == NULL) {
+			*run->undefined = 1;
+			break;
+		}
+		if (ir->stage == DRV_GPU_STAGE_VERTEX) {
+			if (inst->location == 64U)
+				*d = run->graphics->vertex_index[lane];
+			else if (inst->location == 65U)
+				*d = run->graphics->instance_index[lane];
+			else
+				*d = run->graphics->input[lane][inst->location][inst->component];
+		} else if (inst->location == 67U) {
+			*d = run->graphics->frag_coord[lane][inst->component];
+		} else if (inst->location == 66U) {
+			*d = run->graphics->front_facing[lane];
+		} else {
+			*d = run->graphics->input[lane][inst->location][inst->component];
+		}
+		break;
+	case DRV_GPU_IR_STORE_OUTPUT:
+		if (run->graphics == NULL) {
+			*run->undefined = 1;
+			break;
+		}
+		linear = inst->location;
+		if (linear == DRV_GPU_IR_LOCATION_POSITION)
+			linear = REFERENCE_SLOT_POSITION;
+		else if (linear == DRV_GPU_IR_LOCATION_POINT_SIZE)
+			linear = REFERENCE_SLOT_POINT_SIZE;
+		if (linear >= REFERENCE_SLOTS) {
+			*run->undefined = 1;
+			break;
+		}
+		run->graphics->output[lane][linear][inst->component] = a;
+		run->graphics->written[lane][linear][inst->component] = 1U;
+		break;
+	case DRV_GPU_IR_SAMPLE:
+	case DRV_GPU_IR_SAMPLE_BIAS:
+	case DRV_GPU_IR_SAMPLE_LOD:
+	case DRV_GPU_IR_TEXTURE:
+		{
+			uint32_t out[4];
+			uint32_t u_value = a;
+			uint32_t v_value = b;
+			uint32_t offset_bits = (inst->component >> 4) & 0xffU;
+			uint32_t message;
+			int fetch = 0;
+			int offset_u;
+			int offset_v;
+			uint32_t k;
+
+			if (run->graphics == NULL || run->graphics->sample == NULL) {
+				*run->undefined = 1;
+				break;
+			}
+			if (inst->op == DRV_GPU_IR_TEXTURE) {
+				message = inst->component & 0x1fU;
+				offset_bits = (inst->component >> 12) & 0xffU;
+				if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD) {
+					u_value = *value(run, inst->src[0] + 1U, lane);
+					v_value = *value(run, inst->src[0] + 2U, lane);
+				} else {
+					u_value = *value(run, inst->src[0], lane);
+					v_value = *value(run, inst->src[0] + 1U, lane);
+				}
+				if (message == DRV_GPU_IR_TEXTURE_LD) {
+					fetch = 1;
+					offset_bits = 0U;
+				}
+			}
+			offset_u = (int)((offset_bits >> 4) & 0xfU);
+			offset_v = (int)(offset_bits & 0xfU);
+			if (offset_u >= 8)
+				offset_u -= 16;
+			if (offset_v >= 8)
+				offset_v -= 16;
+			run->graphics->sample(run->graphics->sample_context, inst->location, inst->immediate, u_value, v_value, fetch, offset_u, offset_v, out);
+			for (k = 0U; k < 4U; k++)
+				*value(run, inst->dst + k, lane) = out[k];
+		}
+		break;
+	case DRV_GPU_IR_KILL:
+		if (a != 0U && run->graphics != NULL) {
+			run->graphics->killed[lane] = 1U;
+			run->active[lane] = 0U;
 		}
 		break;
 	case DRV_GPU_IR_BARRIER:

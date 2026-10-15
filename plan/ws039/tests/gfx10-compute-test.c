@@ -19,6 +19,7 @@
  */
 
 #include "drivers/gpu/amdrdna/compiler/gfx10-compile.h"
+#include "drivers/gpu/amdrdna/compiler/gfx10-program.h"
 #include "drivers/gpu/compiler/spirv.h"
 #include "plan/ws039/tests/gfx10-machine.h"
 #include "plan/ws039/tests/gfx10-reference.h"
@@ -102,6 +103,7 @@ test_module(
 	struct drv_gpu_compile_diagnostic parse_diagnostic;
 	struct amdrdna_gfx10_program *program;
 	struct amdrdna_gfx10_diagnostic diagnostic;
+	struct amdrdna_gfx10_registers registers;
 	uint32_t groups[3];
 	uint32_t index;
 	uint64_t steps;
@@ -170,6 +172,20 @@ test_module(
 				program->code[index] >> 24);
 		}
 		fclose(hex);
+	}
+
+	/* The register values: the VGPR blocks, two user SGPRs, the workgroup ids, the local ids x, y, z, the shared memory. */
+	amdrdna_gfx10_program_registers(program, &registers);
+	if ((registers.counts & 0x3fU) != (program->vgpr_count - 1U) / 8U ||
+	    ((registers.counts >> 12) & 0xffU) != 0xf0U ||
+	    ((registers.inputs >> 1) & 0x1fU) != 2U ||
+	    ((registers.inputs >> 7) & 7U) != 7U ||
+	    ((registers.inputs >> 11) & 3U) != 2U ||
+	    ((registers.inputs >> 15) & 0x1ffU) != (program->shared_bytes + 511U) / 512U) {
+		printf("FAIL %s: register values 0x%08x 0x%08x\n", name, registers.counts, registers.inputs);
+		amdrdna_gfx10_program_free(program);
+		drv_gpu_shader_ir_free(ir);
+		return 1;
 	}
 
 	/* The sine and cosine are approximations on the hardware: their programs compare with a tolerance. */
@@ -294,18 +310,18 @@ run_trial(
 		uniform = &ir->uniforms[index];
 		binding = NULL;
 		if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE) {
-			for (slot = 0U; slot < program->storage_count; slot++) {
+			for (slot = 0U; slot < program->storage_used; slot++) {
 				if (program->storage[slot].set == uniform->set && program->storage[slot].binding == uniform->binding)
 					binding = &program->storage[slot];
 			}
 		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_BLOCK) {
-			for (slot = 0U; slot < program->uniform_count; slot++) {
+			for (slot = 0U; slot < program->uniform_used; slot++) {
 				if (program->uniforms[slot].set == uniform->set && program->uniforms[slot].binding == uniform->binding)
 					binding = &program->uniforms[slot];
 			}
 		}
 		if (binding != NULL)
-			machine_raw_descriptor(table, binding->table_offset, addresses[index], sizes[index]);
+			amdrdna_gfx10_raw_buffer_descriptor(addresses[index], sizes[index], (uint32_t *)(table + binding->table_offset));
 	}
 
 	/* Every workgroup on both. */

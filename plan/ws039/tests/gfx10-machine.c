@@ -17,6 +17,7 @@
  */
 
 #include "plan/ws039/tests/gfx10-machine.h"
+#include "plan/ws039/tests/gfx10-texture.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -73,6 +74,7 @@ struct run {
 	struct machine_result *result;
 	struct wave *wave;
 	uint32_t word;
+	struct machine_graphics *graphics;
 };
 
 static int step(struct run *run, struct wave *wave);
@@ -93,6 +95,10 @@ static int scalar_load(struct run *run, struct wave *wave, uint32_t word0, uint3
 static int vector_alu(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1, int wide, uint32_t literal, int *used_literal);
 static int buffer_access(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1);
 static int shared_access(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1);
+static int export_access(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1);
+static int interpolate(struct run *run, struct wave *wave, uint32_t word);
+static int format_fetch(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1);
+static int image_access(struct run *run, struct wave *wave, uint32_t word0, uint32_t word1);
 static uint32_t vector_operation(unsigned opcode, uint32_t a, uint32_t b, uint32_t c, int *known);
 static void note_wait(struct wave *wave, uint32_t immediate);
 static void clear_set(uint8_t *set);
@@ -216,24 +222,6 @@ machine_add_region(
 	return region->address;
 }
 
-/* Writes a raw buffer descriptor of a region into a table: the base, no stride, the size in bytes. */
-void
-machine_raw_descriptor(
-	uint8_t *table,
-	uint32_t offset,
-	uint64_t address,
-	uint32_t size)
-{
-	uint32_t words[4];
-
-	/* The base's low 32 bits, its high 16 bits, the record count, and the channel and format word. */
-	words[0] = (uint32_t)address;
-	words[1] = (uint32_t)(address >> 32) & 0xffffU;
-	words[2] = size;
-	words[3] = 0x31016facU;
-	memcpy(table + offset, words, sizeof(words));
-}
-
 /* Runs one instruction of a wave; nonzero when the run stops on an error. */
 static int
 step(
@@ -296,6 +284,14 @@ step(
 	} else if (top6 == 0x36U) {
 		length = 2U;
 		error = shared_access(run, wave, word0, word1);
+	} else if (top6 == 0x3cU) {
+		length = 2U;
+		error = image_access(run, wave, word0, word1);
+	} else if (top6 == 0x32U) {
+		error = interpolate(run, wave, word0);
+	} else if (top6 == 0x3eU) {
+		length = 2U;
+		error = export_access(run, wave, word0, word1);
 	} else {
 		return fail(run, "an instruction form the machine does not know");
 	}
@@ -1198,6 +1194,10 @@ buffer_access(
 	descriptor = ((word1 >> 16) & 0x1fU) << 2;
 	soffset_code = (word1 >> 24) & 0xffU;
 
+	/* A typed fetch by record index. */
+	if (opcode == 0x03U)
+		return format_fetch(run, wave, word0, word1);
+
 	/* Only byte offsets are used for storage. */
 	if (offen == 0)
 		return fail(run, "a buffer access without a byte offset register");
@@ -1488,4 +1488,430 @@ mark_scalar_reads(
 		if (code + index < 128U)
 			set[code + index] = 1U;
 	}
+}
+
+/* Runs one wave of a vertex or pixel program. */
+void
+machine_run_graphics(
+	const struct machine_dispatch *dispatch,
+	struct machine_memory *memory,
+	int pixel,
+	struct machine_graphics *graphics,
+	struct machine_result *result)
+{
+	static struct wave wave;
+	struct run run;
+	uint32_t lane;
+	uint32_t index;
+	uint32_t next;
+	int stopped;
+
+	memset(result, 0, sizeof(*result));
+	memset(&run, 0, sizeof(run));
+	memset(&wave, 0, sizeof(wave));
+	memset(graphics->exported, 0, sizeof(graphics->exported));
+	memset(graphics->export_channels, 0, sizeof(graphics->export_channels));
+	memset(graphics->export_lanes, 0, sizeof(graphics->export_lanes));
+	memset(graphics->export_flags, 0, sizeof(graphics->export_flags));
+	graphics->export_count = 0U;
+	run.dispatch = dispatch;
+	run.memory = memory;
+	run.result = result;
+	run.wave = &wave;
+	run.graphics = graphics;
+
+	/* The table address and the user SGPRs; the VGPRs past the inputs are garbage. */
+	wave.s[0] = (uint32_t)dispatch->table;
+	wave.s[1] = (uint32_t)(dispatch->table >> 32);
+	for (index = 3U; index < 256U; index++) {
+		for (lane = 0U; lane < MACHINE_LANES; lane++)
+			wave.v[index][lane] = 0xdeadbeefU ^ (index * 77U + lane);
+	}
+
+	/* A vertex wave: s2 .. s4, v0 the vertex id, v3 the instance id. */
+	if (pixel == 0) {
+		wave.s[2] = graphics->user[0];
+		wave.s[3] = graphics->user[1];
+		wave.s[4] = graphics->user[2];
+		for (lane = 0U; lane < MACHINE_LANES; lane++) {
+			if (lane < graphics->lanes)
+				wave.s[CODE_EXEC] |= 1U << lane;
+			wave.v[0][lane] = graphics->first_vertex_id + lane;
+			wave.v[1][lane] = 0U;
+			wave.v[2][lane] = 0U;
+			wave.v[3][lane] = graphics->instance_id;
+		}
+	} else {
+		/* A pixel wave: s2 the primitive mask, the enabled inputs packed from v0. */
+		wave.s[2] = 0x1234U;
+		wave.s[CODE_EXEC] = graphics->coverage;
+		for (lane = 0U; lane < MACHINE_LANES; lane++) {
+			next = 0U;
+			memcpy(&wave.v[next++][lane], &graphics->perspective[lane][0], 4U);
+			memcpy(&wave.v[next++][lane], &graphics->perspective[lane][1], 4U);
+			if ((dispatch->pixel_inputs & (1U << 5)) != 0U) {
+				memcpy(&wave.v[next++][lane], &graphics->linear[lane][0], 4U);
+				memcpy(&wave.v[next++][lane], &graphics->linear[lane][1], 4U);
+			}
+			if ((dispatch->pixel_inputs & (0xfU << 8)) != 0U) {
+				for (index = 0U; index < 4U; index++)
+					memcpy(&wave.v[next++][lane], &graphics->position[lane][index], 4U);
+			}
+			if ((dispatch->pixel_inputs & (1U << 12)) != 0U)
+				memcpy(&wave.v[next++][lane], &graphics->face[lane], 4U);
+		}
+	}
+
+	/* Runs the wave to its end. */
+	while (wave.state == WAVE_RUNNING) {
+		stopped = step(&run, &wave);
+		if (stopped != 0)
+			return;
+		if (wave.state == WAVE_AT_BARRIER)
+			wave.state = WAVE_RUNNING;
+		if (result->steps > MACHINE_STEP_LIMIT) {
+			fail(&run, "the wave runs too long");
+			return;
+		}
+	}
+}
+
+/* Runs an export: the enabled channels of the lanes the wave runs, kept by target. */
+static int
+export_access(
+	struct run *run,
+	struct wave *wave,
+	uint32_t word0,
+	uint32_t word1)
+{
+	unsigned target;
+	unsigned mask;
+	unsigned channel;
+	unsigned lane;
+	unsigned code;
+	int error;
+
+	if (run->graphics == NULL)
+		return fail(run, "an export in a compute program");
+	target = (word0 >> 4) & 0x3fU;
+	mask = word0 & 0xfU;
+
+	/* The registers of the enabled channels are ready; they stay read until the export counter. */
+	for (channel = 0U; channel < 4U; channel++) {
+		if ((mask & (1U << channel)) == 0U)
+			continue;
+		code = 256U + ((word1 >> (8U * channel)) & 0xffU);
+		error = check_vector_read(run, wave, code);
+		if (error != 0)
+			return error;
+		for (lane = 0U; lane < MACHINE_LANES; lane++) {
+			if ((wave->s[CODE_EXEC] & (1U << lane)) != 0U)
+				run->graphics->exported[target][lane][channel] = wave->v[code - 256U][lane];
+		}
+		wave->pending[code] |= PENDING_EXPORT;
+	}
+	if ((run->graphics->export_flags[target] & 1U) != 0U)
+		return fail(run, "a target exported twice");
+	run->graphics->export_channels[target] = mask;
+	run->graphics->export_lanes[target] = wave->s[CODE_EXEC];
+	run->graphics->export_flags[target] = 1U | ((word0 >> 11) & 1U) << 1 | ((word0 >> 12) & 1U) << 2;
+	run->graphics->export_count++;
+	return 0;
+}
+
+/* Runs an interpolation: P0 + P10 i (the first step), P20 j added (the second), or P0 (the flat move). */
+static int
+interpolate(
+	struct run *run,
+	struct wave *wave,
+	uint32_t word)
+{
+	unsigned vdst;
+	unsigned opcode;
+	unsigned attribute;
+	unsigned channel;
+	unsigned source;
+	unsigned lane;
+	const float *vertices;
+	float barycentric;
+	float result;
+	int error;
+
+	if (run->graphics == NULL || run->graphics->attribute == NULL)
+		return fail(run, "an interpolation outside a pixel program");
+	vdst = 256U + ((word >> 18) & 0xffU);
+	opcode = (word >> 16) & 3U;
+	attribute = (word >> 10) & 0x3fU;
+	channel = (word >> 8) & 3U;
+	source = word & 0xffU;
+
+	/* M0 and the barycentric are ready, the destination is free (and ready, for the second step). */
+	error = check_scalar_read(run, wave, CODE_M0);
+	if (error == 0 && opcode != 2U)
+		error = check_vector_read(run, wave, 256U + source);
+	if (error == 0)
+		error = check_write(run, wave, vdst);
+	if (error != 0)
+		return error;
+	if (opcode == 2U && source != 2U)
+		return fail(run, "a flat move of a parameter other than P0");
+	clear_set(wave->read_by_load);
+	clear_set(wave->read_by_store);
+	clear_set(wave->read_by_shared);
+
+	/* Each lane the wave runs, by its primitive's three vertices. */
+	for (lane = 0U; lane < MACHINE_LANES; lane++) {
+		if ((wave->s[CODE_EXEC] & (1U << lane)) == 0U)
+			continue;
+		vertices = run->graphics->attribute[run->graphics->primitive[lane]][attribute][channel];
+		if (opcode == 2U) {
+			result = vertices[0];
+		} else if (opcode == 0U) {
+			barycentric = as_float(wave->v[source][lane]);
+			result = fmaf(vertices[1] - vertices[0], barycentric, vertices[0]);
+		} else {
+			barycentric = as_float(wave->v[source][lane]);
+			result = fmaf(vertices[2] - vertices[0], barycentric, as_float(wave->v[vdst - 256U][lane]));
+		}
+		wave->v[vdst - 256U][lane] = as_bits(result);
+	}
+	return 0;
+}
+
+/* Runs a typed fetch by record index: the descriptor's format and channel selects. */
+static int
+format_fetch(
+	struct run *run,
+	struct wave *wave,
+	uint32_t word0,
+	uint32_t word1)
+{
+	unsigned vaddr;
+	unsigned vdata;
+	unsigned descriptor;
+	unsigned lane;
+	unsigned channel;
+	unsigned select;
+	unsigned components;
+	unsigned format;
+	uint32_t stride;
+	uint32_t records;
+	uint32_t index;
+	uint32_t raw[4];
+	uint32_t value;
+	uint64_t base;
+	uint8_t *bytes;
+	int is_unorm;
+	int error;
+
+	vaddr = 256U + (word1 & 0xffU);
+	vdata = 256U + ((word1 >> 8) & 0xffU);
+	descriptor = ((word1 >> 16) & 0x1fU) << 2;
+	if (((word0 >> 13) & 1U) == 0U)
+		return fail(run, "a typed fetch without a record index");
+
+	/* The descriptor, the index ready; the four destination registers free. */
+	for (channel = 0U; channel < 4U; channel++) {
+		error = check_scalar_read(run, wave, descriptor + channel);
+		if (error == 0)
+			error = check_write(run, wave, vdata + channel);
+		if (error != 0)
+			return error;
+	}
+	error = check_vector_read(run, wave, vaddr);
+	if (error != 0)
+		return error;
+
+	base = (uint64_t)wave->s[descriptor] | ((uint64_t)(wave->s[descriptor + 1U] & 0xffffU) << 32);
+	stride = (wave->s[descriptor + 1U] >> 16) & 0x3fffU;
+	records = wave->s[descriptor + 2U];
+	format = (wave->s[descriptor + 3U] >> 12) & 0x7fU;
+
+	/* The channels of the format. */
+	is_unorm = 0;
+	switch (format) {
+	case 20U: case 22U: components = 1U; break;
+	case 62U: case 64U: components = 2U; break;
+	case 72U: case 74U: components = 3U; break;
+	case 75U: case 77U: components = 4U; break;
+	case 56U: components = 4U; is_unorm = 1; break;
+	default:
+		return fail(run, "a vertex format the machine does not know");
+	}
+
+	/* Each lane: the record's channels, then the selects. */
+	for (lane = 0U; lane < MACHINE_LANES; lane++) {
+		if ((wave->s[CODE_EXEC] & (1U << lane)) == 0U)
+			continue;
+		index = wave->v[vaddr - 256U][lane];
+		if (index >= records)
+			return fail(run, "a vertex fetch past the records (the test does not use it)");
+		memset(raw, 0, sizeof(raw));
+		if (is_unorm != 0) {
+			bytes = memory_at(run, base + (uint64_t)index * stride, 4U);
+			if (bytes == NULL)
+				return fail(run, "a vertex fetch outside memory");
+			for (channel = 0U; channel < 4U; channel++)
+				raw[channel] = as_bits((float)bytes[channel] / 255.0f);
+		} else {
+			bytes = memory_at(run, base + (uint64_t)index * stride, 4U * components);
+			if (bytes == NULL)
+				return fail(run, "a vertex fetch outside memory");
+			memcpy(raw, bytes, 4U * components);
+		}
+		for (channel = 0U; channel < 4U; channel++) {
+			select = (wave->s[descriptor + 3U] >> (3U * channel)) & 7U;
+			if (select == 0U) {
+				value = 0U;
+			} else if (select == 1U) {
+				value = (format == 20U || format == 62U || format == 72U || format == 75U) ? 1U : 0x3f800000U;
+			} else if (select >= 4U) {
+				value = raw[select - 4U];
+			} else {
+				return fail(run, "a channel select the machine does not know");
+			}
+			wave->v[vdata - 256U + channel][lane] = value;
+		}
+	}
+	for (channel = 0U; channel < 4U; channel++)
+		wave->pending[vdata + channel] |= PENDING_VECTOR;
+	mark_scalar_reads(wave->read_by_load, descriptor, 4U);
+	mark_scalar_reads(wave->read_by_load, CODE_EXEC, 1U);
+	if (wave->branch_after_shared != 0)
+		return fail(run, "a buffer access after a branch after a shared access (LdsBranchVmemWAR)");
+	wave->vector_memory = 1;
+	return 0;
+}
+
+/* Runs an image access: a sample at normalized coordinates (with an offset, a bias or a level), or a texel fetch. */
+static int
+image_access(
+	struct run *run,
+	struct wave *wave,
+	uint32_t word0,
+	uint32_t word1)
+{
+	unsigned opcode;
+	unsigned vaddr;
+	unsigned vdata;
+	unsigned image;
+	unsigned sampler;
+	unsigned count;
+	unsigned lane;
+	unsigned index;
+	unsigned next;
+	uint32_t descriptor[8];
+	uint32_t sampler_words[4];
+	uint32_t out[4];
+	uint32_t offset;
+	uint32_t quad;
+	int has_offset;
+	int has_bias;
+	int has_level;
+	int implicit;
+	int fetch;
+	int offset_u;
+	int offset_v;
+	uint8_t *texels;
+	int error;
+
+	opcode = (word0 >> 18) & 0x7fU;
+	vaddr = 256U + (word1 & 0xffU);
+	vdata = 256U + ((word1 >> 8) & 0xffU);
+	image = ((word1 >> 16) & 0x1fU) << 2;
+	sampler = ((word1 >> 21) & 0x1fU) << 2;
+	if (((word0 >> 8) & 0xfU) != 0xfU || ((word0 >> 3) & 7U) != 1U || ((word0 >> 1) & 3U) != 0U)
+		return fail(run, "an image access other than four channels of a 2D image without NSA");
+
+	/* The address count by the opcode. */
+	has_offset = 0;
+	has_bias = 0;
+	has_level = 0;
+	implicit = 0;
+	fetch = 0;
+	switch (opcode) {
+	case 0x01U: fetch = 1; has_level = 1; break;
+	case 0x20U: implicit = 1; break;
+	case 0x24U: has_level = 1; break;
+	case 0x25U: has_bias = 1; implicit = 1; break;
+	case 0x27U: break;
+	case 0x30U: has_offset = 1; implicit = 1; break;
+	case 0x34U: has_offset = 1; has_level = 1; break;
+	case 0x35U: has_offset = 1; has_bias = 1; implicit = 1; break;
+	case 0x37U: has_offset = 1; break;
+	default:
+		return fail(run, "an image opcode the machine does not know");
+	}
+	if (fetch != 0 && ((word0 >> 12) & 1U) == 0U)
+		return fail(run, "a texel fetch without unnormalized coordinates");
+	count = 2U + (unsigned)has_offset + (unsigned)has_bias + (unsigned)has_level;
+
+	/* The descriptors, the addresses ready; the destination free. */
+	for (index = 0U; index < 8U; index++) {
+		error = check_scalar_read(run, wave, image + index);
+		if (error != 0)
+			return error;
+		descriptor[index] = wave->s[image + index];
+	}
+	memset(sampler_words, 0, sizeof(sampler_words));
+	if (fetch == 0) {
+		for (index = 0U; index < 4U; index++) {
+			error = check_scalar_read(run, wave, sampler + index);
+			if (error != 0)
+				return error;
+			sampler_words[index] = wave->s[sampler + index];
+		}
+	}
+	for (index = 0U; index < count; index++) {
+		error = check_vector_read(run, wave, vaddr + index);
+		if (error != 0)
+			return error;
+	}
+	for (index = 0U; index < 4U; index++) {
+		error = check_write(run, wave, vdata + index);
+		if (error != 0)
+			return error;
+	}
+
+	/* A sample with derivatives needs whole quads. */
+	if (implicit != 0) {
+		for (quad = 0U; quad < 32U; quad += 4U) {
+			if (((wave->s[CODE_EXEC] >> quad) & 0xfU) != 0U && ((wave->s[CODE_EXEC] >> quad) & 0xfU) != 0xfU)
+				return fail(run, "a sample with derivatives without whole quads");
+		}
+	}
+
+	texels = memory_at(run, texture_address(descriptor), 1U);
+	if (texels == NULL)
+		return fail(run, "an image outside memory");
+
+	/* Each lane: its offset, then u and v (past the bias), filtered. */
+	for (lane = 0U; lane < MACHINE_LANES; lane++) {
+		if ((wave->s[CODE_EXEC] & (1U << lane)) == 0U)
+			continue;
+		next = vaddr - 256U;
+		offset_u = 0;
+		offset_v = 0;
+		if (has_offset != 0) {
+			offset = wave->v[next][lane];
+			offset_u = (int)(int8_t)(uint8_t)((offset & 0x3fU) << 2) >> 2;
+			offset_v = (int)(int8_t)(uint8_t)(((offset >> 8) & 0x3fU) << 2) >> 2;
+			next++;
+		}
+		if (has_bias != 0)
+			next++;
+		texture_filter(texels, descriptor, sampler_words, wave->v[next][lane], wave->v[next + 1U][lane], fetch, offset_u, offset_v, out);
+		for (index = 0U; index < 4U; index++)
+			wave->v[vdata - 256U + index][lane] = out[index];
+	}
+	for (index = 0U; index < 4U; index++)
+		wave->pending[vdata + index] |= PENDING_VECTOR;
+	mark_scalar_reads(wave->read_by_load, image, 8U);
+	if (fetch == 0)
+		mark_scalar_reads(wave->read_by_load, sampler, 4U);
+	mark_scalar_reads(wave->read_by_load, CODE_EXEC, 1U);
+	if (wave->branch_after_shared != 0)
+		return fail(run, "an image access after a branch after a shared access (LdsBranchVmemWAR)");
+	wave->vector_memory = 1;
+	return 0;
 }

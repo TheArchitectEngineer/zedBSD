@@ -1,6 +1,7 @@
 #!/bin/sh
 # Host test of the amdrdna GFX10 shader compiler (ws039-p007): the encoder's known words, compared with LLVM's assembler;
-# compute modules compiled and run on a GFX10 interpreter and on the IR reference; the code disassembled by llvm-mc.
+# compute, vertex and pixel modules compiled and run on a GFX10 interpreter and on the IR reference; the code
+# disassembled by llvm-mc.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws039/tests/amdrdna-compiler-host-test.sh   (from anywhere)
@@ -27,6 +28,7 @@ for source in "$tests"/shaders/*.comp; do
 	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$out/$name.spv" "$source"
 done
 cc $flags -o "$out/gfx10-compute-test" "$tests/gfx10-compute-test.c" "$tests/gfx10-machine.c" "$tests/gfx10-reference.c" \
+	"$tests/gfx10-texture.c" "$repo/src/drivers/gpu/amdrdna/compiler/gfx10-program.c" \
 	"$repo/src/drivers/gpu/amdrdna/compiler/gfx10-compile.c" "$repo/src/drivers/gpu/amdrdna/compiler/gfx10-wait.c" \
 	"$repo/src/drivers/gpu/amdrdna/compiler/gfx10-encode.c" "$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" -lm
@@ -34,7 +36,22 @@ cc $flags -o "$out/gfx10-compute-test" "$tests/gfx10-compute-test.c" "$tests/gfx
 	"$out/loop.spv:2,1,1" "$out/uniform.spv:2,1,1" "$out/division.spv:3,1,1" \
 	"$out/atomic.spv:2,1,1" "$out/shared.spv:2,1,1" "$out/trig.spv:2,1,1:float" "$out/half.spv:2,1,1:float" || status=1
 
-# 3. Every word of every program is an instruction llvm-mc knows.
+# 3. Vertex and pixel modules on the GFX10 interpreter and the IR reference.
+graphics=""
+for source in "$tests"/shaders/*.vert "$tests"/shaders/*.frag; do
+	name=$(basename "$source")
+	glslc --target-env=vulkan1.0 -o "$out/$name.spv" "$source"
+	graphics="$graphics $out/$name.spv"
+done
+cc $flags -o "$out/gfx10-graphics-test" "$tests/gfx10-graphics-test.c" "$tests/gfx10-machine.c" "$tests/gfx10-reference.c" \
+	"$tests/gfx10-texture.c" \
+	"$repo/src/drivers/gpu/amdrdna/compiler/gfx10-compile.c" "$repo/src/drivers/gpu/amdrdna/compiler/gfx10-wait.c" \
+	"$repo/src/drivers/gpu/amdrdna/compiler/gfx10-encode.c" "$repo/src/drivers/gpu/amdrdna/compiler/gfx10-program.c" \
+	"$repo/src/drivers/gpu/compiler/spirv.c" "$repo/src/drivers/gpu/compiler/optimize.c" -lm
+# shellcheck disable=SC2086
+"$out/gfx10-graphics-test" "$out" $graphics || status=1
+
+# 4. Every word of every program is an instruction llvm-mc knows.
 for hex in "$out"/*.hex; do
 	if llvm-mc-19 -arch=amdgcn -mcpu=gfx1010 -disassemble "$hex" > "$hex.s" 2> "$hex.err" && [ ! -s "$hex.err" ]; then
 		:

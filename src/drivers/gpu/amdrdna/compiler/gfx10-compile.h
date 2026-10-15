@@ -74,13 +74,37 @@ struct amdrdna_gfx10_program {
 	/* The bytes of the resource table the driver writes. */
 	uint32_t table_bytes;
 
+	/*
+	 * A vertex program: the locations it fetches from vertex buffers (bit
+	 * L), whose descriptors start at vertex_table_offset (location L's at
+	 * vertex_table_offset + 16 L); the parameter locations it exports (bit
+	 * L, exported as parameter L); and whether it writes the point size.
+	 */
+	uint32_t fetched_locations;
+	uint32_t vertex_table_offset;
+	uint32_t parameter_outputs;
+	uint32_t writes_point_size;
+
+	/*
+	 * A pixel program: the input VGPRs it has the hardware deliver (the
+	 * bits of the pixel input enable), the attribute locations it reads
+	 * (bit L, read as attribute L) and those read flat, the colour
+	 * locations it writes (bit L, exported to colour target L), and
+	 * whether it discards.
+	 */
+	uint32_t pixel_inputs;
+	uint32_t attribute_inputs;
+	uint32_t flat_inputs;
+	uint32_t color_outputs;
+	uint32_t discards;
+
 	/* The storage buffers, the uniform buffers and the sampled images, and where their descriptors go. */
 	struct amdrdna_gfx10_binding storage[AMDRDNA_GFX10_STORAGE_MAX];
-	uint32_t storage_count;
+	uint32_t storage_used;
 	struct amdrdna_gfx10_binding uniforms[AMDRDNA_GFX10_UNIFORM_MAX];
-	uint32_t uniform_count;
+	uint32_t uniform_used;
 	struct amdrdna_gfx10_binding textures[AMDRDNA_GFX10_TEXTURE_MAX];
-	uint32_t texture_count;
+	uint32_t texture_used;
 };
 
 /*

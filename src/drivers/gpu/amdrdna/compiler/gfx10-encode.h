@@ -27,7 +27,8 @@
 
 /*
  * The flags of a memory, export or control instruction
- * (struct amdrdna_gfx10_inst.flags).
+ * (struct amdrdna_gfx10_inst.flags), zedBSD's own bits that the encoder
+ * puts in each form's fields.
  *
  * GLOBALLY_COHERENT makes a buffer access go past the per-unit cache (and
  * an atomic return the old value), DEVICE_COHERENT makes a load go past the
@@ -37,13 +38,13 @@
  * exports of a program and VALID_MASK says the export carries the lanes
  * that are alive.
  */
-#define AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT	0x01U
-#define AMDRDNA_GFX10_FLAG_OFFSET_ADDRESS	0x02U
-#define AMDRDNA_GFX10_FLAG_INDEX_ADDRESS	0x04U
-#define AMDRDNA_GFX10_FLAG_UNNORMALIZED		0x08U
-#define AMDRDNA_GFX10_FLAG_LAST			0x10U
-#define AMDRDNA_GFX10_FLAG_VALID_MASK		0x20U
-#define AMDRDNA_GFX10_FLAG_DEVICE_COHERENT	0x40U
+#define AMDRDNA_GFX10_FLAG_GLOBALLY_COHERENT	(1U << 0)
+#define AMDRDNA_GFX10_FLAG_OFFSET_ADDRESS	(1U << 1)
+#define AMDRDNA_GFX10_FLAG_INDEX_ADDRESS	(1U << 2)
+#define AMDRDNA_GFX10_FLAG_UNNORMALIZED		(1U << 3)
+#define AMDRDNA_GFX10_FLAG_LAST			(1U << 4)
+#define AMDRDNA_GFX10_FLAG_VALID_MASK		(1U << 5)
+#define AMDRDNA_GFX10_FLAG_DEVICE_COHERENT	(1U << 6)
 
 /*
  * The kind of an instruction: which form it is written in.
@@ -174,9 +175,9 @@ struct amdrdna_gfx10_range {
  */
 struct amdrdna_gfx10_access {
 	struct amdrdna_gfx10_range reads[AMDRDNA_GFX10_MAX_READS];
-	uint32_t read_count;
+	uint32_t reads_used;
 	struct amdrdna_gfx10_range writes[AMDRDNA_GFX10_MAX_WRITES];
-	uint32_t write_count;
+	uint32_t writes_used;
 	enum amdrdna_gfx10_counter counter;
 };
 

@@ -313,8 +313,8 @@ amdrdna_gfx10_describe(
 	int returns;
 
 	/* Starts with no register used. */
-	access->read_count = 0U;
-	access->write_count = 0U;
+	access->reads_used = 0U;
+	access->writes_used = 0U;
 	access->counter = AMDRDNA_GFX10_COUNTER_NONE;
 
 	/* Reads the registers of the instruction's form. */
@@ -1121,13 +1121,13 @@ add_read(
 		return;
 
 	/* The list is long enough for every instruction's reads. */
-	if (access->read_count == AMDRDNA_GFX10_MAX_READS)
+	if (access->reads_used == AMDRDNA_GFX10_MAX_READS)
 		return;
 
 	/* Appends the range. */
-	access->reads[access->read_count].first = (uint16_t)code;
-	access->reads[access->read_count].count = (uint16_t)count;
-	access->read_count++;
+	access->reads[access->reads_used].first = (uint16_t)code;
+	access->reads[access->reads_used].count = (uint16_t)count;
+	access->reads_used++;
 }
 
 /* Records a write of count registers from code, when the code names a register. */
@@ -1149,11 +1149,11 @@ add_write(
 		return;
 
 	/* The list is long enough for every instruction's writes. */
-	if (access->write_count == AMDRDNA_GFX10_MAX_WRITES)
+	if (access->writes_used == AMDRDNA_GFX10_MAX_WRITES)
 		return;
 
 	/* Appends the range. */
-	access->writes[access->write_count].first = (uint16_t)code;
-	access->writes[access->write_count].count = (uint16_t)count;
-	access->write_count++;
+	access->writes[access->writes_used].first = (uint16_t)code;
+	access->writes[access->writes_used].count = (uint16_t)count;
+	access->writes_used++;
 }

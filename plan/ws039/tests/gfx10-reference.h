@@ -36,6 +36,41 @@ struct reference_memory {
 	uint32_t push_size;
 };
 
+/* The output slots of a graphics run: the locations, then the position and the point size. */
+#define REFERENCE_SLOT_POSITION		32U
+#define REFERENCE_SLOT_POINT_SIZE	33U
+#define REFERENCE_SLOTS			34U
+
+/*
+ * One wave of a vertex or pixel program for the reference: the lanes that
+ * run; a vertex lane's fetched locations and its vertex and instance
+ * numbers; a pixel lane's interpolated attributes, position (w already
+ * 1 / w) and face (a Boolean); and what the run left: each lane's outputs
+ * by slot with a mark per channel written, and its discard.
+ */
+struct reference_graphics {
+	uint32_t lanes;
+	uint8_t run[32];
+	uint32_t input[32][32][4];
+	uint32_t vertex_index[32];
+	uint32_t instance_index[32];
+	uint32_t frag_coord[32][4];
+	uint32_t front_facing[32];
+	uint32_t output[32][REFERENCE_SLOTS][4];
+	uint8_t written[32][REFERENCE_SLOTS][4];
+	uint8_t killed[32];
+
+	/*
+	 * Samples the sampled image (set, binding) at (u, v) (or fetches the
+	 * integer texel), with a texel offset; the four channels to out.
+	 */
+	void (*sample)(void *context, uint32_t set, uint32_t binding, uint32_t u, uint32_t v, int fetch, int offset_u, int offset_v, uint32_t *out);
+	void *sample_context;
+};
+
+/* Runs one wave of a vertex or pixel program; as reference_run_group(). */
+const char *reference_run_graphics(const struct drv_gpu_shader_ir *ir, struct reference_memory *memory, struct reference_graphics *graphics, int *undefined);
+
 /*
  * Runs one compute workgroup of a parsed program.
  *
