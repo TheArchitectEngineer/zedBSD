@@ -1063,8 +1063,7 @@ nvrtx_sm75_memory(
 }
 
 /*
- * The dependence marking of the nvrtx shader compiler (see
- * sm75.h), ws037-p008 stage D.
+ * The dependence marking of the nvrtx shader compiler (see sm75.h).
  *
  * The reordering (nvrtx_sm75_reorder()) works inside each block of
  * instructions between the fixed ones (branches, convergence, barriers,
@@ -2568,24 +2567,25 @@ nvrtx_sm75_later(
 /*
  * The nvrtx shader compiler, stage A (see sm75.h).
  *
- * One pass over the scalar IR chooses the SM75 instructions of each IR
- * instruction and assigns registers as it goes: a value gets a register
- * when it is defined and gives it back after the last instruction that
- * reads it (the IR of stage A is straight-line).  Addresses take an even
- * pair.  A Boolean of the IR is a register of all ones or zero; a
- * comparison sets P0 and turns it into a Boolean at once, and a selection
- * or a guarded access turns the Boolean back into P0.
+ * One pass over the scalar IR chooses the SM75 instructions of each
+ * IR instruction and assigns registers as it goes: a value gets a
+ * register when it is defined and gives it back after the last
+ * instruction that reads it (the IR of stage A is straight-line).
+ * Addresses take an even pair.  A Boolean of the IR is a register of
+ * all ones or zero; a comparison sets P0 and turns it into a Boolean
+ * at once, and a selection or a guarded access turns the Boolean back
+ * into P0.
  *
- * The dependences are marked when the program is complete
- * (sm75.c, stage D): each read waits only as long as the shader
- * model's latency table says for its writer, or for the scoreboard of a
- * variable-latency writer.  The lowering says of each instruction it emits
- * whether it is of fixed or variable latency or ends a block, and the
- * marking's reading of the instruction must agree.
+ * The dependences are marked when the program is complete (sm75.c,
+ * stage D): each read waits only as long as the shader model's
+ * latency table says for its writer, or for the scoreboard of a
+ * variable-latency writer.  The lowering says of each instruction it
+ * emits whether it is of fixed or variable latency or ends a block,
+ * and the marking's reading of the instruction must agree.
  *
- * A global access gets the shader model's memory order field when it is
- * emitted (ws242-p002); nothing else the lowering chooses depends on the
- * shader model.
+ * A global access gets the shader model's memory order field when it
+ * is emitted; nothing else the lowering chooses depends on the shader
+ * model.
  */
 
 /* A value without a register. */

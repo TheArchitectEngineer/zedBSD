@@ -20,10 +20,11 @@
 #include <stdint.h>
 
 /*
- * The facts of the Turing (SM75) instruction set the nvrtx shader compiler
- * uses (ws037-p008): where the fields of a 128-bit instruction lie, the
- * opcodes and the codes of their modifiers, the special registers, and the
- * constant buffer layout the compiler and the dispatch agree on.
+ * The facts of the Turing (SM75) instruction set the nvrtx shader
+ * compiler uses: where the fields of a 128-bit instruction lie, the
+ * opcodes and the codes of their modifiers, the special registers,
+ * and the constant buffer layout the compiler and the dispatch agree
+ * on.
  *
  * The constant buffer layout (NVRTX_SM75_CB_*) is zedBSD's own.
  */
@@ -83,7 +84,7 @@
  * 89); the three models targeted are zedBSD's choice.
  */
 /*
- * ==== The shader models (ws242-p002) ====
+ * ==== The shader models ====
  *
  * The compiler targets Turing (SM75: RTX 20, GTX 16), Ampere (SM86: RTX 30)
  * and Ada (SM89: RTX 40).  The three share this file's encoding but for
@@ -628,7 +629,7 @@
 #define NVRTX_SM75_CB_TEXTURES_MAX	32U
 
 /*
- * The encoder of Turing (SM75) instructions (sm75.c, ws037-p008).
+ * The encoder of Turing (SM75) instructions (sm75.c).
  *
  * Each function fills one 128-bit instruction from operands that are
  * already physical registers, immediates or constant buffer words.  An
@@ -807,18 +808,18 @@ void nvrtx_sm75_nop(struct nvrtx_sm75_word *word);
 void nvrtx_sm75_bra(struct nvrtx_sm75_word *word, int32_t instructions);
 
 /*
- * The dependence marking of the nvrtx shader compiler (sm75.c,
- * ws037-p008 stage D).
+ * The dependence marking of the nvrtx shader compiler (sm75.c).
  *
  * After the lowering has emitted a program, this pass sets every
  * instruction's scheduling control (sm75.h, NVRTX_SM75_DELAY_LOW ..):
  * a fixed-latency result holds its reader back only as many cycles as
- * the shader model's latency table says for that writer and reader (Turing's,
- * or the one Ampere and Ada share, ws242-p002), and a
- * variable-latency instruction releases a scoreboard of its own that only
- * the instructions that need its result (or its sources' registers) wait
- * for.  Branches, convergence barriers, barriers, discards, EXIT and the
- * targets of branches start a new block with every result complete.
+ * the shader model's latency table says for that writer and reader
+ * (Turing's, or the one Ampere and Ada share), and a variable-latency
+ * instruction releases a scoreboard of its own that only the
+ * instructions that need its result (or its sources' registers) wait
+ * for.  Branches, convergence barriers, barriers, discards, EXIT and
+ * the targets of branches start a new block with every result
+ * complete.
  *
  * The pass reads the instructions back from their words: it knows the
  * operands of every instruction the lowering emits and refuses any other.
@@ -894,15 +895,15 @@ int nvrtx_sm75_reorder(uint32_t *code, uint32_t count, uint32_t sm, uint32_t *in
 int nvrtx_sm75_schedule(uint32_t *code, uint32_t count, uint32_t sm, uint32_t *instruction, const char **reason);
 
 /*
- * The nvrtx shader compiler: SPIR-V to Turing (SM75) code (sm75.c,
- * ws037-p008).
+ * The nvrtx shader compiler: SPIR-V to Turing (SM75) code (sm75.c).
  *
- * The shared SPIR-V frontend makes the scalar IR (drivers/gpu/compiler/);
- * this backend chooses SM75 instructions for it, assigns registers, marks
- * the dependences, and encodes 128-bit instructions.  The result says what
- * the dispatch needs: the general registers to reserve, the shared memory,
- * the workgroup's size, and which buffer goes where in the constant
- * buffers (sm75.h, NVRTX_SM75_CB_*).
+ * The shared SPIR-V frontend makes the scalar IR
+ * (drivers/gpu/compiler/); this backend chooses SM75 instructions for
+ * it, assigns registers, marks the dependences, and encodes 128-bit
+ * instructions.  The result says what the dispatch needs: the general
+ * registers to reserve, the shared memory, the workgroup's size, and
+ * which buffer goes where in the constant buffers (sm75.h,
+ * NVRTX_SM75_CB_*).
  *
  * Stages A and B compile compute shaders: arithmetic, conversions, the
  * special functions, storage and shared memory with their atomics,
@@ -913,9 +914,9 @@ int nvrtx_sm75_schedule(uint32_t *code, uint32_t count, uint32_t sm, uint32_t *i
  * spilling are refused with a reason.
  *
  * The same program is compiled for Turing (SM75, RTX 20 and GTX 16),
- * Ampere (SM86, RTX 30) or Ada (SM89, RTX 40), ws242-p002: the
- * instructions chosen are the same, a global access's memory order field
- * and the latencies the dependence marking waits differ.  The functions
+ * Ampere (SM86, RTX 30) or Ada (SM89, RTX 40): the instructions
+ * chosen are the same, a global access's memory order field and the
+ * latencies the dependence marking waits differ.  The functions
  * without a shader model compile for Turing.
  */
 
