@@ -408,6 +408,12 @@ Phase disposition: normal
 
 - 2026-10-16 Q1 の判断（design-reviewer の review-1 の m7）: A3 は WS236 の独立の Phase（ws236-p012）。設計・実装・review への対応・T2 への依頼 10 はそちら。
 
+### T1-690 の CPU の内訳（2026-10-16、P3 の読み、作業はユーザーの決定で停止）
+
+- ユーザーの決定（2026-10-16、Q1 経由、原文）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」→ 60 fps・1080p の作業は止めた。A3（[ws236-p012](../phase012/phase.md)）を残すか戻すかはユーザーに確認中。
+- T1-690（A3 入り、`plan/agents/T2/t1-690/on/`）の `sysctl hw.cputimes` の差: 動画の再生の 15 s の間、4 CPU の時間の **約 75% が system（kernel）**、user は約 3%、idle 約 21%。再生の間の約 2.6 s の隙（ps・dmesg の採取を含む）でも system 約 55%。`ps` の TIME は compositor（`/bin/wayland`）が 15 s に 8 s、videoplayer は終わった後なので数に出ない。T1-689 の `kern: perf` の再生中の switches 約 20 倍と合わせ、往復の遅さ（1 往復 1.4〜4 ms、kernel の処理は約 0.25 ms）は kernel の CPU の取り合いの見込み。誰が kernel で CPU を使うか（videoplayer の thread の ioctl か、kernel の thread か）は、再生中の `ps -e -o pid,time,comm` を数秒おきに取る（thread 単位なら `-H` 相当）ことで次に分かる。再開する時はここから。
+- A3 の効果（T1-690）: 1080p60 全画面の compose frame_ms 24 → 18.5 ms、copy の道（`VULKAN_ZEDBSD_DIRECT=0`）は 23〜24 ms。shown は 1080p60 で約 305/600、720p60 で約 300/600（どちらも約 30 fps）、30p は 1080p で 267/300、720p で 289/300。
+
 ### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 
 - **表示の速さは compositor の frame の速さで決まっている**: T1-685 の窓の 1080p60（r-c）で `KWL PERF compose frames=118`／5 s（23.6 fps）、`frame_ms=25`（frame の始まりから完了まで）、videoplayer の `DRAW` も 1 秒 24 frame で `acquire_us` 26 ms（compositor が前の image を返すのを待つ）。compositor は frame を 1 つずつ（`in_flight`）出し、完了の後に窓の commit を最大 frame の半分待つ（`frame_wait_ms`、display.c）ので、frame_ms 25 ms なら 1 frame 約 40 ms。
