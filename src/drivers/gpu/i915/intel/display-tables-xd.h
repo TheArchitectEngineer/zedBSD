@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "display-regs-xd.h"
+#include "xd-vbt-layout.h"
 #include "../display/xd-platform.h"
 
 /*
@@ -2192,6 +2193,127 @@ static const struct i915_xd_pll_desc i915_xd_plls_adlp[] = {
 };
 
 /*
+ * How each platform's VBT names its ports: the DVO port codes of each
+ * DDI.  Tiger Lake numbers by DDI (A..I, the CRT code with DDI E);
+ * Rocket Lake by combo PHY (C and D are TC1 and TC2); Alder Lake-S by
+ * combo PHY (B..E are TC1..TC4); display 13 keeps D and E for DDIs it
+ * does not have and names TC1..TC4 F..I.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_bios.c
+ * (dvo_port_to_port: port_mapping, rkl_port_mapping, adls_port_mapping,
+ * xelpd_port_mapping) and Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_display_limits.h (enum port: PORT_TC1,
+ * PORT_D_XELPD, PORT_E_XELPD).
+ */
+static const struct i915_xd_vbt_dvo_row i915_xd_vbt_dvo_tgl[] = {
+	{ 0U, { I915_XD_DVO_HDMI_A, I915_XD_DVO_DP_A, I915_XD_DVO_NONE } },
+	{ 1U, { I915_XD_DVO_HDMI_B, I915_XD_DVO_DP_B, I915_XD_DVO_NONE } },
+	{ 2U, { I915_XD_DVO_HDMI_C, I915_XD_DVO_DP_C, I915_XD_DVO_NONE } },
+	{ 3U, { I915_XD_DVO_HDMI_D, I915_XD_DVO_DP_D, I915_XD_DVO_NONE } },
+	{ 4U, { I915_XD_DVO_HDMI_E, I915_XD_DVO_DP_E, I915_XD_DVO_CRT } },
+	{ 5U, { I915_XD_DVO_HDMI_F, I915_XD_DVO_DP_F, I915_XD_DVO_NONE } },
+	{ 6U, { I915_XD_DVO_HDMI_G, I915_XD_DVO_DP_G, I915_XD_DVO_NONE } },
+	{ 7U, { I915_XD_DVO_HDMI_H, I915_XD_DVO_DP_H, I915_XD_DVO_NONE } },
+	{ 8U, { I915_XD_DVO_HDMI_I, I915_XD_DVO_DP_I, I915_XD_DVO_NONE } },
+};
+
+static const struct i915_xd_vbt_dvo_row i915_xd_vbt_dvo_rkl[] = {
+	{ 0U, { I915_XD_DVO_HDMI_A, I915_XD_DVO_DP_A, I915_XD_DVO_NONE } },
+	{ 1U, { I915_XD_DVO_HDMI_B, I915_XD_DVO_DP_B, I915_XD_DVO_NONE } },
+	{ 3U, { I915_XD_DVO_HDMI_C, I915_XD_DVO_DP_C, I915_XD_DVO_NONE } },
+	{ 4U, { I915_XD_DVO_HDMI_D, I915_XD_DVO_DP_D, I915_XD_DVO_NONE } },
+};
+
+static const struct i915_xd_vbt_dvo_row i915_xd_vbt_dvo_adls[] = {
+	{ 0U, { I915_XD_DVO_HDMI_A, I915_XD_DVO_DP_A, I915_XD_DVO_NONE } },
+	{ 3U, { I915_XD_DVO_HDMI_B, I915_XD_DVO_DP_B, I915_XD_DVO_NONE } },
+	{ 4U, { I915_XD_DVO_HDMI_C, I915_XD_DVO_DP_C, I915_XD_DVO_NONE } },
+	{ 5U, { I915_XD_DVO_HDMI_D, I915_XD_DVO_DP_D, I915_XD_DVO_NONE } },
+	{ 6U, { I915_XD_DVO_HDMI_E, I915_XD_DVO_DP_E, I915_XD_DVO_NONE } },
+};
+
+static const struct i915_xd_vbt_dvo_row i915_xd_vbt_dvo_adlp[] = {
+	{ 0U, { I915_XD_DVO_HDMI_A, I915_XD_DVO_DP_A, I915_XD_DVO_NONE } },
+	{ 1U, { I915_XD_DVO_HDMI_B, I915_XD_DVO_DP_B, I915_XD_DVO_NONE } },
+	{ 2U, { I915_XD_DVO_HDMI_C, I915_XD_DVO_DP_C, I915_XD_DVO_NONE } },
+	{ 7U, { I915_XD_DVO_HDMI_D, I915_XD_DVO_DP_D, I915_XD_DVO_NONE } },
+	{ 8U, { I915_XD_DVO_HDMI_E, I915_XD_DVO_DP_E, I915_XD_DVO_NONE } },
+	{ 3U, { I915_XD_DVO_HDMI_F, I915_XD_DVO_DP_F, I915_XD_DVO_NONE } },
+	{ 4U, { I915_XD_DVO_HDMI_G, I915_XD_DVO_DP_G, I915_XD_DVO_NONE } },
+	{ 5U, { I915_XD_DVO_HDMI_H, I915_XD_DVO_DP_H, I915_XD_DVO_NONE } },
+	{ 6U, { I915_XD_DVO_HDMI_I, I915_XD_DVO_DP_I, I915_XD_DVO_NONE } },
+};
+
+/*
+ * The VBT DDC pin code of each GMBUS pin (the index), 0 where the pin
+ * has none: the ICP-class table of Tiger Lake (pins 1..3 for DDI A..C,
+ * 9..14 for TC1..TC6), Rocket Lake beside a TGP, Alder Lake-S, and
+ * display 13.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_bios.c
+ * (icp_ddc_pin_map, rkl_pch_tgp_ddc_pin_map, adls_ddc_pin_map,
+ * adlp_ddc_pin_map), Linux v6.8.12 drivers/gpu/drm/i915/display/intel_vbt_defs.h
+ * (enum vbt_gmbus_ddi) and Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_gmbus.h (GMBUS_PIN_*).
+ */
+static const uint8_t i915_xd_vbt_ddc_tgl[] = { 0U, 1U, 2U, 3U, 0U, 0U, 0U, 0U, 0U, 4U, 5U, 6U, 7U, 8U, 9U };
+static const uint8_t i915_xd_vbt_ddc_rkl[] = { 0U, 1U, 2U, 0U, 0U, 0U, 0U, 0U, 0U, 3U, 4U };
+static const uint8_t i915_xd_vbt_ddc_adls[] = { 0U, 1U, 0U, 0U, 0U, 0U, 0U, 0U, 0U, 2U, 3U, 4U, 5U };
+static const uint8_t i915_xd_vbt_ddc_adlp[] = { 0U, 1U, 2U, 0U, 0U, 0U, 0U, 0U, 0U, 3U, 4U, 5U, 6U };
+
+/*
+ * The VBT AUX channel code of each AUX channel (the index: A, B, C, then
+ * USBC1..USBC6, which display 13 also numbers its D and E by), 0 where
+ * the channel has none.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/display/intel_bios.c
+ * (direct_aux_ch_map, rkl_aux_ch_map, adls_aux_ch_map, adlp_aux_ch_map)
+ * and Linux v6.8.12 drivers/gpu/drm/i915/display/intel_display.h
+ * (enum aux_ch).
+ */
+static const uint8_t i915_xd_vbt_aux_tgl[] = {
+	I915_XD_VBT_AUX_A, I915_XD_VBT_AUX_B, I915_XD_VBT_AUX_C, I915_XD_VBT_AUX_D, I915_XD_VBT_AUX_E,
+	I915_XD_VBT_AUX_F, I915_XD_VBT_AUX_G, I915_XD_VBT_AUX_H, I915_XD_VBT_AUX_I
+};
+static const uint8_t i915_xd_vbt_aux_rkl[] = {
+	I915_XD_VBT_AUX_A, I915_XD_VBT_AUX_B, 0U, I915_XD_VBT_AUX_C, I915_XD_VBT_AUX_D
+};
+static const uint8_t i915_xd_vbt_aux_adls[] = {
+	I915_XD_VBT_AUX_A, 0U, 0U, I915_XD_VBT_AUX_B, I915_XD_VBT_AUX_C, I915_XD_VBT_AUX_D, I915_XD_VBT_AUX_E
+};
+static const uint8_t i915_xd_vbt_aux_adlp[] = {
+	I915_XD_VBT_AUX_A, I915_XD_VBT_AUX_B, I915_XD_VBT_AUX_C, I915_XD_VBT_AUX_F, I915_XD_VBT_AUX_G,
+	I915_XD_VBT_AUX_H, I915_XD_VBT_AUX_I, I915_XD_VBT_AUX_D, I915_XD_VBT_AUX_E
+};
+
+/*
+ * The VBT numbering of each platform, made of the tables above.
+ */
+static const struct i915_xd_vbt_maps i915_xd_vbt_maps_tgl = {
+	i915_xd_vbt_dvo_tgl, sizeof(i915_xd_vbt_dvo_tgl) / sizeof(i915_xd_vbt_dvo_tgl[0]),
+	i915_xd_vbt_ddc_tgl, sizeof(i915_xd_vbt_ddc_tgl) / sizeof(i915_xd_vbt_ddc_tgl[0]),
+	i915_xd_vbt_aux_tgl, sizeof(i915_xd_vbt_aux_tgl) / sizeof(i915_xd_vbt_aux_tgl[0])
+};
+
+static const struct i915_xd_vbt_maps i915_xd_vbt_maps_rkl = {
+	i915_xd_vbt_dvo_rkl, sizeof(i915_xd_vbt_dvo_rkl) / sizeof(i915_xd_vbt_dvo_rkl[0]),
+	i915_xd_vbt_ddc_rkl, sizeof(i915_xd_vbt_ddc_rkl) / sizeof(i915_xd_vbt_ddc_rkl[0]),
+	i915_xd_vbt_aux_rkl, sizeof(i915_xd_vbt_aux_rkl) / sizeof(i915_xd_vbt_aux_rkl[0])
+};
+
+static const struct i915_xd_vbt_maps i915_xd_vbt_maps_adls = {
+	i915_xd_vbt_dvo_adls, sizeof(i915_xd_vbt_dvo_adls) / sizeof(i915_xd_vbt_dvo_adls[0]),
+	i915_xd_vbt_ddc_adls, sizeof(i915_xd_vbt_ddc_adls) / sizeof(i915_xd_vbt_ddc_adls[0]),
+	i915_xd_vbt_aux_adls, sizeof(i915_xd_vbt_aux_adls) / sizeof(i915_xd_vbt_aux_adls[0])
+};
+
+static const struct i915_xd_vbt_maps i915_xd_vbt_maps_adlp = {
+	i915_xd_vbt_dvo_adlp, sizeof(i915_xd_vbt_dvo_adlp) / sizeof(i915_xd_vbt_dvo_adlp[0]),
+	i915_xd_vbt_ddc_adlp, sizeof(i915_xd_vbt_ddc_adlp) / sizeof(i915_xd_vbt_ddc_adlp[0]),
+	i915_xd_vbt_aux_adlp, sizeof(i915_xd_vbt_aux_adlp) / sizeof(i915_xd_vbt_aux_adlp[0])
+};
+
+/*
  * The platform descriptions: Tiger Lake (and its UY parts), Rocket Lake
  * beside a TGP south display, Alder Lake-S and Raptor Lake-S, Alder
  * Lake-P and its N and Raptor Lake-P and -U parts.  Only Tiger Lake and
@@ -2261,7 +2383,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/tgl_dmc_ver2_12.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_tgl,
-		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS
+		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS,
+		&i915_xd_vbt_maps_tgl
 	},
 	{
 		"Tiger Lake UY",
@@ -2307,7 +2430,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/tgl_dmc_ver2_12.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_tgl_uy,
-		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS
+		I915_XD_WA_DMC_CLK_MSEC_VBLANK | I915_XD_WA_XE_D_CHICKENS,
+		&i915_xd_vbt_maps_tgl
 	},
 	{
 		"Rocket Lake",
@@ -2353,7 +2477,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/rkl_dmc_ver2_03.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_rkl,
-		I915_XD_WA_BUDDY_1409767108_A0 | I915_XD_WA_XE_D_CHICKENS
+		I915_XD_WA_BUDDY_1409767108_A0 | I915_XD_WA_XE_D_CHICKENS,
+		&i915_xd_vbt_maps_rkl
 	},
 	{
 		"Alder Lake-S",
@@ -2399,7 +2524,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adls_dmc_ver2_01.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_adls,
-		I915_XD_WA_BUDDY_1409767108 | I915_XD_WA_DMC_VBLANK_A | I915_XD_WA_XE_D_CHICKENS
+		I915_XD_WA_BUDDY_1409767108 | I915_XD_WA_DMC_VBLANK_A | I915_XD_WA_XE_D_CHICKENS,
+		&i915_xd_vbt_maps_adls
 	},
 	{
 		"Raptor Lake-S",
@@ -2445,7 +2571,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adls_dmc_ver2_01.bin",
 		I915_XD_DMC_PIPE_BASE_TGL,
 		&i915_xd_swing_adls,
-		I915_XD_WA_BUDDY_1409767108 | I915_XD_WA_DMC_VBLANK_A | I915_XD_WA_XE_D_CHICKENS
+		I915_XD_WA_BUDDY_1409767108 | I915_XD_WA_DMC_VBLANK_A | I915_XD_WA_XE_D_CHICKENS,
+		&i915_xd_vbt_maps_adls
 	},
 	{
 		"Alder Lake-P",
@@ -2491,7 +2618,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		&i915_xd_vbt_maps_adlp
 	},
 	{
 		"Alder Lake-N",
@@ -2537,7 +2665,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		&i915_xd_vbt_maps_adlp
 	},
 	{
 		"Raptor Lake-P",
@@ -2583,7 +2712,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		&i915_xd_vbt_maps_adlp
 	},
 	{
 		"Raptor Lake-U",
@@ -2629,7 +2759,8 @@ static const struct i915_xd_platform i915_xd_platforms[] = {
 		"i915/adlp_dmc.bin",
 		I915_XD_DMC_PIPE_BASE_ADLP,
 		&i915_xd_swing_adlp,
-		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS
+		I915_XD_WA_PW1_FLR_SOURCE | I915_XD_WA_DPCE_UNGATE | I915_XD_WA_PIPEDMC_UNGATE | I915_XD_WA_ARB_PROG_SLOTS,
+		&i915_xd_vbt_maps_adlp
 	},
 };
 

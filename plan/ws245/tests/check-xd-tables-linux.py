@@ -1,6 +1,7 @@
 # ws245-p002: checks the data tables of src/drivers/gpu/i915/intel/display-tables-xd.h against the Linux v6.8.12 files
 # they were taken from: the CD clock steps, the combo DPLL DisplayPort words, the TBT PLL words, the compensation
-# references, the bandwidth buddy masks, the steppings, the PCI ids, the swing tables and the display buffer rules.
+# references, the bandwidth buddy masks, the steppings, the PCI ids, the swing tables, the display buffer rules and
+# (p004) the VBT numbering tables.
 #   python3 -I plan/ws245/tests/check-xd-tables-linux.py [LINUX_TREE]   (default build/ws229-p001/linux/linux-6.8.12)
 # The Linux files are only read.  Prints one line per table and FAILED with the differences when a table differs.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -141,6 +142,61 @@ for ours_name, linux_name in (('i915_xd_dbuf_tgl', 'tgl_allowed_dbufs'), ('i915_
 			slices['ABCD'.index(p)] = sum(1 << (int(s) - 1) for s in re.findall(r'DBUF_S(\d)', v))
 		theirs += [pipes, 1 if 'join_mbus = true' in entry else 0] + slices
 	compare(ours_name, nums(block(header, ours_name + '[]')), theirs)
+
+# The VBT numbering tables (p004): the DVO port codes of each port, the DDC pin code of each GMBUS pin and the AUX code
+# of each AUX channel, with the Linux enum values worked out (implicit increments and aliases) from the Linux headers.
+def defines(text, prefix):
+	"""The values of the #defines of a text whose names start with prefix."""
+	return {n: int(v, 0) for n, v in re.findall(r'#define (%s\w*)\s+(0x[0-9a-fA-F]+|\d+)' % prefix, text)}
+
+
+def enum(text, start):
+	"""The values of an enum (implicit increments and aliases) from the text after start."""
+	body = text[text.index(start):]
+	body = re.sub(r'/\*.*?\*/', '', body[body.index('{') + 1:body.index('};')], flags=re.S)
+	values = {}
+	nxt = 0
+	for item in [x.strip() for x in body.split(',') if x.strip()]:
+		if '=' in item:
+			name, value = [x.strip() for x in item.split('=')]
+			nxt = values[value] if value in values else int(value, 0)
+		else:
+			name = item
+		values[name] = nxt
+		nxt += 1
+	return values
+
+
+vd = open(i915 + 'display/intel_vbt_defs.h').read()
+dvo = defines(vd, 'DVO_PORT_')
+dvo['-1'] = None
+aux_codes = defines(vd, 'DP_AUX_')
+gmbus_ddi = enum(vd, 'enum vbt_gmbus_ddi')
+ports = enum(open(i915 + 'display/intel_display_limits.h').read(), 'enum port {')
+aux_ch = enum(open(i915 + 'display/intel_display.h').read(), 'enum aux_ch {')
+gmbus_pins = defines(open(i915 + 'display/intel_gmbus.h').read(), 'GMBUS_PIN_')
+xl = open('src/drivers/gpu/i915/intel/xd-vbt-layout.h').read()
+xd_names = defines(xl, 'I915_XD_DVO_')
+xd_names.update(defines(xl, 'I915_XD_VBT_AUX_'))
+bios = open(i915 + 'display/intel_bios.c').read()
+for ours_name, linux_name in (('tgl', 'port_mapping'), ('rkl', 'rkl_port_mapping'), ('adls', 'adls_port_mapping'), ('adlp', 'xelpd_port_mapping')):
+	text = bios[bios.index('static const int %s[][3] = {' % linux_name):]
+	text = text[:text.index('};')]
+	theirs = sorted((ports[p], dvo[c]) for p, codes in re.findall(r'\[(PORT_\w+)\] = \{([^}]*)\}', text)
+			for c in [x.strip() for x in codes.split(',')] if dvo[c] is not None)
+	ours = sorted((int(d.rstrip('U')), xd_names[c]) for d, codes in re.findall(r'\{ (\d+U), \{([^}]*)\} \}', block(header, 'i915_xd_vbt_dvo_%s[]' % ours_name))
+		      for c in [x.strip() for x in codes.split(',')] if c != 'I915_XD_DVO_NONE')
+	compare('i915_xd_vbt_dvo_' + ours_name, ours, theirs)
+for ours_name, linux_name in (('tgl', 'icp_ddc_pin_map'), ('rkl', 'rkl_pch_tgp_ddc_pin_map'), ('adls', 'adls_ddc_pin_map'), ('adlp', 'adlp_ddc_pin_map')):
+	text = block(bios, 'static const u8 %s[]' % linux_name)
+	theirs = sorted((gmbus_pins[p], gmbus_ddi[c]) for p, c in re.findall(r'\[(GMBUS_PIN_\w+)\] = (\w+)', text))
+	values = [int(x) for x in re.findall(r'(\d+)U', header[header.index('i915_xd_vbt_ddc_%s[] =' % ours_name):].split('};')[0].split('=', 1)[1])]
+	compare('i915_xd_vbt_ddc_' + ours_name, sorted((i, v) for i, v in enumerate(values) if v != 0), theirs)
+for ours_name, linux_name in (('tgl', 'direct_aux_ch_map'), ('rkl', 'rkl_aux_ch_map'), ('adls', 'adls_aux_ch_map'), ('adlp', 'adlp_aux_ch_map')):
+	text = block(bios, 'static const u8 %s[]' % linux_name)
+	theirs = sorted((aux_ch[a], aux_codes[c]) for a, c in re.findall(r'\[(AUX_CH_\w+)\] = (\w+)', text))
+	values = [x.strip() for x in header[header.index('i915_xd_vbt_aux_%s[] =' % ours_name):].split('};')[0].split('{', 1)[1].split(',')]
+	compare('i915_xd_vbt_aux_' + ours_name, sorted((i, xd_names[v]) for i, v in enumerate(values) if v != '0U'), theirs)
 
 if failed:
 	print('check_xd_tables: FAILED: ' + ', '.join(failed))
