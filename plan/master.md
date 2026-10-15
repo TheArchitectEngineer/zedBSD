@@ -556,7 +556,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
 | [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 285c55e39。T1-698: 5330 の VFIO で attach・firmware・scan が整理の前と同じ、association は未実施） | association の確かめの扱い → completed |
-| [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | planned | WS248 の後に P2（q1205 予約） |
+| [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 331d314be。Pi 4 の実機の WiFi の試験待ち） | T の Pi 4 の試験 → completed |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | planned | 着手はユーザーの指示で |
 
@@ -604,6 +604,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-15 夕（ユーザー、クリック）: WS245 §7 #22（Gen9 の実機）は「SV7（10.0.10.27）」。WS039 §15 #9（RX 5600 XT の機械）は「RTX 機と入れ替え（10.0.30.5）」。WS039 §15 の残り・WS245 §7 の残りは「個別に見直す」→ 1 件ずつ聞く。
 - 2026-10-15 夕（ユーザー、クリック）: WS249 の WHD の 2 file の path は「不明のままにする」。brcmfmac の定数は「Linuxのドライバです」、SDIO の仕様書の版は「分からないです」。WS248 の association は「.wifi を使って接続まで試す」（T1-700）。assoc.h の未 commit は「自分の整形。commit してよい」→ Q1 が commit。WS245 §7 #18 は「今のまま（efifb）」: RKL・ADL-S/RPL-S は device.c に足さず、xd の表にだけ持つ。
 - 2026-10-15 夕（ユーザー）:「開発管理はすべてのソースから削除しますが、今は作業対象になったときに削除するだけでいいです。WS248でも消してほしかったですが、また今度でいいです。独立したWSを作って、あとでソースツリー全体を見直しましょう。WS249では削除を行いましょう。」→ Guardrail「source の中の開発の管理情報」、WS251 を作成、WS249 の範囲に削除を追加（P2 に伝えた）。WS248 は管理番号が残るまま（WS251 で）。
 - 2026-10-15 夕（ユーザー）:「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」→ WS250 を作成（nvrtx の isolate・reset・channel の取り消し、設計から）。
