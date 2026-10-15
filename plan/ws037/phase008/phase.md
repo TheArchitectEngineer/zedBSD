@@ -336,3 +336,7 @@ register の割り当ての方針も変えた（`sm75-compile.c` の `nvrtx_sm75
 - `plan/ws037/tests/nvrtx-sm75-host-test.sh`: encode の既知の語と欄、compute の module、QMD・draw の push。
 - 共有の部品: `sm75-machine.[ch]`（SM75 の interpreter と依存の検査）、`sm75-reference.[ch]`（IR の参照 interpreter）、`sm75-desktop-extract.py`。
 - master.md の Tools・試験の一覧への登録は Q1 に依頼（P4 は master.md を書かない）。
+
+## 13. SM86・SM89
+
+RTX 30（SM86）・RTX 40（SM89）への対応は [ws242-p002](../../ws242/phase002/phase.md)（2026-10-16 P4）。
