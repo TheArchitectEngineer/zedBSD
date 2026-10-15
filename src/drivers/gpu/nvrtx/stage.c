@@ -17,22 +17,22 @@
  * attaches while the platform discovers its devices, before the kernel parses
  * the line:
  *
- * The stages that make the display work run by default (without them the
- * desktop does not run on a machine whose display is on the NVIDIA GPU):
- * the GSP boot, the VRAM window (P4m), the display's readout,
- * the takeover of the firmware's head showing the console (P8b) and the GPU
- * device (P8c).  The test stages run only when asked.
+  * The stages that make the display work run by default (without them the
+  * desktop does not run on a machine whose display is on the NVIDIA GPU): the
+  * GSP boot, the VRAM window (vram-window), the display's readout, the
+  * takeover of the firmware's head showing the console (takeover) and the GPU
+  * device (gpu-device).  The test stages run only when asked.
  *
  *   nvrtx.off=1, nvrtx=off  the driver does not look at the GPU at all
  *   nvrtx.stop=<stage>    the driver stops before that stage
- *   nvrtx.gsp=0           the GPU is left to the firmware after N1 (the
+ *   nvrtx.gsp=0           the GPU is left to the firmware after console (the
  *                         stages that write never run); nvrtx.gsp=1 also
  *                         boots the GSP when the firmware's picture is
  *                         not on the GPU or cannot be kept (a test run)
  *   nvrtx.disp=0          the driver stops after the display's readout
- *                         (P8a) instead of taking the firmware's head over
+ *                         (display-client) instead of taking the firmware's head over
  *   nvrtx.resident=0      after the takeover the GSP is stopped instead of
- *                         staying up as a GPU device (P8c)
+ *                         staying up as a GPU device (gpu-device)
  *   nvrtx.disp.own=1      the takeover shows the driver's own surface (the
  *                         test's bands) at once, without the test's flip and
  *                         waits: for a GPU the firmware's console is not on
@@ -43,10 +43,10 @@
  *                         the monitor can be watched
  *   nvrtx.gr=1            after the copy channel, the driver has the
  *                         resource manager make the graphics golden context
- *                         (and the TU10x scrubber channel), stage P5g
- *   nvrtx.compute=1       the first compute launch (P9c, a test)
- *   nvrtx.draw=1          the first draw (P9g, a test)
- *   nvrtx.work=1          the work channel the GPU device keeps (P9w, with
+ *                         (and the TU10x scrubber channel), the golden-context stage
+ *   nvrtx.compute=1       the first compute launch (compute-test, a test)
+ *   nvrtx.draw=1          the first draw (draw-test, a test)
+ *   nvrtx.work=1          the work channel the GPU device keeps (work-channel, with
  *                         the golden context it needs; the renderer implies
  *                         it)
  *   nvrtx.vk=0            the GPU device is a display alone; by default it

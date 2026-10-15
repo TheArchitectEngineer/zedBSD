@@ -6,15 +6,16 @@
  */
 
 /*
- * The GPU device of the nvrtx driver (stage P8c, nvrtx.resident=1).
+ * The GPU device of the nvrtx driver (the gpu-device stage, nvrtx.resident=1).
  *
-  * After the takeover of the firmware's head (P8b) the GSP stays up and the
-  * GPU is registered with the GPU core as a device with storage, blobs in the
-  * VRAM, transfers, CPU mappings, sharing of blobs between its opens and one
-  * display: the head the firmware lit, in the mode it lit it with, with its
-  * refresh boundaries, its cursor plane and its scanout constraints.  node.c
-  * holds the sessions and resources, present.c the display's operations,
-  * cursor.c the cursor plane, share.c the sharing and the scanout operations.
+   * After the takeover of the firmware's head (takeover) the GSP stays up and
+   * the GPU is registered with the GPU core as a device with storage, blobs in
+   * the VRAM, transfers, CPU mappings, sharing of blobs between its opens and
+   * one display: the head the firmware lit, in the mode it lit it with, with
+   * its refresh boundaries, its cursor plane and its scanout constraints.
+   * node.c holds the sessions and resources, present.c the display's
+   * operations, cursor.c the cursor plane, share.c the sharing and the scanout
+   * operations.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_NODE_H
@@ -178,7 +179,7 @@ struct nvrtx_node_perf {
  * free) and lease its number; sequence counts the frames shown under the
  * lease.  shown is the blob on the screen, NULL while a surface of the node
  * is.  frames are the node's two surfaces storage frames are copied into,
- * next the one the next copy uses; the console surface is P8b's first.
+ * next the one the next copy uses; the console surface is takeover's first.
  * broken is set once a flip did not begin, and by the stop for the reboot
  * once the GSP is stopped: nothing touches the display after it.
  *

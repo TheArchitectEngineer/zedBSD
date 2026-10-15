@@ -6,7 +6,8 @@
  */
 
 /*
- * The graphics golden context and the TU10x scrubber (stage P5g).
+  * The graphics golden context and the TU10x scrubber (the golden-context
+  * stage).
  *
  * Before any graphics channel can run, the resource manager builds a golden
  * context: the state every new graphics context starts from.  It does so
@@ -82,9 +83,9 @@ static bool gr_needs_scrubber(const struct nvrtx_gpu *gpu);
 static uint64_t gr_align(uint64_t value, uint32_t shift);
 
 /*
- * Runs stage P5g: the golden context, then the scrubber on the chips that need one.
+ * Runs the golden-context stage: the golden context, then the scrubber on the chips that need one.
  *
- * The copy channel of P5 is already running.  A failure is returned; the
+ * The copy channel of copy-channel is already running.  A failure is returned; the
  * finish's stop frees whatever objects were made.
  *
  * Procedure referenced: Linux v6.19
@@ -99,7 +100,7 @@ nvrtx_gr_start(
 	int error;
 
 	/* Reads the buffers' sizes and lays the arena out. */
-	nvrtx_stage_mark("P5g begin");
+	nvrtx_stage_mark("golden-context begin");
 	error = gr_buffers_info(gpu);
 	if (error != 0)
 		return error;
@@ -114,7 +115,7 @@ nvrtx_gr_start(
 	if (error != 0)
 		return error;
 
-	nvrtx_stage_mark("P5g ok: golden context");
+	nvrtx_stage_mark("golden-context ok: golden context");
 
 	/* Only TU102, TU104 and TU106 need the scrubber. */
 	if (!scrubber)
@@ -126,12 +127,12 @@ nvrtx_gr_start(
 		return error;
 
 	/* Succeeded: graphics channels may be made from here. */
-	nvrtx_stage_mark("P5g ok: scrubber");
+	nvrtx_stage_mark("golden-context ok: scrubber");
 	return 0;
 }
 
 /*
- * Undoes P5g's objects before the unload.
+ * Undoes golden-context's objects before the unload.
  *
  * The scrubber is told to tear down first, then its 3D object, channel and
  * space go; whatever the golden context's run left is freed the same way.
@@ -202,11 +203,11 @@ nvrtx_gr_stop(
 
 	/* Says how the stop went, when anything failed. */
 	if (failures != 0)
-		nvrtx_stage_mark("P6: %d graphics frees failed; the unload removes the rest", failures);
+		nvrtx_stage_mark("channel-stop: %d graphics frees failed; the unload removes the rest", failures);
 }
 
 /*
- * Gives back the system-memory method buffers of P5g.
+ * Gives back the system-memory method buffers of golden-context.
  *
  * Only once the GPU no longer reads them: after the GSP is stopped.
  */
@@ -254,7 +255,7 @@ gr_buffers_info(
 	/* Reads engine 0's buffers. */
 	gr->buffer_count = nvrtx_gr_buffers(reply, reply_length, gr->buffers, NVRTX_GR_BUFFER_MAX);
 	if (gr->buffer_count == 0U) {
-		nvrtx_stage_mark("P5g fail: context buffer information missing");
+		nvrtx_stage_mark("golden-context fail: context buffer information missing");
 		return EIO;
 	}
 
@@ -262,7 +263,7 @@ gr_buffers_info(
 	total = 0U;
 	for (index = 0U; index < gr->buffer_count; index++)
 		total += gr->buffers[index].size;
-	nvrtx_stage_mark("P5g ctxbufs: %u buffers, %u KiB", (unsigned)gr->buffer_count, (unsigned)(total / 1024U));
+	nvrtx_stage_mark("golden-context ctxbufs: %u buffers, %u KiB", (unsigned)gr->buffer_count, (unsigned)(total / 1024U));
 
 	/* Succeeded: the buffers are known. */
 	return 0;
@@ -294,13 +295,13 @@ gr_layout(
 	/* Takes the arena below the first block, in the last usable region. */
 	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_GR_ARENA_RESERVE, &candidate, &region);
 	if (error != 0) {
-		nvrtx_stage_mark("P5g fail: no VRAM for the arena (%d)", error);
+		nvrtx_stage_mark("golden-context fail: no VRAM for the arena (%d)", error);
 		return error;
 	}
 
 	gr->arena = gr_align(candidate, 21U);
 	if (gr->arena + GR_ARENA_BYTES > gpu->engine.vram_block) {
-		nvrtx_stage_mark("P5g fail: the arena %llx meets the first block", (unsigned long long)gr->arena);
+		nvrtx_stage_mark("golden-context fail: the arena %llx meets the first block", (unsigned long long)gr->arena);
 		return ENOSPC;
 	}
 
@@ -333,12 +334,12 @@ gr_layout(
 
 	/* Everything must fit the arena and the range. */
 	if (physical > GR_ARENA_BYTES || virtual_offset > GR_VA_BYTES) {
-		nvrtx_stage_mark("P5g fail: buffers need %llx of VRAM, %llx of range", (unsigned long long)physical, (unsigned long long)virtual_offset);
+		nvrtx_stage_mark("golden-context fail: buffers need %llx of VRAM, %llx of range", (unsigned long long)physical, (unsigned long long)virtual_offset);
 		return ENOSPC;
 	}
 
 	/* Succeeded: the arena is laid out. */
-	nvrtx_stage_mark("P5g arena at %llx, buffers %llx bytes", (unsigned long long)gr->arena, (unsigned long long)(physical - GR_BUFFERS_AT));
+	nvrtx_stage_mark("golden-context arena at %llx, buffers %llx bytes", (unsigned long long)gr->arena, (unsigned long long)(physical - GR_BUFFERS_AT));
 	return 0;
 }
 

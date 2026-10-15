@@ -6,7 +6,8 @@
  */
 
 /*
- * The records of the display channels (stage P8b) that touch no hardware.
+  * The records of the display channels (the takeover stage) that touch no
+  * hardware.
  *
  * The push-buffer methods of the core and window channels, the hash-table
  * entries and context DMA objects of the display's instance memory, and the
@@ -612,7 +613,7 @@ nvrtx_disp_core_head_mode(
  * Derives a head's mode from the state the firmware armed it with.
  *
  * The visible size is the blank start less the blank end (as the readout
- * of P8a shows it), not the armed viewport, which may be a scaled one.
+ * of display-client shows it), not the armed viewport, which may be a scaled one.
  */
 void
 nvrtx_disp_mode_from_armed(

@@ -6,7 +6,8 @@
  */
 
 /*
- * The records of the display channels (stage P8b) that touch no hardware.
+  * The records of the display channels (the takeover stage) that touch no
+  * hardware.
  *
  * A display channel (the core channel and the window channels of the
  * Turing display) reads methods from a push buffer; this header names the
@@ -292,7 +293,7 @@ uint32_t nvrtx_disp_band_color(uint32_t band);
 
 /*
  * The display's own resource-manager client and its device and subdevice
- * (stage P8a): the channels and the
+ * (the display-client stage): the channels and the
  * display's objects belong to it, and the low 14 bits of its handle are in
  * every hash-table entry of the display's instance memory.
  *

@@ -70,7 +70,7 @@ nvrtx_rom_read(
 	if (error == 0)
 		error = nvrtx_vbios_walk(data, NVRTX_VBIOS_MAX_BYTES, &gpu->vbios);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 vbios: no copy in VRAM (%d), reading the ROM", error);
+		nvrtx_stage_mark("layout vbios: no copy in VRAM (%d), reading the ROM", error);
 		error = rom_from_prom(gpu, data);
 		if (error == 0)
 			error = nvrtx_vbios_walk(data, NVRTX_VBIOS_MAX_BYTES, &gpu->vbios);

@@ -8,10 +8,10 @@
 /*
  * Internal interface of the nvrtx driver (NVIDIA Turing and later GPUs).
  *
-  * The driver is brought up one stage at a time.  This revision has the stages
-  * that only read: N0 finds the GPU and reads its chip identity, N1 records
-  * where the firmware's picture lives.  Nothing is written to the GPU and the
-  * function is left to the firmware afterwards.
+   * The driver is brought up one stage at a time.  This revision has the
+   * stages that only read: identify finds the GPU and reads its chip identity,
+   * console records where the firmware's picture lives.  Nothing is written to
+   * the GPU and the function is left to the firmware afterwards.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_PRIVATE_H
@@ -62,7 +62,7 @@
 /* The register window must reach past both identity registers; it is 16 MiB on Turing. */
 #define NVRTX_REGISTER_WINDOW_MIN	0x1000U
 
-/* How much of the register window N0 maps: the first page holds both identity registers. */
+/* How much of the register window identify maps: the first page holds both identity registers. */
 #define NVRTX_N0_MAP_BYTES		0x1000U
 
 /* The PCI Express capability and the function-level-reset bit of its device capabilities. */
@@ -73,7 +73,7 @@
 /* The widest line a stage mark writes, so a mark never wraps on the console. */
 #define NVRTX_STAGE_LINE_COLUMNS	79U
 
-/* The memory windows N0 records: registers, VRAM, instance memory. */
+/* The memory windows identify records: registers, VRAM, instance memory. */
 #define NVRTX_WINDOW_COUNT		3U
 
 /* The GPU generations, by the architecture field of the identity register. */
@@ -215,9 +215,9 @@ struct nvrtx_window {
 /*
  * One NVIDIA GPU function while the driver looks at it.
  *
- * Lives on the attach's stack for the read-only stages: the attach takes the
- * register window, runs N0 and N1, and gives everything back before it
- * returns, so no state outlives the attach.
+  * Lives on the attach's stack for the read-only stages: the attach takes the
+  * register window, runs identify and console, and gives everything back
+  * before it returns, so no state outlives the attach.
  */
 struct nvrtx_device {
 	struct drv_pci_device *pci;
@@ -233,7 +233,7 @@ struct nvrtx_device {
 	struct nvrtx_chip chip;
 	/* Nonzero when the function advertises a function-level reset. */
 	int flr;
-	/* Nonzero when N1 found the firmware's picture in this GPU's VRAM window: the GPU is the primary display. */
+	/* Nonzero when console found the firmware's picture in this GPU's VRAM window: the GPU is the primary display. */
 	int gop_on_gpu;
 	/*
 	 * That picture as the loader describes it: its offset in the VRAM
@@ -248,21 +248,22 @@ struct nvrtx_device {
 };
 
 /*
- * Runs stage N0: finds the windows, maps the registers and reads the chip.
+  * Runs the identify stage: finds the windows, maps the registers and reads
+  * the chip.
  */
 int
 nvrtx_n0_discover(
 	struct nvrtx_device *device);
 
 /*
- * Runs stage N1: records where the firmware's picture lies.
+ * Runs the console stage: records where the firmware's picture lies.
  */
 void
 nvrtx_n1_readout(
 	struct nvrtx_device *device);
 
 /*
- * Gives back everything N0 took, in the reverse order.
+ * Gives back everything identify took, in the reverse order.
  */
 void
 nvrtx_n0_release(

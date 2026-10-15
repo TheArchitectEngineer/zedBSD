@@ -7,7 +7,7 @@
 
 /*
  * The records of the display's first commit that touch no hardware (stage
- * P8b).
+ * takeover).
  *
  * The takeover sends this when it starts the display and commits the
  * first mode on a head the firmware lit (the Turing core and window

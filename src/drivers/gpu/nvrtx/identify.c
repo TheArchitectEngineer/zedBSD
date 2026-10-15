@@ -217,7 +217,7 @@ static const struct nvrtx_profile identify_ad10x = {
  * Every Turing, Ampere and Ada chip of the GeForce RTX 20, 30 and 40 (and
  * GTX 16) has a family record.  GA100 and GH100 (data-centre parts without
  * a display) and Blackwell (WS240) are recognized and named only, and the
- * stages after N1 leave them alone.
+ * stages after console leave them alone.
  */
 static const struct identify_entry identify_table[] = {
 	{ 0x162U, "TU102", &identify_tu10x },
@@ -276,7 +276,7 @@ nvrtx_identify(
 
 	/*
 	 * A GPU switched to big-endian would need a write to switch back, and
-	 * N0 never writes; anything else in the second register but the
+	 * identify never writes; anything else in the second register but the
 	 * little-endian zero and the virtual-function bits is not trusted either.
 	 */
 	if (ident1 == NVRTX_IDENT_1_BIG_ENDIAN)

@@ -523,7 +523,7 @@ struct nvrtx_fwsec {
 #define NVRTX_RAMFC_BYTES		0x200U
 #define NVRTX_USERD_BYTES		0x200U
 
-/* The control call's header, and the parameters of the calls P4 to P6 make. */
+/* The control call's header, and the parameters of the calls address-space to channel-stop make. */
 #define NVRTX_CONTROL_HEADER_BYTES	24U
 #define NVRTX_CONTROL_STATUS_AT		12U
 #define NVRTX_SPACE_PARAMS_BYTES	48U
@@ -537,7 +537,7 @@ struct nvrtx_fwsec {
 #define NVRTX_COPY_PARAMS_BYTES		8U
 #define NVRTX_FREE_PARAMS_BYTES		16U
 
-/* The control commands of P4 to P6. */
+/* The control commands of address-space to channel-stop. */
 #define NVRTX_CTL_SET_PAGE_DIRECTORY	0x00801813U
 #define NVRTX_CTL_UNSET_PAGE_DIRECTORY	0x00801814U
 #define NVRTX_CTL_DEVICE_INFO		0x20801112U
@@ -545,7 +545,7 @@ struct nvrtx_fwsec {
 #define NVRTX_CTL_BIND			0xa06f0104U
 #define NVRTX_CTL_SCHEDULE		0xa06f0103U
 
-/* The classes of P4 and P5 on Turing (a generation's own are its profile's). */
+/* The classes of address-space and copy-channel on Turing (a generation's own are its profile's). */
 #define NVRTX_CLASS_SPACE		0x90f1U
 #define NVRTX_CLASS_CHANNEL		0xc46fU
 #define NVRTX_CLASS_COPY		0xc5b5U

@@ -6,11 +6,12 @@
  */
 
 /*
- * The first draw (stage P9g, nvrtx.draw=1).
+ * The first draw (the draw-test stage, nvrtx.draw=1).
  *
- * After the first compute launch (P9c) has run on its graphics channel,
- * the driver makes a 3D object (TURING_A) on the same channel, with the 3D
- * and compute classes on one channel (subchannels 0 and 1), and draws a quad three times, checking each result from the CPU:
+  * After the first compute launch (compute-test) has run on its graphics
+  * channel, the driver makes a 3D object (TURING_A) on the same channel, with
+  * the 3D and compute classes on one channel (subchannels 0 and 1), and draws
+  * a quad three times, checking each result from the CPU:
  *
  *   1. into a 256x256 pitch-linear A8B8G8R8 colour target in system
  *      memory: a clear of the whole target, then a quad of one colour over
@@ -242,10 +243,10 @@ nvrtx_draw_pages(
 }
 
 /*
- * Runs stage P9g: the 3D object, the programs, the data, then the draw
+ * Runs the draw-test stage: the 3D object, the programs, the data, then the draw
  * into system memory, into VRAM, and textured, each checked from the CPU.
  *
- * Needs the compute launch's channel (P9c) and its tables with the draw's
+ * Needs the compute launch's channel (compute-test) and its tables with the draw's
  * memory (nvrtx_draw_buffers() and nvrtx_draw_pages()).  Every draw
  * runs while the fences arrive, so one run reports each; returns the first
  * failure, or 0 when all three drew what they should.
@@ -259,8 +260,8 @@ nvrtx_draw_start(
 	int error;
 
 	/* Marks the stage and says where the VRAM target is. */
-	nvrtx_stage_mark("P9g begin");
-	nvrtx_stage_mark("P9g VRAM target at %llx (%s)", (unsigned long long)gpu->draw.vram_target, (gpu->draw.vram_bo_made != 0) ? "buffer object" : "compute arena");
+	nvrtx_stage_mark("draw-test begin");
+	nvrtx_stage_mark("draw-test VRAM target at %llx (%s)", (unsigned long long)gpu->draw.vram_target, (gpu->draw.vram_bo_made != 0) ? "buffer object" : "compute arena");
 	failure = 0;
 
 	/* The 3D object and the programs. */
@@ -301,7 +302,7 @@ nvrtx_draw_start(
 		return failure;
 
 	/* Succeeded: the GPU drew with the driver's programs. */
-	nvrtx_stage_mark("P9g ok: three draws checked");
+	nvrtx_stage_mark("draw-test ok: three draws checked");
 	return 0;
 }
 
@@ -370,13 +371,13 @@ draw_object(
 	/* TURING_A, no parameters (as the golden context's). */
 	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, NVRTX_HANDLE_DRAW, gpu->identity.chip.profile->class_threed, NULL, 0U);
 	if (error != 0) {
-		nvrtx_stage_mark("P9g fail: the 3D object was refused (%d)", error);
+		nvrtx_stage_mark("draw-test fail: the 3D object was refused (%d)", error);
 		return error;
 	}
 
 	/* Succeeded: the stop frees it. */
 	gpu->draw.threed_made = 1;
-	nvrtx_stage_mark("P9g ok: 3D object on the compute channel");
+	nvrtx_stage_mark("draw-test ok: 3D object on the compute channel");
 	return 0;
 }
 
@@ -441,14 +442,14 @@ draw_compile(
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
 	error = nvrtx_sm75_compile_ir(&program->ir, &binary, &diagnostic);
 	if (error != 0) {
-		nvrtx_stage_mark("P9g fail: program %u did not compile (%d: %s)", (unsigned)index, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?");
+		nvrtx_stage_mark("draw-test fail: program %u did not compile (%d: %s)", (unsigned)index, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?");
 		return error;
 	}
 
 	/* The header and the code must fit the page. */
 	bytes = (size_t)binary->code_words * 4U;
 	if (binary->graphics == 0U || DRAW_HEADER_BYTES + bytes > NVRTX_GSP_PAGE_SIZE) {
-		nvrtx_stage_mark("P9g fail: program %u takes %u bytes", (unsigned)index, (unsigned)bytes);
+		nvrtx_stage_mark("draw-test fail: program %u takes %u bytes", (unsigned)index, (unsigned)bytes);
 		nvrtx_sm75_binary_free(binary);
 		return EINVAL;
 	}
@@ -458,7 +459,7 @@ draw_compile(
 	kern_memcpy(page, binary->sph, DRAW_HEADER_BYTES);
 	kern_memcpy(page + DRAW_HEADER_BYTES, binary->code, bytes);
 	gprs[index] = binary->gpr_count;
-	nvrtx_stage_mark("P9g program %u: %u instructions, %u registers", (unsigned)index, (unsigned)(binary->code_words / 4U), (unsigned)binary->gpr_count);
+	nvrtx_stage_mark("draw-test program %u: %u instructions, %u registers", (unsigned)index, (unsigned)(binary->code_words / 4U), (unsigned)binary->gpr_count);
 	nvrtx_sm75_binary_free(binary);
 
 	/* Succeeded: the program is in place. */
@@ -605,7 +606,7 @@ draw_vram(
 	/* The target holds the pattern before. */
 	error = nvrtx_vram_fill(gpu, gpu->draw.vram_target, DRAW_PATTERN, NVRTX_DRAW_VRAM_BYTES);
 	if (error != 0) {
-		nvrtx_stage_mark("P9g fail: the VRAM target could not be filled (%d)", error);
+		nvrtx_stage_mark("draw-test fail: the VRAM target could not be filled (%d)", error);
 		return error;
 	}
 
@@ -678,18 +679,18 @@ draw_check_vram(
 		if (value == want) {
 			right++;
 		} else if (right == index) {
-			nvrtx_stage_mark("P9g fail: VRAM target word %u is %08x, want %08x", (unsigned)index, (unsigned)value, (unsigned)want);
+			nvrtx_stage_mark("draw-test fail: VRAM target word %u is %08x, want %08x", (unsigned)index, (unsigned)value, (unsigned)want);
 		}
 	}
 
 	/* Refuses a target that did not get the draw. */
 	if (right != count) {
-		nvrtx_stage_mark("P9g fail: VRAM target: %u of %u %s right", (unsigned)right, (unsigned)count, (pixels != NULL) ? "pixels" : "points");
+		nvrtx_stage_mark("draw-test fail: VRAM target: %u of %u %s right", (unsigned)right, (unsigned)count, (pixels != NULL) ? "pixels" : "points");
 		return EIO;
 	}
 
 	/* Succeeded: the VRAM holds the picture. */
-	nvrtx_stage_mark("P9g ok: draw wrote the VRAM target (%u %s right)", (unsigned)count, (pixels != NULL) ? "pixels" : "points");
+	nvrtx_stage_mark("draw-test ok: draw wrote the VRAM target (%u %s right)", (unsigned)count, (pixels != NULL) ? "pixels" : "points");
 	return 0;
 }
 
@@ -760,7 +761,7 @@ draw_run(
 	push = draw_push(gpu, page);
 	length += nvrtx_push_fence(push + length, NVRTX_COMPUTE_SEMAPHORE_VA, fence);
 	if (length > (size_t)pages * NVRTX_GSP_PAGE_SIZE) {
-		nvrtx_stage_mark("P9g fail: the %s push buffer takes %u bytes", what, (unsigned)length);
+		nvrtx_stage_mark("draw-test fail: the %s push buffer takes %u bytes", what, (unsigned)length);
 		return ENOSPC;
 	}
 
@@ -772,12 +773,12 @@ draw_run(
 	/* Waits for the fence. */
 	error = nvrtx_compute_wait(gpu, fence, &waited);
 	if (error != 0) {
-		nvrtx_stage_mark("P9g fail: fence 0x%x of the %s draw did not come (semaphore %08x)", (unsigned)fence, what, (unsigned)*(const volatile uint32_t *)gpu->compute.semaphore.dma.address);
+		nvrtx_stage_mark("draw-test fail: fence 0x%x of the %s draw did not come (semaphore %08x)", (unsigned)fence, what, (unsigned)*(const volatile uint32_t *)gpu->compute.semaphore.dma.address);
 		return error;
 	}
 
 	/* Succeeded: the draw ran to its fence. */
-	nvrtx_stage_mark("P9g ok: fence 0x%x of the %s draw after %u us", (unsigned)fence, what, (unsigned)waited);
+	nvrtx_stage_mark("draw-test ok: fence 0x%x of the %s draw after %u us", (unsigned)fence, what, (unsigned)waited);
 	return 0;
 }
 
@@ -808,19 +809,19 @@ draw_check_system(
 			if (value == want)
 				continue;
 			if (wrong == 0U)
-				nvrtx_stage_mark("P9g fail: %s target (%u, %u) is %08x, want %08x", what, (unsigned)x, (unsigned)y, (unsigned)value, (unsigned)want);
+				nvrtx_stage_mark("draw-test fail: %s target (%u, %u) is %08x, want %08x", what, (unsigned)x, (unsigned)y, (unsigned)value, (unsigned)want);
 			wrong++;
 		}
 	}
 
 	/* Refuses a target with any wrong pixel. */
 	if (wrong != 0U) {
-		nvrtx_stage_mark("P9g fail: %s target: %u of %u pixels wrong, middle %08x", what, (unsigned)wrong, (unsigned)(DRAW_SIZE * DRAW_SIZE), (unsigned)pixels[(DRAW_SIZE / 2U) * DRAW_SIZE + DRAW_SIZE / 2U]);
+		nvrtx_stage_mark("draw-test fail: %s target: %u of %u pixels wrong, middle %08x", what, (unsigned)wrong, (unsigned)(DRAW_SIZE * DRAW_SIZE), (unsigned)pixels[(DRAW_SIZE / 2U) * DRAW_SIZE + DRAW_SIZE / 2U]);
 		return EIO;
 	}
 
 	/* Succeeded: the target is the picture. */
-	nvrtx_stage_mark("P9g ok: draw wrote the %s target (%u pixels right)", what, (unsigned)(DRAW_SIZE * DRAW_SIZE));
+	nvrtx_stage_mark("draw-test ok: draw wrote the %s target (%u pixels right)", what, (unsigned)(DRAW_SIZE * DRAW_SIZE));
 	return 0;
 }
 

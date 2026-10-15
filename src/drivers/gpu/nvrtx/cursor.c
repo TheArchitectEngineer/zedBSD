@@ -6,7 +6,7 @@
  */
 
 /*
- * The cursor plane of the nvrtx GPU device's display (stage P8c).
+ * The cursor plane of the nvrtx GPU device's display (the gpu-device stage).
  *
  * The taken-over head's hardware cursor shows a 64 by 64 A8R8G8B8 image
  * with premultiplied alpha over the window, at a position the cursor's own
@@ -76,7 +76,7 @@ nvrtx_cursor_start(
 		error = nvrtx_bo_map(gpu, &node->cursor_object);
 	if (error != 0) {
 		nvrtx_bo_free(gpu, &node->cursor_object);
-		nvrtx_stage_mark("P8c: no cursor plane (VRAM %d)", error);
+		nvrtx_stage_mark("gpu-device: no cursor plane (VRAM %d)", error);
 		return;
 	}
 
@@ -89,14 +89,14 @@ nvrtx_cursor_start(
 	error = nvrtx_scanout_cursor_start(gpu);
 	if (error != 0) {
 		nvrtx_bo_free(gpu, &node->cursor_object);
-		nvrtx_stage_mark("P8c: no cursor plane (channel %d)", error);
+		nvrtx_stage_mark("gpu-device: no cursor plane (channel %d)", error);
 		return;
 	}
 
 	/* Succeeded: the display has a cursor plane, hidden and without an image. */
 	node->cursor_slot = 0U;
 	node->cursor_ready = 1;
-	nvrtx_stage_mark("P8c ok: cursor plane %ux%u at %llx",
+	nvrtx_stage_mark("gpu-device ok: cursor plane %ux%u at %llx",
 	    (unsigned)NVRTX_DISP_CURSOR_SIDE,
 	    (unsigned)NVRTX_DISP_CURSOR_SIDE,
 	    (unsigned long long)node->cursor_object.vram);
@@ -125,7 +125,7 @@ nvrtx_cursor_lease_end(
 		if (error == 0) {
 			node->cursor_visible = 0;
 		} else {
-			nvrtx_stage_mark("P8c: the cursor was not hidden at the lease's end (%d)", error);
+			nvrtx_stage_mark("gpu-device: the cursor was not hidden at the lease's end (%d)", error);
 		}
 	}
 

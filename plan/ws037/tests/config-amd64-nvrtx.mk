@@ -7,8 +7,8 @@
 #     stage marks are on the guest's emulated VGA screen that QMP's screendump captures,
 #   - the boot words of one run.  Since 2026-10-15 the display stages run by default (the GSP boot, P4m,
 #     P8a, the takeover P8b showing the console, the GPU device P8c), so each run turns off what it does
-#     not test: NVRTX_RUN=R0 (nvrtx.gsp=0: N0 and N1 only), R1 (nvrtx.gsp=1 nvrtx.stop=P1a), R2 (stop=P2a),
-#     R3 (stop=P3), R4 (stop=P4), R5 (stop=P5), R6 (stop=P6) or R7 (nvrtx.gsp=1, every built stage up to
+#     not test: NVRTX_RUN=R0 (nvrtx.gsp=0: identify and console only), R1 (nvrtx.gsp=1 nvrtx.stop=devinit), R2 (stop=booter),
+#     R3 (stop=static-info), R4 (stop=address-space), R5 (stop=copy-channel), R6 (stop=channel-stop) or R7 (nvrtx.gsp=1, every built stage up to
 #     P8a: nvrtx.disp=0 nvrtx.resident=0) or R7g (R7 and nvrtx.gr=1, the golden context) or R8b (the
 #     takeover of the head the GOP lit as the monitor test, nvrtx.disp.test=1, and nvrtx.resident=0) or R8c
 #     (R8b with the GPU device) or R8d (R8c with the display-scanout probe: events, refresh, cursor,
@@ -35,22 +35,22 @@ ZEDBSD_BOOT_EXTRA_LINES :=
 ZEDBSD_USER_PROGRAMS += display-inventory display-control
 endif
 ifeq ($(NVRTX_RUN),R1)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P1a
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=devinit
 endif
 ifeq ($(NVRTX_RUN),R2)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P2a
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=booter
 endif
 ifeq ($(NVRTX_RUN),R3)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P3
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=static-info
 endif
 ifeq ($(NVRTX_RUN),R4)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P4
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=address-space
 endif
 ifeq ($(NVRTX_RUN),R5)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P5
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=copy-channel
 endif
 ifeq ($(NVRTX_RUN),R6)
-ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=P6
+ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=channel-stop
 endif
 ifeq ($(NVRTX_RUN),R7)
 ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.disp=0 nvrtx.resident=0

@@ -8,8 +8,8 @@
 /*
  * The read-only stages of the nvrtx driver.
  *
- * N0 finds the GPU's memory windows, maps the first page of the register
- * window and reads the chip identity.  N1 records where the firmware's
+ * identify finds the GPU's memory windows, maps the first page of the register
+ * window and reads the chip identity.  console records where the firmware's
  * picture lies: in this GPU's VRAM window or elsewhere.  Neither writes the
  * GPU; the only change is that memory decoding is switched on for the read
  * if the firmware left it off, and the command bits are restored afterwards.
@@ -36,7 +36,8 @@ static void discover_flr(struct nvrtx_device *device);
 static const char *discover_bar_kind(const struct nvrtx_window *window);
 
 /*
- * Runs stage N0: finds the windows, maps the registers and reads the chip.
+  * Runs the identify stage: finds the windows, maps the registers and reads
+  * the chip.
  *
  * Returns 0 when the identity names a chip of a known generation, ENODEV
  * for a function the driver never drives, ENOTSUP for an unknown chip, or
@@ -54,7 +55,7 @@ nvrtx_n0_discover(
 	int error;
 
 	/* Says which function the stage looks at. */
-	nvrtx_stage_mark("N0 begin %04x:%04x at %02x:%02x.%u",
+	nvrtx_stage_mark("identify begin %04x:%04x at %02x:%02x.%u",
 	    (unsigned)NVRTX_PCI_VENDOR,
 	    (unsigned)device->product,
 	    (unsigned)device->address.bus,
@@ -68,13 +69,13 @@ nvrtx_n0_discover(
 	/* The first memory window is the register window; without it there is nothing to read. */
 	registers = &device->windows[0];
 	if (registers->present == 0) {
-		nvrtx_stage_mark("N0 fail: no memory window");
+		nvrtx_stage_mark("identify fail: no memory window");
 		return ENODEV;
 	}
 
 	/* A window too small to hold the identity registers is not a GPU's register window. */
 	if (registers->size < NVRTX_REGISTER_WINDOW_MIN) {
-		nvrtx_stage_mark("N0 fail: register window of %llu bytes",
+		nvrtx_stage_mark("identify fail: register window of %llu bytes",
 		    (unsigned long long)registers->size);
 		return ENODEV;
 	}
@@ -82,7 +83,7 @@ nvrtx_n0_discover(
 	/* Saves the command bits, so the release gives the function back as the firmware left it. */
 	error = drv_pci_device_save_enable_state(device->pci, &device->enable_state);
 	if (error != 0) {
-		nvrtx_stage_mark("N0 fail: command bits not saved (%d)", error);
+		nvrtx_stage_mark("identify fail: command bits not saved (%d)", error);
 		return error;
 	}
 
@@ -91,14 +92,14 @@ nvrtx_n0_discover(
 	/* Lets the registers decode; the firmware's console has it on already. */
 	error = drv_pci_device_enable_memory(device->pci);
 	if (error != 0) {
-		nvrtx_stage_mark("N0 fail: memory decoding not enabled (%d)", error);
+		nvrtx_stage_mark("identify fail: memory decoding not enabled (%d)", error);
 		return error;
 	}
 
-	/* Claims the register window, so no other driver maps it while N0 reads. */
+	/* Claims the register window, so no other driver maps it while identify reads. */
 	error = drv_pci_device_claim_bar(device->pci, registers->bar);
 	if (error != 0) {
-		nvrtx_stage_mark("N0 fail: register window not claimed (%d)", error);
+		nvrtx_stage_mark("identify fail: register window not claimed (%d)", error);
 		return error;
 	}
 
@@ -112,7 +113,7 @@ nvrtx_n0_discover(
 	    DRV_PCI_MAP_READ | DRV_PCI_MAP_NOCACHE,
 	    &device->registers);
 	if (error != 0) {
-		nvrtx_stage_mark("N0 fail: registers not mapped (%d)", error);
+		nvrtx_stage_mark("identify fail: registers not mapped (%d)", error);
 		return error;
 	}
 
@@ -121,7 +122,7 @@ nvrtx_n0_discover(
 	ident1 = kern_mmio_read32((const uint8_t *)device->registers.address + NVRTX_REG_MC_IDENT_1);
 
 	/* Marks the raw values, so a refused chip still shows what it answered. */
-	nvrtx_stage_mark("N0 ident0=%08x ident1=%08x flr=%s",
+	nvrtx_stage_mark("identify ident0=%08x ident1=%08x flr=%s",
 	    (unsigned)ident0,
 	    (unsigned)ident1,
 	    device->flr != 0 ? "yes" : "no");
@@ -129,7 +130,7 @@ nvrtx_n0_discover(
 	/* Decodes the chip, and says why a function is refused. */
 	error = nvrtx_identify(ident0, ident1, &device->chip);
 	if (error == ENOTSUP) {
-		nvrtx_stage_mark("N0 stop: unknown chip %03x (%s)",
+		nvrtx_stage_mark("identify stop: unknown chip %03x (%s)",
 		    (unsigned)device->chip.chipset,
 		    nvrtx_family_name(device->chip.family));
 		return error;
@@ -137,13 +138,13 @@ nvrtx_n0_discover(
 
 	/* Any other refusal is a function this driver never drives. */
 	if (error != 0) {
-		nvrtx_stage_mark("N0 stop: not a GPU this driver drives (chip %03x)",
+		nvrtx_stage_mark("identify stop: not a GPU this driver drives (chip %03x)",
 		    (unsigned)device->chip.chipset);
 		return error;
 	}
 
 	/* Marks the chip the later stages are chosen by. */
-	nvrtx_stage_mark("N0 ok chip=%03x %s rev %02x (%s)",
+	nvrtx_stage_mark("identify ok chip=%03x %s rev %02x (%s)",
 	    (unsigned)device->chip.chipset,
 	    device->chip.name,
 	    (unsigned)device->chip.revision,
@@ -156,11 +157,11 @@ nvrtx_n0_discover(
 	 */
 	product = nvrtx_product_find(device->product);
 	if (product == NULL) {
-		nvrtx_stage_mark("N0 product %04x not in the table", (unsigned)device->product);
+		nvrtx_stage_mark("identify product %04x not in the table", (unsigned)device->product);
 	} else if (product->chipset != device->chip.chipset) {
-		nvrtx_stage_mark("N0 product %04x is listed as chip %03x", (unsigned)device->product, (unsigned)product->chipset);
+		nvrtx_stage_mark("identify product %04x is listed as chip %03x", (unsigned)device->product, (unsigned)product->chipset);
 	} else if (product->name != NULL) {
-		nvrtx_stage_mark("N0 product %s%s", product->name, product->laptop != 0 ? " (laptop)" : "");
+		nvrtx_stage_mark("identify product %s%s", product->name, product->laptop != 0 ? " (laptop)" : "");
 	}
 
 	/* Succeeded: the chip is identified and the register page stays mapped until the release. */
@@ -168,7 +169,7 @@ nvrtx_n0_discover(
 }
 
 /*
- * Runs stage N1: records where the firmware's picture lies.
+ * Runs the console stage: records where the firmware's picture lies.
  *
  * Only the loader's description of the framebuffer is read; the display
  * registers are left alone.  A picture inside this GPU's VRAM window is the
@@ -186,7 +187,7 @@ nvrtx_n1_readout(
 	/* A boot without a framebuffer has no picture to keep. */
 	framebuffer = kern_boot_handoff(DISCOVER_FRAMEBUFFER_HANDOFF);
 	if (framebuffer == NULL) {
-		nvrtx_stage_mark("N1 no firmware framebuffer");
+		nvrtx_stage_mark("console no firmware framebuffer");
 		return;
 	}
 
@@ -204,7 +205,7 @@ nvrtx_n1_readout(
 		device->gop_height = framebuffer->height;
 		device->gop_stride = framebuffer->stride;
 		device->gop_format = framebuffer->format;
-		nvrtx_stage_mark("N1 gop %ux%u stride %u in bar%u at +%llx",
+		nvrtx_stage_mark("console gop %ux%u stride %u in bar%u at +%llx",
 		    (unsigned)framebuffer->width,
 		    (unsigned)framebuffer->height,
 		    (unsigned)framebuffer->stride,
@@ -214,7 +215,7 @@ nvrtx_n1_readout(
 	}
 
 	/* Otherwise the picture is another device's. */
-	nvrtx_stage_mark("N1 gop %ux%u at %llx is not on this GPU",
+	nvrtx_stage_mark("console gop %ux%u at %llx is not on this GPU",
 	    (unsigned)framebuffer->width,
 	    (unsigned)framebuffer->height,
 	    (unsigned long long)framebuffer->physical_base);
@@ -224,7 +225,7 @@ nvrtx_n1_readout(
 }
 
 /*
- * Gives back everything N0 took, in the reverse order.
+ * Gives back everything identify took, in the reverse order.
  */
 void
 nvrtx_n0_release(
@@ -301,7 +302,7 @@ discover_windows(
 			window->prefetchable = 1;
 
 		/* Marks the window and counts it. */
-		nvrtx_stage_mark("N0 bar%u %s size %lluK at %llx",
+		nvrtx_stage_mark("identify bar%u %s size %lluK at %llx",
 		    index,
 		    discover_bar_kind(window),
 		    (unsigned long long)(window->size >> 10),

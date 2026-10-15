@@ -278,17 +278,17 @@ nvrtx_region_tear_down(
 		return 0;
 
 	/* Runs FWSEC's SB command and reads its result. */
-	nvrtx_stage_mark("P7 begin: FWSEC-SB");
+	nvrtx_stage_mark("unload begin: FWSEC-SB");
 	error = nvrtx_fwsec_run(gpu, &gpu->memory.fwsec_sb);
 	if (error == ETIMEDOUT)
 		return error;
 
 	result = nvrtx_rd32(gpu, BOOT_REG_SB_RESULT) & 0xffffU;
 	if (error != 0 || result != 0U)
-		nvrtx_stage_mark("P7 FWSEC-SB error %d result %04x", error, (unsigned)result);
+		nvrtx_stage_mark("unload FWSEC-SB error %d result %04x", error, (unsigned)result);
 
 	/* Runs booter_unload with the plain-unload arguments. */
-	nvrtx_stage_mark("P7 booter_unload");
+	nvrtx_stage_mark("unload booter_unload");
 	error = nvrtx_booter_run(gpu, &gpu->unload, BOOT_UNLOAD_ARGUMENT, BOOT_UNLOAD_ARGUMENT);
 	if (error == ETIMEDOUT)
 		return error;
@@ -296,12 +296,12 @@ nvrtx_region_tear_down(
 	/* The region must be gone now. */
 	high = nvrtx_rd32(gpu, BOOT_REG_REGION_HIGH);
 	if (high != 0U) {
-		nvrtx_stage_mark("P7 fail: region still up to %08x; power cycle needed", (unsigned)high);
+		nvrtx_stage_mark("unload fail: region still up to %08x; power cycle needed", (unsigned)high);
 		return EIO;
 	}
 
 	/* Succeeded: the region is torn down. */
-	nvrtx_stage_mark("P7 ok: region torn down");
+	nvrtx_stage_mark("unload ok: region torn down");
 	return 0;
 }
 
@@ -339,7 +339,7 @@ nvrtx_frts_result(
  * Runs one FWSEC program (FRTS or SB) on an Ampere or later GSP falcon.
  *
  * The program's copy already carries its command and the signature the
- * fuses ask for (P0).  The falcon is reset, copies the code (all secure)
+ * fuses ask for (layout).  The falcon is reset, copies the code (all secure)
  * and the data by DMA, and its boot ROM checks the signature and starts it.
  *
  * Procedure referenced: Linux v6.19

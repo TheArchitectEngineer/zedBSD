@@ -6,22 +6,24 @@
  */
 
 /*
- * The first address space and channel of the nvrtx driver (stages P4 to P6).
+  * The first address space and channel of the nvrtx driver (stages
+  * address-space to channel-stop).
  *
- * P4 takes a block at the top of the usable VRAM, writes the page tables of
+ * address-space takes a block at the top of the usable VRAM, writes the page tables of
  * one 2 MiB range into it through the register window onto the VRAM
  * (PRAMIN), has the resource manager make an address space the driver owns
  * and gives it the root, and invalidates the TLBs.  The range maps three
  * system-memory buffers: the ring of push-buffer entries, the push buffer and
  * a semaphore page.
  *
- * P5 picks a copy engine on a runlist of its own, makes the channel (its
+ * copy-channel picks a copy engine on a runlist of its own, makes the channel (its
  * instance block and USERD in the same VRAM block, its method buffer in system
  * memory), binds and schedules it, and runs one fence: the push buffer
  * releases a semaphore value that the CPU polls.
  *
- * P6 reports a channel error the firmware sent and frees the channel and the
- * address space; the GSP's unload in P7 removes whatever is left.
+  * channel-stop reports a channel error the firmware sent and frees the
+  * channel and the address space; the GSP's unload in unload removes whatever
+  * is left.
  */
 
 #include <stdbool.h>
@@ -89,7 +91,7 @@
 #define CHANNEL_FILL_VALUE		0xc0ffee01U
 #define CHANNEL_FILL_FENCE_VALUE	0x1235U
 
-/* How long the end of P6 takes messages the firmware sent meanwhile. */
+/* How long the end of channel-stop takes messages the firmware sent meanwhile. */
 #define CHANNEL_DRAIN_TIMEOUT_US	100000U
 
 static int channel_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
@@ -104,7 +106,7 @@ static int channel_wait(struct nvrtx_gpu *gpu, uint32_t expected, uint32_t put);
 static int channel_copy_fill(struct nvrtx_gpu *gpu);
 
 /*
- * Runs stage P4: the VRAM block, the page tables, the address space and the TLB invalidate.
+ * Runs the address-space stage: the VRAM block, the page tables, the address space and the TLB invalidate.
  */
 int
 nvrtx_space_start(
@@ -124,14 +126,14 @@ nvrtx_space_start(
 	engine = &gpu->engine;
 
 	/* Takes the VRAM block at the top of the last usable region. */
-	nvrtx_stage_mark("P4 begin");
+	nvrtx_stage_mark("address-space begin");
 	error = nvrtx_mmu_vram_block(gpu->static_info, CHANNEL_BLOCK_BYTES, &engine->vram_block, &region);
 	if (error != 0) {
-		nvrtx_stage_mark("P4 fail: no usable VRAM region (%d)", error);
+		nvrtx_stage_mark("address-space fail: no usable VRAM region (%d)", error);
 		return error;
 	}
 
-	nvrtx_stage_mark("P4 vram: region %u, block at %llx", (unsigned)region, (unsigned long long)engine->vram_block);
+	nvrtx_stage_mark("address-space vram: region %u, block at %llx", (unsigned)region, (unsigned long long)engine->vram_block);
 
 	/* Allocates the system-memory buffers the range maps. */
 	error = channel_buffers(gpu);
@@ -155,14 +157,14 @@ nvrtx_space_start(
 	if (error == 0)
 		error = channel_vram_read32(gpu, engine->vram_block, &check);
 	if (error == 0 && check != nvrtx_get32(image, 0U)) {
-		nvrtx_stage_mark("P4 fail: root reads back %08x, wrote %08x", (unsigned)check, (unsigned)nvrtx_get32(image, 0U));
+		nvrtx_stage_mark("address-space fail: root reads back %08x, wrote %08x", (unsigned)check, (unsigned)nvrtx_get32(image, 0U));
 		error = EIO;
 	}
 	kern_free(image);
 	if (error != 0)
 		return error;
 
-	nvrtx_stage_mark("P4 page tables at %llx", (unsigned long long)engine->vram_block);
+	nvrtx_stage_mark("address-space page tables at %llx", (unsigned long long)engine->vram_block);
 
 	/* Makes the address space the driver owns. */
 	nvrtx_space_params(params);
@@ -193,12 +195,12 @@ nvrtx_space_start(
 		return error;
 
 	/* Succeeded: the address space maps the range. */
-	nvrtx_stage_mark("P4 ok: vaspace");
+	nvrtx_stage_mark("address-space ok: vaspace");
 	return 0;
 }
 
 /*
- * Runs stage P5: the copy engine, the channel and one fence.
+ * Runs the copy-channel stage: the copy engine, the channel and one fence.
  */
 int
 nvrtx_channel_start(
@@ -216,7 +218,7 @@ nvrtx_channel_start(
 	engine = &gpu->engine;
 
 	/* Reads the engines and their runlists, and picks a copy engine. */
-	nvrtx_stage_mark("P5 begin");
+	nvrtx_stage_mark("copy-channel begin");
 	kern_memset(gpu->reply, 0, NVRTX_DEVINFO_PARAMS_BYTES);
 	error = nvrtx_rm_control(gpu,
 	    gpu->internal_client,
@@ -231,7 +233,7 @@ nvrtx_channel_start(
 
 	error = nvrtx_devinfo_pick(reply, reply_length, &engine->pick);
 	if (error != 0) {
-		nvrtx_stage_mark("P5 fail: no copy engine of its own runlist (%d)", error);
+		nvrtx_stage_mark("copy-channel fail: no copy engine of its own runlist (%d)", error);
 		return error;
 	}
 
@@ -258,7 +260,7 @@ nvrtx_channel_start(
 	if (error != 0)
 		return error;
 
-	nvrtx_stage_mark("P5 copy engine %x runlist %u (graphics %u), method buffer %u",
+	nvrtx_stage_mark("copy-channel copy engine %x runlist %u (graphics %u), method buffer %u",
 	    (unsigned)engine->pick.engine,
 	    (unsigned)engine->pick.runlist,
 	    (unsigned)engine->pick.graphics_runlist,
@@ -312,7 +314,7 @@ nvrtx_channel_start(
 	/* The stop takes the channel off the scheduler before it frees it. */
 	engine->scheduled = 1;
 
-	nvrtx_stage_mark("P5 ok: channel %u on runlist %u", (unsigned)CHANNEL_ID, (unsigned)engine->pick.runlist);
+	nvrtx_stage_mark("copy-channel ok: channel %u on runlist %u", (unsigned)CHANNEL_ID, (unsigned)engine->pick.runlist);
 
 	/* Runs one fence through the channel. */
 	error = channel_fence(gpu);
@@ -320,9 +322,9 @@ nvrtx_channel_start(
 		return error;
 
 	/* Has the copy engine fill words, unless the boot stops before the copy. */
-	allowed = nvrtx_stage_allowed("P5e");
+	allowed = nvrtx_stage_allowed("copy-fill");
 	if (!allowed) {
-		nvrtx_stage_mark("P5e skipped (nvrtx.stop=P5e)");
+		nvrtx_stage_mark("copy-fill skipped (nvrtx.stop=copy-fill)");
 		return 0;
 	}
 
@@ -335,11 +337,11 @@ nvrtx_channel_start(
 }
 
 /*
- * Runs stage P6's stop: takes the messages the firmware sent, then undoes
- * P4 and P5: the channel off the scheduler, the copy
+ * Runs stage channel-stop's stop: takes the messages the firmware sent, then undoes
+ * address-space and copy-channel: the channel off the scheduler, the copy
  * object, the channel, the root, the address space.
  *
- * The finish runs it before every P7, whatever nvrtx.stop says: when the
+ * The finish runs it before every unload, whatever nvrtx.stop says: when the
  * channel was left scheduled for the unload to remove, the firmware did
  * not answer the unload call (ETIMEDOUT) and did not stop.  Failures are only
  * reported; the unload removes whatever stays.
@@ -426,14 +428,14 @@ nvrtx_channel_stop(
 
 	/* Says how the stop went. */
 	if (failures == 0) {
-		nvrtx_stage_mark("P6 ok: channel and vaspace freed");
+		nvrtx_stage_mark("channel-stop ok: channel and vaspace freed");
 	} else {
-		nvrtx_stage_mark("P6: %d frees failed; the unload removes the rest", failures);
+		nvrtx_stage_mark("channel-stop: %d frees failed; the unload removes the rest", failures);
 	}
 }
 
 /*
- * Gives back the system-memory buffers of P4 and P5.
+ * Gives back the system-memory buffers of address-space and copy-channel.
  *
  * Only once the GPU no longer reads them: after the GSP is stopped.
  */
@@ -474,7 +476,7 @@ nvrtx_flush_tlb(
 }
 
 /*
- * Invalidates the hub's TLB entries of a BAR's page tables (stage P4m).
+ * Invalidates the hub's TLB entries of a BAR's page tables (the vram-window stage).
  *
  * The flush of a BAR's address space: all addresses, every root, the hub's
  * TLB only.  Returns ETIMEDOUT when the invalidate does not finish in 2 s.
@@ -832,7 +834,7 @@ channel_wait(
 		value = *semaphore;
 		waited = nvrtx_now_us() - start;
 		if (value == expected) {
-			nvrtx_stage_mark("P5 ok: fence 0x%x reached after %u us", (unsigned)value, (unsigned)waited);
+			nvrtx_stage_mark("copy-channel ok: fence 0x%x reached after %u us", (unsigned)value, (unsigned)waited);
 			return 0;
 		}
 
@@ -845,7 +847,7 @@ channel_wait(
 	/* The value never came: reports the semaphore and the ring's get. */
 	get = 0xffffffffU;
 	(void)channel_vram_read32(gpu, engine->vram_block + CHANNEL_USERD_AT + CHANNEL_USERD_RING_GET, &get);
-	nvrtx_stage_mark("P5 fail: fence %08x after 2 s, ring get %u put %u", (unsigned)*semaphore, (unsigned)get, (unsigned)put);
+	nvrtx_stage_mark("copy-channel fail: fence %08x after 2 s, ring get %u put %u", (unsigned)*semaphore, (unsigned)get, (unsigned)put);
 	return ETIMEDOUT;
 }
 
@@ -930,18 +932,18 @@ channel_copy_fill(
 	words = (const volatile uint32_t *)((uint8_t *)engine->semaphore.dma.address + CHANNEL_FILL_AT);
 	for (index = 0U; index < CHANNEL_FILL_WORDS; index++) {
 		if (words[index] != CHANNEL_FILL_VALUE) {
-			nvrtx_stage_mark("P5 fail: copy fill word %u is %08x", (unsigned)index, (unsigned)words[index]);
+			nvrtx_stage_mark("copy-channel fail: copy fill word %u is %08x", (unsigned)index, (unsigned)words[index]);
 			return EIO;
 		}
 	}
 
 	if (words[CHANNEL_FILL_WORDS] == CHANNEL_FILL_VALUE) {
-		nvrtx_stage_mark("P5 fail: copy fill ran past its length");
+		nvrtx_stage_mark("copy-channel fail: copy fill ran past its length");
 		return EIO;
 	}
 
 	/* Succeeded: the copy engine wrote the words. */
-	nvrtx_stage_mark("P5 ok: copy engine filled %u words", (unsigned)CHANNEL_FILL_WORDS);
+	nvrtx_stage_mark("copy-channel ok: copy engine filled %u words", (unsigned)CHANNEL_FILL_WORDS);
 	return 0;
 }
 

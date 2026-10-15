@@ -219,9 +219,9 @@ nvrtx_rpc_wait(
 			continue;
 		}
 
-		/* A channel error is reported with its channel, its kind and the faulting address (P6). */
+		/* A channel error is reported with its channel, its kind and the faulting address (channel-stop). */
 		if (got_function == NVRTX_EVENT_CHANNEL_ERROR && *length >= RPC_ERROR_BYTES) {
-			nvrtx_stage_mark("P6 channel error: eng %x chid %u type %u fault %08x%08x/%u",
+			nvrtx_stage_mark("channel-stop channel error: eng %x chid %u type %u fault %08x%08x/%u",
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_ENGINE_AT),
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_CHANNEL_AT),
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT),
@@ -404,10 +404,10 @@ nvrtx_rm_free_in(
 /*
  * Sends the call built in gpu->call and waits for its numbered reply.
  *
- * Once a reply has failed to come in time, the firmware is taken as not
- * answering: every later call fails at once with ETIMEDOUT, so the
- * teardown of many objects that follows (P6, the reboot's P7) does not
- * wait the whole time for each.
+  * Once a reply has failed to come in time, the firmware is taken as not
+  * answering: every later call fails at once with ETIMEDOUT, so the teardown
+  * of many objects that follows (channel-stop, the reboot's unload) does not
+  * wait the whole time for each.
  */
 static int
 rpc_exchange(
@@ -559,7 +559,7 @@ rpc_error_log(
 /*
  * Resumes the GSP's core at the firmware's request: the GSP falcon is put
  * back into its RISC-V mode with the start page's address in its mailboxes,
- * and the secure processor's booter, still loaded from P2a, is started
+ * and the secure processor's booter, still loaded from booter, is started
  * again to hand the core back to the firmware.
  */
 static int

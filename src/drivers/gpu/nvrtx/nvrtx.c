@@ -8,13 +8,13 @@
 /*
  * The nvrtx PCI driver: registration and attach.
  *
-  * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware.  The
-  * attach finds the GPU, reads its chip identity (N0) and records where the
-  * firmware's picture lies (N1).  With nvrtx.gsp=0 on the boot line, or for a
-  * chip without a GSP path yet, it then gives the function back to the
-  * firmware by refusing the bind: the firmware's console keeps working, the
-  * PCI core never suspends the function, and a machine without an NVIDIA GPU
-  * is not touched at all.
+   * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware.  The
+   * attach finds the GPU, reads its chip identity (identify) and records where
+   * the firmware's picture lies (console).  With nvrtx.gsp=0 on the boot line,
+   * or for a chip without a GSP path yet, it then gives the function back to
+   * the firmware by refusing the bind: the firmware's console keeps working,
+   * the PCI core never suspends the function, and a machine without an NVIDIA
+   * GPU is not touched at all.
  *
  * Otherwise (the default) on a chip of a verified family (TU10x) that shows
  * the firmware's picture, or on any Turing, Ampere or Ada chip with
@@ -24,7 +24,7 @@
  * system holds the firmware.  The kept function refuses a system suspend.
  *
  * At the reboot or the shutdown of the machine the PCI shutdown hook stops
- * a GSP kept up (the GPU device, then P7), so the hub's state of this boot
+ * a GSP kept up (the GPU device, then unload), so the hub's state of this boot
  * and the protected region are not carried into the next boot.
  */
 
@@ -45,7 +45,7 @@
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
-/* How long the shutdown waits for a GSP boot still running (P2b's wait is the longest stage), and its step. */
+/* How long the shutdown waits for a GSP boot still running (gsp-init's wait is the longest stage), and its step. */
 #define NVRTX_SHUTDOWN_BOOT_WAIT_US	12000000U
 #define NVRTX_SHUTDOWN_STEP_US		10000U
 
@@ -129,10 +129,10 @@ nvrtx_attach(
 	drv_pci_device_address(pci, &device.address);
 	device.product = drv_pci_device_product(pci);
 
-	/* Stops before N0 when the boot asks. */
-	allowed = nvrtx_stage_allowed("N0");
+	/* Stops before identify when the boot asks. */
+	allowed = nvrtx_stage_allowed("identify");
 	if (!allowed) {
-		nvrtx_stage_mark("N0 skipped (nvrtx.stop=N0)");
+		nvrtx_stage_mark("identify skipped (nvrtx.stop=identify)");
 		return ENODEV;
 	}
 
@@ -143,12 +143,12 @@ nvrtx_attach(
 		return ENODEV;
 	}
 
-	/* Records the firmware's picture unless the boot stops before N1. */
-	allowed = nvrtx_stage_allowed("N1");
+	/* Records the firmware's picture unless the boot stops before console. */
+	allowed = nvrtx_stage_allowed("console");
 	if (allowed) {
 		nvrtx_n1_readout(&device);
 	} else {
-		nvrtx_stage_mark("N1 skipped (nvrtx.stop=N1)");
+		nvrtx_stage_mark("console skipped (nvrtx.stop=console)");
 	}
 
 	/*
@@ -167,17 +167,17 @@ nvrtx_attach(
 		if (error == 0)
 			return 0;
 
-		nvrtx_stage_mark("N1 done; the GSP boot not started (%d)", error);
+		nvrtx_stage_mark("console done; the GSP boot not started (%d)", error);
 	} else if (!gsp_wanted) {
-		nvrtx_stage_mark("N1 done; %s left to the firmware (nvrtx.gsp=0)", device.chip.name);
+		nvrtx_stage_mark("console done; %s left to the firmware (nvrtx.gsp=0)", device.chip.name);
 	} else if (profile == NULL) {
-		nvrtx_stage_mark("N1 done; no GSP path for %s yet", device.chip.name);
+		nvrtx_stage_mark("console done; no GSP path for %s yet", device.chip.name);
 	} else if (profile->verified == 0) {
-		nvrtx_stage_mark("N1 done; %s (%s) not yet seen on hardware, left to the firmware (nvrtx.gsp=1 boots it)",
+		nvrtx_stage_mark("console done; %s (%s) not yet seen on hardware, left to the firmware (nvrtx.gsp=1 boots it)",
 		    device.chip.name,
 		    profile->name);
 	} else {
-		nvrtx_stage_mark("N1 done; no firmware picture on %s, left to the firmware (nvrtx.gsp=1 boots it)", device.chip.name);
+		nvrtx_stage_mark("console done; no firmware picture on %s, left to the firmware (nvrtx.gsp=1 boots it)", device.chip.name);
 	}
 
 	/* Gives the registers and the command bits back. */
@@ -211,7 +211,7 @@ nvrtx_detach(
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
 		return EBUSY;
 
-	/* A GPU device keeps the GSP up until power-off (stage P8c). */
+	/* A GPU device keeps the GSP up until power-off (the gpu-device stage). */
 	if (gpu->resident != 0)
 		return EBUSY;
 
@@ -232,7 +232,7 @@ nvrtx_detach(
  * shutdown hook, after the volumes are synced and the network stopped).
  *
  * A boot still running is waited for, for a bounded time; then the GPU
- * device, if one was registered, and the GSP are stopped (P7).  Nothing
+ * device, if one was registered, and the GSP are stopped (unload).  Nothing
  * here stops the reboot: a failure is shown and the reset follows.
  */
 static void
@@ -256,7 +256,7 @@ nvrtx_shutdown(
 
 		waited = nvrtx_now_us() - start;
 		if (waited > NVRTX_SHUTDOWN_BOOT_WAIT_US) {
-			nvrtx_stage_mark("P7 shutdown: the GSP boot still runs after %u ms; left to the reset", (unsigned)(waited / 1000U));
+			nvrtx_stage_mark("unload shutdown: the GSP boot still runs after %u ms; left to the reset", (unsigned)(waited / 1000U));
 			return;
 		}
 
@@ -292,9 +292,9 @@ nvrtx_suspend(
 /*
  * Keeps a function for the GSP boot and starts its worker.
  *
- * The N0 mapping of one page is replaced by the whole register window; the
- * claim and the saved command bits pass to the kept state.  On a failure
- * nothing is kept and the caller releases what N0 took.
+  * The identify mapping of one page is replaced by the whole register window;
+  * the claim and the saved command bits pass to the kept state.  On a failure
+  * nothing is kept and the caller releases what identify took.
  */
 static int
 nvrtx_keep(
@@ -334,7 +334,7 @@ nvrtx_keep(
 		return ENODEV;
 	}
 
-	/* Takes over N0's state; its one-page mapping is no longer needed. */
+	/* Takes over identify's state; its one-page mapping is no longer needed. */
 	drv_pci_device_unmap_bar(device->pci, &device->registers);
 	device->registers.address = NULL;
 	gpu->identity = *device;
@@ -364,10 +364,11 @@ nvrtx_keep(
 	thread->detached = 1;
 
 	/*
-	 * A boot that keeps the GPU up as a GPU device with its display (the
-	 * default) publishes /dev/gpuN only at the worker's last stage (P8c):
-	 * until the worker ends, the GPU counts as attaching, so the graphical
-	 * login waits for its display instead of giving the console back.
+	  * A boot that keeps the GPU up as a GPU device with its display (the
+	  * default) publishes /dev/gpuN only at the worker's last stage
+	  * (gpu-device): until the worker ends, the GPU counts as attaching,
+	  * so the graphical login waits for its display instead of giving the
+	  * console back.
 	 */
 	resident = nvrtx_stage_resident_wanted();
 	display = nvrtx_stage_disp_wanted();
@@ -379,7 +380,7 @@ nvrtx_keep(
 	thread_start(thread);
 
 	/* Succeeded: the function is kept and the GSP boot runs in the background. */
-	nvrtx_stage_mark("N1 done; %s kept for the GSP boot", gpu->identity.chip.name);
+	nvrtx_stage_mark("console done; %s kept for the GSP boot", gpu->identity.chip.name);
 	return 0;
 }
 
@@ -406,7 +407,7 @@ nvrtx_worker(
 	gpu->worker_running = 0;
 }
 
-/* Gives back the kept registers, the DMA memory, N0's claim and command bits, and the state. */
+/* Gives back the kept registers, the DMA memory, identify's claim and command bits, and the state. */
 static void
 nvrtx_give_back(
 	struct nvrtx_gpu *gpu)
@@ -417,7 +418,7 @@ nvrtx_give_back(
 	/* Unmaps the register window. */
 	drv_pci_device_unmap_bar(gpu->identity.pci, &gpu->registers);
 
-	/* Releases N0's claim and restores the command bits. */
+	/* Releases identify's claim and restores the command bits. */
 	nvrtx_n0_release(&gpu->identity);
 
 	/* Frees the state. */

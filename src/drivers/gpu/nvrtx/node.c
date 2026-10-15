@@ -6,12 +6,13 @@
  */
 
 /*
- * The GPU device of the nvrtx driver: sessions and resources (stage P8c).
+  * The GPU device of the nvrtx driver: sessions and resources (the gpu-device
+  * stage).
  *
- * By default (unless nvrtx.resident=0) with a head taken over (P8b), the
+ * By default (unless nvrtx.resident=0) with a head taken over (takeover), the
  * worker leaves the GSP up and registers the GPU with the GPU core.  The
  * device has ordinary storage (RAM the CPU reads and writes), blobs in the
- * VRAM (buffer objects of P4m's allocator, mapped in the CPU's window,
+ * VRAM (buffer objects of vram-window's allocator, mapped in the CPU's window,
  * shared between opens by share.c), transfers and CPU mappings of both, and
  * the display of present.c and cursor.c.  With nvrtx.vk=1 it is also a
  * renderer (runtime.c: the Vulkan protocol's commands).
@@ -20,7 +21,7 @@
  * path back to the firmware while it runs, so the GPU is kept until the
  * reboot or the shutdown (detach refuses).  Then the PCI shutdown hook
  * stops the device (nvrtx_node_stop: it goes offline, the lease ends, the
- * drain stops) and the GSP (P7), so the next boot finds the GPU as the
+ * drain stops) and the GSP (unload), so the next boot finds the GPU as the
  * firmware left it.
  */
 
@@ -90,9 +91,9 @@ static void node_perf_report(struct nvrtx_node *node);
 static uint64_t node_perf_average(uint64_t total, uint64_t count);
 
 /*
- * Registers the GPU as a GPU device after the takeover (stage P8c).
+ * Registers the GPU as a GPU device after the takeover (the gpu-device stage).
  *
- * Needs the CPU's window (P4m) and the head taken over (P8b).  Returns 0
+ * Needs the CPU's window (vram-window) and the head taken over (takeover).  Returns 0
  * once the device is registered: the GSP must then stay up.  On a failure
  * nothing is registered and the caller stops the GSP as usual.
  */
@@ -106,14 +107,14 @@ nvrtx_node_start(
 	int error;
 
 	/* The display's frames need the window and a head of the driver's own. */
-	nvrtx_stage_mark("P8c begin");
+	nvrtx_stage_mark("gpu-device begin");
 	if (gpu->memory_state.bar1_ready == 0) {
-		nvrtx_stage_mark("P8c fail: no bar1 window");
+		nvrtx_stage_mark("gpu-device fail: no bar1 window");
 		return ENODEV;
 	}
 
 	if (gpu->display.window_made == 0) {
-		nvrtx_stage_mark("P8c fail: no head taken over");
+		nvrtx_stage_mark("gpu-device fail: no head taken over");
 		return ENODEV;
 	}
 
@@ -162,7 +163,7 @@ nvrtx_node_start(
 	/* Takes the display's frames and shows the console surface. */
 	error = nvrtx_present_start(node);
 	if (error != 0) {
-		nvrtx_stage_mark("P8c fail: the display's frames (%d)", error);
+		nvrtx_stage_mark("gpu-device fail: the display's frames (%d)", error);
 		node_free(node);
 		return error;
 	}
@@ -177,7 +178,7 @@ nvrtx_node_start(
 	/* Registers the device; the core publishes /dev/gpuN. */
 	error = drv_gpu_register(&node->ops, node, &node->device);
 	if (error != 0) {
-		nvrtx_stage_mark("P8c fail: register (%d)", error);
+		nvrtx_stage_mark("gpu-device fail: register (%d)", error);
 		node_free(node);
 		return error;
 	}
@@ -200,12 +201,12 @@ nvrtx_node_start(
 		drain->detached = 1;
 		thread_start(drain);
 	} else {
-		nvrtx_stage_mark("P8c: no message drain (%d)", error);
+		nvrtx_stage_mark("gpu-device: no message drain (%d)", error);
 	}
 
 	/* Succeeded: the GPU is a GPU device; the GSP stays up for it. */
 	gpu->node = node;
-	nvrtx_stage_mark("P8c ok: gpu device registered, display %ux%u at %u mHz",
+	nvrtx_stage_mark("gpu-device ok: gpu device registered, display %ux%u at %u mHz",
 	    (unsigned)node->width,
 	    (unsigned)node->height,
 	    (unsigned)node->refresh_millihz);
@@ -222,7 +223,7 @@ nvrtx_node_start(
  * message drain ends, so this thread is the GSP's only reader; the lease
  * ends under the node's present lock and its lock, which bring the
  * firmware's picture back on the head and are held while the GSP is
- * stopped (P7), so no presentation or frame runs meanwhile; the display is
+ * stopped (unload), so no presentation or frame runs meanwhile; the display is
  * broken after it.  Every step is bounded and a failure is only shown.
  */
 void
@@ -241,9 +242,9 @@ nvrtx_node_stop(
 	if (error == 0) {
 		node->device = NULL;
 	} else if (error == EBUSY) {
-		nvrtx_stage_mark("P7 shutdown: the GPU device is offline; opens remain until the reset");
+		nvrtx_stage_mark("unload shutdown: the GPU device is offline; opens remain until the reset");
 	} else {
-		nvrtx_stage_mark("P7 shutdown: the GPU device was not withdrawn (%d)", error);
+		nvrtx_stage_mark("unload shutdown: the GPU device was not withdrawn (%d)", error);
 	}
 
 	/* Ends the message drain at its next turn, so the GSP's replies reach the stop. */
@@ -255,7 +256,7 @@ nvrtx_node_stop(
 
 		waited = nvrtx_now_us() - start;
 		if (waited > NODE_DRAIN_STOP_TIMEOUT_US) {
-			nvrtx_stage_mark("P7 shutdown: the message drain did not end in %u ms", (unsigned)(waited / 1000U));
+			nvrtx_stage_mark("unload shutdown: the message drain did not end in %u ms", (unsigned)(waited / 1000U));
 			break;
 		}
 
@@ -472,7 +473,7 @@ node_close(
 	mutex_unlock(&node->lock);
 
 	if (error != 0)
-		nvrtx_stage_mark("P8c: an executor session closed with %d", error);
+		nvrtx_stage_mark("gpu-device: an executor session closed with %d", error);
 
 	/* Frees the session. */
 	kern_free(session);

@@ -94,7 +94,7 @@
 
 /*
  * The executor's own programs (a textured quad placed by push constants,
- * the P9g draw's) and the session's run.
+ * the draw-test draw's) and the session's run.
  *
  * token names the run to the node, cpu and va its two views; at is where
  * the push buffer goes on, constants, headers and samplers how much of
@@ -323,9 +323,9 @@ execute_open(
 }
 
 /*
- * Compiles the executor's quad programs (P9g's textured quad: the corners
- * placed by the push constants' rectangle, the texture read at the push
- * constants' texture rectangle) into a run of their own.
+  * Compiles the executor's quad programs (draw-test's textured quad: the
+  * corners placed by the push constants' rectangle, the texture read at the
+  * push constants' texture rectangle) into a run of their own.
  */
 static int
 execute_programs(

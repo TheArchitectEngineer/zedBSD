@@ -6,12 +6,12 @@
  */
 
 /*
- * The work channel (P9w, nvrtx.work=1).
+ * The work channel (work-channel, nvrtx.work=1).
  *
- * After the golden context (P5g) and the VRAM allocator (P4m) the driver
- * makes the graphics channel the GPU device keeps for the work it is given,
- * the way the first compute launch (compute.c) makes its channel, with
- * both classes on the one channel:
+  * After the golden context (golden-context) and the VRAM allocator
+  * (vram-window) the driver makes the graphics channel the GPU device keeps
+  * for the work it is given, the way the first compute launch (compute.c)
+  * makes its channel, with both classes on the one channel:
  *
  *   1. an arena of the VRAM allocator for the space's page tables, the
  *      channel's instance block and USERD, and its own context buffers;
@@ -112,11 +112,12 @@ static uint64_t work_semaphore_timer(const struct nvrtx_gpu *gpu, size_t at);
 static uint64_t work_align(uint64_t value, uint32_t shift);
 
 /*
- * Runs P9w: the arena, the space, the channel with both classes and
+ * Runs work-channel: the arena, the space, the channel with both classes and
  * its first fence.
  *
- * Needs the golden context of P5g and the VRAM allocator of P4m.  A failure
- * is returned; the finish's stop frees whatever objects were made.
+  * Needs the golden context of golden-context and the VRAM allocator of
+  * vram-window.  A failure is returned; the finish's stop frees whatever
+  * objects were made.
  */
 int
 nvrtx_work_start(
@@ -125,7 +126,7 @@ nvrtx_work_start(
 	bool timed;
 	int error;
 
-	nvrtx_stage_mark("P9w begin");
+	nvrtx_stage_mark("work-channel begin");
 
 	/* Each run is timed on the GPU when the boot asks for the counts (nvrtx.vk.perf=1). */
 	timed = nvrtx_stage_vk_perf_wanted();
@@ -135,13 +136,13 @@ nvrtx_work_start(
 
 	/* The channel's context comes from the golden context. */
 	if (gpu->gr.buffer_count == 0U) {
-		nvrtx_stage_mark("P9w fail: no golden context");
+		nvrtx_stage_mark("work-channel fail: no golden context");
 		return EINVAL;
 	}
 
 	/* The arena comes from the VRAM allocator. */
 	if (gpu->memory_state.ready == 0) {
-		nvrtx_stage_mark("P9w fail: no VRAM allocator (P4m)");
+		nvrtx_stage_mark("work-channel fail: no VRAM allocator (vram-window)");
 		return ENODEV;
 	}
 
@@ -171,7 +172,7 @@ nvrtx_work_start(
 	if (error != 0)
 		return error;
 
-	nvrtx_stage_mark("P9w ok: work channel %u on runlist %u", (unsigned)WORK_CHID, (unsigned)gpu->engine.pick.graphics_runlist);
+	nvrtx_stage_mark("work-channel ok: work channel %u on runlist %u", (unsigned)WORK_CHID, (unsigned)gpu->engine.pick.graphics_runlist);
 
 	/* The classes on their subchannels, and the first fence. */
 	error = work_first(gpu);
@@ -186,7 +187,7 @@ nvrtx_work_start(
 }
 
 /*
- * Undoes P9w's objects before the graphics context's
+ * Undoes work-channel's objects before the graphics context's
  * stop: the channel off the scheduler, the 3D and compute objects, the
  * channel, the root, the space.  Failures are counted and shown; the
  * unload removes the rest.
@@ -264,7 +265,7 @@ nvrtx_work_stop(
 
 	/* Says how the stop went, when anything failed. */
 	if (failures != 0)
-		nvrtx_stage_mark("P6: %d work frees failed; the unload removes the rest", failures);
+		nvrtx_stage_mark("channel-stop: %d work frees failed; the unload removes the rest", failures);
 }
 
 /*
@@ -683,7 +684,7 @@ work_arena(
 	/* Takes the arena. */
 	error = nvrtx_bo_alloc(gpu, WORK_ARENA_BYTES, WORK_ARENA_ALIGN, &work->arena);
 	if (error != 0) {
-		nvrtx_stage_mark("P9w fail: no VRAM for the arena (%d)", error);
+		nvrtx_stage_mark("work-channel fail: no VRAM for the arena (%d)", error);
 		return error;
 	}
 
@@ -705,12 +706,12 @@ work_arena(
 
 	/* The channel's own buffers must fit the arena. */
 	if (at > WORK_ARENA_BYTES) {
-		nvrtx_stage_mark("P9w fail: the context buffers need %llx of VRAM", (unsigned long long)at);
+		nvrtx_stage_mark("work-channel fail: the context buffers need %llx of VRAM", (unsigned long long)at);
 		return ENOSPC;
 	}
 
 	/* Succeeded: the arena is laid out. */
-	nvrtx_stage_mark("P9w arena at %llx, own buffers %llx bytes", (unsigned long long)work->arena.vram, (unsigned long long)(at - WORK_BUFFERS_AT));
+	nvrtx_stage_mark("work-channel arena at %llx, own buffers %llx bytes", (unsigned long long)work->arena.vram, (unsigned long long)(at - WORK_BUFFERS_AT));
 	return 0;
 }
 
@@ -738,7 +739,7 @@ work_buffers(
 	if (error != 0)
 		return error;
 
-	/* The method buffer, as large as the resource manager asked for P5's. */
+	/* The method buffer, as large as the resource manager asked for copy-channel's. */
 	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &work->methods);
 	if (error != 0)
 		return error;
@@ -776,7 +777,7 @@ work_tables(
 		buffer = &gr->buffers[index];
 		size = work_align(buffer->size, 12U);
 		if (gr->virtual_address[index] < NVRTX_WORK_VA_BASE || gr->virtual_address[index] + size > NVRTX_WORK_VA_DRIVER) {
-			nvrtx_stage_mark("P9w fail: context buffer %u at %llx is outside the space", (unsigned)index, (unsigned long long)gr->virtual_address[index]);
+			nvrtx_stage_mark("work-channel fail: context buffer %u at %llx is outside the space", (unsigned)index, (unsigned long long)gr->virtual_address[index]);
 			return ERANGE;
 		}
 	}
@@ -820,7 +821,7 @@ work_tables(
 	if (error == 0)
 		error = nvrtx_vram_zero(gpu, work->arena.vram + WORK_INSTANCE_AT, 2U * NVRTX_INSTANCE_BYTES);
 	if (error != 0) {
-		nvrtx_stage_mark("P9w fail: the tables could not be written (%d)", error);
+		nvrtx_stage_mark("work-channel fail: the tables could not be written (%d)", error);
 		return error;
 	}
 
@@ -828,7 +829,7 @@ work_tables(
 	nvrtx_heap_init(&work->va, NVRTX_WORK_VA_USER, NVRTX_WORK_VA_BASE + NVRTX_WORK_VA_BYTES);
 
 	/* Succeeded: the tables are in the VRAM. */
-	nvrtx_stage_mark("P9w page tables at %llx", (unsigned long long)(work->arena.vram + WORK_TABLES_AT));
+	nvrtx_stage_mark("work-channel page tables at %llx", (unsigned long long)(work->arena.vram + WORK_TABLES_AT));
 	return 0;
 }
 
@@ -847,7 +848,7 @@ work_space(
 	work = &gpu->work;
 	root = work->arena.vram + WORK_TABLES_AT;
 
-	/* The space, owned by the driver (as P4's). */
+	/* The space, owned by the driver (as address-space's). */
 	nvrtx_space_params(params);
 	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_WORK_SPACE, NVRTX_CLASS_SPACE, params, sizeof(params));
 	if (error != 0)
@@ -869,7 +870,7 @@ work_space(
 		return error;
 
 	/* Succeeded: the space maps the range. */
-	nvrtx_stage_mark("P9w ok: vaspace");
+	nvrtx_stage_mark("work-channel ok: vaspace");
 	return 0;
 }
 
@@ -1022,13 +1023,13 @@ work_first(
 		error = nvrtx_work_wait(gpu, fence, WORK_FIRST_FENCE_US);
 	if (error != 0) {
 		work->ready = 0;
-		nvrtx_stage_mark("P9w fail: the first fence %u did not come (%d, semaphore %08x)", (unsigned)fence, error, (unsigned)work_semaphore(gpu));
+		nvrtx_stage_mark("work-channel fail: the first fence %u did not come (%d, semaphore %08x)", (unsigned)fence, error, (unsigned)work_semaphore(gpu));
 		return error;
 	}
 
 	/* Succeeded: the channel ran its first work. */
 	waited = nvrtx_now_us() - start;
-	nvrtx_stage_mark("P9w ok: fence %u after %u us", (unsigned)fence, (unsigned)waited);
+	nvrtx_stage_mark("work-channel ok: fence %u after %u us", (unsigned)fence, (unsigned)waited);
 	return 0;
 }
 

@@ -6,20 +6,20 @@
  */
 
 /*
- * The takeover of the firmware's head (stage P8b, on by default, off with
- * nvrtx.disp=0).
+  * The takeover of the firmware's head (the takeover stage, on by default, off
+  * with nvrtx.disp=0).
  *
- * After P8a found the head the firmware (GOP) lit, the driver makes the
- * display's core channel and the head's first window channel through the
- * resource manager, writes their context DMA objects and hash-table entries
- * into the display's instance memory, and sends the head the state it is
- * armed with: the same timing, the same output resource (SOR) and control,
- * so the output keeps running.  The window then shows the firmware's
- * console, kept at the VRAM's start (P0 and P4m), so the console goes on
- * where it was; the GPU device (P8c) flips away from it and back.  With
- * nvrtx.disp.test=1 the window shows a surface of the driver's own instead,
- * a flip moves it to a second one, and each step waits 5 s so the monitor
- * can be watched.
+  * After display-client found the head the firmware (GOP) lit, the driver
+  * makes the display's core channel and the head's first window channel
+  * through the resource manager, writes their context DMA objects and
+  * hash-table entries into the display's instance memory, and sends the head
+  * the state it is armed with: the same timing, the same output resource (SOR)
+  * and control, so the output keeps running.  The window then shows the
+  * firmware's console, kept at the VRAM's start (layout and vram-window), so
+  * the console goes on where it was; the GPU device (gpu-device) flips away
+  * from it and back.  With nvrtx.disp.test=1 the window shows a surface of the
+  * driver's own instead, a flip moves it to a second one, and each step waits
+  * 5 s so the monitor can be watched.
  *
  * The order and the values are nouveau's on a Turing GPU under the GSP
  * (r535/r570 display channels, the Turing core, window, window-immediate
@@ -46,7 +46,7 @@
 /* The control that registers a display channel's push buffer with the resource manager. */
 #define SCANOUT_CTL_PUSHBUFFER		0x20800a58U
 
-/* The handle of the display root the channels are made under (P8a's). */
+/* The handle of the display root the channels are made under (display-client's). */
 #define SCANOUT_HANDLE_ROOT		0xc5700000U
 
 /* A display channel's push buffer: one page of 1024 words, never wrapped. */
@@ -85,7 +85,7 @@
 #define SCANOUT_SURFACE_ALIGN		0x100000ULL
 #define SCANOUT_BAND_COUNT		8U
 
-/* The output resource a head can be driven by: the SOR's index from P8a, at most 8. */
+/* The output resource a head can be driven by: the SOR's index from display-client, at most 8. */
 #define SCANOUT_SOR_MAX			8U
 
 /* The most words one frame's methods take in a window's push buffer (the image, the flip and the update). */
@@ -190,10 +190,10 @@ static int scanout_core_send_cursor(struct nvrtx_gpu *gpu);
 static int scanout_cursor_write(struct nvrtx_gpu *gpu, uint32_t method, uint32_t value);
 
 /*
- * Runs stage P8b: makes the display's channels, inherits the output the
- * firmware lit, detects the sinks and commits the first mode on the lit
- * head, showing the console on it (with the monitor test, a surface of
- * bands and a flip).
+  * Runs the takeover stage: makes the display's channels, inherits the output
+  * the firmware lit, detects the sinks and commits the first mode on the lit
+  * head, showing the console on it (with the monitor test, a surface of bands
+  * and a flip).
  *
  * Without a head the firmware lit, or without a console the head can show,
  * nothing is committed (the scanout rule) and display.taken stays 0.  A
@@ -214,7 +214,7 @@ nvrtx_scanout_start(
 	test = nvrtx_stage_disp_test_wanted();
 
 	/* The notifiers live in 4 KiB after the instance memory, cleared. */
-	nvrtx_stage_mark("P8b begin");
+	nvrtx_stage_mark("takeover begin");
 	display->sync = display->instance + SCANOUT_SYNC_AFTER_INSTANCE;
 	error = nvrtx_vram_zero(gpu, display->sync, SCANOUT_SYNC_BYTES);
 	if (error != 0)
@@ -238,14 +238,14 @@ nvrtx_scanout_start(
 
 	/* Shows nothing anywhere the firmware did not light. */
 	if (display->gop_head_found == 0) {
-		nvrtx_stage_mark("P8b: no head lit by the firmware; nothing committed");
+		nvrtx_stage_mark("takeover: no head lit by the firmware; nothing committed");
 		return 0;
 	}
 
 	/* The head's first window is the one it shows; the hardware must have it. */
 	display->window = display->gop_head * 2U;
 	if ((display->windows_made & (1U << display->window)) == 0U) {
-		nvrtx_stage_mark("P8b fail: window %u of head %u is absent", (unsigned)display->window, (unsigned)display->gop_head);
+		nvrtx_stage_mark("takeover fail: window %u of head %u is absent", (unsigned)display->window, (unsigned)display->gop_head);
 		return ENODEV;
 	}
 
@@ -284,14 +284,14 @@ nvrtx_scanout_start(
 	own = nvrtx_stage_disp_own_wanted();
 	if (!test && !own) {
 		display->taken = 1;
-		nvrtx_stage_mark("P8b ok: head %u shows the console", (unsigned)display->gop_head);
+		nvrtx_stage_mark("takeover ok: head %u shows the console", (unsigned)display->gop_head);
 		return 0;
 	}
 
 	/* The driver's own surface is on the head, without the test's flip and waits: the takeover is done. */
 	if (!test) {
 		display->taken = 1;
-		nvrtx_stage_mark("P8b ok: head %u shows the driver's surface", (unsigned)display->gop_head);
+		nvrtx_stage_mark("takeover ok: head %u shows the driver's surface", (unsigned)display->gop_head);
 		return 0;
 	}
 
@@ -309,14 +309,14 @@ nvrtx_scanout_start(
 
 	/* Succeeded: the head shows the driver's surface. */
 	display->taken = 1;
-	nvrtx_stage_mark("P8b ok: head %u shows the driver's surfaces", (unsigned)display->gop_head);
+	nvrtx_stage_mark("takeover ok: head %u shows the driver's surfaces", (unsigned)display->gop_head);
 	return 0;
 }
 
 /*
- * Frees every channel P8b made before the display's root: the cursors, the
- * window-immediate channels, the windows, the core.  Failures are only
- * shown.
+  * Frees every channel takeover made before the display's root: the cursors,
+  * the window-immediate channels, the windows, the core.  Failures are only
+  * shown.
  */
 void
 nvrtx_scanout_stop(
@@ -376,7 +376,7 @@ nvrtx_scanout_stop(
 
 	/* Says how the stop went, when anything failed. */
 	if (failures != 0)
-		nvrtx_stage_mark("P8b: %d channel frees failed; the unload removes the rest", failures);
+		nvrtx_stage_mark("takeover: %d channel frees failed; the unload removes the rest", failures);
 }
 
 /*
@@ -400,7 +400,7 @@ nvrtx_scanout_release(
 
 /*
  * Shows a surface on the taken-over head's window and waits until the flip
- * has begun (the GPU device's frames, stage P8c): the flip is sent
+ * has begun (the GPU device's frames, the gpu-device stage): the flip is sent
  * (nvrtx_scanout_frame_send()) and its notifier waited for
  * (nvrtx_scanout_frame_wait()).  Returns as the two do.
  */
@@ -519,7 +519,7 @@ nvrtx_scanout_frame_send(
 
 		/* The head's view is the surface's size from this frame on. */
 		display->view_in = view_in;
-		nvrtx_stage_mark("P8c view %ux%u shown at %ux%u",
+		nvrtx_stage_mark("gpu-device view %ux%u shown at %ux%u",
 		    (unsigned)surface->width,
 		    (unsigned)surface->height,
 		    (unsigned)(display->mode.active & 0xffffU),
@@ -559,9 +559,9 @@ nvrtx_scanout_frame_wait(
 }
 
 /*
- * Reports whether the taken-over head has its cursor channel (stage P8c):
- * P8b makes every head's cursor channel with the others, as nouveau does.
- * Without it the display has no cursor plane.
+  * Reports whether the taken-over head has its cursor channel (the gpu-device
+  * stage): takeover makes every head's cursor channel with the others, as
+  * nouveau does. Without it the display has no cursor plane.
  */
 int
 nvrtx_scanout_cursor_start(
@@ -573,12 +573,12 @@ nvrtx_scanout_cursor_start(
 
 	/* The head's cursor channel was made with the others. */
 	if (display->cursor_made == 0) {
-		nvrtx_stage_mark("P8c: head %u has no cursor channel", (unsigned)display->gop_head);
+		nvrtx_stage_mark("gpu-device: head %u has no cursor channel", (unsigned)display->gop_head);
 		return ENODEV;
 	}
 
 	/* Succeeded: the head's cursor takes a position and an update. */
-	nvrtx_stage_mark("P8c channel %04x.%u made", (unsigned)gpu->identity.chip.profile->class_cursor, (unsigned)display->gop_head);
+	nvrtx_stage_mark("gpu-device channel %04x.%u made", (unsigned)gpu->identity.chip.profile->class_cursor, (unsigned)display->gop_head);
 	return 0;
 }
 
@@ -760,9 +760,9 @@ scanout_read_armed(
 
 	display = &gpu->display;
 
-	/* An output P8a could not name cannot be kept. */
+	/* An output display-client could not name cannot be kept. */
 	if (display->gop_sor >= SCANOUT_SOR_MAX) {
-		nvrtx_stage_mark("P8b fail: head %u has no output resource (%x)", (unsigned)display->gop_head, (unsigned)display->gop_sor);
+		nvrtx_stage_mark("takeover fail: head %u has no output resource (%x)", (unsigned)display->gop_head, (unsigned)display->gop_sor);
 		return ENODEV;
 	}
 
@@ -775,7 +775,7 @@ scanout_read_armed(
 	display->sor_control = nvrtx_rd32(gpu, SCANOUT_REG_CORE_ARMED + NVRTX_CORE_SOR_SET_CONTROL + display->gop_sor * NVRTX_CORE_SOR_STRIDE);
 
 	/* Shows the viewport, the raster and the control that will be sent back. */
-	nvrtx_stage_mark("P8b head %u armed: view %08x raster %08x clock %08x, SOR %u %08x",
+	nvrtx_stage_mark("takeover head %u armed: view %08x raster %08x clock %08x, SOR %u %08x",
 	    (unsigned)display->gop_head,
 	    (unsigned)display->armed[NVRTX_DISP_ARMED_VIEWPORT_IN],
 	    (unsigned)display->armed[NVRTX_DISP_ARMED_RASTER_SIZE],
@@ -789,12 +789,12 @@ scanout_read_armed(
 	 * turn the firmware's picture off.
 	 */
 	if (display->armed[NVRTX_DISP_ARMED_RASTER_SIZE] == 0U) {
-		nvrtx_stage_mark("P8b fail: head %u has no armed raster; the picture is left alone", (unsigned)display->gop_head);
+		nvrtx_stage_mark("takeover fail: head %u has no armed raster; the picture is left alone", (unsigned)display->gop_head);
 		return ENODEV;
 	}
 
 	if ((display->sor_control & SCANOUT_SOR_OWNER_MASK & (1U << display->gop_head)) == 0U) {
-		nvrtx_stage_mark("P8b fail: SOR %u is not armed for head %u; the picture is left alone", (unsigned)display->gop_sor, (unsigned)display->gop_head);
+		nvrtx_stage_mark("takeover fail: SOR %u is not armed for head %u; the picture is left alone", (unsigned)display->gop_sor, (unsigned)display->gop_head);
 		return ENODEV;
 	}
 
@@ -802,13 +802,13 @@ scanout_read_armed(
 	if (display->gop_protocol != SCANOUT_PROTOCOL_TMDS_A &&
 	    display->gop_protocol != SCANOUT_PROTOCOL_TMDS_B &&
 	    display->gop_protocol != SCANOUT_PROTOCOL_TMDS_DUAL) {
-		nvrtx_stage_mark("P8b: protocol %u is not TMDS; the picture is left alone", (unsigned)display->gop_protocol);
+		nvrtx_stage_mark("takeover: protocol %u is not TMDS; the picture is left alone", (unsigned)display->gop_protocol);
 		return ENODEV;
 	}
 
 	/* The mode the head is set to: the armed raster and clock, the visible size from the blank. */
 	nvrtx_disp_mode_from_armed(display->armed, &display->mode);
-	nvrtx_stage_mark("P8b head %u mode: %ux%u, view out %08x",
+	nvrtx_stage_mark("takeover head %u mode: %ux%u, view out %08x",
 	    (unsigned)display->gop_head,
 	    (unsigned)(display->mode.active & 0xffffU),
 	    (unsigned)(display->mode.active >> 16),
@@ -844,7 +844,7 @@ scanout_surfaces(
 	width = display->mode.active & 0xffffU;
 	height = display->mode.active >> 16;
 	if (width == 0U || height == 0U || width > 0x4000U || height > 0x4000U) {
-		nvrtx_stage_mark("P8b fail: the armed visible size is %ux%u", (unsigned)width, (unsigned)height);
+		nvrtx_stage_mark("takeover fail: the armed visible size is %ux%u", (unsigned)width, (unsigned)height);
 		return EINVAL;
 	}
 
@@ -860,9 +860,10 @@ scanout_surfaces(
 	}
 
 	/*
-	 * Takes two surfaces from the VRAM allocator (P4m), mapped in the CPU's
-	 * window when there is one; without the allocator, under the graphics
-	 * and compute arenas' reserve in the last usable region, as before.
+	  * Takes two surfaces from the VRAM allocator (vram-window), mapped in
+	  * the CPU's window when there is one; without the allocator, under
+	  * the graphics and compute arenas' reserve in the last usable region,
+	  * as before.
 	 */
 	span = (uint64_t)((width * 4U + SCANOUT_PITCH_ALIGN - 1U) & ~(SCANOUT_PITCH_ALIGN - 1U)) * height;
 	span = (span + SCANOUT_SURFACE_ALIGN - 1U) & ~(SCANOUT_SURFACE_ALIGN - 1U);
@@ -874,7 +875,7 @@ scanout_surfaces(
 		display->surface_objects[1].vram = candidate + span;
 	}
 	if (error != 0) {
-		nvrtx_stage_mark("P8b fail: no VRAM for the surfaces (%d)", error);
+		nvrtx_stage_mark("takeover fail: no VRAM for the surfaces (%d)", error);
 		return error;
 	}
 
@@ -899,7 +900,7 @@ scanout_surfaces(
 		return error;
 
 	/* Succeeded: the surfaces are ready to be shown. */
-	nvrtx_stage_mark("P8b surfaces %ux%u pitch %u at %llx and %llx",
+	nvrtx_stage_mark("takeover surfaces %ux%u pitch %u at %llx and %llx",
 	    (unsigned)width,
 	    (unsigned)height,
 	    (unsigned)display->surfaces[0].pitch,
@@ -911,7 +912,7 @@ scanout_surfaces(
 /*
  * Describes the firmware's console as both surfaces (the second is never
  * flipped to without the test): its VRAM at the start, its size, pitch and
- * format.  The console is shown only when it was kept (P0, P4m), is no
+ * format.  The console is shown only when it was kept (layout, vram-window), is no
  * larger than the mode's visible size and has a pitch the window takes (a
  * multiple of 64 bytes); otherwise ENOTSUP leaves the head to the firmware.
  * A console smaller than the mode is enlarged by the head's scaler, as the
@@ -932,19 +933,19 @@ scanout_console_surface(
 
 	/* Leaves the head alone without a console the window reaches. */
 	if (console->mapped == 0) {
-		nvrtx_stage_mark("P8b: no console kept; the head is left to the firmware");
+		nvrtx_stage_mark("takeover: no console kept; the head is left to the firmware");
 		return ENOTSUP;
 	}
 
 	/* Leaves the head alone without a console size the window can show. */
 	if (console->width == 0U || console->height == 0U) {
-		nvrtx_stage_mark("P8b: the console has no size; the head is left to the firmware");
+		nvrtx_stage_mark("takeover: the console has no size; the head is left to the firmware");
 		return ENOTSUP;
 	}
 
 	/* Leaves the head alone when the console is larger than the mode: the head's scaler only enlarges. */
 	if (console->width > width || console->height > height) {
-		nvrtx_stage_mark("P8b: the console is %ux%u, larger than the mode %ux%u; the head is left to the firmware",
+		nvrtx_stage_mark("takeover: the console is %ux%u, larger than the mode %ux%u; the head is left to the firmware",
 		    (unsigned)console->width,
 		    (unsigned)console->height,
 		    (unsigned)width,
@@ -954,7 +955,7 @@ scanout_console_surface(
 
 	/* Leaves the head alone when the window cannot take the console's rows. */
 	if ((console->pitch & (NVRTX_DISP_PITCH_UNIT - 1U)) != 0U) {
-		nvrtx_stage_mark("P8b: the console's pitch %u is not a multiple of %u; the head is left to the firmware",
+		nvrtx_stage_mark("takeover: the console's pitch %u is not a multiple of %u; the head is left to the firmware",
 		    (unsigned)console->pitch,
 		    (unsigned)NVRTX_DISP_PITCH_UNIT);
 		return ENOTSUP;
@@ -972,7 +973,7 @@ scanout_console_surface(
 	}
 
 	/* Succeeded: the console is the surface to show, enlarged to the mode when it is smaller. */
-	nvrtx_stage_mark("P8b console %ux%u pitch %u at the VRAM's start, shown at %ux%u",
+	nvrtx_stage_mark("takeover console %ux%u pitch %u at the VRAM's start, shown at %ux%u",
 	    (unsigned)console->width,
 	    (unsigned)console->height,
 	    (unsigned)console->pitch,
@@ -998,7 +999,7 @@ scanout_surface_objects(
 		if (error != 0)
 			return error;
 
-		/* The CPU's view is for later frames; P8b paints through PRAMIN, so a missing window is no failure. */
+		/* The CPU's view is for later frames; takeover paints through PRAMIN, so a missing window is no failure. */
 		if (gpu->memory_state.bar1_ready != 0)
 			(void)nvrtx_bo_map(gpu, object);
 	}
@@ -1189,7 +1190,7 @@ scanout_channels(
 	}
 
 	/* Succeeded: every channel exists. */
-	nvrtx_stage_mark("P8b channels: core, windows %x, immediate %x, cursors %x",
+	nvrtx_stage_mark("takeover channels: core, windows %x, immediate %x, cursors %x",
 	    (unsigned)display->windows_made,
 	    (unsigned)display->wimms_made,
 	    (unsigned)display->cursors_made);
@@ -1257,7 +1258,7 @@ scanout_mode(
 	}
 
 	nvrtx_disp_first_mode(&display->timing, &display->mode);
-	nvrtx_stage_mark("P8b head %u mode (%s): %ux%u, total %ux%u, clock %u kHz, output %08x",
+	nvrtx_stage_mark("takeover head %u mode (%s): %ux%u, total %ux%u, clock %u kHz, output %08x",
 	    (unsigned)display->gop_head,
 	    source,
 	    (unsigned)display->timing.hdisplay,
@@ -1411,13 +1412,13 @@ scanout_commit(
 
 	/* Reports a commit a notifier did not confirm. */
 	if (failed != 0) {
-		nvrtx_stage_mark("P8b fail: the first commit was not confirmed");
+		nvrtx_stage_mark("takeover fail: the first commit was not confirmed");
 		return EIO;
 	}
 
 	/* Succeeded: the head shows the first surface, its view the surface's size. */
 	display->view_in = first.view_in;
-	nvrtx_stage_mark("P8b ok: mode set (%ux%u on SOR %u), surface A %ux%u shown",
+	nvrtx_stage_mark("takeover ok: mode set (%ux%u on SOR %u), surface A %ux%u shown",
 	    (unsigned)(display->mode.active & 0xffffU),
 	    (unsigned)(display->mode.active >> 16),
 	    (unsigned)display->gop_sor,
@@ -1574,7 +1575,7 @@ scanout_kick(
 {
 	/* A buffer that overflowed would send a cut sequence. */
 	if (push->overflow != 0) {
-		nvrtx_stage_mark("P8b fail: a push buffer overflowed (%u words)", (unsigned)push->count);
+		nvrtx_stage_mark("takeover fail: a push buffer overflowed (%u words)", (unsigned)push->count);
 		return E2BIG;
 	}
 
@@ -1635,7 +1636,7 @@ scanout_notifier_wait(
 		waited = nvrtx_now_us() - start;
 		if ((word >> NVRTX_DISP_NOTIFIER_STATUS_SHIFT) >= least) {
 			if (what != NULL)
-				nvrtx_stage_mark("P8b %s notified after %u us", what, (unsigned)waited);
+				nvrtx_stage_mark("takeover %s notified after %u us", what, (unsigned)waited);
 			return 0;
 		}
 
@@ -1650,7 +1651,7 @@ scanout_notifier_wait(
 	put = nvrtx_rd32(gpu, user + SCANOUT_USER_PUT_AT);
 	if (what == NULL)
 		what = "frame";
-	nvrtx_stage_mark("P8b fail: %s notifier %08x after 2 s, get %x put %x",
+	nvrtx_stage_mark("takeover fail: %s notifier %08x after 2 s, get %x put %x",
 	    what,
 	    (unsigned)word,
 	    (unsigned)get,
@@ -1668,12 +1669,12 @@ scanout_step(
 	/* Only the mark without the test. */
 	test = nvrtx_stage_disp_test_wanted();
 	if (!test) {
-		nvrtx_stage_mark("P8b step %s", what);
+		nvrtx_stage_mark("takeover step %s", what);
 		return;
 	}
 
 	/* The mark, then the wait. */
-	nvrtx_stage_mark("P8b step %s (5 s)", what);
+	nvrtx_stage_mark("takeover step %s (5 s)", what);
 	scanout_hold(SCANOUT_STEP_US);
 }
 
@@ -1683,19 +1684,19 @@ scanout_diagnose(
 	struct nvrtx_gpu *gpu)
 {
 	/* The core channel's exception: its status (method in bits 11:0, reason in 14:12), data and code. */
-	nvrtx_stage_mark("P8b core exception %08x data %08x code %08x",
+	nvrtx_stage_mark("takeover core exception %08x data %08x code %08x",
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION_DATA),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION_CODE));
 
 	/* The other exceptions, the supervisor's pending steps and the core's state. */
-	nvrtx_stage_mark("P8b other %08x supervisor %08x core state %08x",
+	nvrtx_stage_mark("takeover other %08x supervisor %08x core state %08x",
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_EXCEPTION_OTHER),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_SUPERVISOR),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_STATE));
 
 	/* The display's error detail, the supervisor's mode switch, and window 0's exception. */
-	nvrtx_stage_mark("P8b error %08x supervisor main %08x window exception %08x",
+	nvrtx_stage_mark("takeover error %08x supervisor main %08x window exception %08x",
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_ERROR_DISP),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_SUPERVISOR_MAIN),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WINDOW_EXCEPTION));
@@ -1738,7 +1739,7 @@ scanout_flip(
 		return error;
 
 	/* Succeeded: the second surface is on the head. */
-	nvrtx_stage_mark("P8b ok: flip, surface B shown");
+	nvrtx_stage_mark("takeover ok: flip, surface B shown");
 	return 0;
 }
 
@@ -1785,7 +1786,7 @@ scanout_drained(
 		/* The channel did not fetch its words in time: shows where it stopped. */
 		waited = nvrtx_now_us() - start;
 		if (waited > SCANOUT_DRAIN_US) {
-			nvrtx_stage_mark("P8c fail: channel at %x stopped, get %x put %x", (unsigned)user, (unsigned)get, (unsigned)put);
+			nvrtx_stage_mark("gpu-device fail: channel at %x stopped, get %x put %x", (unsigned)user, (unsigned)get, (unsigned)put);
 			return ETIMEDOUT;
 		}
 
@@ -1897,7 +1898,7 @@ scanout_cursor_write(
 		/* The channel did not make room in time. */
 		waited = nvrtx_now_us() - start;
 		if (waited > SCANOUT_CURSOR_SPACE_US) {
-			nvrtx_stage_mark("P8c fail: cursor channel has %u free entries", (unsigned)free_entries);
+			nvrtx_stage_mark("gpu-device fail: cursor channel has %u free entries", (unsigned)free_entries);
 			return ETIMEDOUT;
 		}
 
@@ -1958,14 +1959,14 @@ scanout_diagnose_window(
 	window = gpu->display.window;
 
 	/* The window's exception (channel 1 + window), its status, its immediate channel's status, and its get and put. */
-	nvrtx_stage_mark("P8b window %u exception %08x data %08x code %08x status %08x immediate %08x",
+	nvrtx_stage_mark("takeover window %u exception %08x data %08x code %08x status %08x immediate %08x",
 	    (unsigned)window,
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION + (1U + window) * SCANOUT_EXCEPTION_STRIDE),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION_DATA + (1U + window) * SCANOUT_EXCEPTION_STRIDE),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_EXCEPTION_CODE + (1U + window) * SCANOUT_EXCEPTION_STRIDE),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WINDOW_STATUS + window * 4U),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WIMM_STATUS + window * 4U));
-	nvrtx_stage_mark("P8b other %08x supervisor %08x core state %08x error %08x",
+	nvrtx_stage_mark("takeover other %08x supervisor %08x core state %08x error %08x",
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_EXCEPTION_OTHER),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_SUPERVISOR),
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_CORE_STATE),

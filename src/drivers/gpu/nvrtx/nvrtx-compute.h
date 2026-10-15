@@ -6,7 +6,7 @@
  */
 
 /*
- * The first compute launch of nvrtx (stage P9c).
+ * The first compute launch of nvrtx (the compute-test stage).
  *
  * compute-launch.c holds the parts that touch no hardware, so the host
  * test runs them as the kernel does: the compute queue meta data (QMD

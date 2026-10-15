@@ -81,9 +81,9 @@ nvrtx_perf_start(
 	/* The state the resource manager chose. */
 	error = perf_state(gpu, &state);
 	if (error != 0) {
-		nvrtx_stage_mark("P9p: no performance state (%d)", error);
+		nvrtx_stage_mark("performance: no performance state (%d)", error);
 	} else {
-		nvrtx_stage_mark("P9p: performance state P%u", (unsigned)state);
+		nvrtx_stage_mark("performance: performance state P%u", (unsigned)state);
 	}
 
 	/* Leaves the choice to the resource manager unless the boot asks for the boost. */
@@ -94,19 +94,19 @@ nvrtx_perf_start(
 	/* Asks for the highest state until power-off. */
 	error = perf_boost(gpu);
 	if (error != 0) {
-		nvrtx_stage_mark("P9p: boost refused (%d)", error);
+		nvrtx_stage_mark("performance: boost refused (%d)", error);
 		return;
 	}
 
 	/* The state after the boost. */
 	error = perf_state(gpu, &state);
 	if (error != 0) {
-		nvrtx_stage_mark("P9p: boosted, no performance state (%d)", error);
+		nvrtx_stage_mark("performance: boosted, no performance state (%d)", error);
 		return;
 	}
 
 	/* Succeeded: the log says which state the boost brought. */
-	nvrtx_stage_mark("P9p: boosted to performance state P%u", (unsigned)state);
+	nvrtx_stage_mark("performance: boosted to performance state P%u", (unsigned)state);
 }
 
 /* Asks the resource manager for the current performance state's number. */

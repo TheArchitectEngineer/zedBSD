@@ -6,7 +6,8 @@
  */
 
 /*
- * The sharing and scanout operations of the nvrtx GPU device (stage P8c).
+  * The sharing and scanout operations of the nvrtx GPU device (the gpu-device
+  * stage).
  *
  * A blob's VRAM can be shared between the opens of the device: an export
  * takes one reference to the blob's backing for the GPU core's shared

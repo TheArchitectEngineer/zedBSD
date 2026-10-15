@@ -32,12 +32,12 @@ struct nvrtx_node;
 /* The firmware directory the GSP files are read from; a chip's files are named by its profile below it. */
 #define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/"
 
-/* The registers P1a reads: GFW's devinit is done when bit 0 of the first is set and the second's low byte is 0xFF. */
+/* The registers devinit reads: GFW's devinit is done when bit 0 of the first is set and the second's low byte is 0xFF. */
 #define NVRTX_REG_DEVINIT_LEVEL		0x118128U
 #define NVRTX_REG_DEVINIT_PROGRESS	0x118234U
 #define NVRTX_DEVINIT_COMPLETED		0xffU
 
-/* The register P0 reads for the display's VGA workspace (the VRAM size's register is the profile's). */
+/* The register layout reads for the display's VGA workspace (the VRAM size's register is the profile's). */
 #define NVRTX_REG_VGA_WORKSPACE		0x625f04U
 
 /* The largest VBIOS the driver reads. */
@@ -82,7 +82,7 @@ struct nvrtx_node;
 #define NVRTX_HANDLE_SCRUBBER_THREED	0xdada0046U
 
 /*
- * The first compute launch's objects (P9c): its address space
+ * The first compute launch's objects (compute-test): its address space
  * (owned by the driver), its graphics channel (chid 3) and the compute
  * object on it, in the same families.
  */
@@ -90,11 +90,11 @@ struct nvrtx_node;
 #define NVRTX_HANDLE_COMPUTE_CHANNEL	0xf1f00003U
 #define NVRTX_HANDLE_COMPUTE		0xc5c00003U
 
-/* The first draw's 3D object (P9g), on the compute launch's channel, in the same family. */
+/* The first draw's 3D object (draw-test), on the compute launch's channel, in the same family. */
 #define NVRTX_HANDLE_DRAW		0x97000003U
 
 /*
- * The work channel's objects (P9w): its address space
+ * The work channel's objects (work-channel): its address space
  * (owned by the driver), its graphics channel (chid 4) and the 3D and
  * compute objects on it, in the same families.
  */
@@ -117,14 +117,15 @@ struct nvrtx_node;
 #define NVRTX_COMPUTE_SEMAPHORE_VA	0x28005000ULL
 
 /*
- * The VRAM the graphics context's arena reserves from the top of the last
- * usable region (P5g), and the compute arena's (P9c, below the graphics
- * arena).  The display's surfaces (P8b) are taken below both.
+  * The VRAM the graphics context's arena reserves from the top of the last
+  * usable region (golden-context), and the compute arena's (compute-test,
+  * below the graphics arena).  The display's surfaces (takeover) are taken
+  * below both.
  */
 #define NVRTX_GR_ARENA_RESERVE		0x8800000ULL
 #define NVRTX_COMPUTE_ARENA_RESERVE	0xa800000ULL
 
-/* The hash-table entries the display's channels add (P8b): two objects for each of two channels. */
+/* The hash-table entries the display's channels add (takeover): two objects for each of two channels. */
 #define NVRTX_DISP_RAMHT_USED_MAX	24U
 
 /* How long a call to the resource manager waits for its reply. */
@@ -173,9 +174,9 @@ struct nvrtx_blob {
 };
 
 /*
- * The memory the GSP boot prepares in P0 and keeps while the GSP may read it.
+ * The memory the GSP boot prepares in layout and keeps while the GSP may read it.
  *
- * Every buffer stays allocated until the GSP is stopped (P7) or, when the
+ * Every buffer stays allocated until the GSP is stopped (unload) or, when the
  * boot never started the GSP, until the worker gives the preparation back.
  */
 struct nvrtx_boot_memory {
@@ -212,7 +213,7 @@ struct nvrtx_boot_memory {
 };
 
 /*
- * The first address space and channel (stages P4 to P6).
+ * The first address space and channel (stages address-space to channel-stop).
  *
  * The VRAM block holds the page tables, the instance block and USERD; the
  * system-memory buffers are the ring, the push buffer, the semaphore page and
@@ -235,7 +236,7 @@ struct nvrtx_engine_state {
 };
 
 /*
- * The graphics context (stage P5g, nvrtx.gr=1).
+ * The graphics context (the golden-context stage, nvrtx.gr=1).
  *
  * The arena is a run of VRAM below the first block that holds two sets of
  * page tables (the golden context's and the scrubber's), the two channels'
@@ -263,7 +264,7 @@ struct nvrtx_gr_state {
 };
 
 /*
- * The first compute launch (stage P9c, nvrtx.compute=1).
+ * The first compute launch (the compute-test stage, nvrtx.compute=1).
  *
  * The arena is a run of VRAM below the graphics arena that holds the
  * space's page tables, the channel's instance block and USERD, and the
@@ -306,7 +307,7 @@ struct nvrtx_bo {
 };
 
 /*
- * The work channel (P9w, nvrtx.work=1): the graphics channel the GPU
+ * The work channel (work-channel, nvrtx.work=1): the graphics channel the GPU
  * device keeps for the work it is given (nvrtx-work.h has its layout).
  *
  * The arena is a buffer object of the VRAM allocator holding the space's
@@ -350,7 +351,7 @@ struct nvrtx_work_state {
 };
 
 /*
- * The first draw (stage P9g, nvrtx.draw=1), on the compute launch's
+ * The first draw (the draw-test stage, nvrtx.draw=1), on the compute launch's
  * channel.
  *
  * The system-memory buffers are the push buffer, the four programs (a
@@ -379,10 +380,10 @@ struct nvrtx_draw_state {
 };
 
 /*
- * The VRAM the driver hands out and the CPU's window onto it (stage P4m).
+ * The VRAM the driver hands out and the CPU's window onto it (the vram-window stage).
  *
  * The VRAM allocator covers the last usable region below the fixed arenas
- * of P4 to P9c; the BAR1 allocator covers the window the driver's page
+ * of address-space to compute-test; the BAR1 allocator covers the window the driver's page
  * tables map.  The BAR1 root (top level) is the resource
  * manager's, from the static information; the driver writes its own lower
  * levels and the root's first entry.  lock serializes both allocators and
@@ -401,7 +402,7 @@ struct nvrtx_memory_state {
 	struct nvrtx_heap bar1;
 	uint64_t bar1_root;
 	uint64_t bar1_root_entry;
-	/* The root's first entry as P4m writes it (at the driver's directories), checked when the window misbehaves. */
+	/* The root's first entry as vram-window writes it (at the driver's directories), checked when the window misbehaves. */
 	uint64_t bar1_root_ours;
 	uint64_t bar1_tables;
 	uint64_t bar1_window;
@@ -414,21 +415,21 @@ struct nvrtx_memory_state {
 };
 
 /*
- * The display under the GSP (stages P8a and P8b).
+ * The display under the GSP (stages display-client and takeover).
  *
  * The instance memory is 64 KiB of VRAM the resource manager keeps the
  * display's objects in.  The masks say which heads, windows and outputs the
  * hardware has and which heads the firmware (GOP) lit; the first lit head,
- * its output (SOR) and protocol are what P8b takes over.  The flags say
+ * its output (SOR) and protocol are what takeover takes over.  The flags say
  * which resource-manager objects exist, so the stop frees only those.
  *
- * P8b adds the core channel and the head's first window channel (their
+ * takeover adds the core channel and the head's first window channel (their
  * push buffers in system memory, kept until the GSP has stopped), the
  * notifiers' 4 KiB of VRAM after the instance memory, the hash-table slots
  * and context DMA objects it wrote into the instance memory, the head's
  * armed state it copied, and the two test surfaces.
  *
- * P8c adds the head's cursor channel (a PIO channel, made before the GPU
+ * gpu-device adds the head's cursor channel (a PIO channel, made before the GPU
  * device is registered) and core_pending: set while a core update the
  * driver sent without waiting (a cursor's) may not have finished, cleared
  * once its notifier says it has.  Both are the GPU device's, under its lock.
@@ -448,7 +449,7 @@ struct nvrtx_display_state {
 	int common_made;
 	int root_made;
 
-	/* P8a: the display's own client and objects, and each output's resource, type and protocol by id bit. */
+	/* display-client: the display's own client and objects, and each output's resource, type and protocol by id bit. */
 	int client_made;
 	int device_made;
 	int subdevice_made;
@@ -458,7 +459,7 @@ struct nvrtx_display_state {
 	uint32_t output_type[32];
 	uint32_t output_protocol[32];
 
-	/* P8b: the outputs connected, what the lit output's EDID says, and the LUTs' VRAM. */
+	/* takeover: the outputs connected, what the lit output's EDID says, and the LUTs' VRAM. */
 	uint32_t connected_mask;
 	struct nvrtx_disp_sink sink;
 	struct nvrtx_disp_timing timing;
@@ -468,7 +469,7 @@ struct nvrtx_display_state {
 	/* The window's notifier the next flip uses (its slot's two halves in turn). */
 	uint32_t window_ntfy;
 
-	/* P8b: the channels (the core, every window, window-immediate and cursor), their push buffers and what the takeover wrote. */
+	/* takeover: the channels (the core, every window, window-immediate and cursor), their push buffers and what the takeover wrote. */
 	struct nvrtx_buffer core_buffer;
 	struct nvrtx_buffer window_buffers[NVRTX_DISP_WINDOWS];
 	struct nvrtx_buffer wimm_buffers[NVRTX_DISP_WINDOWS];
@@ -500,7 +501,7 @@ struct nvrtx_display_state {
 	int window_made;
 	int cursor_made;
 	int core_pending;
-	/* Set once P8b shows its surface on the head: the GPU device (P8c) may take the display. */
+	/* Set once takeover shows its surface on the head: the GPU device (gpu-device) may take the display. */
 	int taken;
 };
 
@@ -510,12 +511,12 @@ struct nvrtx_display_state {
  * which the window reaches in its physical mode until the resource manager
  * makes it virtual.  When the console is kept, the resource manager is told
  * its size (it keeps that much VRAM from offset 0, as for the vendor's
- * driver), P4m maps the window's first pages back onto it, P8b shows it on
+ * driver), vram-window maps the window's first pages back onto it, takeover shows it on
  * the taken-over head, and a GSP that stops leaves the window in physical
  * mode again.
  *
  * kept says the GSP boot may go on with the console; mapped says the window
- * reaches it again (P4m).  size is the VRAM it takes in whole 64 KiB, pitch
+ * reaches it again (vram-window).  size is the VRAM it takes in whole 64 KiB, pitch
  * its row in bytes; bar1_block is the window's mode register as the
  * firmware left it.
  */
@@ -530,7 +531,7 @@ struct nvrtx_console {
 };
 
 /*
- * One GPU the driver keeps after N1, when the boot asked for the GSP path.
+ * One GPU the driver keeps after console, when the boot asked for the GSP path.
  *
  * Created by the attach and owned by the PCI binding; the worker thread runs
  * the GSP boot and is the only writer of the state while it runs.  The
@@ -542,7 +543,7 @@ struct nvrtx_gpu {
 	int registers_claimed;
 	struct drv_dma_device *dma;
 
-	/* The firmware files read in P0. */
+	/* The firmware files read in layout. */
 	struct nvrtx_blob booter_load;
 	struct nvrtx_blob booter_unload;
 	struct nvrtx_blob bootloader_file;
@@ -552,7 +553,7 @@ struct nvrtx_gpu {
 	struct nvrtx_bootloader bootloader_desc;
 	struct nvrtx_falcon_bl falcon_bl;
 
-	/* The VBIOS read in P0 and its FWSEC program. */
+	/* The VBIOS read in layout and its FWSEC program. */
 	uint8_t *vbios_data;
 	size_t vbios_size;
 	struct nvrtx_vbios vbios;
@@ -574,7 +575,7 @@ struct nvrtx_gpu {
 	 * Set once a call to the resource manager got no reply in time: the
 	 * firmware is taken as not answering, and every later call fails at
 	 * once instead of waiting its whole time, so a teardown of many
-	 * objects (the reboot's P7) stays short.
+	 * objects (the reboot's unload) stays short.
 	 */
 	int rpc_unanswered;
 
@@ -591,13 +592,13 @@ struct nvrtx_gpu {
 	struct nvrtx_compute_state compute;
 	struct nvrtx_draw_state draw;
 
-	/* The work channel the GPU device keeps (P9w). */
+	/* The work channel the GPU device keeps (work-channel). */
 	struct nvrtx_work_state work;
 
 	/* The VRAM allocator and the BAR1 window. */
 	struct nvrtx_memory_state memory_state;
 
-	/* The firmware's console kept through the boot (written by the worker before P0, read after). */
+	/* The firmware's console kept through the boot (written by the worker before layout, read after). */
 	struct nvrtx_console console;
 
 	/*
@@ -607,13 +608,13 @@ struct nvrtx_gpu {
 	 */
 	struct mutex window_lock;
 
-	/* The static information P3 read, and the resource manager's own client and subdevice. */
+	/* The static information static-info read, and the resource manager's own client and subdevice. */
 	uint8_t *static_info;
 	uint32_t internal_client;
 	uint32_t internal_subdevice;
 
 	/*
-	 * The registered GPU device (stage P8c), and whether the GSP stays up
+	 * The registered GPU device (the gpu-device stage), and whether the GSP stays up
 	 * for it: then detach refuses, and the GPU is kept until power-off.
 	 */
 	struct nvrtx_node *node;

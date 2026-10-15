@@ -6,17 +6,17 @@
  */
 
 /*
- * The display of the nvrtx GPU device (stage P8c).
+ * The display of the nvrtx GPU device (the gpu-device stage).
  *
- * One display: the head the firmware lit and the driver took over (P8b),
- * in the mode P8b set on it (the only mode, as the design's first step
+ * One display: the head the firmware lit and the driver took over (takeover),
+ * in the mode takeover set on it (the only mode, as the design's first step
  * has it); the console, when smaller, is enlarged to it by the head.  One
  * lease at a time, FIFO presentation of storage frames
  * (copied by the CPU into one of the node's two surfaces, then flipped to)
  * and of blobs (flipped to as they are).  A presentation returns once the
  * window's flip has begun, so a wait answers at once.  Releasing the lease,
  * closing its session or destroying the blob on the screen brings the
- * console surface (P8b's first) back.
+ * console surface (takeover's first) back.
  *
  * The node's present lock puts the presentations, the lease's end and a
  * blob's going off the screen in one order; a presentation takes the
@@ -451,7 +451,7 @@ present_claim(
 	mutex_unlock(&node->lock);
 
 	/* Succeeded: the session holds the display. */
-	nvrtx_stage_mark("P8c lease %llu claimed", (unsigned long long)request->lease);
+	nvrtx_stage_mark("gpu-device lease %llu claimed", (unsigned long long)request->lease);
 	return 0;
 }
 
@@ -752,7 +752,7 @@ present_wait(
 	return 0;
 }
 
-/* Reports the head's refresh in millihertz from the pixel clock and raster of the mode P8b set. */
+/* Reports the head's refresh in millihertz from the pixel clock and raster of the mode takeover set. */
 static uint32_t
 present_refresh(
 	const struct nvrtx_display_state *display)
@@ -898,7 +898,7 @@ present_broken(
 {
 	/* Presentations, the cursor and the lease's end leave the head alone from now on. */
 	node->broken = 1;
-	nvrtx_stage_mark("P8c fail: a flip did not begin (%d); the display stops", error);
+	nvrtx_stage_mark("gpu-device fail: a flip did not begin (%d); the display stops", error);
 }
 
 /*
@@ -930,7 +930,7 @@ present_end_lease(
 	}
 
 	/* The lease is free. */
-	nvrtx_stage_mark("P8c lease %llu released after %llu frames", (unsigned long long)node->lease, (unsigned long long)node->sequence);
+	nvrtx_stage_mark("gpu-device lease %llu released after %llu frames", (unsigned long long)node->lease, (unsigned long long)node->sequence);
 	node->owner = NULL;
 	node->lease = 0U;
 	node->sequence = 0U;

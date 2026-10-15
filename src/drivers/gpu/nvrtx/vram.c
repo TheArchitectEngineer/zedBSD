@@ -6,7 +6,8 @@
  */
 
 /*
- * The VRAM allocator and the CPU's window onto the VRAM (stage P4m).
+  * The VRAM allocator and the CPU's window onto the VRAM (the vram-window
+  * stage).
  *
  * The allocator hands out runs of the last usable VRAM region below the
  * fixed arenas the earlier stages place at its top (the first block, the
@@ -21,13 +22,13 @@
  * buffer object is then mapped by writing its pages' entries and
  * invalidating again.  The CPU maps the window uncached.
  *
- * P4m does not fail the boot: when the window cannot be set up the later
+ * vram-window does not fail the boot: when the window cannot be set up the later
  * stages run as before (they reach the VRAM through the register window,
  * PRAMIN) and only the users of the window find it missing.
  *
  * On the GPU the machine boots on, the firmware's console lies at the start
  * of the window and of the VRAM (the GOP's mapping in the window's physical
- * mode).  The resource manager makes the whole window virtual, so P4m maps
+ * mode).  The resource manager makes the whole window virtual, so vram-window maps
  * the window's first pages back onto the console before anything else
  * takes the window (the console's size, and its mapping kept at offset
  * 0).  The console's pages are in the tables before the
@@ -37,8 +38,8 @@
  * console's memory is never mapped twice.
  *
  * Every write of page entries is read back through PRAMIN, and the
- * self-test that ends P4m recovers in rounds: when the window does not
- * reach its run, P4m reports what the root's entry, the run's page entry,
+ * self-test that ends vram-window recovers in rounds: when the window does not
+ * reach its run, vram-window reports what the root's entry, the run's page entry,
  * the window's mode and the MMU's fault record hold, then clears the fault
  * record, writes the tables again, binds the window to its instance block
  * again (under the root that block names, should it differ from the static
@@ -176,7 +177,7 @@ static int vram_place_ptes(struct nvrtx_gpu *gpu, uint64_t at, const uint8_t *en
 static int vram_read64(struct nvrtx_gpu *gpu, uint64_t address, uint64_t *value);
 
 /*
- * Runs stage P4m: the VRAM allocator, then the window and its self-test.
+ * Runs the vram-window stage: the VRAM allocator, then the window and its self-test.
  *
  * Returns 0 even when the window could not be set up (the stage's marks say
  * why); an error only when the allocator itself cannot be placed.
@@ -195,10 +196,10 @@ nvrtx_memory_start(
 	memory = &gpu->memory_state;
 
 	/* Finds the last usable region; the fixed arenas take its top. */
-	nvrtx_stage_mark("P4m begin");
+	nvrtx_stage_mark("vram-window begin");
 	error = nvrtx_mmu_vram_region(gpu->static_info, &base, &top, &region);
 	if (error != 0) {
-		nvrtx_stage_mark("P4m fail: no usable VRAM region (%d)", error);
+		nvrtx_stage_mark("vram-window fail: no usable VRAM region (%d)", error);
 		return error;
 	}
 
@@ -208,7 +209,7 @@ nvrtx_memory_start(
 
 	/* The allocator covers the rest of the region, below the fixed arenas. */
 	if (top <= base || top - base <= VRAM_FIXED_RESERVE) {
-		nvrtx_stage_mark("P4m fail: region %u is too small (%llx..%llx)", (unsigned)region, (unsigned long long)base, (unsigned long long)top);
+		nvrtx_stage_mark("vram-window fail: region %u is too small (%llx..%llx)", (unsigned)region, (unsigned long long)base, (unsigned long long)top);
 		return ENOSPC;
 	}
 
@@ -222,7 +223,7 @@ nvrtx_memory_start(
 	mutex_unlock(&memory->lock);
 
 	/* Shows where the allocator lies. */
-	nvrtx_stage_mark("P4m vram: region %u, heap %llx..%llx (%llu MiB)",
+	nvrtx_stage_mark("vram-window vram: region %u, heap %llx..%llx (%llu MiB)",
 	    (unsigned)region,
 	    (unsigned long long)base,
 	    (unsigned long long)heap_top,
@@ -231,7 +232,7 @@ nvrtx_memory_start(
 	/* Builds the window's tables under the resource manager's root. */
 	error = vram_bar1_tables(gpu);
 	if (error != 0) {
-		nvrtx_stage_mark("P4m: no bar1 window (%d); the later stages use PRAMIN", error);
+		nvrtx_stage_mark("vram-window: no bar1 window (%d); the later stages use PRAMIN", error);
 		return 0;
 	}
 
@@ -243,7 +244,7 @@ nvrtx_memory_start(
 	/* Maps the window for the CPU. */
 	error = vram_bar1_cpu(gpu);
 	if (error != 0) {
-		nvrtx_stage_mark("P4m: the CPU cannot map bar1 (%d)", error);
+		nvrtx_stage_mark("vram-window: the CPU cannot map bar1 (%d)", error);
 		return 0;
 	}
 
@@ -298,7 +299,7 @@ nvrtx_memory_release(
  * Takes a run of VRAM of whole pages for a buffer object, unmapped.
  *
  * align is a power of two of at least a page (smaller is raised to a page).
- * Returns ENODEV before P4m, or the allocator's ENOSPC.
+ * Returns ENODEV before vram-window, or the allocator's ENOSPC.
  */
 int
 nvrtx_bo_alloc(
@@ -462,7 +463,7 @@ nvrtx_bo_bus(
 }
 
 /*
- * Decides, before the GSP boot (P0), whether the firmware's console on this
+ * Decides, before the GSP boot (layout), whether the firmware's console on this
  * GPU is kept through it.
  *
  * The console is kept when the loader's picture starts the VRAM window, the
@@ -494,13 +495,13 @@ nvrtx_console_check(
 
 	/* Refuses a picture away from the window's start, which the resource manager does not keep. */
 	if (identity->gop_offset != 0U) {
-		nvrtx_stage_mark("P0 console at bar1 +%llx, not its start: cannot be kept", (unsigned long long)identity->gop_offset);
+		nvrtx_stage_mark("layout console at bar1 +%llx, not its start: cannot be kept", (unsigned long long)identity->gop_offset);
 		return EBUSY;
 	}
 
 	/* Refuses a window the firmware put in its virtual mode: the picture's VRAM is unknown. */
 	if ((block & VRAM_BAR1_BLOCK_VIRTUAL) != 0U) {
-		nvrtx_stage_mark("P0 console: bar1 is virtual (%08x): cannot be kept", (unsigned)block);
+		nvrtx_stage_mark("layout console: bar1 is virtual (%08x): cannot be kept", (unsigned)block);
 		return EBUSY;
 	}
 
@@ -509,7 +510,7 @@ nvrtx_console_check(
 	    identity->gop_width == 0U ||
 	    identity->gop_height == 0U ||
 	    identity->gop_stride < identity->gop_width) {
-		nvrtx_stage_mark("P0 console %ux%u stride %u format %u: cannot be kept",
+		nvrtx_stage_mark("layout console %ux%u stride %u format %u: cannot be kept",
 		    (unsigned)identity->gop_width,
 		    (unsigned)identity->gop_height,
 		    (unsigned)identity->gop_stride,
@@ -526,7 +527,7 @@ nvrtx_console_check(
 	console->kept = 1;
 
 	/* Succeeded: the boot keeps the console. */
-	nvrtx_stage_mark("P0 console %ux%u pitch %u kept: %llu KiB at the VRAM's start",
+	nvrtx_stage_mark("layout console %ux%u pitch %u kept: %llu KiB at the VRAM's start",
 	    (unsigned)console->width,
 	    (unsigned)console->height,
 	    (unsigned)console->pitch,
@@ -575,7 +576,7 @@ nvrtx_console_restore(
 	/* Says what the window was put back to; the resource manager's mapping of the console is gone. */
 	restored = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
 	console->mapped = 0;
-	nvrtx_stage_mark("P7 console: bar1 mode %08x again (was %08x, status %08x)",
+	nvrtx_stage_mark("unload console: bar1 mode %08x again (was %08x, status %08x)",
 	    (unsigned)restored,
 	    (unsigned)block,
 	    (unsigned)status);
@@ -638,7 +639,7 @@ vram_bar1_tables(
 	if (error != 0)
 		return error;
 
-	nvrtx_stage_mark("P4m bar1: root %llx entry %llx, window %llu MiB, tables at %llx",
+	nvrtx_stage_mark("vram-window bar1: root %llx entry %llx, window %llu MiB, tables at %llx",
 	    (unsigned long long)memory->bar1_root,
 	    (unsigned long long)memory->bar1_root_entry,
 	    (unsigned long long)(memory->bar1_window >> 20),
@@ -724,7 +725,7 @@ vram_bar1_write_tables(
 
 	/* Refuses a root whose entry did not take the driver's directories. */
 	if (found != memory->bar1_root_ours) {
-		nvrtx_stage_mark("P4m: the root's entry reads %llx, %llx written", (unsigned long long)found, (unsigned long long)memory->bar1_root_ours);
+		nvrtx_stage_mark("vram-window: the root's entry reads %llx, %llx written", (unsigned long long)found, (unsigned long long)memory->bar1_root_ours);
 		return EIO;
 	}
 
@@ -763,13 +764,13 @@ vram_console_map(
 
 	/* The console must lie in the part of the window the tables cover; the tables left it out otherwise. */
 	if (console->size >= memory->bar1_window) {
-		nvrtx_stage_mark("P4m fail: the console's %llu KiB do not fit the window", (unsigned long long)(console->size >> 10));
+		nvrtx_stage_mark("vram-window fail: the console's %llu KiB do not fit the window", (unsigned long long)(console->size >> 10));
 		return ENOSPC;
 	}
 
 	/* Succeeded: the console's writes reach its VRAM again. */
 	console->mapped = 1;
-	nvrtx_stage_mark("P4m console: bar1 0..%llx on the VRAM's start again", (unsigned long long)console->size);
+	nvrtx_stage_mark("vram-window console: bar1 0..%llx on the VRAM's start again", (unsigned long long)console->size);
 	return 0;
 }
 
@@ -848,7 +849,7 @@ vram_bar1_test(
 	if (error == 0)
 		error = nvrtx_bo_map(gpu, &bo);
 	if (error != 0) {
-		nvrtx_stage_mark("P4m fail: the test run (%d)", error);
+		nvrtx_stage_mark("vram-window fail: the test run (%d)", error);
 		nvrtx_bo_free(gpu, &bo);
 		return error;
 	}
@@ -868,16 +869,16 @@ vram_bar1_test(
 
 	/* Reports a window that does not reach the VRAM. */
 	if (error != 0) {
-		nvrtx_stage_mark("P4m fail: bar1 reads %08x %08x, PRAMIN reads %08x (%d)", (unsigned)probe.first, (unsigned)probe.last, (unsigned)probe.back, error);
+		nvrtx_stage_mark("vram-window fail: bar1 reads %08x %08x, PRAMIN reads %08x (%d)", (unsigned)probe.first, (unsigned)probe.last, (unsigned)probe.back, error);
 		return EIO;
 	}
 
 	/* Says that the window works only since a recovery round. */
 	if (how != NULL)
-		nvrtx_stage_mark("P4m retry: the window reads back after %s", how);
+		nvrtx_stage_mark("vram-window retry: the window reads back after %s", how);
 
 	/* Succeeded: the window reaches the VRAM both ways. */
-	nvrtx_stage_mark("P4m ok: bar1 %llu MiB at %llx, read back both ways",
+	nvrtx_stage_mark("vram-window ok: bar1 %llu MiB at %llx, read back both ways",
 	    (unsigned long long)(gpu->memory_state.bar1_window >> 20),
 	    (unsigned long long)gpu->memory_state.bar1_bus);
 	return 0;
@@ -965,9 +966,9 @@ vram_bar1_report(
 	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
 
 	/* Says what was found, before anything is changed. */
-	nvrtx_stage_mark("P4m retry: bar1 reads %08x %08x, PRAMIN reads %08x", (unsigned)probe->first, (unsigned)probe->last, (unsigned)probe->back);
-	nvrtx_stage_mark("P4m retry: root entry %llx, ours %llx (%d)", (unsigned long long)root, (unsigned long long)memory->bar1_root_ours, error);
-	nvrtx_stage_mark("P4m retry: page entry %llx, wants %llx, mode %08x", (unsigned long long)entry, (unsigned long long)wanted, (unsigned)block);
+	nvrtx_stage_mark("vram-window retry: bar1 reads %08x %08x, PRAMIN reads %08x", (unsigned)probe->first, (unsigned)probe->last, (unsigned)probe->back);
+	nvrtx_stage_mark("vram-window retry: root entry %llx, ours %llx (%d)", (unsigned long long)root, (unsigned long long)memory->bar1_root_ours, error);
+	nvrtx_stage_mark("vram-window retry: page entry %llx, wants %llx, mode %08x", (unsigned long long)entry, (unsigned long long)wanted, (unsigned)block);
 	vram_fault_show(gpu, "retry");
 }
 
@@ -996,16 +997,16 @@ vram_fault_show(
 	info = nvrtx_rd32(gpu, VRAM_REG_FAULT_INFO);
 
 	/* Says what the MMU holds, raw and decoded, in lines short enough for the console and dmesg (80 columns). */
-	nvrtx_stage_mark("P4m %s: fault status %08x, record %08x",
+	nvrtx_stage_mark("vram-window %s: fault status %08x, record %08x",
 	    when,
 	    (unsigned)status,
 	    (unsigned)info);
-	nvrtx_stage_mark("P4m %s: fault at %08x%08x, engine %x",
+	nvrtx_stage_mark("vram-window %s: fault at %08x%08x, engine %x",
 	    when,
 	    (unsigned)high,
 	    (unsigned)low,
 	    (unsigned)(instance & VRAM_FAULT_ENGINE_MASK));
-	nvrtx_stage_mark("P4m %s: fault type %u client %02x access %u",
+	nvrtx_stage_mark("vram-window %s: fault type %u client %02x access %u",
 	    when,
 	    (unsigned)(info & VRAM_FAULT_TYPE_MASK),
 	    (unsigned)((info >> VRAM_FAULT_CLIENT_SHIFT) & VRAM_FAULT_CLIENT_MASK),
@@ -1051,7 +1052,7 @@ vram_bar1_recover(
 			return error;
 
 		/* Says what this round read, so the log tells which rounds did nothing. */
-		nvrtx_stage_mark("P4m retry %u (%s): bar1 reads %08x %08x, PRAMIN reads %08x",
+		nvrtx_stage_mark("vram-window retry %u (%s): bar1 reads %08x %08x, PRAMIN reads %08x",
 		    round,
 		    *how,
 		    (unsigned)probe->first,
@@ -1136,7 +1137,7 @@ vram_bar1_rebind(
 	/* Only a window in its virtual mode on an instance block in the VRAM can be bound again. */
 	block = nvrtx_rd32(gpu, VRAM_REG_BAR1_BLOCK);
 	if ((block & VRAM_BAR1_BLOCK_VIRTUAL) == 0U || (block & VRAM_BAR1_BLOCK_TARGET_MASK) != 0U) {
-		nvrtx_stage_mark("P4m retry: bar1 mode %08x is not virtual in the VRAM; not bound again", (unsigned)block);
+		nvrtx_stage_mark("vram-window retry: bar1 mode %08x is not virtual in the VRAM; not bound again", (unsigned)block);
 		return EIO;
 	}
 
@@ -1147,10 +1148,10 @@ vram_bar1_rebind(
 		return error;
 
 	named &= VRAM_INSTANCE_ROOT_MASK;
-	nvrtx_stage_mark("P4m retry: instance block %llx names root %llx",
+	nvrtx_stage_mark("vram-window retry: instance block %llx names root %llx",
 	    (unsigned long long)instance,
 	    (unsigned long long)named);
-	nvrtx_stage_mark("P4m retry: the static information names root %llx",
+	nvrtx_stage_mark("vram-window retry: the static information names root %llx",
 	    (unsigned long long)memory->bar1_root);
 
 	/* Adopts a root named elsewhere and writes the tables under it. */
@@ -1166,7 +1167,7 @@ vram_bar1_rebind(
 	error = nvrtx_poll(gpu, VRAM_REG_BAR_STATUS, VRAM_BAR1_PENDING, 0U, VRAM_BAR1_POLLS * VRAM_BAR1_POLL_US);
 	if (error != 0) {
 		status = nvrtx_rd32(gpu, VRAM_REG_BAR_STATUS);
-		nvrtx_stage_mark("P4m retry: the bind of bar1 did not settle (status %08x)", (unsigned)status);
+		nvrtx_stage_mark("vram-window retry: the bind of bar1 did not settle (status %08x)", (unsigned)status);
 		return error;
 	}
 

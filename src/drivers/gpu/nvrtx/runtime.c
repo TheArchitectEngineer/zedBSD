@@ -178,7 +178,7 @@ nvrtx_runtime_stop(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	nvrtx_stage_mark("P7 shutdown: the renderer takes no more work");
+	nvrtx_stage_mark("unload shutdown: the renderer takes no more work");
 }
 
 /* Reports the protocol's capset: wire 1, XML 1.3.269, timelines, the vendor suffix and its flags. */

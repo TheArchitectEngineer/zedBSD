@@ -8,28 +8,29 @@
 /*
  * The GSP boot of the nvrtx driver.
  *
- * Stage P0 prepares everything the later stages need before anything is
- * written that cannot be taken back:
- * the firmware files, the DMA memory the GSP reads, the placement of the
- * firmware in the VRAM, and the two FWSEC programs from the VBIOS.  The only
- * writes are the VBIOS windows, which are put back at once.  A failure in P0
- * leaves the GPU as the firmware left it.
+  * Stage layout prepares everything the later stages need before anything is
+  * written that cannot be taken back: the firmware files, the DMA memory the
+  * GSP reads, the placement of the firmware in the VRAM, and the two FWSEC
+  * programs from the VBIOS.  The only writes are the VBIOS windows, which are
+  * put back at once.  A failure in layout leaves the GPU as the firmware left
+  * it.
  *
- * P1a waits for the GPU's own firmware to finish devinit.  P1b runs
- * FWSEC-FRTS, which sets up the protected region at the top of the VRAM.
- * The region is torn down (P7's FWSEC-SB and booter_unload) only after the
- * firmware has run and unloaded; a region without a started firmware stays
- * until the host reboots.  Nothing is retried.  P2a queues the system information and
- * the registry, puts the GSP's falcon into RISC-V mode and runs booter_load,
- * which places the firmware in the region and starts it.  P2b waits for the
- * firmware's init-done event, performing the CPU sequencer it sends.
+  * devinit waits for the GPU's own firmware to finish devinit.  frts runs
+  * FWSEC-FRTS, which sets up the protected region at the top of the VRAM. The
+  * region is torn down (unload's FWSEC-SB and booter_unload) only after the
+  * firmware has run and unloaded; a region without a started firmware stays
+  * until the host reboots.  Nothing is retried.  booter queues the system
+  * information and the registry, puts the GSP's falcon into RISC-V mode and
+  * runs booter_load, which places the firmware in the region and starts it.
+  * gsp-init waits for the firmware's init-done event, performing the CPU
+  * sequencer it sends.
  *
- * P3 asks for the static information and allocates the first objects: a
+ * static-info asks for the static information and allocates the first objects: a
  * client, the device and the subdevice.
  *
- * P4 and later make the address spaces, the channels, the display and the
+ * address-space and later make the address spaces, the channels, the display and the
  * GPU device (their own files).  Where the boot ends short of keeping the
- * GPU up, the worker stops the GSP (P7: the unload call, the GSP's falcon
+ * GPU up, the worker stops the GSP (unload: the unload call, the GSP's falcon
  * reset, FWSEC-SB, booter_unload) and gives the preparation back, so the
  * GPU ends as the firmware left it.  A GSP kept up is stopped the same way
  * at the reboot or the shutdown of the machine (nvrtx_gsp_shutdown).
@@ -50,11 +51,11 @@
 /* The largest small file read whole. */
 #define GSP_SMALL_FILE_MAX		0x40000U
 
-/* How long P1a waits for devinit, in microseconds, and the step between its reads. */
+/* How long devinit waits for devinit, in microseconds, and the step between its reads. */
 #define GSP_DEVINIT_TIMEOUT_US		4100000U
 #define GSP_DEVINIT_STEP_US		2000U
 
-/* How long P2b waits for the init-done event, and P7 for the unload's reply and the GSP's halt. */
+/* How long gsp-init waits for the init-done event, and unload for the unload's reply and the GSP's halt. */
 #define GSP_INIT_DONE_TIMEOUT_US	10000000U
 #define GSP_UNLOAD_TIMEOUT_US		2000000U
 #define GSP_UNLOADED_TIMEOUT_US		2000000U
@@ -70,7 +71,7 @@
 /* The secure scratch register whose bit 26 says the boot has handed over to the firmware. */
 #define GSP_REG_BOOT_SCRATCH		0x1180f8U
 
-/* When P2b shows how far the firmware got, in milliseconds after it began to wait. */
+/* When gsp-init shows how far the firmware got, in milliseconds after it began to wait. */
 #define GSP_PROGRESS_POINTS		4U
 
 /* The highest user address the resource manager is told of (the 47-bit user half). */
@@ -119,10 +120,10 @@ nvrtx_gsp_start(
 	bool work_wanted;
 	int error;
 
-	/* Stops before P0 when the boot asks. */
-	allowed = nvrtx_stage_allowed("P0");
+	/* Stops before layout when the boot asks. */
+	allowed = nvrtx_stage_allowed("layout");
 	if (!allowed) {
-		nvrtx_stage_mark("P0 skipped (nvrtx.stop=P0)");
+		nvrtx_stage_mark("layout skipped (nvrtx.stop=layout)");
 		return 0;
 	}
 
@@ -135,32 +136,32 @@ nvrtx_gsp_start(
 	if (error != 0) {
 		forced = nvrtx_stage_gsp_forced();
 		if (!forced) {
-			nvrtx_stage_mark("P0 skipped: the console stays the firmware's");
+			nvrtx_stage_mark("layout skipped: the console stays the firmware's");
 			return 0;
 		}
 	}
 
-	/* Prepares everything P1 and later need. */
-	nvrtx_stage_mark("P0 begin");
+	/* Prepares everything devinit and later need. */
+	nvrtx_stage_mark("layout begin");
 	error = gsp_prepare(gpu);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail (%d); the GPU is untouched", error);
+		nvrtx_stage_mark("layout fail (%d); the GPU is untouched", error);
 		gpu->state = NVRTX_GSP_FAILED;
 		nvrtx_gsp_release(gpu);
 		return error;
 	}
 
 	gpu->state = NVRTX_GSP_PREPARED;
-	nvrtx_stage_mark("P0 ok vram %lluM wpr2 %llx+%lluM heap %lluM",
+	nvrtx_stage_mark("layout ok vram %lluM wpr2 %llx+%lluM heap %lluM",
 	    (unsigned long long)(gpu->layout.vram_size >> 20),
 	    (unsigned long long)gpu->layout.region,
 	    (unsigned long long)(gpu->layout.region_size >> 20),
 	    (unsigned long long)(gpu->layout.heap_size >> 20));
 
-	/* Stops before P1a when the boot asks. */
-	allowed = nvrtx_stage_allowed("P1a");
+	/* Stops before devinit when the boot asks. */
+	allowed = nvrtx_stage_allowed("devinit");
 	if (!allowed) {
-		nvrtx_stage_mark("P1a skipped (nvrtx.stop=P1a)");
+		nvrtx_stage_mark("devinit skipped (nvrtx.stop=devinit)");
 		gsp_finish(gpu);
 		return 0;
 	}
@@ -173,10 +174,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before P1b when the boot asks. */
-	allowed = nvrtx_stage_allowed("P1b");
+	/* Stops before frts when the boot asks. */
+	allowed = nvrtx_stage_allowed("frts");
 	if (!allowed) {
-		nvrtx_stage_mark("P1b skipped (nvrtx.stop=P1b)");
+		nvrtx_stage_mark("frts skipped (nvrtx.stop=frts)");
 		gsp_finish(gpu);
 		return 0;
 	}
@@ -188,10 +189,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before P2a when the boot asks; the finish reports the region it leaves. */
-	allowed = nvrtx_stage_allowed("P2a");
+	/* Stops before booter when the boot asks; the finish reports the region it leaves. */
+	allowed = nvrtx_stage_allowed("booter");
 	if (!allowed) {
-		nvrtx_stage_mark("P2a skipped (nvrtx.stop=P2a)");
+		nvrtx_stage_mark("booter skipped (nvrtx.stop=booter)");
 		gsp_finish(gpu);
 		return 0;
 	}
@@ -210,10 +211,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before P3 when the boot asks; the finish stops the GSP again. */
-	allowed = nvrtx_stage_allowed("P3");
+	/* Stops before static-info when the boot asks; the finish stops the GSP again. */
+	allowed = nvrtx_stage_allowed("static-info");
 	if (!allowed) {
-		nvrtx_stage_mark("P3 skipped (nvrtx.stop=P3)");
+		nvrtx_stage_mark("static-info skipped (nvrtx.stop=static-info)");
 		gsp_finish(gpu);
 		return 0;
 	}
@@ -227,10 +228,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before P4 when the boot asks; the finish stops the GSP again. */
-	allowed = nvrtx_stage_allowed("P4");
+	/* Stops before address-space when the boot asks; the finish stops the GSP again. */
+	allowed = nvrtx_stage_allowed("address-space");
 	if (!allowed) {
-		nvrtx_stage_mark("P4 skipped (nvrtx.stop=P4)");
+		nvrtx_stage_mark("address-space skipped (nvrtx.stop=address-space)");
 		gsp_finish(gpu);
 		return 0;
 	}
@@ -243,23 +244,23 @@ nvrtx_gsp_start(
 	}
 
 	/* Sets the VRAM allocator and the CPU's window up unless the boot stops before them; neither stops the boot. */
-	allowed = nvrtx_stage_allowed("P4m");
+	allowed = nvrtx_stage_allowed("vram-window");
 	if (!allowed)
-		nvrtx_stage_mark("P4m skipped (nvrtx.stop=P4m)");
+		nvrtx_stage_mark("vram-window skipped (nvrtx.stop=vram-window)");
 	if (allowed)
 		(void)nvrtx_memory_start(gpu);
 
 	/* Gives a console the window no longer reaches back: the GSP stops and the window's mode is restored. */
 	if (gpu->console.kept != 0 && gpu->console.mapped == 0) {
-		nvrtx_stage_mark("P4m: the console is not reached; stopping to give it back");
+		nvrtx_stage_mark("vram-window: the console is not reached; stopping to give it back");
 		gsp_finish(gpu);
 		return EIO;
 	}
 
-	/* Stops before P5 when the boot asks. */
-	allowed = nvrtx_stage_allowed("P5");
+	/* Stops before copy-channel when the boot asks. */
+	allowed = nvrtx_stage_allowed("copy-channel");
 	if (!allowed) {
-		nvrtx_stage_mark("P5 skipped (nvrtx.stop=P5)");
+		nvrtx_stage_mark("copy-channel skipped (nvrtx.stop=copy-channel)");
 		gsp_end(gpu);
 		return 0;
 	}
@@ -276,9 +277,9 @@ nvrtx_gsp_start(
 	work_wanted = nvrtx_stage_work_wanted();
 	if (work_wanted)
 		wanted = true;
-	allowed = nvrtx_stage_allowed("P5g");
+	allowed = nvrtx_stage_allowed("golden-context");
 	if (wanted && !allowed)
-		nvrtx_stage_mark("P5g skipped (nvrtx.stop=P5g)");
+		nvrtx_stage_mark("golden-context skipped (nvrtx.stop=golden-context)");
 	if (wanted && allowed) {
 		error = nvrtx_gr_start(gpu);
 		if (error != 0) {
@@ -289,9 +290,9 @@ nvrtx_gsp_start(
 
 	/* Runs the first compute program when the boot asks (nvrtx.compute=1) and does not stop before it. */
 	wanted = nvrtx_stage_compute_wanted();
-	allowed = nvrtx_stage_allowed("P9c");
+	allowed = nvrtx_stage_allowed("compute-test");
 	if (wanted && !allowed)
-		nvrtx_stage_mark("P9c skipped (nvrtx.stop=P9c)");
+		nvrtx_stage_mark("compute-test skipped (nvrtx.stop=compute-test)");
 	if (wanted && allowed) {
 		error = nvrtx_compute_start(gpu);
 		if (error != 0) {
@@ -301,9 +302,9 @@ nvrtx_gsp_start(
 	}
 
 	/* Makes the work channel when the boot asks (nvrtx.work=1) and does not stop before it. */
-	allowed = nvrtx_stage_allowed("P9w");
+	allowed = nvrtx_stage_allowed("work-channel");
 	if (work_wanted && !allowed)
-		nvrtx_stage_mark("P9w skipped (nvrtx.stop=P9w)");
+		nvrtx_stage_mark("work-channel skipped (nvrtx.stop=work-channel)");
 	if (work_wanted && allowed) {
 		error = nvrtx_work_start(gpu);
 		if (error != 0) {
@@ -312,10 +313,10 @@ nvrtx_gsp_start(
 		}
 	}
 
-	/* Stops before P8 when the boot asks. */
-	allowed = nvrtx_stage_allowed("P8");
+	/* Stops before display when the boot asks. */
+	allowed = nvrtx_stage_allowed("display");
 	if (!allowed) {
-		nvrtx_stage_mark("P8 skipped (nvrtx.stop=P8)");
+		nvrtx_stage_mark("display skipped (nvrtx.stop=display)");
 		gsp_end(gpu);
 		return 0;
 	}
@@ -329,11 +330,11 @@ nvrtx_gsp_start(
 
 	/* Takes the firmware's head over unless the boot says nvrtx.disp=0 or stops before it. */
 	wanted = nvrtx_stage_disp_wanted();
-	allowed = nvrtx_stage_allowed("P8b");
+	allowed = nvrtx_stage_allowed("takeover");
 	if (wanted && !allowed)
-		nvrtx_stage_mark("P8b skipped (nvrtx.stop=P8b)");
+		nvrtx_stage_mark("takeover skipped (nvrtx.stop=takeover)");
 	if (!wanted)
-		nvrtx_stage_mark("P8b off (nvrtx.disp=0); stopping after P8a");
+		nvrtx_stage_mark("takeover off (nvrtx.disp=0); stopping after display-client");
 	if (wanted && allowed) {
 		error = nvrtx_scanout_start(gpu);
 		if (error != 0) {
@@ -348,13 +349,13 @@ nvrtx_gsp_start(
 		error = nvrtx_node_start(gpu);
 		if (error == 0) {
 			gpu->resident = 1;
-			nvrtx_stage_mark("P8c: the GSP stays up until power-off");
+			nvrtx_stage_mark("gpu-device: the GSP stays up until power-off");
 			return 0;
 		}
 	}
 
-	/* Says where the boot ends; the end keeps a console's GSP up, or runs P8's and P6's stops and P7. */
-	nvrtx_stage_mark("P8 done; this revision ends at P8c");
+	/* Says where the boot ends; the end keeps a console's GSP up, or runs display's and channel-stop's stops and unload. */
+	nvrtx_stage_mark("display done; this revision ends at gpu-device");
 	gsp_end(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
@@ -363,7 +364,7 @@ nvrtx_gsp_start(
 
 /*
  * Stops a GSP kept up until now, for the reboot or the shutdown of the
- * machine: the objects of P6 are freed, the firmware is unloaded (P7), the
+ * machine: the objects of channel-stop are freed, the firmware is unloaded (unload), the
  * protected region is torn down and the VRAM window is put back in the
  * firmware's mode, so nothing of this boot (the hub's state, the region)
  * is carried into the next.  Called from the PCI shutdown hook once the
@@ -382,20 +383,20 @@ nvrtx_gsp_shutdown(
 		return 0;
 
 	/* Stops the firmware and tears the region down; a failure is reported and the reset follows anyway. */
-	nvrtx_stage_mark("P7 shutdown begin: stopping the GSP before the reset");
+	nvrtx_stage_mark("unload shutdown begin: stopping the GSP before the reset");
 	error = gsp_teardown(gpu);
 	if (error != 0) {
-		nvrtx_stage_mark("P7 shutdown fail (%d); the reset follows anyway", error);
+		nvrtx_stage_mark("unload shutdown fail (%d); the reset follows anyway", error);
 		return error;
 	}
 
 	/* Succeeded: the GPU is as the firmware left it, as far as the driver can put it. */
-	nvrtx_stage_mark("P7 shutdown ok: the GSP is stopped");
+	nvrtx_stage_mark("unload shutdown ok: the GSP is stopped");
 	return 0;
 }
 
 /*
- * Gives back everything P0 prepared.
+ * Gives back everything layout prepared.
  *
  * Only for a GPU whose GSP was never started: once the GSP may read this
  * memory it is kept until the GSP is stopped.
@@ -469,7 +470,7 @@ nvrtx_gsp_release(
 	kern_memset(memory, 0, sizeof(*memory));
 }
 
-/* Runs the steps of P0 in order; the first failure stops it. */
+/* Runs the steps of layout in order; the first failure stops it. */
 static int
 gsp_prepare(
 	struct nvrtx_gpu *gpu)
@@ -506,7 +507,7 @@ gsp_prepare(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: P1 has everything it needs. */
+	/* Succeeded: devinit has everything it needs. */
 	return 0;
 }
 
@@ -523,7 +524,7 @@ gsp_load_files(
 	/* Reads the GSP's RISC-V bootloader. */
 	error = nvrtx_file_load(profile->bootloader_file, GSP_SMALL_FILE_MAX, &gpu->bootloader_file);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: %s not read (%d); no firmware package?", profile->bootloader_file, error);
+		nvrtx_stage_mark("layout fail: %s not read (%d); no firmware package?", profile->bootloader_file, error);
 		return error;
 	}
 
@@ -560,7 +561,7 @@ gsp_load_files(
 	}
 
 	/* Succeeded: the small files are read. */
-	nvrtx_stage_mark("P0 files: booters %zu/%zu bytes, bootloader %zu bytes",
+	nvrtx_stage_mark("layout files: booters %zu/%zu bytes, bootloader %zu bytes",
 	    gpu->booter_load.size,
 	    gpu->booter_unload.size,
 	    gpu->bootloader_file.size);
@@ -581,7 +582,7 @@ gsp_prepare_image(
 	/* Reads the image and its signature into DMA memory. */
 	error = nvrtx_file_load_image(gpu, gpu->identity.chip.profile->image_file);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: %s not read (%d)", gpu->identity.chip.profile->image_file, error);
+		nvrtx_stage_mark("layout fail: %s not read (%d)", gpu->identity.chip.profile->image_file, error);
 		return error;
 	}
 
@@ -605,7 +606,7 @@ gsp_prepare_image(
 		return error;
 
 	/* Succeeded: the booter can find every page of the image. */
-	nvrtx_stage_mark("P0 image: %zu bytes in %zu chunks, signature %zu bytes",
+	nvrtx_stage_mark("layout image: %zu bytes in %zu chunks, signature %zu bytes",
 	    memory->image_size,
 	    memory->image.chunk_count,
 	    memory->signature_size);
@@ -656,7 +657,7 @@ gsp_prepare_placement(
 	    profile->heap_min_bytes,
 	    &gpu->layout);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: VRAM of %lluM too small", (unsigned long long)(vram_size >> 20));
+		nvrtx_stage_mark("layout fail: VRAM of %lluM too small", (unsigned long long)(vram_size >> 20));
 		return error;
 	}
 
@@ -766,14 +767,14 @@ gsp_prepare_fwsec(
 	/* Reads the VBIOS through one of its windows. */
 	error = nvrtx_rom_read(gpu);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: VBIOS not read (%d)", error);
+		nvrtx_stage_mark("layout fail: VBIOS not read (%d)", error);
 		return error;
 	}
 
 	/* Finds the FWSEC program. */
 	error = nvrtx_vbios_fwsec(&gpu->vbios, &gpu->fwsec);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: FWSEC not found in the VBIOS (%d)", error);
+		nvrtx_stage_mark("layout fail: FWSEC not found in the VBIOS (%d)", error);
 		return error;
 	}
 
@@ -782,7 +783,7 @@ gsp_prepare_fwsec(
 	if (gpu->identity.chip.profile->falcon_style == NVRTX_FALCON_BOOT_ROM)
 		wanted_version = 3U;
 	if (gpu->fwsec.version != wanted_version) {
-		nvrtx_stage_mark("P0 fail: FWSEC v%u where v%u is loaded", (unsigned)gpu->fwsec.version, (unsigned)wanted_version);
+		nvrtx_stage_mark("layout fail: FWSEC v%u where v%u is loaded", (unsigned)gpu->fwsec.version, (unsigned)wanted_version);
 		return ENOTSUP;
 	}
 
@@ -813,7 +814,7 @@ gsp_prepare_fwsec(
 
 		error = nvrtx_fwsec_fuse_index(&gpu->fwsec, fuse, &index);
 		if (error != 0) {
-			nvrtx_stage_mark("P0 fail: no FWSEC signature for fuse %08x (versions %04x)",
+			nvrtx_stage_mark("layout fail: no FWSEC signature for fuse %08x (versions %04x)",
 			    (unsigned)fuse,
 			    (unsigned)gpu->fwsec.signature_versions);
 			return error;
@@ -842,7 +843,7 @@ gsp_prepare_fwsec(
 		return error;
 
 	/* Succeeded: both programs are ready. */
-	nvrtx_stage_mark("P0 vbios %zu bytes, fwsec v%u %u bytes",
+	nvrtx_stage_mark("layout vbios %zu bytes, fwsec v%u %u bytes",
 	    gpu->vbios_size,
 	    (unsigned)gpu->fwsec.version,
 	    (unsigned)gpu->fwsec.program_size);
@@ -877,7 +878,7 @@ gsp_prepare_falcons(
 		gpu->sec2_falcon.base = NVRTX_FALCON_SEC2_BASE;
 		gpu->sec2_falcon.pmc_mask = 0U;
 		gpu->sec2_falcon.style = style;
-		nvrtx_stage_mark("P0 falcons: boot ROM loading (%s)", gpu->identity.chip.profile->name);
+		nvrtx_stage_mark("layout falcons: boot ROM loading (%s)", gpu->identity.chip.profile->name);
 		return 0;
 	}
 
@@ -887,7 +888,7 @@ gsp_prepare_falcons(
 
 	error = nvrtx_device_info_reset(words, NVRTX_ENGINE_SEC2, &bit);
 	if (error != 0) {
-		nvrtx_stage_mark("P0 fail: no SEC2 in the device information (%d)", error);
+		nvrtx_stage_mark("layout fail: no SEC2 in the device information (%d)", error);
 		return error;
 	}
 
@@ -896,11 +897,11 @@ gsp_prepare_falcons(
 	gpu->sec2_falcon.style = style;
 
 	/* Succeeded: both falcons are known. */
-	nvrtx_stage_mark("P0 falcons: SEC2 reset bit %u", (unsigned)bit);
+	nvrtx_stage_mark("layout falcons: SEC2 reset bit %u", (unsigned)bit);
 	return 0;
 }
 
-/* Runs P1a: waits for the GPU's own firmware to finish devinit. */
+/* Runs devinit: waits for the GPU's own firmware to finish devinit. */
 static int
 gsp_devinit_wait(
 	struct nvrtx_gpu *gpu)
@@ -911,14 +912,14 @@ gsp_devinit_wait(
 	uint32_t progress;
 
 	/* Polls both registers until devinit is complete or the time is spent. */
-	nvrtx_stage_mark("P1a begin: devinit");
+	nvrtx_stage_mark("devinit begin: devinit");
 	start = nvrtx_now_us();
 	for (;;) {
 		level = nvrtx_rd32(gpu, NVRTX_REG_DEVINIT_LEVEL);
 		progress = nvrtx_rd32(gpu, NVRTX_REG_DEVINIT_PROGRESS);
 		waited = nvrtx_now_us() - start;
 		if ((level & 0x1U) != 0U && (progress & 0xffU) == NVRTX_DEVINIT_COMPLETED) {
-			nvrtx_stage_mark("P1a ok after %u ms", (unsigned)(waited / 1000U));
+			nvrtx_stage_mark("devinit ok after %u ms", (unsigned)(waited / 1000U));
 			return 0;
 		}
 
@@ -929,11 +930,11 @@ gsp_devinit_wait(
 	}
 
 	/* Devinit never completed: the GPU is not used. */
-	nvrtx_stage_mark("P1a fail: devinit level %08x progress %08x", (unsigned)level, (unsigned)progress);
+	nvrtx_stage_mark("devinit fail: devinit level %08x progress %08x", (unsigned)level, (unsigned)progress);
 	return ETIMEDOUT;
 }
 
-/* Runs P1b: checks that no region is there, then sets it up with FWSEC-FRTS. */
+/* Runs frts: checks that no region is there, then sets it up with FWSEC-FRTS. */
 static int
 gsp_region_set(
 	struct nvrtx_gpu *gpu)
@@ -946,7 +947,7 @@ gsp_region_set(
 	/* A region left by an earlier boot cannot be set up again: stop without writing. */
 	nvrtx_region_bounds(gpu, &low, &high);
 	if (high != 0U) {
-		nvrtx_stage_mark("P1b stop: region %08x-%08x already set; power cycle needed", (unsigned)low, (unsigned)high);
+		nvrtx_stage_mark("frts stop: region %08x-%08x already set; power cycle needed", (unsigned)low, (unsigned)high);
 		gpu->state = NVRTX_GSP_FAILED;
 		return EBUSY;
 	}
@@ -958,11 +959,11 @@ gsp_region_set(
 
 	/* Runs FWSEC-FRTS; from here on the end of the boot reports or tears down the region. */
 	gpu->region_written = 1;
-	nvrtx_stage_mark("P1b begin: FWSEC-FRTS at %llx", (unsigned long long)gpu->layout.frts);
+	nvrtx_stage_mark("frts begin: FWSEC-FRTS at %llx", (unsigned long long)gpu->layout.frts);
 	error = nvrtx_fwsec_run(gpu, &gpu->memory.fwsec_frts);
 	if (error == ETIMEDOUT) {
 		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("P1b fail: FWSEC did not halt; memory kept, power cycle needed");
+		nvrtx_stage_mark("frts fail: FWSEC did not halt; memory kept, power cycle needed");
 		return error;
 	}
 
@@ -970,19 +971,19 @@ gsp_region_set(
 	result = nvrtx_frts_result(gpu);
 	nvrtx_region_bounds(gpu, &low, &high);
 	if (error != 0 || result != 0U || high == 0U) {
-		nvrtx_stage_mark("P1b fail: error %d result %04x region %08x-%08x", error, (unsigned)result, (unsigned)low, (unsigned)high);
+		nvrtx_stage_mark("frts fail: error %d result %04x region %08x-%08x", error, (unsigned)result, (unsigned)low, (unsigned)high);
 		gpu->state = NVRTX_GSP_FAILED;
 		return EIO;
 	}
 
 	/* Succeeded: the region is set up. */
 	gpu->state = NVRTX_GSP_REGION_SET;
-	nvrtx_stage_mark("P1b ok: region %08x-%08x", (unsigned)low, (unsigned)high);
+	nvrtx_stage_mark("frts ok: region %08x-%08x", (unsigned)low, (unsigned)high);
 	return 0;
 }
 
 /*
- * Ends the boot after P4m, on its success or a failure: a GSP whose window
+ * Ends the boot after vram-window, on its success or a failure: a GSP whose window
  * holds the firmware's console again stays up (unless the boot says
  * nvrtx.resident=0), because stopping the resource manager takes the
  * console's mapping, and maybe the head, with it; the GPU is then kept
@@ -1000,7 +1001,7 @@ gsp_end(
 	    gpu->console.mapped != 0 &&
 	    gpu->state == NVRTX_GSP_RUNNING) {
 		gpu->resident = 1;
-		nvrtx_stage_mark("P8: the GSP stays up to keep the console");
+		nvrtx_stage_mark("display: the GSP stays up to keep the console");
 		return;
 	}
 
@@ -1030,7 +1031,7 @@ gsp_finish(
 }
 
 /*
- * Stops a running GSP (P6's frees, then P7) and tears its region down once.
+ * Stops a running GSP (channel-stop's frees, then unload) and tears its region down once.
  *
  * Returns 0 when the memory may be given back: the GSP is stopped, or it
  * never ran.  Returns EBUSY when a falcon may still read the memory (one
@@ -1050,7 +1051,7 @@ gsp_teardown(
 		return EBUSY;
 
 	/*
-	 * Frees the graphics objects, the channel and the address space (P6)
+	 * Frees the graphics objects, the channel and the address space (channel-stop)
 	 * before every unload: the firmware did not unload with a scheduled
 	 * channel left (R6).
 	 */
@@ -1068,7 +1069,7 @@ gsp_teardown(
 		error = gsp_stop(gpu);
 		if (error != 0) {
 			gpu->state = NVRTX_GSP_FAILED_HOLD;
-			nvrtx_stage_mark("P7 fail: the GSP did not stop (%d); memory kept, power cycle needed", error);
+			nvrtx_stage_mark("unload fail: the GSP did not stop (%d); memory kept, power cycle needed", error);
 			return EBUSY;
 		}
 
@@ -1087,14 +1088,14 @@ gsp_teardown(
 		error = nvrtx_region_tear_down(gpu);
 	if (error == ETIMEDOUT) {
 		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("P7 fail: a program did not halt; memory kept, power cycle needed");
+		nvrtx_stage_mark("unload fail: a program did not halt; memory kept, power cycle needed");
 		return EBUSY;
 	}
 
 	if (!stopped && gpu->region_written != 0) {
 		nvrtx_region_bounds(gpu, &low, &high);
 		if (high != 0U)
-			nvrtx_stage_mark("P7 left: region %08x-%08x, no GSP started; reboot the host", (unsigned)low, (unsigned)high);
+			nvrtx_stage_mark("unload left: region %08x-%08x, no GSP started; reboot the host", (unsigned)low, (unsigned)high);
 	}
 
 	/* Puts the window back in the firmware's mode, so a kept console reaches its VRAM without the resource manager. */
@@ -1156,7 +1157,7 @@ gsp_queue_setup_calls(
 	return 0;
 }
 
-/* Runs P2a: queues the first calls, puts the GSP in RISC-V mode, and starts it through booter_load. */
+/* Runs booter: queues the first calls, puts the GSP in RISC-V mode, and starts it through booter_load. */
 static int
 gsp_boot_riscv(
 	struct nvrtx_gpu *gpu)
@@ -1167,15 +1168,15 @@ gsp_boot_riscv(
 	bool running;
 	int error;
 
-	nvrtx_stage_mark("P2a begin: booter_load");
+	nvrtx_stage_mark("booter begin: booter_load");
 
 	/* Shows where the memory the firmware writes is, for a dump from outside the machine. */
-	nvrtx_stage_mark("P2a memory: libos %llx rmargs %llx queues %llx+%x",
+	nvrtx_stage_mark("booter memory: libos %llx rmargs %llx queues %llx+%x",
 	    (unsigned long long)gpu->memory.libos.dma.device_address,
 	    (unsigned long long)gpu->memory.rmargs.dma.device_address,
 	    (unsigned long long)gpu->memory.queues.dma.device_address,
 	    (unsigned)NVRTX_QUEUE_SHARED_BYTES);
-	nvrtx_stage_mark("P2a memory: logs %llx %llx %llx, %x bytes each",
+	nvrtx_stage_mark("booter memory: logs %llx %llx %llx, %x bytes each",
 	    (unsigned long long)gpu->memory.logs[0].dma.device_address,
 	    (unsigned long long)gpu->memory.logs[1].dma.device_address,
 	    (unsigned long long)gpu->memory.logs[2].dma.device_address,
@@ -1209,12 +1210,12 @@ gsp_boot_riscv(
 	error = nvrtx_booter_run(gpu, &gpu->load, (uint32_t)(record & 0xffffffffU), (uint32_t)(record >> 32));
 	if (error == ETIMEDOUT) {
 		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("P2a fail: booter_load did not halt; memory kept, power cycle needed");
+		nvrtx_stage_mark("booter fail: booter_load did not halt; memory kept, power cycle needed");
 		return error;
 	}
 
 	if (error != 0) {
-		nvrtx_stage_mark("P2a fail: booter_load (%d)", error);
+		nvrtx_stage_mark("booter fail: booter_load (%d)", error);
 		return error;
 	}
 
@@ -1222,18 +1223,18 @@ gsp_boot_riscv(
 	nvrtx_wr32(gpu, GSP_REG_APP_VERSION, gpu->bootloader_desc.app_version);
 	running = nvrtx_falcon_riscv_running(gpu, &gpu->gsp_falcon, &status);
 	if (!running) {
-		nvrtx_stage_mark("P2a fail: the RISC-V core is not running (%08x)", (unsigned)status);
+		nvrtx_stage_mark("booter fail: the RISC-V core is not running (%08x)", (unsigned)status);
 		return EIO;
 	}
 
 	/* Succeeded: the GSP firmware runs; from here the end of the boot must stop it. */
 	gpu->state = NVRTX_GSP_RUNNING;
-	nvrtx_stage_mark("P2a ok: RISC-V running");
+	nvrtx_stage_mark("booter ok: RISC-V running");
 	return 0;
 }
 
 /*
- * Runs P2b: waits for the init-done event, performing the sequencer meanwhile.
+ * Runs gsp-init: waits for the init-done event, performing the sequencer meanwhile.
  *
  * The wait is cut at a few points to show how far the firmware got.  When
  * the event does not come, the memory is kept, so the logs and the queues
@@ -1253,7 +1254,7 @@ gsp_init_done(
 	int error;
 
 	/* Waits for the event up to each point in turn, showing the progress at each. */
-	nvrtx_stage_mark("P2b begin: waiting for init done");
+	nvrtx_stage_mark("gsp-init begin: waiting for init done");
 	start = nvrtx_now_us();
 	error = ETIMEDOUT;
 	for (point = 0U; point < GSP_PROGRESS_POINTS; point++) {
@@ -1279,12 +1280,12 @@ gsp_init_done(
 			gsp_progress(gpu, (uint32_t)(elapsed / 1000U));
 
 		gpu->state = NVRTX_GSP_FAILED_HOLD;
-		nvrtx_stage_mark("P2b fail (%d): memory kept for a dump; reboot the host", error);
+		nvrtx_stage_mark("gsp-init fail (%d): memory kept for a dump; reboot the host", error);
 		return error;
 	}
 
 	/* Succeeded: the firmware is up. */
-	nvrtx_stage_mark("P2b ok: GSP-RM is up after %u ms", (unsigned)(elapsed / 1000U));
+	nvrtx_stage_mark("gsp-init ok: GSP-RM is up after %u ms", (unsigned)(elapsed / 1000U));
 	return 0;
 }
 
@@ -1308,7 +1309,7 @@ gsp_progress(
 	 * status queue's header (its size is zero until the firmware writes it)
 	 * and write pointer are the firmware's.
 	 */
-	nvrtx_stage_mark("P2b %u ms: cmd put %u got %u; msg size %x put %u got %u",
+	nvrtx_stage_mark("gsp-init %u ms: cmd put %u got %u; msg size %x put %u got %u",
 	    (unsigned)milliseconds,
 	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_COMMAND_AT + NVRTX_QHDR_WRITE_AT),
 	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_STATUS_AT + NVRTX_QHDR_READ_AT),
@@ -1317,7 +1318,7 @@ gsp_progress(
 	    (unsigned)gsp_queue_word(gpu, NVRTX_QUEUE_COMMAND_AT + NVRTX_QHDR_READ_AT));
 
 	/* The firmware's registers; a mark line holds 79 columns, so each group has its own. */
-	nvrtx_stage_mark("P2b %u ms: mbox %08x %08x riscv %08x boot %08x",
+	nvrtx_stage_mark("gsp-init %u ms: mbox %08x %08x riscv %08x boot %08x",
 	    (unsigned)milliseconds,
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX0),
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_MAILBOX1),
@@ -1325,7 +1326,7 @@ gsp_progress(
 	    (unsigned)nvrtx_rd32(gpu, GSP_REG_BOOT_SCRATCH));
 
 	/* The three logs' put pointers: how many words the firmware has written in each. */
-	nvrtx_stage_mark("P2b %u ms: log put %llx %llx %llx",
+	nvrtx_stage_mark("gsp-init %u ms: log put %llx %llx %llx",
 	    (unsigned)milliseconds,
 	    (unsigned long long)gsp_log_put(gpu, 0U),
 	    (unsigned long long)gsp_log_put(gpu, 1U),
@@ -1363,7 +1364,7 @@ gsp_log_put(
 }
 
 /*
- * Stops a running GSP (P7): the unload call, the halt, and the falcon reset.
+ * Stops a running GSP (unload): the unload call, the halt, and the falcon reset.
  *
  * The region is torn down afterwards by the finish.  Returns ETIMEDOUT when
  * the firmware did not unload in time.
@@ -1378,13 +1379,13 @@ gsp_stop(
 	int error;
 
 	/* Asks the firmware to unload and waits for its reply; a lost reply still goes on to the halt check. */
-	nvrtx_stage_mark("P7 begin: unload");
+	nvrtx_stage_mark("unload begin: unload");
 	nvrtx_unload_args(args);
 	error = nvrtx_rpc_send(gpu, NVRTX_CALL_UNLOAD, args, sizeof(args), 1, &sequence);
 	if (error == 0)
 		error = nvrtx_rpc_wait(gpu, NVRTX_CALL_UNLOAD, sequence, GSP_UNLOAD_TIMEOUT_US, &length);
 	if (error != 0)
-		nvrtx_stage_mark("P7 unload call: %d", error);
+		nvrtx_stage_mark("unload unload call: %d", error);
 
 	/* Waits for the firmware to say it has unloaded. */
 	error = nvrtx_poll(gpu, GSP_REG_MAILBOX0, 0xffffffffU, GSP_UNLOADED, GSP_UNLOADED_TIMEOUT_US);
@@ -1413,7 +1414,7 @@ gsp_static_info(
 	int error;
 
 	/* Sends a zeroed record of the information's size and waits for it to come back filled. */
-	nvrtx_stage_mark("P3 begin: static info");
+	nvrtx_stage_mark("static-info begin: static info");
 	kern_memset(gpu->reply, 0, NVRTX_STATIC_INFO_BYTES);
 	error = nvrtx_rpc_send(gpu, NVRTX_CALL_STATIC_INFO, gpu->reply, NVRTX_STATIC_INFO_BYTES, 1, &sequence);
 	if (error != 0)
@@ -1421,17 +1422,17 @@ gsp_static_info(
 
 	error = nvrtx_rpc_wait(gpu, NVRTX_CALL_STATIC_INFO, sequence, NVRTX_CALL_TIMEOUT_US, &length);
 	if (error != 0) {
-		nvrtx_stage_mark("P3 fail: static info (%d)", error);
+		nvrtx_stage_mark("static-info fail: static info (%d)", error);
 		return error;
 	}
 
 	/* A short reply is not the 570.144 layout. */
 	if (length < NVRTX_STATIC_INFO_BYTES) {
-		nvrtx_stage_mark("P3 fail: static info of %zu bytes", length);
+		nvrtx_stage_mark("static-info fail: static info of %zu bytes", length);
 		return EIO;
 	}
 
-	/* Keeps the information: P4 reads the FB regions and the internal handles from it. */
+	/* Keeps the information: address-space reads the FB regions and the internal handles from it. */
 	gpu->static_info = kern_malloc(NVRTX_STATIC_INFO_BYTES);
 	if (gpu->static_info == NULL)
 		return ENOMEM;
@@ -1451,10 +1452,10 @@ gsp_static_info(
 	name[index] = '\0';
 
 	/* Succeeded: the firmware knows the GPU. */
-	nvrtx_stage_mark("P3 static: %s vram %lluM uefi %u", name,
+	nvrtx_stage_mark("static-info static: %s vram %lluM uefi %u", name,
 	    (unsigned long long)(nvrtx_get64(gpu->reply, NVRTX_STATIC_FB_LENGTH_AT) >> 20),
 	    (unsigned)gpu->reply[NVRTX_STATIC_UEFI_AT]);
-	nvrtx_stage_mark("P3 static: bar1 root %llx bar2 root %llx",
+	nvrtx_stage_mark("static-info static: bar1 root %llx bar2 root %llx",
 	    (unsigned long long)nvrtx_get64(gpu->reply, NVRTX_STATIC_BAR1_ROOT_AT),
 	    (unsigned long long)nvrtx_get64(gpu->reply, NVRTX_STATIC_BAR2_ROOT_AT));
 	return 0;
@@ -1490,6 +1491,6 @@ gsp_objects(
 		return error;
 
 	/* Succeeded: the driver has its client, device and subdevice. */
-	nvrtx_stage_mark("P3 ok: client, device and subdevice");
+	nvrtx_stage_mark("static-info ok: client, device and subdevice");
 	return 0;
 }

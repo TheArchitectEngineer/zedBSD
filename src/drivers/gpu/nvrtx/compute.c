@@ -6,10 +6,10 @@
  */
 
 /*
- * The first compute launch (stage P9c, nvrtx.compute=1).
+ * The first compute launch (the compute-test stage, nvrtx.compute=1).
  *
- * After the golden context (P5g) the driver makes a graphics channel of its
- * own and runs one compute program on it:
+  * After the golden context (golden-context) the driver makes a graphics
+  * channel of its own and runs one compute program on it:
  *
  *   1. an address space the driver owns, over page tables in an arena of
  *      VRAM below the graphics arena; the tables map the channel's context
@@ -24,7 +24,7 @@
  *      launch and a semaphore fence after it;
  *   4. the result: 32 words of 42, and the word after them untouched;
  *   5. when the boot asks (nvrtx.draw=1), the first draw on the same
- *      channel (draw.c, stage P9g), whose pages the tables map too.
+ *      channel (draw.c, the draw-test stage), whose pages the tables map too.
  *
  * Nothing of the display or of the copy channel is touched.  The stop
  * undoes 2 and 1 before the graphics context's stop.
@@ -113,11 +113,11 @@ static uint64_t compute_page_va(uint32_t page);
 static uint64_t compute_align(uint64_t value, uint32_t shift);
 
 /*
- * Runs stage P9c: the space, the channel, the program, the launch and the
- * check of its result.
+  * Runs the compute-test stage: the space, the channel, the program, the
+  * launch and the check of its result.
  *
- * Needs the golden context of P5g.  A failure is returned; the finish's
- * stop frees whatever objects were made.
+  * Needs the golden context of golden-context.  A failure is returned; the
+  * finish's stop frees whatever objects were made.
  */
 int
 nvrtx_compute_start(
@@ -128,11 +128,11 @@ nvrtx_compute_start(
 	bool allowed;
 	int error;
 
-	nvrtx_stage_mark("P9c begin");
+	nvrtx_stage_mark("compute-test begin");
 
 	/* The channel's context comes from the golden context. */
 	if (gpu->gr.buffer_count == 0U) {
-		nvrtx_stage_mark("P9c fail: no golden context (nvrtx.gr=1 is needed)");
+		nvrtx_stage_mark("compute-test fail: no golden context (nvrtx.gr=1 is needed)");
 		return EINVAL;
 	}
 
@@ -158,7 +158,7 @@ nvrtx_compute_start(
 	if (error != 0)
 		return error;
 
-	nvrtx_stage_mark("P9c ok: compute channel %u on runlist %u", (unsigned)COMPUTE_CHID, (unsigned)gpu->engine.pick.graphics_runlist);
+	nvrtx_stage_mark("compute-test ok: compute channel %u on runlist %u", (unsigned)COMPUTE_CHID, (unsigned)gpu->engine.pick.graphics_runlist);
 
 	/* The program, then the launch and its fence. */
 	error = compute_program(gpu, &gpr_count);
@@ -176,9 +176,9 @@ nvrtx_compute_start(
 
 	/* Draws on the same channel when the boot asks (nvrtx.draw=1) and does not stop before it. */
 	wanted = nvrtx_stage_draw_wanted();
-	allowed = nvrtx_stage_allowed("P9g");
+	allowed = nvrtx_stage_allowed("draw-test");
 	if (wanted && !allowed)
-		nvrtx_stage_mark("P9g skipped (nvrtx.stop=P9g)");
+		nvrtx_stage_mark("draw-test skipped (nvrtx.stop=draw-test)");
 	if (wanted && allowed) {
 		error = nvrtx_draw_start(gpu);
 		if (error != 0)
@@ -190,7 +190,7 @@ nvrtx_compute_start(
 }
 
 /*
- * Undoes P9c's objects before the graphics context's
+ * Undoes compute-test's objects before the graphics context's
  * stop: the channel off the scheduler, the compute object, the channel, the
  * root, the space.  Failures are counted and shown; the unload removes the
  * rest.
@@ -260,11 +260,11 @@ nvrtx_compute_stop(
 
 	/* Says how the stop went, when anything failed. */
 	if (failures != 0)
-		nvrtx_stage_mark("P6: %d compute frees failed; the unload removes the rest", failures);
+		nvrtx_stage_mark("channel-stop: %d compute frees failed; the unload removes the rest", failures);
 }
 
 /*
- * Gives back P9c's system-memory buffers.
+ * Gives back compute-test's system-memory buffers.
  *
  * Only once the GPU no longer reads them: after the GSP is stopped.
  */
@@ -387,13 +387,13 @@ compute_arena(
 	/* Takes the arena below the graphics arena, in the last usable region. */
 	error = nvrtx_mmu_vram_block(gpu->static_info, NVRTX_COMPUTE_ARENA_RESERVE, &candidate, &region);
 	if (error != 0) {
-		nvrtx_stage_mark("P9c fail: no VRAM for the arena (%d)", error);
+		nvrtx_stage_mark("compute-test fail: no VRAM for the arena (%d)", error);
 		return error;
 	}
 
 	compute->arena = compute_align(candidate, COMPUTE_ARENA_ALIGN_SHIFT);
 	if (compute->arena + COMPUTE_ARENA_BYTES > gr->arena) {
-		nvrtx_stage_mark("P9c fail: the arena %llx meets the graphics arena", (unsigned long long)compute->arena);
+		nvrtx_stage_mark("compute-test fail: the arena %llx meets the graphics arena", (unsigned long long)compute->arena);
 		return ENOSPC;
 	}
 
@@ -413,12 +413,12 @@ compute_arena(
 
 	/* The channel's own buffers must fit the arena below the draw's target. */
 	if (physical > COMPUTE_DRAW_AT) {
-		nvrtx_stage_mark("P9c fail: the context buffers need %llx of VRAM", (unsigned long long)physical);
+		nvrtx_stage_mark("compute-test fail: the context buffers need %llx of VRAM", (unsigned long long)physical);
 		return ENOSPC;
 	}
 
 	/* Succeeded: the arena is laid out. */
-	nvrtx_stage_mark("P9c arena at %llx, own buffers %llx bytes", (unsigned long long)compute->arena, (unsigned long long)(physical - COMPUTE_BUFFERS_AT));
+	nvrtx_stage_mark("compute-test arena at %llx, own buffers %llx bytes", (unsigned long long)compute->arena, (unsigned long long)(physical - COMPUTE_BUFFERS_AT));
 	return 0;
 }
 
@@ -462,7 +462,7 @@ compute_buffers(
 	if (error != 0)
 		return error;
 
-	/* The method buffer, as large as the resource manager asked for P5's. */
+	/* The method buffer, as large as the resource manager asked for copy-channel's. */
 	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &compute->methods);
 	if (error != 0)
 		return error;
@@ -548,12 +548,12 @@ compute_tables(
 	if (error == 0)
 		error = nvrtx_vram_zero(gpu, compute->arena + COMPUTE_INSTANCE_AT, 2U * NVRTX_INSTANCE_BYTES);
 	if (error != 0) {
-		nvrtx_stage_mark("P9c fail: the tables could not be written (%d)", error);
+		nvrtx_stage_mark("compute-test fail: the tables could not be written (%d)", error);
 		return error;
 	}
 
 	/* Succeeded: the tables are in the VRAM. */
-	nvrtx_stage_mark("P9c page tables at %llx", (unsigned long long)(compute->arena + COMPUTE_TABLES_AT));
+	nvrtx_stage_mark("compute-test page tables at %llx", (unsigned long long)(compute->arena + COMPUTE_TABLES_AT));
 	return 0;
 }
 
@@ -572,7 +572,7 @@ compute_space(
 	compute = &gpu->compute;
 	root = compute->arena + COMPUTE_TABLES_AT;
 
-	/* The space, owned by the driver (as P4's). */
+	/* The space, owned by the driver (as address-space's). */
 	nvrtx_space_params(params);
 	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_COMPUTE_SPACE, NVRTX_CLASS_SPACE, params, sizeof(params));
 	if (error != 0)
@@ -594,7 +594,7 @@ compute_space(
 		return error;
 
 	/* Succeeded: the space maps the range. */
-	nvrtx_stage_mark("P9c ok: vaspace");
+	nvrtx_stage_mark("compute-test ok: vaspace");
 	return 0;
 }
 
@@ -715,14 +715,14 @@ compute_program(
 	error = nvrtx_sm75_compile_ir(&first->ir, &binary, &diagnostic);
 	kern_free(first);
 	if (error != 0) {
-		nvrtx_stage_mark("P9c fail: the program did not compile (%d: %s)", error, (diagnostic.reason != NULL) ? diagnostic.reason : "?");
+		nvrtx_stage_mark("compute-test fail: the program did not compile (%d: %s)", error, (diagnostic.reason != NULL) ? diagnostic.reason : "?");
 		return error;
 	}
 
 	/* The code must fit the page. */
 	bytes = (size_t)binary->code_words * 4U;
 	if (bytes > NVRTX_GSP_PAGE_SIZE || binary->storage_count != 1U) {
-		nvrtx_stage_mark("P9c fail: the program takes %u bytes and %u storage buffers", (unsigned)bytes, (unsigned)binary->storage_count);
+		nvrtx_stage_mark("compute-test fail: the program takes %u bytes and %u storage buffers", (unsigned)bytes, (unsigned)binary->storage_count);
 		nvrtx_sm75_binary_free(binary);
 		return EINVAL;
 	}
@@ -730,7 +730,7 @@ compute_program(
 	/* Copies the code; the page is coherent memory, so the GPU sees it as written. */
 	kern_memcpy(gpu->compute.program.dma.address, binary->code, bytes);
 	*gpr_count = binary->gpr_count;
-	nvrtx_stage_mark("P9c program: %u instructions, %u registers", (unsigned)(binary->code_words / 4U), (unsigned)binary->gpr_count);
+	nvrtx_stage_mark("compute-test program: %u instructions, %u registers", (unsigned)(binary->code_words / 4U), (unsigned)binary->gpr_count);
 	nvrtx_sm75_binary_free(binary);
 
 	/* Succeeded: the program is in place. */
@@ -789,7 +789,7 @@ compute_launch(
 	info.cbuf_size[0] = COMPUTE_CONSTANTS_BYTES;
 	error = nvrtx_qmd_build((uint32_t *)compute->qmd.dma.address, &info);
 	if (error != 0) {
-		nvrtx_stage_mark("P9c fail: the QMD could not be built (%d)", error);
+		nvrtx_stage_mark("compute-test fail: the QMD could not be built (%d)", error);
 		return error;
 	}
 
@@ -808,12 +808,12 @@ compute_launch(
 	/* Waits for the fence. */
 	error = nvrtx_compute_wait(gpu, COMPUTE_FENCE_VALUE, &waited);
 	if (error != 0) {
-		nvrtx_stage_mark("P9c fail: fence %08x after 2 s, result word 0 %08x", (unsigned)*(const volatile uint32_t *)compute->semaphore.dma.address, (unsigned)((const volatile uint32_t *)compute->result.dma.address)[0]);
+		nvrtx_stage_mark("compute-test fail: fence %08x after 2 s, result word 0 %08x", (unsigned)*(const volatile uint32_t *)compute->semaphore.dma.address, (unsigned)((const volatile uint32_t *)compute->result.dma.address)[0]);
 		return error;
 	}
 
 	/* Succeeded: the launch ran to its fence. */
-	nvrtx_stage_mark("P9c ok: fence 0x%x reached after %u us", (unsigned)COMPUTE_FENCE_VALUE, (unsigned)waited);
+	nvrtx_stage_mark("compute-test ok: fence 0x%x reached after %u us", (unsigned)COMPUTE_FENCE_VALUE, (unsigned)waited);
 	return 0;
 }
 
@@ -830,19 +830,19 @@ compute_check(
 	/* Each invocation's word. */
 	for (index = 0U; index < NVRTX_COMPUTE_FIRST_WIDTH; index++) {
 		if (words[index] != NVRTX_COMPUTE_FIRST_VALUE) {
-			nvrtx_stage_mark("P9c fail: result word %u is %08x", (unsigned)index, (unsigned)words[index]);
+			nvrtx_stage_mark("compute-test fail: result word %u is %08x", (unsigned)index, (unsigned)words[index]);
 			return EIO;
 		}
 	}
 
 	/* The word after them. */
 	if (words[NVRTX_COMPUTE_FIRST_WIDTH] != COMPUTE_RESULT_FILL) {
-		nvrtx_stage_mark("P9c fail: the program wrote past its words (%08x)", (unsigned)words[NVRTX_COMPUTE_FIRST_WIDTH]);
+		nvrtx_stage_mark("compute-test fail: the program wrote past its words (%08x)", (unsigned)words[NVRTX_COMPUTE_FIRST_WIDTH]);
 		return EIO;
 	}
 
 	/* Succeeded: the program ran as compiled. */
-	nvrtx_stage_mark("P9c ok: compute wrote %u words of %u", (unsigned)NVRTX_COMPUTE_FIRST_WIDTH, (unsigned)NVRTX_COMPUTE_FIRST_VALUE);
+	nvrtx_stage_mark("compute-test ok: compute wrote %u words of %u", (unsigned)NVRTX_COMPUTE_FIRST_WIDTH, (unsigned)NVRTX_COMPUTE_FIRST_VALUE);
 	return 0;
 }
 

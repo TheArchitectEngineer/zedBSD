@@ -6,19 +6,19 @@
  */
 
 /*
- * The display under the GSP (stage P8a: bring-up).
+ * The display under the GSP (the display-client stage: bring-up).
  *
- * The resource manager owns the display hardware's state machine.  The
- * driver brings the display up in this order: the display's instance memory (64 KiB of VRAM) is given to the
- * resource manager; the display gets a client, device and subdevice of its
- * own with the common object the display controls go to; the windows,
- * heads and outputs are read, each output's resource and connector; the
- * hotplug and DisplayPort interrupt notifications are asked for; the hash
- * table at the start of the instance memory is cleared; and the Turing
- * display root is made.  Nothing here changes what is on the screen; the
- * channels and the first commit on the head the firmware lit are stage
- * P8b (scanout.c).  When P8b does not run, the heads the firmware lit are
- * read for the log.
+  * The resource manager owns the display hardware's state machine.  The driver
+  * brings the display up in this order: the display's instance memory (64 KiB
+  * of VRAM) is given to the resource manager; the display gets a client,
+  * device and subdevice of its own with the common object the display controls
+  * go to; the windows, heads and outputs are read, each output's resource and
+  * connector; the hotplug and DisplayPort interrupt notifications are asked
+  * for; the hash table at the start of the instance memory is cleared; and the
+  * Turing display root is made.  Nothing here changes what is on the screen;
+  * the channels and the first commit on the head the firmware lit are stage
+  * takeover (scanout.c).  When takeover does not run, the heads the firmware
+  * lit are read for the log.
  */
 
 #include <stdbool.h>
@@ -144,7 +144,8 @@ static void display_head(struct nvrtx_gpu *gpu, uint32_t head, uint32_t display_
 static const char *display_protocol_name(uint32_t protocol);
 
 /*
- * Runs stage P8a: the display's instance memory, its objects and the readout of the lit heads.
+  * Runs the display-client stage: the display's instance memory, its objects
+  * and the readout of the lit heads.
  *
  * A failure is returned; the finish's stop frees the objects that were made.
  *
@@ -165,7 +166,7 @@ nvrtx_display_start(
 	display = &gpu->display;
 
 	/* Gives the resource manager the display's instance memory. */
-	nvrtx_stage_mark("P8 begin");
+	nvrtx_stage_mark("display begin");
 	error = display_instance(gpu);
 	if (error != 0)
 		return error;
@@ -212,14 +213,14 @@ nvrtx_display_start(
 
 	display->root_made = 1;
 
-	/* Without the takeover the heads the firmware lit are read here for the log; with it, P8b reads them in its order. */
+	/* Without the takeover the heads the firmware lit are read here for the log; with it, takeover reads them in its order. */
 	takeover = nvrtx_stage_disp_wanted();
-	allowed = nvrtx_stage_allowed("P8b");
+	allowed = nvrtx_stage_allowed("takeover");
 	if (!takeover || !allowed)
 		display_readout(gpu);
 
 	/* Succeeded: the display is the driver's to drive from here. */
-	nvrtx_stage_mark("P8 ok: display, heads %x, windows %x, outputs %x",
+	nvrtx_stage_mark("display ok: display, heads %x, windows %x, outputs %x",
 	    (unsigned)display->head_mask,
 	    (unsigned)display->window_mask,
 	    (unsigned)display->output_mask);
@@ -240,7 +241,7 @@ nvrtx_display_stop(
 	display = &gpu->display;
 	failures = 0;
 
-	/* Frees P8b's channels first: they are children of the root. */
+	/* Frees takeover's channels first: they are children of the root. */
 	nvrtx_scanout_stop(gpu);
 
 	/* Frees the root, then the two event objects, then the common object. */
@@ -296,7 +297,7 @@ nvrtx_display_stop(
 
 	/* Says how the stop went, when anything failed. */
 	if (failures != 0)
-		nvrtx_stage_mark("P6: %d display frees failed; the unload removes the rest", failures);
+		nvrtx_stage_mark("channel-stop: %d display frees failed; the unload removes the rest", failures);
 }
 
 /* Sends a control whose reply the caller reads in place: the reply is copied back over the parameters. */
@@ -353,7 +354,7 @@ display_instance(
 }
 
 /*
- * Finds the output the firmware lit and its head (stage P8b): for each output with a resource, in the order of its
+ * Finds the output the firmware lit and its head (the takeover stage): for each output with a resource, in the order of its
  * id, asks each head which display it drives until one drives this output,
  * then asks the output's resource and protocol.  The first lit output is
  * the one taken over.  Returns 0 (with gop_head_found clear when nothing
@@ -404,7 +405,7 @@ nvrtx_display_inherit(
 				return error;
 
 			display->lit_mask |= 1U << head;
-			nvrtx_stage_mark("P8b output %x lit on head %u: SOR %u %s",
+			nvrtx_stage_mark("takeover output %x lit on head %u: SOR %u %s",
 			    (unsigned)display_id,
 			    (unsigned)head,
 			    (unsigned)nvrtx_get32(params, DISPLAY_OUTPUT_INDEX_AT),
@@ -428,7 +429,7 @@ nvrtx_display_inherit(
 }
 
 /*
- * Detects the connected outputs (stage P8b): each output with a resource is asked whether a sink is connected;
+ * Detects the connected outputs (the takeover stage): each output with a resource is asked whether a sink is connected;
  * a connected one is asked its flat-panel information, and a connected
  * TMDS output its EDID, which for the lit output gives the preferred
  * timing and the HDMI facts.
@@ -488,7 +489,7 @@ nvrtx_display_detect(
 	}
 
 	/* Succeeded: the connected outputs are known. */
-	nvrtx_stage_mark("P8b connected %x", (unsigned)display->connected_mask);
+	nvrtx_stage_mark("takeover connected %x", (unsigned)display->connected_mask);
 	return 0;
 }
 
@@ -621,7 +622,7 @@ display_outputs(
 				return error;
 		}
 
-		nvrtx_stage_mark("P8 output %x: %s %u %s",
+		nvrtx_stage_mark("display output %x: %s %u %s",
 		    (unsigned)display_id,
 		    type == DISPLAY_TYPE_SOR ? "SOR" : "OR",
 		    (unsigned)display->output_or[index],
@@ -633,7 +634,7 @@ display_outputs(
 }
 
 /*
- * Reads one connected TMDS output's EDID; for the output whose id P8b
+ * Reads one connected TMDS output's EDID; for the output whose id takeover
  * takes over (or, before the inherit, any), keeps its preferred timing
  * and its sink's facts.
  */
@@ -671,7 +672,7 @@ display_edid(
 		if (error == 0)
 			display->timing_from_edid = 1;
 		nvrtx_disp_first_edid_sink(params + DISPLAY_EDID_DATA_AT, size, &display->sink);
-		nvrtx_stage_mark("P8b EDID %x: %u bytes, preferred %ux%u at %u kHz, %s%s",
+		nvrtx_stage_mark("takeover EDID %x: %u bytes, preferred %ux%u at %u kHz, %s%s",
 		    (unsigned)(1U << index),
 		    (unsigned)size,
 		    (unsigned)display->timing.hdisplay,
@@ -783,7 +784,7 @@ display_counts(
 
 	/* Succeeded: the display's shape is known. */
 	display->output_mask = nvrtx_get32(params, DISPLAY_SUPPORTED_MASK_AT);
-	nvrtx_stage_mark("P8 heads %u (%x), windows %x, outputs %x",
+	nvrtx_stage_mark("display heads %u (%x), windows %x, outputs %x",
 	    (unsigned)display->head_count,
 	    (unsigned)display->head_mask,
 	    (unsigned)display->window_mask,
@@ -813,7 +814,7 @@ display_readout(
 		nvrtx_put32(params, DISPLAY_ACTIVE_HEAD_AT, head);
 		error = display_control(gpu, NVRTX_DISP_CLIENT, DISPLAY_HANDLE_COMMON, DISPLAY_CTL_ACTIVE, params, sizeof(params));
 		if (error != 0) {
-			nvrtx_stage_mark("P8 head %u: active query failed (%d)", (unsigned)head, error);
+			nvrtx_stage_mark("display head %u: active query failed (%d)", (unsigned)head, error);
 			continue;
 		}
 
@@ -858,7 +859,7 @@ display_head(
 		protocol = nvrtx_get32(params, DISPLAY_OUTPUT_PROTOCOL_AT);
 	}
 
-	/* Keeps the first lit head for P8b. */
+	/* Keeps the first lit head for takeover. */
 	if (gpu->display.gop_head_found == 0) {
 		gpu->display.gop_head_found = 1;
 		gpu->display.gop_head = head;
@@ -873,11 +874,11 @@ display_head(
 	blank_end = nvrtx_rd32(gpu, base + DISPLAY_ARMED_BLANK_END_AT);
 	blank_start = nvrtx_rd32(gpu, base + DISPLAY_ARMED_BLANK_START_AT);
 	clock = nvrtx_rd32(gpu, base + DISPLAY_ARMED_CLOCK_AT);
-	nvrtx_stage_mark("P8 head %u: display %x %s %u %s", (unsigned)head, (unsigned)display_id,
+	nvrtx_stage_mark("display head %u: display %x %s %u %s", (unsigned)head, (unsigned)display_id,
 	    type == DISPLAY_TYPE_SOR ? "SOR" : "OR",
 	    (unsigned)output,
 	    display_protocol_name(protocol));
-	nvrtx_stage_mark("P8 head %u: %ux%u of %ux%u, clock %u",
+	nvrtx_stage_mark("display head %u: %ux%u of %ux%u, clock %u",
 	    (unsigned)head,
 	    (unsigned)((blank_start & 0xffffU) - (blank_end & 0xffffU)),
 	    (unsigned)((blank_start >> 16) - (blank_end >> 16)),
