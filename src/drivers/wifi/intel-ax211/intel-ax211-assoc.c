@@ -82,12 +82,13 @@
 #define AX211_ASSOC_QUEUE_CB_SIZE 5U
 #define AX211_ASSOC_RESERVATION_FOR_JOIN 0U
 
-static int ax211_assoc_required_version( const struct intel_ax211_protocol_command_table *table, uint8_t group, uint8_t opcode, uint8_t command_version, uint8_t notification_version);
+
+static int ax211_assoc_required_version(const struct intel_ax211_protocol_command_table *table, uint8_t group, uint8_t opcode, uint8_t command_version, uint8_t notification_version);
 static int ax211_assoc_address_valid(const uint8_t address[6]);
 static void ax211_assoc_put_le32(uint8_t *bytes, uint32_t value);
 static void ax211_assoc_put_le16(uint8_t *bytes, uint16_t value);
 static uint32_t ax211_assoc_get_le32(const uint8_t *bytes);
-static int ax211_assoc_optional_version( const struct intel_ax211_protocol_command_table *table, uint8_t group, uint8_t opcode, uint8_t command_version, uint8_t notification_version);
+static int ax211_assoc_optional_version(const struct intel_ax211_protocol_command_table *table, uint8_t group, uint8_t opcode, uint8_t command_version, uint8_t notification_version);
 static int ax211_assoc_profile_valid(const struct intel_ax211_assoc_profile *profile);
 static int ax211_assoc_set_step(struct intel_ax211_assoc_state *state, enum intel_ax211_assoc_step step, uint64_t now_us);
 static uint32_t ax211_assoc_next_sequence(uint32_t sequence);
@@ -115,37 +116,39 @@ static int ax211_assoc_advance(struct intel_ax211_assoc_state *state, uint64_t n
 static int ax211_assoc_exchange_failure(struct intel_ax211_assoc_state *state, int result, uint64_t now_us);
 
 /*
- * Implements the drv intel ax211 assoc mcast filter api89 validate operation.
+ * Checks that the image lists the multicast filter command at the version this
+ * driver encodes.
  */
 int
 drv_intel_ax211_assoc_mcast_filter_api89_validate(
 	const struct intel_ax211_protocol_command_table *table)
 {
-	int error;
+	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing table. */
 	if (table == NULL)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Checks the drv intel ax211 protocol command table validate api89 result. */
-	if (drv_intel_ax211_protocol_command_table_validate_api89(table) !=
-	    INTEL_AX211_PROTOCOL_OK) {
-		/* Returns the computed result. */
+	/* Refuses a table that is not the API 89 table. */
+	result = drv_intel_ax211_protocol_command_table_validate_api89(table);
+	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_ASSOC_UNSUPPORTED;
-	}
 
-	/* Obtains the ax211 assoc required version result. */
-	error = ax211_assoc_required_version(
+	/* Requires the multicast filter command's version. */
+	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_CLASSIC_WIDE,
 		INTEL_AX211_ASSOC_MULTICAST_LIST_OPCODE,
 		INTEL_AX211_ASSOC_MULTICAST_LIST_VERSION, 0U);
+	if (result != INTEL_AX211_ASSOC_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the command is supported. */
+	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc mcast filter encode operation.
+ * Encodes the multicast filter that passes all multicast of the network named
+ * by bssid.
  */
 int
 drv_intel_ax211_assoc_mcast_filter_encode(
@@ -153,57 +156,63 @@ drv_intel_ax211_assoc_mcast_filter_encode(
 	uint8_t *output,
 	size_t output_capacity)
 {
-	/* Checks the ax211 assoc address valid result. */
-	if (bssid == NULL || output == NULL ||
-	    !ax211_assoc_address_valid(bssid)) {
-		/* Returns the computed result. */
-		return INTEL_AX211_ASSOC_INVALID;
-	}
+	int valid;
 
-	/* Handles the output capacity condition. */
+	/* Refuses missing arguments. */
+	if (bssid == NULL || output == NULL)
+		return INTEL_AX211_ASSOC_INVALID;
+
+	/* Refuses an unset or group address. */
+	valid = ax211_assoc_address_valid(bssid);
+	if (!valid)
+		return INTEL_AX211_ASSOC_INVALID;
+
+	/* Refuses a buffer smaller than the command. */
 	if (output_capacity < INTEL_AX211_ASSOC_MULTICAST_LIST_SIZE)
 		return INTEL_AX211_ASSOC_BUFFER_TOO_SMALL;
+
+	/* Succeeded: fills the command. */
 	kern_memset(output, 0, INTEL_AX211_ASSOC_MULTICAST_LIST_SIZE);
 	output[0U] = 1U;
 	output[3U] = 1U;
 	kern_memcpy(output + 4U, bssid, 6U);
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc mac power api89 validate operation.
+ * Checks that the image lists the power-save command at the version this
+ * driver encodes.
  */
 int
 drv_intel_ax211_assoc_mac_power_api89_validate(
 	const struct intel_ax211_protocol_command_table *table)
 {
-	int error;
+	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing table. */
 	if (table == NULL)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Checks the drv intel ax211 protocol command table validate api89 result. */
-	if (drv_intel_ax211_protocol_command_table_validate_api89(table) !=
-	    INTEL_AX211_PROTOCOL_OK) {
-		/* Returns the computed result. */
+	/* Refuses a table that is not the API 89 table. */
+	result = drv_intel_ax211_protocol_command_table_validate_api89(table);
+	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_ASSOC_UNSUPPORTED;
-	}
 
-	/* Obtains the ax211 assoc required version result. */
-	error = ax211_assoc_required_version(
+	/* Requires the power-save command's version. */
+	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_CLASSIC_WIDE,
 		INTEL_AX211_ASSOC_POWER_SAVE_OPCODE,
 		INTEL_AX211_ASSOC_POWER_SAVE_VERSION, 0U);
+	if (result != INTEL_AX211_ASSOC_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the command is supported. */
+	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc mac power encode operation.
+ * Encodes the power-save command: power save off and a keep-alive period of
+ * three DTIM intervals.
  */
 int
 drv_intel_ax211_assoc_mac_power_encode(
@@ -216,49 +225,56 @@ drv_intel_ax211_assoc_mac_power_encode(
 	uint64_t keep_alive_seconds;
 	uint32_t effective_dtim;
 
-	/* Handles the output availability. */
+	/* Refuses a missing buffer and a zero beacon interval. */
 	if (output == NULL || beacon_interval_ms == 0U)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Handles the output capacity condition. */
+	/* Refuses a buffer smaller than the command. */
 	if (output_capacity < INTEL_AX211_ASSOC_POWER_SAVE_SIZE)
 		return INTEL_AX211_ASSOC_BUFFER_TOO_SMALL;
-	effective_dtim = dtim_period == 0U ? 1U : dtim_period;
+
+	/* Treats an unknown DTIM period as every beacon. */
+	if (dtim_period == 0U)
+		effective_dtim = 1U;
+	else
+		effective_dtim = dtim_period;
+
+	/* Rounds three DTIM intervals up to whole seconds. */
 	keep_alive_milliseconds =
 		UINT64_C(3) * effective_dtim * beacon_interval_ms;
 	keep_alive_seconds =
 		(keep_alive_milliseconds + UINT64_C(999)) / UINT64_C(1000);
 
-	/* Handles the keep alive seconds condition. */
+	/* Raises a shorter period to the minimum. */
 	if (keep_alive_seconds <
 	    INTEL_AX211_ASSOC_POWER_SAVE_KEEP_ALIVE_MIN_SECONDS) {
 		keep_alive_seconds =
 			INTEL_AX211_ASSOC_POWER_SAVE_KEEP_ALIVE_MIN_SECONDS;
 	}
 
-	/* Handles the keep alive seconds condition. */
+	/* Refuses a period the 16-bit field cannot hold. */
 	if (keep_alive_seconds > UINT16_MAX)
 		return INTEL_AX211_ASSOC_OVERSIZED;
+
+	/* Succeeded: fills the command. */
 	kern_memset(output, 0, INTEL_AX211_ASSOC_POWER_SAVE_SIZE);
 	ax211_assoc_put_le32(output, INTEL_AX211_ASSOC_INTERFACE_SLOT);
 	ax211_assoc_put_le16(output + 4U, 0U);
 	ax211_assoc_put_le16(output + 6U, (uint16_t)keep_alive_seconds);
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc mac power response validate operation.
+ * Checks the power-save command's answer.
  */
 int
 drv_intel_ax211_assoc_mac_power_response_validate(
 	const uint8_t *response,
 	size_t response_length)
 {
-	int error;
+	uint32_t status;
 
-	/* Handles the response availability. */
+	/* Refuses a missing answer. */
 	if (response == NULL)
 		return INTEL_AX211_ASSOC_INVALID;
 
@@ -269,45 +285,43 @@ drv_intel_ax211_assoc_mac_power_response_validate(
 	if (response_length == 0U)
 		return INTEL_AX211_ASSOC_OK;
 
-	/* Handles the response length condition. */
+	/* Refuses an answer shorter than the status word. */
 	if (response_length < INTEL_AX211_ASSOC_POWER_SAVE_RESPONSE_SIZE)
 		return INTEL_AX211_ASSOC_TRUNCATED;
 
-	/* Handles the response length condition. */
+	/* Refuses an answer longer than the status word. */
 	if (response_length > INTEL_AX211_ASSOC_POWER_SAVE_RESPONSE_SIZE)
 		return INTEL_AX211_ASSOC_OVERSIZED;
 
-	/* Computes the function result. */
-	error = ax211_assoc_get_le32(response) == 0U
-				  ? INTEL_AX211_ASSOC_OK
-				  : INTEL_AX211_ASSOC_FIRMWARE;
+	/* Refuses a nonzero status. */
+	status = ax211_assoc_get_le32(response);
+	if (status != 0U)
+		return INTEL_AX211_ASSOC_FIRMWARE;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the firmware accepted the command. */
+	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc api89 validate operation.
+ * Checks that the image lists every association command at the version this
+ * driver encodes.
  */
 int
 drv_intel_ax211_assoc_api89_validate(
 	const struct intel_ax211_protocol_command_table *table)
 {
-	int error;
 	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing table. */
 	if (table == NULL)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Checks the drv intel ax211 protocol command table validate api89 result. */
-	if (drv_intel_ax211_protocol_command_table_validate_api89(table) !=
-	    INTEL_AX211_PROTOCOL_OK) {
-		/* Returns the computed result. */
+	/* Refuses a table that is not the API 89 table. */
+	result = drv_intel_ax211_protocol_command_table_validate_api89(table);
+	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_ASSOC_UNSUPPORTED;
-	}
 
-	/* Checks the operation result. */
+	/* Requires the channel context command. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_CLASSIC_WIDE,
 		INTEL_AX211_ASSOC_CHANNEL_CONTEXT_OPCODE,
@@ -315,7 +329,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the interface command. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_LINK_SETUP,
 		INTEL_AX211_ASSOC_INTERFACE_SETUP_OPCODE,
@@ -323,7 +337,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the link command. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_LINK_SETUP,
 		INTEL_AX211_ASSOC_LINK_SETUP_OPCODE,
@@ -331,7 +345,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Accepts the station command unlisted or at its version. */
 	result = ax211_assoc_optional_version(
 		table, INTEL_AX211_ASSOC_FAMILY_LINK_SETUP,
 		INTEL_AX211_ASSOC_PEER_SETUP_OPCODE,
@@ -339,7 +353,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Accepts the station removal unlisted or at its version. */
 	result = ax211_assoc_optional_version(
 		table, INTEL_AX211_ASSOC_FAMILY_LINK_SETUP,
 		INTEL_AX211_ASSOC_PEER_REMOVE_OPCODE,
@@ -347,7 +361,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the receive chain command. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_TRAFFIC,
 		INTEL_AX211_ASSOC_RECEIVE_CHAINS_OPCODE,
@@ -355,7 +369,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the queue command and its answer. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_TRAFFIC,
 		INTEL_AX211_ASSOC_QUEUE_SETUP_OPCODE,
@@ -364,7 +378,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the time reservation command. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_LINK_SETUP,
 		INTEL_AX211_ASSOC_TIME_RESERVATION_OPCODE,
@@ -372,7 +386,7 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the time reservation notice. */
 	result = ax211_assoc_required_version(
 		table, INTEL_AX211_ASSOC_FAMILY_LINK_SETUP,
 		INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE,
@@ -381,20 +395,22 @@ drv_intel_ax211_assoc_api89_validate(
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the multicast filter command. */
 	result = drv_intel_ax211_assoc_mcast_filter_api89_validate(table);
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Obtains the drv intel ax211 assoc mac power api89 validate result. */
-	error = drv_intel_ax211_assoc_mac_power_api89_validate(table);
+	/* Requires the power-save command. */
+	result = drv_intel_ax211_assoc_mac_power_api89_validate(table);
+	if (result != INTEL_AX211_ASSOC_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: every association command is supported. */
+	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc begin operation.
+ * Starts an association session for profile and selects its first command.
  */
 int
 drv_intel_ax211_assoc_begin(
@@ -407,35 +423,47 @@ drv_intel_ax211_assoc_begin(
 {
 	uint32_t next_sequence;
 	uint32_t last_completed_sequence;
+	int valid;
 	int result;
 
-	/* Checks the ax211 assoc profile valid result. */
-	if (state == NULL || !ax211_assoc_profile_valid(profile) ||
-	    common_generation == 0U || hardware_epoch == 0U) {
-		/* Returns the computed result. */
+	/* Refuses a missing state. */
+	if (state == NULL)
 		return INTEL_AX211_ASSOC_INVALID;
-	}
 
-	/* Checks the operation result. */
+	/* Refuses a profile the commands cannot carry. */
+	valid = ax211_assoc_profile_valid(profile);
+	if (!valid)
+		return INTEL_AX211_ASSOC_INVALID;
+
+	/* Refuses an unset operation or firmware boot. */
+	if (common_generation == 0U || hardware_epoch == 0U)
+		return INTEL_AX211_ASSOC_INVALID;
+
+	/* Requires every association command. */
 	result = drv_intel_ax211_assoc_api89_validate(table);
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
 
-	/* Handles the state condition. */
+	/* Refuses a session while another one runs. */
 	if (state->initialized && state->phase != INTEL_AX211_ASSOC_PHASE_IDLE)
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 
-	/* Handles the state condition. */
+	/* Refuses a second session of the same operation. */
 	if (state->initialized &&
 	    common_generation == state->last_common_generation) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_STALE;
 	}
 
 	/* Restarts the state machine but keeps the sequence numbering. */
-	next_sequence = state->initialized ? state->next_sequence : 1U;
-	last_completed_sequence =
-		state->initialized ? state->last_completed_sequence : 0U;
+	if (state->initialized) {
+		next_sequence = state->next_sequence;
+		last_completed_sequence = state->last_completed_sequence;
+	} else {
+		next_sequence = 1U;
+		last_completed_sequence = 0U;
+	}
+
+	/* Clears the state and records the new session. */
 	kern_memset(state, 0, sizeof(*state));
 	state->profile = *profile;
 	state->common_generation = common_generation;
@@ -447,18 +475,21 @@ drv_intel_ax211_assoc_begin(
 	state->failure = INTEL_AX211_ASSOC_OK;
 	state->initialized = 1U;
 
-	/* Checks the operation result. */
+	/* Selects the first command; a failure leaves the state cleared. */
 	result = ax211_assoc_set_step(state, INTEL_AX211_ASSOC_STEP_MAC_ADD,
 				      now_us);
-	if (result != INTEL_AX211_ASSOC_OK)
+	if (result != INTEL_AX211_ASSOC_OK) {
 		kern_memset(state, 0, sizeof(*state));
+		return result;
+	}
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the first command is ready. */
+	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc begin update operation.
+ * Starts the association stage of an authenticated session with the access
+ * point's answer.
  */
 int
 drv_intel_ax211_assoc_begin_update(
@@ -468,45 +499,49 @@ drv_intel_ax211_assoc_begin_update(
 	uint32_t hardware_epoch,
 	uint64_t now_us)
 {
+	int valid;
 	int result;
 
-	/* Handles the state availability. */
-	if (state == NULL || !state->initialized || update == NULL ||
-	    common_generation == 0U || hardware_epoch == 0U) {
-		/* Returns the computed result. */
+	/* Refuses missing arguments and an unset operation or firmware boot. */
+	if (state == NULL ||
+	    !state->initialized ||
+	    update == NULL ||
+	    common_generation == 0U ||
+	    hardware_epoch == 0U) {
 		return INTEL_AX211_ASSOC_INVALID;
 	}
 
-	/* Handles the common generation condition. */
+	/* Refuses another operation or firmware boot. */
 	if (common_generation != state->common_generation ||
 	    hardware_epoch != state->hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_STALE;
 	}
 
-	/* Handles the state condition. */
+	/* Admits only a session whose authentication stage is done. */
 	if (state->phase != INTEL_AX211_ASSOC_PHASE_AUTH_READY)
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 
-	/* Checks the ax211 assoc update valid result. */
-	if (!ax211_assoc_update_valid(&state->profile, update))
+	/* Refuses an answer the commands cannot carry. */
+	valid = ax211_assoc_update_valid(&state->profile, update);
+	if (!valid)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Checks the operation result. */
+	/* Selects the first command of the stage. */
 	result = ax211_assoc_set_step(
 		state, INTEL_AX211_ASSOC_STEP_MAC_ASSOCIATE, now_us);
 	if (result != INTEL_AX211_ASSOC_OK)
 		return result;
+
+	/* Succeeded: the association stage runs with the answer. */
 	state->update = *update;
 	state->update_valid = 1U;
 	state->phase = INTEL_AX211_ASSOC_PHASE_ASSOCIATING;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc current operation.
+ * Encodes the session's current command, or reports where the session
+ * stands.
  */
 int
 drv_intel_ax211_assoc_current(
@@ -514,51 +549,56 @@ drv_intel_ax211_assoc_current(
 	uint64_t now_us,
 	struct intel_ax211_assoc_command *command)
 {
-	int error;
+	int result;
 
-	/* Handles the state availability. */
+	/* Refuses missing arguments and an unstarted state. */
 	if (state == NULL || command == NULL || !state->initialized)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Handles the state condition. */
+	/* The authentication stage is done. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_AUTH_READY)
 		return INTEL_AX211_ASSOC_AUTH_READY;
 
-	/* Handles the state condition. */
+	/* The association is done. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_ASSOCIATED)
 		return INTEL_AX211_ASSOC_COMPLETE;
 
-	/* Checks the operation status. */
+	/* The rollback failed. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_FAILED)
 		return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
 
-	/* Handles the state condition. */
+	/* An idle state either never started or has rolled back. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_IDLE) {
-		return state->failure == INTEL_AX211_ASSOC_OK
-			       ? INTEL_AX211_ASSOC_INVALID
-			       : INTEL_AX211_ASSOC_ROLLED_BACK;
+		/* Refuses a state that never failed. */
+		if (state->failure == INTEL_AX211_ASSOC_OK)
+			return INTEL_AX211_ASSOC_INVALID;
+
+		/* Reports the finished rollback. */
+		return INTEL_AX211_ASSOC_ROLLED_BACK;
 	}
 
-	/* Handles the state condition. */
+	/* Refuses a running state without a command. */
 	if (state->step == INTEL_AX211_ASSOC_STEP_NONE ||
 	    state->active_sequence == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 	}
 
-	/* Handles the now us condition. */
+	/* The command's time ran out. */
 	if (now_us >= state->deadline)
 		return INTEL_AX211_ASSOC_TIMEOUT;
 
-	/* Obtains the ax211 assoc command encode result. */
-	error = ax211_assoc_command_encode(state, command);
+	/* Encodes the command. */
+	result = ax211_assoc_command_encode(state, command);
+	if (result != INTEL_AX211_ASSOC_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: *command is the command to send. */
+	return INTEL_AX211_ASSOC_OK;
 }
 
 /*
- * Implements the drv intel ax211 assoc accept operation.
+ * Accepts the firmware's answer to the current command and selects the next
+ * one.
  */
 int
 drv_intel_ax211_assoc_accept(
@@ -567,102 +607,99 @@ drv_intel_ax211_assoc_accept(
 	const struct intel_ax211_assoc_reply *reply,
 	uint64_t now_us)
 {
-	int error;
+	int matches;
 	int result;
 
-	/* Handles the state availability. */
-	if (state == NULL || command == NULL || reply == NULL ||
+	/* Refuses missing arguments and an unstarted state. */
+	if (state == NULL ||
+	    command == NULL ||
+	    reply == NULL ||
 	    !state->initialized) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
 
-	/* Handles the command condition. */
+	/* Refuses a command or answer of another operation or firmware boot. */
 	if (command->common_generation != state->common_generation ||
 	    command->hardware_epoch != state->hardware_epoch ||
 	    reply->common_generation != state->common_generation ||
 	    reply->hardware_epoch != state->hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_STALE;
 	}
 
-	/* Handles the command condition. */
+	/* Refuses a repeat of the answer already accepted. */
 	if (command->sequence == state->last_completed_sequence ||
 	    reply->sequence == state->last_completed_sequence) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_DUPLICATE;
 	}
 
-	/* Handles the command condition. */
-	if (command->step != state->step || reply->step != state->step ||
+	/* Refuses a command or answer of another step. */
+	if (command->step != state->step ||
+	    reply->step != state->step ||
 	    command->sequence != state->active_sequence ||
 	    reply->sequence != state->active_sequence) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 	}
 
-	/* Checks the ax211 assoc command matches result. */
-	if (!ax211_assoc_command_matches(state, command))
+	/* Refuses a command that differs from the one the state encodes. */
+	matches = ax211_assoc_command_matches(state, command);
+	if (!matches)
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 
-	/* Handles the now us condition. */
+	/* A late answer expires the command. */
 	if (now_us >= state->deadline) {
-		/* Obtains the drv intel ax211 assoc expire result. */
-		error = drv_intel_ax211_assoc_expire(state, now_us);
-
-		/* Failed. */
-		return error;
-	}
-
-	/* Handles the reply condition. */
-	if (reply->acknowledgement != 0) {
-		/* Handles the state condition. */
-		if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
-			state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
-			state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-			/* Returns the computed result. */
-			return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-		}
-
-		(void)ax211_assoc_rollback_begin(
-			state, INTEL_AX211_ASSOC_FIRMWARE, now_us);
-
-		/* Returns the computed result. */
-		return INTEL_AX211_ASSOC_FIRMWARE;
-	}
-
-	/* Checks the operation result. */
-	result = ax211_assoc_response_validate(command, reply);
-	if (result != INTEL_AX211_ASSOC_OK) {
-		/* Handles the state condition. */
-		if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
-			state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
-			state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-			/* Returns the computed result. */
-			return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-		}
-
-		ax211_assoc_mark_uncertain(state, state->step);
-		(void)ax211_assoc_rollback_begin(state, result, now_us);
-
-		/* Failed. */
+		result = drv_intel_ax211_assoc_expire(state, now_us);
 		return result;
 	}
 
+	/* A refused command ends the session. */
+	if (reply->acknowledgement != 0) {
+		/* A refusal during the rollback fails the rollback. */
+		if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
+			state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
+			state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+			return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+		}
+
+		/* Starts the rollback and reports the refusal. */
+		(void)ax211_assoc_rollback_begin(
+			state, INTEL_AX211_ASSOC_FIRMWARE, now_us);
+		return INTEL_AX211_ASSOC_FIRMWARE;
+	}
+
+	/* A malformed answer ends the session. */
+	result = ax211_assoc_response_validate(command, reply);
+	if (result != INTEL_AX211_ASSOC_OK) {
+		/* A malformed answer during the rollback fails the rollback. */
+		if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
+			state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
+			state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+			return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+		}
+
+		/* Starts the rollback and reports the malformed answer. */
+		ax211_assoc_mark_uncertain(state, state->step);
+		(void)ax211_assoc_rollback_begin(state, result, now_us);
+		return result;
+	}
+
+	/* Records the answer and selects the next command. */
 	state->last_completed_sequence = state->active_sequence;
 	ax211_assoc_mark_success(state, state->step);
+	result = ax211_assoc_advance(state, now_us);
 
-	/* Obtains the ax211 assoc advance result. */
-	error = ax211_assoc_advance(state, now_us);
+	/* Reports a session that could not go on. */
+	if (result != INTEL_AX211_ASSOC_PENDING &&
+	    result != INTEL_AX211_ASSOC_AUTH_READY &&
+	    result != INTEL_AX211_ASSOC_COMPLETE) {
+		return result;
+	}
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: reports the next command or the end of a stage. */
+	return result;
 }
 
 /*
- * Implements the drv intel ax211 assoc session event accept operation.
+ * Accepts the firmware's notice about the session's time reservation.
  */
 int
 drv_intel_ax211_assoc_session_event_accept(
@@ -676,118 +713,116 @@ drv_intel_ax211_assoc_session_event_accept(
 	uint32_t start;
 	uint32_t configuration_id;
 
-	/* Handles the state availability. */
-	if (state == NULL || message == NULL || !state->initialized ||
-	    common_generation == 0U || hardware_epoch == 0U ||
+	/* Refuses missing arguments and unset generations. */
+	if (state == NULL ||
+	    message == NULL ||
+	    !state->initialized ||
+	    common_generation == 0U ||
+	    hardware_epoch == 0U ||
 	    message->generation == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
 
-	/* Handles the common generation condition. */
+	/* Refuses a notice of another operation or firmware boot. */
 	if (common_generation != state->common_generation ||
 	    hardware_epoch != state->hardware_epoch ||
 	    message->generation != hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_STALE;
 	}
 
-	/* Handles the message condition. */
+	/* Refuses any other notification and another layout. */
 	if (message->group != INTEL_AX211_ASSOC_FAMILY_LINK_SETUP ||
 	    message->opcode != INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE ||
 	    message->version !=
 		    INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_LAYOUT_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_UNSUPPORTED;
 	}
 
-	/* Checks the operation status. */
+	/* Refuses a message the firmware marked as failed. */
 	if ((message->flags & INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK) != 0U)
 		return INTEL_AX211_ASSOC_FIRMWARE;
 
-	/* Handles the message condition. */
+	/* Refuses a command answer. */
 	if ((message->queue & 0x80U) == 0U)
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 
-	/* Handles the payload availability. */
+	/* Refuses a notice without a payload. */
 	if (message->payload == NULL)
 		return INTEL_AX211_ASSOC_INVALID;
 
-	/* Handles the message condition. */
+	/* Refuses a short notice. */
 	if (message->payload_length <
 	    INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_SIZE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_TRUNCATED;
 	}
 
-	/* Handles the message condition. */
+	/* Refuses a long notice. */
 	if (message->payload_length >
 	    INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_SIZE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_OVERSIZED;
 	}
+
+	/* Refuses a status or start flag other than 0 or 1. */
 	mac_id = ax211_assoc_get_le32(message->payload);
 	status = ax211_assoc_get_le32(message->payload + 4U);
 	start = ax211_assoc_get_le32(message->payload + 8U);
 	configuration_id = ax211_assoc_get_le32(message->payload + 12U);
-
-	/* Checks the operation status. */
 	if (status > 1U || start > 1U)
 		return INTEL_AX211_ASSOC_FIRMWARE;
 
-	/* Handles the mac id condition. */
+	/*
+	 * Ignores another interface, another reservation, a failure, and the
+	 * start of the reservation.
+	 */
 	if (mac_id != INTEL_AX211_ASSOC_INTERFACE_SLOT ||
 	    configuration_id != AX211_ASSOC_RESERVATION_FOR_JOIN ||
-	    status != 1U || start != 0U) {
-		/* Returns the computed result. */
+	    status != 1U ||
+	    start != 0U) {
 		return INTEL_AX211_ASSOC_EVENT_IGNORED;
 	}
 
-	/* Handles the state condition. */
+	/* Refuses a second end of the reservation. */
 	if (state->session_ended != 0U)
 		return INTEL_AX211_ASSOC_DUPLICATE;
+
+	/* Succeeded: the reservation ended and needs no removal. */
 	state->session_ended = 1U;
 	state->resources &= ~AX211_ASSOC_RESOURCE_SESSION;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_SESSION_EXPIRED;
 }
 
 /*
- * Implements the drv intel ax211 assoc expire operation.
+ * Ends the current command whose time ran out and starts the rollback.
  */
 int
 drv_intel_ax211_assoc_expire(
 	struct intel_ax211_assoc_state *state,
 	uint64_t now_us)
 {
-	/* Handles the state availability. */
-	if (state == NULL || !state->initialized ||
+	/* Refuses a state without a command whose time ran out. */
+	if (state == NULL ||
+	    !state->initialized ||
 	    state->step == INTEL_AX211_ASSOC_STEP_NONE ||
 	    now_us < state->deadline) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
 
-	/* Handles the state condition. */
+	/* A timeout during the rollback fails the rollback. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
 		state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
 		state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
 	}
 
+	/* Starts the rollback and reports the timeout. */
 	ax211_assoc_mark_uncertain(state, state->step);
 	(void)ax211_assoc_rollback_begin(state, INTEL_AX211_ASSOC_TIMEOUT,
 					 now_us);
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_TIMEOUT;
 }
 
 /*
- * Implements the drv intel ax211 assoc cancel operation.
+ * Cancels a running session by starting its rollback.
  */
 int
 drv_intel_ax211_assoc_cancel(
@@ -796,45 +831,48 @@ drv_intel_ax211_assoc_cancel(
 	uint32_t hardware_epoch,
 	uint64_t now_us)
 {
-	int error;
+	int result;
 
-	/* Handles the state availability. */
-	if (state == NULL || !state->initialized || common_generation == 0U ||
+	/* Refuses missing arguments and an unset operation or firmware boot. */
+	if (state == NULL ||
+	    !state->initialized ||
+	    common_generation == 0U ||
 	    hardware_epoch == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
 
-	/* Handles the common generation condition. */
+	/* Refuses another operation or firmware boot. */
 	if (common_generation != state->common_generation ||
 	    hardware_epoch != state->hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_STALE;
 	}
 
-	/* Handles the state condition. */
+	/* The rollback already runs. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK)
 		return INTEL_AX211_ASSOC_PENDING;
 
-	/* Handles the state condition. */
+	/* The session has already rolled back. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_IDLE)
 		return INTEL_AX211_ASSOC_ROLLED_BACK;
 
-	/* Checks the operation status. */
+	/* The rollback already failed. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_FAILED)
 		return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+
+	/* Starts the rollback. */
 	ax211_assoc_mark_uncertain(state, state->step);
-
-	/* Obtains the ax211 assoc rollback begin result. */
-	error = ax211_assoc_rollback_begin(
+	result = ax211_assoc_rollback_begin(
 		state, INTEL_AX211_ASSOC_ROLLED_BACK, now_us);
+	if (result == INTEL_AX211_ASSOC_ROLLBACK_FAILED)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the rollback is pending or already done. */
+	return result;
 }
 
 /*
- * Implements the drv intel ax211 assoc drive operation.
+ * Runs the session through ops until it reaches the end of a stage, rolls
+ * back, or fails.
  */
 int
 drv_intel_ax211_assoc_drive(
@@ -848,42 +886,46 @@ drv_intel_ax211_assoc_drive(
 	int result;
 	unsigned int count;
 
-	/* Handles the state availability. */
-	if (state == NULL || ops == NULL || ops->clock_us == NULL ||
+	/* Refuses missing arguments and incomplete operations. */
+	if (state == NULL ||
+	    ops == NULL ||
+	    ops->clock_us == NULL ||
 	    ops->exchange == NULL) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
-	/* Process each remaining element. */
-	for (count = 0U; count < INTEL_AX211_ASSOC_COMMAND_LIMIT; count++) {
-		now_us = ops->clock_us(argument);
 
-		/* Checks the operation status. */
+	/* Sends at most the command limit of one session. */
+	for (count = 0U; count < INTEL_AX211_ASSOC_COMMAND_LIMIT; count++) {
+		/* Encodes the current command. */
+		now_us = ops->clock_us(argument);
 		result = drv_intel_ax211_assoc_current(state, now_us, &command);
+
+		/* Stops at the end of a stage, a rollback, or its failure. */
 		if (result == INTEL_AX211_ASSOC_AUTH_READY ||
 		    result == INTEL_AX211_ASSOC_COMPLETE ||
 		    result == INTEL_AX211_ASSOC_ROLLED_BACK ||
 		    result == INTEL_AX211_ASSOC_ROLLBACK_FAILED) {
-			/* Returns the computed result. */
-			return result == INTEL_AX211_ASSOC_ROLLED_BACK
-				       ? state->failure
-				       : result;
+			/* A rollback reports the failure that caused it. */
+			if (result == INTEL_AX211_ASSOC_ROLLED_BACK)
+				return state->failure;
+
+			/* Reports where the session stands. */
+			return result;
 		}
 
-		/* Checks the operation result. */
+		/* Expires a command whose time ran out. */
 		if (result == INTEL_AX211_ASSOC_TIMEOUT) {
 			(void)drv_intel_ax211_assoc_expire(state, now_us);
 			continue;
 		}
 
-		/* Checks the operation result. */
+		/* Reports any other refusal. */
 		if (result != INTEL_AX211_ASSOC_OK)
 			return result;
 
+		/* Sends the command; a failed exchange starts the rollback. */
 		kern_memset(&reply, 0, sizeof(reply));
 		result = ops->exchange(argument, &command, &reply);
-
-		/* Checks the operation result. */
 		now_us = ops->clock_us(argument);
 		if (result != INTEL_AX211_ASSOC_OK) {
 			(void)ax211_assoc_exchange_failure(state, result,
@@ -891,26 +933,26 @@ drv_intel_ax211_assoc_drive(
 			continue;
 		}
 
-		/* Checks the operation result. */
+		/* Stops at the end of a stage. */
 		result = drv_intel_ax211_assoc_accept(state, &command, &reply,
 						      now_us);
 		if (result == INTEL_AX211_ASSOC_AUTH_READY ||
 		    result == INTEL_AX211_ASSOC_COMPLETE) {
-			/* Failed. */
 			return result;
 		}
 
-		/* Checks the operation result. */
+		/* Goes on with the next command or the rollback. */
 		if (result == INTEL_AX211_ASSOC_PENDING ||
 		    result == INTEL_AX211_ASSOC_FIRMWARE ||
-		    result == INTEL_AX211_ASSOC_TIMEOUT)
+		    result == INTEL_AX211_ASSOC_TIMEOUT) {
 			continue;
+		}
 
-		/* Checks the operation result. */
+		/* A rollback reports the failure that caused it. */
 		if (result == INTEL_AX211_ASSOC_ROLLED_BACK)
 			return state->failure;
 
-		/* Checks the operation result. */
+		/* Starts the rollback for an answer that does not fit. */
 		if (result == INTEL_AX211_ASSOC_STALE ||
 		    result == INTEL_AX211_ASSOC_OUT_OF_ORDER ||
 		    result == INTEL_AX211_ASSOC_DUPLICATE) {
@@ -919,18 +961,17 @@ drv_intel_ax211_assoc_drive(
 			continue;
 		}
 
-		/* Failed. */
+		/* Reports any other failure. */
 		return result;
 	}
 
+	/* The command limit ran out; the rollback failed. */
 	state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
 	state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
 }
 
-/* Supports the ax211 assoc required version operation. */
+/* Requires that the table lists a command at exactly the given versions. */
 static int
 ax211_assoc_required_version(
 	const struct intel_ax211_protocol_command_table *table,
@@ -942,21 +983,26 @@ ax211_assoc_required_version(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Checks the operation result. */
+	/* Refuses an unlisted command. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, group, opcode, &version);
-	if (result != INTEL_AX211_PROTOCOL_OK ||
-	    version.command_version != command_version ||
+	if (result != INTEL_AX211_PROTOCOL_OK)
+		return INTEL_AX211_ASSOC_UNSUPPORTED;
+
+	/* Refuses other versions. */
+	if (version.command_version != command_version ||
 	    version.notification_version != notification_version) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the command is listed at the versions. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
-/* Supports the ax211 assoc address valid operation. */
+/*
+ * Reports whether address is a set individual address: 1 when it is, 0 when
+ * not.
+ */
 static int
 ax211_assoc_address_valid(
 	const uint8_t address[6])
@@ -964,22 +1010,23 @@ ax211_assoc_address_valid(
 	size_t index;
 	int any;
 
-	/* Handles the address availability. */
+	/* Refuses a missing address and a group address. */
 	if (address == NULL || (address[0] & 1U) != 0U)
 		return 0;
+
+	/* Looks for a nonzero byte. */
 	any = 0;
-	/* Process each remaining element. */
 	for (index = 0U; index < 6U; index++) {
-		/* Handles the address condition. */
+		/* Notes a nonzero byte. */
 		if (address[index] != 0U)
 			any = 1;
 	}
 
-	/* Returns the computed result. */
+	/* Reports whether the address is set. */
 	return any;
 }
 
-/* Supports the ax211 assoc put le32 operation. */
+/* Stores a 32-bit value little-endian. */
 static void
 ax211_assoc_put_le32(
 	uint8_t *bytes,
@@ -991,7 +1038,7 @@ ax211_assoc_put_le32(
 	bytes[3] = (uint8_t)(value >> 24);
 }
 
-/* Supports the ax211 assoc put le16 operation. */
+/* Stores a 16-bit value little-endian. */
 static void
 ax211_assoc_put_le16(
 	uint8_t *bytes,
@@ -1001,17 +1048,22 @@ ax211_assoc_put_le16(
 	bytes[1] = (uint8_t)(value >> 8);
 }
 
-/* Supports the ax211 assoc get le32 operation. */
+/* Reads a little-endian 32-bit value. */
 static uint32_t
 ax211_assoc_get_le32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
 	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-/* API89 omits STA_CONFIG/STA_REMOVE from its command-version table.  The firmware ABI defines their baseline v1 layouts implicitly.  Accept a matching explicit entry for deterministic fixtures, but never accept an explicit conflicting version. */
+/*
+ * API89 omits STA_CONFIG/STA_REMOVE from its command-version table.  The
+ * firmware ABI defines their baseline v1 layouts implicitly.  Accept a matching
+ * explicit entry for deterministic fixtures, but never accept an explicit
+ * conflicting version.
+ */
 static int
 ax211_assoc_optional_version(
 	const struct intel_ax211_protocol_command_table *table,
@@ -1023,23 +1075,28 @@ ax211_assoc_optional_version(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Checks the operation result. */
+	/* Accepts an unlisted command; refuses a failed lookup. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, group, opcode, &version);
 	if (result == INTEL_AX211_PROTOCOL_MISSING)
 		return INTEL_AX211_ASSOC_OK;
-	if (result != INTEL_AX211_PROTOCOL_OK ||
-	    version.command_version != command_version ||
+	if (result != INTEL_AX211_PROTOCOL_OK)
+		return INTEL_AX211_ASSOC_UNSUPPORTED;
+
+	/* Refuses other versions. */
+	if (version.command_version != command_version ||
 	    version.notification_version != notification_version) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the command is listed at the versions. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
-/* Supports the ax211 assoc profile valid operation. */
+/*
+ * Reports whether the commands can carry profile: 1 when they can, 0 when
+ * not.
+ */
 static int
 ax211_assoc_profile_valid(
 	const struct intel_ax211_assoc_profile *profile)
@@ -1048,87 +1105,128 @@ ax211_assoc_profile_valid(
 	size_t index;
 	uint8_t channel;
 	int channel_valid;
+	int valid;
+	int result;
+
+	/* Refuses a missing profile. */
+	if (profile == NULL)
+		return 0;
+
+	/* Refuses an unset or group own address. */
+	valid = ax211_assoc_address_valid(profile->station_address);
+	if (!valid)
+		return 0;
+
+	/* Refuses an unset or group BSSID. */
+	valid = ax211_assoc_address_valid(profile->bssid);
+	if (!valid)
+		return 0;
+
+	/* Refuses a BSSID equal to the own address. */
+	result = kern_memcmp(profile->station_address, profile->bssid, 6U);
+	if (result == 0)
+		return 0;
 
 	/* Accepts only a channel one of the bands defines. */
-	channel = profile == NULL ? 0U : profile->channel;
-	channel_valid = (channel >= 1U && channel <= 14U) ||
-			(channel >= 36U && channel <= 144U &&
-			 ((channel - 36U) % 4U) == 0U) ||
-			(channel >= 149U && channel <= 181U &&
-			 ((channel - 149U) % 4U) == 0U);
+	channel = profile->channel;
+	channel_valid = 0;
+	if (channel >= 1U && channel <= 14U)
+		channel_valid = 1;
+	if (channel >= 36U && channel <= 144U && ((channel - 36U) % 4U) == 0U)
+		channel_valid = 1;
+	if (channel >= 149U && channel <= 181U &&
+	    ((channel - 149U) % 4U) == 0U) {
+		channel_valid = 1;
+	}
 
-	/* Checks the ax211 assoc address valid result. */
-	if (profile == NULL ||
-	    !ax211_assoc_address_valid(profile->station_address) ||
-	    !ax211_assoc_address_valid(profile->bssid) ||
-	    kern_memcmp(profile->station_address, profile->bssid, 6U) == 0 ||
-	    !channel_valid ||
-	    profile->channel_width_mhz != INTEL_AX211_ASSOC_CHANNEL_WIDTH_MHZ ||
-	    profile->rx_chain_mask == 0U || profile->rx_chain_mask > 7U ||
-	    (profile->cck_ack_rates | profile->ofdm_ack_rates) == 0U ||
-	    profile->short_preamble > 1U || profile->short_slot > 1U ||
-	    profile->qos > 1U || profile->beacon_interval_tu == 0U ||
-	    profile->queue_byte_count_address == 0U ||
-	    profile->queue_descriptor_address == 0U ||
-	    (profile->queue_byte_count_address & UINT64_C(3)) != 0U ||
-	    (profile->queue_descriptor_address & UINT64_C(255)) != 0U) {
-		/* Succeeded. */
+	/* Refuses any other channel. */
+	if (!channel_valid)
+		return 0;
+
+	/* Refuses another channel width and an unusable chain mask. */
+	if (profile->channel_width_mhz != INTEL_AX211_ASSOC_CHANNEL_WIDTH_MHZ ||
+	    profile->rx_chain_mask == 0U ||
+	    profile->rx_chain_mask > 7U) {
 		return 0;
 	}
-	/* Process each remaining element. */
+
+	/* Refuses no ACK rate and flags other than 0 or 1. */
+	if ((profile->cck_ack_rates | profile->ofdm_ack_rates) == 0U ||
+	    profile->short_preamble > 1U ||
+	    profile->short_slot > 1U ||
+	    profile->qos > 1U) {
+		return 0;
+	}
+
+	/* Refuses a zero beacon interval and unset queue addresses. */
+	if (profile->beacon_interval_tu == 0U ||
+	    profile->queue_byte_count_address == 0U ||
+	    profile->queue_descriptor_address == 0U) {
+		return 0;
+	}
+
+	/* Refuses misaligned queue addresses. */
+	if ((profile->queue_byte_count_address & 3U) != 0U ||
+	    (profile->queue_descriptor_address & 255U) != 0U) {
+		return 0;
+	}
+
+	/* Checks every access category's parameters. */
 	for (index = 0U; index < INTEL_AX211_ASSOC_EDCA_COUNT; index++) {
-		/* Handles the edca condition. */
+		/* Refuses out-of-range values and a reversed window. */
 		edca = &profile->edca[index];
-		if (edca->ecw_min > 15U || edca->ecw_max > 15U ||
-		    edca->ecw_min > edca->ecw_max || edca->aifsn > 15U ||
+		if (edca->ecw_min > 15U ||
+		    edca->ecw_max > 15U ||
+		    edca->ecw_min > edca->ecw_max ||
+		    edca->aifsn > 15U ||
 		    edca->txop_32us > 2047U) {
-			/* Succeeded. */
 			return 0;
 		}
 	}
 
-	/* Reports operation failure. */
+	/* The profile is valid. */
 	return 1;
 }
 
-/* Supports the ax211 assoc set step operation. */
+/* Makes step the current command under a fresh sequence and deadline. */
 static int
 ax211_assoc_set_step(
 	struct intel_ax211_assoc_state *state,
 	enum intel_ax211_assoc_step step,
 	uint64_t now_us)
 {
-	/* Handles the state availability. */
-	if (state == NULL || step == INTEL_AX211_ASSOC_STEP_NONE ||
+	/* Refuses missing arguments and a deadline beyond the clock. */
+	if (state == NULL ||
+	    step == INTEL_AX211_ASSOC_STEP_NONE ||
 	    now_us > UINT64_MAX - INTEL_AX211_ASSOC_COMMAND_TIMEOUT_US) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
+
+	/* Succeeded: step is the current command. */
 	state->step = step;
 	state->active_sequence = state->next_sequence;
 	state->next_sequence = ax211_assoc_next_sequence(state->next_sequence);
 	state->deadline = now_us + INTEL_AX211_ASSOC_COMMAND_TIMEOUT_US;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
-/* Supports the ax211 assoc next sequence operation. */
+/* Returns the sequence number after sequence, skipping zero as unset. */
 static uint32_t
 ax211_assoc_next_sequence(
 	uint32_t sequence)
 {
+	/* Skips zero when the counter wraps. */
 	sequence++;
-
-	/* Handles the sequence condition. */
 	if (sequence == 0U)
 		sequence = 1U;
 
-	/* Returns the computed result. */
+	/* Reports the next number. */
 	return sequence;
 }
 
-/* Supports the ax211 assoc update valid operation. */
+/*
+ * Reports whether the commands can carry update: 1 when they can, 0 when not.
+ */
 static int
 ax211_assoc_update_valid(
 	const struct intel_ax211_assoc_profile *profile,
@@ -1137,10 +1235,11 @@ ax211_assoc_update_valid(
 	uint64_t dtim_offset;
 	uint32_t interval;
 
-	/* Handles the profile availability. */
-	if (profile == NULL || update == NULL || update->association_id == 0U ||
+	/* Refuses missing arguments and an association id out of range. */
+	if (profile == NULL ||
+	    update == NULL ||
+	    update->association_id == 0U ||
 	    update->association_id > 2007U) {
-		/* Succeeded. */
 		return 0;
 	}
 
@@ -1151,30 +1250,43 @@ ax211_assoc_update_valid(
 	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
 	 * (iwx_mac_ctxt_cmd_fill_sta).
 	 */
-	if (update->dtim_period == 0U)
-		return update->dtim_count == 0U;
+	if (update->dtim_period == 0U) {
+		/* Refuses a DTIM count without a DTIM period. */
+		if (update->dtim_count != 0U)
+			return 0;
 
-	/* Handles the update condition. */
+		/* The update is valid without DTIM knowledge. */
+		return 1;
+	}
+
+	/* Refuses a DTIM count beyond the period. */
 	if (update->dtim_count >= update->dtim_period)
 		return 0;
+
+	/* Refuses a DTIM interval or offset the fields cannot hold. */
 	interval = (uint32_t)profile->beacon_interval_tu *
 		   (uint32_t)update->dtim_period;
 	dtim_offset = (uint64_t)update->dtim_count *
 		      (uint64_t)profile->beacon_interval_tu * UINT64_C(1024);
+	if (interval < profile->beacon_interval_tu ||
+	    dtim_offset > UINT32_MAX) {
+		return 0;
+	}
 
-	/* Returns the computed result. */
-	return interval >= profile->beacon_interval_tu &&
-	       dtim_offset <= UINT32_MAX;
+	/* The update is valid. */
+	return 1;
 }
 
-/* Supports the ax211 assoc command encode operation. */
+/* Encodes the command of the state's current step. */
 static int
 ax211_assoc_command_encode(
 	const struct intel_ax211_assoc_state *state,
 	struct intel_ax211_assoc_command *command)
 {
+	/* Fills the fields every command shares. */
 	ax211_assoc_command_base(state, command);
-	/* Dispatch the current operation state. */
+
+	/* Encodes the step's command. */
 	switch (state->step) {
 	case INTEL_AX211_ASSOC_STEP_MAC_ADD:
 		ax211_assoc_mac_config_encode(state, AX211_ASSOC_ACTION_ADD, 0,
@@ -1259,15 +1371,15 @@ ax211_assoc_command_encode(
 		break;
 	case INTEL_AX211_ASSOC_STEP_NONE:
 	default:
-		/* Returns the computed result. */
+		/* Refuses a state without a command. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: *command is encoded. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
-/* Supports the ax211 assoc command base operation. */
+/* Fills the step, sequence, generations and deadline of a command. */
 static void
 ax211_assoc_command_base(
 	const struct intel_ax211_assoc_state *state,
@@ -1281,7 +1393,7 @@ ax211_assoc_command_base(
 	command->deadline = state->deadline;
 }
 
-/* Supports the ax211 assoc mac config encode operation. */
+/* Encodes the interface command for action. */
 static void
 ax211_assoc_mac_config_encode(
 	const struct intel_ax211_assoc_state *state,
@@ -1302,9 +1414,11 @@ ax211_assoc_mac_config_encode(
 	ax211_assoc_put_le32(command->payload, INTEL_AX211_ASSOC_INTERFACE_SLOT);
 	ax211_assoc_put_le32(command->payload + 4U, action);
 
-	/* Handles the action condition. */
+	/* A removal names only the interface. */
 	if (action == AX211_ASSOC_ACTION_REMOVE)
 		return;
+
+	/* Describes the client interface. */
 	ax211_assoc_put_le32(command->payload + 8U,
 			     AX211_ASSOC_INTERFACE_KIND_CLIENT);
 	kern_memcpy(command->payload + 12U, state->profile.station_address, 6U);
@@ -1319,16 +1433,18 @@ ax211_assoc_mac_config_encode(
 	ax211_assoc_put_le32(command->payload + 20U, filter);
 	ax211_assoc_put_le32(command->payload + 32U,
 			     AX211_ASSOC_NO_ACK_FOR_HOST);
-	command->payload[36U] = associated ? 1U : 0U;
 
-	/* Handles the associated condition. */
+	/* An associated interface carries its association id. */
 	if (associated) {
+		command->payload[36U] = 1U;
 		ax211_assoc_put_le16(command->payload + 40U,
 				     state->update.association_id);
+	} else {
+		command->payload[36U] = 0U;
 	}
 }
 
-/* Supports the ax211 assoc link config encode operation. */
+/* Encodes the link command for action. */
 static void
 ax211_assoc_link_config_encode(
 	const struct intel_ax211_assoc_state *state,
@@ -1338,6 +1454,7 @@ ax211_assoc_link_config_encode(
 	uint32_t phy_id,
 	struct intel_ax211_assoc_command *command)
 {
+	uint32_t qos;
 	uint8_t dtim_period;
 
 	/* Builds the link configuration command. */
@@ -1352,15 +1469,19 @@ ax211_assoc_link_config_encode(
 	ax211_assoc_put_le32(command->payload + 4U, INTEL_AX211_ASSOC_LINK_SLOT);
 	ax211_assoc_put_le32(command->payload + 12U, phy_id);
 
-	/* Handles the action condition. */
+	/* A removal names only the link and the channel context. */
 	if (action == AX211_ASSOC_ACTION_REMOVE)
 		return;
+
+	/* Binds the link to the interface and the own address. */
 	ax211_assoc_put_le32(command->payload + 8U, INTEL_AX211_ASSOC_INTERFACE_SLOT);
 	kern_memcpy(command->payload + 16U, state->profile.station_address, 6U);
 
-	/* Handles the action condition. */
+	/* An addition carries nothing more. */
 	if (action == AX211_ASSOC_ACTION_ADD)
 		return;
+
+	/* Describes the changed fields, the rates and the slot time. */
 	ax211_assoc_put_le32(command->payload + 24U, modify_mask);
 	ax211_assoc_put_le32(command->payload + 28U, active);
 	ax211_assoc_put_le32(command->payload + 36U,
@@ -1370,19 +1491,28 @@ ax211_assoc_link_config_encode(
 	ax211_assoc_put_le32(command->payload + 44U,
 			     state->profile.short_preamble);
 	ax211_assoc_put_le32(command->payload + 48U, state->profile.short_slot);
-	ax211_assoc_put_le32(command->payload + 56U,
-			     state->profile.qos ? 1U : 0U);
+
+	/* Describes QoS and the access categories. */
+	if (state->profile.qos)
+		qos = 1U;
+	else
+		qos = 0U;
+	ax211_assoc_put_le32(command->payload + 56U, qos);
 	ax211_assoc_edca_encode(&state->profile, command->payload + 60U);
+
+	/* Describes the beacon interval and the DTIM interval. */
 	ax211_assoc_put_le32(command->payload + 136U,
 			     state->profile.beacon_interval_tu);
-	dtim_period = state->update_valid ? state->update.dtim_period
-					  : state->profile.dtim_period;
+	if (state->update_valid)
+		dtim_period = state->update.dtim_period;
+	else
+		dtim_period = state->profile.dtim_period;
 	ax211_assoc_put_le32(command->payload + 140U,
 			     (uint32_t)state->profile.beacon_interval_tu *
 				     (uint32_t)dtim_period);
 }
 
-/* Supports the ax211 assoc edca encode operation. */
+/* Encodes the four access categories into the link command. */
 static void
 ax211_assoc_edca_encode(
 	const struct intel_ax211_assoc_profile *profile,
@@ -1414,7 +1544,7 @@ ax211_assoc_edca_encode(
 								   4U};
 	size_t index;
 
-	/* Process each remaining element. */
+	/* Writes each category's window, AIFSN, FIFO and TXOP limit. */
 	for (index = 0U; index < INTEL_AX211_ASSOC_EDCA_COUNT; index++) {
 		edca = &profile->edca[index];
 		entry = output + (size_t)ac_index[index] * 8U;
@@ -1429,13 +1559,14 @@ ax211_assoc_edca_encode(
 	}
 }
 
-/* Supports the ax211 assoc phy encode operation. */
+/* Encodes the channel context command for action. */
 static void
 ax211_assoc_phy_encode(
 	const struct intel_ax211_assoc_state *state,
 	uint32_t action,
 	struct intel_ax211_assoc_command *command)
 {
+	/* Builds the channel context command. */
 	command->header = INTEL_AX211_ASSOC_HEADER_LEGACY;
 	command->group = INTEL_AX211_ASSOC_FAMILY_CLASSIC;
 	command->opcode = INTEL_AX211_ASSOC_CHANNEL_CONTEXT_OPCODE;
@@ -1451,12 +1582,13 @@ ax211_assoc_phy_encode(
 	 * AX211 is not CDB.
 	 */
 	ax211_assoc_put_le32(command->payload + 8U, state->profile.channel);
-	command->payload[12U] = state->profile.channel <= 14U
-					? AX211_ASSOC_CHANNEL_IN_24GHZ
-					: AX211_ASSOC_CHANNEL_IN_5GHZ;
+	if (state->profile.channel <= 14U)
+		command->payload[12U] = AX211_ASSOC_CHANNEL_IN_24GHZ;
+	else
+		command->payload[12U] = AX211_ASSOC_CHANNEL_IN_5GHZ;
 }
 
-/* Supports the ax211 assoc rlc encode operation. */
+/* Encodes the receive chain command. */
 static void
 ax211_assoc_rlc_encode(
 	const struct intel_ax211_assoc_state *state,
@@ -1464,6 +1596,7 @@ ax211_assoc_rlc_encode(
 {
 	uint32_t chains;
 
+	/* Builds the receive chain command. */
 	command->header = INTEL_AX211_ASSOC_HEADER_WIDE;
 	command->group = INTEL_AX211_ASSOC_FAMILY_TRAFFIC;
 	command->opcode = INTEL_AX211_ASSOC_RECEIVE_CHAINS_OPCODE;
@@ -1476,18 +1609,21 @@ ax211_assoc_rlc_encode(
 	command->layout_version = INTEL_AX211_ASSOC_RECEIVE_CHAINS_VERSION;
 	command->response_kind = INTEL_AX211_ASSOC_RESPONSE_EMPTY;
 	command->payload_length = INTEL_AX211_ASSOC_RECEIVE_CHAINS_SIZE;
+
+	/* Writes the chain mask with bits 10 and 12. */
 	chains = ((uint32_t)state->profile.rx_chain_mask << 1) |
 		 (UINT32_C(1) << 10) | (UINT32_C(1) << 12);
 	ax211_assoc_put_le32(command->payload + 4U, chains);
 }
 
-/* Supports the ax211 assoc station config encode operation. */
+/* Encodes the station command of the access point. */
 static void
 ax211_assoc_station_config_encode(
 	const struct intel_ax211_assoc_state *state,
 	int associated,
 	struct intel_ax211_assoc_command *command)
 {
+	/* Builds the station command. */
 	command->header = INTEL_AX211_ASSOC_HEADER_WIDE;
 	command->group = INTEL_AX211_ASSOC_FAMILY_LINK_SETUP;
 	command->opcode = INTEL_AX211_ASSOC_PEER_SETUP_OPCODE;
@@ -1502,33 +1638,35 @@ ax211_assoc_station_config_encode(
 	ax211_assoc_put_le32(command->payload + 24U,
 			     AX211_ASSOC_PEER_KIND_ACCESS_POINT);
 
-	/* Handles the associated condition. */
+	/* An associated station carries its association id. */
 	if (associated) {
 		ax211_assoc_put_le32(command->payload + 28U,
 				     state->update.association_id);
 	}
 }
 
-/* Supports the ax211 assoc queue encode operation. */
+/* Encodes the management queue command for operation. */
 static void
 ax211_assoc_queue_encode(
 	const struct intel_ax211_assoc_state *state,
 	uint32_t operation,
 	struct intel_ax211_assoc_command *command)
 {
+	/* Builds the queue command; only an addition's answer is checked. */
 	command->header = INTEL_AX211_ASSOC_HEADER_WIDE;
 	command->group = INTEL_AX211_ASSOC_FAMILY_TRAFFIC;
 	command->opcode = INTEL_AX211_ASSOC_QUEUE_SETUP_OPCODE;
 	command->layout_version = INTEL_AX211_ASSOC_QUEUE_SETUP_VERSION;
 	command->response_version = INTEL_AX211_ASSOC_QUEUE_RESPONSE_VERSION;
-	command->response_kind = operation == AX211_ASSOC_QUEUE_OPERATION_ADD
-					 ? INTEL_AX211_ASSOC_RESPONSE_QUEUE
-					 : INTEL_AX211_ASSOC_RESPONSE_IGNORED;
+	if (operation == AX211_ASSOC_QUEUE_OPERATION_ADD)
+		command->response_kind = INTEL_AX211_ASSOC_RESPONSE_QUEUE;
+	else
+		command->response_kind = INTEL_AX211_ASSOC_RESPONSE_IGNORED;
 	command->payload_length = INTEL_AX211_ASSOC_QUEUE_SETUP_SIZE;
 	ax211_assoc_put_le32(command->payload, operation);
 	ax211_assoc_put_le32(command->payload + 4U, 1U);
 
-	/* Validates the selected operation. */
+	/* An addition describes the queue; a removal names its TID. */
 	if (operation == AX211_ASSOC_QUEUE_OPERATION_ADD) {
 		command->payload[8U] = AX211_ASSOC_MANAGEMENT_TID;
 		ax211_assoc_put_le32(command->payload + 16U,
@@ -1543,7 +1681,7 @@ ax211_assoc_queue_encode(
 	}
 }
 
-/* Supports the ax211 assoc put le64 operation. */
+/* Stores a 64-bit value little-endian. */
 static void
 ax211_assoc_put_le64(
 	uint8_t *bytes,
@@ -1553,13 +1691,14 @@ ax211_assoc_put_le64(
 	ax211_assoc_put_le32(bytes + 4U, (uint32_t)(value >> 32));
 }
 
-/* Supports the ax211 assoc session encode operation. */
+/* Encodes the time reservation command for action. */
 static void
 ax211_assoc_session_encode(
 	const struct intel_ax211_assoc_state *state,
 	uint32_t action,
 	struct intel_ax211_assoc_command *command)
 {
+	/* Builds the time reservation command. */
 	command->header = INTEL_AX211_ASSOC_HEADER_WIDE;
 	command->group = INTEL_AX211_ASSOC_FAMILY_LINK_SETUP;
 	command->opcode = INTEL_AX211_ASSOC_TIME_RESERVATION_OPCODE;
@@ -1571,7 +1710,7 @@ ax211_assoc_session_encode(
 	ax211_assoc_put_le32(command->payload + 8U,
 			     AX211_ASSOC_RESERVATION_FOR_JOIN);
 
-	/* Handles the action condition. */
+	/* An addition reserves nine beacon intervals. */
 	if (action == AX211_ASSOC_ACTION_ADD) {
 		ax211_assoc_put_le32(
 			command->payload + 12U,
@@ -1579,7 +1718,7 @@ ax211_assoc_session_encode(
 	}
 }
 
-/* Supports the ax211 assoc station remove encode operation. */
+/* Encodes the removal of the access point's station. */
 static void
 ax211_assoc_station_remove_encode(
 	struct intel_ax211_assoc_command *command)
@@ -1594,46 +1733,66 @@ ax211_assoc_station_remove_encode(
 	ax211_assoc_put_le32(command->payload, INTEL_AX211_ASSOC_PEER_SLOT);
 }
 
-/* Supports the ax211 assoc command matches operation. */
+/*
+ * Reports whether command is exactly the one the state encodes: 1 when it
+ * is, 0 when not.
+ */
 static int
 ax211_assoc_command_matches(
 	const struct intel_ax211_assoc_state *state,
 	const struct intel_ax211_assoc_command *command)
 {
-	int error;
 	struct intel_ax211_assoc_command expected;
+	int result;
 
-	/* Checks the ax211 assoc command encode result. */
-	if (state == NULL || command == NULL ||
-	    ax211_assoc_command_encode(state, &expected) !=
-		    INTEL_AX211_ASSOC_OK) {
-		/* Succeeded. */
+	/* Refuses missing arguments. */
+	if (state == NULL || command == NULL)
+		return 0;
+
+	/* Encodes the expected command. */
+	result = ax211_assoc_command_encode(state, &expected);
+	if (result != INTEL_AX211_ASSOC_OK)
+		return 0;
+
+	/* Compares the step, the kinds and the command's identity. */
+	if (command->step != expected.step ||
+	    command->header != expected.header ||
+	    command->response_kind != expected.response_kind ||
+	    command->group != expected.group ||
+	    command->opcode != expected.opcode) {
 		return 0;
 	}
 
-	/* Computes the function result. */
-	error =
-		command->step == expected.step &&
-		command->header == expected.header &&
-		command->response_kind == expected.response_kind &&
-		command->group == expected.group &&
-		command->opcode == expected.opcode &&
-		command->wire_version == expected.wire_version &&
-		command->layout_version == expected.layout_version &&
-		command->response_version == expected.response_version &&
-		command->sequence == expected.sequence &&
-		command->common_generation == expected.common_generation &&
-		command->hardware_epoch == expected.hardware_epoch &&
-		command->deadline == expected.deadline &&
-		command->payload_length == expected.payload_length &&
-		kern_memcmp(command->payload, expected.payload,
-		       expected.payload_length) == 0;
+	/* Compares the versions. */
+	if (command->wire_version != expected.wire_version ||
+	    command->layout_version != expected.layout_version ||
+	    command->response_version != expected.response_version) {
+		return 0;
+	}
 
-	/* Returns the computed result. */
-	return error;
+	/* Compares the sequence, the generations and the deadline. */
+	if (command->sequence != expected.sequence ||
+	    command->common_generation != expected.common_generation ||
+	    command->hardware_epoch != expected.hardware_epoch ||
+	    command->deadline != expected.deadline) {
+		return 0;
+	}
+
+	/* Compares the payload's length. */
+	if (command->payload_length != expected.payload_length)
+		return 0;
+
+	/* Compares the payload. */
+	result = kern_memcmp(command->payload, expected.payload,
+			     expected.payload_length);
+	if (result != 0)
+		return 0;
+
+	/* The command matches. */
+	return 1;
 }
 
-/* Supports the ax211 assoc rollback begin operation. */
+/* Starts removing the firmware objects of the session, newest first. */
 static int
 ax211_assoc_rollback_begin(
 	struct intel_ax211_assoc_state *state,
@@ -1643,117 +1802,130 @@ ax211_assoc_rollback_begin(
 	enum intel_ax211_assoc_step step;
 	int result;
 
-	/* Handles the state condition. */
+	/* The rollback already runs. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK)
 		return INTEL_AX211_ASSOC_PENDING;
 	state->failure = failure;
 
-	/* Handles the step condition. */
+	/* Nothing to remove: the session is rolled back. */
 	step = ax211_assoc_rollback_step(state->resources);
 	if (step == INTEL_AX211_ASSOC_STEP_NONE) {
 		state->phase = INTEL_AX211_ASSOC_PHASE_IDLE;
 		state->step = INTEL_AX211_ASSOC_STEP_NONE;
 		state->active_sequence = 0U;
 		state->deadline = 0U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_ROLLED_BACK;
 	}
 
+	/* Selects the first removal; a failure fails the rollback. */
 	state->phase = INTEL_AX211_ASSOC_PHASE_ROLLBACK;
-
-	/* Checks the operation result. */
 	result = ax211_assoc_set_step(state, step, now_us);
 	if (result != INTEL_AX211_ASSOC_OK) {
 		state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
 		state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the first removal is pending. */
 	return INTEL_AX211_ASSOC_PENDING;
 }
 
-/* Supports the ax211 assoc rollback step operation. */
+/*
+ * Selects the removal of the newest firmware object in resources, or none.
+ */
 static enum intel_ax211_assoc_step
 ax211_assoc_rollback_step(
 	uint32_t resources)
 {
-	/* Handles the resources condition. */
+	/* The time reservation is removed first. */
 	if ((resources & AX211_ASSOC_RESOURCE_SESSION) != 0U)
 		return INTEL_AX211_ASSOC_STEP_SESSION_REMOVE;
 
-	/* Handles the resources condition. */
+	/* Then the queue. */
 	if ((resources & AX211_ASSOC_RESOURCE_QUEUE) != 0U)
 		return INTEL_AX211_ASSOC_STEP_QUEUE_REMOVE;
 
-	/* Handles the resources condition. */
+	/* Then the station. */
 	if ((resources & AX211_ASSOC_RESOURCE_STATION) != 0U)
 		return INTEL_AX211_ASSOC_STEP_STATION_REMOVE;
 
-	/* Handles the resources condition. */
+	/* Then the link's activity. */
 	if ((resources & AX211_ASSOC_RESOURCE_LINK_ACTIVE) != 0U)
 		return INTEL_AX211_ASSOC_STEP_LINK_DEACTIVATE;
 
-	/* Handles the resources condition. */
+	/* Then the link. */
 	if ((resources & AX211_ASSOC_RESOURCE_LINK) != 0U)
 		return INTEL_AX211_ASSOC_STEP_LINK_REMOVE;
 
-	/* Handles the resources condition. */
+	/* Then the interface. */
 	if ((resources & AX211_ASSOC_RESOURCE_MAC) != 0U)
 		return INTEL_AX211_ASSOC_STEP_MAC_REMOVE;
 
-	/* Handles the resources condition. */
+	/* Then the channel context. */
 	if ((resources & AX211_ASSOC_RESOURCE_PHY) != 0U)
 		return INTEL_AX211_ASSOC_STEP_PHY_REMOVE;
 
-	/* Returns the computed result. */
+	/* Nothing is left. */
 	return INTEL_AX211_ASSOC_STEP_NONE;
 }
 
-/* Supports the ax211 assoc response validate operation. */
+/* Checks an answer against the kind of answer its command expects. */
 static int
 ax211_assoc_response_validate(
 	const struct intel_ax211_assoc_command *command,
 	const struct intel_ax211_assoc_reply *reply)
 {
-	/* Handles the command availability. */
-	if (command == NULL || reply == NULL ||
+	uint32_t status;
+	uint16_t queue;
+	uint16_t reserved;
+
+	/* Refuses missing arguments, a long answer and another version. */
+	if (command == NULL ||
+	    reply == NULL ||
 	    reply->payload_length > INTEL_AX211_ASSOC_RESPONSE_MAX ||
 	    reply->response_version != command->response_version) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_FIRMWARE;
 	}
-	/* Dispatch the selected syntax or record type. */
+
+	/* Checks the answer by the kind the command expects. */
 	switch (command->response_kind) {
 	case INTEL_AX211_ASSOC_RESPONSE_EMPTY:
-		/* Returns the computed result. */
-		return reply->payload_length == 0U ? INTEL_AX211_ASSOC_OK
-						   : INTEL_AX211_ASSOC_FIRMWARE;
+		/* Refuses an answer with a payload. */
+		if (reply->payload_length != 0U)
+			return INTEL_AX211_ASSOC_FIRMWARE;
+
+		/* Succeeded: the answer is empty. */
+		return INTEL_AX211_ASSOC_OK;
 	case INTEL_AX211_ASSOC_RESPONSE_STATUS_ZERO:
-		/* Checks the ax211 assoc get le32 result. */
-		if (reply->payload_length != 4U ||
-		    ax211_assoc_get_le32(reply->payload) != 0U) {
-			/* Returns the computed result. */
+		/* Refuses an answer that is not one status word. */
+		if (reply->payload_length != 4U)
+			return INTEL_AX211_ASSOC_FIRMWARE;
+
+		/* Refuses a nonzero status. */
+		status = ax211_assoc_get_le32(reply->payload);
+		if (status != 0U)
+			return INTEL_AX211_ASSOC_FIRMWARE;
+
+		/* Succeeded: the status is zero. */
+		return INTEL_AX211_ASSOC_OK;
+	case INTEL_AX211_ASSOC_RESPONSE_QUEUE:
+		/* Refuses an answer of another size. */
+		if (reply->payload_length !=
+		    INTEL_AX211_ASSOC_QUEUE_RESPONSE_SIZE) {
 			return INTEL_AX211_ASSOC_FIRMWARE;
 		}
 
-		/* Returns the computed result. */
-		return INTEL_AX211_ASSOC_OK;
-	case INTEL_AX211_ASSOC_RESPONSE_QUEUE:
-		/* Checks the ax211 assoc get le16 result. */
-		if (reply->payload_length !=
-			    INTEL_AX211_ASSOC_QUEUE_RESPONSE_SIZE ||
-		    ax211_assoc_get_le16(reply->payload) <
-			    AX211_ASSOC_QUEUE_MIN ||
-		    ax211_assoc_get_le16(reply->payload) >
-			    AX211_ASSOC_QUEUE_MAX ||
-		    ax211_assoc_get_le16(reply->payload + 6U) != 0U) {
-			/* Returns the computed result. */
+		/* Refuses a queue number out of range. */
+		queue = ax211_assoc_get_le16(reply->payload);
+		if (queue < AX211_ASSOC_QUEUE_MIN ||
+		    queue > AX211_ASSOC_QUEUE_MAX) {
 			return INTEL_AX211_ASSOC_FIRMWARE;
 		}
+
+		/* Refuses a nonzero reserved field. */
+		reserved = ax211_assoc_get_le16(reply->payload + 6U);
+		if (reserved != 0U)
+			return INTEL_AX211_ASSOC_FIRMWARE;
 
 		/*
 		 * The response flags are not a completion status and are
@@ -1766,30 +1938,33 @@ ax211_assoc_response_validate(
 		 */
 		return INTEL_AX211_ASSOC_OK;
 	case INTEL_AX211_ASSOC_RESPONSE_IGNORED:
-		/* Returns the computed result. */
+		/* Succeeded: the answer is not checked. */
 		return INTEL_AX211_ASSOC_OK;
 	default:
-		/* Returns the computed result. */
+		/* Refuses an unknown kind. */
 		return INTEL_AX211_ASSOC_FIRMWARE;
 	}
 }
 
-/* Supports the ax211 assoc get le16 operation. */
+/* Reads a little-endian 16-bit value. */
 static uint16_t
 ax211_assoc_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the value from its two bytes, least significant first. */
 	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
 }
 
-/* Supports the ax211 assoc mark uncertain operation. */
+/*
+ * Records the object a command without a clear answer may have created, so
+ * that the rollback removes it.
+ */
 static void
 ax211_assoc_mark_uncertain(
 	struct intel_ax211_assoc_state *state,
 	enum intel_ax211_assoc_step step)
 {
-	/* Dispatch the selected operation case. */
+	/* Marks the object the step creates. */
 	switch (step) {
 	case INTEL_AX211_ASSOC_STEP_MAC_ADD:
 		state->resources |= AX211_ASSOC_RESOURCE_MAC;
@@ -1810,7 +1985,7 @@ ax211_assoc_mark_uncertain(
 		state->resources |= AX211_ASSOC_RESOURCE_QUEUE;
 		break;
 	case INTEL_AX211_ASSOC_STEP_SESSION_PROTECT:
-		/* Handles the state condition. */
+		/* A reservation that already ended needs no removal. */
 		if (state->session_ended == 0U)
 			state->resources |= AX211_ASSOC_RESOURCE_SESSION;
 		break;
@@ -1819,13 +1994,13 @@ ax211_assoc_mark_uncertain(
 	}
 }
 
-/* Supports the ax211 assoc mark success operation. */
+/* Records the object an accepted command created or removed. */
 static void
 ax211_assoc_mark_success(
 	struct intel_ax211_assoc_state *state,
 	enum intel_ax211_assoc_step step)
 {
-	/* Dispatch the selected operation case. */
+	/* Marks or clears the object of the step. */
 	switch (step) {
 	case INTEL_AX211_ASSOC_STEP_MAC_ADD:
 		state->resources |= AX211_ASSOC_RESOURCE_MAC;
@@ -1846,7 +2021,7 @@ ax211_assoc_mark_success(
 		state->resources |= AX211_ASSOC_RESOURCE_QUEUE;
 		break;
 	case INTEL_AX211_ASSOC_STEP_SESSION_PROTECT:
-		/* Handles the state condition. */
+		/* A reservation that already ended needs no removal. */
 		if (state->session_ended == 0U)
 			state->resources |= AX211_ASSOC_RESOURCE_SESSION;
 		break;
@@ -1884,7 +2059,10 @@ ax211_assoc_mark_success(
 	}
 }
 
-/* Supports the ax211 assoc advance operation. */
+/*
+ * Selects the command after the accepted one, or ends a stage or the
+ * rollback.
+ */
 static int
 ax211_assoc_advance(
 	struct intel_ax211_assoc_state *state,
@@ -1893,7 +2071,7 @@ ax211_assoc_advance(
 	enum intel_ax211_assoc_step next;
 	int result;
 
-	/* Dispatch the current operation state. */
+	/* Finds the next step of the stage or of the rollback. */
 	switch (state->step) {
 	case INTEL_AX211_ASSOC_STEP_MAC_ADD:
 		next = INTEL_AX211_ASSOC_STEP_LINK_ADD;
@@ -1920,12 +2098,11 @@ ax211_assoc_advance(
 		next = INTEL_AX211_ASSOC_STEP_SESSION_PROTECT;
 		break;
 	case INTEL_AX211_ASSOC_STEP_SESSION_PROTECT:
+		/* Succeeded: the authentication stage is done. */
 		state->phase = INTEL_AX211_ASSOC_PHASE_AUTH_READY;
 		state->step = INTEL_AX211_ASSOC_STEP_NONE;
 		state->active_sequence = 0U;
 		state->deadline = 0U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_AUTH_READY;
 	case INTEL_AX211_ASSOC_STEP_MAC_ASSOCIATE:
 		next = INTEL_AX211_ASSOC_STEP_LINK_ASSOCIATE;
@@ -1934,12 +2111,11 @@ ax211_assoc_advance(
 		next = INTEL_AX211_ASSOC_STEP_STATION_UPDATE;
 		break;
 	case INTEL_AX211_ASSOC_STEP_STATION_UPDATE:
+		/* Succeeded: the association is done. */
 		state->phase = INTEL_AX211_ASSOC_PHASE_ASSOCIATED;
 		state->step = INTEL_AX211_ASSOC_STEP_NONE;
 		state->active_sequence = 0U;
 		state->deadline = 0U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_COMPLETE;
 	case INTEL_AX211_ASSOC_STEP_SESSION_REMOVE:
 	case INTEL_AX211_ASSOC_STEP_QUEUE_REMOVE:
@@ -1948,8 +2124,7 @@ ax211_assoc_advance(
 	case INTEL_AX211_ASSOC_STEP_LINK_REMOVE:
 	case INTEL_AX211_ASSOC_STEP_MAC_REMOVE:
 	case INTEL_AX211_ASSOC_STEP_PHY_REMOVE:
-
-		/* Handles the next condition. */
+		/* The rollback ends when nothing is left to remove. */
 		next = ax211_assoc_rollback_step(state->resources);
 		if (next == INTEL_AX211_ASSOC_STEP_NONE) {
 			state->phase = INTEL_AX211_ASSOC_PHASE_IDLE;
@@ -1957,39 +2132,39 @@ ax211_assoc_advance(
 			state->active_sequence = 0U;
 			state->deadline = 0U;
 			state->update_valid = 0U;
-
-			/* Returns the computed result. */
 			return INTEL_AX211_ASSOC_ROLLED_BACK;
 		}
 
 		break;
 	case INTEL_AX211_ASSOC_STEP_NONE:
 	default:
-		/* Returns the computed result. */
+		/* Refuses a state without a command. */
 		return INTEL_AX211_ASSOC_OUT_OF_ORDER;
 	}
 
-	/* Checks the operation result. */
+	/* Selects the next command. */
 	result = ax211_assoc_set_step(state, next, now_us);
-	if (result == INTEL_AX211_ASSOC_OK)
-		return INTEL_AX211_ASSOC_PENDING;
+	if (result != INTEL_AX211_ASSOC_OK) {
+		/* A failure during the rollback fails the rollback. */
+		if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
+			state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
+			state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+			return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+		}
 
-	/* Handles the state condition. */
-	if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
-		state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
-		state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-		/* Returns the computed result. */
-		return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
+		/* Starts the rollback and reports the failure. */
+		(void)ax211_assoc_rollback_begin(state, result, now_us);
+		return result;
 	}
 
-	(void)ax211_assoc_rollback_begin(state, result, now_us);
-
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the next command is pending. */
+	return INTEL_AX211_ASSOC_PENDING;
 }
 
-/* Supports the ax211 assoc exchange failure operation. */
+/*
+ * Starts the rollback after a failed exchange and reports the failure it
+ * records.
+ */
 static int
 ax211_assoc_exchange_failure(
 	struct intel_ax211_assoc_state *state,
@@ -1998,7 +2173,7 @@ ax211_assoc_exchange_failure(
 {
 	int failure;
 
-	/* Dispatch the selected operation case. */
+	/* Keeps a known failure; any other becomes an I/O failure. */
 	switch (result) {
 	case INTEL_AX211_ASSOC_TIMEOUT:
 	case INTEL_AX211_ASSOC_STALE:
@@ -2013,18 +2188,15 @@ ax211_assoc_exchange_failure(
 		break;
 	}
 
-	/* Handles the state condition. */
+	/* A failure during the rollback fails the rollback. */
 	if (state->phase == INTEL_AX211_ASSOC_PHASE_ROLLBACK) {
 		state->phase = INTEL_AX211_ASSOC_PHASE_FAILED;
 		state->failure = INTEL_AX211_ASSOC_ROLLBACK_FAILED;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_ROLLBACK_FAILED;
 	}
 
+	/* Starts the rollback and reports the recorded failure. */
 	ax211_assoc_mark_uncertain(state, state->step);
 	(void)ax211_assoc_rollback_begin(state, failure, now_us);
-
-	/* Returns the computed result. */
 	return failure;
 }
