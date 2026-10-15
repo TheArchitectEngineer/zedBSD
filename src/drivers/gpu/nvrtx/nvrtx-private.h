@@ -279,13 +279,15 @@ bool
 nvrtx_stage_draw_wanted(void);
 
 /*
- * Reports whether the boot asked for the work channel (nvrtx.work=1).
+ * Reports whether the boot asked for the work channel (nvrtx.work=1), or
+ * wants the renderer that runs its work there.
  */
 bool
 nvrtx_stage_work_wanted(void);
 
 /*
- * Reports whether the boot asked for the renderer (nvrtx.vk=1).
+ * Reports whether the GPU device is also a renderer (the default; nvrtx.vk=0
+ * turns it off).
  */
 bool
 nvrtx_stage_vk_wanted(void);

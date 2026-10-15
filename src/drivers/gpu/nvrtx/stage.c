@@ -48,10 +48,11 @@
  *   nvrtx.draw=1          the first draw (P9g, a test)
  *   nvrtx.work=1          the work channel the GPU device keeps (P9w, with
  *                         the golden context it needs; not yet by default)
- *   nvrtx.vk=1            the GPU device is also a renderer: it takes the
- *                         Vulkan protocol's commands and runs them on the
- *                         work channel, which it implies (ws037-p007 stages
- *                         D2 and D3; not yet by default)
+ *   nvrtx.vk=0            the GPU device is a display alone; by default it
+ *                         is also a renderer that takes the Vulkan
+ *                         protocol's commands and runs them on the work
+ *                         channel, which it implies (ws037-p007 stages D2
+ *                         and D3; the default since 2026-10-16)
  */
 
 #include <stdarg.h>
@@ -96,7 +97,7 @@
 #define STAGE_WORK_TOKEN		"nvrtx.work=1"
 
 /* The whole token that makes the GPU device a renderer (ws037-p007 stage D2). */
-#define STAGE_VK_TOKEN			"nvrtx.vk=1"
+#define STAGE_VK_OFF_TOKEN		"nvrtx.vk=0"
 
 /* The whole token that stops the GSP after the takeover instead of keeping the GPU device (ws037-p006 P8c). */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
@@ -287,7 +288,7 @@ nvrtx_stage_draw_wanted(void)
 
 /*
  * Reports whether the boot asked for the work channel (nvrtx.work=1), or
- * for the renderer that runs its work there (nvrtx.vk=1).
+ * wants the renderer that runs its work there (the default, nvrtx.vk=0 off).
  */
 bool
 nvrtx_stage_work_wanted(void)
@@ -300,8 +301,7 @@ nvrtx_stage_work_wanted(void)
 		return true;
 
 	/* The renderer needs the channel too. */
-	present = stage_token_present(STAGE_VK_TOKEN);
-	if (present)
+	if (nvrtx_stage_vk_wanted())
 		return true;
 
 	/* Without it the GPU device has no work channel. */
@@ -309,20 +309,21 @@ nvrtx_stage_work_wanted(void)
 }
 
 /*
- * Reports whether the boot asked for the renderer (nvrtx.vk=1).
+ * Reports whether the GPU device is also a renderer: the default, unless the
+ * boot turned it off with nvrtx.vk=0.
  */
 bool
 nvrtx_stage_vk_wanted(void)
 {
 	bool present;
 
-	/* Looks for nvrtx.vk=1 among the boot parameters. */
-	present = stage_token_present(STAGE_VK_TOKEN);
+	/* Looks for nvrtx.vk=0 among the boot parameters. */
+	present = stage_token_present(STAGE_VK_OFF_TOKEN);
 	if (present)
-		return true;
+		return false;
 
-	/* Without it the GPU device is a display alone. */
-	return false;
+	/* Without it the GPU device is also a renderer. */
+	return true;
 }
 
 /*
