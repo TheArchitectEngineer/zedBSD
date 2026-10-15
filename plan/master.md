@@ -606,6 +606,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-15 夜（ユーザー、クリック、Intel GPU の display の書き直しのレビュー 4 への判断）: LCD の確かめは「register などの証拠で代える」、外部 monitor は「常設できない」、止まった時は「その都度自分で入れ直す」→ Guardrail の i915 の節に追記。i915 は P1 がレビュー 4 を反映（改訂 5、8c4fe7791）しレビュー 5（blocker 2・major 11・minor 15、未反映）を commit してラップアップ（7d9a4a09b、merge bbf8d7ae9）。再開点は ws245/phase001/phase.md。
 - 2026-10-15 夜（ユーザー、1 件ずつクリック）: AMD RDNA の driver の設計 §15 の 14 件に回答（全文は ws039/ws.md）。既定から変わった物: #7「まず256MBで実装します。」、#11 control の node は「開発の間だけ」。#14 amdgpu を 10.0.10.3 で load して dump は許可。→ WS039 p001 cleared。
 - 2026-10-15 夜（ユーザー）:「5時間あたりの使用量がリミットに届きそうなので、i915の方は、今の作業が終わったらラップアップして、AMDに集中しましょう。N=1にします。」→ P1（i915 のレビュー 4 の反映、q1209-i02）は区切りで終了、AMD（WS039）だけを続ける。
 - 2026-10-15 夜（ユーザー）:「なんでサブエージェントがFableで動いてるんですか？」→ Q1 の説明（kernel-and-driver-designer の定義が model: claude-fable-5-1）の後「了解です。このままでよいです。」→ 設計の担当は Fable のまま。

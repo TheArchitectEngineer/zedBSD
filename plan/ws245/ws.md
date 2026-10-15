@@ -67,7 +67,7 @@ Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md
 
 1. 段の kernel を build（`make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=… vmunix`）。userland を変えない段は kernel だけを差し替える。
 2. 5330 が Linux（chaos、`ssh solaris10-man`）の時: `sudo mount /dev/sda2 /mnt/zb`（USB の ZEDBSD 区画）→ 前の `vmunix` を控えて段の kernel を `vmunix` に写す → umount → `sudo efibootmgr -n 0005`（USB の UEFI の entry、1 回だけ）→ `sudo systemctl reboot`。zedBSD の時は `ssh kei@10.0.30.3`（password kei、sudo も kei）で `/boot/boot0/` に写して `reboot`（再起動は既定の Linux に戻るので、続けて上の BootNext を使う）。
-3. zedBSD に ssh で入り、`sysctl kern.boot.login`（graphical）、`/var/log/sessiond.log`（SESSION start・HANDOFF）、`dmesg` の i915 の行（`lease 1 claimed`・`PICTURE UP`・`perf: … per submit`・`device lost` が 0）、backlight（`backlight-probe -f /dev/backlight/backlight0`、Q1 の `build/q1/blp/bin/backlight-probe`）を見る。LCD の目視はユーザー（頼まず、一覧に）。
+3. zedBSD に ssh で入り、`sysctl kern.boot.login`（graphical）、`/var/log/sessiond.log`（SESSION start・HANDOFF）、`dmesg` の i915 の行（`lease 1 claimed`・`picture up`（大文字小文字を区別しない grep）・`perf: … per submit`・`device lost` が 0）、backlight（`backlight-probe -f /dev/backlight/backlight0`、Q1 の `build/q1/blp/bin/backlight-probe`）を見る。LCD の目視はユーザー（頼まず、一覧に）。
 4. 5330 の DHCP が取れない事がある（2026-10-15、ユーザーが再取得して回復）。ssh が届かない時は止まったと決めつけず、ユーザーに知らせる。
 
 ## レビュー 4 への判断（2026-10-15 夜 ユーザー、クリック）
