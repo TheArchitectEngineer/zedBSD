@@ -214,6 +214,7 @@ CONFIG_DRIVER_PCI_NVRTX ?= n
 # The AMD RDNA driver (ws039) is off by default: it is being written and has
 # not been tried on a board yet.
 CONFIG_DRIVER_PCI_AMDRDNA ?= n
+CONFIG_AMDRDNA_CONTROL ?= y
 # HD Audio is on by default where its driver builds (amd64); a config written
 # by the menu names it explicitly.
 CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -608,6 +609,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_I915=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915)),1,0) \
 	-DCONFIG_DRIVER_PCI_NVRTX=$(if $(filter y,$(CONFIG_DRIVER_PCI_NVRTX)),1,0) \
 	-DCONFIG_DRIVER_PCI_AMDRDNA=$(if $(filter y,$(CONFIG_DRIVER_PCI_AMDRDNA)),1,0) \
+	-DCONFIG_AMDRDNA_CONTROL=$(if $(filter y,$(CONFIG_AMDRDNA_CONTROL)),1,0) \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
