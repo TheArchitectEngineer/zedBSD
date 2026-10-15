@@ -374,7 +374,7 @@ nvrtx_family_name(
  * with a reset bit.
  *
  * Procedure referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/top/ga100.c (ga100_top_parse).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/top/gk104.c (gk104_top_parse).
  */
 int
 nvrtx_device_info_reset(

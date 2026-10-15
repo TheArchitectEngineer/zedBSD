@@ -40,6 +40,11 @@
  *
  * Its bits 28:20 name the chip: bits 28:24 the architecture and bits 23:20
  * the implementation within it.  Bits 7:0 are the revision.
+ *
+ * Values referenced: NVIDIA open-gpu-doc
+ * manuals/turing/tu104/dev_master.ref.txt (NV_PMC_BOOT_0,
+ * NV_PMC_BOOT_0_ARCHITECTURE, NV_PMC_BOOT_0_IMPLEMENTATION) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/device/base.c (nvkm_device_ctor).
  */
 #define NVRTX_REG_MC_IDENT_0		0x000000U
 #define NVRTX_IDENT_CHIP_SHIFT		20U
@@ -54,6 +59,11 @@
  * It reads 0 when the GPU answers in little-endian order and 0x01000001
  * when it was switched to big-endian.  On Turing and later, bits 17:16 are
  * set on a virtual function of a partitioned GPU.
+ *
+ * Values referenced: NVIDIA open-gpu-doc
+ * manuals/turing/tu104/dev_master.ref.txt (NV_PMC_BOOT_1, NV_PMC_BOOT_1_VGPU)
+ * and Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/device/base.c
+ * (nvkm_device_endianness, nvkm_device_ctor).
  */
 #define NVRTX_REG_MC_IDENT_1		0x000004U
 #define NVRTX_IDENT_1_BIG_ENDIAN	0x01000001U
@@ -308,6 +318,12 @@ nvrtx_product_at(
 /*
  * The device information table: 64 words naming the engines, their
  * registers and their reset bits in the PMC enable register.
+ *
+ * Values referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_top.ref.txt
+ * (NV_PTOP_DEVICE_INFO, NV_PTOP_DEVICE_INFO_ENTRY, NV_PTOP_DEVICE_INFO_RESET,
+ * NV_PTOP_DEVICE_INFO_RESET_ENUM, NV_PTOP_DEVICE_INFO_TYPE_ENUM,
+ * NV_PTOP_DEVICE_INFO_CHAIN) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/top/gk104.c (gk104_top_parse).
  */
 #define NVRTX_REG_DEVICE_INFO		0x022700U
 #define NVRTX_DEVICE_INFO_WORDS		64U
@@ -322,7 +338,13 @@ nvrtx_product_at(
 #define NVRTX_DEVICE_INFO_TYPE_MASK	0x1fffffffU
 #define NVRTX_DEVICE_INFO_CHAINED	0x80000000U
 
-/* The engine type of the secure processor (SEC2) that runs the booters. */
+/*
+ * The engine type of the secure processor (SEC2) that runs the booters.
+ *
+ * Value referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_top.ref.txt
+ * (NV_PTOP_DEVICE_INFO_TYPE_ENUM_SEC) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/top/gk104.c (gk104_top_parse).
+ */
 #define NVRTX_ENGINE_SEC2		0xdU
 
 /*

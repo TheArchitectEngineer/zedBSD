@@ -32,12 +32,24 @@ struct nvrtx_node;
 /* The firmware directory the GSP files are read from; a chip's files are named by its profile below it. */
 #define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/"
 
-/* The registers devinit reads: GFW's devinit is done when bit 0 of the first is set and the second's low byte is 0xFF. */
+/*
+ * The registers devinit reads: GFW's devinit is done when bit 0 of the first is
+ * set and the second's low byte is 0xFF.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/devinit/tu102.c (tu102_devinit_wait).
+ */
 #define NVRTX_REG_DEVINIT_LEVEL		0x118128U
 #define NVRTX_REG_DEVINIT_PROGRESS	0x118234U
 #define NVRTX_DEVINIT_COMPLETED		0xffU
 
-/* The register layout reads for the display's VGA workspace (the VRAM size's register is the profile's). */
+/*
+ * The register layout reads for the display's VGA workspace (the VRAM size's
+ * register is the profile's).
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_vga_workspace_addr).
+ */
 #define NVRTX_REG_VGA_WORKSPACE		0x625f04U
 
 /* The largest VBIOS the driver reads. */
@@ -58,8 +70,8 @@ struct nvrtx_node;
  * handle carries its channel number.
  *
  * Values referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/client.c, device.c and
- * vmm.c (the handles of the client, device, subdevice and address space).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/handles.h (NVKM_RM_CLIENT,
+ * NVKM_RM_DEVICE, NVKM_RM_SUBDEVICE, NVKM_RM_VASPACE, NVKM_RM_CHAN).
  */
 #define NVRTX_HANDLE_CLIENT		0xc1d00000U
 #define NVRTX_HANDLE_DEVICE		0xde1d0000U
@@ -73,6 +85,12 @@ struct nvrtx_node;
  * (chid 1) and 3D object take the next handles of the same families; the
  * scrubber's are the resource manager's fixed ones, by which it finds the
  * scrubber channel of the client.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/gr.h
+ * (KGRAPHICS_SCRUBBER_HANDLE_VAS, KGRAPHICS_SCRUBBER_HANDLE_CHANNEL,
+ * KGRAPHICS_SCRUBBER_HANDLE_3DOBJ) and nvkm/subdev/gsp/rm/handles.h
+ * (NVKM_RM_THREED).
  */
 #define NVRTX_HANDLE_GOLDEN_SPACE	0x90f10001U
 #define NVRTX_HANDLE_GOLDEN_CHANNEL	0xf1f00001U
@@ -117,10 +135,10 @@ struct nvrtx_node;
 #define NVRTX_COMPUTE_SEMAPHORE_VA	0x28005000ULL
 
 /*
-  * The VRAM the graphics context's arena reserves from the top of the last
-  * usable region (golden-context), and the compute arena's (compute-test,
-  * below the graphics arena).  The display's surfaces (takeover) are taken
-  * below both.
+ * The VRAM the graphics context's arena reserves from the top of the last
+ * usable region (golden-context), and the compute arena's (compute-test,
+ * below the graphics arena).  The display's surfaces (takeover) are taken
+ * below both.
  */
 #define NVRTX_GR_ARENA_RESERVE		0x8800000ULL
 #define NVRTX_COMPUTE_ARENA_RESERVE	0xa800000ULL
@@ -131,7 +149,12 @@ struct nvrtx_node;
 /* How long a call to the resource manager waits for its reply. */
 #define NVRTX_CALL_TIMEOUT_US		5000000U
 
-/* The two falcons the boot drives: the GSP's own and the secure processor's. */
+/*
+ * The two falcons the boot drives: the GSP's own and the secure processor's.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/base.c
+ * (nvkm_gsp_new_) and nvkm/engine/sec2/tu102.c (tu102_sec2_new).
+ */
 #define NVRTX_FALCON_GSP_BASE		0x110000U
 #define NVRTX_FALCON_SEC2_BASE		0x840000U
 
