@@ -6062,17 +6062,18 @@ ax211_pci_keys_remove_all(
 	uint8_t command[INTEL_AX211_KEY_COMMAND_SIZE];
 	uint8_t index;
 	uint64_t generation;
+	int encode_result;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Nothing to remove without a key state. */
 	if (controller == NULL || !controller->keys_initialized)
 		return 0;
 	result = 0;
 
-	/* Process each remaining element. */
+	/* Removes each group key the firmware may hold. */
 	for (index = 0U; index < INTEL_AX211_KEY_INDEX_LIMIT && result == 0;
 	     index++) {
-		/* Handles the generation condition. */
+		/* Takes the active key, else a programmed staged one. */
 		generation = controller->keys.active_group[index];
 		if (generation == 0U &&
 		    controller->staged_group_key[index].valid &&
@@ -6081,23 +6082,23 @@ ax211_pci_keys_remove_all(
 					     .request.key_generation;
 		}
 
-		/* Handles the generation condition. */
+		/* Else takes a retired key still to be removed. */
 		if (generation == 0U &&
 		    controller->retired_group_key_remove[index]) {
 			generation =
 				controller->retired_group_key_generation[index];
 		}
 
-		/* Handles the generation condition. */
+		/* Encodes and sends the removal. */
 		if (generation != 0U) {
 			kern_memset(command, 0, sizeof(command));
 
-			/* Checks the operation result. */
-			result = ax211_pci_key_result_errno(
-				drv_intel_ax211_key_remove_encode(
-					controller->connection_generation,
-					generation, INTEL_AX211_KEY_GROUP_KEY,
-					index, command));
+			/* Sends a removal that encoded. */
+			encode_result = drv_intel_ax211_key_remove_encode(
+				controller->connection_generation,
+				generation, INTEL_AX211_KEY_GROUP_KEY,
+				index, command);
+			result = ax211_pci_key_result_errno(encode_result);
 			if (result == 0) {
 				result = ax211_pci_key_command(
 					controller, command, deadline_ticks);
@@ -6107,26 +6108,27 @@ ax211_pci_keys_remove_all(
 		}
 	}
 
-	/* Checks the operation result. */
+	/* Removes the pairwise key the firmware may hold. */
 	if (result == 0) {
-		/* Handles the generation condition. */
+		/* Takes the active key, else a programmed staged one. */
 		generation = controller->keys.active_pairwise;
-		if (generation == 0U && controller->staged_pairwise_key.valid &&
+		if (generation == 0U &&
+		    controller->staged_pairwise_key.valid &&
 		    controller->staged_pairwise_key.programmed) {
 			generation = controller->staged_pairwise_key.request
 					     .key_generation;
 		}
 
-		/* Handles the generation condition. */
+		/* Encodes and sends the removal. */
 		if (generation != 0U) {
 			kern_memset(command, 0, sizeof(command));
 
-			/* Checks the operation result. */
-			result = ax211_pci_key_result_errno(
-				drv_intel_ax211_key_remove_encode(
-					controller->connection_generation,
-					generation, INTEL_AX211_KEY_PAIRWISE,
-					0U, command));
+			/* Sends a removal that encoded. */
+			encode_result = drv_intel_ax211_key_remove_encode(
+				controller->connection_generation,
+				generation, INTEL_AX211_KEY_PAIRWISE,
+				0U, command);
+			result = ax211_pci_key_result_errno(encode_result);
 			if (result == 0) {
 				result = ax211_pci_key_command(
 					controller, command, deadline_ticks);
@@ -6136,8 +6138,12 @@ ax211_pci_keys_remove_all(
 		}
 	}
 
-	/* Returns the computed result. */
-	return result;
+	/* Reports the failure. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: the firmware holds no key. */
+	return 0;
 }
 
 /* Issues one exact API89 key command; caller scrubs its payload. */
@@ -6152,9 +6158,11 @@ ax211_pci_key_command(
 	size_t response_length;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || payload == NULL)
 		return EINVAL;
+
+	/* Describes the key command. */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = INTEL_AX211_KEY_FAMILY;
 	request.command.opcode = INTEL_AX211_KEY_OPCODE;
@@ -6168,15 +6176,19 @@ ax211_pci_key_command(
 	request.response_version = INTEL_AX211_KEY_RESPONSE_VERSION;
 	request.minimum_response_length = 0U;
 	request.maximum_response_length = sizeof(response);
+
+	/* Sends the command and clears its answer. */
 	kern_memset(response, 0, sizeof(response));
 	response_length = 0U;
 	result = ax211_pci_direct_command(controller, &request, deadline_ticks,
 					  response, sizeof(response),
 					  &response_length, NULL, NULL);
 	ax211_pci_scrub(response, sizeof(response));
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the firmware accepted the command. */
+	return 0;
 }
 
 /* Retains one replacement secret only until its checked activation barrier. */
@@ -6185,36 +6197,43 @@ ax211_pci_staged_key_store(
 	struct ax211_pci_staged_key *staged,
 	const struct intel_ax211_key_request *request)
 {
-	/* Handles the staged availability. */
+	int same;
+
+	/* Refuses missing arguments. */
 	if (staged == NULL || request == NULL)
 		return EINVAL;
 
-	/* Handles the staged condition. */
+	/* A staged slot accepts only the same key again. */
 	if (staged->valid) {
-		/* Handles the staged condition. */
-		if (staged->request.connection_generation ==
-			    request->connection_generation &&
-		    staged->request.key_generation == request->key_generation &&
-		    staged->request.receive_packet_number ==
-			    request->receive_packet_number &&
-		    staged->request.kind == request->kind &&
-		    staged->request.key_index == request->key_index &&
-		    (staged->programmed ||
-		     kern_memcmp(staged->request.key, request->key,
-			    INTEL_AX211_KEY_BYTES) == 0)) {
-			/* Succeeded. */
-			return 0;
+		/* Refuses another key. */
+		if (staged->request.connection_generation !=
+			    request->connection_generation ||
+		    staged->request.key_generation != request->key_generation ||
+		    staged->request.receive_packet_number !=
+			    request->receive_packet_number ||
+		    staged->request.kind != request->kind ||
+		    staged->request.key_index != request->key_index) {
+			return EBUSY;
 		}
 
-		/* Failed. */
-		return EBUSY;
+		/* A programmed key's bytes are erased; its fields match. */
+		if (staged->programmed)
+			return 0;
+
+		/* Refuses other key bytes. */
+		same = kern_memcmp(staged->request.key, request->key,
+				   INTEL_AX211_KEY_BYTES);
+		if (same != 0)
+			return EBUSY;
+
+		/* Succeeded: the same key is already staged. */
+		return 0;
 	}
 
+	/* Succeeded: stages the key. */
 	staged->request = *request;
 	staged->valid = 1U;
 	staged->programmed = 0U;
-
-	/* Succeeded. */
 	return 0;
 }
 
@@ -6226,20 +6245,22 @@ ax211_pci_staged_key_program(
 	uint64_t deadline_ticks)
 {
 	uint8_t command[INTEL_AX211_KEY_COMMAND_SIZE];
+	int encode_result;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments and an empty slot. */
 	if (controller == NULL || staged == NULL || !staged->valid)
 		return EINVAL;
 
-	/* Handles the staged condition. */
+	/* A programmed key needs nothing more. */
 	if (staged->programmed)
 		return 0;
 	kern_memset(command, 0, sizeof(command));
 
-	/* Checks the operation result. */
-	result = ax211_pci_key_result_errno(
-		drv_intel_ax211_key_add_encode(&staged->request, command));
+	/* Encodes the addition and sends it. */
+	encode_result = drv_intel_ax211_key_add_encode(&staged->request,
+						       command);
+	result = ax211_pci_key_result_errno(encode_result);
 	if (result == 0) {
 		staged->programmed = 1U;
 		result = ax211_pci_key_command(controller, command,
@@ -6256,84 +6277,99 @@ ax211_pci_staged_key_program(
 				sizeof(staged->request.key));
 	}
 
+	/* Clears the encoded command. */
 	drv_intel_ax211_key_command_scrub(command);
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the firmware holds the key. */
+	return 0;
 }
 
-/* Supports the ax211 pci staged key clear operation. */
+/* Clears one staging slot, key bytes included. */
 static void
 ax211_pci_staged_key_clear(
 	struct ax211_pci_staged_key *staged)
 {
-	/* Handles the staged availability. */
+	/* Clears a slot that exists. */
 	if (staged != NULL)
 		ax211_pci_scrub(staged, sizeof(*staged));
 }
 
-/* Supports the ax211 pci keys have active operation. */
+/* Reports whether any key is active: 1 when one is, 0 when none is. */
 static int
 ax211_pci_keys_have_active(
 	const struct ax211_pci_controller *controller)
 {
 	uint8_t index;
 
-	/* Handles the controller availability. */
+	/* No key is active without a key state. */
 	if (controller == NULL || !controller->keys_initialized)
 		return 0;
 
-	/* Handles the controller condition. */
+	/* The pairwise key is active. */
 	if (controller->keys.active_pairwise != 0U)
 		return 1;
 
-	/* Process each remaining element. */
+	/* Looks for an active group key. */
 	for (index = 0U; index < INTEL_AX211_KEY_INDEX_LIMIT; index++) {
-		/* Handles the controller condition. */
+		/* A group key is active. */
 		if (controller->keys.active_group[index] != 0U)
 			return 1;
 	}
 
-	/* Succeeded. */
+	/* No key is active. */
 	return 0;
 }
 
-/* Supports the ax211 pci key request address valid operation. */
+/*
+ * Reports whether a key request names the connection's addresses: the BSSID
+ * for a pairwise key, the broadcast address for a group key.  1 when it does,
+ * 0 when not.
+ */
 static int
 ax211_pci_key_request_address_valid(
 	const struct ax211_pci_controller *controller,
 	const struct wlan_radio_key_request *request)
 {
-	int error;
 	static const uint8_t broadcast[6] = {0xffU, 0xffU, 0xffU,
 					     0xffU, 0xffU, 0xffU};
+	int same;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || request == NULL ||
+	/* Rejects missing arguments and a connection without a BSS. */
+	if (controller == NULL ||
+	    request == NULL ||
 	    !controller->selected_bss_valid) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the request condition. */
+	/* A pairwise key is at index 0 and names the BSSID. */
 	if (request->kind == WLAN_RADIO_KEY_PAIRWISE) {
-		/* Computes the function result. */
-		error =
-			request->key_index == 0U &&
-			kern_memcmp(request->address,
-			       controller->selected_metadata.bssid, 6U) == 0;
+		/* Rejects any other index. */
+		if (request->key_index != 0U)
+			return 0;
 
-		/* Failed. */
-		return error;
+		/* Rejects any other address. */
+		same = kern_memcmp(request->address,
+				   controller->selected_metadata.bssid, 6U);
+		if (same != 0)
+			return 0;
+
+		/* The addresses match. */
+		return 1;
 	}
 
-	/* Computes the function result. */
-	error =
-		request->kind == WLAN_RADIO_KEY_GROUP &&
-		kern_memcmp(request->address, broadcast, sizeof(broadcast)) == 0;
+	/* Rejects any other kind. */
+	if (request->kind != WLAN_RADIO_KEY_GROUP)
+		return 0;
 
-	/* Returns the computed result. */
-	return error;
+	/* A group key names the broadcast address. */
+	same = kern_memcmp(request->address, broadcast, sizeof(broadcast));
+	if (same != 0)
+		return 0;
+
+	/* The addresses match. */
+	return 1;
 }
 
 /* An uncertain key command is recoverable only after a global DMA reset. */
@@ -6344,31 +6380,43 @@ ax211_pci_key_fail_closed(
 {
 	int stop_error;
 
-	/* Handles the controller availability. */
-	if (controller == NULL)
-		return error != 0 ? error : EIO;
+	/* Without a controller, reports the error, or EIO for none. */
+	if (controller == NULL) {
+		/* Reports the error. */
+		if (error != 0)
+			return error;
+
+		/* Reports a failure without a reason. */
+		return EIO;
+	}
+
+	/* Logs the failure and stops the session. */
 	kern_logf("intel-ax211: fail-closed key/association path error=%d "
 		   "phase=%u step=%u resources=%08x\n",
 		   error, controller->association.phase,
 		   controller->association.step,
 		   controller->association.resources);
 	stop_error = ax211_pci_session_stop(controller);
-	controller->quarantined = stop_error != 0;
 
 	/* The independent owner can retry after this radio callback returns. */
 	if (stop_error != 0) {
+		controller->quarantined = 1U;
 		ax211_pci_stop_defer_locked(controller, stop_error);
 
 		/* Reports the unproven stop; no resource absence is claimed. */
 		return stop_error;
 	}
 
+	/* Reports the error, or EIO for none, after a proven stop. */
+	controller->quarantined = 0U;
+	if (error != 0)
+		return error;
 
-	/* Returns the computed result. */
-	return error != 0 ? error : EIO;
+	/* Reports a failure without a reason. */
+	return EIO;
 }
 
-/* Supports the ax211 pci tx submit operation. */
+/* Queues one frame on the transmit ring under the caller's deadline. */
 static int
 ax211_pci_tx_submit(
 	struct ax211_pci_controller *controller,
@@ -6376,22 +6424,21 @@ ax211_pci_tx_submit(
 	uint64_t deadline_ticks,
 	int report_completion)
 {
-	int error;
 	struct intel_ax211_tx_ring_handle handle;
 	uint64_t deadline_us;
 	uint64_t now_us;
 	uint64_t timeout_us;
 	int result;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || request == NULL ||
+	/* Refuses missing arguments, a flag other than 0 or 1, and no ring. */
+	if (controller == NULL ||
+	    request == NULL ||
 	    (report_completion != 0 && report_completion != 1) ||
 	    !controller->tx_ring_allocated) {
-		/* Failed. */
 		return EINVAL;
 	}
 
-	/* Checks the operation result. */
+	/* Converts the deadline into a timeout. */
 	result = ax211_pci_clock_us(controller, &now_us);
 	if (result == 0) {
 		result = ax211_pci_command_timeout(controller, deadline_ticks,
@@ -6399,33 +6446,33 @@ ax211_pci_tx_submit(
 						   &deadline_us);
 	}
 
-	/* Checks the operation result. */
+	/* Reports a failed conversion. */
 	if (result != 0)
 		return result;
 	(void)deadline_us;
 	kern_memset(&handle, 0, sizeof(handle));
 
-	/* Checks the operation result. */
+	/* Queues the frame; a failure that poisons the ring starts recovery. */
 	result = drv_intel_ax211_tx_ring_submit(&controller->frame_ring, request,
 						now_us, timeout_us, &handle);
 	if (result != INTEL_AX211_TX_RING_OK) {
-		/* Checks the operation status. */
+		/* Starts recovery for a ring that needs a reset. */
 		if (result == INTEL_AX211_TX_RING_KICK_FAILED ||
 		    result == INTEL_AX211_TX_RING_POISONED ||
-		    result == INTEL_AX211_TX_RING_BARRIER_REQUIRED)
+		    result == INTEL_AX211_TX_RING_BARRIER_REQUIRED) {
 			ax211_pci_recovery_latch_locked(controller, EIO);
+		}
 
-		/* Obtains the ax211 pci tx ring result errno result. */
-		error = ax211_pci_tx_ring_result_errno(result);
-
-		/* Failed. */
-		return error;
+		/* Reports the failure. */
+		result = ax211_pci_tx_ring_result_errno(result);
+		return result;
 	}
 
-	controller->tx_report_completion[handle.index] =
-		report_completion != 0 ? 1U : 0U;
-
-	/* Succeeded. */
+	/* Succeeded: records whether the completion is reported. */
+	if (report_completion != 0)
+		controller->tx_report_completion[handle.index] = 1U;
+	else
+		controller->tx_report_completion[handle.index] = 0U;
 	return 0;
 }
 
@@ -6439,46 +6486,48 @@ ax211_pci_tx_dispatch(
 	struct intel_ax211_protocol_message tx_message;
 	struct wlan_station *station;
 	unsigned report_completion;
+	int acknowledged;
+	int status;
 	int report_result;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || message == NULL)
 		return EINVAL;
 
-	/* Handles the controller condition. */
+	/* Nothing to retire without a ring. */
 	if (!controller->tx_ring_allocated)
 		return 0;
 	kern_memset(&retired, 0, sizeof(retired));
 	tx_message = *message;
 	tx_message.queue &= 0x7fU;
 
-	/* Checks the operation result. */
+	/* Ignores a repeated, stale or early response. */
 	result = drv_intel_ax211_tx_ring_complete(&controller->frame_ring,
 						  &tx_message, &retired);
 	if (result == INTEL_AX211_TX_RING_DUPLICATE ||
 	    result == INTEL_AX211_TX_RING_STALE ||
 	    result == INTEL_AX211_TX_RING_NOT_READY) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Checks the operation status. */
+	/* Refuses any other failure than a failed transmission. */
 	if (result != INTEL_AX211_TX_RING_OK &&
 	    result != INTEL_AX211_TX_RING_TX_FAILED) {
-		/* Failed. */
 		return EIO;
 	}
+
+	/* Takes the frame's reporting flag. */
 	report_completion =
 		controller->tx_report_completion[retired.handle.index];
 	controller->tx_report_completion[retired.handle.index] = 0U;
 	station = NULL;
 
-	/* Handles the report completion condition. */
+	/* A frame without reporting is retired. */
 	if (!report_completion)
 		return 0;
 
-	/* Checks the operation status. */
+	/* Logs a failed transmission. */
 	if (result == INTEL_AX211_TX_RING_TX_FAILED) {
 		kern_logf("intel-ax211: TX failed generation=%u cookie=%u "
 			   "acknowledged=%u failure=%u/%u\n",
@@ -6488,34 +6537,45 @@ ax211_pci_tx_dispatch(
 			   retired.frame_retries);
 	}
 
-	/* Handles the report result condition. */
+	/* A station that is gone takes no report. */
 	report_result = ax211_pci_operation_enter_locked(controller, &station);
 	if (report_result == ENODEV)
 		return 0;
 
-	/* Handles the report result condition. */
+	/* Refuses an operation that could not be entered. */
 	if (report_result != 0)
 		return EIO;
+
+	/* Reports a sent frame as acknowledged, a failed one as EIO. */
+	if (result == INTEL_AX211_TX_RING_OK) {
+		acknowledged = 1;
+		status = 0;
+	} else {
+		acknowledged = 0;
+		status = EIO;
+	}
 
 	/*
 	 * Completion can advance WPA and synchronously enter another radio op.
 	 */
-
 	mutex_unlock(&controller->lifecycle_lock);
 
 	report_result = wlan_station_report_tx_complete(
 		station, retired.handle.connection_generation,
-		retired.handle.cookie, result == INTEL_AX211_TX_RING_OK ? 1 : 0,
-		result == INTEL_AX211_TX_RING_OK ? 0 : EIO);
+		retired.handle.cookie, acknowledged, status);
 	mutex_lock(&controller->lifecycle_lock);
 
 	ax211_pci_operation_leave_locked(controller);
 
-	/* Returns the computed result. */
-	return report_result == 0 || report_result == ESTALE ||
-			       report_result == ENODEV
-		       ? 0
-		       : EIO;
+	/* A stale report or a station that left is not a failure. */
+	if (report_result != 0 &&
+	    report_result != ESTALE &&
+	    report_result != ENODEV) {
+		return EIO;
+	}
+
+	/* Succeeded: the completion is reported. */
+	return 0;
 }
 
 /* Fails one uncertain oldest TX and resets the complete hardware epoch. */
@@ -6527,30 +6587,32 @@ ax211_pci_tx_timeout_check(
 	struct intel_ax211_tx_ring_handle handle;
 	struct wlan_station *station;
 	unsigned report_completion;
+	int enter_result;
 	int report_result;
 	int result;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || !controller->tx_ring_allocated ||
+	/* Nothing can time out without pending frames. */
+	if (controller == NULL ||
+	    !controller->tx_ring_allocated ||
 	    !controller->frame_ring.enabled ||
 	    controller->frame_ring.pending_count == 0U) {
-		/* Succeeded. */
 		return 0;
 	}
 	kern_memset(&handle, 0, sizeof(handle));
 
-	/* Checks the operation result. */
+	/* The oldest frame is still within its time. */
 	result = drv_intel_ax211_tx_ring_timeout_oldest(&controller->frame_ring,
 							now_us, &handle);
 	if (result == INTEL_AX211_TX_RING_PENDING ||
 	    result == INTEL_AX211_TX_RING_NOT_READY) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses any outcome other than a timeout. */
 	if (result != INTEL_AX211_TX_RING_TIMEOUT)
 		return EIO;
+
+	/* Logs the timeout and takes the frame's reporting flag. */
 	kern_logf(
 		"intel-ax211: TX completion timeout generation=%u cookie=%u\n",
 		(unsigned)handle.connection_generation,
@@ -6559,23 +6621,31 @@ ax211_pci_tx_timeout_check(
 	controller->tx_report_completion[handle.index] = 0U;
 	station = NULL;
 
-	/* Checks the ax211 pci operation enter locked result. */
+	/* Reports the timed-out frame to a station that takes reports. */
 	report_result = 0;
-	if (report_completion &&
-	    ax211_pci_operation_enter_locked(controller, &station) == 0) {
-		mutex_unlock(&controller->lifecycle_lock);
-		report_result = wlan_station_report_tx_complete(
-			station, handle.connection_generation, handle.cookie, 0,
-			ETIMEDOUT);
-		mutex_lock(&controller->lifecycle_lock);
-		ax211_pci_operation_leave_locked(controller);
+	if (report_completion) {
+		/* Reports through an entered operation. */
+		enter_result = ax211_pci_operation_enter_locked(controller,
+								&station);
+		if (enter_result == 0) {
+			mutex_unlock(&controller->lifecycle_lock);
+			report_result = wlan_station_report_tx_complete(
+				station, handle.connection_generation,
+				handle.cookie, 0, ETIMEDOUT);
+			mutex_lock(&controller->lifecycle_lock);
+			ax211_pci_operation_leave_locked(controller);
+		}
 	}
 
-	/* Returns the computed result. */
-	return report_result == 0 || report_result == ESTALE ||
-			       report_result == ENODEV
-		       ? ETIMEDOUT
-		       : EIO;
+	/* A failed report is an I/O failure. */
+	if (report_result != 0 &&
+	    report_result != ESTALE &&
+	    report_result != ENODEV) {
+		return EIO;
+	}
+
+	/* Reports the timeout, which resets the epoch. */
+	return ETIMEDOUT;
 }
 
 /* Classifies one copied MPDU against the current connection and key epoch. */
@@ -6593,17 +6663,20 @@ ax211_pci_connection_rx_dispatch(
 	unsigned type;
 	int result;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || mpdu == NULL || mpdu->frame == NULL ||
+	/* Refuses missing arguments and a missing connection. */
+	if (controller == NULL ||
+	    mpdu == NULL ||
+	    mpdu->frame == NULL ||
 	    controller->connection_generation == 0U) {
-		/* Failed. */
 		return EINVAL;
 	}
 
-	/* Handles the type condition. */
+	/* Passes only management and data frames. */
 	type = frame_control & 0x000cU;
 	if (type != 0U && type != 0x0008U)
 		return 0;
+
+	/* Describes the frame. */
 	kern_memset(&report, 0, sizeof(report));
 	report.generation = controller->connection_generation;
 	report.frame = mpdu->frame;
@@ -6611,38 +6684,50 @@ ax211_pci_connection_rx_dispatch(
 	report.rssi_dbm = mpdu->rssi_dbm;
 	report.channel = mpdu->channel;
 
-	/* Handles the mpdu condition. */
+	/*
+	 * A CCMP frame carries its key; any other protected frame is dropped.
+	 */
 	if (mpdu->cipher == INTEL_AX211_RX_PROTECTION_CCMP) {
-		/* Handles the controller condition. */
-		if (!controller->keys_initialized || mpdu->length < 10U ||
+		/*
+		 * Drops a frame without a key state, too short or undecrypted.
+		 */
+		if (!controller->keys_initialized ||
+		    mpdu->length < 10U ||
 		    !mpdu->decrypted) {
-			/* Succeeded. */
 			return 0;
 		}
-		kind = (mpdu->frame[4U] & 1U) != 0U ? INTEL_AX211_KEY_GROUP_KEY
-						    : INTEL_AX211_KEY_PAIRWISE;
-		key_index =
-			kind == INTEL_AX211_KEY_PAIRWISE ? 0U : mpdu->key_index;
 
-		/* Checks the operation result. */
+		/* A group-addressed frame uses a group key at its index. */
+		if ((mpdu->frame[4U] & 1U) != 0U)
+			kind = INTEL_AX211_KEY_GROUP_KEY;
+		else
+			kind = INTEL_AX211_KEY_PAIRWISE;
+		if (kind == INTEL_AX211_KEY_PAIRWISE)
+			key_index = 0U;
+		else
+			key_index = mpdu->key_index;
+
+		/* Drops a frame whose key is not known. */
 		result = drv_intel_ax211_key_state_rx_generation(
 			&controller->keys, controller->connection_generation,
 			kind, key_index, controller->hardware_epoch,
 			&key_generation);
 		if (result != INTEL_AX211_KEY_OK)
 			return 0;
+
+		/* Describes the key. */
 		report.key_generation = key_generation;
 		report.packet_number = mpdu->packet_number;
 		report.cipher = WLAN_RADIO_CIPHER_CCMP;
 		report.decrypted = 1U;
 		report.key_index = key_index;
 	} else if (mpdu->cipher != INTEL_AX211_RX_PROTECTION_NONE) {
-		/* Succeeded. */
+		/* Drops a frame of another protection. */
 		return 0;
 	}
 	station = NULL;
 
-	/* Checks the operation result. */
+	/* A station that is gone takes no frame. */
 	result = ax211_pci_operation_enter_locked(controller, &station);
 	if (result == ENODEV)
 		return 0;
@@ -6652,7 +6737,6 @@ ax211_pci_connection_rx_dispatch(
 	/*
 	 * Frame ingestion may advance WPA and synchronously enter a radio op.
 	 */
-
 	mutex_unlock(&controller->lifecycle_lock);
 
 	(void)wlan_station_report_frame(station, &report);
