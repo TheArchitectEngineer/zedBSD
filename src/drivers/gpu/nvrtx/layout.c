@@ -28,18 +28,36 @@
 #define LAYOUT_MIB			0x100000ULL
 #define LAYOUT_GIB			0x40000000ULL
 
-/* The VRAM-size register: its magnitude and scale fields, and the fifteen-sixteenths flag. */
+/*
+ * The VRAM-size register: its magnitude and scale fields, and the
+ * fifteen-sixteenths flag.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/fb/gp102.c
+ * (gp102_fb_vidmem_size).
+ */
 #define LAYOUT_VRAM_MAGNITUDE_SHIFT	4U
 #define LAYOUT_VRAM_MAGNITUDE_MASK	0x3fU
 #define LAYOUT_VRAM_SCALE_MASK		0xfU
 #define LAYOUT_VRAM_FIFTEEN_SIXTEENTHS	0x40000000U
 
-/* The display's VGA-workspace register: its valid bit and its address field (in 256-byte units). */
+/*
+ * The display's VGA-workspace register: its valid bit and its address field (in
+ * 256-byte units).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_vga_workspace_addr).
+ */
 #define LAYOUT_VGA_VALID		0x8U
 #define LAYOUT_VGA_ADDRESS_MASK		0xffffff00U
 #define LAYOUT_VGA_ADDRESS_SHIFT	8U
 
-/* The region the VBIOS firmware fills, and the alignment of the region's top. */
+/*
+ * The region the VBIOS firmware fills, and the alignment of the region's top.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_oneinit).
+ */
 #define LAYOUT_FRTS_BYTES		(1ULL * LAYOUT_MIB)
 #define LAYOUT_TOP_ALIGN		(128ULL * LAYOUT_KIB)
 
@@ -48,15 +66,31 @@
  * 96 KiB for each GiB of VRAM and room for the clients' allocations, on top
  * of its operating system's part, and at least a least size; both of those
  * are the generation's (its profile).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gsp.h
+ * (GSP_FW_HEAP_PARAM_BASE_RM_SIZE_TU10X, GSP_FW_HEAP_PARAM_SIZE_PER_GB_FB,
+ * GSP_FW_HEAP_PARAM_CLIENT_ALLOC_SIZE) and nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_wpr_heap_size).
  */
 #define LAYOUT_HEAP_BASE		(8ULL * LAYOUT_MIB)
 #define LAYOUT_HEAP_PER_GIB		(96ULL * LAYOUT_KIB)
 #define LAYOUT_HEAP_CLIENTS		(48ULL * LAYOUT_KIB * 2048ULL)
 
-/* The heap outside the protected region. */
+/*
+ * The heap outside the protected region.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_oneinit).
+ */
 #define LAYOUT_OUTER_HEAP_BYTES		(1ULL * LAYOUT_MIB)
 
-/* The longest region name the GSP's operating system takes. */
+/*
+ * The longest region name the GSP's operating system takes.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_libos_id8).
+ */
 #define LAYOUT_LIBOS_NAME_MAX		8U
 
 static uint64_t layout_align_down(uint64_t value, uint64_t alignment);
@@ -67,6 +101,9 @@ static uint64_t layout_align_up(uint64_t value, uint64_t alignment);
  *
  * The size is the magnitude shifted by the scale in MiB, and fifteen
  * sixteenths of that when the flag says so.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/fb/gp102.c (gp102_fb_vidmem_size).
  */
 uint64_t
 nvrtx_vram_size(
@@ -91,6 +128,9 @@ nvrtx_vram_size(
 
 /*
  * Decodes the VRAM size from the register Ampere and later report it in: whole MiB.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/fb/ga102.c (ga102_fb_vidmem_size).
  */
 uint64_t
 nvrtx_vram_size_mib(
@@ -110,6 +150,10 @@ nvrtx_vram_size_mib(
  *
  * Without the valid bit the workspace is the last MiB.  A valid address below
  * the last MiB is not trusted and the last 128 KiB are used instead.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c
+ * (tu102_gsp_vga_workspace_addr).
  */
 uint64_t
 nvrtx_vga_workspace(
@@ -141,6 +185,10 @@ nvrtx_vga_workspace(
  * heap_os is the part of the heap the GSP's operating system takes and
  * heap_min the least the heap may be (the generation's).  Returns EINVAL
  * when the VRAM is too small to hold the pieces.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_oneinit,
+ * tu102_gsp_wpr_heap_size).
  */
 int
 nvrtx_wpr_layout(
@@ -211,6 +259,9 @@ nvrtx_wpr_layout(
  * Writes the placement record the booter reads.
  *
  * The record is NVRTX_WPRM_BYTES long; fields not written here are zero.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_wpr_meta_init).
  */
 void
 nvrtx_wpr_record(
@@ -270,6 +321,10 @@ nvrtx_wpr_record(
  *
  * The name is packed into a word with its first character in the highest
  * used byte; the region is one contiguous range in system memory.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_libos_init,
+ * r535_gsp_libos_id8).
  */
 void
 nvrtx_libos_region(
@@ -308,6 +363,10 @@ nvrtx_libos_region(
  *
  * The first word is the GSP's put pointer, zero at start; the words after it
  * list the bus address of each page of the buffer, which is contiguous.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (r535_gsp_libos_init,
+ * create_pte_array).
  */
 void
 nvrtx_log_buffer(
@@ -333,6 +392,9 @@ nvrtx_log_buffer(
  * The queues' page list and its length, the two queues' offsets in the
  * shared memory, no suspend-resume state, GPU instance 0, and the stack kept
  * in the GSP's data memory, which this firmware version expects.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/gsp.c (r570_gsp_set_rmargs).
  */
 void
 nvrtx_rmargs(
