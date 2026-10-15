@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: q1204（P1、2026-10-15 夕）で p002 を実装中。以前: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
+Resume point: q1204（P1、2026-10-15 夕）: p002 の実装と host 試験は完了（branch agent/p1-ws245、d8134ee40・5084f1852 は main に merge 済み、3d476ca43・8e62fb89d とこの記録の commit）。残りは (f) T1 の boot-test と Q1 の判定、§7 #18・#22 の回答（[phase002](phase002/phase.md)）。次は p003（merge はデモの後: §7 #13）か p004/p006。以前: q1204 で p002 を実装中。以前: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -55,7 +55,7 @@ Resume point: q1204（P1、2026-10-15 夕）で p002 を実装中。以前: 2026
 | ID | 内容 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計: Linux v6.8.12 の分岐（決定 3・4）と PRM（補助）から、display 11〜13 の model（platform の記述、pipe・transcoder・DDI・PHY（combo・Dekel・MG）・PLL・plane・watermark・DBUF・power well・DMC・AUX・GMBUS・VBT・opregion・Type-C の 2 つの流れ）、外向きの口と契約、データの表の引用の方法、書き直しの順序と Phase の分割、試験の道（host・T1 の 5330 passthrough・実機の一覧）、LW の見積もり。design-reviewer を 3 回通す | in-progress（design.md 改訂 3a。§7 の判断をユーザーに聞いてから clearance） |
-| p002 | 土台: register と表の header（記述の 9 行）、xd-io、xd-platform（PCI ID に RKL・ADL-S/RPL-S を display だけの種類で）、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | planned（6 LW） |
+| [p002](phase002/phase.md) | 土台: register と表の header（記述の 9 行）、xd-io、xd-platform（RKL・ADL-S/RPL-S は記述の表だけ、`device.c` は #18 の回答まで不変）、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | in-progress（q1204 P1: (a)〜(e) PASS、(f) T1 待ち、(g) 一覧） |
 | p003 | 口 `xd.h` と `struct i915_xd_ops`、旧 code への adapter `old-xd.c`、own の file の付け替え、`i915.display=xd|old`（kern/boot.c、Q1 の承認。既定 old） | planned（7 LW。merge はデモの後: design.md §7 #13） |
 | p004 | VBT（合成の fixture、4 platform の V2/V3/V4）・EDID | planned（3 LW） |
 | p005 | AUX・GMBUS | planned（3 LW、p006 の後） |
