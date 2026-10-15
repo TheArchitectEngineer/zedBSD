@@ -3828,7 +3828,14 @@ nvrtx_sm75_lower(
 		source = nvrtx_sm75_cb(NVRTX_SM75_CB_ROOT, NVRTX_SM75_CB_PUSH + instruction->immediate);
 		break;
 	case DRV_GPU_IR_LOAD_UBO:
-		/* A uniform buffer word at an offset the constant buffer field holds. */
+		/*
+		 * A uniform buffer word at an offset the constant buffer field
+		 * holds.
+		 *
+		 * Value referenced: Mesa 25.3.6
+		 * src/nouveau/compiler/nak/sm70_encode.rs
+		 * (SM70Encoder::set_src_cb: the offset field of 16 bits).
+		 */
 		if (instruction->location >= lowering->ir->uniform_count || lowering->ir->uniforms[instruction->location].kind != DRV_GPU_IR_UNIFORM_BLOCK)
 			return nvrtx_sm75_refuse(lowering, EINVAL, "a uniform load names no uniform buffer");
 		if (instruction->immediate > 0xfffcU || (instruction->immediate & 3U) != 0U)
@@ -4078,7 +4085,8 @@ nvrtx_sm75_lower_unit(
 	 * Sine and cosine first scale the angle into turns.
 	 *
 	 * Procedure referenced: Mesa 25.3.6
-	 * src/nouveau/compiler/nak/builder.rs (fsin, fcos).
+	 * src/nouveau/compiler/nak/builder.rs (SSABuilder::fsin and
+	 * SSABuilder::fcos: the angle times 1 / (2 pi) from SM70 on).
 	 */
 	if (instruction->op == DRV_GPU_IR_SIN || instruction->op == DRV_GPU_IR_COS) {
 		error = nvrtx_sm75_take(lowering, &temporary);
@@ -4382,8 +4390,10 @@ nvrtx_sm75_lower_storage(
  * LOOP_END branches back to the loop's first instruction for the threads
  * whose Boolean holds; the others go on to the BSYNC and wait there.
  *
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the
- * loop's OpBSSy and OpBSync).
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_cf.c
+ * (lower_cf_list: the loop's break scope, push_scope and pop_scope) and
+ * src/nouveau/compiler/nak/from_nir.rs (ShaderFromNir::parse_intrinsic: the
+ * OpBSSy of bar_set_nv and the OpBSync of bar_sync_nv).
  */
 static int
 nvrtx_sm75_lower_loop(
@@ -4444,6 +4454,14 @@ nvrtx_sm75_lower_loop(
 	if (error != 0)
 		return error;
 
+	/*
+	 * The BSSY's offset: from the instruction after the BSSY to the
+	 * BSYNC, in 32-bit words.
+	 *
+	 * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+	 * (SM70Encoder::get_rel_offset: the target's place minus the next
+	 * instruction's, in 32-bit words).
+	 */
 	kern_memcpy(word.w, slot, sizeof(word.w));
 	nvrtx_sm75_set(&word, NVRTX_SM75_BSSY_OFFSET_LOW, NVRTX_SM75_BSSY_OFFSET_BITS, (uint64_t)((int64_t)(lowering->count - 1U - (bssy + 1U)) * NVRTX_SM75_INSTRUCTION_WORDS));
 	kern_memcpy(slot, word.w, sizeof(word.w));
@@ -4458,6 +4476,10 @@ nvrtx_sm75_lower_loop(
  * once, then a quotient corrected at most twice; the signed ones divide the
  * magnitudes and give the quotient the sign of the operands' product and
  * the remainder the dividend's sign (SPIR-V OpSDiv and OpSRem).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c
+ * (emit_idiv: the magnitudes divided, and the sign of the quotient from the
+ * operands' exclusive or).
  */
 static int
 nvrtx_sm75_lower_divide(
@@ -4983,7 +5005,15 @@ nvrtx_sm75_lower_shared(
  * otherwise).  Each is followed by a NOP of two cycles.
  *
  * Value referenced: the SM75 code the CUDA compiler emits (a NOP of two
- * cycles after an instruction with an execution latency).
+ * cycles after an instruction with an execution latency), and Mesa 25.3.6
+ * src/nouveau/compiler/nak/calc_instr_deps.rs (calc_delays: the NOP with a
+ * delay of 2 after an instruction whose execution latency is above 1) and
+ * src/nouveau/compiler/nak/sm70.rs (ShaderModel70::exec_latency: BAR and
+ * MEMBAR).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs
+ * (ShaderFromNir::parse_intrinsic, nir_intrinsic_barrier: the MEMBAR's
+ * scope, the GPU's for global memory and the workgroup's otherwise).
  */
 static int
 nvrtx_sm75_lower_sync(
@@ -5151,8 +5181,10 @@ nvrtx_sm75_extend_loops(
  * order (the registers the hardware reads at EXIT), which no value may
  * take; a vertex program's store request starts empty.
  *
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the
- * order of the fragment outputs in OpRegOut).
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs
+ * (ShaderFromNir::parse_intrinsic, copy_fs_outputs_nv: the order of the
+ * fragment outputs in OpRegOut, four for each location written, in
+ * ascending order).
  */
 static int
 nvrtx_sm75_prepare_graphics(
@@ -5214,8 +5246,9 @@ nvrtx_sm75_prepare_graphics(
  * every perspective input is multiplied by.
  *
  * Procedure referenced: Mesa 25.3.6
- * src/nouveau/compiler/nak_nir_lower_fs_inputs.c (the SM70 interpolation:
- * pass, then times 1 / w).
+ * src/nouveau/compiler/nak_nir_lower_fs_inputs.c (load_frag_w and
+ * lower_fs_input_intrin: the SM70 interpolation, w passed screen-linear,
+ * then 1 / w).
  */
 static int
 nvrtx_sm75_prologue(
@@ -5275,6 +5308,10 @@ nvrtx_sm75_prologue(
  * instance number; a fragment program's interpolated word (IPA, in
  * perspective multiplied by 1 / w), or the pixel's position.  The
  * header's input map records each.
+ *
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak_nir_lower_fs_inputs.c (interp_fs_input: from
+ * SM70 on, an input in perspective is passed, then multiplied by 1 / w).
  */
 static int
 nvrtx_sm75_lower_input(
@@ -5296,7 +5333,15 @@ nvrtx_sm75_lower_input(
 	if (instruction->component > 3U)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "an input component past the fourth");
 
-	/* A vertex program: a generic attribute, the vertex number or the instance number. */
+	/*
+	 * A vertex program: a generic attribute, the vertex number or the
+	 * instance number.
+	 *
+	 * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs
+	 * (VtgIoInfo::mark_attrs: a bit of the input map for each word, the
+	 * generic words from 0x080 and the C part of the system values from
+	 * 0x2c0).
+	 */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
 		if (instruction->location < 32U) {
 			address = NVRTX_SM75_ATTR_GENERIC + instruction->location * 16U + instruction->component * 4U;
@@ -5335,7 +5380,15 @@ nvrtx_sm75_lower_input(
 		return 0;
 	}
 
-	/* A located input and its interpolation. */
+	/*
+	 * A located input and its interpolation.
+	 *
+	 * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs
+	 * (FragmentIoInfo::mark_attr_read) and
+	 * src/nouveau/compiler/nak/sph.rs
+	 * (ShaderProgramHeader::set_imap_vector_ps: two bits of the input map
+	 * for each generic word).
+	 */
 	input = NULL;
 	if (instruction->location < 32U)
 		input = nvrtx_sm75_input(lowering->ir, instruction->location);
@@ -5400,7 +5453,15 @@ nvrtx_sm75_lower_output(
 	if (instruction->component > 3U)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "an output component past the fourth");
 
-	/* A fragment program: the colour's register. */
+	/*
+	 * A fragment program: the colour's register.
+	 *
+	 * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs
+	 * (ShaderFromNir::parse_intrinsic, copy_fs_outputs_nv: writes_color, a
+	 * bit for each component of each location) and
+	 * src/nouveau/compiler/nak/sph.rs
+	 * (ShaderProgramHeader::set_omap_targets).
+	 */
 	if (lowering->ir->stage == DRV_GPU_STAGE_FRAGMENT) {
 		nvrtx_sm75_begin(&word);
 		nvrtx_sm75_mov(&word, lowering->color_reg[instruction->location] + instruction->component, &value);
@@ -5415,7 +5476,13 @@ nvrtx_sm75_lower_output(
 	if (lowering->ir->stage != DRV_GPU_STAGE_VERTEX)
 		return nvrtx_sm75_refuse(lowering, ENOTSUP, "outputs of this stage are not compiled yet");
 
-	/* The attribute's address and its bit of the output map. */
+	/*
+	 * The attribute's address and its bit of the output map.
+	 *
+	 * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs
+	 * (VtgIoInfo::mark_attrs: a bit of the output map for each word, the
+	 * system values below 0x080 and the generic words from 0x080).
+	 */
 	if (instruction->location == DRV_GPU_IR_LOCATION_POSITION) {
 		address = NVRTX_SM75_ATTR_POSITION + instruction->component * 4U;
 		nvrtx_sm75_sph_set(sph, NVRTX_SM75_SPH_OMAP_AB_LOW + address / 4U, 1U, 1U);
@@ -5449,6 +5516,12 @@ nvrtx_sm75_lower_output(
  * pairs that become the four results' registers.  The level of detail of a
  * sample is implicit in a fragment program, zero in a vertex one, or the
  * instruction's bias or level.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c
+ * (lower_tex: the coordinates in the first source, the level of detail and
+ * then the offset in the second) and src/nouveau/compiler/nak/sm70_encode.rs
+ * (SM70Op for OpTex, encode: two destination registers and two source
+ * registers).
  */
 static int
 nvrtx_sm75_lower_sample(
@@ -5602,7 +5675,7 @@ nvrtx_sm75_lower_sample(
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c
  * (lower_tex: how the coordinates, level of detail and offset are packed into
- * registers).
+ * registers, the offset four bits for each component with u lowest).
  */
 static int
 nvrtx_sm75_texture_operands(
@@ -5689,7 +5762,9 @@ nvrtx_sm75_texture_operands(
  * Lowers a discard of the fragments where the Boolean holds: @P0 KILL.
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs
- * (demote, demote_if).
+ * (ShaderFromNir::parse_intrinsic: nir_intrinsic_demote and
+ * nir_intrinsic_demote_if) and src/nouveau/compiler/nak/sph.rs
+ * (encode_header: set_kills_pixels).
  */
 static int
 nvrtx_sm75_lower_kill(
@@ -5777,12 +5852,13 @@ nvrtx_sm75_header(
 
 		/*
 		 * The position's w is mapped in even when the program does not
-		 * read it, as a trap follows without it.  A first draw
-		 * without it stopped on a shader program header error.
+		 * read it, as a trap (a shader program header error) follows
+		 * without it.
 		 *
-		 * Procedure referenced: Mesa 25.3.6
-		 * src/nouveau/compiler/nak/from_nir.rs (the position's w in a
-		 * fragment program's input map).
+		 * Value referenced: Mesa 25.3.6
+		 * src/nouveau/compiler/nak/from_nir.rs (init_info_from_nir: bit
+		 * 31 of a fragment program's sysvals_in.ab, the position's w in
+		 * its input map).
 		 */
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_IMAP_AB_LOW + NVRTX_SM75_ATTR_POSITION_W / 4U, 1U, 1U);
 	} else {
@@ -5831,7 +5907,12 @@ nvrtx_sm75_sph_set(
 	}
 }
 
-/* Widens a vertex program's store request to an attribute word's address. */
+/*
+ * Widens a vertex program's store request to an attribute word's address.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs
+ * (VtgIoInfo::mark_store_req: the first and the last word, by address / 4).
+ */
 static void
 nvrtx_sm75_mark_store(
 	struct nvrtx_sm75_lowering *lowering,
@@ -5929,7 +6010,7 @@ nvrtx_sm75_storage_address(
 
 /*
  * Appends an instruction.  Its scheduling control is set when the program
- * is complete (sm75.c); here the kind the lowering emits it as is
+ * is complete (nvrtx_sm75_finish); here the kind the lowering emits it as is
  * checked against how the dependence marking reads it back: a
  * variable-latency kind must be an instruction with a scoreboard, a fixed
  * one an instruction without, and a branch, convergence or barrier kind an
@@ -6051,7 +6132,14 @@ nvrtx_sm75_finish(
 	/* A graphics program's header. */
 	nvrtx_sm75_header(lowering);
 
-	/* The size and the registers (at least four, the hardware's two included). */
+	/*
+	 * The size and the registers (at least four, the hardware's two
+	 * included).
+	 *
+	 * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/api.rs
+	 * (ShaderBin::new: num_gprs, at least 4) and
+	 * src/nouveau/compiler/nak/sm70.rs (ShaderModel70::hw_reserved_gprs).
+	 */
 	lowering->binary->code_words = lowering->count * NVRTX_SM75_INSTRUCTION_WORDS;
 	lowering->binary->gpr_count = lowering->highest + NVRTX_SM75_GPR_RESERVED;
 	if (lowering->binary->gpr_count < NVRTX_SM75_GPR_MINIMUM)
