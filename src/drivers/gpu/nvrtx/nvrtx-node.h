@@ -131,18 +131,23 @@ struct nvrtx_node_entry {
  *
  * Made once by nvrtx_node_start() and kept until power-off, as the GSP is.
  * lock serializes the lease, the frames and the screen's state; it is taken
- * before the memory lock.  owner is the session holding the lease (NULL when
+ * before the memory lock.  present_lock is taken before lock and held by a
+ * presentation throughout, and by the lease's end, a blob's going off the
+ * screen and the stop: the window's flips and its notifiers, next and the
+ * node's frames are its; a presentation waits for its flip to begin
+ * holding it but not lock.  owner is the session holding the lease (NULL when
  * free) and lease its number; sequence counts the frames shown under the
  * lease.  shown is the blob on the screen, NULL while a surface of the node
  * is.  frames are the node's two surfaces storage frames are copied into,
  * next the one the next copy uses; the console surface is P8b's first.
- * broken is set once a flip did not begin: nothing is flipped after it.
+ * broken is set once a flip did not begin, and by the stop for the reboot
+ * once the GSP is stopped: nothing touches the display after it.
  *
  * refresh_lock (IRQ-safe, never held across a wait) guards the refresh
  * count: the head's 16-bit frame counter extended to a count that never
  * goes back (refresh_frame is the last reading, refresh_time_ns the time the
- * count last moved); readers do not take the node's lock, which a
- * presentation holds while it waits.
+ * count last moved); readers take neither the node's lock nor its present
+ * lock.
  *
  * The cursor plane, under the node's lock: cursor_object holds two images
  * of 64 by 64 pixels (slots), cursor_ready says the cursor channel and the
@@ -164,6 +169,7 @@ struct nvrtx_node {
 	struct nvrtx_gpu *gpu;
 	struct drv_gpu_device *device;
 	struct drv_gpu_ops ops;
+	struct mutex present_lock;
 	struct mutex lock;
 	void *owner;
 	uint64_t lease;

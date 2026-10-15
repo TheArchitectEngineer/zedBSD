@@ -18,6 +18,13 @@
  * closing its session or destroying the blob on the screen brings the
  * console surface (P8b's first) back.
  *
+ * The node's present lock puts the presentations, the lease's end and a
+ * blob's going off the screen in one order; a presentation takes the
+ * node's lock only to check the lease and to send its flip, and waits for
+ * the head's refresh that begins the flip without it, so the renderer and
+ * the cursor, which take the node's lock, are not held up by the display's
+ * refresh (ws037-p007 9, F1).
+ *
  * A flip that does not begin in time leaves the display broken: nothing is
  * flipped after it, presentations fail with EIO, and a blob that may still
  * be on the screen keeps its VRAM until power-off.
@@ -104,7 +111,10 @@ const struct drv_gpu_display_ops nvrtx_display_ops = {
 };
 
 static uint32_t present_refresh(const struct nvrtx_display_state *display);
+static int present_admit(struct nvrtx_node *node, void *session, const struct nvrtx_resource *resource, const struct gpu_display_present *request, bool blob, struct nvrtx_disp_surface *surface);
+static void present_shown(struct nvrtx_node *node, struct nvrtx_resource *resource, bool blob);
 static int present_show(struct nvrtx_node *node, const struct nvrtx_disp_surface *surface);
+static void present_broken(struct nvrtx_node *node, int error);
 static void present_end_lease(struct nvrtx_node *node);
 static void present_copy(struct nvrtx_node *node, const struct nvrtx_resource *resource, const struct gpu_display_present *request, const struct nvrtx_disp_surface *frame);
 static uint32_t present_format(uint32_t format);
@@ -167,12 +177,14 @@ nvrtx_present_start(
 	}
 
 	/* Shows the console surface; the first frame goes to the first of the node's. */
+	mutex_lock(&node->present_lock);
 	mutex_lock(&node->lock);
 
 	node->next = 0U;
 	error = present_show(node, &display->surfaces[0]);
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&node->present_lock);
 
 	/* Reports a head that did not flip. */
 	if (error != 0)
@@ -190,13 +202,15 @@ nvrtx_present_session_close(
 	struct nvrtx_node *node,
 	void *session)
 {
-	/* The console surface comes back when the session held the lease. */
+	/* The console surface comes back when the session held the lease, after a presentation still running. */
+	mutex_lock(&node->present_lock);
 	mutex_lock(&node->lock);
 
 	if (node->owner == session)
 		present_end_lease(node);
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&node->present_lock);
 }
 
 /*
@@ -210,7 +224,8 @@ nvrtx_present_resource_gone(
 {
 	int error;
 
-	/* Flips to the console surface when the blob is the one shown. */
+	/* Flips to the console surface when the blob is the one shown, after a presentation still running (which may show it). */
+	mutex_lock(&node->present_lock);
 	mutex_lock(&node->lock);
 
 	if (node->shown == resource) {
@@ -223,13 +238,14 @@ nvrtx_present_resource_gone(
 	}
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&node->present_lock);
 }
 
 /*
  * Ends the lease for the reboot, whoever holds it: the cursor is hidden
  * and the console surface (the firmware's picture) comes back on the head,
  * so the screen is as the firmware left it when the GSP is stopped.  The
- * caller holds the node's lock.
+ * caller holds the node's present lock and its lock.
  */
 void
 nvrtx_present_stop(
@@ -450,17 +466,20 @@ present_release(
 
 	node = private_data;
 
-	/* Ends the lease, bringing the console surface back. */
+	/* Ends the lease, bringing the console surface back, after a presentation still running. */
+	mutex_lock(&node->present_lock);
 	mutex_lock(&node->lock);
 
 	if (node->owner != session || node->lease != request->lease) {
 		mutex_unlock(&node->lock);
+		mutex_unlock(&node->present_lock);
 		return EINVAL;
 	}
 
 	present_end_lease(node);
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&node->present_lock);
 
 	/* Succeeded: the lease is free. */
 	return 0;
@@ -472,10 +491,16 @@ present_release(
  * A blob is flipped to as it is: its rows a multiple of 64 bytes apart, its
  * image on a 256-byte boundary of the VRAM.  Storage is copied into the next
  * of the node's frames, which is flipped to.  Either way the frame has the
- * display's size and the call returns once the flip has begun.  Returns 0
- * with the frame's sequence, EINVAL for another session's lease or a frame
- * the display cannot show, ESTALE for another generation, or EIO when the
- * flip did not begin (the display is then broken).
+ * display's size and the call returns once the flip has begun.
+ *
+ * The presentation holds the node's present lock throughout, so frames,
+ * the lease's end and a blob's going off the screen happen one at a time;
+ * it holds the node's lock only to check the lease and to send the flip,
+ * not while the storage is copied or the flip waits for the head's next
+ * refresh, so the renderer and the cursor go on meanwhile.  Returns 0 with
+ * the frame's sequence, EINVAL for another session's lease or a frame the
+ * display cannot show, ESTALE for another generation, or EIO when the flip
+ * did not begin (the display is then broken).
  */
 static int
 present_present(
@@ -487,87 +512,72 @@ present_present(
 	struct nvrtx_node *node;
 	struct nvrtx_resource *resource;
 	struct nvrtx_disp_surface surface;
-	uint64_t offset;
+	uint32_t notifier;
+	bool blob;
 	int error;
 
 	node = private_data;
 	resource = object;
 
+	/* A blob is flipped to as it is; storage is copied first. */
+	blob = false;
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
+		blob = true;
+
 	/* The frame has the display's size. */
 	if (request->width != node->width || request->height != node->height)
 		return EINVAL;
 
-	/* Checks the lease and shows the frame under the node's lock. */
+	/* One presentation at a time; the lease cannot end while it runs. */
+	mutex_lock(&node->present_lock);
+
+	/* Checks the lease and picks the surface under the node's lock. */
 	mutex_lock(&node->lock);
 
-	if (node->owner != session || node->lease != request->lease) {
-		mutex_unlock(&node->lock);
-		return EINVAL;
-	}
-
-	if (request->generation != NVRTX_NODE_GENERATION) {
-		mutex_unlock(&node->lock);
-		return ESTALE;
-	}
-
-	if (node->broken != 0) {
-		mutex_unlock(&node->lock);
-		return EIO;
-	}
-
-	/* A blob is the surface itself; storage goes into the next of the node's frames. */
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
-		offset = resource->backing->bo.vram + request->offset;
-		if (resource->kind != NVRTX_RESOURCE_BLOB ||
-		    (offset % PRESENT_OFFSET_ALIGN) != 0U ||
-		    (request->stride % PRESENT_PITCH_ALIGN) != 0U) {
-			mutex_unlock(&node->lock);
-			return EINVAL;
-		}
-
-		surface.offset = offset;
-		surface.pitch = request->stride;
-	} else {
-		if (resource->kind != NVRTX_RESOURCE_STORAGE || (request->offset % 4U) != 0U) {
-			mutex_unlock(&node->lock);
-			return EINVAL;
-		}
-
-		surface = node->frames[node->next];
-		present_copy(node, resource, request, &surface);
-	}
-
-	surface.width = request->width;
-	surface.height = request->height;
-	surface.handle = NVRTX_DISP_HANDLE_VRAM;
-	surface.format = present_format(request->format);
-
-	/* Flips to it and waits until the flip has begun. */
-	error = present_show(node, &surface);
-	if (error != 0) {
-		if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
-			node->shown = resource;
-		mutex_unlock(&node->lock);
-		return EIO;
-	}
-
-	/*
-	 * The blob on the screen, or none; the next storage frame goes to the
-	 * other of the node's frames, since this one is on the screen.
-	 */
-	node->shown = NULL;
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
-		node->shown = resource;
-	} else {
-		node->next ^= 1U;
-	}
-
-	/* The frame counts: its number and the time it was shown. */
-	node->sequence++;
-	node->shown_time_ns = nvrtx_now_us() * 1000U;
-	request->sequence = node->sequence;
+	error = present_admit(node, session, resource, request, blob, &surface);
 
 	mutex_unlock(&node->lock);
+
+	/* Reports a frame the lease or the display does not take. */
+	if (error != 0) {
+		mutex_unlock(&node->present_lock);
+		return error;
+	}
+
+	/* Storage goes into the node's frame not on the screen, which only presentations touch. */
+	if (!blob)
+		present_copy(node, resource, request, &surface);
+
+	/* Sends the flip under the node's lock: the core's view change and the cursor's core updates take turns. */
+	mutex_lock(&node->lock);
+
+	error = nvrtx_scanout_frame_send(node->gpu, &surface, &notifier);
+
+	mutex_unlock(&node->lock);
+
+	/* Waits for the head's refresh that begins the flip, outside the node's lock. */
+	if (error == 0)
+		error = nvrtx_scanout_frame_wait(node->gpu, notifier);
+
+	/* Records the frame on the screen, or the broken display. */
+	mutex_lock(&node->lock);
+
+	if (error == 0) {
+		present_shown(node, resource, blob);
+		request->sequence = node->sequence;
+	} else {
+		present_broken(node, error);
+		if (blob)
+			node->shown = resource;
+	}
+
+	mutex_unlock(&node->lock);
+
+	mutex_unlock(&node->present_lock);
+
+	/* Reports a flip that did not begin. */
+	if (error != 0)
+		return EIO;
 
 	/* Succeeded: the frame is on the screen. */
 	return 0;
@@ -767,8 +777,91 @@ present_refresh(
 }
 
 /*
- * Flips the window to a surface; a flip that does not begin breaks the
- * display.  The caller holds the node's lock.
+ * Checks a presentation against the lease and the display and describes the
+ * surface it flips to: the blob itself, or the node's frame not on the
+ * screen, which the storage is to be copied into.  The caller holds the
+ * node's present lock and its lock.  Returns 0, EINVAL, ESTALE or EIO as
+ * present_present() does.
+ */
+static int
+present_admit(
+	struct nvrtx_node *node,
+	void *session,
+	const struct nvrtx_resource *resource,
+	const struct gpu_display_present *request,
+	bool blob,
+	struct nvrtx_disp_surface *surface)
+{
+	uint64_t offset;
+
+	/* Only the lease's holder presents. */
+	if (node->owner != session || node->lease != request->lease)
+		return EINVAL;
+
+	/* Only the one generation exists. */
+	if (request->generation != NVRTX_NODE_GENERATION)
+		return ESTALE;
+
+	/* A broken display flips nothing more. */
+	if (node->broken != 0)
+		return EIO;
+
+	/* A blob is the surface itself; storage goes into the next of the node's frames. */
+	if (blob) {
+		offset = resource->backing->bo.vram + request->offset;
+		if (resource->kind != NVRTX_RESOURCE_BLOB ||
+		    (offset % PRESENT_OFFSET_ALIGN) != 0U ||
+		    (request->stride % PRESENT_PITCH_ALIGN) != 0U)
+			return EINVAL;
+
+		surface->offset = offset;
+		surface->pitch = request->stride;
+	} else {
+		if (resource->kind != NVRTX_RESOURCE_STORAGE || (request->offset % 4U) != 0U)
+			return EINVAL;
+
+		*surface = node->frames[node->next];
+	}
+
+	/* The frame's size and format. */
+	surface->width = request->width;
+	surface->height = request->height;
+	surface->handle = NVRTX_DISP_HANDLE_VRAM;
+	surface->format = present_format(request->format);
+
+	/* Succeeded: the frame may be shown. */
+	return 0;
+}
+
+/*
+ * Records a frame whose flip has begun: the blob on the screen, or none
+ * (the next storage frame then goes to the other of the node's frames,
+ * since this one is on the screen), and the frame's number and time.  The
+ * caller holds the node's lock.
+ */
+static void
+present_shown(
+	struct nvrtx_node *node,
+	struct nvrtx_resource *resource,
+	bool blob)
+{
+	/* The blob a later going off the screen looks for, or the other frame for the next copy. */
+	node->shown = NULL;
+	if (blob) {
+		node->shown = resource;
+	} else {
+		node->next ^= 1U;
+	}
+
+	/* The frame counts: its number and the time it was shown. */
+	node->sequence++;
+	node->shown_time_ns = nvrtx_now_us() * 1000U;
+}
+
+/*
+ * Flips the window to a surface and waits until the flip has begun; a flip
+ * that does not begin breaks the display.  The caller holds the node's
+ * present lock and its lock.
  */
 static int
 present_show(
@@ -780,8 +873,7 @@ present_show(
 	/* Flips and waits until the flip has begun. */
 	error = nvrtx_scanout_frame(node->gpu, surface);
 	if (error != 0) {
-		node->broken = 1;
-		nvrtx_stage_mark("P8c fail: a flip did not begin (%d); the display stops", error);
+		present_broken(node, error);
 		return error;
 	}
 
@@ -790,8 +882,23 @@ present_show(
 }
 
 /*
+ * Marks the display broken after a flip that did not begin: nothing is
+ * flipped after it.  The caller holds the node's lock.
+ */
+static void
+present_broken(
+	struct nvrtx_node *node,
+	int error)
+{
+	/* Presentations, the cursor and the lease's end leave the head alone from now on. */
+	node->broken = 1;
+	nvrtx_stage_mark("P8c fail: a flip did not begin (%d); the display stops", error);
+}
+
+/*
  * Ends the lease: the console surface comes back and the blob on the screen
- * is let go (kept when the flip back failed).  The caller holds the lock.
+ * is let go (kept when the flip back failed).  The caller holds the node's
+ * present lock and its lock.
  */
 static void
 present_end_lease(

@@ -714,6 +714,8 @@ void nvrtx_display_stop(struct nvrtx_gpu *gpu);
 
 int nvrtx_scanout_start(struct nvrtx_gpu *gpu);
 int nvrtx_scanout_frame(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface);
+int nvrtx_scanout_frame_send(struct nvrtx_gpu *gpu, const struct nvrtx_disp_surface *surface, uint32_t *notifier);
+int nvrtx_scanout_frame_wait(struct nvrtx_gpu *gpu, uint32_t notifier);
 void nvrtx_scanout_stop(struct nvrtx_gpu *gpu);
 void nvrtx_scanout_release(struct nvrtx_gpu *gpu);
 int nvrtx_scanout_cursor_start(struct nvrtx_gpu *gpu);

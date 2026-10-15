@@ -118,6 +118,7 @@ nvrtx_node_start(
 		return ENOMEM;
 
 	/* Initializes the node: no lease, numbers from one, the refresh count from one. */
+	(void)mutex_init(&node->present_lock, LOCK_RANK_DEVICE, "nvrtx present");
 	(void)mutex_init(&node->lock, LOCK_RANK_DEVICE, "nvrtx node");
 	spin_init(&node->refresh_lock, LOCK_RANK_DEVICE, "nvrtx refresh");
 	node->gpu = gpu;
@@ -206,9 +207,10 @@ nvrtx_node_start(
  * (the core refuses new opens and operations; an open that remains only
  * delays the registration's release, which the reset makes moot); the
  * message drain ends, so this thread is the GSP's only reader; the lease
- * ends under the node's lock, which brings the firmware's picture back on
- * the head and is held while the GSP is stopped (P7), so no presentation or
- * frame runs meanwhile.  Every step is bounded and a failure is only shown.
+ * ends under the node's present lock and its lock, which bring the
+ * firmware's picture back on the head and are held while the GSP is
+ * stopped (P7), so no presentation or frame runs meanwhile; the display is
+ * broken after it.  Every step is bounded and a failure is only shown.
  */
 void
 nvrtx_node_stop(
@@ -247,13 +249,22 @@ nvrtx_node_stop(
 		kern_usleep_range(NODE_DRAIN_STOP_STEP_US, NODE_DRAIN_STOP_STEP_US * 2U);
 	}
 
-	/* Brings the firmware's picture back and stops the GSP while nothing else may use the display or the channel. */
+	/*
+	 * Brings the firmware's picture back and stops the GSP while nothing
+	 * else may use the display or the channel: a presentation still
+	 * waiting for its flip finishes first (the present lock).  The display
+	 * is broken from then on, so a presentation or a cursor change that
+	 * comes after touches nothing of the stopped GPU.
+	 */
+	mutex_lock(&node->present_lock);
 	mutex_lock(&node->lock);
 
 	nvrtx_present_stop(node);
 	(void)nvrtx_gsp_shutdown(node->gpu);
+	node->broken = 1;
 
 	mutex_unlock(&node->lock);
+	mutex_unlock(&node->present_lock);
 }
 
 /*
