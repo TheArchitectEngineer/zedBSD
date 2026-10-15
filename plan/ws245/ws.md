@@ -47,7 +47,7 @@ Resume point: q1204（P1、2026-10-15 夕）: p002 の実装と host 試験は�
 ユーザー:「WS245は、ロールバックできる体制にしておいて、今から実装します。」
 - ロールバックの基点: main 0c25c87a7（WS245 の実装の commit が入る前）。Phase ごとに別の merge commit にするので、`git revert -m 1 <merge>` で Phase 単位に戻せる。
 - kernel の振る舞いは p009 まで変えない: p002・p004〜p008 は新しい file と host 試験だけ。p003 の adapter 以降も `i915.display=old` が既定で、xd は opt-in（design.md §7 #0、既定の切り替えは p011）。`old` は p013 まで逃げ道。
-- §7 の判断は既定の案で進め、既定の無い #18（RKL・ADL-S/RPL-S を支えるか）・#22（Gen9 の機械）は回答待ち。#18 の回答までは device.c の ID の表に RKL・ADL-S を足さない（今の振る舞いのまま）。
+- §7 の判断は既定の案で進める。#18（2026-10-15 ユーザー、クリック「今のまま（efifb）」）: RKL・ADL-S/RPL-S は device.c に足さず今の振る舞い（efifb）を保ち、xd の platform の表にだけ持つ。#22（Gen9 の機械）は回答待ち。
 - merge の時期（§7 #13、2026-10-15 夕 ユーザー「WS245はいつでもロールバックできるので、今マージします」）: デモの後まで待たず、p003 以降も Phase の成果ができ次第 main に merge する（既定の案の「p003 以降はデモの後」を置き換え）。戻す時は Phase の merge commit を revert する。
 
 ## Phase（design.md §6.2、改訂 3a。p001 の clearance で確定）
