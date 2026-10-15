@@ -32,8 +32,16 @@ compiler/ は WS246 の範囲で、ここでは触らない。
 
 ## 結果
 
-（担当が書く）
+- **q986 P3（cleared の候補、main に merge 046ce5e1c、提出 97f772767）**: 27 file を監査し 18 file の comment を変更。draw-push.c の上部の一覧（Mesa の 8 path と SHA-256・派生の宣言）を消し block ごとへ（Values 13・Procedure 11）。exec-push.c の method 47 件は clc597.h の NVC597_* と一致。cpp の比較 27/27 同じ、build rc 0・warning 0、監査の grep は referenced: の段落だけ。段の名前の残り（vk-dispatch.c の D2/D3、work.c の D1）も comment から除いた。
+- Q1: vk-node.c の log の段の名前 `D3` → `executor`（`D3 fail` → `executor fail`）。runtime.c の `D2` は P1 の merge の後に `renderer` へ。
 
 ## 出典の無い値
 
-（担当が書く）
+| file | 値 | 扱い |
+| --- | --- | --- |
+| compute.c・work.c | COMPUTE_VA_LIMIT・WORK_VA_LIMIT（1<<47） | 自前の選択（vmmtu102 の page の段は 49 bit） |
+| vk-execute.c | EXECUTE_BUFFER_START_ALIGN（256） | 出典なし |
+| nvrtx-compute.h | NVRTX_QMD_CBUF_ALIGN（0x100） | 自前の保守的な値（NVK は Turing で 64） |
+| gr.c | GR_CHIPSET_TU102/104/106 が scrubber を要すること | chipset の番号だけ出典あり、scrubber の対象の根拠なし |
+| image.c | IMAGE_ELF_*・IMAGE_SECTION_* | ELF の公開仕様（付けない） |
+| nvrtx-vk-objects.h | NVRTX_VK_IMAGE_SIDE_MAX（16384） | 自前の上限（NVK は 32768） |

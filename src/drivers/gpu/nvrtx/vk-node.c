@@ -121,7 +121,7 @@ nvrtx_vk_memory_detach(
 	/* The work channel no longer reads the run (every submission waited for its work). */
 	error = nvrtx_work_unmap(session->node->gpu, va, held->bo.size);
 	if (error != 0)
-		nvrtx_stage_mark("D3: a memory's run at %llx stayed mapped (%d)", (unsigned long long)va, error);
+		nvrtx_stage_mark("executor: a memory's run at %llx stayed mapped (%d)", (unsigned long long)va, error);
 
 	/* The memory's reference goes; the last one gives the VRAM back. */
 	vk_node_backing_drop(session->node, held);
@@ -249,7 +249,7 @@ nvrtx_vk_gpu_free(
 	/* Unmaps it; a run that stays mapped keeps its VRAM, so nothing else is mapped over it. */
 	error = nvrtx_work_unmap(session->node->gpu, run->va, run->bo.size);
 	if (error != 0) {
-		nvrtx_stage_mark("D3: an executor run at %llx stayed mapped (%d)", (unsigned long long)run->va, error);
+		nvrtx_stage_mark("executor: an executor run at %llx stayed mapped (%d)", (unsigned long long)run->va, error);
 		kern_free(run);
 		return;
 	}
@@ -291,7 +291,7 @@ nvrtx_vk_gpu_run(
 	/* Waits for the fence. */
 	error = nvrtx_work_wait(node->gpu, fence, VK_NODE_RUN_US);
 	if (error != 0) {
-		nvrtx_stage_mark("D3 fail: the work of fence %u did not finish (%d)", (unsigned)fence, error);
+		nvrtx_stage_mark("executor fail: the work of fence %u did not finish (%d)", (unsigned)fence, error);
 		return EIO;
 	}
 
