@@ -99,7 +99,8 @@
  *
  * token names the run to the node, cpu and va its two views; at is where
  * the push buffer goes on, constants, headers and samplers how much of
- * their parts the push buffer uses.  The programs are compiled once, into
+ * their parts the push buffer uses, draws and quads how many application
+ * draws and own quads it holds (for the node's counts).  The programs are compiled once, into
  * a run of their own.
  */
 struct nvrtx_vk_execute {
@@ -110,6 +111,8 @@ struct nvrtx_vk_execute {
 	uint32_t constants;
 	uint32_t headers;
 	uint32_t samplers;
+	uint32_t draws;
+	uint32_t quads;
 	bool started;
 	void *program_token;
 	uint8_t *program_cpu;
@@ -410,8 +413,9 @@ execute_compile(
 }
 
 /*
- * Starts a push buffer: the 3D class's state NVK's queue starts with, and
- * the header and sampler pools; nothing of the run's parts is used yet.
+ * Starts a push buffer: the 3D class's state NVK's queue starts with, the
+ * header and sampler pools, and the shader caches emptied; nothing of the
+ * run's parts is used yet.
  */
 static void
 execute_start(
@@ -425,10 +429,15 @@ execute_start(
 	execute->at = nvrtx_push_draw_textures(push, execute->at, execute->va + EXECUTE_HEADERS_AT, EXECUTE_POOL_ENTRIES,
 					       execute->va + EXECUTE_SAMPLERS_AT, EXECUTE_POOL_ENTRIES);
 
+	/* The programs and constants the CPU wrote since the last run are read anew, once for every draw of this push buffer. */
+	execute->at = nvrtx_push_draw_invalidate(push, execute->at);
+
 	/* Nothing of the parts is used. */
 	execute->constants = 0U;
 	execute->headers = 0U;
 	execute->samplers = 0U;
+	execute->draws = 0U;
+	execute->quads = 0U;
 	execute->started = true;
 }
 
@@ -443,7 +452,8 @@ execute_flush(
 {
 	int error;
 
-	/* Runs it. */
+	/* Counts its draws, then runs it. */
+	nvrtx_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
 	error = nvrtx_vk_gpu_run(session->owner, execute->va + EXECUTE_PUSH_AT, (uint32_t)execute->at);
 	if (error != 0)
 		return error;
@@ -729,9 +739,10 @@ execute_draw(
 	execute->at = nvrtx_push_draw_pipeline(push, execute->at, pipeline->vertex.va, pipeline->vertex.gprs,
 					       pipeline->fragment.va, pipeline->fragment.gprs);
 
-	/* The draw. */
+	/* The draw, one more in the push buffer. */
 	execute->at = nvrtx_exec_draw(push, execute->at, pipeline->topology, record->values[2], record->values[0],
 				      record->values[1], record->values[3]);
+	execute->draws++;
 
 	/* Succeeded: the draw is written. */
 	return 0;
@@ -1375,6 +1386,7 @@ execute_quad(
 	execute->at = nvrtx_push_draw_pipeline(push, execute->at, execute->quad_vertex, execute->quad_vertex_gprs,
 					       execute->quad_fragment, execute->quad_fragment_gprs);
 	execute->at = nvrtx_exec_draw(push, execute->at, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0U, EXECUTE_CORNERS, 1U, 0U);
+	execute->quads++;
 
 	/* Succeeded: the quad is written. */
 	return 0;

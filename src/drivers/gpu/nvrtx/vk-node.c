@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <uapi/errno.h>
 
@@ -264,33 +265,102 @@ nvrtx_vk_gpu_run(
 	uint32_t bytes)
 {
 	struct nvrtx_session *session;
+	struct nvrtx_node *node;
 	uint64_t start;
 	uint64_t spent;
+	uint64_t gpu_ns;
 	uint32_t fence;
+	int timed;
 	int error;
 
 	session = owner;
+	node = session->node;
 
 	/* Puts the push buffer on the ring with the driver's fence after it. */
 	start = nvrtx_now_us();
-	error = nvrtx_work_submit(session->node->gpu, va, bytes, &fence);
+	error = nvrtx_work_submit(node->gpu, va, bytes, &fence);
 	if (error != 0)
 		return error;
 
 	/* Waits for the fence. */
-	error = nvrtx_work_wait(session->node->gpu, fence, VK_NODE_RUN_US);
+	error = nvrtx_work_wait(node->gpu, fence, VK_NODE_RUN_US);
 	if (error != 0) {
 		nvrtx_stage_mark("D3 fail: the work of fence %u did not finish (%d)", (unsigned)fence, error);
 		return EIO;
 	}
 
-	/* Counts the run and its time from the submission to the fence. */
+	/* Counts the run, its time from the submission to the fence, and its push buffer's bytes. */
 	spent = nvrtx_now_us() - start;
-	nvrtx_node_count(session->node, &session->node->counts.runs, 1U);
-	nvrtx_node_count(session->node, &session->node->counts.run_us, spent);
+	nvrtx_node_count(node, &node->counts.runs, 1U);
+	nvrtx_node_count(node, &node->counts.run_us, spent);
+	nvrtx_node_count_max(node, &node->counts.run_max_us, spent);
+	nvrtx_node_count(node, &node->counts.push_bytes, bytes);
+
+	/* Counts the GPU's own time for the run when the channel times its runs. */
+	timed = nvrtx_work_run_time(node->gpu, fence, &gpu_ns);
+	if (timed == 0) {
+		nvrtx_node_count(node, &node->counts.timed, 1U);
+		nvrtx_node_count(node, &node->counts.gpu_us, gpu_ns / 1000U);
+		nvrtx_node_count_max(node, &node->counts.gpu_max_us, gpu_ns / 1000U);
+	}
 
 	/* Succeeded: the GPU has done the work. */
 	return 0;
+}
+
+/*
+ * Counts the draws a push buffer holds before it runs, for the node's
+ * counts (nvrtx.vk.perf=1): the application's draws and the executor's
+ * own quads.  The caller holds the node's lock.
+ */
+void
+nvrtx_vk_gpu_drawn(
+	void *owner,
+	uint32_t draws,
+	uint32_t quads)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The two kinds of draw. */
+	nvrtx_node_count(session->node, &session->node->counts.draws, draws);
+	nvrtx_node_count(session->node, &session->node->counts.quads, quads);
+}
+
+/*
+ * Copies a command stream out of a blob's bytes in the CPU's window into
+ * the executor's memory, counting the copy and its time for the node's
+ * counts (nvrtx.vk.perf=1).  The caller holds the node's lock.
+ */
+void
+nvrtx_vk_blob_read(
+	void *owner,
+	uint8_t *to,
+	const uint8_t *from,
+	size_t length)
+{
+	struct nvrtx_session *session;
+	struct nvrtx_node *node;
+	uint64_t start;
+	uint64_t spent;
+
+	session = owner;
+	node = session->node;
+
+	/* The copy, timed: the window is read without the CPU's cache. */
+	start = 0U;
+	if (node->perf != 0)
+		start = nvrtx_now_us();
+	kern_memcpy(to, from, length);
+
+	/* Counts the copy, its bytes and its time. */
+	if (node->perf != 0) {
+		spent = nvrtx_now_us() - start;
+		nvrtx_node_count(node, &node->counts.streams, 1U);
+		nvrtx_node_count(node, &node->counts.stream_bytes, length);
+		nvrtx_node_count(node, &node->counts.stream_us, spent);
+	}
 }
 
 /*

@@ -372,7 +372,7 @@ stream_blob(
 	if (copy == NULL)
 		return ENOMEM;
 
-	kern_memcpy(copy, cpu + (size_t)offset, (size_t)length);
+	nvrtx_vk_blob_read(frame->session->owner, copy, cpu + (size_t)offset, (size_t)length);
 	frame->copy_left -= length;
 
 	/* Runs the copy one level deeper. */

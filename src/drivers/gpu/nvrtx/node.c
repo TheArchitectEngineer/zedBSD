@@ -883,8 +883,9 @@ node_drain(
  * Writes the counts of the last period into the kernel log and starts the
  * next (nvrtx.vk.perf=1): the push buffers the work channel ran and their
  * average time, the CPU's copies, the renderer's frames with their average
- * wait for the node's lock and their average hold of it, and the flips
- * with their average wait for the head.
+ * wait for the node's lock and their average hold of it, the flips with
+ * their average wait for the head, the GPU's own time for the runs, the
+ * draws they held and the command streams read through the window.
  */
 static void
 node_perf_report(
@@ -913,9 +914,19 @@ node_perf_report(
 	taken.held_us = __atomic_exchange_n(&node->counts.held_us, 0U, __ATOMIC_RELAXED);
 	taken.flips = __atomic_exchange_n(&node->counts.flips, 0U, __ATOMIC_RELAXED);
 	taken.flip_us = __atomic_exchange_n(&node->counts.flip_us, 0U, __ATOMIC_RELAXED);
+	taken.run_max_us = __atomic_exchange_n(&node->counts.run_max_us, 0U, __ATOMIC_RELAXED);
+	taken.timed = __atomic_exchange_n(&node->counts.timed, 0U, __ATOMIC_RELAXED);
+	taken.gpu_us = __atomic_exchange_n(&node->counts.gpu_us, 0U, __ATOMIC_RELAXED);
+	taken.gpu_max_us = __atomic_exchange_n(&node->counts.gpu_max_us, 0U, __ATOMIC_RELAXED);
+	taken.draws = __atomic_exchange_n(&node->counts.draws, 0U, __ATOMIC_RELAXED);
+	taken.quads = __atomic_exchange_n(&node->counts.quads, 0U, __ATOMIC_RELAXED);
+	taken.push_bytes = __atomic_exchange_n(&node->counts.push_bytes, 0U, __ATOMIC_RELAXED);
+	taken.streams = __atomic_exchange_n(&node->counts.streams, 0U, __ATOMIC_RELAXED);
+	taken.stream_bytes = __atomic_exchange_n(&node->counts.stream_bytes, 0U, __ATOMIC_RELAXED);
+	taken.stream_us = __atomic_exchange_n(&node->counts.stream_us, 0U, __ATOMIC_RELAXED);
 	node->perf_since_us = now;
 
-	/* Two lines within the log's 79 columns. */
+	/* The runs and the frames, each line within the log's 79 columns. */
 	nvrtx_stage_mark("perf %llums: runs %llu avg %lluus, cpu copies %llu %lluKiB",
 	    (unsigned long long)(period / 1000U),
 	    (unsigned long long)taken.runs,
@@ -928,6 +939,25 @@ node_perf_report(
 	    (unsigned long long)node_perf_average(taken.held_us, taken.frames),
 	    (unsigned long long)taken.flips,
 	    (unsigned long long)node_perf_average(taken.flip_us, taken.flips));
+
+	/* The GPU's own time for the timed runs, and the longest runs of each kind. */
+	nvrtx_stage_mark("perf: gpu %llu avg %lluus max %lluus, run max %lluus",
+	    (unsigned long long)taken.timed,
+	    (unsigned long long)node_perf_average(taken.gpu_us, taken.timed),
+	    (unsigned long long)taken.gpu_max_us,
+	    (unsigned long long)taken.run_max_us);
+
+	/* What the runs held. */
+	nvrtx_stage_mark("perf: draws %llu quads %llu push %lluKiB",
+	    (unsigned long long)taken.draws,
+	    (unsigned long long)taken.quads,
+	    (unsigned long long)(taken.push_bytes / 1024U));
+
+	/* The command streams read through the window, and the time it took. */
+	nvrtx_stage_mark("perf: streams %llu %lluKiB %lluus",
+	    (unsigned long long)taken.streams,
+	    (unsigned long long)(taken.stream_bytes / 1024U),
+	    (unsigned long long)taken.stream_us);
 }
 
 /* Reports a total's average over its count, zero for no count. */

@@ -49,7 +49,6 @@
  * ==== TURING_A's methods (clc597.h) ====
  */
 #define M_SET_OBJECT				0x0000U
-#define M_INVALIDATE_SHADER_CACHES		0x021cU
 #define M_SET_ALIASED_LINE_WIDTH_ENABLE		0x020cU
 #define M_SET_API_MANDATED_EARLY_Z		0x0210U
 #define M_SET_L2_ROP_PREFETCH_READ		0x0218U
@@ -75,6 +74,7 @@
 #define M_SET_VIEWPORT_Z_CLIP			0x0d7cU
 #define M_SET_COLOR_CLEAR_VALUE			0x0d80U
 #define M_SET_REDUCE_COLOR_THRESHOLDS_ENABLE	0x0d9cU
+#define M_INVALIDATE_SHADER_CACHES_NO_WFI	0x0da4U
 #define M_SET_FRONT_POLYGON_MODE		0x0dacU
 #define M_SET_POLY_SMOOTH			0x0db4U
 #define M_SET_DA_PRIMITIVE_RESTART_VERTEX_ARRAY	0x0de8U
@@ -238,7 +238,7 @@
 #define V_SUBTILING_A			0x20164010U
 #define V_SUBTILING_B			0x20U
 
-/* The shader cache invalidation of new programs: instructions, data, constants. */
+/* The shader caches a push buffer's draws read: instructions, global data, constants. */
 #define V_INVALIDATE_SHADERS		0x1011U
 
 /* A vertex attribute: active two floats, or inactive four (zero). */
@@ -602,8 +602,10 @@ nvrtx_push_draw_target(
  * and a pixel program at type 5 (each index the same as its type, each at
  * its header's address, in its group), the other stages off, the pixel
  * program's tuning and what NVK's shading rate and anti-aliasing macros
- * set for it, then the last vertex stage's layer and clip planes, and the
- * shader caches invalidated for the new code.
+ * set for it, then the last vertex stage's layer and clip planes.  The
+ * shader caches are not touched: nvrtx_push_draw_invalidate() empties them
+ * once at the push buffer's start, so draws one after another do not wait
+ * for each other's idle (ws241-p001).
  *
  * Returns where the push buffer goes on.
  */
@@ -659,10 +661,32 @@ nvrtx_push_draw_pipeline(
 	at = draw_set(push, at, M_SET_USER_CLIP_ENABLE, 0U);
 	at = draw_set(push, at, M_SET_USER_CLIP_OP, 0U);
 
-	/* The caches start clean for the new code and constants. */
-	at = draw_set(push, at, M_INVALIDATE_SHADER_CACHES, V_INVALIDATE_SHADERS);
-
 	/* Succeeded: the pipeline is bound. */
+	return at;
+}
+
+/*
+ * Writes the invalidation of the shader caches a push buffer's draws read:
+ * the programs' instructions, the global data and the constants, without
+ * waiting for idle.
+ *
+ * The CPU writes programs and constants between runs, and a push buffer
+ * starts after the run before it finished, so one invalidation at its
+ * start serves every draw in it, as NVK's queue does at a command
+ * buffer's start.  The form that waits for idle (0x021c) is not used: on
+ * every draw it drained the pipeline (ws241-p001).
+ *
+ * Returns where the push buffer goes on.
+ */
+size_t
+nvrtx_push_draw_invalidate(
+	uint8_t *push,
+	size_t at)
+{
+	/* The instruction, global data and constant caches, without a wait for idle. */
+	at = draw_set(push, at, M_INVALIDATE_SHADER_CACHES_NO_WFI, V_INVALIDATE_SHADERS);
+
+	/* Succeeded: the draws after it read the code and constants as written. */
 	return at;
 }
 

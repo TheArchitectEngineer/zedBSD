@@ -1335,6 +1335,7 @@ check_draw_push(void)
 	at = nvrtx_push_draw_init(push, 0U, 0x28011000ULL);
 	at = nvrtx_push_draw_constants(push, at, 0x28018000ULL, 0x1000U);
 	at = nvrtx_push_draw_target(push, at, &target);
+	at = nvrtx_push_draw_invalidate(push, at);
 	at = nvrtx_push_draw_pipeline(push, at, 0x28014000ULL, 12U, 0x28015000ULL, 8U);
 	at = nvrtx_push_draw_vertices(push, at, 0x28019000ULL, 48U, 8U);
 	at = nvrtx_push_draw_textures(push, at, 0x2801b000ULL, 1U, 0x2801c000ULL, 1U);
@@ -1382,7 +1383,7 @@ check_draw_push(void)
 	check(seen[0x0f1cU / 4U] && state[0x0f1cU / 4U] == 0U, "no post-depth coverage (SET_POST_Z_PS_IMASK)");
 	check(seen[0x2a00U / 4U] && seen[(0x2a00U + 15U * 16U) / 4U] && state[0x2a00U / 4U] == 0U && state[(0x2a00U + 15U * 16U) / 4U] == 0U, "every variable pixel rate shading control off");
 	check(state[0x0754U / 4U] == 1U, "hybrid anti-alias control: one pass, centroid per fragment");
-	check(state[0x021cU / 4U] == 0x1011U, "shader caches invalidated");
+	check(!seen[0x021cU / 4U] && state[0x0da4U / 4U] == 0x1011U, "shader caches invalidated without a wait for idle");
 
 	/* Constant buffer 0 selected and bound to the five groups. */
 	check(state[0x2380U / 4U] == 0x1000U && state[0x2384U / 4U] == 0U && state[0x2388U / 4U] == 0x28018000U, "constant buffer 0 selected");

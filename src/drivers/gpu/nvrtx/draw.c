@@ -565,6 +565,7 @@ draw_system(
 	at = nvrtx_push_draw_constants(push, at, draw_page_va(DRAW_CONSTANTS_PAGE), DRAW_CONSTANTS_BYTES);
 	at = nvrtx_push_draw_textures(push, at, draw_page_va(DRAW_HEADERS_PAGE), 1U, draw_page_va(DRAW_SAMPLERS_PAGE), 1U);
 	at = nvrtx_push_draw_target(push, at, &target);
+	at = nvrtx_push_draw_invalidate(push, at);
 	at = nvrtx_push_draw_pipeline(push, at, draw_page_va(DRAW_PROGRAM_PAGE + DRAW_VERTEX), gprs[DRAW_VERTEX], draw_page_va(DRAW_PROGRAM_PAGE + DRAW_FRAGMENT), gprs[DRAW_FRAGMENT]);
 	at = nvrtx_push_draw_vertices(push, at, draw_page_va(DRAW_VERTICES_PAGE), DRAW_VERTEX_COUNT * DRAW_VERTEX_STRIDE, DRAW_VERTEX_STRIDE);
 	at = nvrtx_push_draw_clear(push, at, clear, DRAW_SIZE, DRAW_SIZE);
@@ -714,6 +715,7 @@ draw_textured(
 	target.pitch = DRAW_PITCH;
 	push = draw_push(gpu, DRAW_TEXTURED_PUSH_PAGE);
 	at = nvrtx_push_draw_target(push, 0U, &target);
+	at = nvrtx_push_draw_invalidate(push, at);
 	at = nvrtx_push_draw_pipeline(push, at, draw_page_va(DRAW_PROGRAM_PAGE + DRAW_TEXTURED_VERTEX), gprs[DRAW_TEXTURED_VERTEX], draw_page_va(DRAW_PROGRAM_PAGE + DRAW_TEXTURED_FRAGMENT), gprs[DRAW_TEXTURED_FRAGMENT]);
 	at = nvrtx_push_draw_clear(push, at, clear, DRAW_SIZE, DRAW_SIZE);
 	at = nvrtx_push_draw_triangles(push, at, 0U, DRAW_VERTEX_COUNT);

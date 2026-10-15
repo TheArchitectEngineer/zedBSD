@@ -21,6 +21,7 @@
 #ifndef DRIVERS_GPU_NVRTX_NODE_H
 #define DRIVERS_GPU_NVRTX_NODE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <drivers/gpu/gpu.h>
@@ -135,10 +136,27 @@ struct nvrtx_node_entry {
  * time they held it; flips the presentations and flip_us the time their
  * flips waited for the head.  Whoever does the work adds with relaxed
  * atomics; the message drain takes and clears them.
+ *
+ * The GPU's side of the runs (ws241-p001): timed the runs the GPU's timer
+ * measured and gpu_us their time on the GPU, run_max_us and gpu_max_us
+ * the longest of each kind; draws and quads the application's and the
+ * executor's own draws in them, push_bytes their push buffers.  streams,
+ * stream_bytes and stream_us are the command streams copied out of the
+ * blobs through the window and the time those copies took.
  */
 struct nvrtx_node_perf {
 	uint64_t runs;
 	uint64_t run_us;
+	uint64_t run_max_us;
+	uint64_t timed;
+	uint64_t gpu_us;
+	uint64_t gpu_max_us;
+	uint64_t draws;
+	uint64_t quads;
+	uint64_t push_bytes;
+	uint64_t streams;
+	uint64_t stream_bytes;
+	uint64_t stream_us;
 	uint64_t copies;
 	uint64_t copy_bytes;
 	uint64_t frames;
@@ -253,6 +271,32 @@ nvrtx_node_count(
 
 	/* The drain takes the count with an exchange, so the add is never lost. */
 	(void)__atomic_fetch_add(count, amount, __ATOMIC_RELAXED);
+}
+
+/*
+ * Raises one of the node's maxima to a value when the boot asked for the
+ * counts; any context, no lock.
+ */
+static inline void
+nvrtx_node_count_max(
+	const struct nvrtx_node *node,
+	uint64_t *maximum,
+	uint64_t value)
+{
+	uint64_t seen;
+	bool replaced;
+
+	/* Nothing is counted without nvrtx.vk.perf=1. */
+	if (node->perf == 0)
+		return;
+
+	/* Replaces a smaller maximum, trying again when another thread changed it meanwhile. */
+	seen = __atomic_load_n(maximum, __ATOMIC_RELAXED);
+	while (seen < value) {
+		replaced = __atomic_compare_exchange_n(maximum, &seen, value, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+		if (replaced)
+			break;
+	}
 }
 
 extern const struct drv_gpu_display_ops nvrtx_display_ops;

@@ -160,6 +160,21 @@ nvrtx_vk_gpu_copied(void *owner, uint64_t bytes)
 	(void)bytes;
 }
 
+void
+nvrtx_vk_gpu_drawn(void *owner, uint32_t draws, uint32_t quads)
+{
+	(void)owner;
+	(void)draws;
+	(void)quads;
+}
+
+void
+nvrtx_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length)
+{
+	(void)owner;
+	memcpy(to, from, length);
+}
+
 int
 main(void)
 {

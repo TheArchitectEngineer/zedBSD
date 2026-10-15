@@ -176,6 +176,7 @@ static const struct objects_gr_kind objects_gr_kinds[] = {
 #define OBJECTS_HOST_SEM_EXECUTE	0x06cU
 #define OBJECTS_SEM_RELEASE		0x1U
 #define OBJECTS_SEM_RELEASE_WFI		(1U << 20)
+#define OBJECTS_SEM_RELEASE_TIMESTAMP	(1U << 25)
 #define OBJECTS_MEM_OP_MEMBAR		(5U << 27)
 
 /* The copy engine's methods and values for a fill: the constant, the component setup, the destination, the launch. */
@@ -193,6 +194,7 @@ static size_t objects_method(uint8_t *push, size_t at, uint32_t method, uint32_t
 static size_t objects_method_on(uint8_t *push, size_t at, uint32_t subchannel, uint32_t method, uint32_t count);
 static void objects_memory(uint8_t *params, size_t at, uint64_t base, uint64_t size, uint32_t space, uint32_t cache);
 static uint32_t objects_log2_up(uint64_t value);
+static size_t objects_fence(uint8_t *push, uint64_t semaphore, uint32_t value, uint32_t execute);
 
 /*
  * Writes a control call: the header, then the parameters.
@@ -378,31 +380,65 @@ nvrtx_push_fence(
 	uint64_t semaphore,
 	uint32_t value)
 {
+	size_t length;
+
+	/* A release that waits for the work before it. */
+	length = objects_fence(push, semaphore, value, OBJECTS_SEM_RELEASE | OBJECTS_SEM_RELEASE_WFI);
+
+	/* Succeeded: the push buffer's length. */
+	return length;
+}
+
+/*
+ * Writes the push buffer of one fence that also records when it passed.
+ *
+ * As nvrtx_push_fence(), but the release writes 16 bytes at the semaphore
+ * (which must lie on a 16-byte boundary): the value in the first word and
+ * the GPU's nanosecond timer in the last eight bytes, the timer written
+ * before the value, so a CPU that sees the value reads a timer that is
+ * already in place.  Returns the length in bytes.
+ */
+size_t
+nvrtx_push_fence_timed(
+	uint8_t *push,
+	uint64_t semaphore,
+	uint32_t value)
+{
+	size_t length;
+
+	/* A release that waits for the work before it and writes the timer. */
+	length = objects_fence(push, semaphore, value, OBJECTS_SEM_RELEASE | OBJECTS_SEM_RELEASE_WFI | OBJECTS_SEM_RELEASE_TIMESTAMP);
+
+	/* Succeeded: the push buffer's length. */
+	return length;
+}
+
+/*
+ * Writes the push buffer of one time stamp: a release that does not wait
+ * for any work, writing a value and the GPU's nanosecond timer at a
+ * semaphore on a 16-byte boundary (laid out as nvrtx_push_fence_timed()
+ * writes it).  It marks when the channel reached it.
+ *
+ * Returns the length in bytes.
+ */
+size_t
+nvrtx_push_stamp(
+	uint8_t *push,
+	uint64_t semaphore,
+	uint32_t value)
+{
 	size_t at;
 
 	/* The semaphore's address and value. */
 	at = objects_method(push, 0U, OBJECTS_HOST_SEM_ADDRESS_LOW, 3U);
-	nvrtx_put32(push, at, (uint32_t)(semaphore & 0xfffffffcU));
+	nvrtx_put32(push, at, (uint32_t)(semaphore & 0xfffffff0U));
 	nvrtx_put32(push, at + 4U, (uint32_t)(semaphore >> 32));
 	nvrtx_put32(push, at + 8U, value);
 	at += 12U;
 
-	/* Releases it once the work before it is done. */
+	/* Releases it at once, with the timer. */
 	at = objects_method(push, at, OBJECTS_HOST_SEM_EXECUTE, 1U);
-	nvrtx_put32(push, at, OBJECTS_SEM_RELEASE | OBJECTS_SEM_RELEASE_WFI);
-	at += 4U;
-
-	/* Makes the release visible to the CPU: a system memory barrier. */
-	at = objects_method(push, at, OBJECTS_HOST_MEM_OP_A, 4U);
-	nvrtx_put32(push, at, 0U);
-	nvrtx_put32(push, at + 4U, 0U);
-	nvrtx_put32(push, at + 8U, 0U);
-	nvrtx_put32(push, at + 12U, OBJECTS_MEM_OP_MEMBAR);
-	at += 16U;
-
-	/* Raises the non-stalling interrupt (the driver polls, so nothing waits on it). */
-	at = objects_method(push, at, OBJECTS_HOST_NON_STALL, 1U);
-	nvrtx_put32(push, at, 0U);
+	nvrtx_put32(push, at, OBJECTS_SEM_RELEASE | OBJECTS_SEM_RELEASE_TIMESTAMP);
 	at += 4U;
 
 	/* Succeeded: the push buffer's length. */
@@ -760,4 +796,43 @@ objects_log2_up(
 
 	/* Reports the exponent. */
 	return shift;
+}
+
+/* Writes a fence's push buffer: the release as execute says, a system memory barrier, the non-stalling interrupt. */
+static size_t
+objects_fence(
+	uint8_t *push,
+	uint64_t semaphore,
+	uint32_t value,
+	uint32_t execute)
+{
+	size_t at;
+
+	/* The semaphore's address and value. */
+	at = objects_method(push, 0U, OBJECTS_HOST_SEM_ADDRESS_LOW, 3U);
+	nvrtx_put32(push, at, (uint32_t)(semaphore & 0xfffffffcU));
+	nvrtx_put32(push, at + 4U, (uint32_t)(semaphore >> 32));
+	nvrtx_put32(push, at + 8U, value);
+	at += 12U;
+
+	/* Releases it once the work before it is done. */
+	at = objects_method(push, at, OBJECTS_HOST_SEM_EXECUTE, 1U);
+	nvrtx_put32(push, at, execute);
+	at += 4U;
+
+	/* Makes the release visible to the CPU: a system memory barrier. */
+	at = objects_method(push, at, OBJECTS_HOST_MEM_OP_A, 4U);
+	nvrtx_put32(push, at, 0U);
+	nvrtx_put32(push, at + 4U, 0U);
+	nvrtx_put32(push, at + 8U, 0U);
+	nvrtx_put32(push, at + 12U, OBJECTS_MEM_OP_MEMBAR);
+	at += 16U;
+
+	/* Raises the non-stalling interrupt (the driver polls, so nothing waits on it). */
+	at = objects_method(push, at, OBJECTS_HOST_NON_STALL, 1U);
+	nvrtx_put32(push, at, 0U);
+	at += 4U;
+
+	/* Succeeded: the push buffer's length. */
+	return at;
 }
