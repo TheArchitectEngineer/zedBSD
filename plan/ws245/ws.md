@@ -3,7 +3,7 @@
 # WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成。p001 の設計を P2 が q991 で実施中）
+Status: planned（2026-10-16 p001 の設計 cleared、D1〜D6 は推奨で決定。p002＝design の P01 から）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -19,6 +19,12 @@ Resume point: p001（設計）から。
 ## 対象（WS244 の棚卸しの「Gen12 の display の Linux 環境」の群、約 6 万行）
 
 `src/drivers/gpu/i915/display/` の ddi・dp・dp-sink・dp-internal.h・pipe・plane・clock・watermark・vbt・vbt.h・panel・panel-backlight・power・dmc・takeover・takeover-internal.h・hotplug・hotplug-internal.h・modeset・modeset-internal.h・internal.h・opregion・opregion-internal.h・aux・gmbus・hdmi・hdmi-mode・edid・edid-read・color・vblank・phy・state・diagnostics・dp-ext・dp-ext-kern・tc・dkl-phy。どれも「Derived from the Linux kernel v6.8.12」と Linux の型・関数の分け方・comment を持つ（ddi.c 107/111、dp.c 92/92、pipe.c 74/74、plane.c 43/44 の関数が写し）。intel/ の header のうち Gen12 だけが使う struct の配置（vbt-defs.h・ref.h・connector.h・wm.h）も含める。
+
+## ユーザーの決定（2026-10-16）
+
+「D1〜D6全部推奨で。」→ [design.md](design.md) の推奨どおり: D1 新しい code は display/adl/、D2 boot の語 `i915.display.new` で切り替え・出荷の点 A（P18 の後に既定）・B（P23 の後に旧を削除）、D3 5330 で PSR を既定で on（boot の語で off）、D4 TC PHY・FIA は Linux v6.8.12 の値を block ごとの引用のデータとして使う（code・構造は写さない）、D5 P01〜P05 から、D6 5330 の確かめは点 A・B でユーザーの試験の一覧に。
+
+Phase の番号: design.md の Pnn は ws245-p(nn+1)（P01 → p002、P23 → p024）。
 
 ## 目的と完了の条件
 
