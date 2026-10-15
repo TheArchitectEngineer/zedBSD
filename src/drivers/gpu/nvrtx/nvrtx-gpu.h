@@ -557,6 +557,13 @@ struct nvrtx_gpu {
 	uint32_t call_sequence;
 	uint8_t *reply;
 	uint8_t *call;
+	/*
+	 * Set once a call to the resource manager got no reply in time: the
+	 * firmware is taken as not answering, and every later call fails at
+	 * once instead of waiting its whole time, so a teardown of many
+	 * objects (the reboot's P7) stays short.
+	 */
+	int rpc_unanswered;
 
 	/* The first address space and channel. */
 	struct nvrtx_engine_state engine;
@@ -717,8 +724,10 @@ int nvrtx_scanout_core_settled(struct nvrtx_gpu *gpu, uint32_t wait_us);
 uint32_t nvrtx_scanout_frame_counter(struct nvrtx_gpu *gpu);
 
 int nvrtx_node_start(struct nvrtx_gpu *gpu);
+void nvrtx_node_stop(struct nvrtx_node *node);
 
 int nvrtx_gsp_start(struct nvrtx_gpu *gpu);
+int nvrtx_gsp_shutdown(struct nvrtx_gpu *gpu);
 void nvrtx_gsp_release(struct nvrtx_gpu *gpu);
 
 #endif

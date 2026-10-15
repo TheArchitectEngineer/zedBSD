@@ -155,6 +155,10 @@ struct nvrtx_node_entry {
  * every session's pending count and faulted; available wakes the worker,
  * retired the drains.  faulted is set by the GPU core's fault: nothing new
  * is taken and what is queued completes with EIO.
+ *
+ * The message drain (node.c): drain_running is set while its thread runs,
+ * drain_stop asks it to end at its next turn (the reboot's stop, which
+ * then reads the GSP's replies itself).
  */
 struct nvrtx_node {
 	struct nvrtx_gpu *gpu;
@@ -194,6 +198,8 @@ struct nvrtx_node {
 	struct nvrtx_node_entry *tail;
 	struct nvrtx_node_entry markers[NVRTX_NODE_MARKERS];
 	int faulted;
+	volatile int drain_running;
+	volatile int drain_stop;
 };
 
 extern const struct drv_gpu_display_ops nvrtx_display_ops;
@@ -204,6 +210,7 @@ int nvrtx_present_start(struct nvrtx_node *node);
 void nvrtx_present_session_close(struct nvrtx_node *node, void *session);
 void nvrtx_present_resource_gone(struct nvrtx_node *node, struct nvrtx_resource *resource);
 void nvrtx_present_refresh_sample(struct nvrtx_node *node, uint64_t *count, uint64_t *time_ns);
+void nvrtx_present_stop(struct nvrtx_node *node);
 
 void nvrtx_cursor_start(struct nvrtx_node *node);
 void nvrtx_cursor_lease_end(struct nvrtx_node *node);
@@ -213,6 +220,7 @@ int nvrtx_cursor_hide(void *private_data, void *session, const struct gpu_displa
 
 void nvrtx_runtime_bind(struct nvrtx_node *node);
 void nvrtx_runtime_start(struct nvrtx_node *node);
+void nvrtx_runtime_stop(struct nvrtx_node *node);
 
 int nvrtx_vk_node_blob_attach(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t blob_id, struct nvrtx_backing *backing, uint64_t bytes);
 

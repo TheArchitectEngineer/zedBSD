@@ -397,7 +397,14 @@ nvrtx_rm_free_in(
 	return 0;
 }
 
-/* Sends the call built in gpu->call and waits for its numbered reply. */
+/*
+ * Sends the call built in gpu->call and waits for its numbered reply.
+ *
+ * Once a reply has failed to come in time, the firmware is taken as not
+ * answering: every later call fails at once with ETIMEDOUT, so the
+ * teardown of many objects that follows (P6, the reboot's P7) does not
+ * wait the whole time for each.
+ */
 static int
 rpc_exchange(
 	struct nvrtx_gpu *gpu,
@@ -408,13 +415,23 @@ rpc_exchange(
 	uint32_t sequence;
 	int error;
 
+	/* A firmware that stopped answering is not asked again. */
+	if (gpu->rpc_unanswered != 0)
+		return ETIMEDOUT;
+
 	/* Sends the call with the next sequence number. */
 	error = nvrtx_rpc_send(gpu, function, gpu->call, call_length, 1, &sequence);
 	if (error != 0)
 		return error;
 
-	/* Waits for the reply with the same number. */
+	/* Waits for the reply with the same number; a reply that never came marks the firmware as not answering. */
 	error = nvrtx_rpc_wait(gpu, function, sequence, NVRTX_CALL_TIMEOUT_US, reply_length);
+	if (error == ETIMEDOUT) {
+		gpu->rpc_unanswered = 1;
+		nvrtx_stage_mark("rpc %u: no reply in time; later calls are not waited for", (unsigned)function);
+		return error;
+	}
+
 	if (error != 0)
 		return error;
 

@@ -27,9 +27,12 @@
  * P3 asks for the static information and allocates the first objects: a
  * client, the device and the subdevice.
  *
- * The stages after P3 are not in this revision: the worker stops the GSP
- * (P7: the unload call, the GSP's falcon reset, FWSEC-SB, booter_unload) and
- * gives the preparation back, so the GPU ends as the firmware left it.
+ * P4 and later make the address spaces, the channels, the display and the
+ * GPU device (their own files).  Where the boot ends short of keeping the
+ * GPU up, the worker stops the GSP (P7: the unload call, the GSP's falcon
+ * reset, FWSEC-SB, booter_unload) and gives the preparation back, so the
+ * GPU ends as the firmware left it.  A GSP kept up is stopped the same way
+ * at the reboot or the shutdown of the machine (nvrtx_gsp_shutdown).
  */
 
 #include <stdbool.h>
@@ -96,6 +99,7 @@ static int gsp_prepare_falcons(struct nvrtx_gpu *gpu);
 static int gsp_devinit_wait(struct nvrtx_gpu *gpu);
 static int gsp_region_set(struct nvrtx_gpu *gpu);
 static void gsp_finish(struct nvrtx_gpu *gpu);
+static int gsp_teardown(struct nvrtx_gpu *gpu);
 static void gsp_end(struct nvrtx_gpu *gpu);
 static int gsp_queue_setup_calls(struct nvrtx_gpu *gpu);
 static int gsp_boot_riscv(struct nvrtx_gpu *gpu);
@@ -364,6 +368,39 @@ nvrtx_gsp_start(
 	gsp_end(gpu);
 
 	/* Succeeded: the boot stopped where this revision ends. */
+	return 0;
+}
+
+/*
+ * Stops a GSP kept up until now, for the reboot or the shutdown of the
+ * machine: the objects of P6 are freed, the firmware is unloaded (P7), the
+ * protected region is torn down and the VRAM window is put back in the
+ * firmware's mode, so nothing of this boot (the hub's state, the region)
+ * is carried into the next.  Called from the PCI shutdown hook once the
+ * worker has ended and the GPU device, if any, is stopped.  Returns 0 when
+ * the GSP stopped and the region is gone, else the error; the memory is
+ * kept either way, since the machine is about to be reset.
+ */
+int
+nvrtx_gsp_shutdown(
+	struct nvrtx_gpu *gpu)
+{
+	int error;
+
+	/* A GSP that does not run has nothing to stop; its worker reported what it left. */
+	if (gpu->state != NVRTX_GSP_RUNNING)
+		return 0;
+
+	/* Stops the firmware and tears the region down; a failure is reported and the reset follows anyway. */
+	nvrtx_stage_mark("P7 shutdown begin: stopping the GSP before the reset");
+	error = gsp_teardown(gpu);
+	if (error != 0) {
+		nvrtx_stage_mark("P7 shutdown fail (%d); the reset follows anyway", error);
+		return error;
+	}
+
+	/* Succeeded: the GPU is as the firmware left it, as far as the driver can put it. */
+	nvrtx_stage_mark("P7 shutdown ok: the GSP is stopped");
 	return 0;
 }
 
@@ -909,6 +946,28 @@ static void
 gsp_finish(
 	struct nvrtx_gpu *gpu)
 {
+	int error;
+
+	/* Stops the GSP and tears the region down; memory a falcon may still read is kept. */
+	error = gsp_teardown(gpu);
+	if (error != 0)
+		return;
+
+	/* Gives the preparation back; a region that stayed is left for a power cycle. */
+	nvrtx_gsp_release(gpu);
+}
+
+/*
+ * Stops a running GSP (P6's frees, then P7) and tears its region down once.
+ *
+ * Returns 0 when the memory may be given back: the GSP is stopped, or it
+ * never ran.  Returns EBUSY when a falcon may still read the memory (one
+ * that did not halt, now or earlier), which is then kept until power-off.
+ */
+static int
+gsp_teardown(
+	struct nvrtx_gpu *gpu)
+{
 	bool stopped;
 	uint32_t low;
 	uint32_t high;
@@ -916,7 +975,7 @@ gsp_finish(
 
 	/* Keeps everything when a falcon may still be reading the memory. */
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
-		return;
+		return EBUSY;
 
 	/*
 	 * Frees the graphics objects, the channel and the address space (P6)
@@ -938,7 +997,7 @@ gsp_finish(
 		if (error != 0) {
 			gpu->state = NVRTX_GSP_FAILED_HOLD;
 			nvrtx_stage_mark("P7 fail: the GSP did not stop (%d); memory kept, power cycle needed", error);
-			return;
+			return EBUSY;
 		}
 
 		stopped = true;
@@ -957,7 +1016,7 @@ gsp_finish(
 	if (error == ETIMEDOUT) {
 		gpu->state = NVRTX_GSP_FAILED_HOLD;
 		nvrtx_stage_mark("P7 fail: a program did not halt; memory kept, power cycle needed");
-		return;
+		return EBUSY;
 	}
 
 	if (!stopped && gpu->region_written != 0) {
@@ -970,8 +1029,8 @@ gsp_finish(
 	if (stopped)
 		nvrtx_console_restore(gpu);
 
-	/* Gives the preparation back; a region that stayed is left for a power cycle. */
-	nvrtx_gsp_release(gpu);
+	/* Succeeded: nothing reads the memory any more; a region that stayed is left for a power cycle. */
+	return 0;
 }
 
 /* Queues the two calls the firmware reads first: the system information and the registry. */

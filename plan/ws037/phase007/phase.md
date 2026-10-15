@@ -438,3 +438,38 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
   3. 失敗の報告に fault status・engine id・decode を足した（`P4m retry: fault status …, record … at …: engine … type … client … access …`）。
 - 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2d build/ws037-p2d/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285。`git diff --check` 0。**実機は未実施**。
 - 実機の確かめ（T1 に依頼）: RTX 機 10.0.30.5 で kernel を `build/ws037-p2d/vmunix` に差し替え、reboot 10 回。毎回 `P4m ok`・`P8c ok: gpu device registered`・session（wayland）の起動。全 run の `P4m bar1 before the tables` の行と、出た時の `P4m retry` の行（どの round で通ったか、instance block の root、fault status）を集める: round 1 で通る＝fault の状態、round 3 で通る＝bind/root、round 4 以降＝RM の busy、全部 FAIL＝別の原因（record の VA・client で切り分け）。
+
+## reboot・shutdown で GSP を止める（P2、2026-10-16、Fable 5.1、build と host 試験まで、実機は未）
+
+ユーザーの決定「再起動の時にGSPを、止めます」→ reboot・shutdown・poweroff の時に nvrtx が P7 を流し、この boot の hub の状態（MMU の fault の記録、BAR1 の bind）と WPR2 を次の boot に持ち越さない（方法 A の P4m の間欠の失敗の候補 a への手当て）。
+
+### 道（kernel の既存の hook）
+
+- `system_shutdown_prepare()`（`src/kern/shutdown.c`、KERN_SYSTEM_HALT/POWEROFF/REBOOT の ioctl、init だけが呼ぶ）は volume の sync → disk の flush → network の停止 → `drv_usb_shutdown()` → `drv_pci_shutdown()` の順で、PCI の driver の `shutdown` hook（`struct drv_pci_driver`、nvme・ahci が使う）を呼ぶ。network が止まらなかった時は USB・PCI の hook は飛ばされる（既存の設計、その時は nvrtx も止まらず reset に任される）。
+- **範囲外の 1 関数の直し（`src/drivers/pci/pci.c` の `drv_pci_shutdown`）**: 従来は root bus 直下の device だけを回していた。RTX は `01:00.0`（PEG の root port `00:01.0` の下）なので hook が届かない → `foreach_device_tree`（既存の静的な木の walk）で root bus とその下の bus を全部回す `pci_shutdown_visit` に変えた。確かめた性質: 各 function は 1 回だけ訪れる（木の walk は subordinate bus を bridge の function からだけ辿る）、順は bridge の function → その下の bus の function（bridge 自身には driver が無いので hook は無い）、root bus の device は今までどおり 1 回。bus master を切る操作は walk に無い（各 hook の仕事）。nvme の hook は `nvme_shutdown_claim` が `detach_busy` で 2 度目を EBUSY にし、ahci の hook は driver_data の無い function を返し port は trylock で取る（他の thread が持つ port は飛ばす）ので、bridge の下で初めて呼ばれても root bus の時と同じ動きになる。**副作用**: PCIe の root port の下の NVMe（5330・13400F の M.2）と AHCI に、reboot・poweroff の時に初めて shutdown の hook（NVMe の admission 停止・queue の削除・controller の shutdown、AHCI の FLUSH）が走る。T1 に QEMU（nvme を pcie-root-port の下に置いた形）の reboot・poweroff の試験を足した（下）。
+
+### nvrtx の止め方（順は nouveau の unload §5 の 1〜5 と同じ、片付けは R6 で決めた P6 の順）
+
+1. `nvrtx_shutdown`（`nvrtx.c`、driver の `shutdown` hook）: kept でない function は何もしない。worker（GSP の boot）が走っていれば最大 12 s 待つ（P2b の待ち 10 s より長く）。過ぎたら `P7 shutdown: the GSP boot still runs after N ms; left to the reset` の 1 行で返す。state が RUNNING でなければ（worker が止めた、始めなかった）何もしない。GPU device があれば `nvrtx_node_stop`、console のために GSP だけ残していた時は `nvrtx_gsp_shutdown`。
+2. `nvrtx_node_stop`（`node.c`）: (a) `nvrtx_runtime_stop`（`runtime.c`、renderer の queue を faulted にして新しい frame・marker・reserve を断り、queue の残りは EIO で完了。fault の報告の行は出さず `P7 shutdown: the renderer takes no more work`）(b) `drv_gpu_unregister`（GPU core が online=0 にして新しい open・ioctl を ENODEV で断る。open が残っていれば EBUSY で登録は残るが offline、reset で消える。`P7 shutdown: the GPU device is offline; opens remain until the reset`）(c) message drain の thread を止める（`drain_stop`、drain は turn（1 s）の終わりで見て抜け `drain_running` を 0 に。最大 3.5 s 待つ。これで RPC の channel の読み手がこの thread だけになる）(d) `node->lock` を取り（flip 中の present・executor の frame が終わるのを待つ）、`nvrtx_present_stop`（`present.c`: lease があれば `present_end_lease` と同じく cursor を隠し console の surface（firmware の絵）を head に戻す）、lock を持ったまま `nvrtx_gsp_shutdown`。
+3. `nvrtx_gsp_shutdown`（`gsp.c`、`gsp_finish` を `gsp_teardown`（止める）と `nvrtx_gsp_release`（memory を返す）に分けた）: `P7 shutdown begin: stopping the GSP before the reset` → `gsp_teardown` = 従来の gsp_finish の順（work の channel → compute → display（cursor・wimm・window・core の channel → root・event・common → subdevice・device・client）→ gr（golden・scrubber）→ 最初の channel と vaspace → `gsp_stop`（UNLOADING_GUEST_DRIVER の RPC、mailbox0 = 0x80000000 を 2 s、GSP の falcon の reset）→ `nvrtx_region_tear_down`（FWSEC-SB → booter_unload → WPR2_HI = 0 の確認、`P7 ok: region torn down`）→ `nvrtx_console_restore`（BAR1 を firmware の mode に戻す、`P7 console: bar1 mode … again`））→ `P7 shutdown ok: the GSP is stopped`。memory（DMA の buffer・heap）は返さない（reset が来る。open が残る session の close が heap に触りうるので残す方が安全）。失敗は `P7 shutdown fail (%d); the reset follows anyway` の 1 行。
+4. **時間の上限**: worker 待ち ≤ 12 s、drain ≤ 3.5 s、lease の終了 ≤ cursor の settle と flip の待ち、RM の free は **`rpc.c` の `rpc_exchange` に「返事が 1 度 time out（5 s）したら以後の call は待たずに ETIMEDOUT」の印（`gpu->rpc_unanswered`、`rpc %u: no reply in time; later calls are not waited for`）** を入れたので、GSP が答えない時も P6 の約 30 の free が 5 s × 30 にならず 5 s で抜ける。unload の RPC は `gsp_stop` が直接送るので印の影響を受けず 2 s + 2 s、FWSEC-SB・booter_unload は falcon の halt の 2 s ずつ。最悪でも 30 s 弱。
+5. nouveau との照合: unload の 1〜5（§5 の事実: UNLOADING_GUEST_DRIVER → mailbox0 → falcon reset → FWSEC-SB → booter_unload）は `gsp_stop` + `nvrtx_region_tear_down` と同じ。nouveau の device の fini は subdev を init の逆順（disp → fifo → … → gsp）に回すが、こちらは R6 以来の順（work・compute の channel → display → gr → 最初の channel）のまま。RM の object は互いに独立で、unload の前に scheduler に channel が残らなければよい（R6 の教訓）ので差は無害と判断し、実機で通っている順を変えなかった。
+6. **firmware の画面**: P8b は firmware の mode・SOR のまま head を引き継いでいるので、lease を終えて console の surface に戻すのが「firmware の状態」に最も近い。head の armed の値を書き戻す道は作っていない（RM の unload が display を落とす。warm reboot の後は firmware（GOP）が VBIOS の init で画面を出し直す: T1-692 の reboot の試験で毎回 logo が出ていることが根拠）。
+
+### 変えた file
+
+`src/drivers/pci/pci.c`（`drv_pci_shutdown`・`pci_shutdown_visit`）、`src/drivers/gpu/nvrtx/nvrtx.c`（hook）、`node.c`（`nvrtx_node_stop`、drain の停止）、`present.c`（`nvrtx_present_stop`）、`runtime.c`（`nvrtx_runtime_stop`）、`gsp.c`（`gsp_teardown`・`nvrtx_gsp_shutdown`）、`rpc.c`（`rpc_unanswered`）、`nvrtx-gpu.h`・`nvrtx-node.h`（印と宣言）。HAL・toolchain は触っていない。
+
+### 確かめ
+
+- `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2e build/ws037-p2e/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。
+- `plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285（変えた所は hardware を触る file なので host 試験の項目は足していない）。`git diff --check` 0。
+- pci.c は全 platform 共通なので `config/ci/config-amd64.mk`・`config/ci/config-rpi4.mk` の vmunix も build（結果は下の行）。
+- **実機・QEMU は未実施**（T1 に依頼、下）。
+
+### T1 への依頼（Q1 経由）
+
+1. **RTX 機 10.0.30.5（方法 A）で reboot 10 回**: kernel を `build/ws037-p2e/vmunix` に差し替え（この branch の SHA の tree で build。a3cf77c12 以降の USB の image と `include/uapi` は同じ）。合格: 毎回の shutdown の log に `P7 shutdown begin`・`P6` の失敗の行なし・`P7 ok: region torn down`・`P7 console: bar1 mode … again`・`P7 shutdown ok: the GSP is stopped`。次の boot で `P4m bar1 before the tables` の行が **無い**（hub の fault の記録が持ち越されていない）・`P4m ok`・`P8c ok: gpu device registered`・session（wayland）の起動。`P4m retry` が出た時はその行を集める（round 名と fault status）。`P7 shutdown fail` が出たら次の boot の `P1b stop: region … already set` の有無も。
+2. **QEMU（nvme を pcie-root-port の下に置いた形）で reboot・poweroff を 3 回ずつ**: CI の image（`config/ci/config-amd64.mk`、kernel `build/ws037-p2e-amd64/vmunix` 相当）を、`-device pcie-root-port,id=rp1,bus=pcie.0 -device nvme,bus=rp1,drive=…` の形で root disk を root port の下に置いて起動し、login の後に reboot（と poweroff）。合格: `shutdown: stopping USB and PCI` → `shutdown: the devices are quiet` が出て reset（poweroff は停止）まで進む、次の boot で fsck の修復なし・login prompt（boot-test.sh の PNG）。これは `drv_pci_shutdown` が bridge の下の NVMe の hook を初めて呼ぶ変更の確認。
+- build の結果（pci.c の変更を含む 3 つ）: `config-amd64-nvrtx.mk`（build/ws037-p2e）rc 0・warning 0、`config/ci/config-amd64.mk`（build/ws037-p2e-amd64）rc 0・warning 0・amd64 vmunix check PASS、`config/ci/config-rpi4.mk`（build/ws037-p2e-rpi4）rc 0・warning 0・arm64 vmunix check PASS。
