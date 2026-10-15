@@ -157,6 +157,12 @@
  * bound to: its page number in bits 27:0 and its target in bits 29:28 (0
  * the VRAM).  The block's field at 0x200 names the root, with the tables'
  * format in its low bits.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/turing/tu102/dev_vm.h
+ * (NV_VIRTUAL_FUNCTION_PRIV_BAR1_BLOCK_PTR,
+ * NV_VIRTUAL_FUNCTION_PRIV_BAR1_BLOCK_TARGET) and NVIDIA open-gpu-doc
+ * manuals/turing/tu104/dev_ram.ref.txt (NV_RAMIN_PAGE_DIR_BASE_LO).
  */
 #define VRAM_BAR1_BLOCK_PTR_MASK	0x0fffffffU
 #define VRAM_BAR1_BLOCK_TARGET_MASK	0x30000000U
