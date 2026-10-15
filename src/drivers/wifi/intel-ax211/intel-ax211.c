@@ -5416,7 +5416,10 @@ ax211_pci_direct_command(
 	return 0;
 }
 
-/* Supports the ax211 pci assoc exchange operation. */
+/*
+ * Sends one association command for the association session and normalizes
+ * its answer; the queue commands also set up or reset the transmit ring.
+ */
 static int
 ax211_pci_assoc_exchange(
 	void *argument,
@@ -5434,19 +5437,24 @@ ax211_pci_assoc_exchange(
 	size_t minimum;
 	size_t maximum;
 	size_t response_length;
+	int same;
 	int result;
 
-	/* Handles the controller availability. */
+	/*
+	 * Refuses missing arguments and a command of another connection or
+	 * firmware boot.
+	 */
 	controller = argument;
-	if (controller == NULL || command == NULL || reply == NULL ||
+	if (controller == NULL ||
+	    command == NULL ||
+	    reply == NULL ||
 	    command->common_generation != controller->connection_generation ||
 	    command->hardware_epoch != controller->hardware_epoch) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_INVALID;
 	}
-	minimum = 0U;
 
-	/* Handles the command condition. */
+	/* Bounds the answer by the kind the command expects. */
+	minimum = 0U;
 	maximum = 0U;
 	if (command->response_kind == INTEL_AX211_ASSOC_RESPONSE_STATUS_ZERO) {
 		minimum = 4U;
@@ -5459,31 +5467,41 @@ ax211_pci_assoc_exchange(
 		maximum = INTEL_AX211_ASSOC_RESPONSE_MAX;
 	}
 
-	/* Handles the command condition. */
+	/* A queue addition must be the one the transmit ring builds. */
 	if (command->step == INTEL_AX211_ASSOC_STEP_QUEUE_ENABLE) {
-		/* Checks the operation result. */
+		/* Builds the ring's queue command. */
 		result = drv_intel_ax211_tx_ring_queue_add_build(
 			&controller->frame_ring, AX211_PEER_SLOT,
 			INTEL_AX211_TX_RING_MANAGEMENT_TID,
 			&controller->tx_queue_config);
-		if (result != INTEL_AX211_TX_RING_OK ||
-		    command->payload_length !=
-			    sizeof(controller->tx_queue_config.command) ||
-		    kern_memcmp(command->payload,
-			   controller->tx_queue_config.command,
-			   sizeof(controller->tx_queue_config.command)) != 0) {
-			/* Returns the computed result. */
+		if (result != INTEL_AX211_TX_RING_OK)
+			return INTEL_AX211_ASSOC_INVALID;
+
+		/* Refuses a command of another length. */
+		if (command->payload_length !=
+		    sizeof(controller->tx_queue_config.command)) {
 			return INTEL_AX211_ASSOC_INVALID;
 		}
+
+		/* Refuses other command bytes. */
+		same = kern_memcmp(command->payload,
+				   controller->tx_queue_config.command,
+				   sizeof(controller->tx_queue_config.command));
+		if (same != 0)
+			return INTEL_AX211_ASSOC_INVALID;
 	}
 
+	/*
+	 * Describes the command; a wide header carries the wire version, a
+	 * narrow one the layout version.
+	 */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = command->group;
 	request.command.opcode = command->opcode;
-	request.command.version =
-		command->header == INTEL_AX211_ASSOC_HEADER_WIDE
-			? command->wire_version
-			: command->layout_version;
+	if (command->header == INTEL_AX211_ASSOC_HEADER_WIDE)
+		request.command.version = command->wire_version;
+	else
+		request.command.version = command->layout_version;
 	request.payload = command->payload;
 	request.payload_length = command->payload_length;
 	request.response_version = command->response_version;
@@ -5494,7 +5512,7 @@ ax211_pci_assoc_exchange(
 	kern_memset(reply, 0, sizeof(*reply));
 	response_length = 0U;
 
-	/* Checks the operation result. */
+	/* Sends the command; a failure is a timeout or an I/O failure. */
 	result = ax211_pci_direct_command(
 		controller, &request, controller->control_deadline_ticks,
 		reply->payload, sizeof(reply->payload), &response_length,
@@ -5505,11 +5523,15 @@ ax211_pci_assoc_exchange(
 			   command->step, command->opcode, command->group,
 			   result);
 
-		/* Returns the computed result. */
-		return result == ETIMEDOUT ? INTEL_AX211_ASSOC_TIMEOUT
-					   : INTEL_AX211_ASSOC_IO;
+		/* Reports a timeout as a timeout. */
+		if (result == ETIMEDOUT)
+			return INTEL_AX211_ASSOC_TIMEOUT;
+
+		/* Reports any other failure as an I/O failure. */
+		return INTEL_AX211_ASSOC_IO;
 	}
 
+	/* Describes the answer. */
 	reply->step = command->step;
 	reply->response_version = command->response_version;
 	reply->sequence = command->sequence;
@@ -5517,36 +5539,46 @@ ax211_pci_assoc_exchange(
 	reply->hardware_epoch = command->hardware_epoch;
 	reply->payload_length = response_length;
 
-	/* Handles the command condition. */
+	/*
+	 * Completes the ring's queue for an addition, resets it for a removal.
+	 */
 	if (command->step == INTEL_AX211_ASSOC_STEP_QUEUE_ENABLE) {
-		/* Checks the operation result. */
+		/* Logs and refuses an answer the ring does not accept. */
 		result = drv_intel_ax211_tx_ring_queue_add_complete(
 			&controller->frame_ring, &controller->tx_queue_config,
 			controller->hardware_epoch,
 			controller->connection_generation, &message, &pending);
 		if (result != INTEL_AX211_TX_RING_OK) {
-			queue = response_length >= 2U
-					? (uint16_t)reply->payload[0U] |
-						  ((uint16_t)reply->payload[1U]
-						   << 8)
-					: 0;
-			flags = response_length >= 4U
-					? (uint16_t)reply->payload[2U] |
-						  ((uint16_t)reply->payload[3U]
-						   << 8)
-					: 0;
-			write_pointer =
-				response_length >= 6U
-					? (uint16_t)reply->payload[4U] |
-						  ((uint16_t)reply->payload[5U]
-						   << 8)
-					: 0;
-			reserved =
-				response_length >= 8U
-					? (uint16_t)reply->payload[6U] |
-						  ((uint16_t)reply->payload[7U]
-						   << 8)
-					: 0;
+			/* Decodes the queue word, when it arrived. */
+			queue = 0;
+			flags = 0;
+			write_pointer = 0;
+			reserved = 0;
+			if (response_length >= 2U) {
+				queue = (uint16_t)reply->payload[0U] |
+					((uint16_t)reply->payload[1U] << 8);
+			}
+
+			/* Decodes the flags word, when it arrived. */
+			if (response_length >= 4U) {
+				flags = (uint16_t)reply->payload[2U] |
+					((uint16_t)reply->payload[3U] << 8);
+			}
+
+			/* Decodes the write pointer, when it arrived. */
+			if (response_length >= 6U) {
+				write_pointer =
+					(uint16_t)reply->payload[4U] |
+					((uint16_t)reply->payload[5U] << 8);
+			}
+
+			/* Decodes the reserved word, when it arrived. */
+			if (response_length >= 8U) {
+				reserved = (uint16_t)reply->payload[6U] |
+					   ((uint16_t)reply->payload[7U] << 8);
+			}
+
+			/* Logs the answer. */
 			kern_logf("intel-ax211: queue add response rejected "
 				   "result=%d "
 				   "length=%u qid=%u flags=%04x wp=%u "
@@ -5555,94 +5587,94 @@ ax211_pci_assoc_exchange(
 				   (unsigned)queue, (unsigned)flags,
 				   (unsigned)write_pointer, (unsigned)reserved);
 
-			/* Returns the computed result. */
+			/* Reports the refused answer. */
 			return INTEL_AX211_ASSOC_FIRMWARE;
 		}
 	} else if (command->step == INTEL_AX211_ASSOC_STEP_QUEUE_REMOVE) {
-		/* Checks the operation result. */
+		/* A failed reset is an I/O failure. */
 		result = drv_intel_ax211_tx_ring_reset(&controller->frame_ring, 1);
 		if (result != INTEL_AX211_TX_RING_OK)
 			return INTEL_AX211_ASSOC_IO;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: *reply holds the answer. */
 	return INTEL_AX211_ASSOC_OK;
 }
 
-/* Supports the ax211 pci assoc result errno operation. */
+/* Maps the association session's results to errno values. */
 static int
 ax211_pci_assoc_result_errno(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each result. */
 	switch (result) {
 	case INTEL_AX211_ASSOC_OK:
 	case INTEL_AX211_ASSOC_AUTH_READY:
 	case INTEL_AX211_ASSOC_COMPLETE:
 	case INTEL_AX211_ASSOC_ROLLED_BACK:
-		/* Succeeded. */
+		/* A success, the end of a stage, or a finished rollback. */
 		return 0;
 	case INTEL_AX211_ASSOC_INVALID:
-		/* Failed. */
+		/* An invalid argument. */
 		return EINVAL;
 	case INTEL_AX211_ASSOC_UNSUPPORTED:
-		/* Failed. */
+		/* An unsupported firmware. */
 		return ENOTSUP;
 	case INTEL_AX211_ASSOC_PENDING:
-		/* Failed. */
+		/* A session still running. */
 		return EBUSY;
 	case INTEL_AX211_ASSOC_STALE:
 	case INTEL_AX211_ASSOC_DUPLICATE:
 	case INTEL_AX211_ASSOC_OUT_OF_ORDER:
-		/* Failed. */
+		/* An answer that does not belong to the current command. */
 		return ESTALE;
 	case INTEL_AX211_ASSOC_TIMEOUT:
-		/* Failed. */
+		/* A timeout. */
 		return ETIMEDOUT;
 	case INTEL_AX211_ASSOC_FIRMWARE:
 	case INTEL_AX211_ASSOC_IO:
 	case INTEL_AX211_ASSOC_ROLLBACK_FAILED:
 	default:
-		/* Failed. */
+		/* Any other failure is an I/O failure. */
 		return EIO;
 	}
 }
 
-/* Supports the ax211 pci tx ring result errno operation. */
+/* Maps the transmit ring's results to errno values. */
 static int
 ax211_pci_tx_ring_result_errno(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each result. */
 	switch (result) {
 	case INTEL_AX211_TX_RING_OK:
-		/* Succeeded. */
+		/* A success. */
 		return 0;
 	case INTEL_AX211_TX_RING_INVALID:
-		/* Failed. */
+		/* An invalid argument. */
 		return EINVAL;
 	case INTEL_AX211_TX_RING_UNSUPPORTED:
-		/* Failed. */
+		/* An unsupported firmware. */
 		return ENOTSUP;
 	case INTEL_AX211_TX_RING_NOT_READY:
-		/* Failed. */
+		/* A ring that is not running. */
 		return ENETDOWN;
 	case INTEL_AX211_TX_RING_FULL:
 	case INTEL_AX211_TX_RING_PENDING:
-		/* Failed. */
+		/* A ring with no room or a pending operation. */
 		return EBUSY;
 	case INTEL_AX211_TX_RING_STALE:
 	case INTEL_AX211_TX_RING_OUT_OF_ORDER:
-		/* Failed. */
+		/* An answer that does not belong to the ring. */
 		return ESTALE;
 	case INTEL_AX211_TX_RING_DUPLICATE:
-		/* Failed. */
+		/* A cookie already in use. */
 		return EEXIST;
 	case INTEL_AX211_TX_RING_TIMEOUT:
-		/* Failed. */
+		/* A timeout. */
 		return ETIMEDOUT;
 	case INTEL_AX211_TX_RING_NO_MEMORY:
-		/* Failed. */
+		/* No memory. */
 		return ENOMEM;
 	case INTEL_AX211_TX_RING_TX_FAILED:
 	case INTEL_AX211_TX_RING_IO_ERROR:
@@ -5651,34 +5683,34 @@ ax211_pci_tx_ring_result_errno(
 	case INTEL_AX211_TX_RING_KICK_FAILED:
 	case INTEL_AX211_TX_RING_MALFORMED:
 	default:
-		/* Failed. */
+		/* Any other failure is an I/O failure. */
 		return EIO;
 	}
 }
 
-/* Supports the ax211 pci key result errno operation. */
+/* Maps the key state's results to errno values. */
 static int
 ax211_pci_key_result_errno(
 	int result)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each result. */
 	switch (result) {
 	case INTEL_AX211_KEY_OK:
 	case INTEL_AX211_KEY_DUPLICATE:
-		/* Succeeded. */
+		/* A success or a repeat of one. */
 		return 0;
 	case INTEL_AX211_KEY_INVALID:
-		/* Failed. */
+		/* An invalid argument. */
 		return EINVAL;
 	case INTEL_AX211_KEY_UNSUPPORTED:
-		/* Failed. */
+		/* An unsupported firmware. */
 		return ENOTSUP;
 	case INTEL_AX211_KEY_STALE:
-		/* Failed. */
+		/* A key of another connection or generation. */
 		return ESTALE;
 	case INTEL_AX211_KEY_MISSING:
 	default:
-		/* Failed. */
+		/* A missing key, and any other failure. */
 		return ENOENT;
 	}
 }
@@ -5691,31 +5723,46 @@ ax211_pci_assoc_profile(
 	uint64_t connection_generation,
 	struct intel_ax211_assoc_profile *profile)
 {
-	int error;
 	struct drv_intel_ax211_bss_assoc_metadata metadata;
 	struct intel_ax211_bss_entry entry;
 	struct intel_ax211_tx_queue_config queue;
+	int present;
 	int result;
 
-	/* Checks the ax211 pci scan channel present result. */
-	if (controller == NULL || bss == NULL || profile == NULL ||
+	/*
+	 * Refuses missing arguments, an unpublished scan, a missing ring and an
+	 * unset generation.
+	 */
+	if (controller == NULL ||
+	    bss == NULL ||
+	    profile == NULL ||
 	    !controller->bss_published_initialized ||
-	    !controller->tx_ring_allocated || connection_generation == 0U ||
-	    !ax211_pci_scan_channel_present(controller, bss->channel)) {
-		/* Failed. */
+	    !controller->tx_ring_allocated ||
+	    connection_generation == 0U) {
 		return EINVAL;
 	}
+
+	/* Refuses a channel the scan does not cover. */
+	present = ax211_pci_scan_channel_present(controller, bss->channel);
+	if (!present)
+		return EINVAL;
 	kern_memset(&entry, 0, sizeof(entry));
 
-	/* Checks the operation result. */
+	/* Finds the BSS in the published scan. */
 	result = drv_intel_ax211_bss_cache_lookup(
 		&controller->bss_published_cache, bss->bssid, bss->channel,
 		controller->hardware_epoch, &entry);
-	if (result != INTEL_AX211_BSS_OK)
-		return result == INTEL_AX211_BSS_NOT_FOUND ? ENOENT : ESTALE;
+	if (result != INTEL_AX211_BSS_OK) {
+		/* A BSS the scan did not see is missing. */
+		if (result == INTEL_AX211_BSS_NOT_FOUND)
+			return ENOENT;
+
+		/* Any other failure is a stale scan. */
+		return ESTALE;
+	}
 	kern_memset(&metadata, 0, sizeof(metadata));
 
-	/* Checks the operation result. */
+	/* Takes the BSS's association metadata. */
 	result = drv_intel_ax211_bss_assoc_metadata(
 		&entry, connection_generation, controller->hardware_epoch,
 		&metadata);
@@ -5723,18 +5770,16 @@ ax211_pci_assoc_profile(
 		return EIO;
 	kern_memset(&queue, 0, sizeof(queue));
 
-	/* Checks the operation result. */
+	/* Builds the management queue's addresses. */
 	result = drv_intel_ax211_tx_ring_queue_add_build(
 		&controller->frame_ring, AX211_PEER_SLOT,
 		INTEL_AX211_TX_RING_MANAGEMENT_TID, &queue);
 	if (result != INTEL_AX211_TX_RING_OK) {
-		/* Obtains the ax211 pci tx ring result errno result. */
-		error = ax211_pci_tx_ring_result_errno(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_pci_tx_ring_result_errno(result);
+		return result;
 	}
 
+	/* Describes the addresses, the channel and the receive chains. */
 	kern_memset(profile, 0, sizeof(*profile));
 	kern_memcpy(profile->station_address, controller->net_device->hwaddr, 6U);
 	kern_memcpy(profile->bssid, metadata.bssid, 6U);
@@ -5746,25 +5791,33 @@ ax211_pci_assoc_profile(
 	 * Preserve the mandatory 1 Mbps fallback bitmap used by the reference
 	 * command ABI even on 5 GHz, where the firmware does not use CCK.
 	 */
-	profile->cck_ack_rates =
-		profile->channel <= 14U ? AX211_ASSOC_CCK_ACK_RATES : 1U;
+	if (profile->channel <= 14U)
+		profile->cck_ack_rates = AX211_ASSOC_CCK_ACK_RATES;
+	else
+		profile->cck_ack_rates = 1U;
 
 	/*
 	 * Mandatory 5 GHz basic OFDM rates: 6, 12, and 24 Mbit/s.  Do not
 	 * advertise every optional OFDM rate as an ACK/basic rate.
 	 */
 	profile->ofdm_ack_rates = AX211_ASSOC_OFDM_ACK_RATES;
-	profile->short_preamble =
-		profile->channel <= 14U &&
-		(metadata.capability & AX211_CAPABILITY_SHORT_PREAMBLE) != 0U;
+
+	/* A short preamble is used on 2.4 GHz when the BSS allows it. */
+	profile->short_preamble = 0U;
+	if (profile->channel <= 14U &&
+	    (metadata.capability & AX211_CAPABILITY_SHORT_PREAMBLE) != 0U) {
+		profile->short_preamble = 1U;
+	}
 
 	/*
 	 * Short-slot timing is mandatory in the 5 GHz OFDM-only band even when
 	 * the AP omits the 2.4-GHz capability bit from its beacon.
 	 */
-	profile->short_slot =
-		profile->channel > 14U ||
-		(metadata.capability & AX211_CAPABILITY_SHORT_SLOT) != 0U;
+	profile->short_slot = 0U;
+	if (profile->channel > 14U ||
+	    (metadata.capability & AX211_CAPABILITY_SHORT_SLOT) != 0U) {
+		profile->short_slot = 1U;
+	}
 
 	/*
 	 * The first p038 common association profile does not negotiate WMM.
@@ -5774,8 +5827,10 @@ ax211_pci_assoc_profile(
 	 */
 	profile->qos = 0U;
 	profile->beacon_interval_tu = metadata.beacon_interval_tu;
-	profile->dtim_period =
-		metadata.tim_valid != 0U ? metadata.dtim_period : 0U;
+	if (metadata.tim_valid != 0U)
+		profile->dtim_period = metadata.dtim_period;
+	else
+		profile->dtim_period = 0U;
 	profile->queue_byte_count_address = queue.byte_count_address;
 	profile->queue_descriptor_address = queue.tfd_address;
 
@@ -5794,27 +5849,29 @@ ax211_pci_assoc_profile(
 	profile->edca[3U].ecw_max = 3U;
 	profile->edca[3U].aifsn = 2U;
 	profile->edca[3U].txop_32us = 47U;
+
+	/* Succeeded: selects the BSS and clears the copies. */
 	controller->selected_bss = entry;
 	controller->selected_metadata = metadata;
 	controller->selected_bss_valid = 1U;
 	ax211_pci_scrub(&queue, sizeof(queue));
 	ax211_pci_scrub(&metadata, sizeof(metadata));
 	ax211_pci_scrub(&entry, sizeof(entry));
-
-	/* Succeeded. */
 	return 0;
 }
 
-/* Supports the ax211 pci connection clear operation. */
+/* Forgets the connection: its BSS, session, keys and transmit state. */
 static void
 ax211_pci_connection_clear(
 	struct ax211_pci_controller *controller)
 {
 	uint8_t key_index;
 
-	/* Handles the controller availability. */
+	/* Nothing to clear without a controller. */
 	if (controller == NULL)
 		return;
+
+	/* Clears the connection's state, its session and its keys. */
 	controller->connection_generation = 0U;
 	controller->control_deadline_ticks = 0U;
 	controller->selected_bss_valid = 0U;
@@ -5829,13 +5886,14 @@ ax211_pci_connection_clear(
 	ax211_pci_scrub(&controller->keys, sizeof(controller->keys));
 	ax211_pci_staged_key_clear(&controller->staged_pairwise_key);
 
-	/* Process each remaining element. */
+	/* Clears each staged group key. */
 	for (key_index = 0U; key_index < INTEL_AX211_KEY_INDEX_LIMIT;
 	     key_index++) {
 		ax211_pci_staged_key_clear(
 			&controller->staged_group_key[key_index]);
 	}
 
+	/* Clears the retired keys and the transmit state. */
 	controller->retired_pairwise_key_generation = 0U;
 	ax211_pci_scrub(controller->retired_group_key_generation,
 			sizeof(controller->retired_group_key_generation));
@@ -5853,21 +5911,19 @@ ax211_pci_assoc_rollback(
 	struct ax211_pci_controller *controller,
 	uint64_t generation)
 {
-	int error;
 	uint64_t now;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller. */
 	if (controller == NULL)
 		return EINVAL;
 
-	/* Handles the controller condition. */
+	/* A connection without a session is only forgotten. */
 	if (!controller->association_initialized) {
-		/* Handles the controller condition. */
+		/* Refuses another connection's generation. */
 		if (controller->connection_generation != 0U &&
 		    generation != 0U &&
 		    controller->connection_generation != generation) {
-			/* Failed. */
 			return ESTALE;
 		}
 		ax211_pci_connection_clear(controller);
@@ -5876,24 +5932,25 @@ ax211_pci_assoc_rollback(
 		return 0;
 	}
 
-	/* Handles the generation condition. */
+	/* Refuses another connection's generation. */
 	if (generation != 0U && generation != controller->connection_generation)
 		return ESTALE;
 
-	/* Handles the controller condition. */
+	/* Removes every key the firmware may hold. */
 	if (controller->keys_initialized) {
-		/* Checks the operation result. */
+		/* Reports a failed removal. */
 		result = ax211_pci_keys_remove_all(
 			controller, controller->control_deadline_ticks);
 		if (result != 0)
 			return result;
 	}
 
-	/* Checks the ax211 pci clock us result. */
-	if (ax211_pci_clock_us(controller, &now) != 0)
+	/* Reads the clock. */
+	result = ax211_pci_clock_us(controller, &now);
+	if (result != 0)
 		return EIO;
 
-	/* Checks the operation result. */
+	/* Cancels the session and drives its rollback. */
 	result = drv_intel_ax211_assoc_cancel(&controller->association,
 					      controller->connection_generation,
 					      controller->hardware_epoch, now);
@@ -5903,20 +5960,16 @@ ax211_pci_assoc_rollback(
 			&controller->association, &ax211_assoc_ops, controller);
 	}
 
-	/* Checks the operation result. */
+	/* Reports a rollback that did not finish. */
 	if (result != INTEL_AX211_ASSOC_ROLLED_BACK &&
 	    result != INTEL_AX211_ASSOC_OK) {
-		/* Obtains the ax211 pci assoc result errno result. */
-		error = ax211_pci_assoc_result_errno(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_pci_assoc_result_errno(result);
+		return result;
 	}
 
-	/* Handles the controller condition. */
+	/* Refuses a transmit ring that still runs or holds frames. */
 	if (controller->frame_ring.enabled ||
 	    controller->frame_ring.pending_count != 0U) {
-		/* Failed. */
 		return EIO;
 	}
 	ax211_pci_connection_clear(controller);
@@ -5931,30 +5984,26 @@ ax211_pci_mcast_filter_configure(
 	struct ax211_pci_controller *controller,
 	uint64_t deadline_ticks)
 {
-	int error;
 	struct intel_ax211_command_request request;
 	uint8_t payload[INTEL_AX211_ASSOC_MULTICAST_LIST_SIZE];
 	size_t response_length;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller and a connection without a BSS. */
 	if (controller == NULL || !controller->selected_bss_valid)
 		return EINVAL;
 	kern_memset(payload, 0, sizeof(payload));
 
-	/* Checks the operation result. */
+	/* Encodes the filter for the BSSID. */
 	result = drv_intel_ax211_assoc_mcast_filter_encode(
 		controller->selected_metadata.bssid, payload, sizeof(payload));
 	if (result != INTEL_AX211_ASSOC_OK) {
 		ax211_pci_scrub(payload, sizeof(payload));
-
-		/* Obtains the ax211 pci assoc result errno result. */
-		error = ax211_pci_assoc_result_errno(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_pci_assoc_result_errno(result);
+		return result;
 	}
 
+	/* Describes the command, which has an empty answer. */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = INTEL_AX211_ASSOC_FAMILY_CLASSIC;
 	request.command.opcode = INTEL_AX211_ASSOC_MULTICAST_LIST_OPCODE;
@@ -5966,16 +6015,18 @@ ax211_pci_mcast_filter_configure(
 	request.maximum_response_length = 0U;
 	response_length = 0U;
 
-	/* Checks the operation result. */
+	/* Sends the command; an answer with a payload is an I/O failure. */
 	result = ax211_pci_direct_command(controller, &request, deadline_ticks,
 					  NULL, 0U, &response_length, NULL,
 					  NULL);
 	if (result == 0 && response_length != 0U)
 		result = EIO;
 	ax211_pci_scrub(payload, sizeof(payload));
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: the filter is set. */
+	return 0;
 }
 
 /* Programs the frozen API89 PM-off client table after multicast admission. */
@@ -5984,18 +6035,18 @@ ax211_pci_mac_power_configure(
 	struct ax211_pci_controller *controller,
 	uint64_t deadline_ticks)
 {
-	int error;
 	struct intel_ax211_command_request request;
 	uint8_t payload[INTEL_AX211_ASSOC_POWER_SAVE_SIZE];
 	uint8_t response[INTEL_AX211_ASSOC_POWER_SAVE_RESPONSE_SIZE];
 	uint32_t beacon_interval_ms;
 	size_t response_length;
+	int validate_result;
 	int result;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || !controller->selected_bss_valid ||
+	/* Refuses a connection without a BSS or a beacon interval. */
+	if (controller == NULL ||
+	    !controller->selected_bss_valid ||
 	    controller->selected_metadata.beacon_interval_tu == 0U) {
-		/* Failed. */
 		return EINVAL;
 	}
 
@@ -6011,20 +6062,17 @@ ax211_pci_mac_power_configure(
 	kern_memset(payload, 0, sizeof(payload));
 	kern_memset(response, 0, sizeof(response));
 
-	/* Checks the operation result. */
+	/* Encodes the table. */
 	result = drv_intel_ax211_assoc_mac_power_encode(
 		controller->selected_metadata.dtim_period, beacon_interval_ms,
 		payload, sizeof(payload));
 	if (result != INTEL_AX211_ASSOC_OK) {
 		ax211_pci_scrub(payload, sizeof(payload));
-
-		/* Obtains the ax211 pci assoc result errno result. */
-		error = ax211_pci_assoc_result_errno(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_pci_assoc_result_errno(result);
+		return result;
 	}
 
+	/* Describes the command and its optional status answer. */
 	kern_memset(&request, 0, sizeof(request));
 	request.command.group = INTEL_AX211_ASSOC_FAMILY_CLASSIC;
 	request.command.opcode = INTEL_AX211_ASSOC_POWER_SAVE_OPCODE;
@@ -6036,21 +6084,25 @@ ax211_pci_mac_power_configure(
 	request.maximum_response_length = sizeof(response);
 	response_length = 0U;
 
-	/* Checks the operation result. */
+	/* Sends the command and checks its answer. */
 	result = ax211_pci_direct_command(controller, &request, deadline_ticks,
 					  response, sizeof(response),
 					  &response_length, NULL, NULL);
 	if (result == 0) {
-		result = ax211_pci_assoc_result_errno(
+		validate_result =
 			drv_intel_ax211_assoc_mac_power_response_validate(
-				response, response_length));
+				response, response_length);
+		result = ax211_pci_assoc_result_errno(validate_result);
 	}
 
+	/* Clears the answer and the table. */
 	ax211_pci_scrub(response, sizeof(response));
 	ax211_pci_scrub(payload, sizeof(payload));
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return result;
+	/* Succeeded: power save is off. */
+	return 0;
 }
 
 /* Removes every tuple still reachable by firmware before station teardown. */
