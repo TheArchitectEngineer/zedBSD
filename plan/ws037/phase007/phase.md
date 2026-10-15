@@ -540,7 +540,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 | F1 | `38fa1c750` | node に `present_lock`（順は present_lock → node->lock）。present は lease の確かめ（`present_admit`）と flip の送り（`nvrtx_scanout_frame_send`）だけ node->lock の下、storage の CPU の複写と flip の BEGUN の待ち（`nvrtx_scanout_frame_wait`、次の vblank まで）は外。lease の終わり・session の close・blob の消滅・P7 の stop は present_lock → node->lock で走っている present を待つ。stop は GSP を止めた後に `broken=1`（以後の present・cursor は EIO）。cursor の core の update は window と interlock しないので、flip の待ちの間に送られてよい |
 | — | `f35d9440a` | vk の host 試験 2 つに compiler の `sm75-schedule.c` を足した（main で link できていなかった） |
 | F2・計数 | `a811fe4f2` | `nvrtx_work_wait` は最初の 2 ms を `atomic_spin_hint` で semaphore（coherent な sysmem）を見る、その後は今までの sleep の poll。新しい boot の語 `nvrtx.vk.perf=1`（既定 off）で message drain が 5 s ごとに `nvrtx: perf …ms: runs N avg Uus, cpu copies N KKiB` と `nvrtx: perf: frames N wait Uus held Uus, flips N avg Uus` を出す（run の submit〜fence の平均、CPU の複写、renderer の frame の node->lock の待ちと保持の平均、flip の vblank の待ちの平均） |
-| F3 | （この節の commit） | buffer→image は buffer が texture になれば GPU の quad で描く: 画素の境界（4 byte）と rows が 32 の倍数なら、texture を region の前の 32 byte 境界から始め、region をその skew 画素から sample する（texture header の address と pitch は bit 5 から）。image→buffer（buffer が target）は今までの 256・128 の条件のまま |
+| F3 | `9e74e7be1` | buffer→image は buffer が texture になれば GPU の quad で描く: 画素の境界（4 byte）と rows が 32 の倍数なら、texture を region の前の 32 byte 境界から始め、region をその skew 画素から sample する（texture header の address と pitch は bit 5 から）。image→buffer（buffer が target）は今までの 256・128 の条件のまま |
 
 確認:
 
