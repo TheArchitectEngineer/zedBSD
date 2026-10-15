@@ -2726,10 +2726,11 @@ ax211_pci_scan_profile(
 {
 	unsigned channel;
 
+	/* Starts from an empty profile of the passive channels. */
 	kern_memset(profile, 0, sizeof(*profile));
 	profile->channel_count = AX211_PASSIVE_CHANNEL_COUNT;
 
-	/* Process each remaining element. */
+	/* Describes each channel and its center frequency. */
 	for (channel = 1U; channel <= profile->channel_count; channel++) {
 		profile->channels[channel - 1U].channel = channel;
 		profile->channels[channel - 1U].center_frequency_mhz =
@@ -2746,11 +2747,11 @@ ax211_pci_partial_discard(
 	unsigned net_live;
 	int error;
 
-	/* Handles the station availability. */
+	/* A published station is not a partial shell. */
 	if (controller->station_attached || controller->station != NULL)
 		return 0;
 
-	/* Handles the device availability. */
+	/* Nothing to retire without a net device. */
 	device = controller->net_device;
 	if (device == NULL)
 		return 0;
@@ -2758,10 +2759,12 @@ ax211_pci_partial_discard(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
+	/* Drops the carrier outside the lock. */
 	(void)net_device_set_carrier(device, 0);
 
-	/* Handles the net live condition. */
+	/* Takes a live device away before retiring it. */
 	if (net_live) {
+		/* Reports a device that could not be taken away. */
 		error = net_device_gone(device);
 		mutex_lock(&controller->lifecycle_lock);
 		if (error != 0)
@@ -2771,11 +2774,13 @@ ax211_pci_partial_discard(
 		mutex_lock(&controller->lifecycle_lock);
 	}
 
+	/* Detaches the device from the controller. */
 	device->driver_data = NULL;
 	controller->net_device = NULL;
 
 	mutex_unlock(&controller->lifecycle_lock);
 
+	/* Destroys the device outside the lock. */
 	net_device_destroy(device);
 	mutex_lock(&controller->lifecycle_lock);
 
@@ -2783,19 +2788,19 @@ ax211_pci_partial_discard(
 	return 0;
 }
 
-/* Supports the ax211 pci lifecycle deadline operation. */
+/* Returns the deadline of a lifecycle join, saturating the clock. */
 static uint64_t
 ax211_pci_lifecycle_deadline(
 	void)
 {
 	uint64_t now;
 
-	/* Handles the now condition. */
+	/* Saturates a deadline beyond the clock. */
 	now = clock_ticks();
 	if (now > UINT64_MAX - AX211_LIFECYCLE_JOIN_TICKS)
 		return UINT64_MAX;
 
-	/* Returns the computed result. */
+	/* Reports the deadline. */
 	return now + AX211_LIFECYCLE_JOIN_TICKS;
 }
 
@@ -2805,22 +2810,22 @@ ax211_pci_station_pin_locked(
 	struct ax211_pci_controller *controller,
 	struct wlan_station **station)
 {
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || station == NULL)
 		return EINVAL;
 	*station = NULL;
 
-	/* Handles the station availability. */
+	/* Refuses a controller without a station. */
 	if (!controller->station_attached || controller->station == NULL)
 		return ENODEV;
 
-	/* Handles the controller condition. */
+	/* Refuses a count that would overflow. */
 	if (controller->operations_active == UINT_MAX)
 		return EOVERFLOW;
+
+	/* Succeeded: counts the operation and reports the station. */
 	controller->operations_active++;
 	*station = controller->station;
-
-	/* Succeeded. */
 	return 0;
 }
 
@@ -2830,35 +2835,39 @@ ax211_pci_operation_enter_locked(
 	struct ax211_pci_controller *controller,
 	struct wlan_station **station)
 {
-	int error;
+	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || station == NULL)
 		return EINVAL;
 	*station = NULL;
 
-	/* Handles the station availability. */
+	/* Refuses a controller that does not admit operations. */
 	if (!controller->operation_admission_open ||
-	    !controller->station_attached || controller->station == NULL) {
-		/* Failed. */
+	    !controller->station_attached ||
+	    controller->station == NULL) {
 		return ENODEV;
 	}
 
-	/* Obtains the ax211 pci station pin locked result. */
-	error = ax211_pci_station_pin_locked(controller, station);
+	/* Pins the station. */
+	result = ax211_pci_station_pin_locked(controller, station);
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: *station is pinned. */
+	return 0;
 }
 
-/* Supports the ax211 pci operation leave locked operation. */
+/* Ends an operation entered with ax211_pci_operation_enter_locked(). */
 static void
 ax211_pci_operation_leave_locked(
 	struct ax211_pci_controller *controller)
 {
-	/* Handles the controller availability. */
+	/* An unbalanced leave is a driver bug. */
 	if (controller == NULL || controller->operations_active == 0U)
 		__builtin_trap();
+
+	/* Ends the operation. */
 	controller->operations_active--;
 }
 
@@ -2868,15 +2877,20 @@ ax211_pci_operations_join_locked(
 	struct ax211_pci_controller *controller,
 	uint64_t deadline)
 {
-	/* Handles the controller availability. */
+	uint64_t now;
+
+	/* Refuses missing arguments and an unset deadline. */
 	if (controller == NULL || deadline == 0U)
 		return EINVAL;
 
-	/* Continue while the operation condition remains true. */
+	/* Waits, with the lock dropped, until no operation is active. */
 	while (controller->operations_active != 0U) {
-		/* Checks the clock ticks result. */
-		if (clock_ticks() >= deadline)
+		/* The deadline passed. */
+		now = clock_ticks();
+		if (now >= deadline)
 			return ETIMEDOUT;
+
+		/* Lets the operations run. */
 		mutex_unlock(&controller->lifecycle_lock);
 		sched_yield();
 		mutex_lock(&controller->lifecycle_lock);
@@ -2892,21 +2906,27 @@ ax211_pci_station_close_wait(
 	struct wlan_station *station,
 	uint64_t deadline)
 {
+	uint64_t now;
 	int result;
 
-	/* Handles the station availability. */
+	/* Refuses a missing station and an unset deadline. */
 	if (station == NULL || deadline == 0U)
 		return ENODEV;
 
-	/* Continue until the operation reaches a terminal state. */
+	/* Retries a busy close until the deadline. */
 	for (;;) {
-		/* Checks the operation result. */
+		/* A closed station ends the wait. */
 		result = wlan_station_close(station);
+		if (result == 0)
+			return 0;
+
+		/* Reports any failure other than a busy station. */
 		if (result != EBUSY)
 			return result;
 
-		/* Checks the clock ticks result. */
-		if (clock_ticks() >= deadline)
+		/* The deadline passed. */
+		now = clock_ticks();
+		if (now >= deadline)
 			return ETIMEDOUT;
 		sched_yield();
 	}
@@ -2918,13 +2938,17 @@ ax211_pci_recovery_latch_locked(
 	struct ax211_pci_controller *controller,
 	int error)
 {
-	/* Handles the controller availability. */
+	/* Nothing to latch without a controller. */
 	if (controller == NULL)
 		return;
 
-	/* Handles the controller condition. */
+	/* Latches the first error, or EIO for none, and its connection. */
 	if (!controller->recovery_pending && !controller->recovery_running) {
-		controller->recovery_error = error > 0 ? error : EIO;
+		/* Keeps a positive error; any other becomes EIO. */
+		if (error > 0)
+			controller->recovery_error = error;
+		else
+			controller->recovery_error = EIO;
 		controller->recovery_generation =
 			controller->connection_generation;
 		controller->recovery_pending = 1U;
@@ -2934,9 +2958,10 @@ ax211_pci_recovery_latch_locked(
 			   (unsigned)controller->recovery_generation);
 	}
 
+	/* Closes admission until the recovery has run. */
 	controller->operation_admission_open = 0U;
 
-	/* Handles the net device availability. */
+	/* Asks for a poll, which runs the recovery. */
 	if (controller->net_device != NULL)
 		net_device_schedule_poll(controller->net_device);
 }
@@ -2957,20 +2982,29 @@ ax211_pci_recovery_run_locked(
 	int stop_error;
 	int failure;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller. */
 	if (controller == NULL)
 		return EINVAL;
-	failure = controller->recovery_error > 0 ? controller->recovery_error
-						 : EIO;
-	generation = controller->recovery_generation != 0U
-			     ? controller->recovery_generation
-			     : controller->connection_generation;
+
+	/* Takes the latched error, or EIO for none. */
+	if (controller->recovery_error > 0)
+		failure = controller->recovery_error;
+	else
+		failure = EIO;
+
+	/* Takes the latched connection, or the current one. */
+	if (controller->recovery_generation != 0U)
+		generation = controller->recovery_generation;
+	else
+		generation = controller->connection_generation;
+
+	/* Closes admission and joins the operations in flight. */
 	controller->operation_admission_open = 0U;
 	deadline = ax211_pci_lifecycle_deadline();
 	join_error = ax211_pci_operations_join_locked(controller, deadline);
 	device = controller->net_device;
 
-	/* Checks the operation status. */
+	/* Retries later when an operation is still in flight. */
 	if (join_error != 0) {
 		/*
 		 * The active lease may still be inside common->radio code. Keep
@@ -2978,69 +3012,85 @@ ax211_pci_recovery_run_locked(
 		 * than racing a reset or release against that caller.
 		 */
 		mutex_unlock(&controller->lifecycle_lock);
-		carrier_error =
-			device != NULL ? net_device_set_carrier(device, 0) : 0;
+		carrier_error = 0;
+		if (device != NULL)
+			carrier_error = net_device_set_carrier(device, 0);
 		mutex_lock(&controller->lifecycle_lock);
 
-		/* Checks the operation status. */
+		/* Logs a carrier that could not be dropped. */
 		if (carrier_error != 0 && carrier_error != ENODEV) {
 			kern_logf("intel-ax211: recovery carrier-down failed "
 				   "(%d)\n",
 				   carrier_error);
 		}
 
+		/* Logs the join that failed. */
 		kern_logf("intel-ax211: recovery operation join failed (%d)\n",
 			   join_error);
 
-		/* Returns the computed result. */
+		/* Failed: a later poll retries. */
 		return join_error;
 	}
 
+	/* Takes the recovery and pins the station of a connection. */
 	controller->recovery_pending = 0U;
 	controller->recovery_error = 0;
 	controller->recovery_generation = 0U;
 	controller->recovery_running = 1U;
 	station = NULL;
-	pin_error = generation != 0U
-			    ? ax211_pci_station_pin_locked(controller, &station)
-			    : 0;
+	pin_error = 0;
+	if (generation != 0U)
+		pin_error = ax211_pci_station_pin_locked(controller, &station);
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	carrier_error = device != NULL ? net_device_set_carrier(device, 0) : 0;
-	link_error = station != NULL ? wlan_station_report_link_loss(
-					       station, generation, failure)
-				     : 0;
+	/* Drops the carrier and reports the link loss. */
+	carrier_error = 0;
+	if (device != NULL)
+		carrier_error = net_device_set_carrier(device, 0);
+	link_error = 0;
+	if (station != NULL) {
+		link_error = wlan_station_report_link_loss(station, generation,
+							   failure);
+	}
+
+	/* Retakes the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the station availability. */
+	/* Unpins the station and stops the session. */
 	if (station != NULL)
 		ax211_pci_operation_leave_locked(controller);
 	stop_error = ax211_pci_session_stop(controller);
 	controller->recovery_running = 0U;
-	controller->quarantined = stop_error != 0;
+	if (stop_error != 0)
+		controller->quarantined = 1U;
+	else
+		controller->quarantined = 0U;
 
-	/* Checks the operation status. */
+	/* Logs a failed pin. */
 	if (pin_error != 0 && pin_error != ENODEV) {
 		kern_logf("intel-ax211: recovery station pin failed (%d)\n",
 			   pin_error);
 	}
 
-	/* Checks the operation status. */
+	/* Logs a carrier that could not be dropped. */
 	if (carrier_error != 0 && carrier_error != ENODEV) {
 		kern_logf("intel-ax211: recovery carrier-down failed (%d)\n",
 			   carrier_error);
 	}
 
-	/* Checks the operation status. */
-	if (link_error != 0 && link_error != ESTALE && link_error != ENODEV &&
-	    link_error != ENOTCONN && link_error != EALREADY) {
+	/* Logs a link loss the station did not take. */
+	if (link_error != 0 &&
+	    link_error != ESTALE &&
+	    link_error != ENODEV &&
+	    link_error != ENOTCONN &&
+	    link_error != EALREADY) {
 		kern_logf(
 			"intel-ax211: recovery link retirement failed (%d)\n",
 			link_error);
 	}
 
-	/* Checks the operation status. */
+	/* Defers a failed stop to the retirement owner. */
 	if (stop_error != 0) {
 		/*
 		 * An inactive, quarantined runtime cannot drive another poll
@@ -3058,8 +3108,12 @@ ax211_pci_recovery_run_locked(
 	 */
 	ax211_pci_reopen_request_locked(controller);
 
-	/* Returns the computed result. */
-	return stop_error != 0 ? stop_error : failure;
+	/* Reports a failed stop first. */
+	if (stop_error != 0)
+		return stop_error;
+
+	/* Reports the failure that started the recovery. */
+	return failure;
 }
 
 /* Retires the visible network graph through every checked common barrier. */
@@ -3071,19 +3125,19 @@ ax211_pci_graph_detach(
 	uint64_t deadline;
 	int error;
 
-	/* Checks the operation status. */
+	/* Cancels a pending station stop. */
 	error = wlan_station_stop_cancel(controller->station);
 	if (error != 0)
 		return error;
 	controller->operation_admission_open = 0U;
 	deadline = ax211_pci_lifecycle_deadline();
 
-	/* Checks the operation status. */
+	/* Joins the operations in flight. */
 	error = ax211_pci_operations_join_locked(controller, deadline);
 	if (error != 0)
 		return error;
 
-	/* Handles the station availability. */
+	/* Nothing to detach without an attached station. */
 	station = controller->station;
 	if (station == NULL || !controller->station_attached)
 		return 0;
@@ -3092,19 +3146,18 @@ ax211_pci_graph_detach(
 	 * Both joins may synchronously invoke radio callbacks.  Admission is
 	 * already closed; drop the hardware lifecycle lock across those edges.
 	 */
-
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Checks the operation status. */
-	error = ax211_pci_station_close_wait(station,
-					     ax211_pci_lifecycle_deadline());
+	/* Closes and detaches the station. */
+	deadline = ax211_pci_lifecycle_deadline();
+	error = ax211_pci_station_close_wait(station, deadline);
 	if (error == 0 || error == ENODEV)
 		error = wlan_station_detach(station);
 	mutex_lock(&controller->lifecycle_lock);
 	if (error != 0 && error != ENODEV)
 		return error;
 
-	/* Handles the controller condition. */
+	/* Forgets the station. */
 	if (controller->station == station) {
 		controller->station = NULL;
 		controller->station_attached = 0U;
@@ -3126,11 +3179,11 @@ ax211_pci_session_stop(
 	int result;
 	unsigned long enabled;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller. */
 	if (controller == NULL)
 		return EINVAL;
 
-	/* Handles the controller condition. */
+	/* Logs the stop of a live connection. */
 	if (controller->runtime_active &&
 	    controller->connection_generation != 0U) {
 		kern_logf("intel-ax211: stopping connection generation=%u "
@@ -3140,6 +3193,7 @@ ax211_pci_session_stop(
 			   controller->association.step);
 	}
 
+	/* Closes admission and forgets a pending recovery. */
 	controller->operation_admission_open = 0U;
 	controller->session_stopped = 0U;
 	controller->recovery_pending = 0U;
@@ -3148,7 +3202,7 @@ ax211_pci_session_stop(
 	association_result = 0;
 	hardware_quiesced = 0;
 
-	/* Handles the controller condition. */
+	/* Rolls back the association of a running runtime. */
 	if (controller->association_initialized && controller->runtime_active) {
 		controller->control_deadline_ticks =
 			ax211_pci_lifecycle_deadline();
@@ -3156,6 +3210,7 @@ ax211_pci_session_stop(
 			controller, controller->connection_generation);
 	}
 
+	/* Marks the runtime inactive for the interrupt handler. */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
 	controller->runtime_active = 0U;
@@ -3163,29 +3218,29 @@ ax211_pci_session_stop(
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
+	/* Forgets deferred events and the scan. */
 	ax211_pci_deferred_event_clear(controller);
 	ax211_pci_scan_clear(controller);
 	result = 0;
 
-	/* Handles the controller condition. */
+	/* Stops the operational firmware, or retries its stop. */
 	if (controller->runtime_initialized) {
-		/* Handles the controller condition. */
+		/* Stops a running session; retries a stop that was owed. */
 		coordinator_result = INTEL_AX211_RUNTIME_START_OK;
 		if (controller->runtime_start.state ==
 		    INTEL_AX211_RUNTIME_START_STATE_RUNNING) {
 			coordinator_result = drv_intel_ax211_runtime_start_stop(
 				&controller->runtime_start);
-		} else if (
-			controller->runtime_start.state ==
-				INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED ||
-			controller->runtime_start.state ==
-				INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED_NO_DMA) {
+		} else if (controller->runtime_start.state ==
+				   INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED ||
+			   controller->runtime_start.state ==
+				   INTEL_AX211_RUNTIME_START_STATE_STOP_REQUIRED_NO_DMA) {
 			coordinator_result =
 				drv_intel_ax211_runtime_start_cleanup(
 					&controller->runtime_start);
 		}
 
-		/* Handles the coordinator result condition. */
+		/* A failed stop is an I/O failure; a stopped one quiesced. */
 		if (coordinator_result != INTEL_AX211_RUNTIME_START_OK) {
 			result = EIO;
 		} else {
@@ -3194,15 +3249,16 @@ ax211_pci_session_stop(
 		}
 	}
 
-	/* Checks the operation result. */
-	if (result == 0 && controller->boot_initialized &&
+	/* Retries a first-boot stop that was owed. */
+	if (result == 0 &&
+	    controller->boot_initialized &&
 	    (controller->boot.state == INTEL_AX211_BOOT_STATE_STOP_REQUIRED ||
 	     controller->boot.state ==
 		     INTEL_AX211_BOOT_STATE_STOP_REQUIRED_NO_DMA)) {
 		coordinator_result =
 			drv_intel_ax211_boot_cleanup(&controller->boot);
 
-		/* Handles the coordinator result condition. */
+		/* A failed stop is an I/O failure. */
 		if (coordinator_result != INTEL_AX211_BOOT_OK)
 			result = EIO;
 	}
@@ -3231,7 +3287,7 @@ ax211_pci_session_stop(
 	 * bus-master disable, which is the global queue-1 DMA barrier.
 	 */
 	if (result == 0 && controller->tx_ring_allocated) {
-		/* Handles the release result condition. */
+		/* A failed release is an I/O failure. */
 		release_result = drv_intel_ax211_tx_ring_release(
 			&controller->frame_ring, hardware_quiesced);
 		if (release_result != INTEL_AX211_TX_RING_OK)
@@ -3240,7 +3296,7 @@ ax211_pci_session_stop(
 			controller->tx_ring_allocated = 0U;
 	}
 
-	/* Checks the operation result. */
+	/* Forgets the connection of a stopped session. */
 	if (result == 0) {
 		ax211_pci_connection_clear(controller);
 		controller->session_stopped = 1U;
@@ -3252,16 +3308,20 @@ ax211_pci_session_stop(
 		association_result = 0;
 	}
 
-	/* Checks the operation result. */
+	/* The first boot's state is retired too. */
 	if (result == 0 && controller->boot_initialized)
 		controller->boot_initialized = 0U;
 
-	/* Checks the operation result. */
+	/* Reports a rollback failure that the stop did not cover. */
 	if (result == 0 && association_result != 0)
 		result = association_result;
 
-	/* Returns the computed result. */
-	return result;
+	/* Reports the failure. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded: the session is stopped. */
+	return 0;
 }
 
 /* Transfers an incomplete global stop to the independent retirement owner. */
