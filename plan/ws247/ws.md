@@ -34,6 +34,7 @@ N0 identify、N1 console、P0 layout、P1a devinit、P1b frts、P2a booter、P2b
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 下の「残り」1・2・4・5：定数ごとの出典、本文の出典の名前の除去、vram.c の path（P1・P2・P3 の並列、q984〜q986） | cleared（2026-10-16、main 50a95d261） |
+| [p003](phase003/phase.md) | compiler の sm75.c・sm75.h に p001 と同じ規則（2026-10-16 ユーザー） | in-progress（q987〜q989） |
 | p002 | 規約の全文の見直し（WS247 が変えた comment を plan/coding-style.md の全文と照らす） | planned |
 
 範囲外で見つかった物（WS037 の後続へ）: scanout.c:1273 が定義の無い番地 0x64013c を読んで捨てている（SOR の caps は 0x640144＋or*8）。[p001](phase001/phase.md) の「出典の無い値」。
