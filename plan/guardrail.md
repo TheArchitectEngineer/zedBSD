@@ -107,6 +107,12 @@ Linux の vc4・v3d（GPL-2.0）から作る作業の文書は `plan/ws141/temp/
 
 - **WS039（AMD RDNA、amdrdna）での適用**（2026-10-15 夕 ユーザー）:「もう1つサブエージェントを立てます。AMD RDNAドライバを書く既存WSの作業をします。このWSにも参照元などに関するガードレールをしっかり適用していきます。値の引用は明示すればOK、コード・シンボル名の引用は不可、ハードウェア操作手順の引用は明示すればOK、GPLなコードを引用しても、引用ならライセンスは影響しない、です。」→ WS039 にこの節の規則をそのまま厳格に当てる: 値（register の offset・bit・表・定数）は block ごとに「Value(s) referenced:」で出典を明示して使ってよい。hardware の操作の手順は「Procedure referenced:」で明示して参考にしてよい。code と symbol の名前（関数・型・macro・enum・register の名前）は写さない（独自の名前にする）。GPL の file からの引用でも、明示した引用なら zedBSD の code の license（Zlib）に影響しない。 補い（2026-10-15 夕 ユーザー、クリック「mnemonic は使ってよい」）AMD が公開する RDNA1 ISA の文書の命令名（s_mov_b32・v_add_f32・s_waitcnt など）は hardware の事実として code の名前・comment に使ってよい。Mesa（ACO）の source の symbol（aco_opcode の enum 名・関数名・型名）は写さない。
 
+## source の中の開発の管理情報（2026-10-15 ユーザー）
+
+ユーザー:「開発管理はすべてのソースから削除しますが、今は作業対象になったときに削除するだけでいいです。WS248でも消してほしかったですが、また今度でいいです。独立したWSを作って、あとでソースツリー全体を見直しましょう。WS249では削除を行いましょう。」
+- source（comment・log の文字列）に開発の管理情報（WS・Phase・Queue・Bug・試験の回の番号、plan/ への参照、日付つきの決定の記録、開発の段の符号）を書かない。
+- 既存の物は、その file が作業の対象になった時に、その作業の中で削除する（log の文字列を変える時は照合する試験・道具を追従させる）。tree 全体の見直しは [WS251](ws251/ws.md)。
+
 ## 決定の出典
 
 ユーザーの指示（HAL の制限と rollback の review、RTL8822B のライセンスの例外、refactor と試験の信頼、WS025 の規約の柔軟性、

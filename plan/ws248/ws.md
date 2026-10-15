@@ -32,3 +32,7 @@ Resume point: WS の完了の判定（Q1）。QEMU・実機の確認は T1 へ�
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 出典の表記: file の先頭の出典を除き、block ごとの Value(s)/Procedure referenced: へ。本文の出典の名前の除去 | cleared（2026-10-15、P2） |
 | [p002](phase002/phase.md) | 規約の全文の見直し: 不要な前方宣言の削除と coding-style.md の全文（intel-ax211.c を 2 file に分割） | cleared（2026-10-15、P2） |
+
+## 残した物（2026-10-15）
+
+comment の開発の管理番号（ws004 HW-T37・p038・ws052-p005・ws218-p002・BUG-158 など）は WS248 の範囲の外として残した。ユーザー「WS248でも消してほしかったですが、また今度でいいです。」→ [WS251](../ws251/ws.md) で削除する。

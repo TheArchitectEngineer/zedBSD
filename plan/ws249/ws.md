@@ -27,6 +27,7 @@ Resume point: WS248 の後に P2（q1205、予約。2026-10-15 ユーザー「WS
 - 引用した値・layout は、その block の直前の複数行の comment に「Value(s) referenced: <版> <path> (<名前>)」、参考にした手順（register の操作の順など）は「Procedure referenced: <版> <path> (<関数>)」。今の「Source(s): …」の形は改める。
 - 引用以外の comment の本文に出典の名前（OpenBSD・bwfm・WHD・Infineon・Linux・brcmfmac など）を書かない。
 - code と symbol の名前は出典（bwfm・WHD・brcmfmac）の物を写さない（一致があれば独自の名前に）。
+- 開発の管理情報（WS・Phase・Queue・Bug・試験の回の番号、plan/ への参照、日付つきの決定）を comment・log から削除する（2026-10-15 ユーザー「WS249では削除を行いましょう。」、Guardrail「source の中の開発の管理情報」）。
 - plan/coding-style.md の全文に合わせる（不要な前方宣言、決まり文句の comment、条件の中の呼び出し、`?:` など。style-check.py と読み比べ）。
 - build（warning 0、rpi4 の config）と BCM43455 の host 試験（あれば）が今と同じ結果。preprocess の後の比較で comment 以外の差が意図した物だけ。実機（Pi 4）の WiFi の確かめは T（Pi 4、10.0.30.2）に依頼する。
 
