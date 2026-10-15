@@ -282,7 +282,7 @@ i915_ms_config(void)
 	config.qgv_allowed_bw = 11707U;
 	config.dmc_fw_mask = 1U << 1;
 
-	/* The target's VBT backlight block (display-ref/vbt-decode.txt): PWM 200 Hz, min 6, controller 0; rawclk 19.2 MHz. */
+	/* The target's VBT backlight block: PWM 200 Hz, min 6, controller 0; rawclk 19.2 MHz. */
 	config.vbt_backlight_present = 1;
 	config.vbt_backlight_pwm_freq_hz = 200U;
 	config.vbt_backlight_min_brightness = 6U;

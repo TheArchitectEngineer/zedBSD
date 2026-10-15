@@ -100,3 +100,5 @@ DPCD 0x000〜0x00e = `11 0a 02 41 00 00 01 00 02 00 00 00 00 0b 00`、0x700〜0x
 OVMF 下の PPS レジスタは未設定（全 0）で、`intel_pps_init()` が VBT から `PP_ON_DELAYS`=0x07d00001、`PP_OFF_DELAYS`=0x044c0001、power-cycle 欄 6 を設定した（＝上の §4 の表で Linux が設定していた値）。0x100／0x101 は 0a／02 と読めた。zedBSD は DPCD へ何も書いていない。これが panel の電源投入時の既定値なのか、以前の設定が残っているのかは未確認（link training を実装する段で、書いた値と読み戻しで確かめる）。
 
 2026-10-14（ws233-p001、ユーザー「VBTはテスト用だったので、もう不要と思います。」）: `i915_vbt.bin`・`i915_opregion.bin` は Dell・Intel の platform の data で再配布の license が無いので外す（削除は Q1）。上の表と手順の中の 2 つの file の記述は履歴。`vbt-decode.txt` は decode した文で raw の bytes を含まない。
+
+2026-10-15（2026-10-15 ユーザー「vbt-decodeは削除してください。」）: 5330 の VBT を解読した文章 `vbt-decode.txt` も削除した（ws233）。上の文中の `vbt-decode.txt` への言及は履歴。
