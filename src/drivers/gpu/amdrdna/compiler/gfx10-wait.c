@@ -609,14 +609,14 @@ note_issued(
 
 		/* The writes of a load, and the reads of an export. */
 		if (access->counter == AMDRDNA_GFX10_COUNTER_EXPORT) {
-			for (index = 0U; index < access->read_count; index++) {
+			for (index = 0U; index < access->reads_used; index++) {
 				for (code = access->reads[index].first; code < access->reads[index].first + access->reads[index].count; code++) {
 					if (code < GFX10_CODES)
 						state->pending[code] = (uint8_t)(state->pending[code] | bit);
 				}
 			}
 		} else {
-			for (index = 0U; index < access->write_count; index++) {
+			for (index = 0U; index < access->writes_used; index++) {
 				for (code = access->writes[index].first; code < access->writes[index].first + access->writes[index].count; code++) {
 					if (code < GFX10_CODES)
 						state->pending[code] = (uint8_t)(state->pending[code] | bit);
@@ -629,7 +629,7 @@ note_issued(
 	read_set = NULL;
 	if (vector_memory != 0) {
 		read_set = state->read_by_load;
-		if (access->write_count == 0U)
+		if (access->writes_used == 0U)
 			read_set = state->read_by_store;
 	} else if (inst->kind == AMDRDNA_GFX10_KIND_SHARED) {
 		read_set = state->read_by_shared;
@@ -637,7 +637,7 @@ note_issued(
 		read_set = state->read_by_scalar_load;
 	}
 	if (read_set != NULL) {
-		for (index = 0U; index < access->read_count; index++)
+		for (index = 0U; index < access->reads_used; index++)
 			add_range(read_set, &access->reads[index]);
 	}
 
@@ -649,7 +649,7 @@ note_issued(
 	}
 
 	/* A scalar write (not a control instruction) ends the scalar load reads' hazard. */
-	if (scalar_alu != 0 && access->write_count != 0U &&
+	if (scalar_alu != 0 && access->writes_used != 0U &&
 	    inst->kind != AMDRDNA_GFX10_KIND_CONTROL && inst->kind != AMDRDNA_GFX10_KIND_BRANCH)
 		set_clear(state->read_by_scalar_load);
 
@@ -788,7 +788,7 @@ needed_counters(
 
 	/* Every register read. */
 	needed = 0U;
-	for (index = 0U; index < access->read_count; index++) {
+	for (index = 0U; index < access->reads_used; index++) {
 		for (code = access->reads[index].first; code < access->reads[index].first + access->reads[index].count; code++) {
 			if (code < GFX10_CODES)
 				needed |= state->pending[code];
@@ -796,7 +796,7 @@ needed_counters(
 	}
 
 	/* Every register written: a late result must not land after the new value. */
-	for (index = 0U; index < access->write_count; index++) {
+	for (index = 0U; index < access->writes_used; index++) {
 		for (code = access->writes[index].first; code < access->writes[index].first + access->writes[index].count; code++) {
 			if (code < GFX10_CODES)
 				needed |= state->pending[code];
@@ -933,7 +933,7 @@ writes_code(
 	uint32_t index;
 
 	/* Each range written. */
-	for (index = 0U; index < access->write_count; index++) {
+	for (index = 0U; index < access->writes_used; index++) {
 		if (code >= access->writes[index].first && code < (unsigned)access->writes[index].first + access->writes[index].count)
 			return 1;
 	}
@@ -950,7 +950,7 @@ writes_scalar(
 	uint32_t index;
 
 	/* Each range written. */
-	for (index = 0U; index < access->write_count; index++) {
+	for (index = 0U; index < access->writes_used; index++) {
 		if (access->writes[index].first < GFX10_SCALAR_CODES)
 			return 1;
 	}
@@ -969,7 +969,7 @@ writes_any_in(
 	int found;
 
 	/* Each range written. */
-	for (index = 0U; index < access->write_count; index++) {
+	for (index = 0U; index < access->writes_used; index++) {
 		found = reads_range_in(set, &access->writes[index]);
 		if (found != 0)
 			return 1;
@@ -988,7 +988,7 @@ reads_code(
 	uint32_t index;
 
 	/* Each range read. */
-	for (index = 0U; index < access->read_count; index++) {
+	for (index = 0U; index < access->reads_used; index++) {
 		if (code >= access->reads[index].first && code < (unsigned)access->reads[index].first + access->reads[index].count)
 			return 1;
 	}

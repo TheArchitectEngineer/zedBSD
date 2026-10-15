@@ -111,7 +111,7 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 | --- | --- | --- |
 | A | encode ＋ compute の最小（算術・比較・変換・特殊関数・storage・push・system value）＋ 1〜3 の試験 | 済（2026-10-15、host） |
 | B | loop・除算・atomic・shared・barrier・fence | 済（2026-10-15、host） |
-| E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 未 |
+| E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 済（2026-10-15、host。TEXTURE は SAMPLE・BIAS・LOD・LD の 4 種） |
 | F | desktop の全 shader の差分の試験（5 節の 4） | 未 |
 | D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 未 |
 
@@ -147,10 +147,36 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 - kernel の flag（zedBSD の target clang `x86_64-unknown-zedbsd`、`AMD64_CFLAGS`＋`-Wdeclaration-after-statement`）で 3 file とも warning 0。
 - ユーザーの判断（2026-10-15、Q1 経由のクリック「mnemonic は使ってよい」）: AMD の公開の RDNA1 ISA の命令名（s_mov_b32 など）は code の名前・comment に使ってよい。Mesa（ACO）の source の symbol（aco_opcode の enum 名・関数名・型名）は写さない。→ opcode・register の名前（`AMDRDNA_GFX10_V_ADD_F32`・`AMDRDNA_GFX10_VCC_LO` など）はこの規則で確定。
 
-### 7.4 再開点（2026-10-15 q1203 の終わり時点）
+### 7.4 段 E（2026-10-15 q1203、続き）
 
-1. 段 E（頂点・fragment）: `prepare` は今 compute だけを通す。VS（user SGPR 5、v0 vertex id・v3 instance id、頂点の V# から `buffer_load_format_xyzw idxen`、`exp pos0`（Navi1x は valid mask）・param）、PS（SPI_PS_INPUT_ENA の順の VGPR、m0 に prim mask、`v_interp_p1/p2`・flat は `v_interp_mov`、`exp mrt` done vm、KILL は生きている mask と早い終わり）、texture（T#・S# を SGPR へ、`image_sample`・`_lz`・`_l`・`_b`・`_o`）、UBO は済み。interpreter に VINTRP・MIMG・EXP と頂点・pixel の入力、参照に graphics の入出力を足す。
-2. `gfx10-program.c`: `amdrdna_gfx10_program_registers()`（RSRC1/2、SPI_PS_INPUT_ENA/ADDR、COL_FORMAT、VS_OUT_CONFIG、POS_FORMAT、PA_CL_VS_OUT_CNTL、SPI_PS_INPUT_CNTL）と生の buffer の V#（`amdrdna_gfx10_raw_buffer_descriptor`）。値は `gfx10.json`・`gfx10-rsrc.json`・`ac_descriptors.c` から block ごとに出典。試験の machine の `machine_raw_descriptor` の word3（0x31016fac）は仮の値なので、この関数ができたら置き換える。
-3. 段 F: desktop の全 shader の差分の試験（5 節の 4）。
-4. 段 D（速さ）: 今は uniform な値も VGPR へ写し、定数を v_mov し、label と分岐の前で全部を待つ。
-5. P3 とのすり合わせ（3 節の program の形。design 9.2 は「差分は無い」と記録済み）、license の監査の表（`plan/ws039/amdrdna-compiler-license-audit.md`、nir_lower_idiv.c を含む）、vmunix.mk への compiler の file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）。
+- `gfx10-compile.c`: 頂点（user SGPR 5 個、v0・v3、`v_add_nc_u32` で base を足す、location ごとに V# を SGPR へ・`s_bitcmp1_b32`＋`s_cselect_b32`＋`v_cndmask` で instance の番号を選び `buffer_load_format_xyzw idxen`、出力は予約した VGPR に集めて最後に `exp pos0`（valid mask）・`exp pos1`（point size）・`exp param L`）、pixel（SPI_PS_INPUT_ENA の順に v0 から: perspective i/j は常に、linear・位置・face は使う時、M0 = s2、`v_interp_p1/p2`・flat は `v_interp_mov p0`、gl_FragCoord.w は `v_rcp_f32`、face は `0 < face`、色は予約した VGPR から最後に `exp mrt L`（最後に done・vm）、無ければ `exp null`）、KILL（生きている lane の SGPR、`s_andn2_b32`→`s_cbranch_scc0` で早い終わり（exec 0 で `exp null done vm`・`s_endpgm`）、exec を生きている lane に、loop の出口でも絞り直す）、texture（T#・S# を prologue で SGPR へ、address を連続の VGPR に offset・bias・u・v・level の順で写す、fragment は whole quad（`s_wqm_b32`）で `image_sample`(`_b`/`_o`)、他の stage は `_lz`、`_l`、texelFetch は `image_load_mip unorm`、結果は 4 つ連続の VGPR に）。whole quad の fragment での storage 書き込みはまだ拒む。
+- `gfx10-program.[ch]`（新規）: `amdrdna_gfx10_program_registers()`（RSRC1 相当: VGPR の block・FLOAT_MODE 0xf0・DX10_CLAMP・VS の VGPR_COMP_CNT 3、RSRC2 相当: USER_SGPR・TGID_X/Y/Z・TIDIG_COMP_CNT 2・LDS_SIZE（512 byte 単位）、VS_OUT_CONFIG・POS_FORMAT・PA_CL_VS_OUT_CNTL の point size の bit、SPI_PS_INPUT_ENA（ADDR も同じ値を書く）・COL_FORMAT 32_ABGR・Z_FORMAT 0・PS_IN_CONTROL の NUM_INTERP と PS_W32_EN・SPI_PS_INPUT_CNTL の OFFSET と FLAT_SHADE、discard の有無（DB_SHADER_CONTROL の kill は driver が立てる））、`amdrdna_gfx10_raw_buffer_descriptor()`（word3 = 0x31016fac、試験で照合）、`amdrdna_gfx10_vertex_descriptor()`（stride・record 数・format・DST_SEL 0,0,0,1、OOB_SELECT STRUCTURED）。struct の field の名前は register の mnemonic を使わず役割の語（counts・inputs・pixel_input_enable など）。
+- 試験: interpreter に export・補間（`fmaf(P10, i, P0)`・`fmaf(P20, j, D)`）・typed fetch（GFX10_FORMAT 20/22/56/62/64/72/74/75/77、DST_SEL）・image（`gfx10-texture.[ch]`: level 0 の linear 2D、RGBA8 unorm・float4、point・bilinear、wrap・clamp。implicit LOD の sample で exec が whole quad でなければ FAIL）。参照に graphics の入出力・KILL・sample（同じ texture の helper を使う）。`gfx10-graphics-test.c`: 頂点は 40 頂点 × 2 instance（2 wave、location ごとに乱数の format と stride、instance mask）、pixel は 1 wave（乱数の coverage・barycentric・位置・face・4 primitive の attribute）、export を語ごとに比べ、生きている lane の集合・最後の export の done/vm・position 0 の valid mask・register の値を確かめる。shader は `basic.vert`・`sparse.vert`・`textured.vert`・`basic.frag`・`discard.frag`・`textured.frag`。
+- 結果（2026-10-15）: `amdrdna-compiler-host-test.sh` PASS（known words 86/86、compute 10、graphics 6 module × 16 回、16 program の disassemble に誤り無し）。試験が見つけた不具合: SAMPLE_LOD の u・v を連続の値と思っていた（`.yx` で外れた）→ 直した。わざとの誤り（i・j の取り違え、base vertex の省略、vertex と instance の取り違え、`s_wqm_b32` の省略）は FAIL になった。loop の出口の生きている mask の絞り直しを外しても色は変わらず PASS（副作用の無い試験では見えない。storage を書く fragment の試験は whole quad では拒むので今は無い）。
+- 出典の監査（自分の確かめ）: file の先頭 20 行に出典の語が無いこと、`0x` の値を持つ `#define AMDRDNA_*` の全 block の直前の comment に「referenced」があること（SOP・VOP の表を形式ごとの block に分けた）、compiler の識別子と引用した Mesa の file（ACO・RADV・ac・nir_lower_idiv・sid.h）の識別子・gfx10*.json の名前の交差が一般語だけであること（`has_bias`・`linear_vgpr`・`vertex_inputs`・`storage_count` などを `biased`・`screen_linear_vgpr`・`fetched_locations`・`storage_used` に改名した後）。
+- kernel の flag で 4 file（compile・encode・wait・program）とも warning 0。
+
+### 7.5 出典の表への追加（2026-10-15、q1203 で引用した file）
+
+| file | SPDX | SHA-256 | 取ったもの |
+| --- | --- | --- | --- |
+| `src/amd/compiler/aco_instruction_selection.cpp` | MIT | `b96cc3b28e5b571ff47f3bc5eb8bdbc6bf6c583b3893caafdc0dc0f8eb36de8c` | image の address の順（`visit_tex`）、offset の 6 bit × 8 bit 間隔、atomic の data と compare の順 |
+| `src/amd/compiler/aco_ir.h`・`aco_ir.cpp` | MIT | `2908a52a…310d`・`b1665561…5083` | operand の番号・inline 定数、s_waitcnt の欄（`wait_imm::pack`） |
+| `src/amd/vulkan/radv_shader.c` | MIT | `9b9683c2652db9b17da90d6391ef342eefdb43ed0b45526feac79e41aad9ba6c` | VGPR の 8 の block（wave32）、legacy VS の VS_OUT_CONFIG・POS_FORMAT・PA_CL_VS_OUT_CNTL |
+| `src/amd/vulkan/radv_pipeline_graphics.c` | MIT | `b3157fbdb02d090f9c036fa62a738477a419686c8ddf73e253401373c648e1fb` | gl_FragCoord.w = 1/w（`nir_lower_fragcoord_wtrans`） |
+| `src/amd/common/nir/ac_nir_lower_intrinsics_to_args.c` | MIT | `391bbc70d648aa83fc25ba6a1ed925c7bcd093ec979256b22df04215041bf0ec` | front face = 引数 > 0 |
+| `src/amd/common/nir/ac_nir_prerast_utils.c` | MIT | `d93c893b089188ac3c499e69548058ee222f85f4a46429fcacd72e255b404628` | 位置の export の順、GFX10 の POS0 の valid mask |
+| `src/amd/common/ac_gpu_info.c` | MIT | `f56e288b5024d51ec7ad5921d85fc15cd6a1df698a01b922543d2a62cf1a17c2` | LDS の encode の単位 512 byte |
+| `src/amd/common/ac_descriptors.c` | MIT | `d66a4c2761e8b13bd32c3a223176c533570bd7c825369f2ae62fb9d008fe41cf` | 生の buffer の V#（R32_FLOAT・XYZW・OOB_SELECT_RAW・RESOURCE_LEVEL 1） |
+| `src/amd/common/ac_binary.c` | MIT | `c7c8552a924f961eb148dd2e8108446cbef8d47d0516f539f3683d725677b619` | prefetch の 3 line |
+| `src/amd/registers/gfx10-rsrc.json` | （Mesa の既定 MIT） | `ab6deb6cea2daf6ef546b8ae5eff105d5939c9d8cd76a710f9f8064e6a2cf820` | export 先、GFX10_FORMAT、SQ_BUF_RSRC_WORD1/3、OOB_SELECT |
+| `src/amd/registers/gfx9.json` | （Mesa の既定 MIT） | `081fbfd1251fb5c6f4b7b6a218ba217e21346e824a04ec8146ab0d1d389ddb06` | DST_SEL の enum（SQ_SEL_XYZW01） |
+
+（`aco_opcodes.py`・`aco_assembler.cpp`・`aco_insert_NOPs.cpp`・`aco_insert_waitcnt.cpp`・`README-ISA.md`・`aco_lower_to_hw_instr.cpp`・`radv_shader_args.c`・`gfx10.json`・`nir_lower_idiv.c` は 1 節の表。監査の表の file `plan/ws039/amdrdna-compiler-license-audit.md` は P5 の所有 path の外なので、作るかどうか Q1 に聞く。）
+
+### 7.6 再開点（2026-10-15 q1203 の段 E の後）
+
+1. 段 F: desktop の全 shader（`userland/desktop/**/shaders.h` の 44 module）を compile し、graphics-test と同じ形で 200 入力ずつ参照と比べる（nvrtx の `nvrtx-sm75-desktop-test.sh`・`sm75-desktop-extract.py` の形）。拒まれる op があれば足す（TEXTURE の他の message、POINT_COORD、PRIMITIVE_ID、SECOND_COLOR など）。
+2. whole quad の fragment での storage 書き込み（helper lane を生きている mask で外す guard）。
+3. 段 D（速さ）: uniform の値を SGPR のまま使う、定数を inline のまま使う、label・分岐の前の全部の待ちを減らす、待ちを counter の数で。
+4. P3 とのすり合わせ（`struct amdrdna_gfx10_program`・`amdrdna_gfx10_registers` の field、資源の表の配置、T#・S# は driver が作る）、vmunix.mk への compiler の 4 file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）、license の監査の表の file。

@@ -51,6 +51,7 @@ struct machine_dispatch {
 	uint32_t group_id[3];
 	uint32_t shared_bytes;
 	uint32_t vgpr_count;
+	uint32_t pixel_inputs;
 };
 
 /*
@@ -64,13 +65,49 @@ struct machine_result {
 	uint32_t error_word;
 };
 
+/* The export targets by code (colours 0..7, nothing 9, positions 12..15, parameters 32..63). */
+#define MACHINE_TARGETS		64U
+
+/*
+ * One wave of a vertex or pixel program: what the hardware delivers, and
+ * what the program exported.
+ *
+ * A vertex wave: user[0..2] are s2..s4 (the base vertex, the first
+ * instance, the instance mask), lanes run vertex ids from first_vertex_id
+ * (v0) with the instance id (v3) for every lane, `lanes` of them.
+ *
+ * A pixel wave: `coverage` lanes run; each lane has its barycentrics, its
+ * position (x, y, z, w) and face, and the primitive whose attributes it
+ * interpolates: attribute[primitive][location][channel][vertex].
+ */
+struct machine_graphics {
+	uint32_t user[3];
+	uint32_t lanes;
+	uint32_t first_vertex_id;
+	uint32_t instance_id;
+	uint32_t coverage;
+	float perspective[MACHINE_LANES][2];
+	float linear[MACHINE_LANES][2];
+	float position[MACHINE_LANES][4];
+	float face[MACHINE_LANES];
+	uint32_t primitive[MACHINE_LANES];
+	const float (*attribute)[32][4][3];
+
+	/* What the program exported: by target, the values of each lane, the channels enabled and the lanes exported. */
+	uint32_t exported[MACHINE_TARGETS][MACHINE_LANES][4];
+	uint32_t export_channels[MACHINE_TARGETS];
+	uint32_t export_lanes[MACHINE_TARGETS];
+	uint32_t export_flags[MACHINE_TARGETS];
+	uint32_t export_count;
+};
+
+/* Runs one wave of a vertex (stage 0) or pixel (stage 1) program. */
+void machine_run_graphics(const struct machine_dispatch *dispatch, struct machine_memory *memory, int pixel, struct machine_graphics *graphics, struct machine_result *result);
+
 /* Runs one compute workgroup; result->error says why it stopped early. */
 void machine_run_group(const struct machine_dispatch *dispatch, struct machine_memory *memory, struct machine_result *result);
 
-/* Adds a region to the memory; returns its address (regions are placed 64 KiB apart from 0x100000000). */
+/* Adds a region to the memory; returns its address (regions are placed 256 MiB apart from 0x100000000). */
 uint64_t machine_add_region(struct machine_memory *memory, uint8_t *bytes, uint32_t size);
-
-/* Writes a raw buffer descriptor (V#) of a region at a byte offset into a table. */
-void machine_raw_descriptor(uint8_t *table, uint32_t offset, uint64_t address, uint32_t size);
 
 #endif /* PLAN_WS039_TESTS_GFX10_MACHINE_H */

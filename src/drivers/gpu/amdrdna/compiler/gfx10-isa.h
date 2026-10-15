@@ -126,10 +126,10 @@
 /*
  * ==== Scalar opcodes ====
  *
+ * The two-source scalar operations.
+ *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
- * (the GFX10 numbers of the tables SOP2, lines 446-482; SOPK, lines
- * 532-554; SOP1, lines 567-622; SOPC, lines 677-684; SOPP, lines
- * 726-761).
+ * (the GFX10 numbers of the table SOP2, lines 446-482).
  */
 #define AMDRDNA_GFX10_S_ADD_U32		0x00U
 #define AMDRDNA_GFX10_S_SUB_U32		0x01U
@@ -143,18 +143,42 @@
 #define AMDRDNA_GFX10_S_LSHR_B32	0x20U
 #define AMDRDNA_GFX10_S_MUL_I32		0x26U
 
+/*
+ * The scalar operations with a 16-bit constant.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table SOPK, lines 532-554).
+ */
 #define AMDRDNA_GFX10_S_MOVK_I32	0x00U
 #define AMDRDNA_GFX10_S_WAITCNT_VSCNT	0x17U
 
+/*
+ * The one-source scalar operations.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table SOP1, lines 567-622).
+ */
 #define AMDRDNA_GFX10_S_MOV_B32		0x03U
 #define AMDRDNA_GFX10_S_NOT_B32		0x07U
 #define AMDRDNA_GFX10_S_WQM_B32		0x09U
 #define AMDRDNA_GFX10_S_AND_SAVEEXEC_B32 0x3cU
 
+/*
+ * The scalar comparisons.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table SOPC, lines 677-684).
+ */
 #define AMDRDNA_GFX10_S_CMP_EQ_U32	0x06U
 #define AMDRDNA_GFX10_S_CMP_LG_U32	0x07U
 #define AMDRDNA_GFX10_S_BITCMP1_B32	0x0dU
 
+/*
+ * The program control operations: the branches, the waits, the end.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table SOPP, lines 726-761).
+ */
 #define AMDRDNA_GFX10_S_NOP		0x00U
 #define AMDRDNA_GFX10_S_ENDPGM		0x01U
 #define AMDRDNA_GFX10_S_BRANCH		0x02U
@@ -184,11 +208,10 @@
 /*
  * ==== Vector ALU opcodes ====
  *
+ * The two-source vector operations.
+ *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
- * (the GFX10 numbers of the tables VOP2, lines 896-966; VOP1, lines
- * 984-1035; VOP3, lines 1260-1370; and the comparisons the loop after
- * VOPC_CLASS builds, lines 1104-1162: the condition 0 .. 15 plus 0x00
- * for f32, 0x80 for i32 and 0xc0 for u32).
+ * (the GFX10 numbers of the table VOP2, lines 896-966).
  * Checked against llvm-mc 19 (-mcpu=gfx1010).
  */
 #define AMDRDNA_GFX10_V_CNDMASK_B32	0x01U
@@ -210,6 +233,13 @@
 #define AMDRDNA_GFX10_V_ADD_NC_U32	0x25U
 #define AMDRDNA_GFX10_V_SUB_NC_U32	0x26U
 
+/*
+ * The one-source vector operations.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table VOP1, lines 984-1035).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
+ */
 #define AMDRDNA_GFX10_V_NOP		0x00U
 #define AMDRDNA_GFX10_V_MOV_B32		0x01U
 #define AMDRDNA_GFX10_V_READFIRSTLANE_B32 0x02U
@@ -232,6 +262,15 @@
 #define AMDRDNA_GFX10_V_COS_F32		0x36U
 #define AMDRDNA_GFX10_V_NOT_B32		0x37U
 
+/*
+ * The vector comparisons: the condition 0 .. 15 plus 0x00 for f32, 0x80
+ * for i32 and 0xc0 for u32.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the loop after VOPC_CLASS that builds the comparisons, lines
+ * 1104-1162, and the gfx10 column of F32, I32 and U32).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
+ */
 #define AMDRDNA_GFX10_V_CMP_LT_F32	0x01U
 #define AMDRDNA_GFX10_V_CMP_EQ_F32	0x02U
 #define AMDRDNA_GFX10_V_CMP_GE_F32	0x06U
@@ -245,6 +284,13 @@
 #define AMDRDNA_GFX10_V_CMP_NE_U32	0xc5U
 #define AMDRDNA_GFX10_V_CMP_GE_U32	0xc6U
 
+/*
+ * The operations that only have the wide form.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
+ * (the GFX10 numbers of the table VOP3, lines 1260-1370).
+ * Checked against llvm-mc 19 (-mcpu=gfx1010).
+ */
 #define AMDRDNA_GFX10_V_MAD_U32_U24	0x143U
 #define AMDRDNA_GFX10_V_FMA_F32		0x14bU
 #define AMDRDNA_GFX10_V_MUL_LO_U32	0x169U

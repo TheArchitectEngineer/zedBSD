@@ -483,8 +483,8 @@ describe_cases(void)
 	/* A short selection reads the lane mask, both sources and VCC_LO, and writes its VGPR. */
 	inst = make(AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_CNDMASK_B32, V(1), V(2), V(3), AMDRDNA_GFX10_VCC_LO);
 	amdrdna_gfx10_describe(&inst, &access);
-	if (access.read_count != 4U || access.write_count != 1U || access.writes[0].first != V(1)) {
-		printf("DESCRIBE\tv_cndmask_b32_e32: %u reads, %u writes\n", access.read_count, access.write_count);
+	if (access.reads_used != 4U || access.writes_used != 1U || access.writes[0].first != V(1)) {
+		printf("DESCRIBE\tv_cndmask_b32_e32: %u reads, %u writes\n", access.reads_used, access.writes_used);
 		failed = 1;
 	}
 
@@ -492,9 +492,9 @@ describe_cases(void)
 	inst = make(AMDRDNA_GFX10_KIND_BUFFER, AMDRDNA_GFX10_BUFFER_LOAD_DWORD, V(1), V(2), S(4), AMDRDNA_GFX10_ZERO);
 	inst.count = 1U;
 	amdrdna_gfx10_describe(&inst, &access);
-	if (access.read_count != 3U || access.reads[2].count != 4U ||
+	if (access.reads_used != 3U || access.reads[2].count != 4U ||
 	    access.counter != AMDRDNA_GFX10_COUNTER_VECTOR_LOAD) {
-		printf("DESCRIBE\tbuffer_load_dword: %u reads, counter %d\n", access.read_count, (int)access.counter);
+		printf("DESCRIBE\tbuffer_load_dword: %u reads, counter %d\n", access.reads_used, (int)access.counter);
 		failed = 1;
 	}
 
@@ -502,8 +502,8 @@ describe_cases(void)
 	inst = make(AMDRDNA_GFX10_KIND_BUFFER, AMDRDNA_GFX10_BUFFER_STORE_DWORD, 0U, V(2), S(4), AMDRDNA_GFX10_ZERO);
 	inst.src[3] = (uint16_t)V(1);
 	amdrdna_gfx10_describe(&inst, &access);
-	if (access.write_count != 0U || access.counter != AMDRDNA_GFX10_COUNTER_VECTOR_STORE) {
-		printf("DESCRIBE\tbuffer_store_dword: %u writes, counter %d\n", access.write_count, (int)access.counter);
+	if (access.writes_used != 0U || access.counter != AMDRDNA_GFX10_COUNTER_VECTOR_STORE) {
+		printf("DESCRIBE\tbuffer_store_dword: %u writes, counter %d\n", access.writes_used, (int)access.counter);
 		failed = 1;
 	}
 
@@ -512,16 +512,16 @@ describe_cases(void)
 	inst.mask = 0xfU;
 	inst.count = 2U;
 	amdrdna_gfx10_describe(&inst, &access);
-	if (access.write_count != 1U || access.writes[0].count != 4U) {
-		printf("DESCRIBE\timage_sample: %u writes\n", access.write_count);
+	if (access.writes_used != 1U || access.writes[0].count != 4U) {
+		printf("DESCRIBE\timage_sample: %u writes\n", access.writes_used);
 		failed = 1;
 	}
 
 	/* Narrowing the lanes reads and writes the lane mask. */
 	inst = make(AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_AND_SAVEEXEC_B32, S(10), AMDRDNA_GFX10_VCC_LO, 0U, 0U);
 	amdrdna_gfx10_describe(&inst, &access);
-	if (access.read_count != 2U || access.write_count != 2U) {
-		printf("DESCRIBE\ts_and_saveexec_b32: %u reads, %u writes\n", access.read_count, access.write_count);
+	if (access.reads_used != 2U || access.writes_used != 2U) {
+		printf("DESCRIBE\ts_and_saveexec_b32: %u reads, %u writes\n", access.reads_used, access.writes_used);
 		failed = 1;
 	}
 
