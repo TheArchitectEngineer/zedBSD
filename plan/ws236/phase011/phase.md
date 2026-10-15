@@ -443,3 +443,5 @@ Phase disposition: normal
 - 2026-10-16 ユーザー（T2 の T1-681 の再生の最中、OLED を目視）:「Piは少なくとも30fps、60fpsに近いフレームレートで動画が再生されました」（b4452d35d の kernel、GPU の picture の道の見込み。数は T1-681 の結果で確かめる）。
 
 - 2026-10-16 ユーザー:「1080pや60fpsはもう計測しなくていいです」→ 以後の T2 の依頼は 720p30 だけ（1080p・60 fps の run は外す）。
+
+- 2026-10-16 ユーザー:「はい、revert します」→ A1（7000f9bfd、Pi 4 の全画面の窓を合成の代わりに vkCmdCopyImage で出す）の code を Q1 が逆に当てて戻した（compose.c・compose.h・import.c・shell.c・scanout.c・kwl.h、backend の gpu-buffer-zedbsd.c・gpu-dmabuf.c・keiland-backend-gpu.h。計画の記録は残す）。直し 7（scanout.c の kl_backend_scanout_possible、出力を閉じない）は残した。rpi4・amd64 の bin/wayland は warning 0、keiland-os-boundary は既存の libbrowser の /dev/urandom の FAIL だけ（変更前と同じ）。A2 は実装していない（kernel の v3d perf の worker= の診断 0c579ead3 だけ残る）。
