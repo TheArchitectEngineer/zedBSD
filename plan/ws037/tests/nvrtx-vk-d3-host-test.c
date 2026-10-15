@@ -1208,6 +1208,7 @@ test_submit(const char *directory)
 	VkRect2D rect;
 	VkImageCopy copy;
 	VkBufferImageCopy upload;
+	VkBufferImageCopy skewed;
 	VkImageSubresourceRange whole;
 	VkImageView attachments[1];
 	VkDescriptorSetLayout layouts[1];
@@ -1541,6 +1542,18 @@ test_submit(const char *directory)
 	vulkan_write_u32(&client, 1);
 	vulkan_write_u64(&client, 1);
 	vulkan_encode_VkBufferImageCopy(&client, &upload);
+	/*
+	 * Two regions: 4x3 pixels from offset 0x44 with rows of 64 bytes (drawn:
+	 * the texture from 0x40, one pixel in), then 3x2 pixels from offset 4
+	 * with rows of 12 bytes (copied by the CPU).
+	 */
+	skewed = upload;
+	skewed.bufferOffset = 0x44;
+	skewed.bufferRowLength = 16;
+	skewed.imageOffset.x = 10;
+	skewed.imageOffset.y = 50;
+	skewed.imageExtent.width = 4;
+	skewed.imageExtent.height = 3;
 	upload.bufferOffset = 4;
 	upload.bufferRowLength = 3;
 	upload.imageOffset.x = 5;
@@ -1551,8 +1564,9 @@ test_submit(const char *directory)
 	vulkan_write_u64(&client, 0x505);
 	vulkan_write_u64(&client, 0x502);
 	vulkan_write_u32(&client, VK_IMAGE_LAYOUT_GENERAL);
-	vulkan_write_u32(&client, 1);
-	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, 2);
+	vulkan_write_u64(&client, 2);
+	vulkan_encode_VkBufferImageCopy(&client, &skewed);
 	vulkan_encode_VkBufferImageCopy(&client, &upload);
 	memset(&whole, 0, sizeof(whole));
 	whole.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1628,8 +1642,8 @@ test_submit(const char *directory)
 	check(methods_with(0x19d0, 0x3c, 0) == 2, "submit: two clears");
 	check(methods_with(0x0d88, 0x3f000000U, 0) == 1, "submit: the pass's clear colour");
 
-	/* Three draws of six vertices: the quad, the image copy and the buffer upload. */
-	check(methods_with(0x1618, 0, 1) == 3 && methods_with(0x0d78, 6, 0) == 3, "submit: three draws of six vertices");
+	/* Four draws of six vertices: the quad, the image copy and the two buffer uploads drawn. */
+	check(methods_with(0x1618, 0, 1) == 4 && methods_with(0x0d78, 6, 0) == 4, "submit: four draws of six vertices");
 	check(methods_with(0x2014 + 0x40, (uint32_t)(pipeline->vertex.va >> 32), 0) >= 1 &&
 	    methods_with(0x2018 + 0x40, (uint32_t)pipeline->vertex.va, 0) >= 1, "submit: the pipeline's vertex program");
 	check(methods_with(0x1360, 1, 0) == 1 && methods_with(0x1e0c, 0x4303, 0) >= 1, "submit: the quad blends one, one minus source alpha");
@@ -1659,6 +1673,18 @@ test_submit(const char *directory)
 	check(word == 0U, "submit: the draw's handle names header 0 and sampler 0");
 	memcpy(&word, constants + 0, 4);
 	check(word == 0xbf800000U, "submit: the draw's push constants");
+
+	/* The upload off the 256-byte boundary: header 3 from the buffer's 0x40, rows of 64; its quad samples from one pixel in. */
+	memcpy(&word, tic + 3 * 32 + 4, 4);
+	check(word == 0x30008040U, "submit: the skewed upload's texture starts on the 32-byte boundary before it");
+	memcpy(&word, tic + 3 * 32 + 12, 4);
+	check((word & 0xffffU) == (64U >> 5), "submit: the skewed upload's texture rows of 64 bytes");
+	memcpy(&word, constants + 3 * 0x500 + 0x10, 4);
+	check(word == 0x3f800000U, "submit: the skewed upload samples from u 1");
+	memcpy(&word, constants + 3 * 0x500 + 0x18, 4);
+	check(word == 0x40a00000U, "submit: the skewed upload samples to u 5");
+	check(methods_with(0x0e04, (10U | (14U << 16)), 0) == 1 && methods_with(0x0e08, (50U | (53U << 16)), 0) == 1,
+	    "submit: the skewed upload's scissor is its region");
 
 	(void)method_last;
 	check(nvrtx_vk_session_close(&session) == 0, "submit: session closed");

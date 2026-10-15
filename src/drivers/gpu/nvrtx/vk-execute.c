@@ -80,9 +80,18 @@
 #define EXECUTE_FLOAT_ONE		0x3f800000U
 #define EXECUTE_INTERNAL_PUSH_BYTES	0x20U
 
-/* A buffer read as a texture or written as a target: its start and its row pitch on these boundaries. */
+/* A buffer written as a target: its start and its row pitch on these boundaries. */
 #define EXECUTE_BUFFER_START_ALIGN	256U
 #define EXECUTE_BUFFER_PITCH_ALIGN	128U
+
+/*
+ * A buffer read as a texture: the texture header holds the address from
+ * bit 5 and the pitch from bit 5, so the texture starts on the 32-byte
+ * boundary at or before the region and the region begins that many pixels
+ * into its rows (ws037-p007 9, F3).
+ */
+#define EXECUTE_TEXTURE_START_ALIGN	32U
+#define EXECUTE_TEXTURE_PITCH_ALIGN	32U
 
 /*
  * The executor's own programs (a textured quad placed by push constants,
@@ -1073,7 +1082,9 @@ execute_buffer_image(
 	uint32_t index;
 	uint32_t row;
 	uint32_t pitch;
+	uint32_t skew;
 	bool inside;
+	bool drawn;
 	int error;
 
 	/* The buffer and the image, with storage. */
@@ -1111,8 +1122,21 @@ execute_buffer_image(
 			return EINVAL;
 		start = buffer_va + region->bufferOffset;
 
-		/* A buffer region off the boundaries is copied by the CPU, after the work before it. */
-		if ((start % EXECUTE_BUFFER_START_ALIGN) != 0U || (pitch % EXECUTE_BUFFER_PITCH_ALIGN) != 0U) {
+		/*
+		 * The GPU draws the region when the buffer can be its texture (whole
+		 * pixels, rows on 32 bytes) or its target (start on 256 bytes, rows
+		 * on 128).
+		 */
+		drawn = false;
+		if (to_image) {
+			if ((start % NVRTX_VK_PIXEL_BYTES) == 0U && (pitch % EXECUTE_TEXTURE_PITCH_ALIGN) == 0U)
+				drawn = true;
+		} else if ((start % EXECUTE_BUFFER_START_ALIGN) == 0U && (pitch % EXECUTE_BUFFER_PITCH_ALIGN) == 0U) {
+			drawn = true;
+		}
+
+		/* Any other region is copied by the CPU, after the work before it. */
+		if (!drawn) {
 			error = execute_flush(session, execute);
 			if (error == 0)
 				error = execute_cpu_copy(buffer, image, region, to_image);
@@ -1129,15 +1153,17 @@ execute_buffer_image(
 		kern_memset(&quad, 0, sizeof(quad));
 		quad.filter = VK_FILTER_NEAREST;
 		if (to_image) {
+			/* The texture from the 32-byte boundary at or before the region; the region skew pixels into its rows. */
+			skew = (uint32_t)(start % EXECUTE_TEXTURE_START_ALIGN) / NVRTX_VK_PIXEL_BYTES;
 			error = execute_image_target(image, image->format, &quad.target);
 			quad.x0 = region->imageOffset.x;
 			quad.y0 = region->imageOffset.y;
-			quad.source = start;
-			quad.source_width = region->imageExtent.width;
+			quad.source = start - (uint64_t)skew * NVRTX_VK_PIXEL_BYTES;
+			quad.source_width = skew + region->imageExtent.width;
 			quad.source_height = region->imageExtent.height;
 			quad.source_pitch = pitch;
 			quad.source_format = image->format;
-			quad.u0 = 0;
+			quad.u0 = (int32_t)skew;
 			quad.v0 = 0;
 		} else {
 			quad.target.address = start;
