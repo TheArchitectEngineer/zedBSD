@@ -64,7 +64,7 @@ struct i915_skl_output {
 	/* Its EDID (none: zero bytes) and the mode chosen from it. */
 	uint8_t edid[I915_SKL_OUTPUT_EDID_BYTES];
 	unsigned edid_bytes;
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 
 	/* A DP sink's receiver capabilities and link limits. */
 	struct i915_skl_dp_port dp;

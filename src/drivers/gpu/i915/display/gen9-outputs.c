@@ -28,7 +28,6 @@
 
 #include "gen9-outputs.h"
 #include "gen9-ddc.h"
-#include "takeover.h"
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 
@@ -77,6 +76,7 @@ drv_i915_skl_wm_latency(
 	uint16_t latency[8])
 {
 	unsigned level;
+	unsigned levels;
 	uint32_t word;
 
 	/* Four levels in each word, level 0 lowest. */
@@ -87,8 +87,40 @@ drv_i915_skl_wm_latency(
 		latency[level] = (uint16_t)((word >> ((level % 4U) * I915_SKL_LATENCY_BITS)) & I915_SKL_LATENCY_MASK);
 	}
 
-	/* The levels after a zero off, the read latency when level 0 is 0, and level 0's 1 us for unknown DIMMs. */
-	drv_i915_adjust_wm_latency(latency, 8, I915_SKL_READ_LATENCY_US, 1);
+	/*
+	 * A level PCODE answered with 0 us cannot be used, and neither can any
+	 * level above it: the levels from there up are cleared and no longer
+	 * count.
+	 *
+	 * Procedure referenced: Linux v6.8.12
+	 * drivers/gpu/drm/i915/display/skl_watermark.c (adjust_wm_latency).
+	 */
+	levels = 8U;
+	for (level = 1U; level < 8U; level++) {
+		/* A level with a latency is usable; the search goes on above it. */
+		if (latency[level] != 0U)
+			continue;
+
+		/* The first unusable level ends the usable ones. */
+		levels = level;
+		break;
+	}
+
+	/* Clears every level from the first unusable one up. */
+	for (level = levels; level < 8U; level++)
+		latency[level] = 0U;
+
+	/*
+	 * When level 0 came back as 0 us, PCODE left the memory read latency
+	 * out of every usable level, so it is added to each of them.
+	 */
+	if (latency[0] == 0U) {
+		for (level = 0U; level < levels; level++)
+			latency[level] = (uint16_t)(latency[level] + I915_SKL_READ_LATENCY_US);
+	}
+
+	/* Level 0 takes 1 us more, because the DIMMs' size is not known (it may be a 16 GB one). */
+	latency[0] = (uint16_t)(latency[0] + 1U);
 
 	/* IPC lengthens every level that is used. */
 	if (!ipc)

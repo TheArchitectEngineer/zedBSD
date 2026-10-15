@@ -19,7 +19,7 @@
 #ifndef DRIVERS_GPU_I915_DISPLAY_GEN9_MODE_H
 #define DRIVERS_GPU_I915_DISPLAY_GEN9_MODE_H
 
-#include "internal.h"
+#include "display-internal.h"
 
 #include <stdint.h>
 
@@ -131,7 +131,7 @@ struct i915_skl_pipe_wm {
 uint32_t drv_i915_skl_cdclk_khz(uint32_t lcpll1_ctl, uint32_t dpll_ctrl1, uint32_t cdclk_ctl);
 
 /* Picks the mode an output shows from its EDID (NULL for none): 0, or EINVAL when nothing fits. */
-int drv_i915_skl_pick_mode(const uint8_t *edid, unsigned edid_bytes, uint32_t max_pixel_khz, struct i915_lcd_mode *mode);
+int drv_i915_skl_pick_mode(const uint8_t *edid, unsigned edid_bytes, uint32_t max_pixel_khz, struct i915_display_mode *mode);
 
 /*
  * ==== The DP link ====

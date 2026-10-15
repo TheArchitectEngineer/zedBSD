@@ -261,8 +261,8 @@ static uint32_t i915_skl_fixed_div(uint32_t value, uint32_t divisor);
 static uint32_t i915_skl_fixed_mul(uint32_t value, uint32_t fixed);
 static uint32_t i915_skl_fixed_round_up(uint32_t fixed);
 static void i915_skl_plane_wm(uint32_t width, uint32_t htotal, uint32_t pixel_khz, const uint16_t latency_us[8], struct i915_skl_wm_level levels[8]);
-static int i915_skl_mode_fits(const struct i915_lcd_mode *mode, uint32_t max_pixel_khz);
-static void i915_skl_safe_mode(struct i915_lcd_mode *mode);
+static int i915_skl_mode_fits(const struct i915_display_mode *mode, uint32_t max_pixel_khz);
+static void i915_skl_safe_mode(struct i915_display_mode *mode);
 static unsigned i915_skl_id_in(uint16_t device_id, const uint16_t *ids, unsigned count);
 static uint32_t i915_skl_reduce(uint32_t *m, uint32_t *n);
 static void i915_skl_m_n(uint32_t m, uint32_t n, uint32_t constant_n, uint32_t *out_m, uint32_t *out_n);
@@ -325,9 +325,9 @@ drv_i915_skl_pick_mode(
 	const uint8_t *edid,
 	unsigned edid_bytes,
 	uint32_t max_pixel_khz,
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
-	struct i915_lcd_mode candidate;
+	struct i915_display_mode candidate;
 	unsigned index;
 	unsigned offset;
 	unsigned dtd_start;
@@ -1284,7 +1284,7 @@ i915_skl_plane_wm(
 /* Reports nonzero when a mode is progressive, at most 4096x4096 and within the pixel clock. */
 static int
 i915_skl_mode_fits(
-	const struct i915_lcd_mode *mode,
+	const struct i915_display_mode *mode,
 	uint32_t max_pixel_khz)
 {
 	/* A clock above the pipe's limit or no clock at all. */
@@ -1306,7 +1306,7 @@ i915_skl_mode_fits(
 /* Fills the safe mode: VESA DMT 1024x768 at 60 Hz, negative syncs. */
 static void
 i915_skl_safe_mode(
-	struct i915_lcd_mode *mode)
+	struct i915_display_mode *mode)
 {
 	kern_memset(mode, 0, sizeof(*mode));
 

@@ -64,7 +64,7 @@
 
 static uint32_t i915_skl_dpll_ctl(unsigned id);
 static void i915_skl_ddi_clock(const struct i915_skl_io *io, unsigned port, unsigned dpll, int on);
-static void i915_skl_transcoder_timings(const struct i915_skl_io *io, unsigned transcoder, const struct i915_lcd_mode *mode);
+static void i915_skl_transcoder_timings(const struct i915_skl_io *io, unsigned transcoder, const struct i915_display_mode *mode);
 static void i915_skl_transcoder_m_n(const struct i915_skl_io *io, unsigned transcoder, const struct i915_skl_link *link);
 static uint32_t i915_skl_ddi_function(const struct i915_skl_output_config *config);
 static void i915_skl_hdmi_buffer_on(const struct i915_skl_io *io, const struct i915_skl_output_config *config);
@@ -548,7 +548,7 @@ static void
 i915_skl_transcoder_timings(
 	const struct i915_skl_io *io,
 	unsigned transcoder,
-	const struct i915_lcd_mode *mode)
+	const struct i915_display_mode *mode)
 {
 	uint32_t offset;
 
