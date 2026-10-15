@@ -38,7 +38,10 @@
  * uses them is zedBSD's own.  Values are unchanged.  Sources (SHA-256):
  *   src/nouveau/compiler/nak/sm70_encode.rs (© 2022 Collabora)
  *     111b841c9661f46729b52072ef070b72fc1bbbe5b304651c43aaf40e297b6695
- *   src/nouveau/compiler/nak/sm70.rs (register files, the largest delay)
+ *   src/nouveau/compiler/nak/sm70.rs (register files, the largest delay, which latency table a shader model uses)
+ *     5048695512c9ace320d9a38b0b6455e11d3fadc0f8ce24a80d1eb4d5f712de27
+ *   src/nouveau/compiler/nak/ir.rs (which shader models are Turing, Ampere and Ada)
+ *     bb34c0499527f92e312d01ce5e2adc2c2774772ab502b9bd59f7696c9866b09e
  *   src/nouveau/compiler/nak/calc_instr_deps.rs (the serial dependences)
  *     8c92e065aa043dcb259cb0bc0ef7436ec692b9b5d10321969fd5adc3d6178695
  *   src/nouveau/compiler/nak/sm75_instr_latencies.rs (the latencies)
@@ -93,6 +96,20 @@
 #define NVRTX_SM75_IMAP_CONSTANT	1U
 #define NVRTX_SM75_IMAP_PERSPECTIVE	2U
 #define NVRTX_SM75_IMAP_SCREEN_LINEAR	3U
+
+/*
+ * ==== The shader models (ws242-p002) ====
+ *
+ * The compiler targets Turing (SM75: RTX 20, GTX 16), Ampere (SM86: RTX 30)
+ * and Ada (SM89: RTX 40).  The three share this file's encoding but for
+ * the memory order of a global access (NVRTX_SM80_MEM_*), and Ampere and
+ * Ada share one latency table (NAK's sm80_instr_latencies.rs) that differs
+ * from Turing's (sm75-schedule.c).
+ */
+#define NVRTX_SM_TURING			75U
+#define NVRTX_SM_AMPERE			86U
+#define NVRTX_SM_ADA			89U
+#define NVRTX_SM_AMPERE_FIRST		80U
 
 /* An instruction is four 32-bit words, the first holding bit 0. */
 #define NVRTX_SM75_INSTRUCTION_WORDS	4U
@@ -324,6 +341,11 @@
 #define NVRTX_SM75_MEM_EVICT_NORMAL	1U
 #define NVRTX_SM75_MEM_OFFSET_LOW	40U
 #define NVRTX_SM75_MEM_OFFSET_BITS	24U
+
+/* From SM80 on, the scope and the order are one field (77..80): 7 is strong at the GPU's scope. */
+#define NVRTX_SM80_MEM_ORDER_LOW	77U
+#define NVRTX_SM80_MEM_ORDER_BITS	4U
+#define NVRTX_SM80_MEM_STRONG_GPU	0x7U
 
 /* LDC: the mode (78..79, 0 indexed) and the data register a store reads (32..39). */
 #define NVRTX_SM75_LDC_MODE_LOW		78U

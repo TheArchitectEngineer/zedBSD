@@ -33,8 +33,9 @@
  * What one invocation of the reference left: a vertex program's attribute
  * words (by address / 4, with a mark per word written), a fragment
  * program's colours (with a mark per component written) and its discard;
- * undefined when the program met something the IR leaves undefined (a
- * division by zero), failed when it could not be run.
+ * undefined when the program met something the IR leaves undefined (an
+ * integer or float division by zero, inversesqrt or log2 of x <= 0, sqrt
+ * of x < 0), failed when it could not be run.
  */
 struct sm75_reference_result {
 	uint32_t attr_out[256];

@@ -668,6 +668,29 @@ nvrtx_sm75_stg(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEM_OFFSET_LOW, NVRTX_SM75_MEM_OFFSET_BITS, 0U);
 }
 
+/*
+ * Sets a global access's memory order for a shader model.
+ *
+ * Before SM80 the scope (77..78, the GPU's) and the order (79..80, strong)
+ * are two fields; from SM80 on they are one (77..80), in which strong at
+ * the GPU's scope is 7 (NAK's set_mem_order).
+ */
+void
+nvrtx_sm75_memory_order(
+	struct nvrtx_sm75_word *word,
+	uint32_t sm)
+{
+	/* Ampere and Ada: the one field. */
+	if (sm >= NVRTX_SM_AMPERE_FIRST) {
+		nvrtx_sm75_set(word, NVRTX_SM80_MEM_ORDER_LOW, NVRTX_SM80_MEM_ORDER_BITS, NVRTX_SM80_MEM_STRONG_GPU);
+		return;
+	}
+
+	/* Turing: the scope and the order. */
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_SCOPE_LOW, 2U, NVRTX_SM75_MEM_SCOPE_GPU);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_ORDER_LOW, 2U, NVRTX_SM75_MEM_ORDER_STRONG);
+}
+
 /* EXIT, unconditional. */
 void
 nvrtx_sm75_exit(

@@ -21,7 +21,13 @@
  * vertex program's attribute words, a fragment program's colours and its
  * discard) must agree.  A disagreement fails the run, strict or not.
  *
- *   nvrtx-sm75-desktop-test [--strict] FILE.spv ...
+ * Every module is compiled for each shader model the compiler targets
+ * (Turing 75, Ampere 86, Ada 89; ws242-p002), or for the one --sm names,
+ * and the interpreter checks the dependences by that model's latencies.
+ * For Turing the program of nvrtx_sm75_compile_stage() (no shader model)
+ * must be the same, word for word, as the one for 75.
+ *
+ *   nvrtx-sm75-desktop-test [--strict] [--sm 75|86|89] FILE.spv ...
  *
  * Nothing here is evidence about the GPU.
  */
@@ -55,11 +61,15 @@
 /* The first texture handle the runs write (one more for each image). */
 #define TEST_HANDLE_BASE		100U
 
+/* The shader models compiled for. */
+static const uint32_t test_models[] = { NVRTX_SM_TURING, NVRTX_SM_AMPERE, NVRTX_SM_ADA };
+
 /* Programs whose two interpreters disagreed, and the state of the made-up inputs. */
 static int test_mismatches;
 static uint32_t test_random = 0x2545f491U;
 
-static int survey(const char *path, int *compiled);
+static int survey(const char *path, uint32_t sm, int *compiled);
+static int same_program(const struct nvrtx_sm75_binary *a, const struct nvrtx_sm75_binary *b);
 static int read_module(const char *path, uint32_t *words, size_t *count);
 static int entry_stage(const uint32_t *words, size_t count, enum drv_gpu_shader_stage *stage);
 static uint32_t refused_op(const uint32_t *words, size_t count, enum drv_gpu_shader_stage stage, uint32_t instruction);
@@ -97,6 +107,8 @@ main(
 	int argc,
 	char **argv)
 {
+	uint32_t only;
+	uint32_t model;
 	int strict;
 	int first;
 	int index;
@@ -105,31 +117,43 @@ main(
 	int refused_count;
 	int error;
 
-	/* --strict makes a refusal a failure. */
+	/* --strict makes a refusal a failure; --sm compiles for one shader model only. */
 	strict = 0;
+	only = 0U;
 	first = 1;
-	if (argc > 1 && strcmp(argv[1], "--strict") == 0) {
-		strict = 1;
-		first = 2;
-	}
-
-	/* Each module in order. */
-	compiled_count = 0;
-	refused_count = 0;
-	for (index = first; index < argc; index++) {
-		error = survey(argv[index], &compiled);
-		if (error != 0)
-			return 2;
-
-		/* Counts the outcome. */
-		if (compiled != 0) {
-			compiled_count++;
+	while (first < argc) {
+		if (strcmp(argv[first], "--strict") == 0) {
+			strict = 1;
+			first++;
+		} else if (strcmp(argv[first], "--sm") == 0 && first + 1 < argc) {
+			only = (uint32_t)strtoul(argv[first + 1], NULL, 10);
+			first += 2;
 		} else {
-			refused_count++;
+			break;
 		}
 	}
 
-	printf("nvrtx_sm75_desktop_test: %d compiled, %d refused, %d disagreed with the IR\n", compiled_count, refused_count, test_mismatches);
+	/* Each shader model, each module in order. */
+	compiled_count = 0;
+	refused_count = 0;
+	for (model = 0U; model < sizeof(test_models) / sizeof(test_models[0]); model++) {
+		if (only != 0U && test_models[model] != only)
+			continue;
+		for (index = first; index < argc; index++) {
+			error = survey(argv[index], test_models[model], &compiled);
+			if (error != 0)
+				return 2;
+
+			/* Counts the outcome. */
+			if (compiled != 0) {
+				compiled_count++;
+			} else {
+				refused_count++;
+			}
+		}
+	}
+
+	printf("nvrtx_sm75_desktop_test: %d compiled, %d refused, %d disagreed with the IR (modules times shader models)\n", compiled_count, refused_count, test_mismatches);
 
 	/* A disagreement always fails. */
 	if (test_mismatches != 0)
@@ -143,14 +167,16 @@ main(
 	return 0;
 }
 
-/* Compiles one module and prints its outcome; nonzero when the file cannot be read. */
+/* Compiles one module for a shader model and prints its outcome; nonzero when the file cannot be read. */
 static int
 survey(
 	const char *path,
+	uint32_t sm,
 	int *compiled)
 {
 	static uint32_t words[TEST_MAX_WORDS];
 	struct nvrtx_sm75_binary *binary;
+	struct nvrtx_sm75_binary *turing;
 	struct nvrtx_sm75_diagnostic diagnostic;
 	enum drv_gpu_shader_stage stage;
 	const char *name;
@@ -184,9 +210,21 @@ survey(
 
 	/* The compilation. */
 	binary = NULL;
-	error = nvrtx_sm75_compile_stage(words, count, stage, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_stage_sm(words, count, stage, sm, &binary, &diagnostic);
 	if (error == 0) {
-		printf("OK      %-40s %u instructions, %u registers\n", name, binary->code_words / 4U, binary->gpr_count);
+		printf("OK sm%u  %-40s %u instructions, %u registers\n", sm, name, binary->code_words / 4U, binary->gpr_count);
+
+		/* Turing's program is the one the functions without a shader model make. */
+		if (sm == NVRTX_SM_TURING) {
+			turing = NULL;
+			error = nvrtx_sm75_compile_stage(words, count, stage, &turing, &diagnostic);
+			if (error != 0 || same_program(binary, turing) == 0) {
+				printf("  the program without a shader model is not the one for 75\n");
+				test_mismatches++;
+			}
+			nvrtx_sm75_binary_free(turing);
+		}
+
 		compare(name, words, count, stage, binary);
 		nvrtx_sm75_binary_free(binary);
 		*compiled = 1;
@@ -197,10 +235,34 @@ survey(
 	op = refused_op(words, count, stage, diagnostic.instruction);
 	if (diagnostic.reason == NULL)
 		diagnostic.reason = "(no reason)";
-	printf("REFUSED %-40s error %d at %u (IR op %u): %s\n", name, error, diagnostic.instruction, op, diagnostic.reason);
+	printf("REFUSED sm%u %-40s error %d at %u (IR op %u): %s\n", sm, name, error, diagnostic.instruction, op, diagnostic.reason);
 
 	/* Succeeded in reporting the refusal. */
 	return 0;
+}
+
+/* Reports nonzero when two programs are the same: code, registers, header and bindings. */
+static int
+same_program(
+	const struct nvrtx_sm75_binary *a,
+	const struct nvrtx_sm75_binary *b)
+{
+	/* The code. */
+	if (a->code_words != b->code_words)
+		return 0;
+	if (memcmp(a->code, b->code, (size_t)a->code_words * 4U) != 0)
+		return 0;
+
+	/* What the dispatch reads besides it. */
+	if (a->gpr_count != b->gpr_count || a->shared_bytes != b->shared_bytes || a->barrier_count != b->barrier_count)
+		return 0;
+	if (a->push_bytes != b->push_bytes || a->graphics != b->graphics)
+		return 0;
+	if (memcmp(a->sph, b->sph, sizeof(a->sph)) != 0)
+		return 0;
+	if (a->storage_count != b->storage_count || a->uniform_count != b->uniform_count || a->texture_count != b->texture_count)
+		return 0;
+	return 1;
 }
 
 /* Reads a SPIR-V file into words; nonzero when it cannot be read or is not SPIR-V. */

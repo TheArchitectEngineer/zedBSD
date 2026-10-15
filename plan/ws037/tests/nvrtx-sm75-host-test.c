@@ -30,6 +30,11 @@
  *      decoded and read at the positions of NVIDIA's clc597.h, the texture
  *      header and sampler fields at the positions of clc597tex.h, and the
  *      IR of the draw's programs compiled and run.
+ *   7. Shader models (ws242-p002): the parts that compile and run programs
+ *      (3, 5's and 6's programs) are run for Turing (SM75), Ampere (SM86)
+ *      and Ada (SM89), the interpreter checking each model's latencies and
+ *      memory order field; a global access's memory order field is checked
+ *      for each model, and a model the compiler does not target is refused.
  *
  *   nvrtx-sm75-host-test DIR    DIR holds the .spv of const, add, ids, float, integer, loop, division, shared and atomic
  *
@@ -53,6 +58,9 @@
 #include <string.h>
 
 
+/* The shader model the parts that compile programs compile for (main() runs them for each). */
+static uint32_t test_sm = NVRTX_SM_TURING;
+
 /* Checks counted and failed. */
 static unsigned test_checks;
 static unsigned test_failures;
@@ -60,6 +68,7 @@ static unsigned test_failures;
 static void check(int passed, const char *what);
 static void check_known_words(void);
 static void check_fields(void);
+static void check_models(const char *directory);
 static void check_graphics_fields(void);
 static void check_const(const char *directory);
 static void check_add(const char *directory);
@@ -115,34 +124,44 @@ main(
 	int argc,
 	char **argv)
 {
+	static const uint32_t models[] = { NVRTX_SM_TURING, NVRTX_SM_AMPERE, NVRTX_SM_ADA };
+	uint32_t index;
+
 	/* The directory of the modules. */
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s DIR\n", argv[0]);
 		return 2;
 	}
 
-	/* Each part. */
+	/* The parts that do not compile, once. */
 	check_known_words();
 	check_fields();
 	check_graphics_fields();
-	check_const(argv[1]);
-	check_add(argv[1]);
-	check_ids(argv[1]);
-	check_float(argv[1]);
-	check_integer(argv[1]);
+	check_models(argv[1]);
 	check_refusals(argv[1]);
-	check_loop(argv[1]);
-	check_division(argv[1]);
-	check_shared(argv[1]);
-	check_atomic(argv[1]);
-	check_quad(argv[1]);
 	check_qmd();
 	check_launch_push();
-	check_first_program();
 	check_system_pages();
 	check_draw_push();
 	check_draw_descriptors();
-	check_draw_programs();
+
+	/* The parts that compile and run programs, for each shader model. */
+	for (index = 0U; index < sizeof(models) / sizeof(models[0]); index++) {
+		test_sm = models[index];
+		printf("== shader model %u\n", test_sm);
+		check_const(argv[1]);
+		check_add(argv[1]);
+		check_ids(argv[1]);
+		check_float(argv[1]);
+		check_integer(argv[1]);
+		check_loop(argv[1]);
+		check_division(argv[1]);
+		check_shared(argv[1]);
+		check_atomic(argv[1]);
+		check_quad(argv[1]);
+		check_first_program();
+		check_draw_programs();
+	}
 
 	/* The tally. */
 	printf("nvrtx_sm75_host_test: %u checks, %u failures\n", test_checks, test_failures);
@@ -324,6 +343,77 @@ check_fields(void)
 	nvrtx_sm75_begin(&word);
 	nvrtx_sm75_i2f(&word, 1U, 2U, 0);
 	check(nvrtx_sm75_get(&word, 0U, 9U) == 0x106U && nvrtx_sm75_get(&word, 74U, 1U) == 0U && nvrtx_sm75_get(&word, 84U, 2U) == 2U, "I2F unsigned");
+}
+
+/*
+ * The shader models: a global access's memory order field in each form
+ * (NAK's set_mem_order: before SM80 the scope 2 at 77..78 and strong 2 at
+ * 79..80, from SM80 on 7 at 77..80), a compiled program's model and its
+ * global accesses, and the refusal of a model the compiler does not
+ * target.
+ */
+static void
+check_models(
+	const char *directory)
+{
+	struct nvrtx_sm75_word word;
+	struct nvrtx_sm75_binary *binary;
+	struct nvrtx_sm75_diagnostic diagnostic;
+	uint32_t index;
+	uint32_t opcode;
+	uint32_t globals;
+	int right;
+	int error;
+
+	/* LDG, STG and ATOMG for Turing and for Ampere and Ada. */
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_ldg(&word, 3U, 4U);
+	nvrtx_sm75_memory_order(&word, NVRTX_SM_TURING);
+	check(nvrtx_sm75_get(&word, 77U, 2U) == 2U && nvrtx_sm75_get(&word, 79U, 2U) == 2U && nvrtx_sm75_get(&word, 84U, 3U) == 1U, "LDG.STRONG.GPU on SM75");
+	nvrtx_sm75_memory_order(&word, NVRTX_SM_AMPERE);
+	check(nvrtx_sm75_get(&word, 77U, 4U) == 7U && nvrtx_sm75_get(&word, 72U, 4U) == 0x9U && nvrtx_sm75_get(&word, 84U, 3U) == 1U, "LDG.STRONG.GPU on SM86");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_stg(&word, 4U, 6U);
+	nvrtx_sm75_memory_order(&word, NVRTX_SM_ADA);
+	check(nvrtx_sm75_get(&word, 77U, 4U) == 7U && nvrtx_sm75_get(&word, 0U, 12U) == 0x386U, "STG.STRONG.GPU on SM89");
+	nvrtx_sm75_begin(&word);
+	nvrtx_sm75_atomic(&word, 0, 3U, 4U, 5U, NVRTX_SM75_ATOM_ADD, 0);
+	nvrtx_sm75_memory_order(&word, NVRTX_SM_AMPERE);
+	check(nvrtx_sm75_get(&word, 77U, 4U) == 7U && nvrtx_sm75_get(&word, 87U, 4U) == 0U && nvrtx_sm75_get(&word, 73U, 3U) == 0U, "ATOMG.ADD.STRONG.GPU on SM86");
+
+	/* A program for Ada says so, and every global access has the one field. */
+	test_sm = NVRTX_SM_ADA;
+	binary = compile_file(directory, "add");
+	test_sm = NVRTX_SM_TURING;
+	check(binary != NULL && binary->shader_model == NVRTX_SM_ADA, "add compiles for SM89");
+	if (binary != NULL) {
+		right = 1;
+		globals = 0U;
+		for (index = 0U; index < binary->code_words; index += 4U) {
+			opcode = (uint32_t)field(&binary->code[index], 0U, 12U);
+			if (opcode != NVRTX_SM75_OP_LDG && opcode != NVRTX_SM75_OP_STG)
+				continue;
+			globals++;
+			if (field(&binary->code[index], 77U, 4U) != 7U)
+				right = 0;
+		}
+		check(right && globals == 3U, "add's two loads and its store are strong at the GPU's scope in SM80's form");
+		nvrtx_sm75_binary_free(binary);
+	}
+
+	/* Hopper and Blackwell (90, 120) and an unknown model are refused, with a reason. */
+	binary = (struct nvrtx_sm75_binary *)1;
+	memset(&diagnostic, 0, sizeof(diagnostic));
+	error = nvrtx_sm75_compile_stage_sm(NULL, 0U, DRV_GPU_STAGE_COMPUTE, 90U, &binary, &diagnostic);
+	check(error == EINVAL && binary == NULL, "a module without words is refused for SM90 too");
+	test_sm = 120U;
+	binary = compile_file(directory, "add");
+	test_sm = NVRTX_SM_TURING;
+	check(binary == NULL, "SM120 is refused");
+	test_sm = 80U;
+	binary = compile_file(directory, "add");
+	test_sm = NVRTX_SM_TURING;
+	check(binary == NULL, "SM80 (GA100, no RTX) is refused");
 }
 
 /* The first target: a constant written at every invocation's index. */
@@ -1050,7 +1140,7 @@ compile_graphics(
 
 	binary = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_stage(words, (size_t)bytes / 4U, stage, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_stage_sm(words, (size_t)bytes / 4U, stage, test_sm, &binary, &diagnostic);
 	free(words);
 	if (error != 0) {
 		printf("  %s: refused %d: %s (instruction %u)\n", name, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?", diagnostic.instruction);
@@ -1152,7 +1242,7 @@ check_first_program(void)
 
 	nvrtx_compute_first_ir(&first);
 	binary = NULL;
-	error = nvrtx_sm75_compile_ir(&first.ir, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_ir_sm(&first.ir, test_sm, &binary, &diagnostic);
 	check(error == 0 && binary != NULL, "the first program compiles from its IR");
 	if (binary == NULL)
 		return;
@@ -1493,7 +1583,7 @@ compile_draw_ir(
 
 	binary = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_ir(&program->ir, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_ir_sm(&program->ir, test_sm, &binary, &diagnostic);
 	if (error != 0) {
 		printf("  %s: refused %d: %s (instruction %u)\n", name, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?", diagnostic.instruction);
 		return NULL;
@@ -1642,7 +1732,7 @@ compile_file(
 
 	/* The compile. */
 	binary = NULL;
-	error = nvrtx_sm75_compile(words, (size_t)bytes / 4U, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_stage_sm(words, (size_t)bytes / 4U, DRV_GPU_STAGE_COMPUTE, test_sm, &binary, &diagnostic);
 	free(words);
 	if (error != 0) {
 		printf("  %s: refused %d: %s (instruction %u)\n", name, error, (diagnostic.reason != NULL) ? diagnostic.reason : "?", diagnostic.instruction);

@@ -17,11 +17,15 @@
  * or a guarded access turns the Boolean back into P0.
  *
  * The dependences are marked when the program is complete
- * (sm75-schedule.c, stage D): each read waits only as long as Turing's
- * latency table says for its writer, or for the scoreboard of a
+ * (sm75-schedule.c, stage D): each read waits only as long as the shader
+ * model's latency table says for its writer, or for the scoreboard of a
  * variable-latency writer.  The lowering says of each instruction it emits
  * whether it is of fixed or variable latency or ends a block, and the
  * marking's reading of the instruction must agree.
+ *
+ * A global access gets the shader model's memory order field when it is
+ * emitted (ws242-p002); nothing else the lowering chooses depends on the
+ * shader model.
  */
 
 #include "sm75-compile.h"
@@ -99,7 +103,8 @@
  * there and freed before it returns.
  */
 struct nvrtx_sm75_lowering {
-	/* The program, the result being built, and where a refusal is described. */
+	/* The shader model, the program, the result being built, and where a refusal is described. */
+	uint32_t sm;
 	const struct drv_gpu_shader_ir *ir;
 	struct nvrtx_sm75_binary *binary;
 	struct nvrtx_sm75_diagnostic *diagnostic;
@@ -158,6 +163,8 @@ struct nvrtx_sm75_texture_operands {
 	uint32_t offset;
 };
 
+static int nvrtx_sm75_known_model(uint32_t sm);
+static int nvrtx_sm75_is_global(const struct nvrtx_sm75_word *word);
 static int nvrtx_sm75_refuse(struct nvrtx_sm75_lowering *lowering, int error, const char *reason);
 static int nvrtx_sm75_prepare(struct nvrtx_sm75_lowering *lowering);
 static int nvrtx_sm75_sources(const struct drv_gpu_shader_ir_inst *instruction, uint32_t *sources);
@@ -228,14 +235,66 @@ nvrtx_sm75_compile(
 }
 
 /*
- * Compiles one stage of a SPIR-V module (compute, vertex or fragment), as
- * nvrtx_sm75_compile() does the compute one.
+ * Compiles one stage of a SPIR-V module (compute, vertex or fragment) for
+ * Turing, as nvrtx_sm75_compile() does the compute one.
  */
 int
 nvrtx_sm75_compile_stage(
 	const uint32_t *words,
 	size_t word_count,
 	enum drv_gpu_shader_stage stage,
+	struct nvrtx_sm75_binary **binary,
+	struct nvrtx_sm75_diagnostic *diagnostic)
+{
+	int error;
+
+	/* Turing's code. */
+	error = nvrtx_sm75_compile_stage_sm(words, word_count, stage, NVRTX_SM_TURING, binary, diagnostic);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the program. */
+	return 0;
+}
+
+/*
+ * Compiles a parsed program for Turing.
+ *
+ * Returns 0 with the program in *binary, or the error of
+ * nvrtx_sm75_compile_ir_sm().
+ */
+int
+nvrtx_sm75_compile_ir(
+	const struct drv_gpu_shader_ir *ir,
+	struct nvrtx_sm75_binary **binary,
+	struct nvrtx_sm75_diagnostic *diagnostic)
+{
+	int error;
+
+	/* Turing's code. */
+	error = nvrtx_sm75_compile_ir_sm(ir, NVRTX_SM_TURING, binary, diagnostic);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the program. */
+	return 0;
+}
+
+/*
+ * Compiles one stage of a SPIR-V module for a shader model.
+ *
+ * The module is parsed by the shared frontend, optimized, and lowered; a
+ * program the lowering refuses after the optimizer rewrote it is lowered
+ * again from the parsed one, which keeps the parsed program's outcome.
+ * Returns 0 with the program, or the frontend's or the lowering's error
+ * with the diagnostic filled.
+ */
+int
+nvrtx_sm75_compile_stage_sm(
+	const uint32_t *words,
+	size_t word_count,
+	enum drv_gpu_shader_stage stage,
+	uint32_t sm,
 	struct nvrtx_sm75_binary **binary,
 	struct nvrtx_sm75_diagnostic *diagnostic)
 {
@@ -283,16 +342,16 @@ nvrtx_sm75_compile_stage(
 
 	/* Lowers the rewritten program, or the parsed one when the optimizer left it alone. */
 	if (optimized.instructions != NULL) {
-		error = nvrtx_sm75_compile_ir(&optimized, binary, diagnostic);
+		error = nvrtx_sm75_compile_ir_sm(&optimized, sm, binary, diagnostic);
 	} else {
-		error = nvrtx_sm75_compile_ir(ir, binary, diagnostic);
+		error = nvrtx_sm75_compile_ir_sm(ir, sm, binary, diagnostic);
 	}
 
 	/* A rewritten program refused for any reason but memory is lowered from the parsed one. */
 	if (optimized.instructions != NULL && error != 0 && error != ENOMEM) {
 		if (diagnostic != NULL)
 			kern_memset(diagnostic, 0, sizeof(*diagnostic));
-		error = nvrtx_sm75_compile_ir(ir, binary, diagnostic);
+		error = nvrtx_sm75_compile_ir_sm(ir, sm, binary, diagnostic);
 	}
 
 	/* The IR retires before the program is handed over. */
@@ -308,15 +367,16 @@ nvrtx_sm75_compile_stage(
 }
 
 /*
- * Compiles a parsed compute program.
+ * Compiles a parsed program for a shader model.
  *
  * Returns 0 with the program in *binary, EINVAL for a malformed program,
- * ENOTSUP for one stage A does not cover (both with the diagnostic), or
- * ENOMEM.
+ * ENOTSUP for one the compiler does not cover or a shader model it does
+ * not target (both with the diagnostic), or ENOMEM.
  */
 int
-nvrtx_sm75_compile_ir(
+nvrtx_sm75_compile_ir_sm(
 	const struct drv_gpu_shader_ir *ir,
+	uint32_t sm,
 	struct nvrtx_sm75_binary **binary,
 	struct nvrtx_sm75_diagnostic *diagnostic)
 {
@@ -325,6 +385,7 @@ nvrtx_sm75_compile_ir(
 	uint32_t dst;
 	uint32_t index;
 	int defines;
+	int known;
 	int error;
 
 	/* A refused compile never leaves an old output pointer live. */
@@ -332,15 +393,27 @@ nvrtx_sm75_compile_ir(
 		return EINVAL;
 	*binary = NULL;
 
+	/* A shader model the compiler does not target is refused. */
+	known = nvrtx_sm75_known_model(sm);
+	if (known == 0) {
+		if (diagnostic != NULL) {
+			diagnostic->instruction = 0U;
+			diagnostic->reason = "the shader model is not one the compiler targets (75, 86 or 89)";
+		}
+		return ENOTSUP;
+	}
+
 	/* The state, empty. */
 	kern_memset(&lowering, 0, sizeof(lowering));
+	lowering.sm = sm;
 	lowering.ir = ir;
 	lowering.diagnostic = diagnostic;
 
-	/* The result. */
+	/* The result, for the shader model. */
 	lowering.binary = kern_calloc(1U, sizeof(*lowering.binary));
 	if (lowering.binary == NULL)
 		return ENOMEM;
+	lowering.binary->shader_model = sm;
 
 	/* Checks the program, finds the last reads, maps the uniforms and makes room for the code. */
 	error = nvrtx_sm75_prepare(&lowering);
@@ -408,6 +481,45 @@ nvrtx_sm75_binary_free(
 	/* The code, then the record. */
 	kern_free(binary->code);
 	kern_free(binary);
+}
+
+/* Reports nonzero for a shader model the compiler targets: Turing (75), Ampere (86) and Ada (89). */
+static int
+nvrtx_sm75_known_model(
+	uint32_t sm)
+{
+	/* The three. */
+	if (sm == NVRTX_SM_TURING)
+		return 1;
+	if (sm == NVRTX_SM_AMPERE)
+		return 1;
+	if (sm == NVRTX_SM_ADA)
+		return 1;
+
+	/* Succeeded: any other is not targeted. */
+	return 0;
+}
+
+/* Reports nonzero for an instruction that accesses global memory (LDG, STG and the global atomics). */
+static int
+nvrtx_sm75_is_global(
+	const struct nvrtx_sm75_word *word)
+{
+	uint32_t opcode;
+
+	/* The 12-bit opcode (the memory accesses have no ALU form). */
+	opcode = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS);
+
+	/* The loads and the stores. */
+	if (opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_STG)
+		return 1;
+
+	/* The atomics. */
+	if (opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS)
+		return 1;
+
+	/* Succeeded: no global access. */
+	return 0;
 }
 
 /* Records a refusal of the current instruction and reports its error. */
@@ -2978,6 +3090,7 @@ nvrtx_sm75_emit(
 	int unknown;
 	int variable;
 	int ends_block;
+	int global;
 
 	/* The code has room for every expansion; running out is a bug of the lowering. */
 	if (lowering->count >= lowering->capacity)
@@ -3007,6 +3120,11 @@ nvrtx_sm75_emit(
 	    variable == 0 &&
 	    operands.class_of == NVRTX_SM75_CLASS_DECOUPLED)
 		return nvrtx_sm75_refuse(lowering, EINVAL, "an instruction emitted as fixed-latency that needs a scoreboard");
+
+	/* A global access gets the shader model's memory order field. */
+	global = nvrtx_sm75_is_global(word);
+	if (global != 0)
+		nvrtx_sm75_memory_order(word, lowering->sm);
 
 	/* The four words into the code. */
 	slot = lowering->binary->code + (size_t)lowering->count * NVRTX_SM75_INSTRUCTION_WORDS;
@@ -3061,14 +3179,14 @@ nvrtx_sm75_finish(
 	/* The instructions of each block in an order that hides latency. */
 	reason = NULL;
 	instruction = 0U;
-	error = nvrtx_sm75_reorder(lowering->binary->code, lowering->count, &instruction, &reason);
+	error = nvrtx_sm75_reorder(lowering->binary->code, lowering->count, lowering->sm, &instruction, &reason);
 	if (error != 0) {
 		lowering->index = instruction;
 		return nvrtx_sm75_refuse(lowering, EINVAL, reason);
 	}
 
 	/* The dependences of every instruction. */
-	error = nvrtx_sm75_schedule(lowering->binary->code, lowering->count, &instruction, &reason);
+	error = nvrtx_sm75_schedule(lowering->binary->code, lowering->count, lowering->sm, &instruction, &reason);
 	if (error != 0) {
 		lowering->index = instruction;
 		return nvrtx_sm75_refuse(lowering, EINVAL, reason);
