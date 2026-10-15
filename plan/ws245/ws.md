@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は main（6bccaef57）、敵対的レビューは 2 回（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)、2968ae183）。改訂は P1 が実施中（agent/p1-ws245）
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は改訂 2（P1、7cdf5879d、678 行、main 280c9fdba）。レビューは 2 回（[design-review-1.md](design-review-1.md) は反映済み、[design-review.md](design-review.md) は未反映））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: p001 の design.md をレビュー（design-review-1.md と design-review.md）とユーザーの決定 1〜4 で改訂 → 再レビュー → 残りの判断をユーザーに。Phase の表は design.md の 6.2 節（p002〜p012、36 LW）。
+Resume point: design-review.md（2 回目のレビュー、blocker 4・major 18・minor 16）の指摘を design.md の §8 の形で反映 → 必要ならもう一度レビュー → §7 の判断 #0〜#10 をユーザーに → p002 から実装（Queue の承認が要る）。Phase の表は design.md の 6.2 節（p002〜p013、51 LW ±40%）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）

@@ -70,3 +70,8 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 - 2 回目のレビュー（design-reviewer、design-review.md）は返ってきて main に入った（2968ae183、merge df9f5efe5）。blocker 4・major 18・minor 16。P1 の design.md の改訂（agent/p1-ws245）は未完で、レビュー 1 だけを扱う依頼。レビュー 2 の反映は次の round。
 - 直した物: WS039（Status・Queue・Resume point・Target・担当・Phase 一覧・ブロックの記述が開始前の「番号の予約」のままだった）、WS241（Resume point が無く、T1-697 の結果と判定が phase.md に無かった）、WS242（Resume point が無かった）、WS243・WS244（p001 を実施したのに Status が planning、表の p001 が planned）、WS245（Status が planning のまま）、WS246（p002 の出典の comment は ws247-p003 で済んだ）、design-review.md の日付。Master の WS の一覧に WS240〜WS247 の行を足し、WS039 の 2 行を直した。
 - **残り（範囲外、未対応）**: Master の WS の一覧に WS233〜WS239 の行も無い。WS239 の ws.md には Status の行が無い。WS039・WS241〜WS244 は前の Q1 の割当で進めたので queue.md に行が無い。
+
+## 追記（15:20 ごろ）: P1 の改訂の回収
+
+- ユーザーの指示で P1 を停止・通常のラップアップ。P1 は改訂を書き終えていて 7cdf5879d を提出、Q1 が実在・§8 の数（直した 36・直さない 2）を確かめて merge（280c9fdba、日付の 4 行を直して衝突を解いた）。記録は ws245/ws.md・phase001。
+- 動いている担当は無い。WS245 の次は design-review.md の反映（未着手）。
