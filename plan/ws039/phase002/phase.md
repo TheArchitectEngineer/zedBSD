@@ -49,9 +49,35 @@ Parent: [WS039](../ws.md)
 | 温度 | THM の CG_MULT_THERMAL_STATUS = 0x5a2d（bit 8:0 = 45、bit 17:9 = 45）、hwmon の edge 43 ℃ | cold・loaded |
 | firmware の版（loaded） | SOS 0x00100d50、ASD 0x21000109、SMC 42.64.0、ME 0x65、PFP 0xa0、CE 0x26、MEC/MEC2 0x9c（feature 35）、RLC 0x80、SDMA0/1 0x23（feature 50）、TMR 9 MiB @0x817d000000、kiq は mec 2 pipe 1 q 0 | loaded |
 
+## 実装（2026-10-16 P3、実機前）
+
+| commit | 中身 |
+| --- | --- |
+| `0adf5cc85` | design.md の #7・#11、この phase.md、`tests/hw-reglist.py`・`tests/hw-dump.py` |
+| `a76de00fe` | ACPI の口: `include/drivers/acpi/acpi.h` の `drv_acpi_table_lookup` と `src/drivers/acpi/acpi-kern.c` の実装（[proposed](../proposed/acpi-table-lookup.diff) と同じ。Q1 了承、2026-10-16） |
+| `3b3726a4f` | driver（`src/drivers/gpu/amdrdna/` の 14 file）、`include/uapi/amdrdna.h`、`include/drivers/pci/pci-amdrdna.h`、`userland/tests/amdrdnactl/`、build の行（`Makefile` の `CONFIG_AMDRDNA_CONTROL`、`config/kernel-options.list`、`platform/amd64/vmunix.mk`）、host 試験と監査（`tests/amdrdna-host-test.sh` ほか）、`tests/config.mk` |
+| `bddc728fd` | `src/kern/platform/pcat.c` の登録の 3 か所（Q1 が所有に加えた） |
+
+driver の file: `amdrdna.c`（PCI の登録・attach・段の機械・bring-up thread・shutdown）、`stage.c`（段の印・boot の parameter `amdrdna.off=1`・`amdrdna.auto=`）、`mmio.c`（register、間接の register の窓、間接の VRAM の窓）、`identify.c`（A0）、`readout.c`（A1、VRAM の配置）、`vbios.c`（A1v）、`control.c`（`/dev/amdrdna0`、`CONFIG_AMDRDNA_CONTROL`）、host でも動く読み手: `block-table.c`（IP discovery）、`boot-database.c`（PSP の runtime DB）、`vbios-table.c`（VFCT と AtomBIOS の data・command の表）、`layout.c`、`products.c`（RDNA1〜3 の device id、GC の版 → chip）、`dcn-registers.c`（DCN の register の表）、`bytes.c`、header `amdrdna-regs.h`・`amdrdna-hw.h`・`amdrdna-private.h`。
+
+設計からの変更・決めたこと:
+- ioctl の group は `'R'`（`'A'` は audio が使っている）。
+- VBIOS の flash の読みは PCI の expansion ROM の BAR ではなく SMUIO の ROM の register（Linux の soc15 の道、PCI の層の変更不要）。
+- A1 の「firmware の package の有無」は attach の時に root が無いので p004（firmware の load）に回した。
+- A0 で secure OS が生きていれば（C2PMSG_81 ≠ 0）`A0 hold` の行を出し、A1・A1v だけ走らせ、A1v より先の要求は EBUSY。
+- 段は失敗の後に自動で再試行しない（以後の ADVANCE は EIO）。kept の function は detach を拒み（control の node が record を持つ）、suspend を拒む。
+- GOP の範囲は pitch の register と loader の stride の広い方 × 高さで予約する（pitch の register が pitch か pitch − 1 か、GOP と DC で違うため）。
+
+確認（host、実機の証拠ではない）:
+- `make -j16 BUILD=build/p3/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p3/amd64/vmunix`、同じく `ZEDBSD_CONFIG=plan/ws039/tests/config.mk` の `vmunix` と `bin/amdrdnactl`: rc 0、warning 0、kernel include check PASS、amd64 vmunix check PASS。
+- `CONFIG_DRIVER_PCI_AMDRDNA=n`（`config/ci/config-amd64-server.mk`、`BUILD=build/p3/amd64-noamd`）の vmunix: rc 0、warning 0、PASS、amdrdna の object は作られない。
+- `plan/ws039/tests/amdrdna-host-test.sh`: PASS。合成の case（block table 10、boot DB 5、VBIOS 12、layout 5、device id 6）、dump の実物（`temp/dump/cold`: discovery の表が Linux の sysfs と一致（39 entry、GC 10.1.10、DMU 2.0.2 …）、runtime DB 無し、VFCT の image（offset 0x68、0xe200 byte）の表が Python の読みと一致、flash の image は同じ所に同じ表）、DCN の register 40 種 × 6 instance = 240 個が Linux の `dcn_2_0_0_offset.h` と一致、監査 (g) `audit-symbols.sh` PASS（出典の header の識別子と交差するのは allow list の一般語 139 個だけ、hex の block は全部 `Value(s) referenced:` 付き）。
+- `plan/tools/style-check.py`: 違反は log の引数の短い条件演算子だけ。
+
 ## 状態と次
 
-- [ ] 骨格・device id の表・discovery・BAR0・GOP の readout・VBIOS・runtime DB・VRAM の配置・段の印・control の node・boot の parameter・register の表
-- [ ] 監査の script と host 試験 (b)(f)(g)(i)
-- [ ] build（warning 0）
+- [x] 骨格・device id の表・discovery・BAR0・GOP の readout・VBIOS・runtime DB・VRAM の配置・段の印・control の node・boot の parameter・register の表
+- [x] 監査の script と host 試験 (b)(f)(g)(i)
+- [x] build（warning 0）
+- [ ] USB の image（`plan/tools/guest/test-image.sh plan/ws039/tests/config.mk build/p3/usb AMDRDNA_RUN=A1v`）
 - [ ] 実機（電源の入れ直し・USB の差し込みはユーザー、Q1 経由）: A0・A1・A1v の ok

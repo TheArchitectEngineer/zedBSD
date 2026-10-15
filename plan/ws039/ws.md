@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q1211（P3、ws039-p002 の段 A0・A1・A1v、2026-10-16 開始）
-Resume point: p002 in-progress（2026-10-16 P3、[phase002](phase002/phase.md)）: design.md の §15 #7（256 MiB の窓）・#11（control の node は開発の間だけ）を反映済み、10.0.10.3 の dump（cold と amdgpu の load の後）を取った。次は骨格と A0・A1・A1v の code、host 試験、build、実機（電源の入れ直しと USB はユーザー）。
+Resume point: p002 in-progress（2026-10-16 P3、[phase002](phase002/phase.md)）: A0・A1・A1v の code・host 試験・build（warning 0）済み（実機前の commit 3b3726a4f・bddc728fd、ACPI の口 a76de00fe）。次は USB の image → 10.0.10.3 の電源の入れ直しと USB の差し込み（ユーザー、Q1 経由）→ 実機で A0・A1・A1v の ok → merge の依頼。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
