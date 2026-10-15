@@ -3,13 +3,13 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 ユーザーの決定で開始、同日ユーザーの指示で一時停止。p001（P3）・p007（P5）は途中で区切った）
+Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001 は P3 が q1202、p007（P5）は停止のまま）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: なし（一時停止中、queue.md に行なし。2026-10-15 は Q1 の割当で進めた）
-Resume point: 再開はユーザーの指示で。[p001](phase001/phase.md) の「再開の点」（調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/、約 600 MB の source と note は消さない）と [p007](phase007/phase.md) の 7.2（Mesa の tarball は /home/awe/zedBSD-worktrees/p5/build/mesa、消さない）。
+Queue: q1202（P3、ws039-p001、2026-10-15 夕）
+Resume point: P3 が q1202 で p001 を再開。[p001](phase001/phase.md) の「再開の点」（調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/、約 600 MB の source と note は消さない）と [p007](phase007/phase.md) の 7.2（Mesa の tarball は /home/awe/zedBSD-worktrees/p5/build/mesa、消さない）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -76,6 +76,10 @@ AMD RDNA世代のGPUのドライバを実装する。
 3. 最初の到達点: NVIDIA と同じく「desktop が描ける」までか。動画（VCN）は後でよいか。
 4. 対象の世代: まず RDNA1（Navi1x）だけを動かし、RDNA2・3 は認識（device id）だけ先に入れるか。
 5. 担当の数（2 担当で並行してよいか）。
+
+### ユーザーの追加の決定（2026-10-15 夕、原文）
+「もう1つサブエージェントを立てます。AMD RDNAドライバを書く既存WSの作業をします。このWSにも参照元などに関するガードレールをしっかり適用していきます。値の引用は明示すればOK、コード・シンボル名の引用は不可、ハードウェア操作手順の引用は明示すればOK、GPLなコードを引用しても、引用ならライセンスは影響しない、です。」
+→ [Guardrail](../guardrail.md) の「MIT・GPL の出典のデータの引用」の WS039 の項。
 
 ### ユーザーの決定（2026-10-15、原文）
 1.「参考の source の扱いですが、値は事実として使い、名前・構造・comment は写さない、をこの WS にも広げます。」
