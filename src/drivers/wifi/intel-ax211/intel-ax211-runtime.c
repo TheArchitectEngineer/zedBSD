@@ -14,7 +14,6 @@
 #include "intel-ax211-runtime.h"
 #include <kern/kcrt.h>
 
-
 /* One row of the command version table that the runtime start requires. */
 struct ax211_runtime_version {
 	uint8_t group;
@@ -25,7 +24,7 @@ struct ax211_runtime_version {
 
 static int ax211_runtime_profile_valid(const struct intel_ax211_runtime_profile *profile);
 static int ax211_runtime_bit(const uint32_t *words, size_t count, unsigned int bit);
-static int ax211_runtime_version_validate( const struct intel_ax211_protocol_command_table *table, const struct ax211_runtime_version *required);
+static int ax211_runtime_version_validate(const struct intel_ax211_protocol_command_table *table, const struct ax211_runtime_version *required);
 static int ax211_runtime_step_enabled(enum intel_ax211_runtime_step step, const struct intel_ax211_runtime_profile *profile);
 static void ax211_runtime_put_le32(uint8_t *bytes, uint32_t value);
 static void ax211_runtime_put_le16(uint8_t *bytes, uint16_t value);
@@ -50,13 +49,20 @@ static enum intel_ax211_runtime_step ax211_runtime_next_step(enum intel_ax211_ru
  * numbers).
  */
 static const struct ax211_runtime_version ax211_runtime_versions[] = {
-	{0x01U, 0x98U, 1U, 0U},	 {0x01U, 0x9bU, 6U, 0U}, {0x02U, 0x01U, 2U, 0U},
-	{0x01U, 0xeeU, 3U, 0U},	 {0x04U, 0x04U, 1U, 0U}, {0x01U, 0x77U, 7U, 0U},
-	{0x01U, 0xc8U, 1U, 6U},	 {0x01U, 0xd2U, 4U, 0U}, {0x01U, 0x0cU, 5U, 0U},
-	{0x01U, 0x0dU, 17U, 0U}, {0x01U, 0x0eU, 1U, 0U}};
+	{0x01U, 0x98U, 1U, 0U},
+	{0x01U, 0x9bU, 6U, 0U},
+	{0x02U, 0x01U, 2U, 0U},
+	{0x01U, 0xeeU, 3U, 0U},
+	{0x04U, 0x04U, 1U, 0U},
+	{0x01U, 0x77U, 7U, 0U},
+	{0x01U, 0xc8U, 1U, 6U},
+	{0x01U, 0xd2U, 4U, 0U},
+	{0x01U, 0x0cU, 5U, 0U},
+	{0x01U, 0x0dU, 17U, 0U},
+	{0x01U, 0x0eU, 1U, 0U}};
 
 /*
- * Implements the drv intel ax211 runtime profile from manifest operation.
+ * Builds the runtime profile from the firmware image and the NVM answer.
  */
 int
 drv_intel_ax211_runtime_profile_from_manifest(
@@ -66,14 +72,25 @@ drv_intel_ax211_runtime_profile_from_manifest(
 	struct intel_ax211_runtime_profile *profile)
 {
 	struct intel_ax211_runtime_profile parsed;
+	int valid;
 
-	/* Handles the manifest availability. */
-	if (manifest == NULL || nvm == NULL || profile == NULL ||
+	/*
+	 * Refuses missing arguments, an LTR flag other than 0 or 1, and missing
+	 * chains.
+	 */
+	if (manifest == NULL ||
+	    nvm == NULL ||
+	    profile == NULL ||
 	    (ltr_enabled != 0 && ltr_enabled != 1) ||
-	    nvm->tx_chain_mask == 0U || nvm->rx_chain_mask == 0U) {
-		/* Returns the computed result. */
+	    nvm->tx_chain_mask == 0U ||
+	    nvm->rx_chain_mask == 0U) {
 		return INTEL_AX211_RUNTIME_INVALID;
 	}
+
+	/*
+	 * Takes the chains, the regulatory mode, the LTR state and the image's
+	 * bits.
+	 */
 	kern_memset(&parsed, 0, sizeof(parsed));
 	parsed.tx_chain_mask = nvm->tx_chain_mask;
 	parsed.rx_chain_mask = nvm->rx_chain_mask;
@@ -84,16 +101,19 @@ drv_intel_ax211_runtime_profile_from_manifest(
 	kern_memcpy(parsed.capabilities, manifest->capabilities,
 	       sizeof(parsed.capabilities));
 
-	/* Checks the ax211 runtime profile valid result. */
-	if (!ax211_runtime_profile_valid(&parsed))
+	/* Refuses an image without the capabilities the runtime depends on. */
+	valid = ax211_runtime_profile_valid(&parsed);
+	if (!valid)
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
+
+	/* Succeeded: publishes the profile. */
 	*profile = parsed;
-	/* Returns the computed result. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime api89 validate operation.
+ * Checks that the pinned image lists every runtime command as the runtime
+ * encodes it.
  */
 int
 drv_intel_ax211_runtime_api89_validate(
@@ -102,52 +122,68 @@ drv_intel_ax211_runtime_api89_validate(
 {
 	struct intel_ax211_protocol_command_version dqa;
 	size_t index;
+	int valid;
+	int skip;
 	int result;
 
-	/* Checks the ax211 runtime profile valid result. */
-	if (table == NULL || !ax211_runtime_profile_valid(profile))
+	/* Refuses a missing table. */
+	if (table == NULL)
 		return INTEL_AX211_RUNTIME_INVALID;
 
-	/* Checks the drv intel ax211 protocol command table validate api89 result. */
-	if (drv_intel_ax211_protocol_command_table_validate_api89(table) !=
-	    INTEL_AX211_PROTOCOL_OK) {
-		/* Returns the computed result. */
+	/* Refuses an unusable profile. */
+	valid = ax211_runtime_profile_valid(profile);
+	if (!valid)
+		return INTEL_AX211_RUNTIME_INVALID;
+
+	/* Refuses a table that is not the pinned image's. */
+	result = drv_intel_ax211_protocol_command_table_validate_api89(table);
+	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
-	}
-	/* Process each remaining element. */
+
+	/* Requires every runtime version the image must list. */
 	for (index = 0U; index < sizeof(ax211_runtime_versions) /
 					 sizeof(ax211_runtime_versions[0]);
 	     index++) {
-		/* Checks the ax211 runtime bit result. */
+		/*
+		 * The latency command is not sent when the firmware sets the
+		 * latency itself.
+		 */
+		skip = 0;
 		if (ax211_runtime_versions[index].group ==
 			    INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE &&
 		    ax211_runtime_versions[index].opcode ==
-			    INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_OPCODE &&
-		    ax211_runtime_bit(profile->capabilities, 5U,
-				      INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY))
+			    INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_OPCODE) {
+			skip = ax211_runtime_bit(
+				profile->capabilities, 5U,
+				INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY);
+		}
+
+		/* Skips the version of a command that is not sent. */
+		if (skip)
 			continue;
 
-		/* Checks the operation result. */
+		/* Refuses the table at the first version that differs. */
 		result = ax211_runtime_version_validate(
 			table, &ax211_runtime_versions[index]);
 		if (result != INTEL_AX211_RUNTIME_OK)
 			return result;
 	}
 
-	/* The pinned image does not advertise DQA and has no g5/c00 row. */
-
-	/* Checks the operation result. */
+	/*
+	 * The pinned image does not advertise dynamic queue allocation and has no
+	 * g5/c00 row; an image that lists one is not the pinned image.
+	 */
 	result = drv_intel_ax211_protocol_command_version_lookup(table, 5U, 0U,
 								 &dqa);
 	if (result != INTEL_AX211_PROTOCOL_MISSING)
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 
-	/* Returns the computed result. */
+	/* Succeeded: the image lists the runtime commands as expected. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime command encode operation.
+ * Encodes the command of one runtime step.
  */
 int
 drv_intel_ax211_runtime_command_encode(
@@ -156,15 +192,21 @@ drv_intel_ax211_runtime_command_encode(
 	struct intel_ax211_runtime_command *command)
 {
 	struct intel_ax211_runtime_command encoded;
+	int valid;
 
-	/* Checks the ax211 runtime profile valid result. */
-	if (!ax211_runtime_profile_valid(profile) || command == NULL ||
-	    step >= INTEL_AX211_RUNTIME_STEP_DONE ||
-	    !ax211_runtime_step_enabled(step, profile)) {
-		/* Returns the computed result. */
+	/* Refuses an unusable profile. */
+	valid = ax211_runtime_profile_valid(profile);
+	if (!valid)
 		return INTEL_AX211_RUNTIME_INVALID;
-	}
-	kern_memset(&encoded, 0, sizeof(encoded));
+
+	/* Refuses a missing output and a step past the end. */
+	if (command == NULL || step >= INTEL_AX211_RUNTIME_STEP_DONE)
+		return INTEL_AX211_RUNTIME_INVALID;
+
+	/* Refuses a step this profile does not send. */
+	valid = ax211_runtime_step_enabled(step, profile);
+	if (!valid)
+		return INTEL_AX211_RUNTIME_INVALID;
 
 	/*
 	 * Sends zero in the wide-header version field, as API 89 accepts.
@@ -172,11 +214,14 @@ drv_intel_ax211_runtime_command_encode(
 	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
 	 * (iwx_send_cmd).
 	 */
+	kern_memset(&encoded, 0, sizeof(encoded));
 	encoded.wire_version = 0U;
 	encoded.response_version = 0U;
-	/* Dispatch the selected operation case. */
+
+	/* Fills the family, opcode, version and payload of the step. */
 	switch (step) {
 	case INTEL_AX211_RUNTIME_STEP_TRANSMIT_CHAINS:
+		/* The transmit chain mask from the NVM answer. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_OPCODE;
 		encoded.layout_version = INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_VERSION;
@@ -184,6 +229,7 @@ drv_intel_ax211_runtime_command_encode(
 		ax211_runtime_put_le32(encoded.payload, profile->tx_chain_mask);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_COEXISTENCE:
+		/* The coexistence mode 3, Wi-Fi only. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_COEXISTENCE_OPCODE;
 		encoded.layout_version = INTEL_AX211_RUNTIME_COEXISTENCE_VERSION;
@@ -191,6 +237,7 @@ drv_intel_ax211_runtime_command_encode(
 		ax211_runtime_put_le32(encoded.payload, 3U);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_SOC_CONFIG:
+		/* The platform flags and the crystal start-up latency. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_PLATFORM;
 		encoded.opcode = INTEL_AX211_RUNTIME_SOC_CONFIG_OPCODE;
 		encoded.layout_version = INTEL_AX211_RUNTIME_SOC_CONFIG_VERSION;
@@ -202,6 +249,7 @@ drv_intel_ax211_runtime_command_encode(
 			INTEL_AX211_RUNTIME_SOC_CONFIG_XTAL_LATENCY);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_LATENCY_TOLERANCE:
+		/* The latency tolerance command, whose first word is 1. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_OPCODE;
 		encoded.layout_version = INTEL_AX211_RUNTIME_LATENCY_TOLERANCE_VERSION;
@@ -209,6 +257,7 @@ drv_intel_ax211_runtime_command_encode(
 		ax211_runtime_put_le32(encoded.payload, 1U);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_TEMP_REPORT:
+		/* An empty set of temperature thresholds. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_RADIO;
 		encoded.opcode = INTEL_AX211_RUNTIME_TEMP_REPORT_OPCODE;
 		encoded.layout_version =
@@ -216,6 +265,7 @@ drv_intel_ax211_runtime_command_encode(
 		encoded.payload_length = INTEL_AX211_RUNTIME_TEMP_REPORT_SIZE;
 		break;
 	case INTEL_AX211_RUNTIME_STEP_POWER_POLICY:
+		/* The device power policy, all zero. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_POWER_POLICY_OPCODE;
 		encoded.layout_version =
@@ -223,6 +273,10 @@ drv_intel_ax211_runtime_command_encode(
 		encoded.payload_length = INTEL_AX211_RUNTIME_POWER_POLICY_SIZE;
 		break;
 	case INTEL_AX211_RUNTIME_STEP_COUNTRY_UPDATE:
+		/*
+		 * Asks for country "ZZ", the world domain, with source byte
+		 * 0x10.
+		 */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_COUNTRY_UPDATE_OPCODE;
 		encoded.layout_version = INTEL_AX211_RUNTIME_COUNTRY_UPDATE_VERSION;
@@ -234,6 +288,7 @@ drv_intel_ax211_runtime_command_encode(
 		encoded.payload[2] = 0x10U;
 		break;
 	case INTEL_AX211_RUNTIME_STEP_SCAN_CONFIG:
+		/* The scan setup with the transmit and receive chain masks. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_PROTOCOL_SCAN_SETUP_OPCODE;
 		encoded.layout_version = 5U;
@@ -244,6 +299,7 @@ drv_intel_ax211_runtime_command_encode(
 				       profile->rx_chain_mask);
 		break;
 	case INTEL_AX211_RUNTIME_STEP_BEACON_FILTER:
+		/* Beacon filtering all zero, which delivers every beacon. */
 		encoded.group = INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE;
 		encoded.opcode = INTEL_AX211_RUNTIME_BEACON_FILTER_OPCODE;
 		encoded.layout_version =
@@ -252,17 +308,17 @@ drv_intel_ax211_runtime_command_encode(
 		break;
 	case INTEL_AX211_RUNTIME_STEP_DONE:
 	default:
-		/* Returns the computed result. */
+		/* No command follows the last step. */
 		return INTEL_AX211_RUNTIME_INVALID;
 	}
 
+	/* Succeeded: publishes the command. */
 	*command = encoded;
-	/* Returns the computed result. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime mcc decode operation.
+ * Decodes the answer to the country update: the country and its channels.
  */
 int
 drv_intel_ax211_runtime_mcc_decode(
@@ -275,29 +331,33 @@ drv_intel_ax211_runtime_mcc_decode(
 	size_t index;
 	const uint8_t *bytes;
 
-	/* Handles the message availability. */
+	/* Refuses missing arguments and an unset epoch. */
 	if (message == NULL || mcc == NULL || generation == 0U)
 		return INTEL_AX211_RUNTIME_INVALID;
 
-	/* Handles the message condition. */
+	/* Refuses a message of an earlier firmware epoch. */
 	if (message->generation != generation)
 		return INTEL_AX211_RUNTIME_STALE;
 
-	/* Handles the message condition. */
+	/* Refuses a message other than the country answer. */
 	if (message->group != INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE ||
 	    message->opcode != INTEL_AX211_RUNTIME_COUNTRY_UPDATE_OPCODE ||
 	    message->version != INTEL_AX211_RUNTIME_COUNTRY_RESPONSE_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 	}
 
-	/* Checks the operation status. */
+	/* Reports an answer the firmware marked as failed. */
 	if ((message->flags & INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK) != 0U)
 		return INTEL_AX211_RUNTIME_FAILED;
 
-	/* Handles the payload availability. */
+	/* Refuses a payload shorter than the 20-byte header. */
 	if (message->payload == NULL || message->payload_length < 20U)
 		return INTEL_AX211_RUNTIME_TRUNCATED;
+
+	/*
+	 * Decodes the header.  Versions 4, 5 and 6 share this layout; the
+	 * reserved padding carries nothing.
+	 */
 	bytes = message->payload;
 	kern_memset(&parsed, 0, sizeof(parsed));
 	parsed.status = ax211_runtime_get_le32(bytes);
@@ -306,47 +366,42 @@ drv_intel_ax211_runtime_mcc_decode(
 	parsed.time = ax211_runtime_get_le16(bytes + 8U);
 	parsed.geographic_info = ax211_runtime_get_le16(bytes + 10U);
 	parsed.source = bytes[12U];
-
-	/*
-	 * v4/v5/v6 share this layout; reserved padding is not semantic input.
-	 */
 	parsed.channel_count = ax211_runtime_get_le32(bytes + 16U);
 
-	/*
-	 * Every documented MCC status still carries a usable channel profile.
-	 */
+	/* Every documented status still carries a usable channel list. */
 	if (parsed.status > INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX)
 		return INTEL_AX211_RUNTIME_FAILED;
 
-	/* Handles the parsed condition. */
+	/* Refuses an answer without channels. */
 	if (parsed.channel_count == 0U)
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 
-	/* Handles the parsed condition. */
+	/* Refuses more channels than the record holds. */
 	if (parsed.channel_count > INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT)
 		return INTEL_AX211_RUNTIME_OVERSIZED;
 
-	/* Handles the message condition. */
+	/* Refuses a payload shorter than its channel list. */
 	expected = 20U + (size_t)parsed.channel_count * 4U;
 	if (message->payload_length < expected)
 		return INTEL_AX211_RUNTIME_TRUNCATED;
 
-	/* Handles the message condition. */
+	/* Refuses a payload longer than its channel list. */
 	if (message->payload_length > expected)
 		return INTEL_AX211_RUNTIME_OVERSIZED;
-	/* Process each remaining element. */
+
+	/* Decodes the flag word of every channel. */
 	for (index = 0U; index < parsed.channel_count; index++) {
 		parsed.channel[index] =
 			ax211_runtime_get_le32(bytes + 20U + index * 4U);
 	}
 
+	/* Succeeded: publishes the answer. */
 	*mcc = parsed;
-	/* Returns the computed result. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime begin operation.
+ * Starts the runtime sequence of one firmware epoch at its first step.
  */
 int
 drv_intel_ax211_runtime_begin(
@@ -359,30 +414,38 @@ drv_intel_ax211_runtime_begin(
 	struct intel_ax211_runtime_state started;
 	int result;
 
-	/* Handles the state availability. */
-	if (state == NULL || generation == 0U ||
+	/*
+	 * Refuses a missing state, an unset epoch and a deadline that
+	 * overflows.
+	 */
+	if (state == NULL ||
+	    generation == 0U ||
 	    now_us > UINT64_MAX - INTEL_AX211_RUNTIME_COMMAND_TIMEOUT_US) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_INVALID;
 	}
 
-	/* Checks the operation result. */
+	/*
+	 * Refuses an image that does not list the runtime commands as expected.
+	 */
 	result = drv_intel_ax211_runtime_api89_validate(table, profile);
 	if (result != INTEL_AX211_RUNTIME_OK)
 		return result;
+
+	/* Starts at the first step with one command timeout. */
 	kern_memset(&started, 0, sizeof(started));
 	started.profile = *profile;
 	started.generation = generation;
 	started.deadline = now_us + INTEL_AX211_RUNTIME_COMMAND_TIMEOUT_US;
 	started.step = INTEL_AX211_RUNTIME_STEP_TRANSMIT_CHAINS;
 	started.active = 1U;
+
+	/* Succeeded: publishes the started sequence. */
 	*state = started;
-	/* Returns the computed result. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime current operation.
+ * Encodes the command of the step the sequence is waiting on.
  */
 int
 drv_intel_ax211_runtime_current(
@@ -392,27 +455,31 @@ drv_intel_ax211_runtime_current(
 {
 	int error;
 
-	/* Handles the state availability. */
-	if (state == NULL || command == NULL || !state->active ||
-	    state->terminal || state->generation == 0U) {
-		/* Returns the computed result. */
+	/* Refuses a sequence that is not running. */
+	if (state == NULL ||
+	    command == NULL ||
+	    !state->active ||
+	    state->terminal ||
+	    state->generation == 0U) {
 		return INTEL_AX211_RUNTIME_INVALID;
 	}
 
-	/* Handles the now us condition. */
+	/* Reports a step whose time is up. */
 	if (now_us >= state->deadline)
 		return INTEL_AX211_RUNTIME_TIMEOUT;
 
-	/* Obtains the drv intel ax211 runtime command encode result. */
+	/* Encodes the step's command. */
 	error = drv_intel_ax211_runtime_command_encode(
 		state->step, &state->profile, command);
+	if (error != INTEL_AX211_RUNTIME_OK)
+		return error;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime ack operation.
+ * Takes the answer to one step and moves the sequence to the next step.
  */
 int
 drv_intel_ax211_runtime_ack(
@@ -423,164 +490,212 @@ drv_intel_ax211_runtime_ack(
 {
 	enum intel_ax211_runtime_step next;
 
-	/* Handles the state availability. */
+	/* Refuses a missing state and an unset epoch. */
 	if (state == NULL || generation == 0U)
 		return INTEL_AX211_RUNTIME_INVALID;
 
-	/* Handles the step condition. */
+	/* Refuses a step past the end. */
 	if ((unsigned int)step >= (unsigned int)INTEL_AX211_RUNTIME_STEP_DONE)
 		return INTEL_AX211_RUNTIME_INVALID;
 
-	/* Handles the generation condition. */
+	/* Refuses an answer of an earlier firmware epoch. */
 	if (generation != state->generation)
 		return INTEL_AX211_RUNTIME_STALE;
 
-	/* Handles the state condition. */
+	/* An answer after the sequence ended is a repeat. */
 	if (state->terminal || !state->active)
 		return INTEL_AX211_RUNTIME_DUPLICATE;
 
-	/* Handles the now us condition. */
+	/* Ends the sequence when the step's time is up. */
 	if (now_us >= state->deadline) {
 		state->active = 0U;
 		state->terminal = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_TIMEOUT;
 	}
 
-	/* Handles the step condition. */
+	/*
+	 * An answer to an earlier step is a repeat; one to a later step is out
+	 * of order.
+	 */
 	if (step != state->step) {
-		return step < state->step ? INTEL_AX211_RUNTIME_DUPLICATE
-					  : INTEL_AX211_RUNTIME_OUT_OF_ORDER;
+		/* An earlier step was already answered. */
+		if (step < state->step)
+			return INTEL_AX211_RUNTIME_DUPLICATE;
+		return INTEL_AX211_RUNTIME_OUT_OF_ORDER;
 	}
 
+	/* Moves to the next step this profile sends. */
 	next = ax211_runtime_next_step(step, &state->profile);
 	state->step = next;
 
-	/* Handles the next condition. */
+	/* Ends the sequence after its last step. */
 	if (next == INTEL_AX211_RUNTIME_STEP_DONE) {
 		state->active = 0U;
 		state->terminal = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_COMPLETE;
 	}
 
-	/* Handles the now us condition. */
+	/* Ends the sequence when the next deadline would overflow. */
 	if (now_us > UINT64_MAX - INTEL_AX211_RUNTIME_COMMAND_TIMEOUT_US) {
 		state->active = 0U;
 		state->terminal = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_TIMEOUT;
 	}
 
+	/* Gives the next step one command timeout. */
 	state->deadline = now_us + INTEL_AX211_RUNTIME_COMMAND_TIMEOUT_US;
 
-	/* Returns the computed result. */
+	/* Succeeded: the sequence waits on the next step. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
 /*
- * Implements the drv intel ax211 runtime expire operation.
+ * Ends the sequence when the step it waits on has run out of time.
  */
 int
 drv_intel_ax211_runtime_expire(
 	struct intel_ax211_runtime_state *state,
 	uint64_t now_us)
 {
-	/* Handles the state availability. */
+	/* Refuses a missing or unstarted state. */
 	if (state == NULL || state->generation == 0U)
 		return INTEL_AX211_RUNTIME_INVALID;
 
-	/* Handles the state condition. */
+	/* A sequence that already ended cannot expire again. */
 	if (state->terminal || !state->active)
 		return INTEL_AX211_RUNTIME_DUPLICATE;
 
-	/* Handles the now us condition. */
+	/* The step still has time. */
 	if (now_us < state->deadline)
 		return INTEL_AX211_RUNTIME_OK;
+
+	/* Ends the sequence. */
 	state->active = 0U;
 	state->terminal = 1U;
 
-	/* Returns the computed result. */
+	/* Reports the timeout. */
 	return INTEL_AX211_RUNTIME_TIMEOUT;
 }
 
-/* Supports the ax211 runtime profile valid operation. */
+/*
+ * Reports whether a runtime profile is one the runtime can run: 1 when it is,
+ * 0 when not.
+ */
 static int
 ax211_runtime_profile_valid(
 	const struct intel_ax211_runtime_profile *profile)
 {
-	/* Handles the profile availability. */
-	if (profile == NULL || profile->tx_chain_mask == 0U ||
-	    profile->rx_chain_mask == 0U || profile->tx_chain_mask > 0x07U ||
-	    profile->rx_chain_mask > 0x07U || profile->firmware_regulatory > 1U ||
+	int set;
+
+	/*
+	 * Rejects a missing profile, chain masks out of range and flags other
+	 * than 0 or 1.
+	 */
+	if (profile == NULL ||
+	    profile->tx_chain_mask == 0U ||
+	    profile->rx_chain_mask == 0U ||
+	    profile->tx_chain_mask > 0x07U ||
+	    profile->rx_chain_mask > 0x07U ||
+	    profile->firmware_regulatory > 1U ||
 	    profile->ltr_enabled > 1U) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Checks the ax211 runtime bit result. */
-	if (!ax211_runtime_bit(profile->api_changes, 4U,
-			       INTEL_AX211_RUNTIME_API_BIT_SHORT_SCAN_SETUP) ||
-	    !ax211_runtime_bit(profile->api_changes, 4U,
-			       INTEL_AX211_RUNTIME_API_BIT_WIDE_CHANNEL_RECORDS) ||
-	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_FEATURE_BIT_PROBE_DS_ELEMENT) ||
-	    ax211_runtime_bit(profile->capabilities, 5U,
-			      INTEL_AX211_RUNTIME_FEATURE_BIT_DYNAMIC_QUEUES) ||
-	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_FEATURE_BIT_FIRMWARE_THERMAL_STOP)) {
-		/* Succeeded. */
+	/* Rejects an image without the short scan setup command. */
+	set = ax211_runtime_bit(profile->api_changes, 4U,
+				INTEL_AX211_RUNTIME_API_BIT_SHORT_SCAN_SETUP);
+	if (!set)
 		return 0;
+
+	/*
+	 * Rejects an image without the wider channel records of the scan
+	 * request.
+	 */
+	set = ax211_runtime_bit(profile->api_changes, 4U,
+				INTEL_AX211_RUNTIME_API_BIT_WIDE_CHANNEL_RECORDS);
+	if (!set)
+		return 0;
+
+	/*
+	 * Rejects an image that does not put the DS element in probe requests.
+	 */
+	set = ax211_runtime_bit(profile->capabilities, 5U,
+				INTEL_AX211_RUNTIME_FEATURE_BIT_PROBE_DS_ELEMENT);
+	if (!set)
+		return 0;
+
+	/* Rejects an image that allocates its queues dynamically. */
+	set = ax211_runtime_bit(profile->capabilities, 5U,
+				INTEL_AX211_RUNTIME_FEATURE_BIT_DYNAMIC_QUEUES);
+	if (set)
+		return 0;
+
+	/* Rejects an image without the firmware's own thermal stop. */
+	set = ax211_runtime_bit(profile->capabilities, 5U,
+				INTEL_AX211_RUNTIME_FEATURE_BIT_FIRMWARE_THERMAL_STOP);
+	if (!set)
+		return 0;
+
+	/* A firmware regulatory domain needs country updates of either kind. */
+	if (profile->firmware_regulatory) {
+		/*
+		 * The country update API, or failing that the country list
+		 * feature.
+		 */
+		set = ax211_runtime_bit(profile->api_changes, 4U,
+					INTEL_AX211_RUNTIME_API_BIT_COUNTRY_UPDATE);
+		if (!set) {
+			set = ax211_runtime_bit(
+				profile->capabilities, 5U,
+				INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_LIST);
+		}
+
+		/* Rejects an image with neither. */
+		if (!set)
+			return 0;
+
+		/*
+		 * Rejects an image whose country updates do not include
+		 * 802.11ax.
+		 */
+		set = ax211_runtime_bit(profile->capabilities, 5U,
+					INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_UPDATE_HE);
+		if (!set)
+			return 0;
 	}
 
-	/* Checks the ax211 runtime bit result. */
-	if (profile->firmware_regulatory &&
-	    !ax211_runtime_bit(profile->api_changes, 4U,
-			       INTEL_AX211_RUNTIME_API_BIT_COUNTRY_UPDATE) &&
-	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_LIST)) {
-		/* Succeeded. */
-		return 0;
-	}
-
-	/* Checks the ax211 runtime bit result. */
-	if (profile->firmware_regulatory &&
-	    !ax211_runtime_bit(profile->capabilities, 5U,
-			       INTEL_AX211_RUNTIME_FEATURE_BIT_COUNTRY_UPDATE_HE)) {
-		/* Succeeded. */
-		return 0;
-	}
-
-	/* Reports operation failure. */
+	/* The profile is usable. */
 	return 1;
 }
 
-/* Supports the ax211 runtime bit operation. */
+/*
+ * Reports whether a bit is set in a set of words: 1 when it is, 0 when it is
+ * not or lies past the last word.
+ */
 static int
 ax211_runtime_bit(
 	const uint32_t *words,
 	size_t count,
 	unsigned int bit)
 {
-	int error;
 	size_t word;
+	uint32_t mask;
 
-	/* Handles the words availability. */
+	/* A bit past the last word, or of a missing set, is not set. */
 	word = bit / 32U;
 	if (words == NULL || word >= count)
 		return 0;
 
-	/* Computes the function result. */
-	error = (words[word] & (UINT32_C(1) << (bit % 32U))) != 0U;
+	/* Bit n is bit n % 32 of word n / 32. */
+	mask = UINT32_C(1) << (bit % 32U);
+	if ((words[word] & mask) == 0U)
+		return 0;
 
-	/* Returns the computed result. */
-	return error;
+	/* The bit is set. */
+	return 1;
 }
 
-/* Supports the ax211 runtime version validate operation. */
+/* Requires that a table lists one runtime command with the given versions. */
 static int
 ax211_runtime_version_validate(
 	const struct intel_ax211_protocol_command_table *table,
@@ -589,52 +704,63 @@ ax211_runtime_version_validate(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Checks the operation result. */
+	/* Refuses a table that does not list the command. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, required->group, required->opcode, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 
-	/* Handles the version condition. */
+	/* Refuses versions other than the required ones. */
 	if (version.command_version != required->command_version ||
 	    version.notification_version != required->notification_version) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RUNTIME_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the table lists the required versions. */
 	return INTEL_AX211_RUNTIME_OK;
 }
 
-/* Supports the ax211 runtime step enabled operation. */
+/* Reports whether a profile sends a step: 1 when it does, 0 when not. */
 static int
 ax211_runtime_step_enabled(
 	enum intel_ax211_runtime_step step,
 	const struct intel_ax211_runtime_profile *profile)
 {
-	int error;
+	int self_latency;
 
-	/* Handles the step condition. */
+	/*
+	 * The latency command is sent only with LTR on and when the firmware
+	 * does not set it.
+	 */
 	if (step == INTEL_AX211_RUNTIME_STEP_LATENCY_TOLERANCE) {
-		/* Computes the function result. */
-		error = profile->ltr_enabled &&
-				  !ax211_runtime_bit(
-					  profile->capabilities, 5U,
-					  INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY);
+		/* Without LTR the command is not sent. */
+		if (!profile->ltr_enabled)
+			return 0;
 
-		/* Failed. */
-		return error;
+		/* A firmware that sets the latency itself needs no command. */
+		self_latency = ax211_runtime_bit(
+			profile->capabilities, 5U,
+			INTEL_AX211_RUNTIME_FEATURE_BIT_SELF_LATENCY);
+		if (self_latency)
+			return 0;
+
+		/* The command is sent. */
+		return 1;
 	}
 
-	/* Handles the step condition. */
+	/* The country update is sent only with a firmware regulatory domain. */
 	if (step == INTEL_AX211_RUNTIME_STEP_COUNTRY_UPDATE)
 		return profile->firmware_regulatory;
 
-	/* Returns the computed result. */
-	return step < INTEL_AX211_RUNTIME_STEP_DONE;
+	/* A step past the end is not sent. */
+	if (step >= INTEL_AX211_RUNTIME_STEP_DONE)
+		return 0;
+
+	/* Every other step is sent. */
+	return 1;
 }
 
-/* Supports the ax211 runtime put le32 operation. */
+/* Stores a 32-bit value in little-endian byte order. */
 static void
 ax211_runtime_put_le32(
 	uint8_t *bytes,
@@ -646,7 +772,7 @@ ax211_runtime_put_le32(
 	bytes[3] = (uint8_t)(value >> 24);
 }
 
-/* Supports the ax211 runtime put le16 operation. */
+/* Stores a 16-bit value in little-endian byte order. */
 static void
 ax211_runtime_put_le16(
 	uint8_t *bytes,
@@ -656,40 +782,49 @@ ax211_runtime_put_le16(
 	bytes[1] = (uint8_t)(value >> 8);
 }
 
-/* Supports the ax211 runtime get le32 operation. */
+/* Reads a 32-bit little-endian value. */
 static uint32_t
 ax211_runtime_get_le32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
 	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-/* Supports the ax211 runtime get le16 operation. */
+/* Reads a 16-bit little-endian value. */
 static uint16_t
 ax211_runtime_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the value from its two bytes, least significant first. */
 	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
 }
 
-/* Supports the ax211 runtime next step operation. */
+/* Finds the step after a step that this profile sends. */
 static enum intel_ax211_runtime_step
 ax211_runtime_next_step(
 	enum intel_ax211_runtime_step step,
 	const struct intel_ax211_runtime_profile *profile)
 {
 	unsigned int next;
+	int enabled;
 
+	/*
+	 * Skips the steps the profile does not send; the end stops the search.
+	 */
 	next = (unsigned int)step + 1U;
-	/* Continue while the operation condition remains true. */
-	while (next < (unsigned int)INTEL_AX211_RUNTIME_STEP_DONE &&
-	       !ax211_runtime_step_enabled((enum intel_ax211_runtime_step)next,
-					   profile))
-		next++;
+	while (next < (unsigned int)INTEL_AX211_RUNTIME_STEP_DONE) {
+		/* Stops at a step that is sent. */
+		enabled = ax211_runtime_step_enabled(
+			(enum intel_ax211_runtime_step)next, profile);
+		if (enabled)
+			break;
 
-	/* Returns the computed result. */
+		/* Tries the following step. */
+		next++;
+	}
+
+	/* Reports the step found, or the end. */
 	return (enum intel_ax211_runtime_step)next;
 }
