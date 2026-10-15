@@ -70,6 +70,12 @@ Resume point: 2026-10-15 夜 q1209（P1）: design.md 改訂 4（§6 の段の�
 3. zedBSD に ssh で入り、`sysctl kern.boot.login`（graphical）、`/var/log/sessiond.log`（SESSION start・HANDOFF）、`dmesg` の i915 の行（`lease 1 claimed`・`PICTURE UP`・`perf: … per submit`・`device lost` が 0）、backlight（`backlight-probe -f /dev/backlight/backlight0`、Q1 の `build/q1/blp/bin/backlight-probe`）を見る。LCD の目視はユーザー（頼まず、一覧に）。
 4. 5330 の DHCP が取れない事がある（2026-10-15、ユーザーが再取得して回復）。ssh が届かない時は止まったと決めつけず、ユーザーに知らせる。
 
+## レビュー 4 への判断（2026-10-15 夜 ユーザー、クリック）
+
+- 内蔵 LCD に映っているかの確かめ（レビュー 4 の B3）:「register などの証拠で代える」→ 各段の回帰で panel の電源（PP_STATUS）・backlight の PWM・frame counter・表示中の buffer（SURFLIVE）・pipe の CRC を ssh で読み、段の前後で比べる。目視は節目だけユーザーの一覧に。
+- HDMI・USB-C DP の外部 monitor の常設（M7）:「常設できない」→ 外部出力は節目だけユーザーの一覧で確かめる。
+- 段の kernel で止まった時（M8）:「その都度自分で入れ直す」→ 止まったら Q1 がユーザーに知らせる。
+
 ## §7 の回答（2026-10-15 夕 ユーザー、1 件ずつクリック）
 
 | # | 回答 | 既定の案との差 |
