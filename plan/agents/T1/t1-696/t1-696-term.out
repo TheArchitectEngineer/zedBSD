@@ -1,0 +1,11 @@
+VK SWAPCHAIN direct=0 reason=renderer width=916 height=632 images=3
+ZTERM SETTINGS run=term ambiguous_wide=0 font_size=16 theme=0
+ZTERM MENU state selection=0 clipboard=0 pixels=16 fullscreen=0 ambiguous_wide=0 theme=0 find=0
+ZTERM MENU ready items=39
+ZTERM TAB active id=1
+ZTERM TAB new run=term id=1 count=1
+ZTERM START run=term columns=90 rows=28 cell=10x22 window=916x632
+ZTERM TABS count=1 active=1 mode=0
+ZTERM TITLE tab=1 title=Terminal
+ZTERM CLIPBOARD selection text=0
+ZTERM PRIMARY offer text=0

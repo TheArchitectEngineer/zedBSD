@@ -1,0 +1,17 @@
+VK SWAPCHAIN direct=0 reason=renderer width=1120 height=720 images=3
+VK SWAPCHAIN direct=0 reason=renderer width=1120 height=720 images=3
+ZFILES LOCATION kind=today path=/home/kei items=0 error=0
+ZFILES GLASS on
+ZFILES MENU state selection=0 folder=0 paste=0 undo=0 back=0 view=0 sort=0 openers=0
+ZFILES MENU ready items=67
+ZFILES TITLEBAR state back=0 forward=0 parts=1 last=Today view=0 preview=0 progress=-1 query= focus=0
+ZFILES TITLEBAR ready controls=8
+ZFILES PACING motion=1 frame=1 errno=0
+ZFILES DEVICES count=0
+ZFILES APPEARANCE appearance=0 accent=0
+ZFILES GLASS panels count=2
+ZFILES READY width=1120 height=720 token=-
+ZFILES HOME free path=/ available=828653568
+ZFILES HOME free result errno=0
+ZFILES MOUNTS count=7
+ZFILES MOUNTS result errno=0

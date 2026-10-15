@@ -755,3 +755,4 @@ P1 の依頼が無い間に、T1 が自分で ticket を読み、QEMU で確か�
 | T1-693 | WS037 reboot・shutdown で GSP を止める（RTX 機で reboot 10 回、7d3fb21c5） | phase007 | **FAIL**（`P4m bar1 before the tables` が 11 回とも出る。P4m ok・P8c ok・session は通る。P7 の行は log に残らず取れない。[results](results-20261016-t1-693.md)） |
 | T1-694 | QEMU の nvme を pcie-root-port の下に置いた reboot・poweroff 3 回ずつ | phase007 | PASS（reset・停止・次の boot の login・fsck 修復なし。shutdown の 2 行は取れず。[results](results-20261016-t1-694.md)） |
 | T1-695 | Q1（WS037、RTX 機の desktop の描画の速さの計測、ユーザー「RTXでの描画が遅いです。RPi4と大差ないです。」） | 診断だけ | 計測済み（2026-10-16、RTX 実機。frame_ms 静止 12.9・Files 中 29.8・Terminal 中 20.8、draw_ms 0.1 で submit+present が大半、CPU 4%。[results](results-20261016-t1-695.md)） |
+| T1-696 | Q1（WS037、F1〜F3 の後の RTX の描画の速さの計測、ae3c1b567 まで） | 診断だけ | 計測済み（2026-10-16、RTX 実機、tree a401a9555。frame_ms 静止 8.78・Files 16.98・Terminal+Files 約 27.8、nvrtx perf 行は出る・fail 無し。[results](results-20261016-t1-696.md)） |
