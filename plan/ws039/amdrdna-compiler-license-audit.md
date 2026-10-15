@@ -3,7 +3,7 @@
 対象: `src/drivers/gpu/amdrdna/compiler/`（`gfx10-isa.h`・`gfx10-encode.[ch]`・`gfx10-compile.[ch]`・`gfx10-wait.[ch]`・`gfx10-program.[ch]`）。
 規則: [Guardrail「MIT・GPL の出典のデータの引用」](../guardrail.md)（WS039 の項）と [design 13 節](design.md)。値は block ごとの「Values referenced:」、手順は「Procedure referenced:」で示し、file の先頭には出典を書かない。code・comment・構造・symbol の名前は写さない（AMD の公開の RDNA1 ISA の命令名は使ってよい、2026-10-15 ユーザー）。copyright・MIT の notice は付けない。
 
-出典の版: Mesa 25.0.7（tarball `mesa-25.0.7.tar.xz`、SHA-256 `592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6`。署名は公開鍵が無く未検証）。下の表は compiler の source が引用している file の全部（2026-10-15 に `grep` で数えた 20 file）。
+出典の版: Mesa 25.0.7（tarball `mesa-25.0.7.tar.xz`、SHA-256 `592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6`。署名は公開鍵が無く未検証）。下の表は compiler の source が引用している file の全部（2026-10-15 に `grep` で数えた 21 file）。
 
 | file | license | SHA-256 | 取ったもの（値 V / 手順 P） | 引用する compiler の file |
 | --- | --- | --- | --- | --- |
@@ -12,6 +12,7 @@
 | `src/amd/compiler/aco_insert_NOPs.cpp` | MIT（SPDX） | `f25ed0cf369737118e4873472af7cbe3628da057851e07f7b82918f2b1e79409` | V: s_waitcnt_depctr の 0xffe3・0xfffe と欄。P: GFX10 の 4 つの hazard（`handle_instruction_gfx10`） | `gfx10-isa.h`・`gfx10-wait.c` |
 | `src/amd/compiler/aco_ir.h` | MIT（SPDX） | `2908a52a0fc4401ce0bf9fa48f5e2b2afbacf3d1f33291e9585e39e05429310d` | V: operand の番号（vcc・m0・null・exec）、inline の整数・浮動小数の番号 | `gfx10-isa.h` |
 | `src/amd/compiler/aco_ir.cpp` | MIT（SPDX） | `b1665561dabb95c481991627436722121cd04699eba48c73bc1d45773f7d5083` | V: s_waitcnt の欄（`wait_imm::pack` の GFX10） | `gfx10-isa.h` |
+| `src/amd/compiler/aco_validate.cpp` | MIT（SPDX） | `7961dc5336a3ae034961986087e8ff7ae599090b84d22d21670cbe8702c2b1b2` | V: VALU の constant bus の上限 2（GFX10、64 bit の shift を除く） | `gfx10-compile.c` |
 | `src/amd/compiler/aco_instruction_selection.cpp` | MIT（SPDX） | `b96cc3b28e5b571ff47f3bc5eb8bdbc6bf6c583b3893caafdc0dc0f8eb36de8c` | V: DS の cmpst と buffer の cmpswap の data・compare の順、offset の 6 bit × 8 bit 間隔。P: image の address の順（`visit_tex`） | `gfx10-isa.h`・`gfx10-compile.c` |
 | `src/amd/compiler/aco_lower_to_hw_instr.cpp` | MIT（SPDX） | `b53d1bb3aa0dbe63f07741655d63730e2126458e92beaddc65deffe3a253a6a2` | P: discard の早い終わり（exec 0 の null export done vm、s_endpgm） | `gfx10-compile.c` |
 | `src/amd/compiler/README-ISA.md` | MIT（Mesa の既定、`docs/license.rst`） | `6698da9ade24f469cb2b1046a529d8663fece6ea334ee31cf57dc857a6ca5251` | V: VOP1 を VOP3 で書く足し算。P: GFX10 の hazard、L0/L1 と GLC・DLC、LDS で M0 を使わない | `gfx10-isa.h`・`gfx10-wait.c`・`gfx10-compile.c` |
@@ -32,6 +33,6 @@
 
 - file の先頭 20 行: 9 file とも出典の語（referenced・Mesa・SHA-256）が無い。
 - `0x` の値を持つ `#define AMDRDNA_*` の全 block: 直前の（空行で区切られた）comment に「Values referenced:」がある（script で全数）。zedBSD 自身の値（flag の bit など）は `0x` を使わず `(1U << n)` で書き、自分の値と comment に書いた。
-- 識別子: compiler の code（comment と文字列を除く）の識別子と、上の 20 file の識別子・json の名前の交差は一般語（`address`・`count`・`offset`・`stage` など）だけ。`has_bias`・`linear_vgpr`・`vertex_inputs`・`storage_count`・`read_count`/`write_count` は改名した。
+- 識別子: compiler の code（comment と文字列を除く）の識別子と、上の 21 file の識別子・json の名前の交差は一般語（`address`・`count`・`offset`・`stage` など）だけ。`has_bias`・`linear_vgpr`・`vertex_inputs`・`storage_count`・`read_count`/`write_count`・`is_signed` は改名した。
 - 構造: ACO は SSA の C++ の多段の compiler、zedBSD は scalar IR から直に命令の列を作り、待ちと hazard を 1 本の straight line の pass で入れる。pass の分け方・関数の切り方・comment の文は ACO と別。
 - 人の review（design 13.3 の 3）は p010 で。

@@ -197,13 +197,14 @@
  * ==== Scalar memory opcodes ====
  *
  * Values referenced: Mesa 25.0.7 src/amd/compiler/aco_opcodes.py
- * (the GFX10 numbers of the table SMEM, lines 787-800).
+ * (the GFX10 numbers of the table SMEM, lines 787-803).
  */
 #define AMDRDNA_GFX10_S_LOAD_DWORD	0x00U
 #define AMDRDNA_GFX10_S_LOAD_DWORDX2	0x01U
 #define AMDRDNA_GFX10_S_LOAD_DWORDX4	0x02U
 #define AMDRDNA_GFX10_S_LOAD_DWORDX8	0x03U
 #define AMDRDNA_GFX10_S_BUFFER_LOAD_DWORD 0x08U
+#define AMDRDNA_GFX10_S_BUFFER_LOAD_DWORDX4 0x0aU
 
 /*
  * ==== Vector ALU opcodes ====

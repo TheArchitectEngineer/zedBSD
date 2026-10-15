@@ -814,12 +814,15 @@ scalar_load(
 	case 0x08U:
 		count = 1U;
 		break;
+	case 0x0aU:
+		count = 4U;
+		break;
 	default:
 		return fail(run, "a scalar load opcode the machine does not know");
 	}
 
 	/* The base registers are ready, and the destination is not waiting for anything. */
-	for (index = 0U; index < (opcode == 0x08U ? 4U : 2U); index++) {
+	for (index = 0U; index < (opcode >= 0x08U ? 4U : 2U); index++) {
 		error = check_scalar_read(run, wave, base + index);
 		if (error != 0)
 			return error;
@@ -835,7 +838,7 @@ scalar_load(
 	/* Loads each word: a buffer load reads 0 past the descriptor's record count. */
 	for (index = 0U; index < count; index++) {
 		value = 0U;
-		if (opcode == 0x08U) {
+		if (opcode >= 0x08U) {
 			address = (uint64_t)wave->s[base] | ((uint64_t)(wave->s[base + 1U] & 0xffffU) << 32);
 			if (offset + 4U * index + 4U <= wave->s[base + 2U]) {
 				bytes = memory_at(run, address + offset + 4U * index, 4U);
@@ -855,7 +858,7 @@ scalar_load(
 	}
 
 	/* The base registers stay read for the SMEMtoVectorWrite hazard. */
-	mark_scalar_reads(wave->read_by_scalar_load, base, opcode == 0x08U ? 4U : 2U);
+	mark_scalar_reads(wave->read_by_scalar_load, base, opcode >= 0x08U ? 4U : 2U);
 	return 0;
 }
 
@@ -937,6 +940,39 @@ vector_alu(
 	for (index = 0U; index < 3U; index++) {
 		if (src[index] == CODE_LITERAL)
 			*used_literal = 1;
+	}
+
+	/* The constant bus: at most two distinct scalar values (SGPRs, VCC, the literal) among the sources read. */
+	{
+		unsigned seen[3];
+		unsigned seen_count = 0U;
+		unsigned reads = sources;
+		unsigned other;
+		int known_scalar;
+
+		if (wide != 0 && opcode >= 0x180U && opcode < 0x200U)
+			reads = 1U;
+		if (wide != 0 && opcode >= 0x100U && opcode < 0x180U && opcode != 0x101U)
+			reads = 2U;
+		if (wide != 0 && opcode < 0x100U)
+			reads = 2U;
+		if (wide != 0 && opcode >= 0x200U && opcode != 0x143U && opcode != 0x14bU)
+			reads = 2U;
+		for (index = 0U; index < reads; index++) {
+			if (src[index] >= 128U && src[index] != CODE_LITERAL)
+				continue;
+			known_scalar = 0;
+			for (other = 0U; other < seen_count; other++) {
+				if (seen[other] == src[index])
+					known_scalar = 1;
+			}
+			if (known_scalar == 0) {
+				if (seen_count == 2U)
+					return fail(run, "a vector instruction reads more than two scalar values (the constant bus)");
+				seen[seen_count] = src[index];
+				seen_count++;
+			}
+		}
 	}
 
 	/* The destination is not waiting for anything; a scalar one ends no hazard here but is checked. */
