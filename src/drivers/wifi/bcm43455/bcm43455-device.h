@@ -36,7 +36,10 @@
 /* The most valid channels the firmware's list may hold. */
 #define BCM43455_CHANNELS_MAX		64U
 
-/* How many events are logged after each start, so a board's first bring-up shows them. */
+/*
+ * How many events are logged after each start, so a board's first bring-up
+ * shows them.
+ */
 #define BCM43455_EVENT_LOG_LIMIT	16U
 
 /* The network device's MTU. */

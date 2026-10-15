@@ -120,7 +120,9 @@ bcm43455_event_decode(
 	event->interface_index = frame[MESSAGE_INTERFACE_INDEX];
 	event->bsscfg_index = frame[MESSAGE_BSSCFG_INDEX];
 
-	/* The event's data follows the message and must lie inside the frame. */
+	/*
+	 * The event's data follows the message and must lie inside the frame.
+	 */
 	data_length = bcm43455_get_be32(frame + MESSAGE_DATA_LENGTH);
 	if ((size_t)data_length > length - BCM43455_EVENT_HEADER_LENGTH)
 		return EPROTO;

@@ -33,7 +33,9 @@
 /* How much of a frame is read before its length is known: its SDPCM header. */
 #define FIRST_READ			BCM43455_SDPCM_HEADER_LENGTH
 
-/* The most frames one pass of the receive path reads before it lets sends in. */
+/*
+ * The most frames one pass of the receive path reads before it lets sends in.
+ */
 #define FRAMES_PER_SERVICE		32U
 
 /* How long a direct-mode request sleeps between looks at the chip. */
@@ -101,7 +103,9 @@ bcm43455_bus_init(
 	bus->hook_context = hook_context;
 	bus->next_id = 1;
 
-	/* Prepares the locks and the queues requesters and stoppers sleep on. */
+	/*
+	 * Prepares the locks and the queues requesters and stoppers sleep on.
+	 */
 	error = mutex_init(&bus->control_lock, LOCK_RANK_DEVICE, "bcm43455 control");
 	if (error != 0)
 		return error;
@@ -138,7 +142,10 @@ bcm43455_bus_direct(
 	struct bcm43455_bus *bus,
 	int allowed)
 {
-	/* Waits out a request in flight, so the change takes effect between requests. */
+	/*
+	 * Waits out a request in flight, so the change takes effect between
+	 * requests.
+	 */
 	mutex_lock(&bus->control_lock);
 
 	bus->direct_allowed = 0;
@@ -175,7 +182,9 @@ bcm43455_bus_control(
 	if (input_length > BCM43455_BCDC_CONTROL_MAX || answer_capacity > BCM43455_BCDC_CONTROL_MAX)
 		return EINVAL;
 
-	/* A get sends as many bytes as it wants back, its input at their start. */
+	/*
+	 * A get sends as many bytes as it wants back, its input at their start.
+	 */
 	request_length = input_length;
 	if (!set && answer_capacity > request_length)
 		request_length = answer_capacity;
@@ -183,19 +192,26 @@ bcm43455_bus_control(
 	/* Admits one request at a time, held while it waits. */
 	mutex_lock(&bus->control_lock);
 
-	/* Hands the request to the thread when it runs, else runs it directly if allowed. */
+	/*
+	 * Hands the request to the thread when it runs, else runs it directly
+	 * if allowed.
+	 */
 	enabled = spin_lock_irqsave(&bus->lock);
 
 	running = bus->thread_running;
 
 	spin_unlock_irqrestore(&bus->lock, enabled);
 
+	/* Sends the request the way the bus is served now. */
 	if (running) {
 		error = slot_control(bus, command, set, input, input_length, request_length, answer, answer_capacity, answer_length);
 	} else if (bus->direct_allowed) {
 		error = direct_control(bus, command, set, input, input_length, request_length, answer, answer_capacity, answer_length);
 	} else {
-		/* Neither the thread nor the lifecycle owner holds the bus: it is down. */
+		/*
+		 * Neither the thread nor the lifecycle owner holds the bus: it
+		 * is down.
+		 */
 		error = ENETDOWN;
 	}
 
@@ -311,7 +327,10 @@ bcm43455_bus_thread_start(
 		return error;
 	}
 
-	/* From here requests go to the thread, and only the thread uses the bus. */
+	/*
+	 * From here requests go to the thread, and only the thread uses the
+	 * bus.
+	 */
 	enabled = spin_lock_irqsave(&bus->lock);
 
 	bus->thread_running = 1;
@@ -323,7 +342,10 @@ bcm43455_bus_thread_start(
 
 	spin_unlock_irqrestore(&bus->lock, enabled);
 
-	/* Starts it; nobody joins it, bcm43455_bus_thread_stop() waits for its flag instead. */
+	/*
+	 * Starts it; nobody joins it, bcm43455_bus_thread_stop() waits for its
+	 * flag instead.
+	 */
 	thread->detached = 1;
 	thread_start(thread);
 
@@ -345,7 +367,10 @@ bcm43455_bus_thread_stop(
 	unsigned running;
 	int error;
 
-	/* Asks the thread to stop; a thread that already stopped, or never ran, only reports why. */
+	/*
+	 * Asks the thread to stop; a thread that already stopped, or never ran,
+	 * only reports why.
+	 */
 	enabled = spin_lock_irqsave(&bus->lock);
 
 	running = bus->thread_running;
@@ -365,6 +390,8 @@ bcm43455_bus_thread_stop(
 		observed = waitq_sequence(&bus->finished_wait);
 		(void)waitq_sleep(&bus->finished_wait, &bus->lock, observed, 0, 0);
 	}
+
+	/* Takes the error the thread stopped on. */
 	error = bus->thread_error;
 
 	spin_unlock_irqrestore(&bus->lock, enabled);
@@ -456,12 +483,17 @@ bcm43455_bus_thread_control(
 	if (input_length > BCM43455_BCDC_CONTROL_MAX || answer_capacity > BCM43455_BCDC_CONTROL_MAX)
 		return 0;
 
-	/* A get sends as many bytes as it wants back, its input at their start. */
+	/*
+	 * A get sends as many bytes as it wants back, its input at their start.
+	 */
 	request_length = input_length;
 	if (!set && answer_capacity > request_length)
 		request_length = answer_capacity;
 
-	/* The thread owns the bus: it sends the command and reads until the answer comes. */
+	/*
+	 * The thread owns the bus: it sends the command and reads until the
+	 * answer comes.
+	 */
 	error = own_request(bus, command, set, input, input_length, request_length, answer, answer_capacity, answer_length, outcome);
 	if (error != 0)
 		return error;
@@ -480,6 +512,7 @@ bus_thread(
 {
 	struct bcm43455_bus *bus;
 	unsigned long enabled;
+	uint64_t poll_deadline;
 	unsigned stop;
 	unsigned work;
 	unsigned radio_work;
@@ -487,6 +520,7 @@ bus_thread(
 	int waited;
 	int error;
 
+	/* The argument is the bus the thread serves; it has not failed yet. */
 	bus = argument;
 	error = 0;
 
@@ -500,6 +534,11 @@ bus_thread(
 		enabled = spin_lock_irqsave(&bus->lock);
 
 		stop = bus->stop_requested;
+
+		/*
+		 * Only a credit lets a queued request or a waiting frame count
+		 * as work.
+		 */
 		work = 0;
 		if (window != 0) {
 			if (bus->slot.state == BCM43455_SLOT_QUEUED)
@@ -507,6 +546,11 @@ bus_thread(
 			if (bus->work_requested)
 				work = 1;
 		}
+
+		/*
+		 * Takes the radio work, which counts as work with or without a
+		 * credit.
+		 */
 		radio_work = bus->radio_work_pending;
 		bus->radio_work_pending = 0;
 		if (radio_work)
@@ -518,17 +562,24 @@ bus_thread(
 		if (stop)
 			break;
 
-		/* Without work, sleeps until the card interrupts, a kick comes, or the poll is due. */
+		/*
+		 * Without work, sleeps until the card interrupts, a kick comes,
+		 * or the poll is due.
+		 */
 		waited = EAGAIN;
 		if (!work) {
-			waited = bus->chip.ops->interrupt_wait(bus->chip.context, deadline_after(BCM43455_BUS_POLL_MS));
+			poll_deadline = deadline_after(BCM43455_BUS_POLL_MS);
+			waited = bus->chip.ops->interrupt_wait(bus->chip.context, poll_deadline);
 			if (waited == 0)
 				bus->counters.interrupts++;
 			else if (waited == ETIMEDOUT)
 				bus->counters.polls++;
 		}
 
-		/* Reads what the chip has, then lets its interrupt in again if it fired. */
+		/*
+		 * Reads what the chip has, then lets its interrupt in again if
+		 * it fired.
+		 */
 		error = service(bus);
 		if (waited == 0)
 			bus->chip.ops->interrupt_rearm(bus->chip.context);
@@ -545,13 +596,18 @@ bus_thread(
 				break;
 		}
 
-		/* Sends the request and the frames that wait, within the credit. */
+		/*
+		 * Sends the request and the frames that wait, within the
+		 * credit.
+		 */
 		error = send_pending(bus);
 		if (error != 0)
 			break;
 	}
 
-	/* Tells the device that its bus failed, so it can report the link lost. */
+	/*
+	 * Tells the device that its bus failed, so it can report the link lost.
+	 */
 	if (error != 0) {
 		kern_logf("bcm43455: bus thread stopped on error %d\n", error);
 		if (bus->hooks->failed != NULL)
@@ -573,6 +629,8 @@ bus_thread(
 	} else if (bus->slot.state == BCM43455_SLOT_ABANDONED) {
 		bus->slot.state = BCM43455_SLOT_EMPTY;
 	}
+
+	/* Leaves the error for the stopper and tells it the thread is gone. */
 	bus->thread_error = error;
 	bus->thread_running = 0;
 	waitq_wake_all(&bus->finished_wait);
@@ -600,13 +658,19 @@ service(
 	unsigned frames;
 	int error;
 
-	/* Reads what the SDIO core has to say: the to-host mailbox's bits and chip activity. */
+	/*
+	 * Reads what the SDIO core has to say: the to-host mailbox's bits and
+	 * chip activity.
+	 */
 	error = bcm43455_chip_read32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_CORE_INTERRUPTS, &status);
 	if (error != 0)
 		return error;
 	status &= BCM43455_INT_MAILBOX_MASK | BCM43455_INT_CHIP_ACTIVE;
 
-	/* Clears the bits it raised before acting on them, so a new one is not lost. */
+	/*
+	 * Clears the bits it raised before acting on them, so a new one is not
+	 * lost.
+	 */
 	if (status != 0) {
 		error = bcm43455_chip_write32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_CORE_INTERRUPTS, status);
 		if (error != 0)
@@ -620,7 +684,10 @@ service(
 			return error;
 	}
 
-	/* Reads frames until the chip has none, a bad one stops the pass, or the pass is long enough. */
+	/*
+	 * Reads frames until the chip has none, a bad one stops the pass, or
+	 * the pass is long enough.
+	 */
 	for (frames = 0; frames < FRAMES_PER_SERVICE; frames++) {
 		error = receive_frame(bus);
 		if (error == ENOENT)
@@ -650,7 +717,10 @@ handle_mailbox(
 	unsigned version;
 	int error;
 
-	/* Reads the data and acknowledges it, which frees the mailbox for the next. */
+	/*
+	 * Reads the data and acknowledges it, which frees the mailbox for the
+	 * next.
+	 */
 	error = bcm43455_chip_read32(&bus->chip, bus->chip.sdio.base + BCM43455_SDIO_TO_HOST_DATA, &data);
 	if (error != 0)
 		return error;
@@ -658,7 +728,10 @@ handle_mailbox(
 	if (error != 0)
 		return error;
 
-	/* Records the protocol version the firmware announces, and refuses another one. */
+	/*
+	 * Records the protocol version the firmware announces, and refuses
+	 * another one.
+	 */
 	version = (data >> BCM43455_TO_HOST_VERSION_SHIFT) & BCM43455_TO_HOST_VERSION_MASK;
 	if (version != 0 && bus->firmware_protocol == 0) {
 		bus->firmware_protocol = version;
@@ -667,7 +740,10 @@ handle_mailbox(
 			return EPROTO;
 	}
 
-	/* A halted firmware ends the bus: it serves nothing more until reloaded. */
+	/*
+	 * A halted firmware ends the bus: it serves nothing more until
+	 * reloaded.
+	 */
 	if ((data & BCM43455_TO_HOST_FIRMWARE_HALT) != 0) {
 		kern_logf("bcm43455: firmware halted (mailbox %08x)\n", data);
 		return EIO;
@@ -712,6 +788,8 @@ receive_frame(
 		kern_memset(bus->rx_frame, 0, FIRST_READ);
 		return ENOENT;
 	}
+
+	/* Aborts a garbled frame, so the next read starts at a frame. */
 	if (error != 0) {
 		kern_memset(bus->rx_frame, 0, FIRST_READ);
 		bus->counters.bad_frames++;
@@ -731,7 +809,9 @@ receive_frame(
 		return 0;
 	}
 
-	/* Reads the rest in four-byte units, or drops a frame too long to keep. */
+	/*
+	 * Reads the rest in four-byte units, or drops a frame too long to keep.
+	 */
 	rest = (size_t)header.length - FIRST_READ;
 	rest = (rest + 3U) & ~(size_t)3U;
 	if (FIRST_READ + rest > sizeof(bus->rx_frame)) {
@@ -742,11 +822,15 @@ receive_frame(
 			return error;
 		return 0;
 	}
+
+	/* Reads the rest behind the header. */
 	error = read_fifo(bus, bus->rx_frame + FIRST_READ, rest);
 	if (error != 0) {
 		kern_memset(bus->rx_frame, 0, FIRST_READ + rest);
 		return error;
 	}
+
+	/* The frame takes the header and the rest. */
 	used = FIRST_READ + rest;
 
 	/* Hands the frame to its channel's consumer, then clears it. */
@@ -772,7 +856,10 @@ read_fifo(
 	unsigned block;
 	int error;
 
-	/* A run longer than a block goes as whole blocks, then a byte-mode tail. */
+	/*
+	 * A run longer than a block goes as whole blocks, then a byte-mode
+	 * tail.
+	 */
 	block = bus->chip.ops->block_size(bus->chip.context, BCM43455_FUNCTION_FRAMES);
 	blocks = 0;
 	if (block != 0 && length > block)
@@ -906,23 +993,31 @@ dispatch(
 			bus->counters.bad_frames++;
 			break;
 		}
+
+		/* Decodes the event the Ethernet frame carries. */
 		frame = payload + data.frame_offset;
 		error = bcm43455_event_decode(frame, data.frame_length, &event);
 		if (error != 0) {
 			bus->counters.bad_frames++;
 			break;
 		}
+
+		/* Hands the event to the device. */
 		bus->counters.events_in++;
 		bus->hooks->event(bus->hook_context, &event, frame, data.frame_length);
 		break;
 
 	case BCM43455_SDPCM_CHANNEL_DATA:
-		/* A data frame is an Ethernet frame behind a BCDC data header. */
+		/*
+		 * A data frame is an Ethernet frame behind a BCDC data header.
+		 */
 		error = bcm43455_bcdc_decode_data(payload, length, &data);
 		if (error != 0) {
 			bus->counters.bad_frames++;
 			break;
 		}
+
+		/* Hands the Ethernet frame to the device. */
 		bus->counters.data_in++;
 		bus->hooks->data(bus->hook_context, payload + data.frame_offset, data.frame_length);
 		break;
@@ -984,7 +1079,10 @@ deliver_answer(
 		return;
 	}
 
-	/* Otherwise the answer belongs to the slot's request, if that is the one sent. */
+	/*
+	 * Otherwise the answer belongs to the slot's request, if that is the
+	 * one sent.
+	 */
 	enabled = spin_lock_irqsave(&bus->lock);
 
 	if (bus->slot.state == BCM43455_SLOT_SENT &&
@@ -1023,7 +1121,7 @@ answer_error(
 	if (answer->status == FIRMWARE_UNSUPPORTED)
 		return EOPNOTSUPP;
 
-	/* Any other refusal. */
+	/* Any other refusal is an I/O error, logged with the firmware's status. */
 	kern_logf("bcm43455: firmware refused command %u (status %d)\n", answer->command, (int)answer->status);
 	return EIO;
 }
@@ -1052,6 +1150,8 @@ send_frame(
 		kern_memset(bus->tx_frame, 0, sizeof(bus->tx_frame));
 		return EINVAL;
 	}
+
+	/* Clears the padding behind the frame. */
 	kern_memset(bus->tx_frame + length, 0, padded - length);
 
 	/* Stamps the header with the next sequence number. */
@@ -1181,7 +1281,10 @@ send_data(
 
 	/* Sends frames until the device has none or the credit runs out. */
 	for (;;) {
-		/* Without credit, the frames stay with the device until the firmware grants more. */
+		/*
+		 * Without credit, the frames stay with the device until the
+		 * firmware grants more.
+		 */
 		window = bcm43455_sdpcm_window(bus->tx_credit_limit, bus->tx_sequence);
 		if (window == 0) {
 			enabled = spin_lock_irqsave(&bus->lock);
@@ -1192,7 +1295,10 @@ send_data(
 			break;
 		}
 
-		/* Asks the device for its next frame, placed behind both headers. */
+		/*
+		 * Asks the device for its next frame, placed behind both
+		 * headers.
+		 */
 		length = 0;
 		given = bus->hooks->transmit(
 			bus->hook_context,
@@ -1298,6 +1404,7 @@ own_request(
 	unsigned window;
 	int error;
 
+	/* No refusal yet. */
 	*outcome = 0;
 
 	/* Takes the request's id. */
@@ -1330,7 +1437,10 @@ own_request(
 	bus->direct.answer_length = 0;
 	bus->direct.error = 0;
 
-	/* Builds the frame: the input, then zeros up to the room for the answer. */
+	/*
+	 * Builds the frame: the input, then zeros up to the room for the
+	 * answer.
+	 */
 	length = build_control(bus, command, set, id, input, input_length);
 	if (request_length > input_length) {
 		kern_memset(bus->tx_frame + length, 0, request_length - input_length);
@@ -1343,7 +1453,7 @@ own_request(
 		length += request_length - input_length;
 	}
 
-	/* Sends it. */
+	/* Sends the request on the control channel. */
 	error = send_frame(bus, BCM43455_SDPCM_CHANNEL_CONTROL, length);
 	if (error != 0) {
 		bus->direct.active = 0;
@@ -1351,7 +1461,10 @@ own_request(
 		return error;
 	}
 
-	/* Reads what the chip sends until the answer comes, the time is spent, or a stop comes. */
+	/*
+	 * Reads what the chip sends until the answer comes, the time is spent,
+	 * or a stop comes.
+	 */
 	error = 0;
 	while (!bus->direct.done) {
 		error = direct_wait(bus, deadline, outcome);
@@ -1360,6 +1473,8 @@ own_request(
 		if (*outcome != 0)
 			break;
 	}
+
+	/* Ends the direct request, whatever came of it. */
 	bus->direct.active = 0;
 	bus->direct.answer = NULL;
 	if (error != 0)
@@ -1399,6 +1514,7 @@ slot_control(
 	unsigned long enabled;
 	uint64_t deadline;
 	uint64_t observed;
+	uint64_t now;
 	size_t copied;
 	int error;
 
@@ -1409,6 +1525,8 @@ slot_control(
 		spin_unlock_irqrestore(&bus->lock, enabled);
 		return ENETDOWN;
 	}
+
+	/* Copies the request in and marks it queued for the thread. */
 	kern_memset(bus->slot.request, 0, sizeof(bus->slot.request));
 	if (input_length != 0)
 		kern_memcpy(bus->slot.request, input, input_length);
@@ -1434,15 +1552,22 @@ slot_control(
 
 	while (bus->slot.state != BCM43455_SLOT_ANSWERED) {
 		/* Gives up at the deadline. */
-		if (sched_ticks() >= deadline)
+		now = sched_ticks();
+		if (now >= deadline)
 			break;
 
-		/* Sleeps on the thread's wakeup; EAGAIN means one came meanwhile. */
+		/*
+		 * Sleeps on the thread's wakeup; EAGAIN means one came
+		 * meanwhile.
+		 */
 		observed = waitq_sequence(&bus->answer_wait);
 		(void)waitq_sleep(&bus->answer_wait, &bus->lock, observed, deadline, 0);
 	}
 
-	/* Takes the answer, or leaves the slot so a late answer is recognized and dropped. */
+	/*
+	 * Takes the answer, or leaves the slot so a late answer is recognized
+	 * and dropped.
+	 */
 	copied = 0;
 	if (bus->slot.state == BCM43455_SLOT_ANSWERED) {
 		error = bus->slot.error;
@@ -1451,6 +1576,8 @@ slot_control(
 			if (copied != 0)
 				kern_memcpy(answer, bus->slot.answer, copied);
 		}
+
+		/* Clears the slot's copy and frees the slot. */
 		kern_memset(bus->slot.answer, 0, sizeof(bus->slot.answer));
 		bus->slot.state = BCM43455_SLOT_EMPTY;
 	} else if (bus->slot.state == BCM43455_SLOT_QUEUED) {
@@ -1459,7 +1586,9 @@ slot_control(
 		bus->slot.state = BCM43455_SLOT_EMPTY;
 		error = ETIMEDOUT;
 	} else {
-		/* Sent and unanswered: the thread drops the answer if it comes. */
+		/*
+		 * Sent and unanswered: the thread drops the answer if it comes.
+		 */
 		bus->slot.state = BCM43455_SLOT_ABANDONED;
 		error = ETIMEDOUT;
 	}
@@ -1502,7 +1631,10 @@ direct_wait(
 	if (bus->direct.active && bus->direct.done)
 		return 0;
 
-	/* The bus thread gives up when it is asked to stop; direct mode has no thread to stop. */
+	/*
+	 * The bus thread gives up when it is asked to stop; direct mode has no
+	 * thread to stop.
+	 */
 	enabled = spin_lock_irqsave(&bus->lock);
 
 	stopping = 0;
@@ -1551,7 +1683,7 @@ take_id_locked(
 	if (bus->next_id == 0)
 		bus->next_id = 1;
 
-	/* Reports the id. */
+	/* Succeeded: the id names one request. */
 	return id;
 }
 
@@ -1567,6 +1699,6 @@ deadline_after(
 	now = sched_ticks();
 	ticks = kern_ms_to_ticks(milliseconds);
 
-	/* Reports the tick. */
+	/* Reports the tick of the deadline. */
 	return now + ticks;
 }

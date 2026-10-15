@@ -27,7 +27,10 @@
 /* How long the slow (ALP) clock may take to come, in milliseconds. */
 #define ALP_WAIT_MS			50U
 
-/* How long a requested clock (ALP for the download, HT afterwards) may take to come. */
+/*
+ * How long a requested clock (ALP for the download, HT afterwards) may take to
+ * come.
+ */
 #define HT_WAIT_MS			5000U
 
 /* How long function 2 may take to report ready once the firmware runs. */
@@ -39,7 +42,9 @@
 /* The shortest firmware image the download takes. */
 #define FIRMWARE_MIN_BYTES		64U
 
-/* The most RAM a 43455 can have; a bank table that adds up to more is garbled. */
+/*
+ * The most RAM a 43455 can have; a bank table that adds up to more is garbled.
+ */
 #define RAM_SIZE_MAX			(2U * 1024U * 1024U)
 
 static int set_window(struct bcm43455_chip *chip, uint32_t address);
@@ -131,17 +136,25 @@ bcm43455_chip_identify(
 		chip->ram_base,
 		chip->ram_size);
 
-	/* Halts the ARM core and the radio, so nothing runs from RAM until the download. */
+	/*
+	 * Halts the ARM core and the radio, so nothing runs from RAM until the
+	 * download.
+	 */
 	error = halt_cores(chip);
 	if (error != 0)
 		return error;
 
-	/* Finds the PMU and learns whether the firmware will run save-restore. */
+	/*
+	 * Finds the PMU and learns whether the firmware will run save-restore.
+	 */
 	error = read_power_unit(chip);
 	if (error != 0)
 		return error;
 
-	/* Prepares the SDIO interface and the PMU for the firmware, and leaves the chip on its slow clock. */
+	/*
+	 * Prepares the SDIO interface and the PMU for the firmware, and leaves
+	 * the chip on its slow clock.
+	 */
 	error = prepare_interface(chip);
 	if (error != 0)
 		return error;
@@ -288,7 +301,10 @@ bcm43455_chip_download(
 	if (error != 0)
 		return error;
 
-	/* Moves the download on the slow clock; the fast one comes only once the firmware runs. */
+	/*
+	 * Moves the download on the slow clock; the fast one comes only once
+	 * the firmware runs.
+	 */
 	error = request_clock(chip, BCM43455_CLOCK_ALP_REQUEST, BCM43455_CLOCK_ALP_AVAILABLE, "slow");
 	if (error != 0)
 		return error;
@@ -301,7 +317,10 @@ bcm43455_chip_download(
 	if (error != 0)
 		return error;
 
-	/* Writes the NVRAM at the top of RAM, where the firmware looks for it, and reads it back. */
+	/*
+	 * Writes the NVRAM at the top of RAM, where the firmware looks for it,
+	 * and reads it back.
+	 */
 	error = bcm43455_chip_write_memory(chip, nvram_address, nvram, nvram_length);
 	if (error != 0)
 		return error;
@@ -320,19 +339,27 @@ bcm43455_chip_download(
 	if (error != 0)
 		return error;
 
-	/* Puts the firmware's reset vector, its first word, where the ARM core starts. */
+	/*
+	 * Puts the firmware's reset vector, its first word, where the ARM core
+	 * starts.
+	 */
 	vector = bcm43455_get_le32(firmware);
 	error = bcm43455_chip_write32(chip, 0, vector);
 	if (error != 0)
 		return error;
 
-	/* Lets the ARM core out of reset without the halt: the firmware starts. */
+	/*
+	 * Lets the ARM core out of reset without the halt: the firmware starts.
+	 */
 	halted = BCM43455_CR4_IO_CPU_HALT;
 	error = restart_core(chip, &chip->cr4, halted, 0, 0);
 	if (error != 0)
 		return error;
 
-	/* Gives the clock request back to the chip until the frame function starts. */
+	/*
+	 * Gives the clock request back to the chip until the frame function
+	 * starts.
+	 */
 	error = chip->ops->write_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, 0);
 	if (error != 0)
 		return error;
@@ -360,7 +387,10 @@ bcm43455_chip_start(
 	uint8_t capability;
 	int error;
 
-	/* Asks for the fast clock, which the running firmware provides, and holds it while the frame function starts. */
+	/*
+	 * Asks for the fast clock, which the running firmware provides, and
+	 * holds it while the frame function starts.
+	 */
 	error = request_clock(chip, BCM43455_CLOCK_HT_REQUEST, BCM43455_CLOCK_HT_AVAILABLE, "fast");
 	if (error != 0)
 		return error;
@@ -383,14 +413,20 @@ bcm43455_chip_start(
 	if (error != 0)
 		return error;
 
-	/* Enables the frame function, which reports ready once the firmware serves it. */
+	/*
+	 * Enables the frame function, which reports ready once the firmware
+	 * serves it.
+	 */
 	error = chip->ops->enable_function(chip->context, BCM43455_FUNCTION_FRAMES, FRAMES_READY_MS);
 	if (error != 0) {
 		kern_logf("bcm43455: frame function not ready (%d)\n", error);
 		return error;
 	}
 
-	/* Lets the to-host mailbox and the chip's activity raise the SDIO core's interrupt. */
+	/*
+	 * Lets the to-host mailbox and the chip's activity raise the SDIO
+	 * core's interrupt.
+	 */
 	error = bcm43455_chip_write32(
 		chip,
 		chip->sdio.base + BCM43455_SDIO_CORE_INTERRUPT_MASK,
@@ -457,7 +493,9 @@ bcm43455_chip_frame_window(
 {
 	int error;
 
-	/* The frame function's address lies in the chip common core's window. */
+	/*
+	 * The frame function's address lies in the chip common core's window.
+	 */
 	error = set_window(chip, BCM43455_CHIPCOMMON_BASE);
 	if (error != 0)
 		return error;
@@ -545,7 +583,10 @@ transfer_memory(
 		if (error != 0)
 			return error;
 
-		/* Takes no more than the window holds past the start, nor than the bounce buffer. */
+		/*
+		 * Takes no more than the window holds past the start, nor than
+		 * the bounce buffer.
+		 */
 		offset = (address + (uint32_t)done) & BCM43455_WINDOW_OFFSET_MASK;
 		room = (size_t)(BCM43455_WINDOW_SIZE - offset);
 		piece = length - done;
@@ -566,6 +607,8 @@ transfer_memory(
 		} else {
 			error = chip->ops->read(chip->context, BCM43455_FUNCTION_BACKPLANE, offset, 1, data + done, piece);
 		}
+
+		/* Reports a piece the bus did not move. */
 		if (error != 0)
 			return error;
 
@@ -573,7 +616,10 @@ transfer_memory(
 		done += piece;
 	}
 
-	/* A write's bounce buffer may have held part of the NVRAM; it keeps nothing. */
+	/*
+	 * A write's bounce buffer may have held part of the NVRAM; it keeps
+	 * nothing.
+	 */
 	if (write)
 		kern_memset(chip->bounce, 0, sizeof(chip->bounce));
 
@@ -604,7 +650,7 @@ start_backplane_clock(
 	if (error != 0)
 		return error;
 
-	/* Waits for it. */
+	/* Waits until the chip says the backplane clock runs. */
 	error = wait_clock(chip, BCM43455_CLOCK_ALP_AVAILABLE, ALP_WAIT_MS);
 	if (error != 0) {
 		kern_logf("bcm43455: backplane clock not available (%d)\n", error);
@@ -678,7 +724,10 @@ scan_erom(
 			break;
 		}
 
-		/* A component starts a core: its id here, its revision and port counts in the next word. */
+		/*
+		 * A component starts a core: its id here, its revision and port
+		 * counts in the next word.
+		 */
 		if (type == BCM43455_EROM_COMPONENT) {
 			if (have_core)
 				keep_core(chip, &core);
@@ -695,7 +744,10 @@ scan_erom(
 			continue;
 		}
 
-		/* Anything but an address descriptor (a master port) says nothing the driver needs. */
+		/*
+		 * Anything but an address descriptor (a master port) says
+		 * nothing the driver needs.
+		 */
 		if ((word & BCM43455_EROM_TYPE_SHORT_MASK) != BCM43455_EROM_ADDRESS)
 			continue;
 
@@ -718,11 +770,16 @@ scan_erom(
 		if (!have_core)
 			continue;
 
-		/* A core's registers and its wrapper are 4 KB or 8 KB; larger regions are memory. */
+		/*
+		 * A core's registers and its wrapper are 4 KB or 8 KB; larger
+		 * regions are memory.
+		 */
 		if (size != BCM43455_EROM_SIZE_4K && size != BCM43455_EROM_SIZE_8K)
 			continue;
 
-		/* Keeps the core's first slave port 0 address as its registers. */
+		/*
+		 * Keeps the core's first slave port 0 address as its registers.
+		 */
 		kind = (word >> BCM43455_EROM_KIND_SHIFT) & BCM43455_EROM_KIND_MASK;
 		port = (word >> BCM43455_EROM_PORT_SHIFT) & BCM43455_EROM_PORT_MASK;
 		if (kind == BCM43455_EROM_KIND_SLAVE &&
@@ -730,7 +787,10 @@ scan_erom(
 		    core.base == 0)
 			core.base = word & BCM43455_EROM_BASE_MASK;
 
-		/* Keeps the core's first wrapper of the kind its ports call for. */
+		/*
+		 * Keeps the core's first wrapper of the kind its ports call
+		 * for.
+		 */
 		if (core.wrapper == 0) {
 			if (kind == BCM43455_EROM_KIND_MASTER_WRAP && master_wraps != 0)
 				core.wrapper = word & BCM43455_EROM_BASE_MASK;
@@ -741,15 +801,21 @@ scan_erom(
 		}
 	}
 
-	/* Refuses a table that does not describe every core the driver drives. */
+	/*
+	 * Refuses a table that does not describe every core the driver drives.
+	 */
 	if (chip->sdio.base == 0) {
 		kern_logf("bcm43455: no SDIO device core in the enumeration ROM\n");
 		return EIO;
 	}
+
+	/* Refuses a table without the processor core and its wrapper. */
 	if (chip->cr4.base == 0 || chip->cr4.wrapper == 0) {
 		kern_logf("bcm43455: no ARM CR4 core in the enumeration ROM\n");
 		return EIO;
 	}
+
+	/* Refuses a table without the radio core's wrapper. */
 	if (chip->d11.wrapper == 0) {
 		kern_logf("bcm43455: no D11 core in the enumeration ROM\n");
 		return EIO;
@@ -866,9 +932,14 @@ hold_core_in_reset(
 	if (error != 0)
 		return error;
 
-	/* A running core is given its pre-reset control, then put into reset. */
+	/*
+	 * A running core is given its pre-reset control, then put into reset.
+	 */
 	if ((control & BCM43455_RESET_CONTROL_RESET) == 0) {
-		/* Sets the pre-reset control with the clock forced on, and reads it back to post the write. */
+		/*
+		 * Sets the pre-reset control with the clock forced on, and
+		 * reads it back to post the write.
+		 */
 		error = bcm43455_chip_write32(
 			chip,
 			core->wrapper + BCM43455_WRAP_IO_CONTROL,
@@ -888,7 +959,10 @@ hold_core_in_reset(
 			return error;
 	}
 
-	/* Sets the in-reset control with the clock forced on, and reads it back. */
+	/*
+	 * Sets the in-reset control with the clock forced on, and reads it
+	 * back.
+	 */
 	error = bcm43455_chip_write32(
 		chip,
 		core->wrapper + BCM43455_WRAP_IO_CONTROL,
@@ -954,7 +1028,10 @@ restart_core(
 			return error;
 	}
 
-	/* Sets the running control with the clock on and the forced gate off, and reads it back. */
+	/*
+	 * Sets the running control with the clock on and the forced gate off,
+	 * and reads it back.
+	 */
 	error = bcm43455_chip_write32(chip, core->wrapper + BCM43455_WRAP_IO_CONTROL, control_released | BCM43455_IO_CONTROL_CLOCK);
 	if (error != 0)
 		return error;
@@ -981,7 +1058,10 @@ halt_cores(
 	uint32_t halt_kept;
 	int error;
 
-	/* Resets the ARM core, keeping only its halt bit across, and leaves it halted. */
+	/*
+	 * Resets the ARM core, keeping only its halt bit across, and leaves it
+	 * halted.
+	 */
 	error = bcm43455_chip_read32(chip, chip->cr4.wrapper + BCM43455_WRAP_IO_CONTROL, &control);
 	if (error != 0)
 		return error;
@@ -990,7 +1070,10 @@ halt_cores(
 	if (error != 0)
 		return error;
 
-	/* Puts the radio core into reset, its PHY reset first and its clock kept. */
+	/*
+	 * Puts the radio core into reset, its PHY reset first and its clock
+	 * kept.
+	 */
 	error = hold_core_in_reset(
 		chip,
 		&chip->d11,
@@ -1021,12 +1104,20 @@ read_power_unit(
 	int separate;
 	int error;
 
-	/* A chip common core of revision 35 or later with the AOB bit has a PMU core of its own. */
+	/*
+	 * A chip common core of revision 35 or later with the AOB bit has a PMU
+	 * core of its own.
+	 */
 	separate = 0;
 	if (chip->chipcommon.revision >= BCM43455_CHIPCOMMON_REVISION_AOB) {
 		if ((chip->capability_ext & BCM43455_CAPABILITY_EXT_AOB) != 0 && chip->pmu.base != 0)
 			separate = 1;
 	}
+
+	/*
+	 * The PMU's registers are in its own core, else in the chip common
+	 * core.
+	 */
 	chip->pmu_base = BCM43455_CHIPCOMMON_BASE;
 	if (separate)
 		chip->pmu_base = chip->pmu.base;
@@ -1038,12 +1129,17 @@ read_power_unit(
 		kern_logf("bcm43455: no PMU\n");
 		return 0;
 	}
+
+	/* Reads the PMU's revision from its capabilities. */
 	error = bcm43455_chip_read32(chip, chip->pmu_base + BCM43455_PMU_CAPABILITY, &capability);
 	if (error != 0)
 		return error;
 	chip->pmu_revision = capability & BCM43455_PMU_REVISION_MASK;
 
-	/* On the 4345 save-restore is bit 2 of chip control register 3, from PMU revision 17. */
+	/*
+	 * On the 4345 save-restore is bit 2 of chip control register 3, from
+	 * PMU revision 17.
+	 */
 	if (chip->pmu_revision >= BCM43455_PMU_REVISION_SR) {
 		error = bcm43455_chip_write32(chip, chip->pmu_base + BCM43455_PMU_CHIP_CONTROL_ADDRESS, BCM43455_PMU_CHIP_CONTROL_SR);
 		if (error != 0)
@@ -1081,7 +1177,10 @@ prepare_interface(
 	uint8_t card;
 	int error;
 
-	/* From SDIO core revision 12 the interface sleeps unless told to keep SDIO on. */
+	/*
+	 * From SDIO core revision 12 the interface sleeps unless told to keep
+	 * SDIO on.
+	 */
 	if (chip->sdio.revision >= BCM43455_SDIO_REVISION_KSO) {
 		error = chip->ops->read_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_SLEEP_CONTROL, &sleep);
 		if (error != 0)
@@ -1149,12 +1248,12 @@ request_clock(
 {
 	int error;
 
-	/* Requests it. */
+	/* Asks the chip for the clock. */
 	error = chip->ops->write_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_CHIP_CLOCK, request);
 	if (error != 0)
 		return error;
 
-	/* Waits for it. */
+	/* Waits until the chip says the clock runs. */
 	error = wait_clock(chip, available, HT_WAIT_MS);
 	if (error != 0) {
 		kern_logf("bcm43455: %s clock not available (%d)\n", name, error);
@@ -1194,7 +1293,10 @@ verify_memory(
 			return error;
 		}
 
-		/* Compares it, then clears the copy, which may hold NVRAM settings. */
+		/*
+		 * Compares it, then clears the copy, which may hold NVRAM
+		 * settings.
+		 */
 		same = kern_memcmp(chip->bounce, expected + done, piece);
 		kern_memset(chip->bounce, 0, sizeof(chip->bounce));
 		if (same != 0) {

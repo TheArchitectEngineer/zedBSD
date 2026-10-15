@@ -71,7 +71,10 @@ bcm43455_bcdc_encode_control(
 {
 	uint32_t flags;
 
-	/* The request id lets the answer be matched; interface 0 is the station. */
+	/*
+	 * The request id lets the answer be matched; interface 0 is the
+	 * station.
+	 */
 	flags = (uint32_t)id << CONTROL_ID_SHIFT;
 	if (set)
 		flags |= CONTROL_FLAG_SET;
@@ -117,7 +120,10 @@ bcm43455_bcdc_decode_control(
 	if ((flags & CONTROL_FLAG_ERROR) != 0)
 		answer->failed = 1;
 
-	/* The payload is what the header claims, but never past what was received. */
+	/*
+	 * The payload is what the header claims, but never past what was
+	 * received.
+	 */
 	received = length - BCM43455_BCDC_CONTROL_LENGTH;
 	answer->payload_offset = BCM43455_BCDC_CONTROL_LENGTH;
 	answer->payload_length = received;
@@ -185,7 +191,10 @@ bcm43455_bcdc_encode_data(
 	unsigned priority,
 	unsigned interface)
 {
-	/* The version, the priority, the interface, and a frame right after the header. */
+	/*
+	 * The version, the priority, the interface, and a frame right after the
+	 * header.
+	 */
 	header[DATA_FLAGS] = (uint8_t)(DATA_VERSION << DATA_VERSION_SHIFT);
 	header[DATA_PRIORITY] = (uint8_t)(priority & DATA_PRIORITY_MASK);
 	header[DATA_FLAGS2] = (uint8_t)(interface & DATA_INTERFACE_MASK);
@@ -218,7 +227,7 @@ bcm43455_bcdc_decode_data(
 	if (offset > length)
 		return EPROTO;
 
-	/* Splits the fields. */
+	/* Keeps the priority, the interface and where the frame is. */
 	data->priority = (unsigned)(payload[DATA_PRIORITY] & DATA_PRIORITY_MASK);
 	data->interface = (unsigned)(payload[DATA_FLAGS2] & DATA_INTERFACE_MASK);
 	data->frame_offset = offset;

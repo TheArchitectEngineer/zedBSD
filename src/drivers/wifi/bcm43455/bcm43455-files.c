@@ -37,38 +37,46 @@ bcm43455_files_load(
 	char version[BCM43455_VERSION_TEXT_MAX];
 	int error;
 
-	/* Refuses nowhere to put the files. */
+	/* Refuses nowhere to put the files, and starts from none. */
 	if (files == NULL)
 		return EINVAL;
 	kern_memset(files, 0, sizeof(*files));
 
-	/* Reads the firmware, whose absence means the package is not installed. */
+	/*
+	 * Reads the firmware, whose absence means the package is not installed.
+	 */
 	error = read_exact(BCM43455_FIRMWARE_PATH, BCM43455_FIRMWARE_SIZE, &files->firmware);
 	if (error != 0)
 		goto fail;
 	files->firmware_length = BCM43455_FIRMWARE_SIZE;
 
-	/* Reads the regulatory table and the board's settings. */
+	/* Reads the regulatory table. */
 	error = read_exact(BCM43455_CLM_PATH, BCM43455_CLM_SIZE, &files->clm);
 	if (error != 0)
 		goto fail;
 	files->clm_length = BCM43455_CLM_SIZE;
+
+	/* Reads the board's settings. */
 	error = read_exact(BCM43455_NVRAM_PATH, BCM43455_NVRAM_SIZE, &files->nvram);
 	if (error != 0)
 		goto fail;
 	files->nvram_length = BCM43455_NVRAM_SIZE;
 
-	/* Checks that each is what the package installs. */
+	/* Checks that the firmware is the one the package installs. */
 	error = bcm43455_firmware_check(files->firmware, files->firmware_length, version, sizeof(version));
 	if (error != 0) {
 		kern_logf("bcm43455: %s is not the 43455 C0 firmware\n", BCM43455_FIRMWARE_PATH);
 		goto fail;
 	}
+
+	/* Checks that the regulatory table is a CLM container. */
 	error = bcm43455_clm_check(files->clm, files->clm_length);
 	if (error != 0) {
 		kern_logf("bcm43455: %s is not a CLM container\n", BCM43455_CLM_PATH);
 		goto fail;
 	}
+
+	/* Checks that the board's settings are NVRAM text. */
 	error = bcm43455_nvram_check(files->nvram, files->nvram_length);
 	if (error != 0) {
 		kern_logf("bcm43455: %s is not NVRAM text\n", BCM43455_NVRAM_PATH);
@@ -113,7 +121,10 @@ bcm43455_files_release(
 	if (files == NULL)
 		return;
 
-	/* Frees each buffer; the NVRAM's is cleared first, as settings of the board. */
+	/*
+	 * Frees each buffer; the NVRAM's is cleared first, as settings of the
+	 * board.
+	 */
 	if (files->firmware != NULL)
 		kern_free(files->firmware);
 	if (files->clm != NULL)
@@ -122,6 +133,8 @@ bcm43455_files_release(
 		kern_memset(files->nvram, 0, files->nvram_length);
 		kern_free(files->nvram);
 	}
+
+	/* Leaves the description empty. */
 	kern_memset(files, 0, sizeof(*files));
 }
 
@@ -187,7 +200,10 @@ read_open_file(
 	if (error != 0)
 		return error;
 
-	/* Refuses a file of another size: another version, not checked with this driver. */
+	/*
+	 * Refuses a file of another size: another version, not checked with
+	 * this driver.
+	 */
 	buffer = NULL;
 	if (lease.size < 0 || (uint64_t)lease.size != (uint64_t)size) {
 		error = EINVAL;
@@ -211,11 +227,16 @@ read_open_file(
 			goto out;
 		}
 
-		/* A file that ends early, or a read larger than asked, is not the file the lease measured. */
+		/*
+		 * A file that ends early, or a read larger than asked, is not
+		 * the file the lease measured.
+		 */
 		if (count == 0 || (size_t)count > size - offset) {
 			error = EIO;
 			goto out;
 		}
+
+		/* Moves past the part read. */
 		offset += (size_t)count;
 	}
 

@@ -36,6 +36,14 @@
 #include <uapi/errno.h>
 
 /*
+ * Marks a parameter the function's contract passes but this driver does not
+ * need.
+ */
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(parameter)	((void)(parameter))
+#endif
+
+/*
  * The country the regulatory table is set to: world-wide, revision 0, else the
  * firmware's choice of revision (-1).
  *
@@ -56,10 +64,15 @@
 /* The firmware's power saving mode that keeps the radio awake. */
 #define POWER_SAVE_OFF			0U
 
-/* How long the station's close may stay busy before close gives up for a retry. */
+/*
+ * How long the station's close may stay busy before close gives up for a retry.
+ */
 #define STATION_CLOSE_TRIES		1000U
 
-/* The bytes the valid-channel list answer takes: its count and up to the maximum. */
+/*
+ * The bytes the valid-channel list answer takes: its count and up to the
+ * maximum.
+ */
 #define CHANNEL_LIST_LENGTH		(4U + 4U * BCM43455_CHANNELS_MAX)
 
 /*
@@ -67,9 +80,11 @@
  * get sends as many bytes as it wants back, and a request of nearly the whole 2
  * KiB control buffer got no answer from the 43455's firmware.
  *
- * Values referenced: Linux drivers/net/wireless/broadcom/brcm80211/brcmfmac,
- * version not recorded (BRCMF_DCMD_SMLEN for "ver", MAX_CAPS_BUFFER_SIZE for
- * "cap").
+ * Values referenced: Linux 6.8.12
+ * drivers/net/wireless/broadcom/brcm80211/brcmfmac/core.h (BRCMF_DCMD_SMLEN,
+ * line 30, for "ver") and
+ * drivers/net/wireless/broadcom/brcm80211/brcmfmac/feature.c
+ * (MAX_CAPS_BUFFER_SIZE, line 226, for "cap").
  */
 #define VERSION_READ_BYTES		256U
 #define CAPABILITIES_READ_BYTES		768U
@@ -170,7 +185,10 @@ bcm43455_device_create(
 	files->clm = NULL;
 	files->nvram = NULL;
 
-	/* Reads the firmware's version text from the file, which names its features. */
+	/*
+	 * Reads the firmware's version text from the file, which names its
+	 * features.
+	 */
 	error = bcm43455_firmware_check(
 		device->files.firmware,
 		device->files.firmware_length,
@@ -179,7 +197,10 @@ bcm43455_device_create(
 	if (error != 0)
 		goto fail;
 
-	/* Turns the NVRAM text into the chip's form once, and keeps its placeholder address. */
+	/*
+	 * Turns the NVRAM text into the chip's form once, and keeps its
+	 * placeholder address.
+	 */
 	error = bcm43455_nvram_pack(
 		device->files.nvram,
 		device->files.nvram_length,
@@ -190,6 +211,8 @@ bcm43455_device_create(
 		kern_logf("bcm43455: NVRAM settings not usable (%d)\n", error);
 		goto fail;
 	}
+
+	/* Keeps the NVRAM's placeholder address, if it has one. */
 	error = bcm43455_nvram_mac(device->files.nvram, device->files.nvram_length, device->placeholder_mac);
 	if (error == 0)
 		device->has_placeholder = 1;
@@ -217,6 +240,8 @@ bcm43455_device_create(
 		error = ENOMEM;
 		goto fail;
 	}
+
+	/* The scan ring holds as many networks as it was made for. */
 	device->scan_ring.capacity = BCM43455_SCAN_RING_SIZE;
 
 	/* Succeeded: the device waits for its probe. */
@@ -243,7 +268,10 @@ bcm43455_device_probe(
 	if (device == NULL)
 		return EINVAL;
 
-	/* Starts the chip without its radio, which reads the identity, and stops it again. */
+	/*
+	 * Starts the chip without its radio, which reads the identity, and
+	 * stops it again.
+	 */
 	mutex_lock(&device->lifecycle_lock);
 
 	error = bcm43455_device_start(device, 0);
@@ -252,6 +280,7 @@ bcm43455_device_probe(
 
 	mutex_unlock(&device->lifecycle_lock);
 
+	/* Reports why the chip did not come up. */
 	if (error != 0)
 		return error;
 
@@ -290,20 +319,29 @@ bcm43455_device_publish(
 	if (device == NULL)
 		return EINVAL;
 
-	/* Holds the lifecycle across the publication, so an early open waits for the station. */
+	/*
+	 * Holds the lifecycle across the publication, so an early open waits
+	 * for the station.
+	 */
 	mutex_lock(&device->lifecycle_lock);
 
+	/* Refuses a device published already. */
 	if (device->published) {
 		mutex_unlock(&device->lifecycle_lock);
 		return EALREADY;
 	}
 
-	/* Describes the network device: an Ethernet-like WLAN with the chip's address. */
+	/*
+	 * Describes the network device: an Ethernet-like WLAN with the chip's
+	 * address.
+	 */
 	net = net_device_alloc();
 	if (net == NULL) {
 		mutex_unlock(&device->lifecycle_lock);
 		return ENOSPC;
 	}
+
+	/* Fills its flags, address, capabilities and operations. */
 	net->flags = NET_DEVICE_BROADCAST | NET_DEVICE_MULTICAST;
 	net->mtu = BCM43455_MTU;
 	kern_memcpy(net->hwaddr, device->identity.mac, sizeof(device->identity.mac));
@@ -322,19 +360,29 @@ bcm43455_device_publish(
 		if (error != EEXIST)
 			break;
 	}
+
+	/* Gives the network device back when no name could be taken. */
 	if (error != 0) {
 		net->driver_data = NULL;
 		net_device_destroy(net);
 		mutex_unlock(&device->lifecycle_lock);
 
-		/* A registry that is shutting down is a normal end for a device found late. */
+		/*
+		 * A registry that is shutting down is a normal end for a device
+		 * found late.
+		 */
 		if (error == EBUSY)
 			return ENODEV;
 		return error;
 	}
+
+	/* The device now has its network device. */
 	device->net = net;
 
-	/* Attaches the station with the carrier down; a WLAN layer shutting down refuses it. */
+	/*
+	 * Attaches the station with the carrier down; a WLAN layer shutting
+	 * down refuses it.
+	 */
 	station = NULL;
 	error = net_device_set_carrier(net, 0);
 	if (error == 0)
@@ -349,7 +397,10 @@ bcm43455_device_publish(
 		return error;
 	}
 
-	/* Succeeded: wlanN and its station exist for as long as the kernel runs. */
+	/*
+	 * Succeeded: wlanN and its station exist for as long as the kernel
+	 * runs.
+	 */
 	device->station = station;
 	device->published = 1;
 	kern_logf("bcm43455: published as %s\n", net->name);
@@ -378,6 +429,8 @@ bcm43455_device_destroy(
 		kern_free(device->scan_ring.entries);
 		device->scan_ring.entries = NULL;
 	}
+
+	/* Releases the files and the device itself. */
 	bcm43455_files_release(&device->files);
 	kern_free(device);
 }
@@ -392,7 +445,9 @@ bcm43455_device_start(
 {
 	int error;
 
-	/* Forgets the previous run's bus state and powers the chip from reset. */
+	/*
+	 * Forgets the previous run's bus state and powers the chip from reset.
+	 */
 	bcm43455_bus_forget(&device->bus);
 	device->powered = 1;
 	error = device->ops->power_up(device->context);
@@ -442,7 +497,10 @@ bcm43455_device_start(
 		goto fail;
 	}
 
-	/* Hands the bus to its thread, with no failure recorded from an earlier run. */
+	/*
+	 * Hands the bus to its thread, with no failure recorded from an earlier
+	 * run.
+	 */
 	bcm43455_bus_direct(&device->bus, 0);
 	error = bcm43455_bus_thread_start(&device->bus);
 	if (error != 0)
@@ -490,7 +548,10 @@ bcm43455_device_stop(
 		device->powered = 0;
 	}
 
-	/* Drops what the rings still hold, the scan and the connection, and the bus's frame copies. */
+	/*
+	 * Drops what the rings still hold, the scan and the connection, and the
+	 * bus's frame copies.
+	 */
 	clear_rings(device);
 	bcm43455_station_reset(device);
 	bcm43455_bus_forget(&device->bus);
@@ -515,7 +576,10 @@ bcm43455_device_ethernet_transmit(
 	if (length > BCM43455_BUS_ETHERNET_MAX)
 		return EMSGSIZE;
 
-	/* Queues it while the bus thread serves the device and the connection is the frame's. */
+	/*
+	 * Queues it while the bus thread serves the device and the connection
+	 * is the frame's.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	if (!device->runtime_active || device->failure_pending) {
@@ -528,13 +592,17 @@ bcm43455_device_ethernet_transmit(
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
+	/* Reports why the frame was not queued. */
 	if (error != 0)
 		return error;
 
 	/* Wakes the bus thread to send it. */
 	bcm43455_bus_wake(&device->bus);
 
-	/* Succeeded: the bus thread sends the frame within the firmware's credit. */
+	/*
+	 * Succeeded: the bus thread sends the frame within the firmware's
+	 * credit.
+	 */
 	return 0;
 }
 
@@ -590,12 +658,14 @@ bcm43455_device_scan_profile(
 		if (frequency == 0)
 			continue;
 
-		/* A channel listed twice is kept once. */
+		/* Looks for the channel among those already kept. */
 		repeated = 0;
 		for (j = 0; j < profile->channel_count; j++) {
 			if (profile->channels[j].channel == channels[i])
 				repeated = 1;
 		}
+
+		/* A channel listed twice is kept once. */
 		if (repeated)
 			continue;
 
@@ -603,7 +673,10 @@ bcm43455_device_scan_profile(
 		if (profile->channel_count == WLAN_SCAN_CHANNEL_MAX)
 			break;
 
-		/* The firmware dwells on the channel itself; the host never sends a probe. */
+		/*
+		 * The firmware dwells on the channel itself; the host never
+		 * sends a probe.
+		 */
 		entry = &profile->channels[profile->channel_count];
 		entry->channel = channels[i];
 		entry->center_frequency_mhz = frequency;
@@ -664,6 +737,8 @@ bcm43455_device_has_capability(
 			if (same == 0)
 				return 1;
 		}
+
+		/* Moves on to the next word. */
 		start = end;
 	}
 }
@@ -708,7 +783,10 @@ bcm43455_device_has_feature(
 		       version[end] != ' ')
 			end++;
 
-		/* A feature of the same length and letters is the one asked for. */
+		/*
+		 * A feature of the same length and letters is the one asked
+		 * for.
+		 */
 		if (end - start == length) {
 			same = kern_memcmp(version + start, name, length);
 			if (same == 0)
@@ -786,9 +864,12 @@ bcm43455_device_restart(
 	unsigned opened;
 	int error;
 
+	/* Holds the lifecycle across the whole restart. */
 	mutex_lock(&device->lifecycle_lock);
 
-	/* Takes the request; a device closed since it was made needs nothing. */
+	/*
+	 * Takes the request; a device closed since it was made needs nothing.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	pending = device->restart_pending;
@@ -797,12 +878,21 @@ bcm43455_device_restart(
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
 
-	if (!pending || !opened || device->station == NULL) {
+	/*
+	 * Leaves the chip alone without a request, an open interface or a
+	 * station.
+	 */
+	if (!pending ||
+	    !opened ||
+	    device->station == NULL) {
 		mutex_unlock(&device->lifecycle_lock);
 		return 0;
 	}
 
-	/* Retires the station's work and stops the failed chip, as a close does. */
+	/*
+	 * Retires the station's work and stops the failed chip, as a close
+	 * does.
+	 */
 	kern_logf("bcm43455: restarting the chip after a bus failure (%d)\n", device->bus_error);
 	error = close_locked(device);
 	if (error != 0) {
@@ -811,7 +901,10 @@ bcm43455_device_restart(
 		return error;
 	}
 
-	/* The close let the lifecycle go for a while; a user's close meanwhile wins. */
+	/*
+	 * The close let the lifecycle go for a while; a user's close meanwhile
+	 * wins.
+	 */
 	if (!device->opened) {
 		mutex_unlock(&device->lifecycle_lock);
 		return 0;
@@ -827,7 +920,10 @@ bcm43455_device_restart(
 
 	mutex_unlock(&device->lifecycle_lock);
 
-	/* Reports a restart that did not bring the radio back; cycling the interface tries again. */
+	/*
+	 * Reports a restart that did not bring the radio back; cycling the
+	 * interface tries again.
+	 */
 	if (error != 0) {
 		kern_logf("bcm43455: restart failed (%d); cycle Wi-Fi to retry\n", error);
 		return error;
@@ -852,12 +948,18 @@ start_settings(
 {
 	int error;
 
-	/* Turns receive glomming off, so every frame arrives alone; an older firmware may not know it. */
+	/*
+	 * Turns receive glomming off, so every frame arrives alone; an older
+	 * firmware may not know it.
+	 */
 	error = bcm43455_bus_iovar_set_u32(&device->bus, "bus:rxglom", 0);
 	if (error != 0)
 		kern_logf("bcm43455: receive glomming not turned off (%d)\n", error);
 
-	/* Loads the regulatory table, then picks the world-wide country from it. */
+	/*
+	 * Loads the regulatory table, then picks the world-wide country from
+	 * it.
+	 */
 	error = load_clm(device);
 	if (error != 0)
 		return error;
@@ -894,7 +996,10 @@ start_settings(
 	if (error != 0)
 		return error;
 
-	/* Learns how the firmware lays out channel specifications and scan requests. */
+	/*
+	 * Learns how the firmware lays out channel specifications and scan
+	 * requests.
+	 */
 	read_layouts(device);
 
 	/* Succeeded: the firmware is set up. */
@@ -935,12 +1040,14 @@ load_clm(
 		if (error != 0)
 			return error;
 
-		/* Sends it. */
+		/* Sends the piece to the firmware. */
 		error = bcm43455_bus_iovar_set(&device->bus, "clmload", message, message_length);
 		if (error != 0) {
 			kern_logf("bcm43455: CLM piece at %u refused (%d)\n", (unsigned)offset, error);
 			return error;
 		}
+
+		/* Moves past the piece sent. */
 		offset += taken;
 		messages++;
 	}
@@ -952,6 +1059,11 @@ load_clm(
 		kern_logf("bcm43455: CLM status not read (%d)\n", error);
 		return error;
 	}
+
+	/*
+	 * Refuses a short answer, and a status that says the table was not
+	 * taken.
+	 */
 	if (answered < sizeof(status_bytes))
 		return EIO;
 	status = bcm43455_get_le32(status_bytes);
@@ -982,7 +1094,10 @@ set_country(
 	size_t answered;
 	int error;
 
-	/* The abbreviation and the code are both XX, the revision the world-wide locale's. */
+	/*
+	 * The abbreviation and the code are both XX, the revision the
+	 * world-wide locale's.
+	 */
 	kern_memset(country, 0, sizeof(country));
 	country[COUNTRY_ABBREVIATION] = (uint8_t)COUNTRY_CODE_0;
 	country[COUNTRY_ABBREVIATION + 1U] = (uint8_t)COUNTRY_CODE_1;
@@ -997,6 +1112,8 @@ set_country(
 		bcm43455_put_le32(country + COUNTRY_REVISION, COUNTRY_REVISION_ANY);
 		error = bcm43455_bus_iovar_set(&device->bus, "country", country, sizeof(country));
 	}
+
+	/* Reports a country neither revision set. */
 	if (error != 0) {
 		kern_logf("bcm43455: country XX not set (%d)\n", error);
 		return error;
@@ -1010,6 +1127,8 @@ set_country(
 		kern_logf("bcm43455: country not read back (%d)\n", error);
 		return error;
 	}
+
+	/* Refuses a short answer, and logs the country the firmware runs in. */
 	if (answered < sizeof(answer))
 		return EIO;
 	kern_logf(
@@ -1044,6 +1163,7 @@ read_identity(
 	int in_list;
 	int error;
 
+	/* Fills the device's identity. */
 	identity = &device->identity;
 
 	/* The address from the chip's OTP. */
@@ -1053,6 +1173,8 @@ read_identity(
 		kern_logf("bcm43455: chip address not read (%d)\n", error);
 		return error;
 	}
+
+	/* Refuses an answer shorter than an address. */
 	if (answered < sizeof(identity->mac))
 		return EIO;
 
@@ -1064,6 +1186,8 @@ read_identity(
 		kern_logf("bcm43455: firmware version not read (%d)\n", error);
 		return error;
 	}
+
+	/* Keeps as much of the text as the identity holds, and logs it. */
 	copied = answered;
 	if (copied > sizeof(identity->version) - 1U)
 		copied = sizeof(identity->version) - 1U;
@@ -1079,11 +1203,16 @@ read_identity(
 		kern_logf("bcm43455: capabilities not read (%d)\n", error);
 		return error;
 	}
+
+	/* Keeps the list and logs it. */
 	kern_memcpy(identity->capabilities, text, answered);
 	identity->capabilities[answered] = '\0';
 	kern_logf("bcm43455: capabilities %s\n", identity->capabilities);
 
-	/* The supplicant must be named by both the file's build features and the running list. */
+	/*
+	 * The supplicant must be named by both the file's build features and
+	 * the running list.
+	 */
 	in_file = bcm43455_device_has_feature(device->file_version, "idsup");
 	in_list = bcm43455_device_has_capability(identity->capabilities, "idsup");
 	identity->supplicant = 0;
@@ -1222,7 +1351,10 @@ read_layouts(
 		kern_logf("bcm43455: channel layout not read (%d); taking the 802.11ac one\n", error);
 	}
 
-	/* The escan request's layout; an older firmware does not know the variable. */
+	/*
+	 * The escan request's layout; an older firmware does not know the
+	 * variable.
+	 */
 	device->identity.scan_layout = BCM43455_SCAN_LAYOUT_V0;
 	kern_memset(bytes, 0, sizeof(bytes));
 	answered = 0;
@@ -1248,7 +1380,10 @@ set_runtime_active(
 {
 	unsigned long enabled;
 
-	/* runtime_active admits frames and radio requests; the failure latch belongs to one run. */
+	/*
+	 * runtime_active admits frames and radio requests; the failure latch
+	 * belongs to one run.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	device->runtime_active = active;
@@ -1294,6 +1429,7 @@ check_address(
 	int zero;
 	int same;
 
+	/* Checks the address read into the identity. */
 	mac = device->identity.mac;
 
 	/* An address of all zeros was never programmed. */
@@ -1302,6 +1438,8 @@ check_address(
 		if (mac[i] != 0)
 			zero = 0;
 	}
+
+	/* Refuses an address that was never programmed. */
 	if (zero) {
 		kern_logf("bcm43455: chip has no address\n");
 		return EADDRNOTAVAIL;
@@ -1338,14 +1476,20 @@ discard_unpublished(
 	struct net_device *net;
 	int error;
 
+	/*
+	 * Takes the network device from the device; without one there is
+	 * nothing to withdraw.
+	 */
 	net = device->net;
 	device->net = NULL;
 	if (net == NULL)
 		return 0;
 
+	/*
+	 * Takes it out of the registry, then destroys it, with the lifecycle
+	 * let go around the network's calls.
+	 */
 	mutex_unlock(&device->lifecycle_lock);
-
-	/* Takes it out of the registry, then destroys it. */
 	(void)net_device_set_carrier(net, 0);
 	error = net_device_gone(net);
 	if (error == 0) {
@@ -1353,6 +1497,7 @@ discard_unpublished(
 		net_device_destroy(net);
 	}
 
+	/* Takes the lifecycle back for the caller. */
 	mutex_lock(&device->lifecycle_lock);
 
 	/* Reports a device the registry kept. */
@@ -1376,13 +1521,13 @@ close_locked(
 {
 	int error;
 
-	/* Retires the station's scan and connection first. */
+	/*
+	 * Retires the station's scan and connection first, with the lifecycle
+	 * let go.
+	 */
 	mutex_unlock(&device->lifecycle_lock);
-
 	error = station_close_wait(device);
-
 	mutex_lock(&device->lifecycle_lock);
-
 	if (error != 0)
 		return error;
 
@@ -1393,13 +1538,12 @@ close_locked(
 	bcm43455_device_stop(device);
 	wlan_station_quiesce_end(device->station);
 
-	/* Lets the station see the stopped radio and leave its closing state. */
+	/*
+	 * Lets the station see the stopped radio and leave its closing state.
+	 */
 	mutex_unlock(&device->lifecycle_lock);
-
 	error = station_close_wait(device);
-
 	mutex_lock(&device->lifecycle_lock);
-
 	if (error != 0)
 		return error;
 
@@ -1471,20 +1615,25 @@ net_open(
 		return ENODEV;
 	device = net->driver_data;
 
+	/* Holds the lifecycle while the interface opens. */
 	mutex_lock(&device->lifecycle_lock);
 
-	/* Refuses an open before the station is attached, or while a retry still owns it. */
+	/* Refuses an open before the station is attached. */
 	if (device->station == NULL) {
 		mutex_unlock(&device->lifecycle_lock);
 		return ENODEV;
 	}
+
+	/* Refuses an open while a stop's retry still owns the station. */
 	busy = wlan_station_stop_busy(device->station);
 	if (busy) {
 		mutex_unlock(&device->lifecycle_lock);
 		return EBUSY;
 	}
 
-	/* Starts the chip with its radio and its bus thread, then the station. */
+	/*
+	 * Starts the chip with its radio and its bus thread, then the station.
+	 */
 	error = 0;
 	if (!device->runtime_active)
 		error = bcm43455_device_start(device, 1);
@@ -1494,7 +1643,10 @@ net_open(
 			bcm43455_device_stop(device);
 	}
 
-	/* An open interface may be restarted after a failure; a user's open starts the count afresh. */
+	/*
+	 * An open interface may be restarted after a failure; a user's open
+	 * starts the count afresh.
+	 */
 	if (error == 0) {
 		enabled = spin_lock_irqsave(&device->ring_lock);
 
@@ -1534,6 +1686,7 @@ net_close(
 	(void)net_device_set_carrier(net, 0);
 	device = net->driver_data;
 
+	/* Holds the lifecycle while the interface closes. */
 	mutex_lock(&device->lifecycle_lock);
 
 	/* A closed interface is not restarted behind the user's back. */
@@ -1575,6 +1728,8 @@ net_transmit(
 		packet_buf_free(packet);
 		return ENODEV;
 	}
+
+	/* Refuses a packet before the station is attached, freeing it. */
 	device = net->driver_data;
 	if (device->station == NULL) {
 		packet_buf_free(packet);
@@ -1609,7 +1764,9 @@ net_poll(
 	if (device->station == NULL)
 		return 0;
 
-	/* Reports the scan and the connection, then delivers up to the budget. */
+	/*
+	 * Reports the scan and the connection, then delivers up to the budget.
+	 */
 	done = bcm43455_station_poll(device, budget);
 
 	/* Reports how many frames were taken. */
@@ -1634,12 +1791,15 @@ net_ioctl(
 	return 0;
 }
 
-/* The device lives for as long as the kernel runs; its network device's end frees nothing. */
+/*
+ * The device lives for as long as the kernel runs; its network device's end
+ * frees nothing.
+ */
 static void
 net_release(
 	void *driver_data)
 {
-	(void)driver_data;
+	UNUSED_PARAMETER(driver_data);
 }
 
 /*
@@ -1657,6 +1817,7 @@ hook_event(
 	unsigned long enabled;
 	int log;
 
+	/* The context is the device the bus serves. */
 	device = context;
 
 	/* Counts the event and decides whether it is one of the first few. */
@@ -1675,7 +1836,10 @@ hook_event(
 	if (log)
 		kern_logf("bcm43455: event %u status %u reason %u\n", event->type, event->status, event->reason);
 
-	/* A scan result, a join's progress or a lost link goes to the scan or the connection. */
+	/*
+	 * A scan result, a join's progress or a lost link goes to the scan or
+	 * the connection.
+	 */
 	bcm43455_station_event(device, event, frame, length);
 }
 
@@ -1695,9 +1859,12 @@ hook_data(
 	uint64_t generation;
 	int error;
 
+	/* The context is the device the bus serves. */
 	device = context;
 
-	/* Queues a copy; a full ring, or no connection to carry it, drops it. */
+	/*
+	 * Queues a copy; a full ring, or no connection to carry it, drops it.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	generation = bcm43455_station_data_generation_locked(device);
@@ -1707,6 +1874,8 @@ hook_data(
 	} else {
 		error = ring_put_locked(&device->rx_ring, generation, frame, length);
 	}
+
+	/* Samples the network device to schedule. */
 	net = device->net;
 
 	spin_unlock_irqrestore(&device->ring_lock, enabled);
@@ -1733,9 +1902,13 @@ hook_transmit(
 	uint64_t current;
 	int taken;
 
+	/* The context is the device the bus serves. */
 	device = context;
 
-	/* Takes frames out of the ring until one belongs to the connection that carries data. */
+	/*
+	 * Takes frames out of the ring until one belongs to the connection that
+	 * carries data.
+	 */
 	enabled = spin_lock_irqsave(&device->ring_lock);
 
 	current = bcm43455_station_data_generation_locked(device);
@@ -1767,6 +1940,7 @@ hook_failed(
 {
 	struct bcm43455_device *device;
 
+	/* The context is the device the bus serves. */
 	device = context;
 
 	/* Latches the failure for the poll. */
@@ -1781,6 +1955,7 @@ hook_work(
 	struct bcm43455_device *device;
 	int error;
 
+	/* The context is the device the bus serves. */
 	device = context;
 
 	/* Sends the escan request or the connection's commands that wait. */
@@ -1864,7 +2039,10 @@ ring_put_locked(
 	return 0;
 }
 
-/* Copies the ring's oldest frame out and clears its entry; returns 1 when one was taken. */
+/*
+ * Copies the ring's oldest frame out and clears its entry; returns 1 when one
+ * was taken.
+ */
 static int
 ring_take_locked(
 	struct bcm43455_frame_ring *ring,
@@ -1915,6 +2093,8 @@ ring_clear_locked(
 		ring->head = (ring->head + 1U) % ring->capacity;
 		ring->count--;
 	}
+
+	/* An empty ring starts again at its first entry. */
 	ring->head = 0;
 }
 
@@ -1926,13 +2106,18 @@ static uint32_t
 channel_frequency(
 	uint32_t channel)
 {
-	/* The 2.4 GHz channels 1 to 13, five megahertz apart, and 14 apart from them. */
+	/*
+	 * The 2.4 GHz channels 1 to 13, five megahertz apart, and 14 apart from
+	 * them.
+	 */
 	if (channel >= 1U && channel <= 13U)
 		return BAND_2G_BASE_MHZ + 5U * channel;
 	if (channel == 14U)
 		return CHANNEL_14_MHZ;
 
-	/* The 5 GHz channels 36 to 144 and 149 to 181, twenty megahertz apart. */
+	/*
+	 * The 5 GHz channels 36 to 144 and 149 to 181, twenty megahertz apart.
+	 */
 	if (channel >= 36U &&
 	    channel <= 144U &&
 	    ((channel - 36U) % 4U) == 0)

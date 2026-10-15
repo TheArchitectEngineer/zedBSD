@@ -47,13 +47,19 @@
 #include "drivers/wifi/bcm43455/bcm43455-event.h"
 #include "drivers/wifi/bcm43455/bcm43455-sdpcm.h"
 
-/* The most bytes one received frame may take; a longer one is read and dropped. */
+/*
+ * The most bytes one received frame may take; a longer one is read and dropped.
+ */
 #define BCM43455_BUS_RX_MAX		4096U
 
-/* The most bytes one sent frame takes on the bus, header and padding included. */
+/*
+ * The most bytes one sent frame takes on the bus, header and padding included.
+ */
 #define BCM43455_BUS_TX_MAX		4096U
 
-/* The longest Ethernet frame the data channel carries, without its BCDC header. */
+/*
+ * The longest Ethernet frame the data channel carries, without its BCDC header.
+ */
 #define BCM43455_BUS_ETHERNET_MAX	1600U
 
 /* How long one control request may wait for its answer, in milliseconds. */

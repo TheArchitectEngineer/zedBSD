@@ -246,7 +246,10 @@
 #define SUPPLICANT_REASON_DEAUTHENTICATED	14U
 #define SUPPLICANT_REASON_TIMEOUT		15U
 
-/* The 802.11 reason an access point gives when the four-way handshake timed out. */
+/*
+ * The 802.11 reason an access point gives when the four-way handshake timed
+ * out.
+ */
 #define REASON_FOUR_WAY_TIMEOUT		15U
 
 static int control_channel_d11n(uint16_t chanspec, uint32_t *channel);
@@ -279,7 +282,9 @@ bcm43455_chanspec_from_channel(
 		return 0;
 	}
 
-	/* The 802.11n layout marks a 20 MHz channel as having no primary part. */
+	/*
+	 * The 802.11n layout marks a 20 MHz channel as having no primary part.
+	 */
 	chanspec = (uint16_t)(channel & CHANSPEC_CHANNEL_MASK);
 	if (io_type == BCM43455_CHANSPEC_LAYOUT_N) {
 		chanspec |= D11N_PART_NONE;
@@ -293,7 +298,10 @@ bcm43455_chanspec_from_channel(
 		return chanspec;
 	}
 
-	/* The 802.11ac layout's primary part of a 20 MHz channel is the lowest, zero. */
+	/*
+	 * The 802.11ac layout's primary part of a 20 MHz channel is the lowest,
+	 * zero.
+	 */
 	chanspec |= D11AC_WIDTH_20;
 	if (band_5g)
 		chanspec |= D11AC_BAND_5G;
@@ -370,7 +378,10 @@ bcm43455_escan_encode(
 	if (action == BCM43455_ESCAN_START)
 		channels = 1;
 
-	/* The request is the header, the parameters and the channel list, rounded to four bytes. */
+	/*
+	 * The request is the header, the parameters and the channel list,
+	 * rounded to four bytes.
+	 */
 	if (layout == BCM43455_SCAN_LAYOUT_V0)
 		request_length = ESCAN_PARAMETERS + V0_CHANNEL_LIST + 2U * channels;
 	else
@@ -380,7 +391,10 @@ bcm43455_escan_encode(
 		return ENOSPC;
 	kern_memset(buffer, 0, request_length);
 
-	/* Writes the header: the layout's version, the action and the scan's id. */
+	/*
+	 * Writes the header: the layout's version, the action and the scan's
+	 * id.
+	 */
 	if (layout == BCM43455_SCAN_LAYOUT_V0)
 		bcm43455_put_le32(buffer + ESCAN_VERSION, ESCAN_VERSION_V0);
 	else
@@ -410,7 +424,10 @@ bcm43455_escan_encode(
 		if (channels != 0)
 			bcm43455_put_le16(parameters + V0_CHANNEL_LIST, chanspec);
 	} else {
-		/* Layout 2 also carries its version and the request's whole length. */
+		/*
+		 * Layout 2 also carries its version and the request's whole
+		 * length.
+		 */
 		bcm43455_put_le16(parameters + V2_VERSION, (uint16_t)ESCAN_VERSION_V2);
 		bcm43455_put_le16(parameters + V2_LENGTH, (uint16_t)request_length);
 		kern_memset(parameters + V2_BSSID, 0xff, 6U);
@@ -445,7 +462,10 @@ bcm43455_escan_result_decode(
 	size_t *first)
 {
 	/* Refuses data shorter than the header. */
-	if (data == NULL || sync_id == NULL || count == NULL || first == NULL)
+	if (data == NULL ||
+	    sync_id == NULL ||
+	    count == NULL ||
+	    first == NULL)
 		return EINVAL;
 	if (length < RESULT_FIRST)
 		return EPROTO;
@@ -521,8 +541,15 @@ bcm43455_bss_to_frame(
 	size_t copied;
 	int error;
 
-	/* Refuses a description shorter than its fixed part, or nowhere to write. */
-	if (bss == NULL || frame == NULL || frame_length == NULL || channel == NULL || rssi == NULL)
+	/*
+	 * Refuses a description shorter than its fixed part, or nowhere to
+	 * write.
+	 */
+	if (bss == NULL ||
+	    frame == NULL ||
+	    frame_length == NULL ||
+	    channel == NULL ||
+	    rssi == NULL)
 		return EINVAL;
 	if (length < BCM43455_BSS_INFO_FIXED)
 		return EPROTO;
@@ -560,7 +587,10 @@ bcm43455_bss_to_frame(
 		return EMSGSIZE;
 	kern_memset(frame, 0, FRAME_ELEMENTS);
 
-	/* A probe response from the BSSID to everyone, with the beacon interval and capabilities. */
+	/*
+	 * A probe response from the BSSID to everyone, with the beacon interval
+	 * and capabilities.
+	 */
 	frame[0] = (uint8_t)FRAME_SUBTYPE_PROBE_RESPONSE;
 	kern_memset(frame + FRAME_DESTINATION, 0xff, 6U);
 	kern_memcpy(frame + FRAME_SOURCE, bss + BSS_BSSID, 6U);
@@ -609,7 +639,9 @@ bcm43455_join_encode(
 	size_t *length)
 {
 	/* Refuses an SSID that does not fit, or no room for the request. */
-	if (buffer == NULL || bssid == NULL || length == NULL)
+	if (buffer == NULL ||
+	    bssid == NULL ||
+	    length == NULL)
 		return EINVAL;
 	if (ssid == NULL && ssid_length != 0)
 		return EINVAL;
@@ -651,7 +683,10 @@ bcm43455_key_encode(
 	/* Starts from zeros, which also ends the text. */
 	kern_memset(message, 0, BCM43455_KEY_MESSAGE_LENGTH);
 
-	/* Sixty-four hex digits, marked as text so the firmware reads them as the PMK. */
+	/*
+	 * Sixty-four hex digits, marked as text so the firmware reads them as
+	 * the PMK.
+	 */
 	bcm43455_put_le16(message + KEY_LENGTH, (uint16_t)(2U * BCM43455_PMK_LENGTH));
 	bcm43455_put_le16(message + KEY_FLAGS, (uint16_t)KEY_FLAG_PASSPHRASE);
 
@@ -741,7 +776,10 @@ bcm43455_connect_classify(
 		break;
 
 	case BCM43455_EVENT_LINK:
-		/* The link coming up is the join; going down after it is the end. */
+		/*
+		 * The link coming up is the join; going down after it is the
+		 * end.
+		 */
 		if ((event->flags & LINK_UP) != 0) {
 			if (!associated)
 				outcome->step = BCM43455_CONNECT_ASSOCIATED;
@@ -749,10 +787,14 @@ bcm43455_connect_classify(
 			outcome->step = BCM43455_CONNECT_LOST;
 			outcome->error = ECONNRESET;
 		}
+
 		break;
 
 	case BCM43455_EVENT_SUPPLICANT:
-		/* The supplicant only speaks once the link is up, and before the key is set. */
+		/*
+		 * The supplicant only speaks once the link is up, and before
+		 * the key is set.
+		 */
 		if (associated && !authorized)
 			classify_handshake(event->status, event->reason, outcome);
 		break;
@@ -791,7 +833,10 @@ control_channel_d11n(
 		return 0;
 	}
 
-	/* Refuses a width this driver does not know, and a 40 MHz channel without a primary part. */
+	/*
+	 * Refuses a width this driver does not know, and a 40 MHz channel
+	 * without a primary part.
+	 */
 	if (width != D11N_WIDTH_40)
 		return EINVAL;
 	if (part != D11N_PART_LOWER && part != D11N_PART_UPPER)
@@ -799,7 +844,10 @@ control_channel_d11n(
 	if (number < 3U)
 		return EINVAL;
 
-	/* A 40 MHz channel names its centre; the primary is 10 MHz (two numbers) below or above. */
+	/*
+	 * A 40 MHz channel names its centre; the primary is 10 MHz (two
+	 * numbers) below or above.
+	 */
 	if (part == D11N_PART_LOWER)
 		*channel = number - 2U;
 	else
@@ -830,7 +878,10 @@ control_channel_d11ac(
 		return 0;
 	}
 
-	/* Refuses a width this driver does not know (160 MHz, 80+80, 5 or 10 MHz). */
+	/*
+	 * Refuses a width this driver does not know (160 MHz, 80+80, 5 or 10
+	 * MHz).
+	 */
 	if (width != D11AC_WIDTH_40 && width != D11AC_WIDTH_80)
 		return EINVAL;
 
@@ -869,7 +920,10 @@ classify_join(
 	case STATUS_NO_NETWORKS:
 	case STATUS_TIMEOUT:
 	case STATUS_NO_ACK:
-		/* The access point was not found or did not answer, as a SoftMAC join that hears nothing. */
+		/*
+		 * The access point was not found or did not answer, as a
+		 * SoftMAC join that hears nothing.
+		 */
 		outcome->step = BCM43455_CONNECT_LOST;
 		outcome->error = ETIMEDOUT;
 		break;
@@ -887,7 +941,10 @@ classify_join(
 	}
 }
 
-/* Reads an authentication's or an association's status before the join completed. */
+/*
+ * Reads an authentication's or an association's status before the join
+ * completed.
+ */
 static void
 classify_attempt(
 	uint32_t status,
@@ -949,7 +1006,10 @@ classify_handshake(
 		return;
 	}
 
-	/* Message 1 or the group key did not come: the access point was slow or far. */
+	/*
+	 * Message 1 or the group key did not come: the access point was slow or
+	 * far.
+	 */
 	if (reason == SUPPLICANT_REASON_TIMEOUT) {
 		if (status == SUPPLICANT_WAIT_MESSAGE_1 || status == SUPPLICANT_WAIT_GROUP_1) {
 			outcome->error = ETIMEDOUT;
@@ -957,7 +1017,10 @@ classify_handshake(
 		}
 	}
 
-	/* Any other failure (an element or cipher mismatch, a group key not decrypted, a deauthentication) is a protocol error. */
+	/*
+	 * Any other failure (an element or cipher mismatch, a group key not
+	 * decrypted, a deauthentication) is a protocol error.
+	 */
 	outcome->error = EPROTO;
 }
 
@@ -969,7 +1032,9 @@ classify_leave(
 	unsigned authorized,
 	struct bcm43455_connect_outcome *outcome)
 {
-	/* Before the join completed, the join's own result says how it ended. */
+	/*
+	 * Before the join completed, the join's own result says how it ended.
+	 */
 	if (!associated)
 		return;
 
@@ -1017,13 +1082,18 @@ ie_walk(
 		if (element_length > length - offset - 2U)
 			return EPROTO;
 
-		/* The SSID and the channel were made from the description already. */
+		/*
+		 * The SSID and the channel were made from the description
+		 * already.
+		 */
 		if (identifier != ELEMENT_SSID && identifier != ELEMENT_DS_PARAMETER) {
 			if (2U + element_length > capacity - copied)
 				return EMSGSIZE;
 			kern_memcpy(frame + copied, elements + offset, 2U + element_length);
 			copied += 2U + element_length;
 		}
+
+		/* Moves on to the next element. */
 		offset += 2U + element_length;
 	}
 
