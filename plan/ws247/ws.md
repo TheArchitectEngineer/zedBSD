@@ -25,10 +25,14 @@ Resume point: 下の「残り」1 から。
 - compiler/: file の上部の出典と Collabora・Red Hat の表示を削除、block ごとの Values/Procedure referenced:（複数行）、sm75.h・sm75.c にまとめた（WS246）。
 - nouveau・Mesa・NVK・NAK・Linux・open-gpu の語を comment の本文から除き、出典を関数・定義の直前の referenced: に移した（29 file のうち 26 file、8f1799d64・f0c4e4180）。file の先頭の comment の referenced: は該当の関数・定義へ移した（boot.c・falcon.c・identify.c・perf.c・compute.c・compute-launch.c・disp-first.c・display.c・gr.c・vram.c・nvrtx-disp.h・nvrtx-draw.h・nvrtx-exec.h）。
 
+## 段の名前の対応（2026-10-16 Q1 が実施、log・nvrtx.stop=・comment）
+
+N0 identify、N1 console、P0 layout、P1a devinit、P1b frts、P2a booter、P2b gsp-init、P3 static-info、P4 address-space、P4m vram-window、P5 copy-channel、P5e copy-fill、P5g golden-context、P6 channel-stop、P7 unload、P8 display、P8a display-client、P8b takeover、P8c gpu-device、P9c compute-test、P9g draw-test、P9w work-channel、P9p performance。試験の config（plan/ws037/tests/config-amd64-nvrtx.mk の nvrtx.stop=）も追従。過去の記録（plan/ の T の結果など）は旧名のまま（履歴）。
+
 ## 残り
 
 1. **本文に出典の名前が残る 3 file**: draw-push.c（40）・scanout.c（21）・disp-records.c（16）。file の上部の出典の一覧（draw-push.c）も block ごとへ。
 2. **定数ごとの出典**: channel.c など、出典の書かれていない定数・register の値に、block ごとに Value(s) referenced: を付ける（ユーザーの指摘: channel.c）。nvrtx の全 file を定数・構造体・関数ごとに監査する。
-3. **段の名前（N0・N1・P0〜P9p）の改名**: log（nvrtx_stage_mark の行）と comment の両方で、開発の段の名前を説明的な名前（例 P9c → compute launch、P4m → VRAM window）に変える。comment には約 600 か所。log の名前を照合する試験・道具（plan/ws037/tests・plan/tools・T の手順）を追従させる。
+3. **（済み、Q1 の commit は下）段の名前（N0・N1・P0〜P9p）の改名**: log（nvrtx_stage_mark の行）と comment の両方で、開発の段の名前を説明的な名前（例 P9c → compute launch、P4m → VRAM window）に変える。comment には約 600 か所。log の名前を照合する試験・道具（plan/ws037/tests・plan/tools・T の手順）を追従させる。
 4. vram.c の 2 つの open-gpu-kernel-modules の path（osinit.c・kern_bus_gm107.c）は手元の取得物に無く未確認。確かめる。
 5. 確かめ: build warning 0、nvrtx の host 試験（sm75・vk-d3・vk。gsp の host 試験は WS242 の未追従で compile が通らない）。
