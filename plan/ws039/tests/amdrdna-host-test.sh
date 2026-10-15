@@ -1,7 +1,8 @@
 #!/bin/sh
 # Host test of the amdrdna driver's table readers and register tables: the block table, the boot database, the
-# video BIOS readers, the VRAM layout, the device IDs (synthetic cases, and a hardware dump when one is given), the
-# display register addresses against the Linux DCN 2.0 header, and the source audit.
+# video BIOS readers, the VRAM layout, the firmware picture's shape (whole, placed, scaled), the device IDs
+# (synthetic cases, and a hardware dump when one is given), the display register addresses against the Linux
+# DCN 2.0 header, and the source audit.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws039/tests/amdrdna-host-test.sh [DUMP-DIRECTORY]
@@ -21,7 +22,7 @@ flags="-std=gnu11 -O1 -g -DKERN_USER_ABI_LP64 -DKERN_UAPI_NATIVE -I$repo/include
 driver="$repo/src/drivers/gpu/amdrdna"
 cc $flags -include uapi/errno.h -o "$out/amdrdna-tables-test" "$tests/amdrdna-tables-test.c" "$driver/bytes.c" \
 	"$driver/block-table.c" "$driver/boot-database.c" "$driver/vbios-table.c" "$driver/layout.c" \
-	"$driver/products.c" "$driver/dcn-registers.c"
+	"$driver/products.c" "$driver/dcn-registers.c" "$driver/picture.c"
 status=0
 if [ -d "$dump" ]; then
 	"$out/amdrdna-tables-test" --dump "$dump" || status=1

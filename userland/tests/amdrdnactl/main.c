@@ -153,9 +153,11 @@ control_status(
 	    (status.flags & AMDRDNA_STATUS_POSTED) != 0U ? 1U : 0U,
 	    (unsigned)status.secure_os_word, (unsigned)status.boot_mailbox, (unsigned)status.power_firmware_state,
 	    (unsigned)status.engine_status, (unsigned)status.bios_scratch_7, (unsigned long long)status.frame_buffer_base);
-	printf("gop otg=%u hubp=%u dig=%u kind=%u %ux%u pitch=0x%x format=%u vram=+0x%llx on_gpu=%u\n",
+	printf("gop otg=%u hubp=%u dig=%u kind=%u %ux%u on %ux%u shape=%u pitch=0x%x format=%u vram=+0x%llx on_gpu=%u\n",
 	    (unsigned)status.gop_timing, (unsigned)status.gop_plane, (unsigned)status.gop_output, (unsigned)status.gop_output_kind,
-	    (unsigned)status.gop_width, (unsigned)status.gop_height, (unsigned)status.gop_pitch_word, (unsigned)status.gop_format,
+	    (unsigned)status.gop_source_width, (unsigned)status.gop_source_height,
+	    (unsigned)status.gop_width, (unsigned)status.gop_height, (unsigned)status.gop_shape,
+	    (unsigned)status.gop_pitch_word, (unsigned)status.gop_format,
 	    (unsigned long long)status.gop_vram_offset, (status.flags & AMDRDNA_STATUS_GOP_ON_GPU) != 0U ? 1U : 0U);
 	printf("vbios source=%u length=%u fwinfo=%u.%u caps=0x%x pptid=%u shutdown=%uC training=%u\n",
 	    (unsigned)status.vbios_source, (unsigned)status.vbios_length,

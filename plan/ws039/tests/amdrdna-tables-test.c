@@ -8,8 +8,8 @@
 /*
  * Host test of the amdrdna driver's table readers: the GPU's block table,
  * the boot database, the ACPI table of video BIOS images and the image's
- * tables, the VRAM layout, the device-ID table and the display register
- * addresses.
+ * tables, the VRAM layout, the firmware picture's shape, the device-ID
+ * table and the display register addresses.
  *
  *   amdrdna-tables-test                     the synthetic cases
  *   amdrdna-tables-test --dump DIRECTORY    also the files a hardware dump
@@ -44,6 +44,8 @@ static void test_block_table(void);
 static void test_boot_database(void);
 static void test_vbios(void);
 static void test_layout(void);
+static void test_picture(void);
+static void picture_scaled_case(struct amdrdna_picture_input *input);
 static void test_products(void);
 static void test_dump(const char *directory);
 static void print_dcn(void);
@@ -65,6 +67,7 @@ main(
 	test_boot_database();
 	test_vbios();
 	test_layout();
+	test_picture();
 	test_products();
 
 	/* Runs the cases of a hardware dump when one is named. */
@@ -501,6 +504,172 @@ test_layout(void)
 	input.vram_bytes = 16ULL << 20;
 	error = amdrdna_layout_plan(&input, &layout);
 	check(error == EINVAL, "layout.small", "16 MiB of VRAM was planned");
+}
+
+/*
+ * Fills the picture the first board run showed: the loader asked for
+ * 640x480, and the firmware kept the monitor's 1920x1080 timing and
+ * stretched a 640x480 surface over it, with the ratios Linux would write
+ * (the 3.19 ratio moved up by five bits).
+ */
+static void
+picture_scaled_case(
+	struct amdrdna_picture_input *input)
+{
+	memset(input, 0, sizeof(*input));
+	input->active_width = 1920U;
+	input->active_height = 1080U;
+	input->viewport_width = 640U;
+	input->viewport_height = 480U;
+	input->scaler_mode = 1U;
+	input->scaler_width = 1920U;
+	input->scaler_height = 1080U;
+	input->horizontal_ratio = (uint32_t)(((640ULL << 19) / 1920U) << 5);
+	input->vertical_ratio = (uint32_t)(((480ULL << 19) / 1080U) << 5);
+	input->loader_present = true;
+	input->loader_width = 640U;
+	input->loader_height = 480U;
+}
+
+/* Checks the comparison of the loader's picture with the plane's viewport, and the shapes. */
+static void
+test_picture(void)
+{
+	struct amdrdna_picture_input input;
+	struct amdrdna_picture picture;
+	int error;
+
+	/* The cold dump's picture: 1920x1080 fetched and shown pixel for pixel. */
+	memset(&input, 0, sizeof(input));
+	input.active_width = 1920U;
+	input.active_height = 1080U;
+	input.viewport_width = 1920U;
+	input.viewport_height = 1080U;
+	input.scaler_width = 1920U;
+	input.scaler_height = 1080U;
+	input.horizontal_ratio = 1U << 24;
+	input.vertical_ratio = 1U << 24;
+	input.loader_present = true;
+	input.loader_width = 1920U;
+	input.loader_height = 1080U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_WHOLE &&
+	    picture.rectangle_inside &&
+	    picture.ratios_agree,
+	    "picture.whole", "a 1920x1080 picture on a 1920x1080 timing was not whole");
+
+	/* The same with the scaler's registers left zero: still whole, the rectangle only noted. */
+	input.scaler_width = 0U;
+	input.scaler_height = 0U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_WHOLE &&
+	    !picture.rectangle_inside &&
+	    !picture.ratios_agree,
+	    "picture.whole-unset", "an unset scaler changed the verdict");
+
+	/* The first board run: a 640x480 surface stretched over 1920x1080. */
+	picture_scaled_case(&input);
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_SCALED &&
+	    picture.rectangle_inside &&
+	    picture.ratios_agree,
+	    "picture.scaled", "a 640x480 surface stretched over 1920x1080 was refused");
+	check(strcmp(amdrdna_picture_shape_name(picture.shape), "scaled") == 0,
+	    "picture.name", "the shape's name is wrong");
+
+	/* Stretched with its aspect kept: 1440x1080 at 240,0. */
+	picture_scaled_case(&input);
+	input.scaler_x = 240U;
+	input.scaler_width = 1440U;
+	input.horizontal_ratio = (uint32_t)(((640ULL << 19) / 1440U) << 5);
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_SCALED &&
+	    picture.rectangle_inside &&
+	    picture.ratios_agree,
+	    "picture.scaled-aspect", "a pillar-boxed stretch was refused");
+
+	/* Unscaled in the middle of the screen. */
+	picture_scaled_case(&input);
+	input.scaler_mode = 0U;
+	input.scaler_x = 640U;
+	input.scaler_y = 300U;
+	input.scaler_width = 640U;
+	input.scaler_height = 480U;
+	input.horizontal_ratio = 1U << 24;
+	input.vertical_ratio = 1U << 24;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_PLACED &&
+	    picture.rectangle_inside &&
+	    picture.ratios_agree,
+	    "picture.placed", "a centred 640x480 picture was not placed");
+
+	/*
+	 * The second board run: scaling on, the ratios left at one and the
+	 * scaler working them out by itself; agrees, and turned off it is noted.
+	 */
+	picture_scaled_case(&input);
+	input.horizontal_ratio = 1U << 24;
+	input.vertical_ratio = 1U << 24;
+	input.scaler_automatic = 1U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_SCALED &&
+	    picture.rectangle_inside &&
+	    picture.ratios_agree,
+	    "picture.automatic-scale", "a stretch with ratios the scaler works out was not taken");
+	input.scaler_automatic = 0U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 && !picture.ratios_agree,
+	    "picture.manual-one", "ratios of one for a 640x480 to 1920x1080 stretch were not noted");
+
+	/* The scaler centring the viewport by itself, its rectangle the whole screen. */
+	picture_scaled_case(&input);
+	input.scaler_mode = 0U;
+	input.scaler_automatic = 2U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_PLACED &&
+	    picture.ratios_agree,
+	    "picture.automatic-centre", "a picture the scaler centres was not placed");
+
+	/* A ratio that does not fit, and a rectangle past the screen, are only noted. */
+	picture_scaled_case(&input);
+	input.horizontal_ratio = 1U << 24;
+	input.scaler_height = 1200U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 &&
+	    picture.shape == AMDRDNA_PICTURE_SCALED &&
+	    !picture.rectangle_inside &&
+	    !picture.ratios_agree,
+	    "picture.notes", "a wrong ratio or rectangle was not noted, or was refused");
+
+	/* The loader's picture of another size than the viewport is refused. */
+	picture_scaled_case(&input);
+	input.viewport_width = 1920U;
+	input.viewport_height = 1080U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == EINVAL, "picture.other-size", "a 640x480 loader picture matched a 1920x1080 viewport");
+
+	/* The same viewport without a loader picture on this GPU is accepted. */
+	input.loader_present = false;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == 0 && picture.shape == AMDRDNA_PICTURE_WHOLE,
+	    "picture.no-loader", "a picture without a loader's was refused");
+
+	/* A viewport moved into the surface, and an empty one, are refused. */
+	picture_scaled_case(&input);
+	input.viewport_y = 8U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == ENOTSUP, "picture.moved", "a moved viewport was taken");
+	picture_scaled_case(&input);
+	input.viewport_width = 0U;
+	error = amdrdna_picture_check(&input, &picture);
+	check(error == EINVAL, "picture.empty", "an empty viewport was taken");
 }
 
 /* Checks the device-ID table and the chip names. */

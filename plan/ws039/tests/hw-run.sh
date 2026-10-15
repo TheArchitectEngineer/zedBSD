@@ -57,7 +57,7 @@ collect)
 	timeout 60 $zedssh amdrdnactl status > "$out/status.txt" 2>&1 || true
 	timeout 60 $zedssh dmesg > "$out/dmesg.txt" 2>&1 || true
 	grep 'amdrdna' "$out/dmesg.txt" > "$out/amdrdna.txt" || true
-	timeout 60 $zedssh 'amdrdnactl vbios /tmp/vbios.rom && cat /tmp/vbios.rom' > "$out/vbios.rom" 2>/dev/null || true
+	timeout 60 $zedssh 'amdrdnactl vbios /tmp/vbios.rom >/dev/null && cat /tmp/vbios.rom' > "$out/vbios.rom" 2>/dev/null || true
 	echo "collected in $out"
 	cat "$out/status.txt"
 	cat "$out/amdrdna.txt"

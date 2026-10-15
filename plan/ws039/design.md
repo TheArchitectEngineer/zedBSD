@@ -121,7 +121,7 @@ IH の処理は **割り込みの handler では writeback の wptr を読んで
 
 | 失敗した段 | 残る物 | 回復 |
 | --- | --- | --- |
-| A0・A1・A1v | 何も（hardware に書いていない） | attach しない（A1v の失敗は A2 以降を進めるが training・Tier F・mode set は skip）。GOP の画面は続く |
+| A0・A1・A1v | 何も（hardware に書いていない） | A0 の失敗は attach しない。A1 の失敗は function を保って control の node だけ出し（status を読むため、p002 の実機で決めた）、以後の段は走らない。A1v の失敗は A2 以降を進めるが training・Tier F・mode set は skip。GOP の画面は続く |
 | A2（GMC・HDP） | GART・HDP の設定、MMHUB の aperture | context 0 の enable を 0 にして止まる。GOP の scanout は MMHUB の aperture を通るので、A2 の失敗の後に画面が乱れる可能性がある（14 節） |
 | A3t | VRAM の下 32 MiB の退避の途中・training の途中、text console は止まっている | timeout なら退避を書き戻して unblank・console を再開し、`A3t fail` で止まる（SOS は載せない）。training が走ったままなら書き戻した物がまた壊れる可能性（14 節）。panic の表示（`kern_text_reveal_fatal`）は止められないので、その時は壊れた画面に出る。次の起動は cold power cycle |
 | A3（SOS の前） | 何も（bootloader の mailbox に書いただけ） | 止まる。**次の起動は cold power cycle が要る見込み** |
@@ -388,7 +388,7 @@ DCN の base は discovery の表から（静的な header では seg 0 = 0x12�
 5. HUBP の surface: SURFACE_CONFIG（PIXEL_FORMAT bit 6:0、期待 8 = ARGB8888、ROTATION 9:8 = 0）、TILING_CONFIG の SW_MODE（bit 4:0、期待 0 = linear）、SURFACE_PITCH（bit 13:0 = pitch − 1、画素）、PRIMARY_SURFACE_ADDRESS と HIGH（16 bit）、PRI_VIEWPORT の START・DIMENSION、SURFACE_CONTROL の DCC（期待 0）、HUBPRET_CONTROL の crossbar（ABGR の判定）、HUBP_CLK_CNTL と DPP_CONTROL の clock。
 6. 出力: DIGn_DIG_BE_EN_CNTL の bit 0（n = PHY の index）、DIG_BE_CNTL の FE_SOURCE_SELECT（bit 14:8、one-hot A〜G）と DIG_MODE（bit 18:16: 1 DP、2 DVI、3 HDMI、5 DP MST）、DIGf_DIG_FE_CNTL の SOURCE_SELECT（bit 2:0 = OTG）。DP なら DP_VID_STREAM_CNTL の enable と status、DP_LINK_CNTL の training complete。
 7. BIOS_SCRATCH_6 の bit 4（accelerated mode、GOP の後は 0 の見込み）。D1〜D6 の VGA_CONTROL（DCN の seg 1 の 0xC から）の bit 0: **立っていれば legacy の VGA の mode で HUBP の surface は使われていないので attach しない**。OTG_MASTER_UPDATE_LOCK が 0 であること（立っていると flip が latch しない）。
-8. surface の address − FB の base（5.3）= VRAM の offset。これが loader の GOP の framebuffer の物理 − BAR0 の base と一致するのが A1 の合格。
+8. surface の address − FB の base（5.3）= VRAM の offset。これが loader の GOP の framebuffer の物理 − BAR0 の base と一致し、**loader の幅・高さが HUBP の viewport（始点 0,0）の大きさと一致する**のが A1 の合格。timing の active とは比べない: GOP は loader の要求した mode（例 `video=640x480`）を、monitor の timing を変えずに DPP の DSCL で拡大して出す（p002 の実機: viewport 640x480、RECOUT 0,0 1920x1080、SCL_MODE 1、AUTOCAL 1 = hardware が ratio を出す、ratio の register は 1.0 のまま）。DSCL の RECOUT・mode・ratio・AUTOCAL は読んで log に出し、合わなければ note だけ。
 9. **clock の読み**（mode set のため、review M11）: DENTIST の分周（DISPCLK・DPPCLK）、DCCG の DPREFCLK・DP の DTO、DCFCLK の今の値を読んで log に出す（register は p014 で `dcn20_clk_mgr.c`・`dccg` の header から写す）。これが mode set で出せる pixel rate の上限になる（8.6 の clock）。
 
 ### 8.3 surface の替え（A6）と flip

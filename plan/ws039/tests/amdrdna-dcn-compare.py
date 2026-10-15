@@ -56,6 +56,12 @@ NAMES = [
     lambda n: "DIG%d_DIG_BE_EN_CNTL" % n,
     lambda n: "DP%d_DP_VID_STREAM_CNTL" % n,
     lambda n: "DP%d_DP_LINK_CNTL" % n,
+    lambda n: "DSCL%d_SCL_MODE" % n,
+    lambda n: "DSCL%d_SCL_HORZ_FILTER_SCALE_RATIO" % n,
+    lambda n: "DSCL%d_SCL_VERT_FILTER_SCALE_RATIO" % n,
+    lambda n: "DSCL%d_RECOUT_START" % n,
+    lambda n: "DSCL%d_RECOUT_SIZE" % n,
+    lambda n: "DSCL%d_DSCL_AUTOCAL" % n,
 ]
 
 

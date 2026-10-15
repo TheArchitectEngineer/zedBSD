@@ -16,8 +16,10 @@
  * and a bring-up thread, which runs the later stages: the ones the boot
  * line names (amdrdna.auto=, A1v by default) and the ones root asks for
  * through the control device, one at a time and never again after one
- * failed.  The kept function refuses a system suspend and is never
- * detached.
+ * failed.  A GPU whose A1 failed is kept too, with its failure recorded,
+ * so the control device can still report what A0 and A1 read; no stage
+ * runs on it.  The kept function refuses a system suspend, unless its A1
+ * failed and nothing ever ran on it, and is never detached.
  */
 
 #include <stdbool.h>
@@ -192,14 +194,19 @@ amdrdna_attach(
 	/* Stage A1: reads the firmware's display and plans the VRAM. */
 	device->running = AMDRDNA_STAGE_A1;
 	error = amdrdna_a1_readout(device);
-	if (error != 0) {
-		amdrdna_give_back(device);
-		return ENODEV;
-	}
 
-	/* Records that A1 reported ok; no stage runs until the thread starts. */
-	device->stage = AMDRDNA_STAGE_A1;
+	/*
+	 * Records how A1 ended.  A failed A1 wrote nothing to the GPU; the
+	 * failure stops the stage machine before it starts, and the function
+	 * is kept only so the control device can report what was read.
+	 */
 	device->running = AMDRDNA_STAGE_NONE;
+	if (error != 0) {
+		device->failed_stage = AMDRDNA_STAGE_A1;
+		device->failed_error = error;
+	} else {
+		device->stage = AMDRDNA_STAGE_A1;
+	}
 
 	/* Keeps the function and starts the bring-up thread. */
 	error = amdrdna_keep(device);
@@ -281,12 +288,34 @@ amdrdna_shutdown(
 	amdrdna_mark("shutdown: the bring-up thread still runs a stage; left to the reset");
 }
 
-/* Refuses a system suspend while the driver keeps the function: it has no suspend path yet. */
+/*
+ * Refuses a system suspend while the driver keeps a function a stage may
+ * run on: it has no suspend path yet.  A function whose A1 failed never
+ * ran a stage after the attach and has nothing to keep across a suspend.
+ */
 static int
 amdrdna_suspend(
 	struct drv_pci_device *pci)
 {
-	UNUSED_PARAMETER(pci);
+	struct amdrdna_device *device;
+	unsigned long irq;
+	unsigned failed_stage;
+
+	/* A function the attach did not keep is the firmware's already. */
+	device = drv_pci_device_driver_data(pci);
+	if (device == NULL)
+		return 0;
+
+	/* Reads where the stage machine stopped. */
+	irq = spin_lock_irqsave(&device->state_lock);
+
+	failed_stage = device->failed_stage;
+
+	spin_unlock_irqrestore(&device->state_lock, irq);
+
+	/* A function stopped by its A1 lets the system sleep. */
+	if (failed_stage == AMDRDNA_STAGE_A1)
+		return 0;
 
 	/* Refused: the system stays up. */
 	return EBUSY;
@@ -317,6 +346,10 @@ amdrdna_keep(
 		target = AMDRDNA_STAGE_A1V;
 	device->target = target;
 
+	/* A failed A1 leaves the target unreached; the thread only waits for the shutdown. */
+	if (device->failed_stage != AMDRDNA_STAGE_NONE)
+		device->target = device->stage;
+
 	/* Creates the bring-up thread. */
 	error = kthread_create(amdrdna_thread, device, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0) {
@@ -336,8 +369,17 @@ amdrdna_keep(
 	/* Publishes the control device; a failure leaves the boot line as the only way forward. */
 	(void)amdrdna_control_create(device);
 
+	/* Says how far the kept function goes: no further after a failed stage. */
+	if (device->failed_stage != AMDRDNA_STAGE_NONE) {
+		amdrdna_mark("kept %s for its status; %s failed (%d), no stage runs",
+		    device->chip,
+		    amdrdna_stage_name(device->failed_stage),
+		    device->failed_error);
+	} else {
+		amdrdna_mark("kept %s; stages up to %s run now", device->chip, amdrdna_stage_name(target));
+	}
+
 	/* Succeeded: the function is kept. */
-	amdrdna_mark("kept %s; stages up to %s run now", device->chip, amdrdna_stage_name(target));
 	return 0;
 }
 

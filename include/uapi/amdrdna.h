@@ -73,6 +73,16 @@
 #define AMDRDNA_VBIOS_SOURCE_ACPI	1U
 #define AMDRDNA_VBIOS_SOURCE_ROM	2U
 
+/*
+ * How the firmware's surface reaches the screen: it fills the active area
+ * (gop_width by gop_height) pixel for pixel, it sits unscaled inside it,
+ * or the scaler stretches the fetched part (gop_source_width by
+ * gop_source_height) over it.
+ */
+#define AMDRDNA_GOP_SHAPE_WHOLE		0U
+#define AMDRDNA_GOP_SHAPE_PLACED	1U
+#define AMDRDNA_GOP_SHAPE_SCALED	2U
+
 /* The output kind the firmware lit, as the display engine names it. */
 #define AMDRDNA_OUTPUT_NONE		0U
 #define AMDRDNA_OUTPUT_DP		1U
@@ -129,7 +139,10 @@ struct amdrdna_status {
 	uint32_t power_table_id;
 	uint32_t shutdown_temperature;
 	uint32_t cpu_window_mib;
-	uint32_t reserved[21];
+	uint32_t gop_source_width;
+	uint32_t gop_source_height;
+	uint32_t gop_shape;
+	uint32_t reserved[18];
 };
 
 /* Asks the driver to run every stage up to target (AMDRDNA_IOC_ADVANCE, root only). */

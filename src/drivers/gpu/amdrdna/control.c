@@ -341,6 +341,9 @@ control_fill(
 		status->gop_height = gop->height;
 		status->gop_pitch_word = gop->pitch_word;
 		status->gop_format = gop->format;
+		status->gop_source_width = gop->viewport_width;
+		status->gop_source_height = gop->viewport_height;
+		status->gop_shape = (uint32_t)gop->picture.shape;
 	}
 
 	/* Whether the loader's picture is this GPU's. */

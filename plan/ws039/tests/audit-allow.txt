@@ -141,3 +141,11 @@ width
 window
 word
 training
+bottom
+difference
+horizontal
+inside
+ratio
+right
+vertical
+lines

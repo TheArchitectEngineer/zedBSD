@@ -38,8 +38,9 @@ struct thread;
  * What the readout of the firmware's display found: the timing generator
  * it lit, the chain behind it (the output processor, the blend unit, the
  * plane), the encoder that drives the connector and its kind, the timing,
- * the plane's surface, the display clocks, and the loader's description
- * of the same picture.
+ * the plane's surface and viewport, the scaler that draws the viewport
+ * into the active area, the display clocks, the loader's description of
+ * the same picture, and how the surface reaches the screen.
  */
 struct amdrdna_gop {
 	bool lit;
@@ -60,8 +61,19 @@ struct amdrdna_gop {
 	uint32_t format;
 	uint32_t tiling;
 	uint32_t pitch_word;
+	uint32_t viewport_x;
+	uint32_t viewport_y;
 	uint32_t viewport_width;
 	uint32_t viewport_height;
+	uint32_t scaler_mode;
+	uint32_t scaler_x;
+	uint32_t scaler_y;
+	uint32_t scaler_width;
+	uint32_t scaler_height;
+	uint32_t horizontal_ratio;
+	uint32_t vertical_ratio;
+	uint32_t scaler_automatic;
+	struct amdrdna_picture picture;
 	uint32_t plane_control;
 	uint32_t underflow;
 	bool compressed;

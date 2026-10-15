@@ -12,7 +12,8 @@
  * first instance's offset plus the instance times that distance, in the
  * display block's window the register belongs to.  Two families do not
  * repeat evenly (the legacy VGA controls of the six heads and the pixel
- * processors of pipes 4 and 5), and those keep one offset per instance.
+ * processors of pipes 4 and 5): those keep one base per instance, and a
+ * register of the family lies at a fixed distance from its instance's base.
  */
 
 #include <stddef.h>
@@ -23,7 +24,8 @@
 /*
  * Where each named display register lies: the display block's window, the
  * first instance's offset in it, and the distance between instances; or,
- * for the uneven families, one offset per instance.
+ * for the uneven families, one base per instance and the register's
+ * distance from that base in the offset.
  */
 struct dcn_place {
 	uint8_t window;
@@ -93,9 +95,15 @@ static const uint16_t pixel_processor_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * mmOTG0_OTG_V_SYNC_A_CNTL, mmOTG0_OTG_CONTROL,
  * mmOTG0_OTG_MASTER_UPDATE_LOCK, mmDIG0_DIG_FE_CNTL, mmDIG0_DIG_BE_CNTL,
  * mmDIG0_DIG_BE_EN_CNTL, mmDP0_DP_VID_STREAM_CNTL, mmDP0_DP_LINK_CNTL, and
- * the _BASE_IDX of each).
+ * the _BASE_IDX of each); the scaler's registers from the same header
+ * (mmDSCL0_SCL_MODE, mmDSCL0_SCL_HORZ_FILTER_SCALE_RATIO,
+ * mmDSCL0_SCL_VERT_FILTER_SCALE_RATIO, mmDSCL0_RECOUT_START,
+ * mmDSCL0_RECOUT_SIZE, mmDSCL0_DSCL_AUTOCAL, and the same registers of
+ * DSCL1 to DSCL5).
  * derived: the distances are the differences between the offsets of
- * instance 1 and instance 0 in the same header.
+ * instance 1 and instance 0 in the same header; a scaler register's
+ * distance from its pixel processor's control word is the same in all six
+ * pipes (0x27, 0x2c, 0x30, 0x3d, 0x3e and 0x38).
  */
 static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 1U, 0x0000U, 0x0000U, head_legacy_offsets },
@@ -137,7 +145,13 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x20afU, 0x0100U, NULL },
 	{ 2U, 0x20b0U, 0x0100U, NULL },
 	{ 2U, 0x210cU, 0x0100U, NULL },
-	{ 2U, 0x2108U, 0x0100U, NULL }
+	{ 2U, 0x2108U, 0x0100U, NULL },
+	{ 2U, 0x0027U, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x002cU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x0030U, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x003dU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x003eU, 0x0000U, pixel_processor_offsets },
+	{ 2U, 0x0038U, 0x0000U, pixel_processor_offsets }
 };
 
 /*
@@ -169,9 +183,9 @@ amdrdna_dcn_index(
 	if (place->window >= display->window_count)
 		return 0U;
 
-	/* An uneven family keeps the instance's own offset; the others repeat at their distance. */
+	/* An uneven family adds the register's distance to the instance's own base; the others repeat at their distance. */
 	if (place->instances != NULL) {
-		offset = place->instances[instance];
+		offset = place->instances[instance] + place->offset;
 	} else {
 		offset = place->offset + (uint32_t)place->stride * instance;
 	}

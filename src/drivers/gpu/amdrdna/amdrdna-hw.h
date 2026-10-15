@@ -105,7 +105,25 @@ enum amdrdna_dcn_register {
 	AMDRDNA_DCN_ENCODER_BACK_ENABLE,
 	AMDRDNA_DCN_DP_STREAM_CONTROL,
 	AMDRDNA_DCN_DP_LINK_CONTROL,
+	AMDRDNA_DCN_SCALER_MODE,
+	AMDRDNA_DCN_SCALER_H_RATIO,
+	AMDRDNA_DCN_SCALER_V_RATIO,
+	AMDRDNA_DCN_SCALER_OUTPUT_START,
+	AMDRDNA_DCN_SCALER_OUTPUT_SIZE,
+	AMDRDNA_DCN_SCALER_AUTOMATIC,
 	AMDRDNA_DCN_REGISTER_COUNT
+};
+
+/*
+ * How the firmware's surface reaches the screen: it fills the timing's
+ * active area pixel for pixel, it sits unscaled inside a larger active
+ * area, or the pixel processor's scaler stretches it.  The order is the
+ * one of the AMDRDNA_GOP_SHAPE_ values of the control interface.
+ */
+enum amdrdna_picture_shape {
+	AMDRDNA_PICTURE_WHOLE,
+	AMDRDNA_PICTURE_PLACED,
+	AMDRDNA_PICTURE_SCALED
 };
 
 /*
@@ -243,6 +261,50 @@ struct amdrdna_vbios_owner {
 };
 
 /*
+ * What the display chain and the loader say about the firmware's picture.
+ *
+ * The timing generator gives the active area the screen shows; the plane
+ * gives the viewport, the part of the surface it fetches; the pixel
+ * processor's scaler gives the rectangle of the active area the viewport
+ * is drawn into, its mode (0 passes the pixels through), its two ratios,
+ * the viewport's size over the rectangle's in units of 1/2^24, and its
+ * automatic mode (0 off; 1 the scaler works the ratios out itself; 2 and 3
+ * it centres the viewport unscaled, 3 also repeating pixels); the loader
+ * gives the size of the framebuffer it handed the kernel.
+ */
+struct amdrdna_picture_input {
+	uint32_t active_width;
+	uint32_t active_height;
+	uint32_t viewport_x;
+	uint32_t viewport_y;
+	uint32_t viewport_width;
+	uint32_t viewport_height;
+	uint32_t scaler_mode;
+	uint32_t scaler_x;
+	uint32_t scaler_y;
+	uint32_t scaler_width;
+	uint32_t scaler_height;
+	uint32_t horizontal_ratio;
+	uint32_t vertical_ratio;
+	uint32_t scaler_automatic;
+	bool loader_present;
+	uint32_t loader_width;
+	uint32_t loader_height;
+};
+
+/*
+ * What the check found: how the surface reaches the screen, whether the
+ * scaler's rectangle lies inside the active area, and whether its mode and
+ * ratios agree with the viewport and the rectangle.  The last two are only
+ * noted; they do not decide whether the picture is the console's.
+ */
+struct amdrdna_picture {
+	enum amdrdna_picture_shape shape;
+	bool rectangle_inside;
+	bool ratios_agree;
+};
+
+/*
  * What the VRAM layout is planned from: the VRAM's size, the part of it the
  * CPU window shows, the firmware's picture, and the ranges the video BIOS
  * keeps for the firmware and the driver.
@@ -346,6 +408,15 @@ amdrdna_vbios_parse(
 	const uint8_t *image,
 	size_t length,
 	struct amdrdna_vbios_info *info);
+
+int
+amdrdna_picture_check(
+	const struct amdrdna_picture_input *input,
+	struct amdrdna_picture *picture);
+
+const char *
+amdrdna_picture_shape_name(
+	enum amdrdna_picture_shape shape);
 
 int
 amdrdna_layout_plan(

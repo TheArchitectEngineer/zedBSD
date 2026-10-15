@@ -12,9 +12,13 @@
  * through an output processor, a blend unit and a plane from a surface in
  * VRAM, and drives a connector through one encoder.  The stage follows
  * that chain backwards from the lit timing generator, reads the plane's
- * surface and the display clocks, and checks that the surface is the
- * picture the loader handed the kernel as its console.  It then plans the
- * VRAM layout around that picture.  Nothing on the display is written.
+ * surface, the scaler that draws it into the active area and the display
+ * clocks, and checks that the surface is the picture the loader handed
+ * the kernel as its console.  The loader's mode need not be the monitor's:
+ * the firmware may fetch a smaller surface and stretch it, so the picture
+ * is compared with the part of the surface the plane fetches, not with the
+ * timing.  The stage then plans the VRAM layout around that picture.
+ * Nothing on the display is written.
  */
 
 #include <stdbool.h>
@@ -43,10 +47,13 @@
  * blend unit and the blend unit's top plane, bottom unit and output
  * processor (0xf for none); the plane's blank bit, timing-generator select
  * and underflow bits, its pixel format, its tiling mode, its pitch word,
- * its viewport, the high 16 bits of its address and its compression bit;
- * the update lock; and an encoder's back-end enable, the one-hot front end
- * it takes, its mode and hot-plug select, and the front end's timing
- * generator.
+ * its viewport's start and size (the same two 14-bit fields), the high 16
+ * bits of its address and its compression bit; the update lock; an
+ * encoder's back-end enable, the one-hot front end it takes, its mode and
+ * hot-plug select, and the front end's timing generator; and the scaler's
+ * mode, its output rectangle's start (13-bit fields) and size (14-bit
+ * fields, the second at bit 16), its 26-bit ratio words and its two-bit
+ * automatic mode.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_sh_mask.h
@@ -68,7 +75,15 @@
  * OTG0_OTG_MASTER_UPDATE_LOCK__OTG_MASTER_UPDATE_LOCK,
  * DIG0_DIG_BE_EN_CNTL__DIG_ENABLE, DIG0_DIG_BE_CNTL__DIG_FE_SOURCE_SELECT,
  * DIG0_DIG_BE_CNTL__DIG_MODE, DIG0_DIG_BE_CNTL__DIG_HPD_SELECT,
- * DIG0_DIG_FE_CNTL__DIG_SOURCE_SELECT).
+ * DIG0_DIG_FE_CNTL__DIG_SOURCE_SELECT,
+ * HUBP0_DCSURF_PRI_VIEWPORT_START__PRI_VIEWPORT_X_START,
+ * HUBP0_DCSURF_PRI_VIEWPORT_START__PRI_VIEWPORT_Y_START,
+ * DSCL0_SCL_MODE__DSCL_MODE, DSCL0_RECOUT_START__RECOUT_START_X,
+ * DSCL0_RECOUT_START__RECOUT_START_Y, DSCL0_RECOUT_SIZE__RECOUT_WIDTH,
+ * DSCL0_RECOUT_SIZE__RECOUT_HEIGHT,
+ * DSCL0_SCL_HORZ_FILTER_SCALE_RATIO__SCL_H_SCALE_RATIO,
+ * DSCL0_SCL_VERT_FILTER_SCALE_RATIO__SCL_V_SCALE_RATIO,
+ * DSCL0_DSCL_AUTOCAL__AUTOCAL_MODE).
  */
 #define READOUT_HEAD_LEGACY		0x00000001U
 #define READOUT_TIMING_ENABLED		0x00000001U
@@ -99,6 +114,12 @@
 #define READOUT_ENCODER_HOTPLUG_SHIFT	28U
 #define READOUT_ENCODER_HOTPLUG_FIELD	0x00000007U
 #define READOUT_FRONT_TIMING_FIELD	0x00000007U
+#define READOUT_SCALER_MODE_FIELD	0x00000007U
+#define READOUT_SCALER_START_FIELD	0x00001fffU
+#define READOUT_SCALER_SIZE_FIELD	0x00003fffU
+#define READOUT_SCALER_SECOND_SHIFT	16U
+#define READOUT_SCALER_RATIO_FIELD	0x03ffffffU
+#define READOUT_SCALER_AUTOMATIC_FIELD	0x00000003U
 
 /* The number of front ends an encoder's one-hot select may name. */
 #define READOUT_FRONT_ENDS		7U
@@ -109,7 +130,9 @@ static int readout_chain(struct amdrdna_device *device);
 static void readout_plane(struct amdrdna_device *device);
 static void readout_output(struct amdrdna_device *device);
 static void readout_clocks(struct amdrdna_device *device);
+static void readout_scaler(struct amdrdna_device *device);
 static int readout_loader(struct amdrdna_device *device);
+static int readout_picture(struct amdrdna_device *device);
 static const char *output_kind_name(unsigned kind);
 
 /*
@@ -118,8 +141,9 @@ static const char *output_kind_name(unsigned kind);
  *
  * Returns 0 when the chain was read (or nothing is lit) and the picture
  * the loader handed over is this surface, ENOTSUP for a head left in VGA
- * mode or a chain the driver cannot follow, or EINVAL when the loader's
- * picture and the plane's surface differ.
+ * mode, a chain the driver cannot follow or a viewport moved into the
+ * surface, or EINVAL when the loader's picture and the fetched surface
+ * differ in place or in size.
  */
 int
 amdrdna_a1_readout(
@@ -142,14 +166,20 @@ amdrdna_a1_readout(
 		if (error != 0)
 			return error;
 
-		/* Reads the plane, the encoder and the clocks of that chain. */
+		/* Reads the plane, the scaler, the encoder and the clocks of that chain. */
 		readout_plane(device);
+		readout_scaler(device);
 		readout_output(device);
 		readout_clocks(device);
 	}
 
-	/* Compares the loader's picture with the plane's surface. */
+	/* Compares the loader's picture with the plane's surface: the same VRAM. */
 	error = readout_loader(device);
+	if (error != 0)
+		return error;
+
+	/* Compares their sizes, and finds how the surface reaches the screen. */
+	error = readout_picture(device);
 	if (error != 0)
 		return error;
 
@@ -171,15 +201,18 @@ amdrdna_a1_readout(
 	}
 
 	/* Marks the chain, the picture and the layout. */
-	amdrdna_mark("A1 ok otg=%u opp=%u mpcc=%u hubp=%u dig=%d mode=%s %ux%u fb=+0x%llx pitch=0x%x stride=%u fmt=%u lit=%u",
+	amdrdna_mark("A1 ok otg=%u opp=%u mpcc=%u hubp=%u dig=%d mode=%s %ux%u on %ux%u %s fb=+0x%llx pitch=0x%x stride=%u fmt=%u lit=%u",
 	    device->gop.timing,
 	    device->gop.output_processor,
 	    device->gop.blend,
 	    device->gop.plane,
 	    device->gop.has_output ? (int)device->gop.output : -1,
 	    output_kind_name(device->gop.output_kind),
+	    (unsigned)device->gop.viewport_width,
+	    (unsigned)device->gop.viewport_height,
 	    (unsigned)device->gop.width,
 	    (unsigned)device->gop.height,
+	    amdrdna_picture_shape_name(device->gop.picture.shape),
 	    (unsigned long long)device->gop.surface_offset,
 	    (unsigned)device->gop.pitch_word,
 	    (unsigned)device->gop.loader_stride,
@@ -213,6 +246,7 @@ amdrdna_plan_layout(
 	struct amdrdna_layout_input input;
 	const struct amdrdna_range *range;
 	uint32_t pixels;
+	uint32_t lines;
 	unsigned index;
 	int error;
 
@@ -223,9 +257,12 @@ amdrdna_plan_layout(
 		input.window_bytes = AMDRDNA_CPU_WINDOW_BYTES;
 
 	/*
-	 * The firmware's picture, by the visible height and the wider of the
-	 * plane's pitch (counted as the pitch or the pitch less one, which the
-	 * firmware and the hardware read differently) and the loader's stride.
+	 * The firmware's picture, by the wider of the plane's pitch (counted
+	 * as the pitch or the pitch less one, which the firmware and the
+	 * hardware read differently) and the loader's stride, and by the
+	 * tallest of the active area, the viewport and the loader's picture
+	 * (a scaled picture is shorter than the screen; the larger range keeps
+	 * whichever the firmware really uses).
 	 */
 	input.gop_present = false;
 	input.gop_offset = 0U;
@@ -233,10 +270,15 @@ amdrdna_plan_layout(
 	pixels = device->gop.pitch_word + 1U;
 	if (device->gop.loader_stride > pixels)
 		pixels = device->gop.loader_stride;
+	lines = device->gop.height;
+	if (device->gop.viewport_height > lines)
+		lines = device->gop.viewport_height;
+	if (device->gop.loader_height > lines)
+		lines = device->gop.loader_height;
 	if (device->gop.lit && device->gop.surface_in_vram) {
 		input.gop_present = true;
 		input.gop_offset = device->gop.surface_offset;
-		input.gop_bytes = (uint64_t)pixels * device->gop.height * READOUT_PIXEL_BYTES;
+		input.gop_bytes = (uint64_t)pixels * lines * READOUT_PIXEL_BYTES;
 	}
 
 	/* The ranges the video BIOS keeps, once it has been read. */
@@ -447,7 +489,12 @@ readout_plane(
 	gop->tiling = display_read(device, AMDRDNA_DCN_PLANE_TILING, gop->plane) & READOUT_TILING_FIELD;
 	gop->pitch_word = display_read(device, AMDRDNA_DCN_PLANE_PITCH, gop->plane) & READOUT_PITCH_FIELD;
 
-	/* The viewport's size. */
+	/* The viewport's start in the surface. */
+	word = display_read(device, AMDRDNA_DCN_PLANE_VIEWPORT_START, gop->plane);
+	gop->viewport_x = word & READOUT_VIEWPORT_FIELD;
+	gop->viewport_y = (word >> READOUT_VIEWPORT_HEIGHT_SHIFT) & READOUT_VIEWPORT_FIELD;
+
+	/* The viewport's size: the part of the surface the plane fetches. */
 	word = display_read(device, AMDRDNA_DCN_PLANE_VIEWPORT_SIZE, gop->plane);
 	gop->viewport_width = word & READOUT_VIEWPORT_FIELD;
 	gop->viewport_height = (word >> READOUT_VIEWPORT_HEIGHT_SHIFT) & READOUT_VIEWPORT_FIELD;
@@ -554,6 +601,46 @@ readout_clocks(
 }
 
 /*
+ * Reads the scaler of the plane's pixel processor: its mode, the rectangle
+ * of the active area it draws the viewport into, and its two ratios.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/dpp/dcn10/dcn10_dpp_dscl.c
+ * (dpp1_dscl_set_scaler_manual_scale, dpp1_dscl_set_recout,
+ * dpp1_dscl_set_manual_ratio_init, and the automatic modes the file
+ * names); the pixel processor of a pipe is the one of the same number as
+ * its plane.
+ */
+static void
+readout_scaler(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_gop *gop;
+	uint32_t word;
+
+	/* The mode: 0 passes the pixels through, the others scale. */
+	gop = &device->gop;
+	gop->scaler_mode = display_read(device, AMDRDNA_DCN_SCALER_MODE, gop->plane) & READOUT_SCALER_MODE_FIELD;
+
+	/* The rectangle's start in the active area. */
+	word = display_read(device, AMDRDNA_DCN_SCALER_OUTPUT_START, gop->plane);
+	gop->scaler_x = word & READOUT_SCALER_START_FIELD;
+	gop->scaler_y = (word >> READOUT_SCALER_SECOND_SHIFT) & READOUT_SCALER_START_FIELD;
+
+	/* The rectangle's size. */
+	word = display_read(device, AMDRDNA_DCN_SCALER_OUTPUT_SIZE, gop->plane);
+	gop->scaler_width = word & READOUT_SCALER_SIZE_FIELD;
+	gop->scaler_height = (word >> READOUT_SCALER_SECOND_SHIFT) & READOUT_SCALER_SIZE_FIELD;
+
+	/* The ratios: the viewport's size over the rectangle's, unless the scaler works them out itself. */
+	gop->horizontal_ratio = display_read(device, AMDRDNA_DCN_SCALER_H_RATIO, gop->plane) & READOUT_SCALER_RATIO_FIELD;
+	gop->vertical_ratio = display_read(device, AMDRDNA_DCN_SCALER_V_RATIO, gop->plane) & READOUT_SCALER_RATIO_FIELD;
+
+	/* The automatic mode: whether the scaler works out the ratios, or centres the viewport, by itself. */
+	gop->scaler_automatic = display_read(device, AMDRDNA_DCN_SCALER_AUTOMATIC, gop->plane) & READOUT_SCALER_AUTOMATIC_FIELD;
+}
+
+/*
  * Compares the picture the loader handed the kernel with the plane's
  * surface: both must be the same VRAM, and the same size.
  */
@@ -602,17 +689,97 @@ readout_loader(
 		return EINVAL;
 	}
 
-	/* And of the plane's size. */
-	if (gop->loader_width != gop->width || gop->loader_height != gop->height) {
-		amdrdna_mark("A1 fail: loader framebuffer %ux%u is not the timing's %ux%u",
-		    (unsigned)gop->loader_width,
-		    (unsigned)gop->loader_height,
-		    (unsigned)gop->width,
-		    (unsigned)gop->height);
-		return EINVAL;
+	/* Succeeded: the console's picture lies where the lit plane fetches its surface. */
+	return 0;
+}
+
+/*
+ * Compares the size of the loader's picture with the part of the surface
+ * the plane fetches, finds how that surface reaches the screen, and marks
+ * the scaler.
+ */
+static int
+readout_picture(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_picture_input input;
+	struct amdrdna_gop *gop;
+	int error;
+
+	/* Nothing lit shows no picture to compare. */
+	gop = &device->gop;
+	if (!gop->lit)
+		return 0;
+
+	/* Gathers the timing, the viewport, the scaler and, when it is this GPU's, the loader's picture. */
+	input.active_width = gop->width;
+	input.active_height = gop->height;
+	input.viewport_x = gop->viewport_x;
+	input.viewport_y = gop->viewport_y;
+	input.viewport_width = gop->viewport_width;
+	input.viewport_height = gop->viewport_height;
+	input.scaler_mode = gop->scaler_mode;
+	input.scaler_x = gop->scaler_x;
+	input.scaler_y = gop->scaler_y;
+	input.scaler_width = gop->scaler_width;
+	input.scaler_height = gop->scaler_height;
+	input.horizontal_ratio = gop->horizontal_ratio;
+	input.vertical_ratio = gop->vertical_ratio;
+	input.scaler_automatic = gop->scaler_automatic;
+	input.loader_present = gop->loader_on_gpu;
+	input.loader_width = gop->loader_width;
+	input.loader_height = gop->loader_height;
+
+	/* Marks the scaler as read, whatever the comparison finds. */
+	amdrdna_mark("A1 scaler dpp=%u mode=%u auto=%u out=%u,%u %ux%u ratio=0x%07x/0x%07x viewport=%u,%u %ux%u active=%ux%u",
+	    gop->plane,
+	    (unsigned)gop->scaler_mode,
+	    (unsigned)gop->scaler_automatic,
+	    (unsigned)gop->scaler_x,
+	    (unsigned)gop->scaler_y,
+	    (unsigned)gop->scaler_width,
+	    (unsigned)gop->scaler_height,
+	    (unsigned)gop->horizontal_ratio,
+	    (unsigned)gop->vertical_ratio,
+	    (unsigned)gop->viewport_x,
+	    (unsigned)gop->viewport_y,
+	    (unsigned)gop->viewport_width,
+	    (unsigned)gop->viewport_height,
+	    (unsigned)gop->width,
+	    (unsigned)gop->height);
+
+	/* Compares the pictures and finds the shape. */
+	error = amdrdna_picture_check(&input, &gop->picture);
+	if (error == ENOTSUP) {
+		amdrdna_mark("A1 fail: hubp %u fetches from %u,%u of its surface, not from the loader's origin",
+		    gop->plane,
+		    (unsigned)gop->viewport_x,
+		    (unsigned)gop->viewport_y);
+		return error;
 	}
 
-	/* Succeeded: the console's picture is this GPU's lit surface. */
+	/* Any other refusal is a viewport that is empty or of another size than the loader's picture. */
+	if (error != 0) {
+		amdrdna_mark("A1 fail: loader framebuffer %ux%u is not hubp %u's viewport %ux%u (active %ux%u)",
+		    (unsigned)gop->loader_width,
+		    (unsigned)gop->loader_height,
+		    gop->plane,
+		    (unsigned)gop->viewport_width,
+		    (unsigned)gop->viewport_height,
+		    (unsigned)gop->width,
+		    (unsigned)gop->height);
+		return error;
+	}
+
+	/* A rectangle outside the screen is only noted; the plane still fetches the console. */
+	if (!gop->picture.rectangle_inside)
+		amdrdna_mark("A1 note: the scaler's rectangle is not inside the active area");
+
+	/* So is a scaler whose mode or ratios do not fit the sizes. */
+	if (!gop->picture.ratios_agree)
+		amdrdna_mark("A1 note: the scaler's mode and ratios do not fit the viewport and the rectangle");
+
+	/* Succeeded: the loader's picture is the fetched surface, and its shape is known. */
 	return 0;
 }
 
