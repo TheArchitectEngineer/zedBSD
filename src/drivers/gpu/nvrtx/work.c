@@ -48,6 +48,15 @@
 #define WORK_ARENA_BYTES		0x2000000ULL
 #define WORK_ARENA_ALIGN		0x200000ULL
 
+/*
+ * Where the timed runs (nvrtx.vk.perf=1) leave their times in the
+ * semaphore's page: the fence's 16 bytes at its start (value, then the
+ * timer at byte 8), and the start stamp's 16 bytes after them.
+ */
+#define WORK_FENCE_TIMER_AT		8U
+#define WORK_START_AT			0x10U
+#define WORK_START_TIMER_AT		0x18U
+
 /* The arena's parts: the tables, the instance block and USERD, then the channel's own context buffers. */
 #define WORK_TABLES_AT			0x000000ULL
 #define WORK_INSTANCE_AT		0x200000ULL
@@ -100,6 +109,7 @@ static int work_ring_wait(struct nvrtx_gpu *gpu, uint32_t entry);
 static int work_ring_put(struct nvrtx_gpu *gpu, uint32_t entry, uint64_t va, size_t length);
 static int work_doorbell(struct nvrtx_gpu *gpu);
 static uint32_t work_semaphore(const struct nvrtx_gpu *gpu);
+static uint64_t work_semaphore_timer(const struct nvrtx_gpu *gpu, size_t at);
 static uint64_t work_align(uint64_t value, uint32_t shift);
 
 /*
@@ -113,9 +123,16 @@ int
 nvrtx_work_start(
 	struct nvrtx_gpu *gpu)
 {
+	bool timed;
 	int error;
 
 	nvrtx_stage_mark("P9w begin");
+
+	/* Each run is timed on the GPU when the boot asks for the counts (nvrtx.vk.perf=1). */
+	timed = nvrtx_stage_vk_perf_wanted();
+	gpu->work.timed = 0;
+	if (timed)
+		gpu->work.timed = 1;
 
 	/* The channel's context comes from the golden context. */
 	if (gpu->gr.buffer_count == 0U) {
@@ -161,6 +178,9 @@ nvrtx_work_start(
 	error = work_first(gpu);
 	if (error != 0)
 		return error;
+
+	/* Reports the GPU's performance level, and raises it when the boot asks (nvrtx.boost=1). */
+	nvrtx_perf_start(gpu);
 
 	/* Succeeded: the channel takes work. */
 	return 0;
@@ -443,9 +463,11 @@ nvrtx_work_unmap(
  *
  * The segment is length bytes at push_va in the channel's space; the GPU
  * reads it after the call returns, so it stays intact until the fence
- * returned in *fence has passed.  Waits up to 2 s for two free ring
- * entries.  Returns ENODEV before the channel runs, ETIMEDOUT when the
- * ring stays full, EINVAL for an empty or misaligned segment.
+ * returned in *fence has passed.  A timed channel (nvrtx.vk.perf=1) puts a
+ * start stamp before the segment and times the fence, for
+ * nvrtx_work_run_time().  Waits up to 2 s for free ring entries.  Returns
+ * ENODEV before the channel runs, ETIMEDOUT when the ring stays full,
+ * EINVAL for an empty or misaligned segment.
  */
 int
 nvrtx_work_submit(
@@ -456,9 +478,11 @@ nvrtx_work_submit(
 {
 	struct nvrtx_work_state *work;
 	uint8_t *slot;
+	uint32_t stamp_entry;
 	uint32_t entry;
 	uint32_t fence_entry;
 	uint32_t value;
+	size_t stamp_length;
 	size_t fence_length;
 	int error;
 
@@ -477,10 +501,21 @@ nvrtx_work_submit(
 		return ENODEV;
 	}
 
-	/* Waits until both entries' earlier work is done. */
+	/* The entries: without timing the segment's entry also stands for the stamp's, which is not written. */
+	stamp_entry = work->put;
 	entry = work->put;
+
+	/* A timed run's start stamp takes the first entry, and the segment the next. */
+	if (work->timed != 0)
+		entry = (stamp_entry + 1U) & (NVRTX_WORK_RING_ENTRIES - 1U);
+
+	/* The fence follows the segment. */
 	fence_entry = (entry + 1U) & (NVRTX_WORK_RING_ENTRIES - 1U);
-	error = work_ring_wait(gpu, entry);
+
+	/* Waits until the entries' earlier work is done. */
+	error = work_ring_wait(gpu, stamp_entry);
+	if (error == 0)
+		error = work_ring_wait(gpu, entry);
 	if (error == 0)
 		error = work_ring_wait(gpu, fence_entry);
 	if (error != 0) {
@@ -488,13 +523,26 @@ nvrtx_work_submit(
 		return error;
 	}
 
-	/* Writes the fence's push buffer into the fence entry's slot. */
+	/* Writes the fence's push buffer into the fence entry's slot, timed for a timed run. */
 	value = work->fence + 1U;
 	slot = (uint8_t *)work->fences.dma.address + (size_t)fence_entry * NVRTX_WORK_FENCE_BYTES;
-	fence_length = nvrtx_push_fence(slot, WORK_SEMAPHORE_VA, value);
+	if (work->timed != 0) {
+		fence_length = nvrtx_push_fence_timed(slot, WORK_SEMAPHORE_VA, value);
+	} else {
+		fence_length = nvrtx_push_fence(slot, WORK_SEMAPHORE_VA, value);
+	}
 
-	/* The segment, then the fence; the doorbell after the put moved past both. */
-	error = work_ring_put(gpu, entry, push_va, length);
+	/* A timed run's start stamp, in its own entry's slot, on the ring before the segment. */
+	error = 0;
+	if (work->timed != 0) {
+		slot = (uint8_t *)work->fences.dma.address + (size_t)stamp_entry * NVRTX_WORK_FENCE_BYTES;
+		stamp_length = nvrtx_push_stamp(slot, WORK_SEMAPHORE_VA + WORK_START_AT, value);
+		error = work_ring_put(gpu, stamp_entry, WORK_FENCES_VA + (uint64_t)stamp_entry * NVRTX_WORK_FENCE_BYTES, stamp_length);
+	}
+
+	/* The segment, then the fence; the doorbell after the put moved past them. */
+	if (error == 0)
+		error = work_ring_put(gpu, entry, push_va, length);
 	if (error == 0)
 		error = work_ring_put(gpu, fence_entry, WORK_FENCES_VA + (uint64_t)fence_entry * NVRTX_WORK_FENCE_BYTES, fence_length);
 	if (error == 0)
@@ -505,10 +553,11 @@ nvrtx_work_submit(
 	}
 
 	/*
-	 * Both entries now belong to this fence: they are written again only
+	 * Every entry now belongs to this fence: they are written again only
 	 * once it has passed.  fence is the newest value the semaphore will
 	 * reach.
 	 */
+	work->entry_fence[stamp_entry] = value;
 	work->entry_fence[entry] = value;
 	work->entry_fence[fence_entry] = value;
 	work->fence = value;
@@ -517,6 +566,52 @@ nvrtx_work_submit(
 
 	/* Succeeded: the work runs and will release the fence. */
 	*fence = value;
+	return 0;
+}
+
+/*
+ * Reports how long the GPU took for a timed run whose fence has passed:
+ * the nanoseconds from its start stamp to its fence, by the GPU's timer.
+ *
+ * Returns ENOENT when the channel is not timed or the stamps are another
+ * run's (a later submission wrote them), else 0.
+ */
+int
+nvrtx_work_run_time(
+	struct nvrtx_gpu *gpu,
+	uint32_t fence,
+	uint64_t *gpu_ns)
+{
+	const volatile uint32_t *semaphore;
+	uint32_t started;
+	uint32_t ended;
+	uint64_t start;
+	uint64_t end;
+
+	/* Only a timed channel leaves stamps. */
+	if (gpu->work.timed == 0)
+		return ENOENT;
+
+	/* Both values must be this run's; each was written after its timer. */
+	semaphore = (const volatile uint32_t *)gpu->work.semaphore.dma.address;
+	started = semaphore[WORK_START_AT / 4U];
+	ended = semaphore[0];
+	if (started != fence || ended != fence)
+		return ENOENT;
+
+	/* The timers are read only after the values that follow them. */
+	__atomic_thread_fence(__ATOMIC_ACQUIRE);
+
+	/* The timers at the start and at the fence. */
+	start = work_semaphore_timer(gpu, WORK_START_TIMER_AT);
+	end = work_semaphore_timer(gpu, WORK_FENCE_TIMER_AT);
+
+	/* A fence timed before its own start is not a time. */
+	if (end < start)
+		return ENOENT;
+
+	/* Succeeded: the GPU's time for the run. */
+	*gpu_ns = end - start;
 	return 0;
 }
 
@@ -1046,6 +1141,25 @@ work_semaphore(
 
 	/* Succeeded: what the GPU last released. */
 	return *semaphore;
+}
+
+/* Reads a 64-bit GPU timer a timed release wrote into the semaphore's page at a byte offset. */
+static uint64_t
+work_semaphore_timer(
+	const struct nvrtx_gpu *gpu,
+	size_t at)
+{
+	const volatile uint32_t *words;
+	uint64_t low;
+	uint64_t high;
+
+	/* The timer's two words in the coherent page, low first. */
+	words = (const volatile uint32_t *)((const uint8_t *)gpu->work.semaphore.dma.address + at);
+	low = words[0];
+	high = words[1];
+
+	/* Succeeded: the timer in nanoseconds. */
+	return (high << 32) | low;
 }
 
 /* Rounds a value up to a power-of-two boundary given as its log 2. */

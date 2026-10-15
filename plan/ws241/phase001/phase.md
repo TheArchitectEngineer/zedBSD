@@ -31,3 +31,25 @@ Parent: [WS241](../ws.md)
 - M2（計測）: stream の複写の回数・KiB・us。
 - M3（計測と切り替え）: 起動の時の P-state、boot の語 nvrtx.boost=1 で PERF_BOOST（最大、無期限）。
 - F2 はこの回は変えない。次の回は数で決める（state の差分だけ書く、stream を cached な system memory へ、spin の短縮など）。
+
+## 2. X1・M1〜M3 の実装（2026-10-16、Q1 の承認「X1 と M1〜M3 を案の通り、F2 はこの回は触らない」）
+
+| 項 | 中身 | file |
+| --- | --- | --- |
+| X1 | 毎 draw の INVALIDATE_SHADER_CACHES（0x021c、暗黙の WFI）をやめ、新しい `nvrtx_push_draw_invalidate()`（NO_WFI 0x0da4、instruction・global data・constant）を push の始めに 1 回。vk の executor は execute_start、P9g（draw.c）の 2 つの push も pipeline の前に呼ぶ | draw-push.c・nvrtx-draw.h・vk-execute.c・draw.c |
+| M1 | nvrtx.vk.perf=1 の時、work channel は 1 回の投入を 3 entry（始めの stamp＝timestamp 付きの release で WFI なし、segment、timestamp 付きの fence）にし、`nvrtx_work_run_time()` が GPU の timer で run の時間を出す。perf の行に `perf: gpu N avg Uus max Mus, run max Rus` と `perf: draws D quads Q push KKiB` | objects.c（`nvrtx_push_fence_timed`・`nvrtx_push_stamp`）・work.c・vk-node.c・vk-execute.c・node.c・nvrtx-node.h |
+| M2 | blob からの command stream の複写を node の `nvrtx_vk_blob_read()` に移し、回数・KiB・us を数える。`perf: streams N KKiB Uus` | vk-stream.c・vk-node.c・nvrtx-vk.h |
+| M3 | 新しい perf.c（段 P9p、P9w の最後から呼ぶ）: GET_CURRENT_PSTATE で `P9p: performance state Pn`、boot の語 nvrtx.boost=1（既定 off）で PERF_BOOST（最大、無期限）と `P9p: boosted to performance state Pn`。drain の前なので RPC は共有しない。失敗は log だけ | perf.c・work.c・nvrtx-gpu.h・platform/amd64/vmunix.mk（1 行）。stage.c・gsp.c は触らない |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p1perf/nvrtx ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk build/p1perf/nvrtx/vmunix` | rc 0・warning 0・vmunix check PASS（cksum 3200698666 3607808） |
+| `make -j16 BUILD=build/p1perf/ci ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1perf/ci/vmunix` | rc 0・warning 0・vmunix check PASS |
+| `sh plan/ws037/tests/nvrtx-vk-d3-host-test.sh` | PASS 122（新: 0x021c なし、0x0da4＝0x1011 が run ごとに 1 回、draw＋quad の計数 4） |
+| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` / `nvrtx-gsp-host-test.sh` | PASS 60 / PASS 285（firmware の directory 無しの skip を除く） |
+| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` / `nvrtx-sm75-desktop-test.sh` | 170 checks 0 failures（0x021c なし、0x0da4＝0x1011）/ 46 compiled 0 disagreed |
+| 実機 | **未実施**（T1-697 へ依頼） |
+
+T1-697 の依頼（Q1 経由）: T1-696 と同じ 3 場面（静止 20 s・Files 20 s・Terminal の無限 echo＋Files 20 s）を nvrtx.vk.perf=1 で、(a) nvrtx.boost=1 なし、(b) あり の 2 回。見る物: KWL PERF（frame_ms・rec submit・acquire）、kernel.log の perf の 5 行（runs・frames/flips・gpu・draws・streams）、`P9p` の行、`D3 fail`・`a command buffer did not run`・`rm: control` の有無、画面の崩れ（X1 で shader の cache の扱いを変えたので、Terminal・Files の文字と窓の絵）。

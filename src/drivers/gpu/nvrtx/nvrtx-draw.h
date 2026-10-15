@@ -99,8 +99,11 @@ size_t nvrtx_push_draw_constants(uint8_t *push, size_t at, uint64_t address, uin
 /* Writes colour target 0, the viewport and the raster, sample, depth and colour state of one draw; reports where the push buffer goes on. */
 size_t nvrtx_push_draw_target(uint8_t *push, size_t at, const struct nvrtx_draw_target *target);
 
-/* Writes the pipeline: a vertex and a pixel program (each at its header), the other stages off; reports where the push buffer goes on. */
+/* Writes the pipeline: a vertex and a pixel program (each at its header), the other stages off, the shader caches untouched; reports where the push buffer goes on. */
 size_t nvrtx_push_draw_pipeline(uint8_t *push, size_t at, uint64_t vertex, uint32_t vertex_gprs, uint64_t pixel, uint32_t pixel_gprs);
+
+/* Writes the invalidation of the shader caches at a push buffer's start, without a wait for idle; reports where the push buffer goes on. */
+size_t nvrtx_push_draw_invalidate(uint8_t *push, size_t at);
 
 /* Writes vertex stream 0 (two floats a vertex at attribute 0) and the attributes; reports where the push buffer goes on. */
 size_t nvrtx_push_draw_vertices(uint8_t *push, size_t at, uint64_t address, uint32_t bytes, uint32_t stride);

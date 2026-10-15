@@ -175,4 +175,17 @@ int nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
  */
 void nvrtx_vk_gpu_copied(void *owner, uint64_t bytes);
 
+/*
+ * Counts the draws of a push buffer about to run: the application's draws
+ * and the executor's own quads, for the node's counts (provided by the
+ * node).
+ */
+void nvrtx_vk_gpu_drawn(void *owner, uint32_t draws, uint32_t quads);
+
+/*
+ * Copies a command stream of length bytes out of a blob's bytes in the
+ * CPU's window, counting the copy and its time (provided by the node).
+ */
+void nvrtx_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length);
+
 #endif

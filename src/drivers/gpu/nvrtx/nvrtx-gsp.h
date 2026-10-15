@@ -684,6 +684,8 @@ void nvrtx_pdir_params(uint8_t *params, uint64_t root, uint32_t space);
 int nvrtx_devinfo_pick(const uint8_t *params, size_t length, struct nvrtx_engine_pick *pick);
 void nvrtx_channel_params(uint8_t *params, const struct nvrtx_channel_setup *setup);
 size_t nvrtx_push_fence(uint8_t *push, uint64_t semaphore, uint32_t value);
+size_t nvrtx_push_fence_timed(uint8_t *push, uint64_t semaphore, uint32_t value);
+size_t nvrtx_push_stamp(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_copy_fill(uint8_t *push, uint32_t subchannel, uint64_t destination, uint32_t words, uint32_t value);
 void nvrtx_ring_entry(uint8_t *entry, uint64_t va, uint32_t words);
 void nvrtx_free_params(uint8_t *params, uint32_t client, uint32_t object);

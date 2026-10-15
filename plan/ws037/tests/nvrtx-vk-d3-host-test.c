@@ -168,6 +168,8 @@ struct test_run {
 static struct test_run runs[16];
 static unsigned run_count;
 static unsigned gpu_runs;
+static unsigned gpu_draws;
+static unsigned gpu_quads;
 static unsigned gpu_copies;
 static uint64_t gpu_copied_bytes;
 
@@ -213,6 +215,23 @@ nvrtx_vk_gpu_copied(void *owner, uint64_t bytes)
 	(void)owner;
 	gpu_copies++;
 	gpu_copied_bytes += bytes;
+}
+
+/* Counts the draws and the executor's own quads of the runs. */
+void
+nvrtx_vk_gpu_drawn(void *owner, uint32_t draws, uint32_t quads)
+{
+	(void)owner;
+	gpu_draws += draws;
+	gpu_quads += quads;
+}
+
+/* Copies a command stream out of a blob, as the node does through its window. */
+void
+nvrtx_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length)
+{
+	(void)owner;
+	memcpy(to, from, length);
 }
 
 /* Decodes a run's push buffer into the method log: incrementing headers of the 3D subchannel. */
@@ -1601,6 +1620,8 @@ test_submit(const char *directory)
 
 	/* The submission with the fence. */
 	gpu_runs = 0;
+	gpu_draws = 0;
+	gpu_quads = 0;
 	gpu_copies = 0;
 	gpu_copied_bytes = 0;
 	method_count = 0;
@@ -1653,6 +1674,9 @@ test_submit(const char *directory)
 	check(methods_with(0x0e04, (10U | (26U << 16)), 0) == 1 && methods_with(0x0e08, (20U | (28U << 16)), 0) == 1,
 	    "submit: the copy's scissor");
 	check(methods_with(0x0110, 0, 1) >= 4, "submit: barriers between the pass and the transfers");
+	check(methods_with(0x021c, 0, 1) == 0, "submit: no draw waits for idle to invalidate the shader caches (ws241-p001)");
+	check(methods_with(0x0da4, 0x1011U, 0) == gpu_runs, "submit: the shader caches invalidated once at each push buffer's start");
+	check(gpu_draws + gpu_quads == 4, "submit: the four draws counted for the node");
 
 	/* The draw's texture: header 0 is image 0x503 (at 0x30004000, rows of 256, 32x32); its handle in the draw's constants. */
 	execute_va = 0;
