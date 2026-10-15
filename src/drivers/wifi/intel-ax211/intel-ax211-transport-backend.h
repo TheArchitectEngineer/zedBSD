@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -50,19 +48,23 @@ struct intel_ax211_transport_backend {
 	uint8_t failed;
 };
 
-int drv_intel_ax211_transport_backend_init(
+int
+drv_intel_ax211_transport_backend_init(
 	struct intel_ax211_transport_backend *backend,
 	struct intel_ax211_mmio *mmio,
 	struct intel_ax211_pci_mmio_backend *pci_mmio,
 	struct intel_ax211_dma_resources *dma);
+
 const struct intel_ax211_transport_ops *
-drv_intel_ax211_transport_backend_ops(void);
+drv_intel_ax211_transport_backend_ops(
+	void);
 
 /*
  * Builds a borrowed ring view transactionally.  On failure, memory is left
  * unchanged.  The DMA resources retain allocation and lifetime ownership.
  */
-int drv_intel_ax211_transport_backend_ring_memory(
+int
+drv_intel_ax211_transport_backend_ring_memory(
 	const struct intel_ax211_transport_backend *backend,
 	struct intel_ax211_transport_ring_memory *memory);
 

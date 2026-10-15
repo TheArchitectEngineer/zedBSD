@@ -1,0 +1,30 @@
+#version 450
+// ws039-p007: shared memory across barriers in a workgroup of three waves, and shared atomics.
+layout(local_size_x = 96) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { uint v[]; };
+layout(std430, set = 0, binding = 1) buffer Out { uint o[]; };
+shared uint s[96];
+shared uint total;
+shared uint highest;
+void main()
+{
+	uint l = gl_LocalInvocationID.x;
+	uint g = gl_GlobalInvocationID.x;
+	if (l == 0u) {
+		total = 0u;
+		highest = 0u;
+	}
+	s[l] = v[g] * 3u + 1u;
+	barrier();
+	atomicAdd(total, l);
+	atomicMax(highest, v[g]);
+	uint x = s[(l + 1u) % 96u] + s[95u - l];
+	barrier();
+	if ((l & 3u) == 1u)
+		s[l] = x;
+	barrier();
+	o[g * 4u] = x;
+	o[g * 4u + 1u] = total;
+	o[g * 4u + 2u] = highest;
+	o[g * 4u + 3u] = s[l ^ 1u];
+}

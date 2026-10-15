@@ -1,0 +1,20 @@
+#version 450
+// ws039-p007: unsigned and signed division and remainder, by values and by constants.
+layout(local_size_x = 32) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { uint v[]; };
+layout(std430, set = 0, binding = 1) buffer Out { uint o[]; };
+void main()
+{
+	uint g = gl_GlobalInvocationID.x;
+	uint a = v[g * 2u];
+	uint b = v[g * 2u + 1u] >> (g & 31u);
+	b = b == 0u ? 7u : b;
+	int sa = int(a);
+	int sb = int(b) == -1 ? 3 : int(b);
+	o[g * 6u] = a / b;
+	o[g * 6u + 1u] = a % b;
+	o[g * 6u + 2u] = uint(sa / sb);
+	o[g * 6u + 3u] = uint(sa % sb);
+	o[g * 6u + 4u] = a / 13u + a % 1000u;
+	o[g * 6u + 5u] = uint(-sa / 7) + uint(sa % -5);
+}

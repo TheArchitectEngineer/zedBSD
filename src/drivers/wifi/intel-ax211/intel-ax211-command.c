@@ -14,7 +14,6 @@
 #include "intel-ax211-command.h"
 #include <kern/kcrt.h>
 
-
 static int ax211_command_transaction_valid(const struct intel_ax211_command_transaction *transaction);
 static int ax211_command_request_valid(const struct intel_ax211_command_request *request);
 static int ax211_command_prepare_result(int result);

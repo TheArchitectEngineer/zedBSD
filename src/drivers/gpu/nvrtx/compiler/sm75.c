@@ -19,11 +19,12 @@
 /*
  * The encoder of Turing (SM75) instructions (see sm75.h).
  *
- * The placement of every field follows the facts in sm75.h.  An ALU instruction has three sources: the first is
- * always a register; the second and the third take one of the forms --
- * both registers, one an immediate, one a constant buffer word -- and the
- * form field says which.  When the third source is the immediate or the
- * constant buffer word, the second source moves into the third's register
+ * The placement of every field follows the facts in sm75.h.  An ALU
+ * instruction has three sources: the first is always a register; the
+ * second and the third take one of the forms -- both registers, one
+ * an immediate, one a constant buffer word -- and the form field says
+ * which.  When the third source is the immediate or the constant
+ * buffer word, the second source moves into the third's register
  * slot.
  */
 

@@ -28,7 +28,7 @@
 #include "irq.h"
 #include "display/display.h"
 #include "display/diagnostics.h"
-#include "display/takeover.h"
+#include "display/gen9-firmware.h"
 #include "display/gen9-flip.h"
 #include "render/render.h"
 #include <kern/kcrt.h>
@@ -1511,9 +1511,9 @@ i915_start_memory(
 		if (gt->ggtt_entries > reserved)
 			driver_ggtt_first = gt->ggtt_entries - reserved;
 
-		/* Takes over the display hardware the GT start depends on. */
+		/* Checks what the firmware scans out before the GT start writes its GGTT pages. */
 		device->stage = "n0_lite_gen9";
-		error = drv_i915_n0_lite_gen9(device->display, &gt->mmio, driver_ggtt_first);
+		error = drv_i915_gen9_firmware_check(device->display, &gt->mmio, driver_ggtt_first);
 		if (error != 0)
 			return error;
 	}

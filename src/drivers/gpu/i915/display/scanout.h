@@ -19,7 +19,7 @@
 #ifndef DRIVERS_GPU_I915_DISPLAY_SCANOUT_H
 #define DRIVERS_GPU_I915_DISPLAY_SCANOUT_H
 
-#include "internal.h"
+#include "display-internal.h"
 
 struct i915_display;
 struct i915_ppgtt;

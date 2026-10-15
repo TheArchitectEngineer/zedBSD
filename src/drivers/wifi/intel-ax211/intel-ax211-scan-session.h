@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -84,31 +82,55 @@ struct intel_ax211_scan_session {
 	uint8_t terminal_result;
 };
 
-int drv_intel_ax211_scan_session_init(
+int
+drv_intel_ax211_scan_session_init(
 	struct intel_ax211_scan_session *session,
 	struct intel_ax211_command_transaction *commands,
 	const struct intel_ax211_protocol_command_table *command_table,
 	const struct intel_ax211_protocol_nvm *nvm,
 	const struct intel_ax211_runtime_mcc *mcc,
-	const uint8_t station_address[6], uint32_t hardware_epoch);
-int drv_intel_ax211_scan_session_begin_channel(
-	struct intel_ax211_scan_session *session, uint64_t common_generation,
-	uint8_t channel, uint64_t now_us);
-int drv_intel_ax211_scan_session_start_ack(
-	struct intel_ax211_scan_session *session, const uint8_t *event_bytes,
-	size_t event_length, uint32_t hardware_epoch, uint64_t now_us);
-int drv_intel_ax211_scan_session_notification(
-	struct intel_ax211_scan_session *session,
-	const struct intel_ax211_protocol_message *message, uint64_t now_us,
-	struct intel_ax211_scan_session_event *event);
-int drv_intel_ax211_scan_session_abort(struct intel_ax211_scan_session *session,
-				       uint64_t common_generation,
-				       uint64_t now_us);
-int drv_intel_ax211_scan_session_abort_ack(
-	struct intel_ax211_scan_session *session, const uint8_t *event_bytes,
-	size_t event_length, uint32_t hardware_epoch, uint64_t now_us);
+	const uint8_t station_address[6],
+	uint32_t hardware_epoch);
+
 int
-drv_intel_ax211_scan_session_expire(struct intel_ax211_scan_session *session,
-				    uint64_t now_us);
+drv_intel_ax211_scan_session_begin_channel(
+	struct intel_ax211_scan_session *session,
+	uint64_t common_generation,
+	uint8_t channel,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_scan_session_start_ack(
+	struct intel_ax211_scan_session *session,
+	const uint8_t *event_bytes,
+	size_t event_length,
+	uint32_t hardware_epoch,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_scan_session_notification(
+	struct intel_ax211_scan_session *session,
+	const struct intel_ax211_protocol_message *message,
+	uint64_t now_us,
+	struct intel_ax211_scan_session_event *event);
+
+int
+drv_intel_ax211_scan_session_abort(
+	struct intel_ax211_scan_session *session,
+	uint64_t common_generation,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_scan_session_abort_ack(
+	struct intel_ax211_scan_session *session,
+	const uint8_t *event_bytes,
+	size_t event_length,
+	uint32_t hardware_epoch,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_scan_session_expire(
+	struct intel_ax211_scan_session *session,
+	uint64_t now_us);
 
 #endif

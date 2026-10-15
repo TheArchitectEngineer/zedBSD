@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -37,18 +35,28 @@ struct intel_ax211_pci_mmio_backend {
 	uint8_t counter_ready;
 };
 
-int drv_intel_ax211_pci_mmio_backend_init(
-	struct intel_ax211_pci_mmio_backend *backend, void *registers,
+int
+drv_intel_ax211_pci_mmio_backend_init(
+	struct intel_ax211_pci_mmio_backend *backend,
+	void *registers,
 	size_t mapping_size);
-const struct intel_ax211_mmio_ops *drv_intel_ax211_pci_mmio_ops(void);
+
+const struct intel_ax211_mmio_ops *
+drv_intel_ax211_pci_mmio_ops(
+	void);
 
 #ifdef INTEL_AX211_PCI_MMIO_HOST_TEST
-int drv_intel_ax211_pci_mmio_host_ticks_for_us(uint64_t frequency_hz,
-					       uint64_t microseconds,
-					       uint64_t *ticks);
-int drv_intel_ax211_pci_mmio_host_ticks_to_us(uint64_t frequency_hz,
-					      uint64_t ticks,
-					      uint64_t *microseconds);
+int
+drv_intel_ax211_pci_mmio_host_ticks_for_us(
+	uint64_t frequency_hz,
+	uint64_t microseconds,
+	uint64_t *ticks);
+
+int
+drv_intel_ax211_pci_mmio_host_ticks_to_us(
+	uint64_t frequency_hz,
+	uint64_t ticks,
+	uint64_t *microseconds);
 #endif
 
 #endif

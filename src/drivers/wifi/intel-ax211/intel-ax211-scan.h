@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -159,31 +157,50 @@ struct intel_ax211_scan_state {
 	uint8_t abort_required;
 };
 
-int drv_intel_ax211_scan_profile_from_nvm(
+int
+drv_intel_ax211_scan_profile_from_nvm(
 	const struct intel_ax211_protocol_nvm *nvm,
 	const struct intel_ax211_runtime_mcc *mcc,
 	const uint8_t station_address[6],
 	struct intel_ax211_scan_profile *profile);
-int drv_intel_ax211_scan_api89_validate(
+
+int
+drv_intel_ax211_scan_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
-int drv_intel_ax211_scan_request_encode(
+
+int
+drv_intel_ax211_scan_request_encode(
 	const struct intel_ax211_scan_profile *profile,
 	uint8_t output[INTEL_AX211_SCAN_REQUEST_SIZE]);
-int
-drv_intel_ax211_scan_abort_encode(uint8_t output[INTEL_AX211_SCAN_CANCEL_SIZE]);
 
-int drv_intel_ax211_scan_begin(
+int
+drv_intel_ax211_scan_abort_encode(
+	uint8_t output[INTEL_AX211_SCAN_CANCEL_SIZE]);
+
+int
+drv_intel_ax211_scan_begin(
 	struct intel_ax211_scan_state *state,
 	const struct intel_ax211_protocol_command_table *table,
-	const struct intel_ax211_scan_profile *profile, uint32_t generation,
+	const struct intel_ax211_scan_profile *profile,
+	uint32_t generation,
 	uint64_t now_us);
-int drv_intel_ax211_scan_request_ack(struct intel_ax211_scan_state *state,
-				     uint32_t generation, uint64_t now_us);
-int drv_intel_ax211_scan_event_accept(
+
+int
+drv_intel_ax211_scan_request_ack(
 	struct intel_ax211_scan_state *state,
-	const struct intel_ax211_protocol_message *message, uint64_t now_us,
+	uint32_t generation,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_scan_event_accept(
+	struct intel_ax211_scan_state *state,
+	const struct intel_ax211_protocol_message *message,
+	uint64_t now_us,
 	struct intel_ax211_scan_event *event);
-int drv_intel_ax211_scan_expire(struct intel_ax211_scan_state *state,
-				uint64_t now_us);
+
+int
+drv_intel_ax211_scan_expire(
+	struct intel_ax211_scan_state *state,
+	uint64_t now_us);
 
 #endif

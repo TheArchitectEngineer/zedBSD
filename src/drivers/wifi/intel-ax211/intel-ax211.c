@@ -1,6 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
-/* Begin consolidated intel-ax211.c. */
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -16,7 +13,36 @@
  */
 
 #include "intel-ax211-internal.h"
+#include "intel-ax211-assoc.h"
+#include "intel-ax211-bss.h"
+#include "intel-ax211-boot.h"
+#include "intel-ax211-key.h"
+#include "intel-ax211-mmio.h"
+#include "intel-ax211-pci-mmio.h"
+#include "intel-ax211-rx.h"
+#include "intel-ax211-runtime-start.h"
+#include "intel-ax211-scan-session.h"
+#include "intel-ax211-transport-backend.h"
+#include "intel-ax211-tx-ring.h"
+
+#include <drivers/wifi/intel-ax211/pci-intel-ax211.h>
+#include <drivers/pci/pci.h>
+
 #include <kern/kcrt.h>
+#include <kern/clock.h>
+#include <kern/lock.h>
+#include <kern/net/net-device.h>
+#include <kern/net/packet-buf.h>
+#include <kern/net/wlan.h>
+#include <kern/sched.h>
+#include <kern/klog.h>
+#include <kern/kmem.h>
+#include <kern/device-io.h>
+
+#include <uapi/errno.h>
+
+#include <limits.h>
+#include <stdint.h>
 
 /*
  * The record types of the firmware file and of the PNVM file.
@@ -108,6 +134,333 @@ enum {
 	AX211_RECORD_TRACE_RANGE_LAST = 0x100000a
 };
 
+/*
+ * The PCI identity and the PCI configuration values the probe checks.
+ *
+ * The identity is the one the hardware intake of the test machines (ws004
+ * HW-T37) found.  The class code is 0x0280 (other network controller) and the
+ * command register bits are memory space 1 and bus master 2.  BAR0 must map at
+ * least 16 KiB: the MSI-X cause and vector registers this driver uses lie up
+ * to 0x2890, and the receive free-index doorbell at 0x1c80.
+ *
+ * Values referenced: the PCI ID database (vendor 8086, device 51f0) for the
+ * identity, and the PCI Local Bus Specification (the class code and the
+ * command register bits).
+ */
+#define AX211_PCI_VENDOR 0x8086U
+#define AX211_PCI_PRODUCT 0x51f0U
+#define AX211_PCI_SUBVENDOR 0x8086U
+#define AX211_PCI_SUBPRODUCT 0x4090U
+#define AX211_PCI_REVISION 0x01U
+#define AX211_PCI_CLASS 0x028000U
+#define AX211_PCI_CLASS_MASK 0xffffffU
+#define AX211_PCI_COMMAND 0x04U
+#define AX211_PCI_COMMAND_MEMORY 0x0002U
+#define AX211_PCI_COMMAND_MASTER 0x0004U
+#define AX211_BAR0_MINIMUM_SIZE 0x4000U
+
+/* zedBSD's own limits and timings of the network interface and its events. */
+#define AX211_MTU 1500U
+#define AX211_MAC_ADDRESS_SIZE 6U
+#define AX211_PASSIVE_CHANNEL_COUNT 11U
+#define AX211_RECEIVE_POLL_DELAY_US 50U
+#define AX211_DIRECT_EVENT_LIMIT 64U
+#define AX211_DEFERRED_EVENT_LIMIT 16U
+#define AX211_DIRECT_TIMEOUT_US 1000000U
+#define AX211_LIFECYCLE_JOIN_TICKS (5U * KERN_CLOCK_HZ)
+
+/*
+ * How many times in a row a recovery may restart the epoch by itself before
+ * the interface is left down for the user to cycle (BUG-158).  A scan that
+ * completes resets the count.
+ */
+#define AX211_REOPEN_ATTEMPTS_MAX 3U
+
+/*
+ * The station slot of the access point, and the rate and capability bits of
+ * the link.
+ *
+ * The capability bits are short preamble at bit 5 and short slot time at bit
+ * 10.  The CCK bitmap 0x0f is 1, 2, 5.5 and 11 Mbit/s and the OFDM bitmap 0x15
+ * is 6, 12 and 24 Mbit/s, the mandatory rates.  On 5 GHz the CCK bitmap is
+ * reduced to bit 0, because the link command keeps a non-empty CCK set even
+ * where the firmware sends no CCK frame.  The access point always takes
+ * station slot 0.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.4.1.4 (the capability bits and
+ * the basic rates) and Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/mac.h (the firmware's rate
+ * bitmaps).
+ */
+#define AX211_PEER_SLOT 0U
+#define AX211_ASSOC_CCK_ACK_RATES 0x0fU
+#define AX211_ASSOC_OFDM_ACK_RATES 0x15U
+#define AX211_CAPABILITY_SHORT_PREAMBLE 0x0020U
+#define AX211_CAPABILITY_SHORT_SLOT 0x0400U
+
+/*
+ * The firmware's report that it rejected a command.
+ *
+ * The event arrives unsolicited (bit 7 of the ring byte of its header set);
+ * the driver logs the error type at byte 0, the rejected opcode at byte 4, the
+ * rejected sequence number at byte 6, which names the ring slot of the command
+ * that failed, and the word at byte 8.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (opcode 2 of the
+ * classic family) and drivers/net/wireless/intel/iwlwifi/fw/api/alive.h
+ * (struct iwl_error_resp, 20 bytes).
+ */
+#define AX211_COMMAND_REJECTION_OPCODE 0x02U
+#define AX211_COMMAND_REJECTION_SIZE 20U
+
+/*
+ * The doorbell that tells the firmware the PNVM sections are in place.
+ *
+ * The register is in the periphery space of the upper CPU, so it is written at
+ * the upper-CPU base (0x300000 on this device) plus 0xa05c04, while the driver
+ * holds the device awake.  The driver rings it after the PNVM sections and
+ * their address table have been written to DMA memory and published in the
+ * scratch area; the firmware answers with the PNVM-accepted notification.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-prph.h
+ * (the doorbell register of the upper CPU and its PNVM bit).
+ */
+#define AX211_PRPH_FIRMWARE_DOORBELL 0xa05c04U
+#define AX211_FIRMWARE_DOORBELL_PNVM_READY (1U << 20)
+
+/*
+ * The PCI Express latency tolerance (LTR) enable of the root port side.
+ *
+ * Device Control 2 is at offset 0x28 of the PCI Express capability and its
+ * LTR mechanism enable is bit 10.  The driver reads it to decide whether the
+ * firmware's latency tolerance command is sent at runtime.
+ *
+ * Values referenced: the PCI Express Base Specification (Device Control 2,
+ * LTR Mechanism Enable).
+ */
+#define AX211_PCIE_CAPABILITY 0x10U
+#define AX211_PCIE_DEVICE_CONTROL2 0x28U
+#define AX211_PCIE_DEVICE_CONTROL2_LTR (1U << 10)
+
+/*
+ * The window through which the host reads the firmware's internal SRAM, and
+ * the error tables found there.
+ *
+ * Writing an SRAM address to 0x40c and then reading 0x41c repeatedly returns
+ * consecutive words; the address advances by four bytes after each read.  The
+ * ALIVE notification gives the address of each table; the UMAC pointer carries
+ * tag bits 31:30 that are not part of the address and are masked off.  The
+ * driver refuses addresses below 0x400000 as a sanity bound, and reads the
+ * tables only when a command failed while a fault cause was raised, to log the
+ * error identifier, the data words, the interrupt status words and the last
+ * host command.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the target memory read address and data registers),
+ * drivers/net/wireless/intel/iwlwifi/fw/img.h (the cache-control tag bits of
+ * a firmware pointer) and drivers/net/wireless/intel/iwlwifi/fw/dump.c (the
+ * LMAC error table of 30 words and the UMAC error table of 15 words).
+ */
+#define AX211_CSR_SRAM_READ_ADDRESS 0x40cU
+#define AX211_CSR_SRAM_READ_DATA 0x41cU
+#define AX211_SRAM_POINTER_TAG_BITS 0xc0000000U
+#define AX211_ERROR_LOG_MIN_ADDRESS 0x00400000U
+#define AX211_LMAC_ERROR_WORD_COUNT 30U
+#define AX211_UMAC_ERROR_WORD_COUNT 15U
+
+struct ax211_pci_staged_key {
+	struct intel_ax211_key_request request;
+	uint8_t valid;
+	uint8_t programmed;
+	uint8_t reserved[6];
+};
+
+struct ax211_pci_deferred_event {
+	struct intel_ax211_boot_received_event received;
+	uint8_t bytes[INTEL_AX211_BOOT_EVENT_CAPACITY];
+};
+/*
+ * The silicon revision and radio identity registers, read at attach.
+ *
+ * The MAC type is bits 15:4 of the silicon revision register (0x37 for So,
+ * 0x43 for SoF); the radio kind is bits 23:12 of the radio identity register
+ * (0x10d for Garfield Peak), and bit 28 of that register is set on a radio
+ * that can run two bands at once.  The driver attaches only to an So or SoF
+ * MAC with a single-band Garfield Peak radio, the combination the pinned
+ * firmware and PNVM files are built for (ws004 p038).
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the two registers and the field positions) and
+ * drivers/net/wireless/intel/iwlwifi/iwl-config.h (the MAC and radio codes).
+ */
+#define AX211_CSR_SILICON_REVISION 0x028U
+#define AX211_CSR_RADIO_IDENTITY 0x09cU
+#define AX211_SILICON_FAMILY_MASK 0x0000fff0U
+#define AX211_SILICON_FAMILY_SHIFT 4U
+#define AX211_SILICON_FAMILY_SO 0x037U
+#define AX211_SILICON_FAMILY_SOF 0x043U
+#define AX211_RADIO_KIND_MASK 0x00fff000U
+#define AX211_RADIO_KIND_SHIFT 12U
+#define AX211_RADIO_KIND_GF 0x10dU
+#define AX211_RADIO_CONCURRENT_BANDS_FLAG 0x10000000U
+
+/*
+ * The silicon revision and radio identity registers, read at attach.
+ *
+ * The MAC type is bits 15:4 of the silicon revision register (0x37 for So,
+ * 0x43 for SoF); the radio kind is bits 23:12 of the radio identity register
+ * (0x10d for Garfield Peak), and bit 28 of that register is set on a radio
+ * that can run two bands at once.  The driver attaches only to an So or SoF
+ * MAC with a single-band Garfield Peak radio, the combination the pinned
+ * firmware and PNVM files are built for (ws004 p038).
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the two registers and the field positions) and
+ * drivers/net/wireless/intel/iwlwifi/iwl-config.h (the MAC and radio codes).
+ */
+#define AX211_CSR_SILICON_REVISION 0x028U
+#define AX211_CSR_RADIO_IDENTITY 0x09cU
+#define AX211_SILICON_FAMILY_MASK 0x0000fff0U
+#define AX211_SILICON_FAMILY_SHIFT 4U
+#define AX211_SILICON_FAMILY_SO 0x037U
+#define AX211_SILICON_FAMILY_SOF 0x043U
+#define AX211_RADIO_KIND_MASK 0x00fff000U
+#define AX211_RADIO_KIND_SHIFT 12U
+#define AX211_RADIO_KIND_GF 0x10dU
+#define AX211_RADIO_CONCURRENT_BANDS_FLAG 0x10000000U
+
+struct ax211_pci_controller {
+	struct mutex lifecycle_lock;
+	struct spinlock interrupt_lock;
+	struct drv_pci_device *device;
+	struct drv_pci_mapping mapping;
+	struct drv_pci_enable_state enable_state;
+	struct drv_pci_bar original_bar;
+	struct intel_ax211_pci_mmio_backend backend;
+	struct intel_ax211_mmio mmio;
+	struct intel_ax211_transport_backend transport_backend;
+	struct intel_ax211_transport transport;
+	struct intel_ax211_boot boot;
+	struct intel_ax211_runtime_start runtime_start;
+	struct intel_ax211_scan_session scan_session;
+	struct intel_ax211_bss_cache bss_staging_cache;
+	struct intel_ax211_bss_cache bss_published_cache;
+	struct intel_ax211_bss_entry selected_bss;
+	struct drv_intel_ax211_bss_assoc_metadata selected_metadata;
+	struct intel_ax211_assoc_state association;
+	struct intel_ax211_key_state keys;
+	struct ax211_pci_staged_key staged_pairwise_key;
+	struct ax211_pci_staged_key staged_group_key[INTEL_AX211_KEY_INDEX_LIMIT];
+	struct ax211_pci_deferred_event deferred_event[AX211_DEFERRED_EVENT_LIMIT];
+	uint8_t deferred_dispatch_event[INTEL_AX211_BOOT_EVENT_CAPACITY];
+	uint64_t retired_pairwise_key_generation;
+	uint64_t retired_group_key_generation[INTEL_AX211_KEY_INDEX_LIMIT];
+	uint8_t retired_group_key_remove[INTEL_AX211_KEY_INDEX_LIMIT];
+	struct intel_ax211_frame_ring frame_ring;
+	struct intel_ax211_tx_queue_config tx_queue_config;
+	struct intel_ax211_dma_resources *active_dma;
+	struct drv_pci_irq irq;
+	void *irq_cookie;
+	struct net_device *net_device;
+	struct wlan_station *station;
+	struct ax211_pci_controller *next;
+	uint32_t hardware_revision;
+	uint32_t radio_identity;
+	uint32_t hardware_epoch;
+	uint8_t runtime_event[INTEL_AX211_BOOT_EVENT_CAPACITY];
+	uint8_t runtime_frame[INTEL_AX211_RX_FRAME_BODY_MAX];
+	uint8_t last_receive_header[INTEL_AX211_EVENT_HEADER_SIZE];
+	size_t last_receive_length;
+	uint8_t last_receive_version;
+	uint32_t command_fh_causes;
+	uint32_t command_hw_causes;
+	uint32_t command_raw_fh_causes;
+	uint32_t command_raw_hw_causes;
+	uint8_t tx_report_completion[INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS];
+	uint32_t scan_step_index;
+	uint64_t bss_staging_generation;
+	uint64_t bss_published_generation;
+	uint64_t connection_generation;
+	uint64_t recovery_generation;
+	uint64_t next_management_cookie;
+	uint64_t control_deadline_ticks;
+	int recovery_error;
+	unsigned refresh_epoch;
+	unsigned deferred_event_head;
+	unsigned deferred_event_count;
+	unsigned deferred_event_draining;
+	unsigned operations_active;
+	unsigned irq_count;
+	unsigned irq_allocated;
+	unsigned irq_established;
+	unsigned receive_enabled;
+	unsigned irq_latched;
+	unsigned boot_initialized;
+	unsigned runtime_initialized;
+	unsigned runtime_active;
+	unsigned operation_admission_open;
+	unsigned recovery_pending;
+	unsigned recovery_running;
+	unsigned poll_active;
+	unsigned poll_reschedule;
+	unsigned scan_initialized;
+	unsigned bss_staging_initialized;
+	unsigned bss_published_initialized;
+	unsigned selected_bss_valid;
+	unsigned association_initialized;
+	unsigned keys_initialized;
+	unsigned tx_ring_allocated;
+	unsigned bar_claimed;
+	unsigned bar_mapped;
+	unsigned bar_may_have_moved;
+	unsigned original_bar_valid;
+	unsigned state_saved;
+	unsigned driver_data_set;
+	unsigned listed;
+	unsigned refresh_busy;
+	unsigned detaching;
+	unsigned ready;
+	unsigned quarantined;
+
+	/* True only after every runtime/DMA owner passed the checked stop. */
+	unsigned session_stopped;
+	unsigned close_pending;
+	uint64_t reject_log_deadline;
+	unsigned net_live;
+	unsigned station_attached;
+
+	/*
+	 * The net device is open: ax211_net_open succeeded and no close
+	 * followed.
+	 */
+	unsigned net_opened;
+
+	/*
+	 * A recovery stopped the epoch while the device stayed open and asked the
+	 * WLAN retirement thread to restart it (BUG-158).  Cleared by the restart,
+	 * by an explicit open or close, and by detach.
+	 */
+	unsigned reopen_pending;
+
+	/*
+	 * Restarts since the last scan that completed; bounded by
+	 * AX211_REOPEN_ATTEMPTS_MAX.
+	 */
+	unsigned reopen_attempts;
+
+	/*
+	 * Set by a suspend that found the radio off, until its resume
+	 * (ws052-p005): an open is refused meanwhile.  Under lifecycle_lock.
+	 */
+	unsigned suspended;
+};
+
+static struct ax211_pci_controller *ax211_controllers;
+static struct spinlock ax211_registry_lock;
+static unsigned ax211_refresh_epoch;
+static unsigned ax211_registry_initialized;
+
 static uint16_t ax211_get_le16(const uint8_t *bytes);
 static uint32_t ax211_get_le32(const uint8_t *bytes);
 static void ax211_put_le16(uint8_t *bytes, uint16_t value);
@@ -116,6 +469,193 @@ static void ax211_put_le64(uint8_t *bytes, uint64_t value);
 static int ax211_tlv_span(uint32_t value, size_t remaining, size_t *span);
 static int ax211_ignored_firmware_tlv(uint32_t type);
 static int ax211_pnvm_finish(const struct intel_ax211_pnvm_manifest *candidate, int active, int version_seen, int hardware_match, uint16_t mac_type, uint16_t rf_id, struct intel_ax211_pnvm_manifest *manifest);
+static int ax211_pci_match(struct drv_pci_device *device, const struct drv_pci_id *identity);
+static int ax211_pci_attach(struct drv_pci_device *device, const struct drv_pci_id *identity);
+static int ax211_pci_detach(struct drv_pci_device *device, unsigned flags);
+static int ax211_pci_suspend(struct drv_pci_device *device);
+static int ax211_pci_resume(struct drv_pci_device *device);
+static int ax211_pci_identity_matches(const struct drv_pci_device *device);
+static int ax211_pci_bar_validate(const struct drv_pci_bar *bar);
+static uint32_t ax211_pci_read32(const struct ax211_pci_controller *controller, unsigned offset);
+static int ax211_pci_hardware_validate(uint32_t hardware_revision, uint32_t radio_identity);
+static int ax211_pci_profile(struct ax211_pci_controller *controller, struct intel_ax211_mmio_profile *profile);
+static int ax211_pci_acquire(struct ax211_pci_controller *controller);
+static int ax211_pci_restore_bar(struct ax211_pci_controller *controller);
+static int ax211_pci_release_resources(struct ax211_pci_controller *controller, int result, int retain_on_failure);
+static int ax211_pci_quarantine(struct ax211_pci_controller *controller, int failure);
+static uint64_t ax211_pci_lifecycle_deadline(void);
+static int ax211_pci_station_pin_locked(struct ax211_pci_controller *controller, struct wlan_station **station);
+static int ax211_pci_operation_enter_locked(struct ax211_pci_controller *controller, struct wlan_station **station);
+static void ax211_pci_operation_leave_locked(struct ax211_pci_controller *controller);
+static int ax211_pci_operations_join_locked(struct ax211_pci_controller *controller, uint64_t deadline);
+static int ax211_pci_station_close_wait(struct wlan_station *station, uint64_t deadline);
+static int ax211_pci_close_locked(struct ax211_pci_controller *);
+static int ax211_pci_log_rejection(struct ax211_pci_controller *);
+static void ax211_pci_recovery_latch_locked(struct ax211_pci_controller *controller, int error);
+static void ax211_pci_stop_defer_locked(struct ax211_pci_controller *controller, int error);
+static int ax211_pci_recovery_run_locked(struct ax211_pci_controller *controller);
+static void ax211_pci_list_add(struct ax211_pci_controller *controller);
+static int ax211_pci_list_remove(struct ax211_pci_controller *controller);
+static void ax211_pci_list_forget(struct ax211_pci_controller *controller);
+static struct ax211_pci_controller * ax211_pci_list_find_device(struct drv_pci_device *device);
+static struct ax211_pci_controller *ax211_pci_refresh_claim(unsigned epoch);
+static void ax211_pci_refresh_release(struct ax211_pci_controller *controller);
+static int ax211_pci_refresh_one(struct ax211_pci_controller *controller);
+static int ax211_pci_publish(struct ax211_pci_controller *controller, const uint8_t mac_address[AX211_MAC_ADDRESS_SIZE]);
+static void ax211_pci_scan_profile(struct wlan_scan_profile *profile);
+static int ax211_pci_partial_discard(struct ax211_pci_controller *controller);
+static int ax211_pci_graph_detach(struct ax211_pci_controller *controller);
+static int ax211_pci_session_stop(struct ax211_pci_controller *controller);
+static int ax211_pci_ltr_enabled(struct ax211_pci_controller *controller, int *enabled);
+static int ax211_pci_irq(void *argument);
+static int ax211_pci_receive_epoch_begin(void *argument, uint32_t generation);
+static int ax211_pci_transport_bind(void *argument, struct intel_ax211_dma_resources *dma, struct intel_ax211_mmio *mmio, struct intel_ax211_transport *transport, uint32_t generation);
+static int ax211_pci_receive_event(void *argument, uint64_t deadline_us, uint8_t *bytes, size_t capacity, struct intel_ax211_boot_received_event *event);
+static int ax211_pci_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
+static int ax211_pci_after_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
+static int ax211_pci_interrupt_drain(void *argument);
+static int ax211_pci_bus_master_disable(void *argument);
+static int ax211_pci_clock_us(void *argument, uint64_t *time_us);
+static int ax211_pci_wake_hold(void *argument);
+static int ax211_pci_wake_release(void *argument);
+static int ax211_pci_tx_event(const struct intel_ax211_event *event);
+static uint8_t ax211_pci_notification_version(const uint8_t *bytes, size_t length);
+static int ax211_pci_scan_initialize(struct ax211_pci_controller *controller);
+static uint32_t ax211_pci_channel_frequency(uint8_t channel);
+static int ax211_pci_runtime_scan_profile(const struct ax211_pci_controller *controller, struct wlan_scan_profile *profile);
+static int ax211_pci_scan_channel_present(const struct ax211_pci_controller *controller, uint8_t channel);
+static void ax211_pci_scan_clear(struct ax211_pci_controller *controller);
+static void ax211_pci_bss_staging_discard(struct ax211_pci_controller *controller);
+static int ax211_pci_bss_staging_publish(struct ax211_pci_controller *controller, uint64_t generation);
+static int ax211_pci_event_message(const uint8_t *bytes, size_t length, const struct intel_ax211_boot_received_event *received, struct intel_ax211_event *event, struct intel_ax211_protocol_message *message);
+static int ax211_pci_scan_command_dispatch(struct ax211_pci_controller *controller, const uint8_t *bytes, size_t length, uint64_t now);
+static int ax211_pci_scan_notification_dispatch( struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message, uint64_t now);
+static int ax211_pci_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message);
+static void ax211_pci_scan_report_error(struct ax211_pci_controller *controller, int result);
+static int ax211_pci_scan_result_errno(int result);
+static int ax211_pci_runtime_event_dispatch( struct ax211_pci_controller *controller, const uint8_t *bytes, size_t length, const struct intel_ax211_boot_received_event *event);
+static int ax211_pci_deferred_event_enqueue( struct ax211_pci_controller *controller, const uint8_t *bytes, const struct intel_ax211_boot_received_event *received);
+static int ax211_pci_deferred_event_drain_one(struct ax211_pci_controller *controller);
+static void ax211_pci_deferred_event_clear(struct ax211_pci_controller *controller);
+static uint32_t ax211_pci_get_le32(const uint8_t bytes[4]);
+static void ax211_pci_scrub(void *memory, size_t length);
+static int ax211_pci_tx_sync_for_device(void *argument, const struct drv_dma_buffer *buffer, size_t offset, size_t length);
+static int ax211_pci_tx_write32(void *argument, uint32_t offset, uint32_t value);
+static uint64_t ax211_pci_assoc_clock_us(void *argument);
+static int ax211_pci_assoc_exchange(void *argument, const struct intel_ax211_assoc_command *command, struct intel_ax211_assoc_reply *reply);
+static int ax211_pci_direct_command( struct ax211_pci_controller *controller, const struct intel_ax211_command_request *request, uint64_t deadline_ticks, uint8_t *response, size_t response_capacity, size_t *response_length, struct intel_ax211_protocol_message *completed_message, struct intel_ax211_protocol_pending_command *completed_pending);
+static int ax211_pci_command_timeout(struct ax211_pci_controller *controller, uint64_t deadline_ticks, uint64_t now_us, uint64_t *timeout_us, uint64_t *deadline_us);
+static int ax211_pci_sram_read_locked(struct ax211_pci_controller *controller, uint32_t address, uint32_t *words, size_t count);
+static void ax211_pci_firmware_error_dump(struct ax211_pci_controller *controller);
+static int ax211_pci_assoc_result_errno(int result);
+static int ax211_pci_tx_ring_result_errno(int result);
+static int ax211_pci_key_result_errno(int result);
+static int ax211_pci_assoc_profile(struct ax211_pci_controller *controller, const struct wlan_bss_record *bss, uint64_t connection_generation, struct intel_ax211_assoc_profile *profile);
+static int ax211_pci_assoc_rollback(struct ax211_pci_controller *controller, uint64_t generation);
+static int ax211_pci_mcast_filter_configure(struct ax211_pci_controller *controller, uint64_t deadline_ticks);
+static int ax211_pci_mac_power_configure(struct ax211_pci_controller *controller, uint64_t deadline_ticks);
+static int ax211_pci_keys_remove_all(struct ax211_pci_controller *controller, uint64_t deadline_ticks);
+static void ax211_pci_connection_clear(struct ax211_pci_controller *controller);
+static int ax211_pci_key_command(struct ax211_pci_controller *controller, const uint8_t *payload, uint64_t deadline_ticks);
+static int ax211_pci_staged_key_store(struct ax211_pci_staged_key *staged, const struct intel_ax211_key_request *request);
+static int ax211_pci_staged_key_program(struct ax211_pci_controller *controller, struct ax211_pci_staged_key *staged, uint64_t deadline_ticks);
+static void ax211_pci_staged_key_clear(struct ax211_pci_staged_key *staged);
+static int ax211_pci_keys_have_active(const struct ax211_pci_controller *controller);
+static int ax211_pci_key_request_address_valid( const struct ax211_pci_controller *controller, const struct wlan_radio_key_request *request);
+static int ax211_pci_key_fail_closed(struct ax211_pci_controller *controller, int error);
+static int ax211_pci_tx_submit(struct ax211_pci_controller *controller, const struct intel_ax211_tx_request *request, uint64_t deadline_ticks, int report_completion);
+static int ax211_pci_tx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message);
+static int ax211_pci_tx_timeout_check(struct ax211_pci_controller *controller, uint64_t now_us);
+static int ax211_pci_connection_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_rx_delivery *mpdu, uint16_t frame_control);
+static int ax211_net_open(struct net_device *device);
+static int ax211_pci_open_locked(struct ax211_pci_controller *controller, int restarting);
+static void ax211_pci_reopen_request_locked(struct ax211_pci_controller *controller);
+static void ax211_net_close(struct net_device *device);
+static int ax211_net_transmit(struct net_device *device, struct packet_buf *packet);
+static unsigned ax211_net_poll_receive(struct net_device *device, unsigned budget);
+static int ax211_net_ioctl(struct net_device *device, unsigned long request, void *argument);
+static void ax211_net_release(void *driver_data);
+static int ax211_radio_scan_channel_start(void *context, uint64_t generation, uint32_t step_index, uint32_t channel, uint64_t deadline);
+static int ax211_radio_scan_stop(void *context, uint64_t generation);
+static int ax211_radio_connect_start(void *context, uint64_t generation, const struct wlan_bss_record *bss, uint64_t deadline);
+static int ax211_radio_disconnect(void *context, uint64_t generation);
+static int ax211_radio_management_transmit(void *context, uint64_t generation, const uint8_t *frame, size_t length, uint64_t deadline);
+static int ax211_radio_association_set(void *context, uint64_t generation, const uint8_t bssid[6], uint16_t aid, uint64_t deadline);
+static int ax211_radio_association_clear(void *context, uint64_t generation, uint64_t deadline);
+static int ax211_radio_frame_transmit(void *context, const struct wlan_radio_tx_request *request);
+static int ax211_radio_key_install(void *context, const struct wlan_radio_key_request *request);
+static int ax211_radio_key_delete(void *context, uint64_t generation, enum wlan_radio_key_kind kind, uint8_t key_index, uint64_t key_generation, uint64_t deadline);
+static int ax211_radio_keys_activate(void *context, uint64_t generation, uint64_t pairwise_key_generation, uint64_t group_key_generation, uint64_t deadline);
+static int ax211_radio_quiesce(void *context);
+static int ax211_radio_stop_retry(void *context);
+static int ax211_radio_restart(void *context);
+
+static const struct drv_pci_id ax211_pci_ids[] = {
+	{
+		.vendor = AX211_PCI_VENDOR,
+		.device = AX211_PCI_PRODUCT,
+		.subvendor = AX211_PCI_SUBVENDOR,
+		.subdevice = AX211_PCI_SUBPRODUCT,
+		.class_code = AX211_PCI_CLASS,
+		.class_mask = AX211_PCI_CLASS_MASK,
+	},
+};
+
+static struct drv_pci_driver ax211_pci_driver = {
+	.name = "intel-ax211",
+	.ids = ax211_pci_ids,
+	.id_count = sizeof(ax211_pci_ids) / sizeof(ax211_pci_ids[0]),
+	.match = ax211_pci_match,
+	.attach = ax211_pci_attach,
+	.detach = ax211_pci_detach,
+	.suspend = ax211_pci_suspend,
+	.resume = ax211_pci_resume,
+};
+
+/* This table is the permanent common-WLAN boundary for the AX211 backend. */
+static const struct wlan_radio_ops ax211_radio_ops = {
+	.scan_channel_start = ax211_radio_scan_channel_start,
+	.scan_stop = ax211_radio_scan_stop,
+	.connect_start = ax211_radio_connect_start,
+	.disconnect = ax211_radio_disconnect,
+	.management_transmit = ax211_radio_management_transmit,
+	.association_set = ax211_radio_association_set,
+	.association_clear = ax211_radio_association_clear,
+	.frame_transmit = ax211_radio_frame_transmit,
+	.key_install = ax211_radio_key_install,
+	.key_delete = ax211_radio_key_delete,
+	.keys_activate = ax211_radio_keys_activate,
+	.quiesce = ax211_radio_quiesce,
+	.stop_retry = ax211_radio_stop_retry,
+	.restart = ax211_radio_restart};
+
+static const struct net_device_ops ax211_net_ops = {
+	.open = ax211_net_open,
+	.close = ax211_net_close,
+	.transmit = ax211_net_transmit,
+	.poll_receive = ax211_net_poll_receive,
+	.ioctl = ax211_net_ioctl,
+	.release = ax211_net_release};
+
+static const struct intel_ax211_runtime_start_ops ax211_runtime_start_ops = {
+	.boot = {.receive_epoch_begin = ax211_pci_receive_epoch_begin,
+		 .transport_bind = ax211_pci_transport_bind,
+		 .receive_event = ax211_pci_receive_event,
+		 .publish_pnvm = ax211_pci_publish_pnvm,
+		 .after_alive = ax211_pci_after_alive,
+		 .interrupt_drain = ax211_pci_interrupt_drain,
+		 .bus_master_disable = ax211_pci_bus_master_disable,
+		 .clock_us = ax211_pci_clock_us},
+	.wake_hold = ax211_pci_wake_hold,
+	.wake_release = ax211_pci_wake_release};
+
+static const struct intel_ax211_tx_ring_ops ax211_tx_ring_ops = {
+	.sync_for_device = ax211_pci_tx_sync_for_device,
+	.write32 = ax211_pci_tx_write32};
+
+static const struct intel_ax211_assoc_ops ax211_assoc_ops = {
+	.clock_us = ax211_pci_assoc_clock_us,
+	.exchange = ax211_pci_assoc_exchange};
 
 /*
  * Implements the drv intel ax211 identity matches operation.
@@ -1209,540 +1749,6 @@ ax211_pnvm_finish(
 	/* Returns the computed result. */
 	return INTEL_AX211_SUCCESS;
 }
-
-/* End consolidated intel-ax211.c. */
-
-/* Begin consolidated pci-intel-ax211.c. */
-
-/*
- * Intel AX211 PCI/CNVio2 transport.
- *
- * Binds the PCI function, runs the firmware epochs and connects the device to
- * the network interface and to the common WLAN layer.
- */
-
-#include <drivers/wifi/intel-ax211/pci-intel-ax211.h>
-#include <drivers/pci/pci.h>
-
-#include "intel-ax211-assoc.h"
-#include "intel-ax211-bss.h"
-#include "intel-ax211-boot.h"
-#include "intel-ax211-key.h"
-#include "intel-ax211-mmio.h"
-#include "intel-ax211-pci-mmio.h"
-#include "intel-ax211-rx.h"
-#include "intel-ax211-runtime-start.h"
-#include "intel-ax211-scan-session.h"
-#include "intel-ax211-transport-backend.h"
-#include "intel-ax211-tx-ring.h"
-
-#include <uapi/errno.h>
-#include <limits.h>
-#include <kern/clock.h>
-#include <kern/lock.h>
-#include <kern/net/net-device.h>
-#include <kern/net/packet-buf.h>
-#include <kern/net/wlan.h>
-#include <kern/sched.h>
-#include <stdint.h>
-#include "kern/klog.h"
-#include "kern/kmem.h"
-#include "kern/device-io.h"
-
-/*
- * The PCI identity and the PCI configuration values the probe checks.
- *
- * The identity is the one the hardware intake of the test machines (ws004
- * HW-T37) found.  The class code is 0x0280 (other network controller) and the
- * command register bits are memory space 1 and bus master 2.  BAR0 must map at
- * least 16 KiB: the MSI-X cause and vector registers this driver uses lie up
- * to 0x2890, and the receive free-index doorbell at 0x1c80.
- *
- * Values referenced: the PCI ID database (vendor 8086, device 51f0) for the
- * identity, and the PCI Local Bus Specification (the class code and the
- * command register bits).
- */
-#define AX211_PCI_VENDOR 0x8086U
-#define AX211_PCI_PRODUCT 0x51f0U
-#define AX211_PCI_SUBVENDOR 0x8086U
-#define AX211_PCI_SUBPRODUCT 0x4090U
-#define AX211_PCI_REVISION 0x01U
-#define AX211_PCI_CLASS 0x028000U
-#define AX211_PCI_CLASS_MASK 0xffffffU
-#define AX211_PCI_COMMAND 0x04U
-#define AX211_PCI_COMMAND_MEMORY 0x0002U
-#define AX211_PCI_COMMAND_MASTER 0x0004U
-#define AX211_BAR0_MINIMUM_SIZE 0x4000U
-
-/* zedBSD's own limits and timings of the network interface and its events. */
-#define AX211_MTU 1500U
-#define AX211_MAC_ADDRESS_SIZE 6U
-#define AX211_PASSIVE_CHANNEL_COUNT 11U
-#define AX211_RECEIVE_POLL_DELAY_US 50U
-#define AX211_DIRECT_EVENT_LIMIT 64U
-#define AX211_DEFERRED_EVENT_LIMIT 16U
-#define AX211_DIRECT_TIMEOUT_US 1000000U
-#define AX211_LIFECYCLE_JOIN_TICKS (5U * KERN_CLOCK_HZ)
-
-/*
- * How many times in a row a recovery may restart the epoch by itself before
- * the interface is left down for the user to cycle (BUG-158).  A scan that
- * completes resets the count.
- */
-#define AX211_REOPEN_ATTEMPTS_MAX 3U
-
-/*
- * The station slot of the access point, and the rate and capability bits of
- * the link.
- *
- * The capability bits are short preamble at bit 5 and short slot time at bit
- * 10.  The CCK bitmap 0x0f is 1, 2, 5.5 and 11 Mbit/s and the OFDM bitmap 0x15
- * is 6, 12 and 24 Mbit/s, the mandatory rates.  On 5 GHz the CCK bitmap is
- * reduced to bit 0, because the link command keeps a non-empty CCK set even
- * where the firmware sends no CCK frame.  The access point always takes
- * station slot 0.
- *
- * Values referenced: IEEE Std 802.11-2020 9.4.1.4 (the capability bits and
- * the basic rates) and Linux v6.17
- * drivers/net/wireless/intel/iwlwifi/fw/api/mac.h (the firmware's rate
- * bitmaps).
- */
-#define AX211_PEER_SLOT 0U
-#define AX211_ASSOC_CCK_ACK_RATES 0x0fU
-#define AX211_ASSOC_OFDM_ACK_RATES 0x15U
-#define AX211_CAPABILITY_SHORT_PREAMBLE 0x0020U
-#define AX211_CAPABILITY_SHORT_SLOT 0x0400U
-
-/*
- * The firmware's report that it rejected a command.
- *
- * The event arrives unsolicited (bit 7 of the ring byte of its header set);
- * the driver logs the error type at byte 0, the rejected opcode at byte 4, the
- * rejected sequence number at byte 6, which names the ring slot of the command
- * that failed, and the word at byte 8.
- *
- * Values referenced: Linux v6.17
- * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (opcode 2 of the
- * classic family) and drivers/net/wireless/intel/iwlwifi/fw/api/alive.h
- * (struct iwl_error_resp, 20 bytes).
- */
-#define AX211_COMMAND_REJECTION_OPCODE 0x02U
-#define AX211_COMMAND_REJECTION_SIZE 20U
-
-/*
- * The doorbell that tells the firmware the PNVM sections are in place.
- *
- * The register is in the periphery space of the upper CPU, so it is written at
- * the upper-CPU base (0x300000 on this device) plus 0xa05c04, while the driver
- * holds the device awake.  The driver rings it after the PNVM sections and
- * their address table have been written to DMA memory and published in the
- * scratch area; the firmware answers with the PNVM-accepted notification.
- *
- * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-prph.h
- * (the doorbell register of the upper CPU and its PNVM bit).
- */
-#define AX211_PRPH_FIRMWARE_DOORBELL 0xa05c04U
-#define AX211_FIRMWARE_DOORBELL_PNVM_READY (1U << 20)
-
-/*
- * The PCI Express latency tolerance (LTR) enable of the root port side.
- *
- * Device Control 2 is at offset 0x28 of the PCI Express capability and its
- * LTR mechanism enable is bit 10.  The driver reads it to decide whether the
- * firmware's latency tolerance command is sent at runtime.
- *
- * Values referenced: the PCI Express Base Specification (Device Control 2,
- * LTR Mechanism Enable).
- */
-#define AX211_PCIE_CAPABILITY 0x10U
-#define AX211_PCIE_DEVICE_CONTROL2 0x28U
-#define AX211_PCIE_DEVICE_CONTROL2_LTR (1U << 10)
-
-/*
- * The window through which the host reads the firmware's internal SRAM, and
- * the error tables found there.
- *
- * Writing an SRAM address to 0x40c and then reading 0x41c repeatedly returns
- * consecutive words; the address advances by four bytes after each read.  The
- * ALIVE notification gives the address of each table; the UMAC pointer carries
- * tag bits 31:30 that are not part of the address and are masked off.  The
- * driver refuses addresses below 0x400000 as a sanity bound, and reads the
- * tables only when a command failed while a fault cause was raised, to log the
- * error identifier, the data words, the interrupt status words and the last
- * host command.
- *
- * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
- * (the target memory read address and data registers),
- * drivers/net/wireless/intel/iwlwifi/fw/img.h (the cache-control tag bits of
- * a firmware pointer) and drivers/net/wireless/intel/iwlwifi/fw/dump.c (the
- * LMAC error table of 30 words and the UMAC error table of 15 words).
- */
-#define AX211_CSR_SRAM_READ_ADDRESS 0x40cU
-#define AX211_CSR_SRAM_READ_DATA 0x41cU
-#define AX211_SRAM_POINTER_TAG_BITS 0xc0000000U
-#define AX211_ERROR_LOG_MIN_ADDRESS 0x00400000U
-#define AX211_LMAC_ERROR_WORD_COUNT 30U
-#define AX211_UMAC_ERROR_WORD_COUNT 15U
-
-struct ax211_pci_staged_key {
-	struct intel_ax211_key_request request;
-	uint8_t valid;
-	uint8_t programmed;
-	uint8_t reserved[6];
-};
-
-struct ax211_pci_deferred_event {
-	struct intel_ax211_boot_received_event received;
-	uint8_t bytes[INTEL_AX211_BOOT_EVENT_CAPACITY];
-};
-
-/*
- * The silicon revision and radio identity registers, read at attach.
- *
- * The MAC type is bits 15:4 of the silicon revision register (0x37 for So,
- * 0x43 for SoF); the radio kind is bits 23:12 of the radio identity register
- * (0x10d for Garfield Peak), and bit 28 of that register is set on a radio
- * that can run two bands at once.  The driver attaches only to an So or SoF
- * MAC with a single-band Garfield Peak radio, the combination the pinned
- * firmware and PNVM files are built for (ws004 p038).
- *
- * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
- * (the two registers and the field positions) and
- * drivers/net/wireless/intel/iwlwifi/iwl-config.h (the MAC and radio codes).
- */
-#define AX211_CSR_SILICON_REVISION 0x028U
-#define AX211_CSR_RADIO_IDENTITY 0x09cU
-#define AX211_SILICON_FAMILY_MASK 0x0000fff0U
-#define AX211_SILICON_FAMILY_SHIFT 4U
-#define AX211_SILICON_FAMILY_SO 0x037U
-#define AX211_SILICON_FAMILY_SOF 0x043U
-#define AX211_RADIO_KIND_MASK 0x00fff000U
-#define AX211_RADIO_KIND_SHIFT 12U
-#define AX211_RADIO_KIND_GF 0x10dU
-#define AX211_RADIO_CONCURRENT_BANDS_FLAG 0x10000000U
-
-struct ax211_pci_controller {
-	struct mutex lifecycle_lock;
-	struct spinlock interrupt_lock;
-	struct drv_pci_device *device;
-	struct drv_pci_mapping mapping;
-	struct drv_pci_enable_state enable_state;
-	struct drv_pci_bar original_bar;
-	struct intel_ax211_pci_mmio_backend backend;
-	struct intel_ax211_mmio mmio;
-	struct intel_ax211_transport_backend transport_backend;
-	struct intel_ax211_transport transport;
-	struct intel_ax211_boot boot;
-	struct intel_ax211_runtime_start runtime_start;
-	struct intel_ax211_scan_session scan_session;
-	struct intel_ax211_bss_cache bss_staging_cache;
-	struct intel_ax211_bss_cache bss_published_cache;
-	struct intel_ax211_bss_entry selected_bss;
-	struct drv_intel_ax211_bss_assoc_metadata selected_metadata;
-	struct intel_ax211_assoc_state association;
-	struct intel_ax211_key_state keys;
-	struct ax211_pci_staged_key staged_pairwise_key;
-	struct ax211_pci_staged_key
-		staged_group_key[INTEL_AX211_KEY_INDEX_LIMIT];
-	struct ax211_pci_deferred_event
-		deferred_event[AX211_DEFERRED_EVENT_LIMIT];
-	uint8_t deferred_dispatch_event[INTEL_AX211_BOOT_EVENT_CAPACITY];
-	uint64_t retired_pairwise_key_generation;
-	uint64_t retired_group_key_generation[INTEL_AX211_KEY_INDEX_LIMIT];
-	uint8_t retired_group_key_remove[INTEL_AX211_KEY_INDEX_LIMIT];
-	struct intel_ax211_frame_ring frame_ring;
-	struct intel_ax211_tx_queue_config tx_queue_config;
-	struct intel_ax211_dma_resources *active_dma;
-	struct drv_pci_irq irq;
-	void *irq_cookie;
-	struct net_device *net_device;
-	struct wlan_station *station;
-	struct ax211_pci_controller *next;
-	uint32_t hardware_revision;
-	uint32_t radio_identity;
-	uint32_t hardware_epoch;
-	uint8_t runtime_event[INTEL_AX211_BOOT_EVENT_CAPACITY];
-	uint8_t runtime_frame[INTEL_AX211_RX_FRAME_BODY_MAX];
-	uint8_t last_receive_header[INTEL_AX211_EVENT_HEADER_SIZE];
-	size_t last_receive_length;
-	uint8_t last_receive_version;
-	uint32_t command_fh_causes;
-	uint32_t command_hw_causes;
-	uint32_t command_raw_fh_causes;
-	uint32_t command_raw_hw_causes;
-	uint8_t tx_report_completion[INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS];
-	uint32_t scan_step_index;
-	uint64_t bss_staging_generation;
-	uint64_t bss_published_generation;
-	uint64_t connection_generation;
-	uint64_t recovery_generation;
-	uint64_t next_management_cookie;
-	uint64_t control_deadline_ticks;
-	int recovery_error;
-	unsigned refresh_epoch;
-	unsigned deferred_event_head;
-	unsigned deferred_event_count;
-	unsigned deferred_event_draining;
-	unsigned operations_active;
-	unsigned irq_count;
-	unsigned irq_allocated;
-	unsigned irq_established;
-	unsigned receive_enabled;
-	unsigned irq_latched;
-	unsigned boot_initialized;
-	unsigned runtime_initialized;
-	unsigned runtime_active;
-	unsigned operation_admission_open;
-	unsigned recovery_pending;
-	unsigned recovery_running;
-	unsigned poll_active;
-	unsigned poll_reschedule;
-	unsigned scan_initialized;
-	unsigned bss_staging_initialized;
-	unsigned bss_published_initialized;
-	unsigned selected_bss_valid;
-	unsigned association_initialized;
-	unsigned keys_initialized;
-	unsigned tx_ring_allocated;
-	unsigned bar_claimed;
-	unsigned bar_mapped;
-	unsigned bar_may_have_moved;
-	unsigned original_bar_valid;
-	unsigned state_saved;
-	unsigned driver_data_set;
-	unsigned listed;
-	unsigned refresh_busy;
-	unsigned detaching;
-	unsigned ready;
-	unsigned quarantined;
-
-	/* True only after every runtime/DMA owner passed the checked stop. */
-	unsigned session_stopped;
-	unsigned close_pending;
-	uint64_t reject_log_deadline;
-	unsigned net_live;
-	unsigned station_attached;
-
-	/*
-	 * The net device is open: ax211_net_open succeeded and no close
-	 * followed.
-	 */
-	unsigned net_opened;
-
-	/*
-	 * A recovery stopped the epoch while the device stayed open and asked the
-	 * WLAN retirement thread to restart it (BUG-158).  Cleared by the restart,
-	 * by an explicit open or close, and by detach.
-	 */
-	unsigned reopen_pending;
-
-	/*
-	 * Restarts since the last scan that completed; bounded by
-	 * AX211_REOPEN_ATTEMPTS_MAX.
-	 */
-	unsigned reopen_attempts;
-
-	/*
-	 * Set by a suspend that found the radio off, until its resume
-	 * (ws052-p005): an open is refused meanwhile.  Under lifecycle_lock.
-	 */
-	unsigned suspended;
-};
-
-static int ax211_pci_match(struct drv_pci_device *device, const struct drv_pci_id *identity);
-static int ax211_pci_attach(struct drv_pci_device *device, const struct drv_pci_id *identity);
-static int ax211_pci_detach(struct drv_pci_device *device, unsigned flags);
-static int ax211_pci_suspend(struct drv_pci_device *device);
-static int ax211_pci_resume(struct drv_pci_device *device);
-static int ax211_pci_identity_matches(const struct drv_pci_device *device);
-static int ax211_pci_bar_validate(const struct drv_pci_bar *bar);
-static uint32_t ax211_pci_read32(const struct ax211_pci_controller *controller, unsigned offset);
-static int ax211_pci_hardware_validate(uint32_t hardware_revision, uint32_t radio_identity);
-static int ax211_pci_profile(struct ax211_pci_controller *controller, struct intel_ax211_mmio_profile *profile);
-static int ax211_pci_acquire(struct ax211_pci_controller *controller);
-static int ax211_pci_restore_bar(struct ax211_pci_controller *controller);
-static int ax211_pci_release_resources(struct ax211_pci_controller *controller, int result, int retain_on_failure);
-static int ax211_pci_quarantine(struct ax211_pci_controller *controller, int failure);
-static uint64_t ax211_pci_lifecycle_deadline(void);
-static int ax211_pci_station_pin_locked(struct ax211_pci_controller *controller, struct wlan_station **station);
-static int ax211_pci_operation_enter_locked(struct ax211_pci_controller *controller, struct wlan_station **station);
-static void ax211_pci_operation_leave_locked(struct ax211_pci_controller *controller);
-static int ax211_pci_operations_join_locked(struct ax211_pci_controller *controller, uint64_t deadline);
-static int ax211_pci_station_close_wait(struct wlan_station *station, uint64_t deadline);
-static int ax211_pci_close_locked(struct ax211_pci_controller *);
-static int ax211_pci_log_rejection(struct ax211_pci_controller *);
-static void ax211_pci_recovery_latch_locked(struct ax211_pci_controller *controller, int error);
-static void ax211_pci_stop_defer_locked(struct ax211_pci_controller *controller, int error);
-static int ax211_pci_recovery_run_locked(struct ax211_pci_controller *controller);
-static void ax211_pci_list_add(struct ax211_pci_controller *controller);
-static int ax211_pci_list_remove(struct ax211_pci_controller *controller);
-static void ax211_pci_list_forget(struct ax211_pci_controller *controller);
-static struct ax211_pci_controller * ax211_pci_list_find_device(struct drv_pci_device *device);
-static struct ax211_pci_controller *ax211_pci_refresh_claim(unsigned epoch);
-static void ax211_pci_refresh_release(struct ax211_pci_controller *controller);
-static int ax211_pci_refresh_one(struct ax211_pci_controller *controller);
-static int ax211_pci_publish(struct ax211_pci_controller *controller, const uint8_t mac_address[AX211_MAC_ADDRESS_SIZE]);
-static void ax211_pci_scan_profile(struct wlan_scan_profile *profile);
-static int ax211_pci_partial_discard(struct ax211_pci_controller *controller);
-static int ax211_pci_graph_detach(struct ax211_pci_controller *controller);
-static int ax211_pci_session_stop(struct ax211_pci_controller *controller);
-static int ax211_pci_ltr_enabled(struct ax211_pci_controller *controller, int *enabled);
-static int ax211_pci_irq(void *argument);
-static int ax211_pci_receive_epoch_begin(void *argument, uint32_t generation);
-static int ax211_pci_transport_bind(void *argument, struct intel_ax211_dma_resources *dma, struct intel_ax211_mmio *mmio, struct intel_ax211_transport *transport, uint32_t generation);
-static int ax211_pci_receive_event(void *argument, uint64_t deadline_us, uint8_t *bytes, size_t capacity, struct intel_ax211_boot_received_event *event);
-static int ax211_pci_publish_pnvm(void *argument, struct intel_ax211_dma_resources *dma);
-static int ax211_pci_after_alive(void *argument, const struct intel_ax211_protocol_alive *alive);
-static int ax211_pci_interrupt_drain(void *argument);
-static int ax211_pci_bus_master_disable(void *argument);
-static int ax211_pci_clock_us(void *argument, uint64_t *time_us);
-static int ax211_pci_wake_hold(void *argument);
-static int ax211_pci_wake_release(void *argument);
-static int ax211_pci_tx_event(const struct intel_ax211_event *event);
-static uint8_t ax211_pci_notification_version(const uint8_t *bytes, size_t length);
-static int ax211_pci_scan_initialize(struct ax211_pci_controller *controller);
-static uint32_t ax211_pci_channel_frequency(uint8_t channel);
-static int ax211_pci_runtime_scan_profile(const struct ax211_pci_controller *controller, struct wlan_scan_profile *profile);
-static int ax211_pci_scan_channel_present(const struct ax211_pci_controller *controller, uint8_t channel);
-static void ax211_pci_scan_clear(struct ax211_pci_controller *controller);
-static void ax211_pci_bss_staging_discard(struct ax211_pci_controller *controller);
-static int ax211_pci_bss_staging_publish(struct ax211_pci_controller *controller, uint64_t generation);
-static int ax211_pci_event_message(const uint8_t *bytes, size_t length, const struct intel_ax211_boot_received_event *received, struct intel_ax211_event *event, struct intel_ax211_protocol_message *message);
-static int ax211_pci_scan_command_dispatch(struct ax211_pci_controller *controller, const uint8_t *bytes, size_t length, uint64_t now);
-static int ax211_pci_scan_notification_dispatch( struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message, uint64_t now);
-static int ax211_pci_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message);
-static void ax211_pci_scan_report_error(struct ax211_pci_controller *controller, int result);
-static int ax211_pci_scan_result_errno(int result);
-static int ax211_pci_runtime_event_dispatch( struct ax211_pci_controller *controller, const uint8_t *bytes, size_t length, const struct intel_ax211_boot_received_event *event);
-static int ax211_pci_deferred_event_enqueue( struct ax211_pci_controller *controller, const uint8_t *bytes, const struct intel_ax211_boot_received_event *received);
-static int ax211_pci_deferred_event_drain_one(struct ax211_pci_controller *controller);
-static void ax211_pci_deferred_event_clear(struct ax211_pci_controller *controller);
-static uint32_t ax211_pci_get_le32(const uint8_t bytes[4]);
-static void ax211_pci_scrub(void *memory, size_t length);
-static int ax211_pci_tx_sync_for_device(void *argument, const struct drv_dma_buffer *buffer, size_t offset, size_t length);
-static int ax211_pci_tx_write32(void *argument, uint32_t offset, uint32_t value);
-static uint64_t ax211_pci_assoc_clock_us(void *argument);
-static int ax211_pci_assoc_exchange(void *argument, const struct intel_ax211_assoc_command *command, struct intel_ax211_assoc_reply *reply);
-static int ax211_pci_direct_command( struct ax211_pci_controller *controller, const struct intel_ax211_command_request *request, uint64_t deadline_ticks, uint8_t *response, size_t response_capacity, size_t *response_length, struct intel_ax211_protocol_message *completed_message, struct intel_ax211_protocol_pending_command *completed_pending);
-static int ax211_pci_command_timeout(struct ax211_pci_controller *controller, uint64_t deadline_ticks, uint64_t now_us, uint64_t *timeout_us, uint64_t *deadline_us);
-static int ax211_pci_sram_read_locked(struct ax211_pci_controller *controller, uint32_t address, uint32_t *words, size_t count);
-static void ax211_pci_firmware_error_dump(struct ax211_pci_controller *controller);
-static int ax211_pci_assoc_result_errno(int result);
-static int ax211_pci_tx_ring_result_errno(int result);
-static int ax211_pci_key_result_errno(int result);
-static int ax211_pci_assoc_profile(struct ax211_pci_controller *controller, const struct wlan_bss_record *bss, uint64_t connection_generation, struct intel_ax211_assoc_profile *profile);
-static int ax211_pci_assoc_rollback(struct ax211_pci_controller *controller, uint64_t generation);
-static int ax211_pci_mcast_filter_configure(struct ax211_pci_controller *controller, uint64_t deadline_ticks);
-static int ax211_pci_mac_power_configure(struct ax211_pci_controller *controller, uint64_t deadline_ticks);
-static int ax211_pci_keys_remove_all(struct ax211_pci_controller *controller, uint64_t deadline_ticks);
-static void ax211_pci_connection_clear(struct ax211_pci_controller *controller);
-static int ax211_pci_key_command(struct ax211_pci_controller *controller, const uint8_t *payload, uint64_t deadline_ticks);
-static int ax211_pci_staged_key_store(struct ax211_pci_staged_key *staged, const struct intel_ax211_key_request *request);
-static int ax211_pci_staged_key_program(struct ax211_pci_controller *controller, struct ax211_pci_staged_key *staged, uint64_t deadline_ticks);
-static void ax211_pci_staged_key_clear(struct ax211_pci_staged_key *staged);
-static int ax211_pci_keys_have_active(const struct ax211_pci_controller *controller);
-static int ax211_pci_key_request_address_valid( const struct ax211_pci_controller *controller, const struct wlan_radio_key_request *request);
-static int ax211_pci_key_fail_closed(struct ax211_pci_controller *controller, int error);
-static int ax211_pci_tx_submit(struct ax211_pci_controller *controller, const struct intel_ax211_tx_request *request, uint64_t deadline_ticks, int report_completion);
-static int ax211_pci_tx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_protocol_message *message);
-static int ax211_pci_tx_timeout_check(struct ax211_pci_controller *controller, uint64_t now_us);
-static int ax211_pci_connection_rx_dispatch(struct ax211_pci_controller *controller, const struct intel_ax211_rx_delivery *mpdu, uint16_t frame_control);
-
-static int ax211_net_open(struct net_device *device);
-static int ax211_pci_open_locked(struct ax211_pci_controller *controller, int restarting);
-static void ax211_pci_reopen_request_locked(struct ax211_pci_controller *controller);
-static void ax211_net_close(struct net_device *device);
-static int ax211_net_transmit(struct net_device *device, struct packet_buf *packet);
-static unsigned ax211_net_poll_receive(struct net_device *device, unsigned budget);
-static int ax211_net_ioctl(struct net_device *device, unsigned long request, void *argument);
-static void ax211_net_release(void *driver_data);
-
-static int ax211_radio_scan_channel_start(void *context, uint64_t generation, uint32_t step_index, uint32_t channel, uint64_t deadline);
-static int ax211_radio_scan_stop(void *context, uint64_t generation);
-static int ax211_radio_connect_start(void *context, uint64_t generation, const struct wlan_bss_record *bss, uint64_t deadline);
-static int ax211_radio_disconnect(void *context, uint64_t generation);
-static int ax211_radio_management_transmit(void *context, uint64_t generation, const uint8_t *frame, size_t length, uint64_t deadline);
-static int ax211_radio_association_set(void *context, uint64_t generation, const uint8_t bssid[6], uint16_t aid, uint64_t deadline);
-static int ax211_radio_association_clear(void *context, uint64_t generation, uint64_t deadline);
-static int ax211_radio_frame_transmit(void *context, const struct wlan_radio_tx_request *request);
-static int ax211_radio_key_install(void *context, const struct wlan_radio_key_request *request);
-static int ax211_radio_key_delete(void *context, uint64_t generation, enum wlan_radio_key_kind kind, uint8_t key_index, uint64_t key_generation, uint64_t deadline);
-static int ax211_radio_keys_activate(void *context, uint64_t generation, uint64_t pairwise_key_generation, uint64_t group_key_generation, uint64_t deadline);
-static int ax211_radio_quiesce(void *context);
-static int ax211_radio_stop_retry(void *context);
-static int ax211_radio_restart(void *context);
-
-static const struct drv_pci_id ax211_pci_ids[] = {
-	{
-		.vendor = AX211_PCI_VENDOR,
-		.device = AX211_PCI_PRODUCT,
-		.subvendor = AX211_PCI_SUBVENDOR,
-		.subdevice = AX211_PCI_SUBPRODUCT,
-		.class_code = AX211_PCI_CLASS,
-		.class_mask = AX211_PCI_CLASS_MASK,
-	},
-};
-
-static struct drv_pci_driver ax211_pci_driver = {
-	.name = "intel-ax211",
-	.ids = ax211_pci_ids,
-	.id_count = sizeof(ax211_pci_ids) / sizeof(ax211_pci_ids[0]),
-	.match = ax211_pci_match,
-	.attach = ax211_pci_attach,
-	.detach = ax211_pci_detach,
-	.suspend = ax211_pci_suspend,
-	.resume = ax211_pci_resume,
-};
-
-/* This table is the permanent common-WLAN boundary for the AX211 backend. */
-static const struct wlan_radio_ops ax211_radio_ops = {
-	.scan_channel_start = ax211_radio_scan_channel_start,
-	.scan_stop = ax211_radio_scan_stop,
-	.connect_start = ax211_radio_connect_start,
-	.disconnect = ax211_radio_disconnect,
-	.management_transmit = ax211_radio_management_transmit,
-	.association_set = ax211_radio_association_set,
-	.association_clear = ax211_radio_association_clear,
-	.frame_transmit = ax211_radio_frame_transmit,
-	.key_install = ax211_radio_key_install,
-	.key_delete = ax211_radio_key_delete,
-	.keys_activate = ax211_radio_keys_activate,
-	.quiesce = ax211_radio_quiesce,
-	.stop_retry = ax211_radio_stop_retry,
-	.restart = ax211_radio_restart};
-
-static const struct net_device_ops ax211_net_ops = {
-	.open = ax211_net_open,
-	.close = ax211_net_close,
-	.transmit = ax211_net_transmit,
-	.poll_receive = ax211_net_poll_receive,
-	.ioctl = ax211_net_ioctl,
-	.release = ax211_net_release};
-
-static const struct intel_ax211_runtime_start_ops ax211_runtime_start_ops = {
-	.boot = {.receive_epoch_begin = ax211_pci_receive_epoch_begin,
-		 .transport_bind = ax211_pci_transport_bind,
-		 .receive_event = ax211_pci_receive_event,
-		 .publish_pnvm = ax211_pci_publish_pnvm,
-		 .after_alive = ax211_pci_after_alive,
-		 .interrupt_drain = ax211_pci_interrupt_drain,
-		 .bus_master_disable = ax211_pci_bus_master_disable,
-		 .clock_us = ax211_pci_clock_us},
-	.wake_hold = ax211_pci_wake_hold,
-	.wake_release = ax211_pci_wake_release};
-
-static const struct intel_ax211_tx_ring_ops ax211_tx_ring_ops = {
-	.sync_for_device = ax211_pci_tx_sync_for_device,
-	.write32 = ax211_pci_tx_write32};
-
-static const struct intel_ax211_assoc_ops ax211_assoc_ops = {
-	.clock_us = ax211_pci_assoc_clock_us,
-	.exchange = ax211_pci_assoc_exchange};
-
-static struct ax211_pci_controller *ax211_controllers;
-static struct spinlock ax211_registry_lock;
-static unsigned ax211_refresh_epoch;
-static unsigned ax211_registry_initialized;
 
 /*
  * Registers the exact Intel AX211 PCI transport driver.
@@ -9659,4 +9665,3 @@ ax211_pci_scrub(
 		length--;
 	}
 }
-/* End consolidated pci-intel-ax211.c. */

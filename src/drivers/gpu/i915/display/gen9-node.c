@@ -35,7 +35,6 @@
 #include "gen9-outputs.h"
 #include "present.h"
 #include "scanout.h"
-#include "takeover.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -162,7 +161,7 @@ static void i915_gen9_node_poll(struct i915_gen9_node *node);
 static void i915_gen9_node_bump(struct i915_gen9_node *node);
 static int i915_gen9_node_index(uint32_t display_id, unsigned *index);
 static int i915_gen9_node_lease_index(struct i915_gen9_node *node, void *session, uint64_t lease, unsigned *index);
-static int i915_gen9_node_make_buffers(struct i915_gen9_node *node, struct i915_gen9_screen *screen, const struct i915_lcd_mode *mode);
+static int i915_gen9_node_make_buffers(struct i915_gen9_node *node, struct i915_gen9_screen *screen, const struct i915_display_mode *mode);
 static void i915_gen9_node_free_buffers(struct i915_gen9_screen *screen);
 static int i915_gen9_node_light(struct i915_gen9_node *node, unsigned index, uint32_t surf);
 static void i915_gen9_node_darken(struct i915_gen9_node *node, unsigned index);
@@ -1199,7 +1198,7 @@ static int
 i915_gen9_node_make_buffers(
 	struct i915_gen9_node *node,
 	struct i915_gen9_screen *screen,
-	const struct i915_lcd_mode *mode)
+	const struct i915_display_mode *mode)
 {
 	unsigned index;
 	int error;
