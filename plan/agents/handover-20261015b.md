@@ -22,6 +22,7 @@
 1. `git -C <worktree> log main..HEAD` と `git -C <worktree> status` を見る。commit があれば `git cat-file -t` で確かめてから merge する。
 2. commit が無く未 commit の差分だけがあるなら、中身を読んで判断する（途中なら担当を新しい世代で再開）。何も無ければ作業は失われたので、同じ依頼で起こし直す（依頼の要点は下の WS245 の節）。
 3. 終わった担当に SendMessage しない（memory の no-message-to-finished-agent）。
+4. 2 つの担当への依頼文は誤った日付（2026-10-16）を含んでいたので、成果物（design.md・design-review.md）に「2026-10-16」の出来事の日付があれば merge の後に 2026-10-15 に直す。
 
 p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の build の出力（p1・p2・p3 の build/ws247-k）は Q1 が plan/tools/q1-clean.sh で消してよい（未実施）。
 
