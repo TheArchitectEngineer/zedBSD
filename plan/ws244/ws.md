@@ -3,7 +3,7 @@
 # WS244: i915 の Linux 由来の code の書き直し（データだけを引用で残す）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-15 作成、P7 が p001 から）
+Status: incomplete（2026-10-15 作成、p001 を P7 が途中まで実施して中断）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -34,6 +34,6 @@ Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| p001 | 棚卸し（file・関数ごとに「データ／写した code／自前」を分類、Mesa 由来の i915 compiler の encode なども含む）と書き直しの方針・順序・試験の道 | planned |
+| p001 | 棚卸し（file・関数ごとに「データ／写した code／自前」を分類、Mesa 由来の i915 compiler の encode なども含む）と書き直しの方針・順序・試験の道 | in-progress（中断、[phase001](phase001/phase.md) の「残り」） |
 | p002〜 | file の群ごとの書き直し（p001 で分割） | planned |
 | 最後 | license の表示と package の整理、規約の全文の見直し | planned |

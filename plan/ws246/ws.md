@@ -23,7 +23,7 @@ Resume point: p001 cleared（Q1 d5d72059d: sm75.h 948 行・sm75.c 5950 行に�
 | ID | 内容 | 状態 |
 | --- | --- | --- |
 | p001（cleared） | まとめ: header を sm75.h（外向きの口と内部の定義を分けるかは設計で決める）、source を sm75.c に。使う側・vmunix.mk・host 試験を追従。動作は変えない（SM75・86・89 の出力が byte 単位で同じ、host 試験 287/0・desktop 試験 138/0、build warning 0） | planned |
-| p002 | refactor: 定数・構造体・関数ごとに出典を探し、「Value(s) referenced:」「Procedure referenced:」を block ごとに付ける（file の上部には書かない）。latency の if の連鎖は表に直す。Mesa NAK に沿った構造（encode の関数の分け方、scoreboard の割り当て）は自前の形に直すか、手順の出典を付ける | planned |
+| p002 | refactor: 定数・構造体・関数ごとに出典を探し、「Value(s) referenced:」「Procedure referenced:」を block ごとに付ける（file の上部には書かない）。latency の if の連鎖は表に直す。Mesa NAK に沿った構造（encode の関数の分け方、scoreboard の割り当て）は自前の形に直すか、手順の出典を付ける | planned（2026-10-15: 定数・関数ごとの referenced: の comment は [ws247-p003](../ws247/phase003/phase.md) で済んだ。残りは latency の if の連鎖を表に、構造の見直し） |
 | p003 | 規約の全文の見直し | planned |
 
 ## 注意

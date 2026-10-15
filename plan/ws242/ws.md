@@ -7,6 +7,7 @@ Status: incomplete（2026-10-15 Q1 作成、ユーザー「20/30/40対応も独�
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体、RTX 2070 で desktop）、[WS240](../ws240/ws.md)（RTX 50、まだ開始しない）
+Resume point: [p001](phase001/phase.md) の「再開点」1〜4（driver が chip の SM を compiler に渡す、Ampere/Ada の QMD V03_00、host 試験の追従）に、ユーザーの決定（GTX 16・RTX 30・40 を既定で有効）を足して次の round（Queue の承認が要る）。[p002](phase002/phase.md) は実装・host 試験・build まで済み（3efc2fe08、実機の確かめは無し）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）

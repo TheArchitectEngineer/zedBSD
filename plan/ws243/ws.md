@@ -3,12 +3,12 @@
 # WS243: nvrtx の NVDEC で H.264 の decode（Vulkan Video）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-15 作成。code だけ先に書き、実機の debug は [WS241](../ws241/ws.md) の完了の後）
+Status: incomplete（2026-10-15 作成、p001 を P6 が途中まで実施し、ユーザーの指示で一時停止。code だけ先に書き、実機の debug は [WS241](../ws241/ws.md) の完了の後）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executor）、[WS083](../ws083/ws.md)（Vulkan Video の拡張と i915 の H.264、`src/drivers/gpu/i915/render/video.c`）、[WS236](../ws236/ws.md)（Pi 4 の Vulkan Video、`src/drivers/gpu/bcm2711/vulkan-video.c`）、[WS202](../ws202/ws.md)（libmedia の `media_vkvideo_ops`）、[WS242](../ws242/ws.md)（RTX 20/30/40）
-Resume point: p001（設計）から。担当は Q1 が割り当てる。
+Resume point: [p001](phase001/phase.md) の「再開の点」（調べた事実と設計の案から design.md を書く → design-reviewer）。再開はユーザーの指示で、担当は Q1 が割り当てる。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -33,7 +33,7 @@ Resume point: p001（設計）から。担当は Q1 が割り当てる。
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: NVDEC の channel の取り方（RM の alloc、class、firmware）、picture の parameter の組み立て、DPB と出力の image の layout、Vulkan Video の object と executor の口（WS083・WS236 の共通の部分の再利用）、license の監査、試験の道 | planned |
+| p001 | 設計: NVDEC の channel の取り方（RM の alloc、class、firmware）、picture の parameter の組み立て、DPB と出力の image の layout、Vulkan Video の object と executor の口（WS083・WS236 の共通の部分の再利用）、license の監査、試験の道 | in-progress（一時停止） |
 | p002 | 実装: NVDEC の channel と engine の起動（code のみ、host 試験） | planned |
 | p003 | 実装: Vulkan Video の object（profile・capability・session・parameters・DPB）と H.264 の decode の命令（code のみ、host 試験） | planned |
 | p004 | 実機の debug（WS241 の完了の後、RTX 2070 の素の起動、T の試験） | planned |

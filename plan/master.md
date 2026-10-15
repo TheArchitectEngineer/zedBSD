@@ -198,7 +198,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS034](ws034/ws.md) | キャンセル | MG002 | 4 | package の導入と kernel・libc の是正 |
 | [WS037](ws037/ws.md) | 要検討（ブロック） | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
 | [WS038](ws038/ws.md) | 要検討（ブロック） | MG006 | 16 | Intel Arc dGPU |
-| [WS039](ws039/ws.md) | 要検討（ブロック） | MG006 | 20 | AMD RDNA |
+| [WS039](ws039/ws.md) | 一時停止（2026-10-15 開始・同日停止） | MG006 | 20 | AMD RDNA（amdrdna、RX 5600 XT。p001 調べ・p007 compiler が途中） |
 | [WS044](ws044/ws.md) | 要検討（ブロック） | MG008 | 1.5 | rpi4 の font・FAT32・lldb |
 | [WS045](ws045/ws.md) | ベータ1 | MG002 | 0 | 完了（2026-10-05） |
 | [WS046](ws046/ws.md) | ベータ2（2026-10-05 移動） | MG002 | 1.5 | GNU 互換の make |
@@ -360,7 +360,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | planned（p001 から、q692） | 独立。試験は centris に挿す NVIDIA の GPU の VFIO |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
-| [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（予約） | planning | 番号のみ |
+| [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（amdrdna） | incomplete（2026-10-15 開始、同日ユーザーの指示で一時停止） | p001 の再開の点・p007 の 7.2（ws.md） |
 | [WS040](ws040/ws.md) | MG008 | 時間の単位を tick 周期から導く | completed | — |
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
 | [WS042](ws042/ws.md) | MG002 | `/bin/sh` の POSIX 互換性 | completed | — |
@@ -549,6 +549,14 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | planning | 未割当 |
 | [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、ベータ2 に入る） | incomplete（p001・p002 cleared、NCQ・TRIM・hotplug・ATAPI は後） | — |
 | [WS232](ws232/ws.md) | MG002 | menuconfig に i386（PC-9800・PC/AT）と Retro の menu（Xzed・zwm・zshell・zterm）（2026-10-14 ユーザー） | completed（2026-10-14） | — |
+| [WS240](ws240/ws.md) | MG006 | nvrtx の RTX 50（Blackwell）（2026-10-15 ユーザー） | planning（開始しない、ユーザー「50はまだ開始しないでください。」） | — |
+| [WS241](ws241/ws.md) | MG006 | nvrtx（RTX）の描画の速さ（2026-10-15 ユーザー） | incomplete（p001 in-progress、T1-697 で boost が効く） | p001 の 3 節（boost を既定に、rec submit、streams） |
+| [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（p001・p002 in-progress、GTX 16・RTX 30・40 を既定で有効はユーザーの決定、未実装） | p001 の再開点 1〜4 |
+| [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（p001 を途中で一時停止、実機は WS241 の後） | p001 の再開の点（design.md） |
+| [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | incomplete（p001 の棚卸しを中断） | p001 の「残り」 |
+| [WS245](ws245/ws.md) | MG006 | i915 の Gen12（5330）display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md とレビュー 2 回は main、P1 が改訂中） | ws.md の Resume point |
+| [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
+| [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | incomplete（p001〜p003 cleared） | ユーザーの判断 2 点（path の省略、CUDA の出典） |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 

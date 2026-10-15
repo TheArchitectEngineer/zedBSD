@@ -2,7 +2,7 @@
 
 # WS245 p001 の設計（design.md）の敵対的レビュー
 
-2026-10-16 design-reviewer（P2 の worktree、main 1d8cc4d19）。対象: [design.md](design.md)（522 行）。design.md は直していない。
+2026-10-15 design-reviewer（P2 の worktree、main 1d8cc4d19）。対象: [design.md](design.md)（522 行）。design.md は直していない。
 根拠は `file:行`（path は `src/drivers/gpu/i915/` からの相対、無印の `design.md:行` は対象の文書）と PRM の text
 （`plan/ws245/temp/*.txt` の行）。Linux の照合は `/home/awe/zedBSD-worktrees/p1/build/ws229-p001/linux/linux-6.8.12/`（読むだけ、値と分岐の確認だけに使った）。
 呼び出し元の照合は、Gen12 の 38 file の公開関数を識別子で集め、それ以外の全 source から参照を数えた（script は scratchpad、tree には置いていない）。

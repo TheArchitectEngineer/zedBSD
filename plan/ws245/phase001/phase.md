@@ -2,7 +2,7 @@
 
 # ws245-p001: Gen12（ADL-P、Latitude 5330）の display の書き直しの設計
 
-Status: in-progress（q991、design.md は main 4625f0a3e、レビュー待ち）
+Status: in-progress（q991、design.md は main 4625f0a3e、レビュー 2 回は main（design-review-1.md 079d8080a、design-review.md 2968ae183）、P1 が改訂中）
 Parent: [WS245](../ws.md)
 Approval: 2026-10-15 ユーザー「同時にサブエージェントで、i915のリライトをやります。WSがあると思います。」
 

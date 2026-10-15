@@ -7,6 +7,7 @@ Status: incomplete（2026-10-15 Q1 作成、ユーザー「RTXの最適化は独
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体）、[WS242](../ws242/ws.md)（RTX 20/30/40 の対応）
+Resume point: [p001](phase001/phase.md) の「3. T1-697 の結果と次」: 次の round（boost を既定に、Terminal+Files の rec submit を詰める、streams の計数を直す）を担当に（Queue の承認が要る）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）

@@ -63,3 +63,10 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 
 - Queue Board: plan/queue.md の「2026-10-15: WS247・WS245（q984〜q995）」。次の番号: BUG-323、WS248、q996、T1-698。
 - 担当の台帳 plan/agents/registry.md はこの session で更新していない。
+
+## 記録の整合の点検（2026-10-15 夕、ユーザー「WS241以降のWSのconsistencyもチェックして、回復してください。AMD RDNAのWSも。」）
+
+- 対象: WS039・WS240〜WS247。commit・リンク・Status と Phase の食い違い・Master の一覧を点検し、直した。
+- 2 回目のレビュー（design-reviewer、design-review.md）は返ってきて main に入った（2968ae183、merge df9f5efe5）。blocker 4・major 18・minor 16。P1 の design.md の改訂（agent/p1-ws245）は未完で、レビュー 1 だけを扱う依頼。レビュー 2 の反映は次の round。
+- 直した物: WS039（Status・Queue・Resume point・Target・担当・Phase 一覧・ブロックの記述が開始前の「番号の予約」のままだった）、WS241（Resume point が無く、T1-697 の結果と判定が phase.md に無かった）、WS242（Resume point が無かった）、WS243・WS244（p001 を実施したのに Status が planning、表の p001 が planned）、WS245（Status が planning のまま）、WS246（p002 の出典の comment は ws247-p003 で済んだ）、design-review.md の日付。Master の WS の一覧に WS240〜WS247 の行を足し、WS039 の 2 行を直した。
+- **残り（範囲外、未対応）**: Master の WS の一覧に WS233〜WS239 の行も無い。WS239 の ws.md には Status の行が無い。WS039・WS241〜WS244 は前の Q1 の割当で進めたので queue.md に行が無い。

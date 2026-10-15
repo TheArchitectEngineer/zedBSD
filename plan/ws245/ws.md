@@ -3,7 +3,7 @@
 # WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-15 作成。p001 の [design.md](design.md) は main に入った（6bccaef57）、敵対的レビューは未完）
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は main（6bccaef57）、敵対的レビューは 2 回（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)、2968ae183）。改訂は P1 が実施中（agent/p1-ws245）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)

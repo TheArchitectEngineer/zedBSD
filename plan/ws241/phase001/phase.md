@@ -53,3 +53,8 @@ Parent: [WS241](../ws.md)
 | 実機 | **未実施**（T1-697 へ依頼） |
 
 T1-697 の依頼（Q1 経由）: T1-696 と同じ 3 場面（静止 20 s・Files 20 s・Terminal の無限 echo＋Files 20 s）を nvrtx.vk.perf=1 で、(a) nvrtx.boost=1 なし、(b) あり の 2 回。見る物: KWL PERF（frame_ms・rec submit・acquire）、kernel.log の perf の 5 行（runs・frames/flips・gpu・draws・streams）、`P9p` の行、`D3 fail`・`a command buffer did not run`・`rm: control` の有無、画面の崩れ（X1 で shader の cache の扱いを変えたので、Terminal・Files の文字と窓の絵）。
+
+## 3. T1-697 の結果と次（2026-10-15 Q1、記録の整合の点検で追記）
+
+- 結果は [t1-697-result.md](t1-697-result.md)（T1、main e7c522105）。失敗の行 0。前の Q1 の判定（plan/agents/handover-20261015.md）: **boost が効く**。GPU の run の平均 約 2.5 ms →（nvrtx.boost=1）約 0.16 ms、frame_ms は Files 約 15.6 → 7.6、Terminal+Files の後半 約 24 → 15.5。`streams` は全 window で 0（計数が繋がっていない疑い）。画面の崩れの確認は未実施（keiland-shot が image に無い）。
+- 次の round（未着手）: boost を既定にする、Terminal+Files に残る rec submit（平均 2〜12.8 ms）を詰める、streams の計数を直す。

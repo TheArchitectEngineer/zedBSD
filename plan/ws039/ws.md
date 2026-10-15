@@ -3,14 +3,14 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 ユーザーの決定で開始。driver P3・compiler P5、実機（RX 5600 XT、素の起動）は届いてから）
+Status: incomplete（2026-10-15 ユーザーの決定で開始、同日ユーザーの指示で一時停止。p001（P3）・p007（P5）は途中で区切った）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: なし
-Resume point: 番号の予約のみ（AMD RDNA GPU）
-Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
+Queue: なし（一時停止中、queue.md に行なし。2026-10-15 は Q1 の割当で進めた）
+Resume point: 再開はユーザーの指示で。[p001](phase001/phase.md) の「再開の点」（調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/、約 600 MB の source と note は消さない）と [p007](phase007/phase.md) の 7.2（Mesa の tarball は /home/awe/zedBSD-worktrees/p5/build/mesa、消さない）。
+Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
 ## 単一目標
@@ -19,7 +19,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## 担当
 
-別契約のエージェントが担当する見込み（2026-09-23ユーザー指示）。このファイルは番号の予約として作った。範囲・受け入れ条件・Phaseは、担当するエージェントが計画する。
+2026-10-15 から driver は P3、compiler は P5（Q1 の割当、ユーザー「担当を 2 人（driver と compiler）で並行してよいです。」）。以前の記述（2026-09-23 別契約のエージェント、番号の予約）は 2026-10-15 の開始で置き換えた。
 
 ## 前提（参考）
 
@@ -30,11 +30,11 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-未作成。
+下の「再開と計画」の表（案）。作った Phase: [p001](phase001/phase.md) 調べと設計（in-progress、一時停止）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
 
 ## 要検討・ブロック（2026-10-05）
 
-ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。
+ユーザーの指示で要検討の状態にしてブロックする。ユーザーと方針を決めるまで Queue に入れない。（2026-10-15 のユーザーの決定で解除して開始、同日一時停止）
 
 
 ## 再開と計画（2026-10-15 ユーザー、Q1 の案、まだ実装しない）
