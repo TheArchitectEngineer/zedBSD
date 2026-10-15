@@ -905,10 +905,10 @@ int nvrtx_sm75_schedule(uint32_t *code, uint32_t count, uint32_t sm, uint32_t *i
  * which buffer goes where in the constant buffers (sm75.h,
  * NVRTX_SM75_CB_*).
  *
- * Stages A and B compile compute shaders: arithmetic, conversions, the
- * special functions, storage and shared memory with their atomics,
- * workgroup barriers and fences, integer division, and loops.  Stage E
- * adds vertex and fragment programs with their shader program header:
+ * Compute shaders compile with arithmetic, conversions, the special
+ * functions, storage and shared memory with their atomics, workgroup
+ * barriers and fences, integer division, and loops; vertex and fragment
+ * programs compile with their shader program header:
  * attributes, interpolated inputs, colour outputs, 2D texture samples and
  * discards.  Geometry, the other texture messages, derivatives and
  * spilling are refused with a reason.

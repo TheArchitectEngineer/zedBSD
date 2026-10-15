@@ -2565,19 +2565,19 @@ nvrtx_sm75_later(
 }
 
 /*
- * The nvrtx shader compiler, stage A (see sm75.h).
+ * The lowering of the nvrtx shader compiler (see sm75.h).
  *
  * One pass over the scalar IR chooses the SM75 instructions of each
  * IR instruction and assigns registers as it goes: a value gets a
  * register when it is defined and gives it back after the last
- * instruction that reads it (the IR of stage A is straight-line).
- * Addresses take an even pair.  A Boolean of the IR is a register of
+ * instruction that reads it; a value read inside a loop it was defined
+ * before lives to the loop's end.  Addresses take an even pair.  A Boolean of the IR is a register of
  * all ones or zero; a comparison sets P0 and turns it into a Boolean
  * at once, and a selection or a guarded access turns the Boolean back
  * into P0.
  *
- * The dependences are marked when the program is complete (sm75.c,
- * stage D): each read waits only as long as the shader model's
+ * The dependences are marked when the program is complete (the
+ * dependence marking above): each read waits only as long as the shader model's
  * latency table says for its writer, or for the scoreboard of a
  * variable-latency writer.  The lowering says of each instruction it
  * emits whether it is of fixed or variable latency or ends a block,
@@ -3093,7 +3093,7 @@ nvrtx_sm75_refuse(
 }
 
 /*
- * Checks that the program is a compute program stage A covers, finds each
+ * Checks that the program uses only operations the compiler covers, finds each
  * value's last read, maps the uniforms, and allocates the per-value arrays
  * and the code.
  */
@@ -3137,7 +3137,7 @@ nvrtx_sm75_prepare(
 		instruction = &ir->instructions[index];
 		lowering->index = index;
 
-		/* The sources of an operation stage A covers. */
+		/* The sources of an operation the compiler covers. */
 		count = nvrtx_sm75_sources(instruction, sources);
 		if (count < 0)
 			return nvrtx_sm75_refuse(lowering, ENOTSUP, "the operation is not compiled yet");
@@ -3198,7 +3198,7 @@ nvrtx_sm75_prepare(
 
 /*
  * Lists the values an instruction reads; reports their number, or -1 for
- * an operation stage A does not cover.
+ * an operation the compiler does not cover.
  */
 static int
 nvrtx_sm75_sources(
@@ -3350,7 +3350,7 @@ nvrtx_sm75_sources(
 		break;
 	}
 
-	/* Succeeded in finding the operation outside stage A. */
+	/* Succeeded in finding the operation the compiler does not cover. */
 	return -1;
 }
 
@@ -5831,7 +5831,7 @@ nvrtx_sm75_take(
 			break;
 	}
 
-	/* None is free: stage A does not spill. */
+	/* None is free: the compiler does not spill. */
 	if (best == NVRTX_SM75_GPR_USABLE)
 		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
 
@@ -5887,7 +5887,7 @@ nvrtx_sm75_take_pair(
 			break;
 	}
 
-	/* None is free: stage A does not spill. */
+	/* None is free: the compiler does not spill. */
 	if (best == NVRTX_SM75_GPR_USABLE)
 		return nvrtx_sm75_refuse(lowering, ENOTSUP, "the program needs more registers than there are (no spilling yet)");
 
