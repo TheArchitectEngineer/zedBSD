@@ -1256,7 +1256,10 @@ nvrtx_sm75_lower_unit(
 	source = lowering->reg[instruction->src[0]];
 	temporary = NVRTX_SM75_RZ;
 
-	/* Sine and cosine first scale the angle into turns. */
+	/*
+	 * Sine and cosine first scale the angle into turns.
+	 * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/builder.rs (fsin, fcos).
+	 */
 	if (instruction->op == DRV_GPU_IR_SIN || instruction->op == DRV_GPU_IR_COS) {
 		error = nvrtx_sm75_take(lowering, &temporary);
 		if (error != 0)
@@ -1558,6 +1561,8 @@ nvrtx_sm75_lower_storage(
  * BSSY whose barrier collects the threads at the BSYNC after the loop, and
  * LOOP_END branches back to the loop's first instruction for the threads
  * whose Boolean holds; the others go on to the BSYNC and wait there.
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the loop's OpBSSy and
+ * OpBSync).
  */
 static int
 nvrtx_sm75_lower_loop(
@@ -2319,6 +2324,8 @@ nvrtx_sm75_extend_loops(
  * R0 onward, four registers for each location it writes in ascending
  * order (the registers the hardware reads at EXIT), which no value may
  * take; a vertex program's store request starts empty.
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the order of the
+ * fragment outputs in OpRegOut).
  */
 static int
 nvrtx_sm75_prepare_graphics(
@@ -2377,7 +2384,9 @@ nvrtx_sm75_prepare_graphics(
 /*
  * Starts a fragment program that interpolates in perspective: w at the
  * pixel (the position's w, passed screen-linear) and its reciprocal, which
- * every perspective input is multiplied by (NAK's SM70 way).
+ * every perspective input is multiplied by.
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_fs_inputs.c (the SM70
+ * interpolation: pass, then times 1 / w).
  */
 static int
 nvrtx_sm75_prologue(
@@ -2761,6 +2770,8 @@ nvrtx_sm75_lower_sample(
  * offset shifted by 8.  The general message passes no image dimension, so
  * only the messages whose parameter count says 2D are taken: a sample
  * (u v), a biased or levelled one (bias or lod, u v), and a fetch (u v lod).
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c (lower_tex: how
+ * the coordinates, level of detail and offset are packed into registers).
  */
 static int
 nvrtx_sm75_texture_operands(
@@ -2843,7 +2854,10 @@ nvrtx_sm75_texture_operands(
 	return 0;
 }
 
-/* Lowers a discard of the fragments where the Boolean holds: @P0 KILL. */
+/*
+ * Lowers a discard of the fragments where the Boolean holds: @P0 KILL.
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (demote, demote_if).
+ */
 static int
 nvrtx_sm75_lower_kill(
 	struct nvrtx_sm75_lowering *lowering,
@@ -2892,11 +2906,12 @@ nvrtx_sm75_input(
 }
 
 /*
- * Completes a graphics program's header (version 4, NAK's encode_header):
+ * Completes a graphics program's header (version 4):
  * the type and version, the SASS version 1, a fragment program's
  * multiple-target bit and its input map's position w, the global memory
  * bits, a vertex program's store request.  The other maps were set as the
  * program was lowered.
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs (encode_header).
  */
 static void
 nvrtx_sm75_header(
@@ -2924,8 +2939,9 @@ nvrtx_sm75_header(
 
 		/*
 		 * The position's w is mapped in even when the program does not
-		 * read it: NAK sets it on every fragment program, as a trap
-		 * follows without it.  The first draw on the GPU (R7d) stopped
+		 * read it, as a trap follows without it (Mesa 25.3.6
+		 * src/nouveau/compiler/nak/from_nir.rs sets it on every
+		 * fragment program).  The first draw on the GPU (R7d) stopped
 		 * on a shader program header error while it was missing.
 		 */
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_IMAP_AB_LOW + NVRTX_SM75_ATTR_POSITION_W / 4U, 1U, 1U);
