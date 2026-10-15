@@ -30,19 +30,19 @@
  */
 
 /*
- * Values referenced: Mesa 25.3.6
- * src/nouveau/headers/nvidia/classes/cla097sph.h, NVA097_SPHV3T1_* and
- * NVA097_SPHV3T2_* (lines 33-401, 403-638), and
- * src/nouveau/compiler/nak/sph.rs, ShaderProgramHeader::new (lines 94-111,
- * version 4 from SM73), set_sph_type to set_does_load_or_store (lines
- * 186-238), set_store_req_start and _end (lines 334-342), the map views
- * imap_* and omap_* (lines 114-185).
- */
-/*
  * ==== The shader program header (version 4) ====
  *
  * 32 words before a graphics program's code: the type and version, what
  * the program does, and the maps of the attributes it reads and writes.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/cla097sph.h, NVA097_SPHV3T1_* and
+ * NVA097_SPHV3T2_* (lines 33-396, 403-635), and
+ * src/nouveau/compiler/nak/sph.rs, SPHV4_SHADER_HEADER_SIZE (line 16),
+ * ShaderProgramHeader::new (lines 94-111, version 4 from SM73),
+ * set_sph_type to set_does_load_or_store (lines 186-236),
+ * set_store_req_start and set_store_req_end (lines 334-341), the map
+ * views imap_* and omap_* (lines 114-183).
  */
 #define NVRTX_SM75_SPH_WORDS		32U
 #define NVRTX_SM75_SPH_BYTES		128U
@@ -70,19 +70,16 @@
 #define NVRTX_SM75_SPH_OMAP_TARGETS_LOW	576U
 
 /*
+ * A fragment input's interpolation in the header's map: constant (flat),
+ * perspective, screen-linear.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs, enum
  * PixelImap and its u8 values (lines 53-68).
  */
-/* A fragment input's interpolation in the header's map: constant (flat), perspective, screen-linear. */
 #define NVRTX_SM75_IMAP_CONSTANT	1U
 #define NVRTX_SM75_IMAP_PERSPECTIVE	2U
 #define NVRTX_SM75_IMAP_SCREEN_LINEAR	3U
 
-/*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs, is_turing,
- * is_ampere and is_ada (lines 9136-9148: Turing 73..79, Ampere 80..88, Ada
- * 89); the three models targeted are zedBSD's choice.
- */
 /*
  * ==== The shader models ====
  *
@@ -91,6 +88,12 @@
  * the memory order of a global access (NVRTX_SM80_MEM_*), and Ampere and
  * Ada share one latency table that differs from Turing's
  * (sm75.c).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs, is_turing,
+ * is_ampere and is_ada (lines 9136-9148: Turing 73..79, Ampere 80..88, Ada
+ * 89), and src/nouveau/winsys/nouveau_device.c, sm_for_chipset (lines
+ * 51-113: 75, 80, 86 and 89); the three models targeted are zedBSD's
+ * choice.
  */
 #define NVRTX_SM_TURING			75U
 #define NVRTX_SM_AMPERE			86U
@@ -98,31 +101,37 @@
 #define NVRTX_SM_AMPERE_FIRST		80U
 
 /*
+ * An instruction is four 32-bit words, the first holding bit 0.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * encode_sm70_shader (lines 4148-4183): four 32-bit words to an instruction.
+ * encode_sm70_shader (lines 4148-4182): four 32-bit words to an instruction.
  */
-/* An instruction is four 32-bit words, the first holding bit 0. */
 #define NVRTX_SM75_INSTRUCTION_WORDS	4U
 #define NVRTX_SM75_INSTRUCTION_BYTES	16U
 
 /*
+ * The general registers the compiler may assign (R0..R252), the zero
+ * register, and the two the hardware keeps.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70.rs, num_regs
  * and hw_reserved_gprs (lines 75-106),
- * src/nouveau/compiler/nak/sm70_encode.rs, zero_reg (lines 55-66), and
- * src/nouveau/compiler/nak/api.rs, the register count at least 4 (line 263).
+ * src/nouveau/compiler/nak/sm70_encode.rs, zero_reg (lines 55-62), and
+ * src/nouveau/compiler/nak/api.rs, ShaderBin::new, the register count at
+ * least 4 (line 263).
  */
-/* The general registers the compiler may assign (R0..R252), the zero register, and the two the hardware keeps. */
 #define NVRTX_SM75_GPR_USABLE		253U
 #define NVRTX_SM75_RZ			255U
 #define NVRTX_SM75_GPR_RESERVED		2U
 #define NVRTX_SM75_GPR_MINIMUM		4U
 
 /*
+ * The predicates P0..P6, and PT, which is always true.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70.rs, num_regs
  * (RegFile::Pred, lines 75-99), and src/nouveau/compiler/nak/sm70_encode.rs,
- * set_pred_reg, set_pred_src_file and set_pred_src (lines 86-141).
+ * true_reg (lines 64-66), set_pred_reg, set_pred_src_file and set_pred_src
+ * (lines 86-141).
  */
-/* The predicates P0..P6, and PT, which is always true. */
 #define NVRTX_SM75_P0			0U
 #define NVRTX_SM75_PT			7U
 
@@ -131,11 +140,12 @@
  */
 
 /*
+ * The opcode (12 bits), the guard predicate and its negation.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * set_opcode (lines 68-70), set_pred (lines 197-208) and encode_alu_base
- * (lines 497-560, the 9-bit opcode and the form at 9..11).
+ * (lines 497-559, the 9-bit opcode and the form at 9..11).
  */
-/* The opcode (12 bits), the guard predicate and its negation. */
 #define NVRTX_SM75_OPCODE_LOW		0U
 #define NVRTX_SM75_OPCODE_BITS		12U
 #define NVRTX_SM75_ALU_OPCODE_BITS	9U
@@ -145,19 +155,24 @@
 #define NVRTX_SM75_GUARD_NOT		15U
 
 /*
+ * The destination register and the first source register.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * set_dst (lines 210-216) and encode_alu_src0 (lines 419-431).
+ * set_reg (lines 72-76), set_dst (lines 210-216) and encode_alu_src0
+ * (lines 419-431).
  */
-/* The destination register and the first source register. */
 #define NVRTX_SM75_DST_LOW		16U
 #define NVRTX_SM75_SRC0_LOW		24U
 #define NVRTX_SM75_REG_BITS		8U
 
 /*
+ * The second source: a register (32..39, abs 62, neg 63), a 32-bit
+ * immediate (32..63), or a constant buffer word.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * encode_alu_reg (lines 455-465) and encode_alu_base (lines 497-560).
+ * encode_alu_reg (lines 455-465), encode_alu_imm (lines 481-483) and
+ * encode_alu_base (lines 497-559).
  */
-/* The second source: a register (32..39, abs 62, neg 63), a 32-bit immediate (32..63), or a constant buffer word. */
 #define NVRTX_SM75_SRC1_LOW		32U
 #define NVRTX_SM75_SRC1_ABS		62U
 #define NVRTX_SM75_SRC1_NEG		63U
@@ -165,10 +180,12 @@
 #define NVRTX_SM75_IMM_BITS		32U
 
 /*
+ * A constant buffer operand: the byte offset (38..53) and the buffer
+ * (54..58); bit 91 clear for a bound buffer.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * set_src_cb (lines 179-195).
+ * set_src_cb (lines 179-195) and encode_alu_cb (lines 485-495).
  */
-/* A constant buffer operand: the byte offset (38..53) and the buffer (54..58); bit 91 clear for a bound buffer. */
 #define NVRTX_SM75_CB_OFFSET_LOW	38U
 #define NVRTX_SM75_CB_OFFSET_BITS	16U
 #define NVRTX_SM75_CB_INDEX_LOW		54U
@@ -176,10 +193,12 @@
 #define NVRTX_SM75_CB_BINDLESS		91U
 
 /*
+ * The first source's abs and neg, and the third source (64..71, abs 74,
+ * neg 75).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * encode_alu_src0 and encode_alu_src2 (lines 419-453).
  */
-/* The first source's abs and neg, and the third source (64..71, abs 74, neg 75). */
 #define NVRTX_SM75_SRC0_NEG		72U
 #define NVRTX_SM75_SRC0_ABS		73U
 #define NVRTX_SM75_SRC2_LOW		64U
@@ -187,10 +206,12 @@
 #define NVRTX_SM75_SRC2_NEG		75U
 
 /*
+ * The ALU forms: which of sources 1 and 2 is a register, an immediate or a
+ * constant buffer word.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * encode_alu_base, the form match (lines 516-558).
  */
-/* The ALU forms: which of sources 1 and 2 is a register, an immediate or a constant buffer word. */
 #define NVRTX_SM75_FORM_REG		1U
 #define NVRTX_SM75_FORM_IMM_SRC2	2U
 #define NVRTX_SM75_FORM_CB_SRC2		3U
@@ -198,12 +219,15 @@
 #define NVRTX_SM75_FORM_CB		5U
 
 /*
+ * The predicate fields many ALU instructions have: two destinations and
+ * two sources with their negations.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * set_pred_dst, set_pred_src_file and set_pred_src (lines 111-141), and the
- * predicate fields of OpFSetP (lines 883-913), OpISetP (lines 1596-1652),
- * OpSel (lines 2103-2140) and OpLop3 (lines 1794-1853).
+ * predicate fields of OpFSetP (lines 883-912), OpIAdd3 (lines 1350-1397),
+ * OpISetP (lines 1596-1651), OpSel (lines 2103-2139) and OpLop3 (lines
+ * 1794-1852).
  */
-/* The predicate fields many ALU instructions have: two destinations and two sources with their negations. */
 #define NVRTX_SM75_PDST0_LOW		81U
 #define NVRTX_SM75_PDST1_LOW		84U
 #define NVRTX_SM75_PSRC_A_LOW		87U
@@ -215,17 +239,16 @@
 #define NVRTX_SM75_PRED_BITS		3U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * set_instr_deps (lines 242-251); src/nouveau/compiler/nak/sm70.rs,
- * max_instr_delay (lines 275-277);
- * src/nouveau/compiler/nak/calc_instr_deps.rs, BarAlloc, six scoreboards
- * (lines 186-195).
- */
-/*
  * The scheduling control: the cycles before the next instruction issues,
  * the yield hint, the scoreboard the result releases (7: none), the one the
  * read of the sources releases (7: none), the scoreboards to wait for, and
  * the operand reuse cache.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
+ * set_instr_deps (lines 242-251); src/nouveau/compiler/nak/sm70.rs,
+ * max_instr_delay (lines 275-277);
+ * src/nouveau/compiler/nak/calc_instr_deps.rs, BarAlloc, six scoreboards
+ * (lines 186-197).
  */
 #define NVRTX_SM75_DELAY_LOW		105U
 #define NVRTX_SM75_DELAY_BITS		4U
@@ -241,23 +264,22 @@
 #define NVRTX_SM75_DELAY_MAX		15U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs, the
- * encode of each operation: OpMov (lines 2029-2059), OpSel (2103-2140),
- * OpFMnMx (759-779), OpFSetP (883-913), OpISetP (1596-1652), OpIAdd3
- * (1350-1398), OpLop3 (1794-1853), OpShf (1871-1918), OpFMul (780-803),
- * OpFAdd (703-734), OpFFma (735-758), OpIMad (1499-1530), OpIMad64
- * (1531-1562), OpF2I (1969-1989), OpI2F (1990-2009), OpFRnd (2010-2028),
- * OpMuFu (950-974), OpLd (3039-3081), OpSt (3172-3211), OpNop (3753-3762),
- * OpS2R (3786-3802), OpBra (3635-3661), OpExit (3662-3677), OpLdc
- * (3082-3171), OpAtom (3275-3359), OpMemBar (3507-3528), OpBar (3689-3716),
- * OpBSSy (3609-3622), OpBSync (3623-3634), OpALd (3377-3396), OpASt
- * (3397-3415), OpIpa (3416-3456), OpTex (2499-2566), OpTld (2567-2641),
- * OpKill (3742-3752).
- */
-/*
  * ==== Opcodes ====
  *
  * An ALU opcode is 9 bits beside its form; the others are 12 bits.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs, the
+ * encode of each operation: OpMov (lines 2029-2058), OpSel (2103-2139),
+ * OpFMnMx (759-778), OpFSetP (883-912), OpISetP (1596-1651), OpIAdd3
+ * (1350-1397), OpLop3 (1794-1852), OpShf (1871-1917), OpFMul (780-802),
+ * OpFAdd (703-733), OpFFma (735-757), OpIMad (1499-1529), OpIMad64
+ * (1531-1561), OpF2I (1969-1988), OpI2F (1990-2008), OpFRnd (2010-2027),
+ * OpMuFu (950-973), OpLd (3039-3080), OpSt (3172-3210), OpNop (3753-3761),
+ * OpS2R (3786-3801), OpBra (3635-3660), OpExit (3662-3676), OpLdc
+ * (3082-3170), OpAtom (3275-3358), OpMemBar (3507-3527), OpBar (3689-3715),
+ * OpBSSy (3609-3621), OpBSync (3623-3633), OpALd (3377-3395), OpASt
+ * (3397-3414), OpIpa (3416-3455), OpTex (2499-2565), OpTld (2567-2640),
+ * OpKill (3742-3751).
  */
 #define NVRTX_SM75_OP_MOV		0x002U
 #define NVRTX_SM75_OP_SEL		0x007U
@@ -305,19 +327,23 @@
  */
 
 /*
+ * MOV: the lanes of a quad written (all four).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpMov (lines 2029-2059).
+ * OpMov (lines 2029-2058), and src/nouveau/compiler/nak/lower_copy_swap.rs,
+ * lower_copy (quad_lanes 0xf, line 36).
  */
-/* MOV: the lanes of a quad written (all four). */
 #define NVRTX_SM75_MOV_LANES_LOW	72U
 #define NVRTX_SM75_MOV_LANES_ALL	0xfU
 
 /*
+ * The float rounding (78..79): to nearest even, toward -inf, toward +inf,
+ * toward zero; flush to zero (80).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * set_rnd_mode (lines 633-644) and the ftz bit of OpFAdd, OpFMul and OpFFma
- * (lines 703-803).
+ * (lines 703-802).
  */
-/* The float rounding (78..79): to nearest even, toward -inf, toward +inf, toward zero; flush to zero (80). */
 #define NVRTX_SM75_ROUND_LOW		78U
 #define NVRTX_SM75_ROUND_NEAREST	0U
 #define NVRTX_SM75_ROUND_DOWN		1U
@@ -326,19 +352,22 @@
 #define NVRTX_SM75_FTZ			80U
 
 /*
+ * FMUL: the post-divide field holds 4 (none).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpFMul (lines 780-803).
+ * OpFMul (lines 780-802).
  */
-/* FMUL: the post-divide field holds 4 (none). */
 #define NVRTX_SM75_FMUL_PDIV_LOW	84U
 #define NVRTX_SM75_FMUL_PDIV_NONE	4U
 
 /*
+ * The comparisons of FSETP (76..79) and ISETP (76..78), and how the result
+ * combines with the accumulator (74..75).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * set_float_cmp_op (lines 805-826), set_pred_set_op (lines 828-838) and
  * set_int_cmp_op (lines 840-855).
  */
-/* The comparisons of FSETP (76..79) and ISETP (76..78), and how the result combines with the accumulator (74..75). */
 #define NVRTX_SM75_CMP_LOW		76U
 #define NVRTX_SM75_FCMP_LT		0x1U
 #define NVRTX_SM75_FCMP_EQ		0x2U
@@ -352,27 +381,33 @@
 #define NVRTX_SM75_SETOP_AND		0U
 
 /*
+ * ISETP and IMAD: bit 73 set for a signed comparison or product.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpISetP (lines 1596-1652) and OpIMad (lines 1499-1530).
+ * OpISetP (lines 1596-1651) and OpIMad (lines 1499-1529).
  */
-/* ISETP and IMAD: bit 73 set for a signed comparison or product. */
 #define NVRTX_SM75_SIGNED		73U
 
 /*
+ * LOP3: the truth table (72..79) over sources a (0xf0), b (0xcc) and c
+ * (0xaa).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpLop3 (lines 1794-1853).
+ * OpLop3 (lines 1794-1852), and src/nouveau/compiler/nak/ir.rs,
+ * LogicOp3::SRC_MASKS (line 1769).
  */
-/* LOP3: the truth table (72..79) over sources a (0xf0), b (0xcc) and c (0xaa). */
 #define NVRTX_SM75_LUT_LOW		72U
 #define NVRTX_SM75_LUT_A		0xf0U
 #define NVRTX_SM75_LUT_B		0xccU
 #define NVRTX_SM75_LUT_C		0xaaU
 
 /*
+ * SHF: the data type (73..74), the wrap of the shift count (75), right
+ * (76), the high half (80).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpShf (lines 1871-1918).
+ * OpShf (lines 1871-1917).
  */
-/* SHF: the data type (73..74), the wrap of the shift count (75), right (76), the high half (80). */
 #define NVRTX_SM75_SHF_TYPE_LOW		73U
 #define NVRTX_SM75_SHF_TYPE_I32		2U
 #define NVRTX_SM75_SHF_TYPE_U32		3U
@@ -381,10 +416,11 @@
 #define NVRTX_SM75_SHF_HIGH		80U
 
 /*
+ * MUFU: the function (74..79).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpMuFu (lines 950-974).
+ * OpMuFu (lines 950-973).
  */
-/* MUFU: the function (74..79). */
 #define NVRTX_SM75_MUFU_LOW		74U
 #define NVRTX_SM75_MUFU_COS		0U
 #define NVRTX_SM75_MUFU_SIN		1U
@@ -395,10 +431,12 @@
 #define NVRTX_SM75_MUFU_SQRT		8U
 
 /*
+ * The conversions: F2I signed (72), I2F signed (74), the result's size
+ * (75..76) and the source's (84..85) as log2 of bytes.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpF2I and OpI2F (lines 1969-2009).
+ * OpF2I and OpI2F (lines 1969-2008).
  */
-/* The conversions: F2I signed (72), I2F signed (74), the result's size (75..76) and the source's (84..85) as log2 of bytes. */
 #define NVRTX_SM75_F2I_SIGNED		72U
 #define NVRTX_SM75_I2F_SIGNED		74U
 #define NVRTX_SM75_CVT_DST_SIZE_LOW	75U
@@ -406,11 +444,13 @@
 #define NVRTX_SM75_CVT_SIZE_32		2U
 
 /*
+ * The special registers S2R reads (72..79): the thread's place in its group
+ * and the group's place in the grid.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpS2R (lines 3786-3802), and src/nouveau/compiler/nak_private.h,
- * NAK_SV_TID_* and NAK_SV_CTAID_* (lines 115-122).
+ * OpS2R (lines 3786-3801), and src/nouveau/compiler/nak_private.h, enum
+ * nak_sv, NAK_SV_TID_* and NAK_SV_CTAID_* (lines 115-122).
  */
-/* The special registers S2R reads (72..79): the thread's place in its group and the group's place in the grid. */
 #define NVRTX_SM75_S2R_INDEX_LOW	72U
 #define NVRTX_SM75_SR_TID_X		0x21U
 #define NVRTX_SM75_SR_TID_Y		0x22U
@@ -420,17 +460,16 @@
 #define NVRTX_SM75_SR_CTAID_Z		0x27U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * set_mem_order (lines 2854-2891, the SM75 branch 2855-2878),
- * set_eviction_priority (lines 2893-2905), set_mem_type (lines 2907-2921),
- * set_mem_access (lines 2923-2934), OpLd and OpSt (lines 3039-3081,
- * 3172-3211).
- */
-/*
  * The memory accesses: a 64-bit address (72), the size (73..75: 4 for 32
  * bits, 5 for 64), the scope (77..78: 2 the GPU) and the order (79..80: 2
  * strong) before SM80, the eviction priority (84..86: 1 normal), and the
  * immediate offset of a global access (40..63).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
+ * set_mem_order (lines 2854-2891, the SM75 branch 2855-2878),
+ * set_eviction_priority (lines 2893-2905), set_mem_type (lines 2907-2921),
+ * set_mem_access (lines 2923-2934), OpLd and OpSt (lines 3039-3080,
+ * 3172-3210).
  */
 #define NVRTX_SM75_MEM_A64		72U
 #define NVRTX_SM75_MEM_TYPE_LOW		73U
@@ -446,31 +485,34 @@
 #define NVRTX_SM75_MEM_OFFSET_BITS	24U
 
 /*
+ * From SM80 on, the scope and the order are one field (77..80): 7 is strong
+ * at the GPU's scope.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * set_mem_order, the SM80 branch (lines 2879-2890).
  */
-/* From SM80 on, the scope and the order are one field (77..80): 7 is strong at the GPU's scope. */
 #define NVRTX_SM80_MEM_ORDER_LOW	77U
 #define NVRTX_SM80_MEM_ORDER_BITS	4U
 #define NVRTX_SM80_MEM_STRONG_GPU	0x7U
 
 /*
+ * LDC: the mode (78..79, 0 indexed) and the data register a store reads
+ * (32..39).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpLdc (lines 3082-3171) and OpSt (lines 3172-3211).
+ * OpLdc (lines 3082-3170) and OpSt (lines 3172-3210).
  */
-/* LDC: the mode (78..79, 0 indexed) and the data register a store reads (32..39). */
 #define NVRTX_SM75_LDC_MODE_LOW		78U
 #define NVRTX_SM75_STORE_DATA_LOW	32U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * set_atom_op (lines 3213-3229), set_atom_type (lines 3231-3272) and OpAtom
- * (lines 3275-3359).
- */
-/*
  * The atomics: the operation (87..90), the type (73..75: 0 unsigned, 1
  * signed 32 bits), and the compare and exchange's second data register
  * (64..71, the compared value at 32..39).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
+ * set_atom_op (lines 3213-3229), set_atom_type (lines 3231-3272) and OpAtom
+ * (lines 3275-3358).
  */
 #define NVRTX_SM75_ATOM_OP_LOW		87U
 #define NVRTX_SM75_ATOM_ADD		0U
@@ -486,33 +528,37 @@
 #define NVRTX_SM75_CAS_DATA_LOW		64U
 
 /*
+ * MEMBAR: the scope (76..78): 0 the workgroup, 2 the GPU.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpMemBar (lines 3507-3528).
+ * OpMemBar (lines 3507-3527).
  */
-/* MEMBAR: the scope (76..78): 0 the workgroup, 2 the GPU. */
 #define NVRTX_SM75_MEMBAR_SCOPE_LOW	76U
 #define NVRTX_SM75_MEMBAR_CTA		0U
 #define NVRTX_SM75_MEMBAR_GPU		2U
 
 /*
+ * BSSY and BSYNC: the convergence barrier (16..19), BSSY's offset to its
+ * BSYNC in words from the next instruction (34..63).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpBSSy and OpBSync (lines 3609-3634) and set_rel_offset (lines 3541-3544).
+ * OpBSSy and OpBSync (lines 3609-3633), get_rel_offset and set_rel_offset
+ * (lines 3530-3544), and src/nouveau/compiler/nak/sm70.rs, num_regs
+ * (RegFile::Bar, line 96).
  */
-/* BSSY and BSYNC: the convergence barrier (16..19), BSSY's offset to its BSYNC in words from the next instruction (34..63). */
 #define NVRTX_SM75_CONVERGE_BAR_LOW	16U
 #define NVRTX_SM75_CONVERGE_BARS	16U
 #define NVRTX_SM75_BSSY_OFFSET_LOW	34U
 #define NVRTX_SM75_BSSY_OFFSET_BITS	30U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpALd and OpASt (lines 3377-3415).
- */
-/*
  * The attribute loads and stores of the vertex stage: ALD's vertex (32..39)
  * and AST's (64..71), the offset register (24..31, RZ), the attribute
  * address (40..49) and the components less one (74..75); AST's data
  * (32..39).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
+ * OpALd and OpASt (lines 3377-3414).
  */
 #define NVRTX_SM75_ATTR_ADDRESS_LOW	40U
 #define NVRTX_SM75_ATTR_ADDRESS_BITS	10U
@@ -520,21 +566,17 @@
 #define NVRTX_SM75_AST_VERTEX_LOW	64U
 
 /*
+ * IPA: the attribute's address in words (64..71), the location (76..77, 0
+ * the pixel's centre) and the frequency (78..79: 0 pass, 1 constant).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpIpa (lines 3416-3456).
+ * OpIpa (lines 3416-3455).
  */
-/* IPA: the attribute's address in words (64..71), the location (76..77, 0 the pixel's centre) and the frequency (78..79: 0 pass, 1 constant). */
 #define NVRTX_SM75_IPA_ADDRESS_LOW	64U
 #define NVRTX_SM75_IPA_FREQUENCY_LOW	78U
 #define NVRTX_SM75_IPA_PASS		0U
 #define NVRTX_SM75_IPA_CONSTANT		1U
 
-/*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpTex (lines 2499-2566), set_tex_cb_ref (lines 2351-2357), set_tex_dim
- * (lines 2359-2373), set_tex_lod_mode (lines 2375-2390), set_tex_channel_mask
- * (lines 2460-2466) and set_eviction_priority (lines 2893-2905).
- */
 /*
  * TEX with its handle in a constant buffer: the handle's word offset
  * (40..53) and buffer (54..58), the second destination pair (64..71, RZ for
@@ -543,6 +585,11 @@
  * channels (72..75), the level of detail mode (87..89: 0 implicit, 1 zero,
  * 2 bias, 3 explicit), the fault predicate (81..83) and the eviction
  * priority (84..86).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
+ * OpTex (lines 2499-2565), set_tex_cb_ref (lines 2351-2357), set_tex_dim
+ * (lines 2359-2373), set_tex_lod_mode (lines 2375-2390), set_tex_channel_mask
+ * (lines 2460-2466) and set_eviction_priority (lines 2893-2905).
  */
 #define NVRTX_SM75_TEX_HANDLE_LOW	40U
 #define NVRTX_SM75_TEX_HANDLE_BITS	14U
@@ -558,25 +605,29 @@
 #define NVRTX_SM75_TEX_LOD_EXPLICIT	3U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpTex and OpTld (lines 2499-2641, AOFFI at bit 76), and
- * src/nouveau/compiler/nak_nir_lower_tex.c, the offsets packed 4 bits a
- * component (lines 230-243).
- */
-/*
  * A constant texel offset (bit 76, AOFFI): the register after the level of
  * detail (or the second source alone) holds u in bits 3..0, v in 7..4 and r
  * in 11..8, each a signed 4-bit number.  TLD (texel
  * fetch) has the TEX fields with an explicit level of detail mode.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
+ * OpTex and OpTld (lines 2499-2640, AOFFI at bit 76), and
+ * src/nouveau/compiler/nak_nir_lower_tex.c, lower_tex, the offsets packed 4
+ * bits a component (lines 230-243).
  */
 #define NVRTX_SM75_TEX_AOFFI		76U
 #define NVRTX_SM75_TEX_OFFSET_BITS	4U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak_private.h,
- * NAK_ATTR_* (lines 45-77).
+ * The attribute addresses: the position, the point size, the first generic
+ * one (16 bytes each), the instance and the vertex numbers.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak_private.h, enum
+ * nak_attr, NAK_ATTR_POINT_SIZE to NAK_ATTR_VERTEX_ID (lines 48-77), and
+ * nak_attribute_attr_addr, 16 bytes a generic attribute (lines 93-99);
+ * src/nouveau/compiler/nak/ir.rs, VtgIoInfo::mark_attrs, the generic
+ * attributes below 0x280 (line 8980).
  */
-/* The attribute addresses: the position, the point size, the first generic one (16 bytes each), the instance and the vertex numbers. */
 #define NVRTX_SM75_ATTR_POINT_SIZE	0x06cU
 #define NVRTX_SM75_ATTR_POSITION	0x070U
 #define NVRTX_SM75_ATTR_POSITION_W	0x07cU
@@ -586,14 +637,16 @@
 #define NVRTX_SM75_ATTR_VERTEX_ID	0x2fcU
 
 /*
+ * BRA: the offset to the target in words from the next instruction
+ * (34..81).
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
- * OpBra (lines 3635-3661) and set_rel_offset (lines 3541-3545).
+ * OpBra (lines 3635-3660), get_rel_offset and set_rel_offset (lines
+ * 3530-3544).
  */
-/* BRA: the offset to the target in words from the next instruction (34..81). */
 #define NVRTX_SM75_BRA_OFFSET_LOW	34U
 #define NVRTX_SM75_BRA_OFFSET_BITS	48U
 
-/* zedBSD's own. */
 /*
  * ==== The constant buffer layout the compiler and the dispatch agree on (zedBSD's) ====
  *
@@ -614,16 +667,18 @@
 #define NVRTX_SM75_CB_UNIFORM_MAX	7U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c
- * (lines 155-160) and src/nouveau/vulkan (the image and sampler descriptors):
- * the handle's bits, header 19:0 and sampler 31:20.  The placement in
- * constant buffer 0 is zedBSD's own.
- */
-/*
  * The texture handles: from NVRTX_SM75_CB_TEXTURES of constant buffer 0, one
  * word per sampled image the shader uses, in the order of its uniform list
  * (the dispatch writes the texture header index in bits 19:0 and the
- * sampler's in 31:20).
+ * sampler's in 31:20).  The placement in constant buffer 0 is zedBSD's own.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c,
+ * lower_tex (lines 156-160), and
+ * src/nouveau/vulkan/nvk_descriptor_types.h,
+ * NVK_IMAGE_DESCRIPTOR_IMAGE_INDEX_MASK,
+ * NVK_IMAGE_DESCRIPTOR_SAMPLER_INDEX_MASK and struct
+ * nvk_sampled_image_descriptor (lines 14-22): the handle's bits, header
+ * 19:0 and sampler 31:20.
  */
 #define NVRTX_SM75_CB_TEXTURES		0x400U
 #define NVRTX_SM75_CB_TEXTURES_MAX	32U
@@ -827,9 +882,12 @@ void nvrtx_sm75_bra(struct nvrtx_sm75_word *word, int32_t instructions);
 
 /*
  * How an instruction's results become ready (Turing's latency classes).
+ * The numbers are zedBSD's own.
  *
  * Values referenced: Mesa 25.3.6
- * src/nouveau/compiler/nak/sm75_instr_latencies.rs (the latency classes).
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, enum RegLatencySM75
+ * (lines 18-38: CoupledAlu, CoupledFMA, IMADLo, IMADWideLower and
+ * IMADWideUpper, CoupledDisp, Decoupled).
  */
 #define NVRTX_SM75_CLASS_ALU		0U
 #define NVRTX_SM75_CLASS_FMA		1U
@@ -845,7 +903,8 @@ void nvrtx_sm75_bra(struct nvrtx_sm75_word *word, int32_t instructions);
  * has it, the instruction's class is NVRTX_SM75_CLASS_DECOUPLED.
  *
  * Value referenced: Mesa 25.3.6
- * src/nouveau/compiler/nak/sm80_instr_latencies.rs (DecoupledAgu).
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, enum RegLatencySM80
+ * (DecoupledAgu, line 41).
  */
 #define NVRTX_SM75_CLASS_AGU		6U
 
