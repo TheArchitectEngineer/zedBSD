@@ -54,7 +54,13 @@
 /* The largest frame a presentation takes. */
 #define PRESENT_MAX_FRAME_BYTES		(64ULL << 20)
 
-/* A window reads a surface from a 256-byte boundary, with rows a multiple of 64 bytes apart. */
+/*
+ * A window reads a surface from a 256-byte boundary, with rows a multiple of
+ * 64 bytes apart.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_image_set, the offset and the pitch the window is given).
+ */
 #define PRESENT_OFFSET_ALIGN		256U
 #define PRESENT_PITCH_ALIGN		64U
 
@@ -65,7 +71,13 @@
 /* The colour the node's frames start with (opaque black, A8R8G8B8). */
 #define PRESENT_FRAME_CLEAR		0xff000000U
 
-/* The head's pixel clock: hertz in bits 30:0, bit 31 scales it by 1000/1001. */
+/*
+ * The head's pixel clock: hertz in bits 30:0, bit 31 scales it by 1000/1001.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_HEAD_SET_PIXEL_CLOCK_FREQUENCY_HERTZ,
+ * NVC57D_HEAD_SET_PIXEL_CLOCK_FREQUENCY_ADJ1000DIV1001).
+ */
 #define PRESENT_CLOCK_HERTZ_MASK	0x7fffffffU
 #define PRESENT_CLOCK_ADJUST		0x80000000U
 

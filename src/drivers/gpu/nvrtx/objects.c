@@ -24,24 +24,55 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* The control header's fields. */
+/*
+ * The control header's fields.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/generated/g_rpc-structures.h (rpc_gsp_rm_control_v03_00).
+ */
 #define OBJECTS_CONTROL_CLIENT_AT	0U
 #define OBJECTS_CONTROL_OBJECT_AT	4U
 #define OBJECTS_CONTROL_COMMAND_AT	8U
 #define OBJECTS_CONTROL_PARAMS_SIZE_AT	16U
 
-/* The address space's parameters: the index (0, a new space) and the flags (bit 3: owned by the driver). */
+/*
+ * The address space's parameters: the index (0, a new space) and the flags
+ * (bit 3: owned by the driver).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nvos.h (NV_VASPACE_ALLOCATION_PARAMETERS,
+ * NV_VASPACE_ALLOCATION_FLAGS_IS_EXTERNALLY_OWNED).
+ */
 #define OBJECTS_SPACE_FLAGS_AT		4U
 #define OBJECTS_SPACE_EXTERNAL		(1U << 3)
 
-/* The page-directory control's parameters. */
+/*
+ * The page-directory control's parameters, and the root directory's
+ * entries.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080dma.h
+ * (NV0080_CTRL_DMA_SET_PAGE_DIRECTORY_PARAMS) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/vmm.c
+ * (r535_mmu_vaspace_new, the root's entry count).
+ */
 #define OBJECTS_PDIR_ADDRESS_AT		0U
 #define OBJECTS_PDIR_ENTRIES_AT		8U
 #define OBJECTS_PDIR_FLAGS_AT		12U
 #define OBJECTS_PDIR_SPACE_AT		16U
 #define OBJECTS_PDIR_ROOT_ENTRIES	4U
 
-/* The device information table: the entry count, and the entries of 100 bytes whose words 2 and 3 are the engine type and the runlist. */
+/*
+ * The device information table: the entry count, and the entries of 100
+ * bytes whose words 2 and 3 are the engine type and the runlist.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fifo.h
+ * (NV2080_CTRL_FIFO_GET_DEVICE_INFO_TABLE_PARAMS,
+ * NV2080_CTRL_FIFO_DEVICE_ENTRY) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fifo.h
+ * (ENGINE_INFO_TYPE_RM_ENGINE_TYPE, ENGINE_INFO_TYPE_RUNLIST).
+ */
 #define OBJECTS_DEVINFO_COUNT_AT	4U
 #define OBJECTS_DEVINFO_ENTRIES_AT	12U
 #define OBJECTS_DEVINFO_ENTRY_BYTES	100U
@@ -49,12 +80,30 @@
 #define OBJECTS_DEVINFO_TYPE_AT		8U
 #define OBJECTS_DEVINFO_RUNLIST_AT	12U
 
-/* The engine types: graphics, and the ten copy engines (the same numbers in both of the resource manager's numberings). */
+/*
+ * The engine types: graphics, and the ten copy engines (the same numbers in
+ * both of the resource manager's numberings).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/cl2080_notification.h
+ * (NV2080_ENGINE_TYPE_GRAPHICS, NV2080_ENGINE_TYPE_COPY0,
+ * NV2080_ENGINE_TYPE_COPY9) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/engine.h
+ * (RM_ENGINE_TYPE_GR0, RM_ENGINE_TYPE_COPY0, RM_ENGINE_TYPE_COPY9).
+ */
 #define OBJECTS_ENGINE_GRAPHICS		0x01U
 #define OBJECTS_ENGINE_COPY_FIRST	0x09U
 #define OBJECTS_ENGINE_COPY_LAST	0x12U
 
-/* The channel's parameters. */
+/*
+ * The channel's parameters, and the memory spaces they name.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/alloc/alloc_channel.h (NV_CHANNEL_ALLOC_PARAMS,
+ * NV_MEMORY_DESC_PARAMS) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/disp.h (ADDR_SYSMEM,
+ * ADDR_FBMEM).
+ */
 #define OBJECTS_CHAN_RING_AT		8U
 #define OBJECTS_CHAN_RING_ENTRIES_AT	16U
 #define OBJECTS_CHAN_FLAGS_AT		20U
@@ -72,20 +121,57 @@
 #define OBJECTS_SPACE_SYSTEM		1U
 #define OBJECTS_SPACE_VRAM		2U
 
-/* The channel's flags: USERD index in bits 10:8, USERD page in bits 20:12 with its fixed bit 21. */
+/*
+ * The channel's flags: USERD index in bits 10:8, USERD page in bits 20:12
+ * with its fixed bit 21.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/alloc/alloc_channel.h
+ * (NVOS04_FLAGS_CHANNEL_USERD_INDEX_VALUE,
+ * NVOS04_FLAGS_CHANNEL_USERD_INDEX_PAGE_VALUE,
+ * NVOS04_FLAGS_CHANNEL_USERD_INDEX_PAGE_FIXED) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (CHID_PER_USERD).
+ */
 #define OBJECTS_FLAG_USERD_INDEX_SHIFT	8U
 #define OBJECTS_FLAG_USERD_PAGE_SHIFT	12U
 #define OBJECTS_FLAG_USERD_PAGE_FIXED	(1U << 21)
 #define OBJECTS_CHANNELS_PER_USERD	8U
 
-/* The channel's internal flags: user privilege, and no error notifiers (type "none" = 1 in bits 3:2 and 5:4). */
+/*
+ * The channel's internal flags: user privilege, and no error notifiers
+ * (type "none" = 1 in bits 3:2 and 5:4).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fifo.h
+ * (NV_KERNELCHANNEL_ALLOC_INTERNALFLAGS_ERROR_NOTIFIER_TYPE,
+ * NV_KERNELCHANNEL_ALLOC_INTERNALFLAGS_ECC_ERROR_NOTIFIER_TYPE,
+ * ERROR_NOTIFIER_TYPE_NONE).
+ */
 #define OBJECTS_INTERNAL_NO_NOTIFIERS	((1U << 2) | (1U << 4))
 
-/* A privileged channel: the flag's bit 5, and the admin privilege (1) in the internal flags' bits 1:0. */
+/*
+ * A privileged channel: the flag's bit 5, and the admin privilege (1) in the
+ * internal flags' bits 1:0.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/alloc/alloc_channel.h
+ * (NVOS04_FLAGS_PRIVILEGED_CHANNEL) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fifo.h
+ * (NV_KERNELCHANNEL_ALLOC_INTERNALFLAGS_PRIVILEGE_ADMIN).
+ */
 #define OBJECTS_FLAG_PRIVILEGED		(1U << 5)
 #define OBJECTS_INTERNAL_ADMIN		1U
 
-/* The copy of the server's reserved directories: the range, the level count and three levels of 24 bytes. */
+/*
+ * The copy of the server's reserved directories: the range, the level count
+ * and three levels of 24 bytes.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl90f1.h
+ * (NV90F1_CTRL_VASPACE_COPY_SERVER_RESERVED_PDES_PARAMS) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/vmm.c
+ * (r535_mmu_vaspace_new, the levels' aperture).
+ */
 #define OBJECTS_PDES_PAGE_SIZE_AT	8U
 #define OBJECTS_PDES_LOW_AT		16U
 #define OBJECTS_PDES_HIGH_AT		24U
@@ -99,11 +185,26 @@
 #define OBJECTS_PDES_APERTURE_VRAM	1U
 #define OBJECTS_PDES_LEVEL_COUNT	3U
 
-/* The context buffer information: engine 0's 26 entries of {size, alignment}. */
+/*
+ * The context buffer information: engine 0's 26 entries of {size,
+ * alignment}.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_INTERNAL_ENGINE_CONTEXT_PROPERTIES_ENGINE_ID_COUNT,
+ * NV2080_CTRL_INTERNAL_ENGINE_CONTEXT_BUFFER_INFO).
+ */
 #define OBJECTS_GR_INFO_ENTRIES		26U
 #define OBJECTS_GR_INFO_ENTRY_BYTES	8U
 
-/* The engine numbers in that table, and the promote call's buffer numbers. */
+/*
+ * The engine numbers in that table, and the promote call's buffer numbers.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080fifo.h
+ * (NV0080_CTRL_FIFO_GET_ENGINE_CONTEXT_PROPERTIES_ENGINE_ID_GRAPHICS_*) and
+ * ctrl/ctrl2080/ctrl2080gpu.h (NV2080_CTRL_GPU_PROMOTE_CTX_BUFFER_ID_*).
+ */
 #define OBJECTS_GR_ID_MAIN		0x00U
 #define OBJECTS_GR_ID_PAGEPOOL		0x0dU
 #define OBJECTS_GR_ID_PATCH		0x10U
@@ -122,10 +223,26 @@
 #define OBJECTS_BUFFER_PRIV_MAP		10U
 #define OBJECTS_BUFFER_UNRESTRICTED_MAP	11U
 
-/* The main buffer carries 64 pages of subcontext headers after the context. */
+/*
+ * The main buffer carries 64 pages of subcontext headers after the context.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gr.c
+ * (r535_gr_get_ctxbuf_info).
+ */
 #define OBJECTS_GR_MAIN_EXTRA		(64U * 0x1000U)
 
-/* The promote call: its header fields and the 32-byte entries. */
+/*
+ * The promote call: its header fields and the 32-byte entries.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080gpu.h
+ * (NV2080_CTRL_GPU_PROMOTE_CTX_PARAMS,
+ * NV2080_CTRL_GPU_PROMOTE_CTX_BUFFER_ENTRY,
+ * NV2080_CTRL_GPU_PROMOTE_CONTEXT_MAX_ENTRIES) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gr.c (r535_gr_promote_ctx,
+ * the VRAM's attribute).
+ */
 #define OBJECTS_PROMOTE_ENGINE_AT	0U
 #define OBJECTS_PROMOTE_CHAN_CLIENT_AT	12U
 #define OBJECTS_PROMOTE_OBJECT_AT	16U
@@ -166,10 +283,25 @@ static const struct objects_gr_kind objects_gr_kinds[] = {
 	{ OBJECTS_GR_ID_PRIV_MAP, OBJECTS_BUFFER_PRIV_MAP, 1, 1, 1 },
 };
 
-/* The method header: the opcode (incrementing) in bits 31:29, count 28:16, subchannel 15:13, method/4 in 11:0. */
+/*
+ * The method header: the opcode (incrementing) in bits 31:29, count 28:16,
+ * subchannel 15:13, method/4 in 11:0.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (NVC46F_DMA_INCR_OPCODE, NVC46F_DMA_INCR_COUNT, NVC46F_DMA_INCR_SUBCHANNEL,
+ * NVC46F_DMA_INCR_ADDRESS).
+ */
 #define OBJECTS_METHOD_INCREMENT	(1U << 29)
 
-/* The host's methods and values for a fence. */
+/*
+ * The host's methods and values for a fence.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (NVC46F_NON_STALL_INTERRUPT, NVC46F_MEM_OP_A, NVC46F_SEM_ADDR_LO,
+ * NVC46F_SEM_EXECUTE, NVC46F_SEM_EXECUTE_OPERATION_RELEASE,
+ * NVC46F_SEM_EXECUTE_RELEASE_WFI, NVC46F_SEM_EXECUTE_RELEASE_TIMESTAMP,
+ * NVC46F_MEM_OP_D_OPERATION_MEMBAR).
+ */
 #define OBJECTS_HOST_NON_STALL		0x020U
 #define OBJECTS_HOST_MEM_OP_A		0x028U
 #define OBJECTS_HOST_SEM_ADDRESS_LOW	0x05cU
@@ -179,7 +311,15 @@ static const struct objects_gr_kind objects_gr_kinds[] = {
 #define OBJECTS_SEM_RELEASE_TIMESTAMP	(1U << 25)
 #define OBJECTS_MEM_OP_MEMBAR		(5U << 27)
 
-/* The copy engine's methods and values for a fill: the constant, the component setup, the destination, the launch. */
+/*
+ * The copy engine's methods and values for a fill: the constant, the
+ * component setup, the destination, the launch.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (NVC46F_SET_OBJECT) and classes/dma-copy/clc5b5.h (NVC5B5_LAUNCH_DMA,
+ * NVC5B5_OFFSET_OUT_UPPER, NVC5B5_LINE_LENGTH_IN, NVC5B5_SET_REMAP_CONST_A,
+ * NVC5B5_SET_REMAP_COMPONENTS and their fields).
+ */
 #define OBJECTS_COPY_SET_OBJECT		0x000U
 #define OBJECTS_COPY_LAUNCH		0x300U
 #define OBJECTS_COPY_OFFSET_OUT_UPPER	0x408U
