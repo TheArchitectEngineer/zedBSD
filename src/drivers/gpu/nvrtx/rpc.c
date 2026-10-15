@@ -441,10 +441,10 @@ nvrtx_rm_free_in(
 /*
  * Sends the call built in gpu->call and waits for its numbered reply.
  *
-  * Once a reply has failed to come in time, the firmware is taken as not
-  * answering: every later call fails at once with ETIMEDOUT, so the teardown
-  * of many objects that follows (channel-stop, the reboot's unload) does not
-  * wait the whole time for each.
+ * Once a reply has failed to come in time, the firmware is taken as not
+ * answering: every later call fails at once with ETIMEDOUT, so the teardown
+ * of many objects that follows (channel-stop, the reboot's unload) does not
+ * wait the whole time for each.
  */
 static int
 rpc_exchange(
