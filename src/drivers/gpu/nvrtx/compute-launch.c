@@ -8,22 +8,6 @@
 /*
  * The parts of the first compute launch that touch no hardware (see
  * nvrtx-compute.h).
- *
- * The QMD fields and the compute class's methods are the ones Mesa's NVK
- * and NAK (MIT) use on Turing: NAK's fill_qmd for version 2.2 (qmd.rs) and
- * NVK's dispatch state and launch (nvk_cmd_dispatch.c).  The positions and
- * the method numbers come from NVIDIA's class headers as Mesa carries them
- * (MIT): clc3c0qmd.h (QMD 2.2) and clc5c0.h (TURING_COMPUTE_A).  Sources
- * (SHA-256, Mesa 25.3.6):
- *   src/nouveau/headers/nvidia/classes/clc3c0qmd.h
- *     761286640c931b8cea41e414dc8be5170bc60c50294b2b7b46ec1ed6c3db482b
- *   src/nouveau/headers/nvidia/classes/clc5c0.h
- *     c716205f0786d1bfdec9f37a8a39bf735363dc2f1f17d3a16809aa87e7c51f2e
- *   src/nouveau/compiler/nak/qmd.rs
- *     73f4daf73c8af8ec5aeb5d93b936aaaa454d1ea6f5bb06edf923028fe2996698
- *   src/nouveau/vulkan/nvk_cmd_dispatch.c
- *     833d88ad7fec1699673a794689ebba19a0365f7bc3271fa586c2eb05a9f353a2
- * The code is zedBSD's own.
  */
 
 #include <stddef.h>
@@ -37,6 +21,9 @@
 
 /*
  * ==== QMD version 2.2: the bit positions of its fields ====
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc3c0qmd.h (NVC3C0_QMDV02_02_*).
  */
 #define QMD_SM_GLOBAL_CACHING		134U
 #define QMD_API_CALL_LIMIT		378U
@@ -73,7 +60,13 @@
 #define QMD_PROGRAM_HIGH_LOW		1568U
 #define QMD_PROGRAM_HIGH_BITS		17U
 
-/* Turing's shared memory carve-outs in KiB, and the warps an SM holds (the shared configuration's inputs). */
+/*
+ * Turing's shared memory carve-outs in KiB, and the warps an SM holds (the
+ * shared configuration's inputs).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs (the shared
+ * memory configuration).
+ */
 #define QMD_SHARED_SMALL_KIB		32U
 #define QMD_SHARED_LARGE_KIB		64U
 #define QMD_WARPS_PER_SM		32U
@@ -81,6 +74,9 @@
 
 /*
  * ==== TURING_COMPUTE_A's methods ====
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/headers/nvidia/classes/clc5c0.h
+ * (NVC5C0_*).
  */
 #define COMPUTE_SET_OBJECT		0x0000U
 #define COMPUTE_INVALIDATE_SHADER_CACHES	0x021cU
@@ -94,7 +90,12 @@
 #define COMPUTE_PCAS_SCHEDULE		(1U << 1)
 #define COMPUTE_LOCAL_WINDOW_A		0x07b0U
 
-/* The shared and local memory windows NVK places at the top of the low 4 GiB. */
+/*
+ * The shared and local memory windows, at the top of the low 4 GiB.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/hw_runner.rs (the
+ * shared and local windows).
+ */
 #define COMPUTE_SHARED_WINDOW		0xfe000000U
 #define COMPUTE_LOCAL_WINDOW		0xff000000U
 
@@ -107,13 +108,16 @@ static uint32_t qmd_pick_shared(uint32_t bytes, uint32_t groups);
 static size_t compute_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
 
 /*
- * Builds a launch's QMD, version 2.2, as NAK fills it for Turing: the
+ * Builds a launch's QMD, version 2.2, for Turing: the
  * version, global caching on, no call limit, the grid and the workgroup,
  * the shared memory and the carve-outs it allows, the registers, the
  * barriers, no local memory, the constant buffers and the program.
  *
  * Returns 0, or EINVAL for a value a field cannot hold or a misaligned
  * address or size.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs
+ * (fill_qmd for version 2.2).
  */
 int
 nvrtx_qmd_build(
@@ -145,7 +149,7 @@ nvrtx_qmd_build(
 	/* Starts empty. */
 	kern_memset(qmd, 0, NVRTX_QMD_WORDS * sizeof(uint32_t));
 
-	/* The version, global caching, and no check of the call limit (NAK's QMD 2.2 start). */
+	/* The version, global caching, and no check of the call limit. */
 	qmd_set(qmd, QMD_VERSION_LOW, 4U, QMD_VERSION);
 	qmd_set(qmd, QMD_MAJOR_VERSION_LOW, 4U, QMD_MAJOR_VERSION);
 	qmd_set(qmd, QMD_SM_GLOBAL_CACHING, 1U, 1U);
@@ -205,11 +209,14 @@ nvrtx_qmd_build(
 
 /*
  * Writes the push buffer of one launch on the compute subchannel: the
- * compute class bound there, the shared and local memory windows (NVK's
- * dispatch state), the shader caches invalidated, then the QMD sent and
+ * compute class bound there, the shared and local memory windows, the
+ * shader caches invalidated, then the QMD sent and
  * scheduled (Turing's SEND_SIGNALING_PCAS_B).
  *
  * Returns the length in bytes.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_dispatch.c
+ * (the dispatch state and the launch).
  */
 size_t
 nvrtx_push_compute_launch(
@@ -350,7 +357,12 @@ qmd_set(
 	}
 }
 
-/* Reports the QMD's code of a shared memory carve-out in KiB (gv100_smem_size_to_hw). */
+/*
+ * Reports the QMD's code of a shared memory carve-out in KiB.
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs
+ * (gv100_smem_size_to_hw).
+ */
 static uint32_t
 qmd_shared_config(
 	uint32_t kib)
