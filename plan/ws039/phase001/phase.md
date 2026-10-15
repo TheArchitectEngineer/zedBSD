@@ -2,7 +2,7 @@
 
 # ws039-p001: amdrdna の調べと設計（初期化の順・firmware・display・packet・段の印・license）
 
-Status: in-progress（2026-10-15 P3、q1202 で再開。design.md・amdrdna-license-audit.md を書き、design-reviewer の review（blocker 3・major 10・minor 20）を全部反映した。clearance は Q1 の判定。設計の判断の項目 12 件はユーザー待ち）
+Status: in-progress（2026-10-15 夜 P3、q1210 / q1210-i01 で design.md の**改訂 2**（§15 の回答 12 件と実機の到着を反映）を書いた。design-reviewer の改訂 2 の review（design-review-2.md）は未実施。clearance は review の反映の後に Q1 の判定）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（code は書かない Phase。build の行だけ Q1 の依頼で先に入れた）
@@ -76,6 +76,14 @@ Parent: [WS039](../ws.md)
 4. [amdrdna-license-audit.md](../amdrdna-license-audit.md): Linux 106 file・Mesa 44 file・firmware 13 file の path・SHA-256・license・取るデータの表（temp の tsv と 2026-10-15 の再計算）。
 5. design-reviewer の review（[design-review.md](../design-review.md)、blocker 3・major 10・minor 20）を全部反映した（扱いは同 file の末尾の「対応」の表）。大きな変更: 段の順を GMC・IH（A2）→ PSP（A3）に（PSP の buffer は GART の system memory、HDP の規則 5.1）、SOS が生きていれば A1 で止まる（cold power cycle）、登録は 1 回で renderer だけの登録を新しい p011（A5s）に、GOP の framebuffer を console の surface のまま残して A6 は flip だけ、compute の queue は作らない、isolate・reset は NULL、lock の表、VRAM の配置、SMU の mailbox と温度の監視、RLC の header の offset の直し、監査の表に 21 行を追加。Phase は p002〜p011（p011 は新規）、計 43〜70 LW。
 6. 未: Q1 の clearance の判定。ユーザーの判断の項目（design の 15 節、12 件、既定つき）。
+
+## 2026-10-15 夜 P3（q1210 / q1210-i01、改訂 2）
+
+前の世代の q1208 はユーザーの即時中断で調べの途中で止まった（commit は無い）。この世代で改めて読み直して書いた。
+
+1. 読んだ物: ws.md の §15 の回答の全文、design.md 第 1 版と design-review.md、p007 の 7.8（P3 とのすり合わせ）、WS250 の design.md（nvrtx の取り消しと復帰の形）、`userland/firmware/README.md`・`zedbsd-firmware.mk`・`nvidia-gsp/Makefile`（取得の形）、`plan/ws037/host.md` と T1-682〜696 の結果（RTX 機の kernel の差し替えの手順）、Guardrail の該当の節、`src/drivers/pci/`（`pci.c` の `assign_bar`・`find_extended_capability`、`pci-window.c`・`pci-pcat-assign.c`・`pci-pcat.c` の `map_bar`）、`src/drivers/acpi/acpi-tables.c`（`drv_acpi_firmware_find`）、`include/uapi/gpu-display.h`（`gpu_display_mode`）、`bootloader/uefi/`（fallback の kernel の仕組みは無い）。正本（`plan/ws039/temp/linux`、Linux v6.19）で新しく読んだ file: `amdgpu_ids.c`（VMID の LRU の割り当て）、`amdgpu_job.c`・`amdgpu_ring.c`・`gfx_v10_0.c`（KIQ の MAP/UNMAP/SET_RESOURCES、gfx・compute の MQD、`reset_kgq`・`reset_kcq`・`kiq_reset_hw_queue`、`set_safe_mode`、gfx10 には SQ_CMD の soft recovery は無い）、`psp_v11_0.c`・`amdgpu_psp.c`・`amdgpu_psp.h`・`amdgpu_ttm.c`（memory training と runtime DB）、`amdgpu_bios.c`・`amd_acpi.h`・`amdgpu_atomfirmware.c`・`atomfirmware.h`（VFCT、data の表の index、training の capability）、`smu_v11_0.c`・`navi10_ppt.c`・`smu_v11_0_pptable.h`・`smu11_driver_if_navi10.h`・`smu_v11_0_ppsmc.h`・`thm_11_0_2_*.h`（pptable・feature・THM の割り込み・fan の register・message の番号）、`display/dc/dml/dcn20/`・`display/dc/link/`・`display/dc/bios/`・`dce_aux.c`・`dce_i2c_hw.c`（mode set の規模の見積もり、`wc -l` で計 32,855 行）。note（`temp/notes/`）は 6 file とも残っていた。
+2. [design.md](../design.md) の改訂 2（626 行）: 冒頭に決定の対応表、A1v（VBIOS の data の表）・A3t（memory training）・A4 = Tier F（fan・thermal）・A5 = KIQ ＋ compute の queue 4 本・A5c（取り消しと復帰）・A10〜A13（mode set）の段を足し、A2 に resizable BAR、5.4 を動的な VMID と pasid に、3.2 に control の node（`/dev/amdrdna0`）、12.5 に実機（RX 5600 XT を挿した 10.0.30.5）の段ごとの手順、15 節を新しい 12 件の問いに、16 節を p002〜p016 の 15 Phase（必須 79〜121 LW、第 1 版は 43〜70 LW）に改めた。
+3. 未: design-reviewer の改訂 2 の review と反映、監査の表への新しい file の追加（p002 の最初に、design 16 節の残課題）。
 
 ## 再開の点（resume point、2026-10-15 夕の更新）
 
