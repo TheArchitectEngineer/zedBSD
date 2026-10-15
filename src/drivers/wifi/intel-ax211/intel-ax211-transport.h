@@ -62,6 +62,7 @@
 	 INTEL_AX211_TRANSPORT_EVENT_CAUSE_FIRMWARE_FAULT |                    \
 	 INTEL_AX211_TRANSPORT_EVENT_CAUSE_HARDWARE_FAULT)
 
+/* The results of the transport. */
 enum intel_ax211_transport_result {
 	INTEL_AX211_TRANSPORT_OK = 0,
 	INTEL_AX211_TRANSPORT_INVALID = 1,
@@ -75,6 +76,7 @@ enum intel_ax211_transport_result {
 	INTEL_AX211_TRANSPORT_AMBIGUOUS = 9
 };
 
+/* The DMA objects the transport asks the controller to synchronize. */
 enum intel_ax211_transport_dma_region {
 	INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD = 1,
 	INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT = 2,
@@ -85,14 +87,25 @@ enum intel_ax211_transport_dma_region {
 	INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL = 7
 };
 
+/*
+ * The direction of a synchronization: before the device reads, before it
+ * writes, and after it wrote.
+ */
 enum intel_ax211_transport_dma_direction {
 	INTEL_AX211_TRANSPORT_DMA_PREWRITE = 1,
 	INTEL_AX211_TRANSPORT_DMA_PREREAD = 2,
 	INTEL_AX211_TRANSPORT_DMA_POSTREAD = 3
 };
 
-enum intel_ax211_transport_wait { INTEL_AX211_TRANSPORT_WAIT_RX_IDLE = 1 };
+/* The bounded waits the transport reports to a tracer. */
+enum intel_ax211_transport_wait {
+	INTEL_AX211_TRANSPORT_WAIT_RX_IDLE = 1
+};
 
+/*
+ * What the transport needs from the PCI controller: register and periphery
+ * access, NIC ownership, DMA synchronization, time, and an optional tracer.
+ */
 struct intel_ax211_transport_ops {
 	int (*csr_read32)(void *argument, uint32_t offset, uint32_t *value);
 	int (*csr_write32)(void *argument, uint32_t offset, uint32_t value);
@@ -112,6 +125,10 @@ struct intel_ax211_transport_ops {
 			       uint64_t start_us, uint64_t deadline_us);
 };
 
+/*
+ * The controller-allocated ring memory: each object's host address and size,
+ * and the device addresses of the command slots and the external buffer.
+ */
 struct intel_ax211_transport_ring_memory {
 	uint8_t *command_tfd;
 	size_t command_tfd_size;
@@ -131,6 +148,10 @@ struct intel_ax211_transport_ring_memory {
 	size_t rx_status_size;
 };
 
+/*
+ * One claimed interrupt: the admitted queue and event causes, and the raw
+ * causes that were acknowledged.
+ */
 struct intel_ax211_transport_causes {
 	uint32_t queue_causes;
 	uint32_t hardware;
@@ -138,12 +159,20 @@ struct intel_ax211_transport_causes {
 	uint32_t raw_hardware;
 };
 
+/*
+ * One received completion: its ring index, the buffer it filled, and its
+ * flags.
+ */
 struct intel_ax211_transport_rx_completion {
 	uint16_t completion_index;
 	uint16_t buffer_id;
 	uint8_t flags;
 };
 
+/*
+ * One firmware epoch's transport: the command ring, the receive rings, the
+ * MSI-X routing, and the ownership state of each.
+ */
 struct intel_ax211_transport {
 	const struct intel_ax211_transport_ops *ops;
 	void *argument;
@@ -200,18 +229,18 @@ int drv_intel_ax211_transport_interrupt_rearm(
 int drv_intel_ax211_transport_publish_rx_descriptor(
 	struct intel_ax211_transport *transport, uint16_t index,
 	uint64_t device_address);
-/* Call only after the Gen3 hardware-ALIVE cause says firmware configured RFH.
+/*
+ * Call only after the Gen3 hardware-ALIVE cause says firmware configured RFH.
  */
-int
-drv_intel_ax211_transport_activate_rx(struct intel_ax211_transport *transport);
-int
-drv_intel_ax211_transport_rx_refresh(struct intel_ax211_transport *transport);
+int drv_intel_ax211_transport_activate_rx(
+	struct intel_ax211_transport *transport);
+int drv_intel_ax211_transport_rx_refresh(
+	struct intel_ax211_transport *transport);
 int drv_intel_ax211_transport_rx_next(
 	struct intel_ax211_transport *transport,
 	struct intel_ax211_transport_rx_completion *completion);
-int
-drv_intel_ax211_transport_rx_replenish(struct intel_ax211_transport *transport,
-				       uint64_t device_address);
+int drv_intel_ax211_transport_rx_replenish(
+	struct intel_ax211_transport *transport, uint64_t device_address);
 int drv_intel_ax211_transport_command_prepare_inline(
 	struct intel_ax211_transport *transport,
 	const struct intel_ax211_command_id *command, const void *payload,
