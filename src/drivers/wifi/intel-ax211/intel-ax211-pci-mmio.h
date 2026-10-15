@@ -23,8 +23,9 @@
  * The mapped BAR0 of one device, and the counter that times the busy waits of
  * the MMIO layer.
  *
- * The counter fields are filled on the first clock read and keep the reported
- * microseconds monotonic for as long as the mapping is in use.
+ * The counter's frequency and origin are fixed when the backend is bound; the
+ * last counter reading and the last reported time only move forward, so the
+ * clock the MMIO layer sees never goes back.
  */
 struct intel_ax211_pci_mmio_backend {
 	volatile uint8_t *registers;
