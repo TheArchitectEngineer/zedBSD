@@ -99,7 +99,12 @@ nvrtx_sm75_begin(
 	nvrtx_sm75_control(word, 0U, 0, NVRTX_SM75_BAR_NONE, NVRTX_SM75_BAR_NONE, 0U);
 }
 
-/* Guards an instruction by a predicate, or its negation. */
+/*
+ * Guards an instruction by a predicate, or its negation.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (set_pred).
+ */
 void
 nvrtx_sm75_guard(
 	struct nvrtx_sm75_word *word,
@@ -116,6 +121,9 @@ nvrtx_sm75_guard(
  * yield hint, the scoreboard the result releases and the one the source
  * read releases (NVRTX_SM75_BAR_NONE for none), and the scoreboards the
  * instruction waits for before it issues.  The operand reuse stays off.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (set_instr_deps).
  */
 void
 nvrtx_sm75_control(
@@ -195,6 +203,9 @@ nvrtx_sm75_cb(
  * Encodes the ALU form: the destination, the first source (a register or
  * none), and the second and third sources by the form they make.  A NULL
  * source is absent; the opcode is the 9-bit ALU opcode.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (encode_alu_base).
  */
 void
 nvrtx_sm75_alu(
@@ -248,7 +259,12 @@ nvrtx_sm75_alu(
 	nvrtx_sm75_set(word, NVRTX_SM75_ALU_FORM_LOW, NVRTX_SM75_ALU_FORM_BITS, form);
 }
 
-/* MOV dst, src: all four lanes of a quad written. */
+/*
+ * MOV dst, src: all four lanes of a quad written.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpMov::encode).
+ */
 void
 nvrtx_sm75_mov(
 	struct nvrtx_sm75_word *word,
@@ -263,6 +279,9 @@ nvrtx_sm75_mov(
 /*
  * FADD dst = a + b.  A register b is the second operand; any other b is
  * the third, with RZ in the second.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpFAdd::encode).
  */
 void
 nvrtx_sm75_fadd(
@@ -286,7 +305,12 @@ nvrtx_sm75_fadd(
 	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
 }
 
-/* FMUL dst = a * b, with no post-divide. */
+/*
+ * FMUL dst = a * b, with no post-divide.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpFMul::encode).
+ */
 void
 nvrtx_sm75_fmul(
 	struct nvrtx_sm75_word *word,
@@ -304,7 +328,12 @@ nvrtx_sm75_fmul(
 	nvrtx_sm75_set(word, NVRTX_SM75_FMUL_PDIV_LOW, 3U, NVRTX_SM75_FMUL_PDIV_NONE);
 }
 
-/* FFMA dst = a * b + c. */
+/*
+ * FFMA dst = a * b + c.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpFFma::encode).
+ */
 void
 nvrtx_sm75_ffma(
 	struct nvrtx_sm75_word *word,
@@ -318,7 +347,13 @@ nvrtx_sm75_ffma(
 	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
 }
 
-/* FMNMX: the smaller of a and b when min (the predicate PT), else the larger (!PT). */
+/*
+ * FMNMX: the smaller of a and b when min (the predicate PT), else the larger
+ * (!PT).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpFMnMx::encode).
+ */
 void
 nvrtx_sm75_fmnmx(
 	struct nvrtx_sm75_word *word,
@@ -337,7 +372,13 @@ nvrtx_sm75_fmnmx(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (min != 0) ? 0U : 1U);
 }
 
-/* FSETP predicate = compare(a, b) AND PT; the second destination is PT (none). */
+/*
+ * FSETP predicate = compare(a, b) AND PT; the second destination is PT
+ * (none).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpFSetP::encode).
+ */
 void
 nvrtx_sm75_fsetp(
 	struct nvrtx_sm75_word *word,
@@ -359,7 +400,12 @@ nvrtx_sm75_fsetp(
 	nvrtx_sm75_set(word, NVRTX_SM75_PDST1_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
 }
 
-/* ISETP predicate = compare(a, b) AND PT, signed or unsigned. */
+/*
+ * ISETP predicate = compare(a, b) AND PT, signed or unsigned.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpISetP::encode).
+ */
 void
 nvrtx_sm75_isetp(
 	struct nvrtx_sm75_word *word,
@@ -386,7 +432,13 @@ nvrtx_sm75_isetp(
 	nvrtx_sm75_set(word, NVRTX_SM75_PDST1_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
 }
 
-/* IADD3 dst = a + b + c, the carry inputs !PT (false) and the carry outputs PT (none). */
+/*
+ * IADD3 dst = a + b + c, the carry inputs !PT (false) and the carry outputs
+ * PT (none).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpIAdd3::encode).
+ */
 void
 nvrtx_sm75_iadd3(
 	struct nvrtx_sm75_word *word,
@@ -415,6 +467,9 @@ nvrtx_sm75_iadd3(
  *
  * Value referenced: the SM75 code the CUDA compiler emits (IMAD's carry
  * operands).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpIMad::encode).
  */
 void
 nvrtx_sm75_imad(
@@ -435,7 +490,12 @@ nvrtx_sm75_imad(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, 1U);
 }
 
-/* IMAD.WIDE.U32: the dst pair = a * b + the c pair, unsigned. */
+/*
+ * IMAD.WIDE.U32: the dst pair = a * b + the c pair, unsigned.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpIMad64::encode).
+ */
 void
 nvrtx_sm75_imad_wide(
 	struct nvrtx_sm75_word *word,
@@ -454,7 +514,12 @@ nvrtx_sm75_imad_wide(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, 1U);
 }
 
-/* LOP3 dst = lut(a, b, c), with no predicate output. */
+/*
+ * LOP3 dst = lut(a, b, c), with no predicate output.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpLop3::encode).
+ */
 void
 nvrtx_sm75_lop3(
 	struct nvrtx_sm75_word *word,
@@ -478,6 +543,10 @@ nvrtx_sm75_lop3(
  * SHF as a 32-bit shift, the count taken modulo 32: left puts the value in
  * the low operand and returns the low half; right puts it in the high
  * operand and returns the high half, unsigned or signed.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpShf::encode) and src/nouveau/compiler/nak/builder.rs (SSABuilder::shl
+ * and SSABuilder::shr).
  */
 void
 nvrtx_sm75_shift(
@@ -514,7 +583,12 @@ nvrtx_sm75_shift(
 	nvrtx_sm75_set(word, NVRTX_SM75_SHF_HIGH, 1U, (right != 0) ? 1U : 0U);
 }
 
-/* SEL dst = predicate (or its negation) ? a : b. */
+/*
+ * SEL dst = predicate (or its negation) ? a : b.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpSel::encode).
+ */
 void
 nvrtx_sm75_sel(
 	struct nvrtx_sm75_word *word,
@@ -530,7 +604,12 @@ nvrtx_sm75_sel(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (negate != 0) ? 1U : 0U);
 }
 
-/* MUFU dst = function(src). */
+/*
+ * MUFU dst = function(src).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpMuFu::encode).
+ */
 void
 nvrtx_sm75_mufu(
 	struct nvrtx_sm75_word *word,
@@ -547,7 +626,12 @@ nvrtx_sm75_mufu(
 	nvrtx_sm75_set(word, NVRTX_SM75_MUFU_LOW, 6U, function);
 }
 
-/* I2F dst = the float of the 32-bit integer src, rounded to nearest. */
+/*
+ * I2F dst = the float of the 32-bit integer src, rounded to nearest.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpI2F::encode).
+ */
 void
 nvrtx_sm75_i2f(
 	struct nvrtx_sm75_word *word,
@@ -567,7 +651,12 @@ nvrtx_sm75_i2f(
 	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
 }
 
-/* F2I dst = the 32-bit integer of the float src, rounded toward zero. */
+/*
+ * F2I dst = the 32-bit integer of the float src, rounded toward zero.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpF2I::encode).
+ */
 void
 nvrtx_sm75_f2i(
 	struct nvrtx_sm75_word *word,
@@ -587,7 +676,12 @@ nvrtx_sm75_f2i(
 	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_ZERO);
 }
 
-/* FRND dst = src rounded to an integral float. */
+/*
+ * FRND dst = src rounded to an integral float.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpFRnd::encode).
+ */
 void
 nvrtx_sm75_frnd(
 	struct nvrtx_sm75_word *word,
@@ -606,7 +700,12 @@ nvrtx_sm75_frnd(
 	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, rounding);
 }
 
-/* S2R dst = a special register. */
+/*
+ * S2R dst = a special register.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpS2R::encode).
+ */
 void
 nvrtx_sm75_s2r(
 	struct nvrtx_sm75_word *word,
@@ -619,7 +718,13 @@ nvrtx_sm75_s2r(
 	nvrtx_sm75_set(word, NVRTX_SM75_S2R_INDEX_LOW, 8U, special);
 }
 
-/* LDC dst = the 32- or 64-bit word at a byte offset of a bound constant buffer, indexed by RZ. */
+/*
+ * LDC dst = the 32- or 64-bit word at a byte offset of a bound constant
+ * buffer, indexed by RZ.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpLdc::encode).
+ */
 void
 nvrtx_sm75_ldc(
 	struct nvrtx_sm75_word *word,
@@ -641,7 +746,12 @@ nvrtx_sm75_ldc(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEM_TYPE_LOW, 3U, (wide != 0) ? NVRTX_SM75_MEM_B64 : NVRTX_SM75_MEM_B32);
 }
 
-/* LDG.E dst = the 32-bit word at the 64-bit address in a register pair. */
+/*
+ * LDG.E dst = the 32-bit word at the 64-bit address in a register pair.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpLd::encode).
+ */
 void
 nvrtx_sm75_ldg(
 	struct nvrtx_sm75_word *word,
@@ -659,7 +769,12 @@ nvrtx_sm75_ldg(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEM_OFFSET_LOW, NVRTX_SM75_MEM_OFFSET_BITS, 0U);
 }
 
-/* STG.E: the 32-bit data register to the 64-bit address in a register pair. */
+/*
+ * STG.E: the 32-bit data register to the 64-bit address in a register pair.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpSt::encode).
+ */
 void
 nvrtx_sm75_stg(
 	struct nvrtx_sm75_word *word,
@@ -702,7 +817,12 @@ nvrtx_sm75_memory_order(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEM_ORDER_LOW, 2U, NVRTX_SM75_MEM_ORDER_STRONG);
 }
 
-/* EXIT, unconditional. */
+/*
+ * EXIT, unconditional.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpExit::encode).
+ */
 void
 nvrtx_sm75_exit(
 	struct nvrtx_sm75_word *word)
@@ -712,7 +832,12 @@ nvrtx_sm75_exit(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
 }
 
-/* NOP. */
+/*
+ * NOP.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpNop::encode).
+ */
 void
 nvrtx_sm75_nop(
 	struct nvrtx_sm75_word *word)
@@ -721,7 +846,13 @@ nvrtx_sm75_nop(
 	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_NOP);
 }
 
-/* BRA by a signed number of instructions from the next one (-1 is the BRA itself). */
+/*
+ * BRA by a signed number of instructions from the next one (-1 is the BRA
+ * itself).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpBra::encode, get_rel_offset and set_rel_offset).
+ */
 void
 nvrtx_sm75_bra(
 	struct nvrtx_sm75_word *word,
@@ -739,7 +870,12 @@ nvrtx_sm75_bra(
 	nvrtx_sm75_set(word, NVRTX_SM75_BRA_OFFSET_LOW, NVRTX_SM75_BRA_OFFSET_BITS, (uint64_t)words);
 }
 
-/* LDS dst = the 32-bit word at the shared memory offset in a register. */
+/*
+ * LDS dst = the 32-bit word at the shared memory offset in a register.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpLd::encode).
+ */
 void
 nvrtx_sm75_lds(
 	struct nvrtx_sm75_word *word,
@@ -753,7 +889,12 @@ nvrtx_sm75_lds(
 	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, offset);
 }
 
-/* STS: the 32-bit data register to the shared memory offset in a register. */
+/*
+ * STS: the 32-bit data register to the shared memory offset in a register.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpSt::encode).
+ */
 void
 nvrtx_sm75_sts(
 	struct nvrtx_sm75_word *word,
@@ -771,6 +912,9 @@ nvrtx_sm75_sts(
  * An atomic returning the old value: ATOMG on the 64-bit address in a
  * register pair (strong at the GPU's scope), or ATOMS on the shared memory
  * offset in a register.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpAtom::encode).
  */
 void
 nvrtx_sm75_atomic(
@@ -800,7 +944,12 @@ nvrtx_sm75_atomic(
 	nvrtx_sm75_set(word, NVRTX_SM75_ATOM_TYPE_LOW, 3U, (is_signed != 0) ? NVRTX_SM75_ATOM_I32 : NVRTX_SM75_ATOM_U32);
 }
 
-/* A compare and exchange returning the old value, global or shared. */
+/*
+ * A compare and exchange returning the old value, global or shared.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpAtom::encode).
+ */
 void
 nvrtx_sm75_atomic_cas(
 	struct nvrtx_sm75_word *word,
@@ -828,7 +977,12 @@ nvrtx_sm75_atomic_cas(
 	nvrtx_sm75_set(word, NVRTX_SM75_ATOM_TYPE_LOW, 3U, NVRTX_SM75_ATOM_U32);
 }
 
-/* MEMBAR of a scope, not for MMIO and not sequentially consistent. */
+/*
+ * MEMBAR of a scope, not for MMIO and not sequentially consistent.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpMemBar::encode).
+ */
 void
 nvrtx_sm75_membar(
 	struct nvrtx_sm75_word *word,
@@ -839,7 +993,12 @@ nvrtx_sm75_membar(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEMBAR_SCOPE_LOW, 3U, scope);
 }
 
-/* BAR.SYNC 0: every thread of the workgroup waits here. */
+/*
+ * BAR.SYNC 0: every thread of the workgroup waits here.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpBar::encode).
+ */
 void
 nvrtx_sm75_bar(
 	struct nvrtx_sm75_word *word)
@@ -848,7 +1007,13 @@ nvrtx_sm75_bar(
 	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_BAR);
 }
 
-/* BSSY: a convergence barrier for the threads that reach the BSYNC so many instructions after the next one. */
+/*
+ * BSSY: a convergence barrier for the threads that reach the BSYNC so many
+ * instructions after the next one.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpBSSy::encode, get_rel_offset and set_rel_offset).
+ */
 void
 nvrtx_sm75_bssy(
 	struct nvrtx_sm75_word *word,
@@ -867,7 +1032,12 @@ nvrtx_sm75_bssy(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
 }
 
-/* BSYNC: waits until every thread the barrier collects has come. */
+/*
+ * BSYNC: waits until every thread the barrier collects has come.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpBSync::encode).
+ */
 void
 nvrtx_sm75_bsync(
 	struct nvrtx_sm75_word *word,
@@ -879,7 +1049,12 @@ nvrtx_sm75_bsync(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
 }
 
-/* Makes a BRA conditional on a predicate (the branch's own condition source). */
+/*
+ * Makes a BRA conditional on a predicate (the branch's own condition source).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpBra::encode).
+ */
 void
 nvrtx_sm75_bra_if(
 	struct nvrtx_sm75_word *word,
@@ -891,7 +1066,13 @@ nvrtx_sm75_bra_if(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (negate != 0) ? 1U : 0U);
 }
 
-/* ALD dst = one word of the vertex's input attribute at an address (the vertex and the offset RZ). */
+/*
+ * ALD dst = one word of the vertex's input attribute at an address (the
+ * vertex and the offset RZ).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpALd::encode).
+ */
 void
 nvrtx_sm75_ald(
 	struct nvrtx_sm75_word *word,
@@ -907,7 +1088,13 @@ nvrtx_sm75_ald(
 	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_COMPONENTS_LOW, 2U, 0U);
 }
 
-/* AST: one word of the vertex's output attribute at an address (the vertex and the offset RZ). */
+/*
+ * AST: one word of the vertex's output attribute at an address (the vertex
+ * and the offset RZ).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpASt::encode).
+ */
 void
 nvrtx_sm75_ast(
 	struct nvrtx_sm75_word *word,
@@ -923,7 +1110,13 @@ nvrtx_sm75_ast(
 	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_COMPONENTS_LOW, 2U, 0U);
 }
 
-/* IPA dst = the fragment's value of the attribute at an address, at the pixel's centre, with no offset. */
+/*
+ * IPA dst = the fragment's value of the attribute at an address, at the
+ * pixel's centre, with no offset.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpIpa::encode).
+ */
 void
 nvrtx_sm75_ipa(
 	struct nvrtx_sm75_word *word,
@@ -944,6 +1137,9 @@ nvrtx_sm75_ipa(
  * TEX.2D with its handle in a constant buffer: four channels into two
  * register pairs, the coordinates from a pair, a level of detail mode and
  * register, no fault predicate, normal eviction.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpTex::encode and set_tex_cb_ref).
  */
 void
 nvrtx_sm75_tex(
@@ -975,7 +1171,13 @@ nvrtx_sm75_tex(
 	nvrtx_sm75_set(word, NVRTX_SM75_MEM_EVICT_LOW, 3U, NVRTX_SM75_MEM_EVICT_NORMAL);
 }
 
-/* Makes a TEX a TLD, which fetches the texel at integer coordinates and an explicit level (or level zero). */
+/*
+ * Makes a TEX a TLD, which fetches the texel at integer coordinates and an
+ * explicit level (or level zero).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpTld::encode).
+ */
 void
 nvrtx_sm75_tex_fetch(
 	struct nvrtx_sm75_word *word)
@@ -984,7 +1186,13 @@ nvrtx_sm75_tex_fetch(
 	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_TLD);
 }
 
-/* Makes a TEX or a TLD read a constant texel offset from the register after its level of detail. */
+/*
+ * Makes a TEX or a TLD read a constant texel offset from the register after
+ * its level of detail.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpTex::encode and OpTld::encode).
+ */
 void
 nvrtx_sm75_tex_offset(
 	struct nvrtx_sm75_word *word)
@@ -993,7 +1201,13 @@ nvrtx_sm75_tex_offset(
 	nvrtx_sm75_set(word, NVRTX_SM75_TEX_AOFFI, 1U, 1U);
 }
 
-/* KILL: the fragment is discarded (the predicate source PT; the guard chooses the threads). */
+/*
+ * KILL: the fragment is discarded (the predicate source PT; the guard chooses
+ * the threads).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (OpKill::encode).
+ */
 void
 nvrtx_sm75_kill(
 	struct nvrtx_sm75_word *word)
@@ -1003,7 +1217,13 @@ nvrtx_sm75_kill(
 	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
 }
 
-/* Places a source in the third source's register slot, with that slot's abs and neg; none places nothing. */
+/*
+ * Places a source in the third source's register slot, with that slot's abs
+ * and neg; none places nothing.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (encode_alu_src2).
+ */
 static void
 nvrtx_sm75_place_src2(
 	struct nvrtx_sm75_word *word,
@@ -1019,7 +1239,12 @@ nvrtx_sm75_place_src2(
 	nvrtx_sm75_set(word, NVRTX_SM75_SRC2_NEG, 1U, (src->neg != 0) ? 1U : 0U);
 }
 
-/* Places a register in the second source's slot, with its abs and neg. */
+/*
+ * Places a register in the second source's slot, with its abs and neg.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (encode_alu_reg).
+ */
 static void
 nvrtx_sm75_place_wide(
 	struct nvrtx_sm75_word *word,
@@ -1031,7 +1256,13 @@ nvrtx_sm75_place_wide(
 	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_NEG, 1U, (src->neg != 0) ? 1U : 0U);
 }
 
-/* Places a constant buffer word in the wide slot: its offset and its buffer, bound, with its abs and neg. */
+/*
+ * Places a constant buffer word in the wide slot: its offset and its buffer,
+ * bound, with its abs and neg.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (encode_alu_cb and set_src_cb).
+ */
 static void
 nvrtx_sm75_place_cb(
 	struct nvrtx_sm75_word *word,
@@ -1047,7 +1278,13 @@ nvrtx_sm75_place_cb(
 	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_NEG, 1U, (src->neg != 0) ? 1U : 0U);
 }
 
-/* Sets a global access: a 64-bit address, 32 bits, strong at the GPU's scope, normal eviction. */
+/*
+ * Sets a global access: a 64-bit address, 32 bits, strong at the GPU's scope,
+ * normal eviction.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (set_mem_access).
+ */
 static void
 nvrtx_sm75_memory(
 	struct nvrtx_sm75_word *word)
@@ -1387,6 +1624,10 @@ nvrtx_sm75_reorder(
  *
  * Returns 0, or 1 with the instruction and the reason when an instruction
  * is not known or the wait before one would not fit the delay field.
+ *
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/calc_instr_deps.rs (assign_barriers and
+ * calc_delays).
  */
 int
 nvrtx_sm75_schedule(
@@ -2102,6 +2343,10 @@ nvrtx_sm75_mark_targets(
 /*
  * Makes an instruction wait for everything in flight: every busy
  * scoreboard, every fixed-latency result's worst latency.
+ *
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/calc_instr_deps.rs (assign_barriers and
+ * calc_delays).
  */
 static void
 nvrtx_sm75_flush(
@@ -2155,6 +2400,10 @@ nvrtx_sm75_clear(
 /*
  * Applies an instruction's reads and writes: a result in flight on a
  * scoreboard is waited for, a fixed-latency one is waited out by cycles.
+ *
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/calc_instr_deps.rs (assign_barriers and
+ * calc_delays).
  */
 static void
 nvrtx_sm75_constrain(
@@ -2622,11 +2871,21 @@ nvrtx_sm75_later(
  */
 #define NVRTX_SM75_RECIPROCAL_SCALE	0x4f7ffffeU
 
+/*
+ * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/builder.rs
+ * (SSABuilder::fsin and SSABuilder::fcos: the argument scaled by 1 / (2 pi)
+ * before MUFU.SIN and MUFU.COS, NVRTX_SM75_INV_TWO_PI).
+ */
 /* All ones, the Boolean true; the sign bit; and 1 / (2 pi) as a float, which the sine and cosine units take. */
 #define NVRTX_SM75_TRUE			0xffffffffU
 #define NVRTX_SM75_SIGN			0x80000000U
 #define NVRTX_SM75_INV_TWO_PI		0x3e22f983U
 
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs
+ * (LogicOp3::SRC_MASKS and LogicOp3::new_lut: the sources as 0xf0, 0xcc
+ * and 0xaa).
+ */
 /* The truth tables of LOP3 used: a and b, a or b, a xor b, not a. */
 #define NVRTX_SM75_LUT_AND		0xc0U
 #define NVRTX_SM75_LUT_OR		0xfcU
@@ -2643,6 +2902,12 @@ nvrtx_sm75_later(
  */
 #define NVRTX_SM75_GPR_POOL		62U
 
+/*
+ * Value referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/cla097sph.h, NVA097_SPHV3T2_OMAP_RED(i)
+ * to NVA097_SPHV3T2_OMAP_ALPHA(i) (bits 576..607, eight targets), and
+ * src/nouveau/compiler/nak/sph.rs (omap_target).
+ */
 /* The colour targets a fragment program writes. */
 #define NVRTX_SM75_COLOR_TARGETS	8U
 
