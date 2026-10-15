@@ -14,6 +14,7 @@
 | U2 | SV7・5330 | 同上 | browser で yahoo.co.jp | feed の画像の枠が無い、画像の大きさが Chrome と同じ（ws074-p233・p234） |
 | U4 | Pi 4（OLED の touch） | T1 が main の kernel と compositor を Pi に入れた後（Q1 が知らせる） | tap・中央の swipe・上端・下端の swipe | 指の下に反応する、中央の 1 本指の swipe で desktop が変わらない（BUG-315） |
 | U8 | RTX 機（10.0.30.5、i5-13400F＋RTX 2070） | `build/ws037-nvrtx/rak/hdd-image.img`（main a3cf77c12、WS037 RAk: main の既定＋`nvrtx.vk=1`、sha256 6a96a228…） | USB に書いて素で起動（BIOS: CSM off、primary display は PEG、monitor は RTX） | logo → GSP の起動の間に少し黒くなってよい → RTX の monitor に Keiland の desktop。出なければ最後の画面の写真（診断の RAd の image を Q1 が作る） |
+| U9 | 5330（素の起動） | main 35fecf627 以降の amd64 の image（ご自身の UAT の image で可。Q1 が build の path を知らせる） | AX211 で WiFi の AP に接続（Settings か `wifi wlan0 connect`） | 接続・IP の取得・通信ができる（WS248 の AX211 の整理の後。T1-700 の VFIO では整理の前も後も接続が失敗したので、素の起動での確かめが WS248 の完了の条件。2026-10-15 ユーザー「実機で接続を確かめてから完了」） |
 
 ## 日程
 
