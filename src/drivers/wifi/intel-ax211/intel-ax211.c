@@ -6674,13 +6674,14 @@ ax211_net_open(
 	struct net_device *device)
 {
 	struct ax211_pci_controller *controller;
+	int busy;
 	int error;
 
-	/* Handles the device availability. */
+	/* Refuses a missing device. */
 	if (device == NULL)
 		return ENODEV;
 
-	/* Handles the controller availability. */
+	/* Refuses a device without a controller. */
 	controller = device->driver_data;
 	if (controller == NULL)
 		return ENODEV;
@@ -6690,7 +6691,8 @@ ax211_net_open(
 	 * Independent retirement must release its epoch before open can reuse
 	 * it.
 	 */
-	if (wlan_station_stop_busy(controller->station)) {
+	busy = wlan_station_stop_busy(controller->station);
+	if (busy) {
 		mutex_unlock(&controller->lifecycle_lock);
 
 		/* Failed. */
@@ -6702,6 +6704,8 @@ ax211_net_open(
 	 */
 	if (controller->suspended) {
 		mutex_unlock(&controller->lifecycle_lock);
+
+		/* Failed: the controller is suspended. */
 		return EBUSY;
 	}
 
@@ -6756,8 +6760,11 @@ ax211_pci_suspend(
 	mutex_lock(&controller->lifecycle_lock);
 
 	busy = 0;
-	if (controller->net_opened || controller->reopen_pending || controller->active_dma != NULL)
+	if (controller->net_opened ||
+	    controller->reopen_pending ||
+	    controller->active_dma != NULL) {
 		busy = 1;
+	}
 	if (!busy)
 		controller->suspended = 1U;
 
@@ -6765,7 +6772,8 @@ ax211_pci_suspend(
 
 	/* Says why a radio that is on stops the sleep. */
 	if (busy) {
-		kern_logf("intel-ax211: the radio is on; it is turned off before the sleep\n");
+		kern_logf("intel-ax211: the radio is on; it is turned off "
+			   "before the sleep\n");
 		return EBUSY;
 	}
 
@@ -6819,6 +6827,8 @@ ax211_pci_open_locked(
 	unsigned long enabled;
 	int boot_result;
 	int runtime_result;
+	int step_result;
+	int coherent;
 	int cleanup_error;
 	int error;
 	int ltr_enabled;
@@ -6827,10 +6837,11 @@ ax211_pci_open_locked(
 	 * Finishes an earlier stopped epoch before publishing a fresh scan
 	 * profile.
 	 */
-	if (!controller->detaching && controller->ready &&
+	if (!controller->detaching &&
+	    controller->ready &&
 	    controller->station_attached &&
 	    (controller->close_pending || controller->session_stopped)) {
-		/* Checks the operation status. */
+		/* Reports a close that did not finish. */
 		error = ax211_pci_close_locked(controller);
 		if (error != 0)
 			return error;
@@ -6840,19 +6851,28 @@ ax211_pci_open_locked(
 	if (restarting && !controller->net_opened)
 		return ECANCELED;
 
-	/* Handles the controller condition. */
-	if (controller->detaching || !controller->ready ||
-	    controller->quarantined || !controller->station_attached)
+	/*
+	 * Refuses a detaching, unready, quarantined or unattached controller;
+	 * a running one opens again only while it admits operations.
+	 */
+	if (controller->detaching ||
+	    !controller->ready ||
+	    controller->quarantined ||
+	    !controller->station_attached) {
 		error = ENODEV;
-	else if (controller->runtime_active) {
-		error = controller->operation_admission_open &&
-					!controller->recovery_pending &&
-					!controller->recovery_running
-				? 0
-				: EBUSY;
+	} else if (controller->runtime_active) {
+		/* A running controller is busy while it does not admit. */
+		if (controller->operation_admission_open &&
+		    !controller->recovery_pending &&
+		    !controller->recovery_running) {
+			error = 0;
+		} else {
+			error = EBUSY;
+		}
 	} else if (controller->operations_active != 0U) {
 		error = EBUSY;
 	} else {
+		/* Starts from a closed admission and a fresh session. */
 		controller->operation_admission_open = 0U;
 		controller->session_stopped = 0U;
 		dma_device = drv_pci_device_dma(controller->device);
@@ -6862,38 +6882,44 @@ ax211_pci_open_locked(
 		runtime_result = INTEL_AX211_RUNTIME_START_OK;
 		stage = "dma-coherency";
 
-		/* Checks the operation status. */
-		error = dma_device == NULL ||
-					!drv_dma_device_is_coherent(dma_device)
-				? EIO
-				: 0;
-		if (error == 0) {
-			stage = "boot-init";
-			error = drv_intel_ax211_boot_init(
-					&controller->boot,
-					&ax211_runtime_start_ops.boot,
-					controller, dma_device,
-					&controller->mmio,
-					&controller->transport,
-					(uint16_t)controller->hardware_revision,
-					AX211_RADIO_KIND_GF,
-					controller->hardware_epoch) ==
-						INTEL_AX211_BOOT_OK
-					? 0
-					: EIO;
+		/* Requires coherent DMA. */
+		error = 0;
+		if (dma_device == NULL) {
+			error = EIO;
+		} else {
+			coherent = drv_dma_device_is_coherent(dma_device);
+			if (!coherent)
+				error = EIO;
 		}
 
-		/* Checks the operation status. */
+		/* Initializes the first-boot coordinator. */
+		if (error == 0) {
+			stage = "boot-init";
+			step_result = drv_intel_ax211_boot_init(
+				&controller->boot,
+				&ax211_runtime_start_ops.boot,
+				controller, dma_device,
+				&controller->mmio,
+				&controller->transport,
+				(uint16_t)controller->hardware_revision,
+				AX211_RADIO_KIND_GF,
+				controller->hardware_epoch);
+			if (step_result != INTEL_AX211_BOOT_OK)
+				error = EIO;
+		}
+
+		/* Runs the first boot, which reads the NVM and stops. */
 		if (error == 0) {
 			stage = "firmware-boot";
 			controller->boot_initialized = 1U;
 			boot_result = drv_intel_ax211_boot_run(
 				&controller->boot, &nvm);
-			error = boot_result == INTEL_AX211_BOOT_OK ? 0 : EIO;
+			if (boot_result != INTEL_AX211_BOOT_OK)
+				error = EIO;
 			controller->hardware_epoch =
 				controller->boot.generation;
 
-			/* Handles the boot result condition. */
+			/* Notes a reset that went on without the indication. */
 			if (boot_result == INTEL_AX211_BOOT_OK &&
 			    controller->mmio.master_disable_timed_out) {
 				kern_logf("intel-ax211: master-disable "
@@ -6903,7 +6929,7 @@ ax211_pci_open_locked(
 					   "completed\n");
 			}
 
-			/* Checks the operation status. */
+			/* Logs the coordinator's state after a failure. */
 			if (error != 0) {
 				kern_logf(
 					"intel-ax211: first boot failed "
@@ -6929,7 +6955,7 @@ ax211_pci_open_locked(
 					controller->boot.nvm_valid);
 			}
 
-			/* Checks the operation status. */
+			/* Logs the last event received before a failure. */
 			if (error != 0 &&
 			    controller->last_receive_length != 0U) {
 				kern_logf("intel-ax211: last rx length=%u "
@@ -6946,49 +6972,47 @@ ax211_pci_open_locked(
 			}
 		}
 
-		/* Checks the operation status. */
+		/* Borrows the command-version table of the first boot. */
 		if (error == 0) {
 			stage = "command-table";
-			error = drv_intel_ax211_boot_command_table(
-					&controller->boot, &table) ==
-						INTEL_AX211_BOOT_OK
-					? 0
-					: EIO;
+			step_result = drv_intel_ax211_boot_command_table(
+				&controller->boot, &table);
+			if (step_result != INTEL_AX211_BOOT_OK)
+				error = EIO;
 		}
 
-		/* Checks the operation status. */
+		/* Reads the LTR choice. */
 		ltr_enabled = 0;
 		if (error == 0) {
 			stage = "ltr";
 			error = ax211_pci_ltr_enabled(controller, &ltr_enabled);
 		}
 
-		/* Checks the operation status. */
+		/* Initializes the operational start coordinator. */
 		if (error == 0) {
 			stage = "runtime-init";
-			error = drv_intel_ax211_runtime_start_init(
-					&controller->runtime_start,
-					&ax211_runtime_start_ops, controller,
-					dma_device, &controller->mmio,
-					&controller->transport,
-					(uint16_t)controller->hardware_revision,
-					AX211_RADIO_KIND_GF, &table, &nvm,
-					ltr_enabled,
-					controller->hardware_epoch) ==
-						INTEL_AX211_RUNTIME_START_OK
-					? 0
-					: EIO;
+			step_result = drv_intel_ax211_runtime_start_init(
+				&controller->runtime_start,
+				&ax211_runtime_start_ops, controller,
+				dma_device, &controller->mmio,
+				&controller->transport,
+				(uint16_t)controller->hardware_revision,
+				AX211_RADIO_KIND_GF, &table, &nvm,
+				ltr_enabled,
+				controller->hardware_epoch);
+			if (step_result != INTEL_AX211_RUNTIME_START_OK)
+				error = EIO;
 		}
 
-		/* Checks the operation status. */
+		/* Starts the operational firmware. */
 		if (error == 0) {
+			/* Logs the coordinator's state after a failure. */
 			stage = "runtime-start";
 			controller->runtime_initialized = 1U;
 			runtime_result = drv_intel_ax211_runtime_start_run(
 				&controller->runtime_start);
-			error = runtime_result == INTEL_AX211_RUNTIME_START_OK
-					? 0
-					: EIO;
+			if (runtime_result != INTEL_AX211_RUNTIME_START_OK)
+				error = EIO;
 			controller->hardware_epoch =
 				controller->runtime_start.generation;
 			if (error != 0) {
@@ -7021,7 +7045,7 @@ ax211_pci_open_locked(
 					controller->runtime_start.wake_held);
 			}
 
-			/* Checks the operation status. */
+			/* Logs the last event received before a failure. */
 			if (error != 0 &&
 			    controller->last_receive_length != 0U) {
 				kern_logf("intel-ax211: last runtime rx "
@@ -7039,45 +7063,52 @@ ax211_pci_open_locked(
 			}
 		}
 
-		/* Checks the operation status. */
+		/* Requires the association command versions. */
 		if (error == 0) {
 			stage = "api89-validation";
-			error = drv_intel_ax211_assoc_api89_validate(&table) ==
-							INTEL_AX211_ASSOC_OK &&
-						drv_intel_ax211_key_api89_validate(
-							&table) ==
-							INTEL_AX211_KEY_OK &&
-						drv_intel_ax211_tx_ring_api89_validate(
-							&table) ==
-							INTEL_AX211_TX_RING_OK
-					? 0
-					: ENOTSUP;
+			step_result = drv_intel_ax211_assoc_api89_validate(&table);
+			if (step_result != INTEL_AX211_ASSOC_OK)
+				error = ENOTSUP;
 		}
 
-		/* Checks the operation status. */
+		/* Requires the key command versions. */
+		if (error == 0) {
+			step_result = drv_intel_ax211_key_api89_validate(&table);
+			if (step_result != INTEL_AX211_KEY_OK)
+				error = ENOTSUP;
+		}
+
+		/* Requires the transmit command versions. */
+		if (error == 0) {
+			step_result =
+				drv_intel_ax211_tx_ring_api89_validate(&table);
+			if (step_result != INTEL_AX211_TX_RING_OK)
+				error = ENOTSUP;
+		}
+
+		/* Allocates the transmit ring. */
 		if (error == 0) {
 			stage = "tx-ring";
 
-			/* Checks the operation status. */
-			error = drv_intel_ax211_tx_ring_allocate(
-					dma_device, &ax211_tx_ring_ops,
-					controller, &controller->frame_ring) ==
-						INTEL_AX211_TX_RING_OK
-					? 0
-					: ENOMEM;
+			/* Counts the management cookies down from the top. */
+			step_result = drv_intel_ax211_tx_ring_allocate(
+				dma_device, &ax211_tx_ring_ops,
+				controller, &controller->frame_ring);
+			if (step_result != INTEL_AX211_TX_RING_OK)
+				error = ENOMEM;
 			if (error == 0) {
 				controller->tx_ring_allocated = 1U;
 				controller->next_management_cookie = UINT64_MAX;
 			}
 		}
 
-		/* Checks the operation status. */
+		/* Initializes scanning. */
 		if (error == 0) {
 			stage = "scan-init";
 			error = ax211_pci_scan_initialize(controller);
 		}
 
-		/* Checks the operation status. */
+		/* Marks the runtime active for the interrupt handler. */
 		if (error == 0) {
 			enabled =
 				spin_lock_irqsave(&controller->interrupt_lock);
@@ -7086,15 +7117,20 @@ ax211_pci_open_locked(
 					       enabled);
 		}
 
-		/* Checks the operation status. */
+		/* Opens the common station. */
 		station = controller->station;
 		if (error == 0) {
 			stage = "station-open";
-			error = station == NULL ? ENODEV
-						: wlan_station_open(station);
+			if (station == NULL)
+				error = ENODEV;
+			else
+				error = wlan_station_open(station);
 		}
 
-		/* Checks the operation status. */
+		/*
+		 * Opens admission, or stops the session of a failed open and
+		 * quarantines a controller whose stop failed.
+		 */
 		if (error == 0) {
 			controller->operation_admission_open = 1U;
 		} else {
@@ -7102,7 +7138,7 @@ ax211_pci_open_locked(
 				"intel-ax211: open failed stage=%s error=%d\n",
 				stage, error);
 
-			/* Checks the operation status. */
+			/* Stops the session; a failed stop quarantines. */
 			cleanup_error = ax211_pci_session_stop(controller);
 			if (cleanup_error != 0) {
 				controller->quarantined = 1U;
@@ -7110,6 +7146,7 @@ ax211_pci_open_locked(
 			}
 		}
 
+		/* Clears the table description and the NVM copy. */
 		ax211_pci_scrub(&table, sizeof(table));
 		ax211_pci_scrub(&nvm, sizeof(nvm));
 	}
@@ -7130,6 +7167,8 @@ ax211_pci_close_locked(
 	struct ax211_pci_controller *controller)
 {
 	struct wlan_station *station;
+	uint64_t deadline;
+	int log;
 	int error;
 	int stop_error;
 
@@ -7140,29 +7179,41 @@ ax211_pci_close_locked(
 	controller->close_pending = 1U;
 	controller->operation_admission_open = 0U;
 
-	/* Checks the operation status. */
-	error = ax211_pci_operations_join_locked(
-		controller, ax211_pci_lifecycle_deadline());
+	/* Joins the operations in flight. */
+	deadline = ax211_pci_lifecycle_deadline();
+	error = ax211_pci_operations_join_locked(controller, deadline);
 	if (error != 0)
 		return error;
-	station = controller->station_attached ? controller->station : NULL;
+
+	/* Takes the attached station. */
+	if (controller->station_attached)
+		station = controller->station;
+	else
+		station = NULL;
 
 	/*
 	 * Gives common retirement its own bounded window outside the callback
 	 * mutex.
 	 */
-
 	mutex_unlock(&controller->lifecycle_lock);
 
-	error = station == NULL
-			? ENODEV
-			: ax211_pci_station_close_wait(
-				  station, ax211_pci_lifecycle_deadline());
+	if (station == NULL) {
+		error = ENODEV;
+	} else {
+		deadline = ax211_pci_lifecycle_deadline();
+		error = ax211_pci_station_close_wait(station, deadline);
+	}
 	mutex_lock(&controller->lifecycle_lock);
-	if (error != 0 && ax211_pci_log_rejection(controller)) {
-		kern_logf("intel-ax211: common close requires checked stop "
-			   "(%d)\n",
-			   error);
+
+	/* Logs a close that needs the checked stop, at most once a second. */
+	if (error != 0) {
+		/* Logs the error. */
+		log = ax211_pci_log_rejection(controller);
+		if (log) {
+			kern_logf("intel-ax211: common close requires checked "
+				   "stop (%d)\n",
+				   error);
+		}
 	}
 
 	/*
@@ -7172,25 +7223,28 @@ ax211_pci_close_locked(
 	if (controller->operations_active != 0U)
 		return EBUSY;
 
-	/* Checks the operation status. */
+	/* Stops the session while the station is quiesced. */
 	stop_error = wlan_station_quiesce_begin(station);
 	if (stop_error != 0)
 		return stop_error;
 	stop_error = ax211_pci_session_stop(controller);
 	wlan_station_quiesce_end(station);
-	controller->quarantined = stop_error != 0;
-	if (stop_error != 0)
+
+	/* A failed stop quarantines the controller. */
+	if (stop_error != 0) {
+		controller->quarantined = 1U;
 		return stop_error;
+	}
 
 	/*
 	 * Successful global stop lets outstanding key/association inverses
 	 * prove absence.
 	 */
-
+	controller->quarantined = 0U;
 	mutex_unlock(&controller->lifecycle_lock);
 
-	error = ax211_pci_station_close_wait(station,
-					     ax211_pci_lifecycle_deadline());
+	deadline = ax211_pci_lifecycle_deadline();
+	error = ax211_pci_station_close_wait(station, deadline);
 	mutex_lock(&controller->lifecycle_lock);
 	if (error == 0)
 		controller->close_pending = 0U;
@@ -7209,6 +7263,7 @@ ax211_net_close(
 	struct net_device *device)
 {
 	struct ax211_pci_controller *controller;
+	int log;
 	int error;
 
 	/* Retires carrier visibility before closing driver admission. */
@@ -7216,7 +7271,7 @@ ax211_net_close(
 		return;
 	(void)net_device_set_carrier(device, 0);
 
-	/* Handles the controller availability. */
+	/* Nothing to close without a controller. */
 	controller = device->driver_data;
 	if (controller == NULL)
 		return;
@@ -7226,16 +7281,28 @@ ax211_net_close(
 	controller->net_opened = 0U;
 	controller->reopen_pending = 0U;
 
+	/* Closes the epoch between the station's stop request and its end. */
 	wlan_station_stop_request(controller->station);
 	error = ax211_pci_close_locked(controller);
 	wlan_station_stop_complete(controller->station, error);
-	if (error != 0 && ax211_pci_log_rejection(controller))
-		kern_logf("intel-ax211: checked close pending (%d)\n", error);
+
+	/* Logs a close left pending, at most once a second. */
+	if (error != 0) {
+		/* Logs the error. */
+		log = ax211_pci_log_rejection(controller);
+		if (log) {
+			kern_logf("intel-ax211: checked close pending (%d)\n",
+				   error);
+		}
+	}
 
 	mutex_unlock(&controller->lifecycle_lock);
 }
 
-/* Bounds repeated rejection diagnostics while the lifecycle mutex is held. */
+/*
+ * Bounds repeated rejection diagnostics while the lifecycle mutex is held:
+ * reports 1 when a diagnostic may be logged now, 0 when not.
+ */
 static int
 ax211_pci_log_rejection(
 	struct ax211_pci_controller *controller)
@@ -7246,16 +7313,17 @@ ax211_pci_log_rejection(
 	 * Keeps the first diagnostic and emits at most one retry diagnostic per
 	 * second.
 	 */
-
-	/* Handles the now condition. */
 	now = clock_ticks();
 	if (now < controller->reject_log_deadline)
 		return 0;
-	controller->reject_log_deadline = UINT64_MAX - now < KERN_CLOCK_HZ
-						  ? UINT64_MAX
-						  : now + KERN_CLOCK_HZ;
 
-	/* Reports operation failure. */
+	/* Sets the next deadline one second ahead, saturating the clock. */
+	if (UINT64_MAX - now < KERN_CLOCK_HZ)
+		controller->reject_log_deadline = UINT64_MAX;
+	else
+		controller->reject_log_deadline = now + KERN_CLOCK_HZ;
+
+	/* A diagnostic may be logged. */
 	return 1;
 }
 
@@ -7269,11 +7337,11 @@ ax211_net_transmit(
 	struct wlan_station *station;
 	int error;
 
-	/* Handles the packet availability. */
+	/* Refuses a missing packet. */
 	if (packet == NULL)
 		return EINVAL;
 
-	/* Handles the device availability. */
+	/* Drops the packet of a missing device. */
 	if (device == NULL) {
 		packet_buf_free(packet);
 
@@ -7281,7 +7349,7 @@ ax211_net_transmit(
 		return ENODEV;
 	}
 
-	/* Handles the controller availability. */
+	/* Drops the packet of a device without a controller. */
 	controller = device->driver_data;
 	if (controller == NULL) {
 		packet_buf_free(packet);
@@ -7292,19 +7360,24 @@ ax211_net_transmit(
 
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the controller condition. */
-	if (!controller->runtime_active || controller->quarantined ||
+	/* Enters an operation of a running, admitting controller. */
+	if (!controller->runtime_active ||
+	    controller->quarantined ||
 	    !controller->operation_admission_open ||
 	    !controller->station_attached) {
+		/* A ready controller is down; any other has no device. */
 		station = NULL;
-		error = controller->ready ? ENETDOWN : ENODEV;
+		if (controller->ready)
+			error = ENETDOWN;
+		else
+			error = ENODEV;
 	} else {
 		error = ax211_pci_operation_enter_locked(controller, &station);
 	}
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Handles the station availability. */
+	/* Drops the packet when no operation was entered. */
 	if (station == NULL) {
 		packet_buf_free(packet);
 
@@ -7312,6 +7385,7 @@ ax211_net_transmit(
 		return error;
 	}
 
+	/* Hands the packet to the station and leaves the operation. */
 	error = wlan_station_transmit(station, packet);
 	mutex_lock(&controller->lifecycle_lock);
 
@@ -7327,7 +7401,10 @@ ax211_net_transmit(
 	return 0;
 }
 
-/* Supports the ax211 net poll receive operation. */
+/*
+ * Drains up to budget runtime events, checks transmit timeouts, starts a
+ * recovery on a fatal error, and reports the number of events handled.
+ */
 static unsigned
 ax211_net_poll_receive(
 	struct net_device *device,
@@ -7338,49 +7415,55 @@ ax211_net_poll_receive(
 	uint64_t now;
 	unsigned count;
 	unsigned reschedule;
+	unsigned pending;
 	unsigned long enabled;
 	int dispatch_result;
 	int fatal_error;
 	int result;
 
-	/* Handles the device availability. */
+	/* Nothing to poll without a device or a budget. */
 	if (device == NULL || budget == 0U)
 		return 0U;
 
-	/* Handles the controller availability. */
+	/* Nothing to poll without a controller. */
 	controller = device->driver_data;
 	if (controller == NULL)
 		return 0U;
 	count = 0U;
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the controller condition. */
+	/* A poll already running is asked to poll once more. */
 	if (controller->poll_active) {
 		controller->poll_reschedule = 1U;
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Returns the computed result. */
+		/* No event was handled here. */
 		return 0U;
 	}
 
-	/* Handles the controller condition. */
+	/* Nothing to poll on a stopped or quarantined controller. */
 	if (!controller->runtime_active || controller->quarantined) {
 		mutex_unlock(&controller->lifecycle_lock);
 
-		/* Returns the computed result. */
+		/* No event was handled. */
 		return 0U;
 	}
 
+	/* A pending recovery's error stops the loop before it starts. */
 	controller->poll_active = 1U;
-	fatal_error =
-		controller->recovery_pending ? controller->recovery_error : 0;
+	if (controller->recovery_pending)
+		fatal_error = controller->recovery_error;
+	else
+		fatal_error = 0;
 
-	/* Process each remaining element. */
-	while (fatal_error == 0 && count < budget &&
-	       controller->runtime_active && !controller->quarantined) {
-		/* Handles the controller condition. */
+	/* Handles events until the budget runs out or nothing is left. */
+	while (fatal_error == 0 &&
+	       count < budget &&
+	       controller->runtime_active &&
+	       !controller->quarantined) {
+		/* Drains deferred events first. */
 		if (controller->deferred_event_count != 0U) {
-			/* Checks the operation result. */
+			/* A busy drain waits for the next poll. */
 			result = ax211_pci_deferred_event_drain_one(controller);
 			if (result == EBUSY)
 				break;
@@ -7393,37 +7476,40 @@ ax211_net_poll_receive(
 			continue;
 		}
 
-		/* Checks the ax211 pci clock us result. */
-		if (ax211_pci_clock_us(controller, &now) != 0) {
+		/* Reads the clock. */
+		result = ax211_pci_clock_us(controller, &now);
+		if (result != 0) {
 			fatal_error = EIO;
 			break;
 		}
 
 		kern_memset(&event, 0, sizeof(event));
 
-		/* Checks the operation result. */
+		/* Receives the next event; none arriving ends the loop. */
 		result = ax211_pci_receive_event(
 			controller, now, controller->runtime_event,
 			sizeof(controller->runtime_event), &event);
 		if (result == INTEL_AX211_BOOT_RECEIVE_TIMEOUT)
 			break;
 		if (result != INTEL_AX211_BOOT_RECEIVE_OK) {
+			pending = (unsigned)drv_intel_ax211_command_pending_count(
+				&controller->runtime_start.commands);
 			kern_logf(
 				"intel-ax211: runtime receive failed result=%d "
 				"scan-phase=%u pending=%u\n",
 				result, controller->scan_session.phase,
-				(unsigned)drv_intel_ax211_command_pending_count(
-					&controller->runtime_start.commands));
+				pending);
 			fatal_error = EIO;
 			break;
 		}
 
+		/* Dispatches the event and clears its bytes. */
 		dispatch_result = ax211_pci_runtime_event_dispatch(
 			controller, controller->runtime_event, event.length,
 			&event);
 		ax211_pci_scrub(controller->runtime_event, event.length);
 
-		/* Handles the dispatch result condition. */
+		/* A failed dispatch is fatal. */
 		if (dispatch_result != 0) {
 			kern_logf(
 				"intel-ax211: runtime dispatch failed error=%d "
@@ -7444,10 +7530,11 @@ ax211_net_poll_receive(
 		count++;
 	}
 
-	/* Checks the operation status. */
-	if (fatal_error == 0 && controller->runtime_active &&
+	/* Checks the transmit timeouts of a healthy controller. */
+	if (fatal_error == 0 &&
+	    controller->runtime_active &&
 	    !controller->quarantined) {
-		/* Checks the operation result. */
+		/* A failed check is fatal. */
 		result = ax211_pci_clock_us(controller, &now);
 		if (result == 0)
 			result = ax211_pci_tx_timeout_check(controller, now);
@@ -7455,9 +7542,9 @@ ax211_net_poll_receive(
 			fatal_error = result;
 	}
 
-	/* Checks the operation status. */
+	/* Runs the recovery of a fatal error. */
 	if (fatal_error != 0) {
-		/* Handles the controller condition. */
+		/* Latches the error unless a recovery is already pending. */
 		if (!controller->recovery_pending) {
 			ax211_pci_recovery_latch_locked(controller,
 							fatal_error);
@@ -7466,14 +7553,23 @@ ax211_net_poll_receive(
 		(void)ax211_pci_recovery_run_locked(controller);
 	}
 
+	/*
+	 * Polls again for a request, a recovery, deferred events, a full budget
+	 * or a latched interrupt, while receiving is enabled.
+	 */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
-	reschedule =
-		(controller->poll_reschedule || controller->recovery_pending ||
-		 controller->deferred_event_count != 0U || count >= budget ||
-		 controller->irq_latched) &&
-		controller->receive_enabled && controller->runtime_active &&
-		!controller->quarantined;
+	reschedule = 0U;
+	if ((controller->poll_reschedule ||
+	     controller->recovery_pending ||
+	     controller->deferred_event_count != 0U ||
+	     count >= budget ||
+	     controller->irq_latched) &&
+	    controller->receive_enabled &&
+	    controller->runtime_active &&
+	    !controller->quarantined) {
+		reschedule = 1U;
+	}
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
@@ -7482,47 +7578,54 @@ ax211_net_poll_receive(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Handles the reschedule condition. */
+	/* Schedules the next poll. */
 	if (reschedule)
 		net_device_schedule_poll(device);
 
-	/* Returns the computed result. */
+	/* Reports the number of events handled. */
 	return count;
 }
 
-/* Supports the ax211 net ioctl operation. */
+/*
+ * Admits a WLAN ioctl by the controller's state and hands it to the common
+ * station.
+ */
 static int
 ax211_net_ioctl(
 	struct net_device *device,
 	unsigned long request,
 	void *argument)
 {
-	int error;
 	struct ax211_pci_controller *controller;
+	int log;
 	int result;
 
-	/* Handles the device availability. */
+	/* Refuses a missing device. */
 	if (device == NULL)
 		return ENODEV;
 
-	/* Handles the controller availability. */
+	/* Refuses a device without a controller. */
 	controller = device->driver_data;
 	if (controller == NULL)
 		return ENODEV;
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the controller condition. */
-	if (!controller->station_attached || controller->detaching)
+	/*
+	 * Admits the queries, and a disconnect of a stopped session, always;
+	 * any other request needs a running controller.
+	 */
+	if (!controller->station_attached || controller->detaching) {
 		result = ENODEV;
-	else if (request == SIOCGWLANSTATUS || request == SIOCGWLANSCAN ||
-		 request == SIOCGWLANBSS ||
-		 (request == SIOCSWLANDISCONNECT &&
-		  controller->session_stopped))
+	} else if (request == SIOCGWLANSTATUS ||
+		   request == SIOCGWLANSCAN ||
+		   request == SIOCGWLANBSS ||
+		   (request == SIOCSWLANDISCONNECT &&
+		    controller->session_stopped)) {
 		result = 0;
-	else if (request == SIOCSWLANDISCONNECT &&
-		 !controller->quarantined &&
-		 (controller->recovery_pending ||
-		  controller->recovery_running)) {
+	} else if (request == SIOCSWLANDISCONNECT &&
+		   !controller->quarantined &&
+		   (controller->recovery_pending ||
+		    controller->recovery_running)) {
 		/*
 		 * A disconnect that arrives while recovery is stopping the
 		 * session waits for it: the session ends stopped and the retry
@@ -7531,35 +7634,46 @@ ax211_net_ioctl(
 		 * user read "Network is down" instead of the refusal (BUG-157).
 		 */
 		result = EBUSY;
-	} else if (!controller->runtime_active || controller->quarantined ||
-		 controller->recovery_pending || controller->recovery_running)
+	} else if (!controller->runtime_active ||
+		   controller->quarantined ||
+		   controller->recovery_pending ||
+		   controller->recovery_running) {
 		result = ENETDOWN;
-	else
+	} else {
 		result = 0;
+	}
 
-	/* Checks the ax211 pci log rejection result. */
-	if (request == SIOCSWLANCONNECT && result != 0 &&
-	    ax211_pci_log_rejection(controller)) {
-		kern_logf("intel-ax211: connect ioctl rejected result=%d "
-			   "runtime=%u "
-			   "quarantined=%u recovery=%u/%u attached=%u "
-			   "detaching=%u\n",
-			   result, controller->runtime_active,
-			   controller->quarantined,
-			   controller->recovery_pending,
-			   controller->recovery_running,
-			   controller->station_attached, controller->detaching);
+	/* Logs a refused connect, at most once a second. */
+	if (request == SIOCSWLANCONNECT && result != 0) {
+		/* Logs the controller's state. */
+		log = ax211_pci_log_rejection(controller);
+		if (log) {
+			kern_logf("intel-ax211: connect ioctl rejected "
+				   "result=%d runtime=%u "
+				   "quarantined=%u recovery=%u/%u attached=%u "
+				   "detaching=%u\n",
+				   result, controller->runtime_active,
+				   controller->quarantined,
+				   controller->recovery_pending,
+				   controller->recovery_running,
+				   controller->station_attached,
+				   controller->detaching);
+		}
 	}
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Computes the function result. */
-	error =
-		result == 0 ? wlan_station_ioctl(device, request, argument)
-			    : result;
+	/* Reports the refusal. */
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Hands the request to the station. */
+	result = wlan_station_ioctl(device, request, argument);
+	if (result != 0)
+		return result;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Frees the controller only after the last removed net-device reference. */
@@ -7569,10 +7683,12 @@ ax211_net_release(
 {
 	struct ax211_pci_controller *controller;
 
-	/* Handles the controller availability. */
+	/* Nothing to free without a controller. */
 	controller = driver_data;
 	if (controller == NULL)
 		return;
+
+	/* Clears and frees the controller. */
 	ax211_pci_scrub(controller, sizeof(*controller));
 	kern_free(controller);
 }
@@ -7586,38 +7702,58 @@ ax211_radio_scan_channel_start(
 	uint32_t channel,
 	uint64_t deadline)
 {
-	int error;
 	struct ax211_pci_controller *controller;
 	uint64_t now;
+	int present;
+	int cache_result;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller. */
 	controller = context;
 	if (controller == NULL)
 		return ENODEV;
 
-	/* Handles the generation condition. */
+	/*
+	 * Refuses an unset generation, a channel out of range and no deadline.
+	 */
 	if (generation == 0U || channel > UINT8_MAX || deadline == 0U)
 		return EINVAL;
 
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the station availability. */
-	if (!controller->ready || controller->detaching ||
-	    controller->quarantined || controller->close_pending ||
-	    controller->recovery_pending || controller->recovery_running ||
-	    !controller->runtime_active || !controller->scan_initialized ||
-	    !controller->station_attached || controller->station == NULL) {
-		result = controller->ready ? ENETDOWN : ENODEV;
+	/* Refuses a controller that cannot scan now. */
+	if (!controller->ready ||
+	    controller->detaching ||
+	    controller->quarantined ||
+	    controller->close_pending ||
+	    controller->recovery_pending ||
+	    controller->recovery_running ||
+	    !controller->runtime_active ||
+	    !controller->scan_initialized ||
+	    !controller->station_attached ||
+	    controller->station == NULL) {
+		/* A ready controller is down; any other has no device. */
+		if (controller->ready)
+			result = ENETDOWN;
+		else
+			result = ENODEV;
 		mutex_unlock(&controller->lifecycle_lock);
 
 		/* Failed. */
 		return result;
 	}
 
-	/* Checks the ax211 pci scan channel present result. */
-	if (step_index >= controller->scan_session.full_profile.channel_count ||
-	    !ax211_pci_scan_channel_present(controller, (uint8_t)channel)) {
+	/* Refuses a step beyond the scan's channels. */
+	if (step_index >= controller->scan_session.full_profile.channel_count) {
+		mutex_unlock(&controller->lifecycle_lock);
+
+		/* Failed. */
+		return EINVAL;
+	}
+
+	/* Refuses a channel the scan does not cover. */
+	present = ax211_pci_scan_channel_present(controller, (uint8_t)channel);
+	if (!present) {
 		mutex_unlock(&controller->lifecycle_lock);
 
 		/* Failed. */
@@ -7633,22 +7769,22 @@ ax211_radio_scan_channel_start(
 	 */
 	if (result == 0 && (!controller->bss_staging_initialized ||
 			    controller->bss_staging_generation != generation)) {
+		/* Starts an empty staging cache for the generation. */
 		ax211_pci_bss_staging_discard(controller);
-
-		/* Checks the operation result. */
-		result = drv_intel_ax211_bss_cache_init(
-				 &controller->bss_staging_cache,
-				 controller->hardware_epoch) ==
-					 INTEL_AX211_BSS_OK
-				 ? 0
-				 : EIO;
+		cache_result = drv_intel_ax211_bss_cache_init(
+			&controller->bss_staging_cache,
+			controller->hardware_epoch);
+		if (cache_result == INTEL_AX211_BSS_OK)
+			result = 0;
+		else
+			result = EIO;
 		if (result == 0) {
 			controller->bss_staging_initialized = 1U;
 			controller->bss_staging_generation = generation;
 		}
 	}
 
-	/* Checks the operation result. */
+	/* Starts the channel's scan. */
 	if (result == 0) {
 		result = drv_intel_ax211_scan_session_begin_channel(
 			&controller->scan_session, generation, (uint8_t)channel,
@@ -7657,7 +7793,7 @@ ax211_radio_scan_channel_start(
 		result = INTEL_AX211_SCAN_SESSION_FAILED;
 	}
 
-	/* Checks the operation result. */
+	/* Records the step, or discards the staging set of a failed start. */
 	if (result == INTEL_AX211_SCAN_SESSION_OK)
 		controller->scan_step_index = step_index;
 	else
@@ -7665,11 +7801,13 @@ ax211_radio_scan_channel_start(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Obtains the ax211 pci scan result errno result. */
-	error = ax211_pci_scan_result_errno(result);
+	/* Reports the failure. */
+	result = ax211_pci_scan_result_errno(result);
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the channel's scan runs. */
+	return 0;
 }
 
 /* Retires the matching asynchronous scan or requests a bounded retry. */
@@ -7684,18 +7822,18 @@ ax211_radio_scan_stop(
 	int error;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller. */
 	controller = context;
 	if (controller == NULL)
 		return ENODEV;
 
-	/* Handles the generation condition. */
+	/* Refuses an unset generation. */
 	if (generation == 0U)
 		return EINVAL;
 
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the controller condition. */
+	/* Refuses a recovery that has not started. */
 	if (controller->recovery_pending && !controller->recovery_running) {
 		mutex_unlock(&controller->lifecycle_lock);
 
@@ -7703,7 +7841,7 @@ ax211_radio_scan_stop(
 		return ENETDOWN;
 	}
 
-	/* Handles the controller condition. */
+	/* Nothing runs on a stopped runtime or without a scan session. */
 	if (!controller->runtime_active || !controller->scan_initialized) {
 		mutex_unlock(&controller->lifecycle_lock);
 
@@ -7711,7 +7849,7 @@ ax211_radio_scan_stop(
 		return 0;
 	}
 
-	/* Handles the controller condition. */
+	/* Nothing runs without a scan generation. */
 	if (controller->scan_session.common_generation == 0U) {
 		mutex_unlock(&controller->lifecycle_lock);
 
@@ -7719,7 +7857,7 @@ ax211_radio_scan_stop(
 		return 0;
 	}
 
-	/* Handles the controller condition. */
+	/* Refuses another generation's scan. */
 	if (controller->scan_session.common_generation != generation) {
 		mutex_unlock(&controller->lifecycle_lock);
 
@@ -7727,7 +7865,7 @@ ax211_radio_scan_stop(
 		return ESTALE;
 	}
 
-	/* Handles the phase condition. */
+	/* An idle session has nothing to stop. */
 	phase = controller->scan_session.phase;
 	if (phase == INTEL_AX211_SCAN_SESSION_IDLE) {
 		mutex_unlock(&controller->lifecycle_lock);
@@ -7736,19 +7874,22 @@ ax211_radio_scan_stop(
 		return 0;
 	}
 
-	/* Handles the phase condition. */
+	/*
+	 * Takes a finished scan's result, or expires and aborts a running one.
+	 */
 	if (phase == INTEL_AX211_SCAN_SESSION_TERMINAL) {
 		result = controller->scan_session.terminal_result;
 	} else {
-		/* Checks the operation status. */
+		/* Expires the session at the current time. */
 		error = ax211_pci_clock_us(controller, &now);
-		if (error != 0)
+		if (error != 0) {
 			result = INTEL_AX211_SCAN_SESSION_FAILED;
-		else
+		} else {
 			result = drv_intel_ax211_scan_session_expire(
 				&controller->scan_session, now);
+		}
 
-		/* Checks the operation result. */
+		/* Aborts a session that is still running. */
 		phase = controller->scan_session.phase;
 		if (result == INTEL_AX211_SCAN_SESSION_OK &&
 		    phase == INTEL_AX211_SCAN_SESSION_RUNNING) {
@@ -7757,7 +7898,7 @@ ax211_radio_scan_stop(
 		}
 	}
 
-	/* Checks the operation result. */
+	/* A scan still stopping is retried. */
 	if (result == INTEL_AX211_SCAN_SESSION_OK ||
 	    result == INTEL_AX211_SCAN_SESSION_BUSY) {
 		mutex_unlock(&controller->lifecycle_lock);
@@ -7766,18 +7907,21 @@ ax211_radio_scan_stop(
 		return EBUSY;
 	}
 
-	/* Checks the operation result. */
+	/* A completed scan publishes the set after its last channel. */
 	if (result == INTEL_AX211_SCAN_SESSION_COMPLETE) {
-		/* Handles the controller condition. */
+		/* Publishes after the final step. */
 		if (controller->scan_step_index + 1U ==
 		    controller->scan_session.full_profile.channel_count) {
-			/* Handles the controller condition. */
+			/*
+			 * A set already published needs no second publication.
+			 */
 			if (!controller->bss_staging_initialized &&
-			    controller->bss_published_generation == generation)
+			    controller->bss_published_generation == generation) {
 				error = 0;
-			else
+			} else {
 				error = ax211_pci_bss_staging_publish(
 					controller, generation);
+			}
 
 			/*
 			 * A scan that completed proves the epoch works:
@@ -7798,10 +7942,14 @@ ax211_radio_scan_stop(
 		mutex_unlock(&controller->lifecycle_lock);
 
 		/* Failed. */
-		return error;
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the channel's scan is retired. */
+		return 0;
 	}
 
-	/* Checks the operation result. */
+	/* An aborted or repeated scan is retired. */
 	if (result == INTEL_AX211_SCAN_SESSION_ABORTED ||
 	    result == INTEL_AX211_SCAN_SESSION_DUPLICATE) {
 		ax211_pci_bss_staging_discard(controller);
