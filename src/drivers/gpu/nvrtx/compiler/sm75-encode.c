@@ -8,8 +8,7 @@
 /*
  * The encoder of Turing (SM75) instructions (see sm75-encode.h).
  *
- * The placement of every field follows the facts in sm75-isa.h, taken from
- * Mesa's NAK (MIT).  An ALU instruction has three sources: the first is
+ * The placement of every field follows the facts in sm75-isa.h.  An ALU instruction has three sources: the first is
  * always a register; the second and the third take one of the forms --
  * both registers, one an immediate, one a constant buffer word -- and the
  * form field says which.  When the third source is the immediate or the
@@ -406,7 +405,9 @@ nvrtx_sm75_iadd3(
 
 /*
  * IMAD dst = a * b + c, the low 32 bits.  The carry output is PT (none)
- * and the carry input !PT (false), as the CUDA compiler writes it.
+ * and the carry input !PT (false).
+ * Value referenced: the SM75 code the CUDA compiler emits (IMAD's carry
+ * operands).
  */
 void
 nvrtx_sm75_imad(
@@ -673,7 +674,9 @@ nvrtx_sm75_stg(
  *
  * Before SM80 the scope (77..78, the GPU's) and the order (79..80, strong)
  * are two fields; from SM80 on they are one (77..80), in which strong at
- * the GPU's scope is 7 (NAK's set_mem_order).
+ * the GPU's scope is 7.
+ * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (set_mem_order).
  */
 void
 nvrtx_sm75_memory_order(
