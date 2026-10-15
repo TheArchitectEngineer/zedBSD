@@ -1,7 +1,6 @@
 #!/bin/sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
-python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver-fragments/prepare.py" --source src/drivers/wifi/intel-ax211/intel-ax211.c
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
@@ -12,7 +11,7 @@ build_dir=$(mktemp -d "$repo_root/build/tmp/zedbsd-intel-ax211-boot.XXXXXX")
 cc=${CC:-cc}
 # _DEFAULT_SOURCE: the host mapping of kcrt.h calls vsnprintf, which strict c89 does not declare.
 warnings="-std=c89 -D_DEFAULT_SOURCE -pedantic -Wno-long-long -Wall -Wextra -Werror"
-core="$repo_root/build/driver-fragments/src/drivers/intel-ax211.c"
+core="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211.c"
 protocol="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-protocol.c"
 init="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-init.c"
 command="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-command.c"

@@ -1,7 +1,6 @@
 #!/bin/sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
-python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver-fragments/prepare.py" --source src/drivers/wifi/intel-ax211/intel-ax211.c
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
@@ -11,7 +10,7 @@ build_dir=$(mktemp -d "$repo_root/build/tmp/zedbsd-intel-ax211.XXXXXX")
 
 cc=${CC:-cc}
 warnings="-std=c11 -Wall -Wextra -Werror"
-source="$repo_root/build/driver-fragments/src/drivers/intel-ax211.c"
+source="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211.c"
 fixture="$test_dir/intel-ax211-core-test.c"
 abi_includes="-I$repo_root/include/libc -DKERN_UAPI_NATIVE -I$repo_root/include/uapi"
 abi_includes="$abi_includes -I$repo_root/include -I$repo_root/src"
