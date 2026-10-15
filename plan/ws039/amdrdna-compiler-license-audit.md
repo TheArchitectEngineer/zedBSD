@@ -33,6 +33,6 @@
 
 - file の先頭 20 行: 9 file とも出典の語（referenced・Mesa・SHA-256）が無い。
 - `0x` の値を持つ `#define AMDRDNA_*` の全 block: 直前の（空行で区切られた）comment に「Values referenced:」がある（script で全数）。zedBSD 自身の値（flag の bit など）は `0x` を使わず `(1U << n)` で書き、自分の値と comment に書いた。
-- 識別子: compiler の code（comment と文字列を除く）の識別子と、上の 21 file の識別子・json の名前の交差は一般語（`address`・`count`・`offset`・`stage` など）だけ。`has_bias`・`linear_vgpr`・`vertex_inputs`・`storage_count`・`read_count`/`write_count` は改名した。
+- 識別子: compiler の code（comment と文字列を除く）の識別子と、上の 21 file の識別子・json の名前の交差は一般語（`address`・`count`・`offset`・`stage` など）だけ。`has_bias`・`linear_vgpr`・`vertex_inputs`・`storage_count`・`read_count`/`write_count`・`is_signed` は改名した。
 - 構造: ACO は SSA の C++ の多段の compiler、zedBSD は scalar IR から直に命令の列を作り、待ちと hazard を 1 本の straight line の pass で入れる。pass の分け方・関数の切り方・comment の文は ACO と別。
 - 人の review（design 13.3 の 3）は p010 で。

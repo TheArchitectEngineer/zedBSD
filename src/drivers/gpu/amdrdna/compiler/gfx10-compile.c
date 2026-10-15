@@ -2069,14 +2069,14 @@ lower_divide(
 	uint32_t temp;
 	uint32_t sign;
 	uint32_t magnitude;
-	int is_signed;
+	int signed_form;
 	int error;
 
 	numerator = value_operand(lowering, instruction->src[0]);
 	denominator = value_operand(lowering, instruction->src[1]);
-	is_signed = 0;
+	signed_form = 0;
 	if (instruction->op == DRV_GPU_IR_IDIV || instruction->op == DRV_GPU_IR_IREM)
-		is_signed = 1;
+		signed_form = 1;
 
 	/* The quotient, the remainder and a scratch register. */
 	error = take_vgpr(lowering, &quotient);
@@ -2094,7 +2094,7 @@ lower_divide(
 	 * -x (the most negative integer stays itself, which read unsigned is
 	 * its magnitude), |n| held in dst and |d| in a fourth register.
 	 */
-	if (is_signed != 0) {
+	if (signed_form != 0) {
 		error = take_vgpr(lowering, &magnitude);
 		if (error != 0)
 			return error;
