@@ -2,7 +2,7 @@
 
 # ws039-p007: shader の compiler（SPIR-V → GFX10、RDNA1、Navi10 = gfx1010）
 
-Status: in-progress（2026-10-15 P5 着手、同日ユーザーの指示で WS039 を一時停止し P5 はラップアップ。再開は 7 節の再開点から）
+Status: in-progress（2026-10-15 P5 着手・一時停止の後、同日夕に q1203 で P5 が再開）
 Disposition: normal
 Parent: [WS039](../ws.md)
 Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-15「担当を 2 人（driver と compiler）で並行してよいです。」）
