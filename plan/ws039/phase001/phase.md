@@ -2,7 +2,7 @@
 
 # ws039-p001: amdrdna の調べと設計（初期化の順・firmware・display・packet・段の印・license）
 
-Status: in-progress（2026-10-15 P3。調べの途中で**ユーザーの指示により WS039 を一時停止**、Q1 のラップアップの指示で区切った。設計の文書（design.md・license の監査）は未着手）
+Status: in-progress（2026-10-15 P3、q1202 で再開。design.md と amdrdna-license-audit.md を書いた。design-reviewer の review と指摘の反映の後に Q1 が clearance を判定）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（code は書かない Phase。build の行だけ Q1 の依頼で先に入れた）
@@ -67,6 +67,14 @@ Parent: [WS039](../ws.md)
 | `f-dcn20.md` | DCN 2.0 の GOP の readout（OTG・HUBP・MPC・DIG）、surface の address と形式、flip と完了、vblank・frame counter、cursor、触らない物、blank と release、shutdown、mode set の範囲 | 途中で停止を頼んだ |
 
    停止を頼んだ 4 つは、PARTIAL の印を付けて書けた所まで残すよう伝えた（届いていない可能性あり。再開の時に note の先頭を見て確かめる）。
+
+## 2026-10-15 夕 P3（q1202、再開）
+
+1. `temp/notes/` の 6 file は全部あった（b は完了、d・e・f は PARTIAL の印つき）。欠けのうち設計に要る物を調べ直した: DCN の割り込みの経路（amdgpu_dm が sparse の外だったので `plan/ws039/temp/linux` に `display/amdgpu_dm/` を sparse で足した。client DCE 0x04、VSTARTUP 0x3C〜・flip 0x4F〜・HPD 9 を `amdgpu_dm.c` の登録で確認）、cursor の属性（`amdgpu_dm_plane.c`: premultiplied、pitch = buffer の幅、address の整列の検査は無い）、dGPU の `gpu_vm_support`（VRAM だけの scanout）。d の残り（ME/PFP/CE の halt の状態）は driver が自分で unhalt するので設計に影響しない。e の残り（NGG の sizing）は legacy VS を使うので不要。f の残り（DP の link training・watermark・DPP の CM）は mode set の範囲で、範囲の外にした。
+2. p007 の 3 節（program の形）を読み、design の 9.2 で driver の側から合わせた（差分なし）。
+3. [design.md](../design.md): 段 A0〜A9（3 節）、firmware（4 節）、GMC・IH・CP・SDMA・DCN（5〜8 節）、executor と compiler の口（9 節）、interface の対応表（10 節）、回復（11 節）、試験の道（12 節）、出典の規則の守り方（13 節）、危険（14 節）、判断の項目 11 件（15 節）、Phase の表（16 節、p002〜p010、計 40〜65 LW）。
+4. [amdrdna-license-audit.md](../amdrdna-license-audit.md): Linux 106 file・Mesa 44 file・firmware 13 file の path・SHA-256・license・取るデータの表（temp の tsv と 2026-10-15 の再計算）。
+5. 未: design-reviewer の review（→ `plan/ws039/design-review.md`）と指摘の反映。
 
 ## 再開の点（resume point）
 
