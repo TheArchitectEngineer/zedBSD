@@ -532,3 +532,24 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 
 ## nvrtx の renderer を既定で on（2026-10-16 ユーザー）
 「nvrtxはmainでデフォルトで有効にしてください。」→ driver の build は既に既定で y（pci.drivers・config-amd64.mk）。runtime の renderer（nvrtx.vk）を既定 on にし、`nvrtx.vk=0` で off（Q1、stage.c の nvrtx_stage_vk_wanted と work の判定、nvrtx-private.h の注釈）。GSP・display・resident は前から既定 on（GOP が RTX の時）。これで方法 A の素の起動は boot の語なしで desktop まで行く見込み（i5-13400F のように iGPU の無い機械）。注意: 試験の run（R7・R8 など、前は vk 無しが既定）も renderer が on になる。config-amd64.mk・nvrtx の config の vmunix は warning 0、nvrtx-gsp-host-test PASS 304。実機は未。
+
+### 9.4 F1〜F3 の実装（2026-10-16、P4。ユーザーの判断「F1〜F3 を進める」「計数の行を出す」。build と host 試験まで、実機は T1 へ）
+
+| 段 | commit | 中身 |
+| --- | --- | --- |
+| F1 | `38fa1c750` | node に `present_lock`（順は present_lock → node->lock）。present は lease の確かめ（`present_admit`）と flip の送り（`nvrtx_scanout_frame_send`）だけ node->lock の下、storage の CPU の複写と flip の BEGUN の待ち（`nvrtx_scanout_frame_wait`、次の vblank まで）は外。lease の終わり・session の close・blob の消滅・P7 の stop は present_lock → node->lock で走っている present を待つ。stop は GSP を止めた後に `broken=1`（以後の present・cursor は EIO）。cursor の core の update は window と interlock しないので、flip の待ちの間に送られてよい |
+| — | `f35d9440a` | vk の host 試験 2 つに compiler の `sm75-schedule.c` を足した（main で link できていなかった） |
+| F2・計数 | `a811fe4f2` | `nvrtx_work_wait` は最初の 2 ms を `atomic_spin_hint` で semaphore（coherent な sysmem）を見る、その後は今までの sleep の poll。新しい boot の語 `nvrtx.vk.perf=1`（既定 off）で message drain が 5 s ごとに `nvrtx: perf …ms: runs N avg Uus, cpu copies N KKiB` と `nvrtx: perf: frames N wait Uus held Uus, flips N avg Uus` を出す（run の submit〜fence の平均、CPU の複写、renderer の frame の node->lock の待ちと保持の平均、flip の vblank の待ちの平均） |
+| F3 | （この節の commit） | buffer→image は buffer が texture になれば GPU の quad で描く: 画素の境界（4 byte）と rows が 32 の倍数なら、texture を region の前の 32 byte 境界から始め、region をその skew 画素から sample する（texture header の address と pitch は bit 5 から）。image→buffer（buffer が target）は今までの 256・128 の条件のまま |
+
+確認:
+
+| コマンド | 結果 |
+| --- | --- |
+| `make -j16 BUILD=build/p4perf/nvrtx ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk build/p4perf/nvrtx/vmunix` | rc 0・warning 0・include/vmunix check PASS |
+| `make -j16 BUILD=build/p4perf/ci ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p4perf/ci/vmunix` | rc 0・warning 0・vmunix check PASS |
+| `sh plan/ws037/tests/nvrtx-vk-d3-host-test.sh` | PASS 119（F2 の CPU の複写の計数 1、F3 の skew した upload: header の address 0x30008040・pitch 64・u 1〜5・scissor） |
+| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` / `nvrtx-gsp-host-test.sh` | PASS 60 / PASS 304 |
+| 実機 | **未実施**（T1 へ: T1-695 と同じ 3 場面の KWL PERF と `nvrtx.vk.perf=1` の行） |
+
+危険: F3 の texture の 32 byte 境界は texture header の field（address の bit 31:5）から決めた。実機で文字の upload（Terminal・Files の中身）の絵が崩れないことを T1 の画面（keiland-shot か写真）で確かめる。
