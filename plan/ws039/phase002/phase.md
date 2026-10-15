@@ -2,7 +2,7 @@
 
 # ws039-p002: 骨格と認識（段 A0・A1・A1v、読むだけ）
 
-Status: in-progress（2026-10-16 P3、q1211 / q1211-i02。実機（10.0.10.3、USB の zedBSD）で A0・A1・A1v ok、2026-10-16 08:28。merge と clearance は Q1 の判定待ち）
+Status: cleared（2026-10-16 Q1: 実機 10.0.10.3 の RX 5600 XT で A0・A1・A1v が ok（3 回目、build/tmp/amdrdna-hw-3/ は P3 の worktree）、Debian の dump と照合が一致、host 試験 PASS、build warning 0。main の merge aeca13ff3。A1 の失敗の時の control の node の道は実機で未通過、HUBP0 の underflow の bit の意味は A6 の前に確かめる）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws039`、base main `202d4ed03`）
