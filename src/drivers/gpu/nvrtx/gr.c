@@ -491,7 +491,7 @@ gr_channel(
 		return ENOMEM;
 
 	nvrtx_channel_params(params, &setup);
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, handle, NVRTX_CLASS_CHANNEL, params, NVRTX_CHANNEL_PARAMS_BYTES);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, handle, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
 	kern_free(params);
 	if (error != 0)
 		return error;
@@ -653,7 +653,7 @@ gr_golden(
 		return error;
 
 	/* The 3D object makes the resource manager build the golden context. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_GOLDEN_CHANNEL, NVRTX_HANDLE_GOLDEN_THREED, NVRTX_CLASS_THREED, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_GOLDEN_CHANNEL, NVRTX_HANDLE_GOLDEN_THREED, gpu->identity.chip.profile->class_threed, NULL, 0U);
 	if (error != 0)
 		return error;
 
@@ -715,7 +715,7 @@ gr_scrubber(
 		return error;
 
 	/* Gives it a 3D object. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_SCRUBBER_CHANNEL, NVRTX_HANDLE_SCRUBBER_THREED, NVRTX_CLASS_THREED, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_SCRUBBER_CHANNEL, NVRTX_HANDLE_SCRUBBER_THREED, gpu->identity.chip.profile->class_threed, NULL, 0U);
 	if (error != 0)
 		return error;
 

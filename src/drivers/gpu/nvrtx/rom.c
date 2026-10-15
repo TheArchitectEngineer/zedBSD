@@ -27,9 +27,6 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The display-disabled fuse; bit 0 set means there is no display and no copy in the VRAM. */
-#define ROM_REG_DISPLAY_DISABLED	0x021c04U
-
 /* The instance-memory window: its base register (in 64 KiB units) and where it shows in the registers. */
 #define ROM_REG_WINDOW_BASE		0x001700U
 #define ROM_WINDOW_AT			0x700000U
@@ -125,8 +122,8 @@ rom_from_vram(
 	uint64_t address;
 	uint32_t saved;
 
-	/* A GPU without a display has no copy. */
-	value = nvrtx_rd32(gpu, ROM_REG_DISPLAY_DISABLED);
+	/* A GPU without a display has no copy (the display-disabled fuse is the generation's register). */
+	value = nvrtx_rd32(gpu, gpu->identity.chip.profile->display_fuse_register);
 	if ((value & 0x1U) != 0U)
 		return ENODEV;
 

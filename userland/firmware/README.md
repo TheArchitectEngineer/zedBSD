@@ -69,13 +69,18 @@ the manifest. Only the Raspberry Pi 4 image configuration selects it.
 Its focused check is `plan/ws206/tests/bcm43455-firmware-package-test.sh`.
 `nvidia-gsp/` (package `nvidia-gsp-firmware`) uses the same official
 linux-firmware commit and installs NVIDIA's GSP-RM firmware 570.144 for
-Turing, which the nvrtx driver boots (plan/ws037/nvrtx-design.md section 9):
-`nvidia/tu102/gsp/gsp-570.144.bin`, `bootloader-570.144.bin`,
-`booter_load-570.144.bin`, `booter_unload-570.144.bin`, and
-`nvidia/tu102/acr/bl.bin`, together with the complete `LICENCE.nvidia`,
-WHENCE, and manifest.  WHENCE links the tu104 and tu106 names to tu102; the
-files are installed once below tu102 and the driver reads that directory for
-every TU10x chip.  `LICENCE.nvidia` permits redistribution of the unmodified
+Turing, Ampere and Ada, which the nvrtx driver boots
+(plan/ws037/nvrtx-design.md section 9, plan/ws242/phase001/phase.md):
+below `nvidia/tu102/` the Turing GSP-RM image `gsp/gsp-570.144.bin`,
+`gsp/bootloader-570.144.bin`, `gsp/booter_load-570.144.bin`,
+`gsp/booter_unload-570.144.bin` and `acr/bl.bin`; below `nvidia/tu116/`
+the GTX 16 booters; below `nvidia/ga102/` the Ampere and Ada GSP-RM image
+with the Ampere bootloader and booters; below `nvidia/ad102/` the Ada
+bootloader and booters; together with the complete `LICENCE.nvidia`,
+WHENCE, and manifest.  WHENCE links the other chips' names (tu104, tu106,
+tu117, ga103 to ga107, ad103 to ad107) and the shared images to these; each
+file is installed once and the driver maps every chip to the directories
+it reads.  `LICENCE.nvidia` permits redistribution of the unmodified
 binaries solely for use on an operating system under an OSI-approved open
 source license, with a copy of the license, and forbids reverse engineering
 and translation; nvrtx reads only the container headers needed to place the

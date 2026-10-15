@@ -55,6 +55,8 @@
 #define NVRTX_HS_SIG_PROD_SIZE_AT	4U
 #define NVRTX_HS_PATCH_LOC_AT		8U
 #define NVRTX_HS_PATCH_SIG_AT		12U
+#define NVRTX_HS_META_AT		16U
+#define NVRTX_HS_META_SIZE_AT		20U
 #define NVRTX_HS_SIG_COUNT_AT		24U
 #define NVRTX_HS_LOAD_AT		28U
 
@@ -82,9 +84,11 @@
 #define NVRTX_RV_DESC_MONITOR_DATA_AT	40U
 #define NVRTX_RV_DESC_MONITOR_CODE_AT	48U
 
-/* The two sections the driver takes from the GSP firmware's ELF file. */
+/*
+ * The section the driver takes the image from in the GSP firmware's ELF
+ * file; the signature's section is the chip family's (its profile).
+ */
 #define NVRTX_GSP_IMAGE_SECTION		".fwimage"
-#define NVRTX_GSP_SIGNATURE_SECTION	".fwsignature_tu10x"
 
 /* The ELF file header's size. */
 #define NVRTX_ELF_HEADER_BYTES		64U
@@ -270,6 +274,16 @@ struct nvrtx_booter {
 	uint32_t os_data_size;
 	uint32_t app_at;
 	uint32_t app_size;
+	/*
+	 * What the boot ROM of an Ampere or later falcon is told with the
+	 * booter (the booter's meta data, three words): the fuse version its
+	 * signatures were made for, the engine it runs on, and its ucode
+	 * number.  has_meta is zero when the file carries none.
+	 */
+	int has_meta;
+	uint32_t fuse_version;
+	uint32_t engine_id;
+	uint32_t ucode_id;
 };
 
 /* The GSP's RISC-V bootloader file and what the placement record names of it. */
@@ -379,6 +393,9 @@ struct nvrtx_channel {
 	uint8_t *staging;
 };
 
+/* The size of one FWSEC signature of a version 3 descriptor. */
+#define NVRTX_FWSEC_SIGNATURE_BYTES	384U
+
 /* The two FWSEC commands: set up the protected region, and tear it down. */
 #define NVRTX_FWSEC_FRTS		0x15U
 #define NVRTX_FWSEC_SB			0x19U
@@ -406,6 +423,20 @@ struct nvrtx_vbios {
  */
 struct nvrtx_fwsec {
 	uint32_t version;
+	/*
+	 * Version 3 (Ampere and later) only: the signature's place in the data
+	 * block, the engine and ucode the boot ROM is told, how many signatures
+	 * the ROM holds and the fuse versions they were made for, and where they
+	 * are in the ROM bytes (each NVRTX_FWSEC_SIGNATURE_BYTES long).  The data
+	 * block is copied by DMA in whole 256-byte blocks: dmem_load_size.
+	 */
+	uint32_t signature_at;
+	uint32_t engine_id;
+	uint32_t ucode_id;
+	uint32_t signature_count;
+	uint32_t signature_versions;
+	size_t signatures_at;
+	uint32_t dmem_load_size;
 	uint32_t interface_at;
 	uint32_t imem_base;
 	uint32_t imem_size;
@@ -514,7 +545,7 @@ struct nvrtx_fwsec {
 #define NVRTX_CTL_BIND			0xa06f0104U
 #define NVRTX_CTL_SCHEDULE		0xa06f0103U
 
-/* The classes of P4 and P5. */
+/* The classes of P4 and P5 on Turing (a generation's own are its profile's). */
 #define NVRTX_CLASS_SPACE		0x90f1U
 #define NVRTX_CLASS_CHANNEL		0xc46fU
 #define NVRTX_CLASS_COPY		0xc5b5U
@@ -641,6 +672,8 @@ uint64_t nvrtx_pages_bus(const struct nvrtx_pages *pages, size_t page);
 
 int nvrtx_booter_parse(const uint8_t *file, size_t size, struct nvrtx_booter *booter);
 int nvrtx_booter_signature(const struct nvrtx_booter *booter, unsigned index, size_t *at);
+uint32_t nvrtx_booter_fuse_register(uint32_t engine_id, uint32_t ucode_id);
+int nvrtx_booter_fuse_index(const struct nvrtx_booter *booter, uint32_t fuse, unsigned *index);
 int nvrtx_falcon_bl_parse(const uint8_t *file, size_t size, struct nvrtx_falcon_bl *bl);
 int nvrtx_bootloader_parse(const uint8_t *file, size_t size, struct nvrtx_bootloader *bootloader);
 int nvrtx_elf_header(const uint8_t *header, size_t file_size, struct nvrtx_elf *elf);
@@ -649,8 +682,9 @@ int nvrtx_elf_find(const struct nvrtx_elf *elf, const uint8_t *table, const uint
 int nvrtx_elf_section(const uint8_t *file, size_t size, const char *name, struct nvrtx_section *section);
 
 uint64_t nvrtx_vram_size(uint32_t value);
+uint64_t nvrtx_vram_size_mib(uint32_t value);
 uint64_t nvrtx_vga_workspace(uint64_t vram_size, uint32_t value);
-int nvrtx_wpr_layout(uint64_t vram_size, uint64_t vga, uint64_t boot_size, uint64_t image_size, struct nvrtx_wpr_layout *layout);
+int nvrtx_wpr_layout(uint64_t vram_size, uint64_t vga, uint64_t boot_size, uint64_t image_size, uint64_t heap_os, uint64_t heap_min, struct nvrtx_wpr_layout *layout);
 void nvrtx_wpr_record(uint8_t *record, const struct nvrtx_wpr_layout *layout, const struct nvrtx_wpr_sources *sources);
 void nvrtx_libos_region(uint8_t *page, unsigned index, const char *name, uint64_t address, uint64_t size);
 void nvrtx_log_buffer(uint8_t *buffer, uint64_t bus, size_t size);
@@ -686,7 +720,7 @@ void nvrtx_channel_params(uint8_t *params, const struct nvrtx_channel_setup *set
 size_t nvrtx_push_fence(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_fence_timed(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_stamp(uint8_t *push, uint64_t semaphore, uint32_t value);
-size_t nvrtx_push_copy_fill(uint8_t *push, uint32_t subchannel, uint64_t destination, uint32_t words, uint32_t value);
+size_t nvrtx_push_copy_fill(uint8_t *push, uint32_t subchannel, uint32_t copy_class, uint64_t destination, uint32_t words, uint32_t value);
 void nvrtx_ring_entry(uint8_t *entry, uint64_t va, uint32_t words);
 void nvrtx_free_params(uint8_t *params, uint32_t client, uint32_t object);
 void nvrtx_space_params_shared(uint8_t *params);
@@ -706,5 +740,8 @@ void nvrtx_mmu_gr_entries_system(uint8_t *entries, const uint64_t *pages, size_t
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);
 int nvrtx_vbios_fwsec(const struct nvrtx_vbios *vbios, struct nvrtx_fwsec *fwsec);
 int nvrtx_fwsec_command(uint8_t *program, const struct nvrtx_fwsec *fwsec, uint32_t command, uint64_t frts, uint64_t frts_size);
+uint32_t nvrtx_fwsec_fuse_register(const struct nvrtx_fwsec *fwsec);
+int nvrtx_fwsec_fuse_index(const struct nvrtx_fwsec *fwsec, uint32_t fuse, unsigned *index);
+int nvrtx_fwsec_sign(uint8_t *program, const struct nvrtx_fwsec *fwsec, const struct nvrtx_vbios *vbios, unsigned index);
 
 #endif

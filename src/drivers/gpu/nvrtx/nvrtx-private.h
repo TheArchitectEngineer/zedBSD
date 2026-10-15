@@ -19,6 +19,7 @@
 #define DRIVERS_GPU_NVRTX_PRIVATE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <drivers/pci/pci.h>
@@ -87,6 +88,88 @@ enum nvrtx_family {
 };
 
 /*
+ * How a generation's falcons are given a signed program.
+ *
+ * On Turing the driver writes the falcon's memories through their ports and
+ * FWSEC is copied in by the small falcon bootloader.  From Ampere on the
+ * falcon copies the program itself by DMA, and its boot ROM checks the
+ * signature the driver patched in against the fuses before it starts it.
+ */
+enum nvrtx_falcon_style {
+	NVRTX_FALCON_PORTS = 0,
+	NVRTX_FALCON_BOOT_ROM
+};
+
+/* The most shared-memory carve-outs (in KiB) a generation's SM offers. */
+#define NVRTX_SHARED_CARVEOUTS_MAX	6U
+
+/*
+ * What one family of chips needs from the GSP boot path and the classes.
+ *
+ * One record stands for the chips that share a firmware set: TU102, TU104
+ * and TU106; TU116 and TU117; GA102 to GA107; AD102 to AD107.  The chip
+ * table points every known chip at its record, and every stage reads the
+ * generation's differences from it instead of testing chip numbers.  The
+ * records are constant and live as long as the kernel.
+ *
+ * A family not yet seen working on real hardware (verified zero) is booted
+ * only when the boot asks for it (nvrtx.gsp=1); by default its GPU is left
+ * to the firmware's picture.
+ */
+struct nvrtx_profile {
+	const char *name;
+	int verified;
+
+	/* The firmware files, below /lib/firmware/nvidia/, and the image's signature section. */
+	const char *image_file;
+	const char *bootloader_file;
+	const char *booter_load_file;
+	const char *booter_unload_file;
+	/* The falcon bootloader FWSEC is copied in by; NULL where the falcon loads FWSEC itself. */
+	const char *falcon_bootloader_file;
+	const char *signature_section;
+	enum nvrtx_falcon_style falcon_style;
+
+	/* The VRAM-size register, and whether it holds whole MiB (else the magnitude and scale form). */
+	uint32_t vram_size_register;
+	int vram_size_in_mib;
+	/* The fuse register whose bit 0 says the GPU has no display (and no VBIOS copy in the VRAM). */
+	uint32_t display_fuse_register;
+
+	/* The GSP heap: the part its operating system takes, and the least the heap may be. */
+	uint64_t heap_os_bytes;
+	uint64_t heap_min_bytes;
+
+	/* Nonzero when the graphics context needs the scrubber channel (TU102, TU104, TU106 only). */
+	int gr_scrubber;
+
+	/* The classes of the channel, the copy engine, 3D and compute. */
+	uint32_t class_channel;
+	uint32_t class_copy;
+	uint32_t class_threed;
+	uint32_t class_compute;
+
+	/* The display's classes: the display itself, the core, window, window-immediate and cursor channels. */
+	uint32_t class_display;
+	uint32_t class_core;
+	uint32_t class_window;
+	uint32_t class_wimm;
+	uint32_t class_cursor;
+	/* The window's storage word for a pitch-linear surface (Ampere's window has no layout field). */
+	uint32_t window_storage_pitch;
+
+	/* The QMD version compute launches are described in. */
+	uint32_t qmd_major;
+	uint32_t qmd_minor;
+	/* The shader model the compiler targets (75, 86 or 89), and the warps one SM holds. */
+	uint32_t sm;
+	uint32_t warps_per_sm;
+	/* The shared-memory carve-outs of one SM, smallest first, in KiB. */
+	uint32_t shared_kib[NVRTX_SHARED_CARVEOUTS_MAX];
+	uint32_t shared_count;
+};
+
+/*
  * What the identity registers say about one GPU.
  *
  * Filled by nvrtx_identify() from the two register values alone, so the
@@ -97,8 +180,22 @@ struct nvrtx_chip {
 	uint32_t revision;
 	enum nvrtx_family family;
 	const char *name;
-	/* Nonzero when the GSP boot path of the first target (TU10x, firmware below tu102) applies. */
-	int gsp_tu102;
+	/* The chip's family record; NULL for a known chip the GSP boot path does not cover. */
+	const struct nvrtx_profile *profile;
+};
+
+/*
+ * One product (PCI device ID) of the chips the driver knows.
+ *
+ * The product names a board, the chip names the silicon; the chip is
+ * decided by the identity register, the product only names it in the marks.
+ */
+struct nvrtx_product {
+	uint16_t device;
+	uint16_t chipset;
+	/* Nonzero for a laptop part. */
+	uint8_t laptop;
+	const char *name;
 };
 
 /*
@@ -185,6 +282,28 @@ nvrtx_identify(
 	uint32_t ident0,
 	uint32_t ident1,
 	struct nvrtx_chip *chip);
+
+/*
+ * Finds the product a PCI device ID names.
+ *
+ * Returns NULL for a device ID the table does not list.
+ */
+const struct nvrtx_product *
+nvrtx_product_find(
+	uint16_t device);
+
+/*
+ * Reports how many products the table lists.
+ */
+size_t
+nvrtx_product_count(void);
+
+/*
+ * Reports one product of the table by its index.
+ */
+const struct nvrtx_product *
+nvrtx_product_at(
+	size_t index);
 
 /*
  * The device information table: 64 words naming the engines, their

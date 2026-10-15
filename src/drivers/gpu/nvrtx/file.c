@@ -8,9 +8,10 @@
 /*
  * The GSP firmware files of the nvrtx driver.
  *
- * The files live below /lib/firmware/nvidia/tu102/ (the nvidia-gsp-firmware
- * package).  The small ones are read whole into kernel memory.  The GSP
- * firmware itself is 28.5 MB: only its ELF header and section table are read
+ * The files live below /lib/firmware/nvidia/ (the nvidia-gsp-firmware
+ * package), in the chip directories the chip's profile names.  The small
+ * ones are read whole into kernel memory.  The GSP firmware itself is
+ * 28.5 MB (Turing) or 63.6 MB (Ampere and Ada): only its ELF header and section table are read
  * into kernel memory, and its image section is read straight into the DMA
  * chunks the GSP will read, so no buffer of the file's size is ever made.
  * Every read waits for the root file system, so it runs on the worker thread.
@@ -233,7 +234,7 @@ firmware_read_sections(
 	if (error != 0)
 		goto out;
 
-	error = nvrtx_elf_find(&elf, table, name_bytes, names.size, NVRTX_GSP_SIGNATURE_SECTION, &signature);
+	error = nvrtx_elf_find(&elf, table, name_bytes, names.size, gpu->identity.chip.profile->signature_section, &signature);
 
 out:
 	/* Gives the table and the names back whatever the lookup found. */

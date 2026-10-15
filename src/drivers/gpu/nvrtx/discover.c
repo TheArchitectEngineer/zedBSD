@@ -48,6 +48,7 @@ nvrtx_n0_discover(
 	struct nvrtx_device *device)
 {
 	struct nvrtx_window *registers;
+	const struct nvrtx_product *product;
 	uint32_t ident0;
 	uint32_t ident1;
 	int error;
@@ -147,6 +148,20 @@ nvrtx_n0_discover(
 	    device->chip.name,
 	    (unsigned)device->chip.revision,
 	    nvrtx_family_name(device->chip.family));
+
+	/*
+	 * Names the board by its device ID when the table knows it.  The chip
+	 * decides the path either way; a product whose table chip differs from
+	 * the identity is shown, so a wrong table row is seen.
+	 */
+	product = nvrtx_product_find(device->product);
+	if (product == NULL) {
+		nvrtx_stage_mark("N0 product %04x not in the table", (unsigned)device->product);
+	} else if (product->chipset != device->chip.chipset) {
+		nvrtx_stage_mark("N0 product %04x is listed as chip %03x", (unsigned)device->product, (unsigned)product->chipset);
+	} else if (product->name != NULL) {
+		nvrtx_stage_mark("N0 product %s%s", product->name, product->laptop != 0 ? " (laptop)" : "");
+	}
 
 	/* Succeeded: the chip is identified and the register page stays mapped until the release. */
 	return 0;

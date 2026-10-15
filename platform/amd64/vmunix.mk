@@ -157,6 +157,8 @@ AMD64_NVRTX_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_NVRTX),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/discover.c src/drivers/gpu/nvrtx/identify.c \
 	src/drivers/gpu/nvrtx/nvrtx.c src/drivers/gpu/nvrtx/stage.c
+# The products (PCI device IDs) of the Turing, Ampere and Ada chips, for the marks (ws242-p001).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/products.c
 # The GSP boot path's parts that touch no hardware (ws037-p004 4a).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/wire.c src/drivers/gpu/nvrtx/image.c \
 	src/drivers/gpu/nvrtx/layout.c src/drivers/gpu/nvrtx/radix3.c src/drivers/gpu/nvrtx/queue.c \

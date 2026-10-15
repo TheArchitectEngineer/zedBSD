@@ -25,11 +25,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The channel classes and their handles: class in the high half, instance in the low half. */
+/*
+ * Turing's channel classes; a channel's handle is its class in the high half
+ * and its instance in the low half.  The driver takes a generation's classes
+ * from its profile (nvrtx-private.h); these name Turing's for the records'
+ * tests.
+ */
 #define NVRTX_DISP_CLASS_CORE		0xc57dU
 #define NVRTX_DISP_CLASS_WINDOW		0xc57eU
 
-/* The cursor's immediate channel (a PIO channel, one for each head: no push buffer, no objects). */
+/* Turing's cursor channel (a PIO channel, one for each head: no push buffer, no objects). */
 #define NVRTX_DISP_CLASS_CURSOR		0xc57aU
 
 /* The channel numbers the hash table knows a channel by: the core is 0, window w is 1 + w. */
@@ -67,6 +72,9 @@
 /* The notifier's status (bits 31:30 of its first word): finished is 2, not begun is 0. */
 #define NVRTX_DISP_NOTIFIER_STATUS_SHIFT	30U
 #define NVRTX_DISP_NOTIFIER_FINISHED		2U
+
+/* The window's storage word for a pitch-linear surface on Turing (its layout field); Ampere's window has none. */
+#define NVRTX_DISP_STORAGE_PITCH_TURING		0x00000010U
 
 /* The window's pixel formats: A8R8G8B8 is B, G, R, A in memory (BGRA8888), A8B8G8R8 is R, G, B, A. */
 #define NVRTX_DISP_FORMAT_A8R8G8B8		0xcfU
@@ -345,8 +353,8 @@ void nvrtx_disp_first_core_mode(struct nvrtx_push *push, const struct nvrtx_disp
 void nvrtx_disp_first_core_release(struct nvrtx_push *push, uint32_t window_interlock);
 void nvrtx_disp_first_core_view(struct nvrtx_push *push, uint32_t head, uint32_t view_in, uint32_t view_out);
 void nvrtx_disp_first_core_olut(struct nvrtx_push *push, uint32_t head, uint64_t offset);
-void nvrtx_disp_first_window(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset, uint64_t ilut_offset);
-void nvrtx_disp_first_window_flip(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t notifier_offset, int with_core);
+void nvrtx_disp_first_window(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t storage, uint32_t notifier_offset, uint64_t ilut_offset);
+void nvrtx_disp_first_window_flip(struct nvrtx_push *push, uint32_t window, const struct nvrtx_disp_surface *surface, uint32_t storage, uint32_t notifier_offset, int with_core);
 void nvrtx_disp_first_mode(const struct nvrtx_disp_timing *timing, struct nvrtx_disp_mode *mode);
 void nvrtx_disp_first_timing_from_armed(const uint32_t *armed, struct nvrtx_disp_timing *timing);
 int nvrtx_disp_first_edid_timing(const uint8_t *edid, size_t length, struct nvrtx_disp_timing *timing);

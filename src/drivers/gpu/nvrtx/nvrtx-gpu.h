@@ -29,16 +29,15 @@
 
 struct nvrtx_node;
 
-/* The firmware directory the GSP files are read from, for every TU10x chip. */
-#define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/tu102/"
+/* The firmware directory the GSP files are read from; a chip's files are named by its profile below it. */
+#define NVRTX_FIRMWARE_DIRECTORY	"/lib/firmware/nvidia/"
 
 /* The registers P1a reads: GFW's devinit is done when bit 0 of the first is set and the second's low byte is 0xFF. */
 #define NVRTX_REG_DEVINIT_LEVEL		0x118128U
 #define NVRTX_REG_DEVINIT_PROGRESS	0x118234U
 #define NVRTX_DEVINIT_COMPLETED		0xffU
 
-/* The registers P0 reads: the VRAM size and the display's VGA workspace. */
-#define NVRTX_REG_VRAM_SIZE		0x100ce0U
+/* The register P0 reads for the display's VGA workspace (the VRAM size's register is the profile's). */
 #define NVRTX_REG_VGA_WORKSPACE		0x625f04U
 
 /* The largest VBIOS the driver reads. */
@@ -132,12 +131,14 @@ struct nvrtx_node;
 #define NVRTX_FALCON_SEC2_BASE		0x840000U
 
 /*
- * One falcon: its register base and, for the secure processor, its bit in
- * the PMC enable register (from the device information table).
+ * One falcon: its register base, how its generation loads and starts a
+ * program, and, for the secure processor on Turing, its bit in the PMC
+ * enable register (from the device information table).
  */
 struct nvrtx_falcon {
 	uint32_t base;
 	uint32_t pmc_mask;
+	enum nvrtx_falcon_style style;
 };
 
 /* How far the GSP boot got; each later state includes the earlier ones. */
@@ -647,6 +648,10 @@ uint32_t nvrtx_falcon_code_limit(struct nvrtx_gpu *gpu, const struct nvrtx_falco
 int nvrtx_falcon_imem(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, const uint8_t *code, uint32_t length, uint32_t address, uint32_t tag, int secure);
 int nvrtx_falcon_dmem(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, const uint8_t *data, uint32_t length, uint32_t address);
 int nvrtx_falcon_boot(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t boot_address, uint32_t *mailbox0, uint32_t *mailbox1);
+int nvrtx_falcon_riscv_mode(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+bool nvrtx_falcon_riscv_running(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t *status);
+int nvrtx_falcon_dma_load(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint64_t bus, uint32_t source, uint32_t length, uint32_t target, int code, int secure);
+void nvrtx_falcon_boot_rom(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon, uint32_t signature_at, uint32_t engine_id, uint32_t ucode_id);
 
 int nvrtx_fwsec_run(struct nvrtx_gpu *gpu, const struct nvrtx_buffer *program);
 int nvrtx_booter_run(struct nvrtx_gpu *gpu, const struct nvrtx_booter *booter, uint32_t mailbox0, uint32_t mailbox1);

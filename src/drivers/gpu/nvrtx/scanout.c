@@ -334,7 +334,7 @@ nvrtx_scanout_stop(
 	/* Frees each cursor, window-immediate and window channel that was made. */
 	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
 		if ((display->cursors_made & (1U << index)) != 0U) {
-			handle = (NVRTX_DISP_CLASS_CURSOR << 16) | index;
+			handle = (gpu->identity.chip.profile->class_cursor << 16) | index;
 			error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
 			if (error != 0)
 				failures++;
@@ -343,7 +343,7 @@ nvrtx_scanout_stop(
 
 	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
 		if ((display->wimms_made & (1U << index)) != 0U) {
-			handle = (NVRTX_DISP_CLASS_WIMM << 16) | index;
+			handle = (gpu->identity.chip.profile->class_wimm << 16) | index;
 			error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
 			if (error != 0)
 				failures++;
@@ -352,7 +352,7 @@ nvrtx_scanout_stop(
 
 	for (index = 0U; index < NVRTX_DISP_WINDOWS; index++) {
 		if ((display->windows_made & (1U << index)) != 0U) {
-			handle = (NVRTX_DISP_CLASS_WINDOW << 16) | index;
+			handle = (gpu->identity.chip.profile->class_window << 16) | index;
 			error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
 			if (error != 0)
 				failures++;
@@ -367,7 +367,7 @@ nvrtx_scanout_stop(
 
 	/* Frees the core channel. */
 	if (display->core_made != 0) {
-		handle = NVRTX_DISP_CLASS_CORE << 16;
+		handle = gpu->identity.chip.profile->class_core << 16;
 		error = nvrtx_rm_free_in(gpu, NVRTX_DISP_CLIENT, handle);
 		if (error != 0)
 			failures++;
@@ -506,7 +506,7 @@ nvrtx_scanout_frame_send(
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_first_window_flip(push, display->window, surface, *notifier, with_core);
+	nvrtx_disp_first_window_flip(push, display->window, surface, gpu->identity.chip.profile->window_storage_pitch, *notifier, with_core);
 	error = scanout_kick(gpu, push, user);
 	if (error != 0)
 		return error;
@@ -578,7 +578,7 @@ nvrtx_scanout_cursor_start(
 	}
 
 	/* Succeeded: the head's cursor takes a position and an update. */
-	nvrtx_stage_mark("P8c channel %04x.%u made", (unsigned)NVRTX_DISP_CLASS_CURSOR, (unsigned)display->gop_head);
+	nvrtx_stage_mark("P8c channel %04x.%u made", (unsigned)gpu->identity.chip.profile->class_cursor, (unsigned)display->gop_head);
 	return 0;
 }
 
@@ -1093,12 +1093,12 @@ scanout_channel(
 		return error;
 
 	/* A window-immediate channel has no objects. */
-	if (class_number == NVRTX_DISP_CLASS_WIMM)
+	if (class_number == gpu->identity.chip.profile->class_wimm)
 		return 0;
 
 	/* The core is channel 0 of the hash table; window w is channel 1 + w. */
 	chid = NVRTX_DISP_CHID_CORE;
-	if (class_number == NVRTX_DISP_CLASS_WINDOW)
+	if (class_number == gpu->identity.chip.profile->class_window)
 		chid = NVRTX_DISP_CHID_WINDOW_FIRST + instance;
 
 	/* Gives it the notifiers' object and the whole VRAM's. */
@@ -1134,7 +1134,7 @@ scanout_channels(
 	display = &gpu->display;
 
 	/* The core channel. */
-	error = scanout_channel(gpu, NVRTX_DISP_CLASS_CORE, 0U, &display->core_buffer, &display->core_push);
+	error = scanout_channel(gpu, gpu->identity.chip.profile->class_core, 0U, &display->core_buffer, &display->core_push);
 	if (error != 0)
 		return error;
 
@@ -1167,14 +1167,14 @@ scanout_channels(
 				continue;
 
 			buffer = &display->window_buffers[window];
-			error = scanout_channel(gpu, NVRTX_DISP_CLASS_WINDOW, window, buffer, NULL);
+			error = scanout_channel(gpu, gpu->identity.chip.profile->class_window, window, buffer, NULL);
 			if (error != 0)
 				return error;
 
 			display->windows_made |= 1U << window;
 
 			buffer = &display->wimm_buffers[window];
-			error = scanout_channel(gpu, NVRTX_DISP_CLASS_WIMM, window, buffer, NULL);
+			error = scanout_channel(gpu, gpu->identity.chip.profile->class_wimm, window, buffer, NULL);
 			if (error != 0)
 				return error;
 
@@ -1213,7 +1213,7 @@ scanout_cursor_channel(
 	int error;
 
 	/* Registers the cursor channel without a push buffer. */
-	nvrtx_disp_pio_pushbuffer_params(registration, NVRTX_DISP_CLASS_CURSOR, head);
+	nvrtx_disp_pio_pushbuffer_params(registration, gpu->identity.chip.profile->class_cursor, head);
 	error = nvrtx_rm_control(gpu,
 	    gpu->internal_client,
 	    gpu->internal_subdevice,
@@ -1226,9 +1226,9 @@ scanout_cursor_channel(
 		return error;
 
 	/* Makes the channel under the display root, the head as its instance. */
-	handle = (NVRTX_DISP_CLASS_CURSOR << 16) | head;
+	handle = (gpu->identity.chip.profile->class_cursor << 16) | head;
 	nvrtx_disp_pio_channel_params(params, head);
-	error = nvrtx_rm_allocate_in(gpu, NVRTX_DISP_CLIENT, SCANOUT_HANDLE_ROOT, handle, NVRTX_DISP_CLASS_CURSOR, params, sizeof(params));
+	error = nvrtx_rm_allocate_in(gpu, NVRTX_DISP_CLIENT, SCANOUT_HANDLE_ROOT, handle, gpu->identity.chip.profile->class_cursor, params, sizeof(params));
 	if (error != 0)
 		return error;
 
@@ -1382,7 +1382,12 @@ scanout_commit(
 
 	/* The window's first image, released with the core; its get is read first. */
 	(void)nvrtx_rd32(gpu, window_user + SCANOUT_USER_GET_AT);
-	nvrtx_disp_first_window(&display->window_push, display->window, &display->surfaces[0], notifier, display->ilut);
+	nvrtx_disp_first_window(&display->window_push,
+	    display->window,
+	    &display->surfaces[0],
+	    gpu->identity.chip.profile->window_storage_pitch,
+	    notifier,
+	    display->ilut);
 	error = scanout_kick(gpu, &display->window_push, window_user);
 	if (error != 0)
 		return error;
@@ -1715,7 +1720,12 @@ scanout_flip(
 	if (error != 0)
 		return error;
 
-	nvrtx_disp_first_window_flip(&display->window_push, display->window, &display->surfaces[1], notifier, 0);
+	nvrtx_disp_first_window_flip(&display->window_push,
+	    display->window,
+	    &display->surfaces[1],
+	    gpu->identity.chip.profile->window_storage_pitch,
+	    notifier,
+	    0);
 	error = scanout_kick(gpu, &display->window_push, user);
 	if (error != 0)
 		return error;

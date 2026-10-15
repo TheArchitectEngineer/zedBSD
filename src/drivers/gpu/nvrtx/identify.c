@@ -10,8 +10,13 @@
  *
  * The PCI device ID only names a product; the chip is named by the identity
  * register at the start of the register window.  This file turns the two
- * identity registers into a chip record.  It touches no hardware, so the
- * host test links it alone.
+ * identity registers into a chip record, and points the chip at its family
+ * record: what its generation needs from the GSP boot path (the firmware
+ * files, the falcons' loading, the registers that moved, the heap) and the
+ * class numbers and formats the later stages use.  The values are hardware
+ * facts as nouveau's GSP path (Linux v6.19, r570) and NVIDIA's open-gpu-doc
+ * class headers (MIT) give them.  It touches no hardware, so the host test
+ * links it alone.
  */
 
 #include <stddef.h>
@@ -29,47 +34,211 @@
 #define IDENTIFY_ARCH_BLACKWELL_DC	0x1aU
 #define IDENTIFY_ARCH_BLACKWELL		0x1bU
 
+/* The GSP heap's part for its operating system and its least size (libos 2 on Turing, libos 3 after). */
+#define IDENTIFY_MIB			0x100000ULL
+#define IDENTIFY_HEAP_OS_TURING		0ULL
+#define IDENTIFY_HEAP_MIN_TURING	(64ULL * IDENTIFY_MIB)
+#define IDENTIFY_HEAP_OS_AMPERE		(22ULL * IDENTIFY_MIB)
+#define IDENTIFY_HEAP_MIN_AMPERE	(170ULL * IDENTIFY_MIB)
+
 /*
- * One known chip: its number in the identity register, its name, and whether
- * the GSP boot path of the first target applies to it.
+ * One known chip: its number in the identity register, its name, and the
+ * family record of the GSP boot path, if it has one.
  */
 struct identify_entry {
 	uint32_t chipset;
 	const char *name;
-	int gsp_tu102;
+	const struct nvrtx_profile *profile;
+};
+
+/*
+ * TU102, TU104 and TU106 (GeForce RTX 20): the firmware below tu102, the
+ * falcon bootloader for FWSEC, and the graphics scrubber channel.  The
+ * family the driver was brought up and seen working on (RTX 2070).
+ */
+static const struct nvrtx_profile identify_tu10x = {
+	"TU10x",
+	1,
+	"tu102/gsp/gsp-570.144.bin",
+	"tu102/gsp/bootloader-570.144.bin",
+	"tu102/gsp/booter_load-570.144.bin",
+	"tu102/gsp/booter_unload-570.144.bin",
+	"tu102/acr/bl.bin",
+	".fwsignature_tu10x",
+	NVRTX_FALCON_PORTS,
+	0x100ce0U,
+	0,
+	0x021c04U,
+	IDENTIFY_HEAP_OS_TURING,
+	IDENTIFY_HEAP_MIN_TURING,
+	1,
+	0xc46fU,
+	0xc5b5U,
+	0xc597U,
+	0xc5c0U,
+	0xc570U,
+	0xc57dU,
+	0xc57eU,
+	0xc57bU,
+	0xc57aU,
+	0x00000010U,
+	2U,
+	2U,
+	75U,
+	32U,
+	{ 32U, 64U, 0U, 0U, 0U, 0U },
+	2U
+};
+
+/*
+ * TU116 and TU117 (GeForce GTX 16): Turing as TU10x, with booters of their
+ * own below tu116 and their own signature in the same GSP image, and no
+ * scrubber channel.
+ */
+static const struct nvrtx_profile identify_tu11x = {
+	"TU11x",
+	0,
+	"tu102/gsp/gsp-570.144.bin",
+	"tu102/gsp/bootloader-570.144.bin",
+	"tu116/gsp/booter_load-570.144.bin",
+	"tu116/gsp/booter_unload-570.144.bin",
+	"tu102/acr/bl.bin",
+	".fwsignature_tu11x",
+	NVRTX_FALCON_PORTS,
+	0x100ce0U,
+	0,
+	0x021c04U,
+	IDENTIFY_HEAP_OS_TURING,
+	IDENTIFY_HEAP_MIN_TURING,
+	0,
+	0xc46fU,
+	0xc5b5U,
+	0xc597U,
+	0xc5c0U,
+	0xc570U,
+	0xc57dU,
+	0xc57eU,
+	0xc57bU,
+	0xc57aU,
+	0x00000010U,
+	2U,
+	2U,
+	75U,
+	32U,
+	{ 32U, 64U, 0U, 0U, 0U, 0U },
+	2U
+};
+
+/*
+ * GA102 to GA107 (GeForce RTX 30): the firmware below ga102, falcons that
+ * load by DMA and check signatures in their boot ROM, the VRAM size in
+ * MiB, the larger heap of the third operating-system version, Ampere's
+ * classes and QMD 3.0.
+ */
+static const struct nvrtx_profile identify_ga10x = {
+	"GA10x",
+	0,
+	"ga102/gsp/gsp-570.144.bin",
+	"ga102/gsp/bootloader-570.144.bin",
+	"ga102/gsp/booter_load-570.144.bin",
+	"ga102/gsp/booter_unload-570.144.bin",
+	NULL,
+	".fwsignature_ga10x",
+	NVRTX_FALCON_BOOT_ROM,
+	0x1183a4U,
+	1,
+	0x820c04U,
+	IDENTIFY_HEAP_OS_AMPERE,
+	IDENTIFY_HEAP_MIN_AMPERE,
+	0,
+	0xc56fU,
+	0xc7b5U,
+	0xc797U,
+	0xc7c0U,
+	0xc670U,
+	0xc67dU,
+	0xc67eU,
+	0xc67bU,
+	0xc67aU,
+	0x00000000U,
+	3U,
+	0U,
+	86U,
+	48U,
+	{ 0U, 8U, 16U, 32U, 64U, 100U },
+	6U
+};
+
+/*
+ * AD102 to AD107 (GeForce RTX 40): Ampere's boot path with the bootloader
+ * and booters below ad102 and the GSP image shared with GA10x (its Ada
+ * signature), Ada's 3D, compute and display-core classes.
+ */
+static const struct nvrtx_profile identify_ad10x = {
+	"AD10x",
+	0,
+	"ga102/gsp/gsp-570.144.bin",
+	"ad102/gsp/bootloader-570.144.bin",
+	"ad102/gsp/booter_load-570.144.bin",
+	"ad102/gsp/booter_unload-570.144.bin",
+	NULL,
+	".fwsignature_ad10x",
+	NVRTX_FALCON_BOOT_ROM,
+	0x1183a4U,
+	1,
+	0x820c04U,
+	IDENTIFY_HEAP_OS_AMPERE,
+	IDENTIFY_HEAP_MIN_AMPERE,
+	0,
+	0xc56fU,
+	0xc7b5U,
+	0xc997U,
+	0xc9c0U,
+	0xc770U,
+	0xc77dU,
+	0xc67eU,
+	0xc67bU,
+	0xc67aU,
+	0x00000000U,
+	3U,
+	0U,
+	89U,
+	48U,
+	{ 0U, 8U, 16U, 32U, 64U, 100U },
+	6U
 };
 
 /*
  * The chips of Turing and later, by identity number.
  *
- * Only TU102, TU104 and TU106 boot the GSP firmware below the tu102
- * directory; TU116 and TU117 have their own booter images, and the later
- * generations their own firmware.  Those are recognized and named, and the
- * stages after N1 refuse them until their firmware path exists.
+ * Every Turing, Ampere and Ada chip of the GeForce RTX 20, 30 and 40 (and
+ * GTX 16) has a family record.  GA100 and GH100 (data-centre parts without
+ * a display) and Blackwell (WS240) are recognized and named only, and the
+ * stages after N1 leave them alone.
  */
 static const struct identify_entry identify_table[] = {
-	{ 0x162U, "TU102", 1 },
-	{ 0x164U, "TU104", 1 },
-	{ 0x166U, "TU106", 1 },
-	{ 0x167U, "TU117", 0 },
-	{ 0x168U, "TU116", 0 },
-	{ 0x170U, "GA100", 0 },
-	{ 0x172U, "GA102", 0 },
-	{ 0x173U, "GA103", 0 },
-	{ 0x174U, "GA104", 0 },
-	{ 0x176U, "GA106", 0 },
-	{ 0x177U, "GA107", 0 },
-	{ 0x180U, "GH100", 0 },
-	{ 0x192U, "AD102", 0 },
-	{ 0x193U, "AD103", 0 },
-	{ 0x194U, "AD104", 0 },
-	{ 0x196U, "AD106", 0 },
-	{ 0x197U, "AD107", 0 },
-	{ 0x1b2U, "GB202", 0 },
-	{ 0x1b3U, "GB203", 0 },
-	{ 0x1b5U, "GB205", 0 },
-	{ 0x1b6U, "GB206", 0 },
-	{ 0x1b7U, "GB207", 0 }
+	{ 0x162U, "TU102", &identify_tu10x },
+	{ 0x164U, "TU104", &identify_tu10x },
+	{ 0x166U, "TU106", &identify_tu10x },
+	{ 0x167U, "TU117", &identify_tu11x },
+	{ 0x168U, "TU116", &identify_tu11x },
+	{ 0x170U, "GA100", NULL },
+	{ 0x172U, "GA102", &identify_ga10x },
+	{ 0x173U, "GA103", &identify_ga10x },
+	{ 0x174U, "GA104", &identify_ga10x },
+	{ 0x176U, "GA106", &identify_ga10x },
+	{ 0x177U, "GA107", &identify_ga10x },
+	{ 0x180U, "GH100", NULL },
+	{ 0x192U, "AD102", &identify_ad10x },
+	{ 0x193U, "AD103", &identify_ad10x },
+	{ 0x194U, "AD104", &identify_ad10x },
+	{ 0x196U, "AD106", &identify_ad10x },
+	{ 0x197U, "AD107", &identify_ad10x },
+	{ 0x1b2U, "GB202", NULL },
+	{ 0x1b3U, "GB203", NULL },
+	{ 0x1b5U, "GB205", NULL },
+	{ 0x1b6U, "GB206", NULL },
+	{ 0x1b7U, "GB207", NULL }
 };
 
 static enum nvrtx_family identify_family(uint32_t architecture);
@@ -96,7 +265,7 @@ nvrtx_identify(
 	chip->revision = 0U;
 	chip->family = NVRTX_FAMILY_UNKNOWN;
 	chip->name = "unknown";
-	chip->gsp_tu102 = 0;
+	chip->profile = NULL;
 
 	/* A window that reads all ones has no GPU behind it, or the GPU fell off the bus. */
 	if (ident0 == 0xffffffffU)
@@ -135,7 +304,7 @@ nvrtx_identify(
 	for (index = 0U; index < sizeof(identify_table) / sizeof(identify_table[0]); index++) {
 		if (identify_table[index].chipset == chip->chipset) {
 			chip->name = identify_table[index].name;
-			chip->gsp_tu102 = identify_table[index].gsp_tu102;
+			chip->profile = identify_table[index].profile;
 
 			/* Succeeded: the chip is known. */
 			return 0;

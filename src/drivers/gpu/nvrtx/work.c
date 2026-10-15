@@ -913,7 +913,7 @@ work_channel(
 		return ENOMEM;
 
 	nvrtx_channel_params(params, &setup);
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_CLASS_CHANNEL, params, NVRTX_CHANNEL_PARAMS_BYTES);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVRTX_HANDLE_WORK_CHANNEL, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
 	kern_free(params);
 	if (error != 0)
 		return error;
@@ -943,14 +943,14 @@ work_objects(
 	work = &gpu->work;
 
 	/* The 3D object. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_THREED, NVRTX_CLASS_THREED, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_THREED, gpu->identity.chip.profile->class_threed, NULL, 0U);
 	if (error != 0)
 		return error;
 
 	work->threed_made = 1;
 
 	/* The compute object. */
-	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_COMPUTE, NVRTX_CLASS_COMPUTE, NULL, 0U);
+	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_WORK_CHANNEL, NVRTX_HANDLE_WORK_COMPUTE, gpu->identity.chip.profile->class_compute, NULL, 0U);
 	if (error != 0)
 		return error;
 
@@ -1001,7 +1001,7 @@ work_first(
 	 */
 	push = (uint8_t *)work->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	push_va = WORK_FENCES_VA + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
-	length = nvrtx_work_push_objects(push, NVRTX_CLASS_THREED, NVRTX_CLASS_COMPUTE);
+	length = nvrtx_work_push_objects(push, gpu->identity.chip.profile->class_threed, gpu->identity.chip.profile->class_compute);
 
 	/* Opens the channel to submissions; the semaphore starts at 0. */
 	kern_memset(work->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);

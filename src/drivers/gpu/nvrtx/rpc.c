@@ -17,6 +17,7 @@
  * call at a time.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -36,15 +37,13 @@
 /*
  * What the resume of the GSP's core uses: the GSP falcon's two mailboxes
  * (the start page's address) and its application-version register, the
- * secure processor's mailbox 0 (its result), the RISC-V core status (bit 0
- * while it runs), and the secure scratch register whose bit 26 says the
- * boot has handed over to the firmware.
+ * secure processor's mailbox 0 (its result), and the secure scratch register
+ * whose bit 26 says the boot has handed over to the firmware.
  */
 #define RPC_GSP_MAILBOX0		(NVRTX_FALCON_GSP_BASE + 0x040U)
 #define RPC_GSP_MAILBOX1		(NVRTX_FALCON_GSP_BASE + 0x044U)
 #define RPC_GSP_APP_VERSION		(NVRTX_FALCON_GSP_BASE + 0x080U)
 #define RPC_SEC2_MAILBOX0		(NVRTX_FALCON_SEC2_BASE + 0x040U)
-#define RPC_RISCV_STATUS		0x111240U
 #define RPC_BOOT_SCRATCH		0x1180f8U
 #define RPC_BOOT_HANDED_OVER		0x04000000U
 #define RPC_RESUME_TIMEOUT_US		2000000U
@@ -565,11 +564,12 @@ rpc_core_resume(
 	uint64_t libos;
 	uint32_t result;
 	uint32_t status;
+	bool running;
 	int error;
 
 	/* Puts the GSP's falcon back into its RISC-V mode and gives it the start page. */
 	nvrtx_stage_mark("sequencer: core resume");
-	error = nvrtx_falcon_reset_engine(gpu, &gpu->gsp_falcon);
+	error = nvrtx_falcon_riscv_mode(gpu, &gpu->gsp_falcon);
 	if (error != 0)
 		return error;
 
@@ -594,8 +594,8 @@ rpc_core_resume(
 
 	/* Tells the GSP the bootloader's version and checks that its RISC-V core runs. */
 	nvrtx_wr32(gpu, RPC_GSP_APP_VERSION, gpu->bootloader_desc.app_version);
-	status = nvrtx_rd32(gpu, RPC_RISCV_STATUS);
-	if ((status & 0x1U) == 0U) {
+	running = nvrtx_falcon_riscv_running(gpu, &gpu->gsp_falcon, &status);
+	if (!running) {
 		nvrtx_stage_mark("sequencer: resume left RISC-V stopped (%08x)", (unsigned)status);
 		return EIO;
 	}

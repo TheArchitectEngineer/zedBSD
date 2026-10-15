@@ -87,6 +87,33 @@
 #define VBIOS_DESC_DMEM_SIZE_AT		48U
 #define VBIOS_DESC_V2_BYTES		52U
 
+/*
+ * The FWSEC descriptor of version 3 (Ampere and later): the signature's
+ * place in the data, the interface table, the code's and data's places and
+ * sizes, the engine mask (16 bits), the ucode number and signature count
+ * (a byte each) and the fuse versions the signatures are for (16 bits).
+ * The signatures follow the fixed part, inside the descriptor's size.
+ */
+#define VBIOS_DESC3_SIGNATURE_AT	8U
+#define VBIOS_DESC3_INTERFACE_AT	12U
+#define VBIOS_DESC3_IMEM_BASE_AT	16U
+#define VBIOS_DESC3_IMEM_SIZE_AT	20U
+#define VBIOS_DESC3_DMEM_BASE_AT	28U
+#define VBIOS_DESC3_DMEM_SIZE_AT	32U
+#define VBIOS_DESC3_ENGINE_AT		36U
+#define VBIOS_DESC3_UCODE_AT		38U
+#define VBIOS_DESC3_COUNT_AT		39U
+#define VBIOS_DESC3_VERSIONS_AT		40U
+#define VBIOS_DESC3_BYTES		44U
+
+/* The block a falcon's DMA copies, which the version 3 program's parts are whole numbers of. */
+#define VBIOS_DMA_BLOCK			0x100U
+
+/* The engine bit of FWSEC on the GSP's falcon, and its fuse bank (one word per ucode number from 1). */
+#define VBIOS_ENGINE_GSP		0x400U
+#define VBIOS_FUSE_BANK_GSP		0x8241c0U
+#define VBIOS_FUSE_VERSION_BITS		16U
+
 /* The application interface table in the program's data memory, and the entry that maps the command block. */
 #define VBIOS_APPIF_VERSION		1U
 #define VBIOS_APPIF_HEADER_AT		1U
@@ -116,6 +143,8 @@ static int vbios_raw16(const uint8_t *rom, size_t size, size_t at, uint32_t *val
 static int vbios_raw32(const uint8_t *rom, size_t size, size_t at, uint32_t *value);
 static int vbios_image(const uint8_t *rom, size_t size, size_t base, size_t *image_size, uint32_t *type, int *last);
 static int vbios_find_bit(const struct nvrtx_vbios *vbios, uint32_t *bit);
+static int vbios_fwsec_v2(const struct nvrtx_vbios *vbios, uint32_t descriptor, uint32_t header, struct nvrtx_fwsec *fwsec);
+static int vbios_fwsec_v3(const struct nvrtx_vbios *vbios, uint32_t descriptor, uint32_t header, struct nvrtx_fwsec *fwsec);
 
 /*
  * Walks the chain of images of a ROM read into memory.
@@ -191,7 +220,8 @@ nvrtx_vbios_walk(
  *
  * Returns 0 with the descriptor's fields and the program's place in the
  * ROM, ENOENT when the ROM has no FWSEC entry, ENOTSUP for a descriptor
- * version other than 2 (Ampere and later), or EINVAL for broken tables.
+ * version other than 2 (Turing) and 3 (Ampere and later), or EINVAL for
+ * broken tables.
  */
 int
 nvrtx_vbios_fwsec(
@@ -307,37 +337,20 @@ nvrtx_vbios_fwsec(
 	if ((header & VBIOS_DESC_VALID) == 0U)
 		return EINVAL;
 
+	/* Reads the descriptor of the version it has; the program follows the descriptor in the ROM. */
 	fwsec->version = (header >> VBIOS_DESC_VERSION_SHIFT) & VBIOS_DESC_VERSION_MASK;
-	if (fwsec->version != 2U)
-		return ENOTSUP;
+	if (fwsec->version == 2U) {
+		error = vbios_fwsec_v2(vbios, descriptor, header, fwsec);
+	} else if (fwsec->version == 3U) {
+		error = vbios_fwsec_v3(vbios, descriptor, header, fwsec);
+	} else {
+		/* A version this driver does not know. */
+		error = ENOTSUP;
+	}
 
-	/* Reads the descriptor; the program follows the descriptor in the ROM. */
-	error = vbios_translate(vbios, descriptor, VBIOS_DESC_V2_BYTES, &value);
+	/* Reports a descriptor that does not describe a program inside the ROM. */
 	if (error != 0)
 		return error;
-
-	fwsec->interface_at = nvrtx_get32(vbios->rom, value + VBIOS_DESC_INTERFACE_AT);
-	fwsec->imem_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_BASE_AT);
-	fwsec->imem_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_SIZE_AT);
-	fwsec->imem_secure_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_SECURE_BASE_AT);
-	fwsec->imem_secure_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_SECURE_SIZE_AT);
-	fwsec->dmem_at = nvrtx_get32(vbios->rom, value + VBIOS_DESC_DMEM_OFFSET_AT);
-	fwsec->dmem_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC_DMEM_BASE_AT);
-	fwsec->dmem_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC_DMEM_SIZE_AT);
-
-	/* The program is the code then the data, right after the descriptor. */
-	fwsec->program_size = fwsec->imem_size + fwsec->dmem_size;
-	error = vbios_translate(vbios, descriptor + (header >> VBIOS_DESC_SIZE_SHIFT), fwsec->program_size, &value);
-	if (error != 0)
-		return error;
-
-	fwsec->program_at = value;
-
-	/* The secure code lies inside the code, and the data block inside the program. */
-	if (fwsec->imem_secure_size > fwsec->imem_size)
-		return EINVAL;
-	if (fwsec->dmem_at > fwsec->program_size || fwsec->dmem_size > fwsec->program_size - fwsec->dmem_at)
-		return EINVAL;
 
 	/* Succeeded: the FWSEC program is found. */
 	return 0;
@@ -428,6 +441,116 @@ nvrtx_fwsec_command(
 
 	/* A program without the command block cannot be told what to do. */
 	return EINVAL;
+}
+
+/*
+ * Names the fuse register that holds FWSEC's revocation version (version 3).
+ *
+ * Returns 0 when the descriptor is not version 3 or its engine is not the
+ * GSP's falcon, the only one FWSEC is signed for.
+ */
+uint32_t
+nvrtx_fwsec_fuse_register(
+	const struct nvrtx_fwsec *fwsec)
+{
+	/* Only a version 3 program on the GSP's falcon is checked against a fuse. */
+	if (fwsec->version != 3U)
+		return 0U;
+	if ((fwsec->engine_id & VBIOS_ENGINE_GSP) == 0U)
+		return 0U;
+	if (fwsec->ucode_id == 0U || fwsec->ucode_id > 32U)
+		return 0U;
+
+	/* Succeeded: the ucode's word of the GSP's bank. */
+	return VBIOS_FUSE_BANK_GSP + (fwsec->ucode_id - 1U) * 4U;
+}
+
+/*
+ * Picks which of FWSEC's signatures the boot ROM checks (version 3).
+ *
+ * The fuse's highest set bit is the version the GPU has revoked up to; the
+ * signatures are stored for the fuse versions whose bits are set in the
+ * descriptor, lowest first, and the one for that version is taken.  Returns
+ * EINVAL when the ROM holds no signature for the GPU's version.
+ */
+int
+nvrtx_fwsec_fuse_index(
+	const struct nvrtx_fwsec *fwsec,
+	uint32_t fuse,
+	unsigned *index)
+{
+	uint32_t position;
+	uint32_t below;
+	uint32_t count;
+	uint32_t bit;
+
+	/* Finds the bit just above the fuse's highest set bit: the version to sign for. */
+	position = 0U;
+	while (fuse != 0U) {
+		position++;
+		fuse >>= 1;
+	}
+
+	/* The descriptor must hold a signature for that version. */
+	if (position >= VBIOS_FUSE_VERSION_BITS)
+		return EINVAL;
+	if ((fwsec->signature_versions & (1U << position)) == 0U)
+		return EINVAL;
+
+	/* The signature's index counts the versions stored before it. */
+	below = fwsec->signature_versions & ((1U << position) - 1U);
+	count = 0U;
+	for (bit = 0U; bit < VBIOS_FUSE_VERSION_BITS; bit++) {
+		if (((below >> bit) & 1U) != 0U)
+			count++;
+	}
+
+	/* The index must name a signature the ROM holds. */
+	if (count >= fwsec->signature_count)
+		return EINVAL;
+
+	/* Succeeded: the signature's index. */
+	*index = count;
+	return 0;
+}
+
+/*
+ * Writes one of FWSEC's signatures into a copy of the program (version 3).
+ *
+ * The boot ROM checks the signature at its place in the data block before
+ * it starts the program.  Returns EINVAL for another version, an index the
+ * ROM does not hold, or a place outside the data block.
+ */
+int
+nvrtx_fwsec_sign(
+	uint8_t *program,
+	const struct nvrtx_fwsec *fwsec,
+	const struct nvrtx_vbios *vbios,
+	unsigned index)
+{
+	const uint8_t *signature;
+	uint8_t *place;
+	uint32_t at;
+
+	/* Only version 3 carries its signatures in the ROM. */
+	if (fwsec->version != 3U)
+		return EINVAL;
+	if (index >= fwsec->signature_count)
+		return EINVAL;
+
+	/* The signature's place must lie inside the data block the DMA copies. */
+	if (fwsec->signature_at > fwsec->dmem_load_size ||
+	    NVRTX_FWSEC_SIGNATURE_BYTES > fwsec->dmem_load_size - fwsec->signature_at)
+		return EINVAL;
+
+	/* Copies the chosen signature over its place. */
+	signature = vbios->rom + fwsec->signatures_at + (size_t)index * NVRTX_FWSEC_SIGNATURE_BYTES;
+	place = program + fwsec->dmem_at + fwsec->signature_at;
+	for (at = 0U; at < NVRTX_FWSEC_SIGNATURE_BYTES; at++)
+		place[at] = signature[at];
+
+	/* Succeeded: the program carries the signature its GPU checks. */
+	return 0;
 }
 
 /* Reads a byte of the ROM through the falcon-image translation. */
@@ -667,4 +790,134 @@ vbios_find_bit(
 
 	/* A ROM without the BIT table is not one this driver reads. */
 	return ENOENT;
+}
+
+/* Reads a version 2 (Turing) FWSEC descriptor and finds its program. */
+static int
+vbios_fwsec_v2(
+	const struct nvrtx_vbios *vbios,
+	uint32_t descriptor,
+	uint32_t header,
+	struct nvrtx_fwsec *fwsec)
+{
+	uint32_t value;
+	int error;
+
+	/* Reads the descriptor. */
+	error = vbios_translate(vbios, descriptor, VBIOS_DESC_V2_BYTES, &value);
+	if (error != 0)
+		return error;
+
+	fwsec->interface_at = nvrtx_get32(vbios->rom, value + VBIOS_DESC_INTERFACE_AT);
+	fwsec->imem_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_BASE_AT);
+	fwsec->imem_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_SIZE_AT);
+	fwsec->imem_secure_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_SECURE_BASE_AT);
+	fwsec->imem_secure_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC_IMEM_SECURE_SIZE_AT);
+	fwsec->dmem_at = nvrtx_get32(vbios->rom, value + VBIOS_DESC_DMEM_OFFSET_AT);
+	fwsec->dmem_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC_DMEM_BASE_AT);
+	fwsec->dmem_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC_DMEM_SIZE_AT);
+	fwsec->dmem_load_size = fwsec->dmem_size;
+
+	/* Version 2 has no signatures for a boot ROM: the falcon bootloader loads it. */
+	fwsec->signature_at = 0U;
+	fwsec->engine_id = 0U;
+	fwsec->ucode_id = 0U;
+	fwsec->signature_count = 0U;
+	fwsec->signature_versions = 0U;
+	fwsec->signatures_at = 0U;
+
+	/* The program is the code then the data, right after the descriptor. */
+	fwsec->program_size = fwsec->imem_size + fwsec->dmem_size;
+	error = vbios_translate(vbios, descriptor + (header >> VBIOS_DESC_SIZE_SHIFT), fwsec->program_size, &value);
+	if (error != 0)
+		return error;
+
+	fwsec->program_at = value;
+
+	/* The secure code lies inside the code, and the data block inside the program. */
+	if (fwsec->imem_secure_size > fwsec->imem_size)
+		return EINVAL;
+	if (fwsec->dmem_at > fwsec->program_size || fwsec->dmem_size > fwsec->program_size - fwsec->dmem_at)
+		return EINVAL;
+
+	/* Succeeded: the version 2 program is found. */
+	return 0;
+}
+
+/*
+ * Reads a version 3 (Ampere and later) FWSEC descriptor and finds its
+ * program and its signatures.
+ *
+ * The program is the code then the data; the falcon copies both by DMA in
+ * 256-byte blocks, so the code is a whole number of blocks and the data is
+ * copied to its next block boundary.
+ */
+static int
+vbios_fwsec_v3(
+	const struct nvrtx_vbios *vbios,
+	uint32_t descriptor,
+	uint32_t header,
+	struct nvrtx_fwsec *fwsec)
+{
+	uint32_t value;
+	uint32_t place;
+	int error;
+
+	/* Reads the fixed part of the descriptor. */
+	error = vbios_translate(vbios, descriptor, VBIOS_DESC3_BYTES, &value);
+	if (error != 0)
+		return error;
+
+	fwsec->signature_at = nvrtx_get32(vbios->rom, value + VBIOS_DESC3_SIGNATURE_AT);
+	fwsec->interface_at = nvrtx_get32(vbios->rom, value + VBIOS_DESC3_INTERFACE_AT);
+	fwsec->imem_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC3_IMEM_BASE_AT);
+	fwsec->imem_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC3_IMEM_SIZE_AT);
+	fwsec->dmem_base = nvrtx_get32(vbios->rom, value + VBIOS_DESC3_DMEM_BASE_AT);
+	fwsec->dmem_size = nvrtx_get32(vbios->rom, value + VBIOS_DESC3_DMEM_SIZE_AT);
+	fwsec->engine_id = vbios->rom[value + VBIOS_DESC3_ENGINE_AT] | ((uint32_t)vbios->rom[value + VBIOS_DESC3_ENGINE_AT + 1U] << 8);
+	fwsec->ucode_id = vbios->rom[value + VBIOS_DESC3_UCODE_AT];
+	fwsec->signature_count = vbios->rom[value + VBIOS_DESC3_COUNT_AT];
+	fwsec->signature_versions = vbios->rom[value + VBIOS_DESC3_VERSIONS_AT] | ((uint32_t)vbios->rom[value + VBIOS_DESC3_VERSIONS_AT + 1U] << 8);
+
+	/* The whole code is secure; the data block starts right after it. */
+	fwsec->imem_secure_base = fwsec->imem_base;
+	fwsec->imem_secure_size = fwsec->imem_size;
+	fwsec->dmem_at = fwsec->imem_size;
+	fwsec->dmem_load_size = (fwsec->dmem_size + VBIOS_DMA_BLOCK - 1U) & ~(VBIOS_DMA_BLOCK - 1U);
+
+	/* A program with no signature cannot pass the boot ROM. */
+	if (fwsec->signature_count == 0U)
+		return EINVAL;
+
+	/* The signatures follow the fixed part, one after the other. */
+	error = vbios_translate(vbios,
+	    descriptor + VBIOS_DESC3_BYTES,
+	    fwsec->signature_count * NVRTX_FWSEC_SIGNATURE_BYTES,
+	    &place);
+	if (error != 0)
+		return error;
+
+	fwsec->signatures_at = place;
+
+	/* The program is the code then the data, right after the descriptor. */
+	fwsec->program_size = fwsec->imem_size + fwsec->dmem_size;
+	error = vbios_translate(vbios, descriptor + (header >> VBIOS_DESC_SIZE_SHIFT), fwsec->program_size, &value);
+	if (error != 0)
+		return error;
+
+	fwsec->program_at = value;
+
+	/* The code must be whole DMA blocks, so the data's copy starts on a block. */
+	if ((fwsec->imem_size % VBIOS_DMA_BLOCK) != 0U || fwsec->imem_size == 0U)
+		return EINVAL;
+
+	/* The interface table and the signature's place lie inside the data block. */
+	if (fwsec->interface_at > fwsec->dmem_size)
+		return EINVAL;
+	if (fwsec->signature_at > fwsec->dmem_load_size ||
+	    NVRTX_FWSEC_SIGNATURE_BYTES > fwsec->dmem_load_size - fwsec->signature_at)
+		return EINVAL;
+
+	/* Succeeded: the version 3 program and its signatures are found. */
+	return 0;
 }

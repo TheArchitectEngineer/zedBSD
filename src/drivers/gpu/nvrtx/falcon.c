@@ -13,6 +13,14 @@
  * each carry a tag) and data memory (DMEM) are written word by word through
  * their port registers, a start address is set, and the CPU is started;
  * the driver then waits for it to halt and reads its two mailboxes.
+ *
+ * From Ampere on (a profile's NVRTX_FALCON_BOOT_ROM) the falcon is reset
+ * with a few more steps (its register block is selected, the reset waits
+ * for the engine to be ready, and the scrub is reported in another
+ * register), it copies a signed program from system memory by its own DMA,
+ * and its boot ROM is told where the signature is and which engine and
+ * ucode it is before the start.  The steps follow nouveau's GA102 falcon
+ * (Linux v6.19, falcon/ga102.c, MIT).
  */
 
 #include <stdbool.h>
@@ -63,13 +71,53 @@
 /* The PMC enable register, where SEC2 has a reset bit. */
 #define FALCON_PMC_ENABLE		0x000200U
 
+/*
+ * The registers of an Ampere or later falcon, relative to its base: the
+ * reset-ready and scrub status, the DMA's base, target, source, command and
+ * upper base, the second register block (base + 0x1000) with the boot ROM's
+ * parameters, the RISC-V core's status, the register-block selection and
+ * the RISC-V mode bits.
+ */
+#define FALCON_AMPERE_STATUS		0x0f4U
+#define FALCON_AMPERE_RESET_READY	0x80000000U
+#define FALCON_AMPERE_SCRUBBING		0x00001000U
+#define FALCON_DMA_BASE			0x110U
+#define FALCON_DMA_TARGET		0x114U
+#define FALCON_DMA_COMMAND		0x118U
+#define FALCON_DMA_SOURCE		0x11cU
+#define FALCON_DMA_BASE_UPPER		0x128U
+#define FALCON_DMA_DONE			0x2U
+#define FALCON_DMA_CODE			0x10U
+#define FALCON_DMA_SECURE		0x4U
+#define FALCON_DMA_BLOCK		0x100U
+#define FALCON_DMA_BLOCK_SIZE		(6U << 8)
+#define FALCON_DMA_CONTEXT_FIELDS	0x00010007U
+#define FALCON_ROM_BOOT			0x1180U
+#define FALCON_ROM_UCODE		0x1198U
+#define FALCON_ROM_ENGINE		0x119cU
+#define FALCON_ROM_SIGNATURE		0x1210U
+#define FALCON_RISCV_STATUS_TURING	0x1240U
+#define FALCON_RISCV_RUNNING_TURING	0x1U
+#define FALCON_RISCV_STATUS_AMPERE	0x1388U
+#define FALCON_RISCV_RUNNING_AMPERE	0x80U
+#define FALCON_SELECT			0x1668U
+#define FALCON_SELECT_PENDING		0x10U
+#define FALCON_SELECT_DONE		0x1U
+#define FALCON_RISCV_MODE_BITS		0x111U
+
 /* How long the waits last, in microseconds, and the step of the poll. */
 #define FALCON_SCRUB_TIMEOUT_US		10000U
+#define FALCON_AMPERE_SCRUB_TIMEOUT_US	20000U
+#define FALCON_READY_TIMEOUT_US		150U
+#define FALCON_SELECT_TIMEOUT_US	10000U
+#define FALCON_DMA_TIMEOUT_US		2000000U
 #define FALCON_HALT_TIMEOUT_US		2000000U
 #define FALCON_POLL_STEP_US		10U
 
 static void falcon_mask(struct nvrtx_gpu *gpu, uint32_t offset, uint32_t mask, uint32_t value);
 static int falcon_scrub_wait(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+static int falcon_select(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
+static void falcon_reset_ready(struct nvrtx_gpu *gpu, const struct nvrtx_falcon *falcon);
 
 /*
  * Waits until a register's masked value equals the expected one.
@@ -150,21 +198,32 @@ nvrtx_falcon_reset(
 	uint32_t identity;
 	int error;
 
+	/* Selects the falcon's register block where its generation needs it. */
+	error = falcon_select(gpu, falcon);
+	if (error != 0)
+		return error;
+
 	/* Stops its interrupts from reaching the host and clears their masks. */
 	falcon_mask(gpu, falcon->base + FALCON_IRQ_DESTINATION, 0x3U, 0U);
 	nvrtx_wr32(gpu, falcon->base + FALCON_IRQ_MASK_CLEAR, 0xffffffffU);
 
-	/* Takes a falcon with a PMC bit out of the enable register. */
-	if (falcon->pmc_mask != 0U)
+	/* Takes a falcon with a PMC bit out of the enable register, once it is ready for the reset. */
+	if (falcon->pmc_mask != 0U) {
+		falcon_reset_ready(gpu, falcon);
 		falcon_mask(gpu, FALCON_PMC_ENABLE, falcon->pmc_mask, 0U);
+	}
 
 	/* Pulses the engine reset. */
 	error = nvrtx_falcon_reset_engine(gpu, falcon);
 	if (error != 0)
 		return error;
 
-	/* Pulses it again for the enable, puts the PMC bit back and waits for the scrub. */
+	/* Pulses it again for the enable, selects it again, puts the PMC bit back and waits for the scrub. */
 	error = nvrtx_falcon_reset_engine(gpu, falcon);
+	if (error != 0)
+		return error;
+
+	error = falcon_select(gpu, falcon);
 	if (error != 0)
 		return error;
 
@@ -372,6 +431,9 @@ nvrtx_falcon_reset_engine(
 {
 	int error;
 
+	/* Waits, briefly, for an Ampere falcon to be ready for the reset. */
+	falcon_reset_ready(gpu, falcon);
+
 	/* Holds the engine in reset for 10 us, then lets it go. */
 	falcon_mask(gpu, falcon->base + FALCON_ENGINE_RESET, 0x1U, 0x1U);
 	kern_usleep_range(10U, 20U);
@@ -384,6 +446,151 @@ nvrtx_falcon_reset_engine(
 
 	/* Succeeded: the engine is out of reset. */
 	return 0;
+}
+
+/*
+ * Puts the GSP's falcon into its RISC-V mode: an engine reset, and on Ampere
+ * and later the RISC-V mode bits of its second register block.
+ */
+int
+nvrtx_falcon_riscv_mode(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon)
+{
+	int error;
+
+	/* Pulses the engine reset. */
+	error = nvrtx_falcon_reset_engine(gpu, falcon);
+	if (error != 0)
+		return error;
+
+	/* An Ampere falcon is switched to the RISC-V core explicitly. */
+	if (falcon->style == NVRTX_FALCON_BOOT_ROM)
+		falcon_mask(gpu, falcon->base + FALCON_SELECT, FALCON_RISCV_MODE_BITS, FALCON_RISCV_MODE_BITS);
+
+	/* Succeeded: the falcon starts its RISC-V core when the booter hands it over. */
+	return 0;
+}
+
+/*
+ * Reports whether the GSP's RISC-V core runs, with the status register read.
+ */
+bool
+nvrtx_falcon_riscv_running(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon,
+	uint32_t *status)
+{
+	/* An Ampere falcon reports the core in another register and bit than Turing's. */
+	if (falcon->style == NVRTX_FALCON_BOOT_ROM) {
+		*status = nvrtx_rd32(gpu, falcon->base + FALCON_RISCV_STATUS_AMPERE);
+		if ((*status & FALCON_RISCV_RUNNING_AMPERE) != 0U)
+			return true;
+
+		/* The core is stopped. */
+		return false;
+	}
+
+	/* Turing's status register: bit 0 while the core runs. */
+	*status = nvrtx_rd32(gpu, falcon->base + FALCON_RISCV_STATUS_TURING);
+	if ((*status & FALCON_RISCV_RUNNING_TURING) != 0U)
+		return true;
+
+	/* The core is stopped. */
+	return false;
+}
+
+/*
+ * Has an Ampere or later falcon copy part of a program into its memory by DMA.
+ *
+ * The program is in system memory at bus; length bytes from source (an
+ * offset into it) go to target in the instruction memory (code) or the data
+ * memory, 256 bytes at a time.  The DMA's base holds the address in
+ * 256-byte units, so bus + source of data must be a multiple of 256 (code
+ * is addressed from bus itself).  Returns EINVAL for a length or an address
+ * the DMA cannot take, ETIMEDOUT when a block does not finish.
+ */
+int
+nvrtx_falcon_dma_load(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon,
+	uint64_t bus,
+	uint32_t source,
+	uint32_t length,
+	uint32_t target,
+	int code,
+	int secure)
+{
+	uint64_t base;
+	uint32_t command;
+	uint32_t offset;
+	uint32_t done;
+	int error;
+
+	/* Code is copied from offsets into the program, data from a base at its own start. */
+	base = bus;
+	offset = source;
+	if (code == 0) {
+		base = bus + source;
+		offset = 0U;
+	}
+
+	/* The DMA moves whole blocks from a block-aligned base below 2^40. */
+	if (length == 0U || (length % FALCON_DMA_BLOCK) != 0U)
+		return EINVAL;
+	if ((base % FALCON_DMA_BLOCK) != 0U || (base >> 40) != 0U)
+		return EINVAL;
+
+	/* Lets the falcon reach physical memory and points DMA context 0 at system memory. */
+	falcon_mask(gpu, falcon->base + FALCON_FBIF_CONTROL, FALCON_FBIF_ALLOW_PHYSICAL, FALCON_FBIF_ALLOW_PHYSICAL);
+	nvrtx_wr32(gpu, falcon->base + FALCON_DMA_CONTROL, 0U);
+	falcon_mask(gpu, falcon->base + FALCON_DMA_CONTEXT, FALCON_DMA_CONTEXT_FIELDS, FALCON_DMA_CONTEXT_SYSTEM);
+
+	/* Builds the command: 256-byte blocks, to the code or the data, marked secure when asked. */
+	command = FALCON_DMA_BLOCK_SIZE;
+	if (code != 0)
+		command |= FALCON_DMA_CODE;
+	if (secure != 0)
+		command |= FALCON_DMA_SECURE;
+
+	/* Sets the DMA's base. */
+	nvrtx_wr32(gpu, falcon->base + FALCON_DMA_BASE, (uint32_t)(base >> 8));
+	nvrtx_wr32(gpu, falcon->base + FALCON_DMA_BASE_UPPER, 0U);
+
+	/* Copies each block and waits for it. */
+	for (done = 0U; done < length; done += FALCON_DMA_BLOCK) {
+		nvrtx_wr32(gpu, falcon->base + FALCON_DMA_TARGET, target + done);
+		nvrtx_wr32(gpu, falcon->base + FALCON_DMA_SOURCE, offset + done);
+		nvrtx_wr32(gpu, falcon->base + FALCON_DMA_COMMAND, command);
+
+		/* Waits for the block to arrive. */
+		error = nvrtx_poll(gpu, falcon->base + FALCON_DMA_COMMAND, FALCON_DMA_DONE, FALCON_DMA_DONE, FALCON_DMA_TIMEOUT_US);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the part is in the falcon's memory. */
+	return 0;
+}
+
+/*
+ * Tells an Ampere or later falcon's boot ROM about the program it starts:
+ * where its signature is in the data memory, its engine and its ucode
+ * number.  The start itself is nvrtx_falcon_boot's.
+ */
+void
+nvrtx_falcon_boot_rom(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon,
+	uint32_t signature_at,
+	uint32_t engine_id,
+	uint32_t ucode_id)
+{
+	/* The boot ROM's parameters, then its go-ahead. */
+	nvrtx_wr32(gpu, falcon->base + FALCON_ROM_SIGNATURE, signature_at);
+	nvrtx_wr32(gpu, falcon->base + FALCON_ROM_ENGINE, engine_id);
+	nvrtx_wr32(gpu, falcon->base + FALCON_ROM_UCODE, ucode_id);
+	nvrtx_wr32(gpu, falcon->base + FALCON_ROM_BOOT, 0x1U);
 }
 
 /* Changes the masked bits of a register to a value. */
@@ -409,12 +616,85 @@ falcon_scrub_wait(
 {
 	int error;
 
-	/* Touches the scrub control, then waits for both scrubbing bits to clear. */
+	/* Touches the scrub control. */
 	falcon_mask(gpu, falcon->base + FALCON_SCRUB_TOUCH, 0U, 0U);
+
+	/* An Ampere falcon reports the scrub in its status register. */
+	if (falcon->style == NVRTX_FALCON_BOOT_ROM) {
+		error = nvrtx_poll(gpu,
+		    falcon->base + FALCON_AMPERE_STATUS,
+		    FALCON_AMPERE_SCRUBBING,
+		    0U,
+		    FALCON_AMPERE_SCRUB_TIMEOUT_US);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the memories are clean. */
+		return 0;
+	}
+
+	/* A Turing falcon clears both scrubbing bits of its DMA control. */
 	error = nvrtx_poll(gpu, falcon->base + FALCON_DMA_CONTROL, FALCON_SCRUBBING, 0U, FALCON_SCRUB_TIMEOUT_US);
 	if (error != 0)
 		return error;
 
 	/* Succeeded: the memories are clean. */
 	return 0;
+}
+
+/*
+ * Selects an Ampere falcon's register block when it is not selected yet.
+ *
+ * A Turing falcon has nothing to select.  Returns ETIMEDOUT when the
+ * selection does not complete.
+ */
+static int
+falcon_select(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon)
+{
+	uint32_t value;
+	int error;
+
+	/* Only an Ampere falcon has the selection. */
+	if (falcon->style != NVRTX_FALCON_BOOT_ROM)
+		return 0;
+
+	/* Nothing is pending: the block is selected already. */
+	value = nvrtx_rd32(gpu, falcon->base + FALCON_SELECT);
+	if ((value & FALCON_SELECT_PENDING) == 0U)
+		return 0;
+
+	/* Asks for the selection and waits for it. */
+	nvrtx_wr32(gpu, falcon->base + FALCON_SELECT, 0U);
+	error = nvrtx_poll(gpu, falcon->base + FALCON_SELECT, FALCON_SELECT_DONE, FALCON_SELECT_DONE, FALCON_SELECT_TIMEOUT_US);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the block is selected. */
+	return 0;
+}
+
+/*
+ * Waits up to 150 us for an Ampere falcon to say it is ready for a reset.
+ *
+ * The wait is advice: a falcon that does not say so is reset anyway, as
+ * nouveau does.  A Turing falcon has no such bit.
+ */
+static void
+falcon_reset_ready(
+	struct nvrtx_gpu *gpu,
+	const struct nvrtx_falcon *falcon)
+{
+	/* Only an Ampere falcon reports readiness. */
+	if (falcon->style != NVRTX_FALCON_BOOT_ROM)
+		return;
+
+	/* Reads the status once, then waits for the ready bit. */
+	(void)nvrtx_rd32(gpu, falcon->base + FALCON_AMPERE_STATUS);
+	(void)nvrtx_poll(gpu,
+	    falcon->base + FALCON_AMPERE_STATUS,
+	    FALCON_AMPERE_RESET_READY,
+	    FALCON_AMPERE_RESET_READY,
+	    FALCON_READY_TIMEOUT_US);
 }

@@ -43,10 +43,31 @@
 /* The longest section name compared, the terminating zero included. */
 #define IMAGE_SECTION_NAME_MAX		32U
 
+/* The booter's meta data: the fuse version, the engine and the ucode number, three words. */
+#define IMAGE_META_BYTES		12U
+#define IMAGE_META_FUSE_AT		0U
+#define IMAGE_META_ENGINE_AT		4U
+#define IMAGE_META_UCODE_AT		8U
+
+/*
+ * The fuse banks that hold a ucode's revocation version on Ampere and
+ * later, one word per ucode number from 1, picked by the ucode's engine
+ * bits: bit 0 (the booters of the secure processor carry it), bit 2, and
+ * bit 10 (FWSEC on the GSP's falcon carries it), checked in that order.
+ */
+#define IMAGE_ENGINE_BIT0		0x001U
+#define IMAGE_ENGINE_BIT2		0x004U
+#define IMAGE_ENGINE_BIT10		0x400U
+#define IMAGE_FUSE_BANK_BIT0		0x824140U
+#define IMAGE_FUSE_BANK_BIT2		0x824100U
+#define IMAGE_FUSE_BANK_BIT10		0x8241c0U
+
 static int image_range(size_t size, uint64_t at, uint64_t length);
 static int image_bin_header(const uint8_t *file, size_t size, size_t *inner, size_t *payload_at, size_t *payload_size);
 static uint32_t image_get16(const uint8_t *bytes, size_t at);
 static int image_name_equal(const uint8_t *file, size_t size, uint64_t at, const char *name);
+static uint32_t image_highest_bit(uint32_t value);
+static int image_booter_meta(const uint8_t *file, size_t size, size_t inner, struct nvrtx_booter *booter);
 
 /*
  * Reads the containers of a booter image (booter_load or booter_unload).
@@ -150,6 +171,16 @@ nvrtx_booter_parse(
 	if (error != 0)
 		return error;
 
+	/* The application, which an Ampere falcon is given from its own offset, lies in the payload. */
+	error = image_range(booter->payload_size, booter->app_at, booter->app_size);
+	if (error != 0)
+		return error;
+
+	/* Reads the meta data the boot ROM of an Ampere or later falcon is told, when the file has it. */
+	error = image_booter_meta(file, size, inner, booter);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the booter's ranges are all inside the file. */
 	return 0;
 }
@@ -172,6 +203,79 @@ nvrtx_booter_signature(
 
 	/* Succeeded: the signature's place in the file. */
 	*at = booter->signatures_at + (size_t)index * booter->signature_size;
+	return 0;
+}
+
+/*
+ * Names the fuse register that holds a ucode's revocation version.
+ *
+ * The engine the ucode runs on picks the bank, its ucode number (from 1)
+ * the word.  Returns 0 for an engine or a ucode number without one.
+ */
+uint32_t
+nvrtx_booter_fuse_register(
+	uint32_t engine_id,
+	uint32_t ucode_id)
+{
+	uint32_t bank;
+
+	/* A ucode number counts from 1, and the bank holds one word for each. */
+	if (ucode_id == 0U || ucode_id > 32U)
+		return 0U;
+
+	/* Picks the bank by the lowest of the engine bits that has one. */
+	if ((engine_id & IMAGE_ENGINE_BIT0) != 0U) {
+		bank = IMAGE_FUSE_BANK_BIT0;
+	} else if ((engine_id & IMAGE_ENGINE_BIT2) != 0U) {
+		bank = IMAGE_FUSE_BANK_BIT2;
+	} else if ((engine_id & IMAGE_ENGINE_BIT10) != 0U) {
+		bank = IMAGE_FUSE_BANK_BIT10;
+	} else {
+		/* An engine without a fuse bank. */
+		return 0U;
+	}
+
+	/* Succeeded: the ucode's word of the bank. */
+	return bank + (ucode_id - 1U) * 4U;
+}
+
+/*
+ * Picks which of a booter's signatures an Ampere or later falcon checks.
+ *
+ * The booter's signatures are ordered by fuse version, newest first: the
+ * fuse register's highest set bit is the version the GPU has revoked up
+ * to, and the booter's fuse version minus it is the signature's index.  A
+ * GPU that has revoked nothing takes the last (oldest) signature.  Returns
+ * EINVAL when the booter is older than the fuses allow or the index is
+ * beyond its signatures.
+ */
+int
+nvrtx_booter_fuse_index(
+	const struct nvrtx_booter *booter,
+	uint32_t fuse,
+	unsigned *index)
+{
+	uint32_t revoked;
+	uint32_t chosen;
+
+	/* An unfused GPU takes the last signature. */
+	if (fuse == 0U) {
+		*index = booter->signature_count - 1U;
+		return 0;
+	}
+
+	/* A booter older than the revoked version cannot run on this GPU. */
+	revoked = image_highest_bit(fuse);
+	if (booter->fuse_version < revoked)
+		return EINVAL;
+
+	/* The signature made for the revoked version. */
+	chosen = booter->fuse_version - revoked;
+	if (chosen >= booter->signature_count)
+		return EINVAL;
+
+	/* Succeeded: the signature's index. */
+	*index = chosen;
 	return 0;
 }
 
@@ -506,5 +610,62 @@ image_name_equal(
 	}
 
 	/* A name as long as the limit is not one this driver asks for. */
+	return 0;
+}
+
+/* Reports the position (from 1) of a word's highest set bit, or 0 for zero. */
+static uint32_t
+image_highest_bit(
+	uint32_t value)
+{
+	uint32_t position;
+
+	/* Shifts the word down until it is empty, counting the shifts. */
+	position = 0U;
+	while (value != 0U) {
+		position++;
+		value >>= 1;
+	}
+
+	/* Succeeded: the highest set bit's position. */
+	return position;
+}
+
+/* Reads a booter's meta data (fuse version, engine, ucode number) when its header names three words of it. */
+static int
+image_booter_meta(
+	const uint8_t *file,
+	size_t size,
+	size_t inner,
+	struct nvrtx_booter *booter)
+{
+	uint32_t meta_at;
+	uint32_t meta_size;
+	int error;
+
+	/* Starts without meta data, as a Turing booter may have none. */
+	booter->has_meta = 0;
+	booter->fuse_version = 0U;
+	booter->engine_id = 0U;
+	booter->ucode_id = 0U;
+
+	/* A header naming fewer than three words carries none. */
+	meta_at = nvrtx_get32(file, inner + NVRTX_HS_META_AT);
+	meta_size = nvrtx_get32(file, inner + NVRTX_HS_META_SIZE_AT);
+	if (meta_size < IMAGE_META_BYTES)
+		return 0;
+
+	/* The three words must lie inside the file. */
+	error = image_range(size, meta_at, IMAGE_META_BYTES);
+	if (error != 0)
+		return error;
+
+	/* Reads them. */
+	booter->fuse_version = nvrtx_get32(file, meta_at + IMAGE_META_FUSE_AT);
+	booter->engine_id = nvrtx_get32(file, meta_at + IMAGE_META_ENGINE_AT);
+	booter->ucode_id = nvrtx_get32(file, meta_at + IMAGE_META_UCODE_AT);
+	booter->has_meta = 1;
+
+	/* Succeeded: the meta data is read. */
 	return 0;
 }

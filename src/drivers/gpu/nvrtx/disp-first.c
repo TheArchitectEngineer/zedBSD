@@ -60,9 +60,6 @@
 /* The window's present control: one frame at least, begin without tearing. */
 #define FIRST_PRESENT_CONTROL		0x00000001U
 
-/* The window's storage: pitch-linear, one GOB high. */
-#define FIRST_STORAGE_PITCH		0x00000010U
-
 /* The window's blending: depth 255, constant alpha 255, the source over the picture as premultiplied. */
 #define FIRST_COMPOSITION_DEPTH		0x00000ff0U
 #define FIRST_COMPOSITION_ALPHA		0x000000ffU
@@ -273,12 +270,17 @@ nvrtx_disp_first_core_olut(
  * Writes the window's first image and its release interlocked with the
  * core: the notifier, the present control, the surface, the input LUT at
  * a VRAM offset, the blending, then the interlock and the release.
+ *
+ * storage is the window's storage word for a pitch-linear surface: the
+ * layout field set on Turing, zero from Ampere on, whose window has no
+ * layout field (the context DMA object's kind says pitch there).
  */
 void
 nvrtx_disp_first_window(
 	struct nvrtx_push *push,
 	uint32_t window,
 	const struct nvrtx_disp_surface *surface,
+	uint32_t storage,
 	uint32_t notifier_offset,
 	uint64_t ilut_offset)
 {
@@ -296,9 +298,9 @@ nvrtx_disp_first_window(
 	/* The present control. */
 	nvrtx_push_one(push, NVRTX_WINDOW_SET_PRESENT_CONTROL, FIRST_PRESENT_CONTROL);
 
-	/* The surface: its size, pitch-linear storage, format and pitch in 64-byte units. */
+	/* The surface: its size, the generation's pitch-linear storage word, format and pitch in 64-byte units. */
 	words[0] = size;
-	words[1] = FIRST_STORAGE_PITCH;
+	words[1] = storage;
 	words[2] = surface->format;
 	words[3] = surface->pitch / NVRTX_DISP_PITCH_UNIT;
 	nvrtx_push_method(push, NVRTX_WINDOW_SET_SIZE, words, 4U);
@@ -337,13 +339,15 @@ nvrtx_disp_first_window(
  * storage, format, pitch, object, offset, point and sizes), then a release
  * interlocked with this window and, when with_core is nonzero, with the
  * core (a flip that comes with a change of the head's view, which the
- * core's release interlocked with this window then completes).
+ * core's release interlocked with this window then completes).  storage is
+ * as for nvrtx_disp_first_window.
  */
 void
 nvrtx_disp_first_window_flip(
 	struct nvrtx_push *push,
 	uint32_t window,
 	const struct nvrtx_disp_surface *surface,
+	uint32_t storage,
 	uint32_t notifier_offset,
 	int with_core)
 {
@@ -360,9 +364,9 @@ nvrtx_disp_first_window_flip(
 	/* The present control. */
 	nvrtx_push_one(push, NVRTX_WINDOW_SET_PRESENT_CONTROL, FIRST_PRESENT_CONTROL);
 
-	/* The surface: its size, pitch-linear storage, format and pitch in 64-byte units. */
+	/* The surface: its size, the generation's pitch-linear storage word, format and pitch in 64-byte units. */
 	words[0] = size;
-	words[1] = FIRST_STORAGE_PITCH;
+	words[1] = storage;
 	words[2] = surface->format;
 	words[3] = surface->pitch / NVRTX_DISP_PITCH_UNIT;
 	nvrtx_push_method(push, NVRTX_WINDOW_SET_SIZE, words, 4U);
