@@ -96,6 +96,8 @@ AMD RDNA世代のGPUのドライバを実装する。
 | 13 | 取り消しの間は desktop も止まる | 「この形でよい」 |
 | 14 | 10.0.10.3 の Linux で amdgpu を load して dump | 「load してよい」（load の後 zedBSD を試す前に電源の入れ直し） |
 
+- 2026-10-16 未明（ユーザー、クリック）: 10.0.10.3 の UEFI に USB の entry が無い時、`efibootmgr --create` で「zedBSD USB」の entry を足して BootNext（1 回だけ）にしてよい（「足してよい」）。BootOrder は変えない。
+
 → p001 は判断が揃ったので cleared（Q1、2026-10-15 夜）。#7・#11 は design.md の該当の節を p002 の最初に直す。
 
 ### design.md §15 #9 の回答（2026-10-15 夕 ユーザー、クリック）
