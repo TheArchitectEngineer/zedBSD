@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は**改訂 5**（P1、q1209-i02: レビュー 4 の反映。段ごとの置き換え + 各段の 5330 の素の起動の回帰、内蔵 LCD は register の証拠。37 段 p047・p016〜p046・p048〜p052、旧 p003・p005〜p015 は cancel）。レビューは 4 回済み（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)・[design-review-4.md](design-review-4.md)）、5 回目（design-review-5.md）を改訂 5 に対して実施中）
+Status: incomplete（2026-10-15 作成。p001 の [design.md](design.md) は**改訂 5**（P1、q1209-i02: レビュー 4 の反映。段ごとの置き換え + 各段の 5330 の素の起動の回帰、内蔵 LCD は register の証拠。37 段 p047・p016〜p046・p048〜p052、旧 p003・p005〜p015 は cancel）。レビューは 4 回済み（[design-review-1.md](design-review-1.md)・[design-review.md](design-review.md)・[design-review-3.md](design-review-3.md)・[design-review-4.md](design-review-4.md)）、5 回目（[design-review-5.md](design-review-5.md)、blocker 2・major 11・minor 15）は済んだが**反映は未着手**（2026-10-15 夜 ユーザーの指示でラップアップ、N=1 で AMD に集中））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-15 夜 q1209-i02（P1）: design.md 改訂 5（レビュー 4 の 34 件を §11.2 で扱い、ユーザーの判断（B3 register の証拠、M7 常設できない、M8 入れ直す）を R4・R9・p047 に反映。§6.2 は 37 段・156 LW、表 R、§7 #30〜#33）。レビュー 5（design-review-5.md）の blocker を直した後に p001 の clearance（Q1）→ ユーザーに §7 #23〜#33（既定の案で進めてよいか）→ p047（証拠の道具）→ p016（OpRegion の場所）から 1 段ずつ（Queue の承認が要る）。p006 の途中の差分は `plan/ws245/temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`（git に入れない）。以前: q1207（P1）: p004 cleared（main 2d5b167aa）、p006 は途中で停止（ユーザーの即時中断）。q1204: p002 cleared（main a9925a4db）。q1200: 改訂 3a。
+Resume point: 2026-10-16 00:03 q1209-i02（P1、ラップアップ）: design.md 改訂 5 は commit 済み（8c4fe7791: レビュー 4 の 34 件を §11.2 で扱い、ユーザーの判断（B3 register の証拠、M7 常設できない、M8 入れ直す）を R4・R9・p047 に反映。§6.2 は 37 段・156 LW、表 R、§7 #30〜#33）。**次に再開する時**: design-review-5.md（blocker 2・major 11・minor 15、未反映。要点と直す順は [phase001/phase.md](phase001/phase.md) の「改訂 5」の残り）を design.md §11.4 で扱って改訂 6 → p001 の clearance（Q1）。M11 は Q1 の作業（decisions-log・guardrail の読み替え・ws.md の手順 3）→ ユーザーに §7 #23〜#33（既定の案で進めてよいか）→ p047（証拠の道具）→ p016（OpRegion の場所）から 1 段ずつ（Queue の承認が要る）。p006 の途中の差分は `plan/ws245/temp/p006-partial-20261015.patch` と `temp/p006-partial-20261015-untracked/`（git に入れない）。以前: q1207（P1）: p004 cleared（main 2d5b167aa）、p006 は途中で停止（ユーザーの即時中断）。q1204: p002 cleared（main a9925a4db）。q1200: 改訂 3a。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -112,7 +112,7 @@ Resume point: 2026-10-15 夜 q1209-i02（P1）: design.md 改訂 5（レビュ�
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（5 回） | in-progress（design.md 改訂 5。レビュー 5 の blocker の反映の後に clearance） |
+| [p001](phase001/phase.md) | 設計: display 11〜13 の model、外向きの口と契約、データの表の引用の方法、段の分割と順序、試験の道、LW。design-reviewer を通す（5 回） | in-progress（design.md 改訂 5。レビュー 5 は済み・未反映。反映（改訂 6）の後に clearance） |
 | [p002](phase002/phase.md) | 土台: register と表の header、xd-io、xd-platform、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、T1-699 PASS、U10 で 5330 の素の起動に合格） |
 | p003 | （改訂 3a）口 `xd.h` と adapter、`i915.display=` | **canceled**（2026-10-15 夜、段ごとの置き換えに置き換え。adapter と boot の語は作らない: design.md §6.1 R5） |
 | [p004](phase004/phase.md) | VBT（合成の fixture）・EDID の解析（呼ばれない部品） | cleared（2026-10-15、host 試験、main 2d5b167aa、U10 で 5330 に合格） |
