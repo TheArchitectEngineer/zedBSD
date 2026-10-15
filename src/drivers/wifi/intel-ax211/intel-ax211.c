@@ -1757,24 +1757,26 @@ int
 drv_pci_intel_ax211_driver_register(
 	void)
 {
-	int function_result;
 	int error;
 
-	/* Handles the ax211 registry initialized condition. */
+	/* A second registration needs no registry setup. */
 	if (ax211_registry_initialized) {
-		/* Obtains the drv pci driver register result. */
-		function_result = drv_pci_driver_register(&ax211_pci_driver);
+		/* Reports a failed registration. */
+		error = drv_pci_driver_register(&ax211_pci_driver);
+		if (error != 0)
+			return error;
 
-		/* Returns the computed result. */
-		return function_result;
+		/* Succeeded. */
+		return 0;
 	}
 
+	/* Sets the registry up. */
 	spin_init(&ax211_registry_lock, LOCK_RANK_DEVICE,
 		  "Intel AX211 registry");
 	ax211_controllers = NULL;
 	ax211_refresh_epoch = 0U;
 
-	/* Checks the operation status. */
+	/* Registers the driver; the registry stays set up after a success. */
 	error = drv_pci_driver_register(&ax211_pci_driver);
 	if (error == 0)
 		ax211_registry_initialized = 1U;
@@ -1799,23 +1801,24 @@ drv_pci_intel_ax211_devices_ready(
 	unsigned epoch;
 	int error;
 
+	/* Starts a new refresh epoch, skipping zero. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 
 	ax211_refresh_epoch++;
-
-	/* Handles the ax211 refresh epoch condition. */
 	if (ax211_refresh_epoch == 0U)
 		ax211_refresh_epoch++;
 	epoch = ax211_refresh_epoch;
 
 	spin_unlock_irqrestore(&ax211_registry_lock, enabled);
 
-	/* Continue until the operation reaches a terminal state. */
+	/* Publishes each controller once in the epoch. */
 	for (;;) {
-		/* Handles the controller availability. */
+		/* Ends when no controller is left. */
 		controller = ax211_pci_refresh_claim(epoch);
 		if (controller == NULL)
 			return;
+
+		/* Publishes the controller and logs a failure. */
 		error = ax211_pci_refresh_one(controller);
 		ax211_pci_refresh_release(controller);
 		if (error != 0) {
@@ -1832,17 +1835,18 @@ ax211_pci_match(
 	struct drv_pci_device *device,
 	const struct drv_pci_id *identity)
 {
-	int error;
+	int matches;
 
+	/* The identity table is not consulted. */
 	(void)identity;
 
-	/* Computes the function result. */
-	error = ax211_pci_identity_matches(device)
-				  ? DRV_PCI_MATCH_EXACT
-				  : DRV_PCI_MATCH_NONE;
+	/* Rejects any other function. */
+	matches = ax211_pci_identity_matches(device);
+	if (!matches)
+		return DRV_PCI_MATCH_NONE;
 
-	/* Returns the computed result. */
-	return error;
+	/* The function is the AX211. */
+	return DRV_PCI_MATCH_EXACT;
 }
 
 /* Retains a validated, DMA-disabled controller without waiting or I/O. */
@@ -1851,24 +1855,28 @@ ax211_pci_attach(
 	struct drv_pci_device *device,
 	const struct drv_pci_id *identity)
 {
-	int function_result;
 	struct ax211_pci_controller *controller;
 	struct intel_ax211_mmio_profile profile;
 	const char *stage;
+	void *driver_data;
+	int matches;
 	int cleanup_error;
 	int error;
 
+	/* The identity table is not consulted. */
 	(void)identity;
 
-	/* Checks the ax211 pci identity matches result. */
-	if (!ax211_pci_identity_matches(device))
+	/* Refuses any other function. */
+	matches = ax211_pci_identity_matches(device);
+	if (!matches)
 		return ENODEV;
 
-	/* Checks the drv pci device driver data result. */
-	if (drv_pci_device_driver_data(device) != NULL)
+	/* Refuses a function another driver holds. */
+	driver_data = drv_pci_device_driver_data(device);
+	if (driver_data != NULL)
 		return EBUSY;
 
-	/* Handles the controller availability. */
+	/* Allocates a cleared controller. */
 	controller = kern_malloc(sizeof(*controller));
 	if (controller == NULL)
 		return ENOMEM;
@@ -1877,7 +1885,7 @@ ax211_pci_attach(
 	controller->device = device;
 	stage = "lifecycle-lock";
 
-	/* Checks the operation status. */
+	/* Initializes the locks and the first epoch. */
 	error = mutex_init(&controller->lifecycle_lock, LOCK_RANK_DEVICE,
 			   "Intel AX211 lifecycle");
 	if (error == 0) {
@@ -1886,13 +1894,13 @@ ax211_pci_attach(
 		controller->hardware_epoch = 1U;
 	}
 
-	/* Checks the operation status. */
+	/* Acquires the PCI lease. */
 	if (error == 0) {
 		stage = "pci-acquire";
 		error = ax211_pci_acquire(controller);
 	}
 
-	/* Checks the operation status. */
+	/* Initializes the MMIO backend on BAR0. */
 	if (error == 0) {
 		stage = "mmio-backend";
 		error = drv_intel_ax211_pci_mmio_backend_init(
@@ -1900,13 +1908,13 @@ ax211_pci_attach(
 			controller->mapping.size);
 	}
 
-	/* Checks the operation status. */
+	/* Derives the MMIO profile. */
 	if (error == 0) {
 		stage = "mmio-profile";
 		error = ax211_pci_profile(controller, &profile);
 	}
 
-	/* Checks the operation status. */
+	/* Initializes the MMIO layer. */
 	if (error == 0) {
 		stage = "mmio-init";
 		error = drv_intel_ax211_mmio_init(
@@ -1914,19 +1922,20 @@ ax211_pci_attach(
 			&controller->backend, &profile);
 	}
 
+	/* Clears the profile. */
 	ax211_pci_scrub(&profile, sizeof(profile));
 
-	/* Checks the operation status. */
+	/* Binds the controller to the function. */
 	if (error == 0) {
 		stage = "driver-data";
 
-		/* Checks the operation status. */
+		/* Records a binding that succeeded. */
 		error = drv_pci_device_set_driver_data(device, controller);
 		if (error == 0)
 			controller->driver_data_set = 1U;
 	}
 
-	/* Checks the operation status. */
+	/* Lists a ready controller; publication waits for devices_ready. */
 	if (error == 0) {
 		controller->ready = 1U;
 		ax211_pci_list_add(controller);
@@ -1937,29 +1946,31 @@ ax211_pci_attach(
 		return 0;
 	}
 
+	/* Logs the failed stage. */
 	kern_logf("intel-ax211: attach failed stage=%s error=%d "
 		   "hw-rev=%08x rf-id=%08x\n",
 		   stage, error, controller->hardware_revision,
 		   controller->radio_identity);
 
-	/* Handles the controller condition. */
+	/* Quarantines a controller whose BAR could not be released. */
 	cleanup_error = ax211_pci_release_resources(controller, error, 1);
 	if (controller->bar_claimed) {
-		/* Obtains the ax211 pci quarantine result. */
-		function_result =
-			ax211_pci_quarantine(controller, cleanup_error);
+		/* Binds the quarantined controller for a checked detach. */
+		error = ax211_pci_quarantine(controller, cleanup_error);
+		if (error != 0)
+			return error;
 
-		/* Returns the computed result. */
-		return function_result;
+		/* Succeeded: the controller stays bound in quarantine. */
+		return 0;
 	}
 
-	/* Handles the controller condition. */
+	/* Unbinds and frees the controller. */
 	if (controller->driver_data_set)
 		(void)drv_pci_device_set_driver_data(device, NULL);
 	ax211_pci_scrub(controller, sizeof(*controller));
 	kern_free(controller);
 
-	/* Returns the computed result. */
+	/* Reports the failure. */
 	return cleanup_error;
 }
 
@@ -1974,19 +1985,20 @@ ax211_pci_detach(
 	unsigned net_live;
 	int error;
 
+	/* No detach flag changes the order. */
 	(void)flags;
 
-	/* Handles the controller availability. */
+	/* Finds the controller, also one whose binding failed. */
 	controller = drv_pci_device_driver_data(device);
 	if (controller == NULL)
 		controller = ax211_pci_list_find_device(device);
 
-	/* Handles the controller availability. */
+	/* Refuses a function without its controller. */
 	if (controller == NULL || controller->device != device)
 		return ENODEV;
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Checks the operation status. */
+	/* Refuses a controller a refresh still owns. */
 	error = ax211_pci_list_remove(controller);
 	if (error != 0) {
 		mutex_unlock(&controller->lifecycle_lock);
@@ -1995,6 +2007,7 @@ ax211_pci_detach(
 		return error;
 	}
 
+	/* Closes the controller and takes its net device. */
 	controller->ready = 0U;
 	controller->operation_admission_open = 0U;
 	net_device = controller->net_device;
@@ -2002,25 +2015,26 @@ ax211_pci_detach(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Handles the net device availability. */
+	/* Drops the carrier. */
 	if (net_device != NULL)
 		(void)net_device_set_carrier(net_device, 0);
 
-	/* Handles the net device availability. */
+	/* Takes a live net device away. */
 	if (net_device != NULL && net_live) {
-		/* Checks the operation status. */
+		/* Reports a device that could not be taken away. */
 		error = net_device_gone(net_device);
 		if (error != 0)
 			return error;
 	}
 
+	/* Retakes the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
-	/* Handles the net live condition. */
+	/* The net device is no longer live. */
 	if (net_live)
 		controller->net_live = 0U;
 
-	/* Checks the operation status. */
+	/* Detaches the station. */
 	error = ax211_pci_graph_detach(controller);
 	if (error != 0) {
 		mutex_unlock(&controller->lifecycle_lock);
@@ -2029,7 +2043,7 @@ ax211_pci_detach(
 		return error;
 	}
 
-	/* Checks the operation status. */
+	/* Stops the session; a failure quarantines the controller. */
 	error = ax211_pci_session_stop(controller);
 	if (error != 0) {
 		controller->quarantined = 1U;
@@ -2039,7 +2053,7 @@ ax211_pci_detach(
 		return error;
 	}
 
-	/* Checks the operation status. */
+	/* Releases the PCI lease; a failure quarantines the controller. */
 	error = ax211_pci_release_resources(controller, 0, 1);
 	if (error != 0) {
 		controller->quarantined = 1U;
@@ -2049,9 +2063,10 @@ ax211_pci_detach(
 		return error;
 	}
 
+	/* The controller is no longer quarantined. */
 	controller->quarantined = 0U;
 
-	/* Handles the controller condition. */
+	/* Unbinds the controller from the function. */
 	if (controller->driver_data_set)
 		error = drv_pci_device_set_driver_data(device, NULL);
 	else
@@ -2063,6 +2078,7 @@ ax211_pci_detach(
 		return error;
 	}
 
+	/* Forgets the controller. */
 	controller->driver_data_set = 0U;
 	ax211_pci_list_forget(controller);
 	controller->device = NULL;
@@ -2070,7 +2086,10 @@ ax211_pci_detach(
 
 	mutex_unlock(&controller->lifecycle_lock);
 
-	/* Handles the net device availability. */
+	/*
+	 * Destroys the net device, whose release frees the controller, or
+	 * frees the controller itself.
+	 */
 	if (net_device != NULL) {
 		net_device_destroy(net_device);
 	} else {
