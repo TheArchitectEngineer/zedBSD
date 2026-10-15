@@ -27,7 +27,13 @@
 /* How many 64-bit entries one table page holds. */
 #define RADIX3_ENTRIES_PER_PAGE		(NVRTX_GSP_PAGE_SIZE / 8U)
 
-/* The table pages in order: the top level, the middle level, then the bottom level. */
+/*
+ * The table pages in order: the top level, the middle level, then the bottom
+ * level.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (nvkm_gsp_radix3_sg).
+ */
 #define RADIX3_TOP_PAGE			0U
 #define RADIX3_MIDDLE_PAGE		1U
 #define RADIX3_BOTTOM_PAGE		2U
@@ -53,6 +59,9 @@ nvrtx_radix3_pages(
  *
  * Returns EINVAL when the table has the wrong number of pages or the image
  * is larger than one middle-level page can describe.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c (nvkm_gsp_radix3_sg).
  */
 int
 nvrtx_radix3_fill(
