@@ -87,3 +87,5 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 - compiler の側（P4、phase008 の新しい節「SM86・SM89」）: SM86・SM89 の encode・latency・規則の差を切り替え、SM75 の出力は byte 単位で不変。
 - 30/40 は実機の確かめなし（host 試験と build まで）。RTX 2070 の今の動き（方法 A で desktop）を壊さない。
 - RTX 50（Blackwell、SM120）は [WS240](../ws240/ws.md)（planning、まだ開始しない）。
+
+- 2026-10-16: RTX 30・40 の対応は [WS242](../ws242/ws.md)、描画の速さは [WS241](../ws241/ws.md) に独立（ユーザー）。
