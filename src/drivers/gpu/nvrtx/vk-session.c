@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's sessions: one for each open of the
- * node, with its objects and the scratch its commands decode into.
+ * The executor's sessions: one for each open of the node, with its objects and
+ * the scratch its commands decode into.
  */
 
 #include <stdbool.h>

@@ -8,20 +8,20 @@
 /*
  * The nvrtx PCI driver: registration and attach.
  *
-   * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware.  The
-   * attach finds the GPU, reads its chip identity (identify) and records where
-   * the firmware's picture lies (console).  With nvrtx.gsp=0 on the boot line,
-   * or for a chip without a GSP path yet, it then gives the function back to
-   * the firmware by refusing the bind: the firmware's console keeps working,
-   * the PCI core never suspends the function, and a machine without an NVIDIA
-   * GPU is not touched at all.
+ * nvrtx drives NVIDIA GPUs from Turing on through the GSP firmware.  The attach
+ * finds the GPU, reads its chip identity (identify) and records where the
+ * firmware's picture lies (console).  With nvrtx.gsp=0 on the boot line, or for
+ * a chip without a GSP path yet, it then gives the function back to the
+ * firmware by refusing the bind: the firmware's console keeps working, the PCI
+ * core never suspends the function, and a machine without an NVIDIA GPU is not
+ * touched at all.
  *
- * Otherwise (the default) on a chip of a verified family (TU10x) that shows
- * the firmware's picture, or on any Turing, Ampere or Ada chip with
- * nvrtx.gsp=1 (GTX 16, RTX 30 and RTX 40 are not yet seen on
- * real hardware, so they boot only when asked), the attach keeps the function and
- * starts a worker thread that runs the GSP boot (gsp.c) once the root file
- * system holds the firmware.  The kept function refuses a system suspend.
+ * Otherwise (the default) on a chip of a verified family (TU10x) that shows the
+ * firmware's picture, or on any Turing, Ampere or Ada chip with nvrtx.gsp=1
+ * (GTX 16, RTX 30 and RTX 40 are not yet seen on real hardware, so they boot
+ * only when asked), the attach keeps the function and starts a worker thread
+ * that runs the GSP boot (gsp.c) once the root file system holds the firmware.
+ * The kept function refuses a system suspend.
  *
  * At the reboot or the shutdown of the machine the PCI shutdown hook stops
  * a GSP kept up (the GPU device, then unload), so the hub's state of this boot
@@ -45,7 +45,10 @@
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
-/* How long the shutdown waits for a GSP boot still running (gsp-init's wait is the longest stage), and its step. */
+/*
+ * How long the shutdown waits for a GSP boot still running (gsp-init's wait is
+ * the longest stage), and its step.
+ */
 #define NVRTX_SHUTDOWN_BOOT_WAIT_US	12000000U
 #define NVRTX_SHUTDOWN_STEP_US		10000U
 
@@ -143,7 +146,9 @@ nvrtx_attach(
 		return ENODEV;
 	}
 
-	/* Records the firmware's picture unless the boot stops before console. */
+	/*
+	 * Records the firmware's picture unless the boot stops before console.
+	 */
 	allowed = nvrtx_stage_allowed("console");
 	if (allowed) {
 		nvrtx_n1_readout(&device);
@@ -211,7 +216,9 @@ nvrtx_detach(
 	if (gpu->state == NVRTX_GSP_FAILED_HOLD)
 		return EBUSY;
 
-	/* A GPU device keeps the GSP up until power-off (the gpu-device stage). */
+	/*
+	 * A GPU device keeps the GSP up until power-off (the gpu-device stage).
+	 */
 	if (gpu->resident != 0)
 		return EBUSY;
 
@@ -292,9 +299,9 @@ nvrtx_suspend(
 /*
  * Keeps a function for the GSP boot and starts its worker.
  *
-  * The identify mapping of one page is replaced by the whole register window;
-  * the claim and the saved command bits pass to the kept state.  On a failure
-  * nothing is kept and the caller releases what identify took.
+ * The identify mapping of one page is replaced by the whole register window;
+ * the claim and the saved command bits pass to the kept state.  On a failure
+ * nothing is kept and the caller releases what identify took.
  */
 static int
 nvrtx_keep(
@@ -334,7 +341,10 @@ nvrtx_keep(
 		return ENODEV;
 	}
 
-	/* Takes over identify's state; its one-page mapping is no longer needed. */
+	/*
+	 * Takes over identify's state; its one-page mapping is no longer
+	 * needed.
+	 */
 	drv_pci_device_unmap_bar(device->pci, &device->registers);
 	device->registers.address = NULL;
 	gpu->identity = *device;
@@ -364,11 +374,11 @@ nvrtx_keep(
 	thread->detached = 1;
 
 	/*
-	  * A boot that keeps the GPU up as a GPU device with its display (the
-	  * default) publishes /dev/gpuN only at the worker's last stage
-	  * (gpu-device): until the worker ends, the GPU counts as attaching,
-	  * so the graphical login waits for its display instead of giving the
-	  * console back.
+	 * A boot that keeps the GPU up as a GPU device with its display (the
+	 * default) publishes /dev/gpuN only at the worker's last stage
+	 * (gpu-device): until the worker ends, the GPU counts as attaching, so
+	 * the graphical login waits for its display instead of giving the
+	 * console back.
 	 */
 	resident = nvrtx_stage_resident_wanted();
 	display = nvrtx_stage_disp_wanted();
@@ -407,7 +417,10 @@ nvrtx_worker(
 	gpu->worker_running = 0;
 }
 
-/* Gives back the kept registers, the DMA memory, identify's claim and command bits, and the state. */
+/*
+ * Gives back the kept registers, the DMA memory, identify's claim and command
+ * bits, and the state.
+ */
 static void
 nvrtx_give_back(
 	struct nvrtx_gpu *gpu)

@@ -480,7 +480,10 @@ compute_buffers(
 	if (error != 0)
 		return error;
 
-	/* The method buffer, as large as the resource manager asked for copy-channel's. */
+	/*
+	 * The method buffer, as large as the resource manager asked for
+	 * copy-channel's.
+	 */
 	error = nvrtx_buffer_alloc(gpu, gpu->engine.methods_size, &compute->methods);
 	if (error != 0)
 		return error;

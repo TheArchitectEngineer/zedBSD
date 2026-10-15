@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's dispatcher: each command goes to
- * the one handler that owns its opcode.
+ * The executor's dispatcher: each command goes to the one handler that owns its
+ * opcode.
  */
 
 #include <stddef.h>

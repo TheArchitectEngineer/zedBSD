@@ -83,11 +83,10 @@
 /*
  * ==== The shader models ====
  *
- * The compiler targets Turing (SM75: RTX 20, GTX 16), Ampere (SM86: RTX 30)
- * and Ada (SM89: RTX 40).  The three share this file's encoding but for
- * the memory order of a global access (NVRTX_SM80_MEM_*), and Ampere and
- * Ada share one latency table that differs from Turing's
- * (sm75.c).
+ * The compiler targets Turing (SM75: RTX 20, GTX 16), Ampere (SM86: RTX 30) and
+ * Ada (SM89: RTX 40).  The three share this file's encoding but for the memory
+ * order of a global access (NVRTX_SM80_MEM_*), and Ampere and Ada share one
+ * latency table that differs from Turing's (sm75.c).
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs, is_turing,
  * is_ampere and is_ada (lines 9136-9148: Turing 73..79, Ampere 80..88, Ada
@@ -606,9 +605,9 @@
 
 /*
  * A constant texel offset (bit 76, AOFFI): the register after the level of
- * detail (or the second source alone) holds u in bits 3..0, v in 7..4 and r
- * in 11..8, each a signed 4-bit number.  TLD (texel
- * fetch) has the TEX fields with an explicit level of detail mode.
+ * detail (or the second source alone) holds u in bits 3..0, v in 7..4 and r in
+ * 11..8, each a signed 4-bit number.  TLD (texel fetch) has the TEX fields with
+ * an explicit level of detail mode.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs,
  * OpTex and OpTld (lines 2499-2640, AOFFI at bit 76), and

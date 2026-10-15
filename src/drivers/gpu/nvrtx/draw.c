@@ -243,13 +243,13 @@ nvrtx_draw_pages(
 }
 
 /*
- * Runs the draw-test stage: the 3D object, the programs, the data, then the draw
- * into system memory, into VRAM, and textured, each checked from the CPU.
+ * Runs the draw-test stage: the 3D object, the programs, the data, then the
+ * draw into system memory, into VRAM, and textured, each checked from the CPU.
  *
- * Needs the compute launch's channel (compute-test) and its tables with the draw's
- * memory (nvrtx_draw_buffers() and nvrtx_draw_pages()).  Every draw
- * runs while the fences arrive, so one run reports each; returns the first
- * failure, or 0 when all three drew what they should.
+ * Needs the compute launch's channel (compute-test) and its tables with the
+ * draw's memory (nvrtx_draw_buffers() and nvrtx_draw_pages()).  Every draw runs
+ * while the fences arrive, so one run reports each; returns the first failure,
+ * or 0 when all three drew what they should.
  */
 int
 nvrtx_draw_start(

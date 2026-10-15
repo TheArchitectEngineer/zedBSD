@@ -510,7 +510,10 @@ nvrtx_push_draw_init_class(
 	for (index = 0U; index < DRAW_SCISSORS; index++)
 		at = draw_set(push, at, M_SET_SCISSOR_ENABLE + index * M_SET_SCISSOR_STRIDE, V_FALSE);
 
-	/* Several colour targets, and Turing's variable pixel rate sample order. */
+	/*
+	 * Several colour targets, and Turing's variable pixel rate sample
+	 * order.
+	 */
 	at = draw_set(push, at, M_SET_CT_MRT_ENABLE, V_TRUE);
 	at = draw_method(push, at, M_SET_VARIABLE_PIXEL_RATE_SAMPLE_ORDER, DRAW_SAMPLE_ORDERS);
 	for (index = 0U; index < DRAW_SAMPLE_ORDERS; index++) {
@@ -640,7 +643,10 @@ nvrtx_push_draw_target(
 	at = draw_set(push, at, M_SET_ZT_SELECT, 0U);
 	at = draw_set(push, at, M_SET_ANTI_ALIAS, V_ANTI_ALIAS_1X1);
 
-	/* Viewport 0 over the target: scale and offset half its size, depth 0 to 1. */
+	/*
+	 * Viewport 0 over the target: scale and offset half its size, depth 0
+	 * to 1.
+	 */
 	at = draw_method(push, at, M_SET_VIEWPORT_SCALE_X, 6U);
 	nvrtx_put32(push, at, half_width);
 	nvrtx_put32(push, at + 4U, half_height);
@@ -658,7 +664,10 @@ nvrtx_push_draw_target(
 	at = draw_set(push, at, M_SET_VIEWPORT_COORDINATE_SWIZZLE, V_VIEWPORT_SWIZZLE_IDENTITY);
 	at = draw_set(push, at, M_SET_VIEWPORT_Z_CLIP, V_Z_CLIP_ZERO_TO_W);
 
-	/* Rasterization: on, clipped in depth by the geometry clipper, filled, not culled. */
+	/*
+	 * Rasterization: on, clipped in depth by the geometry clipper, filled,
+	 * not culled.
+	 */
 	at = draw_set(push, at, M_SET_RASTER_ENABLE, V_TRUE);
 	at = draw_set(push, at, M_SET_VIEWPORT_CLIP_CONTROL, V_VIEWPORT_CLIP_DRAW);
 	at = draw_method(push, at, M_SET_FRONT_POLYGON_MODE, 2U);
@@ -681,7 +690,10 @@ nvrtx_push_draw_target(
 	at = draw_set(push, at, M_SET_DEPTH_WRITE, V_FALSE);
 	at = draw_set(push, at, M_SET_STENCIL_TEST, V_FALSE);
 
-	/* Colour: no logic operation or blending, all four channels, target 0 at location 0. */
+	/*
+	 * Colour: no logic operation or blending, all four channels, target 0
+	 * at location 0.
+	 */
 	at = draw_set(push, at, M_SET_LOGIC_OP, V_FALSE);
 	at = draw_set(push, at, M_SET_BLEND, V_FALSE);
 	at = draw_set(push, at, M_SET_CT_WRITE, V_CT_WRITE_RGBA);
@@ -735,7 +747,10 @@ nvrtx_push_draw_pipeline(
 		}
 	}
 
-	/* The pixel program: its subtiling, no early depth, no post-depth coverage, bounded culling. */
+	/*
+	 * The pixel program: its subtiling, no early depth, no post-depth
+	 * coverage, bounded culling.
+	 */
 	at = draw_method(push, at, M_SET_SUBTILING_PERF_KNOB_A, 2U);
 	nvrtx_put32(push, at, V_SUBTILING_A);
 	nvrtx_put32(push, at + 4U, V_SUBTILING_B);
@@ -997,7 +1012,10 @@ nvrtx_draw_texture_header(
 	draw_field(header, 151U, 4U, TIC_TYPE_TWO_D_NO_MIPMAP);
 	draw_field(header, 160U, 16U, texture->height - 1U);
 
-	/* The sector promotion, border from the sampler, normalized coordinates and spread functions. */
+	/*
+	 * The sector promotion, border from the sampler, normalized coordinates
+	 * and spread functions.
+	 */
 	draw_field(header, 155U, 2U, TIC_PROMOTE_TO_2_V);
 	draw_field(header, 157U, 3U, TIC_BORDER_SAMPLER_COLOR);
 	draw_field(header, 191U, 1U, 1U);
@@ -1219,7 +1237,10 @@ draw_set(
 	return at + 4U;
 }
 
-/* Writes colour target index as a null target: no address, disabled, compressed. */
+/*
+ * Writes colour target index as a null target: no address, disabled,
+ * compressed.
+ */
 static size_t
 draw_null_target(
 	uint8_t *push,

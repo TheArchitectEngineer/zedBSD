@@ -6,10 +6,9 @@
  */
 
 /*
- * The executor's shader modules, layouts and descriptors: shader
- * modules, descriptor set layouts, pipeline layouts,
- * pipeline caches, descriptor pools and their sets, and the updates of
- * the sets.
+ * The executor's shader modules, layouts and descriptors: shader modules,
+ * descriptor set layouts, pipeline layouts, pipeline caches, descriptor pools
+ * and their sets, and the updates of the sets.
  *
  * A set's binding names the image view and the sampler of a combined image
  * sampler, the one kind of descriptor the compositor uses; other kinds are

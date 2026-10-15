@@ -15,39 +15,37 @@
  * down.  Those stages keep their fixed places; new users (the display's
  * surfaces, the buffer objects of the GPU device) take their VRAM here.
  *
- * The window (BAR1): the resource manager owns the window's root page table, whose address the
- * static information gives; the driver builds the lower levels for the
- * first part of the window in its own VRAM, writes the root's first entry
- * to point at them, and invalidates the hub's TLB with the root named.  A
- * buffer object is then mapped by writing its pages' entries and
+ * The window (BAR1): the resource manager owns the window's root page table,
+ * whose address the static information gives; the driver builds the lower
+ * levels for the first part of the window in its own VRAM, writes the root's
+ * first entry to point at them, and invalidates the hub's TLB with the root
+ * named.  A buffer object is then mapped by writing its pages' entries and
  * invalidating again.  The CPU maps the window uncached.
  *
- * vram-window does not fail the boot: when the window cannot be set up the later
- * stages run as before (they reach the VRAM through the register window,
+ * vram-window does not fail the boot: when the window cannot be set up the
+ * later stages run as before (they reach the VRAM through the register window,
  * PRAMIN) and only the users of the window find it missing.
  *
- * On the GPU the machine boots on, the firmware's console lies at the start
- * of the window and of the VRAM (the GOP's mapping in the window's physical
- * mode).  The resource manager makes the whole window virtual, so vram-window maps
- * the window's first pages back onto the console before anything else
- * takes the window (the console's size, and its mapping kept at offset
- * 0).  The console's pages are in the tables before the
- * root's entry is switched to them, so the console's writes (the boot
- * splash turns on every kernel line) never meet an unmapped window.  The
- * CPU's own mapping of the window starts after the console, so the
- * console's memory is never mapped twice.
+ * On the GPU the machine boots on, the firmware's console lies at the start of
+ * the window and of the VRAM (the GOP's mapping in the window's physical mode).
+ * The resource manager makes the whole window virtual, so vram-window maps the
+ * window's first pages back onto the console before anything else takes the
+ * window (the console's size, and its mapping kept at offset 0).  The console's
+ * pages are in the tables before the root's entry is switched to them, so the
+ * console's writes (the boot splash turns on every kernel line) never meet an
+ * unmapped window.  The CPU's own mapping of the window starts after the
+ * console, so the console's memory is never mapped twice.
  *
- * Every write of page entries is read back through PRAMIN, and the
- * self-test that ends vram-window recovers in rounds: when the window does not
- * reach its run, vram-window reports what the root's entry, the run's page entry,
- * the window's mode and the MMU's fault record hold, then clears the fault
- * record, writes the tables again, binds the window to its instance block
- * again (under the root that block names, should it differ from the static
- * information's), and waits longer between the later readings.  The hub
- * keeps its MMU state over a warm reboot (the GSP stays up until
- * power-off, the function is never reset), so a record of an earlier
- * boot's fault is shown before the tables are written, for telling a
- * later failure's cause.
+ * Every write of page entries is read back through PRAMIN, and the self-test
+ * that ends vram-window recovers in rounds: when the window does not reach its
+ * run, vram-window reports what the root's entry, the run's page entry, the
+ * window's mode and the MMU's fault record hold, then clears the fault record,
+ * writes the tables again, binds the window to its instance block again (under
+ * the root that block names, should it differ from the static information's),
+ * and waits longer between the later readings.  The hub keeps its MMU state
+ * over a warm reboot (the GSP stays up until power-off, the function is never
+ * reset), so a record of an earlier boot's fault is shown before the tables are
+ * written, for telling a later failure's cause.
  */
 
 #include <stdbool.h>
@@ -122,14 +120,13 @@
 #define VRAM_RETRY_ROUND_BIND		3U
 
 /*
- * The MMU's record of the last fault no fault buffer took (Turing's
- * "other" fault), where a BAR's faulted access
- * lands: the address, the instance word whose low bits name the engine
- * (4 is BAR1), and the information word (bits 4:0 the fault's type, 2 an
- * invalid page entry; bits 14:8 the client, 0x07 the CPU's read and 0x08
- * its posted write through a BAR; bits 19:16 the access, 0 a read and 1 a
- * write; bit 31 the record's validity).  The status word's bits 7:0 say
- * which window's accesses were dropped (bit 1 BAR1 in its virtual mode)
+ * The MMU's record of the last fault no fault buffer took (Turing's "other"
+ * fault), where a BAR's faulted access lands: the address, the instance word
+ * whose low bits name the engine (4 is BAR1), and the information word (bits
+ * 4:0 the fault's type, 2 an invalid page entry; bits 14:8 the client, 0x07 the
+ * CPU's read and 0x08 its posted write through a BAR; bits 19:16 the access, 0
+ * a read and 1 a write; bit 31 the record's validity).  The status word's bits
+ * 7:0 say which window's accesses were dropped (bit 1 BAR1 in its virtual mode)
  * and bit 31 that a record waits; each clears when written as 1.
  *
  * Values referenced: Linux v6.19
@@ -197,7 +194,8 @@ static int vram_place_ptes(struct nvrtx_gpu *gpu, uint64_t at, const uint8_t *en
 static int vram_read64(struct nvrtx_gpu *gpu, uint64_t address, uint64_t *value);
 
 /*
- * Runs the vram-window stage: the VRAM allocator, then the window and its self-test.
+ * Runs the vram-window stage: the VRAM allocator, then the window and its
+ * self-test.
  *
  * Returns 0 even when the window could not be set up (the stage's marks say
  * why); an error only when the allocator itself cannot be placed.

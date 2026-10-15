@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's objects: what a published identity
- * of each kind stands for, and the handlers that make them.
+ * The executor's objects: what a published identity of each kind stands for,
+ * and the handlers that make them.
  *
  * Every image is pitch linear, four bytes a pixel: the display, the
  * texture header and the colour target all read that layout, so nothing

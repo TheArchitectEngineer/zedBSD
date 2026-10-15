@@ -6,10 +6,9 @@
  */
 
 /*
- * The executor's recorded commands: each vkCmd*
- * libvulkan records arrives as [opcode][0][command buffer] and its
- * arguments, with no reply, and is kept as a record of its command buffer
- * until a submission runs it (vk-execute.c).
+ * The executor's recorded commands: each vkCmd* libvulkan records arrives as
+ * [opcode][0][command buffer] and its arguments, with no reply, and is kept as
+ * a record of its command buffer until a submission runs it (vk-execute.c).
  *
  * Every record is read to its end first, holding the objects it names;
  * then it is appended to a command buffer that is recording, or let go.

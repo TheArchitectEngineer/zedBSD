@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's memory: VkDeviceMemory, the binding
- * of buffers and images to it, and what they require of it.
+ * The executor's memory: VkDeviceMemory, the binding of buffers and images to
+ * it, and what they require of it.
  *
  * An allocation is only a record until its storage arrives: libvulkan
  * creates a blob for every allocation of the one (host visible) memory

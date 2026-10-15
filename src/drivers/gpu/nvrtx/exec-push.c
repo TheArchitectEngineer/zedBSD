@@ -377,10 +377,10 @@ nvrtx_exec_target(
 }
 
 /*
- * Writes viewport 0 from a VkViewport's six floats (x, y, width, height,
- * min depth, max depth, as their bits): the scale half the
- * size, the offset its corner plus that, the depth's scale its range, and
- * the clip its rectangle and depth range.
+ * Writes viewport 0 from a VkViewport's six floats (x, y, width, height, min
+ * depth, max depth, as their bits): the scale half the size, the offset its
+ * corner plus that, the depth's scale its range, and the clip its rectangle and
+ * depth range.
  *
  * Returns where the push buffer goes on.
  *
@@ -775,7 +775,10 @@ nvrtx_exec_texture_header(
 	exec_field(header, 151U, 4U, TIC_TYPE_TWO_D_NO_MIPMAP);
 	exec_field(header, 160U, 16U, height - 1U);
 
-	/* The sector promotion, border from the sampler, normalized coordinates and spread functions. */
+	/*
+	 * The sector promotion, border from the sampler, normalized coordinates
+	 * and spread functions.
+	 */
 	exec_field(header, 155U, 2U, TIC_PROMOTE_TO_2_V);
 	exec_field(header, 157U, 3U, TIC_BORDER_SAMPLER_COLOR);
 	exec_field(header, 191U, 1U, 1U);
@@ -784,9 +787,9 @@ nvrtx_exec_texture_header(
 }
 
 /*
- * Writes a sampler: the address modes, the font filter
- * and sRGB border fields, the filters (nearest or linear, one level), the
- * seamless cube setting and the coordinates' normalization.
+ * Writes a sampler: the address modes, the font filter and sRGB border fields,
+ * the filters (nearest or linear, one level), the seamless cube setting and the
+ * coordinates' normalization.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c
  * (nvk_sampler_get_header).

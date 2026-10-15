@@ -9,14 +9,13 @@
  * The display of the nvrtx GPU device (the gpu-device stage).
  *
  * One display: the head the firmware lit and the driver took over (takeover),
- * in the mode takeover set on it (the only mode, as the design's first step
- * has it); the console, when smaller, is enlarged to it by the head.  One
- * lease at a time, FIFO presentation of storage frames
- * (copied by the CPU into one of the node's two surfaces, then flipped to)
- * and of blobs (flipped to as they are).  A presentation returns once the
- * window's flip has begun, so a wait answers at once.  Releasing the lease,
- * closing its session or destroying the blob on the screen brings the
- * console surface (takeover's first) back.
+ * in the mode takeover set on it (the only mode, as the design's first step has
+ * it); the console, when smaller, is enlarged to it by the head.  One lease at
+ * a time, FIFO presentation of storage frames (copied by the CPU into one of
+ * the node's two surfaces, then flipped to) and of blobs (flipped to as they
+ * are).  A presentation returns once the window's flip has begun, so a wait
+ * answers at once.  Releasing the lease, closing its session or destroying the
+ * blob on the screen brings the console surface (takeover's first) back.
  *
  * The node's present lock puts the presentations, the lease's end and a
  * blob's going off the screen in one order; a presentation takes the
@@ -764,7 +763,10 @@ present_wait(
 	return 0;
 }
 
-/* Reports the head's refresh in millihertz from the pixel clock and raster of the mode takeover set. */
+/*
+ * Reports the head's refresh in millihertz from the pixel clock and raster of
+ * the mode takeover set.
+ */
 static uint32_t
 present_refresh(
 	const struct nvrtx_display_state *display)

@@ -8,32 +8,31 @@
 /*
  * The GSP boot of the nvrtx driver.
  *
-  * Stage layout prepares everything the later stages need before anything is
-  * written that cannot be taken back: the firmware files, the DMA memory the
-  * GSP reads, the placement of the firmware in the VRAM, and the two FWSEC
-  * programs from the VBIOS.  The only writes are the VBIOS windows, which are
-  * put back at once.  A failure in layout leaves the GPU as the firmware left
-  * it.
+ * Stage layout prepares everything the later stages need before anything is
+ * written that cannot be taken back: the firmware files, the DMA memory the GSP
+ * reads, the placement of the firmware in the VRAM, and the two FWSEC programs
+ * from the VBIOS.  The only writes are the VBIOS windows, which are put back at
+ * once.  A failure in layout leaves the GPU as the firmware left it.
  *
-  * devinit waits for the GPU's own firmware to finish devinit.  frts runs
-  * FWSEC-FRTS, which sets up the protected region at the top of the VRAM. The
-  * region is torn down (unload's FWSEC-SB and booter_unload) only after the
-  * firmware has run and unloaded; a region without a started firmware stays
-  * until the host reboots.  Nothing is retried.  booter queues the system
-  * information and the registry, puts the GSP's falcon into RISC-V mode and
-  * runs booter_load, which places the firmware in the region and starts it.
-  * gsp-init waits for the firmware's init-done event, performing the CPU
-  * sequencer it sends.
+ * devinit waits for the GPU's own firmware to finish devinit.  frts runs
+ * FWSEC-FRTS, which sets up the protected region at the top of the VRAM. The
+ * region is torn down (unload's FWSEC-SB and booter_unload) only after the
+ * firmware has run and unloaded; a region without a started firmware stays
+ * until the host reboots.  Nothing is retried.  booter queues the system
+ * information and the registry, puts the GSP's falcon into RISC-V mode and runs
+ * booter_load, which places the firmware in the region and starts it.  gsp-init
+ * waits for the firmware's init-done event, performing the CPU sequencer it
+ * sends.
  *
- * static-info asks for the static information and allocates the first objects: a
- * client, the device and the subdevice.
+ * static-info asks for the static information and allocates the first objects:
+ * a client, the device and the subdevice.
  *
- * address-space and later make the address spaces, the channels, the display and the
- * GPU device (their own files).  Where the boot ends short of keeping the
- * GPU up, the worker stops the GSP (unload: the unload call, the GSP's falcon
- * reset, FWSEC-SB, booter_unload) and gives the preparation back, so the
- * GPU ends as the firmware left it.  A GSP kept up is stopped the same way
- * at the reboot or the shutdown of the machine (nvrtx_gsp_shutdown).
+ * address-space and later make the address spaces, the channels, the display
+ * and the GPU device (their own files).  Where the boot ends short of keeping
+ * the GPU up, the worker stops the GSP (unload: the unload call, the GSP's
+ * falcon reset, FWSEC-SB, booter_unload) and gives the preparation back, so the
+ * GPU ends as the firmware left it.  A GSP kept up is stopped the same way at
+ * the reboot or the shutdown of the machine (nvrtx_gsp_shutdown).
  */
 
 #include <stdbool.h>
@@ -61,7 +60,10 @@
 #define GSP_DEVINIT_TIMEOUT_US		4100000U
 #define GSP_DEVINIT_STEP_US		2000U
 
-/* How long gsp-init waits for the init-done event, and unload for the unload's reply and the GSP's halt. */
+/*
+ * How long gsp-init waits for the init-done event, and unload for the unload's
+ * reply and the GSP's halt.
+ */
 #define GSP_INIT_DONE_TIMEOUT_US	10000000U
 #define GSP_UNLOAD_TIMEOUT_US		2000000U
 #define GSP_UNLOADED_TIMEOUT_US		2000000U
@@ -97,7 +99,10 @@
  */
 #define GSP_REG_BOOT_SCRATCH		0x1180f8U
 
-/* When gsp-init shows how far the firmware got, in milliseconds after it began to wait. */
+/*
+ * When gsp-init shows how far the firmware got, in milliseconds after it began
+ * to wait.
+ */
 #define GSP_PROGRESS_POINTS		4U
 
 /* The highest user address the resource manager is told of (the 47-bit user half). */
@@ -215,7 +220,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before booter when the boot asks; the finish reports the region it leaves. */
+	/*
+	 * Stops before booter when the boot asks; the finish reports the region
+	 * it leaves.
+	 */
 	allowed = nvrtx_stage_allowed("booter");
 	if (!allowed) {
 		nvrtx_stage_mark("booter skipped (nvrtx.stop=booter)");
@@ -237,7 +245,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before static-info when the boot asks; the finish stops the GSP again. */
+	/*
+	 * Stops before static-info when the boot asks; the finish stops the GSP
+	 * again.
+	 */
 	allowed = nvrtx_stage_allowed("static-info");
 	if (!allowed) {
 		nvrtx_stage_mark("static-info skipped (nvrtx.stop=static-info)");
@@ -254,7 +265,10 @@ nvrtx_gsp_start(
 		return error;
 	}
 
-	/* Stops before address-space when the boot asks; the finish stops the GSP again. */
+	/*
+	 * Stops before address-space when the boot asks; the finish stops the
+	 * GSP again.
+	 */
 	allowed = nvrtx_stage_allowed("address-space");
 	if (!allowed) {
 		nvrtx_stage_mark("address-space skipped (nvrtx.stop=address-space)");
@@ -380,7 +394,10 @@ nvrtx_gsp_start(
 		}
 	}
 
-	/* Says where the boot ends; the end keeps a console's GSP up, or runs display's and channel-stop's stops and unload. */
+	/*
+	 * Says where the boot ends; the end keeps a console's GSP up, or runs
+	 * display's and channel-stop's stops and unload.
+	 */
 	nvrtx_stage_mark("display done; this revision ends at gpu-device");
 	gsp_end(gpu);
 
@@ -389,14 +406,14 @@ nvrtx_gsp_start(
 }
 
 /*
- * Stops a GSP kept up until now, for the reboot or the shutdown of the
- * machine: the objects of channel-stop are freed, the firmware is unloaded (unload), the
+ * Stops a GSP kept up until now, for the reboot or the shutdown of the machine:
+ * the objects of channel-stop are freed, the firmware is unloaded (unload), the
  * protected region is torn down and the VRAM window is put back in the
- * firmware's mode, so nothing of this boot (the hub's state, the region)
- * is carried into the next.  Called from the PCI shutdown hook once the
- * worker has ended and the GPU device, if any, is stopped.  Returns 0 when
- * the GSP stopped and the region is gone, else the error; the memory is
- * kept either way, since the machine is about to be reset.
+ * firmware's mode, so nothing of this boot (the hub's state, the region) is
+ * carried into the next.  Called from the PCI shutdown hook once the worker has
+ * ended and the GPU device, if any, is stopped.  Returns 0 when the GSP stopped
+ * and the region is gone, else the error; the memory is kept either way, since
+ * the machine is about to be reset.
  */
 int
 nvrtx_gsp_shutdown(
@@ -910,8 +927,9 @@ gsp_prepare_falcons(
 	 * From Ampere on the secure processor is reset without its PMC bit (the
 	 * device table moved and changed its form).
 	 *
-	 * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c
-	 * (ga102_gsp_reset, ga102_gsp_flcn).
+	 * Procedure referenced: Linux v6.19
+	 * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_reset,
+	 * ga102_gsp_flcn).
 	 */
 	if (style == NVRTX_FALCON_BOOT_ROM) {
 		gpu->sec2_falcon.base = NVRTX_FALCON_SEC2_BASE;
@@ -1032,11 +1050,11 @@ gsp_region_set(
 }
 
 /*
- * Ends the boot after vram-window, on its success or a failure: a GSP whose window
- * holds the firmware's console again stays up (unless the boot says
- * nvrtx.resident=0), because stopping the resource manager takes the
- * console's mapping, and maybe the head, with it; the GPU is then kept
- * until power-off as for the GPU device.  Otherwise the finish stops it.
+ * Ends the boot after vram-window, on its success or a failure: a GSP whose
+ * window holds the firmware's console again stays up (unless the boot says
+ * nvrtx.resident=0), because stopping the resource manager takes the console's
+ * mapping, and maybe the head, with it; the GPU is then kept until power-off as
+ * for the GPU device.  Otherwise the finish stops it.
  */
 static void
 gsp_end(
@@ -1080,7 +1098,8 @@ gsp_finish(
 }
 
 /*
- * Stops a running GSP (channel-stop's frees, then unload) and tears its region down once.
+ * Stops a running GSP (channel-stop's frees, then unload) and tears its region
+ * down once.
  *
  * Returns 0 when the memory may be given back: the GSP is stopped, or it
  * never ran.  Returns EBUSY when a falcon may still read the memory (one
@@ -1103,9 +1122,9 @@ gsp_teardown(
 		return EBUSY;
 
 	/*
-	 * Frees the graphics objects, the channel and the address space (channel-stop)
-	 * before every unload: the firmware did not unload with a scheduled
-	 * channel left.
+	 * Frees the graphics objects, the channel and the address space
+	 * (channel-stop) before every unload: the firmware did not unload with
+	 * a scheduled channel left.
 	 */
 	if (gpu->state == NVRTX_GSP_RUNNING) {
 		nvrtx_work_stop(gpu);
@@ -1131,9 +1150,9 @@ gsp_teardown(
 	/*
 	 * Tears the region down only after a GSP that ran has unloaded:
 	 * booter_unload undoes what booter_load and the firmware set up, and
-	 * refuses a region that only FWSEC-FRTS made (it answers with mailbox 0x29).  A
-	 * region without a started firmware stays until the GPU loses power or
-	 * the host reboots, as the vendor's driver also leaves it.
+	 * refuses a region that only FWSEC-FRTS made (it answers with mailbox
+	 * 0x29).  A region without a started firmware stays until the GPU loses
+	 * power or the host reboots, as the vendor's driver also leaves it.
 	 */
 	error = 0;
 	if (stopped && gpu->region_written != 0)
@@ -1301,7 +1320,8 @@ gsp_boot_riscv(
 }
 
 /*
- * Runs gsp-init: waits for the init-done event, performing the sequencer meanwhile.
+ * Runs gsp-init: waits for the init-done event, performing the sequencer
+ * meanwhile.
  *
  * The wait is cut at a few points to show how far the firmware got.  When
  * the event does not come, the memory is kept, so the logs and the queues
@@ -1434,7 +1454,8 @@ gsp_log_put(
 }
 
 /*
- * Stops a running GSP (unload): the unload call, the halt, and the falcon reset.
+ * Stops a running GSP (unload): the unload call, the halt, and the falcon
+ * reset.
  *
  * The region is torn down afterwards by the finish.  Returns ETIMEDOUT when
  * the firmware did not unload in time.
@@ -1513,7 +1534,10 @@ gsp_static_info(
 		return EIO;
 	}
 
-	/* Keeps the information: address-space reads the FB regions and the internal handles from it. */
+	/*
+	 * Keeps the information: address-space reads the FB regions and the
+	 * internal handles from it.
+	 */
 	gpu->static_info = kern_malloc(NVRTX_STATIC_INFO_BYTES);
 	if (gpu->static_info == NULL)
 		return ENOMEM;

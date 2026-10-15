@@ -6,8 +6,8 @@
  */
 
 /*
- * The executor's transport: one submitted frame of
- * the Kei GPU command protocol, decoded command by command.
+ * The executor's transport: one submitted frame of the Kei GPU command
+ * protocol, decoded command by command.
  *
  * The transport's own commands are taken here: selecting the reply stream
  * (a range of one of the session's blobs the replies are written to),

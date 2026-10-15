@@ -36,8 +36,8 @@ static void discover_flr(struct nvrtx_device *device);
 static const char *discover_bar_kind(const struct nvrtx_window *window);
 
 /*
-  * Runs the identify stage: finds the windows, maps the registers and reads
-  * the chip.
+ * Runs the identify stage: finds the windows, maps the registers and reads the
+ * chip.
  *
  * Returns 0 when the identity names a chip of a known generation, ENODEV
  * for a function the driver never drives, ENOTSUP for an unknown chip, or
@@ -96,7 +96,10 @@ nvrtx_n0_discover(
 		return error;
 	}
 
-	/* Claims the register window, so no other driver maps it while identify reads. */
+	/*
+	 * Claims the register window, so no other driver maps it while identify
+	 * reads.
+	 */
 	error = drv_pci_device_claim_bar(device->pci, registers->bar);
 	if (error != 0) {
 		nvrtx_stage_mark("identify fail: register window not claimed (%d)", error);

@@ -117,10 +117,10 @@ static uint32_t qmd_pick_shared(uint32_t bytes, uint32_t groups);
 static size_t compute_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
 
 /*
- * Builds a launch's QMD, version 2.2, for Turing: the
- * version, global caching on, no call limit, the grid and the workgroup,
- * the shared memory and the carve-outs it allows, the registers, the
- * barriers, no local memory, the constant buffers and the program.
+ * Builds a launch's QMD, version 2.2, for Turing: the version, global caching
+ * on, no call limit, the grid and the workgroup, the shared memory and the
+ * carve-outs it allows, the registers, the barriers, no local memory, the
+ * constant buffers and the program.
  *
  * Returns 0, or EINVAL for a value a field cannot hold or a misaligned
  * address or size.
@@ -217,10 +217,10 @@ nvrtx_qmd_build(
 }
 
 /*
- * Writes the push buffer of one launch on the compute subchannel: the
- * compute class bound there, the shared and local memory windows, the
- * shader caches invalidated, then the QMD sent and
- * scheduled (Turing's SEND_SIGNALING_PCAS_B).
+ * Writes the push buffer of one launch on the compute subchannel: the compute
+ * class bound there, the shared and local memory windows, the shader caches
+ * invalidated, then the QMD sent and scheduled (Turing's
+ * SEND_SIGNALING_PCAS_B).
  *
  * Returns the length in bytes.
  *

@@ -127,7 +127,8 @@ nvrtx_vram_size(
 }
 
 /*
- * Decodes the VRAM size from the register Ampere and later report it in: whole MiB.
+ * Decodes the VRAM size from the register Ampere and later report it in: whole
+ * MiB.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/fb/ga102.c (ga102_fb_vidmem_size).
