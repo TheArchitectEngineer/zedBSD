@@ -3,7 +3,7 @@
 # ws236-p012: Pi の WSI の direct の swapchain（present の copy を無くす）
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3 新世代。設計の第 2 版（design-reviewer の review-1 の major 8・minor 7 に対応）と実装・host 試験・build 済み、Q1 の merge と T2 の依頼 10 待ち）
+Status: canceled（2026-10-16 ユーザーの決定で revert、下の「revert」）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236g`）
 依存: [ws236-p011](../phase011/phase.md)（A1 の全画面の copy、T1-688）。分けた経緯: 2026-10-16 Q1 の判断（review-1 m7「A3 は WS236 の独立の Phase に、規約の全文の見直しを含める」）。p011 の「A3 の設計」第 1 版（7879af2b0）からここへ移した。
@@ -127,3 +127,6 @@ Phase disposition: normal
 
 ## 2026-10-16 ユーザーの決定
 「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」（T1-690 の A3 の有無の比較の後）→ Pi のビデオの要件は 720p30。60 fps・1080p に向けた作業は止める。A3（この Phase）を残すか revert するかはユーザーに確認中。
+
+## revert（2026-10-16、ユーザーの決定）
+ユーザー（クリック）: A3 を「revert する」（要件が 720p30 になり、720p30 では fps が変わらず合成の 1 frame が 14.2→20.2 ms に延びたため）。Q1 が 1eba9a16b・15d2de40b・849ea5b1a の code の変更（libvulkan の WSI、compositor の opt-in、kernel の capset の bit・出力先の検査、host 試験の stub）を逆に当てて戻した（計画の記録は残す）。rpi4・amd64 の vmunix・libvulkan・wayland は warning 0、ws214 vulkan-overlay-host・ws141 vulkan-cursor-host・vulkan-device の host 試験は PASS。Status: canceled（revert 済み）。
