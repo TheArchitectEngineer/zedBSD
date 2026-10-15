@@ -132,6 +132,13 @@ void nvrtx_sm75_ldc(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t index, 
 void nvrtx_sm75_ldg(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t address);
 void nvrtx_sm75_stg(struct nvrtx_sm75_word *word, uint32_t address, uint32_t data);
 
+/*
+ * Sets a global access's memory order (strong at the GPU's scope) in the
+ * form of a shader model: SM75's scope and order fields, or from SM80 on
+ * their one field.  The global encoders above write SM75's form.
+ */
+void nvrtx_sm75_memory_order(struct nvrtx_sm75_word *word, uint32_t sm);
+
 /* LDS and STS of a 32-bit word at a byte offset of the workgroup's shared memory in a register. */
 void nvrtx_sm75_lds(struct nvrtx_sm75_word *word, uint32_t dst, uint32_t offset);
 void nvrtx_sm75_sts(struct nvrtx_sm75_word *word, uint32_t offset, uint32_t data);

@@ -1,11 +1,13 @@
 #!/bin/sh
 # Every desktop shader (userland/desktop/**/shaders.h, as the components ship them) through the nvrtx SM75
-# compiler (ws037-p008): prints each module compiled or refused with the reason, and runs each compiled one on the
-# SM75 interpreter and its IR on a reference interpreter for many inputs; they must agree.
+# compiler (ws037-p008) for Turing, Ampere and Ada (SM75, SM86, SM89; ws242-p002): prints each module compiled or
+# refused with the reason, and runs each compiled one on the interpreter (with that shader model's dependence check) and
+# its IR on a reference interpreter for many inputs; they must agree.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
-# usage: plan/ws037/tests/nvrtx-sm75-desktop-test.sh [--strict]   (from anywhere)
-# --strict fails when any module is refused.  Everything goes in a new directory below build/tmp; nothing is removed.
+# usage: plan/ws037/tests/nvrtx-sm75-desktop-test.sh [--strict] [--sm 75|86|89]   (from anywhere)
+# --strict fails when any module is refused; --sm compiles for one shader model only (all three by default).
+# Everything goes in a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 mkdir -p "$repo/build/tmp"

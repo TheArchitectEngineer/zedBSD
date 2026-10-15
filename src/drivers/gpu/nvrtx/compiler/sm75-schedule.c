@@ -6,6 +6,7 @@
 /*
  * Copyright © 2022 Collabora, Ltd.
  * Copyright © 2024 Collabora, Ltd.
+ * Copyright © 2025 Red Hat.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -34,13 +35,17 @@
  * Modified for zedBSD: the latencies are excerpted by hand from Mesa 25.3.6
  * (src/nouveau/compiler/nak, SPDX MIT) and the code is zedBSD's own.
  * Sources (SHA-256):
- *   nak/sm75_instr_latencies.rs (the latency classes and tables)
+ *   nak/sm75_instr_latencies.rs (Turing's latency classes and tables)
  *     419b8b1d25fb16ddc8ae726768b15e593d3b84f467cc6bb59101eb39bf764878
+ *   nak/sm80_instr_latencies.rs (© 2025 Red Hat; Ampere's and Ada's
+ *   latency classes and tables, ws242-p002)
+ *     3aeeb5b8a91c5d34323eb2fa18eb1848325ab90c58d409425fce3e15ef049797
  *   nak/calc_instr_deps.rs (a scoreboard is waited for at least two
  *   cycles after the instruction that sets it; six scoreboards)
  *     8c92e065aa043dcb259cb0bc0ef7436ec692b9b5d10321969fd5adc3d6178695
  *   nak/sm70.rs (the latency class of each operation, the execution
- *   latency of BAR and MEMBAR)
+ *   latency of BAR and MEMBAR: 5 on Turing, 6 from SM80 on)
+ *     5048695512c9ace320d9a38b0b6455e11d3fadc0f8ce24a80d1eb4d5f712de27
  *
  * The reordering (nvrtx_sm75_reorder()) works inside each block of
  * instructions between the fixed ones (branches, convergence, barriers,
@@ -59,6 +64,15 @@
  * the instruction before it gets that many cycles as its delay.  The
  * tables' few values that depend on predication or on finer classes are
  * taken at their largest, so the delays are never short.
+ *
+ * Ampere and Ada (SM86, SM89) differ from Turing only in the read after
+ * write of a fixed-latency result: a variable-latency reader waits 4
+ * cycles (5 for the address unit's) instead of 6, an IMAD.WIDE's addend
+ * waits 4 for another IMAD.WIDE instead of 2, and a guard, a branch or a
+ * variable-latency reader of a comparison waits 13 instead of 12.  Their
+ * write after write, write after read and worst latencies are within the
+ * values below, which both use; BAR and MEMBAR execute in 6 cycles, which
+ * NVRTX_SM75_DELAY_SYNC_MIN already waits.
  */
 
 #include "sm75-schedule.h"
@@ -88,7 +102,7 @@
 #define NVRTX_SM75_WAW_DECOUPLED	6U
 #define NVRTX_SM75_WAR_DECOUPLED	2U
 
-/* The fewest cycles after a barrier or a memory barrier (its execution takes 5), and after EXIT. */
+/* The fewest cycles after a barrier or a memory barrier (its execution takes 5 on Turing, 6 from SM80 on), and after EXIT. */
 #define NVRTX_SM75_DELAY_SYNC_MIN	6U
 #define NVRTX_SM75_DELAY_EXIT_MIN	5U
 #define NVRTX_SM75_DELAY_AFTER_SYNC	2U
@@ -124,11 +138,13 @@ struct nvrtx_sm75_track {
 };
 
 /*
- * The state of one pass: the registers and predicates, each scoreboard's
- * use (busy) and the cycle it was set, and the cycle of the instruction
- * before.  Lives on the stack of nvrtx_sm75_schedule().
+ * The state of one pass: the shader model, the registers and predicates,
+ * each scoreboard's use (busy) and the cycle it was set, and the cycle of
+ * the instruction before.  Allocated by nvrtx_sm75_schedule() for one
+ * call.
  */
 struct nvrtx_sm75_scheduler {
+	uint32_t sm;
 	struct nvrtx_sm75_track gpr[NVRTX_SM75_TRACKED_GPRS];
 	struct nvrtx_sm75_track predicate[NVRTX_SM75_TRACKED_PREDICATES];
 	uint32_t bar_busy;
@@ -152,8 +168,8 @@ struct nvrtx_sm75_node {
 	int issued;
 };
 
-static int nvrtx_sm75_reorder_block(struct nvrtx_sm75_node *nodes, uint32_t count, uint32_t *code);
-static uint32_t nvrtx_sm75_dependence(const struct nvrtx_sm75_node *before, const struct nvrtx_sm75_node *after);
+static int nvrtx_sm75_reorder_block(struct nvrtx_sm75_node *nodes, uint32_t count, uint32_t sm, uint32_t *code);
+static uint32_t nvrtx_sm75_dependence(const struct nvrtx_sm75_node *before, const struct nvrtx_sm75_node *after, uint32_t sm);
 static int nvrtx_sm75_memory_kind(uint32_t opcode);
 static uint32_t nvrtx_sm75_guess(const struct nvrtx_sm75_node *node);
 static int nvrtx_sm75_fixed(const struct nvrtx_sm75_operands *operands);
@@ -168,8 +184,10 @@ static void nvrtx_sm75_constrain(struct nvrtx_sm75_scheduler *scheduler, const s
 static void nvrtx_sm75_take_bars(struct nvrtx_sm75_scheduler *scheduler, const struct nvrtx_sm75_operands *operands, uint32_t *wait, uint32_t *write_bar, uint32_t *read_bar);
 static void nvrtx_sm75_record(struct nvrtx_sm75_scheduler *scheduler, const struct nvrtx_sm75_operands *operands, uint32_t issue, uint32_t write_bar, uint32_t read_bar);
 static void nvrtx_sm75_release(struct nvrtx_sm75_scheduler *scheduler, uint32_t wait);
-static uint32_t nvrtx_sm75_raw(uint32_t writer, uint32_t reader);
-static uint32_t nvrtx_sm75_predicate_raw(uint32_t reader);
+static uint32_t nvrtx_sm75_raw(uint32_t sm, uint32_t writer, uint32_t reader);
+static uint32_t nvrtx_sm75_raw_turing(uint32_t writer, uint32_t reader);
+static uint32_t nvrtx_sm75_raw_ampere(uint32_t writer, uint32_t reader);
+static uint32_t nvrtx_sm75_predicate_raw(uint32_t sm, uint32_t reader);
 static uint32_t nvrtx_sm75_later(uint32_t a, uint32_t b);
 
 /*
@@ -227,6 +245,7 @@ int
 nvrtx_sm75_reorder(
 	uint32_t *code,
 	uint32_t count,
+	uint32_t sm,
 	uint32_t *instruction,
 	const char **reason)
 {
@@ -295,7 +314,7 @@ nvrtx_sm75_reorder(
 
 		/* The block's instructions in their new order. */
 		if (end - start > 1U) {
-			error = nvrtx_sm75_reorder_block(nodes + start, end - start, code + (size_t)start * NVRTX_SM75_INSTRUCTION_WORDS);
+			error = nvrtx_sm75_reorder_block(nodes + start, end - start, sm, code + (size_t)start * NVRTX_SM75_INSTRUCTION_WORDS);
 			if (error != 0) {
 				*instruction = start;
 				*reason = "no memory for the reordering";
@@ -325,6 +344,7 @@ int
 nvrtx_sm75_schedule(
 	uint32_t *code,
 	uint32_t count,
+	uint32_t sm,
 	uint32_t *instruction,
 	const char **reason)
 {
@@ -363,7 +383,8 @@ nvrtx_sm75_schedule(
 	}
 	nvrtx_sm75_mark_targets(code, count, target);
 
-	/* Nothing in flight at the program's start. */
+	/* The shader model's latencies, and nothing in flight at the program's start. */
+	scheduler->sm = sm;
 	nvrtx_sm75_clear(scheduler);
 	scheduler->cycle = 0U;
 	previous = NULL;
@@ -460,6 +481,7 @@ static int
 nvrtx_sm75_reorder_block(
 	struct nvrtx_sm75_node *nodes,
 	uint32_t count,
+	uint32_t sm,
 	uint32_t *code)
 {
 	uint32_t *order;
@@ -481,7 +503,7 @@ nvrtx_sm75_reorder_block(
 	for (before = count; before > 0U; before--) {
 		path = nvrtx_sm75_guess(&nodes[before - 1U]);
 		for (after = before; after < count; after++) {
-			latency = nvrtx_sm75_dependence(&nodes[before - 1U], &nodes[after]);
+			latency = nvrtx_sm75_dependence(&nodes[before - 1U], &nodes[after], sm);
 			if (latency == NVRTX_SM75_NO_DEPENDENCE)
 				continue;
 			if (latency + nodes[after].priority > path)
@@ -496,7 +518,7 @@ nvrtx_sm75_reorder_block(
 		nodes[after].earliest = 0U;
 		nodes[after].issued = 0;
 		for (before = 0U; before < after; before++) {
-			latency = nvrtx_sm75_dependence(&nodes[before], &nodes[after]);
+			latency = nvrtx_sm75_dependence(&nodes[before], &nodes[after], sm);
 			if (latency != NVRTX_SM75_NO_DEPENDENCE)
 				nodes[after].waiting++;
 		}
@@ -538,7 +560,7 @@ nvrtx_sm75_reorder_block(
 		order[issued] = best;
 		nodes[best].issued = 1;
 		for (after = best + 1U; after < count; after++) {
-			latency = nvrtx_sm75_dependence(&nodes[best], &nodes[after]);
+			latency = nvrtx_sm75_dependence(&nodes[best], &nodes[after], sm);
 			if (latency == NVRTX_SM75_NO_DEPENDENCE)
 				continue;
 			nodes[after].waiting--;
@@ -568,7 +590,8 @@ nvrtx_sm75_reorder_block(
 static uint32_t
 nvrtx_sm75_dependence(
 	const struct nvrtx_sm75_node *before,
-	const struct nvrtx_sm75_node *after)
+	const struct nvrtx_sm75_node *after,
+	uint32_t sm)
 {
 	const struct nvrtx_sm75_operands *first;
 	const struct nvrtx_sm75_operands *second;
@@ -589,16 +612,16 @@ nvrtx_sm75_dependence(
 				continue;
 			if (first->class_of == NVRTX_SM75_CLASS_DECOUPLED)
 				return nvrtx_sm75_guess(before);
-			return nvrtx_sm75_raw(first->class_of, second->read_class[j]);
+			return nvrtx_sm75_raw(sm, first->class_of, second->read_class[j]);
 		}
 	}
 
 	/* A predicate the second reads (as its guard or its source) that the first writes. */
 	if (first->predicate_write != NVRTX_SM75_NO_PREDICATE) {
 		if (first->predicate_write == second->guard)
-			return nvrtx_sm75_predicate_raw(NVRTX_SM75_CLASS_DECOUPLED);
+			return nvrtx_sm75_predicate_raw(sm, NVRTX_SM75_CLASS_DECOUPLED);
 		if (first->predicate_write == second->predicate_read)
-			return nvrtx_sm75_predicate_raw(second->class_of);
+			return nvrtx_sm75_predicate_raw(sm, second->class_of);
 	}
 
 	/* A register the second writes that the first reads or writes. */
@@ -861,12 +884,12 @@ nvrtx_sm75_operands_other(
 	case NVRTX_SM75_OP_ATOMG:
 	case NVRTX_SM75_OP_ATOMG_CAS:
 		/* The 64-bit address pair, the data, the compare-and-exchange's second data, the result. */
-		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_DECOUPLED);
-		nvrtx_sm75_add_read(operands, src0 + 1U, NVRTX_SM75_CLASS_DECOUPLED);
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_AGU);
+		nvrtx_sm75_add_read(operands, src0 + 1U, NVRTX_SM75_CLASS_AGU);
 		if (opcode != NVRTX_SM75_OP_LDG)
-			nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_DECOUPLED);
+			nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_AGU);
 		if (opcode == NVRTX_SM75_OP_ATOMG_CAS)
-			nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_DECOUPLED);
+			nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_AGU);
 		if (opcode != NVRTX_SM75_OP_STG)
 			nvrtx_sm75_add_write(operands, dst);
 		break;
@@ -875,19 +898,19 @@ nvrtx_sm75_operands_other(
 	case NVRTX_SM75_OP_ATOMS:
 	case NVRTX_SM75_OP_ATOMS_CAS:
 		/* The offset, the data, the second data, the result. */
-		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_DECOUPLED);
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_AGU);
 		if (opcode != NVRTX_SM75_OP_LDS)
-			nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_DECOUPLED);
+			nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_AGU);
 		if (opcode == NVRTX_SM75_OP_ATOMS_CAS)
-			nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_DECOUPLED);
+			nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_AGU);
 		if (opcode != NVRTX_SM75_OP_STS)
 			nvrtx_sm75_add_write(operands, dst);
 		break;
 	case NVRTX_SM75_OP_AST:
 		/* The data; the vertex and offset registers are RZ. */
-		nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_DECOUPLED);
-		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_DECOUPLED);
-		nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_DECOUPLED);
+		nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_AGU);
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_AGU);
+		nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_AGU);
 		break;
 	case NVRTX_SM75_OP_TEX:
 	case NVRTX_SM75_OP_TLD:
@@ -1091,7 +1114,7 @@ nvrtx_sm75_constrain(
 			*wait |= 1U << track->write_bar;
 			continue;
 		}
-		*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_raw(track->write_class, operands->read_class[index]));
+		*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_raw(scheduler->sm, track->write_class, operands->read_class[index]));
 	}
 
 	/* Each register write: after the write and the reads before it. */
@@ -1119,7 +1142,7 @@ nvrtx_sm75_constrain(
 	if (operands->guard != NVRTX_SM75_NO_PREDICATE) {
 		track = &scheduler->predicate[operands->guard];
 		if (track->written != 0)
-			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(NVRTX_SM75_CLASS_DECOUPLED));
+			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(scheduler->sm, NVRTX_SM75_CLASS_DECOUPLED));
 	}
 	if (operands->predicate_read != NVRTX_SM75_NO_PREDICATE) {
 		track = &scheduler->predicate[operands->predicate_read];
@@ -1127,7 +1150,7 @@ nvrtx_sm75_constrain(
 		if (operands->boundary != 0)
 			reader = NVRTX_SM75_CLASS_DECOUPLED;
 		if (track->written != 0)
-			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(reader));
+			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(scheduler->sm, reader));
 	}
 
 	/* The predicate written: after the write and the reads before it. */
@@ -1298,17 +1321,45 @@ nvrtx_sm75_release(
 }
 
 /*
- * Reports the cycles from a fixed-latency register write to a read
- * (sm75_instr_latencies.rs, read_after_write; an IMAD.WIDE writes as its
- * upper half and its addend is read as DISPATCH here, the lower half).
+ * Reports the cycles from a fixed-latency register write to a read in a
+ * shader model's latency table.  An IMAD.WIDE writes as its upper half,
+ * and its addend is read as NVRTX_SM75_CLASS_DISPATCH here.
  */
 static uint32_t
 nvrtx_sm75_raw(
+	uint32_t sm,
 	uint32_t writer,
 	uint32_t reader)
 {
-	/* A variable-latency reader waits 6 for any fixed-latency writer. */
-	if (reader == NVRTX_SM75_CLASS_DECOUPLED)
+	uint32_t latency;
+
+	/* Ampere and Ada share one table. */
+	if (sm >= NVRTX_SM_AMPERE_FIRST) {
+		latency = nvrtx_sm75_raw_ampere(writer, reader);
+
+		/* Succeeded: Ampere's and Ada's latency. */
+		return latency;
+	}
+
+	/* Turing's. */
+	latency = nvrtx_sm75_raw_turing(writer, reader);
+
+	/* Succeeded: Turing's latency. */
+	return latency;
+}
+
+/*
+ * Reports Turing's cycles from a fixed-latency register write to a read
+ * (sm75_instr_latencies.rs, read_after_write; the addend is the
+ * IMADWideLower reader).
+ */
+static uint32_t
+nvrtx_sm75_raw_turing(
+	uint32_t writer,
+	uint32_t reader)
+{
+	/* A variable-latency reader, of the address unit or not, waits 6 for any fixed-latency writer. */
+	if (reader == NVRTX_SM75_CLASS_DECOUPLED || reader == NVRTX_SM75_CLASS_AGU)
 		return 6U;
 
 	/* An IMAD.WIDE's addend (the lower half reader). */
@@ -1345,12 +1396,57 @@ nvrtx_sm75_raw(
 }
 
 /*
+ * Reports Ampere's and Ada's cycles from a fixed-latency register write to
+ * a read (sm80_instr_latencies.rs, read_after_write: the writers are
+ * CoupledAlu, CoupledFMA and IMADWideWriteDH, the addend is the
+ * IMADWideReadCL reader, which reads as CoupledFMA does).
+ */
+static uint32_t
+nvrtx_sm75_raw_ampere(
+	uint32_t writer,
+	uint32_t reader)
+{
+	/* A variable-latency reader of the address unit (DecoupledAgu) waits 5, any other (Decoupled) 4. */
+	if (reader == NVRTX_SM75_CLASS_AGU)
+		return 5U;
+	if (reader == NVRTX_SM75_CLASS_DECOUPLED)
+		return 4U;
+
+	/* An IMAD.WIDE's factors (IMADWideReadAB). */
+	if (reader == NVRTX_SM75_CLASS_IMAD_WIDE) {
+		if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+			return 5U;
+		if (writer == NVRTX_SM75_CLASS_IMAD_WIDE)
+			return 6U;
+		return 4U;
+	}
+
+	/* A float or IMAD reader, or an IMAD.WIDE's addend. */
+	if (reader == NVRTX_SM75_CLASS_FMA ||
+	    reader == NVRTX_SM75_CLASS_IMAD ||
+	    reader == NVRTX_SM75_CLASS_DISPATCH) {
+		if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+			return 5U;
+		return 4U;
+	}
+
+	/* An ALU reader. */
+	if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+		return 4U;
+
+	/* Succeeded: an FMA, IMAD or IMAD.WIDE writer of an ALU reader. */
+	return 5U;
+}
+
+/*
  * Reports the cycles from a comparison's predicate (an ALU write) to a
- * read: 4 for an ALU reader, 5 for a float or IMAD one, 12 for a guard, a
- * branch or a variable-latency reader (pred_read_after_write).
+ * read: 4 for an ALU reader, 5 for a float or IMAD one, and for a guard, a
+ * branch or a variable-latency reader 12 on Turing (pred_read_after_write)
+ * and 13 on Ampere and Ada (PredLatencySM80's Guard and Decoupled).
  */
 static uint32_t
 nvrtx_sm75_predicate_raw(
+	uint32_t sm,
 	uint32_t reader)
 {
 	/* An ALU reader. */
@@ -1363,7 +1459,11 @@ nvrtx_sm75_predicate_raw(
 	    reader == NVRTX_SM75_CLASS_IMAD_WIDE)
 		return 5U;
 
-	/* Succeeded: a guard, a branch or a variable-latency reader. */
+	/* A guard, a branch or a variable-latency reader on Ampere and Ada. */
+	if (sm >= NVRTX_SM_AMPERE_FIRST)
+		return 13U;
+
+	/* Succeeded: a guard, a branch or a variable-latency reader on Turing. */
 	return 12U;
 }
 

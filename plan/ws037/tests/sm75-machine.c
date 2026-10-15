@@ -30,7 +30,10 @@ static void sm75_machine_predicate_write(struct test_thread *t, uint32_t predica
 static void sm75_machine_exit_check(struct test_run *run, struct test_thread *t);
 static void sm75_machine_hazard(struct test_run *run, struct test_thread *t, const char *what, uint32_t reg);
 static uint32_t sm75_machine_class(uint32_t opcode);
-static uint32_t sm75_machine_raw(uint32_t writer, uint32_t reader);
+static uint32_t sm75_machine_raw(uint32_t sm, uint32_t writer, uint32_t reader);
+static uint32_t sm75_machine_sm(const struct test_run *run);
+static int sm75_machine_agu(uint32_t opcode);
+static void sm75_machine_memory_order(struct test_run *run, struct test_thread *t, const struct nvrtx_sm75_word *word);
 static void sm75_machine_texture(struct test_run *run, struct test_thread *t, const struct nvrtx_sm75_word *word);
 static int32_t sm75_machine_offset(uint32_t bits, unsigned low);
 
@@ -731,9 +734,12 @@ sm75_machine_issue(
 	}
 	t->next_cycle = t->cycle + delay;
 
-	/* The class, and nothing read or written yet. */
+	/* The class, and nothing read or written yet; the address unit's reads are a class of their own. */
 	t->instruction_class = sm75_machine_class((uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS));
 	t->read_class = t->instruction_class;
+	if (sm75_machine_agu((uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS)) != 0)
+		t->read_class = TEST_CLASS_AGU;
+	sm75_machine_memory_order(run, t, word);
 	t->read_count = 0U;
 	t->write_count = 0U;
 	t->issued = 1;
@@ -847,7 +853,7 @@ sm75_machine_read(
 	/* A variable-latency write in flight must have been waited for, a fixed-latency one waited out. */
 	if (hazard->written != 0 && hazard->write_bar != 0U) {
 		sm75_machine_hazard(run, t, "reads before the scoreboard of its write: R", reg);
-	} else if (hazard->written != 0 && t->cycle < hazard->write_cycle + sm75_machine_raw(hazard->write_class, t->read_class)) {
+	} else if (hazard->written != 0 && t->cycle < hazard->write_cycle + sm75_machine_raw(sm75_machine_sm(run), hazard->write_class, t->read_class)) {
 		sm75_machine_hazard(run, t, "reads too soon after its write: R", reg);
 	}
 
@@ -903,7 +909,8 @@ sm75_machine_write(
 /*
  * Reads a predicate for the running instruction (PT always), after the
  * comparison that wrote it: 4 cycles for an ALU reader, 5 for a float or
- * IMAD one, 12 for a guard, a branch or a variable-latency one.
+ * IMAD one, 12 for a guard, a branch or a variable-latency one (13 on
+ * Ampere and Ada).
  */
 static int
 sm75_machine_predicate(
@@ -920,8 +927,10 @@ sm75_machine_predicate(
 		return 1;
 	hazard = &t->predicate[predicate];
 
-	/* The latency by the reader. */
+	/* The latency by the reader and the shader model. */
 	need = 12U;
+	if (sm75_machine_sm(run) >= NVRTX_SM_AMPERE_FIRST)
+		need = 13U;
 	if (reader == TEST_CLASS_ALU)
 		need = 4U;
 	if (reader == TEST_CLASS_FMA || reader == TEST_CLASS_IMAD || reader == TEST_CLASS_IMAD_WIDE)
@@ -1015,22 +1024,37 @@ sm75_machine_class(
 
 /*
  * Reports the cycles from a fixed-latency register write to a read
- * (read_after_write; an IMAD.WIDE writes as its upper half).
+ * (read_after_write; an IMAD.WIDE writes as its upper half): Turing's
+ * table (sm75_instr_latencies.rs), or Ampere's and Ada's
+ * (sm80_instr_latencies.rs), which reads the addend as an FMA and lets a
+ * variable-latency reader read sooner.
  */
 static uint32_t
 sm75_machine_raw(
+	uint32_t sm,
 	uint32_t writer,
 	uint32_t reader)
 {
-	/* A variable-latency reader. */
-	if (reader == TEST_CLASS_DECOUPLED || reader == TEST_CLASS_GUARD)
-		return 6U;
+	int ampere;
 
-	/* An IMAD.WIDE's addend. */
+	ampere = 0;
+	if (sm >= NVRTX_SM_AMPERE_FIRST)
+		ampere = 1;
+
+	/* A variable-latency reader: 6 on Turing; 4 on Ampere and Ada, 5 for the address unit. */
+	if (reader == TEST_CLASS_DECOUPLED || reader == TEST_CLASS_GUARD || reader == TEST_CLASS_AGU) {
+		if (ampere == 0)
+			return 6U;
+		if (reader == TEST_CLASS_AGU)
+			return 5U;
+		return 4U;
+	}
+
+	/* An IMAD.WIDE's addend: on Turing 2 after another IMAD.WIDE; on Ampere and Ada as an FMA reads. */
 	if (reader == TEST_CLASS_WIDE_ADDEND) {
 		if (writer == TEST_CLASS_ALU || writer == TEST_CLASS_DISPATCH)
 			return 5U;
-		if (writer == TEST_CLASS_IMAD_WIDE)
+		if (writer == TEST_CLASS_IMAD_WIDE && ampere == 0)
 			return 2U;
 		return 4U;
 	}
@@ -1055,4 +1079,59 @@ sm75_machine_raw(
 	if (writer == TEST_CLASS_ALU || writer == TEST_CLASS_DISPATCH)
 		return 4U;
 	return 5U;
+}
+
+/* Reports the shader model of the program run (Turing for one made without it). */
+static uint32_t
+sm75_machine_sm(
+	const struct test_run *run)
+{
+	/* A program made by hand. */
+	if (run->binary->shader_model == 0U)
+		return NVRTX_SM_TURING;
+	return run->binary->shader_model;
+}
+
+/* Reports nonzero for an instruction whose reads are the address unit's (NAK's DecoupledAgu on Ampere and Ada). */
+static int
+sm75_machine_agu(
+	uint32_t opcode)
+{
+	/* The memory accesses, the attribute accesses, IPA and BAR. */
+	if (opcode == NVRTX_SM75_OP_LDG || opcode == NVRTX_SM75_OP_STG || opcode == NVRTX_SM75_OP_ATOMG || opcode == NVRTX_SM75_OP_ATOMG_CAS ||
+	    opcode == NVRTX_SM75_OP_LDS || opcode == NVRTX_SM75_OP_STS || opcode == NVRTX_SM75_OP_ATOMS || opcode == NVRTX_SM75_OP_ATOMS_CAS ||
+	    opcode == NVRTX_SM75_OP_ALD || opcode == NVRTX_SM75_OP_AST || opcode == NVRTX_SM75_OP_IPA || opcode == NVRTX_SM75_OP_BAR)
+		return 1;
+	return 0;
+}
+
+/*
+ * Checks a global access's memory order (strong at the GPU's scope): before
+ * SM80 the scope 2 at 77..78 and the order 2 at 79..80, from SM80 on 7 in
+ * the one field 77..80 (NAK's set_mem_order).
+ */
+static void
+sm75_machine_memory_order(
+	struct test_run *run,
+	struct test_thread *t,
+	const struct nvrtx_sm75_word *word)
+{
+	uint32_t opcode;
+	uint32_t field;
+	uint32_t want;
+
+	/* Only the global accesses. */
+	opcode = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS);
+	if (opcode != NVRTX_SM75_OP_LDG && opcode != NVRTX_SM75_OP_STG && opcode != NVRTX_SM75_OP_ATOMG && opcode != NVRTX_SM75_OP_ATOMG_CAS)
+		return;
+
+	/* The field by the shader model. */
+	field = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM80_MEM_ORDER_LOW, NVRTX_SM80_MEM_ORDER_BITS);
+	want = NVRTX_SM75_MEM_SCOPE_GPU | (NVRTX_SM75_MEM_ORDER_STRONG << 2);
+	if (sm75_machine_sm(run) >= NVRTX_SM_AMPERE_FIRST)
+		want = NVRTX_SM80_MEM_STRONG_GPU;
+	if (field != want) {
+		printf("  instruction %u has the memory order 0x%x, not 0x%x of shader model %u\n", t->pc, field, want, sm75_machine_sm(run));
+		run->failed = 1;
+	}
 }

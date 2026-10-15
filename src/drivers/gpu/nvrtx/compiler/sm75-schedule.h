@@ -12,7 +12,8 @@
  * After the lowering has emitted a program, this pass sets every
  * instruction's scheduling control (sm75-isa.h, NVRTX_SM75_DELAY_LOW ..):
  * a fixed-latency result holds its reader back only as many cycles as
- * Turing's latency table says for that writer and reader, and a
+ * the shader model's latency table says for that writer and reader (Turing's,
+ * or the one Ampere and Ada share, ws242-p002), and a
  * variable-latency instruction releases a scoreboard of its own that only
  * the instructions that need its result (or its sources' registers) wait
  * for.  Branches, convergence barriers, barriers, discards, EXIT and the
@@ -34,6 +35,15 @@
 #define NVRTX_SM75_CLASS_IMAD_WIDE	3U
 #define NVRTX_SM75_CLASS_DISPATCH	4U
 #define NVRTX_SM75_CLASS_DECOUPLED	5U
+
+/*
+ * A read by a variable-latency instruction of the address unit (the global
+ * and shared memory accesses and the attribute stores), which Ampere's and
+ * Ada's table tells from the other variable-latency reads (NAK's
+ * DecoupledAgu); only a read has it, the instruction's class is
+ * NVRTX_SM75_CLASS_DECOUPLED.
+ */
+#define NVRTX_SM75_CLASS_AGU		6U
 
 /* The most registers and predicates one instruction reads and writes. */
 #define NVRTX_SM75_OPERANDS_READS	8U
@@ -65,19 +75,19 @@ struct nvrtx_sm75_operands {
 int nvrtx_sm75_operands(const uint32_t *words, struct nvrtx_sm75_operands *operands);
 
 /*
- * Reorders the instructions inside each block of a program so that the
- * long-latency ones issue early; nonzero, with the instruction and a
- * reason, when one is not known or there is no memory.  Branches,
- * convergence and barriers, NOPs and the blocks' bounds keep their places,
- * so every branch offset stays valid.
+ * Reorders the instructions inside each block of a program for a shader
+ * model (NVRTX_SM_*) so that the long-latency ones issue early; nonzero,
+ * with the instruction and a reason, when one is not known or there is no
+ * memory.  Branches, convergence and barriers, NOPs and the blocks' bounds
+ * keep their places, so every branch offset stays valid.
  */
-int nvrtx_sm75_reorder(uint32_t *code, uint32_t count, uint32_t *instruction, const char **reason);
+int nvrtx_sm75_reorder(uint32_t *code, uint32_t count, uint32_t sm, uint32_t *instruction, const char **reason);
 
 /*
- * Sets the scheduling control of a program's instructions; nonzero, with
- * the instruction and a reason, when one is not known or a delay would
- * not fit its field.
+ * Sets the scheduling control of a program's instructions for a shader
+ * model (NVRTX_SM_*); nonzero, with the instruction and a reason, when one
+ * is not known or a delay would not fit its field.
  */
-int nvrtx_sm75_schedule(uint32_t *code, uint32_t count, uint32_t *instruction, const char **reason);
+int nvrtx_sm75_schedule(uint32_t *code, uint32_t count, uint32_t sm, uint32_t *instruction, const char **reason);
 
 #endif /* DRIVERS_GPU_NVRTX_COMPILER_SM75_SCHEDULE_H */

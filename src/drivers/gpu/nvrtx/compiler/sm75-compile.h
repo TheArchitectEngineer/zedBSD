@@ -23,6 +23,12 @@
  * attributes, interpolated inputs, colour outputs, 2D texture samples and
  * discards.  Geometry, the other texture messages, derivatives and
  * spilling are refused with a reason.
+ *
+ * The same program is compiled for Turing (SM75, RTX 20 and GTX 16),
+ * Ampere (SM86, RTX 30) or Ada (SM89, RTX 40), ws242-p002: the
+ * instructions chosen are the same, a global access's memory order field
+ * and the latencies the dependence marking waits differ.  The functions
+ * without a shader model compile for Turing.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_COMPILER_SM75_COMPILE_H
@@ -58,6 +64,9 @@ struct nvrtx_sm75_binary {
 	/* The code: 128-bit instructions, four words each, padded to a whole 128-byte line. */
 	uint32_t *code;
 	uint32_t code_words;
+
+	/* The shader model the code is for (NVRTX_SM_*). */
+	uint32_t shader_model;
 
 	/* The general registers the program needs, the hardware's two included (the QMD's register count). */
 	uint32_t gpr_count;
@@ -106,6 +115,12 @@ int nvrtx_sm75_compile_stage(const uint32_t *words, size_t word_count, enum drv_
 
 /* Compiles a parsed compute program (the IR is only read). */
 int nvrtx_sm75_compile_ir(const struct drv_gpu_shader_ir *ir, struct nvrtx_sm75_binary **binary, struct nvrtx_sm75_diagnostic *diagnostic);
+
+/* Compiles a SPIR-V module's stage for a shader model (NVRTX_SM_TURING, _AMPERE or _ADA); ENOTSUP for another. */
+int nvrtx_sm75_compile_stage_sm(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, uint32_t sm, struct nvrtx_sm75_binary **binary, struct nvrtx_sm75_diagnostic *diagnostic);
+
+/* Compiles a parsed program for a shader model, as nvrtx_sm75_compile_stage_sm(). */
+int nvrtx_sm75_compile_ir_sm(const struct drv_gpu_shader_ir *ir, uint32_t sm, struct nvrtx_sm75_binary **binary, struct nvrtx_sm75_diagnostic *diagnostic);
 
 /* Frees a compiled program. */
 void nvrtx_sm75_binary_free(struct nvrtx_sm75_binary *binary);

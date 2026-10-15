@@ -217,18 +217,30 @@ reference_step(
 		v[inst->dst] = a & 0x7fffffffU;
 		break;
 	case DRV_GPU_IR_RSQ:
+		/* GLSL leaves inversesqrt of x <= 0 undefined (normalize of a zero vector, ws242-p002). */
+		if (!(fa > 0.0f))
+			result->undefined = 1;
 		v[inst->dst] = reference_bits(1.0f / sqrtf(fa));
 		break;
 	case DRV_GPU_IR_RCP:
+		/* A division by zero has an unspecified result. */
+		if (fa == 0.0f)
+			result->undefined = 1;
 		v[inst->dst] = reference_bits(1.0f / fa);
 		break;
 	case DRV_GPU_IR_SQRT:
+		/* sqrt of x < 0 is undefined. */
+		if (fa < 0.0f)
+			result->undefined = 1;
 		v[inst->dst] = reference_bits(sqrtf(fa));
 		break;
 	case DRV_GPU_IR_EXP2:
 		v[inst->dst] = reference_bits(exp2f(fa));
 		break;
 	case DRV_GPU_IR_LOG2:
+		/* log2 of x <= 0 is undefined (and pow, made of it, of x < 0 or of 0 to y <= 0). */
+		if (!(fa > 0.0f))
+			result->undefined = 1;
 		v[inst->dst] = reference_bits(log2f(fa));
 		break;
 	case DRV_GPU_IR_SIN:

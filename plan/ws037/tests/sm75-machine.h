@@ -14,9 +14,11 @@
  * turns between barriers.  The graphics instructions read and write the
  * run's attribute words, and a texture instruction answers with a texel
  * made from its operands (sm75_machine_invoke() says which), so a test can
- * predict it.  It checks the serial dependences as it goes.  Since it reads
- * the same field positions the encoder writes, it checks the lowering, not
- * the encoding.
+ * predict it.  It checks the dependences as it goes, by the latency table
+ * of the program's shader model (binary->shader_model: Turing's, or the
+ * one Ampere and Ada share, ws242-p002), and that every global access has
+ * the shader model's memory order field.  Since it reads the same field
+ * positions the encoder writes, it checks the lowering, not the encoding.
  */
 
 #ifndef PLAN_WS037_TESTS_SM75_MACHINE_H
@@ -148,6 +150,9 @@ uint32_t sm75_machine_bits(float value);
 #define TEST_CLASS_DECOUPLED	5U
 #define TEST_CLASS_WIDE_ADDEND	6U
 #define TEST_CLASS_GUARD	7U
+
+/* A read by a variable-latency instruction of the address unit (memory and attribute accesses, IPA, BAR), NAK's DecoupledAgu. */
+#define TEST_CLASS_AGU		8U
 
 /* Converts a float to a 32-bit integer toward zero as the hardware does: saturated, NaN to 0. */
 uint32_t sm75_machine_f2i(float value, int is_signed);
