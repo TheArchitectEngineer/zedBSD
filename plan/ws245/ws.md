@@ -63,6 +63,13 @@ Resume point: 2026-10-15 夜 中断。Phase の表を「段ごとに 5330 で回
 - kernel の binary の比べ（Q1、sha256）: p002 の 2 つ目以降と p004 の xd の file は呼ばれず binary を変えない。binary を変えたのは p002 の 1 つ目（9e78e62f8、own の型の分離と Gen9 の移設）と AX211 の整理。
 - 観測（未解析）: Ctrl+Shift の console の起動で `/bin/wayland` を ssh から root で手で起動すると、GPU の仕事が 1 回約 2 秒（GPU 自身は 16 ms）で時間切れ → device lost。普通の起動では出ない。最初の普通の起動（boot-000001、log が 0 byte）で backlight が消えて何も写らなかった原因は不明。
 
+## 5330 の素の起動での段ごとの回帰の手順（2026-10-15 夜 Q1 が実施して確かめた形）
+
+1. 段の kernel を build（`make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=… vmunix`）。userland を変えない段は kernel だけを差し替える。
+2. 5330 が Linux（chaos、`ssh solaris10-man`）の時: `sudo mount /dev/sda2 /mnt/zb`（USB の ZEDBSD 区画）→ 前の `vmunix` を控えて段の kernel を `vmunix` に写す → umount → `sudo efibootmgr -n 0005`（USB の UEFI の entry、1 回だけ）→ `sudo systemctl reboot`。zedBSD の時は `ssh kei@10.0.30.3`（password kei、sudo も kei）で `/boot/boot0/` に写して `reboot`（再起動は既定の Linux に戻るので、続けて上の BootNext を使う）。
+3. zedBSD に ssh で入り、`sysctl kern.boot.login`（graphical）、`/var/log/sessiond.log`（SESSION start・HANDOFF）、`dmesg` の i915 の行（`lease 1 claimed`・`PICTURE UP`・`perf: … per submit`・`device lost` が 0）、backlight（`backlight-probe -f /dev/backlight/backlight0`、Q1 の `build/q1/blp/bin/backlight-probe`）を見る。LCD の目視はユーザー（頼まず、一覧に）。
+4. 5330 の DHCP が取れない事がある（2026-10-15、ユーザーが再取得して回復）。ssh が届かない時は止まったと決めつけず、ユーザーに知らせる。
+
 ## §7 の回答（2026-10-15 夕 ユーザー、1 件ずつクリック）
 
 | # | 回答 | 既定の案との差 |
