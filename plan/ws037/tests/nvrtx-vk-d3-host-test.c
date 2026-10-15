@@ -23,7 +23,7 @@
 #include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
 #include "userland/desktop/libvulkan/internal.h"
 #include "userland/desktop/libvulkan/codec.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 #include "userland/desktop/wayland/shaders.h"
 
 /* The reply blob's id, where its replies start, and the device's identity. */

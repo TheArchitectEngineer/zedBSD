@@ -12,7 +12,7 @@
 #include "plan/ws037/tests/sm75-reference.h"
 
 #include "drivers/gpu/compiler/spirv.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-isa.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 #include <math.h>
 #include <stdint.h>

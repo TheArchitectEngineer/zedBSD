@@ -9,7 +9,7 @@
  * ws037-p008: a small interpreter of the SM75 instructions the nvrtx
  * compiler emits (sm75-machine.c), shared by the host tests.
  *
- * It decodes each instruction by the field positions of sm75-isa.h and does
+ * It decodes each instruction by the field positions of sm75.h and does
  * what it says, one invocation at a time; a workgroup's invocations take
  * turns between barriers.  The graphics instructions read and write the
  * run's attribute words, and a texture instruction answers with a texel
@@ -24,7 +24,7 @@
 #ifndef PLAN_WS037_TESTS_SM75_MACHINE_H
 #define PLAN_WS037_TESTS_SM75_MACHINE_H
 
-#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 #include <stdint.h>
 

@@ -43,7 +43,7 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-draw.h"
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 /* The draw's system-memory pages in the range, in order (NVRTX_DRAW_PAGES in all). */
 #define DRAW_PUSH_PAGE			0U

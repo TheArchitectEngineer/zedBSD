@@ -12,8 +12,7 @@
 
 #include "plan/ws037/tests/sm75-machine.h"
 
-#include "drivers/gpu/nvrtx/compiler/sm75-encode.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-isa.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -147,7 +146,7 @@ sm75_machine_dispatch(
 
 /*
  * Runs one invocation: decodes each instruction by the field positions of
- * sm75-isa.h and does what it says, until EXIT.  Also checks the serial
+ * sm75.h and does what it says, until EXIT.  Also checks the serial
  * dependences: an instruction after one of variable latency waits for the
  * scoreboards that one set.
  */

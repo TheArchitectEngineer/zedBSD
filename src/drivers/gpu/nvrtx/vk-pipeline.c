@@ -9,7 +9,7 @@
  * The executor's graphics pipelines (ws037-p007 stage D3).
  *
  * A pipeline's vertex and fragment modules are compiled for SM75 by the
- * nvrtx compiler (compiler/sm75-compile.c) when the pipeline is created,
+ * nvrtx compiler (compiler/sm75.c) when the pipeline is created,
  * and their programs (each its header, then its code) are copied into a
  * run of the executor's GPU memory the pipeline keeps.  The pipeline also
  * keeps the state a draw sends: the vertex input, the topology, the
@@ -34,7 +34,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-vk-objects.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 

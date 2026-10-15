@@ -44,7 +44,7 @@
 #include "drivers/gpu/nvrtx/nvrtx-exec.h"
 #include "drivers/gpu/nvrtx/nvrtx-draw.h"
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 /* The session's run: its size and where each of its parts starts. */
 #define EXECUTE_RUN_BYTES		(2U * 1024U * 1024U)

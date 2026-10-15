@@ -42,7 +42,7 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-compute.h"
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
-#include "drivers/gpu/nvrtx/compiler/sm75-compile.h"
+#include "drivers/gpu/nvrtx/compiler/sm75.h"
 
 /* The arena: its size (its reserve below the top, under the graphics arena, is NVRTX_COMPUTE_ARENA_RESERVE). */
 #define COMPUTE_ARENA_BYTES		0x2000000ULL
@@ -758,7 +758,7 @@ compute_launch(
 	for (index = 0U; index < NVRTX_GSP_PAGE_SIZE / 4U; index++)
 		words[index] = COMPUTE_RESULT_FILL;
 
-	/* Constant buffer 0: storage buffer 0's address and size at the table's first entry (sm75-isa.h). */
+	/* Constant buffer 0: storage buffer 0's address and size at the table's first entry (sm75.h). */
 	kern_memset(compute->constants.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
 	words = (uint32_t *)compute->constants.dma.address;
 	words[NVRTX_SM75_CB_STORAGE / 4U] = (uint32_t)(result_va & 0xffffffffU);

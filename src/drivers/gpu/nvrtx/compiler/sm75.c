@@ -5,8 +5,2542 @@
  * SPDX-License-Identifier: Zlib
  */
 
+#include "sm75.h"
+
+#include "drivers/gpu/compiler/optimize.h"
+#include "drivers/gpu/compiler/spirv.h"
+
+#include <kern/kcrt.h>
+#include <kern/kmem.h>
+#include <uapi/errno.h>
+
+#include <stddef.h>
+
 /*
- * The nvrtx shader compiler, stage A (see sm75-compile.h).
+ * The encoder of Turing (SM75) instructions (see sm75.h).
+ *
+ * The placement of every field follows the facts in sm75.h.  An ALU instruction has three sources: the first is
+ * always a register; the second and the third take one of the forms --
+ * both registers, one an immediate, one a constant buffer word -- and the
+ * form field says which.  When the third source is the immediate or the
+ * constant buffer word, the second source moves into the third's register
+ * slot.
+ */
+
+static void nvrtx_sm75_place_src2(struct nvrtx_sm75_word *word, const struct nvrtx_sm75_src *src);
+static void nvrtx_sm75_place_wide(struct nvrtx_sm75_word *word, const struct nvrtx_sm75_src *src);
+static void nvrtx_sm75_place_cb(struct nvrtx_sm75_word *word, const struct nvrtx_sm75_src *src);
+static void nvrtx_sm75_memory(struct nvrtx_sm75_word *word);
+
+/* Writes a field of up to 64 bits at a bit position. */
+void
+nvrtx_sm75_set(
+	struct nvrtx_sm75_word *word,
+	unsigned low,
+	unsigned bits,
+	uint64_t value)
+{
+	unsigned bit;
+	unsigned index;
+	uint32_t mask;
+
+	/* Each bit of the field, into the word that holds it. */
+	for (bit = 0U; bit < bits; bit++) {
+		index = (low + bit) / 32U;
+		mask = 1U << ((low + bit) % 32U);
+
+		/* Sets or clears the bit the value has there. */
+		if (((value >> bit) & 1U) != 0U) {
+			word->w[index] |= mask;
+		} else {
+			word->w[index] &= ~mask;
+		}
+	}
+}
+
+/* Reads a field of up to 64 bits at a bit position. */
+uint64_t
+nvrtx_sm75_get(
+	const struct nvrtx_sm75_word *word,
+	unsigned low,
+	unsigned bits)
+{
+	uint64_t value;
+	unsigned bit;
+	unsigned index;
+
+	/* Each bit of the field, lowest first. */
+	value = 0U;
+	for (bit = 0U; bit < bits; bit++) {
+		index = (low + bit) / 32U;
+
+		/* A set bit of the instruction is the same bit of the value. */
+		if (((word->w[index] >> ((low + bit) % 32U)) & 1U) != 0U)
+			value |= (uint64_t)1U << bit;
+	}
+
+	/* Succeeded: the field's value. */
+	return value;
+}
+
+/* Starts an instruction: all bits zero, guarded by PT, no scoreboard. */
+void
+nvrtx_sm75_begin(
+	struct nvrtx_sm75_word *word)
+{
+	/* Nothing is set yet. */
+	word->w[0] = 0U;
+	word->w[1] = 0U;
+	word->w[2] = 0U;
+	word->w[3] = 0U;
+
+	/* Every thread runs it, and it neither writes nor reads a scoreboard. */
+	nvrtx_sm75_guard(word, NVRTX_SM75_PT, 0);
+	nvrtx_sm75_control(word, 0U, 0, NVRTX_SM75_BAR_NONE, NVRTX_SM75_BAR_NONE, 0U);
+}
+
+/* Guards an instruction by a predicate, or its negation. */
+void
+nvrtx_sm75_guard(
+	struct nvrtx_sm75_word *word,
+	unsigned predicate,
+	int negate)
+{
+	/* The predicate and whether it is negated. */
+	nvrtx_sm75_set(word, NVRTX_SM75_GUARD_LOW, NVRTX_SM75_PRED_BITS, predicate);
+	nvrtx_sm75_set(word, NVRTX_SM75_GUARD_NOT, 1U, (negate != 0) ? 1U : 0U);
+}
+
+/*
+ * Sets the scheduling control: the cycles before the next instruction, the
+ * yield hint, the scoreboard the result releases and the one the source
+ * read releases (NVRTX_SM75_BAR_NONE for none), and the scoreboards the
+ * instruction waits for before it issues.  The operand reuse stays off.
+ */
+void
+nvrtx_sm75_control(
+	struct nvrtx_sm75_word *word,
+	unsigned delay,
+	int yield,
+	unsigned write_bar,
+	unsigned read_bar,
+	unsigned wait_mask)
+{
+	/* The delay and the yield. */
+	nvrtx_sm75_set(word, NVRTX_SM75_DELAY_LOW, NVRTX_SM75_DELAY_BITS, delay);
+	nvrtx_sm75_set(word, NVRTX_SM75_YIELD, 1U, (yield != 0) ? 1U : 0U);
+
+	/* The scoreboards. */
+	nvrtx_sm75_set(word, NVRTX_SM75_WRITE_BAR_LOW, NVRTX_SM75_BAR_BITS, write_bar);
+	nvrtx_sm75_set(word, NVRTX_SM75_READ_BAR_LOW, NVRTX_SM75_BAR_BITS, read_bar);
+	nvrtx_sm75_set(word, NVRTX_SM75_WAIT_LOW, NVRTX_SM75_WAIT_BITS, wait_mask);
+}
+
+/* Makes a register source. */
+struct nvrtx_sm75_src
+nvrtx_sm75_reg(
+	uint32_t reg)
+{
+	struct nvrtx_sm75_src src;
+
+	/* A plain register. */
+	src.kind = NVRTX_SM75_SRC_REG;
+	src.value = reg;
+	src.cb_index = 0U;
+	src.neg = 0;
+	src.abs = 0;
+
+	/* Succeeded: the operand. */
+	return src;
+}
+
+/* Makes an immediate source. */
+struct nvrtx_sm75_src
+nvrtx_sm75_imm(
+	uint32_t bits)
+{
+	struct nvrtx_sm75_src src;
+
+	/* The 32 bits as they are. */
+	src.kind = NVRTX_SM75_SRC_IMM;
+	src.value = bits;
+	src.cb_index = 0U;
+	src.neg = 0;
+	src.abs = 0;
+
+	/* Succeeded: the operand. */
+	return src;
+}
+
+/* Makes a constant buffer source: the word at a byte offset of a bound buffer. */
+struct nvrtx_sm75_src
+nvrtx_sm75_cb(
+	uint32_t index,
+	uint32_t offset)
+{
+	struct nvrtx_sm75_src src;
+
+	/* The buffer and the offset. */
+	src.kind = NVRTX_SM75_SRC_CB;
+	src.value = offset;
+	src.cb_index = index;
+	src.neg = 0;
+	src.abs = 0;
+
+	/* Succeeded: the operand. */
+	return src;
+}
+
+/*
+ * Encodes the ALU form: the destination, the first source (a register or
+ * none), and the second and third sources by the form they make.  A NULL
+ * source is absent; the opcode is the 9-bit ALU opcode.
+ */
+void
+nvrtx_sm75_alu(
+	struct nvrtx_sm75_word *word,
+	uint32_t opcode,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *src0,
+	const struct nvrtx_sm75_src *src1,
+	const struct nvrtx_sm75_src *src2)
+{
+	uint32_t form;
+
+	/* The destination. */
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+
+	/* The first source is a register. */
+	if (src0 != NULL) {
+		nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, src0->value);
+		nvrtx_sm75_set(word, NVRTX_SM75_SRC0_ABS, 1U, (src0->abs != 0) ? 1U : 0U);
+		nvrtx_sm75_set(word, NVRTX_SM75_SRC0_NEG, 1U, (src0->neg != 0) ? 1U : 0U);
+	}
+
+	/* The third source chooses the form when it is not a register. */
+	if (src2 != NULL && src2->kind == NVRTX_SM75_SRC_IMM) {
+		/* The immediate in the wide slot, the second source in the third's register slot. */
+		nvrtx_sm75_set(word, NVRTX_SM75_IMM_LOW, NVRTX_SM75_IMM_BITS, src2->value);
+		nvrtx_sm75_place_src2(word, src1);
+		form = NVRTX_SM75_FORM_IMM_SRC2;
+	} else if (src2 != NULL && src2->kind == NVRTX_SM75_SRC_CB) {
+		/* The constant buffer word in the wide slot, the second source in the third's register slot. */
+		nvrtx_sm75_place_cb(word, src2);
+		nvrtx_sm75_place_src2(word, src1);
+		form = NVRTX_SM75_FORM_CB_SRC2;
+	} else {
+		/* The third source, a register or none, in its slot; the second chooses the form. */
+		nvrtx_sm75_place_src2(word, src2);
+		form = NVRTX_SM75_FORM_REG;
+		if (src1 != NULL && src1->kind == NVRTX_SM75_SRC_IMM) {
+			nvrtx_sm75_set(word, NVRTX_SM75_IMM_LOW, NVRTX_SM75_IMM_BITS, src1->value);
+			form = NVRTX_SM75_FORM_IMM;
+		} else if (src1 != NULL && src1->kind == NVRTX_SM75_SRC_CB) {
+			nvrtx_sm75_place_cb(word, src1);
+			form = NVRTX_SM75_FORM_CB;
+		} else if (src1 != NULL) {
+			nvrtx_sm75_place_wide(word, src1);
+		}
+	}
+
+	/* The opcode and the form. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_ALU_OPCODE_BITS, opcode);
+	nvrtx_sm75_set(word, NVRTX_SM75_ALU_FORM_LOW, NVRTX_SM75_ALU_FORM_BITS, form);
+}
+
+/* MOV dst, src: all four lanes of a quad written. */
+void
+nvrtx_sm75_mov(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *src)
+{
+	/* The source is the second operand. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_MOV, dst, NULL, src, NULL);
+	nvrtx_sm75_set(word, NVRTX_SM75_MOV_LANES_LOW, 4U, NVRTX_SM75_MOV_LANES_ALL);
+}
+
+/*
+ * FADD dst = a + b.  A register b is the second operand; any other b is
+ * the third, with RZ in the second.
+ */
+void
+nvrtx_sm75_fadd(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b)
+{
+	struct nvrtx_sm75_src zero;
+
+	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
+
+	/* The operands by the kind of b. */
+	if (b->kind == NVRTX_SM75_SRC_REG) {
+		nvrtx_sm75_alu(word, NVRTX_SM75_OP_FADD, dst, a, b, NULL);
+	} else {
+		nvrtx_sm75_alu(word, NVRTX_SM75_OP_FADD, dst, a, &zero, b);
+	}
+
+	/* Round to nearest, denormals kept. */
+	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
+}
+
+/* FMUL dst = a * b, with no post-divide. */
+void
+nvrtx_sm75_fmul(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b)
+{
+	struct nvrtx_sm75_src zero;
+
+	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
+
+	/* The product, RZ as the third operand. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_FMUL, dst, a, b, &zero);
+	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
+	nvrtx_sm75_set(word, NVRTX_SM75_FMUL_PDIV_LOW, 3U, NVRTX_SM75_FMUL_PDIV_NONE);
+}
+
+/* FFMA dst = a * b + c. */
+void
+nvrtx_sm75_ffma(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	const struct nvrtx_sm75_src *c)
+{
+	/* The three operands as they are. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_FFMA, dst, a, b, c);
+	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
+}
+
+/* FMNMX: the smaller of a and b when min (the predicate PT), else the larger (!PT). */
+void
+nvrtx_sm75_fmnmx(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	int min)
+{
+	struct nvrtx_sm75_src zero;
+
+	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
+
+	/* The two operands, RZ as the third, and the choice. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_FMNMX, dst, a, b, &zero);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (min != 0) ? 0U : 1U);
+}
+
+/* FSETP predicate = compare(a, b) AND PT; the second destination is PT (none). */
+void
+nvrtx_sm75_fsetp(
+	struct nvrtx_sm75_word *word,
+	uint32_t predicate,
+	uint32_t compare,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b)
+{
+	/* The operands; there is no register destination. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_FSETP, NVRTX_SM75_RZ, a, b, NULL);
+
+	/* The comparison, combined by AND with the accumulator PT. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SETOP_LOW, 2U, NVRTX_SM75_SETOP_AND);
+	nvrtx_sm75_set(word, NVRTX_SM75_CMP_LOW, 4U, compare);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+
+	/* The destinations. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, predicate);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST1_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/* ISETP predicate = compare(a, b) AND PT, signed or unsigned. */
+void
+nvrtx_sm75_isetp(
+	struct nvrtx_sm75_word *word,
+	uint32_t predicate,
+	uint32_t compare,
+	int is_signed,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b)
+{
+	/* The operands; there is no register destination. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_ISETP, NVRTX_SM75_RZ, a, b, NULL);
+
+	/* The low compare and the accumulator are PT. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_C_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+
+	/* The signedness, the AND, the comparison. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SIGNED, 1U, (is_signed != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_SETOP_LOW, 2U, NVRTX_SM75_SETOP_AND);
+	nvrtx_sm75_set(word, NVRTX_SM75_CMP_LOW, 3U, compare);
+
+	/* The destinations. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, predicate);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST1_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/* IADD3 dst = a + b + c, the carry inputs !PT (false) and the carry outputs PT (none). */
+void
+nvrtx_sm75_iadd3(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	const struct nvrtx_sm75_src *c)
+{
+	/* The three operands. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_IADD3, dst, a, b, c);
+
+	/* No carry in. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, 1U);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_B_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_B_NOT, 1U, 1U);
+
+	/* No carry out. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST1_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/*
+ * IMAD dst = a * b + c, the low 32 bits.  The carry output is PT (none)
+ * and the carry input !PT (false).
+ * Value referenced: the SM75 code the CUDA compiler emits (IMAD's carry
+ * operands).
+ */
+void
+nvrtx_sm75_imad(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	const struct nvrtx_sm75_src *c,
+	int is_signed)
+{
+	/* The three operands and the signedness. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_IMAD, dst, a, b, c);
+	nvrtx_sm75_set(word, NVRTX_SM75_SIGNED, 1U, (is_signed != 0) ? 1U : 0U);
+
+	/* No carry out, no carry in. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, 1U);
+}
+
+/* IMAD.WIDE.U32: the dst pair = a * b + the c pair, unsigned. */
+void
+nvrtx_sm75_imad_wide(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	const struct nvrtx_sm75_src *c)
+{
+	/* The three operands, unsigned. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_IMAD_WIDE, dst, a, b, c);
+	nvrtx_sm75_set(word, NVRTX_SM75_SIGNED, 1U, 0U);
+
+	/* No carry out, no carry in. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, 1U);
+}
+
+/* LOP3 dst = lut(a, b, c), with no predicate output. */
+void
+nvrtx_sm75_lop3(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	const struct nvrtx_sm75_src *c,
+	uint32_t lut)
+{
+	/* The three operands and the table. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_LOP3, dst, a, b, c);
+	nvrtx_sm75_set(word, NVRTX_SM75_LUT_LOW, 8U, lut);
+
+	/* The predicate input is !PT and the predicate output PT (none). */
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, 1U);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/*
+ * SHF as a 32-bit shift, the count taken modulo 32: left puts the value in
+ * the low operand and returns the low half; right puts it in the high
+ * operand and returns the high half, unsigned or signed.
+ */
+void
+nvrtx_sm75_shift(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t value,
+	const struct nvrtx_sm75_src *count,
+	int right,
+	int arithmetic)
+{
+	struct nvrtx_sm75_src source;
+	struct nvrtx_sm75_src zero;
+	uint32_t type;
+
+	source = nvrtx_sm75_reg(value);
+	zero = nvrtx_sm75_reg(NVRTX_SM75_RZ);
+
+	/* The funnel's low and high operands by the direction. */
+	if (right != 0) {
+		nvrtx_sm75_alu(word, NVRTX_SM75_OP_SHF, dst, &zero, count, &source);
+	} else {
+		nvrtx_sm75_alu(word, NVRTX_SM75_OP_SHF, dst, &source, count, &zero);
+	}
+
+	/* The type: signed for a left shift and an arithmetic right one, unsigned for a logical right one. */
+	type = NVRTX_SM75_SHF_TYPE_I32;
+	if (right != 0 && arithmetic == 0)
+		type = NVRTX_SM75_SHF_TYPE_U32;
+
+	/* The type, the wrap, the direction and the half. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SHF_TYPE_LOW, 2U, type);
+	nvrtx_sm75_set(word, NVRTX_SM75_SHF_WRAP, 1U, 1U);
+	nvrtx_sm75_set(word, NVRTX_SM75_SHF_RIGHT, 1U, (right != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_SHF_HIGH, 1U, (right != 0) ? 1U : 0U);
+}
+
+/* SEL dst = predicate (or its negation) ? a : b. */
+void
+nvrtx_sm75_sel(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	const struct nvrtx_sm75_src *a,
+	const struct nvrtx_sm75_src *b,
+	uint32_t predicate,
+	int negate)
+{
+	/* The two operands and the predicate. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_SEL, dst, a, b, NULL);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, predicate);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (negate != 0) ? 1U : 0U);
+}
+
+/* MUFU dst = function(src). */
+void
+nvrtx_sm75_mufu(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t function,
+	uint32_t src)
+{
+	struct nvrtx_sm75_src source;
+
+	source = nvrtx_sm75_reg(src);
+
+	/* The source is the second operand. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_MUFU, dst, NULL, &source, NULL);
+	nvrtx_sm75_set(word, NVRTX_SM75_MUFU_LOW, 6U, function);
+}
+
+/* I2F dst = the float of the 32-bit integer src, rounded to nearest. */
+void
+nvrtx_sm75_i2f(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t src,
+	int is_signed)
+{
+	struct nvrtx_sm75_src source;
+
+	source = nvrtx_sm75_reg(src);
+
+	/* The source, its signedness, both sizes 32 bits, the rounding. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_I2F, dst, NULL, &source, NULL);
+	nvrtx_sm75_set(word, NVRTX_SM75_I2F_SIGNED, 1U, (is_signed != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_CVT_DST_SIZE_LOW, 2U, NVRTX_SM75_CVT_SIZE_32);
+	nvrtx_sm75_set(word, NVRTX_SM75_CVT_SRC_SIZE_LOW, 2U, NVRTX_SM75_CVT_SIZE_32);
+	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_NEAREST);
+}
+
+/* F2I dst = the 32-bit integer of the float src, rounded toward zero. */
+void
+nvrtx_sm75_f2i(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t src,
+	int is_signed)
+{
+	struct nvrtx_sm75_src source;
+
+	source = nvrtx_sm75_reg(src);
+
+	/* The source, the result's signedness, both sizes 32 bits, the rounding. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_F2I, dst, NULL, &source, NULL);
+	nvrtx_sm75_set(word, NVRTX_SM75_F2I_SIGNED, 1U, (is_signed != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_CVT_DST_SIZE_LOW, 2U, NVRTX_SM75_CVT_SIZE_32);
+	nvrtx_sm75_set(word, NVRTX_SM75_CVT_SRC_SIZE_LOW, 2U, NVRTX_SM75_CVT_SIZE_32);
+	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, NVRTX_SM75_ROUND_ZERO);
+}
+
+/* FRND dst = src rounded to an integral float. */
+void
+nvrtx_sm75_frnd(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t src,
+	uint32_t rounding)
+{
+	struct nvrtx_sm75_src source;
+
+	source = nvrtx_sm75_reg(src);
+
+	/* The source, both sizes 32 bits, the rounding. */
+	nvrtx_sm75_alu(word, NVRTX_SM75_OP_FRND, dst, NULL, &source, NULL);
+	nvrtx_sm75_set(word, NVRTX_SM75_CVT_DST_SIZE_LOW, 2U, NVRTX_SM75_CVT_SIZE_32);
+	nvrtx_sm75_set(word, NVRTX_SM75_CVT_SRC_SIZE_LOW, 2U, NVRTX_SM75_CVT_SIZE_32);
+	nvrtx_sm75_set(word, NVRTX_SM75_ROUND_LOW, 2U, rounding);
+}
+
+/* S2R dst = a special register. */
+void
+nvrtx_sm75_s2r(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t special)
+{
+	/* The opcode, the destination, the register's number. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_S2R);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_S2R_INDEX_LOW, 8U, special);
+}
+
+/* LDC dst = the 32- or 64-bit word at a byte offset of a bound constant buffer, indexed by RZ. */
+void
+nvrtx_sm75_ldc(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t index,
+	uint32_t offset,
+	int wide)
+{
+	/* The opcode, the destination, the index register RZ, the mode, a bound buffer. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_LDC);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_LDC_MODE_LOW, 2U, 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_CB_BINDLESS, 1U, 0U);
+
+	/* The buffer, the offset and the size. */
+	nvrtx_sm75_set(word, NVRTX_SM75_CB_INDEX_LOW, NVRTX_SM75_CB_INDEX_BITS, index);
+	nvrtx_sm75_set(word, NVRTX_SM75_CB_OFFSET_LOW, NVRTX_SM75_CB_OFFSET_BITS, offset);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_TYPE_LOW, 3U, (wide != 0) ? NVRTX_SM75_MEM_B64 : NVRTX_SM75_MEM_B32);
+}
+
+/* LDG.E dst = the 32-bit word at the 64-bit address in a register pair. */
+void
+nvrtx_sm75_ldg(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t address)
+{
+	/* The opcode, no predicate output, the access. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_LDG);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_memory(word);
+
+	/* The destination and the address, no offset. */
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_OFFSET_LOW, NVRTX_SM75_MEM_OFFSET_BITS, 0U);
+}
+
+/* STG.E: the 32-bit data register to the 64-bit address in a register pair. */
+void
+nvrtx_sm75_stg(
+	struct nvrtx_sm75_word *word,
+	uint32_t address,
+	uint32_t data)
+{
+	/* The opcode and the access. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_STG);
+	nvrtx_sm75_memory(word);
+
+	/* The address, the data, no offset. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_STORE_DATA_LOW, NVRTX_SM75_REG_BITS, data);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_OFFSET_LOW, NVRTX_SM75_MEM_OFFSET_BITS, 0U);
+}
+
+/*
+ * Sets a global access's memory order for a shader model.
+ *
+ * Before SM80 the scope (77..78, the GPU's) and the order (79..80, strong)
+ * are two fields; from SM80 on they are one (77..80), in which strong at
+ * the GPU's scope is 7.
+ * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
+ * (set_mem_order).
+ */
+void
+nvrtx_sm75_memory_order(
+	struct nvrtx_sm75_word *word,
+	uint32_t sm)
+{
+	/* Ampere and Ada: the one field. */
+	if (sm >= NVRTX_SM_AMPERE_FIRST) {
+		nvrtx_sm75_set(word, NVRTX_SM80_MEM_ORDER_LOW, NVRTX_SM80_MEM_ORDER_BITS, NVRTX_SM80_MEM_STRONG_GPU);
+		return;
+	}
+
+	/* Turing: the scope and the order. */
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_SCOPE_LOW, 2U, NVRTX_SM75_MEM_SCOPE_GPU);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_ORDER_LOW, 2U, NVRTX_SM75_MEM_ORDER_STRONG);
+}
+
+/* EXIT, unconditional. */
+void
+nvrtx_sm75_exit(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode; the predicate source is PT. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_EXIT);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/* NOP. */
+void
+nvrtx_sm75_nop(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode alone. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_NOP);
+}
+
+/* BRA by a signed number of instructions from the next one (-1 is the BRA itself). */
+void
+nvrtx_sm75_bra(
+	struct nvrtx_sm75_word *word,
+	int32_t instructions)
+{
+	int64_t words;
+
+	/* The offset counts 32-bit words, four to an instruction. */
+	words = (int64_t)instructions * (int64_t)NVRTX_SM75_INSTRUCTION_WORDS;
+
+	/* The opcode, not uniform, the predicate source PT, the offset. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_BRA);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, 1U, 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_BRA_OFFSET_LOW, NVRTX_SM75_BRA_OFFSET_BITS, (uint64_t)words);
+}
+
+/* LDS dst = the 32-bit word at the shared memory offset in a register. */
+void
+nvrtx_sm75_lds(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t offset)
+{
+	/* The opcode, the size, the destination and the offset register. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_LDS);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_TYPE_LOW, 3U, NVRTX_SM75_MEM_B32);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, offset);
+}
+
+/* STS: the 32-bit data register to the shared memory offset in a register. */
+void
+nvrtx_sm75_sts(
+	struct nvrtx_sm75_word *word,
+	uint32_t offset,
+	uint32_t data)
+{
+	/* The opcode, the size, the offset and the data registers. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_STS);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_TYPE_LOW, 3U, NVRTX_SM75_MEM_B32);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, offset);
+	nvrtx_sm75_set(word, NVRTX_SM75_STORE_DATA_LOW, NVRTX_SM75_REG_BITS, data);
+}
+
+/*
+ * An atomic returning the old value: ATOMG on the 64-bit address in a
+ * register pair (strong at the GPU's scope), or ATOMS on the shared memory
+ * offset in a register.
+ */
+void
+nvrtx_sm75_atomic(
+	struct nvrtx_sm75_word *word,
+	int shared,
+	uint32_t dst,
+	uint32_t address,
+	uint32_t data,
+	uint32_t operation,
+	int is_signed)
+{
+	/* The opcode and, for global memory, the access. */
+	if (shared != 0) {
+		nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_ATOMS);
+	} else {
+		nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_ATOMG);
+		nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+		nvrtx_sm75_memory(word);
+	}
+
+	/* The registers, the operation and the type. */
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_STORE_DATA_LOW, NVRTX_SM75_REG_BITS, data);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_OFFSET_LOW, NVRTX_SM75_MEM_OFFSET_BITS, 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATOM_OP_LOW, 4U, operation);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATOM_TYPE_LOW, 3U, (is_signed != 0) ? NVRTX_SM75_ATOM_I32 : NVRTX_SM75_ATOM_U32);
+}
+
+/* A compare and exchange returning the old value, global or shared. */
+void
+nvrtx_sm75_atomic_cas(
+	struct nvrtx_sm75_word *word,
+	int shared,
+	uint32_t dst,
+	uint32_t address,
+	uint32_t compare,
+	uint32_t data)
+{
+	/* The opcode and, for global memory, the access. */
+	if (shared != 0) {
+		nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_ATOMS_CAS);
+	} else {
+		nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_ATOMG_CAS);
+		nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+		nvrtx_sm75_memory(word);
+	}
+
+	/* The registers and the type (unsigned 32 bits). */
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_STORE_DATA_LOW, NVRTX_SM75_REG_BITS, compare);
+	nvrtx_sm75_set(word, NVRTX_SM75_CAS_DATA_LOW, NVRTX_SM75_REG_BITS, data);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_OFFSET_LOW, NVRTX_SM75_MEM_OFFSET_BITS, 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATOM_TYPE_LOW, 3U, NVRTX_SM75_ATOM_U32);
+}
+
+/* MEMBAR of a scope, not for MMIO and not sequentially consistent. */
+void
+nvrtx_sm75_membar(
+	struct nvrtx_sm75_word *word,
+	uint32_t scope)
+{
+	/* The opcode and the scope. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_MEMBAR);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEMBAR_SCOPE_LOW, 3U, scope);
+}
+
+/* BAR.SYNC 0: every thread of the workgroup waits here. */
+void
+nvrtx_sm75_bar(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode alone names barrier 0 and the whole workgroup. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_BAR);
+}
+
+/* BSSY: a convergence barrier for the threads that reach the BSYNC so many instructions after the next one. */
+void
+nvrtx_sm75_bssy(
+	struct nvrtx_sm75_word *word,
+	uint32_t barrier,
+	int32_t instructions)
+{
+	int64_t words;
+
+	/* The offset counts 32-bit words, four to an instruction. */
+	words = (int64_t)instructions * (int64_t)NVRTX_SM75_INSTRUCTION_WORDS;
+
+	/* The opcode, the barrier, the offset, the predicate source PT. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_BSSY);
+	nvrtx_sm75_set(word, NVRTX_SM75_CONVERGE_BAR_LOW, 4U, barrier);
+	nvrtx_sm75_set(word, NVRTX_SM75_BSSY_OFFSET_LOW, NVRTX_SM75_BSSY_OFFSET_BITS, (uint64_t)words);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/* BSYNC: waits until every thread the barrier collects has come. */
+void
+nvrtx_sm75_bsync(
+	struct nvrtx_sm75_word *word,
+	uint32_t barrier)
+{
+	/* The opcode, the barrier, the predicate source PT. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_BSYNC);
+	nvrtx_sm75_set(word, NVRTX_SM75_CONVERGE_BAR_LOW, 4U, barrier);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/* Makes a BRA conditional on a predicate (the branch's own condition source). */
+void
+nvrtx_sm75_bra_if(
+	struct nvrtx_sm75_word *word,
+	uint32_t predicate,
+	int negate)
+{
+	/* The condition and its negation. */
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, predicate);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_NOT, 1U, (negate != 0) ? 1U : 0U);
+}
+
+/* ALD dst = one word of the vertex's input attribute at an address (the vertex and the offset RZ). */
+void
+nvrtx_sm75_ald(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t address)
+{
+	/* The opcode, the destination, the registers RZ, the address, one component. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_ALD);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_COMPONENTS_LOW, 2U, 0U);
+}
+
+/* AST: one word of the vertex's output attribute at an address (the vertex and the offset RZ). */
+void
+nvrtx_sm75_ast(
+	struct nvrtx_sm75_word *word,
+	uint32_t address,
+	uint32_t data)
+{
+	/* The opcode, the data, the registers RZ, the address, one component. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_AST);
+	nvrtx_sm75_set(word, NVRTX_SM75_STORE_DATA_LOW, NVRTX_SM75_REG_BITS, data);
+	nvrtx_sm75_set(word, NVRTX_SM75_AST_VERTEX_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_ADDRESS_LOW, NVRTX_SM75_ATTR_ADDRESS_BITS, address);
+	nvrtx_sm75_set(word, NVRTX_SM75_ATTR_COMPONENTS_LOW, 2U, 0U);
+}
+
+/* IPA dst = the fragment's value of the attribute at an address, at the pixel's centre, with no offset. */
+void
+nvrtx_sm75_ipa(
+	struct nvrtx_sm75_word *word,
+	uint32_t dst,
+	uint32_t address,
+	uint32_t frequency)
+{
+	/* The opcode, the destination, the address in words, the location and the frequency, the offset RZ, no predicate. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_IPA);
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, dst);
+	nvrtx_sm75_set(word, NVRTX_SM75_IPA_ADDRESS_LOW, 8U, address >> 2);
+	nvrtx_sm75_set(word, NVRTX_SM75_IPA_FREQUENCY_LOW, 2U, frequency);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, NVRTX_SM75_RZ);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/*
+ * TEX.2D with its handle in a constant buffer: four channels into two
+ * register pairs, the coordinates from a pair, a level of detail mode and
+ * register, no fault predicate, normal eviction.
+ */
+void
+nvrtx_sm75_tex(
+	struct nvrtx_sm75_word *word,
+	uint32_t first,
+	uint32_t second,
+	uint32_t coordinates,
+	uint32_t lod,
+	uint32_t lod_mode,
+	uint32_t index,
+	uint32_t offset)
+{
+	/* The opcode and the handle's place. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_TEX);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_HANDLE_LOW, NVRTX_SM75_TEX_HANDLE_BITS, offset / 4U);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_BUFFER_LOW, 5U, index);
+
+	/* The destinations and the sources. */
+	nvrtx_sm75_set(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS, first);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_DST2_LOW, NVRTX_SM75_REG_BITS, second);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS, coordinates);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, lod);
+
+	/* 2D, all four channels, the level of detail mode, no fault predicate, normal eviction. */
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_DIM_LOW, 3U, NVRTX_SM75_TEX_DIM_2D);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_CHANNELS_LOW, 4U, 0xfU);
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_LOD_LOW, 3U, lod_mode);
+	nvrtx_sm75_set(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_EVICT_LOW, 3U, NVRTX_SM75_MEM_EVICT_NORMAL);
+}
+
+/* Makes a TEX a TLD, which fetches the texel at integer coordinates and an explicit level (or level zero). */
+void
+nvrtx_sm75_tex_fetch(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode; every other field is the TEX's. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_TLD);
+}
+
+/* Makes a TEX or a TLD read a constant texel offset from the register after its level of detail. */
+void
+nvrtx_sm75_tex_offset(
+	struct nvrtx_sm75_word *word)
+{
+	/* AOFFI. */
+	nvrtx_sm75_set(word, NVRTX_SM75_TEX_AOFFI, 1U, 1U);
+}
+
+/* KILL: the fragment is discarded (the predicate source PT; the guard chooses the threads). */
+void
+nvrtx_sm75_kill(
+	struct nvrtx_sm75_word *word)
+{
+	/* The opcode and the predicate source. */
+	nvrtx_sm75_set(word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS, NVRTX_SM75_OP_KILL);
+	nvrtx_sm75_set(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS, NVRTX_SM75_PT);
+}
+
+/* Places a source in the third source's register slot, with that slot's abs and neg; none places nothing. */
+static void
+nvrtx_sm75_place_src2(
+	struct nvrtx_sm75_word *word,
+	const struct nvrtx_sm75_src *src)
+{
+	/* An absent source leaves the slot zero. */
+	if (src == NULL)
+		return;
+
+	/* The register and its modifiers. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC2_LOW, NVRTX_SM75_REG_BITS, src->value);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC2_ABS, 1U, (src->abs != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC2_NEG, 1U, (src->neg != 0) ? 1U : 0U);
+}
+
+/* Places a register in the second source's slot, with its abs and neg. */
+static void
+nvrtx_sm75_place_wide(
+	struct nvrtx_sm75_word *word,
+	const struct nvrtx_sm75_src *src)
+{
+	/* The register and its modifiers. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS, src->value);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_ABS, 1U, (src->abs != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_NEG, 1U, (src->neg != 0) ? 1U : 0U);
+}
+
+/* Places a constant buffer word in the wide slot: its offset and its buffer, bound, with its abs and neg. */
+static void
+nvrtx_sm75_place_cb(
+	struct nvrtx_sm75_word *word,
+	const struct nvrtx_sm75_src *src)
+{
+	/* The offset, the buffer, a bound buffer. */
+	nvrtx_sm75_set(word, NVRTX_SM75_CB_OFFSET_LOW, NVRTX_SM75_CB_OFFSET_BITS, src->value);
+	nvrtx_sm75_set(word, NVRTX_SM75_CB_INDEX_LOW, NVRTX_SM75_CB_INDEX_BITS, src->cb_index);
+	nvrtx_sm75_set(word, NVRTX_SM75_CB_BINDLESS, 1U, 0U);
+
+	/* The modifiers. */
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_ABS, 1U, (src->abs != 0) ? 1U : 0U);
+	nvrtx_sm75_set(word, NVRTX_SM75_SRC1_NEG, 1U, (src->neg != 0) ? 1U : 0U);
+}
+
+/* Sets a global access: a 64-bit address, 32 bits, strong at the GPU's scope, normal eviction. */
+static void
+nvrtx_sm75_memory(
+	struct nvrtx_sm75_word *word)
+{
+	/* The address size and the data size. */
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_A64, 1U, 1U);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_TYPE_LOW, 3U, NVRTX_SM75_MEM_B32);
+
+	/* The scope, the order and the eviction priority. */
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_SCOPE_LOW, 2U, NVRTX_SM75_MEM_SCOPE_GPU);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_ORDER_LOW, 2U, NVRTX_SM75_MEM_ORDER_STRONG);
+	nvrtx_sm75_set(word, NVRTX_SM75_MEM_EVICT_LOW, 3U, NVRTX_SM75_MEM_EVICT_NORMAL);
+}
+
+/*
+ * The dependence marking of the nvrtx shader compiler (see
+ * sm75.h), ws037-p008 stage D.
+ *
+ * The reordering (nvrtx_sm75_reorder()) works inside each block of
+ * instructions between the fixed ones (branches, convergence, barriers,
+ * discards, EXIT, NOPs) and branch targets: an instruction may move past
+ * another only when neither reads or writes what the other writes, and
+ * memory accesses keep their order when either one stores.  Among the
+ * instructions whose predecessors have issued, the one with the longest
+ * latency-weighted path to the block's end goes first (a list scheduler),
+ * the latencies of variable-latency instructions estimated.
+ *
+ * The marking walks the program once in order.  For every register and
+ * predicate it keeps who wrote it last and when (a cycle count from the
+ * start of the block), or which scoreboard will say the write is done, and
+ * which scoreboards will say the reads of it are done.  An instruction
+ * issues at the first cycle every one of its reads and writes allows, and
+ * the instruction before it gets that many cycles as its delay.  The
+ * tables' few values that depend on predication or on finer classes are
+ * taken at their largest, so the delays are never short.
+ *
+ * Ampere and Ada (SM86, SM89) differ from Turing only in the read after
+ * write of a fixed-latency result: a variable-latency reader waits 4
+ * cycles (5 for the address unit's) instead of 6, an IMAD.WIDE's addend
+ * waits 4 for another IMAD.WIDE instead of 2, and a guard, a branch or a
+ * variable-latency reader of a comparison waits 13 instead of 12.  Their
+ * write after write, write after read and worst latencies are within the
+ * values below, which both use; BAR and MEMBAR execute in 6 cycles, which
+ * NVRTX_SM75_DELAY_SYNC_MIN already waits.
+ */
+
+/* Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs, BarAlloc (lines 186-196: six scoreboards). */
+/* The scoreboards an instruction may set, and the mask of all of them. */
+#define NVRTX_SM75_SCOREBOARDS		6U
+#define NVRTX_SM75_SCOREBOARD_ALL	0x3fU
+
+/* zedBSD's own. */
+/* The general registers and predicates the pass tracks. */
+#define NVRTX_SM75_TRACKED_GPRS		256U
+#define NVRTX_SM75_TRACKED_PREDICATES	8U
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 692-698: a scoreboard is
+ * waited for 2 cycles after it is set at the earliest).
+ */
+/* The cycles after a scoreboard is set before an instruction may wait for it. */
+#define NVRTX_SM75_SCOREBOARD_SETTLE	2U
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write and
+ * pred_read_after_write with no reader (lines 205-412, 695-776),
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 259-576, 889-958), and
+ * src/nouveau/compiler/nak/sm70.rs, worst_latency and instr_latency (lines 24-67, 263-273).
+ */
+/* The worst latency of a fixed-latency general register and predicate result, which a block's end waits out. */
+#define NVRTX_SM75_WORST_GPR		6U
+#define NVRTX_SM75_WORST_PREDICATE	13U
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, write_after_write and write_after_read
+ * (lines 414-693), and src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines
+ * 578-842), at their largest.
+ */
+/* A write after a write, and a variable-latency write after a fixed-latency write or read. */
+#define NVRTX_SM75_WAW_FIXED		2U
+#define NVRTX_SM75_WAW_DECOUPLED	6U
+#define NVRTX_SM75_WAR_DECOUPLED	2U
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70.rs, exec_latency (lines 169-185), and
+ * src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 811-818: a NOP of 2 cycles
+ * after an instruction with an execution latency).
+ * Value referenced: the SM75 code the CUDA compiler emits (EXIT's delay of 5).
+ */
+/* The fewest cycles after a barrier or a memory barrier (its execution takes 5 on Turing, 6 from SM80 on), and after EXIT. */
+#define NVRTX_SM75_DELAY_SYNC_MIN	6U
+#define NVRTX_SM75_DELAY_EXIT_MIN	5U
+#define NVRTX_SM75_DELAY_AFTER_SYNC	2U
+
+/* zedBSD's own estimates. */
+/* The latencies the reordering assumes for the variable-latency instructions (only priorities, never correctness). */
+#define NVRTX_SM75_GUESS_TEXTURE	100U
+#define NVRTX_SM75_GUESS_GLOBAL		300U
+#define NVRTX_SM75_GUESS_SHARED		30U
+#define NVRTX_SM75_GUESS_CONSTANT	25U
+#define NVRTX_SM75_GUESS_UNIT		15U
+#define NVRTX_SM75_GUESS_SPECIAL	20U
+
+/* zedBSD's own. */
+/* A pair the reordering must keep in order, and a block not yet ended. */
+#define NVRTX_SM75_NO_DEPENDENCE	0xffffffffU
+
+/* No scoreboard, no predicate, and a register never written. */
+#define NVRTX_SM75_NO_BAR		0xffU
+#define NVRTX_SM75_NO_PREDICATE		NVRTX_SM75_PT
+
+/* zedBSD's own. */
+/*
+ * What the pass knows of one general register or predicate: whether a
+ * fixed-latency write is in flight, its class and its cycle; the
+ * scoreboard of a variable-latency write in flight; the scoreboards of the
+ * variable-latency reads in flight; and the last fixed-latency read.
+ */
+struct nvrtx_sm75_track {
+	int written;
+	uint32_t write_class;
+	uint32_t write_cycle;
+	uint32_t write_bar;
+	uint32_t read_bars;
+	uint32_t read_cycle;
+};
+
+/*
+ * The state of one pass: the shader model, the registers and predicates,
+ * each scoreboard's use (busy) and the cycle it was set, and the cycle of
+ * the instruction before.  Allocated by nvrtx_sm75_schedule() for one
+ * call.
+ */
+struct nvrtx_sm75_scheduler {
+	uint32_t sm;
+	struct nvrtx_sm75_track gpr[NVRTX_SM75_TRACKED_GPRS];
+	struct nvrtx_sm75_track predicate[NVRTX_SM75_TRACKED_PREDICATES];
+	uint32_t bar_busy;
+	uint32_t bar_set_cycle[NVRTX_SM75_SCOREBOARDS];
+	uint32_t cycle;
+};
+
+/*
+ * One instruction of a block being reordered: its operands, its opcode, the
+ * latency-weighted path to the block's end, the predecessors not yet
+ * issued, the earliest cycle they allow, and whether it has issued.  An
+ * array of them lives for one call of nvrtx_sm75_reorder().
+ */
+struct nvrtx_sm75_node {
+	struct nvrtx_sm75_operands operands;
+	uint32_t opcode;
+	uint32_t words[NVRTX_SM75_INSTRUCTION_WORDS];
+	uint32_t priority;
+	uint32_t waiting;
+	uint32_t earliest;
+	int issued;
+};
+
+static int nvrtx_sm75_reorder_block(struct nvrtx_sm75_node *nodes, uint32_t count, uint32_t sm, uint32_t *code);
+static uint32_t nvrtx_sm75_dependence(const struct nvrtx_sm75_node *before, const struct nvrtx_sm75_node *after, uint32_t sm);
+static int nvrtx_sm75_memory_kind(uint32_t opcode);
+static uint32_t nvrtx_sm75_guess(const struct nvrtx_sm75_node *node);
+static int nvrtx_sm75_fixed(const struct nvrtx_sm75_operands *operands);
+static int nvrtx_sm75_operands_alu(const struct nvrtx_sm75_word *word, uint32_t opcode, struct nvrtx_sm75_operands *operands);
+static int nvrtx_sm75_operands_other(const struct nvrtx_sm75_word *word, uint32_t opcode, struct nvrtx_sm75_operands *operands);
+static void nvrtx_sm75_add_read(struct nvrtx_sm75_operands *operands, uint32_t reg, uint32_t read_class);
+static void nvrtx_sm75_add_write(struct nvrtx_sm75_operands *operands, uint32_t reg);
+static void nvrtx_sm75_mark_targets(const uint32_t *code, uint32_t count, uint8_t *target);
+static void nvrtx_sm75_flush(struct nvrtx_sm75_scheduler *scheduler, uint32_t *earliest, uint32_t *wait);
+static void nvrtx_sm75_clear(struct nvrtx_sm75_scheduler *scheduler);
+static void nvrtx_sm75_constrain(struct nvrtx_sm75_scheduler *scheduler, const struct nvrtx_sm75_operands *operands, uint32_t *earliest, uint32_t *wait);
+static void nvrtx_sm75_take_bars(struct nvrtx_sm75_scheduler *scheduler, const struct nvrtx_sm75_operands *operands, uint32_t *wait, uint32_t *write_bar, uint32_t *read_bar);
+static void nvrtx_sm75_record(struct nvrtx_sm75_scheduler *scheduler, const struct nvrtx_sm75_operands *operands, uint32_t issue, uint32_t write_bar, uint32_t read_bar);
+static void nvrtx_sm75_release(struct nvrtx_sm75_scheduler *scheduler, uint32_t wait);
+static uint32_t nvrtx_sm75_raw(uint32_t sm, uint32_t writer, uint32_t reader);
+static uint32_t nvrtx_sm75_raw_turing(uint32_t writer, uint32_t reader);
+static uint32_t nvrtx_sm75_raw_ampere(uint32_t writer, uint32_t reader);
+static uint32_t nvrtx_sm75_predicate_raw(uint32_t sm, uint32_t reader);
+static uint32_t nvrtx_sm75_later(uint32_t a, uint32_t b);
+
+/*
+ * Reads an instruction's operands from its four words.
+ *
+ * Returns 0 with the operands, or 1 for an opcode the lowering does not
+ * emit.  The guard predicate is read by every guarded instruction.
+ */
+int
+nvrtx_sm75_operands(
+	const uint32_t *words,
+	struct nvrtx_sm75_operands *operands)
+{
+	struct nvrtx_sm75_word word;
+	uint32_t opcode;
+	int unknown;
+
+	word.w[0] = words[0];
+	word.w[1] = words[1];
+	word.w[2] = words[2];
+	word.w[3] = words[3];
+
+	/* Nothing read or written yet, one cycle to the next instruction. */
+	kern_memset(operands, 0, sizeof(*operands));
+	operands->predicate_read = NVRTX_SM75_NO_PREDICATE;
+	operands->predicate_write = NVRTX_SM75_NO_PREDICATE;
+	operands->min_delay = 1U;
+
+	/* The guard, unless it is PT. */
+	operands->guard = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_GUARD_LOW, NVRTX_SM75_PRED_BITS);
+
+	/* The opcodes of their own encodings, then the ALU ones by their 9 bits. */
+	opcode = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS);
+	unknown = nvrtx_sm75_operands_other(&word, opcode, operands);
+	if (unknown == 0)
+		return 0;
+
+	opcode = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_ALU_OPCODE_BITS);
+	unknown = nvrtx_sm75_operands_alu(&word, opcode, operands);
+	if (unknown != 0)
+		return 1;
+
+	/* Succeeded: an ALU instruction. */
+	return 0;
+}
+
+/*
+ * Reorders the instructions inside each block of a program.
+ *
+ * A block is a run of instructions that are not fixed (see
+ * nvrtx_sm75_fixed()), cut at every branch target.  Returns 0, or 1 with
+ * the instruction and the reason.
+ */
+int
+nvrtx_sm75_reorder(
+	uint32_t *code,
+	uint32_t count,
+	uint32_t sm,
+	uint32_t *instruction,
+	const char **reason)
+{
+	struct nvrtx_sm75_node *nodes;
+	uint8_t *cut;
+	uint32_t index;
+	uint32_t start;
+	uint32_t end;
+	int unknown;
+	int fixed;
+	int error;
+
+	/* The nodes, one per instruction. */
+	nodes = kern_calloc(count + 1U, sizeof(*nodes));
+	if (nodes == NULL) {
+		*instruction = 0U;
+		*reason = "no memory for the reordering";
+		return 1;
+	}
+
+	/* Where blocks are cut: before a branch target; a fixed instruction is a cut of its own. */
+	cut = kern_calloc(count + 1U, sizeof(*cut));
+	if (cut == NULL) {
+		kern_free(nodes);
+		*instruction = 0U;
+		*reason = "no memory for the branch targets";
+		return 1;
+	}
+	nvrtx_sm75_mark_targets(code, count, cut);
+
+	/* Every instruction's operands and words. */
+	for (index = 0U; index < count; index++) {
+		unknown = nvrtx_sm75_operands(code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS, &nodes[index].operands);
+		if (unknown != 0) {
+			kern_free(cut);
+			kern_free(nodes);
+			*instruction = index;
+			*reason = "the reordering does not know an instruction";
+			return 1;
+		}
+		kern_memcpy(nodes[index].words, code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS, sizeof(nodes[index].words));
+		nodes[index].opcode = nodes[index].words[0] & 0xfffU;
+	}
+
+	/* Each block: from a cut or after a fixed instruction, up to the next of either. */
+	error = 0;
+	start = 0U;
+	while (start < count && error == 0) {
+		/* A fixed instruction stays. */
+		fixed = nvrtx_sm75_fixed(&nodes[start].operands);
+		if (fixed != 0) {
+			start++;
+			continue;
+		}
+
+		/* The block's end: the end of the code, a branch target or a fixed instruction. */
+		end = start + 1U;
+		while (end < count) {
+			if (cut[end] != 0U)
+				break;
+			fixed = nvrtx_sm75_fixed(&nodes[end].operands);
+			if (fixed != 0)
+				break;
+			end++;
+		}
+
+		/* The block's instructions in their new order. */
+		if (end - start > 1U) {
+			error = nvrtx_sm75_reorder_block(nodes + start, end - start, sm, code + (size_t)start * NVRTX_SM75_INSTRUCTION_WORDS);
+			if (error != 0) {
+				*instruction = start;
+				*reason = "no memory for the reordering";
+			}
+		}
+		start = end;
+	}
+
+	kern_free(cut);
+	kern_free(nodes);
+
+	/* Reports a failure. */
+	if (error != 0)
+		return 1;
+
+	/* Succeeded: every block is reordered. */
+	return 0;
+}
+
+/*
+ * Sets the scheduling control of every instruction of a program.
+ *
+ * Returns 0, or 1 with the instruction and the reason when an instruction
+ * is not known or the wait before one would not fit the delay field.
+ */
+int
+nvrtx_sm75_schedule(
+	uint32_t *code,
+	uint32_t count,
+	uint32_t sm,
+	uint32_t *instruction,
+	const char **reason)
+{
+	struct nvrtx_sm75_scheduler *scheduler;
+	struct nvrtx_sm75_operands operands;
+	struct nvrtx_sm75_word word;
+	uint8_t *target;
+	uint32_t *slot;
+	uint32_t *previous;
+	uint32_t index;
+	uint32_t earliest;
+	uint32_t wait;
+	uint32_t write_bar;
+	uint32_t read_bar;
+	uint32_t bar;
+	uint32_t previous_min;
+	uint32_t delay;
+	int previous_sync;
+	int unknown;
+
+	/* The pass's state, which is too large for a kernel stack. */
+	scheduler = kern_calloc(1U, sizeof(*scheduler));
+	if (scheduler == NULL) {
+		*instruction = 0U;
+		*reason = "no memory for the dependence marking";
+		return 1;
+	}
+
+	/* The branch targets, which start blocks. */
+	target = kern_calloc(count + 1U, sizeof(*target));
+	if (target == NULL) {
+		kern_free(scheduler);
+		*instruction = 0U;
+		*reason = "no memory for the branch targets";
+		return 1;
+	}
+	nvrtx_sm75_mark_targets(code, count, target);
+
+	/* The shader model's latencies, and nothing in flight at the program's start. */
+	scheduler->sm = sm;
+	nvrtx_sm75_clear(scheduler);
+	scheduler->cycle = 0U;
+	previous = NULL;
+	previous_min = 0U;
+	previous_sync = 0;
+
+	/* Each instruction in order. */
+	for (index = 0U; index < count; index++) {
+		slot = code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS;
+
+		/* What it reads and writes. */
+		unknown = nvrtx_sm75_operands(slot, &operands);
+		if (unknown != 0) {
+			kern_free(target);
+			kern_free(scheduler);
+			*instruction = index;
+			*reason = "the dependence marking does not know an instruction";
+			return 1;
+		}
+
+		/* The NOP after a barrier waits 2 cycles. */
+		if (previous_sync != 0 && operands.class_of == NVRTX_SM75_CLASS_DISPATCH)
+			operands.min_delay = NVRTX_SM75_DELAY_AFTER_SYNC;
+
+		/* The earliest it may issue after the instruction before. */
+		earliest = scheduler->cycle + previous_min;
+		wait = 0U;
+
+		/* A branch target or a block's last instruction waits for everything. */
+		if (target[index] != 0U || operands.boundary != 0) {
+			nvrtx_sm75_flush(scheduler, &earliest, &wait);
+			nvrtx_sm75_clear(scheduler);
+		}
+
+		/* Its own reads and writes, then the scoreboards it sets. */
+		nvrtx_sm75_constrain(scheduler, &operands, &earliest, &wait);
+		nvrtx_sm75_take_bars(scheduler, &operands, &wait, &write_bar, &read_bar);
+
+		/* A scoreboard is waited for only once it has settled. */
+		for (bar = 0U; bar < NVRTX_SM75_SCOREBOARDS; bar++) {
+			if ((wait & (1U << bar)) == 0U)
+				continue;
+			earliest = nvrtx_sm75_later(earliest, scheduler->bar_set_cycle[bar] + NVRTX_SM75_SCOREBOARD_SETTLE);
+		}
+
+		/* The instruction before waits that many cycles; the field holds 15 at most. */
+		if (previous != NULL) {
+			delay = earliest - scheduler->cycle;
+			if (delay > NVRTX_SM75_DELAY_MAX) {
+				kern_free(target);
+				kern_free(scheduler);
+				*instruction = index;
+				*reason = "a wait longer than the delay field holds";
+				return 1;
+			}
+			kern_memcpy(word.w, previous, sizeof(word.w));
+			nvrtx_sm75_set(&word, NVRTX_SM75_DELAY_LOW, NVRTX_SM75_DELAY_BITS, delay);
+			kern_memcpy(previous, word.w, sizeof(word.w));
+		}
+
+		/* The waits are done when it issues; then its own results and scoreboards are in flight. */
+		nvrtx_sm75_release(scheduler, wait);
+		nvrtx_sm75_record(scheduler, &operands, earliest, write_bar, read_bar);
+
+		/* Its scoreboards, its waits and its yield; the delay comes with the next one. */
+		kern_memcpy(word.w, slot, sizeof(word.w));
+		nvrtx_sm75_control(&word, operands.min_delay, operands.boundary, write_bar, read_bar, wait);
+		kern_memcpy(slot, word.w, sizeof(word.w));
+
+		/* A block's last instruction leaves nothing in flight behind it. */
+		if (operands.boundary != 0)
+			nvrtx_sm75_clear(scheduler);
+
+		scheduler->cycle = earliest;
+		previous = slot;
+		previous_min = operands.min_delay;
+		previous_sync = 0;
+		if (operands.min_delay == NVRTX_SM75_DELAY_SYNC_MIN)
+			previous_sync = 1;
+	}
+
+	kern_free(target);
+	kern_free(scheduler);
+
+	/* Succeeded: every instruction has its control. */
+	return 0;
+}
+
+/*
+ * Reorders one block by list scheduling and writes it back over its code.
+ * Returns 0, or ENOMEM-like 1 when the order cannot be kept.
+ */
+static int
+nvrtx_sm75_reorder_block(
+	struct nvrtx_sm75_node *nodes,
+	uint32_t count,
+	uint32_t sm,
+	uint32_t *code)
+{
+	uint32_t *order;
+	uint32_t before;
+	uint32_t after;
+	uint32_t latency;
+	uint32_t path;
+	uint32_t issued;
+	uint32_t best;
+	uint32_t soonest;
+	uint32_t cycle;
+
+	/* The new order. */
+	order = kern_calloc(count, sizeof(*order));
+	if (order == NULL)
+		return 1;
+
+	/* Each instruction's longest latency-weighted path to the block's end, from the last back. */
+	for (before = count; before > 0U; before--) {
+		path = nvrtx_sm75_guess(&nodes[before - 1U]);
+		for (after = before; after < count; after++) {
+			latency = nvrtx_sm75_dependence(&nodes[before - 1U], &nodes[after], sm);
+			if (latency == NVRTX_SM75_NO_DEPENDENCE)
+				continue;
+			if (latency + nodes[after].priority > path)
+				path = latency + nodes[after].priority;
+		}
+		nodes[before - 1U].priority = path;
+	}
+
+	/* Each instruction's predecessors. */
+	for (after = 0U; after < count; after++) {
+		nodes[after].waiting = 0U;
+		nodes[after].earliest = 0U;
+		nodes[after].issued = 0;
+		for (before = 0U; before < after; before++) {
+			latency = nvrtx_sm75_dependence(&nodes[before], &nodes[after], sm);
+			if (latency != NVRTX_SM75_NO_DEPENDENCE)
+				nodes[after].waiting++;
+		}
+	}
+
+	/* Issues one instruction at a time: the ready one of the highest priority that can issue now, else the soonest. */
+	cycle = 0U;
+	for (issued = 0U; issued < count; issued++) {
+		best = count;
+		soonest = count;
+		for (after = 0U; after < count; after++) {
+			if (nodes[after].issued != 0 || nodes[after].waiting != 0U)
+				continue;
+
+			/* The soonest ready one, the first in the old order among equals. */
+			if (soonest == count || nodes[after].earliest < nodes[soonest].earliest)
+				soonest = after;
+
+			/* The ready one of the highest priority that can issue at this cycle. */
+			if (nodes[after].earliest > cycle)
+				continue;
+			if (best == count || nodes[after].priority > nodes[best].priority)
+				best = after;
+		}
+
+		/* Nothing can issue now: the soonest one, later. */
+		if (best == count) {
+			best = soonest;
+			cycle = nodes[best].earliest;
+		}
+
+		/* A ready instruction always exists in a block without cycles; none means the dependences are wrong. */
+		if (best == count) {
+			kern_free(order);
+			return 1;
+		}
+
+		/* It issues, and its successors may issue after its latency. */
+		order[issued] = best;
+		nodes[best].issued = 1;
+		for (after = best + 1U; after < count; after++) {
+			latency = nvrtx_sm75_dependence(&nodes[best], &nodes[after], sm);
+			if (latency == NVRTX_SM75_NO_DEPENDENCE)
+				continue;
+			nodes[after].waiting--;
+			if (cycle + latency > nodes[after].earliest)
+				nodes[after].earliest = cycle + latency;
+		}
+		cycle++;
+	}
+
+	/* The block's words in the new order. */
+	for (issued = 0U; issued < count; issued++)
+		kern_memcpy(code + (size_t)issued * NVRTX_SM75_INSTRUCTION_WORDS, nodes[order[issued]].words, sizeof(nodes[0].words));
+
+	kern_free(order);
+
+	/* Succeeded: the block is reordered. */
+	return 0;
+}
+
+/*
+ * Reports the cycles an instruction must issue after an earlier one of its
+ * block (an estimate for a variable-latency result), or
+ * NVRTX_SM75_NO_DEPENDENCE when the two may swap: a read of a register or
+ * predicate the earlier one writes, a write of one it reads or writes, and
+ * two memory accesses of which one stores.
+ */
+static uint32_t
+nvrtx_sm75_dependence(
+	const struct nvrtx_sm75_node *before,
+	const struct nvrtx_sm75_node *after,
+	uint32_t sm)
+{
+	const struct nvrtx_sm75_operands *first;
+	const struct nvrtx_sm75_operands *second;
+	uint32_t latency;
+	uint32_t i;
+	uint32_t j;
+	int first_memory;
+	int second_memory;
+
+	first = &before->operands;
+	second = &after->operands;
+	latency = NVRTX_SM75_NO_DEPENDENCE;
+
+	/* A register the second reads that the first writes: the first's result latency. */
+	for (i = 0U; i < first->write_count; i++) {
+		for (j = 0U; j < second->read_count; j++) {
+			if (first->writes[i] != second->reads[j])
+				continue;
+			if (first->class_of == NVRTX_SM75_CLASS_DECOUPLED)
+				return nvrtx_sm75_guess(before);
+			return nvrtx_sm75_raw(sm, first->class_of, second->read_class[j]);
+		}
+	}
+
+	/* A predicate the second reads (as its guard or its source) that the first writes. */
+	if (first->predicate_write != NVRTX_SM75_NO_PREDICATE) {
+		if (first->predicate_write == second->guard)
+			return nvrtx_sm75_predicate_raw(sm, NVRTX_SM75_CLASS_DECOUPLED);
+		if (first->predicate_write == second->predicate_read)
+			return nvrtx_sm75_predicate_raw(sm, second->class_of);
+	}
+
+	/* A register the second writes that the first reads or writes. */
+	for (j = 0U; j < second->write_count; j++) {
+		for (i = 0U; i < first->read_count; i++) {
+			if (first->reads[i] == second->writes[j])
+				latency = 1U;
+		}
+		for (i = 0U; i < first->write_count; i++) {
+			if (first->writes[i] == second->writes[j])
+				latency = 1U;
+		}
+	}
+
+	/* A predicate the second writes that the first reads or writes. */
+	if (second->predicate_write != NVRTX_SM75_NO_PREDICATE) {
+		if (second->predicate_write == first->guard ||
+		    second->predicate_write == first->predicate_read ||
+		    second->predicate_write == first->predicate_write)
+			latency = 1U;
+	}
+
+	/* Two memory accesses, one of them a store or an atomic. */
+	first_memory = nvrtx_sm75_memory_kind(before->opcode);
+	second_memory = nvrtx_sm75_memory_kind(after->opcode);
+	if (first_memory != 0 &&
+	    second_memory != 0 &&
+	    (first_memory == 2 || second_memory == 2))
+		latency = 1U;
+
+	/* Succeeded: the order the pair needs, or none. */
+	return latency;
+}
+
+/* Reports 2 for an instruction that stores to memory (or an attribute), 1 for one that loads it, 0 for neither. */
+static int
+nvrtx_sm75_memory_kind(
+	uint32_t opcode)
+{
+	/* The stores and the atomics. */
+	if (opcode == NVRTX_SM75_OP_STG ||
+	    opcode == NVRTX_SM75_OP_STS ||
+	    opcode == NVRTX_SM75_OP_AST)
+		return 2;
+	if (opcode == NVRTX_SM75_OP_ATOMG ||
+	    opcode == NVRTX_SM75_OP_ATOMG_CAS ||
+	    opcode == NVRTX_SM75_OP_ATOMS ||
+	    opcode == NVRTX_SM75_OP_ATOMS_CAS)
+		return 2;
+
+	/* The loads. */
+	if (opcode == NVRTX_SM75_OP_LDG ||
+	    opcode == NVRTX_SM75_OP_LDS ||
+	    opcode == NVRTX_SM75_OP_ALD)
+		return 1;
+
+	/* Succeeded: no memory access. */
+	return 0;
+}
+
+/* Reports the latency the reordering assumes for an instruction's result. */
+static uint32_t
+nvrtx_sm75_guess(
+	const struct nvrtx_sm75_node *node)
+{
+	/* A fixed-latency result. */
+	if (node->operands.class_of != NVRTX_SM75_CLASS_DECOUPLED)
+		return NVRTX_SM75_WORST_GPR;
+
+	/* The variable-latency ones by their opcode. */
+	if (node->opcode == NVRTX_SM75_OP_TEX || node->opcode == NVRTX_SM75_OP_TLD)
+		return NVRTX_SM75_GUESS_TEXTURE;
+	if (node->opcode == NVRTX_SM75_OP_LDG ||
+	    node->opcode == NVRTX_SM75_OP_ATOMG ||
+	    node->opcode == NVRTX_SM75_OP_ATOMG_CAS)
+		return NVRTX_SM75_GUESS_GLOBAL;
+	if (node->opcode == NVRTX_SM75_OP_LDS ||
+	    node->opcode == NVRTX_SM75_OP_ATOMS ||
+	    node->opcode == NVRTX_SM75_OP_ATOMS_CAS)
+		return NVRTX_SM75_GUESS_SHARED;
+	if (node->opcode == NVRTX_SM75_OP_LDC)
+		return NVRTX_SM75_GUESS_CONSTANT;
+	if (node->opcode == NVRTX_SM75_OP_S2R)
+		return NVRTX_SM75_GUESS_SPECIAL;
+	/* Succeeded: the special function unit, the conversions, the attribute loads and the interpolation. */
+	return NVRTX_SM75_GUESS_UNIT;
+}
+
+/* Reports nonzero for an instruction that keeps its place: one that ends a block, or a NOP. */
+static int
+nvrtx_sm75_fixed(
+	const struct nvrtx_sm75_operands *operands)
+{
+	/* The ends of blocks. */
+	if (operands->boundary != 0)
+		return 1;
+
+	/* NOPs (the padding, and the one after a barrier). */
+	if (operands->class_of == NVRTX_SM75_CLASS_DISPATCH)
+		return 1;
+
+	/* Succeeded: it may move. */
+	return 0;
+}
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
+ * needs_scoreboards (lines 49-203, 1187-1208), and
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257, 1433-1453).
+ */
+/* Reads the operands of an ALU instruction by its 9-bit opcode; nonzero for one not known. */
+static int
+nvrtx_sm75_operands_alu(
+	const struct nvrtx_sm75_word *word,
+	uint32_t opcode,
+	struct nvrtx_sm75_operands *operands)
+{
+	uint32_t form;
+	uint32_t dst;
+	uint32_t src0;
+	uint32_t src1;
+	uint32_t src2;
+	int has_src0;
+	int has_src2;
+	int writes_dst;
+
+	form = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_ALU_FORM_LOW, NVRTX_SM75_ALU_FORM_BITS);
+	dst = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS);
+	src0 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS);
+	src1 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS);
+	src2 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC2_LOW, NVRTX_SM75_REG_BITS);
+
+	/* The forms the lowering emits. */
+	if (form < NVRTX_SM75_FORM_REG || form > NVRTX_SM75_FORM_CB)
+		return 1;
+
+	/* Which sources the operation has, whether it writes a register, its class. */
+	has_src0 = 1;
+	has_src2 = 1;
+	writes_dst = 1;
+	operands->class_of = NVRTX_SM75_CLASS_ALU;
+	switch (opcode) {
+	case NVRTX_SM75_OP_MOV:
+	case NVRTX_SM75_OP_MUFU:
+	case NVRTX_SM75_OP_I2F:
+	case NVRTX_SM75_OP_F2I:
+	case NVRTX_SM75_OP_FRND:
+		/* One source, the second. */
+		has_src0 = 0;
+		has_src2 = 0;
+		if (opcode != NVRTX_SM75_OP_MOV)
+			operands->class_of = NVRTX_SM75_CLASS_DECOUPLED;
+		break;
+	case NVRTX_SM75_OP_SEL:
+		/* Two sources and the condition. */
+		has_src2 = 0;
+		operands->predicate_read = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS);
+		break;
+	case NVRTX_SM75_OP_FSETP:
+	case NVRTX_SM75_OP_ISETP:
+		/* Two sources and a predicate result. */
+		has_src2 = 0;
+		writes_dst = 0;
+		operands->predicate_write = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_PDST0_LOW, NVRTX_SM75_PRED_BITS);
+		break;
+	case NVRTX_SM75_OP_FADD:
+		/* A third source only as the moved second one of an immediate or constant form. */
+		operands->class_of = NVRTX_SM75_CLASS_FMA;
+		if (form == NVRTX_SM75_FORM_REG ||
+		    form == NVRTX_SM75_FORM_IMM ||
+		    form == NVRTX_SM75_FORM_CB)
+			has_src2 = 0;
+		break;
+	case NVRTX_SM75_OP_FMUL:
+	case NVRTX_SM75_OP_FFMA:
+		operands->class_of = NVRTX_SM75_CLASS_FMA;
+		break;
+	case NVRTX_SM75_OP_IMAD:
+		operands->class_of = NVRTX_SM75_CLASS_IMAD;
+		break;
+	case NVRTX_SM75_OP_IMAD_WIDE:
+		operands->class_of = NVRTX_SM75_CLASS_IMAD_WIDE;
+		break;
+	case NVRTX_SM75_OP_FMNMX:
+	case NVRTX_SM75_OP_IADD3:
+	case NVRTX_SM75_OP_LOP3:
+	case NVRTX_SM75_OP_SHF:
+		break;
+	default:
+		return 1;
+	}
+
+	/* The first source. */
+	if (has_src0 != 0)
+		nvrtx_sm75_add_read(operands, src0, operands->class_of);
+
+	/* The second source when it is a register. */
+	if (form == NVRTX_SM75_FORM_REG)
+		nvrtx_sm75_add_read(operands, src1, operands->class_of);
+
+	/* The register in the third slot; an IMAD.WIDE's addend is a pair it reads late. */
+	if (has_src2 != 0 &&
+	    opcode == NVRTX_SM75_OP_IMAD_WIDE &&
+	    src2 != NVRTX_SM75_RZ) {
+		nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_DISPATCH);
+		nvrtx_sm75_add_read(operands, src2 + 1U, NVRTX_SM75_CLASS_DISPATCH);
+	} else if (has_src2 != 0) {
+		nvrtx_sm75_add_read(operands, src2, operands->class_of);
+	}
+
+	/* The result, a pair for IMAD.WIDE. */
+	if (writes_dst != 0)
+		nvrtx_sm75_add_write(operands, dst);
+	if (writes_dst != 0 &&
+	    opcode == NVRTX_SM75_OP_IMAD_WIDE &&
+	    dst != NVRTX_SM75_RZ)
+		nvrtx_sm75_add_write(operands, dst + 1U);
+
+	/* Succeeded: the operands are read. */
+	return 0;
+}
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
+ * needs_scoreboards (lines 49-203, 1187-1208), and
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257, 1433-1453:
+ * DecoupledAgu for the address unit's reads).
+ */
+/* Reads the operands of an instruction of its own 12-bit opcode; nonzero for one not known. */
+static int
+nvrtx_sm75_operands_other(
+	const struct nvrtx_sm75_word *word,
+	uint32_t opcode,
+	struct nvrtx_sm75_operands *operands)
+{
+	uint32_t dst;
+	uint32_t src0;
+	uint32_t src1;
+	uint32_t src2;
+	uint32_t mode;
+	uint32_t extra;
+	uint32_t index;
+
+	dst = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_DST_LOW, NVRTX_SM75_REG_BITS);
+	src0 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC0_LOW, NVRTX_SM75_REG_BITS);
+	src1 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC1_LOW, NVRTX_SM75_REG_BITS);
+	src2 = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_SRC2_LOW, NVRTX_SM75_REG_BITS);
+	operands->class_of = NVRTX_SM75_CLASS_DECOUPLED;
+
+	/* The operands by the opcode. */
+	switch (opcode) {
+	case NVRTX_SM75_OP_NOP:
+		operands->class_of = NVRTX_SM75_CLASS_DISPATCH;
+		break;
+	case NVRTX_SM75_OP_S2R:
+	case NVRTX_SM75_OP_ALD:
+	case NVRTX_SM75_OP_IPA:
+		/* A result; the lowering gives none of them a register source (the vertex, offset and interpolation registers are RZ). */
+		nvrtx_sm75_add_write(operands, dst);
+		break;
+	case NVRTX_SM75_OP_LDC:
+		/* A result, a pair for a 64-bit load. */
+		nvrtx_sm75_add_write(operands, dst);
+		mode = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_MEM_TYPE_LOW, 3U);
+		if (mode == NVRTX_SM75_MEM_B64)
+			nvrtx_sm75_add_write(operands, dst + 1U);
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_DECOUPLED);
+		break;
+	case NVRTX_SM75_OP_LDG:
+	case NVRTX_SM75_OP_STG:
+	case NVRTX_SM75_OP_ATOMG:
+	case NVRTX_SM75_OP_ATOMG_CAS:
+		/* The 64-bit address pair, the data, the compare-and-exchange's second data, the result. */
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_AGU);
+		nvrtx_sm75_add_read(operands, src0 + 1U, NVRTX_SM75_CLASS_AGU);
+		if (opcode != NVRTX_SM75_OP_LDG)
+			nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_AGU);
+		if (opcode == NVRTX_SM75_OP_ATOMG_CAS)
+			nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_AGU);
+		if (opcode != NVRTX_SM75_OP_STG)
+			nvrtx_sm75_add_write(operands, dst);
+		break;
+	case NVRTX_SM75_OP_LDS:
+	case NVRTX_SM75_OP_STS:
+	case NVRTX_SM75_OP_ATOMS:
+	case NVRTX_SM75_OP_ATOMS_CAS:
+		/* The offset, the data, the second data, the result. */
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_AGU);
+		if (opcode != NVRTX_SM75_OP_LDS)
+			nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_AGU);
+		if (opcode == NVRTX_SM75_OP_ATOMS_CAS)
+			nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_AGU);
+		if (opcode != NVRTX_SM75_OP_STS)
+			nvrtx_sm75_add_write(operands, dst);
+		break;
+	case NVRTX_SM75_OP_AST:
+		/* The data; the vertex and offset registers are RZ. */
+		nvrtx_sm75_add_read(operands, src1, NVRTX_SM75_CLASS_AGU);
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_AGU);
+		nvrtx_sm75_add_read(operands, src2, NVRTX_SM75_CLASS_AGU);
+		break;
+	case NVRTX_SM75_OP_TEX:
+	case NVRTX_SM75_OP_TLD:
+		/* The coordinates' pair, the level of detail and the offset after it, the two result pairs. */
+		nvrtx_sm75_add_read(operands, src0, NVRTX_SM75_CLASS_DECOUPLED);
+		nvrtx_sm75_add_read(operands, src0 + 1U, NVRTX_SM75_CLASS_DECOUPLED);
+		mode = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_TEX_LOD_LOW, 3U);
+		extra = 0U;
+		if (mode == NVRTX_SM75_TEX_LOD_BIAS || mode == NVRTX_SM75_TEX_LOD_EXPLICIT)
+			extra++;
+		index = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_TEX_AOFFI, 1U);
+		if (index != 0U)
+			extra++;
+		for (index = 0U; index < extra && src1 != NVRTX_SM75_RZ; index++)
+			nvrtx_sm75_add_read(operands, src1 + index, NVRTX_SM75_CLASS_DECOUPLED);
+		nvrtx_sm75_add_write(operands, dst);
+		if (dst != NVRTX_SM75_RZ)
+			nvrtx_sm75_add_write(operands, dst + 1U);
+		nvrtx_sm75_add_write(operands, src2);
+		if (src2 != NVRTX_SM75_RZ)
+			nvrtx_sm75_add_write(operands, src2 + 1U);
+		break;
+	case NVRTX_SM75_OP_BRA:
+		/* The condition; a branch ends its block. */
+		operands->predicate_read = (uint32_t)nvrtx_sm75_get(word, NVRTX_SM75_PSRC_A_LOW, NVRTX_SM75_PRED_BITS);
+		operands->boundary = 1;
+		break;
+	case NVRTX_SM75_OP_BSSY:
+	case NVRTX_SM75_OP_BSYNC:
+	case NVRTX_SM75_OP_KILL:
+		/* Convergence and discards end their blocks. */
+		operands->boundary = 1;
+		break;
+	case NVRTX_SM75_OP_BAR:
+	case NVRTX_SM75_OP_MEMBAR:
+		/* A barrier ends its block and takes 5 cycles to execute. */
+		operands->boundary = 1;
+		operands->min_delay = NVRTX_SM75_DELAY_SYNC_MIN;
+		break;
+	case NVRTX_SM75_OP_EXIT:
+		/* EXIT reads every output and ends the program. */
+		operands->boundary = 1;
+		operands->min_delay = NVRTX_SM75_DELAY_EXIT_MIN;
+		break;
+	default:
+		return 1;
+	}
+
+	/* Succeeded: the operands are read. */
+	return 0;
+}
+
+/* Adds a register read of a class, unless it is RZ or the list is full. */
+static void
+nvrtx_sm75_add_read(
+	struct nvrtx_sm75_operands *operands,
+	uint32_t reg,
+	uint32_t read_class)
+{
+	/* RZ is never waited for. */
+	if (reg >= NVRTX_SM75_RZ)
+		return;
+	if (operands->read_count == NVRTX_SM75_OPERANDS_READS)
+		return;
+
+	/* The register and how it is read. */
+	operands->reads[operands->read_count] = reg;
+	operands->read_class[operands->read_count] = read_class;
+	operands->read_count++;
+}
+
+/* Adds a register write, unless it is RZ or the list is full. */
+static void
+nvrtx_sm75_add_write(
+	struct nvrtx_sm75_operands *operands,
+	uint32_t reg)
+{
+	/* A write to RZ is dropped. */
+	if (reg >= NVRTX_SM75_RZ)
+		return;
+	if (operands->write_count == NVRTX_SM75_OPERANDS_WRITES)
+		return;
+
+	/* The register. */
+	operands->writes[operands->write_count] = reg;
+	operands->write_count++;
+}
+
+/* Marks the instructions a branch or a convergence barrier leads to. */
+static void
+nvrtx_sm75_mark_targets(
+	const uint32_t *code,
+	uint32_t count,
+	uint8_t *target)
+{
+	struct nvrtx_sm75_word word;
+	uint64_t offset;
+	int64_t to;
+	uint32_t opcode;
+	uint32_t index;
+
+	/* Each branch and convergence barrier: its target counts in words from the next instruction. */
+	for (index = 0U; index < count; index++) {
+		kern_memcpy(word.w, code + (size_t)index * NVRTX_SM75_INSTRUCTION_WORDS, sizeof(word.w));
+		opcode = (uint32_t)nvrtx_sm75_get(&word, NVRTX_SM75_OPCODE_LOW, NVRTX_SM75_OPCODE_BITS);
+
+		/* The offset field and its sign. */
+		if (opcode == NVRTX_SM75_OP_BRA) {
+			offset = nvrtx_sm75_get(&word, NVRTX_SM75_BRA_OFFSET_LOW, NVRTX_SM75_BRA_OFFSET_BITS);
+			if ((offset >> (NVRTX_SM75_BRA_OFFSET_BITS - 1U)) != 0U)
+				offset |= ~((1ULL << NVRTX_SM75_BRA_OFFSET_BITS) - 1U);
+		} else if (opcode == NVRTX_SM75_OP_BSSY) {
+			offset = nvrtx_sm75_get(&word, NVRTX_SM75_BSSY_OFFSET_LOW, NVRTX_SM75_BSSY_OFFSET_BITS);
+			if ((offset >> (NVRTX_SM75_BSSY_OFFSET_BITS - 1U)) != 0U)
+				offset |= ~((1ULL << NVRTX_SM75_BSSY_OFFSET_BITS) - 1U);
+		} else {
+			continue;
+		}
+
+		/* A target inside the program starts a block. */
+		to = (int64_t)index + 1 + (int64_t)offset / (int64_t)NVRTX_SM75_INSTRUCTION_WORDS;
+		if (to >= 0 && to < (int64_t)count)
+			target[to] = 1U;
+	}
+}
+
+/*
+ * Makes an instruction wait for everything in flight: every busy
+ * scoreboard, every fixed-latency result's worst latency.
+ */
+static void
+nvrtx_sm75_flush(
+	struct nvrtx_sm75_scheduler *scheduler,
+	uint32_t *earliest,
+	uint32_t *wait)
+{
+	uint32_t index;
+
+	/* Every scoreboard in use. */
+	*wait |= scheduler->bar_busy;
+
+	/* Every fixed-latency register result. */
+	for (index = 0U; index < NVRTX_SM75_TRACKED_GPRS; index++) {
+		if (scheduler->gpr[index].written == 0)
+			continue;
+		if (scheduler->gpr[index].write_bar != NVRTX_SM75_NO_BAR)
+			continue;
+		*earliest = nvrtx_sm75_later(*earliest, scheduler->gpr[index].write_cycle + NVRTX_SM75_WORST_GPR);
+	}
+
+	/* Every predicate result. */
+	for (index = 0U; index < NVRTX_SM75_TRACKED_PREDICATES; index++) {
+		if (scheduler->predicate[index].written == 0)
+			continue;
+		*earliest = nvrtx_sm75_later(*earliest, scheduler->predicate[index].write_cycle + NVRTX_SM75_WORST_PREDICATE);
+	}
+}
+
+/* Forgets everything in flight (after a block's end has waited it out); the scoreboards' set cycles stay. */
+static void
+nvrtx_sm75_clear(
+	struct nvrtx_sm75_scheduler *scheduler)
+{
+	uint32_t index;
+
+	/* The registers and predicates. */
+	for (index = 0U; index < NVRTX_SM75_TRACKED_GPRS; index++) {
+		kern_memset(&scheduler->gpr[index], 0, sizeof(scheduler->gpr[index]));
+		scheduler->gpr[index].write_bar = NVRTX_SM75_NO_BAR;
+	}
+	for (index = 0U; index < NVRTX_SM75_TRACKED_PREDICATES; index++) {
+		kern_memset(&scheduler->predicate[index], 0, sizeof(scheduler->predicate[index]));
+		scheduler->predicate[index].write_bar = NVRTX_SM75_NO_BAR;
+	}
+
+	/* No scoreboard is in use. */
+	scheduler->bar_busy = 0U;
+}
+
+/*
+ * Applies an instruction's reads and writes: a result in flight on a
+ * scoreboard is waited for, a fixed-latency one is waited out by cycles.
+ */
+static void
+nvrtx_sm75_constrain(
+	struct nvrtx_sm75_scheduler *scheduler,
+	const struct nvrtx_sm75_operands *operands,
+	uint32_t *earliest,
+	uint32_t *wait)
+{
+	const struct nvrtx_sm75_track *track;
+	uint32_t index;
+	uint32_t reader;
+
+	/* Each register read: after its writer. */
+	for (index = 0U; index < operands->read_count; index++) {
+		track = &scheduler->gpr[operands->reads[index]];
+		if (track->written == 0)
+			continue;
+		if (track->write_bar != NVRTX_SM75_NO_BAR) {
+			*wait |= 1U << track->write_bar;
+			continue;
+		}
+		*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_raw(scheduler->sm, track->write_class, operands->read_class[index]));
+	}
+
+	/* Each register write: after the write and the reads before it. */
+	for (index = 0U; index < operands->write_count; index++) {
+		track = &scheduler->gpr[operands->writes[index]];
+		*wait |= track->read_bars;
+		if (track->written != 0 && track->write_bar != NVRTX_SM75_NO_BAR)
+			*wait |= 1U << track->write_bar;
+
+		/* A fixed-latency write before it. */
+		if (track->written != 0 && track->write_bar == NVRTX_SM75_NO_BAR) {
+			if (operands->class_of == NVRTX_SM75_CLASS_DECOUPLED) {
+				*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + NVRTX_SM75_WAW_DECOUPLED);
+			} else {
+				*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + NVRTX_SM75_WAW_FIXED);
+			}
+		}
+
+		/* A fixed-latency read before a variable-latency write. */
+		if (operands->class_of == NVRTX_SM75_CLASS_DECOUPLED)
+			*earliest = nvrtx_sm75_later(*earliest, track->read_cycle + NVRTX_SM75_WAR_DECOUPLED);
+	}
+
+	/* The guard and the predicate source: after the comparison that wrote them. */
+	if (operands->guard != NVRTX_SM75_NO_PREDICATE) {
+		track = &scheduler->predicate[operands->guard];
+		if (track->written != 0)
+			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(scheduler->sm, NVRTX_SM75_CLASS_DECOUPLED));
+	}
+	if (operands->predicate_read != NVRTX_SM75_NO_PREDICATE) {
+		track = &scheduler->predicate[operands->predicate_read];
+		reader = operands->class_of;
+		if (operands->boundary != 0)
+			reader = NVRTX_SM75_CLASS_DECOUPLED;
+		if (track->written != 0)
+			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + nvrtx_sm75_predicate_raw(scheduler->sm, reader));
+	}
+
+	/* The predicate written: after the write and the reads before it. */
+	if (operands->predicate_write != NVRTX_SM75_NO_PREDICATE) {
+		track = &scheduler->predicate[operands->predicate_write];
+		if (track->written != 0)
+			*earliest = nvrtx_sm75_later(*earliest, track->write_cycle + NVRTX_SM75_WAW_FIXED);
+		*earliest = nvrtx_sm75_later(*earliest, track->read_cycle + NVRTX_SM75_WAR_DECOUPLED);
+	}
+}
+
+/*
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs
+ * (BarAlloc, try_find_free_bar and free_some_bar, lines 214-228: the lowest
+ * free scoreboard, else the one set longest ago).
+ */
+/*
+ * Chooses the scoreboards a variable-latency instruction sets: one its
+ * result releases, when it writes a register, and one the read of its
+ * sources releases, when it reads one.  A scoreboard is free when nothing
+ * in flight names it and the instruction does not wait for it already
+ * ending its use; when none is free, the one set longest ago is waited for
+ * by this instruction and reused.
+ */
+static void
+nvrtx_sm75_take_bars(
+	struct nvrtx_sm75_scheduler *scheduler,
+	const struct nvrtx_sm75_operands *operands,
+	uint32_t *wait,
+	uint32_t *write_bar,
+	uint32_t *read_bar)
+{
+	uint32_t free_bars;
+	uint32_t bar;
+	uint32_t oldest;
+	uint32_t candidate;
+	uint32_t need;
+	uint32_t taken;
+
+	/* A fixed-latency instruction sets none. */
+	*write_bar = NVRTX_SM75_BAR_NONE;
+	*read_bar = NVRTX_SM75_BAR_NONE;
+	if (operands->class_of != NVRTX_SM75_CLASS_DECOUPLED)
+		return;
+
+	/* How many it needs. */
+	need = 0U;
+	if (operands->write_count != 0U)
+		need++;
+	if (operands->read_count != 0U)
+		need++;
+
+	/* Each one needed, the lowest free first, else the one set longest ago. */
+	taken = 0U;
+	while (need > 0U) {
+		free_bars = NVRTX_SM75_SCOREBOARD_ALL & ~(scheduler->bar_busy & ~*wait) & ~taken;
+		bar = NVRTX_SM75_SCOREBOARDS;
+		oldest = 0xffffffffU;
+		for (candidate = 0U; candidate < NVRTX_SM75_SCOREBOARDS; candidate++) {
+			if ((taken & (1U << candidate)) != 0U)
+				continue;
+
+			/* The lowest free one. */
+			if ((free_bars & (1U << candidate)) != 0U) {
+				bar = candidate;
+				break;
+			}
+
+			/* Else the one set longest ago so far. */
+			if (scheduler->bar_set_cycle[candidate] < oldest) {
+				oldest = scheduler->bar_set_cycle[candidate];
+				bar = candidate;
+			}
+		}
+
+		/* A busy one is waited for by this instruction, which ends its use. */
+		if ((free_bars & (1U << bar)) == 0U)
+			*wait |= 1U << bar;
+		taken |= 1U << bar;
+
+		/* The result's first, then the sources'. */
+		if (*write_bar == NVRTX_SM75_BAR_NONE && operands->write_count != 0U) {
+			*write_bar = bar;
+		} else {
+			*read_bar = bar;
+		}
+		need--;
+	}
+}
+
+/*
+ * Records an instruction issued at a cycle: what it reads and writes is in
+ * flight, on its scoreboards when it has them.
+ */
+static void
+nvrtx_sm75_record(
+	struct nvrtx_sm75_scheduler *scheduler,
+	const struct nvrtx_sm75_operands *operands,
+	uint32_t issue,
+	uint32_t write_bar,
+	uint32_t read_bar)
+{
+	struct nvrtx_sm75_track *track;
+	uint32_t index;
+
+	/* The reads: on the read scoreboard, or at this cycle. */
+	for (index = 0U; index < operands->read_count; index++) {
+		track = &scheduler->gpr[operands->reads[index]];
+		if (read_bar != NVRTX_SM75_BAR_NONE) {
+			track->read_bars |= 1U << read_bar;
+		} else {
+			track->read_cycle = issue;
+		}
+	}
+
+	/* The writes: on the result scoreboard, or fixed-latency of the instruction's class. */
+	for (index = 0U; index < operands->write_count; index++) {
+		track = &scheduler->gpr[operands->writes[index]];
+		track->written = 1;
+		track->write_class = operands->class_of;
+		track->write_cycle = issue;
+		track->write_bar = NVRTX_SM75_NO_BAR;
+		if (write_bar != NVRTX_SM75_BAR_NONE)
+			track->write_bar = write_bar;
+	}
+
+	/* The predicates. */
+	if (operands->guard != NVRTX_SM75_NO_PREDICATE)
+		scheduler->predicate[operands->guard].read_cycle = issue;
+	if (operands->predicate_read != NVRTX_SM75_NO_PREDICATE)
+		scheduler->predicate[operands->predicate_read].read_cycle = issue;
+	if (operands->predicate_write != NVRTX_SM75_NO_PREDICATE) {
+		scheduler->predicate[operands->predicate_write].written = 1;
+		scheduler->predicate[operands->predicate_write].write_cycle = issue;
+	}
+
+	/* The scoreboards it set are in use from this cycle. */
+	if (write_bar != NVRTX_SM75_BAR_NONE) {
+		scheduler->bar_busy |= 1U << write_bar;
+		scheduler->bar_set_cycle[write_bar] = issue;
+	}
+	if (read_bar != NVRTX_SM75_BAR_NONE) {
+		scheduler->bar_busy |= 1U << read_bar;
+		scheduler->bar_set_cycle[read_bar] = issue;
+	}
+}
+
+/* Ends the use of the scoreboards an instruction waited for: what they guarded is complete. */
+static void
+nvrtx_sm75_release(
+	struct nvrtx_sm75_scheduler *scheduler,
+	uint32_t wait)
+{
+	struct nvrtx_sm75_track *track;
+	uint32_t index;
+
+	/* Nothing waited. */
+	if (wait == 0U)
+		return;
+
+	/* Each register: a result on a waited scoreboard is ready, reads on them are done. */
+	for (index = 0U; index < NVRTX_SM75_TRACKED_GPRS; index++) {
+		track = &scheduler->gpr[index];
+		track->read_bars &= ~wait;
+		if (track->write_bar != NVRTX_SM75_NO_BAR && (wait & (1U << track->write_bar)) != 0U) {
+			track->written = 0;
+			track->write_bar = NVRTX_SM75_NO_BAR;
+		}
+	}
+
+	/* The scoreboards are free. */
+	scheduler->bar_busy &= ~wait;
+}
+
+/*
+ * Reports the cycles from a fixed-latency register write to a read in a
+ * shader model's latency table.  An IMAD.WIDE writes as its upper half,
+ * and its addend is read as NVRTX_SM75_CLASS_DISPATCH here.
+ */
+static uint32_t
+nvrtx_sm75_raw(
+	uint32_t sm,
+	uint32_t writer,
+	uint32_t reader)
+{
+	uint32_t latency;
+
+	/* Ampere and Ada share one table. */
+	if (sm >= NVRTX_SM_AMPERE_FIRST) {
+		latency = nvrtx_sm75_raw_ampere(writer, reader);
+
+		/* Succeeded: Ampere's and Ada's latency. */
+		return latency;
+	}
+
+	/* Turing's. */
+	latency = nvrtx_sm75_raw_turing(writer, reader);
+
+	/* Succeeded: Turing's latency. */
+	return latency;
+}
+
+/* Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write (lines 205-412). */
+/*
+ * Reports Turing's cycles from a fixed-latency register write to a read
+ * (the addend of an IMAD.WIDE reads late).
+ */
+static uint32_t
+nvrtx_sm75_raw_turing(
+	uint32_t writer,
+	uint32_t reader)
+{
+	/* A variable-latency reader, of the address unit or not, waits 6 for any fixed-latency writer. */
+	if (reader == NVRTX_SM75_CLASS_DECOUPLED || reader == NVRTX_SM75_CLASS_AGU)
+		return 6U;
+
+	/* An IMAD.WIDE's addend (the lower half reader). */
+	if (reader == NVRTX_SM75_CLASS_DISPATCH) {
+		if (writer == NVRTX_SM75_CLASS_ALU)
+			return 5U;
+		if (writer == NVRTX_SM75_CLASS_IMAD_WIDE)
+			return 2U;
+		return 4U;
+	}
+
+	/* An IMAD.WIDE's factors. */
+	if (reader == NVRTX_SM75_CLASS_IMAD_WIDE) {
+		if (writer == NVRTX_SM75_CLASS_ALU)
+			return 5U;
+		if (writer == NVRTX_SM75_CLASS_IMAD_WIDE)
+			return 6U;
+		return 4U;
+	}
+
+	/* A float or IMAD reader. */
+	if (reader == NVRTX_SM75_CLASS_FMA || reader == NVRTX_SM75_CLASS_IMAD) {
+		if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+			return 5U;
+		return 4U;
+	}
+
+	/* An ALU reader. */
+	if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+		return 4U;
+
+	/* Succeeded: an FMA, IMAD or IMAD.WIDE writer of an ALU reader. */
+	return 5U;
+}
+
+/* Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm80_instr_latencies.rs, read_after_write (lines 259-576). */
+/*
+ * Reports Ampere's and Ada's cycles from a fixed-latency register write to
+ * a read (sm80_instr_latencies.rs, read_after_write: the writers are
+ * CoupledAlu, CoupledFMA and IMADWideWriteDH, the addend is the
+ * IMADWideReadCL reader, which reads as CoupledFMA does).
+ */
+static uint32_t
+nvrtx_sm75_raw_ampere(
+	uint32_t writer,
+	uint32_t reader)
+{
+	/* A variable-latency reader of the address unit (DecoupledAgu) waits 5, any other (Decoupled) 4. */
+	if (reader == NVRTX_SM75_CLASS_AGU)
+		return 5U;
+	if (reader == NVRTX_SM75_CLASS_DECOUPLED)
+		return 4U;
+
+	/* An IMAD.WIDE's factors (IMADWideReadAB). */
+	if (reader == NVRTX_SM75_CLASS_IMAD_WIDE) {
+		if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+			return 5U;
+		if (writer == NVRTX_SM75_CLASS_IMAD_WIDE)
+			return 6U;
+		return 4U;
+	}
+
+	/* A float or IMAD reader, or an IMAD.WIDE's addend. */
+	if (reader == NVRTX_SM75_CLASS_FMA ||
+	    reader == NVRTX_SM75_CLASS_IMAD ||
+	    reader == NVRTX_SM75_CLASS_DISPATCH) {
+		if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+			return 5U;
+		return 4U;
+	}
+
+	/* An ALU reader. */
+	if (writer == NVRTX_SM75_CLASS_ALU || writer == NVRTX_SM75_CLASS_DISPATCH)
+		return 4U;
+
+	/* Succeeded: an FMA, IMAD or IMAD.WIDE writer of an ALU reader. */
+	return 5U;
+}
+
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, pred_read_after_write (lines
+ * 695-776), and src/nouveau/compiler/nak/sm80_instr_latencies.rs,
+ * PredLatencySM80::pred_read_after_write (lines 889-958).
+ */
+/*
+ * Reports the cycles from a comparison's predicate (an ALU write) to a
+ * read: 4 for an ALU reader, 5 for a float or IMAD one, and for a guard, a
+ * branch or a variable-latency reader 12 on Turing (pred_read_after_write)
+ * and 13 on Ampere and Ada (PredLatencySM80's Guard and Decoupled).
+ */
+static uint32_t
+nvrtx_sm75_predicate_raw(
+	uint32_t sm,
+	uint32_t reader)
+{
+	/* An ALU reader. */
+	if (reader == NVRTX_SM75_CLASS_ALU)
+		return 4U;
+
+	/* A float or IMAD reader. */
+	if (reader == NVRTX_SM75_CLASS_FMA ||
+	    reader == NVRTX_SM75_CLASS_IMAD ||
+	    reader == NVRTX_SM75_CLASS_IMAD_WIDE)
+		return 5U;
+
+	/* A guard, a branch or a variable-latency reader on Ampere and Ada. */
+	if (sm >= NVRTX_SM_AMPERE_FIRST)
+		return 13U;
+
+	/* Succeeded: a guard, a branch or a variable-latency reader on Turing. */
+	return 12U;
+}
+
+/* Reports the later of two cycles. */
+static uint32_t
+nvrtx_sm75_later(
+	uint32_t a,
+	uint32_t b)
+{
+	/* The first when it is later. */
+	if (a > b)
+		return a;
+
+	/* Succeeded: the second. */
+	return b;
+}
+
+/*
+ * The nvrtx shader compiler, stage A (see sm75.h).
  *
  * One pass over the scalar IR chooses the SM75 instructions of each IR
  * instruction and assigns registers as it goes: a value gets a register
@@ -17,7 +2551,7 @@
  * or a guarded access turns the Boolean back into P0.
  *
  * The dependences are marked when the program is complete
- * (sm75-schedule.c, stage D): each read waits only as long as the shader
+ * (sm75.c, stage D): each read waits only as long as the shader
  * model's latency table says for its writer, or for the scoreboard of a
  * variable-latency writer.  The lowering says of each instruction it emits
  * whether it is of fixed or variable latency or ends a block, and the
@@ -27,18 +2561,6 @@
  * emitted (ws242-p002); nothing else the lowering chooses depends on the
  * shader model.
  */
-
-#include "sm75-compile.h"
-#include "sm75-encode.h"
-#include "sm75-isa.h"
-#include "sm75-schedule.h"
-
-#include "drivers/gpu/compiler/optimize.h"
-#include "drivers/gpu/compiler/spirv.h"
-
-#include <kern/kcrt.h>
-#include <kern/kmem.h>
-#include <uapi/errno.h>
 
 /* A value without a register. */
 #define NVRTX_SM75_NO_REG		0xffffU
@@ -3099,7 +5621,7 @@ nvrtx_sm75_storage_address(
 
 /*
  * Appends an instruction.  Its scheduling control is set when the program
- * is complete (sm75-schedule.c); here the kind the lowering emits it as is
+ * is complete (sm75.c); here the kind the lowering emits it as is
  * checked against how the dependence marking reads it back: a
  * variable-latency kind must be an instruction with a scoreboard, a fixed
  * one an instruction without, and a branch, convergence or barrier kind an
