@@ -3085,6 +3085,12 @@ finish(
 	 */
 	if (program->discards != 0U) {
 		emit_label(lowering, lowering->early_end_label);
+		emit_scalar(lowering,
+			    AMDRDNA_GFX10_KIND_SCALAR_ONE,
+			    AMDRDNA_GFX10_S_MOV_B32,
+			    AMDRDNA_GFX10_EXEC_LO,
+			    AMDRDNA_GFX10_ZERO,
+			    0U);
 		emit_export(lowering, AMDRDNA_GFX10_EXPORT_NOTHING, 0U, 0U, AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK);
 		emit(lowering, &inst);
 	}

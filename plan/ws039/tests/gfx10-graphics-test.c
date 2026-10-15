@@ -10,7 +10,7 @@
  * run on the GFX10 interpreter and on the IR reference with the same
  * random inputs, their exports compared.
  *
- * usage: gfx10-graphics-test OUTDIR MODULE.(vert|frag).spv...
+ * usage: gfx10-graphics-test OUTDIR [--trials N] MODULE.(vert|frag).spv...
  *
  * A vertex program runs 40 vertices (two waves) of two instances; its
  * fetched locations come from vertex buffers of random formats (1 to 4
@@ -34,6 +34,9 @@
 #include <string.h>
 
 #define TEST_TRIALS		16U
+
+/* The trials of each module (--trials). */
+static unsigned test_trials = TEST_TRIALS;
 #define TEST_BUFFER_BYTES	4096U
 #define TEST_TABLE_BYTES	4096U
 #define TEST_VERTICES		40U
@@ -101,11 +104,16 @@ main(
 	int index;
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: %s OUTDIR MODULE.(vert|frag).spv...\n", argv[0]);
+		fprintf(stderr, "usage: %s OUTDIR [--trials N] MODULE.(vert|frag).spv...\n", argv[0]);
 		return 2;
 	}
+	index = 2;
+	if (argc > 4 && strcmp(argv[2], "--trials") == 0) {
+		test_trials = (unsigned)strtoul(argv[3], NULL, 10);
+		index = 4;
+	}
 	failed = 0;
-	for (index = 2; index < argc; index++)
+	for (; index < argc; index++)
 		failed |= test_module(argv[1], argv[index]);
 	return failed;
 }
@@ -219,7 +227,7 @@ test_module(
 	/* The trials. */
 	error = 0;
 	state = 0x9e3779b9U;
-	for (trial = 0U; trial < TEST_TRIALS && error == 0; trial++) {
+	for (trial = 0U; trial < test_trials && error == 0; trial++) {
 		if (stage == DRV_GPU_STAGE_VERTEX) {
 			error = vertex_trial(ir, program, &state);
 		} else {
@@ -228,7 +236,7 @@ test_module(
 	}
 	if (error == 0) {
 		printf("PASS %s: %u trials, %u words, %u VGPRs, %u SGPRs\n",
-		       name, TEST_TRIALS, program->code_words, program->vgpr_count, program->sgpr_count);
+		       name, test_trials, program->code_words, program->vgpr_count, program->sgpr_count);
 	} else {
 		printf("FAIL %s (trial %u)\n", name, trial - 1U);
 	}
