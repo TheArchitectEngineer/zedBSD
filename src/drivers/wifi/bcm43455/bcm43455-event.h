@@ -21,16 +21,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The ethertype of the firmware's event frames. */
+/*
+ * The ethertype of the firmware's event frames.
+ *
+ * Value referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines 754-783).
+ */
 #define BCM43455_ETHERTYPE_EVENT	0x886cU
 
 /* The length of an event message, up to its data. */
 #define BCM43455_EVENT_HEADER_LENGTH	72U
 
-/* The bytes of the firmware's event mask: one bit per event number, up to 143. */
+/*
+ * The bytes of the firmware's event mask: one bit per event number, up to 143.
+ *
+ * Value referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines 731-733)
+ * and OpenBSD sys/dev/ic/bwfm.c revision 1.113 (line 518).
+ */
 #define BCM43455_EVENT_MASK_LENGTH	18U
 
-/* The events this driver asks for. */
+/*
+ * The events this driver asks for.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines 659-722)
+ * and Infineon wifi-host-driver bd99da7b WHD/COMPONENT_WIFI6/inc/whd_events.h
+ * (lines 37-53).
+ */
 #define BCM43455_EVENT_JOIN_RESULT		0U
 #define BCM43455_EVENT_AUTHENTICATION		3U
 #define BCM43455_EVENT_DEAUTHENTICATED		5U

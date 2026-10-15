@@ -18,15 +18,6 @@
  * buffers) is cleared once its bytes have moved on, so a key that a
  * request carries does not stay in memory.
  *
- * Sources: the receive and send rules (a twelve-byte header read first,
- * the rest in four-byte units; the credit window; the first sequence
- * number; the padding; the interrupt status and mailbox handling) follow
- * OpenBSD's bwfm(4) (ISC), sys/dev/sdmmc/if_bwfm_sdio.c 1.44
- * (bwfm_sdio_rx_frames(), bwfm_sdio_tx_ok(), bwfm_sdio_tx_ctrlframe(),
- * bwfm_sdio_task()); the abort of a bad frame follows Infineon's WHD
- * (Apache-2.0), whd_bus_sdio_protocol.c (whd_bus_sdio_abort_read()).  The
- * thread, the slot, direct mode, the hooks and the work the thread does
- * for the device are this driver's own.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-bus.h"
@@ -48,12 +39,21 @@
 /* How long a direct-mode request sleeps between looks at the chip. */
 #define DIRECT_STEP_MS			10U
 
-/* The firmware's error code for a command or variable it does not have. */
+/*
+ * The firmware's error code for a command or variable it does not have.
+ *
+ * Value referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/inc/whd_types.h (lines 1066 and 1090, the offset of 2000
+ * left out).
+ */
 #define FIRMWARE_UNSUPPORTED		(-23)
 
 /*
- * The first sequence number and the credit before the firmware's first
- * frame: a window of one frame.
+ * The first sequence number and the credit before the firmware's first frame: a
+ * window of one frame.
+ *
+ * Values referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44 (line
+ * 268).
  */
 #define INITIAL_SEQUENCE		0xffU
 #define INITIAL_CREDIT			0U
@@ -581,14 +581,16 @@ bus_thread(
 }
 
 /*
- * Reads the SDIO core's interrupt status, answers the mailbox and reads
- * the pending frames.  Returns an error only for a bus or firmware
- * failure that ends the bus.
+ * Reads the SDIO core's interrupt status, answers the mailbox and reads the
+ * pending frames.  Returns an error only for a bus or firmware failure that
+ * ends the bus.
  *
- * The frames are read on every pass, with or without the frame
- * indication, as other drivers of the chip do: a missed indication must
- * not leave a frame waiting.  Reading when there is none costs one
- * header's read.
+ * The frames are read on every pass, with or without the frame indication: a
+ * missed indication must not leave a frame waiting.  Reading when there is none
+ * costs one header's read.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_task(), lines 699-745).
  */
 static int
 service(
@@ -634,8 +636,11 @@ service(
 }
 
 /*
- * Reads the firmware's mailbox data, acknowledges it and acts on it:
- * the protocol version, a halt, and its flow control.
+ * Reads the firmware's mailbox data, acknowledges it and acts on it: the
+ * protocol version, a halt, and its flow control.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_task(), lines 699-745).
  */
 static int
 handle_mailbox(
@@ -677,9 +682,12 @@ handle_mailbox(
 }
 
 /*
- * Reads one frame and hands it on.  Returns ENOENT when the chip has
- * none, EAGAIN when a bad frame was dropped and this pass should end, and
- * a bus error otherwise.
+ * Reads one frame and hands it on: the twelve-byte header first, then the rest
+ * in four-byte units.  Returns ENOENT when the chip has none, EAGAIN when a bad
+ * frame was dropped and this pass should end, and a bus error otherwise.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_rx_frames(), lines 1197-1260).
  */
 static int
 receive_frame(
@@ -830,8 +838,10 @@ discard_rest(
 
 /*
  * Aborts the frame being read, tells the chip to drop it, and tells the
- * firmware that the host refused it, so the next read starts at the next
- * frame.
+ * firmware that the host refused it, so the next read starts at the next frame.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * whd_bus_sdio_protocol.c (whd_bus_sdio_abort_read(), lines 1317-1336).
  */
 static int
 abort_frame(
@@ -1019,8 +1029,11 @@ answer_error(
 }
 
 /*
- * Sends the frame in tx_frame: writes its SDPCM header, pads it to the
- * bus's unit, writes it to the frame function and clears it.
+ * Sends the frame in tx_frame: writes its SDPCM header, pads it to the bus's
+ * unit, writes it to the frame function and clears it.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_tx_ctrlframe()).
  */
 static int
 send_frame(

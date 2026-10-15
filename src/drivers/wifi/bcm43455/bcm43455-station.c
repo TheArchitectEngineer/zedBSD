@@ -26,15 +26,6 @@
  * Every copy of the PMK is erased as soon as it has moved on: the slot's
  * when the bus thread takes it, the key message as soon as it is sent
  * (or the connection fails or is cancelled), the bus's frames by the bus.
- *
- * Sources: the order of a WPA2-PSK join with the firmware supplicant (the
- * cipher, the key management, "sup_wpa", "sup_wpa2_eapver",
- * "sup_wpa_tmo", the key, then the join) follows Infineon's WHD
- * (Apache-2.0) tree bd99da7b, whd_wifi_api.c (whd_wifi_prepare_join(),
- * whd_wifi_join_specific()); the escan with its abort follows WHD
- * whd_wifi_scan() and whd_wifi_stop_scan() and OpenBSD bwfm(4) (ISC)
- * bwfm.c 1.113 (bwfm_scan_v0()).  The slots, the latches and the work
- * on the bus thread are this driver's own.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-device.h"
@@ -47,10 +38,24 @@
 #include <kern/net/wlan.h>
 #include <uapi/errno.h>
 
-/* The key timeout the supplicant reports a missing handshake message after, in milliseconds (WHD's). */
+/*
+ * The key timeout the supplicant reports a missing handshake message after, in
+ * milliseconds.
+ *
+ * Value referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (line 79) and
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (line 1141).
+ */
 #define SUPPLICANT_KEY_TIMEOUT_MS	3000U
 
-/* The EAPOL version the supplicant answers with: whatever the access point uses. */
+/*
+ * The EAPOL version the supplicant answers with: whatever the access point
+ * uses.
+ *
+ * Value referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (line 1103) and
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (lines 716-735 and 1817-1852).
+ */
 #define SUPPLICANT_EAPOL_ANY		0xffffffffU
 
 /* The interface the station runs on: the firmware's primary one. */
@@ -334,8 +339,12 @@ radio_scan_channel_start(
 }
 
 /*
- * The core stops a scan: aborts what the firmware still scans and forgets
- * the scan, so nothing more of it is reported.
+ * The core stops a scan: aborts what the firmware still scans and forgets the
+ * scan, so nothing more of it is reported.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (whd_wifi_stop_scan(), lines
+ * 3394-3419).
  */
 static int
 radio_scan_stop(
@@ -594,8 +603,8 @@ radio_ethernet_transmit(
 
 /*
  * Reports whether a channel is scanned without probing.  The world-wide
- * regulatory domain (E6) lets a station probe only on 2.4 GHz channels 1
- * to 11 and 5 GHz channels 36 to 48; on every other channel it listens.
+ * regulatory domain lets a station probe only on 2.4 GHz channels 1 to 11
+ * and 5 GHz channels 36 to 48; on every other channel it listens.
  */
 static int
 channel_passive(
@@ -870,8 +879,12 @@ connect_event_locked(
 }
 
 /*
- * Takes the waiting scan channel and sends its escan request.  handled
- * is set when there was one.  Returns the bus's error.
+ * Takes the waiting scan channel and sends its escan request.  handled is set
+ * when there was one.  Returns the bus's error.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (whd_wifi_scan()); OpenBSD
+ * sys/dev/ic/bwfm.c revision 1.113 (bwfm_scan_v0()).
  */
 static int
 work_scan(
@@ -1076,9 +1089,13 @@ work_connect(
 }
 
 /*
- * Sends a WPA2-PSK connection's commands in their order, stopping at the
- * first one that fails or at a cancel.  outcome receives the failure.
- * Returns the bus's error.
+ * Sends a WPA2-PSK connection's commands in their order, stopping at the first
+ * one that fails or at a cancel.  outcome receives the failure.  Returns the
+ * bus's error.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (whd_wifi_prepare_join(), lines
+ * 1717-2077, and the join, lines 2433-2490).
  */
 static int
 connect_commands(
@@ -1120,7 +1137,7 @@ connect_commands(
 	/*
 	 * The EAPOL version the access point uses, and the key timeout that
 	 * makes the supplicant report a missing message; a firmware without
-	 * them still connects (WHD goes on too).
+	 * them still connects.
 	 */
 	error = send_bsscfg_u32(device, generation, "bsscfg:sup_wpa2_eapver", SUPPLICANT_EAPOL_ANY, &optional);
 	if (error != 0)

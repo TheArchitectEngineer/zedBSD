@@ -7,11 +7,6 @@
 
 /*
  * BCM43455: encoding and decoding the BCDC control and data headers.
- *
- * Source: OpenBSD bwfm(4) (ISC), sys/dev/ic/bwfmreg.h 1.26 (struct
- * bwfm_proto_bcdc_dcmd and struct bwfm_proto_bcdc_hdr) for the field
- * positions and flag bits, and its command numbers, which Infineon's WHD
- * (Apache-2.0) whd_wlioctl.h also lists; values only.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-bcdc.h"
@@ -19,7 +14,12 @@
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
-/* Where each field of the control header sits. */
+/*
+ * Where each field of the control header sits, and its flag word.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (struct
+ * bwfm_proto_bcdc_dcmd, lines 314-329).
+ */
 #define CONTROL_COMMAND		0U
 #define CONTROL_LENGTH		4U
 #define CONTROL_FLAGS		8U
@@ -32,7 +32,13 @@
 #define CONTROL_INTERFACE_SHIFT	12U
 #define CONTROL_ID_SHIFT	16U
 
-/* Where each field of the data header sits. */
+/*
+ * Where each field of the data header sits, its version, and its priority and
+ * interface fields.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (struct
+ * bwfm_proto_bcdc_hdr, lines 331-342).
+ */
 #define DATA_FLAGS		0U
 #define DATA_PRIORITY		1U
 #define DATA_FLAGS2		2U

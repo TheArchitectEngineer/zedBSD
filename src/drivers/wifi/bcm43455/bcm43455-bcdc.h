@@ -29,7 +29,13 @@
 /* The most payload one control message carries either way. */
 #define BCM43455_BCDC_CONTROL_MAX	2048U
 
-/* The firmware commands this driver uses. */
+/*
+ * The firmware commands this driver uses.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines 248-311)
+ * and Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 1305-1539).
+ */
 #define BCM43455_COMMAND_RADIO_UP		2U
 #define BCM43455_COMMAND_RADIO_DOWN		3U
 #define BCM43455_COMMAND_POWER_SAVE		86U

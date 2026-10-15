@@ -16,21 +16,13 @@
  * stops the thread, takes the radio down and cuts the chip's power.
  *
  * Every start makes the same settings: receive glomming off, the CLM
- * loaded, the country set to the world-wide "XX" and read back (E6),
- * roaming off, power saving off, the events the driver uses enabled.
- *
- * Sources: the variable names and the country's layout are those of
- * Infineon's WHD (Apache-2.0) whd_wlioctl.h; the event mask's length (18
- * bytes) is OpenBSD bwfm(4)'s (ISC) bwfmreg.h 1.26; the world-wide
- * country's revision 0 is WHD's WHD_COUNTRY_WORLD_WIDE_XX (whd_types.h).
- * "bus:rxglom" and the fallback revision -1 have no permissively licensed
- * public source; they are marked so in plan/ws206/phase004/values.md and
- * checked on a board.
+ * loaded, the country set to the world-wide "XX" and read back, roaming
+ * off, power saving off, the events the driver uses enabled.
  *
  * The station is attached with the FullMAC radio operations of
- * bcm43455-station.c (ws206-p005), which use the WLAN core's FullMAC
- * engine (ws206-p008): the bus hooks here hand events, received frames,
- * the radio work and a bus failure to them, and the poll lets them report.
+ * bcm43455-station.c, which use the WLAN core's FullMAC engine: the bus
+ * hooks here hand events, received frames, the radio work and a bus
+ * failure to them, and the poll lets them report.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-device.h"
@@ -44,8 +36,13 @@
 #include <uapi/errno.h>
 
 /*
- * The country the regulatory table is set to: world-wide (E6), revision 0
- * as WHD defines it, else the firmware's choice of revision.
+ * The country the regulatory table is set to: world-wide, revision 0, else the
+ * firmware's choice of revision (-1).
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 667-673 and 1073, the
+ * layout) and WHD/COMPONENT_WIFI6/inc/whd_types.h (line 859, revision 0).  No
+ * permissively licensed public source for revision -1 was found.
  */
 #define COUNTRY_CODE_0			'X'
 #define COUNTRY_CODE_1			'X'
@@ -66,11 +63,13 @@
 #define CHANNEL_LIST_LENGTH		(4U + 4U * BCM43455_CHANNELS_MAX)
 
 /*
- * The room asked for the firmware's version text and its capability list:
- * brcmfmac's (ISC) BRCMF_DCMD_SMLEN for "ver" and MAX_CAPS_BUFFER_SIZE for
- * "cap".  A get sends as many bytes as it wants back, and a request of
- * nearly the whole 2 KiB control buffer got no answer from the 43455's
- * firmware (BUG-311, T1-632: "firmware version not read (42)").
+ * The room asked for the firmware's version text and its capability list.  A
+ * get sends as many bytes as it wants back, and a request of nearly the whole 2
+ * KiB control buffer got no answer from the 43455's firmware.
+ *
+ * Values referenced: Linux drivers/net/wireless/broadcom/brcm80211/brcmfmac,
+ * version not recorded (BRCMF_DCMD_SMLEN for "ver", MAX_CAPS_BUFFER_SIZE for
+ * "cap").
  */
 #define VERSION_READ_BYTES		256U
 #define CAPABILITIES_READ_BYTES		768U
@@ -841,6 +840,11 @@ bcm43455_device_restart(
 
 /*
  * Makes the settings every start makes and reads the identity.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 1073-1232, the variable
+ * names); OpenBSD sys/dev/ic/bwfm.c revision 1.113 (line 261).  No permissively
+ * licensed public source for "bus:rxglom" was found.
  */
 static int
 start_settings(
@@ -965,9 +969,9 @@ load_clm(
  * Sets the country to the world-wide "XX" and logs what the firmware
  * reads back, which is the regulatory domain it then runs in.
  *
- * The revision is first 0, the world-wide locale as WHD defines it
- * (WHD_COUNTRY_WORLD_WIDE_XX); a firmware whose table does not carry it
- * is asked to choose the revision itself (-1, unconfirmed on a board).
+ * The revision is first 0, the world-wide locale; a firmware whose table
+ * does not carry it is asked to choose the revision itself (-1,
+ * unconfirmed on a board).
  */
 static int
 set_country(

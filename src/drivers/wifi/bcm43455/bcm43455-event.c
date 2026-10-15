@@ -7,11 +7,6 @@
 
 /*
  * BCM43455: decoding the firmware's event frames.
- *
- * Source: OpenBSD bwfm(4) (ISC), sys/dev/ic/bwfmreg.h 1.26 (struct
- * bwfm_ethhdr, struct bwfm_event_msg and the event numbers) and the check
- * in bwfm.c 1.113 (bwfm_rx()); the event numbers agree with Infineon's
- * WHD (Apache-2.0) whd_events.h.  Values only.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-event.h"
@@ -23,15 +18,30 @@
 #define ETHERNET_TYPE			12U
 #define ETHERNET_HEADER_LENGTH		14U
 
-/* The Broadcom vendor header that follows it. */
+/*
+ * The Broadcom vendor header that follows it.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (struct
+ * bwfm_ethhdr, lines 754-783).
+ */
 #define VENDOR_SUBTYPE			14U
 #define VENDOR_OUI			19U
 #define VENDOR_USER_SUBTYPE		22U
 
-/* The vendor header's user subtype of a firmware event. */
+/*
+ * The vendor header's user subtype of a firmware event.
+ *
+ * Value referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113 (bwfm_rx(), lines
+ * 2367-2373).
+ */
 #define VENDOR_USER_SUBTYPE_EVENT	1U
 
-/* The event message, big-endian, after the vendor header. */
+/*
+ * The event message, big-endian, after the vendor header.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (struct
+ * bwfm_event_msg, lines 754-783).
+ */
 #define MESSAGE_VERSION			24U
 #define MESSAGE_FLAGS			26U
 #define MESSAGE_TYPE			28U
@@ -43,7 +53,12 @@
 #define MESSAGE_INTERFACE_INDEX		70U
 #define MESSAGE_BSSCFG_INDEX		71U
 
-/* Broadcom's organizationally unique identifier, which marks its vendor header. */
+/*
+ * Broadcom's organizationally unique identifier, which marks its vendor header.
+ *
+ * Value referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113 (bwfm_rx(), lines
+ * 2367-2373).
+ */
 static const uint8_t broadcom_oui[3] = {0x00, 0x10, 0x18};
 
 /*
@@ -77,9 +92,13 @@ bcm43455_event_decode(
 		return EPROTO;
 
 	/*
-	 * The vendor header names Broadcom and the event user subtype.  Its
-	 * own subtype (0x8001) is read but, as other drivers of the chip do,
-	 * not required.
+	 * The vendor header names Broadcom and the event user subtype.  Its own
+	 * subtype (0x8001) is read but not required.
+	 *
+	 * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+	 * (bwfm_rx(), lines 2367-2373) and, for 0x8001, Infineon
+	 * wifi-host-driver bd99da7b WHD/COMPONENT_WIFI6/inc/whd_events.h (line
+	 * 140).
 	 */
 	subtype = bcm43455_get_be16(frame + VENDOR_SUBTYPE);
 	event->vendor_subtype = subtype;

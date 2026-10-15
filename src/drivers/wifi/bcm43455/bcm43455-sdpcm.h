@@ -25,7 +25,12 @@
 /* The frame tag and the software header together. */
 #define BCM43455_SDPCM_HEADER_LENGTH	12U
 
-/* The channels a frame belongs to. */
+/*
+ * The channels a frame belongs to.
+ *
+ * Values referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.h revision 1.3 (lines
+ * 167-172).
+ */
 #define BCM43455_SDPCM_CHANNEL_CONTROL	0U
 #define BCM43455_SDPCM_CHANNEL_EVENT	1U
 #define BCM43455_SDPCM_CHANNEL_DATA	2U

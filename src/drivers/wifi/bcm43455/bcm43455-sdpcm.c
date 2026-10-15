@@ -9,17 +9,20 @@
  * BCM43455: encoding and decoding the SDPCM frame headers.
  *
  * The layout (frame tag, then the software header) is the one the chip's
- * firmware uses on its SDIO frame function.  Source: OpenBSD bwfm(4)
- * (ISC), sys/dev/sdmmc/if_bwfm_sdio.h 1.3 (struct bwfm_sdio_hwhdr and
- * struct bwfm_sdio_swhdr) for the byte positions, if_bwfm_sdio.c 1.44
- * for the credit rule and the padding; values only.
+ * firmware uses on its SDIO frame function.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-sdpcm.h"
 #include "drivers/wifi/bcm43455/bcm43455-bytes.h"
 #include <uapi/errno.h>
 
-/* Where each field of the header sits in the frame. */
+/*
+ * Where each field of the header sits in the frame, and the channel byte's
+ * split.
+ *
+ * Values referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.h revision 1.3 (struct
+ * bwfm_sdio_hwhdr and struct bwfm_sdio_swhdr, lines 150-179).
+ */
 #define TAG_LENGTH		0U
 #define TAG_CHECK		2U
 #define HEADER_SEQUENCE		4U
@@ -121,6 +124,9 @@ bcm43455_sdpcm_encode(
 
 /*
  * Reports how many frames may be sent before the firmware's credit runs out.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_tx_ok(), lines 1076-1081).
  */
 unsigned
 bcm43455_sdpcm_window(
@@ -145,6 +151,9 @@ bcm43455_sdpcm_window(
 
 /*
  * Reports how many bytes a frame occupies on the bus.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (lines 1112-1117).
  */
 size_t
 bcm43455_sdpcm_padded_length(
