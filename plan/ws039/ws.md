@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q1202（P3、ws039-p001、2026-10-15 夕）
-Resume point: P3 が q1202 で p001 を再開。[p001](phase001/phase.md) の「再開の点」（調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/、約 600 MB の source と note は消さない）と [p007](phase007/phase.md) の 7.2（Mesa の tarball は /home/awe/zedBSD-worktrees/p5/build/mesa、消さない）。
+Resume point: P3 が q1202 で p001 を再開し [design.md](design.md)・[amdrdna-license-audit.md](amdrdna-license-audit.md) を書いた（2026-10-15 夕）。次は design-reviewer の review（design-review.md）と指摘の反映 → Q1 の clearance の判定 → p002。design の 15 節の判断の項目 11 件はユーザー待ち。調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/（約 600 MB の source と note は消さない。temp/linux に amdgpu_dm を sparse で足した）。[p007](phase007/phase.md) の 7.2（Mesa の tarball は /home/awe/zedBSD-worktrees/p5/build/mesa、消さない）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -30,7 +30,7 @@ AMD RDNA世代のGPUのドライバを実装する。
 
 ## Phase一覧
 
-下の「再開と計画」の表（案）。作った Phase: [p001](phase001/phase.md) 調べと設計（in-progress、一時停止）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
+[design.md](design.md) の 16 節の表が正（下の「再開と計画」の表は 2026-10-15 昼の案）。作った Phase: [p001](phase001/phase.md) 調べと設計（in-progress、design.md 済み・review 待ち）、[p007](phase007/phase.md) GFX10 の shader の compiler（in-progress、一時停止）。
 
 ## 要検討・ブロック（2026-10-05）
 
