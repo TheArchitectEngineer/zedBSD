@@ -2,7 +2,7 @@
 
 # ws245-p002: 土台（register と表の header、xd-io、xd-platform、host 試験の枠、own の型の分離、Gen9 の own への移設）
 
-Status: in-progress（2026-10-15 q1204 P1: 実装と host 試験は完了、commit 済み。残りは (f) の T1（QEMU の boot-test）の結果と Q1 の判定。(g) の実機は一覧に載せるだけ）
+Status: cleared（2026-10-15 Q1: (a)〜(e) は P1 の host 試験・build、(f) は T1-699（T2、QEMU の Venus の image、boot-test.sh で login prompt、main 6d07bee3d）PASS。(g) の実機（Gen9 の機械は §7 #22 の回答待ち、5330・5320）は未実施でユーザーの試験の一覧に。main の merge a9925a4db）
 Parent: [WS245](../ws.md)
 Queue: q1204 / q1204-i01（P1、worktree p1、branch agent/p1-ws245、基点 main 911b7e178）
 Approval: 2026-10-15 夕 ユーザー「WS245は、ロールバックできる体制にしておいて、今から実装します。」

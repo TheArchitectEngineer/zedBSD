@@ -555,7 +555,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md 改訂 2 は main、レビュー 2 の反映が残る） | ws.md の Resume point |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
-| [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 285c55e39。T1-698 の AX211 の QEMU（VFIO）・5330 の試験待ち） | T1-698 → completed |
+| [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 285c55e39。T1-698: 5330 の VFIO で attach・firmware・scan が整理の前と同じ、association は未実施） | association の確かめの扱い → completed |
 | [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | planned | WS248 の後に P2（q1205 予約） |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（p001 を P4 が q1206 で設計中） | p001 |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | planned | 着手はユーザーの指示で |

@@ -55,7 +55,7 @@ Resume point: q1204（P1、2026-10-15 夕）: p002 の実装と host 試験は�
 | ID | 内容 | 状態 |
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計: Linux v6.8.12 の分岐（決定 3・4）と PRM（補助）から、display 11〜13 の model（platform の記述、pipe・transcoder・DDI・PHY（combo・Dekel・MG）・PLL・plane・watermark・DBUF・power well・DMC・AUX・GMBUS・VBT・opregion・Type-C の 2 つの流れ）、外向きの口と契約、データの表の引用の方法、書き直しの順序と Phase の分割、試験の道（host・T1 の 5330 passthrough・実機の一覧）、LW の見積もり。design-reviewer を 3 回通す | in-progress（design.md 改訂 3a。§7 の判断をユーザーに聞いてから clearance） |
-| [p002](phase002/phase.md) | 土台: register と表の header（記述の 9 行）、xd-io、xd-platform（RKL・ADL-S/RPL-S は記述の表だけ、`device.c` は #18 の回答まで不変）、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | in-progress（q1204 P1: (a)〜(e) PASS、(f) T1 待ち、(g) 一覧） |
+| [p002](phase002/phase.md) | 土台: register と表の header（記述の 9 行）、xd-io、xd-platform（RKL・ADL-S/RPL-S は記述の表だけ、`device.c` は #18 の回答まで不変）、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、(f) T1-699 PASS、(g) の実機は未実施） |
 | p003 | 口 `xd.h` と `struct i915_xd_ops`、旧 code への adapter `old-xd.c`、own の file の付け替え、`i915.display=xd|old`（kern/boot.c、Q1 の承認。既定 old） | planned（7 LW。merge はデモの後: design.md §7 #13） |
 | p004 | VBT（合成の fixture、4 platform の V2/V3/V4）・EDID | planned（3 LW） |
 | p005 | AUX・GMBUS | planned（3 LW、p006 の後） |
