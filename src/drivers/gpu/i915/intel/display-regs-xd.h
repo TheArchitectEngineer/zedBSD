@@ -11,8 +11,7 @@
  * Raptor Lake-P/U on display 13), as the xd display code (display/xd-*.c)
  * reads and writes them.
  *
- * Each register is named after the Intel display documentation, with the
- * I915_XD_ prefix.  A register that repeats per pipe, transcoder, port,
+ * Each register name has the I915_XD_ prefix.  A register that repeats per pipe, transcoder, port,
  * PHY or Type-C port takes the instance as an argument; the argument is
  * a plain index:
  *
@@ -1002,6 +1001,37 @@
 #define I915_XD_TX_DW5_SCALING_MODE		0x001c0000U
 #define I915_XD_TX_DW5_RTERM			0x00000038U
 #define I915_XD_TX_DW7_N_SCALAR			0x7f000000U
+
+/*
+ * The duty cycle corrector of a combo PHY on display 12 and 13: the
+ * ODCC clock select and its divider (DW8 of the transmit lanes) and the
+ * DCC mode (DW1 of the PCS lanes), which the PHY init sets to run once.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/display/intel_combo_phy_regs.h
+ * (ICL_PORT_TX_DW8_ODCC_CLK_SEL, ICL_PORT_TX_DW8_ODCC_CLK_DIV_SEL_MASK,
+ * ICL_PORT_TX_DW8_ODCC_CLK_DIV_SEL_DIV2, DCC_MODE_SELECT_MASK,
+ * RUN_DCC_ONCE).
+ */
+#define I915_XD_TX_DW8_ODCC_CLOCK_SELECT	0x80000000U
+#define I915_XD_TX_DW8_ODCC_DIVIDER		0x60000000U
+#define I915_XD_TX_DW8_ODCC_DIVIDE_BY_2		1U
+#define I915_XD_PCS_DW1_DCC_MODE		0x00300000U
+#define I915_XD_PCS_DW1_DCC_RUN_ONCE		0U
+
+/*
+ * The display 12 chickens of the start: the frame buffer compression
+ * chicken of pipe A (the compressor's dummy pixel) and the clock request
+ * policy (the memory-up override).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_reg.h
+ * (ILK_DPFC_CHICKEN, DPFC_CHICKEN_COMP_DUMMY_PIXEL, CLKREQ_POLICY,
+ * CLKREQ_POLICY_MEM_UP_OVRD).
+ */
+#define I915_XD_DPFC_CHICKEN_A			0x43224U
+#define I915_XD_DPFC_CHICKEN_DUMMY_PIXEL	0x00004000U
+#define I915_XD_CLKREQ_POLICY			0x101038U
+#define I915_XD_CLKREQ_POLICY_MEM_UP_OVERRIDE	0x00000002U
 
 /*
  * The PHY miscellaneous word of combo PHY A and B: the IO compensation

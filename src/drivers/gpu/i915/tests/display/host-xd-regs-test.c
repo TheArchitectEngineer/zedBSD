@@ -7,8 +7,9 @@
 
 /*
  * The host test of the xd register headers against the tree's older
- * register headers (intel/mreg.h, trans.h, plane.h, dkl.h, hotplug.h): every pair of xd-regs-map.h whose Linux name an older
- * header still defines must have the same value.
+ * register headers (intel/mreg.h, trans.h, plane.h, dkl.h, hotplug.h):
+ * every pair of xd-regs-map.h whose Linux name an older header still
+ * defines must have the same value.
  *
  * The older headers go when the display 12 and 13 code they serve is
  * removed; this test goes with them, and the pair list then stays

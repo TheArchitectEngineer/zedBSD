@@ -153,7 +153,7 @@ AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dkl-phy.c src/drivers/gpu/i91
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/dp-ext.c src/drivers/gpu/i915/display/dp-ext-kern.c
 AMD64_I915_SOURCES += src/drivers/gpu/i915/display/head.c src/drivers/gpu/i915/display/head-rules.c
 # The display 12 and 13 rewrite (WS245): compiled from its first files on, not yet called by the driver.
-AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-io.c
+AMD64_I915_SOURCES += src/drivers/gpu/i915/display/xd-io.c src/drivers/gpu/i915/display/xd-platform.c
 endif
 AMD64_NVRTX_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_NVRTX),y)
