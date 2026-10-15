@@ -3,12 +3,12 @@
 # WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成。p001 の設計を P2 が q991 で実施中）
+Status: planning（2026-10-16 作成。p001 の [design.md](design.md) は main に入った（6bccaef57）、敵対的レビューは未完）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: p001（設計）から。
+Resume point: p001 の design-reviewer → 指摘の反映 → design.md 第 7 節の判断 14 件をユーザーに。Phase の表は design.md の 6.2 節（p002〜p012、36 LW）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-16）
