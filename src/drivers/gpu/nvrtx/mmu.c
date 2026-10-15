@@ -25,25 +25,58 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* The directory entries: valid targets (in bits 2:1), the volatile bit, and the address shift. */
+/*
+ * The directory entries: valid targets (in bits 2:1), the volatile bit, and the
+ * address shift.
+ *
+ * Values referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_mmu.ref.txt
+ * (NV_MMU_VER2_PDE_APERTURE, NV_MMU_VER2_PDE_VOL) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgp100.c (gp100_vmm_pde).
+ */
 #define MMU_PDE_VRAM			(1ULL << 1)
 #define MMU_PDE_SYSTEM			(2ULL << 1)
 #define MMU_PDE_VOLATILE		(1ULL << 3)
 
-/* The page entries: valid, the target (in bits 2:1, VRAM 0, coherent system 2), volatile, kind 0 (pitch). */
+/*
+ * The page entries: valid, the target (in bits 2:1, VRAM 0, coherent system 2),
+ * volatile, kind 0 (pitch).
+ *
+ * Values referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_mmu.ref.txt
+ * (NV_MMU_VER2_PTE_VALID, NV_MMU_VER2_PTE_APERTURE, NV_MMU_VER2_PTE_VOL,
+ * NV_MMU_VER2_PTE_KIND).
+ */
 #define MMU_PTE_VALID			(1ULL << 0)
 #define MMU_PTE_SYSTEM			(2ULL << 1)
 #define MMU_PTE_VOLATILE		(1ULL << 3)
 
-/* A page only privileged work (the context switch) may use, and one it may only read. */
+/*
+ * A page only privileged work (the context switch) may use, and one it may only
+ * read.
+ *
+ * Values referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_mmu.ref.txt
+ * (NV_MMU_VER2_PTE_PRIVILEGE, NV_MMU_VER2_PTE_READ_ONLY).
+ */
 #define MMU_PTE_PRIVILEGED		(1ULL << 5)
 #define MMU_PTE_READ_ONLY		(1ULL << 6)
 
-/* The graphics context's tables: the four directories, then one page table per 2 MiB of range. */
+/*
+ * The graphics context's tables: the four directories, then one page table per
+ * 2 MiB of range.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgp100.c (gp100_vmm_desc_12, the
+ * span of one entry of the second directory).
+ */
 #define MMU_GR_TABLES_FIRST_AT		0x4000U
 #define MMU_GR_DIRECTORY1_SPAN		0x20000000ULL
 
-/* The address field of every entry: the address shifted right by 4 (page number at bit 8). */
+/*
+ * The address field of every entry: the address shifted right by 4 (page number
+ * at bit 8).
+ *
+ * Value referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_mmu.ref.txt
+ * (NV_MMU_VER2_PDE_ADDRESS_SYS, NV_MMU_VER2_PTE_ADDRESS_SHIFT).
+ */
 #define MMU_ADDRESS_SHIFT		4U
 
 /* The five pages of the tables, in the order they lie in the block. */
@@ -53,7 +86,16 @@
 #define MMU_DIR0_AT			0x3000U
 #define MMU_TABLE_AT			0x4000U
 
-/* The instance block's fields for the page tables. */
+/*
+ * The instance block's fields for the page tables.
+ *
+ * Values referenced: NVIDIA open-gpu-doc manuals/turing/tu104/dev_ram.ref.txt
+ * (NV_RAMIN_PAGE_DIR_BASE_LO, NV_RAMIN_USE_VER2_PT_FORMAT,
+ * NV_RAMIN_BIG_PAGE_SIZE, NV_RAMIN_SC_PDB_VALID,
+ * NV_RAMIN_SC_PAGE_DIR_BASE_TARGET) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgv100.c (gv100_vmm_join) and
+ * nvkm/subdev/mmu/vmmgf100.c (gf100_vmm_join_).
+ */
 #define MMU_INST_ROOT_AT		0x200U
 #define MMU_INST_LIMIT_AT		0x208U
 #define MMU_INST_SUBCONTEXT_CLEAR_AT	0x21cU
@@ -64,7 +106,16 @@
 #define MMU_INST_ROOT_BIG_64K		(1ULL << 11)
 #define MMU_INST_INVALID		0x1U
 
-/* The FB region table in the static information: count, then 16 regions of 48 bytes. */
+/*
+ * The FB region table in the static information: count, then 16 regions of 48
+ * bytes.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080fb.h
+ * (NV2080_CTRL_CMD_FB_GET_FB_REGION_INFO_PARAMS,
+ * NV2080_CTRL_CMD_FB_GET_FB_REGION_FB_REGION_INFO,
+ * NV2080_CTRL_CMD_FB_GET_FB_REGION_INFO_MAX_ENTRIES).
+ */
 #define MMU_REGION_COUNT_AT		(NVRTX_STATIC_REGIONS_AT + 0U)
 #define MMU_REGION_FIRST_AT		(NVRTX_STATIC_REGIONS_AT + 8U)
 #define MMU_REGION_BYTES		48U
@@ -144,6 +195,10 @@ nvrtx_mmu_tables(
  * The root is in the VRAM; the tables use version 2 with 64 KiB big pages.
  * Subcontext 0 uses the same root and the other 63 are invalid.  The image
  * is the whole 4 KiB instance block.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmgv100.c (gv100_vmm_join) and
+ * nvkm/subdev/mmu/vmmgf100.c (gf100_vmm_join_).
  */
 void
 nvrtx_mmu_instance(
@@ -243,6 +298,10 @@ nvrtx_mmu_vram_block(
  * Usable is what nvrtx_mmu_vram_block() takes its blocks from: neither
  * reserved nor protected, with compression and ISO.  The region is
  * [*base, *top).  Returns ENOSPC when no region is usable.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_get_static_info_fb).
  */
 int
 nvrtx_mmu_vram_region(
@@ -635,7 +694,14 @@ mmu_gr_range_valid(
 	return 1;
 }
 
-/* Reports whether the FB region at an offset of the static information is one the driver may use. */
+/*
+ * Reports whether the FB region at an offset of the static information is one
+ * the driver may use.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_get_static_info_fb).
+ */
 static int
 mmu_region_usable(
 	const uint8_t *static_info,
