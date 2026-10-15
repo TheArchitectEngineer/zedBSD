@@ -33,6 +33,7 @@
 ### Q1 の次の手順
 
 <!-- master:next:start -->
+- **2026-10-16 夕の引き継ぎ（次の Q1 はここから）**: このセッションの終わりで道具の出力が実際の file と合わない現象が出た（同じ file の行数・hash が呼ぶたびに違う）。(1) main の build と host 試験（nvrtx: sm75・sm75-desktop・vk-d3・vk、adl: plan・edid・opregion・vbt）を確かめ直す。(2) WS245 の display/adl/ の 7 file を plan/coding-style.md の全文と照らしてレビュー（未判定、ユーザーの依頼）。(3) WS247 の判断 2 点（path の省略、sm75.c の「the SM75 code the CUDA compiler emits」）を受けて completed。(4) WS245 は p008（design の P07 電源・DMC）→ p006（P05 AUX・GMBUS）、p007（P06 panel）は並行可。報告の page: https://claude.ai/code/artifact/7c2e91d4-5a83-4f0b-b6e2-1d9a04c8f357
 0. **2026-10-16 の引き継ぎ: まず [plan/agents/handover-20261016.md](agents/handover-20261016.md) を読む**（担当の状態、T1-697 の待ち、著作権の規則、未決の判断）。
 1. 新しい Q1 は AGENTS.md・plan/beta2.md（先頭の「ユーザーが今できる試験」）・この block・[plan/agents/wrapup-20261015.md](agents/wrapup-20261015.md) を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **今の仕事: Pi4 のビデオの試験（WS236 p006、T1-653）**。ユーザーが Pi の SD を書き直し中で、「それまで何もせずに待っていてください」。書き直しの知らせの後に、Q1（または T）が最新の main の kernel で [phase006](ws236/phase006/phase.md) の「T への依頼」を流し、結果をユーザーに伝える（ユーザー「最新のカーネルでOKです。まずはビデオ再生をテストしてください。結果を教えてください。」）。起動で固まれば BUG-317（写真をもらう）。
