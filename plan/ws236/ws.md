@@ -65,3 +65,21 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 - Pi 4 の実機（main 2597b86）で、vkvideo-probe の 3 本の全 28 frame が参照と bit 単位で一致（frame 0 も出る）。probe の hash の不一致は probe の tile の判定の不具合で、Q1 が直した。
 - Video Player の 1080p30 は約 15 fps（shown 76・late 224）。VPU の frame を 1 枚ずつ約 32 ms 待つのが主因（cached の写しで readback は 2.5 ms に）。次は複数の picture を同時に渡す pipeline（新しい Phase の候補、ユーザーの判断で）。
 - 詳細は [phase006](phase006/phase.md) の「実機の結果」。
+
+## メモリ帯域の試算（2026-10-16 Q1、ユーザーの依頼「メモリ帯域を計算してみてください」、実測ではない）
+
+全画面・画面 1280x720 の今の道（A1・A3 は revert 済み）。1 frame の大きさ: 720p の NV12 1.38 MB、1080p の NV12 3.11 MB、画面の RGBA 3.69 MB。
+
+| 段（720p 動画の 1 表示 frame） | 読み＋書き |
+| --- | --- |
+| VPU の decode（出力 1＋参照の読み 約 2 枚） | 約 4.1 MB |
+| TFU で Y・UV を UIF へ | 2.8 MB |
+| Video Player の shader（NV12 を読み RGBA を書く） | 5.1 MB |
+| libvulkan の present の写し | 7.4 MB |
+| compositor の TFU（窓の画） | 7.4 MB |
+| compositor の合成 | 7.4 MB |
+| compositor の present の写し | 7.4 MB |
+| 計 | 約 42 MB／frame |
+
+HVS の scanout（3.69 MB × 60 Hz ≈ 0.22 GB/s）を足して、720p30 約 1.5 GB/s、720p60 約 2.7 GB/s、1080p30 約 1.8 GB/s、1080p60 約 3.3 GB/s。Pi 4 の LPDDR4-3200 ×32 bit の理論値は 12.8 GB/s、持続の実効は 3〜4 割（約 4〜5 GB/s、memcpy で 2.5〜3 GB/s）、tile・参照の読みは連続でないので効率はさらに下がり、CPU・VPU・V3D・HVS が 1 本の bus を取り合う。→ 720p30 は収まり、720p60・1080p は実効の上限に当たる（60p が約 30 fps で頭打ちの実測と合う）。decoder の出力を HVS に直に載せる道なら 1 frame 約 4〜6 MB で 1080p も届く計算。推定: 参照の読みの量・実効の帯域・access の効率は未測定。
+ユーザーの判断（2026-10-16）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」「Pi4は直接的にデコーダを使うなら1080pもギリギリいけるのでしょうが、Vulkanのバッファにデコードする場合はこれが限界なんです。」
