@@ -120,14 +120,13 @@
 #define VRAM_RETRY_ROUND_BIND		3U
 
 /*
- * The MMU's record of the last fault no fault buffer took (Turing's
- * "other" fault), where a BAR's faulted access
- * lands: the address, the instance word whose low bits name the engine
- * (4 is BAR1), and the information word (bits 4:0 the fault's type, 2 an
- * invalid page entry; bits 14:8 the client, 0x07 the CPU's read and 0x08
- * its posted write through a BAR; bits 19:16 the access, 0 a read and 1 a
- * write; bit 31 the record's validity).  The status word's bits 7:0 say
- * which window's accesses were dropped (bit 1 BAR1 in its virtual mode)
+ * The MMU's record of the last fault no fault buffer took (Turing's "other"
+ * fault), where a BAR's faulted access lands: the address, the instance word
+ * whose low bits name the engine (4 is BAR1), and the information word (bits
+ * 4:0 the fault's type, 2 an invalid page entry; bits 14:8 the client, 0x07 the
+ * CPU's read and 0x08 its posted write through a BAR; bits 19:16 the access, 0
+ * a read and 1 a write; bit 31 the record's validity).  The status word's bits
+ * 7:0 say which window's accesses were dropped (bit 1 BAR1 in its virtual mode)
  * and bit 31 that a record waits; each clears when written as 1.
  *
  * Values referenced: Linux v6.19

@@ -62,12 +62,11 @@ struct nvrtx_node;
 #define NVRTX_IMAGE_MAX_BYTES		0x40000000U
 
 /*
- * The handles the driver gives its objects of the resource manager, the
- * values below (the space's root is refused under other handles).  A
- * client handle is in the resource server's client range,
- * 0xc1d0 in the high half and the client's number in the low half; the
- * resource server re-encodes a client handle outside it.  The channel's
- * handle carries its channel number.
+ * The handles the driver gives its objects of the resource manager, the values
+ * below (the space's root is refused under other handles).  A client handle is
+ * in the resource server's client range, 0xc1d0 in the high half and the
+ * client's number in the low half; the resource server re-encodes a client
+ * handle outside it.  The channel's handle carries its channel number.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/handles.h (NVKM_RM_CLIENT,

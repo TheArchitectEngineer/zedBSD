@@ -136,12 +136,12 @@ struct nvrtx_node_entry {
  * does the work adds with relaxed atomics; the message drain takes and clears
  * them.
  *
- * The GPU's side of the runs: timed the runs the GPU's timer
- * measured and gpu_us their time on the GPU, run_max_us and gpu_max_us
- * the longest of each kind; draws and quads the application's and the
- * executor's own draws in them, push_bytes their push buffers.  streams,
- * stream_bytes and stream_us are the command streams copied out of the
- * blobs through the window and the time those copies took.
+ * The GPU's side of the runs: timed the runs the GPU's timer measured and
+ * gpu_us their time on the GPU, run_max_us and gpu_max_us the longest of each
+ * kind; draws and quads the application's and the executor's own draws in them,
+ * push_bytes their push buffers.  streams, stream_bytes and stream_us are the
+ * command streams copied out of the blobs through the window and the time those
+ * copies took.
  */
 struct nvrtx_node_perf {
 	uint64_t runs;

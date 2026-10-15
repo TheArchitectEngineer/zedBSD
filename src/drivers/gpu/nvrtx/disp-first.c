@@ -9,16 +9,16 @@
  * The records of the display's first commit that touch no hardware (the
  * takeover stage).
  *
- * The takeover sends this when it starts the display and commits the
- * first mode on a head the firmware lit (the Turing core and window
- * classes): the core's start (its notifier object and every
- * window's usage bounds, without a release), then one core release with
- * the output's control, the head's mode and every window's owner, the
- * head's output LUT, the window's image and input LUT released interlocked
- * with the core, and a second core release interlocked with the window.
- * Also here: the mode's raster words from a timing, the identity LUTs, the
- * EDID's preferred timing and HDMI facts, the AVI infoframe's words and the
- * resource manager's parameters of the controls the takeover sends.
+ * The takeover sends this when it starts the display and commits the first mode
+ * on a head the firmware lit (the Turing core and window classes): the core's
+ * start (its notifier object and every window's usage bounds, without a
+ * release), then one core release with the output's control, the head's mode
+ * and every window's owner, the head's output LUT, the window's image and input
+ * LUT released interlocked with the core, and a second core release interlocked
+ * with the window.  Also here: the mode's raster words from a timing, the
+ * identity LUTs, the EDID's preferred timing and HDMI facts, the AVI
+ * infoframe's words and the resource manager's parameters of the controls the
+ * takeover sends.
  */
 
 #include <stdbool.h>
@@ -338,10 +338,10 @@ nvrtx_disp_first_core_release(
 
 /*
  * Writes a head's view without a release, for a Volta or later head: the
- * viewport's input size (the picture the windows
- * show) and its output size (the mode's visible size), each width in bits
- * 15:0 and height in 31:16.  An input smaller than the output is enlarged
- * by the head's scaler; the core's release that follows takes it in.
+ * viewport's input size (the picture the windows show) and its output size (the
+ * mode's visible size), each width in bits 15:0 and height in 31:16.  An input
+ * smaller than the output is enlarged by the head's scaler; the core's release
+ * that follows takes it in.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/dispnv50/headc37d.c (headc37d_view).

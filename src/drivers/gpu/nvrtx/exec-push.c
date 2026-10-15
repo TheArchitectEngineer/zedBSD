@@ -377,10 +377,10 @@ nvrtx_exec_target(
 }
 
 /*
- * Writes viewport 0 from a VkViewport's six floats (x, y, width, height,
- * min depth, max depth, as their bits): the scale half the
- * size, the offset its corner plus that, the depth's scale its range, and
- * the clip its rectangle and depth range.
+ * Writes viewport 0 from a VkViewport's six floats (x, y, width, height, min
+ * depth, max depth, as their bits): the scale half the size, the offset its
+ * corner plus that, the depth's scale its range, and the clip its rectangle and
+ * depth range.
  *
  * Returns where the push buffer goes on.
  *
@@ -787,9 +787,9 @@ nvrtx_exec_texture_header(
 }
 
 /*
- * Writes a sampler: the address modes, the font filter
- * and sRGB border fields, the filters (nearest or linear, one level), the
- * seamless cube setting and the coordinates' normalization.
+ * Writes a sampler: the address modes, the font filter and sRGB border fields,
+ * the filters (nearest or linear, one level), the seamless cube setting and the
+ * coordinates' normalization.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c
  * (nvk_sampler_get_header).

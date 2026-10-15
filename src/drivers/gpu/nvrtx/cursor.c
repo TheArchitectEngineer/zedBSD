@@ -8,15 +8,14 @@
 /*
  * The cursor plane of the nvrtx GPU device's display (the gpu-device stage).
  *
- * The taken-over head's hardware cursor shows a 64 by 64 A8R8G8B8 image
- * with premultiplied alpha over the window, at a position the cursor's own
- * PIO channel takes (scanout.c: the core's cursor methods and the cursor
- * channel's position and update).  The image
- * is copied into one of two slots of a buffer object in the VRAM, so a
- * shown cursor keeps reading the old slot until the core's update that
- * names the new one has finished; a new image while that update is still
- * out is refused with EBUSY for that moment.  A move of a shown cursor
- * only writes the cursor channel and never waits.
+ * The taken-over head's hardware cursor shows a 64 by 64 A8R8G8B8 image with
+ * premultiplied alpha over the window, at a position the cursor's own PIO
+ * channel takes (scanout.c: the core's cursor methods and the cursor channel's
+ * position and update).  The image is copied into one of two slots of a buffer
+ * object in the VRAM, so a shown cursor keeps reading the old slot until the
+ * core's update that names the new one has finished; a new image while that
+ * update is still out is refused with EBUSY for that moment.  A move of a shown
+ * cursor only writes the cursor channel and never waits.
  *
  * Every operation checks the open's lease first; the lease's end hides the
  * cursor and forgets its image.  The state is the node's, under its lock.

@@ -8,14 +8,14 @@
 /*
  * The work channel of the nvrtx driver: the parts that touch no hardware.
  *
- * The work channel (work.c) is the graphics channel
- * the GPU device keeps for the work it is given: one address space the
- * driver owns over the 512 MiB at NVRTX_WORK_VA_BASE, whose low part holds
- * the graphics context's buffers at the golden context's addresses, then
- * the driver's own pages (the ring, the semaphore and the fences' push
- * buffers), then the runs the device maps for its users.  Each submission
- * takes two ring entries: the caller's push buffer segment, then a fence
- * of the driver's that releases the next value of the semaphore.
+ * The work channel (work.c) is the graphics channel the GPU device keeps for
+ * the work it is given: one address space the driver owns over the 512 MiB at
+ * NVRTX_WORK_VA_BASE, whose low part holds the graphics context's buffers at
+ * the golden context's addresses, then the driver's own pages (the ring, the
+ * semaphore and the fences' push buffers), then the runs the device maps for
+ * its users.  Each submission takes two ring entries: the caller's push buffer
+ * segment, then a fence of the driver's that releases the next value of the
+ * semaphore.
  */
 
 #ifndef DRIVERS_GPU_NVRTX_WORK_H

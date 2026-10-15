@@ -6,9 +6,9 @@
  */
 
 /*
- * The executor's command pools and command buffers:
- * their allocation, and the begin, end and reset of a recording.  The
- * recorded commands themselves are vk-record.c's.
+ * The executor's command pools and command buffers: their allocation, and the
+ * begin, end and reset of a recording.  The recorded commands themselves are
+ * vk-record.c's.
  *
  * A command buffer keeps its records until it is begun again, reset, or
  * freed; each record holds the objects it names, so they outlive their

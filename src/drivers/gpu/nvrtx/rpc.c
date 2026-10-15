@@ -169,10 +169,9 @@ nvrtx_rpc_send(
 /*
  * Waits for the reply (or event) of a function, serving other events meanwhile.
  *
- * The reply is matched on its function alone; the sequence is kept for
- * the marks.  The payload is left in gpu->reply with
- * its length.  Returns EIO when the reply carries an error result,
- * ETIMEDOUT when it did not come in time.
+ * The reply is matched on its function alone; the sequence is kept for the
+ * marks.  The payload is left in gpu->reply with its length.  Returns EIO when
+ * the reply carries an error result, ETIMEDOUT when it did not come in time.
  *
  * Procedure referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/rpc.c (r535_gsp_msg_recv,

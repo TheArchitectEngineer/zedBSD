@@ -6,9 +6,8 @@
  */
 
 /*
- * What the executor's create and destroy commands share: the
- * tail of a create, its reply, the plain destroy, and the result
- * an errno becomes on the wire.
+ * What the executor's create and destroy commands share: the tail of a create,
+ * its reply, the plain destroy, and the result an errno becomes on the wire.
  */
 
 #include <stdbool.h>
