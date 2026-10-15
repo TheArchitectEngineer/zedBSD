@@ -3,7 +3,7 @@
 # WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成、担当未定。次の Q1 が割り当てる）
+Status: planning（2026-10-16 作成。p001 の設計を P2 が q991 で実施中）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -32,6 +32,6 @@ Resume point: p001（設計）から。
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| p001 | 設計: PRM からの display の model（pipe・transcoder・DDI・PHY（combo・Dekel/TC）・PLL・plane・watermark・power well・DMC・AUX・GMBUS・VBT・opregion）、外向きの口、データの表の引用の方法、書き直しの順序と Phase の分割、試験の道（host と 5330）、LW の見積もり。design-reviewer を通す | planned |
+| [p001](phase001/phase.md) | 設計: PRM からの display の model（pipe・transcoder・DDI・PHY（combo・Dekel/TC）・PLL・plane・watermark・power well・DMC・AUX・GMBUS・VBT・opregion）、外向きの口、データの表の引用の方法、書き直しの順序と Phase の分割、試験の道（host と 5330）、LW の見積もり。design-reviewer を通す | planned |
 | p002〜 | 群ごとの書き直し（p001 で分割。WS244 の案の順: edid → vbt → aux・gmbus → backlight・panel → power・dmc → clock・PLL → watermark → pipe・plane・ddi・dp → takeover・hotplug） | planned |
 | 最後 | 規約の全文の見直し、出典の監査（file の上部に出典が無く、block ごとに付いていること） | planned |
