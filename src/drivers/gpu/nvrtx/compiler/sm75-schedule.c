@@ -82,31 +82,55 @@
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 
+/* From Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs, BarAlloc (lines 186-196: six scoreboards). */
 /* The scoreboards an instruction may set, and the mask of all of them. */
 #define NVRTX_SM75_SCOREBOARDS		6U
 #define NVRTX_SM75_SCOREBOARD_ALL	0x3fU
 
+/* zedBSD's own. */
 /* The general registers and predicates the pass tracks. */
 #define NVRTX_SM75_TRACKED_GPRS		256U
 #define NVRTX_SM75_TRACKED_PREDICATES	8U
 
+/*
+ * From nak/calc_instr_deps.rs, calc_delays (lines 692-698: a scoreboard is
+ * waited for 2 cycles after it is set at the earliest).
+ */
 /* The cycles after a scoreboard is set before an instruction may wait for it. */
 #define NVRTX_SM75_SCOREBOARD_SETTLE	2U
 
+/*
+ * From nak/sm75_instr_latencies.rs, read_after_write and
+ * pred_read_after_write with no reader (lines 205-412, 695-776),
+ * nak/sm80_instr_latencies.rs, the same (lines 259-576, 889-958), and
+ * nak/sm70.rs, worst_latency and instr_latency (lines 24-67, 263-273).
+ */
 /* The worst latency of a fixed-latency general register and predicate result, which a block's end waits out. */
 #define NVRTX_SM75_WORST_GPR		6U
 #define NVRTX_SM75_WORST_PREDICATE	13U
 
+/*
+ * From nak/sm75_instr_latencies.rs, write_after_write and write_after_read
+ * (lines 414-693), and nak/sm80_instr_latencies.rs, the same (lines
+ * 578-842), at their largest.
+ */
 /* A write after a write, and a variable-latency write after a fixed-latency write or read. */
 #define NVRTX_SM75_WAW_FIXED		2U
 #define NVRTX_SM75_WAW_DECOUPLED	6U
 #define NVRTX_SM75_WAR_DECOUPLED	2U
 
+/*
+ * From nak/sm70.rs, exec_latency (lines 169-185), and
+ * nak/calc_instr_deps.rs, calc_delays (lines 811-818: a NOP of 2 cycles
+ * after an instruction with an execution latency).  EXIT's 5 is the delay
+ * the CUDA compiler writes on EXIT, not from Mesa.
+ */
 /* The fewest cycles after a barrier or a memory barrier (its execution takes 5 on Turing, 6 from SM80 on), and after EXIT. */
 #define NVRTX_SM75_DELAY_SYNC_MIN	6U
 #define NVRTX_SM75_DELAY_EXIT_MIN	5U
 #define NVRTX_SM75_DELAY_AFTER_SYNC	2U
 
+/* zedBSD's own estimates. */
 /* The latencies the reordering assumes for the variable-latency instructions (only priorities, never correctness). */
 #define NVRTX_SM75_GUESS_TEXTURE	100U
 #define NVRTX_SM75_GUESS_GLOBAL		300U
@@ -115,6 +139,7 @@
 #define NVRTX_SM75_GUESS_UNIT		15U
 #define NVRTX_SM75_GUESS_SPECIAL	20U
 
+/* zedBSD's own. */
 /* A pair the reordering must keep in order, and a block not yet ended. */
 #define NVRTX_SM75_NO_DEPENDENCE	0xffffffffU
 
@@ -122,6 +147,7 @@
 #define NVRTX_SM75_NO_BAR		0xffU
 #define NVRTX_SM75_NO_PREDICATE		NVRTX_SM75_PT
 
+/* zedBSD's own. */
 /*
  * What the pass knows of one general register or predicate: whether a
  * fixed-latency write is in flight, its class and its cycle; the
@@ -727,6 +753,11 @@ nvrtx_sm75_fixed(
 	return 0;
 }
 
+/*
+ * The latency classes from nak/sm75_instr_latencies.rs, op_category and
+ * needs_scoreboards (lines 49-203, 1187-1208), and
+ * nak/sm80_instr_latencies.rs, the same (lines 85-257, 1433-1453).
+ */
 /* Reads the operands of an ALU instruction by its 9-bit opcode; nonzero for one not known. */
 static int
 nvrtx_sm75_operands_alu(
@@ -839,6 +870,12 @@ nvrtx_sm75_operands_alu(
 	return 0;
 }
 
+/*
+ * The latency classes from nak/sm75_instr_latencies.rs, op_category and
+ * needs_scoreboards (lines 49-203, 1187-1208), and
+ * nak/sm80_instr_latencies.rs, the same (lines 85-257, 1433-1453:
+ * DecoupledAgu for the address unit's reads).
+ */
 /* Reads the operands of an instruction of its own 12-bit opcode; nonzero for one not known. */
 static int
 nvrtx_sm75_operands_other(
@@ -1163,6 +1200,11 @@ nvrtx_sm75_constrain(
 }
 
 /*
+ * The policy (the lowest free scoreboard, else the one set longest ago)
+ * follows nak/calc_instr_deps.rs, BarAlloc, try_find_free_bar and
+ * free_some_bar (lines 214-228).
+ */
+/*
  * Chooses the scoreboards a variable-latency instruction sets: one its
  * result releases, when it writes a register, and one the read of its
  * sources releases, when it reads one.  A scoreboard is free when nothing
@@ -1348,6 +1390,7 @@ nvrtx_sm75_raw(
 	return latency;
 }
 
+/* The values from nak/sm75_instr_latencies.rs, read_after_write (lines 205-412). */
 /*
  * Reports Turing's cycles from a fixed-latency register write to a read
  * (sm75_instr_latencies.rs, read_after_write; the addend is the
@@ -1395,6 +1438,7 @@ nvrtx_sm75_raw_turing(
 	return 5U;
 }
 
+/* The values from nak/sm80_instr_latencies.rs, read_after_write (lines 259-576). */
 /*
  * Reports Ampere's and Ada's cycles from a fixed-latency register write to
  * a read (sm80_instr_latencies.rs, read_after_write: the writers are
@@ -1438,6 +1482,11 @@ nvrtx_sm75_raw_ampere(
 	return 5U;
 }
 
+/*
+ * The values from nak/sm75_instr_latencies.rs, pred_read_after_write (lines
+ * 695-776), and nak/sm80_instr_latencies.rs,
+ * PredLatencySM80::pred_read_after_write (lines 889-958).
+ */
 /*
  * Reports the cycles from a comparison's predicate (an ALU write) to a
  * read: 4 for an ALU reader, 5 for a float or IMAD one, and for a guard, a
