@@ -39,7 +39,13 @@
 #define DEVICE_F32_32767		0x46fffe00U
 #define DEVICE_F32_2048			0x45000000U
 
-/* NVIDIA's PCI vendor, and the version and driver version the device reports (libvulkan needs a native 1.1). */
+/*
+ * NVIDIA's PCI vendor, and the version and driver version the device
+ * reports (libvulkan needs a native 1.1).
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nv_device_info.h
+ * (NVIDIA_VENDOR_ID).
+ */
 #define DEVICE_VENDOR			0x10deU
 #define DEVICE_API_VERSION		VK_MAKE_VERSION(1, 1, 0)
 #define DEVICE_DRIVER_VERSION		1U

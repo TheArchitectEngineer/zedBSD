@@ -6,8 +6,8 @@
  */
 
 /*
-  * The graphics golden context and the TU10x scrubber (the golden-context
-  * stage).
+ * The graphics golden context and the TU10x scrubber (the golden-context
+ * stage).
  *
  * Before any graphics channel can run, the resource manager builds a golden
  * context: the state every new graphics context starts from.  It does so
@@ -39,7 +39,13 @@
 #define GR_ARENA_BYTES			0x8000000ULL
 #define GR_ARENA_ALIGN			0x200000ULL
 
-/* The arena's parts. */
+/*
+ * The arena's parts.  The golden channel's instance block is 0x12000
+ * bytes, and a channel's USERD lies one page after its instance block.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gr.c (r535_gr_oneinit).
+ */
 #define GR_GOLDEN_TABLES_AT		0x000000ULL
 #define GR_SCRUBBER_TABLES_AT		0x100000ULL
 #define GR_GOLDEN_INSTANCE_AT		0x200000ULL
@@ -62,12 +68,25 @@
 #define GR_SCRUBBER_CHID		2U
 #define GR_RING_ENTRIES			(0x1000U / 8U)
 
-/* The chips that need the scrubber channel. */
+/*
+ * The chips that need the scrubber channel.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/device/base.c (nvkm_device_ctor,
+ * the chipset numbers).
+ */
 #define GR_CHIPSET_TU102		0x162U
 #define GR_CHIPSET_TU104		0x164U
 #define GR_CHIPSET_TU106		0x166U
 
-/* The promote call's numbers of the two access maps. */
+/*
+ * The promote call's numbers of the two access maps.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gr.h
+ * (NV2080_CTRL_GPU_PROMOTE_CTX_BUFFER_ID_PRIV_ACCESS_MAP,
+ * NV2080_CTRL_GPU_PROMOTE_CTX_BUFFER_ID_UNRESTRICTED_PRIV_ACCESS_MAP).
+ */
 #define GR_BUFFER_PRIV_MAP		10U
 #define GR_BUFFER_UNRESTRICTED_MAP	11U
 

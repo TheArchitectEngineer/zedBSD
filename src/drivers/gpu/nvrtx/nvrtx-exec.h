@@ -26,7 +26,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The vertex attributes and streams the class has, and the ones the executor sets. */
+/*
+ * The vertex attributes the class has, and the streams the executor sets.
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_draw.c
+ * (nvk_flush_vi_state, the 32 attributes).
+ */
 #define NVRTX_EXEC_ATTRIBUTES		32U
 #define NVRTX_EXEC_STREAMS		4U
 

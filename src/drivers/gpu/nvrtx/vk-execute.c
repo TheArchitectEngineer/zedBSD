@@ -56,7 +56,13 @@
 #define EXECUTE_ZERO_AT			(1664U * 1024U)
 #define EXECUTE_CORNERS_AT		(1668U * 1024U)
 
-/* The headers and the samplers of one push buffer, each eight words. */
+/*
+ * The headers and the samplers of one push buffer, each eight words.
+ *
+ * Value referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597tex.h (the 256-bit
+ * NVC597_TEXHEAD_PITCH_* and NVC597_TEXSAMP* layouts).
+ */
 #define EXECUTE_POOL_ENTRIES		2048U
 #define EXECUTE_POOL_ENTRY_BYTES	32U
 
@@ -67,7 +73,12 @@
 /* What one record writes at most into the push buffer (a transfer of NVRTX_VK_REGIONS_MAX quads), before the run is started to make room. */
 #define EXECUTE_RECORD_ROOM		32768U
 
-/* A texture handle: the header's index, and the sampler's from bit 20. */
+/*
+ * A texture handle: the header's index, and the sampler's from bit 20.
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_descriptor_types.h
+ * (nvk_sampled_image_descriptor).
+ */
 #define EXECUTE_HANDLE_SAMPLER_SHIFT	20U
 
 /* The quad's corners: two triangles of six corners, two floats each. */
@@ -79,7 +90,13 @@
 #define EXECUTE_FLOAT_ONE		0x3f800000U
 #define EXECUTE_INTERNAL_PUSH_BYTES	0x20U
 
-/* A buffer written as a target: its start and its row pitch on these boundaries. */
+/*
+ * A buffer written as a target: its start and its row pitch on these
+ * boundaries.
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/nil/image.rs (Image::new_linear,
+ * the 128-byte row alignment for rendering).
+ */
 #define EXECUTE_BUFFER_START_ALIGN	256U
 #define EXECUTE_BUFFER_PITCH_ALIGN	128U
 
@@ -88,6 +105,11 @@
  * bit 5 and the pitch from bit 5, so the texture starts on the 32-byte
  * boundary at or before the region and the region begins that many pixels
  * into its rows.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc597tex.h
+ * (NVC597_TEXHEAD_PITCH_ADDRESS_BITS31TO5,
+ * NVC597_TEXHEAD_PITCH_PITCH_BITS20TO5).
  */
 #define EXECUTE_TEXTURE_START_ALIGN	32U
 #define EXECUTE_TEXTURE_PITCH_ALIGN	32U
@@ -323,9 +345,9 @@ execute_open(
 }
 
 /*
-  * Compiles the executor's quad programs (draw-test's textured quad: the
-  * corners placed by the push constants' rectangle, the texture read at the
-  * push constants' texture rectangle) into a run of their own.
+ * Compiles the executor's quad programs (draw-test's textured quad: the
+ * corners placed by the push constants' rectangle, the texture read at the
+ * push constants' texture rectangle) into a run of their own.
  */
 static int
 execute_programs(
@@ -416,8 +438,8 @@ execute_compile(
  * header and sampler pools, and the shader caches emptied; nothing of the
  * run's parts is used yet.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
- * (nvk_queue_init_context_state) and nvk_cmd_draw.c
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state) and src/nouveau/vulkan/nvk_cmd_draw.c
  * (nvk_push_draw_state_init).
  */
 static void

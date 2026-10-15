@@ -25,7 +25,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The address space: one first-level directory entry's 512 MiB. */
+/*
+ * The address space: one first-level directory entry's 512 MiB.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c (tu102_vmm, the
+ * 29-bit level).
+ */
 #define NVRTX_WORK_VA_BASE		0x20000000ULL
 #define NVRTX_WORK_VA_BYTES		0x20000000ULL
 
@@ -37,7 +43,13 @@
 #define NVRTX_WORK_RING_ENTRIES		512U
 #define NVRTX_WORK_FENCE_BYTES		64U
 
-/* The most words one ring entry carries (its length field, bits 30:10 of its upper word). */
+/*
+ * The most words one ring entry carries (its length field, bits 30:10 of
+ * its upper word).
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (NVC46F_GP_ENTRY1_LENGTH).
+ */
 #define NVRTX_WORK_SEGMENT_WORDS_MAX	0x1fffffU
 
 /*

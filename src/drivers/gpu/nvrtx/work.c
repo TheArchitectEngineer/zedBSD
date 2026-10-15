@@ -8,10 +8,10 @@
 /*
  * The work channel (work-channel, nvrtx.work=1).
  *
-  * After the golden context (golden-context) and the VRAM allocator
-  * (vram-window) the driver makes the graphics channel the GPU device keeps
-  * for the work it is given, the way the first compute launch (compute.c)
-  * makes its channel, with both classes on the one channel:
+ * After the golden context (golden-context) and the VRAM allocator
+ * (vram-window) the driver makes the graphics channel the GPU device keeps
+ * for the work it is given, the way the first compute launch (compute.c)
+ * makes its channel, with both classes on the one channel:
  *
  *   1. an arena of the VRAM allocator for the space's page tables, the
  *      channel's instance block and USERD, and its own context buffers;
@@ -51,6 +51,11 @@
  * Where the timed runs (nvrtx.vk.perf=1) leave their times in the
  * semaphore's page: the fence's 16 bytes at its start (value, then the
  * timer at byte 8), and the start stamp's 16 bytes after them.
+ *
+ * Value referenced: NVIDIA open-gpu-doc
+ * manuals/turing/tu104/dev_pbdma.ref.txt
+ * (NV_UDMA_SEM_EXECUTE_RELEASE_TIMESTAMP, the 16-byte release with a
+ * timestamp).
  */
 #define WORK_FENCE_TIMER_AT		8U
 #define WORK_START_AT			0x10U
@@ -75,12 +80,30 @@
 /* The channel number on the graphics runlist (the golden context 1, the scrubber 2, the compute launch 3). */
 #define WORK_CHID			4U
 
-/* USERD's get and put of the ring, and the doorbell: runlist in bits 22:16, channel in bits 11:0. */
+/*
+ * USERD's get and put of the ring, and the doorbell: runlist in bits 22:16,
+ * channel in bits 11:0.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (Nvc46fControl_struct), NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/turing/tu102/dev_vm.h
+ * (NV_VIRTUAL_FUNCTION_DOORBELL) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/vfn/tu102.c (tu102_vfn_new) and
+ * drivers/gpu/drm/nouveau/nvkm/engine/fifo/tu102.c
+ * (tu102_chan_doorbell_handle).
+ */
 #define WORK_USERD_RING_GET		0x88U
 #define WORK_USERD_RING_PUT		0x8cU
 #define WORK_REG_DOORBELL		0xbb0090U
 
-/* The promote's number of the unrestricted access map, which a channel sharing the global buffers leaves out. */
+/*
+ * The promote's number of the unrestricted access map, which a channel
+ * sharing the global buffers leaves out.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/gr.h
+ * (NV2080_CTRL_GPU_PROMOTE_CTX_BUFFER_ID_UNRESTRICTED_PRIV_ACCESS_MAP).
+ */
 #define WORK_BUFFER_UNRESTRICTED_MAP	11U
 
 /* How long the first fence and a free ring entry are waited for, and how often the CPU looks. */
@@ -115,9 +138,9 @@ static uint64_t work_align(uint64_t value, uint32_t shift);
  * Runs work-channel: the arena, the space, the channel with both classes and
  * its first fence.
  *
-  * Needs the golden context of golden-context and the VRAM allocator of
-  * vram-window.  A failure is returned; the finish's stop frees whatever
-  * objects were made.
+ * Needs the golden context of golden-context and the VRAM allocator of
+ * vram-window.  A failure is returned; the finish's stop frees whatever
+ * objects were made.
  */
 int
 nvrtx_work_start(
@@ -269,7 +292,7 @@ nvrtx_work_stop(
 }
 
 /*
- * Gives back D1's system-memory buffers and its arena.
+ * Gives back the work channel's system-memory buffers and its arena.
  *
  * Only once the GPU no longer reads them: after the GSP is stopped.
  */
@@ -877,6 +900,9 @@ work_space(
 /*
  * Makes the graphics channel: its instance block naming the tables, the
  * channel on the graphics engine and the promote of its context buffers.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/fifo.c (r535_chan_alloc).
  */
 static int
 work_channel(

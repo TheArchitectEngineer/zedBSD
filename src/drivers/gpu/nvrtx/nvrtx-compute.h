@@ -26,17 +26,32 @@
 /*
  * The compute class of Turing, and the subchannel it is bound to.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
- * (nvk_queue_init_context_state).
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc5c0.h (TURING_COMPUTE_A) and
+ * src/nouveau/vulkan/nvk_queue.c (nvk_queue_init_context_state).
  */
 #define NVRTX_CLASS_COMPUTE		0xc5c0U
 #define NVRTX_COMPUTE_SUBCHANNEL	1U
 
-/* A QMD is 64 words (256 bytes) and is read at a 256-byte boundary. */
+/*
+ * A QMD is 64 words (256 bytes) and is read at a 256-byte boundary.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc3c0qmd.h (the 2048-bit
+ * NVC3C0_QMDV02_02_* layout) and src/nouveau/vulkan/nvk_cmd_dispatch.c
+ * (nvk_cmd_upload_qmd).
+ */
 #define NVRTX_QMD_WORDS			64U
 #define NVRTX_QMD_ALIGN			0x100U
 
-/* The constant buffers a QMD binds, and the alignment of their addresses and sizes. */
+/*
+ * The constant buffers a QMD binds, and the alignment of their addresses
+ * and sizes.
+ *
+ * Value referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc3c0qmd.h
+ * (NVC3C0_QMDV02_02_CONSTANT_BUFFER_VALID(i), eight buffers).
+ */
 #define NVRTX_QMD_CBUFS			8U
 #define NVRTX_QMD_CBUF_ALIGN		0x100U
 

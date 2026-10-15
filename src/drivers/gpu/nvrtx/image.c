@@ -43,7 +43,13 @@
 /* The longest section name compared, the terminating zero included. */
 #define IMAGE_SECTION_NAME_MAX		32U
 
-/* The booter's meta data: the fuse version, the engine and the ucode number, three words. */
+/*
+ * The booter's meta data: the fuse version, the engine and the ucode
+ * number, three words.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_booter_ctor).
+ */
 #define IMAGE_META_BYTES		12U
 #define IMAGE_META_FUSE_AT		0U
 #define IMAGE_META_ENGINE_AT		4U
@@ -54,6 +60,12 @@
  * later, one word per ucode number from 1, picked by the ucode's engine
  * bits: bit 0 (the booters of the secure processor carry it), bit 2, and
  * bit 10 (FWSEC on the GSP's falcon carries it), checked in that order.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/ga100.c
+ * (ga100_flcn_fw_signature) and NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/ampere/ga100/dev_fuse.h
+ * (NV_FUSE_OPT_FPF_SEC2_UCODE1_VERSION, NV_FUSE_OPT_FPF_NVDEC_UCODE1_VERSION,
+ * NV_FUSE_OPT_FPF_GSP_UCODE1_VERSION).
  */
 #define IMAGE_ENGINE_BIT0		0x001U
 #define IMAGE_ENGINE_BIT2		0x004U
@@ -74,6 +86,11 @@ static int image_booter_meta(const uint8_t *file, size_t size, size_t inner, str
  *
  * Returns 0 with the payload, signature and load ranges filled, or EINVAL
  * when a header or a range it names does not fit the file.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (tu102_gsp_booter_ctor)
+ * and drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c
+ * (ga102_gsp_booter_ctor).
  */
 int
 nvrtx_booter_parse(
@@ -211,6 +228,9 @@ nvrtx_booter_signature(
  *
  * The engine the ucode runs on picks the bank, its ucode number (from 1)
  * the word.  Returns 0 for an engine or a ucode number without one.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/ga100.c
+ * (ga100_flcn_fw_signature).
  */
 uint32_t
 nvrtx_booter_fuse_register(
@@ -248,6 +268,9 @@ nvrtx_booter_fuse_register(
  * GPU that has revoked nothing takes the last (oldest) signature.  Returns
  * EINVAL when the booter is older than the fuses allow or the index is
  * beyond its signatures.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/falcon/ga100.c
+ * (ga100_flcn_fw_signature).
  */
 int
 nvrtx_booter_fuse_index(
@@ -284,6 +307,9 @@ nvrtx_booter_fuse_index(
  *
  * The descriptor gives the start tag (the start address in 256-byte units)
  * and the code's place in the payload.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_v2).
  */
 int
 nvrtx_falcon_bl_parse(
@@ -324,6 +350,10 @@ nvrtx_falcon_bl_parse(
 
 /*
  * Reads the containers of the GSP's RISC-V bootloader file.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/gsp.c
+ * (r535_gsp_rm_boot_ctor).
  */
 int
 nvrtx_bootloader_parse(
@@ -537,7 +567,13 @@ image_range(
 	return 0;
 }
 
-/* Reads the six-word file header: the inner header's place and the payload's range. */
+/*
+ * Reads the six-word file header: the inner header's place and the
+ * payload's range.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/nvfw/fw.c (nvfw_bin_hdr).
+ */
 static int
 image_bin_header(
 	const uint8_t *file,

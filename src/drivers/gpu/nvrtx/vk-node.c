@@ -31,7 +31,13 @@
 /* How long a push buffer may run before the executor calls the GPU lost. */
 #define VK_NODE_RUN_US			2000000U
 
-/* The executor's own runs are on this boundary (the page tables' big page). */
+/*
+ * The executor's own runs are on this boundary (the page tables' big page).
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c (tu102_vmm, the
+ * 16-bit page).
+ */
 #define VK_NODE_RUN_ALIGN		0x10000ULL
 
 /*

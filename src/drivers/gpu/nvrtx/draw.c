@@ -8,10 +8,10 @@
 /*
  * The first draw (the draw-test stage, nvrtx.draw=1).
  *
-  * After the first compute launch (compute-test) has run on its graphics
-  * channel, the driver makes a 3D object (TURING_A) on the same channel, with
-  * the 3D and compute classes on one channel (subchannels 0 and 1), and draws
-  * a quad three times, checking each result from the CPU:
+ * After the first compute launch (compute-test) has run on its graphics
+ * channel, the driver makes a 3D object (TURING_A) on the same channel, with
+ * the 3D and compute classes on one channel (subchannels 0 and 1), and draws
+ * a quad three times, checking each result from the CPU:
  *
  *   1. into a 256x256 pitch-linear A8B8G8R8 colour target in system
  *      memory: a clear of the whole target, then a quad of one colour over
@@ -541,8 +541,8 @@ draw_data(
  * constant buffer 0, the texture pools, the target, the one-colour
  * programs, the vertices, the clear and the quad; then checks every pixel.
  *
- * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
- * (nvk_queue_init_context_state) and nvk_cmd_draw.c
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
+ * (nvk_queue_init_context_state) and src/nouveau/vulkan/nvk_cmd_draw.c
  * (nvk_push_draw_state_init).
  */
 static int
