@@ -1,4 +1,4 @@
-# WS244 棚卸し（途中、2026-10-16 P7）
+# WS244 棚卸し（途中、2026-10-15 P7）
 
 生成: `python3 -I plan/ws244/tests/inventory.py src/drivers/gpu/i915`（`--functions` で関数ごとの C/S の行）。
 分類は heuristic（script 先頭の注記）。C = comment が Linux・Mesa の関数・file を出典に名指す、または derived を宣言した file で Linux の型名を使う。S = 出典の名指しは無いが Linux の型名を使う。O = どちらも無い。

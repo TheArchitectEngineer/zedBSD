@@ -339,4 +339,4 @@ register の割り当ての方針も変えた（`sm75-compile.c` の `nvrtx_sm75
 
 ## 13. SM86・SM89
 
-RTX 30（SM86）・RTX 40（SM89）への対応は [ws242-p002](../../ws242/phase002/phase.md)（2026-10-16 P4）。
+RTX 30（SM86）・RTX 40（SM89）への対応は [ws242-p002](../../ws242/phase002/phase.md)（2026-10-15 P4）。

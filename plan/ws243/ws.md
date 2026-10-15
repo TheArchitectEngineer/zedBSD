@@ -3,7 +3,7 @@
 # WS243: nvrtx の NVDEC で H.264 の decode（Vulkan Video）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成。code だけ先に書き、実機の debug は [WS241](../ws241/ws.md) の完了の後）
+Status: planning（2026-10-15 作成。code だけ先に書き、実機の debug は [WS241](../ws241/ws.md) の完了の後）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -11,7 +11,7 @@ Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executo
 Resume point: p001（設計）から。担当は Q1 が割り当てる。
 <!-- awesome-plan-current:end -->
 
-## ユーザーの指示（原文、2026-10-16）
+## ユーザーの指示（原文、2026-10-15）
 
 「それから、NVDECでH.264を利用できるようにするWSを作ります。Vulkan Videoで利用できるようにします。」
 「NVDECはまずコードだけ書いておいて、WS241が完了してから実機デバッグします。」

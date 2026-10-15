@@ -1,4 +1,4 @@
-# nvrtx: 値を持つ #define の block で referenced の無い物（2026-10-16 Q1 の機械的な数え、main 5aa6d52d5）
+# nvrtx: 値を持つ #define の block で referenced の無い物（2026-10-15 Q1 の機械的な数え、main 5aa6d52d5）
 
 自前の値（大きさ・時間切れ・handle の選び方など）は referenced 不要。hardware・firmware の値の block だけ出典を探して「Values referenced:」（複数行）を付ける。
 

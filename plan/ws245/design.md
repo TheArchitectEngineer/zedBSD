@@ -2,7 +2,7 @@
 
 # WS245 の設計: Gen12（ADL-P、Latitude 5330）の display の書き直し
 
-2026-10-16 P2（q991、ws245-p001）。親: [p001](phase001/phase.md)・[WS245](ws.md)。code は書かない（p002 以降）。
+2026-10-15 P2（q991、ws245-p001）。親: [p001](phase001/phase.md)・[WS245](ws.md)。code は書かない（p002 以降）。
 今の code（`src/drivers/gpu/i915/display/`、`intel/`）は「外から見える振る舞いと register の書き込みの列」を知るためだけに読んだ。
 その構造・型・名前・制御の流れは、この設計に持ち込まない（§3 の「持ち込まない物」の表）。
 
@@ -11,7 +11,7 @@
 ### 0.1 公開の PRM の入手の状況
 
 Intel の公開の PRM（Programmer's Reference Manual、intel.com の "Graphics for Linux Developer Reference"）には
-**Alder Lake（ADL-P）の版は無い**（2026-10-16 に索引 `developer-reference/1-0/overview.html` を確認: Alchemist、Rocket Lake、Tiger Lake、
+**Alder Lake（ADL-P）の版は無い**（2026-10-15 に索引 `developer-reference/1-0/overview.html` を確認: Alchemist、Rocket Lake、Tiger Lake、
 Lakefield、DG1、Ice Lake 以前のみ。01.org は閉じており、x.org の mirror は 403）。ADL-P の display は Linux の言い方で display 13（XE_LPD）で、
 Tiger Lake（display 12）の display engine に pipe D・DBUF 4 slice・PIPE_MISC2・CDCLK の squash などを足した物である。公開の文書のうち
 次の 2 組を第一の出典にする（`plan/ws245/temp/` に PDF と `pdftotext -layout` の text を置いた。git には入れない。再取得は
@@ -39,7 +39,7 @@ Linux v6.8.12 の MIT の file（`i915_reg.h`、`display/intel_*_regs.h`、`inte
   comment は自分の言葉で書き、表は値だけを持ち「Value(s) referenced: IHD-OS-TGL-Vol 12-12.21 §<章> (<表の名前>)」と出典を付ける。
   PRM の文は SPDX の id を持たない（0BSD は「code included in this document」の分だけ）。
 - Linux v6.8.12 の値の出典: `i915_reg.h`（MIT、"Permission is hereby granted"）、`display/intel_*_regs.h`（SPDX MIT）、`intel_vbt_defs.h`（MIT）、
-  `intel_opregion.c`（MIT）、`include/drm/display/drm_dp.h`（MIT）。値の引用は guardrail（2026-10-16）の「MIT・GPL の出典のデータの引用」のとおり
+  `intel_opregion.c`（MIT）、`include/drm/display/drm_dp.h`（MIT）。値の引用は guardrail（2026-10-15）の「MIT・GPL の出典のデータの引用」のとおり
   block ごとに「Value(s) referenced: Linux v6.8.12 <path> (<define・表の名前>)」。**code・comment・構造は写さない**。GPL の file（`intel_hotplug.c` など）も
   値だけなら引けるが、この設計では GPL の file から引く値は無い（hotplug の pin の bit も `i915_reg.h`（MIT）にある）。
 - 転記の形: file の先頭には出典を書かない（zedBSD の著作権 header と file の説明だけ）。出典は block の直前の複数行 comment。
@@ -199,7 +199,7 @@ package = CSS header（128 byte、module type 9、version）→ package header�
 - OpRegion: PCI config 0xFC（ASLS）→ 8 KiB、signature "IntelGraphicsMem"、mailbox 1（ACPI）0x100、2（SWSCI）0x200、3（ASLE）0x300、4（VBT 6 KiB）0x400、5（ASLE 拡張）0x1C00。VBT は 2.1+ では RVDA（OpRegion からの相対）/RVDS で mailbox 4 の外にもある。**runtime（DRDY/ARDY/CADL/DIDL、ASLE の backlight 要求、ACPI notify）は今も使っていないので、この WS でも使わない**（OpRegion は VBT を取り出すためだけ）。
 - VBT: header（"$VBT"、version）→ BDB（"BIOS_DATA_BLOCK"、block の列）。使う block: 1 general features（panel fitting、backlight 系の flag）、2 general definitions（child device: DVO port → DDI、device type、AUX channel、DDC pin、lane reversal、TC/TBT の flag、HDMI の level shift）、12 driver features、27 eDP（panel ごとの rate/lane、PPS の T 値、low vswing、HOBL）、40 LFP options、41 LFP data pointers + 42 LFP data（timing、panel type）、43 LFP backlight（PWM 周波数、controller、min brightness、極性）。version ごとの field の有無は `intel_vbt_defs.h` の comment（MIT）の値で持つ。ADL-P の DVO port → DDI の対応（DVO の A/B/C → DDI A/B/C、D/E → ADL-P の D/E、**F/G/H/I → TC1..4**、HDMI の DVO も同じ）、AUX channel の値（0x40 → A、0x10 → B、0x60..0x90 → USBC1..4）、DDC の pin（1 = DDI A、2 = DDI B、9..12 = TC1..4）は Linux の値（§5.3 V2）。
   今の code が VBT から取って使っている物（新しい xd-vbt が返す物）: port の child（kind: DP/eDP/HDMI、AUX、DDC pin、lane reversal、TC/TBT、HDMI level shift、DP の max rate/lanes）、panel type（LVDS options → 0xFF なら EDID の PnP id で探す）、LFP の DTD（generic DTD が優先）、backlight（PWM Hz、controller、min、極性、16 bit の level）、eDP（bpp、PPS の T1_T3/T8/T9/T10/T11_T12、rate/lanes、low vswing、HOBL）、general features の SSC と AFC startup、LFP power の HOBL。VBT が無い時の既定（port A = eDP、B/C = DP+HDMI、version 155）も保つ。
-- panel power と backlight の register（PCH、ADP-P）: PPS は 0xC7200 から 0x100 ごとに 2 組（index は VBT の backlight controller、index 1 は SOUTH_CHICKEN1 の bit 2 が要る）。PP_CONTROL の power cycle delay は bit 8:4（PP_DIVISOR は無い）。PWM は controller 0 が 0xC8250/54/58（CTL1/FREQ1/DUTY1、enable bit 31、極性 bit 29）、controller 1 が 0xC8350..。ACM Vol 2c の SBLC_PWM_CTL1/FREQ（C8250h/C8254h）、PP_STATUS/PP_CONTROL（C7200h/C7204h）、GMBUS0（C5100h）、SHOTPLUG_CTL_DDI/TC（C4030h/C4034h）、RAWCLK_FREQ（C6204h）は Linux の ADL-P の offset と一致する（2026-10-16 に確認）。
+- panel power と backlight の register（PCH、ADP-P）: PPS は 0xC7200 から 0x100 ごとに 2 組（index は VBT の backlight controller、index 1 は SOUTH_CHICKEN1 の bit 2 が要る）。PP_CONTROL の power cycle delay は bit 8:4（PP_DIVISOR は無い）。PWM は controller 0 が 0xC8250/54/58（CTL1/FREQ1/DUTY1、enable bit 31、極性 bit 29）、controller 1 が 0xC8350..。ACM Vol 2c の SBLC_PWM_CTL1/FREQ（C8250h/C8254h）、PP_STATUS/PP_CONTROL（C7200h/C7204h）、GMBUS0（C5100h）、SHOTPLUG_CTL_DDI/TC（C4030h/C4034h）、RAWCLK_FREQ（C6204h）は Linux の ADL-P の offset と一致する（2026-10-15 に確認）。
 - EDID: VESA E-EDID 1.4 の base block（128 byte、checksum、detailed timing 18 byte × 4、物理の大きさ、bpc は 0x14 の bit）、CEA-861 の拡張（HDMI の VSDB の有無、short video descriptor）。今の `output.c`（自前）の detailed timing の decode と CVT-RB は保つ。
 - DPCD: 0x000.. の receiver caps（rev、max rate、max lanes、enhanced framing、TPS3/4、0x00E の拡張 caps の bit → 0x2200）、0x010.. の eDP 1.4 の supported link rates（**今の code は eDP ≥ 1.4 を EINVAL で拒む。新しい xd-dp はこの表を読む**: 5330 の panel は eDP 1.1 相当なので動作は変わらない）、0x100.. の link config（BW set、lane count、TPS set、lane の swing/pre-emphasis 0x103..、downspread 0x107）、0x200.. の status（sink count、IRQ vector、lane status 0x202..、align 0x204、adjust request 0x206..）、0x600 の power、0x700.. の eDP の表示制御、0xF0000 の LTTPR（読むだけ）。address と bit は `drm_dp.h`（MIT）の値。
 - 今の AUX の規則で保つ物: 1 transaction は 20 byte まで、timeout は 4 ms（TIME_OUT_MAX = 3）、sync pulse 32/fast 18、busy の待ち 10 ms、再試行 5 回（timeout は即、receive error は 400–500 µs 後）、native の再試行 32 回、I2C-over-AUX は 16 byte 単位で DEFER は 7 回まで、eDP の AUX の前に VDD を入れる、TC port は所有中だけ。GMBUS で保つ物: 100 kHz、read は 511 byte まで（それ以上は byte count override）、待ちは 50 ms、NAK は SW_CLR_INT で片付けて 1 回だけ再試行、bit-bang の fallback は無し（今も無い）。EDID で保つ物: block ごとに 4 回まで、checksum、header の 8 byte、segment は block 2 から。
@@ -519,4 +519,4 @@ Phase ごとの出力（p002〜p007）は「新しい file + host 試験」だ�
 
 ## 8. 敵対的レビューの要約
 
-2026-10-16 P2: design-reviewer を §0〜§7 に対して起動した（対象の節、根拠の file と PRM の章、blocker/major/minor の分類を依頼）が、q991 の run が終わる時点で報告は届いていない。**レビューは未完**。届いた指摘の blocker・major を直すか、直さない理由を書き、この節に要約する作業が残る（Q1 が P2 を再開するか、別の担当が行う）。
+2026-10-15 P2: design-reviewer を §0〜§7 に対して起動した（対象の節、根拠の file と PRM の章、blocker/major/minor の分類を依頼）が、q991 の run が終わる時点で報告は届いていない。**レビューは未完**。届いた指摘の blocker・major を直すか、直さない理由を書き、この節に要約する作業が残る（Q1 が P2 を再開するか、別の担当が行う）。

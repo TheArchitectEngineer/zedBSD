@@ -95,6 +95,6 @@ T1-314 の FAIL（apps.photos.browse）は、使い回しの AAT の image（bui
 
 P1 が worktree で target 無しの make（既定の goal は disk-image）を流し、target の clang・libcxx・openssh・openssl の package の build を始めた（約 10 分で自分で止めた）。共有の toolchain は lock のまま（Q1 が `toolchain-lock.sh status` で確かめた）、worktree の中の途中の出力は Q1 が消した。→ 実装の担当（P）は個別の target（`$(BUILD)/vmunix`・`$(BUILD)/bin/<app>`・`$(BUILD)/dynamic/<lib>.so` など）を名指して make し、target 無しの make・disk-image を流さない（image を作るのは T1 か Q1）。
 
-## Pi の電源の入れ直し（2026-10-16 ユーザー）
+## Pi の電源の入れ直し（2026-10-15 ユーザー）
 
 ユーザー:「これを使って、電源のON/OFFができます。スイッチデバイスです。Piの電源をこのスイッチに接続して、あなたにON/OFFを委ねることで、自動再起動が可能になります。」→ Pi 4 の電源は SwitchBot のプラグ（AC276E42B252）につなぐ。Pi が ping・ssh とも戻らない時、試験の担当（T2）は自分で入り切りせず Q1 に知らせ、Q1 が `plan/tools/switchbot.py cycle AC276E42B252` で入れ直す（ユーザーに聞かずに行ってよい、委任済み）。入れ直しの後も戻らなければ SD の焼き直しが要るのでユーザーに知らせる。token・secret は host の `~/.config/switchbot/credentials` だけに置き、tree・log・SendMessage に書かない。

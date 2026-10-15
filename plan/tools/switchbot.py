@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # Turns a SwitchBot plug on or off through the SwitchBot cloud API (v1.1),
-# so Q1 can power-cycle a test machine that stopped answering (2026-10-16
+# so Q1 can power-cycle a test machine that stopped answering (2026-10-15
 # user: "これを使って、電源のON/OFFができます。…あなたにON/OFFを委ねることで、
 # 自動再起動が可能になります。").  Only Q1 runs it; agents ask Q1.
 #

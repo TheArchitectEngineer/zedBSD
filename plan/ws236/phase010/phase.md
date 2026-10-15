@@ -3,7 +3,7 @@
 # ws236-p010: decode の depth（VPU に複数の picture を重ねる）
 
 Parent: [WS236](../ws.md)
-Status: cleared（2026-10-16 Q1、T2 の T1-671: depth 1.4〜1.7、wait 約 5.6 ms、probe 一致）
+Status: cleared（2026-10-15 Q1、T2 の T1-671: depth 1.4〜1.7、wait 約 5.6 ms、probe 一致）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236d`）
 依存: [ws236-p008](../phase008/phase.md)（flight の仕組み）、[ws236-p009](../phase009/phase.md)（案 0 の見当）
@@ -78,12 +78,12 @@ execution の「queue の上での終わり」と「終わり（fence の signal
 - `vkQueueWaitIdle` の空の submit は飛んでいる全ての decode を待つ。後の submission の fence は前の submission の decode を待たない（Vulkan の仕様より緩い、p008 からの約束。GPU の command・probe は影響を受けない）。
 - 表示の道（videoplayer の CPU の NV12→RGB と縮小、約 60 ms／枚）は案 1（ユーザーの判断待ち）。この Phase だけでは Video.mp4 の late は大きくは減らない見込み。
 
-## T2 の T1-668（2026-10-16）: 未実施（Pi が戻らない）
+## T2 の T1-668（2026-10-15）: 未実施（Pi が戻らない）
 
-- main 1872c0d84 の kernel（cksum 1299747588 8216576、warning 0）を入れて reboot した後、Pi が ping・ssh とも 10 分以上戻らない。手順 2〜6 は未実施。前の kernel は Pi の /root/vmunix.pre-t1-668（T1-663 の kernel、cksum 3938144144）。結果 [results-20261016-t1-668.md](../../agents/T2/results-20261016-t1-668.md)。
+- main 1872c0d84 の kernel（cksum 1299747588 8216576、warning 0）を入れて reboot した後、Pi が ping・ssh とも 10 分以上戻らない。手順 2〜6 は未実施。前の kernel は Pi の /root/vmunix.pre-t1-668（T1-663 の kernel、cksum 3938144144）。結果 [results-20261015-t1-668.md](../../agents/T2/results-20261015-t1-668.md)。
 - 次: ユーザーに Pi の電源の入れ直しと画面の写真を頼む。戻らなければ SD の FAT の /boot/boot0/vmunix を前の kernel に戻す（Pi の上では /root にあるので、SD を host で読む必要がある）。
 
-## T2 の T1-671（2026-10-16、Pi 実機、main 9640a1cc1）: cleared（Q1）
+## T2 の T1-671（2026-10-15、Pi 実機、main 9640a1cc1）: cleared（Q1）
 
 - probe 3 本 PASS（28 frame MATCH、decode 平均 3.6/6.7/4.4 ms）。kernel `v3d: video:` depth 1.4〜1.7（前 1.0）、libmedia の wait 約 5.6 ms（前 28〜32 ms）。`execution failed`・EIO 無し、compositor は再生の後も生きている。
 - 再生は変わらず（1080p30 は shown 40・late 260）: 表示の道（`VIDEOPLAYER DRAW` picture 約 60 ms/枚）が支配的。この Phase の合格（depth・wait・probe・desktop）は満たした。表示は phase009 の案 1。Video.mp4 は Pi に無く未実施。

@@ -47,8 +47,8 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 | [ws236-p008](phase008/phase.md) | 再生の速さ: Video.mp4 を遅れなく（in-progress、P3、2026-10-15 ユーザー「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」）: VPU へ複数の unit を重ねる pipeline、place・readback の短縮 | 8 LW | p006 |
 | [ws236-p009](phase009/phase.md) | decoder の出力を GPU・HVS で直に使う道の調べと設計（設計済み、実装はユーザーの判断待ち、P3、2026-10-15 ユーザー「デコーダの出力は、おそらくVideoCore でテクスチャとして使える形式なのでは？それを特別に利用したらどうですか？」）: 推す順は 案 0（depth 1.0 の直し、libvulkan の私的な fence が decode を 1 枚ずつにしている見当、0.5〜2 LW）→ 案 1（videoplayer が NV12 の image を V3D で sample して描く、R8・RG8 の texture と TFU、20〜31 LW）→ 後で案 2（HVS の overlay に NV12） | 調べ 2 LW | p008 |
 | [ws236-p010](phase010/phase.md) | decode の depth（案 0、in-progress、P3、2026-10-15、実装・host 試験・build 済み、T2 の Pi 実機待ち）: libvulkan の私的な fence で decode の execution が frame まで queue を塞いでいた。kernel の executor に settling list を足し、execution は送った時点で queue を離れ、fence の signal と自分の marker だけを frame の後にした（libvulkan・libmedia は変えない） | 2 LW | p009 |
-| [ws236-p011](phase011/phase.md) | 案 1: decoder の出力を GPU の texture に、表示を GPU で（in-progress、P3、2026-10-16 ユーザーの判断「案 1 を WS236 の Phase で」）: a. TFU の probe（R8・RG8 の UIF、YUV 入力）、b. VPU の bulk を NV12 の image へ直に、c. V3D の R8・RG8 の texture と plane の view、d. libmedia の GPU の picture、e. videoplayer の描画を Vulkan に | 20〜31 LW | p009・p010 |
-| [ws236-p012](phase012/phase.md) | Pi の WSI の direct の swapchain（in-progress、P3、2026-10-16 Q1 の判断で p011 の A3 を分けた）: bcm2711 の renderer が約束する時、swapchain の image を共有の image そのものにして present の copy を無くす（libvulkan・kernel の capset の bit・compositor の opt-in）、規約の全文の見直しを含める | 4〜8 LW | p011 |
+| [ws236-p011](phase011/phase.md) | 案 1: decoder の出力を GPU の texture に、表示を GPU で（in-progress、P3、2026-10-15 ユーザーの判断「案 1 を WS236 の Phase で」）: a. TFU の probe（R8・RG8 の UIF、YUV 入力）、b. VPU の bulk を NV12 の image へ直に、c. V3D の R8・RG8 の texture と plane の view、d. libmedia の GPU の picture、e. videoplayer の描画を Vulkan に | 20〜31 LW | p009・p010 |
+| [ws236-p012](phase012/phase.md) | Pi の WSI の direct の swapchain（in-progress、P3、2026-10-15 Q1 の判断で p011 の A3 を分けた）: bcm2711 の renderer が約束する時、swapchain の image を共有の image そのものにして present の copy を無くす（libvulkan・kernel の capset の bit・compositor の opt-in）、規約の全文の見直しを含める | 4〜8 LW | p011 |
 | [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
 
 合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。
@@ -66,7 +66,7 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 - Video Player の 1080p30 は約 15 fps（shown 76・late 224）。VPU の frame を 1 枚ずつ約 32 ms 待つのが主因（cached の写しで readback は 2.5 ms に）。次は複数の picture を同時に渡す pipeline（新しい Phase の候補、ユーザーの判断で）。
 - 詳細は [phase006](phase006/phase.md) の「実機の結果」。
 
-## メモリ帯域の試算（2026-10-16 Q1、ユーザーの依頼「メモリ帯域を計算してみてください」、実測ではない）
+## メモリ帯域の試算（2026-10-15 Q1、ユーザーの依頼「メモリ帯域を計算してみてください」、実測ではない）
 
 全画面・画面 1280x720 の今の道（A1・A3 は revert 済み）。1 frame の大きさ: 720p の NV12 1.38 MB、1080p の NV12 3.11 MB、画面の RGBA 3.69 MB。
 
@@ -82,4 +82,4 @@ Resume point: p006（P3、2026-10-15、agent/p3-ws236 a7d79ec3e）: frame 0 は 
 | 計 | 約 42 MB／frame |
 
 HVS の scanout（3.69 MB × 60 Hz ≈ 0.22 GB/s）を足して、720p30 約 1.5 GB/s、720p60 約 2.7 GB/s、1080p30 約 1.8 GB/s、1080p60 約 3.3 GB/s。Pi 4 の LPDDR4-3200 ×32 bit の理論値は 12.8 GB/s、持続の実効は 3〜4 割（約 4〜5 GB/s、memcpy で 2.5〜3 GB/s）、tile・参照の読みは連続でないので効率はさらに下がり、CPU・VPU・V3D・HVS が 1 本の bus を取り合う。→ 720p30 は収まり、720p60・1080p は実効の上限に当たる（60p が約 30 fps で頭打ちの実測と合う）。decoder の出力を HVS に直に載せる道なら 1 frame 約 4〜6 MB で 1080p も届く計算。推定: 参照の読みの量・実効の帯域・access の効率は未測定。
-ユーザーの判断（2026-10-16）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」「Pi4は直接的にデコーダを使うなら1080pもギリギリいけるのでしょうが、Vulkanのバッファにデコードする場合はこれが限界なんです。」
+ユーザーの判断（2026-10-15）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」「Pi4は直接的にデコーダを使うなら1080pもギリギリいけるのでしょうが、Vulkanのバッファにデコードする場合はこれが限界なんです。」

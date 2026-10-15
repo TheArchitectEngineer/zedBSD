@@ -81,11 +81,11 @@ zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVID
 - 2026-10-15 ユーザー: nvrtx を既定で on。CONFIG は y 済み。runtime の段の既定 on・opt-out・方法 A（USB から素で起動）・GSP の firmware の image への収録は P1 の作業中の patch（plan/agents/p1/wrapup-20261015.patch、base 0e33f93cf）で未完。
 - R7d の SPH の直しは P3 の patch（plan/agents/p3/wrapup-20261015.patch、base e1e8cad65、P1 の 7ce6e4019 と同じ file を変えるので手で合わせる）。
 
-## RTX 30・40 の対応（2026-10-16 ユーザー、Q1 の記録）
+## RTX 30・40 の対応（2026-10-15 ユーザー、Q1 の記録）
 ユーザー（原文）:「nvrtxドライバは、RTX 20/30/40/50までのSMで対応できるようにしたいです。」「20/30/40は、30/40の動作確認なしで、とりあえず対応しておいてください。firmwareも追加しておきます。あと、20/30/40の全モデルで認識できるようにしてください。50は別WSを作り、あとでnvrtxに追加します。」「この作業はいったん記録してから開始してください。50はまだ開始しないでください。」
 - driver の側（P2、ws037-p009「RTX 30・40 の対応（driver）」）: 20/30/40 の全 chip（TU102・104・106・116・117、GA102・103・104・106・107、AD102・103・104・106・107）の PCI の device id と chip id の認識、chip の世代ごとの表（firmware の名前・class・QMD の版・起動の差）、firmware の package に GA10x・AD10x の GSP-RM・booter・bootloader を足す、起動・RM・class の差の切り替え。
 - compiler の側（P4、phase008 の新しい節「SM86・SM89」）: SM86・SM89 の encode・latency・規則の差を切り替え、SM75 の出力は byte 単位で不変。
 - 30/40 は実機の確かめなし（host 試験と build まで）。RTX 2070 の今の動き（方法 A で desktop）を壊さない。
 - RTX 50（Blackwell、SM120）は [WS240](../ws240/ws.md)（planning、まだ開始しない）。
 
-- 2026-10-16: RTX 30・40 の対応は [WS242](../ws242/ws.md)、描画の速さは [WS241](../ws241/ws.md) に独立（ユーザー）。
+- 2026-10-15: RTX 30・40 の対応は [WS242](../ws242/ws.md)、描画の速さは [WS241](../ws241/ws.md) に独立（ユーザー）。

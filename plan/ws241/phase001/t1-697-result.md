@@ -1,6 +1,6 @@
 # T1-697 WS241 p001: RTX の描画の速さ（X1＋計測 M1〜M3、診断）
 
-RTX 機 10.0.30.5（実機）。tree 27b361f75（main）。2026-10-16。QEMU は使っていない。
+RTX 機 10.0.30.5（実機）。tree 27b361f75（main）。2026-10-15。QEMU は使っていない。
 build: `make -j16 BUILD=build/t1/nvrtx-perf2 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk build/t1/nvrtx-perf2/vmunix`（warning 0、34 s、vmunix check PASS、cksum 3247642944 3607816）。/boot/boot0/vmunix に差し替え（元 /boot/boot0/vmunix.pre-t1-697）。cfg は (a) `nvrtx.vk.perf=1`、(b) 加えて `nvrtx.boost=1`、各 1 回の起動で 3 場面。終了後 cfg は元に戻した（/boot/boot0/zedbsd.cfg.pre-t1-697 から複写、再起動はしていない＝今動いている起動は (b) の設定のまま）。kernel は新しいまま。
 場面: scenes.sh（静止 20 s／`timeout 20 files`／terminal の `sh /tmp/spam.sh`（無限 echo）26 s ＋ 3 s 後に files 20 s）。
 成果物（絶対 path）: /home/awe/zedBSD-worktrees/t1/plan/agents/T1/t1-697/ の scenes.sh・extract.py・marks-{a,b}.txt・kernel-{a,b}.log・session-{a,b}.log（KWL PERF 全文）・dmesg-{a,b}.txt・ext-{a,b}.txt・misc-{a,b}.txt。

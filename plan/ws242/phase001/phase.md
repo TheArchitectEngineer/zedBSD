@@ -2,13 +2,13 @@
 
 # ws242-p001: RTX 30・40 の対応（driver）と RTX 20/30/40 の全モデルの認識
 
-Status: in-progress（2026-10-16 P2、利用量の都合で Q1 の通常ラップアップ。途中の WIP commit まで。下の「再開点」）
+Status: in-progress（2026-10-15 P2、利用量の都合で Q1 の通常ラップアップ。途中の WIP commit まで。下の「再開点」）
 Disposition: normal
 Parent: [WS242](../ws.md)
 実行者: P2（phase-runner）
 依存: なし（compiler の側は ws242-p002、P4。main 8a550f840 に SM86・SM89 の API が入った）
 
-## 範囲（ユーザー 2026-10-16、ws.md の原文）
+## 範囲（ユーザー 2026-10-15、ws.md の原文）
 
 1. RTX 20（TU102・TU104・TU106、GTX 16 の TU116・TU117）・RTX 30（GA102〜GA107）・RTX 40（AD102〜AD107）を PCI の device id と identity register の chip で認識する。
 2. firmware の package に GA10x・AD10x（と TU116 の booter）の GSP-RM・booter・bootloader を足す（570.144、tu102 と同じ版）。
@@ -45,7 +45,7 @@ Parent: [WS242](../ws.md)
 
 - firmware の package（`userland/firmware/nvidia-gsp/` の Makefile・manifest・notice、`userland/firmware/README.md`）: 16 file（新しい 9: tu116 の booter 2、ga102 の 4、ad102 の 3。大きさ・sha256 は linux-firmware dc85cced から取り直して確かめた、Makefile の表）。cache の directory を `<rev>-tu-ga-ad` にした（古い 7 file の cache を壊れた cache と誤らない）。scrubber-570.144.bin・tu116/acr/bl.bin（tu102 と同一）は入れない。image が約 64 MB 増える。zedBSD-firmware の mirror には新しい file が無い（upstream に落ちる）。
 - driver: profile と chip の表（identify.c）、products.c、firmware の file 名と署名の section（gsp.c・file.c）、VRAM size と heap（layout.c、`nvrtx_wpr_layout` に heap の 2 つの引数、`nvrtx_vram_size_mib`）、FWSEC v3（vbios.c）、booter の meta と fuse の署名選び（image.c）、Ampere の falcon（falcon.c: reset・DMA・boot ROM・RISC-V mode/status）、boot ROM の FWSEC・booter（boot.c）、sequencer の resume（rpc.c）、display fuse（rom.c）、attach の verified の判断（nvrtx.c）、N0 の製品名（discover.c）、class を profile から（channel・compute・gr・draw・work・display・scanout、copy fill に class 引数、draw init の class 版 `nvrtx_push_draw_init_class`、window の storage 引数）。`platform/amd64/vmunix.mk` に products.c。
-- build: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws037-k-y build/ws037-k-y/vmunix` rc 0・warning 0（2026-10-16 12:05、main 27b361f75 を取り込んだ tree）。
+- build: `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws037-k-y build/ws037-k-y/vmunix` rc 0・warning 0（2026-10-15 12:05、main 27b361f75 を取り込んだ tree）。
 
 ## 再開点（未完）
 

@@ -3,15 +3,15 @@
 # WS244: i915 の Linux 由来の code の書き直し（データだけを引用で残す）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成、P7 が p001 から）
+Status: planning（2026-10-15 作成、P7 が p001 から）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47c）。**2026-10-16 ユーザーの分割**: Gen12（5330）の display は書き直し → [WS245](../ws245/ws.md) に移した。この WS の残りは (1) **Gen9 の display（display/gen9-*.c）を guardrail に沿って直す**（file の先頭の「code は自前、順序と表は Linux」などの出典の宣言を消し、表・順序の値は block ごとに「Value(s) referenced: …」、参考にした手順は「Procedure referenced: …」を付ける。code が写しなら書き直す）、(2) GT（gt-power.c・workarounds.c・verify-workarounds.c の「Follows Linux …」の関数）、(3) compiler・render（Mesa の手順の言及）、(4) intel/ の header（データは block ごとの引用に、file の先頭の MIT の表示と出典を消す）、(5) display の自前の file の言及の確認、(6) 最後に license の package（userland/base/licenses/i915-driver/）の整理。
+Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47c）。**2026-10-15 ユーザーの分割**: Gen12（5330）の display は書き直し → [WS245](../ws245/ws.md) に移した。この WS の残りは (1) **Gen9 の display（display/gen9-*.c）を guardrail に沿って直す**（file の先頭の「code は自前、順序と表は Linux」などの出典の宣言を消し、表・順序の値は block ごとに「Value(s) referenced: …」、参考にした手順は「Procedure referenced: …」を付ける。code が写しなら書き直す）、(2) GT（gt-power.c・workarounds.c・verify-workarounds.c の「Follows Linux …」の関数）、(3) compiler・render（Mesa の手順の言及）、(4) intel/ の header（データは block ごとの引用に、file の先頭の MIT の表示と出典を消す）、(5) display の自前の file の言及の確認、(6) 最後に license の package（userland/base/licenses/i915-driver/）の整理。
 <!-- awesome-plan-current:end -->
 
-## ユーザーの指示（原文、2026-10-16）
+## ユーザーの指示（原文、2026-10-15）
 
 「code・コメント・構造:については、MITであっても写してはいけません。もしかして写した箇所があるんですか？」
 「範囲を全部の WS に広げます。」

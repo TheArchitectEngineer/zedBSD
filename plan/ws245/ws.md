@@ -3,7 +3,7 @@
 # WS245: i915 の Gen12（ADL-P、Latitude 5330）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成。p001 の [design.md](design.md) は main に入った（6bccaef57）、敵対的レビューは未完）
+Status: planning（2026-10-15 作成。p001 の [design.md](design.md) は main に入った（6bccaef57）、敵対的レビューは未完）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -11,7 +11,7 @@ Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚
 Resume point: p001 の design.md をレビュー（design-review-1.md と design-review.md）とユーザーの決定 1〜4 で改訂 → 再レビュー → 残りの判断をユーザーに。Phase の表は design.md の 6.2 節（p002〜p012、36 LW）。
 <!-- awesome-plan-current:end -->
 
-## ユーザーの指示（原文、2026-10-16）
+## ユーザーの指示（原文、2026-10-15）
 
 「Gen12（5330）のディスプレイは書き直します。WSを立ててください。」
 （前提の決定: 「code・コメント・構造:については、MITであっても写してはいけません。」「範囲を全部の WS に広げます。」「ガードレイルに、ファイル上部には参考にしたことや引用したことを一切書かず、該当箇所にブロック単位で記載することを明記してください。」）
@@ -20,7 +20,7 @@ Resume point: p001 の design.md をレビュー（design-review-1.md と design
 
 `src/drivers/gpu/i915/display/` の ddi・dp・dp-sink・dp-internal.h・pipe・plane・clock・watermark・vbt・vbt.h・panel・panel-backlight・power・dmc・takeover・takeover-internal.h・hotplug・hotplug-internal.h・modeset・modeset-internal.h・internal.h・opregion・opregion-internal.h・aux・gmbus・hdmi・hdmi-mode・edid・edid-read・color・vblank・phy・state・diagnostics・dp-ext・dp-ext-kern・tc・dkl-phy。どれも「Derived from the Linux kernel v6.8.12」と Linux の型・関数の分け方・comment を持つ（ddi.c 107/111、dp.c 92/92、pipe.c 74/74、plane.c 43/44 の関数が写し）。intel/ の header のうち Gen12 だけが使う struct の配置（vbt-defs.h・ref.h・connector.h・wm.h）も含める。
 
-## ユーザーの決定（2026-10-16、design.md のレビューの後）
+## ユーザーの決定（2026-10-15、design.md のレビューの後）
 
 「5は、(1) a、(2) 5330のみ、(3) Linuxのコードを参考にする、(4) Linuxを優先、でおねがいします。」
 1. 逃げ道の形は (a): 口（xd.h）を p002 で決め、own の file は最初からその口だけを呼ぶ。口の実装を旧（薄い adapter、p011 で削除）と xd で丸ごと切り替える（状態を混ぜない）。

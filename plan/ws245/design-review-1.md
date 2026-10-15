@@ -1,4 +1,4 @@
-# ws245 design.md の敵対的レビュー 1（2026-10-16）
+# ws245 design.md の敵対的レビュー 1（2026-10-15）
 
 設計の担当（P2、q991）が起動した design-reviewer の報告を Q1 が要約した物（担当は file を書かずに返した）。対象は commit 6bccaef57 の design.md。blocker 6・major 19・minor 14。
 
@@ -6,7 +6,7 @@ Q1 が元の資料で確かめた点: B2（plan/ws031/display-ref/dmesg-display.
 
 ## blocker
 
-- **B1** 記録と design.md が別物（P01〜P23・D1〜D6 の記録）。→ 2026-10-16 に記録の誤りとして取り消した（485ad5be6）。解決済み。
+- **B1** 記録と design.md が別物（P01〜P23・D1〜D6 の記録）。→ 2026-10-15 に記録の誤りとして取り消した（485ad5be6）。解決済み。
 - **B2** PCH の raw clock を 38.4 MHz としている（§1・§2.1・§2.2・§2.11）。5330 は 19.2 MHz（backlight 96000 ＝ 19.2 MHz ÷ VBT の 200 Hz）。SFUSE_STRAP から決め、参照 clock 38.4 MHz と分ける。
 - **B3** 「CDCLK を変えない」（§2.6・§7 #9）と PRM の init/uninit・DC9 の resume が矛盾。xd-clock に CDCLK の off → 既知の値への on・off を入れる（p005）。
 - **B4** 逃げ道 `i915.display=old` が成り立たない（own の file を xd の口に付け替え、struct i915_display の field を消すと旧 code は呼ばれず compile もできない。head の付け替え先は p009 の成果物）。(a) 口を p002 で決め実装を丸ごと切り替える（旧は薄い adapter）か、(b) 逃げ道は commit の rollback と割り切る。

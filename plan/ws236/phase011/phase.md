@@ -3,15 +3,15 @@
 # ws236-p011: 案 1: decoder の出力を GPU の texture に、表示を GPU で
 
 Parent: [WS236](../ws.md)
-Status: in-progress（2026-10-16、P3 新世代。直し 7 は T1-687 PASS（全画面で VPU が止まらない、原因は出力の閉じ開き）。60 fps: A1（全画面の窓の copy）は T1-688 PASS（速さは変わらず）。A3 は [ws236-p012](../phase012/phase.md) に分けた。律速は往復の待ちと CPU の取り合い（T1-689）。V1 は不採用）
+Status: in-progress（2026-10-15、P3 新世代。直し 7 は T1-687 PASS（全画面で VPU が止まらない、原因は出力の閉じ開き）。60 fps: A1（全画面の窓の copy）は T1-688 PASS（速さは変わらず）。A3 は [ws236-p012](../phase012/phase.md) に分けた。律速は往復の待ちと CPU の取り合い（T1-689）。V1 は不採用）
 Phase disposition: normal
-実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-16 新世代 `agent/p3-ws236f`）
+実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236e` → 2026-10-15 新世代 `agent/p3-ws236f`）
 依存: [ws236-p009](../phase009/phase.md)（案 1 の設計）、[ws236-p010](../phase010/phase.md)（decode の depth、cleared）
 
 ## ユーザーのゴールと判断（原文と要旨）
 
 - ゴール（2026-10-15 夜）:「Piでデコーダから変換なしでGPUのテクスチャにして、60fps出るようになること。」
-- 判断（2026-10-16、クリック）: 案 1 を WS236 の Phase で進める（WS141・WS202・WS122 の file も WS236 の範囲として触ってよい）。
+- 判断（2026-10-15、クリック）: 案 1 を WS236 の Phase で進める（WS141・WS202・WS122 の file も WS236 の範囲として触ってよい）。
   GPU が直に sample する値では firmware の「2〜15 が 1 小さい」を直さない（bit 単位の読み戻し＝vkvideo-probe の時だけ補正）。
   TFU の YUV 入力の probe をする（Pi で試し、使えればその道を使う）。
 
@@ -34,7 +34,7 @@ Phase disposition: normal
 | d | libmedia: GPU の picture（decoder の image の memory を opaque fd で export、picture が image を持つ間はその slot に decode しない）。VkDevice は共有せず、app が fd を import する | `userland/desktop/libmedia/`、`userland/desktop/media-app/decoder.c`・`.h` | 実装・build・host 試験済み（実機は依頼 3） |
 | e | videoplayer: 自前の presenter（KL_PRESENT_NONE、arm64 だけ）。picture の 2 plane を shader で YCbCr→RGB と縮小、bar・notice は内容が変わった時だけ overlay へ | `userland/desktop/videoplayer/` | 実装・build（rpi4・amd64 warning 0）、実機は依頼 3 |
 
-## 段 a: TFU の probe（2026-10-16、P3）
+## 段 a: TFU の probe（2026-10-15、P3）
 
 ### 作った物
 
@@ -62,17 +62,17 @@ Phase disposition: normal
 5. 終わったら boot の行から `v3d.tfu_probe=1` を外す（kernel は残してよい。token が無ければ前と同じ振る舞い）。
 6. 止め所: Pi が応答しなくなったら止めて報告（boot の途中の probe の reset で止まった見込み。前の kernel に戻す）。
 
-### T2 の結果（T1-674、2026-10-16、Pi 4 実機、main に merge 済みの 98b1e481d）
+### T2 の結果（T1-674、2026-10-15、Pi 4 実機、main に merge 済みの 98b1e481d）
 
-- 起動: `tfu-probe end`、V10 の reset の後の noop complete、desktop まで起動（PASS）。結果 `plan/agents/T2/results-20261016-t1-674.md`・`t1-674-probe.log`。
+- 起動: `tfu-probe end`、V10 の reset の後の noop complete、desktop まで起動（PASS）。結果 `plan/agents/T2/results-20261015-t1-674.md`・`t1-674-probe.log`。
 - plane: R8 96x40・512x480、RG8 48x20・256x240 の全て `mismatches=0`・`overrun=0`（hardware の UIF の配置は `bcm2711_native_texture_offset` と一致）。時間 512x480 R8 105 us、256x240 RG8 56 us → 1080p の Y（2 MB）約 0.9 ms、UV（1 MB）約 0.45 ms の見込み。
 - yuv: format=0（raster、NV12・I420）は全 0 の書き込み、format=1・2（SAND の 1 列）は領域 0・4 の中心だけ Y を 4 byte に複製した灰色（80808080・b4b4b4b4、他の 6 つは 0）、3・9・10 は一部だけ書き、4〜8 は全 0。`matches 1/1` は灰色（Cb=Cr=128）の領域が全ての行列に合うだけで、色の変換は起きていない。→ **YUV→RGBA の変換は既定の設定では出ない（B-1 は使わない）**。非公開の bit（係数の register の使い方、別の入力の bit）を探すのは見積もりの外なので打ち切り、**B-2（R8・RG8 の 2 枚を TFU で UIF に、YCbCr→RGB は shader）** を選んだ。
 
-## 段 b・c: VPU の bulk を image へ直に、NV12 の plane を R8・RG8 の texture に（2026-10-16、P3）
+## 段 b・c: VPU の bulk を image へ直に、NV12 の plane を R8・RG8 の texture に（2026-10-15、P3）
 
 ### 約束（Vulkan から見た振る舞い）
 
-- **SAMPLED の usage を持つ NV12 の decode 出力の image（以下「sampled の picture」）は、firmware の値をそのまま持つ**（2〜15 の 1 小さい値を直さない、ユーザーの判断 2026-10-16）。`vkCmdCopyImageToBuffer` の readback は値を直して書く（`bcm2711_vulkan_video_image_raw`）。SAMPLED の無い picture（今の libmedia・vkvideo-probe の既定）は前と同じ（kernel が直して写し、readback は写しのまま）。
+- **SAMPLED の usage を持つ NV12 の decode 出力の image（以下「sampled の picture」）は、firmware の値をそのまま持つ**（2〜15 の 1 小さい値を直さない、ユーザーの判断 2026-10-15）。`vkCmdCopyImageToBuffer` の readback は値を直して書く（`bcm2711_vulkan_video_image_raw`）。SAMPLED の無い picture（今の libmedia・vkvideo-probe の既定）は前と同じ（kernel が直して写し、readback は写しのまま）。
 - sampled の picture の作り方: `flags` に `MUTABLE_FORMAT`・`EXTENDED_USAGE`（他の flag は不可、NV12 以外は 0 のまま）、usage に `SAMPLED`（と `TRANSFER_SRC`）。plane の view: `aspectMask` = `PLANE_0` で format `R8_UNORM`（輝度）、`PLANE_1` で `R8G8_UNORM`（R に Cb、G に Cr、幅・高さは半分）。shader が sample すると R8 は (Y, 0, 0, 1)、RG8 は (Cb, Cr, 0, 1)。
 - `vkGetPhysicalDeviceFormatProperties` は `R8_UNORM`・`R8G8_UNORM` に `SAMPLED_IMAGE`・`FILTER_LINEAR` を返す（plane の view の format として。R8・RG8 の image 自体は作れない）。NV12 自体の feature は変えない（YCbCr の sampler は無い）。
 - 描く前に decode の frame が image に入っていることはアプリが fence で確かめる（decode を含む submission の fence は自分の frame の後に signal、p010）。描画の draw は decode の飛んでいる frame を待たない（copy・blit は待つ）。
@@ -89,7 +89,7 @@ Phase disposition: normal
 - `userland/tests/vkvideo-probe`: `--sampled`（sampled の picture を作り、map せず、decode の command buffer の後ろで両 plane を `vkCmdCopyImageToBuffer` で image と同じ配置の buffer に写して hash・dump する）。
 - 試験: `plan/ws236/tests/texture-plane-host-test.c`・`run-texture-plane-test.sh`（新規、1・2・4 byte の UIF の offset と CPU の変換、R8・RG8・RGBA8 の record）。
 
-### 確かめ（host と build、2026-10-16）
+### 確かめ（host と build、2026-10-15）
 
 | 確かめ | 結果 |
 | --- | --- |
@@ -112,12 +112,12 @@ Phase disposition: normal
 6. `dmesg | grep -E 'rpi4-mmal: frame .* not its target|kept for good|v3d: video:|v3d: (EIO|execution failed)'` を保存。
 7. 合否: (a)(b) とも rc 0・全 frame MATCH・differing 0、1080p の hash が `--sampled` の有無で同じ、`not its target's layout` の行が無い（あれば frame の pitch・chroma の値を報告）、`kept for good`・`execution failed` が無い。Video Player は今の main のまま（libmedia は変えていない）で、1 本（`baseline-1080p30-10s.mp4`）再生して落ちないこと（回帰）。
 
-### T2 の結果（T1-677、2026-10-16、Pi 4 実機、main 78354757f）: 段 b PASS
+### T2 の結果（T1-677、2026-10-15、Pi 4 実機、main 78354757f）: 段 b PASS
 
-- 3 本を (a) 今まで通り・(b) `--sampled` とも全 frame MATCH、dump-compare 56 件 differing 0、1080p の hash は `--sampled` の有無で同じ。dmesg に `not its target's layout`・`kept for good`・`execution failed` 無し。Video Player は前と同等（shown 39・late 261）で落ちない。結果 `plan/agents/T2/results-20261016-t1-677.md`。
+- 3 本を (a) 今まで通り・(b) `--sampled` とも全 frame MATCH、dump-compare 56 件 differing 0、1080p の hash は `--sampled` の有無で同じ。dmesg に `not its target's layout`・`kept for good`・`execution failed` 無し。Video Player は前と同等（shown 39・late 261）で落ちない。結果 `plan/agents/T2/results-20261015-t1-677.md`。
 - `--sampled` の decode time が長い（1080p 33→60 ms）のは probe の測り方: `--sampled` は decode の command buffer の後ろで両 plane を uncached の image から CPU が補正しながら読む copy をし、その時間が decode time に入る。GPU の道（段 e）は readback をしない。
 
-## 段 d・e: libmedia の GPU の picture と videoplayer の自前の presenter（2026-10-16、P3）
+## 段 d・e: libmedia の GPU の picture と videoplayer の自前の presenter（2026-10-15、P3）
 
 ### 形（決めたこと）
 
@@ -140,7 +140,7 @@ Phase disposition: normal
   - `main.c`: arm64 で KL_PRESENT_NONE と presenter、`media_decoder_gpu_pictures(VP_GPU_HOLD)`（import できる時）、`vp_draw_gpu`・`vp_fit`・`vp_bar_visible`、`PRESENT`・`PRESENTED … gpu=` の行。`media.c`・`videoplayer.h`: ring の上限（presenter の時は 3）、presenter の型。`Makefile`: `present.c`。
 - 試験: `plan/ws236/tests/shader-compile-host-test.c`・`run-shader-compile-test.sh`（新規、videoplayer の shader を bcm2711 の compiler で compile、picture.frag が 2 枚の texture を読む）。`plan/ws202/tests/host-vkvideo-runtime.c`（GPU の判定と、fence 付きの decode・slot の持ちの確かめを足した）、`host-native-playback.c`・`host-app-fallback.c`・`plan/tools/media/host-codec.c`（stub と ops の初期化子）。
 
-### 確かめ（host と build、2026-10-16）
+### 確かめ（host と build、2026-10-15）
 
 | 確かめ | 結果 |
 | --- | --- |
@@ -162,29 +162,29 @@ Phase disposition: normal
 5. 合否: (a) `PRESENT own=1 gpu_pictures=1`、`pictures the GPU holds` の行が出る、(b) 1080p30 の 2 本が最後まで、`FRAMES … late` がほぼ 0（目安 10 以下）・shown 290 以上、(c) `DRAW picture_us` が 1 枚 数 ms（前は約 60000）、(d) PNG の色が正しい（testsrc2 の色の帯・文字が見え、緑や紫に偏らない。前の CPU の道の PNG と見比べ）、(e) `FAILED`・`execution failed` が無く、videoplayer・compositor が落ちない、(f) videoplayer の CPU の使用率が前より下がる（記録）。
 6. 止め所: Pi が応答しなくなったら止めて報告。画が出ない・色が違う時は PNG と log を返す（解析は P3）。
 
-### T2 の結果（T1-679、2026-10-16、Pi 4 実機、main 18c4fa5d3）: FAIL → 直した
+### T2 の結果（T1-679、2026-10-15、Pi 4 実機、main 18c4fa5d3）: FAIL → 直した
 
-- `PRESENT own=1 gpu_pictures=1 hold=6` の後、`vkGetPhysicalDeviceVideoFormatPropertiesKHR count failed (-1000023000)` と `no sampled NV12 decode images; pictures are read back`。全て readback の道（high shown 98・late 194、`DRAW picture_us` 約 50 ms/枚）。落ちない、`execution failed` 無し。PNG は Pi の image に keiland-shot が無く未実施。結果 `plan/agents/T2/results-20261016-t1-679.md`。
+- `PRESENT own=1 gpu_pictures=1 hold=6` の後、`vkGetPhysicalDeviceVideoFormatPropertiesKHR count failed (-1000023000)` と `no sampled NV12 decode images; pictures are read back`。全て readback の道（high shown 98・late 194、`DRAW picture_us` 約 50 ms/枚）。落ちない、`execution failed` 無し。PNG は Pi の image に keiland-shot が無く未実施。結果 `plan/agents/T2/results-20261015-t1-679.md`。
 - 原因: libvulkan の `vkGetPhysicalDeviceVideoFormatPropertiesKHR`（`userland/desktop/libvulkan/video.c`）が usage を DECODE_DST・DPB・TRANSFER_SRC に限り、SAMPLED を含む照会を kernel に送らずに `VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR` を返していた。
 - 直し（95c47d971）: libvulkan の mask に SAMPLED を足す（可否は kernel が答える。i915 は今まで通り拒む）。WS083 の host 試験の「手元で拒む usage」の例を COLOR_ATTACHMENT に。rpi4・amd64 の libvulkan warning 0、`plan/ws083/tests/run-host-libvulkan-video.sh`・`plan/ws202/tests/run-host-nv12-readback.sh` PASS。
 - 再試験は依頼 3 と同じ手順に `/lib/libvulkan.so` の差し替えを足す。
 - uname の版は `/etc/os-release`（userland）から来るので kernel の新旧は分からない（kernel の banner は版だけ）。kernel は `/boot/boot0/vmunix` の cksum で確かめる。
 - Pi で PNG を撮るには、keiland-shot を arm64 の dynamic の規則（`platform/common/userland-dynamic.mk`）に足し、`ZEDBSD_TEST_SCREEN_CAPTURE := y` の試験の config で compositor（`bin/wayland`）と keiland-shot を作って差し替える必要がある（共有の build の file なので Q1 の判断）。
 
-### T2 の結果（T1-680、2026-10-16、Pi 4 実機、main 7d03555d8）: FAIL → 直した
+### T2 の結果（T1-680、2026-10-15、Pi 4 実機、main 7d03555d8）: FAIL → 直した
 
-- 照会は通り `pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)`（baseline 14）。続いて `vkGetMemoryFdKHR failed (-4)` と `a context of pictures the GPU holds failed (1004); pictures are read back`（libmedia が readback の context で作り直した）。全て readback の道（high shown 98・late 194）。落ちない。結果 `plan/agents/T2/results-20261016-t1-680.md`。
+- 照会は通り `pictures the GPU holds, 17 slots (references 4, reorder 2, flights 4, held 6)`（baseline 14）。続いて `vkGetMemoryFdKHR failed (-4)` と `a context of pictures the GPU holds failed (1004); pictures are read back`（libmedia が readback の context で作り直した）。全て readback の道（high shown 98・late 194）。落ちない。結果 `plan/agents/T2/results-20261015-t1-680.md`。
 - 原因: libvulkan の `vkGetMemoryFdKHR` は fd に device と driver の UUID を刻むため `vulkan_physical_identity`（`GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2` に `VkPhysicalDeviceIDProperties` を連ねた照会）を送るが、bcm2711 の kernel はこの opcode を扱わず、`VK_ERROR_DEVICE_LOST`（-4）になっていた（Venus の host だけが答えていた。native の V3D で OPAQUE_FD の allocation の export を使うのは今回が初めて）。
 - 直し: `src/drivers/gpu/bcm2711/vulkan-query.c` に `identity_query`（chain が properties2 → ID properties → 終わりの照会だけに答える。device の UUID・driver の UUID は固定の 16 byte、LUID なし、続けて普通の properties）。どの context も同じ値を返すので、libmedia（export）と videoplayer（import）の照合が合う。`plan/ws141/tests/vulkan-device-host-test.c` に libvulkan と同じ要求と読みで 2 回照会して同じ UUID になる確かめを足した（`ws236 p011 native device identity for exported allocations: PASS`、全 32 行 PASS）。rpi4 の vmunix warning 0。
 - Pi の PNG: `userland/tests/keiland-shot/Makefile` の platform に rpi4 を足し（arm64 の basic の command の規則で作れる。共有の `userland-dynamic.mk` の変更は不要だった）、`plan/ws236/tests/config-rpi4-shot.mk`（`ZEDBSD_TEST_SCREEN_CAPTURE := y` と keiland-shot）で compositor（`bin/wayland`、`KWL SHOT` を持つ）と `bin/keiland-shot`（aarch64）が build できることを確かめた。
 
-### T2 の結果（T1-681、2026-10-16、Pi 4 実機、main 4cd126b74）: GPU の道は動いた、速さが未達
+### T2 の結果（T1-681、2026-10-15、Pi 4 実機、main 4cd126b74）: GPU の道は動いた、速さが未達
 
 - `pictures the GPU holds, 17 slots`、`MEDIA backend=vulkan-video`、kernel の `place 0〜13 us`・`readbacks 0`、`DRAW picture_us` 45〜1095 us（前 約 225 ms）。PNG（keiland-shot、1280x720）の色は正しい（カラーバー・灰の四角・市松・時刻、Q1 も目視）。`execution failed` 無し、落ちない。
 - `PRESENTED … gpu=0` は最初の frame（picture がまだ無い）の行で、GPU の道でないことを意味しない（今回の直しで `picture=` を足し、DRAW の行に GPU の picture を描いた frame 数 `gpu=` を足した）。
 - 速さ: high 1080p30 は shown 210・late 90／10 s（約 21 fps）、baseline shown 201・late 99。`DRAW rest_us`（present と fence の待ち）27〜52 ms が支配的。kernel の video は 2 秒に 52〜73 decode、depth 1.4〜1.7、frame 37〜50 ms。
 
-## 速さの直し（2026-10-16、P3、Q1 の依頼「presenter の 2 frame 重ねと律速の切り分け」）
+## 速さの直し（2026-10-15、P3、Q1 の依頼「presenter の 2 frame 重ねと律速の切り分け」）
 
 ### 見立て
 
@@ -213,14 +213,14 @@ Phase disposition: normal
 4. 報告: 各 log の `Vulkan Video:`（slots・flights）・`PRESENTED`・`FRAMES`・`DRAW`（gpu・acquire_us・submit_us・wait_us）・`CLOCK`・`DONE`・`FAILED`、dmesg の `v3d: perf`・`v3d: video:`・`v3d: tfu`・`execution failed`、PNG。
 5. 合否: (a) 1080p30 の 2 本が shown 290 以上・late 10 以下、(b) 1080p60 の shown（目標 590 以上、記録）、(c) DRAW の gpu が frames と同じ、(d) 落ちない・`execution failed` 無し、(e) PNG の色。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す。
 
-### presenter の 2 frame 重ねの検討（2026-10-16、P3、Q1 の依頼）
+### presenter の 2 frame 重ねの検討（2026-10-15、P3、Q1 の依頼）
 
 - 今: 1 frame ずつ（acquire → 記録 → submit → present → fence を待つ）。待つ間に CPU は次の frame を作れないが、GPU の仕事は TFU（Y・UV 約 1.4 ms の見込み）と 1 枚の quad の描画（窓の大きさの fragment、texture 2 枚）だけ。
 - 重ねる形（実装するなら）: frame の slot を 2 つ（command buffer・fence・acquire の semaphore）、picture の quad の頂点を slot ごと、前の picture は「最後に描いた frame の通し番号」を持たせて、その frame の fence が済んでから解放（videoplayer に解放待ちの列）。overlay の image は書く前に飛んでいる全 frame を待つ（GPU の picture では overlay の書き換えは bar の表示中の 250 ms ごとだけなので、待ちは稀）。見積もり 1〜2 LW。
 - 効く条件: `DRAW rest_us`（present と fence の待ち）が 1 frame の時間（30 fps で 33 ms、60 fps で 16.7 ms）に近い時。V3D の executor は compositor と videoplayer の仕事を順に流すので、compositor の 1 frame（WS141 p013 では 33 ms 級だった）が長いと fence の待ちも長くなる。その時は重ねても compositor の合成の速さが上限（表示は compositor が出す）で、60 fps には compositor 側の短縮が要る。
 - 判断: T1-679 の `DRAW picture_us`・`rest_us` と kernel の perf を見てから決める。`rest_us` が 1 frame の半分を超え、かつ compositor が 60 fps で回っている時に実装する。それ以外（compositor が律速）なら、HVS の overlay に NV12 を直に載せる案 2（WS214、compositor の合成を通らない）の方が効く。
 
-### T2 の結果（T1-683、2026-10-16、Pi 4 実機、main a7f6474bf）と律速の切り分け
+### T2 の結果（T1-683、2026-10-15、Pi 4 実機、main a7f6474bf）と律速の切り分け
 
 - 1080p30 high: shown 270・late 30（10 s）、`DRAW` は 1 秒に 25〜29 frame、`acquire_us` 25〜32 ms・`submit_us` 1.6〜3.2 ms・`wait_us` 0.2〜0.9 ms・`picture_us` 2 ms→0。baseline: shown 250・late 50。1080p60（15 s）: shown 279・late 321、`DRAW` 1 秒に 12〜21 frame、`acquire_us` 25〜59 ms、`Vulkan Video:` 2 秒に 74〜83 picture（約 41 fps）・submit 4.4 ms・wait 14.5 ms・copy 4.5 ms、flights 3（17 slots、held 7）。落ちない、`execution failed` 無し、PNG の色は正しい。
 - `PRESENTED picture=0 gpu=0` は最初の frame（picture がまだ無い）の行だけで、続く `DRAW` は gpu=frames（18 に 17 などは最初の 1 枚）。1080p60 も GPU の picture の道に入っている（Q1 の (2) は問題なし）。
@@ -228,7 +228,7 @@ Phase disposition: normal
 - kernel の `v3d: perf`（1080p30、2 秒）: subs 284、passes 112（videoplayer と compositor が 1 frame に 1 つずつ）、image passes 112、TFU 168（1 frame に 3: Y・UV と compositor が窓の image を写す 1）、busy 72%（1080p60 は 86〜90%）。`v3d: gpu tiles`: draw 17604 tile × 22650 cycle（500 MHz で 45 us/tile）、copy 17780 tile × 2972 cycle。1 frame あたり GPU 約 8M cycle＝**約 16 ms**、TFU 約 3 ms、executor の CPU の準備・解放を足すと executor の時間は 1 frame に約 25 ms。窓の再生では 1 frame に videoplayer の pass と compositor の合成の pass が両方要り、60 fps（16.7 ms）には GPU の仕事を半分以下にしないと届かない。
 - **decode の律速（1080p60）**: kernel の `v3d: video` で depth 2.1（flight 3 のうち平均 2 つしか VPU に無い）、frame 49 ms。libmedia は 1 picture に submit 4.4 ms と copy（fence の reset・command buffer の reset 2 回・query の読み）4.5 ms を順にかけ、その間 flight が 1 つ空く。executor が 86% 埋まっているので、1 回 1 回の kernel の要求が V3D の pass の後ろで待つ（2 秒に要求 1740、1 picture に約 20）。
 
-### 直し 5（2026-10-16、P3）
+### 直し 5（2026-10-15、P3）
 
 - videoplayer（`main.c`）: `--fullscreen`（起動から全画面）。content type は VIDEO なので、compositor の game mode（ws122-p005b、`KWL SCANOUT direct=1`）に入れば compositor は合成せず、窓の image を HVS がそのまま出す（bcm2711 の `GPU_DISPLAY_PRESENT` の BLOB は allocation を直に出す）。1 frame の GPU の仕事は Y・UV の TFU と出力の大きさの 1 枚の quad だけになり、compositor の pass・窓の image の TFU・copy pass が消える。
 - videoplayer（`videoplayer.h`）: 先読みの picture を 3 → 2（hold 7 → 6）。High の stream（参照 4・reorder 2）で libmedia の flight が 3 → 4 になる（17 slots の中）。
@@ -251,17 +251,17 @@ Phase disposition: normal
 4. 報告: videoplayer の `Vulkan Video:`（flights・held）・`FULLSCREEN`・`FRAMES`・`DRAW`（acquire_us・submit_us・wait_us）、compositor の `KWL SCANOUT`（direct=1 か、direct=0 の reason）、dmesg の `v3d: perf`・`v3d: gpu tiles`・`v3d: video:`（depth・frame）・`v3d: requests`・`execution failed`、PNG。
 5. 合否: (a) (i) で `KWL SCANOUT direct=1`、(b) (i) の shown（film は 10 s・600 frame、目標 580 以上・late 20 以下、記録）、(c) (ii) が shown 290 以上・late 10 以下、(d) `Vulkan Video:` の flights 4・depth と 2 秒の picture 数（目標 120 以上）、(e) 落ちない・`execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
 
-### T2 の結果（T1-685、2026-10-16、Pi 4 実機、main f0576b990）: FAIL
+### T2 の結果（T1-685、2026-10-15、Pi 4 実機、main f0576b990）: FAIL
 
 - `--fullscreen`（1080p60・1080p30）: `PLAYBACK failed error=5`（shown 9〜14）。dmesg: 入力 4 つが flags `0x406`（FRAME_START・FRAME_END・**TRANSMISSION_FAILED**）で返り、`v3d: video: picture 26/27 skipped: no frame from the decoder (42)`、続いて `PORT_ACTION not answered`・`decoder 0 destroyed broken`。reboot の後の 1 回目（r-a）も同じ止まり方（入力 4 つが返らず `PORT_ACTION not answered`）。以後 reboot まで `ril.video_decode not created (42)`・`no firmware decoder for a 1920x1088 session`（libmedia は CPU の decode に戻り再生は続く）。
 - compositor: `KWL SCANOUT direct=0 reason=size` → `KWL OUTPUT closed` → `reason=backend errno=21` → `KWL OUTPUT open`（`KWL MODE window switch_ms=59〜64`）→ `reason=refused`。
-- 窓の 1080p60（reboot 後）は落ちない: shown 304・late 296、decode 2 秒に 89〜95、`v3d: perf` busy 86〜91%。結果 `plan/agents/T2/results-20261016-t1-685.md`。
+- 窓の 1080p60（reboot 後）は落ちない: shown 304・late 296、decode 2 秒に 89〜95、`v3d: perf` busy 86〜91%。結果 `plan/agents/T2/results-20261015-t1-685.md`。
 
-## 直し 6（2026-10-16、P3 新世代）: 全画面の切り替えで VPU が止まる、game mode、decode の要求
+## 直し 6（2026-10-15、P3 新世代）: 全画面の切り替えで VPU が止まる、game mode、decode の要求
 
 ### 調べ
 
-1. **game mode が入らない理由**: bcm2711 の display の QUERY（`display-device.c` `output_query`）が `GPU_DISPLAY_BLOB` を立てないので、backend の `scanout_display()`（`scanout-zedbsd.c`）が `ENOTSUP`（= `EOPNOTSUPP` 21）を返す。ws223-p001 §0 の 4 と同じ。**2026-10-13 のユーザーの決定（WS223 原文「Video Playerは、Game Modeをやめます。…全画面ではコンポジターを利用しましょう。」）と、直し 5 の「Video Player を game mode に入れる」は衝突する**。Q1 の指示（2026-10-16）で game mode の道は実装しない。60 fps の道（A 合成の短縮／B HVS の plane／WS223 の見直し）はユーザーの判断として Q1 が master の未決に記録した。
+1. **game mode が入らない理由**: bcm2711 の display の QUERY（`display-device.c` `output_query`）が `GPU_DISPLAY_BLOB` を立てないので、backend の `scanout_display()`（`scanout-zedbsd.c`）が `ENOTSUP`（= `EOPNOTSUPP` 21）を返す。ws223-p001 §0 の 4 と同じ。**2026-10-13 のユーザーの決定（WS223 原文「Video Playerは、Game Modeをやめます。…全画面ではコンポジターを利用しましょう。」）と、直し 5 の「Video Player を game mode に入れる」は衝突する**。Q1 の指示（2026-10-15）で game mode の道は実装しない。60 fps の道（A 合成の短縮／B HVS の plane／WS223 の見直し）はユーザーの判断として Q1 が master の未決に記録した。
 2. **VPU が止まる理由（見込み）**: 全画面への切り替えで compositor は game mode を試すために swapchain を閉じる（`scanout_enter` → `kwl_compose_output_close`）。display の lease の release は console を戻し（`bcm2711_display_flip_restore`）、**core clock を console の値へ下げる**（`lower_clock`、720p で 67 MHz 級の要求）。backend が断ると compositor は直ちに swapchain を開き直し、次の flip が **core clock を 500 MHz へ上げ直す**（`raise_clock`）。core clock は VPU（firmware の MMAL）の clock で、その 2 回の変更が decode の最中に起きた直後に入力の bulk が TRANSMISSION_FAILED で返り、firmware の decoder が答えなくなった（T1-685 の 3 回とも全画面の切り替えの時、窓の再生では起きない）。出力の閉じ開きで他に VPU に触る物（HVS の list、console の再描画、V3D の allocation）は無い。
 3. **reboot なしの回復**: firmware の MMAL の worker が答えなくなると、VCHIQ の service を閉じて開き直しても component の作成が答えない（a2・b・c）。firmware を作り直す口は無く、reboot なしの回復はできない。今の道（session の作成が失敗 → libmedia が CPU の decode に戻る）で再生は続く（T1-685 の b は shown 151）。よって**止まらないようにする**のが直し。
 4. **decode の要求**: GPU の picture の道で libmedia が 1 picture にかける kernel の要求は Begin・End（記録）・QueueSubmit・WaitForFences・ResetFences・ResetCommandBuffer・GetQueryPoolResults の 7。`vkBeginCommandBuffer` は pool の `RESET_COMMAND_BUFFER_BIT` で暗に reset する（kernel の `begin_buffer` が `bcm2711_vulkan_command_clear` する）ので、明示の reset は要らない。`v3d: decode requests` は全 client（compositor・videoplayer・libmedia）の wire の要求の数で、1 picture あたり 20 ではない（前の見立ての訂正）。
@@ -298,13 +298,13 @@ Phase disposition: normal
 5. 合否: (a) 5 本とも `PLAYBACK failed` が無く、dmesg に `not answered`・`came back unread`・`no firmware decoder` が無い（reboot なしで続けて再生できる）、(b) `rpi4-firmware: core clock` の行が video の再生中（全画面の切り替えの時を含む）に出ない（出るのは compositor の起動と、再生の始まり・終わりの境だけ）、(c) 全画面の数の記録（合否ではない）: (ii)・(v) の shown・late（目標 290 以上・10 以下）、(i)・(iv) の shown、`KWL PERF compose frame_ms`、`DRAW acquire_us`。game mode は WS223 のユーザーの決定で入らない（`reason=backend errno=21` は期待どおり）。(d) `execution failed` 無し、PNG の色。終わったら `v3d.perf=1` を外す。
 6. 止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
 
-### T2 の結果（T1-686、2026-10-16、Pi 4 実機、main 514a5775c）: FAIL
+### T2 の結果（T1-686、2026-10-15、Pi 4 実機、main 514a5775c）: FAIL
 
-- 全画面の 1080p60・30 で `PLAYBACK failed error=5`（shown 13〜14 か 0）。reboot の直後の 1 本目（a・r-a）は**同じ pts 26〜29 の入力 4 つ**が TRANSMISSION_FAILED（flags 0x406）で返り、transmit queued 30 completed 26、以後 `not answered (42)`・`ril.video_decode not created`。2 回とも同じ所で壊れる（決定的）。結果 `plan/agents/T2/results-20261016-t1-686.md`。
+- 全画面の 1080p60・30 で `PLAYBACK failed error=5`（shown 13〜14 か 0）。reboot の直後の 1 本目（a・r-a）は**同じ pts 26〜29 の入力 4 つ**が TRANSMISSION_FAILED（flags 0x406）で返り、transmit queued 30 completed 26、以後 `not answered (42)`・`ril.video_decode not created`。2 回とも同じ所で壊れる（決定的）。結果 `plan/agents/T2/results-20261015-t1-686.md`。
 - **r-a の decode の間に `rpi4-firmware: core clock` の行は 1 つも無い**（VIDEO の floor が 500 MHz を保ち、display の上げ下げは集約の中で吸収された）。それでも壊れたので、直し 6 の見立て（core clock の変化）は外れ。再生中の 67→500 MHz の対（r-d・r-e）は decoder が壊れて消えた後（floor が無い）で、結果であって原因ではない。
 - 壊れる時に起きていること: compositor の `KWL CURSOR_PLANE closed`・`KWL OUTPUT closed`（game mode を試すために swapchain を閉じる → display の lease の release、console の list の復帰と text の再描画）→ backend が ENOTSUP → 出力を開き直す（lease の claim、swapchain 3 枚・layer・cursor の image の作り直し）。同じ時に videoplayer は 960x600 → 1280x720 に swapchain を作り直す。窓の再生（どちらも無い）では壊れない。
 
-## 直し 7（2026-10-16、P3 新世代）: 出力を閉じない、lease の log
+## 直し 7（2026-10-15、P3 新世代）: 出力を閉じない、lease の log
 
 ### 調べ（見込み）
 
@@ -338,17 +338,17 @@ Phase disposition: normal
 5. 合否: (a) 全画面の切り替えで `KWL SCANOUT direct=0 reason=backend errno=21 … output=kept` が出て、`KWL OUTPUT closed` が出ない、(b) 5 本とも `PLAYBACK failed` が無く、dmesg に `came back unread`・`not answered`・`no firmware decoder` が無い、(c) 記録: (ii)・(v) の shown・late、`bcm2711: display lease` の行が再生の間に出ないこと。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す（kernel は残してよい）。
 6. FAIL の時の材料: (b) が FAIL で lease の行が無ければ原因は videoplayer の作り直し側（P3 が次に追う）。lease の行があれば、その行と `came back unread` の順を報告。止め所: Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
 
-### T2 の結果（T1-687、2026-10-16、Pi 4 実機、main 37baf57ce）: 直し 7 PASS
+### T2 の結果（T1-687、2026-10-15、Pi 4 実機、main 37baf57ce）: 直し 7 PASS
 
-- 全画面 4 本で `KWL SCANOUT direct=0 reason=backend errno=21 … output=kept`、`KWL OUTPUT closed` 0。5 本とも `PLAYBACK failed`・`came back unread`・`not answered`・`no firmware decoder`・`execution failed` 無し、`bcm2711: display lease` の行 0、再生中の core clock の行 0。**原因は出力の閉じ開き（display の lease の release・claim）で、直し 7 で VPU は止まらなくなった**（lease の release・claim のどの要素が firmware の decoder を止めるかは未解明、Bug にするかは Q1 の判断）。結果 `plan/agents/T2/results-20261016-t1-687.md`。
+- 全画面 4 本で `KWL SCANOUT direct=0 reason=backend errno=21 … output=kept`、`KWL OUTPUT closed` 0。5 本とも `PLAYBACK failed`・`came back unread`・`not answered`・`no firmware decoder`・`execution failed` 無し、`bcm2711: display lease` の行 0、再生中の core clock の行 0。**原因は出力の閉じ開き（display の lease の release・claim）で、直し 7 で VPU は止まらなくなった**（lease の release・claim のどの要素が firmware の decoder を止めるかは未解明、Bug にするかは Q1 の判断）。結果 `plan/agents/T2/results-20261015-t1-687.md`。
 - 速さ（A1 の前）: 60p 全画面 shown 306・late 294（約 20 fps）、compose frame_ms 23〜24、`DRAW acquire_us` 19〜21 ms。30p 全画面 263/37、frame_ms 18.8。60p 窓 304/296、frame_ms 28。`v3d: perf` busy 91〜93%。
 
-### 60 fps の続き（V1・A1、2026-10-16 P3 新世代、T1-686 で中断）
+### 60 fps の続き（V1・A1、2026-10-15 P3 新世代、T1-686 で中断）
 
 - **V1（TMU が raster を読む）は不採用**: V3D 4.2 の TMU は 2D の raster の texture を sample できない（Mesa v3dv `v3dv_formats.c`「Raster format is only supported for 1D textures」、gallium v3d `v3dx_state.c`「V3D still doesn't support sampling from raster textures」、MIT）。1D・texel buffer として読み、shader で 2D の address と bilinear を組むと 1 画素に 8 回の fetch で TFU（Y・UV 約 1.4 ms）より遥かに遅い。
 - **A1（設計、下の「A1 の実装」で実装した）**: kernel は whole-image の `vkCmdCopyImage`（同じ format・大きさの raster 同士）を 0 draw の TLB の copy の pass で行う（`vulkan-native-image.c` `copy_whole`、T1-686 の perf で copy 2700 cycle/tile ≒ 240 tile で約 1.3 ms、draw は 7800〜8900 cycle/tile ≒ 約 4 ms＋窓の TFU 1.6 ms）。compositor の `compose_record` で、出力と同じ大きさ・同じ format の不透明な全画面の窓だけが映る frame（`scanout.c` の overlay の判定、glass の `fullscreen_whole`、cursor が frame に描かれない、turn・head なし）を、pass の代わりに UNDEFINED→TRANSFER_DST の barrier・copy・PRESENT_SRC の barrier で出す。i915・Venus を変えないため Broadcom（vendor 0x14e4）だけ。copy の結果は plain の不透明の quad と byte 単位で同じ、glass の whole の描き方とは alpha だけが違う（HVS の primary は固定の alpha、keiland-shot は RGB なので見えない）。videoplayer の swapchain は RGBA（wayland の WSI の最初の format）、compositor の出力は format=37（R8G8B8A8）で一致の見込み。
 
-### A1 の実装（2026-10-16、P3 新世代）: 全画面の窓だけが映る frame は copy で出す
+### A1 の実装（2026-10-15、P3 新世代）: 全画面の窓だけが映る frame は copy で出す
 
 - 振る舞い: Pi 4（Broadcom の GPU）で、出力と同じ大きさ・format の不透明な全画面の窓だけが映る frame は、合成の pass（窓の image の TFU と出力の大きさの quad）をやめ、窓の image を swapchain の image へ `vkCmdCopyImage` で写す（kernel は 0 draw の TLB の copy の pass、`copy_whole`）。合成で出すことは変わらない（game mode・直の scanout ではない、WS223 の決定の中）。何かが重なる（bar・menu・popup・sub-surface・IME の候補・edge の gesture・animation・lock・cursor を frame に描く・drag）、大きさ・format が違う、透明、turn・head がある時は前と同じに描く。i915・Venus・Linux・FreeBSD は変わらない（policy が off）。
 - `compose.c`: `compose_copy_source`（判定と理由）、`compose_copy_record`（UNDEFINED→TRANSFER_DST の barrier、copy、PRESENT_SRC への barrier）、`compose_copy_log`（`KWL COPY window=0|1 reason=… surface=N frame=F` を変化の時だけ）、`compose_record` の分岐（scene は無効に、hover・shot・host image は前と同じ）、`compose_limits` の policy（vendor 0x14e4、backend の import が copy の元になれる、RGBA・BGRA の linear が TRANSFER_SRC）。`compose.h`: `KWL_COPY_VENDOR`、`kwl_import.format`、`copy_policy`・`copy_target`（swapchain が TRANSFER_DST を持つ）・`copy_shown`・`copy_reason`。`import.c`: import の format を持つ。
@@ -375,12 +375,12 @@ Phase disposition: normal
 4. 報告: compositor の `KWL COPY`（全行）・`KWL PERF`（compose の frames・frame_ms）・`KWL SCANOUT`、videoplayer の `FRAMES`・`DRAW`（acquire_us）・`PLAYBACK`、dmesg の `v3d: perf`（subs・passes・tfu）・`v3d: gpu tiles`・`v3d: tfu`・`execution failed`、PNG。
 5. 合否: (a) (i)(ii) で `KWL COPY window=1` が出る（bar が消えた後。出なければ reason を報告）、(b) 落ちない・`execution failed` 無し・`PLAYBACK failed` 無し、(c) PNG の色と画（前の PNG と同じ見え方、ずれ・色の入れ替わりが無い）、(d) 記録: (i) の shown・late と `KWL PERF compose frame_ms`、`DRAW acquire_us`、`v3d: tfu jobs` の 2 秒の数（前の T1-685 の窓 1080p60 は compose 23.6 fps・frame_ms 25・TFU 1 frame に 3）。(iii) は `KWL COPY window=0 reason=not-fullscreen`。終わったら `v3d.perf=1` を外し、compositor を CI の物に戻す。
 
-### T2 の結果（T1-689、2026-10-16、診断）の読み
+### T2 の結果（T1-689、2026-10-15、診断）の読み
 
 - 全画面 60p: shown 303・late 297、`worker=` 61〜64%（executor が実際に持たれた割合、busy 84% より小さい）、compose frame_ms 25.3〜25.6、rec の begin 1.4〜1.9・end 1.4・submit 2.2・present 3.8〜4.2 ms、kernel の要求の wait 84〜86 us・run 154〜200 us。kernel の処理は 1 要求 0.25 ms 程度で、1 往復 1.4〜4 ms の残りは kernel の外。
 - `kern.perf=1` の報告は出ていた（行は `sched:` ではなく `kern: perf` で始まる。不具合ではない）。desktop の静止時は 2 秒に switches 約 9 千・woken 約 5 千、**再生中は switches 18〜20 万・woken 12〜13 万・preempted 約 4 万**（20 倍）、preempted の最長の待ちは 4〜11 ms（videoplayer の thread が 476 個の switch の後ろで 11 ms 待った例）。何かが毎秒数万回起きて寝る（短い timeout の poll・spin の yield など）か、CPU の取り合いで往復が遅れている見込み。video の step は 2 秒に約 440 で、decode の poll の空回りではない。誰かは依頼 10 の `ps` の CPU 時間で見る。
 
-### A2 の調べ（2026-10-16、P3 新世代、T1-687 の log から）
+### A2 の調べ（2026-10-15、P3 新世代、T1-687 の log から）
 
 - **`v3d: perf` の busy は executor の占有を多く見せる**: `total` は job の最初の step から最後の step までで、step に分かれる job（decode を含む libmedia の command buffer、`EINPROGRESS` で番を譲る）は間に他の session の番を含む。T1-687 の 60p 全画面の 2 秒: subs 283・total 平均 6.5 ms（= busy 92%）に対し、exec（GPU の実行と待ち）3.1 ms・prep 0.67・xfer（video の event の CPU）0.83・rel 0.17・clean 0.19 で、和は約 5.0 ms、step に分かれた job の待ちが約 1.2 ms/sub。GPU の実行は 2 秒の約 44%、CPU を含めた実の占有は約 67% の見込み。**直し**: kernel の perf に job の step の自分の時間の和を足し、行の末尾に `worker=N%`（executor が実際に持たれていた割合）を出す（`vulkan-queue.c` が step を測り `bcm2711_vulkan_native_job_count_step`、`v3d-hardware.h` の `step_ticks`）。
 - 1 表示 frame（2 秒に 47）あたりの executor の仕事（A1 の前）: videoplayer の TFU 2 job（Y・UV、平均 1.7〜1.8 ms/job、VPU と HVS と帯域を分ける）と 240 tile の draw（約 8000 cycle/tile ≒ 3.9 ms）、compositor の窓の TFU（約 1.7 ms）と 240 tile の draw（約 3.9 ms）と **scene の capture の copy（image → buffer、240 tile 約 1.9 ms、cursor plane が cursor を出していない時に毎 frame）**、decode の event（1 表示 frame に約 2 decode、約 7 step × 0.65 ms）。A1 は compositor の TFU・draw・capture を copy 1 回（約 1.3〜1.9 ms）に置き換えるので、1 表示 frame で約 5〜6 ms 減る見込み。
@@ -399,22 +399,22 @@ Phase disposition: normal
 
 - T2 への依頼: 単独では出さない。次に Pi の kernel を差し替える依頼（A2 か A1 の続き）に含める（`v3d: perf` の行の末尾に `worker=N%` が出ること）。
 
-### T2 の結果（T1-688、2026-10-16、Pi 4 実機、A1 7000f9bfd）: PASS、速さは変わらず
+### T2 の結果（T1-688、2026-10-15、Pi 4 実機、A1 7000f9bfd）: PASS、速さは変わらず
 
 - 全画面で `KWL COPY window=1 reason=none`、窓は `window=0 reason=not-fullscreen`。落ちない、PNG の色・画は正しい（`build/review/t1-688-pi.png`、撮影の frame は合成）。60p 全画面 305/295・compose frame_ms 23.5〜24.6・videoplayer の acquire 約 20 ms、30p 全画面 243/57、60p 窓 305/295・frame_ms 27.6〜30。draw の tile は 1 表示 frame に 240（videoplayer だけ）に減ったが、frame の速さは同じ。
 - 読み: `passes=47/0/140`（2 秒）＝ 1 表示 frame に image の pass が 3 つ: A1 の copy と、**libvulkan の present の copy が 2 つ**（videoplayer の Wayland の swapchain、compositor の display の swapchain。下の A3）。compositor の frame 24 ms のうち CPU 側の呼びが約 12 ms（acquire 4・begin 1.3・end 1.1・submit 1.9・present 3.1〜3.8、present は copy の command の submit）、残りは GPU の完了待ち。律速は GPU の量ではなく、present ごとの copy の submit と executor の順番待ちを含む往復の連鎖。
 
 ## A3（Pi の WSI の direct の swapchain）は [ws236-p012](../phase012/phase.md) へ移した
 
-- 2026-10-16 Q1 の判断（design-reviewer の review-1 の m7）: A3 は WS236 の独立の Phase（ws236-p012）。設計・実装・review への対応・T2 への依頼 10 はそちら。
+- 2026-10-15 Q1 の判断（design-reviewer の review-1 の m7）: A3 は WS236 の独立の Phase（ws236-p012）。設計・実装・review への対応・T2 への依頼 10 はそちら。
 
-### T1-690 の CPU の内訳（2026-10-16、P3 の読み、作業はユーザーの決定で停止）
+### T1-690 の CPU の内訳（2026-10-15、P3 の読み、作業はユーザーの決定で停止）
 
-- ユーザーの決定（2026-10-16、Q1 経由、原文）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」→ 60 fps・1080p の作業は止めた。A3（[ws236-p012](../phase012/phase.md)）を残すか戻すかはユーザーに確認中。
+- ユーザーの決定（2026-10-15、Q1 経由、原文）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」→ 60 fps・1080p の作業は止めた。A3（[ws236-p012](../phase012/phase.md)）を残すか戻すかはユーザーに確認中。
 - T1-690（A3 入り、`plan/agents/T2/t1-690/on/`）の `sysctl hw.cputimes` の差: 動画の再生の 15 s の間、4 CPU の時間の **約 75% が system（kernel）**、user は約 3%、idle 約 21%。再生の間の約 2.6 s の隙（ps・dmesg の採取を含む）でも system 約 55%。`ps` の TIME は compositor（`/bin/wayland`）が 15 s に 8 s、videoplayer は終わった後なので数に出ない。T1-689 の `kern: perf` の再生中の switches 約 20 倍と合わせ、往復の遅さ（1 往復 1.4〜4 ms、kernel の処理は約 0.25 ms）は kernel の CPU の取り合いの見込み。誰が kernel で CPU を使うか（videoplayer の thread の ioctl か、kernel の thread か）は、再生中の `ps -e -o pid,time,comm` を数秒おきに取る（thread 単位なら `-H` 相当）ことで次に分かる。再開する時はここから。
 - A3 の効果（T1-690）: 1080p60 全画面の compose frame_ms 24 → 18.5 ms、copy の道（`VULKAN_ZEDBSD_DIRECT=0`）は 23〜24 ms。shown は 1080p60 で約 305/600、720p60 で約 300/600（どちらも約 30 fps）、30p は 1080p で 267/300、720p で 289/300。
 
-### 合成の全画面・窓の速さの見積もり（2026-10-16、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
+### 合成の全画面・窓の速さの見積もり（2026-10-15、P3 新世代、T1-683・T1-685 の log から。依頼 6 の数で確かめる）
 
 - **表示の速さは compositor の frame の速さで決まっている**: T1-685 の窓の 1080p60（r-c）で `KWL PERF compose frames=118`／5 s（23.6 fps）、`frame_ms=25`（frame の始まりから完了まで）、videoplayer の `DRAW` も 1 秒 24 frame で `acquire_us` 26 ms（compositor が前の image を返すのを待つ）。compositor は frame を 1 つずつ（`in_flight`）出し、完了の後に窓の commit を最大 frame の半分待つ（`frame_wait_ms`、display.c）ので、frame_ms 25 ms なら 1 frame 約 40 ms。
 - **frame_ms 25 ms の中身は V3D の executor の順番待ち**: compositor 自身の GPU の仕事は窓の image の TFU（1280x720 RGBA、TFU 1 job 平均 1.7 ms）と 240 tile の 1 pass（約 2.5〜3 ms）だけ。executor（1 本）は compositor・videoplayer（Y・UV の TFU 2 job と 1 pass）・decode の step を交互に流し、`v3d: perf` busy 86〜91%・subs 280/2 s・1 sub 平均 6.2 ms。表示 1 frame（24 fps）あたり executor 約 37 ms（decode 2 picture 分を含む）。
@@ -427,7 +427,7 @@ Phase disposition: normal
 
 ### ユーザーの判断が要る点（記録、P3 は先へ進む）
 
-- **窓の再生の 60 fps**: 窓では compositor の合成の pass（GPU 約 8 ms/frame の見込み）と窓の image の TFU が毎 frame 要り、videoplayer 側だけでは届かない。案は (A) compositor の合成の短縮（窓の下の層を描かない遮蔽の省略など、WS141 p013・WS211 の範囲）、(B) WS214（窓を HVS の plane に載せる）の p005 で再生中の窓を plane に載せる、(C) 60 fps は全画面（game mode）だけを目標にする。~~P3 は (C) の道（`--fullscreen`）を先に確かめる。~~ 2026-10-16 訂正（P3 新世代、Q1）: (C) の game mode は WS223 のユーザーの決定（2026-10-13「Video Playerは、Game Modeをやめます」）に反するので取らない。全画面も合成で、60 fps の道は (A)・(B)・WS223 の見直しのどれかをユーザーが選ぶ（Q1 が master の未決に記録）。
+- **窓の再生の 60 fps**: 窓では compositor の合成の pass（GPU 約 8 ms/frame の見込み）と窓の image の TFU が毎 frame 要り、videoplayer 側だけでは届かない。案は (A) compositor の合成の短縮（窓の下の層を描かない遮蔽の省略など、WS141 p013・WS211 の範囲）、(B) WS214（窓を HVS の plane に載せる）の p005 で再生中の窓を plane に載せる、(C) 60 fps は全画面（game mode）だけを目標にする。~~P3 は (C) の道（`--fullscreen`）を先に確かめる。~~ 2026-10-15 訂正（P3 新世代、Q1）: (C) の game mode は WS223 のユーザーの決定（2026-10-13「Video Playerは、Game Modeをやめます」）に反するので取らない。全画面も合成で、60 fps の道は (A)・(B)・WS223 の見直しのどれかをユーザーが選ぶ（Q1 が master の未決に記録）。
 - **全画面の切り替えの出力の閉じ開き**: WS223 の p002（`scanout-rules.c` の content の条件を `game` だけに）が入るまで、Video Player の全画面は game mode を試して swapchain を 1 回閉じて開き直す（約 60 ms の止まり、`KWL MODE window switch_ms=59〜64`）。直し 6 で VPU は止まらなくなる見込みだが、無駄な閉じ開きは WS223 p002 で消える（Q1 の割り当て）。
 - **先読みの picture 3 → 2**: 1080p60 の decode の throughput（flight 4）のため。30p の再生で揺れ（late）が増えるなら戻すか、libmedia の slot の上限（`H264_DPB_SLOTS` 17、kernel の `VIDEO_MAX_DPB_SLOTS` 17）を広げる（kernel は slot の数を使っていないので広げられるが、libmedia の DPB の表の大きさが変わる）。
 
@@ -440,8 +440,8 @@ Phase disposition: normal
 - slot の数が 17 を超える stream（参照・reorder が多い）は readback の道に戻る（log の `pictures are read back`）。
 - i915（5330）の videoplayer は変えていない（arm64 だけ）。i915 で同じ道を使うには i915 の kernel に NV12 の plane の view と export が要る（範囲外）。
 
-- 2026-10-16 ユーザー（T2 の T1-681 の再生の最中、OLED を目視）:「Piは少なくとも30fps、60fpsに近いフレームレートで動画が再生されました」（b4452d35d の kernel、GPU の picture の道の見込み。数は T1-681 の結果で確かめる）。
+- 2026-10-15 ユーザー（T2 の T1-681 の再生の最中、OLED を目視）:「Piは少なくとも30fps、60fpsに近いフレームレートで動画が再生されました」（b4452d35d の kernel、GPU の picture の道の見込み。数は T1-681 の結果で確かめる）。
 
-- 2026-10-16 ユーザー:「1080pや60fpsはもう計測しなくていいです」→ 以後の T2 の依頼は 720p30 だけ（1080p・60 fps の run は外す）。
+- 2026-10-15 ユーザー:「1080pや60fpsはもう計測しなくていいです」→ 以後の T2 の依頼は 720p30 だけ（1080p・60 fps の run は外す）。
 
-- 2026-10-16 ユーザー:「はい、revert します」→ A1（7000f9bfd、Pi 4 の全画面の窓を合成の代わりに vkCmdCopyImage で出す）の code を Q1 が逆に当てて戻した（compose.c・compose.h・import.c・shell.c・scanout.c・kwl.h、backend の gpu-buffer-zedbsd.c・gpu-dmabuf.c・keiland-backend-gpu.h。計画の記録は残す）。直し 7（scanout.c の kl_backend_scanout_possible、出力を閉じない）は残した。rpi4・amd64 の bin/wayland は warning 0、keiland-os-boundary は既存の libbrowser の /dev/urandom の FAIL だけ（変更前と同じ）。A2 は実装していない（kernel の v3d perf の worker= の診断 0c579ead3 だけ残る）。
+- 2026-10-15 ユーザー:「はい、revert します」→ A1（7000f9bfd、Pi 4 の全画面の窓を合成の代わりに vkCmdCopyImage で出す）の code を Q1 が逆に当てて戻した（compose.c・compose.h・import.c・shell.c・scanout.c・kwl.h、backend の gpu-buffer-zedbsd.c・gpu-dmabuf.c・keiland-backend-gpu.h。計画の記録は残す）。直し 7（scanout.c の kl_backend_scanout_possible、出力を閉じない）は残した。rpi4・amd64 の bin/wayland は warning 0、keiland-os-boundary は既存の libbrowser の /dev/urandom の FAIL だけ（変更前と同じ）。A2 は実装していない（kernel の v3d perf の worker= の診断 0c579ead3 だけ残る）。

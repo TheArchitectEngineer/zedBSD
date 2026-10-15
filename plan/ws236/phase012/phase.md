@@ -3,14 +3,14 @@
 # ws236-p012: Pi の WSI の direct の swapchain（present の copy を無くす）
 
 Parent: [WS236](../ws.md)
-Status: canceled（2026-10-16 ユーザーの決定で revert、下の「revert」）
+Status: canceled（2026-10-15 ユーザーの決定で revert、下の「revert」）
 Phase disposition: normal
 実行者: P3（worktree `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3-ws236g`）
-依存: [ws236-p011](../phase011/phase.md)（A1 の全画面の copy、T1-688）。分けた経緯: 2026-10-16 Q1 の判断（review-1 m7「A3 は WS236 の独立の Phase に、規約の全文の見直しを含める」）。p011 の「A3 の設計」第 1 版（7879af2b0）からここへ移した。
+依存: [ws236-p011](../phase011/phase.md)（A1 の全画面の copy、T1-688）。分けた経緯: 2026-10-15 Q1 の判断（review-1 m7「A3 は WS236 の独立の Phase に、規約の全文の見直しを含める」）。p011 の「A3 の設計」第 1 版（7879af2b0）からここへ移した。
 
 ## 目的と合格
 
-- 目的: Pi 4（bcm2711 の V3D）で、Vulkan の app と compositor の swapchain の present ごとの GPU の copy（app が描く image → 共有の image）を無くし、1 表示 frame の GPU の pass と present の往復を減らす。製品の挙動（見え方・API の振る舞い）は変えない描画の最適化（Q1 の委任、2026-10-16）。
+- 目的: Pi 4（bcm2711 の V3D）で、Vulkan の app と compositor の swapchain の present ごとの GPU の copy（app が描く image → 共有の image）を無くし、1 表示 frame の GPU の pass と present の往復を減らす。製品の挙動（見え方・API の振る舞い）は変えない描画の最適化（Q1 の委任、2026-10-15）。
 - 合格（Pi 4 実機、T2 の依頼 10）: 起動・desktop・app・GL の app・X11 の app・VT の切り替え・回転・動画の全画面と窓で画が出て崩れない、`execution failed`・`a pass writes a run the display reads`・decode の `came back unread`・`not answered` が無い、`v3d: perf` の image の pass が 1 表示 frame に 1 つ（A1 の copy だけ）に減る。5330（i915）・QEMU（Venus）・RTX（nvrtx）は `VK SWAPCHAIN direct=0 reason=renderer`（今の道のまま）。規約の全文の見直し（変えた C の file）。
 
 ## 今の形と問題
@@ -18,7 +18,7 @@ Phase disposition: normal
 - libvulkan の WSI（`userland/desktop/libvulkan/wsi-swapchain.c`）は、app が描く swapchain の image（`group->images[i]`、OPTIMAL）と、compositor・display に渡す共有の image（`presentation[i].shared_image`、LINEAR、export した allocation を `platform->import_image` で native に登録）を分ける。`vkQueuePresentKHR` ごとに `present_record` が copy の command（`present_copy_shared`）を記録し（同じ image の 2 回目からは記録を使い回す）、`present_submit` が app の待ちの semaphore とともに submit し、present の worker が fence の後に native の present（Wayland の commit、display の `GPU_DISPLAY_PRESENT_SYNC`）をする。
 - bcm2711 の kernel では OPTIMAL と LINEAR の image は同じ raster の backing（`vulkan-resource.c`「Optimal images use the same native raster backing」）で、layout と queue family の ownership は resource（VkImage）ごと（compositor・display が同じ memory を自分の image として import すると、その image の layout は別に持つ）。copy は同じ byte を写すだけの上乗せで、1 present に 240 tile の copy の pass（約 1.3〜2 ms）と、その pass の executor の順番待ちが足される（T1-688: 1 表示 frame に image の pass が 3 つ＝A1 の copy、videoplayer の present の copy、compositor の present の copy）。
 
-## 約束（設計 第 2 版、2026-10-16）
+## 約束（設計 第 2 版、2026-10-15）
 
 ### direct の chain とその条件
 
@@ -73,14 +73,14 @@ Phase disposition: normal
 - Wayland の app（全て direct）: videoplayer、toolkit の app（Settings・Files・Terminal・Notes・Monitor・mview・Image Viewer）、browser、libegl の GL の app（glxtest・zgears・egltest）、xserver（TRANSFER_DST だけの chain、部分の region）、display-events、vkdemo・wltest。窓の resize（oldSwapchain）、全画面の切り替え、最小化・復帰。
 - 変わらない: cursor plane（今のまま）、HVS の overlay の plane（WS214）。
 
-## 実装（2026-10-16、P3 新世代）
+## 実装（2026-10-15、P3 新世代）
 
 - kernel: `render-runtime.c`（native の word を常に出し、direct swapchain の bit 2）、`display-flip.c`・`.h`（`bcm2711_display_flip_reads`、flip の状態の持ち主の static の参照）、`vulkan-native-job.c`（`check_output`）。
 - libvulkan: `internal.h`（`context->direct_swapchain`）、`context.c`（bit 2 を読む）、`wsi-image.c`・`wsi-internal.h`（`vulkan_wsi_shared_image_create` に追加の usage）、`wsi-swapchain.c`（`WSI_DIRECT_VARIABLE`・`WSI_DIRECT_DISPLAY_VARIABLE`、group の `borrowed`、chain の `direct`、job の `bare`、`swapchain_create(…, alone, …)`、`swapchain_direct_eligible`（reason）、`swapchain_direct_create`、戻りの規則、作成の log、`swapchain_group_free`・`swapchain_native_images_free` の direct の扱い、`present_prepare`（direct の矩形は全体だけ。opt-in の compositor の出力だけが対象）、`present_bare`・`present_record`（bare は slot の fence だけ、slot の recording を 0 に）・`present_recording_key`（bare は key 0）・`present_submit`（bare は command buffer 0）・`present_slots_forget`（command の無い slot を飛ばす））。
 - compositor: `wayland/compose.c`（出力の swapchain の作成の前後だけ `VULKAN_ZEDBSD_DIRECT_DISPLAY=1`）。
 - 試験: `plan/ws214/tests/vulkan-overlay-host.c` の (x)（bit が無い前の scenario は全て direct=0、bit があっても opt-in が無い display の chain は direct=0、opt-in で direct＝`vkGetSwapchainImagesKHR` が共有の image・present は submit 1・copy 0・native present 1、全体でない矩形は拒否、renderer が共有の image を断ると copy の道に戻り、bare の後の slot で copy の present が command buffer を作って copy する）。`vulkan-overlay-host.sh`・`plan/ws141/tests/vulkan-cursor-host.sh`（stderr の検査から `VK SWAPCHAIN` の行を外す）、`vulkan-cursor-host.c`（stub の引数）、`plan/ws141/tests/vulkan-device-host-test.c`（capset が 176 byte・native の word・bit 2）、`vulkan-device-link-stubs.c`・`v3d-hardware-host-test.c`（`bcm2711_display_flip_reads` の stub）、`userland/tests/gpu-share/main.c`（新しい引数）。
 
-## 確かめ（host と build、2026-10-16）
+## 確かめ（host と build、2026-10-15）
 
 | 確かめ | 結果 |
 | --- | --- |
@@ -110,7 +110,7 @@ Phase disposition: normal
 6. 戻し: 画が出ない・落ちる時は最初に `/lib/libvulkan.so` を退避の物に戻して reboot（全 app が影響を受ける）。Pi が応答しなくなったら止めて報告（Q1 が SwitchBot で入れ直す）。
 7. T1（別の機会、起動の確かめに含める）: 5330（i915）・QEMU（Venus）・RTX の desktop の起動の log に `VK SWAPCHAIN direct=0 reason=renderer` が出る（direct にならない）。
 
-## design-reviewer の review-1（2026-10-16、Q1 が要旨を写した）
+## design-reviewer の review-1（2026-10-15、Q1 が要旨を写した）
 
 結論: blocker 0（bcm2711 の display の PRESENT_SYNC は adoption まで返らず、前の front の holds-- はその後、compositor は current・front に参照の数を持ち frame の fence の後で release するので、「共有の image が手放されるまで acquire しない」gating は正しい）。major 8・minor 7。
 
@@ -123,10 +123,10 @@ Phase disposition: normal
 - M7 試験が競合と失敗の道を検出できない → kernel の出力先の検査の log、強制失敗の host 試験、作り直しの繰り返しの前後の memory。
 - M8 回帰の範囲の抜け（libegl・xserver・terminal・notes・monitor・mview・display-events、turn・heads・VT・display の off/on・mode の変更・lock、nvrtx）。
 - minor: m1 acquire の安全の根拠の場所、m2 usage は vkGetPhysicalDeviceImageFormatProperties(LINEAR)、m3 CONCURRENT は direct にしない、m4 stub の host 試験 2 本、m5 単独の作成は明示の引数、m6 env で切れる・作成ごとの log、m7 独立の Phase。
-- Q1 の判断（2026-10-16、ユーザーは就寝中、製品の挙動を変えない形を選んだ）: M1 capset の bit（WS141 の範囲として許可）、M2 opt-in（第三者の KHR_display の app は今の道）、M3 印の意味を保つ、m7 ws236-p012。P3 は 849ea5b1a で全て対応（P3 の報告）。T2 の T1-690・T1 の T1-691 で確かめる。
+- Q1 の判断（2026-10-15、ユーザーは就寝中、製品の挙動を変えない形を選んだ）: M1 capset の bit（WS141 の範囲として許可）、M2 opt-in（第三者の KHR_display の app は今の道）、M3 印の意味を保つ、m7 ws236-p012。P3 は 849ea5b1a で全て対応（P3 の報告）。T2 の T1-690・T1 の T1-691 で確かめる。
 
-## 2026-10-16 ユーザーの決定
+## 2026-10-15 ユーザーの決定
 「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」（T1-690 の A3 の有無の比較の後）→ Pi のビデオの要件は 720p30。60 fps・1080p に向けた作業は止める。A3（この Phase）を残すか revert するかはユーザーに確認中。
 
-## revert（2026-10-16、ユーザーの決定）
+## revert（2026-10-15、ユーザーの決定）
 ユーザー（クリック）: A3 を「revert する」（要件が 720p30 になり、720p30 では fps が変わらず合成の 1 frame が 14.2→20.2 ms に延びたため）。Q1 が 1eba9a16b・15d2de40b・849ea5b1a の code の変更（libvulkan の WSI、compositor の opt-in、kernel の capset の bit・出力先の検査、host 試験の stub）を逆に当てて戻した（計画の記録は残す）。rpi4・amd64 の vmunix・libvulkan・wayland は warning 0、ws214 vulkan-overlay-host・ws141 vulkan-cursor-host・vulkan-device の host 試験は PASS。Status: canceled（revert 済み）。

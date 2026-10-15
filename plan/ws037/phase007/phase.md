@@ -2,7 +2,7 @@
 
 # ws037-p007: 3D の投入（段 P9g: 最初の draw）
 
-Status: in-progress（2026-10-16: **D3・D5・D6 が方式 B（passthrough）の実機で PASS**。D6 は T1-678 で Keiland の desktop が nvrtx で描かれた（8.13）→ D6 は cleared の候補（Q1 の判定）。残りは D7（方法 A、8.14、ユーザーの判断待ち）。以前: 段 P9g は T1-656 で実機 PASS）
+Status: in-progress（2026-10-15: **D3・D5・D6 が方式 B（passthrough）の実機で PASS**。D6 は T1-678 で Keiland の desktop が nvrtx で描かれた（8.13）→ D6 は cleared の候補（Q1 の判定）。残りは D7（方法 A、8.14、ユーザーの判断待ち）。以前: 段 P9g は T1-656 で実機 PASS）
 Disposition: normal
 Parent: [WS037](../ws.md)
 依存: [p008](../phase008/phase.md) の段 E（頂点・fragment の program と SPH、2026-10-15 実装・host 済み）、段 P9c（compute の投入。2026-10-15 実機 R7c PASS: GR の channel・promote・QMD・fence の道が実機で動いた）、P5g（golden context）
@@ -242,7 +242,7 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 | vmunix（`build/p2/amd64`） | rc 0・warning 0・include/vmunix check PASS |
 | 実機 | 未実施（node に CAPSET・COMMAND・NOTIFICATION・JOB はまだ付けていない: 次の D2 の残り） |
 
-### 8.6 D2 の node の口（2026-10-16、P2。build と host 試験まで）
+### 8.6 D2 の node の口（2026-10-15、P2。build と host 試験まで）
 
 `nvrtx.vk=1`（新しい boot の語、既定は off: D3 が動くまで既存の machine の libvulkan が nvrtx を renderer に選ばないように）の時だけ、node が renderer になる。
 
@@ -264,7 +264,7 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 
 次は D3（memory・buffer・image・descriptor・pipeline・render pass と記録の 15 種の vkCmd、D1 の work channel へ投入）。
 
-### 8.7 D3 の設計（2026-10-16、P2）
+### 8.7 D3 の設計（2026-10-15、P2）
 
 範囲は Keiland の compositor と libkeiland の ui が使う物だけ（`userland/desktop/wayland`・`libkeiland/ui` の vk 呼び出しの棚卸し）: memory・buffer・image（2D、1 level・1 layer・1 sample、B8G8R8A8／R8G8B8A8 の UNORM・SRGB）・image view・sampler・shader module・descriptor set layout／pool／set／update（COMBINED_IMAGE_SAMPLER）・pipeline layout（push constant）・render pass（colour 1 つ）・framebuffer・graphics pipeline・command pool／buffer・fence・semaphore・QueueSubmit、記録する vkCmd は 15 種（BeginRenderPass・EndRenderPass・BindPipeline・BindDescriptorSets・BindVertexBuffers・PushConstants・SetViewport・SetScissor・Draw・PipelineBarrier・CopyImage・CopyBufferToImage・CopyImageToBuffer・BlitImage・ClearColorImage）。
 
@@ -280,7 +280,7 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 
 段: D3a memory・buffer・image・view・sampler（＋node の blob の `blob_id`）→ D3b shader module・layout・descriptor・render pass・framebuffer・pipeline（compile）→ D3c command pool／buffer と記録 → D3d fence・semaphore・QueueSubmit と push の組み立て・実行。各段で build・host 試験、D3d の後に T1 へ（vkdemo の offscreen）。
 
-### 8.8 D3 の実装（2026-10-16、P2。build と host 試験まで、実機は R9v を T へ）
+### 8.8 D3 の実装（2026-10-15、P2。build と host 試験まで、実機は R9v を T へ）
 
 8.7 の設計どおり。executor の object と記録と実行を nvrtx の中に書いた（i915 の codec を include、型・名前・構造は nvrtx の物）。
 
@@ -329,33 +329,33 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
 3. SSH で `keiland-shot /tmp/r9k.png` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` が合格の印、PNG を scp で host へ取り、結果の md に貼る（login の画面か desktop が描かれていること）。
 4. FAIL の時: `/var/log/sessiond.log`・`/var/log/greeter.log`（login の画面の compositor の出力）と 1 の dmesg を記録。
 
-### 8.9 R9v（T1-672、2026-10-16）: FAIL（語の不足）と直し
+### 8.9 R9v（T1-672、2026-10-15）: FAIL（語の不足）と直し
 
-- `plan/agents/T1/results-20261016-t1-672.md`。dmesg: P9w ok（fence 1 after 517 us）、P8 ok、`P8b: no console kept; the head is left to the firmware`、`P8 done; this revision ends at P8c`、P6 ok・P7 unload。P8c の行が無く GPU device は登録されず、`vkquad` → `VKQUAD fail devices 0 count=0`、`display-events` → `done error=-3`。executor（D3）には届いていない。
+- `plan/agents/T1/results-20261015-t1-672.md`。dmesg: P9w ok（fence 1 after 517 us）、P8 ok、`P8b: no console kept; the head is left to the firmware`、`P8 done; this revision ends at P8c`、P6 ok・P7 unload。P8c の行が無く GPU device は登録されず、`vkquad` → `VKQUAD fail devices 0 count=0`、`display-events` → `done error=-3`。executor（D3）には届いていない。
 - 原因: 方式 B の guest では GOP の console が emulated の VGA にあり RTX に無いので、既定の takeover（console を見せる）は head を firmware に残し、P8c（resident）は `display.taken` が無いので走らない。R8c・R8d は `nvrtx.disp.test=1`（自前の帯の surface）で takeover していた。
 - 直し: R9v と R9k の語に `nvrtx.disp.test=1` を足した（`config-amd64-nvrtx.mk`、8.8 と R9k の手順の前提）。code は変えない。
 - 後の課題（desktop が通った後に Q1 と決める）: console の無い時（方式 B、または GOP が別の GPU）にも、renderer を求められたら自前の黒い surface で takeover して device を登録するか。
 
-### 8.10 R9v（T1-673、2026-10-16）: vkquad PASS、display-events FAIL と直し
+### 8.10 R9v（T1-673、2026-10-15）: vkquad PASS、display-events FAIL と直し
 
-- `plan/agents/T1/results-20261016-t1-673.md`。`P8c ok: gpu device registered`、**`VKQUAD ok device=zedBSD nvrtx (NVIDIA Turing) pixels=4096`**（D3: RTX が compositor の quad の shader で描き、copy・clear・buffer↔image と読み戻しが合う。実機の初の Vulkan の描画）。
+- `plan/agents/T1/results-20261015-t1-673.md`。`P8c ok: gpu device registered`、**`VKQUAD ok device=zedBSD nvrtx (NVIDIA Turing) pixels=4096`**（D3: RTX が compositor の quad の shader で描き、copy・clear・buffer↔image と読み戻しが合う。実機の初の Vulkan の描画）。
 - display-events: `DISPLAY-EVENTS done error=-3` だけ（extensions の行も出ない: `vkEnumeratePhysicalDevices` が 0 台で -3）。nvrtx の error の行は無し。
 - 原因（code の読みで特定）: GPU core は native の仕事をした session が閉じる時に recovery の stop（`stop_begin`・`stop_poll`）で止まったことを確かめ、stop の無い backend では device 全体を fault にする（`gpu.c` の monitor、action 3）。runtime は `recovery.fault` しか持たなかったので、vkquad の終わりで renderer が fault し、次の open（display-events）の libvulkan の最初の command が EIO で、その node は飛ばされた。
 - 直し（`runtime.c`・`nvrtx-node.h`）: `stop_begin`（session に stopping を立て、新しい frame・command・reservation を EIO で断る、待たない）と `stop_poll`（session の queued／running の仕事が無くなれば 0、まだなら EAGAIN、commit されていない reservation は数えない）。fault の最初の 1 回を `D2: the renderer faulted (E); it takes no more work` と kernel log に出す（次の切り分けのため）。build は warning 0。
 - 次: T1 で R9v を流し直す（vkquad の後の display-events が swapchain／present の行を出すこと、vkquad を 2 回流して 2 回とも ok になること）。
 
-### 8.11 R9v（T1-675、2026-10-16）: PASS（D3・D5）
+### 8.11 R9v（T1-675、2026-10-15）: PASS（D3・D5）
 
-- `plan/agents/T1/results-20261016-t1-675.md`（main f82703504、52096d8cd 込み）。`P9w ok`、`P8c ok: gpu device registered`。
+- `plan/agents/T1/results-20261015-t1-675.md`（main f82703504、52096d8cd 込み）。`P9w ok`、`P8c ok: gpu device registered`。
 - **vkquad 2 回連続とも `VKQUAD ok device=zedBSD nvrtx (NVIDIA Turing) pixels=4096`**（D3: 描画・転送・読み戻し、session の stop が通り 2 回目も open できる）。
 - **display-events**: surface-counter=1・display-control=1、nvrtx の head 1280x1024、swapchain result=0、present 60 frames result=0、first-pixel result=0（18 ms）、`done error=0`（D5: VK_KHR_display の swapchain で RTX の display に出た）。power off/on は -13（nvrtx の power は EOPNOTSUPP の仕様、合格の外）。
 - nvrtx の error の行・`D2: the renderer faulted` は無い。
 - 判定（Q1）: D3・D5 を実機で確認。次は D6（R9k: compositor が nvrtx で desktop を描く）。
 
-### 8.12 R9k（T1-676、2026-10-16）: FAIL（sessiond が display を待たなかった）と直し
+### 8.12 R9k（T1-676、2026-10-15）: FAIL（sessiond が display を待たなかった）と直し
 
-- `plan/agents/T1/results-20261016-t1-676.md`（2 回とも同じ）。nvrtx は P9w ok・P8b ok・`P8c ok: gpu device registered`、refused・D3 fail・faulted は無し、`/dev/gpu0` はある。しかし compositor（greeter）も session も無く tty の login。`/var/log/sessiond.log` は `SESSIOND CONSOLE reason=no-display errno=6` と `SESSIOND CONSOLE show`、dmesg の `system: the console is shown again` は P0 の直後で P8c より前。
-- ユーザーは run の中で RTX の実の monitor に `nvrtx.disp.test=1` の帯（カラーバー）を目視した（2026-10-16、phase006 に記録）。
+- `plan/agents/T1/results-20261015-t1-676.md`（2 回とも同じ）。nvrtx は P9w ok・P8b ok・`P8c ok: gpu device registered`、refused・D3 fail・faulted は無し、`/dev/gpu0` はある。しかし compositor（greeter）も session も無く tty の login。`/var/log/sessiond.log` は `SESSIOND CONSOLE reason=no-display errno=6` と `SESSIOND CONSOLE show`、dmesg の `system: the console is shown again` は P0 の直後で P8c より前。
+- ユーザーは run の中で RTX の実の monitor に `nvrtx.disp.test=1` の帯（カラーバー）を目視した（2026-10-15、phase006 に記録）。
 - 原因: sessiond は `/dev/gpu0` が無い時、kernel の `hw.gpu.attaching`（GPU device が node へ向かう途中の数）が 0 なら待たずに console に戻す。i915 は attach で数えるが nvrtx は数えていなかった。さらに数えても、`nvrtx.disp.test=1` の待ち（5 s・5 s・3 s・3 s）は sessiond の待ちの上限 15 s を越える。
 - 直し:
   - `nvrtx.c`・`nvrtx-gpu.h`: GSP の worker を始める時、GPU device と display が求められていれば（既定）`kern_gpu_attach_begin()`、worker の終わり（P8c の登録の後、または失敗）で `kern_gpu_attach_end()`。
@@ -363,16 +363,16 @@ image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/con
   - `config-amd64-nvrtx.mk`: R9k の語を `nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1` に。
 - build は warning 0。次: T1 で R9k を流し直す。sessiond.log に `SESSIOND DISPLAY waited_ms=…` が出て、greeter（compositor）が動き、keiland-shot が PNG を取れること。
 
-### 8.13 R9k（T1-678、2026-10-16）: PASS（D6: RTX の上に Keiland の desktop）
+### 8.13 R9k（T1-678、2026-10-15）: PASS（D6: RTX の上に Keiland の desktop）
 
-- `plan/agents/T1/results-20261016-t1-678.md`（tree f706f4718、1c5c90857 込み）。RTX 2070 実機、方式 B（QEMU+VFIO、rombar=1）。boot の語 `login=graphical kmsg=quiet nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1`。image の build は rc 0・warning 0。
+- `plan/agents/T1/results-20261015-t1-678.md`（tree f706f4718、1c5c90857 込み）。RTX 2070 実機、方式 B（QEMU+VFIO、rombar=1）。boot の語 `login=graphical kmsg=quiet nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1`。image の build は rc 0・warning 0。
 - dmesg（nvrtx）: `P8b ok: head 0 shows the driver's surface`（1280x1024）→ `P8c ok: gpu device registered, display 1280x1024 at 60019 mHz`。`refused`・`D3 fail`・`did not compile`・`faulted` は 0 件。`/dev/gpu0` あり。
 - sessiond.log: **`SESSIOND DISPLAY waited_ms=2300`**（8.12 の attach の数えで sessiond が待った）→ greeter=/bin/wayland、AUTOLOGIN kei、SEAT `/dev/gpu0`、SESSION start、`HANDOFF session ready=1`。ps に wayland（`--session --glass`）・keiland-ime・files `--desktop`・settings `--welcome`。
 - `keiland-shot` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` rc 0。PNG: 上の panel（時計）、wallpaper、Settings の "Welcome to Kei, Kei" の window（Skip・Next）。写しは main の `build/review/t1-678-r9k.png`。
 - 判定: **D6 PASS（QEMU+VFIO の実機の RTX。compositor が nvrtx の renderer で合成し、nvrtx の display に出した）**。ユーザーの目標「RTXでデスクトップが描画できること。」を方式 B で満たした。証拠は compositor の capture（keiland-shot）と log で、RTX の monitor の目視はこの run では無い（同じ display の道の帯は 8.12 の run でユーザーが目視）。
 - D6 は cleared の候補（Q1 の判定）。p007 の残り: D7（方法 A、8.14）と、`nvrtx.vk`・`nvrtx.disp.own` の既定（ユーザーの判断）。
 
-### 8.14 D7（方法 A: 素の起動）で要る物（2026-10-16、P2 の洗い出し。code は未着手、ユーザーの判断待ち）
+### 8.14 D7（方法 A: 素の起動）で要る物（2026-10-15、P2 の洗い出し。code は未着手、ユーザーの判断待ち）
 
 Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動）で GOP の console を引き継ぐ道で desktop まで行くか、`nvrtx.vk` の既定を洗い出す。調べた事実（code と T の結果）:
 
@@ -396,14 +396,14 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
    - **RAd**（RAk が FAIL の時の切り分け）: RAk に kernel の行を画面に出す（`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、graphical boot n）。最後に見えた `N1`・`P0`・`P4m`・`P8b`・`P8c`・`P9w` の印を写真に撮る。graphical boot n なので GOP は 640x480 になり、RAk（1920x1080）とは mode が違う点に注意（切り分けの用で、合格の判定は RAk）。
    - 手順は phase006 の RA と同じ: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/rak NVRTX_RUN=RAk`、USB に書き、BIOS は CSM off・primary display が PEG、RTX の出力に monitor。
 
-## 方法 A の 1 回目（RAk、2026-10-16、ユーザーが RTX 機 10.0.30.5 を USB から素で起動、Q1 が SSH で調べた）
+## 方法 A の 1 回目（RAk、2026-10-15、ユーザーが RTX 機 10.0.30.5 を USB から素で起動、Q1 が SSH で調べた）
 
 - image `build/ws037-nvrtx/rak`（main a3cf77c12、語 `logo=logo.ppm login=graphical kmsg=quiet nvrtx.vk=1`）。kernel log は `build/q1/rak-run1/kernel.log`（197 行）。
 - 実機で通った: N0（TU106 rev a1）、`N1 gop 640x480 stride 1024 in bar1 at +0`、`P0 console 640x480 pitch 4096 kept`、P0〜P2b（GSP-RM up after 917 ms）、P3、P4、P4m（`console: bar1 0..1e0000 on the VRAM's start again`、read back both ways）、P5、P5g、P9w（fence after 866 us）、P8（outputs）、P8b の channel・EDID（1280x1024、DVI）・head 0 の armed（view 01e00280＝firmware は 640x480 を head の scaler で 1280x1024 に拡大）。
 - 止まった所: `P8b: the console is 640x480, the mode 1280x1024; the head is left to the firmware`（scanout.c:837、console の大きさが mode と違うと takeover しない）→ `P8: the GSP stays up to keep the console`、GPU device を登録しない → `/dev/gpu0` 無し → sessiond `CONSOLE reason=no-display errno=6`。
 - 原因の 2 つ: (1) GOP が 640x480（graphical boot は video= を落とすが、loader が 1920x1080 を求め、この monitor（最大 1280x1024）で 640x480 になった見込み）、(2) nvrtx が console と mode の大きさの違いを受けない（firmware は view in 640x480・out 1280x1024 で拡大していた）。
 
-## 方法 A の 1 回目の直し（P2、2026-10-16、未試験）
+## 方法 A の 1 回目の直し（P2、2026-10-15、未試験）
 
 - 原因（上の (2)）: `scanout_console_surface` が console と mode の大きさの一致を求め、640x480 の console・1280x1024 の mode で ENOTSUP → takeover せず GPU device も登録しない。
 - 直し（firmware と同じ形、GOP の出力先のまま。nouveau の `headc37d_view`・`nv50_head_atomic_check_view` の view in＝picture の大きさ、view out＝mode の大きさと照らした）:
@@ -414,7 +414,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 - 実機の確かめ（T1、RTX 機 10.0.30.5 に SSH）: 今の USB の image（RAk、main a3cf77c12）の kernel だけを差し替える（a3cf77c12 以降 `include/uapi`・`src/kern` の変更なし）。見る行: `P8b console 640x480 pitch 4096 at the VRAM's start, shown at 1280x1024`、`P8b ok: mode set (1280x1024 on SOR 1), surface A 640x480 shown`、`P8b ok: head 0 shows the console`、`P8c ok: gpu device registered, display 1280x1024`、`P8c lease N claimed`、`P8c view 1280x1024 shown at 1280x1024`。`P8b fail`・`P8c fail`・sessiond の `CONSOLE reason=no-display` が無いこと。
 - 残り（範囲外）: loader の GOP の選び方。graphical boot は 1920x1080 だけを求め、無ければ firmware の今の mode（ここでは 640x480）のまま。1920x1080 以下で一番大きい mode を選ぶ案を Q1 に送った（boot loader は別 WS の所有）。
 
-## 方法 A の P4m の間欠の失敗の直し（P2、2026-10-16、build と host 試験まで、実機は未）
+## 方法 A の P4m の間欠の失敗の直し（P2、2026-10-15、build と host 試験まで、実機は未）
 
 - 症状（T1-682 run 1、RTX 機、kernel 3db13909a）: `P4m console: bar1 0..1e0000 on the VRAM's start again` の後の自己試験で `P4m fail: bar1 reads bad0acd9 bad0acda, PRAMIN reads 5a5a1234 (0)` → `P8c fail: no bar1 window`。run 2 と RAk の 1 回目は同じ番地（root 1f7653000、表 1e9370000、試験の run は bar1 1e0000）で ok。読み（0xbad0acXX＝BAR の access の失敗の値、2 語で下位が d9・da と変わる）と、window で書いた語が PRAMIN に無いことから、試験の run の BAR1 の翻訳がその間ずっと失敗していた。
 - nouveau（Linux v6.12 の `nvkm/subdev/bar/r535.c`・`mmu/vmmtu102.c`・`fault/tu102.c`、kernel.org の plain で読んだ）と照らした: BAR1 は RM の PD3 を wrap して entry 0 を書く（同じ）、TLB の invalidate は 0xb830a0 に root>>8、0xb830a4 に 0、0xb830b0 に 0x80000000|PAGE_ALL|HUB_ONLY|ALL_PDB（1|6）で bit 31 を 2 s まで poll（同じ）。page table の書き込みの後の flush は nouveau では BAR2 の読み（r535_bar_flush）、こちらは PRAMIN の書き込みの後の PRAMIN の読み返しで順序を取っている。手順の違いは見つからず、同じ番地で通る run があるので、決定的な手順の誤りではなく、非同期の何かとの競合と読んだ。
@@ -426,7 +426,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 - 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2c build/ws037-p2c/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285 checks（278→285）。`git diff --check` 0。**実機は未実施**。
 - 実機の確かめ（T1 に依頼）: RTX 機 10.0.30.5 で kernel を `build/ws037-p2c/vmunix` に差し替え、reboot を 5 回。毎回 `P4m ok`・`P8c ok: gpu device registered`・sessiond の session（wayland）の起動を見る。`P4m retry:` の行が出たらその 4 行が原因の切り分けの材料（root の entry が ours でない＝RM が戻した、page entry が wants でない＝PRAMIN の書き込みが届かない、両方合っている＝TLB・fault の側）。
 
-## 方法 A の P4m の間欠の失敗の解析と 2 回目の直し（P2、2026-10-16、Fable 5.1、build と host 試験まで、実機は未）
+## 方法 A の P4m の間欠の失敗の解析と 2 回目の直し（P2、2026-10-15、Fable 5.1、build と host 試験まで、実機は未）
 
 - 材料: T1-691 run 1（kernel eec32eab4 のまま再発、`build/t1/t1-691/run1-dmesg.txt`）、T1-682 run 1、RAk の 1 回目、T1-684 の 5 回（全て PASS）。
 - **fault の記録 `00110802 at 0x1d0000` の解読**（MIT の open-gpu-doc `turing/tu104/pri_mmu_hub.ref.txt` の NV_PFB_PRI_MMU_FAULT_INFO と dev_vm の VF alias、nouveau gv100 fifo の表）: FAULT_TYPE（4:0）= 2 PTE（page entry が無効）、CLIENT（14:8）= 0x08 HOST_CPU_NB（CPU の BAR 越しの posted write）、ACCESS_TYPE（19:16）= 1 VIRT_WRITE、CLIENT_TYPE（20）= HUB、GPC 0、REPLAYABLE（7）= 0（non-replayable）、VALID（31）= 0（記録は ack 済みか古い）。VA 0x1d0000 = 640x480 pitch 4096 の console の y=464〜479 = **text console の最終行（row 29 / 30）**。quiet boot の spinner は y≈323〜353（`splash.c`: centre = height/2 + 0.272×360 = 338、reach≈15）で、ここには書かない。この行に書くのは console が「表示」されている時（前の boot の終わり、または sessiond の console への fallback の後）だけで、P4m の時点（console は suspended）の物ではない。hub の MMU の記録は warm reboot を越えて残る（GSP は power-off まで上げたまま、FLR 無し、P7 無し）ので、前の boot の物と読む。P4m の retry の時にこの古い記録が残っていた＝P2b〜P4m の間の spinner の書き込みは記録を上書きしていない（fault していないか、記録されない）。
@@ -439,7 +439,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 - 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2d build/ws037-p2d/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285。`git diff --check` 0。**実機は未実施**。
 - 実機の確かめ（T1 に依頼）: RTX 機 10.0.30.5 で kernel を `build/ws037-p2d/vmunix` に差し替え、reboot 10 回。毎回 `P4m ok`・`P8c ok: gpu device registered`・session（wayland）の起動。全 run の `P4m bar1 before the tables` の行と、出た時の `P4m retry` の行（どの round で通ったか、instance block の root、fault status）を集める: round 1 で通る＝fault の状態、round 3 で通る＝bind/root、round 4 以降＝RM の busy、全部 FAIL＝別の原因（record の VA・client で切り分け）。
 
-## reboot・shutdown で GSP を止める（P2、2026-10-16、Fable 5.1、build と host 試験まで、実機は未）
+## reboot・shutdown で GSP を止める（P2、2026-10-15、Fable 5.1、build と host 試験まで、実機は未）
 
 ユーザーの決定「再起動の時にGSPを、止めます」→ reboot・shutdown・poweroff の時に nvrtx が P7 を流し、この boot の hub の状態（MMU の fault の記録、BAR1 の bind）と WPR2 を次の boot に持ち越さない（方法 A の P4m の間欠の失敗の候補 a への手当て）。
 
@@ -474,18 +474,18 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 2. **QEMU（nvme を pcie-root-port の下に置いた形）で reboot・poweroff を 3 回ずつ**: CI の image（`config/ci/config-amd64.mk`、kernel `build/ws037-p2e-amd64/vmunix` 相当）を、`-device pcie-root-port,id=rp1,bus=pcie.0 -device nvme,bus=rp1,drive=…` の形で root disk を root port の下に置いて起動し、login の後に reboot（と poweroff）。合格: `shutdown: stopping USB and PCI` → `shutdown: the devices are quiet` が出て reset（poweroff は停止）まで進む、次の boot で fsck の修復なし・login prompt（boot-test.sh の PNG）。これは `drv_pci_shutdown` が bridge の下の NVMe の hook を初めて呼ぶ変更の確認。
 - build の結果（pci.c の変更を含む 3 つ）: `config-amd64-nvrtx.mk`（build/ws037-p2e）rc 0・warning 0、`config/ci/config-amd64.mk`（build/ws037-p2e-amd64）rc 0・warning 0・amd64 vmunix check PASS、`config/ci/config-rpi4.mk`（build/ws037-p2e-rpi4）rc 0・warning 0・arm64 vmunix check PASS。
 
-### T1-692 の結果を受けて（Q1 の伝え、2026-10-16）と診断の行の分割
+### T1-692 の結果を受けて（Q1 の伝え、2026-10-15）と診断の行の分割
 
 - T1-692（P2 の 9d733a1b2、main に merge 済み、reboot 10 回）: 10 回とも P4m ok・P8c ok・session 起動。全 run に `P4m bar1 before the tables: fault status 00000000, record 00110802 …`（同じ古い記録）。run 6 だけ retry: round 1（fault の clear）・round 2（表の書き直し）は通らず **round 3（bind のやり直し）で通った**。→ 原因は候補 a（前の boot の hub の状態、bind）寄り。上の reboot 時の GSP の unload で解消するかは、T1 の reboot 10 回で `before the tables` の行が消えるかで見る。
 - dmesg の行が 80 字で切れて round 3 の instance block の root が読めなかったので、`vram.c` の診断の行を 79 字に収まるよう分けた: `P4m <when>: fault status …, record …` / `P4m <when>: fault at <addr>, engine E` / `P4m <when>: fault type T client C access A`（`vram_fault_show`）、`P4m retry: instance block … names root …` / `P4m retry: the static information names root …`。
 - T1 への依頼に足す: kernel の log は dmesg でなく **`/var/log/kernel.log` の全文**（SSH で scp）を取る。
 
-## reboot で GSP を止める件の扱い（2026-10-16 ユーザー）
+## reboot で GSP を止める件の扱い（2026-10-15 ユーザー）
 「GSPを止める処理については、WSにメモしておいて、あまり深追いしないことにします。Fableの調査で大きな問題がなければ、これでこの問題を終了します。」→ T1-693（RTX 機の reboot 11 回）: 11 回とも P4m ok・P8c ok・session 起動（1 回は retry の round 3 で通った）、ただし前の boot の hub の fault の record（0x142000）は毎回残り、shutdown の P7 の行は log に残らず走ったかは未確認。P2（Fable 5.1 high）が P7 が走るかと record の判定だけを読みで確かめ、大きな問題が無ければ終了。
 
-### T1-693 の結果の読み（P2、2026-10-16、Fable 5.1。ユーザー「GSPを止める処理については、WSにメモしておいて、あまり深追いしない」→ code は変えず、読みで答えた）
+### T1-693 の結果の読み（P2、2026-10-15、Fable 5.1。ユーザー「GSPを止める処理については、WSにメモしておいて、あまり深追いしない」→ code は変えず、読みで答えた）
 
-材料: `plan/agents/T1/results-20261016-t1-693.md`、`/home/awe/zedBSD-worktrees/t1/build/t1/t1-693/run0〜10.txt`、`src/kern/shutdown.c`、`src/drivers/generic/system-device.c`、`userland/base/init/main.c`（`shutdown_system`）、`src/drivers/pci/pci.c`、`src/drivers/gpu/nvrtx/{nvrtx,gsp,vram}.c`、`src/kern/klog.c`、`src/drivers/platform/pcat/graphics/splash.c`、open-gpu-doc `turing/tu104/pri_mmu_hub.ref.txt`。
+材料: `plan/agents/T1/results-20261015-t1-693.md`、`/home/awe/zedBSD-worktrees/t1/build/t1/t1-693/run0〜10.txt`、`src/kern/shutdown.c`、`src/drivers/generic/system-device.c`、`userland/base/init/main.c`（`shutdown_system`）、`src/drivers/pci/pci.c`、`src/drivers/gpu/nvrtx/{nvrtx,gsp,vram}.c`、`src/kern/klog.c`、`src/drivers/platform/pcat/graphics/splash.c`、open-gpu-doc `turing/tu104/pri_mmu_hub.ref.txt`。
 
 1. **P7 は shutdown で走るか（hook の順と条件）**: 経路は init の `shutdown_system`（service を逆順に停止 → 他の process を停止 → sync → `/dev/system` の `KERN_SYSTEM_REBOOT`）→ `system_shutdown_prepare`（readahead の停止 → writeback の閉じ → volume の sync → disk の flush → platform の prepare → `net_shutdown_for_boot` → network が止まった時だけ `drv_usb_shutdown` → `drv_pci_shutdown`）→ `kern_platform_reboot`。`drv_pci_shutdown` は root bus とその下の bus を全部回す（cf60ca868 の直し）ので `01:00.0` の nvrtx の hook に届く。**飛ぶ条件は 1 つだけ**: `net_shutdown_for_boot` が 10 s（`NET_SHUTDOWN_LIMIT_MS`）の間に 0 を返さない時（USB・PCI の hook を両方飛ばす、既存の設計）。RTX 機の NIC は USB の `usb-cdc-ncm: ue0`（PCI の NIC は無い）で、その停止が時間内に終わるかは log からは分からない。**log で確かめられない理由**: `/var/log/kernel.log` は syslogd が、boot の FAT の `/boot/boot0/log/boot-NNNNNN.txt` は bootlog が書くが、どちらも init が ioctl の前に止める service なので、ioctl の後の kernel の行（`shutdown: …`・`P7 …`）はどこにも残らない（設計上、disk は hook の前に flush 済みで、hook の後に file は書けない）。dmesg は次の boot で新しい ring。よって **P7 が走ったか・飛んだかは、今の log では肯定も否定もできない**（T1 の「P7 の行が無い」は不在の証拠ではない）。
 2. **`P4m bar1 before the tables` が 11 回とも出た理由**: 判定は `vram_bar1_tables` の「fault status の DROPPED/VALID が立つ、または FAULT_INFO（0xb83090）≠ 0」（`info != 0U`）。FAULT_INFO の field は全部 `R-EVF`（読み取り専用）で、VALID（bit 31）だけが fault の ack（STATUS の VALID に 1 を書く、RM の fault handling か P4m の retry）で落ち、type・client・access の値は**次の fault が記録されるまで残る**。GSP の unload・falcon の reset・booter_unload は hub の register を reset しないので、unload しても 0 にはならない（0 に戻るのは GPU 全体の reset か power-off だけ）。だから「record ≠ 0 なら出す」判定は、一度でも fault した GPU では以後の毎 boot で出るのが当然で、**T1-693 の合格条件「行が無い」は満たしようがなかった**（判定の誤り。pending の fault は `fault status 00000000` と VALID=0 で「無し」と読める）。
@@ -493,11 +493,11 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
    - 前の P2 の解析「P4m の時点で console は suspended」は誤り（nvrtx は `kern_text_suspend` を呼んでいない。呼ぶのは i915 の bootfb と platform の graphics だけ）。
 3. **run 5 の round 3（bind のやり直し）まで行く理由が unload の後も残るか**: 上の読みでは、hub の fault の record は boot ごとに作り直されるので record は unload の有無と無関係。bind の状態は RM が boot ごとに `0xb80f40` を書き直す物で、持ち越しではない。残る仮説（未確認、深追いしない）: P2b〜P4m の spinner の fault を RM が処理する（non-replayable の fault buffer → RM の BAR1 の回復）のと、P4m の root の entry の書き換え・TLB の invalidate が重なり、hub の BAR1 の bind が古い PDB を見たまま残る。再 bind で直るのはこれと矛盾しない。手当てするなら **GSP の boot の前に `kern_text_suspend()`（spinner も止まる）、P4m で console を map した後に `kern_text_resume()`** で fault 自体を無くす（nouveau と同じ形）。今回は code を変えない。
 4. **次の boot から前の shutdown を確かめる道**: 作らない（Q1 の指示）。案だけ: `NV_PBUS_SW_SCRATCH(i)`（0x1400 + 4i、64 本、RM は 0・1・30、FWSEC は 14（0x1438）・21（0x1454）を使う）の空きに P7 の段と結果を magic 付きで書き、次の boot の N0 で 1 行出す。GPU の reset が無ければ warm reboot を越えて残る見込み（hub の record と同じ理由）だが、VBIOS の devinit・GSP の init が消さないかは未確認。
-5. **大きな問題の有無（読みで）**: 無し。shutdown の hook の待ちは有限（worker ≤ 12 s、drain ≤ 3.5 s、RPC は 1 度 time out したら以後待たない、unload 2 s + 2 s、falcon の halt 2 s ずつ、最悪 30 s 弱）、失敗は 1 行出して reset に任せる。P7 の unload の後に console の書き込み（`shutdown: the devices are quiet` の spinner）が BAR1 で fault しても drop されるだけ（`nvrtx_console_restore` が physical mode に戻した後は届く）。`drv_pci_shutdown` の木の walk は QEMU で nvme を root port の下に置いた reboot・poweroff 3 回ずつ完走・fsck の修復なし（T1-694）。実機 11 回の reboot も全て起動・session 到達（T1-693）。この件はここで終了（ユーザー 2026-10-16）。
+5. **大きな問題の有無（読みで）**: 無し。shutdown の hook の待ちは有限（worker ≤ 12 s、drain ≤ 3.5 s、RPC は 1 度 time out したら以後待たない、unload 2 s + 2 s、falcon の halt 2 s ずつ、最悪 30 s 弱）、失敗は 1 行出して reset に任せる。P7 の unload の後に console の書き込み（`shutdown: the devices are quiet` の spinner）が BAR1 で fault しても drop されるだけ（`nvrtx_console_restore` が physical mode に戻した後は届く）。`drv_pci_shutdown` の木の walk は QEMU で nvme を root port の下に置いた reboot・poweroff 3 回ずつ完走・fsck の修復なし（T1-694）。実機 11 回の reboot も全て起動・session 到達（T1-693）。この件はここで終了（ユーザー 2026-10-15）。
 
-## 9. 描画の遅さの見立て（2026-10-16、P4。code は未変更、Q1 の返事待ち）
+## 9. 描画の遅さの見立て（2026-10-15、P4。code は未変更、Q1 の返事待ち）
 
-ユーザー:「RTXでの描画が遅いです。RPi4と大差ないです。」T1-695（RTX 機、実機、`plan/agents/T1/results-20261016-t1-695.md`）の KWL PERF: draw は 0.1 ms、frame_ms は静止 12.9・Terminal の echo 19.5（約 51 fps）・Files を動かす 29.8（最大 34.3）。frame の大部分は rec の submit（5〜32 ms）と present（3〜15 ms）。CPU は 16 CPU の合計で 0.3〜4%。
+ユーザー:「RTXでの描画が遅いです。RPi4と大差ないです。」T1-695（RTX 機、実機、`plan/agents/T1/results-20261015-t1-695.md`）の KWL PERF: draw は 0.1 ms、frame_ms は静止 12.9・Terminal の echo 19.5（約 51 fps）・Files を動かす 29.8（最大 34.3）。frame の大部分は rec の submit（5〜32 ms）と present（3〜15 ms）。CPU は 16 CPU の合計で 0.3〜4%。
 
 ### 9.1 1 frame の流れと待ち（code の読み）
 
@@ -530,10 +530,10 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 - 順: F1 → F2 → F3（F1・F2 は独立、F3 は host 試験で push を照合）。各段で build（warning 0）と host 試験、まとめて T1 に T1-695 と同じ 3 場面の KWL PERF を依頼して比べる。
 - 確かめを楽にするため、F1〜F3 と一緒に 5 s ごとの計数の行（run の数・CPU の複写の数と byte・present の待ち・lock の待ちの合計）を `nvrtx.vk.perf=1` の時だけ kernel log に出す案もある（Q1 の判断）。
 
-## nvrtx の renderer を既定で on（2026-10-16 ユーザー）
+## nvrtx の renderer を既定で on（2026-10-15 ユーザー）
 「nvrtxはmainでデフォルトで有効にしてください。」→ driver の build は既に既定で y（pci.drivers・config-amd64.mk）。runtime の renderer（nvrtx.vk）を既定 on にし、`nvrtx.vk=0` で off（Q1、stage.c の nvrtx_stage_vk_wanted と work の判定、nvrtx-private.h の注釈）。GSP・display・resident は前から既定 on（GOP が RTX の時）。これで方法 A の素の起動は boot の語なしで desktop まで行く見込み（i5-13400F のように iGPU の無い機械）。注意: 試験の run（R7・R8 など、前は vk 無しが既定）も renderer が on になる。config-amd64.mk・nvrtx の config の vmunix は warning 0、nvrtx-gsp-host-test PASS 304。実機は未。
 
-### 9.4 F1〜F3 の実装（2026-10-16、P4。ユーザーの判断「F1〜F3 を進める」「計数の行を出す」。build と host 試験まで、実機は T1 へ）
+### 9.4 F1〜F3 の実装（2026-10-15、P4。ユーザーの判断「F1〜F3 を進める」「計数の行を出す」。build と host 試験まで、実機は T1 へ）
 
 | 段 | commit | 中身 |
 | --- | --- | --- |

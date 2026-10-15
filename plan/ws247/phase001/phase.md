@@ -2,9 +2,9 @@
 
 # ws247-p001: nvrtx の定数・表・手順に block ごとの出典を付け、本文の出典の名前を除く
 
-Status: cleared（2026-10-16、q984〜q986 とも cleared）
+Status: cleared（2026-10-15、q984〜q986 とも cleared）
 Parent: [WS247](../ws.md)
-Approval: 2026-10-16 ユーザー「WS247の作業を行います。」（ws.md の「残り」1・2・4 の範囲）
+Approval: 2026-10-15 ユーザー「WS247の作業を行います。」（ws.md の「残り」1・2・4 の範囲）
 
 ## 範囲
 

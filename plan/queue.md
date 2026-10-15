@@ -2,7 +2,7 @@
 
 # Queue / all-agent index
 
-## 2026-10-16: WS247・WS245（q984〜q995）
+## 2026-10-15: WS247・WS245（q984〜q995）
 
 承認はユーザーの各指示（各 phase.md の Approval）。
 

@@ -2,10 +2,10 @@
 
 # ws039-p007: shader の compiler（SPIR-V → GFX10、RDNA1、Navi10 = gfx1010）
 
-Status: in-progress（2026-10-16 P5 着手、同日ユーザーの指示で WS039 を一時停止し P5 はラップアップ。再開は 7 節の再開点から）
+Status: in-progress（2026-10-15 P5 着手、同日ユーザーの指示で WS039 を一時停止し P5 はラップアップ。再開は 7 節の再開点から）
 Disposition: normal
 Parent: [WS039](../ws.md)
-Queue: Q1 の割当（2026-10-16、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-16「担当を 2 人（driver と compiler）で並行してよいです。」）
+Queue: Q1 の割当（2026-10-15、P5: 「WS039 の shader の compiler（ws039-p007）」。ユーザーの決定 2026-10-15「担当を 2 人（driver と compiler）で並行してよいです。」）
 依存: なし（host で作って確かめる）。GPU で走らせる確かめは driver（P3）の compute・draw の投入の口に依存する。
 実行者: P5（phase-runner）
 
@@ -13,7 +13,7 @@ Queue: Q1 の割当（2026-10-16、P5: 「WS039 の shader の compiler（ws039-
 
 - 置き場所: `src/drivers/gpu/amdrdna/compiler/`（kernel の中、Guardrail の「SPIR-V の compile は kernel 空間」）。front・optimizer・IR の型は共有の `src/drivers/gpu/compiler/`（i915・V3D・nvrtx と共有）をそのまま使い、変えない。amdrdna は backend だけを持つ。
 - 形は nvrtx の SM75（ws037-p008）に倣う: 命令の選択 → register の割り当て → 待ち（waitcnt）と hazard の印 → encode。ただし AMD は命令を 1 度 machine の命令の列（struct の配列）に作ってから、待ち・hazard・分岐の pass を通して最後に encode する（SM75 の「語から読み戻す」形より単純）。
-- 出典の扱い（Guardrail「MIT の出典のデータの引用」、2026-10-16 ユーザー）: Mesa の ACO・RADV・`src/amd/registers` の encode・opcode・hazard の表・register の欄は**データ**として使い、ブロックごとに出典（path、Mesa の版、関数か表の名前、分かれば行）を comment に書く。copyright・MIT の notice は付けない。code の構造は写さない（ACO は C++ の SSA の大きな compiler で、構造は zedBSD の scalar IR に合わない）。encode の正しさは host の `llvm-mc-19`（LLVM の AMDGPU の assembler、gfx1010 を encode・disassemble できる）で照らす。LLVM の code は取り込まない（試験の道具として呼ぶだけ）。
+- 出典の扱い（Guardrail「MIT の出典のデータの引用」、2026-10-15 ユーザー）: Mesa の ACO・RADV・`src/amd/registers` の encode・opcode・hazard の表・register の欄は**データ**として使い、ブロックごとに出典（path、Mesa の版、関数か表の名前、分かれば行）を comment に書く。copyright・MIT の notice は付けない。code の構造は写さない（ACO は C++ の SSA の大きな compiler で、構造は zedBSD の scalar IR に合わない）。encode の正しさは host の `llvm-mc-19`（LLVM の AMDGPU の assembler、gfx1010 を encode・disassemble できる）で照らす。LLVM の code は取り込まない（試験の道具として呼ぶだけ）。
 
 ### 出典（Mesa 25.0.7、tarball の SHA-256 `592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6`。P1 の `build/mesa-tools/` から P5 の `build/mesa/` へ写して展開、commit しない）
 
@@ -102,7 +102,7 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 2. **disassemble**: compile した全 program の code を `llvm-mc-19 -disassemble` に通し、全ての語が gfx1010 の有効な命令になること、試験の decoder の命令の名前の列と llvm の名前の列が一致すること。
 3. **interpreter**: 試験の中の GFX10 の wave32 の interpreter（必要な命令だけ、encode の語を自分で decode）で走らせ、IR の参照の interpreter と比べる。32 lane に別々の入力を入れ、loop の exec の扱いも見る。待ちの検査（保留の register を待たずに読む・書く）と hazard の検査も interpreter が行う。
 4. **desktop の全 shader**: `userland/desktop/**/shaders.h` の全 module を compile し、200 入力ずつ IR の参照と一致すること（nvrtx の `nvrtx-sm75-desktop-test.sh` と同じ形）。
-5. build: `config/ci/config-amd64.mk` の vmunix（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の下に compiler の file を足す、Q1 の指示 2026-10-16）、warning 0。P3 の行が main に入るまでは kernel の flag で単体の compile を確かめる。
+5. build: `config/ci/config-amd64.mk` の vmunix（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の下に compiler の file を足す、Q1 の指示 2026-10-15）、warning 0。P3 の行が main に入るまでは kernel の flag で単体の compile を確かめる。
 
 ## 6. 段
 
@@ -116,7 +116,7 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 
 ## 7. 記録
 
-### 7.1 2026-10-16 P5（一時停止のラップアップ）
+### 7.1 2026-10-15 P5（一時停止のラップアップ）
 
 済み:
 - 設計（1〜6 節）。program の形（3 節）は P3 とまだすり合わせていない。
@@ -129,6 +129,6 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 
 1. 準備: Mesa 25.0.7 の tarball を `build/mesa/` に（P5 の worktree の物は P1 の `/home/awe/zedBSD-worktrees/p1/build/mesa-tools/mesa-25.0.7.tar.xz` の複写、SHA-256 `592272df3cf01e85e7db300c449df5061092574d099da275d19e97ef0510f8a6`、署名は公開鍵が無く未検証）。展開した範囲は `src/amd/{compiler,common,registers,vulkan}`・`docs/license.rst`。GFX10 の opcode の表は `aco_opcodes.py` を正規表現で読む script（scratchpad に作った、commit していない）で取った: 行の `op(...)` の gfx10 の値、無ければ前の世代の値を引き継ぐ。
 2. 次: `gfx10-encode.[ch]`（2 節の machine の命令の struct、形式ごとの encode、読み書きする register の範囲）→ 試験 `plan/ws039/tests/` の既知の語（llvm-mc と比べる）→ `gfx10-compile.[ch]` の段 A（compute）→ `gfx10-wait.[ch]` → interpreter と IR の参照 → 段 B・E・F（6 節）。
-3. 規則（2026-10-16 ユーザー、Guardrail）: MIT でも code・comment・構造は写さない。data（encode・opcode・hazard の表・register の値）だけを使い、ブロックごとに出典を書く。copyright・MIT の notice は付けない。
+3. 規則（2026-10-15 ユーザー、Guardrail）: MIT でも code・comment・構造は写さない。data（encode・opcode・hazard の表・register の値）だけを使い、ブロックごとに出典を書く。copyright・MIT の notice は付けない。
 4. vmunix.mk: P3 が `CONFIG_DRIVER_PCI_AMDRDNA` の行を入れ、その下に P5 が compiler の file を別の commit で足す（Q1 の指示）。それまでは kernel の flag で単体の compile。
 5. 未実施: encode・lowering・試験・build・P3 との program の形のすり合わせ、license の監査の表。

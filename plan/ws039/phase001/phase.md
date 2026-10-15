@@ -2,7 +2,7 @@
 
 # ws039-p001: amdrdna の調べと設計（初期化の順・firmware・display・packet・段の印・license）
 
-Status: in-progress（2026-10-16 P3。調べの途中で**ユーザーの指示により WS039 を一時停止**、Q1 のラップアップの指示で区切った。設計の文書（design.md・license の監査）は未着手）
+Status: in-progress（2026-10-15 P3。調べの途中で**ユーザーの指示により WS039 を一時停止**、Q1 のラップアップの指示で区切った。設計の文書（design.md・license の監査）は未着手）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（code は書かない Phase。build の行だけ Q1 の依頼で先に入れた）
@@ -17,13 +17,13 @@ Parent: [WS039](../ws.md)
 - `plan/ws039/amdrdna-license-audit.md`（[nvrtx-license-audit.md](../../ws037/nvrtx-license-audit.md) の形）。
 - design-reviewer の review と指摘の反映。
 
-## 出典の扱い（2026-10-16 ユーザー、Guardrail「MIT・GPL の出典のデータの引用」）
+## 出典の扱い（2026-10-15 ユーザー、Guardrail「MIT・GPL の出典のデータの引用」）
 
 - MIT・GPL のどちらの出典からも、使ってよいのは**データ（定数と表: register の offset と bit、packet の形、firmware の表など）だけ**。block ごとに引用元（path・版・表か define の名前・分かれば行）を comment に書く。データには copyright・MIT の表示を付けない。
 - **code・comment・構造は MIT でも写さない**（全 WS に適用）。code・comment・構造は自分で書く。
 - design.md もこの規則で書く（値は出典付き、手順は自分の言葉）。
 
-## これまでにしたこと（2026-10-16 P3）
+## これまでにしたこと（2026-10-15 P3）
 
 1. **build の行**（Q1 の依頼、commit `2699de765`、main に `464c2b843` で merge 済み）: `CONFIG_DRIVER_PCI_AMDRDNA`（Makefile の既定 n と -D、`config/drivers/pci.drivers`（既定 n）・`menu.list` の GPU、`config/ci/config-amd64.mk` は y、`config-rpi4.mk` は n）、`platform/amd64/vmunix.mk` に空の `AMD64_AMDRDNA_SOURCES` の ifeq（driver の file、その後に P5 の compiler の file）。確認: `make -j16 BUILD=build/p3/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p3/amd64/vmunix` rc 0・warning 0・include check と vmunix check PASS。`plan/tools/menuconfig-target-host-test.py` は MAC-T001（VCHIQ）で FAIL するが、変更の前の base でも同じ出力（既存）。
 2. **正本の取得**（commit しない、`plan/ws039/temp/`、git の ignore の範囲）:
@@ -57,7 +57,7 @@ Parent: [WS039](../ws.md)
    navi10 には `_wks`・`dmcu`・`dmcub` の file が無い（DCN 2.0 の Navi10 は display の firmware を使わない見込み、要確かめ）。
 5. **調べの作業の文書**（`temp/notes/`、英語、file:line 付き、commit しない）。6 つの調べを helper に並行で頼んだ:
 
-| note | 中身 | 状態（2026-10-16 の区切り） |
+| note | 中身 | 状態（2026-10-15 の区切り） |
 | --- | --- | --- |
 | `a-chips-pci.md` | RDNA1〜3 の PCI の device id の表、BAR（MMIO は BAR5、VRAM は BAR0、doorbell は BAR2）、Navi10 の IP の base、IP discovery、reset と shutdown、VBIOS の post の確かめ、Mesa の family と gfx_level | **完了**（627 行。要点: RX 5600 XT は 0x731F rev 0xCA、Navi10 は v6.19 で IP discovery だけ（VRAM の上端 −64 KiB、10 KiB）、BAR5 MMIO・BAR2 doorbell・BAR0 VRAM、GRBM_STATUS の byte 0x8010、RDNA3 は class で照合し GC の版で判定、post の確かめは BIOS_SCRATCH_7 の bit 0x200、C2PMSG_81≠0 なら前の driver が PSP を load 済みで reset が要る） |
 | `b-psp-fw-smu.md` | firmware の一覧と container の header、PSP 11.0 の bootloader（KDB・sysdrv・SOS）、PSP の ring、TMR、LOAD_IP_FW の順、SMU 11 の mailbox と最小の手順 | 調べの途中で停止を頼んだ（無いか PARTIAL） |
@@ -70,7 +70,7 @@ Parent: [WS039](../ws.md)
 
 ## 再開の点（resume point）
 
-1. `temp/notes/` の 6 つの note の有無と先頭の PARTIAL の印を確かめ、欠けた topic（b・d・e・f の残り）だけを調べ直す。temp は消えていない前提（worktree `/home/awe/zedBSD-worktrees/p3`、無ければ上の表の版で sparse に取り直す。取得は必ず `plan/ws039/temp` の中の明示の path で行う（2026-10-16 の事故: cwd の取り違えで main の checkout に clone を作り、mv で戻した））。
+1. `temp/notes/` の 6 つの note の有無と先頭の PARTIAL の印を確かめ、欠けた topic（b・d・e・f の残り）だけを調べ直す。temp は消えていない前提（worktree `/home/awe/zedBSD-worktrees/p3`、無ければ上の表の版で sparse に取り直す。取得は必ず `plan/ws039/temp` の中の明示の path で行う（2026-10-15 の事故: cwd の取り違えで main の checkout に clone を作り、mv で戻した））。
 2. P5 の [p007](../phase007/phase.md)（compiler が出す program の形: user SGPR・記述子・PS の入力・export・driver に渡す header）が main に入っていれば読み、design の口を合わせる。
 3. `plan/ws039/design.md` を書く。予定の骨子（まだ文書に無い、調べからの見立て）:
    - **AMD は GSP のような BAR の切り替えが無い**: BAR0 は VRAM を直に見る窓のままなので、GOP の framebuffer の範囲を VRAM の allocator から除けば、text console の切り離し（nvrtx の pcat の口）は要らない見込み。BAR0 は resizable BAR が無ければ 256 MiB。

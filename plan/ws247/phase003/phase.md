@@ -2,9 +2,9 @@
 
 # ws247-p003: nvrtx の compiler（sm75.c・sm75.h）に p001 と同じ出典の規則を当てる
 
-Status: cleared（2026-10-16、q987〜q989 とも cleared）
+Status: cleared（2026-10-15、q987〜q989 とも cleared）
 Parent: [WS247](../ws.md)
-Approval: 2026-10-16 ユーザー「sm75.[ch]にも同じルールを適用して監査、修正して」
+Approval: 2026-10-15 ユーザー「sm75.[ch]にも同じルールを適用して監査、修正して」
 
 ## 範囲
 
@@ -32,6 +32,6 @@ p001 と同じ（cpp の比較、build warning 0、監査の grep）。Q1 が me
 
 ## 出典の無い値・ユーザーの判断
 
-- sm75.c の「Value referenced: the SM75 code the CUDA compiler emits」（IMAD の carry、EXIT の遅れ 5 など 3 か所）: 版と path の形でなく参照の tree で確かめられない。扱いをユーザーに聞いた（2026-10-16）。
+- sm75.c の「Value referenced: the SM75 code the CUDA compiler emits」（IMAD の carry、EXIT の遅れ 5 など 3 か所）: 版と path の形でなく参照の tree で確かめられない。扱いをユーザーに聞いた（2026-10-15）。
 - 末尾を 128 byte の行まで NOP で埋める（NVRTX_SM75_LINE_INSTRUCTIONS・nvrtx_sm75_finish）、GUESS_* の latency の見込み、register の割り当て、cbuf 0 の layout: 自前。
 - NVRTX_SM75_ATTR_GENERIC_END（0x280）は ir.rs VtgIoInfo::mark_attrs の `addr < 0x280` を出典にした（名前の付いた定数は無い）。

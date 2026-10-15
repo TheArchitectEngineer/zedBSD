@@ -3,8 +3,8 @@
 # ws243-p001: 設計（NVDEC の H.264 を Vulkan Video で）
 
 Parent: [WS243](../ws.md)
-Status: in-progress（2026-10-16 ユーザーの指示で WS243 を一時停止。調べの途中で止めた。design.md はまだ書いていない）
-担当: P6（2026-10-16）。code は書いていない。
+Status: in-progress（2026-10-15 ユーザーの指示で WS243 を一時停止。調べの途中で止めた。design.md はまだ書いていない）
+担当: P6（2026-10-15）。code は書いていない。
 
 ## 再開の点
 
@@ -22,7 +22,7 @@ Status: in-progress（2026-10-16 ユーザーの指示で WS243 を一時停止�
 | `offsets.txt`・`off.c` | `nvdec_h264_pic_s` を host で compile して測った field の byte の位置と bit の位置（下の表の元） | 上の ogd |
 | nouveau（Linux v6.19） | P1 の worktree の `plan/ws037/temp/linux/` を読んだ（自分の temp には写していない）。`nvkm/subdev/gsp/rm/r535/fifo.c`・`r570/fifo.c`・`r535/nvdec.c`・`rm/engine.c` | commit `05f7e89ab9731565d8a62e3b5d1ec206485eeb0b` |
 
-## 守る規則（2026-10-16 の Q1 経由のユーザーの決定、guardrail の「MIT・GPL の出典のデータの引用」）
+## 守る規則（2026-10-15 の Q1 経由のユーザーの決定、guardrail の「MIT・GPL の出典のデータの引用」）
 
 - MIT・GPL の source から使ってよいのは**データ**（method の offset、struct の field の位置、定数、表）だけ。block ごとに引用元（path・版・struct か表の名前・分かれば行）を comment に書く。著作権表示は付けない。
 - **code・comment・構造は MIT でも写さない**。NVK の rust の手順（DPB の管理など）は読んで事実を得るだけで、zedBSD の code は自分で書く。
@@ -65,4 +65,4 @@ Status: in-progress（2026-10-16 ユーザーの指示で WS243 を一時停止�
 
 ## 記録
 
-- 2026-10-16 P6: 規則・手本（nvrtx の channel・work channel・executor、i915・Pi の Vulkan Video、libmedia の vkvideo-runtime、vkvideo-probe）と出典（open-gpu-doc、open-gpu-kernel-modules 570.144、Mesa NVK、nouveau v6.19）を読んだ。上の事実を集めた所で、ユーザーの指示で WS243 を一時停止（Q1 のラップアップの依頼）。code・試験・build は未実施。
+- 2026-10-15 P6: 規則・手本（nvrtx の channel・work channel・executor、i915・Pi の Vulkan Video、libmedia の vkvideo-runtime、vkvideo-probe）と出典（open-gpu-doc、open-gpu-kernel-modules 570.144、Mesa NVK、nouveau v6.19）を読んだ。上の事実を集めた所で、ユーザーの指示で WS243 を一時停止（Q1 のラップアップの依頼）。code・試験・build は未実施。

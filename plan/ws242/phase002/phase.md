@@ -2,10 +2,10 @@
 
 # ws242-p002: shader の compiler を SM86（RTX 30）・SM89（RTX 40）にも
 
-Status: in-progress（2026-10-16 P4: 実装・host 試験・build まで。実機（RTX 30/40）の確かめはユーザーの指示で無し。driver が SM を渡す口は P2（ws242-p001））
+Status: in-progress（2026-10-15 P4: 実装・host 試験・build まで。実機（RTX 30/40）の確かめはユーザーの指示で無し。driver が SM を渡す口は P2（ws242-p001））
 Disposition: normal
 Parent: [WS242](../ws.md)
-Queue: Q1 の割当（2026-10-16、P4）。ユーザー「nvrtxドライバは、RTX 20/30/40/50までのSMで対応できるようにしたいです。20/30/40はSPIR-V loweringのみで対応できそうですか？」「20/30/40は、30/40の動作確認なしで、とりあえず対応しておいてください。」「20/30/40対応も独立したWSにして、今から作業します。」
+Queue: Q1 の割当（2026-10-15、P4）。ユーザー「nvrtxドライバは、RTX 20/30/40/50までのSMで対応できるようにしたいです。20/30/40はSPIR-V loweringのみで対応できそうですか？」「20/30/40は、30/40の動作確認なしで、とりあえず対応しておいてください。」「20/30/40対応も独立したWSにして、今から作業します。」
 依存: なし（host で作って確かめる）。driver の呼び手が chip の SM を渡すのは ws242-p001（P2）。
 実行者: P4（phase-runner）
 元の記録: compiler の全体は [ws037-p008](../../ws037/phase008/phase.md)（SM75）。
@@ -45,7 +45,7 @@ NAK の encoder は SM70 以降で 1 本（SM の番号の比較で分岐）、l
 | QMD | V02_02 | V03_00 | driver の側（ws242-p001） |
 | SM あたりの thread（register の方針の目安） | 1024 | 1536 | register の pool（62 + 2）は SM75 のまま。速さの目安だけで、正しさには効かない |
 
-## 3. 実装（2026-10-16 P4）
+## 3. 実装（2026-10-15 P4）
 
 | file | 変更 |
 | --- | --- |
@@ -54,15 +54,15 @@ NAK の encoder は SM70 以降で 1 本（SM の番号の比較で分岐）、l
 | `sm75-schedule.[ch]` | `nvrtx_sm75_reorder()`・`nvrtx_sm75_schedule()` に `sm`。read の分類 `NVRTX_SM75_CLASS_AGU`（address unit の読み、SM75 では 6 で今までと同じ）。RAW を `nvrtx_sm75_raw_turing()`・`nvrtx_sm75_raw_ampere()` に分け、述語の RAW も SM ごと。Red Hat の MIT の notice と sm80_instr_latencies.rs の出典を header に |
 | `sm75-compile.[ch]` | `nvrtx_sm75_compile_stage_sm(words, count, stage, sm, …)`・`nvrtx_sm75_compile_ir_sm(ir, sm, …)`。75・86・89 以外は ENOTSUP と理由。結果に `shader_model`。emit の時に global の access に SM の memory order。今の関数（sm 無し）は SM75 のまま |
 
-driver との口（Q1 経由で P2 に渡した、2026-10-16）: driver の呼び手 4 か所（`vk-pipeline.c`・`draw.c`・`compute.c`・`vk-execute.c`）が chip の表の SM（TU10x・TU11x → 75、GA10x → 86、AD10x → 89）で `_sm` の関数を呼ぶ。呼び手を変えるまでは今と同じ SM75 の code。
+driver との口（Q1 経由で P2 に渡した、2026-10-15）: driver の呼び手 4 か所（`vk-pipeline.c`・`draw.c`・`compute.c`・`vk-execute.c`）が chip の表の SM（TU10x・TU11x → 75、GA10x → 86、AD10x → 89）で `_sm` の関数を呼ぶ。呼び手を変えるまでは今と同じ SM75 の code。
 
-### 3.1 出典の block ごとの注記（2026-10-16、Q1 経由のユーザーの指示「その2つのファイルは、まずブロックごとに引用元を示してください。」「レイテンシの表は、データなので、引用で済むように思います。引用元を明示すればいいと思います。」）
+### 3.1 出典の block ごとの注記（2026-10-15、Q1 経由のユーザーの指示「その2つのファイルは、まずブロックごとに引用元を示してください。」「レイテンシの表は、データなので、引用で済むように思います。引用元を明示すればいいと思います。」）
 
 - `sm75-isa.h`・`sm75-schedule.c` の Mesa の値を持つ block の上に、出典（Mesa 25.3.6 の path、関数・表の名前、行の範囲）を 1 つずつ書いた。zedBSD の物（cbuf の割り当て、追跡の数、並べ替えの見積り）は「zedBSD's own」。EXIT の delay 5 は Mesa ではなく CUDA の出す語から。
 - `sm75-isa.h` は #define の値だけなので、Collabora の MIT の notice を外し、header を Zlib（SPDX）に、出典の一覧（sha256）は残した。`sm75-schedule.c` の notice は、表の入れ子の形（reader → writer の if の並び）と scoreboard の選び方が NAK に沿うので、Q1 の判断まで残した。
 - 動作は不変: SM75 の 55 module の出力は byte 単位で同じ、host 試験 287 checks 0 failures、vmunix は warning 0。
 
-## 4. 確かめ（host と build、2026-10-16 P4）
+## 4. 確かめ（host と build、2026-10-15 P4）
 
 | コマンド | 結果 |
 | --- | --- |

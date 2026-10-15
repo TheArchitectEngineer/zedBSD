@@ -2,9 +2,9 @@
 
 # ws247-p002: 規約の全文の見直し（WS247 が変えた comment と log の文字列）
 
-Status: cleared（2026-10-16、q990）
+Status: cleared（2026-10-15、q990）
 Parent: [WS247](../ws.md)
-Approval: 2026-10-16 ユーザー「ではp002をサブエージェント1つで実施してください。」
+Approval: 2026-10-15 ユーザー「ではp002をサブエージェント1つで実施してください。」
 
 ## 範囲
 
@@ -30,6 +30,6 @@ src/drivers/gpu/nvrtx/（compiler/ を含む）で WS247 が変えた comment �
 5. log の冗長（`unload unload call`、`devinit begin: devinit`、`static-info begin: static info`）。
 6. style-check.py の 716 件（大半は compiler/sm75.c の移動した code と他の WS の code、comment 以外で範囲外）。
 
-## Q1 の確かめ直し（2026-10-16、main 1d8cc4d19）
+## Q1 の確かめ直し（2026-10-15、main 1d8cc4d19）
 
 WS247 の並列作業の前（352b53fee）と今の main で、nvrtx の変更 61 file を `cpp -fpreprocessed -P`（空白を除く）で比べた。差は runtime.c・vk-node.c の log の段の名前の 5 行（D2 → renderer、D3 → executor、意図した改名）だけで、他の 59 file は comment だけの変更。build rc 0・warning 0（amd64 vmunix check PASS）、host 試験 sm75 287/0・desktop 138 compiled/0 disagreed・vk-d3 122/0・vk 60/0。
