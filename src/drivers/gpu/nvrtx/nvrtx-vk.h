@@ -169,4 +169,10 @@ void nvrtx_vk_gpu_free(void *owner, void *token);
  */
 int nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
 
+/*
+ * Counts a transfer the CPU did through the window instead of the GPU, for
+ * the node's counts (provided by the node).
+ */
+void nvrtx_vk_gpu_copied(void *owner, uint64_t bytes);
+
 #endif

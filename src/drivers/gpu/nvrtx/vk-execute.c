@@ -1118,6 +1118,9 @@ execute_buffer_image(
 				error = execute_cpu_copy(buffer, image, region, to_image);
 			if (error != 0)
 				return error;
+
+			/* Counted for nvrtx.vk.perf=1; the next draw writes its target anew. */
+			nvrtx_vk_gpu_copied(session->owner, (uint64_t)region->imageExtent.width * NVRTX_VK_PIXEL_BYTES * region->imageExtent.height);
 			state->target_written = false;
 			continue;
 		}

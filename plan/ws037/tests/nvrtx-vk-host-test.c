@@ -153,6 +153,13 @@ nvrtx_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes)
 	return EIO;
 }
 
+void
+nvrtx_vk_gpu_copied(void *owner, uint64_t bytes)
+{
+	(void)owner;
+	(void)bytes;
+}
+
 int
 main(void)
 {

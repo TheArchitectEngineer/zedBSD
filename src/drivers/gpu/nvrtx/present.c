@@ -512,6 +512,7 @@ present_present(
 	struct nvrtx_node *node;
 	struct nvrtx_resource *resource;
 	struct nvrtx_disp_surface surface;
+	uint64_t waited;
 	uint32_t notifier;
 	bool blob;
 	int error;
@@ -555,9 +556,14 @@ present_present(
 
 	mutex_unlock(&node->lock);
 
-	/* Waits for the head's refresh that begins the flip, outside the node's lock. */
-	if (error == 0)
+	/* Waits for the head's refresh that begins the flip, outside the node's lock, and counts the wait. */
+	if (error == 0) {
+		waited = nvrtx_now_us();
 		error = nvrtx_scanout_frame_wait(node->gpu, notifier);
+		waited = nvrtx_now_us() - waited;
+		nvrtx_node_count(node, &node->counts.flips, 1U);
+		nvrtx_node_count(node, &node->counts.flip_us, waited);
+	}
 
 	/* Records the frame on the screen, or the broken display. */
 	mutex_lock(&node->lock);

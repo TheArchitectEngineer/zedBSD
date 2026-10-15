@@ -127,6 +127,28 @@ struct nvrtx_node_entry {
 };
 
 /*
+ * The counts nvrtx.vk.perf=1 writes into the kernel log every 5 s
+ * (ws037-p007 9): runs and run_us are the push buffers the work channel ran
+ * and the time from their submission to their fence; copies and copy_bytes
+ * the transfers the CPU did through the window; frames the renderer's
+ * frames, wait_us the time they waited for the node's lock and held_us the
+ * time they held it; flips the presentations and flip_us the time their
+ * flips waited for the head.  Whoever does the work adds with relaxed
+ * atomics; the message drain takes and clears them.
+ */
+struct nvrtx_node_perf {
+	uint64_t runs;
+	uint64_t run_us;
+	uint64_t copies;
+	uint64_t copy_bytes;
+	uint64_t frames;
+	uint64_t wait_us;
+	uint64_t held_us;
+	uint64_t flips;
+	uint64_t flip_us;
+};
+
+/*
  * The registered GPU device and its display.
  *
  * Made once by nvrtx_node_start() and kept until power-off, as the GSP is.
@@ -164,6 +186,10 @@ struct nvrtx_node_entry {
  * The message drain (node.c): drain_running is set while its thread runs,
  * drain_stop asks it to end at its next turn (the reboot's stop, which
  * then reads the GSP's replies itself).
+ *
+ * perf is set at the start when the boot asked for the counts
+ * (nvrtx.vk.perf=1) and never changes; counts are the counts, perf_since_us
+ * the time the drain last wrote them (the drain's alone).
  */
 struct nvrtx_node {
 	struct nvrtx_gpu *gpu;
@@ -206,7 +232,28 @@ struct nvrtx_node {
 	int faulted;
 	volatile int drain_running;
 	volatile int drain_stop;
+	int perf;
+	struct nvrtx_node_perf counts;
+	uint64_t perf_since_us;
 };
+
+/*
+ * Adds to one of the node's counts when the boot asked for them; any
+ * context, no lock.
+ */
+static inline void
+nvrtx_node_count(
+	const struct nvrtx_node *node,
+	uint64_t *count,
+	uint64_t amount)
+{
+	/* Nothing is counted without nvrtx.vk.perf=1. */
+	if (node->perf == 0)
+		return;
+
+	/* The drain takes the count with an exchange, so the add is never lost. */
+	(void)__atomic_fetch_add(count, amount, __ATOMIC_RELAXED);
+}
 
 extern const struct drv_gpu_display_ops nvrtx_display_ops;
 extern const struct drv_gpu_share_ops nvrtx_share_ops;

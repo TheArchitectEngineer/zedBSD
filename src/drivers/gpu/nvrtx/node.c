@@ -60,6 +60,9 @@
 #define NODE_DRAIN_TURN_US		1000000U
 #define NODE_DRAIN_PAUSE_US		1000000U
 
+/* How often the drain writes the counts nvrtx.vk.perf=1 asks for. */
+#define NODE_PERF_PERIOD_US		5000000U
+
 /* Matches no function: the drain takes every message until its turn ends. */
 #define NODE_DRAIN_NO_FUNCTION		0xffffffffU
 
@@ -83,6 +86,8 @@ static int node_resource_map(void *private_data, void *session, void *object, st
 static int node_range(const struct nvrtx_resource *resource, uint64_t offset, uint32_t bytes);
 static void node_free(struct nvrtx_node *node);
 static void node_drain(void *argument);
+static void node_perf_report(struct nvrtx_node *node);
+static uint64_t node_perf_average(uint64_t total, uint64_t count);
 
 /*
  * Registers the GPU as a GPU device after the takeover (stage P8c).
@@ -125,6 +130,12 @@ nvrtx_node_start(
 	node->next_lease = 1U;
 	node->next_resource_id = 1U;
 	node->refresh_count = 1U;
+
+	/* The counts every 5 s, when the boot asked for them. */
+	node->perf = 0;
+	if (nvrtx_stage_vk_perf_wanted())
+		node->perf = 1;
+	node->perf_since_us = nvrtx_now_us();
 
 	/* Describes the device: its interface, its capabilities and every operation. */
 	node->ops.version = DRV_GPU_INTERFACE_VERSION;
@@ -858,11 +869,79 @@ node_drain(
 
 		/* Brings the refresh count up to date. */
 		nvrtx_present_refresh_sample(node, &count, &time_ns);
+
+		/* Writes the counts when they are asked for and their time has come. */
+		node_perf_report(node);
 	}
 
 	/* drain_running cleared tells the stop that nothing else reads the channel. */
 	__atomic_thread_fence(__ATOMIC_SEQ_CST);
 	node->drain_running = 0;
+}
+
+/*
+ * Writes the counts of the last period into the kernel log and starts the
+ * next (nvrtx.vk.perf=1): the push buffers the work channel ran and their
+ * average time, the CPU's copies, the renderer's frames with their average
+ * wait for the node's lock and their average hold of it, and the flips
+ * with their average wait for the head.
+ */
+static void
+node_perf_report(
+	struct nvrtx_node *node)
+{
+	struct nvrtx_node_perf taken;
+	uint64_t now;
+	uint64_t period;
+
+	/* Nothing is written without nvrtx.vk.perf=1, nor before the period is over. */
+	if (node->perf == 0)
+		return;
+
+	now = nvrtx_now_us();
+	period = now - node->perf_since_us;
+	if (period < NODE_PERF_PERIOD_US)
+		return;
+
+	/* Takes each count and clears it; adds that come meanwhile go to the next period. */
+	taken.runs = __atomic_exchange_n(&node->counts.runs, 0U, __ATOMIC_RELAXED);
+	taken.run_us = __atomic_exchange_n(&node->counts.run_us, 0U, __ATOMIC_RELAXED);
+	taken.copies = __atomic_exchange_n(&node->counts.copies, 0U, __ATOMIC_RELAXED);
+	taken.copy_bytes = __atomic_exchange_n(&node->counts.copy_bytes, 0U, __ATOMIC_RELAXED);
+	taken.frames = __atomic_exchange_n(&node->counts.frames, 0U, __ATOMIC_RELAXED);
+	taken.wait_us = __atomic_exchange_n(&node->counts.wait_us, 0U, __ATOMIC_RELAXED);
+	taken.held_us = __atomic_exchange_n(&node->counts.held_us, 0U, __ATOMIC_RELAXED);
+	taken.flips = __atomic_exchange_n(&node->counts.flips, 0U, __ATOMIC_RELAXED);
+	taken.flip_us = __atomic_exchange_n(&node->counts.flip_us, 0U, __ATOMIC_RELAXED);
+	node->perf_since_us = now;
+
+	/* Two lines within the log's 79 columns. */
+	nvrtx_stage_mark("perf %llums: runs %llu avg %lluus, cpu copies %llu %lluKiB",
+	    (unsigned long long)(period / 1000U),
+	    (unsigned long long)taken.runs,
+	    (unsigned long long)node_perf_average(taken.run_us, taken.runs),
+	    (unsigned long long)taken.copies,
+	    (unsigned long long)(taken.copy_bytes / 1024U));
+	nvrtx_stage_mark("perf: frames %llu wait %lluus held %lluus, flips %llu avg %lluus",
+	    (unsigned long long)taken.frames,
+	    (unsigned long long)node_perf_average(taken.wait_us, taken.frames),
+	    (unsigned long long)node_perf_average(taken.held_us, taken.frames),
+	    (unsigned long long)taken.flips,
+	    (unsigned long long)node_perf_average(taken.flip_us, taken.flips));
+}
+
+/* Reports a total's average over its count, zero for no count. */
+static uint64_t
+node_perf_average(
+	uint64_t total,
+	uint64_t count)
+{
+	/* Nothing was counted. */
+	if (count == 0U)
+		return 0U;
+
+	/* Succeeded: the average. */
+	return total / count;
 }
 
 /* Takes a blob out of its session's list (a blob never listed is left alone). */

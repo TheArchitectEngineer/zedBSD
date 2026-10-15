@@ -168,6 +168,8 @@ struct test_run {
 static struct test_run runs[16];
 static unsigned run_count;
 static unsigned gpu_runs;
+static unsigned gpu_copies;
+static uint64_t gpu_copied_bytes;
 
 /* The methods the runs wrote, in order: a method's byte address and its word. */
 static uint32_t method_log[65536][2];
@@ -202,6 +204,15 @@ nvrtx_vk_gpu_free(void *owner, void *token)
 			runs[index].cpu = NULL;
 	}
 	free(token);
+}
+
+/* Counts the CPU's copies the executor reports. */
+void
+nvrtx_vk_gpu_copied(void *owner, uint64_t bytes)
+{
+	(void)owner;
+	gpu_copies++;
+	gpu_copied_bytes += bytes;
 }
 
 /* Decodes a run's push buffer into the method log: incrementing headers of the 3D subchannel. */
@@ -1576,6 +1587,8 @@ test_submit(const char *directory)
 
 	/* The submission with the fence. */
 	gpu_runs = 0;
+	gpu_copies = 0;
+	gpu_copied_bytes = 0;
 	method_count = 0;
 	frame_begin(&client);
 	command_begin(&client, GPU_OP_QUEUE_SUBMIT);
@@ -1606,6 +1619,7 @@ test_submit(const char *directory)
 	/* The CPU copy: image 0x502 (at 0, rows of 256) at (5, 40). */
 	check(memcmp(scene + 40 * 256 + 5 * 4, scene + 0x8004, 12) == 0 && memcmp(scene + 41 * 256 + 5 * 4, scene + 0x8004 + 12, 12) == 0,
 	    "submit: the unaligned region copied by the CPU");
+	check(gpu_copies == 1 && gpu_copied_bytes == 24, "submit: the CPU's copy counted with its 24 bytes");
 
 	/* The pass's target: image 0x502 at 0x30000000, pitch 256, A8R8G8B8; cleared, and the image 0x503 cleared too. */
 	check(methods_with(0x0804, 0x30000000U, 0) >= 1 && methods_with(0x0808, 256, 0) >= 1 && methods_with(0x0810, 0xcf, 0) >= 1,
