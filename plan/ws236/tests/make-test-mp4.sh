@@ -12,3 +12,8 @@ ffmpeg -y -v error -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 10 -c:v libx26
 	-g 60 -crf 42 -pix_fmt yuv420p -movflags +faststart "$here/baseline-1080p30-10s.mp4"
 ffmpeg -y -v error -f lavfi -i testsrc2=size=1920x1080:rate=60 -t 10 -c:v libx264 -profile:v high -level 4.2 -bf 2 \
 	-g 120 -crf 42 -pix_fmt yuv420p -movflags +faststart "$here/high-1080p60-10s.mp4"
+# 2026-10-16 user "720pの動画で試してください": the same High at 1280x720, 30 and 60 fps.
+ffmpeg -y -v error -f lavfi -i testsrc2=size=1280x720:rate=30 -t 10 -c:v libx264 -profile:v high -level 3.1 -bf 2 \
+	-g 60 -crf 42 -pix_fmt yuv420p -movflags +faststart "$here/high-720p30-10s.mp4"
+ffmpeg -y -v error -f lavfi -i testsrc2=size=1280x720:rate=60 -t 10 -c:v libx264 -profile:v high -level 3.2 -bf 2 \
+	-g 120 -crf 42 -pix_fmt yuv420p -movflags +faststart "$here/high-720p60-10s.mp4"
