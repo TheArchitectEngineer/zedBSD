@@ -293,6 +293,13 @@ bool
 nvrtx_stage_vk_wanted(void);
 
 /*
+ * Reports whether the boot asked for the renderer's and the display's counts
+ * every 5 s (nvrtx.vk.perf=1).
+ */
+bool
+nvrtx_stage_vk_perf_wanted(void);
+
+/*
  * Reports whether the GPU stays up as a GPU device after the takeover: by
  * default, unless the boot says nvrtx.resident=0.
  */

@@ -72,6 +72,7 @@ static int runtime_stop_begin(void *private_data, void *session, int error);
 static int runtime_stop_poll(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
 static void runtime_worker(void *argument);
+static int runtime_execute(struct nvrtx_node *node, struct nvrtx_session *session, const void *wire, uint32_t bytes);
 static void runtime_enqueue(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
 static struct nvrtx_node_entry *runtime_marker(struct nvrtx_node *node, struct nvrtx_session *session, void *token, struct drv_gpu_completion *completion);
 static unsigned runtime_free_markers(const struct nvrtx_node *node);
@@ -251,11 +252,7 @@ runtime_command(
 		return EAGAIN;
 
 	/* Runs the frame through the executor. */
-	mutex_lock(&node->lock);
-
-	error = nvrtx_vk_stream_execute(owner->vk, wire, bytes, nvrtx_vk_dispatch);
-
-	mutex_unlock(&node->lock);
+	error = runtime_execute(node, owner, wire, bytes);
 
 	/* Reports a frame that failed. */
 	if (error != 0)
@@ -713,13 +710,8 @@ runtime_worker(
 			error = EIO;
 			if (faulted == 0) {
 				error = 0;
-				if (entry->bytes != 0U) {
-					mutex_lock(&node->lock);
-
-					error = nvrtx_vk_stream_execute(entry->session->vk, entry->wire, entry->bytes, nvrtx_vk_dispatch);
-
-					mutex_unlock(&node->lock);
-				}
+				if (entry->bytes != 0U)
+					error = runtime_execute(node, entry->session, entry->wire, entry->bytes);
 			}
 		} else if (faulted != 0 && error == 0) {
 			error = EIO;
@@ -749,6 +741,53 @@ runtime_worker(
 			drv_gpu_capacity_changed(node->device);
 		}
 	}
+}
+
+/*
+ * Runs a frame of a session through the executor under the node's lock;
+ * with nvrtx.vk.perf=1 the frame, its wait for the lock and its hold of it
+ * are counted.  Returns the executor's error.
+ */
+static int
+runtime_execute(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session,
+	const void *wire,
+	uint32_t bytes)
+{
+	uint64_t asked;
+	uint64_t taken;
+	uint64_t left;
+	int error;
+
+	/* Runs the frame, timing the lock's wait and hold only when the counts are asked for. */
+	asked = 0U;
+	if (node->perf != 0)
+		asked = nvrtx_now_us();
+
+	mutex_lock(&node->lock);
+
+	taken = 0U;
+	if (node->perf != 0)
+		taken = nvrtx_now_us();
+	error = nvrtx_vk_stream_execute(session->vk, wire, bytes, nvrtx_vk_dispatch);
+
+	mutex_unlock(&node->lock);
+
+	/* Counts the frame, its wait and its hold. */
+	if (node->perf != 0) {
+		left = nvrtx_now_us();
+		nvrtx_node_count(node, &node->counts.frames, 1U);
+		nvrtx_node_count(node, &node->counts.wait_us, taken - asked);
+		nvrtx_node_count(node, &node->counts.held_us, left - taken);
+	}
+
+	/* Reports a frame the executor refused or that failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame ran. */
+	return 0;
 }
 
 /* Appends an entry to the queue and wakes the worker; the caller holds queue_lock. */

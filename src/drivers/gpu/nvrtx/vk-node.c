@@ -264,12 +264,15 @@ nvrtx_vk_gpu_run(
 	uint32_t bytes)
 {
 	struct nvrtx_session *session;
+	uint64_t start;
+	uint64_t spent;
 	uint32_t fence;
 	int error;
 
 	session = owner;
 
 	/* Puts the push buffer on the ring with the driver's fence after it. */
+	start = nvrtx_now_us();
 	error = nvrtx_work_submit(session->node->gpu, va, bytes, &fence);
 	if (error != 0)
 		return error;
@@ -281,8 +284,31 @@ nvrtx_vk_gpu_run(
 		return EIO;
 	}
 
+	/* Counts the run and its time from the submission to the fence. */
+	spent = nvrtx_now_us() - start;
+	nvrtx_node_count(session->node, &session->node->counts.runs, 1U);
+	nvrtx_node_count(session->node, &session->node->counts.run_us, spent);
+
 	/* Succeeded: the GPU has done the work. */
 	return 0;
+}
+
+/*
+ * Counts a transfer the CPU did through the window, for the node's counts
+ * (nvrtx.vk.perf=1).  The caller holds the node's lock.
+ */
+void
+nvrtx_vk_gpu_copied(
+	void *owner,
+	uint64_t bytes)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* One copy more, and its bytes. */
+	nvrtx_node_count(session->node, &session->node->counts.copies, 1U);
+	nvrtx_node_count(session->node, &session->node->counts.copy_bytes, bytes);
 }
 
 /*

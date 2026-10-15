@@ -99,6 +99,9 @@
 /* The whole token that makes the GPU device a renderer (ws037-p007 stage D2). */
 #define STAGE_VK_OFF_TOKEN		"nvrtx.vk=0"
 
+/* The whole token that asks for the renderer's and the display's counts every 5 s (ws037-p007 9). */
+#define STAGE_VK_PERF_TOKEN		"nvrtx.vk.perf=1"
+
 /* The whole token that stops the GSP after the takeover instead of keeping the GPU device (ws037-p006 P8c). */
 #define STAGE_RESIDENT_OFF_TOKEN	"nvrtx.resident=0"
 
@@ -324,6 +327,24 @@ nvrtx_stage_vk_wanted(void)
 
 	/* Without it the GPU device is also a renderer. */
 	return true;
+}
+
+/*
+ * Reports whether the boot asked for the renderer's and the display's counts
+ * in the kernel log every 5 s (nvrtx.vk.perf=1; off by default).
+ */
+bool
+nvrtx_stage_vk_perf_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.vk.perf=1 among the boot parameters. */
+	present = stage_token_present(STAGE_VK_PERF_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it no counts are written. */
+	return false;
 }
 
 /*

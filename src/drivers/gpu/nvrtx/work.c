@@ -35,6 +35,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/atomic.h>
 #include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
@@ -78,6 +79,14 @@
 #define WORK_FIRST_FENCE_US		2000000U
 #define WORK_ENTRY_WAIT_US		2000000U
 #define WORK_POLL_US			50U
+
+/*
+ * How long a wait looks at the semaphore without sleeping before it sleeps
+ * between looks: a sleep lasts at least a scheduler tick (1 ms), many
+ * times the few tens of microseconds the GPU takes for most work, so the
+ * work that ends soon is seen as it ends (ws037-p007 9, F2).
+ */
+#define WORK_SPIN_US			2000U
 
 static int work_arena(struct nvrtx_gpu *gpu);
 static int work_buffers(struct nvrtx_gpu *gpu);
@@ -514,6 +523,9 @@ nvrtx_work_submit(
 /*
  * Waits until a fence has passed, up to a time measured in microseconds.
  *
+ * The semaphore lies in coherent system memory, so looking at it costs
+ * the CPU and the bus nothing: the first 2 ms it is looked at without a
+ * pause longer than the processor's spin hint, after that between sleeps.
  * Returns 0, or ETIMEDOUT when the semaphore did not reach it in time.
  */
 int
@@ -539,7 +551,12 @@ nvrtx_work_wait(
 		if (spent > timeout_us)
 			return ETIMEDOUT;
 
-		kern_usleep_range(WORK_POLL_US, WORK_POLL_US * 2U);
+		/* Spins at first; work that takes longer is looked at again after a sleep. */
+		if (spent < WORK_SPIN_US) {
+			atomic_spin_hint();
+		} else {
+			kern_usleep_range(WORK_POLL_US, WORK_POLL_US * 2U);
+		}
 	}
 
 	/* Succeeded: the work before the fence is done. */
