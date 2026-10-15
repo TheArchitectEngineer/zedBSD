@@ -983,14 +983,18 @@ vram_fault_show(
 	instance = nvrtx_rd32(gpu, VRAM_REG_FAULT_INST_LO);
 	info = nvrtx_rd32(gpu, VRAM_REG_FAULT_INFO);
 
-	/* Says what the MMU holds, raw and decoded. */
-	nvrtx_stage_mark("P4m %s: fault status %08x, record %08x at %08x%08x: engine %x type %u client %02x access %u",
+	/* Says what the MMU holds, raw and decoded, in lines short enough for the console and dmesg (80 columns). */
+	nvrtx_stage_mark("P4m %s: fault status %08x, record %08x",
 	    when,
 	    (unsigned)status,
-	    (unsigned)info,
+	    (unsigned)info);
+	nvrtx_stage_mark("P4m %s: fault at %08x%08x, engine %x",
+	    when,
 	    (unsigned)high,
 	    (unsigned)low,
-	    (unsigned)(instance & VRAM_FAULT_ENGINE_MASK),
+	    (unsigned)(instance & VRAM_FAULT_ENGINE_MASK));
+	nvrtx_stage_mark("P4m %s: fault type %u client %02x access %u",
+	    when,
 	    (unsigned)(info & VRAM_FAULT_TYPE_MASK),
 	    (unsigned)((info >> VRAM_FAULT_CLIENT_SHIFT) & VRAM_FAULT_CLIENT_MASK),
 	    (unsigned)((info >> VRAM_FAULT_ACCESS_SHIFT) & VRAM_FAULT_ACCESS_MASK));
@@ -1132,9 +1136,10 @@ vram_bar1_rebind(
 		return error;
 
 	named &= VRAM_INSTANCE_ROOT_MASK;
-	nvrtx_stage_mark("P4m retry: instance block %llx names root %llx, the static information %llx",
+	nvrtx_stage_mark("P4m retry: instance block %llx names root %llx",
 	    (unsigned long long)instance,
-	    (unsigned long long)named,
+	    (unsigned long long)named);
+	nvrtx_stage_mark("P4m retry: the static information names root %llx",
 	    (unsigned long long)memory->bar1_root);
 
 	/* Adopts a root named elsewhere and writes the tables under it. */
