@@ -113,7 +113,7 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 | B | loop・除算・atomic・shared・barrier・fence | 済（2026-10-15、host） |
 | E | 頂点・fragment（頂点の fetch、補間、export、sample、KILL、UBO） | 済（2026-10-15、host。TEXTURE は SAMPLE・BIAS・LOD・LD の 4 種） |
 | F | desktop の全 shader の差分の試験（5 節の 4） | 済（2026-10-15、host、44 module × 200 回） |
-| D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 未 |
+| D | 速さ（待ちを register ごとの counter に、uniform の値を SGPR のまま使う） | 一部（2026-10-15: uniform の SGPR・inline 定数・出力の直書き・chunk の cache。待ちの counter 数・loop の中の待ちは未） |
 
 ## 7. 記録
 
@@ -180,9 +180,23 @@ compiler が program ごとに配置を決め、結果の記述に byte の offs
 - 結果: 最初の実行で libGL の `fixed_frag`・`fixed_flat_frag` が FAIL（全 lane を discard した wave の早い終わりで exec を 0 にせずに `exp null done vm` していた → valid mask が全 lane になる不具合）。早い終わりに `s_mov_b32 exec_lo, 0` を足して直し、host 試験にこれを確かめる `uniform_discard.frag` を加えた（直す前の code で FAIL することを確かめた）。直した後: **44 module 全部 compile、44 × 200 回 PASS、44 program の disassemble に誤り無し**（約 21 秒）。host 試験も PASS（graphics 7 module）。
 - 監査の表 [amdrdna-compiler-license-audit.md](../amdrdna-compiler-license-audit.md) を作った（2026-10-15 Q1 の許可）。
 
-### 7.7 再開点（2026-10-15 q1203 の段 F の後）
+### 7.7 段 D の一部（2026-10-15 q1203、続き）
 
-1. 段 D（速さ）: uniform の値を SGPR のまま使う（push・UBO・descriptor の語を VALU の operand に直接）、定数を inline・literal のまま使う（今は CONST ごとに v_mov）、label・分岐の前の全部の待ちを減らす（loop の中の待ちを counter の数で）、VGPR の予約（VS の param 4 個ずつ）を減らす。速さの物差し（命令数・待ちの数）を desktop の試験に出す。
-2. whole quad の fragment での storage 書き込み（helper lane を生きている mask で外す guard）と、IR の TEXTURE の他の message（RESINFO・比較・derivative）、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR（desktop は使わない）。
-3. P3 とのすり合わせ（`struct amdrdna_gfx10_program`・`struct amdrdna_gfx10_registers` の field、資源の表の配置、T#・S# は driver が作る、SPI_PS_INPUT_ADDR は ENA と同じ値）、vmunix.mk への compiler の 4 file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）、実機での確かめ（`v_rcp_iflag_f32` の精度に頼る除算、Navi1x の valid mask、早い終わり）。
-4. 回帰の道具として Master の Tools に登録してほしいもの（Q1 に依頼）: `plan/ws039/tests/amdrdna-compiler-host-test.sh`、`plan/ws039/tests/amdrdna-compiler-desktop-test.sh`（部品 `gfx10-machine.[ch]`・`gfx10-reference.[ch]`・`gfx10-texture.[ch]`・`gfx10-*-test.c`・`gfx10-compare-words.py`・`gfx10-desktop-extract.py`・`shaders/`）。
+物差し: desktop 44 program の命令数（`s_code_end` の詰め物を除く、llvm-mc の disassemble の行数）。
+
+| 段階 | 命令 | s_waitcnt | v_mov |
+| --- | --- | --- | --- |
+| 段 F の後 | 8765 | 1074 | 1633 |
+| uniform の語を prologue で 16 byte ずつ SGPR へ（`s_load_dwordx4`・`s_buffer_load_dwordx4`）、inline 定数を operand のまま、VALU の SGPR operand は constant bus 2 個まで（超えたら scratch の VGPR へ写す） | 7567 | 677 | 1112 |
+| 出力にだけ使う値を出力の register に直接定義、sample の u・v が既に連続なら写さない | 7288 | 684 | 828 |
+| SGPR に入らない uniform の語は 4 個の chunk の cache（loop の始まりと終わりで忘れる） | 6636 | 338 | 888 |
+
+- 変更: `gfx10-compile.c`（`operand_code`・`moved`・`output_home` の配列、`plan_uniforms`・`has_operand`・`vgpr_operand`・`scratch_copy`・`legalize_scalars`・`plan_output_homes`、`lower_uniform` を chunk の cache に）、`gfx10-isa.h`（`s_buffer_load_dwordx4` 0x0a）、`gfx10-encode.c`（その記述）。constant bus の上限 2 は `aco_validate.cpp`（`const_bus_limit`、SHA-256 `7961dc5336a3ae034961986087e8ff7ae599090b84d22d21670cbe8702c2b1b2`、MIT）から引用（監査の表に足すこと）。
+- 試験: interpreter に constant bus の検査（3 個目の異なる scalar の読みで FAIL）と `s_buffer_load_dwordx4`。`shaders/cache.comp`（40 個の vec4 の uniform、loop の前・中・後で読む）を足した。cache を loop で忘れる処理を外すと FAIL することを確かめた。host 試験 PASS（compute 11・graphics 7）、desktop 44 × 200 回 PASS、disassemble 誤り無し。kernel の flag で warning 0。
+
+### 7.8 再開点（2026-10-15 q1203 の段 D の一部の後）
+
+1. 段 D の続き: 待ちを counter の数で（今は全部 0 まで）、label・分岐の前の全部の待ちを減らす（loop の back edge で状態を合わせる）、比較 → Boolean → 再比較の重複（v_cmp・v_cndmask・v_cmp_ne）を減らす、VS の param・位置の予約の VGPR を減らす、libGL の固定機能の VS（1400 命令）の uniform の読みの並べ方。
+2. whole quad の fragment での storage 書き込み、IR の TEXTURE の他の message、POINT_COORD・PRIMITIVE_ID・SECOND_COLOR。
+3. P3 とのすり合わせ（`struct amdrdna_gfx10_program`・`struct amdrdna_gfx10_registers` の field、資源の表の配置、T#・S# は driver が作る、SPI_PS_INPUT_ADDR は ENA と同じ値）、vmunix.mk への compiler の 4 file の追加（P3 の `CONFIG_DRIVER_PCI_AMDRDNA` の行の後）、実機での確かめ（`v_rcp_iflag_f32` の精度に頼る除算、Navi1x の valid mask、早い終わり、constant bus）。
+4. Master の Tools への登録（Q1 に依頼済み）: `amdrdna-compiler-host-test.sh`・`amdrdna-compiler-desktop-test.sh`。

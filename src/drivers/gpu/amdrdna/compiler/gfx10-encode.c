@@ -356,7 +356,8 @@ amdrdna_gfx10_describe(
 		break;
 	case AMDRDNA_GFX10_KIND_SCALAR_LOAD:
 		/* A buffer load reads the four SGPRs of its descriptor, a load the pair of its address. */
-		if (inst->opcode == AMDRDNA_GFX10_S_BUFFER_LOAD_DWORD) {
+		if (inst->opcode == AMDRDNA_GFX10_S_BUFFER_LOAD_DWORD ||
+		    inst->opcode == AMDRDNA_GFX10_S_BUFFER_LOAD_DWORDX4) {
 			add_read(access, inst->src[0], 4U);
 		} else {
 			add_read(access, inst->src[0], 2U);
