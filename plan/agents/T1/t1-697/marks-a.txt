@@ -1,0 +1,7 @@
+MARK static-begin session=282 kernel=266
+MARK static-end session=315 kernel=286
+MARK files-begin session=315 kernel=286
+MARK files-end session=465 kernel=306
+MARK term-begin session=481 kernel=311
+MARK term-end session=679 kernel=336
+MARK end session=718 kernel=347
