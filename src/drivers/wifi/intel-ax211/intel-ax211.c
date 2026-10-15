@@ -3767,18 +3767,22 @@ ax211_pci_publish_pnvm(
 	int result;
 	int unlock_result;
 
-	/* Handles the controller availability. */
+	/*
+	 * Refuses DMA memory that is not the active one or holds no PNVM table.
+	 */
 	controller = argument;
-	if (controller == NULL || dma == NULL ||
-	    dma != controller->active_dma || !dma->pnvm_prepared ||
+	if (controller == NULL ||
+	    dma == NULL ||
+	    dma != controller->active_dma ||
+	    !dma->pnvm_prepared ||
 	    dma->pnvm_table.address == NULL ||
-	    dma->pnvm_table.device_address == 0U || dma->pnvm_count == 0U) {
-		/* Reports operation failure. */
+	    dma->pnvm_table.device_address == 0U ||
+	    dma->pnvm_count == 0U) {
 		return -1;
 	}
 	kern_io_write_barrier();
 
-	/* Checks the operation result. */
+	/* Rings the PNVM doorbell while the NIC is held awake. */
 	result = drv_intel_ax211_mmio_wake_hold(&controller->mmio);
 	if (result != INTEL_AX211_MMIO_OK)
 		return -1;
@@ -3789,11 +3793,14 @@ ax211_pci_publish_pnvm(
 		AX211_FIRMWARE_DOORBELL_PNVM_READY);
 	unlock_result = drv_intel_ax211_mmio_wake_release(&controller->mmio);
 
-	/* Returns the computed result. */
-	return result == INTEL_AX211_MMIO_OK &&
-			       unlock_result == INTEL_AX211_MMIO_OK
-		       ? 0
-		       : -1;
+	/* Reports a failed write or release. */
+	if (result != INTEL_AX211_MMIO_OK ||
+	    unlock_result != INTEL_AX211_MMIO_OK) {
+		return -1;
+	}
+
+	/* Succeeded: the firmware may read the table. */
+	return 0;
 }
 
 /* The MSI-X path needs no ICT reset, but ownership must still be balanced. */
@@ -3806,22 +3813,26 @@ ax211_pci_after_alive(
 	int result;
 	int unlock_result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller and an unhealthy ALIVE. */
 	controller = argument;
-	if (controller == NULL || alive == NULL ||
+	if (controller == NULL ||
+	    alive == NULL ||
 	    alive->status != INTEL_AX211_PROTOCOL_ALIVE_HEALTHY) {
-		/* Reports operation failure. */
 		return -1;
 	}
 
-	/* Checks the operation result. */
+	/* Holds and releases the NIC once. */
 	result = drv_intel_ax211_mmio_wake_hold(&controller->mmio);
 	if (result != INTEL_AX211_MMIO_OK)
 		return -1;
 	unlock_result = drv_intel_ax211_mmio_wake_release(&controller->mmio);
 
-	/* Returns the computed result. */
-	return unlock_result == INTEL_AX211_MMIO_OK ? 0 : -1;
+	/* Reports a failed release. */
+	if (unlock_result != INTEL_AX211_MMIO_OK)
+		return -1;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Masks, disestablishes, and retires the sole MSI-X lifetime in order. */
@@ -3834,10 +3845,12 @@ ax211_pci_interrupt_drain(
 	int disable_result;
 	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses a missing controller. */
 	controller = argument;
 	if (controller == NULL)
 		return -1;
+
+	/* Stops the interrupt handler from scheduling receives. */
 	enabled = spin_lock_irqsave(&controller->interrupt_lock);
 
 	controller->receive_enabled = 0U;
@@ -3845,7 +3858,7 @@ ax211_pci_interrupt_drain(
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
-	/* Handles the controller condition. */
+	/* Masks every cause of a routed vector. */
 	disable_result = INTEL_AX211_TRANSPORT_OK;
 	if (controller->transport.msix_configured &&
 	    (controller->irq_established || controller->irq_allocated)) {
@@ -3853,10 +3866,10 @@ ax211_pci_interrupt_drain(
 			&controller->transport);
 	}
 
-	/* Handles the controller condition. */
+	/* Disestablishes the handler, which waits for a running one. */
 	result = 0;
 	if (controller->irq_established) {
-		/* Checks the operation result. */
+		/* Forgets the handler once it is gone. */
 		result = drv_pci_device_disestablish_irq_checked(
 			controller->device, controller->irq_cookie);
 		if (result == 0) {
@@ -3865,7 +3878,7 @@ ax211_pci_interrupt_drain(
 		}
 	}
 
-	/* Checks the operation result. */
+	/* Frees the vector once no handler can run. */
 	if (result == 0 && controller->irq_allocated) {
 		drv_pci_device_free_irqs(controller->device, &controller->irq,
 					 controller->irq_count);
@@ -3884,12 +3897,16 @@ ax211_pci_interrupt_drain(
 		spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 	}
 
-	/* Checks the operation result. */
+	/* Reports a handler that could not be disestablished. */
 	if (result != 0)
 		return -1;
 
-	/* Returns the computed result. */
-	return disable_result == INTEL_AX211_TRANSPORT_OK ? 0 : -1;
+	/* Reports a mask that failed. */
+	if (disable_result != INTEL_AX211_TRANSPORT_OK)
+		return -1;
+
+	/* Succeeded: no interrupt reaches the driver. */
+	return 0;
 }
 
 /* Turns PCI bus mastering off once the controller reset stopped its DMA. */
@@ -3914,90 +3931,102 @@ ax211_pci_bus_master_disable(
 	return 0;
 }
 
-/* Supports the ax211 pci clock us operation. */
+/* Reads the device clock in microseconds. */
 static int
 ax211_pci_clock_us(
 	void *argument,
 	uint64_t *time_us)
 {
-	int error;
 	struct ax211_pci_controller *controller;
+	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments and a missing clock. */
 	controller = argument;
-	if (controller == NULL || time_us == NULL ||
+	if (controller == NULL ||
+	    time_us == NULL ||
 	    controller->mmio.ops == NULL ||
 	    controller->mmio.ops->clock_us == NULL) {
-		/* Reports operation failure. */
 		return -1;
 	}
 
-	/* Computes the function result. */
-	error = controller->mmio.ops->clock_us(
+	/* Reads the clock. */
+	result = controller->mmio.ops->clock_us(
 		controller->mmio.argument, time_us);
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: *time_us holds the time. */
+	return 0;
 }
 
-/* Supports the ax211 pci nic lock operation. */
+/* Holds the NIC awake: 0 on success, -1 on failure. */
 static int
 ax211_pci_wake_hold(
 	void *argument)
 {
-	int error;
 	struct ax211_pci_controller *controller;
+	int result;
 
+	/* Refuses a missing controller. */
 	controller = argument;
+	if (controller == NULL)
+		return -1;
 
-	/* Computes the function result. */
-	error = controller != NULL && drv_intel_ax211_mmio_wake_hold(
-							&controller->mmio) ==
-							INTEL_AX211_MMIO_OK
-				  ? 0
-				  : -1;
+	/* Holds the NIC. */
+	result = drv_intel_ax211_mmio_wake_hold(&controller->mmio);
+	if (result != INTEL_AX211_MMIO_OK)
+		return -1;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return 0;
 }
 
-/* Supports the ax211 pci nic unlock operation. */
+/* Releases the NIC: 0 on success, -1 on failure. */
 static int
 ax211_pci_wake_release(
 	void *argument)
 {
-	int error;
 	struct ax211_pci_controller *controller;
+	int result;
 
+	/* Refuses a missing controller. */
 	controller = argument;
+	if (controller == NULL)
+		return -1;
 
-	/* Computes the function result. */
-	error = controller != NULL && drv_intel_ax211_mmio_wake_release(
-							&controller->mmio) ==
-							INTEL_AX211_MMIO_OK
-				  ? 0
-				  : -1;
+	/* Releases the NIC. */
+	result = drv_intel_ax211_mmio_wake_release(&controller->mmio);
+	if (result != INTEL_AX211_MMIO_OK)
+		return -1;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return 0;
 }
 
-/* TX_CMD uses the narrow data-queue header, whose wire group is legacy. */
+/*
+ * Reports whether an event is a transmit response: 1 when it is, 0 when not.
+ * TX_CMD uses the narrow data-queue header, whose wire group is legacy.
+ */
 static int
 ax211_pci_tx_event(
 	const struct intel_ax211_event *event)
 {
 	uint8_t group;
 
-	/* Handles the event availability. */
+	/* Rejects a missing event and any other opcode. */
 	if (event == NULL || event->command.opcode != INTEL_AX211_TX_OPCODE)
 		return 0;
+
+	/* Rejects any other family. */
 	group = event->flags &
 		(uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
+	if (group != INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
+	    group != INTEL_AX211_TX_FAMILY) {
+		return 0;
+	}
 
-	/* Returns the computed result. */
-	return group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC ||
-	       group == INTEL_AX211_TX_FAMILY;
+	/* The event is a transmit response. */
+	return 1;
 }
 
 /* Pins layouts absent from the RX wire header at the PCI boundary. */
@@ -4010,66 +4039,63 @@ ax211_pci_notification_version(
 	uint8_t opcode;
 	uint8_t queue;
 
-	/* Handles the bytes availability. */
+	/* An event without a header has no version. */
 	if (bytes == NULL || length < INTEL_AX211_EVENT_HEADER_SIZE)
 		return 0U;
+
+	/* Reads the opcode, the family and the queue. */
 	opcode = bytes[4U];
 	group = bytes[5U] & (uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
 	queue = bytes[7U];
 
-	/* Handles the group condition. */
+	/* A transmit response has the transmit layout. */
 	if ((group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC ||
 	     group == INTEL_AX211_TX_FAMILY) &&
 	    opcode == INTEL_AX211_TX_OPCODE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_NOTIFICATION_VERSION;
 	}
 
-	/* Handles the queue condition. */
+	/* Any other command answer has no pinned version. */
 	if ((queue & 0x80U) == 0U)
 		return 0U;
 
-	/* Handles the group condition. */
+	/* ALIVE. */
 	if (group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
 	    opcode == INTEL_AX211_PROTOCOL_ALIVE_OPCODE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_ALIVE_VERSION;
 	}
 
-	/* Handles the group condition. */
+	/* PNVM accepted. */
 	if (group == INTEL_AX211_PROTOCOL_FAMILY_REGULATORY_STORE &&
 	    opcode == INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_OPCODE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_PNVM_ACCEPTED_VERSION;
 	}
 
-	/* Handles the group condition. */
+	/* Init finished, whose version is not pinned. */
 	if (group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
 	    opcode == INTEL_AX211_PROTOCOL_INIT_FINISHED_OPCODE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_PROTOCOL_UNKNOWN_VERSION;
 	}
 
-	/* Handles the group condition. */
+	/* Notification 0/0xc1 has layout version 5. */
 	if (group == 0U && opcode == 0xc1U)
 		return 5U;
 
-	/* Handles the group condition. */
+	/* The time reservation notice. */
 	if (group == INTEL_AX211_ASSOC_FAMILY_LINK_SETUP &&
 	    opcode == INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_OPCODE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_ASSOC_TIME_RESERVATION_NOTICE_LAYOUT_VERSION;
 	}
 
-	/* Handles the group condition. */
+	/* Notification 1/0xc8 has layout version 6. */
 	if (group == 1U && opcode == 0xc8U)
 		return 6U;
 
-	/* Handles the group condition. */
+	/* Notifications 0/0x0f and 0/0xb5 have layout version 1. */
 	if (group == 0U && (opcode == 0x0fU || opcode == 0xb5U))
 		return 1U;
 
-	/* Returns the computed result. */
+	/* Any other notification's version is not pinned. */
 	return INTEL_AX211_PROTOCOL_UNKNOWN_VERSION;
 }
 
@@ -4078,38 +4104,43 @@ static int
 ax211_pci_scan_initialize(
 	struct ax211_pci_controller *controller)
 {
-	int error;
 	struct intel_ax211_protocol_command_table table;
 	struct intel_ax211_runtime_mcc mcc;
 	struct wlan_scan_profile profile;
+	int validate_result;
 	int result;
 
-	/* Handles the controller availability. */
-	if (controller == NULL || !controller->runtime_initialized ||
+	/* Refuses a controller whose operational firmware is not running. */
+	if (controller == NULL ||
+	    !controller->runtime_initialized ||
 	    controller->runtime_start.state !=
 		    INTEL_AX211_RUNTIME_START_STATE_RUNNING ||
-	    controller->hardware_epoch == 0U || controller->net_device == NULL) {
-		/* Failed. */
+	    controller->hardware_epoch == 0U ||
+	    controller->net_device == NULL) {
 		return EINVAL;
 	}
+
+	/* Describes the pinned command table. */
 	kern_memset(&table, 0, sizeof(table));
 	kern_memset(&mcc, 0, sizeof(mcc));
 	table.bytes = controller->runtime_start.command_version_bytes;
 	table.count = INTEL_AX211_PROTOCOL_API89_COMMAND_COUNT;
 
-	/* Checks the operation result. */
+	/* Takes the country answer and requires the receive versions. */
 	result = drv_intel_ax211_runtime_start_mcc(&controller->runtime_start,
 						   &mcc);
 	if (result == INTEL_AX211_RUNTIME_START_OK) {
-		result = drv_intel_ax211_rx_api89_validate(&table) ==
-					 INTEL_AX211_RX_OK
-				 ? INTEL_AX211_SCAN_SESSION_OK
-				 : INTEL_AX211_SCAN_SESSION_UNSUPPORTED;
+		/* Requires the receive command versions. */
+		validate_result = drv_intel_ax211_rx_api89_validate(&table);
+		if (validate_result == INTEL_AX211_RX_OK)
+			result = INTEL_AX211_SCAN_SESSION_OK;
+		else
+			result = INTEL_AX211_SCAN_SESSION_UNSUPPORTED;
 	} else {
 		result = INTEL_AX211_SCAN_SESSION_FAILED;
 	}
 
-	/* Checks the operation result. */
+	/* Initializes the scan session. */
 	if (result == INTEL_AX211_SCAN_SESSION_OK) {
 		result = drv_intel_ax211_scan_session_init(
 			&controller->scan_session,
@@ -4121,63 +4152,62 @@ ax211_pci_scan_initialize(
 
 	ax211_pci_scrub(&mcc, sizeof(mcc));
 
-	/* Checks the operation result. */
+	/* Reports a failed initialization. */
 	if (result != INTEL_AX211_SCAN_SESSION_OK) {
-		/* Obtains the ax211 pci scan result errno result. */
-		error = ax211_pci_scan_result_errno(result);
-
-		/* Failed. */
-		return error;
+		result = ax211_pci_scan_result_errno(result);
+		return result;
 	}
 
 	kern_memset(&profile, 0, sizeof(profile));
 
-	/* Checks the operation result. */
+	/* Gives the station the channels the firmware scans. */
 	result = ax211_pci_runtime_scan_profile(controller, &profile);
 	if (result == 0) {
-		result = controller->station == NULL
-				 ? ENODEV
-				 : wlan_station_scan_profile_update(
-					   controller->station, &profile);
+		/* A controller without a station has no device. */
+		if (controller->station == NULL) {
+			result = ENODEV;
+		} else {
+			result = wlan_station_scan_profile_update(
+				controller->station, &profile);
+		}
 	}
 
 	ax211_pci_scrub(&profile, sizeof(profile));
 
-	/* Checks the operation result. */
+	/* Reports a failed update. */
 	if (result != 0)
 		return result;
+
+	/* Succeeded: scanning is initialized. */
 	controller->scan_step_index = 0U;
 	controller->scan_initialized = 1U;
-
-	/* Succeeded. */
 	return 0;
 }
 
-/* Supports the ax211 pci channel frequency operation. */
+/* Returns the center frequency in MHz of a channel, or 0 for none. */
 static uint32_t
 ax211_pci_channel_frequency(
 	uint8_t channel)
 {
-	/* Handles the channel condition. */
+	/* Channels 1 to 13 of 2.4 GHz. */
 	if (channel >= 1U && channel <= 13U)
 		return 2407U + 5U * (uint32_t)channel;
 
-	/* Handles the channel condition. */
+	/* Channel 14. */
 	if (channel == 14U)
 		return 2484U;
 
-	/* Handles the channel condition. */
+	/* The 5 GHz channels. */
 	if ((channel >= 36U && channel <= 144U && (channel - 36U) % 4U == 0U) ||
 	    (channel >= 149U && channel <= 181U && (channel - 149U) % 4U == 0U)) {
-		/* Returns the computed result. */
 		return 5000U + 5U * (uint32_t)channel;
 	}
 
-	/* Returns the computed result. */
+	/* Any other channel has no frequency. */
 	return 0U;
 }
 
-/* Supports the ax211 pci runtime scan profile operation. */
+/* Describes the scan session's channels as the station's scan profile. */
 static int
 ax211_pci_runtime_scan_profile(
 	const struct ax211_pci_controller *controller,
@@ -4187,23 +4217,22 @@ ax211_pci_runtime_scan_profile(
 	const struct intel_ax211_scan_profile *source;
 	size_t index;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || profile == NULL)
 		return EINVAL;
 
-	/* Handles the source condition. */
+	/* Refuses an empty or oversized channel list. */
 	source = &controller->scan_session.full_profile;
 	if (source->channel_count == 0U ||
 	    source->channel_count > WLAN_SCAN_CHANNEL_MAX) {
-		/* Failed. */
 		return EINVAL;
 	}
 	kern_memset(profile, 0, sizeof(*profile));
 	profile->channel_count = (uint32_t)source->channel_count;
 
-	/* Process each remaining element. */
+	/* Describes each channel. */
 	for (index = 0U; index < source->channel_count; index++) {
-		/* Handles the frequency condition. */
+		/* Refuses a channel without a frequency. */
 		frequency = ax211_pci_channel_frequency(source->channel[index]);
 		if (frequency == 0U)
 			return EINVAL;
@@ -4216,7 +4245,9 @@ ax211_pci_runtime_scan_profile(
 	return 0;
 }
 
-/* Supports the ax211 pci scan channel present operation. */
+/*
+ * Reports whether the scan covers a channel: 1 when it does, 0 when not.
+ */
 static int
 ax211_pci_scan_channel_present(
 	const struct ax211_pci_controller *controller,
@@ -4224,23 +4255,22 @@ ax211_pci_scan_channel_present(
 {
 	size_t index;
 
-	/* Handles the controller availability. */
+	/* No channel is covered without a scan session. */
 	if (controller == NULL || !controller->scan_initialized)
 		return 0;
 
-	/* Process each remaining element. */
+	/* Looks for the channel. */
 	for (index = 0U;
 	     index < controller->scan_session.full_profile.channel_count;
 	     index++) {
-		/* Handles the controller condition. */
+		/* The channel is covered. */
 		if (controller->scan_session.full_profile.channel[index] ==
 		    channel) {
-			/* Reports operation failure. */
 			return 1;
 		}
 	}
 
-	/* Succeeded. */
+	/* The channel is not covered. */
 	return 0;
 }
 
@@ -4249,9 +4279,11 @@ static void
 ax211_pci_scan_clear(
 	struct ax211_pci_controller *controller)
 {
-	/* Handles the controller availability. */
+	/* Nothing to clear without a controller. */
 	if (controller == NULL)
 		return;
+
+	/* Forgets the scan session and both BSS sets. */
 	controller->scan_initialized = 0U;
 	controller->scan_step_index = 0U;
 	controller->bss_staging_generation = 0U;
@@ -4273,9 +4305,11 @@ static void
 ax211_pci_bss_staging_discard(
 	struct ax211_pci_controller *controller)
 {
-	/* Handles the controller availability. */
+	/* Nothing to drop without a controller. */
 	if (controller == NULL)
 		return;
+
+	/* Forgets the staging set. */
 	controller->bss_staging_generation = 0U;
 	controller->bss_staging_initialized = 0U;
 	ax211_pci_scrub(&controller->bss_staging_cache,
@@ -4288,22 +4322,22 @@ ax211_pci_bss_staging_publish(
 	struct ax211_pci_controller *controller,
 	uint64_t generation)
 {
-	/* Handles the controller availability. */
-	if (controller == NULL || generation == 0U ||
+	/* Refuses missing arguments and a missing staging set. */
+	if (controller == NULL ||
+	    generation == 0U ||
 	    !controller->bss_staging_initialized) {
-		/* Failed. */
 		return EINVAL;
 	}
 
-	/* Handles the controller condition. */
+	/* Refuses another generation's set. */
 	if (controller->bss_staging_generation != generation)
 		return ESTALE;
+
+	/* Succeeded: the staging set becomes the published one. */
 	controller->bss_published_cache = controller->bss_staging_cache;
 	controller->bss_published_generation = generation;
 	controller->bss_published_initialized = 1U;
 	ax211_pci_bss_staging_discard(controller);
-
-	/* Succeeded. */
 	return 0;
 }
 
