@@ -482,3 +482,38 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 
 ## reboot で GSP を止める件の扱い（2026-10-16 ユーザー）
 「GSPを止める処理については、WSにメモしておいて、あまり深追いしないことにします。Fableの調査で大きな問題がなければ、これでこの問題を終了します。」→ T1-693（RTX 機の reboot 11 回）: 11 回とも P4m ok・P8c ok・session 起動（1 回は retry の round 3 で通った）、ただし前の boot の hub の fault の record（0x142000）は毎回残り、shutdown の P7 の行は log に残らず走ったかは未確認。P2（Fable 5.1 high）が P7 が走るかと record の判定だけを読みで確かめ、大きな問題が無ければ終了。
+
+## 9. 描画の遅さの見立て（2026-10-16、P4。code は未変更、Q1 の返事待ち）
+
+ユーザー:「RTXでの描画が遅いです。RPi4と大差ないです。」T1-695（RTX 機、実機、`plan/agents/T1/results-20261016-t1-695.md`）の KWL PERF: draw は 0.1 ms、frame_ms は静止 12.9・Terminal の echo 19.5（約 51 fps）・Files を動かす 29.8（最大 34.3）。frame の大部分は rec の submit（5〜32 ms）と present（3〜15 ms）。CPU は 16 CPU の合計で 0.3〜4%。
+
+### 9.1 1 frame の流れと待ち（code の読み）
+
+| # | 段 | 待つ物 | 時間の見積もり |
+| --- | --- | --- | --- |
+| 1 | libvulkan の返事の要る command（EndCommandBuffer・QueueSubmit・ResetFences など） | `GPU_COMMAND_SUBMIT` → node の FIFO → **node に 1 つの worker** → `node->lock` の下で executor → `drv_gpu_complete` → `GPU_COMMAND_WAIT`（`runtime.c` 254・717 行） | lock が空いていれば数十 µs。全 session（compositor・全 app）が 1 本の worker と `node->lock` で直列 |
+| 2 | QueueSubmit（`vk-queue.c`） | command buffer ごとに push を組み（BAR1 は CPU に **uncached**、`vram.c` 797 行）、`nvrtx_vk_gpu_run` → `nvrtx_work_wait`（`vk-node.c`）で**同期に待つ** | 待ちは 50 µs の `kern_usleep_range` だが 1 ms の tick に丸まる（`kern/clock.c` 694 行）: **1 run ≥ 約 1 ms**（GPU の仕事は数十 µs）。起動の `P9w ok: fence 1 after 858 us`・`P5 fence 887 us/1000 us` と合う |
+| 3 | 揃わない buffer→image の複写（`execute_buffer_image`） | start が 256・pitch が 128 の倍数でないと、push を **flush（run 1 回 ≥1 ms）** してから **CPU が BAR1 越しに uncached で読み書き**（`execute_cpu_copy`）。libkeiland の app の damage の region は `bufferOffset = y*pitch + x*4`（`libkeiland/ui/present.c` 1591 行）でほぼ全部この道 | uncached の PCIe の読みは 1 回 0.5〜1 µs・8 byte → 8〜16 MB/s。文字 1 行の damage（400×20 px、32 KB）で 2〜4 ms＋flush 1 ms。全部 `node->lock` の下 |
+| 4 | vkQueuePresentKHR（WSI の worker） | 画像の複写の submit（#2 と同じ、1 run）→ `GPU_DISPLAY_PRESENT`（BLOB）→ `present_present` が **`node->lock` を持ったまま** `nvrtx_scanout_frame` で flip の notifier の BEGUN を待つ（`present.c` 500 行付近、`scanout.c` 502 行）。present control は「1 frame 以上・tearing なし」（`disp-first.c` 61 行）なので **次の vblank まで**（起動の `core with window 16717 us` と同じ 1 frame） | **0〜16.7 ms（平均 8 ms）、その間は全 session の command・submit が止まる** |
+| 5 | 利用者の mapping | VkDeviceMemory は全部 BAR1 の VRAM で、user の mapping は `VM_DEVICE_MMIO`（uncached、`gpu.c` 3267 行）。app の canvas → staging の memcpy、compositor の頂点・staging の書き込みが uncached | 書きは数十〜百数十 MB/s。全画面 5 MB なら数十 ms、damage だけなら小さい |
+
+### 9.2 律速の判定（T1-695 と突き合わせ）
+
+- **第 1 の律速は #4（present が vblank まで `node->lock` を持つ）**。WSI の worker の present が lock を持って次の vblank を待つ間、compositor の次の frame の End・Submit と app の submit が全部待つ。frame が vblank の 1〜2 個に量子化される: Files 29.8 ms・最大 34.3 ms（≒ 2×16.7）、Terminal 19.5 ms（1 と 2 の混ざり）。rec の submit の 5〜32 ms の大部分は lock の待ち（自分の GPU の仕事は数十 µs）。
+- **第 2 は #2（GPU の run の待ちが 1 ms の tick に丸まる）**。desktop の 1 frame に run は compositor 1〜2・WSI の複写 1・app ごとに 1〜2（＋#3 の flush）で、4〜8 run ≒ 4〜10 ms が worker（lock の下）で直列。
+- **第 3 は #3（揃わない複写の CPU と flush）**。app が描く場面（Terminal・Files の中身）で lock の下に ms 単位を足す。
+- #5 は副（app 側の時間で、lock は持たない）。
+
+上限の見積もり: compositor の draw 0.1 ms・GPU の仕事は frame あたり 1 ms 未満なので、#4 を外し #2 を縮めれば、frame は vblank（16.7 ms、60 fps）で決まる。今の 20〜30 ms は待ちの作りで、GPU の速さではない（Pi 4 と大差ない理由）。
+
+### 9.3 直しの案（Q1 の判断待ち）
+
+| 案 | 内容 | 見込み | 大きさ |
+| --- | --- | --- | --- |
+| F1 | present の flip の待ちを `node->lock` の外へ: lease の確かめと blob の参照の確保だけ `node->lock` で、flip と notifier の待ちは display の別の lock（present と cursor の display channel 用）で行う。blob は待ちの間 `backing->refs` で保つ | submit・End が lock の待ちから解放、frame は 1 vblank（16.7 ms）へ。最大の効果 | `present.c`・`cursor.c`・`nvrtx-node.h` で 100〜150 行。cursor と core の notifier の順序の確認が要る |
+| F2 | `nvrtx_work_wait` を、coherent な system memory の semaphore を pause 付きで最大 約 2 ms 回し、その後に sleep の poll に落とす | 1 run が約 1 ms → GPU の時間＋数 µs。frame あたり 4〜10 ms 縮む（worker の時間） | `work.c` 約 20 行 |
+| F3 | 揃わない buffer→image を GPU の quad で: source の texture の address を 256 に切り下げ、差を u の offset（画素）にする。source の pitch は TIC の 32 の倍数で足りる（libkeiland の pitch は 64 の倍数）。CPU の道は pitch が合わない時だけ残す | app の damage の upload が CPU の uncached の読みと flush から外れる（damage のある frame で数 ms〜十数 ms） | `vk-execute.c` 60〜100 行＋`nvrtx-vk-d3-host-test.sh` の項目 |
+| F4（後、別の相談） | BAR1 の write-combining: kernel の view は既存の HAL の `hal_space_map_device(... HAL_SPACE_WC)`（i915 が使う、hal.h の変更なし）。user の mapping は GPU core・`vm-device` に WC の属性が無く、nvrtx の外の変更 | push の組み立てと app の staging の書きが数倍 | kernel 側は小。user 側は GPU core の WS と Q1 の調整 |
+
+- 順: F1 → F2 → F3（F1・F2 は独立、F3 は host 試験で push を照合）。各段で build（warning 0）と host 試験、まとめて T1 に T1-695 と同じ 3 場面の KWL PERF を依頼して比べる。
+- 確かめを楽にするため、F1〜F3 と一緒に 5 s ごとの計数の行（run の数・CPU の複写の数と byte・present の待ち・lock の待ちの合計）を `nvrtx.vk.perf=1` の時だけ kernel log に出す案もある（Q1 の判断）。
