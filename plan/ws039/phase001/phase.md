@@ -2,7 +2,7 @@
 
 # ws039-p001: amdrdna の調べと設計（初期化の順・firmware・display・packet・段の印・license）
 
-Status: in-progress（2026-10-15 夜 P3、q1210 / q1210-i01 で design.md の**改訂 2**（§15 の回答 12 件と実機の到着を反映）を書き、design-reviewer の review（[design-review-2.md](../design-review-2.md)、blocker 3・major 13・minor 15）を全部反映した。clearance は Q1 の判定。新しい問い 14 件（design 15 節）はユーザー待ち）
+Status: cleared（2026-10-15 夜 Q1: design.md 改訂 2（02d595b8d、main 270400286）、レビュー 2 回を反映、§15 の 14 件にユーザーが回答。#7・#11 の本文の直しは p002 の最初に）
 Disposition: normal
 Parent: [WS039](../ws.md)
 実行者: P3（code は書かない Phase。build の行だけ Q1 の依頼で先に入れた）

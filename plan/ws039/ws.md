@@ -9,7 +9,7 @@ Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: q1210（P3、ws039-p001 の design.md の改訂 2、2026-10-15 夜）
-Resume point: P3 が q1210 で [design.md](design.md) の改訂 2（§15 の回答 12 件と RX 5600 XT の到着を反映。段 A0〜A13、Phase p002〜p016、必須 75〜111 LW）を書き、design-reviewer の review（[design-review-2.md](design-review-2.md)、31 件）を全部反映した（2026-10-15 夜）。実機は 10.0.10.3（design 12.5）。次は Q1 の clearance の判定 → p002（A0・A1・A1v、実機で読むだけ。Linux の amdgpu の dump との照合は Q1 の許可の後）。design の 15 節の新しい問い 14 件（既定つき）はユーザー待ち。計画に無い依存: ACPI の table を署名で借りる公開の口（p002 で差分の案を Q1 へ）。調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/（約 600 MB の source と note は消さない）。[p007](phase007/phase.md) の 7.8（P3 とのすり合わせは p008 の最初）。
+Resume point: p001 cleared（2026-10-15 夜）。次は p002（実機で段ごと、N=1 で AMD に集中）。#7（256 MiB の窓で実装）・#11（control の node は開発の間だけ）を design.md に反映してから。以前: P3 が q1210 で [design.md](design.md) の改訂 2（§15 の回答 12 件と RX 5600 XT の到着を反映。段 A0〜A13、Phase p002〜p016、必須 75〜111 LW）を書き、design-reviewer の review（[design-review-2.md](design-review-2.md)、31 件）を全部反映した（2026-10-15 夜）。実機は 10.0.10.3（design 12.5）。次は Q1 の clearance の判定 → p002（A0・A1・A1v、実機で読むだけ。Linux の amdgpu の dump との照合は Q1 の許可の後）。design の 15 節の新しい問い 14 件（既定つき）はユーザー待ち。計画に無い依存: ACPI の table を署名で借りる公開の口（p002 で差分の案を Q1 へ）。調べの note は worktree /home/awe/zedBSD-worktrees/p3 の plan/ws039/temp/notes/（約 600 MB の source と note は消さない）。[p007](phase007/phase.md) の 7.8（P3 とのすり合わせは p008 の最初）。
 Target: 未定（2026-10-15 に開始・一時停止。以前の扱い: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」））
 <!-- awesome-plan-current:end -->
 
@@ -76,6 +76,27 @@ AMD RDNA世代のGPUのドライバを実装する。
 3. 最初の到達点: NVIDIA と同じく「desktop が描ける」までか。動画（VCN）は後でよいか。
 4. 対象の世代: まず RDNA1（Navi1x）だけを動かし、RDNA2・3 は認識（device id）だけ先に入れるか。
 5. 担当の数（2 担当で並行してよいか）。
+
+### design.md 改訂 2 の §15 への回答（2026-10-15 夜 ユーザー、1 件ずつクリック）
+
+| # | 問い | 回答 |
+| --- | --- | --- |
+| 1 | mode set の時期 | 「desktop の後」 |
+| 2 | 出力の順 | 「案のとおり」（DP 先・HDMI 後、別の connector は Keiland の指示の時だけ） |
+| 3 | training 中の画面 | 「案のとおり（blank）」 |
+| 4 | CTF（温度の危険域） | 「案のとおり」（GPU だけ fault、system は止めない） |
+| 5 | Tier S の fan | 「案のとおり（50%）」 |
+| 6 | compute の queue の範囲 | 「案のとおり」（kernel の試験と compute 専用の family の最小の経路） |
+| 7 | resizable BAR | 「まず256MBで実装します。」（BAR0 の 256 MiB の窓で実装。UEFI の Re-Size BAR・OS の中の resize は後） |
+| 8 | 試験の oracle に Linux の atom.c | 「案のとおり」（tarball の取得、host 試験だけ） |
+| 9 | ACPI の table を署名で借りる公開の口 | 「口を足す」（p002 で差分、Q1 が確かめて入れる） |
+| 10 | mode1 reset | 「案のとおり（後で）」（p016） |
+| 11 | control の node /dev/amdrdna0 | 「開発の間だけ」（完成したら消すか config で off） |
+| 12 | main に入れる条件 | 「案のとおり」（実機で確かめた段だけ） |
+| 13 | 取り消しの間は desktop も止まる | 「この形でよい」 |
+| 14 | 10.0.10.3 の Linux で amdgpu を load して dump | 「load してよい」（load の後 zedBSD を試す前に電源の入れ直し） |
+
+→ p001 は判断が揃ったので cleared（Q1、2026-10-15 夜）。#7・#11 は design.md の該当の節を p002 の最初に直す。
 
 ### design.md §15 #9 の回答（2026-10-15 夕 ユーザー、クリック）
 RX 5600 XT は「RTX 機と入れ替え（10.0.30.5）」（i5-13400F の機械で RTX 2070 と入れ替える。nvrtx の実機の試験とは交代）。§15 の他の項目は「個別に見直す」で 1 件ずつ回答（2026-10-15 夕、クリック）:
