@@ -92,9 +92,6 @@ static VkResult compose_replay_commands(struct kwl_compose *compose, struct kwl_
 static void compose_rec_timed(struct kwl_server *server, const struct kwl_render_outcome *outcome);
 static void compose_hold(struct kwl_server *server, struct kwl_object **windows, unsigned count);
 static void compose_log_draws(struct kwl_server *server);
-static const struct kwl_import *compose_copy_source(struct kwl_server *server, struct kwl_object **windows, unsigned count, const char **reason);
-static void compose_copy_log(struct kwl_server *server, const struct kwl_import *copy, const char *reason, struct kwl_object **windows, unsigned count);
-static void compose_copy_record(struct kwl_list *command, const struct kwl_import *source, VkImage target, VkImageLayout layout, uint32_t width, uint32_t height);
 
 /* How far into its way App Home's animation shows in its first frame, in milliseconds (review-2 N4). */
 #define COMPOSE_HOME_FIRST_MS	8U
@@ -527,9 +524,6 @@ compose_output_open_parked(
 		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
 	}
 	compose->readback = (unsigned)readback;
-
-	/* The images can take a fullscreen window's copy only with both transfer directions (ws236-p011). */
-	compose->copy_target = scene_supported;
 	if (result != VK_SUCCESS ||
 	    compose->output.image_count > KWL_SWAPCHAIN_MAX ||
 	    compose->output.format != compose->format) {
@@ -1625,8 +1619,6 @@ compose_limits(
 {
 	VkPhysicalDeviceProperties device;
 	VkPhysicalDeviceMemoryProperties memory;
-	VkFormatProperties format;
-	int importable;
 
 	/* The device the GPU buffers are imported into. */
 	server->gpu_device.instance = server->compose->instance;
@@ -1636,32 +1628,6 @@ compose_limits(
 	/* The largest width and height of a 2D image. */
 	vkGetPhysicalDeviceProperties(server->compose->physical, &device);
 	server->gpu_device.max_dimension = device.limits.maxImageDimension2D;
-
-	/*
-	 * Whether a fullscreen window shown alone is copied rather than drawn
-	 * on this GPU (KWL_COPY_VENDOR, ws236-p011).  The clients' images are
-	 * linear RGBA or BGRA, which must then also be a copy's source; the
-	 * backend's imports are made so (copy_source) where it can.
-	 */
-	server->compose->copy_policy = 0U;
-	if (device.vendorID == KWL_COPY_VENDOR)
-		server->compose->copy_policy = 1U;
-
-	/* The backend's imports must be able to be a copy's source. */
-	importable = kl_backend_gpu_copy_source();
-	if (!importable)
-		server->compose->copy_policy = 0U;
-
-	/* Both four-channel formats of the clients' images can be a linear copy's source. */
-	vkGetPhysicalDeviceFormatProperties(server->compose->physical, VK_FORMAT_R8G8B8A8_UNORM, &format);
-	if ((format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) == 0U)
-		server->compose->copy_policy = 0U;
-	vkGetPhysicalDeviceFormatProperties(server->compose->physical, VK_FORMAT_B8G8R8A8_UNORM, &format);
-	if ((format.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) == 0U)
-		server->compose->copy_policy = 0U;
-
-	/* The imports from now on are a copy's source too when frames copy. */
-	server->gpu_device.copy_source = server->compose->copy_policy;
 
 	/* The memory types a buffer's memory may be one of. */
 	vkGetPhysicalDeviceMemoryProperties(server->compose->physical, &memory);
@@ -3137,8 +3103,6 @@ compose_record(
 	const VkRect2D *rects;
 	VkImage target;
 	VkFramebuffer framebuffer;
-	const struct kwl_import *copy;
-	const char *copy_reason;
 	unsigned rect_count;
 	unsigned index;
 	unsigned reuse;
@@ -3235,34 +3199,6 @@ compose_record(
 
 	/* The pictures a window's dock or undock animation shows, drawn in its first frame (layer-cache.c, ws211-p007). */
 	kwl_layers_anim_inband(server, command, windows, count);
-
-	/*
-	 * A fullscreen window shown alone is copied onto the image instead of
-	 * drawn (ws236-p011): no pass, and no conversion of its image for
-	 * sampling.  The frame is that image and nothing else, so the scene
-	 * kept for the cursor is not known after it.
-	 */
-	copy = compose_copy_source(server, windows, count, &copy_reason);
-	compose_copy_log(server, copy, copy_reason, windows, count);
-	if (copy != NULL) {
-		compose->scene.valid = 0U;
-		compose_copy_record(command, copy, target, kwl_compose_target_layout(compose), compose->target_width, compose->target_height);
-
-		/* The frame draws no hover test (nothing is over the window). */
-		if (!reuse)
-			kwl_hover_end(server);
-
-		/* A test image's capture, and the host images written up to now, as in a drawn frame. */
-		kwl_shot_record(server, command, compose->output.images[image]);
-		kwl_host_images_take(compose, command);
-
-		/* A list that could not grow is not replayed. */
-		if (command->failed)
-			return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-		/* Succeeded: the list holds the frame's copy. */
-		return VK_SUCCESS;
-	}
 
 	/* The anchor's pass: its own part of the plane (ws113-p007). */
 	server->view_output = KWL_PLANE_ANCHOR;
@@ -3407,250 +3343,6 @@ compose_record(
 
 	/* Succeeded: the list holds the frame. */
 	return VK_SUCCESS;
-}
-
-/*
- * Finds the image a frame copies instead of drawing (ws236-p011): the
- * fullscreen window on top, when it is all the frame would show, opaque,
- * at the output's place, size and format, with no cursor drawn into the
- * frame.  Returns NULL with the first reason it is drawn.
- */
-static const struct kwl_import *
-compose_copy_source(
-	struct kwl_server *server,
-	struct kwl_object **windows,
-	unsigned count,
-	const char **reason)
-{
-	struct kwl_compose *compose;
-	struct kwl_object *top;
-	struct kwl_object *whole;
-	const struct kwl_import *image;
-	const struct kwl_import *cursor;
-	struct kwl_ime *ime;
-	uint32_t width;
-	uint32_t height;
-	int32_t hotspot_x;
-	int32_t hotspot_y;
-	unsigned index;
-	int covered;
-	int shown;
-
-	/* Only a GPU that gains by it. */
-	compose = server->compose;
-	if (!compose->copy_policy) {
-		*reason = "device";
-		return NULL;
-	}
-
-	/* With swapchain images a copy can write. */
-	if (!compose->copy_target) {
-		*reason = "usage";
-		return NULL;
-	}
-
-	/* The window on top of the desktop shown is fullscreen. */
-	*reason = "not-fullscreen";
-	if (count == 0U)
-		return NULL;
-	top = kwl_top_window(server);
-	if (top == NULL || !top->fullscreen)
-		return NULL;
-
-	/* The plain look draws every window in the list, so it is the last drawn (the glass look's own test is below). */
-	if (!server->glass && top != windows[count - 1U])
-		return NULL;
-
-	/* The login and the lock screens and a screen put out are drawn. */
-	*reason = "screen";
-	if (server->greeter || server->locked || server->screen_off)
-		return NULL;
-
-	/* An output turned by the compositor, or other displays, are drawn from the scene. */
-	*reason = "output";
-	if (compose->turn.image != VK_NULL_HANDLE)
-		return NULL;
-	for (index = 0U; index < KWL_HEADS; index++) {
-		/* A live head is drawn from this frame's scene. */
-		if (compose->heads[index].open)
-			return NULL;
-	}
-
-	/* Nothing over it: the game mode's rule (menus, popups, sub-surfaces, the bar, animations). */
-	*reason = "overlay";
-	covered = kwl_scanout_covered(server, top);
-	if (covered)
-		return NULL;
-
-	/* No input method's candidates over it. */
-	ime = server->ime;
-	if (ime != NULL && ime->activated && ime->active != NULL) {
-		for (index = 0U; index < sizeof(ime->popups) / sizeof(ime->popups[0]); index++) {
-			/* A candidate window would be drawn over it. */
-			if (ime->popups[index] != NULL)
-				return NULL;
-		}
-	}
-
-	/* The glass look draws it alone, at the output's place and size. */
-	*reason = "glass";
-	if (server->glass) {
-		whole = kwl_glass_whole_window(server);
-		if (whole != top)
-			return NULL;
-	}
-
-	/* An image, opaque, in the output's format. */
-	*reason = "image";
-	image = surface_image(top);
-	if (image == NULL)
-		return NULL;
-	if (image->draw != KWL_DRAW_OPAQUE)
-		return NULL;
-	if (image->format != compose->format)
-		return NULL;
-
-	/* Of the output's size, shown whole and unscaled at its origin. */
-	*reason = "size";
-	if (image->width != compose->target_width || image->height != compose->target_height)
-		return NULL;
-	kwl_surface_size(top, &width, &height);
-	if (width != server->width || height != server->height)
-		return NULL;
-	if (top->x != 0 || top->y != 0)
-		return NULL;
-	if (top->source[2] > 0 || top->destination[0] > 0)
-		return NULL;
-
-	/* No cursor or drag drawn into the frame (the cursor plane shows it, or none shows). */
-	*reason = "cursor";
-	if (server->dnd_active)
-		return NULL;
-	if (!compose->cursor_plane.shown) {
-		shown = kwl_compose_cursor_source(server, &cursor, &hotspot_x, &hotspot_y);
-		if (shown != 0)
-			return NULL;
-	}
-
-	/* Succeeded: the frame is the window's image. */
-	*reason = "none";
-	return image;
-}
-
-/* Logs when frames start or stop copying a fullscreen window, or are drawn for another reason (KWL COPY, ws236-p011). */
-static void
-compose_copy_log(
-	struct kwl_server *server,
-	const struct kwl_import *copy,
-	const char *reason,
-	struct kwl_object **windows,
-	unsigned count)
-{
-	struct kwl_compose *compose;
-	unsigned shown;
-	uint32_t surface_id;
-
-	/* Only on a GPU whose frames copy, and only a change. */
-	compose = server->compose;
-	if (!compose->copy_policy)
-		return;
-	shown = 0U;
-	if (copy != NULL)
-		shown = 1U;
-	if (shown == compose->copy_shown && reason == compose->copy_reason)
-		return;
-
-	/* The choice the next frame is compared with. */
-	compose->copy_shown = shown;
-	compose->copy_reason = reason;
-
-	/* The window on top, if any, in the log. */
-	surface_id = 0U;
-	if (count != 0U)
-		surface_id = windows[count - 1U]->id;
-	printf("KWL COPY window=%u reason=%s surface=%u frame=%llu\n", shown, reason, surface_id, (unsigned long long)server->frame + 1U);
-
-	/* Succeeded: the change is logged. */
-	return;
-}
-
-/*
- * Records the copy of a window's image onto the frame's swapchain image, in
- * place of the frame's pass: the image becomes the copy's destination once
- * the acquire is waited for, takes every byte of the window's image, and
- * goes back to the layout it is presented in.
- */
-static void
-compose_copy_record(
-	struct kwl_list *command,
-	const struct kwl_import *source,
-	VkImage target,
-	VkImageLayout layout,
-	uint32_t width,
-	uint32_t height)
-{
-	VkImageMemoryBarrier barrier;
-	VkImageCopy region;
-
-	/*
-	 * The submission waits for the acquire at the colour output stage, so
-	 * the copy follows that stage; every pixel is replaced, so the old
-	 * ones need not be kept (UNDEFINED).
-	 */
-	memset(&barrier, 0, sizeof(barrier));
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.srcAccessMask = 0U;
-	barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = target;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.levelCount = 1U;
-	barrier.subresourceRange.layerCount = 1U;
-	kwl_list_pipeline_barrier(
-		command,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		0U,
-		0U,
-		NULL,
-		0U,
-		NULL,
-		1U,
-		&barrier);
-
-	/* The whole image, byte for byte: both have the output's format and size. */
-	memset(&region, 0, sizeof(region));
-	region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.srcSubresource.layerCount = 1U;
-	region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.dstSubresource.layerCount = 1U;
-	region.extent.width = width;
-	region.extent.height = height;
-	region.extent.depth = 1U;
-	kwl_list_copy_image(command, source->image, VK_IMAGE_LAYOUT_GENERAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &region);
-
-	/* Back to the layout the image is presented (or captured) in. */
-	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier.dstAccessMask = 0U;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.newLayout = layout;
-	kwl_list_pipeline_barrier(
-		command,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-		0U,
-		0U,
-		NULL,
-		0U,
-		NULL,
-		1U,
-		&barrier);
-
-	/* Succeeded: the list holds the copy and both transitions. */
-	return;
 }
 
 /*

@@ -40,11 +40,8 @@ struct kl_backend_resource;
 
 /*
  * The compositor's Vulkan device as the imports use it, and what it can
- * take: the largest image side and the number of memory types.
- * copy_source asks that an imported image can also be a copy's source
- * (VK_IMAGE_USAGE_TRANSFER_SRC_BIT), for the compositor that copies a
- * fullscreen window shown alone (ws236-p011); 0 keeps it sampled only.
- * Valid from the device's creation to its destruction.
+ * take: the largest image side and the number of memory types.  Valid from
+ * the device's creation to its destruction.
  */
 struct kl_backend_gpu_device {
 	VkInstance instance;
@@ -52,7 +49,6 @@ struct kl_backend_gpu_device {
 	VkDevice device;
 	uint32_t max_dimension;
 	uint32_t memory_type_count;
-	unsigned copy_source;
 };
 
 /*
@@ -132,8 +128,5 @@ uint32_t kl_backend_gpu_device_extensions(VkPhysicalDevice physical, const char 
 
 /* Reports the frame fence's exported handle type, or 0 for status polling. */
 VkExternalFenceHandleTypeFlagBits kl_backend_gpu_frame_fence_type(void);
-
-/* Reports whether the imports make an image a copy's source when the device's copy_source asks (1), or keep it sampled only (0). */
-int kl_backend_gpu_copy_source(void);
 
 #endif

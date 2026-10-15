@@ -231,17 +231,6 @@ kl_backend_gpu_frame_fence_type(
 }
 
 /*
- * Reports that zedBSD's imports make an image a copy's source when asked.
- */
-int
-kl_backend_gpu_copy_source(
-	void)
-{
-	/* Succeeded: buffer_image adds the transfer source usage on request. */
-	return 1;
-}
-
-/*
  * Preserves zedBSD's factory protocol without initial format events.
  */
 int
@@ -520,10 +509,6 @@ buffer_image(
 	create.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
 	create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-	/* A copy's source too, where the compositor copies a fullscreen window shown alone (ws236-p011). */
-	if (device->copy_source)
-		create.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
 	/* Creates the sampled image before any dedicated memory is imported. */
 	status = vkCreateImage(device->device, &create, NULL, created);

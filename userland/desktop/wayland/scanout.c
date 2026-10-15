@@ -154,25 +154,6 @@ kwl_scanout_surface_gone(
 		server->scanout_noted = NULL;
 }
 
-/*
- * Tells whether anything is drawn over a fullscreen window (the game mode's
- * overlay rule, scanout_overlay), for the composed frame's copy of the
- * window (compose.c, ws236-p011).
- */
-int
-kwl_scanout_covered(
-	struct kwl_server *server,
-	struct kwl_object *top)
-{
-	int covered;
-
-	/* The same answer as the game mode's. */
-	covered = scanout_overlay(server, top);
-
-	/* Succeeded: 1 when something is drawn over it. */
-	return covered;
-}
-
 /* Gathers the facts of a pass for the rules. */
 static void
 scanout_facts(

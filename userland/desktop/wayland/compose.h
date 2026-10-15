@@ -56,17 +56,6 @@
 /* The variant of the dark glass among the panel pipelines. */
 #define KWL_PANEL_DARK_GLASS	7U
 
-/*
- * The GPU whose frames copy a fullscreen window shown alone instead of
- * drawing it (its PCI vendor, VkPhysicalDeviceProperties.vendorID): the
- * Raspberry Pi 4's (Broadcom).  Its sampling of a client's image converts
- * every new image to the GPU's tiled layout (a TFU job, about 1.6 ms for
- * 1280x720) and a drawing pass of the output costs about 4 ms, while a
- * whole-image copy between two raster images is a tile copy of about
- * 1.3 ms (ws236-p011, T1-686's perf).  Other GPUs compose as before.
- */
-#define KWL_COPY_VENDOR		0x14e4U
-
 /* Bound the buffers that hold a descriptor set at once. */
 #define KWL_DESCRIPTOR_MAX	512U
 
@@ -95,8 +84,6 @@ struct kwl_import {
 	uint32_t width;
 	uint32_t height;
 	enum kwl_draw draw;
-	/* The format the image is sampled in (VK_FORMAT_UNDEFINED where its maker did not say; such an image is never copied raw). */
-	VkFormat format;
 	/*
 	 * A host-written image (wl_shm, the arrow, the glass look's pictures):
 	 * the CPU writes a separate linear staging image through map, and the
@@ -449,19 +436,6 @@ struct kwl_compose {
 	int rotate_saved;
 	/* The swapchain images can be a copy's source (a test image's capture, ws173-p002). */
 	unsigned readback;
-	/*
-	 * The copy of a fullscreen window shown alone (compose_copy_source,
-	 * ws236-p011): copy_policy says the GPU is one whose frames take such a
-	 * window by copying its image onto the swapchain's rather than drawing
-	 * it (KWL_COPY_VENDOR, set with the device), copy_target that the
-	 * swapchain's images can be a copy's destination (set with the output).
-	 * copy_shown is whether the last frame copied, copy_reason why not
-	 * (static words); the log says when either changes.
-	 */
-	unsigned copy_policy;
-	unsigned copy_target;
-	unsigned copy_shown;
-	const char *copy_reason;
 	/* Cursor-free scene is optional and never replaces redraws after scene changes. */
 	struct kwl_scene scene;
 	/* The cursor plane, when the output has one (cursor-plane.c). */

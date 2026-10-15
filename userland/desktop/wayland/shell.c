@@ -1724,45 +1724,6 @@ kwl_glass_overlay(
 }
 
 /*
- * Finds the fullscreen window a frame of the glass look shows alone at the
- * output's place and size (kwl_glass_draw's whole frame, fullscreen_whole),
- * or NULL.
- *
- * Such a frame is that window's image and nothing else, so the compositor
- * may copy the image instead of drawing it (compose.c, ws236-p011).
- */
-struct kwl_object *
-kwl_glass_whole_window(
-	struct kwl_server *server)
-{
-	struct kwl_object *top;
-	struct shell_rect body;
-	float home;
-	int whole;
-
-	/* A screen the closed lid put out is drawn black. */
-	if (server->screen_off)
-		return NULL;
-
-	/* Only the window's frame: nothing else is drawn, nothing moves. */
-	home = kwl_home_progress(server);
-	whole = fullscreen_whole(server, home);
-	if (!whole)
-		return NULL;
-
-	/* Its body is the output itself, neither larger nor moved. */
-	top = kwl_top_window(server);
-	body_rect(server, top, &body);
-	if (body.x != 0 || body.y != 0)
-		return NULL;
-	if (body.width != (int32_t)server->width || body.height != (int32_t)server->height)
-		return NULL;
-
-	/* Succeeded: the frame shows this window alone. */
-	return top;
-}
-
-/*
  * Brings a window to the top and gives it the focus (for the menus, whose
  * press on a title bar does what a press on it does).
  */
