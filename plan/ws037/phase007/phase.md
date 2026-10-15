@@ -479,3 +479,6 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 - T1-692（P2 の 9d733a1b2、main に merge 済み、reboot 10 回）: 10 回とも P4m ok・P8c ok・session 起動。全 run に `P4m bar1 before the tables: fault status 00000000, record 00110802 …`（同じ古い記録）。run 6 だけ retry: round 1（fault の clear）・round 2（表の書き直し）は通らず **round 3（bind のやり直し）で通った**。→ 原因は候補 a（前の boot の hub の状態、bind）寄り。上の reboot 時の GSP の unload で解消するかは、T1 の reboot 10 回で `before the tables` の行が消えるかで見る。
 - dmesg の行が 80 字で切れて round 3 の instance block の root が読めなかったので、`vram.c` の診断の行を 79 字に収まるよう分けた: `P4m <when>: fault status …, record …` / `P4m <when>: fault at <addr>, engine E` / `P4m <when>: fault type T client C access A`（`vram_fault_show`）、`P4m retry: instance block … names root …` / `P4m retry: the static information names root …`。
 - T1 への依頼に足す: kernel の log は dmesg でなく **`/var/log/kernel.log` の全文**（SSH で scp）を取る。
+
+## reboot で GSP を止める件の扱い（2026-10-16 ユーザー）
+「GSPを止める処理については、WSにメモしておいて、あまり深追いしないことにします。Fableの調査で大きな問題がなければ、これでこの問題を終了します。」→ T1-693（RTX 機の reboot 11 回）: 11 回とも P4m ok・P8c ok・session 起動（1 回は retry の round 3 で通った）、ただし前の boot の hub の fault の record（0x142000）は毎回残り、shutdown の P7 の行は log に残らず走ったかは未確認。P2（Fable 5.1 high）が P7 が走るかと record の判定だけを読みで確かめ、大きな問題が無ければ終了。
