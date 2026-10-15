@@ -76,8 +76,13 @@
 /* The kernel's count of GPU devices whose node is still on its way. */
 #define MAIN_GPU_ATTACHING_SYSCTL	"hw.gpu.attaching"
 
-/* How long, in milliseconds, sessiond waits for a display that a GPU driver is still attaching. */
-#define MAIN_DISPLAY_WAIT_MS	15000LL
+/*
+ * How long, in milliseconds, sessiond waits for a display that a GPU driver
+ * is still attaching.  A driver that loads its firmware from the root file
+ * system after a cold power-on can take a minute (the RTX's GSP firmware),
+ * so the wait is long; it ends at once when no GPU device is attaching.
+ */
+#define MAIN_DISPLAY_WAIT_MS	120000LL
 
 /* How long, in nanoseconds, sessiond pauses before it looks for the display again. */
 #define MAIN_DISPLAY_POLL_NS	100000000L
