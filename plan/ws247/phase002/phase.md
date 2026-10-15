@@ -2,7 +2,7 @@
 
 # ws247-p002: 規約の全文の見直し（WS247 が変えた comment と log の文字列）
 
-Status: in-progress（q990、2026-10-16）
+Status: cleared（2026-10-16、q990）
 Parent: [WS247](../ws.md)
 Approval: 2026-10-16 ユーザー「ではp002をサブエージェント1つで実施してください。」
 
@@ -18,4 +18,14 @@ src/drivers/gpu/nvrtx/（compiler/ を含む）で WS247 が変えた comment �
 
 ## 結果
 
-（Q1 が書く）
+- **q990 P1（conformance-reviewer、提出 3826c9184・b2a5b4ce6・c8bab8ab6、main に merge b64f2f7a2）**: 45 file。前の変更で崩れた comment の形（字下げの多い ` * ` 約 118 行、80 桁超 約 100 か所、1 行の長い `/* … */`、ちぎれた段落）を直した。sm75.c の出典だけの block 18 か所を説明と 1 つの block に統合。work-records.c の順序と Procedure への直し。identify.c の `(WS240)`・nvrtx-gsp.h の `(5f)` を除いた。products.c の pci.ids の出典を Values referenced: の形に。log の文字列は不変。cpp の比較で全 file 同じ。
+- **Q1 の確かめ（main b64f2f7a2）**: build rc 0・warning 0、host 試験 sm75 287/0・desktop 138 compiled/0 disagreed・vk-d3 122/0・vk 60/0。
+
+## 直さずに残した点（ユーザーの判断・後続）
+
+1. 2 つ目以降の path の省略（`Linux v6.19 drivers/gpu/drm/nouveau/…` の後の `nvkm/…`、NVIDIA の後の `ctrl/…`・`class/…` など約 73 か所）を認めるか（ユーザーに聞いた）。
+2. sm75.c の `Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c` の 3 か所: 意図した版（p003 で P2・P3 が 25.0.7 の tree で中身を確かめた。25.3.6 の取得物に src/compiler が無い）。直さない。
+3. identify.c の `NVIDIA open-gpu-doc (the class numbers)` に path が無い。
+4. nvrtx-gsp.h の `as both other drivers give it`（名前なしで出典を指す文）。
+5. log の冗長（`unload unload call`、`devinit begin: devinit`、`static-info begin: static info`）。
+6. style-check.py の 716 件（大半は compiler/sm75.c の移動した code と他の WS の code、comment 以外で範囲外）。

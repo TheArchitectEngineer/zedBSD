@@ -3,11 +3,11 @@
 # WS247: nvrtx の comment と log から開発の管理情報と出典の名前を除き、出典を block ごとに明記する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-16 p001 cleared、残りは p002）
+Status: incomplete（2026-10-16 p001・p002・p003 cleared。ユーザーの判断 2 点の後に completed）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[WS246](../ws246/ws.md)（compiler のまとめ）、[WS037](../ws037/ws.md)
-Resume point: p002（規約の全文の見直し、planned、未承認）。
+Resume point: ユーザーの判断待ち: (1) path の省略を認めるか（p002 の残し 1）、(2) sm75.c の「the SM75 code the CUDA compiler emits」の扱い（p003）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-16）
@@ -35,7 +35,7 @@ N0 identify、N1 console、P0 layout、P1a devinit、P1b frts、P2a booter、P2b
 | --- | --- | --- |
 | [p001](phase001/phase.md) | 下の「残り」1・2・4・5：定数ごとの出典、本文の出典の名前の除去、vram.c の path（P1・P2・P3 の並列、q984〜q986） | cleared（2026-10-16、main 50a95d261） |
 | [p003](phase003/phase.md) | compiler の sm75.c・sm75.h に p001 と同じ規則（2026-10-16 ユーザー） | cleared（2026-10-16、main 70e7a254f） |
-| [p002](phase002/phase.md) | 規約の全文の見直し（WS247 が変えた comment を plan/coding-style.md の全文と照らす） | in-progress（q990、conformance-reviewer 1 つ） |
+| [p002](phase002/phase.md) | 規約の全文の見直し（WS247 が変えた comment を plan/coding-style.md の全文と照らす） | cleared（2026-10-16、main b64f2f7a2） |
 
 範囲外で見つかった物（WS037 の後続へ）: scanout.c:1273 が定義の無い番地 0x64013c を読んで捨てている（SOR の caps は 0x640144＋or*8）。[p001](phase001/phase.md) の「出典の無い値」。
 
