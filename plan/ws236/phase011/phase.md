@@ -441,3 +441,5 @@ Phase disposition: normal
 - i915（5330）の videoplayer は変えていない（arm64 だけ）。i915 で同じ道を使うには i915 の kernel に NV12 の plane の view と export が要る（範囲外）。
 
 - 2026-10-16 ユーザー（T2 の T1-681 の再生の最中、OLED を目視）:「Piは少なくとも30fps、60fpsに近いフレームレートで動画が再生されました」（b4452d35d の kernel、GPU の picture の道の見込み。数は T1-681 の結果で確かめる）。
+
+- 2026-10-16 ユーザー:「1080pや60fpsはもう計測しなくていいです」→ 以後の T2 の依頼は 720p30 だけ（1080p・60 fps の run は外す）。
