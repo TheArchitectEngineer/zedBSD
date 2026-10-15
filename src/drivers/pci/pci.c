@@ -176,6 +176,7 @@ static void pci_irq_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument
 static void pci_intx_dispatch(int irq, kern_irq_ack_t acknowledge, void *argument);
 static int describe_visit(struct drv_pci_device *device, void *argument);
 static bool pci_probe_waits(const struct drv_pci_device *device);
+static int pci_shutdown_visit(struct drv_pci_device *device, void *argument);
 
 /*
  * Brings the PCI subsystem into service.
@@ -199,25 +200,22 @@ drv_pci_init(
 
 /*
  * Takes the PCI subsystem out of service.
+ *
+ * Every bound function on every root bus and on every bus behind a bridge
+ * gets its driver's shutdown hook once, a bridge's own function before the
+ * functions behind it (a GPU behind the processor's root port, an NVMe disk
+ * behind a chipset root port).  The hooks report their own failures; the
+ * walk never stops early.
  */
 void
 drv_pci_shutdown(
 	void)
 {
-	struct drv_pci_device *device;
 	struct drv_pci_bus *bus;
 
-	/* Process each linked entry. */
-	for (bus = root_buses; bus != NULL; bus = bus->next) {
-		/* Process each linked entry. */
-		for (device = bus->devices; device != NULL;
-		     device = device->next) {
-			/* Handles the driver availability. */
-			if (device->driver != NULL &&
-			    device->driver->shutdown != NULL)
-				device->driver->shutdown(device);
-		}
-	}
+	/* Visits the functions of each root bus and of the buses below it. */
+	for (bus = root_buses; bus != NULL; bus = bus->next)
+		(void)foreach_device_tree(bus, pci_shutdown_visit, NULL);
 }
 
 /*
@@ -3619,4 +3617,28 @@ pci_probe_waits(
 
 	/* Succeeded: every memory BAR has an address. */
 	return false;
+}
+
+/*
+ * Runs one function's driver shutdown hook, when its driver has one, and
+ * always goes on to the next function of the walk.
+ */
+static int
+pci_shutdown_visit(
+	struct drv_pci_device *device,
+	void *argument)
+{
+	(void)argument;
+
+	/* A function without a driver, or whose driver has no hook, is left as it is. */
+	if (device->driver == NULL)
+		return 0;
+	if (device->driver->shutdown == NULL)
+		return 0;
+
+	/* The driver quiesces its function before the reset or the halt. */
+	device->driver->shutdown(device);
+
+	/* The walk goes on. */
+	return 0;
 }

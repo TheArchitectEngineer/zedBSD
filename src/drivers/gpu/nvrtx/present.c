@@ -226,6 +226,24 @@ nvrtx_present_resource_gone(
 }
 
 /*
+ * Ends the lease for the reboot, whoever holds it: the cursor is hidden
+ * and the console surface (the firmware's picture) comes back on the head,
+ * so the screen is as the firmware left it when the GSP is stopped.  The
+ * caller holds the node's lock.
+ */
+void
+nvrtx_present_stop(
+	struct nvrtx_node *node)
+{
+	/* Without a lease the console surface is on the head already. */
+	if (node->owner == NULL)
+		return;
+
+	/* The lease ends as if its holder had released it. */
+	present_end_lease(node);
+}
+
+/*
  * Brings the refresh count up to date from the head's frame counter and
  * reports it with the time it last moved.
  *

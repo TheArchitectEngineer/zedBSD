@@ -154,6 +154,32 @@ nvrtx_runtime_start(
 	nvrtx_stage_mark("D2: no renderer worker (%d)", error);
 }
 
+/*
+ * Stops the renderer for the reboot: nothing new is taken and what is
+ * queued completes with EIO, as after a fault, but without a fault's
+ * report.  The worker thread runs on, idle, until the reset.
+ */
+void
+nvrtx_runtime_stop(
+	struct nvrtx_node *node)
+{
+	unsigned long enabled;
+
+	/* A node that is no renderer has no queue. */
+	if (node->renderer == 0)
+		return;
+
+	/* faulted refuses every later frame, marker and reservation; the worker completes the rest with EIO. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	node->faulted = 1;
+	waitq_wake_all(&node->available);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	nvrtx_stage_mark("P7 shutdown: the renderer takes no more work");
+}
+
 /* Reports the protocol's capset: wire 1, XML 1.3.269, timelines, the vendor suffix and its flags. */
 static int
 runtime_capset(

@@ -20,6 +20,11 @@
  * (or any TU10x chip with nvrtx.gsp=1) the attach keeps the function and
  * starts a worker thread that runs the GSP boot (gsp.c) once the root file
  * system holds the firmware.  The kept function refuses a system suspend.
+ *
+ * At the reboot or the shutdown of the machine the PCI shutdown hook stops
+ * a GSP kept up (the GPU device, then P7), so the hub's state of this boot
+ * and the protected region are not carried into the next boot (2026-10-16,
+ * the user's decision: the GSP is stopped at the reboot).
  */
 
 #include <stdbool.h>
@@ -28,6 +33,7 @@
 
 #include <drivers/pci/pci-nvrtx.h>
 #include <drivers/pci/pci.h>
+#include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/sched.h>
@@ -38,8 +44,13 @@
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 
+/* How long the shutdown waits for a GSP boot still running (P2b's wait is the longest stage), and its step. */
+#define NVRTX_SHUTDOWN_BOOT_WAIT_US	12000000U
+#define NVRTX_SHUTDOWN_STEP_US		10000U
+
 static int nvrtx_attach(struct drv_pci_device *pci, const struct drv_pci_id *id);
 static int nvrtx_detach(struct drv_pci_device *pci, unsigned flags);
+static void nvrtx_shutdown(struct drv_pci_device *pci);
 static int nvrtx_suspend(struct drv_pci_device *pci);
 static int nvrtx_keep(struct nvrtx_device *device);
 static void nvrtx_worker(void *argument);
@@ -67,7 +78,7 @@ drv_pci_nvrtx_driver_register(void)
 		NULL,
 		nvrtx_attach,
 		nvrtx_detach,
-		NULL,
+		nvrtx_shutdown,
 		nvrtx_suspend,
 		NULL,
 		{ 0U, 0U, 0U, 0U }
@@ -205,6 +216,57 @@ nvrtx_detach(
 
 	/* Succeeded: PCI may clear the binding. */
 	return 0;
+}
+
+/*
+ * Stops a kept GPU for the reboot or the shutdown of the machine (the PCI
+ * shutdown hook, after the volumes are synced and the network stopped).
+ *
+ * A boot still running is waited for, for a bounded time; then the GPU
+ * device, if one was registered, and the GSP are stopped (P7).  Nothing
+ * here stops the reboot: a failure is shown and the reset follows.
+ */
+static void
+nvrtx_shutdown(
+	struct drv_pci_device *pci)
+{
+	struct nvrtx_gpu *gpu;
+	uint64_t start;
+	uint64_t waited;
+
+	/* A function the attach did not keep is the firmware's already. */
+	gpu = drv_pci_device_driver_data(pci);
+	if (gpu == NULL)
+		return;
+
+	/* Waits for a boot still running: it ends by itself, with the GSP kept up or stopped. */
+	start = nvrtx_now_us();
+	for (;;) {
+		if (gpu->worker_running == 0)
+			break;
+
+		waited = nvrtx_now_us() - start;
+		if (waited > NVRTX_SHUTDOWN_BOOT_WAIT_US) {
+			nvrtx_stage_mark("P7 shutdown: the GSP boot still runs after %u ms; left to the reset", (unsigned)(waited / 1000U));
+			return;
+		}
+
+		kern_usleep_range(NVRTX_SHUTDOWN_STEP_US, NVRTX_SHUTDOWN_STEP_US * 2U);
+	}
+
+	/* The worker's last writes to the state are seen before it is read here. */
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+	/* A GSP the worker already stopped, or never started, leaves nothing to do. */
+	if (gpu->state != NVRTX_GSP_RUNNING)
+		return;
+
+	/* Stops the GPU device with the GSP, or the GSP alone when it was kept up for the console. */
+	if (gpu->node != NULL) {
+		nvrtx_node_stop(gpu->node);
+	} else {
+		(void)nvrtx_gsp_shutdown(gpu);
+	}
 }
 
 /* Refuses a system suspend while the driver keeps the function: the GSP has no suspend path yet. */

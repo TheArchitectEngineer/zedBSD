@@ -16,8 +16,12 @@
  * the display of present.c and cursor.c.  With nvrtx.vk=1 it is also a
  * renderer (runtime.c: the Vulkan protocol's commands, ws037-p007 stage D2).
  *
- * The device is never unregistered: the GSP has no path back to the firmware
- * while it runs, so the GPU is kept until power-off (detach refuses).
+ * The device is not unregistered while the machine runs: the GSP has no
+ * path back to the firmware while it runs, so the GPU is kept until the
+ * reboot or the shutdown (detach refuses).  Then the PCI shutdown hook
+ * stops the device (nvrtx_node_stop: it goes offline, the lease ends, the
+ * drain stops) and the GSP (P7), so the next boot finds the GPU as the
+ * firmware left it.
  */
 
 #include <stdbool.h>
@@ -61,6 +65,10 @@
 
 /* The page the storage is allocated in. */
 #define NODE_PAGE_BYTES			4096U
+
+/* How long the stop waits for the message drain to end (a turn, its pause and a margin), and its step. */
+#define NODE_DRAIN_STOP_TIMEOUT_US	3500000U
+#define NODE_DRAIN_STOP_STEP_US		10000U
 
 static int node_open(void *private_data, void **session);
 static void node_close(void *private_data, void *session);
@@ -174,6 +182,7 @@ nvrtx_node_start(
 	 */
 	error = kthread_create(node_drain, node, SCHED_PRIORITY_DEFAULT, &drain);
 	if (error == 0) {
+		node->drain_running = 1;
 		drain->detached = 1;
 		thread_start(drain);
 	} else {
@@ -187,6 +196,64 @@ nvrtx_node_start(
 	    (unsigned)node->height,
 	    (unsigned)node->refresh_millihz);
 	return 0;
+}
+
+/*
+ * Stops the GPU device and the GSP for the reboot or the shutdown of the
+ * machine.
+ *
+ * In this order: the renderer takes no more work; the device goes offline
+ * (the core refuses new opens and operations; an open that remains only
+ * delays the registration's release, which the reset makes moot); the
+ * message drain ends, so this thread is the GSP's only reader; the lease
+ * ends under the node's lock, which brings the firmware's picture back on
+ * the head and is held while the GSP is stopped (P7), so no presentation or
+ * frame runs meanwhile.  Every step is bounded and a failure is only shown.
+ */
+void
+nvrtx_node_stop(
+	struct nvrtx_node *node)
+{
+	uint64_t start;
+	uint64_t waited;
+	int error;
+
+	/* The renderer refuses new frames and markers from here on. */
+	nvrtx_runtime_stop(node);
+
+	/* The device goes offline; opens that remain keep the registration (offline too), which the reset ends. */
+	error = drv_gpu_unregister(node->device);
+	if (error == 0) {
+		node->device = NULL;
+	} else if (error == EBUSY) {
+		nvrtx_stage_mark("P7 shutdown: the GPU device is offline; opens remain until the reset");
+	} else {
+		nvrtx_stage_mark("P7 shutdown: the GPU device was not withdrawn (%d)", error);
+	}
+
+	/* Ends the message drain at its next turn, so the GSP's replies reach the stop. */
+	node->drain_stop = 1;
+	start = nvrtx_now_us();
+	for (;;) {
+		if (node->drain_running == 0)
+			break;
+
+		waited = nvrtx_now_us() - start;
+		if (waited > NODE_DRAIN_STOP_TIMEOUT_US) {
+			nvrtx_stage_mark("P7 shutdown: the message drain did not end in %u ms", (unsigned)(waited / 1000U));
+			break;
+		}
+
+		kern_usleep_range(NODE_DRAIN_STOP_STEP_US, NODE_DRAIN_STOP_STEP_US * 2U);
+	}
+
+	/* Brings the firmware's picture back and stops the GSP while nothing else may use the display or the channel. */
+	mutex_lock(&node->lock);
+
+	nvrtx_present_stop(node);
+	(void)nvrtx_gsp_shutdown(node->gpu);
+
+	mutex_unlock(&node->lock);
 }
 
 /*
@@ -747,9 +814,10 @@ node_free(
 
 /*
  * Takes the messages the GSP sends while the device is up, a turn at a
- * time, until power-off.  The worker that made the device has ended, and
- * the device's operations make no calls to the GSP, so this thread is the
- * channel's only reader.  The wait shows the channel errors it meets.
+ * time, until the stop for the reboot asks it to end.  The worker that
+ * made the device has ended, and the device's operations make no calls to
+ * the GSP, so this thread is the channel's only reader.  The wait shows
+ * the channel errors it meets.
  *
  * After each turn (about a second) it also reads the head's frame counter,
  * so the refresh count keeps up even while nobody waits for a boundary
@@ -767,15 +835,23 @@ node_drain(
 
 	node = argument;
 
-	/* Takes messages turn after turn; a turn ends when its time is spent. */
+	/* Takes messages turn after turn; a turn ends when its time is spent, and the stop ends the turns. */
 	for (;;) {
 		error = nvrtx_rpc_wait(node->gpu, NODE_DRAIN_NO_FUNCTION, 0U, NODE_DRAIN_TURN_US, &length);
 		if (error != 0 && error != ETIMEDOUT)
 			kern_usleep_range(NODE_DRAIN_PAUSE_US, NODE_DRAIN_PAUSE_US);
 
+		/* The stop for the reboot reads the GSP's replies itself from here on. */
+		if (node->drain_stop != 0)
+			break;
+
 		/* Brings the refresh count up to date. */
 		nvrtx_present_refresh_sample(node, &count, &time_ns);
 	}
+
+	/* drain_running cleared tells the stop that nothing else reads the channel. */
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	node->drain_running = 0;
 }
 
 /* Takes a blob out of its session's list (a blob never listed is left alone). */
