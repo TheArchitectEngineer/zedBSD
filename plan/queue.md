@@ -14,6 +14,7 @@
 | q1203 / q1203-i01 | P5（phase-runner、worktree p5・agent/p5-ws039、基点 main） | [ws039-p007](ws039/phase007/phase.md) | GFX10 の shader の compiler の再開（7.2 の再開点: encode → 既知の語の試験 → compute の lowering → waitcnt → interpreter）。host の試験と build まで、実機なし（2026-10-15 ユーザー「N=3で続けましょう。」、WS039 の開始の承認と担当 2 人の決定の範囲） | 担当の作業は区切り（段 A・E・F と D の一部、encode 86 語・compute 11・graphics 7・desktop 44 が参照と一致、desktop の命令数 -24%。最終 b117d0d31、main に merge、P5 は返却）。p007 は in-progress のまま、残りは phase.md 7.8 |
 | q1204 / q1204-i01 | P1（phase-runner、worktree p1・agent/p1-ws245、基点 0c25c87a7） | ws245-p002 | 土台: register・表の header、xd-io、xd-platform、host 試験の枠、internal.h の own の型の分離と Gen9 の移設（design.md §6.2 の p002）。kernel の振る舞いは変えない。#18 の回答まで RKL・ADL-S の ID は device.c に足さない（2026-10-15 ユーザー「WS245は、ロールバックできる体制にしておいて、今から実装します。」） | in-progress |
 | q1205 / q1205-i01 | P2（worktree p2・agent/p2-ws249） | [ws249-p001](ws249/phase001/phase.md) → [ws249-p002](ws249/phase002/phase.md) | BCM43455 の driver の出典の表記と規約の全文（2026-10-15 ユーザー「bcm43455も同じガードレールで修正してほしいです。WSを立ててください。」「WS248のあとでOKです。」）。動作は変えない | in-progress |
+| q1206 / q1206-i01 | P4（kernel-and-driver-designer、worktree p4・agent/p4-ws250） | [ws250-p001](ws250/phase001/phase.md) | nvrtx の終わらない GPU の仕事の取り消しと復帰の設計（code は書かない、design-reviewer を通す）。2026-10-15 ユーザー「その場合のキャンセルと復帰を実装した方がよくない？…システムとしては動き続けてほしいな。」、N=3 の空いた枠 | in-progress |
 
 ## 2026-10-15: WS247・WS245（q984〜q995）
 

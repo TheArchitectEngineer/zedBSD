@@ -2,7 +2,7 @@
 
 # ws250-p001: nvrtx の取り消しと復帰の設計
 
-Status: planned（2026-10-15）
+Status: in-progress（2026-10-15、q1206 P4）
 Parent: [WS250](../ws.md)
 Approval: 2026-10-15 ユーザー「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」
 
