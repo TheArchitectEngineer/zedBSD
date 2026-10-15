@@ -111,22 +111,36 @@ struct drv_intel_ax211_bss_assoc_metadata {
 	uint8_t receive_tsf_valid;
 };
 
-int drv_intel_ax211_bss_decode(const struct intel_ax211_rx_delivery *mpdu,
-			       uint64_t observation_generation,
-			       uint32_t hardware_epoch,
-			       struct intel_ax211_bss_entry *entry);
-int drv_intel_ax211_bss_cache_init(struct intel_ax211_bss_cache *cache,
-				   uint32_t hardware_epoch);
 int
-drv_intel_ax211_bss_cache_observe(struct intel_ax211_bss_cache *cache,
-				  const struct intel_ax211_bss_entry *entry);
-int drv_intel_ax211_bss_cache_lookup(
+drv_intel_ax211_bss_decode(
+	const struct intel_ax211_rx_delivery *mpdu,
+	uint64_t observation_generation,
+	uint32_t hardware_epoch,
+	struct intel_ax211_bss_entry *entry);
+
+int
+drv_intel_ax211_bss_cache_init(
+	struct intel_ax211_bss_cache *cache,
+	uint32_t hardware_epoch);
+
+int
+drv_intel_ax211_bss_cache_observe(
+	struct intel_ax211_bss_cache *cache,
+	const struct intel_ax211_bss_entry *entry);
+
+int
+drv_intel_ax211_bss_cache_lookup(
 	const struct intel_ax211_bss_cache *cache,
-	const uint8_t bssid[INTEL_AX211_BSS_ADDRESS_SIZE], uint8_t channel,
-	uint32_t hardware_epoch, struct intel_ax211_bss_entry *entry);
-int drv_intel_ax211_bss_assoc_metadata(
+	const uint8_t bssid[INTEL_AX211_BSS_ADDRESS_SIZE],
+	uint8_t channel,
+	uint32_t hardware_epoch,
+	struct intel_ax211_bss_entry *entry);
+
+int
+drv_intel_ax211_bss_assoc_metadata(
 	const struct intel_ax211_bss_entry *entry,
-	uint64_t connection_generation, uint32_t hardware_epoch,
+	uint64_t connection_generation,
+	uint32_t hardware_epoch,
 	struct drv_intel_ax211_bss_assoc_metadata *metadata);
 
 #endif

@@ -91,24 +91,58 @@ struct intel_ax211_mmio {
 	int master_disable_timed_out;
 };
 
-int drv_intel_ax211_mmio_init(struct intel_ax211_mmio *mmio,
-			      const struct intel_ax211_mmio_ops *ops,
-			      void *argument,
-			      const struct intel_ax211_mmio_profile *profile);
-int drv_intel_ax211_mmio_take_ownership(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_sw_reset(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_apm_init(struct intel_ax211_mmio *mmio);
+int
+drv_intel_ax211_mmio_init(
+	struct intel_ax211_mmio *mmio,
+	const struct intel_ax211_mmio_ops *ops,
+	void *argument,
+	const struct intel_ax211_mmio_profile *profile);
+
+int
+drv_intel_ax211_mmio_take_ownership(
+	struct intel_ax211_mmio *mmio);
+
+int
+drv_intel_ax211_mmio_sw_reset(
+	struct intel_ax211_mmio *mmio);
+
+int
+drv_intel_ax211_mmio_apm_init(
+	struct intel_ax211_mmio *mmio);
+
 /* Success guarantees a STOP_MASTER request, APM stop, and settled reset. */
-int drv_intel_ax211_mmio_stop(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_wake_hold(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_wake_release(struct intel_ax211_mmio *mmio);
-int drv_intel_ax211_mmio_read_mac(struct intel_ax211_mmio *mmio,
-				  uint8_t mac_address[6]);
-int drv_intel_ax211_mmio_prph_read32(struct intel_ax211_mmio *mmio,
-				     uint32_t address, uint32_t *value);
-int drv_intel_ax211_mmio_prph_write32(struct intel_ax211_mmio *mmio,
-				      uint32_t address, uint32_t value);
-int drv_intel_ax211_mmio_publish_gen3(struct intel_ax211_mmio *mmio,
-				      const struct intel_ax211_mmio_boot *boot);
+int
+drv_intel_ax211_mmio_stop(
+	struct intel_ax211_mmio *mmio);
+
+int
+drv_intel_ax211_mmio_wake_hold(
+	struct intel_ax211_mmio *mmio);
+
+int
+drv_intel_ax211_mmio_wake_release(
+	struct intel_ax211_mmio *mmio);
+
+int
+drv_intel_ax211_mmio_read_mac(
+	struct intel_ax211_mmio *mmio,
+	uint8_t mac_address[6]);
+
+int
+drv_intel_ax211_mmio_prph_read32(
+	struct intel_ax211_mmio *mmio,
+	uint32_t address,
+	uint32_t *value);
+
+int
+drv_intel_ax211_mmio_prph_write32(
+	struct intel_ax211_mmio *mmio,
+	uint32_t address,
+	uint32_t value);
+
+int
+drv_intel_ax211_mmio_publish_gen3(
+	struct intel_ax211_mmio *mmio,
+	const struct intel_ax211_mmio_boot *boot);
 
 #endif

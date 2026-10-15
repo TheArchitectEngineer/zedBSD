@@ -178,8 +178,7 @@ drv_intel_ax211_init_finished_validate(
 		return INTEL_AX211_PROTOCOL_INVALID;
 
 	/* Checks the notification against the current generation. */
-	error =
-		drv_intel_ax211_protocol_init_finished(message, generation);
+	error = drv_intel_ax211_protocol_init_finished(message, generation);
 	if (error != INTEL_AX211_PROTOCOL_OK)
 		return error;
 

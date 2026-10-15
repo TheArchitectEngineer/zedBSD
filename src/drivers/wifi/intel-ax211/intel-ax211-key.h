@@ -31,14 +31,14 @@
  * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h (SEC_KEY_CMD and struct
  * iwl_sec_key_cmd) and IEEE Std 802.11-2020 12.5.3 (the CCMP-128 key length).
  */
-#define INTEL_AX211_KEY_FAMILY 5U
-#define INTEL_AX211_KEY_OPCODE 0x18U
-#define INTEL_AX211_KEY_COMMAND_VERSION 1U
-#define INTEL_AX211_KEY_WIRE_VERSION 0U
-#define INTEL_AX211_KEY_RESPONSE_VERSION 0U
-#define INTEL_AX211_KEY_COMMAND_SIZE 80U
-#define INTEL_AX211_KEY_BYTES 16U
-#define INTEL_AX211_KEY_INDEX_LIMIT 4U
+#define INTEL_AX211_KEY_FAMILY			5U
+#define INTEL_AX211_KEY_OPCODE			0x18U
+#define INTEL_AX211_KEY_COMMAND_VERSION		1U
+#define INTEL_AX211_KEY_WIRE_VERSION		0U
+#define INTEL_AX211_KEY_RESPONSE_VERSION	0U
+#define INTEL_AX211_KEY_COMMAND_SIZE		80U
+#define INTEL_AX211_KEY_BYTES			16U
+#define INTEL_AX211_KEY_INDEX_LIMIT		4U
 
 enum intel_ax211_key_result {
 	INTEL_AX211_KEY_OK = 0,
@@ -77,42 +77,72 @@ struct intel_ax211_key_state {
 	uint8_t reserved[2];
 };
 
-int drv_intel_ax211_key_api89_validate(
-	const struct intel_ax211_protocol_command_table *table);
 int
-drv_intel_ax211_key_add_encode(const struct intel_ax211_key_request *request,
-			       uint8_t output[INTEL_AX211_KEY_COMMAND_SIZE]);
-int drv_intel_ax211_key_remove_encode(
-	uint64_t connection_generation, uint64_t key_generation,
-	enum intel_ax211_key_kind kind, uint8_t key_index,
+drv_intel_ax211_key_api89_validate(
+	const struct intel_ax211_protocol_command_table *table);
+
+int
+drv_intel_ax211_key_add_encode(
+	const struct intel_ax211_key_request *request,
 	uint8_t output[INTEL_AX211_KEY_COMMAND_SIZE]);
-void drv_intel_ax211_key_command_scrub(
+
+int
+drv_intel_ax211_key_remove_encode(
+	uint64_t connection_generation,
+	uint64_t key_generation,
+	enum intel_ax211_key_kind kind,
+	uint8_t key_index,
+	uint8_t output[INTEL_AX211_KEY_COMMAND_SIZE]);
+
+void
+drv_intel_ax211_key_command_scrub(
 	uint8_t command[INTEL_AX211_KEY_COMMAND_SIZE]);
 
-int drv_intel_ax211_key_state_init(struct intel_ax211_key_state *state,
-				   uint32_t hardware_epoch,
-				   uint64_t connection_generation);
-int drv_intel_ax211_key_state_installed(
+int
+drv_intel_ax211_key_state_init(
 	struct intel_ax211_key_state *state,
-	const struct intel_ax211_key_request *request, uint32_t hardware_epoch);
-int drv_intel_ax211_key_state_activate(struct intel_ax211_key_state *state,
-				       uint64_t connection_generation,
-				       uint64_t pairwise_generation,
-				       uint64_t group_generation,
-				       uint32_t hardware_epoch);
-int drv_intel_ax211_key_state_removed(struct intel_ax211_key_state *state,
-				      uint64_t connection_generation,
-				      enum intel_ax211_key_kind kind,
-				      uint8_t key_index,
-				      uint64_t key_generation,
-				      uint32_t hardware_epoch);
-int drv_intel_ax211_key_state_rx_generation(
+	uint32_t hardware_epoch,
+	uint64_t connection_generation);
+
+int
+drv_intel_ax211_key_state_installed(
+	struct intel_ax211_key_state *state,
+	const struct intel_ax211_key_request *request,
+	uint32_t hardware_epoch);
+
+int
+drv_intel_ax211_key_state_activate(
+	struct intel_ax211_key_state *state,
+	uint64_t connection_generation,
+	uint64_t pairwise_generation,
+	uint64_t group_generation,
+	uint32_t hardware_epoch);
+
+int
+drv_intel_ax211_key_state_removed(
+	struct intel_ax211_key_state *state,
+	uint64_t connection_generation,
+	enum intel_ax211_key_kind kind,
+	uint8_t key_index,
+	uint64_t key_generation,
+	uint32_t hardware_epoch);
+
+int
+drv_intel_ax211_key_state_rx_generation(
 	const struct intel_ax211_key_state *state,
-	uint64_t connection_generation, enum intel_ax211_key_kind kind,
-	uint8_t key_index, uint32_t hardware_epoch, uint64_t *key_generation);
-int drv_intel_ax211_key_state_tx_validate(
+	uint64_t connection_generation,
+	enum intel_ax211_key_kind kind,
+	uint8_t key_index,
+	uint32_t hardware_epoch,
+	uint64_t *key_generation);
+
+int
+drv_intel_ax211_key_state_tx_validate(
 	const struct intel_ax211_key_state *state,
-	uint64_t connection_generation, uint64_t key_generation,
-	uint8_t key_index, uint64_t packet_number, uint32_t hardware_epoch);
+	uint64_t connection_generation,
+	uint64_t key_generation,
+	uint8_t key_index,
+	uint64_t packet_number,
+	uint32_t hardware_epoch);
 
 #endif

@@ -33,7 +33,7 @@
 0. **まず [plan/agents/handover-20261015b.md](agents/handover-20261015b.md) を読む**（この session の異常と点検、未完の担当、ユーザーの判断待ち、残っている仕事）。
 1. 新しい Q1 は AGENTS.md・この block・plan/beta2.md の先頭（「ユーザーが今できる試験」）を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge_one の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`。memory の verify-merge-before-reporting）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS249、q1203（q1202 は P3 の ws039-p001 の再開。q1201 は P2 の WS248 AX211 の整理。q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS249、q1204（q1203 は P5 の ws039-p007 compiler の再開。q1202 は P3 の ws039-p001 の再開。q1201 は P2 の WS248 AX211 の整理。q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
 4. 日付（2026-10-15 ユーザー「host の時計は 2026-10-15（木）です。10-16は明らかにおかしいです。」）: 10-15 04:36 以降の記録が 1 日進んだ 2026-10-16 と書かれていたので、出来事の日付を 2026-10-15 に直した（予定の 7 行は 10-16 のまま）。日付は host の時計（`date`）で書く。 記録の整合を保つ手順は [record-integrity.md](record-integrity.md)（AGENTS.md の「記録の整合」）。LW は 1 LW ≈ 実時間 15〜25 分（2026-10-14 の較正、10-15 に正と承認）。
 <!-- master:next:end -->
 
@@ -531,7 +531,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS215](ws215/ws.md) | MG005 | Raspberry Pi 4 の Bluetooth（内蔵の BCM43455、UART の HCI）（2026-10-12 ユーザー） | planning | 未割当（SMP・最適化の終了の後） |
 | [WS216](ws216/ws.md) | MG006 | Notes の描く道具（筆・鉛筆・領域の塗りつぶし・水彩）（2026-10-13 ユーザーの UAT） | planning | 未割当（BUG-296 の後） |
 | [WS217](ws217/ws.md) | MG006 | 画面の回転（Settings の Display、縦長で Notes を使う）（2026-10-13 ユーザーの UAT） | planning | 未割当（まず設計） |
-| [WS218](ws218/ws.md) | MG005 | Intel WiFi（AX211）driver の license の表示を実態に合わせる（OpenBSD・Intel の license の削除の監査）（2026-10-13 ユーザー） | planning | P1 p001 |
+| [WS218](ws218/ws.md) | MG005 | Intel WiFi（AX211）driver の license の表示を実態に合わせる（OpenBSD・Intel の license の削除の監査）（2026-10-13 ユーザー） | incomplete（p002 は実装・host 試験済み、AX211 の QEMU・実機の試験待ち） | p001 の記録の締め、p002 の試験 |
 | [WS219](ws219/ws.md) | MG006 | Venus の protocol の op の流用の整理（定数名の付け直し、Venus の著作権表示を外し引用の明記に留める）（2026-10-13 ユーザー） | planning | 未割当（WS218 p001 の後の P1） |
 | [WS220](ws220/ws.md) | MG005 | TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）（2026-10-13 ユーザー） | planning | 次に空いた P（WS219 より先） |
 | [WS221](ws221/ws.md) | MG005 | Jumbo frame（Ethernet の L2 の大きな MTU、device ごとの上限、IP・TCP の MSS）（2026-10-13 ユーザー） | planning | 次に空いた P |

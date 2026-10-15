@@ -664,8 +664,7 @@ ax211_parse_ucode(
 #ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
 
 	/* Parses the image with the host test's parser. */
-	error =
-		intel_ax211_firmware_loader_host_parse(bytes, length, manifest);
+	error = intel_ax211_firmware_loader_host_parse(bytes, length, manifest);
 
 	/* Reports the parser's result. */
 	return error;
@@ -673,8 +672,7 @@ ax211_parse_ucode(
 #else
 
 	/* Parses the image. */
-	error =
-		drv_intel_ax211_firmware_parse(bytes, length, manifest);
+	error = drv_intel_ax211_firmware_parse(bytes, length, manifest);
 
 	/* Reports the parser's result. */
 	return error;
@@ -703,8 +701,7 @@ ax211_inspect_pnvm(
 #else
 
 	/* Inspects the file. */
-	error =
-		drv_intel_ax211_pnvm_inspect(bytes, length, inventory);
+	error = drv_intel_ax211_pnvm_inspect(bytes, length, inventory);
 
 	/* Reports the inspection's result. */
 	return error;

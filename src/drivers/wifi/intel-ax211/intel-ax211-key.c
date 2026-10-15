@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -31,12 +29,12 @@
  * and enum iwl_sec_key_flags) and IEEE Std 802.11-2020 12.5.3.2 (the CCMP
  * packet number).
  */
-#define AX211_KEY_ACTION_ADD 1U
-#define AX211_KEY_ACTION_REMOVE 3U
-#define AX211_KEY_STATION_MASK 1U
-#define AX211_KEY_SUITE_CCMP 2U
-#define AX211_KEY_APPLIES_TO_GROUP 0x40U
-#define AX211_KEY_PACKET_NUMBER_MAX UINT64_C(0x0000ffffffffffff)
+#define AX211_KEY_ACTION_ADD		1U
+#define AX211_KEY_ACTION_REMOVE		3U
+#define AX211_KEY_STATION_MASK		1U
+#define AX211_KEY_SUITE_CCMP		2U
+#define AX211_KEY_APPLIES_TO_GROUP	0x40U
+#define AX211_KEY_PACKET_NUMBER_MAX	UINT64_C(0x0000ffffffffffff)
 
 static int ax211_key_request_valid(const struct intel_ax211_key_request *request);
 static void ax211_key_put_le32(uint8_t *bytes, uint32_t value);

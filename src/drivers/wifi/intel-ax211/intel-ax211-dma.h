@@ -114,30 +114,40 @@ struct intel_ax211_dma_resources {
 	uint8_t reserved;
 };
 
-int drv_intel_ax211_dma_prepare_boot(
+int
+drv_intel_ax211_dma_prepare_boot(
 	struct drv_dma_device *device, const uint8_t *firmware_bytes,
 	size_t firmware_length,
 	const struct intel_ax211_firmware_manifest *manifest,
 	uint16_t hardware_revision,
 	struct intel_ax211_dma_resources *resources);
+
 /*
- * PNVM preparation is admitted only after release_boot_images records an
- * accepted ALIVE generation.
+ * PNVM preparation is admitted only after release_boot_images records
+ * an accepted ALIVE generation.
  */
-int drv_intel_ax211_dma_prepare_pnvm(
+int
+drv_intel_ax211_dma_prepare_pnvm(
 	const uint8_t *pnvm_bytes, size_t pnvm_length,
 	const struct intel_ax211_pnvm_manifest *manifest,
 	struct intel_ax211_dma_resources *resources);
+
 /*
  * Call only after the exact ALIVE notification has been accepted.  This
  * retires IML and LMAC/UMAC images; paging and runtime rings remain owned.
  */
-void drv_intel_ax211_dma_release_boot_images(
+void
+drv_intel_ax211_dma_release_boot_images(
 	struct intel_ax211_dma_resources *resources);
-void drv_intel_ax211_dma_release(struct intel_ax211_dma_resources *resources);
+
+void
+drv_intel_ax211_dma_release(struct intel_ax211_dma_resources *resources);
 
 #ifdef INTEL_AX211_DMA_HOST_TEST
-void intel_ax211_dma_host_scrub(void *memory, size_t length);
+void
+intel_ax211_dma_host_scrub(
+	void *memory,
+	size_t length);
 #endif
 
 #endif
