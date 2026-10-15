@@ -1,9 +1,14 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 private first-boot coordinator
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 private first-boot coordinator.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_BOOT_H

@@ -1,9 +1,14 @@
 /* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
- * zedBSD Intel AX211 exact firmware-file loader
+ * zedBSD
  * Copyright (C) 2026 Awe Morris
+ *
  * SPDX-License-Identifier: Zlib
+ */
+
+/*
+ * Intel AX211 exact firmware-file loader.
  */
 
 #include "intel-ax211-firmware.h"
@@ -89,6 +94,102 @@ static int ax211_files_state(const struct intel_ax211_firmware_files *files, int
 static int ax211_read_exact_file(const char *path, size_t exact_size, const uint8_t digest[32], uint8_t **bytes);
 static int ax211_parse_ucode(const uint8_t *bytes, size_t length, struct intel_ax211_firmware_manifest *manifest);
 static int ax211_inspect_pnvm(const uint8_t *bytes, size_t length, struct intel_ax211_pnvm_inventory *inventory);
+
+/*
+ * Implements the drv intel ax211 firmware files release operation.
+ */
+void
+drv_intel_ax211_firmware_files_release(
+	struct intel_ax211_firmware_files *files)
+{
+	/* Handles the files availability. */
+	if (files == NULL)
+		return;
+	ax211_release_bytes(&files->ucode_bytes, INTEL_AX211_FIRMWARE_SIZE);
+	ax211_release_bytes(&files->pnvm_bytes, INTEL_AX211_PNVM_FILE_SIZE);
+	kern_memset(files, 0, sizeof(*files));
+}
+
+/*
+ * Implements the drv intel ax211 firmware files load operation.
+ */
+int
+drv_intel_ax211_firmware_files_load(
+	struct intel_ax211_firmware_files *files)
+{
+	struct intel_ax211_firmware_files candidate;
+	int owned;
+	int error;
+
+	/* Checks the operation status. */
+	error = ax211_files_state(files, &owned);
+	if (error != 0)
+		return error;
+	kern_memset(&candidate, 0, sizeof(candidate));
+
+	/* Checks the operation status. */
+	error = ax211_read_exact_file(
+		INTEL_AX211_FIRMWARE_VFS_PATH, INTEL_AX211_FIRMWARE_SIZE,
+		ax211_ucode_digest, &candidate.ucode_bytes);
+	if (error == 0) {
+		candidate.ucode_size = INTEL_AX211_FIRMWARE_SIZE;
+
+		/* Checks the ax211 parse ucode result. */
+		if (ax211_parse_ucode(
+			    candidate.ucode_bytes, candidate.ucode_size,
+			    &candidate.ucode_manifest) != INTEL_AX211_SUCCESS)
+			error = EILSEQ;
+	}
+
+	/* Checks the operation status. */
+	if (error == 0) {
+		/* Checks the operation status. */
+		error = ax211_read_exact_file(
+			INTEL_AX211_PNVM_VFS_PATH, INTEL_AX211_PNVM_FILE_SIZE,
+			ax211_pnvm_digest, &candidate.pnvm_bytes);
+		if (error == 0)
+			candidate.pnvm_size = INTEL_AX211_PNVM_FILE_SIZE;
+	}
+
+	/* Checks the operation status. */
+	if (error == 0 &&
+	    ax211_inspect_pnvm(candidate.pnvm_bytes, candidate.pnvm_size,
+			       &candidate.pnvm_inventory) != INTEL_AX211_SUCCESS)
+		error = EILSEQ;
+	if (error != 0) {
+		drv_intel_ax211_firmware_files_release(&candidate);
+
+		/* Failed. */
+		return error;
+	}
+
+	/* Handles the owned condition. */
+	if (owned)
+		drv_intel_ax211_firmware_files_release(files);
+	*files = candidate;
+	/* Succeeded. */
+	return 0;
+}
+
+#ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
+/*
+ * Implements the drv intel ax211 firmware loader test sha256 operation.
+ */
+int
+drv_intel_ax211_firmware_loader_test_sha256(
+	const void *data,
+	size_t length,
+	uint8_t digest[32])
+{
+	int error;
+
+	/* Obtains the ax211 sha256 result. */
+	error = ax211_sha256(data, length, digest);
+
+	/* Returns the computed result. */
+	return error;
+}
+#endif
 
 /* Supports the ax211 rotate right operation. */
 static uint32_t
@@ -348,21 +449,6 @@ ax211_release_bytes(
 	}
 }
 
-/*
- * Implements the drv intel ax211 firmware files release operation.
- */
-void
-drv_intel_ax211_firmware_files_release(
-	struct intel_ax211_firmware_files *files)
-{
-	/* Handles the files availability. */
-	if (files == NULL)
-		return;
-	ax211_release_bytes(&files->ucode_bytes, INTEL_AX211_FIRMWARE_SIZE);
-	ax211_release_bytes(&files->pnvm_bytes, INTEL_AX211_PNVM_FILE_SIZE);
-	kern_memset(files, 0, sizeof(*files));
-}
-
 /* Supports the ax211 files state operation. */
 static int
 ax211_files_state(
@@ -541,84 +627,3 @@ ax211_inspect_pnvm(
 
 #endif
 }
-
-/*
- * Implements the drv intel ax211 firmware files load operation.
- */
-int
-drv_intel_ax211_firmware_files_load(
-	struct intel_ax211_firmware_files *files)
-{
-	struct intel_ax211_firmware_files candidate;
-	int owned;
-	int error;
-
-	/* Checks the operation status. */
-	error = ax211_files_state(files, &owned);
-	if (error != 0)
-		return error;
-	kern_memset(&candidate, 0, sizeof(candidate));
-
-	/* Checks the operation status. */
-	error = ax211_read_exact_file(
-		INTEL_AX211_FIRMWARE_VFS_PATH, INTEL_AX211_FIRMWARE_SIZE,
-		ax211_ucode_digest, &candidate.ucode_bytes);
-	if (error == 0) {
-		candidate.ucode_size = INTEL_AX211_FIRMWARE_SIZE;
-
-		/* Checks the ax211 parse ucode result. */
-		if (ax211_parse_ucode(
-			    candidate.ucode_bytes, candidate.ucode_size,
-			    &candidate.ucode_manifest) != INTEL_AX211_SUCCESS)
-			error = EILSEQ;
-	}
-
-	/* Checks the operation status. */
-	if (error == 0) {
-		/* Checks the operation status. */
-		error = ax211_read_exact_file(
-			INTEL_AX211_PNVM_VFS_PATH, INTEL_AX211_PNVM_FILE_SIZE,
-			ax211_pnvm_digest, &candidate.pnvm_bytes);
-		if (error == 0)
-			candidate.pnvm_size = INTEL_AX211_PNVM_FILE_SIZE;
-	}
-
-	/* Checks the operation status. */
-	if (error == 0 &&
-	    ax211_inspect_pnvm(candidate.pnvm_bytes, candidate.pnvm_size,
-			       &candidate.pnvm_inventory) != INTEL_AX211_SUCCESS)
-		error = EILSEQ;
-	if (error != 0) {
-		drv_intel_ax211_firmware_files_release(&candidate);
-
-		/* Failed. */
-		return error;
-	}
-
-	/* Handles the owned condition. */
-	if (owned)
-		drv_intel_ax211_firmware_files_release(files);
-	*files = candidate;
-	/* Succeeded. */
-	return 0;
-}
-
-#ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
-/*
- * Implements the drv intel ax211 firmware loader test sha256 operation.
- */
-int
-drv_intel_ax211_firmware_loader_test_sha256(
-	const void *data,
-	size_t length,
-	uint8_t digest[32])
-{
-	int error;
-
-	/* Obtains the ax211 sha256 result. */
-	error = ax211_sha256(data, length, digest);
-
-	/* Returns the computed result. */
-	return error;
-}
-#endif

@@ -128,6 +128,46 @@ drv_intel_ax211_pci_mmio_ops(
 	return &ax211_pci_mmio_operations;
 }
 
+#ifdef INTEL_AX211_PCI_MMIO_HOST_TEST
+/*
+ * Implements the drv intel ax211 pci mmio host ticks for us operation.
+ */
+int
+drv_intel_ax211_pci_mmio_host_ticks_for_us(
+	uint64_t frequency_hz,
+	uint64_t microseconds,
+	uint64_t *ticks)
+{
+	int error;
+
+	/* Obtains the ax211 backend ticks for us result. */
+	error =
+		ax211_backend_ticks_for_us(frequency_hz, microseconds, ticks);
+
+	/* Returns the computed result. */
+	return error;
+}
+
+/*
+ * Implements the drv intel ax211 pci mmio host ticks to us operation.
+ */
+int
+drv_intel_ax211_pci_mmio_host_ticks_to_us(
+	uint64_t frequency_hz,
+	uint64_t ticks,
+	uint64_t *microseconds)
+{
+	int error;
+
+	/* Obtains the ax211 backend ticks to us result. */
+	error =
+		ax211_backend_ticks_to_us(frequency_hz, ticks, microseconds);
+
+	/* Returns the computed result. */
+	return error;
+}
+#endif
+
 /* Supports the ax211 backend range valid operation. */
 static int
 ax211_backend_range_valid(
@@ -609,43 +649,3 @@ ax211_backend_clock_us(
 	/* Succeeded. */
 	return 0;
 }
-
-#ifdef INTEL_AX211_PCI_MMIO_HOST_TEST
-/*
- * Implements the drv intel ax211 pci mmio host ticks for us operation.
- */
-int
-drv_intel_ax211_pci_mmio_host_ticks_for_us(
-	uint64_t frequency_hz,
-	uint64_t microseconds,
-	uint64_t *ticks)
-{
-	int error;
-
-	/* Obtains the ax211 backend ticks for us result. */
-	error =
-		ax211_backend_ticks_for_us(frequency_hz, microseconds, ticks);
-
-	/* Returns the computed result. */
-	return error;
-}
-
-/*
- * Implements the drv intel ax211 pci mmio host ticks to us operation.
- */
-int
-drv_intel_ax211_pci_mmio_host_ticks_to_us(
-	uint64_t frequency_hz,
-	uint64_t ticks,
-	uint64_t *microseconds)
-{
-	int error;
-
-	/* Obtains the ax211 backend ticks to us result. */
-	error =
-		ax211_backend_ticks_to_us(frequency_hz, ticks, microseconds);
-
-	/* Returns the computed result. */
-	return error;
-}
-#endif

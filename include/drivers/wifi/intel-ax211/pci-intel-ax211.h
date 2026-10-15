@@ -6,7 +6,7 @@
  */
 
 /*
- * Intel AX211 PCI driver
+ * Intel AX211 PCI driver.
  */
 
 #ifndef KERN_DRIVERS_PCI_INTEL_AX211_H

@@ -109,123 +109,13 @@ enum {
 };
 
 static uint16_t ax211_get_le16(const uint8_t *bytes);
-
-/* Supports the ax211 get le16 operation. */
-static uint16_t
-ax211_get_le16(
-	const uint8_t *bytes)
-{
-	/* Returns the computed result. */
-	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
-}
-
 static uint32_t ax211_get_le32(const uint8_t *bytes);
-
-/* Supports the ax211 get le32 operation. */
-static uint32_t
-ax211_get_le32(
-	const uint8_t *bytes)
-{
-	/* Returns the computed result. */
-	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
-	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
-}
-
 static void ax211_put_le16(uint8_t *bytes, uint16_t value);
-
-/* Supports the ax211 put le16 operation. */
-static void
-ax211_put_le16(
-	uint8_t *bytes,
-	uint16_t value)
-{
-	bytes[0] = (uint8_t)value;
-	bytes[1] = (uint8_t)(value >> 8);
-}
-
 static void ax211_put_le32(uint8_t *bytes, uint32_t value);
-
-/* Supports the ax211 put le32 operation. */
-static void
-ax211_put_le32(
-	uint8_t *bytes,
-	uint32_t value)
-{
-	bytes[0] = (uint8_t)value;
-	bytes[1] = (uint8_t)(value >> 8);
-	bytes[2] = (uint8_t)(value >> 16);
-	bytes[3] = (uint8_t)(value >> 24);
-}
-
 static void ax211_put_le64(uint8_t *bytes, uint64_t value);
-
-/* Supports the ax211 put le64 operation. */
-static void
-ax211_put_le64(
-	uint8_t *bytes,
-	uint64_t value)
-{
-	unsigned int index;
-
-	/* Process each remaining element. */
-	for (index = 0; index < 8; index++)
-		bytes[index] = (uint8_t)(value >> (index * 8));
-}
-
 static int ax211_tlv_span(uint32_t value, size_t remaining, size_t *span);
-
-/* Supports the ax211 tlv span operation. */
-static int
-ax211_tlv_span(
-	uint32_t value,
-	size_t remaining,
-	size_t *span)
-{
-	size_t length = (size_t)value;
-
-	/* Checks the current data length. */
-	if (length > SIZE_MAX - 3U)
-		return INTEL_AX211_OVERFLOW;
-
-	/* Checks the current data length. */
-	length = (length + 3U) & ~(size_t)3U;
-	if (length > remaining)
-		return INTEL_AX211_TRUNCATED;
-	*span = length;
-	/* Returns the computed result. */
-	return INTEL_AX211_SUCCESS;
-}
-
 static int ax211_ignored_firmware_tlv(uint32_t type);
-
-/* Supports the ax211 ignored firmware tlv operation. */
-static int
-ax211_ignored_firmware_tlv(
-	uint32_t type)
-{
-	/* Handles the type condition. */
-	if ((type >= 1U && type <= 18U) ||
-	    (type >= AX211_RECORD_WAKE_SECTION && type <= AX211_RECORD_CALIBRATION_DEFAULTS) ||
-	    (type >= AX211_RECORD_CIPHER_SCHEMES && type <= AX211_RECORD_SCAN_CHANNEL_LIMIT) ||
-	    type == AX211_RECORD_PAGED_SIZE || type == AX211_RECORD_SNIFFER_SECTION ||
-	    type == AX211_RECORD_SDIO_DMA_ADDRESS || type == AX211_RECORD_TRACE_DESTINATION ||
-	    type == AX211_RECORD_TRACE_SETUP || type == AX211_RECORD_TRACE_TRIGGER ||
-	    (type >= AX211_RECORD_BACKGROUND_SCAN_LIMITS && type <= AX211_RECORD_LOWER_CPU_TRACE_ADDRESSES) ||
-	    (type >= AX211_RECORD_RECOVERY_BUFFER && type <= AX211_RECORD_RADIO_INTEGRATION_REVISION) ||
-	    type == AX211_RECORD_PNVM_REVISION || type == AX211_RECORD_PNVM_BOARD ||
-	    type == 65U || (type >= AX211_RECORD_SECTION_TABLE_ADDRESS && type <= 69U) ||
-	    type == AX211_RECORD_PNVM_PAYLOAD || type == AX211_RECORD_STATION_LIMIT ||
-	    type == 0x101U || type == AX211_RECORD_BEACON_LIMIT ||
-	    (type >= 0x1000000U && type <= 0x1000004U) ||
-	    (type >= AX211_RECORD_TRACE_RANGE_FIRST && type <= AX211_RECORD_TRACE_RANGE_LAST) ||
-	    type == 0x100000bU || type == 0x100000cU || type == 1092U) {
-		/* Reports operation failure. */
-		return 1;
-	}
-
-	/* Succeeded. */
-	return 0;
-}
+static int ax211_pnvm_finish(const struct intel_ax211_pnvm_manifest *candidate, int active, int version_seen, int hardware_match, uint16_t mac_type, uint16_t rf_id, struct intel_ax211_pnvm_manifest *manifest);
 
 /*
  * Implements the drv intel ax211 identity matches operation.
@@ -544,38 +434,6 @@ drv_intel_ax211_sku_equal(
 	return left->data[0] == right->data[0] &&
 	       left->data[1] == right->data[1] &&
 	       left->data[2] == right->data[2];
-}
-
-static int ax211_pnvm_finish(const struct intel_ax211_pnvm_manifest *candidate, int active, int version_seen, int hardware_match, uint16_t mac_type, uint16_t rf_id, struct intel_ax211_pnvm_manifest *manifest);
-
-/* Supports the ax211 pnvm finish operation. */
-static int
-ax211_pnvm_finish(
-	const struct intel_ax211_pnvm_manifest *candidate,
-	int active,
-	int version_seen,
-	int hardware_match,
-	uint16_t mac_type,
-	uint16_t rf_id,
-	struct intel_ax211_pnvm_manifest *manifest)
-{
-	/* Handles the active condition. */
-	if (!active)
-		return INTEL_AX211_MISSING;
-
-	/* Handles the version seen condition. */
-	if (!version_seen || candidate->section_count == 0U)
-		return INTEL_AX211_MISSING;
-
-	/* Handles the hardware match condition. */
-	if (!hardware_match || candidate->mac_type != mac_type ||
-	    candidate->rf_id != rf_id) {
-		/* Returns the computed result. */
-		return INTEL_AX211_IDENTITY_MISMATCH;
-	}
-	*manifest = *candidate;
-	/* Returns the computed result. */
-	return INTEL_AX211_SUCCESS;
 }
 
 /*
@@ -1205,17 +1063,144 @@ drv_intel_ax211_staging_clear(
 	drv_intel_ax211_scrub(staging->bytes, sizeof(staging->bytes));
 	staging->length = 0;
 }
+/* Supports the ax211 get le16 operation. */
+static uint16_t
+ax211_get_le16(
+	const uint8_t *bytes)
+{
+	/* Returns the computed result. */
+	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
+}
+
+/* Supports the ax211 get le32 operation. */
+static uint32_t
+ax211_get_le32(
+	const uint8_t *bytes)
+{
+	/* Returns the computed result. */
+	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
+	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
+}
+
+/* Supports the ax211 put le16 operation. */
+static void
+ax211_put_le16(
+	uint8_t *bytes,
+	uint16_t value)
+{
+	bytes[0] = (uint8_t)value;
+	bytes[1] = (uint8_t)(value >> 8);
+}
+
+/* Supports the ax211 put le32 operation. */
+static void
+ax211_put_le32(
+	uint8_t *bytes,
+	uint32_t value)
+{
+	bytes[0] = (uint8_t)value;
+	bytes[1] = (uint8_t)(value >> 8);
+	bytes[2] = (uint8_t)(value >> 16);
+	bytes[3] = (uint8_t)(value >> 24);
+}
+
+/* Supports the ax211 put le64 operation. */
+static void
+ax211_put_le64(
+	uint8_t *bytes,
+	uint64_t value)
+{
+	unsigned int index;
+
+	/* Process each remaining element. */
+	for (index = 0; index < 8; index++)
+		bytes[index] = (uint8_t)(value >> (index * 8));
+}
+
+/* Supports the ax211 tlv span operation. */
+static int
+ax211_tlv_span(
+	uint32_t value,
+	size_t remaining,
+	size_t *span)
+{
+	size_t length = (size_t)value;
+
+	/* Checks the current data length. */
+	if (length > SIZE_MAX - 3U)
+		return INTEL_AX211_OVERFLOW;
+
+	/* Checks the current data length. */
+	length = (length + 3U) & ~(size_t)3U;
+	if (length > remaining)
+		return INTEL_AX211_TRUNCATED;
+	*span = length;
+	/* Returns the computed result. */
+	return INTEL_AX211_SUCCESS;
+}
+
+/* Supports the ax211 ignored firmware tlv operation. */
+static int
+ax211_ignored_firmware_tlv(
+	uint32_t type)
+{
+	/* Handles the type condition. */
+	if ((type >= 1U && type <= 18U) ||
+	    (type >= AX211_RECORD_WAKE_SECTION && type <= AX211_RECORD_CALIBRATION_DEFAULTS) ||
+	    (type >= AX211_RECORD_CIPHER_SCHEMES && type <= AX211_RECORD_SCAN_CHANNEL_LIMIT) ||
+	    type == AX211_RECORD_PAGED_SIZE || type == AX211_RECORD_SNIFFER_SECTION ||
+	    type == AX211_RECORD_SDIO_DMA_ADDRESS || type == AX211_RECORD_TRACE_DESTINATION ||
+	    type == AX211_RECORD_TRACE_SETUP || type == AX211_RECORD_TRACE_TRIGGER ||
+	    (type >= AX211_RECORD_BACKGROUND_SCAN_LIMITS && type <= AX211_RECORD_LOWER_CPU_TRACE_ADDRESSES) ||
+	    (type >= AX211_RECORD_RECOVERY_BUFFER && type <= AX211_RECORD_RADIO_INTEGRATION_REVISION) ||
+	    type == AX211_RECORD_PNVM_REVISION || type == AX211_RECORD_PNVM_BOARD ||
+	    type == 65U || (type >= AX211_RECORD_SECTION_TABLE_ADDRESS && type <= 69U) ||
+	    type == AX211_RECORD_PNVM_PAYLOAD || type == AX211_RECORD_STATION_LIMIT ||
+	    type == 0x101U || type == AX211_RECORD_BEACON_LIMIT ||
+	    (type >= 0x1000000U && type <= 0x1000004U) ||
+	    (type >= AX211_RECORD_TRACE_RANGE_FIRST && type <= AX211_RECORD_TRACE_RANGE_LAST) ||
+	    type == 0x100000bU || type == 0x100000cU || type == 1092U) {
+		/* Reports operation failure. */
+		return 1;
+	}
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Supports the ax211 pnvm finish operation. */
+static int
+ax211_pnvm_finish(
+	const struct intel_ax211_pnvm_manifest *candidate,
+	int active,
+	int version_seen,
+	int hardware_match,
+	uint16_t mac_type,
+	uint16_t rf_id,
+	struct intel_ax211_pnvm_manifest *manifest)
+{
+	/* Handles the active condition. */
+	if (!active)
+		return INTEL_AX211_MISSING;
+
+	/* Handles the version seen condition. */
+	if (!version_seen || candidate->section_count == 0U)
+		return INTEL_AX211_MISSING;
+
+	/* Handles the hardware match condition. */
+	if (!hardware_match || candidate->mac_type != mac_type ||
+	    candidate->rf_id != rf_id) {
+		/* Returns the computed result. */
+		return INTEL_AX211_IDENTITY_MISMATCH;
+	}
+	*manifest = *candidate;
+	/* Returns the computed result. */
+	return INTEL_AX211_SUCCESS;
+}
+
 /* End consolidated intel-ax211.c. */
 
 /* Begin consolidated pci-intel-ax211.c. */
-/* -*- mode: c; c-basic-offset: 8; indent-tabs-mode: t; tab-width: 8 -*- */
-
-/*
- * zedBSD
- * Copyright (C) 2026 Awe Morris
- *
- * SPDX-License-Identifier: Zlib
- */
 
 /*
  * Intel AX211 PCI/CNVio2 transport.
