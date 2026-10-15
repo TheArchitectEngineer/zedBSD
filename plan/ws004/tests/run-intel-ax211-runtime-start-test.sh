@@ -3,7 +3,6 @@
 # The runtime-session stop order table (BUG-158): drain, quiesce, reset,
 # then bus-master disable, then DMA release.
 set -eu
-python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver-fragments/prepare.py" --source src/drivers/wifi/intel-ax211/intel-ax211.c
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
@@ -15,7 +14,7 @@ cc=${CC:-cc}
 # _DEFAULT_SOURCE: the host mapping of kcrt.h calls vsnprintf, which strict c89 does not declare.
 warnings="-std=c89 -D_DEFAULT_SOURCE -pedantic -Wno-long-long -Wall -Wextra -Werror"
 ax211="$repo_root/src/drivers/wifi/intel-ax211"
-core="$repo_root/build/driver-fragments/src/drivers/intel-ax211.c"
+core="$repo_root/src/drivers/wifi/intel-ax211/intel-ax211.c"
 sources="$core $ax211/intel-ax211-protocol.c $ax211/intel-ax211-init.c"
 sources="$sources $ax211/intel-ax211-runtime.c"
 sources="$sources $ax211/intel-ax211-runtime-start.c"

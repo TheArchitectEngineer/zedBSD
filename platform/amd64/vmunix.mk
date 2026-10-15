@@ -293,6 +293,7 @@ endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
 AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
+	src/drivers/wifi/intel-ax211/intel-ax211-pci.c \
 	src/drivers/wifi/intel-ax211/intel-ax211-assoc.c \
 	src/drivers/wifi/intel-ax211/intel-ax211-boot.c \
 	src/drivers/wifi/intel-ax211/intel-ax211-bss.c \

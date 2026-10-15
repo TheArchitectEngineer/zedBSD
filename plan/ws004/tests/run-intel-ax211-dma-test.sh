@@ -1,7 +1,6 @@
 #!/bin/sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
-python3 "$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)/plan/tools/driver-fragments/prepare.py" --source src/drivers/wifi/intel-ax211/intel-ax211.c
 
 test_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$test_dir/../../.." && pwd)
@@ -13,7 +12,7 @@ cc=${CC:-cc}
 warnings="-std=c11 -Wall -Wextra -Werror"
 defines="-DINTEL_AX211_DMA_HOST_TEST"
 includes="-I$repo_root/include -I$repo_root/include/uapi -I$repo_root/src"
-core=$repo_root/build/driver-fragments/src/drivers/intel-ax211.c
+core=$repo_root/src/drivers/wifi/intel-ax211/intel-ax211.c
 dma=$repo_root/src/drivers/wifi/intel-ax211/intel-ax211-dma.c
 fixture=$test_dir/intel-ax211-dma-test.c
 objects=
