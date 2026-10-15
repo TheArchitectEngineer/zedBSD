@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private Gen3 data transmit ring.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-fh.h, fw/api/datapath.h and fw/api/tx.h.  They were cross-checked
- * against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50.  Each block of values below names the header it was taken
- * from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-tx-ring.h"
@@ -36,12 +17,16 @@
 /*
  * The field values of the queue setup command and of a TFD.
  *
- * Source: Linux iwlwifi v6.17 fw/api/datapath.h (queue operation 0 adds a
- * queue; size code 5 announces 256 descriptors, log2 of the count minus 3)
- * and iwl-fh.h (a TFD starts with the buffer count in its low 5 bits, then
- * one 10-byte entry per buffer from byte 2: a 16-bit length and a 64-bit
- * address; a byte-count table entry holds the length in its low 14 bits).
- * The narrow command header of the transmit command is 4 bytes.
+ * Queue operation 0 adds a queue, and size code 5 announces 256 descriptors
+ * (log2 of the count minus 3).  A TFD starts with the buffer count in its low
+ * 5 bits, then one 10-byte entry per buffer from byte 2: a 16-bit length and
+ * a 64-bit address.  A byte-count table entry holds the length in its low 14
+ * bits.  The narrow command header of the transmit command is 4 bytes.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h (the queue operation
+ * and the size code) and drivers/net/wireless/intel/iwlwifi/iwl-fh.h (the TFD
+ * and the byte-count table entry).
  */
 #define AX211_TX_QUEUE_OPERATION_ADD 0U
 #define AX211_TX_QUEUE_CB_SIZE 5U
@@ -278,10 +263,14 @@ drv_intel_ax211_tx_ring_queue_add_complete(
 
 	/*
 	 * API 89 hardware has been observed returning bit 0 in this field
-	 * together with a valid queue number and write pointer.  Linux iwlwifi
-	 * and OpenBSD iwx deliberately do not use the response flags as a
-	 * completion status.  Match those production drivers so a valid
-	 * dynamically assigned queue is not rejected locally.
+	 * together with a valid queue number and write pointer.  The response
+	 * flags are not a completion status, so a valid dynamically assigned
+	 * queue is not rejected for them.
+	 *
+	 * Procedure referenced: Linux v6.17
+	 * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/tx-gen2.c
+	 * (iwl_pcie_txq_alloc_response) and OpenBSD 0f464d413c50
+	 * sys/dev/pci/if_iwx.c (iwx_enable_txq).
 	 */
 	if (queue < INTEL_AX211_TX_QUEUE_MIN ||
 	    queue > INTEL_AX211_TX_QUEUE_MAX ||

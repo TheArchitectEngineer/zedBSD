@@ -9,29 +9,6 @@
 
 /*
  * Intel AX211 private API89 passive-scan codecs and state.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/scan.h and fw/api/commands.h.  They were cross-checked against
- * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
- * block of values below names the header it was taken from.
- *
- * Values of the 802.11 frame itself (frame control bits, element identifiers,
- * rates and channel numbers) come from IEEE Std 802.11-2020, and the WMM
- * element from the Wi-Fi Alliance WMM specification; the blocks that hold
- * them say so.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-scan.h"
@@ -40,11 +17,7 @@
 /*
  * The layout of the scan request (version 17), as byte offsets.
  *
- * Source: Linux iwlwifi v6.17 fw/api/scan.h (struct iwl_scan_req_umac_v17,
- * struct iwl_scan_general_params_v11, struct iwl_scan_channel_params_v7,
- * struct iwl_scan_channel_cfg_umac, struct iwl_scan_periodic_parms_v1 and
- * struct iwl_scan_probe_params_v4).  drv_intel_ax211_scan_request_encode()
- * fills it as follows:
+ * drv_intel_ax211_scan_request_encode() fills it as follows:
  * - bytes 0 and 4: scan id and out-of-channel priority;
  * - the general section from byte 8: flags (16 bits) at +0, the two probing
  *   stays at +4 and +5, the adaptive default stays for 2.4 GHz, 5 GHz and
@@ -60,6 +33,12 @@
  * - the schedule from byte 584, of which the first plan runs once (its
  *   repetition count at +2 is 1);
  * - the probe template from byte 596.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/scan.h (struct
+ * iwl_scan_req_umac_v17, struct iwl_scan_general_params_v11, struct
+ * iwl_scan_channel_params_v7, struct iwl_scan_channel_cfg_umac, struct
+ * iwl_scan_periodic_parms_v1 and struct iwl_scan_probe_params_v4).
  */
 #define AX211_SCAN_GENERAL_OFFSET 8U
 #define AX211_SCAN_CHANNEL_OFFSET 44U
@@ -73,16 +52,19 @@
  * The flag values of the scan request and the outcome codes of its
  * completion.
  *
- * Source: Linux iwlwifi v6.17 fw/api/scan.h (enum
+ * The general flags set are REPORT_ALL (bit 1: pass every beacon and probe
+ * response to the host, not only matches), REPORT_EACH_PASS (bit 2: send the
+ * pass-finished notice), ADAPTIVE_STAY (bit 7: use the adaptive stay times of
+ * the general section) and LISTEN_ONLY (bit 11: scan every channel passively).
+ * CHANNELS_IN_GIVEN_ORDER (bit 5 of the channel section's flags) makes the
+ * firmware visit the channels in the listed order.  A completion reports 1
+ * when the scan finished and 2 when it was cancelled; anything else is a
+ * failure.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/scan.h (enum
  * iwl_umac_scan_general_flags_v2, enum iwl_scan_channel_flags and the scan
- * completion status).  The general flags set are REPORT_ALL (bit 1: pass
- * every beacon and probe response to the host, not only matches),
- * REPORT_EACH_PASS (bit 2: send the pass-finished notice), ADAPTIVE_STAY
- * (bit 7: use the adaptive stay times of the general section) and
- * LISTEN_ONLY (bit 11: scan every channel passively).  CHANNELS_IN_GIVEN_ORDER
- * (bit 5 of the channel section's flags) makes the firmware visit the
- * channels in the listed order.  A completion reports 1 when the scan
- * finished and 2 when it was cancelled; anything else is a failure.
+ * completion status).
  */
 #define AX211_SCAN_FLAG_REPORT_ALL 0x02U
 #define AX211_SCAN_FLAG_REPORT_EACH_PASS 0x04U
@@ -624,22 +606,29 @@ ax211_scan_probe_encode(
 	/*
 	 * Segment descriptors precede the fixed 512-byte frame area.  This
 	 * first profile is forced passive, so firmware never transmits this
-	 * frame.  Keep a valid OpenBSD-style legacy 11g probe body here; a
-	 * later active-scan profile must add its negotiated HT/HE information.
+	 * frame.  Keep a valid legacy 11g probe body here; a later active-scan
+	 * profile must add its negotiated HT/HE information.
 	 *
-	 * Sources: Linux iwlwifi v6.17 fw/api/scan.h (struct
-	 * iwl_scan_probe_req: an offset and a length for the MAC header, for
-	 * each band part and for the common part).  Here the MAC header part is
+	 * The descriptors give an offset and a length for the MAC header, for
+	 * each band part and for the common part.  Here the MAC header part is
 	 * at offset 0 with 26 bytes (the 24-byte header and the empty SSID
 	 * element), the first band part at offset 26 with 19 bytes (both rate
 	 * elements and the DS parameter element), the other band parts are
 	 * empty and the common part starts at offset 45 with no bytes.  The
-	 * frame follows IEEE Std 802.11-2020: frame control 0x40 (a probe
-	 * request), broadcast receiver and BSSID, a zero-length SSID element
-	 * (element 0), the supported rates element (1) with the eight rates
-	 * 1, 2, 5.5, 11, 6, 9, 12 and 18 Mbit/s, the extended rates element
-	 * (50) with 24, 36, 48 and 54 Mbit/s, all in units of 500 kbit/s, and
-	 * the DS parameter element (3) whose channel byte the firmware fills.
+	 * frame has frame control 0x40 (a probe request), broadcast receiver
+	 * and BSSID, a zero-length SSID element (element 0), the supported
+	 * rates element (1) with the eight rates 1, 2, 5.5, 11, 6, 9, 12 and
+	 * 18 Mbit/s, the extended rates element (50) with 24, 36, 48 and 54
+	 * Mbit/s, all in units of 500 kbit/s, and the DS parameter element (3)
+	 * whose channel byte the firmware fills.
+	 *
+	 * Values referenced: Linux v6.17
+	 * drivers/net/wireless/intel/iwlwifi/fw/api/scan.h (struct
+	 * iwl_scan_probe_req) and IEEE Std 802.11-2020 (the probe request
+	 * frame and its elements).
+	 *
+	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+	 * (iwx_fill_probe_req, the legacy 11g probe body).
 	 */
 	ax211_scan_put_le16(probe, 0U);
 	ax211_scan_put_le16(probe + 2U, 26U);

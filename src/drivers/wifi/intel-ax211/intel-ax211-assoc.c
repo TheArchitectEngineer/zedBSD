@@ -9,26 +9,6 @@
 
 /*
  * Intel AX211 private API89 association-session implementation.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/mac-cfg.h, fw/api/phy-ctxt.h, fw/api/datapath.h,
- * fw/api/time-event.h, fw/api/power.h and fw/api/mac.h.  They were
- * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50.  Each block of values below names the header it was
- * taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-assoc.h"
@@ -49,10 +29,6 @@
 /*
  * The field values of the association commands.
  *
- * Sources: Linux iwlwifi v6.17 fw/api/mac-cfg.h (actions, interface kinds,
- * receive filter bits, link change bits and station kinds), fw/api/phy-ctxt.h
- * (band codes), fw/api/datapath.h (queue operations) and fw/api/time-event.h
- * (the time reservation configurations).
  * - Actions: 1 adds, 2 modifies and 3 removes an object; the same three
  *   codes serve the channel context, interface, link and time reservation.
  *   0xffffffff in the channel context field of a link means "no channel".
@@ -74,6 +50,14 @@
  *   5 announces 256 descriptors (log2 of the count minus 3).
  * - Time reservation configuration 0 is the reservation for joining a
  *   network; a notice with another configuration is ignored.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/mac-cfg.h (actions, interface
+ * kinds, receive filter bits, link change bits and station kinds),
+ * drivers/net/wireless/intel/iwlwifi/fw/api/phy-ctxt.h (band codes),
+ * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h (queue operations) and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/time-event.h (the time reservation
+ * configurations).
  */
 #define AX211_ASSOC_ACTION_ADD 1U
 #define AX211_ASSOC_ACTION_MODIFY 2U
@@ -1161,8 +1145,11 @@ ax211_assoc_update_valid(
 	}
 
 	/*
-	 * A probe response need not carry TIM.  OpenBSD deliberately permits
-	 * association without DTIM knowledge and keeps beacon delivery enabled.
+	 * A probe response need not carry TIM.  Association is permitted
+	 * without DTIM knowledge, and beacon delivery stays enabled.
+	 *
+	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+	 * (iwx_mac_ctxt_cmd_fill_sta).
 	 */
 	if (update->dtim_period == 0U)
 		return update->dtim_count == 0U;
@@ -1409,14 +1396,17 @@ ax211_assoc_edca_encode(
 	/*
 	 * Where each access category goes in the link command.
 	 *
-	 * Source: Linux iwlwifi v6.17 fw/api/mac.h (the access category order
-	 * of the firmware and the transmit FIFO numbers of struct
-	 * iwl_ac_qos).  The profile lists the categories in the order of the
-	 * WMM parameter element (best effort, background, video, voice); the
-	 * firmware's array is background, best effort, video, voice, so
-	 * ac_index swaps the first two.  fifo[] is the firmware transmit FIFO
-	 * that serves each profile entry, written as a one-bit mask: best
-	 * effort FIFO 2, background 1, video 3, voice 4.
+	 * The profile lists the categories in the order of the WMM parameter
+	 * element (best effort, background, video, voice); the firmware's
+	 * array is background, best effort, video, voice, so ac_index swaps
+	 * the first two.  fifo[] is the firmware transmit FIFO that serves
+	 * each profile entry, written as a one-bit mask: best effort FIFO 2,
+	 * background 1, video 3, voice 4.
+	 *
+	 * Values referenced: Linux v6.17
+	 * drivers/net/wireless/intel/iwlwifi/fw/api/mac.h (the access category
+	 * order of the firmware and the transmit FIFO numbers of struct
+	 * iwl_ac_qos).
 	 */
 	static const uint8_t ac_index[INTEL_AX211_ASSOC_EDCA_COUNT] = {1U, 0U,
 								       2U, 3U};
@@ -1766,8 +1756,13 @@ ax211_assoc_response_validate(
 		}
 
 		/*
-		 * Linux iwlwifi and OpenBSD iwx both ignore response flags
-		 * here.
+		 * The response flags are not a completion status and are
+		 * ignored here.
+		 *
+		 * Procedure referenced: Linux v6.17
+		 * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/tx-gen2.c
+		 * (iwl_pcie_txq_alloc_response) and OpenBSD 0f464d413c50
+		 * sys/dev/pci/if_iwx.c (iwx_enable_txq).
 		 */
 		return INTEL_AX211_ASSOC_OK;
 	case INTEL_AX211_ASSOC_RESPONSE_IGNORED:

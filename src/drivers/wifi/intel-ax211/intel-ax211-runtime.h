@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private API89 runtime contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/commands.h, fw/api/phy.h, fw/api/coex.h, fw/api/power.h,
- * fw/api/nvm-reg.h and fw/file.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_RUNTIME_H
@@ -46,10 +27,13 @@
 /*
  * The command families of the runtime start commands.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h (enum
- * iwl_mvm_command_groups): family 1 is the classic opcode space through the
- * wide header, family 2 holds the platform (system) commands and family 4
- * the radio (PHY) operations.
+ * Family 1 is the classic opcode space through the wide header, family 2
+ * holds the platform (system) commands and family 4 the radio (PHY)
+ * operations.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (enum
+ * iwl_mvm_command_groups).
  */
 #define INTEL_AX211_RUNTIME_FAMILY_CLASSIC_WIDE 1U
 #define INTEL_AX211_RUNTIME_FAMILY_PLATFORM 2U
@@ -59,12 +43,9 @@
  * The commands that bring a freshly started firmware to the state in which
  * it can scan, with their opcodes, layout versions and payload sizes.
  *
- * Sources: Linux iwlwifi v6.17 fw/api/commands.h for the opcodes of family
- * 1, fw/api/system.h for the platform command, fw/api/phy.h for the
- * temperature thresholds, fw/api/coex.h, fw/api/power.h and fw/api/nvm-reg.h
- * for the payloads; the versions are those listed in the command version
- * record of the pinned API 89 image.  The runtime sends them one at a time
- * and waits for each answer, in the order of enum intel_ax211_runtime_step:
+ * The versions are those listed in the command version record of the pinned
+ * API 89 image.  The runtime sends the commands one at a time and waits for
+ * each answer, in the order of enum intel_ax211_runtime_step:
  * - TRANSMIT_CHAINS (1/0x98, v1, 4 bytes): the transmit chain mask from the
  *   NVM answer.
  * - COEXISTENCE (1/0x9b, v6, 8 bytes): the Bluetooth coexistence mode word,
@@ -85,6 +66,14 @@
  *   transmit and receive chain masks at bytes 4 and 8.
  * - BEACON_FILTER (1/0xd2, v4, 60 bytes): beacon filtering, all zero, which
  *   leaves every beacon delivered to the host.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h for the opcodes of
+ * family 1, drivers/net/wireless/intel/iwlwifi/fw/api/system.h for the
+ * platform command, drivers/net/wireless/intel/iwlwifi/fw/api/phy.h for the
+ * temperature thresholds, drivers/net/wireless/intel/iwlwifi/fw/api/coex.h,
+ * drivers/net/wireless/intel/iwlwifi/fw/api/power.h and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/nvm-reg.h for the payloads.
  */
 #define INTEL_AX211_RUNTIME_TRANSMIT_CHAINS_OPCODE 0x98U
 #define INTEL_AX211_RUNTIME_COEXISTENCE_OPCODE 0x9bU
@@ -117,11 +106,9 @@
 /*
  * The capability bits of the firmware image that the runtime depends on.
  *
- * Source: Linux iwlwifi v6.17 fw/file.h (enum iwl_ucode_tlv_api and enum
- * iwl_ucode_tlv_capa).  The INTERFACE_FLAGS records of the image form a
- * 128-bit set (API bits) and the FEATURE_FLAGS records a 160-bit set
- * (feature bits); bit n is bit n % 32 of word n / 32.  The pinned image
- * must have:
+ * The INTERFACE_FLAGS records of the image form a 128-bit set (API bits) and
+ * the FEATURE_FLAGS records a 160-bit set (feature bits); bit n is bit n % 32
+ * of word n / 32.  The pinned image must have:
  * - API 56 (the short scan setup command) and API 58 (the wider channel
  *   records of the scan request), because the scan commands are written in
  *   those forms;
@@ -135,6 +122,9 @@
  * (country updates) and feature 89 (country updates that include 802.11ax)
  * are also required.  Feature 50 means the firmware sets the PCI Express
  * latency tolerance itself, and the driver then skips its own command.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/fw/file.h
+ * (enum iwl_ucode_tlv_api and enum iwl_ucode_tlv_capa).
  */
 #define INTEL_AX211_RUNTIME_API_BIT_COUNTRY_UPDATE 9U
 #define INTEL_AX211_RUNTIME_API_BIT_SHORT_SCAN_SETUP 56U
@@ -149,14 +139,18 @@
 /*
  * The payload of the platform command.
  *
- * Source: Linux iwlwifi v6.17 fw/api/system.h (struct
- * iwl_soc_configuration_cmd and its flag bits) and cfg/ax210.c (the crystal
- * latencies of the family).  By that layout the flags 0x0a leave bit 0 (a
- * discrete module) clear, set bit 1 (low-latency crystal) and put 2 in the
- * latency-tolerance delay field of bits 3:2 (2500 us).  12000 is the crystal
- * start-up latency in microseconds, the value Linux gives the low-latency
- * AX210-family configurations.  The firmware accepts this pair on the test
- * machines, whose AX211 is the CNVio2 part with its MAC in the platform.
+ * By that layout the flags 0x0a leave bit 0 (a discrete module) clear, set bit
+ * 1 (low-latency crystal) and put 2 in the latency-tolerance delay field of
+ * bits 3:2 (2500 us).  12000 is the crystal start-up latency in microseconds,
+ * the value of the low-latency AX210-family configurations.  The
+ * firmware accepts this pair on the test machines, whose AX211 is the CNVio2
+ * part with its MAC in the platform.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/system.h (struct
+ * iwl_soc_configuration_cmd and its flag bits) and
+ * drivers/net/wireless/intel/iwlwifi/cfg/ax210.c (the crystal latencies of the
+ * family).
  */
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_FLAGS 0x0aU
 #define INTEL_AX211_RUNTIME_SOC_CONFIG_XTAL_LATENCY 12000U
@@ -164,12 +158,14 @@
 /*
  * The bounds of the country answer.
  *
- * Source: Linux iwlwifi v6.17 fw/api/nvm-reg.h (struct iwl_mcc_update_resp
- * and enum iwl_mcc_update_status).  The answer has a 20-byte header (status
- * at 0, country code at 4, capabilities at 6, time at 8, geographic
- * information at 10, channel count at 16) and one 32-bit flag word per
- * channel; there are at most 110 channels, and every status from 0 to 8
- * still carries a usable channel list.
+ * The answer has a 20-byte header (status at 0, country code at 4,
+ * capabilities at 6, time at 8, geographic information at 10, channel count at
+ * 16) and one 32-bit flag word per channel; there are at most 110 channels,
+ * and every status from 0 to 8 still carries a usable channel list.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/nvm-reg.h (struct
+ * iwl_mcc_update_resp and enum iwl_mcc_update_status).
  */
 #define INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT 110U
 #define INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX 8U

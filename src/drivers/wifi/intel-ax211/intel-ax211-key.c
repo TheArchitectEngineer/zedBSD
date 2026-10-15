@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private API89 CCMP key implementation.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/datapath.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-key.h"
@@ -37,14 +19,17 @@
 /*
  * The fields of the key command.
  *
- * Source: Linux iwlwifi v6.17 fw/api/datapath.h (struct iwl_sec_key_cmd and
- * enum iwl_sec_key_flags).  The command carries the action at byte 0 (1
- * adds, 3 removes), the mask of stations the key applies to at byte 4 (bit 0,
- * the access point's slot), the key index at 8 and the flags at 12; for an
- * add, the key itself follows from byte 16 and the receive packet number of
- * the key at byte 64.  The flags select the cipher (2 is CCMP) and, with
- * APPLIES_TO_GROUP (bit 6), mark a group key rather than the pairwise one.
- * A CCMP packet number is 48 bits (IEEE Std 802.11-2020 12.5.3.2).
+ * The command carries the action at byte 0 (1 adds, 3 removes), the mask of
+ * stations the key applies to at byte 4 (bit 0, the access point's slot), the
+ * key index at 8 and the flags at 12; for an add, the key itself follows from
+ * byte 16 and the receive packet number of the key at byte 64.  The flags
+ * select the cipher (2 is CCMP) and, with APPLIES_TO_GROUP (bit 6), mark a
+ * group key rather than the pairwise one.  A CCMP packet number is 48 bits.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h (struct iwl_sec_key_cmd
+ * and enum iwl_sec_key_flags) and IEEE Std 802.11-2020 12.5.3.2 (the CCMP
+ * packet number).
  */
 #define AX211_KEY_ACTION_ADD 1U
 #define AX211_KEY_ACTION_REMOVE 3U

@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private MMIO contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-csr.h, iwl-prph.h and iwl-config.h.  They were cross-checked against
- * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
- * block of values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_MMIO_H
@@ -37,14 +19,18 @@
 /*
  * The device profile the MMIO layer accepts.
  *
- * Source: Linux iwlwifi v6.17 iwl-config.h (MAC type codes 0x37 So and 0x43
- * SoF, radio kind 0x10d Garfield Peak) and cfg/ax210.c (the upper-CPU
- * periphery base 0x300000 of the AX210 family).  drv_intel_ax211_mmio_init()
- * refuses any other profile, a radio that runs two bands at once, an
- * integrated part, or another periphery base, because the register
- * sequences in intel-ax211-mmio.c were established for this combination
- * only.  The image loader size is that of the loader record of the pinned
- * firmware image (13944 bytes), and publish_gen3 refuses any other length.
+ * drv_intel_ax211_mmio_init() refuses any other profile, a radio that runs two
+ * bands at once, an integrated part, or another periphery base, because the
+ * register sequences in intel-ax211-mmio.c were established for this
+ * combination only.  The image loader size is that of the loader record of the
+ * pinned firmware image (13944 bytes), and publish_gen3 refuses any other
+ * length.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/iwl-config.h (MAC type codes 0x37 So and
+ * 0x43 SoF, radio kind 0x10d Garfield Peak) and
+ * drivers/net/wireless/intel/iwlwifi/cfg/ax210.c (the upper-CPU periphery base
+ * 0x300000 of the AX210 family).
  */
 #define INTEL_AX211_MMIO_MAC_SO 0x37U
 #define INTEL_AX211_MMIO_MAC_SOF 0x43U

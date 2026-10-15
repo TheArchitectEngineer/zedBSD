@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,15 +9,6 @@
 
 /*
  * Intel AX211 private BSS association-metadata contract.
- *
- * Sources of the values.  Every constant in this file is a value of the
- * 802.11 frame itself: the frame control field, the fixed fields of a beacon
- * and a probe response, and the element identifiers and lengths come from
- * IEEE Std 802.11-2020 (9.2.4.1 frame control, 9.3.3.2 and 9.3.3.10 beacon
- * and probe response bodies, 9.4.2 elements), and the WMM information and
- * parameter elements from the Wi-Fi Alliance WMM specification (vendor
- * element of OUI 00-50-F2, type 2).  No value in this file is taken from a
- * driver header.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_BSS_H

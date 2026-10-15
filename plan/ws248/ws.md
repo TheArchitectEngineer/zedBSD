@@ -3,11 +3,11 @@
 # WS248: Intel AX211 の driver の出典の表記と規約の整理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成、P2 が p001 を実行中）
+Status: incomplete（2026-10-15 作成。p001 cleared、P2 が p002 を実行中）
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS004](../ws004/ws.md)（AX211 の試験は plan/ws004/tests/）、[WS247](../ws247/ws.md)（nvrtx での同じ整理）
-Resume point: q1201（P2）で p001 → p002。
+Resume point: q1201（P2）の p002。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -30,5 +30,5 @@ Resume point: q1201（P2）で p001 → p002。
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 出典の表記: file の先頭の出典を除き、block ごとの Value(s)/Procedure referenced: へ。本文の出典の名前の除去 | in-progress（q1201） |
-| [p002](phase002/phase.md) | 規約の全文の見直し: 不要な前方宣言の削除と coding-style.md の全文 | planned（q1201 の後半） |
+| [p001](phase001/phase.md) | 出典の表記: file の先頭の出典を除き、block ごとの Value(s)/Procedure referenced: へ。本文の出典の名前の除去 | cleared（2026-10-15、P2） |
+| [p002](phase002/phase.md) | 規約の全文の見直し: 不要な前方宣言の削除と coding-style.md の全文 | in-progress（q1201 の後半、P2） |

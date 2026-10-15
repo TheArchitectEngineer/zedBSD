@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private Gen3 data transmit ring.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-fh.h, fw/api/datapath.h, fw/api/tx.h and iwl-csr.h.  They were
- * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50.  Each block of values below names the header it was
- * taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_TX_RING_H
@@ -44,15 +25,6 @@
 /*
  * The data transmit ring of the management queue.
  *
- * Sources: Linux iwlwifi v6.17 iwl-fh.h (the 256-byte TFD, its 10-byte
- * transfer buffer entries, the byte-count table of 1024 16-bit entries and
- * the 4092-byte buffer limit), iwl-csr.h (the transmit write-index doorbell
- * at 0x460) and fw/api/tx.h.  The limit of 255 frames outstanding is the
- * statement "A maximum of 255 (not 256!) TFDs may be on a queue waiting for
- * Tx." in the description of the TFD in Linux iwlwifi v6.17 iwl-fh.h (and
- * in OpenBSD sys/dev/pci/if_iwxreg.h at 0f464d413c50, above struct
- * iwx_tfh_tfd).
- *
  * The ring carries the frames of TID 15 (management frames) on the queue the
  * firmware assigned in the queue setup answer.  It has 256 descriptors of
  * 256 bytes (64 KiB) and keeps at most 255 frames outstanding, so a full
@@ -63,6 +35,15 @@
  * table entry of the descriptor gets the frame length the firmware will
  * send.  After filling a descriptor the driver writes the queue number
  * (bits 23:16) and the new write index to the doorbell.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-fh.h
+ * (the 256-byte TFD, its 10-byte transfer buffer entries, the byte-count table
+ * of 1024 16-bit entries, the 4092-byte buffer limit and the limit of 255 TFDs
+ * waiting on a queue, in the description of the TFD),
+ * drivers/net/wireless/intel/iwlwifi/iwl-csr.h (the transmit write-index
+ * doorbell at 0x460) and drivers/net/wireless/intel/iwlwifi/fw/api/tx.h, and
+ * OpenBSD 0f464d413c50 sys/dev/pci/if_iwxreg.h (the same limit of 255 TFDs,
+ * above struct iwx_tfh_tfd).
  */
 #define INTEL_AX211_TX_RING_MANAGEMENT_TID 15U
 #define INTEL_AX211_TX_RING_DESCRIPTOR_SLOTS 256U
@@ -81,9 +62,13 @@
 /*
  * The queue setup command as the ring sends it.
  *
- * Source: Linux iwlwifi v6.17 fw/api/datapath.h (SCD_QUEUE_CONFIG_CMD,
- * opcode 0x17 of family 5); versions from the pinned API 89 image (command
- * 3, answer 2).  The layout is described in intel-ax211-assoc.h.
+ * The command is opcode 0x17 of family 5, and the pinned API 89 image lists
+ * command version 3 and answer version 2.  The layout is described in
+ * intel-ax211-assoc.h.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/datapath.h
+ * (SCD_QUEUE_CONFIG_CMD).
  */
 #define INTEL_AX211_TX_QUEUE_SETUP_FAMILY 5U
 #define INTEL_AX211_TX_QUEUE_SETUP_OPCODE 0x17U

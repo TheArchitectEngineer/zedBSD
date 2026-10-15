@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -10,24 +10,8 @@
 /*
  * Intel AX211 private MMIO implementation.
  *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-csr.h, iwl-prph.h and pcie/gen1_2/trans.c.  They were cross-checked
- * against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit
- * 0f464d413c50.  Each block of values below names the header it was taken
- * from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
+ * Powers the device up and down, takes ownership of it, reads its station
+ * address and publishes the boot context and the image loader.
  */
 
 #include "intel-ax211-mmio.h"
@@ -40,11 +24,9 @@
  * The host-visible control registers (the CSR window at the start of BAR0)
  * that power the device up, hand it to the driver and start its firmware.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (all offsets); the boot context and
- * loader image registers also in pcie/iwl-context-info-v2.h.  Every register
- * here is 32 bits wide and is written with a read-modify-write of the bits
- * named below, except the address and length registers, which are written
- * whole.
+ * Every register here is 32 bits wide and is written with a read-modify-write
+ * of the bits named below, except the address and length registers, which are
+ * written whole.
  *
  * - FUNCTION_CONTROL (0x000) carries the ownership handshake, the prepare
  *   request, the power-event enable, the host-wake-from-L1A permission and
@@ -63,10 +45,9 @@
  *   LOADER_IMAGE_LENGTH (0x128) tell the device where the boot context and
  *   the image loader are.  The two address registers are 64 bits wide as two
  *   words, and drv_intel_ax211_mmio_publish_gen3() writes the low word first.
- * - DMA_WAIT_TUNING (0x240) holds the DMA engine's wait threshold.  Linux
- *   names the register a debug register and sets its upper half to the
- *   maximum to avoid a hardware error under stress; this driver does the
- *   same in apm_init.
+ * - DMA_WAIT_TUNING (0x240) holds the DMA engine's wait threshold.  It is a
+ *   debug register whose upper half is set to the maximum during power-up to
+ *   avoid a hardware error under stress; this driver does so in apm_init.
  * - LINK_POWER_OVERRIDE (0x250) keeps the link awake while bit 31 is set.
  *   The prepare fallback sets it before its first retry; the stop sequence
  *   sets it and clears it again 1 ms later.
@@ -74,6 +55,15 @@
  *   OEM strap copy and the fused (one-time programmable) copy.  Each copy is
  *   two words; the first gives address bytes 0 to 3 from its most
  *   significant byte down, the second gives bytes 4 and 5 from bits 15:0.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (all offsets) and
+ * drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h (the boot
+ * context and loader image registers).
+ *
+ * Procedure referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/trans.c (iwl_pcie_apm_init,
+ * the DMA wait threshold).
  */
 #define AX211_CSR_FUNCTION_CONTROL 0x000U
 #define AX211_CSR_RESTART_CONTROL 0x020U
@@ -100,12 +90,9 @@
 /*
  * The bits of those registers, grouped by register.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h.  Version 6.17 names the three
- * ownership bits of FUNCTION_CONTROL PCI_OWN_SET (bit 22), WAKE_ME (bit 27)
- * and WAKE_ME_PCIE_OWNER_EN (bit 28); OpenBSD if_iwxreg.h and older Linux
- * releases give them the names of the ownership handshake, the prepare
- * request and the power-event enable, which say better what the driver uses
- * them for.  The self-boot bit is in pcie/iwl-context-info-v2.h.
+ * The three ownership bits of FUNCTION_CONTROL are bit 22, bit 27 and bit 28.
+ * They are named here after what the driver uses them for: the ownership
+ * handshake, the prepare request and the power-event enable.
  *
  * What the driver found about each group:
  * - FUNCTION_CONTROL.  Writing OWNERSHIP_REQUEST asks for the device; the
@@ -119,10 +106,9 @@
  * - HOST_ANNOUNCE.  DRIVER_PRESENT (bit 5) is written once ownership has
  *   been granted.
  * - RESTART_CONTROL.  WHOLE_DEVICE resets the device, and the driver waits
- *   5 ms after it before the next access.  BUS_MASTER_STOP_REQUEST asks the DMA engines to stop,
- *   and BUS_MASTER_STOPPED reads back set when they have; Linux and OpenBSD
- *   wait 100 us for it and treat a timeout as a warning, and so does this
- *   driver.
+ *   5 ms after it before the next access.  BUS_MASTER_STOP_REQUEST asks the
+ *   DMA engines to stop, and BUS_MASTER_STOPPED reads back set when they
+ *   have; the driver waits 100 us for it and treats a timeout as a warning.
  * - POWER_CONTROL.  ACTIVE_STATE moves the device from its unpowered D0U
  *   state to D0A; CLOCK_STABLE reads set when the MAC clock runs, which is
  *   needed before any periphery register is touched.  KEEP_AWAKE_REQUEST
@@ -133,6 +119,18 @@
  *   wakes from L1A for received traffic.
  * - DMA_WAIT_TUNING.  MAXIMUM sets the upper half of the register, the FH
  *   (DMA engine) wait threshold, to its largest value.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (CSR_HW_IF_CONFIG_REG_PCI_OWN_SET, CSR_HW_IF_CONFIG_REG_WAKE_ME,
+ * CSR_HW_IF_CONFIG_REG_WAKE_ME_PCIE_OWNER_EN and the bits of the other
+ * registers), drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h
+ * (the self-boot bit) and OpenBSD 0f464d413c50 sys/dev/pci/if_iwxreg.h (the
+ * names of the ownership bits).
+ *
+ * Procedure referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/trans.c
+ * (iwl_pcie_apm_stop_master) and OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+ * (iwx_apm_stop), the wait for the bus master stop.
  */
 #define AX211_FUNCTION_HOST_WAKE_FROM_L1A 0x00080000U
 #define AX211_FUNCTION_OWNERSHIP_REQUEST 0x00400000U
@@ -155,20 +153,25 @@
 /*
  * The latency tolerance the device reports while it boots.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (the register layout) and
- * pcie/gen1_2/trans-gen2.c, which writes a value of about 250 us on a
- * discrete (not integrated) AX210-family device to work around latency
- * problems while the device boots; the firmware replaces it later with a
- * smaller value.  The register has two halves, the
- * no-snoop requirement in bits 31:16 and the snoop requirement in bits 15:0;
- * in each half the top bit says the requirement is valid, a 3-bit scale
- * follows (bits 28:26 and 12:10; scale 2 is units of 1024 ns) and the low
- * 10 bits are the value.  The snoop half written here is valid, scale 2,
- * value 250, about 256 us.  The no-snoop half is written as 0x82fa: valid,
- * and with the scale bit placed at bit 25, which lies in the value field, so
- * by that layout it reads as scale 0 and value 762 (762 ns) rather than the
- * 256 us of the snoop half.  The device boots with this value on the test
+ * A value of about 250 us is written on a discrete (not integrated)
+ * AX210-family device to work around latency problems while the device boots;
+ * the firmware replaces it later with a smaller value.  The register has two
+ * halves, the no-snoop requirement in bits 31:16 and the snoop requirement in
+ * bits 15:0; in each half the top bit says the requirement is valid, a 3-bit
+ * scale follows (bits 28:26 and 12:10; scale 2 is units of 1024 ns) and the
+ * low 10 bits are the value.  The snoop half written here is valid, scale 2,
+ * value 250, about 256 us.  The no-snoop half is written as 0x82fa: valid, and
+ * with the scale bit placed at bit 25, which lies in the value field, so by
+ * that layout it reads as scale 0 and value 762 (762 ns) rather than the 256
+ * us of the snoop half.  The device boots with this value on the test
  * machines; it is recorded here as found, not corrected (ws218-p002).
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (CSR_LTR_LONG_VAL_AD, the register layout).
+ *
+ * Procedure referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/trans-gen2.c
+ * (iwl_pcie_set_ltr).
  */
 #define AX211_LATENCY_NO_SNOOP_REQUIRED 0x80000000U
 #define AX211_LATENCY_NO_SNOOP_UNIT_MICROSECOND 0x02000000U
@@ -186,12 +189,15 @@
  * The periphery register that starts the upper CPU, and the bound of the
  * periphery address space.
  *
- * Source: Linux iwlwifi v6.17 iwl-prph.h.  Periphery registers are reached
- * through an indirect window (intel-ax211-pci-mmio.c), and the upper CPU's
- * registers lie at the upper-CPU base (0x300000 on this family) plus their
- * offset.  Writing 1 to UPPER_CPU_START at that base is the last step of
- * publish_gen3; the firmware boot then runs on its own and reports ALIVE.
- * Periphery addresses are 24 bits wide.
+ * Periphery registers are reached through an indirect window
+ * (intel-ax211-pci-mmio.c), and the upper CPU's registers lie at the upper-CPU
+ * base (0x300000 on this family) plus their offset.  Writing 1 to
+ * UPPER_CPU_START at that base is the last step of publish_gen3; the firmware
+ * boot then runs on its own and reports ALIVE.  Periphery addresses are 24
+ * bits wide.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-prph.h
+ * (the upper CPU start register and the periphery address bound).
  */
 #define AX211_PRPH_UPPER_CPU_START 0xa05c44U
 #define AX211_PRPH_MAX_ADDRESS 0x00ffffffU
@@ -199,16 +205,22 @@
 /*
  * The timing of the power and ownership sequences.
  *
- * Source: the delays Linux iwlwifi v6.17 pcie/gen1_2/trans.c and OpenBSD
- * if_iwx.c use for the same sequences; the device's documentation of them is
- * not public.  The ownership handshake is polled every 10 us for 50 us.  The
- * prepare fallback retries 10 times, polling every 200 us within one 150 ms
- * budget shared by all retries (as OpenBSD does; Linux restarts the budget
- * for each retry), with 25 ms between retries.  A whole-device reset needs
- * 5 ms; the MAC clock is awaited for at most 25 ms; a keep-awake request is
- * given 2 us before polling and 150 ms in all; the stop sequence waits 1 ms
- * after its prepare request, 5 ms after releasing the link override and at
- * most 100 us for the bus master stop.
+ * The device's documentation of these delays is not public.  The ownership
+ * handshake is polled every 10 us for 50 us.  The prepare fallback retries 10
+ * times, polling every 200 us within one 150 ms budget shared by all retries,
+ * with 25 ms between retries.  A whole-device reset needs 5 ms; the MAC clock
+ * is awaited for at most 25 ms; a keep-awake request is given 2 us before
+ * polling and 150 ms in all; the stop sequence waits 1 ms after its prepare
+ * request, 5 ms after releasing the link override and at most 100 us for the
+ * bus master stop.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/trans.c
+ * (iwl_pcie_set_hw_ready, iwl_pcie_prepare_card_hw, iwl_pcie_apm_init,
+ * iwl_pcie_apm_stop) and OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+ * (iwx_set_hw_ready, iwx_prepare_card_hw, iwx_apm_init, iwx_apm_stop), the
+ * delays of the same sequences.  The shared budget of the prepare retries
+ * follows iwx_prepare_card_hw.
  */
 #define AX211_OWNERSHIP_ACK_TIMEOUT_US 50U
 #define AX211_OWNERSHIP_ACK_POLL_US 10U
@@ -483,7 +495,13 @@ drv_intel_ax211_mmio_stop(
 				      AX211_POWER_KEEP_AWAKE_REQUEST);
 	ax211_remember_error(&first_error, result);
 
-	/* Uses the exact pre-BZ OpenBSD link-power stop preamble. */
+	/*
+	 * Holds the link awake and asks the device to prepare for the stop, the
+	 * link-power preamble of a device older than the BZ family.
+	 *
+	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+	 * (iwx_apm_stop).
+	 */
 	result = ax211_csr_set_bits(mmio, AX211_CSR_LINK_POWER_OVERRIDE,
 				    AX211_LINK_POWER_OVERRIDE_HOLD_AWAKE);
 	ax211_remember_error(&first_error, result);
@@ -509,10 +527,15 @@ drv_intel_ax211_mmio_stop(
 		AX211_GENERAL_POLL_US, INTEL_AX211_MMIO_WAIT_MASTER_DISABLED);
 
 	/*
-	 * Linux and OpenBSD both treat this 100-us indication deadline as a
-	 * warning and continue the mandatory software reset.  The PCI owner has
-	 * already disabled bus mastering before a DMA-owning stop reaches here;
-	 * keep all actual MMIO, clock, and reset failures fatal.
+	 * A missed 100-us indication deadline is only a warning, and the
+	 * mandatory software reset continues.  The PCI owner has already
+	 * disabled bus mastering before a DMA-owning stop reaches here; keep
+	 * all actual MMIO, clock, and reset failures fatal.
+	 *
+	 * Procedure referenced: Linux v6.17
+	 * drivers/net/wireless/intel/iwlwifi/pcie/gen1_2/trans.c
+	 * (iwl_pcie_apm_stop_master) and OpenBSD 0f464d413c50
+	 * sys/dev/pci/if_iwx.c (iwx_apm_stop).
 	 */
 	if (result == INTEL_AX211_MMIO_TIMEOUT)
 		mmio->master_disable_timed_out = 1;
@@ -1144,7 +1167,12 @@ ax211_delay(
 	return INTEL_AX211_MMIO_OK;
 }
 
-/* Runs the finite OpenBSD-derived link-power fallback. */
+/*
+ * Runs the finite link-power fallback of the ownership request.
+ *
+ * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+ * (iwx_prepare_card_hw).
+ */
 static int
 ax211_prepare_fallback(
 	struct intel_ax211_mmio *mmio)
@@ -1284,7 +1312,12 @@ ax211_read_mac_words(
 	return result;
 }
 
-/* Applies the OpenBSD byte order without relying on host endianness. */
+/*
+ * Decodes the two station address words without relying on host endianness.
+ *
+ * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+ * (iwx_flip_hw_address).
+ */
 static void
 ax211_decode_mac_words(
 	uint32_t first,
@@ -1299,7 +1332,13 @@ ax211_decode_mac_words(
 	address[5] = (uint8_t)second;
 }
 
-/* Rejects the OpenBSD sentinel plus zero, broadcast, and multicast values. */
+/*
+ * Rejects the reserved placeholder address and the zero, broadcast and
+ * multicast values.
+ *
+ * Value referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+ * (iwx_is_valid_mac_addr, the reserved address).
+ */
 static int
 ax211_mac_valid(
 	const uint8_t address[AX211_MAC_ADDRESS_SIZE])

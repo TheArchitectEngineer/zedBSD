@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -10,24 +10,8 @@
 /*
  * Intel AX211 private Gen3 transport implementation.
  *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-csr.h, iwl-fh.h, iwl-prph.h and fw/api/cmdhdr.h.  They were
- * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50.  Each block of values below names the header it was
- * taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
+ * Owns the command ring, the receive rings and the MSI-X routing of one
+ * firmware epoch.
  */
 
 #include "intel-ax211-transport.h"
@@ -40,19 +24,21 @@
  * The sizes of the DMA areas the transport checks, and the command ring's
  * identity.
  *
- * Sources: Linux iwlwifi v6.17 iwl-fh.h (descriptor and byte-count table
- * sizes) and fw/api/cmdhdr.h (command families).  The command ring is ring 0
- * of the device; its 256 TFDs of 256 bytes fill 64 KiB, and its byte-count
- * table has 1024 16-bit entries (2 KiB) of which the first 256 are used.
- * Each of the 256 command slots is 324 bytes (82944 bytes in all), and a
- * command too large for its slot goes through one 4 KiB external buffer.
- * The receive transfer ring holds 512 descriptors of 16 bytes and the
- * completion ring 512 entries of 32 bytes; the device's completion index is
- * one 16-bit word.  The first transfer buffer of a command is always 20
- * bytes: the device copies it into its own memory before it reads the
- * rest.  The command families are the "group" byte of the wide header: 0 is
- * the classic opcode space, and 1 is the same opcode space addressed through
- * the wide header.
+ * The command ring is ring 0 of the device; its 256 TFDs of 256 bytes fill 64
+ * KiB, and its byte-count table has 1024 16-bit entries (2 KiB) of which the
+ * first 256 are used.  Each of the 256 command slots is 324 bytes (82944 bytes
+ * in all), and a command too large for its slot goes through one 4 KiB
+ * external buffer.  The receive transfer ring holds 512 descriptors of 16
+ * bytes and the completion ring 512 entries of 32 bytes; the device's
+ * completion index is one 16-bit word.  The first transfer buffer of a command
+ * is always 20 bytes: the device copies it into its own memory before it reads
+ * the rest.  The command families are the "group" byte of the wide header: 0
+ * is the classic opcode space, and 1 is the same opcode space addressed
+ * through the wide header.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-fh.h
+ * (the descriptor and byte-count table sizes) and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/cmdhdr.h (the command families).
  */
 #define AX211_COMMAND_TFD_SIZE 65536U
 #define AX211_COMMAND_BYTE_COUNT_SIZE 2048U
@@ -69,11 +55,10 @@
 /*
  * The host-visible registers of the interrupt, doorbell and MSI-X logic.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h, and iwl-fh.h for the receive free
- * index.  What the transport does with each:
+ * What the transport does with each:
  * - INTERRUPT_DELAY (0x004) is a byte written once, at ring setup, with the
- *   default 0x40; Linux documents the unit as 32 us, so the device delays an
- *   interrupt by up to 2048 us to coalesce causes.
+ *   default 0x40; the unit is 32 us, so the device delays an interrupt by up
+ *   to 2048 us to coalesce causes.
  * - INTERRUPT_CAUSE (0x008) is the legacy cause register.  The driver never
  *   uses legacy interrupts, but writes all ones to it to clear causes left
  *   from an earlier owner before the firmware is loaded.
@@ -82,7 +67,7 @@
  *   (bit 2), each with its own write, before it lets the firmware run.
  * - WRITE_SHADOWING (0x0a8) controls the device's shadow copies of its
  *   doorbell registers, which take host writes while the MAC sleeps; the
- *   driver sets bits 31 and 19:0 at ring setup, the value OpenBSD writes.
+ *   driver sets bits 31 and 19:0 at ring setup.
  * - QUEUE_WRITE_INDEX (0x460) is the transmit doorbell: the ring number from
  *   bit 16 up and the new write index in bits 15:0.
  * - RX_FREE_INDEX (0x1c80) is the receive doorbell: the index up to which
@@ -97,6 +82,13 @@
  *   masked by itself when it raised it; RX_VECTOR_MAP (0x2880) and
  *   CAUSE_VECTOR_MAP (0x2890) are byte arrays that name the vector of each
  *   cause.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the registers and the unit of the interrupt delay) and
+ * drivers/net/wireless/intel/iwlwifi/iwl-fh.h (the receive free index).
+ *
+ * Value referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c (iwx_nic_init,
+ * the write shadowing value).
  */
 #define AX211_CSR_INTERRUPT_DELAY 0x004U
 #define AX211_CSR_INTERRUPT_CAUSE 0x008U
@@ -115,11 +107,13 @@
 /*
  * The values written to those registers.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h.  A vector map byte holds the vector
- * number in bits 6:0; bit 7 set means the device does not clear the cause
- * by itself when it raises the vector, so the driver sees every cause it
- * acknowledges.  All causes go to vector 0, and SELF_MASK_VECTOR0 is the
- * bit of vector 0 in the self-mask state register.
+ * A vector map byte holds the vector number in bits 6:0; bit 7 set means the
+ * device does not clear the cause by itself when it raises the vector, so the
+ * driver sees every cause it acknowledges.  All causes go to vector 0, and
+ * SELF_MASK_VECTOR0 is the bit of vector 0 in the self-mask state register.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (the values of the interrupt and MSI-X registers).
  */
 #define AX211_INTERRUPT_DELAY_DEFAULT 0x40U
 #define AX211_WRITE_SHADOWING_ENABLE 0x800fffffU
@@ -132,12 +126,14 @@
 /*
  * The queue causes: the first of the two MSI-X cause registers.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (enum msix_fh_int_causes).  Bits
- * 15:0 are the receive queues, of which the transport routes queues 0 and 1.
- * Bits 16 and 17 are the two device-to-host DMA channels, bit 19 the
+ * Bits 15:0 are the receive queues, of which the transport routes queues 0 and
+ * 1.  Bits 16 and 17 are the two device-to-host DMA channels, bit 19 the
  * host-to-device channel, and bit 21 a DMA engine fault.  QUEUE_CAUSES_ROUTED
- * are the causes the transport unmasks and routes; the fault cause is the
- * one shared with the boot and runtime code through intel-ax211-transport.h.
+ * are the causes the transport unmasks and routes; the fault cause is the one
+ * shared with the boot and runtime code through intel-ax211-transport.h.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (enum msix_fh_int_causes).
  */
 #define AX211_QUEUE_CAUSE_RX0 0x00000001U
 #define AX211_QUEUE_CAUSE_RX1 0x00000002U
@@ -153,18 +149,20 @@
 /*
  * The event causes: the second of the two MSI-X cause registers.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (enum msix_hw_int_causes),
- * cross-checked with OpenBSD if_iwxreg.h.  Bit 0 is raised when the firmware
- * reports ALIVE, bit 1 is a wake-up, bit 2
+ * Bit 0 is raised when the firmware reports ALIVE, bit 1 is a wake-up, bit 2
  * the end of a reset, bit 6 a thermal stop, bit 7 the radio switch, bit 8 a
  * periodic timer, bit 26 the transmit scheduler, bit 27 the transmit DMA
  * engine and bit 30 a host wake.  Bits 25, 29 and 5 are faults: a firmware
- * fault, a hardware fault, and a second firmware-fault cause (OpenBSD names
- * bit 5 a second software-error cause; Linux v6.17 names it the software
- * error of the later BZ family).  The driver routes all three and treats
- * each as fatal (INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES).  While the
- * firmware is being loaded only ALIVE is unmasked; at runtime all of
- * EVENT_CAUSES_ROUTED are.
+ * fault, a hardware fault, and a second firmware-fault cause (bit 5 is named a
+ * second software-error cause in one reference and the software error of the
+ * later BZ family in the other).  The driver routes all three and treats each
+ * as fatal (INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES).  While the firmware is
+ * being loaded only ALIVE is unmasked; at runtime all of EVENT_CAUSES_ROUTED
+ * are.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (enum msix_hw_int_causes) and OpenBSD 0f464d413c50 sys/dev/pci/if_iwxreg.h
+ * (IWX_MSIX_HW_INT_CAUSES_*).
  */
 #define AX211_EVENT_CAUSE_ALIVE INTEL_AX211_TRANSPORT_EVENT_CAUSE_ALIVE
 #define AX211_EVENT_CAUSE_WAKE 0x00000002U
@@ -193,15 +191,16 @@
 /*
  * The periphery registers the transport uses.
  *
- * Source: Linux iwlwifi v6.17 iwl-prph.h (the interrupt mode register of the
- * upper CPU and its MSI-X bit) and iwl-fh.h (the receive DMA configuration
- * and status registers of the AX210 family and the idle bit).  All three are
- * reached at the upper-CPU periphery base plus their offset, while the
- * device is held awake.  INTERRUPT_MODE_MSIX is set once, before the vector
- * map is programmed, to select MSI-X signalling.  When the transport is
- * quiesced, writing zero to RX_DMA_CONFIG stops receive DMA, and the
- * transport waits up to 10 ms, polling every 10 us, for the idle bit of
- * RX_DMA_STATUS.
+ * All three are reached at the upper-CPU periphery base plus their offset,
+ * while the device is held awake.  INTERRUPT_MODE_MSIX is set once, before the
+ * vector map is programmed, to select MSI-X signalling.  When the transport is
+ * quiesced, writing zero to RX_DMA_CONFIG stops receive DMA, and the transport
+ * waits up to 10 ms, polling every 10 us, for the idle bit of RX_DMA_STATUS.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-prph.h
+ * (the interrupt mode register of the upper CPU and its MSI-X bit) and
+ * drivers/net/wireless/intel/iwlwifi/iwl-fh.h (the receive DMA configuration
+ * and status registers of the AX210 family and the idle bit).
  */
 #define AX211_PRPH_INTERRUPT_MODE 0xa05c00U
 #define AX211_INTERRUPT_MODE_MSIX 0x02000000U
@@ -1156,10 +1155,12 @@ drv_intel_ax211_transport_command_prepare_inline(
 	tfd = transport->memory.command_tfd + tfd_offset;
 
 	/*
-	 * API 89 rejects the original four-byte group-zero command form. Legacy
-	 * logical commands are therefore carried by LONG_GROUP on the wire,
-	 * just as the pinned OpenBSD implementation does for firmware API
-	 * >= 50.
+	 * API 89 rejects the original four-byte group-zero command form.
+	 * Legacy logical commands are therefore carried by LONG_GROUP on the
+	 * wire, as they are for every firmware API from 50 on.
+	 *
+	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+	 * (iwx_send_cmd).
 	 */
 	kern_memset(slot, 0, INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE);
 	header_size = INTEL_AX211_WIDE_COMMAND_HEADER_SIZE;

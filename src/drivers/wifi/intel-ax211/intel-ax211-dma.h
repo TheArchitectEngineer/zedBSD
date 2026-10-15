@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private DMA ownership.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * pcie/iwl-context-info-v2.h, iwl-fh.h and fw/file.h.  They were
- * cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50.  Each block of values below names the header it was
- * taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_DMA_H
@@ -40,9 +21,6 @@
 /*
  * The sizes of the DMA areas prepared for one boot.
  *
- * Sources: Linux iwlwifi v6.17 pcie/iwl-context-info-v2.h (the scratch area,
- * struct iwl_prph_scratch, and the status page), iwl-fh.h (rings and the
- * 4 KiB receive buffers) and fw/file.h (the image loader record).
  * - The scratch area is 1660 bytes; the firmware is told its size in words
  *   at its byte 4 (415).
  * - The status page is one 4 KiB page owned by the firmware; the transmit
@@ -60,6 +38,13 @@
  * - The image loader is the 13944-byte loader record of the pinned image,
  *   and no runtime section of that image exceeds 32 KiB, which the loader
  *   checks before it copies one into DMA memory.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h (the scratch
+ * area, struct iwl_prph_scratch, and the status page),
+ * drivers/net/wireless/intel/iwlwifi/iwl-fh.h (rings and the 4 KiB receive
+ * buffers) and drivers/net/wireless/intel/iwlwifi/fw/file.h (the image loader
+ * record).
  */
 #define INTEL_AX211_SCRATCH_AREA_SIZE 1660U
 #define INTEL_AX211_STATUS_PAGE_SIZE 4096U

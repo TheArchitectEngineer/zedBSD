@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private API89 runtime codecs and state.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/commands.h, fw/api/phy.h, fw/api/coex.h, fw/api/power.h,
- * fw/api/nvm-reg.h and fw/file.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-runtime.h"
@@ -56,13 +37,17 @@ static enum intel_ax211_runtime_step ax211_runtime_next_step(enum intel_ax211_ru
  * The command versions the runtime start depends on, as the pinned firmware
  * lists them.
  *
- * Source: the command version record (type 48) of the pinned API 89 image,
- * read by zedBSD; the family and opcode numbers are those of Linux iwlwifi
- * v6.17 fw/api/commands.h.  Each row is family, opcode, command version and
- * notification version, for the commands of intel-ax211-runtime.h and the
- * scan setup, scan start and scan cancel commands (1/0x0c v5, 1/0x0d v17,
- * 1/0x0e v1).  The country update answer is version 6.  The latency
- * tolerance row is not checked when the firmware sets the latency itself.
+ * Each row is family, opcode, command version and notification version, for
+ * the commands of intel-ax211-runtime.h and the scan setup, scan start and
+ * scan cancel commands (1/0x0c v5, 1/0x0d v17, 1/0x0e v1).  The country update
+ * answer is version 6.  The latency tolerance row is not checked when the
+ * firmware sets the latency itself.
+ *
+ * Values referenced: linux-firmware 20260410
+ * intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode (the command version record,
+ * type 48, read by zedBSD) and Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (the family and opcode
+ * numbers).
  */
 static const struct ax211_runtime_version ax211_runtime_versions[] = {
 	{0x01U, 0x98U, 1U, 0U},	 {0x01U, 0x9bU, 6U, 0U}, {0x02U, 0x01U, 2U, 0U},
@@ -181,7 +166,12 @@ drv_intel_ax211_runtime_command_encode(
 	}
 	kern_memset(&encoded, 0, sizeof(encoded));
 
-	/* OpenBSD sends zero in the wide-header version field. */
+	/*
+	 * Sends zero in the wide-header version field, as API 89 accepts.
+	 *
+	 * Procedure referenced: OpenBSD 0f464d413c50 sys/dev/pci/if_iwx.c
+	 * (iwx_send_cmd).
+	 */
 	encoded.wire_version = 0U;
 	encoded.response_version = 0U;
 	/* Dispatch the selected operation case. */

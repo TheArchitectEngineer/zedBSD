@@ -10,24 +10,10 @@
 /*
  * Intel AX211 private core contract.
  *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-config.h, fw/file.h, pcie/iwl-context-info-v2.h, iwl-fh.h and
- * fw/api/cmdhdr.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
+ * The values of the device and firmware interface that the components of the
+ * driver share, with what the driver established about each of them on AX211
+ * hardware: where the value is used, what it means to the device or to the
+ * firmware, the order the device requires, and how the firmware behaved.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_INTERNAL_H
@@ -39,11 +25,13 @@
 /*
  * The PCI identity of the one AX211 module this driver binds.
  *
- * Source: the PCI ID database and the read-only hardware intake of the
- * Latitude test machines (ws004 HW-T37), which found the CNVio2 function at
- * 8086:51f0 with subsystem 8086:4090 and revision 01.  The driver attaches
- * only on an exact match of all five values, so a different AX2xx part is
- * left alone instead of being driven with this firmware.
+ * The read-only hardware intake of the Latitude test machines (ws004 HW-T37)
+ * found the CNVio2 function at 8086:51f0 with subsystem 8086:4090 and
+ * revision 01.  The driver attaches only on an exact match of all five
+ * values, so a different AX2xx part is left alone instead of being driven
+ * with this firmware.
+ *
+ * Values referenced: the PCI ID database (vendor 8086, device 51f0).
  */
 #define INTEL_AX211_PCI_VENDOR_ID 0x8086U
 #define INTEL_AX211_PCI_DEVICE_ID 0x51f0U
@@ -54,19 +42,23 @@
 /*
  * The silicon and radio identity the firmware image is built for.
  *
- * Source: Linux iwlwifi v6.17 iwl-config.h (the MAC and RF type codes of the
- * So family and of the Garfield Peak radio) and iwl-csr.h (where they are
- * read).  The MAC type is the 12-bit field at bits 15:4 of the silicon
- * revision register and is 0x37 on So and 0x43 on SoF; the radio kind is the
- * 12-bit field at bits 23:12 of the radio identity register and is 0x10d on
- * Garfield Peak.  The same pair of codes reappears inside the PNVM file as
- * the hardware-kind record, and drv_intel_ax211_pnvm_select() accepts a PNVM
+ * The MAC type is the 12-bit field at bits 15:4 of the silicon revision
+ * register and is 0x37 on So and 0x43 on SoF; the radio kind is the 12-bit
+ * field at bits 23:12 of the radio identity register and is 0x10d on Garfield
+ * Peak.  The same pair of codes reappears inside the PNVM file as the
+ * hardware-kind record, and drv_intel_ax211_pnvm_select() accepts a PNVM
  * section only when that record carries this pair.  CONCURRENT_BANDS is zero
  * because this module has one LMAC and cannot run two bands at once, so every
- * command that takes an LMAC number is sent with zero.  The CRF, CNV, WFPM
- * and raw radio identity words are the values of the exact unit this driver
+ * command that takes an LMAC number is sent with zero.  The CRF, CNV, WFPM and
+ * raw radio identity words are the values of the exact unit this driver
  * targets; the driver does not read them, and the host tests pin them so that
  * the identity record stays complete.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/iwl-config.h (the MAC and RF type codes
+ * of the So family and of the Garfield Peak radio) and
+ * drivers/net/wireless/intel/iwlwifi/iwl-csr.h (the fields they are read
+ * from).
  */
 #define INTEL_AX211_SILICON_SO 0x37U
 #define INTEL_AX211_SILICON_SOF 0x43U
@@ -81,11 +73,14 @@
 /*
  * The one firmware image the driver accepts.
  *
- * Source: the linux-firmware repository at the tag and commit below, measured
- * by zedBSD (size, SHA-256, and the version record inside the file).  The
- * driver refuses any other image: the command versions, the command layouts
- * and the boot order in this driver were established against API 89 of this
- * build, and nothing guarantees that another build keeps them.
+ * The size, the SHA-256 and the version record were measured on the file by
+ * zedBSD.  The driver refuses any other image: the command versions, the
+ * command layouts and the boot order in this driver were established against
+ * API 89 of this build, and nothing guarantees that another build keeps them.
+ *
+ * Value referenced: linux-firmware 20260410 (commit
+ * dc85ccedc9c973682fbcf4d628ca61174bcc3120)
+ * intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode.
  */
 #define INTEL_AX211_FIRMWARE_PATH "intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode"
 #define INTEL_AX211_FIRMWARE_SIZE 1736748U
@@ -99,16 +94,23 @@
 /*
  * The platform data (PNVM) file that belongs to that image.
  *
- * Source: the same linux-firmware commit, measured by zedBSD.  The file holds
- * radio tuning sections for several boards; the driver copies only the
+ * The size and the SHA-256 were measured on the file by zedBSD.  The file
+ * holds radio tuning sections for several boards; the driver copies only the
  * sections of the board that the firmware names in its ALIVE notification.
+ *
+ * Value referenced: linux-firmware 20260410 (commit
+ * dc85ccedc9c973682fbcf4d628ca61174bcc3120)
+ * intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm.
  */
 #define INTEL_AX211_PNVM_PATH "intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm"
 #define INTEL_AX211_PNVM_FILE_SIZE 55176U
 #define INTEL_AX211_PNVM_SHA256                                                \
 	"efa9726d4a9d44b83fc9a14cedcf306a4e439e9de919802eb9e92df4ec032b2a"
 
-/* The linux-firmware release the two files above were taken from. */
+/*
+ * The release tag and the commit of the repository the two files above were
+ * taken from.
+ */
 #define INTEL_AX211_LINUX_FIRMWARE_TAG "20260410"
 #define INTEL_AX211_LINUX_FIRMWARE_COMMIT                                      \
 	"dc85ccedc9c973682fbcf4d628ca61174bcc3120"
@@ -116,17 +118,18 @@
 /*
  * The framing of the firmware file and of the PNVM file.
  *
- * Source: Linux iwlwifi v6.17 fw/file.h (struct iwl_tlv_ucode_header and
- * struct iwl_ucode_tlv).  The firmware file starts with an 88-byte header:
- * a zero word, the magic word 0x0a4c5749 ("IWL\n" in little-endian order), a
- * 64-byte human-readable build name, the header version at byte 72 and the
- * build number at byte 76.  Records follow, each an 8-byte header (type and
- * length, both little-endian words) and a body padded to four bytes.  The
- * PNVM file is the same record stream without the 88-byte header.  The
- * section limits are zedBSD's bounds.  The host test of the pinned files
- * found 60 runtime entries in the image (15 LMAC, 17 UMAC and 26 paged
- * sections plus the two marks below, none longer than 32 KiB) and 8 sections
- * for 4 boards in the PNVM file.
+ * The firmware file starts with an 88-byte header: a zero word, the magic word
+ * 0x0a4c5749 ("IWL\n" in little-endian order), a 64-byte human-readable build
+ * name, the header version at byte 72 and the build number at byte 76.
+ * Records follow, each an 8-byte header (type and length, both little-endian
+ * words) and a body padded to four bytes.  The PNVM file is the same record
+ * stream without the 88-byte header.  The section limits are zedBSD's bounds.
+ * The host test of the pinned files found 60 runtime entries in the image (15
+ * LMAC, 17 UMAC and 26 paged sections plus the two marks below, none longer
+ * than 32 KiB) and 8 sections for 4 boards in the PNVM file.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/fw/file.h
+ * (struct iwl_tlv_ucode_header, struct iwl_ucode_tlv).
  */
 #define INTEL_AX211_FIRMWARE_FILE_MAGIC 0x0a4c5749U
 #define INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE 88U
@@ -137,15 +140,18 @@
 /*
  * The command ring and the receive ring, as the device sees them.
  *
- * Source: Linux iwlwifi v6.17 iwl-fh.h (RX_QUEUE_CB_SIZE, TFD_QUEUE_CB_SIZE,
- * struct iwl_rx_transfer_desc, struct iwl_rx_completion_desc) and
- * pcie/iwl-context-info-v2.h.  The device is told the size of each ring as a
- * code, not a count: the command ring of 256 entries is announced as 5
- * (log2 of the count minus 3, because that ring is counted in groups of
- * eight), the receive ring of 512 entries as 9 (log2 of the count).  A
- * receive transfer descriptor is 16 bytes (buffer id at byte 0, buffer
- * address at byte 8); a receive completion descriptor is 32 bytes and the
- * device writes the buffer id back at byte 4 and its flags at byte 6.
+ * The device is told the size of each ring as a code, not a count: the command
+ * ring of 256 entries is announced as 5 (log2 of the count minus 3, because
+ * that ring is counted in groups of eight), the receive ring of 512 entries as
+ * 9 (log2 of the count).  A receive transfer descriptor is 16 bytes (buffer id
+ * at byte 0, buffer address at byte 8); a receive completion descriptor is 32
+ * bytes and the device writes the buffer id back at byte 4 and its flags at
+ * byte 6.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-fh.h
+ * (RX_QUEUE_CB_SIZE, TFD_QUEUE_CB_SIZE, struct iwl_rx_transfer_desc, struct
+ * iwl_rx_completion_desc) and
+ * drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h.
  */
 #define INTEL_AX211_COMMAND_RING_SIZE 256U
 #define INTEL_AX211_RX_RING_SIZE 512U
@@ -159,11 +165,13 @@
 /*
  * The transfer descriptor (TFD) of the Gen3 transmit queues.
  *
- * Source: Linux iwlwifi v6.17 iwl-fh.h (struct iwl_tfh_tfd and struct
- * iwl_tfh_tb).  A descriptor is 256 bytes: a 16-bit buffer count, then up to
- * 25 buffer entries of 10 bytes (a 16-bit length and a 64-bit address).  A
- * buffer may not exceed 4092 bytes.  The command ring and every data ring use
- * this one layout.
+ * A descriptor is 256 bytes: a 16-bit buffer count, then up to 25 buffer
+ * entries of 10 bytes (a 16-bit length and a 64-bit address).  A buffer may
+ * not exceed 4092 bytes.  The command ring and every data ring use this one
+ * layout.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-fh.h
+ * (struct iwl_tfh_tfd, struct iwl_tfh_tb).
  */
 #define INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE 256U
 #define INTEL_AX211_TRANSFER_DESCRIPTOR_BUFFERS 25U
@@ -172,15 +180,17 @@
 /*
  * The headers in front of a command and of a firmware event.
  *
- * Source: Linux iwlwifi v6.17 fw/api/cmdhdr.h (struct iwl_cmd_header and
- * struct iwl_cmd_header_wide, struct iwl_rx_packet).  The narrow header is
- * 4 bytes: opcode, flags, ring index, ring number.  The wide header adds a
- * command family byte in place of the flags, a 16-bit payload length at byte
- * 4, a reserved byte and the layout version at byte 7.  An event starts with
- * a 32-bit word whose low 14 bits are the frame length and whose bits 21:16
- * name the receive queue, followed by a narrow header; the payload therefore
- * starts at byte 8.  The staging capacity is zedBSD's own bound for one
- * copied event.
+ * The narrow header is 4 bytes: opcode, flags, ring index, ring number.  The
+ * wide header adds a command family byte in place of the flags, a 16-bit
+ * payload length at byte 4, a reserved byte and the layout version at byte 7.
+ * An event starts with a 32-bit word whose low 14 bits are the frame length
+ * and whose bits 21:16 name the receive queue, followed by a narrow header;
+ * the payload therefore starts at byte 8.  The staging capacity is zedBSD's
+ * own bound for one copied event.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/cmdhdr.h (struct iwl_cmd_header,
+ * struct iwl_cmd_header_wide, struct iwl_rx_packet).
  */
 #define INTEL_AX211_NARROW_COMMAND_HEADER_SIZE 4U
 #define INTEL_AX211_WIDE_COMMAND_HEADER_SIZE 8U
@@ -191,15 +201,17 @@
  * The destination words that mark section boundaries instead of naming a
  * load address.
  *
- * Source: Linux iwlwifi v6.17 fw/file.h for the first two, and the PNVM
- * reader in fw/pnvm.c for the third.  In the runtime section list of the
- * firmware file, a section whose destination is 0xffffcccc separates the
- * lower-MAC (LMAC) sections from the upper-MAC (UMAC) sections, and one whose
- * destination is 0xaaaabbbb separates the UMAC sections from the paged
- * sections.  Both marks carry a body of exactly one zero word, and the
- * firmware loader in this file refuses an image that lacks either mark or
- * repeats it.  In the PNVM file, a section with destination 0xddddeeee closes
- * a board's data and is not copied.
+ * In the runtime section list of the firmware file, a section whose
+ * destination is 0xffffcccc separates the lower-MAC (LMAC) sections from the
+ * upper-MAC (UMAC) sections, and one whose destination is 0xaaaabbbb separates
+ * the UMAC sections from the paged sections.  Both marks carry a body of
+ * exactly one zero word, and the firmware loader in this file refuses an image
+ * that lacks either mark or repeats it.  In the PNVM file, a section with
+ * destination 0xddddeeee closes a board's data and is not copied.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/fw/file.h
+ * (the first two marks) and drivers/net/wireless/intel/iwlwifi/fw/pnvm.c (the
+ * PNVM reader, the third mark).
  */
 #define INTEL_AX211_UPPER_CPU_IMAGE_MARK 0xffffccccU
 #define INTEL_AX211_PAGED_IMAGE_MARK 0xaaaabbbbU
@@ -256,13 +268,16 @@ struct intel_ax211_firmware_manifest {
 /*
  * The three words that name the board a firmware instance runs on.
  *
- * Source: Linux iwlwifi v6.17 fw/api/alive.h (the SKU words of the ALIVE
- * notification) and fw/file.h (the PNVM SKU record, type 64).  The firmware
- * reports these words in its ALIVE notification; the PNVM file opens each
- * board's data with a 12-byte record carrying the same three words.  The
- * driver copies the PNVM sections of the one board whose words are equal to
- * the reported ones, so the signature is the key that ties a running
+ * The firmware reports these words in its ALIVE notification; the PNVM file
+ * opens each board's data with a 12-byte record carrying the same three words.
+ * The driver copies the PNVM sections of the one board whose words are equal
+ * to the reported ones, so the signature is the key that ties a running
  * firmware to its radio tuning data.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/alive.h (the SKU words of the
+ * ALIVE notification) and drivers/net/wireless/intel/iwlwifi/fw/file.h (the
+ * PNVM SKU record, type 64).
  */
 struct intel_ax211_board_signature {
 	uint32_t data[3];
@@ -291,10 +306,8 @@ struct intel_ax211_pnvm_inventory {
  * The boot context: the one structure the device reads to find the host's
  * rings when the firmware starts.
  *
- * Sources: Linux iwlwifi v6.17 pcie/iwl-context-info-v2.h, struct
- * iwl_context_info_v2, and OpenBSD sys/dev/pci/if_iwxreg.h, struct
- * iwx_context_info_gen3, at commit 0f464d413c50.  The field order and widths
- * are the device's DMA layout; the names here are zedBSD's.
+ * The field order and widths are the device's DMA layout; the names here are
+ * zedBSD's.
  *
  * drv_intel_ax211_boot_context_encode() writes these fields as 104
  * little-endian bytes into a coherent DMA page, and the address of that page
@@ -314,8 +327,7 @@ struct intel_ax211_pnvm_inventory {
  * - version and config are zero; the API 89 firmware boots with them so.
  * - status_page_address is a 4 KiB page the firmware owns for its own
  *   bookkeeping.  The driver puts the two tail-index arrays inside it, at
- *   2048 and 3072 bytes from its start (half and three quarters of the page,
- *   the places Linux uses as well).
+ *   2048 and 3072 bytes from its start (half and three quarters of the page).
  * - completion_head_array_address is a two-byte DMA word in which the device
  *   publishes how far it has filled the receive completion ring.  The
  *   transport reads it as a little-endian 16-bit index to learn which
@@ -334,6 +346,11 @@ struct intel_ax211_pnvm_inventory {
  * - scratch_area_address and scratch_area_size name the 1660-byte scratch
  *   area in which the driver tells the firmware where the PNVM sections, the
  *   receive buffers and the firmware's own DRAM copies are.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h (struct
+ * iwl_context_info_v2) and OpenBSD 0f464d413c50 sys/dev/pci/if_iwxreg.h
+ * (struct iwx_context_info_gen3).
  */
 struct intel_ax211_boot_context {
 	uint16_t version;

@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,15 +9,6 @@
 
 /*
  * Intel AX211 private BSS association-metadata implementation.
- *
- * Sources of the values.  Every constant in this file is a value of the
- * 802.11 frame itself: the frame control field, the fixed fields of a beacon
- * and a probe response, and the element identifiers and lengths come from
- * IEEE Std 802.11-2020 (9.2.4.1 frame control, 9.3.3.2 and 9.3.3.10 beacon
- * and probe response bodies, 9.4.2 elements), and the WMM information and
- * parameter elements from the Wi-Fi Alliance WMM specification (vendor
- * element of OUI 00-50-F2, type 2).  No value in this file is taken from a
- * driver header.
  */
 
 #include "intel-ax211-bss.h"
@@ -29,10 +20,11 @@
 /*
  * The frame control values that mark a frame the BSS cache accepts.
  *
- * Source: IEEE Std 802.11-2020 9.2.4.1.  Only a protocol version 0
- * management frame of subtype probe response (5) or beacon (8), sent
- * neither to nor from a distribution system and not protected, describes a
- * network.
+ * Only a protocol version 0 management frame of subtype probe response (5) or
+ * beacon (8), sent neither to nor from a distribution system and not
+ * protected, describes a network.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.2.4.1.
  */
 #define AX211_BSS_FRAME_VERSION_MASK 0x0003U
 #define AX211_BSS_FRAME_TYPE_MASK 0x000cU
@@ -46,10 +38,11 @@
 /*
  * Where the fields of a beacon or probe response are.
  *
- * Source: IEEE Std 802.11-2020 9.3.3.2 and 9.3.3.10.  The management header
- * is 24 bytes with the BSSID at byte 16; the fixed body follows (timestamp
- * 8 bytes, beacon interval at byte 32, capability information at 34), and
- * the elements start at byte 36.
+ * The management header is 24 bytes with the BSSID at byte 16; the fixed body
+ * follows (timestamp 8 bytes, beacon interval at byte 32, capability
+ * information at 34), and the elements start at byte 36.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.3.3.2 and 9.3.3.10.
  */
 #define AX211_BSS_FIXED_BODY_OFFSET 24U
 #define AX211_BSS_INFORMATION_ELEMENTS_OFFSET 36U
@@ -58,15 +51,18 @@
 /*
  * The elements the cache reads.
  *
- * Sources: IEEE Std 802.11-2020 9.4.2 (element identifiers: SSID 0, DS
- * parameter set 3, TIM 5, HT operation 61, vendor specific 221; an SSID of
- * at most 32 bytes, an HT operation body of 22 bytes, a TIM body of at
- * least 4 bytes) and the Wi-Fi Alliance WMM specification (a vendor element
- * of OUI 00-50-F2 and OUI type 2, whose subtype 0 is the 7-byte information
- * element and subtype 1 the 24-byte parameter element, both version 1).
- * The DS parameter set gives the channel the network says it is on; a
- * frame whose element disagrees with the channel it was received on is
- * refused as malformed.
+ * The element identifiers are SSID 0, DS parameter set 3, TIM 5, HT operation
+ * 61 and vendor specific 221.  An SSID has at most 32 bytes, an HT operation
+ * body 22 bytes and a TIM body at least 4 bytes.  WMM is a vendor element of
+ * OUI 00-50-F2 and OUI type 2, whose subtype 0 is the 7-byte information
+ * element and subtype 1 the 24-byte parameter element, both version 1.  The
+ * DS parameter set gives the channel the network says it is on; a frame whose
+ * element disagrees with the channel it was received on is refused as
+ * malformed.
+ *
+ * Values referenced: IEEE Std 802.11-2020 9.4.2 (the element identifiers and
+ * lengths) and the Wi-Fi Alliance WMM Specification (the WMM information and
+ * parameter elements).
  */
 #define AX211_BSS_IE_SSID 0U
 #define AX211_BSS_IE_TIM 5U

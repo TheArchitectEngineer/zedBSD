@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private API89 passive-scan contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/scan.h and fw/api/commands.h.  They were cross-checked against
- * OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each
- * block of values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_SCAN_H
@@ -41,14 +23,17 @@
 /*
  * The scan commands and notifications of the upper CPU.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h (opcodes) and fw/api/scan.h
- * (layouts); the versions are those the pinned API 89 image lists.  The
- * driver sends the commands in family 1 and receives both notifications,
- * version 1, in family 0: SCAN_START (0x0d, request v17, 1940 bytes),
- * SCAN_CANCEL (0x0e, v1, 8 bytes), SCAN_FINISHED (0x0f), which ends a scan,
- * and SCAN_PASS_FINISHED (0xb5, at most 912 bytes), which reports one pass
- * over the channel list.  The scan setup command of version 5 is sent
- * once at runtime start (intel-ax211-runtime.h).
+ * The versions are those the pinned API 89 image lists.  The driver sends the
+ * commands in family 1 and receives both notifications, version 1, in family
+ * 0: SCAN_START (0x0d, request v17, 1940 bytes), SCAN_CANCEL (0x0e, v1, 8
+ * bytes), SCAN_FINISHED (0x0f), which ends a scan, and SCAN_PASS_FINISHED
+ * (0xb5, at most 912 bytes), which reports one pass over the channel list.
+ * The scan setup command of version 5 is sent once at runtime start
+ * (intel-ax211-runtime.h).
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (opcodes) and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/scan.h (layouts).
  */
 #define INTEL_AX211_SCAN_FAMILY_CLASSIC_WIDE 1U
 #define INTEL_AX211_SCAN_FAMILY_CLASSIC 0U
@@ -65,18 +50,20 @@
 /*
  * The parameters of one scan request, and its sizes.
  *
- * Source: Linux iwlwifi v6.17 fw/api/scan.h (struct iwl_scan_req_umac_v17
- * and its parts).  The driver runs one scan at a time with scan id 0, which
- * the firmware echoes in every scan notification; a notification with
- * another id is not ours.  Precedence 6 is written both as the request's
- * out-of-channel priority and as the scan priority of the general section.
- * The firmware stays 10 TU on a channel when probing and 110 TU when only
- * listening, with an adaptive budget of 300 TU.  The request has room for
- * 67 channel entries; the driver lists at most 51 (14 at 2.4 GHz and 37 at
- * 5 GHz), and the probe template has 512 bytes.  A pass report holds a
- * 16-byte header and up to 112 8-byte channel results, 912 bytes in all.
- * The time limits are zedBSD's: one second for the firmware to acknowledge
- * a command, five seconds for a scan to finish.
+ * The driver runs one scan at a time with scan id 0, which the firmware echoes
+ * in every scan notification; a notification with another id is not ours.
+ * Precedence 6 is written both as the request's out-of-channel priority and as
+ * the scan priority of the general section.  The firmware stays 10 TU on a
+ * channel when probing and 110 TU when only listening, with an adaptive budget
+ * of 300 TU.  The request has room for 67 channel entries; the driver lists at
+ * most 51 (14 at 2.4 GHz and 37 at 5 GHz), and the probe template has 512
+ * bytes.  A pass report holds a 16-byte header and up to 112 8-byte channel
+ * results, 912 bytes in all.  The time limits are zedBSD's: one second for the
+ * firmware to acknowledge a command, five seconds for a scan to finish.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/scan.h (struct
+ * iwl_scan_req_umac_v17 and its parts).
  */
 #define INTEL_AX211_SCAN_UID 0U
 #define INTEL_AX211_SCAN_PRECEDENCE 6U

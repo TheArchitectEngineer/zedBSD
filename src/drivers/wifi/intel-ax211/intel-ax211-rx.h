@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private API89 receive contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/rx.h and fw/api/commands.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_RX_H
@@ -40,12 +22,15 @@
 /*
  * The received-frame notification.
  *
- * Source: Linux iwlwifi v6.17 fw/api/commands.h (opcode 0xc1 of family 0)
- * and fw/api/rx.h (struct iwl_rx_mpdu_desc); version 5 is the one the
- * pinned API 89 image lists.  Every received 802.11 frame arrives as this
- * notification: a 64-byte descriptor, then the frame, at most 4032 bytes,
- * as the descriptor's first 16-bit word says.  The receive buffer may hold
- * bytes after the frame; they are not part of it.
+ * Every received 802.11 frame arrives as this notification: a 64-byte
+ * descriptor, then the frame, at most 4032 bytes, as the descriptor's first
+ * 16-bit word says.  The receive buffer may hold bytes after the frame; they
+ * are not part of it.  Version 5 is the one the pinned API 89 image lists.
+ *
+ * Values referenced: Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h (opcode 0xc1 of family
+ * 0) and drivers/net/wireless/intel/iwlwifi/fw/api/rx.h (struct
+ * iwl_rx_mpdu_desc).
  */
 #define INTEL_AX211_RX_FRAME_FAMILY 0U
 #define INTEL_AX211_RX_FRAME_OPCODE 0xc1U

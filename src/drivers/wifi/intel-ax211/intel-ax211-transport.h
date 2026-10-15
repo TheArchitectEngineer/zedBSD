@@ -1,4 +1,4 @@
-/* -*- mode: c; c-file-style: "linux"; tab-width: 8; -*- */
+/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
 
 /*
  * zedBSD
@@ -9,24 +9,6 @@
 
 /*
  * Intel AX211 private Gen3 transport contract.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * iwl-csr.h and iwl-fh.h.  They were cross-checked against OpenBSD
- * sys/dev/pci/if_iwxreg.h and if_iwx.c at commit 0f464d413c50.  Each block of
- * values below names the header it was taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #ifndef KERN_DRIVERS_INTEL_AX211_TRANSPORT_H
@@ -41,12 +23,14 @@
 /*
  * The command slots and receive descriptors shared with the boot code.
  *
- * Source: Linux iwlwifi v6.17 iwl-fh.h (the 16-byte receive transfer
- * descriptor and 32-byte completion descriptor) for the device layouts; the
- * slot sizes are zedBSD's.  A command slot of 324 bytes holds the 8-byte
- * wide header and up to 316 payload bytes inline; a longer command uses the
- * one 4 KiB external buffer, which holds the header and up to 4088 payload
- * bytes.  The receive ring has 512 descriptors.
+ * A command slot of 324 bytes holds the 8-byte wide header and up to 316
+ * payload bytes inline; a longer command uses the one 4 KiB external buffer,
+ * which holds the header and up to 4088 payload bytes.  The receive ring has
+ * 512 descriptors.  The slot sizes are zedBSD's.
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-fh.h
+ * (the 16-byte receive transfer descriptor and 32-byte completion
+ * descriptor).
  */
 #define INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE 324U
 #define INTEL_AX211_TRANSPORT_COMMAND_INLINE_PAYLOAD_MAX 316U
@@ -59,12 +43,14 @@
 /*
  * The MSI-X causes that the boot and runtime code test for themselves.
  *
- * Source: Linux iwlwifi v6.17 iwl-csr.h (enum msix_hw_int_causes and enum
- * msix_fh_int_causes).  ALIVE is bit 0 of the event-cause register; the
- * firmware faults are bits 5 and 25 and the hardware fault bit 29 of the
- * same register; the DMA engine fault is bit 21 of the queue-cause register.
- * A command that fails while one of the fatal causes is pending makes the
- * driver read the firmware error tables (intel-ax211.c).
+ * ALIVE is bit 0 of the event-cause register; the firmware faults are bits 5
+ * and 25 and the hardware fault bit 29 of the same register; the DMA engine
+ * fault is bit 21 of the queue-cause register.  A command that fails while one
+ * of the fatal causes is pending makes the driver read the firmware error
+ * tables (intel-ax211.c).
+ *
+ * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-csr.h
+ * (enum msix_hw_int_causes and enum msix_fh_int_causes).
  */
 #define INTEL_AX211_TRANSPORT_EVENT_CAUSE_ALIVE 0x00000001U
 #define INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT 0x00200000U

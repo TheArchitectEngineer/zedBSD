@@ -9,25 +9,6 @@
 
 /*
  * Intel AX211 private firmware protocol codecs.
- *
- * Sources of the values.  The register offsets, bit positions, command
- * numbers, firmware file record types and wire layouts in this file are facts
- * of the AX211 hardware and of its firmware interface.  Intel publishes no
- * register or host-command specification for this device, so the values were
- * collected with Intel's own driver headers as the primary source: Linux
- * iwlwifi at tag v6.17, under drivers/net/wireless/intel/iwlwifi/, in
- * fw/api/alive.h, fw/api/nvm-reg.h, fw/api/commands.h and fw/file.h.  They
- * were cross-checked against OpenBSD sys/dev/pci/if_iwxreg.h and if_iwx.c at
- * commit 0f464d413c50.  Each block of values below names the header it was
- * taken from.
- *
- * This file is not an adaptation of those headers.  It collects the interface
- * values, gives them names of its own, and adds what the zedBSD driver
- * established about each of them while it was brought up on AX211 hardware:
- * where the value is used, what it means to the device or to the firmware,
- * the order the device requires, and how the firmware behaved.  It is written
- * as a reference that a developer of an AX211 driver for another operating
- * system can use on its own.
  */
 
 #include "intel-ax211-protocol.h"
@@ -54,17 +35,21 @@ static uint64_t ax211_protocol_get_le64(const uint8_t *bytes);
  * The command versions the boot path depends on, as the pinned firmware
  * lists them.
  *
- * Source: the command version record (type 48) of the pinned API 89 image
- * from linux-firmware 20260410, read by zedBSD; the family and opcode
- * numbers are those of Linux iwlwifi v6.17 fw/api/commands.h and
- * fw/api/nvm-reg.h.  Each row is family, opcode, command layout version and
- * notification layout version: ALIVE (0, 1) has no command and
- * notification version 6; SCAN_SETUP (1, 0x0c) is version 5 and SCAN_START
- * (1, 0x0d) version 17; NVM_HANDOFF (12, 0) is version 1; NVM_QUERY (12, 2)
- * is command version 1 with a version 4 answer; PNVM_ACCEPTED (12, 0xfe) has
- * no command and notification version 1.  99 is the image's "no version".
- * The boot is refused when the image lists any of them differently, because
- * the layouts the driver writes and reads are those versions.
+ * Each row is family, opcode, command layout version and notification layout
+ * version: ALIVE (0, 1) has no command and notification version 6; SCAN_SETUP
+ * (1, 0x0c) is version 5 and SCAN_START (1, 0x0d) version 17; NVM_HANDOFF (12,
+ * 0) is version 1; NVM_QUERY (12, 2) is command version 1 with a version 4
+ * answer; PNVM_ACCEPTED (12, 0xfe) has no command and notification version 1.
+ * 99 is the image's "no version".  The boot is refused when the image lists
+ * any of them differently, because the layouts the driver writes and reads are
+ * those versions.
+ *
+ * Values referenced: linux-firmware 20260410
+ * intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode (the command version record,
+ * type 48, read by zedBSD) and Linux v6.17
+ * drivers/net/wireless/intel/iwlwifi/fw/api/commands.h and
+ * drivers/net/wireless/intel/iwlwifi/fw/api/nvm-reg.h (the family and opcode
+ * numbers).
  */
 static const struct ax211_required_version ax211_api89_required[] = {
 	{0x00U, 0x01U, 99U, 6U}, {0x01U, 0x0cU, 5U, 0U},
@@ -365,8 +350,12 @@ drv_intel_ax211_protocol_nvm_query_decode(
 	struct intel_ax211_protocol_channel *channel_local;
 	struct intel_ax211_protocol_channel *channel_local1;
 	/*
-	 * The 5 GHz channel numbers (IEEE Std 802.11-2020 Annex E) in the order
-	 * the firmware lists their flag words after the 14 channels of 2.4 GHz.
+	 * The 5 GHz channel numbers in the order the firmware lists their flag
+	 * words after the 14 channels of 2.4 GHz.
+	 *
+	 * Values referenced: IEEE Std 802.11-2020 Annex E (the channel numbers)
+	 * and Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-nvm-parse.c
+	 * (the order of the channels).
 	 */
 	static const uint8_t
 		channel_5ghz[INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT] = {
