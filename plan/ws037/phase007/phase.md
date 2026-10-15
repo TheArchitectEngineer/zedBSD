@@ -529,3 +529,6 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 
 - 順: F1 → F2 → F3（F1・F2 は独立、F3 は host 試験で push を照合）。各段で build（warning 0）と host 試験、まとめて T1 に T1-695 と同じ 3 場面の KWL PERF を依頼して比べる。
 - 確かめを楽にするため、F1〜F3 と一緒に 5 s ごとの計数の行（run の数・CPU の複写の数と byte・present の待ち・lock の待ちの合計）を `nvrtx.vk.perf=1` の時だけ kernel log に出す案もある（Q1 の判断）。
+
+## nvrtx の renderer を既定で on（2026-10-16 ユーザー）
+「nvrtxはmainでデフォルトで有効にしてください。」→ driver の build は既に既定で y（pci.drivers・config-amd64.mk）。runtime の renderer（nvrtx.vk）を既定 on にし、`nvrtx.vk=0` で off（Q1、stage.c の nvrtx_stage_vk_wanted と work の判定、nvrtx-private.h の注釈）。GSP・display・resident は前から既定 on（GOP が RTX の時）。これで方法 A の素の起動は boot の語なしで desktop まで行く見込み（i5-13400F のように iGPU の無い機械）。注意: 試験の run（R7・R8 など、前は vk 無しが既定）も renderer が on になる。config-amd64.mk・nvrtx の config の vmunix は warning 0、nvrtx-gsp-host-test PASS 304。実機は未。
