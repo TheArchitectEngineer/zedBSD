@@ -465,7 +465,7 @@ nvrtx_sm75_iadd3(
  * IMAD dst = a * b + c, the low 32 bits.  The carry output is PT (none)
  * and the carry input !PT (false).
  *
- * Value referenced: the SM75 code the CUDA compiler emits (IMAD's carry
+ * Value referenced: the SM75 code the SASS compiler emits (IMAD's carry
  * operands).
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
@@ -1393,7 +1393,7 @@ nvrtx_sm75_memory(
  * src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 811-818: a
  * NOP of 2 cycles after an instruction with an execution latency).
  *
- * Value referenced: the SM75 code the CUDA compiler emits (EXIT's delay of
+ * Value referenced: the SM75 code the SASS compiler emits (EXIT's delay of
  * 5).
  */
 #define NVRTX_SM75_DELAY_SYNC_MIN	6U
@@ -5027,7 +5027,7 @@ nvrtx_sm75_lower_shared(
  * fence (MEMBAR at the GPU's scope for global memory, the workgroup's
  * otherwise).  Each is followed by a NOP of two cycles.
  *
- * Value referenced: the SM75 code the CUDA compiler emits (a NOP of two
+ * Value referenced: the SM75 code the SASS compiler emits (a NOP of two
  * cycles after an instruction with an execution latency), and Mesa 25.3.6
  * src/nouveau/compiler/nak/calc_instr_deps.rs (calc_delays: the NOP with a
  * delay of 2 after an instruction whose execution latency is above 1) and
