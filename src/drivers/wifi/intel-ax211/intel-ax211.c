@@ -2082,41 +2082,51 @@ ax211_pci_detach(
 	return 0;
 }
 
-/* Checks the complete frozen P038 PCI tuple. */
+/*
+ * Reports whether a PCI function is the frozen P038 AX211: 1 when it is, 0
+ * when not.
+ */
 static int
 ax211_pci_identity_matches(
 	const struct drv_pci_device *device)
 {
-	int error;
+	uint32_t pci_class;
+	uint16_t vendor;
+	uint16_t product;
+	uint16_t subvendor;
+	uint16_t subproduct;
+	uint8_t revision;
 
-	/* Handles the device availability. */
+	/* Rejects a missing function. */
 	if (device == NULL)
 		return 0;
 
-	/* Checks the drv pci device vendor result. */
-	if (drv_pci_device_vendor(device) != AX211_PCI_VENDOR ||
-	    drv_pci_device_product(device) != AX211_PCI_PRODUCT) {
-		/* Succeeded. */
+	/* Rejects another vendor or product. */
+	vendor = drv_pci_device_vendor(device);
+	product = drv_pci_device_product(device);
+	if (vendor != AX211_PCI_VENDOR || product != AX211_PCI_PRODUCT)
+		return 0;
+
+	/* Rejects another subsystem. */
+	subvendor = drv_pci_device_subvendor(device);
+	subproduct = drv_pci_device_subproduct(device);
+	if (subvendor != AX211_PCI_SUBVENDOR ||
+	    subproduct != AX211_PCI_SUBPRODUCT) {
 		return 0;
 	}
 
-	/* Checks the drv pci device subvendor result. */
-	if (drv_pci_device_subvendor(device) != AX211_PCI_SUBVENDOR ||
-	    drv_pci_device_subproduct(device) != AX211_PCI_SUBPRODUCT) {
-		/* Succeeded. */
-		return 0;
-	}
-
-	/* Checks the drv pci device revision result. */
-	if (drv_pci_device_revision(device) != AX211_PCI_REVISION)
+	/* Rejects another revision. */
+	revision = drv_pci_device_revision(device);
+	if (revision != AX211_PCI_REVISION)
 		return 0;
 
-	/* Computes the function result. */
-	error = (drv_pci_device_class(device) &
-			   AX211_PCI_CLASS_MASK) == AX211_PCI_CLASS;
+	/* Rejects another class. */
+	pci_class = drv_pci_device_class(device);
+	if ((pci_class & AX211_PCI_CLASS_MASK) != AX211_PCI_CLASS)
+		return 0;
 
-	/* Returns the computed result. */
-	return error;
+	/* The function is the AX211. */
+	return 1;
 }
 
 /* Validates BAR0 before PCI decode or MMIO is changed. */
@@ -2124,19 +2134,22 @@ static int
 ax211_pci_bar_validate(
 	const struct drv_pci_bar *bar)
 {
-	/* Handles the bar availability. */
+	/* Refuses a missing BAR. */
 	if (bar == NULL)
 		return EINVAL;
 
-	/* Handles the bar condition. */
+	/* Refuses a BAR that is not memory. */
 	if (bar->type != DRV_PCI_BAR_MEMORY32 &&
 	    bar->type != DRV_PCI_BAR_MEMORY64) {
-		/* Failed. */
 		return ENODEV;
 	}
 
-	/* Returns the computed result. */
-	return bar->size >= AX211_BAR0_MINIMUM_SIZE ? 0 : ENODEV;
+	/* Refuses a BAR smaller than the registers the driver uses. */
+	if (bar->size < AX211_BAR0_MINIMUM_SIZE)
+		return ENODEV;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Reads one naturally aligned identity CSR from retained BAR0. */
@@ -2148,11 +2161,12 @@ ax211_pci_read32(
 	volatile uint8_t *registers;
 	uint32_t value;
 
+	/* Reads the register and orders later reads after it. */
 	registers = controller->mapping.address;
 	value = *(volatile uint32_t *)(registers + offset);
 	kern_io_read_barrier();
 
-	/* Returns the computed result. */
+	/* Reports the value. */
 	return value;
 }
 
@@ -2165,24 +2179,28 @@ ax211_pci_hardware_validate(
 	uint32_t mac_type;
 	uint32_t radio_type;
 
+	/* Takes the MAC and radio kinds. */
 	mac_type = (hardware_revision & AX211_SILICON_FAMILY_MASK) >>
 		   AX211_SILICON_FAMILY_SHIFT;
 	radio_type = (radio_identity & AX211_RADIO_KIND_MASK) >>
 		     AX211_RADIO_KIND_SHIFT;
 
-	/* Handles the mac type condition. */
+	/* Refuses another MAC. */
 	if (mac_type != AX211_SILICON_FAMILY_SO &&
 	    mac_type != AX211_SILICON_FAMILY_SOF) {
-		/* Failed. */
 		return ENODEV;
 	}
 
-	/* Handles the radio type condition. */
+	/* Refuses another radio. */
 	if (radio_type != AX211_RADIO_KIND_GF)
 		return ENODEV;
 
-	/* Returns the computed result. */
-	return (radio_identity & AX211_RADIO_CONCURRENT_BANDS_FLAG) == 0U ? 0 : ENODEV;
+	/* Refuses a radio with concurrent bands. */
+	if ((radio_identity & AX211_RADIO_CONCURRENT_BANDS_FLAG) != 0U)
+		return ENODEV;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Derives the already validated private MMIO profile. */
@@ -2193,9 +2211,11 @@ ax211_pci_profile(
 {
 	uint32_t mac_type;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || profile == NULL)
 		return EINVAL;
+
+	/* Succeeded: describes the MAC, the radio and the periphery base. */
 	kern_memset(profile, 0, sizeof(*profile));
 	mac_type =
 		(controller->hardware_revision & AX211_SILICON_FAMILY_MASK) >>
@@ -2203,8 +2223,6 @@ ax211_pci_profile(
 	profile->mac_type = (uint16_t)mac_type;
 	profile->rf_type = INTEL_AX211_MMIO_RF_GF;
 	profile->upper_cpu_prph_base = INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE;
-
-	/* Succeeded. */
 	return 0;
 }
 
@@ -2213,43 +2231,42 @@ static int
 ax211_pci_acquire(
 	struct ax211_pci_controller *controller)
 {
-	int function_result;
 	struct drv_pci_bar bar;
 	uint16_t command;
 	int error;
 
-	/* Checks the operation status. */
+	/* Claims BAR0. */
 	error = drv_pci_device_claim_bar(controller->device, 0U);
 	if (error != 0)
 		return error;
 	controller->bar_claimed = 1U;
 
-	/* Checks the operation status. */
+	/* Reads BAR0. */
 	error = drv_pci_device_bar(controller->device, 0U, &bar);
 	if (error != 0)
 		return error;
 
-	/* Checks the operation status. */
+	/* Validates BAR0 and remembers it. */
 	error = ax211_pci_bar_validate(&bar);
 	if (error != 0)
 		return error;
 	controller->original_bar = bar;
 	controller->original_bar_valid = 1U;
 
-	/* Checks the operation status. */
+	/* Saves the enable state for the release. */
 	error = drv_pci_device_save_enable_state(controller->device,
 						 &controller->enable_state);
 	if (error != 0)
 		return error;
 	controller->state_saved = 1U;
 
-	/* Checks the operation status. */
+	/* Turns bus mastering off; the mapper may move BAR0 from here on. */
 	error = drv_pci_device_set_bus_master(controller->device, false);
 	if (error != 0)
 		return error;
 	controller->bar_may_have_moved = 1U;
 
-	/* Checks the operation status. */
+	/* Maps BAR0 uncached. */
 	error = drv_pci_device_map_bar(controller->device, 0U,
 				       DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE |
 					       DRV_PCI_MAP_NOCACHE,
@@ -2258,50 +2275,50 @@ ax211_pci_acquire(
 		return error;
 	controller->bar_mapped = 1U;
 
-	/* Handles the address availability. */
+	/* Refuses a mapping that is missing, not memory, or of a bad size. */
 	if (controller->mapping.address == NULL ||
 	    (controller->mapping.type != DRV_PCI_BAR_MEMORY32 &&
 	     controller->mapping.type != DRV_PCI_BAR_MEMORY64) ||
 	    controller->mapping.size < AX211_BAR0_MINIMUM_SIZE ||
 	    controller->mapping.size > bar.size) {
-		/* Failed. */
 		return EIO;
 	}
 
-	/* Checks the operation status. */
+	/* Enables memory decode with bus mastering still off. */
 	error = drv_pci_device_enable_memory(controller->device);
 	if (error == 0) {
 		error = drv_pci_device_set_bus_master(controller->device,
 						      false);
 	}
 
-	/* Checks the operation status. */
+	/* Reads the command register back. */
 	if (error == 0) {
 		error = drv_pci_device_config_read16(
 			controller->device, AX211_PCI_COMMAND, &command);
 	}
 
-	/* Checks the operation status. */
+	/* Reports a failed step. */
 	if (error != 0)
 		return error;
 
-	/* Handles the command condition. */
+	/* Refuses decode that is off or bus mastering that is on. */
 	if ((command & AX211_PCI_COMMAND_MEMORY) == 0U ||
 	    (command & AX211_PCI_COMMAND_MASTER) != 0U) {
-		/* Failed. */
 		return EIO;
 	}
+
+	/* Reads the identity registers and validates them. */
 	controller->hardware_revision =
 		ax211_pci_read32(controller, AX211_CSR_SILICON_REVISION);
 	controller->radio_identity =
 		ax211_pci_read32(controller, AX211_CSR_RADIO_IDENTITY);
-
-	/* Obtains the ax211 pci hardware validate result. */
-	function_result = ax211_pci_hardware_validate(
+	error = ax211_pci_hardware_validate(
 		controller->hardware_revision, controller->radio_identity);
+	if (error != 0)
+		return error;
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Succeeded: the lease is held. */
+	return 0;
 }
 
 /* Restores BAR0 if the host mapper assigned a temporary MMIO address. */
@@ -2312,22 +2329,22 @@ ax211_pci_restore_bar(
 	struct drv_pci_bar current_bar;
 	int error;
 
-	/* Handles the controller condition. */
+	/* Nothing to restore when BAR0 cannot have moved. */
 	if (!controller->bar_may_have_moved)
 		return 0;
 
-	/* Handles the controller condition. */
+	/* Refuses a restore without the original BAR. */
 	if (!controller->original_bar_valid)
 		return EIO;
 
-	/* Checks the operation status. */
+	/* Reads BAR0. */
 	error = drv_pci_device_bar(controller->device, 0U, &current_bar);
 	if (error != 0)
 		return error;
 
-	/* Handles the current bar condition. */
+	/* Assigns the original address back to a moved BAR0. */
 	if (current_bar.bus_address != controller->original_bar.bus_address) {
-		/* Checks the operation status. */
+		/* Reports a failed assignment. */
 		error = drv_pci_device_assign_bar(
 			controller->device, 0U,
 			controller->original_bar.bus_address);
@@ -2335,10 +2352,9 @@ ax211_pci_restore_bar(
 			return error;
 	}
 
+	/* Succeeded: BAR0 is where it was. */
 	controller->bar_may_have_moved = 0U;
 	controller->original_bar_valid = 0U;
-
-	/* Succeeded. */
 	return 0;
 }
 
@@ -2353,55 +2369,68 @@ ax211_pci_release_resources(
 	int quiesce_error;
 	int restore_error;
 
+	/* No restore has failed yet. */
 	bar_error = 0;
 	restore_error = 0;
 
-	/* Handles the controller condition. */
+	/* Unmaps BAR0. */
 	if (controller->bar_mapped) {
 		drv_pci_device_unmap_bar(controller->device,
 					 &controller->mapping);
 		controller->bar_mapped = 0U;
 	}
 
-	/* Checks the operation status. */
+	/* Restores BAR0 and then the enable state. */
 	bar_error = ax211_pci_restore_bar(controller);
 	if (bar_error == 0 && controller->state_saved) {
-		/* Checks the operation status. */
+		/* Forgets the saved state once it is restored. */
 		restore_error = drv_pci_device_restore_enable_state(
 			controller->device, &controller->enable_state);
 		if (restore_error == 0)
 			controller->state_saved = 0U;
 	}
 
-	/* Checks the operation status. */
+	/* A failed restore turns bus mastering off and may keep the lease. */
 	if (bar_error != 0 || restore_error != 0) {
-		/* Checks the operation status. */
+		/* A failed turn-off replaces a success. */
 		quiesce_error = drv_pci_device_set_bus_master(
 			controller->device, false);
 		if (result == 0 && quiesce_error != 0)
 			result = quiesce_error;
 
-		/* Checks the operation status. */
-		if (retain_on_failure)
-			return bar_error != 0 ? bar_error : restore_error;
+		/*
+		 * Keeps BAR0 claimed for a retry, reporting the first failure.
+		 */
+		if (retain_on_failure) {
+			/* Reports a failed BAR restore. */
+			if (bar_error != 0)
+				return bar_error;
+
+			/* Reports a failed state restore. */
+			return restore_error;
+		}
 	}
 
-	/* Handles the controller condition. */
+	/* Releases BAR0. */
 	if (controller->bar_claimed) {
 		drv_pci_device_release_bar(controller->device, 0U);
 		controller->bar_claimed = 0U;
 	}
 
-	/* Checks the operation status. */
+	/* Reports a failed BAR restore. */
 	if (bar_error != 0)
 		return bar_error;
 
-	/* Checks the operation status. */
+	/* Reports a failed state restore. */
 	if (restore_error != 0)
 		return restore_error;
 
-	/* Returns the computed result. */
-	return result;
+	/* Reports the caller's result. */
+	if (result != 0)
+		return result;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Keeps an incompletely restored controller bound for checked detach retry. */
@@ -2413,31 +2442,33 @@ ax211_pci_quarantine(
 	uint16_t command;
 	int error;
 
+	/* The controller admits nothing from here on. */
 	controller->ready = 0U;
 	controller->quarantined = 1U;
 
-	/* Checks the operation status. */
+	/* Turns bus mastering off and reads the command register back. */
 	error = drv_pci_device_set_bus_master(controller->device, false);
 	if (error == 0) {
 		error = drv_pci_device_config_read16(
 			controller->device, AX211_PCI_COMMAND, &command);
 	}
 
-	/* Checks the operation status. */
+	/* A master bit still set is an I/O failure; a failure is reported. */
 	if (error == 0 && (command & AX211_PCI_COMMAND_MASTER) != 0U)
 		error = EIO;
 	if (error != 0)
 		failure = error;
 
-	/* Handles the controller condition. */
+	/* Binds the controller to the function, if not yet. */
 	if (!controller->driver_data_set) {
-		/* Checks the operation status. */
+		/* Records a binding that succeeded. */
 		error = drv_pci_device_set_driver_data(controller->device,
 						       controller);
 		if (error == 0)
 			controller->driver_data_set = 1U;
 	}
 
+	/* Lists the controller so that detach finds it. */
 	ax211_pci_list_add(controller);
 	kern_logf("intel-ax211: controller restoration quarantined (%d)\n",
 		   failure);
@@ -2453,6 +2484,7 @@ ax211_pci_list_add(
 {
 	unsigned long enabled;
 
+	/* Links the controller at the head of the registry. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 
 	controller->next = ax211_controllers;
@@ -2469,7 +2501,7 @@ ax211_pci_list_remove(
 {
 	unsigned long enabled;
 
-	/* Handles the controller condition. */
+	/* Refuses a controller a refresh still owns. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 	if (controller->refresh_busy) {
 		spin_unlock_irqrestore(&ax211_registry_lock, enabled);
@@ -2478,7 +2510,7 @@ ax211_pci_list_remove(
 		return EBUSY;
 	}
 
-	/* Handles the controller condition. */
+	/* Marks the controller as detaching. */
 	if (!controller->detaching)
 		controller->detaching = 1U;
 
@@ -2496,13 +2528,16 @@ ax211_pci_list_forget(
 	struct ax211_pci_controller **link;
 	unsigned long enabled;
 
+	/* Walks the registry under its lock. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 
-	/* Process each linked entry. */
+	/* Unlinks the controller. */
 	for (link = &ax211_controllers; *link != NULL; link = &(*link)->next) {
-		/* Handles the link condition. */
+		/* Skips any other controller. */
 		if (*link != controller)
 			continue;
+
+		/* Unlinks this one. */
 		*link = controller->next;
 		controller->next = NULL;
 		controller->listed = 0U;
@@ -2520,19 +2555,20 @@ ax211_pci_list_find_device(
 	struct ax211_pci_controller *controller;
 	unsigned long enabled;
 
+	/* Walks the registry under its lock. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 
-	/* Process each linked entry. */
+	/* Looks for the controller of the function. */
 	for (controller = ax211_controllers; controller != NULL;
 	     controller = controller->next) {
-		/* Handles the controller condition. */
+		/* Stops at the controller of the function. */
 		if (controller->device == device)
 			break;
 	}
 
 	spin_unlock_irqrestore(&ax211_registry_lock, enabled);
 
-	/* Returns the computed result. */
+	/* Reports the controller, or NULL. */
 	return controller;
 }
 
@@ -2544,17 +2580,23 @@ ax211_pci_refresh_claim(
 	struct ax211_pci_controller *controller;
 	unsigned long enabled;
 
+	/* Walks the registry under its lock. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 
-	/* Process each linked entry. */
+	/* Looks for a ready, unpublished controller not yet seen. */
 	for (controller = ax211_controllers; controller != NULL;
 	     controller = controller->next) {
-		/* Handles the controller condition. */
-		if (controller->detaching || controller->refresh_busy ||
-		    !controller->ready || controller->quarantined ||
+		/* Skips a controller that cannot be published now. */
+		if (controller->detaching ||
+		    controller->refresh_busy ||
+		    !controller->ready ||
+		    controller->quarantined ||
 		    controller->station_attached ||
-		    controller->refresh_epoch == epoch)
+		    controller->refresh_epoch == epoch) {
 			continue;
+		}
+
+		/* Claims this one for the epoch. */
 		controller->refresh_epoch = epoch;
 		controller->refresh_busy = 1U;
 		break;
@@ -2562,7 +2604,7 @@ ax211_pci_refresh_claim(
 
 	spin_unlock_irqrestore(&ax211_registry_lock, enabled);
 
-	/* Returns the computed result. */
+	/* Reports the claimed controller, or NULL. */
 	return controller;
 }
 
@@ -2573,6 +2615,7 @@ ax211_pci_refresh_release(
 {
 	unsigned long enabled;
 
+	/* Ends the refresh's ownership. */
 	enabled = spin_lock_irqsave(&ax211_registry_lock);
 
 	controller->refresh_busy = 0U;
@@ -2590,23 +2633,28 @@ ax211_pci_refresh_one(
 	int error;
 	int stop_error;
 
+	/* Starts from a cleared address under the lifecycle lock. */
 	kern_memset(mac_address, 0, sizeof(mac_address));
 	mutex_lock(&controller->lifecycle_lock);
 
 	hardware_attempted = 0;
 
-	/* Handles the controller condition. */
-	if (controller->detaching || !controller->ready ||
-	    controller->quarantined)
+	/* Refuses an unusable controller; retires a partial shell first. */
+	if (controller->detaching ||
+	    !controller->ready ||
+	    controller->quarantined) {
 		error = ENODEV;
-	else
+	} else {
 		error = ax211_pci_partial_discard(controller);
+	}
+
+	/* Takes ownership of the device. */
 	if (error == 0) {
 		hardware_attempted = 1;
 		error = drv_intel_ax211_mmio_take_ownership(&controller->mmio);
 	}
 
-	/* Checks the operation status. */
+	/* Resets and powers the MAC, then reads its address. */
 	if (error == INTEL_AX211_MMIO_OK)
 		error = drv_intel_ax211_mmio_sw_reset(&controller->mmio);
 	if (error == INTEL_AX211_MMIO_OK)
@@ -2616,7 +2664,7 @@ ax211_pci_refresh_one(
 						      mac_address);
 	}
 
-	/* Handles the hardware attempted condition. */
+	/* Stops a touched device and publishes the station. */
 	stop_error = INTEL_AX211_MMIO_OK;
 	if (hardware_attempted)
 		stop_error = drv_intel_ax211_mmio_stop(&controller->mmio);
@@ -2649,7 +2697,7 @@ ax211_pci_publish(
 	int error;
 	int gone_error;
 
-	/* Handles the device availability. */
+	/* Describes the net device. */
 	device = net_device_alloc();
 	if (device == NULL)
 		return ENOSPC;
@@ -2662,19 +2710,19 @@ ax211_pci_publish(
 	device->driver_data = controller;
 	error = ENOSPC;
 
-	/* Process each remaining element. */
+	/* Creates it under the first free name wlan0, wlan1, and so on. */
 	for (index = 0U; index < NET_DEVICE_MAX; index++) {
 		kern_memcpy(device->name, "wlan", 4U);
 		device->name[4] = (char)('0' + index);
 		device->name[5] = '\0';
 
-		/* Checks the operation status. */
+		/* Stops at any outcome but a name in use. */
 		error = net_device_create(device);
 		if (error != EEXIST)
 			break;
 	}
 
-	/* Checks the operation status. */
+	/* Destroys a device that could not be created. */
 	if (error != 0) {
 		device->driver_data = NULL;
 		net_device_destroy(device);
@@ -2683,11 +2731,12 @@ ax211_pci_publish(
 		return error;
 	}
 
+	/* Records the device. */
 	controller->net_device = device;
 	controller->net_live = 1U;
 	station = NULL;
 
-	/* Checks the operation status. */
+	/* Drops the carrier and attaches the station. */
 	error = net_device_set_carrier(device, 0);
 	if (error == 0) {
 		ax211_pci_scan_profile(&profile);
@@ -2697,13 +2746,14 @@ ax211_pci_publish(
 		kern_memset(&profile, 0, sizeof(profile));
 	}
 
+	/* Clears the profile. */
 	ax211_pci_scrub(&profile, sizeof(profile));
 
-	/* Checks the operation status. */
+	/* A missing station is an I/O failure; a failure retires the shell. */
 	if (error == 0 && station == NULL)
 		error = EIO;
 	if (error != 0) {
-		/* Checks the operation status. */
+		/* Reports a shell that could not be retired. */
 		gone_error = ax211_pci_partial_discard(controller);
 		if (gone_error != 0)
 			return gone_error;
@@ -2712,10 +2762,9 @@ ax211_pci_publish(
 		return error;
 	}
 
+	/* Succeeded: the station is published. */
 	controller->station = station;
 	controller->station_attached = 1U;
-
-	/* Succeeded. */
 	return 0;
 }
 
