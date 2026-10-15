@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -416,52 +414,115 @@ struct intel_ax211_staging {
 };
 
 int
-drv_intel_ax211_identity_matches(const struct intel_ax211_identity *identity);
-int drv_intel_ax211_mac_type_supported(uint16_t mac_type);
-int
-drv_intel_ax211_firmware_parse(const uint8_t *bytes, size_t length,
-			       struct intel_ax211_firmware_manifest *manifest);
-int drv_intel_ax211_sku_equal(const struct intel_ax211_board_signature *left,
-			      const struct intel_ax211_board_signature *right);
-int drv_intel_ax211_pnvm_select(const uint8_t *bytes, size_t length,
-			       const struct intel_ax211_board_signature *sku,
-			       uint16_t mac_type, uint16_t rf_id,
-			       struct intel_ax211_pnvm_manifest *manifest);
-int drv_intel_ax211_pnvm_inspect(const uint8_t *bytes, size_t length,
-				 struct intel_ax211_pnvm_inventory *inventory);
+drv_intel_ax211_identity_matches(
+	const struct intel_ax211_identity *identity);
 
-int drv_intel_ax211_boot_context_encode(
+int
+drv_intel_ax211_mac_type_supported(
+	uint16_t mac_type);
+
+int
+drv_intel_ax211_firmware_parse(
+	const uint8_t *bytes,
+	size_t length,
+	struct intel_ax211_firmware_manifest *manifest);
+
+int
+drv_intel_ax211_sku_equal(
+	const struct intel_ax211_board_signature *left,
+	const struct intel_ax211_board_signature *right);
+
+int
+drv_intel_ax211_pnvm_select(
+	const uint8_t *bytes,
+	size_t length,
+	const struct intel_ax211_board_signature *sku,
+	uint16_t mac_type,
+	uint16_t rf_id,
+	struct intel_ax211_pnvm_manifest *manifest);
+
+int
+drv_intel_ax211_pnvm_inspect(
+	const uint8_t *bytes,
+	size_t length,
+	struct intel_ax211_pnvm_inventory *inventory);
+
+int
+drv_intel_ax211_boot_context_encode(
 	uint8_t output[104],
 	const struct intel_ax211_boot_context *context);
-int drv_intel_ax211_rx_transfer_descriptor_encode(uint8_t output[16],
-						  uint16_t buffer_id,
-						  uint64_t address);
-int drv_intel_ax211_rx_completion_descriptor_decode(const uint8_t input[32],
-						    uint16_t *buffer_id,
-						    uint8_t *flags);
-int drv_intel_ax211_tfd_encode(uint8_t output[256],
-			       const struct intel_ax211_tfd_buffer *buffers,
-			       size_t buffer_count);
-int drv_intel_ax211_narrow_command_encode(
-	uint8_t output[4], uint8_t opcode, uint8_t flags,
+
+int
+drv_intel_ax211_rx_transfer_descriptor_encode(
+	uint8_t output[16],
+	uint16_t buffer_id,
+	uint64_t address);
+
+int
+drv_intel_ax211_rx_completion_descriptor_decode(
+	const uint8_t input[32],
+	uint16_t *buffer_id,
+	uint8_t *flags);
+
+int
+drv_intel_ax211_tfd_encode(
+	uint8_t output[256],
+	const struct intel_ax211_tfd_buffer *buffers,
+	size_t buffer_count);
+
+int
+drv_intel_ax211_narrow_command_encode(
+	uint8_t output[4],
+	uint8_t opcode,
+	uint8_t flags,
 	const struct intel_ax211_ring_token *token);
-int drv_intel_ax211_wide_command_encode(
-	uint8_t output[8], const struct intel_ax211_command_id *command,
-	uint16_t payload_length, const struct intel_ax211_ring_token *token);
-int drv_intel_ax211_event_decode(const uint8_t *bytes, size_t length,
-				 struct intel_ax211_event *event);
 
-int drv_intel_ax211_ring_init(struct intel_ax211_ring *ring, uint8_t queue,
-			      uint16_t capacity);
-int drv_intel_ax211_ring_reserve(struct intel_ax211_ring *ring,
-				 struct intel_ax211_ring_token *token);
-int drv_intel_ax211_ring_complete(struct intel_ax211_ring *ring,
-				  const struct intel_ax211_ring_token *token);
-size_t drv_intel_ax211_ring_available(const struct intel_ax211_ring *ring);
+int
+drv_intel_ax211_wide_command_encode(
+	uint8_t output[8],
+	const struct intel_ax211_command_id *command,
+	uint16_t payload_length,
+	const struct intel_ax211_ring_token *token);
 
-void drv_intel_ax211_scrub(void *memory, size_t length);
-int drv_intel_ax211_staging_set(struct intel_ax211_staging *staging,
-				const void *data, size_t length);
-void drv_intel_ax211_staging_clear(struct intel_ax211_staging *staging);
+int
+drv_intel_ax211_event_decode(
+	const uint8_t *bytes,
+	size_t length,
+	struct intel_ax211_event *event);
+
+int
+drv_intel_ax211_ring_init(
+	struct intel_ax211_ring *ring,
+	uint8_t queue,
+	uint16_t capacity);
+
+int
+drv_intel_ax211_ring_reserve(
+	struct intel_ax211_ring *ring,
+	struct intel_ax211_ring_token *token);
+
+int
+drv_intel_ax211_ring_complete(
+	struct intel_ax211_ring *ring,
+	const struct intel_ax211_ring_token *token);
+
+size_t
+drv_intel_ax211_ring_available(
+	const struct intel_ax211_ring *ring);
+
+void
+drv_intel_ax211_scrub(
+	void *memory,
+	size_t length);
+
+int
+drv_intel_ax211_staging_set(
+	struct intel_ax211_staging *staging,
+	const void *data,
+	size_t length);
+
+void
+drv_intel_ax211_staging_clear(
+	struct intel_ax211_staging *staging);
 
 #endif

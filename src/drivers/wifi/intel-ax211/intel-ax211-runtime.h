@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -251,36 +249,54 @@ struct intel_ax211_runtime_state {
 	uint8_t terminal;
 };
 
-int drv_intel_ax211_runtime_profile_from_manifest(
+int
+drv_intel_ax211_runtime_profile_from_manifest(
 	const struct intel_ax211_firmware_manifest *manifest,
-	const struct intel_ax211_protocol_nvm *nvm, int ltr_enabled,
+	const struct intel_ax211_protocol_nvm *nvm,
+	int ltr_enabled,
 	struct intel_ax211_runtime_profile *profile);
-int drv_intel_ax211_runtime_api89_validate(
+
+int
+drv_intel_ax211_runtime_api89_validate(
 	const struct intel_ax211_protocol_command_table *table,
 	const struct intel_ax211_runtime_profile *profile);
 
-int drv_intel_ax211_runtime_command_encode(
+int
+drv_intel_ax211_runtime_command_encode(
 	enum intel_ax211_runtime_step step,
 	const struct intel_ax211_runtime_profile *profile,
 	struct intel_ax211_runtime_command *command);
-int drv_intel_ax211_runtime_mcc_decode(
-	const struct intel_ax211_protocol_message *message, uint32_t generation,
+
+int
+drv_intel_ax211_runtime_mcc_decode(
+	const struct intel_ax211_protocol_message *message,
+	uint32_t generation,
 	struct intel_ax211_runtime_mcc *mcc);
 
-int drv_intel_ax211_runtime_begin(
+int
+drv_intel_ax211_runtime_begin(
 	struct intel_ax211_runtime_state *state,
 	const struct intel_ax211_protocol_command_table *table,
-	const struct intel_ax211_runtime_profile *profile, uint32_t generation,
+	const struct intel_ax211_runtime_profile *profile,
+	uint32_t generation,
 	uint64_t now_us);
+
 int
-drv_intel_ax211_runtime_current(const struct intel_ax211_runtime_state *state,
-				uint64_t now_us,
-				struct intel_ax211_runtime_command *command);
-int drv_intel_ax211_runtime_ack(struct intel_ax211_runtime_state *state,
-				uint32_t generation,
-				enum intel_ax211_runtime_step step,
-				uint64_t now_us);
-int drv_intel_ax211_runtime_expire(struct intel_ax211_runtime_state *state,
-				   uint64_t now_us);
+drv_intel_ax211_runtime_current(
+	const struct intel_ax211_runtime_state *state,
+	uint64_t now_us,
+	struct intel_ax211_runtime_command *command);
+
+int
+drv_intel_ax211_runtime_ack(
+	struct intel_ax211_runtime_state *state,
+	uint32_t generation,
+	enum intel_ax211_runtime_step step,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_runtime_expire(
+	struct intel_ax211_runtime_state *state,
+	uint64_t now_us);
 
 #endif

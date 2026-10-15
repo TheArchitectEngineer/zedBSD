@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -320,45 +318,71 @@ struct intel_ax211_assoc_state {
  */
 struct intel_ax211_assoc_ops {
 	uint64_t (*clock_us)(void *argument);
-	int (*exchange)(void *argument,
-			const struct intel_ax211_assoc_command *command,
-			struct intel_ax211_assoc_reply *reply);
+	int (*exchange)(void *argument, const struct intel_ax211_assoc_command *command, struct intel_ax211_assoc_reply *reply);
 };
 
 /* Zero-initialize state before first use; an IDLE rollback may be reused. */
-int drv_intel_ax211_assoc_api89_validate(
+int
+drv_intel_ax211_assoc_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
+
 /* API89 lists this logical legacy command under LONG_GROUP (group 1). */
-int drv_intel_ax211_assoc_mcast_filter_api89_validate(
+int
+drv_intel_ax211_assoc_mcast_filter_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
-int drv_intel_ax211_assoc_mcast_filter_encode(const uint8_t bssid[6],
-					      uint8_t *output,
-					      size_t output_capacity);
-int drv_intel_ax211_assoc_mac_power_api89_validate(
+
+int
+drv_intel_ax211_assoc_mcast_filter_encode(
+	const uint8_t bssid[6],
+	uint8_t *output,
+	size_t output_capacity);
+
+int
+drv_intel_ax211_assoc_mac_power_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
-int drv_intel_ax211_assoc_mac_power_encode(uint8_t dtim_period,
-					   uint32_t beacon_interval_ms,
-					   uint8_t *output,
-					   size_t output_capacity);
-int drv_intel_ax211_assoc_mac_power_response_validate(const uint8_t *response,
-						      size_t response_length);
-int drv_intel_ax211_assoc_begin(
+
+int
+drv_intel_ax211_assoc_mac_power_encode(
+	uint8_t dtim_period,
+	uint32_t beacon_interval_ms,
+	uint8_t *output,
+	size_t output_capacity);
+
+int
+drv_intel_ax211_assoc_mac_power_response_validate(
+	const uint8_t *response,
+	size_t response_length);
+
+int
+drv_intel_ax211_assoc_begin(
 	struct intel_ax211_assoc_state *state,
 	const struct intel_ax211_protocol_command_table *table,
 	const struct intel_ax211_assoc_profile *profile,
-	uint64_t common_generation, uint32_t hardware_epoch, uint64_t now_us);
-int drv_intel_ax211_assoc_begin_update(
+	uint64_t common_generation,
+	uint32_t hardware_epoch,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_assoc_begin_update(
 	struct intel_ax211_assoc_state *state,
 	const struct intel_ax211_assoc_update *update,
-	uint64_t common_generation, uint32_t hardware_epoch, uint64_t now_us);
-int drv_intel_ax211_assoc_current(const struct intel_ax211_assoc_state *state,
-				  uint64_t now_us,
-				  struct intel_ax211_assoc_command *command);
+	uint64_t common_generation,
+	uint32_t hardware_epoch,
+	uint64_t now_us);
+
 int
-drv_intel_ax211_assoc_accept(struct intel_ax211_assoc_state *state,
-			     const struct intel_ax211_assoc_command *command,
-			     const struct intel_ax211_assoc_reply *reply,
-			     uint64_t now_us);
+drv_intel_ax211_assoc_current(
+	const struct intel_ax211_assoc_state *state,
+	uint64_t now_us,
+	struct intel_ax211_assoc_command *command);
+
+int
+drv_intel_ax211_assoc_accept(
+	struct intel_ax211_assoc_state *state,
+	const struct intel_ax211_assoc_command *command,
+	const struct intel_ax211_assoc_reply *reply,
+	uint64_t now_us);
+
 /*
  * Accepts only an unsolicited v2-layout SESSION_PROTECTION_NOTIF from the
  * current firmware epoch.  SESSION_EXPIRED means a successful ASSOC
@@ -366,17 +390,29 @@ drv_intel_ax211_assoc_accept(struct intel_ax211_assoc_state *state,
  * means another MAC/configuration, a start, or an unsuccessful notification
  * made no state change.
  */
-int drv_intel_ax211_assoc_session_event_accept(
+int
+drv_intel_ax211_assoc_session_event_accept(
 	struct intel_ax211_assoc_state *state,
 	const struct intel_ax211_protocol_message *message,
-	uint64_t common_generation, uint32_t hardware_epoch);
-int drv_intel_ax211_assoc_expire(struct intel_ax211_assoc_state *state,
-				 uint64_t now_us);
-int drv_intel_ax211_assoc_cancel(struct intel_ax211_assoc_state *state,
-				 uint64_t common_generation,
-				 uint32_t hardware_epoch, uint64_t now_us);
-int drv_intel_ax211_assoc_drive(struct intel_ax211_assoc_state *state,
-				const struct intel_ax211_assoc_ops *ops,
-				void *argument);
+	uint64_t common_generation,
+	uint32_t hardware_epoch);
+
+int
+drv_intel_ax211_assoc_expire(
+	struct intel_ax211_assoc_state *state,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_assoc_cancel(
+	struct intel_ax211_assoc_state *state,
+	uint64_t common_generation,
+	uint32_t hardware_epoch,
+	uint64_t now_us);
+
+int
+drv_intel_ax211_assoc_drive(
+	struct intel_ax211_assoc_state *state,
+	const struct intel_ax211_assoc_ops *ops,
+	void *argument);
 
 #endif

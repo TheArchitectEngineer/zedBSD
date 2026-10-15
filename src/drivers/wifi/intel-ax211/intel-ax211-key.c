@@ -56,8 +56,10 @@ drv_intel_ax211_key_api89_validate(
 		return INTEL_AX211_KEY_INVALID;
 
 	/* Looks up the versions the image lists for the key command. */
-	result = drv_intel_ax211_protocol_command_version_lookup(
-		table, INTEL_AX211_KEY_FAMILY, INTEL_AX211_KEY_OPCODE, &version);
+	result = drv_intel_ax211_protocol_command_version_lookup(table,
+								 INTEL_AX211_KEY_FAMILY,
+								 INTEL_AX211_KEY_OPCODE,
+								 &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_KEY_UNSUPPORTED;
 

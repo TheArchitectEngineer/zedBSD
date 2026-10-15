@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -177,69 +175,123 @@ struct intel_ax211_transport {
 	uint8_t rx_dma_idle;
 };
 
-int drv_intel_ax211_transport_init(
+int
+drv_intel_ax211_transport_init(
 	struct intel_ax211_transport *transport,
-	const struct intel_ax211_transport_ops *ops, void *argument,
+	const struct intel_ax211_transport_ops *ops,
+	void *argument,
 	const struct intel_ax211_mmio_profile *profile,
 	const struct intel_ax211_transport_ring_memory *memory);
-int drv_intel_ax211_transport_configure_msix(
+
+int
+drv_intel_ax211_transport_configure_msix(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_initialize_rings(
+
+int
+drv_intel_ax211_transport_initialize_rings(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_enable_firmware_interrupts(
+
+int
+drv_intel_ax211_transport_enable_firmware_interrupts(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_enable_runtime_interrupts(
+
+int
+drv_intel_ax211_transport_enable_runtime_interrupts(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_disable_interrupts(
+
+int
+drv_intel_ax211_transport_disable_interrupts(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_interrupt_claim(
+
+int
+drv_intel_ax211_transport_interrupt_claim(
 	struct intel_ax211_transport *transport,
 	struct intel_ax211_transport_causes *causes);
-int drv_intel_ax211_transport_interrupt_rearm(
+
+int
+drv_intel_ax211_transport_interrupt_rearm(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_publish_rx_descriptor(
-	struct intel_ax211_transport *transport, uint16_t index,
+
+int
+drv_intel_ax211_transport_publish_rx_descriptor(
+	struct intel_ax211_transport *transport,
+	uint16_t index,
 	uint64_t device_address);
-/* Call only after the Gen3 hardware-ALIVE cause says firmware configured RFH.
+
+/*
+ * Call only after the Gen3 hardware-ALIVE cause says firmware configured RFH.
  */
 int
-drv_intel_ax211_transport_activate_rx(struct intel_ax211_transport *transport);
+drv_intel_ax211_transport_activate_rx(
+	struct intel_ax211_transport *transport);
+
 int
-drv_intel_ax211_transport_rx_refresh(struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_rx_next(
+drv_intel_ax211_transport_rx_refresh(
+	struct intel_ax211_transport *transport);
+
+int
+drv_intel_ax211_transport_rx_next(
 	struct intel_ax211_transport *transport,
 	struct intel_ax211_transport_rx_completion *completion);
+
 int
-drv_intel_ax211_transport_rx_replenish(struct intel_ax211_transport *transport,
-				       uint64_t device_address);
-int drv_intel_ax211_transport_command_prepare_inline(
+drv_intel_ax211_transport_rx_replenish(
 	struct intel_ax211_transport *transport,
-	const struct intel_ax211_command_id *command, const void *payload,
-	size_t payload_length, struct intel_ax211_ring_token *token);
-int drv_intel_ax211_transport_command_prepare_external(
+	uint64_t device_address);
+
+int
+drv_intel_ax211_transport_command_prepare_inline(
 	struct intel_ax211_transport *transport,
-	const struct intel_ax211_command_id *command, const void *payload,
-	size_t payload_length, struct intel_ax211_ring_token *token);
-int drv_intel_ax211_transport_command_publish(
+	const struct intel_ax211_command_id *command,
+	const void *payload,
+	size_t payload_length,
+	struct intel_ax211_ring_token *token);
+
+int
+drv_intel_ax211_transport_command_prepare_external(
+	struct intel_ax211_transport *transport,
+	const struct intel_ax211_command_id *command,
+	const void *payload,
+	size_t payload_length,
+	struct intel_ax211_ring_token *token);
+
+int
+drv_intel_ax211_transport_command_publish(
 	struct intel_ax211_transport *transport,
 	const struct intel_ax211_ring_token *token);
-int drv_intel_ax211_transport_command_abort_prepared(
+
+int
+drv_intel_ax211_transport_command_abort_prepared(
 	struct intel_ax211_transport *transport,
 	const struct intel_ax211_ring_token *token);
-int drv_intel_ax211_transport_command_submit_inline(
+
+int
+drv_intel_ax211_transport_command_submit_inline(
 	struct intel_ax211_transport *transport,
-	const struct intel_ax211_command_id *command, const void *payload,
+	const struct intel_ax211_command_id *command,
+	const void *payload,
 	size_t payload_length, struct intel_ax211_ring_token *token);
-int drv_intel_ax211_transport_command_complete(
+
+int
+drv_intel_ax211_transport_command_complete(
 	struct intel_ax211_transport *transport,
 	const struct intel_ax211_ring_token *token);
-size_t drv_intel_ax211_transport_command_pending_count(
+
+size_t
+drv_intel_ax211_transport_command_pending_count(
 	const struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_command_oldest(
+
+int
+drv_intel_ax211_transport_command_oldest(
 	const struct intel_ax211_transport *transport,
 	struct intel_ax211_ring_token *token);
-int drv_intel_ax211_transport_command_after_device_reset(
+
+int
+drv_intel_ax211_transport_command_after_device_reset(
 	struct intel_ax211_transport *transport);
-int drv_intel_ax211_transport_quiesce(struct intel_ax211_transport *transport);
+
+int
+drv_intel_ax211_transport_quiesce(
+	struct intel_ax211_transport *transport);
 
 #endif

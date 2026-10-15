@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -75,11 +73,16 @@ struct intel_ax211_rx_delivery {
 	uint8_t tsf_valid;
 };
 
-int drv_intel_ax211_rx_api89_validate(
+int
+drv_intel_ax211_rx_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
-int drv_intel_ax211_rx_mpdu_decode(
-	const struct intel_ax211_protocol_message *message, uint32_t generation,
-	uint8_t *output, size_t output_capacity,
+
+int
+drv_intel_ax211_rx_mpdu_decode(
+	const struct intel_ax211_protocol_message *message,
+	uint32_t generation,
+	uint8_t *output,
+	size_t output_capacity,
 	struct intel_ax211_rx_delivery *mpdu);
 
 #endif

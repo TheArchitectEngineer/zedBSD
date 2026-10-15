@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -297,39 +295,54 @@ struct intel_ax211_protocol_nvm {
 	uint8_t rx_chain_mask;
 	uint8_t firmware_regulatory;
 	uint32_t channel_total;
-	struct intel_ax211_protocol_channel
-		channel_24ghz[INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT];
+	struct intel_ax211_protocol_channel channel_24ghz[INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT];
 	size_t channel_24ghz_count;
 	size_t valid_24ghz_count;
-	struct intel_ax211_protocol_channel
-		channel_5ghz[INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT];
+	struct intel_ax211_protocol_channel channel_5ghz[INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT];
 	size_t channel_5ghz_count;
 	size_t valid_5ghz_count;
 };
 
-int drv_intel_ax211_protocol_command_table_parse(
-	const uint8_t *bytes, size_t length,
+int
+drv_intel_ax211_protocol_command_table_parse(
+	const uint8_t *bytes,
+	size_t length,
 	struct intel_ax211_protocol_command_table *table);
-int drv_intel_ax211_protocol_command_version_lookup(
-	const struct intel_ax211_protocol_command_table *table, uint8_t group,
-	uint8_t opcode, struct intel_ax211_protocol_command_version *version);
-int drv_intel_ax211_protocol_command_table_validate_api89(
+
+int
+drv_intel_ax211_protocol_command_version_lookup(
+	const struct intel_ax211_protocol_command_table *table,
+	uint8_t group,
+	uint8_t opcode,
+	struct intel_ax211_protocol_command_version *version);
+
+int
+drv_intel_ax211_protocol_command_table_validate_api89(
 	const struct intel_ax211_protocol_command_table *table);
 
-int drv_intel_ax211_protocol_command_response_validate(
+int
+drv_intel_ax211_protocol_command_response_validate(
 	const struct intel_ax211_protocol_message *message,
 	const struct intel_ax211_protocol_pending_command *pending);
 
-int drv_intel_ax211_protocol_alive_decode(
-	const struct intel_ax211_protocol_message *message, uint32_t generation,
+int
+drv_intel_ax211_protocol_alive_decode(
+	const struct intel_ax211_protocol_message *message,
+	uint32_t generation,
 	struct intel_ax211_protocol_alive *alive);
-int drv_intel_ax211_protocol_pnvm_accepted(
+
+int
+drv_intel_ax211_protocol_pnvm_accepted(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation);
-int drv_intel_ax211_protocol_init_finished(
+
+int
+drv_intel_ax211_protocol_init_finished(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation);
-int drv_intel_ax211_protocol_nvm_query_decode(
+
+int
+drv_intel_ax211_protocol_nvm_query_decode(
 	const struct intel_ax211_protocol_message *message,
 	const struct intel_ax211_protocol_pending_command *pending,
 	struct intel_ax211_protocol_nvm *nvm);

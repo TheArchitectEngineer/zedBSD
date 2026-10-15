@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -193,45 +191,63 @@ struct intel_ax211_frame_ring {
 	uint8_t reserved[2];
 };
 
-int drv_intel_ax211_tx_ring_api89_validate(
+int
+drv_intel_ax211_tx_ring_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
 
-int drv_intel_ax211_tx_ring_allocate(struct drv_dma_device *dma_device,
-				     const struct intel_ax211_tx_ring_ops *ops,
-				     void *ops_argument,
-				     struct intel_ax211_frame_ring *ring);
+int
+drv_intel_ax211_tx_ring_allocate(
+	struct drv_dma_device *dma_device,
+	const struct intel_ax211_tx_ring_ops *ops,
+	void *ops_argument,
+	struct intel_ax211_frame_ring *ring);
 
-int drv_intel_ax211_tx_ring_queue_add_build(
-	const struct intel_ax211_frame_ring *ring, uint8_t station_id, uint8_t tid,
+int
+drv_intel_ax211_tx_ring_queue_add_build(
+	const struct intel_ax211_frame_ring *ring,
+	uint8_t station_id,
+	uint8_t tid,
 	struct intel_ax211_tx_queue_config *config);
 
-int drv_intel_ax211_tx_ring_queue_add_complete(
+int
+drv_intel_ax211_tx_ring_queue_add_complete(
 	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_tx_queue_config *config,
-	uint32_t hardware_generation, uint64_t connection_generation,
+	uint32_t hardware_generation,
+	uint64_t connection_generation,
 	const struct intel_ax211_protocol_message *message,
 	const struct intel_ax211_protocol_pending_command *pending);
 
-int drv_intel_ax211_tx_ring_submit(struct intel_ax211_frame_ring *ring,
-				   const struct intel_ax211_tx_request *request,
-				   uint64_t now, uint64_t timeout,
-				   struct intel_ax211_tx_ring_handle *handle);
+int
+drv_intel_ax211_tx_ring_submit(
+	struct intel_ax211_frame_ring *ring,
+	const struct intel_ax211_tx_request *request,
+	uint64_t now,
+	uint64_t timeout,
+	struct intel_ax211_tx_ring_handle *handle);
 
-int drv_intel_ax211_tx_ring_complete(
+int
+drv_intel_ax211_tx_ring_complete(
 	struct intel_ax211_frame_ring *ring,
 	const struct intel_ax211_protocol_message *message,
 	struct intel_ax211_tx_ring_retired *retired);
 
-int drv_intel_ax211_tx_ring_timeout_oldest(
-	struct intel_ax211_frame_ring *ring, uint64_t now,
+int
+drv_intel_ax211_tx_ring_timeout_oldest(
+	struct intel_ax211_frame_ring *ring,
+	uint64_t now,
 	struct intel_ax211_tx_ring_handle *handle);
 
 /* dma_quiesced is proof that queue 1 can no longer access host memory. */
-int drv_intel_ax211_tx_ring_reset(struct intel_ax211_frame_ring *ring,
-				  int dma_quiesced);
+int
+drv_intel_ax211_tx_ring_reset(
+	struct intel_ax211_frame_ring *ring,
+	int dma_quiesced);
 
 /* Release has the same barrier rule and frees allocations in reverse order. */
-int drv_intel_ax211_tx_ring_release(struct intel_ax211_frame_ring *ring,
-				    int dma_quiesced);
+int
+drv_intel_ax211_tx_ring_release(
+	struct intel_ax211_frame_ring *ring,
+	int dma_quiesced);
 
 #endif

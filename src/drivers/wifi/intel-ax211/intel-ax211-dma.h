@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -116,7 +114,8 @@ struct intel_ax211_dma_resources {
 
 int
 drv_intel_ax211_dma_prepare_boot(
-	struct drv_dma_device *device, const uint8_t *firmware_bytes,
+	struct drv_dma_device *device,
+	const uint8_t *firmware_bytes,
 	size_t firmware_length,
 	const struct intel_ax211_firmware_manifest *manifest,
 	uint16_t hardware_revision,
@@ -128,7 +127,8 @@ drv_intel_ax211_dma_prepare_boot(
  */
 int
 drv_intel_ax211_dma_prepare_pnvm(
-	const uint8_t *pnvm_bytes, size_t pnvm_length,
+	const uint8_t *pnvm_bytes,
+	size_t pnvm_length,
 	const struct intel_ax211_pnvm_manifest *manifest,
 	struct intel_ax211_dma_resources *resources);
 
@@ -141,7 +141,8 @@ drv_intel_ax211_dma_release_boot_images(
 	struct intel_ax211_dma_resources *resources);
 
 void
-drv_intel_ax211_dma_release(struct intel_ax211_dma_resources *resources);
+drv_intel_ax211_dma_release(
+	struct intel_ax211_dma_resources *resources);
 
 #ifdef INTEL_AX211_DMA_HOST_TEST
 void

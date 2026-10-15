@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -128,13 +126,21 @@ struct intel_ax211_tx_completion {
 	uint8_t frame_retries;
 };
 
-int drv_intel_ax211_tx_api89_validate(
+int
+drv_intel_ax211_tx_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
-int drv_intel_ax211_tx_prepare(const struct intel_ax211_tx_request *request,
-			       struct intel_ax211_tx_prepared *prepared);
-int drv_intel_ax211_tx_completion_decode(
+
+int
+drv_intel_ax211_tx_prepare(
+	const struct intel_ax211_tx_request *request,
+	struct intel_ax211_tx_prepared *prepared);
+
+int
+drv_intel_ax211_tx_completion_decode(
 	const struct intel_ax211_protocol_message *message,
-	uint32_t hardware_generation, uint16_t expected_queue,
-	uint8_t expected_index, struct intel_ax211_tx_completion *completion);
+	uint32_t hardware_generation,
+	uint16_t expected_queue,
+	uint8_t expected_index,
+	struct intel_ax211_tx_completion *completion);
 
 #endif

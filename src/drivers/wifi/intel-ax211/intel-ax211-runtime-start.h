@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -128,22 +126,35 @@ struct intel_ax211_runtime_start {
 	uint8_t last_error;
 };
 
-int drv_intel_ax211_runtime_start_init(
+int
+drv_intel_ax211_runtime_start_init(
 	struct intel_ax211_runtime_start *session,
-	const struct intel_ax211_runtime_start_ops *ops, void *argument,
-	struct drv_dma_device *dma_device, struct intel_ax211_mmio *mmio,
-	struct intel_ax211_transport *transport, uint16_t hardware_revision,
+	const struct intel_ax211_runtime_start_ops *ops,
+	void *argument,
+	struct drv_dma_device *dma_device,
+	struct intel_ax211_mmio *mmio,
+	struct intel_ax211_transport *transport,
+	uint16_t hardware_revision,
 	uint16_t rf_type,
 	const struct intel_ax211_protocol_command_table *command_table,
-	const struct intel_ax211_protocol_nvm *nvm, int ltr_enabled,
+	const struct intel_ax211_protocol_nvm *nvm,
+	int ltr_enabled,
 	uint32_t generation_seed);
-int drv_intel_ax211_runtime_start_run(
+
+int
+drv_intel_ax211_runtime_start_run(
 	struct intel_ax211_runtime_start *session);
-int drv_intel_ax211_runtime_start_stop(
+
+int
+drv_intel_ax211_runtime_start_stop(
 	struct intel_ax211_runtime_start *session);
-int drv_intel_ax211_runtime_start_cleanup(
+
+int
+drv_intel_ax211_runtime_start_cleanup(
 	struct intel_ax211_runtime_start *session);
-int drv_intel_ax211_runtime_start_mcc(
+
+int
+drv_intel_ax211_runtime_start_mcc(
 	const struct intel_ax211_runtime_start *session,
 	struct intel_ax211_runtime_mcc *mcc);
 

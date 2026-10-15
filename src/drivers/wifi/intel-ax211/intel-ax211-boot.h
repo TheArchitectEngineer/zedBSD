@@ -1,5 +1,3 @@
-/* -*- mode: c; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*- */
-
 /*
  * zedBSD
  * Copyright (C) 2026 Awe Morris
@@ -26,8 +24,8 @@
 #include <stdint.h>
 
 /*
- * zedBSD's bounds of the first boot: the size of one copied event, the most
- * events read while waiting for one, and the time each step may take.
+ * The size of one copied event, the most events read while waiting
+ * for one, and the time each step may take.
  */
 #define INTEL_AX211_BOOT_EVENT_CAPACITY 4096U
 #define INTEL_AX211_BOOT_EVENT_LIMIT 64U
@@ -157,17 +155,29 @@ struct intel_ax211_boot {
 	uint8_t last_error;
 };
 
-int drv_intel_ax211_boot_init(struct intel_ax211_boot *boot,
-			      const struct intel_ax211_boot_ops *ops,
-			      void *argument, struct drv_dma_device *dma_device,
-			      struct intel_ax211_mmio *mmio,
-			      struct intel_ax211_transport *transport,
-			      uint16_t hardware_revision, uint16_t rf_type,
-			      uint32_t generation_seed);
-int drv_intel_ax211_boot_run(struct intel_ax211_boot *boot,
-			     struct intel_ax211_protocol_nvm *nvm);
-int drv_intel_ax211_boot_cleanup(struct intel_ax211_boot *boot);
-int drv_intel_ax211_boot_command_table(
+int
+drv_intel_ax211_boot_init(
+	struct intel_ax211_boot *boot,
+	const struct intel_ax211_boot_ops *ops,
+	void *argument,
+	struct drv_dma_device *dma_device,
+	struct intel_ax211_mmio *mmio,
+	struct intel_ax211_transport *transport,
+	uint16_t hardware_revision,
+	uint16_t rf_type,
+	uint32_t generation_seed);
+
+int
+drv_intel_ax211_boot_run(
+	struct intel_ax211_boot *boot,
+	struct intel_ax211_protocol_nvm *nvm);
+
+int
+drv_intel_ax211_boot_cleanup(
+	struct intel_ax211_boot *boot);
+
+int
+drv_intel_ax211_boot_command_table(
 	const struct intel_ax211_boot *boot,
 	struct intel_ax211_protocol_command_table *table);
 
