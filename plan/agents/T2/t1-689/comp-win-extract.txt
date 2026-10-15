@@ -1,0 +1,9 @@
+KWL PERF compose frames=29 draw_ms=0.90 (acquire 6.09 submit+present 11.54) frame_ms=32.81
+KWL PERF rec frames=29 copied=0 begin=1.38 encode=0.30 end=1.65 submit=2.48 present=5.44 | max end=5.13 submit=4.19 present=22.18
+KWL PERF main ticks=346.5 input=0.5 clients=249.3 frame_done=38.0 schedule=591.2 flush=7.8 other=85.9 | schedule ticks=491.0 adopt=9.2 shm=2.1 cursor=1.3 layers=1.0 draw=26.1 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF compose frames=100 draw_ms=1.07 (acquire 5.34 submit+present 9.61) frame_ms=29.43
+KWL PERF rec frames=100 copied=0 begin=1.16 encode=0.13 end=1.31 submit=2.06 present=4.62 | max end=4.85 submit=6.41 present=11.45
+KWL PERF main ticks=677.1 input=0.9 clients=104.2 frame_done=80.8 schedule=1115.7 flush=19.7 other=197.2 | schedule ticks=876.9 adopt=23.1 shm=3.3 cursor=3.4 layers=0.1 draw=107.3 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF compose frames=99 draw_ms=1.07 (acquire 5.96 submit+present 9.90) frame_ms=29.08
+KWL PERF rec frames=99 copied=0 begin=1.20 encode=0.16 end=1.37 submit=2.15 present=4.69 | max end=3.26 submit=4.81 present=10.08
+KWL PERF main ticks=717.4 input=1.1 clients=103.6 frame_done=75.8 schedule=1137.2 flush=25.7 other=212.2 | schedule ticks=912.5 adopt=20.1 shm=3.7 cursor=2.4 layers=0.3 draw=106.3 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00

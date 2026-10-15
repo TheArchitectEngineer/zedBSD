@@ -1,0 +1,18 @@
+VIDEOPLAYER FRAMES shown=1 time_ms=16 late=1
+VIDEOPLAYER DRAW frames=19 picture_us=3368 rest_us=40210 gpu=18 acquire_us=17473 submit_us=6105 wait_us=1263
+VIDEOPLAYER DRAW frames=20 picture_us=2600 rest_us=38150 gpu=20 acquire_us=28000 submit_us=3600 wait_us=1650
+VIDEOPLAYER DRAW frames=21 picture_us=2619 rest_us=35142 gpu=21 acquire_us=25380 submit_us=4619 wait_us=1476
+VIDEOPLAYER DRAW frames=20 picture_us=100 rest_us=39300 gpu=20 acquire_us=29550 submit_us=4350 wait_us=1750
+VIDEOPLAYER FRAMES shown=100 time_ms=3266 late=97
+VIDEOPLAYER DRAW frames=21 picture_us=47 rest_us=36857 gpu=21 acquire_us=27809 submit_us=4190 wait_us=1714
+VIDEOPLAYER DRAW frames=19 picture_us=210 rest_us=42578 gpu=19 acquire_us=32263 submit_us=5000 wait_us=1894
+VIDEOPLAYER DRAW frames=20 picture_us=0 rest_us=39700 gpu=20 acquire_us=28600 submit_us=5350 wait_us=1550
+VIDEOPLAYER DRAW frames=20 picture_us=50 rest_us=41200 gpu=20 acquire_us=30850 submit_us=4050 wait_us=2100
+VIDEOPLAYER DRAW frames=20 picture_us=0 rest_us=38850 gpu=20 acquire_us=28150 submit_us=4500 wait_us=1900
+VIDEOPLAYER DRAW frames=19 picture_us=315 rest_us=41842 gpu=19 acquire_us=29736 submit_us=5263 wait_us=1894
+VIDEOPLAYER FRAMES shown=200 time_ms=6533 late=193
+VIDEOPLAYER DRAW frames=22 picture_us=181 rest_us=36954 gpu=22 acquire_us=26954 submit_us=4909 wait_us=1454
+VIDEOPLAYER DRAW frames=20 picture_us=0 rest_us=41800 gpu=20 acquire_us=31550 submit_us=4600 wait_us=1600
+VIDEOPLAYER DRAW frames=21 picture_us=95 rest_us=38238 gpu=21 acquire_us=27047 submit_us=5333 wait_us=1285
+VIDEOPLAYER DRAW frames=21 picture_us=285 rest_us=37809 gpu=21 acquire_us=26714 submit_us=4904 wait_us=2285
+VIDEOPLAYER FRAMES shown=298 time_ms=15189 late=288
