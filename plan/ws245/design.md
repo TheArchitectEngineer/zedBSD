@@ -558,7 +558,7 @@ struct i915_xd_ops { /* §6.1: 口の実装の表。p003 では old の adapter 
 | p012 | **旧 code の削除と出典の監査**: 旧 40 file と `internal.h` の Linux の型、`old-xd.c`、`dc9.c`、`i915.display=old`、`struct i915_xd_ops`（wrapper を直接の関数に）、`intel/` の Gen12 だけが使う header（WS244 と分担）、`tests/execution/ktest-display.c`・`ktest-display-probe.c`（Linux の型に依存: 消し、kernel で意味のある検査（起動の段の順、well の読み）は `xd.h` の上の小さな ktest に書き直す）、`ktest-gt.c` の `display/hotplug.h`・`power.h` の include を `xd.h` に、display の ktest の set（`vmunix.mk` の 3 行）の整理、旧 host 試験の削除（§6.4）、`host-xd-regs-test.c` の置き換え、"Derived from the Linux kernel" と Linux の MIT の表示を Gen12 の file から消す | `inventory.py` の Gen12 の file の C と S の行が 0、file の先頭に出典が無い（grep）、block ごとの "Value(s) referenced:"/"Procedure referenced:"（複数行 comment）の grep、関数名の対応表の目視、build warning 0（`I915_TESTS=y` でも）、Venus の image の boot-test（T1）。**5330（ユーザー）**: p009〜p011 の 3 つを旧 code 無しで | p011、ユーザーの確認（p009〜p011） | 3 |
 | p013 | **規約の全文の見直し**（conformance-reviewer） | `plan/coding-style.md` の全文の checklist、`git diff --check`、build | p012 | 2 |
 
-LW の合計 **51**（±40 %。**1 LW ≈ 担当 1 人の実時間 1〜2 時間**で見積もった: 51 LW ≈ 51〜102 時間の担当の実時間。初版の 36 LW は換算が揃っておらず、B4 の adapter、B3 の CDCLK、B5 の TC、B6 の IRQ の hook、M3 の DBUF の遷移、M5 の DMC、M9 の ktest、M13 の quiesce、own の型の分離を数えていなかった: M18）。
+LW の合計 **51**（±40 %。〔2026-10-15 Q1 訂正: 換算は 1 LW ≈ 実時間 15〜25 分（2026-10-14 ユーザーの較正「8 LWは、だいたい実時間で2～3時間です。十分行けます。」、2026-10-15 ユーザーがこの換算を正と承認）。51 LW ≈ 実時間 13〜21 時間。改訂 2 の「1〜2 時間」は古い換算〕初版の 36 LW は換算が揃っておらず、B4 の adapter、B3 の CDCLK、B5 の TC、B6 の IRQ の hook、M3 の DBUF の遷移、M5 の DMC、M9 の ktest、M13 の quiesce、own の型の分離を数えていなかった: M18）。
 p004・p005・p006 は互いに独立なので担当が空けば並べられる（host 試験だけで QEMU を塞がない）。p009 以降は 5330 のユーザーの確かめが要るので、1 つずつ。
 
 Phase ごとの出力: p002・p004〜p008 は「新しい file + host 試験」だけで kernel の振る舞いは変わらない。p003 は own の file の付け替え（振る舞いは変わらない筈: 5330 で確かめる）。p009 が最初に kernel の振る舞いを変える Phase。
@@ -660,7 +660,7 @@ B1（記録の誤り）は Q1 が取り消し済み。下の表は B2〜B6・M1�
 | M15 PRM の許諾が ADL-P に及ぶか | 直した（決定 3・4） | 手順の根拠を Linux に移し、PRM は意味の理解と Linux に無い値だけ。PRM の文は写さない | §0.2 |
 | M16 §5.4 が guardrail と食い違う | 直した（決定 3） | Procedure referenced に Linux の関数を書く規則に | §5.4 |
 | M17 module が Linux の file と 1 対 1 | 直した | 境界の根拠（hardware の単位）の列を足し、25 → 19（opregion→vbt、pcode→io、phy+hdmi→ddi、dkl→tc、pps+backlight→panel、trans+plane→pipe、wm→dbuf）。残る 1 対 1 は hardware/規格が 1 単位の物 | §3.2 |
-| M18 LW の過小評価と換算 | 直した | 1 LW ≈ 1〜2 時間で揃え、足した作業を数えて 36 → 51 LW | §6.2 |
+| M18 LW の過小評価と換算 | 直した（換算は 2026-10-15 に 1 LW ≈ 15〜25 分へ訂正） | 1 LW ≈ 1〜2 時間で揃え、足した作業を数えて 36 → 51 LW | §6.2 |
 | M19 Tiger Lake を支えない事は機能を失う | 指摘どおり（2026-10-15 訂正: display 12 は実機で動作確認済み、xd に含める。設計は次の改訂） | display 12 の分岐は持たない。5320 の i915 の display は失われる（bootfb）。§7 から外し §4.4 に帰結を書いた | §4.4 |
 | m1 ADL の公開 PRM の有無の再確認 | 直さない | 決定 3 で PRM は補助になり、ADL-P の版の有無は設計を止めない。2026-10-15 の索引の確認を記録に残す（再確認はしていない） | §0.1 |
 | m2 DPLL4 | 直した | `adlp_plls` は DPLL0/1・TBT・TC PLL 1..4。DPLL4 は無い | §2.1、§2.6 |
