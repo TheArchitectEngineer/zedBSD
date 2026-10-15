@@ -8,21 +8,6 @@
 /*
  * BCM43455: encoding the radio operations' messages and reading their
  * results.
- *
- * Sources (values and layouts only, plan/ws206/phase005/phase.md lists
- * each): OpenBSD bwfm(4) (ISC), sys/dev/ic/bwfmreg.h 1.26 (the channel
- * specification bits, the escan request in both layouts, the escan
- * result, the network description, the join and key messages) and bwfm.c
- * 1.113 (bwfm_spec2chan_d11n(), bwfm_spec2chan_d11ac(), bwfm_scan_v2(),
- * bwfm_scan_node()); Infineon's WHD (Apache-2.0) tree bd99da7b,
- * whd_wlioctl.h (the command numbers, the abort with action 3, the key
- * as hex text marked as a passphrase in whd_wifi_sae_password()),
- * whd_events_int.h and whd_cdc_bdc.c (the supplicant's states and
- * reasons as the firmware numbers them) and whd_wifi_api.c
- * (whd_wifi_join_events_handler(): which supplicant failure means a
- * timeout waiting for message 1, 3 or the group key).  The mapping of
- * failures to errors is this driver's own, after the WLAN core's
- * SoftMAC rules.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-radio.h"
@@ -30,10 +15,20 @@
 #include <kern/kcrt.h>
 #include <uapi/errno.h>
 
-/* The channel specification's channel number. */
+/*
+ * The channel specification's channel number.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 194-234).
+ */
 #define CHANSPEC_CHANNEL_MASK		0x00ffU
 
-/* The 802.11n layout: the primary part, the width and the band. */
+/*
+ * The 802.11n layout: the primary part, the width and the band.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 194-234).
+ */
 #define D11N_PART_MASK			0x0300U
 #define D11N_PART_LOWER			0x0100U
 #define D11N_PART_UPPER			0x0200U
@@ -44,7 +39,12 @@
 #define D11N_BAND_5G			0x1000U
 #define D11N_BAND_2G			0x2000U
 
-/* The 802.11ac layout: the primary part (three bits), the width and the band. */
+/*
+ * The 802.11ac layout: the primary part (three bits), the width and the band.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 194-234).
+ */
 #define D11AC_PART_MASK			0x0700U
 #define D11AC_PART_SHIFT		8U
 #define D11AC_WIDTH_MASK		0x3800U
@@ -54,17 +54,34 @@
 #define D11AC_BAND_2G			0x0000U
 #define D11AC_BAND_5G			0xc000U
 
-/* The escan request: its version, the action and the scan's id. */
+/*
+ * The escan request: its version, the action and the scan's id.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 509-575); Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 496-554).
+ */
 #define ESCAN_VERSION			0U
 #define ESCAN_ACTION			4U
 #define ESCAN_SYNC_ID			6U
 #define ESCAN_PARAMETERS		8U
 
-/* The escan request's version for each layout. */
+/*
+ * The escan request's version for each layout.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 509-575); Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 496-554).
+ */
 #define ESCAN_VERSION_V0		1U
 #define ESCAN_VERSION_V2		2U
 
-/* The scan parameters of layout 0, from their start. */
+/*
+ * The scan parameters of layout 0, from their start.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 509-575).
+ */
 #define V0_SSID_LENGTH			0U
 #define V0_BSSID			36U
 #define V0_BSS_TYPE			42U
@@ -76,7 +93,12 @@
 #define V0_CHANNELS			60U
 #define V0_CHANNEL_LIST			64U
 
-/* The scan parameters of layout 2, from their start. */
+/*
+ * The scan parameters of layout 2, from their start.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 509-575).
+ */
 #define V2_VERSION			0U
 #define V2_LENGTH			2U
 #define V2_SSID_LENGTH			4U
@@ -90,18 +112,38 @@
 #define V2_CHANNELS			68U
 #define V2_CHANNEL_LIST			72U
 
-/* Any kind of network, an active or a passive scan, and the firmware's own timing (-1). */
+/*
+ * Any kind of network, an active or a passive scan, and the firmware's own
+ * timing (-1).
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 509-575); OpenBSD sys/dev/ic/bwfm.c revision 1.113 (bwfm_scan_v2(), lines
+ * 2138-2255).
+ */
 #define NETWORK_KIND_ANY			2U
 #define SCAN_PROBING		0U
 #define SCAN_LISTENING		1U
 #define FIRMWARE_DEFAULT		0xffffffffU
 
-/* The escan result's header: its length, version, the scan's id and the number of networks. */
+/*
+ * The escan result's header: its length, version, the scan's id and the number
+ * of networks.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 577-583); Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 556-562).
+ */
 #define RESULT_SYNC_ID			8U
 #define RESULT_COUNT			10U
 #define RESULT_FIRST			12U
 
-/* The network description. */
+/*
+ * The network description.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 344-375); Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (line 493, the version 109).
+ */
 #define BSS_LENGTH			4U
 #define BSS_BSSID			8U
 #define BSS_BEACON_PERIOD		14U
@@ -128,20 +170,38 @@
 /* The longest SSID. */
 #define SSID_MAX			32U
 
-/* The join request: the SSID, then the BSSID, its count, and the channel list. */
+/*
+ * The join request: the SSID, then the BSSID, its count, and the channel list.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 4239-4256); OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 585-611).
+ */
 #define JOIN_SSID_LENGTH		0U
 #define JOIN_SSID			4U
 #define JOIN_BSSID			36U
 #define JOIN_CHANNELS			44U
 #define JOIN_CHANNEL_LIST		48U
 
-/* The key message: the key's length, its flags (text) and the hex digits. */
+/*
+ * The key message: the key's length, its flags (text) and the hex digits.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 781-785); OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 649-654).
+ */
 #define KEY_LENGTH			0U
 #define KEY_FLAGS			2U
 #define KEY_TEXT			4U
 #define KEY_FLAG_PASSPHRASE		0x0001U
 
-/* The event statuses this driver tells apart (firmware numbering). */
+/*
+ * The event statuses this driver tells apart (firmware numbering).
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 736-751); Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/inc/whd_events.h (lines 61-77).
+ */
 #define STATUS_SUCCESS			0U
 #define STATUS_FAIL			1U
 #define STATUS_TIMEOUT			2U
@@ -154,16 +214,35 @@
 #define STATUS_NEWSCAN			9U
 #define STATUS_NEWASSOC			10U
 
-/* The link event's flag that says the link is up. */
+/*
+ * The link event's flag that says the link is up.
+ *
+ * Value referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (line 58).
+ */
 #define LINK_UP				0x0001U
 
-/* The supplicant's states (the firmware's numbers, without WHD's offset of 256). */
+/*
+ * The supplicant's states, as the firmware numbers them.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_events_int.h (lines 224-236) and
+ * WHD/COMPONENT_WIFI6/src/whd_cdc_bdc.c (lines 867-870, an offset of 256 this
+ * driver does not add).
+ */
 #define SUPPLICANT_KEYED		6U
 #define SUPPLICANT_WAIT_MESSAGE_1	4U
 #define SUPPLICANT_WAIT_MESSAGE_3	8U
 #define SUPPLICANT_WAIT_GROUP_1		10U
 
-/* The supplicant's reasons (the firmware's numbers, without WHD's offset of 512). */
+/*
+ * The supplicant's reasons, as the firmware numbers them.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_events_int.h (lines 329-344) and
+ * WHD/COMPONENT_WIFI6/src/whd_cdc_bdc.c (lines 867-870, an offset of 512 this
+ * driver does not add).
+ */
 #define SUPPLICANT_REASON_DEAUTHENTICATED	14U
 #define SUPPLICANT_REASON_TIMEOUT		15U
 
@@ -227,6 +306,9 @@ bcm43455_chanspec_from_channel(
 
 /*
  * Reads the primary channel of a channel specification.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_spec2chan_d11n() and bwfm_spec2chan_d11ac(), lines 1903-1983).
  */
 int
 bcm43455_chanspec_control_channel(
@@ -254,6 +336,10 @@ bcm43455_chanspec_control_channel(
 
 /*
  * Writes an escan request for one channel, or an abort.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_scan_v2(), lines 2138-2255); Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (the abort, lines 3394-3419).
  */
 int
 bcm43455_escan_encode(
@@ -324,7 +410,7 @@ bcm43455_escan_encode(
 		if (channels != 0)
 			bcm43455_put_le16(parameters + V0_CHANNEL_LIST, chanspec);
 	} else {
-		/* Layout 2 also carries its version and, as bwfm(4) sets it, the request's whole length. */
+		/* Layout 2 also carries its version and the request's whole length. */
 		bcm43455_put_le16(parameters + V2_VERSION, (uint16_t)ESCAN_VERSION_V2);
 		bcm43455_put_le16(parameters + V2_LENGTH, (uint16_t)request_length);
 		kern_memset(parameters + V2_BSSID, 0xff, 6U);
@@ -346,6 +432,9 @@ bcm43455_escan_encode(
 
 /*
  * Decodes the header of an escan result event's data.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113 (lines
+ * 2611-2665).
  */
 int
 bcm43455_escan_result_decode(
@@ -372,6 +461,9 @@ bcm43455_escan_result_decode(
 
 /*
  * Measures the network description at offset of an escan result's data.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113 (lines
+ * 2611-2665).
  */
 int
 bcm43455_bss_length(
@@ -402,6 +494,10 @@ bcm43455_bss_length(
 
 /*
  * Turns one network description into a probe response.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_scan_node(), lines 2717-2763); the SSID and DS parameter elements are
+ * made here.
  */
 int
 bcm43455_bss_to_frame(
@@ -498,6 +594,9 @@ bcm43455_bss_to_frame(
 
 /*
  * Writes a join request.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (lines 2343-2386).
  */
 int
 bcm43455_join_encode(
@@ -537,6 +636,10 @@ bcm43455_join_encode(
 
 /*
  * Writes the supplicant's key message for a PMK.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (whd_wifi_sae_password(), lines
+ * 1140-1176).
  */
 void
 bcm43455_key_encode(
@@ -594,7 +697,7 @@ bcm43455_scan_classify(
 /*
  * Reads what an event means to the connection being made.
  *
- * The table (plan/ws206/phase005/phase.md keeps the same one):
+ * The table:
  *   join result success, or the link coming up       ASSOCIATED
  *   supplicant keyed                                  AUTHORIZED
  *   join result: no network, timeout, no ack         ETIMEDOUT
@@ -813,7 +916,14 @@ classify_attempt(
 	}
 }
 
-/* Reads a supplicant event before the key was set. */
+/*
+ * Reads a supplicant event before the key was set.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/whd_wifi_api.c (whd_wifi_join_events_handler(), lines
+ * 1360-1400); the errors are this driver's own, after the WLAN core's SoftMAC
+ * rules.
+ */
 static void
 classify_handshake(
 	uint32_t status,

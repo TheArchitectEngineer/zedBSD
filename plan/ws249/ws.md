@@ -3,11 +3,11 @@
 # WS249: BCM43455（Raspberry Pi 4 の WiFi）の driver の出典の表記と規約の整理
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-15 作成。WS248 の後に P2 が q1205 で行う予定）
+Status: incomplete（2026-10-15 作成。p001 cleared、P2 が q1205 で p002 を実行中）
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS248](../ws248/ws.md)（AX211 での同じ整理、手順の手本）、[WS215](../ws215/ws.md)（Pi 4 の Bluetooth、同じ chip）
-Resume point: WS248 の後に P2（q1205、予約。2026-10-15 ユーザー「WS248のあとでOKです。」）。
+Resume point: q1205（P2）の p002。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -34,5 +34,5 @@ Resume point: WS248 の後に P2（q1205、予約。2026-10-15 ユーザー「WS
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 出典の表記: file の先頭の出典を除き block ごとの Value(s)/Procedure referenced: へ、本文の出典の名前の除去、出典と一致する symbol 名の付け直し | planned |
-| [p002](phase002/phase.md) | 規約の全文の見直し | planned |
+| [p001](phase001/phase.md) | 出典の表記: file の先頭の出典を除き block ごとの Value(s)/Procedure referenced: へ、本文の出典の名前の除去、出典と一致する symbol 名の付け直し | cleared（2026-10-15、q1205、P2） |
+| [p002](phase002/phase.md) | 規約の全文の見直し | in-progress（q1205、P2） |

@@ -14,14 +14,6 @@
  * low fifteen go into the function 1 address.  Each core has a wrapper
  * whose reset and I/O control registers start, stop and halt it.
  *
- * Sources: the order of the register operations follows OpenBSD's bwfm(4)
- * (ISC), sys/dev/ic/bwfm.c 1.113 (bwfm_chip_attach(), bwfm_chip_ai_disable(),
- * bwfm_chip_ai_reset(), bwfm_chip_dmp_erom_scan(), bwfm_chip_cr4_set_passive(),
- * bwfm_chip_cr4_set_active(), bwfm_chip_tcm_ramsize(), bwfm_chip_sr_capable())
- * and sys/dev/sdmmc/if_bwfm_sdio.c 1.44 (the attach, the download and
- * bwfm_sdio_preinit()).  Only the facts (which register, which value, in
- * which order) were taken; the functions, their split and the comments
- * are this driver's own.  plan/ws206/phase004/values.md has the lines.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-chip.h"
@@ -109,7 +101,7 @@ bcm43455_chip_identify(
 	    bus != BCM43455_CHIP_BUS_AXI)
 		return ENODEV;
 
-	/* Reads the capabilities, logged for the save-restore question (R8). */
+	/* Reads the capabilities, logged for the save-restore question. */
 	error = bcm43455_chip_read32(chip, BCM43455_CHIPCOMMON_BASE + BCM43455_CHIPCOMMON_CAPABILITY, &chip->capability);
 	if (error != 0)
 		return error;
@@ -261,14 +253,18 @@ bcm43455_chip_read_memory(
 /*
  * Writes the firmware and the NVRAM and starts the ARM core.
  *
- * The order (slow clock, firmware, read back, NVRAM below the top of RAM,
- * read back, reset vector at address 0, ARM core released, clock given
- * back) is bwfm's bwfm_sdio_load_microcode() and
- * bwfm_sdio_buscore_activate().  The download runs on the slow (ALP)
- * clock: bwfm_sdio_preinit() sets sc_alp_only around the download, so
- * bwfm_sdio_htclk() asks for ALP, not HT.  The fast clock needs the PMU
- * resources the firmware sets up from the NVRAM, so before the firmware
- * runs it never comes (BUG-311: "fast clock not available" on the Pi 4).
+ * The order is: slow clock, firmware, read back, NVRAM below the top of
+ * RAM, read back, reset vector at address 0, ARM core released, clock given
+ * back.  The download runs on the slow (ALP) clock, not the fast (HT) one.
+ * The fast clock needs the PMU resources the firmware sets up from the
+ * NVRAM, so before the firmware runs it never comes (on the Pi 4 the wait
+ * for it ends in "fast clock not available").
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_load_microcode(), bwfm_sdio_buscore_activate(),
+ * bwfm_sdio_preinit() and bwfm_sdio_htclk(), lines 500-548 and 596-640) and
+ * OpenBSD sys/dev/ic/bwfm.c revision 1.113 (bwfm_chip_cr4_set_active(), lines
+ * 1275-1285).
  */
 int
 bcm43455_chip_download(
@@ -346,11 +342,13 @@ bcm43455_chip_download(
 }
 
 /*
- * Brings the frame function up behind the running firmware.
+ * Brings the frame function up behind the running firmware, the
+ * save-restore branch included.  The interrupt enable sets master, F1 and
+ * F2.
  *
- * The order is bwfm's bwfm_sdio_preinit(), the save-restore branch
- * included; the interrupt enable is WHD's (whd_bus_sdio_protocol.c,
- * master, F1 and F2).
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_preinit(), lines 432-462) and Infineon wifi-host-driver bd99da7b
+ * whd_bus_sdio_protocol.c (lines 410-411).
  */
 int
 bcm43455_chip_start(
@@ -409,7 +407,7 @@ bcm43455_chip_start(
 	 * With save-restore the firmware decides when the chip sleeps: the
 	 * chip waits for the fast clock when it wakes, the card takes CMD14,
 	 * and only the force bit stays.  Without it the host's request is put
-	 * back as it was before the force (R8).
+	 * back as it was before the force.
 	 */
 	if (chip->save_restore) {
 		error = chip->ops->read_byte(chip->context, BCM43455_FUNCTION_BACKPLANE, BCM43455_F1_WAKEUP_CONTROL, &wakeup);
@@ -586,7 +584,10 @@ transfer_memory(
 /*
  * Asks for the backplane's slow clock, waits for it, and then keeps it on
  * by force; also drops the SDIO lines' internal pull-ups, which the board
- * provides.  The order is bwfm's bwfm_sdio_buscore_prepare().
+ * provides.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_buscore_prepare(), lines 1002-1041).
  */
 static int
 start_backplane_clock(
@@ -635,8 +636,10 @@ start_backplane_clock(
  * address descriptor may be followed by a high address word and a size
  * word.  A core's base is its first 4 KB or 8 KB slave port 0 address, its
  * wrapper the first master wrapper (for a core with master ports) or
- * slave wrapper.  The descriptor format and these rules are those of
- * bwfm's bwfm_chip_dmp_get_regaddr(); the walk is written anew.
+ * slave wrapper.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_chip_dmp_erom_scan() and bwfm_chip_dmp_get_regaddr(), lines 1182-1240).
  */
 static int
 scan_erom(
@@ -786,8 +789,10 @@ keep_core(
 }
 
 /*
- * Adds up the ARM CR4's RAM banks, as bwfm's bwfm_chip_tcm_ramsize()
- * reads them.
+ * Adds up the ARM CR4's RAM banks.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_chip_tcm_ramsize(), lines 1533-1556).
  */
 static int
 read_ram_size(
@@ -840,7 +845,10 @@ read_ram_size(
 /*
  * Puts a core into reset with the given I/O control before and during it.
  * A core already in reset only gets its in-reset control.  The register
- * sequence is the AXI wrapper's, as bwfm's bwfm_chip_ai_disable() does it.
+ * sequence is the AXI wrapper's.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_chip_ai_disable(), lines 1062-1098).
  */
 static int
 hold_core_in_reset(
@@ -897,7 +905,10 @@ hold_core_in_reset(
 
 /*
  * Resets a core from whatever state it is in and lets it run with the
- * post-reset I/O control, as bwfm's bwfm_chip_ai_reset() does it.
+ * post-reset I/O control.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_chip_ai_reset(), lines 1101-1125).
  */
 static int
 restart_core(
@@ -957,8 +968,10 @@ restart_core(
 
 /*
  * Leaves the ARM core out of reset but halted, and the radio core in
- * reset with its PHY clocked, so the RAM can be written: bwfm's
- * bwfm_chip_cr4_set_passive().
+ * reset with its PHY clocked, so the RAM can be written.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_chip_cr4_set_passive(), lines 1288-1306).
  */
 static int
 halt_cores(
@@ -993,8 +1006,11 @@ halt_cores(
 /*
  * Finds the PMU (a core of its own on a chip that says so, else part of
  * the chip common core), reads its revision, and reads whether the chip
- * runs save-restore: bwfm's bwfm_chip_get_pmu() and, for the 4345,
- * bwfm_chip_sr_capable().
+ * runs save-restore.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_chip_get_pmu(), lines 1027-1040, and bwfm_chip_sr_capable(), lines
+ * 1384-1401).
  */
 static int
 read_power_unit(
@@ -1039,7 +1055,7 @@ read_power_unit(
 			chip->save_restore = 1;
 	}
 
-	/* Succeeded: records what the board's first bring-up must confirm (R8). */
+	/* Succeeded: logs what the board's first bring-up must confirm. */
 	kern_logf(
 		"bcm43455: PMU at %08x revision %u, save-restore %u\n",
 		chip->pmu_base,
@@ -1051,8 +1067,10 @@ read_power_unit(
 /*
  * Keeps the SDIO interface awake, lets an SDIO reset reset the WLAN
  * backplane, reloads the PMU's resources, and leaves the frame function
- * off and the chip on its slow clock: the steps bwfm's attach takes after
- * bwfm_chip_attach() (if_bwfm_sdio.c).
+ * off and the chip on its slow clock.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44 (the
+ * attach after bwfm_chip_attach(), lines 311-334).
  */
 static int
 prepare_interface(
@@ -1116,8 +1134,11 @@ prepare_interface(
 }
 
 /*
- * Asks for a clock (the slow ALP or the fast HT one) and waits for it, as
- * bwfm_sdio_htclk() does: the request alone, then up to HT_WAIT_MS.
+ * Asks for a clock (the slow ALP or the fast HT one) and waits for it: the
+ * request alone, then up to HT_WAIT_MS.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (bwfm_sdio_htclk()).
  */
 static int
 request_clock(

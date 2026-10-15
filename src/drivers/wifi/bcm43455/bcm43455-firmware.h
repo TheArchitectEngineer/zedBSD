@@ -40,7 +40,11 @@
 /* The most bytes the NVRAM settings take in the chip's form. */
 #define BCM43455_NVRAM_BLOB_MAX		4096U
 
-/* The most CLM bytes one clmload message carries. */
+/*
+ * The most CLM bytes one clmload message carries.
+ *
+ * Value referenced: Infineon wifi-host-driver bd99da7b whd_clm.c (lines 54-58).
+ */
 #define BCM43455_CLM_CHUNK_MAX		1400U
 
 /* The clmload message's header before its CLM bytes. */

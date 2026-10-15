@@ -24,11 +24,23 @@
 
 #include "drivers/wifi/bcm43455/bcm43455-event.h"
 
-/* How the firmware numbers channel specifications: the 802.11n layout, or the 802.11ac one. */
+/*
+ * How the firmware numbers channel specifications: the 802.11n layout, or the
+ * 802.11ac one.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (line 247);
+ * OpenBSD sys/dev/ic/bwfm.c revision 1.113 (lines 256-260).
+ */
 #define BCM43455_CHANSPEC_LAYOUT_N		1U
 #define BCM43455_CHANSPEC_LAYOUT_AC		2U
 
-/* The firmware commands of a connection. */
+/*
+ * The firmware commands of a connection.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 1304-1544); OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 247-312).
+ */
 #define BCM43455_COMMAND_IO_VERSION		1U
 #define BCM43455_COMMAND_INFRASTRUCTURE		20U
 #define BCM43455_COMMAND_AUTHENTICATION		22U
@@ -38,16 +50,34 @@
 #define BCM43455_COMMAND_KEY_MANAGEMENT		165U
 #define BCM43455_COMMAND_SUPPLICANT_KEY		268U
 
-/* The values a WPA2-PSK join with AES sets: open authentication, the AES cipher, WPA2 with a pre-shared key. */
+/*
+ * The values a WPA2-PSK join with AES sets: open authentication, the AES
+ * cipher, WPA2 with a pre-shared key.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 831 and 4273) and
+ * WHD/COMPONENT_WIFI6/inc/whd_types.h (line 65); OpenBSD sys/dev/ic/bwfmreg.h
+ * revision 1.26 (lines 167-191).
+ */
 #define BCM43455_AUTHENTICATION_OPEN	0U
 #define BCM43455_CIPHER_AES		0x04U
 #define BCM43455_KEY_MANAGEMENT_WPA2_PSK	0x80U
 
-/* The escan actions. */
+/*
+ * The escan actions.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 496-554); OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 509-575).
+ */
 #define BCM43455_ESCAN_START		1U
 #define BCM43455_ESCAN_ABORT		3U
 
-/* The two layouts of the scan parameters ("scan_ver" 0 or absent, and 2). */
+/*
+ * The two layouts of the scan parameters ("scan_ver" 0 or absent, and 2).
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113 (lines 277-278).
+ */
 #define BCM43455_SCAN_LAYOUT_V0		0U
 #define BCM43455_SCAN_LAYOUT_V2		2U
 
@@ -57,13 +87,24 @@
 /* The bytes of a join request: the SSID, the BSSID and one channel. */
 #define BCM43455_JOIN_REQUEST_LENGTH	52U
 
-/* The bytes of the supplicant's key message: its length, its flags and the key as hex text. */
+/*
+ * The bytes of the supplicant's key message: its length, its flags and the key
+ * as hex text.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 781-785).
+ */
 #define BCM43455_KEY_MESSAGE_LENGTH	70U
 
 /* The PMK the core derives. */
 #define BCM43455_PMK_LENGTH		32U
 
-/* The fixed part of the firmware's description of one network. */
+/*
+ * The fixed part of the firmware's description of one network.
+ *
+ * Values referenced: OpenBSD sys/dev/ic/bwfmreg.h revision 1.26 (lines
+ * 344-375).
+ */
 #define BCM43455_BSS_INFO_FIXED		128U
 
 /* The longest probe response a scan result is turned into. */

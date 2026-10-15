@@ -11,12 +11,6 @@
  *
  * Pure functions: no lock, no allocation, no hardware.
  *
- * Sources: the NVRAM's form at the top of RAM (NUL-separated settings,
- * padding, the length word) is the one OpenBSD's bwfm(4) (ISC) builds in
- * sys/dev/ic/bwfm.c 1.113 (bwfm_nvram_convert()); this driver also drops
- * the spaces around a line and lines without "=".  The clmload message
- * (flags, kind, length, checksum, 1400 bytes a piece) follows Infineon's
- * WHD (Apache-2.0) whd_wlioctl.h and whd_clm.c and bwfm's bwfmreg.h.
  */
 
 #include "drivers/wifi/bcm43455/bcm43455-firmware.h"
@@ -32,18 +26,37 @@
 #define CLM_MAGIC			"BLOB"
 #define CLM_MAGIC_LENGTH		4U
 
-/* The clmload header: the flags, the kind of download, the length and a checksum. */
+/*
+ * The clmload header: the flags, the kind of download, the length and a
+ * checksum.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 4154-4172) and OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 785-797).
+ */
 #define CLM_FLAG			0U
 #define CLM_TYPE			2U
 #define CLM_LENGTH			4U
 #define CLM_CRC				8U
 
-/* The clmload flags: the handler's version, and the first and the last piece. */
+/*
+ * The clmload flags: the handler's version, and the first and the last piece.
+ *
+ * Values referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 4154-4172) and OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 785-797).
+ */
 #define CLM_FLAG_HANDLER_VERSION	0x1000U
 #define CLM_FLAG_BEGIN			0x0002U
 #define CLM_FLAG_END			0x0004U
 
-/* The download kind that means the regulatory table. */
+/*
+ * The download kind that means the regulatory table.
+ *
+ * Value referenced: Infineon wifi-host-driver bd99da7b
+ * WHD/COMPONENT_WIFI6/src/include/whd_wlioctl.h (lines 4154-4172) and OpenBSD
+ * sys/dev/ic/bwfmreg.h revision 1.26 (lines 785-797).
+ */
 #define CLM_TYPE_CLM			2U
 
 /* The NVRAM key of the board's placeholder address, and an address's text length. */
@@ -160,7 +173,12 @@ bcm43455_nvram_check(
 }
 
 /*
- * Turns the NVRAM text into the chip's form.
+ * Turns the NVRAM text into the chip's form: the settings separated by NULs,
+ * padded to four bytes, then the length word.  Spaces around a line and lines
+ * without "=" are dropped as well.
+ *
+ * Procedure referenced: OpenBSD sys/dev/ic/bwfm.c revision 1.113
+ * (bwfm_nvram_convert(), lines 3009 on).
  */
 int
 bcm43455_nvram_pack(
@@ -314,7 +332,11 @@ bcm43455_nvram_mac(
 }
 
 /*
- * Finds where the converted NVRAM goes.
+ * Finds where the converted NVRAM goes: the top of RAM, its last four bytes the
+ * length word.
+ *
+ * Procedure referenced: OpenBSD sys/dev/sdmmc/if_bwfm_sdio.c revision 1.44
+ * (lines 526-528).
  */
 int
 bcm43455_nvram_place(
@@ -348,6 +370,9 @@ bcm43455_nvram_place(
 
 /*
  * Builds the clmload message that carries the CLM bytes from offset on.
+ *
+ * Procedure referenced: Infineon wifi-host-driver bd99da7b whd_clm.c (lines
+ * 54-58).
  */
 int
 bcm43455_clm_message(
