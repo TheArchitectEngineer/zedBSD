@@ -204,6 +204,10 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrt
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/node.c src/drivers/gpu/nvrtx/present.c src/drivers/gpu/nvrtx/cursor.c src/drivers/gpu/nvrtx/share.c
 endif
+# The AMD RDNA driver (ws039): the driver's files, then the shader compiler's (ws039-p007).
+AMD64_AMDRDNA_SOURCES :=
+ifeq ($(CONFIG_DRIVER_PCI_AMDRDNA),y)
+endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;
 # I915_TEST_ORACLE=y also links the draw readback the pixel oracle reads (slow: it dumps a frame).
@@ -366,6 +370,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_HDA_SOURCES) \
 	$(AMD64_I915_SOURCES) \
 	$(AMD64_NVRTX_SOURCES) \
+	$(AMD64_AMDRDNA_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
 	$(AMD64_ACPI_SOURCES) \
 	$(AMD64_I2C_SOURCES) \
