@@ -11,6 +11,7 @@
 -->
 
 <!-- master:agents:start -->
+- **2026-10-15 20:01（ユーザー「待ってください、書き換えが一度に大幅すぎます。すべての作業を即時中断してください。」）**: Q1 が P1（WS245 p006 の途中）・P3（WS039 design.md 改訂 2 の調べの途中）・P4（WS250 design.md の書き足しの途中）を TaskStop で止めた。未 commit の差分は残してある: p1 の worktree（xd-platform.h・display-regs-xd*.h・display-tables-xd.h・xd-regs-map.h、p006 の途中）、p4 の worktree（plan/ws250/design.md）。main に入った物は全部 merge 済み（main 8f2e76f8c まで）。再開はユーザーの指示で。
 - **2026-10-15 15:50（Q1、記録の整合の点検の後）**: 動いている担当は無い。全 worktree に未 merge の commit は無い（t1・t2・t3 に未追跡の作業 file だけ）。今日の成果と残り: WS247 は p001〜p003 cleared（completed にはユーザーの判断 2 点）、WS245 は design.md 改訂 2 とレビュー 2 が main（次: レビュー 2 の反映・display 12 の差・display 11 の Phase）、WS242 は既定 on の決定（未実装）。詳しくは [handover-20261015b.md](agents/handover-20261015b.md) と [record-integrity.md](record-integrity.md)。前の経過の 2 行（前の session の状況・RTX の順）は decisions-log へ移した。
 - AMD RDNA（2026-10-15 ユーザー）: RX 5600 XT が今日届く。[WS039](ws039/ws.md) amdrdna を開始（RDNA1 を動かし RDNA2・3 は認識だけ、到達点は desktop、VCN は後、素の起動で試験、GPL の参照の規則を WS039 に広げた、driver P3・compiler P5）。 同日ユーザーの指示で一時停止の後、夕に再開（P3 が p001 の設計、q1202。p007 compiler は停止のまま）。
 - 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。ユーザーは逐次に 1 つずつ解決する進め方。
