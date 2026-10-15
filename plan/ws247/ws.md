@@ -3,11 +3,11 @@
 # WS247: nvrtx の comment と log から開発の管理情報と出典の名前を除き、出典を block ごとに明記する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-16 Q1 が途中まで実施）
+Status: incomplete（2026-10-16 p001 cleared、残りは p002）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[WS246](../ws246/ws.md)（compiler のまとめ）、[WS037](../ws037/ws.md)
-Resume point: 下の「残り」1 から。
+Resume point: p002（規約の全文の見直し、planned、未承認）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-16）
@@ -29,7 +29,16 @@ Resume point: 下の「残り」1 から。
 
 N0 identify、N1 console、P0 layout、P1a devinit、P1b frts、P2a booter、P2b gsp-init、P3 static-info、P4 address-space、P4m vram-window、P5 copy-channel、P5e copy-fill、P5g golden-context、P6 channel-stop、P7 unload、P8 display、P8a display-client、P8b takeover、P8c gpu-device、P9c compute-test、P9g draw-test、P9w work-channel、P9p performance。試験の config（plan/ws037/tests/config-amd64-nvrtx.mk の nvrtx.stop=）も追従。過去の記録（plan/ の T の結果など）は旧名のまま（履歴）。
 
-## 残り
+## Phase
+
+| Phase | 内容 | 状態 |
+| --- | --- | --- |
+| [p001](phase001/phase.md) | 下の「残り」1・2・4・5：定数ごとの出典、本文の出典の名前の除去、vram.c の path（P1・P2・P3 の並列、q984〜q986） | cleared（2026-10-16、main 50a95d261） |
+| p002 | 規約の全文の見直し（WS247 が変えた comment を plan/coding-style.md の全文と照らす） | planned |
+
+範囲外で見つかった物（WS037 の後続へ）: scanout.c:1273 が定義の無い番地 0x64013c を読んで捨てている（SOR の caps は 0x640144＋or*8）。[p001](phase001/phase.md) の「出典の無い値」。
+
+## 残り（2026-10-16 に p001 で全て済み）
 
 1. **本文に出典の名前が残る 3 file**: draw-push.c（40）・scanout.c（21）・disp-records.c（16）。file の上部の出典の一覧（draw-push.c）も block ごとへ。
 2. **定数ごとの出典**（2026-10-16 ユーザー:「disp-records.c ... 定数にreferencedがない／draw-push.c ... ファイルヘッダにまとめてreferenceが書かれている／このパターンをnvrtx内すべてのファイルで修正してください。」、進め方はクリック「次のセッションで」。一覧: [unreferenced-defines.md](unreferenced-defines.md)、60 file・403 block。disp-first.c は済み（5aa6d52d5）。file の先頭の出典の一覧は draw-push.c ほか、Values/Procedure referenced: を block ごとへ。推奨の進め方: file の群ごとに担当を並列に起動、Q1 が merge と build・host 試験）: channel.c など、出典の書かれていない定数・register の値に、block ごとに Value(s) referenced: を付ける（ユーザーの指摘: channel.c）。nvrtx の全 file を定数・構造体・関数ごとに監査する。
