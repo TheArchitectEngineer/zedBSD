@@ -72,6 +72,7 @@ enum intel_ax211_dma_image_class {
 	INTEL_AX211_DMA_IMAGE_PAGING = 3
 };
 
+/* One runtime section of the image, copied into its own DMA buffer. */
 struct intel_ax211_dma_image {
 	struct drv_dma_buffer buffer;
 	uint32_t destination;
@@ -80,6 +81,8 @@ struct intel_ax211_dma_image {
 };
 
 /*
+ * Every DMA buffer one boot of the device uses.
+ *
  * The PCI transport owns one zero-initialized instance.  No member may be
  * copied after preparation because private_data belongs to the DMA mapper.
  */

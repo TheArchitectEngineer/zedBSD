@@ -80,6 +80,7 @@
 #define INTEL_AX211_SCAN_ACK_TIMEOUT_US 1000000U
 #define INTEL_AX211_SCAN_WATCHDOG_US 5000000U
 
+/* The results of the scan codecs and of the scan bookkeeping. */
 enum intel_ax211_scan_result {
 	INTEL_AX211_SCAN_OK = 0,
 	INTEL_AX211_SCAN_INVALID = 1,
@@ -95,6 +96,10 @@ enum intel_ax211_scan_result {
 	INTEL_AX211_SCAN_FAILED = 11
 };
 
+/*
+ * Where a scan is: not started, waiting for its acknowledgment, running, or
+ * ended.
+ */
 enum intel_ax211_scan_phase {
 	INTEL_AX211_SCAN_PHASE_IDLE = 0,
 	INTEL_AX211_SCAN_PHASE_WAIT_ACK = 1,
@@ -102,11 +107,15 @@ enum intel_ax211_scan_phase {
 	INTEL_AX211_SCAN_PHASE_TERMINAL = 3
 };
 
+/* The two scan notifications: the completion and a pass report. */
 enum intel_ax211_scan_event_kind {
 	INTEL_AX211_SCAN_EVENT_COMPLETE = 1,
 	INTEL_AX211_SCAN_EVENT_ITERATION_COMPLETE = 2
 };
 
+/*
+ * What a scan sends: the station address, the channel width and the channels.
+ */
 struct intel_ax211_scan_profile {
 	uint8_t station_address[6];
 	uint8_t channel_width_mhz;
@@ -114,6 +123,7 @@ struct intel_ax211_scan_profile {
 	size_t channel_count;
 };
 
+/* The result of one channel in a pass report. */
 struct intel_ax211_scan_channel_result {
 	uint8_t channel;
 	uint8_t probe_result;
@@ -121,6 +131,7 @@ struct intel_ax211_scan_channel_result {
 	uint32_t duration;
 };
 
+/* One decoded scan notification. */
 struct intel_ax211_scan_event {
 	enum intel_ax211_scan_event_kind kind;
 	uint8_t status;
@@ -135,6 +146,10 @@ struct intel_ax211_scan_event {
 		channel[INTEL_AX211_SCAN_CHANNEL_LIMIT];
 };
 
+/*
+ * The bookkeeping of one scan of one firmware epoch: its deadlines, the
+ * channels it asked for, and whether it must be cancelled.
+ */
 struct intel_ax211_scan_state {
 	uint32_t generation;
 	uint64_t acknowledgement_deadline;

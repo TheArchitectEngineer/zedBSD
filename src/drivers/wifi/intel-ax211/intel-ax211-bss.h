@@ -27,6 +27,7 @@
 #define INTEL_AX211_BSS_CACHE_LIMIT 64U
 #define INTEL_AX211_BSS_ADDRESS_SIZE 6U
 
+/* The results of the BSS decoder and cache. */
 enum intel_ax211_bss_result {
 	INTEL_AX211_BSS_OK = 0,
 	INTEL_AX211_BSS_INVALID = 1,
@@ -37,12 +38,15 @@ enum intel_ax211_bss_result {
 	INTEL_AX211_BSS_NOT_FOUND = 6
 };
 
+/* The kind of frame a BSS entry came from. */
 enum intel_ax211_bss_source {
 	INTEL_AX211_BSS_SOURCE_PROBE_RESPONSE = 1,
 	INTEL_AX211_BSS_SOURCE_BEACON = 2
 };
 
 /*
+ * One BSS as the driver last saw it in a beacon or a probe response.
+ *
  * This private record intentionally retains neither an SSID nor credentials.
  * observation_generation records the scan operation which observed the BSS;
  * hardware_epoch independently identifies the firmware boot which produced
@@ -69,6 +73,12 @@ struct intel_ax211_bss_entry {
 	uint8_t valid;
 };
 
+/*
+ * The BSSs seen in the scans of one firmware epoch.
+ *
+ * It holds as many entries as the common scan snapshot, so a BSS that snapshot
+ * offers is still here when a connection is asked for.
+ */
 struct intel_ax211_bss_cache {
 	struct intel_ax211_bss_entry entry[INTEL_AX211_BSS_CACHE_LIMIT];
 	uint32_t hardware_epoch;
@@ -77,6 +87,8 @@ struct intel_ax211_bss_cache {
 };
 
 /*
+ * What the association needs to know about the chosen BSS.
+ *
  * Association-side values only.  Queue DMA addresses and other hardware-owned
  * state are deliberately absent.  tim_valid tells the caller whether the
  * DTIM fields can be used for the post-authentication association update.

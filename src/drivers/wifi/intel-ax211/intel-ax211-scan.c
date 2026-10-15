@@ -46,8 +46,6 @@
 #define AX211_SCAN_CHANNEL_CONFIG_SIZE 8U
 #define AX211_SCAN_PERIODIC_OFFSET 584U
 #define AX211_SCAN_PROBE_OFFSET 596U
-
-
 /*
  * The flag values of the scan request and the outcome codes of its
  * completion.
@@ -78,7 +76,7 @@
 static int ax211_scan_station_valid(const uint8_t address[6]);
 static void ax211_scan_profile_add(struct intel_ax211_scan_profile *profile, const struct intel_ax211_protocol_channel *candidate, const struct intel_ax211_runtime_mcc *mcc, size_t regulatory_index, int firmware_regulatory);
 static int ax211_scan_profile_valid(const struct intel_ax211_scan_profile *profile);
-static int ax211_scan_required_version( const struct intel_ax211_protocol_command_table *table, uint8_t opcode, uint8_t command_version);
+static int ax211_scan_required_version(const struct intel_ax211_protocol_command_table *table, uint8_t opcode, uint8_t command_version);
 static void ax211_scan_put_le32(uint8_t *bytes, uint32_t value);
 static void ax211_scan_put_le16(uint8_t *bytes, uint16_t value);
 static void ax211_scan_probe_encode(const struct intel_ax211_scan_profile *profile, uint8_t *probe);
@@ -89,7 +87,8 @@ static int ax211_scan_status_result(uint8_t status);
 static int ax211_scan_iteration_decode(const struct intel_ax211_protocol_message *message, struct intel_ax211_scan_event *event);
 
 /*
- * Implements the drv intel ax211 scan profile from nvm operation.
+ * Builds the scan profile from the NVM answer and, under a firmware regulatory
+ * domain, the country answer.
  */
 int
 drv_intel_ax211_scan_profile_from_nvm(
@@ -100,33 +99,48 @@ drv_intel_ax211_scan_profile_from_nvm(
 {
 	struct intel_ax211_scan_profile parsed;
 	size_t index;
+	int valid;
 
-	/* Checks the ax211 scan station valid result. */
-	if (nvm == NULL || station_address == NULL || profile == NULL ||
+	/*
+	 * Refuses missing arguments, a module without 2.4 GHz, channel counts out
+	 * of range, and a firmware regulatory domain without a usable country
+	 * answer.
+	 */
+	if (nvm == NULL ||
+	    station_address == NULL ||
+	    profile == NULL ||
 	    !nvm->band_24_enabled ||
 	    nvm->channel_24ghz_count >
 		    INTEL_AX211_PROTOCOL_24GHZ_CHANNEL_LIMIT ||
 	    nvm->channel_5ghz_count > INTEL_AX211_PROTOCOL_5GHZ_CHANNEL_LIMIT ||
 	    (nvm->firmware_regulatory &&
-	     (mcc == NULL || mcc->status > INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX ||
+	     (mcc == NULL ||
+	      mcc->status > INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX ||
 	      mcc->channel_count == 0U ||
-	      mcc->channel_count > INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT)) ||
-	    !ax211_scan_station_valid(station_address)) {
-		/* Returns the computed result. */
+	      mcc->channel_count > INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT))) {
 		return INTEL_AX211_SCAN_INVALID;
 	}
+
+	/* Refuses a station address that cannot send probe requests. */
+	valid = ax211_scan_station_valid(station_address);
+	if (!valid)
+		return INTEL_AX211_SCAN_INVALID;
+
+	/* Lists the usable 2.4 GHz channels. */
 	kern_memset(&parsed, 0, sizeof(parsed));
 	kern_memcpy(parsed.station_address, station_address, 6U);
 	parsed.channel_width_mhz = INTEL_AX211_SCAN_CHANNEL_WIDTH_MHZ;
-	/* Process each remaining element. */
 	for (index = 0U; index < nvm->channel_24ghz_count; index++) {
 		ax211_scan_profile_add(&parsed, &nvm->channel_24ghz[index], mcc,
 				       index, nvm->firmware_regulatory);
 	}
 
-	/* Handles the nvm condition. */
+	/* Lists the usable 5 GHz channels when the band is enabled. */
 	if (nvm->band_52_enabled) {
-		/* Process each remaining element. */
+		/*
+		 * The 5 GHz entries follow the 14 of 2.4 GHz in the country
+		 * answer.
+		 */
 		for (index = 0U; index < nvm->channel_5ghz_count; index++) {
 			ax211_scan_profile_add(
 				&parsed, &nvm->channel_5ghz[index], mcc,
@@ -136,60 +150,62 @@ drv_intel_ax211_scan_profile_from_nvm(
 		}
 	}
 
-	/* Checks the ax211 scan profile valid result. */
-	if (!ax211_scan_profile_valid(&parsed))
+	/* Refuses a profile without channels or with an impossible one. */
+	valid = ax211_scan_profile_valid(&parsed);
+	if (!valid)
 		return INTEL_AX211_SCAN_UNSUPPORTED;
+
+	/* Succeeded: publishes the profile. */
 	*profile = parsed;
-	/* Returns the computed result. */
 	return INTEL_AX211_SCAN_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan api89 validate operation.
+ * Checks that the pinned image lists the scan commands in the layouts used
+ * here.
  */
 int
 drv_intel_ax211_scan_api89_validate(
 	const struct intel_ax211_protocol_command_table *table)
 {
-	int error;
 	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing table. */
 	if (table == NULL)
 		return INTEL_AX211_SCAN_INVALID;
 
-	/* Checks the drv intel ax211 protocol command table validate api89 result. */
-	if (drv_intel_ax211_protocol_command_table_validate_api89(table) !=
-	    INTEL_AX211_PROTOCOL_OK) {
-		/* Returns the computed result. */
+	/* Refuses a table that is not the pinned image's. */
+	result = drv_intel_ax211_protocol_command_table_validate_api89(table);
+	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_SCAN_UNSUPPORTED;
-	}
 
-	/* Checks the operation result. */
+	/* Requires the scan setup version. */
 	result = ax211_scan_required_version(
 		table, INTEL_AX211_PROTOCOL_SCAN_SETUP_OPCODE,
 		INTEL_AX211_SCAN_CONFIG_VERSION);
 	if (result != INTEL_AX211_SCAN_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Requires the scan request version. */
 	result = ax211_scan_required_version(table,
 					     INTEL_AX211_SCAN_REQUEST_OPCODE,
 					     INTEL_AX211_SCAN_REQUEST_VERSION);
 	if (result != INTEL_AX211_SCAN_OK)
 		return result;
 
-	/* Obtains the ax211 scan required version result. */
-	error = ax211_scan_required_version(
+	/* Requires the scan cancel version. */
+	result = ax211_scan_required_version(
 		table, INTEL_AX211_SCAN_CANCEL_OPCODE,
 		INTEL_AX211_SCAN_CANCEL_VERSION);
+	if (result != INTEL_AX211_SCAN_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the image lists the scan commands as expected. */
+	return INTEL_AX211_SCAN_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan request encode operation.
+ * Encodes the scan request of a profile.
  */
 int
 drv_intel_ax211_scan_request_encode(
@@ -198,14 +214,25 @@ drv_intel_ax211_scan_request_encode(
 {
 	uint8_t *channel;
 	uint16_t flags;
+	uint32_t band_flag;
 	size_t index;
+	int valid;
 
-	/* Checks the ax211 scan profile valid result. */
-	if (!ax211_scan_profile_valid(profile) || output == NULL)
+	/* Refuses an unusable profile. */
+	valid = ax211_scan_profile_valid(profile);
+	if (!valid)
 		return INTEL_AX211_SCAN_INVALID;
+
+	/* Refuses a missing output buffer. */
+	if (output == NULL)
+		return INTEL_AX211_SCAN_INVALID;
+
+	/* Writes the scan id and the out-of-channel priority. */
 	kern_memset(output, 0, INTEL_AX211_SCAN_REQUEST_SIZE);
 	ax211_scan_put_le32(output, INTEL_AX211_SCAN_UID);
 	ax211_scan_put_le32(output + 4U, INTEL_AX211_SCAN_PRECEDENCE);
+
+	/* Writes the general section: flags, stays, budget and priority. */
 	flags = AX211_SCAN_FLAG_REPORT_ALL | AX211_SCAN_FLAG_REPORT_EACH_PASS |
 		AX211_SCAN_FLAG_ADAPTIVE_STAY | AX211_SCAN_FLAG_LISTEN_ONLY;
 	ax211_scan_put_le16(output + AX211_SCAN_GENERAL_OFFSET, flags);
@@ -223,49 +250,66 @@ drv_intel_ax211_scan_request_encode(
 	output[AX211_SCAN_GENERAL_OFFSET + 33U] =
 		INTEL_AX211_SCAN_LISTENING_STAY_TU;
 
+	/*
+	 * Writes the channel section: the order flag, the count and the
+	 * overrides.
+	 */
 	output[AX211_SCAN_CHANNEL_OFFSET] = AX211_SCAN_CHANNELS_IN_GIVEN_ORDER;
 	output[AX211_SCAN_CHANNEL_OFFSET + 1U] =
 		(uint8_t)profile->channel_count;
 	output[AX211_SCAN_CHANNEL_OFFSET + 2U] = 10U;
 	output[AX211_SCAN_CHANNEL_OFFSET + 3U] = 2U;
-	/* Process each remaining element. */
+
+	/* Writes one entry per channel. */
 	for (index = 0U; index < profile->channel_count; index++) {
+		/* Channels 1 to 14 are 2.4 GHz, the others 5 GHz. */
 		channel = output + AX211_SCAN_CHANNEL_CONFIG_OFFSET +
 			  index * AX211_SCAN_CHANNEL_CONFIG_SIZE;
-		ax211_scan_put_le32(channel,
-				    profile->channel[index] <= 14U
-					    ? AX211_SCAN_24GHZ_BAND_FLAG
-					    : 0U);
+		if (profile->channel[index] <= 14U) {
+			band_flag = AX211_SCAN_24GHZ_BAND_FLAG;
+		} else {
+			band_flag = 0U;
+		}
+
+		/*
+		 * Writes the band, the channel, no known power limit and one
+		 * repetition.
+		 */
+		ax211_scan_put_le32(channel, band_flag);
 		channel[4U] = profile->channel[index];
 		channel[5U] = 0x80U;
 		channel[6U] = 1U;
 	}
 
+	/* Runs the first schedule plan once and writes the probe template. */
 	output[AX211_SCAN_PERIODIC_OFFSET + 2U] = 1U;
 	ax211_scan_probe_encode(profile, output + AX211_SCAN_PROBE_OFFSET);
 
-	/* Returns the computed result. */
+	/* Succeeded: the request is ready to send. */
 	return INTEL_AX211_SCAN_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan abort encode operation.
+ * Encodes the scan cancel command, one zero word.
  */
 int
 drv_intel_ax211_scan_abort_encode(
 	uint8_t output[INTEL_AX211_SCAN_CANCEL_SIZE])
 {
-	/* Handles the output availability. */
+	/* Refuses a missing output buffer. */
 	if (output == NULL)
 		return INTEL_AX211_SCAN_INVALID;
+
+	/* Writes the zero word. */
 	kern_memset(output, 0, INTEL_AX211_SCAN_CANCEL_SIZE);
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_SCAN_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan begin operation.
+ * Starts the bookkeeping of one scan, which then waits for its request to be
+ * acknowledged.
  */
 int
 drv_intel_ax211_scan_begin(
@@ -277,39 +321,50 @@ drv_intel_ax211_scan_begin(
 {
 	struct intel_ax211_scan_state started;
 	size_t index;
+	int valid;
 	int result;
 
-	/* Checks the ax211 scan profile valid result. */
-	if (state == NULL || !ax211_scan_profile_valid(profile) ||
-	    generation == 0U ||
+	/* Refuses a missing state. */
+	if (state == NULL)
+		return INTEL_AX211_SCAN_INVALID;
+
+	/* Refuses an unusable profile. */
+	valid = ax211_scan_profile_valid(profile);
+	if (!valid)
+		return INTEL_AX211_SCAN_INVALID;
+
+	/* Refuses an unset epoch and a watchdog deadline that overflows. */
+	if (generation == 0U ||
 	    now_us > UINT64_MAX - INTEL_AX211_SCAN_WATCHDOG_US) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_INVALID;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses an image that does not list the scan commands as expected. */
 	result = drv_intel_ax211_scan_api89_validate(table);
 	if (result != INTEL_AX211_SCAN_OK)
 		return result;
+
+	/* Sets the acknowledgment and watchdog deadlines. */
 	kern_memset(&started, 0, sizeof(started));
 	started.generation = generation;
 	started.acknowledgement_deadline =
 		now_us + INTEL_AX211_SCAN_ACK_TIMEOUT_US;
 	started.scan_deadline = now_us + INTEL_AX211_SCAN_WATCHDOG_US;
 	started.phase = INTEL_AX211_SCAN_PHASE_WAIT_ACK;
-	/* Process each remaining element. */
+
+	/* Marks every requested channel in the channel bitmap. */
 	for (index = 0U; index < profile->channel_count; index++) {
 		started.requested_channels[profile->channel[index] / 8U] |=
 			(uint8_t)(UINT8_C(1) << (profile->channel[index] % 8U));
 	}
 
+	/* Succeeded: publishes the started scan. */
 	*state = started;
-	/* Returns the computed result. */
 	return INTEL_AX211_SCAN_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan request ack operation.
+ * Takes the acknowledgment of the scan request and lets the scan run.
  */
 int
 drv_intel_ax211_scan_request_ack(
@@ -317,41 +372,39 @@ drv_intel_ax211_scan_request_ack(
 	uint32_t generation,
 	uint64_t now_us)
 {
-	/* Handles the state availability. */
+	/* Refuses a missing state and an unset epoch. */
 	if (state == NULL || generation == 0U)
 		return INTEL_AX211_SCAN_INVALID;
 
-	/* Handles the generation condition. */
+	/* Refuses an acknowledgment of an earlier firmware epoch. */
 	if (generation != state->generation)
 		return INTEL_AX211_SCAN_STALE;
 
-	/* Handles the state condition. */
+	/* An acknowledgment of a running or ended scan is a repeat. */
 	if (state->phase == INTEL_AX211_SCAN_PHASE_RUNNING ||
 	    state->phase == INTEL_AX211_SCAN_PHASE_TERMINAL) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_DUPLICATE;
 	}
 
-	/* Handles the state condition. */
+	/* Refuses an acknowledgment when none is awaited. */
 	if (state->phase != INTEL_AX211_SCAN_PHASE_WAIT_ACK)
 		return INTEL_AX211_SCAN_OUT_OF_ORDER;
 
-	/* Handles the now us condition. */
+	/* Ends the scan when the acknowledgment came too late. */
 	if (now_us >= state->acknowledgement_deadline) {
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_TIMED_OUT;
 	}
 
+	/* The scan runs. */
 	state->phase = INTEL_AX211_SCAN_PHASE_RUNNING;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_SCAN_OK;
 }
 
 /*
- * Implements the drv intel ax211 scan event accept operation.
+ * Takes one scan notification: a pass report or the completion.
  */
 int
 drv_intel_ax211_scan_event_accept(
@@ -362,88 +415,99 @@ drv_intel_ax211_scan_event_accept(
 {
 	int result;
 
-	/* Handles the state availability. */
+	/* Refuses missing arguments. */
 	if (state == NULL || event == NULL)
 		return INTEL_AX211_SCAN_INVALID;
 
-	/* Checks the operation result. */
+	/*
+	 * Ends the scan, and asks for a cancel, when the watchdog has run out.
+	 */
 	result = ax211_scan_event_header(state, message, now_us);
 	if (result == INTEL_AX211_SCAN_TIMED_OUT) {
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 		state->abort_required = 1U;
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses a notification that does not belong to the running scan. */
 	if (result != INTEL_AX211_SCAN_OK)
 		return result;
 
-	/* Handles the message condition. */
-	if (message->opcode == INTEL_AX211_SCAN_FINISHED_OPCODE)
+	/*
+	 * Decodes the completion or the pass report; others are not scan
+	 * events.
+	 */
+	if (message->opcode == INTEL_AX211_SCAN_FINISHED_OPCODE) {
 		result = ax211_scan_complete_decode(message, event);
-	else if (message->opcode == INTEL_AX211_SCAN_PASS_FINISHED_OPCODE)
+	} else if (message->opcode == INTEL_AX211_SCAN_PASS_FINISHED_OPCODE) {
 		result = ax211_scan_iteration_decode(message, event);
-	else {
-		/* Returns the computed result. */
+	} else {
 		return INTEL_AX211_SCAN_UNSUPPORTED;
 	}
 
-	/* Checks the operation status. */
+	/* A completion, a cancel or a failure ends the scan. */
 	if (result == INTEL_AX211_SCAN_COMPLETE ||
 	    result == INTEL_AX211_SCAN_ABORTED ||
 	    result == INTEL_AX211_SCAN_FAILED)
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 
-	/* Returns the computed result. */
+	/* Reports what the event was. */
 	return result;
 }
 
 /*
- * Implements the drv intel ax211 scan expire operation.
+ * Ends a scan whose acknowledgment or watchdog deadline has passed.
  */
 int
 drv_intel_ax211_scan_expire(
 	struct intel_ax211_scan_state *state,
 	uint64_t now_us)
 {
-	/* Handles the state availability. */
+	/* Refuses a missing or unstarted state. */
 	if (state == NULL || state->generation == 0U)
 		return INTEL_AX211_SCAN_INVALID;
 
-	/* Handles the state condition. */
+	/* An ended scan cannot expire again. */
 	if (state->phase == INTEL_AX211_SCAN_PHASE_TERMINAL)
 		return INTEL_AX211_SCAN_DUPLICATE;
 
-	/* Handles the state condition. */
+	/*
+	 * A scan waiting for its acknowledgment expires at the acknowledgment
+	 * deadline.
+	 */
 	if (state->phase == INTEL_AX211_SCAN_PHASE_WAIT_ACK) {
-		/* Handles the now us condition. */
+		/* The acknowledgment still has time. */
 		if (now_us < state->acknowledgement_deadline)
 			return INTEL_AX211_SCAN_OK;
-		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 
-		/* Returns the computed result. */
+		/* Ends the scan. */
+		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 		return INTEL_AX211_SCAN_TIMED_OUT;
 	}
 
-	/* Handles the state condition. */
+	/*
+	 * A running scan expires at the watchdog deadline and must be
+	 * cancelled.
+	 */
 	if (state->phase == INTEL_AX211_SCAN_PHASE_RUNNING) {
-		/* Handles the now us condition. */
+		/* The scan still has time. */
 		if (now_us < state->scan_deadline)
 			return INTEL_AX211_SCAN_OK;
+
+		/* Ends the scan and asks for a cancel. */
 		state->phase = INTEL_AX211_SCAN_PHASE_TERMINAL;
 		state->abort_required = 1U;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_TIMED_OUT;
 	}
 
-	/* Returns the computed result. */
+	/* No other phase has a deadline. */
 	return INTEL_AX211_SCAN_OUT_OF_ORDER;
 }
 
-/* Supports the ax211 scan station valid operation. */
+/*
+ * Reports whether a station address can send probe requests: 1 when it is an
+ * individual address that is neither all zeros nor all ones, 0 when not.
+ */
 static int
 ax211_scan_station_valid(
 	const uint8_t address[6])
@@ -452,27 +516,41 @@ ax211_scan_station_valid(
 	int all_zero;
 	int all_ones;
 
-	/* Handles the address availability. */
+	/* Rejects a missing address and a group address. */
 	if (address == NULL || (address[0] & 1U) != 0U)
 		return 0;
+
+	/* Notes whether every byte is zero, or every byte is all ones. */
 	all_zero = 1;
 	all_ones = 1;
-	/* Process each remaining element. */
 	for (index = 0U; index < 6U; index++) {
-		/* Handles the address condition. */
+		/* A nonzero byte rules out the zero address. */
 		if (address[index] != 0U)
 			all_zero = 0;
 
-		/* Handles the address condition. */
+		/* A byte other than 0xff rules out the broadcast address. */
 		if (address[index] != 0xffU)
 			all_ones = 0;
 	}
 
-	/* Returns the computed result. */
-	return !all_zero && !all_ones;
+	/* Rejects the zero address. */
+	if (all_zero)
+		return 0;
+
+	/* Rejects the broadcast address. */
+	if (all_ones)
+		return 0;
+
+	/* The address can send probe requests. */
+	return 1;
 }
 
-/* Supports the ax211 scan profile add operation. */
+/*
+ * Adds one channel of the NVM answer to a profile when it may be used.
+ *
+ * Under a firmware regulatory domain the country answer decides; otherwise
+ * the NVM's own usable bit does.
+ */
 static void
 ax211_scan_profile_add(
 	struct intel_ax211_scan_profile *profile,
@@ -481,72 +559,90 @@ ax211_scan_profile_add(
 	size_t regulatory_index,
 	int firmware_regulatory)
 {
-	/* Handles the candidate condition. */
+	/*
+	 * Skips a channel without a number, and any channel once the profile is
+	 * full.
+	 */
 	if (candidate->number == 0U ||
 	    profile->channel_count >= INTEL_AX211_SCAN_CHANNEL_LIMIT) {
-		/* Returns the computed result. */
 		return;
 	}
 
-	/* Handles the lar enabled condition. */
+	/* Skips a channel the regulatory decision does not allow. */
 	if (firmware_regulatory) {
-		/* Handles the mcc availability. */
-		if (mcc == NULL || regulatory_index >= mcc->channel_count ||
+		/* The country answer must list the channel as usable. */
+		if (mcc == NULL ||
+		    regulatory_index >= mcc->channel_count ||
 		    (mcc->channel[regulatory_index] &
 		     INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE) == 0U) {
-			/* Returns the computed result. */
 			return;
 		}
 	} else if (!candidate->valid) {
-		/* Returns the computed result. */
 		return;
 	}
 
+	/* Adds the channel. */
 	profile->channel[profile->channel_count++] = candidate->number;
 }
 
-/* Supports the ax211 scan profile valid operation. */
+/*
+ * Reports whether a scan profile can be sent: 1 when it can, 0 when not.
+ */
 static int
 ax211_scan_profile_valid(
 	const struct intel_ax211_scan_profile *profile)
 {
 	uint8_t channel;
 	size_t index, earlier;
+	int valid;
 
-	/* Checks the ax211 scan station valid result. */
-	if (profile == NULL ||
-	    !ax211_scan_station_valid(profile->station_address) ||
-	    profile->channel_width_mhz != INTEL_AX211_SCAN_CHANNEL_WIDTH_MHZ ||
+	/* Rejects a missing profile. */
+	if (profile == NULL)
+		return 0;
+
+	/* Rejects a station address that cannot send probe requests. */
+	valid = ax211_scan_station_valid(profile->station_address);
+	if (!valid)
+		return 0;
+
+	/* Rejects another channel width and a channel count out of range. */
+	if (profile->channel_width_mhz != INTEL_AX211_SCAN_CHANNEL_WIDTH_MHZ ||
 	    profile->channel_count == 0U ||
 	    profile->channel_count > INTEL_AX211_SCAN_CHANNEL_LIMIT) {
-		/* Succeeded. */
 		return 0;
 	}
-	/* Process each remaining element. */
+
+	/* Checks every channel. */
 	for (index = 0U; index < profile->channel_count; index++) {
-		/* Handles the channel condition. */
+		/*
+		 * Rejects a channel that is not a 20 MHz channel of 2.4 or 5
+		 * GHz.
+		 */
 		channel = profile->channel[index];
 		if (!((channel >= 1U && channel <= 14U) ||
 		      (channel >= 36U && channel <= 144U &&
 		       ((channel - 36U) % 4U) == 0U) ||
 		      (channel >= 149U && channel <= 181U &&
 		       ((channel - 149U) % 4U) == 0U))) {
-			/* Succeeded. */
 			return 0;
 		}
-		/* Process each remaining element. */
+
+		/* Rejects a channel listed twice. */
 		for (earlier = 0U; earlier < index; earlier++) {
-			/* Handles the profile condition. */
+			/* An earlier entry with the same channel. */
 			if (profile->channel[earlier] == channel)
 				return 0;
 		}
 	}
 
-	/* Reports operation failure. */
+	/* The profile can be sent. */
 	return 1;
 }
 
-/* Supports the ax211 scan required version operation. */
+/*
+ * Requires that the table lists one scan command of the wide family with the
+ * given command version and no notification version.
+ */
 static int
 ax211_scan_required_version(
 	const struct intel_ax211_protocol_command_table *table,
@@ -556,21 +652,20 @@ ax211_scan_required_version(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Checks the operation result. */
+	/* Refuses a command that is missing or listed with other versions. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, INTEL_AX211_SCAN_FAMILY_CLASSIC_WIDE, opcode, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK ||
 	    version.command_version != command_version ||
 	    version.notification_version != 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the table lists the required versions. */
 	return INTEL_AX211_SCAN_OK;
 }
 
-/* Supports the ax211 scan put le32 operation. */
+/* Stores a 32-bit value in little-endian byte order. */
 static void
 ax211_scan_put_le32(
 	uint8_t *bytes,
@@ -582,7 +677,7 @@ ax211_scan_put_le32(
 	bytes[3] = (uint8_t)(value >> 24);
 }
 
-/* Supports the ax211 scan put le16 operation. */
+/* Stores a 16-bit value in little-endian byte order. */
 static void
 ax211_scan_put_le16(
 	uint8_t *bytes,
@@ -592,12 +687,13 @@ ax211_scan_put_le16(
 	bytes[1] = (uint8_t)(value >> 8);
 }
 
-/* Supports the ax211 scan probe encode operation. */
+/* Writes the probe request template of the scan request. */
 static void
 ax211_scan_probe_encode(
 	const struct intel_ax211_scan_profile *profile,
 	uint8_t *probe)
 {
+	/* The supported and extended rates, in units of 500 kbit/s. */
 	static const uint8_t rates[12] = {2U,  4U,  11U, 22U, 12U, 18U,
 					  24U, 36U, 48U, 72U, 96U, 108U};
 	uint8_t *frame;
@@ -659,73 +755,76 @@ ax211_scan_probe_encode(
 	frame[offset] = 0U;
 }
 
-/* Supports the ax211 scan event header operation. */
+/* Checks that a notification belongs to the running scan. */
 static int
 ax211_scan_event_header(
 	const struct intel_ax211_scan_state *state,
 	const struct intel_ax211_protocol_message *message,
 	uint64_t now_us)
 {
-	/* Handles the message availability. */
+	/* Refuses a missing message and an unset epoch. */
 	if (message == NULL || message->generation == 0U)
 		return INTEL_AX211_SCAN_INVALID;
 
-	/* Handles the message condition. */
+	/* Refuses a notification of an earlier firmware epoch. */
 	if (message->generation != state->generation)
 		return INTEL_AX211_SCAN_STALE;
 
-	/* Handles the state condition. */
+	/* A notification after the scan ended is a repeat. */
 	if (state->phase == INTEL_AX211_SCAN_PHASE_TERMINAL)
 		return INTEL_AX211_SCAN_DUPLICATE;
 
-	/* Handles the state condition. */
+	/* Refuses a notification before the request was acknowledged. */
 	if (state->phase != INTEL_AX211_SCAN_PHASE_RUNNING)
 		return INTEL_AX211_SCAN_OUT_OF_ORDER;
 
-	/* Handles the now us condition. */
+	/* Reports that the watchdog has run out. */
 	if (now_us >= state->scan_deadline)
 		return INTEL_AX211_SCAN_TIMED_OUT;
 
-	/* Handles the message condition. */
+	/* Refuses a notification of another family or layout. */
 	if (message->group != INTEL_AX211_SCAN_FAMILY_CLASSIC ||
 	    message->version != INTEL_AX211_SCAN_NOTIFICATION_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_UNSUPPORTED;
 	}
 
-	/* Checks the operation status. */
+	/* Reports a notification the firmware marked as failed. */
 	if ((message->flags & INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK) != 0U)
 		return INTEL_AX211_SCAN_FAILED;
 
-	/* Handles the payload availability. */
+	/* Refuses a missing payload. */
 	if (message->payload == NULL)
 		return INTEL_AX211_SCAN_INVALID;
 
-	/* Returns the computed result. */
+	/* Succeeded: the notification belongs to the scan. */
 	return INTEL_AX211_SCAN_OK;
 }
 
-/* Supports the ax211 scan complete decode operation. */
+/* Decodes the completion of a scan. */
 static int
 ax211_scan_complete_decode(
 	const struct intel_ax211_protocol_message *message,
 	struct intel_ax211_scan_event *event)
 {
-	int error;
+	int outcome;
+	uint32_t uid;
 	const uint8_t *bytes;
 
-	/* Handles the message condition. */
+	/* Refuses a payload shorter than the completion. */
 	if (message->payload_length < 16U)
 		return INTEL_AX211_SCAN_TRUNCATED;
 
-	/* Handles the message condition. */
+	/* Refuses a payload longer than the completion. */
 	if (message->payload_length > 16U)
 		return INTEL_AX211_SCAN_OVERSIZED;
 
-	/* Checks the ax211 scan get le32 result. */
+	/* Refuses the completion of another scan. */
 	bytes = message->payload;
-	if (ax211_scan_get_le32(bytes) != INTEL_AX211_SCAN_UID)
+	uid = ax211_scan_get_le32(bytes);
+	if (uid != INTEL_AX211_SCAN_UID)
 		return INTEL_AX211_SCAN_OUT_OF_ORDER;
+
+	/* Decodes the completion. */
 	kern_memset(event, 0, sizeof(*event));
 	event->kind = INTEL_AX211_SCAN_EVENT_COMPLETE;
 	event->final_schedule = bytes[4U];
@@ -737,40 +836,40 @@ ax211_scan_complete_decode(
 	 * Scheduling, iteration, EBS, elapsed-time, and reserved fields are
 	 * firmware reports.  They do not narrow the v1 completion contract.
 	 */
-	error = ax211_scan_status_result(event->status);
+	outcome = ax211_scan_status_result(event->status);
 
-	/* Returns the computed result. */
-	return error;
+	/* Reports how the scan ended. */
+	return outcome;
 }
 
-/* Supports the ax211 scan get le32 operation. */
+/* Reads a 32-bit little-endian value. */
 static uint32_t
 ax211_scan_get_le32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
 	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-/* Supports the ax211 scan status result operation. */
+/* Maps the completion's status byte to how the scan ended. */
 static int
 ax211_scan_status_result(
 	uint8_t status)
 {
-	/* Checks the operation status. */
+	/* The scan finished. */
 	if (status == AX211_SCAN_OUTCOME_FINISHED)
 		return INTEL_AX211_SCAN_COMPLETE;
 
-	/* Checks the operation status. */
+	/* The scan was cancelled. */
 	if (status == AX211_SCAN_OUTCOME_CANCELLED)
 		return INTEL_AX211_SCAN_ABORTED;
 
-	/* Returns the computed result. */
+	/* Any other status is a failure. */
 	return INTEL_AX211_SCAN_FAILED;
 }
 
-/* Supports the ax211 scan iteration decode operation. */
+/* Decodes the report of one pass over the channel list. */
 static int
 ax211_scan_iteration_decode(
 	const struct intel_ax211_protocol_message *message,
@@ -778,42 +877,45 @@ ax211_scan_iteration_decode(
 {
 	const uint8_t *result;
 	const uint8_t *bytes;
+	uint32_t uid;
 	size_t available;
 	size_t count;
 	size_t expected;
 	size_t index;
 
-	/* Handles the message condition. */
+	/* Refuses a payload shorter than the report header. */
 	if (message->payload_length < 16U)
 		return INTEL_AX211_SCAN_TRUNCATED;
 
-	/* Handles the message condition. */
+	/* Refuses a payload too long or not made of whole channel results. */
 	if (message->payload_length >
 		    INTEL_AX211_SCAN_ITERATION_NOTIFICATION_SIZE ||
 	    (message->payload_length - 16U) % 8U != 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_SCAN_OVERSIZED;
 	}
 
-	/* Checks the ax211 scan get le32 result. */
+	/* Refuses the report of another scan. */
 	bytes = message->payload;
-	if (ax211_scan_get_le32(bytes) != INTEL_AX211_SCAN_UID)
+	uid = ax211_scan_get_le32(bytes);
+	if (uid != INTEL_AX211_SCAN_UID)
 		return INTEL_AX211_SCAN_OUT_OF_ORDER;
 
-	/* Checks the remaining item count. */
+	/* Refuses more results than the profile has channels. */
 	count = bytes[4U];
 	if (count > INTEL_AX211_SCAN_CHANNEL_LIMIT)
 		return INTEL_AX211_SCAN_OVERSIZED;
 
-	/* Checks the remaining item count. */
+	/* Refuses more results than the payload holds. */
 	available = (message->payload_length - 16U) / 8U;
 	if (count > available)
 		return INTEL_AX211_SCAN_TRUNCATED;
 
-	/* Handles the message condition. */
+	/* Refuses a payload shorter than its results. */
 	expected = 16U + count * 8U;
 	if (message->payload_length < expected)
 		return INTEL_AX211_SCAN_TRUNCATED;
+
+	/* Decodes the header. */
 	kern_memset(event, 0, sizeof(*event));
 	event->kind = INTEL_AX211_SCAN_EVENT_ITERATION_COMPLETE;
 	event->channel_count = count;
@@ -822,15 +924,14 @@ ax211_scan_iteration_decode(
 	event->last_channel = bytes[7U];
 	event->tsf = (uint64_t)ax211_scan_get_le32(bytes + 8U) |
 		     ((uint64_t)ax211_scan_get_le32(bytes + 12U) << 32);
-	/* Process each remaining element. */
+
+	/*
+	 * Decodes the live results.  Channel, band, and per-probe fields are
+	 * informational reports; the UID and bounded result count fence this
+	 * notification.
+	 */
 	for (index = 0U; index < count; index++) {
 		result = bytes + 16U + index * 8U;
-
-		/*
-		 * Channel, band, and per-probe fields are informational
-		 * reports. The UID and bounded result count fence this
-		 * notification.
-		 */
 		event->channel[index].channel = result[0U];
 		event->channel[index].probe_result = result[2U];
 		event->channel[index].probe_not_sent = result[3U];
@@ -839,11 +940,10 @@ ax211_scan_iteration_decode(
 	}
 
 	/*
-	 * API89 firmware may publish the complete 112-entry result storage even
-	 * when scanned_channels says only one entry is live.  Decode exactly
-	 * that bounded prefix and ignore the remaining fixed-array storage.
-	 * This is an iteration report, not the terminal UMAC completion;
-	 * SCAN_COMPLETE_UMAC owns lifetime.
+	 * Succeeded.  API89 firmware may publish the complete 112-entry result
+	 * storage even when scanned_channels says only one entry is live; only
+	 * that bounded prefix is decoded.  This is an iteration report, not the
+	 * terminal completion, which owns the scan's lifetime.
 	 */
 	return INTEL_AX211_SCAN_OK;
 }

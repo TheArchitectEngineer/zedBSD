@@ -79,6 +79,12 @@
 #define AX211_BSS_WMM_PARAMETER_SUBTYPE 1U
 #define AX211_BSS_WMM_VERSION 1U
 
+/*
+ * What the element walk of one frame found.
+ *
+ * It lives on the stack of one decode; the seen flags refuse an element that
+ * appears twice.
+ */
 struct ax211_bss_ie_state {
 	uint8_t channel;
 	uint8_t dtim_count;
@@ -100,7 +106,7 @@ static int ax211_bss_entry_valid(const struct intel_ax211_bss_entry *entry);
 static int ax211_bss_entry_worse(const struct intel_ax211_bss_entry *left, const struct intel_ax211_bss_entry *right);
 
 /*
- * Implements the drv intel ax211 bss decode operation.
+ * Decodes a received beacon or probe response into a BSS entry.
  */
 int
 drv_intel_ax211_bss_decode(
@@ -114,61 +120,66 @@ drv_intel_ax211_bss_decode(
 	const uint8_t *frame;
 	uint16_t frame_control;
 	uint16_t subtype;
+	int valid;
 	int result;
 
-	/* Handles the mpdu availability. */
-	if (mpdu == NULL || entry == NULL || mpdu->frame == NULL ||
-	    observation_generation == 0U || hardware_epoch == 0U) {
-		/* Returns the computed result. */
+	/* Refuses missing arguments and unset generations. */
+	if (mpdu == NULL ||
+	    entry == NULL ||
+	    mpdu->frame == NULL ||
+	    observation_generation == 0U ||
+	    hardware_epoch == 0U) {
 		return INTEL_AX211_BSS_INVALID;
 	}
 
-	/* Handles the mpdu condition. */
+	/* Refuses a frame without a channel or shorter than the fixed body. */
 	if (mpdu->channel == 0U ||
 	    mpdu->length < AX211_BSS_INFORMATION_ELEMENTS_OFFSET) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_TRUNCATED;
 	}
-	frame = mpdu->frame;
 
-	/* Handles the frame control condition. */
+	/* Refuses a frame of another protocol version or type. */
+	frame = mpdu->frame;
 	frame_control = ax211_bss_get_le16(frame);
 	if ((frame_control & AX211_BSS_FRAME_VERSION_MASK) != 0U ||
 	    (frame_control & AX211_BSS_FRAME_TYPE_MASK) !=
 		    AX211_BSS_FRAME_TYPE_MANAGEMENT) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_UNSUPPORTED;
 	}
 
-	/* Handles the frame control condition. */
+	/*
+	 * Refuses a frame to or from a distribution system, or a protected one.
+	 */
 	if ((frame_control &
 	     (AX211_BSS_FRAME_TO_FROM_DS | AX211_BSS_FRAME_PROTECTED)) != 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_MALFORMED;
 	}
 
-	/* Handles the subtype condition. */
+	/*
+	 * Refuses a management frame other than a beacon or a probe response.
+	 */
 	subtype = frame_control & AX211_BSS_FRAME_SUBTYPE_MASK;
 	if (subtype != AX211_BSS_FRAME_SUBTYPE_BEACON &&
 	    subtype != AX211_BSS_FRAME_SUBTYPE_PROBE_RESPONSE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_UNSUPPORTED;
 	}
 
-	/* Checks the ax211 bss address valid result. */
-	if (!ax211_bss_address_valid(frame + AX211_BSS_BSSID_OFFSET))
+	/* Refuses a group or zero BSSID. */
+	valid = ax211_bss_address_valid(frame + AX211_BSS_BSSID_OFFSET);
+	if (!valid)
 		return INTEL_AX211_BSS_MALFORMED;
 
+	/* Walks the elements. */
 	kern_memset(&ies, 0, sizeof(ies));
-
-	/* Checks the operation result. */
 	result = ax211_bss_ies_decode(
 		frame + AX211_BSS_INFORMATION_ELEMENTS_OFFSET,
 		mpdu->length - AX211_BSS_INFORMATION_ELEMENTS_OFFSET, &ies);
 	if (result != INTEL_AX211_BSS_OK)
 		return result;
 
-	/* Handles the ies condition. */
+	/*
+	 * Refuses a frame that names another channel than the one it came on.
+	 */
 	if (ies.channel != 0U && ies.channel != mpdu->channel)
 		return INTEL_AX211_BSS_MALFORMED;
 
@@ -191,40 +202,50 @@ drv_intel_ax211_bss_decode(
 	decoded.tim_valid = ies.tim_seen;
 	decoded.wmm_present = ies.wmm_present;
 	decoded.receive_tsf_valid = mpdu->tsf_valid != 0U ? 1U : 0U;
-	decoded.source = subtype == AX211_BSS_FRAME_SUBTYPE_BEACON
-				 ? INTEL_AX211_BSS_SOURCE_BEACON
-				 : INTEL_AX211_BSS_SOURCE_PROBE_RESPONSE;
 	decoded.valid = 1U;
 
-	/* Handles the decoded condition. */
+	/* Records which kind of frame the entry came from. */
+	if (subtype == AX211_BSS_FRAME_SUBTYPE_BEACON) {
+		decoded.source = INTEL_AX211_BSS_SOURCE_BEACON;
+	} else {
+		decoded.source = INTEL_AX211_BSS_SOURCE_PROBE_RESPONSE;
+	}
+
+	/* Refuses a zero beacon interval. */
 	if (decoded.beacon_interval_tu == 0U)
 		return INTEL_AX211_BSS_MALFORMED;
+
+	/* Succeeded: publishes the entry. */
 	*entry = decoded;
-	/* Returns the computed result. */
 	return INTEL_AX211_BSS_OK;
 }
 
 /*
- * Implements the drv intel ax211 bss cache init operation.
+ * Empties the BSS cache and binds it to one firmware epoch.
  */
 int
 drv_intel_ax211_bss_cache_init(
 	struct intel_ax211_bss_cache *cache,
 	uint32_t hardware_epoch)
 {
-	/* Handles the cache availability. */
+	/* Refuses a missing cache and an unset epoch. */
 	if (cache == NULL || hardware_epoch == 0U)
 		return INTEL_AX211_BSS_INVALID;
+
+	/* Empties the cache. */
 	kern_memset(cache, 0, sizeof(*cache));
 	cache->hardware_epoch = hardware_epoch;
 	cache->initialized = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_BSS_OK;
 }
 
 /*
- * Implements the drv intel ax211 bss cache observe operation.
+ * Records one observed BSS in the cache.
+ *
+ * A BSS already cached is updated; a new one takes a free slot, or replaces
+ * the worst entry when the cache is full and it is better.
  */
 int
 drv_intel_ax211_bss_cache_observe(
@@ -233,106 +254,114 @@ drv_intel_ax211_bss_cache_observe(
 {
 	size_t index;
 	size_t available;
+	int valid;
+	int compared;
+	int worse;
 
-	/* Handles the cache availability. */
+	/* Refuses missing arguments and an uninitialized cache. */
 	if (cache == NULL || entry == NULL || cache->initialized == 0U)
 		return INTEL_AX211_BSS_INVALID;
 
-	/* Checks the ax211 bss entry valid result. */
-	if (!ax211_bss_entry_valid(entry))
+	/* Refuses an inconsistent entry. */
+	valid = ax211_bss_entry_valid(entry);
+	if (!valid)
 		return INTEL_AX211_BSS_MALFORMED;
 
-	/* Handles the entry condition. */
+	/* Refuses an entry of another firmware epoch. */
 	if (entry->hardware_epoch != cache->hardware_epoch)
 		return INTEL_AX211_BSS_STALE;
 
-	/* Process each remaining element. */
+	/* Updates the entry of the same BSSID if the cache holds one. */
 	for (index = 0U; index < INTEL_AX211_BSS_CACHE_LIMIT; index++) {
-		/* Handles the cache condition. */
-		if (cache->entry[index].valid != 0U &&
-		    kern_memcmp(cache->entry[index].bssid, entry->bssid,
-			   sizeof(entry->bssid)) == 0) {
-			/* Handles the entry condition. */
-			if (entry->observation_generation <
-			    cache->entry[index].observation_generation) {
-				/* Returns the computed result. */
-				return INTEL_AX211_BSS_STALE;
-			}
+		/* Skips a free slot. */
+		if (cache->entry[index].valid == 0U)
+			continue;
 
-			/* Handles the entry condition. */
-			if (entry->observation_generation ==
-				    cache->entry[index]
-					    .observation_generation &&
-			    entry->channel == cache->entry[index].channel &&
-			    cache->entry[index].source ==
-				    INTEL_AX211_BSS_SOURCE_BEACON &&
-			    entry->source ==
-				    INTEL_AX211_BSS_SOURCE_PROBE_RESPONSE) {
-				/*
-				 * Common scan admission refreshes these
-				 * selection fields even when private beacon
-				 * timing remains authoritative.
-				 */
-				cache->entry[index].rssi_dbm = entry->rssi_dbm;
-				cache->entry[index].last_seen_ticks =
-					entry->last_seen_ticks;
+		/* Skips a slot of another BSSID. */
+		compared = kern_memcmp(cache->entry[index].bssid, entry->bssid,
+				       sizeof(entry->bssid));
+		if (compared != 0)
+			continue;
 
-				/* Returns the computed result. */
-				return INTEL_AX211_BSS_OK;
-			}
+		/* Refuses an observation older than the cached one. */
+		if (entry->observation_generation <
+		    cache->entry[index].observation_generation) {
+			return INTEL_AX211_BSS_STALE;
+		}
 
-			cache->entry[index] = *entry;
-
-			/* Returns the computed result. */
+		/*
+		 * A probe response of the same scan pass after a beacon on the same
+		 * channel only refreshes the fields the common scan admission
+		 * selects by; the beacon's timing stays authoritative.
+		 */
+		if (entry->observation_generation ==
+			    cache->entry[index].observation_generation &&
+		    entry->channel == cache->entry[index].channel &&
+		    cache->entry[index].source ==
+			    INTEL_AX211_BSS_SOURCE_BEACON &&
+		    entry->source == INTEL_AX211_BSS_SOURCE_PROBE_RESPONSE) {
+			cache->entry[index].rssi_dbm = entry->rssi_dbm;
+			cache->entry[index].last_seen_ticks =
+				entry->last_seen_ticks;
 			return INTEL_AX211_BSS_OK;
 		}
+
+		/* Replaces the cached entry with the newer one. */
+		cache->entry[index] = *entry;
+		return INTEL_AX211_BSS_OK;
 	}
 
-	/* Handles the cache condition. */
+	/*
+	 * Stores a new BSS in the first free slot while the cache is not full.
+	 */
 	if (cache->count < INTEL_AX211_BSS_CACHE_LIMIT) {
+		/* Finds the first free slot. */
 		available = INTEL_AX211_BSS_CACHE_LIMIT;
-		/* Process each remaining element. */
 		for (index = 0U; index < INTEL_AX211_BSS_CACHE_LIMIT; index++) {
-			/* Handles the cache condition. */
+			/* Remembers only the first free slot. */
 			if (cache->entry[index].valid == 0U &&
 			    available == INTEL_AX211_BSS_CACHE_LIMIT)
 				available = index;
 		}
 
-		/* Handles the available condition. */
+		/*
+		 * A count below the limit with no free slot is a broken cache.
+		 */
 		if (available == INTEL_AX211_BSS_CACHE_LIMIT)
 			return INTEL_AX211_BSS_MALFORMED;
+
+		/* Stores the entry. */
 		cache->entry[available] = *entry;
 		cache->count++;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_OK;
 	}
 
 	/*
-	 * Mirror the common 64-entry scan cache's deterministic admission rule
-	 * so every BSS it can publish remains representable here.
+	 * Finds the worst cached entry with the eviction rule of the common
+	 * 64-entry scan cache, so every BSS it can publish remains representable
+	 * here.
 	 */
 	index = 0U;
-	/* Process each element required by the operation. */
 	for (available = 1U; available < INTEL_AX211_BSS_CACHE_LIMIT;
 	     available++) {
-		/* Checks the ax211 bss entry worse result. */
-		if (ax211_bss_entry_worse(&cache->entry[available],
-					  &cache->entry[index]))
+		/* Moves to an entry that would be evicted first. */
+		worse = ax211_bss_entry_worse(&cache->entry[available],
+					      &cache->entry[index]);
+		if (worse)
 			index = available;
 	}
 
-	/* Checks the ax211 bss entry worse result. */
-	if (ax211_bss_entry_worse(&cache->entry[index], entry))
+	/* Replaces the worst entry when the new one is better. */
+	worse = ax211_bss_entry_worse(&cache->entry[index], entry);
+	if (worse)
 		cache->entry[index] = *entry;
 
-	/* Returns the computed result. */
+	/* Succeeded: the cache holds the better entries. */
 	return INTEL_AX211_BSS_OK;
 }
 
 /*
- * Implements the drv intel ax211 bss cache lookup operation.
+ * Finds the cached entry of one BSSID on one channel.
  */
 int
 drv_intel_ax211_bss_cache_lookup(
@@ -343,46 +372,58 @@ drv_intel_ax211_bss_cache_lookup(
 	struct intel_ax211_bss_entry *entry)
 {
 	size_t index;
+	int valid;
+	int compared;
 
-	/* Handles the cache availability. */
-	if (cache == NULL || bssid == NULL || entry == NULL ||
-	    cache->initialized == 0U || channel == 0U || hardware_epoch == 0U) {
-		/* Returns the computed result. */
+	/*
+	 * Refuses missing arguments, an uninitialized cache and unset values.
+	 */
+	if (cache == NULL ||
+	    bssid == NULL ||
+	    entry == NULL ||
+	    cache->initialized == 0U ||
+	    channel == 0U ||
+	    hardware_epoch == 0U) {
 		return INTEL_AX211_BSS_INVALID;
 	}
 
-	/* Checks the ax211 bss address valid result. */
-	if (!ax211_bss_address_valid(bssid))
+	/* Refuses a group or zero BSSID. */
+	valid = ax211_bss_address_valid(bssid);
+	if (!valid)
 		return INTEL_AX211_BSS_INVALID;
 
-	/* Handles the cache condition. */
+	/* Refuses a lookup of another firmware epoch. */
 	if (cache->hardware_epoch != hardware_epoch)
 		return INTEL_AX211_BSS_STALE;
-	/* Process each remaining element. */
+
+	/* Looks for the BSSID on the channel. */
 	for (index = 0U; index < INTEL_AX211_BSS_CACHE_LIMIT; index++) {
-		/* Handles the cache condition. */
-		if (cache->entry[index].valid != 0U &&
-		    cache->entry[index].channel == channel &&
-		    kern_memcmp(cache->entry[index].bssid, bssid,
-			   INTEL_AX211_BSS_ADDRESS_SIZE) == 0) {
-			/* Handles the cache condition. */
-			if (cache->entry[index].hardware_epoch !=
-			    hardware_epoch) {
-				/* Returns the computed result. */
-				return INTEL_AX211_BSS_STALE;
-			}
-			*entry = cache->entry[index];
-			/* Returns the computed result. */
-			return INTEL_AX211_BSS_OK;
-		}
+		/* Skips a free slot and a slot on another channel. */
+		if (cache->entry[index].valid == 0U ||
+		    cache->entry[index].channel != channel)
+			continue;
+
+		/* Skips a slot of another BSSID. */
+		compared = kern_memcmp(cache->entry[index].bssid, bssid,
+				       INTEL_AX211_BSS_ADDRESS_SIZE);
+		if (compared != 0)
+			continue;
+
+		/* Refuses an entry of another firmware epoch. */
+		if (cache->entry[index].hardware_epoch != hardware_epoch)
+			return INTEL_AX211_BSS_STALE;
+
+		/* Succeeded: reports the entry. */
+		*entry = cache->entry[index];
+		return INTEL_AX211_BSS_OK;
 	}
 
-	/* Returns the computed result. */
+	/* The cache does not hold the BSS. */
 	return INTEL_AX211_BSS_NOT_FOUND;
 }
 
 /*
- * Implements the drv intel ax211 bss assoc metadata operation.
+ * Turns a cached entry into the association metadata of one connection.
  */
 int
 drv_intel_ax211_bss_assoc_metadata(
@@ -392,21 +433,26 @@ drv_intel_ax211_bss_assoc_metadata(
 	struct drv_intel_ax211_bss_assoc_metadata *metadata)
 {
 	struct drv_intel_ax211_bss_assoc_metadata decoded;
+	int valid;
 
-	/* Handles the entry availability. */
-	if (entry == NULL || metadata == NULL || connection_generation == 0U ||
+	/* Refuses missing arguments and unset generations. */
+	if (entry == NULL ||
+	    metadata == NULL ||
+	    connection_generation == 0U ||
 	    hardware_epoch == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_INVALID;
 	}
 
-	/* Checks the ax211 bss entry valid result. */
-	if (!ax211_bss_entry_valid(entry))
+	/* Refuses an inconsistent entry. */
+	valid = ax211_bss_entry_valid(entry);
+	if (!valid)
 		return INTEL_AX211_BSS_MALFORMED;
 
-	/* Handles the entry condition. */
+	/* Refuses an entry of another firmware epoch. */
 	if (entry->hardware_epoch != hardware_epoch)
 		return INTEL_AX211_BSS_STALE;
+
+	/* Copies what the association needs from the entry. */
 	kern_memset(&decoded, 0, sizeof(decoded));
 	kern_memcpy(decoded.bssid, entry->bssid, sizeof(decoded.bssid));
 	decoded.common_generation = connection_generation;
@@ -423,21 +469,25 @@ drv_intel_ax211_bss_assoc_metadata(
 	decoded.tim_valid = entry->tim_valid;
 	decoded.wmm_present = entry->wmm_present;
 	decoded.receive_tsf_valid = entry->receive_tsf_valid;
+
+	/* Succeeded: publishes the metadata. */
 	*metadata = decoded;
-	/* Returns the computed result. */
 	return INTEL_AX211_BSS_OK;
 }
 
-/* Supports the ax211 bss get le16 operation. */
+/* Reads a 16-bit little-endian value. */
 static uint16_t
 ax211_bss_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the value from its two bytes, least significant first. */
 	return (uint16_t)((uint16_t)bytes[0U] | ((uint16_t)bytes[1U] << 8));
 }
 
-/* Supports the ax211 bss address valid operation. */
+/*
+ * Reports whether an address can be a BSSID: 1 when it is an individual,
+ * nonzero address, 0 when not.
+ */
 static int
 ax211_bss_address_valid(
 	const uint8_t address[6])
@@ -445,19 +495,24 @@ ax211_bss_address_valid(
 	size_t index;
 	uint8_t combined;
 
-	/* Handles the address availability. */
+	/* Rejects a missing address and a group address. */
 	if (address == NULL || (address[0U] & 1U) != 0U)
 		return 0;
+
+	/* Combines the six bytes to tell a zero address. */
 	combined = 0U;
-	/* Process each remaining element. */
 	for (index = 0U; index < 6U; index++)
 		combined |= address[index];
 
-	/* Returns the computed result. */
-	return combined != 0U;
+	/* Rejects the zero address. */
+	if (combined == 0U)
+		return 0;
+
+	/* The address can be a BSSID. */
+	return 1;
 }
 
-/* Supports the ax211 bss ies decode operation. */
+/* Walks the elements of a beacon or probe response. */
 static int
 ax211_bss_ies_decode(
 	const uint8_t *bytes,
@@ -470,158 +525,179 @@ ax211_bss_ies_decode(
 	uint8_t identifier;
 	int result;
 
-	/* Handles the bytes availability. */
+	/* Refuses missing arguments. */
 	if (bytes == NULL || state == NULL)
 		return INTEL_AX211_BSS_INVALID;
+
+	/* Reads one element after another until the end of the frame. */
 	offset = 0U;
-	/* Process each remaining element. */
 	while (offset < length) {
-		/* Checks the current data length. */
+		/* Refuses an element header cut off by the end of the frame. */
 		if (length - offset < 2U)
 			return INTEL_AX211_BSS_TRUNCATED;
+
+		/* Takes the identifier and the length of the element. */
 		identifier = bytes[offset];
 		element_length = bytes[offset + 1U];
 		offset += 2U;
 
-		/* Handles the element length condition. */
+		/* Refuses an element body cut off by the end of the frame. */
 		if (element_length > length - offset)
 			return INTEL_AX211_BSS_TRUNCATED;
-		data = bytes + offset;
 
-		/* Handles the identifier condition. */
+		/* Reads the elements the cache uses; others are skipped. */
+		data = bytes + offset;
 		if (identifier == AX211_BSS_IE_SSID) {
-			/* Handles the element length condition. */
+			/*
+			 * Refuses an overlong SSID and a second SSID element.
+			 */
 			if (element_length > AX211_BSS_SSID_MAX ||
 			    state->ssid_seen != 0U) {
-				/* Returns the computed result. */
 				return INTEL_AX211_BSS_MALFORMED;
 			}
+
+			/* Notes the SSID. */
 			state->ssid_seen = 1U;
 		} else if (identifier == AX211_BSS_IE_DS_PARAMETER) {
-			/* Handles the element length condition. */
+			/* Refuses a DS parameter set of another length. */
 			if (element_length != 1U)
 				return INTEL_AX211_BSS_MALFORMED;
 
-			/* Checks the operation result. */
+			/* Records the channel it names. */
 			result = ax211_bss_channel_observe(state, data[0U], 0);
 			if (result != INTEL_AX211_BSS_OK)
 				return result;
 		} else if (identifier == AX211_BSS_IE_HT_OPERATION) {
-			/* Handles the element length condition. */
+			/* Refuses an HT operation element of another length. */
 			if (element_length != AX211_BSS_HT_OPERATION_SIZE)
 				return INTEL_AX211_BSS_MALFORMED;
 
-			/* Checks the operation result. */
+			/* Records its primary channel. */
 			result = ax211_bss_channel_observe(state, data[0U], 1);
 			if (result != INTEL_AX211_BSS_OK)
 				return result;
 		} else if (identifier == AX211_BSS_IE_TIM) {
-			/* Handles the element length condition. */
+			/* Refuses a short TIM and a second TIM element. */
 			if (element_length < AX211_BSS_TIM_MIN_SIZE ||
 			    state->tim_seen != 0U) {
-				/* Returns the computed result. */
 				return INTEL_AX211_BSS_MALFORMED;
 			}
 
-			/* Handles the data condition. */
+			/*
+			 * Refuses a zero DTIM period and a count not below it.
+			 */
 			if (data[1U] == 0U || data[0U] >= data[1U])
 				return INTEL_AX211_BSS_MALFORMED;
+
+			/* Records the DTIM count and period. */
 			state->dtim_count = data[0U];
 			state->dtim_period = data[1U];
 			state->tim_seen = 1U;
 		} else if (identifier == AX211_BSS_IE_VENDOR) {
-			/* Checks the operation result. */
+			/* Records a WMM element. */
 			result = ax211_bss_wmm_observe(state, data,
 						       element_length);
 			if (result != INTEL_AX211_BSS_OK)
 				return result;
 		}
 
+		/* Moves to the next element. */
 		offset += element_length;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: every element was read. */
 	return INTEL_AX211_BSS_OK;
 }
 
-/* Supports the ax211 bss channel observe operation. */
+/* Records the channel a DS parameter set or an HT operation element names. */
 static int
 ax211_bss_channel_observe(
 	struct ax211_bss_ie_state *state,
 	uint8_t channel,
 	int ht)
 {
-	/* Handles the channel condition. */
+	/* Refuses channel zero. */
 	if (channel == 0U)
 		return INTEL_AX211_BSS_MALFORMED;
 
-	/* Handles the ht condition. */
+	/* Refuses a second element of the same kind. */
 	if (ht != 0) {
-		/* Handles the state condition. */
+		/* A second HT operation element. */
 		if (state->ht_seen != 0U)
 			return INTEL_AX211_BSS_MALFORMED;
+
+		/* Notes the HT operation element. */
 		state->ht_seen = 1U;
 	} else {
-		/* Handles the state condition. */
+		/* A second DS parameter set. */
 		if (state->ds_seen != 0U)
 			return INTEL_AX211_BSS_MALFORMED;
+
+		/* Notes the DS parameter set. */
 		state->ds_seen = 1U;
 	}
 
-	/* Handles the state condition. */
+	/* Refuses elements that name different channels. */
 	if (state->channel != 0U && state->channel != channel)
 		return INTEL_AX211_BSS_MALFORMED;
+
+	/* Records the channel. */
 	state->channel = channel;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_BSS_OK;
 }
 
-/* Supports the ax211 bss wmm observe operation. */
+/* Records a WMM element among the vendor elements. */
 static int
 ax211_bss_wmm_observe(
 	struct ax211_bss_ie_state *state,
 	const uint8_t *data,
 	size_t length)
 {
-	/* Checks the current data length. */
-	if (length < 4U || data[0U] != 0x00U || data[1U] != 0x50U ||
-	    data[2U] != 0xf2U || data[3U] != AX211_BSS_WMM_TYPE) {
-		/* Returns the computed result. */
+	/* A vendor element other than WMM is skipped. */
+	if (length < 4U ||
+	    data[0U] != 0x00U ||
+	    data[1U] != 0x50U ||
+	    data[2U] != 0xf2U ||
+	    data[3U] != AX211_BSS_WMM_TYPE) {
 		return INTEL_AX211_BSS_OK;
 	}
 
-	/* Checks the current data length. */
+	/* Refuses a WMM element shorter than the information element. */
 	if (length < AX211_BSS_WMM_INFO_SIZE)
 		return INTEL_AX211_BSS_MALFORMED;
 
-	/* Handles the data condition. */
+	/*
+	 * Refuses a WMM subtype other than information or parameter, or another
+	 * version.
+	 */
 	if ((data[4U] != AX211_BSS_WMM_INFO_SUBTYPE &&
 	     data[4U] != AX211_BSS_WMM_PARAMETER_SUBTYPE) ||
 	    data[5U] != AX211_BSS_WMM_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_MALFORMED;
 	}
 
-	/* Handles the data condition. */
+	/* Refuses a WMM element whose length does not match its subtype. */
 	if ((data[4U] == AX211_BSS_WMM_INFO_SUBTYPE &&
 	     length != AX211_BSS_WMM_INFO_SIZE) ||
 	    (data[4U] == AX211_BSS_WMM_PARAMETER_SUBTYPE &&
 	     length != AX211_BSS_WMM_PARAMETER_SIZE)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_BSS_MALFORMED;
 	}
 
-	/* Handles the state condition. */
+	/* Refuses a second WMM element. */
 	if (state->wmm_present != 0U)
 		return INTEL_AX211_BSS_MALFORMED;
+
+	/* Notes the WMM element. */
 	state->wmm_present = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_BSS_OK;
 }
 
-/* Supports the ax211 bss get le64 operation. */
+/* Reads a 64-bit little-endian value. */
 static uint64_t
 ax211_bss_get_le64(
 	const uint8_t *bytes)
@@ -638,70 +714,89 @@ ax211_bss_get_le64(
 	value |= (uint64_t)bytes[6U] << 48;
 	value |= (uint64_t)bytes[7U] << 56;
 
-	/* Returns the computed result. */
+	/* Reports the value. */
 	return value;
 }
 
-/* Supports the ax211 bss entry valid operation. */
+/* Reports whether a BSS entry is consistent: 1 when it is, 0 when not. */
 static int
 ax211_bss_entry_valid(
 	const struct intel_ax211_bss_entry *entry)
 {
-	/* Checks the ax211 bss address valid result. */
-	if (entry == NULL || entry->valid != 1U ||
+	int valid;
+
+	/* Rejects a missing or unused entry and unset fields. */
+	if (entry == NULL ||
+	    entry->valid != 1U ||
 	    entry->observation_generation == 0U ||
-	    entry->hardware_epoch == 0U || entry->channel == 0U ||
-	    entry->beacon_interval_tu == 0U ||
-	    !ax211_bss_address_valid(entry->bssid)) {
-		/* Succeeded. */
+	    entry->hardware_epoch == 0U ||
+	    entry->channel == 0U ||
+	    entry->beacon_interval_tu == 0U) {
 		return 0;
 	}
 
-	/* Handles the entry condition. */
+	/* Rejects a group or zero BSSID. */
+	valid = ax211_bss_address_valid(entry->bssid);
+	if (!valid)
+		return 0;
+
+	/* Rejects an unknown source. */
 	if (entry->source != INTEL_AX211_BSS_SOURCE_BEACON &&
 	    entry->source != INTEL_AX211_BSS_SOURCE_PROBE_RESPONSE) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the entry condition. */
-	if (entry->tim_valid > 1U || entry->wmm_present > 1U ||
+	/* Rejects flags other than 0 or 1. */
+	if (entry->tim_valid > 1U ||
+	    entry->wmm_present > 1U ||
 	    entry->receive_tsf_valid > 1U) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the entry condition. */
-	if (entry->tim_valid != 0U && (entry->dtim_period == 0U ||
-				       entry->dtim_count >= entry->dtim_period)) {
-		/* Succeeded. */
+	/* Rejects a TIM with a zero period or a count not below it. */
+	if (entry->tim_valid != 0U &&
+	    (entry->dtim_period == 0U ||
+	     entry->dtim_count >= entry->dtim_period)) {
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The entry is consistent. */
 	return 1;
 }
 
-/* True when left is evicted before right, matching the common WLAN cache. */
+/*
+ * Reports whether left is evicted before right: by weaker signal, then by
+ * older sighting, then by the larger BSSID, as in the common WLAN cache.
+ */
 static int
 ax211_bss_entry_worse(
 	const struct intel_ax211_bss_entry *left,
 	const struct intel_ax211_bss_entry *right)
 {
-	int error;
+	int compared;
 
-	/* Handles the left condition. */
-	if (left->rssi_dbm != right->rssi_dbm)
-		return left->rssi_dbm < right->rssi_dbm;
+	/* A weaker signal is worse. */
+	if (left->rssi_dbm != right->rssi_dbm) {
+		/* The weaker of the two is worse. */
+		if (left->rssi_dbm < right->rssi_dbm)
+			return 1;
+		return 0;
+	}
 
-	/* Handles the left condition. */
-	if (left->last_seen_ticks != right->last_seen_ticks)
-		return left->last_seen_ticks < right->last_seen_ticks;
+	/* With equal signals, an older sighting is worse. */
+	if (left->last_seen_ticks != right->last_seen_ticks) {
+		/* The one seen earlier is worse. */
+		if (left->last_seen_ticks < right->last_seen_ticks)
+			return 1;
+		return 0;
+	}
 
-	/* Computes the function result. */
-	error = kern_memcmp(left->bssid, right->bssid,
-				 INTEL_AX211_BSS_ADDRESS_SIZE) > 0;
+	/* Otherwise the larger BSSID is worse. */
+	compared = kern_memcmp(left->bssid, right->bssid,
+			       INTEL_AX211_BSS_ADDRESS_SIZE);
+	if (compared > 0)
+		return 1;
 
-	/* Returns the computed result. */
-	return error;
+	/* The left entry is not worse. */
+	return 0;
 }

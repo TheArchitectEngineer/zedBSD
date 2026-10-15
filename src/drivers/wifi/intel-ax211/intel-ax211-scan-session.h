@@ -20,9 +20,11 @@
 #include "intel-ax211-command.h"
 #include "intel-ax211-scan.h"
 
+/* zedBSD's bounds: one second for the request's and for the cancel's answer. */
 #define INTEL_AX211_SCAN_SESSION_COMMAND_TIMEOUT_US 1000000U
 #define INTEL_AX211_SCAN_SESSION_ABORT_TIMEOUT_US 1000000U
 
+/* The results of the scan session. */
 enum intel_ax211_scan_session_result {
 	INTEL_AX211_SCAN_SESSION_OK = 0,
 	INTEL_AX211_SCAN_SESSION_INVALID = 1,
@@ -38,6 +40,7 @@ enum intel_ax211_scan_session_result {
 	INTEL_AX211_SCAN_SESSION_FAILED = 11
 };
 
+/* What the session waits for. */
 enum intel_ax211_scan_session_phase {
 	INTEL_AX211_SCAN_SESSION_IDLE = 0,
 	INTEL_AX211_SCAN_SESSION_WAIT_START_ACK = 1,
@@ -47,6 +50,7 @@ enum intel_ax211_scan_session_phase {
 	INTEL_AX211_SCAN_SESSION_TERMINAL = 5
 };
 
+/* One scan notification handed to the caller, with the scan it belongs to. */
 struct intel_ax211_scan_session_event {
 	uint64_t common_generation;
 	uint8_t channel;
@@ -54,6 +58,9 @@ struct intel_ax211_scan_session_event {
 };
 
 /*
+ * The scans of one firmware epoch, one channel at a time, over the command
+ * transaction of that epoch.
+ *
  * The common-WLAN generation is never placed on the firmware wire.  Firmware
  * notifications are fenced by hardware_epoch, which belongs to the running
  * operational image.  The API89 table and full NVM/MCC profile are owned by
