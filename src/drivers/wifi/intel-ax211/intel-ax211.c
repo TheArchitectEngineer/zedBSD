@@ -4860,12 +4860,12 @@ ax211_pci_deferred_event_clear(
 			sizeof(controller->deferred_dispatch_event));
 }
 
-/* Supports the ax211 pci get le32 operation. */
+/* Reads a little-endian 32-bit value. */
 static uint32_t
 ax211_pci_get_le32(
 	const uint8_t bytes[4])
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0U] | ((uint32_t)bytes[1U] << 8) |
 	       ((uint32_t)bytes[2U] << 16) | ((uint32_t)bytes[3U] << 24);
 }
@@ -4879,20 +4879,30 @@ ax211_pci_tx_sync_for_device(
 	size_t length)
 {
 	struct ax211_pci_controller *controller;
+	int coherent;
 
-	/* Checks the drv dma device is coherent result. */
+	/*
+	 * Refuses missing arguments, a range outside the buffer and a controller
+	 * without a runtime.
+	 */
 	controller = argument;
-	if (controller == NULL || buffer == NULL || buffer->address == NULL ||
-	    buffer->device_address == 0U || offset > buffer->size ||
+	if (controller == NULL ||
+	    buffer == NULL ||
+	    buffer->address == NULL ||
+	    buffer->device_address == 0U ||
+	    offset > buffer->size ||
 	    length > buffer->size - offset ||
-	    !controller->runtime_initialized ||
-	    !drv_dma_device_is_coherent(controller->frame_ring.dma_device)) {
-		/* Reports operation failure. */
+	    !controller->runtime_initialized) {
 		return -1;
 	}
-	kern_io_write_barrier();
 
-	/* Succeeded. */
+	/* Refuses DMA memory that is not coherent. */
+	coherent = drv_dma_device_is_coherent(controller->frame_ring.dma_device);
+	if (!coherent)
+		return -1;
+
+	/* Succeeded: orders the writes before the device reads them. */
+	kern_io_write_barrier();
 	return 0;
 }
 
@@ -4903,40 +4913,43 @@ ax211_pci_tx_write32(
 	uint32_t offset,
 	uint32_t value)
 {
-	int error;
 	struct ax211_pci_controller *controller;
+	int result;
 
-	/* Handles the controller availability. */
+	/* Refuses any other register and a missing register write. */
 	controller = argument;
 	if (controller == NULL ||
 	    offset != INTEL_AX211_TX_RING_WRITE_POINTER_REGISTER ||
 	    controller->mmio.ops == NULL ||
 	    controller->mmio.ops->csr_write32 == NULL) {
-		/* Reports operation failure. */
 		return -1;
 	}
+
+	/* Orders the ring's writes before the doorbell, then rings it. */
 	kern_io_write_barrier();
-
-	/* Computes the function result. */
-	error = controller->mmio.ops->csr_write32(
+	result = controller->mmio.ops->csr_write32(
 		controller->mmio.argument, offset, value);
+	if (result != 0)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return 0;
 }
 
-/* Supports the ax211 pci assoc clock us operation. */
+/* Reads the device clock for the association session; UINT64_MAX on failure. */
 static uint64_t
 ax211_pci_assoc_clock_us(
 	void *argument)
 {
 	uint64_t now;
+	int result;
 
-	/* Checks the ax211 pci clock us result. */
-	if (ax211_pci_clock_us(argument, &now) != 0)
+	/* A failed read is the end of time, which expires every command. */
+	result = ax211_pci_clock_us(argument, &now);
+	if (result != 0)
 		return UINT64_MAX;
 
-	/* Returns the computed result. */
+	/* Reports the time. */
 	return now;
 }
 
@@ -4953,19 +4966,21 @@ ax211_pci_command_timeout(
 	uint64_t remaining_ticks;
 	uint64_t remaining_us;
 
-	/* Handles the controller availability. */
+	/* Refuses missing arguments. */
 	if (controller == NULL || timeout_us == NULL || deadline_us == NULL)
 		return EINVAL;
 	remaining_us = AX211_DIRECT_TIMEOUT_US;
 
-	/* Handles the deadline ticks condition. */
+	/* Bounds the interval by a set deadline. */
 	if (deadline_ticks != 0U && deadline_ticks != UINT64_MAX) {
-		/* Handles the now ticks condition. */
+		/* Refuses a deadline that has passed. */
 		now_ticks = clock_ticks();
 		if (now_ticks >= deadline_ticks)
 			return ETIMEDOUT;
 
-		/* Handles the remaining ticks condition. */
+		/*
+		 * Converts the remaining ticks, keeping the bound on overflow.
+		 */
 		remaining_ticks = deadline_ticks - now_ticks;
 		if (remaining_ticks > UINT64_MAX / 1000000U) {
 			remaining_us = AX211_DIRECT_TIMEOUT_US;
@@ -4973,23 +4988,23 @@ ax211_pci_command_timeout(
 			remaining_us =
 				remaining_ticks * 1000000U / KERN_CLOCK_HZ;
 
-			/* Handles the remaining us condition. */
+			/* Rounds a remainder below 1 us up to 1 us. */
 			if (remaining_us == 0U)
 				remaining_us = 1U;
 
-			/* Handles the remaining us condition. */
+			/* Never exceeds the bound. */
 			if (remaining_us > AX211_DIRECT_TIMEOUT_US)
 				remaining_us = AX211_DIRECT_TIMEOUT_US;
 		}
 	}
 
-	/* Handles the now us condition. */
+	/* Refuses a deadline beyond the device clock. */
 	if (now_us > UINT64_MAX - remaining_us)
 		return EOVERFLOW;
+
+	/* Succeeded: reports the interval and the deadline. */
 	*timeout_us = remaining_us;
 	*deadline_us = now_us + remaining_us;
-
-	/* Succeeded. */
 	return 0;
 }
 
@@ -5005,34 +5020,41 @@ ax211_pci_sram_read_locked(
 	size_t count)
 {
 	size_t index;
+	int result;
 
-	/* Checks the operation status. */
-	if (controller == NULL || words == NULL || count == 0U ||
-	    address < AX211_ERROR_LOG_MIN_ADDRESS || (address & 3U) != 0U ||
+	/*
+	 * Refuses missing arguments, a misplaced or misaligned range, a range
+	 * beyond the address space, a NIC not held awake, and missing register
+	 * access.
+	 */
+	if (controller == NULL ||
+	    words == NULL ||
+	    count == 0U ||
+	    address < AX211_ERROR_LOG_MIN_ADDRESS ||
+	    (address & 3U) != 0U ||
 	    count - 1U > (UINT32_MAX - address) / sizeof(uint32_t) ||
 	    controller->mmio.wake_hold_depth == 0U ||
 	    controller->mmio.ops == NULL ||
 	    controller->mmio.ops->csr_read32 == NULL ||
 	    controller->mmio.ops->csr_write32 == NULL) {
-		/* Failed. */
 		return EINVAL;
 	}
 
-	/* Checks the csr write32 result. */
-	if (controller->mmio.ops->csr_write32(controller->mmio.argument,
-					      AX211_CSR_SRAM_READ_ADDRESS,
-					      address) != 0) {
-		/* Failed. */
+	/* Points the data window at the address. */
+	result = controller->mmio.ops->csr_write32(controller->mmio.argument,
+						   AX211_CSR_SRAM_READ_ADDRESS,
+						   address);
+	if (result != 0)
 		return EIO;
-	}
 	kern_io_barrier();
 
-	/* Process each remaining element. */
+	/* Reads the words in turn. */
 	for (index = 0U; index < count; index++) {
-		/* Checks the csr read32 result. */
-		if (controller->mmio.ops->csr_read32(controller->mmio.argument,
-						     AX211_CSR_SRAM_READ_DATA,
-						     &words[index]) != 0) {
+		/* A failed read clears what was read. */
+		result = controller->mmio.ops->csr_read32(
+			controller->mmio.argument, AX211_CSR_SRAM_READ_DATA,
+			&words[index]);
+		if (result != 0) {
 			kern_memset(words, 0, count * sizeof(*words));
 
 			/* Failed. */
@@ -5060,11 +5082,11 @@ ax211_pci_firmware_error_dump(
 	int lmac_result;
 	int umac_result;
 
-	/* Handles the controller availability. */
+	/* Nothing to read without a controller. */
 	if (controller == NULL)
 		return;
 
-	/* Handles the controller condition. */
+	/* The tables are known only from a healthy ALIVE. */
 	if (!controller->runtime_start.alive_accepted ||
 	    controller->runtime_start.alive.status !=
 		    INTEL_AX211_PROTOCOL_ALIVE_HEALTHY) {
@@ -5073,10 +5095,11 @@ ax211_pci_firmware_error_dump(
 			   (unsigned)controller->runtime_start.alive_accepted,
 			   controller->runtime_start.alive.status);
 
-		/* Returns the computed result. */
+		/* Nothing can be read. */
 		return;
 	}
 
+	/* Reads both tables. */
 	kern_memset(lmac, 0, sizeof(lmac));
 	kern_memset(umac, 0, sizeof(umac));
 	lmac_address =
@@ -5088,7 +5111,7 @@ ax211_pci_firmware_error_dump(
 	umac_result = ax211_pci_sram_read_locked(controller, umac_address, umac,
 						 AX211_UMAC_ERROR_WORD_COUNT);
 
-	/* Handles the lmac result condition. */
+	/* Logs the LMAC table, or why it could not be read. */
 	if (lmac_result == 0) {
 		kern_logf(
 			"intel-ax211: LMAC firmware error ptr=%08x valid=%08x "
@@ -5103,7 +5126,7 @@ ax211_pci_firmware_error_dump(
 			   lmac_address, lmac_result);
 	}
 
-	/* Handles the umac result condition. */
+	/* Logs the UMAC table, or why it could not be read. */
 	if (umac_result == 0) {
 		kern_logf(
 			"intel-ax211: UMAC firmware error ptr=%08x valid=%08x "
@@ -5135,7 +5158,10 @@ ax211_pci_direct_command(
 	struct intel_ax211_protocol_pending_command *completed_pending)
 {
 	const uint8_t *error_payload;
+	const char *reason;
 	uint16_t bad_sequence;
+	uint32_t error_type;
+	uint32_t error_service;
 	uint8_t event_group;
 	uint64_t slot_address;
 	struct intel_ax211_boot_received_event received;
@@ -5146,32 +5172,44 @@ ax211_pci_direct_command(
 	uint64_t deadline_us;
 	uint64_t now_us;
 	uint64_t timeout_us;
+	size_t pending_count;
 	size_t length;
 	unsigned index;
 	int command_submitted;
+	int decode_result;
+	int tx_event;
 	int lock_result;
 	int result;
 	int unlock_result;
 
-	/* Checks the drv intel ax211 command pending count result. */
-	if (controller == NULL || request == NULL || response_length == NULL ||
+	/*
+	 * Refuses missing arguments and a controller whose operational
+	 * firmware is not running.
+	 */
+	if (controller == NULL ||
+	    request == NULL ||
+	    response_length == NULL ||
 	    (response_capacity != 0U && response == NULL) ||
-	    !controller->runtime_initialized || !controller->runtime_active ||
+	    !controller->runtime_initialized ||
+	    !controller->runtime_active ||
 	    controller->runtime_start.state !=
 		    INTEL_AX211_RUNTIME_START_STATE_RUNNING ||
-	    !controller->runtime_start.commands_initialized ||
-	    drv_intel_ax211_command_pending_count(
-		    &controller->runtime_start.commands) != 0U) {
-		/* Failed. */
+	    !controller->runtime_start.commands_initialized) {
 		return EBUSY;
 	}
+
+	/* Refuses a second command while one is outstanding. */
+	pending_count = drv_intel_ax211_command_pending_count(
+		&controller->runtime_start.commands);
+	if (pending_count != 0U)
+		return EBUSY;
 	*response_length = 0U;
 
-	/* Handles the completed message availability. */
+	/* Clears the optional message output. */
 	if (completed_message != NULL)
 		kern_memset(completed_message, 0, sizeof(*completed_message));
 
-	/* Handles the completed pending availability. */
+	/* Clears the optional pending-command output and the cause records. */
 	if (completed_pending != NULL)
 		kern_memset(completed_pending, 0, sizeof(*completed_pending));
 	kern_memset(&handle, 0, sizeof(handle));
@@ -5181,7 +5219,7 @@ ax211_pci_direct_command(
 	controller->command_raw_fh_causes = 0U;
 	controller->command_raw_hw_causes = 0U;
 
-	/* Checks the operation result. */
+	/* Converts the deadline into a timeout. */
 	result = ax211_pci_clock_us(controller, &now_us);
 	if (result == 0) {
 		result = ax211_pci_command_timeout(controller, deadline_ticks,
@@ -5189,17 +5227,17 @@ ax211_pci_direct_command(
 						   &deadline_us);
 	}
 
-	/* Checks the operation result. */
+	/* Reports a failed conversion. */
 	if (result != 0)
 		return result;
 
-	/* Handles the lock result condition. */
+	/* Holds the NIC awake. */
 	lock_result = ax211_pci_wake_hold(controller);
 	if (lock_result != 0)
 		return EIO;
 	command_submitted = 0;
 
-	/* Checks the operation result. */
+	/* Submits the command and keeps its pending record. */
 	result = drv_intel_ax211_command_submit(
 		&controller->runtime_start.commands, request, now_us,
 		timeout_us, &handle);
@@ -5215,42 +5253,62 @@ ax211_pci_direct_command(
 
 	index = 0U;
 
-	/* Process each remaining element. */
+	/* Receives events until the answer arrives or the bounds run out. */
 	while (result == 0 && index < AX211_DIRECT_EVENT_LIMIT) {
 		kern_memset(&received, 0, sizeof(received));
 
-		/* Checks the operation result. */
+		/* A timeout or a receive failure ends the wait. */
 		result = ax211_pci_receive_event(
 			controller, deadline_us, controller->runtime_event,
 			sizeof(controller->runtime_event), &received);
-		if (result == INTEL_AX211_BOOT_RECEIVE_TIMEOUT)
+		if (result == INTEL_AX211_BOOT_RECEIVE_TIMEOUT) {
 			result = ETIMEDOUT;
-		else if (result != INTEL_AX211_BOOT_RECEIVE_OK)
+			break;
+		}
+		if (result != INTEL_AX211_BOOT_RECEIVE_OK) {
 			result = EIO;
-		else if (received.generation != controller->hardware_epoch ||
-			 received.length == 0U ||
-			 received.length > sizeof(controller->runtime_event) ||
-			 drv_intel_ax211_event_decode(
-				 controller->runtime_event, received.length,
-				 &decoded) != INTEL_AX211_SUCCESS)
+			break;
+		}
+
+		/* Refuses an event of another epoch or of an invalid size. */
+		if (received.generation != controller->hardware_epoch ||
+		    received.length == 0U ||
+		    received.length > sizeof(controller->runtime_event)) {
 			result = EIO;
-		else if (ax211_pci_tx_event(&decoded)) {
+			break;
+		}
+
+		/* Refuses an event that does not decode. */
+		decode_result = drv_intel_ax211_event_decode(
+			controller->runtime_event, received.length, &decoded);
+		if (decode_result != INTEL_AX211_SUCCESS) {
+			result = EIO;
+			break;
+		}
+
+		/* Defers a transmit event. */
+		tx_event = ax211_pci_tx_event(&decoded);
+		if (tx_event) {
 			result = ax211_pci_deferred_event_enqueue(
 				controller, controller->runtime_event,
 				&received);
 			ax211_pci_scrub(controller->runtime_event,
 					received.length);
 			index++;
-		} else if ((decoded.queue & 0x80U) != 0U) {
+			continue;
+		}
+
+		/* Defers a notification, logging a command rejection. */
+		if ((decoded.queue & 0x80U) != 0U) {
 			event_group =
 				decoded.flags &
 				(uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
 
-			/* Checks the operation status. */
+			/* Logs the firmware's rejection of a command. */
 			if (event_group == INTEL_AX211_PROTOCOL_FAMILY_CLASSIC &&
 			    decoded.command.opcode ==
 				    AX211_COMMAND_REJECTION_OPCODE) {
-				/* Checks the operation status. */
+				/* Logs a well-formed rejection's fields. */
 				error_payload = controller->runtime_event +
 						decoded.payload_offset;
 				if (decoded.payload_length ==
@@ -5259,17 +5317,19 @@ ax211_pci_direct_command(
 						(uint16_t)error_payload[6U] |
 						((uint16_t)error_payload[7U]
 						 << 8);
+					error_type =
+						ax211_pci_get_le32(error_payload);
+					error_service = ax211_pci_get_le32(
+						error_payload + 8U);
 					kern_logf("intel-ax211: firmware "
 						   "command error "
 						   "type=%08x command=%02x "
 						   "sequence=%04x "
 						   "service=%08x\n",
-						   ax211_pci_get_le32(
-							   error_payload),
+						   error_type,
 						   error_payload[4U],
 						   bad_sequence,
-						   ax211_pci_get_le32(
-							   error_payload + 8U));
+						   error_service);
 				} else {
 					kern_logf("intel-ax211: malformed "
 						   "firmware "
@@ -5279,101 +5339,112 @@ ax211_pci_direct_command(
 				}
 			}
 
+			/* Defers the notification. */
 			result = ax211_pci_deferred_event_enqueue(
 				controller, controller->runtime_event,
 				&received);
 			ax211_pci_scrub(controller->runtime_event,
 					received.length);
 			index++;
-		} else {
-			length = 0U;
+			continue;
+		}
 
-			/* Checks the operation result. */
-			result = drv_intel_ax211_command_complete(
-				&controller->runtime_start.commands,
-				controller->runtime_event, received.length,
-				controller->hardware_epoch, response,
-				response_capacity, &length);
-			if (result == INTEL_AX211_COMMAND_OK) {
-				*response_length = length;
+		/* Completes the command with its answer. */
+		length = 0U;
+		result = drv_intel_ax211_command_complete(
+			&controller->runtime_start.commands,
+			controller->runtime_event, received.length,
+			controller->hardware_epoch, response,
+			response_capacity, &length);
+		if (result == INTEL_AX211_COMMAND_OK) {
+			*response_length = length;
 
-				/*
-				 * Handles the completed pending availability.
-				 */
-				if (completed_pending != NULL)
-					*completed_pending = pending;
+			/* Reports the pending record when it is asked for. */
+			if (completed_pending != NULL)
+				*completed_pending = pending;
 
-				/*
-				 * Handles the completed message availability.
-				 */
-				if (completed_message != NULL) {
-					completed_message->opcode =
-						decoded.command.opcode;
-					completed_message->group =
-						decoded.flags &
-						(uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
-					completed_message->version =
-						pending.response_version;
-					completed_message->flags =
-						decoded.flags;
-					completed_message->queue =
-						decoded.queue;
-					completed_message->index =
-						decoded.index;
-					completed_message->generation =
-						controller->hardware_epoch;
-					completed_message->payload = response;
-					completed_message->payload_length =
-						length;
-				}
-
-				result = 0;
-				command_submitted = 0;
-			} else {
-				kern_logf(
-					"intel-ax211: command completion "
-					"rejected "
-					"request=%02x/%02x response=%02x/%02x "
-					"flags=%02x queue=%02x index=%02x "
-					"payload=%u "
-					"expected=%u..%u result=%d\n",
-					(unsigned)request->command.group,
-					(unsigned)request->command.opcode,
-					(unsigned)(decoded.flags &
-						   (uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK),
-					(unsigned)decoded.command.opcode,
-					(unsigned)decoded.flags,
-					(unsigned)decoded.queue,
-					(unsigned)decoded.index,
-					(unsigned)decoded.payload_length,
-					(unsigned)request
-						->minimum_response_length,
-					(unsigned)request
-						->maximum_response_length,
-					result);
-				result = EIO;
+			/*
+			 * Reports the answer as a message when it is asked for.
+			 */
+			if (completed_message != NULL) {
+				completed_message->opcode =
+					decoded.command.opcode;
+				completed_message->group =
+					decoded.flags &
+					(uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK;
+				completed_message->version =
+					pending.response_version;
+				completed_message->flags =
+					decoded.flags;
+				completed_message->queue =
+					decoded.queue;
+				completed_message->index =
+					decoded.index;
+				completed_message->generation =
+					controller->hardware_epoch;
+				completed_message->payload = response;
+				completed_message->payload_length =
+					length;
 			}
 
-			ax211_pci_scrub(controller->runtime_event,
-					received.length);
-			break;
+			result = 0;
+			command_submitted = 0;
+		} else {
+			kern_logf(
+				"intel-ax211: command completion "
+				"rejected "
+				"request=%02x/%02x response=%02x/%02x "
+				"flags=%02x queue=%02x index=%02x "
+				"payload=%u "
+				"expected=%u..%u result=%d\n",
+				(unsigned)request->command.group,
+				(unsigned)request->command.opcode,
+				(unsigned)(decoded.flags &
+					   (uint8_t)~INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK),
+				(unsigned)decoded.command.opcode,
+				(unsigned)decoded.flags,
+				(unsigned)decoded.queue,
+				(unsigned)decoded.index,
+				(unsigned)decoded.payload_length,
+				(unsigned)request
+					->minimum_response_length,
+				(unsigned)request
+					->maximum_response_length,
+				result);
+			result = EIO;
 		}
+
+		/* Clears the event and ends the wait. */
+		ax211_pci_scrub(controller->runtime_event,
+				received.length);
+		break;
 	}
 
-	/* Checks the operation result. */
+	/* An exhausted event budget is a timeout. */
 	if (result == 0 && index == AX211_DIRECT_EVENT_LIMIT)
 		result = ETIMEDOUT;
-	if (result != 0 && command_submitted &&
+
+	/* Dumps the firmware's error tables after a fatal cause. */
+	if (result != 0 &&
+	    command_submitted &&
 	    ((controller->command_fh_causes &
 	      INTEL_AX211_TRANSPORT_QUEUE_CAUSE_FAULT) != 0U ||
 	     (controller->command_hw_causes &
-	      INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES) != 0U))
+	      INTEL_AX211_TRANSPORT_EVENT_FATAL_CAUSES) != 0U)) {
 		ax211_pci_firmware_error_dump(controller);
+	}
+
+	/* Logs a timed-out command with the transport's state. */
 	if (result == ETIMEDOUT && command_submitted) {
+		/* Names the bound that ran out. */
 		slot_address = controller->transport.memory
 				       .command_slots_device_address +
 			       (uint64_t)handle.token.index *
 				       INTEL_AX211_TRANSPORT_COMMAND_SLOT_SIZE;
+		if (index == AX211_DIRECT_EVENT_LIMIT)
+			reason = "event-limit";
+		else
+			reason = "deadline";
 		kern_logf(
 			"intel-ax211: command timeout opcode=%02x group=%02x "
 			"token=%u events=%u reason=%s slot-page=%03x "
@@ -5383,8 +5454,7 @@ ax211_pci_direct_command(
 			(unsigned)request->command.opcode,
 			(unsigned)request->command.group,
 			(unsigned)handle.token.index, index,
-			index == AX211_DIRECT_EVENT_LIMIT ? "event-limit"
-							  : "deadline",
+			reason,
 			(unsigned)(slot_address & UINT64_C(0xfff)),
 			controller->command_fh_causes,
 			controller->command_hw_causes,
@@ -5397,13 +5467,13 @@ ax211_pci_direct_command(
 			(unsigned)controller->transport.command_ring.used);
 	}
 
-	/* Checks the operation result. */
+	/* Cancels a command that did not complete. */
 	if (result != 0 && command_submitted) {
 		(void)drv_intel_ax211_command_cancel(
 			&controller->runtime_start.commands, &handle);
 	}
 
-	/* Checks the operation result. */
+	/* Releases the NIC; a failed release fails a successful command. */
 	unlock_result = ax211_pci_wake_release(controller);
 	if (result == 0 && unlock_result != 0)
 		result = EIO;
