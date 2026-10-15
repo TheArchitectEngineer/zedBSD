@@ -16,6 +16,7 @@
 - 体制（2026-10-15 ユーザー）: P1・P2・P3 は誰でも何でも、T1・T2・T3 は試験、B1 は Web。ユーザーは逐次に 1 つずつ解決する進め方。
 - Pi 4（10.0.30.2）: 2026-10-15 Q1 が SD を焼き直した（ユーザー「Piのイメージを焼いてください。」、BUG-294 の直しの後の main 9640a1cc1 の config/ci/config-rpi4.mk、`build/uat/main-rpi4-sd/hdd-image.img` sha256 d582e576…、書いた後に cmp で一致）。kei の公開鍵・host key・/home/kei の試験の file（Video.mp4・ws236/）は消えた。壊れた前の UFS の写しは build/q1/bug294/（BUG-294）。kei の password は kei。新しい host key は ED25519 SHA256:7IzFEK4j…（2026-10-15、焼き直しの後）。
 - RTX 機（10.0.30.5、i5-13400F＋RTX 2070、2026-10-15 ユーザー）:「RTXは kei@10.0.30.5 パスワードkeiです。」「RTX機は再起動するとzedBSDが起動しますので、カーネルなどアップデートして再起動してOKです。」→ USB の zedBSD（RAk の image）が起動する。T・Q1 が SSH（password kei、sudo も kei の見込み）で kernel・userland を差し替えて reboot してよい。network は使える（SSH が通る）。host key は焼き直し・差し替えで変わる（ユーザーの指示で ~/.ssh/known_hosts から消して入れ直した）。
+- Latitude 5330（10.0.30.3、2026-10-15 夕 ユーザー）:「Latitude 5330が10.0.30.3で入れますので、テストが必要なら使ってください。」→ 試験の担当が使ってよい。予定: WS248 の p002 の後に AX211 の試験（WS218 p002 の MSI-X の書く順の確かめも兼ねる）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
