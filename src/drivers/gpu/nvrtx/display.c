@@ -31,13 +31,32 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The display's instance memory: 64 KiB of VRAM, 1 MiB below the first block. */
+/*
+ * The display's instance memory: 64 KiB of VRAM, 1 MiB below the first
+ * block, write-combined in the VRAM's space.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_disp_oneinit, the instance memory's size) and r535/nvrm/disp.h
+ * (ADDR_FBMEM, NV_MEMORY_WRITECOMBINED).
+ */
 #define DISPLAY_INSTANCE_BELOW		0x100000ULL
 #define DISPLAY_INSTANCE_BYTES		0x10000U
 #define DISPLAY_SPACE_VRAM		2U
 #define DISPLAY_CACHE_WRITE_COMBINED	2U
 
-/* The controls of the bring-up and the readout. */
+/*
+ * The controls of the bring-up and the readout.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_CMD_INTERNAL_DISPLAY_WRITE_INST_MEM,
+ * NV2080_CTRL_CMD_INTERNAL_DISPLAY_GET_STATIC_INFO,
+ * NV2080_CTRL_CMD_INTERNAL_INIT_BRIGHTC_STATE_LOAD), ctrl2080/ctrl2080event.h
+ * (NV2080_CTRL_CMD_EVENT_SET_NOTIFICATION), ctrl0073/ctrl0073system.h,
+ * ctrl0073/ctrl0073specific.h, ctrl0073/ctrl0073dp.h and
+ * ctrl0073/ctrl0073dfp.h (the NV0073_CTRL_CMD_ controls of the same names).
+ */
 #define DISPLAY_CTL_WRITE_INSTANCE	0x20800a49U
 #define DISPLAY_CTL_STATIC_INFO		0x20800a01U
 #define DISPLAY_CTL_BRIGHTNESS_LOAD	0x20800ac6U
@@ -56,7 +75,14 @@
 #define DISPLAY_CTL_HDMI_ENABLE		0x00730273U
 #define DISPLAY_CTL_HDMI_SINK_CAPS	0x00730293U
 
-/* Their parameter lengths. */
+/*
+ * Their parameter lengths.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h,
+ * ctrl2080/ctrl2080event.h and ctrl0073/ctrl0073system.h, ctrl0073specific.h,
+ * ctrl0073dp.h, ctrl0073dfp.h (the controls' _PARAMS structures).
+ */
 #define DISPLAY_WRITE_INSTANCE_BYTES	24U
 #define DISPLAY_STATIC_INFO_BYTES	36U
 #define DISPLAY_BRIGHTNESS_LOAD_BYTES	4104U
@@ -81,13 +107,32 @@
 #define DISPLAY_TYPE_NONE		0U
 #define DISPLAY_OUTPUT_MAX		32U
 
-/* The notifications asked for: hotplug and the DisplayPort interrupt, with their event objects. */
+/*
+ * The notifications asked for: hotplug and the DisplayPort interrupt, with
+ * their event objects.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/cl2080_notification.h
+ * (NV2080_NOTIFIERS_HOTPLUG, NV2080_NOTIFIERS_DP_IRQ).
+ */
 #define DISPLAY_NOTIFY_HOTPLUG		1U
 #define DISPLAY_NOTIFY_DP_IRQ		7U
 #define DISPLAY_HANDLE_HOTPLUG		0x007e0000U
 #define DISPLAY_HANDLE_DP_IRQ		0x007e0001U
 
-/* The fields the driver reads or writes. */
+/*
+ * The fields the driver reads or writes.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_INTERNAL_DISPLAY_GET_STATIC_INFO_PARAMS) and
+ * ctrl0073/ctrl0073system.h, ctrl0073specific.h
+ * (NV0073_CTRL_SYSTEM_GET_NUM_HEADS_PARAMS,
+ * NV0073_CTRL_SPECIFIC_GET_ALL_HEAD_MASK_PARAMS,
+ * NV0073_CTRL_SYSTEM_GET_SUPPORTED_PARAMS,
+ * NV0073_CTRL_SYSTEM_GET_ACTIVE_PARAMS,
+ * NV0073_CTRL_SPECIFIC_OR_GET_INFO_PARAMS).
+ */
 #define DISPLAY_STATIC_WINDOWS_AT	4U
 #define DISPLAY_HEAD_COUNT_AT		8U
 #define DISPLAY_HEAD_MASK_AT		4U
@@ -99,22 +144,46 @@
 #define DISPLAY_OUTPUT_TYPE_AT		12U
 #define DISPLAY_OUTPUT_PROTOCOL_AT	16U
 
-/* "Not supported": the brightness state the driver has no ACPI method to load. */
+/*
+ * "Not supported": the brightness state the driver has no ACPI method to
+ * load.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nvstatuscodes.h (NV_ERR_NOT_SUPPORTED).
+ */
 #define DISPLAY_STATUS_NOT_SUPPORTED	0x56U
 
 /*
  * The objects: the common object and the display root (its class is the
  * generation's, the profile's class_display; the handle keeps Turing's
  * number on every generation, as a handle is only the driver's name).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/cl0073.h (NV04_DISPLAY_COMMON) and
+ * class/clc570.h (NVC570_DISPLAY).
  */
 #define DISPLAY_CLASS_COMMON		0x0073U
 #define DISPLAY_HANDLE_COMMON		0x00730000U
 #define DISPLAY_HANDLE_ROOT		0xc5700000U
 
-/* The most heads the readout looks at. */
+/*
+ * The most heads the readout looks at.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_PDISP_FE_HW_SYS_CAP_HEAD_EXISTS__SIZE_1).
+ */
 #define DISPLAY_HEAD_MAX		8U
 
-/* A head's armed state: the raster, sync and blank words, and the pixel clock. */
+/*
+ * A head's armed state: the raster, sync and blank words, and the pixel
+ * clock (the core's armed copy, from its first head method on).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_UDISP_FE_CHN_ARMED_BASEADR_CORE) and NVIDIA open-gpu-doc
+ * classes/display/clc57d.h (the NVC57D_HEAD_SET_ methods).
+ */
 #define DISPLAY_REG_ARMED_HEAD		0x68a000U
 #define DISPLAY_HEAD_STRIDE		0x400U
 #define DISPLAY_ARMED_CONTROL_AT	0x004U
@@ -124,7 +193,13 @@
 #define DISPLAY_ARMED_BLANK_END_AT	0x06cU
 #define DISPLAY_ARMED_BLANK_START_AT	0x070U
 
-/* The output kinds and protocols the readout names. */
+/*
+ * The output kinds and protocols the readout names.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl0073/ctrl0073specific.h
+ * (NV0073_CTRL_SPECIFIC_OR_TYPE_SOR, NV0073_CTRL_SPECIFIC_OR_PROTOCOL_SOR_*).
+ */
 #define DISPLAY_TYPE_SOR		2U
 #define DISPLAY_PROTOCOL_TMDS_A		1U
 #define DISPLAY_PROTOCOL_TMDS_B		2U
@@ -361,8 +436,8 @@ display_instance(
  * is lit) or the error of a control.
  *
  * Procedure referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the inherit of a
- * lit output).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_outp_inherit).
  */
 int
 nvrtx_display_inherit(
@@ -435,8 +510,8 @@ nvrtx_display_inherit(
  * timing and the HDMI facts.
  *
  * Procedure referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the connectors'
- * probe).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_outp_detect, r535_outp_dfp_get_info, r535_tmds_edid_get).
  */
 int
 nvrtx_display_detect(
@@ -497,7 +572,9 @@ nvrtx_display_detect(
  * Tells the resource manager the lit output drives an HDMI sink, and the
  * sink's capabilities, before the first commit.
  *
- * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the HDMI enable).
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_sor_hdmi_ctrl, r535_sor_hdmi_scdc).
  */
 int
 nvrtx_display_hdmi(
@@ -723,8 +800,10 @@ display_event(
  * The brightness state is "not supported" (the driver evaluates no ACPI
  * method for it).
  *
- * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (the brightness state
- * sent when the method is absent).
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_disp_oneinit, the brightness state sent when the method is
+ * absent).
  */
 static int
 display_counts(

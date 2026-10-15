@@ -39,7 +39,13 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
 
-/* A window reads a surface from a 256-byte boundary, with rows a multiple of 64 bytes apart. */
+/*
+ * A window reads a surface from a 256-byte boundary, with rows a multiple of
+ * 64 bytes apart.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_image_set, the offset and the pitch the window is given).
+ */
 #define SHARE_OFFSET_ALIGN		256U
 #define SHARE_STRIDE_ALIGN		64U
 

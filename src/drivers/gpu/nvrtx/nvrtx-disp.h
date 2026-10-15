@@ -30,36 +30,88 @@
  * and its instance in the low half.  The driver takes a generation's classes
  * from its profile (nvrtx-private.h); these name Turing's for the records'
  * tests.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_CORE_CHANNEL_DMA) and clc57e.h (NVC57E_WINDOW_CHANNEL_DMA).
  */
 #define NVRTX_DISP_CLASS_CORE		0xc57dU
 #define NVRTX_DISP_CLASS_WINDOW		0xc57eU
 
-/* Turing's cursor channel (a PIO channel, one for each head: no push buffer, no objects). */
+/*
+ * Turing's cursor channel (a PIO channel, one for each head: no push buffer,
+ * no objects).
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57a.h
+ * (NVC57A_CURSOR_IMM_CHANNEL_PIO).
+ */
 #define NVRTX_DISP_CLASS_CURSOR		0xc57aU
 
-/* The channel numbers the hash table knows a channel by: the core is 0, window w is 1 + w. */
+/*
+ * The channel numbers the hash table knows a channel by: the core is 0,
+ * window w is 1 + w.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_PDISP_CHN_NUM_CORE, NV_PDISP_CHN_NUM_WIN).
+ */
 #define NVRTX_DISP_CHID_CORE		0U
 #define NVRTX_DISP_CHID_WINDOW_FIRST	1U
 
-/* The handles of the two context DMA objects every channel has: the notifiers and the whole VRAM. */
+/*
+ * The handles of the two context DMA objects every channel has: the
+ * notifiers and the whole VRAM.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/handles.h
+ * (NV50_DISP_HANDLE_SYNCBUF, NV50_DISP_HANDLE_VRAM).
+ */
 #define NVRTX_DISP_HANDLE_SYNC		0xf0000000U
 #define NVRTX_DISP_HANDLE_VRAM		0xf0000001U
 
-/* The hash table at the start of the instance memory: 1024 entries of 8 bytes. */
+/*
+ * The hash table at the start of the instance memory: 1024 entries of 8
+ * bytes.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/disp/tu102.c (ramht_size) and
+ * drivers/gpu/drm/nouveau/nvkm/core/ramht.c (nvkm_ramht_update, the entry's
+ * two words).
+ */
 #define NVRTX_DISP_RAMHT_BYTES		0x2000U
 #define NVRTX_DISP_RAMHT_ENTRIES	1024U
 #define NVRTX_DISP_RAMHT_BITS		10U
 #define NVRTX_DISP_RAMHT_ENTRY_BYTES	8U
 
-/* One context DMA object: 24 bytes on a 16-byte step, after the hash table. */
+/*
+ * One context DMA object: 24 bytes on a 16-byte step, after the hash table.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/dma/usergv100.c (gv100_dmaobj_bind,
+ * the object's size).
+ */
 #define NVRTX_DISP_CONTEXT_DMA_BYTES	24U
 #define NVRTX_DISP_CONTEXT_DMA_STEP	32U
 
-/* The resource manager's parameters: the push buffer's registration and a channel's allocation. */
+/*
+ * The resource manager's parameters: the push buffer's registration and a
+ * channel's allocation.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_INTERNAL_DISPLAY_CHANNEL_PUSHBUFFER_PARAMS) and
+ * src/common/sdk/nvidia/inc/nvos.h
+ * (NV50VAIO_CHANNELDMA_ALLOCATION_PARAMETERS).
+ */
 #define NVRTX_DISP_PUSHBUFFER_BYTES	56U
 #define NVRTX_DISP_CHANNEL_BYTES	40U
 
-/* The resource manager's allocation of a PIO channel (the cursor's): its instance, a notifier handle, a pointer. */
+/*
+ * The resource manager's allocation of a PIO channel (the cursor's): its
+ * instance, a notifier handle, a pointer.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nvos.h
+ * (NV50VAIO_CHANNELPIO_ALLOCATION_PARAMETERS).
+ */
 #define NVRTX_DISP_PIO_CHANNEL_BYTES	16U
 
 /*
@@ -71,21 +123,50 @@
 #define NVRTX_DISP_ASSIGN_SOR_BYTES	80U
 #define NVRTX_DISP_SOR_NONE		0xffffffffU
 
-/* The longest run of data one method header carries. */
+/*
+ * The longest run of data one method header carries.
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_DMA_METHOD_COUNT).
+ */
 #define NVRTX_DISP_METHOD_COUNT_MAX	1023U
 
-/* The notifier's status (bits 31:30 of its first word): finished is 2, not begun is 0. */
+/*
+ * The notifier's status (bits 31:30 of its first word): finished is 2, not
+ * begun is 0.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NV_DISP_NOTIFIER__0_STATUS).
+ */
 #define NVRTX_DISP_NOTIFIER_STATUS_SHIFT	30U
 #define NVRTX_DISP_NOTIFIER_FINISHED		2U
 
-/* The window's storage word for a pitch-linear surface on Turing (its layout field); Ampere's window has none. */
+/*
+ * The window's storage word for a pitch-linear surface on Turing (its layout
+ * field); Ampere's window has none.
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57e.h
+ * (NVC57E_SET_STORAGE_MEMORY_LAYOUT_PITCH).
+ */
 #define NVRTX_DISP_STORAGE_PITCH_TURING		0x00000010U
 
-/* The window's pixel formats: A8R8G8B8 is B, G, R, A in memory (BGRA8888), A8B8G8R8 is R, G, B, A. */
+/*
+ * The window's pixel formats: A8R8G8B8 is B, G, R, A in memory (BGRA8888),
+ * A8B8G8R8 is R, G, B, A.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57e.h
+ * (NVC57E_SET_PARAMS_FORMAT_A8R8G8B8, NVC57E_SET_PARAMS_FORMAT_A8B8G8R8).
+ */
 #define NVRTX_DISP_FORMAT_A8R8G8B8		0xcfU
 #define NVRTX_DISP_FORMAT_A8B8G8R8		0xd5U
 
-/* A push buffer's jump: the opcode in bits 31:29, the byte offset in bits 11:2. */
+/*
+ * A push buffer's jump: the opcode in bits 31:29, the byte offset in bits
+ * 11:2.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_DMA_OPCODE_JUMP, NVC57D_DMA_JUMP_OFFSET).
+ */
 #define NVRTX_DISP_JUMP				0x20000000U
 #define NVRTX_DISP_JUMP_OFFSET_MASK		0x00000ffcU
 
@@ -147,7 +228,13 @@
 #define NVRTX_DISP_ARMED_DITHER			11U
 #define NVRTX_DISP_ARMED_OUTPUT_RESOURCE	14U
 
-/* An output resource's control: the owner heads in bits 7:0, the protocol in bits 11:8. */
+/*
+ * An output resource's control: the owner heads in bits 7:0, the protocol in
+ * bits 11:8.
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_SOR_SET_CONTROL_PROTOCOL).
+ */
 #define NVRTX_DISP_SOR_PROTOCOL_SHIFT		8U
 
 /*
@@ -178,17 +265,33 @@ struct nvrtx_disp_mode {
 /*
  * The cursor's image: 64 by 64 pixels of A8R8G8B8 (premultiplied), rows
  * packed, on a 256-byte boundary of the VRAM (the core's cursor size W64_H64).
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_HEAD_SET_CONTROL_CURSOR_SIZE_W64_H64).
  */
 #define NVRTX_DISP_CURSOR_SIDE			64U
 #define NVRTX_DISP_CURSOR_BYTES			(NVRTX_DISP_CURSOR_SIDE * NVRTX_DISP_CURSOR_SIDE * 4U)
 
-/* The cursor channel's registers, from its user area: the free entries, the update and the position. */
+/*
+ * The cursor channel's registers, from its user area: the free entries, the
+ * update and the position.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57a.h
+ * (NVC57A_FREE, NVC57A_UPDATE, NVC57A_SET_CURSOR_HOT_SPOT_POINT_OUT).
+ */
 #define NVRTX_CURSOR_FREE			0x008U
 #define NVRTX_CURSOR_FREE_COUNT_MASK		0x3fU
 #define NVRTX_CURSOR_UPDATE			0x200U
 #define NVRTX_CURSOR_POINT_OUT			0x208U
 
-/* The head's frame counter: bits 31:16 of the raster generator's position (RG_DPCA). */
+/*
+ * The head's frame counter: bits 31:16 of the raster generator's position
+ * (RG_DPCA).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_PDISP_RG_DPCA_FRM_CNT).
+ */
 #define NVRTX_DISP_FRAME_COUNT_SHIFT		16U
 #define NVRTX_DISP_FRAME_COUNT_MASK		0xffffU
 
@@ -230,7 +333,13 @@ struct nvrtx_push {
 	int overflow;
 };
 
-/* The step of a surface's pitch the window takes (it is given the pitch in these units). */
+/*
+ * The step of a surface's pitch the window takes (it is given the pitch in
+ * these units).
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndwc57e.c
+ * (wndwc57e_image_set, the planar storage's pitch).
+ */
 #define NVRTX_DISP_PITCH_UNIT		64U
 
 /*
@@ -305,26 +414,73 @@ uint32_t nvrtx_disp_band_color(uint32_t band);
 #define NVRTX_DISP_DEVICE			0xde1d0000U
 #define NVRTX_DISP_SUBDEVICE			0x5d1d0000U
 
-/* The window-immediate class, the event class, and the windows a Turing display has. */
+/*
+ * The window-immediate class, the event class, and the windows a Turing
+ * display has.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57b.h
+ * (NVC57B_WINDOW_IMM_CHANNEL_DMA) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/event.h
+ * (NV01_EVENT_KERNEL_CALLBACK_EX) and
+ * drivers/gpu/drm/nouveau/dispnv50/corec57d.c (corec57d_init, the windows
+ * it bounds).
+ */
 #define NVRTX_DISP_CLASS_WIMM			0xc57bU
 #define NVRTX_DISP_CLASS_EVENT			0x007eU
 #define NVRTX_DISP_WINDOWS			8U
 
-/* The context DMA object a window reads the shown surface through (all the VRAM, large pages). */
-/* The first word of the notifiers' and the VRAM's context DMA objects: the VRAM, read and write, small pages. */
+/*
+ * The first word of the notifiers' and the VRAM's context DMA objects: the
+ * VRAM, read and write, small pages.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/dma/usergv100.c (gv100_dmaobj_new,
+ * the first word's flags).
+ */
 #define NVRTX_DISP_CONTEXT_DMA_FLAGS		0x00000045U
 
-/* An output whose resource is a SOR (the resource manager's output type), and the most heads a display has. */
+/*
+ * An output whose resource is a SOR (the resource manager's output type),
+ * and the most heads a display has.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/disp.h
+ * (NV0073_CTRL_SPECIFIC_OR_TYPE_SOR) and NVIDIA open-gpu-kernel-modules
+ * 570.144 src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_PDISP_FE_HW_SYS_CAP_HEAD_EXISTS__SIZE_1).
+ */
 #define NVRTX_DISP_OUTPUT_SOR			2U
 #define NVRTX_DISP_HEAD_MAX			8U
 
+/*
+ * The context DMA object a window reads the shown surface through (all the
+ * VRAM, large pages): its handle, and the first word of the object.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/dma/usergv100.c (gv100_dmaobj_new,
+ * the first word's flags).
+ */
 #define NVRTX_DISP_HANDLE_FB			0xfb000000U
 #define NVRTX_DISP_CONTEXT_DMA_FB_FLAGS		0x00000005U
 
-/* A LUT's bytes: a 32-byte header and 1025 entries of 8 bytes. */
+/*
+ * A LUT's bytes: a 32-byte header and 1025 entries of 8 bytes.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/headc57d.c
+ * (headc57d_olut_load) and lut.c (nv50_lut_init).
+ */
 #define NVRTX_DISP_LUT_BYTES			0x2008U
 
-/* The event objects' parameters, the client-side flag of their notification, and a repeated notification's parameters. */
+/*
+ * The event objects' parameters, the client-side flag of their
+ * notification, and a repeated notification's parameters.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/event.h
+ * (NV0005_ALLOC_PARAMETERS, NV01_EVENT_CLIENT_RM,
+ * NV2080_CTRL_EVENT_SET_NOTIFICATION_PARAMS,
+ * NV2080_CTRL_EVENT_SET_NOTIFICATION_ACTION_REPEAT).
+ */
 #define NVRTX_DISP_EVENT_BYTES			24U
 #define NVRTX_DISP_EVENT_CLIENT			0x04000000U
 #define NVRTX_DISP_NOTIFICATION_BYTES		20U

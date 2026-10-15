@@ -21,16 +21,14 @@
   * driver's own instead, a flip moves it to a second one, and each step waits
   * 5 s so the monitor can be watched.
  *
- * The order and the values are nouveau's on a Turing GPU under the GSP
- * (r535/r570 display channels, the Turing core, window, window-immediate
- * and cursor classes; hardware facts): every channel is made first (the
- * core, then for each head its two windows with their window-immediate
- * channels and its cursor), the core gets its start without a release,
- * the lit output is inherited and the sinks detected, and the first commit
- * gives the head its mode from the sink's preferred timing (the armed
- * timing when there is no EDID) in two core releases around the window's
- * first image.  Nothing is shown anywhere but on the head the firmware lit
- * (the firmware's output is the only output the driver scans out).
+ * The order: every channel is made first (the core, then for each head its
+ * two windows with their window-immediate channels and its cursor), the
+ * core gets its start without a release, the lit output is inherited and
+ * the sinks detected, and the first commit gives the head its mode from the
+ * sink's preferred timing (the armed timing when there is no EDID) in two
+ * core releases around the window's first image.  Nothing is shown anywhere
+ * but on the head the firmware lit (the firmware's output is the only output
+ * the driver scans out).
  */
 
 #include <stdbool.h>
@@ -43,27 +41,65 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The control that registers a display channel's push buffer with the resource manager. */
+/*
+ * The control that registers a display channel's push buffer with the
+ * resource manager.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h
+ * (NV2080_CTRL_CMD_INTERNAL_DISPLAY_CHANNEL_PUSHBUFFER).
+ */
 #define SCANOUT_CTL_PUSHBUFFER		0x20800a58U
 
-/* The handle of the display root the channels are made under (display-client's). */
+/*
+ * The handle of the display root the channels are made under
+ * (display-client's): the root's class in the high half.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/clc570.h (NVC570_DISPLAY) and Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (r535_disp_init).
+ */
 #define SCANOUT_HANDLE_ROOT		0xc5700000U
 
 /* A display channel's push buffer: one page of 1024 words, never wrapped. */
 #define SCANOUT_PUSH_BYTES		0x1000U
 #define SCANOUT_PUSH_WORDS		(SCANOUT_PUSH_BYTES / 4U)
 
-/* Where the channels' put and get are: the core's user area, and each window's page after it. */
+/*
+ * Where the channels' put and get are: the core's user area, and each
+ * window's page after it.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_UDISP_FE_CHN_ASSY_BASEADR_CORE, NV_UDISP_FE_CHN_ASSY_BASEADR_WIN),
+ * Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c
+ * (r535_chan_user) and NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_PUT, NVC57D_GET).
+ */
 #define SCANOUT_REG_CORE_USER		0x680000U
 #define SCANOUT_REG_WINDOW_USER		0x690000U
 #define SCANOUT_WINDOW_USER_STRIDE	0x1000U
 #define SCANOUT_USER_PUT_AT		0x0U
 #define SCANOUT_USER_GET_AT		0x4U
 
-/* The core's armed state: the core methods' values as last released, from this register on. */
+/*
+ * The core's armed state: the core methods' values as last released, from
+ * this register on.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_UDISP_FE_CHN_ARMED_BASEADR_CORE).
+ */
 #define SCANOUT_REG_CORE_ARMED		0x688000U
 
-/* The notifiers: 4 KiB of VRAM just after the instance memory; the core's at 0, window w's at (1 + w) * 64 + 32. */
+/*
+ * The notifiers: 4 KiB of VRAM just after the instance memory; the core's at
+ * 0, window w's at (1 + w) * 64 + 32.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.h
+ * (NV50_DISP_SYNC, NV50_DISP_CORE_NTFY, NV50_DISP_WNDW_NTFY) and NVIDIA
+ * open-gpu-doc classes/display/clc57d.h (NV_DISP_NOTIFIER_SIZEOF).
+ */
 #define SCANOUT_SYNC_AFTER_INSTANCE	0x10000U
 #define SCANOUT_SYNC_BYTES		0x1000U
 #define SCANOUT_CORE_NOTIFIER_AT	0x0U
@@ -94,10 +130,20 @@
 /* The most words a change of the head's view takes in the core (the view's 4, the release's 9), with a margin. */
 #define SCANOUT_VIEW_WORDS_MAX		32U
 
-/* The SOR capability nouveau reads once for each SOR output (its caps area's word at 0x13c). */
+/*
+ * The SOR capability read once for each SOR output (the caps area's word at
+ * 0x13c).
+ */
 #define SCANOUT_REG_SOR_CAPS		0x64013cU
 
-/* The heads' HDMI infoframe registers: the AVI's control and words, the vendor frame's control, one block of 0x400 for each head. */
+/*
+ * The heads' HDMI infoframe registers: the AVI's control and words, the
+ * vendor frame's control, one block of 0x400 for each head.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/disp/gv100.c
+ * (gv100_sor_hdmi_infoframe_avi, gv100_sor_hdmi_infoframe_vsi).
+ */
 #define SCANOUT_REG_AVI_CONTROL		0x6f0000U
 #define SCANOUT_REG_AVI_HEADER		0x6f0008U
 #define SCANOUT_REG_VSI_CONTROL		0x6f0100U
@@ -109,18 +155,38 @@
 #define SCANOUT_OLUT_AFTER_INSTANCE	0x11000U
 #define SCANOUT_ILUT_AFTER_INSTANCE	0x14000U
 
-/* The protocols of a TMDS output (single link A or B, dual link): the takeover drives only these. */
+/*
+ * The protocols of a TMDS output (single link A or B, dual link): the
+ * takeover drives only these.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_SOR_SET_CONTROL_PROTOCOL_SINGLE_TMDS_A, _SINGLE_TMDS_B,
+ * _DUAL_TMDS).
+ */
 #define SCANOUT_PROTOCOL_TMDS_A		1U
 #define SCANOUT_PROTOCOL_TMDS_B		2U
 #define SCANOUT_PROTOCOL_TMDS_DUAL	5U
 
-/* The clock from which a dual-link TMDS output uses both links. */
+/*
+ * The clock from which a dual-link TMDS output uses both links.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_sor_atomic_enable).
+ */
 #define SCANOUT_DUAL_LINK_KHZ		165000U
 
 /* How long each step of the takeover waits after its mark, so the monitor can be watched at it. */
 #define SCANOUT_STEP_US			5000000U
 
-/* The display's error state, read when a notifier does not come: the core's exception, the other exceptions, the supervisor and the core's state. */
+/*
+ * The display's error state, read when a notifier does not come: the core's
+ * exception, the other exceptions, the supervisor and the core's state.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/disp/gv100.c (gv100_disp_exception,
+ * gv100_disp_intr_exc_other, gv100_disp_intr_ctrl_disp,
+ * gv100_disp_core_idle, gv100_disp_dmac_idle, gv100_disp_super).
+ */
 #define SCANOUT_REG_CORE_EXCEPTION	0x611020U
 #define SCANOUT_REG_CORE_EXCEPTION_DATA	0x611024U
 #define SCANOUT_REG_CORE_EXCEPTION_CODE	0x611028U
@@ -134,18 +200,43 @@
 #define SCANOUT_REG_WINDOW_STATUS	0x610664U
 #define SCANOUT_REG_WIMM_STATUS		0x6106e4U
 
-/* The output resource's control: the heads that own it are bits 7:0. */
+/*
+ * The output resource's control: the heads that own it are bits 7:0.
+ *
+ * Value referenced: NVIDIA open-gpu-doc classes/display/clc57d.h
+ * (NVC57D_SOR_SET_CONTROL_OWNER_MASK).
+ */
 #define SCANOUT_SOR_OWNER_MASK		0xffU
 
-/* The cursor channels' user areas: one page for each head (nouveau's r535_chan_user). */
+/*
+ * The cursor channels' user areas: one page for each head.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/disp.c (r535_chan_user)
+ * and NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h
+ * (NV_UDISP_FE_CHN_ASSY_BASEADR_CURS).
+ */
 #define SCANOUT_REG_CURSOR_USER		0x6d8000U
 #define SCANOUT_CURSOR_USER_STRIDE	0x1000U
 
-/* A cursor channel is written once it has four free entries, waited for at most 100 ms (nouveau's curs507a_space). */
+/*
+ * A cursor channel is written once it has four free entries, waited for at
+ * most 100 ms.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/curs507a.c
+ * (curs507a_space).
+ */
 #define SCANOUT_CURSOR_SPACE_LEAST	4U
 #define SCANOUT_CURSOR_SPACE_US		100000U
 
-/* The cursor channel's update: release the gathered state (RELEASE_ELV, nouveau's cursc37a_update). */
+/*
+ * The cursor channel's update: release the gathered state (RELEASE_ELV).
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/cursc37a.c
+ * (cursc37a_update) and NVIDIA open-gpu-doc classes/display/clc57a.h
+ * (NVC57A_UPDATE_RELEASE_ELV).
+ */
 #define SCANOUT_CURSOR_RELEASE		0x00000001U
 
 /* How long the core channel is given to fetch what it has before more is written over it, and the polling step. */
@@ -155,7 +246,13 @@
 /* The most words a cursor's core methods and update take (the cursor's 7, the update's 9), with a margin. */
 #define SCANOUT_CURSOR_WORDS_MAX	32U
 
-/* The heads' raster positions, whose top half counts frames (RG_DPCA): one block of 0x800 for each head. */
+/*
+ * The heads' raster positions, whose top half counts frames (RG_DPCA): one
+ * block of 0x800 for each head.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/disp/v03_00/dev_disp.h (NV_PDISP_RG_DPCA).
+ */
 #define SCANOUT_REG_RG_DPCA		0x616330U
 #define SCANOUT_RG_STRIDE		0x800U
 
@@ -435,12 +532,15 @@ nvrtx_scanout_frame(
  * the head's view (the console smaller than the mode, and a frame of the
  * mode's size after it, or back) changes the view with the flip: the core
  * takes the new viewport input size, the window's release is interlocked
- * with the core and the core's with the window, as nouveau's commit of a
- * head and its plane together.  When a push buffer has no room left it is
- * wound back to its start first (nouveau's wind).  The caller serializes
- * the frames and the cursor's core updates, and waits for the notifier
- * before the next flip is sent (the window's two notifiers alternate).
- * Returns ETIMEDOUT when a change of the view does not finish in 2 s.
+ * with the core and the core's with the window, as in a commit of a head
+ * and its plane together.  When a push buffer has no room left it is wound
+ * back to its start first.  The caller serializes the frames and the
+ * cursor's core updates, and waits for the notifier before the next flip is
+ * sent (the window's two notifiers alternate).  Returns ETIMEDOUT when a
+ * change of the view does not finish in 2 s.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_disp_atomic_commit_tail, nv50_dmac_wind).
  */
 int
 nvrtx_scanout_frame_send(
@@ -560,8 +660,11 @@ nvrtx_scanout_frame_wait(
 
 /*
   * Reports whether the taken-over head has its cursor channel (the gpu-device
-  * stage): takeover makes every head's cursor channel with the others, as
-  * nouveau does. Without it the display has no cursor plane.
+  * stage): takeover makes every head's cursor channel with the others.
+  * Without it the display has no cursor plane.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/head.c
+ * (nv50_head_create).
  */
 int
 nvrtx_scanout_cursor_start(
@@ -586,12 +689,15 @@ nvrtx_scanout_cursor_start(
  * Shows the head's cursor: the image at a VRAM offset (64 by 64 A8R8G8B8 on
  * a 256-byte boundary) with its top left at a position word.
  *
- * As nouveau's commit of a cursor plane: the cursor channel takes the
- * position and its update, the core the cursor's control, object and
- * offset, then the core's update without an interlock.  The core's
- * notifier is asked for but not waited for (core_pending is set); the
- * caller first makes sure no earlier one is out (nvrtx_scanout_core_settled).
- * Returns 0, ETIMEDOUT when a channel does not take the words, or E2BIG.
+ * As a commit of a cursor plane: the cursor channel takes the position and
+ * its update, the core the cursor's control, object and offset, then the
+ * core's update without an interlock.  The core's notifier is asked for but
+ * not waited for (core_pending is set); the caller first makes sure no
+ * earlier one is out (nvrtx_scanout_core_settled).  Returns 0, ETIMEDOUT
+ * when a channel does not take the words, or E2BIG.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndw.c
+ * (nv50_wndw_flush_set) and disp.c (nv50_disp_atomic_commit_tail).
  */
 int
 nvrtx_scanout_cursor_show(
@@ -631,7 +737,10 @@ nvrtx_scanout_cursor_show(
 
 /*
  * Moves the shown cursor: the cursor channel takes the position and its
- * update alone, no core update (nouveau's legacy cursor move).
+ * update alone, no core update (a legacy cursor move).
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_disp_atomic_commit_tail, the legacy cursor update).
  */
 int
 nvrtx_scanout_cursor_point(
@@ -655,9 +764,12 @@ nvrtx_scanout_cursor_point(
 
 /*
  * Hides the head's cursor: the core's cursor off and without its object,
- * then the core's update without an interlock (nouveau's clear of a
- * cursor plane), its notifier asked for but not waited for.  The caller
- * first makes sure no earlier one is out.
+ * then the core's update without an interlock (the clear of a cursor
+ * plane), its notifier asked for but not waited for.  The caller first
+ * makes sure no earlier one is out.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndw.c
+ * (nv50_wndw_flush_clr).
  */
 int
 nvrtx_scanout_cursor_clear(
@@ -1116,10 +1228,13 @@ scanout_channel(
 }
 
 /*
- * Makes every display channel in nouveau's order: the core (and sends its
- * start, without a release), then for each head its first window with its
+ * Makes every display channel in order: the core (and sends its start,
+ * without a release), then for each head its first window with its
  * window-immediate channel, its second window with its own, and its cursor.
- * Each SOR output's capability word is read as nouveau's encoder reads it.
+ * Each SOR output's capability word is read once, as an encoder is made.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_display_create, nv50_sor_create) and head.c (nv50_head_create).
  */
 static int
 scanout_channels(
@@ -1312,15 +1427,18 @@ scanout_luts(
 }
 
 /*
- * Commits the first mode on the lit head as nouveau's first commit does:
+ * Commits the first mode on the lit head as a first commit does:
  * the window's surface object; the core's methods (the output taken off
  * and given back with its protocol, the HDMI controls and infoframes in
  * between for an HDMI sink, the head's mode, every window's owner) and
  * its release, waited for; the head's output LUT; the window's first
  * image, released interlocked with the core; the core's second release,
  * interlocked with the window, waited for; and the window's notifier.
- * As nouveau, a notifier that does not come is shown and the commit goes
- * on; any such is reported at the end as EIO.
+ * A notifier that does not come is shown and the commit goes on; any such
+ * is reported at the end as EIO.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_disp_atomic_commit_tail, nv50_disp_atomic_commit_core).
  */
 static int
 scanout_commit(
@@ -1428,9 +1546,13 @@ scanout_commit(
 }
 
 /*
- * Writes the lit head's HDMI infoframes as nouveau's HDMI enable does: the
- * AVI frame of the RGB picture, and the vendor frame turned off (a mode
- * without an HDMI code or 3D has none).
+ * Writes the lit head's HDMI infoframes as an HDMI enable does: the AVI
+ * frame of the RGB picture, and the vendor frame turned off (a mode without
+ * an HDMI code or 3D has none).
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_hdmi_enable) and drivers/gpu/drm/nouveau/nvkm/engine/disp/gv100.c
+ * (gv100_sor_hdmi_infoframe_avi, gv100_sor_hdmi_infoframe_vsi).
  */
 static void
 scanout_infoframes(
@@ -1702,7 +1824,13 @@ scanout_diagnose(
 	    (unsigned)nvrtx_rd32(gpu, SCANOUT_REG_WINDOW_EXCEPTION));
 }
 
-/* Flips the window to the second surface (nouveau's commit of a plane alone) and waits for its notifier. */
+/*
+ * Flips the window to the second surface (a commit of a plane alone) and
+ * waits for its notifier.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_disp_atomic_commit_tail).
+ */
 static int
 scanout_flip(
 	struct nvrtx_gpu *gpu)
@@ -1800,9 +1928,12 @@ scanout_drained(
 /*
  * Makes room for words more of the core's methods: once the core has
  * fetched everything it was given, the buffer is wound back to its start
- * when the words would not fit before its end (nouveau's wind: a jump to
- * the start where the get stands, the put moved to the start, and the
- * channel left to take the jump), so nothing unfetched is written over.
+ * when the words would not fit before its end (a jump to the start where
+ * the get stands, the put moved to the start, and the channel left to take
+ * the jump), so nothing unfetched is written over.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/disp.c
+ * (nv50_dmac_wind).
  */
 static int
 scanout_core_room(
@@ -1872,7 +2003,10 @@ scanout_core_send_cursor(
 
 /*
  * Writes one register of the head's cursor channel once the channel has
- * room for it (nouveau's curs507a_space: four free entries within 100 ms).
+ * room for it (four free entries within 100 ms).
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/curs507a.c
+ * (curs507a_space).
  */
 static int
 scanout_cursor_write(
@@ -1932,8 +2066,10 @@ scanout_window_notifier(
 
 /*
  * Takes the window's notifier for the next flip and moves to the other one
- * (the two 16-byte halves of the window's slot are used in turn, as
- * nouveau's planes do).
+ * (the two 16-byte halves of the window's slot are used in turn).
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/dispnv50/wndw.c
+ * (nv50_wndw_ntfy_enable).
  */
 static uint32_t
 scanout_next_notifier(

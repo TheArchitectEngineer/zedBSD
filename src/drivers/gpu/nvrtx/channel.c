@@ -37,7 +37,16 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
 
-/* The register window onto the VRAM: its 64 KiB-unit base register, where it shows, and its size. */
+/*
+ * The register window onto the VRAM: its 64 KiB-unit base register, where
+ * it shows, and its size.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/maxwell/gm107/dev_bus.h
+ * (NV_PBUS_BAR0_WINDOW) and turing/tu102/dev_ram.h (NV_PRAMIN), and Linux
+ * v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/instmem/nv50.c
+ * (nv50_instmem_set_bar0_window_addr).
+ */
 #define CHANNEL_REG_WINDOW_BASE		0x001700U
 #define CHANNEL_WINDOW_AT		0x700000U
 #define CHANNEL_WINDOW_BYTES		0x100000U
@@ -62,7 +71,13 @@
 /* The channel number (the resource manager keeps channel 0). */
 #define CHANNEL_ID			8U
 
-/* The TLB invalidate registers: the root, its upper half, and the trigger (bit 31) with "all addresses" (bit 0). */
+/*
+ * The TLB invalidate registers: the root, its upper half, and the trigger
+ * (bit 31) with "all addresses" (bit 0).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c (tu102_vmm_flush).
+ */
 #define CHANNEL_REG_FLUSH_ROOT		0xb830a0U
 #define CHANNEL_REG_FLUSH_ROOT_UPPER	0xb830a4U
 #define CHANNEL_REG_FLUSH		0xb830b0U
@@ -71,11 +86,24 @@
 #define CHANNEL_FLUSH_BAR		0x6U
 #define CHANNEL_FLUSH_TIMEOUT_US	2000000U
 
-/* USERD's put and get of the ring. */
+/*
+ * USERD's put and get of the ring.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
+ * (Nvc46fControl's GPGet and GPPut).
+ */
 #define CHANNEL_USERD_RING_GET		0x88U
 #define CHANNEL_USERD_RING_PUT		0x8cU
 
-/* The doorbell: runlist in bits 22:16, channel in bits 11:0. */
+/*
+ * The doorbell: runlist in bits 22:16, channel in bits 11:0.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/inc/swref/published/turing/tu102/dev_vm.h
+ * (NV_VIRTUAL_FUNCTION_FULL_PHYS_OFFSET, NV_VIRTUAL_FUNCTION_DOORBELL) and
+ * Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/fifo/tu102.c
+ * (tu102_chan_doorbell_handle, tu102_chan_start).
+ */
 #define CHANNEL_REG_DOORBELL		0xbb0090U
 
 /* The fence value and how long the CPU waits for it. */
@@ -83,7 +111,13 @@
 #define CHANNEL_FENCE_TIMEOUT_US	2000000U
 #define CHANNEL_FENCE_STEP_US		100U
 
-/* The copy fill: its subchannel, where its push buffer and its words go, how many, and the values. */
+/*
+ * The copy fill: its subchannel, where its push buffer and its words go, how
+ * many, and the values.
+ *
+ * Value referenced: Mesa 25.3.6 src/nouveau/headers/nv_push.h (SUBC_NV90B5,
+ * the copy engine's subchannel).
+ */
 #define CHANNEL_COPY_SUBCHANNEL		4U
 #define CHANNEL_FILL_PUSH_AT		0x2000U
 #define CHANNEL_FILL_AT			0x100U
@@ -458,6 +492,9 @@ nvrtx_channel_release(
  * Invalidates every TLB entry of the page tables under one root in the VRAM.
  *
  * Returns ETIMEDOUT when the invalidate does not finish in 2 s.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c (tu102_vmm_flush).
  */
 int
 nvrtx_flush_tlb(
@@ -481,8 +518,8 @@ nvrtx_flush_tlb(
  * The flush of a BAR's address space: all addresses, every root, the hub's
  * TLB only.  Returns ETIMEDOUT when the invalidate does not finish in 2 s.
  *
- * Procedure referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c
- * (tu102_vmm_flush).
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c (tu102_vmm_flush).
  */
 int
 nvrtx_flush_tlb_bar(
@@ -778,7 +815,13 @@ channel_flush_tlb(
 	return 0;
 }
 
-/* Points ring entry index at a push-buffer segment, moves the ring's put past it, and rings the doorbell. */
+/*
+ * Points ring entry index at a push-buffer segment, moves the ring's put
+ * past it, and rings the doorbell.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/fifo/tu102.c (tu102_chan_start).
+ */
 static int
 channel_submit(
 	struct nvrtx_gpu *gpu,
