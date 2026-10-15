@@ -231,9 +231,9 @@ static const struct nvrtx_profile identify_ad10x = {
  * The chips of Turing and later, by identity number.
  *
  * Every Turing, Ampere and Ada chip of the GeForce RTX 20, 30 and 40 (and
- * GTX 16) has a family record.  GA100 and GH100 (data-centre parts without
- * a display) and Blackwell (WS240) are recognized and named only, and the
- * stages after console leave them alone.
+ * GTX 16) has a family record.  GA100 and GH100 (data-centre parts without a
+ * display) and Blackwell are recognized and named only, and the stages after
+ * console leave them alone.
  */
 static const struct identify_entry identify_table[] = {
 	{ 0x162U, "TU102", &identify_tu10x },

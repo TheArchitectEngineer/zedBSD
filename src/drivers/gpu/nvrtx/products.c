@@ -11,11 +11,13 @@
  * Every PCI device ID of a Turing (TU102, TU104, TU106, TU116, TU117), Ampere
  * (GA102 to GA107) or Ada (AD102 to AD107) GPU function: desktop and laptop
  * boards of the GeForce RTX 20, 30 and 40 and GTX 16, and the workstation,
- * data-centre and mining boards built on the same chips.  The IDs and names are
- * facts from the PCI ID repository (pci-ids.ucw.cz, pci.ids of 2026-10-15); an
- * unnamed entry carries no name.  The table only names a GPU in the stage
- * marks: the chip, and with it the driver's path, is decided by the identity
- * register, so a board missing here is still driven.
+ * data-centre and mining boards built on the same chips.  An unnamed entry
+ * carries no name.  The table only names a GPU in the stage marks: the chip,
+ * and with it the driver's path, is decided by the identity register, so a
+ * board missing here is still driven.
+ *
+ * Values referenced: pci.ids of the PCI ID repository (pci-ids.ucw.cz) of
+ * 2026-10-15 (the IDs and names of the NVIDIA devices).
  */
 
 #include <stddef.h>

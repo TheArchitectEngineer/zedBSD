@@ -730,8 +730,8 @@ struct nvrtx_fwsec {
 #define NVRTX_EVENT_CHANNEL_ERROR	0x1004U
 
 /*
- * The graphics context (5f): the controls and classes, the parameter
- * lengths, and the context buffers the resource manager names.
+ * The graphics context (golden-context): the controls and classes, the
+ * parameter lengths, and the context buffers the resource manager names.
  *
  * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
  * src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080internal.h

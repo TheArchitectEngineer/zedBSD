@@ -1331,27 +1331,35 @@ nvrtx_sm75_memory(
  */
 
 /*
+ * The scoreboards an instruction may set, and the mask of all of them.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs,
  * BarAlloc (lines 186-196: six scoreboards).
  */
-/* The scoreboards an instruction may set, and the mask of all of them. */
 #define NVRTX_SM75_SCOREBOARDS		6U
 #define NVRTX_SM75_SCOREBOARD_ALL	0x3fU
 
-/* zedBSD's own. */
-/* The general registers and predicates the pass tracks. */
+/*
+ * The general registers and predicates the pass tracks.
+ *
+ * zedBSD's own.
+ */
 #define NVRTX_SM75_TRACKED_GPRS		256U
 #define NVRTX_SM75_TRACKED_PREDICATES	8U
 
 /*
+ * The cycles after a scoreboard is set before an instruction may wait for it.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs,
  * calc_delays (lines 692-698: a scoreboard is waited for 2 cycles after it is
  * set at the earliest).
  */
-/* The cycles after a scoreboard is set before an instruction may wait for it. */
 #define NVRTX_SM75_SCOREBOARD_SETTLE	2U
 
 /*
+ * The worst latency of a fixed-latency general register and predicate result,
+ * which a block's end waits out.
+ *
  * Values referenced: Mesa 25.3.6
  * src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write and
  * pred_read_after_write with no reader (lines 205-412, 695-776),
@@ -1359,23 +1367,27 @@ nvrtx_sm75_memory(
  * 889-958), and src/nouveau/compiler/nak/sm70.rs, worst_latency and
  * instr_latency (lines 24-67, 263-273).
  */
-/* The worst latency of a fixed-latency general register and predicate result, which a block's end waits out. */
 #define NVRTX_SM75_WORST_GPR		6U
 #define NVRTX_SM75_WORST_PREDICATE	13U
 
 /*
+ * A write after a write, and a variable-latency write after a fixed-latency
+ * write or read.
+ *
  * Values referenced: Mesa 25.3.6
  * src/nouveau/compiler/nak/sm75_instr_latencies.rs, write_after_write and
  * write_after_read (lines 414-693), and
  * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 578-842),
  * at their largest.
  */
-/* A write after a write, and a variable-latency write after a fixed-latency write or read. */
 #define NVRTX_SM75_WAW_FIXED		2U
 #define NVRTX_SM75_WAW_DECOUPLED	6U
 #define NVRTX_SM75_WAR_DECOUPLED	2U
 
 /*
+ * The fewest cycles after a barrier or a memory barrier (its execution takes 5
+ * on Turing, 6 from SM80 on), and after EXIT.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70.rs,
  * exec_latency (lines 169-185), and
  * src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 811-818: a
@@ -1384,13 +1396,16 @@ nvrtx_sm75_memory(
  * Value referenced: the SM75 code the CUDA compiler emits (EXIT's delay of
  * 5).
  */
-/* The fewest cycles after a barrier or a memory barrier (its execution takes 5 on Turing, 6 from SM80 on), and after EXIT. */
 #define NVRTX_SM75_DELAY_SYNC_MIN	6U
 #define NVRTX_SM75_DELAY_EXIT_MIN	5U
 #define NVRTX_SM75_DELAY_AFTER_SYNC	2U
 
-/* zedBSD's own estimates. */
-/* The latencies the reordering assumes for the variable-latency instructions (only priorities, never correctness). */
+/*
+ * The latencies the reordering assumes for the variable-latency instructions
+ * (only priorities, never correctness).
+ *
+ * zedBSD's own estimates.
+ */
 #define NVRTX_SM75_GUESS_TEXTURE	100U
 #define NVRTX_SM75_GUESS_GLOBAL		300U
 #define NVRTX_SM75_GUESS_SHARED		30U
@@ -1398,20 +1413,24 @@ nvrtx_sm75_memory(
 #define NVRTX_SM75_GUESS_UNIT		15U
 #define NVRTX_SM75_GUESS_SPECIAL	20U
 
-/* zedBSD's own. */
-/* A pair the reordering must keep in order, and a block not yet ended. */
+/*
+ * A pair the reordering must keep in order, and a block not yet ended.
+ *
+ * zedBSD's own.
+ */
 #define NVRTX_SM75_NO_DEPENDENCE	0xffffffffU
 
 /* No scoreboard, no predicate, and a register never written. */
 #define NVRTX_SM75_NO_BAR		0xffU
 #define NVRTX_SM75_NO_PREDICATE		NVRTX_SM75_PT
 
-/* zedBSD's own. */
 /*
  * What the pass knows of one general register or predicate: whether a
  * fixed-latency write is in flight, its class and its cycle; the
  * scoreboard of a variable-latency write in flight; the scoreboards of the
  * variable-latency reads in flight; and the last fixed-latency read.
+ *
+ * zedBSD's own.
  */
 struct nvrtx_sm75_track {
 	int written;
@@ -2017,13 +2036,15 @@ nvrtx_sm75_fixed(
 }
 
 /*
+ * Reads the operands of an ALU instruction by its 9-bit opcode; nonzero for one
+ * not known.
+ *
  * Values referenced: Mesa 25.3.6
  * src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
  * needs_scoreboards (lines 49-203, 1187-1208), and
  * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257,
  * 1433-1453).
  */
-/* Reads the operands of an ALU instruction by its 9-bit opcode; nonzero for one not known. */
 static int
 nvrtx_sm75_operands_alu(
 	const struct nvrtx_sm75_word *word,
@@ -2136,13 +2157,15 @@ nvrtx_sm75_operands_alu(
 }
 
 /*
+ * Reads the operands of an instruction of its own 12-bit opcode; nonzero for
+ * one not known.
+ *
  * Values referenced: Mesa 25.3.6
  * src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
  * needs_scoreboards (lines 49-203, 1187-1208), and
  * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257,
  * 1433-1453: DecoupledAgu for the address unit's reads).
  */
-/* Reads the operands of an instruction of its own 12-bit opcode; nonzero for one not known. */
 static int
 nvrtx_sm75_operands_other(
 	const struct nvrtx_sm75_word *word,
@@ -2474,18 +2497,17 @@ nvrtx_sm75_constrain(
 }
 
 /*
- * Procedure referenced: Mesa 25.3.6
- * src/nouveau/compiler/nak/calc_instr_deps.rs (BarAlloc, try_find_free_bar
- * and free_some_bar, lines 214-228: the lowest free scoreboard, else the one
- * set longest ago).
- */
-/*
  * Chooses the scoreboards a variable-latency instruction sets: one its
  * result releases, when it writes a register, and one the read of its
  * sources releases, when it reads one.  A scoreboard is free when nothing
  * in flight names it and the instruction does not wait for it already
  * ending its use; when none is free, the one set longest ago is waited for
  * by this instruction and reused.
+ *
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/calc_instr_deps.rs (BarAlloc, try_find_free_bar
+ * and free_some_bar, lines 214-228: the lowest free scoreboard, else the one
+ * set longest ago).
  */
 static void
 nvrtx_sm75_take_bars(
@@ -2666,13 +2688,12 @@ nvrtx_sm75_raw(
 }
 
 /*
+ * Reports Turing's cycles from a fixed-latency register write to a read
+ * (the addend of an IMAD.WIDE reads late).
+ *
  * Values referenced: Mesa 25.3.6
  * src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write (lines
  * 205-412).
- */
-/*
- * Reports Turing's cycles from a fixed-latency register write to a read
- * (the addend of an IMAD.WIDE reads late).
  */
 static uint32_t
 nvrtx_sm75_raw_turing(
@@ -2717,15 +2738,14 @@ nvrtx_sm75_raw_turing(
 }
 
 /*
- * Values referenced: Mesa 25.3.6
- * src/nouveau/compiler/nak/sm80_instr_latencies.rs, read_after_write (lines
- * 259-576).
- */
-/*
  * Reports Ampere's and Ada's cycles from a fixed-latency register write to
  * a read (sm80_instr_latencies.rs, read_after_write: the writers are
  * CoupledAlu, CoupledFMA and IMADWideWriteDH, the addend is the
  * IMADWideReadCL reader, which reads as CoupledFMA does).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, read_after_write (lines
+ * 259-576).
  */
 static uint32_t
 nvrtx_sm75_raw_ampere(
@@ -2765,16 +2785,15 @@ nvrtx_sm75_raw_ampere(
 }
 
 /*
- * Values referenced: Mesa 25.3.6
- * src/nouveau/compiler/nak/sm75_instr_latencies.rs, pred_read_after_write
- * (lines 695-776), and src/nouveau/compiler/nak/sm80_instr_latencies.rs,
- * PredLatencySM80::pred_read_after_write (lines 889-958).
- */
-/*
  * Reports the cycles from a comparison's predicate (an ALU write) to a
  * read: 4 for an ALU reader, 5 for a float or IMAD one, and for a guard, a
  * branch or a variable-latency reader 12 on Turing (pred_read_after_write)
  * and 13 on Ampere and Ada (PredLatencySM80's Guard and Decoupled).
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, pred_read_after_write
+ * (lines 695-776), and src/nouveau/compiler/nak/sm80_instr_latencies.rs,
+ * PredLatencySM80::pred_read_after_write (lines 889-958).
  */
 static uint32_t
 nvrtx_sm75_predicate_raw(
@@ -2872,21 +2891,24 @@ nvrtx_sm75_later(
 #define NVRTX_SM75_RECIPROCAL_SCALE	0x4f7ffffeU
 
 /*
+ * All ones, the Boolean true; the sign bit; and 1 / (2 pi) as a float, which
+ * the sine and cosine units take.
+ *
  * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/builder.rs
  * (SSABuilder::fsin and SSABuilder::fcos: the argument scaled by 1 / (2 pi)
  * before MUFU.SIN and MUFU.COS, NVRTX_SM75_INV_TWO_PI).
  */
-/* All ones, the Boolean true; the sign bit; and 1 / (2 pi) as a float, which the sine and cosine units take. */
 #define NVRTX_SM75_TRUE			0xffffffffU
 #define NVRTX_SM75_SIGN			0x80000000U
 #define NVRTX_SM75_INV_TWO_PI		0x3e22f983U
 
 /*
+ * The truth tables of LOP3 used: a and b, a or b, a xor b, not a.
+ *
  * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/ir.rs
  * (LogicOp3::SRC_MASKS and LogicOp3::new_lut: the sources as 0xf0, 0xcc
  * and 0xaa).
  */
-/* The truth tables of LOP3 used: a and b, a or b, a xor b, not a. */
 #define NVRTX_SM75_LUT_AND		0xc0U
 #define NVRTX_SM75_LUT_OR		0xfcU
 #define NVRTX_SM75_LUT_XOR		0x3cU
@@ -2903,12 +2925,13 @@ nvrtx_sm75_later(
 #define NVRTX_SM75_GPR_POOL		62U
 
 /*
+ * The colour targets a fragment program writes.
+ *
  * Value referenced: Mesa 25.3.6
  * src/nouveau/headers/nvidia/classes/cla097sph.h, NVA097_SPHV3T2_OMAP_RED(i)
  * to NVA097_SPHV3T2_OMAP_ALPHA(i) (bits 576..607, eight targets), and
  * src/nouveau/compiler/nak/sph.rs (omap_target).
  */
-/* The colour targets a fragment program writes. */
 #define NVRTX_SM75_COLOR_TARGETS	8U
 
 /* What a uniform of the IR maps to: no slot. */
