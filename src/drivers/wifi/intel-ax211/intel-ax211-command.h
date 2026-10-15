@@ -111,45 +111,79 @@ struct intel_ax211_command_transaction {
 	uint32_t last_completion_epoch[INTEL_AX211_COMMAND_ENTRY_COUNT];
 };
 
-int drv_intel_ax211_command_transaction_init(
+int
+drv_intel_ax211_command_transaction_init(
 	struct intel_ax211_command_transaction *transaction,
-	struct intel_ax211_transport *transport, size_t max_pending,
+	struct intel_ax211_transport *transport,
+	size_t max_pending,
 	uint32_t hardware_epoch);
 
-int drv_intel_ax211_command_nvm_handoff_encode(uint8_t output[4]);
-int drv_intel_ax211_command_nvm_query_encode(uint8_t output[4]);
+int
+drv_intel_ax211_command_nvm_handoff_encode(
+	uint8_t output[4]);
 
-int drv_intel_ax211_command_submit(
-	struct intel_ax211_command_transaction *transaction,
-	const struct intel_ax211_command_request *request, uint64_t now,
-	uint64_t timeout, struct intel_ax211_command_handle *handle);
-int drv_intel_ax211_command_submit_nvm_handoff(
-	struct intel_ax211_command_transaction *transaction, uint64_t now,
-	uint64_t timeout, struct intel_ax211_command_handle *handle);
-int drv_intel_ax211_command_submit_nvm_query(
-	struct intel_ax211_command_transaction *transaction, uint64_t now,
-	uint64_t timeout, struct intel_ax211_command_handle *handle);
+int
+drv_intel_ax211_command_nvm_query_encode(
+	uint8_t output[4]);
 
-int drv_intel_ax211_command_complete(
+int
+drv_intel_ax211_command_submit(
 	struct intel_ax211_command_transaction *transaction,
-	const uint8_t *event_bytes, size_t event_length,
-	uint32_t hardware_epoch, void *response, size_t response_capacity,
+	const struct intel_ax211_command_request *request,
+	uint64_t now,
+	uint64_t timeout,
+	struct intel_ax211_command_handle *handle);
+
+int
+drv_intel_ax211_command_submit_nvm_handoff(
+	struct intel_ax211_command_transaction *transaction,
+	uint64_t now,
+	uint64_t timeout,
+	struct intel_ax211_command_handle *handle);
+
+int
+drv_intel_ax211_command_submit_nvm_query(
+	struct intel_ax211_command_transaction *transaction,
+	uint64_t now,
+	uint64_t timeout,
+	struct intel_ax211_command_handle *handle);
+
+int
+drv_intel_ax211_command_complete(
+	struct intel_ax211_command_transaction *transaction,
+	const uint8_t *event_bytes,
+	size_t event_length,
+	uint32_t hardware_epoch,
+	void *response,
+	size_t response_capacity,
 	size_t *response_length);
-int drv_intel_ax211_command_cancel(
+
+int
+drv_intel_ax211_command_cancel(
 	struct intel_ax211_command_transaction *transaction,
 	const struct intel_ax211_command_handle *handle);
-int drv_intel_ax211_command_timeout_oldest(
-	struct intel_ax211_command_transaction *transaction, uint64_t now,
+
+int
+drv_intel_ax211_command_timeout_oldest(
+	struct intel_ax211_command_transaction *transaction,
+	uint64_t now,
 	struct intel_ax211_command_handle *handle);
-void drv_intel_ax211_command_cancel_all(
+
+void
+drv_intel_ax211_command_cancel_all(
 	struct intel_ax211_command_transaction *transaction);
-int drv_intel_ax211_command_after_device_reset(
+
+int
+drv_intel_ax211_command_after_device_reset(
 	struct intel_ax211_command_transaction *transaction,
 	uint32_t hardware_epoch);
 
-size_t drv_intel_ax211_command_pending_count(
+size_t
+drv_intel_ax211_command_pending_count(
 	const struct intel_ax211_command_transaction *transaction);
-int drv_intel_ax211_command_is_poisoned(
+
+int
+drv_intel_ax211_command_is_poisoned(
 	const struct intel_ax211_command_transaction *transaction);
 
 #endif

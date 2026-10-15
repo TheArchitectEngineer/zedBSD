@@ -65,17 +65,23 @@ enum intel_ax211_init_profile {
 	INTEL_AX211_INIT_PROFILE_STORE_READ = 1
 };
 
-int drv_intel_ax211_init_api89_validate(
+int
+drv_intel_ax211_init_api89_validate(
 	const struct intel_ax211_protocol_command_table *table);
 
-int drv_intel_ax211_init_stage_select_encode(
+int
+drv_intel_ax211_init_stage_select_encode(
 	enum intel_ax211_init_profile profile,
 	uint8_t output[INTEL_AX211_INIT_STAGE_SELECT_SIZE]);
-int drv_intel_ax211_init_stage_select_decode(
-	const uint8_t *bytes, size_t length,
+
+int
+drv_intel_ax211_init_stage_select_decode(
+	const uint8_t *bytes,
+	size_t length,
 	enum intel_ax211_init_profile *profile);
 
-int drv_intel_ax211_init_finished_validate(
+int
+drv_intel_ax211_init_finished_validate(
 	const struct intel_ax211_protocol_message *message,
 	uint32_t generation);
 

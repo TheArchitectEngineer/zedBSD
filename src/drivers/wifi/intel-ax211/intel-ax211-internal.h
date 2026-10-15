@@ -82,14 +82,13 @@
  * dc85ccedc9c973682fbcf4d628ca61174bcc3120)
  * intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode.
  */
-#define INTEL_AX211_FIRMWARE_PATH "intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode"
-#define INTEL_AX211_FIRMWARE_SIZE 1736748U
-#define INTEL_AX211_FIRMWARE_SHA256                                            \
-	"c569c4b0ffe2054a1cedd5affccff2da8515325eeb23f788c7abe9463d1a1514"
-#define INTEL_AX211_FIRMWARE_VERSION "89.735b75a4.0"
-#define INTEL_AX211_FIRMWARE_API 89U
-#define INTEL_AX211_FIRMWARE_MINOR 0x735b75a4U
-#define INTEL_AX211_FIRMWARE_SERIAL 0U
+#define INTEL_AX211_FIRMWARE_PATH	"intel/iwlwifi/iwlwifi-so-a0-gf-a0-89.ucode"
+#define INTEL_AX211_FIRMWARE_SIZE	1736748U
+#define INTEL_AX211_FIRMWARE_SHA256     "c569c4b0ffe2054a1cedd5affccff2da8515325eeb23f788c7abe9463d1a1514"
+#define INTEL_AX211_FIRMWARE_VERSION	"89.735b75a4.0"
+#define INTEL_AX211_FIRMWARE_API	89U
+#define INTEL_AX211_FIRMWARE_MINOR	0x735b75a4U
+#define INTEL_AX211_FIRMWARE_SERIAL	0U
 
 /*
  * The platform data (PNVM) file that belongs to that image.
@@ -102,18 +101,16 @@
  * dc85ccedc9c973682fbcf4d628ca61174bcc3120)
  * intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm.
  */
-#define INTEL_AX211_PNVM_PATH "intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm"
-#define INTEL_AX211_PNVM_FILE_SIZE 55176U
-#define INTEL_AX211_PNVM_SHA256                                                \
-	"efa9726d4a9d44b83fc9a14cedcf306a4e439e9de919802eb9e92df4ec032b2a"
+#define INTEL_AX211_PNVM_PATH		"intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm"
+#define INTEL_AX211_PNVM_FILE_SIZE	55176U
+#define INTEL_AX211_PNVM_SHA256         "efa9726d4a9d44b83fc9a14cedcf306a4e439e9de919802eb9e92df4ec032b2a"
 
 /*
  * The release tag and the commit of the repository the two files above were
  * taken from.
  */
-#define INTEL_AX211_LINUX_FIRMWARE_TAG "20260410"
-#define INTEL_AX211_LINUX_FIRMWARE_COMMIT                                      \
-	"dc85ccedc9c973682fbcf4d628ca61174bcc3120"
+#define INTEL_AX211_LINUX_FIRMWARE_TAG		"20260410"
+#define INTEL_AX211_LINUX_FIRMWARE_COMMIT	"dc85ccedc9c973682fbcf4d628ca61174bcc3120"
 
 /*
  * The framing of the firmware file and of the PNVM file.
@@ -131,11 +128,11 @@
  * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/fw/file.h
  * (struct iwl_tlv_ucode_header, struct iwl_ucode_tlv).
  */
-#define INTEL_AX211_FIRMWARE_FILE_MAGIC 0x0a4c5749U
-#define INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE 88U
-#define INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE 8U
-#define INTEL_AX211_FIRMWARE_SECTION_LIMIT 69U
-#define INTEL_AX211_PNVM_SECTION_LIMIT 64U
+#define INTEL_AX211_FIRMWARE_FILE_MAGIC		0x0a4c5749U
+#define INTEL_AX211_FIRMWARE_FILE_HEADER_SIZE	88U
+#define INTEL_AX211_FIRMWARE_RECORD_HEADER_SIZE	8U
+#define INTEL_AX211_FIRMWARE_SECTION_LIMIT	69U
+#define INTEL_AX211_PNVM_SECTION_LIMIT		64U
 
 /*
  * The command ring and the receive ring, as the device sees them.
@@ -153,14 +150,14 @@
  * iwl_rx_completion_desc) and
  * drivers/net/wireless/intel/iwlwifi/pcie/iwl-context-info-v2.h.
  */
-#define INTEL_AX211_COMMAND_RING_SIZE 256U
-#define INTEL_AX211_RX_RING_SIZE 512U
-#define INTEL_AX211_COMMAND_RING_CB_SIZE 5U
-#define INTEL_AX211_RX_RING_CB_SIZE 9U
-#define INTEL_AX211_MAX_COMMAND_PAYLOAD 4088U
-#define INTEL_AX211_BOOT_CONTEXT_SIZE 104U
-#define INTEL_AX211_RX_TRANSFER_DESCRIPTOR_SIZE 16U
-#define INTEL_AX211_RX_COMPLETION_DESCRIPTOR_SIZE 32U
+#define INTEL_AX211_COMMAND_RING_SIZE			256U
+#define INTEL_AX211_RX_RING_SIZE			512U
+#define INTEL_AX211_COMMAND_RING_CB_SIZE		5U
+#define INTEL_AX211_RX_RING_CB_SIZE			9U
+#define INTEL_AX211_MAX_COMMAND_PAYLOAD			4088U
+#define INTEL_AX211_BOOT_CONTEXT_SIZE			104U
+#define INTEL_AX211_RX_TRANSFER_DESCRIPTOR_SIZE		16U
+#define INTEL_AX211_RX_COMPLETION_DESCRIPTOR_SIZE	32U
 
 /*
  * The transfer descriptor (TFD) of the Gen3 transmit queues.
@@ -173,9 +170,9 @@
  * Values referenced: Linux v6.17 drivers/net/wireless/intel/iwlwifi/iwl-fh.h
  * (struct iwl_tfh_tfd, struct iwl_tfh_tb).
  */
-#define INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE 256U
-#define INTEL_AX211_TRANSFER_DESCRIPTOR_BUFFERS 25U
-#define INTEL_AX211_TRANSFER_BUFFER_LENGTH_MAX 4092U
+#define INTEL_AX211_TRANSFER_DESCRIPTOR_SIZE		256U
+#define INTEL_AX211_TRANSFER_DESCRIPTOR_BUFFERS		25U
+#define INTEL_AX211_TRANSFER_BUFFER_LENGTH_MAX		4092U
 
 /*
  * The headers in front of a command and of a firmware event.
@@ -192,10 +189,10 @@
  * drivers/net/wireless/intel/iwlwifi/fw/api/cmdhdr.h (struct iwl_cmd_header,
  * struct iwl_cmd_header_wide, struct iwl_rx_packet).
  */
-#define INTEL_AX211_NARROW_COMMAND_HEADER_SIZE 4U
-#define INTEL_AX211_WIDE_COMMAND_HEADER_SIZE 8U
-#define INTEL_AX211_EVENT_HEADER_SIZE 8U
-#define INTEL_AX211_STAGING_CAPACITY 4096U
+#define INTEL_AX211_NARROW_COMMAND_HEADER_SIZE		4U
+#define INTEL_AX211_WIDE_COMMAND_HEADER_SIZE		8U
+#define INTEL_AX211_EVENT_HEADER_SIZE			8U
+#define INTEL_AX211_STAGING_CAPACITY			4096U
 
 /*
  * The destination words that mark section boundaries instead of naming a
@@ -213,9 +210,9 @@
  * (the first two marks) and drivers/net/wireless/intel/iwlwifi/fw/pnvm.c (the
  * PNVM reader, the third mark).
  */
-#define INTEL_AX211_UPPER_CPU_IMAGE_MARK 0xffffccccU
-#define INTEL_AX211_PAGED_IMAGE_MARK 0xaaaabbbbU
-#define INTEL_AX211_PNVM_IMAGE_MARK 0xddddeeeeU
+#define INTEL_AX211_UPPER_CPU_IMAGE_MARK		0xffffccccU
+#define INTEL_AX211_PAGED_IMAGE_MARK			0xaaaabbbbU
+#define INTEL_AX211_PNVM_IMAGE_MARK			0xddddeeeeU
 
 enum intel_ax211_result {
 	INTEL_AX211_SUCCESS = 0,
@@ -306,8 +303,7 @@ struct intel_ax211_pnvm_inventory {
  * The boot context: the one structure the device reads to find the host's
  * rings when the firmware starts.
  *
- * The field order and widths are the device's DMA layout; the names here are
- * zedBSD's.
+ * The field order and widths are the device's DMA layout.
  *
  * drv_intel_ax211_boot_context_encode() writes these fields as 104
  * little-endian bytes into a coherent DMA page, and the address of that page

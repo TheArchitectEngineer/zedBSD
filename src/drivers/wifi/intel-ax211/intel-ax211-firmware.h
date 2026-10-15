@@ -37,21 +37,35 @@ struct intel_ax211_firmware_files {
 	struct intel_ax211_pnvm_inventory pnvm_inventory;
 };
 
-/* files must be zero initialized or own one previous successful load. */
+/*
+ * files must be zero initialized or own one previous successful load.
+ */
 int
-drv_intel_ax211_firmware_files_load(struct intel_ax211_firmware_files *files);
-void drv_intel_ax211_firmware_files_release(
+drv_intel_ax211_firmware_files_load(
+	struct intel_ax211_firmware_files *files);
+
+void
+drv_intel_ax211_firmware_files_release(
 	struct intel_ax211_firmware_files *files);
 
 #ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
-int intel_ax211_firmware_loader_host_parse(
-	const uint8_t *bytes, size_t length,
+int
+intel_ax211_firmware_loader_host_parse(
+	const uint8_t *bytes,
+	size_t length,
 	struct intel_ax211_firmware_manifest *manifest);
-int intel_ax211_firmware_loader_host_inspect_pnvm(
-	const uint8_t *bytes, size_t length,
+
+int
+intel_ax211_firmware_loader_host_inspect_pnvm(
+	const uint8_t *bytes,
+	size_t length,
 	struct intel_ax211_pnvm_inventory *inventory);
-int drv_intel_ax211_firmware_loader_test_sha256(const void *data, size_t length,
-						uint8_t digest[32]);
+
+int
+drv_intel_ax211_firmware_loader_test_sha256(
+	const void *data,
+	size_t length,
+	uint8_t digest[32]);
 #endif
 
 #endif
