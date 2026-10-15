@@ -267,24 +267,30 @@ drv_intel_ax211_mmio_init(
 	void *argument,
 	const struct intel_ax211_mmio_profile *profile)
 {
-	/* Handles the mmio availability. */
+	int valid;
+
+	/* Refuses missing arguments. */
 	if (mmio == NULL || ops == NULL || profile == NULL)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the csr read32 availability. */
+	/* Refuses a backend without register access. */
 	if (ops->csr_read32 == NULL || ops->csr_write32 == NULL)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the prph read32 availability. */
+	/* Refuses a backend without periphery access. */
 	if (ops->prph_read32 == NULL || ops->prph_write32 == NULL)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the delay us availability. */
+	/* Refuses a backend without a delay or a clock. */
 	if (ops->delay_us == NULL || ops->clock_us == NULL)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Checks the ax211 profile valid result. */
-	if (!ax211_profile_valid(profile))
+	/*
+	 * Refuses a device other than the one the sequences were established
+	 * for.
+	 */
+	valid = ax211_profile_valid(profile);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Initializes a private, unowned device state. */
@@ -293,7 +299,7 @@ drv_intel_ax211_mmio_init(
 	mmio->argument = argument;
 	mmio->profile = *profile;
 
-	/* Returns OK. */
+	/* Succeeded: the state is ready for the ownership handshake. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -304,13 +310,15 @@ int
 drv_intel_ax211_mmio_take_ownership(
 	struct intel_ax211_mmio *mmio)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses a handshake while the device is held awake. */
 	if (mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
@@ -324,12 +332,10 @@ drv_intel_ax211_mmio_take_ownership(
 	result = ax211_request_ownership(mmio);
 	if (result == INTEL_AX211_MMIO_OK) {
 		mmio->prepared = 1;
-
-		/* Returns the computed result. */
 		return INTEL_AX211_MMIO_OK;
 	}
 
-	/* Checks the operation result. */
+	/* Reports any failure other than a timeout. */
 	if (result != INTEL_AX211_MMIO_TIMEOUT)
 		return result;
 
@@ -338,9 +344,8 @@ drv_intel_ax211_mmio_take_ownership(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
+	/* Succeeded: the driver owns the device. */
 	mmio->prepared = 1;
-
-	/* Returns OK. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -351,13 +356,17 @@ int
 drv_intel_ax211_mmio_sw_reset(
 	struct intel_ax211_mmio *mmio)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/*
+	 * Refuses a reset before ownership or while the device is held awake.
+	 */
 	if (!mmio->prepared || mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
@@ -375,9 +384,8 @@ drv_intel_ax211_mmio_sw_reset(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
+	/* Succeeded: the device is reset. */
 	mmio->reset_done = 1;
-
-	/* Returns the computed result. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -388,24 +396,24 @@ int
 drv_intel_ax211_mmio_apm_init(
 	struct intel_ax211_mmio *mmio)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses a power-up before ownership and reset. */
 	if (!mmio->prepared || !mmio->reset_done)
 		return INTEL_AX211_MMIO_ORDER;
 
-	/* Handles the mmio condition. */
+	/* Refuses a power-up while the device is held awake. */
 	if (mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Keeps L0s from racing L1A receive wakeup. */
 	mmio->apm_ready = 0;
-
-	/* Checks the operation result. */
 	result = ax211_csr_set_bits(mmio,
 				    AX211_CSR_LINK_WORKAROUNDS,
 				    AX211_LINK_WORKAROUND_L1A_WAKE);
@@ -450,24 +458,28 @@ drv_intel_ax211_mmio_apm_init(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
+	/* Succeeded: the MAC clock runs. */
 	mmio->apm_ready = 1;
-
-	/* Returns OK. */
 	return INTEL_AX211_MMIO_OK;
 }
 
 /*
  * Quiesces AX210-family bus-master activity and finishes with a software reset.
+ *
+ * Every stage runs even after an earlier one failed; the first failure is
+ * reported.
  */
 int
 drv_intel_ax211_mmio_stop(
 	struct intel_ax211_mmio *mmio)
 {
 	int first_error;
+	int valid;
 	int result;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
 	/* Makes every failure fail closed to later MMIO/PRPH users. */
@@ -549,8 +561,12 @@ drv_intel_ax211_mmio_stop(
 	result = ax211_delay(mmio, AX211_SW_RESET_DELAY_US);
 	ax211_remember_error(&first_error, result);
 
-	/* Returns the result. */
-	return first_error;
+	/* Reports the first stage that failed. */
+	if (first_error != INTEL_AX211_MMIO_OK)
+		return first_error;
+
+	/* Succeeded: the device is stopped and reset. */
+	return INTEL_AX211_MMIO_OK;
 }
 
 /*
@@ -561,49 +577,52 @@ drv_intel_ax211_mmio_wake_hold(
 	struct intel_ax211_mmio *mmio)
 {
 	int clear_result;
+	int valid;
 	int result;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses a hold before the MAC clock runs. */
 	if (!mmio->apm_ready)
 		return INTEL_AX211_MMIO_ORDER;
 
 	/* Reuses an ownership scope already held by this state. */
 	if (mmio->wake_hold_depth != 0U) {
-		/* Handles the mmio condition. */
+		/* Refuses a depth that would wrap around. */
 		if (mmio->wake_hold_depth == (unsigned int)-1)
 			return INTEL_AX211_MMIO_INVALID;
-		mmio->wake_hold_depth++;
 
-		/* Returns the computed result. */
+		/* Nests the hold. */
+		mmio->wake_hold_depth++;
 		return INTEL_AX211_MMIO_OK;
 	}
 
-	/* Requests access and gives the power controller time to react. */
+	/* Requests access. */
 	result = ax211_csr_set_bits(mmio,
 				    AX211_CSR_POWER_CONTROL,
 				    AX211_POWER_KEEP_AWAKE_REQUEST);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/*
+	 * Gives the power controller time to react; a failure withdraws the
+	 * request.
+	 */
 	result = ax211_delay(mmio, AX211_NIC_REQUEST_SETTLE_US);
 	if (result != INTEL_AX211_MMIO_OK) {
-		/* Handles the clear result condition. */
+		/* A failed withdrawal leaves the clock state unknown. */
 		clear_result = ax211_csr_clear_bits(mmio,
 						    AX211_CSR_POWER_CONTROL,
 						    AX211_POWER_KEEP_AWAKE_REQUEST);
 		if (clear_result != INTEL_AX211_MMIO_OK) {
 			mmio->apm_ready = 0;
-
-			/* Returns the computed result. */
 			return clear_result;
 		}
 
-		/* Failed. */
+		/* Reports the failed delay. */
 		return result;
 	}
 
@@ -616,24 +635,21 @@ drv_intel_ax211_mmio_wake_hold(
 				AX211_GENERAL_POLL_US,
 				INTEL_AX211_MMIO_WAIT_NIC_OWNERSHIP);
 	if (result != INTEL_AX211_MMIO_OK) {
-		/* Handles the clear result condition. */
+		/* A failed withdrawal leaves the clock state unknown. */
 		clear_result = ax211_csr_clear_bits(mmio,
 						    AX211_CSR_POWER_CONTROL,
 						    AX211_POWER_KEEP_AWAKE_REQUEST);
 		if (clear_result != INTEL_AX211_MMIO_OK) {
 			mmio->apm_ready = 0;
-
-			/* Returns the result. */
 			return clear_result;
 		}
 
-		/* Failed. */
+		/* Reports the failed wait. */
 		return result;
 	}
 
+	/* Succeeded: the device stays awake until the hold is released. */
 	mmio->wake_hold_depth = 1U;
-
-	/* Returns OK. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -644,20 +660,20 @@ int
 drv_intel_ax211_mmio_wake_release(
 	struct intel_ax211_mmio *mmio)
 {
+	int valid;
 	int result;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses a release without a hold. */
 	if (mmio->wake_hold_depth == 0U)
 		return INTEL_AX211_MMIO_NOT_OWNER;
 
 	/* Retains hardware ownership for an outer caller. */
 	mmio->wake_hold_depth--;
-
-	/* Handles the mmio condition. */
 	if (mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_OK;
 
@@ -667,12 +683,10 @@ drv_intel_ax211_mmio_wake_release(
 				      AX211_POWER_KEEP_AWAKE_REQUEST);
 	if (result != INTEL_AX211_MMIO_OK) {
 		mmio->apm_ready = 0;
-
-		/* Failed. */
 		return result;
 	}
 
-	/* Returns OK. */
+	/* Succeeded: the device may sleep again. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -687,19 +701,22 @@ drv_intel_ax211_mmio_read_mac(
 	uint8_t candidate[AX211_MAC_ADDRESS_SIZE];
 	int result;
 	int unlock_result;
+	int valid;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio) || mac_address == NULL)
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	kern_memset(candidate, 0, sizeof(candidate));
+	/* Refuses a missing output. */
+	if (mac_address == NULL)
+		return INTEL_AX211_MMIO_INVALID;
 
-	/* Checks the operation result. */
+	/* Holds the device awake for the reads. */
+	kern_memset(candidate, 0, sizeof(candidate));
 	result = drv_intel_ax211_mmio_wake_hold(mmio);
 	if (result != INTEL_AX211_MMIO_OK) {
 		ax211_scrub(candidate, sizeof(candidate));
-
-		/* Failed. */
 		return result;
 	}
 
@@ -708,30 +725,47 @@ drv_intel_ax211_mmio_read_mac(
 				      AX211_CSR_STATION_ADDRESS_STRAP_FIRST,
 				      AX211_CSR_STATION_ADDRESS_STRAP_SECOND,
 				      candidate);
-	if (result == INTEL_AX211_MMIO_OK && !ax211_mac_valid(candidate)) {
-		ax211_scrub(candidate, sizeof(candidate));
-		result = ax211_read_mac_words(mmio,
-					      AX211_CSR_STATION_ADDRESS_FUSE_FIRST,
-					      AX211_CSR_STATION_ADDRESS_FUSE_SECOND,
-					      candidate);
+
+	/* Falls back to the fused value when the strap value is not usable. */
+	if (result == INTEL_AX211_MMIO_OK) {
+		/* Reads the fused words in place of an unusable strap value. */
+		valid = ax211_mac_valid(candidate);
+		if (!valid) {
+			ax211_scrub(candidate, sizeof(candidate));
+			result = ax211_read_mac_words(mmio,
+						      AX211_CSR_STATION_ADDRESS_FUSE_FIRST,
+						      AX211_CSR_STATION_ADDRESS_FUSE_SECOND,
+						      candidate);
+		}
 	}
 
-	/* Checks the ax211 mac valid result. */
-	if (result == INTEL_AX211_MMIO_OK && !ax211_mac_valid(candidate))
-		result = INTEL_AX211_MMIO_INVALID;
+	/* Refuses a fused value that is not usable either. */
+	if (result == INTEL_AX211_MMIO_OK) {
+		/* An unusable address is invalid. */
+		valid = ax211_mac_valid(candidate);
+		if (!valid)
+			result = INTEL_AX211_MMIO_INVALID;
+	}
 
 	/*
-	 * Never publishes an address until its ownership reference is released.
+	 * Never publishes an address until its ownership reference is released;
+	 * a failed release replaces any other result.
 	 */
 	unlock_result = drv_intel_ax211_mmio_wake_release(mmio);
 	if (unlock_result != INTEL_AX211_MMIO_OK)
 		result = unlock_result;
+
+	/* Publishes the address on success and clears the temporary. */
 	if (result == INTEL_AX211_MMIO_OK)
 		kern_memcpy(mac_address, candidate, sizeof(candidate));
 	ax211_scrub(candidate, sizeof(candidate));
 
-	/* Returns the result. */
-	return result;
+	/* Reports why no address was published. */
+	if (result != INTEL_AX211_MMIO_OK)
+		return result;
+
+	/* Succeeded: the station address is published. */
+	return INTEL_AX211_MMIO_OK;
 }
 
 /*
@@ -743,23 +777,32 @@ drv_intel_ax211_mmio_prph_read32(
 	uint32_t address,
 	uint32_t *value)
 {
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio) || value == NULL)
+	int valid;
+	int error;
+
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses a missing output. */
+	if (value == NULL)
+		return INTEL_AX211_MMIO_INVALID;
+
+	/* Refuses an access while the device is not held awake. */
 	if (mmio->wake_hold_depth == 0U)
 		return INTEL_AX211_MMIO_NOT_OWNER;
 
-	/* Handles the address condition. */
+	/* Refuses an address beyond the periphery space. */
 	if (address > AX211_PRPH_MAX_ADDRESS)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Checks the prph read32 result. */
-	if (mmio->ops->prph_read32(mmio->argument, address, value) != 0)
+	/* Reads the register through the backend. */
+	error = mmio->ops->prph_read32(mmio->argument, address, value);
+	if (error != 0)
 		return INTEL_AX211_MMIO_IO;
 
-	/* Returns the computed result. */
+	/* Succeeded. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -772,23 +815,28 @@ drv_intel_ax211_mmio_prph_write32(
 	uint32_t address,
 	uint32_t value)
 {
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio))
+	int valid;
+	int error;
+
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses an access while the device is not held awake. */
 	if (mmio->wake_hold_depth == 0U)
 		return INTEL_AX211_MMIO_NOT_OWNER;
 
-	/* Handles the address condition. */
+	/* Refuses an address beyond the periphery space. */
 	if (address > AX211_PRPH_MAX_ADDRESS)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Checks the prph write32 result. */
-	if (mmio->ops->prph_write32(mmio->argument, address, value) != 0)
+	/* Writes the register through the backend. */
+	error = mmio->ops->prph_write32(mmio->argument, address, value);
+	if (error != 0)
 		return INTEL_AX211_MMIO_IO;
 
-	/* Returns OK. */
+	/* Succeeded. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -803,20 +851,26 @@ drv_intel_ax211_mmio_publish_gen3(
 	uint32_t boot_control;
 	int result;
 	int unlock_result;
+	int valid;
 
-	/* Checks the ax211 mmio valid result. */
-	if (!ax211_mmio_valid(mmio) || boot == NULL)
+	/* Refuses an uninitialized state. */
+	valid = ax211_mmio_valid(mmio);
+	if (!valid)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the mmio condition. */
+	/* Refuses missing boot inputs. */
+	if (boot == NULL)
+		return INTEL_AX211_MMIO_INVALID;
+
+	/* Refuses a start before power-up or while the device is held awake. */
 	if (!mmio->apm_ready || mmio->wake_hold_depth != 0U)
 		return INTEL_AX211_MMIO_ORDER;
 
-	/* Handles the boot condition. */
+	/* Refuses unset addresses. */
 	if (boot->context_address == 0U || boot->iml_address == 0U)
 		return INTEL_AX211_MMIO_INVALID;
 
-	/* Handles the boot condition. */
+	/* Refuses a loader of another size. */
 	if (boot->iml_size != INTEL_AX211_MMIO_LOADER_IMAGE_SIZE)
 		return INTEL_AX211_MMIO_INVALID;
 
@@ -836,7 +890,7 @@ drv_intel_ax211_mmio_publish_gen3(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Publishes the loader's length. */
 	result = ax211_csr_write(mmio, AX211_CSR_LOADER_IMAGE_LENGTH, boot->iml_size);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
@@ -863,8 +917,6 @@ drv_intel_ax211_mmio_publish_gen3(
 				 AX211_LATENCY_BOOT_VALUE);
 	if (result != INTEL_AX211_MMIO_OK) {
 		(void)drv_intel_ax211_mmio_wake_release(mmio);
-
-		/* Failed. */
 		return result;
 	}
 
@@ -876,72 +928,82 @@ drv_intel_ax211_mmio_publish_gen3(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Handles the unlock result condition. */
+	/* Reports a failed release of the hold. */
 	if (unlock_result != INTEL_AX211_MMIO_OK)
 		return unlock_result;
 
-	/* Returns OK. */
+	/* Succeeded: the firmware boots on its own from here. */
 	return INTEL_AX211_MMIO_OK;
 }
 
-/* Validates the exact P038 SO-or-SOF plus GF transport assumptions. */
+/*
+ * Reports whether a profile is the So or SoF MAC with a single-band Garfield
+ * Peak radio the transport was established for: 1 when it is, 0 when not.
+ */
 static int
 ax211_profile_valid(
 	const struct intel_ax211_mmio_profile *profile)
 {
-	/* Handles the profile availability. */
+	/* Rejects a missing profile. */
 	if (profile == NULL)
 		return 0;
 
-	/* Handles the profile condition. */
+	/* Rejects another MAC type. */
 	if (profile->mac_type != INTEL_AX211_MMIO_MAC_SO &&
 	    profile->mac_type != INTEL_AX211_MMIO_MAC_SOF) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the profile condition. */
+	/* Rejects another radio. */
 	if (profile->rf_type != INTEL_AX211_MMIO_RF_GF)
 		return 0;
 
-	/* Handles the profile condition. */
+	/*
+	 * Rejects a radio that runs two bands at once and an integrated part.
+	 */
 	if (profile->concurrent_bands != 0U || profile->integrated != 0U)
 		return 0;
 
-	/* Handles the profile condition. */
+	/* Rejects another periphery base of the upper CPU. */
 	if (profile->upper_cpu_prph_base != INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE)
 		return 0;
 
-	/* Reports operation failure. */
+	/* The profile is the expected one. */
 	return 1;
 }
 
-/* Checks that a state was initialized through the exact profile gate. */
+/*
+ * Reports whether a state was initialized through the exact profile gate: 1
+ * when it was, 0 when not.
+ */
 static int
 ax211_mmio_valid(
 	const struct intel_ax211_mmio *mmio)
 {
-	/* Handles the mmio availability. */
+	int valid;
+
+	/* Rejects a missing state and missing operations. */
 	if (mmio == NULL || mmio->ops == NULL)
 		return 0;
 
-	/* Handles the csr read32 availability. */
+	/* Rejects a backend without register access. */
 	if (mmio->ops->csr_read32 == NULL || mmio->ops->csr_write32 == NULL)
 		return 0;
 
-	/* Handles the prph read32 availability. */
+	/* Rejects a backend without periphery access. */
 	if (mmio->ops->prph_read32 == NULL || mmio->ops->prph_write32 == NULL)
 		return 0;
 
-	/* Handles the delay us availability. */
+	/* Rejects a backend without a delay or a clock. */
 	if (mmio->ops->delay_us == NULL || mmio->ops->clock_us == NULL)
 		return 0;
 
-	/* Checks the ax211 profile valid result. */
-	if (!ax211_profile_valid(&mmio->profile))
+	/* Rejects a profile other than the expected one. */
+	valid = ax211_profile_valid(&mmio->profile);
+	if (!valid)
 		return 0;
 
-	/* Reports operation failure. */
+	/* The state is usable. */
 	return 1;
 }
 
@@ -950,16 +1012,15 @@ static int
 ax211_request_ownership(
 	struct intel_ax211_mmio *mmio)
 {
-	int error;
 	int result;
 
-	/* Checks the operation result. */
+	/* Requests ownership. */
 	result = ax211_csr_set_bits(mmio, AX211_CSR_FUNCTION_CONTROL,
 				    AX211_FUNCTION_OWNERSHIP_REQUEST);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Waits for the device to keep the request bit set. */
 	result = ax211_poll_csr(
 		mmio, AX211_CSR_FUNCTION_CONTROL, AX211_FUNCTION_OWNERSHIP_REQUEST,
 		AX211_FUNCTION_OWNERSHIP_REQUEST, AX211_OWNERSHIP_ACK_TIMEOUT_US,
@@ -967,12 +1028,14 @@ ax211_request_ownership(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Obtains the ax211 csr write result. */
-	error = ax211_csr_write(mmio, AX211_CSR_HOST_ANNOUNCE,
-					  AX211_HOST_ANNOUNCE_DRIVER_PRESENT);
+	/* Announces the driver. */
+	result = ax211_csr_write(mmio, AX211_CSR_HOST_ANNOUNCE,
+				 AX211_HOST_ANNOUNCE_DRIVER_PRESENT);
+	if (result != INTEL_AX211_MMIO_OK)
+		return result;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded: the driver owns the device. */
+	return INTEL_AX211_MMIO_OK;
 }
 
 /* Sets CSR bits through a checked read-modify-write operation. */
@@ -982,21 +1045,22 @@ ax211_csr_set_bits(
 	uint32_t offset,
 	uint32_t bits)
 {
-	int error;
 	uint32_t value;
 	int result;
 
-	/* Checks the operation result. */
+	/* Reads the register. */
 	result = ax211_csr_read(mmio, offset, &value);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
+
+	/* Writes it back with the bits set. */
 	value |= bits;
+	result = ax211_csr_write(mmio, offset, value);
+	if (result != INTEL_AX211_MMIO_OK)
+		return result;
 
-	/* Obtains the ax211 csr write result. */
-	error = ax211_csr_write(mmio, offset, value);
-
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return INTEL_AX211_MMIO_OK;
 }
 
 /* Reads one CSR and converts a backend failure into a private result. */
@@ -1006,11 +1070,14 @@ ax211_csr_read(
 	uint32_t offset,
 	uint32_t *value)
 {
-	/* Checks the csr read32 result. */
-	if (mmio->ops->csr_read32(mmio->argument, offset, value) != 0)
+	int error;
+
+	/* Reads through the backend. */
+	error = mmio->ops->csr_read32(mmio->argument, offset, value);
+	if (error != 0)
 		return INTEL_AX211_MMIO_IO;
 
-	/* Returns OK. */
+	/* Succeeded. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -1021,11 +1088,14 @@ ax211_csr_write(
 	uint32_t offset,
 	uint32_t value)
 {
-	/* Checks the csr write32 result. */
-	if (mmio->ops->csr_write32(mmio->argument, offset, value) != 0)
+	int error;
+
+	/* Writes through the backend. */
+	error = mmio->ops->csr_write32(mmio->argument, offset, value);
+	if (error != 0)
 		return INTEL_AX211_MMIO_IO;
 
-	/* Returns OK. */
+	/* Succeeded. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -1049,7 +1119,7 @@ ax211_poll_csr(
 	uint32_t maximum_iterations;
 	int result;
 
-	/* Handles the step us condition. */
+	/* Refuses a zero step or timeout. */
 	if (step_us == 0U || timeout_us == 0U)
 		return INTEL_AX211_MMIO_INVALID;
 
@@ -1058,11 +1128,11 @@ ax211_poll_csr(
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Handles the uint64 t condition. */
+	/* Refuses a deadline that overflows the clock. */
 	if ((uint64_t)timeout_us > UINT64_MAX - start)
 		return INTEL_AX211_MMIO_CLOCK;
 
-	/* Handles the trace deadline availability. */
+	/* Lets the backend trace the wait. */
 	deadline = start + (uint64_t)timeout_us;
 	if (mmio->ops->trace_deadline != NULL) {
 		mmio->ops->trace_deadline(mmio->argument,
@@ -1074,49 +1144,48 @@ ax211_poll_csr(
 	/* Polls with both absolute-time and iteration bounds. */
 	previous = start;
 	maximum_iterations = timeout_us / step_us + 2U;
-
-	/* Process each element required by the operation. */
 	for (iteration = 0U; iteration < maximum_iterations; iteration++) {
-		/* Checks the operation result. */
+		/* Reads the register. */
 		result = ax211_csr_read(mmio, offset, &value);
 		if (result != INTEL_AX211_MMIO_OK)
 			return result;
 
-		/* Validates the current value. */
+		/* The masked bits have the expected value. */
 		if ((value & mask) == (expected & mask))
 			return INTEL_AX211_MMIO_OK;
 
-		/* Checks the operation result. */
+		/* Reads the clock. */
 		result = ax211_clock(mmio, &current);
 		if (result != INTEL_AX211_MMIO_OK)
 			return result;
 
-		/* Handles the current condition. */
+		/* Refuses a clock that went back. */
 		if (current < previous)
 			return INTEL_AX211_MMIO_CLOCK;
 
-		/* Handles the current condition. */
+		/* The deadline has passed. */
 		if (current >= deadline)
 			return INTEL_AX211_MMIO_TIMEOUT;
 
-		/* Checks the operation result. */
+		/* Waits one step. */
 		result = ax211_delay(mmio, step_us);
 		if (result != INTEL_AX211_MMIO_OK)
 			return result;
 
-		/* Checks the operation result. */
+		/* Reads the clock again. */
 		result = ax211_clock(mmio, &current);
 		if (result != INTEL_AX211_MMIO_OK)
 			return result;
 
-		/* Handles the current condition. */
+		/* Refuses a clock that did not advance over the step. */
 		if (current <= previous)
 			return INTEL_AX211_MMIO_CLOCK;
 
+		/* Remembers the time for the next step. */
 		previous = current;
 	}
 
-	/* Returns timeout status. */
+	/* The iteration bound ran out. */
 	return INTEL_AX211_MMIO_TIMEOUT;
 }
 
@@ -1126,11 +1195,14 @@ ax211_clock(
 	struct intel_ax211_mmio *mmio,
 	uint64_t *time_us)
 {
-	/* Checks the clock us result. */
-	if (mmio->ops->clock_us(mmio->argument, time_us) != 0)
+	int error;
+
+	/* Reads through the backend. */
+	error = mmio->ops->clock_us(mmio->argument, time_us);
+	if (error != 0)
 		return INTEL_AX211_MMIO_CLOCK;
 
-	/* Returns OK. */
+	/* Succeeded. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -1140,11 +1212,14 @@ ax211_delay(
 	struct intel_ax211_mmio *mmio,
 	uint32_t duration_us)
 {
-	/* Checks the delay us result. */
-	if (mmio->ops->delay_us(mmio->argument, duration_us) != 0)
+	int error;
+
+	/* Waits through the backend. */
+	error = mmio->ops->delay_us(mmio->argument, duration_us);
+	if (error != 0)
 		return INTEL_AX211_MMIO_IO;
 
-	/* Returns OK. */
+	/* Succeeded. */
 	return INTEL_AX211_MMIO_OK;
 }
 
@@ -1163,25 +1238,21 @@ ax211_prepare_fallback(
 	int result;
 
 	/* Keeps the PCIe link awake while requesting ownership. */
-
-	/* Checks the operation result. */
 	result = ax211_csr_set_bits(mmio,
 				    AX211_CSR_LINK_POWER_OVERRIDE,
 				    AX211_LINK_POWER_OVERRIDE_HOLD_AWAKE);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Lets the link settle. */
 	result = ax211_delay(mmio, AX211_PREPARE_SETTLE_US);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
 	/* Retries within one cumulative 150-ms polling budget. */
 	polled_us = 0U;
-
-	/* Process each remaining element. */
 	for (retry = 0U; retry < AX211_PREPARE_RETRY_COUNT; retry++) {
-		/* Checks the operation result. */
+		/* Asks the device to prepare. */
 		result = ax211_csr_set_bits(mmio,
 					    AX211_CSR_FUNCTION_CONTROL,
 					    AX211_FUNCTION_PREPARE_REQUEST);
@@ -1190,18 +1261,19 @@ ax211_prepare_fallback(
 
 		/* Rechecks readiness at 200-us fallback intervals. */
 		do {
-			/* Checks the operation result. */
+			/* Tries the handshake; a timeout keeps polling. */
 			result = ax211_request_ownership(mmio);
 			if (result == INTEL_AX211_MMIO_OK)
 				return INTEL_AX211_MMIO_OK;
 			if (result != INTEL_AX211_MMIO_TIMEOUT)
 				return result;
 
-			/* Checks the operation result. */
+			/* Waits one interval of the budget. */
 			result = ax211_delay(mmio, AX211_PREPARE_RETRY_POLL_US);
 			if (result != INTEL_AX211_MMIO_OK)
 				return result;
 
+			/* Counts the interval against the budget. */
 			polled_us += AX211_PREPARE_RETRY_POLL_US;
 		} while (polled_us < AX211_PREPARE_TOTAL_POLL_US);
 
@@ -1211,7 +1283,7 @@ ax211_prepare_fallback(
 			return result;
 	}
 
-	/* Returns the timeout status. */
+	/* Every attempt timed out. */
 	return INTEL_AX211_MMIO_TIMEOUT;
 }
 
@@ -1222,21 +1294,22 @@ ax211_csr_clear_bits(
 	uint32_t offset,
 	uint32_t bits)
 {
-	int error;
 	uint32_t value;
 	int result;
 
-	/* Checks the operation result. */
+	/* Reads the register. */
 	result = ax211_csr_read(mmio, offset, &value);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
+
+	/* Writes it back with the bits cleared. */
 	value &= ~bits;
+	result = ax211_csr_write(mmio, offset, value);
+	if (result != INTEL_AX211_MMIO_OK)
+		return result;
 
-	/* Obtains the ax211 csr write result. */
-	error = ax211_csr_write(mmio, offset, value);
-
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return INTEL_AX211_MMIO_OK;
 }
 
 /* Retains the first stop failure while later cleanup stages still run. */
@@ -1245,7 +1318,7 @@ ax211_remember_error(
 	int *first_error,
 	int result)
 {
-	/* Checks the operation status. */
+	/* Keeps only the first failure. */
 	if (*first_error == INTEL_AX211_MMIO_OK &&
 	    result != INTEL_AX211_MMIO_OK)
 		*first_error = result;
@@ -1259,8 +1332,8 @@ ax211_scrub(
 {
 	volatile uint8_t *byte;
 
+	/* Clears every byte through a volatile pointer. */
 	byte = memory;
-	/* Process each remaining element. */
 	while (length != 0U) {
 		*byte++ = 0U;
 		length--;
@@ -1279,20 +1352,25 @@ ax211_read_mac_words(
 	uint32_t second;
 	int result;
 
+	/* Reads both words; the address is decoded only when both were read. */
 	first = 0U;
 	second = 0U;
-
-	/* Checks the operation result. */
 	result = ax211_csr_read(mmio, first_offset, &first);
 	if (result == INTEL_AX211_MMIO_OK)
 		result = ax211_csr_read(mmio, second_offset, &second);
 	if (result == INTEL_AX211_MMIO_OK)
 		ax211_decode_mac_words(first, second, address);
+
+	/* Clears the raw words. */
 	ax211_scrub(&first, sizeof(first));
 	ax211_scrub(&second, sizeof(second));
 
-	/* Returns the operation result. */
-	return result;
+	/* Reports a failed read. */
+	if (result != INTEL_AX211_MMIO_OK)
+		return result;
+
+	/* Succeeded: the address is decoded. */
+	return INTEL_AX211_MMIO_OK;
 }
 
 /*
@@ -1326,30 +1404,35 @@ static int
 ax211_mac_valid(
 	const uint8_t address[AX211_MAC_ADDRESS_SIZE])
 {
+	/* The addresses a station address must not be. */
 	static const uint8_t reserved[AX211_MAC_ADDRESS_SIZE] = {
 		0x02U, 0xccU, 0xaaU, 0xffU, 0xeeU, 0x00U};
 	static const uint8_t zero[AX211_MAC_ADDRESS_SIZE] = {0U, 0U, 0U,
 							     0U, 0U, 0U};
 	static const uint8_t broadcast[AX211_MAC_ADDRESS_SIZE] = {
 		0xffU, 0xffU, 0xffU, 0xffU, 0xffU, 0xffU};
+	int compared;
 
-	/* Handles the address condition. */
+	/* Rejects a group address. */
 	if ((address[0] & 1U) != 0U)
 		return 0;
 
-	/* Handles the memcmp condition. */
-	if (kern_memcmp(address, reserved, sizeof(reserved)) == 0)
+	/* Rejects the reserved placeholder. */
+	compared = kern_memcmp(address, reserved, sizeof(reserved));
+	if (compared == 0)
 		return 0;
 
-	/* Handles the memcmp condition. */
-	if (kern_memcmp(address, zero, sizeof(zero)) == 0)
+	/* Rejects the zero address. */
+	compared = kern_memcmp(address, zero, sizeof(zero));
+	if (compared == 0)
 		return 0;
 
-	/* Handles the memcmp condition. */
-	if (kern_memcmp(address, broadcast, sizeof(broadcast)) == 0)
+	/* Rejects the broadcast address. */
+	compared = kern_memcmp(address, broadcast, sizeof(broadcast));
+	if (compared == 0)
 		return 0;
 
-	/* Reports operation failure. */
+	/* The address is usable. */
 	return 1;
 }
 
@@ -1360,17 +1443,18 @@ ax211_publish_address(
 	uint32_t offset,
 	uint64_t address)
 {
-	int error;
 	int result;
 
-	/* Checks the operation result. */
+	/* Writes the low word. */
 	result = ax211_csr_write(mmio, offset, (uint32_t)address);
 	if (result != INTEL_AX211_MMIO_OK)
 		return result;
 
-	/* Obtains the ax211 csr write result. */
-	error = ax211_csr_write(mmio, offset + 4U, (uint32_t)(address >> 32));
+	/* Writes the high word. */
+	result = ax211_csr_write(mmio, offset + 4U, (uint32_t)(address >> 32));
+	if (result != INTEL_AX211_MMIO_OK)
+		return result;
 
-	/* Returns the result. */
-	return error;
+	/* Succeeded. */
+	return INTEL_AX211_MMIO_OK;
 }

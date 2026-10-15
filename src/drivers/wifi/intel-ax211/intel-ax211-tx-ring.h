@@ -57,6 +57,7 @@
 #define INTEL_AX211_TX_RING_HEADER_COPY_SIZE 20U
 #define INTEL_AX211_TX_RING_TB_SIZE_MAX 4092U
 
+/* The transmit write-index doorbell named above. */
 #define INTEL_AX211_TX_RING_WRITE_POINTER_REGISTER 0x460U
 
 /*
@@ -77,6 +78,7 @@
 #define INTEL_AX211_TX_QUEUE_SETUP_COMMAND_SIZE 36U
 #define INTEL_AX211_TX_QUEUE_SETUP_RESPONSE_SIZE 8U
 
+/* The results of the data transmit ring. */
 enum intel_ax211_tx_ring_result {
 	INTEL_AX211_TX_RING_OK = 0,
 	INTEL_AX211_TX_RING_INVALID = 1,
@@ -98,6 +100,9 @@ enum intel_ax211_tx_ring_result {
 };
 
 /*
+ * What the ring needs from its owner: handing memory to the device and
+ * writing the doorbell.
+ *
  * All callbacks run while the owning controller serializes the TX ring.
  * sync_for_device must establish coherent-DMA visibility before returning.
  */
@@ -108,6 +113,10 @@ struct intel_ax211_tx_ring_ops {
 	int (*write32)(void *argument, uint32_t offset, uint32_t value);
 };
 
+/*
+ * The queue setup command built for one ring, with the fields it was built
+ * from so that its answer can be checked against them.
+ */
 struct intel_ax211_tx_queue_config {
 	uint8_t command[INTEL_AX211_TX_QUEUE_SETUP_COMMAND_SIZE];
 	uint64_t tfd_address;
@@ -116,6 +125,7 @@ struct intel_ax211_tx_queue_config {
 	uint8_t tid;
 };
 
+/* What a caller holds for one frame in flight. */
 struct intel_ax211_tx_ring_handle {
 	uint64_t connection_generation;
 	uint64_t cookie;
@@ -128,6 +138,7 @@ struct intel_ax211_tx_ring_handle {
 	uint8_t reserved;
 };
 
+/* The outcome of one retired frame. */
 struct intel_ax211_tx_ring_retired {
 	struct intel_ax211_tx_ring_handle handle;
 	uint16_t sequence_control;
@@ -138,6 +149,12 @@ struct intel_ax211_tx_ring_retired {
 	uint8_t reserved;
 };
 
+/*
+ * One slot of the ring: its command and payload buffers and the frame in
+ * flight in it.
+ *
+ * An uncertain slot may still be owned by the device; it stays until reset.
+ */
 struct intel_ax211_tx_ring_slot {
 	struct drv_dma_buffer command;
 	struct drv_dma_buffer payload;
@@ -147,7 +164,11 @@ struct intel_ax211_tx_ring_slot {
 	uint8_t uncertain;
 };
 
-/* Private controller-owned object; do not copy after allocation. */
+/*
+ * One data transmit ring of the device.
+ *
+ * Private controller-owned object; do not copy after allocation.
+ */
 struct intel_ax211_frame_ring {
 	struct drv_dma_device *dma_device;
 	const struct intel_ax211_tx_ring_ops *ops;
