@@ -66,7 +66,10 @@
 #define NVRTX_SM75_LOOP_DEPTH		16U
 #define NVRTX_SM75_NOT_DEFINED		0xffffffffU
 
-/* 2^32 less 512 as a float (0x4f7ffffe), which scales a reciprocal to a 32-bit fixed-point one. */
+/*
+ * 2^32 less 512 as a float (0x4f7ffffe), which scales a reciprocal to a 32-bit fixed-point one.
+ * Value referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c (emit_udiv).
+ */
 #define NVRTX_SM75_RECIPROCAL_SCALE	0x4f7ffffeU
 
 /* All ones, the Boolean true; the sign bit; and 1 / (2 pi) as a float, which the sine and cosine units take. */
@@ -1748,6 +1751,8 @@ nvrtx_sm75_lower_divide(
  *   r = r + hi(r * (-d * r))                      one refinement
  *   q = hi(n * r);  m = n - q * d
  *   twice: if (m >= d) { q = q + 1; m = m - d; }
+ *
+ * Procedure referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c (emit_udiv).
  */
 static int
 nvrtx_sm75_divide_unsigned(
@@ -2156,8 +2161,9 @@ nvrtx_sm75_lower_shared(
  * Lowers a workgroup barrier (after the memory barrier of global memory it
  * names; BAR.SYNC itself orders the workgroup's shared memory) and a memory
  * fence (MEMBAR at the GPU's scope for global memory, the workgroup's
- * otherwise).  Each is followed by a NOP of two cycles, as the CUDA
- * compiler does after an instruction with an execution latency.
+ * otherwise).  Each is followed by a NOP of two cycles.
+ * Value referenced: the SM75 code the CUDA compiler emits (a NOP of two
+ * cycles after an instruction with an execution latency).
  */
 static int
 nvrtx_sm75_lower_sync(
@@ -2912,6 +2918,8 @@ nvrtx_sm75_input(
  * bits, a vertex program's store request.  The other maps were set as the
  * program was lowered.
  * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs (encode_header).
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs (encode_header: the SASS
+ * version and the fields set).
  */
 static void
 nvrtx_sm75_header(
@@ -2939,10 +2947,12 @@ nvrtx_sm75_header(
 
 		/*
 		 * The position's w is mapped in even when the program does not
-		 * read it, as a trap follows without it (Mesa 25.3.6
-		 * src/nouveau/compiler/nak/from_nir.rs sets it on every
-		 * fragment program).  The first draw on the GPU (R7d) stopped
-		 * on a shader program header error while it was missing.
+		 * read it, as a trap follows without it.  The first draw on
+		 * the GPU (R7d) stopped on a shader program header error
+		 * while it was missing.
+		 * Procedure referenced: Mesa 25.3.6
+		 * src/nouveau/compiler/nak/from_nir.rs (the position's w in a
+		 * fragment program's input map).
 		 */
 		nvrtx_sm75_sph_set(binary->sph, NVRTX_SM75_SPH_IMAP_AB_LOW + NVRTX_SM75_ATTR_POSITION_W / 4U, 1U, 1U);
 	} else {
