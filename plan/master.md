@@ -34,7 +34,7 @@
 0. **まず [plan/agents/handover-20261015b.md](agents/handover-20261015b.md) を読む**（この session の異常と点検、未完の担当、ユーザーの判断待ち、残っている仕事）。
 1. 新しい Q1 は AGENTS.md・この block・plan/beta2.md の先頭（「ユーザーが今できる試験」）を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge_one の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`。memory の verify-merge-before-reporting）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS250、q1206（q1205 は P2 の WS249 の予約。q1204 は P1 の ws245-p002 の実装。q1203 は P5 の ws039-p007 compiler の再開。q1202 は P3 の ws039-p001 の再開。q1201 は P2 の WS248 AX211 の整理。q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS251、q1206（q1205 は P2 の WS249 の予約。q1204 は P1 の ws245-p002 の実装。q1203 は P5 の ws039-p007 compiler の再開。q1202 は P3 の ws039-p001 の再開。q1201 は P2 の WS248 AX211 の整理。q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
 4. 日付（2026-10-15 ユーザー「host の時計は 2026-10-15（木）です。10-16は明らかにおかしいです。」）: 10-15 04:36 以降の記録が 1 日進んだ 2026-10-16 と書かれていたので、出来事の日付を 2026-10-15 に直した（予定の 7 行は 10-16 のまま）。日付は host の時計（`date`）で書く。 記録の整合を保つ手順は [record-integrity.md](record-integrity.md)（AGENTS.md の「記録の整合」）。LW は 1 LW ≈ 実時間 15〜25 分（2026-10-14 の較正、10-15 に正と承認）。
 <!-- master:next:end -->
 
@@ -557,6 +557,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
 | [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001 を P2 が実行中、q1201） | p001 → p002 |
 | [WS249](ws249/ws.md) | MG005 | BCM43455（Pi 4 の WiFi）の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | planned | WS248 の後に P2（q1205 予約） |
+| [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | planned | p001 設計の担当の割り当て待ち |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
@@ -602,6 +603,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-15 夕（ユーザー）:「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」→ WS250 を作成（nvrtx の isolate・reset・channel の取り消し、設計から）。
 - 2026-10-15 夕（ユーザー）:「bcm43455も同じガードレールで修正してほしいです。WSを立ててください。」→ WS249 を作成（WS248 と同じ整理、担当は未割当）。
 - 2026-10-15 夕（ユーザー、クリック「file を 2 つに分ける」）: 整形で intel-ax211.c の consolidated の目印が消え AX211 の host 試験 6 本が動かなくなった件 → intel-ax211.c を firmware・descriptor と PCI の 2 file に分け、試験は直に compile、prepare.py の AX211 の行を外す（P2、WS248 p002）。同日「整形しかしていないので、あなたがマージしてOKです。」→ Q1 が 599bf8755 を merge（6356b3c7c）。
 - 2026-10-15 夕（ユーザー）:「WS245はいつでもロールバックできるので、今マージします」→ WS245 design.md §7 #13 は「p003 以降もデモを待たず merge」。同日 AX211 の 2 回目の整形（8a9de2294）はユーザーが commit。
