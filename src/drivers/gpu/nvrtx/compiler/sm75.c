@@ -412,6 +412,7 @@ nvrtx_sm75_iadd3(
 /*
  * IMAD dst = a * b + c, the low 32 bits.  The carry output is PT (none)
  * and the carry input !PT (false).
+ *
  * Value referenced: the SM75 code the CUDA compiler emits (IMAD's carry
  * operands).
  */
@@ -681,6 +682,7 @@ nvrtx_sm75_stg(
  * Before SM80 the scope (77..78, the GPU's) and the order (79..80, strong)
  * are two fields; from SM80 on they are one (77..80), in which strong at
  * the GPU's scope is 7.
+ *
  * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70_encode.rs
  * (set_mem_order).
  */
@@ -1092,7 +1094,10 @@ nvrtx_sm75_memory(
  * NVRTX_SM75_DELAY_SYNC_MIN already waits.
  */
 
-/* Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs, BarAlloc (lines 186-196: six scoreboards). */
+/*
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs,
+ * BarAlloc (lines 186-196: six scoreboards).
+ */
 /* The scoreboards an instruction may set, and the mask of all of them. */
 #define NVRTX_SM75_SCOREBOARDS		6U
 #define NVRTX_SM75_SCOREBOARD_ALL	0x3fU
@@ -1103,26 +1108,31 @@ nvrtx_sm75_memory(
 #define NVRTX_SM75_TRACKED_PREDICATES	8U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 692-698: a scoreboard is
- * waited for 2 cycles after it is set at the earliest).
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs,
+ * calc_delays (lines 692-698: a scoreboard is waited for 2 cycles after it is
+ * set at the earliest).
  */
 /* The cycles after a scoreboard is set before an instruction may wait for it. */
 #define NVRTX_SM75_SCOREBOARD_SETTLE	2U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write and
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write and
  * pred_read_after_write with no reader (lines 205-412, 695-776),
- * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 259-576, 889-958), and
- * src/nouveau/compiler/nak/sm70.rs, worst_latency and instr_latency (lines 24-67, 263-273).
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 259-576,
+ * 889-958), and src/nouveau/compiler/nak/sm70.rs, worst_latency and
+ * instr_latency (lines 24-67, 263-273).
  */
 /* The worst latency of a fixed-latency general register and predicate result, which a block's end waits out. */
 #define NVRTX_SM75_WORST_GPR		6U
 #define NVRTX_SM75_WORST_PREDICATE	13U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, write_after_write and write_after_read
- * (lines 414-693), and src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines
- * 578-842), at their largest.
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, write_after_write and
+ * write_after_read (lines 414-693), and
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 578-842),
+ * at their largest.
  */
 /* A write after a write, and a variable-latency write after a fixed-latency write or read. */
 #define NVRTX_SM75_WAW_FIXED		2U
@@ -1130,10 +1140,13 @@ nvrtx_sm75_memory(
 #define NVRTX_SM75_WAR_DECOUPLED	2U
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70.rs, exec_latency (lines 169-185), and
- * src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 811-818: a NOP of 2 cycles
- * after an instruction with an execution latency).
- * Value referenced: the SM75 code the CUDA compiler emits (EXIT's delay of 5).
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm70.rs,
+ * exec_latency (lines 169-185), and
+ * src/nouveau/compiler/nak/calc_instr_deps.rs, calc_delays (lines 811-818: a
+ * NOP of 2 cycles after an instruction with an execution latency).
+ *
+ * Value referenced: the SM75 code the CUDA compiler emits (EXIT's delay of
+ * 5).
  */
 /* The fewest cycles after a barrier or a memory barrier (its execution takes 5 on Turing, 6 from SM80 on), and after EXIT. */
 #define NVRTX_SM75_DELAY_SYNC_MIN	6U
@@ -1764,9 +1777,11 @@ nvrtx_sm75_fixed(
 }
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
  * needs_scoreboards (lines 49-203, 1187-1208), and
- * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257, 1433-1453).
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257,
+ * 1433-1453).
  */
 /* Reads the operands of an ALU instruction by its 9-bit opcode; nonzero for one not known. */
 static int
@@ -1881,10 +1896,11 @@ nvrtx_sm75_operands_alu(
 }
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, op_category and
  * needs_scoreboards (lines 49-203, 1187-1208), and
- * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257, 1433-1453:
- * DecoupledAgu for the address unit's reads).
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, the same (lines 85-257,
+ * 1433-1453: DecoupledAgu for the address unit's reads).
  */
 /* Reads the operands of an instruction of its own 12-bit opcode; nonzero for one not known. */
 static int
@@ -2210,9 +2226,10 @@ nvrtx_sm75_constrain(
 }
 
 /*
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/calc_instr_deps.rs
- * (BarAlloc, try_find_free_bar and free_some_bar, lines 214-228: the lowest
- * free scoreboard, else the one set longest ago).
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/calc_instr_deps.rs (BarAlloc, try_find_free_bar
+ * and free_some_bar, lines 214-228: the lowest free scoreboard, else the one
+ * set longest ago).
  */
 /*
  * Chooses the scoreboards a variable-latency instruction sets: one its
@@ -2400,7 +2417,11 @@ nvrtx_sm75_raw(
 	return latency;
 }
 
-/* Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write (lines 205-412). */
+/*
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, read_after_write (lines
+ * 205-412).
+ */
 /*
  * Reports Turing's cycles from a fixed-latency register write to a read
  * (the addend of an IMAD.WIDE reads late).
@@ -2447,7 +2468,11 @@ nvrtx_sm75_raw_turing(
 	return 5U;
 }
 
-/* Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm80_instr_latencies.rs, read_after_write (lines 259-576). */
+/*
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm80_instr_latencies.rs, read_after_write (lines
+ * 259-576).
+ */
 /*
  * Reports Ampere's and Ada's cycles from a fixed-latency register write to
  * a read (sm80_instr_latencies.rs, read_after_write: the writers are
@@ -2492,8 +2517,9 @@ nvrtx_sm75_raw_ampere(
 }
 
 /*
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs, pred_read_after_write (lines
- * 695-776), and src/nouveau/compiler/nak/sm80_instr_latencies.rs,
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak/sm75_instr_latencies.rs, pred_read_after_write
+ * (lines 695-776), and src/nouveau/compiler/nak/sm80_instr_latencies.rs,
  * PredLatencySM80::pred_read_after_write (lines 889-958).
  */
 /*
@@ -2590,7 +2616,9 @@ nvrtx_sm75_later(
 
 /*
  * 2^32 less 512 as a float (0x4f7ffffe), which scales a reciprocal to a 32-bit fixed-point one.
- * Value referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c (emit_udiv).
+ *
+ * Value referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c
+ * (emit_udiv).
  */
 #define NVRTX_SM75_RECIPROCAL_SCALE	0x4f7ffffeU
 
@@ -3783,7 +3811,9 @@ nvrtx_sm75_lower_unit(
 
 	/*
 	 * Sine and cosine first scale the angle into turns.
-	 * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/builder.rs (fsin, fcos).
+	 *
+	 * Procedure referenced: Mesa 25.3.6
+	 * src/nouveau/compiler/nak/builder.rs (fsin, fcos).
 	 */
 	if (instruction->op == DRV_GPU_IR_SIN || instruction->op == DRV_GPU_IR_COS) {
 		error = nvrtx_sm75_take(lowering, &temporary);
@@ -4086,8 +4116,9 @@ nvrtx_sm75_lower_storage(
  * BSSY whose barrier collects the threads at the BSYNC after the loop, and
  * LOOP_END branches back to the loop's first instruction for the threads
  * whose Boolean holds; the others go on to the BSYNC and wait there.
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the loop's OpBSSy and
- * OpBSync).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the
+ * loop's OpBSSy and OpBSync).
  */
 static int
 nvrtx_sm75_lower_loop(
@@ -4274,7 +4305,8 @@ nvrtx_sm75_lower_divide(
  *   q = hi(n * r);  m = n - q * d
  *   twice: if (m >= d) { q = q + 1; m = m - d; }
  *
- * Procedure referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c (emit_udiv).
+ * Procedure referenced: Mesa 25.0.7 src/compiler/nir/nir_lower_idiv.c
+ * (emit_udiv).
  */
 static int
 nvrtx_sm75_divide_unsigned(
@@ -4684,6 +4716,7 @@ nvrtx_sm75_lower_shared(
  * names; BAR.SYNC itself orders the workgroup's shared memory) and a memory
  * fence (MEMBAR at the GPU's scope for global memory, the workgroup's
  * otherwise).  Each is followed by a NOP of two cycles.
+ *
  * Value referenced: the SM75 code the CUDA compiler emits (a NOP of two
  * cycles after an instruction with an execution latency).
  */
@@ -4852,8 +4885,9 @@ nvrtx_sm75_extend_loops(
  * R0 onward, four registers for each location it writes in ascending
  * order (the registers the hardware reads at EXIT), which no value may
  * take; a vertex program's store request starts empty.
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the order of the
- * fragment outputs in OpRegOut).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (the
+ * order of the fragment outputs in OpRegOut).
  */
 static int
 nvrtx_sm75_prepare_graphics(
@@ -4913,8 +4947,10 @@ nvrtx_sm75_prepare_graphics(
  * Starts a fragment program that interpolates in perspective: w at the
  * pixel (the position's w, passed screen-linear) and its reciprocal, which
  * every perspective input is multiplied by.
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_fs_inputs.c (the SM70
- * interpolation: pass, then times 1 / w).
+ *
+ * Procedure referenced: Mesa 25.3.6
+ * src/nouveau/compiler/nak_nir_lower_fs_inputs.c (the SM70 interpolation:
+ * pass, then times 1 / w).
  */
 static int
 nvrtx_sm75_prologue(
@@ -5298,8 +5334,10 @@ nvrtx_sm75_lower_sample(
  * offset shifted by 8.  The general message passes no image dimension, so
  * only the messages whose parameter count says 2D are taken: a sample
  * (u v), a biased or levelled one (bias or lod, u v), and a fetch (u v lod).
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c (lower_tex: how
- * the coordinates, level of detail and offset are packed into registers).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak_nir_lower_tex.c
+ * (lower_tex: how the coordinates, level of detail and offset are packed into
+ * registers).
  */
 static int
 nvrtx_sm75_texture_operands(
@@ -5384,7 +5422,9 @@ nvrtx_sm75_texture_operands(
 
 /*
  * Lowers a discard of the fragments where the Boolean holds: @P0 KILL.
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs (demote, demote_if).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/from_nir.rs
+ * (demote, demote_if).
  */
 static int
 nvrtx_sm75_lower_kill(
@@ -5439,9 +5479,12 @@ nvrtx_sm75_input(
  * multiple-target bit and its input map's position w, the global memory
  * bits, a vertex program's store request.  The other maps were set as the
  * program was lowered.
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs (encode_header).
- * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs (encode_header: the SASS
- * version and the fields set).
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs
+ * (encode_header).
+ *
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sph.rs
+ * (encode_header: the SASS version and the fields set).
  */
 static void
 nvrtx_sm75_header(
@@ -5472,6 +5515,7 @@ nvrtx_sm75_header(
 		 * read it, as a trap follows without it.  The first draw on
 		 * the GPU (R7d) stopped on a shader program header error
 		 * while it was missing.
+		 *
 		 * Procedure referenced: Mesa 25.3.6
 		 * src/nouveau/compiler/nak/from_nir.rs (the position's w in a
 		 * fragment program's input map).

@@ -3,11 +3,11 @@
 # WS246: nvrtx の shader compiler を sm75.h・sm75.c にまとめて refactor し、出典を定数・構造体・関数ごとに明記する
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-16 作成、担当未定）
+Status: incomplete（2026-10-16 ユーザー「残り使用量でできそうです。今やってください。」→ Q1 が p001 を実施）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md) p008（compiler）、[WS242](../ws242/ws.md) p002（SM86・SM89）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: p001 から。
+Resume point: p001 cleared（Q1 d5d72059d: sm75.h 948 行・sm75.c 5950 行にまとめ、使う側・vmunix.mk・host 試験を追従。build warning 0、nvrtx-sm75-host-test 287/0、desktop 138/0、vk-d3 122/0、vk 60/0）。referenced: の comment を複数行の形に折り返した（ユーザー）。次は p002（定数・構造体・関数ごとに出典を探す、latency の if の連鎖を表に、NAK に沿った構造の見直し）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの提案（原文、2026-10-16）
@@ -22,7 +22,7 @@ Resume point: p001 から。
 
 | ID | 内容 | 状態 |
 | --- | --- | --- |
-| p001 | まとめ: header を sm75.h（外向きの口と内部の定義を分けるかは設計で決める）、source を sm75.c に。使う側・vmunix.mk・host 試験を追従。動作は変えない（SM75・86・89 の出力が byte 単位で同じ、host 試験 287/0・desktop 試験 138/0、build warning 0） | planned |
+| p001（cleared） | まとめ: header を sm75.h（外向きの口と内部の定義を分けるかは設計で決める）、source を sm75.c に。使う側・vmunix.mk・host 試験を追従。動作は変えない（SM75・86・89 の出力が byte 単位で同じ、host 試験 287/0・desktop 試験 138/0、build warning 0） | planned |
 | p002 | refactor: 定数・構造体・関数ごとに出典を探し、「Value(s) referenced:」「Procedure referenced:」を block ごとに付ける（file の上部には書かない）。latency の if の連鎖は表に直す。Mesa NAK に沿った構造（encode の関数の分け方、scoreboard の割り当て）は自前の形に直すか、手順の出典を付ける | planned |
 | p003 | 規約の全文の見直し | planned |
 
