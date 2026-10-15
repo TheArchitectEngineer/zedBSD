@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理、棚卸し plan/ws244/inventory.md・tests/inventory.py）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」
-Resume point: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
+Resume point: q1204（P1、2026-10-15 夕）で p002 を実装中。以前: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display 12 の TGL・RKL・ADL-S/RPL-S と display 13 の ADL-P 系、display 11 は p014。Phase p002〜p015、80 LW ±40%、実機の往復は別枠 6〜10 LW。3 回目のレビュー blocker 2・major 17・minor 16 を全部反映）。次: §7 の判断 #0〜#22（特に #11 PRM の Notices、#13 merge の時期、#15 passthrough の scenario、#16 他の WS の Phase、#17 TGL の TC、#18 RKL・ADL-S の今の状態、#20 GT、#22 Gen9 の機械）をユーザーに → p001 の clearance（Q1）→ p002 から実装（Queue の承認が要る。p003 以降の merge はデモの後: #13）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -41,6 +41,14 @@ Resume point: 2026-10-15 P1（q1200）: design.md 改訂 3a（多機種: display
 - 外向きの口（display の API、Gen9 と共有の部分）は保つ。
 - 書き直しの後、`Derived from the Linux kernel` と Linux の MIT の表示は Gen12 の file から消え、`userland/base/licenses/i915-driver/` は WS244 の最後で整理する。
 - 完了（対象の機種の方針で読み替え: 5330 だけでなく display 12・13 の対象機種で）: 5330 の実機で、起動・GOP の引き継ぎ・内蔵 panel（eDP）・backlight・外部の DP/HDMI（USB-C を含む）・hotplug・mode set・suspend の戻りが今と同じに動く（ユーザーの確かめ、試験の一覧に載せる）。
+
+## 実装の開始とロールバックの体制（2026-10-15 夕）
+
+ユーザー:「WS245は、ロールバックできる体制にしておいて、今から実装します。」
+- ロールバックの基点: main 0c25c87a7（WS245 の実装の commit が入る前）。Phase ごとに別の merge commit にするので、`git revert -m 1 <merge>` で Phase 単位に戻せる。
+- kernel の振る舞いは p009 まで変えない: p002・p004〜p008 は新しい file と host 試験だけ。p003 の adapter 以降も `i915.display=old` が既定で、xd は opt-in（design.md §7 #0、既定の切り替えは p011）。`old` は p013 まで逃げ道。
+- §7 の判断は既定の案で進め、既定の無い #18（RKL・ADL-S/RPL-S を支えるか）・#22（Gen9 の機械）は回答待ち。#18 の回答までは device.c の ID の表に RKL・ADL-S を足さない（今の振る舞いのまま）。
+- merge の時期は §7 #13 の既定（p002 はいつでも、p003 以降は 10/17 のデモの後）を Q1 がユーザーに確かめる。
 
 ## Phase（design.md §6.2、改訂 3a。p001 の clearance で確定）
 
