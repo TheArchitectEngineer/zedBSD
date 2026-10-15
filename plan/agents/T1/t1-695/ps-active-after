@@ -1,0 +1,22 @@
+PID     TIME COMMAND
+  0 00:00:00 kernel
+  1 00:00:00 kernel
+  4 00:00:12 kernel
+  5 00:00:00 kernel
+  6 00:00:01 kernel
+  7 00:00:00 kernel
+  9 00:00:02 kernel
+ 10 00:00:04 kernel
+ 17 00:00:01 kernel
+ 18 00:00:00 kernel
+ 19 00:00:01 kernel
+ 27 00:00:06 /bin/wayland
+ 36 00:00:00 /usr/libexec/keiland-ime
+ 37 00:00:03 /bin/files
+ 38 00:00:02 /bin/settings
+198 00:00:00 kernel
+200 00:00:00 sshd-session: kei@notty
+201 00:00:00 sh
+208 00:00:00 timeout
+210 00:00:01 /bin/files
+246 00:00:00 ps

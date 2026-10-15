@@ -1,0 +1,194 @@
+KWL CLIENT client=6 fd=32
+KWL INSET create client=6 inset=23 toplevel=21
+KWL EDIT create client=6 edit=25 toplevel=21
+KWL BOUNDS client=6 surface=19 width=1256 height=904
+KWL CONFIGURE client=6 surface=19 serial=367 width=0 height=0 fullscreen=0
+KWL SEAT client=6 pointer=0 keyboard=1 touch=0
+KWL CLIENT client=7 fd=36
+KWL INSET create client=7 inset=23 toplevel=21
+KWL EDIT create client=7 edit=25 toplevel=21
+KWL BOUNDS client=7 surface=19 width=1256 height=904
+KWL CONFIGURE client=7 surface=19 serial=368 width=0 height=0 fullscreen=0
+KWL SEAT client=7 pointer=0 keyboard=1 touch=0
+KWL SYSTEM result client=3 object=41 request=838 applied=0
+KWL IMPORT client=7 buffer=31 width=1120 height=720 bytes=3317760
+KWL IMPORT client=7 buffer=32 width=1120 height=720 bytes=3317760
+KWL IMPORT client=7 buffer=33 width=1120 height=720 bytes=3317760
+KWL SYSTEM result client=3 object=41 request=839 applied=0
+KWL IMPORT client=6 buffer=31 width=916 height=632 bytes=2428928
+KWL IMPORT client=6 buffer=32 width=916 height=632 bytes=2428928
+KWL IMPORT client=6 buffer=33 width=916 height=632 bytes=2428928
+KWL MENU set client=6 place=35 menu=36
+KWL MENU commit client=6 menu=36 serial=1 items=39 generation=1
+KWL MENU commit client=6 menu=36 serial=2 items=39 generation=2
+KWL MENU commit client=6 menu=36 serial=3 items=39 generation=3
+KWL MENU commit client=6 menu=36 serial=4 items=39 generation=4
+KWL MENU commit client=6 menu=36 serial=5 items=39 generation=5
+KWL MENU commit client=6 menu=36 serial=6 items=39 generation=6
+KWL MENU commit client=6 menu=36 serial=7 items=39 generation=7
+KWL DECORATION applied client=6 surface=19 mode=2
+KWL MAP client=6 surface=19 x=182 y=244
+KWL SURFACE enter surface=19 output=0 client=6
+KWL IME app key=app:terminal language=direct from=inherited
+KWL RENDER output=0 surfaces=19,19,19
+KWL MENU bar client=6 surface=19 where=floating item=1 offset=121 top=192 width=52 height=44
+KWL MENU bar client=6 surface=19 where=floating item=2 offset=175 top=192 width=47 height=44
+KWL MENU bar client=6 surface=19 where=floating item=3 offset=224 top=192 width=51 height=44
+KWL MENU bar client=6 surface=19 where=floating item=4 offset=277 top=192 width=69 height=44
+KWL MENU bar client=6 surface=19 where=floating item=5 offset=348 top=192 width=49 height=44
+KWL APPS bar count=3 hidden=0 desktop=2 apps=settings,files,terminal
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL APPS icon app=files x=92 y=0 width=34 height=44 windows=1
+KWL APPS icon app=terminal x=126 y=0 width=34 height=44 windows=1
+KWL MENU set client=6 place=35 menu=0
+KWL CLIENT gone client=6 reason=hangup
+KWL CLEANUP client=6 objects=11 unread_fds=0
+KWL CLEANUP done client=6 ms=32 quiesce=32 surfaces=0 shell=0 objects=0 queued=1 import_us=0 backend_us=0
+KWL IME app key=app:files language=direct from=remembered
+KWL IMPORT client=7 buffer=34 width=1120 height=720 bytes=3317760
+KWL IMPORT client=7 buffer=35 width=1120 height=720 bytes=3317760
+KWL IMPORT client=7 buffer=36 width=1120 height=720 bytes=3317760
+KWL MENU set client=7 place=40 menu=41
+KWL MENU commit client=7 menu=41 serial=1 items=90 generation=1
+KWL MENU commit client=7 menu=41 serial=2 items=90 generation=2
+KWL MENU commit client=7 menu=41 serial=3 items=90 generation=3
+KWL MENU commit client=7 menu=41 serial=4 items=90 generation=4
+KWL MENU commit client=7 menu=41 serial=5 items=90 generation=5
+KWL MENU commit client=7 menu=41 serial=6 items=90 generation=6
+KWL MENU commit client=7 menu=41 serial=7 items=90 generation=7
+KWL MENU commit client=7 menu=41 serial=8 items=90 generation=8
+KWL MENU commit client=7 menu=41 serial=9 items=90 generation=9
+KWL MENU commit client=7 menu=41 serial=10 items=90 generation=10
+KWL MENU commit client=7 menu=41 serial=11 items=90 generation=11
+KWL MENU commit client=7 menu=41 serial=12 items=90 generation=12
+KWL MENU commit client=7 menu=41 serial=13 items=90 generation=13
+KWL MENU commit client=7 menu=41 serial=14 items=90 generation=14
+KWL MENU commit client=7 menu=41 serial=15 items=90 generation=15
+KWL MENU commit client=7 menu=41 serial=16 items=90 generation=16
+KWL MENU commit client=7 menu=41 serial=17 items=90 generation=17
+KWL MENU commit client=7 menu=41 serial=18 items=90 generation=18
+KWL MENU commit client=7 menu=41 serial=19 items=90 generation=19
+KWL MENU commit client=7 menu=41 serial=20 items=90 generation=20
+KWL MENU commit client=7 menu=41 serial=21 items=90 generation=21
+KWL MENU commit client=7 menu=41 serial=22 items=90 generation=22
+KWL MENU commit client=7 menu=41 serial=23 items=90 generation=23
+KWL MENU commit client=7 menu=41 serial=24 items=90 generation=24
+KWL MENU commit client=7 menu=41 serial=25 items=90 generation=25
+KWL MENU commit client=7 menu=41 serial=26 items=90 generation=26
+KWL MENU commit client=7 menu=41 serial=27 items=90 generation=27
+KWL MENU commit client=7 menu=41 serial=28 items=90 generation=28
+KWL MENU commit client=7 menu=41 serial=29 items=90 generation=29
+KWL MENU commit client=7 menu=41 serial=30 items=90 generation=30
+KWL MENU commit client=7 menu=41 serial=31 items=90 generation=31
+KWL MENU commit client=7 menu=41 serial=32 items=90 generation=32
+KWL MENU commit client=7 menu=41 serial=33 items=90 generation=33
+KWL MENU commit client=7 menu=41 serial=34 items=90 generation=34
+KWL MENU commit client=7 menu=41 serial=35 items=90 generation=35
+KWL MENU commit client=7 menu=41 serial=36 items=90 generation=36
+KWL MENU commit client=7 menu=41 serial=37 items=90 generation=37
+KWL MENU commit client=7 menu=41 serial=38 items=90 generation=38
+KWL MENU commit client=7 menu=41 serial=39 items=90 generation=39
+KWL MENU commit client=7 menu=41 serial=40 items=90 generation=40
+KWL MENU commit client=7 menu=41 serial=41 items=90 generation=41
+KWL MENU commit client=7 menu=41 serial=42 items=90 generation=42
+KWL TITLEBAR create client=7 titlebar=43 toplevel=21
+KWL TITLEBAR commit client=7 titlebar=43 serial=1 mode=1 controls=0 tabs=0 generation=1
+KWL TITLEBAR commit client=7 titlebar=43 serial=2 mode=1 controls=8 tabs=0 generation=2
+KWL TITLEBAR commit client=7 titlebar=43 serial=3 mode=1 controls=8 tabs=0 generation=3
+KWL TITLEBAR commit client=7 titlebar=43 serial=4 mode=1 controls=8 tabs=0 generation=4
+KWL TITLEBAR commit client=7 titlebar=43 serial=5 mode=1 controls=8 tabs=0 generation=5
+KWL TITLEBAR commit client=7 titlebar=43 serial=6 mode=1 controls=8 tabs=0 generation=6
+KWL TITLEBAR commit client=7 titlebar=43 serial=7 mode=1 controls=8 tabs=0 generation=7
+KWL TITLEBAR commit client=7 titlebar=43 serial=8 mode=1 controls=8 tabs=0 generation=8
+KWL RENDER output=0 surfaces=19,19
+KWL APPS bar count=2 hidden=0 desktop=2 apps=settings,files
+KWL APPS icon app=settings x=58 y=0 width=34 height=44 windows=1
+KWL APPS icon app=files x=92 y=0 width=34 height=44 windows=1
+KWL SYSTEM object client=7 get=2 id=48
+KWL SYSTEM object client=7 get=3 id=49
+KWL SYSTEM object client=7 get=4 id=50
+KWL SYSTEM object client=7 get=5 id=51
+KWL SYSTEM object client=7 get=7 id=52
+KWL SYSTEM object client=7 get=8 id=53
+KWL NOTIFY object client=7 id=54
+KWL MAIL object client=7 id=55
+KWL PHONE object client=7 id=56
+KWL PRINTERS object client=7 id=57
+KWL DISPLAYS object client=7 id=58
+KWL SYSTEM machine object client=7 id=59
+KWL BT object client=7 id=60
+KWL SETTINGS snapshot client=7 object=68
+KWL GLASS client=7 surface=19 panels=2 card:0,0,212,720,16 card:220,0,900,720,16
+KWL DECORATION applied client=7 surface=19 mode=2
+KWL EDIT state client=7 edit=25 actions=0xff flags=0xd
+KWL MAP client=7 surface=19 x=128 y=248
+KWL SURFACE enter surface=19 output=0 client=7
+KWL SYSTEM machine query client=7 request=1 what=2
+KWL SYSTEM machine query client=7 request=2 what=16
+KWL RENDER output=0 surfaces=19,19,19
+KWL TITLEBAR control client=7 surface=19 where=floating id=1 x=223 y=203 width=30 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=2 x=257 y=203 width=30 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=3 x=291 y=203 width=30 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=4 x=331 y=203 width=56 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=5 x=772 y=203 width=220 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=6 x=996 y=203 width=30 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=7 x=1030 y=203 width=30 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=8 x=1064 y=203 width=30 height=30 shown=1
+KWL TITLEBAR control client=7 surface=19 where=floating id=0 x=1104 y=203 width=30 height=30 shown=1
+KWL SYSTEM machine answer client=7 request=1 what=2 result=0 users=0 filesystems=2 skipped=0 mounts=0 mounts_skipped=0
+KWL SYSTEM machine answer client=7 request=2 what=16 result=0 users=0 filesystems=0 skipped=0 mounts=7 mounts_skipped=0
+KWL RETIRE drained released=1 ms=218
+KWL SYSTEM result client=3 object=41 request=840 applied=0
+KWL SYSTEM sharing answer error=0
+KWL SYSTEM enrolled pin=0 keys=0 listed=0
+ZSETTINGS USERS enrolled changed
+KWL PHONE state reachable=1 subscribed=0 linked=0 messages=0 why=no-record contacts=0 contacts_why= record=1/0
+KWL PERF 5001ms: passes=537 timeouts=454 | poll 92.9% work 3.3%
+KWL PERF compose frames=11 draw_ms=0.11 (acquire 0.03 submit+present 23.82) frame_ms=31.58
+KWL PERF rec frames=11 copied=0 begin=1.24 encode=0.18 end=0.57 submit=18.69 present=3.13 | max end=2.12 submit=22.97 present=3.98
+KWL PERF main ticks=186.8 input=0.2 clients=84.2 frame_done=3.4 schedule=48.3 flush=2.0 other=26.3 | schedule ticks=42.3 adopt=1.1 shm=0.4 cursor=0.1 layers=0.2 draw=1.2 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=537 pass_p99_us=6277 pass_max_us=32290 walk_max_us=124 vk_outside_max_us=31676
+KWL PERF walk drawings=11 dropped=0 | small n=0 | middle n=11 p50=0.09 p90=0.12 max=0.12 | large n=0 | replay n=11 p50=0.71 p90=4.79 max=9.97 | quiet n=0 | quiet_replay n=0
+KWL SYSTEM result client=3 object=41 request=841 applied=0
+KWL SYSTEM result client=3 object=41 request=842 applied=0
+KWL SYSTEM result client=3 object=41 request=843 applied=0
+KWL SYSTEM result client=3 object=41 request=844 applied=0
+KWL SYSTEM result client=3 object=41 request=845 applied=0
+KWL PERF 5009ms: passes=486 timeouts=474 | poll 93.7% work 1.0%
+KWL PERF compose frames=1 draw_ms=0.08 (acquire 0.05 submit+present 15.19) frame_ms=23.56
+KWL PERF rec frames=1 copied=0 begin=0.15 encode=0.04 end=0.20 submit=11.86 present=2.94 | max end=0.20 submit=11.86 present=2.94
+KWL PERF main ticks=264.9 input=0.2 clients=1.4 frame_done=3.3 schedule=37.5 flush=0.0 other=5.5 | schedule ticks=33.7 adopt=0.8 shm=0.4 cursor=0.0 layers=0.0 draw=0.1 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=486 pass_p99_us=209 pass_max_us=2768 walk_max_us=73 vk_outside_max_us=2
+KWL PERF walk drawings=1 dropped=0 | small n=1 p50=0.07 p90=0.07 max=0.07 | middle n=0 | large n=0 | replay n=1 p50=0.38 p90=0.38 max=0.38 | quiet n=0 | quiet_replay n=0
+KWL SYSTEM result client=3 object=41 request=846 applied=0
+KWL SYSTEM result client=3 object=41 request=847 applied=0
+KWL SYSTEM result client=3 object=41 request=848 applied=0
+KWL SYSTEM result client=3 object=41 request=849 applied=0
+KWL CLIENT gone client=5 reason=read
+KWL CLEANUP client=5 objects=52 unread_fds=0
+KWL CLEANUP done client=5 ms=1 quiesce=0 surfaces=0 shell=0 objects=1 queued=3 import_us=0 backend_us=1000
+KWL RENDER output=0 surfaces=19,19
+KWL RETIRE drained released=3 ms=47
+KWL SYSTEM result client=3 object=41 request=850 applied=0
+KWL PERF 5000ms: passes=494 timeouts=480 | poll 95.3% work 1.0%
+KWL PERF compose frames=1 draw_ms=0.07 (acquire 0.03 submit+present 19.27) frame_ms=34.26
+KWL PERF rec frames=1 copied=0 begin=0.11 encode=0.05 end=0.25 submit=15.85 present=3.00 | max end=0.25 submit=15.85 present=3.00
+KWL PERF main ticks=183.8 input=0.2 clients=1.7 frame_done=3.3 schedule=34.7 flush=0.0 other=8.9 | schedule ticks=30.9 adopt=0.8 shm=0.4 cursor=0.0 layers=0.1 draw=0.1 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=494 pass_p99_us=186 pass_max_us=3059 walk_max_us=60 vk_outside_max_us=2929
+KWL PERF walk drawings=1 dropped=0 | small n=0 | middle n=1 p50=0.06 p90=0.06 max=0.06 | large n=0 | replay n=1 p50=0.42 p90=0.42 max=0.42 | quiet n=0 | quiet_replay n=0
+KWL SYSTEM result client=3 object=41 request=851 applied=0
+KWL SYSTEM result client=3 object=41 request=852 applied=0
+KWL SYSTEM result client=3 object=41 request=853 applied=0
+KWL SYSTEM result client=3 object=41 request=854 applied=0
+KWL SYSTEM result client=3 object=41 request=855 applied=0
+KWL PERF 5000ms: passes=481 timeouts=471 | poll 93.8% work 0.8%
+KWL PERF main ticks=262.7 input=0.2 clients=0.8 frame_done=3.2 schedule=32.1 flush=0.0 other=5.3 | schedule ticks=29.1 adopt=0.5 shm=0.2 cursor=0.0 layers=0.0 draw=0.0 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=481 pass_p99_us=147 pass_max_us=183 walk_max_us=0 vk_outside_max_us=2
+KWL SYSTEM result client=3 object=41 request=856 applied=0
+KWL SYSTEM result client=3 object=41 request=857 applied=0
+KWL SYSTEM result client=3 object=41 request=858 applied=0
+KWL SYSTEM result client=3 object=41 request=859 applied=0
+KWL SYSTEM result client=3 object=41 request=860 applied=0
+KWL PERF 5000ms: passes=489 timeouts=479 | poll 95.4% work 0.9%
+KWL PERF main ticks=182.5 input=0.2 clients=0.9 frame_done=3.2 schedule=32.9 flush=0.0 other=5.4 | schedule ticks=29.8 adopt=0.5 shm=0.2 cursor=0.0 layers=0.0 draw=0.0 | cursor presents=0 held=0 fence=0.0 acquire=0.0 copy=0.0 present=0.0 present_max=0.00
+KWL PERF pass passes=489 pass_p99_us=159 pass_max_us=190 walk_max_us=0 vk_outside_max_us=1

@@ -1,0 +1,210 @@
+boot: kernel heap, process, and scheduler initialization
+I/O pool large=32 small=32 resident=2232320 budget=67108864
+boot: HAL initialized successfully. [cpu 16, memory 32600MB, timer 1ms]
+boot: CPUs ready: 16
+boot: platform device discovery
+usb: URB completion contract q009-release-acquire-v1
+pci: ECAM segment 0000 bus 00 at 00000000:c0000000
+xhci: pci 0000:00:14.0 id=8086:7ae0 sub=8086:7270 rev=11 parent=root
+xhci: pci 0000:00:14.0 BAR0 type=64 size=00000000:00010000 original=00000040:12200000/00000040:12200004 final=00000040:12200000/00000040:12200004 mapped=65536
+xhci: pci 0000:00:14.0 command=0006->0002 (MEM on, MASTER off)
+xhci: pci 0000:00:14.0 caps len=80 version=0120 hcs1=14000840 hcs2=14200054 hcc1=20007fc1 dboff=00003000 rtsoff=00002000 reject=00000000:ok
+usb0: xHCI, 20 root ports
+xhci: PCI controller, version=120 ports=20 slots=64 irq=0 MSI
+ahci0: PCI 0000:00:17.0 class=010601 version=00010301 cap=e734ff43 ports=000000f0 slots=32 MSI
+hda: volume nid 2 steps 87 step 3/4 dB offset 87
+hda: volume 100% -> step 87/87
+hda: codec 0, 4 output pin(s), input yes, volume yes, 2 format(s), MSI
+hda: input pin 0x12 config 0x411111f0 pin caps 0x00000020 amp 0x00000000
+hda: input pin 0x14 config 0x01014120 pin caps 0x0001003e amp 0x00000000
+hda: input pin 0x15 config 0x411111f0 pin caps 0x00000036 amp 0x00000000
+hda: input pin 0x16 config 0x411111f0 pin caps 0x00000036 amp 0x00000000
+hda: input pin 0x17 config 0x411111f0 pin caps 0x00000036 amp 0x00000000
+hda: input pin 0x18 config 0x01a19040 pin caps 0x00003736 amp 0x00270300
+hda: input pin 0x19 config 0x02a19030 pin caps 0x0000373e amp 0x00270300
+hda: input pin 0x1a config 0x0181303f pin caps 0x00003736 amp 0x00270300
+hda: input pin 0x1b config 0x02214010 pin caps 0x0001373e amp 0x00270300
+hda: input pin 0x1c config 0x411111f0 pin caps 0x00000020 amp 0x00000000
+hda: input pin 0x1d config 0x4024c601 pin caps 0x00000020 amp 0x00000000
+hda: input pin 0x1f config 0x411111f0 pin caps 0x00000020 amp 0x00000000
+nvme: PCI controller 0000:02:00.0 version=10400 queue=64 timeout=10000ms MSI-X
+nvrtx: N0 begin 10de:1f02 at 01:00.0
+nvrtx: N0 bar0 mem32 size 16384K at 80000000
+nvrtx: N0 bar1 mem64 pref size 262144K at 4000000000
+nvrtx: N0 bar3 mem64 pref size 32768K at 4010000000
+nvrtx: N0 ident0=166000a1 ident1=00000000 flr=yes
+nvrtx: N0 ok chip=166 TU106 rev a1 (Turing)
+nvrtx: N1 gop 640x480 stride 1024 in bar1 at +0
+nvrtx: N1 done; TU106 kept for the GSP boot
+nvrtx: P0 console 640x480 pitch 4096 kept: 1920 KiB at the VRAM's start
+nvrtx: P0 begin
+hda: codec 0, 4 output pin(s), input no, volume no, 2 format(s), MSI
+xhci: pci 0000:01:00.2 id=10de:1ada sub=19da:2516 rev=a1 parent=0000:00:01.0
+xhci: pci 0000:01:00.2 BAR0 type=64 size=00000000:00040000 original=00000040:12000000/00000040:1200000c final=00000040:12000000/00000040:1200000c mapped=262144
+xhci: pci 0000:01:00.2 command=0006->0002 (MEM on, MASTER off)
+xhci: pci 0000:01:00.2 caps len=20 version=0110 hcs1=06000124 hcs2=1c00002a hcc1=0180ff05 dboff=00030000 rtsoff=00020000 reject=00000000:ok
+usb1: xHCI, 6 root ports
+xhci: PCI controller, version=110 ports=6 slots=36 irq=0 MSI
+acpi: PCI_Config region of absent function 0:10.6 reads as all ones
+acpi: PCI_Config region of absent function 0:10.7 reads as all ones
+ACPI Debug: "return 0x00"
+ACPI Debug: "return 0x0F"
+ACPI Debug: "return 0x00"
+ACPI: S5 is SLP_TYP 7/0
+ACPI: reset register port 0xcf9 value 0x6 width 8
+ACPI: SCI_EN 1, PM1_EN 0x20, 3 runtime GPEs
+ACPI: runtime GPEs: 0x61 0x62 0x66
+ACPI: wake-only GPEs with a method: 0x69 0x6f 0x72
+acpi: SCI on IRQ 9
+ACPI: the EC's _CRS gives no ports (error 6)
+acpi: the Embedded Controller did not attach (error 6)
+acpi: power device sleep-button value -1
+acpi: power device power-button value -1
+acpi: temperature sensor \_TZ_.TZ00 flags 0x0 valid 0x5 27850 mC
+ACPI: LPS0 \_SB_.PEPD, Intel functions 0x7f, Microsoft functions 0x0
+acpi: 27 tables listed, namespace ready
+ucsi: \_SB_.UBTC is not present (_STA 0x0)
+graphics: built-in VGA 8x16 font selected
+boot: platform devices detected: 0
+boot: waiting up to 5 seconds for boot storage
+xhci: port 5 reset complete portsc=00000603
+usb0: device 1 port 5 04fe:0021 class 00 configuration=1 configured
+usb0: device 1 interface 0 class 03/01/01 driver=usb-hid
+usb0: device 1 interface 1 class 03/00/00 driver=usb-hid
+usb-hid-rdesc: usb0 device 1 interface 2 length=34
+usb-hid-rdesc: usb0 device 1 interface 2 0000: 06 00 ff 09 01 a1 01 09 02 15 00 26 ff 00 75 08 95 40 81 02 09 03 15 00 26 ff 00 75 08 95 40 91
+usb-hid-rdesc: usb0 device 1 interface 2 0020: 02 c0
+usb-hid-diag: usb0 device 1 interface 2 refused error=21 stage=parse item=0x0022 prefix=0x00
+usb-hid-diag: usb0 device 1 interface 2 attach error=21 stage=prepare
+usb0: device 1 interface 2 class 03/00/00 driver=usb-hid attach-failed error=21
+xhci: port 17 reset complete portsc=00001203
+usb0: device 2 port 17 0bda:8156 class 00 configuration=2 configured
+usb-cdc-ncm: ue0 mac=6c:1f:f7:1a:08:b6
+usb0: device 2 interface 0 class 02/0d/00 driver=usb-cdc-ncm
+usb0: device 2 interface 1 class 0a/00/01 claimed-by=0 driver=usb-cdc-ncm
+xhci: port 19 reset complete portsc=00001203
+usb0: device 3 port 19 30de:6545 class 00 configuration=1 configured
+usb-storage: sda blocks=122019840 block-size=512 cache=unknown dpofua=no flush=sync-cache
+usb0: device 3 interface 0 class 08/06/50 driver=usb-storage
+nvme: /dev/nvme0n1 namespace=1 blocks=00000000:3a386030 block-size=512 writable max-transfer=128
+zedBSD 1.0.0-beta2
+boot: parameters: boot0=UUID=3DA3-3AA7 rootpart=PARTLABEL=zedBSD-root swap0=PARTLABEL=zedBSD-swap logo=logo.ppm login=graphical kmsg=quiet nvrtx.vk=1
+boot: ignored 2 unknown parameters; first=logo
+boot: VFS initialization
+vfs: boot BIOS=80 GPT partition=unknown devices=0
+usb-hid: deferred activation failed interface=1 error=13
+input: /dev/input/event0: HHKB-Hybrid
+usb-hid: event device usb0 device=1 interface=0 endpoint=81 report-bytes=8
+input: /dev/input/event1: PC/AT PS/2 mouse
+input: /dev/input/event2: PC/AT PS/2 keyboard
+vfs: native boot disk=none physical disks=2
+gpt: sda protective MBR extent mismatch: advertised-last=4853759 gpt-last=122019839; using GPT
+vfs: scan sda H/S=255/63 blocks=122019840: 4 entries
+vfs: sda partition 1 start=00000000:00000800 data=00000000:00000800 blocks=00000000:00020000
+vfs: sda partition 2 start=00000000:00020800 data=00000000:00020800 blocks=00000000:00080000
+vfs: sda partition 3 start=00000000:000A0800 data=00000000:000A0800 blocks=00000000:00200000
+vfs: sda partition 4 start=00000000:002A0800 data=00000000:002A0800 blocks=00000000:00200000
+vfs: scan nvme0n1 geometry error=21: 3 entries
+vfs: nvme0n1 partition 1 start=00000000:00000800 data=00000000:00000800 blocks=00000000:001E8000
+vfs: nvme0n1 partition 2 start=00000000:001E8800 data=00000000:001E8800 blocks=00000000:37195000
+vfs: nvme0n1 partition 3 start=00000000:3737D800 data=00000000:3737D800 blocks=00000000:03008000
+vfs: boot0 UUID=3DA3-3AA7 -> /dev/sda2 (private FAT)
+vfs: rootpart selector PARTLABEL=zedBSD-root resolved to /dev/sda3
+swap: swap0 source=PARTLABEL=zedBSD-swap slots=262143
+swap: active sources=1 total=262143 free=262143
+vfs: mounting runtime filesystems...
+vfs: runtime filesystems mounted
+vfs: boot0 (BOOT) published at /boot/boot0
+vfs: ESP published at /boot/efi
+boot: memory 33382676 KiB total, 33349636 KiB free, 19872 KiB reserved
+boot: starting init /sbin/init
+
+nvrtx: P0 files: booters 59272/39304 bytes, bootloader 4196 bytes
+usb-cdc-ncm: ue0 link 2500 Mb/s
+nvrtx: P0 image: 28528288 bytes in 28 chunks, signature 4096 bytes
+nvrtx: P0 vbios: no copy in VRAM (13), reading the ROM
+nvrtx: P0 vbios 328192 bytes, fwsec v2 39440 bytes
+nvrtx: P0 falcons: SEC2 reset bit 14
+nvrtx: P0 ok vram 8192M wpr2 1f7800000+135M heap 105M
+nvrtx: P1a begin: devinit
+nvrtx: P1a ok after 0 ms
+nvrtx: P1b begin: FWSEC-FRTS at 1ffe00000
+nvrtx: P1b ok: region 01ffe000-01ffee00
+nvrtx: P2a begin: booter_load
+nvrtx: P2a memory: libos 74e02000 rmargs 74e33000 queues 714c5000+81000
+nvrtx: P2a memory: logs 74e03000 74e13000 74e23000, 10000 bytes each
+nvrtx: P2a ok: RISC-V running
+nvrtx: P2b begin: waiting for init done
+nvrtx: P2b 200 ms: cmd put 2 got 2; msg size 40000 put 0 got 0
+nvrtx: P2b 200 ms: mbox 74e02000 00000000 riscv 00000035 boot 11000000
+nvrtx: P2b 200 ms: log put 4a 0 c
+nvrtx: rpc: sequencer of 2000 bytes
+nvrtx: sequencer: core resume
+nvrtx: P2b ok: GSP-RM is up after 893 ms
+nvrtx: P3 begin: static info
+nvrtx: P3 static: TU106-A vram 8192M uefi 1
+nvrtx: P3 static: bar1 root 1f7653000 bar2 root 1f76c2000
+nvrtx: P3 ok: client, device and subdevice
+nvrtx: P4 begin
+nvrtx: P4 vram: region 2, block at 1f3f00000
+nvrtx: P4 page tables at 1f3f00000
+nvrtx: P4 ok: vaspace
+nvrtx: P4m begin
+nvrtx: P4m vram: region 2, heap 2160000..1e9400000 (7794 MiB)
+nvrtx: P4m bar1: root 1f7653000 entry 1f765202, window 256 MiB, tables at 1e937
+nvrtx: P4m bar1 before the tables: fault status 00000000, record 00110802
+nvrtx: P4m bar1 before the tables: fault at 0000000000142000, engine 80
+nvrtx: P4m bar1 before the tables: fault type 2 client 08 access 1
+nvrtx: P4m console: bar1 0..1e0000 on the VRAM's start again
+nvrtx: P4m ok: bar1 256 MiB at 40001e0000, read back both ways
+nvrtx: P5 begin
+nvrtx: P5 copy engine b runlist 8 (graphics 0), method buffer 8192
+nvrtx: P5 ok: channel 8 on runlist 8
+nvrtx: P5 ok: fence 0x1234 reached after 887 us
+nvrtx: P5 ok: fence 0x1235 reached after 1000 us
+nvrtx: P5 ok: copy engine filled 64 words
+nvrtx: P5g begin
+nvrtx: P5g ctxbufs: 9 buffers, 10741 KiB
+nvrtx: P5g arena at 1eb800000, buffers c85000 bytes
+nvrtx: P5g ok: golden context
+nvrtx: P5g ok: scrubber
+nvrtx: P9w begin
+nvrtx: P9w arena at 1e7200000, own buffers f5000 bytes
+nvrtx: P9w page tables at 1e7200000
+nvrtx: P9w ok: vaspace
+nvrtx: P9w ok: work channel 4 on runlist 0
+nvrtx: P9w ok: fence 1 after 858 us
+nvrtx: P8 begin
+nvrtx: P8 heads 4 (f), windows ff, outputs ff00
+nvrtx: P8 output 100: SOR 4294967295 TMDS-dual
+nvrtx: P8 output 200: SOR 1 TMDS-A
+nvrtx: P8 output 400: SOR 4294967295 DP-B
+nvrtx: P8 output 800: SOR 4294967295 TMDS-B
+nvrtx: P8 output 1000: SOR 4294967295 DP-A
+nvrtx: P8 output 2000: SOR 4294967295 TMDS-A
+nvrtx: P8 output 4000: SOR 4294967295 DP-B
+nvrtx: P8 output 8000: SOR 4294967295 TMDS-B
+nvrtx: P8 ok: display, heads f, windows ff, outputs ff00
+nvrtx: P8b begin
+nvrtx: P8b channels: core, windows ff, immediate ff, cursors f
+nvrtx: P8b step 1: channels made
+nvrtx: P8b output 200 lit on head 0: SOR 1 TMDS-A
+nvrtx: P8b EDID 200: 384 bytes, preferred 1280x1024 at 108000 kHz, DVI
+nvrtx: P8b connected 200
+nvrtx: P8b head 0 armed: view 01e00280 raster 042a0698 clock 066ff300, SOR 1 00
+nvrtx: P8b head 0 mode: 1280x1024, view out 04000500
+nvrtx: P8b head 0 mode (EDID): 1280x1024, total 1688x1066, clock 108000 kHz, ou
+nvrtx: P8b console 640x480 pitch 4096 at the VRAM's start, shown at 1280x1024
+nvrtx: P8b core mode notified after 32484 us
+nvrtx: P8b step 2: core released with the mode
+nvrtx: P8b core with window notified after 16717 us
+nvrtx: P8b window first notified after 2 us
+nvrtx: P8b ok: mode set (1280x1024 on SOR 1), surface A 640x480 shown
+nvrtx: P8b ok: head 0 shows the console
+nvrtx: P8c begin
+nvrtx: P8c channel c57a.0 made
+nvrtx: P8c ok: cursor plane 64x64 at 1e9360000
+nvrtx: P8c ok: gpu device registered, display 1280x1024 at 60019 mHz
+nvrtx: P8c: the GSP stays up until power-off
+nvrtx: P8c lease 1 claimed
+nvrtx: P8c view 1280x1024 shown at 1280x1024
