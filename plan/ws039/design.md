@@ -316,7 +316,7 @@ allocator は「CPU が触るか」の flag を持ち、窓の時は 2 つの po
 
 ### 7.1 RLC・golden・constants（A5 の前半）
 
-第 1 版のとおり: golden の表（GC 40 項目、SDMA 24＋2 項目、値は出典付きのデータ）、GRBM_CNTL の READ_TIMEOUT、GB_ADDR_CONFIG の読み、RB・CU・TCC の mask、tile steering、VMID 0〜15 ごとの SH_MEM_CONFIG = 0xC00C と SH_MEM_BASES、RLC は PSP の autoload で動いているので halt・load・start はしない（CP_STAT == 0 と RLC_RLCS_BOOTLOAD_STATUS の bit 31 を待つ）、CSB（949 dword）を VRAM に置き RLC_CSIB に、SRM の enable、tcp harvest。CAM remap は入れない。
+golden の表（GC 40 項目、SDMA 24＋2 項目、値は出典付きのデータ）、GRBM_CNTL の READ_TIMEOUT、GB_ADDR_CONFIG の読み、RB・CU・TCC の mask、tile steering、VMID 0〜15 ごとの SH_MEM_CONFIG = 0xC00C と SH_MEM_BASES、RLC は PSP の autoload で動いているので halt・load・start はしない（CP_STAT == 0 と RLC_RLCS_BOOTLOAD_STATUS の bit 31 を待つ）、CSB（949 dword）を VRAM に置き RLC_CSIB に、SRM の enable、tcp harvest。CAM remap は入れない。
 
 ### 7.2 KIQ（判断 4 の回答。Linux の既定と同じ道）
 
@@ -329,7 +329,7 @@ allocator は「CPU が触るか」の flag を持ち、窓の時は 2 つの po
 
 ### 7.3 GFX の queue 0（KIQ の MAP_QUEUES、engine 4）
 
-- Navi10 の GFX は me 1 本・pipe 1 本・queue 8 本（`gfx_v10_0_sw_init`）。Linux は 1 本（`GFX10_NUM_GFX_RINGS_NV1X` 1）だけ map する。amdrdna も **1 本**（queue 0）。理由: 複数の GFX の HQD の time slice（CP_GFX_HQD_QUANTUM）が Navi10 の firmware で安全かは Linux に例が無い（Sienna Cichlid の 2 本だけ）。session ごとの GFX の queue は Future Work（11 節の案 B）。
+- Navi10 の GFX は me 1 本・pipe 1 本・queue 8 本（`gfx_v10_0_sw_init`）。Linux は 1 本（`GFX10_NUM_GFX_RINGS_NV1X` 1）だけ map する。amdrdna も **1 本**（queue 0）。理由: 複数の GFX の HQD の time slice（CP_GFX_HQD_QUANTUM）が Navi10 の firmware で安全かは Linux に例が無い（Sienna Cichlid の 2 本だけ）。session ごとの GFX の queue は Future Work（11.1）。
 - **MQD**（`v10_gfx_mqd`、Procedure referenced: `gfx_v10_0_gfx_mqd_init`）: wptr/wptr_hi 0、MQD の base（& ~3）と hi、MQD_CONTROL（VMID 0、PRIV_STATE 1、CACHE_POLICY 0）、HQD_VMID 0、queue の priority、HQD_QUANTUM の QUANTUM_EN 1、HQD の base（ring の MC address >> 8）と hi、rptr の address（writeback、& ~3）と hi（& 0xFFFF）、wptr poll の address と hi、HQD_CNTL = RB_BUFSZ(log2(byte / 4) − 1) | RB_BLKSZ(RB_BUFSZ − 2)（**BUF_SWAP は 0**: Linux は big endian の時だけ立てる。review M1）、doorbell の control（offset = 0x8B << 1、EN）、rptr の現在値、**HQD_ACTIVE 1**。欄の dword の位置は p005 で `v10_structs.h` から出典付きに写し、`offsetof` の static assert で確かめる。**init の時の MQD の写し**を system memory に保ち、queue の reset（11 節）ではそれを書き戻す。
 - **map**: ring（GART の system memory、256 byte 整列）と MQD を用意 → GRBM_GFX_CNTL で me 0 pipe 0 queue 0 を選んで MQD の欄を埋める（register は書かない）→ GFX の doorbell の範囲（CP_RB_DOORBELL_RANGE_LOWER/UPPER、`cp_gfx_set_doorbell`）→ 選択を戻す → **KIQ に MAP_QUEUES（0xA2、7 dword）**: dw1 = QUEUE_SEL 0 | VMID 0 | QUEUE 0 (<< 13) | PIPE 0 (<< 16) | **ME 1 (<< 18。Linux は `me == 1 ? 0 : 1` なので GFX（me 0）は 1、MEC1 は 0、MEC2 は 1。review M2）** | QUEUE_TYPE 0 (<< 21) | ALLOC_FORMAT 0 (<< 24) | **ENGINE_SEL 4 (<< 26)** | NUM_QUEUES 1 (<< 29)、dw2 = DOORBELL_OFFSET (<< 2)、dw3/4 = MQD の address、dw5/6 = wptr の address → KIQ の ring test で完了を確かめる → ME/PFP/CE の unhalt（CP_ME_CNTL の halt の bit 24・26・28 を落とし CP_STAT == 0）→ preamble（CSB と同じ列 ＋ SET_BASE の CE partition 0x8000/0x8000）→ 256 dword に NOP で揃えて wptr を進め doorbell → GFX の ring test（SCRATCH_REG0（uconfig の offset 0x40）を MMIO で既知の値にし、SET_UCONFIG_REG で別の値を書き、MMIO で読み戻す）。
 - **退路**（`amdrdna.kiq=0`）: CP_RB0 の register の道（review 反映版の 7.2）: CP_RB_WPTR_DELAY = 0 → CP_RB_VMID = 0 → pipe 0 → CP_RB0_CNTL = RB_BUFSZ(log2(byte/8)) | RB_BLKSZ(同 − 2)（BUF_SWAP 0）→ WPTR・WPTR_HI = 0 → RPTR_ADDR LO/HI（HI は & 0xFFFF）→ WPTR_POLL_ADDR LO/HI → 1 ms → CNTL を再び → RB0_BASE = MC address >> 8、BASE_HI = (address >> 8) >> 32 → CP_RB_ACTIVE = 1 → doorbell（CP_RB_DOORBELL_CONTROL の OFFSET = index・EN、RANGE_LOWER = index、RANGE_UPPER = 0x0FFFFFFC）→ CP_MAX_CONTEXT = 7、CP_DEVICE_ID = 1 → unhalt → preamble → ring test。この道では queue の reset（11 節）は使えず、取り消しは device の fault まで。
@@ -339,7 +339,7 @@ allocator は「CPU が触るか」の flag を持ち、窓の時は 2 つの po
 - **数と場所**: MEC1 の pipe 0〜3 の queue 1（pipe ごとに 1 本、KIQ の pipe 0 queue 0 を避ける）。4 本にする理由: pipe ごとに 1 本なら MEC の pipe の並列が使え、MQD・EOP・ring・doorbell の資源が小さい（Linux の既定の 8 本は pipe × queue の格子）。doorbell 0x003〜0x006（<< 1）。
 - **MQD**（`v10_compute_mqd`、Procedure referenced: `gfx_v10_0_compute_mqd_init`、値は note d の 4.2 の表、dword の位置は p005 で `v10_structs.h` から）: header 0xC0310800（review m7）、pipelinestat_enable 1、static_thread_mgmt_se0..3 = 0xFFFFFFFF、misc_reserved 3、EOP の base（>> 8）と EOP_CONTROL（EOP_SIZE 8 = 2 KiB）、PQ_DOORBELL_CONTROL（offset、EN）、DEQUEUE_REQUEST・PQ_RPTR・PQ_WPTR 0、MQD の base と control（VMID 0）、PQ の base（>> 8）、PQ_CONTROL = QUEUE_SIZE log2(byte / 4) − 1 | RPTR_BLOCK_SIZE 9 | UNORD_DISPATCH | PRIV_STATE | KMD_QUEUE、RPTR_REPORT_ADDR、WPTR_POLL_ADDR、HQD_VMID 0、PERSISTENT_STATE の PRELOAD_SIZE 0x53、IB_CONTROL の MIN_IB_AVAIL_SIZE 3、priority、**HQD_ACTIVE 0**（MAP_QUEUES が立てる）。
 - **map**: MQD を埋める（GRBM の選択の下、register は書かない。rptr は今の register から読む。init の時の写しを保つ）→ KIQ に MAP_QUEUES（ENGINE_SEL 0、ME 0 = me 1、PIPE p、QUEUE 1）→ KIQ の ring test → compute の ring test（WRITE_DATA で writeback の語）。
-- **用途**: (1) A5 の最初の dispatch の試験（p007 の compiler の最小の compute の program を DISPATCH_DIRECT で、結果を storage の buffer で確かめる）。(2) kernel の自分の仕事（将来の clear・copy の shader、cleaner shader）。(3) **Vulkan の compute 専用の queue family**（executor が 2 つ目の family を出す）: desktop の app は使わないので p008 の必須にはせず、A5c の取り消しの試験（11 節の S7）で compute の queue の reset を確かめるために p013 で最小の経路（compute の pipeline の dispatch を compute の queue に投入する family）を作る。universal の family（graphics ＋ compute）の dispatch は順序を守るため GFX の ring のまま（engine をまたぐ順序の同期は作らない。第 1 版の SDMA と同じ理由）。
+- **用途**: (1) A5 の最初の dispatch の試験（p007 の compiler の最小の compute の program を DISPATCH_DIRECT で、結果を storage の buffer で確かめる）。(2) kernel の自分の仕事（将来の clear・copy の shader、cleaner shader）。(3) **Vulkan の compute 専用の queue family**（executor が 2 つ目の family を出す）: desktop の app は使わないので p008 の必須にはせず、A5c の取り消しの試験（12.5 の vkhang の compute の場合）で compute の queue の reset を確かめるために p013 で最小の経路（compute の pipeline の dispatch を compute の queue に投入する family）を作る。universal の family（graphics ＋ compute）の dispatch は順序を守るため GFX の ring のまま（engine をまたぐ順序の同期は作らない。第 1 版の SDMA と同じ理由）。
 - **fence**: compute の queue の fence も RELEASE_MEM（EOP の event、compute の shader type の bit を header に）。EOP の割り込みの ring_id から me 1 の pipe を引く。
 - **選ばなかった案**: KIQ 無しの直接の HQD（note d の 4.5。firmware の preempt・unmap が無く、取り消しが register の DEQUEUE だけになる）。session ごとの compute の queue（MEC1 の 31 本を配る。Keiland の app の数を超えると配れない。将来の案）。
 
@@ -378,29 +378,42 @@ DCN の base は discovery の表から（静的な header では seg 0 = 0x12�
 
 ### 8.2 GOP の readout（A1、読むだけ）
 
-第 1 版の 1〜8 のとおり（OTG の MASTER_EN と timing、ODM → OPP → MPC → DPP/HUBP の鎖、HUBP の surface、DIG の BE/FE と DIG_MODE、DP の stream と link の状態、BIOS_SCRATCH_6 の ACC_MODE、VGA_CONTROL（立っていれば attach しない）、OTG_MASTER_UPDATE_LOCK、surface の address − FB の base = GOP の framebuffer の物理 − BAR0 の base）。
+1. OTG 0〜5 の OTG_CONTROL の bit 0（MASTER_EN）。点いている物の timing: H_TOTAL・V_TOTAL（+1 が total）、H/V_BLANK_START_END（active の幅 = BLANK_START − BLANK_END）、H/V_SYNC_A と POL。
+2. OTG k → OPP: ODMk_OPTC_DATA_SOURCE_SELECT の SEG0_SRC_SEL（bit 11:8）が OPP の id（NUM_OF_INPUT_SEGMENT が 1 なら ODM combine で 2 つ、SEG1 = 0xF は 1 つ）。
+3. OPP j → MPCC: MPC_OUTj_MUX の bit 3:0（0xF は無し）。MPCC m: TOP_SEL（DPP の id、0xF は無し）、BOT_SEL（次の MPCC）、OPP_ID、MPCC_CONTROL の mode・alpha、STATUS。
+4. DPP d = HUBP d。HUBPd の DCHUBP_CNTL の VTG_SEL（bit 7:4）が k に等しいことを確かめる。
+5. HUBP の surface: SURFACE_CONFIG（PIXEL_FORMAT bit 6:0、期待 8 = ARGB8888、ROTATION 9:8 = 0）、TILING_CONFIG の SW_MODE（bit 4:0、期待 0 = linear）、SURFACE_PITCH（bit 13:0 = pitch − 1、画素）、PRIMARY_SURFACE_ADDRESS と HIGH（16 bit）、PRI_VIEWPORT の START・DIMENSION、SURFACE_CONTROL の DCC（期待 0）、HUBPRET_CONTROL の crossbar（ABGR の判定）、HUBP_CLK_CNTL と DPP_CONTROL の clock。
+6. 出力: DIGn_DIG_BE_EN_CNTL の bit 0（n = PHY の index）、DIG_BE_CNTL の FE_SOURCE_SELECT（bit 14:8、one-hot A〜G）と DIG_MODE（bit 18:16: 1 DP、2 DVI、3 HDMI、5 DP MST）、DIGf_DIG_FE_CNTL の SOURCE_SELECT（bit 2:0 = OTG）。DP なら DP_VID_STREAM_CNTL の enable と status、DP_LINK_CNTL の training complete。
+7. BIOS_SCRATCH_6 の bit 4（accelerated mode、GOP の後は 0 の見込み）。D1〜D6 の VGA_CONTROL（DCN の seg 1 の 0xC から）の bit 0: **立っていれば legacy の VGA の mode で HUBP の surface は使われていないので attach しない**。OTG_MASTER_UPDATE_LOCK が 0 であること（立っていると flip が latch しない）。
+8. surface の address − FB の base（5.3）= VRAM の offset。これが loader の GOP の framebuffer の物理 − BAR0 の base と一致するのが A1 の合格。
+9. **clock の読み**（mode set のため、review M11）: DENTIST の分周（DISPCLK・DPPCLK）、DCCG の DPREFCLK・DP の DTO、DCFCLK の今の値を読んで log に出す（register は p014 で `dcn20_clk_mgr.c`・`dccg` の header から写す）。これが mode set で出せる pixel rate の上限になる（8.6 の clock）。
 
 ### 8.3 surface の替え（A6）と flip
 
-第 1 版のとおり（client の surface は GOP と同じ pitch・幅・高さ・format、flip は ADDRESS_HIGH → LOW、完了は FLIP_PENDING と EARLIEST_INUSE と flip の割り込み、vblank は VSTARTUP、frame counter、触らない物の一覧、underflow の監視）。
+- client の surface: VRAM、256 byte 整列、format 8（32 bpp）、linear、**pitch・幅・高さは GOP と同じ**（DML の watermark・DLG・TTU を GOP の値のまま使うため。大きさや format を変えると再計算が要る）。GOP の framebuffer は console の surface のままで、display の release・fault・shutdown では flip で戻る（2 節の 4）。
+- flip の順（Procedure referenced）: DCSURF_FLIP_CONTROL の FLIP_TYPE（bit 1、0 = VUPDATE で latch）→ VMID_SETTINGS_0 = 0 → SURFACE_CONTROL の TMZ 0 → **ADDRESS_HIGH → ADDRESS（LOW）の順**（LOW の書き込みで全部が latch する）。CPU が surface を書いた後なら先に HDP の flush。
+- 完了: FLIP_CONTROL の FLIP_PENDING（bit 8）が 0 かつ EARLIEST_INUSE（LOW/HIGH）が要求した address。HUBP の flip の割り込み（INT_MASK bit 0、CLEAR bit 8、OCCURRED bit 16、STATUS bit 17）で present の完了を `drv_gpu_complete`。
+- vblank: OTG_GLOBAL_SYNC_STATUS の VSTARTUP_INT_EN（bit 0）と EVENT_CLEAR（bit 4）。frame counter = OTG_STATUS_FRAME_COUNT の 24 bit。位置 = OTG_STATUS_POSITION。
+- **触らない物（takeover の間）**: OTG の timing と VSTARTUP/VUPDATE/VREADY、ODM、pixel clock・PLL・DTO、DIG・PHY・link、OPP の FMT、MPC の木、DPP の scaler・CM、HUBP の DLG/TTU/RQ、HUBBUB の watermark、DENTIST の分周、power gating（**HUBP5 の domain は触ると chip が reset しうる**）。
+- 危険: SMU が UCLK を変えると GOP の watermark が p-state の切り替えを覆わず underflow しうる。Tier F では UCLK DPM が無いので起きない。HUBP_UNDERFLOW_STATUS（DCHUBP_CNTL bit 30:28）と OPTC の UNDERFLOW_OCCURRED（bit 10）を A2・A6 の ok の行に出す。
 
 ### 8.4 cursor（A7）
 
-第 1 版のとおり（HUBP の cursor の address・size・control、DPP の CNVC の cursor、position・hot spot、DST_OFFSET は DP なら DP_DTO の PHASE から、HDMI は 0 で試す、4 KiB 整列、mode 2 premultiplied）。
+HUBP: CURSOR_SURFACE_ADDRESS_HIGH → ADDRESS → CURSOR_SIZE（HEIGHT bit 8:0、WIDTH 24:16）→ CURSOR_CONTROL（MODE bit 10:8 = 2 premultiplied、PITCH 17:16: 0 = 64・1 = 128・2 = 256 画素、LINES_PER_CHUNK 28:24: 64 幅で 3）→ HUBPREQ の CURSOR_SETTINGS（DST_Y_OFFSET 0、CHUNK_HDL_ADJUST 3）。DPP: CNVC_CUR の CURSOR0_CONTROL の MODE（bit 6:4）と ENABLE。位置: CURSOR_POSITION（Y 13:0、X 29:16）、HOT_SPOT、DST_OFFSET（timing の offset = (x − hotspot) × dchub の refclk / pixel clock。pixel clock は DP なら DP_DTO の PHASE から。HDMI では読めないので 0 のまま試す）。負の位置は 0 に clamp して hotspot に足す。最大 256×256。cursor の buffer は VRAM の 4 KiB 整列（amdgpu_dm は BO の address をそのまま渡し、整列の検査は無い。実機で確かめる）。amdgpu_dm は mode 2（premultiplied）、pitch = buffer の幅。`cursor_set` は image を kernel の cursor の buffer に copy（HDP flush）してから address を書く。
 
 ### 8.5 release と shutdown
 
-第 1 版のとおり（takeover の時に GOP の HUBP の state を保存し、release で cursor を無効、割り込みを止め、GOP の address に flip で戻して pending が消えるのを待つ。warm reboot の前に BIOS_SCRATCH_6 の bit 4 を 0）。**mode set をした後の release**: 8.6 の「戻し」（GOP の mode に組み直す）。shutdown では組み直さない（次の起動で GOP が post し直す。見込み、14 節）。
+takeover の時に GOP の HUBP の state（address・CONFIG・PITCH・TILING・FLIP_CONTROL・CURSOR_CONTROL・flip の INT_MASK）を保存し、release（display の lease の終わり、device の fault、shutdown）では cursor を HUBP・DPP で無効にし、割り込みを止め、GOP の address に vsync の flip で戻し pending が消えるのを待ってから client の buffer を返す。timing・link を触っていないので GOP の framebuffer の絵（text console が書き続けている）がそのまま出る。warm reboot の前に BIOS_SCRATCH_6 の bit 4 を 0 にする（Linux の `dc_disable_accelerated_mode` と同じ意図）。**mode set をした後の release**: 8.6 の「戻し」（GOP の mode に組み直す）。shutdown では組み直さない（次の起動で GOP が post し直す。見込み、14 節）。
 
 ### 8.6 mode set（A10〜A13、判断 7 の回答）
 
 出典（手順と値。p014・p015 で file ごとに監査の表に足す）: Linux v6.19 `amdgpu/atom.c`・`atom.h`（AtomBIOS の bytecode の interpreter: opcode の表、operand の encode、workspace・parameter の空間、`atom_execute_table`）、`include/atombios.h`・`atomfirmware.h`（opcode の値、command の表の parameter の struct: `set_pixel_clock_parameters_v7`、`dig_encoder_control_parameters_v1_5`、`dig_transmitter_control_parameters_v1_6`、`enable_crtc_parameters`、`enable_disp_power_gating_parameters_v2_1` …）、`display/dc/bios/command_table2.c`・`bios_parser2.c`（どの表をどの parameter で呼ぶか）、`display/dc/dce/dce_aux.c`（AUX の engine）・`dce_i2c_hw.c`（DDC の I2C）、`display/dc/link/protocols/link_dp_training.c`・`link_dp_training_8b_10b.c`・`link_dp_capability.c`・`link_dpcd.c`（DPCD の読み書きと training の順）、`display/dc/link/link_detection.c`（EDID と detect）、`display/dc/hwss/dcn20/dcn20_hwseq.c`（`enable_stream_timing`・`update_dchubp_dpp`・`blank_pixel_data`・`enable_plane`）、`display/dc/resource/dcn20/dcn20_resource.c`、`dcn10_optc.c`（`program_timing`）、`dcn20_optc.c`（ODM の bypass）、`dcn10_stream_encoder.c`（DP の MSA・VID stream、HDMI の設定）、`dcn10_link_encoder.c`（DIG の enable、transmitter control の呼び出し）、`dcn20_hubbub.c`（watermark の register）、`display/dc/dml/dcn20/display_rq_dlg_calc_20.c`・`dcn20_fpu.c`・`display_mode_vba_20.c`（DLG・TTU・watermark の式）、VESA の DisplayPort 1.4 と E-EDID の規格（公開の規格。training の手順と DPCD の address、EDID の形）。
 
-**範囲**: GOP の出力先の connector（A1 の DIG と DIG_MODE）に対して、(a) 同じ mode の組み直し（A11）、(b) EDID の別の mode（A12）、(c) hotplug（同じ connector の抜き差し、別の monitor、A13）。**別の connector への出力は Keiland の `display.mode`（UAPI `gpu_display_mode` の operation）の指示があった時だけ**（Guardrail）。DP を先に（RX 5600 XT の monitor は DP の予定）、HDMI は p015 の後半。DP MST・eDP・DVI・HDR・ODM（4K 以上の 2 pipe）・scaling・DCC・tiling は範囲の外。
+**範囲**: GOP の出力先の connector（A1 の DIG と DIG_MODE）に対して、(a) 同じ mode の組み直し（A11）、(b) EDID の別の mode（A12）、(c) hotplug（同じ connector の抜き差し、短い pulse、別の monitor、A13）。**別の connector への出力は Keiland が その output を claim して present した時だけ**（Guardrail。UAPI の `display.mode` は列挙と検証だけで mode を設定する op ではない。review M10、下の 10）。DP を先に（RX 5600 XT の monitor は DP の予定）、HDMI は p015 の後半。DP MST・eDP・DVI・HDR・ODM（4K 以上の 2 pipe）・scaling・DCC・tiling・**boot の clock を越える mode**（下の clock）は範囲の外。
 
 **部品**:
 
-1. **AtomBIOS の command の表の interpreter**（p014）: VBIOS の bytecode を実行する。opcode（MOVE・AND・OR・SHIFT・ADD・SUB・MUL・DIV・COMPARE・JUMP・TEST・DELAY・CALL・SET_REG_BLOCK・SET_FB_BASE・SWITCH・DEBUG …、約 120 個）と operand の種類（register・parameter・workspace・frame buffer・immediate・PLL・MC の各空間、byte/word/dword の幅、swizzle）は `atom.c` の表と `atombios.h` の enum から**データ**として取り、実行の手順は自分の言葉（Procedure referenced）。register の空間は MMIO（dword の index）、PLL・MC の空間は Navi10 では index/data の間接（`atom.c` の `atom_iio` の table は VBIOS の中にある）。**host 試験**: A1v で取り出した実機の VBIOS の image で、SetPixelClock などの表を「register の読みは記録した値・書きは log」の dry run で走らせ、register の書き込みの列を**Linux の `atom.c` を host で compile した oracle**（`plan/ws039/tests/atom-oracle/`、MIT の code を test の道具として link する。zedBSD の code には入れない。扱いは 15 節 #8 の判断）の列と比べる。
+1. **AtomBIOS の command の表の interpreter**（p014）: VBIOS の bytecode を実行する。opcode（約 120 個: 転送・論理・算術・比較・分岐・遅延・呼び出し・register の block の選択・FB の base・switch …）と operand の種類（register・parameter・workspace・frame buffer・immediate・PLL・MC の各空間、byte/word/dword の幅、swizzle）は `atom.c` の表と `atombios.h` の enum から**データ**として取り、実行の手順は自分の言葉（Procedure referenced）。**opcode の名前は振る舞いから付けた独自の語**（例 `AMDRDNA_BYTECODE_COPY`。Linux の `atom_op_*` の名前は写さない。review M13）。register の空間は MMIO の dword の index で、BAR5 の外の index は PCIE の間接（5.3 の `pcie_index`）。**PLL・MC の空間は Linux の amdgpu では空の callback（読みは 0、書きは何もしない）なので同じにする**（review m4）。IIO の table（`atom_iio`）は VBIOS の中の別の bytecode で、register の間接の読み書きに使う。**host 試験**: A1v で取り出した実機の VBIOS の image で、SetPixelClock などの表を「register の読みは記録した値・書きは log」の dry run で走らせ、register の書き込みの列を **Linux の `atom.c`（MIT）を oracle として host で走らせた列**と比べる。oracle の source は **tree に入れず**、test の script が Linux の tarball（版と SHA-256 を固定）を `build/` に取得して host で build する（AGENTS.md の外部の source の規則と Guardrail の「code を写さない」に触れない形。扱いは 15 節 #8 の判断）。
 2. **VBIOS の command の呼び出し**（p015、Procedure referenced: `command_table2.c`）: EnableDispPowerGating（pipe の power on）、SetPixelClock（pixel clock と PLL/DTO: DP は DP の DTO、HDMI は PHY の PLL）、DIGxEncoderControl（encoder の setup・enable/disable、lane の数・rate）、DIG1TransmitterControl（PHY の init・enable/disable・link の rate）、EnableCRTC（OTG の有効化）。parameter の struct は `atomfirmware.h` の値。
 3. **AUX と DDC**（p014）: DP_AUXn の register（0x1F50 + 0x1C × n の組、`dce_aux.c` の順: ARB の request → data の FIFO に command と address → control で送信 → status の待ち → reply の FIFO）。DPCD の read/write（native AUX）、EDID（I2C-over-AUX、address 0x50、128 byte × block）。HDMI: DC_I2C_DDCn の hardware I2C engine（0x1EA3 + 2 × (n − 1) の組、`dce_i2c_hw.c`）。GPIO の pin は VBIOS の gpio_pin_lut（4.5）で connector に対応づける（p014 で読む）。
 4. **EDID の解釈**: 128 byte の base block の detailed timing（DTD）と standard timing、拡張 block の CEA の short video descriptor は最初は DTD だけ。mode の一覧 → `display.query` の mode の列（UAPI の `gpu_display_mode` の index/count）。
@@ -408,12 +421,13 @@ DCN の base は discovery の表から（静的な header では seg 0 = 0x12�
 6. **pipe の組み立て**（p015、Procedure referenced: `dcn20_hwseq.c` の `enable_stream_timing`・`update_dchubp_dpp`。順は Linux の HW sequencer のとおり、文は自分の言葉）: OTG の lock → power gating off（VBIOS）→ ODM bypass → OPTC の clock → SetPixelClock → OTG の timing（H/V の total・blank・sync・polarity、VSTARTUP/VUPDATE/VREADY の global sync）→ OPP の pipe clock と FMT（8 bpc RGB、dither 無し）→ DPG で blank → EnableCRTC → DPP の clock と DTO → HUBP の VTG_SEL → HUBP の DLG/TTU/RQ（8）→ DPP の format（ARGB8888、CSC bypass、scaler bypass）→ MPC の木（1 層、alpha 無し、OPP の mux）→ viewport → cursor → HUBP の surface（8.3）→ HUBBUB の watermark（8）→ DIG の FE（stream encoder の DP の MSA・VID の timing・color、HDMI は infoframe と TMDS）→ DIG の BE（encoder control、link training）→ DP の VID stream の enable → unblank → OTG の unlock。
 7. **blank と戻し**: 組み直しの前に DPG で blank し DP の VID stream を止める（`blank_pixel_data`）。GOP の mode への戻しは同じ手順を GOP の timing で。
 8. **DLG・TTU・HUBBUB の watermark（DML の代わり）**: Linux の DML（`display_mode_vba_20.c` 5,115 行、`display_rq_dlg_calc_20.c` 1,665 行、`dcn20_fpu.c` 2,559 行、浮動小数）の移植は範囲に合わない。amdrdna は**単一 pipe・linear ARGB8888・scaling 無し・ODM 無し・DISPCLK/DCFCLK/UCLK は boot の値（DPM 無し）**の形に絞って、要る出力（HUBP の RQ の chunk/meta の設定、DLG の refcyc/vratio の値、TTU の QoS の値、HUBBUB の urgent・p-state・self-refresh の watermark）を `display_rq_dlg_calc_20.c` と `dcn20_fpu.c` の式（Procedure referenced）から 64 bit の固定小数で計算する。p-state の切り替えが無い（UCLK DPM 無し）ので p-state の watermark は最大、self-refresh は無効。**A11（同じ mode）は GOP の値をそのまま保つ**（A1 で読んで保存）ので DML の代わりは A12 からでよい。確かめは実機の underflow（HUBP_UNDERFLOW_STATUS・OPTC の UNDERFLOW_OCCURRED）と、A12 の値を GOP の値（同じ mode の時）と比べる。
-9. **hotplug**（A13）: HPD の割り込み（6 節）→ 100 ms の debounce → DC_HPD_SENSE で接続を読む → 外れたなら blank して link を落とし `display.events` の sequence を進める（Keiland が出力 off を知る）→ 繋がったなら DPCD・EDID を読み、同じ monitor（EDID の一致）なら同じ mode で re-light、違えば EDID の推奨の mode（DTD の最初）で mode set し events を進める。GOP の connector 以外の HPD は events を進めるだけ（Keiland が `display.mode` で指示するまで点けない）。
-10. **DISPLAY の ops との対応**: `display.query` は connector ごとの mode の一覧（EDID の DTD）、`display.mode` は index で mode を選ぶ（GOP の connector は driver の判断で、他は Keiland の指示として扱う）、`display.events` は HPD で進む。lease を持つ session（compositor）の present は mode set の間 EAGAIN。
+9. **hotplug**（A13）: HPD の割り込み（6 節）→ 100 ms の debounce → DC_HPD_SENSE で接続を読む → 外れたなら blank して link を落とし `display.events` の sequence を進める（Keiland が出力 off を知る）→ 繋がったなら DPCD・EDID を読み、**今の mode が出せる monitor なら同じ mode で re-light**（compositor の present の大きさと pitch を変えない）、出せない時だけ EDID の推奨の mode（DTD の最初、boot の clock の中）で mode set し events を進める（その後の古い大きさの present は EINVAL。Keiland は events の後の query で新しい mode を知り present を作り直す）。**DP の短い pulse**（HPD_RX、src 6〜11。monitor の省電力からの復帰など。review m11）: DPCD の link の状態（0x202〜0x204）を読み、落ちていれば同じ mode で再 training（takeover の間（A6〜A8）も同じ扱いにする。p015）。GOP の connector 以外の HPD は events を進めるだけ（Keiland が claim して present するまで点けない）。
+10. **DISPLAY の ops との対応**（review M10）: `display.query` は output（connector）ごとの今の mode と状態、`display.mode` は **ENUMERATE（EDID の mode の一覧。boot の clock で出せる物だけ）と VALIDATE（custom の mode の検証。出せなければ ERANGE）だけ**で、mode を設定しない。**mode set の引き金**は、lease の持ち主（compositor）の **present・commit の width・height・refresh_millihz が今の mode と違う時**（GOP の output では driver が EDID の一致する mode に組み直す）と、**別の output の claim と present**（Keiland の明示の指示 = Guardrail の例外の道）。`display.events` は HPD で進む。mode set の間の present は EAGAIN。i915（WS051・WS113）が present の大きさの変更をどう扱っているかを p014 の最初に読み、同じ形にする。
+11. **clock**（review M11）: Linux の DCN 2.0 の clock manager は DISPCLK・DPPCLK を上げる前に SMU に電圧を頼み（`dcn20_clk_mgr.c` の `set_voltage_by_freq`・`set_hard_min_dcfclk_by_freq`・display の数）、DENTIST の分周を書く。amdrdna は DPM を有効にしないので電圧を上げられない。**出せる mode は boot の DISPCLK・DPPCLK・DCFCLK（A1 の 9 で読む）の中に pixel rate と DPP の要求が収まる物だけ**にし、ENUMERATE から外し VALIDATE は ERANGE。DENTIST・DCCG は読むだけ（DP の DTO は SetPixelClock の command が書く）。boot の値を越える mode は DPM（別の WS）の後。
 
-**危険**（14 節）: PHY と PLL は VBIOS の command に頼るので interpreter の誤りは画面が点かない形で出る、DP の training の失敗、watermark の誤りによる underflow、HDMI の scrambling（340 MHz 以上）。A11 の失敗は GOP の画面が戻らない（warm reboot で戻る見込み）。
+**危険**（14 節）: PHY と PLL は VBIOS の command に頼るので interpreter の誤りは画面が点かない形で出る、DP の training の失敗、watermark の誤りによる underflow、HDMI の scrambling（340 MHz 以上）、boot の clock の上限が低いと別の mode がほとんど出せない。A11 の失敗は GOP の画面が戻らない（warm reboot で戻る見込み）。
 
-**選ばなかった案**: PHY・PLL を自前で書く（Linux の DC も VBIOS に頼る。register の意味が公開されていない）。DML の全部の移植（規模と浮動小数。kernel に浮動小数の規則が無い）。Keiland 側で EDID を読む（AUX は kernel の register）。
+**選ばなかった案**: PHY・PLL を自前で書く（Linux の DC も VBIOS に頼る。register の意味が公開されていない）。DML の全部の移植（規模と浮動小数。kernel に浮動小数の規則が無い）。Keiland 側で EDID を読む（AUX は kernel の register）。driver が hotplug で勝手に mode を替える（compositor の present と合わなくなる）。
 
 ## 9. executor と compiler の口
 
@@ -423,15 +437,32 @@ nvrtx の 8.0 節と同じ: libvulkan は Venus の client、kernel の中に Ve
 
 ### 9.2 compiler との約束（p007 の 3 節に合わせる、P3 の側の確認）
 
-第 1 版のとおり（全 stage wave32、legacy VS、user SGPR の配置、資源の表、結果の記述から driver が書く register、shader の code は VRAM の 256 byte 整列で末尾に 3 cache line の詰め物、出典の版は p007 が Mesa 25.0.7・driver が 25.3.6）。p007 の 7.8 の再開点 3（`struct amdrdna_gfx10_program`・`struct amdrdna_gfx10_registers` の field、T#・S# は driver が作る、SPI_PS_INPUT_ADDR = ENA）は p008 の最初に P5 とすり合わせる。**A5 の compute の dispatch の試験**は p007 の host 試験の最小の compute の program（`shaders/ids.comp` 相当）の語をそのまま使う（p005 が p007 の段 A の成果に依存する）。
+p007 の 3 節の program の形をそのまま受ける（2026-10-15 の P5 の記述を読んで合わせた。差分は無い）:
 
-### 9.3 draw に要る state（A9）
+- 全 stage wave32（driver が DISPATCH_INITIATOR の CS_W32_EN（bit 15）、VGT_SHADER_STAGES_EN の VS_W32_EN（bit 23）、SPI_PS_IN_CONTROL の PS_W32_EN（bit 15）を立てる）。legacy VS、scratch 無し。
+- user SGPR: s[0:1] = 資源の表の GPU の仮想 address（64 bit）。CS は user SGPR 2 個（TGID_X/Y/Z_EN で s2〜s4 が workgroup の id）、VS は 5 個（s2 base vertex、s3 first instance、s4 instance rate の mask）、PS は 2 個（s2 は hardware が置く prim mask）。driver は SPI_SHADER_USER_DATA_VS_0（SH 0xB130 → dword 0x2C4C）・PS_0（0xB030 → 0x2C0C）・COMPUTE_USER_DATA_0（0xB900 → 0x2E40）から順に SET_SH_REG で書く（Mesa 25.3.6 `radv_shader_info.c` の stage ごとの base）。
+- VS の入力 VGPR: v0 vertex id、v3 instance id（VGPR_COMP_CNT 3）。PS は SPI_PS_INPUT_ENA の bit の順。CS は v0〜v2（TIDIG_COMP_CNT 2）。
+- 資源の表（push → SSBO の V# → UBO の V# → T#＋S# → VS の頂点の V#）は compiler が program ごとに配置を決めて結果の記述に offset を入れ、driver が draw・dispatch ごとに書く。
+- 結果の記述から driver が書く register: PGM_LO/HI（address >> 8、HI は >> 40）、RSRC1/2、SPI_PS_INPUT_ENA/ADDR、SPI_SHADER_COL_FORMAT・Z_FORMAT、SPI_VS_OUT_CONFIG、SPI_SHADER_POS_FORMAT、PA_CL_VS_OUT_CNTL、SPI_PS_INPUT_CNTL_0..31、SPI_PS_IN_CONTROL（NUM_INTERP）、COMPUTE_NUM_THREAD_X/Y/Z、LDS。`amdrdna_gfx10_program_registers()` が作る（p007）。
+- shader の code: VRAM、256 byte 整列、末尾に 3 cache line の詰め物（prefetch）、CPU で書いた後 HDP flush。PGM_HI は program ごとに書く（RADV の 32 bit の窓の約束は使わない）。p007 の出典は Mesa **25.0.7**（P5 の表）で、driver の側は Mesa 25.3.6。block の comment にはそれぞれの版を書く（監査の表も版ごと）。
 
-第 1 版のとおり（preamble、render target、blend、viewport・scissor・raster、draw、dispatch、記述子、cache、clear・copy は全部 GFX の ring）。
+p007 の 7.8 の再開点 3（`struct amdrdna_gfx10_program`・`struct amdrdna_gfx10_registers` の field、T#・S# は driver が作る、SPI_PS_INPUT_ADDR = ENA）は p008 の最初に P5 とすり合わせる。**A5 の compute の dispatch の試験**は p007 の host 試験の最小の compute の program（`shaders/ids.comp` 相当）の語をそのまま使う（p005 が p007 の段 A の成果に依存する）。
+
+### 9.3 draw に要る state（A9、作業の文書 e の 1〜4・9 節）
+
+- preamble（queue ごとに 1 回、IB の先頭で毎回でもよい。**queue の reset の後は kernel が出し直す**（11.3）、review M3）: CONTEXT_CONTROL、CLEAR_STATE、gfx10 の graphics の初期 state（RSRC3/4 の CU_EN、REQ_CTRL、DB の cache control、CB の cache control、binner の CNTL_1、NGG の mode CNTL、VGT の reuse、GE の uconfig 群、VERTEX_REUSE_BLOCK 14、PA_SU/CL の VTE・VTX・point size・line stipple、SPI_INTERP_CONTROL_0）と compute の初期 state（COHER_START_DELAY 0x20、STATIC_THREAD_MGMT の CU_EN、USER_ACCUM、DISPATCH_TUNNEL 0、START_X/Y/Z 0）。値は Mesa 25.3.6 `ac_cmdbuf.c`・`radv_queue.c` から出典付きで取る。
+- render target（linear の 32 bpp）: CB_COLOR0_BASE（>> 8）、VIEW、INFO（FORMAT 10 = 8_8_8_8、NUMBER_TYPE 0 unorm か 6 srgb、COMP_SWAP 0 std/1 alt、BLEND_CLAMP、SIMPLE_FLOAT）、ATTRIB、ATTRIB2（MIP0 の幅・高さ − 1）、ATTRIB3（RESOURCE_TYPE 1、RESOURCE_LEVEL 1、SW_MODE 0、CMASK_PIPE_ALIGNED）、BASE_EXT。**gfx10.1 では linear の pitch は幅から決まる（256 byte に切り上げ）**: scanout の buffer を描画の対象にするには stride = align(幅 × 4, 256) が要る（client の surface は GOP と同じ pitch なので、GOP の pitch がこれを満たすかを A1 で確かめる。満たさなければ描画は別の buffer に行い GFX の ring の copy（DMA_DATA）で写す）。
+- blend: CB_BLEND0_CONTROL（ONE・ONE_MINUS_SRC_ALPHA で 0x40000501）、SX_MRT0_BLEND_OPT、CB_TARGET_MASK、CB_COLOR_CONTROL（ROP3 0xCC、MODE 1）、CB_SHADER_MASK。depth 無し: DB_Z_INFO・STENCIL_INFO の format invalid、DB_DEPTH_CONTROL 0、DB_SHADER_CONTROL（Z_ORDER early、DUAL_QUAD_DISABLE 1）。
+- viewport・scissor・raster: PA_SC_WINDOW_SCISSOR、SCREEN_SCISSOR_BR、VPORT_SCISSOR_0、PA_SC_MODE_CNTL_0（VPORT_SCISSOR_ENABLE）、PA_CL_VPORT_XSCALE から 6 語、VPORT_ZMIN/ZMAX、guardband、PA_SU_SC_MODE_CNTL 0、PA_CL_CLIP_CNTL（DX_CLIP_SPACE_DEF、DX_LINEAR_ATTR_CLIP）、PA_SC_AA_CONFIG 0、AA_MASK、DB_EQAA、PA_SC_MODE_CNTL_1、PA_SC_BINNER_CNTL_0（binning 無効 = 2）。
+- draw: VGT_PRIMITIVE_TYPE（uconfig index 1、trilist 4）、VGT_SHADER_STAGES_EN（legacy VS、MAX_PRIMGRP_IN_WAVE 2、VS_W32_EN）、GE_CNTL（PRIM_GRP 128、VERT_GRP 256）、VGT_GS_MODE 0、NUM_INSTANCES、DRAW_INDEX_AUTO（count、AUTO_INDEX）か DRAW_INDEX_2。
+- dispatch: COMPUTE_PGM_LO/HI、RSRC1/2/3、RESOURCE_LIMITS、NUM_THREAD_X/Y/Z、DISPATCH_DIRECT（groups、initiator = SHADER_EN | ORDER_MODE | TUNNEL | CS_W32_EN | FORCE_START_AT_000）。universal の family では GFX の ring で出す（7.4）。
+- 記述子: T#（8 語、gfx10 の layout、RESOURCE_LEVEL 1、TYPE 9 = 2D、format 56 = 8_8_8_8 unorm・130 srgb、DST_SEL、SW_MODE 0）、S#（4 語）、V#（4 語、format 22 = 32_FLOAT の raw、OOB_SELECT 3）。値は Mesa 25.3.6 `ac_descriptors.c`・`gfx10-rsrc.json`・`gfx10_format_table.py` から。
+- cache: submission の終わりは RELEASE_MEM（7.6）で CB/DB を flush して L2 を writeback してから fence。sampled read の前に GLV・GL1 の invalidate、CB の書き込みの後に PS_PARTIAL_FLUSH と CB の flush。RX 5600 XT は 192 bit bus で TCC が 12（2 の冪でない）の可能性があり、その場合 CB の書き込みの後に GL2 の writeback が要る（Mesa の `tcc_rb_non_coherent` の規則）。A5 で TCC の有効な mask を読んで判定する。
+- clear・copy（全部 GFX の ring）: linear の image の clear は CP の DMA_DATA（fill）か draw、buffer ↔ linear image は pitch が同じなら DMA_DATA の copy、違えば行ごと、scale 付き blit は textured draw（compositor 自身の draw と同じ）。
 
 ### 9.4 executor の作り（判断 5 の回答: 写す）
 
-nvrtx の executor のうち hardware に依らない部分（13 file、計 5,993 行）を amdrdna に写して独自の名前にする。hardware の部分は PM4・GFX10 の記述子・linear の image で書き直す。p008 の最初に写す file の一覧と切り分けを記録し、共有の層への寄せ直しは Future Work。**A5c の取り消し**のために、executor の run の待ちに期限（`CONFIG_AMDRDNA_RUN_MS`、既定 2000）を持ち、期限で session を LOST にする（WS250 の 4.2 と同じ形）。
+nvrtx の executor のうち hardware に依らない部分（`vk-object.c`・`vk-session.c`・`vk-stream.c`・`vk-dispatch.c`・`vk-device.c`・`vk-memory.c`・`vk-resource.c`・`vk-queue.c`・`vk-reply.c`・`vk-target.c`・`vk-record.c`・`vk-command.c`・`vk-layout.c`、計 5,993 行。`vk-resource.c` は nvrtx の hardware の語を一部含むので切り分けが要る）を amdrdna に写して独自の名前にする。理由: WS037 の Future Work「executor の共有の層」は未着手で、共有の層を切り出す作業は WS241 が触る file と重なる。hardware の部分（`vk-execute.c`・`vk-pipeline.c`・`draw-push.c`・`exec-push.c`・`compute-launch.c`・`image.c` に当たる物）は PM4・GFX10 の記述子・linear の image で書き直す。p008 の最初に写す file の一覧と切り分けを記録し、共有の層への寄せ直しは Future Work。**executor の模型は写した物のまま: renderer の worker は node に 1 本、submission（run）ごとに GPU の完了を同期で待つ**（review M4）。したがって GFX の ring の上に同時にある user の run は最大 1 つで、**run の期限（`CONFIG_AMDRDNA_RUN_MS`、既定 2000）の起点は run を ring に積んだ時 = その run が ring の先頭に来た時**（先の run は完了済み）。期限で session を LOST にする（11 節）。worker を session ごとにして GPU の待ちを lock の外に出す形（WS250 の p005 の a と同じ）は Future Work。
 
 ## 10. 我々の interface への対応表
 
@@ -443,8 +474,8 @@ nvrtx の executor のうち hardware に依らない部分（13 file、計 5,99
 
 | capability / 表 | callback | amdrdna での中身 | Phase |
 | --- | --- | --- | --- |
-| （常に） | `get_info`、`open`・`close` | session = executor の context ＋ pasid ＋ 4 段の page table（root は VRAM）＋ 状態（READY/LOST/…）。VMID は submission の時に動的（5.4）。close は未完了の fence を待ち、LOST なら取り消しの完了（FREED か STUCK）を待つ | p011 |
-| RESOURCE・BLOB | `resource_create`・`blob_create`・`resource_destroy` | buffer object: VRAM か system memory。session の page table に map。destroy は最後の fence の完了と TLB の invalidate の完了を確かめてから返す。STUCK の session の物は返さない | p011 |
+| （常に） | `get_info`、`open`・`close` | session = executor の context ＋ pasid ＋ 4 段の page table（root は VRAM）＋ 状態（READY/LOST/…、11.3）。VMID は submission の時に動的（5.4）。close は共通の層の stop（`stop_begin` → `stop_poll` が 0）の後に来る。隔離（`isolate` が 0）された session の close は hardware に触らず資源を quarantine に残す | p011 |
+| RESOURCE・BLOB | `resource_create`・`blob_create`・`resource_destroy` | buffer object: VRAM か system memory。session の page table に map。destroy は最後の fence の完了と TLB の invalidate の完了を確かめてから返す。隔離された session の物は返さない（quarantine） | p011 |
 | BLOB（任意） | `blob_create_placed` | VRAM の連続・256 byte 整列・CPU から見える範囲（scanout） | p011 |
 | TRANSFER | `resource_read`・`resource_write` | VRAM は BAR0（HDP の規則）、resizable BAR 無しの窓の外は MM_INDEX の間接、system memory は直接 | p011 |
 | MAPPING | `resource_map` | VRAM は BAR0 を通す DEVICE の map。system memory は RAM の map | p011 |
@@ -459,7 +490,7 @@ nvrtx の executor のうち hardware に依らない部分（13 file、計 5,99
 | DISPLAY_CONTROL | `display.power`・`display.refresh` | power: HUBP の blank の解除/設定。refresh: VSTARTUP の割り込みの待ち | p006 |
 | cursor | `display.cursor_set`・`cursor_move`・`cursor_hide` | 8.4 | p006 |
 | scanout の表 | `scanout.query_device`・`scanout.constraints`、`import_image` = NULL | constraints: VRAM の連続・CPU から見える範囲、offset 256 byte、pitch = 今の mode の pitch、形式は ARGB8888/ABGR8888 の linear | p006 |
-| recovery の表 | `fault`（必須）、`stop_begin`・`stop_poll`、**`isolate`（実装、11 節）**、`reset` = NULL | 11 節 | p011・p013 |
+| recovery の表 | `fault`（必須）、`stop_begin`・`stop_poll`（nvrtx と同じ: 投入を止めて完了を待つ）、**`isolate`（実装、11 節: queue の reset で GPU の上の停止を確かめた時だけ 0、資源は quarantine）**、`reset` = NULL | 11 節 | p011・p013 |
 
 ### 10.2 安全の模型
 
@@ -469,40 +500,43 @@ nvrtx の 8.2 と同じ: user は PM4 を書かない。kernel の構造を user
 
 出典（手順）: Linux v6.19 `amdgpu_job.c`（`amdgpu_job_timedout`: ring ごとの reset → だめなら GPU の reset）、`amdgpu_ring.c`（`reset_helper_begin/end`）、`gfx_v10_0.c`（`reset_kgq`: KIQ 経由で CP_VMID_RESET を書き MQD の active を待つ → MQD の init → MAP_QUEUES、`reset_kcq`: UNMAP_QUEUES RESET → HQD_ACTIVE の待ち → init → MAP、`kiq_reset_hw_queue`、`set_safe_mode`）、`gc_10_1_0_offset.h`（CP_VMID_RESET 0x1E53、CP_GFX_HQD_ACTIVE 0x1E80、SPI_COMPUTE_QUEUE_RESET 0x1F7B、RLC_SAFE_MODE 0x4C05）。[WS250 の設計](../ws250/design.md)（nvrtx の同じ目的の形: session の状態機械、期限、kill の手順、`isolate` の基準）。
 
-### 11.1 目的（ユーザーの決定、WS250 と同じ）
+### 11.1 目的（ユーザーの決定）と WS250 との違い
 
-終わらない shader（または GPU の fault）を出した app は `VK_ERROR_DEVICE_LOST` で止まってよい。**他の app と compositor は動き続ける**。GPU の上で仕事を取り消し、queue を作り直して GPU を使える状態に戻す。
+終わらない shader（または GPU の fault）を出した app は `VK_ERROR_DEVICE_LOST` で止まってよい。**他の app と compositor は動き続ける**。GPU の上で仕事を取り消し、queue を戻して GPU を使える状態にする。
+
+**WS250 との違い**（review M4。ユーザーに示す点、15 節 #13）: WS250（nvrtx）は session ごとの channel（案 A）を採り、GPU の側で詰まった仕事の後ろで待たないようにした。amdrdna の最初の版は **GFX の queue が 1 本で全 session が共有**（7.3）なので、WS250 が退けた「共有の queue を止めて戻す」（案 B）の形になる: **期限（既定 2 s）＋ reset（ms 台）の間は compositor を含む全 session の GFX の仕事が止まり、その後 desktop は動き続ける**。session ごとの GFX の queue（Navi10 の 1 pipe に 8 本の HQD を time slice で回す。Linux に Navi10 の例が無い）は Future Work。compute 専用の family の仕事は自分の queue の reset で済み、GFX は止まらない。
 
 ### 11.2 検出
 
-- **run の期限**: executor の run（submission）の fence の待ちは `CONFIG_AMDRDNA_RUN_MS`（既定 2000。`config/kernel-options.list` に 1 行、choice 1000/2000/5000/10000）。越えたら**その session の喪失**。他の session とは混ぜない。desktop の run は ms 台なので 2 桁の余裕（WS241 の実測）。
-- **CP の例外の割り込み**（priv reg 184・priv inst 185・bad opcode 183）: IV の vmid → その時の VMID の記録 → session。期限を待たず喪失にする（第 1 版の「device の fault」を改める。Linux も scheduler の fault = ring の reset として扱う）。
-- **VM fault**: pasid → session。no-retry で既定の page へ逃げるので GPU は止まらない。session を喪失にし、残りの仕事は流し続ける（queue の reset は要らない。ただし fault の嵐を避けるため、その session の以後の submission は投入しない）。
+- **run の期限**: executor の run（submission）の fence の待ちは `CONFIG_AMDRDNA_RUN_MS`（既定 2000。`config/kernel-options.list` に 1 行、choice 1000/2000/5000/10000）。起点は run を ring に積んだ時（9.4: 同期の 1 worker なので先の run は完了済みで、ring の先頭に来た時と同じ）。越えたら**その session の喪失**。他の session とは混ぜない。desktop の run は ms 台なので 2 桁の余裕（WS241 の実測）。
+- **CP の例外の割り込み**（priv reg 184・priv inst 185・bad opcode 183）: IV の vmid → その時の VMID の記録 → session。期限を待たず喪失にし、queue の reset へ（Linux も scheduler の fault = ring の reset として扱う）。
+- **VM fault**: pasid → session。no-retry で既定の page へ逃げるので GPU は止まらないことが多い。session を喪失にし、以後の submission は投入しない。**fault した run にも run の期限を当て**、期限までに fence が完了すれば reset 無しで FREED、完了しなければ reset の道へ（review M4 の 3: 無限 loop と fault の両方の場合）。
 - **共通の層の期限**（supervised job の 60 s）は最後の網（WS250 の 4.2 と同じ）。
 
 ### 11.3 取り消しの手順（session の状態機械）
 
 ```
-READY ──期限 / CP の例外 / stop_begin──▶ LOST ──bring-up の thread が queue を reset──▶ STOPPING
-   ──reset と remap が全部 ok──▶ FREED ──close──▶ 資源を返す
-   ──どれか失敗──▶ STUCK ──▶ isolate は失敗 → device の fault（全 session EIO、電源の切断まで）
-VM fault だけ: READY ──▶ LOST ──（queue は動いている）──▶ FREED（fence が全部完了した時）
+READY ──正常の close（stop_begin(ENODEV)）──▶ STOPPING（投入を止め fence の完了を待つ）──完了──▶ FINISHED ──close──▶ 資源を返す
+READY ──run の期限 / CP の例外 / VM fault──▶ LOST ──fence が期限までに完了──▶ FREED（reset 無し）
+LOST ──完了しない──bring-up の thread が queue を reset──▶ RESETTING ──reset と remap が全部 ok──▶ FREED
+RESETTING ──どれか失敗──▶ STUCK ──▶ isolate は EIO → device の fault（全 session EIO、電源の切断まで）
+FREED ──isolate(0)──▶ ISOLATED ──close──▶ 資源は quarantine（返さない）
 ```
 
-1. `session->lost = reason`、`drv_gpu_report_session_error(EIO)`。以後の submit・command・reserve は EIO。libvulkan は EIO を `VK_ERROR_DEVICE_LOST` にする（WS250 の 1 節の事実）。
-2. **GFX の queue の reset**（guilty の session の run が GFX の queue に居る時。`kiq` の mutex、`grbm_select` の mutex、RLC の safe mode（RLC_SAFE_MODE に CMD | MESSAGE 1 を書き、応答を待つ）の下。Procedure referenced: `gfx_v10_0_reset_kgq`）: (a) `ring` の spinlock の下で record を backup（7.7）、投入を止める。(b) KIQ に WRITE_DATA で CP_VMID_RESET = RESET_REQUEST(1 << vmid) | PIPE0_QUEUES(1 << 0)、WAIT_REG_MEM で MQD の `cp_gfx_hqd_active` の語が 0 になるのを待つ、WAIT_REG_MEM（register）で CP_VMID_RESET == 0、KIQ の ring test。(c) GFX の MQD を作り直し（rptr・wptr 0、同じ ring）、MAP_QUEUES、KIQ の ring test、GFX の ring test。(d) backup を新しい ring に書き（guilty の record は除く）、doorbell。(e) 全部 ok なら guilty の session は FREED: その VMID の TLB を invalidate して pool に返す。どれか失敗なら STUCK。
-3. **compute の queue の reset**（guilty の run が compute の queue に居る時。Procedure referenced: `gfx_v10_0_reset_kcq`）: (a) backup。(b) KIQ に UNMAP_QUEUES（ACTION RESET、ENGINE 0、その queue の doorbell）、KIQ の ring test。(c) GRBM の選択の下で CP_HQD_ACTIVE の bit 0 が 0 になるのを待つ（100 ms）。(d) MQD を作り直し MAP_QUEUES、ring test。(e) backup を書く。(f) FREED / STUCK。
+1. LOST: `session->lost = reason`、`drv_gpu_report_session_error(EIO)`。以後の submit・command・reserve は EIO。libvulkan は EIO を `VK_ERROR_DEVICE_LOST` にする（WS250 の 1 節の事実）。
+2. **GFX の queue の reset**（guilty の session の run が GFX の queue に居る時。`kiq` の mutex の下、**KIQ の packet だけで MMIO は触らないので RLC の safe mode も GRBM の選択も要らない**。Procedure referenced: `gfx_v10_0_reset_kgq`。review M3）: (a) `ring` の spinlock の下で record を backup（7.7 の (1)(2)）、投入を止める。(b) KIQ に WRITE_DATA で CP_VMID_RESET（0x1E53）= RESET_REQUEST(1 << vmid) | PIPE0_QUEUES(1 << 0)、WAIT_REG_MEM（memory）で MQD の `cp_gfx_hqd_active` の語が 0 になるのを待つ、WAIT_REG_MEM（register）で CP_VMID_RESET == 0、KIQ の ring test。(c) GFX の MQD を **init の時の写しから書き戻し**、ring を NOP で埋め、rptr・wptr・writeback を 0、MAP_QUEUES、KIQ の ring test、GFX の ring test。(d) **preamble（9.3）を kernel が出し直す**（CP_VMID_RESET が context の state を戻すかは未確認なので、常に出し直す）。(e) backup を ring に書き（7.7 の (4)）、doorbell。(f) 全部 ok なら FREED: その session の全 ring の record が完了か取り消しになってから VMID の TLB を invalidate して pool に返し、**全 VMID の `flushed_seq` を 0** にする（5.4）。どれか失敗なら STUCK。
+3. **compute の queue の reset**（guilty の run が compute の queue に居る時。Procedure referenced: `gfx_v10_0_reset_kcq`）: (a) backup。(b) KIQ に UNMAP_QUEUES（ACTION RESET、ENGINE 0、その queue の doorbell）、KIQ の ring test。(c) `grbm_select` の mutex の下で me/pipe/queue を選び CP_HQD_ACTIVE の bit 0 が 0 になるのを待つ（100 ms）。Linux はここを RLC の safe mode で囲むが、それは clock gating（CGCG・MGCG）が有効な時だけで、**amdrdna は clock gating を設定しないので safe mode に入らない**（CG を入れる時はこの (c) を safe mode で囲む）。(d) MQD を写しから戻し MAP_QUEUES、ring test。(e) backup を書く。(f) FREED / STUCK。
 4. **KIQ が答えない**（ring test の timeout）: device の fault。
-5. STUCK の session の資源（BO・page table・VMID）は返さない。FREED なら close の通常の道で返す。
-6. **時間**: KIQ の往復は ms 台の見込み。reset の間、同じ queue の他の session の frame は止まる（1 回だけ、期限の 2 s ＋ reset の時間）。その後 desktop は動く。
+5. STUCK・ISOLATED の session の資源（BO・page table・VMID）は返さない。FINISHED（正常の close）と、FREED のまま isolate が呼ばれずに close に至った session（共通の層が `stop_poll` の 0 を見て FINISHED にした時）は通常の道で返す。
+6. **時間**: KIQ の往復は ms 台の見込み。reset の間、GFX の queue の他の session の frame は止まる（期限の 2 s ＋ reset の時間、1 回）。その後 desktop は動く。bring-up の thread が長い段の最中なら reset はその後（2 節の lock の順）。
 
 ### 11.4 共通の層の ops
 
 | op | 実装 |
 | --- | --- |
-| `stop_begin(session, error)` | `stopping`。READY なら LOST にして bring-up の thread に reset を頼む |
-| `stop_poll(session)` | pending が 0 なら 0。LOST・STOPPING なら EAGAIN |
-| `isolate(session)` | **FREED なら 0**（queue の reset と remap が成功し、VMID の wave が居ないと確かめた）。STUCK なら EIO → 共通の層は device の fault へ。isolate が 0 の後の `resource_destroy`・`close` は hardware に触らず（gpu.h の契約）、返す物は TLB の invalidate 済みの VRAM・page table だけ |
+| `stop_begin(session, error)` | **投入を止めるだけ**（nvrtx と同じ。review B1: 共通の層は正常の close でも GPU に仕事を出した session に `stop_begin(ENODEV)` を呼ぶので、ここで reset を始めると app の終了のたびに共有の queue が止まる）。READY なら STOPPING。LOST なら何もしない（取り消しは期限の道が進める） |
+| `stop_poll(session)` | 全 ring の record の fence が完了していれば 0（FINISHED か FREED）。STOPPING・LOST・RESETTING なら EAGAIN。**STUCK なら EIO**（すぐ escalate。review M4） |
+| `isolate(session)` | **FREED なら 0**（queue の reset と remap が成功し、VMID の wave が居ないと確かめた）→ ISOLATED。それ以外（LOST・RESETTING・STUCK）は EIO → 共通の層は device の fault へ。isolate が 0 の後の `resource_destroy`・`close` は hardware に触らず、資源は **`quarantined` の list に積んで返さない**（gpu.h の契約「checked reset まで device の持ち物」。`reset` は NULL なので reboot まで。review M5）。呼ばれるのは共通の層の stop の期限（10 s）を越えた時か `stop_poll` が EIO を返した時だけなので、普通の取り消しは FREED → FINISHED の道で資源が返る |
 | `fault(error)` | 冪等。新しい投入を止め、全ての destroy・close が不確かな DMA を保持する。driver が自分で見つけた異常（PSP の timeout、KIQ の timeout、GRBM の hang、温度の閾値、SMU の hang、hardware CTF）は隔離を構えてから `drv_gpu_report_error` |
 | `reset()` | **NULL**（最初の版）。mode1 reset の実験は 11.6 |
 
@@ -518,38 +552,124 @@ VM fault だけ: READY ──▶ LOST ──（queue は動いている）──
 
 ### 11.7 停止（shutdown・reboot の hook、`stage` までの逆順）
 
-(1) 投入を止め、fence を待つ（timeout）。(2) EOP・TRAP・THM の割り込みを止める。(3) GFX の queue と compute の queue を KIQ の UNMAP_QUEUES（PREEMPT）で外し、CP_ME_CNTL で CE/PFP/ME を halt、CP_MEC_CNTL で MEC を halt。(4) SDMA0: RB・IB の enable を 0、F32 の HALT。RLC は止めない。(5) display を GOP の surface に戻す（8.5）。mode set 済みなら GOP の mode に戻す（8.6 の 7）。BIOS_SCRATCH_6 の bit 4 を 0。(6) SMU: Tier F なら DisableAllSmuFeatures、PrepareMp1ForUnload。(7) PSP: UNLOAD_TA（ASD）、DESTROY_TMR、ring の破棄。(8) IH を止め、bus master を切る。SOS は生きたままになる。
+(1) 投入を止め、fence を待つ（timeout）。(2) EOP・TRAP・THM の割り込みを止める。(3) GFX の queue を KIQ の UNMAP_QUEUES（PREEMPT）、compute の queue を UNMAP_QUEUES（RESET。Linux の teardown と同じ。止まった compute の PREEMPT は終わらない可能性がある。review m8）で外し、CP_ME_CNTL で CE/PFP/ME を halt、CP_MEC_CNTL で MEC を halt。(4) SDMA0: RB・IB の enable を 0、F32 の HALT。RLC は止めない。(5) display を GOP の surface に戻す（8.5）。mode set 済みなら GOP の mode に戻す（8.6 の 7）。BIOS_SCRATCH_6 の bit 4 を 0。(6) SMU: Tier F なら DisableAllSmuFeatures、PrepareMp1ForUnload。(7) PSP: UNLOAD_TA（ASD）、DESTROY_TMR、ring の破棄。(8) IH を止め、bus master を切る。SOS は生きたままになる。
 
 ## 12. 段の印・boot の parameter・試験の道
 
 - **印**: 3 節の `kern_logf` の行。試験の image は `kmsg=console`（logo 無し）。印は GOP の framebuffer の text console に出る（client の surface を出している間と、A3t の blank の間を除く）。
-- **boot の parameter**（nvrtx の `stage.c` と同じく生の command line を語で照らす）: `amdrdna.off=1`（attach しない）、`amdrdna.auto=A5`（起動で自動に進める段の上限。既定 `A1v`）、`amdrdna.disp.own=1`（A6〜A8 を走らせ display 付きで登録する。p006 の実機の合格の後に既定 on。判断 8）、`amdrdna.disp.test=1`（A6 で色の帯を数秒出して戻す）、`amdrdna.vk=1`（A9）、`amdrdna.pause=1`（危ない段の前に数秒待つ）、`amdrdna.temp.max=`、`amdrdna.fan.duty=`（Tier S）、`amdrdna.train=0`（A3t を省く）、`amdrdna.train.blank=0`、`amdrdna.kiq=0`（CP_RB0 の道）、`amdrdna.rebar=0`（BAR を広げない）、`amdrdna.modeset=0`（A10 以降を走らせない）。
+- **boot の parameter**（nvrtx の `stage.c` と同じく生の command line を語で照らす）: `amdrdna.off=1`（attach しない）、`amdrdna.auto=A5`（起動で自動に進める段の上限。既定 `A1v`）、`amdrdna.disp.own=1`（A6〜A8 を走らせ display 付きで登録する。p006 の実機の合格の後に既定 on。判断 8）、`amdrdna.disp.test=1`（A6 で色の帯を数秒出して戻す）、`amdrdna.vk=1`（A9）、`amdrdna.pause=1`（危ない段の前に数秒待つ）、`amdrdna.temp.max=`、`amdrdna.fan.duty=`（Tier S）、`amdrdna.train=0`（A3t を省く）、`amdrdna.train.blank=0`、`amdrdna.kiq=0`（CP_RB0 の道）、`amdrdna.window=256`（BAR0 が広くても 256 MiB の窓の 2 つの pool で動かす。比較の試験用）、`amdrdna.modeset=0`（A10 以降を走らせない）。
 - **試験の道は素の起動だけ**（ユーザーの決定 2、判断 9 の回答: RTX 機と入れ替え）。VFIO の passthrough は使わない。QEMU の試験は無い（QEMU に Navi10 は無い）。
 - **A3 以降の試行の間は cold power cycle が要る**（11.6 の p016 まで）: 停止の手順の後も SOS は生きていて、platform の warm reboot が GPU を reset しなければ次の起動の A0 で `sos alive` で止まる。最初の試行で warm reboot の後の C2PMSG_81 を見て確かめる。
 - **固まった時の証拠**: 危ない段（A2・A3t・A3・A5・A5c・A6・A11）の begin の行の後に log を disk に同期してから hardware に書く。次の起動で読める印（BIOS_SCRATCH の未使用の register に段の番号を書く案）は p002 で register の空きを確かめてから決める。
 - **host 試験**（実機の前、各 Phase に入れる。`plan/ws039/tests/`）: (a) firmware の container の parser。(b) IP discovery の parser。(c) PSP の frame・command buffer の layout の static assert。(d) PTE・PDE・GART の entry、4 段の index の分解、**VMID の pool の割り当て（LRU・取り上げ・fence の待ち）**。(e) PM4・SDMA の packet（header・RELEASE_MEM・WAIT_REG_MEM・COPY_LINEAR・DMA_DATA・**MAP_QUEUES・UNMAP_QUEUES・SET_RESOURCES**）、**MQD の欄の offset の static assert**。(f) DCN の register の address の表。(g) 13.3 の監査の script。(h) p007 の compiler の試験は P5。(i) **VBIOS の parser**（合成の rom header と data の表、実機の image を取ってからはその image）。(j) **AtomBIOS の interpreter の dry run**（8.6 の 1）。(k) **session の状態機械と取り消し**（record の backup と re-emit、FREED/STUCK の判定。KIQ は stub）。(l) **SMU の pptable の組み立て**（powerplayinfo ＋ smc_dpm_info → PPTable_t の欄の offset）。(m) **DLG・TTU・watermark の固定小数の計算**（Linux の DML を host で浮動小数で走らせた参照の値と比べる。参照の道具は test の中だけ、15 節 #8）。
 - **負荷・耐久**は別枠（ユーザーに確かめてから）。
 
-### 12.5 実機の段ごとの手順（RX 5600 XT、RTX 機 10.0.30.5 と入れ替え）
+### 12.5 実機の段ごとの手順（RX 5600 XT を挿した 10.0.10.3）
+
+ユーザー（2026-10-15 夜）「RTX機 10.0.10.3 は RDNA機に変わりました。」（改訂 2 の最初の版で 10.0.30.5 と書いたのは誤り）。
 
 | 項目 | 値・手順 |
 | --- | --- |
-| 機械 | 10.0.30.5（Core i5-13400F の desktop、iGPU 無し。RTX 2070 を RX 5600 XT に**ユーザーが挿し替える**）。ssh `kei@10.0.30.5`（password kei、sudo も kei の見込み。Master の 2026-10-15 の記録）。host key は焼き直しで変わる: `ssh-keygen -R` して `accept-new`（Master の規則） |
-| 起動 | USB の zedBSD（RAk の image）が起動する。**kernel は `/boot/boot0/vmunix` を scp で差し替える**（元の `vmunix.rak` は残す。T1-682〜696 の手順）。boot の設定は `/boot/boot0/zedbsd.cfg`（`kmsg=console`、logo 無し、`login=text`（A9 まで。A9 以降 `login=graphical amdrdna.vk=1`）、`amdrdna.auto=A1v`。元は `.bak` に残す） |
-| image の中身 | `plan/ws039/tests/config.mk` で build（amdrdna=y、`amd-navi-firmware`=y、`amdrdnactl`・`vkhang`・`vkquad`・`keiland-shot`）。T1 は `yes \| make firmware-licenses` の後に `make -j16 BUILD=build/t1/amdrdna ZEDBSD_CONFIG=plan/ws039/tests/config.mk build/t1/amdrdna/vmunix`（warning 0、vmunix check PASS、cksum を記録）。firmware の file は USB の root の `/lib/firmware/amdgpu/` に scp（package の install と同じ path・同じ byte）。`amdrdnactl` などの binary も scp |
-| UEFI の設定（ユーザー） | CSM off（legacy の VGA の mode なら attach しない）。resizable BAR のために "Above 4G Decoding"（と "Re-Size BAR Support" があれば on）。monitor は RX の **DP**（HDMI は p015 の後半） |
-| 1 回の試行 | (1) `sudo reboot`（SSH）→ (2) SSH が戻る（5 分以内）→ (3) `amdrdnactl status`（A0・A1・A1v の値、`sos alive` か）→ (4) `amdrdnactl advance <段>`（例 A2）→ (5) `amdrdnactl status` と `dmesg \| grep amdrdna`（`Ax ok` の行）→ (6) 合格の段の値を記録。画面の確認が要る段（A3t の blank と戻し、A6・A7・A11〜A13）は**ユーザーの目視か写真**（T1 は「確認してほしい項目」を一覧にし、ユーザーが都合の良い時に見る。「今すぐ試験を」とは頼まない） |
+| 機械 | 10.0.10.3（Core i5-13400F の desktop、iGPU 無し）。RX 5600 XT: `lspci` で Navi 10 `1002:731f` rev ca、subsystem Sapphire `1da2:e411`。**普段は Debian 13 の Linux が動く**（`ssh awe@10.0.10.3`、鍵、`sudo -n` 可）。Linux の amdgpu は載っていない（`Kernel modules: amdgpu` の表示だけ）。UEFI の boot の entry は debian と Windows だけ |
+| zedBSD の起動 | USB の zedBSD の image（RAk の形、`plan/ws039/tests/config.mk` で build）を挿し、**Linux から `efibootmgr --bootnext <USB の entry>` で 1 回だけ USB から起動**（5330 と同じ手順。Q1 の見込み、p002 の最初に確かめる）。zedBSD が固まって電源を入れ直すと **既定の Debian が立つ**ので、SSH は必ず戻る（BootNext は 1 回限り）。zedBSD の側の SSH（RAk の image の利用者、IP は DHCP で同じ NIC なので 10.0.10.3 の見込み。p002 で確かめる）で `amdrdnactl` と `kernel.log` を読む。zedBSD から Debian に戻るのは `sudo reboot`（warm）か電源の入れ直し |
+| kernel・設定の差し替え | USB の ESP の `/boot/boot0/vmunix`・`zedbsd.cfg` と root の `/lib/firmware/amdgpu/`・binary を、**Debian から USB を mount して書く**（scp で Debian へ → mount → cp。zedBSD が固まっていても書ける）か、zedBSD が上がっていれば zedBSD の SSH で書く。元の `vmunix.rak`・`zedbsd.cfg.bak` は残す。zedbsd.cfg: `kmsg=console`、logo 無し、`login=text`（A9 まで。A9 以降 `login=graphical amdrdna.vk=1`）、`amdrdna.auto=A1v` |
+| image の中身 | `plan/ws039/tests/config.mk`（amdrdna=y、`amd-navi-firmware`=y、`amdrdnactl`・`vkhang`・`vkquad`・`keiland-shot`）。T1 は `yes \| make firmware-licenses` の後に `make -j16 BUILD=build/t1/amdrdna ZEDBSD_CONFIG=plan/ws039/tests/config.mk build/t1/amdrdna/vmunix`（warning 0、vmunix check PASS、cksum を記録）。firmware の file は USB の root の `/lib/firmware/amdgpu/`（package の install と同じ path・同じ byte） |
+| UEFI の設定（ユーザー） | CSM off（legacy の VGA の mode なら attach しない）。resizable BAR のために "Above 4G Decoding" と "Re-Size BAR Support" を on（5.5。Linux の `lspci -vvv` で `Region 0` の大きさと `Physical Resizable BAR` の capability で効いたか分かる）。monitor は RX の **DP**（HDMI は p015 の後半） |
+| **Linux の amdgpu での照合**（p002 の前に 1 回、以後は必要な時） | 読むだけの物（機械を変えない。許可は要らない）: `lspci -vvv -s <bdf>`（BAR の大きさ・ReBAR の capability・bridge の窓 = 5.5 と A0 の期待値）、`lspci -t`（GPU の上の bridge と switch の topology）、`/sys/firmware/acpi/tables/VFCT`（VBIOS の image。4.5 の parser の host 試験の入力）、`dmesg`（起動の時の PCI の割り当て）。**機械を変える物（amdgpu の load、設定の変更）は Q1 の許可を取ってから**: `sudo modprobe amdgpu` の後の `dmesg`（PSP の SOS・TA の版、`memory training`、TMR の大きさ、discovery の GC の版、SMU の版と driver IF の版、fan・thermal の feature の有効化、GART・VRAM の配置）、`/sys/kernel/debug/dri/<n>/amdgpu_firmware_info`（各 firmware の版 = 4.2 の期待値）、`amdgpu_vbios`（VBIOS）、`amdgpu_regs*`（register の dump: A0・A1 の読み戻しの照合）、`amdgpu_pm_info`（温度・fan・clock = A4 の照合）、`/sys/class/hwmon`。**amdgpu を load すると SOS が居るので、その後の warm reboot で zedBSD の A0 が `sos alive` を出す**（14 節の 2 の「warm reboot で platform が GPU を reset するか」を確かめる機会でもある）。dump の後は `rmmod amdgpu` ではなく電源の入れ直し（ユーザー）で zedBSD の cold boot に戻す |
+| 1 回の試行 | (1) Debian で BootNext → `sudo reboot` → (2) zedBSD の SSH が戻る（5 分以内）→ (3) `amdrdnactl status`（A0・A1・A1v の値、`sos alive` か）→ (4) `amdrdnactl advance <段>`（例 A2）→ (5) `amdrdnactl status` と `dmesg \| grep amdrdna`（`Ax ok` の行）→ (6) 合格の段の値を記録 → (7) `sudo reboot` で Debian に戻る。画面の確認が要る段（A3t の blank と戻し、A6・A7・A11〜A13）は**ユーザーの目視か写真**（T1 は「確認してほしい項目」を一覧にし、ユーザーが都合の良い時に見る。「今すぐ試験を」とは頼まない）。機械で確かめられる物は register で（OTG の CRC（register は p014 で出典を写す）で同じ絵の前後の一致、HUBP・OPTC の underflow。review m12） |
 | 段の進め方 | 1 回の起動で合格済みの段まで `advance` で一気に進め、新しい段を 1 つだけ試す。合格したら次の試行で `amdrdna.auto=` をその段まで上げてよい（起動で自動）。**実機で ok の行が取れた段の code だけを main に merge する**（2 節の 11） |
-| 固まった時 | SSH が 5 分で戻らない → 固まったと判定 → **ユーザーの一覧に「10.0.30.5 の電源の入れ直し」を載せる**（T1 は Q1 に報告、Q1 がユーザーの一覧を更新）。入れ直しの後は attach が A1v で止まるので SSH が戻る。log は `kernel.log` の同期済みの部分まで |
-| cold power cycle | A3 以降を試した後の warm reboot で A0 が `sos alive` を出したら、以後その試行の系列は電源の入れ直しが要る（p016 まで）。1 回の起動で A2〜A5s を一気に進める形にして、入れ直しの回数を段の数でなく試行の数にする |
-| 証拠 | `kernel.log` の `amdrdna:` の行、`amdrdnactl status` の出力、T1 の結果の file（`plan/agents/T1/results-*.md` の形）、写真（ユーザー）。実機の証拠と host 試験の証拠を分けて書く |
+| 固まった時 | zedBSD の SSH が 5 分で戻らない → 固まったと判定 → **ユーザーの一覧に「10.0.10.3 の電源の入れ直し」を載せる**（T1 は Q1 に報告、Q1 がユーザーの一覧を更新）。入れ直しの後は Debian が立つので SSH は戻り、USB の log（`kernel.log` の同期済みの部分）を Debian から読める |
+| cold power cycle | A3 以降を試した後の warm reboot（Debian 経由でも）で A0 が `sos alive` を出したら、以後その試行の系列は電源の入れ直しが要る（p016 まで）。1 回の起動で A2〜A5s を一気に進める形にして、入れ直しの回数を段の数でなく試行の数にする。Debian の S5（`poweroff`）＋ Wake-on-LAN で GPU の電源が切れるなら、ユーザー無しで入れ直せる可能性がある（S5 で slot の電源が切れるか、UEFI の WOL の設定、Debian の NIC の WOL は未確認。review m12。最初の試行で確かめる項目） |
+| 証拠 | `kernel.log` の `amdrdna:` の行、`amdrdnactl status` の出力、Linux の dump との照合の表、T1 の結果の file（`plan/agents/T1/results-*.md` の形）、写真（ユーザー）。実機の証拠と host 試験の証拠を分けて書く |
 | 画面が戻らない時（A11〜A13） | `sudo reboot` で GOP が post し直して画面が戻る見込み（14 節）。戻らなければ電源の入れ直し |
-| lock | RTX 機の lock（`/tmp/nvrtx-hw.lock` の考え）を RX 機でも 1 つ。T1・T2・T3 の並行は別の機械の時だけ |
-| 残り | kernel が attach で panic する不具合（A0・A1 の code の誤り）は毎回の起動で起きて SSH が戻らない。対策: A0・A1 の code は host 試験（合成の表）で先に確かめ、attach の最初に `amdrdna.off` を読む。bootloader に「1 回だけ別の kernel」の仕組みは無い（`bootloader/uefi/` を確かめた）。**zbl の fallback の kernel（前回の起動が login まで行かなければ `vmunix.rak` を使う）を Q1 に提案する**（WS039 の外、判断の項目 15 節 #9） |
+| lock | 10.0.10.3 の lock を 1 つ（`/tmp/amd-hw.lock` の考え、T1 の運用）。T1・T2・T3 の並行は別の機械の時だけ |
+| 残り | kernel が attach で panic する不具合（A0・A1 の code の誤り）でも、**BootNext が 1 回限りなので次の起動は Debian に戻る**（改訂 2 の最初の版で心配した「毎回の起動で固まる」は無い）。bootloader の fallback の kernel の提案（15 節 #9）は優先度を下げる。A0・A1 の code は host 試験（合成の表と Linux の dump）で先に確かめる |
 
 ## 13. 出典の規則の実装 Phase での守り方
 
-第 1 版のとおり（13.1 名前の規則と例の表、13.2 出典の comment の書き方（複数行、`Value(s) referenced:`・`Procedure referenced:`・`derived:`）、13.3 監査（symbol の衝突の script、出典の comment の検査、人の review、監査の表））。改訂 2 で足す例:
+Guardrail「MIT・GPL の出典のデータの引用」（WS039 の項）を code でこう守る。
+
+### 13.1 名前の規則（code・symbol の名前を写さない）
+
+- 全ての識別子は `amdrdna_`（関数・型・変数）か `AMDRDNA_`（macro・enum）で始め、**Linux・Mesa の symbol の名前（`mm*`・`*__SHIFT`・`*_MASK`・`PACKET3_*`・`GFX_CMD_ID_*`・`SOC15_*`・`PPSMC_MSG_*`・`V_*`・`S_*`・`R_*`・`SQ_*` など）を含めない**。AMD の register の mnemonic（`GRBM_STATUS`・`CP_RB0_BASE`・`RELEASE_MEM`・`HUBPREQ0_DCSURF_PRIMARY_SURFACE_ADDRESS` など、この文書が出典の指示に使っている語）もそのまま使わず、役割を自分の語で書く。
+- 例（左が出典の名前、右が amdrdna の名前。左は comment の「referenced」の中にだけ現れる）:
+
+| 出典の名前（comment の中だけ） | amdrdna の名前（code） |
+| --- | --- |
+| `mmGRBM_STATUS` | `AMDRDNA_GC_REG_BLOCK_STATUS` |
+| `mmRCC_DEV0_EPF0_RCC_CONFIG_MEMSIZE` | `AMDRDNA_NBIO_REG_VRAM_SIZE_MIB` |
+| `mmMM_INDEX` / `mmMM_INDEX_HI` / `mmMM_DATA` | `AMDRDNA_NBIO_REG_VRAM_WINDOW_LOW` / `_HIGH` / `_DATA` |
+| `mmBIOS_SCRATCH_7`、`ATOM_S7_ASIC_INIT_COMPLETE_MASK` | `AMDRDNA_NBIO_REG_BIOS_SCRATCH_7`、`AMDRDNA_BIOS_SCRATCH_7_POSTED` |
+| `mmMP0_SMN_C2PMSG_35` | `AMDRDNA_PSP_REG_BOOT_COMMAND`（C2PMSG_36 は `_BOOT_ARGUMENT`、81 は `_SECURE_OS_ALIVE`、33 は `_PLATFORM_INIT_DONE`） |
+| `mmMP1_SMN_C2PMSG_66` / `_82` / `_90` | `AMDRDNA_SMU_REG_MESSAGE` / `_ARGUMENT` / `_RESPONSE` |
+| `mmOTG0_OTG_CONTROL`、`OTG_MASTER_EN` | `AMDRDNA_DCN_REG_TIMING_CONTROL`（instance は引数）、`AMDRDNA_DCN_TIMING_CONTROL_ENABLED` |
+| `mmHUBPREQ0_DCSURF_PRIMARY_SURFACE_ADDRESS` | `AMDRDNA_DCN_REG_PLANE_SURFACE_ADDRESS_LOW` |
+| `mmCP_RB0_BASE` / `CP_RB0_CNTL` | `AMDRDNA_GC_REG_GFX_RING_BASE` / `AMDRDNA_GC_REG_GFX_RING_CONTROL` |
+| `PACKET3_RELEASE_MEM` (0x49) | `AMDRDNA_PM4_OP_EVENT_FENCE` |
+| `PACKET3_WAIT_REG_MEM` (0x3C) | `AMDRDNA_PM4_OP_WAIT_VALUE` |
+| `GFX_CMD_ID_LOAD_IP_FW` (6) | `AMDRDNA_PSP_CMD_LOAD_ENGINE_FIRMWARE` |
+| `PPSMC_MSG_GetSmuVersion` (2) | `AMDRDNA_SMU_MSG_QUERY_FIRMWARE_VERSION` |
+| `AMDGPU_PTE_VALID` | `AMDRDNA_PTE_PRESENT` |
+| `struct psp_gfx_rb_frame` | `struct amdrdna_psp_ring_slot` |
+
+- 名前の語の選び方: block（GC・NBIO・PSP・SMU・GMC・IH・SDMA・DCN）＋ 役割（英語の普通の語）。出典の略語（RB・HQD・MQD・OTG・HUBP）は hardware の部品の名前で AMD の文書の語なので、**部品の名前としては使ってよい**が、出典の symbol を丸ごと（`CP_HQD_PQ_CONTROL` のように）写さない。迷ったら出典の綴りと一致しない語を選ぶ。
+- struct の field の名前・順も自分で決める（PSP の command buffer のように hardware の layout が固定の物は offset で書き、`offsetof` の static assert で確かめる）。
+
+### 13.2 出典の comment の書き方
+
+値（register の offset・bit・enum・packet の形・firmware の表・golden の表）は、その値を定義する block の直前に複数行の comment で出典を書く。file の先頭には書かない。
+
+```c
+/*
+ * The PSP boot mailbox: the command register and its argument register
+ * (the firmware buffer address shifted right by 20), and the word the
+ * secure OS writes once it runs.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/mp/mp_11_0_offset.h
+ * (mmMP0_SMN_C2PMSG_35, mmMP0_SMN_C2PMSG_36, mmMP0_SMN_C2PMSG_81).
+ */
+#define AMDRDNA_PSP_REG_BOOT_COMMAND		0x0063U
+#define AMDRDNA_PSP_REG_BOOT_ARGUMENT		0x0064U
+#define AMDRDNA_PSP_REG_SECURE_OS_ALIVE		0x0091U
+```
+
+自分で計算した値（base ＋ offset、log2、bit の組み合わせ）は、同じ複数行の comment の中に「derived:」の行で書く（1 行の `/* … */` は作らない。review m2）:
+
+```c
+/*
+ * The absolute register index of the GC block status word on Navi10.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/navi10_ip_offset.h (GC_BASE, segment 0),
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h (mmGRBM_STATUS).
+ * derived: 0x1260 + 0x0DA4 = 0x2004 (dword index), 0x8010 bytes.
+ */
+```
+
+hardware の操作の手順を参考にした関数は、関数の直前（か手順の block の直前）に同じ形で書く:
+
+```c
+/*
+ * Hands one boot image to the PSP boot loader: wait until the mailbox is
+ * ready, publish the buffer address, write the command, wait again.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/psp_v11_0.c (psp_v11_0_bootloader_load_component).
+ */
+```
+
+- 版は「Linux v6.19」「Mesa 25.3.6」「Mesa 25.0.7」（p007）「linux-firmware 20260410」の形（commit の hash は監査の表にだけ）。複数の出典は行を分ける。
+- copyright・MIT・GPL の notice は付けない。
+
+### 13.3 監査（p010 と各 Phase の終わり）
+
+1. **symbol の衝突の検査**（script、`plan/ws039/tests/audit-symbols.sh`、p002 で作る）: 出典の header（Linux の `include/asic_reg/**/*.h`・`amdgpu/nvd.h`・`amdgpu/psp_gfx_if.h`・`amdgpu_psp.h`・`amdgpu_vm.h`・`soc15_ih_clientid.h`・`ivsrcid/**`・`navi10_sdma_pkt_open.h`・`smu_v11_0_ppsmc.h`・`smu11_driver_if_navi10.h`・`navi10_enum.h`・`discovery.h`、Mesa の `sid.h` と **`src/amd/registers/gfx10*.json`・`pkt3.json` の名前**（`amdgfxregs.h` は build の時に JSON から作られ tree に無い。review m3））から識別子（`[A-Za-z_][A-Za-z0-9_]{3,}`）を集め、`src/drivers/gpu/amdrdna/` の code（comment を除く）の識別子と交差させる。許すのは C の keyword・libc の名前・一般語の短い allow list（`enable`・`status`・`base`…、file で管理）だけ。交差が空でなければ FAIL。
+2. **出典の comment の検査**（同じ script）: `0x` の数値を持つ `#define AMDRDNA_` と `static const` の表の各 block について、**block の直前の comment**（空行で区切られた直前の `/* … */`）に `Value(s) referenced:` か `Values referenced:` があること（`derived:` だけの comment は不可）。無ければ FAIL。file の先頭 20 行に `referenced` があれば FAIL。
+3. **人の review**: p010 で code の構造（関数の分け方・順・comment の文）が出典の関数と「同じ形」になっていないかを読む。手順が同じでも、文は自分の言葉、変数と関数の切り方は zedBSD の規約（`plan/coding-style.md`）。
+4. 監査の表（[amdrdna-license-audit.md](amdrdna-license-audit.md)）に、参照した file ごとの path・SHA-256・license・取ったデータの種類を p010 までに揃える（p007 の Mesa 25.0.7 の file は P5 の `amdrdna-compiler-license-audit.md`）。
+
+### 13.4 改訂 2 で足す名前の例
 
 | 出典の名前（comment の中だけ） | amdrdna の名前（code） |
 | --- | --- |
@@ -564,32 +684,33 @@ VM fault だけ: READY ──▶ LOST ──（queue は動いている）──
 | `PSP_BL__DRAM_LONG_TRAIN` (0x100000) | `AMDRDNA_PSP_BOOT_CMD_TRAIN_MEMORY_LONG` |
 | `IH_VMID_0_LUT` | `AMDRDNA_IH_REG_SPACE_TO_PROCESS` |
 | `atom_master_list_of_data_tables_v2_1.firmwareinfo` | `AMDRDNA_VBIOS_DATA_FIRMWARE_INFO`（index 4） |
-| `ATOM_OP_MOVE` …（interpreter の opcode） | `AMDRDNA_ATOM_OP_MOVE` …（AMD の公開の bytecode の語。Mesa の mnemonic の扱いと同じ「hardware/firmware の事実」として使う。判断の項目 15 節 #8） |
+| `atom_op_move` / `ATOM_OP_MOVE`（AtomBIOS の interpreter の opcode。Linux の symbol） | `AMDRDNA_BYTECODE_COPY`（振る舞いから付けた独自の語。値 = opcode の番号はデータとして出典付き。**AtomBIOS の opcode の名前は AMD の公開の ISA の文書の命令名ではないので、mnemonic の例外は当てない**。review M13） |
 
 ## 14. 危険と未知（実機で観測していない）
 
 1. IP discovery の表の中身（GC の版、base の address、header の版）。
-2. C2PMSG_81 の cold boot の値と、warm reboot で platform が GPU を reset するか（しなければ A3 以降の試行ごとに cold power cycle、p016 まで）。
+2. C2PMSG_81 の cold boot の値と、warm reboot で platform が GPU を reset するか（しなければ A3 以降の試行ごとに cold power cycle、p016 まで。Linux の amdgpu を load した後の warm reboot で先に観測できる、12.5）。
 3. TMR の大きさ。ASD を省けるか（省かない）。
-4. **memory training**: VBIOS の training の bit と runtime DB の値、training の時間、32 MiB の範囲が正しいか（Linux の定数を信じる）、timeout の後に PSP が書き続けるか、blank の最中の HUBP の振る舞い。
-5. **SMU の Tier F**: pptable 無し・DPM 無しで FAN_CONTROL・THERMAL・FW_CTF の feature が有効になるか（Linux は常に全部の feature と一緒に有効にする。拒まれたら Tier S）、metrics の表が転送されるか、THM の温度の単位、fan が実際に回るか（ユーザーの目視・音）、smc_dpm_info の content の版（5 の見込み）。
+4. **memory training**: VBIOS の training の bit と runtime DB の値、training の時間、32 MiB の範囲が正しいか（Linux の定数を信じる）、timeout の後に PSP が書き続けるか、blank の最中の HUBP の振る舞い、training の最中に CPU が BAR0 に書いた時の結果（console は止めるが panic の表示は止められない）。
+5. **SMU の Tier F**: allowed mask を FW_CTF・FAN_CONTROL・THERMAL の 3 bit だけにして EnableAllSmuFeatures を送った前例が Linux に無い（Linux は常に DPM の feature と一緒に有効にする。拒まれたら per-feature、それもだめなら Tier S）、RunBtc が DPM 無しで害が無いか、metrics の表が転送されるか、THM の CG_MULT_THERMAL_STATUS の温度の単位と意味（Tier S の唯一の源。Tier F の metrics と比べて確かめる）、fan が実際に回るか（ユーザーの目視・音）、smc_dpm_info の content の版（5 の見込み）、A3 の直後から A4 までの短い間の fan の状態。
 6. RLC と SMU の handshake: DPM の feature が無い SMU で RLC が event を待たないか。
-7. **KIQ**: Navi10 の firmware が MAP_QUEUES（engine 4）で GFX を map する（Linux の既定なので見込みは高い）。KIQ の ring test が最初の PM4。
-8. **queue の reset**: CP_VMID_RESET の後に MQD の active が落ちるか、remap の後に他の session の流し直しが正しく動くか、compute の RESET_QUEUES の後の HQD_ACTIVE。Linux 6.11 以降の道で、Navi10 での実績は Linux の test に依る。
-9. **動的な VMID**: switch ごとの flush の費用、pasid の LUT の書き込みが IH の fault の pasid に反映されるか。
-10. **resizable BAR**: capability の quirk（0x7000）、root の bus の 64 bit の窓、8 GiB の device の map が HAL の窓に収まるか、BAR2 の置き直し、PCI の層の差分が入るか。
+7. **KIQ**: Navi10 の firmware が MAP_QUEUES（engine 4）で GFX を map する（Linux の既定なので見込みは高い）。KIQ の ring test が最初の PM4。CP_PQ_STATUS の DOORBELL_ENABLE の既定値。
+8. **queue の reset**: CP_VMID_RESET の後に MQD の active が落ちるか、CP_VMID_RESET が context の state（preamble）を戻すか（戻さない前提で出し直す）、remap の後の流し直しが正しく動くか、compute の RESET_QUEUES の後の HQD_ACTIVE。Linux 6.11 以降の道で、Navi10 での実績は Linux の test に依る。
+9. **動的な VMID**: switch ごとの flush の費用、pasid の LUT の書き込みが IH の fault の pasid に反映されるか、ring をまたぐ flush の順（5.4）。
+10. **resizable BAR**: UEFI の Re-Size BAR が RX 5600 XT で何 GiB にするか（capability の quirk 0x7000 の形で 1 GiB 止まりの可能性）、8 GiB の device の map が HAL の窓に収まるか、10.0.10.3 の PCI の topology（GPU の上の bridge・switch）。
 11. GOP の pitch が 256 byte の整列を満たすか。GOP の framebuffer の VRAM の offset と HUBP の address の一致。GOP の framebuffer が VRAM の下 32 MiB にあるか（training の退避の前提ではないが画面の戻りの前提）。
-12. VBIOS の予約の範囲（A1v で読む。読めなければ第 1 版の余裕）。VFCT が無い機械。
+12. VBIOS の予約の範囲（A1v で読む。読めなければ review 反映版の余裕）。VFCT が無い機械。ACPI の table の公開の口の差分が入るか（M9）。
 13. HUBP の cursor の address の整列。HDMI の時の DST_OFFSET。
 14. TCC の数（12 なら GL2 の writeback が要る）。
 15. A2 の MMHUB の aperture の書き換えが GOP の scanout に影響するか。
-16. **mode set**: AtomBIOS の interpreter の誤り（dry run の oracle で減らす）、PHY の設定の VBIOS の表の parameter の版、DP の training の失敗、DLG・TTU・watermark の固定小数の誤りによる underflow、A11 の失敗で GOP の画面が戻らない（warm reboot の GOP の post で戻る見込み。戻らなければ電源）、HDMI の scrambling。
-17. 素の起動だけなので、GPU が固まった時の回復は電源の切断。kernel の attach の panic は SSH を奪う（12.5 の残り）。
+16. **mode set**: AtomBIOS の interpreter の誤り（dry run の oracle で減らす）、PHY の設定の VBIOS の表の parameter の版、DP の training の失敗、DLG・TTU・watermark の固定小数の誤りによる underflow、A11 の失敗で GOP の画面が戻らない（warm reboot の GOP の post で戻る見込み。戻らなければ電源）、HDMI の scrambling、boot の DISPCLK・DPPCLK の上限が低くて別の mode がほとんど出せない可能性（M11）、p014・p015 の LW が上限に近いか越える見込み（interpreter・DP の training・pipe の組み立て・固定小数の DML の代わりを合わせた規模）。
+17. 素の起動だけなので、GPU が固まった時の回復は電源の切断（BootNext が 1 回限りなので Debian には戻る）。
 18. amd64 の IOMMU（今は DMA の物理 = bus の address）。
+19. **共有の GFX の queue**: 取り消しの間（期限 2 s ＋ reset）は desktop も止まる（11.1）。
 
 ## 15. 判断の項目
 
-**決定済み（2026-10-15 ユーザー）**: 参考の source の扱い（値は出典付き、名前・構造・comment は写さない、GPL も同じ、AMD の ISA の mnemonic は可、Mesa の symbol は不可）、試験は bare metal、到達点は「desktop が描ける」まで（VCN は後）、まず RDNA1、driver と compiler の 2 担当、firmware は zedBSD-firmware、memory training を走らせる、SMU は fan・thermal も最初から、compute の queue も作る、executor は写す、取り消しと復帰（WS250 の形）、mode set も入れる、takeover は opt-in から、RX 5600 XT は RTX 機と入れ替え、resizable BAR、動的な VMID、renderer だけの登録を許す。
+**決定済み（2026-10-15 ユーザー）**: 参考の source の扱い（値は出典付き、名前・構造・comment は写さない、GPL も同じ、AMD の ISA の mnemonic は可、Mesa の symbol は不可）、試験は bare metal、到達点は「desktop が描ける」まで（VCN は後）、まず RDNA1、driver と compiler の 2 担当、firmware は zedBSD-firmware、memory training を走らせる、SMU は fan・thermal も最初から、compute の queue も作る、executor は写す、取り消しと復帰（WS250 の目的と同じ。形の違いは 11.1）、mode set も入れる、takeover は opt-in から、RX 5600 XT は 10.0.10.3（元の RTX 機）に挿した、resizable BAR、動的な VMID、renderer だけの登録を許す。
 
 **新しく聞く点**（既定の案と理由。作業の内容で書く）:
 
@@ -601,34 +722,36 @@ VM fault だけ: READY ──▶ LOST ──（queue は動いている）──
 | 4 | **温度の上限と CTF の時の振る舞い**: device の fault にとどめ system は止めない（Linux は system を shutdown する） | 止めない。PMFW の FW_CTF が hardware の上限で GPU を守る。system の shutdown は policy なので driver が決めない |
 | 5 | **fan の退路（Tier S）の duty**: SMU が feature を拒んだ時、THM で固定の duty 50 % | 50 %（`amdrdna.fan.duty=` で変えられる）。音が気になれば下げる。full の DPM（Tier 1）は別の WS |
 | 6 | **compute の queue の使い方**: 4 本を kernel の dispatch の試験と取り消しの試験に使い、Vulkan の compute 専用の queue family は p013 で最小の経路だけ（desktop は使わない） | そうする。universal の family の dispatch は順序のため GFX の ring のまま |
-| 7 | **resizable BAR の PCI の層の差分**（`src/drivers/pci/`、HAL ではない）: p003 で差分を `plan/ws039/proposed/` に置き、Q1 が main に当てる。当てない判断なら 256 MiB の窓 | 当てる（6 GiB 全部が CPU から見え、allocator が単純になる）。差分は小さい（capability の読み、size の書き、BAR の測り直し、窓への置き直し） |
-| 8 | **試験の oracle に Linux の MIT の code を使う**: AtomBIOS の interpreter の dry run の照合に `atom.c`（MIT）を、DLG・watermark の照合に DML（MIT）を、`plan/ws039/tests/` の host の道具として compile する（zedBSD の code には入れない、image にも入れない） | 使う（Guardrail は zedBSD の code への写しを禁じる。test の道具としての link は別。監査の表に「test の oracle」と書く）。だめなら照合は実機の register の値だけ |
-| 9 | **bootloader の fallback の kernel**（WS039 の外、Q1 へ）: 前回の起動が login まで行かなければ `vmunix.rak` を使う仕組み。attach の panic で SSH が戻らない危険への保険 | 提案する（別の WS か zbl の小さい Phase）。無くても control の node（3.2）で A2 以降の危険は避けられる |
+| 7 | **resizable BAR は UEFI の Re-Size BAR で**: OS の中で BAR を動かす案（改訂 2 の最初の案）は、GPU の上の bridge の窓の再割り当てと boot の framebuffer の固定の VA の張り替え（HAL の承認の対象になりうる）が要り動かない（review B2、5.5）。ユーザーの決定 10「resizable BAR も使う」を、UEFI の "Above 4G Decoding"・"Re-Size BAR Support" を on にして firmware が広げた BAR0 を使う形で満たす | そうする（同じ効果: 6 GiB 全部が CPU から見える）。UEFI の設定はユーザー。OS の中の resize は Future Work（別の WS） |
+| 8 | **試験の oracle に Linux の MIT の code を使う**: AtomBIOS の interpreter の dry run の照合に `atom.c`（MIT）を host で走らせる。**source は tree に入れず**、test の script が Linux の tarball（版と SHA-256 を固定）を `build/` に取得して host で build する（AGENTS.md の外部の source の規則の形）。DML の oracle は header 群と kernel の FPU の macro に依り手間が大きいので使わず、DLG・watermark は実機の underflow と GOP の値（同じ mode）との比較だけ（review M13） | 使う（tarball の取得の形。監査の表に「test の oracle、tree に無い」と書く）。だめなら照合は実機の register の値だけ |
+| 9 | **ACPI の table の公開の口**（WS039 の外、ACPI の driver の差分 `plan/ws039/proposed/acpi-table-lookup.diff`、Q1 の判断）: VBIOS を VFCT から読むのに要る（review M9）。無ければ ROM の BAR から読む道だけ | 入れる（小さい差分: 署名で生の table を借りる関数 1 つ）。bootloader の fallback の kernel の提案は、BootNext が 1 回限りで Debian に戻るので優先度を下げた（12.5） |
 | 10 | **`reset`（mode1 reset ＋ asic_init ＋ re-light）**: p016 として p015 の後に置く（cold power cycle も無くなる） | 後（p016 は選択）。それまで STUCK と `sos alive` は電源の切断 |
 | 11 | **control の node の UAPI**（`/dev/amdrdna0`、`include/uapi/amdrdna.h`、`amdrdnactl`）を production の image にも残す（段の状態の読み、VBIOS の取り出し） | 残す（read は誰でも、advance は root）。nvrtx の boot の parameter の形より実機の試験が安全 |
 | 12 | **実機で確かめた段だけを main に入れる**（2 節の 11）。その先は branch に置く | そうする（i915 の display の規則の考え方）。Q1 の merge の判断の基準 |
+| 13 | **取り消しの間は desktop も止まる**（11.1）: GFX の queue が 1 本で全 session が共有なので、期限（2 s）＋ reset（ms 台）の間は compositor の仕事も止まり、その後動き続ける。WS250（nvrtx）の session ごとの channel とは違う。session ごとの GFX の queue（Navi10 の 8 本の HQD、Linux に例が無い）は Future Work | この形で進める（ユーザーの決定 6「desktop は動き続ける」を「reset の後」と読む）。短くするなら期限を 1 s に（config） |
+| 14 | **Linux の amdgpu を 10.0.10.3 で load して dump を取る**（12.5）: 機械の状態を変える（SOS が載る → 次の zedBSD の起動は cold power cycle）ので Q1 の許可の後に | p002 の最初に 1 回（register・VBIOS・firmware の版・PCI の topology・ReBAR の結果の照合）。その後は電源の入れ直し |
 
 ## 16. Phase への引き継ぎと LW
 
 | Phase | 段 | 内容 | 依存 | 見込み |
 | --- | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | — | この文書（改訂 2）、license の監査、review | — | 済の見込み（4〜6 LW） |
-| p002 | A0・A1・A1v | 骨格（PCI の attach、BAR の map、`CONFIG_DRIVER_PCI_AMDRDNA` は済）、RDNA1〜3 の device id の表、IP discovery の parser、resizable BAR の capability の読み、GOP の readout、VBIOS（VFCT）と data の表の parser、VRAM の配置、段の印、control の node（`/dev/amdrdna0`、UAPI、`amdrdnactl`）、boot の parameter、独自の名前の register の表、監査の script、host 試験 (b)(f)(g)(i)。**実機: A0・A1・A1v の ok** | 実機（RX 5600 XT を挿した 10.0.30.5） | 4〜5 LW |
-| p003 | A2 | resizable BAR（PCI の層の差分の案 `plan/ws039/proposed/pci-resize-bar.diff`、Q1 の判断）、BAR0 の map（8 GiB の窓の扱い）、GMC（FB、allocator、GART、両 hub の VMID 0、context 1〜15、HDP）、IH（ring、MSI、thread、dispatch）、VM fault の受け、host 試験 (d) の前半。**実機: A2 の ok、underflow 0** | p002 | 4〜6 LW |
-| p004 | A3t・A3 | firmware の package（zedBSD-firmware への file の一覧を Q1 へ）、container の parser、root の mount 後の load、memory training（退避・blank・training・戻し）、PSP の bootloader・ring・TOC・TMR・LOAD_IP_FW・AUTOLOAD・ASD、停止の PSP の部分、host 試験 (a)(c)。**実機: A3t・A3 の ok（cold power cycle の往復を含む）** | p003 | 5〜7 LW |
-| p012 | A4 | SMU: mailbox、pptable（VBIOS ＋ smc_dpm_info、soft pptable の選択）、driver の表、Tier F の feature、THM の割り込みと閾値、温度と fan の読み、監視の thread、Tier S の退路、停止の SMU の部分、host 試験 (l)。**実機: A4 の ok、温度と fan の回転が読め fan が回る（ユーザーの目視）** | p004 | 4〜6 LW |
+| p002 | A0・A1・A1v | Linux の amdgpu の dump との照合（12.5、Q1 の許可）、骨格（PCI の attach、BAR の map、`CONFIG_DRIVER_PCI_AMDRDNA` は済）、RDNA1〜3 の device id の表、IP discovery の parser、resizable BAR の capability と BAR0 の大きさの読み、GOP の readout と clock の読み、VBIOS（VFCT か ROM の BAR）と data の表の parser、PSP の runtime DB の parser、VRAM の配置、段の印、control の node（`/dev/amdrdna0`、UAPI、`amdrdnactl`）、boot の parameter、独自の名前の register の表、監査の script、host 試験 (b)(f)(g)(i)。**実機: A0・A1・A1v の ok** | 実機（RX 5600 XT を挿した 10.0.10.3）、ACPI の table の公開の口の差分（`plan/ws039/proposed/acpi-table-lookup.diff`、Q1 の判断。無ければ A1v は ROM の BAR か skip） | 5〜6 LW |
+| p003 | A2 | BAR0 の map（firmware が広げた 8 GiB の窓の扱い、1 つの pool か 2 つの pool）、GMC（FB、allocator（下 32 MiB の予約を含む）、GART、両 hub の VMID 0、context 1〜15、HDP）、IH（ring・MSI の用意、thread、dispatch。enable は A3）、VM fault の受け、host 試験 (d) の前半。**実機: A2 の ok、underflow 0** | p002 | 3〜5 LW |
+| p004 | A3t・A3・A4（Tier S） | firmware の package（zedBSD-firmware への file の一覧を Q1 へ）、container の parser、root の mount 後の load、memory training（console の停止・退避・blank・training・戻し）、IH の enable、PSP の bootloader・ring・TOC・TMR・LOAD_IP_FW・AUTOLOAD・ASD、**SMU の mailbox と版の読みと Tier S（THM の固定の duty の fan、THM の温度の読み、監視の thread）**、停止の PSP・SMU の部分、host 試験 (a)(c)。**実機: A3t・A3 の ok と A4 の `mode=S`（温度と fan の回転が読め fan が回る。cold power cycle の往復を含む）** | p003 | 6〜8 LW |
+| p012 | A4（Tier F） | SMU の Tier F: NumOfDisplays、pptable（VBIOS ＋ smc_dpm_info、soft pptable の選択）、driver の表、RunBtc、allowed mask と EnableAllSmuFeatures（per-feature の第 2 の試し）、THM の割り込みと閾値、metrics の温度と fan の読み（THM の値との比較）、host 試験 (l)。**実機: A4 の `mode=F`、features の 3 bit、温度の 2 つの源の一致** | p004 | 4〜6 LW |
 | p005 | A5 | golden・constants・RLC の autoload 待ち・CSB、KIQ、GFX の queue（MAP_QUEUES）、compute の queue 4 本、SDMA0、fence と割り込み、最初の copy、最初の dispatch（p007 の最小の program）、CP_RB0 の退路、host 試験 (e)。**実機: A5 の ok** | p004、p007 の段 A（済） | 4〜6 LW |
 | p011 | A5s | session: pasid・動的な VMID・page table・BO・VM の flush、`drv_gpu_ops` の open〜SHARE・recovery（fault・stop）、停止の hook、GPU device の登録（renderer だけ）、capset の骨、host 試験 (d) の後半。**実機: A5s の ok、`/dev/gpu0` が出る** | p005 | 5〜7 LW |
-| p013 | A5c | 取り消しと復帰: run の期限（config）、session の状態機械、GFX の queue の reset と remap、compute の queue の reset、record の backup と流し直し、`isolate`、compute 専用の family の最小の経路、`vkhang`（`userland/tests/vkhang/`、無限 loop の fragment と compute）、host 試験 (k)。**実機: S2（app だけ DEVICE_LOST、desktop 継続、vkquad ok）、compute の queue の reset** | p011、p008（vkhang は Vulkan の app なので A9 の後に実機） | 6〜8 LW |
+| p013 | A5c | 取り消しと復帰: run の期限（config）、session の状態機械（11.3）、GFX の queue の reset（MQD の写しからの戻し、preamble の出し直し）、compute の queue の reset、record の backup と流し直し（fence の packet、2 回目の取り消し）、`isolate` と quarantine、compute 専用の family の最小の経路、`vkhang`（`userland/tests/vkhang/`、無限 loop の fragment と compute）、host 試験 (k)。**実機: vkhang の app だけ DEVICE_LOST、reset の後 desktop 継続、vkquad ok、compute の queue の reset** | p011、p008（vkhang は Vulkan の app なので A9 の後に実機） | 6〜8 LW |
 | p006 | A6〜A8 | client の surface と flip、vblank・flip・HPD の割り込み、cursor、display・scanout の ops と DISPLAY_CONTROL、display 付きの登録、release で GOP に戻す。**実機: A6〜A8 の ok（画面はユーザーの目視）** | p003（display 自体は PSP に依らない）、p011（登録） | 5〜8 LW |
 | [p007](phase007/phase.md) | — | compiler（P5）。driver との口は 9.2。段 A〜F は済、段 D の続きと P3 とのすり合わせ | なし（host） | 残り 2〜4 LW（p007 の記録） |
 | p008 | A9 | executor（nvrtx の写しと PM4 の hardware の部分）、記述子、draw・dispatch、renderer の node、run の期限、vkquad。**実機: A9 の ok、vkquad の pixel の一致** | p011・p007 | 8〜12 LW |
 | p009 | — | compositor が amdrdna で描く、`amdrdna.auto` の既定を上げる、reboot の後片付け。**実機: desktop** | p006・p008 | 2〜4 LW |
-| p014 | A10 | AtomBIOS の command の表の interpreter（dry run と oracle の host 試験 (j)）、AUX・DDC の engine、DPCD・EDID の読み、link の状態の readout、`display.query` の mode の一覧。**実機: A10 の ok（読むだけ）** | p006、p002（VBIOS） | 6〜9 LW |
-| p015 | A11〜A13 | VBIOS の command の呼び出し（power gating・pixel clock・encoder・transmitter・CRTC）、OTG・OPP・MPC・DPP・HUBP・DIG の組み立て、DP の link training、同じ mode の re-light、別の mode（DLG・TTU・watermark の固定小数、host 試験 (m)）、hotplug（同じ connector）、`display.mode`、戻し、HDMI（後半）。**実機: A11・A12・A13 の ok、underflow 0** | p014 | 14〜22 LW |
+| p014 | A10 | i915 の present の大きさの変更の扱いの確認、AtomBIOS の command の表の interpreter（dry run と oracle の host 試験 (j)、oracle は tarball の取得）、AUX・DDC の engine、DPCD・EDID の読み、link の状態の readout、`display.mode` の ENUMERATE・VALIDATE（boot の clock の中の mode だけ）。**実機: A10 の ok（読むだけ）** | p006、p002（VBIOS） | 7〜10 LW |
+| p015 | A11〜A13 | VBIOS の command の呼び出し（power gating・pixel clock・encoder・transmitter・CRTC）、OTG・OPP・MPC・DPP・HUBP・DIG の組み立て、DP の link training、同じ mode の re-light、別の mode（present の大きさの変更が引き金、DLG・TTU・watermark の固定小数、host 試験 (m)）、hotplug（同じ connector、短い pulse の再 training）、戻し、HDMI（後半）。**実機: A11・A12・A13 の ok、underflow 0** | p014 | 16〜24 LW |
 | p016（選択） | — | `reset`: mode1 reset ＋ asic_init（interpreter）＋ A2〜A5s の再実行 ＋ re-light。`sos alive` の時の自動の reset | p015、p013 | 6〜10 LW |
 | p010 | — | 規約の全文の見直し、出典の監査（13.3）、license の監査の表の完成（改訂 2 で読んだ file を含む） | p002〜p009・p011〜p015 | 2〜3 LW |
 
-必須（p002〜p015、p016 を除く）: 約 **79〜121 LW**（第 1 版の 43〜70 LW から、training・Tier F・KIQ と compute・取り消し・resizable BAR・動的な VMID・VBIOS・mode set の分が増えた。8 LW ≈ 2〜3 時間）。p016 は別に 6〜10 LW。順は実機の段の順（p002 → p003 → p004 → p012 → p005 → p011 → p008（p007 の済の成果）→ p006 → p009 → p013 → p014 → p015 → p010）。p006 は p003 の後に実機で先に確かめてもよい（display は PSP に依らない）。
+必須（p002〜p015 と p007 の残り、p016 を除く。表の数を足した物: 5+3+6+4+4+5+6+5+2+8+2+7+16+2 = 75 〜 6+5+8+6+6+7+8+8+4+12+4+10+24+3 = 111）: 約 **75〜111 LW**（review 反映版の 43〜70 LW から、training・Tier F・KIQ と compute・取り消し・動的な VMID・VBIOS・mode set の分が増えた。8 LW ≈ 2〜3 時間）。p016 は別に 6〜10 LW。順は実機の段の順（p002 → p003 → p004 → p012 → p005 → p011 → p008（p007 の済の成果）→ p006 → p009 → p013 → p014 → p015 → p010）。p006 は p003 の後に実機で先に確かめてもよい（display は PSP に依らない）。
 
-**残課題（p001 の clearance の後、p002 の最初に）**: 改訂 2 で読んだ正本の file を [amdrdna-license-audit.md](amdrdna-license-audit.md) に足す（`amdgpu_ids.c`・`amdgpu_job.c`・`amdgpu_ring.c`・`amdgpu_bios.c`・`amdgpu_atomfirmware.c`・`atom.c`・`atom.h`・`amd_acpi.h`・`smu_v11_0_pptable.h`・`smu_v11_0.c` の fan/thermal の関数・`gfx_v10_0.c` の KIQ と reset の関数・`v10_structs.h`・`display/dc/dml/dcn20/*`・`display/dc/link/*`・`display/dc/bios/*`・`display/dc/dce/dce_aux.c`・`dce_i2c_hw.c`）。
+**残課題（p001 の clearance の後、p002 の最初に）**: 改訂 2 で読んだ正本の file を [amdrdna-license-audit.md](amdrdna-license-audit.md) に足す（`amdgpu_ids.c`・`amdgpu_job.c`・`amdgpu_ring.c`・`amdgpu_fence.c`・`amdgpu_bios.c`・`amdgpu_atomfirmware.c`・`atom.c`・`atom.h`・`atombios.h`（VFCT）・`pm/swsmu/amdgpu_smu.c`・`display/dc/clk_mgr/dcn20/dcn20_clk_mgr.c`・`smu_v11_0_pptable.h`・`smu_v11_0.c` の fan/thermal の関数・`gfx_v10_0.c` の KIQ と reset の関数・`v10_structs.h`・`display/dc/dml/dcn20/*`・`display/dc/link/*`・`display/dc/bios/*`・`display/dc/dce/dce_aux.c`・`dce_i2c_hw.c`）。

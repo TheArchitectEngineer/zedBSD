@@ -257,3 +257,43 @@ Tier S の温度は「THM の register」とあるが register を名指しし�
 | major | 13（M1〜M13） |
 | minor | 15（m1〜m15） |
 | 計 | 31 |
+
+---
+
+## 対応（2026-10-15 夜 P3、design.md の改訂 2 の第 2 版（commit は phase.md）に反映。指摘ごとの扱い）
+
+| 指摘 | 扱い | design.md の場所 |
+| --- | --- | --- |
+| B1 | 直した: `stop_begin` は投入を止めるだけ、`stop_poll` は fence の完了で 0（nvrtx と同じ）。reset は run の期限・CP の例外・（期限までに終わらない）VM fault の時だけ。状態機械に正常の close の道（STOPPING → FINISHED）を足した | 11.3、11.4 |
+| B2 | 直した: OS の中の resize をやめ、UEFI の Re-Size BAR で firmware が広げた BAR0 を使う。bridge の窓と boot の framebuffer の固定の VA の理由を書き、PCI の層の差分の案を消した。決定 10 との関係は 15 節 #7 でユーザーへ | 1.2、3 節 A0・A2、5.2、5.5、14 節の 10、15 節 #7、16 節 p003 |
+| B3 | 直した: A3t の前に `kern_text_suspend`、後に `kern_text_resume`。IH は A2 で用意だけし enable は A3 の最初。A3t が済むまで下 32 MiB には何も置かない。panic の表示は止められないことを危険に | 2 節の 4・5、3 節、3.1、4.3t、5.2、6 節、14 節の 4 |
+| M1 | 直した: BUF_SWAP 0（退路の CP_RB0 も） | 7.3 |
+| M2 | 直した: WPTR_POLL_CNTL の EN = 0 と CP_PQ_STATUS の DOORBELL_ENABLE = 1、GFX の MAP_QUEUES の ME = 1、KIQ は MEC2 の pipe 1 queue 0、SET_RESOURCES の mask は map する compute の queue の bit、RLC_CP_SCHEDULERS は 1 回の書き込み | 7.2、7.3 |
+| M3 | 直した: GFX の reset は KIQ の packet だけ（safe mode・GRBM 無し）、compute の MMIO の poll は CG を入れないので safe mode 無し（入れる時は囲む）、MQD は init の写しから戻す、guilty の fence の packet は流し直す、guilty の session の全 record に error、2 回目は全部取り消し、reset の後は全 VMID を flush し直す、preamble は kernel が出し直す | 7.3、7.7、11.3、5.4、9.3 |
+| M4 | 直した: 11.1 に「共有の queue なので取り消しの間は desktop も止まる、WS250 の A は Future Work」を明記し 15 節 #13 でユーザーへ。executor は同期の 1 worker のまま写す（期限の起点 = ring に積んだ時）、流し直しの対象は主に kernel の packet と compute の family。VM fault の LOST にも期限を当てて reset の道へ。STUCK の `stop_poll` は EIO。VMID は全 ring の record の完了まで返さない | 11.1、11.2、11.3、11.4、9.4、5.4 |
+| M5 | 直した: `isolate` は FREED の時だけ 0、資源は quarantine（返さない。reset = NULL なので reboot まで）。通常の close（FINISHED）の道だけ資源を返す | 2 節の 6、10.1、11.3、11.4 |
+| M6 | 直した: VMID の記録を ring ごとの最後の fence と最後の flush の ring/fence に、取り上げは全 ring の完了（同じ ring だけなら即時）、flush の要否に「別の ring の flush が未完了」を足した。invalidate の engine の表（GFX 0・KIQ 1・compute 4〜7・SDMA0 8・CPU 17）と HDP の flush の bit（CP0、CP2 << pipe、SDMA0 0x400） | 5.1 (c)、5.3、5.4 |
+| M7 | 直した: Linux の順に寄せた（NumOfDisplays → driver の表 → pptable → RunBtc → allowed mask → EnableAllSmuFeatures → 読み戻し、per-feature は第 2 の試し）。版の不一致は log だけ。前例の無さを 14 節の 5 に | 4.4 |
+| M8 | 直した: A3 と A4 は 1 つの advance で続けて走る。Tier S（固定の duty と監視）を p004 の最小にし、Tier F は p012 | 3 節、4.4 の Tier S、16 節 p004・p012 |
+| M9 | 直した: A1v は attach でなく bring-up の thread の最初（ACPI の後）。ACPI の driver に生の table を署名で借りる公開の口の差分の案（`plan/ws039/proposed/acpi-table-lookup.diff`）を p002 の依存に。VFCT → ROM の BAR の順 | 3 節、3.2、4.5、15 節 #9、16 節 p002 |
+| M10 | 直した: `display.mode` は ENUMERATE・VALIDATE だけ。mode set の引き金は lease の持ち主の present・commit の大きさ・refresh と、別の output の claim と present。hotplug は同じ mode の re-light を優先し、出せない時だけ推奨の mode に替えて events を進める。i915 の扱いを p014 の最初に確かめる | 8.6 の範囲・9・10、3 節 A13 |
+| M11 | 直した: clock の部品を足した（A1 で DISPCLK・DPPCLK・DCFCLK を読み、boot の値の中の mode だけを ENUMERATE、VALIDATE は ERANGE）。A13 の例を変えた。危険に | 8.2 の 9、8.6 の 11、3 節 A13、14 節の 16 |
+| M12 | 直した: 「第 1 版のとおり」を全部本文に戻した（5.3・5.4・6・7.1・7.3 の退路・7.5・8.2〜8.5・9.2・9.3・13.1〜13.3）。版の呼び方（第 1 版 73a01c38b、review 反映版 ef8235e60、改訂 2）を冒頭に | 冒頭、各節 |
+| M13 | 直した: AtomBIOS の opcode は振る舞いから付けた独自の名前（`AMDRDNA_BYTECODE_COPY`）にし、mnemonic の例外は当てないと明記。oracle は tree に入れず tarball を取得して host で build する形に。DML の oracle はやめ実機の比較だけ | 8.6 の 1、13.4、15 節 #8 |
+| m1 | 直した: bit 23 = 512 GiB | 5.5 |
+| m2 | 直した: 出典は `atombios.h`、欄の幅、ImageLength 0 と長さの検査 | 4.5 |
+| m3 | 直した: directory の配列は +4 から、entry_count < 0x40、size ≥ 8 | 4.3t |
+| m4 | 直した: PLL・MC の空間は空の callback、BAR5 の外は PCIE の間接、IIO は別 | 8.6 の 1 |
+| m5 | 直した: 「11 節の案 B」→ 11.1、「S7」→ 12.5 の vkhang、「S2」→ 文で、「4.2 の表」→ 5.3 の engine の表 | 7.3、7.4、5.4、16 節 |
+| m6 | 直した: 合計を表から数え直した（75〜111 LW、p007 の残りを含む） | 16 節 |
+| m7 | 直した: compute の MQD の header 0xC0310800、rptr は register から | 7.4 |
+| m8 | 直した: 停止では compute を RESET、GFX を PREEMPT | 11.7 |
+| m9 | 直した: INTH = min(255, software_shutdown_temp)、INTL = max(0, min)、MP1 の sw の割り込みの enable、ROM_SMUIO 0x16・src 83。監視の thread の閾値と INTH の違い | 4.4 の 9 |
+| m10 | 直した: lock の順（投入・取り消し・display）と長い段の最中の遅れ | 2 節の 8 |
+| m11 | 直した: DP の短い pulse（HPD_RX）の再 training を A13 と takeover の間に | 8.6 の 9、3 節 A13 |
+| m12 | 直した: S5＋WOL の案を最初の試行の確認の項目に、OTG の CRC と underflow で機械的に確かめる案 | 12.5 |
+| m13 | 直した: UAPI の概要（group の文字、struct の形、STATUS・ADVANCE・VBIOS の ioctl、権限） | 3.2 |
+| m14 | 直した: A5c を線形の順の A9 の後に。p006 は p003 の後に A6・A7 を `disp.test` で登録無しに確かめられる | 3 節、16 節 |
+| m15 | 直した: Tier S の温度の register を名指し（CG_MULT_THERMAL_STATUS の ASIC_MAX_TEMP）、p012 の受け入れに metrics との比較 | 4.4 の Tier S、14 節の 5 |
+
+残る物（design の外、Phase で確かめる）: UEFI の Re-Size BAR が RX 5600 XT で何 GiB にするか、ACPI の table の口の差分（Q1）、PMFW が 3 bit の allowed mask で EnableAll を受けるか、CP_VMID_RESET の後の context の state、boot の DISPCLK の上限、10.0.10.3 の PCI の topology（Linux の dump で先に読める）。
