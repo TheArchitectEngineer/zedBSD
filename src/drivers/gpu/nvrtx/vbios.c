@@ -28,12 +28,24 @@
 
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
-/* The signatures an image of the chain may start with. */
+/*
+ * The signatures an image of the chain may start with.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/image.c (nvbios_imagen).
+ */
 #define VBIOS_SIGNATURE_PC		0xaa55U
 #define VBIOS_SIGNATURE_ALT		0xbb77U
 #define VBIOS_SIGNATURE_NV		0x4e56U
 
-/* The PCI data structure: where its pointer is, its signatures and the fields read. */
+/*
+ * The PCI data structure: where its pointer is, its signatures and the fields
+ * read.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/pcir.c (nvbios_pcirTe,
+ * nvbios_pcirTp).
+ */
 #define VBIOS_PCIR_POINTER_AT		0x18U
 #define VBIOS_PCIR_PCIR			0x52494350U
 #define VBIOS_PCIR_RGIS			0x53494752U
@@ -45,12 +57,27 @@
 #define VBIOS_PCIR_LAST			0x80U
 #define VBIOS_IMAGE_UNIT		512U
 
-/* NVIDIA's extension after the PCI data structure, which corrects the size and the last flag. */
+/*
+ * NVIDIA's extension after the PCI data structure, which corrects the size and
+ * the last flag.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/npde.c (nvbios_npdeTe,
+ * nvbios_npdeTp).
+ */
 #define VBIOS_NPDE_SIGNATURE		0x4544504eU
 #define VBIOS_NPDE_SIZE_AT		0x08U
 #define VBIOS_NPDE_INDICATOR_AT		0x0aU
 
-/* The image types: the PC image is checksummed; 0x70 has no extension; 0xE0 holds the falcon programs. */
+/*
+ * The image types: the PC image is checksummed; 0x70 has no extension; 0xE0
+ * holds the falcon programs.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadow.c (shadow_image),
+ * nvkm/subdev/bios/image.c (nvbios_imagen) and nvkm/subdev/bios/base.c
+ * (nvkm_bios_new).
+ */
 #define VBIOS_TYPE_PC			0x00U
 #define VBIOS_TYPE_NO_EXTENSION		0x70U
 #define VBIOS_TYPE_FALCON		0xe0U
@@ -58,21 +85,39 @@
 /* The most images followed, so a broken chain cannot loop. */
 #define VBIOS_IMAGE_MAX			16U
 
-/* The BIT table: its signature, the entry size and count fields, and the first entry. */
+/*
+ * The BIT table: its signature, the entry size and count fields, and the first
+ * entry.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/bios/bit.c
+ * (bit_entry) and nvkm/subdev/bios/pmu.c (nvbios_pmuTe).
+ */
 #define VBIOS_BIT_ENTRY_SIZE_AT		9U
 #define VBIOS_BIT_ENTRY_COUNT_AT	10U
 #define VBIOS_BIT_ENTRIES_AT		12U
 #define VBIOS_BIT_FALCON_ID		'p'
 #define VBIOS_BIT_FALCON_VERSION	2U
 
-/* The falcon program table's header fields and the FWSEC entry type. */
+/*
+ * The falcon program table's header fields and the FWSEC entry type.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/bios/pmu.c
+ * (nvbios_pmuTe, nvbios_pmuEp) and nvkm/subdev/gsp/fwsec.c
+ * (nvkm_gsp_fwsec_init).
+ */
 #define VBIOS_FALCON_HEADER_AT		1U
 #define VBIOS_FALCON_ENTRY_SIZE_AT	2U
 #define VBIOS_FALCON_COUNT_AT		3U
 #define VBIOS_FALCON_FWSEC		0x85U
 #define VBIOS_FALCON_DATA_AT		2U
 
-/* The FWSEC descriptor (version 2): the header word and the fields read. */
+/*
+ * The FWSEC descriptor (version 2): the header word and the fields read.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (union
+ * nvfw_falcon_ucode_desc, nvkm_gsp_fwsec_init).
+ */
 #define VBIOS_DESC_VALID		0x1U
 #define VBIOS_DESC_VERSION_SHIFT	8U
 #define VBIOS_DESC_VERSION_MASK		0xffU
@@ -93,6 +138,10 @@
  * sizes, the engine mask (16 bits), the ucode number and signature count
  * (a byte each) and the fuse versions the signatures are for (16 bits).
  * The signatures follow the fixed part, inside the descriptor's size.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (union
+ * nvfw_falcon_ucode_desc).
  */
 #define VBIOS_DESC3_SIGNATURE_AT	8U
 #define VBIOS_DESC3_INTERFACE_AT	12U
@@ -106,15 +155,36 @@
 #define VBIOS_DESC3_VERSIONS_AT		40U
 #define VBIOS_DESC3_BYTES		44U
 
-/* The block a falcon's DMA copies, which the version 3 program's parts are whole numbers of. */
+/*
+ * The block a falcon's DMA copies, which the version 3 program's parts are
+ * whole numbers of.
+ *
+ * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c
+ * (nvkm_gsp_fwsec_v3) and nvkm/falcon/ga102.c (ga102_flcn_fw_load).
+ */
 #define VBIOS_DMA_BLOCK			0x100U
 
-/* The engine bit of FWSEC on the GSP's falcon, and its fuse bank (one word per ucode number from 1). */
+/*
+ * The engine bit of FWSEC on the GSP's falcon, and its fuse bank (one word per
+ * ucode number from 1).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_fwsec_signature)
+ * and nvkm/subdev/gsp/fwsec.c (union nvfw_falcon_ucode_desc).
+ */
 #define VBIOS_ENGINE_GSP		0x400U
 #define VBIOS_FUSE_BANK_GSP		0x8241c0U
 #define VBIOS_FUSE_VERSION_BITS		16U
 
-/* The application interface table in the program's data memory, and the entry that maps the command block. */
+/*
+ * The application interface table in the program's data memory, and the entry
+ * that maps the command block.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (union nvfw_falcon_appif_hdr,
+ * union nvfw_falcon_appif, NVFW_FALCON_APPIF_ID_DMEMMAPPER,
+ * nvkm_gsp_fwsec_patch).
+ */
 #define VBIOS_APPIF_VERSION		1U
 #define VBIOS_APPIF_HEADER_AT		1U
 #define VBIOS_APPIF_ENTRY_SIZE_AT	2U
@@ -122,12 +192,24 @@
 #define VBIOS_APPIF_DMEM_MAPPER		4U
 #define VBIOS_APPIF_BASE_AT		4U
 
-/* The command block: where the input buffer is, and the command word. */
+/*
+ * The command block: where the input buffer is, and the command word.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (union
+ * nvfw_falcon_appif_dmemmapper).
+ */
 #define VBIOS_MAPPER_INPUT_AT		8U
 #define VBIOS_MAPPER_COMMAND_AT		44U
 #define VBIOS_MAPPER_BYTES		48U
 
-/* The input buffer: the VBIOS read request, then the FRTS region. */
+/*
+ * The input buffer: the VBIOS read request, then the FRTS region.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (struct nvfw_fwsec_frts_cmd,
+ * NVFW_FRTS_CMD_REGION_TYPE_FB, nvkm_gsp_fwsec_patch).
+ */
 #define VBIOS_INPUT_BYTES		44U
 #define VBIOS_READ_REQUEST_BYTES	24U
 #define VBIOS_READ_REQUEST_FLAGS	2U
@@ -153,6 +235,10 @@ static int vbios_fwsec_v3(const struct nvrtx_vbios *vbios, uint32_t descriptor, 
  * and the end of the last image, or EINVAL when the chain is broken or the
  * PC image's checksum is wrong.  The end may be past the bytes given: the
  * caller reads that much and walks again.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/shadow.c (shadow_image) and
+ * nvkm/subdev/bios/image.c (nvbios_imagen).
  */
 int
 nvrtx_vbios_walk(
@@ -222,6 +308,10 @@ nvrtx_vbios_walk(
  * ROM, ENOENT when the ROM has no FWSEC entry, ENOTSUP for a descriptor
  * version other than 2 (Turing) and 3 (Ampere and later), or EINVAL for
  * broken tables.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_init) and
+ * nvkm/subdev/bios/pmu.c (nvbios_pmuEp).
  */
 int
 nvrtx_vbios_fwsec(
@@ -363,6 +453,9 @@ nvrtx_vbios_fwsec(
  * interface table leads to the command block, whose command word and input
  * buffer (a VBIOS read request and, for FRTS, the region in 4 KiB units) are
  * written.  Returns EINVAL when a table or block lies outside the data.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_patch).
  */
 int
 nvrtx_fwsec_command(
@@ -448,6 +541,9 @@ nvrtx_fwsec_command(
  *
  * Returns 0 when the descriptor is not version 3 or its engine is not the
  * GSP's falcon, the only one FWSEC is signed for.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_fwsec_signature).
  */
 uint32_t
 nvrtx_fwsec_fuse_register(
@@ -472,6 +568,9 @@ nvrtx_fwsec_fuse_register(
  * signatures are stored for the fuse versions whose bits are set in the
  * descriptor, lowest first, and the one for that version is taken.  Returns
  * EINVAL when the ROM holds no signature for the GPU's version.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (ga102_gsp_fwsec_signature).
  */
 int
 nvrtx_fwsec_fuse_index(
@@ -520,6 +619,9 @@ nvrtx_fwsec_fuse_index(
  * The boot ROM checks the signature at its place in the data block before
  * it starts the program.  Returns EINVAL for another version, an index the
  * ROM does not hold, or a place outside the data block.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_v3).
  */
 int
 nvrtx_fwsec_sign(
@@ -618,6 +720,9 @@ vbios_get32(
  *
  * An address at or past the end of the first image is read in the falcon
  * image instead.  Returns EINVAL when the range is outside the bytes.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/base.c (nvbios_addr).
  */
 static int
 vbios_translate(
@@ -764,7 +869,13 @@ vbios_image(
 	return 0;
 }
 
-/* Finds the BIT table's signature in the first image. */
+/*
+ * Finds the BIT table's signature in the first image.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/bios/base.c (nvkm_bios_new) and
+ * nvkm/subdev/bios/bit.c (bit_entry).
+ */
 static int
 vbios_find_bit(
 	const struct nvrtx_vbios *vbios,
@@ -792,7 +903,12 @@ vbios_find_bit(
 	return ENOENT;
 }
 
-/* Reads a version 2 (Turing) FWSEC descriptor and finds its program. */
+/*
+ * Reads a version 2 (Turing) FWSEC descriptor and finds its program.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_v2).
+ */
 static int
 vbios_fwsec_v2(
 	const struct nvrtx_vbios *vbios,
@@ -851,6 +967,9 @@ vbios_fwsec_v2(
  * The program is the code then the data; the falcon copies both by DMA in
  * 256-byte blocks, so the code is a whole number of blocks and the data is
  * copied to its next block boundary.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/fwsec.c (nvkm_gsp_fwsec_v3).
  */
 static int
 vbios_fwsec_v3(
