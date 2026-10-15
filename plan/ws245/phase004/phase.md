@@ -2,7 +2,7 @@
 
 # ws245-p004: VBT・OpRegion・EDID（xd-vbt、xd-edid）
 
-Status: in-progress（2026-10-15 q1207 P1: 実装と host 試験は完了、受け入れ条件は全部 PASS。Q1 の merge と判定待ち）
+Status: cleared（2026-10-15 Q1: host だけの Phase。build warning 0、host 試験 regs 495・io 48・platform 80・vbt 119 で失敗 0、Linux の layout 193 と V2/V3/V4 の 12 表が一致。kernel の振る舞いは不変。main の merge 2d5b167aa）
 Parent: [WS245](../ws.md)
 Queue: q1207 / q1207-i01（P1、worktree p1、branch agent/p1-ws245、基点 main 6d07bee3d、途中で main dd1cd51a6・c76a71eda を merge）
 Approval: 2026-10-15 ユーザー「WS245は、ロールバックできる体制にしておいて、今から実装します。」「WS245はいつでもロールバックできるので、今マージします」

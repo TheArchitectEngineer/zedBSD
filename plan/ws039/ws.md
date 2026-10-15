@@ -87,7 +87,11 @@ RX 5600 XT は「RTX 機と入れ替え（10.0.30.5）」（i5-13400F の機械�
 - #5 executor: 「既定の案で（写す）」。
 - #6 reset: 「WS250 と同じく取り消しと復帰を入れる」（既定の案から変更。終わらない仕事はその session だけ DEVICE_LOST、queue の停止・作り直しで desktop は動き続ける、isolate、必要なら mode1 reset の実験）。
 - #7 display: 「mode set も入れる」（既定の案から変更。別の解像度・hotplug まで。AtomBIOS・DML 相当の扱いを設計に入れる。Guardrail の scanout の規則（GOP の出力先以外に driver の判断で scanout を始めない）は守る）。
-→ design.md の改訂が要る（#2〜#4・#6・#7）。
+- #8 takeover: 「既定の案で」（最初は amdrdna.disp.own=1 の opt-in、合格後に既定 on）。
+- #10 BAR: 「resizable BAR も使う」（既定の案から変更。PCI の層の resizable BAR の対応を設計に入れる）。
+- #11 VMID: 「動的に割り当てる」（既定の案から変更）。
+- #12 renderer だけの登録: 「既定の案で（許す）」。
+→ design.md の改訂が要る（#2〜#4・#6・#7・#10・#11、firmware の取得元は zedBSD-firmware）。p001 は改訂とレビューの後に cleared。
 
 ### ユーザーの追加の決定（2026-10-15 夕、原文）
 「もう1つサブエージェントを立てます。AMD RDNAドライバを書く既存WSの作業をします。このWSにも参照元などに関するガードレールをしっかり適用していきます。値の引用は明示すればOK、コード・シンボル名の引用は不可、ハードウェア操作手順の引用は明示すればOK、GPLなコードを引用しても、引用ならライセンスは影響しない、です。」

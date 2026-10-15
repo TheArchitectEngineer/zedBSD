@@ -57,7 +57,7 @@ Resume point: q1207（P1、2026-10-15 夜）: p004（xd-vbt・xd-edid、[phase00
 | [p001](phase001/phase.md) | 設計: Linux v6.8.12 の分岐（決定 3・4）と PRM（補助）から、display 11〜13 の model（platform の記述、pipe・transcoder・DDI・PHY（combo・Dekel・MG）・PLL・plane・watermark・DBUF・power well・DMC・AUX・GMBUS・VBT・opregion・Type-C の 2 つの流れ）、外向きの口と契約、データの表の引用の方法、書き直しの順序と Phase の分割、試験の道（host・T1 の 5330 passthrough・実機の一覧）、LW の見積もり。design-reviewer を 3 回通す | in-progress（design.md 改訂 3a。§7 の判断をユーザーに聞いてから clearance） |
 | [p002](phase002/phase.md) | 土台: register と表の header（記述の 9 行）、xd-io、xd-platform（RKL・ADL-S/RPL-S は記述の表だけ、`device.c` は #18 の回答まで不変）、host の試験の枠と own の register の model、own の型の分離、Gen9 の own への移設 | cleared（2026-10-15、(f) T1-699 PASS、(g) の実機は未実施） |
 | p003 | 口 `xd.h` と `struct i915_xd_ops`、旧 code への adapter `old-xd.c`、own の file の付け替え、`i915.display=xd|old`（kern/boot.c、Q1 の承認。既定 old） | planned（7 LW。merge はデモの後: design.md §7 #13） |
-| [p004](phase004/phase.md) | VBT（合成の fixture、4 platform の V2/V3/V4）・EDID | in-progress（2026-10-15 q1207 P1: 実装と host 試験完了、受け入れ全部 PASS（vbt 119/0、layout 193/0、V2〜V4 12 表）。Q1 の判定待ち） |
+| [p004](phase004/phase.md) | VBT（合成の fixture、4 platform の V2/V3/V4）・EDID | cleared（2026-10-15、host 試験、main 2d5b167aa） |
 | p005 | AUX・GMBUS | planned（3 LW、p006 の後） |
 | p006 | power（W1・W3、TGL の pcode の well、IRQ の hook、DC・DC9）・DMC（v2、載せる間の well）・clock（CDCLK の 4 表と crawl/relock、combo DPLL、TC PLL）・xd-tc の register の部分 | planned（8 LW） |
 | p007 | DDI（combo PHY、swing、DDI_BUF_CTL、DP_TP）・DP（訓練）・panel（PPS、backlight） | planned（6 LW） |
