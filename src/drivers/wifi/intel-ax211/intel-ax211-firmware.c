@@ -73,6 +73,7 @@ static const uint8_t ax211_ucode_digest[32] = {
 	0x85U, 0x15U, 0x32U, 0x5eU, 0xebU, 0x23U, 0xf7U, 0x88U,
 	0xc7U, 0xabU, 0xe9U, 0x46U, 0x3dU, 0x1aU, 0x15U, 0x14U};
 
+/* The SHA-256 digest of the pinned PNVM file, measured as above. */
 static const uint8_t ax211_pnvm_digest[32] = {
 	0xefU, 0xa9U, 0x72U, 0x6dU, 0x4aU, 0x9dU, 0x44U, 0xb8U,
 	0x3fU, 0xc9U, 0xa1U, 0x4cU, 0xedU, 0xcfU, 0x30U, 0x6aU,
@@ -80,7 +81,6 @@ static const uint8_t ax211_pnvm_digest[32] = {
 	0xb9U, 0xe9U, 0x2dU, 0xf4U, 0xecU, 0x03U, 0x2bU, 0x2aU};
 
 static uint32_t ax211_rotate_right(uint32_t value, unsigned amount);
-
 static uint32_t ax211_get_be32(const uint8_t *bytes);
 static void ax211_put_be32(uint8_t *bytes, uint32_t value);
 static void ax211_sha256_transform(struct ax211_sha256_context *context, const uint8_t block[64]);
@@ -96,22 +96,27 @@ static int ax211_parse_ucode(const uint8_t *bytes, size_t length, struct intel_a
 static int ax211_inspect_pnvm(const uint8_t *bytes, size_t length, struct intel_ax211_pnvm_inventory *inventory);
 
 /*
- * Implements the drv intel ax211 firmware files release operation.
+ * Frees the two files and returns the set to its empty state.
  */
 void
 drv_intel_ax211_firmware_files_release(
 	struct intel_ax211_firmware_files *files)
 {
-	/* Handles the files availability. */
+	/* Nothing to release without a set. */
 	if (files == NULL)
 		return;
+
+	/* Clears and frees both buffers, then the bookkeeping. */
 	ax211_release_bytes(&files->ucode_bytes, INTEL_AX211_FIRMWARE_SIZE);
 	ax211_release_bytes(&files->pnvm_bytes, INTEL_AX211_PNVM_FILE_SIZE);
 	kern_memset(files, 0, sizeof(*files));
 }
 
 /*
- * Implements the drv intel ax211 firmware files load operation.
+ * Loads, verifies and parses the pinned firmware image and PNVM file.
+ *
+ * The files are read into a candidate set first; the caller's set is replaced
+ * only when both files were read, matched their digests and parsed.
  */
 int
 drv_intel_ax211_firmware_files_load(
@@ -120,30 +125,31 @@ drv_intel_ax211_firmware_files_load(
 	struct intel_ax211_firmware_files candidate;
 	int owned;
 	int error;
+	int parsed;
 
-	/* Checks the operation status. */
+	/* Learns whether the caller's set holds an earlier load. */
 	error = ax211_files_state(files, &owned);
 	if (error != 0)
 		return error;
-	kern_memset(&candidate, 0, sizeof(candidate));
 
-	/* Checks the operation status. */
+	/* Reads the firmware image and checks its digest. */
+	kern_memset(&candidate, 0, sizeof(candidate));
 	error = ax211_read_exact_file(
 		INTEL_AX211_FIRMWARE_VFS_PATH, INTEL_AX211_FIRMWARE_SIZE,
 		ax211_ucode_digest, &candidate.ucode_bytes);
+
+	/* Parses the image; a malformed image is an illegal byte sequence. */
 	if (error == 0) {
 		candidate.ucode_size = INTEL_AX211_FIRMWARE_SIZE;
-
-		/* Checks the ax211 parse ucode result. */
-		if (ax211_parse_ucode(
-			    candidate.ucode_bytes, candidate.ucode_size,
-			    &candidate.ucode_manifest) != INTEL_AX211_SUCCESS)
+		parsed = ax211_parse_ucode(
+			candidate.ucode_bytes, candidate.ucode_size,
+			&candidate.ucode_manifest);
+		if (parsed != INTEL_AX211_SUCCESS)
 			error = EILSEQ;
 	}
 
-	/* Checks the operation status. */
+	/* Reads the PNVM file and checks its digest. */
 	if (error == 0) {
-		/* Checks the operation status. */
 		error = ax211_read_exact_file(
 			INTEL_AX211_PNVM_VFS_PATH, INTEL_AX211_PNVM_FILE_SIZE,
 			ax211_pnvm_digest, &candidate.pnvm_bytes);
@@ -151,29 +157,34 @@ drv_intel_ax211_firmware_files_load(
 			candidate.pnvm_size = INTEL_AX211_PNVM_FILE_SIZE;
 	}
 
-	/* Checks the operation status. */
-	if (error == 0 &&
-	    ax211_inspect_pnvm(candidate.pnvm_bytes, candidate.pnvm_size,
-			       &candidate.pnvm_inventory) != INTEL_AX211_SUCCESS)
-		error = EILSEQ;
+	/*
+	 * Inspects the PNVM file; a malformed file is an illegal byte sequence.
+	 */
+	if (error == 0) {
+		parsed = ax211_inspect_pnvm(candidate.pnvm_bytes, candidate.pnvm_size,
+					    &candidate.pnvm_inventory);
+		if (parsed != INTEL_AX211_SUCCESS)
+			error = EILSEQ;
+	}
+
+	/* Discards the candidate and reports why it could not be loaded. */
 	if (error != 0) {
 		drv_intel_ax211_firmware_files_release(&candidate);
-
-		/* Failed. */
 		return error;
 	}
 
-	/* Handles the owned condition. */
+	/* Replaces an earlier load with the candidate. */
 	if (owned)
 		drv_intel_ax211_firmware_files_release(files);
 	*files = candidate;
-	/* Succeeded. */
+
+	/* Succeeded: the caller's set holds the verified files. */
 	return 0;
 }
 
 #ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
 /*
- * Implements the drv intel ax211 firmware loader test sha256 operation.
+ * Computes the SHA-256 digest of a buffer for the host test.
  */
 int
 drv_intel_ax211_firmware_loader_test_sha256(
@@ -183,35 +194,40 @@ drv_intel_ax211_firmware_loader_test_sha256(
 {
 	int error;
 
-	/* Obtains the ax211 sha256 result. */
+	/* Computes the digest. */
 	error = ax211_sha256(data, length, digest);
+	if (error != 0)
+		return error;
 
-	/* Returns the computed result. */
-	return error;
+	/* Succeeded. */
+	return 0;
 }
 #endif
 
-/* Supports the ax211 rotate right operation. */
+/* Rotates a 32-bit word right by the given number of bits. */
 static uint32_t
 ax211_rotate_right(
 	uint32_t value,
 	unsigned amount)
 {
-	/* Returns the computed result. */
+	/*
+	 * Combines the bits shifted out on the right with the bits shifted in
+	 * on the left.
+	 */
 	return (value >> amount) | (value << (32U - amount));
 }
 
-/* Supports the ax211 get be32 operation. */
+/* Reads a 32-bit big-endian value. */
 static uint32_t
 ax211_get_be32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, most significant first. */
 	return ((uint32_t)bytes[0] << 24) | ((uint32_t)bytes[1] << 16) |
 	       ((uint32_t)bytes[2] << 8) | (uint32_t)bytes[3];
 }
 
-/* Supports the ax211 put be32 operation. */
+/* Stores a 32-bit value in big-endian byte order. */
 static void
 ax211_put_be32(
 	uint8_t *bytes,
@@ -223,34 +239,41 @@ ax211_put_be32(
 	bytes[3] = (uint8_t)value;
 }
 
-/* Supports the ax211 sha256 transform operation. */
+/* Mixes one 64-byte block into the hash state. */
 static void
 ax211_sha256_transform(
 	struct ax211_sha256_context *context,
 	const uint8_t block[64])
 {
-	uint32_t s0_local, s1_local;
-	uint32_t choose_local, majority_local, s0_local1, s1_local2,
-		temporary1_local, temporary2_local;
+	uint32_t schedule_sigma0;
+	uint32_t schedule_sigma1;
+	uint32_t sum0;
+	uint32_t sum1;
+	uint32_t choose;
+	uint32_t majority;
+	uint32_t temporary1;
+	uint32_t temporary2;
 	uint32_t schedule[64];
 	uint32_t a, b, c, d, e, f, g, h;
 	unsigned index;
 
-	/* Process each remaining element. */
+	/* Takes the first 16 words of the message schedule from the block. */
 	for (index = 0; index < 16U; index++)
 		schedule[index] = ax211_get_be32(block + index * 4U);
-	/* Process each remaining element. */
+
+	/* Extends the schedule to 64 words. */
 	for (; index < 64U; index++) {
-		s0_local = ax211_rotate_right(schedule[index - 15U], 7U) ^
-			   ax211_rotate_right(schedule[index - 15U], 18U) ^
-			   (schedule[index - 15U] >> 3);
-		s1_local = ax211_rotate_right(schedule[index - 2U], 17U) ^
-			   ax211_rotate_right(schedule[index - 2U], 19U) ^
-			   (schedule[index - 2U] >> 10);
-		schedule[index] = schedule[index - 16U] + s0_local +
-				  schedule[index - 7U] + s1_local;
+		schedule_sigma0 = ax211_rotate_right(schedule[index - 15U], 7U) ^
+				  ax211_rotate_right(schedule[index - 15U], 18U) ^
+				  (schedule[index - 15U] >> 3);
+		schedule_sigma1 = ax211_rotate_right(schedule[index - 2U], 17U) ^
+				  ax211_rotate_right(schedule[index - 2U], 19U) ^
+				  (schedule[index - 2U] >> 10);
+		schedule[index] = schedule[index - 16U] + schedule_sigma0 +
+				  schedule[index - 7U] + schedule_sigma1;
 	}
 
+	/* Starts the eight working variables from the hash state. */
 	a = context->state[0];
 	b = context->state[1];
 	c = context->state[2];
@@ -259,30 +282,32 @@ ax211_sha256_transform(
 	f = context->state[5];
 	g = context->state[6];
 	h = context->state[7];
-	/* Process each remaining element. */
+
+	/* Runs the 64 rounds of the compression function. */
 	for (index = 0; index < 64U; index++) {
-		s1_local2 = ax211_rotate_right(e, 6U) ^
-			    ax211_rotate_right(e, 11U) ^
-			    ax211_rotate_right(e, 25U);
-		choose_local = (e & f) ^ (~e & g);
-		temporary1_local = h + s1_local2 + choose_local +
-				   ax211_sha256_constants[index] +
-				   schedule[index];
-		s0_local1 = ax211_rotate_right(a, 2U) ^
-			    ax211_rotate_right(a, 13U) ^
-			    ax211_rotate_right(a, 22U);
-		majority_local = (a & b) ^ (a & c) ^ (b & c);
-		temporary2_local = s0_local1 + majority_local;
+		sum1 = ax211_rotate_right(e, 6U) ^
+		       ax211_rotate_right(e, 11U) ^
+		       ax211_rotate_right(e, 25U);
+		choose = (e & f) ^ (~e & g);
+		temporary1 = h + sum1 + choose +
+			     ax211_sha256_constants[index] +
+			     schedule[index];
+		sum0 = ax211_rotate_right(a, 2U) ^
+		       ax211_rotate_right(a, 13U) ^
+		       ax211_rotate_right(a, 22U);
+		majority = (a & b) ^ (a & c) ^ (b & c);
+		temporary2 = sum0 + majority;
 		h = g;
 		g = f;
 		f = e;
-		e = d + temporary1_local;
+		e = d + temporary1;
 		d = c;
 		c = b;
 		b = a;
-		a = temporary1_local + temporary2_local;
+		a = temporary1 + temporary2;
 	}
 
+	/* Adds the working variables into the hash state. */
 	context->state[0] += a;
 	context->state[1] += b;
 	context->state[2] += c;
@@ -291,23 +316,27 @@ ax211_sha256_transform(
 	context->state[5] += f;
 	context->state[6] += g;
 	context->state[7] += h;
+
+	/* Clears the schedule, which holds message words. */
 	drv_intel_ax211_scrub(schedule, sizeof(schedule));
 }
 
-/* Supports the ax211 sha256 init operation. */
+/* Starts a SHA-256 computation from the initial hash values. */
 static void
 ax211_sha256_init(
 	struct ax211_sha256_context *context)
 {
+	/* The initial hash values of SHA-256 (FIPS 180-4, 5.3.3). */
 	static const uint32_t initial[8] = {
 		0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU,
 		0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U};
 
+	/* Clears the state and loads the initial hash values. */
 	kern_memset(context, 0, sizeof(*context));
 	kern_memcpy(context->state, initial, sizeof(initial));
 }
 
-/* Supports the ax211 sha256 update operation. */
+/* Adds bytes to a SHA-256 computation. */
 static int
 ax211_sha256_update(
 	struct ax211_sha256_context *context,
@@ -318,36 +347,39 @@ ax211_sha256_update(
 	size_t amount;
 	size_t remaining = length;
 
-	/* Handles the bytes availability. */
+	/* Refuses a missing buffer of nonzero length. */
 	if (length != 0U && bytes == NULL)
 		return EINVAL;
 
-	/* Handles the uint64 t condition. */
+	/* Refuses a total length whose bit count overflows 64 bits. */
 	if ((uint64_t)length > UINT64_MAX / 8U - context->length)
 		return EOVERFLOW;
+
+	/*
+	 * Counts the bytes, then fills the block buffer and hashes each full
+	 * block.
+	 */
 	context->length += (uint64_t)length;
-	/* Continue while the operation condition remains true. */
 	while (remaining != 0U) {
 		available = sizeof(context->block) - context->used;
 		amount = remaining < available ? remaining : available;
-
 		kern_memcpy(context->block + context->used, bytes, amount);
 		context->used += amount;
 		bytes += amount;
 		remaining -= amount;
 
-		/* Handles the context condition. */
+		/* Hashes the block once it is full. */
 		if (context->used == sizeof(context->block)) {
 			ax211_sha256_transform(context, context->block);
 			context->used = 0U;
 		}
 	}
 
-	/* Succeeded. */
+	/* Succeeded: the bytes are part of the computation. */
 	return 0;
 }
 
-/* Supports the ax211 sha256 final operation. */
+/* Pads the last block, hashes it and writes the digest. */
 static void
 ax211_sha256_final(
 	struct ax211_sha256_context *context,
@@ -356,9 +388,13 @@ ax211_sha256_final(
 	uint64_t bit_length = context->length * 8U;
 	unsigned index;
 
+	/* Appends the one bit that ends the message. */
 	context->block[context->used++] = 0x80U;
 
-	/* Handles the context condition. */
+	/*
+	 * Hashes the block first when the length no longer fits behind the end
+	 * bit.
+	 */
 	if (context->used > 56U) {
 		kern_memset(context->block + context->used, 0,
 		       sizeof(context->block) - context->used);
@@ -366,21 +402,26 @@ ax211_sha256_final(
 		context->used = 0U;
 	}
 
+	/*
+	 * Zero-fills up to the length field and stores the bit length
+	 * big-endian.
+	 */
 	kern_memset(context->block + context->used, 0, 56U - context->used);
-	/* Process each remaining element. */
 	for (index = 0; index < 8U; index++) {
 		context->block[63U - index] =
 			(uint8_t)(bit_length >> (index * 8U));
 	}
 
+	/* Hashes the last block. */
 	ax211_sha256_transform(context, context->block);
-	/* Process each remaining element. */
+
+	/* Writes the digest big-endian and clears the state. */
 	for (index = 0; index < 8U; index++)
 		ax211_put_be32(digest + index * 4U, context->state[index]);
 	drv_intel_ax211_scrub(context, sizeof(*context));
 }
 
-/* Supports the ax211 sha256 operation. */
+/* Computes the SHA-256 digest of a buffer. */
 static int
 ax211_sha256(
 	const void *data,
@@ -390,27 +431,38 @@ ax211_sha256(
 	struct ax211_sha256_context context;
 	int error;
 
-	/* Handles the digest availability. */
+	/*
+	 * Refuses a missing digest buffer, or missing data of nonzero length.
+	 */
 	if (digest == NULL || (data == NULL && length != 0U))
 		return EINVAL;
+
+	/* Starts the computation. */
 	ax211_sha256_init(&context);
 
-	/* Checks the operation status. */
+	/*
+	 * Hashes the data, and finishes on success or clears the state on
+	 * failure.
+	 */
 	error = ax211_sha256_update(&context, data, length);
-	if (error == 0)
+	if (error == 0) {
 		ax211_sha256_final(&context, digest);
-	else
+	} else {
 		drv_intel_ax211_scrub(&context, sizeof(context));
+	}
 
-	/* Reports the failure. */
+	/* Reports why the data could not be hashed. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: the digest is written. */
 	return 0;
 }
 
-/* Supports the ax211 digest matches operation. */
+/*
+ * Checks a buffer against its expected SHA-256 digest: 0 on a match, EILSEQ
+ * otherwise.
+ */
 static int
 ax211_digest_matches(
 	const uint8_t *bytes,
@@ -422,26 +474,36 @@ ax211_digest_matches(
 	unsigned index;
 	int error;
 
-	/* Checks the operation status. */
+	/* Computes the digest of the buffer. */
 	error = ax211_sha256(bytes, length, actual);
 	if (error != 0)
 		return error;
-	/* Process each remaining element. */
+
+	/*
+	 * Compares every byte, so the time taken does not depend on where they
+	 * differ.
+	 */
 	for (index = 0; index < sizeof(actual); index++)
 		difference |= (uint8_t)(actual[index] ^ expected[index]);
+
+	/* Clears the computed digest. */
 	drv_intel_ax211_scrub(actual, sizeof(actual));
 
-	/* Returns the computed result. */
-	return difference == 0U ? 0 : EILSEQ;
+	/* Refuses a buffer whose digest differs. */
+	if (difference != 0U)
+		return EILSEQ;
+
+	/* Succeeded: the buffer is the expected file. */
+	return 0;
 }
 
-/* Supports the ax211 release bytes operation. */
+/* Clears and frees a file buffer and forgets it. */
 static void
 ax211_release_bytes(
 	uint8_t **bytes,
 	size_t exact_size)
 {
-	/* Handles the bytes availability. */
+	/* Only a buffer that is held is freed. */
 	if (*bytes != NULL) {
 		drv_intel_ax211_scrub(*bytes, exact_size);
 		kern_free(*bytes);
@@ -449,7 +511,9 @@ ax211_release_bytes(
 	}
 }
 
-/* Supports the ax211 files state operation. */
+/*
+ * Learns whether a file set holds an earlier load: 0 and *owned set, or EINVAL.
+ */
 static int
 ax211_files_state(
 	const struct intel_ax211_firmware_files *files,
@@ -458,34 +522,42 @@ ax211_files_state(
 	int ucode_present;
 	int pnvm_present;
 
-	/* Handles the files availability. */
+	/* Refuses missing arguments. */
 	if (files == NULL || owned == NULL)
 		return EINVAL;
-	ucode_present = files->ucode_bytes != NULL;
 
-	/* Handles the ucode present condition. */
-	pnvm_present = files->pnvm_bytes != NULL;
+	/* Notes which of the two buffers are held. */
+	ucode_present = 0;
+	if (files->ucode_bytes != NULL)
+		ucode_present = 1;
+	pnvm_present = 0;
+	if (files->pnvm_bytes != NULL)
+		pnvm_present = 1;
+
+	/* An empty set owns nothing, and its sizes must be zero too. */
 	if (!ucode_present && !pnvm_present) {
 		*owned = 0;
-		/* Returns the computed result. */
-		return files->ucode_size == 0U && files->pnvm_size == 0U
-			       ? 0
-			       : EINVAL;
+		if (files->ucode_size != 0U || files->pnvm_size != 0U)
+			return EINVAL;
+		return 0;
 	}
 
-	/* Handles the ucode present condition. */
-	if (!ucode_present || !pnvm_present ||
+	/*
+	 * Refuses a set that holds one file only, or files of the wrong size.
+	 */
+	if (!ucode_present ||
+	    !pnvm_present ||
 	    files->ucode_size != INTEL_AX211_FIRMWARE_SIZE ||
 	    files->pnvm_size != INTEL_AX211_PNVM_FILE_SIZE) {
-		/* Failed. */
 		return EINVAL;
 	}
+
+	/* Succeeded: the set owns an earlier load. */
 	*owned = 1;
-	/* Succeeded. */
 	return 0;
 }
 
-/* Supports the ax211 read exact file operation. */
+/* Reads a file of an exact size and checks its digest. */
 static int
 ax211_read_exact_file(
 	const char *path,
@@ -502,36 +574,42 @@ ax211_read_exact_file(
 	int error;
 	int close_error;
 
-	/* Handles the path availability. */
+	/* Refuses missing arguments. */
 	if (path == NULL || digest == NULL || bytes == NULL)
 		return EINVAL;
-	kern_memset(&lease, 0, sizeof(lease));
 
-	/* Checks the operation status. */
+	/* Opens the file and takes a lease on its content. */
+	kern_memset(&lease, 0, sizeof(lease));
 	error = file_openat(&kern_cwdinfo, path, O_RDONLY | O_NOFOLLOW, 0,
 			    &file);
 	if (error == 0) {
-		/* Checks the operation status. */
 		error = file_content_lease_begin(file, &lease);
 		if (error == 0)
 			lease_active = 1;
 	}
 
-	/* Checks the operation status. */
+	/* Refuses a file of another size. */
 	if (error == 0 &&
 	    (lease.size < 0 || (uint64_t)lease.size != (uint64_t)exact_size))
 		error = EINVAL;
+
+	/* Allocates the buffer for the whole file. */
 	if (error == 0) {
-		/* Handles the result availability. */
 		result = kern_malloc(exact_size);
 		if (result == NULL)
 			error = ENOMEM;
 	}
+
+	/* Reads the file until the buffer is full. */
 	while (error == 0 && offset < exact_size) {
-		/* Checks the remaining item count. */
 		count = file_content_lease_pread(&lease, result + offset,
 						 exact_size - offset,
 						 (off_t)offset);
+
+		/*
+		 * A failed read, an empty read or an overlong read ends the
+		 * loop.
+		 */
 		if (count < 0)
 			error = (int)-count;
 		else if (count == 0 || (size_t)count > exact_size - offset)
@@ -540,21 +618,25 @@ ax211_read_exact_file(
 			offset += (size_t)count;
 	}
 
-	/* Handles the lease active condition. */
+	/* Ends the lease. */
 	if (lease_active)
 		file_content_lease_end(&lease);
 
-	/* Handles the file availability. */
+	/*
+	 * Closes the file; a close error counts only when nothing failed
+	 * before.
+	 */
 	if (file != NULL) {
-		/* Checks the operation status. */
 		close_error = file_close(file);
 		if (error == 0 && close_error != 0)
 			error = close_error;
 	}
 
-	/* Checks the operation status. */
+	/* Checks the digest of what was read. */
 	if (error == 0)
 		error = ax211_digest_matches(result, exact_size, digest);
+
+	/* Frees the buffer on failure, or hands it to the caller. */
 	if (error != 0)
 		ax211_release_bytes(&result, exact_size);
 	else
@@ -568,7 +650,9 @@ ax211_read_exact_file(
 	return 0;
 }
 
-/* Supports the ax211 parse ucode operation. */
+/*
+ * Parses the firmware image, through the host test's parser in the host build.
+ */
 static int
 ax211_parse_ucode(
 	const uint8_t *bytes,
@@ -579,26 +663,26 @@ ax211_parse_ucode(
 
 #ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
 
-	/* Obtains the intel ax211 firmware loader host parse result. */
+	/* Parses the image with the host test's parser. */
 	error =
 		intel_ax211_firmware_loader_host_parse(bytes, length, manifest);
 
-	/* Failed. */
+	/* Reports the parser's result. */
 	return error;
 
 #else
 
-	/* Obtains the drv intel ax211 firmware parse result. */
+	/* Parses the image. */
 	error =
 		drv_intel_ax211_firmware_parse(bytes, length, manifest);
 
-	/* Failed. */
+	/* Reports the parser's result. */
 	return error;
 
 #endif
 }
 
-/* Supports the ax211 inspect pnvm operation. */
+/* Inspects the PNVM file, through the host test's code in the host build. */
 static int
 ax211_inspect_pnvm(
 	const uint8_t *bytes,
@@ -609,20 +693,20 @@ ax211_inspect_pnvm(
 
 #ifdef INTEL_AX211_FIRMWARE_LOADER_HOST_TEST
 
-	/* Obtains the intel ax211 firmware loader host inspect pnvm result. */
+	/* Inspects the file with the host test's code. */
 	error = intel_ax211_firmware_loader_host_inspect_pnvm(
 		bytes, length, inventory);
 
-	/* Failed. */
+	/* Reports the inspection's result. */
 	return error;
 
 #else
 
-	/* Obtains the drv intel ax211 pnvm inspect result. */
+	/* Inspects the file. */
 	error =
 		drv_intel_ax211_pnvm_inspect(bytes, length, inventory);
 
-	/* Failed. */
+	/* Reports the inspection's result. */
 	return error;
 
 #endif

@@ -42,6 +42,7 @@
 #define INTEL_AX211_RX_PROTECTION_NONE 0U
 #define INTEL_AX211_RX_PROTECTION_CCMP 1U
 
+/* The results of the receive decoder. */
 enum intel_ax211_rx_result {
 	INTEL_AX211_RX_OK = 0,
 	INTEL_AX211_RX_INVALID = 1,
@@ -54,7 +55,11 @@ enum intel_ax211_rx_result {
 	INTEL_AX211_RX_STALE = 8
 };
 
-/* The frame pointer refers to the caller-owned output buffer. */
+/*
+ * One decoded received frame with its radio information and protection.
+ *
+ * The frame pointer refers to the caller-owned output buffer.
+ */
 struct intel_ax211_rx_delivery {
 	const uint8_t *frame;
 	size_t length;

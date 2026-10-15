@@ -49,7 +49,7 @@
  * - TRANSMIT_CHAINS (1/0x98, v1, 4 bytes): the transmit chain mask from the
  *   NVM answer.
  * - COEXISTENCE (1/0x9b, v6, 8 bytes): the Bluetooth coexistence mode word,
- *   sent as 3, the mode coex.h calls BT_COEX_WIFI.
+ *   sent as 3 (BT_COEX_WIFI).
  * - SOC_CONFIG (2/0x01, v2, 8 bytes): the platform flags 0x0a and the
  *   crystal start-up latency of 12000 (see below).
  * - LATENCY_TOLERANCE (1/0xee, v3, 32 bytes): sent only when the PCI Express
@@ -170,6 +170,7 @@
 #define INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT 110U
 #define INTEL_AX211_RUNTIME_COUNTRY_STATUS_MAX 8U
 
+/* The results of the runtime codecs and of the runtime sequence. */
 enum intel_ax211_runtime_result {
 	INTEL_AX211_RUNTIME_OK = 0,
 	INTEL_AX211_RUNTIME_INVALID = 1,
@@ -185,6 +186,7 @@ enum intel_ax211_runtime_result {
 	INTEL_AX211_RUNTIME_OVERSIZED = 11
 };
 
+/* The steps of the runtime sequence, in the order they are sent. */
 enum intel_ax211_runtime_step {
 	INTEL_AX211_RUNTIME_STEP_TRANSMIT_CHAINS = 0,
 	INTEL_AX211_RUNTIME_STEP_COEXISTENCE = 1,
@@ -198,6 +200,10 @@ enum intel_ax211_runtime_step {
 	INTEL_AX211_RUNTIME_STEP_DONE = 9
 };
 
+/*
+ * What the runtime sequence depends on: the chains and regulatory mode from the
+ * NVM answer, whether LTR is enabled, and the image's capability bits.
+ */
 struct intel_ax211_runtime_profile {
 	uint8_t tx_chain_mask;
 	uint8_t rx_chain_mask;
@@ -207,6 +213,7 @@ struct intel_ax211_runtime_profile {
 	uint32_t capabilities[5];
 };
 
+/* One encoded runtime command, ready for the command transaction. */
 struct intel_ax211_runtime_command {
 	uint8_t group;
 	uint8_t opcode;
@@ -217,6 +224,7 @@ struct intel_ax211_runtime_command {
 	size_t payload_length;
 };
 
+/* The decoded answer to the country update. */
 struct intel_ax211_runtime_mcc {
 	uint32_t status;
 	uint16_t mcc;
@@ -228,6 +236,12 @@ struct intel_ax211_runtime_mcc {
 	uint32_t channel[INTEL_AX211_RUNTIME_COUNTRY_CHANNEL_LIMIT];
 };
 
+/*
+ * The runtime sequence of one firmware epoch.
+ *
+ * It is active while it waits on a step and terminal once it completed or
+ * timed out; each step has its own deadline.
+ */
 struct intel_ax211_runtime_state {
 	struct intel_ax211_runtime_profile profile;
 	uint32_t generation;

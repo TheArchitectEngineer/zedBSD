@@ -46,14 +46,15 @@
 #define AX211_TX_FLAG_ENCRYPT_DISABLE 0x0002U
 #define AX211_TX_FLAG_HIGH_PRIORITY 0x0004U
 
+/* The offload-assist word: the MAC header length in words and the padding. */
 #define AX211_TX_OFFLOAD_MAC_HEADER_SHIFT 8U
 #define AX211_TX_OFFLOAD_MAC_HEADER_MASK 0x1fU
 #define AX211_TX_OFFLOAD_PADDING 0x2000U
 
+/* The rate word: the two basic rates and the first antenna. */
 #define AX211_TX_RATE_1M_CCK 0U
 #define AX211_TX_RATE_6M_OFDM 0x0100U
 #define AX211_TX_RATE_ANTENNA_A 0x4000U
-
 /*
  * The 802.11 frame control field and the CCMP header.
  *
@@ -74,9 +75,9 @@
 #define AX211_TX_PROTECTED 0x4000U
 #define AX211_TX_ORDER 0x8000U
 
+/* The CCMP header length and its Ext IV bit. */
 #define AX211_TX_CCMP_HEADER_SIZE 8U
 #define AX211_TX_CCMP_EXTENDED_IV 0x20U
-
 /*
  * The transmit completion notification (version 7, 48 bytes for one frame).
  *
@@ -109,7 +110,8 @@ static void ax211_tx_put_le32(uint8_t *bytes, uint32_t value);
 static uint32_t ax211_tx_get_le32(const uint8_t *bytes);
 
 /*
- * Implements the drv intel ax211 tx api89 validate operation.
+ * Checks that the pinned image lists the transmit command and its completion
+ * in the layouts used here.
  */
 int
 drv_intel_ax211_tx_api89_validate(
@@ -118,29 +120,31 @@ drv_intel_ax211_tx_api89_validate(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing command table. */
 	if (table == NULL)
 		return INTEL_AX211_TX_INVALID;
 
-	/* Checks the operation result. */
+	/* Looks up the versions the image lists for the transmit command. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, INTEL_AX211_TX_FAMILY, INTEL_AX211_TX_OPCODE, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_TX_UNSUPPORTED;
 
-	/* Handles the version condition. */
+	/* Refuses an image whose command or completion layout differs. */
 	if (version.command_version != INTEL_AX211_TX_COMMAND_VERSION ||
 	    version.notification_version != INTEL_AX211_TX_NOTIFICATION_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the image speaks the transmit command encoded here. */
 	return INTEL_AX211_TX_OK;
 }
 
 /*
- * Implements the drv intel ax211 tx prepare operation.
+ * Builds the transmit command that carries one frame.
+ *
+ * The command holds the fixed part and the MAC header; the rest of the frame
+ * is sent from its own buffer, which payload_offset and payload_length name.
  */
 int
 drv_intel_ax211_tx_prepare(
@@ -156,65 +160,73 @@ drv_intel_ax211_tx_prepare(
 	uint32_t rate;
 	int result;
 
-	/* Handles the request availability. */
+	/* Refuses missing arguments. */
 	if (request == NULL || prepared == NULL || request->frame == NULL)
 		return INTEL_AX211_TX_INVALID;
 
-	/* Checks the operation result. */
+	/* Finds the MAC header length of the frame. */
 	result = ax211_tx_header_length(request->frame, request->length,
 					&header_length);
 	if (result != INTEL_AX211_TX_OK)
 		return result;
 
-	/* Checks the operation result. */
+	/* Refuses a request that is inconsistent with its frame. */
 	result = ax211_tx_request_validate(request, header_length);
 	if (result != INTEL_AX211_TX_OK)
 		return result;
 
-	/* Handles the request condition. */
+	/*
+	 * The firmware inserts the CCMP header itself, so its length is left
+	 * out.
+	 */
 	firmware_length = request->length;
 	if (request->encrypted)
 		firmware_length -= AX211_TX_CCMP_HEADER_SIZE;
 
-	/* Handles the firmware length condition. */
+	/* Refuses a length the 16-bit field cannot hold. */
 	if (firmware_length > UINT16_MAX)
 		return INTEL_AX211_TX_OVERSIZED;
 
+	/*
+	 * Sends at 6 Mbit/s OFDM on 5 GHz, where CCK is not allowed, and at 1
+	 * Mbit/s CCK otherwise.
+	 */
 	kern_memset(&encoded, 0, sizeof(encoded));
 	flags = 0U;
-	rate = AX211_TX_RATE_ANTENNA_A |
-	       (request->band_5ghz ? AX211_TX_RATE_6M_OFDM
-				   : AX211_TX_RATE_1M_CCK);
+	if (request->band_5ghz) {
+		rate = AX211_TX_RATE_ANTENNA_A | AX211_TX_RATE_6M_OFDM;
+	} else {
+		rate = AX211_TX_RATE_ANTENNA_A | AX211_TX_RATE_1M_CCK;
+	}
 
-	/* Handles the request condition. */
+	/*
+	 * Asks the firmware not to encrypt a frame that is sent in the clear.
+	 */
 	if (!request->encrypted)
 		flags |= AX211_TX_FLAG_ENCRYPT_DISABLE;
 
 	/*
-	 * API89 does not have usable data-rate state until TLC is configured.
-	 * Keep the first standalone-driver path self-contained by supplying a
-	 * conservative basic rate for every frame class: 1M CCK on 2.4 GHz and
-	 * 6M OFDM where CCK is illegal on 5 GHz.  A later TLC phase may replace
-	 * this fixed-rate policy without changing the TX ABI.
+	 * API 89 has no usable data-rate state until rate control is configured.
+	 * Every frame therefore carries the conservative basic rate chosen above,
+	 * and is queued ahead of normal traffic.
 	 */
 	flags |= AX211_TX_FLAG_COMMAND_RATE | AX211_TX_FLAG_HIGH_PRIORITY;
 
-	/* Handles the padding condition. */
+	/* Pads the MAC header to a multiple of four bytes. */
 	padding = header_length & 3U;
 	if (padding != 0U)
 		padding = 4U - padding;
 
-	/* Handles the padding condition. */
+	/* Writes the header length in words, and marks the padding if any. */
 	offload = (uint32_t)((header_length / 2U) &
 			     AX211_TX_OFFLOAD_MAC_HEADER_MASK)
 		  << AX211_TX_OFFLOAD_MAC_HEADER_SHIFT;
 	if (padding != 0U)
 		offload |= AX211_TX_OFFLOAD_PADDING;
 
-	/* Handles the header length condition. */
+	/* Refuses a header that does not fit the command buffer. */
 	if (INTEL_AX211_TX_COMMAND_FIXED_SIZE + header_length + padding >
 	    sizeof(encoded.command)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_BUFFER_TOO_SMALL;
 	}
 
@@ -227,11 +239,16 @@ drv_intel_ax211_tx_prepare(
 	       request->frame, header_length);
 	encoded.command_length =
 		INTEL_AX211_TX_COMMAND_FIXED_SIZE + header_length + padding;
-	encoded.payload_offset = header_length;
 
-	/* Handles the request condition. */
+	/*
+	 * The payload starts after the MAC header, and after the CCMP header
+	 * too.
+	 */
+	encoded.payload_offset = header_length;
 	if (request->encrypted)
 		encoded.payload_offset += AX211_TX_CCMP_HEADER_SIZE;
+
+	/* Records what the completion and the key checks need. */
 	encoded.payload_length = request->length - encoded.payload_offset;
 	encoded.connection_generation = request->connection_generation;
 	encoded.cookie = request->cookie;
@@ -240,13 +257,14 @@ drv_intel_ax211_tx_prepare(
 	encoded.frame_length = (uint16_t)firmware_length;
 	encoded.encrypted = request->encrypted;
 	encoded.key_index = request->key_index;
+
+	/* Succeeded: publishes the prepared command. */
 	*prepared = encoded;
-	/* Returns the computed result. */
 	return INTEL_AX211_TX_OK;
 }
 
 /*
- * Implements the drv intel ax211 tx completion decode operation.
+ * Decodes the completion of one frame sent on a data queue.
  */
 int
 drv_intel_ax211_tx_completion_decode(
@@ -261,64 +279,65 @@ drv_intel_ax211_tx_completion_decode(
 	uint32_t status;
 	uint16_t response_queue;
 
-	/* Handles the message availability. */
-	if (message == NULL || completion == NULL ||
-	    hardware_generation == 0U || message->generation == 0U ||
+	/* Refuses missing arguments, unset epochs and a queue out of range. */
+	if (message == NULL ||
+	    completion == NULL ||
+	    hardware_generation == 0U ||
+	    message->generation == 0U ||
 	    expected_queue < INTEL_AX211_TX_QUEUE_MIN ||
 	    expected_queue > INTEL_AX211_TX_QUEUE_MAX) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_INVALID;
 	}
 
-	/* Handles the message condition. */
+	/* Refuses a message of an earlier firmware epoch. */
 	if (message->generation != hardware_generation)
 		return INTEL_AX211_TX_STALE;
 
-	/* Handles the message condition. */
+	/* Refuses a message other than the transmit completion. */
 	if (message->group != INTEL_AX211_TX_FAMILY ||
 	    message->opcode != INTEL_AX211_TX_OPCODE ||
 	    message->version != INTEL_AX211_TX_NOTIFICATION_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_UNSUPPORTED;
 	}
 
-	/* Checks the operation status. */
+	/* Reports a completion the firmware marked as failed. */
 	if ((message->flags & INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK) != 0U)
 		return INTEL_AX211_TX_FAILED;
 
-	/* Handles the message condition. */
+	/* Refuses a completion of another ring slot. */
 	if (message->queue != (uint8_t)(expected_queue & 0x1fU) ||
 	    message->index != expected_index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_STALE;
 	}
 
-	/* Handles the payload availability. */
+	/* Refuses a missing payload. */
 	if (message->payload == NULL)
 		return INTEL_AX211_TX_INVALID;
 
-	/* Handles the message condition. */
+	/* Refuses a payload shorter than one completion. */
 	if (message->payload_length < AX211_TX_RESPONSE_SIZE)
 		return INTEL_AX211_TX_TRUNCATED;
 
-	/* Handles the message condition. */
+	/* Refuses a payload longer than one completion. */
 	if (message->payload_length > AX211_TX_RESPONSE_SIZE)
 		return INTEL_AX211_TX_OVERSIZED;
 
-	/* Handles the message condition. */
+	/* Refuses a completion that reports more than one frame. */
 	if (message->payload[0U] != 1U)
 		return INTEL_AX211_TX_UNSUPPORTED;
 
-	/* Handles the response queue condition. */
+	/* Refuses a completion of another queue. */
 	response_queue = ax211_tx_get_le16(message->payload + 36U);
 	if (response_queue != expected_queue)
 		return INTEL_AX211_TX_STALE;
 
-	/* Handles the scheduler sequence condition. */
+	/* Refuses a scheduler sequence number out of range. */
 	scheduler_sequence = ax211_tx_get_le32(message->payload +
 					       AX211_TX_RESPONSE_SSN_OFFSET);
 	if (scheduler_sequence >= INTEL_AX211_TX_SCHEDULER_SEQUENCE_LIMIT)
 		return INTEL_AX211_TX_FAILED;
+
+	/* Takes the outcome of the frame. */
 	status = ax211_tx_get_le32(message->payload +
 				   AX211_TX_RESPONSE_STATUS_OFFSET) &
 		 AX211_TX_OUTCOME_MASK;
@@ -331,16 +350,24 @@ drv_intel_ax211_tx_completion_decode(
 	decoded.sequence_control = ax211_tx_get_le16(message->payload + 28U);
 	decoded.byte_count = ax211_tx_get_le16(message->payload + 30U);
 	decoded.index = expected_index;
-	decoded.acknowledged = status == AX211_TX_OUTCOME_DELIVERED ||
-			       status == AX211_TX_OUTCOME_SENT_WITHOUT_ACK;
 	decoded.rts_retries = message->payload[2U];
 	decoded.frame_retries = message->payload[3U];
+
+	/*
+	 * Counts a delivered frame and one sent without acknowledgment as sent.
+	 */
+	decoded.acknowledged = 0;
+	if (status == AX211_TX_OUTCOME_DELIVERED)
+		decoded.acknowledged = 1;
+	else if (status == AX211_TX_OUTCOME_SENT_WITHOUT_ACK)
+		decoded.acknowledged = 1;
+
+	/* Succeeded: publishes the completion. */
 	*completion = decoded;
-	/* Returns the computed result. */
 	return INTEL_AX211_TX_OK;
 }
 
-/* Supports the ax211 tx header length operation. */
+/* Finds the length of the MAC header of a frame to send. */
 static int
 ax211_tx_header_length(
 	const uint8_t *frame,
@@ -352,64 +379,71 @@ ax211_tx_header_length(
 	uint16_t type;
 	size_t required;
 
-	/* Handles the frame availability. */
+	/* Refuses missing arguments and a frame without frame control. */
 	if (frame == NULL || header_length == NULL || length < 2U)
 		return INTEL_AX211_TX_INVALID;
+
+	/* Takes the type and the subtype of the frame. */
 	frame_control = ax211_tx_get_le16(frame);
 	type = frame_control & AX211_TX_FRAME_TYPE_MASK;
 	subtype = frame_control & AX211_TX_FRAME_SUBTYPE_MASK;
 
-	/* Handles the type condition. */
+	/*
+	 * Measures the header of a management or data frame; others are
+	 * refused.
+	 */
 	if (type == AX211_TX_FRAME_TYPE_MANAGEMENT) {
-		/* Handles the frame control condition. */
+		/* With +HTC/Order set the header carries HT control. */
 		required = 24U;
 		if ((frame_control & AX211_TX_ORDER) != 0U)
 			required += 4U;
 	} else if (type == AX211_TX_FRAME_TYPE_DATA) {
-		/* Handles the frame control condition. */
+		/*
+		 * A frame between two distribution systems has a fourth
+		 * address.
+		 */
 		required = 24U;
 		if ((frame_control & (AX211_TX_TO_DS | AX211_TX_FROM_DS)) ==
 		    (AX211_TX_TO_DS | AX211_TX_FROM_DS))
 			required += 6U;
 
-		/* Handles the subtype condition. */
+		/* A QoS data frame carries the QoS control field. */
 		if ((subtype & AX211_TX_FRAME_SUBTYPE_QOS) != 0U) {
 			required += 2U;
 
-			/* Handles the frame control condition. */
+			/* With +HTC/Order set it also carries HT control. */
 			if ((frame_control & AX211_TX_ORDER) != 0U)
 				required += 4U;
 		}
 	} else if (type == AX211_TX_FRAME_TYPE_CONTROL) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_UNSUPPORTED;
 	} else {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_INVALID;
 	}
 
-	/* Handles the required condition. */
+	/* Refuses a header longer than the command can carry. */
 	if (required > INTEL_AX211_TX_MAC_HEADER_MAX)
 		return INTEL_AX211_TX_OVERSIZED;
 
-	/* Checks the current data length. */
+	/* Refuses a frame shorter than its header. */
 	if (length < required)
 		return INTEL_AX211_TX_TRUNCATED;
+
+	/* Succeeded: reports the header length. */
 	*header_length = required;
-	/* Returns the computed result. */
 	return INTEL_AX211_TX_OK;
 }
 
-/* Supports the ax211 tx get le16 operation. */
+/* Reads a 16-bit little-endian value. */
 static uint16_t
 ax211_tx_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the value from its two bytes, least significant first. */
 	return (uint16_t)bytes[0U] | ((uint16_t)bytes[1U] << 8);
 }
 
-/* Supports the ax211 tx request validate operation. */
+/* Checks that a transmit request is consistent with its frame. */
 static int
 ax211_tx_request_validate(
 	const struct intel_ax211_tx_request *request,
@@ -419,8 +453,12 @@ ax211_tx_request_validate(
 	uint16_t expected_type;
 	int result;
 
-	/* Handles the request condition. */
-	if (request->connection_generation == 0U || request->cookie == 0U ||
+	/*
+	 * Refuses unset identifiers, impossible lengths and out-of-range
+	 * fields.
+	 */
+	if (request->connection_generation == 0U ||
+	    request->cookie == 0U ||
 	    request->length < header_length ||
 	    request->length > INTEL_AX211_TX_FRAME_MAX ||
 	    (request->encrypted != 0U && request->encrypted != 1U) ||
@@ -429,53 +467,70 @@ ax211_tx_request_validate(
 	    (request->frame_class != INTEL_AX211_TX_FRAME_MANAGEMENT &&
 	     request->frame_class != INTEL_AX211_TX_FRAME_EAPOL &&
 	     request->frame_class != INTEL_AX211_TX_FRAME_DATA)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_INVALID;
 	}
-	frame_control = ax211_tx_get_le16(request->frame);
 
-	/* Handles the frame control condition. */
-	expected_type = request->frame_class == INTEL_AX211_TX_FRAME_MANAGEMENT
-				? AX211_TX_FRAME_TYPE_MANAGEMENT
-				: AX211_TX_FRAME_TYPE_DATA;
+	/*
+	 * A management request carries a management frame, the others a data
+	 * frame.
+	 */
+	frame_control = ax211_tx_get_le16(request->frame);
+	if (request->frame_class == INTEL_AX211_TX_FRAME_MANAGEMENT) {
+		expected_type = AX211_TX_FRAME_TYPE_MANAGEMENT;
+	} else {
+		expected_type = AX211_TX_FRAME_TYPE_DATA;
+	}
+
+	/* Refuses a frame of another type. */
 	if ((frame_control & AX211_TX_FRAME_TYPE_MASK) != expected_type)
 		return INTEL_AX211_TX_INVALID;
 
-	/* Handles the request condition. */
+	/* Management frames are not encrypted by this driver. */
 	if (request->frame_class == INTEL_AX211_TX_FRAME_MANAGEMENT &&
 	    request->encrypted) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_UNSUPPORTED;
 	}
 
-	/* Handles the request condition. */
+	/*
+	 * Refuses a plain frame that carries key fields or is marked protected.
+	 */
 	if (!request->encrypted &&
-	    (request->key_generation != 0U || request->packet_number != 0U ||
+	    (request->key_generation != 0U ||
+	     request->packet_number != 0U ||
 	     request->key_index != 0U ||
 	     (frame_control & AX211_TX_PROTECTED) != 0U)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_INVALID;
 	}
 
-	/* Handles the request condition. */
+	/*
+	 * Refuses an encrypted frame without a key, a usable packet number or
+	 * the mark.
+	 */
 	if (request->encrypted &&
-	    (request->key_generation == 0U || request->packet_number == 0U ||
+	    (request->key_generation == 0U ||
+	     request->packet_number == 0U ||
 	     request->packet_number > 0x0000ffffffffffffULL ||
 	     (frame_control & AX211_TX_PROTECTED) == 0U)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_INVALID;
 	}
 
-	/* Handles the request condition. */
+	/* A plain frame needs no CCMP header. */
 	if (!request->encrypted)
 		return INTEL_AX211_TX_OK;
-	result = ax211_tx_ccmp_validate(request, header_length);
 
-	/* Returns the computed result. */
-	return result;
+	/* Checks the CCMP header of an encrypted frame. */
+	result = ax211_tx_ccmp_validate(request, header_length);
+	if (result != INTEL_AX211_TX_OK)
+		return result;
+
+	/* Succeeded: the request is consistent. */
+	return INTEL_AX211_TX_OK;
 }
 
-/* Supports the ax211 tx ccmp validate operation. */
+/*
+ * Checks that the CCMP header of a frame matches the request's key and packet
+ * number.
+ */
 static int
 ax211_tx_ccmp_validate(
 	const struct intel_ax211_tx_request *request,
@@ -484,22 +539,21 @@ ax211_tx_ccmp_validate(
 	const uint8_t *ccmp;
 	uint64_t packet_number;
 
-	/* Handles the header length condition. */
+	/* Refuses a frame too short for the CCMP header. */
 	if (header_length > request->length ||
 	    request->length - header_length < AX211_TX_CCMP_HEADER_SIZE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_TRUNCATED;
 	}
 
-	/* Handles the ccmp condition. */
+	/* Refuses a reserved byte, a missing Ext IV or another key index. */
 	ccmp = request->frame + header_length;
-	if (ccmp[2U] != 0U || (ccmp[3U] & 0x3fU) != AX211_TX_CCMP_EXTENDED_IV ||
+	if (ccmp[2U] != 0U ||
+	    (ccmp[3U] & 0x3fU) != AX211_TX_CCMP_EXTENDED_IV ||
 	    (ccmp[3U] >> 6) != request->key_index) {
-		/* Returns the computed result. */
 		return INTEL_AX211_TX_INVALID;
 	}
 
-	/* Handles the packet number condition. */
+	/* Refuses a header whose packet number is not the request's. */
 	packet_number = (uint64_t)ccmp[0U] | ((uint64_t)ccmp[1U] << 8) |
 			((uint64_t)ccmp[4U] << 16) |
 			((uint64_t)ccmp[5U] << 24) |
@@ -507,11 +561,11 @@ ax211_tx_ccmp_validate(
 	if (packet_number != request->packet_number)
 		return INTEL_AX211_TX_STALE;
 
-	/* Returns the computed result. */
+	/* Succeeded: the header matches. */
 	return INTEL_AX211_TX_OK;
 }
 
-/* Supports the ax211 tx put le16 operation. */
+/* Stores a 16-bit value in little-endian byte order. */
 static void
 ax211_tx_put_le16(
 	uint8_t *bytes,
@@ -521,7 +575,7 @@ ax211_tx_put_le16(
 	bytes[1U] = (uint8_t)(value >> 8);
 }
 
-/* Supports the ax211 tx put le32 operation. */
+/* Stores a 32-bit value in little-endian byte order. */
 static void
 ax211_tx_put_le32(
 	uint8_t *bytes,
@@ -533,12 +587,12 @@ ax211_tx_put_le32(
 	bytes[3U] = (uint8_t)(value >> 24);
 }
 
-/* Supports the ax211 tx get le32 operation. */
+/* Reads a 32-bit little-endian value. */
 static uint32_t
 ax211_tx_get_le32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0U] | ((uint32_t)bytes[1U] << 8) |
 	       ((uint32_t)bytes[2U] << 16) | ((uint32_t)bytes[3U] << 24);
 }

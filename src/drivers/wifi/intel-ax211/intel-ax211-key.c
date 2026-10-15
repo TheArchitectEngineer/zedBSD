@@ -44,7 +44,7 @@ static void ax211_key_put_le64(uint8_t *bytes, uint64_t value);
 static int ax211_key_state_live(const struct intel_ax211_key_state *state, uint64_t connection_generation, uint32_t hardware_epoch);
 
 /*
- * Implements the drv intel ax211 key api89 validate operation.
+ * Checks that the pinned image lists the key command in the layout encoded here.
  */
 int
 drv_intel_ax211_key_api89_validate(
@@ -53,29 +53,28 @@ drv_intel_ax211_key_api89_validate(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing command table. */
 	if (table == NULL)
 		return INTEL_AX211_KEY_INVALID;
 
-	/* Checks the operation result. */
+	/* Looks up the versions the image lists for the key command. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, INTEL_AX211_KEY_FAMILY, INTEL_AX211_KEY_OPCODE, &version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_KEY_UNSUPPORTED;
 
-	/* Handles the version condition. */
+	/* Refuses an image whose key command or answer layout differs. */
 	if (version.command_version != INTEL_AX211_KEY_COMMAND_VERSION ||
 	    version.notification_version != INTEL_AX211_KEY_RESPONSE_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the image speaks the key command this driver encodes. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key add encode operation.
+ * Encodes the command that installs a CCMP key.
  */
 int
 drv_intel_ax211_key_add_encode(
@@ -83,16 +82,31 @@ drv_intel_ax211_key_add_encode(
 	uint8_t output[INTEL_AX211_KEY_COMMAND_SIZE])
 {
 	uint32_t flags;
+	int valid;
 
-	/* Checks the ax211 key request valid result. */
-	if (!ax211_key_request_valid(request) || output == NULL)
+	/* Refuses a malformed request. */
+	valid = ax211_key_request_valid(request);
+	if (!valid)
 		return INTEL_AX211_KEY_INVALID;
+
+	/* Refuses a missing output buffer. */
+	if (output == NULL)
+		return INTEL_AX211_KEY_INVALID;
+
+	/* Starts from an all-zero command so that unused fields are zero. */
 	kern_memset(output, 0, INTEL_AX211_KEY_COMMAND_SIZE);
 
-	/* Handles the request condition. */
+	/*
+	 * Marks a group key so that the firmware applies it to group traffic.
+	 */
 	flags = AX211_KEY_SUITE_CCMP;
 	if (request->kind == INTEL_AX211_KEY_GROUP_KEY)
 		flags |= AX211_KEY_APPLIES_TO_GROUP;
+
+	/*
+	 * Writes the add action, the station, the key index, the flags and the
+	 * key.
+	 */
 	ax211_key_put_le32(output, AX211_KEY_ACTION_ADD);
 	ax211_key_put_le32(output + 4U, AX211_KEY_STATION_MASK);
 	ax211_key_put_le32(output + 8U, request->key_index);
@@ -100,12 +114,12 @@ drv_intel_ax211_key_add_encode(
 	kern_memcpy(output + 16U, request->key, INTEL_AX211_KEY_BYTES);
 	ax211_key_put_le64(output + 64U, request->receive_packet_number);
 
-	/* Returns the computed result. */
+	/* Succeeded: the add command is ready to send. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key remove encode operation.
+ * Encodes the command that removes a CCMP key.
  */
 int
 drv_intel_ax211_key_remove_encode(
@@ -117,32 +131,42 @@ drv_intel_ax211_key_remove_encode(
 {
 	uint32_t flags;
 
-	/* Handles the output availability. */
-	if (output == NULL || connection_generation == 0U ||
-	    key_generation == 0U || key_index >= INTEL_AX211_KEY_INDEX_LIMIT ||
+	/*
+	 * Refuses a missing buffer, an unset generation or an impossible key
+	 * slot.
+	 */
+	if (output == NULL ||
+	    connection_generation == 0U ||
+	    key_generation == 0U ||
+	    key_index >= INTEL_AX211_KEY_INDEX_LIMIT ||
 	    (kind != INTEL_AX211_KEY_PAIRWISE &&
 	     kind != INTEL_AX211_KEY_GROUP_KEY) ||
 	    (kind == INTEL_AX211_KEY_PAIRWISE && key_index != 0U)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_INVALID;
 	}
+
+	/* Starts from an all-zero command so that unused fields are zero. */
 	kern_memset(output, 0, INTEL_AX211_KEY_COMMAND_SIZE);
 
-	/* Handles the kind condition. */
+	/* Marks a group key so that the firmware removes the group key. */
 	flags = AX211_KEY_SUITE_CCMP;
 	if (kind == INTEL_AX211_KEY_GROUP_KEY)
 		flags |= AX211_KEY_APPLIES_TO_GROUP;
+
+	/*
+	 * Writes the remove action, the station, the key index and the flags.
+	 */
 	ax211_key_put_le32(output, AX211_KEY_ACTION_REMOVE);
 	ax211_key_put_le32(output + 4U, AX211_KEY_STATION_MASK);
 	ax211_key_put_le32(output + 8U, key_index);
 	ax211_key_put_le32(output + 12U, flags);
 
-	/* Returns the computed result. */
+	/* Succeeded: the remove command is ready to send. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key command scrub operation.
+ * Clears a key command so that no key bytes stay in memory.
  */
 void
 drv_intel_ax211_key_command_scrub(
@@ -151,17 +175,21 @@ drv_intel_ax211_key_command_scrub(
 	volatile uint8_t *bytes;
 	size_t index;
 
-	/* Handles the command availability. */
+	/* Nothing to clear without a command. */
 	if (command == NULL)
 		return;
+
+	/*
+	 * Writes through a volatile pointer so the clearing is not optimized
+	 * away.
+	 */
 	bytes = command;
-	/* Process each remaining element. */
 	for (index = 0U; index < INTEL_AX211_KEY_COMMAND_SIZE; index++)
 		bytes[index] = 0U;
 }
 
 /*
- * Implements the drv intel ax211 key state init operation.
+ * Starts the key bookkeeping of one connection.
  */
 int
 drv_intel_ax211_key_state_init(
@@ -169,23 +197,24 @@ drv_intel_ax211_key_state_init(
 	uint32_t hardware_epoch,
 	uint64_t connection_generation)
 {
-	/* Handles the state availability. */
+	/* Refuses a missing state or an unset epoch or connection. */
 	if (state == NULL || hardware_epoch == 0U ||
 	    connection_generation == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_INVALID;
 	}
+
+	/* Records the epoch and the connection the keys will belong to. */
 	kern_memset(state, 0, sizeof(*state));
 	state->hardware_epoch = hardware_epoch;
 	state->connection_generation = connection_generation;
 	state->initialized = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded: the state accepts keys of this connection. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key state installed operation.
+ * Records a key installed in the firmware that waits to be activated.
  */
 int
 drv_intel_ax211_key_state_installed(
@@ -194,35 +223,46 @@ drv_intel_ax211_key_state_installed(
 	uint32_t hardware_epoch)
 {
 	uint64_t *slot;
+	int valid;
 	int result;
 
-	/* Checks the ax211 key request valid result. */
-	if (!ax211_key_request_valid(request))
+	/* Refuses a malformed request. */
+	valid = ax211_key_request_valid(request);
+	if (!valid)
 		return INTEL_AX211_KEY_INVALID;
 
-	/* Checks the operation result. */
+	/* Refuses a request of an old connection or firmware epoch. */
 	result = ax211_key_state_live(state, request->connection_generation,
 				      hardware_epoch);
 	if (result != INTEL_AX211_KEY_OK)
 		return result;
 
-	/* Handles the slot condition. */
-	slot = request->kind == INTEL_AX211_KEY_PAIRWISE
-		       ? &state->staged_pairwise
-		       : &state->staged_group[request->key_index];
+	/* Picks the staged slot of the key. */
+	if (request->kind == INTEL_AX211_KEY_PAIRWISE) {
+		/* The pairwise key has one slot. */
+		slot = &state->staged_pairwise;
+	} else {
+		/* A group key has one slot per key index. */
+		slot = &state->staged_group[request->key_index];
+	}
+
+	/* Ignores a second report of the key already staged in the slot. */
 	if (*slot == request->key_generation)
 		return INTEL_AX211_KEY_DUPLICATE;
 
-	/* Handles the slot condition. */
+	/* Refuses to overwrite a slot that holds another staged key. */
 	if (*slot != 0U)
 		return INTEL_AX211_KEY_STALE;
+
+	/* Stages the key in its slot until the keys are activated. */
 	*slot = request->key_generation;
-	/* Returns the computed result. */
+
+	/* Succeeded: the key is staged. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key state activate operation.
+ * Makes a staged pairwise and group key the active pair.
  */
 int
 drv_intel_ax211_key_state_activate(
@@ -237,63 +277,73 @@ drv_intel_ax211_key_state_activate(
 	int found;
 	int result;
 
-	/* Handles the pairwise generation condition. */
+	/* Refuses unset key generations. */
 	if (pairwise_generation == 0U || group_generation == 0U)
 		return INTEL_AX211_KEY_INVALID;
 
-	/* Checks the operation result. */
+	/* Refuses a request of an old connection or firmware epoch. */
 	result = ax211_key_state_live(state, connection_generation,
 				      hardware_epoch);
 	if (result != INTEL_AX211_KEY_OK)
 		return result;
 
-	/* Handles the state condition. */
+	/* Ignores an activation of the pair that is already active. */
 	if (state->active_pairwise == pairwise_generation) {
-		/* Process each remaining element. */
+		/* Looks for the group key among the active group keys. */
 		for (group_index = 0U;
 		     group_index < INTEL_AX211_KEY_INDEX_LIMIT; group_index++) {
-			/* Handles the state condition. */
+			/* The group key is active too: nothing changes. */
 			if (state->active_group[group_index] ==
 			    group_generation) {
-				/* Returns the computed result. */
 				return INTEL_AX211_KEY_DUPLICATE;
 			}
 		}
 	}
 
-	/* Handles the pairwise found condition. */
-	pairwise_found = state->staged_pairwise == pairwise_generation ||
-			 state->active_pairwise == pairwise_generation;
+	/* Finds the pairwise key, staged or already active. */
+	pairwise_found = 0;
+	if (state->staged_pairwise == pairwise_generation)
+		pairwise_found = 1;
+	else if (state->active_pairwise == pairwise_generation)
+		pairwise_found = 1;
+
+	/* Refuses a pairwise key that was never installed. */
 	if (!pairwise_found)
 		return INTEL_AX211_KEY_MISSING;
+
+	/* Looks for the group key among the staged group keys. */
 	found = 0;
 	group_index = 0U;
-	/* Process each remaining element. */
 	while (group_index < INTEL_AX211_KEY_INDEX_LIMIT && !found) {
-		/* Handles the state condition. */
+		/* Stops at the matching slot, or moves to the next one. */
 		if (state->staged_group[group_index] == group_generation)
 			found = 1;
 		else
 			group_index++;
 	}
 
-	/* Handles the found condition. */
+	/* Falls back to the active group keys when no staged one matches. */
 	if (!found) {
+		/* Looks for the group key among the active group keys. */
 		group_index = 0U;
-		/* Process each remaining element. */
 		while (group_index < INTEL_AX211_KEY_INDEX_LIMIT && !found) {
-			/* Handles the state condition. */
+			/*
+			 * Stops at the matching slot, or moves to the next one.
+			 */
 			if (state->active_group[group_index] ==
-			    group_generation)
+			    group_generation) {
 				found = 1;
-			else
+			} else {
 				group_index++;
+			}
 		}
 	}
 
-	/* Handles the found condition. */
+	/* Refuses a group key that was never installed. */
 	if (!found)
 		return INTEL_AX211_KEY_MISSING;
+
+	/* Makes the pair active and forgets every staged key. */
 	kern_memset(state->active_group, 0, sizeof(state->active_group));
 	state->active_pairwise = pairwise_generation;
 	state->active_group[group_index] = group_generation;
@@ -301,12 +351,12 @@ drv_intel_ax211_key_state_activate(
 	state->staged_pairwise = 0U;
 	kern_memset(state->staged_group, 0, sizeof(state->staged_group));
 
-	/* Returns the computed result. */
+	/* Succeeded: the pair is active. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key state removed operation.
+ * Forgets a key that was removed from the firmware.
  */
 int
 drv_intel_ax211_key_state_removed(
@@ -321,43 +371,50 @@ drv_intel_ax211_key_state_removed(
 	uint64_t *active;
 	int result;
 
-	/* Handles the key generation condition. */
-	if (key_generation == 0U || key_index >= INTEL_AX211_KEY_INDEX_LIMIT ||
+	/* Refuses an unset generation or an impossible key slot. */
+	if (key_generation == 0U ||
+	    key_index >= INTEL_AX211_KEY_INDEX_LIMIT ||
 	    (kind != INTEL_AX211_KEY_PAIRWISE &&
 	     kind != INTEL_AX211_KEY_GROUP_KEY) ||
 	    (kind == INTEL_AX211_KEY_PAIRWISE && key_index != 0U)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_INVALID;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses a request of an old connection or firmware epoch. */
 	result = ax211_key_state_live(state, connection_generation,
 				      hardware_epoch);
 	if (result != INTEL_AX211_KEY_OK)
 		return result;
-	staged = kind == INTEL_AX211_KEY_PAIRWISE
-			 ? &state->staged_pairwise
-			 : &state->staged_group[key_index];
 
-	/* Handles the staged condition. */
-	active = kind == INTEL_AX211_KEY_PAIRWISE
-			 ? &state->active_pairwise
-			 : &state->active_group[key_index];
+	/* Picks the staged and the active slot of the key. */
+	if (kind == INTEL_AX211_KEY_PAIRWISE) {
+		/* The pairwise key has one slot of each kind. */
+		staged = &state->staged_pairwise;
+		active = &state->active_pairwise;
+	} else {
+		/* A group key has one slot of each kind per key index. */
+		staged = &state->staged_group[key_index];
+		active = &state->active_group[key_index];
+	}
+
+	/* Refuses a key that is neither staged nor active. */
 	if (*staged != key_generation && *active != key_generation)
 		return INTEL_AX211_KEY_MISSING;
 
-	/* Handles the staged condition. */
+	/* Clears the staged slot when it holds the key. */
 	if (*staged == key_generation)
 		*staged = 0U;
-	/* Handles the active condition. */
+
+	/* Clears the active slot when it holds the key. */
 	if (*active == key_generation)
 		*active = 0U;
-	/* Returns the computed result. */
+
+	/* Succeeded: the key is forgotten. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key state rx generation operation.
+ * Reports the generation of the active key that decrypts received frames.
  */
 int
 drv_intel_ax211_key_state_rx_generation(
@@ -371,35 +428,43 @@ drv_intel_ax211_key_state_rx_generation(
 	uint64_t generation;
 	int result;
 
-	/* Handles the key generation availability. */
+	/* Refuses a missing output or an impossible key slot. */
 	if (key_generation == NULL ||
 	    key_index >= INTEL_AX211_KEY_INDEX_LIMIT ||
 	    (kind != INTEL_AX211_KEY_PAIRWISE &&
 	     kind != INTEL_AX211_KEY_GROUP_KEY) ||
 	    (kind == INTEL_AX211_KEY_PAIRWISE && key_index != 0U)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_INVALID;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses a request of an old connection or firmware epoch. */
 	result = ax211_key_state_live(state, connection_generation,
 				      hardware_epoch);
 	if (result != INTEL_AX211_KEY_OK)
 		return result;
 
-	/* Handles the generation condition. */
-	generation = kind == INTEL_AX211_KEY_PAIRWISE
-			     ? state->active_pairwise
-			     : state->active_group[key_index];
+	/* Reads the active slot of the key. */
+	if (kind == INTEL_AX211_KEY_PAIRWISE) {
+		/* The pairwise key has one active slot. */
+		generation = state->active_pairwise;
+	} else {
+		/* A group key has one active slot per key index. */
+		generation = state->active_group[key_index];
+	}
+
+	/* Refuses a key slot that holds no active key. */
 	if (generation == 0U)
 		return INTEL_AX211_KEY_MISSING;
+
+	/* Reports the active key's generation. */
 	*key_generation = generation;
-	/* Returns the computed result. */
+
+	/* Succeeded: the active key's generation is reported. */
 	return INTEL_AX211_KEY_OK;
 }
 
 /*
- * Implements the drv intel ax211 key state tx validate operation.
+ * Checks that a frame to send names the active pairwise key and a usable packet number.
  */
 int
 drv_intel_ax211_key_state_tx_validate(
@@ -412,31 +477,44 @@ drv_intel_ax211_key_state_tx_validate(
 {
 	int result;
 
-	/* Handles the key generation condition. */
-	if (key_generation == 0U || key_index != 0U || packet_number == 0U ||
+	/*
+	 * Refuses an unset generation, a group key slot or a packet number out
+	 * of range.
+	 */
+	if (key_generation == 0U ||
+	    key_index != 0U ||
+	    packet_number == 0U ||
 	    packet_number > AX211_KEY_PACKET_NUMBER_MAX) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_INVALID;
 	}
 
-	/* Checks the operation result. */
+	/* Refuses a request of an old connection or firmware epoch. */
 	result = ax211_key_state_live(state, connection_generation,
 				      hardware_epoch);
 	if (result != INTEL_AX211_KEY_OK)
 		return result;
 
-	/* Returns the computed result. */
-	return state->active_pairwise == key_generation ? INTEL_AX211_KEY_OK
-							: INTEL_AX211_KEY_STALE;
+	/* Refuses a key that is no longer the active pairwise key. */
+	if (state->active_pairwise != key_generation)
+		return INTEL_AX211_KEY_STALE;
+
+	/* Succeeded: the frame may be encrypted with the key. */
+	return INTEL_AX211_KEY_OK;
 }
 
-/* Supports the ax211 key request valid operation. */
+/*
+ * Reports whether a key request names a usable key: 1 when usable, 0 when not.
+ */
 static int
 ax211_key_request_valid(
 	const struct intel_ax211_key_request *request)
 {
-	/* Handles the request availability. */
-	if (request == NULL || request->connection_generation == 0U ||
+	/*
+	 * Rejects an unset generation, a packet number out of range or an
+	 * impossible slot.
+	 */
+	if (request == NULL ||
+	    request->connection_generation == 0U ||
 	    request->key_generation == 0U ||
 	    request->receive_packet_number > AX211_KEY_PACKET_NUMBER_MAX ||
 	    request->key_index >= INTEL_AX211_KEY_INDEX_LIMIT ||
@@ -444,15 +522,14 @@ ax211_key_request_valid(
 	     request->kind != INTEL_AX211_KEY_GROUP_KEY) ||
 	    (request->kind == INTEL_AX211_KEY_PAIRWISE &&
 	     request->key_index != 0U)) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The request names a usable key. */
 	return 1;
 }
 
-/* Supports the ax211 key put le32 operation. */
+/* Stores a 32-bit value in little-endian byte order. */
 static void
 ax211_key_put_le32(
 	uint8_t *bytes,
@@ -464,7 +541,7 @@ ax211_key_put_le32(
 	bytes[3U] = (uint8_t)(value >> 24);
 }
 
-/* Supports the ax211 key put le64 operation. */
+/* Stores a 64-bit value in little-endian byte order. */
 static void
 ax211_key_put_le64(
 	uint8_t *bytes,
@@ -472,32 +549,35 @@ ax211_key_put_le64(
 {
 	unsigned index;
 
-	/* Process each remaining element. */
+	/* Writes the eight bytes from the least significant up. */
 	for (index = 0U; index < 8U; index++)
 		bytes[index] = (uint8_t)(value >> (index * 8U));
 }
 
-/* Supports the ax211 key state live operation. */
+/*
+ * Checks that a key operation belongs to the live connection and firmware
+ * epoch.
+ */
 static int
 ax211_key_state_live(
 	const struct intel_ax211_key_state *state,
 	uint64_t connection_generation,
 	uint32_t hardware_epoch)
 {
-	/* Handles the state availability. */
-	if (state == NULL || !state->initialized || hardware_epoch == 0U ||
+	/* Refuses a missing or uninitialized state and unset identifiers. */
+	if (state == NULL ||
+	    !state->initialized ||
+	    hardware_epoch == 0U ||
 	    connection_generation == 0U) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_INVALID;
 	}
 
-	/* Handles the state condition. */
+	/* Refuses an operation of an earlier connection or firmware epoch. */
 	if (state->hardware_epoch != hardware_epoch ||
 	    state->connection_generation != connection_generation) {
-		/* Returns the computed result. */
 		return INTEL_AX211_KEY_STALE;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the operation belongs to the live connection. */
 	return INTEL_AX211_KEY_OK;
 }

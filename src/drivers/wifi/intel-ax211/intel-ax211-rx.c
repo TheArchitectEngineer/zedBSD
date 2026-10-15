@@ -107,7 +107,8 @@ static int ax211_rx_header_length(const uint8_t *frame, size_t length, size_t *h
 static int ax211_rx_security(struct intel_ax211_rx_delivery *mpdu, const uint8_t *frame, size_t length, size_t header_length);
 
 /*
- * Implements the drv intel ax211 rx api89 validate operation.
+ * Checks that the pinned image lists the received-frame notification in the
+ * layout decoded here.
  */
 int
 drv_intel_ax211_rx_api89_validate(
@@ -116,31 +117,34 @@ drv_intel_ax211_rx_api89_validate(
 	struct intel_ax211_protocol_command_version version;
 	int result;
 
-	/* Handles the table availability. */
+	/* Refuses a missing command table. */
 	if (table == NULL)
 		return INTEL_AX211_RX_INVALID;
 
-	/* Checks the operation result. */
+	/* Looks up the versions the image lists for the notification. */
 	result = drv_intel_ax211_protocol_command_version_lookup(
 		table, INTEL_AX211_RX_FRAME_FAMILY, INTEL_AX211_RX_FRAME_OPCODE,
 		&version);
 	if (result != INTEL_AX211_PROTOCOL_OK)
 		return INTEL_AX211_RX_UNSUPPORTED;
 
-	/* Handles the version condition. */
+	/* Refuses another layout; the notification has no command version. */
 	if (version.command_version != INTEL_AX211_PROTOCOL_UNKNOWN_VERSION ||
 	    version.notification_version !=
 		    INTEL_AX211_RX_FRAME_NOTIFICATION_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_UNSUPPORTED;
 	}
 
-	/* Returns the computed result. */
+	/* Succeeded: the image speaks the notification this driver decodes. */
 	return INTEL_AX211_RX_OK;
 }
 
 /*
- * Implements the drv intel ax211 rx mpdu decode operation.
+ * Decodes one received 802.11 frame into the caller's buffer.
+ *
+ * The frame leaves in its usual shape: the padding the firmware inserted is
+ * removed, the hardware trailer is cut off, and a CCMP frame gets a zeroed
+ * 8-byte MIC field in its place.
  */
 int
 drv_intel_ax211_rx_mpdu_decode(
@@ -165,48 +169,47 @@ drv_intel_ax211_rx_mpdu_decode(
 	uint8_t mac_flags;
 	int result;
 
-	/* Handles the message availability. */
-	if (message == NULL || output == NULL || mpdu == NULL ||
-	    generation == 0U || message->generation == 0U) {
-		/* Returns the computed result. */
+	/* Refuses missing buffers and unset epochs. */
+	if (message == NULL ||
+	    output == NULL ||
+	    mpdu == NULL ||
+	    generation == 0U ||
+	    message->generation == 0U) {
 		return INTEL_AX211_RX_INVALID;
 	}
 
-	/* Handles the message condition. */
+	/* Refuses a message of an earlier firmware epoch. */
 	if (message->generation != generation)
 		return INTEL_AX211_RX_STALE;
 
-	/* Handles the message condition. */
+	/* Refuses a message other than the received-frame notification. */
 	if (message->group != INTEL_AX211_RX_FRAME_FAMILY ||
 	    message->opcode != INTEL_AX211_RX_FRAME_OPCODE ||
 	    message->version != INTEL_AX211_RX_FRAME_NOTIFICATION_VERSION) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_UNSUPPORTED;
 	}
 
-	/* Checks the operation status. */
+	/* Reports a notification the firmware marked as failed. */
 	if ((message->flags & INTEL_AX211_PROTOCOL_COMMAND_FAILED_MASK) != 0U)
 		return INTEL_AX211_RX_FAILED;
 
-	/* Handles the payload availability. */
+	/* Refuses a missing payload. */
 	if (message->payload == NULL)
 		return INTEL_AX211_RX_INVALID;
 
-	/* Handles the message condition. */
+	/* Refuses a payload shorter than the descriptor. */
 	if (message->payload_length < INTEL_AX211_RX_FRAME_DESCRIPTOR_SIZE)
 		return INTEL_AX211_RX_TRUNCATED;
 
+	/* Refuses a frame longer than an 802.11 frame can be. */
 	descriptor = message->payload;
-
-	/* Handles the frame length condition. */
 	frame_length = ax211_rx_get_le16(descriptor);
 	if (frame_length > INTEL_AX211_RX_FRAME_BODY_MAX)
 		return INTEL_AX211_RX_OVERSIZED;
 
-	/* Handles the message condition. */
+	/* Refuses a frame that runs past the payload. */
 	if (message->payload_length - INTEL_AX211_RX_FRAME_DESCRIPTOR_SIZE <
 	    frame_length) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_TRUNCATED;
 	}
 
@@ -217,94 +220,102 @@ drv_intel_ax211_rx_mpdu_decode(
 	if (frame_length < 2U)
 		return INTEL_AX211_RX_TRUNCATED;
 
+	/* Refuses a frame whose check sequence failed or that overran. */
 	kern_memset(&decoded, 0, sizeof(decoded));
 	decoded.status = ax211_rx_get_le32(descriptor + 12U);
-
-	/* Handles the decoded condition. */
 	if ((decoded.status &
 	     (AX211_RX_CHECK_FCS_GOOD | AX211_RX_CHECK_NO_OVERRUN)) !=
 	    (AX211_RX_CHECK_FCS_GOOD | AX211_RX_CHECK_NO_OVERRUN)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_FAILED;
 	}
 
-	/* Handles the decoded condition. */
+	/* Drops a frame the firmware recognised as a repeat. */
 	if ((decoded.status & AX211_RX_REPEATED_FRAME) != 0U)
 		return INTEL_AX211_RX_DUPLICATE;
 
-	/* Handles the mac flags condition. */
+	/* Refuses a frame of an aggregate. */
 	mac_flags = descriptor[3U];
 	if ((mac_flags & AX211_RX_MAC_FLAG_AMSDU) != 0U)
 		return INTEL_AX211_RX_UNSUPPORTED;
+
+	/*
+	 * Takes the signal strength and the channel; a frame needs a channel.
+	 */
 	decoded.rssi_dbm = ax211_rx_rssi(descriptor[40U], descriptor[41U]);
 	decoded.channel = descriptor[42U];
-
-	/* Handles the decoded condition. */
 	if (decoded.channel == 0U)
 		return INTEL_AX211_RX_FAILED;
+
+	/* Takes the start time on the air. */
 	decoded.air_start_clock = ax211_rx_get_le32(descriptor + 44U);
 
-	/* Handles the phy info condition. */
+	/* Takes the TSF unless the radio replaced that word. */
 	phy_info = ax211_rx_get_le16(descriptor + 5U);
 	if ((phy_info & AX211_RX_RADIO_TIME_REPLACED) == 0U) {
 		decoded.tsf = ax211_rx_get_le64(descriptor + 48U);
 		decoded.tsf_valid = 1U;
 	}
 
+	/* Finds the MAC header length of the frame as the firmware wrote it. */
 	frame = descriptor + INTEL_AX211_RX_FRAME_DESCRIPTOR_SIZE;
-
-	/* Checks the operation result. */
 	result = ax211_rx_header_length(frame, frame_length, &header_length);
 	if (result != INTEL_AX211_RX_OK)
 		return result;
+
+	/* Refuses a hardware trailer longer than the frame. */
 	hardware_trailer_length =
 		(descriptor[2U] & AX211_RX_MAC_FLAG1_MIC_CRC_LENGTH_MASK) >>
 		AX211_RX_MAC_FLAG1_MIC_CRC_LENGTH_SHIFT;
-
-	/* Handles the hardware trailer length condition. */
 	if (hardware_trailer_length > frame_length)
 		return INTEL_AX211_RX_TRUNCATED;
-	common_trailer_length =
-		(decoded.status & AX211_RX_CIPHER_FIELD_MASK) ==
-				AX211_RX_CIPHER_FIELD_CCMP
-			? AX211_CCMP_TAG_SIZE
-			: 0U;
+
+	/* A CCMP frame gets an 8-byte MIC field at its end; others get none. */
+	if ((decoded.status & AX211_RX_CIPHER_FIELD_MASK) ==
+	    AX211_RX_CIPHER_FIELD_CCMP) {
+		common_trailer_length = AX211_CCMP_TAG_SIZE;
+	} else {
+		common_trailer_length = 0U;
+	}
+
+	/* Takes the frame without the hardware trailer. */
 	copied_length = frame_length - hardware_trailer_length;
 
-	/* Handles the decoded condition. */
+	/* The padding follows the MAC header, and the CCMP header if any. */
 	padding_offset = header_length;
 	if ((decoded.status & AX211_RX_CIPHER_FIELD_MASK) ==
 	    AX211_RX_CIPHER_FIELD_CCMP) {
-		/* Handles the padding offset condition. */
+		/* Refuses a CCMP frame too short for the CCMP header. */
 		if (padding_offset > copied_length ||
 		    copied_length - padding_offset < AX211_CCMP_HEADER_SIZE) {
-			/* Returns the computed result. */
 			return INTEL_AX211_RX_TRUNCATED;
 		}
+
+		/* Places the padding after the CCMP header. */
 		padding_offset += AX211_CCMP_HEADER_SIZE;
 	}
 
-	/* Handles the mac flags condition. */
+	/* Leaves the two bytes of padding out of the copy. */
 	if ((mac_flags & AX211_RX_MAC_FLAG_PADDING) != 0U) {
-		/* Handles the padding offset condition. */
+		/* Refuses a frame too short for the padding. */
 		if (padding_offset > copied_length ||
 		    copied_length - padding_offset < 2U) {
-			/* Returns the computed result. */
 			return INTEL_AX211_RX_TRUNCATED;
 		}
+
+		/* The copy is two bytes shorter. */
 		copied_length -= 2U;
 	}
 
-	/* Handles the copied length condition. */
+	/* Refuses a length that overflows with the MIC field. */
 	if (copied_length > SIZE_MAX - common_trailer_length)
 		return INTEL_AX211_RX_OVERSIZED;
 
-	/* Handles the normalized length condition. */
+	/* Refuses a frame that does not fit the caller's buffer. */
 	normalized_length = copied_length + common_trailer_length;
 	if (normalized_length > output_capacity)
 		return INTEL_AX211_RX_BUFFER_TOO_SMALL;
 
-	/* Handles the mac flags condition. */
+	/* Copies the frame around the padding, or whole when there is none. */
 	if ((mac_flags & AX211_RX_MAC_FLAG_PADDING) != 0U) {
 		kern_memcpy(output, frame, padding_offset);
 		kern_memcpy(output + padding_offset, frame + padding_offset + 2U,
@@ -313,56 +324,56 @@ drv_intel_ax211_rx_mpdu_decode(
 		kern_memcpy(output, frame, copied_length);
 	}
 
-	/* Handles the common trailer length condition. */
+	/* Writes the zeroed MIC field. */
 	if (common_trailer_length != 0U)
 		kern_memset(output + copied_length, 0, common_trailer_length);
-	frame_control = ax211_rx_get_le16(output);
 
-	/* Checks the operation result. */
+	/* Finds the MAC header length of the frame in its final shape. */
+	frame_control = ax211_rx_get_le16(output);
 	result = ax211_rx_header_length(output, normalized_length,
 					&header_length);
 	if (result != INTEL_AX211_RX_OK)
 		return result;
+
+	/* Decodes the protection of the frame. */
 	decoded.frame = output;
 	decoded.length = normalized_length;
-
-	/* Checks the operation result. */
 	result = ax211_rx_security(&decoded, output, normalized_length,
 				   header_length);
 	if (result != INTEL_AX211_RX_OK)
 		return result;
 
-	/* Handles the frame control condition. */
+	/* Refuses a decrypted frame that is not marked protected. */
 	if ((frame_control & AX211_FRAME_PROTECTED) == 0U &&
 	    decoded.cipher != INTEL_AX211_RX_PROTECTION_NONE) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_FAILED;
 	}
+
+	/* Succeeded: publishes the decoded frame. */
 	*mpdu = decoded;
-	/* Returns the computed result. */
 	return INTEL_AX211_RX_OK;
 }
 
-/* Supports the ax211 rx get le16 operation. */
+/* Reads a 16-bit little-endian value. */
 static uint16_t
 ax211_rx_get_le16(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the value from its two bytes, least significant first. */
 	return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
 }
 
-/* Supports the ax211 rx get le32 operation. */
+/* Reads a 32-bit little-endian value. */
 static uint32_t
 ax211_rx_get_le32(
 	const uint8_t *bytes)
 {
-	/* Returns the computed result. */
+	/* Assembles the word from its four bytes, least significant first. */
 	return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
 	       ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-/* Supports the ax211 rx rssi operation. */
+/* Turns the energies of the two antennas into the stronger signal in dBm. */
 static int32_t
 ax211_rx_rssi(
 	uint8_t energy_a,
@@ -371,29 +382,30 @@ ax211_rx_rssi(
 	int32_t signal_a;
 	int32_t signal_b;
 
+	/* An energy of zero means the antenna received nothing. */
 	signal_a = energy_a == 0U ? -256 : -(int32_t)energy_a;
 	signal_b = energy_b == 0U ? -256 : -(int32_t)energy_b;
 
-	/* Returns the computed result. */
+	/* Reports the stronger of the two. */
 	return signal_a > signal_b ? signal_a : signal_b;
 }
 
-/* Supports the ax211 rx get le64 operation. */
+/* Reads a 64-bit little-endian value. */
 static uint64_t
 ax211_rx_get_le64(
 	const uint8_t *bytes)
 {
-	uint64_t function_result;
+	uint64_t value;
 
-	/* Computes the function result. */
-	function_result = (uint64_t)ax211_rx_get_le32(bytes) |
-			  ((uint64_t)ax211_rx_get_le32(bytes + 4U) << 32);
+	/* Assembles the value from its two words, the low word first. */
+	value = (uint64_t)ax211_rx_get_le32(bytes) |
+		((uint64_t)ax211_rx_get_le32(bytes + 4U) << 32);
 
-	/* Returns the computed result. */
-	return function_result;
+	/* Reports the value. */
+	return value;
 }
 
-/* Supports the ax211 rx header length operation. */
+/* Finds the length of the MAC header of an 802.11 frame. */
 static int
 ax211_rx_header_length(
 	const uint8_t *frame,
@@ -405,51 +417,61 @@ ax211_rx_header_length(
 	uint16_t type;
 	size_t required;
 
-	/* Handles the frame availability. */
+	/* Refuses missing arguments and a frame without frame control. */
 	if (frame == NULL || header_length == NULL || length < 2U)
 		return INTEL_AX211_RX_INVALID;
+
+	/* Takes the type and the subtype of the frame. */
 	frame_control = ax211_rx_get_le16(frame);
 	type = frame_control & AX211_FRAME_TYPE_MASK;
-
-	/* Handles the type condition. */
 	subtype = frame_control & AX211_FRAME_SUBTYPE_MASK;
+
+	/* Measures the header by type: management, control or data. */
 	if (type == AX211_FRAME_TYPE_MANAGEMENT) {
 		required = 24U;
 	} else if (type == AX211_FRAME_TYPE_CONTROL) {
-		required = subtype == AX211_FRAME_CONTROL_CTS ||
-					   subtype == AX211_FRAME_CONTROL_ACK
-				   ? 10U
-				   : 16U;
+		/*
+		 * CTS and ACK carry one address, the other control frames two.
+		 */
+		if (subtype == AX211_FRAME_CONTROL_CTS ||
+		    subtype == AX211_FRAME_CONTROL_ACK) {
+			required = 10U;
+		} else {
+			required = 16U;
+		}
 	} else if (type == AX211_FRAME_TYPE_DATA) {
-		/* Handles the frame control condition. */
+		/*
+		 * A frame between two distribution systems has a fourth
+		 * address.
+		 */
 		required = 24U;
 		if ((frame_control &
 		     (AX211_FRAME_TO_DS | AX211_FRAME_FROM_DS)) ==
 		    (AX211_FRAME_TO_DS | AX211_FRAME_FROM_DS))
 			required += 6U;
 
-		/* Handles the subtype condition. */
+		/* A QoS data frame carries the QoS control field. */
 		if ((subtype & AX211_FRAME_SUBTYPE_QOS) != 0U) {
 			required += 2U;
 
-			/* Handles the frame control condition. */
+			/* With +HTC/Order set it also carries HT control. */
 			if ((frame_control & AX211_FRAME_ORDER) != 0U)
 				required += 4U;
 		}
 	} else {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_UNSUPPORTED;
 	}
 
-	/* Checks the current data length. */
+	/* Refuses a frame shorter than its header. */
 	if (length < required)
 		return INTEL_AX211_RX_TRUNCATED;
+
+	/* Succeeded: reports the header length. */
 	*header_length = required;
-	/* Returns the computed result. */
 	return INTEL_AX211_RX_OK;
 }
 
-/* Supports the ax211 rx security operation. */
+/* Decodes the protection of a received frame and its CCMP packet number. */
 static int
 ax211_rx_security(
 	struct intel_ax211_rx_delivery *mpdu,
@@ -461,52 +483,61 @@ ax211_rx_security(
 	uint16_t frame_control;
 	uint32_t security;
 
+	/* Takes the cipher the firmware applied. */
 	frame_control = ax211_rx_get_le16(frame);
-
-	/* Handles the security condition. */
 	security = mpdu->status & AX211_RX_CIPHER_FIELD_MASK;
+
+	/* A plain frame must not be marked protected. */
 	if (security == AX211_RX_CIPHER_FIELD_NONE) {
-		/* Handles the frame control condition. */
+		/* Refuses a protected frame the firmware did not decrypt. */
 		if ((frame_control & AX211_FRAME_PROTECTED) != 0U)
 			return INTEL_AX211_RX_FAILED;
 
-		/* Returns the computed result. */
+		/* Succeeded: the frame is plain. */
 		return INTEL_AX211_RX_OK;
 	}
 
-	/* Handles the security condition. */
+	/* Ciphers other than CCMP are not handled. */
 	if (security != AX211_RX_CIPHER_FIELD_CCMP)
 		return INTEL_AX211_RX_UNSUPPORTED;
 
-	/* Handles the frame control condition. */
+	/*
+	 * Refuses a CCMP frame not marked protected, not decrypted or not
+	 * checked.
+	 */
 	if ((frame_control & AX211_FRAME_PROTECTED) == 0U ||
 	    (mpdu->status &
 	     (AX211_RX_PLAINTEXT_RESTORED | AX211_RX_CHECK_MIC_GOOD)) !=
 		    (AX211_RX_PLAINTEXT_RESTORED | AX211_RX_CHECK_MIC_GOOD)) {
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_FAILED;
 	}
 
-	/* Checks the current data length. */
+	/* Refuses a frame too short for the CCMP header. */
 	if (length < header_length + AX211_CCMP_HEADER_SIZE)
 		return INTEL_AX211_RX_TRUNCATED;
 
-	/* Handles the ccmp condition. */
+	/*
+	 * Refuses a CCMP header with a nonzero reserved byte or without Ext IV.
+	 */
 	ccmp = frame + header_length;
 	if (ccmp[2U] != 0U || (ccmp[3U] & AX211_CCMP_EXTENDED_IV) == 0U)
 		return INTEL_AX211_RX_FAILED;
+
+	/* Assembles the 48-bit packet number from bytes 0, 1 and 4 to 7. */
 	mpdu->packet_number =
 		(uint64_t)ccmp[0U] | ((uint64_t)ccmp[1U] << 8) |
 		((uint64_t)ccmp[4U] << 16) | ((uint64_t)ccmp[5U] << 24) |
 		((uint64_t)ccmp[6U] << 32) | ((uint64_t)ccmp[7U] << 40);
 
-	/* Handles the mpdu condition. */
+	/* Refuses a zero packet number. */
 	if (mpdu->packet_number == 0U)
 		return INTEL_AX211_RX_FAILED;
+
+	/* Records the key index and the protection. */
 	mpdu->key_index = (uint8_t)((ccmp[3U] >> 6) & 0x03U);
 	mpdu->cipher = INTEL_AX211_RX_PROTECTION_CCMP;
 	mpdu->decrypted = 1U;
 
-	/* Returns the computed result. */
+	/* Succeeded: the frame was decrypted and checked. */
 	return INTEL_AX211_RX_OK;
 }

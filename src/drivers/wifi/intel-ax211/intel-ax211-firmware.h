@@ -22,6 +22,12 @@
 #define INTEL_AX211_FIRMWARE_VFS_PATH "/lib/firmware/" INTEL_AX211_FIRMWARE_PATH
 #define INTEL_AX211_PNVM_VFS_PATH "/lib/firmware/" INTEL_AX211_PNVM_PATH
 
+/*
+ * The pinned firmware image and PNVM file, loaded into memory and parsed.
+ *
+ * A zero-initialized instance owns nothing; a successful load fills every
+ * field, and the release frees both buffers and returns the instance to zero.
+ */
 struct intel_ax211_firmware_files {
 	uint8_t *ucode_bytes;
 	size_t ucode_size;

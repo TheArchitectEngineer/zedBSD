@@ -49,6 +49,7 @@
 #define INTEL_AX211_TX_QUEUE_MAX 511U
 #define INTEL_AX211_TX_SCHEDULER_SEQUENCE_LIMIT 65536U
 
+/* The results of the transmit codecs. */
 enum intel_ax211_tx_result {
 	INTEL_AX211_TX_OK = 0,
 	INTEL_AX211_TX_INVALID = 1,
@@ -60,12 +61,21 @@ enum intel_ax211_tx_result {
 	INTEL_AX211_TX_BUFFER_TOO_SMALL = 7
 };
 
+/*
+ * The kinds of frame a caller may send: a management frame, an EAPOL frame
+ * of the key handshake, or a data frame.
+ */
 enum intel_ax211_tx_frame_class {
 	INTEL_AX211_TX_FRAME_MANAGEMENT = 1,
 	INTEL_AX211_TX_FRAME_EAPOL = 2,
 	INTEL_AX211_TX_FRAME_DATA = 3
 };
 
+/*
+ * One frame to send, with the connection and key it belongs to.
+ *
+ * The frame bytes stay owned by the caller until the completion arrives.
+ */
 struct intel_ax211_tx_request {
 	uint64_t connection_generation;
 	uint64_t cookie;
@@ -81,11 +91,13 @@ struct intel_ax211_tx_request {
 };
 
 /*
+ * The transmit command built for one frame.
+ *
  * command contains the Gen3 v10 fixed body, the copied 802.11 header, and
  * optional alignment padding.  payload_offset/payload_length select the
  * caller-owned frame bytes which form the following TFD transfer buffer.
  * For a protected CCMP frame the common WLAN boundary supplies and validates
- * the eight-byte IV, but Intel firmware inserts that IV and the MIC from its
+ * the eight-byte IV, but the firmware inserts that IV and the MIC from its
  * installed key state.  The prepared transfer therefore skips the supplied
  * IV and frame_length is the firmware input length with that IV removed.
  */
@@ -103,6 +115,7 @@ struct intel_ax211_tx_prepared {
 	uint8_t key_index;
 };
 
+/* The decoded completion of one sent frame. */
 struct intel_ax211_tx_completion {
 	uint32_t hardware_generation;
 	uint32_t scheduler_sequence;

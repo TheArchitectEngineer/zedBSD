@@ -22,34 +22,47 @@
 extern void kern_io_read_barrier(void);
 extern void kern_io_write_barrier(void);
 
-static int ax211_backend_valid(const struct intel_ax211_transport_backend *backend);
-static int ax211_backend_ready(const struct intel_ax211_transport_backend *backend);
-static int ax211_backend_buffer_valid(const struct drv_dma_buffer *buffer, size_t exact_size, uint64_t alignment);
 static int ax211_backend_csr_read32(void *argument, uint32_t offset, uint32_t *value);
-static void ax211_backend_fail(struct intel_ax211_transport_backend *backend);
 static int ax211_backend_csr_write32(void *argument, uint32_t offset, uint32_t value);
 static int ax211_backend_csr_write8(void *argument, uint32_t offset, uint8_t value);
-static int ax211_backend_bar_byte_valid( const struct intel_ax211_pci_mmio_backend *pci_mmio, uint32_t offset);
 static int ax211_backend_wake_hold(void *argument);
 static int ax211_backend_wake_release(void *argument);
 static int ax211_backend_prph_read32(void *argument, uint32_t address, uint32_t *value);
 static int ax211_backend_prph_write32(void *argument, uint32_t address, uint32_t value);
 static int ax211_backend_dma_sync(void *argument, enum intel_ax211_transport_dma_region region, size_t offset, size_t length, enum intel_ax211_transport_dma_direction direction);
-static struct drv_dma_buffer * ax211_backend_region(struct intel_ax211_transport_backend *backend, enum intel_ax211_transport_dma_region region);
-static size_t ax211_backend_region_size(enum intel_ax211_transport_dma_region region);
-static int ax211_backend_direction_valid( enum intel_ax211_transport_dma_region region, enum intel_ax211_transport_dma_direction direction);
-static int ax211_backend_range_valid(size_t offset, size_t length, size_t capacity);
 static int ax211_backend_delay_us(void *argument, uint32_t duration_us);
 static int ax211_backend_clock_us(void *argument, uint64_t *time_us);
 static void ax211_backend_trace_deadline(void *argument, enum intel_ax211_transport_wait wait, uint64_t start_us, uint64_t deadline_us);
 
+/*
+ * The transport operations carried out on the device's BAR and DMA memory.
+ *
+ * The transport calls them with the backend as the argument; the table lives
+ * as long as the driver.  The order is that of struct
+ * intel_ax211_transport_ops.
+ */
 static const struct intel_ax211_transport_ops ax211_backend_operations = {
-	ax211_backend_csr_read32,    ax211_backend_csr_write32,
-	ax211_backend_csr_write8,    ax211_backend_wake_hold,
-	ax211_backend_wake_release,    ax211_backend_prph_read32,
-	ax211_backend_prph_write32,  ax211_backend_dma_sync,
-	ax211_backend_delay_us,	     ax211_backend_clock_us,
+	ax211_backend_csr_read32,
+	ax211_backend_csr_write32,
+	ax211_backend_csr_write8,
+	ax211_backend_wake_hold,
+	ax211_backend_wake_release,
+	ax211_backend_prph_read32,
+	ax211_backend_prph_write32,
+	ax211_backend_dma_sync,
+	ax211_backend_delay_us,
+	ax211_backend_clock_us,
 	ax211_backend_trace_deadline};
+
+static int ax211_backend_valid(const struct intel_ax211_transport_backend *backend);
+static int ax211_backend_ready(const struct intel_ax211_transport_backend *backend);
+static int ax211_backend_buffer_valid(const struct drv_dma_buffer *buffer, size_t exact_size, uint64_t alignment);
+static void ax211_backend_fail(struct intel_ax211_transport_backend *backend);
+static int ax211_backend_bar_byte_valid(const struct intel_ax211_pci_mmio_backend *pci_mmio, uint32_t offset);
+static struct drv_dma_buffer *ax211_backend_region(struct intel_ax211_transport_backend *backend, enum intel_ax211_transport_dma_region region);
+static size_t ax211_backend_region_size(enum intel_ax211_transport_dma_region region);
+static int ax211_backend_direction_valid(enum intel_ax211_transport_dma_region region, enum intel_ax211_transport_dma_direction direction);
+static int ax211_backend_range_valid(size_t offset, size_t length, size_t capacity);
 
 /*
  * Binds three controller-owned objects without touching hardware or DMA.
@@ -62,40 +75,49 @@ drv_intel_ax211_transport_backend_init(
 	struct intel_ax211_dma_resources *dma)
 {
 	struct intel_ax211_transport_backend candidate;
+	int valid;
+	int ready;
+	int coherent;
 
-	/* Handles the backend availability. */
+	/* Refuses missing objects. */
 	if (backend == NULL || mmio == NULL || pci_mmio == NULL || dma == NULL)
 		return INTEL_AX211_TRANSPORT_BACKEND_INVALID;
+
+	/* Binds the objects into a candidate. */
 	kern_memset(&candidate, 0, sizeof(candidate));
 	candidate.mmio = mmio;
 	candidate.pci_mmio = pci_mmio;
 	candidate.dma = dma;
 	candidate.initialized = 1U;
 
-	/* Checks the ax211 backend valid result. */
-	if (!ax211_backend_valid(&candidate))
+	/* Refuses objects that do not belong together. */
+	valid = ax211_backend_valid(&candidate);
+	if (!valid)
 		return INTEL_AX211_TRANSPORT_BACKEND_INVALID;
 
-	/* Checks the ax211 backend ready result. */
-	if (!ax211_backend_ready(&candidate))
+	/* Refuses DMA memory that is not prepared for a boot. */
+	ready = ax211_backend_ready(&candidate);
+	if (!ready)
 		return INTEL_AX211_TRANSPORT_BACKEND_NOT_READY;
 
-	/* Checks the drv dma device is coherent result. */
-	if (!drv_dma_device_is_coherent(dma->device))
+	/* Refuses a device whose DMA is not coherent. */
+	coherent = drv_dma_device_is_coherent(dma->device);
+	if (!coherent)
 		return INTEL_AX211_TRANSPORT_BACKEND_NOT_COHERENT;
+
+	/* Succeeded: publishes the bound backend. */
 	*backend = candidate;
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_BACKEND_OK;
 }
 
 /*
- * Implements the drv intel ax211 transport backend ops operation.
+ * Reports the transport operations of the backend.
  */
 const struct intel_ax211_transport_ops *
 drv_intel_ax211_transport_backend_ops(
 	void)
 {
-	/* Returns the computed result. */
+	/* The table is the same for every device. */
 	return &ax211_backend_operations;
 }
 
@@ -108,18 +130,34 @@ drv_intel_ax211_transport_backend_ring_memory(
 	struct intel_ax211_transport_ring_memory *memory)
 {
 	struct intel_ax211_transport_ring_memory candidate;
+	int valid;
+	int ready;
+	int coherent;
 
-	/* Checks the ax211 backend valid result. */
-	if (memory == NULL || !ax211_backend_valid(backend))
+	/* Refuses a missing output. */
+	if (memory == NULL)
 		return INTEL_AX211_TRANSPORT_BACKEND_INVALID;
 
-	/* Checks the operation status. */
-	if (backend->failed || !ax211_backend_ready(backend))
+	/* Refuses an unbound backend. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
+		return INTEL_AX211_TRANSPORT_BACKEND_INVALID;
+
+	/* Refuses a failed backend. */
+	if (backend->failed)
 		return INTEL_AX211_TRANSPORT_BACKEND_NOT_READY;
 
-	/* Checks the drv dma device is coherent result. */
-	if (!drv_dma_device_is_coherent(backend->dma->device))
+	/* Refuses DMA memory that is not prepared for a boot. */
+	ready = ax211_backend_ready(backend);
+	if (!ready)
+		return INTEL_AX211_TRANSPORT_BACKEND_NOT_READY;
+
+	/* Refuses a device whose DMA is not coherent. */
+	coherent = drv_dma_device_is_coherent(backend->dma->device);
+	if (!coherent)
 		return INTEL_AX211_TRANSPORT_BACKEND_NOT_COHERENT;
+
+	/* Copies the address and size of every ring buffer into the view. */
 	kern_memset(&candidate, 0, sizeof(candidate));
 	candidate.command_tfd = backend->dma->command_tfd.address;
 	candidate.command_tfd_size = backend->dma->command_tfd.size;
@@ -140,139 +178,155 @@ drv_intel_ax211_transport_backend_ring_memory(
 	candidate.rx_completion_size = backend->dma->rx_completion.size;
 	candidate.rx_status = backend->dma->rx_status.address;
 	candidate.rx_status_size = backend->dma->rx_status.size;
+
+	/* Succeeded: publishes the complete view. */
 	*memory = candidate;
-	/* Returns the computed result. */
 	return INTEL_AX211_TRANSPORT_BACKEND_OK;
 }
 
-/* Checks the stable object identity shared with the controller MMIO state. */
+/*
+ * Reports whether the backend's objects belong together: 1 when they do, 0 when
+ * not.
+ */
 static int
 ax211_backend_valid(
 	const struct intel_ax211_transport_backend *backend)
 {
 	const struct intel_ax211_mmio_ops *ops;
 
-	/* Handles the backend availability. */
-	if (backend == NULL || !backend->initialized || backend->mmio == NULL ||
-	    backend->pci_mmio == NULL || backend->dma == NULL) {
-		/* Succeeded. */
+	/* Rejects an unbound backend. */
+	if (backend == NULL ||
+	    !backend->initialized ||
+	    backend->mmio == NULL ||
+	    backend->pci_mmio == NULL ||
+	    backend->dma == NULL) {
 		return 0;
 	}
 
-	/* Handles the ops availability. */
+	/* Rejects an MMIO layer that runs on another BAR backend. */
 	ops = backend->mmio->ops;
 	if (ops == NULL || backend->mmio->argument != backend->pci_mmio)
 		return 0;
 
-	/* Handles the csr read32 availability. */
-	if (ops->csr_read32 == NULL || ops->csr_write32 == NULL ||
-	    ops->prph_read32 == NULL || ops->prph_write32 == NULL ||
-	    ops->delay_us == NULL || ops->clock_us == NULL) {
-		/* Succeeded. */
+	/* Rejects an MMIO layer without the operations the transport calls. */
+	if (ops->csr_read32 == NULL ||
+	    ops->csr_write32 == NULL ||
+	    ops->prph_read32 == NULL ||
+	    ops->prph_write32 == NULL ||
+	    ops->delay_us == NULL ||
+	    ops->clock_us == NULL) {
 		return 0;
 	}
 
-	/* Handles the registers availability. */
+	/* Rejects an unmapped BAR. */
 	if (backend->pci_mmio->registers == NULL ||
 	    backend->pci_mmio->mapping_size == 0U) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Reports operation failure. */
+	/* The backend is usable. */
 	return 1;
 }
 
-/* Proves that all seven runtime ring allocations still belong to DMA. */
+/*
+ * Reports whether all seven ring buffers are allocated as the rings need: 1
+ * when they are, 0 when not.
+ */
 static int
 ax211_backend_ready(
 	const struct intel_ax211_transport_backend *backend)
 {
-	int error;
 	const struct intel_ax211_dma_resources *dma;
+	int valid;
 
-	/* Checks the ax211 backend valid result. */
-	if (!ax211_backend_valid(backend))
+	/* Rejects an unbound backend. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return 0;
 
-	/* Handles the device availability. */
+	/* Rejects DMA memory that is not prepared for a boot. */
 	dma = backend->dma;
 	if (dma->device == NULL || !dma->boot_prepared)
 		return 0;
 
-	/* Checks the ax211 backend buffer valid result. */
-	if (!ax211_backend_buffer_valid(
-		    &dma->command_tfd, INTEL_AX211_COMMAND_TFD_RING_SIZE, 256U)) {
-		/* Succeeded. */
+	/* Rejects a command TFD ring of another size or alignment. */
+	valid = ax211_backend_buffer_valid(
+		&dma->command_tfd, INTEL_AX211_COMMAND_TFD_RING_SIZE, 256U);
+	if (!valid)
 		return 0;
-	}
 
-	/* Checks the ax211 backend buffer valid result. */
-	if (!ax211_backend_buffer_valid(&dma->command_byte_count,
-					INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE,
-					128U)) {
-		/* Succeeded. */
+	/* Rejects a command byte-count table of another size or alignment. */
+	valid = ax211_backend_buffer_valid(&dma->command_byte_count,
+					   INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE,
+					   128U);
+	if (!valid)
 		return 0;
-	}
 
-	/* Checks the ax211 backend buffer valid result. */
-	if (!ax211_backend_buffer_valid(&dma->command_slots,
-					INTEL_AX211_COMMAND_SLOTS_SIZE, 64U)) {
-		/* Succeeded. */
+	/* Rejects command slots of another size or alignment. */
+	valid = ax211_backend_buffer_valid(&dma->command_slots,
+					   INTEL_AX211_COMMAND_SLOTS_SIZE, 64U);
+	if (!valid)
 		return 0;
-	}
 
-	/* Checks the ax211 backend buffer valid result. */
-	if (!ax211_backend_buffer_valid(&dma->command_external,
-					INTEL_AX211_COMMAND_EXTERNAL_SIZE, 64U)) {
-		/* Succeeded. */
+	/* Rejects an external command buffer of another size or alignment. */
+	valid = ax211_backend_buffer_valid(&dma->command_external,
+					   INTEL_AX211_COMMAND_EXTERNAL_SIZE, 64U);
+	if (!valid)
 		return 0;
-	}
 
-	/* Checks the ax211 backend buffer valid result. */
-	if (!ax211_backend_buffer_valid(
-		    &dma->rx_transfer, INTEL_AX211_RX_TRANSFER_RING_SIZE, 256U)) {
-		/* Succeeded. */
+	/* Rejects a receive transfer ring of another size or alignment. */
+	valid = ax211_backend_buffer_valid(
+		&dma->rx_transfer, INTEL_AX211_RX_TRANSFER_RING_SIZE, 256U);
+	if (!valid)
 		return 0;
-	}
 
-	/* Checks the ax211 backend buffer valid result. */
-	if (!ax211_backend_buffer_valid(&dma->rx_completion,
-					INTEL_AX211_RX_COMPLETION_RING_SIZE,
-					256U)) {
-		/* Succeeded. */
+	/* Rejects a receive completion ring of another size or alignment. */
+	valid = ax211_backend_buffer_valid(&dma->rx_completion,
+					   INTEL_AX211_RX_COMPLETION_RING_SIZE,
+					   256U);
+	if (!valid)
 		return 0;
-	}
 
-	/* Obtains the ax211 backend buffer valid result. */
-	error = ax211_backend_buffer_valid(
+	/* Rejects a receive status word of another size or alignment. */
+	valid = ax211_backend_buffer_valid(
 		&dma->rx_status, INTEL_AX211_RX_STATUS_SIZE, 16U);
+	if (!valid)
+		return 0;
 
-	/* Returns the computed result. */
-	return error;
+	/* Every ring buffer is usable. */
+	return 1;
 }
 
-/* Supports the ax211 backend buffer valid operation. */
+/*
+ * Reports whether a DMA buffer has the exact size and alignment: 1 when it has,
+ * 0 when not.
+ */
 static int
 ax211_backend_buffer_valid(
 	const struct drv_dma_buffer *buffer,
 	size_t exact_size,
 	uint64_t alignment)
 {
-	/* Handles the buffer availability. */
-	if (buffer == NULL || buffer->address == NULL ||
-	    buffer->size != exact_size || buffer->device_address == 0U ||
+	/*
+	 * Rejects a missing buffer, another size, an unset address or a
+	 * misaligned one.
+	 */
+	if (buffer == NULL ||
+	    buffer->address == NULL ||
+	    buffer->size != exact_size ||
+	    buffer->device_address == 0U ||
 	    alignment == 0U ||
 	    (buffer->device_address & (alignment - 1U)) != 0U) {
-		/* Succeeded. */
 		return 0;
 	}
 
-	/* Handles the buffer condition. */
+	/*
+	 * Rejects a buffer whose end would pass the top of the address space.
+	 */
 	if (buffer->device_address > UINT64_MAX - (uint64_t)(exact_size - 1U))
 		return 0;
 
-	/* Reports operation failure. */
+	/* The buffer is usable. */
 	return 1;
 }
 
@@ -285,39 +339,55 @@ ax211_backend_csr_read32(
 {
 	struct intel_ax211_transport_backend *backend;
 	uint32_t candidate;
+	int valid;
+	int error;
 
-	/* Checks the operation status. */
+	/* Refuses a missing output. */
 	backend = argument;
-	if (value == NULL || !ax211_backend_valid(backend) || backend->failed)
+	if (value == NULL)
 		return -1;
 
-	/* Checks the csr read32 result. */
-	candidate = 0U;
-	if (backend->mmio->ops->csr_read32(backend->mmio->argument, offset,
-					   &candidate) != 0 ||
-	    candidate == UINT32_MAX) {
-		ax211_backend_fail(backend);
+	/* Refuses an unbound backend. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
+		return -1;
 
-		/* Reports operation failure. */
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
+
+	/* Reads the register through the MMIO layer. */
+	candidate = 0U;
+	error = backend->mmio->ops->csr_read32(backend->mmio->argument, offset,
+					       &candidate);
+
+	/*
+	 * A failed read, or all ones, means the device is gone: the backend
+	 * fails.
+	 */
+	if (error != 0 || candidate == UINT32_MAX) {
+		ax211_backend_fail(backend);
 		return -1;
 	}
 
+	/* Reports the register. */
 	*value = candidate;
+
 	/* Succeeded. */
 	return 0;
 }
 
-/* Supports the ax211 backend fail operation. */
+/* Marks the backend as failed so that it refuses further access. */
 static void
 ax211_backend_fail(
 	struct intel_ax211_transport_backend *backend)
 {
-	/* Handles the backend availability. */
+	/* Nothing to mark without a backend. */
 	if (backend != NULL)
 		backend->failed = 1U;
 }
 
-/* Supports the ax211 backend csr write32 operation. */
+/* Writes a 32-bit register through the MMIO layer. */
 static int
 ax211_backend_csr_write32(
 	void *argument,
@@ -325,18 +395,24 @@ ax211_backend_csr_write32(
 	uint32_t value)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
+	int error;
 
-	/* Checks the operation status. */
+	/* Refuses an unbound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed)
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return -1;
 
-	/* Checks the csr write32 result. */
-	if (backend->mmio->ops->csr_write32(backend->mmio->argument, offset,
-					    value) != 0) {
-		ax211_backend_fail(backend);
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
 
-		/* Reports operation failure. */
+	/* Writes the register; a failed write fails the backend. */
+	error = backend->mmio->ops->csr_write32(backend->mmio->argument, offset,
+						value);
+	if (error != 0) {
+		ax211_backend_fail(backend);
 		return -1;
 	}
 
@@ -352,19 +428,32 @@ ax211_backend_csr_write8(
 	uint8_t value)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
 
-	/* Checks the operation status. */
+	/* Refuses an unbound backend, and fails it if there is one. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed ||
-	    !ax211_backend_bar_byte_valid(backend->pci_mmio, offset)) {
-		/* Handles the backend availability. */
+	valid = ax211_backend_valid(backend);
+	if (!valid) {
+		/* A backend that exists is failed so that it stays refused. */
 		if (backend != NULL)
 			ax211_backend_fail(backend);
-
-		/* Reports operation failure. */
 		return -1;
 	}
 
+	/* Refuses a failed backend. */
+	if (backend->failed) {
+		ax211_backend_fail(backend);
+		return -1;
+	}
+
+	/* Refuses a byte outside the mapping, and fails the backend. */
+	valid = ax211_backend_bar_byte_valid(backend->pci_mmio, offset);
+	if (!valid) {
+		ax211_backend_fail(backend);
+		return -1;
+	}
+
+	/* Writes the byte, ordered after earlier writes. */
 	*(volatile uint8_t *)(backend->pci_mmio->registers + offset) = value;
 	kern_io_write_barrier();
 
@@ -372,64 +461,83 @@ ax211_backend_csr_write8(
 	return 0;
 }
 
-/* Supports the ax211 backend bar byte valid operation. */
+/*
+ * Reports whether a byte register lies inside the mapping: 1 when it does, 0
+ * when not.
+ */
 static int
 ax211_backend_bar_byte_valid(
 	const struct intel_ax211_pci_mmio_backend *pci_mmio,
 	uint32_t offset)
 {
-	/* Handles the pci mmio availability. */
+	/* Rejects an unmapped BAR. */
 	if (pci_mmio == NULL || pci_mmio->registers == NULL)
 		return 0;
 
-	/* Returns the computed result. */
-	return (size_t)offset < pci_mmio->mapping_size;
+	/* Rejects an offset past the end of the mapping. */
+	if ((size_t)offset >= pci_mmio->mapping_size)
+		return 0;
+
+	/* The byte lies inside the mapping. */
+	return 1;
 }
 
-/* Supports the ax211 backend nic lock operation. */
+/* Holds the device awake for register access. */
 static int
 ax211_backend_wake_hold(
 	void *argument)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
+	int result;
 
-	/* Checks the operation status. */
+	/* Refuses an unbound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed)
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return -1;
 
-	/* Checks the drv intel ax211 mmio nic lock result. */
-	if (drv_intel_ax211_mmio_wake_hold(backend->mmio) != INTEL_AX211_MMIO_OK)
+	/* Refuses a failed backend. */
+	if (backend->failed)
 		return -1;
 
-	/* Succeeded. */
+	/* Takes the hold through the MMIO layer. */
+	result = drv_intel_ax211_mmio_wake_hold(backend->mmio);
+	if (result != INTEL_AX211_MMIO_OK)
+		return -1;
+
+	/* Succeeded: the device stays awake until the hold is released. */
 	return 0;
 }
 
-/* Unlock remains available after a failure so ownership cannot leak. */
+/*
+ * Releases a wake hold; it works after a failure too, so that a hold cannot
+ * leak.
+ */
 static int
 ax211_backend_wake_release(
 	void *argument)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
+	int result;
 
-	/* Checks the ax211 backend valid result. */
+	/* Refuses an unbound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend))
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return -1;
 
-	/* Checks the drv intel ax211 mmio nic unlock result. */
-	if (drv_intel_ax211_mmio_wake_release(backend->mmio) !=
-	    INTEL_AX211_MMIO_OK) {
-		/* Reports operation failure. */
+	/* Releases the hold through the MMIO layer. */
+	result = drv_intel_ax211_mmio_wake_release(backend->mmio);
+	if (result != INTEL_AX211_MMIO_OK)
 		return -1;
-	}
 
 	/* Succeeded. */
 	return 0;
 }
 
-/* Supports the ax211 backend prph read32 operation. */
+/* Reads a periphery register through the MMIO layer. */
 static int
 ax211_backend_prph_read32(
 	void *argument,
@@ -437,18 +545,27 @@ ax211_backend_prph_read32(
 	uint32_t *value)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
+	int result;
 
-	/* Checks the operation status. */
+	/* Refuses a missing output. */
 	backend = argument;
-	if (value == NULL || !ax211_backend_valid(backend) || backend->failed)
+	if (value == NULL)
 		return -1;
 
-	/* Checks the drv intel ax211 mmio prph read32 result. */
-	if (drv_intel_ax211_mmio_prph_read32(backend->mmio, address, value) !=
-	    INTEL_AX211_MMIO_OK) {
-		ax211_backend_fail(backend);
+	/* Refuses an unbound backend. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
+		return -1;
 
-		/* Reports operation failure. */
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
+
+	/* Reads the register; a failed read fails the backend. */
+	result = drv_intel_ax211_mmio_prph_read32(backend->mmio, address, value);
+	if (result != INTEL_AX211_MMIO_OK) {
+		ax211_backend_fail(backend);
 		return -1;
 	}
 
@@ -456,7 +573,7 @@ ax211_backend_prph_read32(
 	return 0;
 }
 
-/* Supports the ax211 backend prph write32 operation. */
+/* Writes a periphery register through the MMIO layer. */
 static int
 ax211_backend_prph_write32(
 	void *argument,
@@ -464,18 +581,23 @@ ax211_backend_prph_write32(
 	uint32_t value)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
+	int result;
 
-	/* Checks the operation status. */
+	/* Refuses an unbound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed)
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return -1;
 
-	/* Checks the drv intel ax211 mmio prph write32 result. */
-	if (drv_intel_ax211_mmio_prph_write32(backend->mmio, address, value) !=
-	    INTEL_AX211_MMIO_OK) {
-		ax211_backend_fail(backend);
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
 
-		/* Reports operation failure. */
+	/* Writes the register; a failed write fails the backend. */
+	result = drv_intel_ax211_mmio_prph_write32(backend->mmio, address, value);
+	if (result != INTEL_AX211_MMIO_OK) {
+		ax211_backend_fail(backend);
 		return -1;
 	}
 
@@ -495,35 +617,60 @@ ax211_backend_dma_sync(
 	struct intel_ax211_transport_backend *backend;
 	struct drv_dma_buffer *buffer;
 	size_t exact_size;
+	int valid;
 
-	/* Checks the operation status. */
+	/* Refuses an unbound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed ||
-	    !ax211_backend_ready(backend) ||
-	    !drv_dma_device_is_coherent(backend->dma->device)) {
-		/* Reports operation failure. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return -1;
-	}
+
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
+
+	/* Refuses DMA memory that is not prepared for a boot. */
+	valid = ax211_backend_ready(backend);
+	if (!valid)
+		return -1;
+
+	/* Refuses a device whose DMA is not coherent. */
+	valid = drv_dma_device_is_coherent(backend->dma->device);
+	if (!valid)
+		return -1;
+
+	/* Refuses a region that is not allocated as the ring needs. */
 	buffer = ax211_backend_region(backend, region);
-
-	/* Checks the ax211 backend buffer valid result. */
 	exact_size = ax211_backend_region_size(region);
-	if (!ax211_backend_buffer_valid(buffer, exact_size, 1U) ||
-	    !ax211_backend_direction_valid(region, direction) || length == 0U ||
-	    !ax211_backend_range_valid(offset, length, buffer->size)) {
-		/* Reports operation failure. */
+	valid = ax211_backend_buffer_valid(buffer, exact_size, 1U);
+	if (!valid)
 		return -1;
-	}
 
-	/* Handles the direction condition. */
-	if (direction == INTEL_AX211_TRANSPORT_DMA_PREWRITE)
+	/* Refuses a direction the region never moves in. */
+	valid = ax211_backend_direction_valid(region, direction);
+	if (!valid)
+		return -1;
+
+	/* Refuses an empty range. */
+	if (length == 0U)
+		return -1;
+
+	/* Refuses a range outside the buffer. */
+	valid = ax211_backend_range_valid(offset, length, buffer->size);
+	if (!valid)
+		return -1;
+
+	/*
+	 * Applies the fence of the direction: memory is coherent, so ordering is all
+	 * a hand-over needs.
+	 */
+	if (direction == INTEL_AX211_TRANSPORT_DMA_PREWRITE) {
 		kern_io_write_barrier();
-	else if (direction == INTEL_AX211_TRANSPORT_DMA_PREREAD)
+	} else if (direction == INTEL_AX211_TRANSPORT_DMA_PREREAD) {
 		kern_io_write_barrier();
-	else if (direction == INTEL_AX211_TRANSPORT_DMA_POSTREAD)
+	} else if (direction == INTEL_AX211_TRANSPORT_DMA_POSTREAD) {
 		kern_io_read_barrier();
-	else {
-		/* Reports operation failure. */
+	} else {
 		return -1;
 	}
 
@@ -531,133 +678,151 @@ ax211_backend_dma_sync(
 	return 0;
 }
 
-/* Supports the ax211 backend region operation. */
+/* Finds the DMA buffer of a region. */
 static struct drv_dma_buffer *
 ax211_backend_region(
 	struct intel_ax211_transport_backend *backend,
 	enum intel_ax211_transport_dma_region region)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each region to its buffer; an unknown region has none. */
 	switch (region) {
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD:
-		/* Returns the computed result. */
 		return &backend->dma->command_tfd;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT:
-		/* Returns the computed result. */
 		return &backend->dma->command_byte_count;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS:
-		/* Returns the computed result. */
 		return &backend->dma->command_slots;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL:
-		/* Returns the computed result. */
 		return &backend->dma->command_external;
 	case INTEL_AX211_TRANSPORT_DMA_RX_TRANSFER:
-		/* Returns the computed result. */
 		return &backend->dma->rx_transfer;
 	case INTEL_AX211_TRANSPORT_DMA_RX_COMPLETION:
-		/* Returns the computed result. */
 		return &backend->dma->rx_completion;
 	case INTEL_AX211_TRANSPORT_DMA_RX_STATUS:
-		/* Returns the computed result. */
 		return &backend->dma->rx_status;
 	default:
-		/* Reports that no result is available. */
 		return NULL;
 	}
 }
 
-/* Supports the ax211 backend region size operation. */
+/* Reports the exact size of a region's buffer. */
 static size_t
 ax211_backend_region_size(
 	enum intel_ax211_transport_dma_region region)
 {
-	/* Dispatch the selected operation case. */
+	/* Maps each region to its size; an unknown region has size zero. */
 	switch (region) {
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_TFD_RING_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_LENGTH_TABLE_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_SLOTS_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL:
-		/* Returns the computed result. */
 		return INTEL_AX211_COMMAND_EXTERNAL_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_RX_TRANSFER:
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_TRANSFER_RING_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_RX_COMPLETION:
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_COMPLETION_RING_SIZE;
 	case INTEL_AX211_TRANSPORT_DMA_RX_STATUS:
-		/* Returns the computed result. */
 		return INTEL_AX211_RX_STATUS_SIZE;
 	default:
-		/* Returns the computed result. */
 		return 0U;
 	}
 }
 
-/* Supports the ax211 backend direction valid operation. */
+/*
+ * Reports whether the transport may move a region in a direction: 1 when it
+ * may, 0 when not.
+ */
 static int
 ax211_backend_direction_valid(
 	enum intel_ax211_transport_dma_region region,
 	enum intel_ax211_transport_dma_direction direction)
 {
-	/* Handles the region condition. */
+	/*
+	 * The command rings and the receive transfer ring are only written by
+	 * the host.
+	 */
 	if (region == INTEL_AX211_TRANSPORT_DMA_COMMAND_TFD ||
 	    region == INTEL_AX211_TRANSPORT_DMA_COMMAND_BYTE_COUNT ||
 	    region == INTEL_AX211_TRANSPORT_DMA_COMMAND_SLOTS ||
 	    region == INTEL_AX211_TRANSPORT_DMA_COMMAND_EXTERNAL ||
 	    region == INTEL_AX211_TRANSPORT_DMA_RX_TRANSFER) {
-		/* Returns the computed result. */
-		return direction == INTEL_AX211_TRANSPORT_DMA_PREWRITE;
+		/* They are handed to the device after the host wrote them. */
+		if (direction == INTEL_AX211_TRANSPORT_DMA_PREWRITE)
+			return 1;
+
+		/* No other direction applies to them. */
+		return 0;
 	}
 
-	/* Handles the region condition. */
+	/*
+	 * The receive completion ring and the status word are written by the
+	 * device.
+	 */
 	if (region == INTEL_AX211_TRANSPORT_DMA_RX_COMPLETION ||
 	    region == INTEL_AX211_TRANSPORT_DMA_RX_STATUS) {
-		/* Returns the computed result. */
-		return direction == INTEL_AX211_TRANSPORT_DMA_PREREAD ||
-		       direction == INTEL_AX211_TRANSPORT_DMA_POSTREAD;
+		/* They are handed to the device before it writes them. */
+		if (direction == INTEL_AX211_TRANSPORT_DMA_PREREAD)
+			return 1;
+
+		/* They are taken back by the host after the device wrote them. */
+		if (direction == INTEL_AX211_TRANSPORT_DMA_POSTREAD)
+			return 1;
+
+		/* No other direction applies to them. */
+		return 0;
 	}
 
-	/* Succeeded. */
+	/* An unknown region moves in no direction. */
 	return 0;
 }
 
-/* Supports the ax211 backend range valid operation. */
+/* Reports whether a range lies inside a buffer: 1 when it does, 0 when not. */
 static int
 ax211_backend_range_valid(
 	size_t offset,
 	size_t length,
 	size_t capacity)
 {
-	/* Returns the computed result. */
-	return offset <= capacity && length <= capacity - offset;
+	/* Rejects an offset past the end. */
+	if (offset > capacity)
+		return 0;
+
+	/* Rejects a length that runs past the end. */
+	if (length > capacity - offset)
+		return 0;
+
+	/* The range lies inside the buffer. */
+	return 1;
 }
 
-/* Supports the ax211 backend delay us operation. */
+/* Waits through the MMIO layer. */
 static int
 ax211_backend_delay_us(
 	void *argument,
 	uint32_t duration_us)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
+	int error;
 
-	/* Checks the operation status. */
+	/* Refuses an unbound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed)
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return -1;
 
-	/* Checks the delay us result. */
-	if (backend->mmio->ops->delay_us(backend->mmio->argument,
-					 duration_us) != 0) {
-		ax211_backend_fail(backend);
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
 
-		/* Reports operation failure. */
+	/* Waits; a failed wait fails the backend. */
+	error = backend->mmio->ops->delay_us(backend->mmio->argument,
+					     duration_us);
+	if (error != 0) {
+		ax211_backend_fail(backend);
 		return -1;
 	}
 
@@ -665,7 +830,7 @@ ax211_backend_delay_us(
 	return 0;
 }
 
-/* Adds an adapter-level monotonicity check to the shared clock source. */
+/* Reads the clock through the MMIO layer and refuses a clock that goes back. */
 static int
 ax211_backend_clock_us(
 	void *argument,
@@ -673,31 +838,44 @@ ax211_backend_clock_us(
 {
 	struct intel_ax211_transport_backend *backend;
 	uint64_t candidate;
+	int valid;
+	int error;
 
-	/* Checks the operation status. */
+	/* Refuses a missing output. */
 	backend = argument;
-	if (time_us == NULL || !ax211_backend_valid(backend) || backend->failed)
+	if (time_us == NULL)
 		return -1;
 
-	/* Checks the clock us result. */
+	/* Refuses an unbound backend. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
+		return -1;
+
+	/* Refuses a failed backend. */
+	if (backend->failed)
+		return -1;
+
+	/* Reads the clock. */
 	candidate = 0U;
-	if (backend->mmio->ops->clock_us(backend->mmio->argument, &candidate) !=
-		    0 ||
+	error = backend->mmio->ops->clock_us(backend->mmio->argument, &candidate);
+
+	/* A failed read, or a time behind the last one, fails the backend. */
+	if (error != 0 ||
 	    (backend->clock_observed && candidate < backend->last_clock_us)) {
 		ax211_backend_fail(backend);
-
-		/* Reports operation failure. */
 		return -1;
 	}
 
+	/* Remembers the time as the new lower bound and reports it. */
 	backend->last_clock_us = candidate;
 	backend->clock_observed = 1U;
 	*time_us = candidate;
+
 	/* Succeeded. */
 	return 0;
 }
 
-/* Supports the ax211 backend trace deadline operation. */
+/* Passes the deadline of the receive-idle wait to the MMIO layer's trace. */
 static void
 ax211_backend_trace_deadline(
 	void *argument,
@@ -706,20 +884,28 @@ ax211_backend_trace_deadline(
 	uint64_t deadline_us)
 {
 	struct intel_ax211_transport_backend *backend;
+	int valid;
 
-	/* Checks the operation status. */
+	/* Nothing to trace without a bound backend. */
 	backend = argument;
-	if (!ax211_backend_valid(backend) || backend->failed ||
-	    backend->mmio->ops->trace_deadline == NULL) {
-		/* Returns the computed result. */
+	valid = ax211_backend_valid(backend);
+	if (!valid)
 		return;
-	}
 
-	/* Handles the wait condition. */
+	/* Nothing to trace on a failed backend. */
+	if (backend->failed)
+		return;
+
+	/* Nothing to trace without a trace hook. */
+	if (backend->mmio->ops->trace_deadline == NULL)
+		return;
+
+	/*
+	 * The transport traces only the receive-idle wait; any other is a
+	 * fault.
+	 */
 	if (wait != INTEL_AX211_TRANSPORT_WAIT_RX_IDLE) {
 		ax211_backend_fail(backend);
-
-		/* Returns the computed result. */
 		return;
 	}
 

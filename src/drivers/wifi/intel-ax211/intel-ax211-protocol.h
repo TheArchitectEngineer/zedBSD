@@ -158,6 +158,7 @@
 #define INTEL_AX211_PROTOCOL_CHANNEL_FLAG_USABLE 0x01U
 #define INTEL_AX211_PROTOCOL_CHANNEL_FLAG_MAY_TRANSMIT 0x08U
 
+/* The results of the firmware protocol codecs. */
 enum intel_ax211_protocol_result {
 	INTEL_AX211_PROTOCOL_OK = 0,
 	INTEL_AX211_PROTOCOL_INVALID = 1,
@@ -171,6 +172,7 @@ enum intel_ax211_protocol_result {
 	INTEL_AX211_PROTOCOL_TOKEN_MISMATCH = 9
 };
 
+/* The versions one entry of the command version table lists for one command. */
 struct intel_ax211_protocol_command_version {
 	uint8_t opcode;
 	uint8_t group;
@@ -178,11 +180,23 @@ struct intel_ax211_protocol_command_version {
 	uint8_t notification_version;
 };
 
+/*
+ * The command version record of an image, borrowed from the image's bytes.
+ *
+ * The bytes stay owned by the loaded firmware file; the table is valid as long
+ * as that file is.
+ */
 struct intel_ax211_protocol_command_table {
 	const uint8_t *bytes;
 	size_t count;
 };
 
+/*
+ * One firmware message with its header fields, ready for validation.
+ *
+ * The payload points into the receive buffer the message arrived in, and the
+ * generation is the firmware epoch the controller stamped on it.
+ */
 struct intel_ax211_protocol_message {
 	uint8_t opcode;
 	uint8_t group;
@@ -195,6 +209,10 @@ struct intel_ax211_protocol_message {
 	size_t payload_length;
 };
 
+/*
+ * What a pending command expects of its answer: the ring slot, the family and
+ * opcode, the layout version and the length bounds.
+ */
 struct intel_ax211_protocol_pending_command {
 	uint8_t opcode;
 	uint8_t group;
@@ -206,6 +224,7 @@ struct intel_ax211_protocol_pending_command {
 	size_t maximum_response_length;
 };
 
+/* The record of one lower MAC in the ALIVE notification. */
 struct intel_ax211_protocol_lmac_alive {
 	uint32_t major;
 	uint32_t minor;
@@ -224,6 +243,7 @@ struct intel_ax211_protocol_lmac_alive {
 	uint32_t relay_buffer_size;
 };
 
+/* The record of the upper MAC in the ALIVE notification. */
 struct intel_ax211_protocol_umac_alive {
 	uint32_t major;
 	uint32_t minor;
@@ -231,6 +251,10 @@ struct intel_ax211_protocol_umac_alive {
 	uint32_t trace_buffer_address;
 };
 
+/*
+ * The decoded ALIVE notification: the firmware's status, where its error and
+ * trace tables are, and the board signature that selects the PNVM sections.
+ */
 struct intel_ax211_protocol_alive {
 	uint16_t status;
 	uint16_t flags;
@@ -242,6 +266,10 @@ struct intel_ax211_protocol_alive {
 	uint32_t restore_region_enabled;
 };
 
+/*
+ * One channel of the NVM answer: its number, its flag word, and whether it may
+ * be used and scanned actively.
+ */
 struct intel_ax211_protocol_channel {
 	uint8_t number;
 	uint8_t valid;
@@ -249,6 +277,10 @@ struct intel_ax211_protocol_channel {
 	uint32_t flags;
 };
 
+/*
+ * The decoded answer to the NVM query: the bands and amendments the module may
+ * use, its chain masks, and its channels.
+ */
 struct intel_ax211_protocol_nvm {
 	uint32_t nvm_flags;
 	uint16_t nvm_revision;
