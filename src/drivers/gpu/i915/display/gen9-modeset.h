@@ -32,7 +32,7 @@ struct i915_skl_output_config {
 	unsigned port;
 	unsigned pipe;
 	unsigned dpll;
-	struct i915_lcd_mode mode;
+	struct i915_display_mode mode;
 	struct i915_skl_link link;
 	struct i915_skl_dpll_words dpll_words;
 

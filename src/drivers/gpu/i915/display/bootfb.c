@@ -53,7 +53,6 @@
 #include "gen9-node.h"
 #include "present.h"
 #include "scanout.h"
-#include "takeover.h"
 #include <kern/kcrt.h>
 
 #include "../i915.h"
@@ -71,6 +70,7 @@
 #include <kern/clock.h>
 #include <kern/klog.h>
 #include <kern/lock.h>
+#include <kern/platform.h>
 #include <kern/pmem.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
@@ -222,8 +222,8 @@ drv_i915_bootfb_bind_ops(
 	if (device->gt.graphics_ver != 9U)
 		return;
 
-	/* The framebuffer the loader handed over, which the firmware's plane still scans out. */
-	fb = drv_i915_n1_console_fb();
+	/* Looks up the framebuffer the loader handed over, which the firmware's plane still scans out. */
+	fb = kern_boot_handoff("pcat.framebuffer");
 	if (fb == NULL) {
 		kern_logf("i915: bootfb: the loader handed over no framebuffer; the node has no display\n");
 		return;
