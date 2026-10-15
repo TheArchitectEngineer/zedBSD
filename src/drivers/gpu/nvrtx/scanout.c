@@ -24,10 +24,11 @@
  * The order: every channel is made first (the core, then for each head its
  * two windows with their window-immediate channels and its cursor), the
  * core gets its start without a release, the lit output is inherited and
- * the sinks detected, and the first commit gives the head its mode from the sink's preferred timing (the armed
- * timing when there is no EDID) in two core releases around the window's
- * first image.  Nothing is shown anywhere but on the head the firmware lit
- * (the firmware's output is the only output the driver scans out).
+ * the sinks detected, and the first commit gives the head its mode from the
+ * sink's preferred timing (the armed timing when there is no EDID) in two
+ * core releases around the window's first image.  Nothing is shown anywhere
+ * but on the head the firmware lit (the firmware's output is the only output
+ * the driver scans out).
  */
 
 #include <stdbool.h>
@@ -129,7 +130,10 @@
 /* The most words a change of the head's view takes in the core (the view's 4, the release's 9), with a margin. */
 #define SCANOUT_VIEW_WORDS_MAX		32U
 
-/* The SOR capability read once for each SOR output (the caps area's word at 0x13c). */
+/*
+ * The SOR capability read once for each SOR output (the caps area's word at
+ * 0x13c).
+ */
 #define SCANOUT_REG_SOR_CAPS		0x64013cU
 
 /*
