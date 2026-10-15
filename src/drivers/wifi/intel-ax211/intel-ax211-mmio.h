@@ -38,6 +38,7 @@
 #define INTEL_AX211_MMIO_UPPER_CPU_PRPH_BASE 0x300000U
 #define INTEL_AX211_MMIO_LOADER_IMAGE_SIZE 13944U
 
+/* The results of the MMIO layer. */
 enum intel_ax211_mmio_result {
 	INTEL_AX211_MMIO_OK = 0,
 	INTEL_AX211_MMIO_INVALID = 1,
@@ -48,6 +49,7 @@ enum intel_ax211_mmio_result {
 	INTEL_AX211_MMIO_NOT_OWNER = 6
 };
 
+/* The bounded waits of the MMIO layer, named for the deadline trace. */
 enum intel_ax211_mmio_wait {
 	INTEL_AX211_MMIO_WAIT_HW_READY = 1,
 	INTEL_AX211_MMIO_WAIT_APM_CLOCK = 2,
@@ -55,6 +57,7 @@ enum intel_ax211_mmio_wait {
 	INTEL_AX211_MMIO_WAIT_MASTER_DISABLED = 4
 };
 
+/* The identity of the device the MMIO layer runs on. */
 struct intel_ax211_mmio_profile {
 	uint16_t mac_type;
 	uint16_t rf_type;
@@ -63,6 +66,10 @@ struct intel_ax211_mmio_profile {
 	uint32_t upper_cpu_prph_base;
 };
 
+/*
+ * The register access, the delay and the clock the MMIO layer needs from its
+ * backend; the deadline trace is optional.
+ */
 struct intel_ax211_mmio_ops {
 	int (*csr_read32)(void *argument, uint32_t offset, uint32_t *value);
 	int (*csr_write32)(void *argument, uint32_t offset, uint32_t value);
@@ -74,12 +81,22 @@ struct intel_ax211_mmio_ops {
 			       uint64_t start_us, uint64_t deadline_us);
 };
 
+/*
+ * What the device needs to start its firmware: the boot context and the loader.
+ */
 struct intel_ax211_mmio_boot {
 	uint64_t context_address;
 	uint64_t iml_address;
 	uint32_t iml_size;
 };
 
+/*
+ * The power and ownership state of one device.
+ *
+ * prepared, reset_done and apm_ready record how far the power-up has come, in
+ * that order; a stop clears them.  wake_hold_depth counts the nested holds
+ * that keep the device awake for register access.
+ */
 struct intel_ax211_mmio {
 	const struct intel_ax211_mmio_ops *ops;
 	void *argument;
