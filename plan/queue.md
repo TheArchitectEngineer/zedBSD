@@ -9,6 +9,7 @@
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1200 / q1200-i01 | P1（kernel-and-driver-designer、worktree p1・agent/p1-ws245、基点 ec06bb53a） | [ws245-p001](ws245/phase001/phase.md) | design.md 改訂 3: design-review.md（レビュー 2）の反映、display 12・13 の全機種への書き直し、display 11 の Phase、3 回目のレビュー。source は変えない | in-progress |
+| q1201 / q1201-i01 | P2（phase-runner、worktree p2・agent/p2-ws248、基点 a3424a08a の次） | [ws248-p001](ws248/phase001/phase.md) → [ws248-p002](ws248/phase002/phase.md) | AX211 の driver の出典の表記と規約の全文（2026-10-15 ユーザー「これもWSを作ってコードを整理しましょう。サブエージェントを1つ割り当ててください。」）。動作は変えない | in-progress |
 
 ## 2026-10-15: WS247・WS245（q984〜q995）
 

@@ -33,7 +33,7 @@
 0. **まず [plan/agents/handover-20261015b.md](agents/handover-20261015b.md) を読む**（この session の異常と点検、未完の担当、ユーザーの判断待ち、残っている仕事）。
 1. 新しい Q1 は AGENTS.md・この block・plan/beta2.md の先頭（「ユーザーが今できる試験」）を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない（試験の一覧を示す）。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge_one の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`。memory の verify-merge-before-reporting）。
-3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS248、q1201（q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
+3. merge は `source plan/tools/merge_one.sh && merge_one SHA`（merge だけを 1 つの Bash の呼び出しに）。次の番号: BUG-323、WS249、q1202（q1201 は P2 の WS248 AX211 の整理。q1200 は P1 の ws245-p001 改訂 3。q1000〜q1199 は WS074 の lane が使った。2026-10-15 ユーザーの承認）、T1-698。次の KL_VERSION は 95。
 4. 日付（2026-10-15 ユーザー「host の時計は 2026-10-15（木）です。10-16は明らかにおかしいです。」）: 10-15 04:36 以降の記録が 1 日進んだ 2026-10-16 と書かれていたので、出来事の日付を 2026-10-15 に直した（予定の 7 行は 10-16 のまま）。日付は host の時計（`date`）で書く。 記録の整合を保つ手順は [record-integrity.md](record-integrity.md)（AGENTS.md の「記録の整合」）。LW は 1 LW ≈ 実時間 15〜25 分（2026-10-14 の較正、10-15 に正と承認）。
 <!-- master:next:end -->
 
@@ -554,6 +554,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p001 の design.md 改訂 2 は main、レビュー 2 の反映が残る） | ws.md の Resume point |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
+| [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001 を P2 が実行中、q1201） | p001 → p002 |
 
 完了した WS の Phase の記録は 2026-09-24 に plan から削除した（git の履歴に残る）。
 
