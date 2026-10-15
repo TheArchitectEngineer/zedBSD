@@ -28,7 +28,10 @@
 
 #include <stdint.h>
 
-/* How an instruction's results become ready (Turing's latency classes, NAK's sm75_instr_latencies.rs). */
+/*
+ * How an instruction's results become ready (Turing's latency classes).
+ * Values referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm75_instr_latencies.rs (the latency classes).
+ */
 #define NVRTX_SM75_CLASS_ALU		0U
 #define NVRTX_SM75_CLASS_FMA		1U
 #define NVRTX_SM75_CLASS_IMAD		2U
@@ -39,9 +42,9 @@
 /*
  * A read by a variable-latency instruction of the address unit (the global
  * and shared memory accesses and the attribute stores), which Ampere's and
- * Ada's table tells from the other variable-latency reads (NAK's
- * DecoupledAgu); only a read has it, the instruction's class is
- * NVRTX_SM75_CLASS_DECOUPLED.
+ * Ada's table tells from the other variable-latency reads; only a read
+ * has it, the instruction's class is NVRTX_SM75_CLASS_DECOUPLED.
+ * Value referenced: Mesa 25.3.6 src/nouveau/compiler/nak/sm80_instr_latencies.rs (DecoupledAgu).
  */
 #define NVRTX_SM75_CLASS_AGU		6U
 
