@@ -48,7 +48,7 @@ Resume point: q1204（P1、2026-10-15 夕）で p002 を実装中。以前: 2026
 - ロールバックの基点: main 0c25c87a7（WS245 の実装の commit が入る前）。Phase ごとに別の merge commit にするので、`git revert -m 1 <merge>` で Phase 単位に戻せる。
 - kernel の振る舞いは p009 まで変えない: p002・p004〜p008 は新しい file と host 試験だけ。p003 の adapter 以降も `i915.display=old` が既定で、xd は opt-in（design.md §7 #0、既定の切り替えは p011）。`old` は p013 まで逃げ道。
 - §7 の判断は既定の案で進め、既定の無い #18（RKL・ADL-S/RPL-S を支えるか）・#22（Gen9 の機械）は回答待ち。#18 の回答までは device.c の ID の表に RKL・ADL-S を足さない（今の振る舞いのまま）。
-- merge の時期は §7 #13 の既定（p002 はいつでも、p003 以降は 10/17 のデモの後）を Q1 がユーザーに確かめる。
+- merge の時期（§7 #13、2026-10-15 夕 ユーザー「WS245はいつでもロールバックできるので、今マージします」）: デモの後まで待たず、p003 以降も Phase の成果ができ次第 main に merge する（既定の案の「p003 以降はデモの後」を置き換え）。戻す時は Phase の merge commit を revert する。
 
 ## Phase（design.md §6.2、改訂 3a。p001 の clearance で確定）
 
