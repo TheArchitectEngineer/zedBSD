@@ -3520,6 +3520,7 @@ ax211_pci_transport_bind(
 	if (!coherent)
 		return -1;
 
+	/* Turns bus mastering on and initializes the transport backend. */
 	kern_memset(&memory, 0, sizeof(memory));
 	bus_master_enabled = 0;
 
@@ -3623,9 +3624,11 @@ ax211_pci_transport_bind(
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
-	/* Reports the failure, never as a success. */
+	/* Reports a failure without a reason as -1. */
 	if (result == 0)
 		return -1;
+
+	/* Reports the failure. */
 	return result;
 }
 
@@ -3663,6 +3666,8 @@ ax211_pci_receive_event(
 	    event == NULL) {
 		return INTEL_AX211_BOOT_RECEIVE_IO;
 	}
+
+	/* Polls with no event received yet. */
 	kern_memset(event, 0, sizeof(*event));
 	receive_result = INTEL_AX211_BOOT_RECEIVE_IO;
 
@@ -3677,6 +3682,8 @@ ax211_pci_receive_event(
 		    controller->active_dma != NULL) {
 			result = 0;
 		}
+
+		/* Clears the latch the poll consumes. */
 		controller->irq_latched = 0U;
 		spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 		if (result != 0)
@@ -3724,6 +3731,7 @@ ax211_pci_receive_event(
 				return INTEL_AX211_BOOT_RECEIVE_IO;
 		}
 
+		/* Takes the next completion of an active receive ring. */
 		kern_memset(&completion, 0, sizeof(completion));
 
 		/* Takes the next completion of an active receive ring. */
@@ -3856,6 +3864,8 @@ ax211_pci_publish_pnvm(
 	    dma->pnvm_count == 0U) {
 		return -1;
 	}
+
+	/* Orders the table's writes before the doorbell. */
 	kern_io_write_barrier();
 
 	/* Rings the PNVM doorbell while the NIC is held awake. */
@@ -4226,6 +4236,7 @@ ax211_pci_scan_initialize(
 			controller->hardware_epoch);
 	}
 
+	/* Clears the country answer. */
 	ax211_pci_scrub(&mcc, sizeof(mcc));
 
 	/* Reports a failed initialization. */
@@ -4234,6 +4245,7 @@ ax211_pci_scan_initialize(
 		return result;
 	}
 
+	/* Gives the station the channels the firmware scans. */
 	kern_memset(&profile, 0, sizeof(profile));
 
 	/* Gives the station the channels the firmware scans. */
@@ -4248,6 +4260,7 @@ ax211_pci_scan_initialize(
 		}
 	}
 
+	/* Clears the profile. */
 	ax211_pci_scrub(&profile, sizeof(profile));
 
 	/* Reports a failed update. */
@@ -4303,6 +4316,8 @@ ax211_pci_runtime_scan_profile(
 	    source->channel_count > WLAN_SCAN_CHANNEL_MAX) {
 		return EINVAL;
 	}
+
+	/* Describes the channel count. */
 	kern_memset(profile, 0, sizeof(*profile));
 	profile->channel_count = (uint32_t)source->channel_count;
 
@@ -4636,6 +4651,8 @@ ax211_pci_scan_notification_dispatch(
 	    result == INTEL_AX211_SCAN_SESSION_STALE) {
 		return 0;
 	}
+
+	/* Reports any other failure through the scan error latch. */
 	ax211_pci_scan_report_error(controller, result);
 
 	/* The failure is reported through the scan error latch. */
@@ -4832,6 +4849,8 @@ ax211_pci_runtime_event_dispatch(
 	    event->length != length) {
 		return EINVAL;
 	}
+
+	/* Clears the decoded event and the message. */
 	kern_memset(&decoded, 0, sizeof(decoded));
 	kern_memset(&message, 0, sizeof(message));
 
@@ -5421,6 +5440,7 @@ ax211_pci_direct_command(
 		result = EIO;
 	}
 
+	/* Starts counting the events received. */
 	index = 0U;
 
 	/* Receives events until the answer arrives or the bounds run out. */
@@ -5435,6 +5455,8 @@ ax211_pci_direct_command(
 			result = ETIMEDOUT;
 			break;
 		}
+
+		/* A receive failure ends the wait. */
 		if (result != INTEL_AX211_BOOT_RECEIVE_OK) {
 			result = EIO;
 			break;
@@ -5557,6 +5579,7 @@ ax211_pci_direct_command(
 					length;
 			}
 
+			/* Retires the command. */
 			result = 0;
 			command_submitted = 0;
 		} else {
@@ -6000,6 +6023,8 @@ ax211_pci_assoc_profile(
 		/* Any other failure is a stale scan. */
 		return ESTALE;
 	}
+
+	/* Takes the BSS's association metadata. */
 	kern_memset(&metadata, 0, sizeof(metadata));
 
 	/* Takes the BSS's association metadata. */
@@ -6166,6 +6191,8 @@ ax211_pci_assoc_rollback(
 		    controller->connection_generation != generation) {
 			return ESTALE;
 		}
+
+		/* Forgets the connection. */
 		ax211_pci_connection_clear(controller);
 
 		/* Succeeded. */
@@ -6212,6 +6239,8 @@ ax211_pci_assoc_rollback(
 	    controller->frame_ring.pending_count != 0U) {
 		return EIO;
 	}
+
+	/* Succeeded: forgets the connection. */
 	ax211_pci_connection_clear(controller);
 
 	/* Succeeded. */
@@ -6396,6 +6425,7 @@ ax211_pci_keys_remove_all(
 					controller, command, deadline_ticks);
 			}
 
+			/* Clears the encoded removal. */
 			drv_intel_ax211_key_command_scrub(command);
 		}
 	}
@@ -6426,6 +6456,7 @@ ax211_pci_keys_remove_all(
 					controller, command, deadline_ticks);
 			}
 
+			/* Clears the encoded removal. */
 			drv_intel_ax211_key_command_scrub(command);
 		}
 	}
@@ -6852,6 +6883,7 @@ ax211_pci_tx_dispatch(
 	 */
 	mutex_unlock(&controller->lifecycle_lock);
 
+	/* Reports the completion. */
 	report_result = wlan_station_report_tx_complete(
 		station, retired.handle.connection_generation,
 		retired.handle.cookie, acknowledged, status);
@@ -6890,6 +6922,8 @@ ax211_pci_tx_timeout_check(
 	    controller->frame_ring.pending_count == 0U) {
 		return 0;
 	}
+
+	/* Takes the oldest frame whose time ran out. */
 	kern_memset(&handle, 0, sizeof(handle));
 
 	/* The oldest frame is still within its time. */
@@ -7017,6 +7051,8 @@ ax211_pci_connection_rx_dispatch(
 		/* Drops a frame of another protection. */
 		return 0;
 	}
+
+	/* Hands the frame to the station. */
 	station = NULL;
 
 	/* A station that is gone takes no frame. */
@@ -7031,6 +7067,7 @@ ax211_pci_connection_rx_dispatch(
 	 */
 	mutex_unlock(&controller->lifecycle_lock);
 
+	/* Reports the frame. */
 	(void)wlan_station_report_frame(station, &report);
 	mutex_lock(&controller->lifecycle_lock);
 
@@ -7141,6 +7178,8 @@ ax211_pci_suspend(
 	    controller->active_dma != NULL) {
 		busy = 1;
 	}
+
+	/* Suspends a controller whose radio is off. */
 	if (!busy)
 		controller->suspended = 1U;
 
@@ -7573,12 +7612,15 @@ ax211_pci_close_locked(
 	 */
 	mutex_unlock(&controller->lifecycle_lock);
 
+	/* Waits for the station's close. */
 	if (station == NULL) {
 		error = ENODEV;
 	} else {
 		deadline = ax211_pci_lifecycle_deadline();
 		error = ax211_pci_station_close_wait(station, deadline);
 	}
+
+	/* Retakes the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
 	/* Logs a close that needs the checked stop, at most once a second. */
@@ -7619,6 +7661,7 @@ ax211_pci_close_locked(
 	controller->quarantined = 0U;
 	mutex_unlock(&controller->lifecycle_lock);
 
+	/* Waits for the station's close again. */
 	deadline = ax211_pci_lifecycle_deadline();
 	error = ax211_pci_station_close_wait(station, deadline);
 	mutex_lock(&controller->lifecycle_lock);
@@ -7734,6 +7777,7 @@ ax211_net_transmit(
 		return ENODEV;
 	}
 
+	/* Opens the epoch under the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
 	/* Enters an operation of a running, admitting controller. */
@@ -7848,6 +7892,7 @@ ax211_net_poll_receive(
 				break;
 			}
 
+			/* Counts the drained event. */
 			count++;
 			continue;
 		}
@@ -7859,6 +7904,7 @@ ax211_net_poll_receive(
 			break;
 		}
 
+		/* Receives the next event. */
 		kern_memset(&event, 0, sizeof(event));
 
 		/* Receives the next event; none arriving ends the loop. */
@@ -7903,6 +7949,7 @@ ax211_net_poll_receive(
 			break;
 		}
 
+		/* Counts the dispatched event. */
 		count++;
 	}
 
@@ -7926,6 +7973,7 @@ ax211_net_poll_receive(
 							fatal_error);
 		}
 
+		/* Runs the recovery. */
 		(void)ax211_pci_recovery_run_locked(controller);
 	}
 
@@ -7949,6 +7997,7 @@ ax211_net_poll_receive(
 
 	spin_unlock_irqrestore(&controller->interrupt_lock, enabled);
 
+	/* Ends the poll. */
 	controller->poll_active = 0U;
 	controller->poll_reschedule = 0U;
 
@@ -8095,6 +8144,7 @@ ax211_radio_scan_channel_start(
 	if (generation == 0U || channel > UINT8_MAX || deadline == 0U)
 		return EINVAL;
 
+	/* Checks the controller under the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
 	/* Refuses a controller that cannot scan now. */
@@ -8136,6 +8186,7 @@ ax211_radio_scan_channel_start(
 		return EINVAL;
 	}
 
+	/* Reads the clock. */
 	result = ax211_pci_clock_us(controller, &now);
 
 	/*
@@ -8207,6 +8258,7 @@ ax211_radio_scan_stop(
 	if (generation == 0U)
 		return EINVAL;
 
+	/* Checks the scan under the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
 	/* Refuses a recovery that has not started. */
@@ -8487,6 +8539,7 @@ ax211_radio_connect_start(
 				controller->association.resources);
 		}
 
+		/* Translates the session's result. */
 		result = ax211_pci_assoc_result_errno(result);
 	}
 
@@ -8644,6 +8697,7 @@ ax211_radio_management_transmit(
 				   (unsigned)generation);
 		}
 
+		/* Refuses the frame. */
 		result = ENETDOWN;
 	} else {
 		/* Describes the frame. */
@@ -8898,6 +8952,8 @@ ax211_radio_frame_transmit(
 	    request->deadline_ticks == 0U) {
 		return EINVAL;
 	}
+
+	/* Checks the controller under the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
 	/* Refuses a stopped runtime, a disabled ring and another connection. */
@@ -8954,6 +9010,8 @@ ax211_radio_frame_transmit(
 				} else {
 					result = INTEL_AX211_KEY_MISSING;
 				}
+
+				/* Translates the key state's result. */
 				result = ax211_pci_key_result_errno(result);
 			}
 
@@ -9031,6 +9089,8 @@ ax211_radio_key_install(
 	     request->key_index != 0U)) {
 		return EINVAL;
 	}
+
+	/* Checks the controller under the lifecycle lock. */
 	mutex_lock(&controller->lifecycle_lock);
 
 	/*
@@ -9141,6 +9201,7 @@ ax211_radio_key_install(
 							.request.key_generation;
 				}
 
+				/* Moves to the next slot. */
 				index++;
 			}
 
@@ -9270,6 +9331,7 @@ ax211_radio_key_delete(
 		/* Notes whether the key is the active one. */
 		active_match = 0;
 		if (private_kind == INTEL_AX211_KEY_PAIRWISE) {
+			/* Compares with the active pairwise key. */
 			if (controller->keys.active_pairwise == key_generation)
 				active_match = 1;
 		} else if (controller->keys.active_group[key_index] ==
@@ -9280,6 +9342,7 @@ ax211_radio_key_delete(
 		/* Notes whether the key is the one an activation retired. */
 		retired_match = 0;
 		if (private_kind == INTEL_AX211_KEY_PAIRWISE) {
+			/* Compares with the retired pairwise key. */
 			if (controller->retired_pairwise_key_generation ==
 			    key_generation) {
 				retired_match = 1;
